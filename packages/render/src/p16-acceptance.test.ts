@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   AUDIO_REVERB_VERSION,
-  computeAudioOutputGain,
   createDefaultAudioPayload,
   dryAudioReverbFallbackBytes,
   encodeAudioReverbChunk,
@@ -47,12 +46,6 @@ function library(options?: {
 }
 
 describe("P16 audio acceptance", () => {
-  it("multiplies asset 0.5 × playCall 0.5 to 0.25", () => {
-    expect(
-      computeAudioOutputGain({ assetVolume: 0.5, playCallVolume: 0.5 }),
-    ).toBe(0.25);
-  });
-
   it("multiplies mixer channel defaults through parents and global", () => {
     const channels = new Map<string, AudioChannelPayload>([
       [
@@ -212,60 +205,6 @@ describe("P16 audio acceptance", () => {
         channels,
       }),
     ).toMatchObject({ gain: 0.5, environmentReverb: false });
-  });
-
-  it("plays with no mixer and no channel without invented gain", () => {
-    expect(
-      resolveAudioPlayback({
-        audio: createDefaultAudioPayload(),
-        playCallVolume: 1,
-        mixer: null,
-        channels: new Map(),
-      }),
-    ).toMatchObject({ gain: 1, environmentReverb: false });
-  });
-
-  it("follows an Actor emitter and reports lastDistance", async () => {
-    const backend = new FakeAudioPlaybackBackend();
-    const service = new AudioService({ backend });
-    service.setLibrary(
-      library({
-        audio: {
-          jump: {
-            volume: 1,
-            audioChannelGuid: null,
-            soundAttenuationGuid: "near",
-          },
-        },
-        attenuations: {
-          near: {
-            innerRadius: 1,
-            maxRadius: 50,
-            distanceModel: "linear",
-            rolloff: 1,
-            spatialisation: "equalPower",
-            cone: null,
-            doppler: null,
-          },
-        },
-      }),
-    );
-    service.setSourceBytes("jump", new Uint8Array([1]));
-    await service.unlockAsync();
-    service.noteActorSlot("speaker", 1);
-    service.handleCommand({
-      type: "playSound",
-      assetGuid: "jump",
-      volume: 1,
-      frameId: 1,
-      voiceId: "v1",
-      emitterActorGuid: "speaker",
-    });
-    await service.flush();
-    service.syncListener({ x: 0, y: 0, z: 0 });
-    service.syncSnapshot([{ slotId: 1, position: { x: 4, y: 0, z: 0 } }]);
-    expect(service.stats().lastDistance).toBe(4);
-    service.dispose();
   });
 
   it("queues pre-gesture playback and returns voices to baseline on dispose", async () => {

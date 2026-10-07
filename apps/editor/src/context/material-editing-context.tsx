@@ -31,6 +31,7 @@ import {
   lowerMaterialDocument,
   materialCompileKey,
   materialParameterDefaults,
+  materialDependencies,
   materialPreviewReducer,
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
@@ -50,6 +51,7 @@ import { usePlay } from "./play-context";
 import { useMaterialRenderControl } from "./material-render-control-context";
 import { useMaterialInstanceSources } from "./material-instance-sources";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
+import { textureUploadSignature } from "../lib/texture-upload-signature";
 
 const FUNCTION_KINDS = ["material-function"] as const;
 
@@ -175,6 +177,34 @@ export function MaterialEditingProvider({
   const frameBudgetMs =
     1000 / Math.max(1, projectDocument?.settings.playFrameCap ?? 60);
 
+  // Keyed on `content`, not on the open-document entry: the store can replace
+  // a document's content while keeping the entry identity, and memoizing on
+  // the entry would leave the preview compiling a stale graph.
+  const content = doc?.content;
+  const hasContent = content != null;
+  const instanceDocument = useMemo<MaterialInstanceDocument | null>(
+    () => isInstanceDocument && content != null ? normalizeMaterialInstanceDocument(content ?? {}) : null,
+    [content, isInstanceDocument],
+  );
+  const instanceSources = useMaterialInstanceSources(documentId, instanceDocument?.parentGuid ?? null);
+  const instanceResolution = useMemo(() => {
+    if (!instanceDocument || !instanceSources) return null;
+    return resolveMaterialInstance(documentId, (guid) =>
+      guid === documentId ? { kind: "instance", document: instanceDocument } : instanceSources.get(guid) ?? null);
+  }, [documentId, instanceDocument, instanceSources]);
+  // An instance compiles its root graph once; its own and inherited overrides
+  // are uniform writes on that material, so value edits never recompile.
+  const document = useMemo<MaterialDocument | null>(() => {
+    if (isFunctionDocument || content == null) return null;
+    if (isInstanceDocument) {
+      return instanceResolution?.ok
+        ? { ...instanceResolution.root, preview: instanceDocument!.preview, instanceOf: instanceResolution.rootGuid }
+        : null;
+    }
+    return normalizeMaterialDocument(content ?? {});
+  }, [content, instanceDocument, instanceResolution, isFunctionDocument, isInstanceDocument]);
+  const instanceOverrides = instanceResolution?.ok ? instanceResolution.overrides : null;
+
   const functionAssetsRef = useRef<IndexedAsset[]>([]);
   const functionAssets = useMemo(() => {
     void registryEpoch; // Registry contents mutate without replacing its instance.
@@ -191,75 +221,60 @@ export function MaterialEditingProvider({
     functionAssetsRef.current = next;
     return next;
   }, [assetRegistry, registryEpoch]);
+  const openFunctionDocuments = useOpenDocumentsOfKinds(FUNCTION_KINDS);
+  const functionDocumentsRef = useRef<ReadonlyArray<readonly [string, unknown]>>([]);
+  const functionDocuments = useMemo(() => {
+    const next = openFunctionDocuments.filter((entry) => entry.content).map((entry) => [entry.ref.path, entry.content] as const);
+    const previous = functionDocumentsRef.current;
+    if (previous.length === next.length && next.every(([path, content], index) =>
+      previous[index]![0] === path && previous[index]![1] === content)) return previous;
+    functionDocumentsRef.current = next;
+    return next;
+  }, [openFunctionDocuments]);
+  const functionRoot = isFunctionDocument && content != null ? normalizeMaterialFunctionDocument(content) : document;
+  const functionRootsKey = JSON.stringify(functionRoot ? materialDependencies(functionRoot).functions : []);
   const [savedFunctions, setSavedFunctions] = useState<Record<string, MaterialFunctionDocument>>({});
-  const [loadedFunctionAssets, setLoadedFunctionAssets] = useState<typeof functionAssets | null>(null);
-  const functionsReady = functionAssets.length === 0 || loadedFunctionAssets === functionAssets;
+  const [loadedFunctions, setLoadedFunctions] = useState<{ assets: typeof functionAssets; roots: string } | null>(null);
+  const functionsReady = functionRootsKey === "[]" ||
+    (loadedFunctions?.assets === functionAssets && loadedFunctions.roots === functionRootsKey);
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       const next: Record<string, MaterialFunctionDocument> = {};
-      for (const asset of functionAssets) {
+      const visited = new Set<string>();
+      const pending = JSON.parse(functionRootsKey) as string[];
+      while (pending.length && !cancelled) {
+        const guid = pending.pop()!;
+        if (visited.has(guid)) continue;
+        visited.add(guid);
+        const asset = functionAssets.find((entry) => entry.header.guid === guid);
+        if (!asset) continue;
         try {
-          const bytes = await readAssetChunk?.(asset.path, "document");
-          const content = bytes?.length ? JSON.parse(new TextDecoder().decode(bytes)) : asset.header.payload;
-          // Missing bodies stay missing so validation can report the call site.
-          if (content && typeof content === "object" && Array.isArray((content as Record<string, unknown>).nodes)) {
-            next[asset.header.guid] = normalizeMaterialFunctionDocument(content);
+          let functionContent = functionDocuments.find(([path]) => path === asset.path)?.[1];
+          if (!functionContent) {
+            const bytes = await readAssetChunk?.(asset.path, "document", { ownerDocumentId: documentId });
+            functionContent = bytes?.length ? JSON.parse(new TextDecoder().decode(bytes)) : asset.header.payload;
+          }
+          if (functionContent && typeof functionContent === "object" && Array.isArray((functionContent as Record<string, unknown>).nodes)) {
+            const fn = normalizeMaterialFunctionDocument(functionContent);
+            next[guid] = fn;
+            pending.push(...materialDependencies(fn).functions);
           }
         } catch {
           // An unavailable function is diagnosed by graph validation.
         }
       }
-      if (!cancelled) { setSavedFunctions(next); setLoadedFunctionAssets(functionAssets); }
+      if (!cancelled) { setSavedFunctions(next); setLoadedFunctions({ assets: functionAssets, roots: functionRootsKey }); }
     })();
     return () => { cancelled = true; };
-  }, [functionAssets, readAssetChunk]);
-
-  /** Open edits override saved document chunks; headers are only legacy fallback. */
-  const functionDocuments = useOpenDocumentsOfKinds(FUNCTION_KINDS);
-  const functions = useMemo(() => {
-    const map: Record<string, MaterialFunctionDocument> = { ...savedFunctions };
-    for (const asset of functionAssets) {
-      const open = functionDocuments.find(
-        (entry) => entry.ref.path === asset.path && entry.content,
-      );
-      if (open?.content) map[asset.header.guid] = normalizeMaterialFunctionDocument(open.content);
-    }
-    return map;
-  }, [functionAssets, functionDocuments, savedFunctions]);
+  }, [documentId, functionAssets, functionDocuments, functionRootsKey, readAssetChunk]);
+  const functions = savedFunctions;
   functionsRef.current = functions;
   engineRef.current = sharedEngine;
 
-  // Keyed on `content`, not on the open-document entry: the store can replace
-  // a document's content while keeping the entry identity, and memoizing on
-  // the entry would leave the preview compiling a stale graph.
-  const content = doc?.content;
-  const instanceDocument = useMemo<MaterialInstanceDocument | null>(
-    () => isInstanceDocument && content !== undefined ? normalizeMaterialInstanceDocument(content ?? {}) : null,
-    [content, isInstanceDocument],
-  );
-  const instanceSources = useMaterialInstanceSources(documentId, instanceDocument?.parentGuid ?? null);
-  const instanceResolution = useMemo(() => {
-    if (!instanceDocument || !instanceSources) return null;
-    return resolveMaterialInstance(documentId, (guid) =>
-      guid === documentId ? { kind: "instance", document: instanceDocument } : instanceSources.get(guid) ?? null);
-  }, [documentId, instanceDocument, instanceSources]);
-  // An instance compiles its root graph once; its own and inherited overrides
-  // are uniform writes on that material, so value edits never recompile.
-  const document = useMemo<MaterialDocument | null>(() => {
-    if (isFunctionDocument || content === undefined) return null;
-    if (isInstanceDocument) {
-      return instanceResolution?.ok
-        ? { ...instanceResolution.root, preview: instanceDocument!.preview, instanceOf: instanceResolution.rootGuid }
-        : null;
-    }
-    return normalizeMaterialDocument(content ?? {});
-  }, [content, instanceDocument, instanceResolution, isFunctionDocument, isInstanceDocument]);
-  const instanceOverrides = instanceResolution?.ok ? instanceResolution.overrides : null;
-
   useEffect(() => {
-    setSharedEngine(play?.ensureSharedEngine() ?? null);
-  }, [play]);
+    setSharedEngine(hasContent ? play?.ensureSharedEngine() ?? null : null);
+  }, [play, hasContent]);
 
   useEffect(() => {
     if (libraryRef.current) return;
@@ -346,7 +361,7 @@ export function MaterialEditingProvider({
       if (mesh === "custom" && guid) {
         const asset = assetRegistry?.getByGuid(guid);
         if (asset && readAssetChunk) {
-          bytes = await readAssetChunk(asset.path, "source");
+          bytes = await readAssetChunk(asset.path, "source", { ownerDocumentId: documentId });
         }
       }
       if (cancelled) return;
@@ -358,6 +373,7 @@ export function MaterialEditingProvider({
   }, [
     assetRegistry,
     canvas,
+    documentId,
     document?.preview.customMeshGuid,
     document?.preview.mesh,
     readAssetChunk,
@@ -381,6 +397,18 @@ export function MaterialEditingProvider({
     return materialCompileKey(document, { functions });
   }, [document, functions]);
 
+  const costClassRef = useRef(costClass);
+  costClassRef.current = costClass;
+  const invalidatePreview = useCallback(() => {
+    generationRef.current += 1;
+    const host = hostRef.current;
+    if (host) libraryRef.current?.cancelPending(host.scene, documentId);
+    dispatch({ type: "edit", cost: costClassRef.current });
+    // A cold dependency completing is part of the requested Render. Keep that
+    // request queued even when this graph is too expensive for auto-preview.
+    if (manualRenderPendingRef.current) dispatch({ type: "render" });
+  }, [documentId]);
+
   const textureGuidsKey = useMemo(() => {
     if (!document) return "";
     const lowered = lowerMaterialDocument(document, { functions });
@@ -389,19 +417,26 @@ export function MaterialEditingProvider({
       value.kind === "texture" && value.textureAssetGuid ? [value.textureAssetGuid] : []);
     return [...new Set([...lowered.plan.dependencies.textures, ...overrideTextures])].sort().join(",");
   }, [document, functions, instanceOverrides]);
-  const [loadedTextureGuidsKey, setLoadedTextureGuidsKey] = useState("");
+  const textureSourcesKey = useMemo(() => {
+    void registryEpoch;
+    return JSON.stringify((textureGuidsKey ? textureGuidsKey.split(",") : []).map((guid) => {
+      const asset = assetRegistry?.getByGuid(guid);
+      return asset ? [guid, asset.path, asset.header.type, textureUploadSignature(asset.header)] : [guid, "missing"];
+    }));
+  }, [assetRegistry, registryEpoch, textureGuidsKey]);
+  const [loadedTextureSourcesKey, setLoadedTextureSourcesKey] = useState("");
   const texturesReady =
-    textureGuidsKey === "" || textureGuidsKey === loadedTextureGuidsKey;
+    textureGuidsKey === "" || textureSourcesKey === loadedTextureSourcesKey;
 
   useEffect(() => {
     const guids = textureGuidsKey === "" ? [] : textureGuidsKey.split(",");
     if (guids.length === 0) {
       textureBytesRef.current = new Map();
-      setLoadedTextureGuidsKey("");
+      setLoadedTextureSourcesKey("");
       return;
     }
     let cancelled = false;
-    setLoadedTextureGuidsKey("");
+    setLoadedTextureSourcesKey("");
     void (async () => {
       const next = new Map<string, Uint8Array>();
       for (const guid of guids) {
@@ -413,27 +448,24 @@ export function MaterialEditingProvider({
           continue;
         }
         if (!readAssetChunk) continue;
-        const pixels = await readAssetChunk(asset.path, "pixels");
+        const pixels = await readAssetChunk(asset.path, "pixels", { ownerDocumentId: documentId });
         if (pixels && pixels.byteLength > 0) {
           next.set(guid, pixels);
           continue;
         }
-        const source = await readAssetChunk(asset.path, "source");
+        const source = await readAssetChunk(asset.path, "source", { ownerDocumentId: documentId });
         if (source && source.byteLength > 0) next.set(guid, source);
       }
       if (cancelled) return;
       textureBytesRef.current = installTextureBytes(next) ?? new Map();
       libraryRef.current?.markDirty();
-      setLoadedTextureGuidsKey(textureGuidsKey);
-      dispatch({ type: "edit", cost: costClassRef.current });
+      setLoadedTextureSourcesKey(textureSourcesKey);
+      invalidatePreview();
     })();
     return () => {
       cancelled = true;
     };
-  }, [assetRegistry, registryEpoch, readAssetChunk, textureGuidsKey]);
-
-  const costClassRef = useRef(costClass);
-  costClassRef.current = costClass;
+  }, [assetRegistry, documentId, invalidatePreview, readAssetChunk, textureGuidsKey, textureSourcesKey]);
 
   const rootParameters = useMemo(() => {
     if (!isInstanceDocument || !document) return null;
@@ -464,21 +496,18 @@ export function MaterialEditingProvider({
     const observer = restored.add(() => {
       libraryRef.current?.invalidate();
       if (!compileKey) return;
-      dispatch({ type: "edit", cost: costClassRef.current });
+      invalidatePreview();
       presenterRef.current?.present({ force: true });
     });
     return () => {
       restored.remove(observer);
     };
-  }, [compileKey, sharedEngine]);
+  }, [compileKey, invalidatePreview, sharedEngine]);
 
   useEffect(() => {
     if (!compileKey) return;
-    generationRef.current += 1;
-    const host = hostRef.current;
-    if (host) libraryRef.current?.cancelPending(host.scene, documentId);
-    dispatch({ type: "edit", cost: costClassRef.current });
-  }, [compileKey, documentId, previewSceneEpoch]);
+    invalidatePreview();
+  }, [compileKey, invalidatePreview, previewSceneEpoch]);
 
   useEffect(() => {
     hostRef.current?.applyParticleMaterial?.(null);

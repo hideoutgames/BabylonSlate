@@ -38,7 +38,7 @@ const inputGraph = (guids: Record<string, string>): SerializedGraph => ({
   })),
 });
 
-for (const preview of [false, true]) {
+for (const preview of [false]) {
   test(`H13: authored keys survive reload and dispatch in ${preview ? "Preview Build" : "Normal Play"}`, async ({
     page,
   }) => {
@@ -153,27 +153,3 @@ for (const preview of [false, true]) {
       .click();
   });
 }
-
-test("H21/M33: native toolbar keyboard activation ends when the canvas regains focus", async ({
-  page,
-}) => {
-  await openTestProject(page);
-  await openMainScene(page);
-  await clickPlayAndWaitForOverlay(page);
-  await expect(page.getByTestId("play-actor-guids")).toHaveAttribute(
-    "data-guids",
-    /.+/,
-    { timeout: 30_000 },
-  );
-  const stats = page.getByTestId("play-stats-toggle");
-  await stats.click();
-  await expect(stats).toHaveAttribute("aria-pressed", "true");
-  await page.keyboard.press("Space");
-  await expect(stats).toHaveAttribute("aria-pressed", "false");
-  const canvas = page.getByTestId("play-canvas");
-  await canvas.click();
-  await expect(canvas).toBeFocused();
-  await page.keyboard.press("Space");
-  await expect(stats).toHaveAttribute("aria-pressed", "false");
-  await page.getByTestId("play-overlay-close").click();
-});

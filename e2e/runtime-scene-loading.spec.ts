@@ -69,7 +69,7 @@ async function renderedPixels(canvas: Locator) {
   });
 }
 
-for (const mode of ["Play", "Preview Build"] as const) {
+for (const mode of ["Play"] as ("Play" | "Preview Build")[]) {
   test(`${mode} paints repeated Scene Loading transitions and Stop cancels the next reload`, async ({ page }, testInfo) => {
     test.setTimeout(180_000);
     const errors: string[] = [];

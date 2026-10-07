@@ -717,7 +717,7 @@ export function collectGraphTypeAssets(options: {
       members: [...entry.members],
     });
   }
-  const open = new Map(options.openDocuments.filter((doc) => doc.ref.kind === "data-definition" && doc.ref.path)
+  const open = new Map(options.openDocuments.filter((doc) => doc.ref.kind === "data-definition" && doc.ref.path && doc.content != null)
     .map((doc) => [doc.ref.path, doc.content]));
   for (const asset of options.assets) {
     if (asset.header.type === "DataDefinition" && asset.header.guid) {

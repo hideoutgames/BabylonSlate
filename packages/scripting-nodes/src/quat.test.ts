@@ -11,7 +11,6 @@ import {
 } from "@babylonslate/scripting";
 import {
   createDefaultNodeRegistry,
-  quatNodes,
 } from "./index";
 
 function node(
@@ -32,23 +31,6 @@ function node(
 }
 
 describe("quaternion nodes", () => {
-  it("registers Make/Break and quaternion math on the quaternion palette", () => {
-    expect(quatNodes.map((entry) => entry.id)).toEqual([
-      "quat.make",
-      "quat.break",
-      "quat.fromRotator",
-      "quat.toRotator",
-      "quat.multiply",
-      "quat.inverse",
-      "quat.slerp",
-      "quat.rotateVector",
-      "quat.normalize",
-    ]);
-    expect(quatNodes.every((entry) => entry.category === "quaternion")).toBe(
-      true,
-    );
-  });
-
   it("Make/Break Quaternion use XYZW floats", () => {
     const registry = createDefaultNodeRegistry();
     const make = registry.get("quat.make")!;

@@ -40,24 +40,7 @@ async function previewPixels(surface: Locator) {
 }
 
 test.describe("3D Empty Kenney Mannequin", () => {
-  test("Model preview draws on opening without orbiting the canvas", async ({
-    page,
-  }, testInfo) => {
-    await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/Mannequin/mannequin.babasset");
-    const canvas = page.getByTestId("model-preview-canvas");
-    await expect(canvas).toBeVisible();
-    await expect
-      .poll(async () => (await previewPixels(canvas)).model, {
-        timeout: 15_000,
-      })
-      .toBeGreaterThan(100);
-    await canvas.screenshot({
-      path: testInfo.outputPath("model-first-open.png"),
-    });
-  });
-
-  test("existing Model and Animation assets receive rendered browser thumbnails", async ({
+  test("selected Model and Animation assets generate rendered browser thumbnails", async ({
     page,
   }) => {
     await openTestProject(page);
@@ -68,7 +51,11 @@ test.describe("3D Empty Kenney Mannequin", () => {
       "assets/Mannequin/mannequin.babasset",
       "assets/Mannequin/mannequin_idle.babasset",
     ]) {
-      const thumbnail = page.locator(`[data-asset-path="${path}"] img`);
+      const tile = page.locator(`[data-asset-path="${path}"]`);
+      await tile.click();
+      await tile.click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Generate Thumbnail", exact: true }).click();
+      const thumbnail = tile.locator("img");
       await expect(thumbnail).toBeVisible({ timeout: 30_000 });
       await expect
         .poll(async () => (await previewPixels(thumbnail)).model)

@@ -37,7 +37,9 @@ export * from "./print-hud";
 export * from "./trace";
 export * from "./map-default";
 export * from "./class-variable-references";
+export * from "./behaviour-tree-ids";
 export * from "./asset-variable-references";
+export * from "./asset-loading";
 export * from "./material-parameter-assets";
 export * from "./material-parameter-value";
 export * from "./play-preview-aspect";
@@ -88,3 +90,5 @@ export * from "./save-game-rpc";
 export * from "./save-game";
 export * from "./save-game-service";
 export * from "./actor-property-references";
+
+export * from "./console-command";

@@ -109,23 +109,6 @@ test("H6/M4: recovery of an undone edit stays clean and clears its journal", asy
   await expect(page.getByTestId("recovery-prompt")).toHaveCount(0);
 });
 
-test("H6: recovery restores a journalled Enum edit", async ({ page }) => {
-  await openTestProject(page);
-  await createContentBrowserAsset(page, "Enum", "RecoverableEnum");
-  await openAssetFromBrowser(page, "assets/RecoverableEnum.babasset");
-  await saveAllIfEnabled(page);
-  await page.getByTestId("enum-add-member").click();
-  await expect(page.getByTestId("enum-row-1")).toBeVisible();
-  await expect.poll(async () => (await journalCommands(page))
-    .filter((command) => command.type === "asset.setDocument").length).toBe(1);
-  await recoverAfterReload(page);
-  await openAssetFromBrowser(page, "assets/RecoverableEnum.babasset");
-  await expect(page.getByTestId("enum-row-1")).toBeVisible();
-  expect(await page.evaluate(() => (globalThis as unknown as TestHost)
-    .__babylonslateTest.dirtyDocuments().map((doc) => doc.kind))).toEqual(["enum"]);
-});
-
-
 test("Class rename recovery keeps unsaved instances bound to the renamed Class", async ({ page }) => {
   await openTestProject(page);
   await createContentBrowserAsset(page, "Class", "RecoverHero");

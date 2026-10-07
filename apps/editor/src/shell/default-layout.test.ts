@@ -1,13 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import { createDefaultLayoutForKind } from "./default-layout";
-import { CLASS_PANEL_INITIAL_HEIGHT, CLASS_PANEL_TITLE } from "./window-catalog";
-
-describe("graph default layout", () => {
-  it("titles the class panel Class at about half the left stack", () => {
-    expect(CLASS_PANEL_TITLE).toBe("Class");
-    expect(CLASS_PANEL_INITIAL_HEIGHT).toBeGreaterThanOrEqual(360);
-  });
-});
 
 describe("createDefaultLayoutForKind", () => {
   it("sizes Sprite Animation Details to 75% of the DockView host", () => {

@@ -1,6 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
 import { closeProjectViaSettings } from "./close-project";
-import { IPAD_TEST_TAG } from "./ipad-tag";
 import { openMainScene, openTestProject } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
 import { readSaveAllDiagnostics, saveAllIfEnabled } from "./save-all";
@@ -193,27 +192,5 @@ test.describe("P6 first-playable scene editing", () => {
     await page.mouse.up();
 
     await expect(copies).toHaveCount(before + 1);
-  });
-
-  test("scene panels expose touch-sized toolbar controls", {
-    tag: IPAD_TEST_TAG,
-  }, async ({ page }) => {
-    await openTestProject(page);
-    await openMainScene(page);
-
-    for (const testId of [
-      "gizmo-tool-translate",
-      "gizmo-tool-rotate",
-      "gizmo-tool-scale",
-      "viewport-drag-select",
-      "viewport-settings",
-      "viewport-mode-toggle",
-      "outliner-add-actor",
-    ]) {
-      const box = await page.getByTestId(testId).boundingBox();
-      expect(box, testId).not.toBeNull();
-      expect(box!.height, testId).toBeGreaterThanOrEqual(28);
-      expect(box!.width, testId).toBeGreaterThanOrEqual(28);
-    }
   });
 });

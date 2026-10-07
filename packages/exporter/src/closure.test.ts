@@ -28,6 +28,16 @@ function asset(
 }
 
 describe("collectExportReachability", () => {
+  it("includes registered debug commands and their deferred resources without requiring scene references", () => {
+    const result = collectExportReachability({ startupSceneGuid: "scene", pluginEnabledGuids: new Set(), parentOf: () => null,
+      assets: [asset({ guid: "scene", name: "Scene", type: "Scene" }),
+        asset({ guid: "command", name: "Teleport", type: "Class", parentClass: "BDebugCommand", dependencies: ["later"],
+          consoleCommand: { name: "teleport", category: "game", description: "", parameters: [] } }),
+        asset({ guid: "later", name: "Later", type: "Scene" })],
+      sceneByGuid: () => null, graphByGuid: () => null,
+    });
+    expect(result.ok && result.value.guids).toEqual(["command", "later", "scene"]);
+  });
   it("packs owned entries, their definition and typed nested dependencies without packing entry paths or text", () => {
     const schema = [
       { name: "assetGuid", typeId: "string" },

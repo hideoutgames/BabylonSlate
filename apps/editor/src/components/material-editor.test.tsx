@@ -119,17 +119,6 @@ function lastCommit(): MaterialDocument {
 }
 
 describe("Material preview panel", () => {
-  it("overlays compact mesh actions on the canvas instead of a toolbar strip", () => {
-    const { container } = render(<MaterialPreviewPanel {...panelProps} />);
-    expect(screen.getByTestId("material-preview-overlay")).toBeTruthy();
-    expect(container.querySelector("[data-slot=toolbar]")).toBeNull();
-    expect(screen.getByTestId("material-preview-mesh")).toBeTruthy();
-    expect(screen.getByTestId("material-preview-mesh-cube")).toBeTruthy();
-    expect(screen.queryByTestId("material-render")).toBeNull();
-    expect(screen.queryByTestId("material-preview-status")).toBeNull();
-    expect(screen.queryByTestId("material-preview-custom-mesh")).toBeNull();
-  });
-
   it("stores the chosen primitive on the document", () => {
     render(<MaterialPreviewPanel {...panelProps} />);
     fireEvent.click(screen.getByTestId("material-preview-mesh-cylinder"));

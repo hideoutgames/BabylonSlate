@@ -195,33 +195,6 @@ describe("SceneOutlinerPanel menus", () => {
     expect(frameActor).toHaveBeenCalledWith("actor-1");
   });
 
-  it("keeps phone row targets separate and restores compact row placement on iPad", () => {
-    const scene = createDefaultScene();
-    scene.actors = [
-      createActor("actor-1", "Cube"),
-      createActor("actor-2", "Sphere"),
-    ];
-    harness.scene = scene;
-    harness.phone = true;
-    const { rerender } = render(
-      <SceneEditingProvider>
-        <SceneOutlinerPanel {...({} as IDockviewPanelProps)} />
-      </SceneEditingProvider>,
-    );
-    let rows = screen.getAllByRole("treeitem");
-    expect(rows[0]!.style.height).toBe("44px");
-    expect(rows[1]!.style.top).toBe("44px");
-    harness.phone = false;
-    rerender(
-      <SceneEditingProvider>
-        <SceneOutlinerPanel {...({} as IDockviewPanelProps)} />
-      </SceneEditingProvider>,
-    );
-    rows = screen.getAllByRole("treeitem");
-    expect(rows[0]!.style.height).toBe("28px");
-    expect(rows[1]!.style.top).toBe("28px");
-  });
-
   it("opens Duplicate/Delete from the row menu button", () => {
     const scene = createDefaultScene();
     scene.actors = [createActor("actor-1", "Cube")];

@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BabylonSlateScopedStoragePlugin } from "./capacitor-scoped-storage";
 import type { ProjectStorageReader } from "@babylonslate/core";
+import { SourceRevisionChangedError } from "@babylonslate/core";
 import { ScopedStorageAdapter } from "./scoped-storage-adapter";
+import { createMountedProjectStorage } from "./mounted-storage";
 
 const prefs = new Map<string, string>();
 
@@ -27,6 +29,7 @@ function createMockPlugin(): BabylonSlateScopedStoragePlugin {
     openFolder: vi.fn(),
     importBookmark: vi.fn(),
     readFile: vi.fn(),
+    readFileRange: vi.fn(),
     writeFile: vi.fn(),
     mkdir: vi.fn(),
     deleteFile: vi.fn(),
@@ -40,6 +43,42 @@ function createMockPlugin(): BabylonSlateScopedStoragePlugin {
 describe("ScopedStorageAdapter", () => {
   beforeEach(() => {
     prefs.clear();
+  });
+
+  it("validates native range responses and keeps scan read accounting on the owning adapter", async () => {
+    const plugin = createMockPlugin();
+    plugin.beginReadScope = vi.fn().mockResolvedValue({ readScope: "scan" });
+    plugin.endReadScope = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(plugin.pickFolder).mockResolvedValue({ folder: { id: "folder", name: "Game", supportsReadScope: true } });
+    vi.mocked(plugin.readFileRange).mockResolvedValue({ data: btoa("ab"), totalSize: 1024, revision: "one", actualBytesRead: 2 });
+    const adapter = new ScopedStorageAdapter(plugin);
+    await adapter.pickProjectFolder();
+    const selected = await adapter.withReadScope(reader => reader.readBinaryRange("large.babasset", 10, 2));
+    expect(selected.bytes).toEqual(new Uint8Array([97, 98]));
+    expect(adapter.getReadMetrics()).toMatchObject({ actualBytesRead: 2, rangeReads: 1, fullReads: 0 });
+    const mounted = createMountedProjectStorage([{ path: "plugin", storage: adapter, sourcePath: "" }]);
+    await expect(mounted.readBinaryRange("plugin/large.babasset", 10, 2, "old")).rejects.toBeInstanceOf(SourceRevisionChangedError);
+    vi.mocked(plugin.readFileRange).mockResolvedValue({ data: btoa("a"), totalSize: 1024, revision: "one", actualBytesRead: 1 });
+    await expect(mounted.readBinaryRange("plugin/large.babasset", 10, 2)).rejects.toThrow(/range response/i);
+    vi.mocked(plugin.readFileRange).mockRejectedValue({ code: "NOT_FOUND", data: { actualBytesRead: 1 } });
+    await expect(mounted.readBinaryRange("plugin/large.babasset", 10, 2)).rejects.toThrow(/not found/i);
+    expect(adapter.getReadMetrics().actualBytesRead).toBe(6);
+    expect(mounted.getReadMetrics!()).toMatchObject({ actualBytesRead: 4, rangeReads: 3 });
+    expect(plugin.readFile).not.toHaveBeenCalled();
+  });
+
+  it("classifies native revision invalidation without treating unrelated failures as retryable", async () => {
+    const plugin = createMockPlugin();
+    vi.mocked(plugin.pickFolder).mockResolvedValue({ folder: { id: "folder", name: "Game" } });
+    vi.mocked(plugin.readFileRange).mockRejectedValue({ code: "REVISION_CHANGED", data: { actualBytesRead: 3 } });
+    const adapter = new ScopedStorageAdapter(plugin);
+    await adapter.pickProjectFolder();
+    await expect(adapter.readBinaryRange("asset.babasset", 0, 4)).rejects.toBeInstanceOf(SourceRevisionChangedError);
+    const unrelated = Object.assign(new Error("Source revision changed"), { code: "UNREACHABLE" });
+    vi.mocked(plugin.readFileRange).mockRejectedValue(unrelated);
+    await expect(adapter.readBinaryRange("asset.babasset", 0, 4)).rejects.toBe(unrelated);
+    expect(adapter.getReadMetrics()).toMatchObject({ rangeReads: 2, actualBytesRead: 3, fullReads: 0 });
+    expect(await adapter.needsReconnect()).toBe(false);
   });
 
   it("isolates concurrent read scopes, closes failed scans and keeps ordinary reads uncached", async () => {

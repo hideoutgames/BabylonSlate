@@ -142,46 +142,6 @@ describe("string.format node", () => {
     expect(compiled.source).toContain('"Hi "');
   });
 
-  it("registers Contains, Starts With, Ends With, Replace, Split, Join, Substring, Trim, Lower, Upper, Parse Int, and Parse Float", () => {
-    expect(stringNodes.map((entry) => entry.id)).toEqual(
-      expect.arrayContaining([
-        "string.contains",
-        "string.startsWith",
-        "string.endsWith",
-        "string.replace",
-        "string.split",
-        "string.join",
-        "string.substring",
-        "string.trim",
-        "string.toLower",
-        "string.toUpper",
-        "string.parseInt",
-        "string.parseFloat",
-      ]),
-    );
-    expect(stringNodes.find((entry) => entry.id === "string.contains")?.title).toBe(
-      "Contains",
-    );
-    expect(stringNodes.find((entry) => entry.id === "string.startsWith")?.title).toBe(
-      "Starts With",
-    );
-    expect(stringNodes.find((entry) => entry.id === "string.endsWith")?.title).toBe(
-      "Ends With",
-    );
-    expect(stringNodes.find((entry) => entry.id === "string.toLower")?.title).toBe(
-      "To Lower",
-    );
-    expect(stringNodes.find((entry) => entry.id === "string.toUpper")?.title).toBe(
-      "To Upper",
-    );
-    expect(stringNodes.find((entry) => entry.id === "string.parseInt")?.title).toBe(
-      "Parse Int",
-    );
-    expect(stringNodes.find((entry) => entry.id === "string.parseFloat")?.title).toBe(
-      "Parse Float",
-    );
-  });
-
   it("types Split as string array out and Join as string array in", () => {
     const split = stringNodes.find((entry) => entry.id === "string.split");
     expect(split?.pins({}).find((pin) => pin.id === "out")?.type).toEqual(

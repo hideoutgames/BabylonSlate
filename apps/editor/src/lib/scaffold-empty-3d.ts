@@ -4,6 +4,7 @@ import {
 } from "@babylonslate/anim-graph";
 import {
   DOCUMENT_CHUNK_ID,
+  collectAssetDependencyMetadata,
   decodeBabasset,
   encodeBabasset,
   normalizeModelPayload,
@@ -203,7 +204,14 @@ export async function applyKenneyMannequinEmptyScaffold(options: {
         : decoded.chunks.get(chunk.id)!,
     }));
     await storage.writeBinary(asset.path, await encodeBabasset({
-      header: { ...decoded.header, payload },
+      header: {
+        ...decoded.header,
+        ...collectAssetDependencyMetadata(decoded.header.type, payload, {
+          dependencies: decoded.header.dependencies,
+          parentClass: decoded.header.parentClass,
+        }),
+        payload,
+      },
       chunks,
       writeBlob: (hash, data) => blobs.writeBlob(hash, data),
     }));

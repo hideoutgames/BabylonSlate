@@ -61,6 +61,7 @@ export const actorNodes: NodeDefinition[] = [
     id: "actor.spawn",
     title: "Spawn Actor",
     category: "actor",
+    latent: true,
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
@@ -71,7 +72,7 @@ export const actorNodes: NodeDefinition[] = [
     codegen: (ctx) => {
       const out = ctx.output("out");
       ctx.emit(
-        `${out} = ctx.spawnActor(${ctx.input("classId")}, ${ctx.input("transform")});`,
+        `${out} = await ctx.spawnActorAsync(${ctx.input("classId")}, ${ctx.input("transform")});`,
       );
     },
   },

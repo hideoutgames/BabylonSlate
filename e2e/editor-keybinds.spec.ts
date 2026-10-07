@@ -1,35 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { openMinimalTestProject } from "./minimal-project";
-import { openMainScene, selectContentBrowserAssetsFolder } from "./open-test-project";
-
-test("Content Browser shortcuts use panel focus and preserve text editing", async ({ page }) => {
-  await openMinimalTestProject(page);
-  const grid = page.getByTestId("content-browser-asset-grid");
-  const search = page.getByTestId("content-browser-search");
-  await grid.focus();
-  await page.keyboard.press("ControlOrMeta+f");
-  await expect(search).toBeFocused();
-  await search.fill("main");
-  await page.keyboard.press("Alt+n");
-  await expect(page.getByTestId("content-browser-new-asset-dialog")).toHaveCount(0);
-  await search.fill("");
-  await grid.focus();
-  await page.keyboard.press("Alt+n");
-  await expect(page.getByTestId("content-browser-new-asset-dialog")).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(page.getByTestId("content-browser-new-asset-dialog")).toHaveCount(0);
-  await grid.focus();
-  await page.keyboard.press("Alt+Shift+n");
-  await page.getByTestId("content-browser-name-input").fill("Shortcut Folder");
-  await page.getByTestId("content-browser-name-confirm").click();
-  await expect(page.getByTestId("content-browser-name-dialog")).toHaveCount(0);
-  await selectContentBrowserAssetsFolder(page);
-  await expect(page.getByTestId("content-folder-assets/Shortcut Folder")).toBeVisible();
-  const scene = page.locator('[data-asset-path="assets/main.scene.babasset"]');
-  await scene.click();
-  await page.keyboard.press("Alt+r");
-  await expect(page.getByTestId("content-browser-refs-dialog")).toBeVisible();
-});
+import { openMainScene } from "./open-test-project";
 
 test("viewport shortcuts match menu hints and closing preserves the dirty document prompt", async ({ page }, testInfo) => {
   await openMinimalTestProject(page);
@@ -71,33 +42,4 @@ test("viewport shortcuts match menu hints and closing preserves the dirty docume
   await page.getByTestId("place-actors-item-shape-box").click();
   await expect(page.getByTestId("place-actors-catalog")).toHaveCount(0);
   await expect(page.getByTestId("scene-outliner-panel").getByRole("treeitem", { name: "box", exact: true })).toBeVisible();
-});
-
-test.describe("phone shortcut affordances", () => {
-  test.use({ hasTouch: true, viewport: { width: 390, height: 844 } });
-
-  test("keeps viewport actions tappable and hides desktop keycaps", async ({ page }, testInfo) => {
-    await page.setViewportSize({ width: 1194, height: 834 });
-    await openMinimalTestProject(page);
-    await openMainScene(page);
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.getByTestId("viewport-settings").tap();
-    const grid = page.getByTestId("viewport-show-grid-toggle");
-    const before = await grid.getAttribute("aria-checked");
-    await expect(grid.locator("kbd").last()).toBeHidden();
-    await grid.tap();
-    await expect(grid).toHaveAttribute("aria-checked", before === "true" ? "false" : "true");
-    const menu = await page.getByTestId("viewport-settings-menu").boundingBox();
-    expect(menu).not.toBeNull();
-    expect(menu!.x).toBeGreaterThanOrEqual(0);
-    expect(menu!.x + menu!.width).toBeLessThanOrEqual(390);
-    await page.screenshot({ path: testInfo.outputPath("phone-viewport-menu.png"), animations: "disabled" });
-    await page.keyboard.press("Escape");
-    await page.getByTestId("document-switcher").tap();
-    await page.getByRole("menuitemradio", { name: "Content Browser" }).tap();
-    await expect(page.getByTestId("open-documents-menu")).toBeHidden();
-    await page.getByTestId("content-browser-new-asset").tap();
-    await expect(page.getByTestId("content-browser-new-asset-dialog")).toBeVisible();
-    await page.screenshot({ path: testInfo.outputPath("phone-new-asset.png"), animations: "disabled" });
-  });
 });

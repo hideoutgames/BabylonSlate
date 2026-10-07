@@ -12,6 +12,12 @@ export interface ImportResult {
   guid: string;
   version: number;
   dependencies: string[];
+  requiredDependencies?: string[];
+  requiredVariableNames?: string[];
+  classReferences?: string[];
+  requiredClassReferences?: string[];
+  consoleCommand?: import("@babylonslate/core").ConsoleCommandMetadata;
+  dependencyMetadataVersion?: number;
   parentClass?: string | null;
   payload: Record<string, unknown>;
   chunks: ImportResultChunk[];

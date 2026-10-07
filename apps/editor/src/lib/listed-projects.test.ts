@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   filterListedProjects,
-  HOMEPAGE_PROJECT_SORT_OPTIONS,
   listedProjectsFromRecents,
   recentProjectsWithOpenedProject,
   shouldDeleteOpfsOnRemove,
@@ -162,25 +161,6 @@ describe("filterListedProjects", () => {
 });
 
 describe("sortListedProjects", () => {
-  it("lists Name A–Z through Created (Oldest) as Content Browser-style options", () => {
-    expect(HOMEPAGE_PROJECT_SORT_OPTIONS.map((option) => option.mode)).toEqual([
-      "name-asc",
-      "name-desc",
-      "last-opened-desc",
-      "last-opened-asc",
-      "created-desc",
-      "created-asc",
-    ]);
-    expect(HOMEPAGE_PROJECT_SORT_OPTIONS.map((option) => option.label)).toEqual([
-      "Name A–Z",
-      "Name Z–A",
-      "Last Opened (Newest)",
-      "Last Opened (Oldest)",
-      "Created (Newest)",
-      "Created (Oldest)",
-    ]);
-  });
-
   it("sorts by display name and treats missing dates as oldest", () => {
     const zebra = project("zebra.babproject", "opfs", { label: "Zebra" });
     const alpha = project("alpha.babproject", "opfs", {

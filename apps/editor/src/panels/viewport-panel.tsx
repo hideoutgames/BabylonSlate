@@ -65,9 +65,9 @@ import {
   environmentTextureGuidsFromScenes,
   postProcessTextureGuidsFromScenes,
 } from "../lib/play-content";
-import { fontMsdfMapsFromPairs } from "../lib/play-fonts";
+import { fontMsdfMapsFromPairs, fontGuidsForSceneRepresentation } from "../lib/play-fonts";
 import { savedMaterialLibraryKey } from "../lib/material-asset-revision";
-import { sceneViewportAssetKey } from "../lib/scene-viewport-assets";
+import { sceneViewportAssetKey, sceneViewportRequiredAssets } from "../lib/scene-viewport-assets";
 import { savedAreaEmissionKey } from "../lib/collect-area-emissions";
 import { sceneStreamingEditorScene } from "../lib/scene-streaming-editor-labels";
 import {
@@ -717,13 +717,21 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       const applyCollectedAssets = async () => {
         if (!blocking && appliedAssetsRef.current?.handle === handle &&
           appliedAssetsRef.current.key === viewportAssetsKey) return;
+        const catalog = assetRegistry?.list() ?? [];
+        const fontSources = catalog.map((asset) => ({ guid: asset.header.guid, path: asset.path, type: asset.header.type, payload: asset.header.payload }));
+        const bitmapFonts = new Set(fontGuidsForSceneRepresentation([scene], fontSources, "source", projectDocument?.settings.fonts.defaultFontGuid));
+        const required = sceneViewportRequiredAssets(scene, catalog, [
+          ...(JSON.parse(effectsAssetGuidsKey) as string[]),
+          ...bitmapFonts,
+          ...fontGuidsForSceneRepresentation([scene], fontSources, "msdf", projectDocument?.settings.fonts.defaultFontGuid),
+        ]);
         const sprites = await collectPlaySpritePayloads(scene);
         controller.signal.throwIfAborted();
         const tileContent = await collectPlayTilemapContent(scene);
-        const waters = await collectPlayWaterContent();
-        const renderTargetAssets = await collectPlayRenderTargets();
+        const waters = await collectPlayWaterContent(required);
+        const renderTargetAssets = await collectPlayRenderTargets(required);
         controller.signal.throwIfAborted();
-        const modelBytes = await collectPlayModelBytes(scene);
+        const modelBytes = await collectPlayModelBytes(scene, [], required);
         controller.signal.throwIfAborted();
         const modelPayloads = await collectPlayModelPayloads(scene);
         controller.signal.throwIfAborted();
@@ -759,7 +767,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           await collectPlayFontMsdfPair(scene),
         );
         controller.signal.throwIfAborted();
-        const fontFaceEntries = await collectPlayFontFaceEntries();
+        const fontFaceEntries = await collectPlayFontFaceEntries(bitmapFonts);
         const fontCss = collectPlayFontCssStacks();
         if (!isCurrent()) return;
         await handle.registerFonts(fontFaceEntries);

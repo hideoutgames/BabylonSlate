@@ -51,7 +51,7 @@ export function useMaterialInstanceSources(
         let content = openMaterials.find(([path]) => path === asset.path)?.[1];
         if (content === undefined) {
           try {
-            const bytes = await readAssetChunk(asset.path, "document");
+            const bytes = await readAssetChunk(asset.path, "document", { ownerDocumentId: selfDocumentId });
             content = bytes?.length ? JSON.parse(decoder.decode(bytes)) : asset.header.payload;
           } catch {
             break;
@@ -69,7 +69,7 @@ export function useMaterialInstanceSources(
       if (!cancelled) setSources(next);
     })();
     return () => { cancelled = true; };
-  }, [assetRegistry, openMaterials, parentGuid, readAssetChunk, registryEpoch]);
+  }, [assetRegistry, openMaterials, parentGuid, readAssetChunk, registryEpoch, selfDocumentId]);
 
   return sources;
 }

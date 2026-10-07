@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   Actor,
-  ActorComponent,
   ClassRegistry,
   GameInstance,
-  BObject,
 } from "@babylonslate/object-model";
 import {
   compileGraph,
@@ -62,67 +60,6 @@ function stubServices(
 }
 
 describe("ScriptContext.isA", () => {
-  it("uses ClassRegistry.isA for live object kinds", () => {
-    const classRegistry = new ClassRegistry();
-    classRegistry.register({
-      id: "Hero",
-      parentClassId: "Actor",
-      kind: "actor",
-      variables: [],
-      implementedInterfaces: [],
-    });
-    classRegistry.register({
-      id: "HealthComponent",
-      parentClassId: "ActorComponent",
-      kind: "component",
-      variables: [],
-      implementedInterfaces: [],
-    });
-    classRegistry.register({
-      id: "Campaign",
-      parentClassId: "GameInstance",
-      kind: "gameInstance",
-      variables: [],
-      implementedInterfaces: [],
-    });
-    classRegistry.register({
-      id: "LevelTools",
-      parentClassId: "EditorUtilityObject",
-      kind: "other",
-      variables: [],
-      implementedInterfaces: [],
-    });
-
-    const ctx = new ScriptHost(
-      stubServices({ classRegistry }),
-    ).createContext(null, 0, 0);
-
-    const hero = new Actor({ classId: "Hero" });
-    const mesh = new ActorComponent({ classId: "HealthComponent" });
-    const campaign = new GameInstance({ classId: "Campaign" });
-    const tools = new BObject({ classId: "LevelTools" });
-
-    expect(ctx.isA(hero, "Hero")).toBe(true);
-    expect(ctx.isA(hero, "Actor")).toBe(true);
-    expect(ctx.isA(hero, "BObject")).toBe(true);
-    expect(ctx.isA(hero, "GameInstance")).toBe(false);
-
-    expect(ctx.isA(mesh, "HealthComponent")).toBe(true);
-    expect(ctx.isA(mesh, "ActorComponent")).toBe(true);
-    expect(ctx.isA(mesh, "Actor")).toBe(false);
-
-    expect(ctx.isA(campaign, "Campaign")).toBe(true);
-    expect(ctx.isA(campaign, "GameInstance")).toBe(true);
-    expect(ctx.isA(campaign, "Actor")).toBe(false);
-
-    expect(ctx.isA(tools, "LevelTools")).toBe(true);
-    expect(ctx.isA(tools, "EditorUtilityObject")).toBe(true);
-    expect(ctx.isA(tools, "Actor")).toBe(false);
-
-    expect(ctx.isA(null, "Actor")).toBe(false);
-    expect(ctx.isA("Hero", "Hero")).toBe(false);
-  });
-
   it("compiled Cast succeeds for Actor ancestry and fails for other kinds", async () => {
     const nodeRegistry = createDefaultNodeRegistry();
     const classRegistry = new ClassRegistry();

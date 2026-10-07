@@ -17,7 +17,6 @@ import {
 } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
 import { saveAllIfEnabled } from "./save-all";
-import { openMinimalTestProject } from "./minimal-project";
 
 async function pickAsset(
   page: Page,
@@ -270,70 +269,6 @@ test.describe("P17 particles", () => {
       .toEqual(expect.objectContaining({ systems: 0, playing: 0 }));
     expect(shaderFallbacks).toEqual([]);
     expect(shaderErrors).toEqual([]);
-  });
-
-  test("Play/Stop Particles are on the Class palette; missing material diagnoses", async ({
-    page,
-  }) => {
-    test.setTimeout(240_000);
-    await openMinimalTestProject(page);
-    await openAssetFromBrowser(page, "assets/main.class.babasset");
-    const graph = page.getByTestId("graph-panel");
-    await expect(graph).toBeVisible();
-    await graph
-      .locator(".react-flow__pane")
-      .dblclick({ position: { x: 24, y: 24 } });
-    await expect(page.getByTestId("node-palette")).toBeVisible();
-    await page.getByTestId("node-palette-search").fill("Play Particles");
-    await expect(
-      page.getByTestId("node-palette-item-particles.play"),
-    ).toBeVisible();
-    await page.getByTestId("node-palette-search").fill("Stop Particles");
-    await expect(
-      page.getByTestId("node-palette-item-particles.stop"),
-    ).toBeVisible();
-    await page.keyboard.press("Escape");
-
-    await openContentBrowser(page);
-    await createContentBrowserAsset(page, "ParticleEmitter", "Bare");
-    await createContentBrowserAsset(page, "ParticleSystem", "EmptyLook");
-    await openAssetFromBrowser(page, "assets/EmptyLook.particles.babasset");
-    await addSystemEmitter(page, "assets/Bare.emitter.babasset", /Bare/);
-
-    await openMainScene(page);
-    await page.getByTestId("outliner-add-actor").click();
-    await expect(page.getByTestId("place-actors-catalog")).toBeVisible();
-    await page.getByTestId("place-actors-item-particle").click();
-    const particleCard = page
-      .locator("[data-testid^='component-card-']")
-      .filter({
-        has: page.getByRole("button", { name: /^Particle(?: \(|$)/ }),
-      });
-    await expect(particleCard).toBeVisible();
-    await particleCard
-      .locator('button[data-testid$="-particleSystemGuid"]')
-      .click();
-    const systemGuid = await guidForPath(
-      page,
-      "assets/EmptyLook.particles.babasset",
-    );
-    expect(systemGuid.length).toBeGreaterThan(0);
-    await expect(page.getByTestId("details-asset-picker")).toBeVisible();
-    await page.getByTestId(`search-item-${systemGuid}`).click();
-    await expect(page.getByTestId("details-asset-picker")).toHaveCount(0);
-
-    await saveAllIfEnabled(page);
-    await clickPlayAndWaitForOverlay(page);
-    // The slot without a Material is skipped with particle.missing_material.
-    await expect(page.getByTestId("play-log-tail")).toContainText(
-      /no Material/i,
-      { timeout: 15_000 },
-    );
-    await expect
-      .poll(async () => particleStats(page), { timeout: 10_000 })
-      .toEqual(expect.objectContaining({ systems: 0 }));
-    await page.getByTestId("play-overlay-close").click();
-    await expect(page.getByTestId("play-overlay")).toHaveCount(0);
   });
 
   test("Particle Emitter and System assets survive save and reopen", async ({

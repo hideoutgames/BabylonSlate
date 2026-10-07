@@ -203,6 +203,7 @@ export const debugNodes: NodeDefinition[] = [
   },
   {
     id: "debug.executeConsoleCommand",
+    latent: true,
     title: "Execute Console Command",
     category: "debug",
     pins: () => [
@@ -216,7 +217,7 @@ export const debugNodes: NodeDefinition[] = [
       const success = ctx.output("success");
       const output = ctx.output("output");
       ctx.emit(
-        `({ success: ${success}, output: ${output} } = ctx.executeConsoleCommand(${ctx.input("command")}));`,
+        `({ success: ${success}, output: ${output} } = await ctx.executeConsoleCommandAsync(${ctx.input("command")}));`,
       );
     },
   },

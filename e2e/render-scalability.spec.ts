@@ -50,7 +50,7 @@ async function commitRendering(page: Page) {
   await waitForSceneViewportReady(page);
 }
 
-test("scalability updates budgets, persists Custom and preserves independent settings and an admitted Ultra sun", async ({
+test("scalability updates budgets, persists Custom and preserves independent settings, the project render path, and an admitted Ultra sun", async ({
   page,
 }, testInfo) => {
   test.setTimeout(180_000);
@@ -144,10 +144,18 @@ test("scalability updates budgets, persists Custom and preserves independent set
   await expect(
     page.getByLabel("Environment Rotation", { exact: true }),
   ).toHaveValue("45");
+  await page.getByTestId("project-render-path").click();
+  await page.getByRole("option", { name: "Clustered Forward", exact: true }).click();
+  // A closing menu can still expose an identically named option to the next click.
+  await expect(page.getByRole("listbox")).toBeHidden();
   await page.getByLabel("Texture Budget (MiB)", { exact: true }).fill("2000");
   await page.getByLabel("Texture Budget (MiB)", { exact: true }).press("Tab");
   await expect(value(page, "Textures Quality")).toHaveText("Custom");
   await commitRendering(page);
+  // Render Path is a project setting only: Scene Details has no Rendering
+  // override section and no per-Scene path or backend control.
+  await expect(page.getByTestId("scene-render-path")).toHaveCount(0);
+  await expect(page.getByTestId("scene-render-pipeline")).toHaveCount(0);
   await expect(page.getByTestId("save-all-project")).toBeEnabled();
   await saveAllIfEnabled(page, 30_000);
   await openTestProject(page);
@@ -158,6 +166,9 @@ test("scalability updates budgets, persists Custom and preserves independent set
     page.getByLabel("Texture Budget (MiB)", { exact: true }),
   ).toHaveValue("2000");
   await expect(value(page, "Shadows Quality")).toHaveText("Ultra");
+  await expect(
+    page.getByTestId("project-render-path").locator('[data-slot="select-value"]'),
+  ).toHaveText("Clustered Forward");
   await choose(page, "Textures Quality", "Medium");
   await expect(
     page.getByLabel("Texture Budget (MiB)", { exact: true }),

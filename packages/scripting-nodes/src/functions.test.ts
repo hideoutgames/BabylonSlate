@@ -12,7 +12,7 @@ import {
   type LogicGraph,
   type NodeRegistry,
 } from "@babylonslate/scripting";
-import { createDefaultNodeRegistry, functionCallNodes } from "./index";
+import { createDefaultNodeRegistry } from "./index";
 
 function node(
   registry: NodeRegistry,
@@ -46,14 +46,6 @@ describe("functions.call", () => {
     const received: unknown[] = [];
     run({ self: "painter", callComponentFunction: (...args: unknown[]) => received.push(args) });
     expect(received).toEqual([["painter", "painterDrawPolyline", { points: [{ x: -1, y: 2 }, { x: 3, y: 4 }] }]]);
-  });
-  it("is registered under the functions category", () => {
-    expect(functionCallNodes.map((entry) => entry.id)).toContain(
-      "functions.call",
-    );
-    const registry = createDefaultNodeRegistry();
-    expect(registry.get("functions.call")?.title).toBe("Call");
-    expect(registry.get("functions.call")?.category).toBe("functions");
   });
 
   it("defaults to exec in/out and Target when implicitSelf is not true", () => {

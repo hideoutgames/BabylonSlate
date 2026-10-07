@@ -199,10 +199,10 @@ describe("project documents as .babasset", () => {
     await service.saveDocument("graph", path, { nodes: [], edges: [], properties: { label: "Keep me" } });
     if (failure === "decode") await storage.writeBinary(path, new Uint8Array([1, 2, 3]));
     const bytes = await storage.readBinary(path);
-    const read = storage.readBinary.bind(storage);
-    const readSpy = vi.spyOn(storage, "readBinary").mockImplementation(async (requested) => {
-      if (failure === "read" && requested === path) throw new Error("Storage temporarily unavailable");
-      return read(requested);
+    const read = storage.readBinaryRange.bind(storage);
+    const readSpy = vi.spyOn(storage, "readBinaryRange").mockImplementation(async (...args) => {
+      if (failure === "read" && args[0] === path) throw new Error("Storage temporarily unavailable");
+      return read(...args);
     });
     const documents = new DocumentService();
     await expect(documents.openDocument(service, { kind: "graph", path, label: "Unreadable" })).rejects.toThrow();
@@ -875,14 +875,11 @@ describe("project documents as .babasset", () => {
     await vi.waitFor(() => expect(encoded()).toEqual(["compressed", 4, 4, 4]));
     const particleChunkId = payload().ktx2ChunkId;
 
-    // A Content Browser change or foreground rescan remounts the registry, which runs the pass.
-    const runs = service.textureAlignmentState.runs;
+    // Remounting metadata must preserve the unsaved encode without processing it.
+    await vi.waitFor(() => expect(service.textureAlignmentState.pending).toBe(0));
+    const alignment = service.textureAlignmentState;
     await service.remountRegistry();
-    await vi.waitFor(() => {
-      const state = service.textureAlignmentState;
-      expect(state.runs).toBeGreaterThan(runs);
-      expect(state.pending).toBe(0);
-    });
+    expect(service.textureAlignmentState).toEqual(alignment);
     expect(encoded()).toEqual(["compressed", 4, 4, 4]);
     expect(payload().ktx2ChunkId).toBe(particleChunkId);
 
@@ -891,14 +888,19 @@ describe("project documents as .babasset", () => {
     expect(saved.header.payload).toMatchObject({ usage: "particle", ktx2ChunkId: particleChunkId, ktx2BlockAlign: 4 });
   });
 
-  it("re-encodes an old odd Texture on the grid when a project with source control off opens", async () => {
+  it("leaves an old odd Texture unread on project open and encodes it on explicit Retry", async () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("Solo.babproject");
     await installMinimalProject(storage);
     await writeLegacyOddTexture(storage, "assets/odd.babasset", "odd");
-    const service = new ProjectService(storage, { encode: standInEncode });
+    const encode = vi.fn(standInEncode);
+    const service = new ProjectService(storage, { encode });
 
     await service.loadCurrentProject();
+    expect(encode).not.toHaveBeenCalled();
+    expect(service.registry!.getByGuid("odd")!.header.payload).not.toHaveProperty("ktx2Width");
+    expect(service.registry!.payloadLoader.snapshot().recentRequests.filter(request => request.path === "assets/odd.babasset")).toEqual([]);
+    expect(await service.retryTextureEncoding("odd", { force: true })).toBe(true);
     await vi.waitFor(() =>
       expect(service.registry!.getByGuid("odd")!.header.payload).toMatchObject({
         compressionState: "compressed",
@@ -909,7 +911,7 @@ describe("project documents as .babasset", () => {
     );
   });
 
-  it("with source control on, re-encodes an old odd Texture only when the user retries it, or once source control is turned off", async () => {
+  it("requires explicit Retry for old odd Textures before and after source control is turned off", async () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("SharedOdd.babproject");
     await installMinimalProject(storage);
@@ -921,7 +923,7 @@ describe("project documents as .babasset", () => {
     const payload = (guid: string) => service.registry!.getByGuid(guid)!.header.payload;
 
     await service.loadCurrentProject();
-    // Each call runs after the passes queued before it (the open's, the remount's).
+    // Explicit maintenance respects shared files, including after a catalog remount.
     expect(await service.reconcileTextureAlignment()).toBe(0);
     await service.remountRegistry();
     expect(await service.reconcileTextureAlignment()).toBe(0);
@@ -938,8 +940,16 @@ describe("project documents as .babasset", () => {
     expect(payload("waiting")).not.toHaveProperty("ktx2Width");
     expect(await service.textureAlignmentStale("retried")).toBe(false);
 
-    // Turning source control off in Project Settings runs the pass.
+    // Changing permissions starts no reads or jobs; the other Texture still needs Retry.
+    await vi.waitFor(() => expect(service.textureAlignmentState.pending).toBe(0));
+    const alignment = service.textureAlignmentState;
+    const reads = storage.getReadMetrics();
     service.setSourceControlEnabled(false);
+    expect(service.textureAlignmentState).toEqual(alignment);
+    expect(storage.getReadMetrics()).toEqual(reads);
+    expect(payload("waiting")).not.toHaveProperty("ktx2Width");
+    expect(encode).toHaveBeenCalledTimes(1);
+    expect(await service.retryTextureEncoding("waiting", { force: true })).toBe(true);
     await vi.waitFor(() => expect(payload("waiting")).toMatchObject({ compressionState: "compressed", ktx2Width: 4, ktx2Height: 4 }));
     expect(encode).toHaveBeenCalledTimes(2);
     expect(await service.textureAlignmentStale("waiting")).toBe(false);
@@ -1006,15 +1016,16 @@ describe("project documents as .babasset", () => {
     const service = new ProjectService(storage, { encode });
     const payload = () => service.registry!.getByGuid("odd")!.header.payload;
 
-    // Source control is off: opening the project re-encodes it on the grid.
+    // Explicit maintenance with source control off re-encodes it on the grid.
     await service.loadCurrentProject();
+    await service.reconcileTextureAlignment(["odd"]);
     await vi.waitFor(() => expect(payload()).toMatchObject({ compressionState: "compressed", ktx2Width: 4, ktx2Height: 4 }));
     // Project Settings turns source control on, and a git client restores the committed file.
     service.setSourceControlEnabled(true);
     await nextMillisecond();
     await storage.writeBinary(path, committedInGit);
 
-    // Returning to the app remounts the registry, which runs the pass.
+    // Returning to the app remounts metadata; a requested pass still respects the revert.
     service.pauseTextureEncodeQueue();
     await service.remountRegistry();
     expect(await service.reconcileTextureAlignment()).toBe(0);
@@ -1035,8 +1046,9 @@ describe("project documents as .babasset", () => {
     const encode = vi.fn(standInEncode);
     const service = new ProjectService(storage, { encode });
 
-    // Source control is off: opening the project pads it on the grid.
+    // Explicit maintenance with source control off pads it on the grid.
     await service.loadCurrentProject();
+    await service.reconcileTextureAlignment(["odd"]);
     await vi.waitFor(() => expect(service.registry!.getByGuid("odd")!.header.payload).toMatchObject({ ktx2Width: 4, ktx2BlockAlign: 4 }));
     service.setSourceControlEnabled(true);
     // A Tileset picks it while the queue is paused: the padding is this
@@ -1094,7 +1106,7 @@ describe("project documents as .babasset", () => {
     await installMinimalProject(storage);
     const paths = Array.from({ length: 8 }, (_, index) => `assets/odd-${index}.babasset`);
     for (const [index, path] of paths.entries()) await writeLegacyOddTexture(storage, path, `odd-${index}`);
-    // Opened with source control on, so the pass waits until it is turned off below.
+    // Open with source control on, then request maintenance explicitly below.
     await enableSourceControlOnDisk(storage);
     const service = new ProjectService(storage, { encode: standInEncode });
     await service.loadCurrentProject();
@@ -1108,6 +1120,7 @@ describe("project documents as .babasset", () => {
     await nextMillisecond();
 
     service.setSourceControlEnabled(false);
+    await service.reconcileTextureAlignment();
     await vi.waitFor(() => {
       expect(service.textureEncodeQueue.depth).toBe(0);
       for (const path of paths) expect(service.registry!.getByPath(path)!.header.payload.ktx2Width).toBe(4);
@@ -1147,8 +1160,9 @@ describe("project documents as .babasset", () => {
     const service = new ProjectService(storage, { encode });
     const onDisk = async (path: string) => (await decodeBabasset(await storage.readBinary(path))).header.payload;
 
-    // Source control is off: opening the project queues both re-encodes.
+    // Source control is off: explicit maintenance queues both re-encodes.
     await service.loadCurrentProject();
+    await service.reconcileTextureAlignment();
     await vi.waitFor(() => expect(encode).toHaveBeenCalledTimes(1));
     expect(service.textureAlignmentState.requeued.sort()).toEqual(["odd-0", "odd-1"]);
     // Project Settings turns source control on while the first re-encode runs.
@@ -1199,8 +1213,9 @@ describe("project documents as .babasset", () => {
       }
     });
 
-    // Source control is off: opening the project queues both re-encodes, so no Retry Encoding.
+    // Explicit maintenance queues both re-encodes, so no Retry Encoding while they run.
     await service.loadCurrentProject();
+    await service.reconcileTextureAlignment();
     await vi.waitFor(() => expect(encode).toHaveBeenCalledTimes(1));
     await vi.waitFor(() => expect(offered).toEqual({ "odd-0": false, "odd-1": false }));
     // Project Settings turns source control on while the first encodes; the page is then hidden.
@@ -1214,6 +1229,70 @@ describe("project documents as .babasset", () => {
     service.resumeTextureEncodeQueue();
     await vi.waitFor(() => expect(offered["odd-1"]).toBe(true));
     expect(encode).toHaveBeenCalledTimes(1);
+  });
+
+  it("refreshes a remount that captured encoding before the encoder committed to the previous registry", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("EncodingRemount.babproject");
+    await installMinimalProject(storage);
+    let releaseEncode!: () => void;
+    const encoding = new Promise<void>((resolve) => { releaseEncode = resolve; });
+    const encode = vi.fn<EncodeFn>(async (source, settings) => {
+      await encoding;
+      return standInEncode(source, settings);
+    });
+    const service = new ProjectService(storage, { encode });
+    await service.loadCurrentProject();
+    const previous = service.registry!;
+    const [imported] = await previous.importFile("project", "", "remount.png", pngHeader(1, 1));
+    const guid = imported!.header.guid;
+    const path = imported!.path;
+    await vi.waitFor(() => expect(previous.getByGuid(guid)?.header.payload.compressionState).toBe("encoding"));
+
+    let capturedHeader!: () => void;
+    const captured = new Promise<void>((resolve) => { capturedHeader = resolve; });
+    let releaseScan!: () => void;
+    const scanning = new Promise<void>((resolve) => { releaseScan = resolve; });
+    const read = storage.readBinaryRange.bind(storage);
+    let held = false;
+    const readSpy = vi.spyOn(storage, "readBinaryRange").mockImplementation(async (...args) => {
+      const result = await read(...args);
+      if (args[0] === path && args[1] === 12 && !held) {
+        held = true;
+        capturedHeader();
+        await scanning;
+      }
+      return result;
+    });
+    let savedEncode!: () => void;
+    const saved = new Promise<void>((resolve) => { savedEncode = resolve; });
+    const unsubscribe = service.onOwnAssetWrite((write) => {
+      if (write.path === path && previous.getByGuid(guid)?.header.payload.compressionState === "compressed") savedEncode();
+    });
+    const remount = service.remountRegistry();
+    try {
+      await captured;
+      releaseEncode();
+      await saved;
+      expect(service.registry).toBe(previous);
+      expect(readAssetDocumentHeader(await storage.readBinary(path)).payload.compressionState).toBe("compressed");
+      releaseScan();
+      await remount;
+      await vi.waitFor(() => expect(service.textureEncodeQueue.depth).toBe(0));
+      expect(service.registry).not.toBe(previous);
+      const current = service.registry!.getByGuid(guid)!;
+      expect(current.header.payload).toMatchObject({ compressionState: "compressed", ktx2Width: 4, ktx2Height: 4 });
+      expect(current.header.chunks.some((chunk) => chunk.id === current.header.payload.ktx2ChunkId)).toBe(true);
+      expect(encode).toHaveBeenCalledTimes(1);
+      expect(service.sessionDiagnostics).toEqual([]);
+    } finally {
+      releaseEncode();
+      releaseScan();
+      await remount;
+      readSpy.mockRestore();
+      unsubscribe();
+      service.dispose();
+    }
   });
 
   it("encodes each Texture once however often the registry remounts while its encode waits or runs", async () => {
@@ -1234,9 +1313,10 @@ describe("project documents as .babasset", () => {
     const payload = (path: string) => service.registry!.getByPath(path)!.header.payload;
     const settled = () => vi.waitFor(() => expect(service.textureAlignmentState.pending).toBe(0));
 
-    // The page is hidden: the open's alignment re-encodes and an import wait in the queue.
+    // The page is hidden: requested alignment re-encodes and an import wait in the queue.
     service.pauseTextureEncodeQueue();
     await service.loadCurrentProject();
+    await service.reconcileTextureAlignment();
     await settled();
     expect(service.textureAlignmentState.requeued.sort()).toEqual(["odd-0", "odd-1"]);
     // Its re-encode waits: Texture Details offers no Retry Encoding meanwhile.
@@ -1265,7 +1345,7 @@ describe("project documents as .babasset", () => {
     expect(encode).toHaveBeenCalledTimes(3);
   });
 
-  it("decodes an unchanged legacy Tileset once across remounts, and again once it changes", async () => {
+  it("decodes a legacy Tileset only during explicit maintenance and reuses it across remounts until it changes", async () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("Legacy.babproject");
     await installMinimalProject(storage);
@@ -1278,20 +1358,26 @@ describe("project documents as .babasset", () => {
     await writeLegacyTileset("tex-a");
     const service = new ProjectService(storage);
     await service.loadCurrentProject();
+    const tilesetReads = () => service.registry!.payloadLoader.snapshot().recentRequests
+      .filter(request => request.path === tilesetPath && request.chunkId === "document").length;
+    expect(tilesetReads()).toBe(0);
+    expect(service.registry!.isAtlasTexture("tex-a")).toBe(false);
+    await service.registry!.resolveLegacyAtlasReferrers();
+    expect(tilesetReads()).toBe(1);
     expect(service.registry!.isAtlasTexture("tex-a")).toBe(true);
-    const reads = vi.spyOn(storage, "readBinary");
-    const tilesetReads = () => reads.mock.calls.filter(([path]) => path === tilesetPath).length;
 
     await service.remountRegistry();
-    // The header scan only: the decoded referrer is remembered.
-    expect(tilesetReads()).toBe(1);
+    // The new registry reuses the decoded referrer without another document read.
+    await service.registry!.resolveLegacyAtlasReferrers();
+    expect(tilesetReads()).toBe(0);
     expect(service.registry!.isAtlasTexture("tex-a")).toBe(true);
 
     // Another checkout of the Tileset, still without meta, picks another texture.
     await writeLegacyTileset("tex-b");
-    reads.mockClear();
     await service.remountRegistry();
-    expect(tilesetReads()).toBe(2);
+    expect(tilesetReads()).toBe(0);
+    await service.registry!.resolveLegacyAtlasReferrers();
+    expect(tilesetReads()).toBe(1);
     expect(service.registry!.isAtlasTexture("tex-a")).toBe(false);
     expect(service.registry!.isAtlasTexture("tex-b")).toBe(true);
   });

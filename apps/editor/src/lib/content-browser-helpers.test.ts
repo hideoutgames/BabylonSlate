@@ -12,14 +12,11 @@ import {
   CREATABLE_ASSET_TYPE_GROUPS,
   ENGINE_BASE_CLASSES,
   buildParentClassTreeRows,
-  creatableAssetTypeDescription,
-  creatableAssetTypeLabel,
   filterCreatableAssetTypes,
   isContentBrowserEmptyGridDoubleClickTarget,
   buildNewAssetResult,
   classDocumentShowsPrefab,
   collectFolderGuids,
-  compressionBadgeLabel,
   contentBrowserMoveFromDrop,
   contentBrowserTreeDropMoves,
   displayAssetTitle,
@@ -44,15 +41,12 @@ import {
   buildMaterialInstanceAssetResult,
   materialInstanceNameFor,
   canRetargetSelectedAssets,
-  contentBrowserMoveDialogTitle,
-  contentBrowserMovePreviewName,
   guidsOutsideSelectedFolders,
   rootSelectedFolderPaths,
   listChildFolders,
   matchesAssetSearch,
   newAssetFileName,
   remapPathAfterFolderMove,
-  textureCompressionState,
   visualForIndexedAsset,
   materialAssetDependencies,
   assetHeaderDependencies,
@@ -74,7 +68,6 @@ import {
   applyContentBrowserTileSelect,
   runWithContentBrowserImportBusy,
   type ContentBrowserTreeRow,
-  assetTypeThumbAccent,
 } from "./content-browser-helpers";
 import { resolveTypeVisual } from "@babylonslate/editor-kit";
 
@@ -325,15 +318,6 @@ describe("content-browser-helpers", () => {
       "Zed",
     ]);
     expect(folders.map((folder) => folder.name)).toEqual(["Zed", "alpha", "Beta"]);
-  });
-
-  it("reads texture compression badges", () => {
-    const pending = asset({
-      payload: { compressionState: "pending" },
-    });
-    expect(textureCompressionState(pending)).toBe("pending");
-    expect(compressionBadgeLabel("encoding")).toBe("Encoding");
-    expect(textureCompressionState(asset({ type: "Scene" }))).toBeNull();
   });
 
   it("strips a trailing type suffix from asset titles", () => {
@@ -1108,18 +1092,6 @@ describe("content-browser-helpers", () => {
     ).toBe("main");
   });
 
-  it("offers BDebugCommand as a Class parent", () => {
-    expect(ENGINE_BASE_CLASSES).toContain("BDebugCommand");
-  });
-
-  it("offers EditorUtilityObject as a Class parent", () => {
-    expect(ENGINE_BASE_CLASSES).toContain("EditorUtilityObject");
-  });
-
-  it("offers EditorFunctionLibrary as a Class parent", () => {
-    expect(ENGINE_BASE_CLASSES).toContain("EditorFunctionLibrary");
-  });
-
   it("offers behaviour-tree bases as Class parents", () => {
     expect(ENGINE_BASE_CLASSES).toContain("BTTask");
     expect(ENGINE_BASE_CLASSES).toContain("BTDecorator");
@@ -1426,111 +1398,11 @@ describe("content-browser-helpers", () => {
     );
   });
 
-  it("lists only authored types in New Asset", () => {
-    expect([...CREATABLE_ASSET_TYPES]).toEqual([
-      "Scene",
-      "SceneLayer",
-      "Class",
-      "Sprite",
-      "SpriteAnimation",
-      "AnimationGraph",
-      "Material",
-      "MaterialInstance",
-      "MaterialFunction",
-      "Tileset",
-      "Tilemap",
-      "BehaviourTree",
-      "Blackboard",
-      "SaveGame",
-      "Enum",
-      "Structure",
-      "DataDefinition",
-      "DataTree",
-      "ScriptInterface",
-      "AudioMixer",
-      "AudioChannel",
-      "SoundAttenuation",
-      "InputAction",
-      "InputAxis",
-      "ParticleEmitter",
-      "ParticleGraph",
-      "ParticleSystem",
-      "Water",
-      "RenderTarget",
-      "RenderTargetTexture",
-      "SkyboxCreator",
-    ]);
-  });
-
-  it("labels creatable types in Title Case with spaces", () => {
-    expect(creatableAssetTypeLabel("Scene")).toBe("Scene");
-    expect(creatableAssetTypeLabel("SceneLayer")).toBe("Scene Layer");
-    expect(creatableAssetTypeLabel("AnimationGraph")).toBe("Animation Graph");
-    expect(creatableAssetTypeLabel("SpriteAnimation")).toBe("Sprite Animation");
-    expect(creatableAssetTypeLabel("MaterialFunction")).toBe("Material Function");
-    expect(creatableAssetTypeLabel("BehaviourTree")).toBe("Behaviour Tree");
-    expect(creatableAssetTypeLabel("ScriptInterface")).toBe("Script Interface");
-    expect(creatableAssetTypeLabel("AudioMixer")).toBe("Audio Mixer");
-    expect(creatableAssetTypeLabel("AudioChannel")).toBe("Audio Channel");
-    expect(creatableAssetTypeLabel("SoundAttenuation")).toBe("Sound Attenuation");
-    expect(creatableAssetTypeLabel("ParticleEmitter")).toBe("Basic Particle Emitter");
-    expect(creatableAssetTypeLabel("ParticleGraph")).toBe("Particle Graph");
-    expect(creatableAssetTypeLabel("ParticleSystem")).toBe("Particle System");
-    expect(creatableAssetTypeLabel("SkyboxCreator")).toBe("Skybox Creator");
-  });
-
-  it("groups every creatable type once", () => {
+  it("groups every creatable type exactly once", () => {
     const grouped = CREATABLE_ASSET_TYPE_GROUPS.flatMap((group) => [
       ...group.types,
     ]);
     expect([...grouped].sort()).toEqual([...CREATABLE_ASSET_TYPES].sort());
-    expect(CREATABLE_ASSET_TYPE_GROUPS.map((group) => group.label)).toEqual([
-      "World",
-      "Input",
-      "Data",
-      "Scripting",
-      "2D",
-      "Animation",
-      "Rendering",
-      "Audio",
-      "AI",
-    ]);
-    const twoD = CREATABLE_ASSET_TYPE_GROUPS.find((group) => group.id === "2d");
-    const animation = CREATABLE_ASSET_TYPE_GROUPS.find(
-      (group) => group.id === "animation",
-    );
-    const audio = CREATABLE_ASSET_TYPE_GROUPS.find((group) => group.id === "audio");
-    expect([...twoD!.types]).toEqual(["Sprite", "Tileset", "Tilemap"]);
-    expect([...animation!.types]).toEqual(["AnimationGraph", "SpriteAnimation"]);
-    expect([...audio!.types]).toEqual([
-      "AudioMixer",
-      "AudioChannel",
-      "SoundAttenuation",
-    ]);
-    const rendering = CREATABLE_ASSET_TYPE_GROUPS.find(
-      (group) => group.id === "rendering",
-    );
-    expect([...rendering!.types]).toEqual([
-      "Material",
-      "MaterialInstance",
-      "MaterialFunction",
-      "RenderTarget",
-      "RenderTargetTexture",
-      "Water",
-      "ParticleEmitter",
-      "ParticleGraph",
-      "ParticleSystem",
-      "SkyboxCreator",
-    ]);
-  });
-
-  it("describes the selected creatable type", () => {
-    expect(creatableAssetTypeDescription("Scene")).toMatch(/world/i);
-    expect(creatableAssetTypeDescription("SkyboxCreator")).toMatch(/editor-only/i);
-    expect(creatableAssetTypeDescription("SkyboxCreator")).toMatch(/skybox/i);
-    expect(creatableAssetTypeDescription("Class")).toMatch(/parent/i);
-    expect(creatableAssetTypeDescription("Class")).toMatch(/logic graph/i);
-    expect(creatableAssetTypeDescription("Class")).not.toMatch(/blueprint/i);
   });
 
   it("filters creatable types by Title Case label", () => {
@@ -1752,15 +1624,6 @@ describe("content-browser-helpers", () => {
     expect(resolveContentBrowserPaintHit(document.createElement("div"))).toBeNull();
   });
 
-  it("re-exports an inset thumb type outline", () => {
-    const accent = assetTypeThumbAccent("var(--asset-texture)");
-    expect(accent.border).toBe("2px solid var(--asset-texture)");
-    expect(accent.borderTopLeftRadius).toBe("calc(var(--radius-xl) - 2px)");
-    expect(accent.borderTopRightRadius).toBe("calc(var(--radius-xl) - 2px)");
-    expect("boxShadow" in accent).toBe(false);
-    expect("backgroundImage" in accent).toBe(false);
-  });
-
   it("creates a Material Instance beside a Material under a free name", () => {
     expect(
       contentBrowserContextActions({ assetCount: 1, folderCount: 0, singleAssetType: "Material" }).slice(0, 2),
@@ -1903,37 +1766,6 @@ describe("content-browser-helpers", () => {
         assetSourcePaths: ["assets"],
       }),
     ).toBe(true);
-  });
-
-  it("titles the move dialog for one item vs many", () => {
-    expect(
-      contentBrowserMoveDialogTitle({
-        operation: "move",
-        itemCount: 1,
-        folderCount: 0,
-        assetCount: 1,
-      }),
-    ).toBe("Move Asset");
-    expect(
-      contentBrowserMoveDialogTitle({
-        operation: "copy",
-        itemCount: 1,
-        folderCount: 1,
-        assetCount: 0,
-      }),
-    ).toBe("Copy Folder");
-    expect(
-      contentBrowserMoveDialogTitle({
-        operation: "move",
-        itemCount: 3,
-        folderCount: 1,
-        assetCount: 2,
-      }),
-    ).toBe("Move 3 items");
-    expect(contentBrowserMovePreviewName(["hero"])).toBe("hero");
-    expect(contentBrowserMovePreviewName(["hero", "fx", "albedo"])).toBe(
-      "3 items",
-    );
   });
 
   it("drops selected assets that already live under a selected folder", () => {

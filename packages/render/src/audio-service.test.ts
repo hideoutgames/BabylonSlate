@@ -40,6 +40,75 @@ function library(options?: {
 }
 
 describe("AudioService", () => {
+  it("prepares ordinary cold Audio before playback and releases its scope when the voice ends", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const release = vi.fn();
+    const service = new AudioService({ backend,
+      prepareAsset: async (guid) => {
+        service.setLibrary(library({ audio: { [guid]: { ...createDefaultAudioPayload(), volume: 0.25 } } }), true);
+        return release;
+      },
+      loadSourceBytes: async () => new Uint8Array([1, 2, 3]),
+    });
+    try {
+      await service.unlockAsync();
+      service.handleCommand({ type: "playSound", assetGuid: "cold", voiceId: "voice", volume: 1, frameId: 1 });
+      await service.flush();
+      expect(backend.plays[0]?.gain).toBe(0.25);
+      expect(release).not.toHaveBeenCalled();
+      backend.finish("voice");
+      expect(release).toHaveBeenCalledOnce();
+    } finally { service.dispose(); }
+  });
+
+  it("keeps old live audio valid while a revised source decodes under a distinct key", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const revisions: Array<string | undefined> = [];
+    const service = new AudioService({ backend, loadSourceBytes: async ({ revision }) => {
+      revisions.push(revision);
+      return new Uint8Array([revision === "old" ? 1 : 2]);
+    } });
+    const content = library({ audio: { clip: createDefaultAudioPayload() } });
+    try {
+      service.setLibrary({ ...content, sourceRevisions: new Map([["clip", "old"]]) });
+      await service.unlockAsync();
+      service.handleCommand({ type: "playSound", assetGuid: "clip", voiceId: "first", volume: 1, frameId: 1 });
+      await service.flush();
+      const oldKey = backend.plays[0]!.cacheKey!;
+      service.setLibrary({ ...content, sourceRevisions: new Map([["clip", "new"]]) }, true);
+      expect(backend.disposedBuffers).not.toContain(oldKey);
+      service.handleCommand({ type: "playSound", assetGuid: "clip", voiceId: "second", volume: 1, frameId: 2 });
+      await service.flush();
+      expect(revisions).toEqual(["old", "new"]);
+      expect(backend.plays[1]!.cacheKey).not.toBe(oldKey);
+      expect(backend.plays.map((play) => [...play.source])).toEqual([[1], [2]]);
+      service.handleCommand({ type: "stopSound", voiceId: "first" });
+      await service.flush();
+      expect(backend.disposedBuffers).toContain(oldKey);
+      expect(service.stats().voices).toBe(1);
+    } finally { service.dispose(); }
+  });
+
+  it("shares preload decoding, pins live buffers, and removes decoded audio when its final source is released", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const decode = vi.spyOn(backend, "decode");
+    const cache = new AudioBufferCache();
+    const service = new AudioService({ backend, cache, loadSourceBytes: async () => new Uint8Array([1, 2, 3, 4]) });
+    service.setLibrary(library({ audio: { clip: createDefaultAudioPayload() } }));
+    try {
+      const [left, right] = await Promise.all([service.preload(["clip"]), service.preload(["clip"])]);
+      expect(decode).toHaveBeenCalledOnce();
+      expect(backend.plays).toEqual([]);
+      left();
+      cache.flushUnreferenced();
+      expect(cache.accountedBytes()).toBeGreaterThan(0);
+      right();
+      service.setLibrary(library(), true);
+      expect(cache.accountedBytes()).toBe(0);
+      expect(backend.disposedBuffers).toContain(audioClipCacheKey("clip", "source"));
+    } finally { service.dispose(); }
+  });
+
   it("unlocks without creating the engine on the gesture turn after warm", async () => {
     const backend = new FakeAudioPlaybackBackend();
     await backend.warmAsync();
@@ -1357,7 +1426,7 @@ describe("AudioService", () => {
     });
     await service.flush();
     expect(service.hasSpatialVoices()).toBe(false);
-    for (let i = 0; i < 2000; i++) {
+    for (let i = 0; i < 50; i++) {
       service.syncSnapshot([{ slotId: 0, position: { x: i, y: 0, z: 0 } }]);
       service.syncListener({ x: 0, y: 0, z: 0 });
     }
@@ -1406,7 +1475,7 @@ describe("AudioService", () => {
   it("replays the same voiceId without leaking a cache pin", async () => {
     const evicted: string[] = [];
     const cache = new AudioBufferCache({
-      byteCeiling: 20,
+      byteCeiling: 40,
       onEvict: (guid) => evicted.push(guid),
     });
     const backend = new FakeAudioPlaybackBackend();

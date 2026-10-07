@@ -39,9 +39,9 @@ function assets(): DataAssetCatalogEntry[] {
   ];
 }
 
-function host(data?: RuntimeDataCatalog, logs: string[] = []): ScriptHost {
+function host(data?: RuntimeDataCatalog, logs: string[] = [], prepareAssets?: ScriptHostServices["prepareAssets"]): ScriptHost {
   const services: ScriptHostServices = {
-    data,
+    data, prepareAssets,
     log: (_severity, _category, message) => { logs.push(message); },
     print: () => {}, destroyActor: () => {},
     executeConsoleCommand: () => ({ success: true, output: "" }),
@@ -51,6 +51,17 @@ function host(data?: RuntimeDataCatalog, logs: string[] = []): ScriptHost {
 }
 
 describe("runtime data catalog", () => {
+  it("replaces released data and exposes newly acquired trees through the existing catalog object", () => {
+    const data = new RuntimeDataCatalog(assets());
+    data.replace([definition("stats", [{ id: "health", name: "Health", typeId: "int" }]),
+      tree("next", "stats", [createDataTreeEntry({ id: "item", name: "Item", values: { Health: 42 } })])]);
+    expect(data.hasTree("equipment")).toBe(false);
+    expect(data.readEntry("equipment", "Weapons/Swords/Iron Sword")).toBeNull();
+    expect(data.readEntry("next", "Item")).toEqual({ Health: 42 });
+    data.replace([]);
+    expect(data.hasTree("next")).toBe(false);
+  });
+
   it("indexes root, children, preorder descendants and parents independently of stored entry order", () => {
     const data = new RuntimeDataCatalog(assets());
     expect(data.getChildren("equipment")).toEqual(["Weapons", "Armor"]);
@@ -265,6 +276,35 @@ describe("runtime data catalog", () => {
     expect(await runOutput("data.getParent", "Weapons/Swords", "parentPath")).toBe("Weapons");
     expect(await runOutput("data.getParent", "Weapons", "found")).toBe("true");
     expect(await runOutput("data.getParent", "", "found")).toBe("false");
+  });
+
+  it("suspends a compiled dynamic data read until its owner prepares the tree", async () => {
+    const registry = createDefaultNodeRegistry();
+    const node = (id: string, typeId: string, properties: Record<string, unknown> = {}): GraphNode => ({ id, typeId, position: { x: 0, y: 0 }, properties, pins: registry.get(typeId)!.pins(properties) });
+    const data = new RuntimeDataCatalog();
+    const logs: string[] = [];
+    let finish!: () => void;
+    const ready = new Promise<void>(resolve => { finish = resolve; });
+    const context = host(data, logs, async ids => {
+      expect(ids).toEqual(["equipment", "stats"]);
+      await ready;
+      data.replace(assets());
+    }).createContext(null, 0, 0);
+    const graph: LogicGraph = {
+      id: "cold-data", kind: "event", nodes: [node("start", "flow.entry"), node("read", "data.readEntryAsync", { definitionGuid: "stats", "default:tree": "equipment", "default:entryPath": "Weapons/Swords/Iron Sword" }), node("log", "debug.log")],
+      edges: [
+        { id: "start", sourceNodeId: "start", sourcePinId: "execOut", targetNodeId: "read", targetPinId: "execIn" },
+        { id: "ready", sourceNodeId: "read", sourcePinId: "completed", targetNodeId: "log", targetPinId: "execIn" },
+        { id: "value", sourceNodeId: "read", sourcePinId: "found", targetNodeId: "log", targetPinId: "message" },
+      ],
+    };
+    const module = await loadCompiledModule(compileGraph(graph, { registry, assetGuid: "reader" }).source, "cold-data");
+    const reading = module.run!(context);
+    expect(logs).toEqual([]);
+    finish();
+    await reading;
+    expect(logs).toEqual(["true"]);
+    expect(data.readEntry("equipment", "Weapons/Swords/Iron Sword", "stats")).toEqual(stats(20));
   });
 
   it("denies editor data authoring in gameplay and safely misses in hosts without a catalog", async () => {

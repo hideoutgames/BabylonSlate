@@ -24,6 +24,7 @@ import {
 import type { CommandMessage } from "@babylonslate/bridge";
 import type { AudioDebugVoiceSnapshot } from "./audio-debug";
 import { AudioBufferCache } from "./audio-buffer-cache";
+import type { NativePreparationPriority, NativePreparationScheduler } from "./native-preparation";
 import { attachAudioLifecycle } from "./audio-lifecycle";
 import type {
   AudioPlaybackBackend,
@@ -41,7 +42,9 @@ export type AudioDiagnostic = {
 export type AudioSourceBytesLoader = (request: {
   assetGuid: string;
   chunkId: string;
+  revision?: string;
 }) => Promise<Uint8Array | null | undefined>;
+export type AudioAssetPreparer = (guid: string, request: { consumer: string; signal: AbortSignal }) => Promise<() => void>;
 
 export type AudioLibrary = {
   mixerGuid: string | null;
@@ -49,6 +52,8 @@ export type AudioLibrary = {
   channels: ReadonlyMap<string, AudioChannelPayload>;
   audio: ReadonlyMap<string, AudioPayload>;
   attenuations: ReadonlyMap<string, SoundAttenuationPayload>;
+  /** Registry/container revision, including the clip hashes. Live voices keep their generation. */
+  sourceRevisions?: ReadonlyMap<string, string>;
 };
 
 export type AudioStats = {
@@ -59,6 +64,7 @@ export type AudioStats = {
   lastDistance: number | null;
   wet: number;
   accountedBytes: number;
+  inFlightBytes?: number;
   debugVoices?: AudioDebugVoiceSnapshot[];
 };
 
@@ -95,6 +101,7 @@ type LiveVoice = {
   previousPose: AudioPose | null;
   clipName: string | null;
   loop: boolean;
+  releaseSource?: () => void;
 };
 
 function emptyLibrary(): AudioLibrary {
@@ -142,10 +149,17 @@ export class AudioService {
   private readonly ownedCache: boolean;
   private readonly onDiagnostic?: (diagnostic: AudioDiagnostic) => void;
   private readonly onVoiceEnded?: (voiceId: string) => void;
+  private readonly onAssetReady?: (guid: string) => void;
   private readonly loadSourceBytes?: AudioSourceBytesLoader;
+  private readonly prepareAsset?: AudioAssetPreparer;
+  private readonly preparation?: NativePreparationScheduler;
+  private readonly decodeController = new AbortController();
+  private readonly preparingVoices = new Map<string, AbortController>();
   private maxVoices: number;
   private library: AudioLibrary = emptyLibrary();
   private readonly sourceBytes = new Map<string, Uint8Array>();
+  private readonly decodedLoads = new Map<string, Promise<Uint8Array>>();
+  private readonly retiredClipKeys = new Set<string>();
   private readonly sourceLoads = new Map<string, Promise<Uint8Array | null>>();
   private readonly sessionChannelVolumes = new Map<string, number>();
   private readonly actorSlots = new Map<string, number>();
@@ -181,7 +195,10 @@ export class AudioService {
     cache?: AudioBufferCache;
     onDiagnostic?: (diagnostic: AudioDiagnostic) => void;
     onVoiceEnded?: (voiceId: string) => void;
+    onAssetReady?: (guid: string) => void;
     loadSourceBytes?: AudioSourceBytesLoader;
+    prepareAsset?: AudioAssetPreparer;
+    preparation?: NativePreparationScheduler;
     now?: () => number;
     random?: () => number;
     maxVoices?: number;
@@ -194,7 +211,10 @@ export class AudioService {
     this.cache.addEvictListener((guid) => this.releaseEvictedClip(guid));
     this.onDiagnostic = options.onDiagnostic;
     this.onVoiceEnded = options.onVoiceEnded;
+    this.onAssetReady = options.onAssetReady;
     this.loadSourceBytes = options.loadSourceBytes;
+    this.prepareAsset = options.prepareAsset;
+    this.preparation = options.preparation;
     this.now = options.now ?? (() => performance.now());
     this.random = options.random ?? Math.random;
     this.lifecycle = attachAudioLifecycle(this.backend, options.lifecycleTarget);
@@ -208,7 +228,17 @@ export class AudioService {
     void this.backend.warmAsync().catch(() => undefined);
   }
 
-  setLibrary(library: AudioLibrary): void {
+  setLibrary(library: AudioLibrary, preserveSession = false): void {
+    for (const [guid, payload] of this.library.audio) if (!library.audio.has(guid) ||
+      this.library.sourceRevisions?.get(guid) !== library.sourceRevisions?.get(guid)) {
+      this.sourceBytes.delete(guid);
+      for (const clip of normalizeAudioPayload(payload).clips) {
+        const key = this.clipKey(guid, clip.chunkId);
+        this.sourceBytes.delete(key);
+        const removed = this.cache.removeUnreferenced(key);
+        if (!removed || this.decodedLoads.has(key)) this.retiredClipKeys.add(key);
+      }
+    }
     const sanitized = sanitizeAudioLibrary({
       audio: library.audio,
       channels: library.channels,
@@ -226,12 +256,88 @@ export class AudioService {
       audio: sanitized.audio,
       channels: sanitized.channels,
     };
-    this.sessionChannelVolumes.clear();
-    this.sessionGlobalVolume = null;
+    for (const [guid, audio] of this.library.audio) for (const clip of normalizeAudioPayload(audio).clips)
+      this.retiredClipKeys.delete(this.clipKey(guid, clip.chunkId));
+    if (!preserveSession) {
+      this.sessionChannelVolumes.clear();
+      this.sessionGlobalVolume = null;
+    }
+  }
+
+  private clipKey(guid: string, chunkId: string): string {
+    const key = audioClipCacheKey(guid, chunkId);
+    const revision = this.library.sourceRevisions?.get(guid);
+    return revision ? JSON.stringify([key, revision]) : key;
+  }
+
+  /** Decode all authored clip choices without starting voices; the preload pins their buffers. */
+  async preload(assetGuids: readonly string[], priority: NativePreparationPriority = "preload"): Promise<() => void> {
+    const keys: string[] = [];
+    const release = () => { for (const key of keys.splice(0)) this.unpinClip(key); };
+    try {
+      for (const guid of assetGuids) {
+        const audio = this.library.audio.get(guid);
+        if (!audio) throw new Error(`Audio ${guid} is unavailable.`);
+        for (const clip of normalizeAudioPayload(audio).clips) {
+          const key = this.clipKey(guid, clip.chunkId);
+          const source = await this.resolveSourceBytes(guid, clip.chunkId, key);
+          if (!source?.byteLength) throw new Error(`Audio ${guid}, chunk ${clip.chunkId}: source bytes are missing.`);
+          await this.ensureDecoded(key, source, priority);
+          if (key !== this.clipKey(guid, clip.chunkId) || !this.library.audio.has(guid))
+            throw new Error(`Audio ${guid} changed during preload; retry the request.`);
+          if (this.disposed) throw new Error("Audio preparation was disposed.");
+          this.cache.pin(key);
+          keys.push(key);
+        }
+      }
+      return release;
+    } catch (error) { release(); throw error; }
+  }
+
+  private ensureDecoded(cacheKey: string, source: Uint8Array, priority: NativePreparationPriority = "gameplay"): Promise<Uint8Array> {
+    const cached = this.cache.get(cacheKey);
+    if (cached) return Promise.resolve(cached);
+    const pending = this.decodedLoads.get(cacheKey);
+    if (pending) return pending;
+    const estimate = this.backend.estimateDecodedBytes?.(source) ?? Math.max(1024 * 1024, source.byteLength * 64);
+    let reservation: ReturnType<AudioBufferCache["reserveDecode"]> | undefined;
+    const decode = async () => {
+      if (this.disposed) throw new Error("Audio preparation was disposed.");
+      reservation = this.cache.reserveDecode(estimate);
+      this.publishStats();
+      return this.backend.decode(cacheKey, source);
+    };
+    const loading = Promise.resolve().then(() => this.preparation
+      ? this.preparation.schedule({ label: `Audio ${cacheKey}`, temporaryBytes: estimate + source.byteLength,
+        signal: this.decodeController.signal, priority }, decode) : decode()).then((result) => {
+      if (this.disposed) { this.backend.disposeBuffer(cacheKey); throw new Error("Audio preparation was disposed."); }
+      if (this.retiredClipKeys.has(cacheKey)) {
+        this.backend.disposeBuffer(cacheKey);
+        this.retiredClipKeys.delete(cacheKey);
+        throw new Error("Audio source changed during decoding; retry the request.");
+      }
+      try { reservation!.resize(result.pcmBytes); }
+      catch (error) { this.backend.disposeBuffer(cacheKey); throw error; }
+      reservation!.release();
+      this.cache.put(cacheKey, source, result.pcmBytes);
+      return source;
+    }).finally(() => {
+      reservation?.release();
+      if (this.decodedLoads.get(cacheKey) === loading) this.decodedLoads.delete(cacheKey);
+      this.publishStats();
+    });
+    this.decodedLoads.set(cacheKey, loading);
+    return loading;
+  }
+
+  private unpinClip(key: string): void {
+    this.cache.unpin(key);
+    if (this.retiredClipKeys.has(key)) this.cache.removeUnreferenced(key);
   }
 
   setSourceBytes(assetGuid: string, bytes: Uint8Array): void {
-    this.sourceBytes.set(assetGuid, bytes);
+    this.sourceBytes.set(this.library.sourceRevisions?.has(assetGuid)
+      ? this.clipKey(assetGuid, AUDIO_DEFAULT_SOURCE_CHUNK) : assetGuid, bytes);
   }
 
   setReverbField(bytes: Uint8Array | null | undefined): void {
@@ -271,6 +377,7 @@ export class AudioService {
   }
 
   handleCommand(command: CommandMessage): void {
+    if (command.type === "stopSound") this.preparingVoices.get(command.voiceId)?.abort(new Error("Audio voice stopped during loading."));
     if (this.disposed) return;
     if (command.type === "setShowAudioDebug") {
       this.setShowAudioDebug(command.enabled);
@@ -310,6 +417,7 @@ export class AudioService {
   private releaseEvictedClip(cacheKey: string): void {
     this.backend.disposeBuffer(cacheKey);
     this.sourceBytes.delete(cacheKey);
+    this.retiredClipKeys.delete(cacheKey);
   }
 
   private stealToCap(): void {
@@ -379,6 +487,8 @@ export class AudioService {
 
   resetSession(): void {
     this.generation++;
+    for (const controller of this.preparingVoices.values()) controller.abort(new Error("Audio session changed during loading."));
+    this.preparingVoices.clear();
     for (const voiceId of [...this.voices.keys()]) {
       this.stopVoice(voiceId);
     }
@@ -396,6 +506,9 @@ export class AudioService {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.decodeController.abort(new Error("Audio session was disposed."));
+    for (const controller of this.preparingVoices.values()) controller.abort(new Error("Audio session was disposed."));
+    this.preparingVoices.clear();
     this.generation++;
     this.lifecycle.dispose();
     for (const voiceId of [...this.voices.keys()]) {
@@ -404,6 +517,10 @@ export class AudioService {
     this.queue = [];
     this.sourceBytes.clear();
     this.sourceLoads.clear();
+    this.decodedLoads.clear();
+    this.retiredClipKeys.clear();
+    this.library = emptyLibrary();
+    this.reverbField = null;
     this.sessionChannelVolumes.clear();
     this.actorSlots.clear();
     this.slotPoses.clear();
@@ -484,23 +601,23 @@ export class AudioService {
     chunkId: string,
     cacheKey: string,
   ): Promise<Uint8Array | null> {
+    const revision = this.library.sourceRevisions?.get(assetGuid);
     const cached =
       this.sourceBytes.get(cacheKey) ??
-      (chunkId === AUDIO_DEFAULT_SOURCE_CHUNK ? this.sourceBytes.get(assetGuid) : undefined) ??
+      (chunkId === AUDIO_DEFAULT_SOURCE_CHUNK && !revision ? this.sourceBytes.get(assetGuid) : undefined) ??
       this.cache.get(cacheKey) ??
-      (chunkId === AUDIO_DEFAULT_SOURCE_CHUNK ? this.cache.get(assetGuid) : undefined);
+      (chunkId === AUDIO_DEFAULT_SOURCE_CHUNK && !revision ? this.cache.get(assetGuid) : undefined);
     if (cached && cached.byteLength > 0) return cached;
     if (!this.loadSourceBytes) return cached ?? null;
     const inflight = this.sourceLoads.get(cacheKey);
     if (inflight) return inflight;
-    const load = this.loadSourceBytes({ assetGuid, chunkId })
+    const load = this.loadSourceBytes({ assetGuid, chunkId, ...(revision ? { revision } : {}) })
       .then((bytes) => {
         if (this.disposed) return null;
+        if (this.clipKey(assetGuid, chunkId) !== cacheKey || this.retiredClipKeys.has(cacheKey))
+          throw new Error(`Audio ${assetGuid} changed during its source read; retry the request.`);
         if (!bytes || bytes.byteLength === 0) return null;
         this.setSourceBytes(cacheKey, bytes);
-        if (chunkId === AUDIO_DEFAULT_SOURCE_CHUNK) {
-          this.setSourceBytes(assetGuid, bytes);
-        }
         return bytes;
       })
       .finally(() => {
@@ -513,6 +630,41 @@ export class AudioService {
   private async play(
     command: Extract<CommandMessage, { type: "playSound" }>,
     generation: number,
+  ): Promise<void> {
+    if (!this.prepareAsset) return this.playPrepared(command, generation);
+    const voiceId = command.voiceId?.trim() || `voice-${++this.voiceSeq}`;
+    const controller = new AbortController();
+    this.preparingVoices.get(voiceId)?.abort(new Error("Audio voice replaced during loading."));
+    this.preparingVoices.set(voiceId, controller);
+    const owned = { transferred: false, release: undefined as (() => void) | undefined, signal: controller.signal };
+    let abort!: () => void;
+    try {
+      const cancelled = new Promise<never>((_, reject) => {
+        abort = () => reject(controller.signal.reason);
+        controller.signal.addEventListener("abort", abort, { once: true });
+      });
+      const acquire = this.prepareAsset(command.assetGuid, { consumer: command.emitterActorGuid ?? `Audio voice ${voiceId}`, signal: controller.signal }).then((release) => {
+        if (controller.signal.aborted || !this.isCurrent(generation)) { release(); throw new Error("Audio source preparation was cancelled."); }
+        owned.release = release;
+      });
+      await Promise.race([acquire, cancelled]);
+      controller.signal.throwIfAborted();
+      await this.playPrepared({ ...command, voiceId }, generation, owned);
+    } catch (error) {
+      if (!controller.signal.aborted && this.isCurrent(generation)) this.onDiagnostic?.({
+        code: "audio.load_failed", assetGuid: command.assetGuid,
+        message: `Audio ${command.assetGuid}: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    } finally {
+      controller.signal.removeEventListener("abort", abort);
+      if (this.preparingVoices.get(voiceId) === controller) this.preparingVoices.delete(voiceId);
+      if (!owned.transferred) owned.release?.();
+    }
+  }
+
+  private async playPrepared(
+    command: Extract<CommandMessage, { type: "playSound" }>, generation: number,
+    sourceOwner?: { transferred: boolean; release?: () => void; signal?: AbortSignal },
   ): Promise<void> {
     const assetGuid = command.assetGuid;
     const audio =
@@ -531,9 +683,9 @@ export class AudioService {
     });
     const clip = pickWeightedAudioClip(payload.clips, this.random);
     const pitch = resolveAudioPitch(payload, this.random);
-    const cacheKey = audioClipCacheKey(assetGuid, clip.chunkId);
+    const cacheKey = this.clipKey(assetGuid, clip.chunkId);
     const source = await this.resolveSourceBytes(assetGuid, clip.chunkId, cacheKey);
-    if (!this.isCurrent(generation)) return;
+    if (!this.isCurrent(generation) || sourceOwner?.signal?.aborted || cacheKey !== this.clipKey(assetGuid, clip.chunkId) || this.retiredClipKeys.has(cacheKey)) return;
     if (!source || source.byteLength === 0) {
       this.onDiagnostic?.({
         code: "audio.missing_source",
@@ -545,25 +697,22 @@ export class AudioService {
     let decoded = this.cache.get(cacheKey);
     if (!decoded) {
       try {
-        const result = await this.backend.decode(cacheKey, source);
+        decoded = await this.ensureDecoded(cacheKey, source);
         if (this.disposed) return;
         if (!this.isCurrent(generation)) {
-          this.backend.disposeBuffer(cacheKey);
           return;
         }
-        this.cache.put(cacheKey, source, result.pcmBytes);
-        decoded = source;
-      } catch {
+      } catch (error) {
         if (!this.isCurrent(generation)) return;
         this.onDiagnostic?.({
-          code: "audio.decode_failed",
-          message: "Audio failed to decode; playback skipped.",
+          code: /budget/i.test(String(error)) ? "audio.budget_exceeded" : "audio.decode_failed",
+          message: `Audio ${assetGuid} failed to prepare: ${error instanceof Error ? error.message : String(error)}`,
           assetGuid,
         });
         return;
       }
     }
-    if (!this.isCurrent(generation)) return;
+    if (!this.isCurrent(generation) || sourceOwner?.signal?.aborted || cacheKey !== this.clipKey(assetGuid, clip.chunkId) || this.retiredClipKeys.has(cacheKey)) return;
     // Transfer the pin before stopping a replaced voice; unpin may evict now.
     this.cache.pin(cacheKey);
     const voiceId = command.voiceId?.trim() || `voice-${++this.voiceSeq}`;
@@ -600,6 +749,7 @@ export class AudioService {
       voiceId,
       assetGuid,
       source: decoded,
+      cacheKey,
       gain: resolved.gain,
       loop: command.loop === true || payload.loop === true,
       spatial,
@@ -610,6 +760,7 @@ export class AudioService {
       voiceId,
       assetGuid,
       cacheKey,
+      releaseSource: sourceOwner?.release,
       playCallVolume: command.volume,
       emitterActorGuid: emitter,
       spatial,
@@ -621,10 +772,12 @@ export class AudioService {
       clipName: clip.name.trim() === "" ? null : clip.name,
       loop: request.loop,
     });
+    if (sourceOwner) sourceOwner.transferred = true;
     this.lastGain = resolved.gain;
     try {
       await this.backend.play(request);
       if (!this.isCurrent(generation)) return;
+      this.onAssetReady?.(assetGuid);
       this.backend.setVoicePlaybackRate(voiceId, pitch);
     } catch {
       if (!this.isCurrent(generation)) return;
@@ -646,7 +799,10 @@ export class AudioService {
     if (!voice) return;
     this.voices.delete(voiceId);
     try { this.backend.stop(voiceId); }
-    finally { this.cache.unpin(voice.cacheKey); }
+    finally {
+      this.unpinClip(voice.cacheKey);
+      voice.releaseSource?.();
+    }
     this.refreshReverbWet();
     this.publishStats();
   }
@@ -823,6 +979,7 @@ export class AudioService {
     audioStats.lastDistance = this.lastDistance;
     audioStats.wet = this.wet;
     audioStats.accountedBytes = this.cache.accountedBytes();
+    audioStats.inFlightBytes = this.cache.reservedBytes();
     audioStats.debugVoices = this.showAudioDebug
       ? this.collectDebugVoices()
       : undefined;

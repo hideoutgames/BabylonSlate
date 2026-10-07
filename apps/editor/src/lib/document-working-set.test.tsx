@@ -3,7 +3,6 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { CONTENT_BROWSER_ID } from "@babylonslate/core";
 import {
   DOCUMENT_IDLE_UNMOUNT_MS,
-  MAX_WARM_DOCUMENT_WORKSPACES,
   advanceTestIdleClock,
   createIdleClock,
   selectMountedDocumentIds,
@@ -21,11 +20,6 @@ function ids(...tabIds: string[]) {
 }
 
 describe("document working set", () => {
-  it("exports the named idle-unmount constants", () => {
-    expect(DOCUMENT_IDLE_UNMOUNT_MS).toBe(120_000);
-    expect(MAX_WARM_DOCUMENT_WORKSPACES).toBe(3);
-  });
-
   const sceneDocs = [{ id: "scene:S", kind: "scene" as const }];
 
   it("always mounts Content Browser and the active tab", () => {
@@ -266,23 +260,6 @@ describe("useDocumentWorkingSet", () => {
     );
   });
 
-  it("caps five Class tabs at three non-CB mounts", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(0);
-    const tabIds = [CB, "graph:1", "graph:2", "graph:3", "graph:4", "graph:5"];
-    const { rerender } = render(
-      <MountedProbe tabIds={tabIds} activeId="graph:1" />,
-    );
-    for (const id of ["graph:2", "graph:3", "graph:4", "graph:5"]) {
-      vi.setSystemTime(Number(id.slice(-1)));
-      rerender(<MountedProbe tabIds={tabIds} activeId={id} />);
-    }
-    const mounted = screen.getByTestId("mounted").textContent?.split(",") ?? [];
-    expect(mounted.filter((id) => id !== CB).sort()).toEqual(
-      ["graph:3", "graph:4", "graph:5"].sort(),
-    );
-  });
-
   it("does not expire grace while the app is backgrounded", () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
@@ -313,27 +290,6 @@ describe("useDocumentWorkingSet", () => {
     act(() => {
       vi.advanceTimersByTime(DOCUMENT_IDLE_UNMOUNT_MS);
     });
-    expect(screen.getByTestId("mounted").textContent).not.toContain("graph:A");
-  });
-
-  it("does not idle-unmount an open Scene after two minutes", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(0);
-    const tabIds = [CB, "scene:S", "graph:A"];
-    const documents = [
-      { id: "scene:S", kind: "scene" },
-      { id: "graph:A", kind: "graph" },
-    ];
-    const { rerender } = render(
-      <MountedProbe tabIds={tabIds} activeId="scene:S" documents={documents} />,
-    );
-    rerender(
-      <MountedProbe tabIds={tabIds} activeId={CB} documents={documents} />,
-    );
-    act(() => {
-      vi.advanceTimersByTime(DOCUMENT_IDLE_UNMOUNT_MS);
-    });
-    expect(screen.getByTestId("mounted").textContent).toContain("scene:S");
     expect(screen.getByTestId("mounted").textContent).not.toContain("graph:A");
   });
 

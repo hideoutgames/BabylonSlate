@@ -130,17 +130,17 @@ The worker counterpart to the snapshot-apply rule: no whole-world work or per-ac
 
 `p14-perf-smoke` is in `pnpm verify` (Vitest):
 
-- Tiny in-process scene: `lastScriptMs`, `lastPhysicsMs`, and combined tick `< TICK_BUDGET_MS` (8 ms). Keep the fixture small so GitHub runners stay under budget.
-- 120 ticks → `stats` command count is ~5 Hz (not 120), each with a finite `publishMs`; snapshot header `tickIndex` is still 120. 2000 ticks with one looping `AudioComponent`: one `playSound`, `stats` stays ~5 Hz, last-100 median tick cost is not much worse than first-100.
-- Accounted texture + geometry bytes vs committed ceilings (`TEXTURE_BYTE_CEILING` 2 GB, `GEOMETRY_BYTE_CEILING` 512 MB). Drift fails CI.
-- Obstructed / hidden editor: `RenderScheduler.shouldRender() === false` (zero frames).
+- 120 ticks of a tiny in-process scene → `stats` command count is ~5 Hz (not 120), each with a finite `publishMs`; snapshot header `tickIndex` is still 120.
+- Obstructed / hidden editor: `RenderScheduler.shouldRender() === false` (zero frames), asserted in `render-core.test.ts`.
 - Draw-call ceiling (`DRAW_CALL_WARN_CEILING` 400) as HUD warnings.
+
+No CI test enforces the 8 ms tick budget (`TICK_BUDGET_MS`) or the accounted byte ceilings (`TEXTURE_BYTE_CEILING` 2 GB, `GEOMETRY_BYTE_CEILING` 512 MB); the HUD reports them at runtime.
 
 A16 60fps and on-device reopen remain `p1-device-spikes`. Export unzip-serve-boot-tick is `e2e/p14-export.spec.ts`.
 
 ## Renderer baseline fixtures
 
-`e2e/rendering-baseline.spec.ts` loads a primitive room with sixteen eligible point lights, compares sixteen spots with authored 45°/90° inner/outer cones, and reloads points. Each fixture records 30 seconds of viewport frame intervals and CPU timing, shared-Engine GPU query readings, actual drawing dimensions, capability limits, estimated shadow/texture/geometry bytes, resource churn and real canvas captures. Intervals are an Engine-end-frame presentation proxy; GPU queries may include sibling views or repeat the last completed sample, and sampled churn is a lower bound. `e2e/rendering-transitions.spec.ts` exercises settings close, unchanged close, and explicit reload with blocking loading progress. Run these explicit files through `pnpm --silent agent:wait local --script test:e2e -- <file>` (quote `'--'` in PowerShell).
+`e2e/rendering-baseline.spec.ts` loads a primitive room with sixteen eligible point lights, compares sixteen spots with authored 45°/90° inner/outer cones, and reloads points. Each fixture records 30 seconds of viewport frame intervals and CPU timing, shared-Engine GPU query readings, actual drawing dimensions, capability limits, estimated shadow/texture/geometry bytes, resource churn and real canvas captures. Intervals are an Engine-end-frame presentation proxy; GPU queries may include sibling views or repeat the last completed sample, and sampled churn is a lower bound. It runs only through `playwright.perf.config.ts`: `pnpm --silent agent:wait local --script test:e2e -- e2e/rendering-baseline.spec.ts --config playwright.perf.config.ts` (quote `'--'` in PowerShell).
 
 These are local browser safety and rendering checks. Chromium touch emulation is not Safari/iPad GPU validation, estimated bytes are not measured residency, and short fixture runs do not establish sustained 60 fps. The A16 crash mechanism remains unconfirmed without device evidence.
 
@@ -202,12 +202,10 @@ do not establish iPad/Safari performance, isolated GPU time or thermal behavior.
 
 ### Camera-driven shadow activation
 
-The targeted `Shadow activation handoff` cases in `e2e/framegraph-shadows.spec.ts`
-measure first and repeated camera-driven point-shadow promotions in PBR and CEL
-with the shared allocation ceiling fixed to one cube. Reports include preparation
-time, graph build count, selected light and reserved bytes. Run the exact cases
-on the same native GPU and settings before comparing revisions; software rendering
-establishes correctness, not device performance.
+The former `Shadow activation handoff` cases in `e2e/framegraph-shadows.spec.ts`
+(since removed) measured first and repeated camera-driven point-shadow promotions in PBR and CEL
+with the shared allocation ceiling fixed to one cube. Reports included preparation
+time, graph build count, selected light and reserved bytes.
 
 On the native RTX 2060 / ANGLE D3D11 WebGL2 fixture (96×72, one 256-pixel cube,
 4.5 MiB allocation ceiling), `47d945c7` rebuilt the graph on every handoff:

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createActor, createDefaultScene } from "@babylonslate/core";
 import {
   collectFontAssetEntries,
   collectFontCssStacks,
@@ -6,7 +7,24 @@ import {
   collectFontMsdfPair,
   fontAssetHasMsdfJson,
   fontAssetHasMsdfPng,
+  fontGuidsForSceneRepresentation,
 } from "./play-fonts";
+
+describe("font representation selection", () => {
+  it("keeps bitmap, MSDF and 3D glyph consumers separate and follows only their fallbacks", () => {
+    const scene = { ...createDefaultScene(), actors: [createActor("text", "Text", { components: [
+      { id: "3d", classId: "Text3DComponent", properties: { fontAssetGuid: "glyph" } },
+      { id: "msdf", classId: "2DTextComponent", properties: { renderer: "msdf", fontAssetGuid: "atlas" } },
+      { id: "bitmap", classId: "2DRichTextComponent", properties: { renderer: "bitmap" } },
+    ] })] };
+    const sources = ["glyph", "atlas", "default", "fallback", "unused"].map((guid) => ({
+      guid, path: guid, type: "Font", payload: { fallbackGuids: guid === "atlas" ? ["fallback"] : guid === "fallback" ? ["atlas"] : [] },
+    }));
+    expect(fontGuidsForSceneRepresentation([scene], sources, "source", "default")).toEqual(["default"]);
+    expect(fontGuidsForSceneRepresentation([scene], sources, "facetype", "default")).toEqual(["glyph"]);
+    expect(fontGuidsForSceneRepresentation([scene], sources, "msdf", "default")).toEqual(["atlas", "fallback"]);
+  });
+});
 
 describe("collectFontAssetEntries", () => {
   it("loads source bytes for Font assets and skips empty chunks", async () => {

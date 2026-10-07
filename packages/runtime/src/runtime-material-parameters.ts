@@ -21,13 +21,18 @@ const copy = (value: MaterialParameterValue): MaterialParameterValue =>
 
 /** Session-owned values for synchronous worker reads; assets and entry overrides remain immutable. */
 export class RuntimeMaterialParameters {
-  private readonly catalog: MaterialParameterCatalog;
-  private readonly textures: ReadonlySet<string>;
+  private catalog: MaterialParameterCatalog;
+  private textures: ReadonlySet<string>;
   private readonly states = new WeakMap<MaterialInstanceObject, State>();
   constructor(
     catalog: MaterialParameterCatalog | undefined,
     textures: readonly string[] | undefined,
   ) {
+    this.catalog = normalizeMaterialParameterCatalog(catalog);
+    this.textures = new Set(textures);
+  }
+
+  replaceCatalog(catalog: MaterialParameterCatalog | undefined, textures: readonly string[] | undefined): void {
     this.catalog = normalizeMaterialParameterCatalog(catalog);
     this.textures = new Set(textures);
   }

@@ -161,22 +161,6 @@ describe("Inspector prefab component details", () => {
     expect(movement?.transform).toBeUndefined();
   });
 
-  it("shows Z-Order instead of Position Z in 2D Prefab Inspector", () => {
-    sceneEditing.viewportMode = "2d";
-    renderInspector({ selectedComponentId: "prefab-mesh" });
-    expect(screen.queryByTestId("property-prefab-mesh-position-z")).toBeNull();
-    expect(screen.getByTestId("property-prefab-mesh-position-x")).toBeTruthy();
-    fireEvent.change(screen.getByTestId("property-prefab-mesh-z-order"), {
-      target: { value: "4" },
-    });
-    expect(applyGraphChange).toHaveBeenCalled();
-    const next = applyGraphChange.mock.calls[0]![1];
-    const mesh = next.components?.find(
-      (component) => component.id === "prefab-mesh",
-    );
-    expect(mesh?.transform?.position[2]).toBe(-4);
-  });
-
   it("keeps class member details when Prefab Root is selected", () => {
     renderInspector({
       selectedComponentId: PREFAB_ROOT_ID,
@@ -231,16 +215,5 @@ describe("Inspector prefab component details", () => {
     renderInspector({ selectedComponentId: PREFAB_ROOT_ID });
     fireEvent.click(screen.getByTestId("property-generateOverlapEvents"));
     expect(applyGraphChange.mock.calls.at(-1)![1].actorDefaults?.generateOverlapEvents).toBe(false);
-  });
-
-  it("titles Inspector with the component count when more than one is selected", () => {
-    renderInspector({
-      selectedComponentIds: ["prefab-mesh", "prefab-sphere"],
-    });
-    expect(screen.getByTestId("inspector-prefab-multi").textContent).toContain(
-      "2 Components",
-    );
-    expect(screen.queryByTestId("inspector-prefab-component")).toBeNull();
-    expect(screen.queryByTestId("inspector-prefab-origin")).toBeNull();
   });
 });

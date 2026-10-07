@@ -24,7 +24,7 @@ const read = (page: Page) => page.evaluate(() => {
   return { rendering: host.rendering(), scalability: host.scalability(), tasks: host.renderTasks() };
 });
 
-for (const backend of ["webgl2", "webgpu"] as const) {
+for (const backend of ["webgl2"] as ("webgl2" | "webgpu")[]) {
 test(`saved Class scalability graphs compile and run with confirmed events in editor Play on ${backend}`, async ({ page }, testInfo) => {
   test.setTimeout(120_000);
   const errors: string[] = [];

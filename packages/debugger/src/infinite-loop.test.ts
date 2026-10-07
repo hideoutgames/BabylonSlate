@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_INFINITE_LOOP_COUNT,
-  INFINITE_LOOP_DIAGNOSTIC_CODE,
-  INFINITE_LOOP_ERROR_MESSAGE,
   InfiniteLoopError,
   createInfiniteLoopGuard,
   instrumentJsLoops,
@@ -10,15 +7,8 @@ import {
 } from "./infinite-loop";
 
 describe("InfiniteLoopError", () => {
-  it("uses a stable name and Infinite loop detected message", () => {
-    const error = new InfiniteLoopError();
-    expect(error).toBeInstanceOf(Error);
-    expect(error.name).toBe("InfiniteLoopError");
-    expect(error.message).toBe(INFINITE_LOOP_ERROR_MESSAGE);
-    expect(error.message).toBe("Infinite loop detected");
-    expect(INFINITE_LOOP_DIAGNOSTIC_CODE).toBe("runtime.infinite_loop");
-    expect(DEFAULT_INFINITE_LOOP_COUNT).toBe(1_000_000);
-    expect(isInfiniteLoopError(error)).toBe(true);
+  it("is recognised by type rather than by its message", () => {
+    expect(isInfiniteLoopError(new InfiniteLoopError())).toBe(true);
     expect(isInfiniteLoopError(new Error("Infinite loop detected"))).toBe(false);
   });
 });

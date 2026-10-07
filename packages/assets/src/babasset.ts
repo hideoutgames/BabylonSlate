@@ -9,12 +9,15 @@ import {
 
 export const BABASSET_MAGIC = new TextEncoder().encode("BABA");
 export const BABASSET_FORMAT_VERSION = 1;
+export const BABASSET_PREFIX_BYTES = 12;
+/** Reject corrupt lengths before allocating a catalog header. */
+export const MAX_BABASSET_HEADER_BYTES = 16 * 1024 * 1024;
 /** Chunks at or above this size externalise to the blob store in thin mode. */
 export const DEFAULT_BLOB_THRESHOLD = 64 * 1024;
 
 export const chunkLocatorSchema = z.union([
   z.object({
-    inline: z.object({ offset: z.number().int(), length: z.number().int() }),
+    inline: z.object({ offset: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER), length: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER) }),
   }),
   z.object({ blob: z.string().min(1) }),
 ]);
@@ -24,12 +27,27 @@ export const chunkEntrySchema = z.object({
   kind: z.string(),
   mime: z.string(),
   sha256: z.string(),
+  /** Older files omit this for blobs; hashes still verify their contents. */
+  byteLength: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
   locator: chunkLocatorSchema,
 });
 
 export const babassetHeaderSchema = z.object({
   chunks: z.array(chunkEntrySchema),
   dependencies: z.array(z.string()).default([]),
+  /** Complete references above; only these edges prepare an immediate consumer. */
+  requiredDependencies: z.array(z.string()).optional(),
+  /** Class properties consumed by synchronous graph readers; applies to instance overrides. */
+  requiredVariableNames: z.array(z.string()).optional(),
+  classReferences: z.array(z.string()).optional(),
+  requiredClassReferences: z.array(z.string()).optional(),
+  consoleCommand: z.object({
+    name: z.string(), description: z.string(), category: z.string(),
+    parameters: z.array(z.object({ name: z.string(), type: z.enum(["string", "float", "int", "bool", "enum"]),
+      optional: z.boolean().optional(), defaultValue: z.unknown().optional(), enumValues: z.array(z.string()).optional() })),
+  }).optional(),
+  /** Missing metadata requires an explicit upgrade, never a scan during open. */
+  dependencyMetadataVersion: z.number().int().nonnegative().optional(),
   engineVersion: z.string(),
   guid: z.string(),
   mode: z.enum(["thin", "bundled"]).default("thin"),
@@ -87,14 +105,24 @@ function assertMagic(bytes: Uint8Array): void {
 /**
  * Read header + chunk table without allocating chunk payloads.
  */
-export function readBabassetHeader(bytes: Uint8Array): BabassetHeader {
+export function readBabassetHeaderLength(bytes: Uint8Array): number {
+  if (bytes.byteLength < BABASSET_PREFIX_BYTES) throw new Error("Truncated .babasset prefix");
   assertMagic(bytes);
   const formatVersion = readU32LE(bytes, 4);
   if (formatVersion !== BABASSET_FORMAT_VERSION) {
     throw new Error(`Unsupported .babasset format version ${formatVersion}`);
   }
   const headerLen = readU32LE(bytes, 8);
-  const headerBytes = bytes.subarray(12, 12 + headerLen);
+  if (headerLen === 0 || headerLen > MAX_BABASSET_HEADER_BYTES) {
+    throw new Error(`Invalid .babasset header length ${headerLen}`);
+  }
+  return headerLen;
+}
+
+export function readBabassetHeader(bytes: Uint8Array): BabassetHeader {
+  const headerLen = readBabassetHeaderLength(bytes);
+  if (bytes.byteLength < BABASSET_PREFIX_BYTES + headerLen) throw new Error("Truncated .babasset header");
+  const headerBytes = bytes.subarray(BABASSET_PREFIX_BYTES, BABASSET_PREFIX_BYTES + headerLen);
   const json = new TextDecoder().decode(headerBytes);
   return babassetHeaderSchema.parse(JSON.parse(json));
 }
@@ -132,6 +160,7 @@ export async function encodeBabasset(
         kind: chunk.kind,
         mime: chunk.mime,
         sha256: hash,
+        byteLength: chunk.data.byteLength,
         locator: { blob: hash },
       });
     } else {
@@ -140,6 +169,7 @@ export async function encodeBabasset(
         kind: chunk.kind,
         mime: chunk.mime,
         sha256: hash,
+        byteLength: chunk.data.byteLength,
         locator: {
           inline: { offset: inlineOffset, length: chunk.data.byteLength },
         },
@@ -156,6 +186,7 @@ export async function encodeBabasset(
   });
   const headerJson = stableStringify(header);
   const headerBytes = new TextEncoder().encode(headerJson);
+  if (headerBytes.byteLength > MAX_BABASSET_HEADER_BYTES) throw new Error(".babasset header exceeds the catalog size limit");
 
   return concatBytes([
     BABASSET_MAGIC,

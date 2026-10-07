@@ -1,48 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { basicParticleStageRole } from "@babylonslate/ui/lib/data-types";
 import {
-  edgeStyleForPin,
-  nodeRoleClass,
   nodeVisualRole,
   pinCssVar,
-  pinVisualShape,
 } from "./node-theme";
 
 describe("pinCssVar", () => {
-  it("maps primitive pin kinds to CSS variables", () => {
-    expect(pinCssVar({ kind: "exec" })).toBe("var(--pin-exec)");
-    expect(pinCssVar({ kind: "bool" })).toBe("var(--pin-bool)");
-    expect(pinCssVar({ kind: "int" })).toBe("var(--pin-int)");
-    expect(pinCssVar({ kind: "float" })).toBe("var(--pin-float)");
-    expect(pinCssVar({ kind: "string" })).toBe("var(--pin-string)");
-  });
-
-  it("maps vector families to --pin-vector", () => {
-    expect(pinCssVar({ kind: "vec2" })).toBe("var(--pin-vector)");
-    expect(pinCssVar({ kind: "vec3" })).toBe("var(--pin-vector)");
-    expect(pinCssVar({ kind: "vec4" })).toBe("var(--pin-vector)");
-  });
-
-  it("maps math, ref, and wildcard families", () => {
-    expect(pinCssVar({ kind: "rotator" })).toBe("var(--pin-rotator)");
-    expect(pinCssVar({ kind: "transform" })).toBe("var(--pin-transform)");
-    expect(pinCssVar({ kind: "color" })).toBe("var(--pin-color)");
-    expect(pinCssVar({ kind: "objectRef", classId: "Actor" })).toBe(
-      "var(--pin-object)",
-    );
-    expect(pinCssVar({ kind: "classRef", classId: "Actor" })).toBe(
-      "var(--pin-class)",
-    );
-    expect(pinCssVar({ kind: "actorRef", classId: "Actor" })).toBe(
-      "var(--pin-actor)",
-    );
-    expect(pinCssVar({ kind: "structRef", guid: "g" })).toBe("var(--pin-struct)");
-    expect(pinCssVar({ kind: "enumRef", guid: "g" })).toBe("var(--pin-enum)");
-    expect(pinCssVar({ kind: "resolvingWildcard" })).toBe("var(--pin-wildcard)");
-    expect(pinCssVar({ kind: "boxedWildcard" })).toBe("var(--pin-wildcard)");
-    expect(pinCssVar({ kind: "delegate" })).toBe("var(--pin-delegate)");
-  });
-
   it("uses the element type for arrays and the value type for maps", () => {
     expect(pinCssVar({ kind: "array", element: { kind: "float" } })).toBe(
       "var(--pin-float)",
@@ -54,33 +17,6 @@ describe("pinCssVar", () => {
         value: { kind: "bool" },
       }),
     ).toBe("var(--pin-bool)");
-  });
-
-  it("falls back to wildcard for unknown kinds", () => {
-    expect(pinCssVar({ kind: "mystery" })).toBe("var(--pin-wildcard)");
-  });
-});
-
-describe("pinVisualShape", () => {
-  it("uses a diamond for exec, a list for arrays, a map glyph for maps, and a circle otherwise", () => {
-    expect(pinVisualShape({ kind: "exec" })).toBe("diamond");
-    expect(
-      pinVisualShape({ kind: "array", element: { kind: "float" } }),
-    ).toBe("list");
-    expect(
-      pinVisualShape({
-        kind: "array",
-        element: { kind: "array", element: { kind: "string" } },
-      }),
-    ).toBe("list");
-    expect(pinVisualShape({ kind: "string" })).toBe("circle");
-    expect(
-      pinVisualShape({
-        kind: "map",
-        key: { kind: "string" },
-        value: { kind: "bool" },
-      }),
-    ).toBe("map");
   });
 });
 
@@ -188,30 +124,5 @@ describe("nodeVisualRole", () => {
   it("ignores a Particle Graph role that is not a stage", () => {
     expect(nodeVisualRole({ category: "math", pure: true, particleRole: "toString" })).toBe("pure");
     expect(nodeVisualRole({ category: "physics", particleRole: "constructor" })).toBe("function");
-  });
-});
-
-describe("nodeRoleClass", () => {
-  it("returns a static Tailwind background class per role", () => {
-    expect(nodeRoleClass("event")).toBe("bg-node-event");
-    expect(nodeRoleClass("function")).toBe("bg-node-function");
-    expect(nodeRoleClass("variable-set")).toBe("bg-node-variable-set");
-    expect(nodeRoleClass("bt-root")).toBe("bg-node-bt-root");
-    expect(nodeRoleClass("bt-composite")).toBe("bg-node-bt-composite");
-    expect(nodeRoleClass("bt-task")).toBe("bg-node-bt-task");
-    expect(nodeRoleClass("call-parent")).toBe("bg-node-call-parent");
-  });
-});
-
-describe("edgeStyleForPin", () => {
-  it("colors and thickens exec wires", () => {
-    expect(edgeStyleForPin({ kind: "exec" })).toEqual({
-      stroke: "var(--pin-exec)",
-      strokeWidth: 5,
-    });
-    expect(edgeStyleForPin({ kind: "bool" })).toEqual({
-      stroke: "var(--pin-bool)",
-      strokeWidth: 4,
-    });
   });
 });

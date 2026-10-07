@@ -6,12 +6,40 @@ import {
   normalizeFontPayload,
 } from "@babylonslate/assets";
 import type { FontAssetEntry } from "@babylonslate/render";
+import { parseText2DProperties, type SerializedScene } from "@babylonslate/core";
 
 export interface FontAssetSource {
   guid: string;
   path: string;
   type: string;
   payload?: unknown;
+}
+
+/** Select the consumer's representation before any source/atlas/glyph bytes load. */
+export function fontGuidsForSceneRepresentation(
+  scenes: readonly (SerializedScene | null | undefined)[],
+  assets: readonly FontAssetSource[],
+  representation: "source" | "facetype" | "msdf",
+  defaultFontGuid?: string | null,
+): string[] {
+  const wanted = new Set<string>();
+  for (const scene of scenes) for (const actor of scene?.actors ?? []) for (const component of actor.components) {
+    if (component.classId === "Text3DComponent" && representation === "facetype") {
+      const guid = component.properties.fontAssetGuid;
+      if (typeof guid === "string" && guid) wanted.add(guid);
+    } else if (component.classId === "2DTextComponent" || component.classId === "2DRichTextComponent") {
+      const text = parseText2DProperties(component.properties);
+      if ((text.renderer === "msdf" ? "msdf" : "source") !== representation) continue;
+      const guid = text.fontAssetGuid ?? defaultFontGuid;
+      if (guid) wanted.add(guid);
+    }
+  }
+  const byGuid = new Map(assets.filter((asset) => asset.type === "Font").map((asset) => [asset.guid, asset]));
+  for (const guid of wanted) {
+    const asset = byGuid.get(guid);
+    if (asset) for (const fallback of normalizeFontPayload(asset.payload, "").fallbackGuids) wanted.add(fallback);
+  }
+  return [...wanted];
 }
 
 /** Load Font `source` chunks for Play FontFace registration. */

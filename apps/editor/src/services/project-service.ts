@@ -1,4 +1,4 @@
-import { createDefaultInputAssets } from "@babylonslate/core";
+import { createDefaultInputAssets, SourceRevisionChangedError } from "@babylonslate/core";
 import { isLockedEngineClassId } from "@babylonslate/object-model";
 import { normalizeDataDefinitionAsset, normalizeDataTreeAsset } from "@babylonslate/core";
 import { normalizeImportedProject, readProjectArchive, PROJECT_IMPORT_LIMIT } from "./project-import";
@@ -8,7 +8,7 @@ import { staticAudioGeometryFingerprint } from "../lib/audio-reverb-bake";
 import { convertGlslToMaterial, normalizeMaterialDocument, normalizeMaterialFunctionDocument, validateMaterialParameterNames } from "@babylonslate/shader-graph";
 import { EditorExtensionService } from "./editor-extension-service";
 import { ENGINE_EXTENSION_LIBRARY_ROOT } from "../lib/engine-extension-library";
-import { installEngineExtensionDefaults, isExtensionPackagePath, type AssetDocument } from "@babylonslate/assets";
+import { installEngineExtensionDefaults, isExtensionPackagePath, isAssetSourceRevisionChanged, type AssetDocument } from "@babylonslate/assets";
 import type {
   DocumentKind,
   PluginEnableOverride,
@@ -28,7 +28,6 @@ import {
   createEmptyProject,
   normalizeProjectSettings,
   normalizeProjectAppearance,
-  migrateGameInstanceClassFromScenes,
   normalizeScene,
   normalizeSceneLayer,
   classHeaderMeta,
@@ -50,6 +49,14 @@ import {
 import type { ProjectFolderHandle, ProjectStorage } from "@babylonslate/core";
 import {
   AssetRegistry,
+  createRegistryAssetLoadingService,
+  type AssetLoadingService,
+  type AssetLoadScope,
+  type AssetLoadPriority,
+  type RegistryLoadedAsset,
+  AccountedPayloadLoader,
+  readAssetCatalog,
+  validateAssetSourceLocator,
   RegistryGenerationClock,
   type AreaEmissionProgress,
   type AreaEmissionProcessor,
@@ -68,6 +75,9 @@ import {
   DOCUMENT_CHUNK_ID,
   EncodeQueue,
   encodeAssetDocument,
+  assetsNeedingDependencyMetadataUpgrade,
+  upgradeAssetDependencyMetadata,
+  type DependencyMetadataUpgradeOptions,
   encodeJobMayWrite,
   extraChunksFromDecoded,
   extraChunksWithAudioReverb,
@@ -132,7 +142,7 @@ import { extraChunksWithNavmesh } from "@babylonslate/navigation";
 import {
   newAssetFileName,
   classIdFromClassAsset,
-  assetHeaderDependencies,
+  assetHeaderDependencyMetadata,
   materialHeaderMeta,
 } from "../lib/content-browser-helpers";
 import {
@@ -152,7 +162,7 @@ import {
   applyKenneyMannequinEmptyScaffold,
   MANNEQUIN_CLASS_FILE,
 } from "../lib/scaffold-empty-3d";
-import { createDefaultLogicGraphSerialized, hydrateClassDocumentPayload } from "./graph-validation";
+import { createDefaultLogicGraphSerialized, defaultNodeRegistry, hydrateClassDocumentPayload } from "./graph-validation";
 
 function headerMetaForSave(
   type: string,
@@ -313,6 +323,9 @@ export class ProjectService {
   private readonly migrations = defaultRegistry();
   private readonly blobs: BlobStore;
   private assetRegistry: AssetRegistry | null = null;
+  private readonly registryMounts = new Set<{ session: number; promise: Promise<AssetRegistry> }>();
+  private sourceLoading: AssetLoadingService | null = null;
+  private sourceSession = 0;
   private projectSearchIndex: ProjectSearchIndex | null = null;
   private readonly encodeQueue: EncodeQueue;
   private readonly emissionJobs = new Set<AbortController>();
@@ -329,6 +342,8 @@ export class ProjectService {
   private derivedStorage: ProjectStorage | null = null;
   private enginePluginStorage: ProjectStorage | null = null;
   private pluginDescriptors: PluginDescriptor[] = [];
+  /** Plugin folders change only through a full sync; overrides reuse the last discovery. */
+  private pluginDescriptorsCurrent = false;
   private pluginDiagnostics: PluginDiagnostic[] = [];
   private pluginOverrides: Record<string, PluginEnableOverride> = {};
   /** Asset guids stay stable across saves so references survive a rewrite. */
@@ -458,26 +473,34 @@ export class ProjectService {
         // (alignment) job leaves the saved state alone until it commits, so
         // nothing on disk requeues it later, source control on or not.
         if (state === "compressed" || job.guard) return;
-        void this.assetRegistry
-          ?.setCompressionState(guid, state)
-          .then(() => this.emitRegistryChange());
+        const registry = this.assetRegistry;
+        if (!registry) return;
+        const session = this.sourceSession;
+        void registry
+          .setCompressionState(guid, state)
+          .then(() => this.refreshTextureWrite(guid, registry, session))
+          .catch((error) => this.emitTextureEncodeDiagnostic(guid, error));
       },
       onComplete: async (result) => {
         const registry = this.assetRegistry;
-        if (!(await registry?.commitCompressedTexture(result))) {
+        if (!registry) return;
+        const session = this.sourceSession;
+        if (!(await registry.commitCompressedTexture(result))) {
           // Refused (a guarded job the file on disk no longer allows): Texture
           // Details rechecks whether the Texture is left stale for the user.
-          this.emitRegistryChange();
+          if (session === this.sourceSession) this.emitRegistryChange();
           return;
         }
-        const committed = registry && committedKtx2Sha256(registry.getByGuid(result.assetGuid)?.header);
+        if (session !== this.sourceSession) return;
+        const committed = committedKtx2Sha256(registry.getByGuid(result.assetGuid)?.header);
         if (committed) this.sessionEncodes.set(result.assetGuid, committed);
-        this.emitRegistryChange();
+        const current = await this.refreshTextureWrite(result.assetGuid, registry, session);
+        if (!current) return;
         // A Tileset, Sprite or Sprite Animation may have picked the texture
         // while it encoded; recheck it with the Usage the pass will use (an
         // open tab's, else the saved one), unless another Usage chose this
         // encode: an unsaved Details edit in a tab closed since.
-        const saved = this.assetRegistry?.getByGuid(result.assetGuid)?.header.payload.usage;
+        const saved = current.getByGuid(result.assetGuid)?.header.payload.usage;
         const usage = this.openTextureUsage?.(result.assetGuid) ?? String(saved ?? "albedo");
         if (result.usage === undefined || result.usage === usage) {
           void this.reconcileTextureAlignment([result.assetGuid]);
@@ -486,12 +509,16 @@ export class ProjectService {
       onError: (guid, error, job) => {
         this.emitTextureEncodeDiagnostic(guid, error);
         const message = error instanceof Error ? error.message : String(error);
-        void this.assetRegistry
-          ?.setCompressionState(guid, "encode_failed", {
+        const registry = this.assetRegistry;
+        if (!registry) return;
+        const session = this.sourceSession;
+        void registry
+          .setCompressionState(guid, "encode_failed", {
             error: message,
             ...(job.guard ? { canWrite: (_guid: string, current: BabassetHeader) => encodeJobMayWrite(job, current) } : {}),
           })
-          .then(() => this.emitRegistryChange());
+          .then(() => this.refreshTextureWrite(guid, registry, session))
+          .catch((failure) => this.emitTextureEncodeDiagnostic(guid, failure));
       },
       // A guarded job dropped unencoded may leave its Texture stale for the user.
       onDrop: () => this.emitRegistryChange(),
@@ -512,6 +539,7 @@ export class ProjectService {
 
   /** Release provider-lifetime resources; project close deliberately does not. */
   dispose(): void {
+    this.resetAssetLoading();
     void this.extensions.close();
     this.cancelEmissionJobs();
     this.encodeQueuePauseUnsubscribe?.();
@@ -539,6 +567,37 @@ export class ProjectService {
     this.diagnostics.push(line);
     if (this.diagnostics.length > 200) this.diagnostics.shift();
     for (const listener of this.diagnosticListeners) listener(line);
+  }
+
+  /** A scan may have captured the old encode state before this write committed. */
+  private async refreshTextureWrite(guid: string, writer: AssetRegistry, session: number): Promise<AssetRegistry | null> {
+    try {
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        if (session !== this.sourceSession) return null;
+        // A rejected scan keeps the previous registry; its caller handles the scan error.
+        await Promise.allSettled([...this.registryMounts].filter((mount) => mount.session === session).map((mount) => mount.promise));
+        if (session !== this.sourceSession) return null;
+        const current = this.assetRegistry;
+        if (!current?.getByGuid(guid)) return null;
+        try {
+          // Refresh only this catalog header; a completed encode never starts a scan or another encode.
+          if (current !== writer) await current.getAssetLocator(guid);
+        } catch (error) {
+          if (isAssetSourceRevisionChanged(error) && attempt < 3) continue;
+          throw error;
+        }
+        if (session !== this.sourceSession) return null;
+        if (current === this.assetRegistry && ![...this.registryMounts].some((mount) => mount.session === session)) {
+          this.emitRegistryChange();
+          return current;
+        }
+      }
+      throw new Error("Saved texture metadata changed during 3 refresh attempts; refresh the Content Browser after saving finishes.");
+    } catch (error) {
+      // A metadata refresh failure must not overwrite a successfully committed encode with encode_failed.
+      if (session === this.sourceSession) this.emitTextureEncodeDiagnostic(guid, error);
+      return null;
+    }
   }
 
   /** When self-hosted transcoder files are missing, prefer source chunks. */
@@ -636,13 +695,12 @@ export class ProjectService {
   /**
    * The editor reports the project's source control **Enable** setting as it
    * changes, saved or not (a project load reads the saved one). Turning it on
-   * stops the alignment pass, including the re-encodes it queued; turning it
-   * off runs the pass.
+   * stops guarded alignment jobs it no longer permits. Changing this setting
+   * does not request texture processing.
    */
   setSourceControlEnabled(enabled: boolean): void {
     if (this.sourceControlEnabled === enabled) return;
     this.sourceControlEnabled = enabled;
-    if (!enabled) void this.reconcileTextureAlignment();
   }
 
   /**
@@ -668,8 +726,7 @@ export class ProjectService {
   /**
    * Whether Texture Details offers **Retry Encoding** for a `compressed`
    * Texture: its committed encode is stale for the alignment policy and
-   * nothing re-encodes it yet (source control on, so the pass leaves it for
-   * the user). `usage` is its tab's, saved or not.
+   * nothing re-encodes it yet. `usage` is its tab's, saved or not.
    */
   async textureAlignmentStale(guid: string, usage?: string): Promise<boolean> {
     const registry = this.assetRegistry;
@@ -822,6 +879,7 @@ export class ProjectService {
 
   setEnginePluginStorage(storage: ProjectStorage | null): void {
     this.enginePluginStorage = storage;
+    this.pluginDescriptorsCurrent = false;
   }
 
   setEngineExtensionStorage(storage: ProjectStorage): void {
@@ -850,7 +908,27 @@ export class ProjectService {
   }
 
   get pendingMigrations(): MigrationPending[] {
-    return [...this.migrationPending];
+    return [...this.migrationPending, ...this.pendingDependencyMetadataUpgrades.map(asset => ({
+      type: "Asset Dependency Metadata", fromVersion: asset.header.dependencyMetadataVersion ?? 0,
+      toVersion: 1, path: asset.path,
+    }))];
+  }
+
+  /** Catalog-only detection; the explicit upgrade reads legacy documents. */
+  get pendingDependencyMetadataUpgrades(): IndexedAsset[] {
+    return assetsNeedingDependencyMetadataUpgrade(this.assetRegistry?.list() ?? [])
+      .filter(asset => !this.assetRegistry?.getRoot(asset.rootId)?.readOnly);
+  }
+
+  async upgradeDependencyMetadata(options: DependencyMetadataUpgradeOptions = {}) {
+    if (!this.assetRegistry) throw new Error("Open a project before upgrading dependency metadata");
+    return upgradeAssetDependencyMetadata(this.assetRegistry, {
+      ...options,
+      context: {
+        graphPins: (type, properties) => defaultNodeRegistry.get(type)?.pins(properties),
+        ...options.context,
+      },
+    });
   }
 
   approveMigrateOnSave(): void {
@@ -1058,6 +1136,7 @@ export class ProjectService {
   }
 
   async closeProject(): Promise<void> {
+    this.resetAssetLoading();
     this.sessionEncodes.clear();
     await this.extensions.close();
     this.cancelEmissionJobs();
@@ -1072,6 +1151,7 @@ export class ProjectService {
     this.projectSearchIndex?.clear();
     this.projectSearchIndex = null;
     this.pluginDescriptors = [];
+    this.pluginDescriptorsCurrent = false;
     this.pluginDiagnostics = [];
     this.pluginOverrides = {};
   }
@@ -1149,6 +1229,8 @@ export class ProjectService {
       throw new Error("No project folder selected");
     }
 
+    this.resetAssetLoading();
+
     this.migrationPending = [];
     this.migrateOnSaveApproved = false;
     this.assetGuids.clear();
@@ -1191,27 +1273,9 @@ export class ProjectService {
     }
 
     const withDocuments = await this.ensureDocuments(document);
-    const scenePayloads: SerializedScene[] = [];
-    if (!withDocuments.settings.gameInstanceClass) {
-      for (const path of withDocuments.scenes) {
-        try {
-          const loaded = await this.loadDocument("scene", path);
-          if (loaded && typeof loaded === "object" && "settings" in loaded) {
-            scenePayloads.push(loaded as SerializedScene);
-          }
-        } catch {
-          /* unreadable scene */
-        }
-      }
-    }
-    const settings = migrateGameInstanceClassFromScenes(
-      withDocuments.settings,
-      scenePayloads,
-    );
-    const migratedDocument =
-      settings === withDocuments.settings
-        ? withDocuments
-        : { ...withDocuments, settings };
+    // Legacy Scene-local GameInstance defaults resolve when that Scene is
+    // requested. Project opening must not scan every Scene to guess a default.
+    const migratedDocument = withDocuments;
     const layouts = await this.loadLayouts(
       documentId({
         kind: "scene",
@@ -1281,7 +1345,39 @@ export class ProjectService {
     maxTextureDimension: number;
   } | null = null;
 
-  private async mountAssetRegistry(): Promise<AssetRegistry> {
+  /** Editor tabs, previews, Play, and explicit preloads share one source cache. */
+  get assetLoadingService(): AssetLoadingService {
+    if (!this.assetRegistry) throw new Error("Open a project before loading assets");
+    if (!this.sourceLoading) {
+      this.sourceLoading = createRegistryAssetLoadingService(() => {
+        if (!this.assetRegistry) throw new Error("The asset's project was closed");
+        return this.assetRegistry;
+      }, { projectId: `${this.projectGuid ?? "project"}:${this.sourceSession}` });
+    }
+    return this.sourceLoading;
+  }
+
+  createAssetLoadScope(owner: string): AssetLoadScope {
+    return this.assetLoadingService.createScope(owner);
+  }
+
+  private resetAssetLoading(): void {
+    this.sourceLoading?.dispose();
+    this.sourceLoading = null;
+    this.sourceSession++;
+  }
+
+  private mountAssetRegistry(): Promise<AssetRegistry> {
+    const session = this.sourceSession;
+    const promise = this.mountAssetRegistryAttempt(session);
+    const mount = { session, promise };
+    this.registryMounts.add(mount);
+    const finished = () => { this.registryMounts.delete(mount); };
+    void promise.then(finished, finished);
+    return promise;
+  }
+
+  private async mountAssetRegistryAttempt(session: number): Promise<AssetRegistry> {
     const maxDimension =
       this.loadedTextureSettings?.maxTextureDimension ??
       DEFAULT_TEXTURE_ENCODE_SETTINGS.maxDimension;
@@ -1304,41 +1400,38 @@ export class ProjectService {
       if (committed) this.sessionEncodes.set(header.guid, committed);
     });
     await registry.mountRoot(projectContentRoot());
+    if (session !== this.sourceSession) throw new DOMException("Project changed during catalog scan", "AbortError");
     this.assetRegistry = registry;
     await this.syncPlugins();
+    if (session !== this.sourceSession) throw new DOMException("Project changed during catalog scan", "AbortError");
     this.projectSearchIndex = new ProjectSearchIndex(this.storage, {
       blobs: this.blobs,
       catalogClassIds: SEARCH_CATALOG_CLASS_IDS,
       nodeTitles: SEARCH_NODE_TITLES,
     });
     this.bindThumbnailWriter();
-    // Every encode pads by atlas status, so legacy Tilesets, Sprites and
-    // Sprite Animations must be decoded before anything is queued.
-    await registry.resolveLegacyAtlasReferrers();
-    const auto = this.loadedTextureSettings?.autoRequeueUncompressed ?? true;
-    if (auto) {
-      await registry.requeueUncompressedTextures();
-    }
+    // Opening a project only builds its catalog. Legacy metadata upgrades and
+    // bulk texture processing are explicit maintenance operations.
     registry.setAtlasStatusListener((guids) => {
       void this.reconcileTextureAlignment(guids);
     });
-    // Open and every remount recheck what is on disk now (nothing while
-    // source control is on).
-    void this.reconcileTextureAlignment();
     return registry;
   }
 
-  async syncPlugins(): Promise<void> {
+  async syncPlugins(options: { rediscover?: boolean } = {}): Promise<void> {
     const registry = this.assetRegistry;
     if (!registry) return;
-    const projectPlugins = await discoverProjectPlugins(this.storage);
-    const enginePlugins = this.enginePluginStorage
-      ? await discoverEnginePlugins(this.enginePluginStorage)
-      : [];
-    this.pluginDescriptors = shadowEnginePlugins(
-      projectPlugins,
-      enginePlugins,
-    );
+    if (options.rediscover !== false || !this.pluginDescriptorsCurrent) {
+      const projectPlugins = await discoverProjectPlugins(this.storage);
+      const enginePlugins = this.enginePluginStorage
+        ? await discoverEnginePlugins(this.enginePluginStorage)
+        : [];
+      this.pluginDescriptors = shadowEnginePlugins(
+        projectPlugins,
+        enginePlugins,
+      );
+      this.pluginDescriptorsCurrent = true;
+    }
     const enabledGuids = new Set(
       this.pluginDescriptors
         .filter((plugin) =>
@@ -1383,7 +1476,10 @@ export class ProjectService {
     overrides: Record<string, PluginEnableOverride>,
   ): Promise<void> {
     this.pluginOverrides = overrides;
-    await this.syncPlugins();
+    // Toggling a discovered plugin changes mounts, not plugin folders; an
+    // unknown guid may name a folder written since the last discovery.
+    const known = new Set(this.pluginDescriptors.map((plugin) => plugin.pluginGuid));
+    await this.syncPlugins({ rediscover: Object.keys(overrides).some((guid) => !known.has(guid)) });
     this.emitRegistryChange();
   }
 
@@ -1766,6 +1862,7 @@ export class ProjectService {
       appearance?: ProjectAppearance;
     },
   ): Promise<ProjectLoadResult> {
+    this.resetAssetLoading();
     const render: Partial<RenderProjectSettings> | undefined = renderOptions
       ? {
           customResolution: true,
@@ -1860,6 +1957,7 @@ export class ProjectService {
   async loadDocument(
     kind: Exclude<DocumentKind, "content-browser">,
     path: string,
+    options: { scope?: AssetLoadScope; signal?: AbortSignal } = {},
   ): Promise<
     | SerializedScene
     | SerializedSceneLayer
@@ -1880,7 +1978,7 @@ export class ProjectService {
       ? assetTypeForDocumentKind(kind)
       : "Class";
     const raw = isAssetDocumentPath(path)
-      ? await this.readAssetDocument(path, fallbackType)
+      ? await this.readAssetDocument(path, fallbackType, options)
       : await this.readLegacyJsonDocument(path, fallbackType);
 
     const migrated = loadPayloadWithMigration(this.migrations, {
@@ -1921,17 +2019,70 @@ export class ProjectService {
   private async readAssetDocument(
     path: string,
     fallbackType: string,
+    options: { scope?: AssetLoadScope; signal?: AbortSignal } = {},
   ): Promise<{ type: string; version: number; payload: Record<string, unknown> }> {
-    const decoded = await decodeAssetDocument(
-      await this.storageForPath(path).readBinary(path),
-      { blobs: this.blobsForPath(path) },
-    );
+    const decoded = await this.readSourceSnapshot(`Document ${path}`, options.signal,
+      () => this.readAssetDocumentAttempt(path, options));
     this.assetGuids.set(path, decoded.guid);
     return {
       type: decoded.type || fallbackType,
       version: decoded.version,
       payload: decoded.payload,
     };
+  }
+
+  /** Retry a complete read, never a mixture of chunk snapshots or project sessions. */
+  private async readSourceSnapshot<T>(label: string, signal: AbortSignal | undefined, read: () => Promise<T>): Promise<T> {
+    const session = this.sourceSession;
+    const check = () => {
+      signal?.throwIfAborted();
+      if (this.sourceSession !== session) throw new DOMException(`${label}: project changed during reading`, "AbortError");
+    };
+    for (let attempt = 1; ; attempt++) {
+      check();
+      try {
+        const value = await read();
+        check();
+        return value;
+      } catch (error) {
+        check();
+        if (!isAssetSourceRevisionChanged(error)) throw error;
+        if (attempt === 3) throw new Error(`${label} changed during 3 read attempts; wait for saving or processing to finish, then retry.`, { cause: error });
+      }
+    }
+  }
+
+  private async readAssetDocumentAttempt(
+    path: string,
+    options: { scope?: AssetLoadScope; signal?: AbortSignal },
+  ): Promise<AssetDocument> {
+    const indexed = this.assetRegistry?.getByPath(path);
+    let decoded: AssetDocument;
+    if (indexed && this.assetRegistry) {
+      const scope = options.scope ?? this.createAssetLoadScope(`Document Read: ${path}`);
+      try {
+        const loaded = await scope.acquireLatest<RegistryLoadedAsset>(`document:${indexed.header.guid}`, indexed.header.guid, undefined, {
+          dependencies: "none", signal: options.signal,
+        });
+        // Working copies preserve unsaved edits independently of cache eviction.
+        decoded = structuredClone(loaded.document);
+      } finally {
+        if (!options.scope) scope.dispose();
+      }
+    } else decoded = await this.readUnindexedAssetDocument(path, options.signal);
+    return decoded;
+  }
+
+  private async readUnindexedAssetDocument(path: string, signal?: AbortSignal): Promise<AssetDocument> {
+    const storage = this.storageForPath(path);
+    const blobs = this.blobsForPath(path);
+    const { header, locator } = await readAssetCatalog(storage, path, { signal });
+    const body = header.chunks.find((chunk) => chunk.id === DOCUMENT_CHUNK_ID);
+    const payload = body
+      ? JSON.parse(new TextDecoder().decode(await new AccountedPayloadLoader(storage, { blobs }).loadChunk(locator, body, blobs, storage, { signal }))) as Record<string, unknown>
+      : header.payload;
+    if (!body) await validateAssetSourceLocator(storage, locator, { signal });
+    return { guid: header.guid, type: header.type, name: header.name, version: header.version, payload };
   }
 
   /** Projects authored before assets moved to .babasset still load from JSON. */
@@ -2089,7 +2240,7 @@ export class ProjectService {
             ? (content as unknown as Record<string, unknown>)
             : undefined,
           headerMeta: headerMetaForSave(type, content),
-          dependencies: assetHeaderDependencies(
+          dependencyMetadata: assetHeaderDependencyMetadata(
             type,
             content as unknown as Record<string, unknown>,
             this.assetRegistry?.list(),
@@ -2128,15 +2279,49 @@ export class ProjectService {
   async readAssetChunk(
     path: string,
     chunkId: string,
+    options: { scope?: AssetLoadScope; signal?: AbortSignal; priority?: AssetLoadPriority } = {},
+  ): Promise<Uint8Array | null> {
+    return this.readSourceSnapshot(`Asset chunk ${path}#${chunkId}`, options.signal,
+      () => this.readAssetChunkAttempt(path, chunkId, options));
+  }
+
+  private async readAssetChunkAttempt(
+    path: string,
+    chunkId: string,
+    options: { scope?: AssetLoadScope; signal?: AbortSignal; priority?: AssetLoadPriority },
   ): Promise<Uint8Array | null> {
     const storage = this.storageForPath(path);
-    const blobs = this.blobsForPath(path);
     if (!(await storage.exists(path))) return null;
-    const decoded = await decodeBabasset(
-      await storage.readBinary(path),
-      (hash) => blobs.readBlob(hash),
-    );
-    return decoded.chunks.get(chunkId) ?? null;
+    const indexed = this.assetRegistry?.getByPath(path);
+    if (indexed && this.assetRegistry) {
+      if (!indexed.header.chunks.some((chunk) => chunk.id === chunkId)) return null;
+      const registry = this.assetRegistry;
+      const locator = await registry.getAssetLocator(indexed.header.guid, { signal: options.signal });
+      const sourceBytes = await registry.getChunkByteLength(indexed.header.guid, chunkId, locator.revision, { signal: options.signal });
+      const scope = options.scope ?? this.createAssetLoadScope(`Chunk Read: ${path}#${chunkId}`);
+      try {
+        return await scope.acquireLatest(`chunk:${indexed.header.guid}:${chunkId}`, indexed.header.guid, {
+          key: `chunk:${chunkId}`,
+          estimate: { sourceBytes, decodedBytes: 0, temporaryBytes: sourceBytes },
+          load: async (asset, signal) => {
+            signal.throwIfAborted();
+            if (asset.revision !== locator.revision || asset.rootId !== indexed.rootId) {
+              throw new SourceRevisionChangedError(`Asset ${indexed.header.guid} changed after estimating chunk ${chunkId}`);
+            }
+            const value = await registry.readChunk(indexed.header.guid, chunkId, locator.revision, { signal });
+            signal.throwIfAborted();
+            return { value, sourceBytes: value.byteLength, decodedBytes: 0 };
+          },
+        }, { dependencies: "none", signal: options.signal, priority: options.priority });
+      } finally {
+        if (!options.scope) scope.dispose();
+      }
+    }
+    const { header, locator } = await readAssetCatalog(storage, path, { signal: options.signal });
+    const entry = header.chunks.find((chunk) => chunk.id === chunkId);
+    if (!entry) return null;
+    const blobs = this.blobsForPath(path);
+    return new AccountedPayloadLoader(storage, { blobs }).loadChunk(locator, entry, blobs, storage, { signal: options.signal });
   }
 
   /** Every Scene payload write must keep only probes matching that geometry. */
@@ -2192,7 +2377,7 @@ export class ProjectService {
         blobs: this.blobsForPath(path),
         extraChunks: extra,
         parentClass: existing?.parentClass ?? null,
-        dependencies: assetHeaderDependencies(type, payload, this.assetRegistry?.list()),
+        dependencyMetadata: assetHeaderDependencyMetadata(type, payload, this.assetRegistry?.list()),
       },
     );
     await storage.writeBinary(path, encoded);
@@ -2296,7 +2481,7 @@ export class ProjectService {
         parentClass: existing?.parentClass ?? null,
         headerPayload: storeInHeader ? payload : undefined,
         headerMeta: headerMetaForSave(type, payload),
-        dependencies: assetHeaderDependencies(type, payload, this.assetRegistry?.list(), existing?.parentClass),
+        dependencyMetadata: assetHeaderDependencyMetadata(type, payload, this.assetRegistry?.list(), existing?.parentClass),
       },
     );
     await storage.writeBinary(path, encoded);

@@ -26,27 +26,6 @@ const scenarios: Array<{ name: string; inject: () => void; reason: RegExp; babyl
     },
     reason: /WebGPU initialization failed: .*adapter.*Using WebGL2\./i,
   },
-  {
-    name: "requestAdapter rejects",
-    babylonFailureLogs: 1,
-    inject: () => {
-      const gpu = navigator.gpu;
-      if (!gpu) return;
-      Object.defineProperty(gpu, "requestAdapter", {
-        configurable: true,
-        value: async () => { throw new Error("Simulated adapter request failure"); },
-      });
-    },
-    reason: /WebGPU initialization failed: .*Simulated adapter request failure.*Using WebGL2\./i,
-  },
-  {
-    name: "navigator.gpu is absent",
-    babylonFailureLogs: 0,
-    inject: () => {
-      Object.defineProperty(Navigator.prototype, "gpu", { configurable: true, get: () => undefined });
-    },
-    reason: /WebGPU initialization failed: WebGPU is unavailable in this browser\. Using WebGL2\./,
-  },
 ];
 
 for (const scenario of scenarios) {

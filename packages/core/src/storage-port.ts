@@ -19,8 +19,39 @@ export interface FileStat {
   mtime: number | null;
 }
 
+/** Exact bounded read. A revision is opaque and scoped to a project and path. */
+export interface StorageRangeRead {
+  bytes: Uint8Array;
+  totalSize: number;
+  revision: string;
+  /** Bytes actually returned by the underlying filesystem/transport, before slicing. */
+  actualBytesRead: number;
+}
+
+/** Retryable snapshot invalidation; malformed files and invalid ranges use other errors. */
+export class SourceRevisionChangedError extends Error {
+  readonly code = "source-revision-changed";
+  constructor(message: string) {
+    super(message);
+    this.name = "SourceRevisionChangedError";
+  }
+}
+
+export interface StorageReadMetrics {
+  operations: number;
+  fullReads: number;
+  rangeReads: number;
+  requestedBytes: number;
+  actualBytesRead: number;
+}
+
+export interface StorageReadOptions {
+  /** Abort network transport and body consumption. Non-interruptible local I/O settles before its caller releases reservations. */
+  signal?: AbortSignal;
+}
+
 /** Read-only view whose path lookup cache may live for one caller operation. */
-export type ProjectStorageReader = Pick<ProjectStorage, "readText" | "readBinary" | "exists" | "readdir" | "stat">;
+export type ProjectStorageReader = Pick<ProjectStorage, "readText" | "readBinary" | "readBinaryRange" | "hasStrongSourceRevisions" | "getReadMetrics" | "exists" | "readdir" | "stat">;
 
 /**
  * Binary-capable project filesystem. UI never calls Capacitor directly.
@@ -54,9 +85,20 @@ export interface ProjectStorage {
   /** Optional directory-lookup reuse for scans; not a transactional file snapshot. */
   withReadScope?<T>(operation: (storage: ProjectStorageReader) => Promise<T>): Promise<T>;
 
-  readText(path: string): Promise<string>;
+  readText(path: string, options?: StorageReadOptions): Promise<string>;
   writeText(path: string, data: string): Promise<void>;
-  readBinary(path: string): Promise<Uint8Array>;
+  readBinary(path: string, options?: StorageReadOptions): Promise<Uint8Array>;
+  /** Read exactly length bytes; reject invalid bounds or a changed expected revision. Never fall back to a full read. */
+  readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string, options?: StorageReadOptions): Promise<StorageRangeRead>;
+  /**
+   * True only when range revisions cannot alias different file contents (for
+   * example immutable catalog hashes or owned in-memory write generations).
+   * Filesystem timestamps alone do not establish this, regardless of precision.
+   * Readers of mutable catalogs must refresh bounded metadata when omitted/false.
+   */
+  readonly hasStrongSourceRevisions?: boolean;
+  /** Cumulative I/O at this adapter's boundary; counters do not measure retained memory. */
+  getReadMetrics?(): StorageReadMetrics;
   writeBinary(path: string, data: Uint8Array): Promise<void>;
   exists(path: string): Promise<boolean>;
   readdir(path: string): Promise<DirEntry[]>;

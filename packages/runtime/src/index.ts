@@ -54,3 +54,6 @@ export {
 } from "./script-host";
 
 export { RuntimeDataCatalog, dataTypeSchemas, type RuntimeDataApi } from "./data-catalog";
+export { createSceneSourceClient, createSceneSourceHost, type AcquireRuntimeScene, type RuntimeSceneSource } from "./scene-source";
+
+export { applyRuntimeSourceControl } from "./source-content-control";

@@ -150,7 +150,7 @@ export async function captureAssetThumbnailPng(
     } else {
       host.mesh.isVisible = false;
       host.scene.shadowsEnabled = false;
-      sync = new EditorSceneSync(host.scene, undefined, { resolveMaterial, freezeActiveMeshes: false });
+      sync = new EditorSceneSync(host.scene, undefined, { resolveMaterial, freezeActiveMeshes: false, preparationPriority: "background" });
       // Simplifying imported models for automatic LOD would repeat expensive
       // work for a single 128px frame; thumbnail Scenes have no distant views.
       const modelPayloads = request.assets?.modelPayloads && new Map(

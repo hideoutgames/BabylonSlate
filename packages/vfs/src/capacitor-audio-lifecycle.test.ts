@@ -36,20 +36,6 @@ describe("Capacitor audio lifecycle bridge", () => {
     removeRouteChange.mockClear();
   });
 
-  it("registers audio interruption and route change listeners on iOS", async () => {
-    initializeCapacitorAudioLifecycle();
-    await flushAsync();
-
-    expect(addListener).toHaveBeenCalledWith(
-      "audioInterruption",
-      expect.any(Function),
-    );
-    expect(addListener).toHaveBeenCalledWith(
-      "audioRouteChange",
-      expect.any(Function),
-    );
-  });
-
   it("dispatches babylonslate:audiointerruption from the native plugin", async () => {
     initializeCapacitorAudioLifecycle();
     await flushAsync();

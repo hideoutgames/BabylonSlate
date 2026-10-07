@@ -1,3 +1,5 @@
+import { rethrowStorageReadFailure, StorageReadCounter, validateStorageRange, validateStorageRangeResult } from "./storage-range";
+import { SourceRevisionChangedError } from "@babylonslate/core";
 import type {
   DirEntry,
   FileStat,
@@ -20,6 +22,9 @@ function toBuffer(data: Uint8Array): ArrayBuffer {
  * The main process backs this with `NodeStorageAdapter`.
  */
 export class ElectronStorageAdapter implements ProjectStorage {
+  private readonly reads = new StorageReadCounter();
+  getReadMetrics() { return this.reads.snapshot(); }
+
   private folder: ProjectFolderHandle | null = null;
   private readonly bridge: ElectronProjectBridge | null;
 
@@ -66,7 +71,22 @@ export class ElectronStorageAdapter implements ProjectStorage {
   }
 
   async readBinary(path: string): Promise<Uint8Array> {
-    return new Uint8Array(await this.requireBridge().readBinary(path));
+    const bytes = new Uint8Array(await this.requireBridge().readBinary(path));
+    this.reads.record("full", bytes.byteLength);
+    return bytes;
+  }
+
+  async readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string) {
+    validateStorageRange(offset, length);
+    const result = await this.reads.range(length, () => this.requireBridge().readBinaryRange(path, offset, length, expectedRevision));
+    try {
+      if (result.error !== undefined) {
+        throw result.errorCode === "source-revision-changed"
+          ? new SourceRevisionChangedError(result.error)
+          : new Error(result.error);
+      }
+      return validateStorageRangeResult(path, offset, length, { ...result, bytes: new Uint8Array(result.bytes) }, expectedRevision);
+    } catch (error) { rethrowStorageReadFailure(error, result.actualBytesRead); }
   }
 
   async writeBinary(path: string, data: Uint8Array): Promise<void> {
