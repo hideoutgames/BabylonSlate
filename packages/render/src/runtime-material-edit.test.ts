@@ -4,10 +4,20 @@ import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { MaterialLibrary, ownedMaterialPreparation } from "./material-library";
 import { applyAssignMaterial, createSnapshotSceneBinding } from "./snapshot-apply";
 import { RuntimeMaterialEditOwner, type RuntimeMaterialPreparationRequest } from "./runtime-material-edit";
-import { drainFinalAuthoringResources } from "./final-authoring-drain";
+import { drainFinalAuthoringResources, waitForFinalAuthoringPreparation } from "./final-authoring-drain";
 
 const disposers: (() => void)[] = [];
 afterEach(() => { while (disposers.length) disposers.pop()?.(); });
+
+it("releases a final-capture wait when native material preparation never settles", async () => {
+  const abort = new AbortController();
+  const pending = waitForFinalAuthoringPreparation(new Promise<void>(() => {}), abort.signal);
+  const rejected = expect(pending).rejects.toThrow("Capture timed out");
+  abort.abort(new Error("Capture timed out"));
+  await rejected;
+  // Releasing the wait is not native disposal, and does not poison a later owner.
+  await expect(waitForFinalAuthoringPreparation(Promise.resolve("ready"), new AbortController().signal)).resolves.toBe("ready");
+});
 async function fixture(textureOptions?: ConstructorParameters<typeof MaterialLibrary>[0]) {
   const engine = new NullEngine();
   const scene = new Scene(engine);

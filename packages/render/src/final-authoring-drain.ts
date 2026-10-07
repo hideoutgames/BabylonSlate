@@ -3,6 +3,19 @@ import { MaterialLibrary, ownedMaterialPreparation } from "./material-library";
 import { componentIdForPlayMesh, wantsOverlayUnlitMaterial, type SnapshotSceneBinding } from "./snapshot-apply";
 import { prepareSceneStream } from "./scene-stream-preparation";
 
+/** Cancel the capture wait, without claiming the underlying native work ended. */
+export async function waitForFinalAuthoringPreparation<T>(work: Promise<T> | undefined, signal: AbortSignal): Promise<T | undefined> {
+  signal.throwIfAborted();
+  if (!work) return undefined;
+  let abort!: () => void;
+  const cancelled = new Promise<never>((_resolve, reject) => {
+    abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+  });
+  try { return await Promise.race([work, cancelled]); }
+  finally { signal.removeEventListener("abort", abort); }
+}
+
 /** Explicit Keep-only resource fence. The caller has already processed every
  * command preceding the runtime quiesce acknowledgment. This does not render,
  * tick the world, or substitute a diagnostic snapshot for owner state. */
@@ -33,7 +46,7 @@ export async function drainFinalAuthoringResources(scene: Scene, binding: Snapsh
       if (!material) throw new Error(`Material ${guid} on actor slot ${slot} has no complete native owner.`);
       if (!prepared.has(material)) {
         prepared.add(material);
-        const diagnostics = await ownedMaterialPreparation(material);
+        const diagnostics = await waitForFinalAuthoringPreparation(ownedMaterialPreparation(material), options.signal);
         options.assertCurrent();
         options.signal.throwIfAborted();
         if (diagnostics?.length) throw new Error(`Material ${guid}: ${diagnostics.map(entry => entry.message).join("; ")}`);

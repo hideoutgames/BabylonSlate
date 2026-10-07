@@ -972,7 +972,10 @@ export function startPlaySession(options: {
       abort.signal.throwIfAborted();
       acknowledgedPaused = true;
       handle.setGameTimePaused(true);
-      const rendered = await handle.quiesceAuthoringRevision(boundary.commandRevision, abort.signal);
+      const drainTimer = setTimeout(() => abort.abort(new Error("Final render-owned resources did not settle within 30 seconds. Retry or Discard the Simulation changes.")), 30_000);
+      let rendered: { commandRevision: number };
+      try { rendered = await handle.quiesceAuthoringRevision(boundary.commandRevision, abort.signal); }
+      finally { clearTimeout(drainTimer); }
       if (captureFenceChanged) throw new Error("A render-owned property changed after the final Simulation boundary.");
       const result = await captureClient.capture(rendered.commandRevision, maxBytes);
       abort.signal.throwIfAborted();
