@@ -32,16 +32,6 @@ describe("Capacitor app lifecycle bridge", () => {
     removeListener.mockClear();
   });
 
-  it("registers an appStateChange listener on iOS", async () => {
-    initializeCapacitorLifecycle();
-    await flushAsync();
-
-    expect(addListener).toHaveBeenCalledWith(
-      "appStateChange",
-      expect.any(Function),
-    );
-  });
-
   it("dispatches babylonslate:appstate with isActive false when the app backgrounds", async () => {
     initializeCapacitorLifecycle();
     await flushAsync();

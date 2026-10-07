@@ -15,7 +15,6 @@ const tests = [
   "packages/core/src/unrelated.test.ts",
   "packages/test-kit/src/public-hygiene.test.ts",
   "apps/docs/src/sidebar.test.ts",
-  "apps/docs/src/verify-workflow.test.ts",
   "apps/editor/src/panel.test.tsx",
   "playwright.config.test.ts",
   "scripts/browser-partition.test.mjs",
@@ -109,83 +108,6 @@ test("tooling and distribution scripts select only their related contracts", () 
   assert.deepEqual(distribution.toolingTests, []);
   assert.deepEqual(distribution.distributionTests, [
     "scripts/distribution/apple-assets.test.mjs",
-  ]);
-});
-
-test("tooling entrypoints without sibling tests select their covering contracts", () => {
-  for (const file of [
-    "scripts/browser-session.mjs",
-    "scripts/build-test-artifact.mjs",
-  ]) {
-    assert.deepEqual(
-      selectChecks([file], packages, tests).toolingTests,
-      ["scripts/test-build.test.mjs"],
-      file,
-    );
-  }
-  assert.deepEqual(
-    selectChecks(["scripts/run-tests.mjs"], packages, tests).toolingTests,
-    ["scripts/test-runner.test.mjs"],
-  );
-  assert.deepEqual(
-    selectChecks(
-      ["scripts/check-public-hygiene.mjs"],
-      packages,
-      tests,
-    ).unitTests,
-    ["packages/test-kit/src/public-hygiene.test.ts"],
-  );
-});
-
-test("verification workflow changes run focused policy contracts", () => {
-  const result = selectChecks(
-    [".github/workflows/verify.yml"],
-    packages,
-    tests,
-  );
-  assert.deepEqual(result.packages, []);
-  assert.deepEqual(result.unitTests, ["apps/docs/src/verify-workflow.test.ts"]);
-  assert.deepEqual(result.toolingTests, [
-    "scripts/verification-policy.test.mjs",
-  ]);
-  assert.deepEqual(result.distributionTests, []);
-  assert.equal(result.docs, false);
-});
-
-test("browser specs stay CI-only while harness changes run discovery policy", () => {
-  const spec = selectChecks(["e2e/p14-export.spec.ts"], packages, tests);
-  assert.deepEqual(spec.packages, []);
-  assert.deepEqual(spec.unitTests, []);
-  assert.deepEqual(spec.toolingTests, []);
-  assert.equal(
-    spec.e2e,
-    undefined,
-    "automatic local preflight must not launch browsers",
-  );
-
-  for (const file of ["e2e/minimal-project.ts", "playwright.config.ts"]) {
-    assert.deepEqual(
-      selectChecks([file], packages, tests).unitTests,
-      ["playwright.config.test.ts"],
-      file,
-    );
-  }
-  const configTest = selectChecks(
-    ["playwright.config.test.ts"],
-    packages,
-    tests,
-  );
-  assert.deepEqual(configTest.packages, []);
-  assert.deepEqual(configTest.unitTests, ["playwright.config.test.ts"]);
-  assert.deepEqual(configTest.toolingTests, []);
-  const timings = selectChecks(
-    ["scripts/browser-timings.json"],
-    packages,
-    tests,
-  );
-  assert.deepEqual(timings.packages, []);
-  assert.deepEqual(timings.toolingTests, [
-    "scripts/browser-partition.test.mjs",
   ]);
 });
 

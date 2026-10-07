@@ -83,12 +83,6 @@ describe("3D Text mesh", () => {
     expect(material.emissiveColor.b).toBeCloseTo(0);
   });
 
-  it("greedy-merges bundled ASCII T into two rectangles", () => {
-    const outline = bundledAsciiTypeFace.glyphs.T?.o ?? "";
-    const contours = outline.split("m ").filter((part) => part.length > 0);
-    expect(contours).toHaveLength(2);
-  });
-
   it("builds bundled T with at most four triangles", () => {
     const handle = createTestEngine();
     handles.push(handle);

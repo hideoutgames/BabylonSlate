@@ -171,7 +171,13 @@ describe("P19 behaviour tree task hosts", () => {
     runtime.stop();
   });
 
-  it("Play Animation fails when the clip guid is missing from the catalog", () => {
+  it.each([
+    ["the clip guid is missing from the catalog", []],
+    [
+      "catalog durationMs is not positive",
+      [{ guid: "missing", type: "Animation", name: "Walk", clipName: "Walk", durationMs: 0 }],
+    ],
+  ] as const)("Play Animation fails when %s", (_reason, animClipCatalog) => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
@@ -184,7 +190,7 @@ describe("P19 behaviour tree task hosts", () => {
           clipAssetGuid: "missing",
         }),
       },
-      animClipCatalog: [],
+      animClipCatalog: [...animClipCatalog],
       onCommand: (command) => commands.push(command),
     });
     runtime.start();
@@ -434,40 +440,6 @@ describe("P19 behaviour tree task hosts", () => {
     expect(euler[0]).toBeCloseTo(0, 4);
     expect(euler[1]).toBeCloseTo(0, 4);
     expect(euler[2]).toBeCloseTo(90, 4);
-    runtime.stop();
-  });
-
-  it("Play Animation fails when catalog durationMs is not positive", () => {
-    const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({
-      seed: 1,
-      maxActors: 4,
-      seedDemoActors: false,
-      playScene: hostScene(),
-      behaviourTrees: {
-        "tree-1": leafTree("anim", "bt.task.playAnimation", {
-          clipKind: "animation",
-          clipAssetGuid: "walk-1",
-        }),
-      },
-      animClipCatalog: [
-        {
-          guid: "walk-1",
-          type: "Animation",
-          name: "Walk",
-          clipName: "Walk",
-          durationMs: 0,
-        },
-      ],
-      onCommand: (command) => commands.push(command),
-    });
-    runtime.start();
-    runtime.realizePlayWorld();
-    runtime.tick();
-    expect(commands.filter((command) => command.type === "animState")).toEqual([]);
-    expect(
-      commands.filter((command) => command.type === "btState").at(-1),
-    ).toMatchObject({ status: "failure" });
     runtime.stop();
   });
 

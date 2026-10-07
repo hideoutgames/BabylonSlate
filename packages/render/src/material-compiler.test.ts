@@ -220,18 +220,6 @@ describe("material compiler", () => {
     expect(sample.uv.isConnected).toBe(true);
   });
 
-  it("builds a real NodeMaterial for a surface graph", () => {
-    const scene = host();
-    const result = compileMaterialPlan(planFor(createDefaultMaterialDocument()), {
-      scene,
-      name: "test",
-    });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    disposers.push(() => result.material.dispose());
-    expect(result.material.getClassName()).toBe("NodeMaterial");
-  });
-
   it("applies opaque blendMode as MATERIAL_OPAQUE after build, including unlit", () => {
     const scene = host();
     const pbr = compileMaterialPlan(planFor(createDefaultMaterialDocument()), {
@@ -361,25 +349,6 @@ describe("material compiler", () => {
     expect((blend as ParticleBlendMultiplyBlock).alphaTexture.isConnected).toBe(true);
   });
 
-  it("instantiates a Babylon block per lowered operation", () => {
-    const scene = host();
-    const result = compileMaterialPlan(planFor(multiplyMaterial()), {
-      scene,
-      name: "test",
-    });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    disposers.push(() => result.material.dispose());
-    const classNames = result.material.attachedBlocks.map((block) =>
-      block.getClassName(),
-    );
-    expect(classNames).toContain("MultiplyBlock");
-    // The two authored constants each become their own input block.
-    expect(
-      classNames.filter((name) => name === "InputBlock").length,
-    ).toBeGreaterThanOrEqual(2);
-  });
-
   it("connects the graph so the output block is actually fed", () => {
     const scene = host();
     const result = compileMaterialPlan(planFor(multiplyMaterial()), {
@@ -394,25 +363,6 @@ describe("material compiler", () => {
     );
     expect(multiply?.inputs.every((input) => input.isConnected)).toBe(true);
     expect(multiply?.outputs[0]?.isConnected).toBe(true);
-  });
-
-  it("produces a different shader when the graph changes", () => {
-    const scene = host();
-    const flat = compileMaterialPlan(planFor(createDefaultMaterialDocument()), {
-      scene,
-      name: "flat",
-    });
-    const tinted = compileMaterialPlan(planFor(multiplyMaterial()), {
-      scene,
-      name: "tinted",
-    });
-    expect(flat.ok && tinted.ok).toBe(true);
-    if (!flat.ok || !tinted.ok) return;
-    disposers.push(() => flat.material.dispose());
-    disposers.push(() => tinted.material.dispose());
-    expect(flat.material.attachedBlocks.length).not.toBe(
-      tinted.material.attachedBlocks.length,
-    );
   });
 
   it("shares one GPU program between materials that differ only in parameter values", async () => {

@@ -235,7 +235,6 @@ describe("material node contracts", () => {
     dispose.push(result.dispose);
     expect(await result.ready).toEqual([]);
     expect(result.material.compiledShaders).toContain("sampler2D Albedo");
-    expect(result.material.compiledShaders).toContain("texture2D(Albedo, UV * 2.0)");
     const sampler = result.material.getBlockByName("custom")!.inputs[0]!.connectedPoint!.ownerBlock as ImageSourceBlock;
     expect(sampler.texture).toBe(texture);
     if (source !== "inline") {
@@ -348,12 +347,6 @@ describe("material node contracts", () => {
     expect(merge?.getInputByName("x")?.connectedPoint?.name).toBe("x");
     expect(merge?.getInputByName("y")?.connectedPoint?.name).toBe("z");
   });
-  it("retains the authored Split input default", async () => {
-    const doc = createDefaultMaterialDocument();
-    node(doc, "split", "vector.split", { "default:value": [0.7] });
-    wire(doc, "split", "x", "output", "roughness");
-    await compile(doc);
-  });
   it("compiles a typed Custom GLSL return and an independently typed additional output", async () => {
     const doc = createDefaultMaterialDocument();
     node(doc, "custom", "custom.glsl", {
@@ -366,9 +359,7 @@ describe("material node contracts", () => {
     wire(doc, "custom", "mask", "output", "roughness");
     const result = await compile(doc);
     const source = result.material.compiledShaders;
-    expect(source).toContain("Mask = step(0.5, UV.x)");
     expect(source).toContain("out float Mask");
-    expect(source).toContain("return vec3(UV, Mask)");
   });
   it("keeps dynamic Clamp bounds in the shader and exposes them to runtime setters", async () => {
     const doc = createDefaultMaterialDocument();

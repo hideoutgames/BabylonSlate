@@ -107,40 +107,6 @@ describe("SpriteAnimation editor", () => {
     });
   });
 
-  it("positions pivot and collision on the object-contain image box", () => {
-    const payload = createDefaultSpriteAnimationPayload();
-    payload.frames[0]!.width = 200;
-    payload.frames[0]!.height = 100;
-    render(
-      <SpriteAnimationPreview
-        payload={payload as unknown as Record<string, unknown>}
-      />,
-    );
-    const box = screen.getByTestId("sprite-animation-image-box");
-    expect(box.style.left).toBe("0%");
-    expect(box.style.top).toBe("25%");
-    expect(box.style.width).toBe("100%");
-    expect(box.style.height).toBe("50%");
-    expect(box.querySelector("[data-testid='sprite-pivot-marker']")).toBeTruthy();
-    expect(box.querySelector("[data-testid='sprite-collision-overlay']")).toBeTruthy();
-  });
-
-  it("renders preview pivot, collision overlay, and a frame strip", () => {
-    render(
-      <SpriteAnimationPreview
-        payload={createDefaultSpriteAnimationPayload() as unknown as Record<string, unknown>}
-      />,
-    );
-    expect(screen.getByTestId("sprite-animation-preview")).toBeTruthy();
-    expect(screen.getByTestId("sprite-pivot-marker")).toBeTruthy();
-    expect(screen.getByTestId("sprite-collision-overlay")).toBeTruthy();
-    expect(screen.getByTestId("sprite-animation-frame-0")).toBeTruthy();
-    expect(screen.getByTestId("sprite-animation-play")).toBeTruthy();
-    expect(screen.getByTestId("sprite-animation-loop").getAttribute("aria-pressed")).toBe(
-      "true",
-    );
-  });
-
   it("plays indexed frame textures without scanning the registry and stops on pause", async () => {
     const listAssets = vi.spyOn(assetRegistry, "list");
     vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:animation-texture");

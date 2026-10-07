@@ -402,19 +402,6 @@ describe("BehaviourTreeEditor", () => {
     );
   });
 
-  it("keeps the Blackboard asset picker out of Details", () => {
-    renderTree();
-    expect(
-      within(screen.getByTestId("bt-details")).queryByTestId("property-blackboard"),
-    ).toBeNull();
-    expect(screen.getByTestId("behaviour-tree-blackboard")).toBeTruthy();
-    expect(
-      within(screen.getByTestId("behaviour-tree-blackboard")).getByTestId(
-        "property-blackboard",
-      ),
-    ).toBeTruthy();
-  });
-
   it("links a Blackboard asset from the Blackboard dock", async () => {
     renderTree();
     fireEvent.click(

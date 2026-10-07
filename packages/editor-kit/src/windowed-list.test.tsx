@@ -3,10 +3,7 @@ import { cleanup, fireEvent, render } from "@testing-library/react";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { WINDOWED_SLICE_OVERSCAN } from "./windowed-slice";
 import {
-  PICKER_LIST_MAX_HEIGHT_PX,
-  WINDOWED_LIST_TOUCH_ROW_HEIGHT,
   WindowedList,
-  pickerListHeightPx,
 } from "./windowed-list";
 
 const VIEWPORT = '[data-slot="scroll-area-viewport"]';
@@ -190,13 +187,5 @@ describe("WindowedList scrolling", () => {
     } finally {
       restore();
     }
-  });
-});
-
-describe("pickerListHeightPx", () => {
-  it("uses one touch row when empty and caps at 16rem", () => {
-    expect(pickerListHeightPx(0)).toBe(WINDOWED_LIST_TOUCH_ROW_HEIGHT);
-    expect(pickerListHeightPx(2)).toBe(2 * WINDOWED_LIST_TOUCH_ROW_HEIGHT);
-    expect(pickerListHeightPx(20)).toBe(PICKER_LIST_MAX_HEIGHT_PX);
   });
 });

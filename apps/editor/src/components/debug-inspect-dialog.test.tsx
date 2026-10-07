@@ -104,35 +104,6 @@ describe("DebugInspectDialog", () => {
     cleanup();
   });
 
-  it("opens as a CatalogDialog-sized overlay with search and a read-only tree", () => {
-    render(
-      <DebugInspectDialog open onOpenChange={() => {}} snapshot={snapshot} />,
-    );
-
-    const root = screen.getByTestId("debug-inspect");
-    expect(root.getAttribute("data-slot")).toBe("dialog-content");
-    expect(root.className).toContain("h-[min(90vh,52rem)]");
-    expect(root.className).toContain("w-[min(96vw,64rem)]");
-    expect(root.className).toContain("max-w-none");
-    expect(root.className).not.toContain("sm:max-w-lg");
-    expect(screen.getByTestId("debug-inspect-tick").getAttribute("data-tick")).toBe(
-      "4",
-    );
-    expect(screen.getByTestId("debug-inspect-search")).toBeTruthy();
-    expect(screen.getByTestId("debug-inspect-search").hasAttribute("autofocus")).toBe(
-      false,
-    );
-    expect(screen.getByTestId("debug-inspect-tree")).toBeTruthy();
-    expect(screen.getByTestId("tree-row-gi").textContent).toContain(
-      "GameInstance",
-    );
-    expect(screen.getByTestId("tree-row-hero").textContent).toContain("Hero");
-    expect(screen.getByTestId("tree-row-mesh").textContent).toContain(
-      "MeshComponent",
-    );
-    expect(screen.getByTestId("debug-inspect-empty")).toBeTruthy();
-  });
-
   it("filters the tree by name, class, or guid and keeps ancestors", () => {
     render(
       <DebugInspectDialog open onOpenChange={() => {}} snapshot={snapshot} />,

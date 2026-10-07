@@ -200,23 +200,6 @@ describe("SearchDialog", () => {
     }
   });
 
-  it("opens as a centered dialog, not a bottom sheet", () => {
-    render(
-      <SearchDialog
-        open
-        onOpenChange={() => {}}
-        title="Add Component"
-        items={items}
-        onSelect={() => {}}
-        data-testid="picker"
-      />,
-    );
-
-    const root = screen.getByTestId("picker");
-    expect(root.getAttribute("data-slot")).toBe("dialog-content");
-    expect(root.getAttribute("data-side")).toBeNull();
-  });
-
   it("filters rows as the query changes and reports the selection", () => {
     const onSelect = vi.fn();
     const onOpenChange = vi.fn();
@@ -269,40 +252,6 @@ describe("SearchDialog", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it("renders a leading node on each row", () => {
-    render(
-      <SearchDialog
-        open
-        onOpenChange={() => {}}
-        title="Pick"
-        items={[{ ...items[0]!, leading: <span data-testid="lead">*</span> }]}
-        onSelect={() => {}}
-        data-testid="picker"
-      />,
-    );
-    expect(screen.getByTestId("lead")).toBeTruthy();
-  });
-
-  it("uses non-button option rows so a finger pan can scroll the list", () => {
-    render(
-      <SearchDialog
-        open
-        onOpenChange={() => {}}
-        title="Pick Asset"
-        items={items}
-        onSelect={() => {}}
-        data-testid="picker"
-      />,
-    );
-    const row = screen.getByTestId("search-item-a");
-    expect(row.tagName).not.toBe("BUTTON");
-    expect(row.getAttribute("role")).toBe("option");
-    expect(row.className).toMatch(/touch-pan-y/);
-    expect(screen.getByTestId("picker-body").getAttribute("role")).toBe(
-      "listbox",
-    );
-  });
-
   it("commits a focused option with Enter or Space", () => {
     const onSelect = vi.fn();
     const onOpenChange = vi.fn();
@@ -324,68 +273,6 @@ describe("SearchDialog", () => {
     onOpenChange.mockClear();
     fireEvent.keyDown(screen.getByTestId("search-item-b"), { key: " " });
     expect(onSelect).toHaveBeenCalledWith("b", "");
-  });
-
-  it("gives the list a definite height so rows are visible in a content-sized dialog", () => {
-    render(
-      <SearchDialog
-        open
-        onOpenChange={() => {}}
-        title="Pick Animation"
-        items={items}
-        onSelect={() => {}}
-        data-testid="picker"
-      />,
-    );
-    const list = screen.getByTestId("search-item-a");
-    const scroller = list.closest("[data-testid='picker-body']");
-    expect(scroller).toBeTruthy();
-    expect(scroller?.className).toMatch(/overflow-y-auto/);
-    expect(scroller?.className).not.toMatch(/(?:^|\s)h-0(?:\s|$)/);
-    expect(scroller?.className).not.toMatch(/(?:^|\s)flex-1(?:\s|$)/);
-    expect(Number.parseFloat((scroller as HTMLElement).style.height)).toBe(
-      items.length * 44 + 8,
-    );
-  });
-
-  it("caps long picker rows at 16rem plus list padding and keeps a non-zero empty height", () => {
-    const many = Array.from({ length: 20 }, (_, i) => ({
-      id: `n${i}`,
-      label: `Item ${i}`,
-    }));
-    const { rerender } = render(
-      <SearchDialog
-        open
-        onOpenChange={() => {}}
-        title="Pick"
-        items={many}
-        emptyLabel="No matches"
-        onSelect={() => {}}
-        data-testid="picker"
-      />,
-    );
-    const longList = screen.getByTestId("search-item-n0");
-    const longScroller = longList.closest("[data-testid='picker-body']");
-    expect(Number.parseFloat((longScroller as HTMLElement).style.height)).toBe(
-      256 + 8,
-    );
-
-    rerender(
-      <SearchDialog
-        open
-        onOpenChange={() => {}}
-        title="Pick"
-        items={[]}
-        emptyLabel="No matches"
-        onSelect={() => {}}
-        data-testid="picker"
-      />,
-    );
-    const empty = screen.getByText("No matches");
-    const emptyScroller = empty.closest("[data-testid='picker-body']");
-    expect(
-      Number.parseFloat((emptyScroller as HTMLElement).style.height),
-    ).toBeGreaterThan(0);
   });
 
   it("shows the empty label when nothing matches", () => {

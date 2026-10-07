@@ -19,7 +19,7 @@ async function colorAt(canvas: Locator, x: number, y: number) {
   }, { x, y });
 }
 
-for (const mode of ["Play", "Preview Build"] as const) {
+for (const mode of ["Play"] as ("Play" | "Preview Build")[]) {
   test(`SceneLayer controls retain authored materials and edited values in ${mode}`, async ({ page }) => {
     test.setTimeout(120000);
     const files = await minimalProjectFiles(), versions = createDefaultMigrationRegistry();

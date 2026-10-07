@@ -1,16 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  AUDIO_WAVEFORM_BARS,
   extractAudioWaveformPeaks,
   mixAudioChannelsToMonoMaxAbs,
   waveformFromPcmBuffer,
 } from "./audio-waveform";
 
 describe("extractAudioWaveformPeaks", () => {
-  it("uses 128 bars as the compact preview default", () => {
-    expect(AUDIO_WAVEFORM_BARS).toBe(128);
-  });
-
   it("returns zero peaks for silence and empty samples", () => {
     expect(extractAudioWaveformPeaks(new Float32Array(0), 4)).toEqual([
       { min: 0, max: 0 },

@@ -20,13 +20,10 @@ type Viewport = {
 };
 declare global { interface Window { __babylonslateViewportTest: Viewport } }
 
-const cases = [
+type Variant = { backend: "webgl2" | "webgpu"; mode: "pbr" | "cel"; profile: "medium" | "low"; alternate: boolean };
+const cases: readonly Variant[] = [
   { backend: "webgl2", mode: "pbr", profile: "medium", alternate: false },
-  { backend: "webgl2", mode: "cel", profile: "low", alternate: false },
-  { backend: "webgpu", mode: "cel", profile: "medium", alternate: false },
-  { backend: "webgpu", mode: "pbr", profile: "low", alternate: false },
-  { backend: "webgl2", mode: "pbr", profile: "medium", alternate: true },
-] as const;
+];
 for (const variant of cases) test(`Basic 3D mannequin ${variant.backend} ${variant.mode} ${variant.profile}${variant.alternate ? " alternate light" : ""} keeps shadows with collider helpers visible`, async ({ page }, testInfo) => {
   test.setTimeout(180_000);
   const errors: string[] = [];

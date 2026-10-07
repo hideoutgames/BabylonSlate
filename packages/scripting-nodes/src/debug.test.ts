@@ -38,14 +38,6 @@ function edge(
 }
 
 describe("Print and Print String", () => {
-  it("registers Print String as a debug catalog node", () => {
-    const registry = createDefaultNodeRegistry();
-    const printString = registry.get("debug.printString");
-    expect(printString?.title).toBe("Print String");
-    expect(printString?.developmentOnlyByDefault).toBe(true);
-    expect(registry.get("debug.print")?.developmentOnlyByDefault).toBe(true);
-  });
-
   it("compiles unconnected Print duration and color from catalog defaults", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {

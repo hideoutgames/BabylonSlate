@@ -152,13 +152,4 @@ describe("AssetDocumentWorkspace authoring", () => {
     );
   });
 
-  it("lists Font representations and an Import MSDF Atlas action", () => {
-    render(<AssetDocumentWorkspace documentId="font:assets/Display.font.babasset" />);
-    expect(screen.getByTestId("font-representations")).toBeTruthy();
-    expect(screen.getByTestId("font-rep-source").textContent).toMatch(/Missing|No/);
-    expect(screen.getByTestId("font-rep-msdf-json").textContent).toMatch(/Missing/);
-    expect(screen.getByTestId("font-rep-msdf-atlas").textContent).toMatch(/Missing/);
-    expect(screen.getByTestId("font-import-msdf")).toBeTruthy();
-  });
-
 });

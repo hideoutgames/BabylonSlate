@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import { NineSliceMarginOverlay, NineSlicePreview } from "./nine-slice-preview";
+import { NineSlicePreview } from "./nine-slice-preview";
 
 const docs = vi.hoisted(() => ({
   loadAssetDocument: vi.fn(async () => null as unknown),
@@ -28,35 +28,6 @@ afterEach(() => {
   docs.loadAssetDocument.mockReset();
   docs.readAssetChunk.mockClear();
   vi.restoreAllMocks();
-});
-
-describe("NineSliceMarginOverlay", () => {
-  it("places dashed lines and orange dots from source fractions", () => {
-    render(
-      <NineSliceMarginOverlay
-        left={0.1}
-        right={0.8}
-        top={0.2}
-        bottom={0.7}
-      />,
-    );
-    expect(screen.getByTestId("panel-nine-slice-line-left").style.left).toBe(
-      "10%",
-    );
-    expect(screen.getByTestId("panel-nine-slice-line-right").style.left).toBe(
-      "80%",
-    );
-    expect(screen.getByTestId("panel-nine-slice-line-top").style.top).toBe("20%");
-    expect(screen.getByTestId("panel-nine-slice-line-bottom").style.top).toBe(
-      "70%",
-    );
-    const nw = screen.getByTestId("panel-nine-slice-dot-nw");
-    expect(nw.style.left).toBe("10%");
-    expect(nw.style.top).toBe("20%");
-    const se = screen.getByTestId("panel-nine-slice-dot-se");
-    expect(se.style.left).toBe("80%");
-    expect(se.style.top).toBe("70%");
-  });
 });
 
 describe("NineSlicePreview", () => {

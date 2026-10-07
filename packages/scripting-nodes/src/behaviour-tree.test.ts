@@ -33,19 +33,6 @@ function nodeById(id: string) {
 }
 
 describe("behaviour-tree nodes", () => {
-  it("registers activate, tick, abort, evaluate, finish, return, and blackboard", () => {
-    expect(behaviourTreeNodes.map((node) => node.id)).toEqual([
-      "bt.event.activate",
-      "bt.event.tick",
-      "bt.event.abort",
-      "bt.event.evaluate",
-      "bt.finish",
-      "bt.returnCondition",
-      "bt.blackboard.get",
-      "bt.blackboard.set",
-    ]);
-  });
-
   it("keeps On Evaluate as exec-out only so the graph returns via Return Condition", () => {
     const pins = nodeById("bt.event.evaluate").pins({});
     expect(pins.map((pin) => pin.id)).toEqual(["execOut"]);

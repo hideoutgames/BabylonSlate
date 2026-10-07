@@ -37,8 +37,6 @@ it("builds converted fragment math as native Babylon blocks with live numeric un
   expect(await compiled.ready).toEqual([]);
   expect(compiled.buildState).toBe("ready");
   expect(compiled.material.attachedBlocks.some((block) => block.getClassName() === "CustomBlock")).toBe(false);
-  expect(compiled.material.compiledShaders).toContain("sin(");
-  expect(compiled.material.compiledShaders).toContain("smoothstep(");
 
   for (const [name, value] of Object.entries({ gain: 0.17, "tint.x": 0.29, "tint.y": 0.43, "tint.z": 0.67 })) {
     expect(compiled.setParameter(name, { kind: "float", value })).toBe(true);

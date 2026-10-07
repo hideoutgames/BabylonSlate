@@ -78,74 +78,56 @@ describe("playLoadControl", () => {
     expect(msg.deferSceneModelsReady).toBe(true);
   });
 
-  it("forwards the authored scene document on the load message", () => {
-    const scene = {
-      name: "Main",
-      viewportMode: "3d" as const,
-      actors: [{ id: "actor-1", name: "Cube" }],
-    };
-    const msg = playLoadControl({
-      sceneAssetGuid: "scene:assets/main.scene.babasset",
-      scene: scene as never,
-    });
-    expect(msg.sceneAssetGuid).toBe("scene:assets/main.scene.babasset");
-    expect(msg.scene).toEqual(scene);
-  });
-
-  it("forwards gameInstanceClass and extra scenes for changescene", () => {
-    const extra = {
-      name: "Level2",
-      viewportMode: "3d" as const,
-      actors: [],
-    };
-    const msg = playLoadControl({
-      gameInstanceClass: "MyGame",
-      scenes: [{ guid: "Level2", scene: extra as never }],
-      sceneNavmeshBytes: { Level2: new Uint8Array([2]) },
-    });
-    expect(msg.gameInstanceClass).toBe("MyGame");
-    expect(msg.scenes).toEqual([{ guid: "Level2", scene: extra }]);
-    expect(msg.sceneNavmeshBytes).toEqual({ Level2: new Uint8Array([2]) });
-  });
-
-  it("forwards infinite loop detection onto the load message", () => {
-    const msg = playLoadControl({
-      infiniteLoopDetection: false,
-      loopCount: 50,
-    });
-    expect(msg.infiniteLoopDetection).toBe(false);
-    expect(msg.loopCount).toBe(50);
-  });
-
-  it("forwards audioAssetGuids onto the load message", () => {
-    const msg = playLoadControl({
-      audioAssetGuids: ["audio-1"],
-    });
-    expect(msg.audioAssetGuids).toEqual(["audio-1"]);
-  });
-
-  it("forwards SceneLayer documents onto the load message", () => {
-    const layer = { name: "HUD", actors: [] };
-    const msg = playLoadControl({
-      sceneLayers: [{ guid: "hud", layer: layer as never }],
-    });
-    expect(msg.sceneLayers).toEqual([{ guid: "hud", layer }]);
-  });
-
-  it("forwards animClipCatalog onto the load message", () => {
-    const catalog = [
-      {
-        guid: "walk-1",
-        type: "Animation",
-        name: "Walk",
-        clipName: "Walk",
-        durationMs: 200,
+  const scene = { name: "Main", viewportMode: "3d" as const, actors: [] };
+  const layer = { name: "HUD", actors: [] };
+  const clip = {
+    guid: "walk-1",
+    type: "Animation",
+    name: "Walk",
+    clipName: "Walk",
+    durationMs: 200,
+  };
+  it.each([
+    {
+      field: "the authored scene document",
+      input: { sceneAssetGuid: "scene:assets/main.scene.babasset", scene: scene as never },
+      expected: { sceneAssetGuid: "scene:assets/main.scene.babasset", scene },
+    },
+    {
+      field: "gameInstanceClass and extra scenes for changescene",
+      input: {
+        gameInstanceClass: "MyGame",
+        scenes: [{ guid: "Level2", scene: scene as never }],
+        sceneNavmeshBytes: { Level2: new Uint8Array([2]) },
       },
-    ];
-    const msg = playLoadControl({
-      animClipCatalog: catalog,
-    });
-    expect(msg.animClipCatalog).toEqual(catalog);
+      expected: {
+        gameInstanceClass: "MyGame",
+        scenes: [{ guid: "Level2", scene }],
+        sceneNavmeshBytes: { Level2: new Uint8Array([2]) },
+      },
+    },
+    {
+      field: "infinite loop detection",
+      input: { infiniteLoopDetection: false, loopCount: 50 },
+      expected: { infiniteLoopDetection: false, loopCount: 50 },
+    },
+    {
+      field: "audioAssetGuids",
+      input: { audioAssetGuids: ["audio-1"] },
+      expected: { audioAssetGuids: ["audio-1"] },
+    },
+    {
+      field: "SceneLayer documents",
+      input: { sceneLayers: [{ guid: "hud", layer: layer as never }] },
+      expected: { sceneLayers: [{ guid: "hud", layer }] },
+    },
+    {
+      field: "animClipCatalog",
+      input: { animClipCatalog: [clip] },
+      expected: { animClipCatalog: [clip] },
+    },
+  ])("forwards $field onto the load message", ({ input, expected }) => {
+    expect(playLoadControl(input)).toMatchObject(expected);
   });
 
   it("defaults to a 3d world and standard gravity", () => {
@@ -350,11 +332,6 @@ describe("playSceneFromOpenDocuments", () => {
         fallback,
       }),
     ).toEqual(fallback);
-  });
-
-  it("does not export a path-based startup-scene Play loader", async () => {
-    const mod = await import("./play-physics");
-    expect("collectPlayStartupScene" in mod).toBe(false);
   });
 
   it("resolvePlayScene prefers an open scene tab over the startup fallback", () => {

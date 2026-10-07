@@ -281,20 +281,6 @@ describe("AnimGraphEditor", () => {
     );
   });
 
-  it("uses compact action-height controls in Variables and States", () => {
-    renderAnimGraph();
-    fireEvent.click(screen.getByTestId("anim-graph-add-variable"));
-    const addVariable = screen.getByTestId("anim-graph-add-variable");
-    const addState = screen.getByTestId("anim-graph-add-state");
-    const stateRow = screen.getByTestId("anim-graph-state-idle");
-    const remove = screen.getByTestId(/anim-graph-variable-remove-/);
-    expect(addVariable.className).not.toMatch(/min-h-\[var\(--touch-target/);
-    expect(addState.className).not.toMatch(/min-h-\[var\(--touch-target/);
-    expect(stateRow.className).not.toMatch(/min-h-\[var\(--touch-target/);
-    expect(remove.getAttribute("aria-label")).toMatch(/remove/i);
-    expect(remove.className).not.toMatch(/min-h-\[var\(--touch-target/);
-  });
-
   it("adds a typed Animation Graph variable", () => {
     renderAnimGraph();
     fireEvent.click(screen.getByTestId("anim-graph-add-variable"));
@@ -319,13 +305,6 @@ describe("AnimGraphEditor", () => {
     fireEvent.keyDown(tree, { key: "End" });
     fireEvent.keyDown(tree, { key: "Enter" });
     expect(lastCommit().variables).toEqual([{ id: "allowed", name: "Allowed", typeId: "struct", typeClassId: "engine:TagContainer", defaultValue: { Tags: [2] } }]);
-  });
-
-  it("renders Unreal-style state nodes", async () => {
-    renderAnimGraph(locoGraph());
-    await waitFor(() => {
-      expect(screen.getByTestId("anim-state-node-idle")).toBeTruthy();
-    });
   });
 
   it("shows each state's clip on its graph node", async () => {

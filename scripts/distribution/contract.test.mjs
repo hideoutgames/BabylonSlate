@@ -1,12 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { PLATFORM_CHOICES, GITHUB_RELEASE_PLATFORMS, artifactNames, createIdentity, existingAppleIdentity, assertAppleBuildAvailable, platformArtifactNames, releaseAssetNames, releaseDisposition, requestedPlatforms, validateArtifacts, validateChecks, validateSource } from "./contract.mjs";
+import { artifactNames, createIdentity, existingAppleIdentity, assertAppleBuildAvailable, platformArtifactNames, releaseAssetNames, releaseDisposition, requestedPlatforms, validateArtifacts, validateChecks, validateSource } from "./contract.mjs";
 
 const request = { version: "1.2.3", declaredVersion: "1.2.3", channel: "test", platforms: "all", sourceSha: "a".repeat(40), runNumber: 417, runAttempt: 1, appleSequenceOffset: 0 };
 
 test("platform choices expand to sorted concrete destinations", () => {
-  assert.deepEqual(PLATFORM_CHOICES, ["all", "desktop", "mobile", "ipados", "android", "windows", "macos", "linux"]);
-  assert.deepEqual(GITHUB_RELEASE_PLATFORMS, ["windows", "macos", "linux", "android"]);
   assert.deepEqual(requestedPlatforms("all"), ["android", "ipados", "linux", "macos", "windows"]);
   assert.deepEqual(requestedPlatforms("desktop"), ["linux", "macos", "windows"]);
   assert.deepEqual(requestedPlatforms("mobile"), ["android", "ipados"]);

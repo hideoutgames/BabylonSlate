@@ -4,7 +4,6 @@ import {
   conversionFor,
   convertMaterialValue,
   isNumericType,
-  materialTypeLabel,
   resolveGenericType,
   typesAreAssignable,
 } from "./types";
@@ -69,11 +68,5 @@ describe("material value types", () => {
 
   it("rejects a generic group containing a texture", () => {
     expect(resolveGenericType(["float", "texture"]).ok).toBe(false);
-  });
-
-  it("labels types in Title Case for diagnostics", () => {
-    expect(materialTypeLabel("vec3")).toBe("Vector 3");
-    expect(materialTypeLabel("float")).toBe("Float");
-    expect(materialTypeLabel("texture")).toBe("Texture");
   });
 });

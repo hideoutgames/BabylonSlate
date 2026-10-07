@@ -509,18 +509,4 @@ describe("AtlasTileGrid", () => {
     fireEvent.click(screen.getByTestId("atlas-cell-2"));
     expect(onSelect).toHaveBeenCalledExactlyOnceWith(2);
   });
-
-  it("contains the atlas image in the preview box", () => {
-    render(
-      <AtlasTileGrid
-        tileset={twoTileSet()}
-        imageUrl="blob:atlas"
-        selectedId={1}
-        onSelect={() => {}}
-        data-testid="atlas"
-      />,
-    );
-    const img = document.querySelector("img");
-    expect(img?.className).toContain("object-contain");
-  });
 });

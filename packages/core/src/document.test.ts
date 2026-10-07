@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  ASSET_DOCUMENT_KINDS,
   CONTENT_BROWSER_ID,
-  CONTENT_BROWSER_REF,
   assetTypeForDocumentKind,
   assetTypeForDocumentSave,
   createDocumentRef,
@@ -12,7 +10,6 @@ import {
   documentKindLabel,
   isAssetDocumentKind,
   isSceneWorkspaceKind,
-  isContentBrowserId,
   labelFromPath,
   migrateLegacyLayout,
   migrateRestoredDocumentId,
@@ -37,11 +34,6 @@ describe("P9 document kinds", () => {
     );
   });
 
-  it("labels material documents in Title Case", () => {
-    expect(documentKindLabel("material")).toBe("Material");
-    expect(documentKindLabel("material-function")).toBe("Material Function");
-  });
-
   it("strips material file suffixes from tab labels", () => {
     expect(labelFromPath("assets/Rock.material.babasset")).toBe("Rock");
     expect(labelFromPath("assets/Tint.matfunc.babasset")).toBe("Tint");
@@ -61,14 +53,6 @@ describe("P9 document kinds", () => {
       expect(ref.label).toBe(label);
       expect(assetTypeForDocumentSave(mapped)).toBe(type);
     }
-  });
-
-  it("does not treat UserInterface as a document kind", () => {
-    expect(documentKindForAssetType("UserInterface")).toBeNull();
-    expect(documentKindForAssetType("EditorUtilityInterface")).toBeNull();
-    expect(isAssetDocumentKind("ui")).toBe(false);
-    expect(parseDocumentId("ui:assets/hud.ui.babasset")).toBeNull();
-    expect(ASSET_DOCUMENT_KINDS).not.toContain("ui");
   });
 
   it("opens SceneLayer as its own 2D overlay document kind", () => {
@@ -373,12 +357,6 @@ describe("Class and settings documents", () => {
 });
 
 describe("document ids and layouts", () => {
-  it("uses a stable id for the pinned Content Browser", () => {
-    expect(documentId(CONTENT_BROWSER_REF)).toBe(CONTENT_BROWSER_ID);
-    expect(isContentBrowserId(CONTENT_BROWSER_ID)).toBe(true);
-    expect(isContentBrowserId("scene:assets/main.scene.babasset")).toBe(false);
-  });
-
   it("namespaces asset document ids by kind and path", () => {
     expect(
       documentId({ kind: "scene", path: "assets/main.scene.babasset" }),

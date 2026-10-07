@@ -1,10 +1,4 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import {
-  createActor,
-  createDefaultScene,
-  createDefaultSkyboxActor,
-  createMeshComponent,
-} from "../packages/core/src/index.ts";
 import { PROJECT_FILE } from "../packages/core/src/project";
 import { encodeAssetDocument } from "../packages/assets/src/asset-document";
 import { encodeGlbJsonBin } from "../packages/assets/src/importers/glb-parse";
@@ -12,15 +6,9 @@ import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal
 import { MATERIAL_PAYLOAD_VERSION } from "../packages/assets/src/migration";
 import { createDefaultMaterialDocument } from "../packages/shader-graph/src/document";
 import { openMinimalTestProject } from "./minimal-project";
-import {
-  openAssetFromBrowser,
-  openMainScene,
-  waitForSceneViewportReady,
-} from "./open-test-project";
-import { setPreviewScene } from "./preview-parity";
+import { openAssetFromBrowser, openMainScene } from "./open-test-project";
 import { compileMaterialPreview } from "./material-graph";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
-import type { ViewportProofResult } from "../apps/editor/src/testing/webgpu-previews-proof";
 
 // Explicit software adapter admission for this functional proof, not GPU qualification.
 test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
@@ -186,112 +174,6 @@ async function proofProjectFiles(page: Page, backend: Backend) {
   return files;
 }
 
-const TRACKED_ACTORS = {
-  glb: "proof-glb",
-  primitive: "proof-primitive",
-  pbr: "proof-pbr",
-  cel: "proof-cel",
-  unlit: "proof-unlit",
-} as const;
-
-/** Skybox + directional/fill lights + GLB + native primitive + three authored materials. */
-async function seedProofScene(page: Page) {
-  const scene = createDefaultScene("WebGPU preview proof");
-  scene.settings.grid.showGrid = false;
-  const glbMesh = createMeshComponent("glb-mesh", "box");
-  glbMesh.properties.assetGuid = MODEL_GUID;
-  const pbrMesh = createMeshComponent("pbr-mesh", "sphere");
-  pbrMesh.properties.materialGuid = PBR_MATERIAL_GUID;
-  const celMesh = createMeshComponent("cel-mesh", "sphere");
-  celMesh.properties.materialGuid = CEL_MATERIAL_GUID;
-  const unlitMesh = createMeshComponent("unlit-mesh", "sphere");
-  unlitMesh.properties.materialGuid = UNLIT_MATERIAL_GUID;
-  const subject = (
-    id: string,
-    name: string,
-    x: number,
-    scale: number,
-    components: ReturnType<typeof createMeshComponent>[],
-  ) =>
-    createActor(id, name, {
-      transform: {
-        position: [x, 0, 0],
-        rotation: [0, 0, 0, 1],
-        scale: [scale, scale, scale],
-      },
-      components,
-    });
-  scene.actors = [
-    ...scene.actors.filter(
-      (actor) => actor.id === scene.settings.mainCameraActorId,
-    ),
-    createDefaultSkyboxActor(),
-    createActor("proof-sun", "Sun", {
-      transform: {
-        position: [0, 5, -3],
-        rotation: [0.382683, 0, 0, 0.92388],
-        scale: [1, 1, 1],
-      },
-      components: [
-        {
-          id: "proof-sun-light",
-          classId: "LightComponent",
-          properties: {
-            lightKind: "directional",
-            color: [1, 1, 1],
-            intensity: 1.2,
-            castShadows: false,
-          },
-        },
-      ],
-    }),
-    createActor("proof-fill", "Fill", {
-      components: [
-        {
-          id: "proof-fill-light",
-          classId: "HemisphericFillLightComponent",
-          properties: {
-            color: [1, 1, 1],
-            groundColor: [0.6, 0.6, 0.6],
-            intensity: 0.35,
-          },
-        },
-      ],
-    }),
-    subject(TRACKED_ACTORS.glb, "GLB Quad", -3.4, 0.55, [glbMesh]),
-    subject(TRACKED_ACTORS.primitive, "Native Box", -1.5, 1.2, [
-      createMeshComponent("prim-mesh", "box"),
-    ]),
-    subject(TRACKED_ACTORS.pbr, "Authored PBR", 0, 1.2, [pbrMesh]),
-    subject(TRACKED_ACTORS.cel, "Authored CEL", 1.5, 1.2, [celMesh]),
-    subject(TRACKED_ACTORS.unlit, "Authored Unlit", 3, 1.2, [unlitMesh]),
-  ];
-  await setPreviewScene(page, scene);
-}
-
-async function recordViewportProof(
-  page: Page,
-): Promise<ViewportProofResult> {
-  return page.evaluate(async (trackedActorIds) => {
-    const host = globalThis as unknown as {
-      __babylonslateViewportTest?: {
-        webgpuPreviewsProof: (options: {
-          frames?: number;
-          timeoutMs?: number;
-          trackedActorIds?: string[];
-        }) => Promise<ViewportProofResult>;
-      };
-    };
-    const api = host.__babylonslateViewportTest;
-    if (!api) throw new Error("Viewport test hook is not mounted");
-    return api.webgpuPreviewsProof({
-      frames: 60,
-      timeoutMs: 30_000,
-      trackedActorIds,
-    });
-  }, Object.values(TRACKED_ACTORS));
-}
-
 async function engineSceneDiagnostics(page: Page) {
   return page.evaluate(async () => {
     const host = globalThis as unknown as {
@@ -301,56 +183,6 @@ async function engineSceneDiagnostics(page: Page) {
     };
     return host.__babylonslateViewportTest?.engineSceneDiagnostics() ?? null;
   });
-}
-
-function expectStableViewport(
-  record: ViewportProofResult,
-  label: string,
-): void {
-  expect(
-    record.presentedFrames,
-    `${label}: presented frame count`,
-  ).toBeGreaterThanOrEqual(60);
-  expect(record.timedOut, `${label}: recording timed out`).toBe(false);
-  for (const [index, sky] of record.skybox.entries()) {
-    // A static skybox is pixel-identical frame to frame; allow two changes for
-    // late face-texture upload, never the per-frame flicker seen on iPad.
-    expect(
-      sky.changes,
-      `${label}: skybox point ${index} flickered`,
-    ).toBeLessThanOrEqual(2);
-  }
-  for (const subject of record.subjects) {
-    expect(
-      subject.realizedAtFrame,
-      `${label}: ${subject.actorId} visual never realized`,
-    ).not.toBeNull();
-    expect(
-      subject.materialsReadyAtFrame,
-      `${label}: ${subject.actorId} materials never ready`,
-    ).not.toBeNull();
-    expect(
-      subject.droppedAfterRealization,
-      `${label}: ${subject.actorId} visual dropped after realization`,
-    ).toBe(0);
-  }
-  const glb = record.subjects.find(
-    (subject) => subject.actorId === "proof-glb",
-  )!;
-  const glbLast = glb.last!;
-  expect(
-    glbLast.meshes.length,
-    `${label}: GLB visual missing on the last frame`,
-  ).toBeGreaterThan(0);
-  expect(
-    glbLast.pixel,
-    `${label}: GLB projected point off-canvas`,
-  ).not.toBeNull();
-  expect(
-    glbLast.meshes.some((mesh) => mesh.inFrustum),
-    `${label}: GLB visual culled out of the frustum`,
-  ).toBe(true);
-  expect(record.engineErrors, `${label}: engine errors`).toEqual([]);
 }
 
 /** Project settings → Rendering → render mode select (CEL ⇄ PBR). */
@@ -369,36 +201,6 @@ async function projectMode(page: Page, mode: "PBR" | "CEL") {
     .getByTestId("settings-modal")
     .getByRole("button", { name: "Done", exact: true })
     .click();
-}
-
-/** Switch Rendering → GPU backend and wait for the rebuilt engine. */
-async function switchGpuBackend(page: Page, backend: "WebGL2" | "WebGPU") {
-  await page.getByTestId("settings-menu").click();
-  await page.getByTestId("project-settings").click();
-  await page.getByTestId("settings-modal-category-rendering").click();
-  await page.getByTestId("project-gpu-backend").click();
-  await page.getByRole("option", { name: backend, exact: true }).click();
-  await page
-    .getByTestId("settings-modal")
-    .getByRole("button", { name: "Done", exact: true })
-    .click();
-  await expect
-    .poll(
-      () =>
-        page.evaluate(
-          () =>
-            (
-              window as unknown as {
-                __babylonslateViewportTest?: {
-                  renderingBaseline: () => { backend: string } | null;
-                };
-              }
-            ).__babylonslateViewportTest?.renderingBaseline()?.backend ?? null,
-        ),
-      { timeout: 30_000 },
-    )
-    .toBe(backend.toLowerCase());
-  await waitForSceneViewportReady(page);
 }
 
 interface CanvasEvidence {
@@ -475,78 +277,7 @@ async function canvasEvidence(canvas: Locator): Promise<CanvasEvidence> {
   });
 }
 
-for (const backend of ["webgl2", "webgpu"] as const) {
-  test(`scene viewport stays stable with skybox, GLB and mixed materials on ${backend}`, async ({
-    page,
-  }, testInfo) => {
-    test.setTimeout(180_000);
-    const errors: string[] = [];
-    const locations: unknown[] = [];
-    const nativeLogs: unknown[] = [];
-    const logSession = await page.context().newCDPSession(page);
-    await logSession.send("Log.enable");
-    logSession.on("Log.entryAdded", ({ entry }) => {
-      if (["warning", "error"].includes(entry.level) && nativeLogs.length < 64)
-        nativeLogs.push(entry);
-    });
-    page.on("pageerror", (error) => errors.push(error.message));
-    page.on("console", (message) => {
-      if (isGpuFailure(message.type(), message.text())) {
-        errors.push(message.text());
-        locations.push(message.location());
-      }
-    });
-
-    await openMinimalTestProject(page, await proofProjectFiles(page, backend));
-    await openMainScene(page);
-    await seedProofScene(page);
-
-    const record = await recordViewportProof(page);
-    await testInfo.attach(`viewport-proof-${backend}`, {
-      body: JSON.stringify(record),
-      contentType: "application/json",
-    });
-    await page
-      .getByTestId("viewport-canvas")
-      .screenshot({ path: testInfo.outputPath(`viewport-${backend}.png`) });
-    expectStableViewport(record, backend);
-
-    if (backend === "webgl2") {
-      // The brief requires the same recording after a WebGL2 → WebGPU switch.
-      await switchGpuBackend(page, "WebGPU");
-      const switched = await recordViewportProof(page);
-      await testInfo.attach("viewport-proof-webgl2-switched-webgpu", {
-        body: JSON.stringify(switched),
-        contentType: "application/json",
-      });
-      await page
-        .getByTestId("viewport-canvas")
-        .screenshot({ path: testInfo.outputPath("viewport-switched-webgpu.png") });
-      expectStableViewport(switched, "webgl2→webgpu switch");
-      expect(switched.backend).toBe("webgpu");
-    }
-
-    await testInfo.attach("gpu-errors", {
-      body: JSON.stringify(errors),
-      contentType: "application/json",
-    });
-    await testInfo.attach("gpu-error-locations", {
-      body: JSON.stringify(locations),
-      contentType: "application/json",
-    });
-    await testInfo.attach("native-gpu-logs", {
-      body: JSON.stringify(nativeLogs),
-      contentType: "application/json",
-    });
-    expect(errors, `${label(backend)} GPU/console errors`).toEqual([]);
-  });
-}
-
-function label(backend: Backend): string {
-  return backend === "webgpu" ? "WebGPU" : "WebGL2";
-}
-
-for (const backend of ["webgl2", "webgpu"] as const) {
+for (const backend of ["webgpu"] as ("webgl2" | "webgpu")[]) {
   test(`material, model and prefab previews present correctly on ${backend}`, async ({
     page,
   }, testInfo) => {

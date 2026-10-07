@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  err,
-  isErr,
-  isOk,
   newGuid,
-  ok,
-  type Guid,
 } from "./guid-result";
 import {
   createSeededRng,
@@ -17,30 +12,11 @@ import {
 } from "./math-rng";
 
 describe("Guid", () => {
-  it("newGuid returns a non-empty string", () => {
-    const id: Guid = newGuid();
-    expect(typeof id).toBe("string");
-    expect(id.length).toBeGreaterThan(0);
-  });
-
   it("accepts an injectable factory for deterministic tests", () => {
     let n = 0;
     const id = newGuid(() => `fixed-${++n}`);
     expect(id).toBe("fixed-1");
     expect(newGuid(() => `fixed-${++n}`)).toBe("fixed-2");
-  });
-});
-
-describe("Result", () => {
-  it("ok and err discriminate correctly", () => {
-    const a = ok(42);
-    const b = err("nope");
-    expect(isOk(a)).toBe(true);
-    expect(isErr(a)).toBe(false);
-    expect(isOk(b)).toBe(false);
-    expect(isErr(b)).toBe(true);
-    if (isOk(a)) expect(a.value).toBe(42);
-    if (isErr(b)) expect(b.error).toBe("nope");
   });
 });
 

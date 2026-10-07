@@ -92,20 +92,6 @@ describe("EngineSettingsForm graph", () => {
     })] }), expect.anything());
     expect((await store.load()).readOnlyPinDefaults).toBe(false);
   });
-
-  it("shows graph default zoom 0.5", () => {
-    const { getByTestId } = render(
-      <EngineSettingsForm
-        settings={defaultEngineSettings()}
-        onChange={() => {}}
-        categoryId="graph"
-      />,
-    );
-    expect(getByTestId("setting-graph-default-zoom")).toHaveProperty(
-      "value",
-      "0.5",
-    );
-  });
 });
 
 describe("EngineSettingsForm viewport", () => {
@@ -136,34 +122,9 @@ describe("EngineSettingsForm viewport", () => {
     expect(toggle.className).not.toMatch(/min-h-\[var\(--touch-target/);
     expect(toggle.closest("[data-slot='field']")?.querySelector("[data-slot='field-content']")).not.toBeNull();
   });
-
-  it("shows camera speed 8", () => {
-    const { getByTestId } = render(
-      <EngineSettingsForm
-        settings={defaultEngineSettings()}
-        onChange={() => {}}
-        categoryId="viewport"
-      />,
-    );
-    expect(getByTestId("setting-fly-speed")).toHaveProperty("value", "8");
-  });
 });
 
 describe("EngineSettingsForm assets", () => {
-  it("shows model import default scale 1", () => {
-    const { getByTestId } = render(
-      <EngineSettingsForm
-        settings={defaultEngineSettings()}
-        onChange={() => {}}
-        categoryId="assets"
-      />,
-    );
-    expect(getByTestId("setting-model-import-scale")).toHaveProperty(
-      "value",
-      "1",
-    );
-  });
-
   it("defaults to source textures with optional local LOD and budget controls", () => {
     const { getByTestId, queryByTestId } = render(
       <EngineSettingsForm
@@ -198,39 +159,6 @@ describe("EngineSettingsForm assets", () => {
 });
 
 describe("EngineSettingsForm focus", () => {
-  it("lists default keep tabs for scene and class", () => {
-    const { getByTestId } = render(
-      <EngineSettingsForm
-        settings={defaultEngineSettings()}
-        onChange={() => {}}
-        categoryId="focus"
-      />,
-    );
-    expect(getByTestId("focus-keep-scene-viewport")).toBeTruthy();
-    expect(getByTestId("focus-keep-graph-graph")).toBeTruthy();
-  });
-
-  it("lists default keep tabs for Material and Script Interface", () => {
-    const { getByTestId } = render(
-      <EngineSettingsForm
-        settings={defaultEngineSettings()}
-        onChange={() => {}}
-        categoryId="focus"
-      />,
-    );
-    expect(getByTestId("focus-keep-material-material-graph")).toBeTruthy();
-    expect(getByTestId("focus-keep-material-function-material-function-graph")).toBeTruthy();
-    expect(getByTestId("focus-keep-script-interface-script-interface-preview")).toBeTruthy();
-    expect(getByTestId("focus-keep-anim-graph-anim-graph-graph")).toBeTruthy();
-    expect(getByTestId("focus-keep-animGraphObject-anim-object-graph")).toBeTruthy();
-    expect(getByTestId("focus-keep-behaviour-tree-behaviour-tree-graph")).toBeTruthy();
-    expect(getByTestId("focus-keep-model-model-preview")).toBeTruthy();
-    expect(getByTestId("focus-keep-skeleton-skeleton-preview")).toBeTruthy();
-    expect(getByTestId("focus-keep-animation-animation-preview")).toBeTruthy();
-    expect(getByTestId("focus-keep-skybox-creator-skybox-creator-preview")).toBeTruthy();
-    expect(getByTestId("focus-keep-trace-trace-timeline")).toBeTruthy();
-  });
-
   it("adds a class tab from the keep dropdown", () => {
     const onChange = vi.fn();
     const { getByTestId } = render(

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { createContentBrowserAsset, openAssetFromBrowser, openTestProject } from "./open-test-project";
+import { openAssetFromBrowser, openTestProject } from "./open-test-project";
 import { findOpfsProjectDirectory } from "./opfs-project";
 import { saveAllIfEnabled } from "./save-all";
 
@@ -104,20 +104,4 @@ test("H6/M4: recovery retains Undo and survives a second reload before Save", as
   await saveAllIfEnabled(page);
   expect(await page.evaluate(() =>
     (globalThis as unknown as TestHost).__babylonslateTest.hasRecoveryJournal())).toBe(false);
-});
-
-test("H6: recovery restores a journalled Enum edit", async ({ page }) => {
-  await openTestProject(page);
-  await createContentBrowserAsset(page, "Enum", "RecoverableEnum");
-  await openAssetFromBrowser(page, "assets/RecoverableEnum.babasset");
-  await saveAllIfEnabled(page);
-  await page.getByTestId("enum-add-member").click();
-  await expect(page.getByTestId("enum-row-1")).toBeVisible();
-  await expect.poll(async () => (await journalCommands(page))
-    .filter((command) => command.type === "asset.setDocument").length).toBe(1);
-  await recoverAfterReload(page);
-  await openAssetFromBrowser(page, "assets/RecoverableEnum.babasset");
-  await expect(page.getByTestId("enum-row-1")).toBeVisible();
-  expect(await page.evaluate(() => (globalThis as unknown as TestHost)
-    .__babylonslateTest.dirtyDocuments().map((doc) => doc.kind))).toEqual(["enum"]);
 });

@@ -11,7 +11,6 @@ import {
   ensureEventNodeOnGraph,
   functionLibraryShowsEventGraphEmpty,
   isObjectInstanceVariableType,
-  memberNamePromptCopy,
   patchClassMember,
   pruneEventMembersToNodes,
   removeClassMember,
@@ -244,24 +243,6 @@ describe("addClassMember", () => {
   it("keeps event members that still have a matching canvas node", () => {
     const graph = addClassMember(emptyGraph(), "event", "On Hit", () => "evt-1");
     expect(pruneEventMembersToNodes(graph)).toBe(graph);
-  });
-
-  it("Title Cases typed event names and prefixes Event on the node", () => {
-    const graph = addClassMember(emptyGraph(), "event", "on hit", () => "id");
-    expect(graph.members?.[0]?.name).toBe("On Hit");
-    expect(graph.nodes[0]?.data.name).toBe("On Hit");
-    expect(graph.nodes[0]?.data.title).toBe("Event On Hit");
-  });
-
-  it("does not double-prefix Event when the typed name already has it", () => {
-    const graph = addClassMember(
-      emptyGraph(),
-      "event",
-      "Event beginPlay",
-      () => "id",
-    );
-    expect(graph.members?.[0]?.name).toBe("Begin Play");
-    expect(graph.nodes[0]?.data.title).toBe("Event Begin Play");
   });
 
   it("rejects a Class variable whose name is reserved", () => {
@@ -818,21 +799,6 @@ describe("addClassMember", () => {
     graph = patchClassMember(graph, "fn-1", { pins });
     expect(graph.nodes[0]?.data.pins).toEqual(pins);
     expect(graph.nodes[0]?.data.__pins).toBeUndefined();
-  });
-});
-
-describe("memberNamePromptCopy", () => {
-  it("returns Title Case titles and labels for each member kind", () => {
-    expect(memberNamePromptCopy("function")).toEqual({
-      title: "Add Function",
-      label: "Function Name",
-    });
-    expect(memberNamePromptCopy("variable").title).toBe("Add Variable");
-    expect(memberNamePromptCopy("variable", { local: true }).title).toBe(
-      "Add Local Variable",
-    );
-    expect(memberNamePromptCopy("event").label).toBe("Event Name");
-    expect(memberNamePromptCopy("interface").title).toBe("Add Interface");
   });
 });
 

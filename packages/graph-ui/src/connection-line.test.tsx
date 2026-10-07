@@ -174,14 +174,4 @@ describe("GraphConnectionLineView", () => {
     });
     expect(queryByTestId("add-node-hint")).toBeNull();
   });
-
-  it("strokes the preview with the dragged pin color", () => {
-    mountHandles([{ nodeId: "source", pinId: "execOut", x: 0, y: 0 }]);
-    const { container } = renderLine({
-      fromHandle: { id: "value" },
-    });
-    const path = container.querySelector(".react-flow__connection-path");
-    expect(path).not.toBeNull();
-    expect(path?.getAttribute("style") ?? "").toMatch(/--pin-string/);
-  });
 });

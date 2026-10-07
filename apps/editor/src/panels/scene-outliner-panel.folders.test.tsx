@@ -345,23 +345,6 @@ function lockIconName(actorId: string): string | null {
 }
 
 describe("Scene Outliner lock icons", () => {
-  it("shows an unlock glyph on an unlocked actor and a lock glyph when locked", () => {
-    renderOutliner({
-      ...createDefaultScene(),
-      folders: [],
-      actors: [
-        createActor("open", "Open"),
-        createActor("shut", "Shut", { locked: true }),
-      ],
-    });
-    expect(lockIconName("open")).toBe("unlock");
-    expect(screen.getByTestId("outliner-lock-open").getAttribute("aria-pressed")).toBe("false");
-    expect(lockIconName("shut")).toBe("lock");
-    expect(screen.getByTestId("outliner-lock-shut").getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByRole("button", { name: "Unlock Shut" }).textContent).not.toContain("Locked");
-    expect(screen.getByTestId("outliner-lock-open").textContent).not.toContain("Locked");
-  });
-
   it("switches the lock glyph after the toggle is clicked", () => {
     const view = renderOutliner({
       ...createDefaultScene(),

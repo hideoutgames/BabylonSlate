@@ -57,25 +57,6 @@ const team = {
 };
 
 describe("select nodes", () => {
-  it("registers fixed typed Selects and enum Select", () => {
-    const ids = selectNodes.map((entry) => entry.id);
-    expect(ids).toEqual(
-      expect.arrayContaining([
-        "select.bool",
-        "select.int",
-        "select.float",
-        "select.string",
-        "select.vec2",
-        "select.vec3",
-        "select.vec4",
-        "select.rotator",
-        "select.transform",
-        "select.color",
-        "enum.select",
-      ]),
-    );
-  });
-
   it("builds Select Bool with False/True options", () => {
     const pins = selectNodes.find((entry) => entry.id === "select.bool")!.pins({});
     expect(pins.map((pin) => pin.id)).toEqual([

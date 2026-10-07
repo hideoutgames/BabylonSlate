@@ -255,167 +255,76 @@ describe("component script API", () => {
     runtime.stop();
   });
 
-  it("Set Light Range re-emits assignMesh with the live range", async () => {
+  it.each([
+    {
+      name: "Set Light Range re-emits assignMesh with the live range",
+      component: { id: "c-1", classId: "LightComponent", properties: { lightKind: "point", range: 10, intensity: 1 } },
+      writes: { range: 25 },
+      expected: { type: "assignMesh", light: expect.objectContaining({ range: 25 }) },
+    },
+    {
+      name: "Set Camera Near Clip re-emits assignMesh with the live clip",
+      component: { id: "c-1", classId: "CameraComponent", properties: { projectionMode: "perspective", nearClip: 0.1 } },
+      writes: { nearClip: 0.5 },
+      expected: { type: "assignMesh", camera: expect.objectContaining({ nearClip: 0.5 }) },
+    },
+    {
+      name: "Set Mesh materialGuid emits assignMaterial",
+      component: (() => {
+        const mesh = createMeshComponent("c-1", "box");
+        mesh.properties.materialGuid = null;
+        return mesh;
+      })(),
+      writes: { materialGuid: "mat-rock" },
+      expected: { type: "assignMaterial", materialAssetGuid: "mat-rock" },
+    },
+    {
+      name: "Set Sprite sortingLayer stamps sorting on assignMesh",
+      component: { id: "c-1", classId: "SpriteComponent", properties: { sortingLayer: "Default", orderInLayer: 0 } },
+      writes: { sortingLayer: "UI", orderInLayer: 3 },
+      expected: { type: "assignMesh", sortingLayer: "UI", orderInLayer: 3 },
+    },
+    {
+      name: "Set Particle System re-emits assignParticle with guid and sorting",
+      component: {
+        id: "c-1",
+        classId: "ParticleComponent",
+        properties: { particleSystemGuid: "sys-1", playOnStart: false, sortingLayer: "Default", orderInLayer: 0 },
+      },
+      writes: { particleSystemGuid: "sys-2", sortingLayer: "Foreground", orderInLayer: 4 },
+      expected: {
+        type: "assignParticle",
+        actorGuid: "target",
+        componentId: "c-1",
+        particleSystemGuid: "sys-2",
+        sortingLayer: "Foreground",
+        orderInLayer: 4,
+      },
+    },
+  ])("$name", async ({ component, writes, expected }) => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
       seedDemoActors: false,
       preferSoftwarePhysics: true,
-      playScene: sceneOf([
-        createActor("lamp", "Lamp", {
-          classId: "Hero",
-          components: [
-            {
-              id: "light-1",
-              classId: "LightComponent",
-              properties: { lightKind: "point", range: 10, intensity: 1 },
-            },
-          ],
-        }),
-      ]),
+      playScene: sceneOf([createActor("target", "Target", { classId: "Hero", components: [component] })]),
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadScripts([
       script(
         [
           "export function onBeginPlay(ctx) {",
-          '  const c = ctx.getComponentById(ctx.self, "light-1");',
-          '  ctx.setVariableOn(c, "range", 25);',
+          '  const c = ctx.getComponentById(ctx.self, "c-1");',
+          ...Object.entries(writes).map(([key, value]) => `  ctx.setVariableOn(c, ${JSON.stringify(key)}, ${JSON.stringify(value)});`),
           "}",
         ].join("\n"),
       ),
     ]);
     runtime.realizePlayWorld();
-    const assigns = commands.filter(
-      (command) =>
-        command.type === "assignMesh" && command.light?.range === 25,
-    );
-    expect(assigns.length).toBeGreaterThan(0);
+    const emitted = commands.filter((command) => command.type === expected.type);
+    expect(emitted.at(-1)).toMatchObject(expected);
     runtime.stop();
   });
-
-  it("Set Camera Near Clip re-emits assignMesh with the live clip", async () => {
-    const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({
-      seed: 1,
-      seedDemoActors: false,
-      preferSoftwarePhysics: true,
-      playScene: sceneOf([
-        createActor("rig", "Rig", {
-          classId: "Hero",
-          components: [
-            {
-              id: "cam-1",
-              classId: "CameraComponent",
-              properties: { projectionMode: "perspective", nearClip: 0.1 },
-            },
-          ],
-        }),
-      ]),
-      onCommand: (command) => commands.push(command),
-    });
-    await runtime.loadScripts([
-      script(
-        [
-          "export function onBeginPlay(ctx) {",
-          '  const c = ctx.getComponentById(ctx.self, "cam-1");',
-          '  ctx.setVariableOn(c, "nearClip", 0.5);',
-          "}",
-        ].join("\n"),
-      ),
-    ]);
-    runtime.realizePlayWorld();
-    const assigns = commands.filter(
-      (command) =>
-        command.type === "assignMesh" && command.camera?.nearClip === 0.5,
-    );
-    expect(assigns.length).toBeGreaterThan(0);
-    runtime.stop();
-  });
-
-  it("Set Mesh materialGuid emits assignMaterial", async () => {
-    const commands: CommandMessage[] = [];
-    const mesh = createMeshComponent("mesh-1", "box");
-    mesh.properties.materialGuid = null;
-    const runtime = createInProcessRuntime({
-      seed: 1,
-      seedDemoActors: false,
-      preferSoftwarePhysics: true,
-      playScene: sceneOf([
-        createActor("prop", "Prop", {
-          classId: "Hero",
-          components: [mesh],
-        }),
-      ]),
-      onCommand: (command) => commands.push(command),
-    });
-    await runtime.loadScripts([
-      script(
-        [
-          "export function onBeginPlay(ctx) {",
-          '  const c = ctx.getComponentById(ctx.self, "mesh-1");',
-          '  ctx.setVariableOn(c, "materialGuid", "mat-rock");',
-          "}",
-        ].join("\n"),
-      ),
-    ]);
-    runtime.realizePlayWorld();
-    expect(
-      commands.filter((command) => command.type === "assignMaterial"),
-    ).toEqual([
-      expect.objectContaining({
-        type: "assignMaterial",
-        materialAssetGuid: "mat-rock",
-      }),
-    ]);
-    runtime.stop();
-  });
-
-  it("Set Sprite sortingLayer stamps sorting on assignMesh", async () => {
-    const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({
-      seed: 1,
-      seedDemoActors: false,
-      preferSoftwarePhysics: true,
-      playScene: sceneOf([
-        createActor("sprite", "Sprite", {
-          classId: "Hero",
-          components: [
-            {
-              id: "sprite-1",
-              classId: "SpriteComponent",
-              properties: { sortingLayer: "Default", orderInLayer: 0 },
-            },
-          ],
-        }),
-      ]),
-      onCommand: (command) => commands.push(command),
-    });
-    await runtime.loadScripts([
-      script(
-        [
-          "export function onBeginPlay(ctx) {",
-          '  const c = ctx.getComponentById(ctx.self, "sprite-1");',
-          '  ctx.setVariableOn(c, "sortingLayer", "UI");',
-          '  ctx.setVariableOn(c, "orderInLayer", 3);',
-          "}",
-        ].join("\n"),
-      ),
-    ]);
-    runtime.realizePlayWorld();
-    const assigns = commands.filter(
-      (command) =>
-        command.type === "assignMesh" && command.actorGuid === "sprite",
-    );
-    const last = assigns.at(-1);
-    expect(last).toMatchObject({
-      type: "assignMesh",
-      sortingLayer: "UI",
-      orderInLayer: 3,
-    });
-    runtime.stop();
-  });
-
   it("Set RigidBody mass updates the physics backend, not only the Map", async () => {
     const runtime = createInProcessRuntime({
       seed: 1,
@@ -666,60 +575,6 @@ describe("component script API", () => {
         playing: true,
       },
     ]);
-    runtime.stop();
-  });
-
-  it("Set Particle System re-emits assignParticle with guid and sorting", async () => {
-    const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({
-      seed: 1,
-      seedDemoActors: false,
-      preferSoftwarePhysics: true,
-      playScene: sceneOf([
-        createActor("fx", "Sparks", {
-          classId: "Hero",
-          components: [
-            {
-              id: "particle-1",
-              classId: "ParticleComponent",
-              properties: {
-                particleSystemGuid: "sys-1",
-                playOnStart: false,
-                sortingLayer: "Default",
-                orderInLayer: 0,
-              },
-            },
-          ],
-        }),
-      ]),
-      onCommand: (command) => commands.push(command),
-    });
-    await runtime.loadScripts([
-      script(
-        [
-          "export function onBeginPlay(ctx) {",
-          '  const c = ctx.getComponentById(ctx.self, "particle-1");',
-          '  ctx.setVariableOn(c, "particleSystemGuid", "sys-2");',
-          '  ctx.setVariableOn(c, "sortingLayer", "Foreground");',
-          '  ctx.setVariableOn(c, "orderInLayer", 4);',
-          "}",
-        ].join("\n"),
-      ),
-    ]);
-    runtime.realizePlayWorld();
-    const assigns = commands.filter(
-      (command) =>
-        command.type === "assignParticle" &&
-        command.particleSystemGuid === "sys-2",
-    );
-    expect(assigns.at(-1)).toMatchObject({
-      type: "assignParticle",
-      actorGuid: "fx",
-      componentId: "particle-1",
-      particleSystemGuid: "sys-2",
-      sortingLayer: "Foreground",
-      orderInLayer: 4,
-    });
     runtime.stop();
   });
 

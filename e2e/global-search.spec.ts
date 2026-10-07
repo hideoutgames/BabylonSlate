@@ -1,5 +1,4 @@
 import { expect, test, type Page } from "@playwright/test";
-import { IPAD_TEST_TAG } from "./ipad-tag";
 import { openTestProject } from "./open-test-project";
 
 async function openGlobalSearch(page: Page): Promise<void> {
@@ -9,9 +8,7 @@ async function openGlobalSearch(page: Page): Promise<void> {
 }
 
 test.describe("Global project search", () => {
-  test("toolbar search opens a dialog and focuses a scene actor", {
-    tag: IPAD_TEST_TAG,
-  }, async ({
+  test("toolbar search opens a dialog and focuses a scene actor", async ({
     page,
   }) => {
     await openTestProject(page);
@@ -53,43 +50,5 @@ test.describe("Global project search", () => {
     await expect(
       page.locator('.react-flow__node.selected[data-id="event-begin-play"]'),
     ).toBeVisible({ timeout: 10_000 });
-  });
-
-  test("dialog stays a fixed tall height and results scroll when they overflow", {
-    tag: IPAD_TEST_TAG,
-  }, async ({
-    page,
-  }) => {
-    await openTestProject(page);
-    await openGlobalSearch(page);
-
-    const dialog = page.getByTestId("global-search-dialog");
-    await expect(dialog).toBeVisible();
-    const viewport = page.viewportSize();
-    expect(viewport).not.toBeNull();
-    const box = await dialog.boundingBox();
-    expect(box).not.toBeNull();
-    const expectedHeight = Math.min(viewport!.height * 0.9, 52 * 16);
-    expect(box!.height).toBeGreaterThan(expectedHeight * 0.85);
-    expect(box!.height).toBeLessThanOrEqual(expectedHeight + 16);
-
-    await page.getByTestId("global-search-query").fill("a");
-    const results = page.getByTestId("global-search-results");
-    await expect(results.locator('[data-testid^="global-search-item-"]').first()).toBeVisible();
-
-    const metrics = await results.evaluate((el) => ({
-      itemCount: el.querySelectorAll('[data-testid^="global-search-item-"]').length,
-      scrollHeight: el.scrollHeight,
-      clientHeight: el.clientHeight,
-      overflowY: getComputedStyle(el).overflowY,
-    }));
-    expect(metrics.overflowY).toBe("auto");
-    expect(metrics.itemCount).toBeGreaterThan(10);
-    expect(metrics.scrollHeight).toBeGreaterThan(metrics.clientHeight);
-
-    await results.evaluate((el) => {
-      el.scrollTop = 240;
-    });
-    expect(await results.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
   });
 });

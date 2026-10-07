@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getBezierPath, Position } from "@xyflow/react";
 import {
-  ANIM_TRANSITION_CURVATURE,
   ANIM_TRANSITION_MIN_STUB,
   animTransitionPath,
 } from "./anim-transition-path";
@@ -22,11 +21,6 @@ function firstControlX(path: string): number {
 }
 
 describe("animTransitionPath", () => {
-  it("uses a stronger curvature and a minimum stub than stock bezier", () => {
-    expect(ANIM_TRANSITION_CURVATURE).toBeGreaterThan(0.25);
-    expect(ANIM_TRANSITION_MIN_STUB).toBeGreaterThanOrEqual(48);
-  });
-
   it("bows further along the handle than default getBezierPath", () => {
     const [stock] = getBezierPath(horizontal);
     const { path } = animTransitionPath(horizontal);

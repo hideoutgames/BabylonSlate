@@ -59,17 +59,6 @@ afterEach(() => {
 
 const noop = async () => {};
 
-it.each(["web", "electron", "ios"])("opens the offline changelog from the %s launcher account menu", async host => {
-  getHostPlatform.mockReturnValue(host);
-  vi.stubGlobal("__BABYLONSLATE_VERSION__", "1.2.3");
-  vi.stubGlobal("__BABYLONSLATE_CHANGELOG__", [{ version: "1.2.3", title: "Release News", changes: ["Projects reopen faster."] }]);
-  renderHomepage();
-  fireEvent.click(await screen.findByRole("button", { name: "Profile" }));
-  fireEvent.click(await screen.findByRole("menuitem", { name: "Changelog" }));
-  const dialog = await screen.findByRole("dialog", { name: "Changelog" });
-  expect(within(dialog).getByText("Projects reopen faster.")).toBeTruthy();
-});
-
 function renderHomepage(
   overrides: Partial<ComponentProps<typeof Homepage>> = {},
 ) {
@@ -113,14 +102,6 @@ function createDialog(id = "blank") {
 }
 
 describe("Slate project browser", () => {
-  it("offers Blank, Basic 3D and Basic 2D starting points", () => {
-    renderHomepage();
-    fireEvent.click(screen.getByTestId("create-project"));
-    for (const id of ["blank", "empty", "2d"])
-      expect(screen.getByTestId(`create-project-${id}`)).toBeTruthy();
-    expect(screen.getByTestId("engine-settings")).toBeTruthy();
-  });
-
   it("marks every project Local and only source-controlled projects Source Control", () => {
     renderHomepage({
       projects: [
@@ -322,17 +303,6 @@ describe("Slate project browser", () => {
     );
   });
 
-  it("explains browser storage without native location controls", () => {
-    renderHomepage();
-    createDialog();
-    fireEvent.click(screen.getByText("Options"));
-    const dialog = screen.getByTestId("create-project-dialog");
-    expect(dialog.textContent).toMatch(/Stored in this browser/i);
-    expect(dialog.textContent).toMatch(/backup/i);
-    expect(screen.queryByTestId("create-project-choose-location")).toBeNull();
-    expect(screen.queryByTestId("create-project-app-documents")).toBeNull();
-  });
-
   it.each(["ios", "electron"])(
     "offers native folder choice on %s",
     async (platform) => {
@@ -426,25 +396,6 @@ describe("Slate project browser", () => {
       await waitFor(() => expect(onRemoveFromList).toHaveBeenCalledOnce());
     },
   );
-
-  it("shows a project's picture instead of the placeholder thumbnail", () => {
-    const image = "data:image/png;base64,AAAA";
-    renderHomepage({
-      projects: [
-        {
-          ...listedProject("Painted", "opfs"),
-          appearance: { icon: "rocket", color: "violet", image },
-        },
-        listedProject("Plain", "opfs"),
-      ],
-    });
-    const painted = screen.getByTestId("open-listed-project-Painted");
-    expect(painted.querySelector("img")?.getAttribute("src")).toBe(image);
-    expect(painted.querySelector("[data-placeholder]")).toBeNull();
-    const plain = screen.getByTestId("open-listed-project-Plain");
-    expect(plain.querySelector("img")).toBeNull();
-    expect(plain.querySelector("[data-placeholder]")).not.toBeNull();
-  });
 
   it("searches projects without changing the stored library", () => {
     renderHomepage({

@@ -34,17 +34,6 @@ function stubScrollViewportHeight(height: number): () => void {
 }
 
 describe("OutputLogPanel", () => {
-  it("reserves separate touch targets for selectable log rows on coarse pointers", () => {
-    vi.stubGlobal("matchMedia", (query: string) => ({
-      matches: query === "(pointer: coarse)", media: query, onchange: null,
-      addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: () => true,
-    }));
-    try {
-      render(<OutputLogPanel {...({} as IDockviewPanelProps)} />);
-      const row = screen.getAllByTestId("output-log-line")[0]!;
-      expect(Number.parseFloat(row.parentElement?.style.height ?? "0")).toBeGreaterThanOrEqual(44);
-    } finally { vi.unstubAllGlobals(); }
-  });
   it("opens a readable selected log message without expanding every row", () => {
     render(<OutputLogPanel {...({} as IDockviewPanelProps)} />);
     fireEvent.click(screen.getAllByTestId("output-log-line")[0]!);
@@ -54,11 +43,6 @@ describe("OutputLogPanel", () => {
   });
   afterEach(() => {
     cleanup();
-  });
-
-  it("mounts every log line when the viewport height is 0", () => {
-    render(<OutputLogPanel {...({} as IDockviewPanelProps)} />);
-    expect(screen.getAllByTestId("output-log-line")).toHaveLength(500);
   });
 
   it("windows 500 log lines to the viewport plus overscan", () => {

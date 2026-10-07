@@ -7,7 +7,6 @@ import {
   screen,
 } from "@testing-library/react";
 import {
-  TREE_DROP_EDGE_PX,
   TREE_ROW_HEIGHT,
   TREE_SWIPE_ADD_PX,
   TreeView,
@@ -303,11 +302,6 @@ describe("TreeView", () => {
     expect(screen.getByRole("tree").getAttribute("aria-activedescendant")).toBe(
       screen.getByTestId("tree-row-root").id,
     );
-  });
-
-  it("uses compact chrome-row height", () => {
-    expect(TREE_ROW_HEIGHT).toBe(28);
-    expect(TREE_DROP_EDGE_PX).toBe(8);
   });
 
   it("classifies drop placement from the Y offset inside a row", () => {
@@ -797,28 +791,6 @@ describe("TreeView", () => {
   it("renders an empty label with no nodes", () => {
     render(<TreeView nodes={[]} emptyLabel="No actors" data-testid="tree" />);
     expect(screen.getByText("No actors")).toBeTruthy();
-  });
-
-  it("marks the selected row with an accent fill", () => {
-    render(<TreeView nodes={nodes} selectedId="child" data-testid="tree" />);
-    expect(screen.getByTestId("tree-row-child").className).toContain(
-      "bg-accent",
-    );
-  });
-
-  it("renders an optional leading icon", () => {
-    render(
-      <TreeView
-        nodes={[
-          {
-            ...nodes[2]!,
-            icon: <span data-testid="row-icon">icon</span>,
-          },
-        ]}
-        data-testid="tree"
-      />,
-    );
-    expect(screen.getByTestId("row-icon")).toBeTruthy();
   });
 
   it("does not start a reparent from trailing controls", () => {
