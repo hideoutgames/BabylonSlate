@@ -4379,11 +4379,14 @@ class InProcessRuntime implements RuntimeDriver {
                 loopCount: 0,
                 justLooped: false,
                 justFinished: false,
+                totalNormalisedTime: 0,
+                previousTotalNormalisedTime: 0,
               },
               layers: [],
               blendFromStateId: null,
               blendFromTimeMs: 0,
               blendElapsedMs: 0,
+              blendSeconds: 0,
               loopCount: 0,
             });
           }
