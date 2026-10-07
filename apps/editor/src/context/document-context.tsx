@@ -85,6 +85,7 @@ import {
   resolveJournalLines,
   SetAssetDocumentCommand,
   ReplaceSceneCommand,
+  type EditApplyResult,
   type EditCommand,
   type HistoryAdmissionResult,
 } from "@babylonslate/edit";
@@ -97,6 +98,8 @@ import {
   isTestModeEnabled,
   createSecretStore,
   createNativeHttp,
+  ENGINE_SETTINGS_CHANGED_EVENT,
+  type EngineSettings,
 } from "@babylonslate/vfs";
 import type { ProjectStorage } from "@babylonslate/core";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
@@ -558,6 +561,13 @@ interface DocumentContextValue {
   redoActiveDocument: () => void;
   canUndoActiveDocument: boolean;
   canRedoActiveDocument: boolean;
+  /**
+   * Set when an edit was larger than the Undo memory limit: it applied, but
+   * its document's Undo history was cleared. Once per gesture; `sequence`
+   * advances for each new notice.
+   */
+  undoHistoryNotice: { documentId: string; sequence: number } | null;
+  dismissUndoHistoryNotice: () => void;
   registerDockviewApi: (
     id: string,
     api: DockviewApi,
@@ -908,6 +918,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     return pending;
   }, []);
   const [autoSaveStatus, setAutoSaveStatus] = useState<DocumentContextValue["autoSaveStatus"]>(null);
+  const [undoHistoryNotice, setUndoHistoryNotice] = useState<DocumentContextValue["undoHistoryNotice"]>(null);
+  const dismissUndoHistoryNotice = useCallback(() => setUndoHistoryNotice(null), []);
+  /** Tell the user once per gesture when an edit could not reach Undo history. */
+  const reportHistoryOutcome = useCallback((id: string, result: EditApplyResult<unknown>) => {
+    if (result.history !== "cleared") return;
+    setUndoHistoryNotice((current) => ({ documentId: id, sequence: (current?.sequence ?? 0) + 1 }));
+  }, []);
   // Keyed by saved revision, and projects made from one template share guids:
   // enterEditor replaces it so one project never shows another's thumbnails.
   const thumbnailLruRef = useRef(new ThumbnailDecodeLru(THUMBNAIL_DECODE_LRU_ENTRIES));
@@ -932,7 +949,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   /** Re-derives the context value after service state it reads changed (edits, tabs, saves). */
   const [contextTick, setContextTick] = useState(0);
   /** Registry-adjacent changes outside the registry itself; part of `registryEpoch`. */
-  const [registryTick, setRegistryTick] = useState(0);
+  const registryTickRef = useRef(0);
+  const [registryTick, setRegistryTick] = useRefState(registryTickRef);
   // Both terms only rise, so the sum changes exactly when either does.
   const registryEpoch = projectService.registryGeneration + registryTick;
   const previousThumbnailIndexRef = useRef<ReturnType<typeof createAssetThumbnailRevisionIndex> | null>(null);
@@ -1028,7 +1046,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const withSceneWrite = useCallback<ProjectService["withSceneWrite"]>(work => projectService.withSceneWrite(work), [projectService]);
   useEffect(() => documentService.onAuthoringLockChange(bump), [bump, documentService]);
   /** Plugins, search index or Show Plugin Content changed: advance `registryEpoch`. */
-  const bumpRegistry = useCallback(() => setRegistryTick((v) => v + 1), []);
+  const bumpRegistry = useCallback(() => setRegistryTick((v) => v + 1), [setRegistryTick]);
   const bumpDockWindows = useCallback(() => {
     setDockWindowTick((v) => v + 1);
   }, []);
@@ -1208,7 +1226,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     void settingsStore.load().then((settings) => {
       editSessionRef.current.configure({
         maxEntries: settings.undoHistoryLength,
-        maxBytes: DEFAULT_EDIT_BYTE_BUDGET,
+        maxBytes: settings.undoByteBudget,
       });
       thumbnailsEnabledRef.current = settings.thumbnailsEnabled !== false;
       setThumbnailsEnabled(settings.thumbnailsEnabled !== false);
@@ -1218,6 +1236,20 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       mounted = false;
     };
   }, [bump, documentService, refreshProjectList, refreshTemplates, settingsStore]);
+
+  // Undo preferences apply to every open document's history as they change.
+  useEffect(() => {
+    const onSettings = (event: Event) => {
+      const detail = (event as CustomEvent<Partial<EngineSettings>>).detail;
+      editSessionRef.current.configure({
+        maxEntries: detail?.undoHistoryLength,
+        maxBytes: detail?.undoByteBudget,
+      });
+      bump();
+    };
+    window.addEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);
+    return () => window.removeEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);
+  }, [bump]);
 
   useEffect(
     () => projectService.onRegistryChange(bumpRegistry),
@@ -1610,12 +1642,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     for (const [id, content] of documents) {
       const doc = documentService.getDocument(id);
       if (!doc || doc.content === content) continue;
+      // Replay can end at the saved content, so compare rather than mark dirty.
       if (isSceneWorkspaceKind(doc.ref.kind)) {
-        documentService.updateScene(id, content as SerializedScene);
+        documentService.updateScene(id, content as SerializedScene, "compare");
       } else if (doc.ref.kind === "graph") {
-        documentService.updateGraph(id, content as SerializedGraph);
+        documentService.updateGraph(id, content as SerializedGraph, "compare");
       } else {
-        documentService.updateAssetDocument(id, content as Record<string, unknown>);
+        documentService.updateAssetDocument(id, content as Record<string, unknown>, "compare");
       }
     }
     // Undo can leave the journal at the saved content. There is nothing to
@@ -2849,6 +2882,31 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     };
   }, [documentService, projectService]);
 
+  /**
+   * Prefab templates for stamping user component overrides, rebuilt only when
+   * a Class can have changed: the registry (its generation or `registryEpoch`
+   * tick) or an open Class document (the graph-kind revision).
+   */
+  const prefabTemplatesCacheRef = useRef<{
+    registry: unknown;
+    key: string;
+    templates: ReturnType<typeof prefabTemplatesByClassId>;
+  } | null>(null);
+  const prefabTemplatesForStamping = useCallback(() => {
+    const registry = projectService.registry;
+    const key = `${projectService.registryGeneration}:${registryTickRef.current}:${documentService.getRevisions().graph}`;
+    const cached = prefabTemplatesCacheRef.current;
+    if (cached && cached.registry === registry && cached.key === key) return cached.templates;
+    const { graphs, parentOf } = classGraphsForPrefabSync();
+    const templates = prefabTemplatesByClassId({
+      classIds: Object.keys(graphs),
+      parentOf,
+      graphs,
+    });
+    prefabTemplatesCacheRef.current = { registry, key, templates };
+    return templates;
+  }, [classGraphsForPrefabSync, documentService, projectService]);
+
   const enqueuePrefabSyncForClassPath = useCallback(
     async (path: string) => {
       const { graphs, parentOf } = classGraphsForPrefabSync();
@@ -2904,6 +2962,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
       const result = editSessionRef.current.applyBatch(id, previous, commands)!;
       documentService.updateGraph(id, result.doc);
+      reportHistoryOutcome(id, result);
       await notifyAppliedCommand(id, result.command);
       void afterMutatingApply(sourceControlRef.current, doc.ref.path);
       if (commands.some((command) => command.type === "graph.setComponents")) {
@@ -2916,6 +2975,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       enqueuePrefabSyncForClassPath,
       notifyAppliedCommand,
       projectService,
+      reportHistoryOutcome,
     ],
   );
 
@@ -3016,18 +3076,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         return false;
       }
       const previous = doc.content as SerializedScene;
-      const { graphs, parentOf } = classGraphsForPrefabSync();
       const intended = options?.prefabSync
         ? next
-        : stampUserComponentOverrides(
-            previous,
-            next,
-            prefabTemplatesByClassId({
-              classIds: Object.keys(graphs),
-              parentOf,
-              graphs,
-            }),
-          );
+        : stampUserComponentOverrides(previous, next, prefabTemplatesForStamping());
       // Deltas, or one whole-scene replacement for fields no delta covers:
       // either way the edit reaches Undo and the journal.
       const commands = planSceneChange(previous, intended);
@@ -3036,15 +3087,17 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
       const result = editSessionRef.current.applyBatch(id, previous, commands)!;
       documentService.updateScene(id, result.doc);
+      reportHistoryOutcome(id, result);
       await notifyAppliedCommand(id, result.command);
       void afterMutatingApply(sourceControlRef.current, doc.ref.path);
       return true;
     },
     [
-      classGraphsForPrefabSync,
       documentService,
       notifyAppliedCommand,
+      prefabTemplatesForStamping,
       projectService,
+      reportHistoryOutcome,
     ],
   );
 
@@ -3117,13 +3170,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         return false;
       }
       const command = new SetAssetDocumentCommand(previous, next, mergeKey);
-      const current = editSessionRef.current.apply(id, previous, command).doc;
-      documentService.updateAssetDocument(id, current);
+      const result = editSessionRef.current.apply(id, previous, command);
+      documentService.updateAssetDocument(id, result.doc);
+      reportHistoryOutcome(id, result);
       await notifyAppliedCommand(id, command);
       void afterMutatingApply(sourceControlRef.current, doc.ref.path);
       return true;
     },
-    [documentService, notifyAppliedCommand, projectService],
+    [documentService, notifyAppliedCommand, projectService, reportHistoryOutcome],
   );
 
   const textureUsageBlockedReason = useCallback(
@@ -4639,7 +4693,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const result =
           direction === "undo" ? stack.undo(content) : stack.redo(content);
         if (!result) return;
-        documentService.updateGraph(activeDocumentId, result.doc);
+        documentService.updateGraph(activeDocumentId, result.doc, "compare");
         void notifyAppliedCommand(activeDocumentId, result.command);
         if (
           JSON.stringify(content.components) !==
@@ -4668,7 +4722,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const result =
           direction === "undo" ? stack.undo(content) : stack.redo(content);
         if (!result) return;
-        documentService.updateAssetDocument(activeDocumentId, result.doc);
+        documentService.updateAssetDocument(activeDocumentId, result.doc, "compare");
         void notifyAppliedCommand(activeDocumentId, result.command);
       }
     },
@@ -5030,6 +5084,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       confirmExternalChangeReloadDocs,
       dismissExternalChange,
       undoActiveDocument,
+      dismissUndoHistoryNotice,
       redoActiveDocument,
       registerDockviewApi,
       unregisterDockviewApi,
@@ -5148,6 +5203,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       confirmExternalChangeReloadDocs,
       dismissExternalChange,
       undoActiveDocument,
+      dismissUndoHistoryNotice,
       redoActiveDocument,
       registerDockviewApi,
       unregisterDockviewApi,
@@ -5268,6 +5324,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         dirtyDocuments,
         projectDirty: projectSaveState.current.isDirty(projectDocument),
         autoSaveStatus,
+        undoHistoryNotice,
         migrationPending,
         templates,
         homepageReady,
@@ -5318,6 +5375,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       tabOrder,
       dirtyDocuments,
       autoSaveStatus,
+      undoHistoryNotice,
       currentGraphSignature,
       route,
       projectDocument,
