@@ -23,12 +23,12 @@ acknowledged boundary and preserves independent lifecycle/user reasons.
 
 ## Transports
 
-| Path | When | Mechanism |
+| Path | Where | Mechanism |
 | --- | --- | --- |
-| SAB seq-lock | `crossOriginIsolated === true` | Double-buffered `SharedArrayBuffer` + `Atomics` seq-lock |
-| Transferable ping-pong | Otherwise (GitHub Pages without COI, many CI hosts) | Transfer `ArrayBuffer` each frame; never require SAB |
+| Transferable ping-pong | Worker → main thread in every Play and player session (the only production path) | Copy the published snapshot into a recycled `ArrayBuffer` and transfer it; never require SAB |
+| SAB seq-lock | Inside the runtime: the driver's published double buffer | `SharedArrayBuffer` + `Atomics` seq-lock when available, plain `ArrayBuffer`s otherwise |
 
-Both paths share the same `Float32Array` layout and channel message types. SAB is an optimisation; CI must exercise transferables.
+Both share the same `Float32Array` layout. Main-thread reads of the shared buffer when `crossOriginIsolated` are not wired; that remains an optional optimisation, and CI exercises transferables.
 
 Cross-origin isolation on Pages uses `coi-serviceworker.js` in `apps/editor/public/` (reload once on first visit).
 
@@ -75,6 +75,8 @@ Slot `i` starts at `16 + i * 16`:
 
 Each replacement has a monotonically increasing `layoutGeneration`. The writer allocates a complete replacement pair, sends ordered `snapshotLayout { capacity, generation }`, and waits for `snapshotLayoutAck` before publishing. SAB mode hands off new buffers because an existing `SharedArrayBuffer` cannot be resized portably; transferable mode replaces both ping-pong buffers under the same handshake. The receiver replaces capacity-sized scratch/index storage and ignores frames from every non-installed generation. Writer rows remain `[0, actorCount)` and interpolation matches recyclable `slotId`, not row index.
 
+Copies carry only the active span (`snapshotActiveFloatCount`: header plus `actorCount` rows), not the whole capacity: seq-lock reads, the worker's transfer buffer and `SnapshotInterpolator.push`. Buffers are not zero-filled, so rows past `actorCount` can hold an earlier, larger frame; readers must never read past `actorCount`. The interpolator ignores a snapshot whose `actorCount` needs more rows than its buffer holds. Capacity still only grows.
+
 `SNAPSHOT_FLAG_VISIBLE` reflects the actor's canonical runtime `visible` variable, initially copied from `SerializedActor.visible`. Scripts can change that variable while playing and the next snapshot updates the renderer. Visibility is per actor: a hidden parent does not implicitly hide a separately rendered child actor.
 
 ## Channels
@@ -84,7 +86,7 @@ Each replacement has a monotonically increasing `layoutGeneration`. The writer a
 | Control | main → worker | `load` (`sceneAssetGuid`, optional authored `scene`, `seed`, `physicsWorld`, `gravity`, `havokWasmUrl`), `loadScripts`, `loadAnimGraphs`, `loadSprites` (Sprite + Sprite Animation payloads, optional `pixelsPerUnit`), `loadTilemaps` (tilemap + tileset payloads, optional `pixelsPerUnit`), `loadModels` (Model JSON headers plus cooked complex-collision `Float32Array` positions / `Uint16Array` or `Uint32Array` indices, only for Models the content scan marks — not the raw GLB), `loadComplexCollision` (answer to the worker command `requestComplexCollision`; meshes or `unavailable` guids), `play`, `step`, `stop`, `setPaused`, `console` (`line`), `inspect`, `sceneLayerResize` (`frustumWidth` / `frustumHeight`, optional `canvasWidth` / `canvasHeight` for Project Cursor NDC) |
 | Commands | worker → main (ordered) | `spawn`, `despawn`, `assignMesh` (`meshAssetGuid` + `meshKind`, optional `sceneLayerId` for HUD overlay routing, optional `light` / `camera` / `skybox` / `text3d` payloads, optional `parts[]` for extra component meshes with local TRS), `possessCamera` (`slotId`), `setScalability` (`transaction`: revisioned session render settings — quality, render path, frame cap, resolution; never persisted), `setLightsDebug` (`enabled`), `assignMaterial`, `activeScene` (`sceneAssetGuid` after `changescene` / `ctx.changeScene`, canonical guid even when the call used a display name), `log`, `print` (keyed HUD; not debugger-gated), `debugDraw` (Play wireframes; not debugger-gated), `diagnostic`, `stats`, `tilemapAnimationTime` (`elapsedMs`, simulation clock for animated atlas UVs), `animState` (`slotId`, `stateId`, `normalisedTime`, `blendWeights`, optional `clipName` / `clipKind` / `clipAssetGuid` / `justFinished` / `justLooped` / `layers[]`), `playSound` (`assetGuid`, `volume`, `frameId`, optional `emitterActorGuid` / `loop` / `voiceId`), `stopSound` (`voiceId`), `setChannelVolume` (`channelGuid`, `volume`), `setGlobalVolume` (`volume`), `assignParticle` (`slotId`, `actorGuid`, `componentId`, `particleSystemGuid`, optional `play`, optional `sortingLayer` / `orderInLayer`), `setParticlePlaying` (`actorGuid`, optional `componentId`, `playing`), `setCursorVisible` (`visible`; Play CSS cursor, default hidden), `consoleResult` (`success`, `output`), `inspectSnapshot` (`tickIndex` + node list, optional `variableTypes`) |
 | Input ring | main → worker | Tick-stamped raw events (see `@babylonslate/input`). Play stamps with the last snapshot header `tickIndex` (`snapshotTickIndex`); `stats` is **not** a hot-path channel (~5 Hz) and must not be the stick clock. The driver applies every queued event each tick so a host/worker clock skew cannot drop sticks. |
-| Snapshots | worker → main | Hot-path transform buffers (SAB or transferable) |
+| Snapshots | worker → main | Hot-path transform buffers (transferable; latest-state, at most two outstanding) |
 
 Structural and resource changes **never** go through the snapshot buffer.
 
@@ -113,7 +115,7 @@ subsequent reloads of the same asset.
 
 ## Transport parity
 
-Transport choice is a host option; scenario results must match across the in-process runtime (`createInProcessRuntime`), SAB (when available), and transferables. There is no RPC channel or Comlink: hosts use the typed control / command / input / snapshot messages above.
+Scenario results must match across the in-process runtime (`createInProcessRuntime`) and the worker's transferable path; the seq-lock and transferable primitives share a parity test. There is no RPC channel or Comlink: hosts use the typed control / command / input / snapshot messages above.
 
 ## Play game Worker
 
@@ -133,13 +135,17 @@ Diagnostics: `worker-entry.ts` mirrors the in-process driver's `reportError` on 
 
 ### Snapshot buffer recycling (transferable path)
 
-The Worker's per-frame snapshot is produced by `TransferablePingPong` (`packages/bridge`), not a fresh `ArrayBuffer` per tick. The host recycles the consumed buffer back to the worker over a `recycleSnapshot` host message once its synchronous consumer (`SnapshotInterpolator.push`, which copies into an owned ping-pong pair immediately) is done with it, so a warmed-up Play session allocates no new snapshot buffer per frame. A frame with nothing to publish (`copySnapshot` returns `false`) calls `cancelWrite()` to return the buffer to the free pool rather than leaking it. This still layers over `postMessage` transfer per frame; true zero-copy `SharedArrayBuffer` main-thread reads (no message per frame at all) when `crossOriginIsolated` remain unwired — a follow-up, not required for correctness since transferables are the CI-mandatory path.
+The Worker's per-frame snapshot is produced by `TransferablePingPong` (`packages/bridge`), not a fresh `ArrayBuffer` per tick. The host recycles the consumed buffer back to the worker over a `recycleSnapshot` host message once its synchronous consumer (`SnapshotInterpolator.push`, which copies into an owned ping-pong pair immediately) is done with it, so a warmed-up Play session allocates no new snapshot buffer per frame. A frame with nothing to publish (`copySnapshot` returns `false`) calls `cancelWrite()` to return the buffer to the free pool rather than leaking it. The free pool keeps at most two spare buffers.
+
+Backpressure: poses are latest-state. The worker counts transferred snapshots until their `recycleSnapshot` returns (stale layout generations are returned too). With two outstanding it skips the tick's pose instead of queueing another transfer; when a buffer returns it publishes the newest pose at once. Realized markers (`sceneRealized`, `sceneLayerRealized`, `sceneStreamRealized`) stay held until a pose snapshot is sent, then follow it. A successful runtime Inspector edit reply (`runtimeInspectorResult` with a `mutation` payload) is held the same way, in order, so a paused host never redraws an older pose; held replies are sent on the next pose, or immediately on `load`/`stop`, and are never dropped. Poses are the only latest-state data: header fields (tick, frame, origin) are always the newest, and no other state rides on a snapshot. Structural commands are never held, and the `snapshotLayout` handshake is unchanged. Hosts recycle in a `finally`, so a throwing consumer cannot stall poses.
+
+This still layers over `postMessage` transfer per frame; true zero-copy `SharedArrayBuffer` main-thread reads (no message per frame at all) when `crossOriginIsolated` remain unwired — a follow-up, not required for correctness since transferables are the CI-mandatory path.
 
 ## Seq-lock (SAB)
 
 1. Writer increments `seq` to odd before writing.
 2. Writer copies header + slots, then sets `seq` to even (`magic` + layout version are written here).
-3. Reader samples `seq`, copies, re-reads `seq`; if odd or changed, retry (bounded).
+3. Reader samples `seq`, copies the header and `actorCount` rows, re-reads `seq`; if odd or changed, retry (bounded).
 4. `tryRead` returns `false` until a buffer has been published. Spare seq-lock slots are zeroed; treating that as `actorCount: 0` would despawn every Play mesh created by `assignMesh` and drop `assignMaterial` records before the first tick. `isPublishedSnapshot` requires header `magic` + layout version. A published snapshot with `actorCount: 0` (empty scene) is still valid.
 
 ## Related docs

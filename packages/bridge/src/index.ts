@@ -16,6 +16,7 @@ export {
   readActorSlot,
   readActorSlotInto,
   readSnapshotHeader,
+  snapshotActiveFloatCount,
   snapshotTickIndex,
   writeActorSlot,
   writeSnapshotHeader,
