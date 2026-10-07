@@ -1663,6 +1663,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                       selection.classId,
                       overlay ? "2d" : scene.settings.physicsWorld,
                       overlay ? "2d" : scene.viewportMode,
+                      entry.components,
                     ),
                     ...selection.properties,
                   },

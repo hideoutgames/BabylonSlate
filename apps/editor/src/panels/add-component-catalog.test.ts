@@ -116,7 +116,7 @@ describe("Add Component catalog", () => {
     expect(defaultPropertiesFor("MeshComponent")).toEqual({
       meshKind: "box",
       assetGuid: null,
-      collisionMode: "simple",
+      collisionMode: "none",
       layer: 1,
       mask: 0xffffffff,
     });
@@ -201,6 +201,24 @@ describe("Add Component catalog", () => {
     expect(defaultPropertiesFor("ColliderComponent", "2d").shape).toEqual({
       kind: "box2d",
       halfExtents: { x: 0.5, y: 0.5 },
+    });
+  });
+
+  it("sizes a new collider to wrap the host's primitive mesh", () => {
+    const box = { id: "m", classId: "MeshComponent", properties: { meshKind: "box", assetGuid: null } };
+    expect(defaultPropertiesFor("ColliderComponent", "2d", "2d", [box]).shape).toEqual({
+      kind: "box2d",
+      halfExtents: { x: 0.75, y: 0.75 },
+    });
+    const stretched = { ...box, transform: { position: [0, 0, 0] as [number, number, number], rotation: [0, 0, 0, 1] as [number, number, number, number], scale: [2, 1, 1] as [number, number, number] } };
+    expect(defaultPropertiesFor("ColliderComponent", "3d", "3d", [stretched]).shape).toEqual({
+      kind: "box",
+      halfExtents: { x: 1.5, y: 0.75, z: 0.75 },
+    });
+    const model = { ...box, properties: { meshKind: "box", assetGuid: "model-1" } };
+    expect(defaultPropertiesFor("ColliderComponent", "3d", "3d", [model]).shape).toEqual({
+      kind: "box",
+      halfExtents: { x: 0.5, y: 0.5, z: 0.5 },
     });
   });
 

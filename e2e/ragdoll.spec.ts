@@ -66,7 +66,7 @@ test("a UI-authored ragdoll articulates the real Mannequin in worker Play and st
   actor.transform.position = [0, 4, 0];
   actor.transform.rotation = eulerDegreesToQuaternion([0, 0, 25]);
   const floor = createActor("ragdoll-floor", "Ragdoll Floor", {
-    components: [createMeshComponent("ragdoll-floor-mesh", "box")],
+    components: [createMeshComponent("ragdoll-floor-mesh", "box", "simple")],
   });
   floor.transform.position = [0, -0.5, 0];
   floor.transform.scale = [20, 1, 20];

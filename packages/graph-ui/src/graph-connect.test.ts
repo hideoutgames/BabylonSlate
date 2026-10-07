@@ -1769,6 +1769,42 @@ describe("edgesAfterConnect", () => {
     expect(connected).toHaveLength(2);
   });
 
+  it("replaces an exec output's wire when the host allows one wire per exec output", () => {
+    const existingExec = [
+      {
+        id: "e:a:execOut:b:execIn",
+        source: "a",
+        target: "b",
+        sourceHandle: "execOut",
+        targetHandle: "execIn",
+      },
+      {
+        id: "e:b:execOut:c:execIn",
+        source: "b",
+        target: "c",
+        sourceHandle: "execOut",
+        targetHandle: "execIn",
+      },
+    ];
+    const connected = edgesAfterConnect(
+      existingExec,
+      {
+        id: "e:a:execOut:c:execIn",
+        source: "a",
+        target: "c",
+        sourceHandle: "execOut",
+        targetHandle: "execIn",
+      },
+      pinFor,
+      { singleExecOutput: true },
+    );
+    // a's old wire is replaced; c keeps its other incoming wire (fan-in).
+    expect(connected.map((edge) => edge.id)).toEqual([
+      "e:b:execOut:c:execIn",
+      "e:a:execOut:c:execIn",
+    ]);
+  });
+
   it("keeps exec fan-in from two outputs onto one input", () => {
     const existingExec = [
       {

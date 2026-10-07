@@ -38,12 +38,12 @@ export function spatialTransformPropertyRows(
       kind: "number",
       id: `${idPrefix}-z-order`,
       label: "Z-Order",
-      value: transform.position[2],
-      defaultValue: reset.position[2],
-      onChange: (z) =>
+      value: zOrderFromDepth(transform.position[2]),
+      defaultValue: zOrderFromDepth(reset.position[2]),
+      onChange: (order) =>
         onUpdateTransform({
           ...transform,
-          position: [transform.position[0], transform.position[1], z],
+          position: [transform.position[0], transform.position[1], depthFromZOrder(order)],
         }),
     });
   }
@@ -80,4 +80,16 @@ export function spatialTransformPropertyRows(
     },
   );
   return rows;
+}
+
+/**
+ * The 2D camera sits on -Z looking toward +Z, so a nearer (smaller) world Z
+ * draws in front. Z-Order counts the other way: a higher order is in front.
+ */
+export function zOrderFromDepth(z: number): number {
+  return z === 0 ? 0 : -z;
+}
+
+export function depthFromZOrder(order: number): number {
+  return order === 0 ? 0 : -order;
 }

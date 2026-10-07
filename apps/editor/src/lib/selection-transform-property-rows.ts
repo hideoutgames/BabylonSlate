@@ -5,6 +5,7 @@ import {
   type SerializedActor,
   type ViewportMode,
 } from "@babylonslate/core";
+import { depthFromZOrder, zOrderFromDepth } from "./transform-property-rows";
 
 /** Shared axis edits are absolute values; other axes retain each actor's values. */
 export function selectionTransformPropertyRows(
@@ -73,13 +74,13 @@ export function selectionTransformPropertyRows(
         kind: "number",
         id: "actor-z-order",
         label: "Z-Order",
-        value: primary.transform.position[2],
+        value: zOrderFromDepth(primary.transform.position[2]),
         defaultValue: 0,
         mixed: actors.some(
           (actor) =>
             actor.transform.position[2] !== primary.transform.position[2],
         ),
-        onChange: (z) =>
+        onChange: (order) =>
           updateSelected((actor) => ({
             ...actor,
             transform: {
@@ -87,7 +88,7 @@ export function selectionTransformPropertyRows(
               position: [
                 actor.transform.position[0],
                 actor.transform.position[1],
-                z,
+                depthFromZOrder(order),
               ],
             },
           })),

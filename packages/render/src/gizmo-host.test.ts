@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FreeCamera, RenderTargetTexture, Scene, Vector3 } from "@babylonjs/core";
+import {
+  FreeCamera,
+  MeshBuilder,
+  RenderTargetTexture,
+  Scene,
+  Vector3,
+} from "@babylonjs/core";
 import { createTestEngine } from "./create-null-engine";
 import {
   clampGizmoScreenScale,
@@ -42,6 +48,41 @@ describe("gizmo screen-scale clamp", () => {
     expect(clampGizmoScreenScale(-0.02, 1.8)).toBeCloseTo(
       -(1.8 * GIZMO_MIN_CAMERA_DISTANCE),
     );
+  });
+});
+
+describe("gizmo move snap", () => {
+  it("lands dragged axes on the world grid and leaves other axes alone", () => {
+    const { scene } = createHandle();
+    const camera = new FreeCamera("cam", new Vector3(0, 0, -10), scene);
+    scene.activeCamera = camera;
+    const mesh = MeshBuilder.CreateBox("box", { size: 1 }, scene);
+    mesh.position.set(0.3, 0.25, 0);
+    const host = createGizmoHost(scene, { tool: "translate" });
+    host.attachTo(mesh);
+    host.setSnap({ enabled: true, translate: 1, rotateDeg: 15, scale: 0.1 });
+    const drag = host.positionGizmo.xGizmo.dragBehavior;
+    const event = (dx: number) => ({
+      delta: new Vector3(dx, 0, 0),
+      dragPlanePoint: Vector3.Zero(),
+      dragPlaneNormal: Vector3.Forward(),
+      dragDistance: dx,
+      pointerId: 1,
+      pointerInfo: null,
+    });
+
+    drag.onDragStartObservable.notifyObservers({
+      dragPlanePoint: Vector3.Zero(),
+      pointerId: 1,
+      pointerInfo: null,
+    });
+    drag.onDragObservable.notifyObservers(event(0.1));
+    expect(mesh.position.x).toBeCloseTo(0);
+    drag.onDragObservable.notifyObservers(event(0.5));
+    drag.onDragObservable.notifyObservers(event(0.3));
+    expect(mesh.position.x).toBeCloseTo(1);
+    expect(mesh.position.y).toBeCloseTo(0.25);
+    host.dispose();
   });
 });
 

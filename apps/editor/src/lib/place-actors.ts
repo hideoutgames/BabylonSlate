@@ -30,7 +30,7 @@ import {
 } from "./prefab-preview";
 import { classIdFromClassAsset, classParentLookup } from "./content-browser-helpers";
 import { mergedPrefabComponentsForClass } from "./prefab-instance-sync";
-import { uniqueSceneActorName } from "./scene-actor-names";
+import { duplicateBaseName, uniqueSceneActorName } from "./scene-actor-names";
 
 export type PlaceActorKind =
   | { type: "shape"; meshKind: string }
@@ -484,8 +484,13 @@ export function spawnPlacedActor(
     applyOverlayPlace({ ...actor, name: uniqueSceneActorName(scene, actor.name) }, options?.overlay === true);
   if (kind.type === "scene-layer-switcher") return finish(createActor(id, "Scene Layer Actor Switcher", { classId: "SceneLayerActorSwitcher", transform, properties: { sceneLayerActors: [], initialIndex: 0 } }));
   if (kind.type === "shape") {
+    // A 3D Ground is a floor: keep the view-center X/Z but sit it at y = 0
+    // rather than wherever the view ray happened to land.
+    const floor = kind.meshKind === "ground" && options?.overlay !== true && scene.viewportMode !== "2d";
     return finish(createActor(id, kind.meshKind, {
-      transform,
+      transform: floor
+        ? { ...transform, position: [transform.position[0], 0, transform.position[2]] }
+        : transform,
       components: [createMeshComponent(`${id}-mesh`, kind.meshKind)],
     }));
   }
@@ -758,7 +763,7 @@ export function duplicateSceneActor(
 ): SerializedActor {
   const copy = structuredClone(source);
   copy.id = nextActorId(scene);
-  copy.name = uniqueSceneActorName(scene, `${source.name} Copy`);
+  copy.name = uniqueSceneActorName(scene, duplicateBaseName(source.name));
   const componentIds = new Map(copy.components.map((component, index) => [
     component.id, `${copy.id}-${component.classId}-${index + 1}`,
   ]));

@@ -72,3 +72,22 @@ export function installEngineDefaultMaterial(scene: Scene): PBRMaterial {
   scene.defaultMaterial = material;
   return material;
 }
+
+/**
+ * 2D scenes ship without lights, so a material-less primitive drawn with the
+ * lit default would be black. In 2D the default also emits its checker, which
+ * keeps it visible without touching `unlit` (owned by the viewport Unlit
+ * shading mode); 3D stays purely lit.
+ */
+export function syncEngineDefaultMaterialEmission(scene: Scene, emit: boolean): void {
+  const material = scene.materials.find(isEngineDefaultMaterial);
+  if (!(material instanceof PBRMaterial)) return;
+  const texture = emit ? material.albedoTexture : null;
+  if (material.emissiveTexture === texture) return;
+  const frozen = material.isFrozen;
+  if (frozen) material.unfreeze();
+  material.emissiveTexture = texture;
+  material.emissiveColor = emit ? new Color3(1, 1, 1) : new Color3(0, 0, 0);
+  material.markDirty();
+  if (frozen) material.freeze();
+}

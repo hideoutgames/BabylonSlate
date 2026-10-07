@@ -61,6 +61,13 @@ export function createCommandRegistry(
       }
       const command = byName.get(name);
       if (!command) {
+        // A bare group word (`stat`, `snapshot`) lists its subcommands.
+        const subcommands = [...byName.keys()]
+          .filter((known) => known.startsWith(`${name} `))
+          .map((known) => known.slice(name.length + 1));
+        if (subcommands.length > 0) {
+          return fail(`usage: ${name} <${subcommands.join("|")}>`);
+        }
         return fail(`unknown command: ${name}`);
       }
       const parsed = parseCommandArgs(rest, command.parameters);

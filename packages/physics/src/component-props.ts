@@ -134,12 +134,12 @@ function parseShape(value: unknown, worldKind: "3d" | "2d"): ColliderShape {
   if (worldKind === "2d") {
     switch (kind) {
       case "circle":
-        return { kind: "circle", radius: shapeNumber(source.radius, 0.5) };
+        return { kind: "circle", radius: shapeExtent(source.radius, 0.5) };
       case "capsule2d":
         return {
           kind: "capsule2d",
-          radius: shapeNumber(source.radius, 0.25),
-          halfHeight: shapeNumber(source.halfHeight, 0.5),
+          radius: shapeExtent(source.radius, 0.25),
+          halfHeight: shapeExtent(source.halfHeight, 0.5),
         };
       case "polygon":
         return {
@@ -159,11 +159,11 @@ function parseShape(value: unknown, worldKind: "3d" | "2d"): ColliderShape {
         return {
           kind: "box2d",
           halfExtents: {
-            x: shapeNumber(
+            x: shapeExtent(
               (source.halfExtents as { x?: number } | undefined)?.x,
               0.5,
             ),
-            y: shapeNumber(
+            y: shapeExtent(
               (source.halfExtents as { y?: number } | undefined)?.y,
               0.5,
             ),
@@ -174,18 +174,18 @@ function parseShape(value: unknown, worldKind: "3d" | "2d"): ColliderShape {
 
   switch (kind) {
     case "sphere":
-      return { kind: "sphere", radius: shapeNumber(source.radius, 0.5) };
+      return { kind: "sphere", radius: shapeExtent(source.radius, 0.5) };
     case "capsule":
       return {
         kind: "capsule",
-        radius: shapeNumber(source.radius, 0.25),
-        halfHeight: shapeNumber(source.halfHeight, 0.5),
+        radius: shapeExtent(source.radius, 0.25),
+        halfHeight: shapeExtent(source.halfHeight, 0.5),
       };
     case "cylinder":
       return {
         kind: "cylinder",
-        radius: shapeNumber(source.radius, 0.5),
-        height: shapeNumber(source.height, 1),
+        radius: shapeExtent(source.radius, 0.5),
+        height: shapeExtent(source.height, 1),
       };
     case "convex":
       return { kind: "convex", points: parsePoints3(source.points) };
@@ -202,15 +202,15 @@ function parseShape(value: unknown, worldKind: "3d" | "2d"): ColliderShape {
       return {
         kind: "box",
         halfExtents: {
-          x: shapeNumber(
+          x: shapeExtent(
             (source.halfExtents as { x?: number } | undefined)?.x,
             0.5,
           ),
-          y: shapeNumber(
+          y: shapeExtent(
             (source.halfExtents as { y?: number } | undefined)?.y,
             0.5,
           ),
-          z: shapeNumber(
+          z: shapeExtent(
             (source.halfExtents as { z?: number } | undefined)?.z,
             0.5,
           ),
@@ -245,6 +245,14 @@ function parsePoints3(
 
 function numberOr(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+/**
+ * A primitive size. Its sign carries no meaning (as with a negative scale), so
+ * an authored -1 half extent is a 1 half extent rather than a broken scene.
+ */
+function shapeExtent(value: unknown, fallback: number): number {
+  return Math.abs(shapeNumber(value, fallback));
 }
 
 function shapeNumber(value: unknown, fallback: number): number {

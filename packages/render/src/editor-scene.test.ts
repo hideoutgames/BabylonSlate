@@ -653,7 +653,7 @@ describe("EditorSceneSync", () => {
     createEditorCamera(scene, { mode: "3d" });
     const sync = new EditorSceneSync(scene);
     const crate = createActor("crate", "Crate", {
-      components: [createMeshComponent("mesh", "box")],
+      components: [createMeshComponent("mesh", "box", "simple")],
     });
     sync.apply(sceneWith([crate]));
     const mesh = sync.meshForActor("crate");

@@ -1515,6 +1515,21 @@ describe("scriptPaletteNodes", () => {
     expect(other?.outOfContext).toBe(true);
   });
 
+  it("keeps the API of a component the host owns in context-sensitive search", () => {
+    const movementCall = (components: Array<{ id: string; classId: string; properties: Record<string, unknown> }>) =>
+      scriptPaletteNodes(registry, {
+        parentClass: "Actor",
+        classId: "Hero",
+        graph: { nodes: [], edges: [], components },
+      }).find((node) => node.id === "functions.call:MovementComponent:Convert Input");
+    expect(movementCall([])?.outOfContext).toBe(true);
+    const owned = movementCall([{ id: "move", classId: "MovementComponent", properties: {} }]);
+    expect(owned).toBeDefined();
+    expect(owned?.outOfContext).toBeUndefined();
+    // Yaw starts at 0 rather than reporting a missing input (2D ignores it).
+    expect(owned?.defaultData?.["default:yaw"]).toBe(0);
+  });
+
   it("marks inherited parent-class custom events as implicit-self Calls", () => {
     const nodes = scriptPaletteNodes(registry, {
       parentClass: "Actor",

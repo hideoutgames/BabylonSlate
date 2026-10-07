@@ -6,6 +6,9 @@ import type {
   RegisteredCommand,
 } from "./types";
 
+/** Upper bound the runtime applies to time dilation. */
+const MAX_TIME_DILATION = 8;
+
 const FLAG: CommandParameter = {
   name: "enabled",
   type: "bool",
@@ -113,7 +116,9 @@ export function builtinCommands(): RegisteredCommand[] {
       parameters: [{ name: "scene", type: "string", complete: "scenes" }],
       run(args, host) {
         const scene = String(args.scene);
-        host.changeScene(scene);
+        if (host.changeScene(scene) === false) {
+          return fail(`unknown scene: ${scene}`);
+        }
         return ok(`changed scene to ${scene}`);
       },
     },
@@ -178,6 +183,9 @@ export function builtinCommands(): RegisteredCommand[] {
           return ok(`volume ${host.getVolume?.() ?? 1}`);
         }
         const volume = Number(args.volume);
+        if (!(volume >= 0 && volume <= 1)) {
+          return fail("volume must be between 0 and 1");
+        }
         host.setVolume(volume);
         return ok(`volume ${volume}`);
       },
@@ -327,6 +335,11 @@ export function builtinCommands(): RegisteredCommand[] {
           return ok(`slomo ${host.getTimeDilation?.() ?? 1}`);
         }
         const rate = Number(args.rate);
+        // 0 freezes simulated time on purpose (frame-exact captures); a
+        // negative rate is not a direction time can run.
+        if (!(rate >= 0 && rate <= MAX_TIME_DILATION)) {
+          return fail(`slomo rate must be between 0 and ${MAX_TIME_DILATION}`);
+        }
         host.setTimeDilation?.(rate);
         return ok(`slomo ${host.getTimeDilation?.() ?? rate}`);
       },
@@ -338,7 +351,7 @@ export function builtinCommands(): RegisteredCommand[] {
       description: "Dump the log ring",
       parameters: [],
       run(_args, host) {
-        return ok(host.dumpLog?.() ?? "");
+        return ok(host.dumpLog?.() || "(log is empty)");
       },
     },
     {

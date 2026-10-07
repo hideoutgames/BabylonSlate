@@ -220,6 +220,11 @@ export interface GraphEditorProps {
   replaceIncomingOnConnect?: boolean;
   /** One visual edge per source→target pair (Animation Graph transitions). */
   uniqueDirectedPairOnConnect?: boolean;
+  /**
+   * Scripting graphs: each exec output drives exactly one wire (exec inputs
+   * still accept many), so a new wire from a linked exec output replaces it.
+   */
+  singleExecOutputOnConnect?: boolean;
   /** Extra host connection veto after pin compatibility. */
   canConnect?: (connection: {
     source: string;
@@ -528,6 +533,7 @@ function GraphEditorCanvas({
   connectEndMode = "default",
   replaceIncomingOnConnect = false,
   uniqueDirectedPairOnConnect = false,
+  singleExecOutputOnConnect = false,
   canConnect,
   normalizeConnection,
   connectionMode,
@@ -873,7 +879,7 @@ function GraphEditorCanvas({
           },
           (nodeId, pinId) =>
             pinOnNode(graphStateRef.current.nodes, nodeId, pinId),
-          { replaceIncoming: replaceIncomingOnConnect, uniqueDirectedPair: uniqueDirectedPairOnConnect },
+          { replaceIncoming: replaceIncomingOnConnect, uniqueDirectedPair: uniqueDirectedPairOnConnect, singleExecOutput: singleExecOutputOnConnect },
         );
         const unchanged =
           next.length === current.length &&
@@ -898,6 +904,7 @@ function GraphEditorCanvas({
       emitChange,
       replaceIncomingOnConnect,
       uniqueDirectedPairOnConnect,
+      singleExecOutputOnConnect,
     ],
   );
 
@@ -964,6 +971,15 @@ function GraphEditorCanvas({
   const collectProximityConnections = useCallback(
     (dragged: CanvasNode[]) => {
       if (readOnly || !nodesDraggable || !proximityDragRef.current || !interactions.assistantEnabled || shakenRef.current) return [];
+      // An already-linked single-link exec output is not an unused pin.
+      const linksSingleExecOutput = (
+        edge: { source: string; sourceHandle?: string | null },
+        connection: { source: string; sourceHandle?: string | null },
+      ) =>
+        singleExecOutputOnConnect &&
+        edge.source === connection.source &&
+        (edge.sourceHandle ?? "") === (connection.sourceHandle ?? "") &&
+        pinOnNode(graphStateRef.current.nodes, connection.source, connection.sourceHandle ?? "")?.kind === "exec";
       const moving = new Map(dragged.map((node) => [node.id, node]));
       const pins: ProximityPin[] = [];
       const store = storeApi.getState();
@@ -1035,7 +1051,8 @@ function GraphEditorCanvas({
                   edge.target === connection.target) ||
                 (uniqueDirectedPairOnConnect &&
                   edge.source === connection.source &&
-                  edge.target === connection.target),
+                  edge.target === connection.target) ||
+                linksSingleExecOutput(edge, connection),
             )
           )
             return false;
@@ -1061,7 +1078,8 @@ function GraphEditorCanvas({
                   edge.target === connection.target) ||
                 (uniqueDirectedPairOnConnect &&
                   edge.source === connection.source &&
-                  edge.target === connection.target),
+                  edge.target === connection.target) ||
+                linksSingleExecOutput(edge, connection),
             )
           )
             continue;
@@ -1115,6 +1133,7 @@ function GraphEditorCanvas({
       replaceIncomingOnConnect,
       storeApi,
       uniqueDirectedPairOnConnect,
+      singleExecOutputOnConnect,
     ],
   );
 
@@ -1636,7 +1655,7 @@ function GraphEditorCanvas({
                   : {}),
               },
               (nodeId, pinId) => pinOnNode(next, nodeId, pinId),
-              { replaceIncoming: replaceIncomingOnConnect, uniqueDirectedPair: uniqueDirectedPairOnConnect },
+              { replaceIncoming: replaceIncomingOnConnect, uniqueDirectedPair: uniqueDirectedPairOnConnect, singleExecOutput: singleExecOutputOnConnect },
             );
             setEdges(nextEdges);
           }
@@ -1655,6 +1674,7 @@ function GraphEditorCanvas({
       pinCompatibility,
       replaceIncomingOnConnect,
       uniqueDirectedPairOnConnect,
+      singleExecOutputOnConnect,
       screenToFlowPosition,
     ],
   );
