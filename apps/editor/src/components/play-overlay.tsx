@@ -779,6 +779,7 @@ export function PlayOverlay({
         captureFrame: () => session.diagnostics.captureFrame(),
         stopSession: () => sessionOwner && sessionTicket ? sessionOwner.stop(sessionTicket) : finishSessionRef.current(),
         releaseInput: () => { if (simulating) changeInputModeRef.current("edit"); },
+        setSurfaceOpen: (open) => session.setEditorInputSuppressed(open),
       });
       diagnosticDetachRef.current = diagnosticLease?.release ?? null;
       if (simulating && inspectionStore) {

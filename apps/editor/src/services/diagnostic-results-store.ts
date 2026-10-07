@@ -11,6 +11,7 @@ export type DiagnosticSessionPorts = {
   captureFrame(): Promise<RenderFrameReport>;
   stopSession?(): void | Promise<unknown>;
   releaseInput?(): void | Promise<unknown>;
+  setSurfaceOpen?(open: boolean): void | Promise<unknown>;
 };
 export type DiagnosticResultsSnapshot = {
   open: boolean; view: DiagnosticView; mode: DiagnosticSessionPorts["mode"] | null;
@@ -28,8 +29,13 @@ export class DiagnosticResultsStore {
     this.update({ open: true, view });
     const session = this.session;
     if (session) void Promise.resolve(session.ports.releaseInput?.()).catch(error => this.fail(session, error));
+    if (session) void Promise.resolve(session.ports.setSurfaceOpen?.(true)).catch(error => this.fail(session, error));
   }
-  close(): void { this.update({ open: false }); }
+  close(): void {
+    this.update({ open: false });
+    const session = this.session;
+    if (session) void Promise.resolve(session.ports.setSurfaceOpen?.(false)).catch(error => this.fail(session, error));
+  }
   selectView(view: DiagnosticView): void { this.update({ view }); }
   importResult(result: DiagnosticResult): void {
     if (this.state.active || this.state.busy) throw new Error("Stop the active diagnostic operation before opening another result.");
@@ -39,6 +45,7 @@ export class DiagnosticResultsStore {
     const session = { ports, token: {} };
     this.session = session;
     this.update({ mode: ports.mode, active: null, busy: false, error: null });
+    if (this.state.open) void Promise.resolve(ports.setSurfaceOpen?.(true)).catch(error => this.fail(session, error));
     return {
       publishProfile: (profile: PerformanceProfile) => {
         if (this.session !== session) return;
@@ -77,7 +84,8 @@ export class DiagnosticResultsStore {
   async captureFrame(): Promise<void> {
     const session = this.available();
     if (!session) return;
-    this.update({ active: "frame", busy: true, error: null, open: true, view: "frame" });
+    this.open("frame");
+    this.update({ active: "frame", busy: true, error: null });
     try {
       const report = await session.ports.captureFrame();
       if (this.session === session) this.update({ result: { kind: "frame", report }, active: null, busy: false });

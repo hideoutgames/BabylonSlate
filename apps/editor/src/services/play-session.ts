@@ -335,6 +335,7 @@ export interface PlaySession {
   setPaused: (paused: boolean) => void;
   setPauseReason: (reason: import("@babylonslate/bridge").SessionPauseReason, paused: boolean) => Promise<import("@babylonslate/bridge").SessionBoundaryResult>;
   setInputMode: (mode: "game" | "edit") => Promise<void>;
+  setEditorInputSuppressed: (suppressed: boolean) => Promise<void>;
   requestPausedRedraw: () => { accepted: boolean; reason?: string };
   /** Last resolved Move.x from the in-process runtime; null on the worker path. */
   lastMoveX: () => number | null;
@@ -619,6 +620,8 @@ export function startPlaySession(options: {
   let gameInputMode: "game" | "edit" = "game";
   let inputTransition = 0;
   let inputTransitionPending = false;
+  let editorInputSuppressed = false;
+  let editorInputRoutingEnabled = false;
   let acknowledgedPaused = false;
   let lastBoundaryId = 0;
   const requestedPauses = new Set<import("@babylonslate/bridge").SessionPauseReason>();
@@ -647,9 +650,9 @@ export function startPlaySession(options: {
     },
   });
   const suppressGameInput = () => {
-    const suppressed = inputTransitionPending || gameInputMode === "edit" || acknowledgedPaused || requestedPauses.size > 0;
+    const suppressed = editorInputSuppressed || inputTransitionPending || gameInputMode === "edit" || acknowledgedPaused || requestedPauses.size > 0;
     input?.setSuppressed(suppressed);
-    if (options.mode === "simulate") handle.setGameInputEnabled(!suppressed);
+    if (options.mode === "simulate" || editorInputRoutingEnabled) handle.setGameInputEnabled(!suppressed);
     return suppressed;
   };
   const setPauseReason: PlaySession["setPauseReason"] = async (reason, paused) => {
@@ -1402,6 +1405,19 @@ export function startPlaySession(options: {
       worker?.postControl({ type: "setPaused", paused });
     },
     setPauseReason,
+    setEditorInputSuppressed: async (suppressed) => {
+      const transition = ++inputTransition;
+      inputTransitionPending = true;
+      editorInputRoutingEnabled = true;
+      editorInputSuppressed = suppressed;
+      input.neutralize();
+      suppressGameInput();
+      const result = await boundaryClient.request({ kind: "resetInput" });
+      if (!result.success) throw new Error(result.reason ?? "Editor input ownership could not be reset");
+      if (transition !== inputTransition) return;
+      inputTransitionPending = false;
+      suppressGameInput();
+    },
     setInputMode: async (mode) => {
       const transition = ++inputTransition;
       inputTransitionPending = true;
