@@ -55,11 +55,10 @@ it("moves a draft with absolute world coordinates and waits for the runtime ackn
   expect(proxy).not.toBe(target);
   expect(proxy.position.x).toBe(1_000_000.25);
   start();
-  // This is the native gizmo's draft output; adapter callbacks must never write
-  // it directly onto the render mesh or add the camera's floating origin twice.
-  proxy.position.x += 5;
-  drag.onDragObservable.notifyObservers({ delta: Vector3.Zero(), dragPlanePoint: Vector3.Zero(),
-    dragPlaneNormal: Vector3.Forward(), dragDistance: 0, pointerId: 1, pointerInfo: null });
+  // Let Babylon's real drag observer update the draft matrix before the adapter
+  // reads it. The authoritative render mesh must remain untouched.
+  drag.onDragObservable.notifyObservers({ delta: new Vector3(5, 0, 0), dragPlanePoint: new Vector3(5, 0, 0),
+    dragPlaneNormal: Vector3.Forward(), dragDistance: 5, pointerId: 1, pointerInfo: null });
   expect(writes.at(-1)).toMatchObject({ target: identity, space: "world", phase: "continuous",
     transform: { position: [1_000_005.25, 2, 3] } });
   expect(target.position.x).toBe(1_000_000.25);
