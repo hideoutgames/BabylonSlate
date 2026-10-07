@@ -127,6 +127,8 @@ async function launchLoaded(
   // Session-scoped HUD feed; cleared with the page, same as the render loop.
   const memoryInterval = window.setInterval(refreshHostMemory, 1000);
   let stopped = false;
+  let previewDiagnostics: ReturnType<typeof import("./preview-diagnostics")["installPreviewDiagnostics"]> | undefined;
+  let preparingDiagnostics: Promise<void> | undefined;
   const previewSaves = previewMode() && window.parent !== window ? createPreviewSaveStorageClient({
     source: () => window.parent,
     origin: () => previewHostOrigin,
@@ -147,6 +149,7 @@ async function launchLoaded(
       () => window.removeEventListener("message", onSessionMessage),
       () => window.clearInterval(memoryInterval),
       () => layoutObserver?.disconnect(),
+      () => { void previewDiagnostics?.close(); },
       stopAudioOverlays,
     ]) {
       try { release(); } catch (error) { errors.push(error); }
@@ -160,6 +163,7 @@ async function launchLoaded(
     game,
     saveStorage: previewSaves?.storage,
     traceByteBudget,
+    previewDiagnostics: previewMode() && window.parent !== window,
     onStopped: cleanupPage,
     onConsoleEvent: (command) => {
       hud.applyCommand(command);
@@ -277,6 +281,24 @@ async function launchLoaded(
     if (!isExpectedPreviewHostMessage(event, window.parent, previewHostOrigin))
       return;
     if (stopped) return;
+    if (previewMode() && session.previewDiagnostics && event.data?.type === "babylonslate-preview-diagnostic-control") {
+      if (previewDiagnostics) { previewDiagnostics.receive(event); return; }
+      if (event.data?.action !== "open" || preparingDiagnostics) return;
+      // This independently built entry is absent from ordinary exported games.
+      // A runtime URL keeps the normal single-file player bundle unchanged.
+      const url = new URL(import.meta.env.DEV ? "./src/preview-diagnostics.ts" : "./player-preview-diagnostics.js", document.baseURI).href;
+      preparingDiagnostics = (async () => {
+        const module = await import(/* @vite-ignore */ url) as typeof import("./preview-diagnostics");
+        if (stopped) return;
+        previewDiagnostics = module.installPreviewDiagnostics(session.previewDiagnostics!, {
+          source: () => window.parent, origin: () => previewHostOrigin,
+          send: (message, transfer) => window.parent.postMessage(message, previewHostOrigin, transfer ?? []),
+        });
+        previewDiagnostics.receive(event);
+      })().catch((error: unknown) => { console.warn("Preview diagnostics could not load.", error); })
+        .finally(() => { preparingDiagnostics = undefined; });
+      return;
+    }
     if (previewMode() && event.data?.type === PREVIEW_CONSOLE_CONTEXT_MESSAGE) {
       if (inspecting) return;
       inspecting = true;

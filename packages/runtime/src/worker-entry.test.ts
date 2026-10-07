@@ -60,6 +60,16 @@ describe.each([
   ["requestAnimationFrame", true],
   ["monotonic timer fallback", false],
 ] as const)("worker entry scheduler with %s", (_label, withAnimationFrame) => {
+  it("rebases a paused clock without replacing its scheduled callback", () => {
+    const harness = createHost(withAnimationFrame);
+    const elapsed: number[] = [];
+    const scheduler = createWorkerScheduler(harness.host, value => elapsed.push(value));
+    scheduler.start(); harness.runNext(16); harness.runNext(20);
+    scheduler.resetClock(); harness.runNext(300_000); harness.runNext(25);
+    expect(elapsed).toEqual([0, 0.02, 0, 0.025]);
+    expect(harness.activeCount()).toBe(1);
+    scheduler.stop();
+  });
   it("boots, repeatedly advances elapsed time, and stops cleanly", () => {
     const harness = createHost(withAnimationFrame);
     const advance = vi.fn();

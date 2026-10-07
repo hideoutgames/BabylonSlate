@@ -9,6 +9,7 @@ import {
   within,
 } from "@testing-library/react";
 import { PropertyGrid, type PropertyRow } from "./property-grid";
+import { EditorReadOnlyContext } from "./editor-read-only";
 import { AssetOpenProvider } from "./asset-picker-control";
 import {
   formatEventMemberName,
@@ -432,7 +433,7 @@ describe("PropertyGrid", () => {
     expect(screen.queryByRole("button", { name: /^Reset / })).toBeNull();
   });
 
-  it("keeps read-only live values current while blocking edits, picks, and resets", () => {
+  it.each(["explicit", "inherited"])("keeps %s read-only live values current while blocking edits, picks, and resets", (policy) => {
     const onChange = vi.fn();
     const onCommit = vi.fn();
     const onPick = vi.fn();
@@ -444,7 +445,10 @@ describe("PropertyGrid", () => {
       { kind: "enum", id: "mode", label: "Mode", value: "idle", options: [{ value: "idle", label: "Idle" }], onChange },
       { kind: "asset", id: "target", label: "Target", value: "actor-1", onChange, onPick },
     ];
-    const { rerender } = render(<PropertyGrid rows={rows} readOnly />);
+    const grid = (values: PropertyRow[]) => <EditorReadOnlyContext.Provider value={policy === "inherited"}>
+      <PropertyGrid rows={values} readOnly={policy === "explicit"} />
+    </EditorReadOnlyContext.Provider>;
+    const { rerender } = render(grid(rows));
     for (const id of ["name", "health", "position-x", "position-y", "position-z", "target", "mode"]) {
       expect((screen.getByTestId(`property-${id}`) as HTMLInputElement | HTMLButtonElement).disabled).toBe(true);
     }
@@ -460,7 +464,7 @@ describe("PropertyGrid", () => {
     expect(onCommit).not.toHaveBeenCalled();
     expect(onPick).not.toHaveBeenCalled();
 
-    rerender(<PropertyGrid rows={rows.map((row) => row.id === "health" ? { ...row, value: 11 } as PropertyRow : row)} readOnly />);
+    rerender(grid(rows.map((row) => row.id === "health" ? { ...row, value: 11 } as PropertyRow : row)));
     expect((screen.getByTestId("property-health") as HTMLInputElement).value).toBe("11");
     expect(checkbox.getAttribute("aria-checked")).toBe("true");
     expect(rows.every((row) => row.disabled === undefined)).toBe(true);

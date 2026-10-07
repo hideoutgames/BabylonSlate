@@ -35,6 +35,26 @@ describe("trace view helpers", () => {
     expect(asTracePayload({ name: "nope" })).toBeNull();
   });
 
+  it("validates optional retention metadata while accepting legacy traces", () => {
+    const retention = {
+      byteBudget: 1024,
+      droppedFrames: 1,
+      complete: false,
+      stopReason: "oversized-frame",
+    };
+    expect(asTracePayload({ ...payload, retention })?.retention).toEqual(retention);
+    expect(asTracePayload({ ...payload, retention: null })).toBeNull();
+    for (const invalid of [
+      { byteBudget: -1 },
+      { droppedFrames: 0.5 },
+      { complete: "false" },
+      { stopReason: "unknown" },
+      { complete: true },
+    ]) {
+      expect(asTracePayload({ ...payload, retention: { ...retention, ...invalid } })).toBeNull();
+    }
+  });
+
   it("filters logs and prints to a window ending at the scrubber", () => {
     expect(
       collectTraceLogWindow(payload, 0, 30).map((line) => line.text),

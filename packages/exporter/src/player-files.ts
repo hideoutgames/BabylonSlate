@@ -4,11 +4,12 @@
  */
 export function selectPlayerRuntimeFiles(
   files: ReadonlyMap<string, Uint8Array>,
-  options: { physicsWorld: "2d" | "3d"; hasSceneLayers?: boolean },
+  options: { physicsWorld: "2d" | "3d"; hasSceneLayers?: boolean; includePreviewDiagnostics?: boolean },
 ): Map<string, Uint8Array> {
   const selected = new Map<string, Uint8Array>();
   for (const [path, bytes] of files) {
     const relative = path.replace(/^\/+/, "");
+    if (relative === "player-preview-diagnostics.js" && !options.includePreviewDiagnostics) continue;
     if (relative.endsWith("README.md") || relative.endsWith(".keep")) continue;
     if (
       options.physicsWorld === "3d" &&

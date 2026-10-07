@@ -21,6 +21,27 @@ describe("typed asset dependencies", () => {
     expect(getRequiredDependencies({ guid: "scene-a", ...metadata })).toEqual(["environment", "font", "hero", "hud", "material", "model", "sound", "spark"]);
   });
 
+  it("keeps saved scene-owned material textures in the required source closure without loading stale overrides", async () => {
+    const bytes = await encodeAssetDocument({ type: "Scene", guid: "scene", name: "Scene", version: 1, payload: {
+      actors: [{ classId: "engine:Actor", suppressedComponentSourceIds: ["removed-component"], components: [
+        { classId: "MeshComponent", properties: { materialGuid: "surface" }, materialInstance: {
+          materialGuid: "surface", parameters: {
+            Albedo: { kind: "texture", textureAssetGuid: "private-texture" },
+            Empty: { kind: "texture", textureAssetGuid: null },
+            Invalid: { kind: "texture", value: "not-a-persisted-texture" },
+            Label: { kind: "string", value: "not-an-asset" },
+          },
+        } },
+        { classId: "MeshComponent", properties: { materialGuid: "replacement" }, materialInstance: {
+          materialGuid: "old-material", parameters: { Albedo: { kind: "texture", textureAssetGuid: "old-texture" } },
+        } },
+      ] }],
+    } });
+    const header = readBabassetHeader(bytes);
+    expect(header.dependencies).toEqual(["private-texture", "replacement", "surface"]);
+    expect(getRequiredDependencies(header)).toEqual(["private-texture", "replacement", "surface"]);
+  });
+
   it("collects typed graph literals, nested structure collections and selected classes without treating free text as references", () => {
     const metadata = collectAssetDependencyMetadata("Class", {
       nodes: [{ id: "spawn", type: "spawn", data: { "default:class": "Enemy", "default:asset": "", Asset: "old-texture", text: "unrelated" } }], edges: [],

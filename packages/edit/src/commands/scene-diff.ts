@@ -30,6 +30,7 @@ import {
   SetViewportModeCommand,
   type SceneEditCommand,
 } from "./scene";
+import { SetActorSuppressedComponentsCommand, SetComponentMaterialInstanceCommand } from "./scene-instance";
 
 function transformEqual(a: SerializedTransform, b: SerializedTransform): boolean {
   return (
@@ -86,6 +87,9 @@ function diffComponents(
     // restore the override when Redo follows the first command's inverse.
     const editLinkage = previous.sourceId || component.sourceId || changedLinkage ? linkage : undefined;
     let recordedLinkage = false;
+    if (JSON.stringify(previous.materialInstance) !== JSON.stringify(component.materialInstance)) {
+      commands.push(new SetComponentMaterialInstanceCommand(actorId, id, previous.materialInstance, component.materialInstance));
+    }
     for (const key of propertiesDiff(previous.properties, component.properties)) {
       commands.push(
         new SetComponentPropertyCommand(
@@ -282,6 +286,9 @@ export function diffSceneCommands(
       continue;
     }
     if (previous !== actor) {
+      if (JSON.stringify(previous.suppressedComponentSourceIds) !== JSON.stringify(actor.suppressedComponentSourceIds)) {
+        commands.push(new SetActorSuppressedComponentsCommand(id, previous.suppressedComponentSourceIds, actor.suppressedComponentSourceIds));
+      }
       if (previous.name !== actor.name) {
         commands.push(new RenameActorCommand(id, previous.name, actor.name));
       }

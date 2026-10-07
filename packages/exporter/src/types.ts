@@ -136,6 +136,8 @@ export type GameManifest = {
 };
 
 export type ExportGameOptions = {
+  /** Editor-hosted Preview only; never enables diagnostics in ordinary exports. */
+  includePreviewDiagnostics?: boolean;
   defaultFontGuid?: string | null;
   saveGame?: import("@babylonslate/core").SaveGameConfiguration;
   project?: { name: string; version: string };

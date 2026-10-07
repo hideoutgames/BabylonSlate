@@ -77,6 +77,14 @@ interface EditCommand<TDoc = unknown> {
 
 Merge: if the new command’s `mergeKey` equals the top undo entry’s key, replace the top entry with a coalesced command (one undo step per gesture). `diffSceneCommands` emits `SetActorsTransformsCommand` when two or more actors change transform in one snapshot so a multi-select gizmo drag is one stack entry.
 
+### Guaranteed history admission
+
+`DocumentEditStack.applyWithHistoryAdmission` and `EditSession.applyWithHistoryAdmission` are explicit transaction entry points. Both forward and inverse commands must declare finite, nonnegative integer byte costs; their sum must fit the document budget before `apply` runs. Failure returns `history-budget` or `invalid-byte-size` without changing Undo, Redo, or gesture state. A successful change creates one separate entry and permits ordinary oldest-entry eviction. A command returning its unchanged input creates no history and preserves Redo. Existing `apply` behavior remains unchanged, including applying an oversized ordinary edit whose history is then evicted.
+
+`ReplaceSceneCommand` (`scene.replace`) preserves a complete canonical `SerializedScene`, including actor properties, ordering, references, component linkage, settings and editor metadata. It snapshots immutable before/after data once, shares those snapshots with its inverse, and restores mutable document copies without running gameplay. Its UTF-8 byte cost includes both complete snapshots; admission conservatively counts both command directions even though the immutable data is shared. This budget describes retained serialized data, not browser heap usage.
+
+The replacement command rejects values JSON would silently lose or coerce (including undefined properties, non-finite numbers, negative zero, sparse arrays, runtime objects and cycles). Capture must encode supported typed values and canonicalize numbers before constructing it. Simulation supplies a bounded complete candidate after schema/reference/resource validation and rechecks revision and permission ownership before using this entry point. Journal revival reuses the same validation and restores the whole replacement as one record; it never selects an arbitrary valid subset.
+
 ## Journal format
 
 Path: `derived/{projectGuid}/journal/00000000.jsonl`, `00000001.jsonl`, … (app-private storage; see [containers.md](containers.md)). Lines are read in segment order. A project journalled by an older build may still have the single file `derived/{projectGuid}/journal.jsonl`; it is read first, and every clear removes both layouts.
@@ -107,6 +115,10 @@ Each line is one JSON object:
 Interactive edits mark the document dirty on apply. `applyGraphChange` and `applySceneChange` both diff snapshots into commands, push through `EditSession`, then **immediately** bump chrome (Undo / Redo / Save All dirty) and schedule `saveProject` after `ProjectSettings.autoSaveIntervalMs` (default **120000**). The crash-journal record is buffered after that bump and written in a batch (see Journal format); a slow or failed journal write is logged and cannot leave Undo disabled. A second edit does **not** reset an already-running timer. The desktop status bar distinguishes Auto-Saving, Auto-Saved, and failed Auto-Save (with the storage error in its tooltip); newer edits keep their unsaved label. Automatic save failures are caught and retain dirty documents for a manual Save All retry. **Save All** writes immediately, cancels the pending timer, then `flushSync`s the chrome bump so Save All disables in the same turn as `markAllClean`. `saveAll` is a stable action: a reference taken before later edits (a dialog handler, Play's prepare step) still saves the documents, layouts and project settings as they are when it runs, and its `flushSync` still commits the new dirty state to `useDocuments()` consumers before it resolves. **Play** is another explicit save trigger: if documents are dirty or graphs are compile-stale, Play saves and compiles first (progress dialog) and waits before launching Preview. When a save runs and `compileOnSave` is on (default **true**), open graphs compile. Only dirty documents write; large immutable chunks stay in the blob store (engineplan §19 / [vfs.md](vfs.md)).
 
 Queued document and Scene bake writes resolve the asset's current path from its GUID after earlier moves finish. A queued Save cannot recreate an old path or resurrect a deleted asset.
+
+Session preparation can call `lockAuthoringWrites(reason)` to close new project-write admission immediately, then await the returned lease's `ready` before locking in-memory documents and taking a baseline. Already-admitted operations finish their complete async scope, including rollback, encode commits, bake flushes, and Save All's clean-revision update. New Save All/autosave requests defer while admission is closed. `withBaselineSave` and `withSceneWrite` pass revocable writer capabilities explicitly; they do not install a global save bypass, and a captured writer cannot be reused after its operation closes. Project, asset-registry, blob, extension/package/code, and exposed storage mutation ports share this boundary. Internal storage rejects writes once admitted operations drain, and the encode queue pauses until every independent lock and pause owner releases it. Reads, logs, and diagnostic writes to separate storage remain usable. This editor-owner boundary cannot stop external filesystem or source-control tools; project close and external document replacement still require session lifecycle coordination. Simulation preparation waits for this barrier before taking its immutable source baseline. The admitted migration-save writer also owns dependency metadata upgrades, so an already-started save finishes before the session lock without opening a global bypass.
+
+Live runtime property requests use `PlaySession.requestRuntimeInspection`, outside the authoring EditSession. Its headless client bounds pending requests (32), aggregate retained request bytes (256 KiB), and each typed transport value (64 KiB). It sends at most one write per object lifetime and field at a time, coalesces pending continuous drafts, preserves discrete/final edits, and reports superseded requests explicitly. Correlation IDs increase at dispatch independently from edit sequences, so another selected target may answer first without consuming the wrong request. Stop, scene replacement, actor destruction, timeout, and invalid identities reject their pending work and release timers. In-process mutation acknowledgments follow authoritative snapshot publication without advancing the game clock; Worker mutations use the same typed protocol. These writes never create per-drag authoring history entries.
 
 The mounted asset registry is authoritative for path-to-GUID lookup. Reusing a moved or deleted path creates a fresh asset identity; replacing and reindexing a file also replaces any earlier cached identity for that path.
 
@@ -168,3 +180,30 @@ See [scene-editing.md](scene-editing.md) for viewport/outliner wiring.
 ## Tests
 
 Every command type gets an apply-then-invert property test asserting structural equality of the document model. Stack tests cover merge keys, dual budgets, and active-document scoping; `session.test.ts` covers closed-history retention, identity checks, rename and oldest-first eviction. `document-service.test.ts` checks that each `DocumentService` mutation advances exactly the document revisions it should; `document-context.test.tsx` checks on the real provider that registry-only updates and tab switches keep `openDocuments`, `tabOrder` and `dirtyDocuments`, and that a Scene edit leaves Class-keyed inputs alone, plus Undo across the exclusive Scene switch, and no history after Discard, an external change, an open-time prefab sync of a changed Class or delete-and-recreate at the same path; `graph-panel.test.tsx` checks on the real provider that a mounted Class graph panel's Add Node palette offers a function added, unsaved, in another open Class tab. Playwright `e2e/p2-accept.spec.ts` covers killed-tab journal recovery; `e2e/p6-scene-editing.spec.ts` covers scene undo through the command layer; `e2e/p5-scripting.spec.ts` covers Class graph undo/redo on the canvas; `e2e/p18-editor-opt.spec.ts` covers idle-unmount (2-minute grace, cap 3 including the open Scene, overlay Play **through** idle grace without resetting Tick) plus Prefab/Play sharing the project-lifetime Engine.
+
+## Simulation retention transaction
+
+Simulation retention uses `beginSimulationDocument` to acquire an exclusive,
+private document lease after pending project writes have completed. Its immutable
+baseline records content identity, path and dirty state. The lease checks those
+identities again and synchronously installs only a history-admitted result while
+ordinary document mutations remain locked. Permissions and source-control state
+are rechecked by the document action. A failed capture or admission keeps the
+source document, dirty flag, Undo and Redo unchanged; explicit Discard releases
+the session without a document command. The one whole-scene command is labeled
+“Apply Simulation Changes”. Complete candidates are retained singly for retry.
+
+`ReplaceSceneCommand` can preflight the configured history budget before copying
+snapshots. Its canonical UTF-8 counter does not construct a second full JSON
+string; both command directions must fit. Scene Undo/Redo compares the restored
+content with the last successful saved scene reference, so undoing Keep to a
+clean baseline returns it to clean. Save remains the normal persistence boundary,
+and the existing journal records the complete command as one entry.
+
+Keep is off by default. Discard performs no final authoring capture, command or
+journal append, and preserves pre-session dirty state and history. Keep snapshots
+its local preference at session start. No-op candidates preserve existing Redo;
+permission, revision, schema or budget refusal leaves the document untouched and
+the bounded quiescent result available for Retry or Discard. Scene scopes acquired
+for lazy document loading remain owned by their document until it closes; Stop
+waits for runtime release before restoring the authoring viewport.

@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryOpfsRoot } from "../../../../packages/vfs/src/test-support/memory-opfs";
-import { createEmptyProject, PROJECT_FILE, SourceRevisionChangedError, type ProjectStorage } from "@babylonslate/core";
+import { createEmptyProject, MAIN_SCENE_FILE, PROJECT_FILE, SourceRevisionChangedError, type SerializedScene, type ProjectStorage } from "@babylonslate/core";
 import { MemoryStorageAdapter, OpfsStorageAdapter } from "@babylonslate/vfs";
-import { encodeAssetDocument, encodeBabasset } from "@babylonslate/assets";
+import { encodeAssetDocument, encodeBabasset, decodeBabasset } from "@babylonslate/assets";
 import { loadKenneyMannequinGlb } from "../lib/kenney-mannequin";
 import { ProjectService } from "./project-service";
 import { setEncodeQueuePauseReason } from "./encode-queue-pause";
@@ -39,6 +39,98 @@ function workerFactory() {
 }
 
 describe("ProjectService lifecycle", () => {
+  it("blocks every exposed project writer while keeping authoring reads and derived storage available", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    const service = new ProjectService(storage);
+    const project = await service.createEmptyProject("Protected", { kind: "2d" });
+    const scene = await service.loadDocument("scene", MAIN_SCENE_FILE) as SerializedScene;
+    const before = await storage.readBinary(MAIN_SCENE_FILE);
+    const registry = service.registry!;
+    const publicStorage = service.storagePort;
+    const blobs = registry.blobsFor("project");
+    const derived = new MemoryStorageAdapter("opfs");
+    await derived.openDocumentsProject("Diagnostics");
+    service.setDerivedStorage(derived);
+    const lease = service.lockAuthoringWrites("Read-only during Simulation Play");
+    expect(await lease.ready).toBe(true);
+    try {
+      await expect(service.saveDocument("scene", MAIN_SCENE_FILE, { ...scene, name: "Blocked" })).rejects.toThrow(/Read-only/);
+      await expect(service.saveProject(project.document, project.layouts)).rejects.toThrow(/Read-only/);
+      await expect(service.upgradeDependencyMetadata()).rejects.toThrow(/Read-only/);
+      await expect(registry.createFolder("project", "Blocked")).rejects.toThrow(/Read-only/);
+      await expect(registry.storageFor("project").writeText("assets/direct.txt", "Blocked")).rejects.toThrow(/Read-only/);
+      await expect(blobs.writeBlob("blocked", new Uint8Array([1]))).rejects.toThrow(/Read-only/);
+      await expect(publicStorage.remove(MAIN_SCENE_FILE)).rejects.toThrow(/Read-only/);
+      await expect(service.extensions.create("Blocked")).rejects.toThrow(/Read-only/);
+      expect((await service.loadDocument("scene", MAIN_SCENE_FILE) as SerializedScene).name).toBe(scene.name);
+      expect(await publicStorage.readBinary(MAIN_SCENE_FILE)).toEqual(before);
+      await derived.writeText("profile.json", "diagnostic");
+      expect(await derived.readText("profile.json")).toBe("diagnostic");
+      expect(await storage.exists("assets/Blocked")).toBe(false);
+      expect(await storage.exists("assets/.blobs/blocked")).toBe(false);
+    } finally { lease.release(); }
+    await service.saveDocument("scene", MAIN_SCENE_FILE, { ...scene, name: "After" });
+    expect((await service.loadDocument("scene", MAIN_SCENE_FILE) as SerializedScene).name).toBe("After");
+    await service.closeProject();
+  });
+
+  it("waits for a complete already-admitted multi-document save and refuses new saves while draining", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    const service = new ProjectService(storage);
+    const project = await service.createEmptyProject("SaveLane", { kind: "2d" });
+    const scene = await service.loadDocument("scene", MAIN_SCENE_FILE) as SerializedScene;
+    let proceed!: () => void;
+    let wroteScene!: () => void;
+    const firstWrite = new Promise<void>(resolve => { wroteScene = resolve; });
+    const paused = new Promise<void>(resolve => { proceed = resolve; });
+    const saving = service.withBaselineSave(async writer => {
+      await writer.saveDocument("scene", MAIN_SCENE_FILE, { ...scene, name: "Saved baseline" });
+      wroteScene();
+      await paused;
+      await writer.upgradeDependencyMetadata();
+      await writer.saveProject({ ...project.document, metadata: { ...project.document.metadata, version: "2.0" } }, project.layouts);
+    });
+    await firstWrite;
+    const lease = service.lockAuthoringWrites("Session is preparing");
+    let ready = false;
+    void lease.ready.then(acquired => { ready = acquired; });
+    await expect(service.saveDocument("scene", MAIN_SCENE_FILE, scene)).rejects.toThrow(/preparing/);
+    expect(ready).toBe(false);
+    proceed();
+    await saving;
+    expect(await lease.ready).toBe(true);
+    expect(JSON.parse(await storage.readText(PROJECT_FILE)).metadata.version).toBe("2.0");
+    expect((await service.loadDocument("scene", MAIN_SCENE_FILE) as SerializedScene).name).toBe("Saved baseline");
+    lease.release();
+    await service.closeProject();
+  });
+
+  it("drains an active texture encode through its final chunk commit before admitting a session baseline", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    let finishEncode!: (result: { ktx2: Uint8Array; wallMs: number }) => void;
+    const service = new ProjectService(storage, { encode: () => new Promise(resolve => { finishEncode = resolve; }) });
+    await service.createEmptyProject("EncodeDrain", { kind: "2d" });
+    await storage.writeBinary("assets/test.babasset", await encodeBabasset({
+      header: { guid: "encode-drain", type: "Texture", name: "Test", engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null, payload: { usage: "albedo", compressionState: "encode_failed" } },
+      chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: new Uint8Array([1, 2, 3]) }],
+    }));
+    await service.registry!.reindexPath("assets/test.babasset");
+    service.textureEncodeQueue.enqueue({ assetGuid: "encode-drain", source: new Uint8Array([1]), settings: { format: "uastc", quality: 2, maxDimension: 2048, generateMipmaps: true } });
+    await vi.waitFor(() => expect(finishEncode).toBeTypeOf("function"));
+    const lease = service.lockAuthoringWrites("Read-only baseline");
+    let ready = false;
+    void lease.ready.then(acquired => { ready = acquired; });
+    await Promise.resolve();
+    expect(ready).toBe(false);
+    finishEncode({ ktx2: new Uint8Array([9, 8, 7]), wallMs: 1 });
+    expect(await lease.ready).toBe(true);
+    const saved = await decodeBabasset(await storage.readBinary("assets/test.babasset"));
+    expect(saved.header.payload.compressionState).toBe("compressed");
+    expect([...saved.chunks.values()].some(bytes => bytes.length === 3 && bytes[0] === 9)).toBe(true);
+    lease.release();
+    await service.closeProject();
+  });
+
   it.each(["chunk", "document"] as const)("retries a complete %s read after a concurrent save without retaining the failed snapshot", async (kind) => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("ConcurrentRead");

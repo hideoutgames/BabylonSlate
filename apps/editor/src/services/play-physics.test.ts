@@ -22,7 +22,7 @@ describe("playLoadControl", () => {
   });
 
   it.each([
-    { traceByteBudget: 1024, retainedTicks: [8] },
+    { traceByteBudget: 1024, retainedTicks: [] },
     { traceByteBudget: 32 * 1024, retainedTicks: [1, 2, 3, 4, 5, 6, 7, 8] },
   ])("retains trace frames according to the Play load budget of $traceByteBudget bytes", ({ traceByteBudget, retainedTicks }) => {
     const runtime = createRuntimeFromLoad(playLoadControl({
@@ -42,6 +42,9 @@ describe("playLoadControl", () => {
       for (let i = 0; i < 8; i++) runtime.tick();
       runtime.executeConsoleCommand("snapshot stop");
       expect(runtime.stopTrace()?.frames.map((frame) => frame.tickIndex)).toEqual(retainedTicks);
+      expect(runtime.stopTrace()?.retention).toMatchObject(traceByteBudget === 1024
+        ? { byteBudget: traceByteBudget, complete: false, droppedFrames: 1, stopReason: "oversized-frame" }
+        : { byteBudget: traceByteBudget, complete: true, droppedFrames: 0, stopReason: "requested" });
     } finally {
       runtime.stop();
     }

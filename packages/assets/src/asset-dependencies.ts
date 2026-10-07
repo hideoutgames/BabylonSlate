@@ -5,6 +5,7 @@ import {
   assetVariableGuidsFromGraph,
   isLegacyMaterialAssetType,
   materialParameterTextureGuidsFromGraph,
+  normalizeMaterialInstanceOverrides,
   parseMapDefaultEntries,
   renderTargetAssetGuidsFromGraph,
   richTextImageGuids,
@@ -259,6 +260,12 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
       }
       materialParameters(properties.materialParameters);
       materialParameters(properties.parameterOverrides);
+      // Scene-owned private values follow only the current assignment. Stale
+      // overrides must not pull an unrelated material or texture into startup.
+      const materialInstance = normalizeMaterialInstanceOverrides(component.materialInstance);
+      if (materialInstance && materialInstance.materialGuid === properties.materialGuid) {
+        materialParameters(materialInstance.parameters);
+      }
       for (const guid of Object.values(row(properties.materialSlotOverrides))) add(guid);
       for (const slot of rows(properties.materialSlots)) add(slot.materialGuid);
       if (lineage.has("SceneStreamingComponent")) add(properties.sceneGuid, false);

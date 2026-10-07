@@ -243,6 +243,7 @@ export async function exportGame(
     const physicsWorld = options.physicsWorld ?? "3d";
     for (const [path, bytes] of selectPlayerRuntimeFiles(options.playerFiles, {
       physicsWorld,
+      includePreviewDiagnostics: options.includePreviewDiagnostics === true && options.bundleDebugger,
       hasSceneLayers: options.assets.some((asset) => asset.type === "SceneLayer"),
     })) {
       files.set(path, bytes);

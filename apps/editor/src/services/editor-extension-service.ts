@@ -16,6 +16,11 @@ export interface ExtensionSnapshot {
   diagnostics: string[];
 }
 
+export interface EditorExtensionWriteOptions {
+  /** Project owner admission spans queued package operations and guest writes. */
+  runAuthoringWrite?: <T>(operation: () => Promise<T>) => Promise<T>;
+}
+
 /** A project lifetime owns code activation; extension files never mount as game assets. */
 export class EditorExtensionService {
   private readonly storage: ProjectStorage;
@@ -31,17 +36,24 @@ export class EditorExtensionService {
   private cleanupDiagnostics: string[] = [];
   private packageDiagnostics: string[] = [];
   private unsubscribeHost: () => void = () => {};
+  private readonly runAuthoringWrite: <T>(operation: () => Promise<T>) => Promise<T>;
 
-  constructor(storage: ProjectStorage, services: EditorExtensionServices) {
+  constructor(storage: ProjectStorage, services: EditorExtensionServices, options: EditorExtensionWriteOptions = {}) {
     this.storage = storage;
+    this.runAuthoringWrite = options.runAuthoringWrite ?? (operation => operation());
     this.services = {
       ...services,
       assets: {
         ...services.assets,
+        create: (path, document) => this.runAuthoringWrite(() => services.assets.create(path, document)),
         update: (path, document) => {
           this.writeGuard(path);
-          return services.assets.update(path, document);
+          return this.runAuthoringWrite(() => services.assets.update(path, document));
         },
+      },
+      code: {
+        ...services.code,
+        write: (path, source) => this.runAuthoringWrite(() => services.code.write(path, source)),
       },
     };
     this.host = this.createHost();
@@ -154,13 +166,13 @@ export class EditorExtensionService {
   }
 
   create(name: string): Promise<ExtensionDescriptor> {
-    return this.serialize(async () => {
+    return this.runAuthoringWrite(() => this.serialize(async () => {
       const existing = await discoverProjectExtensions(this.storage);
       const result = await writeProjectExtension(this.storage,
         uniqueExtensionFolderName(name, existing.map((entry) => entry.folderName)), createExtensionSettings(name));
       await this.refreshNow(this.overrides);
       return result;
-    });
+    }));
   }
 
   readSource(guid: string): Promise<string> {
@@ -170,7 +182,7 @@ export class EditorExtensionService {
   }
 
   save(guid: string, settings: ExtensionSettings, source: string): Promise<void> {
-    return this.serialize(async () => {
+    return this.runAuthoringWrite(() => this.serialize(async () => {
       const entry = this.entry(guid);
       if (entry.invalid) throw new Error(entry.invalid);
       if (entry.readOnly) throw new Error("Engine Extensions are read-only. Import a project copy to edit it.");
@@ -197,11 +209,11 @@ export class EditorExtensionService {
       }
       this.fingerprint = "";
       await this.refreshNow(this.overrides);
-    });
+    }));
   }
 
   remove(guid: string): Promise<void> {
-    return this.serialize(async () => {
+    return this.runAuthoringWrite(() => this.serialize(async () => {
       const entry = this.entry(guid);
       if (entry.readOnly || !entry.folderPath.startsWith("extensions/") || !isExtensionPackagePath(entry.folderPath)) {
         throw new Error("Only project Extensions can be deleted here.");
@@ -217,7 +229,7 @@ export class EditorExtensionService {
       const next = { ...this.overrides };
       delete next[guid];
       await this.refreshNow(next);
-    });
+    }));
   }
 
   export(guid: string): Promise<Uint8Array> {
@@ -229,7 +241,7 @@ export class EditorExtensionService {
   }
 
   import(bytes: Uint8Array, replace = false): Promise<{ status: "imported" } | { status: "conflict"; name: string }> {
-    return this.serialize(async () => {
+    return this.runAuthoringWrite(() => this.serialize(async () => {
       const incoming = await inspectBabextension(bytes);
       const existing = await discoverProjectExtensions(this.storage);
       const plan = planExtensionImport({ incoming, existingExtensions: existing,
@@ -250,7 +262,7 @@ export class EditorExtensionService {
       this.overrides = { ...this.overrides, [incoming.settings.extensionGuid]: { enabled: false } };
       await this.refreshNow(this.overrides);
       return { status: "imported" };
-    });
+    }));
   }
 
   getOverrides(): ExtensionOverrides { return { ...this.overrides }; }

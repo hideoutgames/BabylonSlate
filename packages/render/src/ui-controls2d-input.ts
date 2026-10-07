@@ -35,6 +35,9 @@ export class UIControls2DInput {
     navigate?: (reverse: boolean) => void,
   ) { this.layers = layers; this.size = size; this.emit = emit; this.canvas = canvas; this.navigate = navigate; }
 
+  /** The native text editor is part of the game surface; focusing it is not leaving the canvas. */
+  ownsElement(element: EventTarget | null): boolean { return element !== null && element === this.editor; }
+
   owns(pointerId: number): boolean { return this.captures.has(pointerId) || this.ignoredPointers.has(pointerId); }
 
   /** Press controls yield touch drags to a containing scroll view; value drags and text selection keep ownership. */

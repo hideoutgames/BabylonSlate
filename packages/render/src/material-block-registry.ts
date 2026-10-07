@@ -1,3 +1,4 @@
+import { GameTimeInputBlock } from "./game-time-input-block";
 import { QualityTextureBlock } from "./texture-quality";
 import { EnvironmentSampleBlock } from "./environment-sample-block";
 import { LogicalSceneTextureBlock } from "./logical-scene-texture-block";
@@ -606,7 +607,7 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     return single(block, {}, { color: block.output });
   },
   "input.time": ({ name, operation }) => {
-    const block = new InputBlock(
+    const block = new GameTimeInputBlock(
       name,
       undefined,
       NodeMaterialBlockConnectionPointTypes.Float,

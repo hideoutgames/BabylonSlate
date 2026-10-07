@@ -6,9 +6,10 @@ export interface EditCommand<TDoc = unknown> {
   readonly type: string;
   /** Coalesce continuous gestures (node drag, slider scrub). */
   readonly mergeKey?: string;
+  /** Pure document replacement: never mutate the input or external state. */
   apply(doc: TDoc): TDoc;
   invert(): EditCommand<TDoc>;
-  /** Snapshot-fallback cost in bytes; omit for compact deltas. */
+  /** Snapshot cost in bytes; required in both directions for history admission. */
   readonly byteSize?: number;
 }
 

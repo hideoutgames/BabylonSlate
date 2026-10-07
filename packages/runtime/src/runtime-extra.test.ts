@@ -81,6 +81,9 @@ describe("runtime driver extras", () => {
     runtime.tick();
     expect(runtime.getWorld().clock.tickIndex).toBe(0);
     runtime.resume();
+    // The first frame after Resume spans the pause and must not catch up.
+    runtime.advance(1);
+    expect(runtime.getWorld().clock.tickIndex).toBe(0);
     runtime.advance(1);
     expect(runtime.getWorld().clock.tickIndex).toBeGreaterThan(0);
     runtime.pushInputBuffer(

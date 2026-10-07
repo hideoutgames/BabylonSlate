@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
-import { EditorState } from "@codemirror/state";
+import { Annotation, Compartment, EditorState } from "@codemirror/state";
+import { useEditorReadOnly } from "@babylonslate/editor-kit";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { javascript } from "@codemirror/lang-javascript";
@@ -15,7 +16,9 @@ export type JsBodyEditorProps = {
   bodyLine?: number;
   names?: readonly string[];
   ariaLabel?: string;
+  readOnly?: boolean;
 };
+const externalValueSync = Annotation.define<boolean>();
 
 export function JsBodyEditor(props: JsBodyEditorProps) {
   return <CodeBodyEditor {...props} language="javascript" />;
@@ -41,7 +44,12 @@ const ACCESSORY = [
  * Touch-friendly ExecuteJavaScript body editor (CodeMirror 6).
  * Loaded only when the Details panel needs it.
  */
-export function CodeBodyEditor({ value, onChange, bodyLine, language, names = [], ariaLabel }: JsBodyEditorProps & { language: "javascript" | "glsl" }) {
+export function CodeBodyEditor({ value, onChange, bodyLine, language, names = [], ariaLabel, readOnly: readOnlyProp = false }: JsBodyEditorProps & { language: "javascript" | "glsl" }) {
+  const inheritedReadOnly = useEditorReadOnly();
+  const readOnly = readOnlyProp || inheritedReadOnly;
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
+  const readOnlyCompartment = useRef(new Compartment());
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
@@ -54,6 +62,9 @@ export function CodeBodyEditor({ value, onChange, bodyLine, language, names = []
     const state = EditorState.create({
       doc: value,
       extensions: [
+        readOnlyCompartment.current.of([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]),
+        EditorState.transactionFilter.of((transaction) => readOnlyRef.current && transaction.docChanged &&
+          !transaction.annotation(externalValueSync) ? [] : transaction),
         lineNumbers(),
         history(),
         language === "glsl" ? glslLanguage : javascript(),
@@ -64,7 +75,7 @@ export function CodeBodyEditor({ value, onChange, bodyLine, language, names = []
         EditorView.contentAttributes.of({ "aria-label": ariaLabel ?? (language === "glsl" ? "GLSL Function Body" : "JavaScript Function Body") }),
         keymap.of([{ key: "Escape", run: closeCompletion, stopPropagation: true }, ...completionKeymap, ...defaultKeymap, ...historyKeymap]),
         EditorView.updateListener.of((update) => {
-          if (update.docChanged) {
+          if (update.docChanged && !update.transactions.every((transaction) => transaction.annotation(externalValueSync))) {
             onChangeRef.current(update.state.doc.toString());
           }
         }),
@@ -98,12 +109,20 @@ export function CodeBodyEditor({ value, onChange, bodyLine, language, names = []
   }, []);
 
   useEffect(() => {
+    viewRef.current?.dispatch({ effects: readOnlyCompartment.current.reconfigure([
+      EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly),
+    ]) });
+    if (readOnly && viewRef.current) closeCompletion(viewRef.current);
+  }, [readOnly]);
+
+  useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
     const current = view.state.doc.toString();
     if (current !== value) {
       view.dispatch({
         changes: { from: 0, to: current.length, insert: value },
+        annotations: externalValueSync.of(true),
       });
     }
   }, [value]);
@@ -119,6 +138,7 @@ export function CodeBodyEditor({ value, onChange, bodyLine, language, names = []
   }, [bodyLine]);
 
   const insert = (token: string) => {
+    if (readOnly) return;
     const view = viewRef.current;
     if (!view) return;
     if (token === "Tab") {
@@ -138,13 +158,14 @@ export function CodeBodyEditor({ value, onChange, bodyLine, language, names = []
         style={{ userSelect: "text", WebkitUserSelect: "text" }}
       />
       <div className="hidden flex-wrap gap-1 border-t p-1 [@media(pointer:coarse)]:flex" data-testid="js-accessory-bar">
-        <Button type="button" variant="outline" size="touch" onPointerDown={(event) => event.preventDefault()} onClick={() => { if (viewRef.current) { viewRef.current.focus(); startCompletion(viewRef.current); } }}>Complete</Button>
+        <Button type="button" variant="outline" size="touch" disabled={readOnly} onPointerDown={(event) => event.preventDefault()} onClick={() => { if (viewRef.current) { viewRef.current.focus(); startCompletion(viewRef.current); } }}>Complete</Button>
         {ACCESSORY.map((token) => (
           <Button
             key={token}
             type="button"
             variant="outline"
             size="touch"
+            disabled={readOnly}
             onPointerDown={(event) => event.preventDefault()}
             onClick={() => insert(token)}
           >

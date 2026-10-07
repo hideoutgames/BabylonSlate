@@ -19,6 +19,7 @@ import { SetActorTransformCommand, SetSceneNameCommand, commandToJournalPayload,
 import { createProjectAsset } from "../lib/create-project-asset";
 import { subscribeModelThumbnailJobs } from "../lib/model-thumbnail-queue";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
+import { registerNavBakeSaveFlush } from "../lib/nav-bake-save";
 import type { OpenDocument } from "../services/document-service";
 import { ProjectService } from "../services/project-service";
 import { classIdForGraphPath } from "../services/script-compiler";
@@ -325,6 +326,131 @@ describe("DocumentProvider actions and route", () => {
     expect(documents().assetRegistry!.getByGuid(asset.header.guid)?.path).toBe(asset.path);
   });
 
+  it("finishes an admitted Save All including its bake writes before a file lock and defers later saves", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 5)));
+    const authored = openScene(MAIN_SCENE_ID);
+    let finishBake!: () => void;
+    let entered!: () => void;
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    const waiting = new Promise<void>(resolve => { finishBake = resolve; });
+    const unregister = registerNavBakeSaveFlush(async writer => {
+      entered();
+      await waiting;
+      if (!writer) throw new Error("Save did not provide its admitted writer.");
+      await writer.writeSceneNavmeshChunk(MAIN_SCENE_FILE, new Uint8Array([7, 3, 1]), authored as unknown as Record<string, unknown>);
+    });
+    let lease: ReturnType<DocumentActions["lockAuthoringWrites"]> | undefined;
+    try {
+      let saving!: Promise<boolean>;
+      act(() => { saving = actions.saveAll(); });
+      await started;
+      lease = actions.lockAuthoringWrites("Simulation is preparing");
+      expect(await actions.saveAll()).toBe(false);
+      await act(async () => { finishBake(); expect(await saving).toBe(true); });
+      expect(await lease.ready).toBe(true);
+      expect(documents().dirtyDocuments).toEqual([]);
+      const stored = await actions.loadAssetDocument("scene", MAIN_SCENE_FILE) as SerializedScene;
+      expect(stored.actors[0]!.transform.position).toEqual(authored.actors[0]!.transform.position);
+      expect(await actions.readAssetChunk(MAIN_SCENE_FILE, "navmesh")).toEqual(new Uint8Array([7, 3, 1]));
+    } finally {
+      finishBake?.();
+      unregister();
+      lease?.release();
+    }
+  });
+
+  it("preserves authored content and existing Redo when authoring rejects edits and history actions", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    const baseline = openScene(MAIN_SCENE_ID);
+    const edited = movedScene(baseline, 2);
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, edited));
+    act(() => actions.undoActiveDocument());
+    expect(documents().canRedoActiveDocument).toBe(true);
+    const restored = openScene(MAIN_SCENE_ID);
+    const revisions = documents().documentRevisions;
+    const settings = documents().projectDocument!.settings;
+    let release!: () => void;
+    act(() => { release = actions.lockAuthoring("Read-only during a session."); });
+    expect(() => actions.closeDocument(MAIN_SCENE_ID)).toThrow("Read-only during a session.");
+    expect(() => actions.closeDocumentsForPaths([MAIN_SCENE_FILE])).toThrow("Read-only during a session.");
+    expect(() => actions.repathDocument("scene", MAIN_SCENE_FILE, "assets/Renamed.babasset")).toThrow("Read-only during a session.");
+    expect(documents().canUndoActiveDocument).toBe(false);
+    expect(documents().canRedoActiveDocument).toBe(false);
+    await act(async () => {
+      expect(await actions.applySceneChange(MAIN_SCENE_ID, movedScene(restored, 20))).toBe(false);
+      actions.updateScene(MAIN_SCENE_ID, movedScene(restored, 30));
+      actions.undoActiveDocument();
+      actions.redoActiveDocument();
+      actions.updateProjectSettings({ compileOnSave: !settings.compileOnSave });
+      await actions.confirmExternalChangeReloadDocs([MAIN_SCENE_FILE]);
+    });
+    expect(openScene(MAIN_SCENE_ID)).toBe(restored);
+    expect(documents().documentRevisions).toBe(revisions);
+    expect(documents().projectDocument!.settings).toBe(settings);
+    act(release);
+    expect(documents().canRedoActiveDocument).toBe(true);
+    act(() => actions.redoActiveDocument());
+    expect(firstActorPosition(MAIN_SCENE_ID)).toEqual(edited.actors[0]!.transform.position);
+    act(() => actions.undoActiveDocument());
+    expect(firstActorPosition(MAIN_SCENE_ID)).toEqual(baseline.actors[0]!.transform.position);
+  });
+
+  it("ignores an external reload that crosses an authoring lease even when it finishes after release", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    const stored = openScene(MAIN_SCENE_ID);
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(stored, 4)));
+    const authored = openScene(MAIN_SCENE_ID);
+    let finishRead!: (content: Awaited<ReturnType<ProjectService["loadDocument"]>>) => void;
+    const original = ProjectService.prototype.loadDocument;
+    const read = vi.spyOn(ProjectService.prototype, "loadDocument").mockImplementation(function (this: ProjectService, kind, path) {
+      if (kind === "scene" && path === MAIN_SCENE_FILE) {
+        return new Promise<Awaited<ReturnType<ProjectService["loadDocument"]>>>(resolve => { finishRead = resolve; });
+      }
+      return original.call(this, kind, path);
+    });
+    try {
+      let pending!: Promise<void>;
+      act(() => { pending = actions.confirmExternalChangeReloadDocs([MAIN_SCENE_FILE]); });
+      await waitFor(() => expect(finishRead).toBeTypeOf("function"));
+      act(() => {
+        const release = actions.lockAuthoring("Read-only during a session.");
+        release();
+      });
+      await act(async () => { finishRead(stored); await pending; });
+      expect(openScene(MAIN_SCENE_ID)).toBe(authored);
+      expect(documents().canUndoActiveDocument).toBe(true);
+      act(() => actions.undoActiveDocument());
+      expect(firstActorPosition(MAIN_SCENE_ID)).toEqual(stored.actors[0]!.transform.position);
+    } finally {
+      read.mockRestore();
+    }
+  });
+
+  it("awaits a session transition owner before closing a scene and preserves the project when Stop is refused", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    const original = openScene(MAIN_SCENE_ID);
+    let resolve!: (allowed: boolean) => void;
+    const unregister = actions.registerBeforeTransition(() => new Promise<boolean>(done => { resolve = done; }));
+    act(() => actions.closeDocument(MAIN_SCENE_ID));
+    expect(openScene(MAIN_SCENE_ID)).toBe(original);
+    await act(async () => { resolve(false); await Promise.resolve(); });
+    expect(openScene(MAIN_SCENE_ID)).toBe(original);
+    let closing!: Promise<void>;
+    act(() => { closing = actions.forceCloseProject(); });
+    await act(async () => { resolve(false); await closing; });
+    expect(documents().route).toBe("editor");
+    expect(openScene(MAIN_SCENE_ID)).toBe(original);
+    act(() => actions.closeDocument(MAIN_SCENE_ID));
+    await act(async () => { resolve(true); await Promise.resolve(); });
+    expect(documents().openDocuments.some(doc => doc.id === MAIN_SCENE_ID)).toBe(false);
+    unregister();
+  });
+
   it("loads a restored cold document before replaying its recovery journal", async () => {
     const actions = await openProject();
     await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
@@ -350,6 +476,29 @@ describe("DocumentProvider actions and route", () => {
     await waitFor(() => expect(openScene(MAIN_SCENE_ID).actors[0]!.transform.position).toEqual(recovered.actors[0]!.transform.position));
     expect(documents().dirtyDocuments.map(doc => doc.id)).toContain(MAIN_SCENE_ID);
     expect(documents().recoveryAvailable).toBe(false);
+  });
+
+  it("compiles the launch snapshot after an open Class is edited again", async () => {
+    const actions = await openProject();
+    const ref = { kind: "graph" as const, path: MAIN_CLASS_FILE, label: "Main" };
+    await act(() => actions.openDocument(ref));
+    const id = documentId(ref);
+    const graph = actions.getOpenDocuments().find(document => document.id === id)!.content as SerializedGraph;
+    const withSpeed = (speed: number): SerializedGraph => ({ ...graph, members: [
+      ...(graph.members ?? []), { id: "speed", kind: "variable", name: "Speed", typeId: "float", defaultValue: speed },
+    ] });
+    await act(() => actions.applyGraphChange(id, withSpeed(7)));
+    const snapshot = actions.getOpenDocuments().map(document => ({ ...document }));
+    await act(() => actions.applyGraphChange(id, withSpeed(19)));
+    const guid = documents().assetRegistry!.list().find(asset => asset.path === MAIN_CLASS_FILE)!.header.guid;
+    const required = new Set([guid]);
+    const captured = await actions.collectPlayPreviewScripts(required, snapshot);
+    const current = await actions.collectPlayPreviewScripts(required);
+    expect(captured.bundles.find(bundle => bundle.classId === classIdForGraphPath(MAIN_CLASS_FILE))?.variables)
+      .toContainEqual({ name: "Speed", type: "float", defaultValue: 7 });
+    expect(current.bundles.find(bundle => bundle.classId === classIdForGraphPath(MAIN_CLASS_FILE))?.variables)
+      .toContainEqual({ name: "Speed", type: "float", defaultValue: 19 });
+    expect(actions.getOpenDocuments().find(document => document.id === id)?.dirty).toBe(true);
   });
 
   it("keeps unrequested scene, script, and resource payloads unread during selected Play collection", async () => {

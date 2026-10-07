@@ -81,6 +81,8 @@ async function fixture(withWater = false, saveGame?: SaveGameConfiguration) {
     applySceneEnvironment: vi.fn(),
     resize: vi.fn(), setSize: vi.fn(), dispose: vi.fn(),
     applyCommand: vi.fn(), pushSnapshot: vi.fn(), setPaused: vi.fn(),
+    setGameTimePaused: vi.fn(), setGameInputEnabled: vi.fn(),
+    captureFrame: vi.fn(async () => ({ version: 1 })), cancelFrameCapture: vi.fn(),
     prepareSceneStream: vi.fn(async (_slots: readonly number[], _signal: AbortSignal, progress?: (value: number) => void) => { progress?.(1); }),
     setSceneStreamingPaused: vi.fn(),
     playVisualStates: () => [], playMeshMaterialNames: () => [], isFreeCamEnabled: () => false,
@@ -110,6 +112,57 @@ async function backendFixture() {
 }
 
 describe("player startup and Stop ownership", () => {
+  it("awaits the correlated Preview pause boundary before render-only capture and neutralizes modal gamepad input", async () => {
+    const { game, canvas, handle, input } = await fixture();
+    game.manifest.bundleDebugger = true;
+    const session = startPlayer({ game, canvas, previewDiagnostics: true });
+    sessions.push(session);
+    const worker = TestWorker.instances[0]!;
+    const boundary = () => {
+      const message = [...worker.messages].reverse().find(entry => entry.channel === "control" && entry.payload.type === "sessionBoundary");
+      if (message?.channel !== "control" || message.payload.type !== "sessionBoundary") throw new Error("Missing boundary request");
+      return message.payload;
+    };
+    const acknowledge = (paused: boolean, requestId = boundary().requestId) => worker.command({ channel: "command", payload: {
+      type: "sessionBoundaryResult", sessionGeneration: 0, requestId, success: true, paused,
+      pauseReasons: paused ? ["user"] : [], tickIndex: 14, sceneAssetGuid: "world", sceneLoadId: 1, commandRevision: 2,
+    } });
+    acknowledge(false);
+    await Promise.resolve();
+    worker.command({ channel: "command", payload: { type: "sessionPaused", paused: true } });
+    expect(boundary().action).toEqual({ kind: "resetInput" });
+    const capture = session.previewDiagnostics!.captureFrame(new AbortController().signal);
+    acknowledge(true, boundary().requestId - 1);
+    await Promise.resolve();
+    expect(handle.captureFrame).not.toHaveBeenCalled();
+    acknowledge(true);
+    await capture;
+    expect(handle.setGameTimePaused).toHaveBeenLastCalledWith(true);
+    expect(handle.captureFrame).toHaveBeenCalledTimes(1);
+    expect(worker.messages.some(entry => entry.channel === "control" && entry.payload.type === "setPaused")).toBe(false);
+
+    const pad = { index: 0, axes: [0.8], buttons: [{ value: 1 }] };
+    vi.stubGlobal("navigator", { getGamepads: () => [pad] });
+    input().pollGamepads();
+    input().ring.drain();
+    const suppress = session.previewDiagnostics!.setEditorInputSuppressed(true);
+    acknowledge(true);
+    await suppress;
+    expect(handle.setGameInputEnabled).toHaveBeenLastCalledWith(false);
+    expect(input().ring.drain()).toContainEqual({ kind: "gamepad", tick: 0, gamepadIndex: 0, axes: [0], buttons: [0] });
+    const restore = session.previewDiagnostics!.setEditorInputSuppressed(false);
+    acknowledge(false);
+    await restore;
+    input().ring.drain();
+    input().pollGamepads();
+    expect(input().ring.drain()).toContainEqual({ kind: "gamepad", tick: 0, gamepadIndex: 0, axes: [0], buttons: [0] });
+    pad.axes[0] = 0; pad.buttons[0]!.value = 0;
+    input().pollGamepads(); input().ring.drain();
+    pad.axes[0] = 0.8; pad.buttons[0]!.value = 1;
+    input().pollGamepads();
+    expect(input().ring.drain()).toContainEqual({ kind: "gamepad", tick: 0, gamepadIndex: 0, axes: [0.8], buttons: [1] });
+  });
+
   it("reopens a packed player's checkpoint through the real in-process fallback", async () => {
     const files = new Map<string, string>();
     const saveStorage: SaveGameStorage = { read: async (key) => files.get(key) ?? null,
@@ -207,7 +260,7 @@ describe("player startup and Stop ownership", () => {
 
   it.each([
     { traceByteBudget: undefined, retainedTicks: [1, 2, 3, 4, 5, 6, 7, 8] },
-    { traceByteBudget: 1024, retainedTicks: [8] },
+    { traceByteBudget: 1024, retainedTicks: [] },
   ])("records using the Preview session trace budget of $traceByteBudget", async ({ traceByteBudget, retainedTicks }) => {
     const { game, canvas } = await fixture();
     game.manifest.bundleDebugger = true;
@@ -226,6 +279,9 @@ describe("player startup and Stop ownership", () => {
       for (let i = 0; i < 8; i++) runtime.tick();
       runtime.executeConsoleCommand("snapshot stop");
       expect(runtime.stopTrace()?.frames.map((frame) => frame.tickIndex)).toEqual(retainedTicks);
+      expect(runtime.stopTrace()?.retention).toMatchObject(traceByteBudget === undefined
+        ? { complete: true, droppedFrames: 0, stopReason: "requested" }
+        : { byteBudget: traceByteBudget, complete: false, droppedFrames: 1, stopReason: "oversized-frame" });
     } finally {
       runtime.stop();
     }

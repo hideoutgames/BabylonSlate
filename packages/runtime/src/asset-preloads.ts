@@ -45,13 +45,16 @@ export class RuntimeAssetPreloads {
     return operation;
   }
 
-  acquire(assetGuids: readonly string[], ownerId: string, options: RuntimeAssetPreloadOptions = {}): Promise<RuntimeAssetPreloadResult> {
+  acquire(assetGuids: readonly string[], ownerId: string, options: RuntimeAssetPreloadOptions = {}, signal?: AbortSignal): Promise<RuntimeAssetPreloadResult> {
     if (this.stopped) return Promise.resolve({ preloadId: "", success: false, progress: 0, errorMessage: "The asset loading session has ended" });
+    if (signal?.aborted) return Promise.resolve({ preloadId: "", success: false, progress: 0, errorMessage: "The asset preload was cancelled" });
     const guids = [...new Set(assetGuids.filter(guid => typeof guid === "string" && guid.trim()).map(guid => guid.trim()))];
     const preloadId = `asset-preload:${this.sessionId}:${++this.nextId}`;
     const promise = new Promise<RuntimeAssetPreloadResult>(resolve => {
       this.preloads.set(preloadId, { ownerId: options.sessionWide ? "session" : ownerId, progress: 0, resolve, onProgress: options.onProgress });
     });
+    const abort = () => this.release(preloadId);
+    signal?.addEventListener("abort", abort, { once: true });
     try {
       options.onProgress?.(0);
       this.emit({ type: "assetPreload", preloadId, ownerId: options.sessionWide ? "session" : ownerId, assetGuids: guids });
@@ -61,7 +64,7 @@ export class RuntimeAssetPreloads {
       entry?.resolve?.({ preloadId, success: false, progress: 0, errorMessage: String(error) });
       try { this.emit({ type: "assetPreloadRelease", preloadId }); } catch { /* The failed transport cannot retain local ownership. */ }
     }
-    return promise;
+    return signal ? promise.finally(() => signal.removeEventListener("abort", abort)) : promise;
   }
 
   receive(result: { preloadId: string; success: boolean; error?: string; progress?: number }): void {

@@ -9,6 +9,7 @@ export const domLogicTests = [
   "apps/editor/src/services/lifecycle-pause.test.ts",
   "apps/editor/src/services/edit-gesture-boundaries.test.ts",
   "apps/editor/src/services/input-capture.test.ts",
+  "apps/editor/src/services/preview-diagnostics.test.ts",
   "apps/editor/src/lib/content-browser-helpers.test.ts",
   "apps/editor/src/lib/play-preview-aspect.test.ts",
   "apps/editor/src/lib/project-engine.test.ts",

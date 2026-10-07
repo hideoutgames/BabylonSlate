@@ -39,6 +39,7 @@ function createBakeFn(workerRef: {
 export function AudioReverbBakeProvider({ children }: { children: ReactNode }) {
   const {
     writeSceneAudioReverbChunk,
+    withSceneWrite,
     loadAssetDocument,
     projectDocument,
     assetRegistry,
@@ -53,6 +54,7 @@ export function AudioReverbBakeProvider({ children }: { children: ReactNode }) {
   // they run. Updated after commit, never during render.
   const latest = {
     write: writeSceneAudioReverbChunk,
+    withSceneWrite,
     loadAssetDocument,
     projectDocument,
     assetRegistry,
@@ -67,14 +69,18 @@ export function AudioReverbBakeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const controller = createAudioReverbBakeController({
       bake: createBakeFn(workerRef),
+      withWrite: work => latestRef.current.withSceneWrite(writer => work(entry =>
+        writer.writeSceneAudioReverbChunk(entry.path, entry.bytes, entry.payload))),
       write: async (entry) => {
         await latestRef.current.write(entry.path, entry.bytes, entry.payload);
       },
     });
     controllerRef.current = controller;
-    registerAudioReverbSaveFlush(async (persistedScenes) => {
+    registerAudioReverbSaveFlush(async (persistedScenes, writer) => {
+      const write = writer ? (entry: import("../lib/audio-reverb-bake").AudioReverbBakeWrite) =>
+        writer.writeSceneAudioReverbChunk(entry.path, entry.bytes, entry.payload) : undefined;
       if (persistedScenes) {
-        await controller.flushAll(persistedScenes);
+        await controller.flushAll(persistedScenes, write);
         return;
       }
       const { projectDocument, assetRegistry } = latestRef.current;
@@ -86,7 +92,7 @@ export function AudioReverbBakeProvider({ children }: { children: ReactNode }) {
         paths,
         load: (path) => latestRef.current.loadAssetDocument("scene", path),
       });
-      await controller.flushAll(scenes);
+      await controller.flushAll(scenes, write);
     });
     return () => {
       registerAudioReverbSaveFlush(null);

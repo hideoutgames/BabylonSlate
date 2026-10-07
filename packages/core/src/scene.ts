@@ -1,7 +1,7 @@
 import { normalizeCelShadingOverrides } from "./cel-shading";
 import { parseLandscapeProperties } from "./landscape";
 import { normalizeFoliageGroups, parseFoliageProperties, type FoliageGroup } from "./foliage";
-import { normalizeMaterialParameterOverrides, type MaterialParameterValue } from "./material-parameter-value";
+import { normalizeMaterialInstanceOverrides, normalizeMaterialParameterOverrides, type MaterialInstanceOverrides, type MaterialParameterValue } from "./material-parameter-value";
 import { normalizeShadowOverrides } from "./shadows";
 import { normalizeEnvironmentLightingOverrides, type EnvironmentLightingOverrides } from "./environment-lighting";
 import { parseSplineProperties, SPLINE_COMPONENT_CLASS_ID } from "./spline-component";
@@ -62,6 +62,8 @@ export interface SerializedComponent {
    * Prefab sync copies every other field from the Class prefab.
    */
   overrideKeys?: string[];
+  /** Private surface parameters, valid only for the named material assignment. */
+  materialInstance?: MaterialInstanceOverrides;
 }
 
 export interface SerializedActor {
@@ -76,6 +78,8 @@ export interface SerializedActor {
   components: SerializedComponent[];
   /** Per-instance actor variable overrides, including SceneLayer switcher entries. */
   properties?: Record<string, unknown>;
+  /** Removed Class prefab rows; source IDs survive actor/component duplication. */
+  suppressedComponentSourceIds?: string[];
   /**
    * Outliner folder that lists this actor, or null for the scene root. Purely
    * organizational: `parentId` still owns transform attachment, and the runtime
@@ -299,8 +303,16 @@ export function createActor(
     locked: overrides.locked ?? false,
     components: overrides.components ?? [],
     ...(overrides.properties ? { properties: structuredClone(overrides.properties) } : {}),
+    ...(overrides.suppressedComponentSourceIds?.length
+      ? { suppressedComponentSourceIds: normalizeSuppressedComponentSourceIds(overrides.suppressedComponentSourceIds) } : {}),
     folderId: overrides.folderId ?? null,
   };
+}
+
+export function normalizeSuppressedComponentSourceIds(value: unknown): string[] {
+  return Array.isArray(value)
+    ? [...new Set(value.filter((entry): entry is string => typeof entry === "string" && !!entry.trim()).map((entry) => entry.trim()))]
+    : [];
 }
 
 function asNumberTuple3(
@@ -353,6 +365,7 @@ function normalizeComponent(
       ? source.sourceId.trim()
       : undefined;
   const overrideKeys = normalizeOverrideKeys(source.overrideKeys);
+  const materialInstance = normalizeMaterialInstanceOverrides(source.materialInstance);
   return {
     id: typeof source.id === "string" ? source.id : `component-${index}`,
     classId:
@@ -372,12 +385,14 @@ function normalizeComponent(
     ...(source.classId === "2DAnchorComponent" ? {} : { transform: normalizeTransform(source.transform) }),
     ...(sourceId ? { sourceId } : {}),
     ...(overrideKeys ? { overrideKeys } : {}),
+    ...(materialInstance ? { materialInstance } : {}),
   };
 }
 
 function normalizeActor(value: unknown, index: number): SerializedActor {
   const source = (value ?? {}) as Record<string, unknown>;
   const components = Array.isArray(source.components) ? source.components.map(normalizeComponent) : [];
+  const suppressedComponentSourceIds = normalizeSuppressedComponentSourceIds(source.suppressedComponentSourceIds);
   return {
     id: typeof source.id === "string" ? source.id : `actor-${index}`,
     name: typeof source.name === "string" ? source.name : `Actor ${index + 1}`,
@@ -389,6 +404,7 @@ function normalizeActor(value: unknown, index: number): SerializedActor {
     visible: source.visible !== false,
     locked: source.locked === true,
     components,
+    ...(suppressedComponentSourceIds.length ? { suppressedComponentSourceIds } : {}),
     ...(source.properties && typeof source.properties === "object" && !Array.isArray(source.properties)
       ? { properties: structuredClone(source.properties as Record<string, unknown>) } : {}),
     folderId: asNullableString(source.folderId),

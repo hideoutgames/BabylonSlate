@@ -39,6 +39,19 @@ describe("render diagnostics qualification fields", () => {
     expect(capture).not.toHaveBeenCalled();
   });
 
+  it("reads lightweight Stats without enabling an otherwise supported GPU query", () => {
+    const engine = new NullEngine(); engines.push(engine);
+    const scene = new Scene(engine);
+    const caps = engine.getCaps();
+    vi.spyOn(engine, "getCaps").mockReturnValue({ ...caps, timerQuery: {} as NonNullable<typeof caps.timerQuery> });
+    const capture = vi.spyOn(engine, "captureGPUFrameTime");
+    const diagnostics = createRenderDiagnostics(scene, () => 1)();
+    expect(diagnostics.gpuMs).toBeNull();
+    expect(diagnostics.gpuStatus).toBe("pending");
+    expect(capture).not.toHaveBeenCalled();
+    expect(engine.onBeginFrameObservable.hasObservers()).toBe(false);
+  });
+
   it("reports adapter, draw calls, resource counts, GPU reservations and scaling level", () => {
     const engine = new NullEngine();
     engines.push(engine);

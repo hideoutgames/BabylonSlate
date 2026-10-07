@@ -89,6 +89,8 @@ export * from "./overlay-visual-style";
 export * from "./save-game-rpc";
 export * from "./save-game";
 export * from "./save-game-service";
+export * from "./session-save-storage";
 export * from "./actor-property-references";
 
+export { remapScenePropertyReferences } from "./scene-property-references";
 export * from "./console-command";

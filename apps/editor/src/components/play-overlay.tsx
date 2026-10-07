@@ -1,3 +1,10 @@
+import { useDiagnosticResultsStore } from "../context/diagnostic-results-context";
+import type { DiagnosticResultsStore } from "../services/diagnostic-results-store";
+import type { SimulationSession } from "../services/simulation-session";
+import { SimulationRetentionDialog, SimulationRetentionHint } from "./simulation-retention-dialog";
+import { SimulationTransformToolbar } from "./simulation-transform-toolbar";
+import type { GizmoTool, RuntimeTransformTools } from "@babylonslate/render";
+import { useSimulationInspectionStore } from "../context/simulation-inspection-context";
 import { useAppSettings } from "../context/app-settings-context";
 import { captureShadowDiagnostics, lightsDebugText } from "@babylonslate/render";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
@@ -29,11 +36,13 @@ import {
   type PlaySceneSourceLoader,
   type PlayAssetSourceLoader,
 } from "../services/play-session";
+import type { GameSessionOwner, GameSessionTicket } from "../services/game-session-owner";
 import { finishPlaySessionWithTrace } from "../lib/play-trace-spill";
 import type { StatsHudHighlight } from "./stats-hud";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import {
   applyLiveEngineSettings,
+  canvasIsEditorVisible,
   localRenderingQualityOverrides,
   ENGINE_SETTINGS_CHANGED_EVENT,
   type LiveEngineSettings,
@@ -92,6 +101,12 @@ import { useDebugConsoleLogs } from "../lib/use-debug-console-logs";
 import { usePlay } from "../context/play-context";
 
 export interface PlayOverlayProps {
+  sessionOwner?: GameSessionOwner<PlaySessionResult>;
+  sessionTicket?: GameSessionTicket;
+  embedded?: boolean;
+  simulationSession?: SimulationSession;
+  simulationAssetGuids?: readonly string[];
+  simulationSaveStorage?: Parameters<typeof startPlaySession>[0]["simulationSaveStorage"];
   saveGame?: import("@babylonslate/core").SaveGameConfiguration;
   sharedEngine: AbstractEngine;
   injectFixtureThrow?: boolean;
@@ -177,7 +192,7 @@ export interface PlayOverlayProps {
     >
   >;
   pauseOnPlay?: boolean;
-  onClose: (result: PlaySessionResult) => void;
+  onClose: (result: PlaySessionResult, ticket?: GameSessionTicket) => void;
 }
 
 function emptyPlayResult(): PlaySessionResult {
@@ -196,6 +211,12 @@ function emptyPlayResult(): PlaySessionResult {
 }
 
 export function PlayOverlay({
+  sessionOwner,
+  sessionTicket,
+  embedded = false,
+  simulationSaveStorage,
+  simulationSession,
+  simulationAssetGuids,
   saveGame,
   sharedEngine,
   injectFixtureThrow,
@@ -271,6 +292,17 @@ export function PlayOverlay({
 }: PlayOverlayProps) {
   const { reportBtState, overlayStats, overlayConsole, overlayInspector } =
     usePlay();
+  const simulating = sessionTicket?.mode === "simulate";
+  const inspectionStore = useSimulationInspectionStore();
+  const diagnosticStore = useDiagnosticResultsStore();
+  const diagnosticDetachRef = useRef<(() => void) | null>(null);
+  const inspectionDetachRef = useRef<(() => void) | null>(null);
+  const transformToolsRef = useRef<RuntimeTransformTools | null>(null);
+  const transformConsumerRef = useRef<(() => void) | null>(null);
+  const transformDetachRef = useRef<(() => void) | null>(null);
+  const transformEditableRef = useRef(false);
+  const syncTransformVisibilityRef = useRef<() => void>(() => {});
+  const [transformTool, setTransformTool] = useState<GizmoTool>("translate");
   const overlayRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sessionRef = useRef<PlaySession | null>(null);
@@ -299,6 +331,12 @@ export function PlayOverlay({
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [freeCamEnabled, setFreeCamEnabled] = useState(false);
   const [paused, setPaused] = useState(pauseOnPlay);
+  const [pausePending, setPausePending] = useState(false);
+  const [inputMode, setInputMode] = useState<"game" | "edit">("game");
+  const [inputPending, setInputPending] = useState(false);
+  const [controlError, setControlError] = useState<string | null>(null);
+  const inputModeRef = useRef<"game" | "edit">("game");
+  const inputSequenceRef = useRef(0);
   const [statsOpen, setStatsOpen] = useState(false);
   const [statsHighlight, setStatsHighlight] =
     useState<StatsHudHighlight | null>(null);
@@ -317,18 +355,105 @@ export function PlayOverlay({
   onCloseRef.current = onClose;
   const closedRef = useRef(false);
   const finishSessionRef = useRef<() => void>(() => {});
+  const detachInspection = () => {
+    transformDetachRef.current?.();
+    transformDetachRef.current = null;
+    inspectionDetachRef.current?.();
+    inspectionDetachRef.current = null;
+  };
   finishSessionRef.current = () => {
     if (closedRef.current) return;
+    if (sessionOwner && sessionTicket) {
+      void sessionOwner.stop(sessionTicket).then((result) => {
+        // A refused retention gate leaves the runtime and its controls available.
+        if (!result && sessionOwner.canStart()) onCloseRef.current(emptyPlayResult(), sessionTicket);
+      });
+      return;
+    }
     closedRef.current = true;
+    detachInspection();
     const session = sessionRef.current;
     sessionRef.current = null;
     void (async () => {
-      const result = session
-        ? await finishPlaySessionWithTrace(session)
-        : emptyPlayResult();
+      const result = session ? await finishPlaySessionWithTrace(session) : emptyPlayResult();
+      diagnosticDetachRef.current?.();
+      diagnosticDetachRef.current = null;
       onCloseRef.current(result);
     })();
   };
+  const changeInputModeRef = useRef<(mode: "game" | "edit") => void>(() => {});
+  changeInputModeRef.current = (mode) => {
+    const session = sessionRef.current;
+    if (!session || !simulating || closedRef.current) return;
+    const sequence = ++inputSequenceRef.current;
+    inputModeRef.current = mode;
+    transformEditableRef.current = false;
+    syncTransformVisibilityRef.current();
+    setInputPending(true);
+    setControlError(null);
+    void session.setInputMode(mode).then(() => {
+      if (sessionRef.current !== session || inputSequenceRef.current !== sequence) return;
+      inputModeRef.current = mode;
+      setInputMode(mode);
+      // Game input is owned by the focused canvas; the chrome button just took focus.
+      if (mode === "game") canvasRef.current?.focus({ preventScroll: true });
+      transformEditableRef.current = mode === "edit";
+      syncTransformVisibilityRef.current();
+      session.requestPausedRedraw();
+    }, (error: unknown) => {
+      if (sessionRef.current === session && inputSequenceRef.current === sequence) setControlError(String(error));
+    }).finally(() => {
+      if (sessionRef.current === session && inputSequenceRef.current === sequence) setInputPending(false);
+    });
+  };
+  const pauseRef = useRef<(reason: "user" | "lifecycle", next: boolean) => void>(() => {});
+  pauseRef.current = (reason, next) => {
+    const session = sessionRef.current;
+    if (!session || closedRef.current) return;
+    if (reason === "user") setPausePending(true);
+    setControlError(null);
+    void session.setPauseReason(reason, next).then((result) => {
+      if (sessionRef.current !== session) return;
+      if (!result.success) { setControlError(result.reason ?? "Pause could not reach a completed runtime boundary."); return; }
+      userPausedRef.current = result.pauseReasons.includes("user");
+      setPaused(result.paused);
+      if (sessionOwner && sessionTicket) sessionOwner.acknowledgePaused(sessionTicket, result.paused);
+      if (result.paused) session.requestPausedRedraw();
+      // Pause keeps Simulation's input mode; resumed game input returns to the canvas.
+      else if (simulating && inputModeRef.current === "game") canvasRef.current?.focus({ preventScroll: true });
+    }, (error: unknown) => {
+      if (sessionRef.current === session) setControlError(String(error));
+    }).finally(() => { if (sessionRef.current === session && reason === "user") setPausePending(false); });
+  };
+
+  useEffect(() => {
+    if (!simulating) return;
+    const releaseOutsideGame = (event: Event) => {
+      if (inputModeRef.current !== "game") return;
+      const target = event.target;
+      // Chrome owns this gesture; it cannot also become a game or camera gesture.
+      if (target instanceof Node && !canvasRef.current?.contains(target) &&
+        !(target instanceof Element && target.closest('[data-testid="simulation-input-mode"], [data-testid="play-overlay-pause"]'))) {
+        changeInputModeRef.current("edit");
+      }
+    };
+    // Escape or Tab into the chrome releases game input. Focus events are not
+    // gestures: dialogs restoring focus as the session starts must not release it.
+    const escape = (event: KeyboardEvent) => {
+      if (inputModeRef.current === "game" && (event.key === "Escape" || event.key === "Tab")) changeInputModeRef.current("edit");
+    };
+    document.addEventListener("pointerdown", releaseOutsideGame, true);
+    document.addEventListener("keydown", escape, true);
+    return () => {
+      document.removeEventListener("pointerdown", releaseOutsideGame, true);
+      document.removeEventListener("keydown", escape, true);
+    };
+  }, [simulating]);
+
+  useEffect(() => {
+    if (simulating && (consoleOpen || inspectorOpen || treeOpen)) changeInputModeRef.current("edit");
+  }, [simulating, consoleOpen, inspectorOpen, treeOpen]);
+
   const scriptsRef = useRef(scripts);
   scriptsRef.current = scripts;
   const animGraphsRef = useRef(animGraphs);
@@ -418,7 +543,7 @@ export function PlayOverlay({
     scenes,
     sceneCatalog,
     classAssetGuids,
-  consoleCommands,
+    consoleCommands,
     audioAssetGuids,
     acquireSceneSources,
     acquireAssetSources,
@@ -437,7 +562,7 @@ export function PlayOverlay({
     scenes,
     sceneCatalog,
     classAssetGuids,
-  consoleCommands,
+    consoleCommands,
     audioAssetGuids,
     acquireSceneSources,
     acquireAssetSources,
@@ -489,262 +614,353 @@ export function PlayOverlay({
     const overlay = overlayRef.current;
     const canvas = canvasRef.current;
     if (!overlay || !canvas) return;
-    const layoutPlay = () => {
-      applyPlayPreviewCanvasLayout({
-        overlay,
-        canvas,
-        ...initialPlayPreviewRef.current,
-        render: runtimeRenderRef.current,
-        liveSize: liveSizeRef.current,
-      });
-    };
-    const resizeIfSized = createCanvasResizeGuard(
-      () => {
-        sessionRef.current?.handle.resize();
-      },
-      {
-        onHoldChange: (holding) => {
-          sessionRef.current?.handle.scheduler.setResizing(holding);
+    if (sessionOwner && sessionTicket && !sessionOwner.isCurrent(sessionTicket)) return;
+    // StrictMode probes effects with setup/cleanup/setup. Defer acquisition so
+    // the abandoned setup cannot allocate a second shared-Engine consumer.
+    let cancelled = false;
+    let disposePresentation: (() => void) | undefined;
+    queueMicrotask(() => {
+      if (cancelled || closedRef.current || (sessionOwner && sessionTicket && !sessionOwner.isCurrent(sessionTicket))) return;
+      const layoutPlay = () => {
+        applyPlayPreviewCanvasLayout({
+          overlay,
+          canvas,
+          ...initialPlayPreviewRef.current,
+          render: runtimeRenderRef.current,
+          liveSize: liveSizeRef.current,
+        });
+      };
+      const resizeIfSized = createCanvasResizeGuard(
+        () => {
+          sessionRef.current?.handle.resize();
         },
-      },
-    );
-    const syncFramebuffer = (sessionHandle: {
-      setSize: (w: number, h: number) => void;
-      resize: () => void;
-    }) => {
-      const framebuffer = playFramebufferSize(
-        runtimeRenderRef.current,
-        liveSizeRef.current,
+        {
+          onHoldChange: (holding) => {
+            sessionRef.current?.handle.scheduler.setResizing(holding);
+          },
+        },
       );
-      if (framebuffer) {
-        sessionHandle.setSize(framebuffer.width, framebuffer.height);
+      const syncFramebuffer = (sessionHandle: {
+        setSize: (w: number, h: number) => void;
+        resize: () => void;
+      }) => {
+        const framebuffer = playFramebufferSize(
+          runtimeRenderRef.current,
+          liveSizeRef.current,
+        );
+        if (framebuffer) {
+          sessionHandle.setSize(framebuffer.width, framebuffer.height);
+          return;
+        }
+        resizeIfSized(canvas);
+      };
+      layoutPlay();
+      userPausedRef.current = initialPauseOnPlayRef.current;
+      setPaused(initialPauseOnPlayRef.current);
+      let session: PlaySession;
+      // eslint-disable-next-line prefer-const -- the Stop closure above may read it before startup assigns it.
+      let diagnosticLease: ReturnType<DiagnosticResultsStore["bindSession"]> | undefined;
+      if (sessionOwner && sessionTicket && !sessionOwner.attach(sessionTicket, async () => {
+        closedRef.current = true;
+        transformDetachRef.current?.();
+        transformDetachRef.current = null;
+        inspectionDetachRef.current?.();
+        inspectionDetachRef.current = null;
+        sessionRef.current = null;
+        const result = await finishPlaySessionWithTrace(session);
+        diagnosticLease?.release();
+        diagnosticDetachRef.current = null;
+        onCloseRef.current(result, sessionTicket);
+        return result;
+      })) return;
+      try {
+        session = startPlaySession({
+          canvas,
+          sharedEngine,
+          mode: sessionTicket?.mode === "simulate" ? "simulate" : "play",
+          sessionGeneration: sessionTicket?.generation,
+          simulationSaveStorage,
+          simulationAssetGuids,
+          onProfile: profile => diagnosticLease?.publishProfile(profile),
+          onRetentionUnavailable: reason => simulationSession?.reportRetentionUnavailable(reason),
+          injectFixtureThrow,
+          scripts: scriptsRef.current,
+          physics: physicsRef.current,
+          sceneAssetGuid: sceneRef.current.sceneAssetGuid,
+          scene: sceneRef.current.scene,
+          project: sceneRef.current.project,
+          saveGame: sceneRef.current.saveGame,
+          gameInstanceClass: sceneRef.current.gameInstanceClass,
+          scenes: sceneRef.current.scenes,
+          sceneCatalog: sceneRef.current.sceneCatalog,
+          classAssetGuids: sceneRef.current.classAssetGuids,
+          consoleCommands: sceneRef.current.consoleCommands,
+          audioAssetGuids: sceneRef.current.audioAssetGuids,
+          acquireSceneSources: sceneRef.current.acquireSceneSources,
+          acquireAssetSources: sceneRef.current.acquireAssetSources,
+          sessionSources: sceneRef.current.sessionSources,
+          getAssetLoadState: sceneRef.current.getAssetLoadState,
+          getSourceControls: sceneRef.current.getSourceControls,
+          releaseInitialSources: sceneRef.current.releaseInitialSources,
+          sceneLayers: sceneRef.current.sceneLayers,
+          frameCap: initialFrameCapRef.current,
+          traceByteBudget: initialTraceByteBudgetRef.current,
+          infiniteLoopDetection: initialInfiniteLoopDetectionRef.current,
+          loopCount: initialLoopCountRef.current,
+          inputAssets: initialInputAssetsRef.current,
+          dataAssets: initialDataAssetsRef.current,
+          inputMappings: initialInputMappingsRef.current,
+          focusNavigation: initialFocusNavigationRef.current,
+          animGraphs: animGraphsRef.current,
+          behaviourTrees: behaviourTreesRef.current,
+          blackboards: blackboardsRef.current,
+          spritePayloads: spritePayloadsRef.current,
+          spriteAnimationPayloads: spriteAnimationPayloadsRef.current,
+          waterPayloads: waterPayloadsRef.current,
+          renderTargets: renderTargetsRef.current,
+          renderTargetTextures: renderTargetTexturesRef.current,
+          tilemapPayloads: tilemapPayloadsRef.current,
+          tilesetPayloads: tilesetPayloadsRef.current,
+          textureBytes: textureBytesRef.current,
+          areaEmissions: areaEmissionsRef.current,
+          texturePixelSizes: texturePixelSizesRef.current,
+          fontFacetypeBytes: fontFacetypeBytesRef.current,
+          fontMsdfJson: fontMsdfJsonRef.current,
+          fontMsdfPng: fontMsdfPngRef.current,
+          fontFaceEntries: fontFaceEntriesRef.current,
+          fontCssStack: fontCssStackRef.current,
+          fontCssStackByGuid: fontCssStackByGuidRef.current,
+          modelBytes: modelBytesRef.current,
+          modelPayloads: modelPayloadsRef.current,
+          modelClipAnimationGuids: modelClipAnimationGuidsRef.current,
+          retargetAnimationLoads: retargetAnimationLoadsRef.current,
+          loadAudioSourceBytes: loadAudioSourceBytesRef.current,
+          audioLibrary: audioLibraryRef.current,
+          animClipCatalog: animClipCatalogRef.current,
+          particleLibrary: particleLibraryRef.current,
+          materialDocuments: materialDocumentsRef.current,
+          materialFunctions: materialFunctionsRef.current,
+          postProcessingEnabled,
+          renderSettings: initialRenderRef.current,
+          consoleRenderSettings: initialConsoleRenderRef.current,
+          hardwareScalingLevel,
+          pixelsPerUnit: pixelsPerUnitRef.current,
+          sortingLayers: sortingLayersRef.current,
+          touchMinTargetPx: touchMinTargetPxRef.current,
+          pixelPerfect: pixelPerfectRef.current,
+          navmeshBytes: navmeshBytesRef.current,
+          sceneNavmeshBytes: sceneNavmeshBytesRef.current,
+          audioReverbByScene: audioReverbBySceneRef.current,
+          audioReverbBytes: audioReverbBytesRef.current,
+          audioProjectSettings: audioProjectSettingsRef.current,
+          pauseOnPlay: initialPauseOnPlayRef.current,
+          onSceneLoading: setSceneLoading,
+          onSessionPaused: (next) => {
+            if (!simulating) userPausedRef.current = next;
+            setPaused(next);
+          },
+          onShowFps: (enabled) => {
+            setStatsOpen(enabled);
+            if (!enabled) setStatsHighlight(null);
+          },
+          onFreeCam: (enabled) => {
+            setFreeCamEnabled(enabled);
+          },
+          onStatHighlight: (name, enabled) => {
+            setStatsOpen(true);
+            setStatsHighlight(
+              enabled &&
+                (name === "unit" ||
+                  name === "memory" ||
+                  name === "draws" ||
+                  name === "threads")
+                ? name
+                : null,
+            );
+          },
+          onStats: (stats) => {
+            setFps(stats.fps);
+            setScriptMs(stats.scriptMs);
+            setPhysicsMs(stats.physicsMs);
+            setPublishMs(stats.publishMs);
+            setMoveX(sessionRef.current?.lastMoveX() ?? null);
+          },
+          onLog: (message, severity) => pushLog(severity, message),
+          onPrint: (entry) => {
+            printRef.current?.(entry);
+            pushLog("print", entry.message);
+          },
+          onBehaviourTreeDebug: (enabled) => {
+            setTreeOpen(enabled);
+            if (enabled) setConsoleOpen(false);
+          },
+          onBehaviourTreeSnapshot: setTrees,
+          onBtState: (state) => reportBtState(state),
+          onRenderOutputChanged: (settings) => {
+            runtimeRenderRef.current = settings;
+            liveSizeRef.current = null;
+            layoutPlay();
+          },
+          onSetRenderResolution: (width, height) => {
+            liveSizeRef.current = {
+              width: clampRenderResolution(width),
+              height: clampRenderResolution(height),
+            };
+            layoutPlay();
+            const current = sessionRef.current;
+            if (current) syncFramebuffer(current.handle);
+          },
+          onFatalDiagnostic: () => finishSessionRef.current(),
+        });
+      } catch (error) {
+        if (sessionOwner && sessionTicket) sessionOwner.fail(sessionTicket, error, true);
+        pushLog("error", `Play startup failed: ${error instanceof Error ? error.message : String(error)}`);
+        onCloseRef.current(emptyPlayResult(), sessionTicket);
         return;
       }
-      resizeIfSized(canvas);
-    };
-    layoutPlay();
-    userPausedRef.current = initialPauseOnPlayRef.current;
-    setPaused(initialPauseOnPlayRef.current);
-    const session = startPlaySession({
-      canvas,
-      sharedEngine,
-      injectFixtureThrow,
-      scripts: scriptsRef.current,
-      physics: physicsRef.current,
-      sceneAssetGuid: sceneRef.current.sceneAssetGuid,
-      scene: sceneRef.current.scene,
-      project: sceneRef.current.project,
-      saveGame: sceneRef.current.saveGame,
-      gameInstanceClass: sceneRef.current.gameInstanceClass,
-      scenes: sceneRef.current.scenes,
-      sceneCatalog: sceneRef.current.sceneCatalog,
-      classAssetGuids: sceneRef.current.classAssetGuids,
-      consoleCommands: sceneRef.current.consoleCommands,
-      audioAssetGuids: sceneRef.current.audioAssetGuids,
-      acquireSceneSources: sceneRef.current.acquireSceneSources,
-      acquireAssetSources: sceneRef.current.acquireAssetSources,
-      sessionSources: sceneRef.current.sessionSources,
-      getAssetLoadState: sceneRef.current.getAssetLoadState,
-      getSourceControls: sceneRef.current.getSourceControls,
-      releaseInitialSources: sceneRef.current.releaseInitialSources,
-      sceneLayers: sceneRef.current.sceneLayers,
-      frameCap: initialFrameCapRef.current,
-      traceByteBudget: initialTraceByteBudgetRef.current,
-      infiniteLoopDetection: initialInfiniteLoopDetectionRef.current,
-      loopCount: initialLoopCountRef.current,
-      inputAssets: initialInputAssetsRef.current,
-      dataAssets: initialDataAssetsRef.current,
-      inputMappings: initialInputMappingsRef.current,
-      focusNavigation: initialFocusNavigationRef.current,
-      animGraphs: animGraphsRef.current,
-      behaviourTrees: behaviourTreesRef.current,
-      blackboards: blackboardsRef.current,
-      spritePayloads: spritePayloadsRef.current,
-      spriteAnimationPayloads: spriteAnimationPayloadsRef.current,
-      waterPayloads: waterPayloadsRef.current,
-      renderTargets: renderTargetsRef.current,
-      renderTargetTextures: renderTargetTexturesRef.current,
-      tilemapPayloads: tilemapPayloadsRef.current,
-      tilesetPayloads: tilesetPayloadsRef.current,
-      textureBytes: textureBytesRef.current,
-      areaEmissions: areaEmissionsRef.current,
-      texturePixelSizes: texturePixelSizesRef.current,
-      fontFacetypeBytes: fontFacetypeBytesRef.current,
-      fontMsdfJson: fontMsdfJsonRef.current,
-      fontMsdfPng: fontMsdfPngRef.current,
-      fontFaceEntries: fontFaceEntriesRef.current,
-      fontCssStack: fontCssStackRef.current,
-      fontCssStackByGuid: fontCssStackByGuidRef.current,
-      modelBytes: modelBytesRef.current,
-      modelPayloads: modelPayloadsRef.current,
-      modelClipAnimationGuids: modelClipAnimationGuidsRef.current,
-      retargetAnimationLoads: retargetAnimationLoadsRef.current,
-      loadAudioSourceBytes: loadAudioSourceBytesRef.current,
-      audioLibrary: audioLibraryRef.current,
-      animClipCatalog: animClipCatalogRef.current,
-      particleLibrary: particleLibraryRef.current,
-      materialDocuments: materialDocumentsRef.current,
-      materialFunctions: materialFunctionsRef.current,
-      postProcessingEnabled,
-      renderSettings: initialRenderRef.current,
-      consoleRenderSettings: initialConsoleRenderRef.current,
-      hardwareScalingLevel,
-      pixelsPerUnit: pixelsPerUnitRef.current,
-      sortingLayers: sortingLayersRef.current,
-      touchMinTargetPx: touchMinTargetPxRef.current,
-      pixelPerfect: pixelPerfectRef.current,
-      navmeshBytes: navmeshBytesRef.current,
-      sceneNavmeshBytes: sceneNavmeshBytesRef.current,
-      audioReverbByScene: audioReverbBySceneRef.current,
-      audioReverbBytes: audioReverbBytesRef.current,
-      audioProjectSettings: audioProjectSettingsRef.current,
-      pauseOnPlay: initialPauseOnPlayRef.current,
-      onSceneLoading: setSceneLoading,
-      onSessionPaused: (next) => {
-        userPausedRef.current = next;
-        setPaused(next);
-      },
-      onShowFps: (enabled) => {
-        setStatsOpen(enabled);
-        if (!enabled) setStatsHighlight(null);
-      },
-      onFreeCam: (enabled) => {
-        setFreeCamEnabled(enabled);
-      },
-      onStatHighlight: (name, enabled) => {
-        setStatsOpen(true);
-        setStatsHighlight(
-          enabled &&
-            (name === "unit" ||
-              name === "memory" ||
-              name === "draws" ||
-              name === "threads")
-            ? name
-            : null,
-        );
-      },
-      onStats: (stats) => {
-        setFps(stats.fps);
-        setScriptMs(stats.scriptMs);
-        setPhysicsMs(stats.physicsMs);
-        setPublishMs(stats.publishMs);
-        setMoveX(sessionRef.current?.lastMoveX() ?? null);
-      },
-      onLog: (message, severity) => pushLog(severity, message),
-      onPrint: (entry) => {
-        printRef.current?.(entry);
-        pushLog("print", entry.message);
-      },
-      onBehaviourTreeDebug: (enabled) => {
-        setTreeOpen(enabled);
-        if (enabled) setConsoleOpen(false);
-      },
-      onBehaviourTreeSnapshot: setTrees,
-      onBtState: (state) => reportBtState(state),
-      onRenderOutputChanged: (settings) => {
-        runtimeRenderRef.current = settings;
-        liveSizeRef.current = null;
-        layoutPlay();
-      },
-      onSetRenderResolution: (width, height) => {
-        liveSizeRef.current = {
-          width: clampRenderResolution(width),
-          height: clampRenderResolution(height),
-        };
-        layoutPlay();
-        const current = sessionRef.current;
-        if (current) syncFramebuffer(current.handle);
-      },
-      onFatalDiagnostic: () => finishSessionRef.current(),
-    });
-    sessionRef.current = session;
-    void createAppSettingsStore()
-      .load()
-      .then((settings) => {
-        if (sessionRef.current !== session) return;
-        applyLiveEngineSettings(
-          session.handle,
-          {
-            renderingOverridesEnabled: settings.renderingOverridesEnabled,
-            hardwareScalingLevel: settings.hardwareScalingLevel,
-            postProcessingEnabled: settings.postProcessingEnabled,
-            textureBudgetEnabled: settings.textureBudgetEnabled,
-            textureByteCeiling: settings.textureByteCeiling,
-            audioBudgetEnabled: settings.audioBudgetEnabled,
-            audioByteCeiling: settings.audioByteCeiling,
-            audioMaxVoices: settings.audioMaxVoices,
-          },
-          { applyFrameCap: false },
-        );
+      sessionRef.current = session;
+      if (simulationSession && sessionOwner && sessionTicket) {
+        sessionOwner.setBeforeStop(sessionTicket, () => simulationSession.resolveStop(() => session.captureSimulationScene()));
+      }
+      diagnosticLease = diagnosticStore?.bindSession({
+        mode: simulating ? "simulate" : "play",
+        startProfile: async options => {
+          const result = await session.diagnostics.startProfile(options);
+          if (!result.success) throw new Error(result.reason ?? "Performance recording is unavailable.");
+        },
+        stopProfile: () => session.diagnostics.stopProfile(),
+        captureFrame: () => session.diagnostics.captureFrame(),
+        stopSession: () => sessionOwner && sessionTicket ? sessionOwner.stop(sessionTicket) : finishSessionRef.current(),
+        releaseInput: () => { if (simulating) changeInputModeRef.current("edit"); },
+        setSurfaceOpen: (open) => session.setEditorInputSuppressed(open),
       });
-    if (initialPauseOnPlayRef.current) {
-      session.setPaused(true);
-    }
-    syncFramebuffer(session.handle);
-    const resizeObserver = new ResizeObserver(() => {
-      layoutPlay();
-      const framebuffer = playFramebufferSize(
-        runtimeRenderRef.current,
-        liveSizeRef.current,
-      );
-      if (!framebuffer) {
-        syncFramebuffer(session.handle);
+      diagnosticDetachRef.current = diagnosticLease?.release ?? null;
+      if (simulating && inspectionStore) {
+        inspectionDetachRef.current = inspectionStore.attach((action, options) => session.requestRuntimeInspection(action, options));
+        const tools = session.handle.attachRuntimeTransformTools({
+          onPick: target => {
+            if (!target) inspectionStore.select(null);
+            else void inspectionStore.pick(target.actorGuid, target.slotId).catch(error => setControlError(String(error)));
+          },
+          onTransform: ({ target, transform, space, phase }) => inspectionStore.request({ kind: "setTransform", target, transform, space },
+            phase === "commit" ? { final: true } : { continuous: true }),
+          onSelectionLost: (target, reason) => inspectionStore.selectionUnavailable(target, reason),
+          onError: reason => setControlError(reason),
+        });
+        transformToolsRef.current = tools;
+        const syncSelection = () => {
+          const state = inspectionStore.getSnapshot();
+          const detail = state.selection;
+          tools.setSelection(state.selected, { slotId: detail?.renderSlotId,
+            worldTransform: detail?.worldTransform, writable: detail?.transformCapability === "live" });
+        };
+        const unsubscribe = inspectionStore.subscribe(syncSelection);
+        syncSelection();
+        const syncToolsVisibility = () => {
+          const enabled = transformEditableRef.current && canvasIsEditorVisible(canvas, true);
+          tools.setEnabled(enabled);
+          if (enabled && !transformConsumerRef.current) transformConsumerRef.current = inspectionStore.consume("selection");
+          if (!enabled) { transformConsumerRef.current?.(); transformConsumerRef.current = null; }
+        };
+        syncTransformVisibilityRef.current = syncToolsVisibility;
+        const visibility = typeof IntersectionObserver === "undefined" ? null : new IntersectionObserver(syncToolsVisibility);
+        visibility?.observe(canvas);
+        syncToolsVisibility();
+        transformDetachRef.current = () => {
+          visibility?.disconnect();
+          syncTransformVisibilityRef.current = () => {};
+          unsubscribe();
+          transformConsumerRef.current?.();
+          transformConsumerRef.current = null;
+          transformToolsRef.current = null;
+          tools.dispose();
+        };
       }
-    });
-    resizeObserver.observe(overlay);
-    const detachLifecycle = attachLifecyclePause((hidden) => {
-      sessionRef.current?.setPaused(hidden || userPausedRef.current);
-    });
-    const movePoll = window.setInterval(() => {
-      const current = sessionRef.current;
-      setMoveX(current?.lastMoveX() ?? null);
-      setActorGuids([...(current?.spawnedActorGuids() ?? [])]);
-      setActorYs((current?.lastActorPositions() ?? []).map((entry) => entry.y));
-      setAudioQueued(audioStats.queued);
-      setAudioUnlocked(audioStats.unlocked);
-      if (current) {
-        setMemoryBytes(current.accountedBytes());
-        if (!hostMemoryInFlight.current) {
-          hostMemoryInFlight.current = true;
-          void getHostMemoryStats()
-            .then(setHostMemory)
-            .catch(() => setHostMemory(null))
-            .finally(() => {
-              hostMemoryInFlight.current = false;
-            });
+      void createAppSettingsStore()
+        .load()
+        .then((settings) => {
+          if (sessionRef.current !== session) return;
+          applyLiveEngineSettings(
+            session.handle,
+            {
+              renderingOverridesEnabled: settings.renderingOverridesEnabled,
+              hardwareScalingLevel: settings.hardwareScalingLevel,
+              postProcessingEnabled: settings.postProcessingEnabled,
+              textureBudgetEnabled: settings.textureBudgetEnabled,
+              textureByteCeiling: settings.textureByteCeiling,
+              audioBudgetEnabled: settings.audioBudgetEnabled,
+              audioByteCeiling: settings.audioByteCeiling,
+              audioMaxVoices: settings.audioMaxVoices,
+            },
+            { applyFrameCap: false },
+          );
+        });
+      if (initialPauseOnPlayRef.current) pauseRef.current("user", true);
+      syncFramebuffer(session.handle);
+      const resizeObserver = new ResizeObserver(() => {
+        layoutPlay();
+        syncTransformVisibilityRef.current();
+        const framebuffer = playFramebufferSize(
+          runtimeRenderRef.current,
+          liveSizeRef.current,
+        );
+        if (!framebuffer) {
+          syncFramebuffer(session.handle);
         }
-        setGeometryBytes(current.handle.accountedGeometryBytes());
-        const counts = current.liveObjectCounts();
-        setMeshCount(counts.meshes);
-        setTextureCount(counts.textures);
-        setDraws(current.drawCalls());
-        setRendering(current.handle.renderDiagnostics());
-        setBridgeRate(current.bridgeMessagesPerSec());
-        setPostProcessPasses(current.handle.postProcessPassCount());
-        setAssignedMaterials(current.handle.assignedMaterialGuids().join(","));
-        setFreeCamEnabled(current.handle.isFreeCamEnabled());
-      }
-    }, 200);
-    const onSettings = (event: Event) => {
-      const detail = (event as CustomEvent<LiveEngineSettings>).detail;
-      if (!detail) return;
-      applyLiveEngineSettings(session.handle, detail, { applyFrameCap: false });
-      setPostProcessPasses(session.handle.postProcessPassCount());
-    };
-    window.addEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);
-    return () => {
-      window.removeEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);
-      resizeIfSized.dispose();
-      resizeObserver.disconnect();
-      window.clearInterval(movePoll);
-      detachLifecycle();
-      reportBtState(null);
-      if (sessionRef.current) {
-        sessionRef.current.stop();
-        sessionRef.current = null;
-      }
-    };
-  }, [sharedEngine, injectFixtureThrow, reportBtState, pushLog]);
+      });
+      resizeObserver.observe(overlay);
+      const detachLifecycle = attachLifecyclePause((hidden) => {
+        pauseRef.current("lifecycle", hidden);
+      });
+      const movePoll = window.setInterval(() => {
+        const current = sessionRef.current;
+        setMoveX(current?.lastMoveX() ?? null);
+        setActorGuids([...(current?.spawnedActorGuids() ?? [])]);
+        setActorYs((current?.lastActorPositions() ?? []).map((entry) => entry.y));
+        setAudioQueued(audioStats.queued);
+        setAudioUnlocked(audioStats.unlocked);
+        if (current) {
+          setMemoryBytes(current.accountedBytes());
+          if (!hostMemoryInFlight.current) {
+            hostMemoryInFlight.current = true;
+            void getHostMemoryStats()
+              .then(setHostMemory)
+              .catch(() => setHostMemory(null))
+              .finally(() => {
+                hostMemoryInFlight.current = false;
+              });
+          }
+          setGeometryBytes(current.handle.accountedGeometryBytes());
+          const counts = current.liveObjectCounts();
+          setMeshCount(counts.meshes);
+          setTextureCount(counts.textures);
+          setDraws(current.drawCalls());
+          setRendering(current.handle.renderDiagnostics());
+          setBridgeRate(current.bridgeMessagesPerSec());
+          setPostProcessPasses(current.handle.postProcessPassCount());
+          setAssignedMaterials(current.handle.assignedMaterialGuids().join(","));
+          setFreeCamEnabled(current.handle.isFreeCamEnabled());
+        }
+      }, 200);
+      const onSettings = (event: Event) => {
+        const detail = (event as CustomEvent<LiveEngineSettings>).detail;
+        if (!detail) return;
+        applyLiveEngineSettings(session.handle, detail, { applyFrameCap: false });
+        setPostProcessPasses(session.handle.postProcessPassCount());
+      };
+      window.addEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);
+      disposePresentation = () => {
+        window.removeEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);
+        resizeIfSized.dispose();
+        resizeObserver.disconnect();
+        window.clearInterval(movePoll);
+        detachLifecycle();
+        reportBtState(null);
+        finishSessionRef.current();
+      };
+    });
+    return () => { cancelled = true; disposePresentation?.(); };
+  }, [sharedEngine, injectFixtureThrow, reportBtState, pushLog, sessionOwner, sessionTicket, simulating, simulationSaveStorage, simulationAssetGuids, inspectionStore, simulationSession, diagnosticStore]);
 
   useEffect(() => {
     if (!isTestModeEnabled()) return;
@@ -811,37 +1027,34 @@ export function PlayOverlay({
     <div
       ref={overlayRef}
       className={cn(
-        "fixed inset-0 z-50 flex flex-col",
+        embedded ? "absolute inset-0 z-20 flex flex-col" : "fixed inset-0 z-50 flex flex-col",
         playPreview.followSystem
           ? "bg-background"
           : "items-center justify-center bg-black",
       )}
       data-testid="play-overlay"
+      data-mode={simulating ? "simulate" : "play"}
       data-scene-guid={sceneAssetGuid ?? ""}
       data-post-process-passes={String(postProcessPasses)}
       data-assigned-materials={assignedMaterials}
     >
+      {simulationSession ? <SimulationRetentionDialog session={simulationSession} onStop={() => finishSessionRef.current()} /> : null}
       <SceneLoadingDialog open={sceneLoading !== null} progress={sceneLoading?.progress ?? 0}
-        phase={sceneLoading?.phase ?? "Preparing Scene"} onStop={() => finishSessionRef.current()} />
+        phase={sceneLoading?.phase ?? "Preparing Scene"} onStop={() => finishSessionRef.current()} finalFocus={canvasRef} />
       <PlayOverlayChrome
         paused={paused}
         statsOpen={statsOpen}
         inspectorOpen={inspectorOpen}
         showStats={overlayStats}
         showConsole={overlayConsole}
-        showInspector={overlayInspector}
-        onPauseToggle={() => {
-          setPaused((prev) => {
-            const next = !prev;
-            userPausedRef.current = next;
-            sessionRef.current?.setPaused(next);
-            return next;
-          });
-        }}
+        showInspector={overlayInspector && !simulating}
+        pausePending={pausePending}
+        simulation={simulating ? { inputMode, inputPending, keepChanges: simulationSession?.keepChanges, onInputModeChange: (mode) => changeInputModeRef.current(mode) } : undefined}
+        onPauseToggle={() => pauseRef.current("user", !userPausedRef.current)}
         onStatsToggle={() => setStatsOpen((open) => !open)}
         onConsoleOpen={() => setConsoleOpen(true)}
         onInspectorToggle={() => setInspectorOpen((open) => !open)}
-        onStep={() => sessionRef.current?.step()}
+        onStep={simulating ? undefined : () => sessionRef.current?.step()}
         onClose={() => finishSessionRef.current()}
         stats={
           <StatsHud
@@ -862,6 +1075,12 @@ export function PlayOverlay({
         }
         extras={
           <>
+            {simulationSession ? <SimulationRetentionHint session={simulationSession} /> : null}
+            {controlError ? <p role="alert" className="pointer-events-auto text-xs text-destructive">{controlError}</p> : null}
+            {simulating && inputMode === "edit" ? <>
+              <SimulationTransformToolbar tool={transformTool} onToolChange={tool => { setTransformTool(tool); transformToolsRef.current?.setTool(tool); }} />
+              <p className="pointer-events-none text-xs text-muted-foreground">Pause to inspect without gameplay changing values. The editor camera does not change the game camera.</p>
+            </> : null}
             <span
               data-testid="play-move-x"
               data-move-x={moveX === null ? "" : String(moveX)}

@@ -32,6 +32,8 @@ import {
   SCENE_COMMAND_TYPES,
 } from "./commands/scene";
 import { SetAssetDocumentCommand } from "./commands/asset-document";
+import { ReplaceSceneCommand } from "./commands/replace-scene";
+import { SetActorSuppressedComponentsCommand, SetComponentMaterialInstanceCommand } from "./commands/scene-instance";
 import {
   commandToJournalPayload,
   parseJournalLine,
@@ -132,6 +134,9 @@ describe("journal", () => {
     const actorId = scene.actors[0]!.id;
     const componentId = scene.actors[0]!.components[0]!.id;
     const commands = [
+      new SetActorSuppressedComponentsCommand(actorId, undefined, ["prefab-removed"]),
+      new SetComponentMaterialInstanceCommand(actorId, componentId, undefined, { materialGuid: "mat", parameters: { Amount: { kind: "float", value: 0.5 } } }),
+      new ReplaceSceneCommand(scene, { ...scene, name: "Replaced" }),
       new AddActorCommand(createActor("added", "Added"), 1),
       new RemoveActorCommand(scene.actors[0]!, 0),
       new SetActorTransformCommand(

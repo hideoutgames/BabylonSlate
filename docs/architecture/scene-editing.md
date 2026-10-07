@@ -14,6 +14,20 @@ Opening or restoring a Scene or SceneLayer document paints **Loading Scene / Loa
 
 Concurrent opens of the same asset share one committed tab: a late read preserves that tab's edits and dirty revision. Reads belonging to a previous project cannot populate its replacement. Class assets also report storage and decode failures; a failed read never opens a fabricated empty graph that could overwrite the original on Save.
 
+`DocumentService.lockAuthoring(reason)` acquires a session-owned lease over
+in-memory authoring writes. Its idempotent release cannot release another owner's
+lease. `getAuthoringLock()` and `onAuthoringLockChange()` expose the effective
+reason and a revision that also invalidates reloads crossing a lock transition.
+The document context exposes the same lock/access/subscription actions; content
+setters, command application, Undo/Redo, prefab sync and disk/recovery reloads
+respect the lock before changing content or history. Layout/navigation remain
+available, and a previously captured safe save can still acknowledge its content.
+Simulation combines this lease with project/file write admission and the shared
+read-only UI policy. Project and source-Scene transitions resolve Stop before
+closing documents. The private `beginSimulationDocument` capability can apply
+one complete, history-admitted retained scene while all ordinary authoring paths
+stay locked; see [the command layer](command-layer.md#guaranteed-history-admission).
+
 Add Component (Scene Details and the Class/Prefab Components toolbar) is an Add Node-style `CatalogMenu` popup anchored under its button: search, collapsible A–Z categories with type icons, and keyboard navigation. Place Actors is a medium `CatalogDialog` that opens on **Featured** (`FEATURED_PLACE_ACTOR_IDS`, cards for common actors available to the host). Its sidebar lists the **Content** group first: **Models** shows project Model assets as thumbnail cards (Content Browser thumbnails, loaded only while that page is shown), and **Project** lists the other placeable assets with their type and folder. Both pages have a sticky toolbar with an asset count and the Content Browser's **Filter** and **Sort** menus: Filter holds Asset Types checkboxes (Project) and a Folder choice (when assets span several folders); Sort offers Name and Folder, and Project adds Type. Clear Filters appears when nothing matches. Filters reset when the dialog closes; sort order persists. The **Engine** group holds Featured and the built-in categories as striped-row lists. Scene assets are not listed; place **Scene Streaming** and choose its Target Scene. Search matches titles, categories, asset types and folders, and shows one list across all categories with sidebar counts following the matches. Actor/component results stay unwindowed.
 
 Outliner **Copy** / **Paste** and **Mod+C / Mod+V** copy selected actor subtrees between scenes in the same project session. Paste is also available in the Outliner toolbar for empty scenes and applies as one undo step. Copies receive new actor/component identities, keep internal attachments and component links, and discard source folders and links to actors outside the copy. A copied subtree whose parent stays behind retains its decomposed world position, rotation and scale; descendants retain local transforms. Nested typed actor/object references in actor and component overrides (including arrays and maps) follow the copied identities; references to source actors or components outside the copy clear to None. Asset GUIDs, labels and prefab source IDs remain unchanged. World Scene and SceneLayer clipboards stay separate. Place Actors includes a **Sprite** entry and project Sprite assets.
@@ -26,7 +40,7 @@ NodeGraphs control each actor's independent instance during Play, Preview Build,
 
 Streaming targets are recorded as asset dependencies for Scene and prefab Class documents, including unsaved edits, so Show References and deletion checks include their target Scenes.
 
-The parent retains its world settings and navigation mesh. Child Scene Defaults and default SceneLayers are not applied automatically. Runtime streaming realizes content from the prepared session library; it is not deferred loading of source files from storage.
+The parent retains its world settings and navigation mesh. Child Scene Defaults and default SceneLayers are not applied automatically. Runtime streaming acquires the target's required source closure through an instance-owned asset scope. Deferred targets remain cold until requested; cancellation and unload release only that instance's sources.
 
 ## SerializedScene v4
 
@@ -81,6 +95,10 @@ Opening a Scene quietly syncs its instances to the current Class prefabs (`Docum
 Prefab linkage and override keys travel through the same commands as property and transform edits, including continuous scrubs. Undo restores inheritance, Redo restores the override, and recovery preserves which fields remain instance-owned before a later prefab sync. Metadata-only linkage changes are also reversible and journalled.
 
 Duplicate assigns fresh actor and component IDs and remaps component `parentId` links within the copy. Prefab `sourceId`, overrides, properties and transforms stay intact. Distinct collider identities keep copies independent in physics, including the software fallback. This affects newly created copies; existing saved duplicate IDs are not migrated automatically.
+
+`SerializedActor.suppressedComponentSourceIds` records deleted prefab rows by stable source ID. Sync excludes those templates before matching legacy unsourced rows; duplication keeps the source IDs unchanged. Both placed-scene loading and fresh prefab realization honor suppression. Deleting a sourced component stamps this metadata, and `scene.setActorSuppressedComponents` carries it through ordinary scene history and recovery so a later Class sync does not resurrect the component.
+
+`SerializedComponent.materialInstance` stores `{ materialGuid, parameters }` for private surface float/color/texture values. Normalization copies valid typed values; parameter textures join scene preparation and export dependencies. A seed applies only to its matching current material assignment. `RuntimeMaterialParameters.captureOverrides` copies authored values plus runtime differences, while `seed` validates the complete reapply batch before mutation. Changing the runtime material assignment invalidates the old seed and MaterialObject. Source Material assets and other components remain independent. The `materialInstance` prefab override key and `scene.setComponentMaterialInstance` command preserve these values and their absence/reset through sync, Undo/Redo and journal recovery. Canonical Simulation capture uses these boundaries for gameplay changes as well as Inspector edits. The required dependency collector includes matching private texture overrides in saved Scene/Class metadata and live viewport preparation; stale assignments do not eagerly load their old textures.
 
 When the Class Prefab list changes (`graph.setComponents`), the **open** scene re-merges every actor of that class (and descendants, using the same ancestor merge as the Prefab tab) through the scene command layer (dirty + undo). Undo/redo of that Class document re-runs the merge when `components` change. Opening a scene runs the same merge **in memory** so the viewport is current without auto-locking the file; Save All after a Prefab edit while the scene is open persists the instance rows. Closed scene files are not rewritten in the background.
 
@@ -253,3 +271,50 @@ The global toolbar's **Scene Mode** picker is available in Scene documents: **De
 - Foliage cells borrow immutable model vertex buffers from the leased model cache, but own their geometry bindings, indices and instance matrices. Painting, deleting or reopening multiple strokes cannot overwrite another cell's transforms or release its buffers.
 - Mouse, pen and one-finger touch drag paint with a footprint preview that follows the surface; Landscape adds a fainter inner ring where full strength ends. Select **Navigate** for ordinary camera gestures. Escape, pointer cancellation, a second touch, switching tools/modes or leaving the document cancels an unfinished stroke. Landscape previews update during sculpting; foliage commits on release.
 - Material **Domain → Landscape** exposes **Landscape Coordinates**, **Landscape Height**, **Landscape Slope**, **Landscape Paint Layers**, and **Landscape Layer Blend**, alongside surface shading nodes. Coordinates use world X/Z and a tiling multiplier; height uses world Y; slope is zero on flat ground and one on vertical faces. Four normalized per-vertex weights drive layer blending. Landscape components and instanced foliage use the same render factories in editor and Play/player.
+
+### Canonical Simulation capture boundary
+
+`captureSimulationScene` is the headless final-scene serializer used by retention. It captures
+only at an owner-acknowledged quiescent boundary whose render command revision
+matches the runtime revision. It reads the real World, reflected Class variables,
+the same component authoring defaults used by Add Component, and explicit material
+parameter state. Diagnostic snapshots and rendered/interpolated poses are not its
+input. The service returns a complete candidate or a named failure without changing
+the document. `PlaySession.captureSimulationScene` first quiesces the runtime and
+drains accepted render-property work. `SimulationSession` then owns permission
+and revision checks, admitted history application, and Retry/Discard resolution
+before the common session owner permits destructive cleanup.
+
+Realization records immutable source IDs in WeakMaps keyed by actual actor and
+component objects. Capture first assigns collision-free document IDs to surviving
+objects, then encodes authorable values and references, including spawned and
+deleted objects. Existing IDs, folders, lock flags and editor metadata remain
+baseline-owned. Final names, local transforms, runtime hierarchy, authorable properties,
+private material parameters and prefab source suppression reflect final state.
+Component schemas are shared with the editor in `component-authoring.ts`; capture
+is independent of the narrower live Inspector setter capabilities.
+
+Reflected Maps keep the existing Class default entry representation. Nested Maps,
+explicit undefined values, and object references use reserved `$sceneValue` tags
+in scene properties. `hydrateScenePropertyReferences` resolves those tags after
+all scene identities exist and before creation hooks. It stages resolution so a
+missing target cannot partially apply references. Plain values retain their
+identity when no tags need resolution. Structure/Enum schemas must come from
+prepared authoring metadata; native objects, getters, cyclic property data,
+unknown resources, and missing references cause named failures. The normal scene
+codec may add defaults but must not discard or repair a captured value.
+
+Typed asset references validate against known authoring identities without eagerly
+loading deferred assets. Concrete material/resource state and Structure/Enum
+schemas still require their current owned source metadata; a catalog GUID alone
+cannot prove a runtime-generated resource is persistable.
+
+The initial capture boundary rejects a changed root scene identity, independent
+streamed Scene or SceneLayer instances (including empty instances), ambiguous
+runtime identities, Dynamic Runtime Mesh geometry, and material owners whose final
+parameters are unavailable. It never flattens instances or creates source assets.
+Caller-selected byte/node limits bound traversal; exact UTF-8 JSON size is measured
+without producing an extra full JSON string. Unsupported topology is latched when
+it occurs, even if a streamed/overlay instance is later removed. Keep never saves
+a subset or rewrites those shared source documents. Browser round-trip and resource
+qualification are tracked in [engineplan §9.8](../engineplan.md).

@@ -20,6 +20,8 @@ export function runtimeOptionsFromLoadControl(
 ): Pick<
   RuntimeDriverOptions,
   | "seed"
+  | "sessionGeneration"
+  | "sessionMode"
   | "frameCap"
   | "traceByteBudget"
   | "renderSettings"
@@ -53,6 +55,8 @@ export function runtimeOptionsFromLoadControl(
   | "audioAssetGuids"
   | "animClipCatalog"
   | "deferSceneModelsReady"
+  | "deferMaterialEdits"
+  | "simulationAssetGuids"
   | "deferSceneLoadingPaint"
   | "cooperativeSceneLoading"
 > {
@@ -79,6 +83,9 @@ export function runtimeOptionsFromLoadControl(
   }
   return {
     seed: msg.seed ?? 1,
+    sessionGeneration: msg.sessionGeneration,
+    sessionMode: msg.sessionMode,
+    simulationAssetGuids: msg.simulationAssetGuids,
     cooperativeSceneLoading: true,
     ...(msg.frameCap !== undefined ? { frameCap: msg.frameCap } : {}),
     ...(msg.traceByteBudget !== undefined ? { traceByteBudget: msg.traceByteBudget } : {}),
@@ -119,6 +126,7 @@ export function runtimeOptionsFromLoadControl(
       ? { animClipCatalog: msg.animClipCatalog }
       : {}),
     ...(msg.deferSceneLoadingPaint ? { deferSceneLoadingPaint: true } : {}),
+    ...(msg.deferMaterialEdits ? { deferMaterialEdits: true } : {}),
     ...(msg.deferSceneModelsReady ? { deferSceneModelsReady: true } : {}),
   };
 }

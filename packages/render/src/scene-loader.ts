@@ -88,7 +88,8 @@ import {
 import { parseColliderProperties } from "@babylonslate/physics";
 import { createText3DMesh } from "./text3d-mesh";
 import { attachmentParentFor, createEditorSpringArmMesh } from "./spring-arm";
-import { createText2DMesh, text2DBitmapBytes } from "./text2d-mesh";
+import { createText2DMesh, refreshText2DMaterials, text2DBitmapBytes } from "./text2d-mesh";
+import { applyAuthoredMaterialInstance } from "./authored-material-instance";
 import {
   applyWorldVisualGroup,
   applyComponentSorting,
@@ -1161,6 +1162,42 @@ export function createActorMesh(
   assets?: MeshAssetContext,
   allActors?: readonly SerializedActor[],
 ): Mesh {
+  const mesh = createUnboundActorMesh(scene, actor, assets, allActors);
+  try {
+    applyAuthoredActorMaterialInstances(mesh, actor, assets);
+    return mesh;
+  } catch (error) { mesh.dispose(); throw error; }
+}
+
+/** Reused by full loads, incremental edits and model adoption. */
+export function applyAuthoredActorMaterialInstances(
+  root: Mesh,
+  actor: SerializedActor,
+  assets?: MeshAssetContext,
+  onPublished?: () => void,
+): void {
+  const parts = isEditorActorOrigin(root) ? visualMeshesOfActorRoot(root) : [root];
+  for (const component of visualComponentsOf(actor)) {
+    const visual = isEditorActorOrigin(root)
+      ? parts.find((mesh) => mesh.name === editorComponentMeshName(actor.id, component.id)) : root;
+    if (!visual) continue;
+    const text = component.classId === "2DTextComponent" || component.classId === "2DRichTextComponent";
+    applyAuthoredMaterialInstance(visual, component, assets, {
+      unlit: text || component.classId.startsWith("2D"), onPublished,
+      ...(text ? { apply: (material: import("@babylonjs/core").Material) => refreshText2DMaterials(visual, {
+        ...assets, resolveMaterial: (guid, options) => guid === component.properties.materialGuid
+          ? material : assets?.resolveMaterial?.(guid, options) ?? null,
+      }) } : {}),
+    });
+  }
+}
+
+function createUnboundActorMesh(
+  scene: Scene,
+  actor: SerializedActor,
+  assets?: MeshAssetContext,
+  allActors?: readonly SerializedActor[],
+): Mesh {
   if (isSceneLayerAnchorActor(actor)) {
     const root = new Mesh(editorMeshName(actor.id), scene);
     root.metadata = { editorActorOrigin: true, editorUnpickable: true };
@@ -1569,7 +1606,10 @@ export function applySceneToBabylonScene(
         guid,
         bytes,
         placeholder,
-        () => applyActorTransform(mesh, actor),
+        () => {
+          applyActorTransform(mesh, actor);
+          applyAuthoredActorMaterialInstances(mesh, actor, meshAssets);
+        },
       );
     }
   }

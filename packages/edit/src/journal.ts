@@ -48,6 +48,8 @@ import {
 import {
   createSetAssetDocumentCommandFromJson,
 } from "./commands/asset-document";
+import { createReplaceSceneCommandFromJson } from "./commands/replace-scene";
+import { createSetActorSuppressedComponentsCommandFromJson, createSetComponentMaterialInstanceCommandFromJson } from "./commands/scene-instance";
 
 export interface JournalLine {
   v: 1;
@@ -317,6 +319,9 @@ export function registerGraphCommandRevivers(): void {
 }
 
 export function registerSceneCommandRevivers(): void {
+  registerCommandReviver("scene.setActorSuppressedComponents", createSetActorSuppressedComponentsCommandFromJson);
+  registerCommandReviver("scene.setComponentMaterialInstance", createSetComponentMaterialInstanceCommandFromJson);
+  registerCommandReviver("scene.replace", createReplaceSceneCommandFromJson);
   registerCommandReviver("scene.setComponentLinkage", createSetComponentLinkageCommandFromJson);
   registerCommandReviver("scene.addActor", createAddActorCommandFromJson);
   registerCommandReviver("scene.removeActor", createRemoveActorCommandFromJson);

@@ -339,6 +339,28 @@ describe("ParticleService", () => {
     service.dispose();
   });
 
+  it("preserves queued manual CPU emissions and live particles during a paused redraw", async () => {
+    const { scene, service, assign, frame } = host();
+    service.setLibrary(library({ "em-1": basic() }));
+    assign();
+    const system = scene.particleSystems[0] as ParticleSystem;
+    await vi.waitFor(() => expect(system.isStarted()).toBe(true));
+    system.manualEmitCount = 3;
+    system.animate(true);
+    expect(system.getActiveCount()).toBe(3);
+    service.setPaused(true);
+    system.manualEmitCount = 2;
+    system.animate(true);
+    frame();
+    expect(system.getActiveCount()).toBe(3);
+    expect(system.manualEmitCount).toBe(2);
+    service.setPaused(false);
+    system.animate(true);
+    expect(system.getActiveCount()).toBe(5);
+    expect(system.manualEmitCount).toBe(0);
+    service.dispose();
+  });
+
   it("re-prepares the bundle for a Capacity edit and keeps its play state", async () => {
     const { scene, service, leases, assign } = host();
     service.updateLibrary(library({ "em-1": basic() }));

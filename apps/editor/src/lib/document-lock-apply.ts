@@ -1,12 +1,13 @@
 import type { SourceControlService } from "../services/source-control-service";
 
-/** True when apply* should no-op (plugin or advisory lock read-only). */
+/** True when apply* should no-op; a session lock cannot be bypassed by Edit Anyway. */
 export function isMutatingApplyBlocked(
   sourceControl: SourceControlService,
   path: string,
   pluginReadOnly: boolean,
+  authoringReadOnly = false,
 ): boolean {
-  if (pluginReadOnly) return true;
+  if (authoringReadOnly || pluginReadOnly) return true;
   return sourceControl.isDocumentReadOnly(path);
 }
 

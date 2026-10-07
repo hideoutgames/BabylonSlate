@@ -1,3 +1,9 @@
+import { acquireEngineGpuTiming, observeEngineGpuTiming, type EngineGpuTimingLease, type EngineGpuTimingObservation, type EngineGpuTimingSample } from "./engine-gpu-timing";
+import { RuntimeMaterialEditOwner, type RuntimeMaterialPreparationRequest, type RuntimeMaterialCommitCommand } from "./runtime-material-edit";
+import { drainFinalAuthoringResources } from "./final-authoring-drain";
+import { createRuntimeTransformTools, type RuntimeTransformTools, type RuntimeTransformToolsOptions, type RuntimeTransformToolsOwner } from "./runtime-transform-tools";
+import { beginRenderFrameCapture, RenderFrameReportFeed, type RenderFrameReport, type RenderFrameReportReceipt } from "./render-frame-report";
+import { pausedSceneRedrawIssue, setSceneGameTimePaused } from "./scene-game-time";
 import { applyDynamicRuntimeMeshUpdate } from "./dynamic-runtime-mesh";
 import { PostProcessRetirement } from "./post-process-retirement";
 import { OverlayLayoutRenderer } from "./overlay-layout-render";
@@ -46,6 +52,7 @@ import type { AbstractEngine, BaseTexture, Camera } from "@babylonjs/core";
 import { resolveRenderingQuality } from "@babylonslate/core";
 import { isEnvironmentLightingReady } from "./environment-lighting";
 import { createRenderDiagnostics, type GpuAttribution, type RenderDiagnostics } from "./render-diagnostics";
+import { RenderPerformanceFeed, type RenderPerformanceReceipt, type RenderPerformanceSample } from "./render-performance";
 import {
   Engine,
   KhronosTextureContainer2,
@@ -200,6 +207,7 @@ import {
   disposeSnapshotBinding,
   disposeWorldOverlayLeftovers,
   refreshPlayActiveCamera,
+  resolvePlayGameCamera,
   retirePlaySlot,
   retirePlayWorldSlots,
   migratePlaySlotVisual,
@@ -284,9 +292,22 @@ export interface EngineHandle {
   pushSnapshot: (buffer: Float32Array) => void;
   /** Apply a structural command (spawn/assignMesh) from the game worker. */
   applyCommand: (command: CommandMessage) => void;
+  prepareRuntimeMaterialEdit: (request: RuntimeMaterialPreparationRequest) => Promise<void>;
+  commitRuntimeMaterialEdit: (command: RuntimeMaterialCommitCommand) => { success: boolean; reason?: string };
+  releaseRuntimeMaterialPreparation: (editToken: string) => void;
+  /** Keep-only: drain accepted render owners after the correlated runtime command fence. */
+  quiesceAuthoringRevision: (commandRevision: number, signal: AbortSignal) => Promise<{ commandRevision: number }>;
   /** Cold authored assignment sources prepare before replacing a live visual. */
   setCommandSourceLoader?: (loader: CommandSourceLoader | null) => void;
   setPaused: (paused: boolean) => void;
+  /** Freeze render-owned game time independently of presentation/input pause reasons. */
+  setGameTimePaused: (paused: boolean) => void;
+  /** SceneLayer input gate, independent of Simulation Edit and pause ownership. */
+  setGameInputEnabled: (enabled: boolean) => void;
+  /** Use the existing debug camera while preserving the possessed game camera/listener. */
+  setSimulationEditMode: (enabled: boolean) => void;
+  /** Request one supported render-only frame; unsupported owners retain the last image. */
+  requestPausedRedraw: () => { accepted: boolean; reason?: string };
   /** Streaming owns a separate pause, so releasing it cannot resume manual Pause. */
   setSceneStreamingPaused: (paused: boolean) => void;
   /** Enable or disable this canvas's `registerView` client (overlay Play). */
@@ -296,6 +317,15 @@ export interface EngineHandle {
   /** Last rendered frame's Babylon draw-call count (`_drawCalls.current`). */
   drawCalls: () => number;
   renderDiagnostics: () => RenderDiagnostics;
+  /** Explicit CPU timing only; host controls finite capture, session mode and result retention. */
+  observePerformance: (onFrame: (sample: RenderPerformanceSample) => void) => () => void;
+  /** Explicit unpaired engine-wide GPU queries; unavailable backends explain why. */
+  observeGpuTiming: (onSample: (sample: EngineGpuTimingSample) => void, onError?: (error: unknown) => void) => EngineGpuTimingObservation;
+  /** Explicit next coherent game presentation; rejects concurrent profiling. */
+  captureFrame: () => Promise<RenderFrameReport>;
+  cancelFrameCapture: (reason?: string) => void;
+  /** Existing gizmos/selection overlay adapted to exact runtime identities. */
+  attachRuntimeTransformTools: (options: RuntimeTransformToolsOptions) => RuntimeTransformTools;
   renderPathStatus: () => ResolvedRenderingPipeline;
   scalabilityStatus: () => ScalabilityAcknowledgement | undefined;
   /** Non-persistent game-wide session render path request; null resumes the project path. */
@@ -995,6 +1025,13 @@ function initializeEngine(
     contextLosses: 0, contextRestorations: 0,
   };
   let captureFramePhases = false;
+  const performanceFeed = new RenderPerformanceFeed();
+  const frameReportFeed = new RenderFrameReportFeed();
+  let pendingFrameReportReceipt: RenderFrameReportReceipt | null = null;
+  onRollback(() => frameReportFeed.cancel("Scene construction failed."));
+  let pendingPerformanceReceipt: RenderPerformanceReceipt | null = null;
+  let admissionPreparationMs = 0;
+  onRollback(() => performanceFeed.dispose());
   const outlineHost = new SceneOutlineHost(scene, worldRenderer, () => scheduler.invalidate("selection"));
   onRollback(() => outlineHost.dispose());
   const deformerHost = new SceneDeformerHost(scene);
@@ -1028,6 +1065,7 @@ function initializeEngine(
   const releaseViewAdmission = registeredView ? admitRegisteredViewFrames(engine, registeredView, () =>
     {
       if (disposed || contextLost) return false;
+      const preparationStart = performanceFeed.active ? performance.now() : 0;
       streamAdmission?.sync();
       if (!worldLoading) runtimeScalability?.advance();
       // Prepare against this view's private-buffer dimensions before Babylon
@@ -1042,13 +1080,15 @@ function initializeEngine(
         engine.setSize(size.width, size.height);
       admittedSnapshot = prepareSnapshot();
       snapshotAdmitted = true;
-      return shouldRenderFrame(performance.now());
+      const admitted = shouldRenderFrame(performance.now());
+      if (performanceFeed.active) admissionPreparationMs = performance.now() - preparationStart;
+      return admitted;
     }, {
       begin: () => { frameCopyReady = false; },
       canCopy: () => frameCopyReady && !disposed && !contextLost,
       copied: (milliseconds) => {
         presentationStats.copyMs = milliseconds;
-        acknowledgeFrameCopy();
+        acknowledgeFrameCopy(undefined, pendingPerformanceReceipt, milliseconds);
       },
     }) : null;
   onRollback(() => releaseViewAdmission?.());
@@ -1122,6 +1162,9 @@ function initializeEngine(
   });
   const interpolator = new SnapshotInterpolator(options.maxActors ?? 256);
   const binding: SnapshotSceneBinding = createSnapshotSceneBinding();
+  let gameInputEnabled = true;
+  let simulationEditMode = false;
+  const acceptsGameInput = () => !disposed && gameInputEnabled && !simulationEditMode && !binding.paused;
   if (options.playMode) streamAdmission = createSceneStreamAdmission(scene, binding);
   onRollback(() => streamAdmission?.clear());
   onRollback(() => disposeSnapshotBinding(binding));
@@ -1147,6 +1190,8 @@ function initializeEngine(
   const renderTargetCaptures = sceneRenderTargetCaptures(scene);
   renderTargetCaptures.setAssets(binding.renderTargets, binding.renderTargetTextures);
   const captureActorSlots = new Map<number, string>();
+  const runtimeActorIdentities = new Map<number, import("@babylonslate/bridge").RuntimeObjectIdentity>();
+  const runtimeComponentTokens = new Map<number, Map<string, number>>();
   binding.areaEmissions = options.areaEmissions;
   binding.texturePixelSizes = options.texturePixelSizes;
   binding.fontFacetypeBytes = options.fontFacetypeBytes;
@@ -1167,16 +1212,24 @@ function initializeEngine(
     scheduler.invalidate("snapshot");
   };
 
+  let runtimeTransformTools: RuntimeTransformToolsOwner | null = null;
+  let runtimeTransformToolsEnabled = false;
+  onRollback(() => runtimeTransformTools?.dispose());
   const playFreeCam: PlayFreeCamController | null = options.playMode
     ? createPlayFreeCamController(scene, {
         binding,
         mode: options.viewportMode ?? "3d",
+        onChanged: () => {
+          if (gameTimePaused) scheduler.requestPausedFrame();
+          else scheduler.invalidate("camera");
+        },
       })
     : null;
   onRollback(() => playFreeCam?.dispose());
   const playFreeCamInput: PlayFreeCamInputHandle | null = playFreeCam
     ? attachPlayFreeCamInput(canvas, playFreeCam, {
         mode: options.viewportMode ?? "3d",
+        blockPointer: (x, y) => runtimeTransformTools?.blocksCameraPointer(x, y) ?? false,
       })
     : null;
   onRollback(() => playFreeCamInput?.dispose());
@@ -1235,6 +1288,9 @@ function initializeEngine(
     },
   });
   onRollback(() => materialLibrary.dispose());
+  const runtimeMaterialEdits = new RuntimeMaterialEditOwner(binding, materialLibrary);
+  let finalAuthoringDrain: AbortController | null = null;
+  onRollback(() => runtimeMaterialEdits.dispose());
   binding.resolveMaterial = (guid, options) => {
     const host = options?.scene ?? scene;
     const document = materialDocuments.get(guid);
@@ -1484,7 +1540,7 @@ function initializeEngine(
     canvasY: number,
     pointerId?: number,
   ): boolean => {
-    if (!sceneLayerCompositor) return false;
+    if (!sceneLayerCompositor || !acceptsGameInput()) return false;
     const mapped = mapCanvasPointer(scene, canvasX, canvasY, pointerCanvas());
     const canvasSize = pointerCanvas();
     const walked = walkOverlayPointerHits(
@@ -1521,7 +1577,9 @@ function initializeEngine(
   const editorSync = options.editor
     ? new EditorSceneSync(scene, scheduler, {
         freezeActiveMeshes: false,
-        resolveMaterial: (guid) => binding.resolveMaterial?.(guid) ?? null,
+        resolveMaterial: (guid, options) => binding.resolveMaterial?.(guid, options) ?? null,
+        releaseMaterialInstance: (key, guid) => binding.releaseMaterialInstance?.(key, guid),
+        validateMaterialParameter: (guid, name, value) => binding.validateMaterialParameter?.(guid, name, value) ?? false,
         onAfterApply: () => { viewportShading?.apply(); syncEditorDeformers(); syncEditorOutlines(); syncEditorFogVolumes(); },
       })
     : null;
@@ -1734,6 +1792,7 @@ function initializeEngine(
     load.signal.throwIfAborted();
     assertCurrent(loadGeneration);
     if (!editorSync) throw new Error("Chunked scene realization requires an editor scene.");
+    frameReportFeed.cancel("The scene changed before frame capture completed.");
     const generation = ++loadGeneration;
     worldRenderer.invalidate();
     cancelPresentation(new Error("Scene loading was superseded."), "world");
@@ -1773,6 +1832,7 @@ function initializeEngine(
       return;
     }
     loadGeneration += 1;
+    frameReportFeed.cancel("The scene changed before frame capture completed.");
     worldRenderer.invalidate();
     cancelPresentation(new Error("Scene loading was superseded."), "world");
     setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
@@ -1797,6 +1857,7 @@ function initializeEngine(
       commandSources.releaseSlots(worldPlaySlots);
       worldPlaySlots.clear();
       refreshPlayActiveCamera(scene, binding);
+      if (simulationEditMode) playFreeCam?.setEnabled(true);
       playViz?.applyCommand({ type: "setShowNav", enabled: false });
       // Play visuals come from assignMesh. Document illumination would plant a
       // second set of lights (`authoredLight:<actorId>`) on changescene.
@@ -2220,7 +2281,13 @@ function initializeEngine(
   let previousFramePresented = false;
   let lastPresentedAt = 0;
   let lastPressureSample: FramePressureSample | null = null;
-  let gpuFrameCaptureRequested = false;
+  let rendererGpuLease: EngineGpuTimingLease | null = null;
+  const gpuObservers = new Set<() => void>();
+  onRollback(() => {
+    for (const release of [...gpuObservers]) release();
+    rendererGpuLease?.release();
+    rendererGpuLease = null;
+  });
   const soleRenderingView = () => {
     let enabled = 0;
     for (const view of engine.views ?? []) {
@@ -2294,8 +2361,10 @@ function initializeEngine(
     } else worldLoading = false;
     pending.resolve();
   };
-  function acknowledgeFrameCopy(owners = [...frameOwners]) {
+  function acknowledgeFrameCopy(owners = [...frameOwners], receipt = pendingPerformanceReceipt, copyMs = 0, frameReport = pendingFrameReportReceipt) {
     presentationStats.copied += 1;
+    frameReportFeed.complete(frameReport, loadGeneration);
+    if (receipt) performanceFeed.complete(receipt, copyMs, performance.now(), loadGeneration);
     if (!frameWasLoading) framePresented = true;
     for (const [key, pending] of owners) {
       if (pendingPresentations.get(key) !== pending) continue;
@@ -2329,8 +2398,8 @@ function initializeEngine(
         applyBoneAttachmentAudioPoses(binding, audioPoses);
         audioService.syncSnapshot(audioPoses);
       }
-      const camera = scene.activeCamera;
-      if (camera) {
+      const camera = simulationEditMode ? resolvePlayGameCamera(scene, binding) : scene.activeCamera;
+      if (camera && !gameTimePaused) {
         const pos = camera.globalPosition ?? camera.position;
         const rot = camera.absoluteRotation;
         audioService.syncListener({
@@ -2417,8 +2486,11 @@ function initializeEngine(
     // permit belongs to this canvas and must not draw into a sibling's blit.
     if (registeredView && engine.activeView && engine.activeView !== registeredView) return;
     frameCopyReady = false;
+    pendingPerformanceReceipt = null;
+    pendingFrameReportReceipt = null;
     frameOwners.clear();
-    const preparationStart = captureFramePhases ? performance.now() : 0;
+    const measurePhases = captureFramePhases || performanceFeed.active;
+    const preparationStart = measurePhases ? performance.now() : 0;
     applyRenderingQuality();
     outlineHost.refreshSettings();
     if (!worldLoading) runtimeScalability?.advance();
@@ -2437,7 +2509,16 @@ function initializeEngine(
     // as a catastrophic frame time and drop quality for no reason.
     const renderStart = performance.now();
     presentationStats.attempted += 1;
-    if (captureFramePhases) presentationStats.preparationMs = renderStart - preparationStart;
+    if (measurePhases) presentationStats.preparationMs = renderStart - preparationStart;
+    const profileReceipt = performanceFeed.active ? performanceFeed.begin({
+      frameId: engine.frameId, tickId: sampled?.tickIndex ?? 0, sceneGeneration: loadGeneration,
+      preparationMs: presentationStats.preparationMs + (registeredView ? admissionPreparationMs : 0),
+      submissionMs: 0, drawCalls: 0,
+      width: scene.activeCamera?.outputRenderTarget?.getSize().width ?? engine.getRenderWidth(true),
+      height: scene.activeCamera?.outputRenderTarget?.getSize().height ?? engine.getRenderHeight(true),
+      resolutionScale: 1 / engine.getHardwareScalingLevel(), loading: loadingFrame,
+    }) : null;
+    admissionPreparationMs = 0;
     let coherentFrame = true;
     beginEngineDrawCallFrame(engine);
     if (rttPresent) rttPresent.bind();
@@ -2447,6 +2528,16 @@ function initializeEngine(
       // hidden/paused views); sleeping cables skip their anchor math.
       if (stepEditorCables(scene, frameStart)) scheduler.invalidate("asset");
     }
+    const frameScope = frameReportFeed.active && (!worldLoading || pendingPresentations.has("world"))
+      ? beginRenderFrameCapture(engine) : null;
+    const frameReportReceipt = frameScope ? frameReportFeed.candidate({ ...frameScope.capture.report, frame: {
+      renderFrameId: engine.frameId, snapshotFrameId: sampled?.frameId ?? 0, tickId: sampled?.tickIndex ?? 0,
+      sceneGeneration: loadGeneration, sceneLoadId: worldLoadId, sceneAssetGuid: worldSceneAssetGuid ?? lastSceneAssetGuid, viewId: scene.uniqueId,
+      width: scene.activeCamera?.outputRenderTarget?.getSize().width ?? engine.getRenderWidth(true),
+      height: scene.activeCamera?.outputRenderTarget?.getSize().height ?? engine.getRenderHeight(true),
+      backend: engine.isWebGPU ? "webgpu" : "webGLVersion" in engine && engine.webGLVersion === 2 ? "webgl2"
+        : "webGLVersion" in engine && engine.webGLVersion === 1 ? "webgl1" : "unknown",
+    } }) : null;
     try {
       const presentingLayers = new Set([...pendingPresentations.values()].flatMap((pending) => pending.owner ? [pending.owner.layerId] : []));
       const drawOwner = (key: string, draw: () => boolean, fallback?: () => void) => {
@@ -2493,8 +2584,11 @@ function initializeEngine(
         });
       };
       if (!worldLoading || pendingPresentations.has("world")) drawOwner("world", () => {
-        const result = worldRenderer.render(pendingPresentations.has("world"));
-        coherentFrame = result.rendered;
+        const result = frameScope
+          ? frameScope.capture.stage(scene, { name: "World output", kind: "composition", sceneId: lastSceneAssetGuid },
+            () => worldRenderer.render(true))
+          : worldRenderer.render(pendingPresentations.has("world"));
+        coherentFrame = result.rendered && (!frameScope || result.readyForPresentation);
         return result.readyForPresentation;
       }, () => {
         // A newly bound output may invalidate admission between scheduling and
@@ -2518,13 +2612,16 @@ function initializeEngine(
           submission?.cancel();
         }
         presentationStats.held += 1;
+        if (frameReportFeed.active) scheduler.requestPausedFrame();
         return;
       }
       if (rttPresent) {
         const owners = [...frameOwners];
+        const copyStart = profileReceipt ? performance.now() : 0;
         void rttPresent.blit().then(() => {
-          acknowledgeFrameCopy(owners);
+          acknowledgeFrameCopy(owners, profileReceipt, profileReceipt ? performance.now() - copyStart : 0, frameReportReceipt);
         }, (error: unknown) => {
+          if (frameReportReceipt) frameReportFeed.cancel(`Frame presentation failed: ${String(error)}`);
           if (!owners.length && !disposed) console.warn(`[render] RTT presentation failed: ${String(error)}`);
           for (const [key, pending] of owners) {
             if (pendingPresentations.get(key) === pending) cancelPresentation(error instanceof Error ? error : new Error(String(error)), key);
@@ -2532,16 +2629,27 @@ function initializeEngine(
         });
       }
     } catch (error) {
+      frameReportFeed.cancel(`Frame capture failed: ${String(error)}`);
       if (!pendingPresentations.size) throw error;
       cancelPresentation(error instanceof Error ? error : new Error(String(error)));
       return;
+    } finally {
+      frameScope?.dispose();
+      // Capture counters change during collection; receipt rows share the bounded arrays.
+      if (frameScope && frameReportReceipt) Object.assign(frameReportReceipt.report, frameScope.capture.report);
     }
+    pendingFrameReportReceipt = frameReportReceipt;
     if (sampled) lastRenderedSnapshotFrame = sampled.frameId;
     frameCopyReady = true;
     presentationStats.drawn += 1;
     lastDrawCalls = readEngineDrawCalls(engine);
     scheduler.noteRendered(frameStart);
     lastRenderCpuMs = performance.now() - renderStart;
+    if (profileReceipt) {
+      profileReceipt.sample.submissionMs = lastRenderCpuMs;
+      profileReceipt.sample.drawCalls = lastDrawCalls;
+      pendingPerformanceReceipt = profileReceipt;
+    }
     if (!registeredView && !rttPresent && !loadingFrame) framePresented = true;
   };
   const presentationObserver = engine.onEndFrameObservable.add(() => {
@@ -2564,9 +2672,8 @@ function initializeEngine(
       // GPU timing only means this view when it owns the Engine's render —
       // siblings would fold their cost into the same counter.
       const sole = soleRenderingView();
-      if (!engine.isWebGPU && sole && presentationSignals && !gpuFrameCaptureRequested && engine.getCaps().timerQuery) {
-        gpuFrameCaptureRequested = true;
-        engine.captureGPUFrameTime(true);
+      if (!engine.isWebGPU && sole && presentationSignals && !rendererGpuLease && engine.getCaps().timerQuery) {
+        rendererGpuLease = acquireEngineGpuTiming(engine);
       }
       const counter = !engine.isWebGPU && presentationSignals && sole && engine.getCaps().timerQuery ? engine.getGPUFrameTimeCounter() : null;
       lastPressureSample = {
@@ -2584,6 +2691,8 @@ function initializeEngine(
     previousFramePresented = framePresented;
     framePresented = false;
     frameCopyReady = false;
+    pendingPerformanceReceipt = null;
+    pendingFrameReportReceipt = null;
   });
   onRollback(() => engine.onEndFrameObservable.remove(presentationObserver));
   onRollback(() => engine.stopRenderLoop(renderLoop));
@@ -2602,6 +2711,9 @@ function initializeEngine(
   const contextLostObserver = engine.onContextLostObservable.add(() => {
     if (disposed) return;
     contextLost = true;
+    finalAuthoringDrain?.abort(new Error("The graphics context was lost during final scene capture."));
+    runtimeMaterialEdits.cancelAll();
+    frameReportFeed.cancel("The graphics context was lost before frame capture completed.");
     presentationStats.contextLosses += 1;
     loadGeneration += 1;
     cancelPresentation(new Error("Rendering context was lost during scene loading."));
@@ -2647,7 +2759,10 @@ function initializeEngine(
     return undefined;
   };
   let scrollDrag: { pointerId: number; startX: number; startY: number; x: number; y: number; active: boolean; target: NonNullable<ReturnType<typeof scrollTargetAt>> } | null = null;
+  const activeGamePointers = new Set<number>();
+  const activeControlKeys = new Set<string>();
   const onOverlayWheel = (event: WheelEvent) => {
+    if (!acceptsGameInput()) return;
     const rect = canvas.getBoundingClientRect();
     const hit = scrollTargetAt(event.clientX - rect.left, event.clientY - rect.top);
     if (!hit) return;
@@ -2656,6 +2771,8 @@ function initializeEngine(
     options.onSceneLayerScroll?.({ layerId: hit.layer.layerId, actorId: hit.target.actorId, componentId: hit.target.componentId!, deltaX: (event.shiftKey || hit.target.scroll?.axis === "horizontal" ? event.deltaY : event.deltaX) * factor * hit.scaleX, deltaY: event.shiftKey ? 0 : event.deltaY * factor * hit.scaleY });
   };
   const onPointerDown = (event: PointerEvent) => {
+    if (!acceptsGameInput()) return;
+    activeGamePointers.add(event.pointerId);
     event.preventDefault();
     canvas.focus({ preventScroll: true });
     canvas.setPointerCapture?.(event.pointerId);
@@ -2677,6 +2794,7 @@ function initializeEngine(
     }
   };
   const onPointerMove = (event: PointerEvent) => {
+    if (!acceptsGameInput() || ((event.pointerType === "touch" || event.buttons > 0) && !activeGamePointers.has(event.pointerId))) return;
     const { x, y } = overlayPointerCanvasCoords(event);
     if (joysticks.move(event.pointerId, x, y)) return;
     if (scrollDrag?.pointerId === event.pointerId) {
@@ -2698,6 +2816,7 @@ function initializeEngine(
     dispatchOverlayPointer("move", x, y);
   };
   const onPointerUp = (event: PointerEvent) => {
+    if (!activeGamePointers.delete(event.pointerId) || !acceptsGameInput()) return;
     const point = overlayPointerCanvasCoords(event);
     const wasScrolling = scrollDrag?.pointerId === event.pointerId && scrollDrag.active;
     if (scrollDrag?.pointerId === event.pointerId) scrollDrag = null;
@@ -2708,19 +2827,45 @@ function initializeEngine(
     dispatchOverlayPointer("up", x, y);
   };
   const onPointerCancel = (event: PointerEvent) => {
+    if (!activeGamePointers.delete(event.pointerId) || !acceptsGameInput()) return;
     if (scrollDrag?.pointerId === event.pointerId) scrollDrag = null;
     if (uiControls.release(event.pointerId, true) || joysticks.release(event.pointerId)) return;
     const { x, y } = overlayPointerCanvasCoords(event);
     playCursor?.notePointer(event.pointerType ?? "mouse", x, y);
     dispatchOverlayPointer("cancel", x, y);
   };
-  const resetJoysticks = () => { scrollDrag = null; joysticks.reset(); uiControls.reset(); };
-  const onCanvasBlur = () => { joysticks.reset(); };
-  const onControlKeyDown = (event: KeyboardEvent) => { if (!binding.paused) uiControls.keyDown(event); };
+  const resetJoysticks = () => {
+    scrollDrag = null;
+    joysticks.reset();
+    uiControls.reset();
+    for (const event of [...applyOverlayPointer(overlayPointerState, "cancel", []), ...applyOverlayPointer(overlayPointerState, "move", [])])
+      options.onSceneLayerPointer?.(event);
+    const captured = [...activeGamePointers];
+    activeGamePointers.clear();
+    activeControlKeys.clear();
+    const document = canvas.ownerDocument;
+    if (document?.pointerLockElement === canvas) document.exitPointerLock?.();
+    for (const pointerId of captured) {
+      try { canvas.releasePointerCapture?.(pointerId); } catch { /* Capture may already have ended. */ }
+    }
+  };
+  const onCanvasBlur = (event: FocusEvent) => { if (!uiControls.ownsElement(event.relatedTarget)) resetJoysticks(); };
+  const onControlKeyDown = (event: KeyboardEvent) => {
+    const key = event.code || event.key;
+    if (!acceptsGameInput() || (event.repeat && !activeControlKeys.has(key))) return;
+    activeControlKeys.add(key);
+    uiControls.keyDown(event);
+  };
+  const onControlKeyUp = (event: KeyboardEvent) => { activeControlKeys.delete(event.code || event.key); };
   const onJoystickVisibility = () => { if (typeof document !== "undefined" && document.hidden) resetJoysticks(); };
-  const onJoystickLostCapture = (event: PointerEvent) => { if (scrollDrag?.pointerId === event.pointerId) scrollDrag = null; joysticks.release(event.pointerId); uiControls.release(event.pointerId, true); };
+  const onJoystickLostCapture = (event: PointerEvent) => {
+    if (!activeGamePointers.delete(event.pointerId)) return;
+    if (scrollDrag?.pointerId === event.pointerId) scrollDrag = null;
+    joysticks.release(event.pointerId); uiControls.release(event.pointerId, true);
+    for (const result of applyOverlayPointer(overlayPointerState, "cancel", [])) options.onSceneLayerPointer?.(result);
+  };
   const onOverlayTouch = (event: TouchEvent) => {
-    event.preventDefault();
+    if (acceptsGameInput()) event.preventDefault();
   };
   if (!options.editor) {
     onRollback(() => {
@@ -2734,6 +2879,7 @@ function initializeEngine(
       canvas.removeEventListener("lostpointercapture", onJoystickLostCapture);
       canvas.removeEventListener("blur", onCanvasBlur);
       canvas.removeEventListener("keydown", onControlKeyDown);
+      canvas.removeEventListener("keyup", onControlKeyUp);
       if (typeof window !== "undefined") window.removeEventListener("blur", resetJoysticks);
       if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onJoystickVisibility);
     });
@@ -2748,6 +2894,7 @@ function initializeEngine(
       canvas.addEventListener("lostpointercapture", onJoystickLostCapture);
       canvas.addEventListener("blur", onCanvasBlur);
       canvas.addEventListener("keydown", onControlKeyDown);
+      canvas.addEventListener("keyup", onControlKeyUp);
       if (canvas.tabIndex < 0) canvas.tabIndex = 0;
       if (typeof window !== "undefined") window.addEventListener("blur", resetJoysticks);
       if (typeof document !== "undefined") document.addEventListener("visibilitychange", onJoystickVisibility);
@@ -2770,10 +2917,13 @@ function initializeEngine(
 
   let callerPaused = false;
   let sceneStreamingPaused = false;
+  let gameTimePaused = false;
   const applyPause = () => {
-    const paused = callerPaused || sceneStreamingPaused;
+    const paused = callerPaused || sceneStreamingPaused || gameTimePaused;
+    setSceneGameTimePaused(scene, gameTimePaused);
+    for (const layer of sceneLayerCompositor?.layers() ?? []) setSceneGameTimePaused(layer.scene, gameTimePaused);
     binding.paused = paused;
-    if (paused) { scrollDrag = null; joysticks.reset(); uiControls.reset(); }
+    if (paused) resetJoysticks();
     scheduler.setPaused(paused);
     audioService?.setPaused(paused);
     particleService?.setPaused(paused);
@@ -2788,7 +2938,19 @@ function initializeEngine(
     editor,
     dispose: () => {
       if (disposed) return;
+      resetJoysticks();
+      runtimeTransformTools?.dispose();
+      runtimeTransformTools = null;
       disposed = true;
+      finalAuthoringDrain?.abort(new Error("The game view stopped during final scene capture."));
+      runtimeMaterialEdits.dispose();
+      performanceFeed.dispose();
+      for (const release of [...gpuObservers]) release();
+      rendererGpuLease?.release();
+      rendererGpuLease = null;
+      frameReportFeed.cancel("The game view was disposed.");
+      pendingPerformanceReceipt = null;
+      pendingFrameReportReceipt = null;
       commandSources.dispose();
       sourceOwners.clear();
       streamAdmission?.clear();
@@ -2851,8 +3013,14 @@ function initializeEngine(
       canvas.removeEventListener("touchstart", onOverlayTouch);
       canvas.removeEventListener("touchmove", onOverlayTouch);
       canvas.removeEventListener("wheel", onOverlayWheel);
+      canvas.removeEventListener("lostpointercapture", onJoystickLostCapture);
+      canvas.removeEventListener("blur", onCanvasBlur);
+      canvas.removeEventListener("keydown", onControlKeyDown);
+      canvas.removeEventListener("keyup", onControlKeyUp);
+      if (typeof window !== "undefined") window.removeEventListener("blur", resetJoysticks);
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", onVisibility);
+        document.removeEventListener("visibilitychange", onJoystickVisibility);
       }
       // Document FontFaces are host state; sibling views keep their own faces.
       fontRegistry.dispose();
@@ -2916,6 +3084,49 @@ function initializeEngine(
     setSize,
     loadScene,
     loadSceneAsync,
+    prepareRuntimeMaterialEdit: (request) => {
+      if (disposed || contextLost || worldLoading) return Promise.reject(new Error("The game view is unavailable or loading."));
+      return runtimeMaterialEdits.prepare(request);
+    },
+    commitRuntimeMaterialEdit: (command) => {
+      if (disposed || contextLost || worldLoading) return { success: false, reason: "The game view is unavailable or loading." };
+      const result = runtimeMaterialEdits.commit(command);
+      if (result.success) { appliedSnapshotIdentity = null; scheduler.invalidate("asset"); scheduler.requestPausedFrame(); }
+      return result;
+    },
+    releaseRuntimeMaterialPreparation: (token) => runtimeMaterialEdits.release(token),
+    quiesceAuthoringRevision: async (commandRevision, signal) => {
+      if (!Number.isSafeInteger(commandRevision) || commandRevision < 0 || finalAuthoringDrain)
+        throw new Error("The final render command fence is invalid or already pending.");
+      if (!gameTimePaused || disposed || contextLost || worldLoading)
+        throw new Error("Final scene capture requires a complete, paused game view.");
+      const controller = new AbortController();
+      const cancel = () => controller.abort(signal.reason);
+      signal.addEventListener("abort", cancel, { once: true });
+      if (signal.aborted) cancel();
+      finalAuthoringDrain = controller;
+      const generation = loadGeneration, sceneLoadId = worldLoadId;
+      const assert = () => {
+        controller.signal.throwIfAborted();
+        if (disposed || contextLost || worldLoading || generation !== loadGeneration || sceneLoadId !== worldLoadId)
+          throw new Error("The final scene render ownership changed during capture.");
+      };
+      try {
+        // These commands were accepted before the correlated fence. Their cold
+        // source preparation may complete while game progression remains held.
+        await commandSources.whenReady(undefined, controller.signal);
+        assert();
+        await drainFinalAuthoringResources(scene, binding, materialLibrary, {
+          signal: controller.signal, assertCurrent: assert,
+          pendingParticles: (slots) => particleService?.pendingSlotPreparation(slots) ?? [],
+        });
+        assert();
+        return { commandRevision };
+      } finally {
+        signal.removeEventListener("abort", cancel);
+        if (finalAuthoringDrain === controller) finalAuthoringDrain = null;
+      }
+    },
     pushSnapshot: (buffer: Float32Array) => {
       interpolator.push(buffer);
       interpAlpha = 1;
@@ -2929,6 +3140,8 @@ function initializeEngine(
       scheduler.invalidate("snapshot");
     },
     applyCommand: (command: CommandMessage) => {
+      if (!applyingPreparedCommand)
+        finalAuthoringDrain?.abort(new Error(`Runtime render command ${command.type} arrived after the final capture fence.`));
       if (!applyingPreparedCommand && commandSources.receive(command, (prepared) => {
         applyingPreparedCommand = true;
         try { engineHandle.applyCommand(prepared); }
@@ -2941,7 +3154,15 @@ function initializeEngine(
         scheduler.invalidate("snapshot");
         return;
       }
-      applyPlayFreeCamCommand(playFreeCam, command);
+      if (command.type === "resetActorInterpolation") {
+        if (captureActorSlots.get(command.slotId) !== command.actorGuid) return;
+        interpolator.resetInterpolationFrom(command.frameId);
+        appliedSnapshotIdentity = null;
+        scheduler.requestPausedFrame();
+        return;
+      }
+      if (!simulationEditMode || (command.type !== "possessCamera" && command.type !== "setFreeCam"))
+        applyPlayFreeCamCommand(playFreeCam, command);
       playViz?.applyCommand(command);
       playDebugDraw?.applyCommand(command);
       if (command.type === "setPainter2D") {
@@ -2955,7 +3176,7 @@ function initializeEngine(
         applyUIControl2DCommand(binding, command);
         if (command.focused !== undefined) {
           const mesh = meshForPlayComponent(binding, command.slotId, command.componentId);
-          if (mesh) uiControls.syncFocus(mesh, command.focused, command.beginEditing);
+          if (mesh && acceptsGameInput()) uiControls.syncFocus(mesh, command.focused, command.beginEditing);
         }
         scheduler.invalidate("asset");
       }
@@ -2992,6 +3213,9 @@ function initializeEngine(
       }
       if (command.type === "spawn") {
         captureActorSlots.set(command.slotId, command.actorGuid);
+        runtimeComponentTokens.delete(command.slotId);
+        if (command.runtimeIdentity) runtimeActorIdentities.set(command.slotId, command.runtimeIdentity);
+        else runtimeActorIdentities.delete(command.slotId);
         renderTargetCaptures.registerActor(command.actorGuid, () => binding.meshes.get(command.slotId) ?? null);
         appliedSnapshotIdentity = null;
         audioService?.noteActorSlot(command.actorGuid, command.slotId);
@@ -3019,8 +3243,11 @@ function initializeEngine(
       }
       if (command.type === "despawn") {
         const actorGuid = captureActorSlots.get(command.slotId);
+        if (actorGuid) runtimeTransformTools?.actorRemoved(actorGuid, command.slotId);
         if (actorGuid) renderTargetCaptures.removeActor(actorGuid);
         captureActorSlots.delete(command.slotId);
+        runtimeActorIdentities.delete(command.slotId);
+        runtimeComponentTokens.delete(command.slotId);
         appliedSnapshotIdentity = null;
         pendingOverlayAssign.delete(command.slotId);
         worldPlaySlots.delete(command.slotId);
@@ -3031,10 +3258,15 @@ function initializeEngine(
         rebuildIfActiveCameraChanged(previousCamera);
       }
       if ((command.type === "sceneLoading" || command.type === "activeScene") && command.sceneLoadId > worldLoadId) {
+        runtimeTransformTools?.clear();
+        frameReportFeed.cancel("The runtime changed Scene before frame capture completed.");
         renderTargetCaptures.clear();
         captureActorSlots.clear();
+        runtimeActorIdentities.clear();
+        runtimeComponentTokens.clear();
         particleService?.retireSlots((slotId) => worldPlaySlots.has(slotId));
         appliedSnapshotIdentity = null;
+        runtimeMaterialEdits.cancelAll();
         worldLoadId = command.sceneLoadId;
         worldSceneAssetGuid = command.sceneAssetGuid;
         postProcessParameters.clear();
@@ -3053,7 +3285,10 @@ function initializeEngine(
       if (command.type === "sceneLayerCreate") {
         const layer = sceneLayerCompositor?.create(command);
         // Layers resolve project quality (Geometry, Water) through the world view.
-        if (layer) followSceneRenderSettings(layer.scene, scene);
+        if (layer) {
+          followSceneRenderSettings(layer.scene, scene);
+          setSceneGameTimePaused(layer.scene, gameTimePaused);
+        }
         syncOverlayLayer(command.layerId);
         scheduler.invalidate("snapshot");
       }
@@ -3146,6 +3381,9 @@ function initializeEngine(
       }
       particleService?.handleCommand(command);
       if (command.type === "assignMesh") {
+        if (command.runtimeComponentTokens) runtimeComponentTokens.set(command.slotId,
+          new Map(command.runtimeComponentTokens.map((entry) => [entry.componentGuid, entry.componentToken])));
+        else runtimeComponentTokens.delete(command.slotId);
         appliedSnapshotIdentity = null;
         if (command.sceneLayerId) {
           worldPlaySlots.delete(command.slotId);
@@ -3306,6 +3544,41 @@ function initializeEngine(
       callerPaused = paused;
       applyPause();
     },
+    setGameTimePaused: (paused: boolean) => {
+      if (disposed) return;
+      gameTimePaused = paused;
+      applyPause();
+    },
+    setGameInputEnabled: (enabled: boolean) => {
+      if (disposed || gameInputEnabled === enabled) return;
+      resetJoysticks();
+      gameInputEnabled = enabled;
+    },
+    setSimulationEditMode: (enabled: boolean) => {
+      if (disposed || !playFreeCam || simulationEditMode === enabled) return;
+      resetJoysticks();
+      playFreeCamInput?.reset();
+      simulationEditMode = enabled;
+      runtimeTransformTools?.setEnabled(enabled && runtimeTransformToolsEnabled);
+      const previous = scene.activeCamera;
+      playFreeCam.setEnabled(enabled);
+      appliedSnapshotIdentity = null;
+      rebuildIfActiveCameraChanged(previous);
+      if (gameTimePaused) scheduler.requestPausedFrame();
+      else scheduler.invalidate("camera");
+    },
+    requestPausedRedraw: () => {
+      if (disposed) return { accepted: false, reason: "The view has been disposed." };
+      if (!gameTimePaused) return { accepted: false, reason: "Render-only redraw requires paused game time." };
+      const worldIssue = pausedSceneRedrawIssue(scene);
+      if (worldIssue) return { accepted: false, reason: worldIssue };
+      for (const layer of sceneLayerCompositor?.layers() ?? []) {
+        const reason = pausedSceneRedrawIssue(layer.scene);
+        if (reason) return { accepted: false, reason };
+      }
+      scheduler.requestPausedFrame();
+      return { accepted: true };
+    },
     setSceneStreamingPaused: (paused: boolean) => {
       sceneStreamingPaused = paused;
       applyPause();
@@ -3319,6 +3592,90 @@ function initializeEngine(
     }),
     drawCalls: () => lastDrawCalls,
     renderDiagnostics,
+    observePerformance: (onFrame) => {
+      if (frameReportFeed.active) throw new Error("Stop frame capture before recording performance.");
+      return performanceFeed.subscribe(onFrame);
+    },
+    observeGpuTiming: (onSample, onError) => {
+      if (disposed || contextLost) return { status: "unavailable", reason: "The game graphics context is unavailable.", release() {} };
+      // eslint-disable-next-line prefer-const -- release may run from a synchronous onError.
+      let observation: EngineGpuTimingObservation | undefined;
+      const release = () => { gpuObservers.delete(release); observation?.release(); };
+      observation = observeEngineGpuTiming(engine, onSample, { onError: error => { release(); onError?.(error); } });
+      if (observation.status === "unavailable") return observation;
+      gpuObservers.add(release);
+      return { ...observation, release };
+    },
+    captureFrame: () => {
+      if (disposed || contextLost) return Promise.reject(new Error("The game view is unavailable."));
+      if (performanceFeed.active) return Promise.reject(new Error("Stop performance recording before capturing a frame."));
+      if (binding.paused && !gameTimePaused)
+        return Promise.reject(new Error("Paused frame capture requires the game-time pause boundary."));
+      if (gameTimePaused) {
+        for (const target of [scene, ...(sceneLayerCompositor?.layers().map((layer) => layer.scene) ?? [])]) {
+          const reason = pausedSceneRedrawIssue(target);
+          if (reason) return Promise.reject(new Error(reason));
+        }
+      }
+      const result = frameReportFeed.arm(loadGeneration);
+      scheduler.requestPausedFrame();
+      scheduler.invalidate("manual");
+      return result;
+    },
+    cancelFrameCapture: (reason) => frameReportFeed.cancel(reason),
+    attachRuntimeTransformTools: (callbacks) => {
+      if (disposed || !options.playMode || options.editor || runtimeTransformTools)
+        throw new Error("Runtime transform tools require a live, unattached game view.");
+      const owner = createRuntimeTransformTools(scene, canvas, {
+        mode: options.viewportMode ?? "3d", scheduler,
+        requestRedraw: () => {
+          if (gameTimePaused) scheduler.requestPausedFrame();
+          else scheduler.invalidate("gizmo");
+        },
+        pointerCanvas,
+        cameraGestureActive: () => playFreeCamInput?.isInteracting() ?? false,
+        forwardPointers: !!options.sharedEngine || presentRtt,
+        registerOverlay: (draw) => worldRenderer.attachEditorOverlay(draw),
+        selectVisuals: (meshes) => outlineHost.selection.set(meshes),
+        resolve: (identity, slotId) => {
+          if (slotId === undefined || !Number.isSafeInteger(slotId) || binding.isOverlaySlot?.(slotId)) return null;
+          const slot = slotId;
+          const matches = () => {
+            const owner = runtimeActorIdentities.get(slot);
+            return owner?.actorGuid === identity.actorGuid && owner.actorToken === identity.actorToken &&
+              owner.sceneInstanceId === identity.sceneInstanceId &&
+              (!identity.componentGuid || runtimeComponentTokens.get(slot)?.get(identity.componentGuid) === identity.componentToken);
+          };
+          if (!matches()) return null;
+          const root = binding.meshes.get(slot) ?? null;
+          const mesh = identity.componentGuid ? meshForPlayComponent(binding, slot, identity.componentGuid) : root;
+          return { slotId: slot, mesh, visuals: mesh ? [mesh, ...mesh.getChildMeshes()] : [],
+            isCurrent: () => matches() && (binding.meshes.get(slot) ?? null) === root && !root?.isDisposed() &&
+              (!identity.componentGuid || meshForPlayComponent(binding, slot, identity.componentGuid) === mesh),
+          };
+        },
+        pick: (x, y) => {
+          const mapped = mapCanvasPointer(scene, x, y, pointerCanvas());
+          const picked = pickAtCanvas(scene, mapped.x, mapped.y);
+          const actorGuid = picked?.slotId != null ? captureActorSlots.get(picked.slotId) : undefined;
+          return actorGuid && picked?.slotId != null ? { actorGuid, slotId: picked.slotId } : null;
+        },
+      }, callbacks);
+      runtimeTransformTools = owner;
+      runtimeTransformToolsEnabled = false;
+      return {
+        setSelection: owner.setSelection, setTool: owner.setTool, setSnap: owner.setSnap,
+        setEnabled: (enabled) => {
+          if (runtimeTransformTools !== owner) return;
+          runtimeTransformToolsEnabled = enabled;
+          owner.setEnabled(enabled && simulationEditMode);
+        },
+        dispose: () => {
+          if (runtimeTransformTools !== owner) return;
+          owner.dispose(); runtimeTransformTools = null; runtimeTransformToolsEnabled = false;
+        },
+      };
+    },
     renderPathStatus: () => sceneRenderPathStatus(scene),
     scalabilityStatus: () => lastScalabilityStatus,
     setRenderPath: (renderPath: RenderPath | null) => {

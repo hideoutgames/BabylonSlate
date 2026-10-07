@@ -2135,3 +2135,81 @@ Performance contract:
 - Edits coalesce per component per simulation tick into bounded dirty ranges. Only changed channels cross the worker bridge, using owned transferable arrays. Clean ticks send no geometry. Play and the exported player use the same command handler.
 - Rendering coalesces packets before admission into one GPU upload per changed channel. CPU data remains available for picking and graphics-context restoration; bounds and picking caches update with geometry. Revision-tracked shadows can stay cached while geometry is unchanged.
 - Geometry collision is **disabled by default**. Enabling it uses the current triangles in 3D physics; no Rigid Body means an implicit static body, while an attached Rigid Body owns motion. Position/topology edits recook at the next physics step; normal, UV and material edits do not. Collision cooking is proportional to mesh size, so keep it disabled for frequently deforming visuals that do not need exact triangle collision. Collapsed triangles contribute no collision surface.
+
+## Render-only game-time pause prerequisite
+
+- `EngineHandle.setGameTimePaused` adds a pause reason independent of the existing caller and streaming holds. `requestPausedRedraw` admits one explicit redraw without resuming those holds; it returns a named refusal when a scene owner cannot redraw safely. These are internal integration primitives, not a completed Simulation UI or runtime pause acknowledgment.
+- Both FrameGraph and native fallback skip Babylon's animation/physics pass during that redraw. Native animation wall time resets on resume. Authored shader Time/Seconds inputs, periodic/manual Render Target captures, CPU/GPU particle simulation, queued GLB weighted poses, and preview water clocks remain held. Audio voices use the existing pause owner and the listener retains its last game-camera pose. No new clock observers or recording buffers are installed.
+- The pinned Babylon patch adds `GPUParticleSystem.paused`, matching the CPU owner's public pause flag. Paused GPU draws reuse completed buffers without prewarming, sampling emitter gradients, consuming manual emissions, or dispatching updates. A system with no initialized buffers remains undrawn until resume. The owner must hold this flag; otherwise paused-redraw admission reports the offending particle system and retains the last coherent image. The patch also adds `Scene.render`'s optional `ignoreActions` argument; frame and intersection actions resume from their existing state on the next gameplay presentation.
+- This boundary does not pause Worker scripts, arbitrary JavaScript callbacks, or external side effects. Session ownership must first acknowledge a runtime boundary, drain accepted render commands, and manage input/editor-camera routing. Queued weighted animation commands remain pending until a real animation pass; final-state capture must resolve that ownership explicitly. GPU, browser presentation, audio, and full Simulation acceptance remain unqualified by headless checks alone.
+
+## Saved component material instances
+
+- Scene components may carry `materialInstance` with a material GUID and typed parameter values. Full scene loads, incremental editor reconciliation and prefab thumbnails apply these only while the component's current material assignment matches that GUID. Text keeps its existing glyph/domain binding.
+- Each component visual owns a private MaterialLibrary instance key. Uniform state is private; immutable textures still use the existing resource leases. Overrides wait for the exact material and parameter texture preparation before replacing the previous valid material. Superseded requests, removed overrides, deleted actors and disposed scenes release only their own instance.
+- The existing scene-load readiness path includes pending instance preparation and reports invalid parameter names/types, missing materials and texture failures. These persistence/rendering boundaries do not by themselves qualify complete Simulation retention.
+
+- `setGameInputEnabled` independently gates SceneLayer pointer, wheel, keyboard, and programmatic focus entry. Input ownership changes cancel pressed/hovered buttons, controls, scrolling and captured pointers; repeat keys and a gesture started under another owner cannot become fresh game input. `setSimulationEditMode` resets debug-camera gestures and switches the existing free camera without releasing the host's input gate or pause reasons. Movement requests a render-only redraw while paused. Running Edit follows the possessed/default game camera for positional audio, including gameplay camera possession changes; the debug camera remains a viewport-only choice. The ordinary console free-camera behavior is unchanged.
+
+Explicit frame reports use `EngineHandle.captureFrame()` and
+`cancelFrameCapture()`. The view admits one request for ten seconds and resolves
+it only after a coherent world presentation reaches that view's copy destination.
+A held candidate is discarded; RTT promises carry their own generation and frame
+receipt, so an old copy cannot complete a later request. Scene replacement,
+context loss, disposal, cancellation, and drawing failure reject the request.
+Performance recording and frame capture exclude one another. A paused request
+uses the acknowledged game-time pause path and requests one render-only frame;
+a presentation-only pause cannot safely substitute for that boundary. Session
+hosts restrict these expensive diagnostics to normal Play and packaged Preview.
+
+A capture attaches public FrameGraph task observers only around the requested
+synchronous draw, removes them in `finally`, and records configured task/pass
+branches separately from actual task execution. Task timings are inclusive wall
+time, may contain driver waits, and are not per-pass or GPU timings. Public
+texture handles, dimensions, formats and sample counts retain their graph
+identity; absent details remain unavailable. Native submission, world output,
+SceneLayer scene output/composition, editor overlays, and existing Render Target
+Capture owners have explicit stages. Known capture actors are attributed by
+identity; batched rendering is not guessed. The collector retains at most 256
+records in each collection, 16 graph submissions, 32 passes per branch, and a
+256 KiB serialized-record admission budget. Omitted records make the report
+incomplete and increment its drop count. This is not browser heap accounting.
+Ordinary frames allocate no report buffers or descriptors and attach no report
+observers. Texture readback/previews, Spector, and GPU pass timings are absent.
+
+A validated runtime transform edit announces its authoritative snapshot frame
+with `resetActorInterpolation`. The renderer checks GUID/slot ownership and
+removes the previous interpolation endpoint when that publication arrives,
+including world-space descendant poses. It does not apply authored local
+coordinates to the flattened render roots. Coalesced pending reset publications
+use a bounded frame interval; subsequent ordinary snapshots resume interpolation.
+
+Simulation attaches the existing gizmo host through
+`EngineHandle.attachRuntimeTransformTools`. It owns one invisible draft mesh and
+the viewport coordinator's existing editor-overlay slot. The actual runtime mesh
+is never dragged directly: continuous and final world-pose drafts go through the
+correlated runtime mutation channel, where authoritative parents and physics
+apply the edit. The final draft remains displayed until its acknowledgement,
+then follows the effective runtime pose. Mesh matrices already contain absolute
+world coordinates; Babylon's floating-origin shader offset is not added again.
+The adapter binds the full runtime identity to an explicitly supplied render slot
+and its visual lifetime, refuses stale/recycled targets, and clears the selection
+on destruction. A replacement visual can rebind only when the same scene-instance,
+actor and component lifetime tokens still own that slot; any drag of its predecessor
+is cancelled first. It uses selected-object reads only. Inspector world-pose replies
+can position a gizmo for an object without a render mesh.
+
+Final authoring capture drains the command-source queue before validating native
+visual/material readiness. Already-accepted cold assignments may publish through
+that fence without advancing game time. Source failure rejects capture instead
+of retaining a predecessor visual; any newly received runtime command invalidates
+the fence. Cancelling this wait does not assert that underlying native work ended.
+
+Gizmo gestures and the existing free camera have exclusive pointer ownership.
+Edit exit, pointer cancellation, focus loss, selection changes, and disposal
+release active gestures without manufacturing a final committed write. A pointer
+which began on a gizmo cannot become a camera drag later. The adapter is created
+only for Simulation consumers, starts disabled, and is enabled only while the
+session uses Edit input; ordinary Play does not allocate its proxy, gizmos, or
+utility Scene. UI consumers retain the acknowledged object identity and expose
+pending/rejected writes through the shared Inspector transport.

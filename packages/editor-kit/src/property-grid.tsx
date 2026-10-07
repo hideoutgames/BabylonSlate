@@ -1,4 +1,5 @@
 import { useRef, useState, type ReactNode } from "react";
+import { useEditorReadOnly } from "./editor-read-only";
 import type { Tag, TagContainer } from "@babylonslate/core";
 import { TagPicker } from "./tag-picker";
 import { Button } from "@babylonslate/ui/components/button";
@@ -659,11 +660,13 @@ export function PropertyGrid({
   rows,
   title,
   orientation = "vertical",
-  readOnly = false,
+  readOnly: readOnlyProp = false,
   hideLabels = false,
   density = "default",
   "data-testid": testId,
 }: PropertyGridProps) {
+  const inheritedReadOnly = useEditorReadOnly();
+  const readOnly = readOnlyProp || inheritedReadOnly;
   const compact = density === "compact";
   return (
     <div

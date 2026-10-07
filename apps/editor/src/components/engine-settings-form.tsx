@@ -2,6 +2,7 @@ import { TemplateLibrarySettings } from "./template-library-settings";
 import { EnginePluginsSettings } from "./engine-plugins-settings";
 import { EngineExtensionsSettings } from "./engine-extensions-settings";
 import { KeybindSettings } from "./keybind-settings";
+import { DebuggerSettingsFields } from "./debugger-settings-fields";
 import { NumberField, SelectableText } from "@babylonslate/editor-kit";
 import { getBuildIdentity } from "../lib/build-identity";
 import {
@@ -166,10 +167,12 @@ export function EngineSettingsForm({
   settings,
   onChange,
   categoryId,
+  focusTargetId,
 }: {
   settings: EngineSettings;
   onChange: (patch: Partial<EngineSettings>) => void | Promise<void>;
   categoryId: EngineSettingsCategoryId;
+  focusTargetId?: string;
 }) {
   const identity = getBuildIdentity();
   return (
@@ -303,32 +306,7 @@ export function EngineSettingsForm({
       ) : null}
 
       {categoryId === "debugger" ? (
-        <FieldSet>
-          <FieldLegend>Debugger</FieldLegend>
-          <Field className="settings-field">
-            <FieldLabel htmlFor="setting-trace-budget-mib">
-              Trace Memory Budget (MiB)
-            </FieldLabel>
-            <NumberField
-              id="setting-trace-budget-mib"
-              min={1}
-              max={256}
-              step={1}
-              className="min-h-[var(--chrome-row,28px)]"
-              data-testid="setting-trace-budget-mib"
-              value={Math.round(settings.traceByteBudget / (1024 * 1024))}
-              onChange={(mebibytes) =>
-                void onChange({
-                  traceByteBudget: Math.round(mebibytes) * 1024 * 1024,
-                })
-              }
-            />
-            <FieldDescription>
-              Applies to the next Play or Preview Build session. When the budget
-              fills, the oldest recorded frames are discarded.
-            </FieldDescription>
-          </Field>
-        </FieldSet>
+        <DebuggerSettingsFields settings={settings} onChange={onChange} focusTargetId={focusTargetId} />
       ) : null}
 
       {categoryId === "viewport" ? (

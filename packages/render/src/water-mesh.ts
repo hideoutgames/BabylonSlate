@@ -1,3 +1,4 @@
+import { isSceneGameTimePaused } from "./scene-game-time";
 import { ArcRotateCamera, Matrix, Mesh, PBRMaterial, Vector3, VertexBuffer, VertexData, type AbstractMesh, type Camera, type Material, type Scene, type SubMesh } from "@babylonjs/core";
 import {
   createDefaultWaterDefinition, createWaterWaveOutput, evaluateWaterVertex, normalizeWaterBody, normalizeWaterDefinition, waterBankFadeLength,
@@ -93,7 +94,7 @@ export function setSceneWaterTime(scene: Scene, seconds: number): void {
  */
 export function updateSceneWater(scene: Scene): void {
   const clock = clocks.get(scene) ?? { time: 0, runtime: false };
-  if (!clock.runtime) clock.time += Math.min(0.1, scene.getEngine().getDeltaTime() / 1000 || 0);
+  if (!clock.runtime && !isSceneGameTimePaused(scene)) clock.time += Math.min(0.1, scene.getEngine().getDeltaTime() / 1000 || 0);
   clocks.set(scene, clock);
   reflections.get(scene)?.sync();
   const entries = surfaces.get(scene);

@@ -1,11 +1,11 @@
-import { createSaveStorageServer } from "@babylonslate/core";
+import { createSaveStorageServer, newGuid } from "@babylonslate/core";
 import { createSaveGameStorage } from "@babylonslate/vfs";
 import type { ScalabilityAcknowledgement, RenderProjectSettings } from "@babylonslate/core";
 import { buildMaterialParameterCatalog } from "@babylonslate/shader-graph";
 import { materialParameterTextureAssetGuids } from "@babylonslate/assets";
 import { captureShadowDiagnostics, lightsDebugText } from "@babylonslate/render";
 import type { AbstractEngine } from "@babylonjs/core";
-import { snapshotFloatCount, type ControlMessage } from "@babylonslate/bridge";
+import { createSessionBoundaryClient, snapshotFloatCount, type ControlMessage, type SessionBoundaryRequest, type SessionBoundaryResult } from "@babylonslate/bridge";
 import { encodeInputEvents } from "@babylonslate/input";
 import { parseAnimGraphDocument } from "@babylonslate/anim-graph";
 import {
@@ -63,6 +63,7 @@ import { packedFontCssStacks } from "./fonts";
 import { createPlayerConsoleHost } from "./console-host";
 import { createPlayerPauseState } from "./console-pause";
 import type { DebugInspectSnapshot } from "@babylonslate/object-model";
+import type { PlayerPreviewDiagnosticPorts } from "./player-diagnostic-types";
 
 function havokWasmUrl(): string {
   return new URL("./havok/HavokPhysics.wasm", document.baseURI).href;
@@ -92,6 +93,7 @@ export type PlayerDiagnostic = {
 };
 
 export type PlayerBootHandle = {
+  previewDiagnostics?: PlayerPreviewDiagnosticPorts;
   ticks: () => number;
   rendering: () => ReturnType<EngineHandle["renderDiagnostics"]> | null;
   scalability: () => ScalabilityAcknowledgement | undefined;
@@ -118,6 +120,8 @@ export type PlayerTestHandle = Pick<PlayerBootHandle,
 >;
 
 export type PlayerBootOptions = {
+  /** Only the editor-hosted Preview path grants the lazy diagnostic transport. */
+  previewDiagnostics?: boolean;
   canvas: HTMLCanvasElement;
   game: LoadedGame;
   /** Preview iframes borrow the editor host's application-private storage. */
@@ -195,6 +199,8 @@ function initializePlayer(
 
   let worker: PlayerWorkerHost | null = null;
   let runtime: RuntimeDriver | null = null;
+  let diagnosticListeners: Set<(command: { type: string } & Record<string, unknown>) => void> | undefined;
+  const diagnosticSessionId = options.previewDiagnostics ? newGuid() : "";
   let input: ReturnType<typeof attachInputCapture> | null = null;
   const resourceFailures = new Set<string>();
   const clearResourceFailures = (ids: Iterable<string>) => { for (const id of ids) resourceFailures.delete(id); };
@@ -345,7 +351,8 @@ function initializePlayer(
       options.onDiagnostic?.(diagnostics);
     },
     onTouchAxis: (controlId, value) => {
-      input?.ring.push({ kind: "touchAxis", controlId, value, tick: playInputStampTick(runtime?.getWorld().clock.tickIndex, lastWorkerTickIndex) });
+      if (options.previewDiagnostics) input?.setTouchAxis(controlId, value);
+      else input?.ring.push({ kind: "touchAxis", controlId, value, tick: playInputStampTick(runtime?.getWorld().clock.tickIndex, lastWorkerTickIndex) });
     },
     onSceneLayerScroll: (event) => {
       const control = { type: "sceneLayerScroll" as const, ...event };
@@ -464,6 +471,8 @@ function initializePlayer(
     layer,
   }));
   const loadControl = {
+    sessionMode: options.previewDiagnostics ? "preview" as const : "play" as const,
+    sessionGeneration: 0,
     frameCap: manifest.playFrameCap,
     traceByteBudget: options.traceByteBudget,
     renderSettings: manifest.render,
@@ -514,6 +523,54 @@ function initializePlayer(
   let raf = 0;
   let halted = false;
   let lifecyclePaused = false;
+  let last = performance.now();
+  let acknowledgedPaused = false;
+  let editorInputSuppressed = false;
+  let inputTransition = 0;
+  let inputTransitionPending = false;
+  let lastBoundaryId = 0;
+  let pendingBoundary: Promise<void> = Promise.resolve();
+  const boundaryClient = options.previewDiagnostics ? createSessionBoundaryClient(0, request => {
+    if (halted) throw new Error("Preview has stopped.");
+    if (worker) worker.postControl({ type: "sessionBoundary", ...request });
+    else if (runtime) void runtime.requestSessionBoundary(request).then(result => boundaryClient?.receive(result));
+    else throw new Error("Preview runtime is unavailable.");
+  }, 3000) : undefined;
+  own(() => boundaryClient?.dispose());
+  const applyInputOwnership = () => {
+    const suppressed = editorInputSuppressed || inputTransitionPending || lifecyclePaused || acknowledgedPaused;
+    input?.setSuppressed(suppressed);
+    handle.setGameInputEnabled(!suppressed);
+  };
+  const requestBoundary = (action: SessionBoundaryRequest["action"]): Promise<void> => {
+    const request = boundaryClient!.request(action).then(result => {
+      if (!result.success) throw new Error(result.reason ?? "Preview runtime rejected the boundary.");
+      if (halted || result.requestId <= lastBoundaryId) return;
+      lastBoundaryId = result.requestId;
+      acknowledgedPaused = result.paused;
+      handle.setGameTimePaused(result.paused);
+      handle.setPaused(false);
+      if (!result.paused) last = performance.now();
+      applyInputOwnership();
+    });
+    pendingBoundary = request;
+    // Capture awaits the rejecting promise; background event owners also report
+    // failure without leaking an unhandled rejection or unfreezing the view.
+    void request.catch(error => options.onConsoleEvent?.({ type: "log", severity: "error", message: String(error) }));
+    return request;
+  };
+  const setEditorInputSuppressed = async (suppressed: boolean) => {
+    if (!boundaryClient) throw new Error("Editor input control is available only in Preview.");
+    const transition = ++inputTransition;
+    editorInputSuppressed = suppressed;
+    inputTransitionPending = true;
+    applyInputOwnership();
+    input?.neutralize();
+    await requestBoundary({ kind: "resetInput" });
+    if (transition !== inputTransition || halted) return;
+    inputTransitionPending = false;
+    applyInputOwnership();
+  };
   const pauseState = createPlayerPauseState();
   let detachLifecycle = () => {};
   let pauseGate: ReturnType<typeof createPlayPauseGate> | null = null;
@@ -777,6 +834,8 @@ function initializePlayer(
     return true;
   };
   const onCommand = (command: { type: string } & Record<string, unknown>) => {
+    if (diagnosticListeners) for (const listener of diagnosticListeners) listener(command);
+    if (command.type === "sessionBoundaryResult") { boundaryClient?.receive(command as SessionBoundaryResult & { type: string }); return; }
     if (command.type === "assetSourcesReady") {
       const requestId = Number(command.requestId);
       const request = pendingSourceRequests.get(requestId);
@@ -789,10 +848,18 @@ function initializePlayer(
     if (halted) return;
     if (command.type === "sceneStreamBlocking") handle.setSceneStreamingPaused(command.blocking === true);
     if (command.type === "sessionPaused") {
-      const paused = pauseState.setConsolePaused(command.paused === true);
-      handle.setPaused(paused);
-      pauseGate?.setPaused(paused);
-      worker?.postControl({ type: "setPaused", paused });
+      if (boundaryClient) {
+        // The console already changed its runtime reason. Read the effective
+        // boundary rather than converting a lifecycle hold into a user pause.
+        handle.setPaused(true);
+        input?.setSuppressed(true);
+        void requestBoundary({ kind: "resetInput" });
+      } else {
+        const paused = pauseState.setConsolePaused(command.paused === true);
+        handle.setPaused(paused);
+        pauseGate?.setPaused(paused);
+        worker?.postControl({ type: "setPaused", paused });
+      }
     }
     consoleHost.receive(command);
     options.onConsoleEvent?.(command);
@@ -949,12 +1016,13 @@ function initializePlayer(
   input = attachInputCapture(canvas, {
     skipPointerAndKeyboard: () => handle.isFreeCamEnabled(),
   });
+  if (options.previewDiagnostics) applyInputOwnership();
   own(() => input?.dispose());
   const releaseUnlock = unlockAudioOnFirstGesture(() => {
     void handle.unlockAudio();
   }, canvas);
   own(releaseUnlock);
-  let last = performance.now();
+  last = performance.now();
   let fpsWindowStart = last;
 
   const pump = () => {
@@ -997,10 +1065,16 @@ function initializePlayer(
     detachLifecycle = attachLifecyclePause((paused) => {
       const wasPaused = lifecyclePaused;
       lifecyclePaused = paused;
-      const effectivePaused = pauseState.setLifecyclePaused(paused);
-      handle.setPaused(effectivePaused);
-      pauseGate?.setPaused(effectivePaused);
-      worker?.postControl({ type: "setPaused", paused: effectivePaused });
+      if (boundaryClient) {
+        handle.setPaused(true);
+        applyInputOwnership();
+        void requestBoundary({ kind: "pause", reason: "lifecycle", paused });
+      } else {
+        const effectivePaused = pauseState.setLifecyclePaused(paused);
+        handle.setPaused(effectivePaused);
+        pauseGate?.setPaused(effectivePaused);
+        worker?.postControl({ type: "setPaused", paused: effectivePaused });
+      }
       if (paused) {
         cancelAnimationFrame(raf);
       } else if (wasPaused) {
@@ -1027,6 +1101,40 @@ function initializePlayer(
 
   function playerHandle(): PlayerBootHandle {
     return {
+      ...(options.previewDiagnostics && manifest.bundleDebugger ? { previewDiagnostics: {
+        sessionGeneration: 0,
+        identity: () => {
+          const render = handle.scalabilityStatus()?.effective?.render ?? runtimeOutput;
+          const frameCap = handle.scheduler.gateState().frameCap;
+          return { sessionId: diagnosticSessionId, mode: "preview" as const,
+            sourceSha: null, buildId: null, sceneId: hostSceneGuid ?? startup,
+            backend: handle.engine.isWebGPU ? "webgpu" : "webgl2", renderPath: handle.renderPathStatus().effective.renderPath,
+            runtimeHost: worker ? "worker" as const : "in-process" as const,
+            quality: JSON.stringify(render), frameCap: Number.isFinite(frameCap) ? frameCap : null,
+            dynamicResolution: render.quality?.resolution?.dynamic === true,
+            enabledDiagnostics: ["performance"], gpuTiming: "unavailable" as const };
+        },
+        observeFrames: (listener) => handle.observePerformance(listener),
+        observeGpuTiming: (listener, onError) => handle.observeGpuTiming(listener, onError),
+        setEditorInputSuppressed,
+        captureFrame: async (signal) => {
+          const cancel = () => handle.cancelFrameCapture("Preview frame capture was cancelled.");
+          signal.addEventListener("abort", cancel, { once: true });
+          try { await pendingBoundary; signal.throwIfAborted(); return await handle.captureFrame(); }
+          finally { signal.removeEventListener("abort", cancel); }
+        },
+        send: async (request) => {
+          if (halted) throw new Error("Preview has stopped.");
+          if (worker) { worker.postControl({ type: "diagnosticOperation", ...request }); return; }
+          if (!runtime) throw new Error("Preview runtime is unavailable.");
+          return runtime.requestDiagnosticOperation(request);
+        },
+        subscribe: (receive) => {
+          (diagnosticListeners ??= new Set()).add(receive);
+          return () => { diagnosticListeners?.delete(receive); if (!diagnosticListeners?.size) diagnosticListeners = undefined; };
+        },
+        own,
+      } satisfies PlayerPreviewDiagnosticPorts } : {}),
       ticks: () => ticks,
       rendering: () => halted ? null : handle.renderDiagnostics(),
       scalability: () => handle.scalabilityStatus?.(),

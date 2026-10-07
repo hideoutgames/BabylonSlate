@@ -91,7 +91,6 @@ export function createPlayBootCoordinator() {
           if (startedEarly) runtime.finishPlayLoading?.();
           else {
             runtime.start();
-            runtime.resume();
             onStarted?.();
           }
         } catch (error) {

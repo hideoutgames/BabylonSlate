@@ -52,6 +52,18 @@ describe("document lock apply gate", () => {
     ).toBe(true);
   });
 
+  it("keeps a session authoring lock effective after choosing Edit Anyway", async () => {
+    const fake = new FakeLockProvider({ selfName: "Ada" });
+    const path = "assets/hero.scene.babasset";
+    fake.addTheirs(path, "Bob");
+    const service = await readyService(fake);
+    await service.refresh();
+    service.onOpenDocument(path);
+    service.setEditAnyway(path);
+    expect(isMutatingApplyBlocked(service, path, false, true)).toBe(true);
+    expect(isMutatingApplyBlocked(service, path, false, false)).toBe(false);
+  });
+
   it("auto-locks after a successful apply", async () => {
     const fake = new FakeLockProvider();
     const service = await readyService(fake);

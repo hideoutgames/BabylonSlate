@@ -7,6 +7,21 @@ import { MemoryAppSettingsStore } from "./memory-app-settings";
 import { WebAppSettingsStore } from "./web-app-settings";
 
 describe("app settings", () => {
+  it("migrates local diagnostic preferences without changing an explicit trace budget or arming collection", () => {
+    const settings = engineSettingsSchema.parse({
+      traceByteBudget: 201_326_592,
+      debuggerDefaults: { overlayConsole: false, pauseOnPlay: true, recordingActive: true },
+    });
+    expect(settings.traceByteBudget).toBe(201_326_592);
+    expect(settings.debuggerDefaults).toMatchObject({ overlayConsole: false, pauseOnPlay: true });
+    expect(settings.debuggerDefaults).not.toHaveProperty("recordingActive");
+    const bounded = engineSettingsSchema.parse({ debuggerDefaults: {
+      profileDurationSeconds: 80, profileByteBudget: 1,
+    } });
+    expect(bounded.debuggerDefaults.profileDurationSeconds).toBe(60);
+    expect(bounded.debuggerDefaults.profileByteBudget).toBe(4 * 1024 * 1024);
+    expect(engineSettingsSchema.safeParse({ debuggerDefaults: { profileDurationSeconds: NaN } }).success).toBe(false);
+  });
   it("keeps inline pin editing enabled for existing devices and persists the local lock", async () => {
     localStorage.setItem("babylonslate:engine-settings", JSON.stringify({ graphDefaultZoom: 0.75 }));
     const store = new WebAppSettingsStore();

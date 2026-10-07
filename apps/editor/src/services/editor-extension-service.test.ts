@@ -9,7 +9,8 @@ import {
 } from "@babylonslate/assets";
 import { convertGlslToMaterial } from "@babylonslate/shader-graph";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
-import { EditorExtensionService } from "./editor-extension-service";
+import { EditorExtensionService, type EditorExtensionWriteOptions } from "./editor-extension-service";
+import { ProjectWriteAdmission } from "./project-write-admission";
 
 const activeServices: EditorExtensionService[] = [];
 
@@ -19,7 +20,7 @@ async function storage(name = "project") {
   return result;
 }
 
-async function fixture() {
+async function fixture(options?: EditorExtensionWriteOptions) {
   const project = await storage();
   const messages: string[] = [];
   const service = new EditorExtensionService(project, {
@@ -42,7 +43,7 @@ async function fixture() {
     },
     materials: { convertGlsl: convertGlslToMaterial },
     log: (_extensionId, message) => { messages.push(message); },
-  });
+  }, options);
   activeServices.push(service);
   return { project, service, messages };
 }
@@ -64,6 +65,35 @@ afterEach(async () => {
 });
 
 describe("EditorExtensionService lifecycle", () => {
+  it("keeps package and guest code/asset writes behind project admission while read-only commands remain usable", async () => {
+    const admission = new ProjectWriteAdmission();
+    const { project, service, messages } = await fixture({ runAuthoringWrite: work => admission.run(work) });
+    const module = `
+      export function activate(api) {
+        api.registerCommand({ id: "code", title: "Write Code", execute() { return api.code.write("code/blocked.js", "blocked"); } });
+        api.registerCommand({ id: "asset", title: "Create Asset", execute() { return api.assets.create("assets/blocked.babasset", { type: "Class", name: "Blocked", payload: { nodes: [], edges: [] } }); } });
+        api.registerCommand({ id: "read", title: "Read", execute() { api.log("Read-only command ran"); } });
+      }
+    `;
+    await writeProjectExtension(project, "tools", enabledSettings("tools"), module);
+    await service.refresh();
+    const lease = admission.lock("Project is read-only");
+    expect(await lease.ready).toBe(true);
+    try {
+      await expect(service.run("tools", "code", {})).rejects.toThrow(/read-only/);
+      await expect(service.run("tools", "asset", {})).rejects.toThrow(/read-only/);
+      await expect(service.save("tools", enabledSettings("tools"), originalModule)).rejects.toThrow(/read-only/);
+      await expect(service.remove("tools")).rejects.toThrow(/read-only/);
+      await service.run("tools", "read", {});
+      expect(messages).toContain("Read-only command ran");
+      expect(await project.exists("code/blocked.js")).toBe(false);
+      expect(await project.exists("assets/blocked.babasset")).toBe(false);
+      expect(await project.readText("extensions/tools/index.ts")).toBe(module);
+    } finally { lease.release(); }
+    await service.run("tools", "code", {});
+    expect(await project.readText("code/blocked.js")).toBe("blocked");
+  });
+
   it("publishes commands registered and removed by an active extension callback", async () => {
     const { project, service, messages } = await fixture();
     let updateCommands!: () => void;

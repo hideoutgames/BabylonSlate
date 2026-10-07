@@ -64,6 +64,7 @@ import {
   skyboxFaceGuidsFromScene,
   environmentTextureGuidsFromScenes,
   postProcessTextureGuidsFromScenes,
+  materialInstanceTextureGuidsFromScenes,
 } from "../lib/play-content";
 import { fontMsdfMapsFromPairs, fontGuidsForSceneRepresentation } from "../lib/play-fonts";
 import { savedMaterialLibraryKey } from "../lib/material-asset-revision";
@@ -91,6 +92,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<EngineHandle | null>(null);
   const releaseEngineRef = useRef<(() => void) | null>(null);
+  const simulationDetachedRef = useRef(false);
   const navDebugRef = useRef<NavMeshDebugOverlay | null>(null);
   const sceneRef = useRef<SerializedScene | null>(null);
   const appliedSceneRef = useRef<{ scene: SerializedScene; handle: EngineHandle } | null>(null);
@@ -151,6 +153,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const {
     registerSharedEngine,
     registerScheduler,
+    registerSimulationViewport,
     playing,
     preparing,
     ensureSharedEngine,
@@ -265,6 +268,27 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const scene = isSceneWorkspaceKind(doc?.ref.kind)
     ? (doc.content as SerializedScene)
     : null;
+  useEffect(() => {
+    const host = panelRef.current;
+    if (!host || doc?.ref.kind !== "scene" || !registerSimulationViewport) return;
+    return registerSimulationViewport({
+      documentId,
+      host,
+      async suspend() {
+        simulationDetachedRef.current = true;
+        blockingLoadRef.current?.abort();
+        loadTransitionRef.current += 1;
+        const handle = engineRef.current;
+        releaseEngineRef.current?.();
+        if (handle) await handle.whenReleased();
+      },
+      restore() {
+        simulationDetachedRef.current = false;
+        setReloadVersion((version) => version + 1);
+      },
+    });
+  }, [doc?.ref.kind, documentId, registerSimulationViewport]);
+
   const editorScene = useMemo(() => scene && sceneStreamingEditorScene(scene, (guid) => {
     void registryEpoch; // Registry headers mutate without replacing the registry.
     const asset = assetRegistry?.getByGuid?.(guid);
@@ -437,7 +461,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !sharedEngine) return;
+    if (!canvas || !sharedEngine || simulationDetachedRef.current) return;
     engineGenerationRef.current += 1;
     setSceneReady(false);
     setDropReady(null);
@@ -671,7 +695,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
 
   useEffect(() => {
     const handle = engineRef.current;
-    if (!scene || !editorScene || !handle) return;
+    if (!scene || !editorScene || !handle || simulationDetachedRef.current) return;
     // Scene overrides arrive before the coalesced settings transaction. Do not
     // apply them through incremental loadScene while its blocking UI is pending.
     if (requestedRenderSettingsKey !== renderSettingsKey) return;
@@ -745,6 +769,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         const extraTextureGuids = [
           ...environmentTextureGuidsFromScenes([scene]),
           ...postProcessTextureGuidsFromScenes([scene]),
+          ...materialInstanceTextureGuidsFromScenes([scene]),
           ...materials.textureGuids,
           ...skyboxFaceGuidsFromScene(scene),
           ...overlayTextureGuidsFromScene(scene),

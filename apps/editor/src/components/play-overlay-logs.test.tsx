@@ -35,6 +35,7 @@ async function openPlay() {
     stop: () => ({}),
   } as unknown as PlaySession);
   render(<PlayOverlay sharedEngine={{} as Engine} onClose={() => {}} />);
+  await act(async () => {});
   const callbacks = vi.mocked(startPlaySession).mock.lastCall![0];
   act(() => callbacks.onSceneLoading?.(null));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());

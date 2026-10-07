@@ -1,3 +1,4 @@
+import { useOptionalPlay } from "../context/play-context";
 import { DataDefinitionEditingProvider } from "../context/data-definition-editing-context";
 import { InputAssetEditingProvider } from "../context/input-asset-editing-context";
 import { SaveGameEditingProvider } from "../context/save-game-editing-context";
@@ -41,7 +42,8 @@ import {
   classIdFromClassAsset,
   classParentLookup,
 } from "../lib/content-browser-helpers";
-import { walkAncestry } from "@babylonslate/editor-kit";
+import { EditorReadOnlyContext, walkAncestry } from "@babylonslate/editor-kit";
+import { useAuthoringLock } from "../lib/use-authoring-lock";
 import {
   isDockviewDocumentKind,
   type DockviewDocumentKind,
@@ -133,13 +135,16 @@ function DocumentShell({
   children: React.ReactNode;
 }) {
   const { sourceControl } = useDocuments();
+  const authoringLock = useAuthoringLock();
   return (
     <div
       className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
       data-testid={testId}
     >
-      <DocumentLockBanner path={path} sourceControl={sourceControl} />
-      <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+      <DocumentLockBanner path={path} sourceControl={sourceControl} authoringReason={authoringLock.readOnly ? authoringLock.reason : null} />
+      <EditorReadOnlyContext.Provider value={authoringLock.readOnly}>
+        <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+      </EditorReadOnlyContext.Provider>
     </div>
   );
 }
@@ -224,6 +229,7 @@ export function AnimDocumentDocks({
 }
 
 export function DocumentWorkspace() {
+  const simulationDocumentId = useOptionalPlay()?.simulationDocumentId ?? null;
   const {
     tabOrder,
     activeDocumentId,
@@ -280,7 +286,7 @@ export function DocumentWorkspace() {
         if (doc.ref.kind !== "content-browser" && doc.content === null) return null;
         const active = id === resolvedActiveId;
         const shouldMount =
-          mountedIds.has(id) ||
+          id === simulationDocumentId || mountedIds.has(id) ||
           (doc.ref.kind === "content-browser" && active);
 
         if (doc.ref.kind === "content-browser") {

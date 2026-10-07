@@ -909,6 +909,22 @@ Two refinements on top of the base mechanism: ExecuteJavaScript anchors carry a 
 
 **Relationship to other surfaces:** Compiler Results is edit-time; the Output Log is a live stream during Preview; the session report is the post-mortem summary. An error that was already an edit-time diagnostic does not duplicate in the report unless it also fired at runtime. The Scene Play button can show a small red dot after a failed session until the user opens the report or starts a new Preview.
 
+### 9.8 Simulation Play and runtime profiling
+
+Simulation Play runs the game in the scene viewport with the editor's own camera, pause and runtime Inspector. It is **internal** (reachable only from tests) until its browser and device qualification is complete.
+
+| Owner | Contract |
+| --- | --- |
+| `GameSessionOwner`, `SimulationSession`, Play preparation | One active Play, Preview or Simulation session; viewport handoff waits for actual release; Stop gates retention before abort and disposal |
+| `DocumentService`, project write admission, `EditSession` | Immutable baseline while running; ordinary authoring stays read-only; Keep applies one history-admitted full-scene replacement |
+| Runtime Inspector, World, physics and material owners | Correlated typed edits on exact runtime instances; no authoring commands during live edits |
+| Scene capture and codecs | Root-scene actor/component provenance, typed references, prefab suppression and private material overrides |
+| Render coordinator and player diagnostics | Explicit timing/frame requests; packaged Preview collects inside the player; Simulation refuses expensive recording |
+
+Keep supports root actor/component spawn, deletion, local pose, declared variables, hierarchy, typed containers and references, prefab component deletion and material-instance parameters. Independent streamed Scenes, SceneLayers, scene transitions and native resources without an authored representation are named failures; nothing is flattened or partially kept.
+
+**Not yet delivered:** selected-graph observation, graph breakpoints and stepping, per-pass GPU timing, output thumbnails and Spector capture. **Outstanding qualification:** real browser and A16 journeys, 20-cycle release accounting and sustained performance comparison against the pre-change baseline.
+
 ## 10. Plugins
 
 A plugin is a folder with its own content root and exactly one `PluginSettings` asset. Crucially, **a plugin extends the engine only through things a project can already author** — classes, graphs, editor utilities, interfaces, content — so there is no native extension surface, no dynamic code loading beyond the compiled-script pipeline that already exists, and therefore none of the sandboxing, ABI or versioning problems that a code-plugin system would drag in. That constraint is what makes this affordable.

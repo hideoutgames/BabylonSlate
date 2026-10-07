@@ -289,6 +289,7 @@ function classMetadataFromGraph(
     return [
       {
         name: member.name,
+        ...(member.typeClassId ? { typeClassId: member.typeClassId } : {}),
         type: member.typeId === "struct" && member.typeClassId === "engine:TagContainer"
           ? "struct:engine:TagContainer"
           : member.typeId ?? "float",

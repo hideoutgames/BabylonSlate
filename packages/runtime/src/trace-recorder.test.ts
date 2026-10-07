@@ -124,7 +124,44 @@ describe("runtime trace recorder", () => {
     const payload = recorded.stopTrace();
     expect(payload).not.toBeNull();
     expect(payload!.frames.length).toBe(1);
+    expect(payload!.retention).toMatchObject({ complete: true, droppedFrames: 0, stopReason: "session-ended" });
     expect(commands.some((command) => command.type === "trace")).toBe(true);
+  });
+
+  it("publishes an oversized-frame stop immediately, preserves prior frames and keeps gameplay ticking", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, traceByteBudget: 2048,
+      onCommand: (command) => commands.push(command),
+    });
+    try {
+      runtime.start();
+      runtime.executeConsoleCommand("snapshot start");
+      runtime.tick();
+      const world = runtime.getWorld();
+      world.spawnActorNow(world.createActor({
+        classId: "Actor", guid: "large", variables: { payload: "x".repeat(4096) },
+      }));
+      runtime.tick();
+      const payload = runtime.stopTrace()!;
+      expect(payload.frames.map((frame) => frame.tickIndex)).toEqual([1]);
+      expect(payload.retention).toEqual({
+        byteBudget: 2048, droppedFrames: 1, complete: false, stopReason: "oversized-frame",
+      });
+      expect(new TextEncoder().encode(JSON.stringify(payload)).byteLength).toBeLessThanOrEqual(2048);
+      expect(commands.filter((command) => command.type === "trace")).toEqual([
+        { type: "trace", payload },
+      ]);
+      expect(commands).toContainEqual(expect.objectContaining({
+        type: "log", severity: "warning", category: "Trace", message: expect.stringContaining("oversized frame"),
+      }));
+      runtime.tick();
+      expect(world.clock.tickIndex).toBe(3);
+      runtime.executeConsoleCommand("snapshot stop");
+      runtime.stop();
+      expect(runtime.stopTrace()).toBe(payload);
+      expect(commands.filter((command) => command.type === "trace")).toHaveLength(1);
+    } finally { runtime.stop(); }
   });
 
   it("replays recorded input events onto a new runtime", () => {

@@ -5,6 +5,7 @@ import {
   createMeshComponent,
   deformerBindings,
   identitySerializedTransform,
+  normalizeMaterialInstanceOverrides,
   springArmChildOffset,
   wouldCreateComponentCycle,
   type PhysicsWorldKind,
@@ -132,6 +133,7 @@ export function instantiatePrefabComponents(
       properties: { ...component.properties },
       parentId,
       sourceId: component.id,
+      ...(component.materialInstance ? { materialInstance: normalizeMaterialInstanceOverrides(component.materialInstance) } : {}),
       transform: component.transform
         ? {
             position: [...component.transform.position] as [

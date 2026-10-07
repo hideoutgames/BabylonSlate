@@ -14,6 +14,7 @@ export const MAX_CLASS_INHERITANCE_DEPTH = 16;
 export type VariableDef = {
   name: string;
   type: string;
+  typeClassId?: string;
   defaultValue?: unknown;
   container?: "single" | "array" | "map";
   keyTypeId?: string;

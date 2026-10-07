@@ -17,6 +17,7 @@ import { applyMaterialBounds } from "./material-bounds";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { skyboxMeshPreparation } from "./skybox";
 import { foliagePreparation } from "./foliage-mesh";
+import { authoredMaterialInstancePreparation } from "./authored-material-instance";
 
 /** Bytes and payloads the editor / Play mesh builders use for authored content. */
 export interface MeshAssetContext {
@@ -76,8 +77,11 @@ export interface MeshAssetContext {
   /** Compiled overlay / mesh Materials (2DMaterial, 2DPanel). */
   resolveMaterial?: (
     guid: string,
-    options?: { scene?: Scene; unlit?: boolean },
+    options?: import("./material-library").MaterialResolveOptions & { scene?: Scene },
   ) => Material | null;
+  /** Releases private component overrides without retiring shared authored materials. */
+  releaseMaterialInstance?: (instanceKey: string, assetGuid?: string) => void;
+  validateMaterialParameter?: (guid: string, name: string, value: import("@babylonslate/core").MaterialParameterValue) => boolean;
 }
 
 function sortedMapKeys(map: ReadonlyMap<string, unknown> | undefined): string {
@@ -224,6 +228,8 @@ export function ownedVisualTexturePreparation(root: AbstractMesh): Promise<void>
   for (const mesh of [root, ...root.getChildMeshes()]) {
     const foliage = foliagePreparation(mesh as Mesh);
     if (foliage) pending.push(foliage);
+    const materialInstance = authoredMaterialInstancePreparation(mesh as Mesh);
+    if (materialInstance) pending.push(materialInstance);
     const binding = albedoBindings.get(mesh);
     const albedo = binding?.preparation;
     const skybox = skyboxMeshPreparation(mesh);

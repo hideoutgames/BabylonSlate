@@ -118,6 +118,9 @@ function withFunctionExport(
   };
 }
 
+// Delay continuations check the session boundary before resuming the script.
+const flushMicrotasks = async () => { for (let i = 0; i < 4; i++) await Promise.resolve(); };
+
 describe("script host runs compiled graphs", () => {
   it("uses the session seed for script random streams", async () => {
     const registry = createDefaultNodeRegistry();
@@ -553,11 +556,11 @@ describe("script host runs compiled graphs", () => {
     runtime.start();
     for (let tick = 0; tick < 10; tick++) {
       runtime.tick();
-      await Promise.resolve();
+      await flushMicrotasks();
     }
     expect(commands.filter((c) => c.type === "log")).toHaveLength(3);
     runtime.stop();
-    await Promise.resolve();
+    await flushMicrotasks();
   });
 
   it("runs OnCommandRun from the console and ExecuteConsoleCommand", async () => {
@@ -1237,17 +1240,17 @@ describe("script host runs compiled graphs", () => {
     runtime.start();
     runtime.tick();
     runtime.tick();
-    await Promise.resolve();
+    await flushMicrotasks();
     expect(commands.filter((c) => c.type === "log")).toHaveLength(0);
 
     runtime.pause();
     await vi.advanceTimersByTimeAsync(1000);
-    await Promise.resolve();
+    await flushMicrotasks();
     expect(commands.filter((c) => c.type === "log")).toHaveLength(0);
     runtime.resume();
 
     runtime.tick();
-    await Promise.resolve();
+    await flushMicrotasks();
     expect(commands.filter((c) => c.type === "log")).toHaveLength(1);
     runtime.stop();
   });
@@ -1319,15 +1322,11 @@ describe("script host runs compiled graphs", () => {
     runtime.start();
     runtime.tick();
     runtime.tick();
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushMicrotasks();
     expect(commands.filter((c) => c.type === "log")).toHaveLength(0);
 
     runtime.tick();
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushMicrotasks();
     const logs = commands.filter((c) => c.type === "log");
     expect(logs).toHaveLength(1);
     expect(String((logs[0] as { message: string }).message)).toContain("7");

@@ -12,6 +12,7 @@ import type { LifecycleHooks } from "./objects";
 import type { Actor } from "./objects";
 import type { World } from "./world";
 import { hydrateClassVariableValue } from "./class-registry";
+import { recordSceneActorProvenance, recordSceneComponentProvenance } from "./scene-provenance";
 
 export type SceneActorHooks = (
   classId: string,
@@ -99,8 +100,10 @@ export function createActorFromSerialized(
     transform: runtimeTransformFromSerialized(serialized.transform),
     hooks: hooksFor?.(serialized.classId),
     sceneLayerId: sceneLayerId ?? null,
+    suppressedComponentSourceIds: serialized.suppressedComponentSourceIds,
   });
   attachSerializedComponents(world, actor, serialized.components);
+  recordSceneActorProvenance(actor, serialized.id);
   return actor;
 }
 
@@ -111,24 +114,33 @@ export function attachSerializedComponents(
   components: readonly SerializedComponent[],
   options: { freshIds?: boolean } = {},
 ): void {
+  const suppressed = actor.suppressedComponentSourceIds.length ? new Set(components.filter((component) => {
+    const sourceId = options.freshIds ? component.id : component.sourceId;
+    return !!sourceId && actor.suppressedComponentSourceIds.includes(sourceId);
+  }).map((component) => component.id)) : null;
+  const activeComponents = suppressed ? components.filter((component) => !suppressed.has(component.id)) : components;
   const ids = new Map(
-    components.map((component) => [
+    activeComponents.map((component) => [
       component.id,
       options.freshIds ? `${actor.guid}:${component.id}` : component.id,
     ]),
   );
-  for (const component of components) {
+  for (const component of activeComponents) {
     if (actor.sceneLayerId && isSceneLayerDeniedComponent(component.classId)) {
       continue;
     }
     const properties = structuredClone(component.properties);
+    for (const variable of world.classRegistry.inheritedVariables(component.classId)) {
+      if (Object.hasOwn(properties, variable.name) && variable.container) {
+        properties[variable.name] = hydrateClassVariableValue({ ...variable, defaultValue: properties[variable.name] });
+      }
+    }
     if (component.classId === "DeformerComponent" && typeof properties.targetMeshComponentId === "string") {
       const target = components.find((entry) => entry.classId === "MeshComponent" && entry.id === properties.targetMeshComponentId)
         ?? components.find((entry) => entry.classId === "MeshComponent" && entry.sourceId === properties.targetMeshComponentId);
       if (target) properties.targetMeshComponentId = ids.get(target.id)!;
     }
-    actor.attachComponent(
-      world.createComponent({
+    const instance = world.createComponent({
         guid: ids.get(component.id),
         classId: component.classId,
         variables: properties,
@@ -136,14 +148,16 @@ export function attachSerializedComponents(
         sourceId: options.freshIds
           ? component.id
           : (component.sourceId ?? null),
-        parentId: component.parentId
+        parentId: component.parentId && !suppressed?.has(component.parentId)
           ? (ids.get(component.parentId) ??
             (options.freshIds ? null : component.parentId))
           : null,
+        materialInstance: component.materialInstance,
         transform: runtimeTransformFromSerialized(
           component.transform ?? identitySerializedTransform(),
         ),
-      }),
-    );
+      });
+    if (!options.freshIds) recordSceneComponentProvenance(instance, component.id);
+    actor.attachComponent(instance);
   }
 }

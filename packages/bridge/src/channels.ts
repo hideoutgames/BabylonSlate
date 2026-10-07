@@ -6,6 +6,27 @@ import type { ProjectInputSettings, SerializedComponent, SerializedScene, Serial
 /** Serializable runtime override of one named Material Graph parameter. */
 export type { MaterialParameterValue } from "@babylonslate/core";
 
+export type GameSessionMode = "play" | "simulate" | "preview";
+export type SessionPauseReason = "user" | "lifecycle" | "loading";
+export type SessionBoundaryRequest = {
+  sessionGeneration: number;
+  /** Strictly increasing within this session; acknowledgments never use FIFO correlation. */
+  requestId: number;
+  action: { kind: "pause"; reason: SessionPauseReason; paused: boolean } | { kind: "resetInput" };
+};
+export type SessionBoundaryResult = {
+  sessionGeneration: number;
+  requestId: number;
+  success: boolean;
+  reason?: string;
+  paused: boolean;
+  pauseReasons: SessionPauseReason[];
+  tickIndex: number;
+  sceneAssetGuid: string;
+  sceneLoadId: number;
+  commandRevision: number;
+};
+
 export interface PlayLightProperties {
   color: [number, number, number];
   intensity: number;
@@ -73,6 +94,7 @@ export type ScriptBundleEntry = {
   variables?: Array<{
     name: string;
     type: string;
+    typeClassId?: string;
     defaultValue?: unknown;
     container?: "single" | "array" | "map";
     keyTypeId?: string;
@@ -110,11 +132,22 @@ export interface RuntimeSceneContent {
 }
 
 export type ControlMessage =
+  | ({ type: "quiesceSimulation" } & import("./simulation-capture").SimulationQuiesceRequest)
+  | ({ type: "captureSimulationState" } & import("./simulation-capture").SimulationCaptureRequest)
+  | ({ type: "runtimeMaterialEditPrepared" | "runtimeMaterialEditApplied" } & import("./runtime-material-edit").RuntimeMaterialEditResponse)
+  | ({ type: "diagnosticOperation" } & import("./diagnostic-operation").DiagnosticOperationRequest)
+  | ({ type: "runtimeInspector" } & import("./runtime-inspector").RuntimeInspectorRequest)
+  | { type: "cancelRuntimeInspector"; sessionGeneration: number; requestId: number }
+  | ({ type: "sessionBoundary" } & SessionBoundaryRequest)
   | ({ type: "loadSceneContent" } & RuntimeSceneContent)
   | { type: "saveStorageResponse"; response: import("@babylonslate/core").SaveStorageResponse }
   | { type: "ragdollPoseCaptured"; slotId: number; requestId: string; bones?: import("@babylonslate/core").RagdollBonePose[]; error?: string }
   | {
       type: "load";
+      sessionGeneration?: number;
+      sessionMode?: GameSessionMode;
+      deferMaterialEdits?: boolean;
+      simulationAssetGuids?: string[];
       saveGame?: import("@babylonslate/core").SaveGameConfiguration;
       dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
       /** Initial session render cap, shared with the renderer for console readback. */
@@ -376,6 +409,18 @@ export type DebugBehaviourTree = {
 };
 
 export type CommandMessage =
+  | { type: "simulationRetentionUnavailable"; sessionGeneration: number; reason: string }
+  | ({ type: "simulationQuiesced" } & SessionBoundaryResult)
+  | { type: "simulationCaptureChunk"; sessionGeneration: number; requestId: number; sequence: number; bytes: Uint8Array }
+  | { type: "simulationCaptureResult"; sessionGeneration: number; requestId: number; result: import("./simulation-capture").SimulationCaptureSummary }
+  | ({ type: "prepareRuntimeMaterialEdit" } & import("./runtime-material-edit").RuntimeMaterialEditPreparation)
+  | { type: "releaseRuntimeMaterialPreparation"; sessionGeneration: number; editToken: string; committed: boolean }
+  | ({ type: "diagnosticOperationResult" } & import("./diagnostic-operation").DiagnosticOperationResult)
+  | ({ type: "performanceTicks" } & import("./diagnostic-operation").PerformanceTickChunk)
+  | { type: "diagnosticOperationStopped"; sessionGeneration: number; recordingId: string; kind: "profile" | "frame"; reason: "requested" | "duration" | "budget" | "session-ended" }
+  | ({ type: "runtimeInspectorResult" } & import("./runtime-inspector").RuntimeInspectorResult)
+  | { type: "resetActorInterpolation"; actorGuid: string; slotId: number; frameId: number }
+  | ({ type: "sessionBoundaryResult" } & SessionBoundaryResult)
   | { type: "saveStorageRequest"; request: import("@babylonslate/core").SaveStorageRequest }
   | { type: "setUIControl2D"; slotId: number; componentId: string; uiControl: { classId: string; properties: import("@babylonslate/core").UIControl2DProperties }; focused?: boolean; beginEditing?: boolean }
   | { type: "setPainter2D"; slotId: number; componentId: string; painter: import("@babylonslate/core").Painter2DProperties }
@@ -401,6 +446,7 @@ export type CommandMessage =
   | { type: "snapshotLayout"; capacity: number; generation: number }
   | {
       type: "spawn";
+      runtimeIdentity?: import("./runtime-inspector").RuntimeObjectIdentity;
       slotId: number;
       actorGuid: string;
       classId: string;
@@ -432,6 +478,7 @@ export type CommandMessage =
     }
   | {
       type: "assignMesh";
+      runtimeComponentTokens?: Array<{ componentGuid: string; componentToken: number }>;
       slotId: number;
       meshAssetGuid: string | null;
       /** SceneLayer instance id; tags the slot as HUD overlay before spawn. */
@@ -617,12 +664,14 @@ export type CommandMessage =
        * visual component; omitting it overrides the whole actor.
        */
       type: "assignMaterial";
+      preparedEditToken?: string;
       slotId: number;
       materialAssetGuid: string | null;
       componentId?: string | null;
     }
   | {
       type: "setMaterialParameter";
+      preparedEditToken?: string;
       slotId: number;
       componentId?: string | null;
       /** Captured assignment prevents stale writes reaching a replacement. */
