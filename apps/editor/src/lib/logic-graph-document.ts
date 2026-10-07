@@ -1,5 +1,6 @@
 import {
   isFunctionLibraryClass,
+  normalizeClassMemberCategory,
   normalizeDataDefinitionAsset,
   normalizeScene,
   type GraphClassMember,
@@ -303,6 +304,10 @@ export function classGraphFromHeaderPayload(
           name: (overrides as { name: string }).name,
         };
       }
+      const fnCategory = normalizeClassMemberCategory(
+        (entry as { category?: unknown }).category,
+      );
+      if (fnCategory) fn.category = fnCategory;
       members.push(fn);
     }
   }
@@ -323,6 +328,10 @@ export function classGraphFromHeaderPayload(
       if (typeof typeClassId === "string" && typeClassId.trim()) {
         member.typeClassId = typeClassId.trim();
       }
+      const variableCategory = normalizeClassMemberCategory(
+        (entry as { category?: unknown }).category,
+      );
+      if (variableCategory) member.category = variableCategory;
       members.push(member);
     }
   }

@@ -181,6 +181,48 @@ describe.each([
     expect(handle.ring.drain()).toEqual([]);
   });
 
+  it("reports chorded mouse buttons that change during one pointer contact", () => {
+    const { canvas, handle } = fixture();
+    const resolver = new InputResolver({ actions: [
+      { name: "Fire", bindings: [{ device: "mouseButton", code: "0" }] },
+      { name: "Aim", bindings: [{ device: "mouseButton", code: "2" }] },
+    ], axes: [] });
+    const mouse = (type: string, button: number, buttons: number) => canvas.dispatchEvent(Object.assign(
+      new Event(type, { cancelable: true }), { pointerId: 1, offsetX: 3, offsetY: 4, button, buttons, pointerType: "mouse" }));
+    mouse("pointerdown", 0, 1);
+    expect(resolver.resolve(handle.ring.drain()).actions.Fire.held).toBe(true);
+    mouse("pointermove", 2, 3);
+    const aiming = resolver.resolve(handle.ring.drain());
+    expect(aiming.actions.Aim).toMatchObject({ pressed: true, held: true });
+    expect(aiming.actions.Fire.held).toBe(true);
+    mouse("pointermove", 0, 2);
+    const fireUp = resolver.resolve(handle.ring.drain());
+    expect(fireUp.actions.Fire).toMatchObject({ released: true, held: false });
+    expect(fireUp.actions.Aim.held).toBe(true);
+    expect(fireUp.cursor.pressed).toBe(false);
+    mouse("pointerup", 2, 0);
+    const done = resolver.resolve(handle.ring.drain());
+    expect(done.actions.Aim).toMatchObject({ released: true, held: false });
+    expect(done.actions.Fire.held).toBe(false);
+    expect(done.cursor.pressed).toBe(false);
+  });
+
+  it("releases chorded buttons when pointerup names a different button", () => {
+    const { canvas, handle } = fixture();
+    const resolver = new InputResolver({ actions: [
+      { name: "Fire", bindings: [{ device: "mouseButton", code: "0" }] },
+      { name: "Aim", bindings: [{ device: "mouseButton", code: "2" }] },
+    ], axes: [] });
+    const mouse = (type: string, button: number, buttons: number) => canvas.dispatchEvent(Object.assign(
+      new Event(type, { cancelable: true }), { pointerId: 1, offsetX: 3, offsetY: 4, button, buttons, pointerType: "mouse" }));
+    mouse("pointerdown", 0, 1);
+    mouse("pointermove", 2, 3);
+    mouse("pointerup", 0, 0);
+    const done = resolver.resolve(handle.ring.drain());
+    expect(done.actions.Fire.held).toBe(false);
+    expect(done.actions.Aim).toMatchObject({ pressed: true, held: false });
+  });
+
   it("removes the old listeners when a session restarts", () => {
     const { canvas, handle } = fixture();
     handle.dispose();
