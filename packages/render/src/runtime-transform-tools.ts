@@ -67,6 +67,8 @@ export function createRuntimeTransformTools(
   let disposed = false;
   let selected: RuntimeObjectIdentity | null = null;
   let selectedKey: string | null = null;
+  let selectedSlot: number | undefined;
+  let inspectedWorldPose: SerializedTransform | undefined;
   let binding: RuntimeTransformBinding | null = null;
   let writable = true;
   let poseAvailable = false;
@@ -112,7 +114,10 @@ export function createRuntimeTransformTools(
     poseAvailable = true;
   };
   const emit = (phase: RuntimeTransformChange["phase"]) => {
-    if (suppressCommit || !enabled || !writable || !current()) return;
+    if (suppressCommit || !enabled || !writable) return;
+    // A draft belongs to its original native owner. Rebind the same exact
+    // runtime identity, but never send the stale owner's final gesture value.
+    if (!current()) { refreshBinding(); return; }
     const target = selected!;
     const requestRevision = ++revision;
     if (phase === "commit") pendingCommit = true;
@@ -133,7 +138,7 @@ export function createRuntimeTransformTools(
     scheduler: { acquireContinuous: (reason) => host.scheduler.acquireContinuous(reason), invalidate: () => host.requestRedraw() },
     registerOverlay: (draw) => host.registerOverlay((camera) => {
       if (!enabled || !selected || lost || !poseAvailable) return;
-      if (!current()) { loseSelection("The selected runtime object or its visual was destroyed."); return; }
+      if (!current() && !refreshBinding()) return;
       follow();
       draw(camera);
     }),
@@ -176,6 +181,26 @@ export function createRuntimeTransformTools(
     if (target) callbacks.onSelectionLost?.(target, reason);
     // Keep its key until an explicit selection change; recycled slots/meshes
     // must never silently revive a destroyed selection during a poll.
+  }
+  function refreshBinding(): boolean {
+    if (lost || !selected) return false;
+    if (current()) return true;
+    // The host validates scene instance, slot, actor token, and component token.
+    // A mesh replacement is not an actor destruction or a new selection.
+    const replacement = host.resolve(selected, selectedSlot);
+    if (!replacement?.isCurrent() || replacement.mesh?.isDisposed()) {
+      loseSelection("The selected runtime object was destroyed or is unavailable.");
+      return false;
+    }
+    cancelGesture();
+    revision++;
+    pendingCommit = false;
+    binding = replacement;
+    poseAvailable = false;
+    if (binding.mesh) follow();
+    else if (inspectedWorldPose) setPose(inspectedWorldPose);
+    attach();
+    return current();
   }
   const point = (event: PointerEvent) => {
     const rect = canvas.getBoundingClientRect();
@@ -224,6 +249,9 @@ export function createRuntimeTransformTools(
       const key = identity ? identityKey(identity) : null;
       if (key === selectedKey) {
         writable = options.writable !== false;
+        if (options.slotId !== undefined) selectedSlot = options.slotId;
+        if (options.worldTransform) inspectedWorldPose = options.worldTransform;
+        if (!lost && binding && !current()) refreshBinding();
         if (!lost && !binding && identity) binding = host.resolve(identity, options.slotId);
         if (!lost && binding?.mesh && !poseAvailable) follow();
         if (!lost && !pendingCommit && !gizmos.isDragging() && options.worldTransform && !binding?.mesh) setPose(options.worldTransform);
@@ -235,6 +263,8 @@ export function createRuntimeTransformTools(
       pendingCommit = false;
       selected = identity;
       selectedKey = key;
+      selectedSlot = options.slotId;
+      inspectedWorldPose = options.worldTransform;
       poseAvailable = false;
       lost = false;
       binding = identity ? host.resolve(identity, options.slotId) : null;

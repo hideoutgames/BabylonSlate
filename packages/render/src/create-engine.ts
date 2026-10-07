@@ -3626,10 +3626,11 @@ function initializeEngine(
               (!identity.componentGuid || runtimeComponentTokens.get(slot)?.get(identity.componentGuid) === identity.componentToken);
           };
           if (!matches()) return null;
-          const root = binding.meshes.get(slot);
-          const mesh = identity.componentGuid ? meshForPlayComponent(binding, slot, identity.componentGuid) : root ?? null;
+          const root = binding.meshes.get(slot) ?? null;
+          const mesh = identity.componentGuid ? meshForPlayComponent(binding, slot, identity.componentGuid) : root;
           return { slotId: slot, mesh, visuals: mesh ? [mesh, ...mesh.getChildMeshes()] : [],
-            isCurrent: () => matches() && (!root || binding.meshes.get(slot) === root) && !root?.isDisposed(),
+            isCurrent: () => matches() && (binding.meshes.get(slot) ?? null) === root && !root?.isDisposed() &&
+              (!identity.componentGuid || meshForPlayComponent(binding, slot, identity.componentGuid) === mesh),
           };
         },
         pick: (x, y) => {

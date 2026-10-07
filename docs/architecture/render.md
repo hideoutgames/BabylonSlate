@@ -2215,8 +2215,16 @@ then follows the effective runtime pose. Mesh matrices already contain absolute
 world coordinates; Babylon's floating-origin shader offset is not added again.
 The adapter binds the full runtime identity to an explicitly supplied render slot
 and its visual lifetime, refuses stale/recycled targets, and clears the selection
-on destruction. It uses selected-object reads only. Inspector world-pose replies
+on destruction. A replacement visual can rebind only when the same scene-instance,
+actor and component lifetime tokens still own that slot; any drag of its predecessor
+is cancelled first. It uses selected-object reads only. Inspector world-pose replies
 can position a gizmo for an object without a render mesh.
+
+Final authoring capture drains the command-source queue before validating native
+visual/material readiness. Already-accepted cold assignments may publish through
+that fence without advancing game time. Source failure rejects capture instead
+of retaining a predecessor visual; any newly received runtime command invalidates
+the fence. Cancelling this wait does not assert that underlying native work ended.
 
 Gizmo gestures and the existing free camera have exclusive pointer ownership.
 Edit exit, pointer cancellation, focus loss, selection changes, and disposal

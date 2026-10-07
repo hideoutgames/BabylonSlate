@@ -343,6 +343,69 @@ describe("Play createEngine view", () => {
     return { handle, canvas };
   }
 
+  it("drains accepted cold assignment sources before the final authoring fence completes", async () => {
+    const { handle } = playHandle(sharedEngine());
+    handle.applyCommand({ type: "spawn", slotId: 4, actorGuid: "hero", classId: "Actor" });
+    handle.applyCommand({ type: "assignMesh", slotId: 4, actorGuid: "hero", meshAssetGuid: null, meshKind: "box" });
+    const mesh = handle.scene.getMeshByName("actor-4")!;
+    const predecessor = mesh.material;
+    let prepared!: () => void;
+    const preparation = new Promise<void>(resolve => { prepared = resolve; });
+    let sourceReleases = 0;
+    handle.setCommandSourceLoader!(async () => {
+      await preparation;
+      const release = await handle.acquireSceneSources({ materialDocuments: new Map([
+        ["cold-material", createDefaultMaterialDocument("Cold Material")],
+      ]) });
+      return () => { sourceReleases++; release(); };
+    });
+    handle.applyCommand({ type: "assignMaterial", slotId: 4, materialAssetGuid: "cold-material" });
+    handle.setGameTimePaused(true);
+    let settled = false;
+    const captured = handle.quiesceAuthoringRevision(11, new AbortController().signal).then(value => { settled = true; return value; });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    expect(mesh.material).toBe(predecessor);
+    prepared();
+    await expect(captured).resolves.toEqual({ commandRevision: 11 });
+    expect(mesh.material).not.toBe(predecessor);
+    expect(mesh.material?.name).toContain("cold-material");
+    expect(sourceReleases).toBe(0);
+    handle.dispose();
+    await handle.whenReleased();
+    expect(sourceReleases).toBe(1);
+  });
+
+  it("rejects a final capture when a new command arrives during accepted source preparation", async () => {
+    const { handle } = playHandle(sharedEngine());
+    handle.applyCommand({ type: "spawn", slotId: 4, actorGuid: "hero", classId: "Actor" });
+    handle.applyCommand({ type: "assignMesh", slotId: 4, actorGuid: "hero", meshAssetGuid: null, meshKind: "box" });
+    let prepared!: () => void;
+    const preparation = new Promise<void>(resolve => { prepared = resolve; });
+    handle.setCommandSourceLoader!(async () => { await preparation; return () => {}; });
+    handle.applyCommand({ type: "assignMaterial", slotId: 4, materialAssetGuid: "pending" });
+    handle.setGameTimePaused(true);
+    const captured = handle.quiesceAuthoringRevision(12, new AbortController().signal);
+    const rejection = expect(captured).rejects.toThrow("arrived after the final capture fence");
+    handle.applyCommand({ type: "setCursorVisible", visible: true, frameId: 9 });
+    await rejection;
+    // Cancelling a capture wait is not cancelling an already-owned asset load.
+    prepared();
+    await handle.whenEditorModelsReady();
+  });
+
+  it("reports accepted source load failures instead of capturing the predecessor visual", async () => {
+    const { handle } = playHandle(sharedEngine());
+    handle.applyCommand({ type: "spawn", slotId: 4, actorGuid: "hero", classId: "Actor" });
+    handle.applyCommand({ type: "assignMesh", slotId: 4, actorGuid: "hero", meshAssetGuid: null, meshKind: "box" });
+    const predecessor = handle.scene.getMeshByName("actor-4")!.material;
+    handle.setCommandSourceLoader!(async () => { throw new Error("Missing cold source"); });
+    handle.applyCommand({ type: "assignMaterial", slotId: 4, materialAssetGuid: "missing" });
+    handle.setGameTimePaused(true);
+    await expect(handle.quiesceAuthoringRevision(13, new AbortController().signal)).rejects.toThrow("Missing cold source");
+    expect(handle.scene.getMeshByName("actor-4")!.material).toBe(predecessor);
+  });
+
   it("routes cable frames through the shared Play/player command host and ignores retired actors", () => {
     const { handle } = playHandle(sharedEngine());
     const cable = { ...parseCableProperties({ numSegments: 2, numSides: 4, cableWidth: 0.4 }), simulationId: 11 };

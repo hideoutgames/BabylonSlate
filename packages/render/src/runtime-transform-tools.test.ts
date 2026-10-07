@@ -19,6 +19,8 @@ function fixture() {
   target.position.set(1_000_000.25, 2, 3);
   target.rotationQuaternion = Quaternion.Identity();
   const identity: RuntimeObjectIdentity = { sceneInstanceId: "scene:a:1", actorGuid: "actor", actorToken: 7 };
+  let liveTarget = target;
+  let liveToken = identity.actorToken;
   const created = vi.spyOn(gizmoModule, "createGizmoHost"); // Retains the real Babylon gizmos.
   const writes: RuntimeTransformChange[] = [];
   const lost = vi.fn();
@@ -27,8 +29,12 @@ function fixture() {
     mode: "3d", scheduler: { acquireContinuous: () => () => {} }, requestRedraw: () => {},
     pointerCanvas: () => ({ width: 800, height: 600 }), cameraGestureActive: () => false,
     forwardPointers: true, pick: () => null, selectVisuals: () => {}, registerOverlay: () => () => {},
-    resolve: (selection, slot) => selection.actorToken === identity.actorToken && slot === 3
-      ? { slotId: 3, mesh: target, visuals: [target], isCurrent: () => !target.isDisposed() } : null,
+    resolve: (selection, slot) => {
+      const resolved = liveTarget;
+      return selection.actorToken === liveToken && selection.sceneInstanceId === identity.sceneInstanceId && slot === 3
+        ? { slotId: 3, mesh: resolved, visuals: [resolved],
+          isCurrent: () => selection.actorToken === liveToken && liveTarget === resolved && !resolved.isDisposed() } : null;
+    },
   }, {
     onPick: () => {}, onSelectionLost: lost,
     onTransform: (change) => {
@@ -46,6 +52,14 @@ function fixture() {
     drag.onDragStartObservable.notifyObservers({ dragPlanePoint: Vector3.Zero(), pointerId: 1, pointerInfo: null });
   };
   return { scene, target, identity, owner, gizmos, writes, lost, drag, start,
+    replaceVisual: (newActor = false) => {
+      const next = MeshBuilder.CreateBox("replacement", {}, scene);
+      next.position.set(10, 20, 30);
+      if (newActor) liveToken++;
+      liveTarget.dispose();
+      liveTarget = next;
+      return next;
+    },
     finishCommit: () => finishCommit?.() };
 }
 
@@ -95,4 +109,28 @@ it("loses a destroyed selection once and refuses to revive it from a stale ident
   expect(owner.setSelection({ ...identity, actorToken: 8 }, { slotId: 3 }).accepted).toBe(false);
   owner.dispose();
   expect(gizmos.layer.utilityLayerScene.isDisposed).toBe(true);
+});
+
+it("rebinds a replacement visual with the same runtime token and cancels its predecessor's drag", () => {
+  const { identity, owner, gizmos, lost, start, drag, writes, replaceVisual } = fixture();
+  start();
+  const replacement = replaceVisual();
+  expect(owner.setSelection(identity, { slotId: 3 }).accepted).toBe(true);
+  expect(lost).not.toHaveBeenCalled();
+  expect(gizmos.isDragging()).toBe(false);
+  expect(writes).toHaveLength(0);
+  expect(gizmos.attachedMesh()!.position.asArray()).toEqual([10, 20, 30]);
+  start();
+  drag.onDragObservable.notifyObservers({ delta: new Vector3(2, 0, 0), dragPlanePoint: new Vector3(2, 0, 0),
+    dragPlaneNormal: Vector3.Forward(), dragDistance: 2, pointerId: 1, pointerInfo: null });
+  expect(writes.at(-1)?.transform.position).toEqual([12, 20, 30]);
+  expect(replacement.position.asArray()).toEqual([10, 20, 30]);
+});
+
+it("does not rebind a recycled slot whose actor lifetime changed", () => {
+  const { identity, owner, gizmos, lost, replaceVisual } = fixture();
+  replaceVisual(true);
+  expect(owner.setSelection(identity, { slotId: 3 }).accepted).toBe(false);
+  expect(lost).toHaveBeenCalledOnce();
+  expect(gizmos.attachedMesh()).toBeNull();
 });
