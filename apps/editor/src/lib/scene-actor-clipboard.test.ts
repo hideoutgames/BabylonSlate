@@ -7,7 +7,9 @@ describe("actor clipboard", () => {
   it("copies subtrees between scenes with new identities and internal references", () => {
     const source = createDefaultScene();
     source.actors = [
-      createActor("actor-1", "Parent", { folderId: "source-folder" }),
+      createActor("actor-1", "Parent", { folderId: "source-folder", components: [
+        { id: "focus-parent", classId: "2DFocusTargetComponent", properties: { focusRight: "actor-1" } },
+      ] }),
       createActor("actor-2", "Child", { parentId: "actor-1", components: [
         { id: "cable", classId: "CableComponent", properties: { targetActorId: "actor-1", targetComponentId: null } },
         { id: "constraint", classId: "PhysicsConstraintComponent", properties: { targetActorId: "outside" } },
@@ -18,14 +20,15 @@ describe("actor clipboard", () => {
     store.copyActors(copySceneActors(source, ["actor-1"]), false);
     source.actors[0]!.name = "Changed Later";
     const destination = createDefaultScene();
-    destination.actors = [createActor("actor-1", "Destination"), createActor("actor-2", "Existing")];
+    destination.actors = [createActor("actor-1", "Destination")];
     const copies = pasteSceneActors(destination, store.readCopiedActors(false));
     const [parent, child] = copies;
     expect(copies).toHaveLength(2);
-    expect(new Set([...destination.actors, ...copies].map((actor) => actor.id)).size).toBe(4);
+    expect(new Set([...destination.actors, ...copies].map((actor) => actor.id)).size).toBe(3);
     expect(parent).toMatchObject({ name: "Parent Copy", parentId: null, folderId: null });
     expect(child).toMatchObject({ parentId: parent!.id, folderId: null });
     expect(child!.components[0]!.properties.targetActorId).toBe(parent!.id);
+    expect(parent!.components[0]!.properties.focusRight).toBe(parent!.id);
     expect(child!.components[1]!.properties.targetActorId).toBeNull();
     expect(store.readCopiedActors(true)).toEqual([]);
     expect(new EditorSessionState().readCopiedActors(false)).toEqual([]);

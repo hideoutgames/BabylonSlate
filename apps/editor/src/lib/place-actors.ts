@@ -811,7 +811,12 @@ export function duplicateSceneActors(
   actorIds: readonly string[],
   sources: readonly SerializedActor[] = scene.actors,
 ): SerializedActor[] {
-  let next = scene;
+  // Source ids may overlap freshly allocated destination ids on cross-scene
+  // paste. Reserve them until every reference has been remapped exactly once.
+  const destinationIds = new Set(scene.actors.map((actor) => actor.id));
+  let next = { ...scene, actors: [...scene.actors, ...sources
+    .filter((actor) => !destinationIds.has(actor.id))
+    .map((actor) => ({ ...actor, name: "" }))] };
   const actorCopies = new Map<string, string>();
   const componentCopies = new Map<string, Map<string, string>>();
   const copies: SerializedActor[] = [];
