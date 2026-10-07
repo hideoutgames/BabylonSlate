@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  Color3,
   NullEngine,
   Scene,
   StandardMaterial,
@@ -13,14 +14,14 @@ import {
   isEngineDefaultMaterial,
 } from "./default-material";
 import { createPrimitiveMesh } from "./scene-loader";
+import { applySceneEnvironment } from "./scene-illumination";
+import { createDefaultScene } from "@babylonslate/core";
 
 const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
   [];
 
 afterEach(() => {
   while (handles.length > 0) {
-import { applySceneEnvironment } from "./scene-illumination";
-import { createDefaultScene } from "@babylonslate/core";
     const handle = handles.pop();
     handle?.scene.dispose();
     handle?.engine.dispose();
