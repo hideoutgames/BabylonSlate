@@ -253,7 +253,7 @@ export class EngineExtensionLibrary {
           else if (await this.libraryStorage.exists(DEFAULTS_FILE)) await this.libraryStorage.remove(DEFAULTS_FILE);
         } catch (restoreError) { restoreErrors.push(restoreError); }
         if (restoreErrors.length > 0) {
-          throw new AggregateError([cause, ...restoreErrors], "Extension import failed and the previous library state could not be fully restored.");
+          throw new AggregateError([cause, ...restoreErrors], "Extension import failed and the previous library state could not be fully restored.", { cause });
         }
         throw cause;
       }

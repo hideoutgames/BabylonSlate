@@ -1,6 +1,6 @@
 appId: no.hideout.babylonslate
 productName: BabylonSlate
-electronVersion: 44.2.0
+electronVersion: 44.6.0
 directories:
   app: dist/app
   output: dist/installers

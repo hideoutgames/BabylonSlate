@@ -1,5 +1,6 @@
 import { BabylonSlateScopedStorage, type NativeRangeOptions, type NativeRangeRead } from "./capacitor-scoped-storage";
 import { rethrowNativeStorageRangeError, rethrowStorageReadFailure, StorageReadCounter, validateStorageRange, validateStorageRangeResult } from "./storage-range";
+import { StorageNotFoundError } from "@babylonslate/core";
 import type {
   DirEntry,
   FileStat,
@@ -17,7 +18,7 @@ function hasFilesystemCode(error: unknown, code: string): boolean {
 
 function rethrowFilesystemError(error: unknown, path: string): never {
   if (hasFilesystemCode(error, "OS-PLUG-FILE-0008")) {
-    throw new Error(`File not found: ${path}`, { cause: error });
+    throw new StorageNotFoundError(path, { cause: error });
   }
   throw error;
 }

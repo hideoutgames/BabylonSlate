@@ -63,7 +63,7 @@ import {
 import { PARTICLE_BILLBOARD_MODES, PARTICLE_BLEND_MODES } from "./particle-render-modes";
 
 /**
- * Babylon 9.20 never initializes `NodeParticleBlock._buildId`: `createSystem` computes
+ * Babylon 9.29 never initializes `NodeParticleBlock._buildId`: `createSystem` computes
  * `undefined++` (NaN), so `build()` never recognizes an already built block and a value
  * node reached by N consumers runs `_build` N times. Seeding a finite id before
  * `createSystem` makes every block build once per system (docs/design/particle-emitters.md).

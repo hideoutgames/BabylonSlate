@@ -9,6 +9,8 @@ export const ANIM_RULE_ENTER_TYPE = "anim.rule.enterState";
 export const ANIM_RULE_EXIT_TYPE = "anim.rule.exitState";
 export const ANIM_RULE_ENTER_NODE_ID = "enter-state";
 export const ANIM_RULE_EXIT_NODE_ID = "exit-state";
+/** Rule-graph query that fires when the clip crosses an exit time (legacy `hasExitTime`). */
+export const ANIM_EXIT_TIME_REACHED_TYPE = "anim.state.exitTimeReached";
 
 export type AnimClipKind = "animation" | "sprite";
 export type AnimVariableTypeId = "bool" | "int" | "float" | "string" | "tag" | "struct";
@@ -102,6 +104,13 @@ export interface AnimStateFacts {
   loopCount: number;
   justLooped: boolean;
   justFinished: boolean;
+  /**
+   * Unwrapped clip position: completed loops plus `normalisedTime`. Equals
+   * `normalisedTime` for non-looping states.
+   */
+  totalNormalisedTime: number;
+  /** `totalNormalisedTime` before this tick advanced the clip (0 on entering a state). */
+  previousTotalNormalisedTime: number;
 }
 
 export interface AnimClipLayer {
@@ -123,6 +132,8 @@ export interface AnimEvalState {
   blendFromStateId: string | null;
   blendFromTimeMs: number;
   blendElapsedMs: number;
+  /** Crossfade length of the transition that started the active blend. */
+  blendSeconds: number;
   loopCount: number;
 }
 
@@ -279,6 +290,65 @@ function uniqueNodeId(prefix: string, used: Set<string>): string {
   return id;
 }
 
+function exitTimeReachedNode(
+  id: string,
+  position: { x: number; y: number },
+  exitTime: number,
+): SerializedGraph["nodes"][number] {
+  return {
+    id,
+    type: ANIM_EXIT_TIME_REACHED_TYPE,
+    position,
+    data: { title: "Exit Time Reached", exitTime },
+  };
+}
+
+/**
+ * Earlier parses migrated `hasExitTime` to `Normalised Time ≥ exitTime`, which
+ * cannot see a looping clip wrap past the threshold. Swap that exact generated
+ * pair for Exit Time Reached; authored comparisons are left alone.
+ */
+function upgradeMigratedExitTime(
+  graph: SerializedGraph,
+  exitTime: number,
+): SerializedGraph {
+  const time = graph.nodes.find(
+    (node) =>
+      node.type === "anim.state.normalisedTime" &&
+      node.id.startsWith("normalised-time-"),
+  );
+  if (!time) return graph;
+  const timeEdges = graph.edges.filter((edge) => edge.source === time.id);
+  const cmp =
+    timeEdges.length === 1 && timeEdges[0]!.targetHandle === "a"
+      ? graph.nodes.find((node) => node.id === timeEdges[0]!.target)
+      : undefined;
+  if (
+    !cmp ||
+    cmp.type !== "math.greaterEqual" ||
+    !cmp.id.startsWith("exit-time-") ||
+    cmp.data.b !== exitTime ||
+    graph.edges.some((edge) => edge.target === cmp.id && edge.source !== time.id)
+  ) {
+    return graph;
+  }
+  return {
+    ...graph,
+    nodes: graph.nodes
+      .filter((node) => node.id !== time.id)
+      .map((node) =>
+        node.id === cmp.id ? exitTimeReachedNode(cmp.id, cmp.position, exitTime) : node,
+      ),
+    edges: graph.edges
+      .filter((edge) => edge.source !== time.id)
+      .map((edge) =>
+        edge.source === cmp.id && edge.sourceHandle === "out"
+          ? { ...edge, sourceHandle: "value" }
+          : edge,
+      ),
+  };
+}
+
 function migrateConditionToRuleGraph(
   condition: string | undefined,
   hasExitTime: boolean,
@@ -308,32 +378,8 @@ function migrateConditionToRuleGraph(
   }
 
   if (hasExitTime) {
-    const timeId = uniqueNodeId("normalised-time", used);
     const cmpId = uniqueNodeId("exit-time", used);
-    graph.nodes.push(
-      {
-        id: timeId,
-        type: "anim.state.normalisedTime",
-        position: { x: 80, y: 40 },
-        data: { title: "Normalised Time" },
-      },
-      {
-        id: cmpId,
-        type: "math.greaterEqual",
-        position: { x: 220, y: 40 },
-        data: {
-          title: "Greater or Equal",
-          b: exitTime,
-        },
-      },
-    );
-    graph.edges.push({
-      id: uniqueNodeId("e", used),
-      source: timeId,
-      target: cmpId,
-      sourceHandle: "value",
-      targetHandle: "a",
-    });
+    graph.nodes.push(exitTimeReachedNode(cmpId, { x: 220, y: 40 }, exitTime));
     if (exitSourceId) {
       const andId = uniqueNodeId("and", used);
       graph.nodes.push({
@@ -347,7 +393,7 @@ function migrateConditionToRuleGraph(
           id: uniqueNodeId("e", used),
           source: cmpId,
           target: andId,
-          sourceHandle: "out",
+          sourceHandle: "value",
           targetHandle: "a",
         },
         {
@@ -362,7 +408,7 @@ function migrateConditionToRuleGraph(
       exitSourceHandle = "out";
     } else {
       exitSourceId = cmpId;
-      exitSourceHandle = "out";
+      exitSourceHandle = "value";
     }
   }
 
@@ -463,7 +509,24 @@ export function validateAnimGraph(
       seenVariables.set(key, variable.name);
     }
   }
+  const stateNameById = new Map(doc.states.map((state) => [state.id, state.name]));
+  const firstByPair = new Map<string, string>();
   for (const transition of doc.transitions) {
+    const pair = `${transition.fromStateId}\u0000${transition.toStateId}`;
+    const first = firstByPair.get(pair);
+    if (first === undefined) {
+      firstByPair.set(pair, transition.id);
+    } else {
+      const from = stateNameById.get(transition.fromStateId) ?? transition.fromStateId;
+      const to = stateNameById.get(transition.toStateId) ?? transition.toStateId;
+      // The hidden duplicate has no canvas edge, so point at its source state.
+      diagnostics.push({
+        code: "anim.duplicateTransition",
+        message: `Transition "${transition.id}" duplicates "${first}" from "${from}" to "${to}". The canvas shows one; priority decides which runs.`,
+        nodeId: transition.fromStateId,
+        severity: "warning",
+      });
+    }
     if (!stateIds.has(transition.fromStateId) || !stateIds.has(transition.toStateId)) {
       diagnostics.push({
         code: "anim.badTransition",
@@ -586,6 +649,7 @@ function factsFor(
     justLooped: boolean;
     justFinished: boolean;
   },
+  previousTotalNormalisedTime: number,
 ): AnimStateFacts {
   const durationSeconds = durationMs / 1000;
   const remainingRatio = state.loop
@@ -601,7 +665,40 @@ function factsFor(
     loopCount: clock.loopCount,
     justLooped: clock.justLooped,
     justFinished: clock.justFinished,
+    totalNormalisedTime: totalNormalisedTime(state.loop, clock.loopCount, clock.normalised),
+    previousTotalNormalisedTime,
   };
+}
+
+function totalNormalisedTime(
+  loop: boolean,
+  loopCount: number,
+  normalised: number,
+): number {
+  return loop ? loopCount + normalised : normalised;
+}
+
+/**
+ * Unity-style exit time: true on the tick the clip crosses `exitTime`.
+ *
+ * - Looping, `exitTime <= 1`: fires each loop as the clip passes
+ *   `exitTime`, `exitTime + 1`, …; `1` fires at every loop completion and `0`
+ *   on entering the state and at every wrap.
+ * - Looping, `exitTime > 1`: fires once, when the unwrapped time passes it.
+ * - Non-looping: `normalisedTime >= exitTime` (clamped at 1), so it stays true
+ *   once reached.
+ */
+export function animExitTimeReached(
+  facts: AnimStateFacts,
+  exitTime: number,
+): boolean {
+  const threshold = Number.isFinite(exitTime) ? Math.max(0, exitTime) : 0;
+  if (!facts.looping) return facts.normalisedTime >= threshold;
+  const from = facts.previousTotalNormalisedTime;
+  const to = facts.totalNormalisedTime;
+  if (threshold === 0 && from === 0) return true;
+  if (threshold > 1) return from < threshold && threshold <= to;
+  return Math.floor(to - threshold) > Math.floor(from - threshold);
 }
 
 function layerFor(
@@ -642,7 +739,8 @@ function transitionPasses(
   const conditionOk =
     !transition.condition || readBool(inputs, transition.condition);
   const exitOk =
-    !transition.hasExitTime || facts.normalisedTime >= (transition.exitTime ?? 0);
+    !transition.hasExitTime ||
+    animExitTimeReached(facts, transition.exitTime ?? 0);
   return conditionOk && exitOk;
 }
 
@@ -667,7 +765,11 @@ export function evaluateAnimGraph(
     current.loop,
   );
 
-  const currentFacts = factsFor(current, duration, clock);
+  const sameState = previous !== null && previous.stateId === stateId;
+  const previousTotal = sameState
+    ? totalNormalisedTime(current.loop, previous.loopCount, previous.normalisedTime)
+    : 0;
+  const currentFacts = factsFor(current, duration, clock, previousTotal);
 
   const outgoing = doc.transitions
     .map((row, index) => ({ row, index }))
@@ -686,6 +788,7 @@ export function evaluateAnimGraph(
   let blendFromStateId = previous?.blendFromStateId ?? null;
   let blendFromTimeMs = previous?.blendFromTimeMs ?? 0;
   let blendElapsedMs = previous?.blendElapsedMs ?? 0;
+  let blendSeconds = previous?.blendSeconds ?? 0;
   let startedBlend: AnimTransition | null = null;
 
   for (const { row } of outgoing) {
@@ -704,12 +807,14 @@ export function evaluateAnimGraph(
     blendFromStateId = stateId;
     blendFromTimeMs = clock.timeMs;
     blendElapsedMs = Math.max(0, dtSeconds) * 1000;
+    blendSeconds = startedBlend.blendSeconds;
   } else if (blendFromStateId && nextId === stateId) {
     blendElapsedMs += Math.max(0, dtSeconds) * 1000;
   } else if (nextId !== stateId) {
     blendFromStateId = null;
     blendFromTimeMs = 0;
     blendElapsedMs = 0;
+    blendSeconds = 0;
   }
 
   const nextState = states.get(nextId) ?? current;
@@ -720,25 +825,18 @@ export function evaluateAnimGraph(
     loopCount: nextLoopCount,
     justLooped,
     justFinished,
-  });
+  }, nextId === stateId ? previousTotal : 0);
 
   const layers: AnimClipLayer[] = [];
   const blendWeights: Record<string, number> = {};
   const blendState = blendFromStateId ? states.get(blendFromStateId) : undefined;
-  const blendSeconds = startedBlend?.blendSeconds
-    ?? (blendFromStateId
-      ? doc.transitions.find(
-          (row) =>
-            row.fromStateId === blendFromStateId && row.toStateId === nextId,
-        )?.blendSeconds
-      : 0)
-    ?? 0;
+  // Stored at blend start: re-finding the row by (from, to) would pick the
+  // first duplicate rather than the transition priority selected.
   const blendDurationMs = Math.max(0, blendSeconds) * 1000;
-  let fromWeight = 0;
   let toWeight = 1;
   if (blendState && blendFromStateId && blendDurationMs > 0 && blendFromStateId !== nextId) {
     const t = Math.min(1, blendElapsedMs / blendDurationMs);
-    fromWeight = 1 - t;
+    const fromWeight = 1 - t;
     toWeight = t;
     const fromDuration = clipDurationMs(blendState, clips);
     const fromClock = advanceClock(
@@ -753,7 +851,7 @@ export function evaluateAnimGraph(
       blendFromStateId = null;
       blendFromTimeMs = 0;
       blendElapsedMs = 0;
-      fromWeight = 0;
+      blendSeconds = 0;
       toWeight = 1;
     } else {
       blendFromTimeMs = fromClock.timeMs;
@@ -766,6 +864,7 @@ export function evaluateAnimGraph(
     blendFromStateId = null;
     blendFromTimeMs = 0;
     blendElapsedMs = 0;
+    blendSeconds = 0;
   }
 
   layers.push(layerFor(doc, nextId, nextNormalised, toWeight));
@@ -781,6 +880,7 @@ export function evaluateAnimGraph(
     blendFromStateId,
     blendFromTimeMs,
     blendElapsedMs,
+    blendSeconds,
     loopCount: nextLoopCount,
   };
 }
@@ -879,10 +979,11 @@ function parseRuleGraph(
   exitTime: number,
 ): SerializedGraph {
   if (isSerializedGraph(value) && value.nodes.length > 0) {
-    return {
+    const graph = {
       nodes: value.nodes.map((node) => ({ ...node, data: { ...node.data } })),
       edges: value.edges.map((edge) => ({ ...edge })),
     };
+    return hasExitTime ? upgradeMigratedExitTime(graph, exitTime) : graph;
   }
   if (condition || hasExitTime) {
     return migrateConditionToRuleGraph(condition, hasExitTime, exitTime);

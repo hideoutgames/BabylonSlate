@@ -3,7 +3,7 @@ import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/node
 import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 
-/** Corrects Babylon 9.20's Voronoi WGSL without changing its GLSL generation. */
+/** Corrects Babylon 9.29's Voronoi WGSL without changing its GLSL generation. */
 export class SlateVoronoiNoiseBlock extends VoronoiNoiseBlock {
   override getClassName(): string {
     return "SlateVoronoiNoiseBlock";

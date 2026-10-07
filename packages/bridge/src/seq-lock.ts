@@ -3,7 +3,7 @@ import {
   SNAPSHOT_MAGIC_F32,
   snapshotFloatCount,
 } from "./layout";
-import { isPublishedSnapshot } from "./snapshot-buffer";
+import { isPublishedSnapshot, snapshotActiveFloatCount } from "./snapshot-buffer";
 
 const SEQ_INDEX = 7;
 const MAX_READ_RETRIES = 64;
@@ -80,10 +80,11 @@ export class SeqLockSnapshotPair {
   }
 
   /**
-   * Copy the most recently published buffer into `out`.
-   * Returns false if the buffer was torn after retries, or if nothing
-   * has been published yet (spare buffers are zeroed and look like
-   * `actorCount: 0`).
+   * Copy the most recently published snapshot into `out`: its header and
+   * `actorCount` rows only, so `out`'s later rows keep stale data that
+   * readers must not consult. Returns false if the buffer was torn after
+   * retries, or if nothing has been published yet (spare buffers are zeroed
+   * and look like `actorCount: 0`).
    */
   tryRead(out: Float32Array): boolean {
     const readIndex = 1 - this.writeIndex;
@@ -93,7 +94,8 @@ export class SeqLockSnapshotPair {
       if ((seq1 & 1) === 1) {
         continue;
       }
-      out.set(src);
+      // A torn `actorCount` only sizes this copy; the seq recheck rejects it.
+      out.set(src.subarray(0, snapshotActiveFloatCount(src)));
       const seq2 = this.getSeq(src);
       if (seq1 === seq2 && (seq2 & 1) === 0) {
         return isPublishedSnapshot(out);

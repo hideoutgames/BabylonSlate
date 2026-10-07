@@ -131,7 +131,11 @@ import {
 } from "../lib/play-fonts";
 import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
 import { classIdForGraphPath } from "../services/script-compiler";
-import { prefabTemplatesByClassId } from "../lib/prefab-instance-sync";
+import {
+  prefabAssetTemplates,
+  prefabTemplateKey,
+  prefabTemplatesByClassId,
+} from "../lib/prefab-instance-sync";
 import { physicsConstraintTargets } from "../lib/physics-constraint-targets";
 import { sceneActorDisplayNames } from "../lib/scene-actor-names";
 import {
@@ -140,6 +144,7 @@ import {
 } from "../lib/use-open-documents-of-kinds";
 
 const CLASS_KINDS = ["graph"] as const;
+const PREFAB_KINDS = ["prefab"] as const;
 
 function PostProcessEntryId({ id, index }: { id: string; index: number }) {
   return (
@@ -297,6 +302,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
       }));
   }, [assetRegistry, materialDocuments, registryEpoch]);
   const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
+  const prefabDocuments = useOpenDocumentsOfKinds(PREFAB_KINDS);
   const sortingLayers =
     projectDocument?.settings.twoD.sortingLayers ?? DEFAULT_SORTING_LAYERS;
   const collisionLayers =
@@ -391,12 +397,15 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
       openDocuments: classDocuments,
       classIdForPath: classIdForGraphPath,
     });
-    return prefabTemplatesByClassId({
-      classIds: Object.keys(graphs),
-      parentOf: classParentLookup(assets),
-      graphs,
-    });
-  }, [assetRegistry, classDocuments, registryEpoch]);
+    return {
+      ...prefabTemplatesByClassId({
+        classIds: Object.keys(graphs),
+        parentOf: classParentLookup(assets),
+        graphs,
+      }),
+      ...prefabAssetTemplates({ assets, openDocuments: prefabDocuments }),
+    };
+  }, [assetRegistry, classDocuments, prefabDocuments, registryEpoch]);
 
   const mutate = useCallback(
     (next: SerializedScene) => {
@@ -1166,7 +1175,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
     .map((component, index) => {
       const title = prefabComponentLabel(component, assetLabel);
       const template = component.sourceId
-        ? prefabTemplates[actor.classId]?.find(
+        ? prefabTemplates[prefabTemplateKey(actor)]?.find(
             (entry) => entry.id === component.sourceId,
           )
         : undefined;

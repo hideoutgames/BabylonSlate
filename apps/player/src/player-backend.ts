@@ -62,10 +62,11 @@ export async function startPlayerWithBackend(
     owner.engine.inputElement = options.canvas;
     player = startPlayer({ ...options, content, sharedEngine: owner.engine, onStopped: releaseOwner });
   } catch (error) {
+    const failures: unknown[] = [error];
     try { releaseOwner(); }
-    catch (cleanupError) {
-      throw new AggregateError([error, cleanupError], "Player startup cleanup failed.", { cause: error });
-    }
+    catch (cleanupError) { failures.push(cleanupError); }
+    if (failures.length > 1)
+      throw new AggregateError(failures, "Player startup cleanup failed.", { cause: error });
     throw error;
   }
   let stopped = false;

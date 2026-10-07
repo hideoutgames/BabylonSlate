@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EditCommand } from "./command";
+import { SetAssetDocumentCommand } from "./commands/asset-document";
 import { DocumentEditStack } from "./stack";
 
 interface TestDoc {
@@ -34,6 +35,7 @@ class MergeableCommand implements EditCommand<TestDoc> {
     readonly from: number,
     readonly target: number,
     mergeKey = "merge",
+    readonly byteSize?: number,
   ) {
     this.mergeKey = mergeKey;
   }
@@ -44,7 +46,7 @@ class MergeableCommand implements EditCommand<TestDoc> {
   }
 
   invert(): EditCommand<TestDoc> {
-    return new MergeableCommand(this.target, this.from, this.mergeKey);
+    return new MergeableCommand(this.target, this.from, this.mergeKey, this.byteSize);
   }
 }
 
@@ -124,6 +126,46 @@ describe("DocumentEditStack", () => {
     expect(stack.undo(doc)!.doc.value).toBe(0);
   });
 
+  it("applies an edit larger than the budget, clears history once and records nothing more of that gesture", () => {
+    const stack = new DocumentEditStack<TestDoc>({ maxEntries: 10, maxBytes: 100 });
+    let doc = stack.apply({ value: 0 }, new IncrementCommand(1, 10)).doc;
+    const oversized = stack.apply(doc, new MergeableCommand(1, 5, "scrub", 200));
+    expect(oversized).toMatchObject({ doc: { value: 5 }, history: "cleared" });
+    expect(stack.canUndo).toBe(false);
+    // Later steps of the same gesture fit, but Undo must not stop mid-gesture.
+    const continued = stack.apply(oversized.doc, new MergeableCommand(5, 6, "scrub", 10));
+    expect(continued).toMatchObject({ doc: { value: 6 }, history: "cleared-gesture" });
+    expect(stack.canUndo).toBe(false);
+    stack.endGesture();
+    doc = stack.apply(continued.doc, new IncrementCommand(1, 10)).doc;
+    expect(stack.undo(doc)?.doc).toEqual({ value: 6 });
+    expect(stack.canUndo).toBe(false);
+  });
+
+  it("keeps a merged snapshot gesture undoable when only its first and last snapshots fit the budget", () => {
+    const snapshot = (value: string) => ({ value: value.repeat(100) });
+    const first = new SetAssetDocumentCommand(snapshot("a"), snapshot("b"), "scrub");
+    // One step holds two 100-character snapshots; the budget fits that, not four.
+    const stack = new DocumentEditStack<Record<string, unknown>>({ maxEntries: 10, maxBytes: 300 });
+    let doc = stack.apply(snapshot("a"), first).doc;
+    doc = stack.apply(doc, new SetAssetDocumentCommand(snapshot("b"), snapshot("c"), "scrub")).doc;
+    const last = stack.apply(doc, new SetAssetDocumentCommand(snapshot("c"), snapshot("d"), "scrub"));
+    expect(last.history).toBe("recorded");
+    doc = stack.undo(last.doc)!.doc;
+    expect(doc).toEqual(snapshot("a"));
+    expect(stack.canUndo).toBe(false);
+    expect(stack.redo(doc)?.doc).toEqual(snapshot("d"));
+  });
+
+  it("evicts the oldest history when its byte budget is lowered", () => {
+    const stack = new DocumentEditStack<TestDoc>({ maxEntries: 10, maxBytes: 1000 });
+    let doc = stack.apply({ value: 0 }, new IncrementCommand(1, 100)).doc;
+    doc = stack.apply(doc, new IncrementCommand(2, 100)).doc;
+    stack.configure({ maxBytes: 150 });
+    expect(stack.undo(doc)?.doc).toEqual({ value: 1 });
+    expect(stack.canUndo).toBe(false);
+  });
+
   it("starts a new gesture after Undo even when the exposed older command shares a merge key", () => {
     const stack = new DocumentEditStack<TestDoc>({ maxEntries: 10, maxBytes: 1000 });
     let doc = stack.apply({ value: 0 }, new MergeableCommand(0, 1)).doc;
@@ -151,7 +193,6 @@ describe("DocumentEditStack", () => {
 
     const redone = stack.redo(doc);
     expect(redone?.doc.value).toBe(2);
-    doc = redone!.doc;
     expect(stack.canUndo).toBe(true);
   });
 
@@ -263,7 +304,7 @@ describe("DocumentEditStack", () => {
     let doc: TestDoc = { value: 0 };
 
     ({ doc } = stack.apply(doc, new IncrementCommand(1)));
-    ({ doc } = stack.undo(doc)!);
+    stack.undo(doc);
 
     stack.clear();
     expect(stack.canUndo).toBe(false);

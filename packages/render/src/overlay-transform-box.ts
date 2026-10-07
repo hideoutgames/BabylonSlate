@@ -150,10 +150,10 @@ function applyOverlayBoxResize(
     nextSy = Math.max(OVERLAY_BOX_MIN_SCALE, snapValue(nextSy, snap.scale));
   }
 
-  if (moveE && !moveW) east = west + nextSx * localW;
-  else if (moveW && !moveE) west = east - nextSx * localW;
-  if (moveN && !moveS) north = south + nextSy * localH;
-  else if (moveS && !moveN) south = north - nextSy * localH;
+  // Only the west/south edges feed the new position; the east/north edges
+  // follow from the snapped scale.
+  if (moveW && !moveE) west = east - nextSx * localW;
+  if (moveS && !moveN) south = north - nextSy * localH;
 
   const dx = west - nextSx * bounds.minX;
   const dy = south - nextSy * bounds.minY;

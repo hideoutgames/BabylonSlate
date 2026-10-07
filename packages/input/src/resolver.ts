@@ -227,7 +227,7 @@ export class InputResolver {
       for (const mapping of [...this.mappings.actions, ...this.mappings.axes]) {
         const key = inputMappingKey(mapping);
         const axis = this.mappings.axes.includes(mapping);
-        let value: InputValueState["value"] = false;
+        let value: InputValueState["value"];
         if (!axis)
           value = mapping.bindings.some((binding) =>
             actionBindingHeld(binding, this.state),
@@ -328,7 +328,9 @@ export class InputResolver {
             contacts.delete(event.pointerId);
           } else if (event.phase === "up") {
             const buttons = contacts.get(event.pointerId);
-            buttons?.delete(event.button);
+            // pointerup only fires once no buttons remain. An up for a button
+            // this contact never pressed means a chord edge was missed.
+            if (!buttons?.delete(event.button)) buttons?.clear();
             if (!buttons?.size) contacts.delete(event.pointerId);
           }
           if (event.pointerId === this.state.primaryPointerId) {

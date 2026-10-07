@@ -6,7 +6,7 @@ import { RuntimeInspector } from "./runtime-inspector";
 import { SceneLayerActorSwitchers } from "./scene-layer-actor-switcher";
 import { RuntimeDataCatalog, dataTypeSchemas } from "./data-catalog";
 import { overlayAnchorBindings } from "./overlay-anchor-layout";
-import { SaveGameError, SaveGameService, type SaveGameServiceOptions } from "@babylonslate/core";
+import { SaveGameError, SaveGameService, resolveActorDefaults, type SaveGameServiceOptions } from "@babylonslate/core";
 import { SaveGameWorld } from "./save-game-world";
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
 import { RuntimeAssetPreloads } from "./asset-preloads";
@@ -22,7 +22,7 @@ import { createDefaultRenderTargetCaptureProperties, normalizeRenderTargetPayloa
 import { normalizeWaterDefinition, normalizeWaterBody, normalizeWaterRemoval, waterKindForClass, type WaterDefinition } from "@babylonslate/core";
 import { areaRectLightBindings, fogVolumeBindings, outlineBindings, deformerBindings, DEFORMER_PROPERTY_KEYS } from "@babylonslate/core";
 import { ScalabilitySession, type ScalabilityRequest, type ScalabilityResult, type ScalabilitySnapshot, type ScalabilityAcknowledgement, type RenderPath, type RenderProjectSettings } from "@babylonslate/core";
-import type { InputAssetDefinition } from "@babylonslate/core";
+import type { CollisionTriangleMesh, InputAssetDefinition } from "@babylonslate/core";
 import { inputMappingsFromAssets } from "@babylonslate/input";
 import {
   SNAPSHOT_FLAG_OVERLAY,
@@ -30,6 +30,7 @@ import {
   SeqLockSnapshotPair,
   writeActorSlot,
   writeSnapshotHeader,
+  type ActorSlot,
   type CommandMessage,
   type ControlMessage,
   type RuntimeSceneContent,
@@ -204,7 +205,7 @@ import {
   formatDumpActors,
   formatInspectActor,
 } from "./console-inspect";
-import { actorChainWorldTransform, actorLabel, actorParentGuid, breakParentCycles, composeActorWorldTransforms, firstSpawnedActorIndex, firstSpawnedWorldTransforms } from "./actor-world-transform";
+import { actorChainWorldTransform, actorLabel, actorParentGuid, breakParentCycles, composeActorWorldTransforms, firstSpawnedActorIndex, firstSpawnedWorldTransforms, WorldTransformComposer } from "./actor-world-transform";
 import { SceneLayerLayout } from "./scene-layer-layout";
 import { SceneLayerVirtualization } from "./scene-layer-virtualization";
 import { isOverlayLayoutClass, isOverlayScrollClass, overlayLayoutKey, type OverlaySafeAreaInsets } from "@babylonslate/core";
@@ -296,12 +297,7 @@ export interface RuntimeDriverOptions {
   sprites?: Readonly<Record<string, SpritePayload>>;
   spriteAnimations?: Readonly<Record<string, SpriteAnimationPayload>>;
   models?: Readonly<Record<string, ModelPayload>>;
-  complexMeshes?: Readonly<
-    Record<
-      string,
-      { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
-    >
-  >;
+  complexMeshes?: Readonly<Record<string, CollisionTriangleMesh>>;
   pixelsPerUnit?: number;
   texturePixelSizes?: Readonly<Record<string, { width: number; height: number }>>;
   /**
@@ -464,17 +460,11 @@ export interface RuntimeDriver {
   registerModelContent(options: {
     models: Readonly<Record<string, ModelPayload>> | ReadonlyMap<string, ModelPayload>;
     complexMeshes?:
-      | Readonly<
-          Record<
-            string,
-            { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
-          >
-        >
-      | ReadonlyMap<
-          string,
-          { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
-        >;
+      | Readonly<Record<string, CollisionTriangleMesh>>
+      | ReadonlyMap<string, CollisionTriangleMesh>;
   }): void;
+  /** Install host answers to `requestComplexCollision`; they survive later `loadModels` replacements. */
+  registerComplexCollisionMeshes(meshes: ReadonlyMap<string, CollisionTriangleMesh>, unavailable?: readonly string[]): void;
   /** Import a baked Scene navmesh chunk. Never generates. */
   loadNavMesh(bytes: Uint8Array): Promise<void>;
   setNavAgentTarget(actorGuid: string, target: NavPoint): boolean;
@@ -674,6 +664,29 @@ class InProcessRuntime implements RuntimeDriver {
   /** Each actor's own slot; `slotByGuid` holds a guid's latest-assigned one. */
   private readonly slotByActor = new WeakMap<Actor, number>();
   private readonly removingActors = new WeakSet<Actor>();
+  /** Actors whose sheared world pose has been reported to the Output Log. */
+  private readonly shearedActors = new WeakSet<Actor>();
+  private readonly reportShearedActor = (actor: Actor): void => {
+    if (this.shearedActors.has(actor)) return;
+    this.shearedActors.add(actor);
+    this.reportLog(
+      `${actorLabel(actor)} has a sheared world transform (nonuniform parent scale with an oblique rotation). ` +
+        "Play shows its nearest rotation and scale; attached actors keep their exact positions.",
+      "warning",
+      "actor",
+    );
+  };
+  /** Publish-time world poses, rewritten in place each snapshot write. */
+  private readonly snapshotPoses = new WorldTransformComposer();
+  private readonly findLiveActor = (guid: string): Actor | undefined => this.world.findActor(guid);
+  /** Reused per actor while writing a snapshot; `writeActorSlot` copies it into the buffer. */
+  private readonly snapshotSlot: ActorSlot = {
+    slotId: 0,
+    position: { x: 0, y: 0, z: 0 },
+    rotation: { x: 0, y: 0, z: 0, w: 1 },
+    scale: { x: 1, y: 1, z: 1 },
+    flags: 0,
+  };
   private readonly componentsWithMaterialAssignment = new WeakSet<ActorComponent>();
   private readonly freeSlots: number[] = [];
   private nextUnusedSlot = 0;
@@ -794,10 +807,20 @@ class InProcessRuntime implements RuntimeDriver {
   private sprites = new Map<string, SpritePayload>();
   private spriteAnimations = new Map<string, SpriteAnimationPayload>();
   private models = new Map<string, ModelPayload>();
-  private complexMeshes = new Map<
-    string,
-    { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
-  >();
+  /** Installed union: on-demand answers overlaid by the latest `loadModels` meshes. */
+  private complexMeshes = new Map<string, CollisionTriangleMesh>();
+  private lastProvidedComplexMeshes: ReadonlyMap<string, CollisionTriangleMesh> = new Map();
+  private demandComplexMeshes = new Map<string, CollisionTriangleMesh>();
+  private pendingComplexMeshes = new Set<string>();
+  private unavailableComplexMeshes = new Set<string>();
+  private warnedComplexMeshes = new Set<string>();
+  /** Physics found a Complex Collision Model without a mesh: ask the host once to cook it. */
+  private readonly missingComplexMesh = (assetGuid: string): void => {
+    if (this.complexMeshes.has(assetGuid) || this.pendingComplexMeshes.has(assetGuid) ||
+      this.unavailableComplexMeshes.has(assetGuid)) return;
+    this.pendingComplexMeshes.add(assetGuid);
+    this.emit({ type: "requestComplexCollision", assetGuid });
+  };
   private pendingAnimJumpByComponent = new Map<string, string>();
   private pixelsPerUnit = 100;
   private readonly texturePixelSizes: Readonly<Record<string, { width: number; height: number }>>;
@@ -1009,6 +1032,8 @@ class InProcessRuntime implements RuntimeDriver {
         deferUnsupportedConstraints: !this.preferSoftwarePhysics,
       },
     );
+    this.physicsSync.setMissingComplexMeshHandler(this.missingComplexMesh);
+    this.overlayPhysicsSync.setMissingComplexMeshHandler(this.missingComplexMesh);
     if (options.tilemaps || options.tilesets) {
       this.bindPhysicsContent(this.physicsSync);
       this.bindPhysicsContent(this.overlayPhysicsSync);
@@ -1045,8 +1070,12 @@ class InProcessRuntime implements RuntimeDriver {
             this.scriptHost.bindInterfaceHandlers(self);
             this.runOwnerCreation(self, () => this.scriptHost.hooksFor(classId)?.onCreation?.(self));
           },
-          onTick: (self, ctx) =>
-            this.guardScript(() => this.scriptHost.hooksFor(classId)?.onTick?.(self, ctx)),
+          // Engine component classes never carry scripts, so they skip the
+          // per-frame script lookup; project components keep it for reloads.
+          onTick: isLockedEngineClassId(classId)
+            ? undefined
+            : (self, ctx) =>
+                this.guardScript(() => this.scriptHost.hooksFor(classId)?.onTick?.(self, ctx)),
           onDestroyed: (self) => {
             this.runOwnerDestroyed(self, () => this.scriptHost.hooksFor(classId)?.onDestroyed?.(self));
             this.dynamicMeshes.remove(self);
@@ -1089,10 +1118,7 @@ class InProcessRuntime implements RuntimeDriver {
     });
     this.dynamicMeshes = new DynamicRuntimeMeshSync({
       eligible: (actor) => !actor.sceneLayerId && this.canRunOwner(actor),
-      slot: (actor) => {
-        const slot = this.slotByGuid.get(actor.guid);
-        return slot !== undefined && this.slotOwners.get(slot) === actor ? slot : undefined;
-      },
+      slot: (actor) => this.actorSlot(actor),
       emit: (command) => this.emit(command),
     });
     this.movement = new MovementWorldSync({
@@ -1111,19 +1137,13 @@ class InProcessRuntime implements RuntimeDriver {
       world: this.world,
       physics: () => this.physicsSync.getBackend(),
       eligible: (actor) => this.canTickActor(actor),
-      slot: (actor) => {
-        const slot = this.slotByGuid.get(actor.guid);
-        return slot !== undefined && this.slotOwners.get(slot) === actor ? slot : undefined;
-      },
+      slot: (actor) => this.actorSlot(actor),
       emit: (command) => this.emit(command),
     });
     this.ragdolls = new RagdollWorldSync({
       world: this.world,
       physics: () => this.physicsSync,
-      slot: (actor) => {
-        const slot = this.slotByGuid.get(actor.guid);
-        return slot !== undefined && this.slotOwners.get(slot) === actor ? slot : undefined;
-      },
+      slot: (actor) => this.actorSlot(actor),
       eligible: (actor) => this.canTickActor(actor),
       deferNative: !this.preferSoftwarePhysics,
       emit: (command) => this.emit(command),
@@ -1133,7 +1153,7 @@ class InProcessRuntime implements RuntimeDriver {
       actors: () => this.world.getActors(),
       canRun: (actor) => !this.stopped && this.canTickActor(actor),
       update: (component, properties) => {
-        const slotId = component.owner ? this.slotByGuid.get(component.owner.guid) : undefined;
+        const slotId = component.owner ? this.actorSlot(component.owner) : undefined;
         if (slotId !== undefined) this.emit({ type: "setUIControl2D", slotId, componentId: component.guid,
           uiControl: { classId: component.classId, properties } });
       },
@@ -1148,7 +1168,7 @@ class InProcessRuntime implements RuntimeDriver {
       canRun: (actor) => this.canTickActor(actor),
       event: (actor, component, event) => {
         if (isUIControl2DClass(component.classId) && (event === "onFocusEnter" || event === "onFocusLeave")) {
-          const slotId = this.slotByGuid.get(actor.guid);
+          const slotId = this.actorSlot(actor);
           if (slotId !== undefined) this.emit({ type: "setUIControl2D", slotId, componentId: component.guid,
             uiControl: { classId: component.classId, properties: this.uiControls.payload(component) }, focused: event === "onFocusEnter" });
         }
@@ -1375,8 +1395,8 @@ class InProcessRuntime implements RuntimeDriver {
       getSaveActorId: (actor) => this.saveGameWorld?.persistentId(actor) ?? actor.guid,
       resolveSaveActor: (id) => this.saveGameWorld?.findActor(id) ?? this.world.findActor(id),
       attachToBone: (actor, target, boneName) => {
-        const slotId = this.slotByGuid.get(actor.guid);
-        const targetSlotId = target ? this.slotByGuid.get(target.guid) : null;
+        const slotId = this.actorSlot(actor);
+        const targetSlotId = target ? this.actorSlot(target) : null;
         if (slotId === undefined || targetSlotId === undefined) return;
         this.emit({ type: "attachToBone", slotId, targetSlotId, boneName });
       },
@@ -1853,7 +1873,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.publishSnapshot();
     if (this.sceneStreams.get(stream.actor.guid) !== stream) return;
     this.emit({ type: "sceneStreamRealized", actorGuid: stream.actor.guid, streamLoadId: stream.loadId,
-      slotIds: [...stream.actors].flatMap((actor) => { const slot = this.slotByGuid.get(actor.guid); return slot === undefined ? [] : [slot]; }) });
+      slotIds: [...stream.actors].flatMap((actor) => { const slot = this.actorSlot(actor); return slot === undefined ? [] : [slot]; }) });
     if (!this.deferSceneModelsReady) this.notifySceneStreamReady(stream.actor.guid, stream.loadId);
   }
 
@@ -2295,7 +2315,7 @@ class InProcessRuntime implements RuntimeDriver {
     }
     for (const actor of actors) {
       checkpoint();
-      const slotId = this.slotByGuid.get(actor.guid);
+      const slotId = this.actorSlot(actor);
       if (slotId === undefined) continue;
       this.emitMeshAssignment(actor, slotId);
       checkpoint();
@@ -2347,7 +2367,7 @@ class InProcessRuntime implements RuntimeDriver {
         if (!result || layer.destroyed) continue;
         const transforms = new Map(result.actors.flatMap(actor => actor.components.map(component => [overlayLayoutKey(actor.id, component.id), component.transform] as const)));
         this.emit({ type: "sceneLayerLayout", layerId: layer.guid, entries: [...result.entries].flatMap(([key, entry]) => {
-          const slotId = this.slotByGuid.get(entry.actorId);
+          const slotId = this.guidSlot(entry.actorId);
           return slotId === undefined ? [] : [{ ...entry, slotId, transform: transforms.get(key) }];
         }) });
       }
@@ -2464,7 +2484,7 @@ class InProcessRuntime implements RuntimeDriver {
   applySceneLayerFocusNavigate(reverse: boolean): void {
     const focused = this.focusNavigation.advance(reverse);
     const actor = focused?.owner;
-    const slotId = actor ? this.slotByGuid.get(actor.guid) : undefined;
+    const slotId = actor ? this.actorSlot(actor) : undefined;
     // A single remaining target may not transition. Acknowledge it so the host
     // can reopen a text editor after Tab without inventing another focus order.
     if (focused && isUIControl2DClass(focused.classId) && slotId !== undefined) {
@@ -2588,14 +2608,14 @@ class InProcessRuntime implements RuntimeDriver {
 
   private flushPainters(): void {
     this.painters.flush((component, painter) => {
-      const slotId = component.owner ? this.slotByGuid.get(component.owner.guid) : undefined;
+      const slotId = component.owner ? this.actorSlot(component.owner) : undefined;
       if (slotId !== undefined) this.emit({ type: "setPainter2D", slotId, componentId: component.guid, painter });
     });
   }
 
   private flushTextAppear(): void {
     this.textAppear.flush((component, progress) => {
-      const slotId = component.owner ? this.slotByGuid.get(component.owner.guid) : undefined;
+      const slotId = component.owner ? this.actorSlot(component.owner) : undefined;
       if (slotId !== undefined) this.emit({ type: "setText2DAppear", slotId, componentId: component.guid, progress });
     });
   }
@@ -2657,6 +2677,7 @@ class InProcessRuntime implements RuntimeDriver {
       models: this.models,
       complexMeshes: this.complexMeshes,
     });
+    sync.setMissingComplexMeshHandler(this.missingComplexMesh);
   }
 
   async loadScripts(scripts: readonly CompiledScript[]): Promise<void> {
@@ -2914,7 +2935,10 @@ class InProcessRuntime implements RuntimeDriver {
     const hooks = this.scriptHost.hooksFor(classId);
     return {
       onCreation: (self) => this.runOwnerCreation(self, () => hooks?.onCreation?.(self)),
-      onTick: (self, ctx) => this.guardScript(() => hooks?.onTick?.(self, ctx)),
+      // Logic-free actors (Prefabs, scriptless classes) add no per-frame call.
+      onTick: hooks?.onTick
+        ? (self, ctx) => this.guardScript(() => hooks.onTick?.(self, ctx))
+        : undefined,
       onDestroyed: (self) => {
         this.sceneLayerSwitchers.retire(self);
         this.runOwnerDestroyed(self, () => hooks?.onDestroyed?.(self));
@@ -3230,7 +3254,7 @@ class InProcessRuntime implements RuntimeDriver {
         if (key.startsWith(`${component.guid}:`)) this.animInitializedBySlot.delete(key);
       }
     }
-    const slotId = this.slotByGuid.get(actor.guid);
+    const slotId = this.actorSlot(actor);
     const ownsSlot = () => slotId !== undefined && this.slotOwners.get(slotId) === actor;
     try {
       if (ownsSlot()) this.emitAudioStops(actor);
@@ -3554,7 +3578,7 @@ class InProcessRuntime implements RuntimeDriver {
     const defaultActor = scene?.actors.find((actor) => actor.id === scene.settings.mainCameraActorId);
     if (defaultActor?.components.some((component) =>
       component.id === scene?.settings.mainCameraComponentId && component.classId === "CameraComponent",
-    ) && this.slotByGuid.has(defaultActor.id)) return;
+    ) && this.guidSlot(defaultActor.id) !== undefined) return;
     for (const actor of this.playScene?.actors ?? []) {
       const opted = actor.components.some(
         (component) =>
@@ -3562,7 +3586,7 @@ class InProcessRuntime implements RuntimeDriver {
           component.properties.attemptPossessViewTarget === true,
       );
       if (!opted) continue;
-      const slotId = this.slotByGuid.get(actor.id);
+      const slotId = this.guidSlot(actor.id);
       if (slotId === undefined) continue;
       this.emit({ type: "possessCamera", slotId });
       this.possessedCameraSlotId = slotId;
@@ -3888,26 +3912,52 @@ class InProcessRuntime implements RuntimeDriver {
   registerModelContent(options: {
     models: Readonly<Record<string, ModelPayload>> | ReadonlyMap<string, ModelPayload>;
     complexMeshes?:
-      | Readonly<
-          Record<
-            string,
-            { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
-          >
-        >
-      | ReadonlyMap<
-          string,
-          { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
-        >;
+      | Readonly<Record<string, CollisionTriangleMesh>>
+      | ReadonlyMap<string, CollisionTriangleMesh>;
   }): void {
     this.models =
       options.models instanceof Map
         ? new Map(options.models)
         : new Map(Object.entries(options.models));
-    this.complexMeshes = options.complexMeshes
+    const provided = options.complexMeshes
       ? options.complexMeshes instanceof Map
-        ? new Map(options.complexMeshes)
+        ? options.complexMeshes
         : new Map(Object.entries(options.complexMeshes))
-      : new Map();
+      : new Map<string, CollisionTriangleMesh>();
+    // A new source union may now hold a Model the host could not cook before.
+    this.unavailableComplexMeshes.clear();
+    this.installComplexMeshes(provided);
+  }
+
+  registerComplexCollisionMeshes(meshes: ReadonlyMap<string, CollisionTriangleMesh>, unavailable: readonly string[] = []): void {
+    for (const [guid, mesh] of meshes) {
+      this.pendingComplexMeshes.delete(guid);
+      this.demandComplexMeshes.set(guid, mesh);
+    }
+    for (const guid of unavailable) {
+      this.pendingComplexMeshes.delete(guid);
+      this.unavailableComplexMeshes.add(guid);
+      if (this.warnedComplexMeshes.has(guid)) continue;
+      this.warnedComplexMeshes.add(guid);
+      const diag: RuntimeDiagnostic = {
+        code: "physics.complex_collision_unavailable",
+        message: `Model ${guid} uses Use Complex Collision, but its collision mesh could not be cooked (source not loaded, or no triangles). The Mesh has no collider; preload the Model or use Use Simple Collision.`,
+        severity: "warning",
+        assetGuid: guid,
+        frameId: this.frameId,
+        tickIndex: this.world.clock.tickIndex,
+      };
+      this.diagnostics.push(diag);
+      this.emit({ type: "diagnostic", code: diag.code, message: diag.message, assetGuid: guid, frameId: this.frameId, severity: "warning" });
+    }
+    if (meshes.size > 0) this.installComplexMeshes(this.lastProvidedComplexMeshes);
+  }
+
+  /** `loadModels` meshes win; on-demand answers fill the rest for the whole session. */
+  private installComplexMeshes(provided: ReadonlyMap<string, CollisionTriangleMesh>): void {
+    // Own the index: an in-process host may clear its map when it releases sources.
+    this.lastProvidedComplexMeshes = new Map(provided);
+    this.complexMeshes = new Map([...this.demandComplexMeshes, ...provided]);
     this.physicsSync.setModelContent({
       models: this.models,
       complexMeshes: this.complexMeshes,
@@ -4339,7 +4389,7 @@ class InProcessRuntime implements RuntimeDriver {
     for (const actor of this.world.getActors()) {
       if (this.stopped) return;
       if (!this.canTickActor(actor)) continue;
-      const slotId = this.slotByGuid.get(actor.guid);
+      const slotId = this.actorSlot(actor);
       if (slotId === undefined) continue;
       if (this.btPlayAnimOwnedSlots.has(slotId)) continue;
       for (const component of actor.components) {
@@ -4379,11 +4429,14 @@ class InProcessRuntime implements RuntimeDriver {
                 loopCount: 0,
                 justLooped: false,
                 justFinished: false,
+                totalNormalisedTime: 0,
+                previousTotalNormalisedTime: 0,
               },
               layers: [],
               blendFromStateId: null,
               blendFromTimeMs: 0,
               blendElapsedMs: 0,
+              blendSeconds: 0,
               loopCount: 0,
             });
           }
@@ -4678,7 +4731,7 @@ class InProcessRuntime implements RuntimeDriver {
     memory: Record<string, unknown>,
   ): BtResult {
     const clip = this.resolvePlayAnimationClip(node.properties);
-    const slotId = this.slotByGuid.get(actor.guid);
+    const slotId = this.actorSlot(actor);
     if (!clip || slotId === undefined) {
       if (slotId !== undefined) this.btPlayAnimOwnedSlots.delete(slotId);
       return "failure";
@@ -4768,7 +4821,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   private abortPlayAnimation(actor: Actor, memory: Record<string, unknown>): void {
     delete memory.elapsedMs;
-    const slotId = this.slotByGuid.get(actor.guid);
+    const slotId = this.actorSlot(actor);
     if (slotId !== undefined) this.btPlayAnimOwnedSlots.delete(slotId);
     (actor.sceneLayerId ? this.overlayPhysicsSync : this.physicsSync).setActorSpriteClip(actor, null);
   }
@@ -4853,7 +4906,7 @@ class InProcessRuntime implements RuntimeDriver {
     for (const actor of this.world.getActors()) {
       if (this.stopped) return;
       if (!this.canTickActor(actor)) continue;
-      const slotId = this.slotByGuid.get(actor.guid);
+      const slotId = this.actorSlot(actor);
       if (slotId === undefined) continue;
       const component = actor.components.find(
         (entry) =>
@@ -4974,7 +5027,7 @@ class InProcessRuntime implements RuntimeDriver {
     const trees: DebugBehaviourTree[] = [];
     for (const actor of this.world.getActors()) {
       if (actor.destroyed) continue;
-      const slotId = this.slotByGuid.get(actor.guid);
+      const slotId = this.actorSlot(actor);
       if (slotId === undefined) continue;
       const component = actor.components.find((entry) =>
         entry.classId === "BehaviourTreeComponent" && !entry.destroyed);
@@ -5095,7 +5148,7 @@ class InProcessRuntime implements RuntimeDriver {
         if (!(target instanceof Actor)) return target;
         if (!target.components.some((component) =>
           component.classId === "CameraComponent" && !component.destroyed,
-        ) || !this.slotByGuid.has(target.guid)) {
+        ) || this.actorSlot(target) === undefined) {
           return { success: false, output: `actor '${query}' has no live camera` };
         }
         this.emit({ type: "setFreeCam", enabled: false });
@@ -5210,7 +5263,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   private flushDeformers(): void {
     for (const actor of this.dirtyDeformerActors) {
-      const slotId = this.slotByGuid.get(actor.guid);
+      const slotId = this.actorSlot(actor);
       if (!actor.destroyed && slotId !== undefined) this.emitActorDeformers(actor, slotId);
     }
     this.dirtyDeformerActors.clear();
@@ -5473,15 +5526,13 @@ class InProcessRuntime implements RuntimeDriver {
     for (const component of actor.components) {
       this.scriptHost.bindInterfaceHandlers(component);
     }
-    const script = this.scriptHost.scriptsFor(actor.classId)[0];
-    const defaults = script?.actorDefaults;
-    if (!defaults) return;
-    if (typeof defaults.generateHitEvents === "boolean") {
-      actor.generateHitEvents = defaults.generateHitEvents;
-    }
-    if (typeof defaults.generateOverlapEvents === "boolean") {
-      actor.generateOverlapEvents = defaults.generateOverlapEvents;
-    }
+    const resolved = resolveActorDefaults(
+      this.world.classRegistry.ancestry(actor.classId)
+        .map((classId) => this.scriptHost.scriptsFor(classId)[0]?.actorDefaults),
+    );
+    actor.generateHitEvents = resolved.generateHitEvents;
+    actor.generateOverlapEvents = resolved.generateOverlapEvents;
+    actor.tickEnabled = resolved.eventTick;
   }
 
   private dispatchCollisionEvents(): void {
@@ -5601,7 +5652,7 @@ class InProcessRuntime implements RuntimeDriver {
       try {
         parseColliderProperties({ shape }, actor.sceneLayerId ? "2d" : this.physicsWorldKind);
       } catch (error) {
-        throw new Error(`${actorLabel(actor)} / ${component.guid}: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(`${actorLabel(actor)} / ${component.guid}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
       }
     }
     const slotId = this.assignSlot(actor);
@@ -5659,7 +5710,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private emitParticleComponents(actor: Actor): void {
-    const slotId = this.slotByGuid.get(actor.guid);
+    const slotId = this.actorSlot(actor);
     if (slotId === undefined) return;
     for (const component of actor.components) {
       if (component.destroyed || component.classId !== "ParticleComponent") {
@@ -5696,7 +5747,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private emitParticleStops(actor: Actor): void {
-    const slotId = this.slotByGuid.get(actor.guid) ?? 0;
+    const slotId = this.actorSlot(actor) ?? 0;
     for (const component of actor.components) {
       if (component.classId !== "ParticleComponent") continue;
       this.emit({
@@ -5747,7 +5798,7 @@ class InProcessRuntime implements RuntimeDriver {
   private possessCamera(target: unknown): void {
     const actor = actorFromIlluminationTarget(target);
     if (!actor) return;
-    const slotId = this.slotByGuid.get(actor.guid);
+    const slotId = this.actorSlot(actor);
     if (slotId === undefined) return;
     this.cameraPossessedByScript = true;
     this.possessedCameraSlotId = slotId;
@@ -5758,7 +5809,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (this.possessedCameraSlotId != null) {
       for (const actor of this.world.getActors()) {
         if (actor.destroyed) continue;
-        if (this.slotByGuid.get(actor.guid) === this.possessedCameraSlotId) {
+        if (this.actorSlot(actor) === this.possessedCameraSlotId) {
           return actor;
         }
       }
@@ -5868,7 +5919,7 @@ class InProcessRuntime implements RuntimeDriver {
   private reemitIllumination(target: unknown): void {
     const actor = actorFromIlluminationTarget(target);
     if (!actor) return;
-    const slotId = this.slotByGuid.get(actor.guid);
+    const slotId = this.actorSlot(actor);
     if (slotId === undefined) return;
     this.emitMeshAssignment(actor, slotId);
   }
@@ -5965,6 +6016,19 @@ class InProcessRuntime implements RuntimeDriver {
     return slotId;
   }
 
+  /** The render slot this actor's own commands target. Never resolve one
+   * through `slotByGuid`: a same-guid duplicate spawned later owns that. */
+  private actorSlot(actor: Actor): number | undefined {
+    const slot = this.slotByActor.get(actor);
+    return slot !== undefined && this.slotOwners.get(slot) === actor ? slot : undefined;
+  }
+
+  /** The slot of a guid's first-spawned live actor, the one guid lookups resolve. */
+  private guidSlot(guid: string): number | undefined {
+    const actor = this.world.findActor(guid);
+    return actor ? this.actorSlot(actor) : undefined;
+  }
+
   private ensureSnapshotCapacity(required: number): void {
     if (required <= this.snapshots.maxActors) return;
     let capacity = Math.max(1, this.snapshots.maxActors);
@@ -5975,8 +6039,8 @@ class InProcessRuntime implements RuntimeDriver {
       this.emit({ type: "snapshotLayout", capacity, generation: this._snapshotGeneration });
     } catch (error) {
       const message = `Unable to grow Actor snapshot capacity to ${capacity}: ${error instanceof Error ? error.message : String(error)}`;
-      this.reportError(new Error(message));
-      throw new Error(message);
+      this.reportError(new Error(message, { cause: error }));
+      throw new Error(message, { cause: error });
     }
   }
 
@@ -7144,14 +7208,15 @@ class InProcessRuntime implements RuntimeDriver {
   private writeSnapshot(frameId: number, tickIndex: number, scriptMs: number, physicsMs: number): void {
     const actors = this.world.getActors();
     const buf = this.snapshots.beginWrite();
-    const findActor = (guid: string) => this.world.findActor(guid);
-    const worldTransforms = composeActorWorldTransforms(findActor, actors);
+    const findActor = this.findLiveActor;
+    const worldTransforms = this.snapshotPoses.compose(findActor, actors, this.reportShearedActor);
     const cameraActor = this.playCameraActor();
     const cameraPosition = cameraActor ? worldTransforms.get(cameraActor.guid)?.position : undefined;
     if (cameraPosition) {
       const next = { x: Math.floor(cameraPosition.x / 1024) * 1024, y: Math.floor(cameraPosition.y / 1024) * 1024, z: Math.floor(cameraPosition.z / 1024) * 1024 };
       if (next.x !== this.snapshotOrigin.x || next.y !== this.snapshotOrigin.y || next.z !== this.snapshotOrigin.z) { this.snapshotOrigin = next; this.snapshotOriginGeneration++; }
     }
+    const slot = this.snapshotSlot;
     let count = 0;
     for (const actor of actors) {
       // Layout-only anchors must not create fallback visuals from pose snapshots.
@@ -7164,17 +7229,14 @@ class InProcessRuntime implements RuntimeDriver {
       if (slotId === undefined) continue;
       const world = worldTransforms.get(actor.guid);
       if (!world) continue;
-      writeActorSlot(buf, count, {
-        slotId,
-        position: world.position,
-        rotation: world.rotation,
-        scale: world.scale,
-        flags:
-          (actor.getVariable("visible") === false
-            ? 0
-            : SNAPSHOT_FLAG_VISIBLE) |
-          (actor.sceneLayerId ? SNAPSHOT_FLAG_OVERLAY : 0),
-      }, this.snapshotOrigin);
+      slot.slotId = slotId;
+      slot.position = world.position;
+      slot.rotation = world.rotation;
+      slot.scale = world.scale;
+      slot.flags =
+        (actor.getVariable("visible") === false ? 0 : SNAPSHOT_FLAG_VISIBLE) |
+        (actor.sceneLayerId ? SNAPSHOT_FLAG_OVERLAY : 0);
+      writeActorSlot(buf, count, slot, this.snapshotOrigin);
       count += 1;
     }
     writeSnapshotHeader(buf, {

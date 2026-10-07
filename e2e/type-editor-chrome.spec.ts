@@ -190,6 +190,8 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
       .getByText("Event Begin Play", { exact: true })
       .click();
     const graph = page.getByTestId("graph-panel");
+    // The new function opened in its own tab; let the Event Graph tab render.
+    await expect(graph.getByText("Event Tick", { exact: true })).toBeVisible();
     const nodes = graph.locator(".react-flow__node");
     const baseline = await classGraphNodeCount(page);
     expect(baseline).toBeGreaterThan(0);

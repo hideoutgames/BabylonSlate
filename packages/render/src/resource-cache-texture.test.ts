@@ -727,7 +727,7 @@ describe("WebGPU KTX2 off the 4x4 block grid", () => {
  * Image row (0 = top, as encoded) that NEAREST sampling at `v` reads from a
  * `rows`-row texture. The wrapper's texture matrix is applied as Babylon's
  * shaders do (`textureMatrix * vec4(uv, 1, 0)`). Upload behaviour is Babylon
- * 9.20's, which a NullEngine cannot run: an image or RGBA upload stores rows
+ * 9.29's, which a NullEngine cannot run: an image or RGBA upload stores rows
  * bottom-first when the InternalTexture's `invertY` is set, while a
  * block-compressed KTX2 upload never flips (WebGPU passes `false`, WebGL2 sets
  * no `UNPACK_FLIP_Y_WEBGL`).

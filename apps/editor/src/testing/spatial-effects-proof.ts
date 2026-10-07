@@ -328,7 +328,7 @@ export async function runSpatialEffectsProof(
         // Warm the native prepass and updated shadow map before readback.
         for (let presented = 0; presented < 2;) {
           engine.beginFrame();
-          let rendered = false;
+          let rendered: boolean;
           try {
             const result = graph.render(activeCamera, false);
             rendered = result.rendered !== false;

@@ -90,8 +90,8 @@ export function flattenPrefabComponents(
 }
 
 /**
- * Actor component tree for class documents. The 3D preview lives in the
- * sibling Prefab viewport tab. Edits write `SerializedGraph.components`.
+ * Actor component tree for Class and Prefab documents. The 3D preview lives in
+ * the sibling Prefab viewport tab. Edits write the document's `components`.
  */
 export function ActorPrefabPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -111,6 +111,8 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
   const [addAnchor, setAddAnchor] = useState<{ x: number; y: number } | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const listedAssets = assetRegistry?.list() ?? [];
+  const isPrefabAsset =
+    openDocuments.find((entry) => entry.id === documentId)?.ref.kind === "prefab";
   const overlay = useMemo(() => {
     const doc = openDocuments.find((entry) => entry.id === documentId);
     const indexed = listedAssets.find((asset) => asset.path === doc?.ref.path);
@@ -134,9 +136,10 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
     [collapsed, components, listedAssets],
   );
 
+  // Prefab assets stay logic-free, so scripted project components are not offered.
   const projectItems = useMemo(
-    () => projectAddComponentItems(listedAssets),
-    [listedAssets],
+    () => (isPrefabAsset ? [] : projectAddComponentItems(listedAssets)),
+    [isPrefabAsset, listedAssets],
   );
 
   const canRemove = selectedIds.some((id) => {

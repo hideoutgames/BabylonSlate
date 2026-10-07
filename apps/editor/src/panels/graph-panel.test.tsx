@@ -17,6 +17,11 @@ import { GraphEditingProvider } from "../context/graph-editing-context";
 import { ValidationProvider } from "../context/validation-context";
 import { createProjectAsset } from "../lib/create-project-asset";
 import {
+  addClassMember,
+  patchClassMember,
+  removeClassMember,
+} from "../lib/class-members";
+import {
   installMemoryOpfs,
   unmountDocumentProvider,
 } from "../testing/real-document-provider";
@@ -65,7 +70,8 @@ const MAIN_CLASS_ID = documentId({ kind: "graph", path: MAIN_CLASS_FILE });
 const seen: {
   actions: DocumentActions | null;
   documents: ReturnType<typeof useDocuments> | null;
-} = { actions: null, documents: null };
+  panelProps: IDockviewPanelProps;
+} = { actions: null, documents: null, panelProps: {} as IDockviewPanelProps };
 
 /** The Main Class graph panel, mounted once its tab is open. */
 function MainClassGraph() {
@@ -78,7 +84,7 @@ function MainClassGraph() {
     <ValidationProvider>
       <GraphEditingProvider>
         <DocumentWorkspaceProvider documentId={MAIN_CLASS_ID}>
-          <GraphPanel {...({} as IDockviewPanelProps)} />
+          <GraphPanel {...seen.panelProps} />
         </DocumentWorkspaceProvider>
       </GraphEditingProvider>
     </ValidationProvider>
@@ -97,6 +103,7 @@ afterEach(async () => {
   await unmountDocumentProvider(seen.documents, seen.actions);
   seen.actions = null;
   seen.documents = null;
+  seen.panelProps = {} as IDockviewPanelProps;
 });
 
 describe("Graph panel", () => {
@@ -151,5 +158,66 @@ describe("Graph panel", () => {
     expect(
       await within(screen.getByTestId("node-palette")).findByText("Call Launch"),
     ).toBeTruthy();
+  });
+
+  it("shows its function in a function tab, retitles on rename, and closes on delete", async () => {
+    render(
+      <DocumentProvider>
+        <MainClassGraph />
+      </DocumentProvider>,
+    );
+    await waitFor(() => expect(seen.documents?.homepageReady).toBe(true));
+    const actions = seen.actions!;
+    await act(() => actions.createEmptyProject("Tabs", { kind: "2d" }));
+    await act(() =>
+      actions.openDocument({ kind: "graph", path: MAIN_CLASS_FILE, label: "Main" }),
+    );
+    const panelApi = {
+      isActive: true,
+      isVisible: true,
+      title: "Jump",
+      onDidActiveChange: () => ({ dispose: () => {} }),
+      onDidVisibilityChange: () => ({ dispose: () => {} }),
+      setTitle: vi.fn((title: string) => {
+        panelApi.title = title;
+      }),
+      close: vi.fn(),
+    };
+    // The Class panel opens the tab once the function exists.
+    seen.panelProps = {
+      params: { functionId: "fn-jump" },
+      api: panelApi,
+    } as unknown as IDockviewPanelProps;
+    await act(() =>
+      actions.applyGraphChange(
+        MAIN_CLASS_ID,
+        addClassMember(
+          openContent<SerializedGraph>(MAIN_CLASS_ID),
+          "function",
+          "Jump",
+          () => "fn-jump",
+        ),
+      ),
+    );
+    expect(document.querySelector('[data-id="fn-jump-input"]')).toBeTruthy();
+
+    await act(() =>
+      actions.applyGraphChange(
+        MAIN_CLASS_ID,
+        patchClassMember(openContent<SerializedGraph>(MAIN_CLASS_ID), "fn-jump", {
+          name: "Leap",
+        }),
+      ),
+    );
+    expect(panelApi.title).toBe("Leap");
+    expect(panelApi.close).not.toHaveBeenCalled();
+
+    await act(() =>
+      actions.applyGraphChange(
+        MAIN_CLASS_ID,
+        removeClassMember(openContent<SerializedGraph>(MAIN_CLASS_ID), "fn-jump"),
+      ),
+    );
+    expect(panelApi.close).toHaveBeenCalled();
   });
 });

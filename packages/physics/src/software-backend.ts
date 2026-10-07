@@ -151,7 +151,14 @@ function aabbForShape(
     }
     case "convex":
     case "mesh": {
-      const pts = shape.kind === "convex" ? shape.points : shape.vertices;
+      const pts =
+        shape.kind === "convex"
+          ? shape.points
+          : Array.from({ length: shape.positions.length / 3 }, (_, i) => ({
+              x: shape.positions[i * 3]!,
+              y: shape.positions[i * 3 + 1]!,
+              z: shape.positions[i * 3 + 2]!,
+            }));
       return aabbFromLocalPoints(
         position,
         oriented ? rotation : undefined,

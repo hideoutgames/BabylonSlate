@@ -55,7 +55,7 @@ async function samplePlay(page: Page, durationMs: number): Promise<Sample> {
     const heap = () =>
       (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize ?? null;
     const longTasks: number[] = [];
-    let observer: PerformanceObserver | null = null;
+    let observer: PerformanceObserver | null;
     try {
       observer = new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) longTasks.push(entry.duration);

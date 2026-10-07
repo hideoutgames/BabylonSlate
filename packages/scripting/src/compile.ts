@@ -373,7 +373,7 @@ export function compileGraph(
    * traps its results inside a block scope.
    */
   const outputDecls = new Map<string, string>();
-  let isAsync = false;
+  let isAsync: boolean;
 
   const emitBody = (text: string, anchor?: Omit<CompileAnchor, "line">) => {
     const line = { text, anchor };

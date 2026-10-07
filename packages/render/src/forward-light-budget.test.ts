@@ -8,6 +8,7 @@ function device(values: number[]) {
   const engine = {
     supportsUniformBuffers: true,
     onContextRestoredObservable: restored,
+    getCaps: () => ({}),
     _gl: {
       MAX_VERTEX_UNIFORM_BLOCKS: 0,
       MAX_FRAGMENT_UNIFORM_BLOCKS: 1,
@@ -48,6 +49,15 @@ describe("conventional forward shader admission", () => {
     restored.notifyObservers(engine);
     expect(forwardLightBudget(engine).slots).toBe(9);
     expect(getParameter).toHaveBeenCalledTimes(8);
+  });
+
+  it("matches Babylon's WebGPU light clamp to the per-stage uniform buffer limit", () => {
+    const engine = {
+      supportsUniformBuffers: true,
+      onContextRestoredObservable: new Observable<AbstractEngine>(),
+      getCaps: () => ({ maxUniformBuffersPerShaderStage: 12 }),
+    } as unknown as AbstractEngine;
+    expect(forwardLightBudget(engine)).toMatchObject({ slots: 8, source: "webgpu", reservedBlocks: 4 });
   });
 
   it("uses conservative WebGL2 minima when queries fail", () => {

@@ -7,6 +7,11 @@ import {
 
 /** Each undo step retains a document snapshot; keep the history bounded. */
 export const MAX_UNDO_HISTORY_LENGTH = 1000;
+const MEBIBYTE = 1024 * 1024;
+/** Per-document Undo memory limit, in bytes (Undo Memory Limit preference). */
+export const DEFAULT_UNDO_BYTE_BUDGET = 16 * MEBIBYTE;
+export const MIN_UNDO_BYTE_BUDGET = MEBIBYTE;
+export const MAX_UNDO_BYTE_BUDGET = 1024 * MEBIBYTE;
 /** Below this a visible viewport is unusably choppy. */
 export const MIN_VIEWPORT_FRAME_CAP = 10;
 export const MAX_VIEWPORT_FRAME_CAP = 240;
@@ -89,6 +94,10 @@ export const engineSettingsSchema = z.object({
     if (typeof value !== "number" || !Number.isFinite(value)) return value;
     return Math.min(MAX_UNDO_HISTORY_LENGTH, Math.max(1, Math.round(value)));
   }, z.number().int().min(1).max(MAX_UNDO_HISTORY_LENGTH).default(50)),
+  undoByteBudget: z.preprocess((value) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return value;
+    return Math.min(MAX_UNDO_BYTE_BUDGET, Math.max(MIN_UNDO_BYTE_BUDGET, Math.round(value)));
+  }, z.number().int().min(MIN_UNDO_BYTE_BUDGET).max(MAX_UNDO_BYTE_BUDGET).default(DEFAULT_UNDO_BYTE_BUDGET)),
   traceByteBudget: z.preprocess((value) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return value;
     // Leave headroom for whole-file JSON and native storage's base64 strings.

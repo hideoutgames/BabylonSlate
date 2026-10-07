@@ -3,7 +3,9 @@ export {
   DocumentEditStack,
   type ApplyResult,
   type DocumentEditStackOptions,
+  type EditApplyResult,
   type HistoryAdmissionResult,
+  type HistoryOutcome,
 } from "./stack";
 export { EditSession, DEFAULT_EDIT_BYTE_BUDGET } from "./session";
 export {
@@ -15,6 +17,7 @@ export {
   SetGraphMembersCommand,
   SetGraphComponentsCommand,
   SetGraphFunctionGraphsCommand,
+  SetGraphActorDefaultsCommand,
   SetNodeDataCommand,
   createMoveNodeCommandFromJson,
   createAddEdgeCommandFromJson,
@@ -25,6 +28,7 @@ export {
   createSetGraphMembersCommandFromJson,
   createSetGraphComponentsCommandFromJson,
   createSetGraphFunctionGraphsCommandFromJson,
+  createSetGraphActorDefaultsCommandFromJson,
 } from "./commands/graph";
 export { diffGraphCommands } from "./commands/graph-diff";
 export {
@@ -56,7 +60,15 @@ export {
   type ActorTransformEntry,
   type SceneEditCommand,
 } from "./commands/scene";
-export { diffSceneCommands } from "./commands/scene-diff";
+export { diffSceneCommands, planSceneChange } from "./commands/scene-diff";
+export {
+  ReorderFolderCommand,
+  SetActorClassCommand,
+  SetActorPropertiesCommand,
+  SetComponentClassCommand,
+  SetComponentTransformPresenceCommand,
+  SetSceneOverlayEditorCommand,
+} from "./commands/scene-fields";
 export { ReplaceSceneCommand, createReplaceSceneCommandFromJson } from "./commands/replace-scene";
 export { SetActorSuppressedComponentsCommand, SetComponentMaterialInstanceCommand } from "./commands/scene-instance";
 export {

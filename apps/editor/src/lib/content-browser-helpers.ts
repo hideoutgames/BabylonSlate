@@ -81,6 +81,7 @@ import {
 } from "@babylonslate/object-model";
 import { createDefaultLogicGraphSerialized, defaultNodeRegistry } from "../services/graph-validation";
 import { classIdForGraphPath } from "../services/script-compiler";
+import { defaultPrefabComponents } from "./prefab-preview";
 
 export const ASSETS_ROOT = "assets";
 
@@ -236,6 +237,7 @@ export const CREATABLE_ASSET_TYPES = [
   "Scene",
   "SceneLayer",
   "Class",
+  "Prefab",
   "Sprite",
   "SpriteAnimation",
   "AnimationGraph",
@@ -276,7 +278,7 @@ export type CreatableAssetTypeGroup = {
 
 /** Catalog groups for the New Asset type-card grid. */
 export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
-  { id: "world", label: "World", types: ["Scene", "SceneLayer"] },
+  { id: "world", label: "World", types: ["Scene", "SceneLayer", "Prefab"] },
   { id: "input", label: "Input", types: ["InputAction", "InputAxis"] },
   { id: "data", label: "Data", types: ["DataDefinition", "DataTree"] },
   {
@@ -317,6 +319,7 @@ const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
   Scene: "A 3D or 2D world document.",
   SceneLayer: "An unlit 2D overlay that draws on top of world scenes.",
   Class: "A class with a parent and a logic graph.",
+  Prefab: "Placeable components without logic. Lighter than an Actor class: no graph, events, variables, or tick.",
   Sprite: "A 2D sprite sheet with named frames and pivots.",
   SpriteAnimation: "A pickable 2D clip of Texture frames for Animation Graph.",
   AnimationGraph: "A state machine that plays Sprite or Animation clips.",
@@ -1550,6 +1553,11 @@ export function buildNewAssetResult(options: {
   if (type === "RenderTarget") return documentAsset(type, name, guid, { ...createDefaultRenderTargetPayload() });
   if (type === "RenderTargetTexture") return documentAsset(type, name, guid, { ...createDefaultRenderTargetTexturePayload() });
   if (type === "Water") return documentAsset(type, name, guid, createDefaultWaterDefinition(options.waterStyle) as unknown as Record<string, unknown>);
+  if (type === "Prefab") {
+    const result = documentAsset(type, name, guid, { components: defaultPrefabComponents() });
+    result.dependencies = assetHeaderDependencies(type, result.payload);
+    return result;
+  }
 
   if (type === "Scene") {
     const payload = createDefaultScene() as unknown as Record<string, unknown>;
@@ -1828,6 +1836,7 @@ const ASSET_FILE_SUFFIX: Partial<Record<CreatableAssetType, string>> = {
   Scene: ".scene.babasset",
   SceneLayer: ".scenelayer.babasset",
   Class: ".class.babasset",
+  Prefab: ".prefab.babasset",
   Sprite: ".sprite.babasset",
   SpriteAnimation: ".spriteanim.babasset",
   AnimationGraph: ".anim.babasset",

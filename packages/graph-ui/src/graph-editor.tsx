@@ -31,6 +31,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -559,7 +560,9 @@ function GraphEditorCanvas({
   const renderPinDefaultEditor = renderPinDefaultEditorProp ?? inheritedPinEditor;
   const pinDefaultsDisabled = readOnly || (readOnlyPinDefaultsProp ?? interactions.readOnlyPinDefaults ?? false);
   const pinDefaultsDisabledRef = useRef(pinDefaultsDisabled);
-  pinDefaultsDisabledRef.current = pinDefaultsDisabled;
+  useLayoutEffect(() => {
+    pinDefaultsDisabledRef.current = pinDefaultsDisabled;
+  });
   const shakeTracker = useRef(new NodeShakeTracker());
   const shakenRef = useRef(false);
   const graphViewport = useMemo(
@@ -591,10 +594,14 @@ function GraphEditorCanvas({
     pinId: string;
   } | null>(null);
   const pendingPinRef = useRef(pendingPin);
-  pendingPinRef.current = pendingPin;
+  useLayoutEffect(() => {
+    pendingPinRef.current = pendingPin;
+  });
   const [paletteOpen, setPaletteOpen] = useState(false);
   const onPaletteOpenChangeRef = useRef(onPaletteOpenChange);
-  onPaletteOpenChangeRef.current = onPaletteOpenChange;
+  useLayoutEffect(() => {
+    onPaletteOpenChangeRef.current = onPaletteOpenChange;
+  });
   const setPaletteOpenState = useCallback((next: boolean) => {
     setPaletteOpen(next);
     onPaletteOpenChangeRef.current?.(next);
@@ -629,20 +636,26 @@ function GraphEditorCanvas({
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const skipPaneClickRef = useRef(false);
   const membersRef = useRef(initialGraph.members);
-  membersRef.current = initialGraph.members;
   const componentsRef = useRef(initialGraph.components);
-  componentsRef.current = initialGraph.components;
+  useLayoutEffect(() => {
+    membersRef.current = initialGraph.members;
+    componentsRef.current = initialGraph.components;
+  });
   const { screenToFlowPosition } = useReactFlow();
   const storeApi = useStoreApi();
   const graphStateRef = useRef({ nodes, edges });
-  graphStateRef.current = { nodes, edges };
+  useLayoutEffect(() => {
+    graphStateRef.current = { nodes, edges };
+  });
   const proximityDragRef = useRef(false);
   const [proximityPaths, setProximityPaths] = useState<Array<{
     connection: OrientedConnection;
     path: string;
   }>>([]);
   const proximityPathsRef = useRef(proximityPaths);
-  proximityPathsRef.current = proximityPaths;
+  useLayoutEffect(() => {
+    proximityPathsRef.current = proximityPaths;
+  });
   const [selectPinDisplayNodes] = useState(createPinDisplayNodesSelector);
   const pinNodes = selectPinDisplayNodes(nodes);
   const pinDisplayTypes = useMemo(
@@ -650,7 +663,9 @@ function GraphEditorCanvas({
     [edges, pinNodes],
   );
   const pinDisplayTypesRef = useRef(pinDisplayTypes);
-  pinDisplayTypesRef.current = pinDisplayTypes;
+  useLayoutEffect(() => {
+    pinDisplayTypesRef.current = pinDisplayTypes;
+  });
   const paneMenu = useContextMenu({
     items: [],
     enabled: Boolean(contextMenuItemsForNode) && !readOnly,
@@ -782,14 +797,17 @@ function GraphEditorCanvas({
     );
   }, [initialGraph, knownTypes, nodeDragHandle]);
 
-  useEffect(() => {
+  // Re-apply a changed drag handle selector while rendering.
+  const [appliedDragHandle, setAppliedDragHandle] = useState(nodeDragHandle);
+  if (appliedDragHandle !== nodeDragHandle) {
+    setAppliedDragHandle(nodeDragHandle);
     setNodes((current) => {
       const next = current.map((node) => withDragHandle(node, nodeDragHandle));
       return next.every((node, index) => node === current[index])
         ? current
         : next;
     });
-  }, [nodeDragHandle]);
+  }
 
   const hiddenToolbar = useMemo(
     () => new Set(hiddenToolbarActions),
@@ -1185,9 +1203,16 @@ function GraphEditorCanvas({
     };
   }, [cancelProximityConnections]);
 
+  // Locking the canvas drops proximity suggestions: state while rendering,
+  // drag bookkeeping once committed.
+  const proximityLocked = readOnly || !nodesDraggable;
+  if (proximityLocked && proximityPaths.length > 0) setProximityPaths([]);
   useEffect(() => {
-    if (readOnly || !nodesDraggable) cancelProximityConnections();
-  }, [cancelProximityConnections, nodesDraggable, readOnly]);
+    if (!proximityLocked) return;
+    proximityDragRef.current = false;
+    shakenRef.current = false;
+    proximityPathsRef.current = [];
+  }, [proximityLocked]);
 
   const handleNodeDrag: OnNodeDrag<CanvasNode> = useCallback(
     (_event, node, dragged) => {
@@ -1700,7 +1725,9 @@ function GraphEditorCanvas({
   }, [edges, selectedEdges, selectedNodes]);
 
   const onSelectionChangeRef = useRef(onSelectionChange);
-  onSelectionChangeRef.current = onSelectionChange;
+  useLayoutEffect(() => {
+    onSelectionChangeRef.current = onSelectionChange;
+  });
   const selectionKey = selectedNodes.map((node) => node.id).join("\0");
   useEffect(() => {
     onSelectionChangeRef.current?.(
@@ -1709,7 +1736,9 @@ function GraphEditorCanvas({
   }, [selectionKey]);
 
   const onEdgeSelectionChangeRef = useRef(onEdgeSelectionChange);
-  onEdgeSelectionChangeRef.current = onEdgeSelectionChange;
+  useLayoutEffect(() => {
+    onEdgeSelectionChangeRef.current = onEdgeSelectionChange;
+  });
   const edgeSelectionKey = selectedEdges.map((edge) => edge.id).join("\0");
   useEffect(() => {
     onEdgeSelectionChangeRef.current?.(
@@ -1960,13 +1989,15 @@ function GraphEditorCanvas({
   );
 
   const screenToFlowPositionRef = useRef(screenToFlowPosition);
-  screenToFlowPositionRef.current = screenToFlowPosition;
   const pinCompatibilityRef = useRef(pinCompatibility);
-  pinCompatibilityRef.current = pinCompatibility;
   const readOnlyRef = useRef(readOnly);
-  readOnlyRef.current = readOnly;
   const connectEndModeRef = useRef(connectEndMode);
-  connectEndModeRef.current = connectEndMode;
+  useLayoutEffect(() => {
+    screenToFlowPositionRef.current = screenToFlowPosition;
+    pinCompatibilityRef.current = pinCompatibility;
+    readOnlyRef.current = readOnly;
+    connectEndModeRef.current = connectEndMode;
+  });
 
   useEffect(() => {
     if (!onCanvasApi) return;

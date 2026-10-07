@@ -1,4 +1,5 @@
 import js from "@eslint/js";
+import { defineConfig } from "eslint/config";
 import globals from "globals";
 import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
@@ -229,7 +230,7 @@ const appNoCapacitor = boundary(
   ],
 );
 
-export default tseslint.config(
+export default defineConfig(
   {
     ignores: [
       "dist",
@@ -248,7 +249,8 @@ export default tseslint.config(
   },
   {
     ...js.configs.recommended,
-    files: ["scripts/**/*.mjs", "eslint.config.js"],
+    // Node tooling: root scripts plus app-local scripts (apps/*/scripts).
+    files: ["**/scripts/**/*.mjs", "eslint.config.js"],
     languageOptions: { globals: globals.node },
   },
   {
@@ -263,7 +265,10 @@ export default tseslint.config(
       "react-refresh": reactRefresh,
     },
     rules: {
-      ...reactHooks.configs.recommended.rules,
+      // Classic hooks rules only. The plugin's React Compiler rules (refs,
+      // set-state-in-effect, immutability, ...) are intentionally not enabled.
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
       "react-refresh/only-export-components": [
         "warn",
         { allowConstantExport: true },
