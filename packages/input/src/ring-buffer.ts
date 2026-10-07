@@ -76,7 +76,7 @@ export function encodeInputEvents(events: readonly RawInputEvent[]): ArrayBuffer
   for (const event of events) {
     size += 5;
     switch (event.kind) {
-      case "pointer": size += 12; break;
+      case "pointer": size += 14; break;
       case "key": size += 3 + encoder.encode(event.code).length; break;
       case "gamepad": size += 3 + 4 * (event.axes.length + event.buttons.length); break;
       case "touchAxis": size += 6 + encoder.encode(event.controlId).length; break;
@@ -94,15 +94,17 @@ export function encodeInputEvents(events: readonly RawInputEvent[]): ArrayBuffer
     view.setUint32(o, event.tick >>> 0, true);
     o += 4;
     if (event.kind === "pointer") {
-      view.setUint16(o, event.pointerId, true);
-      o += 2;
+      // `PointerEvent.pointerId` is a signed 32-bit long; pen and touch ids exceed 16 bits.
+      view.setInt32(o, event.pointerId, true);
+      o += 4;
       view.setUint8(o, PHASE[event.phase]);
       o += 1;
       view.setFloat32(o, event.x, true);
       o += 4;
       view.setFloat32(o, event.y, true);
       o += 4;
-      view.setUint8(o, event.button);
+      // Signed so a hover move's button -1 survives the transfer.
+      view.setInt8(o, event.button);
       o += 1;
     } else if (event.kind === "key") {
       view.setUint8(o, PHASE[event.phase]);
@@ -152,15 +154,15 @@ export function decodeInputEvents(
     const tick = view.getUint32(o, true);
     o += 4;
     if (kindByte === KIND.pointer) {
-      const pointerId = view.getUint16(o, true);
-      o += 2;
+      const pointerId = view.getInt32(o, true);
+      o += 4;
       const phase = PHASE_NAME[view.getUint8(o)] as PointerPhase;
       o += 1;
       const x = view.getFloat32(o, true);
       o += 4;
       const y = view.getFloat32(o, true);
       o += 4;
-      const button = view.getUint8(o);
+      const button = view.getInt8(o);
       o += 1;
       events.push({ kind: "pointer", tick, pointerId, phase, x, y, button });
     } else if (kindByte === KIND.key) {
@@ -209,7 +211,50 @@ export function decodeInputEvents(
   return events;
 }
 
-/** Fixed-capacity ring; push drops the oldest event when full. */
+/** True for events that end a press or deflection; overflow and ownership boundaries keep them. */
+export function isInputReleaseEvent(event: RawInputEvent): boolean {
+  switch (event.kind) {
+    case "key": return event.phase === "up";
+    case "pointer": return event.phase === "up" || event.phase === "cancel";
+    case "touchAxis": return event.value === 0;
+    case "gamepad": return event.axes.every(value => value === 0) && event.buttons.every(value => value === 0);
+    default: return true;
+  }
+}
+
+/** Events for one control share a key; a later event for it may supersede an earlier sample. */
+function controlKey(event: RawInputEvent): string | undefined {
+  switch (event.kind) {
+    case "pointer": return `p${event.pointerId}`;
+    case "gamepad": case "gamepadDisconnect": return `g${event.gamepadIndex}`;
+    case "touchAxis": return `t${event.controlId}`;
+    default: return undefined;
+  }
+}
+
+/** Resolver thresholds: zero (input started/released) and 0.5 (actions and pressed keys). */
+function level(value: number): number {
+  const magnitude = Math.abs(value);
+  return magnitude > 0.5 ? 2 : magnitude > 0 ? 1 : 0;
+}
+
+/** Whether dropping `sample` keeps every resolver edge because `next` follows it. */
+function supersededBy(sample: RawInputEvent, next: RawInputEvent): boolean {
+  if (sample.kind === "pointer") return sample.phase === "move";
+  if (sample.kind === "touchAxis" && next.kind === "touchAxis") return level(sample.value) === level(next.value);
+  if (sample.kind !== "gamepad" || next.kind !== "gamepad") return false;
+  const levels = (event: typeof sample) => [...event.axes, ...event.buttons].map(level).join();
+  return sample.axes.length === next.axes.length && levels(sample) === levels(next);
+}
+
+/**
+ * Bounded input queue that never strands a held control. At `capacity`, push
+ * first coalesces the oldest continuous sample (pointer move, gamepad or
+ * touch-axis sample) that the next event for the same control supersedes
+ * without changing a threshold edge. A queue of edges may grow to four times
+ * `capacity`; beyond that the oldest press or sample is dropped, so a release
+ * can arrive without its press but is never lost itself.
+ */
 export class InputRingBuffer {
   private readonly capacity: number;
   private readonly events: RawInputEvent[] = [];
@@ -220,12 +265,35 @@ export class InputRingBuffer {
 
   push(event: RawInputEvent): void {
     if (this.events.length >= this.capacity) {
-      this.events.shift();
+      let victim = this.supersededIndex(event);
+      if (victim < 0 && this.events.length >= this.capacity * 4) {
+        victim = this.events.findIndex(queued => !isInputReleaseEvent(queued));
+        if (victim < 0 && !isInputReleaseEvent(event)) return;
+        victim = Math.max(victim, 0);
+      }
+      if (victim >= 0) this.events.splice(victim, 1);
     }
     this.events.push(event);
   }
 
   drain(): RawInputEvent[] {
     return this.events.splice(0, this.events.length);
+  }
+
+  /** Oldest queued sample made redundant by the next event for its control, or -1. */
+  private supersededIndex(incoming: RawInputEvent): number {
+    const next = new Map<string, RawInputEvent>();
+    const incomingKey = controlKey(incoming);
+    if (incomingKey) next.set(incomingKey, incoming);
+    let victim = -1;
+    for (let index = this.events.length - 1; index >= 0; index--) {
+      const event = this.events[index]!;
+      const key = controlKey(event);
+      if (!key) continue;
+      const later = next.get(key);
+      if (later && supersededBy(event, later)) victim = index;
+      next.set(key, event);
+    }
+    return victim;
   }
 }

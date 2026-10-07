@@ -328,7 +328,9 @@ export class InputResolver {
             contacts.delete(event.pointerId);
           } else if (event.phase === "up") {
             const buttons = contacts.get(event.pointerId);
-            buttons?.delete(event.button);
+            // pointerup only fires once no buttons remain. An up for a button
+            // this contact never pressed means a chord edge was missed.
+            if (!buttons?.delete(event.button)) buttons?.clear();
             if (!buttons?.size) contacts.delete(event.pointerId);
           }
           if (event.pointerId === this.state.primaryPointerId) {
