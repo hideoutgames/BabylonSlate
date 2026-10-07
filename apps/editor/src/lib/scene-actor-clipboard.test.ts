@@ -4,6 +4,40 @@ import { copySceneActors, pasteSceneActors } from "./scene-actor-clipboard";
 import { EditorSessionState } from "./editor-session-state";
 
 describe("actor clipboard", () => {
+  it("remaps nested actor and component overrides while clearing external live references", () => {
+    const source = createDefaultScene();
+    source.actors = [
+      createActor("actor-1", "Owner", { properties: {
+        target: { guid: "actor-2", classId: "Actor" },
+        outside: { guid: "outside", classId: "Actor" },
+        nested: [{ kind: "actorRef", id: "actor-2" }],
+        lookup: new Map([["target", { kind: "objectRef", guid: "target-mesh", classId: "MeshComponent" }]]),
+        assetGuid: "actor-2", label: "actor-2",
+      }, components: [{ id: "owner-mesh", classId: "MeshComponent", properties: {
+        settings: { target: { guid: "actor-2", classId: "Actor" }, component: { guid: "target-mesh", classId: "MeshComponent" } },
+        outside: { kind: "objectRef", guid: "outside-mesh", classId: "MeshComponent" },
+        assetGuid: "actor-2", label: "outside",
+      } }] }),
+      createActor("actor-2", "Target", { components: [{ id: "target-mesh", classId: "MeshComponent", properties: {} }] }),
+      createActor("outside", "Outside", { components: [{ id: "outside-mesh", classId: "MeshComponent", properties: {} }] }),
+    ];
+    const destination = { ...createDefaultScene(), actors: [createActor("actor-2", "Unrelated Destination Actor")] };
+    const snapshot = copySceneActors(source, ["actor-1", "actor-2"]);
+    const [owner, target] = pasteSceneActors(destination, snapshot);
+    expect(owner!.properties).toEqual({
+      target: { guid: target!.id, classId: "Actor" }, outside: null,
+      nested: [{ kind: "actorRef", id: target!.id }],
+      lookup: new Map([["target", { kind: "objectRef", guid: target!.components[0]!.id, classId: "MeshComponent" }]]),
+      assetGuid: "actor-2", label: "actor-2",
+    });
+    expect(owner!.components[0]!.properties).toEqual({
+      settings: { target: { guid: target!.id, classId: "Actor" }, component: { guid: target!.components[0]!.id, classId: "MeshComponent" } },
+      outside: null, assetGuid: "actor-2", label: "outside",
+    });
+    expect(source.actors[0]!.properties!.outside).toEqual({ guid: "outside", classId: "Actor" });
+    expect(snapshot[0]!.properties!.target).toEqual({ guid: "actor-2", classId: "Actor" });
+  });
+
   it("keeps a detached subtree at its original world position, rotation and scale", () => {
     const source = createDefaultScene();
     const rotation = eulerDegreesToQuaternion([0, 0, 90]);
