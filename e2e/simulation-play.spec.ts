@@ -53,6 +53,14 @@ async function startSimulation(page: Page) {
   await expect(page.getByTestId("play-overlay")).toHaveAttribute("data-mode", "simulate", { timeout: 60_000 });
   await expect(page.getByTestId("play-overlay")).toHaveCount(1);
   await expect(page.getByTestId("play-canvas")).toBeVisible();
+  const viewport = await page.getByTestId("viewport-panel").boundingBox();
+  const gameCanvas = await page.getByTestId("play-canvas").boundingBox();
+  expect(viewport).not.toBeNull();
+  expect(gameCanvas).not.toBeNull();
+  expect(gameCanvas!.x).toBeGreaterThanOrEqual(viewport!.x - 1);
+  expect(gameCanvas!.y).toBeGreaterThanOrEqual(viewport!.y - 1);
+  expect(gameCanvas!.x + gameCanvas!.width).toBeLessThanOrEqual(viewport!.x + viewport!.width + 1);
+  expect(gameCanvas!.y + gameCanvas!.height).toBeLessThanOrEqual(viewport!.y + viewport!.height + 1);
   await expect(page.getByTestId("play-overlay")).toContainText("Discard On Stop");
   await expect.poll(() => state(page)).toMatchObject({ generation: previous.generation + 1, mode: "simulate", lifecycle: "running", quarantined: false });
   await expect.poll(() => tick(page), { timeout: 30_000 }).toBeGreaterThan(2);

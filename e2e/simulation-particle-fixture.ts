@@ -43,7 +43,7 @@ export async function simulationParticleProject() {
       components: [{ id: "lens", classId: "CameraComponent", properties: { nearClip: 0.1, farClip: 100, fieldOfView: 60 } }],
     }),
     createActor("particles", "Moving Particles", {
-      components: [{ id: "emitter", classId: "ParticleComponent", properties: { particleSystemGuid: systemGuid, autoPlay: true } }],
+      components: [{ id: "emitter", classId: "ParticleComponent", properties: { particleSystemGuid: systemGuid, playOnStart: true } }],
     }),
     createActor("control", "Redraw Control", {
       transform: { ...identitySerializedTransform(), position: [-3, -2.5, 0] }, components: [cube],
