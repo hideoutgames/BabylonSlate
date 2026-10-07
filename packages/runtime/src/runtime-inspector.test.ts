@@ -45,6 +45,23 @@ describe("bounded runtime Inspector", () => {
     } finally { runtime.stop(); }
   });
 
+  it("matches renderer lifetime metadata to authoritative selection and resolves picks without a world detail snapshot", async () => {
+    const { runtime, request, actor, component, commands } = await fixture();
+    try {
+      const spawn = commands.find(command => command.type === "spawn" && command.actorGuid === actor.actorGuid);
+      expect(spawn).toMatchObject({ type: "spawn", runtimeIdentity: actor });
+      if (spawn?.type !== "spawn") throw new Error("missing renderer spawn");
+      expect((await request({ kind: "resolvePick", actorGuid: actor.actorGuid, slotId: spawn.slotId })).payload)
+        .toMatchObject({ kind: "identity", row: { identity: actor, renderSlotId: spawn.slotId } });
+      expect((await request({ kind: "resolvePick", actorGuid: "wrong", slotId: spawn.slotId })).success).toBe(false);
+      expect((await request({ kind: "selection", target: component })).payload)
+        .toMatchObject({ materialGuid: "mat", worldTransform: identitySerializedTransform(), renderSlotId: spawn.slotId });
+      expect(commands).toContainEqual(expect.objectContaining({ type: "assignMesh", runtimeComponentTokens: [
+        { componentGuid: component.componentGuid, componentToken: component.componentToken },
+      ] }));
+    } finally { runtime.stop(); }
+  });
+
   it("keeps GUID reuse and destroyed components distinct from the selected lifetime", async () => {
     const { runtime, request, actor, component } = await fixture();
     try {

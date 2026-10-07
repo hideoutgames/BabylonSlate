@@ -100,7 +100,7 @@ export class RuntimeMaterialEditGate {
     const pending = this.pending.get(token); if (!pending) return;
     this.pending.delete(token); clearTimeout(pending.timer);
     this.host.emit({ type: "releaseRuntimeMaterialPreparation", sessionGeneration: this.host.generation, editToken: token, committed: true });
-    pending.resolve({ ...pending.result!, ...this.host.inspector.result(pending.request) });
+    pending.resolve(pending.result!);
   }
   private reject(token: string, reason: string, uncertain = false): void {
     const pending = this.pending.get(token); if (!pending) return;

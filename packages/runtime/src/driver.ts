@@ -540,6 +540,7 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly simulationDataAssets: RuntimeDriverOptions["dataAssets"];
   private simulationStart: Pick<SimulationCaptureIdentity, "sceneAssetGuid" | "sceneInstanceId" | "sceneLoadId"> | null = null;
   private simulationQuiescent = false;
+  private simulationUnsupportedInstance: { kind: "stream" | "layer"; id: string } | null = null;
   private lastCaptureRequestId = 0;
   private readonly sessionGeneration: number;
   private readonly sessionMode: GameSessionMode;
@@ -1614,6 +1615,7 @@ class InProcessRuntime implements RuntimeDriver {
       actors: new Set(), idMap: new Map(), scene, controller: new AbortController(), realized: false, notified: false,
       promise, resolve, reject, navObstacles: [] };
     this.sceneStreams.set(actor.guid, stream);
+    this.markUnsupportedSimulationInstance("stream", scene.guid);
     this.streamScenes.set(scene, stream);
     const operation = this.withStreamBlock(promise, blocking);
     this.emit({ type: "sceneStreamLoading", actorGuid: actor.guid, streamLoadId: loadId });
@@ -2024,6 +2026,7 @@ class InProcessRuntime implements RuntimeDriver {
       })),
       layerBounds: document.settings.layerBounds,
     });
+    this.markUnsupportedSimulationInstance("layer", layer.guid);
     ownedLayer = layer;
     work?.layers.push(layer);
     const layerLoad = { layer, loadId: ++this.layerLoadId, realized: false, presented: false, ready: false };
@@ -3316,6 +3319,8 @@ class InProcessRuntime implements RuntimeDriver {
       return false;
     }
     if (this.stopped) return true;
+    if (this.sessionMode === "simulate") this.emit({ type: "simulationRetentionUnavailable", sessionGeneration: this.sessionGeneration,
+      reason: "Keep cannot retain a scene transition into the starting scene document." });
     // The departing Scene's teardown starts here; its SceneSubsystems End at the exit.
     this.duringSceneTeardown(() => {
       for (const stream of [...this.sceneStreams.values()]) this.retireSceneStream(stream);
@@ -6074,6 +6079,13 @@ class InProcessRuntime implements RuntimeDriver {
     return this.diagnosticRecorder.request(request);
   }
 
+  private markUnsupportedSimulationInstance(kind: "stream" | "layer", id: string): void {
+    if (this.sessionMode !== "simulate" || this.simulationUnsupportedInstance) return;
+    this.simulationUnsupportedInstance = { kind, id };
+    this.emit({ type: "simulationRetentionUnavailable", sessionGeneration: this.sessionGeneration,
+      reason: `Keep cannot retain an independent ${kind === "layer" ? "SceneLayer" : "streamed Scene"} instance (${id}), including one removed before Stop.` });
+  }
+
   quiesceSimulation(request: SimulationQuiesceRequest): Promise<SessionBoundaryResult> {
     return new Promise(resolve => queueMicrotask(() => {
       const boundaryRequest: SessionBoundaryRequest = { ...request, action: { kind: "resetInput" } };
@@ -6105,31 +6117,30 @@ class InProcessRuntime implements RuntimeDriver {
       if (this.materialEditGate?.busy || this.materialEditGate?.ownershipFailure) { fail(this.materialEditGate.ownershipFailure ?? "A material edit is still pending.", "ownership"); return; }
       if (request.maxBytes !== undefined && (!Number.isSafeInteger(request.maxBytes) || request.maxBytes < 1 || request.maxBytes > 64 * 1024 * 1024)) { fail("Invalid final scene capture budget.", "budget"); return; }
       try {
-      const scene = this.world.currentScene;
-      if (!scene || this.sceneWorkBlocked || this.bootLoading || this.streamBlockingCount > 0) { fail("Scene loading has not reached a complete final boundary."); return; }
-      const postProcessStack = scene.postProcessStack.map(entry => {
-        const material = getPostProcessMaterialObject(scene, entry.id ?? "");
-        const overrides = material ? this.materialParameters.captureOverrides(material) : null;
-        return overrides ? { ...entry, parameters: overrides } : entry;
-      });
-      if (postProcessStack.some(entry => !this.simulationAssets.has(entry.materialGuid))) { fail("A post-process material has no prepared authoring asset.", "resource"); return; }
-      const schemas = dataTypeSchemas(this.simulationDataAssets ?? []);
-      resolve(captureSimulationScene({ world: this.world, baseline: this.simulationBaseline, identity, startingScene: this.simulationStart,
-        quiescent: true, renderRevision: request.renderRevision, maxBytes: request.maxBytes,
-        sceneSettings: { ...this.simulationBaseline.settings, gravity: [this.gravity[0], this.gravity[1], this.gravity[2]], postProcessStack },
-        ownership: actor => actor.sceneLayerId ? "layer" : this.actorStream.has(actor) ? "stream" : "root",
-        independentInstances: [...[...this.sceneStreams.values()].map(stream => ({ kind: "stream" as const, id: stream.actor.guid })),
-          ...this.world.getSceneLayers().map(layer => ({ kind: "layer" as const, id: layer.guid }))],
-        materialOverrides: component => {
-          const material = component.getVariable("materialObject");
-          return material instanceof MaterialObject ? this.materialParameters.captureOverrides(material) : null;
-        },
-        prefabComponents: classId => this.world.classRegistry.ancestry(classId).flatMap(ancestor => this.scriptHost.scriptsFor(ancestor))
-          .find(script => script.components !== undefined)?.components ?? [],
-        assetExists: guid => this.simulationAssets.has(guid),
-        structFields: guid => schemas.structs[guid]?.fields.map(field => ({ ...field, type: field.typeId })) ?? null,
-        enumMembers: guid => schemas.enums[guid]?.members.map(member => member.name) ?? null,
-      }));
+        const scene = this.world.currentScene;
+        if (!scene || this.sceneWorkBlocked || this.bootLoading || this.streamBlockingCount > 0) { fail("Scene loading has not reached a complete final boundary."); return; }
+        const postProcessStack = scene.postProcessStack.map(entry => {
+          const material = getPostProcessMaterialObject(scene, entry.id ?? "");
+          const overrides = material ? this.materialParameters.captureOverrides(material) : null;
+          return overrides ? { ...entry, parameters: overrides } : entry;
+        });
+        if (postProcessStack.some(entry => !this.simulationAssets.has(entry.materialGuid))) { fail("A post-process material has no prepared authoring asset.", "resource"); return; }
+        const schemas = dataTypeSchemas(this.simulationDataAssets ?? []);
+        resolve(captureSimulationScene({ world: this.world, baseline: this.simulationBaseline, identity, startingScene: this.simulationStart,
+          quiescent: true, renderRevision: request.renderRevision, maxBytes: request.maxBytes,
+          sceneSettings: { ...this.simulationBaseline.settings, gravity: [this.gravity[0], this.gravity[1], this.gravity[2]], postProcessStack },
+          ownership: actor => actor.sceneLayerId ? "layer" : this.actorStream.has(actor) ? "stream" : "root",
+          independentInstances: this.simulationUnsupportedInstance ? [this.simulationUnsupportedInstance] : [],
+          materialOverrides: component => {
+            const material = component.getVariable("materialObject");
+            return material instanceof MaterialObject ? this.materialParameters.captureOverrides(material) : null;
+          },
+          prefabComponents: classId => this.world.classRegistry.ancestry(classId).flatMap(ancestor => this.scriptHost.scriptsFor(ancestor))
+            .find(script => script.components !== undefined)?.components ?? [],
+          assetExists: guid => this.simulationAssets.has(guid),
+          structFields: guid => schemas.structs[guid]?.fields.map(field => ({ ...field, type: field.typeId })) ?? null,
+          enumMembers: guid => schemas.enums[guid]?.members.map(member => member.name) ?? null,
+        }));
       } catch (error) { fail(error instanceof Error ? error.message : "Final scene capture failed."); }
     }));
   }

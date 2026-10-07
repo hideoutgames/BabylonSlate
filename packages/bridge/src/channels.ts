@@ -381,6 +381,7 @@ export type DebugBehaviourTree = {
 };
 
 export type CommandMessage =
+  | { type: "simulationRetentionUnavailable"; sessionGeneration: number; reason: string }
   | ({ type: "simulationQuiesced" } & SessionBoundaryResult)
   | { type: "simulationCaptureChunk"; sessionGeneration: number; requestId: number; sequence: number; bytes: Uint8Array }
   | { type: "simulationCaptureResult"; sessionGeneration: number; requestId: number; result: import("./simulation-capture").SimulationCaptureSummary }
