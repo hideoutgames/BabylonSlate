@@ -88,8 +88,8 @@ export default defineConfig({
       ...(reactProfiling ? { "react-dom/client": "react-dom/profiling" } : {}),
     },
   },
+  // Localhost only by default; `--host` opts in to LAN access (see README).
   server: {
-    host: true,
     port: 5173,
   },
 });

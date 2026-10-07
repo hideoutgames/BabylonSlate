@@ -49,6 +49,8 @@ export interface CatalogMenuProps<T extends CatalogMenuItem> {
   flat?: boolean;
   /** Visible category label; defaults to `humanizePropertyLabel` for camelCase ids. */
   formatCategory?: (category: string) => string;
+  /** Categories listed after the A–Z categories, in the given order. */
+  trailingCategories?: readonly string[];
   renderLeading?: (item: T) => ReactNode;
   /** Right side of the title row (Add Node's Context Sensitive checkbox). */
   headerAccessory?: ReactNode;
@@ -133,6 +135,7 @@ export function CatalogMenu<T extends CatalogMenuItem>({
   filterItems,
   flat = false,
   formatCategory = humanizePropertyLabel,
+  trailingCategories,
   renderLeading,
   headerAccessory,
   searchLabel,
@@ -166,6 +169,16 @@ export function CatalogMenu<T extends CatalogMenuItem>({
     [filterItems, formatCategory, items, search],
   );
 
+  const compareCategories = useMemo(() => {
+    const trailing = trailingCategories ?? [];
+    const rank = (category: string) => {
+      const index = trailing.indexOf(category);
+      return index < 0 ? -1 : index;
+    };
+    return (a: string, b: string) =>
+      rank(a) - rank(b) || formatCategory(a).localeCompare(formatCategory(b));
+  }, [formatCategory, trailingCategories]);
+
   const sidebar = modal && !flat;
   const sidebarCategories = useMemo(() => {
     if (!sidebar) return [];
@@ -174,8 +187,8 @@ export function CatalogMenu<T extends CatalogMenuItem>({
     for (const item of filtered) counts.set(item.category, (counts.get(item.category) ?? 0) + 1);
     return [...counts.entries()]
       .map(([category, count]) => ({ category, count }))
-      .sort((a, b) => formatCategory(a.category).localeCompare(formatCategory(b.category)));
-  }, [filtered, formatCategory, items, sidebar]);
+      .sort((a, b) => compareCategories(a.category, b.category));
+  }, [compareCategories, filtered, items, sidebar]);
 
   const rows = useMemo((): MenuRow<T>[] => {
     if (flat) {
@@ -192,9 +205,7 @@ export function CatalogMenu<T extends CatalogMenuItem>({
       list.push(item);
       groups.set(item.category, list);
     }
-    const sorted = [...groups.entries()].sort(([a], [b]) =>
-      formatCategory(a).localeCompare(formatCategory(b)),
-    );
+    const sorted = [...groups.entries()].sort(([a], [b]) => compareCategories(a, b));
     const result: MenuRow<T>[] = [];
     for (const [category, grouped] of sorted) {
       const expanded = !collapsed.has(category);
@@ -211,7 +222,7 @@ export function CatalogMenu<T extends CatalogMenuItem>({
       }
     }
     return result;
-  }, [collapsed, filtered, flat, formatCategory, sidebar, sidebarCategory]);
+  }, [collapsed, compareCategories, filtered, flat, sidebar, sidebarCategory]);
 
   const stripedRows = useMemo(() => {
     const striped = new Set<number>();

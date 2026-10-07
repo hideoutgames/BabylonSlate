@@ -1,4 +1,5 @@
 import type { DirEntry, FileStat, ProjectFolderHandle, ProjectStorage, StorageReadOptions } from "@babylonslate/core";
+import { StorageNotFoundError } from "@babylonslate/core";
 import { projectRelativePath } from "./project-path";
 import { StorageReadCounter, validateStorageRange } from "./storage-range";
 
@@ -42,7 +43,7 @@ class MountedProjectStorage implements ProjectStorage {
   private file(path: string): { storage: ProjectStorage; path: string } {
     const cleaned = this.path(path);
     const target = this.route(cleaned);
-    if (!cleaned || !target) throw new Error(`File not found: ${path}`);
+    if (!cleaned || !target) throw new StorageNotFoundError(path);
     return target;
   }
 
@@ -80,7 +81,7 @@ class MountedProjectStorage implements ProjectStorage {
     const cleaned = this.path(path);
     if (!cleaned || this.mounts.some(mount => mount.path.startsWith(`${cleaned}/`))) return { isDir: true, size: null, mtime: null };
     const target = this.route(cleaned);
-    if (!target) throw new Error(`File not found: ${path}`);
+    if (!target) throw new StorageNotFoundError(path);
     return target.storage.stat(target.path);
   }
   async exists(path: string): Promise<boolean> {
@@ -103,7 +104,7 @@ class MountedProjectStorage implements ProjectStorage {
       const stat = rest.includes("/") ? { isDir: true, size: null, mtime: null } : await mount.storage.stat(mount.sourcePath);
       entries.set(childName, { name: childName, ...stat });
     }
-    if (!target && !entries.size && cleaned) throw new Error(`Directory not found: ${path}`);
+    if (!target && !entries.size && cleaned) throw new StorageNotFoundError(path, { message: `Directory not found: ${path}` });
     return [...entries.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
 }

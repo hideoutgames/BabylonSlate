@@ -1,4 +1,12 @@
-import type { Transform } from "@babylonslate/core";
+import {
+  composeAffineTransform,
+  createAffineTransform,
+  decomposeAffineTransform,
+  invertAffineTransform,
+  multiplyAffineTransforms,
+  type AffineTransform,
+  type Transform,
+} from "@babylonslate/core";
 import type { Actor } from "@babylonslate/object-model";
 
 export type ActorTransformMap = ReadonlyMap<string, Transform>;
@@ -21,8 +29,12 @@ export function actorWorldTransform(
     parentId = actorParentGuid(parent);
   }
   let transform = chain[chain.length - 1]!;
+  // A sheared ancestor continues through its exact matrix, not its TRS.
+  let shear: AffineTransform | undefined;
   for (let index = chain.length - 2; index >= 0; index -= 1) {
-    transform = composeParentChildTransform(transform, chain[index]!);
+    const composed = composeWorldPose(transform, shear, chain[index]!);
+    transform = composed.transform;
+    shear = composed.shear;
   }
   return transform;
 }
@@ -94,13 +106,16 @@ export function actorWorldTransforms(
  * need not rebuild one. Poses are keyed by guid and describe the actor the
  * lookup answers: a selected later duplicate resolves as its guid's
  * first-spawned actor, so the result never depends on selection order.
+ * `onShear` hears each resolved actor whose world matrix is sheared, so its
+ * pose only approximates that matrix (see `composeParentChildTransform`).
  */
 export function composeActorWorldTransforms(
   lookup: (guid: string) => Actor | undefined,
   selected: Iterable<Actor>,
+  onShear?: (actor: Actor) => void,
 ): Map<string, Transform> {
   const resolved = new Map<string, Transform>();
-  composeInto(lookup, selected, resolved, true);
+  composeInto(lookup, selected, resolved, true, onShear);
   return resolved;
 }
 
@@ -123,27 +138,37 @@ function composeInto(
   selected: Iterable<Actor>,
   resolved: Map<string, Transform>,
   canonical: boolean,
+  onShear?: (actor: Actor) => void,
 ): boolean {
   const resolving = new Set<string>();
+  // Exact world matrices of sheared actors, whose descendants compose through them.
+  let shears: Map<string, AffineTransform> | undefined;
   let cyclic = false;
 
   const resolve = (actor: Actor): Transform => {
     const cached = resolved.get(actor.guid);
     if (cached) return cached;
-    const local = copyTransform(actor.transform);
     if (resolving.has(actor.guid)) {
       cyclic = true;
-      return local;
+      return copyTransform(actor.transform);
     }
 
     resolving.add(actor.guid);
     const parentId = actorParentGuid(actor);
     const parent = parentId ? lookup(parentId) : undefined;
     if (parent && resolving.has(parent.guid)) cyclic = true;
-    const world =
-      parent && !resolving.has(parent.guid)
-        ? composeParentChildTransform(resolve(parent), local)
-        : local;
+    let world: Transform;
+    if (parent && !resolving.has(parent.guid)) {
+      const parentWorld = resolve(parent);
+      const composed = composeWorldPose(parentWorld, shears?.get(parent.guid), actor.transform);
+      world = composed.transform;
+      if (composed.shear) {
+        (shears ??= new Map()).set(actor.guid, composed.shear);
+        onShear?.(actor);
+      }
+    } else {
+      world = copyTransform(actor.transform);
+    }
     resolving.delete(actor.guid);
     resolved.set(actor.guid, world);
     return world;
@@ -240,7 +265,109 @@ export function copyTransform(value: Transform): Transform {
   };
 }
 
+const parentScratch = createAffineTransform();
+const localScratch = createAffineTransform();
+const worldScratch = createAffineTransform();
+
+/**
+ * World pose of `local` under the world pose `parent`, matching the editor's
+ * authored matrices and Babylon parenting: the world matrix is
+ * `local × parentWorld`, so parent scale applies in the parent's frame and a
+ * quarter-turned child permutes nonuniform parent scale onto its own axes.
+ * Shear-free results (uniform parent scale, axis-aligned or mirrored turns)
+ * are exact. Nonuniform parent scale with an oblique child rotation shears the
+ * basis, which no pose represents: translation stays exact and the pose is the
+ * nearest one (see `decomposeAffineTransform`).
+ */
 export function composeParentChildTransform(
+  parent: Transform,
+  local: Transform,
+): Transform {
+  return composeWorldPose(parent, undefined, local).transform;
+}
+
+/**
+ * `composeParentChildTransform`, continuing through `parentShear` (the
+ * parent's exact world matrix when its pose only approximates shear). `shear`
+ * is the exact world matrix when this pose is itself an approximation.
+ */
+function composeWorldPose(
+  parent: Transform,
+  parentShear: AffineTransform | undefined,
+  local: Transform,
+): { transform: Transform; shear?: AffineTransform } {
+  const { x: sx, y: sy, z: sz } = parent.scale;
+  const rotation = local.rotation;
+  if (!parentShear && ((sx === sy && sy === sz) ||
+    (rotation.x === 0 && rotation.y === 0 && rotation.z === 0))) {
+    // Uniform parent scale, or an unrotated child, commutes with the child's
+    // rotation: the per-axis composition is the exact matrix product.
+    return { transform: composeCommutingTransform(parent, local) };
+  }
+  const world = multiplyAffineTransforms(
+    composeAffineTransform(local, localScratch),
+    parentShear ?? composeAffineTransform(parent, parentScratch),
+    worldScratch,
+  );
+  const transform: Transform = {
+    position: { x: 0, y: 0, z: 0 },
+    rotation: { x: 0, y: 0, z: 0, w: 1 },
+    scale: { x: 1, y: 1, z: 1 },
+  };
+  // Signed scales keep the per-axis sign pattern of the composition (stable
+  // while a child turns under a mirrored parent); rotation prefers parent × local.
+  const sheared = decomposeAffineTransform(world, multiplyQuaternion(parent.rotation, rotation), transform, {
+    x: sx * local.scale.x,
+    y: sy * local.scale.y,
+    z: sz * local.scale.z,
+  });
+  return sheared ? { transform, shear: Float64Array.from(world) } : { transform };
+}
+
+/**
+ * The local pose that composes under `parent` to `world`: the inverse of
+ * `composeParentChildTransform`, exact whenever such a shear-free pose exists.
+ * `current` (the target's present local pose) chooses among equivalent signed
+ * scales. Returns null when the parent's scale is not invertible.
+ */
+export function relativeTransform(
+  parent: Transform,
+  world: Transform,
+  current?: Transform,
+): Transform | null {
+  const { x: sx, y: sy, z: sz } = parent.scale;
+  if (![sx, sy, sz].every((axis) => Number.isFinite(axis) && axis !== 0)) return null;
+  const inverseRotation = inverseQuaternion(parent.rotation);
+  if (sx === sy && sy === sz) {
+    const offset = rotateVector(inverseRotation, {
+      x: world.position.x - parent.position.x,
+      y: world.position.y - parent.position.y,
+      z: world.position.z - parent.position.z,
+    });
+    return {
+      position: { x: offset.x / sx, y: offset.y / sx, z: offset.z / sx },
+      rotation: multiplyQuaternion(inverseRotation, world.rotation),
+      scale: { x: world.scale.x / sx, y: world.scale.y / sx, z: world.scale.z / sx },
+    };
+  }
+  if (!invertAffineTransform(composeAffineTransform(parent, parentScratch), parentScratch)) return null;
+  const local = multiplyAffineTransforms(composeAffineTransform(world, localScratch), parentScratch, worldScratch);
+  const transform: Transform = {
+    position: { x: 0, y: 0, z: 0 },
+    rotation: { x: 0, y: 0, z: 0, w: 1 },
+    scale: { x: 1, y: 1, z: 1 },
+  };
+  decomposeAffineTransform(
+    local,
+    current?.rotation ?? multiplyQuaternion(inverseRotation, world.rotation),
+    transform,
+    current?.scale ?? { x: world.scale.x * sx, y: world.scale.y * sy, z: world.scale.z * sz },
+  );
+  return transform;
+}
+
+/** Per-axis composition, exact when parent scale commutes with the child's rotation. */
+function composeCommutingTransform(
   parent: Transform,
   local: Transform,
 ): Transform {

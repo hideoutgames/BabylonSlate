@@ -51,7 +51,8 @@ Projects are ordinary folders (or a `.zip` of that folder). Editor scenes and gr
 
 ```bash
 pnpm install
-pnpm dev            # start Vite dev server
+pnpm dev            # start Vite dev server on localhost only
+pnpm dev --host     # also expose it on your local network (opt-in)
 pnpm docs:dev       # VitePress docs site from docs/
 pnpm verify:local   # path-aware local PR preflight
 pnpm verify         # explicit full local diagnostic, including Playwright
@@ -92,6 +93,16 @@ pnpm build:pages
 ```
 
 That builds the editor and the VitePress docs site, then copies docs into `apps/editor/dist/docs/`.
+
+### Local dev server on a physical iPad
+
+The editor (5173) and player (5174) dev servers listen on localhost only. To open a local build on an iPad on the same trusted network:
+
+1. Run `pnpm dev --host` (or `pnpm --filter player dev --host` for the player).
+2. Open the **Network** URL that Vite prints (`http://<computer-LAN-IP>:5173/`) in Safari on the iPad. Allow incoming connections in the computer's firewall if prompted.
+3. Stop the server when finished. Do not use `--host` on untrusted networks: anyone on the network can reach the dev server.
+
+A plain-HTTP LAN origin is not a secure context, so secure-context features such as service workers (and the cross-origin isolation shim that uses one) can behave differently from the HTTPS Pages preview.
 
 ### Manual checklist (~5 min)
 

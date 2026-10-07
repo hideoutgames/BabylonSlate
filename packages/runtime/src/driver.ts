@@ -674,6 +674,18 @@ class InProcessRuntime implements RuntimeDriver {
   /** Each actor's own slot; `slotByGuid` holds a guid's latest-assigned one. */
   private readonly slotByActor = new WeakMap<Actor, number>();
   private readonly removingActors = new WeakSet<Actor>();
+  /** Actors whose sheared world pose has been reported to the Output Log. */
+  private readonly shearedActors = new WeakSet<Actor>();
+  private readonly reportShearedActor = (actor: Actor): void => {
+    if (this.shearedActors.has(actor)) return;
+    this.shearedActors.add(actor);
+    this.reportLog(
+      `${actorLabel(actor)} has a sheared world transform (nonuniform parent scale with an oblique rotation). ` +
+        "Play shows its nearest rotation and scale; attached actors keep their exact positions.",
+      "warning",
+      "actor",
+    );
+  };
   private readonly componentsWithMaterialAssignment = new WeakSet<ActorComponent>();
   private readonly freeSlots: number[] = [];
   private nextUnusedSlot = 0;
@@ -1045,8 +1057,12 @@ class InProcessRuntime implements RuntimeDriver {
             this.scriptHost.bindInterfaceHandlers(self);
             this.runOwnerCreation(self, () => this.scriptHost.hooksFor(classId)?.onCreation?.(self));
           },
-          onTick: (self, ctx) =>
-            this.guardScript(() => this.scriptHost.hooksFor(classId)?.onTick?.(self, ctx)),
+          // Engine component classes never carry scripts, so they skip the
+          // per-frame script lookup; project components keep it for reloads.
+          onTick: isLockedEngineClassId(classId)
+            ? undefined
+            : (self, ctx) =>
+                this.guardScript(() => this.scriptHost.hooksFor(classId)?.onTick?.(self, ctx)),
           onDestroyed: (self) => {
             this.runOwnerDestroyed(self, () => this.scriptHost.hooksFor(classId)?.onDestroyed?.(self));
             this.dynamicMeshes.remove(self);
@@ -2914,7 +2930,10 @@ class InProcessRuntime implements RuntimeDriver {
     const hooks = this.scriptHost.hooksFor(classId);
     return {
       onCreation: (self) => this.runOwnerCreation(self, () => hooks?.onCreation?.(self)),
-      onTick: (self, ctx) => this.guardScript(() => hooks?.onTick?.(self, ctx)),
+      // Logic-free actors (Prefabs, scriptless classes) add no per-frame call.
+      onTick: hooks?.onTick
+        ? (self, ctx) => this.guardScript(() => hooks.onTick?.(self, ctx))
+        : undefined,
       onDestroyed: (self) => {
         this.sceneLayerSwitchers.retire(self);
         this.runOwnerDestroyed(self, () => hooks?.onDestroyed?.(self));
@@ -4379,11 +4398,14 @@ class InProcessRuntime implements RuntimeDriver {
                 loopCount: 0,
                 justLooped: false,
                 justFinished: false,
+                totalNormalisedTime: 0,
+                previousTotalNormalisedTime: 0,
               },
               layers: [],
               blendFromStateId: null,
               blendFromTimeMs: 0,
               blendElapsedMs: 0,
+              blendSeconds: 0,
               loopCount: 0,
             });
           }
@@ -7145,7 +7167,7 @@ class InProcessRuntime implements RuntimeDriver {
     const actors = this.world.getActors();
     const buf = this.snapshots.beginWrite();
     const findActor = (guid: string) => this.world.findActor(guid);
-    const worldTransforms = composeActorWorldTransforms(findActor, actors);
+    const worldTransforms = composeActorWorldTransforms(findActor, actors, this.reportShearedActor);
     const cameraActor = this.playCameraActor();
     const cameraPosition = cameraActor ? worldTransforms.get(cameraActor.guid)?.position : undefined;
     if (cameraPosition) {

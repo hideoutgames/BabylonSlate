@@ -400,14 +400,33 @@ function cooldownOnlyMemory(
   return keep;
 }
 
+function resetNodeMemory(
+  nodeMemory: Record<string, Record<string, unknown>>,
+  id: string,
+): void {
+  const keep = cooldownOnlyMemory(nodeMemory[id]);
+  if (Object.keys(keep).length === 0) delete nodeMemory[id];
+  else nodeMemory[id] = keep;
+}
+
 function retainCooldownMemory(
   nodeMemory: Record<string, Record<string, unknown>>,
 ): void {
-  for (const id of Object.keys(nodeMemory)) {
-    const keep = cooldownOnlyMemory(nodeMemory[id]);
-    if (Object.keys(keep).length === 0) delete nodeMemory[id];
-    else nodeMemory[id] = keep;
-  }
+  for (const id of Object.keys(nodeMemory)) resetNodeMemory(nodeMemory, id);
+}
+
+/**
+ * Pushes a child that starts a new execution (not a resumed `running` one).
+ * Like Unreal, the node's instance memory is re-initialised on execution, so
+ * a Wait re-entered in the same pass starts from zero; cooldowns survive.
+ */
+function enterNode(
+  stack: BtStackFrame[],
+  nodeId: string,
+  nodeMemory: Record<string, Record<string, unknown>>,
+): void {
+  resetNodeMemory(nodeMemory, nodeId);
+  stack.push({ nodeId, childIndex: 0, opened: false });
 }
 
 function resetSubtreeForLoop(
@@ -442,8 +461,71 @@ function restartLoop(
   return true;
 }
 
+function observerKey(decoratorId: string): string {
+  return `__obs:${decoratorId}`;
+}
+
+function observesLowerPriority(decorator: BtDecorator): boolean {
+  return decorator.abortMode === "lowerPriority" || decorator.abortMode === "both";
+}
+
+/**
+ * Whether the higher-priority branch could actually run: every decorator on
+ * the node and on its ancestors below the aborting selector must pass.
+ */
+function branchEligible(
+  nodes: Map<string, BtNode>,
+  parents: Map<string, string>,
+  node: BtNode,
+  selectorId: string,
+  blackboard: BlackboardValues,
+  nodeMemory: Record<string, Record<string, unknown>>,
+  host?: BtDecoratorHost,
+): boolean {
+  let current: BtNode | undefined = node;
+  while (current && current.id !== selectorId) {
+    if (decoratorBlocks(current, blackboard, nodeMemory, host)) return false;
+    const parentId = parents.get(current.id);
+    current = parentId ? nodes.get(parentId) : undefined;
+  }
+  return true;
+}
+
+/**
+ * Records the current result of every lower-priority observer in a selector
+ * child the walk just moved past. Lower-priority aborts fire only when that
+ * result later changes from false to true, so a condition that is already
+ * true when the lower branch starts does not abort it.
+ */
+function armLowerPriorityObservers(
+  nodes: Map<string, BtNode>,
+  parents: Map<string, string>,
+  selectorId: string,
+  childId: string,
+  blackboard: BlackboardValues,
+  nodeMemory: Record<string, Record<string, unknown>>,
+  host?: BtDecoratorHost,
+): void {
+  for (const id of subtreeIds(nodes, childId)) {
+    const node = nodes.get(id);
+    if (!node || !node.decorators.some(observesLowerPriority)) continue;
+    if (nearestSelector(nodes, parents, id)?.selector.id !== selectorId) continue;
+    for (const decorator of node.decorators) {
+      if (!observesLowerPriority(decorator)) continue;
+      (nodeMemory[id] ??= {})[observerKey(decorator.id)] = decoratorCondition(
+        decorator,
+        node,
+        blackboard,
+        nodeMemory,
+        host,
+      );
+    }
+  }
+}
+
 function applyAborts(
   nodes: Map<string, BtNode>,
+  parents: Map<string, string>,
   stack: BtStackFrame[],
   lastResults: Record<string, BtResult>,
   blackboard: BlackboardValues,
@@ -451,7 +533,6 @@ function applyAborts(
   decoratorHost?: BtDecoratorHost,
   host?: BtTaskHost,
 ): void {
-  const parents = parentOf(nodes);
   const active = new Set<string>();
   for (const frame of stack) {
     if (frame.opened) active.add(frame.nodeId);
@@ -480,7 +561,7 @@ function applyAborts(
         return;
       }
 
-      if (lower && condition) {
+      if (lower) {
         const found = nearestSelector(nodes, parents, node.id);
         if (!found || found.index < 0) continue;
         const runningLower = found.selector.children.some((childId, index) => {
@@ -488,7 +569,28 @@ function applyAborts(
           const ids = subtreeIds(nodes, childId);
           return [...ids].some((id) => active.has(id));
         });
-        if (!runningLower) continue;
+        const key = observerKey(decorator.id);
+        if (!runningLower) {
+          if (nodeMemory[node.id]) delete nodeMemory[node.id]![key];
+          continue;
+        }
+        const memory = (nodeMemory[node.id] ??= {});
+        const previous = memory[key];
+        memory[key] = condition;
+        if (previous !== false || !condition) continue;
+        if (
+          !branchEligible(
+            nodes,
+            parents,
+            node,
+            found.selector.id,
+            blackboard,
+            nodeMemory,
+            decoratorHost,
+          )
+        ) {
+          continue;
+        }
         while (stack.length > 0 && stack[stack.length - 1]!.nodeId !== found.selector.id) {
           const frame = stack.pop()!;
           lastResults[frame.nodeId] = "failure";
@@ -660,8 +762,10 @@ export function evaluateBehaviourTree(
     stack.push({ nodeId: tree.rootId, childIndex: 0, opened: false });
   }
 
+  const parents = parentOf(nodes);
   applyAborts(
     nodes,
+    parents,
     stack,
     lastResults,
     blackboard,
@@ -690,6 +794,21 @@ export function evaluateBehaviourTree(
     options?.serviceHost,
   );
 
+  // A Loop restart re-enters its subtree within this pass. The restarted
+  // subtree runs with dt = 0 so latent work (Wait, MoveTo, custom tasks, time
+  // limits) yields until the next tick instead of consuming the same dt again;
+  // instant tasks still loop within the tick.
+  const restarted = new Set<string>();
+  const stepDt = (): number =>
+    restarted.size > 0 && stack.some((entry) => restarted.has(entry.nodeId))
+      ? 0
+      : dtSeconds;
+  const loop = (node: BtNode, frame: BtStackFrame): boolean => {
+    if (!restartLoop(node, frame, nodes, lastResults, nodeMemory)) return false;
+    restarted.add(node.id);
+    return true;
+  };
+
   let status: BtResult = "running";
   let guard = 0;
   while (stack.length > 0 && guard < 10_000) {
@@ -710,7 +829,7 @@ export function evaluateBehaviourTree(
           continue;
         }
         frame.opened = true;
-        if (advanceTimeLimits(node, nodeMemory, dtSeconds)) {
+        if (advanceTimeLimits(node, nodeMemory, stepDt())) {
           lastResults[node.id] = "failure";
           startCooldowns(node, nodeMemory);
           stack.pop();
@@ -719,23 +838,21 @@ export function evaluateBehaviourTree(
         tickNodeServices(
           node,
           blackboard,
-          dtSeconds,
+          stepDt(),
           nodeMemory,
           seed,
           options?.serviceHost,
         );
       }
       const memory = (nodeMemory[node.id] ??= {});
-      const result = tickTask(node, blackboard, dtSeconds, memory, options?.host);
+      const result = tickTask(node, blackboard, stepDt(), memory, options?.host);
       lastResults[node.id] = result;
       if (result === "running") {
         if (yieldToParallel(stack, nodes, lastResults)) continue;
         status = "running";
         break;
       }
-      if (restartLoop(node, frame, nodes, lastResults, nodeMemory)) {
-        continue;
-      }
+      if (loop(node, frame)) continue;
       startCooldowns(node, nodeMemory);
       stack.pop();
       continue;
@@ -749,7 +866,7 @@ export function evaluateBehaviourTree(
       }
       frame.opened = true;
       frame.childIndex = 0;
-      if (advanceTimeLimits(node, nodeMemory, dtSeconds)) {
+      if (advanceTimeLimits(node, nodeMemory, stepDt())) {
         lastResults[node.id] = "failure";
         startCooldowns(node, nodeMemory);
         stack.pop();
@@ -758,7 +875,7 @@ export function evaluateBehaviourTree(
       tickNodeServices(
         node,
         blackboard,
-        dtSeconds,
+        stepDt(),
         nodeMemory,
         seed,
         options?.serviceHost,
@@ -779,14 +896,14 @@ export function evaluateBehaviourTree(
             options?.host,
           );
           lastResults[node.id] = "failure";
-          if (restartLoop(node, frame, nodes, lastResults, nodeMemory)) continue;
+          if (loop(node, frame)) continue;
           startCooldowns(node, nodeMemory);
           stack.pop();
           continue;
         }
         if (results.length > 0 && results.every((row) => row === "success")) {
           lastResults[node.id] = "success";
-          if (restartLoop(node, frame, nodes, lastResults, nodeMemory)) continue;
+          if (loop(node, frame)) continue;
           startCooldowns(node, nodeMemory);
           stack.pop();
           continue;
@@ -801,12 +918,12 @@ export function evaluateBehaviourTree(
         frame.childIndex += 1;
         continue;
       }
-      stack.push({
-        nodeId: childId,
-        childIndex: 0,
-        opened: existing === "running",
-      });
-      if (existing !== "running") delete lastResults[childId];
+      if (existing === "running") {
+        stack.push({ nodeId: childId, childIndex: 0, opened: true });
+      } else {
+        delete lastResults[childId];
+        enterNode(stack, childId, nodeMemory);
+      }
       frame.childIndex += 1;
       continue;
     }
@@ -814,9 +931,7 @@ export function evaluateBehaviourTree(
     const childId = node.children[frame.childIndex];
     if (childId === undefined) {
       lastResults[node.id] = node.kind === "selector" ? "failure" : "success";
-      if (restartLoop(node, frame, nodes, lastResults, nodeMemory)) {
-        continue;
-      }
+      if (loop(node, frame)) continue;
       startCooldowns(node, nodeMemory);
       stack.pop();
       continue;
@@ -830,7 +945,7 @@ export function evaluateBehaviourTree(
       break;
     }
     if (childResult === undefined) {
-      stack.push({ nodeId: childId, childIndex: 0, opened: false });
+      enterNode(stack, childId, nodeMemory);
       continue;
     }
     if (childResult === "running") {
@@ -840,7 +955,7 @@ export function evaluateBehaviourTree(
     if (node.kind === "sequence") {
       if (childResult === "failure") {
         lastResults[node.id] = "failure";
-        if (restartLoop(node, frame, nodes, lastResults, nodeMemory)) continue;
+        if (loop(node, frame)) continue;
         startCooldowns(node, nodeMemory);
         stack.pop();
         continue;
@@ -851,11 +966,20 @@ export function evaluateBehaviourTree(
     // selector
     if (childResult === "success") {
       lastResults[node.id] = "success";
-      if (restartLoop(node, frame, nodes, lastResults, nodeMemory)) continue;
+      if (loop(node, frame)) continue;
       startCooldowns(node, nodeMemory);
       stack.pop();
       continue;
     }
+    armLowerPriorityObservers(
+      nodes,
+      parents,
+      node.id,
+      childId,
+      blackboard,
+      nodeMemory,
+      options?.decoratorHost,
+    );
     frame.childIndex += 1;
   }
 

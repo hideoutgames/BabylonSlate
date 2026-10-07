@@ -76,7 +76,7 @@ import {
   commandToJournalPayload,
   DEFAULT_EDIT_BYTE_BUDGET,
   diffGraphCommands,
-  diffSceneCommands,
+  planSceneChange,
   EditSession,
   journalRepathLine,
   journalDiscardLine,
@@ -215,6 +215,8 @@ import {
 import { tryReparentUserClass } from "../lib/reparent-class";
 import {
   descendantClassIds,
+  prefabAssetTemplateKey,
+  prefabAssetTemplates,
   prefabTemplatesByClassId,
   scenesEqualForPrefabSync,
   stampUserComponentOverrides,
@@ -317,6 +319,13 @@ import {
   type MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
 export type AppRoute = "home" | "editor";
+
+/** Scene instance sync scope; omit both lists to sync every Class and Prefab. */
+type PrefabSyncOptions = {
+  classIds?: readonly string[];
+  prefabGuids?: readonly string[];
+  quiet?: boolean;
+};
 
 interface DocumentContextValue {
   registerBeforeTransition: DocumentTransitionGate["register"];
@@ -886,7 +895,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     new EditSession({ maxBytes: DEFAULT_EDIT_BYTE_BUDGET }),
   );
   const syncPrefabInstancesRef = useRef<
-    (options?: { classIds?: readonly string[]; quiet?: boolean }) => Promise<void>
+    (options?: PrefabSyncOptions) => Promise<void>
   >(async () => {});
   const dockviewApisRef = useRef(new Map<string, DockviewApi>());
   const dockSubscriptionsRef = useRef(new Map<string, Array<{ dispose: () => void }>>());
@@ -2863,6 +2872,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [classGraphsForPrefabSync],
   );
 
+  const enqueuePrefabSyncForPrefabPath = useCallback(
+    async (path: string) => {
+      const guid = projectService.registry?.getByPath(path)?.header.guid;
+      if (guid) await syncPrefabInstancesRef.current({ prefabGuids: [guid] });
+    },
+    [projectService],
+  );
+
   const notifyAppliedCommand = useCallback(
     (id: string, command: EditCommand<unknown>) => {
       const guid = projectService.guid;
@@ -3022,25 +3039,23 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         : stampUserComponentOverrides(
             previous,
             next,
-            prefabTemplatesByClassId({
-              classIds: Object.keys(graphs),
-              parentOf,
-              graphs,
-            }),
+            {
+              ...prefabTemplatesByClassId({
+                classIds: Object.keys(graphs),
+                parentOf,
+                graphs,
+              }),
+              ...prefabAssetTemplates({
+                assets: projectService.registry?.list() ?? [],
+                openDocuments: [...documentService.getState().openDocuments.values()],
+              }),
+            },
           );
-      const commands = diffSceneCommands(previous, intended);
+      // Deltas, or one whole-scene replacement for fields no delta covers:
+      // either way the edit reaches Undo and the journal.
+      const commands = planSceneChange(previous, intended);
       if (commands.length === 0) {
-        if (scenesEqualForPrefabSync(previous, intended)) {
-          return false;
-        }
-        documentService.updateScene(id, intended);
-        await notifyDocumentEdited({
-          scheduleDebouncedSave,
-          bump,
-          journal: async () => {},
-        });
-        void afterMutatingApply(sourceControlRef.current, doc.ref.path);
-        return true;
+        return false;
       }
       const result = editSessionRef.current.applyBatch(id, previous, commands)!;
       documentService.updateScene(id, result.doc);
@@ -3049,17 +3064,15 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       return true;
     },
     [
-      bump,
       classGraphsForPrefabSync,
       documentService,
       notifyAppliedCommand,
       projectService,
-      scheduleDebouncedSave,
     ],
   );
 
   const syncPrefabInstances = useCallback(async (
-    options?: { classIds?: readonly string[]; quiet?: boolean },
+    options?: PrefabSyncOptions,
   ) => {
     if (documentService.getAuthoringLock().readOnly) return;
     const open = [...documentService.getState().openDocuments.values()];
@@ -3072,12 +3085,22 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       classIdForPath: classIdForGraphPath,
     });
     const parentOf = classParentLookup(assets);
-    const classIds = options?.classIds ?? Object.keys(graphs);
-    const templates = prefabTemplatesByClassId({
-      classIds: [...classIds],
-      parentOf,
-      graphs,
-    });
+    // A targeted sync touches only the edited Class lineage or Prefab assets.
+    const targeted = options?.classIds !== undefined || options?.prefabGuids !== undefined;
+    const classIds = options?.classIds ?? (targeted ? [] : Object.keys(graphs));
+    const assetTemplates = prefabAssetTemplates({ assets, openDocuments: open });
+    const prefabKeys = options?.prefabGuids?.map(prefabAssetTemplateKey);
+    const templates = {
+      ...prefabTemplatesByClassId({
+        classIds: [...classIds],
+        parentOf,
+        graphs,
+      }),
+      ...(targeted
+        ? Object.fromEntries((prefabKeys ?? []).flatMap((key) =>
+            assetTemplates[key] ? [[key, assetTemplates[key]] as const] : []))
+        : assetTemplates),
+    };
     const scene = sceneDoc.content as SerializedScene;
     const next = syncSceneActorsFromPrefabs(scene, templates);
     if (scenesEqualForPrefabSync(scene, next)) return;
@@ -3131,9 +3154,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       documentService.updateAssetDocument(id, current);
       await notifyAppliedCommand(id, command);
       void afterMutatingApply(sourceControlRef.current, doc.ref.path);
+      if (doc.ref.kind === "prefab") await enqueuePrefabSyncForPrefabPath(doc.ref.path);
       return true;
     },
-    [documentService, notifyAppliedCommand, projectService],
+    [documentService, enqueuePrefabSyncForPrefabPath, notifyAppliedCommand, projectService],
   );
 
   const textureUsageBlockedReason = useCallback(
@@ -4680,9 +4704,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         if (!result) return;
         documentService.updateAssetDocument(activeDocumentId, result.doc);
         void notifyAppliedCommand(activeDocumentId, result.command);
+        if (doc.ref.kind === "prefab") void enqueuePrefabSyncForPrefabPath(doc.ref.path);
       }
     },
-    [documentService, enqueuePrefabSyncForClassPath, notifyAppliedCommand, projectService],
+    [documentService, enqueuePrefabSyncForClassPath, enqueuePrefabSyncForPrefabPath, notifyAppliedCommand, projectService],
   );
 
 

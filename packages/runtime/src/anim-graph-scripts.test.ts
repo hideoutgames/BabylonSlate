@@ -207,6 +207,50 @@ describe("runtime AnimationGraph scripts", () => {
     runtime.stop();
   });
 
+  it("fires a compiled Exit Time Reached rule on the tick a looping clip wraps past it", async () => {
+    const registry = createDefaultNodeRegistry();
+    const doc = locoDocument();
+    // 300 ms at 60 Hz: 0.9444 on tick 17, wraps to 0 on tick 18.
+    doc.clips[0]!.durationMs = 300;
+    const rule: LogicGraph = {
+      id: "idle-to-run",
+      kind: "event",
+      nodes: [
+        node(registry, "enter-state", "anim.rule.enterState"),
+        node(registry, "exit-state", "anim.rule.exitState"),
+        node(registry, "exit-time", "anim.state.exitTimeReached", {
+          exitTime: 0.95,
+        }),
+      ],
+      edges: [
+        {
+          id: "e-exit",
+          sourceNodeId: "exit-time",
+          sourcePinId: "value",
+          targetNodeId: "exit-state",
+          targetPinId: "value",
+        },
+      ],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 4,
+      seedDemoActors: false,
+      playScene: animScene(),
+      animGraphs: { "graph-1": doc },
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([toRuleScript(rule, registry, "idle-to-run")]);
+    runtime.start();
+    runtime.realizePlayWorld();
+    for (let tick = 1; tick <= 17; tick += 1) runtime.tick();
+    expect(lastAnimState(commands)?.stateId).toBe("idle");
+    runtime.tick();
+    expect(lastAnimState(commands)?.stateId).toBe("run");
+    runtime.stop();
+  });
+
   it("runs Initialize then Update and transitions from a compiled rule", async () => {
     const registry = createDefaultNodeRegistry();
     const objectGraph: LogicGraph = {

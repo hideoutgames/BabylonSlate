@@ -336,6 +336,41 @@ it("reads back a body under a nonphysics child of another body from both post-st
   }
 });
 
+it("keeps a resting body's oblique local rotation under a mirrored parent", () => {
+  const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
+  const mirror = world.createActor({ classId: "Actor", guid: "mirror", transform: identityTransform() });
+  mirror.transform.scale.x = -1;
+  world.spawnActorNow(mirror);
+  const body = world.createActor({
+    classId: "Actor",
+    guid: "body",
+    transform: identityTransform(),
+    variables: { parentId: mirror.guid },
+  });
+  body.transform.position = { x: 1, y: 2, z: 0 };
+  // 45 degrees about Z: mirrored across the parent's X, the body turns -45 degrees.
+  const rotation = { x: 0, y: 0, z: Math.sin(Math.PI / 8), w: Math.cos(Math.PI / 8) };
+  body.transform.rotation = { ...rotation };
+  body.attachComponent(world.createComponent({
+    classId: "RigidBodyComponent",
+    variables: { motionType: "dynamic", mass: 1, gravityScale: 0, linearDamping: 0 },
+  }));
+  world.spawnActorNow(body);
+  const sync = new PhysicsWorldSync(physics.createSoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 }));
+  try {
+    for (let tick = 0; tick < 3; tick++) sync.step(1 / 60, world);
+    const native = sync.getBackend().getBodyTransform("body:body")!.rotation;
+    expect(native.z).toBeCloseTo(-rotation.z, 9);
+    expect(native.w).toBeCloseTo(rotation.w, 9);
+    expect(body.transform.position.x).toBeCloseTo(1, 9);
+    expect(body.transform.position.y).toBeCloseTo(2, 9);
+    for (const axis of ["x", "y", "z", "w"] as const)
+      expect(body.transform.rotation[axis]).toBeCloseTo(rotation[axis], 9);
+  } finally {
+    sync.dispose();
+  }
+});
+
 it("reads back a body against a nonphysics parent that a step hook moved", () => {
   const world = new World({
     seed: 1,
@@ -484,7 +519,9 @@ it.each([
           z: 0,
         });
         const y = slot.position.y + center.y;
-        expect(y).toBeCloseTo(2 * parentScale.x);
+        // As the editor composes it, the quarter-turned child's local X runs
+        // along the parent's Y, so the parent's Y scale stretches the offset.
+        expect(y).toBeCloseTo(2 * parentScale.y);
         expect(
           backend.lineTrace({ x: -5, y, z: 0 }, { x: 5, y, z: 0 }).hit,
         ).toBe(true);

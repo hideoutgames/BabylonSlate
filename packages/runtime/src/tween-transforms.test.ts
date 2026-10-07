@@ -14,6 +14,10 @@ function fixture() {
   return { parent, actor, find: (guid: string) => actors.get(guid) };
 }
 
+function expectScale(actual: { x: number; y: number; z: number }, expected: { x: number; y: number; z: number }): void {
+  for (const axis of ["x", "y", "z"] as const) expect(actual[axis]).toBeCloseTo(expected[axis], 9);
+}
+
 describe("tween transform writes", () => {
   it("reads live actor and component ancestry when ordering world transform writes", () => {
     const { parent, actor, find } = fixture();
@@ -68,7 +72,9 @@ describe("tween transform writes", () => {
     expect(direction.x).toBeCloseTo(1);
     expect(direction.z).toBeCloseTo(0);
     expect(applyTweenTransform(actor, "scale", { x: 8, y: 9, z: 8 }, "world", find)).toBe(true);
-    expect(actor.transform.scale).toEqual({ x: 4, y: 3, z: 2 });
+    // The child's quarter turn about Y applies the parent's Z scale (4) on
+    // its X axis and the parent's X scale (2) on its Z axis.
+    expectScale(actor.transform.scale, { x: 2, y: 3, z: 4 });
     expect(actor.transform.position).toBe(position);
     expect(position).toEqual({ x: 0, y: 0, z: 0 });
   });
@@ -104,7 +110,7 @@ describe("tween transform writes", () => {
     expect(actor.transform.position.z).toBeCloseTo(3);
     expect(actor.transform.rotation.y).toBeCloseTo(Math.SQRT1_2);
     expect(actor.transform.rotation.w).toBeCloseTo(Math.SQRT1_2);
-    expect(actor.transform.scale).toEqual({ x: 4, y: 3, z: 2 });
+    expectScale(actor.transform.scale, { x: 2, y: 3, z: 4 });
     pose.position.x = 500;
     expect(component.transform.position.x).toBe(22);
   });
