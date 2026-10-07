@@ -44,7 +44,7 @@ function fixture() {
     textureHalfFloatRender: true,
     textureHalfFloatLinearFiltering: true,
   });
-  // Babylon 9.20 NullEngine creates cube InternalTextures but leaves them
+  // Babylon 9.29 NullEngine creates cube InternalTextures but leaves them
   // unattached to the wrapper. Complete that headless GPU boundary so the real
   // generator can expose dimensions and dispose its allocation like WebGL does.
   const createCubeTarget = engine.createRenderTargetCubeTexture.bind(engine);

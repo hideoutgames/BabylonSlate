@@ -104,7 +104,7 @@ type Entry = {
 // Minimum residency bounds camera-driven map churn; priority/camera switches
 // and loss of eligibility still take effect immediately.
 const SHADOW_MIN_RESIDENCY_MS = 250;
-// Every Babylon 9.20 shadow filter returns fully lit at darkness 1.
+// Every Babylon 9.29 shadow filter returns fully lit at darkness 1.
 const NEUTRAL_DARKNESS = 1;
 const controllers = new WeakMap<Scene, SceneShadowController>();
 
@@ -427,7 +427,7 @@ export class SceneShadowController {
     const state = sceneRenderingSettings(scene);
     const requested = state.shadows;
     const engineSupportsCascades = scene.getEngine()._features.supportCSM;
-    // Babylon 9.20's constructor also checks its static last-created-engine
+    // Babylon 9.29's constructor also checks its static last-created-engine
     // capability. Match both gates before admission; a rejected CSM constructor
     // cannot be recovered by trying smaller cascaded maps.
     const constructorSupportsCascades = CascadedShadowGenerator.IsSupported;
@@ -867,7 +867,7 @@ export class SceneShadowController {
               -1,
               true,
             );
-          // Registered after Babylon 9.20's native observer: single-map view /
+          // Registered after Babylon 9.29's native observer: single-map view /
           // projection and the CSM layer are current, caster uniforms are not
           // bound yet. Never derive from the previous frame in applySettings.
           let preparedBias: EffectiveShadowBias | null = null;

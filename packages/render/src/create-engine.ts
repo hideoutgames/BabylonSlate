@@ -2307,7 +2307,7 @@ function initializeEngine(
   const renderDiagnostics = () => {
     captureFramePhases = true;
     const source = engine.getRenderingCanvas();
-    // Babylon 9.20 exposes loop scheduling fields but keeps the native context
+    // Babylon 9.29 exposes loop scheduling fields but keeps the native context
     // loss flag protected; this snapshot never mutates native ownership.
     const native = engine as unknown as { _contextWasLost: boolean };
     return { ...(readDiagnostics ??= createRenderDiagnostics(

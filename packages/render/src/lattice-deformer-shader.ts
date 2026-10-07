@@ -21,7 +21,7 @@ class Carrier extends Material {
 const functions = new Map<ShaderLanguage, string>();
 
 /** Babylon owns fetching and interpolation. Only stage, boundary derivative,
- * and the analytic differential are adapted here, checked against 9.20 hooks. */
+ * and the analytic differential are adapted here, checked against 9.29 hooks. */
 export function latticeShaderFunctions(scene: Scene, language: ShaderLanguage): string {
   const cached = functions.get(language);
   if (cached) return cached;
