@@ -16,7 +16,6 @@ import {
 export function InterfacePreviewPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-
   const { selectedMemberId, setSelectedPinId } = useTypeAssetEditing();
   const { sessionViewport, onSessionViewportChange } = useGraphSessionViewport(
     documentId,
