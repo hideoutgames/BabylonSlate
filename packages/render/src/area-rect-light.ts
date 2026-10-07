@@ -5,7 +5,7 @@ import { setAuthoredLightEnabled } from "./light-policy";
 import type { MeshAssetContext } from "./mesh-assets";
 import { areaEmissionResourceKey, retainAreaEmissionTexture } from "./area-emission-resource";
 
-/** 9.20 adds this key without rebuilding when an existing light slot changes type. */
+/** 9.29 adds this key without rebuilding when an existing light slot changes type. */
 class OwnedRectAreaLight extends RectAreaLight {
   override prepareLightSpecificDefines(defines: MaterialDefines, index: number): void {
     const added = !Object.hasOwn(defines, `RECTAREALIGHTEMISSIONTEXTURE${index}`);
@@ -74,7 +74,7 @@ export class AreaRectLightOwner {
       try {
         const next = pixels ? retainAreaEmissionTexture(this.light.getScene().getEngine(), pixels) : undefined;
         this.light.emissionTexture = next?.texture ?? null;
-        // Native 9.20 waits for onLoad, which has already fired for RawTexture.
+        // Native 9.29 waits for onLoad, which has already fired for RawTexture.
         this.light._markMeshesAsLightDirty();
         this.releaseEmission?.();
         this.releaseEmission = next?.release;

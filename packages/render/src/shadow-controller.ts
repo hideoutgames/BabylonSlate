@@ -104,7 +104,7 @@ type Entry = {
 // Minimum residency bounds camera-driven map churn; priority/camera switches
 // and loss of eligibility still take effect immediately.
 const SHADOW_MIN_RESIDENCY_MS = 250;
-// Every Babylon 9.20 shadow filter returns fully lit at darkness 1.
+// Every Babylon 9.29 shadow filter returns fully lit at darkness 1.
 const NEUTRAL_DARKNESS = 1;
 const controllers = new WeakMap<Scene, SceneShadowController>();
 
@@ -203,6 +203,11 @@ export class SceneShadowController {
   private readonly entries = new Map<Light, Entry>();
   private readonly meshes = new Set<AbstractMesh>();
   private readonly pending = new Set<AbstractMesh>();
+  /** Scene meshes already queued once; a removal forgets the mesh so a re-add is queued again. */
+  private readonly known = new WeakSet<AbstractMesh>();
+  /** scene.meshes.length at the last scan, and synchronous removals since. */
+  private knownMeshCount = 0;
+  private removedSinceScan = 0;
   private readonly spatial = new ShadowSpatialIndex();
   private selectionCamera: Camera | null = null;
   /** Per-map closures read their current owner; a local map can move between lights. */
@@ -229,13 +234,19 @@ export class SceneShadowController {
         entry.resetAllocation = true;
       }
     });
-    for (const mesh of scene.meshes) this.pending.add(mesh);
+    this.queueUnknownMeshes();
     scene.onNewMeshAddedObservable.add((mesh) => {
       // Babylon defers this notification. RTT-only proxies can already have
       // left the Scene before it arrives; removal must win over a stale add.
-      if (!mesh.isDisposed() && scene.meshes.includes(mesh)) this.pending.add(mesh);
+      // sync() may already have queued the mesh through the count check.
+      if (!mesh.isDisposed() && !this.known.has(mesh) && scene.meshes.includes(mesh)) {
+        this.known.add(mesh);
+        this.pending.add(mesh);
+      }
     });
     scene.onMeshRemovedObservable.add((mesh) => {
+      this.removedSinceScan++;
+      this.known.delete(mesh);
       this.pending.delete(mesh);
       // Only casters own a spatial leaf or generator render-list membership.
       if (!this.meshes.delete(mesh)) return;
@@ -373,6 +384,15 @@ export class SceneShadowController {
     }
     return { passes, bytes };
   }
+  private queueUnknownMeshes(): void {
+    for (const mesh of this.scene.meshes) {
+      if (this.known.has(mesh)) continue;
+      this.known.add(mesh);
+      this.pending.add(mesh);
+    }
+    this.knownMeshCount = this.scene.meshes.length;
+    this.removedSinceScan = 0;
+  }
   diagnostics(lights: readonly Light[] = this.scene.lights) {
     return lights.map((light) => shadowLightRow(light, this.entries.get(light)));
   }
@@ -380,6 +400,11 @@ export class SceneShadowController {
     const scene = this.scene;
     if (scene.isDisposed) return;
     syncDirectionalLightPolicy(scene);
+    // Babylon pushes a mesh synchronously but notifies it on a later task, and
+    // a frame can render first. Removals notify synchronously, so a length
+    // that is not the last scan minus those removals means an unnotified add.
+    if (scene.meshes.length !== this.knownMeshCount - this.removedSinceScan)
+      this.queueUnknownMeshes();
     const hadPending = this.pending.size > 0;
     for (const mesh of this.pending) {
       if (mesh.isDisposed() || !scene.meshes.includes(mesh)) continue;
@@ -427,7 +452,7 @@ export class SceneShadowController {
     const state = sceneRenderingSettings(scene);
     const requested = state.shadows;
     const engineSupportsCascades = scene.getEngine()._features.supportCSM;
-    // Babylon 9.20's constructor also checks its static last-created-engine
+    // Babylon 9.29's constructor also checks its static last-created-engine
     // capability. Match both gates before admission; a rejected CSM constructor
     // cannot be recovered by trying smaller cascaded maps.
     const constructorSupportsCascades = CascadedShadowGenerator.IsSupported;
@@ -867,7 +892,7 @@ export class SceneShadowController {
               -1,
               true,
             );
-          // Registered after Babylon 9.20's native observer: single-map view /
+          // Registered after Babylon 9.29's native observer: single-map view /
           // projection and the CSM layer are current, caster uniforms are not
           // bound yet. Never derive from the previous frame in applySettings.
           let preparedBias: EffectiveShadowBias | null = null;
@@ -992,13 +1017,18 @@ export class SceneShadowController {
           entry.status = "allocation-failed";
           entry.reason =
             "shadow allocation failed at minimum size; awaiting settings change or context recovery";
+          const failures: unknown[] = [error];
           try {
             cleanup(entry.light.getShadowGenerator());
           } catch (cleanupError) {
+            failures.push(cleanupError);
+          }
+          if (failures.length > 1) {
             entry.reason = "shadow allocation cleanup failed";
             throw new AggregateError(
-              [error, cleanupError],
+              failures,
               "Shadow allocation and resource cleanup failed",
+              { cause: error },
             );
           }
           // Standby maps are optional reuse; free them before reducing an admitted map.

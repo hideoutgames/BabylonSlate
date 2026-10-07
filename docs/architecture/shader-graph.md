@@ -41,7 +41,7 @@ use native NodeMaterial blocks for GLSL/WGSL and work in vertex and fragment
 stages across the supported material domains. They require no texture assets.
 Their cost weights account for the extra arithmetic, especially cellular noise.
 
-The render adapter subclasses Babylon 9.20's Voronoi block to correct its WGSL:
+The render adapter subclasses Babylon 9.29's Voronoi block to correct its WGSL:
 the hash uses a local value instead of assigning to an immutable parameter,
 outputs dereference their pointers, and vector additions use explicit splats.
 The native algorithm and GLSL generation are preserved; the workaround is local

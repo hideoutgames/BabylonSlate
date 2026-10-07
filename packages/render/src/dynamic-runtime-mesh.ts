@@ -137,7 +137,7 @@ function flushSurface(surface: Surface): void {
   if (surface.indicesResized || surface.verticesResized || newGeometry) mesh.setIndices(surface.indices, null, true);
   else if (surface.indicesDirty) mesh.updateIndices(surface.indices, 0, true);
   const geometry = mesh.geometry!;
-  geometry._resetPointsArrayCache(); // Babylon 9.20: invalidate its lazily cached picking positions.
+  geometry._resetPointsArrayCache(); // Babylon 9.29: invalidate its lazily cached picking positions.
   geometry.extend.minimum.copyFrom(surface.minimum); geometry.extend.maximum.copyFrom(surface.maximum);
   updateDynamicMaterialBounds(mesh, surface.minimum, surface.maximum);
   geometry.onGeometryUpdated?.(geometry);

@@ -141,7 +141,7 @@ export function sidecarBytesForUri(
   uri: string,
   sidecars: ReadonlyMap<string, Uint8Array>,
 ): Uint8Array | null {
-  let decoded = uri;
+  let decoded: string;
   try {
     decoded = decodeURIComponent(uri);
   } catch {

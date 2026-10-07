@@ -429,10 +429,9 @@ function selectLevel(binding: LodBinding, camera: Camera, commit: boolean): numb
 }
 
 function lodsFor(scene: Scene): SceneLods {
-  let lods = sceneLods.get(scene);
+  const lods = sceneLods.get(scene);
   if (lods) return lods;
   const state: SceneLods = { bindings: new Set(), masters: new WeakMap() };
-  lods = state;
   sceneLods.set(scene, state);
   // Babylon consults the Scene selector on the classic path and in every
   // ObjectRenderer pass (FrameGraph, shadow maps, outline masks).

@@ -6,6 +6,7 @@ import {
   RemoveEdgeCommand,
   RemoveNodeCommand,
   SetGraphMembersCommand,
+  SetGraphActorDefaultsCommand,
   SetGraphComponentsCommand,
   SetGraphFunctionGraphsCommand,
   SetNodeDataCommand,
@@ -55,6 +56,13 @@ function functionGraphsEqual(
   return JSON.stringify(a ?? {}) === JSON.stringify(b ?? {});
 }
 
+function actorDefaultsEqual(
+  a: SerializedGraph["actorDefaults"],
+  b: SerializedGraph["actorDefaults"],
+): boolean {
+  return JSON.stringify(a ?? {}) === JSON.stringify(b ?? {});
+}
+
 export function diffGraphCommands(
   before: SerializedGraph,
   after: SerializedGraph,
@@ -68,6 +76,7 @@ export function diffGraphCommands(
   | SetGraphMembersCommand
   | SetGraphComponentsCommand
   | SetGraphFunctionGraphsCommand
+  | SetGraphActorDefaultsCommand
 > {
   const commands: Array<
     | MoveNodeCommand
@@ -79,6 +88,7 @@ export function diffGraphCommands(
     | SetGraphMembersCommand
     | SetGraphComponentsCommand
     | SetGraphFunctionGraphsCommand
+    | SetGraphActorDefaultsCommand
   > = [];
 
   const beforeNodes = new Map(before.nodes.map((node) => [node.id, node]));
@@ -149,6 +159,12 @@ export function diffGraphCommands(
         before.functionGraphs,
         after.functionGraphs,
       ),
+    );
+  }
+
+  if (!actorDefaultsEqual(before.actorDefaults, after.actorDefaults)) {
+    commands.push(
+      new SetGraphActorDefaultsCommand(before.actorDefaults, after.actorDefaults),
     );
   }
 

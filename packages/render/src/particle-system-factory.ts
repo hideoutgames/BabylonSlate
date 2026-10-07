@@ -49,7 +49,7 @@ export function createParticleReadinessTexture(scene: Scene): RawTexture {
   return texture;
 }
 
-/** Babylon 9.20 GPU internals behind the ring claim and in-place gradient edits. */
+/** Babylon 9.29 GPU internals behind the ring claim and in-place gradient edits. */
 type GpuInternals = {
   _currentActiveCount: number;
   _writePointer: number;
@@ -115,7 +115,7 @@ class OwnedGPUParticleSystem extends GPUParticleSystem {
     }
   }
 
-  /** Babylon 9.20's animate clock, including prewarm. */
+  /** Babylon 9.29's animate clock, including prewarm. */
   override animate(preWarm = false): void {
     super.animate(preWarm);
     this.simulationDelta = this.updateSpeed *
@@ -129,8 +129,9 @@ class OwnedGPUParticleSystem extends GPUParticleSystem {
   }
 
   /**
-   * Rebake gradient textures after their keys were edited in place. Unlike Babylon's
-   * public `forceRefreshGradients()` this never resets, so live particles survive.
+   * Rebake gradient textures after their keys were edited in place. Babylon 9.29 rebakes
+   * an existing texture in place; unlike its public `forceRefreshGradients()`, which
+   * resets on a structural change, this never resets, so live particles survive.
    */
   refreshGradientTextures(): void {
     const internals = gpuInternals(this);

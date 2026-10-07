@@ -7,6 +7,7 @@ import {
   type KeyboardEvent,
   type ReactElement,
   type ReactNode,
+  type RefObject,
 } from "react";
 import { CheckIcon, ChevronRightIcon } from "lucide-react";
 import {
@@ -413,16 +414,17 @@ function OverlayMenu({
   contentTestId?: string;
   onClose: () => void;
   parentWidth?: number;
-  parentPanels?: Set<HTMLElement>;
+  parentPanels?: RefObject<Set<HTMLElement>>;
   onBack?: () => void;
   beforeSelect?: () => void;
 }) {
   const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null);
-  const [position, setPosition] = useState({ x, y });
+  const [position, setPosition] = useState({ x, y, width: 192 });
   const panelRef = useRef<HTMLDivElement>(null);
   const ownedPanels = useRef(new Set<HTMLElement>());
   const returnFocus = useRef<Element | null>(null);
-  const focusPanels = parentPanels ?? ownedPanels.current;
+  // Every panel in one menu tree registers in the root's set.
+  const focusPanelsRef = parentPanels ?? ownedPanels;
   const openSubmenu = items.find(
     (item) => item.type === "submenu" && item.id === openSubmenuId,
   );
@@ -439,6 +441,7 @@ function OverlayMenu({
 
   useLayoutEffect(() => {
     const panel = panelRef.current;
+    const focusPanels = focusPanelsRef.current;
     if (!panel) return;
     const previousFocus = returnFocus.current ?? document.activeElement;
     returnFocus.current = previousFocus;
@@ -469,7 +472,7 @@ function OverlayMenu({
         }
       });
     };
-  }, [focusPanels, parentPanels]);
+  }, [focusPanelsRef, parentPanels]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement;
@@ -552,8 +555,8 @@ function OverlayMenu({
     // Layout size, not the rect: the open animation starts scaled down.
     const width = panel?.offsetWidth ?? 192;
     const height = panel?.offsetHeight ?? 0;
-    setPosition(
-      clampOverlayMenuPosition({
+    setPosition({
+      ...clampOverlayMenuPosition({
         x,
         y,
         width,
@@ -563,15 +566,15 @@ function OverlayMenu({
         margin: 8,
         insets: viewport.insets,
       }),
-    );
+      width,
+    });
   }, [x, y, items, viewport]);
 
   const submenuOrigin = openSubmenu
     ? overlaySubmenuOrigin({
         parentX: position.x,
         parentY: position.y,
-        parentWidth:
-          parentWidth ?? panelRef.current?.offsetWidth ?? 192,
+        parentWidth: parentWidth ?? position.width,
         submenuWidth: 192,
         viewportWidth: viewport.width,
         margin: 8,
@@ -604,7 +607,7 @@ function OverlayMenu({
           x={submenuOrigin.x}
           y={submenuOrigin.y}
           parentWidth={192}
-          parentPanels={focusPanels}
+          parentPanels={focusPanelsRef}
           beforeSelect={prepareSelection}
           onBack={() => {
             setOpenSubmenuId(null);

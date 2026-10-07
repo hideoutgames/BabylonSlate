@@ -2,7 +2,7 @@ import { createSaveStorageServer, newGuid } from "@babylonslate/core";
 import { createSaveGameStorage } from "@babylonslate/vfs";
 import type { ScalabilityAcknowledgement, RenderProjectSettings } from "@babylonslate/core";
 import { buildMaterialParameterCatalog } from "@babylonslate/shader-graph";
-import { materialParameterTextureAssetGuids } from "@babylonslate/assets";
+import { cookComplexCollisionMesh, materialParameterTextureAssetGuids } from "@babylonslate/assets";
 import { captureShadowDiagnostics, lightsDebugText } from "@babylonslate/render";
 import type { AbstractEngine } from "@babylonjs/core";
 import { createSessionBoundaryClient, snapshotFloatCount, type ControlMessage, type SessionBoundaryRequest, type SessionBoundaryResult } from "@babylonslate/bridge";
@@ -833,6 +833,24 @@ function initializePlayer(
     });
     return true;
   };
+  // Runtime fallback for a Complex Collision Model the content scan missed. The
+  // answer is asynchronous, so it never re-enters the requesting physics tick.
+  const answerComplexCollision = (guid: string) => queueMicrotask(() => {
+    if (halted) return;
+    let mesh: import("@babylonslate/core").CollisionTriangleMesh | null = null;
+    try {
+      const source = game.modelBytes.get(guid);
+      mesh = game.cookComplexCollision ? game.cookComplexCollision(guid)
+        : source ? cookComplexCollisionMesh(source, game.modelPayloads.get(guid)) : null;
+    } catch (error) {
+      options.onConsoleEvent?.({ type: "log", severity: "warning", message: `Complex Collision for ${guid}: ${error instanceof Error ? error.message : String(error)}` });
+    }
+    const control: import("@babylonslate/bridge").ControlMessage = mesh
+      ? { type: "loadComplexCollision", meshes: [{ guid, positions: mesh.positions, indices: mesh.indices }] }
+      : { type: "loadComplexCollision", meshes: [], unavailable: [guid] };
+    if (worker) worker.postControl(control);
+    else if (runtime) void applyRuntimeSourceControl(runtime, control).catch(error => runtime?.reportError(error));
+  });
   const onCommand = (command: { type: string } & Record<string, unknown>) => {
     if (diagnosticListeners) for (const listener of diagnosticListeners) listener(command);
     if (command.type === "sessionBoundaryResult") { boundaryClient?.receive(command as SessionBoundaryResult & { type: string }); return; }
@@ -846,6 +864,7 @@ function initializePlayer(
     if (sceneSources?.receive(command as never)) return;
     if (command.type === "saveStorageRequest") { saveServer.receive(command.request as import("@babylonslate/core").SaveStorageRequest); return; }
     if (halted) return;
+    if (command.type === "requestComplexCollision") { answerComplexCollision(String(command.assetGuid)); return; }
     if (command.type === "sceneStreamBlocking") handle.setSceneStreamingPaused(command.blocking === true);
     if (command.type === "sessionPaused") {
       if (boundaryClient) {
@@ -941,9 +960,10 @@ function initializePlayer(
     }
   } catch (error) {
     worker = null;
-    try { releaseWorker(); } catch (cleanupError) {
-      throw new AggregateError([error, cleanupError], "Player worker startup and termination failed.", { cause: error });
-    }
+    const failures: unknown[] = [error];
+    try { releaseWorker(); } catch (cleanupError) { failures.push(cleanupError); }
+    if (failures.length > 1)
+      throw new AggregateError(failures, "Player worker startup and termination failed.", { cause: error });
     const inProcess = createRuntimeFromLoad(loadControl, (command) =>
       onCommand(command as never),
       saveStorage,

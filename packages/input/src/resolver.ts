@@ -227,7 +227,7 @@ export class InputResolver {
       for (const mapping of [...this.mappings.actions, ...this.mappings.axes]) {
         const key = inputMappingKey(mapping);
         const axis = this.mappings.axes.includes(mapping);
-        let value: InputValueState["value"] = false;
+        let value: InputValueState["value"];
         if (!axis)
           value = mapping.bindings.some((binding) =>
             actionBindingHeld(binding, this.state),

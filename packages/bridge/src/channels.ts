@@ -1,7 +1,10 @@
 import type { ScalabilityTransaction, ScalabilityAcknowledgement, RenderPathStatus, RenderProjectSettings, ScenePostProcessEntry, MaterialParameterCatalog, MaterialParameterValue } from "@babylonslate/core";
 /** Reliable ordered channel message types (never through the snapshot buffer). */
 
-import type { ProjectInputSettings, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
+import type { ActorDefaults, CollisionTriangleMesh, ProjectInputSettings, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
+
+/** Rest-pose Complex Collision triangles for one Model; typed arrays clone as one memcpy. */
+export type CookedCollisionMeshEntry = { guid: string } & CollisionTriangleMesh;
 
 /** Serializable runtime override of one named Material Graph parameter. */
 export type { MaterialParameterValue } from "@babylonslate/core";
@@ -106,13 +109,8 @@ export type ScriptBundleEntry = {
     method: string;
     exportName: string;
   }>;
-  /** Omitted flags default to true at spawn. */
-  actorDefaults?: {
-    /** Authored built-in actor properties applied before per-instance overrides. */
-    properties?: Record<string, unknown>;
-    generateHitEvents?: boolean;
-    generateOverlapEvents?: boolean;
-  };
+  /** Omitted flags inherit from the parent Class; engine bases are enabled. */
+  actorDefaults?: ActorDefaults;
   /** Effective prefab component templates for runtime Spawn Actor. */
   components?: SerializedComponent[];
 };
@@ -251,11 +249,15 @@ export type ControlMessage =
   | {
       type: "loadModels";
       models: Array<{ guid: string; document: unknown }>;
-      complexMeshes?: Array<{
-        guid: string;
-        vertices: Array<{ x: number; y: number; z: number }>;
-        indices: number[];
-      }>;
+      /** Up-front cooked meshes for Models the content scan marks as Complex Collision. */
+      complexMeshes?: CookedCollisionMeshEntry[];
+    }
+  | {
+      /** Host answer to `requestComplexCollision`; kept beside `loadModels` meshes for the session. */
+      type: "loadComplexCollision";
+      meshes: CookedCollisionMeshEntry[];
+      /** Requested Models the host could not cook (source not loaded, or no triangles). */
+      unavailable?: string[];
     }
   | { type: "loadNavMesh"; bytes: ArrayBuffer }
   | { type: "play" }
@@ -637,6 +639,8 @@ export type CommandMessage =
   | { type: "assetPreload"; preloadId: string; ownerId: string; assetGuids: string[] }
   | { type: "assetPreloadRelease"; preloadId: string }
   | { type: "assetSourcesReady"; requestId: number; success: boolean; error?: string }
+  /** A Complex Collision Model had no cooked mesh; the host answers with `loadComplexCollision`. */
+  | { type: "requestComplexCollision"; assetGuid: string }
   | { type: "sceneStreamRealized"; actorGuid: string; streamLoadId: number; slotIds: number[] }
   | { type: "sceneStreamRemoved"; actorGuid: string; streamLoadId: number }
   | { type: "sceneSourceRequested"; requestId: number; assetGuid: string; consumer: string; streamActorGuid?: string; streamLoadId?: number }

@@ -43,7 +43,7 @@ type WebGpuAttachment = AbstractEngine & {
 const FULL_VIEWPORT: IViewportLike = Object.freeze({ x: 0, y: 0, width: 1, height: 1 });
 
 /**
- * Pinned 9.20 adapter: records the exact framebuffer attachment and render state. Keeps the engine's own viewport
+ * Pinned 9.29 adapter: records the exact framebuffer attachment and render state. Keeps the engine's own viewport
  * object (never copied or mutated), so a caller holding that reference still sees its values.
  */
 export function saveEngineDrawingState(engine: AbstractEngine, state: EngineDrawingState): void {

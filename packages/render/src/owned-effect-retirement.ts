@@ -10,7 +10,7 @@ export interface OwnedEffectRetirement {
 
 /**
  * Retain one owned DrawWrapper reference while its last WebGL program compiles.
- * Pinned Babylon 9.20: native parallel compilation polls the same program after
+ * Pinned Babylon 9.29: native parallel compilation polls the same program after
  * EffectWrapper.dispose() normally decrements that reference and deletes it.
  * No native refcount, compiler callback, global prototype or frame is replaced.
  */

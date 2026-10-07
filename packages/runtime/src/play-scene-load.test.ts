@@ -532,6 +532,20 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
+  it("possesses the first of two same-guid camera actors in its own slot", async () => {
+    const commands: CommandMessage[] = [];
+    const scene = cameraPossessScene(true);
+    scene.actors.push(createActor("cam", "Camera Copy"));
+    const runtime = createRuntimeFromLoad({ type: "load", sceneAssetGuid: "cameras", scene },
+      (command) => commands.push(command));
+    try {
+      await runtime.realizePlayWorld();
+      const [own, copy] = commands.flatMap((command) => command.type === "spawn" && command.actorGuid === "cam" ? [command.slotId] : []);
+      expect(copy).toBeDefined();
+      expect(commands.flatMap((command) => command.type === "possessCamera" ? [command.slotId] : [])).toEqual([own]);
+    } finally { runtime.stop(); }
+  });
+
   it("leaves the camera alone when the option is off", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createRuntimeFromLoad(

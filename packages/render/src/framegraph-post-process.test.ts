@@ -103,7 +103,7 @@ function host(
     lockstepMaxSteps: 4,
   });
   const scene = new Scene(engine);
-  // Babylon 9.20 NullEngine has no FrameGraph allocation overrides. Adapt only
+  // Babylon 9.29 NullEngine has no FrameGraph allocation overrides. Adapt only
   // those hardware boundaries, retaining real textures, wrappers and refcounts.
   vi.spyOn(engine, "_createInternalTexture").mockImplementation(
     (size, options) => {

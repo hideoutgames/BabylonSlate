@@ -59,7 +59,7 @@ export class SceneDeformerHost {
         try { setMeshLatticeDeformer(mesh, retained?.binding ?? null); }
         catch (rollbackError) { failures.push(rollbackError); }
       }
-      if (failures.length > 1) throw new AggregateError(failures, "Deformer update could not restore its previous bindings");
+      if (failures.length > 1) throw new AggregateError(failures, "Deformer update could not restore its previous bindings", { cause: error });
       throw error;
     }
     for (const [id, target] of previous) {

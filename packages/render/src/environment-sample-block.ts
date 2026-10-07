@@ -144,7 +144,7 @@ export class EnvironmentSampleBlock extends NodeMaterialBlock {
     state.compilationString += `if (!(dot(${direction},${direction})>1e-12)) { ${direction}=${vec3}(0.0,0.0,1.0); }\n`;
     state.compilationString += `${direction} = (${uniform}${this.matrix} * ${wgsl ? "vec4f" : "vec4"}(${direction},0.0)).xyz;\n`;
     state.compilationString += `${direction}.z *= ${params}.w;\n`;
-    // Babylon 9.20 PBR prefilter mapping at normal incidence. Raw sampling has
+    // Babylon 9.29 PBR prefilter mapping at normal incidence. Raw sampling has
     // no view normal, anisotropy or geometric AA input; texture metadata still applies.
     state.compilationString += `${state._declareLocalVar(roughness, NodeMaterialBlockConnectionPointTypes.Float)}=clamp(${this.roughness.associatedVariableName},0.0,1.0);\n`;
     state.compilationString += `${state._declareLocalVar(lod, NodeMaterialBlockConnectionPointTypes.Float)}=log2(${prefilter}.x*(${roughness}*${roughness}+0.0005));\n`;

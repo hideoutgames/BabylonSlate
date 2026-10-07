@@ -50,7 +50,6 @@ import {
   playLoadModelsControl,
   playLoadSpritesControl,
   playLoadTilemapsControl,
-  cookPlayComplexMeshes,
   playSceneByGuid,
 } from "../lib/play-content";
 import {
@@ -564,6 +563,10 @@ export function startPlaySession(options: {
   fontCssStackByGuid?: ReadonlyMap<string, string>;
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   modelPayloads?: ReadonlyMap<string, ModelPayload>;
+  /** Complex Collision meshes cooked during source preparation; Play never re-cooks them. */
+  complexMeshes?: ReadonlyMap<string, import("@babylonslate/core").CollisionTriangleMesh>;
+  /** Answers the runtime's `requestComplexCollision` for a Model the content scan missed. */
+  cookComplexCollision?: (assetGuid: string) => Promise<import("@babylonslate/core").CollisionTriangleMesh | null>;
   modelClipAnimationGuids?: ReadonlyMap<string, ReadonlyMap<string, string>>;
   retargetAnimationLoads?: ReadonlyMap<
     string,
@@ -911,6 +914,20 @@ export function startPlaySession(options: {
     else if (runtime && !await applyRuntimeSourceControl(runtime, control))
       throw new Error(`Unsupported source preparation control: ${control.type}.`);
   };
+  // Runtime fallback for a Complex Collision Model the content scan missed. The
+  // answer is always asynchronous, so it never re-enters the requesting tick.
+  const answerComplexCollision = (assetGuid: string) => {
+    void Promise.resolve()
+      .then(() => options.cookComplexCollision?.(assetGuid) ?? null)
+      .catch((error: unknown) => {
+        options.onLog?.(`Complex Collision for ${assetGuid}: ${error instanceof Error ? error.message : String(error)}`, "warning");
+        return null;
+      })
+      .then((mesh) => stopped ? undefined : publishSourceControl(mesh
+        ? { type: "loadComplexCollision", meshes: [{ guid: assetGuid, positions: mesh.positions, indices: mesh.indices }] }
+        : { type: "loadComplexCollision", meshes: [], unavailable: [assetGuid] }))
+      .catch((error: unknown) => options.onLog?.(`Complex Collision for ${assetGuid}: ${String(error)}`, "error"));
+  };
   const knownAssetGuids = new Set<string>();
   const preparedAssetGuids = new Set<string>();
   const initialSourceGuids = new Set(options.getSourceControls?.().flatMap((control) => control.type === "loadSceneContent" ? control.assetGuids : []) ?? []);
@@ -1086,7 +1103,7 @@ export function startPlaySession(options: {
     for (const guid of persistent) if (!scoped.has(guid)) initialSourceGuids.add(guid);
     if (initialSourcesReady) publishAssetStates([...initialSourceGuids], "ready");
     for (const guid of preparedScenes.keys()) if (!sceneSourceOwners.has(guid)) preparedScenes.delete(guid);
-    for (const key of ["textureBytes", "modelBytes", "modelPayloads", "spritePayloads", "spriteAnimationPayloads",
+    for (const key of ["textureBytes", "modelBytes", "modelPayloads", "complexMeshes", "spritePayloads", "spriteAnimationPayloads",
       "tilemapPayloads", "tilesetPayloads", "waterPayloads", "fontFacetypeBytes", "fontMsdfJson", "fontMsdfPng",
       "fontCssStackByGuid", "fontFaceEntries", "materialDocuments", "materialFunctions", "audioLibrary", "particleLibrary",
       "renderTargets", "renderTargetTextures", "areaEmissions", "texturePixelSizes", "modelClipAnimationGuids",
@@ -1306,6 +1323,7 @@ export function startPlaySession(options: {
       else request?.reject(new Error(command.error ?? "Script sources failed to prepare."));
       return;
     }
+    if (command.type === "requestComplexCollision") { answerComplexCollision(command.assetGuid); return; }
     if (receivePreload(command)) return;
     if (sceneSources?.receive(command)) return;
     if (command.type === "saveStorageRequest") { saveServer.receive(command.request); return; }
@@ -1474,10 +1492,7 @@ export function startPlaySession(options: {
         options.spriteAnimationPayloads,
         options.pixelsPerUnit,
       ),
-      models: playLoadModelsControl(
-        options.modelPayloads,
-        cookPlayComplexMeshes(options.modelBytes, options.modelPayloads),
-      ),
+      models: playLoadModelsControl(options.modelPayloads, options.complexMeshes),
       navmeshBytes: options.navmeshBytes,
       pauseOnPlay: options.pauseOnPlay,
     })) {
@@ -1547,10 +1562,7 @@ export function startPlaySession(options: {
     if (options.modelPayloads && options.modelPayloads.size > 0) {
       inProcess.registerModelContent({
         models: options.modelPayloads,
-        complexMeshes: cookPlayComplexMeshes(
-          options.modelBytes,
-          options.modelPayloads,
-        ),
+        complexMeshes: options.complexMeshes,
       });
     }
     if (options.navmeshBytes && options.navmeshBytes.byteLength > 0) {

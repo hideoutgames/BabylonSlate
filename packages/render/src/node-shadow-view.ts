@@ -2,7 +2,7 @@ import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/node
 import { NodeMaterialBlockTargets } from "@babylonjs/core";
 import { checkedShader } from "./checked-shader";
 
-/** Babylon 9.20's WGSL shadow include expects a native uniform, not a graph's View input. */
+/** Babylon 9.29's WGSL shadow include expects a native uniform, not a graph's View input. */
 export function bindNodeShadowView(
   state: NodeMaterialBuildState,
   start: number,

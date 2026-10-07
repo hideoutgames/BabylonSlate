@@ -135,7 +135,7 @@ async function locked(directory, check, operation) {
         continue;
       }
       // A killed owner may leave a lock; an unpublished owner gets a grace period.
-      let age = 0;
+      let age;
       try {
         age = Date.now() - (await stat(path)).mtimeMs;
       } catch {

@@ -499,6 +499,40 @@ describe("snapshot interpolator", () => {
     const sampled = interp.sample(1);
     expect(sampled?.actors[0]?.position.x).toBe(1);
   });
+
+  it("interpolates sparse large-capacity snapshots without reading an earlier larger frame's rows", () => {
+    const interp = new SnapshotInterpolator(32);
+    const push = (frameId: number, rows: Array<[slotId: number, x: number]>) => {
+      const buf = new Float32Array(snapshotFloatCount(32));
+      rows.forEach(([slotId, x], index) => writeActorSlot(buf, index, {
+        slotId,
+        position: { x, y: 1, z: 2 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        scale: { x: 1, y: 2, z: 3 },
+        flags: 1,
+      }));
+      writeSnapshotHeader(buf, { frameId, tickIndex: frameId, actorCount: rows.length, scriptMs: 0, physicsMs: 0 });
+      interp.push(buf);
+    };
+    push(1, [[0, 0], [1, 10], [2, 20], [3, 30]]);
+    push(2, [[4, 2], [5, 12]]);
+    // Lands in the buffer that held frame 1; its rows past the second remain.
+    push(3, [[5, 16], [4, 6]]);
+
+    const out = interp.sample(0.5)!;
+    expect(out.actorCount).toBe(2);
+    expect(out.actors.slice(0, 2).map(({ slotId, position, scale }) => ({ slotId, x: position.x, y: position.y, scale })))
+      .toEqual([
+        { slotId: 5, x: 14, y: 1, scale: { x: 1, y: 2, z: 3 } },
+        { slotId: 4, x: 4, y: 1, scale: { x: 1, y: 2, z: 3 } },
+      ]);
+
+    push(4, [[6, 50]]);
+    const latest = interp.sample(1)!;
+    expect(latest.actorCount).toBe(1);
+    expect(latest.actors[0]!.slotId).toBe(6);
+    expect(latest.actors[0]!.position.x).toBe(50);
+  });
 });
 
 describe("writeSampledAudioPoses", () => {

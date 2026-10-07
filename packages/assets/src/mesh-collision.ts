@@ -1,3 +1,4 @@
+import { packCollisionTriangleMesh, type CollisionTriangleMesh } from "@babylonslate/core";
 import type { ModelPayload } from "./model-payload";
 import { extractGltfCollisionMesh } from "./glb-geometry";
 import {
@@ -92,21 +93,24 @@ function boxMesh(hx: number, hy: number, hz: number): {
 /** Rest-pose triangle soup for Use Complex Collision on engine primitives. */
 export function complexCollisionMeshForMeshKind(
   meshKind: string | null | undefined,
-): { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] } {
-  switch (meshKind) {
-    case "sphere":
-      return latLongSphere(0.75, 12, 8);
-    case "cylinder":
-      return latLongCylinder(0.5, 1.5, 12);
-    case "plane":
-    case "quad":
-      return boxMesh(0.75, 0.75, 0.01);
-    case "ground":
-      return boxMesh(5, 0.01, 5);
-    case "box":
-    default:
-      return boxMesh(0.75, 0.75, 0.75);
-  }
+): CollisionTriangleMesh {
+  const mesh = (() => {
+    switch (meshKind) {
+      case "sphere":
+        return latLongSphere(0.75, 12, 8);
+      case "cylinder":
+        return latLongCylinder(0.5, 1.5, 12);
+      case "plane":
+      case "quad":
+        return boxMesh(0.75, 0.75, 0.01);
+      case "ground":
+        return boxMesh(5, 0.01, 5);
+      case "box":
+      default:
+        return boxMesh(0.75, 0.75, 0.75);
+    }
+  })();
+  return packCollisionTriangleMesh(mesh.vertices, mesh.indices);
 }
 
 function latLongSphere(
@@ -211,35 +215,73 @@ export function meshCollisionFingerprint(
   return `simple:${typeof properties.meshKind === "string" ? properties.meshKind : "box"}`;
 }
 
+/** Cook one Model's rest-pose triangles; `null` when the source has fewer than three vertices. */
+export function cookComplexCollisionMesh(
+  source: Uint8Array,
+  modelPayload?: ModelPayload | null,
+): CollisionTriangleMesh | null {
+  const mesh = extractGltfCollisionMesh(source, modelPayload?.importScale ?? 1);
+  return mesh && mesh.positions.length >= 9 ? mesh : null;
+}
+
+/**
+ * Cook the Models in `only` (every Model when omitted). Callers pass the
+ * `complexCollisionModelGuids` of their document closure so Models that never
+ * use Complex Collision are not parsed.
+ */
 export function cookComplexCollisionMeshes(
   modelBytes: ReadonlyMap<string, Uint8Array> | undefined,
   modelPayloads?: ReadonlyMap<string, ModelPayload> | undefined,
-): Map<
-  string,
-  { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
-> {
-  const out = new Map<
-    string,
-    { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
-  >();
+  only?: ReadonlySet<string>,
+): Map<string, CollisionTriangleMesh> {
+  const out = new Map<string, CollisionTriangleMesh>();
   if (!modelBytes) return out;
   for (const [guid, bytes] of modelBytes) {
-    const scale = modelPayloads?.get(guid)?.importScale ?? 1;
-    const mesh = extractGltfCollisionMesh(bytes, scale);
-    if (!mesh || mesh.vertices.length < 3) continue;
-    out.set(guid, mesh);
+    if (only && !only.has(guid)) continue;
+    const mesh = cookComplexCollisionMesh(bytes, modelPayloads?.get(guid));
+    if (mesh) out.set(guid, mesh);
   }
   return out;
+}
+
+/**
+ * Model GUIDs that authored content can simulate with Use Complex Collision:
+ * `MeshComponent` rows whose `collisionMode` is `complex` and that name a Model
+ * `assetGuid`, in Scene / SceneLayer `actors[].components` and in Class
+ * prefab or compiled-script `components`. Runtime-only changes (a script
+ * switching Collision Mode or the Model) are served on demand instead.
+ */
+export function complexCollisionModelGuids(documents: Iterable<unknown>): Set<string> {
+  const guids = new Set<string>();
+  const visit = (components: unknown) => {
+    if (!Array.isArray(components)) return;
+    for (const component of components) {
+      if (!component || typeof component !== "object") continue;
+      const { classId, properties } = component as { classId?: unknown; properties?: unknown };
+      // Scene normalization treats a missing classId as a MeshComponent.
+      if ((classId !== undefined && classId !== "MeshComponent") || !properties || typeof properties !== "object") continue;
+      const values = properties as Record<string, unknown>;
+      if (parseMeshCollisionMode(values.collisionMode) !== "complex") continue;
+      const guid = typeof values.assetGuid === "string" ? values.assetGuid.trim() : "";
+      if (guid) guids.add(guid);
+    }
+  };
+  for (const document of documents) {
+    if (!document || typeof document !== "object") continue;
+    const record = document as { components?: unknown; actors?: unknown };
+    visit(record.components);
+    if (Array.isArray(record.actors))
+      for (const actor of record.actors)
+        if (actor && typeof actor === "object") visit((actor as { components?: unknown }).components);
+  }
+  return guids;
 }
 
 export function resolveMeshCollisions(
   properties: Record<string, unknown>,
   options?: {
     modelPayload?: ModelPayload | null;
-    complexMesh?: {
-      vertices: Array<{ x: number; y: number; z: number }>;
-      indices: number[];
-    } | null;
+    complexMesh?: CollisionTriangleMesh | null;
   },
 ): ResolvedMeshCollision[] {
   const mode = parseMeshCollisionMode(properties.collisionMode);
@@ -260,15 +302,11 @@ export function resolveMeshCollisions(
     typeof properties.assetGuid === "string" ? properties.assetGuid.trim() : "";
   if (assetGuid) {
     const mesh = options?.complexMesh;
-    if (!mesh || mesh.vertices.length < 3) return [];
+    if (!mesh || mesh.positions.length < 9) return [];
     return [
       {
         shapeId: "complex",
-        shape: {
-          kind: "mesh",
-          vertices: mesh.vertices,
-          indices: mesh.indices,
-        },
+        shape: { kind: "mesh", positions: mesh.positions, indices: mesh.indices },
         ...identity,
       },
     ];
@@ -279,11 +317,7 @@ export function resolveMeshCollisions(
   return [
     {
       shapeId: "complex",
-      shape: {
-        kind: "mesh",
-        vertices: tessellated.vertices,
-        indices: tessellated.indices,
-      },
+      shape: { kind: "mesh", positions: tessellated.positions, indices: tessellated.indices },
       ...identity,
     },
   ];

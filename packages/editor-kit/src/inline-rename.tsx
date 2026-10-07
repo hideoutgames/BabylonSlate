@@ -34,7 +34,6 @@ export function InlineRenameInput({ value, onDone, className, "aria-label": labe
   useLayoutEffect(() => {
     mountedAt.current = performance.now();
     focusAndSelect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only focus
   }, []);
   useEffect(() => {
     const onPointerDown = (event: globalThis.PointerEvent) => {
