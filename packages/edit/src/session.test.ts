@@ -8,6 +8,7 @@ import {
 } from "@babylonslate/core";
 import { diffGraphCommands } from "./commands/graph-diff";
 import { diffSceneCommands } from "./commands/scene-diff";
+import { SetAssetDocumentCommand } from "./commands/asset-document";
 
 interface TestDoc {
   value: number;
@@ -266,5 +267,30 @@ describe("EditSession", () => {
     expect(session.reopenDocument("doc:first", () => "first")).toBe(false);
     expect(session.reopenDocument("doc:second", () => "second")).toBe(true);
     expect(session.undo("doc:open", { value: 1 })?.doc).toEqual({ value: 0 });
+  });
+
+  it("applies a changed byte budget to documents that already have history", () => {
+    const session = new EditSession({ maxBytes: 50 });
+    const first = session.apply("doc", { value: 0 }, new IncrementCommand(1, 10));
+    session.configure({ maxBytes: 500 });
+    const second = session.apply("doc", first.doc, new IncrementCommand(1, 100));
+    expect(second.history).toBe("recorded");
+    expect(session.undo("doc", second.doc)?.doc).toEqual({ value: 1 });
+    expect(session.undo("doc", { value: 1 })?.doc).toEqual({ value: 0 });
+  });
+
+  it("undoes a merged scrub of a large asset document to its pre-gesture state within the default budget", () => {
+    const session = new EditSession();
+    // About 0.6 MB per snapshot.
+    const asset = (step: number) => ({ step, pixels: "x".repeat(600_000) });
+    let doc: Record<string, unknown> = asset(0);
+    for (let step = 1; step <= 20; step++) {
+      const result = session.apply("tilemap", doc, new SetAssetDocumentCommand(doc, asset(step), "paint:stroke-1"));
+      expect(result.history).toBe("recorded");
+      doc = result.doc;
+    }
+    expect(session.undo("tilemap", doc)?.doc).toEqual(asset(0));
+    expect(session.canUndo("tilemap")).toBe(false);
+    expect(session.redo("tilemap", asset(0))?.doc).toEqual(asset(20));
   });
 });
