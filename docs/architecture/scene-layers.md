@@ -2,7 +2,7 @@
 
 Unlit 2D overlay documents stacked on a session compositor. Not a second world scene, not additive world streaming, and not a revival of the removed UserInterface / ADT HUD.
 
-Schema: `packages/core/src/scene-layer.ts`. Runtime: `RuntimeDriver` compositor APIs, delegating layer lifecycle to `SceneLayers` (`packages/runtime/src/scene-layers.ts`). Render: extra Babylon `Scene`s on the shared Engine (`packages/render/src/scene-layer-compositor.ts`).
+Schema: `packages/core/src/scene-layer.ts`. Runtime: `RuntimeDriver` compositor APIs, delegating layer lifecycle to `SceneLayers` (`packages/runtime/src/scene-layers.ts`) and layout, anchors, safe area, virtualization, focus, pointer and scroll input to `SceneLayerOverlay` (`packages/runtime/src/scene-layer-overlay.ts`). Render: extra Babylon `Scene`s on the shared Engine (`packages/render/src/scene-layer-compositor.ts`).
 
 Runtime layout retains its entries across asynchronous visual replacement. It
 indexes mesh names when layout or scene membership changes; unchanged frames
