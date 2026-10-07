@@ -1500,7 +1500,9 @@ function initializeEngine(
   const editorSync = options.editor
     ? new EditorSceneSync(scene, scheduler, {
         freezeActiveMeshes: false,
-        resolveMaterial: (guid) => binding.resolveMaterial?.(guid) ?? null,
+        resolveMaterial: (guid, options) => binding.resolveMaterial?.(guid, options) ?? null,
+        releaseMaterialInstance: (key, guid) => binding.releaseMaterialInstance?.(key, guid),
+        validateMaterialParameter: (guid, name, value) => binding.validateMaterialParameter?.(guid, name, value) ?? false,
         onAfterApply: () => { viewportShading?.apply(); syncEditorDeformers(); syncEditorOutlines(); syncEditorFogVolumes(); },
       })
     : null;
