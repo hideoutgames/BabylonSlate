@@ -53,6 +53,8 @@ async function startSimulation(page: Page) {
   await expect(page.getByTestId("play-overlay")).toHaveAttribute("data-mode", "simulate", { timeout: 60_000 });
   await expect(page.getByTestId("play-overlay")).toHaveCount(1);
   await expect(page.getByTestId("play-canvas")).toBeVisible();
+  // The modal loading status owns focus until the scene is presented; game input starts after it.
+  await expect(page.getByTestId("scene-loading-dialog")).toHaveCount(0, { timeout: 60_000 });
   const viewport = await page.getByTestId("viewport-panel").boundingBox();
   const gameCanvas = await page.getByTestId("play-canvas").boundingBox();
   expect(viewport).not.toBeNull();

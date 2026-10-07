@@ -395,6 +395,8 @@ export function PlayOverlay({
       if (sessionRef.current !== session || inputSequenceRef.current !== sequence) return;
       inputModeRef.current = mode;
       setInputMode(mode);
+      // Game input is owned by the focused canvas; the chrome button just took focus.
+      if (mode === "game") canvasRef.current?.focus({ preventScroll: true });
       transformEditableRef.current = mode === "edit";
       syncTransformVisibilityRef.current();
       session.requestPausedRedraw();
@@ -417,6 +419,8 @@ export function PlayOverlay({
       setPaused(result.paused);
       if (sessionOwner && sessionTicket) sessionOwner.acknowledgePaused(sessionTicket, result.paused);
       if (result.paused) session.requestPausedRedraw();
+      // Pause keeps Simulation's input mode; resumed game input returns to the canvas.
+      else if (simulating && inputModeRef.current === "game") canvasRef.current?.focus({ preventScroll: true });
     }, (error: unknown) => {
       if (sessionRef.current === session) setControlError(String(error));
     }).finally(() => { if (sessionRef.current === session && reason === "user") setPausePending(false); });
@@ -429,17 +433,19 @@ export function PlayOverlay({
       const target = event.target;
       // Chrome owns this gesture; it cannot also become a game or camera gesture.
       if (target instanceof Node && !canvasRef.current?.contains(target) &&
-        !(target instanceof Element && target.closest('[data-testid="simulation-input-mode"]'))) {
+        !(target instanceof Element && target.closest('[data-testid="simulation-input-mode"], [data-testid="play-overlay-pause"]'))) {
         changeInputModeRef.current("edit");
       }
     };
-    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") changeInputModeRef.current("edit"); };
+    // Escape or Tab into the chrome releases game input. Focus events are not
+    // gestures: dialogs restoring focus as the session starts must not release it.
+    const escape = (event: KeyboardEvent) => {
+      if (inputModeRef.current === "game" && (event.key === "Escape" || event.key === "Tab")) changeInputModeRef.current("edit");
+    };
     document.addEventListener("pointerdown", releaseOutsideGame, true);
-    document.addEventListener("focusin", releaseOutsideGame, true);
     document.addEventListener("keydown", escape, true);
     return () => {
       document.removeEventListener("pointerdown", releaseOutsideGame, true);
-      document.removeEventListener("focusin", releaseOutsideGame, true);
       document.removeEventListener("keydown", escape, true);
     };
   }, [simulating]);
@@ -652,6 +658,7 @@ export function PlayOverlay({
       userPausedRef.current = initialPauseOnPlayRef.current;
       setPaused(initialPauseOnPlayRef.current);
       let session: PlaySession;
+      // eslint-disable-next-line prefer-const -- the Stop closure above may read it before startup assigns it.
       let diagnosticLease: ReturnType<DiagnosticResultsStore["bindSession"]> | undefined;
       if (sessionOwner && sessionTicket && !sessionOwner.attach(sessionTicket, async () => {
         closedRef.current = true;
@@ -1033,7 +1040,7 @@ export function PlayOverlay({
     >
       {simulationSession ? <SimulationRetentionDialog session={simulationSession} onStop={() => finishSessionRef.current()} /> : null}
       <SceneLoadingDialog open={sceneLoading !== null} progress={sceneLoading?.progress ?? 0}
-        phase={sceneLoading?.phase ?? "Preparing Scene"} onStop={() => finishSessionRef.current()} />
+        phase={sceneLoading?.phase ?? "Preparing Scene"} onStop={() => finishSessionRef.current()} finalFocus={canvasRef} />
       <PlayOverlayChrome
         paused={paused}
         statsOpen={statsOpen}
