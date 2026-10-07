@@ -620,9 +620,9 @@ importers:
       '@babylonslate/core':
         specifier: workspace:*
         version: link:../core
-      '@dimforge/rapier2d-compat':
-        specifier: ^0.14.0
-        version: 0.14.0
+      '@dimforge/rapier2d-deterministic-compat':
+        specifier: ^0.21.0
+        version: 0.21.0
     devDependencies:
       typescript:
         specifier: ~5.8.2
@@ -1244,8 +1244,8 @@ packages:
     resolution: {integrity: sha512-Vd/9EVDiu6PPJt9yAh6roZP6El1xHrdvIVGjyBsHR0RYwNHgL7FJPyIIW4fANJNG6FtyZfvlRPpFI4ZM/lubvw==}
     engines: {node: '>=18'}
 
-  '@dimforge/rapier2d-compat@0.14.0':
-    resolution: {integrity: sha512-sljQVPstRS63hVLnVNphsZUjH51TZoptVM0XlglKAdZ8CT+kWnmA6olwjkF7omPWYrlKMd/nHORxOUdJDOSoAQ==}
+  '@dimforge/rapier2d-deterministic-compat@0.21.0':
+    resolution: {integrity: sha512-qVwHqqpRX73ktQRqiAa/0JdBfWdzsGHg8r8d+snaZB0WRXaTs3m7GU6jN+Qf3gEjMEUqk3Rc9q87yGXHkktTbA==}
 
   '@dnd-kit/accessibility@3.1.1':
     resolution: {integrity: sha512-2P+YgaXF+gRsIihwwY1gCsQSYnu9Zyj2py8kY5fFvUM1qm2WA2u639R6YNVfU4GWr+ZM5mqEsfHZZLoRONbemw==}
@@ -6399,7 +6399,7 @@ snapshots:
 
   '@csstools/css-tokenizer@3.0.4': {}
 
-  '@dimforge/rapier2d-compat@0.14.0': {}
+  '@dimforge/rapier2d-deterministic-compat@0.21.0': {}
 
   '@dnd-kit/accessibility@3.1.1(react@19.2.8)':
     dependencies:
