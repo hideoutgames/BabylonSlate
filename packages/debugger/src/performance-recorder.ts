@@ -6,6 +6,7 @@ export const PERFORMANCE_FRAME_COLUMNS = [
 export const PERFORMANCE_TICK_COLUMNS = [
   "tickId", "elapsedMs", "scriptMs", "physicsMs", "publishMs", "otherMs",
 ] as const;
+export const PERFORMANCE_GPU_COLUMNS = ["observedAtMs", "durationMs", "querySequence", "coalescedQueries"] as const;
 export const DEFAULT_PROFILE_DURATION_MS = 10_000;
 export const DEFAULT_PROFILE_BYTE_BUDGET = 16 * 1024 * 1024;
 export const MAX_PROFILE_BYTE_BUDGET = 64 * 1024 * 1024;
@@ -25,8 +26,10 @@ export type PerformanceIdentity = {
   frameCap: number | null;
   dynamicResolution: boolean;
   enabledDiagnostics: string[];
-  /** No profiling query is enabled by this CPU recorder. */
-  gpuTiming: "unavailable" | "disabled";
+  /** A valid-query population, never fabricated per-frame alignment. */
+  gpuTiming: "unavailable" | "disabled" | "unpaired";
+  gpuReason?: string;
+  gpuAttribution?: "engine-aggregate";
 };
 export type PerformanceFrameSample = {
   frameId: number; tickId: number; sceneGeneration: number;
@@ -35,6 +38,10 @@ export type PerformanceFrameSample = {
   preparationMs: number; submissionMs: number; copyMs: number; drawCalls: number;
   width: number; height: number; resolutionScale: number;
   loading?: boolean;
+};
+export type PerformanceGpuSample = {
+  observedAtMs: number; durationMs: number; querySequence: number; coalescedQueries: number;
+  attribution: "engine-aggregate";
 };
 export type PerformanceTickSample = {
   tickId: number;
@@ -57,7 +64,7 @@ export type PerformanceProfile = {
   /** Accounted numeric backing buffers plus serialized metadata, not browser heap or JSON export size. */
   retainedBytes: number;
   droppedRecords: number; stopReason: PerformanceStopReason;
-  frames: PerformanceStream; ticks: PerformanceStream;
+  frames: PerformanceStream; ticks: PerformanceStream; gpu: PerformanceStream;
 };
 
 type BufferStream = PerformanceStream & { tailUsed: number };
@@ -71,7 +78,7 @@ export class PerformanceRecorder {
   private active: {
     identity: PerformanceIdentity; startedAtMs: number; durationMs: number;
     byteBudget: number; retainedBytes: number; previousCompletedAt: number | null;
-    frames: BufferStream; ticks: BufferStream;
+    frames: BufferStream; ticks: BufferStream; gpu: BufferStream; previousGpuAt: number | null; previousGpuSequence: number;
   } | undefined;
   private result: PerformanceProfile | undefined;
   private readonly now: () => number;
@@ -96,7 +103,8 @@ export class PerformanceRecorder {
       throw new Error("Performance retained-data budget cannot admit metadata and one frame.");
     this.active = { identity: copyIdentity(identity),
       startedAtMs: this.now(), durationMs, byteBudget, retainedBytes, previousCompletedAt: null,
-      frames: newStream(PERFORMANCE_FRAME_COLUMNS), ticks: newStream(PERFORMANCE_TICK_COLUMNS) };
+      frames: newStream(PERFORMANCE_FRAME_COLUMNS), ticks: newStream(PERFORMANCE_TICK_COLUMNS), gpu: newStream(PERFORMANCE_GPU_COLUMNS),
+      previousGpuAt: null, previousGpuSequence: 0 };
     this.result = undefined;
   }
 
@@ -131,6 +139,20 @@ export class PerformanceRecorder {
     return this.append(this.active!.ticks, PERFORMANCE_TICK_COLUMNS.map((key) => sample[key]));
   }
 
+  recordGpu(sample: PerformanceGpuSample): boolean {
+    if (!this.advance()) return false;
+    const state = this.active!;
+    if (state.identity.gpuTiming !== "unpaired") return false;
+    if (![sample.observedAtMs, sample.durationMs].every(finite) ||
+      ![sample.querySequence, sample.coalescedQueries].every(safeId) || sample.attribution !== "engine-aggregate" ||
+      sample.observedAtMs < state.startedAtMs || (state.previousGpuAt !== null && sample.observedAtMs < state.previousGpuAt))
+      throw new Error("GPU samples require valid query identities and finite monotonic delivery times.");
+    if (sample.querySequence <= state.previousGpuSequence) return false;
+    const accepted = this.append(state.gpu, [sample.observedAtMs - state.startedAtMs, sample.durationMs, sample.querySequence, sample.coalescedQueries]);
+    if (accepted) { state.previousGpuAt = sample.observedAtMs; state.previousGpuSequence = sample.querySequence; }
+    return accepted;
+  }
+
   stop(reason: PerformanceStopReason = "requested", stoppedAtMs = this.now()): PerformanceProfile | undefined {
     const state = this.active;
     if (!state) return this.result;
@@ -140,7 +162,7 @@ export class PerformanceRecorder {
     this.result = { kind: "babylonslate-performance", version: 1, identity: state.identity,
       requestedDurationMs: state.durationMs, durationMs: Math.max(0, stoppedAtMs - state.startedAtMs),
       byteBudget: state.byteBudget, retainedBytes: state.retainedBytes, droppedRecords: reason === "budget" ? 1 : 0,
-      stopReason: reason, frames: finish(state.frames), ticks: finish(state.ticks) };
+      stopReason: reason, frames: finish(state.frames), ticks: finish(state.ticks), gpu: finish(state.gpu) };
     this.onStopped?.(this.result);
     return this.result;
   }
@@ -220,11 +242,12 @@ export function parsePerformanceProfile(value: unknown): PerformanceProfile | nu
   };
   const frames = parseStream(data.frames, PERFORMANCE_FRAME_COLUMNS);
   const ticks = frames && parseStream(data.ticks, PERFORMANCE_TICK_COLUMNS);
-  if (!frames || !ticks || bytes > data.retainedBytes) return null;
+  const gpu = ticks && (data.gpu === undefined ? { columns: PERFORMANCE_GPU_COLUMNS, count: 0, chunks: [] } : parseStream(data.gpu, PERFORMANCE_GPU_COLUMNS));
+  if (!frames || !ticks || !gpu || bytes > data.retainedBytes || (gpu.count > 0 && data.identity.gpuTiming !== "unpaired")) return null;
   return { kind: "babylonslate-performance", version: 1, identity: copyIdentity(data.identity),
     requestedDurationMs: data.requestedDurationMs, durationMs: data.durationMs,
     byteBudget: data.byteBudget, retainedBytes: data.retainedBytes,
-    droppedRecords: data.droppedRecords, stopReason: data.stopReason, frames, ticks };
+    droppedRecords: data.droppedRecords, stopReason: data.stopReason, frames, ticks, gpu };
 }
 
 function validIdentity(value: unknown): value is PerformanceIdentity {
@@ -232,7 +255,10 @@ function validIdentity(value: unknown): value is PerformanceIdentity {
   const identity = value as PerformanceIdentity;
   if (!["play", "preview", "simulate"].includes(identity.mode) ||
     !["worker", "in-process"].includes(identity.runtimeHost) ||
-    !["disabled", "unavailable"].includes(identity.gpuTiming) ||
+    !["disabled", "unavailable", "unpaired"].includes(identity.gpuTiming) ||
+    (identity.gpuReason !== undefined && (typeof identity.gpuReason !== "string" || identity.gpuReason.length > 4096)) ||
+    (identity.gpuAttribution !== undefined && identity.gpuAttribution !== "engine-aggregate") ||
+    (identity.gpuTiming === "unpaired" && identity.gpuAttribution !== "engine-aggregate") ||
     typeof identity.dynamicResolution !== "boolean" ||
     !(identity.frameCap === null || finite(identity.frameCap)) ||
     !Array.isArray(identity.enabledDiagnostics) || identity.enabledDiagnostics.length > 32 ||
@@ -250,7 +276,8 @@ function metadataBytes(identity: PerformanceIdentity): number {
 }
 function copyIdentity(identity: PerformanceIdentity): PerformanceIdentity {
   const { sessionId, mode, sourceSha, buildId, sceneId, backend, renderPath, runtimeHost,
-    quality, frameCap, dynamicResolution, enabledDiagnostics, gpuTiming } = identity;
+    quality, frameCap, dynamicResolution, enabledDiagnostics, gpuTiming, gpuReason, gpuAttribution } = identity;
   return { sessionId, mode, sourceSha, buildId, sceneId, backend, renderPath, runtimeHost,
-    quality, frameCap, dynamicResolution, enabledDiagnostics: [...enabledDiagnostics], gpuTiming };
+    quality, frameCap, dynamicResolution, enabledDiagnostics: [...enabledDiagnostics], gpuTiming,
+    ...(gpuReason !== undefined ? { gpuReason } : {}), ...(gpuAttribution !== undefined ? { gpuAttribution } : {}) };
 }

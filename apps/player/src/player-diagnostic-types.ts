@@ -7,6 +7,7 @@ export type PlayerPreviewDiagnosticPorts = {
   sessionGeneration: number;
   identity: () => PerformanceIdentity;
   observeFrames: EngineHandle["observePerformance"];
+  observeGpuTiming: EngineHandle["observeGpuTiming"];
   setEditorInputSuppressed: (suppressed: boolean) => Promise<void>;
   captureFrame: (signal: AbortSignal) => Promise<RenderFrameReport>;
   send: (request: DiagnosticOperationRequest) => Promise<DiagnosticOperationResult | undefined>;

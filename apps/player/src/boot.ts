@@ -1115,6 +1115,7 @@ function initializePlayer(
             enabledDiagnostics: ["performance"], gpuTiming: "unavailable" as const };
         },
         observeFrames: (listener) => handle.observePerformance(listener),
+        observeGpuTiming: (listener, onError) => handle.observeGpuTiming(listener, onError),
         setEditorInputSuppressed,
         captureFrame: async (signal) => {
           const cancel = () => handle.cancelFrameCapture("Preview frame capture was cancelled.");

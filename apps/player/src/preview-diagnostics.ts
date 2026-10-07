@@ -12,13 +12,14 @@ export function installPreviewDiagnostics(ports: PlayerPreviewDiagnosticPorts, e
   const client = createDiagnosticOperationClient({ sessionGeneration: ports.sessionGeneration,
     send: async (request) => { const reply = await ports.send(request); if (reply) client.receive(reply); } });
   const session = new SessionDiagnostics<RenderFrameReport>({ mode: "preview", identity: ports.identity,
-    observeFrames: ports.observeFrames, captureFrame: ports.captureFrame,
+    observeFrames: ports.observeFrames, observeGpuTiming: ports.observeGpuTiming, captureFrame: ports.captureFrame,
     runtimeOperation: (request) => client.request(request),
     onProfile: (profile) => {
-      const { frames, ticks, ...metadata } = profile;
+      const { frames, ticks, gpu, ...metadata } = profile;
       transfer = server.publishProfile({ metadata: { ...metadata,
-        frames: { columns: frames.columns, count: frames.count }, ticks: { columns: ticks.columns, count: ticks.count } },
-        frames: frames.chunks, ticks: ticks.chunks }).finally(() => session.forgetProfile(profile));
+        frames: { columns: frames.columns, count: frames.count }, ticks: { columns: ticks.columns, count: ticks.count },
+        gpu: { columns: gpu.columns, count: gpu.count } },
+        frames: frames.chunks, ticks: ticks.chunks, gpu: gpu.chunks }).finally(() => session.forgetProfile(profile));
     },
   });
   const server = createPreviewDiagnosticServer(endpoint, {

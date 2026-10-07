@@ -1672,6 +1672,7 @@ export function startPlaySession(options: {
         enabledDiagnostics: ["performance"], gpuTiming: "unavailable" };
     },
     observeFrames: (listener) => handle.observePerformance(listener),
+    observeGpuTiming: (listener, onError) => handle.observeGpuTiming(listener, onError),
     runtimeOperation: (request) => diagnosticClient.request(request),
     captureFrame: async (signal) => {
       const cancel = () => handle.cancelFrameCapture("Frame capture was cancelled.");

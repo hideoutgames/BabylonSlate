@@ -26,8 +26,10 @@ export function createPreviewDiagnostics(options: {
     onProfile: (transfer) => {
       const frames = transfer.metadata.frames as Record<string, unknown> | undefined;
       const ticks = transfer.metadata.ticks as Record<string, unknown> | undefined;
+      const gpu = transfer.metadata.gpu as Record<string, unknown> | undefined;
       const profile = parsePerformanceProfile({ ...transfer.metadata,
-        frames: { ...frames, chunks: transfer.frames }, ticks: { ...ticks, chunks: transfer.ticks } });
+        frames: { ...frames, chunks: transfer.frames }, ticks: { ...ticks, chunks: transfer.ticks },
+        ...(gpu ? { gpu: { ...gpu, chunks: transfer.gpu ?? [] } } : {}) });
       if (!profile) { options.onError("Preview returned an invalid or incomplete performance profile."); return; }
       retained = profile;
       profileActive = false;
@@ -52,7 +54,7 @@ export function createPreviewDiagnostics(options: {
       inputTransition = inputTransition.then(() => client.request("input", { inputSuppressed: suppressed }));
       return inputTransition;
     },
-    startProfile(settings: { durationMs?: number; byteBudget?: number } = {}): Promise<PreviewDiagnosticResult> {
+    startProfile(settings: { durationMs?: number; byteBudget?: number; gpuTiming?: boolean } = {}): Promise<PreviewDiagnosticResult> {
       if (closing || disposed || starting || profileActive) return Promise.resolve({ success: false, reason: "Preview diagnostics are unavailable or already recording." });
       profileActive = true;
       starting = client.request("profile-start", settings).then((result) => {

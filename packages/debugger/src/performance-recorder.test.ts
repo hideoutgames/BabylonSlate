@@ -102,4 +102,24 @@ describe("PerformanceRecorder", () => {
     expect(parsePerformanceProfile({ ...JSON.parse(json), version: 99 })).toBeNull();
     expect(parsePerformanceProfile({ ...JSON.parse(json), frames: { ...JSON.parse(json).frames, count: 100 } })).toBeNull();
   });
+
+  it("retains a separate bounded valid-query population without repeating stale GPU results", () => {
+    const recorder = new PerformanceRecorder({ now: () => 1000 });
+    recorder.start({ ...identity, gpuTiming: "unpaired", gpuAttribution: "engine-aggregate" }, { byteBudget: 4096 });
+    const sample = { observedAtMs: 1010, durationMs: 2.5, querySequence: 40, coalescedQueries: 0, attribution: "engine-aggregate" as const };
+    expect(recorder.recordGpu(sample)).toBe(true);
+    expect(recorder.recordGpu(sample)).toBe(false);
+    let querySequence = 41;
+    while (recorder.recordGpu({ ...sample, querySequence: querySequence++ })) { /* Fill only the admitted numeric budget. */ }
+    const result = recorder.stop()!;
+    expect(result.stopReason).toBe("budget");
+    expect(result.retainedBytes).toBeLessThanOrEqual(result.byteBudget);
+    expect(result.frames.count).toBe(0);
+    expect(result.ticks.count).toBe(0);
+    expect(result.gpu.chunks[0]![0]).toBe(10);
+    const reopened = parsePerformanceProfile(JSON.parse(serializePerformanceProfile(result)))!;
+    expect(reopened.gpu.count).toBe(result.gpu.count);
+    expect(summarizePerformanceColumn(reopened.gpu, "durationMs")).toMatchObject({ count: result.gpu.count, median: 2.5 });
+    expect(parsePerformanceProfile({ ...reopened, identity: { ...reopened.identity, gpuTiming: "disabled" } })).toBeNull();
+  });
 });

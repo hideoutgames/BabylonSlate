@@ -4,7 +4,7 @@ export const PREVIEW_DIAGNOSTIC_MESSAGE = "babylonslate-preview-diagnostic-contr
 export type PreviewDiagnosticOperation = "profile-start" | "profile-stop" | "frame" | "input";
 export type PreviewDiagnosticSettings = { durationMs?: number; byteBudget?: number; inputSuppressed?: boolean; gpuTiming?: boolean };
 export type PreviewDiagnosticResult = { success: boolean; reason?: string; result?: unknown };
-export type PreviewProfileTransfer = { metadata: Record<string, unknown>; frames: Float64Array[]; ticks: Float64Array[] };
+export type PreviewProfileTransfer = { metadata: Record<string, unknown>; frames: Float64Array[]; ticks: Float64Array[]; gpu?: Float64Array[] };
 type Incoming = { source: unknown; origin: string; data: unknown };
 export type PreviewDiagnosticEndpoint = {
   source(): unknown; origin(): string;
@@ -14,7 +14,7 @@ type Message = { type: typeof PREVIEW_DIAGNOSTIC_MESSAGE; client: string; sessio
   action: "open" | "ready" | "request" | "result" | "profile-start" | "profile-chunk" | "profile-end" | "profile-error" | "close";
   requestId?: number; operation?: PreviewDiagnosticOperation; durationMs?: number; byteBudget?: number; inputSuppressed?: boolean; gpuTiming?: boolean;
   success?: boolean; reason?: string; result?: unknown; profileId?: number; metadata?: Record<string, unknown>;
-  stream?: "frames" | "ticks"; sequence?: number; rows?: Float64Array };
+  stream?: "frames" | "ticks" | "gpu"; sequence?: number; rows?: Float64Array };
 const validId = (id: unknown): id is string => typeof id === "string" && id.length > 0 && id.length <= 128;
 const validSequence = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 const MAX_TRANSFER_BYTES = 64 * 1024 * 1024;
@@ -37,7 +37,7 @@ export function createPreviewDiagnosticClient(endpoint: PreviewDiagnosticEndpoin
   let sequence = 0;
   let opening: { promise: Promise<void>; resolve: () => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> } | undefined;
   const pending = new Map<number, { resolve: (result: PreviewDiagnosticResult) => void; timer: ReturnType<typeof setTimeout> }>();
-  let capture: { id: number; metadata: Record<string, unknown>; frames: Float64Array[]; ticks: Float64Array[];
+  let capture: { id: number; metadata: Record<string, unknown>; frames: Float64Array[]; ticks: Float64Array[]; gpu: Float64Array[];
     bytes: number; limit: number; sequence: number; timer: ReturnType<typeof setTimeout> } | undefined;
   const send = (message: Omit<Message, "type" | "client" | "session">) => endpoint.send({ type: PREVIEW_DIAGNOSTIC_MESSAGE, client, session, ...message });
   const cancelRequests = (reason: string) => {
@@ -96,10 +96,10 @@ export function createPreviewDiagnosticClient(endpoint: PreviewDiagnosticEndpoin
         const metadata = message.metadata;
         const limit = metadata?.byteBudget;
         if (!metadata || !validSequence(limit) || limit < 1024 || limit > MAX_TRANSFER_BYTES) { options.onError?.("Invalid Preview profile budget."); return; }
-        capture = { id: message.profileId, metadata, frames: [], ticks: [], bytes: 0, limit, sequence: 0,
+        capture = { id: message.profileId, metadata, frames: [], ticks: [], gpu: [], bytes: 0, limit, sequence: 0,
           timer: setTimeout(() => clearCapture("Preview profile transfer timed out."), 10_000) };
       } else if (message.action === "profile-chunk" && capture && message.profileId === capture.id) {
-        if (message.sequence !== capture.sequence || (message.stream !== "frames" && message.stream !== "ticks") ||
+        if (message.sequence !== capture.sequence || (message.stream !== "frames" && message.stream !== "ticks" && message.stream !== "gpu") ||
           !(message.rows instanceof Float64Array) || !message.rows.byteLength || message.rows.byteLength > MAX_CHUNK_BYTES ||
           capture.bytes + message.rows.byteLength > capture.limit) {
           clearCapture("Preview profile transfer was incomplete or exceeded its data budget."); return;
@@ -111,7 +111,7 @@ export function createPreviewDiagnosticClient(endpoint: PreviewDiagnosticEndpoin
         const complete = capture;
         clearCapture();
         if (message.sequence !== complete.sequence) { options.onError?.("Preview profile transfer lost chunks."); return; }
-        options.onProfile({ metadata: complete.metadata, frames: complete.frames, ticks: complete.ticks });
+        options.onProfile({ metadata: complete.metadata, frames: complete.frames, ticks: complete.ticks, gpu: complete.gpu });
       } else if (message.action === "profile-error") clearCapture(message.reason ?? "Preview profile transfer failed.");
     },
     dispose(): void {
@@ -148,7 +148,7 @@ export function createPreviewDiagnosticServer(endpoint: PreviewDiagnosticEndpoin
       let sequence = 0;
       try {
         send({ action: "profile-start", profileId, metadata: transfer.metadata });
-        for (const stream of ["frames", "ticks"] as const) for (const source of transfer[stream]) {
+        for (const stream of ["frames", "ticks", "gpu"] as const) for (const source of transfer[stream] ?? []) {
           if (closed || client !== owner) return;
           if (source.byteLength > MAX_CHUNK_BYTES) throw new Error("Preview profile chunk exceeds the transport budget.");
           const rows = source.slice();

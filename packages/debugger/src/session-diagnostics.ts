@@ -1,4 +1,4 @@
-import { DEFAULT_PROFILE_DURATION_MS, PerformanceRecorder, type PerformanceFrameSample,
+import { DEFAULT_PROFILE_DURATION_MS, PerformanceRecorder, type PerformanceFrameSample, type PerformanceGpuSample,
   type PerformanceIdentity, type PerformanceProfile, type PerformanceStopReason } from "./performance-recorder";
 
 export type DiagnosticOperationRequest = {
@@ -10,6 +10,9 @@ export type SessionDiagnosticPorts<FrameReport> = {
   mode: "play" | "preview" | "simulate";
   identity: () => PerformanceIdentity;
   observeFrames: (consume: (frame: PerformanceFrameSample) => void) => () => void;
+  observeGpuTiming?: (consume: (sample: PerformanceGpuSample) => void, onError: (error: unknown) => void) => {
+    status: "unpaired" | "unavailable"; reason?: string; release(): void;
+  };
   /** Correlated runtime admission. Stop flushes accepted ticks before resolving. */
   runtimeOperation: (request: DiagnosticOperationRequest) => Promise<DiagnosticOperationResult>;
   captureFrame: (signal: AbortSignal) => Promise<FrameReport>;
@@ -19,7 +22,7 @@ export type SessionDiagnosticPorts<FrameReport> = {
 type Operation = {
   kind: "profile" | "frame"; id: string; abort: AbortController;
   admission: Promise<DiagnosticOperationResult>; stopping?: Promise<PerformanceProfile | null>;
-  recorder?: PerformanceRecorder; releaseFrames?: () => void;
+  recorder?: PerformanceRecorder; releaseFrames?: () => void; releaseGpu?: () => void;
   timer?: ReturnType<typeof setTimeout>; deadline?: number; sequence: number;
   droppedRecords: number;
 };
@@ -42,11 +45,11 @@ export class SessionDiagnostics<FrameReport> {
   /** Transfer owners release the player's copy after the editor has received it. */
   forgetProfile(profile: PerformanceProfile): void { if (this.retained === profile) this.retained = null; }
 
-  async startProfile(options: { durationMs?: number; byteBudget?: number } = {}): Promise<DiagnosticOperationResult> {
+  async startProfile(options: { durationMs?: number; byteBudget?: number; gpuTiming?: boolean } = {}): Promise<DiagnosticOperationResult> {
     const refusal = this.refusal();
     if (refusal) return { success: false, reason: refusal };
-    const identity = this.ports.identity();
-    const state = this.reserve("profile", identity.sessionId, options);
+    let identity = { ...this.ports.identity(), gpuTiming: "disabled", gpuReason: undefined, gpuAttribution: undefined } as PerformanceIdentity;
+    const state = this.reserve("profile", identity.sessionId, { durationMs: options.durationMs, byteBudget: options.byteBudget });
     const result = await state.admission;
     if (!result.success || state.stopping || this.disposed) {
       if (!state.stopping) await this.finish(state, "error");
@@ -54,6 +57,17 @@ export class SessionDiagnostics<FrameReport> {
     }
     try {
       const recorder = new PerformanceRecorder({ now: this.now, onStopped: (profile) => { void this.finish(state, profile.stopReason); } });
+      if (options.gpuTiming) {
+        const gpu = this.ports.observeGpuTiming?.(sample => {
+          if (!state.stopping && this.operation === state && state.recorder) recorder.recordGpu(sample);
+        }, () => { void this.finish(state, "error"); });
+        state.releaseGpu = gpu?.release;
+        identity = { ...identity, gpuTiming: gpu?.status ?? "unavailable",
+          gpuReason: gpu?.reason ?? (gpu ? undefined : "This runtime host cannot collect GPU timing."),
+          gpuAttribution: gpu?.status === "unpaired" ? "engine-aggregate" : undefined,
+          enabledDiagnostics: gpu?.status === "unpaired" ? [...identity.enabledDiagnostics, "gpu-timing"] : identity.enabledDiagnostics };
+      }
+      if (state.stopping) throw new Error("GPU timing could not start.");
       recorder.start(identity, options);
       state.recorder = recorder;
       state.deadline = this.now() + (options.durationMs ?? DEFAULT_PROFILE_DURATION_MS);
@@ -143,6 +157,8 @@ export class SessionDiagnostics<FrameReport> {
     if (state.timer !== undefined) clearTimeout(state.timer);
     state.releaseFrames?.();
     state.releaseFrames = undefined;
+    state.releaseGpu?.();
+    state.releaseGpu = undefined;
     state.stopping = (async () => {
       await state.admission;
       const released = await this.request({ kind: state.kind, action: "stop", recordingId: state.id });

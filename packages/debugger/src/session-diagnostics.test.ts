@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SessionDiagnostics, type DiagnosticOperationRequest } from "./session-diagnostics";
-import { summarizePerformanceColumn, type PerformanceFrameSample, type PerformanceIdentity } from "./performance-recorder";
+import { summarizePerformanceColumn, type PerformanceFrameSample, type PerformanceGpuSample, type PerformanceIdentity } from "./performance-recorder";
 
 const identity: PerformanceIdentity = { sessionId: "test", mode: "preview", sourceSha: null, buildId: "pack",
   sceneId: "world", backend: "webgl2", renderPath: "frameGraph", runtimeHost: "worker", quality: "Low",
@@ -68,5 +68,46 @@ describe("SessionDiagnostics", () => {
     expect(session.receiveTicks({ recordingId: requests.at(-1)!.recordingId, sequence: 1, rows: new Float64Array(6) })).toBe(false);
     await session.stopProfile();
     expect(session.lastProfile?.stopReason).toBe("error");
+  });
+
+  it("collects GPU values only on explicit request and releases every profile lease", async () => {
+    let gpu: ((sample: PerformanceGpuSample) => void) | undefined;
+    const release = vi.fn(() => { gpu = undefined; });
+    const observeGpuTiming = vi.fn((consume: (sample: PerformanceGpuSample) => void) => {
+      gpu = consume; return { status: "unpaired" as const, release };
+    });
+    const session = new SessionDiagnostics({ mode: "play", identity: () => identity, now: () => 1000,
+      observeFrames: () => () => {}, observeGpuTiming, captureFrame: async () => "frame",
+      runtimeOperation: async () => ({ success: true }),
+    });
+    await session.startProfile();
+    expect(observeGpuTiming).not.toHaveBeenCalled();
+    expect((await session.stopProfile())?.identity.gpuTiming).toBe("disabled");
+    await session.startProfile({ gpuTiming: true });
+    gpu!({ observedAtMs: 1010, durationMs: 3, querySequence: 8, coalescedQueries: 0, attribution: "engine-aggregate" });
+    const result = await session.stopProfile();
+    expect(result?.identity).toMatchObject({ gpuTiming: "unpaired", gpuAttribution: "engine-aggregate", enabledDiagnostics: ["performance", "gpu-timing"] });
+    expect(result?.gpu.count).toBe(1);
+    expect(release).toHaveBeenCalledOnce();
+    expect(gpu).toBeUndefined();
+    await session.startProfile({ gpuTiming: true });
+    await session.dispose();
+    expect(release).toHaveBeenCalledTimes(2);
+  });
+
+  it("names unsupported GPU collection and releases a query lease if frame attachment fails", async () => {
+    const ports = { mode: "play" as const, identity: () => identity, now: () => 0,
+      observeFrames: () => () => {}, captureFrame: async () => "frame", runtimeOperation: async () => ({ success: true }) };
+    const unavailable = new SessionDiagnostics(ports);
+    await unavailable.startProfile({ gpuTiming: true });
+    expect((await unavailable.stopProfile())?.identity).toMatchObject({ gpuTiming: "unavailable", gpuReason: expect.stringContaining("cannot collect") });
+    const release = vi.fn();
+    const failing = new SessionDiagnostics({ ...ports,
+      observeGpuTiming: () => ({ status: "unpaired", release }),
+      observeFrames: () => { throw new Error("View ended"); },
+    });
+    expect(await failing.startProfile({ gpuTiming: true })).toMatchObject({ success: false, reason: "View ended" });
+    expect(release).toHaveBeenCalledOnce();
+    expect(failing.active).toBeNull();
   });
 });
