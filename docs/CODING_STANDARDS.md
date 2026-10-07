@@ -16,6 +16,7 @@ Short conventions for BabylonSlate. Tooling (ESLint, TypeScript strict) enforces
 ## TypeScript
 
 - `verbatimModuleSyntax`: use `import type` for type-only imports.
+- TypeScript 6 DOM APIs (`Blob`, `Response`, `crypto.subtle`, file writers) take ArrayBuffer-backed views. Helpers that allocate fresh bytes return `Uint8Array<ArrayBuffer>`; copy with `bytes.slice()` when an owned `ArrayBuffer` is needed, or narrow `Uint8Array` storage bytes with `as Uint8Array<ArrayBuffer>` at the DOM call (never SharedArrayBuffer-backed). Annotate ping-pong or reassigned buffers as plain `Uint8Array` / `Float64Array`. Toolchain details: [testing](architecture/testing.md#verification-scope).
 - Prefer `Result` and explicit errors over thrown exceptions in pure packages (as types land in `core`).
 - No `any` without a one-line justification comment.
 

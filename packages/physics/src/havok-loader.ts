@@ -34,7 +34,7 @@ export function resetHavokModuleCache(): void {
   cached = null;
 }
 
-async function resolveWasmBinary(havokWasmUrl?: string): Promise<Uint8Array> {
+async function resolveWasmBinary(havokWasmUrl?: string): Promise<ArrayBuffer> {
   if (havokWasmUrl) {
     if (typeof fetch !== "function") {
       throw new Error(`Havok WASM download is unavailable: ${havokWasmUrl}`);
@@ -45,7 +45,7 @@ async function resolveWasmBinary(havokWasmUrl?: string): Promise<Uint8Array> {
         `Havok WASM request failed (${response.status}): ${havokWasmUrl}`,
       );
     }
-    return new Uint8Array(await response.arrayBuffer());
+    return response.arrayBuffer();
   }
 
   // Node / Vitest: resolve the package wasm without static `node:*` imports so
@@ -77,7 +77,8 @@ async function resolveWasmBinary(havokWasmUrl?: string): Promise<Uint8Array> {
       const wasmPath = require.resolve(
         "@babylonjs/havok/lib/esm/HavokPhysics.wasm",
       );
-      return new Uint8Array(readFileSync(wasmPath));
+      // Copy into a standalone ArrayBuffer (Emscripten's `wasmBinary` type).
+      return new Uint8Array(readFileSync(wasmPath)).buffer;
     }
   }
 

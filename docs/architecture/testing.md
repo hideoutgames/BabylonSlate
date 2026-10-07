@@ -27,6 +27,13 @@ Lint toolchain (root `eslint.config.js`, flat config via `defineConfig`):
 - `eslint-plugin-react-refresh` 0.5 `only-export-components` (warn, constant exports allowed).
 - Package import boundaries are `no-restricted-imports` blocks in the same file (see [CODING_STANDARDS](../CODING_STANDARDS.md)).
 
+TypeScript toolchain:
+
+- TypeScript `~6.0.3` in every manifest. `typescript-eslint` 8 supports `<6.1`, so TypeScript 7 waits for a compatible typescript-eslint release.
+- TypeScript 6 defaults `types` to `[]`: the root `tsconfig.json` lists `"types": ["node"]`; app configs that set `types` (`vite/client`, `vitepress/client`) list what they need.
+- Side-effect imports are checked: packages that import `.css` without Vite client types declare `declare module "*.css" {}` in `src/styles.d.ts`.
+- `baseUrl` is deprecated; `paths` entries are relative to their tsconfig. No config uses `ignoreDeprecations`.
+
 GPU proof harnesses keep typed capture and lifecycle records. Missing native preprocessing textures or active WebGL sampler locations fail qualification with an explicit diagnostic.
 
 Agents run only explicit targeted test files/cases for changed behavior and directly affected consumers, with scoped static checks where relevant. Full local suites, coverage, all browser tests, workspace-wide checks and the cumulative `verify:local` diagnostic require an explicit user request; they are not automatic PR prerequisites. Prose/instruction-only changes use diff/link review. After repairs, rerun only affected checks and document why reused results still apply. Required GitHub CI is unchanged. The cumulative tooling described below remains available as an opt-in diagnostic; its `deliveryEligible` certificate is not required for targeted agent delivery.
