@@ -1,4 +1,4 @@
-import { normalizeScene, normalizeSceneLayer, parseText2DProperties, type SerializedScene, type SerializedSceneLayer, type StorageReadMetrics } from "@babylonslate/core";
+import { collisionTriangleMeshBytes, normalizeScene, normalizeSceneLayer, parseText2DProperties, type CollisionTriangleMesh, type SerializedScene, type SerializedSceneLayer, type StorageReadMetrics } from "@babylonslate/core";
 import {
   createHttpPackSource,
   createMemoryPackSource,
@@ -27,7 +27,8 @@ import {
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import {
   AssetLoadingService,
-  cookComplexCollisionMeshes,
+  complexCollisionModelGuids,
+  cookComplexCollisionMesh,
   modelAnimationDurations,
   sha256Hex,
   type AssetLoadScope,
@@ -73,7 +74,10 @@ export type LoadedGame = {
   audioPayloads: Map<string, AudioPayload>;
   payloads: Map<string, Uint8Array>;
   decodedPayloads?: Map<string, unknown>;
-  complexMeshes?: Map<string, { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }>;
+  /** Cooked only for Models a prepared Scene/Class uses with Use Complex Collision. */
+  complexMeshes?: Map<string, CollisionTriangleMesh>;
+  /** On-demand fallback for the runtime's `requestComplexCollision`; `null` when the Model is not loaded. */
+  cookComplexCollision?: (guid: string) => CollisionTriangleMesh | null;
   modelAnimationDurations?: Map<string, ReadonlyMap<string, number | undefined>>;
   navmeshBytes: Map<string, Uint8Array>;
   audioReverbBytes: Map<string, Uint8Array>;
@@ -127,7 +131,7 @@ export async function loadGameFromFiles(
   const audioPayloads = new Map<string, AudioPayload>();
   const payloads = new Map<string, Uint8Array>();
   const decodedPayloads = new Map<string, unknown>();
-  const complexMeshes = new Map<string, { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }>();
+  const complexMeshes = new Map<string, CollisionTriangleMesh>();
   const durations = new Map<string, ReadonlyMap<string, number | undefined>>();
   const navmeshBytes = new Map<string, Uint8Array>();
   const audioReverbBytes = new Map<string, Uint8Array>();
@@ -197,11 +201,12 @@ export async function loadGameFromFiles(
     signal.throwIfAborted();
     return bytes;
   }
-  type PreparedAsset = { bytes: Uint8Array; decodedBytes: number; document?: unknown; publish: () => void };
+  type PreparedAsset = { bytes: Uint8Array; decodedBytes: number; document?: unknown; model?: { source: Uint8Array; payload: ModelPayload }; publish: () => void };
   async function decode(entry: GameAssetIndexEntry, bytes: Uint8Array): Promise<PreparedAsset> {
     const document = entry.encoding === "json" ? parseJsonAsset(bytes) : undefined;
     let decodedBytes = document === undefined ? 0 : bytes.byteLength * 2;
     let install = () => {};
+    let model: PreparedAsset["model"];
     if (entry.type === "Scene") { const value = normalizeScene(document); install = () => { scenes.set(entry.guid, value); }; }
     else if (entry.type === "SceneLayer") { const value = normalizeSceneLayer(document); install = () => { sceneLayers.set(entry.guid, value); }; }
     else if (entry.type === "Texture") install = () => { textureBytes.set(entry.guid, bytes); };
@@ -213,10 +218,11 @@ export async function loadGameFromFiles(
       install = () => { areaEmissions.set(guid, value); };
     } else if (entry.type === "Model") {
       const value = extractPackedModelAsset(bytes);
-      const mesh = cookComplexCollisionMeshes(new Map([[entry.guid, value.source]]), new Map([[entry.guid, value.payload]])).get(entry.guid);
       const animationDurations = modelAnimationDurations(value.source);
-      decodedBytes = mesh ? mesh.vertices.length * 24 + mesh.indices.length * 8 : 0;
-      install = () => { modelBytes.set(entry.guid, value.source); modelPayloads.set(entry.guid, value.payload); if (mesh) complexMeshes.set(entry.guid, mesh); durations.set(entry.guid, animationDurations); };
+      // Complex Collision is a separate representation, cooked in prepare() only when needed.
+      model = value;
+      decodedBytes = animationDurations.size * 128;
+      install = () => { modelBytes.set(entry.guid, value.source); modelPayloads.set(entry.guid, value.payload); durations.set(entry.guid, animationDurations); };
     } else if (entry.type === "Font") install = () => {
       fontBytes.set(entry.guid, bytes);
       if (entry.name?.trim()) fontFamilies.set(entry.guid, entry.name.trim());
@@ -234,7 +240,7 @@ export async function loadGameFromFiles(
       install = () => { const index = scripts.findIndex(script => script.assetGuid === value.assetGuid && script.classId === value.classId); if (index >= 0) scripts[index] = value as ScriptBundleEntry; else scripts.push(value as ScriptBundleEntry); };
     } else if (entry.type === NAVMESH_EXPORT_TYPE) install = () => { navmeshBytes.set(sceneGuidFromNavmeshExport(entry.guid) ?? entry.guid, bytes); };
     else if (entry.type === AUDIO_REVERB_EXPORT_TYPE) install = () => { audioReverbBytes.set(sceneGuidFromAudioReverbExport(entry.guid) ?? entry.guid, bytes); };
-    return { bytes, decodedBytes, document, publish: () => { payloads.set(entry.guid, bytes); if (document !== undefined) decodedPayloads.set(entry.guid, document); install(); } };
+    return { bytes, decodedBytes, document, model, publish: () => { payloads.set(entry.guid, bytes); if (document !== undefined) decodedPayloads.set(entry.guid, document); install(); } };
   }
 
   const game: LoadedGame = {
@@ -262,6 +268,10 @@ export async function loadGameFromFiles(
   };
   const sourceListeners = new Set<() => void>();
   let notificationPending = false;
+  game.cookComplexCollision = guid => {
+    const source = modelBytes.get(guid);
+    return source ? complexMeshes.get(guid) ?? cookComplexCollisionMesh(source, modelPayloads.get(guid)) : null;
+  };
   game.onSourcesChanged = listener => { sourceListeners.add(listener); return () => { sourceListeners.delete(listener); }; };
   function evict(entry: GameAssetIndexEntry, bytes: Uint8Array): void {
     if (payloads.get(entry.guid) !== bytes) return;
@@ -272,7 +282,6 @@ export async function loadGameFromFiles(
       if (index >= 0) scripts.splice(index, 1);
     }
     decodedPayloads.delete(entry.guid);
-    complexMeshes.delete(entry.guid);
     durations.delete(entry.guid);
     for (const map of [scenes, sceneLayers, textureBytes, modelBytes, modelPayloads, fontBytes, audioPayloads]) map.delete(entry.guid);
     const owner = entry.guid.slice(entry.guid.indexOf(":") + 1);
@@ -297,7 +306,7 @@ export async function loadGameFromFiles(
     representation: (record) => {
       const entry = entries.get(record.id)!;
       const size = entry.byteLength ?? 0;
-      return { key: "export-source", estimate: { sourceBytes: size, decodedBytes: size * (entry.type === "Model" ? 4 : 2), temporaryBytes: size },
+      return { key: "export-source", estimate: { sourceBytes: size, decodedBytes: size * 2, temporaryBytes: size },
         load: async (_record, signal) => {
           const bytes = await read(entry, signal);
           const prepared = await decode(entry, bytes);
@@ -313,6 +322,21 @@ export async function loadGameFromFiles(
     for (const source of packSources.values()) { const stats = source.getReadMetrics?.(); if (stats) for (const key of Object.keys(result) as Array<keyof StorageReadMetrics>) result[key] += stats[key]; }
     return result;
   };
+  function acquireCollision(scope: AssetLoadScope, id: string, model: { source: Uint8Array; payload: ModelPayload }, signal?: AbortSignal, priority: AssetLoadPriority = "gameplay") {
+    return scope.acquire<PreparedAsset>(id, {
+      key: "export-complex-collision",
+      estimate: { sourceBytes: 0, decodedBytes: model.source.byteLength, temporaryBytes: model.source.byteLength * 3 },
+      load: async () => {
+        const mesh = cookComplexCollisionMesh(model.source, model.payload);
+        const decodedBytes = mesh ? collisionTriangleMeshBytes(mesh) : 0;
+        return {
+          value: { bytes: new Uint8Array(), decodedBytes, publish: () => { if (mesh) complexMeshes.set(id, mesh); } },
+          decodedBytes,
+          dispose: () => { if (mesh && complexMeshes.get(id) === mesh) complexMeshes.delete(id); },
+        };
+      },
+    }, { signal, priority, dependencies: "none" });
+  }
   async function prepare(scope: AssetLoadScope, roots: string[], signal?: AbortSignal, onProgress?: (progress: { completed: number; total: number }) => void, priority: AssetLoadPriority = "gameplay", requestedFonts?: ReadonlyMap<string, ReadonlySet<"facetype" | "msdf" | "bitmap">>) {
     const closure = new Set<string>();
     const visit = (id: string) => { if (closure.has(id)) return; closure.add(id); for (const dependency of entries.get(id)?.requiredDependencies ?? []) visit(dependency); };
@@ -365,12 +389,20 @@ export async function loadGameFromFiles(
       if (selected.has("msdf")) { variants.add(fontMsdfExportGuid(guid)); variants.add(fontMsdfAtlasExportGuid(guid)); }
     }
     const extraMetadata = [...closure].filter(id => !documentIds.includes(id));
-    const total = prepared.length + extraMetadata.length + variants.size;
+    // A Model's collision triangles are a separate cached representation, cooked
+    // only when a Scene/Class in this closure uses Use Complex Collision.
+    const needsCollision = complexCollisionModelGuids([...prepared.map(asset => asset.document), ...scripts]);
+    const collisions = documentIds.flatMap((id, index) => {
+      const model = prepared[index]!.model;
+      return model && needsCollision.has(id) ? [acquireCollision(scope, id, model, signal, priority)] : [];
+    });
+    const total = prepared.length + extraMetadata.length + variants.size + collisions.length;
     let completed = prepared.length;
     onProgress?.({ completed, total });
     const extra = await Promise.all([
       ...extraMetadata.map(id => acquire(id, entries.get(id)?.type === "Font")),
       ...[...variants].map(id => { closure.add(id); return acquire(id); }),
+      ...collisions,
     ].map(async work => { const result = await work; onProgress?.({ completed: ++completed, total }); return result; }));
     signal?.throwIfAborted();
     for (const asset of [...prepared, ...extra]) asset.publish();
