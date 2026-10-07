@@ -220,9 +220,12 @@ function validateStructural(
     const source = findNode(graph, edge.sourceNodeId);
     const target = findNode(graph, edge.targetNodeId);
     if (!source || !target) continue;
-    // A latent action yields to the runtime, so its back-edge is not an
-    // uninterrupted synchronous loop. Other cycles remain legal, with a warning.
-    if (registry?.get(source.typeId)?.latent || source.properties.async === true) continue;
+    // Warn only on unconditional synchronous paths. Branches and stateful
+    // flow controls may exit; latent actions yield to the runtime.
+    const definition = registry?.get(source.typeId);
+    if (definition?.latent || definition?.structuredFlow || source.properties.async === true ||
+      source.pins.filter((pin) => pin.kind === "exec" && pin.direction === "out").length !== 1 ||
+      source.pins.filter((pin) => pin.kind === "exec" && pin.direction === "in").length > 1) continue;
     if (findPin(source, edge.sourcePinId)?.kind === "exec" &&
       findPin(target, edge.targetPinId)?.kind === "exec") {
       execAdjacency.get(source.id)!.push(target.id);
