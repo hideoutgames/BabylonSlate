@@ -17,7 +17,6 @@ import {
   isAssetDocumentKind,
   isContentBrowserId,
   isSceneWorkspaceKind,
-  labelFromPath,
   migrateRestoredDocumentId,
   parseDocumentId,
 } from "@babylonslate/core";
@@ -318,7 +317,8 @@ export class DocumentService {
       // acquire a scope and read the document when the user actually needs it.
       this.state.openDocuments.set(restoredId, {
         id: restoredId,
-        ref: { kind: parsed.kind, path: parsed.path, label: labelFromPath(parsed.path) },
+        // Same kind suffix openDocument adds on load ("Main Scene", not "Main").
+        ref: createDocumentRef(parsed.kind, parsed.path),
         content: null,
         layout: layouts.documents[restoredId] ?? layouts.documents[id] ?? null,
         dirty: false,

@@ -265,10 +265,14 @@ describe("DocumentService", () => {
     expect(state.activeDocumentId).toBe(CONTENT_BROWSER_ID);
     expect(projectService.loadDocument).not.toHaveBeenCalled();
     expect(service.getDocument(sceneId)?.content).toBeNull();
+    const restoredLabels = [sceneId, graphId].map((id) => service.getDocument(id)?.ref.label);
     await service.openDocument(projectService, service.getDocument(sceneId)!.ref);
     expect(service.getActiveDocument()?.content).toMatchObject({ name: "Main" });
     expect(service.getDocument(graphId)?.content).toBeNull();
     expect(projectService.loadDocument).toHaveBeenCalledOnce();
+    await service.openDocument(projectService, service.getDocument(graphId)!.ref);
+    // Unloaded tabs already show the label loading produces.
+    expect([sceneId, graphId].map((id) => service.getDocument(id)?.ref.label)).toEqual(restoredLabels);
   });
 
   it("pins an open scene immediately after content browser even when other assets were opened first", async () => {
