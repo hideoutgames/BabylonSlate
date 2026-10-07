@@ -175,6 +175,33 @@ describe("material compiler", () => {
     expect(setFloat4).toHaveBeenCalledWith(expect.stringMatching(/^fogParameters/), Scene.FOGMODE_EXP2, 2, 10, 0.7);
   });
 
+  it.each(["pbr", "unlit"] as const)("leaves %s color linear for a Scene Linear display stage", async (shadingModel) => {
+    const scene = host();
+    scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
+    const doc = createDefaultMaterialDocument();
+    doc.shadingModel = shadingModel;
+    const result = compileMaterialPlan(planFor(doc), { scene, name: "encoded" });
+    if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+    disposers.push(() => result.dispose());
+    expect(await result.ready).toEqual([]);
+    const mesh = MeshBuilder.CreateBox("encoded-box", {}, scene);
+    mesh.material = result.material;
+    // Babylon's two display encodings: in-material image processing, or the
+    // fragment output's gamma conversion.
+    const displayEncodings = async () => {
+      // A new frame: readiness is cached per render id.
+      scene.incrementRenderId();
+      await result.material.forceCompilationAsync(mesh);
+      const subMesh = mesh.subMeshes![0]!;
+      expect(result.material.isReadyForSubMesh(mesh, subMesh)).toBe(true);
+      return subMesh.effect!.defines.match(/^#define (IMAGEPROCESSING|CONVERTTOGAMMA\d*)$/gm) ?? [];
+    };
+    expect(await displayEncodings()).toHaveLength(1);
+    // Scene Linear: the Display Color stage encodes the frame exactly once.
+    scene.imageProcessingConfiguration.applyByPostProcess = true;
+    expect(await displayEncodings()).toEqual([]);
+  });
+
   it("keeps screen overlays independent of world fog", async () => {
     const scene = host();
     scene.fogMode = Scene.FOGMODE_LINEAR;
