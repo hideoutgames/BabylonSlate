@@ -11,7 +11,7 @@ function saveStateLabel(unsaved: number, projectDirty: boolean): string {
 }
 
 export function EditorStatusBar() {
-  const { openDocuments, activeDocumentId, dirtyDocuments, projectDirty } =
+  const { openDocuments, activeDocumentId, dirtyDocuments, projectDirty, autoSaveStatus } =
     useDocuments();
   const { errorCount } = useValidation();
   const phone = usePhoneLayout();
@@ -26,7 +26,15 @@ export function EditorStatusBar() {
           data-dirty={dirty ? "true" : "false"}
           aria-hidden="true"
         />
-        {saveStateLabel(dirtyDocuments.length, projectDirty)}
+        <span role="status" title={autoSaveStatus?.message}>
+          {autoSaveStatus?.state === "saving"
+            ? "Auto-Saving…"
+            : autoSaveStatus?.state === "error"
+              ? "Auto-Save Failed — Use Save All"
+              : autoSaveStatus?.state === "saved" && !dirty
+                ? "All Changes Auto-Saved"
+                : saveStateLabel(dirtyDocuments.length, projectDirty)}
+        </span>
         {errorCount > 0 ? (
           <span className="editor-status-errors">
             <CircleAlertIcon aria-hidden="true" />

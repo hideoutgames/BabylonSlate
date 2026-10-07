@@ -5,6 +5,7 @@ import { EditorStatusBar } from "./editor-status-bar";
 const state = vi.hoisted(() => ({
   dirtyDocuments: [] as Array<{ id: string }>,
   projectDirty: false,
+  autoSaveStatus: null as ReturnType<typeof import("../context/document-context").useDocuments>["autoSaveStatus"],
   errorCount: 0,
   phone: false,
 }));
@@ -14,6 +15,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   activeDocumentId: "scene",
   dirtyDocuments: state.dirtyDocuments,
   projectDirty: state.projectDirty,
+  autoSaveStatus: state.autoSaveStatus,
 })));
 vi.mock("../context/validation-context", () => ({
   useValidation: () => ({ errorCount: state.errorCount }),
@@ -26,6 +28,7 @@ beforeEach(() => {
   vi.stubGlobal("__BABYLONSLATE_BUILD_LABEL__", "0.0.1 Development build");
   state.dirtyDocuments = [];
   state.projectDirty = false;
+  state.autoSaveStatus = null;
   state.errorCount = 0;
   state.phone = false;
 });
@@ -53,6 +56,22 @@ describe("EditorStatusBar", () => {
     expect(screen.getByTestId("editor-status-bar").textContent).toContain(
       "Unsaved Project Changes",
     );
+  });
+
+  it("distinguishes automatic saving, success, failure, and newer unsaved edits", () => {
+    state.autoSaveStatus = { state: "saving" };
+    const { rerender } = render(<EditorStatusBar />);
+    expect(screen.getByRole("status").textContent).toContain("Auto-Saving");
+    state.autoSaveStatus = { state: "saved" };
+    rerender(<EditorStatusBar />);
+    expect(screen.getByRole("status").textContent).toContain("Auto-Saved");
+    state.dirtyDocuments = [{ id: "new-edit" }];
+    rerender(<EditorStatusBar />);
+    expect(screen.getByRole("status").textContent).toContain("1 Unsaved Document");
+    state.autoSaveStatus = { state: "error", message: "Storage unavailable" };
+    rerender(<EditorStatusBar />);
+    expect(screen.getByRole("status").textContent).toContain("Auto-Save Failed");
+    expect(screen.getByRole("status").title).toBe("Storage unavailable");
   });
 
   it("shows compile errors", () => {
