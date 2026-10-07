@@ -14,7 +14,7 @@ type PackedLights = {
   _lightDataRenderId: number;
 };
 
-/** Babylon 9.20 packs by camera depth; CEL ties require stable authored order. */
+/** Babylon 9.29 packs by camera depth; CEL ties require stable authored order. */
 export class ClusteredLightOrder {
   private map: RenderTargetTexture | undefined;
   private observer: Observer<RenderTargetTexture> | undefined;

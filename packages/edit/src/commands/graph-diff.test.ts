@@ -7,6 +7,7 @@ import {
   RemoveEdgeCommand,
   RemoveNodeCommand,
   SetGraphMembersCommand,
+  SetGraphActorDefaultsCommand,
   SetGraphComponentsCommand,
   SetGraphFunctionGraphsCommand,
   SetNodeDataCommand,
@@ -68,6 +69,17 @@ describe("diffGraphCommands", () => {
     expect(commands.some((c) => c instanceof SetGraphMembersCommand)).toBe(
       true,
     );
+  });
+
+  it("emits an undoable SetGraphActorDefaultsCommand when Actor Defaults change", () => {
+    const before = createDefaultGraph();
+    const after = { ...before, actorDefaults: { generateHitEvents: false, eventTick: "disabled" as const } };
+    const commands = diffGraphCommands(before, after);
+    expect(commands).toHaveLength(1);
+    const command = commands[0] as SetGraphActorDefaultsCommand;
+    expect(command).toBeInstanceOf(SetGraphActorDefaultsCommand);
+    expect(command.apply(before).actorDefaults).toEqual(after.actorDefaults);
+    expect(command.invert().apply(after)).not.toHaveProperty("actorDefaults");
   });
 
   it("emits SetGraphComponentsCommand when prefab components change", () => {

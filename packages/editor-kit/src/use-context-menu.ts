@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
@@ -92,7 +93,9 @@ export function useContextMenu(
   } = options;
   const pressRef = useRef<PressState | null>(null);
   const itemsRef = useRef(items);
-  itemsRef.current = items;
+  useLayoutEffect(() => {
+    itemsRef.current = items;
+  });
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
   // Right mouse press: a drag (viewport orbit) must not end in a menu, and
   // platforms that fire contextmenu on press defer it to the release.

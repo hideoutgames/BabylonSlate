@@ -69,6 +69,10 @@ import {
 } from "../lib/overridable-functions";
 import { componentGraphMembersForClass } from "../lib/component-graph-members";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
+import {
+  EVENT_GRAPH_PANEL_ID,
+  openFunctionGraphPanel,
+} from "../shell/function-graph-panels";
 
 const CLASS_KINDS = ["graph"] as const;
 const INTERFACE_KINDS = ["script-interface"] as const;
@@ -1051,8 +1055,8 @@ export function ClassMembersView({
 }
 
 /** Class panel — My Blueprint member tree stacked under Components. */
-export function MyClassPanel(_props: MyClassPanelProps) {
-  void _props;
+export function MyClassPanel(props: MyClassPanelProps) {
+  const dockApi = props.containerApi as MyClassPanelProps["containerApi"] | undefined;
   const { documentId } = useDocumentWorkspace();
   const { applyGraphChange, applyAssetDocumentChange, openDocument } =
     useDocumentActions();
@@ -1124,6 +1128,7 @@ export function MyClassPanel(_props: MyClassPanelProps) {
   }, [assetRegistry, className, classDocuments, indexed, interfaceDocuments, parentOf, registryEpoch]);
 
   const focusEvent = (nodeId: string, name: string) => {
+    dockApi?.getPanel(EVENT_GRAPH_PANEL_ID)?.api.setActive();
     setActiveFunctionId(null);
     setSelectedNodeIds([nodeId]);
     setFocusDiagnostic({
@@ -1181,6 +1186,7 @@ export function MyClassPanel(_props: MyClassPanelProps) {
           }
           if (member?.kind === "function") {
             setSelectedMemberId(id);
+            if (dockApi) openFunctionGraphPanel(dockApi, id, member.name);
             setActiveFunctionId(id);
             return;
           }

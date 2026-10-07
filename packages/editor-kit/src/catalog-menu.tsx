@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronRightIcon } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
 import {
@@ -156,13 +156,17 @@ export function CatalogMenu<T extends CatalogMenuItem>({
   const coarse = isCoarsePointerEnvironment();
   const rowHeight = coarse ? CATALOG_MENU_TOUCH_ROW_HEIGHT : CATALOG_MENU_ROW_HEIGHT;
 
-  useEffect(() => {
-    if (!open) return;
-    setSearch("");
-    setActiveKey(null);
-    setCollapsed(new Set());
-    setSidebarCategory(null);
-  }, [open]);
+  // Reset the menu while rendering each time it opens.
+  const [wasOpen, setWasOpen] = useState<boolean | null>(null);
+  if (wasOpen !== open) {
+    setWasOpen(open);
+    if (open) {
+      setSearch("");
+      setActiveKey(null);
+      setCollapsed(new Set());
+      setSidebarCategory(null);
+    }
+  }
 
   const filtered = useMemo(
     () => (filterItems ? filterItems(items, search) : defaultFilter(items, search, formatCategory)),
@@ -262,7 +266,7 @@ export function CatalogMenu<T extends CatalogMenuItem>({
   const onSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.nativeEvent.isComposing || rows.length === 0) return;
     const active = activeIndex >= 0 ? rows[activeIndex]! : null;
-    let next = activeIndex;
+    let next: number;
     switch (event.key) {
       case "ArrowDown":
         next = Math.min(rows.length - 1, activeIndex + 1);

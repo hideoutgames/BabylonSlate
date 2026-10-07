@@ -53,11 +53,15 @@ export function createGameWorkerHost(): GameWorkerHost {
         return;
       }
       const buffer = new Float32Array(ab);
-      for (const handler of snapshotHandlers) handler(buffer);
       // Consumers (SnapshotInterpolator.push) copy synchronously, so the
       // buffer is safe to hand straight back for the worker's next frame —
-      // avoids a fresh ArrayBuffer allocation every tick.
-      post({ channel: "recycleSnapshot", payload: ab }, [ab]);
+      // avoids a fresh ArrayBuffer allocation every tick. The worker caps
+      // unreturned snapshots, so a throwing consumer must still return it.
+      try {
+        for (const handler of snapshotHandlers) handler(buffer);
+      } finally {
+        post({ channel: "recycleSnapshot", payload: ab }, [ab]);
+      }
     }
   };
 

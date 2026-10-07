@@ -1,7 +1,7 @@
 import { checkedShader } from "./checked-shader";
 
 /**
- * Directional PCF receiver-plane correction for Babylon 9.20. Each native
+ * Directional PCF receiver-plane correction for Babylon 9.29. Each native
  * bilinear tap compares against the receiver plane at its own sample position.
  * Low reconstructs its bilinear footprint with four texel-center comparisons
  * so a conservative shared depth cannot erase nearby contacts. Other qualities

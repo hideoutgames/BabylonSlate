@@ -67,6 +67,12 @@ export type NodeDefinition = {
    * only when every dependency is also referentially transparent. */
   referentiallyTransparent?: boolean;
   latent?: boolean;
+  /**
+   * Render pins in their declared order instead of lifting exec pins to the
+   * top. Function Input, Output, and Call nodes follow the signature order
+   * the author arranged in the Inspector.
+   */
+  declaredPinOrder?: boolean;
   /** Hidden from runtime graph palettes unless the host is an editor graph. */
   editorOnly?: boolean;
   /**

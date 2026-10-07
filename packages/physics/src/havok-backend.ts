@@ -985,7 +985,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       ),
     );
     const memberships = new Map<PhysicsShape, number>();
-    let grounded = false;
+    let grounded: boolean;
     try {
       // CCT casts exclude their private body, not the actor's physical body.
       // Filter the owner's complete compound before collecting any contacts.
@@ -1265,10 +1265,12 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         try {
           mesh.isVisible = false;
           const data = new VertexData();
-          const points =
-            shape.kind === "convex" ? shape.points : shape.vertices;
-          data.positions = points.flatMap((p) => [p.x, p.y, p.z]);
-          data.indices = shape.kind === "mesh" ? [...shape.indices] : [];
+          // Packed mesh geometry passes through; Havok copies it into native memory.
+          data.positions =
+            shape.kind === "convex"
+              ? shape.points.flatMap((p) => [p.x, p.y, p.z])
+              : shape.positions;
+          data.indices = shape.kind === "mesh" ? shape.indices : [];
           data.applyToMesh(mesh);
           return shape.kind === "convex"
             ? new PhysicsShapeConvexHull(mesh, this.scene)

@@ -4,7 +4,7 @@ import {
 } from "@babylonjs/core";
 import { retireOwnedEffect, type OwnedEffectRetirement } from "./owned-effect-retirement";
 
-/** Pinned Babylon 9.20 ownership adapter: dispose() only detaches observers.
+/** Pinned Babylon 9.29 ownership adapter: dispose() only detaches observers.
  * Its per-generator wrappers borrow one Effect reference from the main wrapper.
  * Retire that reference once, after native parallel compilation has settled. */
 type NativeShadowEntry = { mainDrawWrapper: DrawWrapper; drawWrapper: Array<DrawWrapper | null>; depthDefines: string };

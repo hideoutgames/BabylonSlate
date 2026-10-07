@@ -1,6 +1,6 @@
 import { act, fireEvent, render, cleanup, screen, waitFor } from "@testing-library/react";
 import { useStore } from "@xyflow/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultGraph } from "@babylonslate/core";
 import { DRAG_ARM_MS, EditorReadOnlyContext, TagProvider } from "@babylonslate/editor-kit";
@@ -4716,7 +4716,9 @@ describe("inline pin editing", () => {
     let replaceSnapshot: (graph: GraphDocument) => void = () => {};
     function ControlledHost() {
       const [snapshot, setSnapshot] = useState(before);
-      replaceSnapshot = setSnapshot;
+      useEffect(() => {
+        replaceSnapshot = setSnapshot;
+      }, []);
       return <GraphEditor initialGraph={snapshot} onChange={(next, meta) => {
         onChange(next, meta);
         setSnapshot(next);
@@ -4848,7 +4850,10 @@ describe("inline pin editing", () => {
       const onChange = vi.fn();
       let commit: ReturnType<typeof useGraphEditorContext>["onPinDefaultChange"];
       function CaptureCommit() {
-        commit = useGraphEditorContext().onPinDefaultChange;
+        const onPinDefaultChange = useGraphEditorContext().onPinDefaultChange;
+        useEffect(() => {
+          commit = onPinDefaultChange;
+        });
         return null;
       }
       const renderBody = () => <CaptureCommit />;

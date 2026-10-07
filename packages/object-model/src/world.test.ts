@@ -502,6 +502,101 @@ describe("World tick", () => {
     expect(world.findActor("actor")).toBe(replacementActor);
   });
 
+  it("removes interleaved layer actors one at a time with dense spawn indices, including re-entrant removals", () => {
+    const world = createTestWorld();
+    const events: string[] = [];
+    const order = () => world.getActors().map((actor) => actor.guid).join(",");
+    const indexed = () => world.getActors().map((actor) => `${actor.guid}@${actor.spawnIndex}`).join(",");
+    const spawn = (guid: string, sceneLayerId: string | null) => {
+      const actor = world.createActor({ classId: "Actor", guid, sceneLayerId, hooks: {
+        onDestroyed: () => { events.push(guid === "a1" ? `${guid}:${indexed()}` : `${guid}:${order()}`); },
+      } });
+      world.spawnActorNow(actor);
+      return actor;
+    };
+    world.createSceneLayer({ guid: "L", assetGuid: "overlay", zOrder: 0 });
+    world.createSceneLayer({ guid: "M", assetGuid: "overlay", zOrder: 1 });
+    spawn("a0", null);
+    const a1 = spawn("a1", "L");
+    spawn("a2", null);
+    spawn("a3", "L");
+    spawn("a4", "M");
+    spawn("a5", "L");
+    spawn("a6", null);
+    // Removes a later actor while a1's own removal is still settling.
+    a1.attachComponent(world.createComponent({ classId: "ActorComponent", hooks: {
+      onDestroyed: () => {
+        events.push("a1-component");
+        world.destroySceneLayer("M");
+      },
+    } }));
+    world.destroySceneLayer("L");
+    expect(events).toEqual([
+      "a1-component",
+      "a4:a0,a2,a3,a5,a6",
+      "a1:a0@0,a2@1,a3@2,a5@3,a6@4",
+      "a3:a0,a2,a5,a6",
+      "a5:a0,a2,a6",
+    ]);
+    expect(indexed()).toBe("a0@0,a2@1,a6@2");
+  });
+
+  it("ticks exactly the actors and components present when each phase reached them", () => {
+    const world = createTestWorld();
+    const ticks: string[] = [];
+    let firstTick = true;
+    world.createSceneLayer({ guid: "layer", assetGuid: "overlay", zOrder: 0 });
+    const actor = (guid: string, sceneLayerId: string | null = null, onTick?: () => void) => world.createActor({
+      classId: "Actor", guid, sceneLayerId, hooks: { onTick: () => { ticks.push(guid); if (firstTick) onTick?.(); } },
+    });
+    const component = (guid: string, onTick?: () => void) => world.createComponent({
+      classId: "ActorComponent", guid, hooks: { onTick: () => { ticks.push(guid); if (firstTick) onTick?.(); } },
+    });
+    // Mid-phase: a synchronous removal of a later actor and a committed spawn.
+    const first = actor("first", null, () => {
+      world.destroySceneLayer("layer");
+      world.spawnActor(actor("late"));
+      world.flushPending();
+    });
+    const second = actor("second");
+    // Mid-phase: attaches to the ticking actor and to one the phase has not reached.
+    first.attachComponent(component("first-c", () => {
+      first.attachComponent(component("first-added"));
+      second.attachComponent(component("second-added"));
+    }));
+    world.spawnActorNow(first);
+    world.spawnActorNow(actor("overlay", "layer"));
+    world.spawnActorNow(second);
+    world.spawnActorNow(actor("third"));
+    world.tick();
+    firstTick = false;
+    expect(ticks).toEqual(["first", "second", "third", "first-c", "second-added"]);
+    expect(world.getActors().map((entry) => `${entry.guid}@${entry.spawnIndex}`))
+      .toEqual(["first@0", "second@1", "third@2", "late@3"]);
+    ticks.length = 0;
+    world.tick();
+    expect(ticks).toEqual(["first", "second", "third", "late", "first-c", "first-added", "second-added"]);
+  });
+
+  it("marks the structural revision for direct actor parent/name map writes", () => {
+    const world = createTestWorld();
+    const actor = world.createActor({ classId: "Actor", variables: { name: "Hero" } });
+    world.spawnActorNow(actor);
+    const revision = () => world.structuralRevision;
+    let before = revision();
+    actor.variables.set("parentId", "root");
+    expect(revision()).toBeGreaterThan(before);
+    before = revision();
+    actor.variables.set("parentId", "root");
+    actor.variables.set("health", 3);
+    expect(revision()).toBe(before);
+    actor.variables.delete("name");
+    expect(revision()).toBeGreaterThan(before);
+    before = revision();
+    actor.variables.clear();
+    expect(revision()).toBeGreaterThan(before);
+  });
+
   it("produces identical snapshots for the same seed", () => {
     const run = (seed: number) => {
       const world = createTestWorld(seed);

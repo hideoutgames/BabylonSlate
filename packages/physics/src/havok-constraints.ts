@@ -59,7 +59,7 @@ export function makeHavokConstraint(desc: ConstraintDesc, scene: Scene): Physics
   }, limits, scene);
 }
 
-/** Babylon 9.20 releases native joints but leaves its reverse pair index behind. */
+/** Babylon 9.29 releases native joints but leaves its reverse pair index behind. */
 export function disposeHavokConstraint(plugin: HavokPlugin, constraint: Physics6DoFConstraint): void {
   const handles = constraint._pluginData as Array<[bigint]> | undefined;
   if (!handles) return;

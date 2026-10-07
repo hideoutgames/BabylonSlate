@@ -65,22 +65,25 @@ export async function createAppWebGpuEngine(
     });
     return engine;
   } catch (error) {
+    const failures: unknown[] = [error];
     try {
       if (initialized) engine.dispose();
       else disposeFailedWebGpuInitialization(engine, canvas);
     } catch (cleanupError) {
+      failures.push(cleanupError);
+    }
+    if (failures.length > 1)
       throw new AggregateError(
-        [error, cleanupError],
+        failures,
         "WebGPU initialization and cleanup failed.",
         { cause: error },
       );
-    }
     throw error;
   }
 }
 
 /**
- * Babylon 9.20's dispose assumes initAsync created every helper. Its failed
+ * Babylon 9.29's dispose assumes initAsync created every helper. Its failed
  * adapter/device path dereferences missing helpers before releasing listeners
  * and EngineStore ownership. This adapter is only for failed initialization,
  * before this Engine can own any application Scene or resource-cache entry.

@@ -196,7 +196,7 @@ export class ForwardSceneFrameGraph {
     watch(scene.onSkeletonRemovedObservable, mark);
     for (const mesh of scene.meshes) this.watchMesh(mesh);
     for (const light of scene.lights) this.watchLight(light);
-    // Babylon 9.20 clears activeCamera at the start of its graph render method.
+    // Babylon 9.29 clears activeCamera at the start of its graph render method.
     // Restore it before existing lighting/floating-origin/lifecycle observers.
     this.beforeRender = scene.onBeforeRenderObservable.add(
       () => {
@@ -819,7 +819,7 @@ export class ForwardSceneFrameGraph {
         if (output.depth) {
           const borrowedDepth = output.depth;
           const createTarget = textures.createRenderTarget.bind(textures);
-          // Babylon 9.20 retains imported color attachments for its wrappers,
+          // Babylon 9.29 retains imported color attachments for its wrappers,
           // but not depth. Each owned wrapper must retain borrowed depth too,
           // since wrapper.dispose releases both. Scope this to this graph only.
           textures.createRenderTarget = (...args) => {

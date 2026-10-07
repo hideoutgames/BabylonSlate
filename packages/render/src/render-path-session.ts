@@ -50,8 +50,10 @@ export function retainPlayRenderPathSession(engine: AbstractEngine): () => void 
   };
   try { if (first) requestRenderPath(engine, {}); }
   catch (error) {
+    const failures: unknown[] = [error];
     try { release(); }
-    catch (restoreError) { throw new AggregateError([error, restoreError], "Play render-path session could not start or restore."); }
+    catch (restoreError) { failures.push(restoreError); }
+    if (failures.length > 1) throw new AggregateError(failures, "Play render-path session could not start or restore.", { cause: error });
     throw error;
   }
   return release;

@@ -33,6 +33,7 @@ import { createWorkerScheduler } from "./worker-scheduler";
 import { captureConsoleLogs } from "./console-capture";
 import { createSceneSnapshotDelivery } from "./scene-snapshot-delivery";
 import { createSceneSourceClient } from "./scene-source";
+import { cookedCollisionMeshMap } from "./source-content-control";
 
 let runtime: RuntimeDriver | null = null;
 let sceneSources = createSceneSourceClient(onCommand);
@@ -47,6 +48,22 @@ const sceneSnapshots = createSceneSnapshotDelivery({
 // Recycled via the host's `recycleSnapshot` message so the per-frame
 // snapshot transfer never allocates a fresh ArrayBuffer once warmed up.
 let snapshotPing = new TransferablePingPong(256);
+// Poses are latest-state. A host that stops returning buffers (a stalled main
+// thread or a hidden tab) must not queue a transfer every tick: with this many
+// outstanding, a tick's pose is skipped and the newest one is published as
+// soon as a buffer comes back. Structural commands are never held.
+const MAX_IN_FLIGHT_SNAPSHOTS = 2;
+let inFlightSnapshots = 0;
+let snapshotSkipped = false;
+// One-shot replies that describe a pose and were held by backpressure; each
+// is sent, in order, right after the next pose snapshot. Never dropped.
+let afterPose: CommandMessage[] = [];
+
+function releaseAfterPose(): void {
+  const held = afterPose;
+  afterPose = [];
+  for (const command of held) onCommand(command);
+}
 let installedGeneration = 0;
 let pendingGeneration: number | null = null;
 let stopConsoleCapture: (() => void) | null = null;
@@ -155,8 +172,13 @@ function handleControl(msg: ControlMessage): void {
         return;
       }
       void rt.requestRuntimeInspector(msg).then(result => {
-        if (runtime === rt && result.success && result.payload?.kind === "mutation") publishSnapshot();
-        onCommand({ type: "runtimeInspectorResult", ...result });
+        const command: CommandMessage = { type: "runtimeInspectorResult", ...result };
+        // A paused host redraws on this result, so it must follow the edited pose.
+        if (runtime === rt && result.success && result.payload?.kind === "mutation" && !publishSnapshot() && snapshotSkipped) {
+          afterPose.push(command);
+          return;
+        }
+        onCommand(command);
       });
       return;
     }
@@ -182,6 +204,7 @@ function handleControl(msg: ControlMessage): void {
       sceneSources.receive(msg);
       return;
     case "load": {
+      releaseAfterPose();
       bootGeneration++;
       boot.reset();
       pauseGate.reset();
@@ -292,17 +315,11 @@ function handleControl(msg: ControlMessage): void {
       for (const entry of msg.models) {
         models[entry.guid] = normalizeModelPayload(entry.document);
       }
-      const complexMeshes: Record<
-        string,
-        { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
-      > = {};
-      for (const entry of msg.complexMeshes ?? []) {
-        complexMeshes[entry.guid] = {
-          vertices: entry.vertices,
-          indices: entry.indices,
-        };
-      }
-      rt.registerModelContent({ models, complexMeshes });
+      rt.registerModelContent({ models, complexMeshes: cookedCollisionMeshMap(msg.complexMeshes) });
+      return;
+    }
+    case "loadComplexCollision": {
+      ensureRuntime().registerComplexCollisionMeshes(cookedCollisionMeshMap(msg.meshes), msg.unavailable);
       return;
     }
     case "loadNavMesh": {
@@ -333,6 +350,7 @@ function handleControl(msg: ControlMessage): void {
       return;
     }
     case "stop":
+      releaseAfterPose();
       bootGeneration++;
       boot.reset();
       pauseGate.reset();
@@ -427,13 +445,20 @@ function handleControl(msg: ControlMessage): void {
 function publishSnapshot(): boolean {
   const rt = runtime;
   if (!rt || pendingGeneration !== null) return false;
+  if (inFlightSnapshots >= MAX_IN_FLIGHT_SNAPSHOTS) {
+    snapshotSkipped = true;
+    return false;
+  }
   const buf = snapshotPing.beginWrite();
   if (!rt.copySnapshot(buf)) {
     snapshotPing.cancelWrite();
     return false;
   }
   const ab = snapshotPing.commitWrite();
+  inFlightSnapshots++;
+  snapshotSkipped = false;
   postMessage({ channel: "snapshot", payload: ab, generation: installedGeneration }, [ab]);
+  releaseAfterPose();
   return true;
 }
 
@@ -459,8 +484,10 @@ self.onmessage = (event: MessageEvent<BridgeHostMessage>) => {
     return;
   }
   if (msg.channel === "recycleSnapshot") {
+    // Every posted buffer comes back once, stale layout generations included.
+    inFlightSnapshots = Math.max(0, inFlightSnapshots - 1);
     snapshotPing.recycle(msg.payload);
-    sceneSnapshots.flush();
+    if (!sceneSnapshots.flush() && snapshotSkipped) publishSnapshot();
     return;
   }
   if (msg.channel === "snapshotLayoutAck" && msg.generation === pendingGeneration) {

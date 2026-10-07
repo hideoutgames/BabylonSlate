@@ -58,8 +58,8 @@ describe("functions.call", () => {
       })),
     ).toEqual([
       { id: "execIn", direction: "in", type: EXEC },
-      { id: "execOut", direction: "out", type: EXEC },
       { id: "target", direction: "in", type: objectRef("Guard") },
+      { id: "execOut", direction: "out", type: EXEC },
     ]);
   });
 
@@ -90,13 +90,34 @@ describe("functions.call", () => {
       })),
     ).toEqual([
       { id: "exec", direction: "in", type: EXEC },
-      { id: "then", direction: "out", type: EXEC },
       { id: "amount", direction: "in", type: FLOAT },
       { id: "flag", direction: "in", type: BOOL },
       { id: "count", direction: "in", type: INT },
       { id: "label", direction: "in", type: STRING },
       { id: "kind", direction: "in", type: enumRef("") },
+      { id: "then", direction: "out", type: EXEC },
       { id: "result", direction: "out", type: FLOAT },
+    ]);
+  });
+
+  it("follows the signature order when exec is moved below a data pin", () => {
+    const def = createDefaultNodeRegistry().get("functions.call")!;
+    const pins = def.pins({
+      functionName: "Alert",
+      classId: "Guard",
+      pins: [
+        { name: "amount", typeId: "float", direction: "in" },
+        { name: "exec", typeId: "exec", direction: "in" },
+        { name: "result", typeId: "float", direction: "out" },
+        { name: "then", typeId: "exec", direction: "out" },
+      ],
+    });
+    expect(pins.map((pin) => `${pin.direction}:${pin.id}`)).toEqual([
+      "in:target",
+      "in:amount",
+      "in:exec",
+      "out:result",
+      "out:then",
     ]);
   });
 

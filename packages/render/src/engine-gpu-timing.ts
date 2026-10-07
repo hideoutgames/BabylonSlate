@@ -24,7 +24,7 @@ type Owner = {
 const owners = new WeakMap<AbstractEngine, Owner>();
 
 export function engineGpuTimingUnavailableReason(engine: AbstractEngine): string | null {
-  if (engine.isWebGPU) return "Babylon 9.20.0 cannot provide valid whole-frame WebGPU timestamps on this path.";
+  if (engine.isWebGPU) return "Babylon 9.29.0 cannot provide valid whole-frame WebGPU timestamps on this path.";
   if (!engine.getCaps().timerQuery) return "The active graphics context does not support GPU timer queries.";
   if (engine.isDisposed) return "The graphics engine has been disposed.";
   return null;
@@ -35,7 +35,7 @@ export function acquireEngineGpuTiming(engine: AbstractEngine): EngineGpuTimingL
   if (engineGpuTimingUnavailableReason(engine)) return null;
   let owner = owners.get(engine);
   if (!owner) {
-    // Pinned Babylon 9.20.0 has no public Engine getter for this switch. Read
+    // Pinned Babylon 9.29.0 has no public Engine getter for this switch. Read
     // this one version-verified flag; all changes use the public capture API.
     const priorCapture = (engine as AbstractEngine & { _captureGPUFrameTime?: boolean })._captureGPUFrameTime === true;
     const instrument = new EngineInstrumentation(engine);
@@ -64,7 +64,7 @@ export function acquireEngineGpuTiming(engine: AbstractEngine): EngineGpuTimingL
     if (--owned.leases || owned.disposed) return;
     owners.delete(engine);
     owned.detach();
-    // Instrumentation.dispose() does not disable engine capture in 9.20.0.
+    // Instrumentation.dispose() does not disable engine capture in 9.29.0.
     // A pending native token remains engine-owned; a later collector skips its
     // first ready result instead of disposing another owner's query privately.
     try { engine.captureGPUFrameTime(owned.priorCapture); }

@@ -3,6 +3,8 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import verifyConfig from "./playwright.config";
+import webkitConfig from "./playwright.webkit.config";
 
 const repoRoot = path.dirname(fileURLToPath(import.meta.url));
 const playwrightCli = createRequire(import.meta.url).resolve(
@@ -15,12 +17,13 @@ type ListedTest = {
   title: string;
 };
 
-let cachedTests: ListedTest[] | undefined;
-function allTests(): ListedTest[] {
-  if (cachedTests) return cachedTests;
+const cachedTests = new Map<string, ListedTest[]>();
+function allTests(config = "playwright.config.ts"): ListedTest[] {
+  const cached = cachedTests.get(config);
+  if (cached) return cached;
   const output = execFileSync(
     process.execPath,
-    [playwrightCli, "test", "--list", "--reporter=json"],
+    [playwrightCli, "test", "--config", config, "--list", "--reporter=json"],
     { encoding: "utf8", cwd: repoRoot },
   );
   type Suite = {
@@ -46,7 +49,7 @@ function allTests(): ListedTest[] {
     for (const child of suite.suites ?? []) visit(child, titles);
   }
   for (const suite of JSON.parse(output).suites) visit(suite, []);
-  cachedTests = tests;
+  cachedTests.set(config, tests);
   return tests;
 }
 
@@ -106,6 +109,35 @@ describe("Playwright iPad project filter", () => {
     ]);
     const desktopKeys = new Set(desktop.map((test) => `${test.file} › ${test.title}`));
     for (const test of landscape)
+      expect(desktopKeys, `${test.title} also runs on desktop`).toContain(`${test.file} › ${test.title}`);
+  }, 60_000);
+});
+
+describe("Playwright WebKit smoke lane", () => {
+  it("keeps PR Verify on Chromium and runs a small tagged desktop subset in WebKit", () => {
+    // verify.yml installs only Chromium; a WebKit project there would fail every shard.
+    for (const project of verifyConfig.projects ?? [])
+      expect(
+        project.use?.browserName ?? project.use?.defaultBrowserType,
+        project.name,
+      ).toBe("chromium");
+    expect(
+      (webkitConfig.projects ?? []).map((project) => [
+        project.name,
+        project.use?.browserName,
+      ]),
+    ).toEqual([["ipad-webkit", "webkit"]]);
+
+    const webkit = allTests("playwright.webkit.config.ts");
+    expect(webkit.map((test) => `${test.file} › ${test.title}`).sort()).toEqual([
+      "editor-smoke.spec.ts › BabylonSlate editor smoke › loads shell, opens project, and shows viewport canvas",
+      "p14-export.spec.ts › P14 export smoke › unzip-serve-boot-tick on range and range-blind servers",
+      "p4-play.spec.ts › P4 Play overlay and session report › Play opens overlay; fixture throw shows report and focuses node",
+    ]);
+    const desktopKeys = new Set(
+      listProject("desktop-chrome").map((test) => `${test.file} › ${test.title}`),
+    );
+    for (const test of webkit)
       expect(desktopKeys, `${test.title} also runs on desktop`).toContain(`${test.file} › ${test.title}`);
   }, 60_000);
 });

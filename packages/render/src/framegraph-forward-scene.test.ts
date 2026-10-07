@@ -56,11 +56,14 @@ function host(engine = new NullEngine()) {
         : enabled.map((value, index) => (value ? 0x8ce0 + index : 0)),
   );
   vi.spyOn(engine, "bindAttachments").mockImplementation(() => {});
+  // Babylon 9.29 graph clears go through the extension's clearAttachments,
+  // which reads the absent WebGL context. NullEngine.clear draws nothing either.
+  vi.spyOn(engine, "clearAttachments").mockImplementation(() => {});
   vi.spyOn(engine, "restoreSingleAttachment").mockImplementation(() => {});
   vi.spyOn(engine, "restoreSingleAttachmentForRenderTarget").mockImplementation(
     () => {},
   );
-  // Babylon 9.20 NullEngine has no FrameGraph allocation overrides. Adapt only
+  // Babylon 9.29 NullEngine has no FrameGraph allocation overrides. Adapt only
   // those hardware boundaries, retaining real textures, wrappers and refcounts.
   vi.spyOn(engine, "_createInternalTexture").mockImplementation(
     (size, options) => {
@@ -339,6 +342,10 @@ it("preserves the native frozen queue across camera-mask changes before returnin
   const hidden = MeshBuilder.CreateBox("outside frustum", {}, scene);
   hidden.layerMask = 1;
   hidden.position.x = 1000;
+  // Babylon 9.29 shares StandardMaterial's shader import across scenes, so a
+  // later freeze can be ready in the creation render id, whose cached world
+  // matrix predates this in-place edit.
+  hidden.computeWorldMatrix(true);
   await new Promise<void>((resolve) => scene.freezeActiveMeshes(false, resolve));
   const otherCamera = new FreeCamera("different mask", camera.position.clone(), scene);
   otherCamera.layerMask = 2;

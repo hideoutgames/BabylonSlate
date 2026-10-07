@@ -39,7 +39,7 @@ export function registerCacheableShadowMaterial(material: NodeMaterial): void {
   });
 }
 
-// Installed Babylon 9.20's native plugins and Slate's mip bias change surface
+// Installed Babylon 9.29's native plugins and Slate's mip bias change surface
 // shading, not vertices. Alpha coverage is rejected separately below.
 // Exact constructors reject derived/custom plugins even when they use a native name.
 const nativePlugins = new Set<unknown>([

@@ -1,4 +1,6 @@
 import {
+  SNAPSHOT_ACTOR_STRIDE,
+  SNAPSHOT_HEADER_FLOATS,
   SNAPSHOT_LAYOUT_VERSION,
   SNAPSHOT_MAGIC_F32,
   actorSlotOffset,
@@ -90,6 +92,17 @@ export function isPublishedSnapshot(buf: Float32Array): boolean {
   return (
     buf[0] === SNAPSHOT_MAGIC_F32 && buf[1] === SNAPSHOT_LAYOUT_VERSION
   );
+}
+
+/**
+ * Floats a reader needs from `buf`: the header plus its `actorCount` rows,
+ * clamped to the buffer. Rows past `actorCount` may hold an earlier frame's
+ * data, so copies stop here and readers never look beyond it.
+ */
+export function snapshotActiveFloatCount(buf: Float32Array): number {
+  const count = buf[4] ?? 0;
+  const rows = count > 0 ? Math.floor(count) : 0;
+  return Math.min(buf.length, SNAPSHOT_HEADER_FLOATS + rows * SNAPSHOT_ACTOR_STRIDE);
 }
 
 /** Last completed simulation tick, or null when the buffer is unpublished. */

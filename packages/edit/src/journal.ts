@@ -7,6 +7,7 @@ import {
   RemoveEdgeCommand,
   RemoveNodeCommand,
   SetGraphMembersCommand,
+  SetGraphActorDefaultsCommand,
   SetGraphComponentsCommand,
   SetGraphFunctionGraphsCommand,
   SetNodeDataCommand,
@@ -18,6 +19,7 @@ import {
   createSetGraphMembersCommandFromJson,
   createSetGraphComponentsCommandFromJson,
   createSetGraphFunctionGraphsCommandFromJson,
+  createSetGraphActorDefaultsCommandFromJson,
   createSetNodeDataCommandFromJson,
 } from "./commands/graph";
 import {
@@ -242,6 +244,14 @@ export function commandToJournalPayload(
         to: functionGraphs.to,
       };
     }
+    case "graph.setActorDefaults": {
+      const actorDefaults = command as SetGraphActorDefaultsCommand;
+      return {
+        type: actorDefaults.type,
+        from: actorDefaults.from,
+        to: actorDefaults.to,
+      };
+    }
     default: {
       if (
         command.type.startsWith("scene.") ||
@@ -326,6 +336,10 @@ export function registerGraphCommandRevivers(): void {
   registerCommandReviver(
     "graph.setFunctionGraphs",
     createSetGraphFunctionGraphsCommandFromJson,
+  );
+  registerCommandReviver(
+    "graph.setActorDefaults",
+    createSetGraphActorDefaultsCommandFromJson,
   );
 }
 

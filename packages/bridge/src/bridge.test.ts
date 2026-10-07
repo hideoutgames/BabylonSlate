@@ -141,6 +141,33 @@ describe("SAB seq-lock transport", () => {
     expect(readSnapshotHeader(copy).frameId).toBe(1);
     expect(readActorSlot(copy, 0).position.x).toBe(9);
   });
+
+  it("delivers every live row of a sparse large-capacity snapshot after a larger frame", () => {
+    const pair = SeqLockSnapshotPair.create(64);
+    const row = (slotId: number, x: number): ActorSlot => ({
+      slotId,
+      position: { x, y: x + 0.5, z: -x },
+      rotation: { x: 0.5, y: -0.5, z: 0.5, w: 0.5 },
+      scale: { x: 2, y: 3, z: 4 },
+      flags: SNAPSHOT_FLAG_VISIBLE,
+    });
+    const publish = (frameId: number, rows: ActorSlot[]) => {
+      const writer = pair.beginWrite();
+      rows.forEach((slot, index) => writeActorSlot(writer, index, slot));
+      writeSnapshotHeader(writer, { frameId, tickIndex: frameId, actorCount: rows.length, scriptMs: 0, physicsMs: 0 });
+      pair.publish();
+    };
+    const copy = new Float32Array(pair.floatCount);
+    publish(1, [row(7, 1), row(8, 2), row(9, 3), row(10, 4)]);
+    expect(pair.tryRead(copy)).toBe(true);
+    publish(2, [row(40, 5)]);
+    publish(3, [row(41, 6), row(63, 7)]);
+
+    expect(pair.tryRead(copy)).toBe(true);
+    expect(readSnapshotHeader(copy)).toMatchObject({ frameId: 3, actorCount: 2 });
+    expect(readActorSlot(copy, 0)).toEqual(row(41, 6));
+    expect(readActorSlot(copy, 1)).toEqual(row(63, 7));
+  });
 });
 
 describe("transferable ping-pong", () => {
@@ -182,5 +209,21 @@ describe("transferable ping-pong", () => {
     ping.cancelWrite();
     const reused = ping.beginWrite();
     expect(reused.buffer).toBe(scratchBuffer);
+  });
+
+  it("keeps only a small spare pool after a burst of returned buffers", () => {
+    const ping = new TransferablePingPong(2);
+    const burst = Array.from({ length: 8 }, () => {
+      ping.beginWrite();
+      return ping.commitWrite();
+    });
+    for (const buffer of burst) ping.recycle(buffer);
+    const next = Array.from({ length: 8 }, () => {
+      ping.beginWrite();
+      return ping.commitWrite();
+    });
+    const reused = next.filter((buffer) => burst.includes(buffer)).length;
+    expect(reused).toBeGreaterThan(0);
+    expect(reused).toBeLessThanOrEqual(3);
   });
 });
