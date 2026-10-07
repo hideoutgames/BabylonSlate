@@ -51,12 +51,13 @@ describe("Simulation final capture boundary", () => {
   });
 
   it("streams large escaped and Unicode values in bounded chunks without changing the JSON meaning", () => {
-    const input = { title: '\\"\n😀'.repeat(12000), value: [null, true, 1, { reference: "actor" }] };
+    const input = { crossed: "x".repeat(2047) + "🐿", title: '\\"\n😀'.repeat(12000), value: [null, true, 1, { reference: "actor" }] };
     const chunks = [...simulationCaptureChunks(input)];
     expect(chunks.length).toBeGreaterThan(1);
     expect(chunks.every(chunk => chunk.byteLength <= 64 * 1024)).toBe(true);
     const decoder = new TextDecoder();
     const serialized = chunks.map(chunk => decoder.decode(chunk, { stream: true })).join("") + decoder.decode();
     expect(JSON.parse(serialized)).toEqual(input);
+    expect(chunks.reduce((size, chunk) => size + chunk.byteLength, 0)).toBe(new TextEncoder().encode(JSON.stringify(input)).byteLength);
   });
 });

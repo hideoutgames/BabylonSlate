@@ -58,4 +58,4 @@ export type { DiagnosticOperation, DiagnosticOperationRequest, DiagnosticOperati
 
 export type { RuntimeMaterialEditPreparation, RuntimeMaterialEditResponse } from "./runtime-material-edit";
 
-export type { SimulationQuiesceRequest, SimulationCaptureRequest, SimulationCaptureSummary } from "./simulation-capture";
+export type { SimulationQuiesceRequest, SimulationCaptureRequest, SimulationCaptureSummary, SimulationCaptureIdentity } from "./simulation-capture";

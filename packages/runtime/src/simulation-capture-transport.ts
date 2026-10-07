@@ -5,7 +5,12 @@ export function* simulationCaptureChunks(value: unknown): Generator<Uint8Array> 
   function* write(item: unknown): Generator<string> {
     if (typeof item === "string") {
       yield '"';
-      for (let offset = 0; offset < item.length; offset += 2048) yield JSON.stringify(item.slice(offset, offset + 2048)).slice(1, -1);
+      for (let offset = 0; offset < item.length;) {
+        let end = Math.min(item.length, offset + 2048);
+        const high = item.charCodeAt(end - 1), low = item.charCodeAt(end);
+        if (high >= 0xd800 && high <= 0xdbff && low >= 0xdc00 && low <= 0xdfff) end++;
+        yield JSON.stringify(item.slice(offset, end)).slice(1, -1); offset = end;
+      }
       yield '"'; return;
     }
     if (item === null || typeof item === "boolean" || typeof item === "number") { yield JSON.stringify(item); return; }
