@@ -1,3 +1,4 @@
+import { runtimeEditLocalTransform } from "./runtime-transform-edit";
 import { RuntimeDiagnosticRecorder } from "./runtime-diagnostic-recorder";
 import { RuntimeInspector } from "./runtime-inspector";
 import { SceneLayerActorSwitchers } from "./scene-layer-actor-switcher";
@@ -6072,7 +6073,7 @@ class InProcessRuntime implements RuntimeDriver {
         try { apply(value); } catch (error) { apply(prior); throw error; }
         if (target instanceof Actor && key === "visible") this.publishInspectorSnapshot(target);
       },
-      applyTransform: (target, transform) => {
+      applyTransform: (target, transform, space) => {
         const prior = target.transform;
         const actor = target instanceof Actor ? target : target.owner!;
         const affected = [actor];
@@ -6094,9 +6095,7 @@ class InProcessRuntime implements RuntimeDriver {
             sync.teleportActor(affectedActor, this.world);
           }
         };
-        target.transform = { position: { x: transform.position[0], y: transform.position[1], z: transform.position[2] },
-          rotation: { x: transform.rotation[0], y: transform.rotation[1], z: transform.rotation[2], w: transform.rotation[3] },
-          scale: { x: transform.scale[0], y: transform.scale[1], z: transform.scale[2] } };
+        target.transform = runtimeEditLocalTransform(this.world, target, transform, space);
         try { apply(); } catch (error) { target.transform = prior; apply(); throw error; }
         if (target instanceof ActorComponent) {
           const slotId = this.slotByActor.get(actor);
@@ -6409,7 +6408,7 @@ class InProcessRuntime implements RuntimeDriver {
     frameId = this.frameId,
     hint?: { btNodeId?: string; assetGuid?: string },
   ): RuntimeDiagnostic | null {
-    if (error instanceof RuntimeContinuationCancelled) return null;
+    if (error instanceof RuntimeContinuationCancelled && this.stopped) return null;
     const err = error instanceof Error ? error : new Error(String(error));
     const stack = err.stack ?? "";
     const anchor = mapStackToAnchor(stack, this.anchors);

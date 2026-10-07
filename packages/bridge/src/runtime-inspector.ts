@@ -26,7 +26,7 @@ export type RuntimeInspectorAction =
   | { kind: "selection"; target: RuntimeObjectIdentity; offset?: number }
   | { kind: "value"; target: RuntimeObjectIdentity; property: string; offset?: number }
   | { kind: "setProperty"; target: RuntimeObjectIdentity; sequence: number; property: string; value: RuntimeInspectorValue }
-  | { kind: "setTransform"; target: RuntimeObjectIdentity; sequence: number; transform: SerializedTransform }
+  | { kind: "setTransform"; target: RuntimeObjectIdentity; sequence: number; transform: SerializedTransform; space?: "local" | "world" }
   | { kind: "setMaterialParameter"; target: RuntimeObjectIdentity; sequence: number; materialGuid: string; parameter: string; value: MaterialParameterValue };
 export type RuntimeInspectorRequest = { sessionGeneration: number; requestId: number; action: RuntimeInspectorAction };
 export type RuntimeInspectorPayload =

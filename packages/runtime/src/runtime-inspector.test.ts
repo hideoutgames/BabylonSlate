@@ -96,6 +96,21 @@ describe("bounded runtime Inspector", () => {
     } finally { runtime.stop(); }
   });
 
+  it("converts world gizmo poses against the current actor and component parent chains", async () => {
+    const { runtime, request, actor, component } = await fixture();
+    try {
+      const world = runtime.getWorld();
+      const parent = world.createActor({ classId: "Actor", guid: "parent" }); parent.transform.position.x = 10; parent.transform.scale.x = 2;
+      world.spawnActorNow(parent); const hero = world.findActor("hero")!; hero.setVariable("parentId", parent.guid);
+      runtime.pause(); const transform = identitySerializedTransform(); transform.position = [18, 0, 0]; transform.scale = [2, 1, 1];
+      expect((await request({ kind: "setTransform", target: actor, sequence: 1, transform, space: "world" })).success).toBe(true);
+      expect(hero.transform.position.x).toBe(4); expect(hero.transform.scale.x).toBe(1);
+      transform.position = [22, 0, 0];
+      expect((await request({ kind: "setTransform", target: component, sequence: 1, transform, space: "world" })).success).toBe(true);
+      expect(hero.components[0]!.transform.position.x).toBe(2);
+    } finally { runtime.stop(); }
+  });
+
   it("teleports a paused physics body through its owner and preserves velocity", async () => {
     const { runtime, request, actor } = await fixture();
     try {
@@ -110,7 +125,8 @@ describe("bounded runtime Inspector", () => {
       const velocity = sync.getActorVelocity(body);
       runtime.pause(); const transform = identitySerializedTransform(); transform.position = [7, 0, 0];
       expect((await request({ kind: "setTransform", target: actor, sequence: 1, transform })).success).toBe(true);
-      expect(sync.getActorVelocity(body)).toEqual(velocity);
+      expect(sync.getActorVelocity(body)).toMatchObject({ linear: velocity!.linear, angular: velocity!.angular });
+      expect(sync.getActorVelocity(body)!.centerOfMass.x).toBeCloseTo(7);
       expect(sync.getBackend().lineTrace({ x: 7, y: 4, z: 0 }, { x: 7, y: -4, z: 0 }).hit).toBe(true);
       expect(sync.getBackend().lineTrace({ x: 0, y: 4, z: 0 }, { x: 0, y: -4, z: 0 }).hit).toBe(false);
       expect(world.clock.tickIndex).toBe(0);

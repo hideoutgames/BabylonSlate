@@ -28,7 +28,7 @@ export interface RuntimeInspectorHost {
   ready(actor: Actor): boolean;
   boundary(): Boundary;
   applyProperty(target: Target, key: string, value: unknown): void;
-  applyTransform(target: Target, transform: SerializedTransform): void;
+  applyTransform(target: Target, transform: SerializedTransform, space?: "local" | "world"): void;
   applyMaterial(component: ActorComponent, name: string, value: import("@babylonslate/core").MaterialParameterValue): boolean;
 }
 
@@ -225,7 +225,8 @@ export class RuntimeInspector {
       const restriction = this.transformRestriction(target);
       if (restriction) throw new Error(restriction);
       validateTransform(action.transform);
-      this.host.applyTransform(target, action.transform);
+      if (action.space !== undefined && action.space !== "local" && action.space !== "world") throw new Error("Unknown transform coordinate space.");
+      this.host.applyTransform(target, action.transform, action.space);
       effective = serializedTransform(target);
     } else {
       if (!(target instanceof ActorComponent)) throw new Error("Select an existing mesh component to edit its material instance.");
