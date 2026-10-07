@@ -95,6 +95,7 @@ export * from "./particle-emission-driver";
 export * from "./particle-render-modes";
 export * from "./particle-preview";
 export * from "./convert-obj-to-glb";
+export * from "./convert-stl-to-glb";
 export * from "./node-rig";
 export type { RenderDiagnostics } from "./render-diagnostics";
 export { captureRenderFrame, activeRenderFrameCapture } from "./render-frame-report";
