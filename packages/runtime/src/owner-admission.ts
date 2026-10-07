@@ -12,6 +12,7 @@ import {
   type BObject,
   type World,
 } from "@babylonslate/object-model";
+import type { SceneLayers } from "./scene-layers";
 import type { SceneStreams } from "./scene-streams";
 
 interface OwnerAdmissionHost {
@@ -23,8 +24,7 @@ interface OwnerAdmissionHost {
   /** The main Scene is still preparing (its load or Play boot loading). */
   sceneLoading(): boolean;
   streams(): Pick<SceneStreams, "blocking" | "actorReady" | "sceneReady">;
-  /** Scene Layer loads by layer guid. */
-  layers(): ReadonlyMap<string, { readonly layer: SceneLayer; readonly ready: boolean }>;
+  layers(): Pick<SceneLayers, "get" | "anyReady">;
   releaseAssets(ownerGuid: string): void;
   reportError(error: unknown): void;
 }
@@ -51,8 +51,7 @@ export class OwnerAdmission {
 
   hasReadyLayers(): boolean {
     if (this.host.stopped() || this.host.streams().blocking) return false;
-    for (const load of this.host.layers().values()) if (load.ready && !load.layer.destroyed) return true;
-    return false;
+    return this.host.layers().anyReady();
   }
 
   canTickActor(actor: Actor, ignorePause = false): boolean {
