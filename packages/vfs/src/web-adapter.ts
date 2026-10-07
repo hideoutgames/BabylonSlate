@@ -1,5 +1,5 @@
 import { checkStorageRevision, rethrowStorageReadFailure, StorageReadCounter, validateStorageRange } from "./storage-range";
-import { SourceRevisionChangedError } from "@babylonslate/core";
+import { isStorageNotFound, SourceRevisionChangedError, StorageNotFoundError } from "@babylonslate/core";
 import type {
   DirEntry,
   FileStat,
@@ -14,6 +14,24 @@ const OPFS_READ_ATTEMPTS = 4;
 const STALE_SNAPSHOT_ERRORS = new Set(["NotReadableError", "NotFoundError"]);
 const writeRevisions = new Map<string, number>();
 const lifecycleQueues = new Map<string, Promise<void>>();
+
+function domErrorName(error: unknown): string {
+  return String((error as { name?: unknown } | null)?.name ?? "");
+}
+
+/**
+ * Map an OPFS lookup failure. NotFoundError means the entry is absent; while
+ * descending directories, TypeMismatchError means a file occupies a directory
+ * name (POSIX ENOTDIR), so the path cannot exist either. Every other failure
+ * (InvalidStateError, NotAllowedError, TypeError…) keeps its own error.
+ */
+function lookupError(error: unknown, path: string, action: string, directory: boolean): Error {
+  const name = domErrorName(error);
+  if (name === "NotFoundError" || (directory && name === "TypeMismatchError")) {
+    return new StorageNotFoundError(path, { cause: error });
+  }
+  return new Error(`Could not ${action} ${path}: ${String(error)}`, { cause: error });
+}
 
 /** Serialize migration/binding across adapters and, with Web Locks, browser tabs. */
 function withProjectLifecycle<T>(id: string, work: () => Promise<T>): Promise<T> {
@@ -245,28 +263,48 @@ export class OpfsStorageAdapter implements ProjectStorage {
   private async resolveHandle(
     path: string,
     create: boolean,
+    action = "open",
   ): Promise<{ parent: FileSystemDirectoryHandle; name: string }> {
     const dir = await this.projectDir();
     const parts = this.split(path);
     if (parts.length === 0) {
       throw new Error(`Invalid path: ${path}`);
     }
-    let parent = dir;
-    for (let i = 0; i < parts.length - 1; i++) {
-      parent = await parent.getDirectoryHandle(parts[i]!, { create });
+    if (create) {
+      let parent = dir;
+      for (let i = 0; i < parts.length - 1; i++) {
+        parent = await parent.getDirectoryHandle(parts[i]!, { create });
+      }
+      return { parent, name: parts[parts.length - 1]! };
     }
-    return { parent, name: parts[parts.length - 1]! };
+    return { parent: await this.descend(dir, parts.slice(0, -1), path, action), name: parts[parts.length - 1]! };
+  }
+
+  /** Open existing directories, reporting a missing segment as StorageNotFoundError. */
+  private async descend(
+    dir: FileSystemDirectoryHandle,
+    parts: string[],
+    path: string,
+    action: string,
+  ): Promise<FileSystemDirectoryHandle> {
+    try {
+      for (const part of parts) dir = await dir.getDirectoryHandle(part);
+      return dir;
+    } catch (error) {
+      throw lookupError(error, path, action, true);
+    }
   }
 
   async readBinary(path: string): Promise<Uint8Array> {
     this.assertFolder();
     for (let attempt = 1; ; attempt++) {
+      const { parent, name } = await this.resolveHandle(path, false, "read");
       let file: File;
       try {
-        const { parent, name } = await this.resolveHandle(path, false);
         file = await (await parent.getFileHandle(name)).getFile();
-      } catch {
-        throw new Error(`File not found: ${path}`);
+      } catch (error) {
+        // A directory at the path (TypeMismatchError) is not a missing file.
+        throw lookupError(error, path, "read", false);
       }
       try {
         const bytes = new Uint8Array(await file.arrayBuffer());
@@ -294,9 +332,13 @@ export class OpfsStorageAdapter implements ProjectStorage {
       try { return { handle: cached, file: await cached.getFile() }; }
       catch { this.rangeHandles.delete(key); }
     }
-    const { parent, name } = await this.resolveHandle(path, false);
-    const handle = await parent.getFileHandle(name);
-    const file = await handle.getFile();
+    const { parent, name } = await this.resolveHandle(path, false, "read");
+    let handle: FileSystemFileHandle;
+    let file: File;
+    try {
+      handle = await parent.getFileHandle(name);
+      file = await handle.getFile();
+    } catch (error) { throw lookupError(error, path, "read", false); }
     this.rangeHandles.set(key, handle);
     return { handle, file };
   }
@@ -364,25 +406,16 @@ export class OpfsStorageAdapter implements ProjectStorage {
     try {
       await this.stat(path);
       return true;
-    } catch (err) {
-      if (err instanceof Error && err.message.includes("No project folder")) {
-        throw err;
-      }
-      return false;
+    } catch (error) {
+      if (isStorageNotFound(error)) return false;
+      throw error;
     }
   }
 
   async readdir(path: string): Promise<DirEntry[]> {
     const root = await this.projectDir();
     const parts = this.split(path === "." ? "" : path);
-    let dir = root;
-    try {
-      for (const seg of parts) {
-        dir = await dir.getDirectoryHandle(seg);
-      }
-    } catch {
-      throw new Error(`File not found: ${path}`);
-    }
+    const dir = await this.descend(root, parts, path, "list");
     const out: DirEntry[] = [];
     // FileSystemDirectoryHandle async iterator (entries may be missing from older DOM libs).
     const dirHandle = dir as FileSystemDirectoryHandle & {
@@ -431,11 +464,11 @@ export class OpfsStorageAdapter implements ProjectStorage {
     for (const cached of [...this.rangeHandles.keys()]) {
       if (cached === key || cached.startsWith(`${key}/`)) this.rangeHandles.delete(cached);
     }
+    const { parent, name } = await this.resolveHandle(path, false, "remove");
     try {
-      const { parent, name } = await this.resolveHandle(path, false);
       await parent.removeEntry(name, { recursive: true });
-    } catch {
-      throw new Error(`File not found: ${path}`);
+    } catch (error) {
+      throw lookupError(error, path, "remove", false);
     }
   }
 
@@ -445,21 +478,20 @@ export class OpfsStorageAdapter implements ProjectStorage {
     if (parts.length === 0) {
       return { isDir: true, size: null, mtime: null };
     }
-    let dir = root;
-    for (let i = 0; i < parts.length - 1; i++) {
-      dir = await dir.getDirectoryHandle(parts[i]!);
-    }
+    const dir = await this.descend(root, parts.slice(0, -1), path, "stat");
     const name = parts[parts.length - 1]!;
     try {
       const file = await (await dir.getFileHandle(name)).getFile();
       return { isDir: false, size: file.size, mtime: file.lastModified };
-    } catch {
-      try {
-        await dir.getDirectoryHandle(name);
-        return { isDir: true, size: null, mtime: null };
-      } catch {
-        throw new Error(`File not found: ${path}`);
-      }
+    } catch (error) {
+      // getFileHandle reports an existing directory as TypeMismatchError.
+      if (domErrorName(error) !== "TypeMismatchError") throw lookupError(error, path, "stat", false);
+    }
+    try {
+      await dir.getDirectoryHandle(name);
+      return { isDir: true, size: null, mtime: null };
+    } catch (error) {
+      throw lookupError(error, path, "stat", false);
     }
   }
 }
