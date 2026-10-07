@@ -5,7 +5,11 @@ import { snapshotBytes } from "../snapshot-bytes";
 export class SetActorSuppressedComponentsCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.setActorSuppressedComponents";
   readonly byteSize: number;
-  constructor(readonly actorId: string, readonly from: readonly string[] | undefined, readonly to: readonly string[] | undefined) {
+  readonly actorId: string;
+  readonly from: readonly string[] | undefined;
+  readonly to: readonly string[] | undefined;
+  constructor(actorId: string, from: readonly string[] | undefined, to: readonly string[] | undefined) {
+    this.actorId = actorId; this.from = from; this.to = to;
     this.byteSize = snapshotBytes({ from, to });
   }
   apply(doc: SerializedScene): SerializedScene {
@@ -25,8 +29,13 @@ export class SetActorSuppressedComponentsCommand implements EditCommand<Serializ
 export class SetComponentMaterialInstanceCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.setComponentMaterialInstance";
   readonly byteSize: number;
-  constructor(readonly actorId: string, readonly componentId: string,
-    readonly from: MaterialInstanceOverrides | undefined, readonly to: MaterialInstanceOverrides | undefined) {
+  readonly actorId: string;
+  readonly componentId: string;
+  readonly from: MaterialInstanceOverrides | undefined;
+  readonly to: MaterialInstanceOverrides | undefined;
+  constructor(actorId: string, componentId: string,
+    from: MaterialInstanceOverrides | undefined, to: MaterialInstanceOverrides | undefined) {
+    this.actorId = actorId; this.componentId = componentId; this.from = from; this.to = to;
     this.byteSize = snapshotBytes({ from, to });
   }
   apply(doc: SerializedScene): SerializedScene {
