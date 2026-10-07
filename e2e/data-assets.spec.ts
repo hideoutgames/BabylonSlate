@@ -43,11 +43,12 @@ async function assetGuidFromBrowser(page: Page, path: string, name: string): Pro
 
 async function addDefinitionField(page: Page, name: string, type: "int" | "string", defaultValue: string): Promise<void> {
   const panel = page.locator('[data-testid="document-workspace-data-definition"]:visible').getByTestId("data-definition-fields-panel");
-  await panel.getByTestId("definition-field-add-name").fill(name);
   await panel.getByTestId("definition-field-add").click();
-  const row = panel.locator('[data-testid^="definition-field-row-"]').last();
-  await row.getByRole("button", { name: "Pin type", exact: true }).click();
-  await page.getByTestId(`search-item-${type}`).click();
+  await page.getByTestId("definition-field-add-menu").getByTestId(`search-item-${type}`).click();
+  const rename = panel.locator('input[aria-label$=" name"]');
+  await expect(rename).toBeFocused();
+  await rename.fill(name);
+  await rename.press("Enter");
   const details = page.locator('[data-testid="document-workspace-data-definition"]:visible').getByTestId("data-definition-details-panel");
   await expect(details.getByRole("textbox", { name: "Name", exact: true })).toHaveValue(name);
   const value = details.getByRole("textbox", { name: "Default Value", exact: true });
@@ -60,13 +61,12 @@ async function addNamedEntry(page: Page, name: string, child = false): Promise<s
   const hierarchy = activeTree(page).getByTestId("data-tree-hierarchy-panel");
   await hierarchy.getByRole("button", { name: child ? "Add Child" : "Add Root", exact: true }).click();
   const selected = hierarchy.locator('[role="treeitem"][aria-selected="true"]');
-  await expect(selected).toContainText("New Entry");
+  const rename = selected.getByRole("textbox", { name: "Rename New Entry", exact: true });
+  await expect(rename).toBeFocused();
   const testId = await selected.getAttribute("data-testid");
   expect(testId).toBeTruthy();
-  await selected.getByRole("button", { name: "Entry Menu For New Entry", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Rename", exact: true }).click();
-  await page.getByTestId("name-prompt-input").fill(name);
-  await page.getByTestId("name-prompt-confirm").click();
+  await rename.fill(name);
+  await rename.press("Enter");
   await expect(selected).toContainText(name);
   return testId!.slice("tree-row-".length);
 }
@@ -98,7 +98,7 @@ test("Data Trees own hierarchical values and infer mixed Definition graph types"
   expect(fieldsBox).not.toBeNull();
   expect(detailsBox).not.toBeNull();
   expect(detailsBox!.x).toBeGreaterThanOrEqual(fieldsBox!.x + fieldsBox!.width);
-  const addBox = await definitionFields.getByLabel("Add Field").boundingBox();
+  const addBox = await definitionFields.getByRole("button", { name: "Add Field", exact: true }).boundingBox();
   const rowBox = await definitionFields.locator('[data-testid^="definition-field-row-"]').first().boundingBox();
   expect(addBox).not.toBeNull();
   expect(rowBox).not.toBeNull();
@@ -218,8 +218,10 @@ test("Data Trees own hierarchical values and infer mixed Definition graph types"
   await openTree.click();
   await tree.getByTestId(`tree-row-${swordId}`).getByRole("button", { name: "Entry Menu For Iron Sword", exact: true }).click();
   await page.getByRole("menuitem", { name: "Rename", exact: true }).click();
-  await page.getByTestId("name-prompt-input").fill("Iron Sword Renamed");
-  await page.getByTestId("name-prompt-confirm").click();
+  const renameSword = tree.getByRole("textbox", { name: "Rename Iron Sword", exact: true });
+  await expect(renameSword).toBeFocused();
+  await renameSword.fill("Iron Sword Renamed");
+  await renameSword.press("Enter");
   await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
   await readNode.getByText("Read ItemStats Data", { exact: true }).click();
   await expect(inlinePath).toContainText("Missing Entry (Weapons/Iron Sword)");

@@ -195,6 +195,14 @@ export function VariableTypeFields({
           data-testid="inspector-member-container"
         >
           <ToggleGroupItem value="single" data-testid="inspector-member-container-single">
+            <PinShapeGlyph
+              shape="circle"
+              connected
+              outlined={false}
+              color="currentColor"
+              size={8}
+              data-icon="inline-start"
+            />
             Single
           </ToggleGroupItem>
           <ToggleGroupItem value="array" data-testid="inspector-member-container-array">

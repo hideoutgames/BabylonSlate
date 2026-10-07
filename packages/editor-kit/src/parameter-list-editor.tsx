@@ -57,6 +57,7 @@ export function ParameterListEditor({
       selectedId={selectedId}
       onSelect={setSelectedId}
       types={PARAMETER_VALUE_TYPES}
+      itemLabel="Parameter"
       testIdPrefix="parameter"
       data-testid="parameter-list-editor"
     />

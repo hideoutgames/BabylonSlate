@@ -16,6 +16,7 @@ export function pinShapeForContainer(
 export function PinShapeGlyph({
   shape,
   connected = false,
+  outlined = true,
   color,
   size,
   className,
@@ -24,6 +25,8 @@ export function PinShapeGlyph({
 }: {
   shape: PinShape;
   connected?: boolean;
+  /** Filled glyphs keep a card-colored edge on graph pins; list chrome turns it off for plain marks. */
+  outlined?: boolean;
   color?: string;
   size?: string | number;
   className?: string;
@@ -61,7 +64,7 @@ export function PinShapeGlyph({
             height={4}
             rx={1}
             fill={connected ? "currentColor" : "transparent"}
-            stroke={connected ? "var(--card)" : "currentColor"}
+            stroke={connected ? (outlined ? "var(--card)" : "none") : "currentColor"}
             strokeWidth={2}
           />
         ))}
@@ -72,8 +75,9 @@ export function PinShapeGlyph({
   return (
     <span
       className={cn(
-        "block border-2",
-        connected ? "border-card" : "",
+        "block",
+        connected && !outlined ? "" : "border-2",
+        connected && outlined ? "border-card" : "",
         shape === "diamond" ? "rotate-45 rounded-sm" : "rounded-full",
         className,
       )}

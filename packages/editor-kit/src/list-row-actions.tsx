@@ -14,6 +14,7 @@ export type ListRowActionsProps = {
   onRemove: () => void;
   removeDisabled?: boolean;
   touchAdaptive?: boolean;
+  className?: string;
 };
 
 /** Compact up / down / trash cluster matching PinListEditor row actions. */
@@ -27,12 +28,13 @@ export function ListRowActions({
   onRemove,
   removeDisabled,
   touchAdaptive = false,
+  className,
 }: ListRowActionsProps) {
   const label = name ?? `row ${index + 1}`;
   const id = rowId ?? String(index);
 
   return (
-    <div className="flex shrink-0 items-center gap-0 self-center">
+    <div className={cn("flex shrink-0 items-center gap-0 self-center", className)}>
       <Button
         type="button"
         variant="ghost"

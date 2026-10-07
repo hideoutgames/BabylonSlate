@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { SerializedGraph } from "@babylonslate/core";
 import { MyClassPanel } from "./my-class-panel";
@@ -80,7 +80,7 @@ afterEach(() => {
 });
 
 describe("MyClassPanel name prompt", () => {
-  it("adds a function through AddFunctionDialog instead of window.prompt", () => {
+  it("adds a function from the Add Function menu instead of window.prompt", () => {
     const prompt = vi.spyOn(window, "prompt");
     render(
       <GraphEditingProvider>
@@ -91,22 +91,21 @@ describe("MyClassPanel name prompt", () => {
     expect(screen.queryByTestId("class-remove-member")).toBeNull();
     fireEvent.click(screen.getByTestId("class-add-functions"));
     expect(prompt).not.toHaveBeenCalled();
-    fireEvent.change(screen.getByTestId("add-function-name"), {
-      target: { value: "Dash" },
-    });
-    fireEvent.click(screen.getByTestId("add-function-confirm"));
+    fireEvent.click(
+      within(screen.getByTestId("add-function-menu")).getByTestId("search-item-__new__"),
+    );
     expect(applyGraphChange).toHaveBeenCalledWith(
       "graph:assets/Hero.class.babasset",
       expect.objectContaining({
         members: expect.arrayContaining([
-          expect.objectContaining({ kind: "function", name: "Dash" }),
+          expect.objectContaining({ kind: "function", name: "NewFunction" }),
         ]),
       }),
     );
     prompt.mockRestore();
   });
 
-  it("adds an event through Add Event dialog instead of window.prompt", () => {
+  it("adds an event from the Add Event menu instead of window.prompt", () => {
     const prompt = vi.spyOn(window, "prompt");
     render(
       <GraphEditingProvider>
@@ -115,16 +114,14 @@ describe("MyClassPanel name prompt", () => {
     );
     fireEvent.click(screen.getByTestId("class-add-events"));
     expect(prompt).not.toHaveBeenCalled();
-    expect(screen.getByTestId("add-event-dialog")).toBeTruthy();
-    fireEvent.change(screen.getByTestId("add-event-name"), {
-      target: { value: "On Hit" },
-    });
-    fireEvent.click(screen.getByTestId("add-event-confirm"));
+    fireEvent.click(
+      within(screen.getByTestId("add-event-menu")).getByTestId("search-item-__new__"),
+    );
     expect(applyGraphChange).toHaveBeenCalledTimes(1);
     const committed = applyGraphChange.mock.calls.at(-1)![1];
     const eventNode = committed.nodes.find((node) => node.type === "flow.event.custom")!;
     expect(committed.members).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: eventNode.id, kind: "event", name: "On Hit" }),
+      expect.objectContaining({ id: eventNode.id, kind: "event", name: "NewEvent" }),
     ]));
     expect(applyGraphChange).toHaveBeenCalledWith(
       "graph:assets/Hero.class.babasset",
@@ -132,7 +129,7 @@ describe("MyClassPanel name prompt", () => {
         nodes: expect.arrayContaining([
           expect.objectContaining({
             type: "flow.event.custom",
-            data: expect.objectContaining({ name: "On Hit" }),
+            data: expect.objectContaining({ name: "NewEvent" }),
           }),
         ]),
       }),
@@ -155,24 +152,23 @@ describe("MyClassPanel name prompt", () => {
     expect(screen.getByTestId("class-add-local-variables")).toBeTruthy();
   });
 
-  it("adds a local variable with the open function id", () => {
+  it("adds a local variable of the picked type with the open function id", async () => {
     render(
       <GraphEditingProvider initialActiveFunctionId="fn-1">
         <MyClassPanel {...({} as IDockviewPanelProps)} />
       </GraphEditingProvider>,
     );
     fireEvent.click(screen.getByTestId("class-add-local-variables"));
-    fireEvent.change(screen.getByTestId("name-prompt-input"), {
-      target: { value: "Temp" },
-    });
-    fireEvent.click(screen.getByTestId("name-prompt-confirm"));
+    fireEvent.click(await screen.findByTestId("search-item-int"));
     expect(applyGraphChange).toHaveBeenCalledWith(
       "graph:assets/Hero.class.babasset",
       expect.objectContaining({
         members: expect.arrayContaining([
           expect.objectContaining({
             kind: "variable",
-            name: "Temp",
+            name: "NewVariable",
+            typeId: "int",
+            defaultValue: 0,
             functionId: "fn-1",
           }),
         ]),

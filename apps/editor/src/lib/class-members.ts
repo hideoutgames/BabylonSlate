@@ -18,6 +18,8 @@ import {
   engineNativeEventsFor,
 } from "@babylonslate/object-model";
 import { SUBSYSTEM_GET_NODE_ID } from "@babylonslate/scripting-nodes";
+import { defaultValueForMember } from "@babylonslate/scripting";
+import { nextCopyName } from "@babylonslate/assets";
 
 export type { GraphClassMember, GraphClassMemberKind, GraphClassMemberPin };
 
@@ -579,6 +581,48 @@ export function isScriptCatalogNodeAllowed(
 
 export function nativeStubId(eventType: string): string {
   return `native:${eventType}`;
+}
+
+/** Starting names for members created before the user renames them inline. */
+export const NEW_MEMBER_NAMES = {
+  variable: "NewVariable",
+  function: "NewFunction",
+  event: "NewEvent",
+} as const;
+
+/** `NewVariable`, then `NewVariable_1`, … skipping names already used by the same kind. */
+export function nextNewMemberName(
+  kind: keyof typeof NEW_MEMBER_NAMES,
+  existingNames: readonly string[],
+): string {
+  return nextCopyName(NEW_MEMBER_NAMES[kind], [...existingNames]);
+}
+
+/** Variable type fields for an Add Variable type-menu pick (`tagContainer` is a struct alias). */
+export function variableFieldsForPickerType(
+  pickerType: string,
+): Pick<GraphClassMember, "typeId" | "typeClassId" | "defaultValue"> {
+  if (pickerType === "tagContainer") {
+    return {
+      typeId: "struct",
+      typeClassId: "engine:TagContainer",
+      defaultValue: defaultValueForMember("struct", "engine:TagContainer"),
+    };
+  }
+  const typeClassId =
+    pickerType === "actor" ? "Actor" : pickerType === "object" || pickerType === "class" ? "BObject" : undefined;
+  const defaultValue =
+    pickerType === "object" || pickerType === "actor" || pickerType === "wildcard" ||
+    pickerType === "struct" || pickerType === "enum"
+      ? undefined
+      : pickerType === "class"
+        ? "BObject"
+        : defaultValueForMember(pickerType, typeClassId);
+  return {
+    typeId: pickerType,
+    ...(typeClassId ? { typeClassId } : {}),
+    ...(defaultValue !== undefined ? { defaultValue } : {}),
+  };
 }
 
 export function memberNamePromptCopy(

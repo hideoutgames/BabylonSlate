@@ -1,4 +1,6 @@
+import type { ReactElement } from "react";
 import { Button } from "@babylonslate/ui/components/button";
+import { cn } from "@babylonslate/ui/lib/utils";
 import { TypeColorMark } from "./type-color-mark";
 import { SearchDropdown } from "./search-dropdown";
 import {
@@ -8,6 +10,48 @@ import {
   type PinPickerType,
 } from "./pin-types";
 
+export type PinTypeMenuProps = {
+  onSelect: (type: PinPickerType) => void;
+  children: ReactElement;
+  title?: string;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  types?: readonly string[];
+  /** Contextual names for generic value shapes (for example Data Definition). */
+  labels?: Readonly<Record<string, string>>;
+  "data-testid"?: string;
+};
+
+/** Searchable, colored pin-type popup anchored to any trigger (type pickers, Add Variable / Add Field). */
+export function PinTypeMenu({
+  onSelect,
+  children,
+  title = "Pin Type",
+  open,
+  onOpenChange,
+  types = PIN_PICKER_TYPES,
+  labels,
+  "data-testid": testId,
+}: PinTypeMenuProps) {
+  return (
+    <SearchDropdown
+      open={open}
+      onOpenChange={onOpenChange}
+      title={title}
+      items={types.map((type) => ({
+        id: type,
+        label: labels?.[type] ?? pinPickerLabel(type),
+        leading: <TypeColorMark colorVar={pinPickerColorVar(type)} />,
+      }))}
+      onSelect={(id) => onSelect(id as PinPickerType)}
+      placeholder="Search types"
+      data-testid={testId}
+    >
+      {children}
+    </SearchDropdown>
+  );
+}
+
 export type PinTypePickerProps = {
   value: PinPickerType | string;
   onChange: (type: PinPickerType) => void;
@@ -16,6 +60,9 @@ export type PinTypePickerProps = {
   types?: readonly string[];
   /** Contextual names for generic value shapes (for example Data Definition). */
   labels?: Readonly<Record<string, string>>;
+  /** Borderless row trigger for dense lists; the default is an outline button. */
+  compact?: boolean;
+  disabled?: boolean;
   "data-testid"?: string;
 };
 
@@ -27,30 +74,31 @@ export function PinTypePicker({
   onOpenChange,
   types = PIN_PICKER_TYPES,
   labels,
+  compact = false,
+  disabled = false,
   "data-testid": testId = "pin-type-picker",
 }: PinTypePickerProps) {
   const selected = types.includes(value) ? value : "float";
   return (
-    <SearchDropdown
+    <PinTypeMenu
       open={open}
       onOpenChange={onOpenChange}
-      title="Pin Type"
-      items={types.map((type) => ({
-        id: type,
-        label: labels?.[type] ?? pinPickerLabel(type),
-        leading: (
-          <TypeColorMark colorVar={pinPickerColorVar(type)} />
-        ),
-      }))}
-      onSelect={(id) => onChange(id as PinPickerType)}
-      placeholder="Search types"
+      types={types}
+      labels={labels}
+      onSelect={onChange}
       data-testid={`${testId}-menu`}
     >
       <Button
         type="button"
-        variant="outline"
-        size="sm"
-        className="min-h-[var(--chrome-row,28px)] justify-start"
+        variant={compact ? "ghost" : "outline"}
+        size={compact ? "xs" : "sm"}
+        disabled={disabled}
+        className={cn(
+          "justify-start",
+          compact
+            ? "h-6 shrink-0 px-1.5 font-normal text-muted-foreground hover:text-foreground pointer-coarse:min-h-11"
+            : "min-h-[var(--chrome-row,28px)]",
+        )}
         data-testid={testId}
         aria-label="Pin type"
       >
@@ -59,6 +107,6 @@ export function PinTypePicker({
           label={labels?.[selected] ?? pinPickerLabel(selected)}
         />
       </Button>
-    </SearchDropdown>
+    </PinTypeMenu>
   );
 }

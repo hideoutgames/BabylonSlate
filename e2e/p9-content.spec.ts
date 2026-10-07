@@ -483,8 +483,12 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("document-workspace-material")).toBeVisible();
     await expect(page.getByTestId("material-details-panel")).toBeVisible();
     await addMaterialPaletteNode(page, "Custom GLSL", "custom.glsl");
-    await page.getByTestId("custom-glsl-output-add-name").fill("Mask");
     await page.getByTestId("custom-glsl-output-add").click();
+    await page.getByTestId("custom-glsl-output-add-menu").getByTestId("search-item-float").click();
+    const outputName = page.getByRole("textbox", { name: "Output 1 name", exact: true });
+    await expect(outputName).toBeFocused();
+    await outputName.fill("Mask");
+    await outputName.press("Enter");
     const glsl = page.getByTestId("material-node-glsl");
     await expect(glsl).toBeVisible();
     await expect(

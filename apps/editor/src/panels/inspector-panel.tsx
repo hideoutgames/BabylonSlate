@@ -750,6 +750,7 @@ function ClassMemberDetails({
           types={FUNCTION_PIN_PICKER_TYPES}
           classEntries={classEntries}
           typeAssets={typeAssets}
+          itemLabel="Input"
           testIdPrefix="class-fn-in"
           data-testid="inspector-member-inputs"
           readOnly={lockSignature}
@@ -761,6 +762,7 @@ function ClassMemberDetails({
           types={FUNCTION_PIN_PICKER_TYPES}
           classEntries={classEntries}
           typeAssets={typeAssets}
+          itemLabel="Output"
           testIdPrefix="class-fn-out"
           data-testid="inspector-member-outputs"
           readOnly={lockSignature}
@@ -1780,6 +1782,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
               selectedId={selectedJsPin} onSelect={selectJsPin}
               classEntries={bobjectClassEntries}
               typeAssets={typeAssets}
+              itemLabel="Input"
               testIdPrefix="js-input"
               onChange={(rows) => {
                 const invalid = rows.find((r) => !isValidJsIdentifier(r.name));
@@ -1798,6 +1801,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
               selectedId={selectedJsPin} onSelect={selectJsPin}
               classEntries={bobjectClassEntries}
               typeAssets={typeAssets}
+              itemLabel="Output"
               testIdPrefix="js-output"
               onChange={(rows) => {
                 const invalid = rows.find((r) => !isValidJsIdentifier(r.name));
@@ -1907,6 +1911,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
             types={PIN_PICKER_TYPES}
             classEntries={bobjectClassEntries}
             typeAssets={typeAssets}
+            itemLabel="Output"
             testIdPrefix="event-out"
             data-testid="inspector-event-outputs"
             onChange={(rows) => {

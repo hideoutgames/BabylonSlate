@@ -41,7 +41,7 @@ export function DataValueEditor({ field, value, defaultValue, onChange, label, p
     const single = { ...field, container: "single" as const };
     const malformed = !Array.isArray(value) || (field.container === "map" && value.some((entry) => !entry || typeof entry !== "object" || Array.isArray(entry) || !("key" in entry) || !("value" in entry)));
     const canReset = invalid || JSON.stringify(value) !== JSON.stringify(resetValue);
-    return <FieldSet disabled={disabled} aria-label={label} className="gap-1" data-data-field={path}>
+    return <FieldSet disabled={disabled} aria-label={label} className={depth === 0 ? "gap-1 border-b border-border/30 px-2 py-1" : "gap-1"} data-data-field={path}>
       <FieldLegend variant="label" className="mb-0 flex items-center gap-1">{label}{canReset ? <Button size="xs" variant="ghost" className={TOUCH_ACTION} disabled={disabled} aria-label={`Reset ${label}`} onClick={() => change(structuredClone(resetValue))}>Reset</Button> : null}</FieldLegend>
       {malformed ? <p className="text-xs text-destructive">Reset this invalid collection to edit its entries. The stored value is preserved until reset.</p> : field.container === "array" ? <EntryListEditor
         items={Array.isArray(value) ? value : []} touchAdaptive addLabel="Add Item"

@@ -22,9 +22,10 @@ for (const preview of [false]) {
     await openTestProject(page);
     await openAssetFromBrowser(page, CLASS_PATH);
     await page.getByTestId("class-add-events").click();
-    await page.getByTestId("add-event-name").fill("Ping");
-    await page.getByTestId("add-event-confirm").click();
-    await expect(page.getByTestId("add-event-dialog")).toHaveCount(0);
+    await page.getByTestId("add-event-menu").getByTestId("search-item-__new__").click();
+    await page.getByRole("textbox", { name: "Rename NewEvent" }).fill("Ping");
+    await page.getByRole("textbox", { name: "Rename NewEvent" }).press("Enter");
+    await expect(page.getByTestId("add-event-menu")).toHaveCount(0);
     await saveAllIfEnabled(page);
     const authored = await savedGraph(page);
     const event = authored.nodes.find((node) => node.type === "flow.event.custom" && node.data.name === "Ping");

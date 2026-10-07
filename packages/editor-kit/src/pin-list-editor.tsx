@@ -1,5 +1,9 @@
 import { useState } from "react";
+import { PlusIcon } from "lucide-react";
 import { normalizeTag } from "@babylonslate/core";
+import { nextCopyName } from "@babylonslate/assets";
+import { cn } from "@babylonslate/ui/lib/utils";
+import { EditableName } from "./inline-rename";
 import { TagPicker } from "./tag-picker";
 import { VariableTypeFields, type VariableContainer } from "./variable-type-fields";
 import { Button } from "@babylonslate/ui/components/button";
@@ -12,7 +16,7 @@ import {
 import { Input } from "@babylonslate/ui/components/input";
 import { NamedListEditor } from "./named-list-editor";
 import { TypeColorMark } from "./type-color-mark";
-import { PinTypePicker } from "./pin-type-picker";
+import { PinTypeMenu, PinTypePicker } from "./pin-type-picker";
 import { ClassPicker, type ClassPickerEntry } from "./class-picker";
 import { AssetPicker, type AssetPickerEntry } from "./asset-picker";
 import { AssetPickerControl } from "./asset-picker-control";
@@ -112,23 +116,23 @@ function moveRow(
   return next;
 }
 
-function addPin(
-  rows: PinListRow[],
-  name: string,
-  direction: "in" | "out" | undefined,
-): PinListRow[] {
-  return [
-    ...rows,
-    {
-      id: `p_${crypto.randomUUID()}`,
-      name,
-      type: "float",
-      ...(direction ? { direction } : {}),
-    },
-  ];
+/** `NewField`, then `NewField_1`, … so new rows never collide with existing names. */
+export function nextPinRowName(rows: readonly PinListRow[], itemLabel: string): string {
+  return nextCopyName(`New${itemLabel.replace(/\s+/g, "")}`, rows.map((row) => row.name));
 }
 
-/** Compact Unreal-like pin rows: color chip, name, type picker, move/remove. */
+function addPin(
+  rows: PinListRow[],
+  id: string,
+  name: string,
+  type: string,
+  direction: "in" | "out" | undefined,
+): PinListRow[] {
+  const row: PinListRow = { id, name, type: "float", ...(direction ? { direction } : {}) };
+  return patchRow([...rows, row], id, { type });
+}
+
+/** Compact Unreal-like pin rows: color chip, renameable name, type picker, move/remove. Add picks a type first. */
 export function PinListEditor({
   rows,
   onChange,
@@ -150,7 +154,7 @@ export function PinListEditor({
   readOnly = false,
   "data-testid": testId = "pin-list-editor",
 }: PinListEditorProps) {
-  const [draftName, setDraftName] = useState("");
+  const [renamingId, setRenamingId] = useState<string | null>(null);
   const [localSelectedId, setLocalSelectedId] = useState<string | null>(null);
   const effectiveSelectedId = selectedId === undefined ? localSelectedId : selectedId;
   const structLabel = structAssetType === "DataDefinition" ? "Data Definition" : structAssetType ?? "Structure / Data Definition";
@@ -161,11 +165,15 @@ export function PinListEditor({
   const hasTypeAssets = typeAssets !== undefined;
   const typeAssetList = typeAssets ?? [];
 
-  const commitAdd = (direction?: "in" | "out") => {
-    const name = draftName.trim();
-    if (!name) return;
-    onChange(addPin(rows, name, direction));
-    setDraftName("");
+  const select = (id: string) => {
+    if (selectedId === undefined) setLocalSelectedId(id);
+    onSelect?.(id);
+  };
+  const commitAdd = (type: string, direction?: "in" | "out") => {
+    const id = `p_${crypto.randomUUID()}`;
+    onChange(addPin(rows, id, nextPinRowName(rows, itemLabel), type, direction));
+    select(id);
+    setRenamingId(id);
   };
 
   const classPickRow = classPickRowId
@@ -175,56 +183,37 @@ export function PinListEditor({
     ? rows.find((row) => row.id === typeAssetPickRowId)
     : undefined;
 
+  const addButton = (label: string, testSuffix: string, direction?: "in" | "out") => (
+    <PinTypeMenu
+      key={testSuffix}
+      title={`${label} Type`}
+      types={types}
+      labels={{ struct: structLabel }}
+      onSelect={(type) => commitAdd(type, direction)}
+      data-testid={`${testIdPrefix}-${testSuffix}-menu`}
+    >
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="pointer-coarse:min-h-11"
+        data-testid={`${testIdPrefix}-${testSuffix}`}
+      >
+        <PlusIcon data-icon="inline-start" />
+        {label}
+      </Button>
+    </PinTypeMenu>
+  );
   const addField = readOnly ? null : (
-    <Field>
-      <FieldLabel htmlFor={`${testIdPrefix}-add-name`}>Add {itemLabel}</FieldLabel>
-      <div className="flex flex-wrap gap-2">
-        <Input
-          id={`${testIdPrefix}-add-name`}
-          data-testid={`${testIdPrefix}-add-name`}
-          className="h-8 min-h-8 min-w-0 flex-1"
-          value={draftName}
-          onChange={(event) => setDraftName(event.target.value)}
-          placeholder="name"
-        />
-        {showDirection ? (
-          <>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              data-testid={`${testIdPrefix}-add-input`}
-              onClick={() => commitAdd("in")}
-            >
-              Add Input
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              data-testid={`${testIdPrefix}-add-output`}
-              onClick={() => commitAdd("out")}
-            >
-              Add Output
-            </Button>
-          </>
-        ) : (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            data-testid={`${testIdPrefix}-add`}
-            onClick={() => commitAdd()}
-          >
-            Add
-          </Button>
-        )}
-      </div>
-    </Field>
+    <div className="flex flex-wrap items-center gap-1">
+      {showDirection
+        ? [addButton("Add Input", "add-input", "in"), addButton("Add Output", "add-output", "out")]
+        : addButton(`Add ${itemLabel}`, "add")}
+    </div>
   );
 
   return (
-    <div className="flex flex-col gap-1.5" data-testid={testId}>
+    <div className="flex flex-col gap-1" data-testid={testId}>
       {title ? <div className="text-sm font-medium">{title}</div> : null}
       {addPosition === "top" ? addField : null}
       {rows.map((row, index) => {
@@ -266,35 +255,32 @@ export function PinListEditor({
         return (
           <div
             key={row.id}
-            className="flex flex-nowrap items-center gap-1"
+            className="group/pin-row flex flex-nowrap items-center gap-1"
           >
             <div className="flex min-w-0 flex-1 flex-col gap-1">
             <div
-              className={`flex min-h-[var(--chrome-row,28px)] items-center gap-1 rounded-md px-1 ${
-                selected ? "bg-accent" : "hover:bg-accent/50"
-              }`}
+              className={cn(
+                "flex min-h-[var(--chrome-row,28px)] items-center gap-1.5 rounded-sm pl-2 pr-0.5 transition-colors motion-reduce:transition-none pointer-coarse:min-h-11",
+                selected ? "bg-accent text-accent-foreground" : "hover:bg-accent/50",
+              )}
               data-testid={`${testIdPrefix}-row-${row.id}`}
-              onClick={() => {
-                if (selectedId === undefined) setLocalSelectedId(row.id);
-                onSelect?.(row.id);
-              }}
-              onFocus={() => {
-                if (selectedId === undefined) setLocalSelectedId(row.id);
-                onSelect?.(row.id);
-              }}
+              onClick={() => select(row.id)}
+              onFocus={() => select(row.id)}
             >
-              <TypeColorMark colorVar={pinPickerColorVar(row.type)} />
-              <Input
-                className="h-7 min-h-7 min-w-0 flex-1"
+              <TypeColorMark colorVar={pinPickerColorVar(row.type === "struct" && row.typeClassId === "engine:TagContainer" ? "tagContainer" : row.type)} />
+              <EditableName
                 value={row.name}
                 aria-label={`${itemLabel} ${index + 1} name`}
                 data-testid={`${testIdPrefix}-${row.id}-name`}
                 disabled={readOnly}
-                onChange={(event) =>
-                  onChange(patchRow(rows, row.id, { name: event.target.value }))
-                }
+                editing={renamingId === row.id}
+                onEditingChange={(editing) => setRenamingId(editing ? row.id : null)}
+                onRename={(name) => onChange(patchRow(rows, row.id, { name }))}
+                className={selected ? "font-medium" : undefined}
               />
               <PinTypePicker
+                compact
+                disabled={readOnly}
                 labels={{ struct: structLabel }}
                 value={row.type === "struct" && row.typeClassId === "engine:TagContainer" ? "tagContainer" : row.type}
                 types={types}
@@ -454,6 +440,7 @@ export function PinListEditor({
             </div>
             {readOnly ? null : (
               <ListRowActions
+                className={cn("transition-opacity motion-reduce:transition-none pointer-coarse:opacity-100", selected ? "opacity-100" : "opacity-0 group-hover/pin-row:opacity-100 group-focus-within/pin-row:opacity-100")}
                 index={index}
                 count={rows.length}
                 name={row.name}

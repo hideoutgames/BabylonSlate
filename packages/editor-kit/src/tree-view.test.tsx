@@ -788,6 +788,38 @@ describe("TreeView", () => {
     expect(onActivate).toHaveBeenCalledWith("child");
   });
 
+  it("renames a renamable row from a label double tap and commits on Enter", () => {
+    const onActivate = vi.fn();
+    const onRenameRequest = vi.fn();
+    const onRenameDone = vi.fn();
+    const rows = nodes.map((node) => node.id === "child" ? { ...node, renamable: true } : node);
+    const { rerender } = render(
+      <TreeView nodes={rows} onActivate={onActivate} onRenameRequest={onRenameRequest} onRenameDone={onRenameDone} />,
+    );
+    const label = screen.getByText("Child");
+    for (let tap = 0; tap < 2; tap++) {
+      dispatchPointerEvent(label, "pointerdown", { clientX: 10, clientY: 10 });
+      dispatchPointerEvent(label, "pointerup", { clientX: 10, clientY: 10 });
+    }
+    expect(onRenameRequest).toHaveBeenCalledWith("child");
+    expect(onActivate).not.toHaveBeenCalled();
+    const row = screen.getByTestId("tree-row-child");
+    for (let tap = 0; tap < 2; tap++) {
+      dispatchPointerEvent(row, "pointerdown", { clientX: 10, clientY: 10 });
+      dispatchPointerEvent(row, "pointerup", { clientX: 10, clientY: 10 });
+    }
+    expect(onActivate).toHaveBeenCalledWith("child");
+    rerender(
+      <TreeView nodes={rows} renamingId="child" onActivate={onActivate} onRenameRequest={onRenameRequest} onRenameDone={onRenameDone} />,
+    );
+    const input = screen.getByRole("textbox", { name: "Rename Child" }) as HTMLInputElement;
+    expect(document.activeElement).toBe(input);
+    expect([input.selectionStart, input.selectionEnd]).toEqual([0, "Child".length]);
+    fireEvent.change(input, { target: { value: "Renamed" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onRenameDone).toHaveBeenCalledWith("child", "Renamed");
+  });
+
   it("renders an empty label with no nodes", () => {
     render(<TreeView nodes={[]} emptyLabel="No actors" data-testid="tree" />);
     expect(screen.getByText("No actors")).toBeTruthy();

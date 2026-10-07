@@ -11,6 +11,7 @@ import {
 } from "react";
 import { ChevronRightIcon } from "lucide-react";
 import { treeGuideSegments } from "./tree-guides";
+import { InlineRenameInput } from "./inline-rename";
 import { cn } from "@babylonslate/ui/lib/utils";
 import {
   CONTEXT_MENU_LONG_PRESS_MS,
@@ -78,6 +79,8 @@ export interface TreeViewNode {
   /** Optional type cue, rendered between the disclosure and the label. */
   icon?: ReactNode;
   muted?: boolean;
+  /** Double-click / double-tap on the label (or F2) requests an inline rename. */
+  renamable?: boolean;
 }
 
 export interface TreeViewProps {
@@ -107,6 +110,12 @@ export interface TreeViewProps {
   /** Double-tap / double-click a row (frame camera, open, …). */
   onActivate?: (id: string) => void;
   onContextMenu?: (id: string, clientX: number, clientY: number) => void;
+  /** Row whose label is an `InlineRenameInput`. */
+  renamingId?: string | null;
+  /** A `renamable` label was double-clicked / double-tapped, or F2 pressed. */
+  onRenameRequest?: (id: string) => void;
+  /** Rename finished; `name` is null when cancelled, empty, or unchanged. */
+  onRenameDone?: (id: string, name: string | null) => void;
   rowHeight?: number;
   emptyLabel?: string;
   "data-testid"?: string;
@@ -123,6 +132,7 @@ interface DragState {
   canDrag: boolean;
   moved: boolean;
   swipeAdd: boolean;
+  onLabel: boolean;
   dragArmTimer: ReturnType<typeof setTimeout> | null;
   longPressTimer: ReturnType<typeof setTimeout> | null;
 }
@@ -164,6 +174,9 @@ export function TreeView({
   onExternalDragEnd,
   onActivate,
   onContextMenu,
+  renamingId = null,
+  onRenameRequest,
+  onRenameDone,
   rowHeight = TREE_ROW_HEIGHT,
   emptyLabel = "Nothing here yet",
   "data-testid": testId,
@@ -200,6 +213,17 @@ export function TreeView({
     }
     setScrollTop(element.scrollTop);
   }, [selectedId, indexById, rowHeight]);
+  useEffect(() => {
+    const index = renamingId == null ? undefined : indexById.get(renamingId);
+    const element = containerRef.current;
+    if (index === undefined || !element || element.clientHeight <= 0) return;
+    const top = index * rowHeight;
+    if (top < element.scrollTop) element.scrollTop = top;
+    else if (top + rowHeight > element.scrollTop + element.clientHeight) {
+      element.scrollTop = top + rowHeight - element.clientHeight;
+    }
+    setScrollTop(element.scrollTop);
+  }, [renamingId, indexById, rowHeight]);
   const activeKey = activeId ?? selectedId;
   const activeIndex = Math.max(
     0,
@@ -323,6 +347,9 @@ export function TreeView({
           }
         }
       }
+    } else if (event.key === "F2" && activeNode.renamable && onRenameRequest) {
+      onSelect?.(activeNode.id);
+      onRenameRequest(activeNode.id);
     } else if (event.key === "Enter") {
       onSelect?.(activeNode.id);
       onActivate?.(activeNode.id);
@@ -522,6 +549,7 @@ export function TreeView({
         canDrag: canDragNow,
         moved: false,
         swipeAdd: false,
+        onLabel: Boolean((event.target as Element | null)?.closest?.("[data-tree-label]")),
         dragArmTimer,
         longPressTimer,
       };
@@ -649,7 +677,9 @@ export function TreeView({
         const now = Date.now();
         const last = lastTapRef.current;
         if (last && last.id === drag.nodeId && now - last.at <= 350) {
-          onActivate?.(drag.nodeId);
+          const node = nodes[indexById.get(drag.nodeId) ?? -1];
+          if (drag.onLabel && node?.renamable && onRenameRequest) onRenameRequest(drag.nodeId);
+          else onActivate?.(drag.nodeId);
           lastTapRef.current = null;
         } else {
           lastTapRef.current = { id: drag.nodeId, at: now };
@@ -660,8 +690,11 @@ export function TreeView({
     [
       clearDrag,
       dropAtClientY,
+      indexById,
+      nodes,
       onActivate,
       onExternalDrop,
+      onRenameRequest,
       onReparent,
       onSelect,
       pointerInsideTree,
@@ -832,16 +865,33 @@ export function TreeView({
                     {node.icon}
                   </span>
                 ) : null}
-                <span
-                  id={`${rowId(node.id)}-label`}
-                  className={cn(
-                    "relative min-w-0 flex-1 truncate",
-                    selected ? "font-medium" : "font-normal",
-                    node.muted ? "text-muted-foreground" : "",
-                  )}
-                >
-                  {node.label}
-                </span>
+                {renamingId === node.id && onRenameDone ? (
+                  <InlineRenameInput
+                    value={node.label}
+                    aria-label={`Rename ${node.label}`}
+                    data-testid={`tree-rename-${node.id}`}
+                    className="relative"
+                    onDone={(name, reason) => {
+                      onRenameDone(node.id, name);
+                      if (reason !== "blur") containerRef.current?.focus({ preventScroll: true });
+                    }}
+                  />
+                ) : (
+                  <span
+                    id={`${rowId(node.id)}-label`}
+                    data-tree-label={node.renamable ? "" : undefined}
+                    title={node.renamable ? `${node.label} · Double-click to rename` : undefined}
+                    className={cn(
+                      "relative min-w-0 truncate",
+                      node.renamable ? "shrink" : "flex-1",
+                      selected ? "font-medium" : "font-normal",
+                      node.muted ? "text-muted-foreground" : "",
+                    )}
+                  >
+                    {node.label}
+                  </span>
+                )}
+                {node.renamable && renamingId !== node.id ? <span className="min-w-0 flex-1" aria-hidden /> : null}
                 {node.preview ? (
                   <span
                     id={`${rowId(node.id)}-preview`}

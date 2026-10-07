@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { createDefaultMaterialDocument, newCustomGlslProperties } from "@babylonslate/shader-graph";
 import { MaterialCustomGlsl } from "./material-custom-glsl";
 
@@ -16,9 +16,12 @@ describe("Custom GLSL sampler editor", () => {
     fireEvent.click(screen.getByTestId("custom-glsl-input-a-type"));
     fireEvent.click(await screen.findByTestId("search-item-texture"));
     expect(screen.getByTestId("custom-glsl-input-a-type").textContent).toContain("Texture");
-    fireEvent.change(screen.getByTestId("custom-glsl-output-add-name"), { target: { value: "Mask" } });
     fireEvent.click(screen.getByTestId("custom-glsl-output-add"));
+    const addMenu = within(await screen.findByTestId("custom-glsl-output-add-menu"));
+    expect(addMenu.queryByTestId("search-item-texture")).toBeNull();
+    fireEvent.click(addMenu.getByTestId("search-item-float"));
     const outputs = screen.getAllByTestId("pin-list-editor")[1]!;
+    expect((within(outputs).getByRole("textbox", { name: "Output 1 name" }) as HTMLInputElement).value).toBe("NewOutput");
     fireEvent.click(outputs.querySelector('[aria-label="Pin type"]')!);
     await screen.findByTestId("search-item-float");
     expect(screen.queryByTestId("search-item-texture")).toBeNull();
