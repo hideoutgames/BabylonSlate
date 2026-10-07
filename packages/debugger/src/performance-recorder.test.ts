@@ -4,6 +4,7 @@ import {
   parsePerformanceProfile,
   serializePerformanceProfile,
   summarizePerformanceColumn,
+  summarizePerformanceColumns,
   type PerformanceIdentity,
 } from "./performance-recorder";
 
@@ -50,6 +51,18 @@ describe("PerformanceRecorder", () => {
     expect(recorder.recording).toBe(false);
     expect(recorder.stop()?.frames.count).toBe(1);
     expect(stopped).toEqual(["duration"]);
+  });
+
+  it("reports the combined script and physics budget per runtime tick", () => {
+    const recorder = new PerformanceRecorder({ now: () => 0 });
+    recorder.start(identity);
+    recorder.recordTick({ tickId: 1, elapsedMs: 0, scriptMs: 6, physicsMs: 4, publishMs: 100, otherMs: 0 });
+    recorder.recordTick({ tickId: 2, elapsedMs: 16, scriptMs: 2, physicsMs: 4, publishMs: 200, otherMs: 0 });
+    const result = recorder.stop()!;
+    expect(summarizePerformanceColumns(result.ticks, ["scriptMs", "physicsMs"], 8)).toEqual({
+      count: 2, median: 8, p95: 10, p99: 10, maximum: 10, overBudgetCount: 1,
+    });
+    expect(summarizePerformanceColumns(result.ticks, ["scriptMs", "missingMs"], 8).count).toBe(0);
   });
 
   it("bounds retained numeric allocations and stops before exceeding the budget", () => {

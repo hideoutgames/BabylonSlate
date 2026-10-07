@@ -27,8 +27,8 @@ it("shows separate completed-frame and tick populations with honest unavailable 
 });
 it("switches timeline populations without conflating frame and runtime clocks", () => {
   render(<PerformanceTimeline profile={recording()} />);
-  expect(screen.getByText("completedAtMs")).toBeTruthy();
+  expect(screen.getByRole("columnheader", { name: "completedAtMs" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Runtime Ticks" }));
-  expect(screen.getByText("elapsedMs")).toBeTruthy();
+  expect(screen.getByRole("columnheader", { name: "elapsedMs" })).toBeTruthy();
   expect(screen.queryByText("completedAtMs")).toBeNull();
 });

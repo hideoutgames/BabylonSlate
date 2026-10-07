@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { parsePerformanceProfile, serializePerformanceProfile, summarizePerformanceColumn, type PerformanceProfile, type PerformanceStream } from "@babylonslate/debugger";
+import { parsePerformanceProfile, serializePerformanceProfile, summarizePerformanceColumn, summarizePerformanceColumns, type PerformanceProfile, type PerformanceStream } from "@babylonslate/debugger";
 import type { RenderFrameReport } from "@babylonslate/render";
 import { NumberField, PanelFrame, PropertyGrid, SearchInput, SelectableText, type PropertyRow } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
@@ -35,8 +35,9 @@ export function PerformanceSummary({ profile }: { profile: PerformanceProfile })
     ["Main preparation wall time", summarizePerformanceColumn(profile.frames, "preparationMs")],
     ["Main submission wall time", summarizePerformanceColumn(profile.frames, "submissionMs")],
     ["Presentation/copy wall time", summarizePerformanceColumn(profile.frames, "copyMs")],
-    ["Worker script phase", summarizePerformanceColumn(profile.ticks, "scriptMs", 8)],
-    ["Worker physics phase", summarizePerformanceColumn(profile.ticks, "physicsMs", 8)],
+    ["Worker script and physics", summarizePerformanceColumns(profile.ticks, ["scriptMs", "physicsMs"], 8)],
+    ["Worker script phase", summarizePerformanceColumn(profile.ticks, "scriptMs")],
+    ["Worker physics phase", summarizePerformanceColumn(profile.ticks, "physicsMs")],
     ["Worker snapshot publish", summarizePerformanceColumn(profile.ticks, "publishMs")],
     ["Other measured runtime phase", summarizePerformanceColumn(profile.ticks, "otherMs")],
   ] as const, [profile, budget]);
@@ -49,7 +50,7 @@ export function PerformanceSummary({ profile }: { profile: PerformanceProfile })
         <td className="p-2">{values.count}</td>{[values.median, values.p95, values.p99, values.maximum].map((value, index) => <td key={index} className="p-2 tabular-nums">{format(value)}</td>)}
         <td className="p-2">{values.overBudgetCount ?? "No threshold"}</td></tr>)}</tbody>
     </table></div>
-    <p className="text-xs text-muted-foreground">Frame threshold {budget.toFixed(2)} ms. Worker phase threshold 8 ms; the project script-plus-physics budget remains 8 ms combined. Submission includes driver waits; asynchronous copy latency can overlap submission. Concurrent host and Worker durations are not summed.</p>
+    <p className="text-xs text-muted-foreground">Frame threshold {budget.toFixed(2)} ms. Combined Worker script and physics threshold 8 ms per tick. Submission includes driver waits; asynchronous copy latency can overlap submission. Concurrent host and Worker durations are not summed.</p>
     <p className="text-xs text-muted-foreground">GPU timing: {profile.identity.gpuTiming}. Heap and physical VRAM: unavailable. These captures contain timing records and no world snapshots.</p>
     <p className="text-xs text-muted-foreground">Retained {(profile.retainedBytes / 1048576).toFixed(2)} MiB / {(profile.byteBudget / 1048576).toFixed(0)} MiB budget; {profile.droppedRecords} dropped records. Accounted buffers are not a browser heap limit.</p>
     <PropertyGrid rows={textRows(profile.identity)} readOnly />
@@ -60,7 +61,7 @@ export function PerformanceTimeline({ profile }: { profile: PerformanceProfile }
   const [population, setPopulation] = useState("frames");
   const [selected, setSelected] = useState(0);
   const stream = population === "frames" ? profile.frames : profile.ticks;
-  const index = Math.min(selected, Math.max(0, stream.count - 1));
+  const index = Math.max(0, Math.min(Number.isFinite(selected) ? Math.floor(selected) : 0, Math.max(0, stream.count - 1)));
   const page = Math.floor(index / 100) * 100;
   const indices = Array.from({ length: Math.min(100, Math.max(0, stream.count - page)) }, (_, offset) => page + offset);
   const values = rowAt(stream, index);

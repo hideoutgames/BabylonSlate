@@ -164,11 +164,18 @@ export class PerformanceRecorder {
 }
 
 export function summarizePerformanceColumn(stream: PerformanceStream, column: string, budgetMs?: number) {
-  const index = stream.columns.indexOf(column);
+  return summarizePerformanceColumns(stream, [column], budgetMs);
+}
+
+/** Sum measured sequential phases within each row, never independent streams. */
+export function summarizePerformanceColumns(stream: PerformanceStream, columns: readonly string[], budgetMs?: number) {
+  const indices = columns.map(column => stream.columns.indexOf(column));
   const values: number[] = [];
-  if (index >= 0) for (const chunk of stream.chunks)
-    for (let offset = index; offset < chunk.length; offset += stream.columns.length)
-      if (Number.isFinite(chunk[offset])) values.push(chunk[offset]!);
+  if (indices.length && indices.every(index => index >= 0)) for (const chunk of stream.chunks)
+    for (let offset = 0; offset < chunk.length; offset += stream.columns.length) {
+      const sum = indices.reduce((value, index) => value + chunk[offset + index]!, 0);
+      if (Number.isFinite(sum)) values.push(sum);
+    }
   values.sort((a, b) => a - b);
   const count = values.length;
   // Nearest rank for tail percentiles; median averages the two middle samples.
