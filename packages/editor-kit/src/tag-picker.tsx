@@ -1,6 +1,6 @@
 import { createContext, useContext, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { isValidTagPath, type Tag, type TagContainer, type TagDefinition } from "@babylonslate/core";
-import { CheckIcon, ChevronDownIcon, MinusIcon, TagsIcon, TagIcon } from "lucide-react";
+import { ChevronDownIcon, MinusIcon, TagsIcon, TagIcon } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
 import { Checkbox } from "@babylonslate/ui/components/checkbox";
 import { Dialog, DialogContent, DialogTitle } from "@babylonslate/ui/components/dialog";
@@ -146,7 +146,7 @@ export function TagPicker(props: TagPickerProps) {
       }
       const count = selectionCounts.get(entry.id) ?? 0;
       const checked = multiple ? count === subtreeSize : selected.has(entry.id);
-      const indeterminate = multiple && count > 0 && !checked;
+      const indeterminate = count > 0 && !checked;
       const hasChildren = (indexed.children.get(entry.id)?.length ?? 0) > 0;
       const expanded = needle.length > 0 || !collapsed.has(entry.id);
       rows.push({
@@ -156,12 +156,10 @@ export function TagPicker(props: TagPickerProps) {
         hasChildren,
         expanded,
         icon: <span className="pointer-events-none relative flex" title={entry.path}>
-          {multiple ? <><Checkbox checked={checked} indeterminate={indeterminate} readOnly tabIndex={-1} aria-label={`${entry.path} Selection`} className={indeterminate ? "[&_svg]:hidden" : undefined} />
-            {indeterminate ? <MinusIcon className="absolute inset-0 size-4 text-foreground" aria-hidden="true" /> : null}</> :
-            <TagIcon className="size-3.5 text-muted-foreground" aria-hidden="true" />}
+          <Checkbox checked={checked} indeterminate={indeterminate} readOnly tabIndex={-1} aria-label={`${entry.path} Selection`} className={indeterminate ? "[&_svg]:hidden" : undefined} />
+          {indeterminate ? <MinusIcon className="absolute inset-0 size-4 text-foreground" aria-hidden="true" /> : null}
         </span>,
-        preview: !multiple && checked ? <CheckIcon className="size-3.5 text-primary" aria-label="Selected" /> :
-          hasChildren ? <span className="text-xs text-muted-foreground tabular-nums">{subtreeSize - 1}</span> : undefined,
+        preview: hasChildren ? <span className="text-xs text-muted-foreground tabular-nums">{subtreeSize - 1}</span> : undefined,
       });
       if (!expanded) index += subtreeSize - 1;
     }
@@ -237,7 +235,7 @@ export function TagPicker(props: TagPickerProps) {
         style={popupMenuFrame(anchor, { width: 400, height: 470 })} data-testid={`${testId}-dialog`}>
         <div className="flex shrink-0 items-center justify-between gap-2 px-3 pt-3 pb-2">
           <DialogTitle className="text-sm">{multiple ? "Select Tags" : "Select Tag"}</DialogTitle>
-          <span className="text-xs text-muted-foreground">{multiple ? `${selected.size} Selected` : "Select One"}</span>
+          <span className="text-xs text-muted-foreground">{selected.size} Selected</span>
         </div>
         <Field className="shrink-0 gap-1.5 px-3 pb-2" data-invalid={error ? true : undefined}>
           <FieldLabel htmlFor={createId} className="text-xs">Create Tag</FieldLabel>
