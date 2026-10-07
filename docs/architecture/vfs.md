@@ -15,6 +15,12 @@ Text + binary filesystem over a bound project folder:
 
 UI never imports Capacitor; all I/O goes through `createStorage()` in `@babylonslate/vfs`.
 
+### Error contract
+
+- A missing path (or a file where a parent directory should be) rejects reads, `readdir`, `stat` and `remove` with `StorageNotFoundError` (`code: "not-found"`, message `File not found: <path>`). Use `isStorageNotFound(error)`; never match messages.
+- `exists()` returns `false` only for that case. Permission, I/O, stale-handle, quota, invalid-path, path-escape and no-folder failures reject, so a caller never mistakes an unreadable file for an absent one. `remove()` of a missing path still rejects (typed).
+- Mapping: OPFS `NotFoundError`, plus `TypeMismatchError` while descending directories; Node `ENOENT` / `ENOTDIR`; Capacitor Filesystem `OS-PLUG-FILE-0008`; scoped storage `NOT_FOUND`. Electron restores the type from the main process's `StorageNotFoundError` invoke message or range `errorCode`. Other OPFS failures are wrapped as `Could not <action> <path>` with the original error as `cause`; Node errors propagate unchanged.
+
 ### Bounded asset reads
 
 Catalog mounting reads a `.babasset` prefix and header through `readBinaryRange`; it does not open each asset's payload. A subsequent read carries the catalog revision, and payload hashes validate the selected chunk. Range APIs never implement a partial read by slicing an already-loaded complete file.
@@ -91,6 +97,7 @@ Global Engine Settings stored **outside** any project:
 
 - `AppSettingsStore.update` queues a latest-read, focused mutation, schema validation, and write transaction across independently created stores. It emits the settings-change event after persistence, preventing concurrent debugger, viewport, appearance, and recent-project updates from overwriting one another.
 - App-owned project creation writes `.babylonslate-creating` until scaffolding finishes. Retrying the same name after interruption clears that app-owned partial scaffold and creates the requested template instead of reporting a duplicate. Reported creation failures still remove only folders owned by that creation; user-picked and unrelated existing folders are preserved.
+- A new project is scaffolded only into an empty folder (ignoring `.babylonslate-creating`, `.DS_Store`, `Thumbs.db`, `desktop.ini`). Create, Create from template and opening a folder without `project.json` refuse a folder with other content instead of overwriting it. An unreadable `project.json` reports its error and never triggers a scaffold. Browser imports skip non-empty folder names.
 - Opening or creating a project persists its recent-project entry before the editor becomes interactive. Reloading during later texture-transcoder setup therefore keeps the project available on Homepage for reopening and journal recovery.
 - Project-browser identity lives in `project.json` metadata: `name` and optional `appearance: { icon, color, image? }`. Icon and color are catalog identifiers; uploaded PNG, JPEG, or WebP images are small data URLs, bounded to 96 KiB of encoded text. Legacy projects without appearance use the default badge. Invalid imported images are discarded without losing project access.
 - Recents cache that metadata so project cards need no folder reads. Opening a project refreshes the cache from its metadata, preserving edited names and badges across reopening. Editing changes metadata and its cache after the project write succeeds; the folder name, handle, templates, and game assets stay unchanged. New projects can choose a badge independently of their template.
