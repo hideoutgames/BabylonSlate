@@ -650,12 +650,12 @@ export function setWaterGpuWaves(mesh: Mesh, enabled: boolean): boolean {
  * Built-in shading reads the definition on every bind (swell constants with Steepness, Wave Model, Peak Sharpness and
  * Wave Seed, Color Variation, the Refraction amount and the FFT band's Detail Waves gain) and the CPU waves on every
  * resample, so this re-applies the material's own scalars (Roughness, Reflection Strength), re-evaluates once the
- * defines that follow the asset (Wave Model, a feature term crossing zero, Refraction or Detail Waves crossing zero,
- * Object Reflections), moves the surface's scene-copy intent to the new values, re-pads the culling bounds for the new
- * wave envelopes, refreshes the contact range of both fields and resamples CPU vertices, also under a paused clock. A
- * Wave Length edit changes the grid step, so the placement below builds a new rest grid in place (Global Water too).
- * The scene's water clock keeps running. Returns false, changing nothing, for other meshes and for edits that need a
- * rebuild: Style compiles into the shader and Custom Material replaces it.
+ * defines that follow the asset (Wave Model, Stylized Look, a feature term crossing zero, Refraction or Detail Waves
+ * crossing zero, Object Reflections), moves the surface's scene-copy intent to the new values, re-pads the culling
+ * bounds for the new wave envelopes, refreshes the contact range of both fields and resamples CPU vertices, also under a
+ * paused clock. A Wave Length edit changes the grid step, so the placement below builds a new rest grid in place
+ * (Global Water too). The scene's water clock keeps running. Returns false, changing nothing, for other meshes and for
+ * edits that need a rebuild: Style compiles into the shader and Custom Material replaces it.
  */
 export function updateWaterMeshDefinition(mesh: Mesh, input: unknown): boolean {
   const surface = surfaceByMesh.get(mesh);

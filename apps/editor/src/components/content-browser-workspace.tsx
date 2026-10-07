@@ -357,6 +357,7 @@ function ContentBrowserWorkspaceBody({
   const [newAssetParent, setNewAssetParent] = useState("BObject");
   const [newDataDefinition, setNewDataDefinition] = useState<string | null>(null);
   const [newWaterStyle, setNewWaterStyle] = useState<import("@babylonslate/core").WaterStyle>("realistic");
+  const [newWaterLook, setNewWaterLook] = useState<import("@babylonslate/core").WaterStylizedLook>("painted");
   const [busy, setBusy] = useState(false);
   const [deleteProgress, setDeleteProgress] = useState<{
     done: number;
@@ -2318,6 +2319,7 @@ function ContentBrowserWorkspaceBody({
         name,
         parentClass: type === "Class" ? newAssetParent : null,
         waterStyle: newWaterStyle,
+        waterStylizedLook: newWaterLook,
         defaultDefinitionGuid: newDataDefinition,
         typeSchemas: type === "DataDefinition" || type === "DataTree" ? typeSchemasFromGraphAssets(newDataTypes) : undefined,
         classParentOf,
@@ -2350,6 +2352,7 @@ function ContentBrowserWorkspaceBody({
     newDataDefinition,
     newDataTypes,
     newWaterStyle,
+    newWaterLook,
     newAssetType,
     openDocuments,
     openOrFocusDocument,
@@ -2872,6 +2875,8 @@ function ContentBrowserWorkspaceBody({
         parentClass={newAssetParent}
         waterStyle={newWaterStyle}
         onWaterStyleChange={setNewWaterStyle}
+        waterStylizedLook={newWaterLook}
+        onWaterStylizedLookChange={setNewWaterLook}
         definitionGuid={newDataDefinition}
         onDefinitionGuidChange={setNewDataDefinition}
         definitionAssets={newDataTypes.dataDefinitions.map(definition => ({ guid: definition.guid, name: definition.name, type: "DataDefinition" }))}

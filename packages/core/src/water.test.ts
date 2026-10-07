@@ -5,29 +5,49 @@ import {
   WATER_CREST_MEAN, WATER_CREST_RANGE, WATER_JACOBIAN_FLOOR, WATER_WAVE_INVERT_TOLERANCE, WATER_WAVE_SHADER_STRIDE, createDefaultWaterDefinition,
   createWaterWaveOutput, evaluateWaterWaves, invertWaterWaves, normalizeWaterBody, normalizeWaterDefinition, sampleWaterSurface, sampleWaterWaves,
   waterBankFadeLength, waterBankGain, waterFootprint, waterHorizontalEnvelope, waterOceanSpectrumDensity, waterRiverCentreline,
-  waterSurfaceDrift, waterWaveComponents, waterWaveDrift, waterWaveEnvelope, waterWaveQ, waterWaveSet, waterWaveShaderConstants,
-  type WaterDefinition,
+  waterSurfaceDrift, waterSwellWarp, waterSwellWarpShaderConstants, waterWaveComponents, waterWaveDrift, waterWaveEnvelope, waterWaveGroups, waterWaveQ,
+  waterWaveSet, waterWaveShaderConstants, WATER_SWELL_WARP_STRIDE, type WaterDefinition,
 } from "./water";
 
-/** The vertical-only kernel as it was before Gerstner waves: the Steepness 0 reference. */
+/**
+ * The vertical-only kernel: the Classic table's plane waves, each riding its wave group (`waterWaveGroups`), summed at
+ * the warped rest point u = x + W(x) (`waterSwellWarp`, W = Σ A·K̂·cos(K·x + φ)), their slope carried back through
+ * ∂u/∂x. The Steepness 0 reference.
+ */
 function legacyWaves(water: WaterDefinition, x: number, z: number, time: number, scale = 1, spacing = 0) {
   const angle = water.waveDirection * Math.PI / 180;
+  let wx = 0, wz = 0, wxx = 0, wxz = 0, wzz = 0;
+  for (const [turn, frequency, amplitude, phase] of waterSwellWarp) {
+    const ax = Math.cos(angle + turn), az = Math.sin(angle + turn);
+    const k = 2 * Math.PI / water.waveLength * frequency, a = water.waveLength * amplitude;
+    const p = k * (ax * x + az * z) + phase, cos = Math.cos(p), sin = a * k * Math.sin(p);
+    wx += a * ax * cos; wz += a * az * cos;
+    wxx -= sin * ax * ax; wxz -= sin * ax * az; wzz -= sin * az * az;
+  }
+  const ux = x + wx, uz = z + wz, reach = spacing * waterWaveSet(water).warpStretch * 4 / water.waveLength;
   let height = 0, dx = 0, dz = 0, velocity = 0;
-  for (const [turn, frequency, amplitude, phase] of waterWaveComponents) {
+  waterWaveComponents.forEach(([turn, frequency, amplitude, phase], i) => {
     const k = 2 * Math.PI * frequency / water.waveLength;
     const heading = angle + turn * water.waveSpread * 2;
     const ax = Math.cos(heading), az = Math.sin(heading);
     const omega = Math.sqrt(9.81 * k) * water.waveSpeed;
-    const filter = Math.max(0, Math.min(1, 2 - spacing * frequency * 4 / water.waveLength));
+    const filter = Math.max(0, Math.min(1, 2 - reach * frequency));
     const a = water.waveHeight * scale * amplitude * filter * filter * (3 - 2 * filter);
-    const p = k * (ax * x + az * z) - omega * time + phase;
+    const p = k * (ax * ux + az * uz) - omega * time + phase;
     const sin = Math.sin(p), cos = Math.cos(p), crest = Math.exp(sin - 1);
     const value = sin + ((crest - WATER_CREST_MEAN) / WATER_CREST_RANGE - sin) * water.choppiness;
     const slope = cos + (crest * cos / WATER_CREST_RANGE - cos) * water.choppiness;
-    height += a * value; dx += a * k * ax * slope; dz += a * k * az * slope; velocity -= a * omega * slope;
-  }
-  const n = Math.hypot(dx, 1, dz);
-  return { height, normal: { x: -dx / n, y: 1 / n, z: -dz / n }, velocity };
+    // The component's wave group: an envelope travelling at the deep-water group velocity, turned off its heading.
+    const [ratio, groupTurn, groupPhase, depth] = waterWaveGroups[i]!, envelope = ratio * k, norm = 1 / Math.sqrt(1 + 0.5 * depth * depth);
+    const gx = envelope * Math.cos(heading + groupTurn), gz = envelope * Math.sin(heading + groupTurn);
+    const groupOmega = envelope * Math.cos(groupTurn) * omega / (2 * k);
+    const gp = gx * ux + gz * uz - groupOmega * time + groupPhase;
+    const g = (1 + depth * Math.cos(gp)) * norm, gs = depth * norm * Math.sin(gp) * value;
+    height += a * g * value; dx += a * (g * k * ax * slope - gs * gx); dz += a * (g * k * az * slope - gs * gz);
+    velocity += a * (gs * groupOmega - g * omega * slope);
+  });
+  const sx = (1 + wxx) * dx + wxz * dz, sz = wxz * dx + (1 + wzz) * dz, n = Math.hypot(sx, 1, sz);
+  return { height, normal: { x: -sx / n, y: 1 / n, z: -sz / n }, velocity };
 }
 
 const storm = { ...createDefaultWaterDefinition(), waveHeight: 1.2, waveLength: 22, choppiness: 0.8, steepness: 1 };
@@ -125,6 +145,14 @@ describe("Water surfaces", () => {
     expect(normalizeWaterDefinition({ surfaceFoam: 0.25, subsurface: 5 })).toMatchObject({ surfaceFoam: 0.25, subsurface: 2 });
     expect(normalizeWaterDefinition({ surfaceFoam: "lots", subsurface: NaN })).toMatchObject({ surfaceFoam: createDefaultWaterDefinition().surfaceFoam, subsurface: createDefaultWaterDefinition().subsurface });
   });
+  it("loads Stylized assets saved without a look as Painted with their stored values and fills Toon from its own defaults", () => {
+    const legacy = normalizeWaterDefinition({ style: "stylized", shallowColor: [0.1, 0.78, 0.72], colorBands: 3 });
+    expect(legacy).toMatchObject({ stylizedLook: "painted", shallowColor: [0.1, 0.78, 0.72], colorBands: 3, depthColorDistance: createDefaultWaterDefinition("stylized").depthColorDistance });
+    expect(normalizeWaterDefinition({ style: "stylized", stylizedLook: "watercolor" }).stylizedLook).toBe("painted");
+    expect(normalizeWaterDefinition({ style: "stylized", stylizedLook: "toon", waveHeight: 2 })).toEqual({ ...createDefaultWaterDefinition("stylized", "toon"), waveHeight: 2 });
+    // Realistic ignores the look: its defaults never follow it.
+    expect({ ...createDefaultWaterDefinition("realistic", "toon"), stylizedLook: "painted" }).toEqual(createDefaultWaterDefinition());
+  });
   it("bounds malformed asset inputs before they reach sampling and rendering", () => {
     const water = normalizeWaterDefinition({ style: "stylized", waveLength: 0, waveHeight: NaN, shallowColor: [-1, 4, 0.2], density: -20 });
     expect(water).toMatchObject({ style: "stylized", shallowColor: [0, 1, 0.2], density: 1 });
@@ -173,8 +201,13 @@ describe("Water surfaces", () => {
         const [x0, z0] = [out[11]!, out[12]!];
         evaluateWaterWaves(set, x0 + h, z0, time, 0, ahead); evaluateWaterWaves(set, x0 - h, z0, time, 0, behind);
         expect(out[5]! - 1).toBeCloseTo((ahead[1]! - behind[1]!) / (2 * h), 6);
-        expect(out[6]!).toBeCloseTo((ahead[2]! - behind[2]!) / (2 * h), 6);
+        expect(out[13]!).toBeCloseTo((ahead[2]! - behind[2]!) / (2 * h), 6);
         expect(out[3]!).toBeCloseTo((ahead[0]! - behind[0]!) / (2 * h), 6);
+        // The warp makes the Jacobian asymmetric: ∂x/∂z0 is checked on its own.
+        evaluateWaterWaves(set, x0, z0 + h, time, 0, ahead); evaluateWaterWaves(set, x0, z0 - h, time, 0, behind);
+        expect(out[6]!).toBeCloseTo((ahead[1]! - behind[1]!) / (2 * h), 6);
+        expect(out[7]! - 1).toBeCloseTo((ahead[2]! - behind[2]!) / (2 * h), 6);
+        expect(out[4]!).toBeCloseTo((ahead[0]! - behind[0]!) / (2 * h), 6);
         evaluateWaterWaves(set, x0, z0, time + h, 0, ahead); evaluateWaterWaves(set, x0, z0, time - h, 0, behind);
         expect(out[9]!).toBeCloseTo((ahead[1]! - behind[1]!) / (2 * h), 6);
         expect(out[10]!).toBeCloseTo((ahead[2]! - behind[2]!) / (2 * h), 6);
@@ -211,7 +244,8 @@ describe("Water surfaces", () => {
     const later = sampleWaterSurface(water, body, surface, 2.5 + h, transform), earlier = sampleWaterSurface(water, body, surface, 2.5 - h, transform);
     // Current plus orbital motion and its mean drift horizontally; the Eulerian height rate vertically.
     const current = sampleWaterSurface({ ...water, waveHeight: 0 }, body, surface, 2.5, transform).velocity;
-    const drift = waterWaveDrift(waterWaveSet(water), body.waveScale, { x: 0, z: 0 });
+    // The query's mean-drift term is that of its own world X/Z (the warp stretches the waves differently from place to place).
+    const drift = waterWaveDrift(waterWaveSet(water), body.waveScale, { x: 0, z: 0 }, 0, surface.x, surface.z);
     expect(sample.velocity.x).toBeCloseTo(current.x + out[9]! + drift.x, 6);
     expect(sample.velocity.z).toBeCloseTo(current.z + out[10]! + drift.z, 6);
     expect(sample.velocity.y - current.y).toBeCloseTo((later.height - earlier.height) / (2 * h), 4);
@@ -259,7 +293,7 @@ describe("Water surfaces", () => {
         for (let i = 0; i < 4000; i++) {
           evaluateWaterWaves(set, (i * 7.31) % 97 - 48, (i * 3.17) % 89 - 44, i * 0.173, 0, out, scale);
           highest = Math.max(highest, Math.abs(out[0]!)); widest = Math.max(widest, Math.hypot(out[1]!, out[2]!));
-          flattest = Math.min(flattest, out[5]! * out[7]! - out[6]! * out[6]!);
+          flattest = Math.min(flattest, out[5]! * out[7]! - out[6]! * out[13]!);
         }
         expect(highest).toBeLessThanOrEqual(vertical);
         expect(highest).toBeGreaterThan(vertical * 0.25);
@@ -285,6 +319,22 @@ describe("Water surfaces", () => {
       expect(c[4]!).toBeCloseTo(ocean.waveHeight * scale * set.amplitude[i]!, 12);
       expect(c[6]!).toBeCloseTo(q * c[4]!, 12);
     }
+    // The warp's constants reproduce its world-space displacement W = Σ A·K̂·cos(K·x + φ) from eye-relative points too.
+    const warp = new Float64Array(waterSwellWarp.length * WATER_SWELL_WARP_STRIDE), angle = ocean.waveDirection * Math.PI / 180;
+    waterSwellWarpShaderConstants(set, origin.x, origin.z, warp);
+    let shaderX = 0, shaderZ = 0, directX = 0, directZ = 0;
+    waterSwellWarp.forEach(([turn, frequency, amplitude, phase], t) => {
+      const c = warp.subarray(t * WATER_SWELL_WARP_STRIDE);
+      expect(c[3]!).toBeGreaterThanOrEqual(0);
+      expect(c[3]!).toBeLessThan(2 * Math.PI);
+      const cos = Math.cos(c[0]! * local.x + c[1]! * local.z + c[3]!);
+      shaderX += c[0]! * c[2]! * cos; shaderZ += c[1]! * c[2]! * cos;
+      const dirX = Math.cos(angle + turn), dirZ = Math.sin(angle + turn), k = 2 * Math.PI / ocean.waveLength * frequency;
+      const direct = Math.cos(k * (dirX * world.x + dirZ * world.z) + phase) * ocean.waveLength * amplitude;
+      directX += dirX * direct; directZ += dirZ * direct;
+    });
+    expect(shaderX).toBeCloseTo(directX, 6);
+    expect(shaderZ).toBeCloseTo(directZ, 6);
   });
   it("gives both wave models one detail spectrum above the analytic swell, bounded by the envelope", () => {
     for (const model of ["classic", "ocean"] as const) {
@@ -355,9 +405,10 @@ describe("Water surfaces", () => {
         return { above: above / 6000, steepest };
       };
       const rounded = profile(0), sharp = profile(1);
-      // Water gathers under narrower, steeper crests: the surface spends less of each wavelength above its mean.
-      expect(rounded.above).toBeGreaterThan(0.47);
-      expect(sharp.above).toBeLessThan(0.42);
+      // Water gathers under narrower, steeper crests: the surface spends clearly less of each wavelength above its mean
+      // (the rounded sea's share along one 300 m line varies by a few percent around a half with the eight components).
+      expect(rounded.above).toBeGreaterThan(0.45);
+      expect(sharp.above).toBeLessThan(rounded.above - 0.05);
       expect(sharp.steepest).toBeGreaterThan(rounded.steepest * 1.25);
     }
   });
@@ -374,8 +425,8 @@ describe("Water surfaces", () => {
             const sample = sampleWaterSurface(water, body, { x, y: -0.1, z }, i * dt);
             let ux = sample.velocity.x, uz = sample.velocity.z;
             if (correct) {
-              waterSurfaceDrift(water, body, sample.edgeDistance, fixed);
-              waterSurfaceDrift(water, body, sample.edgeDistance, coupled, rate);
+              waterSurfaceDrift(water, body, sample.edgeDistance, fixed, 0, x, z);
+              waterSurfaceDrift(water, body, sample.edgeDistance, coupled, rate, x, z);
               ux += coupled.x - fixed.x; uz += coupled.z - fixed.z;
             }
             vx += (ux - vx) * Math.min(1, rate * dt); vz += (uz - vz) * Math.min(1, rate * dt);

@@ -43,7 +43,7 @@ const oceanOnly = new Set<NumberKey>(["peakSharpness", "waveSeed"]);
 const descriptions: Partial<Record<NumberKey, string>> = {
   opacity: "Maximum opacity of deep water. Shallow water near banks stays clearer.",
   roughness: "Realistic: how far the sun glint and sky reflection spread. Stylized: width of the sun's streak and sparkle path.",
-  reflectionStrength: "Realistic: strength of the sky reflection. Stylized: strength of the soft painted sky reflection, strongest at grazing views.",
+  reflectionStrength: "Realistic: strength of the sky reflection. Stylized Painted: strength of the soft painted sky reflection, strongest at grazing views. Stylized Toon: strength of object reflections only.",
   depthColorDistance: "Metres of water that absorb most light. Smaller values look deeper and darker sooner.",
   rippleScale: "Higher values make smaller wind ripples.",
   choppiness: "0 gives rounded swell; 1 gives sharp crests and flat troughs. Floating objects follow the same shape.",
@@ -72,7 +72,7 @@ export function WaterDetailsPanel(_props: IDockviewPanelProps) {
   const [picking, setPicking] = useState(false);
   const doc = useOpenDocument(documentId);
   const water = normalizeWaterDefinition(doc?.content);
-  const defaults = createDefaultWaterDefinition(water.style);
+  const defaults = createDefaultWaterDefinition(water.style, water.stylizedLook);
   /** `field` names the per-field merge key: one scrub or color drag is one undo step. */
   const commit = (next: WaterDefinition, field?: string) => { void applyAssetDocumentChange(documentId, normalizeWaterDefinition(next) as unknown as Record<string, unknown>, field ? `water:${field}` : undefined); };
   // Surface Materials change with the registry, not with edits of this Water.
@@ -87,12 +87,20 @@ export function WaterDetailsPanel(_props: IDockviewPanelProps) {
     ...(key === "waveSeed" ? { precision: 0 } : {}), ...(oceanOnly.has(key) && water.waveModel !== "ocean" ? { disabled: true } : {}),
     ...(descriptions[key] ? { description: descriptions[key] } : {}), onChange: (value) => commit({ ...water, [key]: value }, key),
   });
+  const stylizedLookRow: PropertyRow = {
+    id: "water-stylizedLook", kind: "enum", label: "Stylized Look", value: water.stylizedLook,
+    options: [{ value: "painted", label: "Painted" }, { value: "toon", label: "Toon" }],
+    description: "Painted is soft, lit-looking water with a painted sky reflection. Toon is flat color bands with white line work and opaque foam. Your colors and wave settings are retained.",
+    onChange: (look) => commit({ ...water, stylizedLook: look === "toon" ? "toon" : "painted" }),
+  };
   const rows: PropertyRow[] = [
     { id: "water-style", kind: "enum", label: "Style", value: water.style, options: [{ value: "realistic", label: "Realistic" }, { value: "stylized", label: "Stylized" }], description: "Changes shading style. Your colors and wave settings are retained.", onChange: (style) => commit({ ...water, style: style === "stylized" ? "stylized" : "realistic" }) },
+    // Stylized only; Realistic keeps the stored look for a later switch back.
+    ...(water.style === "stylized" ? [stylizedLookRow] : []),
     ...(["shallowColor", "deepColor", "foamColor"] as const).map((key): PropertyRow => ({ id: `water-${key}`, kind: "color", label: humanizePropertyLabel(key), value: water[key], defaultValue: defaults[key], onChange: (value) => commit({ ...water, [key]: [value[0], value[1], value[2]] }, key) })),
     ...lookControls.map(numberRow),
     { id: "water-objectReflections", kind: "boolean", label: "Object Reflections", value: water.objectReflections, defaultValue: defaults.objectReflections, description: "Render only: also reflect scene objects (screen-space or planar, per the Water Reflections quality setting). Off reflects only the sky. Visible in scene viewports and Play, not in this preview.", onChange: (objectReflections) => commit({ ...water, objectReflections }) },
-    { id: "water-waveModel", kind: "enum", label: "Wave Model", value: water.waveModel, defaultValue: defaults.waveModel, options: [{ value: "classic", label: "Classic" }, { value: "ocean", label: "Ocean Spectrum" }], description: "Classic is five fixed swell waves. Ocean Spectrum draws eight waves from a sea spectrum peaking at Wave Length, with the same overall height. Affects physics.", onChange: (waveModel) => commit({ ...water, waveModel: waveModel === "ocean" ? "ocean" : "classic" }) },
+    { id: "water-waveModel", kind: "enum", label: "Wave Model", value: water.waveModel, defaultValue: defaults.waveModel, options: [{ value: "classic", label: "Classic" }, { value: "ocean", label: "Ocean Spectrum" }], description: "Classic is eight fixed swell waves spread around Wave Length. Ocean Spectrum draws eight waves from a sea spectrum peaking at Wave Length, with the same overall height. Affects physics.", onChange: (waveModel) => commit({ ...water, waveModel: waveModel === "ocean" ? "ocean" : "classic" }) },
     ...waveControls.map(numberRow),
     ...surfaceControls.map(numberRow),
     { id: "water-material", kind: "asset", label: "Custom Material", value: water.materialGuid, placeholder: "Built-In Water", description: "Optional Surface Material. Wave displacement and buoyancy remain active.", ...(selected ? assetRowIdentity({ name: selected.header.name, type: selected.header.type }) : {}), onPick: () => setPicking(true), onChange: (materialGuid) => commit({ ...water, materialGuid }) },

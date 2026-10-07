@@ -9,7 +9,7 @@ import {
 import { updateSceneRenderingSettings } from "./render-settings";
 import { waterFftDiagnostics, waterFftForSurface } from "./water-fft";
 import { WATER_FFT_SAMPLER, WaterMaterialPlugin } from "./water-material";
-import { createWaterMesh, setSceneWaterTime, updateSceneWater } from "./water-mesh";
+import { createWaterMesh, setSceneWaterTime, updateSceneWater, updateWaterMeshDefinition } from "./water-mesh";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
 
 /** Capture the shader upload boundary while using real scene objects and binding logic. */
@@ -206,9 +206,32 @@ describe("Water material binding", () => {
       expect(realistic).toContain("#define LIGHT1");
       // Built-in water displaces its static rest grid in the vertex shader.
       expect(realistic).toContain("#define SLATE_WATER_GPU_WAVES");
-      // Classic compiles only its five swell components; Ocean Spectrum adds its other three.
-      expect(realistic).not.toContain("#define SLATE_WATER_OCEAN");
-      expect(await compiled("stylized", "ocean")).toContain("#define SLATE_WATER_OCEAN");
+      // Both wave models evaluate eight components: Wave Model is uniform-only and compiles the same program.
+      expect(await compiled("realistic", "ocean")).toBe(realistic);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+
+  it("compiles the Toon look only for Stylized water and switches the look in place without a rebuild", async () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    try {
+      new FreeCamera("camera", new Vector3(0, 5, -10), scene);
+      new DirectionalLight("sun", new Vector3(0, -1, 0.3), scene);
+      const defines = async (mesh: ReturnType<typeof createWaterMesh>) => {
+        const material = mesh.material as PBRMaterial, subMesh = mesh.subMeshes[0]!;
+        await vi.waitFor(() => expect(material.isReadyForSubMesh(mesh, subMesh)).toBe(true));
+        return subMesh.effect!.defines;
+      };
+      const painted = createWaterMesh(scene, "stylized", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition("stylized"));
+      const material = painted.material;
+      expect(await defines(painted)).toContain("#define SLATE_WATER_STYLIZED");
+      expect(await defines(painted)).not.toContain("SLATE_WATER_TOON\n");
+      // A Details edit of Stylized Look keeps the surface and its material and recompiles it as Toon.
+      expect(updateWaterMeshDefinition(painted, createDefaultWaterDefinition("stylized", "toon"))).toBe(true);
+      expect(painted.material).toBe(material);
+      expect(await defines(painted)).toContain("#define SLATE_WATER_TOON\n");
+      // Realistic water ignores a stored look.
+      const realistic = createWaterMesh(scene, "realistic", normalizeWaterBody({ resolution: 8 }), { ...createDefaultWaterDefinition(), stylizedLook: "toon" });
+      expect(await defines(realistic)).not.toContain("SLATE_WATER_TOON\n");
     } finally { scene.dispose(); engine.dispose(); }
   });
 
@@ -339,10 +362,16 @@ describe("Water material binding", () => {
       plugin.hardBindForSubMesh(output.buffer, scene);
       const rest = { x: 3.25, z: -1.5 }, kernel = createWaterWaveOutput();
       evaluateWaterWaves(waterWaveSet(definition), origin.x + rest.x, origin.z + rest.z, plugin.time, 0, kernel, body.waveScale);
+      // The shader evaluates every component at the warped rest point rest + W(rest), from the warp's own uniforms.
+      const warped = { ...rest };
+      for (let t = 0; t < 3; t++) {
+        const [kx, kz, scaled, phase] = output.vectors.get(`slateWaterSwellWarp${t}`)!, cos = Math.cos(kx! * rest.x + kz! * rest.z + phase!);
+        warped.x += kx! * scaled! * cos; warped.z += kz! * scaled! * cos;
+      }
       let height = 0, offsetX = 0, offsetZ = 0;
       for (let i = 0; i < WATER_WAVE_MAX_COMPONENTS; i++) {
         const [dx, dz, k] = output.vectors.get(`slateWaterSwellDir${i}`)!, [amplitude, phase, gerstner] = output.vectors.get(`slateWaterSwellAmp${i}`)!;
-        const p = k! * (dx! * rest.x + dz! * rest.z) + phase!;
+        const p = k! * (dx! * warped.x + dz! * warped.z) + phase!;
         height += amplitude! * Math.sin(p); offsetX += gerstner! * dx! * Math.cos(p); offsetZ += gerstner! * dz! * Math.cos(p);
       }
       // Float32 uniforms keep the phases small, so the shader's swell matches the float64 kernel closely.

@@ -276,7 +276,7 @@ describe("Water rendering", () => {
         return subMesh.effect!.defines;
       };
       const shaderInputs = [
-        ...Array.from({ length: 8 }, (_, i) => [`slateWaterSwellDir${i}`, `slateWaterSwellAmp${i}`]).flat(),
+        ...Array.from({ length: 8 }, (_, i) => [`slateWaterSwellDir${i}`, `slateWaterSwellAmp${i}`]).flat(), "slateWaterSwellWarp0", "slateWaterSwellWarp1", "slateWaterSwellWarp2",
         "slateWaterSea", "slateWaterSwellInfo", "slateWaterShape", "slateWaterWaves", "slateWaterLook", "slateWaterTerms", "slateWaterMotion",
       ];
       // No scene copy intent, no detail band, Classic waves and no Sparkles to start with.
@@ -288,7 +288,7 @@ describe("Water rendering", () => {
       const edits: Array<Partial<WaterDefinition>> = [
         // Uniform-only fields; Steepness also widens a finite body's culling bounds.
         { steepness: 0.9, colorVariation: 0.1, waveHeight: 1.4 },
-        // Wave Model, Peak Sharpness and Wave Seed change the components; Ocean Spectrum compiles its other three.
+        // Wave Model, Peak Sharpness and Wave Seed change the components (uniform-only: both models evaluate eight).
         { waveModel: "ocean", peakSharpness: 6, waveSeed: 42 },
         // Features crossing zero recompile: refraction intent, the planar mirror, the FFT band and Sparkles.
         { refraction: 0.6, objectReflections: true, detailWaves: 0.8, sparkles: 0.5 },
@@ -306,7 +306,6 @@ describe("Water rendering", () => {
         expect(bounds(lake)).toEqual(bounds(rebuilt).map((value) => expect.closeTo(value, 6)));
         rebuilt.dispose();
       }
-      expect(await compiled(lake)).toContain("#define SLATE_WATER_OCEAN");
       expect(await compiled(lake)).toContain("#define SLATE_WATER_SPARKLES\n");
       // Refraction and Object Reflections now ask for the scene copy; the count leaves with the surface.
       expect(sceneWaterSamplesSceneCopy(scene, true, false)).toBe(true);

@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { FreeCamera, MeshBuilder, NullEngine, RawTexture, Scene, StandardMaterial, Vector3, type PBRMaterial, type SubMesh, type UniformBuffer } from "@babylonjs/core";
 import { ObjectRenderer } from "@babylonjs/core/Rendering/objectRenderer";
-import { WATER_WAVE_MAX_COMPONENTS, createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch } from "@babylonslate/core";
+import { WATER_SWELL_WARP_TERMS, WATER_WAVE_MAX_COMPONENTS, createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch } from "@babylonslate/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
 import { isDisposedNodeMaterial } from "./gpu-resource-live";
 import { acquireAuthoredOutlineVariant, compileMaterialPlan } from "./material-compiler";
@@ -177,7 +177,6 @@ it("displaces built-in GPU water in the mask with the material's swell for the f
     expect(objects.isReadyForRendering(80, 64)).toBe(true);
     render();
     expect(program().defines).toContain("#define SLATE_WATER_GPU_WAVES");
-    expect(program().defines).toContain("#define SLATE_WATER_OCEAN");
     // Each mask draw binds what the water material's own vertex shader reads in the same frame.
     const bound = new Map<string, number[]>(), effect = program().effect!;
     vi.spyOn(effect, "setFloat4").mockImplementation((name: string, x: number, y: number, z: number, w: number) => { bound.set(name, [x, y, z, w]); return effect; });
@@ -187,6 +186,8 @@ it("displaces built-in GPU water in the mask with the material's swell for the f
     plugin.hardBindForSubMesh({ updateFloat4: (name: string, ...values: number[]) => material.set(name, values), updateMatrix: () => {} } as unknown as UniformBuffer, scene);
     for (let i = 0; i < WATER_WAVE_MAX_COMPONENTS; i++)
       for (const name of [`slateWaterSwellDir${i}`, `slateWaterSwellAmp${i}`]) expect(bound.get(name), name).toEqual(material.get(name));
+    // The swell's warp too: the mask displaces the same warped surface.
+    for (let t = 0; t < WATER_SWELL_WARP_TERMS; t++) expect(bound.get(`slateWaterSwellWarp${t}`), `warp ${t}`).toEqual(material.get(`slateWaterSwellWarp${t}`));
     expect(bound.get("slateWaterSwellInfo")![0]).toBe(material.get("slateWaterSwellInfo")![0]);
     expect(bound.get("slateWaterShape")![0]).toBe(material.get("slateWaterShape")![0]);
     // CPU-path water uploads displaced vertices: its mask program must draw them as they are.

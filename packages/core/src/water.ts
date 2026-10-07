@@ -4,14 +4,18 @@ import { inverseQuat, quatRotateVector, type QuatObject } from "./euler";
 import { sampleSplinePath, SPLINE_SUBDIVISIONS } from "./spline-component";
 
 export type WaterStyle = "realistic" | "stylized";
+/** Stylized water's look: Painted (soft, lit-looking, Sea of Thieves-like) or Toon (flat bands, white line work). */
+export type WaterStylizedLook = "painted" | "toon";
 export type WaterKind = "global" | "ocean" | "lake" | "river" | "puddle";
 export type WaterColor = [number, number, number];
-/** Classic: five fixed swell components. Ocean: eight seeded components drawn from a JONSWAP spectrum. */
+/** Classic: eight fixed swell components. Ocean: eight seeded components drawn from a JONSWAP spectrum. Both share one warp. */
 export type WaterWaveModel = "classic" | "ocean";
 
 /** Version 1 Water asset. Distances are metres and time is simulation seconds. */
 export interface WaterDefinition {
   style: WaterStyle;
+  /** Render only: Stylized water's look; Realistic ignores it. Assets saved without it load as Painted. */
+  stylizedLook: WaterStylizedLook;
   shallowColor: WaterColor;
   deepColor: WaterColor;
   foamColor: WaterColor;
@@ -108,22 +112,26 @@ const tuple = (value: unknown, fallback: WaterColor, min: number, max: number): 
     : [...fallback];
 };
 
-export function createDefaultWaterDefinition(style: WaterStyle = "realistic"): WaterDefinition {
-  const stylized = style === "stylized";
+/**
+ * Defaults of a new Water asset. Stylized defaults follow `look` (Realistic ignores it): Painted and Toon differ only
+ * in colours, Reflection Strength, Depth Color Distance, Color Bands and Sparkles.
+ */
+export function createDefaultWaterDefinition(style: WaterStyle = "realistic", look: WaterStylizedLook = "painted"): WaterDefinition {
+  const stylized = style === "stylized", toon = stylized && look === "toon";
   return {
-    style,
-    shallowColor: stylized ? [0.1, 0.78, 0.72] : [0.1, 0.5, 0.48],
-    deepColor: stylized ? [0.02, 0.17, 0.3] : [0.02, 0.13, 0.24],
-    foamColor: stylized ? [1, 1, 1] : [0.9, 0.93, 0.94],
-    opacity: stylized ? 1 : 0.97, roughness: stylized ? 0.3 : 0.06,
-    reflectionStrength: stylized ? 0.8 : 1, depthColorDistance: stylized ? 3 : 4,
+    style, stylizedLook: look,
+    shallowColor: toon ? [0.2, 0.86, 0.9] : stylized ? [0.1, 0.72, 0.66] : [0.1, 0.68, 0.95],
+    deepColor: toon ? [0.05, 0.27, 0.7] : stylized ? [0.04, 0.21, 0.31] : [0.03, 0.15, 0.3],
+    foamColor: toon ? [1, 1, 1] : stylized ? [0.97, 0.99, 1] : [0.9, 0.93, 0.94],
+    opacity: stylized ? 1 : 0.97, roughness: stylized ? 0.3 : 0.04,
+    reflectionStrength: toon ? 0.8 : 1, depthColorDistance: toon ? 6 : stylized ? 4 : 6.5,
     waveHeight: 0.35, waveLength: 12, waveSpeed: 1.3, waveDirection: 25,
     choppiness: stylized ? 0.2 : 0.45, waveSpread: 0.5,
     rippleStrength: stylized ? 0.35 : 0.6, rippleScale: stylized ? 1 : 1.4,
     foamAmount: stylized ? 1 : 0.6, foamWidth: stylized ? 1.2 : 0.8,
     crestFoam: 0.35, contactFoamWidth: stylized ? 0.6 : 1.2,
     surfaceFoam: stylized ? 0.4 : 0.15, subsurface: 1,
-    colorBands: stylized ? 3 : 0, sparkles: stylized ? 0.4 : 0, density: 1000, materialGuid: null,
+    colorBands: toon ? 3 : 0, sparkles: toon ? 0.4 : stylized ? 0.5 : 0, density: 1000, materialGuid: null,
     steepness: stylized ? 0.3 : 0.5, waveModel: "classic", peakSharpness: 3.3, waveSeed: 0,
     detailWaves: stylized ? 0 : 1, refraction: stylized ? 0.15 : 0.35, objectReflections: !stylized,
     colorVariation: 0.5,
@@ -132,7 +140,7 @@ export function createDefaultWaterDefinition(style: WaterStyle = "realistic"): W
 
 export function normalizeWaterDefinition(value: unknown): WaterDefinition {
   const v = record(value);
-  const d = createDefaultWaterDefinition(v.style === "stylized" ? "stylized" : "realistic");
+  const d = createDefaultWaterDefinition(v.style === "stylized" ? "stylized" : "realistic", v.stylizedLook === "toon" ? "toon" : "painted");
   return {
     ...d,
     shallowColor: tuple(v.shallowColor, d.shallowColor, 0, 1),
@@ -235,12 +243,45 @@ export const emptyWaterSample = (): WaterSample => ({
 });
 
 /**
- * Classic swell: [heading turn, relative frequency, relative amplitude, phase]. `waterWaveSet` builds the Classic
- * model from this table; the built-in shader still unrolls it per pixel until GPU evaluation moves to
- * `waterWaveShaderConstants`, which covers both models.
+ * Classic swell: [heading turn, relative frequency, relative amplitude, phase]; `waterWaveSet` builds the Classic
+ * model from this table. Eight components with their energy spread over the band like a sea spectrum (none carries more
+ * than a third of it, so no single wave train prints parallel rows) and headings fanned to both sides of Wave
+ * Direction, at incommensurate frequencies. Σ a² is that of the original five-component table (0.3591), so the sea's
+ * significant height is unchanged.
  */
 export const waterWaveComponents = [
-  [0, 1, 0.5, 0], [0.62, 1.37, 0.27, 1.2], [-0.81, 1.93, 0.16, 2.7], [1.47, 2.71, 0.09, 4.1], [-1.72, 3.53, 0.05, 0.6],
+  [0.36, 0.753, 0.198, 2.87], [-0.11, 0.899, 0.3349, 3.65], [0.12, 1.157, 0.3355, 1.55], [-0.26, 1.422, 0.2247, 0.61],
+  [-0.46, 1.857, 0.1436, 5.68], [0.6, 2.336, 0.1061, 2.56], [0.9, 2.936, 0.0876, 4.53], [-0.87, 3.67, 0.0717, 4.15],
+] as const;
+
+/**
+ * The swell's shared domain warp, both models: [heading turn from Wave Direction (radians), wavenumber relative to the
+ * peak (2π / Wave Length), amplitude relative to Wave Length, phase]. Every component is evaluated at the warped rest
+ * point u = x0 + W(x0), W = Σ A·K̂·cos(K·x0 + φ) = ∇φ (a gradient field, so ∂W/∂x0 is symmetric), so a finite set of
+ * plane waves never repeats as a regular lattice: crests curve over about eight wavelengths and the local wavelength
+ * and heading drift by up to `WaterWaveSet.warpStretch`. Static in the world and independent of quality, so physics
+ * and every renderer evaluate the same surface.
+ */
+export const waterSwellWarp = [
+  [0.4, 0.125, 0.2, 0.7], [2.5, 0.104, 0.2, 2.9], [4.4, 0.149, 0.2, 5.1],
+] as const;
+/** Terms of `waterSwellWarp`. */
+export const WATER_SWELL_WARP_TERMS = waterSwellWarp.length;
+
+/**
+ * Wave groups, both models, per component slot: [envelope wavenumber relative to the component's, envelope heading turn
+ * from the component's (radians), phase, depth m]. Each component's height is modulated by
+ * g = (1 + m·cos(κ·ê·u − Ω·t + ψ)) / √(1 + m²/2), κ = ratio · k, which travels at the component's deep-water group velocity
+ * (Ω = κ·(ê·d)·ω / 2k, half the crest speed along the component's heading): crests run through each group, growing and
+ * fading as they pass, so the sea comes in sets with calmer water between them and the same crest never returns to the
+ * same place after a period. Groups are about seven of their component's wavelengths long, turned off its heading so
+ * crests also vary along their length; the √ keeps each component's mean energy (the sea's significant height). Only
+ * the height carries the envelope: the Gerstner horizontal offset stays unmodulated, so the Jacobian bound (and with it
+ * Steepness's crest sharpness) is unchanged. Evaluated at the warped rest point like the components themselves.
+ */
+export const waterWaveGroups = [
+  [0.13, 0.55, 0.9, 0.4], [0.155, -0.45, 4.1, 0.5], [0.12, 0.6, 2.3, 0.5], [0.145, -0.5, 5.6, 0.45],
+  [0.165, 0.4, 1.4, 0.4], [0.135, -0.6, 3.3, 0.35], [0.15, 0.5, 0.2, 0.35], [0.125, -0.4, 4.8, 0.3],
 ] as const;
 
 /** Mean and half-range of `exp(sin p - 1)`, used to centre the sharp-crest profile. */
@@ -263,7 +304,7 @@ export function waterWaveProfile(p: number, choppiness: number): { value: number
 export const WATER_STEEPNESS_CAP = 3.5;
 /** Smallest Jacobian determinant Steepness 1 can reach when every crest aligns: the surface never folds over. */
 export const WATER_JACOBIAN_FLOOR = 0.1;
-/** Most analytic components any wave model uses (Ocean Spectrum). */
+/** Most analytic components any wave model uses (both use eight). */
 export const WATER_WAVE_MAX_COMPONENTS = 8;
 /** Newton steps after the Picard start when a query inverts world X/Z to its rest point. Fixed, so every host agrees. */
 export const WATER_WAVE_NEWTON_STEPS = 4;
@@ -306,8 +347,31 @@ export interface WaterWaveSet {
   readonly amplitude: Float64Array;
   /** Phase at the world origin and time zero (radians). */
   readonly phase: Float64Array;
-  /** Wavenumber relative to 2π / Wave Length; mesh spacing fades a component by `spacing · frequency · 4 / waveLength`. */
+  /**
+   * Wavenumber relative to 2π / Wave Length; mesh spacing fades a component by `spacing · frequency · warpStretch · 4 /
+   * waveLength` (the warp compresses it locally by up to `warpStretch`).
+   */
   readonly frequency: Float64Array;
+  /**
+   * Per component, its wave group (`waterWaveGroups`): the envelope's wavevector κ·ê (rad/m), angular frequency Ω
+   * (rad/s, including Wave Speed), phase and depth m.
+   */
+  readonly groupX: Float64Array;
+  readonly groupZ: Float64Array;
+  readonly groupOmega: Float64Array;
+  readonly groupPhase: Float64Array;
+  readonly groupDepth: Float64Array;
+  /** `waterSwellWarp` in world units: each term's unit heading, wavenumber (rad/m), amplitude (m) and phase. */
+  readonly warpDirX: Float64Array;
+  readonly warpDirZ: Float64Array;
+  readonly warpK: Float64Array;
+  readonly warpAmplitude: Float64Array;
+  readonly warpPhase: Float64Array;
+  /**
+   * 1 + the largest eigenvalue ∂W/∂x0 can reach anywhere (its terms' signs taken independently): no warped wavevector is
+   * longer than this many times its own.
+   */
+  readonly warpStretch: number;
   readonly waveHeight: number;
   readonly waveLength: number;
   readonly waveSpeed: number;
@@ -318,14 +382,26 @@ export interface WaterWaveSet {
   readonly peakSharpness: number;
   readonly waveSeed: number;
   readonly detailWaves: number;
-  /** S₁ = Σ k·A at Wave Scale 1 from unfiltered amplitudes (A = Wave Height · amplitude); bounds the Jacobian. */
+  /**
+   * S₁ = Σ k·A at Wave Scale 1 from unfiltered amplitudes (A = Wave Height · amplitude).
+   */
   readonly slopeSum: number;
-  /** Σ A at Wave Scale 1: the vertical envelope of the analytic waves (the crest profile stays within ±1). */
+  /**
+   * The largest Σ k·A·dᵀ·M·d (M = I + ∂W/∂x0, the warp's stretch along each heading) anywhere on the surface: S₁ plus
+   * Σₜ Aₜ·Kₜ·Σᵢ kᵢ·Aᵢ·(dᵢ·K̂ₜ)², every warp term at its most stretching phase. Bounds the Jacobian (`waterWaveQ`).
+   */
+  readonly jacobianSlope: number;
+  /** Σ A at Wave Scale 1: the horizontal envelope's sum (the Gerstner offset carries no wave groups). */
   readonly amplitudeSum: number;
   /**
-   * Σ k·A²·ω·d / 2 at Wave Scale 1 and q = 1 (m/s). Under Gerstner waves a fixed point sees the orbital velocity
-   * average to −q²·scale² times this; `waterWaveDrift` cancels that, so waves rock floating objects without pushing
-   * them upwind.
+   * Σ A·(1 + m)/√(1 + m²/2) at Wave Scale 1: the vertical envelope of the analytic waves (the crest profile stays within
+   * ±1 and a wave group raises a component by at most that factor).
+   */
+  readonly heightSum: number;
+  /**
+   * Σ k·A²·ω·d / 2 at Wave Scale 1 and q = 1 (m/s), unwarped. Under Gerstner waves a fixed point sees the orbital
+   * velocity average to −q²·scale² times this, each component weighted by dᵀ·(I + ∂W/∂x0)·d there; `waterWaveDrift`
+   * cancels that, so waves rock floating objects without pushing them upwind.
    */
   readonly driftX: number;
   readonly driftZ: number;
@@ -333,7 +409,7 @@ export interface WaterWaveSet {
   readonly peakK: number;
   /**
    * The highest wavenumber the analytic components represent (4 × peakK for both models; Classic's shortest swell is
-   * 3.53 × peakK). Render-only detail (Detail Waves, the FFT band) synthesizes only wavenumbers above it.
+   * 3.67 × peakK). Render-only detail (Detail Waves, the FFT band) synthesizes only wavenumbers above it.
    */
   readonly cutoffK: number;
   /**
@@ -391,6 +467,11 @@ function buildWaveSet(water: WaterDefinition): WaterWaveSet {
     model: ocean ? "ocean" : "classic", count,
     k: new Float64Array(count), omega: new Float64Array(count), dirX: new Float64Array(count), dirZ: new Float64Array(count),
     amplitude: new Float64Array(count), phase: new Float64Array(count), frequency: new Float64Array(count),
+    groupX: new Float64Array(count), groupZ: new Float64Array(count), groupOmega: new Float64Array(count),
+    groupPhase: new Float64Array(count), groupDepth: new Float64Array(count), heightSum: 0,
+    warpDirX: new Float64Array(WATER_SWELL_WARP_TERMS), warpDirZ: new Float64Array(WATER_SWELL_WARP_TERMS),
+    warpK: new Float64Array(WATER_SWELL_WARP_TERMS), warpAmplitude: new Float64Array(WATER_SWELL_WARP_TERMS),
+    warpPhase: new Float64Array(WATER_SWELL_WARP_TERMS), warpStretch: 1, jacobianSlope: 0,
     waveHeight: water.waveHeight, waveLength: water.waveLength, waveSpeed: water.waveSpeed, waveDirection: water.waveDirection,
     waveSpread: water.waveSpread, choppiness: water.choppiness, steepness: water.steepness, peakSharpness: water.peakSharpness,
     waveSeed: water.waveSeed, detailWaves: water.detailWaves,
@@ -400,7 +481,6 @@ function buildWaveSet(water: WaterDefinition): WaterWaveSet {
   const headings = new Float64Array(count);
   if (!ocean) {
     waterWaveComponents.forEach(([turn, frequency, amplitude, phase], i) => {
-      // Same expressions as the original per-sample loop, so Steepness 0 reproduces earlier results exactly.
       set.k[i] = 2 * Math.PI * frequency / water.waveLength;
       headings[i] = angle + turn * water.waveSpread * 2;
       set.frequency[i] = frequency; set.amplitude[i] = amplitude; set.phase[i] = phase;
@@ -444,12 +524,66 @@ function buildWaveSet(water: WaterDefinition): WaterWaveSet {
   for (let i = 0; i < count; i++) {
     set.dirX[i] = Math.cos(headings[i]!); set.dirZ[i] = Math.sin(headings[i]!);
     set.omega[i] = Math.sqrt(9.81 * set.k[i]!) * water.waveSpeed;
+    const [ratio, turn, groupPhase, depth] = waterWaveGroups[i]!, envelope = ratio * set.k[i]!;
+    set.groupX[i] = envelope * Math.cos(headings[i]! + turn); set.groupZ[i] = envelope * Math.sin(headings[i]! + turn);
+    // Deep-water group velocity ω / 2k along the heading, seen along the envelope's own wavevector.
+    set.groupOmega[i] = envelope * Math.cos(turn) * set.omega[i]! / (2 * set.k[i]!);
+    set.groupPhase[i] = groupPhase; set.groupDepth[i] = depth;
     const amplitude = water.waveHeight * set.amplitude[i]!;
     set.amplitudeSum += amplitude; set.slopeSum += set.k[i]! * amplitude;
+    set.heightSum += amplitude * (1 + depth) / Math.sqrt(1 + 0.5 * depth * depth);
     const drift = set.k[i]! * amplitude * amplitude * set.omega[i]! / 2;
     set.driftX += drift * set.dirX[i]!; set.driftZ += drift * set.dirZ[i]!;
   }
+  waterSwellWarp.forEach(([turn, frequency, amplitude, phase], t) => {
+    set.warpDirX[t] = Math.cos(angle + turn); set.warpDirZ[t] = Math.sin(angle + turn);
+    set.warpK[t] = set.peakK * frequency; set.warpAmplitude[t] = water.waveLength * amplitude; set.warpPhase[t] = phase;
+  });
+  set.warpStretch = 1 + warpEigenBound(set);
+  set.jacobianSlope = set.slopeSum;
+  for (let t = 0; t < WATER_SWELL_WARP_TERMS; t++) {
+    let along = 0;
+    for (let i = 0; i < count; i++) {
+      const cos = set.dirX[i]! * set.warpDirX[t]! + set.dirZ[i]! * set.warpDirZ[t]!;
+      along += set.k[i]! * water.waveHeight * set.amplitude[i]! * cos * cos;
+    }
+    set.jacobianSlope += set.warpAmplitude[t]! * set.warpK[t]! * along;
+  }
   return set;
+}
+
+/**
+ * The largest eigenvalue ∂W/∂x0 = −Σ A·K·sin(K·x0 + φ)·K̂K̂ᵀ can take: the largest |eigenvalue| of Σ s·A·K·K̂K̂ᵀ over
+ * every sign pattern s ∈ {−1, 1} (the norm is convex in s, so a vertex of the cube attains it, and the terms' phases
+ * are incommensurate, so the surface approaches every pattern somewhere).
+ */
+function warpEigenBound(set: WaterWaveSet): number {
+  let bound = 0;
+  for (let signs = 0; signs < 1 << WATER_SWELL_WARP_TERMS; signs++) {
+    let xx = 0, xz = 0, zz = 0;
+    for (let t = 0; t < WATER_SWELL_WARP_TERMS; t++) {
+      const c = (signs >> t & 1 ? -1 : 1) * set.warpAmplitude[t]! * set.warpK[t]!, x = set.warpDirX[t]!, z = set.warpDirZ[t]!;
+      xx += c * x * x; xz += c * x * z; zz += c * z * z;
+    }
+    const mean = (xx + zz) / 2, radius = Math.hypot((xx - zz) / 2, xz);
+    bound = Math.max(bound, Math.abs(mean) + radius);
+  }
+  return bound;
+}
+
+/**
+ * The swell's warp (`waterSwellWarp`) at rest point (x0, z0), allocation-free: writes W (`out` 0-1) and the symmetric
+ * ∂W/∂x0 (`out` 2-4: xx, xz, zz).
+ */
+export function evaluateWaterSwellWarp(set: WaterWaveSet, x0: number, z0: number, out: Float64Array): void {
+  let wx = 0, wz = 0, xx = 0, xz = 0, zz = 0;
+  for (let t = 0; t < WATER_SWELL_WARP_TERMS; t++) {
+    const x = set.warpDirX[t]!, z = set.warpDirZ[t]!, k = set.warpK[t]!, a = set.warpAmplitude[t]!;
+    const p = k * (x * x0 + z * z0) + set.warpPhase[t]!, cos = Math.cos(p), sin = a * k * Math.sin(p);
+    wx += a * x * cos; wz += a * z * cos;
+    xx -= sin * x * x; xz -= sin * x * z; zz -= sin * z * z;
+  }
+  out[0] = wx; out[1] = wz; out[2] = xx; out[3] = xz; out[4] = zz;
 }
 
 const waveSets = new WeakMap<WaterDefinition, WaterWaveSet>();
@@ -472,20 +606,28 @@ export function waterWaveSet(water: WaterDefinition): WaterWaveSet {
 }
 
 /**
- * Gerstner factor for a body's Wave Scale: `steepness · min(WATER_STEEPNESS_CAP, (1 - WATER_JACOBIAN_FLOOR) / (S₁·scale))`.
- * Horizontal motion scales with amplitude, so flat water never moves sideways, and the Jacobian stays at or above
- * the floor, so the surface never folds and the inversion always converges.
+ * Gerstner factor for a body's Wave Scale:
+ * `steepness · min(WATER_STEEPNESS_CAP, (1 - WATER_JACOBIAN_FLOOR) / (jacobianSlope·scale))`. Horizontal motion scales
+ * with amplitude, so flat water never moves sideways, and the Jacobian stays at or above the floor, so the surface
+ * never folds and the inversion always converges: with M = I + ∂W/∂x0 (symmetric and positive definite),
+ * det(I − S·M) = det(I − M^½·S·M^½), and M^½·S·M^½ = Σ q·a·k·sin p·(M^½d)(M^½d)ᵀ with |M^½d|² = dᵀ·M·d, so the
+ * determinant stays at or above 1 − q·Σ k·A·dᵀ·M·d ≥ 1 − q·jacobianSlope.
  */
 export function waterWaveQ(set: WaterWaveSet, scale = 1): number {
   if (!(set.steepness > 0)) return 0;
-  return set.steepness * Math.min(WATER_STEEPNESS_CAP, (1 - WATER_JACOBIAN_FLOOR) / Math.max(set.slopeSum * Math.abs(scale), 1e-9));
+  return set.steepness * Math.min(WATER_STEEPNESS_CAP, (1 - WATER_JACOBIAN_FLOOR) / Math.max(set.jacobianSlope * Math.abs(scale), 1e-9));
 }
+
+const warpScratch = new Float64Array(5);
 
 /**
  * Forward Gerstner evaluation at the rest point (x0, z0), allocation-free: writes height H, horizontal offset D,
  * ∇₀H, the Jacobian J = ∂(x0 + D)/∂(x0, z0), ∂H/∂t and ∂D/∂t into `out` (`WaterWaveSlot` 0-10 and 13). The rendered
- * surface point is (x0 + Dx, rest height + H, z0 + Dz). `spacing` (metres between mesh vertices) fades unresolvable
- * components; physics passes 0. q never depends on spacing, so mesh detail never changes horizontal motion.
+ * surface point is (x0 + Dx, rest height + H, z0 + Dz). Every component is evaluated at the warped rest point
+ * u = x0 + W(x0) (`waterSwellWarp`), so the rest-space derivatives carry M = I + ∂W/∂x0: ∇₀H = M·∇ᵤH and
+ * ∇₀D = ∇ᵤD·M. Each component's height rides its wave group (`waterWaveGroups`), whose envelope also enters ∇₀H and
+ * ∂H/∂t; the offset D does not. `spacing` (metres between mesh vertices) fades unresolvable components (at their most
+ * compressed wavelength); physics passes 0. q never depends on spacing, so mesh detail never changes horizontal motion.
  * `gain` (with its rest-space gradient) scales the horizontal offset: finite bodies pass `waterBankGain`, which fades
  * it to zero at their banks; open water passes 1.
  */
@@ -494,19 +636,27 @@ export function evaluateWaterWaves(
   gain = 1, gainX = 0, gainZ = 0,
 ): void {
   const q = waterWaveQ(set, scale), chop = set.choppiness, waveHeight = set.waveHeight, waveLength = set.waveLength;
+  const warp = warpScratch;
+  evaluateWaterSwellWarp(set, x0, z0, warp);
+  const ux = x0 + warp[0]!, uz = z0 + warp[1]!, mxx = 1 + warp[2]!, mxz = warp[3]!, mzz = 1 + warp[4]!;
+  const reach = spacing * set.warpStretch * 4 / waveLength;
   let height = 0, dx = 0, dz = 0, hx = 0, hz = 0, sxx = 0, sxz = 0, szz = 0, rate = 0, dxt = 0, dzt = 0;
   for (let i = 0; i < set.count; i++) {
-    const k = set.k[i]!, ax = set.dirX[i]!, az = set.dirZ[i]!, omega = set.omega[i]!, frequency = set.frequency[i]!;
-    const filter = clamp(2 - spacing * frequency * 4 / waveLength, 0, 1);
+    const k = set.k[i]!, ax = set.dirX[i]!, az = set.dirZ[i]!, omega = set.omega[i]!;
+    const filter = clamp(2 - reach * set.frequency[i]!, 0, 1);
     const a = waveHeight * scale * set.amplitude[i]! * filter * filter * (3 - 2 * filter);
-    const p = k * (ax * x0 + az * z0) - omega * time + set.phase[i]!;
+    const p = k * (ax * ux + az * uz) - omega * time + set.phase[i]!;
     const sin = Math.sin(p), cos = Math.cos(p), crest = Math.exp(sin - 1);
     const value = sin + ((crest - WATER_CREST_MEAN) / WATER_CREST_RANGE - sin) * chop;
     const slope = cos + (crest * cos / WATER_CREST_RANGE - cos) * chop;
-    height += a * value;
-    hx += a * k * ax * slope;
-    hz += a * k * az * slope;
-    rate -= a * omega * slope;
+    // Wave group (`waterWaveGroups`): the height's envelope g and its derivatives; the offset below carries none.
+    const gx = set.groupX[i]!, gz = set.groupZ[i]!, depth = set.groupDepth[i]!, norm = 1 / Math.sqrt(1 + 0.5 * depth * depth);
+    const gp = gx * ux + gz * uz - set.groupOmega[i]! * time + set.groupPhase[i]!;
+    const g = (1 + depth * Math.cos(gp)) * norm, gs = depth * norm * Math.sin(gp) * value;
+    height += a * g * value;
+    hx += a * (g * k * ax * slope - gs * gx);
+    hz += a * (g * k * az * slope - gs * gz);
+    rate += a * (gs * set.groupOmega[i]! - g * omega * slope);
     if (q > 0) {
       // D = Σ q·a·d·cos p: water gathers under each crest (sin p = 1) and spreads in the troughs.
       const d = q * a, dk = d * k * sin, dw = d * omega * sin;
@@ -515,10 +665,11 @@ export function evaluateWaterWaves(
       dxt += dw * ax; dzt += dw * az;
     }
   }
-  out[0] = height; out[1] = gain * dx; out[2] = gain * dz; out[3] = hx; out[4] = hz;
-  // J = I + gain·∇₀D + D ⊗ ∇₀gain, with ∇₀D = −Σ q·a·k·sin p·d ⊗ d.
-  out[5] = 1 - gain * sxx + dx * gainX; out[6] = -gain * sxz + dx * gainZ;
-  out[13] = -gain * sxz + dz * gainX; out[7] = 1 - gain * szz + dz * gainZ;
+  out[0] = height; out[1] = gain * dx; out[2] = gain * dz;
+  out[3] = mxx * hx + mxz * hz; out[4] = mxz * hx + mzz * hz;
+  // J = I + gain·∇₀D + D ⊗ ∇₀gain, with ∇₀D = −S·M, S = Σ q·a·k·sin p·d ⊗ d.
+  out[5] = 1 - gain * (sxx * mxx + sxz * mxz) + dx * gainX; out[6] = -gain * (sxx * mxz + sxz * mzz) + dx * gainZ;
+  out[13] = -gain * (sxz * mxx + szz * mxz) + dz * gainX; out[7] = 1 - gain * (sxz * mxz + szz * mzz) + dz * gainZ;
   out[8] = rate; out[9] = gain * dxt; out[10] = gain * dzt;
 }
 
@@ -611,40 +762,73 @@ export function evaluateWaterVertex(
  * component i is cancelled by the share ω²/(ω² + rate²) such a support still sees. The default 0 (a fixed point, such
  * as Sample Water Surface) cancels it fully; buoyancy passes its drag rate. Either way the waves rock objects without
  * a net push, and only the current carries them. Zero at Steepness 0.
+ * The warp (`waterSwellWarp`) stretches each component's local wavenumber along its heading by dᵀ·M·d (M = I + ∂W/∂x0)
+ * and the mean scales with it: given the world X/Z (`x`, `z`) the term is that point's, so a support anywhere sees no
+ * net push; without them it is the warp's spatial mean (M = I).
  */
-export function waterWaveDrift(set: WaterWaveSet, scale: number, out: { x: number; z: number }, couplingRate = 0): { x: number; z: number } {
+export function waterWaveDrift(
+  set: WaterWaveSet, scale: number, out: { x: number; z: number }, couplingRate = 0, x = Number.NaN, z = Number.NaN,
+): { x: number; z: number } {
   const factor = (waterWaveQ(set, scale) * scale) ** 2;
-  if (!(couplingRate > 0) || factor === 0) { out.x = factor * set.driftX; out.z = factor * set.driftZ; return out; }
+  const local = Number.isFinite(x) && Number.isFinite(z);
+  if ((!(couplingRate > 0) && !local) || factor === 0) { out.x = factor * set.driftX; out.z = factor * set.driftZ; return out; }
   const rate = couplingRate * couplingRate;
-  let x = 0, z = 0;
-  for (let i = 0; i < set.count; i++) {
-    const omega = set.omega[i]!, amplitude = set.waveHeight * set.amplitude[i]!;
-    const drift = set.k[i]! * amplitude * amplitude * omega / 2 * (omega * omega / (omega * omega + rate));
-    x += drift * set.dirX[i]!; z += drift * set.dirZ[i]!;
+  let mxx = 1, mxz = 0, mzz = 1;
+  if (local) {
+    evaluateWaterSwellWarp(set, x, z, warpScratch);
+    mxx += warpScratch[2]!; mxz = warpScratch[3]!; mzz += warpScratch[4]!;
   }
-  out.x = factor * x; out.z = factor * z;
+  let sumX = 0, sumZ = 0;
+  for (let i = 0; i < set.count; i++) {
+    const omega = set.omega[i]!, amplitude = set.waveHeight * set.amplitude[i]!, ax = set.dirX[i]!, az = set.dirZ[i]!;
+    const stretch = ax * ax * mxx + 2 * ax * az * mxz + az * az * mzz;
+    const drift = set.k[i]! * amplitude * amplitude * omega / 2 * stretch * (omega * omega / (omega * omega + rate));
+    sumX += drift * ax; sumZ += drift * az;
+  }
+  out.x = factor * sumX; out.z = factor * sumZ;
   return out;
 }
 
-/** Floats per component written by `waterWaveShaderConstants`: two vec4s. */
-export const WATER_WAVE_SHADER_STRIDE = 8;
+/** Floats per component written by `waterWaveShaderConstants`: three vec4s. */
+export const WATER_WAVE_SHADER_STRIDE = 12;
 
 /**
  * Per-component GPU constants for one surface, relative to a world origin (the floating origin, so shaders evaluate
- * small eye-relative coordinates) at the current simulation time. For component i, `out[i·8 …]` holds
- * (dir.x, dir.z, k, ω) and (amplitude · scale, phase, q · amplitude · scale, frequency · 4 / Wave Length).
- * The phase `(k·dir·origin − ω·time + φ) mod 2π` is reduced in float64, so a shader evaluates
- * `p = k·dot(dir, xz − origin) + phase` with no large-argument trigonometry on mobile GPUs. Returns the count.
+ * small eye-relative coordinates) at the current simulation time. For component i, `out[i·12 …]` holds
+ * (dir.x, dir.z, k, ω), (amplitude · scale, phase, q · amplitude · scale, frequency · warpStretch · 4 / Wave Length) and
+ * its wave group (κê.x, κê.z, group phase, depth m). Both phases, `(k·dir·origin − ω·time + φ) mod 2π` and
+ * `(κê·origin − Ω·time + ψ) mod 2π`, are reduced in float64, so a shader evaluates `p = k·dot(dir, u − origin) + phase`
+ * and the group's `dot(κê, u − origin) + group phase` at the warped rest point u (`waterSwellWarpShaderConstants`) with
+ * no large-argument trigonometry on mobile GPUs. Returns the count.
  */
 export function waterWaveShaderConstants(set: WaterWaveSet, scale: number, originX: number, originZ: number, time: number, out: Float32Array | Float64Array): number {
   const q = waterWaveQ(set, scale);
   for (let i = 0; i < set.count; i++) {
     const k = set.k[i]!, ax = set.dirX[i]!, az = set.dirZ[i]!, omega = set.omega[i]!, a = set.waveHeight * scale * set.amplitude[i]!;
     const phase = (k * (ax * originX + az * originZ) - omega * time + set.phase[i]!) % TAU, o = i * WATER_WAVE_SHADER_STRIDE;
+    const gx = set.groupX[i]!, gz = set.groupZ[i]!, group = (gx * originX + gz * originZ - set.groupOmega[i]! * time + set.groupPhase[i]!) % TAU;
     out[o] = ax; out[o + 1] = az; out[o + 2] = k; out[o + 3] = omega;
-    out[o + 4] = a; out[o + 5] = phase < 0 ? phase + TAU : phase; out[o + 6] = q * a; out[o + 7] = set.frequency[i]! * 4 / set.waveLength;
+    out[o + 4] = a; out[o + 5] = phase < 0 ? phase + TAU : phase; out[o + 6] = q * a;
+    out[o + 7] = set.frequency[i]! * set.warpStretch * 4 / set.waveLength;
+    out[o + 8] = gx; out[o + 9] = gz; out[o + 10] = group < 0 ? group + TAU : group; out[o + 11] = set.groupDepth[i]!;
   }
   return set.count;
+}
+
+/** Floats per warp term written by `waterSwellWarpShaderConstants`: one vec4. */
+export const WATER_SWELL_WARP_STRIDE = 4;
+
+/**
+ * The swell warp's GPU constants relative to a world origin, as `waterWaveShaderConstants`: per term,
+ * (K.x, K.z, A / |K|, phase) with the phase `(K·origin + φ) mod 2π` reduced in float64, so a shader evaluates
+ * W = Σ K·(A/|K|)·cos(dot(K, xz − origin) + phase) and ∂W/∂x0 = −Σ K ⊗ K·(A/|K|)·sin(…) at eye-relative points.
+ */
+export function waterSwellWarpShaderConstants(set: WaterWaveSet, originX: number, originZ: number, out: Float32Array | Float64Array): void {
+  for (let t = 0; t < WATER_SWELL_WARP_TERMS; t++) {
+    const k = set.warpK[t]!, x = set.warpDirX[t]!, z = set.warpDirZ[t]!, o = t * WATER_SWELL_WARP_STRIDE;
+    const phase = (k * (x * originX + z * originZ) + set.warpPhase[t]!) % TAU;
+    out[o] = k * x; out[o + 1] = k * z; out[o + 2] = set.warpAmplitude[t]! / k; out[o + 3] = phase < 0 ? phase + TAU : phase;
+  }
 }
 
 /**
@@ -656,10 +840,13 @@ export function waterOceanSpectrumDensity(set: WaterWaveSet, k: number): number 
   return k > 0 ? set.spectrumScale * oceanShape(k / set.peakK, set.spectrumSharpness) : 0;
 }
 
-/** Bound on |H| for a body (metres): every analytic component plus the Detail Waves band (4σ of the spectrum above the cutoff). */
+/**
+ * Bound on |H| for a body (metres): every analytic component at the top of its wave group plus the Detail Waves band (4σ
+ * of the spectrum above the cutoff).
+ */
 export function waterWaveEnvelope(water: WaterDefinition, scale = 1): number {
   const set = waterWaveSet(water);
-  return Math.abs(scale) * (set.amplitudeSum + set.detailHeight * set.detailWaves);
+  return Math.abs(scale) * (set.heightSum + set.detailHeight * set.detailWaves);
 }
 
 /** Bound on the Gerstner horizontal offset |D| for a body (metres): q · Σ A. Zero at Steepness 0. */
@@ -817,14 +1004,16 @@ const gainScratchOut = new Float64Array(2), slopeScratch = new Float64Array(2), 
 
 /**
  * The mean-drift term (m/s) `sampleWaterSurface` adds to X/Z water velocity at a sample `edgeDistance` metres inside
- * a body (`waterWaveDrift`, faded with the horizontal offset near finite banks). Buoyancy swaps the fixed-point term
- * (`couplingRate` 0) for its supports' coupling rate, so hulls with any drag rock in place instead of drifting.
+ * a body (`waterWaveDrift`, faded with the horizontal offset near finite banks), at world X/Z (`x`, `z`) when given.
+ * Buoyancy swaps the fixed-point term (`couplingRate` 0) for its supports' coupling rate, so hulls with any drag rock
+ * in place instead of drifting.
  */
 export function waterSurfaceDrift(
   water: WaterDefinition, body: WaterBodyProperties, edgeDistance: number, out: { x: number; z: number }, couplingRate = 0,
+  x = Number.NaN, z = Number.NaN,
 ): { x: number; z: number } {
   const set = waterWaveSet(water);
-  waterWaveDrift(set, body.waveScale, out, couplingRate);
+  waterWaveDrift(set, body.waveScale, out, couplingRate, x, z);
   if (body.kind !== "global") {
     waterBankGain(edgeDistance, waterBankFadeLength(water, body.waveScale), gainScratchOut);
     const fade = gainScratchOut[0]! * gainScratchOut[0]!;
@@ -897,7 +1086,7 @@ export function sampleWaterSurface(
     waterEulerianGradient(wave, wave[3]! - normal.x / normal.y, wave[4]! - normal.z / normal.y, slopeScratch);
     const ex = slopeScratch[0]!, ez = slopeScratch[1]!;
     normal.x = -ex; normal.z = -ez;
-    const drift = waterSurfaceDrift(water, body, edgeDistance, driftScratch);
+    const drift = waterSurfaceDrift(water, body, edgeDistance, driftScratch, 0, position.x, position.z);
     velocity.x += wave[9]! + drift.x; velocity.z += wave[10]! + drift.z;
     velocity.y += wave[8]! - (ex * wave[9]! + ez * wave[10]!);
   } else {

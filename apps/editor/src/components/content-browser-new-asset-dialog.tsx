@@ -1,5 +1,5 @@
 import { ToggleGroup, ToggleGroupItem } from "@babylonslate/ui/components/toggle-group";
-import type { WaterStyle } from "@babylonslate/core";
+import type { WaterStyle, WaterStylizedLook } from "@babylonslate/core";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { ArrowLeftIcon, ArrowRightIcon, FileIcon, FolderIcon } from "lucide-react";
 import {
@@ -64,6 +64,9 @@ export interface ContentBrowserNewAssetDialogProps {
   onParentClassChange: (parentClass: string) => void;
   waterStyle?: WaterStyle;
   onWaterStyleChange?: (style: WaterStyle) => void;
+  /** Stylized Water's look, shown while Stylized is chosen. */
+  waterStylizedLook?: WaterStylizedLook;
+  onWaterStylizedLookChange?: (look: WaterStylizedLook) => void;
   definitionGuid?: string | null;
   onDefinitionGuidChange?: (guid: string | null) => void;
   definitionAssets?: readonly { guid: string; name: string; type: string }[];
@@ -141,6 +144,8 @@ export function ContentBrowserNewAssetDialog({
   onParentClassChange,
   waterStyle = "realistic",
   onWaterStyleChange,
+  waterStylizedLook = "painted",
+  onWaterStylizedLookChange,
   definitionGuid = null,
   onDefinitionGuidChange,
   definitionAssets = [],
@@ -352,12 +357,22 @@ export function ContentBrowserNewAssetDialog({
                   </Field>
                 </FieldGroup>
                 {type === "Water" ? (
-                  <FieldGroup><Field><FieldLabel>Water Style</FieldLabel>
-                    <ToggleGroup value={[waterStyle]} onValueChange={(values) => { const value = values[0]; if (value === "realistic" || value === "stylized") onWaterStyleChange?.(value); }} variant="outline" size="sm" aria-label="Water Style">
-                      <ToggleGroupItem value="realistic">Realistic</ToggleGroupItem>
-                      <ToggleGroupItem value="stylized">Stylized</ToggleGroupItem>
-                    </ToggleGroup>
-                  </Field></FieldGroup>
+                  <FieldGroup>
+                    <Field><FieldLabel>Water Style</FieldLabel>
+                      <ToggleGroup value={[waterStyle]} onValueChange={(values) => { const value = values[0]; if (value === "realistic" || value === "stylized") onWaterStyleChange?.(value); }} variant="outline" size="sm" aria-label="Water Style">
+                        <ToggleGroupItem value="realistic">Realistic</ToggleGroupItem>
+                        <ToggleGroupItem value="stylized">Stylized</ToggleGroupItem>
+                      </ToggleGroup>
+                    </Field>
+                    {waterStyle === "stylized" ? (
+                      <Field><FieldLabel>Look</FieldLabel>
+                        <ToggleGroup value={[waterStylizedLook]} onValueChange={(values) => { const value = values[0]; if (value === "painted" || value === "toon") onWaterStylizedLookChange?.(value); }} variant="outline" size="sm" aria-label="Stylized Look">
+                          <ToggleGroupItem value="painted">Painted</ToggleGroupItem>
+                          <ToggleGroupItem value="toon">Toon</ToggleGroupItem>
+                        </ToggleGroup>
+                      </Field>
+                    ) : null}
+                  </FieldGroup>
                 ) : null}
                 {isData ? (
                   <FieldGroup><Field><FieldLabel>Default Definition</FieldLabel>
