@@ -61,13 +61,16 @@ describe("game session ownership", () => {
     expect(owner.begin("preview")).toBeNull();
   });
 
-  it("does not let a reported runtime failure discard an attached native owner", () => {
+  it("keeps a failed runtime owned until Stop confirms its release", async () => {
     const owner = new GameSessionOwner<GameSessionStopResult>();
     const ticket = owner.begin("play")!;
     owner.attach(ticket, () => ({ released: Promise.resolve({ quarantined: false }) }));
     owner.fail(ticket, new Error("runtime failed"));
     expect(owner.getSnapshot().quarantined).toBe(true);
     expect(owner.begin("preview")).toBeNull();
+    const result = await owner.stop(ticket);
+    await result?.released;
+    expect(owner.begin("preview")).not.toBeNull();
   });
 
   it("permits a new preparation after a failure before native allocation", () => {

@@ -99,7 +99,7 @@ export class GameSessionOwner<Result extends GameSessionStopResult> {
     if (!ticket || !this.owns(ticket)) return Promise.resolve(undefined);
     const current = this.current!;
     if (current.stopping) return current.stopping;
-    if (this.state.quarantined) return Promise.resolve(undefined);
+    if (this.state.quarantined && !current.stop) return Promise.resolve(undefined);
     if (!current.stop) {
       this.current = null;
       current.abort.abort();
