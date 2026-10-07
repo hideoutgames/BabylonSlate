@@ -9,7 +9,7 @@ Shared surface for the headless runtime object graph (engineplan §5, §16). Imp
 - Graph Get/Set exposes these properties. **Set Control Point Offset** accepts a control index and Vector 3, returning false for an invalid index/offset or unavailable target. **Reset Control Points** clears offsets. Both calls target the component; they do not redirect to an actor or sibling.
 - The worker sends revisioned `setActorDeformers` control snapshots, coalesces tick edits per actor and omits unchanged snapshots. It never sends or scans mesh vertices. Disabling the last cage sends an empty snapshot. Slot retirement discards retained state.
 - Serialized offset and bound coordinates clamp to ±10¹⁰ before Float32 upload, matching dynamic geometry's envelope. Set Control Point Offset rejects values outside that envelope.
-- Deformation follows model animation and material World Position Offset in the renderer. This is visual geometry: physics, navigation and CPU picking keep the original shape. GPU cost scales with affected vertices and rendering passes; the control limit is not a device performance guarantee.
+- Deformation follows model animation and material World Position Offset in the renderer. This is visual geometry: physics, navigation and CPU picking keep the original shape; editor viewport taps use the GPU pick and follow the drawn shape. GPU cost scales with affected vertices and rendering passes; the control limit is not a device performance guarantee.
 
 ## Prefab assets
 

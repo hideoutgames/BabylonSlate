@@ -47,6 +47,7 @@ import {
 } from "@babylonslate/assets";
 import {
   convertObjImportBatch,
+  convertStlImportBatch,
   animationRetargetHasMatches,
 } from "@babylonslate/render";
 import { convertFbxImportBatch } from "@babylonslate/render/fbx-import";
@@ -1623,8 +1624,12 @@ function ContentBrowserWorkspaceBody({
                 engine: play?.ensureSharedEngine() ?? undefined,
               });
             errors.push(...convertErrors);
+            const stl = await convertStlImportBatch(converted, {
+              engine: play?.ensureSharedEngine() ?? undefined,
+            });
+            errors.push(...stl.errors);
             const prepared = groupMsdfImportBatch(
-              embedGltfImportBatch(converted).filter((file) => !fbx.consumedSidecars.includes(file.name)),
+              embedGltfImportBatch(stl.files).filter((file) => !fbx.consumedSidecars.includes(file.name)),
             );
             if (prepared.length === 0) return;
             setImportProgress({

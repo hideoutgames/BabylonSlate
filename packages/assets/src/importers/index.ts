@@ -39,9 +39,9 @@ export function registeredImportAccept(): string {
     .join(",");
 }
 
-/** Picker accept list: registered importers plus converted FBX/OBJ and their sidecars. */
+/** Picker accept list: registered importers plus converted FBX/OBJ/STL and their sidecars. */
 export function pickerImportAccept(): string {
-  return `${registeredImportAccept()},.obj,.mtl,.bin,.fbx`;
+  return `${registeredImportAccept()},.obj,.mtl,.bin,.fbx,.stl`;
 }
 
 export async function importByExtension(

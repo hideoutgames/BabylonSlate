@@ -8,6 +8,7 @@ import { BindBonesParameters, BindMorphTargetParameters, PrepareDefinesAndAttrib
 import { retireOwnedEffect, type OwnedEffectRetirement } from "./owned-effect-retirement";
 import { SHARED_OUTLINE_ATTRIBUTE, type SharedOutlineGroup, type SharedOutlineView } from "./shared-outline";
 import { SHARED_OUTLINE_MASK_SHADER } from "./shared-outline-shaders";
+import type { EffectCompileFailure } from "./effect-compile-failure";
 import { acquireAuthoredOutlineVariant, type AuthoredOutlineVariant } from "./material-compiler";
 import { CelMaterial } from "./cel-material";
 import { bindMeshLatticeDeformer, hasMeshLatticeDeformer } from "./lattice-deformer-binding";
@@ -33,8 +34,9 @@ export class SharedOutlineMaskRenderer {
   private currentEffect: Effect | undefined;
   // One callback for every submission; _processRendering invokes it synchronously.
   private readonly setInstanceWorld = (_instance: boolean, world: Matrix) => this.currentEffect!.setMatrix("world", world);
-  constructor(renderer: ObjectRenderer, view: SharedOutlineView, group: SharedOutlineGroup) {
-    this.renderer = renderer; this.view = view; this.group = group;
+  private readonly compileFailure: EffectCompileFailure | undefined;
+  constructor(renderer: ObjectRenderer, view: SharedOutlineView, group: SharedOutlineGroup, compileFailure?: EffectCompileFailure) {
+    this.renderer = renderer; this.view = view; this.group = group; this.compileFailure = compileFailure;
     renderer.customIsReadyFunction = (mesh, _refreshRate, preWarm) => {
       if (this.disposed || mesh.isDisposed()) return false;
       // The renderer performs LOD selection after this callback. Check both the
@@ -194,7 +196,7 @@ export class SharedOutlineMaskRenderer {
       wrapper.setEffect(this.view.scene.getEngine().createEffect(SHARED_OUTLINE_MASK_SHADER, {
         attributes, uniformsNames: uniforms, uniformBuffersNames: [],
         samplers: ["styleSampler", "diffuseSampler", "opacitySampler", "boneSampler", "morphTargets", "bakedVertexAnimationTexture", "latticeData", ...(water ? [WATER_FFT_SAMPLER] : [])],
-        defines: joined, fallbacks, onCompiled: null, onError: null,
+        defines: joined, fallbacks, onCompiled: null, onError: this.compileFailure?.for(`Shared Outline ${this.group} Mask`) ?? null,
         indexParameters: { maxSimultaneousMorphTargets: morphs },
         shaderLanguage: this.view.scene.getEngine().isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
       }, this.view.scene.getEngine()), joined);

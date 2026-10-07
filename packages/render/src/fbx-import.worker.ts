@@ -1,15 +1,11 @@
-import assimp from "assimpjs";
-import wasmUrl from "assimpjs/dist/assimpjs.wasm?url";
-import { convertFbxWithAssimp, type ModelImportFile } from "./fbx-conversion";
+import { convertFbxToGlb, type ModelImportFile } from "./fbx-conversion";
 
 self.onmessage = async (
   event: MessageEvent<{ file: ModelImportFile; sidecars: ModelImportFile[] }>,
 ) => {
   try {
-    const importer = await assimp({ locateFile: () => wasmUrl });
     const consumedSidecars = new Set<string>();
-    const bytes = convertFbxWithAssimp(
-      importer,
+    const bytes = await convertFbxToGlb(
       event.data.file,
       event.data.sidecars,
       consumedSidecars,

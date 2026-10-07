@@ -53,6 +53,31 @@ export interface TemporalAntiAliasingSettings {
   blend: number;
 }
 
+/**
+ * Scene Linear white balance: neutralizes an illuminant of the given
+ * correlated color temperature, then offsets along the green/magenta axis.
+ */
+export interface WhiteBalanceSettings {
+  enabled: boolean;
+  /** Illuminant temperature in Kelvin; 6500 is neutral daylight. */
+  temperature: number;
+  /** Positive shifts toward magenta, negative toward green. */
+  tint: number;
+}
+
+/**
+ * FSR 1 upscaling: the scene and its effect chain render at `renderScale` of
+ * the view, then edge-adaptive upsampling and contrast-adaptive sharpening
+ * restore the output resolution.
+ */
+export interface UpscalingSettings {
+  enabled: boolean;
+  /** Internal render scale per axis. */
+  renderScale: number;
+  /** Sharpening attenuation in stops; 0 is strongest. */
+  sharpness: number;
+}
+
 export interface VolumetricLightingSettings {
   enabled: boolean;
   resolutionScale: number;
@@ -71,6 +96,7 @@ export interface RenderEffectsSettings {
   toneMapping: RenderEffectsToneMapping;
   exposure: number;
   contrast: number;
+  whiteBalance: WhiteBalanceSettings;
   vignette: {
     enabled: boolean;
     weight: number;
@@ -85,6 +111,7 @@ export interface RenderEffectsSettings {
     scale: number;
   };
   fxaa: boolean;
+  upscaling: UpscalingSettings;
   temporalAntiAliasing: TemporalAntiAliasingSettings;
   colorGrading: ColorGradingSettings;
   ambientOcclusion: AmbientOcclusionSettings;
@@ -95,12 +122,16 @@ export interface RenderEffectsSettings {
 export const RENDER_EFFECTS_LIMITS = {
   exposure: [0.01, 100],
   contrast: [0, 10],
+  whiteBalanceTemperature: [1700, 15000],
+  whiteBalanceTint: [-150, 150],
   vignetteWeight: [0, 10],
   bloomThreshold: [0, 100],
   bloomWeight: [0, 10],
   bloomKernel: [1, 512],
   bloomScale: [0.05, 1],
   spatialResolutionScale: [0.25, 1],
+  upscalingRenderScale: [0.5, 1],
+  upscalingSharpness: [0, 2],
   temporalSamples: [4, 32],
   temporalBlend: [0.02, 1],
   ambientOcclusionSamples: [4, 32],
@@ -124,9 +155,11 @@ export const DEFAULT_RENDER_EFFECTS: Readonly<RenderEffectsSettings> = {
   toneMapping: "none",
   exposure: 1,
   contrast: 1,
+  whiteBalance: { enabled: false, temperature: 6500, tint: 0 },
   vignette: { enabled: false, weight: 1.5, color: [0, 0, 0] },
   bloom: { enabled: false, threshold: 0.9, weight: 0.15, kernel: 64, scale: 0.5 },
   fxaa: false,
+  upscaling: { enabled: false, renderScale: 0.67, sharpness: 0.2 },
   temporalAntiAliasing: { enabled: false, samples: 8, blend: 0.1 },
   colorGrading: { enabled: false, lutTextureGuid: null },
   ambientOcclusion: {
@@ -176,9 +209,11 @@ export function normalizeRenderEffectsSettings(
   const source = object(value);
   const colorPipeline = object(source.colorPipeline);
   const vignette = object(source.vignette);
+  const whiteBalance = object(source.whiteBalance);
   const bloom = object(source.bloom);
   const colorGrading = object(source.colorGrading);
   const temporal = object(source.temporalAntiAliasing);
+  const upscaling = object(source.upscaling);
   const ambientOcclusion = object(source.ambientOcclusion);
   const reflections = object(source.reflections);
   const volumetric = object(source.volumetricLighting);
@@ -210,6 +245,13 @@ export function normalizeRenderEffectsSettings(
       DEFAULT_RENDER_EFFECTS.contrast,
       ...RENDER_EFFECTS_LIMITS.contrast,
     ),
+    whiteBalance: {
+      enabled: whiteBalance.enabled === true,
+      temperature: finite(whiteBalance.temperature, DEFAULT_RENDER_EFFECTS.whiteBalance.temperature,
+        ...RENDER_EFFECTS_LIMITS.whiteBalanceTemperature),
+      tint: finite(whiteBalance.tint, DEFAULT_RENDER_EFFECTS.whiteBalance.tint,
+        ...RENDER_EFFECTS_LIMITS.whiteBalanceTint),
+    },
     vignette: {
       enabled: vignette.enabled === true,
       weight: finite(
@@ -245,6 +287,13 @@ export function normalizeRenderEffectsSettings(
       ),
     },
     fxaa: source.fxaa === true,
+    upscaling: {
+      enabled: upscaling.enabled === true,
+      renderScale: finite(upscaling.renderScale, DEFAULT_RENDER_EFFECTS.upscaling.renderScale,
+        ...RENDER_EFFECTS_LIMITS.upscalingRenderScale),
+      sharpness: finite(upscaling.sharpness, DEFAULT_RENDER_EFFECTS.upscaling.sharpness,
+        ...RENDER_EFFECTS_LIMITS.upscalingSharpness),
+    },
     temporalAntiAliasing: {
       enabled: temporal.enabled === true,
       samples: Math.round(finite(temporal.samples, DEFAULT_RENDER_EFFECTS.temporalAntiAliasing.samples,

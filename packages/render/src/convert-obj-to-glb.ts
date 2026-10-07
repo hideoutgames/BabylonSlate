@@ -95,6 +95,28 @@ function unregisterSidecars(keys: string[]): void {
   }
 }
 
+/** Export the meshes a converter loaded into its scratch scene as one GLB. */
+export async function exportConvertedSceneToGlb(
+  scene: Scene,
+  format: string,
+): Promise<Uint8Array> {
+  if (scene.meshes.length === 0) {
+    throw new Error(`${format} conversion produced no meshes.`);
+  }
+  const exported = await GLTF2Export.GLBAsync(scene, "import", {
+    shouldExportNode: (node) => {
+      const className = node.getClassName();
+      return className === "Mesh" || className === "TransformNode";
+    },
+  });
+  const glbFile =
+    exported.glTFFiles["import.glb"] ?? Object.values(exported.glTFFiles)[0];
+  if (!glbFile) {
+    throw new Error(`${format} conversion did not write a GLB.`);
+  }
+  return await blobToBytes(glbFile);
+}
+
 /** Load Wavefront OBJ (optional MTL/maps) and export a GLB for Model import. */
 export async function convertObjToGlb(
   objBytes: Uint8Array,
@@ -118,21 +140,7 @@ export async function convertObjToGlb(
       "file:",
     );
     container.addAllToScene();
-    if (scene.meshes.length === 0) {
-      throw new Error("OBJ conversion produced no meshes.");
-    }
-    const exported = await GLTF2Export.GLBAsync(scene, "import", {
-      shouldExportNode: (node) => {
-        const className = node.getClassName();
-        return className === "Mesh" || className === "TransformNode";
-      },
-    });
-    const glbFile =
-      exported.glTFFiles["import.glb"] ?? Object.values(exported.glTFFiles)[0];
-    if (!glbFile) {
-      throw new Error("OBJ conversion did not write a GLB.");
-    }
-    return await blobToBytes(glbFile);
+    return await exportConvertedSceneToGlb(scene, "OBJ");
   } finally {
     unregisterSidecars(sidecarKeys);
     containerDispose(scene);

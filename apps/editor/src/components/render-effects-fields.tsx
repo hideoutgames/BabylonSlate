@@ -52,6 +52,10 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
     patch({ vignette: { ...project.vignette, ...value } });
   const patchBloom = (value: Partial<RenderEffectsSettings["bloom"]>) =>
     patch({ bloom: { ...project.bloom, ...value } });
+  const patchWhiteBalance = (value: Partial<RenderEffectsSettings["whiteBalance"]>) =>
+    patch({ whiteBalance: { ...project.whiteBalance, ...value } });
+  const patchUpscaling = (value: Partial<RenderEffectsSettings["upscaling"]>) =>
+    patch({ upscaling: { ...project.upscaling, ...value } });
   const patchTemporal = (value: Partial<RenderEffectsSettings["temporalAntiAliasing"]>) =>
     patch({ temporalAntiAliasing: { ...project.temporalAntiAliasing, ...value } });
   return (
@@ -138,6 +142,58 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
             Scene Linear contrast curve strength.
           </FieldDescription>
         </Field>
+        <Field orientation="horizontal" className="settings-field">
+          <FieldLabel htmlFor="project-effects-white-balance">White Balance</FieldLabel>
+          <Switch
+            id="project-effects-white-balance"
+            aria-describedby="project-effects-white-balance-description"
+            data-testid="project-effects-white-balance"
+            checked={project.whiteBalance.enabled}
+            disabled={project.colorPipeline.mode !== "sceneLinear"}
+            onCheckedChange={(enabled) => patchWhiteBalance({ enabled: enabled === true })}
+          />
+          <FieldDescription id="project-effects-white-balance-description">
+            Scene Linear correction for the color of the scene lighting.
+          </FieldDescription>
+        </Field>
+        {project.whiteBalance.enabled ? (
+          <>
+            <Field className="settings-field">
+              <FieldLabel htmlFor="project-effects-white-balance-temperature">Temperature (K)</FieldLabel>
+              <NumberField
+                id="project-effects-white-balance-temperature"
+                aria-describedby="project-effects-white-balance-temperature-description"
+                data-testid="project-effects-white-balance-temperature"
+                value={project.whiteBalance.temperature}
+                min={RENDER_EFFECTS_LIMITS.whiteBalanceTemperature[0]}
+                max={RENDER_EFFECTS_LIMITS.whiteBalanceTemperature[1]}
+                step={50}
+                disabled={project.colorPipeline.mode !== "sceneLinear"}
+                onChange={(temperature) => patchWhiteBalance({ temperature })}
+              />
+              <FieldDescription id="project-effects-white-balance-temperature-description">
+                Illuminant to neutralize. Low values cool warm light; 6500 is neutral.
+              </FieldDescription>
+            </Field>
+            <Field className="settings-field">
+              <FieldLabel htmlFor="project-effects-white-balance-tint">Tint</FieldLabel>
+              <NumberField
+                id="project-effects-white-balance-tint"
+                aria-describedby="project-effects-white-balance-tint-description"
+                data-testid="project-effects-white-balance-tint"
+                value={project.whiteBalance.tint}
+                min={RENDER_EFFECTS_LIMITS.whiteBalanceTint[0]}
+                max={RENDER_EFFECTS_LIMITS.whiteBalanceTint[1]}
+                step={1}
+                disabled={project.colorPipeline.mode !== "sceneLinear"}
+                onChange={(tint) => patchWhiteBalance({ tint })}
+              />
+              <FieldDescription id="project-effects-white-balance-tint-description">
+                Positive shifts toward magenta, negative toward green.
+              </FieldDescription>
+            </Field>
+          </>
+        ) : null}
         <Field orientation="horizontal" className="settings-field">
           <FieldLabel htmlFor="project-effects-bloom">Bloom</FieldLabel>
           <Switch
@@ -323,6 +379,55 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
                 step={1}
                 onChange={(samples) => patchTemporal({ samples: Math.round(samples) })}
               />
+            </Field>
+          </>
+        ) : null}
+        <Field orientation="horizontal" className="settings-field">
+          <FieldLabel htmlFor="project-effects-upscaling">FSR Upscaling</FieldLabel>
+          <Switch
+            id="project-effects-upscaling"
+            aria-describedby="project-effects-upscaling-description"
+            data-testid="project-effects-upscaling"
+            checked={project.upscaling.enabled}
+            onCheckedChange={(enabled) => patchUpscaling({ enabled: enabled === true })}
+          />
+          <FieldDescription id="project-effects-upscaling-description">
+            Renders the scene and its effects at a lower resolution, then upscales and sharpens with AMD FSR 1.
+          </FieldDescription>
+        </Field>
+        {project.upscaling.enabled ? (
+          <>
+            <Field className="settings-field">
+              <FieldLabel htmlFor="project-effects-upscaling-scale">Render Scale</FieldLabel>
+              <NumberField
+                id="project-effects-upscaling-scale"
+                aria-describedby="project-effects-upscaling-scale-description"
+                data-testid="project-effects-upscaling-scale"
+                value={project.upscaling.renderScale}
+                min={RENDER_EFFECTS_LIMITS.upscalingRenderScale[0]}
+                max={RENDER_EFFECTS_LIMITS.upscalingRenderScale[1]}
+                step={0.01}
+                onChange={(renderScale) => patchUpscaling({ renderScale })}
+              />
+              <FieldDescription id="project-effects-upscaling-scale-description">
+                Fraction of the output width and height rendered. 1 disables upscaling.
+              </FieldDescription>
+            </Field>
+            <Field className="settings-field">
+              <FieldLabel htmlFor="project-effects-upscaling-sharpness">Sharpness</FieldLabel>
+              <NumberField
+                id="project-effects-upscaling-sharpness"
+                aria-describedby="project-effects-upscaling-sharpness-description"
+                data-testid="project-effects-upscaling-sharpness"
+                value={project.upscaling.sharpness}
+                min={RENDER_EFFECTS_LIMITS.upscalingSharpness[0]}
+                max={RENDER_EFFECTS_LIMITS.upscalingSharpness[1]}
+                step={0.05}
+                onChange={(sharpness) => patchUpscaling({ sharpness })}
+              />
+              <FieldDescription id="project-effects-upscaling-sharpness-description">
+                Sharpening reduction in stops. 0 is the sharpest.
+              </FieldDescription>
             </Field>
           </>
         ) : null}

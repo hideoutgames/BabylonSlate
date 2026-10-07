@@ -19,6 +19,7 @@ import {
 } from "./shared-outline";
 import { registerSharedOutlineShaders, SHARED_OUTLINE_COMPOSE_SHADER } from "./shared-outline-shaders";
 import { SharedOutlineMaskRenderer } from "./shared-outline-mask";
+import { EffectCompileFailure } from "./effect-compile-failure";
 
 type MaskRecord = {
   group: SharedOutlineGroup;
@@ -39,6 +40,8 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
   readonly view: SharedOutlineView;
   private readonly masks: MaskRecord[] = [];
   private readonly compose: EffectWrapper;
+  /** Set once the compose or a mask shader fails to compile. */
+  readonly compileFailure = new EffectCompileFailure();
   private readonly inverseProjection = Matrix.Identity();
   private composePass: FrameGraphRenderPass | undefined;
   private lease: ManagedRenderLease | undefined;
@@ -63,6 +66,7 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
       uniformNames: ["screenSize", "tableSize", "maximumWidth", "maximumWidths", "reverseDepth", "activeGroups", "inverseProjection", "depthRange", "distanceFadeEnabled"],
       samplerNames: ["strictDepth", ...SHARED_OUTLINE_GROUPS.flatMap((group) => [`${group}Mask`, `${group}Style`])],
       shaderLanguage: graph.engine.isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
+      onError: this.compileFailure.for(`${name} Compose`),
     });
     this.onBeforeTaskExecute.add(() => this.sync());
   }
@@ -100,7 +104,7 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
         objects.depthTest = true; objects.depthWrite = true;
         this.view.owner.registerRenderPass(objects.objectRenderer.renderPassId);
         this.masks.push({ group, mask, depth, clear, objects,
-          renderer: new SharedOutlineMaskRenderer(objects.objectRenderer, this.view, group) });
+          renderer: new SharedOutlineMaskRenderer(objects.objectRenderer, this.view, group, this.compileFailure) });
       }
     }
     this.sync();

@@ -218,7 +218,7 @@ import { applyAlbedoTexture, installModelSources, installTextureBytes, type Mesh
 import { FontRegistry, type FontAssetEntry } from "./font-registry";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import { applyBoneAttachmentAudioPoses } from "./bone-attachment";
-import { pickAtCanvas } from "./picking";
+import { pickActorMeshName, pickAtCanvas } from "./picking";
 import { mapCanvasPointer } from "./pick-coords";
 import { refreshJoystick2DMaterials } from "./joystick2d-mesh";
 import { Joystick2DInput } from "./joystick2d-input";
@@ -2012,6 +2012,7 @@ function initializeEngine(
       } : null);
     };
 
+    let tapPickSequence = 0;
     const gestures = attachViewportGestures(canvas, cameraController, {
       scheduler,
       editorCameraActive: () => !previewGameCamera,
@@ -2029,9 +2030,13 @@ function initializeEngine(
           : undefined,
       onTap: (x, y, tap) => {
         const mapped = mapCanvasPointer(scene, x, y, pointerCanvas());
-        const hit = pickAtCanvas(scene, mapped.x, mapped.y);
-        const actorId = hit ? editorSync.actorForMesh(hit.meshName) : null;
-        options.onPickActor?.(actorId, { additive: tap?.additive === true });
+        const sequence = ++tapPickSequence;
+        void pickActorMeshName(scene, mapped.x, mapped.y).then((meshName) => {
+          // A later tap or scene disposal supersedes this asynchronous read-back.
+          if (sequence !== tapPickSequence || scene.isDisposed) return;
+          const actorId = meshName ? editorSync.actorForMesh(meshName) : null;
+          options.onPickActor?.(actorId, { additive: tap?.additive === true });
+        });
       },
       onMarqueeMove: options.onMarqueeMove,
       onDragSelectEnd: options.onDragSelectEnd,

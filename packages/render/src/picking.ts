@@ -1,6 +1,7 @@
 import type { Scene } from "@babylonjs/core";
 import { PickingInfo } from "@babylonjs/core";
 import { EDITOR_ACTOR_MESH_PREFIX } from "./scene-loader";
+import { gpuPickMesh } from "./gpu-object-id-picker";
 
 /** Resolve an imported part through its named actor ancestor. */
 export function actorMeshName(mesh: { name: string; parent: unknown }): string {
@@ -46,4 +47,18 @@ export function pickAtCanvas(
     slotId: match ? Number(match[1]) : null,
     hit: pick,
   };
+}
+
+/**
+ * Editor tap pick: GPU object-ID pass (matches deformed geometry), falling
+ * back to the CPU ray when the GPU pass is unavailable or not ready.
+ */
+export async function pickActorMeshName(
+  scene: Scene,
+  canvasX: number,
+  canvasY: number,
+): Promise<string | null> {
+  const mesh = await gpuPickMesh(scene, canvasX, canvasY);
+  if (mesh !== undefined) return mesh ? actorMeshName(mesh) : null;
+  return pickAtCanvas(scene, canvasX, canvasY)?.meshName ?? null;
 }

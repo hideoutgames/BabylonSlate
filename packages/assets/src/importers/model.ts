@@ -25,7 +25,7 @@ const MIME_BY_EXTENSION: Record<string, string> = {
 };
 
 const UNSUPPORTED_MODEL_FORMAT =
-  "Models must be GLB or glTF. FBX, OBJ, STL, and other DCC formats are not supported.";
+  "Models must be GLB or glTF. The Content Browser converts FBX, OBJ and STL to GLB on import; other DCC formats are not supported.";
 
 /**
  * Models import as a Model asset plus browsable Material / Texture / Animation

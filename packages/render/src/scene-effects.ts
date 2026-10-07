@@ -25,7 +25,7 @@ export interface SceneEffectsInputs {
 
 /** Composed effect chain: authored stack output → ambient occlusion →
  * reflections → volumetric lighting → bloom → image processing →
- * FXAA → output. Null means the project renders exactly as it always has. */
+ * FXAA → FSR 1 upscale and sharpen → output. Null means the project renders exactly as it always has. */
 export interface SceneEffectsPlan {
   /** Half-float linear intermediates and the linear→display conversion. */
   sceneLinear: boolean;
@@ -36,6 +36,22 @@ export interface SceneEffectsPlan {
   ambientOcclusion: RenderEffectsSettings["ambientOcclusion"] | null;
   reflections: RenderEffectsSettings["reflections"] | null;
   volumetricLighting: RenderEffectsSettings["volumetricLighting"] | null;
+  /** FrameGraph only: the chain renders at `renderScale`, then FSR 1 restores
+   * the output size. The classic camera chain renders at full size. */
+  upscale: RenderEffectsSettings["upscaling"] | null;
+}
+
+/** Internal render size of a chain whose plan upscales to `width`×`height`. */
+export function upscaledRenderSize(
+  plan: Pick<SceneEffectsPlan, "upscale"> | null | undefined,
+  width: number,
+  height: number,
+): { width: number; height: number } {
+  const scale = plan?.upscale?.renderScale ?? 1;
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  };
 }
 
 /**
@@ -68,10 +84,11 @@ export function planSceneEffects(
   const reflections = mode === "pbr" && effects.reflections.enabled ? effects.reflections : null;
   const volumetricLighting = effects.volumetricLighting.enabled ? effects.volumetricLighting
     : fogVolumesPresent ? { ...effects.volumetricLighting, enabled: true, density: 0 } : null;
+  const upscale = effects.upscaling.enabled && effects.upscaling.renderScale < 1 ? effects.upscaling : null;
   // sceneLinear always yields imageProcessing, so it needs no separate term.
-  if (!bloom && !imageProcessing && !fxaa && !temporalAntiAliasing && !ambientOcclusion && !reflections && !volumetricLighting)
+  if (!bloom && !imageProcessing && !fxaa && !temporalAntiAliasing && !ambientOcclusion && !reflections && !volumetricLighting && !upscale)
     return null;
-  return { sceneLinear, bloom, imageProcessing, fxaa, temporalAntiAliasing, ambientOcclusion, reflections, volumetricLighting };
+  return { sceneLinear, bloom, imageProcessing, fxaa, temporalAntiAliasing, ambientOcclusion, reflections, volumetricLighting, upscale };
 }
 
 const TONE_MAPPING_TYPES: Record<RenderEffectsToneMapping, number> = {
@@ -105,6 +122,11 @@ export function sceneEffectsImageProcessingConfiguration(
     : ImageProcessingConfiguration.TONEMAPPING_STANDARD;
   config.exposure = linear ? effects.exposure : 1;
   config.contrast = linear ? effects.contrast : 1;
+  if (linear && effects.whiteBalance.enabled) {
+    config.whiteBalanceEnabled = true;
+    config.temperature = effects.whiteBalance.temperature;
+    config.tint = effects.whiteBalance.tint;
+  }
   const vignette = plan.vignette;
   if (vignette) {
     config.vignetteEnabled = true;

@@ -14,7 +14,7 @@ import {
 import { createEditorCamera } from "./editor-camera";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { encodeTranslatedTetrahedronGlb } from "./glb-test-fixtures";
-import { pickAtCanvas } from "./picking";
+import { pickActorMeshName, pickAtCanvas } from "./picking";
 import { editorComponentMeshName, editorMeshName } from "./scene-loader";
 import { meshNamesInCanvasRect, projectToCanvas } from "./two-d";
 import { visualMeshes } from "./visual-meshes";
@@ -115,6 +115,27 @@ describe("editor tap picking", () => {
       ]),
     );
     expect(pickWorld(sync, position)).toBe("box");
+  });
+
+  it("falls back to the CPU ray when the engine cannot render an object-ID pass", async () => {
+    const position = new Vector3(2, 0, 0);
+    prepareView(position);
+    const sync = new EditorSceneSync(scene);
+    sync.apply(
+      sceneWith([
+        createActor("box", "Box", {
+          transform: {
+            ...identitySerializedTransform(),
+            position: [position.x, position.y, position.z],
+          },
+          components: [createMeshComponent("mesh", "box")],
+        }),
+      ]),
+    );
+    expect(pickWorld(sync, position)).toBe("box");
+    const projected = projectToCanvas(scene, position, WIDTH, HEIGHT)!;
+    const meshName = await pickActorMeshName(scene, projected.x, projected.y);
+    expect(meshName && sync.actorForMesh(meshName)).toBe("box");
   });
 
   it("picks an audio helper from the origin collider when the icon is not pickable", () => {

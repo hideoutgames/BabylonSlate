@@ -9,6 +9,7 @@ import {
   planSceneEffects,
   sceneEffectsImageProcessingConfiguration,
   sceneEffectsKey,
+  upscaledRenderSize,
 } from "./scene-effects";
 
 function effects(
@@ -44,7 +45,7 @@ it("adds the Scene Linear and Display Color stages for PBR only", () => {
   });
   expect(planSceneEffects(linear, "pbr")).toEqual({
     sceneLinear: true,
-    ambientOcclusion: null, reflections: null, volumetricLighting: null,
+    ambientOcclusion: null, reflections: null, volumetricLighting: null, upscale: null,
     bloom: null,
     imageProcessing: { sceneLinear: true, vignette: null, colorGrading: null },
     fxaa: false, temporalAntiAliasing: null,
@@ -63,7 +64,7 @@ it("keeps CEL effects display-space with identity processing", () => {
   const plan = planSceneEffects(linear, "cel")!;
   expect(plan).toEqual({
     sceneLinear: false,
-    ambientOcclusion: null, reflections: null, volumetricLighting: null,
+    ambientOcclusion: null, reflections: null, volumetricLighting: null, upscale: null,
     bloom: { enabled: true, threshold: 0.5, weight: 0.4, kernel: 32, scale: 0.25 },
     imageProcessing: null,
     fxaa: false, temporalAntiAliasing: null,
@@ -131,6 +132,17 @@ it("plans temporal anti-aliasing on both render modes", () => {
   expect(sceneEffectsKey(temporal, "pbr", true)).not.toBe(sceneEffectsKey(effects({}), "pbr", true));
 });
 
+it("plans an FSR chain on its own and renders it at the scaled size", () => {
+  const upscaling = { enabled: true, renderScale: 0.67, sharpness: 0.2 };
+  for (const mode of ["pbr", "cel"] as const) {
+    const plan = planSceneEffects(effects({ upscaling }), mode);
+    expect(plan?.upscale).toEqual(upscaling);
+    expect(upscaledRenderSize(plan, 1920, 1080)).toEqual({ width: 1286, height: 724 });
+  }
+  expect(planSceneEffects(effects({ upscaling: { ...upscaling, renderScale: 1 } }), "pbr")).toBeNull();
+  expect(upscaledRenderSize(null, 1920, 1080)).toEqual({ width: 1920, height: 1080 });
+});
+
 it("plans nothing while the post-processing toggle is off", () => {
   const linear = effects({
     colorPipeline: { version: 1, mode: "sceneLinear" },
@@ -141,9 +153,15 @@ it("plans nothing while the post-processing toggle is off", () => {
 
 it("configures display processing only for the linear stage", () => {
   const config = sceneEffectsImageProcessingConfiguration(
-    effects({ toneMapping: "aces", exposure: 1.5, contrast: 1.2 }),
+    effects({
+      toneMapping: "aces", exposure: 1.5, contrast: 1.2,
+      whiteBalance: { enabled: true, temperature: 3200, tint: -20 },
+    }),
     { sceneLinear: true, vignette: null, colorGrading: null },
   );
+  expect(config.whiteBalanceEnabled).toBe(true);
+  expect(config.temperature).toBe(3200);
+  expect(config.tint).toBe(-20);
   expect(config.toneMappingEnabled).toBe(true);
   expect(config.toneMappingType).toBe(
     ImageProcessingConfiguration.TONEMAPPING_ACES,
@@ -155,7 +173,10 @@ it("configures display processing only for the linear stage", () => {
 
 it("holds processing at identity when the stage only carries a vignette", () => {
   const config = sceneEffectsImageProcessingConfiguration(
-    effects({ toneMapping: "aces", exposure: 4, contrast: 3 }),
+    effects({
+      toneMapping: "aces", exposure: 4, contrast: 3,
+      whiteBalance: { enabled: true, temperature: 3200, tint: -20 },
+    }),
     {
       sceneLinear: false,
       vignette: { enabled: true, weight: 2, color: [0.25, 0.5, 0.75] },
@@ -165,6 +186,7 @@ it("holds processing at identity when the stage only carries a vignette", () => 
   expect(config.toneMappingEnabled).toBe(false);
   expect(config.exposure).toBe(1);
   expect(config.contrast).toBe(1);
+  expect(config.whiteBalanceEnabled).toBe(false);
   expect(config.vignetteEnabled).toBe(true);
   expect(config.vignetteWeight).toBe(2);
   expect(config.vignetteColor.r).toBeCloseTo(0.25);
