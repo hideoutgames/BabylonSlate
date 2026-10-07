@@ -61,6 +61,8 @@ Bake modal phases:
 
 ## Scripting and BT MoveTo
 
+Play's navigation state (Scene navmesh selection, crowd agents, obstacles, cost volumes, the MoveTo task host and `debugNavigation`) lives in `RuntimeNavigation` (`packages/runtime/src/runtime-navigation.ts`). The driver forwards its public nav methods to it and releases it on Stop; departing Scene agents clear when the main Scene is replaced.
+
 Compiled graphs call `ctx.findPathTo` / `ctx.moveTo` / `ctx.stopMovement` / `ctx.isPathValid` / `ctx.getClosestNavigablePoint` / `ctx.getRandomPointInRadius` / `ctx.addObstacle` / `ctx.removeObstacle`. `scripting-nodes` must not import `@babylonslate/navigation`.
 
 **Move To Blackboard Key** uses the same navigation path as Move To, resolving a Vector or spatial Object/Actor Reference from the linked Blackboard. It follows changes to that value and stops when the target becomes invalid or the task is aborted.

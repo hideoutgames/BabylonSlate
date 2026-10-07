@@ -266,6 +266,28 @@ describe("runtime navmesh import and crowd", () => {
     runtime.stop();
   });
 
+  it("Stop releases the navmesh and clears the navigation, then behaviour-tree, debug overlays", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1, seedDemoActors: false, playScene: patrolScene(),
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadNavMesh(bytes);
+    runtime.start();
+    runtime.realizePlayWorld();
+    expect(runtime.setNavAgentTarget("agent", { x: 4, y: 0, z: 4 })).toBe(true);
+    expect(runtime.findNavPath({ x: -4, y: 0, z: -4 }, { x: 4, y: 0, z: 4 }).length).toBeGreaterThan(1);
+    runtime.executeConsoleCommand("showpathfinding on");
+    runtime.executeConsoleCommand("behaviourtreedebug on");
+    commands.length = 0;
+    runtime.stop();
+    expect(commands.slice(-2)).toEqual([
+      { type: "debugNavigation", agents: [], world: "3d" },
+      { type: "behaviourTreeSnapshot", trees: [] },
+    ]);
+    expect(runtime.findNavPath({ x: -4, y: 0, z: -4 }, { x: 4, y: 0, z: 4 })).toEqual([]);
+  });
+
   it("an idle NavAgent preserves dynamic gravity and the physics world pose", async () => {
     const runtime = createInProcessRuntime({
       seed: 1, seedDemoActors: false, playScene: physicalAgentScene({ y: 2 }),
