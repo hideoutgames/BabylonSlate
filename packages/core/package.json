@@ -11,6 +11,6 @@
     "test": "node ../../scripts/run-tests.mjs unit packages/core"
   },
   "devDependencies": {
-    "typescript": "~5.8.2"
+    "typescript": "~6.0.3"
   }
 }
