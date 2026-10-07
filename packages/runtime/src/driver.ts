@@ -21,12 +21,6 @@ import { ScalabilitySession, type ScalabilityRequest, type ScalabilityResult, ty
 import type { CollisionTriangleMesh, InputAssetDefinition } from "@babylonslate/core";
 import { inputMappingsFromAssets } from "@babylonslate/input";
 import {
-  SNAPSHOT_FLAG_OVERLAY,
-  SNAPSHOT_FLAG_VISIBLE,
-  SeqLockSnapshotPair,
-  writeActorSlot,
-  writeSnapshotHeader,
-  type ActorSlot,
   type CommandMessage,
   type ControlMessage,
   type RuntimeSceneContent,
@@ -79,7 +73,6 @@ import {
 import {
   createDefaultSceneSettings,
   DEFAULT_PLAY_FRAME_CAP,
-  isSceneLayerAnchorActor,
   deprojectCursorRay,
   type MaterialParameterCatalog,
   type MaterialParameterValue,
@@ -156,12 +149,13 @@ import {
   formatDumpActors,
   formatInspectActor,
 } from "./console-inspect";
-import { actorChainWorldTransform, actorLabel, breakParentCycles, firstSpawnedActorIndex, WorldTransformComposer } from "./actor-world-transform";
+import { actorChainWorldTransform, actorLabel, breakParentCycles, firstSpawnedActorIndex } from "./actor-world-transform";
 import type { OverlaySafeAreaInsets } from "@babylonslate/core";
 import type { ModelPayload, SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import { initNavigation, type NavObstacleKind, type NavPoint } from "@babylonslate/navigation";
 import { RuntimeSubsystems } from "./runtime-subsystems";
 import { RenderSlots } from "./render-slots";
+import { SnapshotPublisher } from "./snapshot-publisher";
 import { RenderCommandEmitter } from "./render-command-emitter";
 import { AudioParticleEmitter, createAudioHostBindings } from "./audio-particle-emitter";
 import { createActorHostBindings, createAssetHostBindings } from "./runtime-host-actors";
@@ -530,7 +524,7 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly savedActors = new WeakSet<Actor>();
   private pendingGameLoaded: (() => void) | null = null;
   private readonly world: World;
-  private snapshots: SeqLockSnapshotPair;
+  private readonly snapshots: SnapshotPublisher;
   private readonly input = new InputRingBuffer(512);
   private readonly resolver: InputResolver;
   private readonly overlay: SceneLayerOverlay;
@@ -577,41 +571,8 @@ class InProcessRuntime implements RuntimeDriver {
   private flushingConsoleActors = false;
   private frameId = 0;
   private readonly removingActors = new WeakSet<Actor>();
-  /** Actors whose sheared world pose has been reported to the Output Log. */
-  private readonly shearedActors = new WeakSet<Actor>();
-  private readonly reportShearedActor = (actor: Actor): void => {
-    if (this.shearedActors.has(actor)) return;
-    this.shearedActors.add(actor);
-    this.reportLog(
-      `${actorLabel(actor)} has a sheared world transform (nonuniform parent scale with an oblique rotation). ` +
-        "Play shows its nearest rotation and scale; attached actors keep their exact positions.",
-      "warning",
-      "actor",
-    );
-  };
-  /** Publish-time world poses, rewritten in place each snapshot write. */
-  private readonly snapshotPoses = new WorldTransformComposer();
-  private readonly findLiveActor = (guid: string): Actor | undefined => this.world.findActor(guid);
-  /** Reused per actor while writing a snapshot; `writeActorSlot` copies it into the buffer. */
-  private readonly snapshotSlot: ActorSlot = {
-    slotId: 0,
-    position: { x: 0, y: 0, z: 0 },
-    rotation: { x: 0, y: 0, z: 0, w: 1 },
-    scale: { x: 1, y: 1, z: 1 },
-    flags: 0,
-  };
-  private _snapshotGeneration = 0;
   private _lastScriptMs = 0;
   private _lastPhysicsMs = 0;
-  /** Most recent publish: overlay layout and removal pass, composition and buffer write (stats `publishMs`). */
-  private _lastPublishMs = 0;
-  /** True while `advance()` runs catch-up ticks; their snapshot writes wait for the burst to end. */
-  private deferSnapshotWrites = false;
-  /** Header of the last tick that reached its publish point while writes were deferred. */
-  private readonly pendingSnapshotHeader = { frameId: 0, tickIndex: 0, scriptMs: 0, physicsMs: 0 };
-  private snapshotWritePending = false;
-  /** Removal-pass time already spent on the pending publish. */
-  private pendingPublishMs = 0;
   private phaseScriptMs = 0;
   private phasePhysicsMs = 0;
   private readonly scriptHost: ScriptHost;
@@ -723,7 +684,7 @@ class InProcessRuntime implements RuntimeDriver {
    */
   private readonly subsystems = new RuntimeSubsystems();
   private readonly renderSlots = new RenderSlots(this.subsystems, {
-    ensureCapacity: (required) => this.ensureSnapshotCapacity(required),
+    ensureCapacity: (required) => this.snapshots.ensureCapacity(required),
     findActor: (guid) => this.world.findActor(guid),
   });
   private readonly renderEmitter = new RenderCommandEmitter({
@@ -768,7 +729,7 @@ class InProcessRuntime implements RuntimeDriver {
     createActor: (serialized) => createActorFromSerialized(this.world, serialized, this.sceneActorHooks),
     realizeActor: (actor, checkpoint) => this.realizeActor(actor, checkpoint),
     breakParentCycles: (actors, detach) => this.breakLoadedParentCycles(actors, detach),
-    publishSnapshot: () => this.publishSnapshot(),
+    publishSnapshot: () => this.snapshots.publish(),
     slot: (actor) => this.actorSlot(actor),
     syncPhysics: () => this.physicsSync.syncFromWorld(this.world),
     navigation: () => this.navigation,
@@ -829,8 +790,8 @@ class InProcessRuntime implements RuntimeDriver {
   get lastPhysicsMs(): number {
     return this._lastPhysicsMs;
   }
-  get snapshotCapacity(): number { return this.snapshots.maxActors; }
-  get snapshotGeneration(): number { return this._snapshotGeneration; }
+  get snapshotCapacity(): number { return this.snapshots.capacity; }
+  get snapshotGeneration(): number { return this.snapshots.generation; }
 
   constructor(options: RuntimeDriverOptions) {
     this.simulationBaseline = options.sessionMode === "simulate" ? options.playScene ?? null : null;
@@ -920,8 +881,6 @@ class InProcessRuntime implements RuntimeDriver {
     this.refreshTilemapAnimationContent();
     this.behaviourTrees.replaceAudioAssets((options.audioAssetGuids ?? []).filter((guid) => guid));
     this.behaviourTrees.replaceAnimClipCatalog((options.animClipCatalog ?? []).filter((entry) => entry.guid));
-    const maxActors = options.maxActors ?? 256;
-    this.snapshots = SeqLockSnapshotPair.create(maxActors);
 
     const registry = new ClassRegistry();
     registry.register({
@@ -1033,6 +992,22 @@ class InProcessRuntime implements RuntimeDriver {
         this.dispatchCollisionEvents();
       },
     });
+    this.snapshots = new SnapshotPublisher(options.maxActors ?? 256, this.world, this.renderSlots, {
+      stopped: () => this.stopped,
+      frameId: () => this.frameId,
+      lastScriptMs: () => this._lastScriptMs,
+      lastPhysicsMs: () => this._lastPhysicsMs,
+      canPublish: () => this.admission.canTickScene() || this.admission.hasReadyLayers(),
+      cameraActor: () => this.playCameraActor(),
+      applyOverlayLayouts: () => this.overlay.applyLayouts(),
+      retireDetachedStreams: () => this.streams.retireDetached(),
+      removedActors: () => this.behaviourTrees.emitSnapshot(true),
+      recorder: () => this.diagnosticRecorder,
+      profilePublish: (milliseconds) => { this.profileTickPublishMs += milliseconds; },
+      reportLog: (message, severity, category) => this.reportLog(message, severity, category),
+      reportError: (error) => { this.reportError(error); },
+      emit: (command) => this.emit(command),
+    }, nowMs);
     this.dynamicMeshes = new DynamicRuntimeMeshSync({
       eligible: (actor) => !actor.sceneLayerId && this.admission.canRun(actor),
       slot: (actor) => this.actorSlot(actor),
@@ -1106,7 +1081,7 @@ class InProcessRuntime implements RuntimeDriver {
       breakParentCycles: (actors) => this.breakLoadedParentCycles(actors),
       realizeActor: (actor) => this.realizeActor(actor),
       removeActor: (actor) => this.removeOwnedActor(actor),
-      publishSnapshot: () => this.publishSnapshot(),
+      publishSnapshot: () => this.snapshots.publish(),
       syncOverlayPhysics: () => this.overlayPhysicsSync.syncFromWorld(this.world),
       emit: (command) => this.emit(command),
     });
@@ -1126,7 +1101,7 @@ class InProcessRuntime implements RuntimeDriver {
       markUnsupportedInstance: (layerGuid) => this.markUnsupportedSimulationInstance("layer", layerGuid),
       guidTaken: (id) => this.renderSlots.hasGuid(id) || this.world.findActor(id) != null,
       createActor: (serialized, layerGuid) => createActorFromSerialized(this.world, serialized, this.sceneActorHooks, layerGuid),
-      publishSnapshot: () => this.publishSnapshot(),
+      publishSnapshot: () => this.snapshots.publish(),
       syncOverlayPhysics: () => this.overlayPhysicsSync.syncFromWorld(this.world),
       tryCompleteSceneLoad: () => this.tryCompleteSceneLoad(),
       removeActor: (actor) => this.removeOwnedActor(actor),
@@ -1972,7 +1947,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (!prepared || this.realization !== prepared.work) return;
     this.checkRealization(prepared.work);
     // Game Instance may have changed poses or created actors during native boot.
-    this.publishSnapshot();
+    this.snapshots.publish();
     this.checkRealization(prepared.work);
     this.finishOrDeferSceneLoad(prepared.name, prepared.work.guid, prepared.work.loadId);
   }
@@ -2296,7 +2271,7 @@ class InProcessRuntime implements RuntimeDriver {
     // All actors, anchors, and renderer assignments precede the readiness latch.
     this.world.flushPending();
     checkpoint();
-    this.publishSnapshot();
+    this.snapshots.publish();
     checkpoint();
     work.finished = true;
     if (scene) {
@@ -2827,7 +2802,7 @@ class InProcessRuntime implements RuntimeDriver {
             this.world.flushPending();
             this.physicsSync.syncFromWorld(this.world);
             this.overlayPhysicsSync.syncFromWorld(this.world);
-            this.publishSnapshot();
+            this.snapshots.publish();
             this.emitDebugColliders();
           } finally {
             this.flushingConsoleActors = false;
@@ -3247,21 +3222,6 @@ class InProcessRuntime implements RuntimeDriver {
     return this.renderSlots.guidSlot(guid);
   }
 
-  private ensureSnapshotCapacity(required: number): void {
-    if (required <= this.snapshots.maxActors) return;
-    let capacity = Math.max(1, this.snapshots.maxActors);
-    while (capacity < required) capacity *= 2;
-    try {
-      this.snapshots = SeqLockSnapshotPair.grow(this.snapshots, capacity);
-      this._snapshotGeneration += 1;
-      this.emit({ type: "snapshotLayout", capacity, generation: this._snapshotGeneration });
-    } catch (error) {
-      const message = `Unable to grow Actor snapshot capacity to ${capacity}: ${error instanceof Error ? error.message : String(error)}`;
-      this.reportError(new Error(message, { cause: error }));
-      throw new Error(message, { cause: error });
-    }
-  }
-
   private bindGameInstance(): void {
     if (this.gameInstanceBound) return;
     this.gameInstanceBound = true;
@@ -3526,7 +3486,7 @@ class InProcessRuntime implements RuntimeDriver {
       synchronize: (actors) => {
         this.physicsSync.syncFromWorld(this.world);
         for (const actor of actors) this.physicsSync.teleportActor(actor, this.world);
-        this.publishSnapshot();
+        this.snapshots.publish();
       },
       reportError: (error) => { this.reportError(error); },
     });
@@ -3552,7 +3512,7 @@ class InProcessRuntime implements RuntimeDriver {
           if (!this.stopped) {
             // User callbacks run after commit. They cannot turn an applied
             // checkpoint into an apparent load failure.
-            for (const notify of [publishOverlays ? () => this.publishSnapshot() : null, loaded, () => this.admission.flush()]) {
+            for (const notify of [publishOverlays ? () => this.snapshots.publish() : null, loaded, () => this.admission.flush()]) {
               try { notify?.(); }
               catch (error) {
                 try { this.reportError(error); } catch { /* The host may be disconnected. */ }
@@ -3736,7 +3696,7 @@ class InProcessRuntime implements RuntimeDriver {
       this.simulationQuiescent = true;
       this.resetInputState();
       if (this.inspectorRequests.length) this.flushInspectorRequests();
-      this.flushDeferredSnapshotWrite();
+      this.snapshots.flushDeferred();
       resolve(this.boundaryResult(boundaryRequest));
     }));
   }
@@ -3902,7 +3862,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.frameId++;
     const slotId = this.renderSlots.recordedSlot(actor);
     if (slotId !== undefined) this.emit({ type: "resetActorInterpolation", actorGuid: actor.guid, slotId, frameId: this.frameId });
-    this.publishSnapshot();
+    this.snapshots.publish();
   }
 
   requestRuntimeInspector(request: RuntimeInspectorRequest): Promise<RuntimeInspectorResult> {
@@ -4079,8 +4039,7 @@ class InProcessRuntime implements RuntimeDriver {
     const completedFrameId = this.frameId;
     this.frameId += 1;
     if (this.admission.canTickScene() || this.admission.hasReadyLayers()) {
-      if (this.deferSnapshotWrites) this.deferSnapshotWrite();
-      else this.publishSnapshot();
+      this.snapshots.publishTick();
       this.emitDebugColliders();
       this.navigation.emitDebug();
       this.behaviourTrees.emitSnapshot();
@@ -4094,9 +4053,9 @@ class InProcessRuntime implements RuntimeDriver {
         tickIndex: this.world.clock.tickIndex,
         scriptMs: this._lastScriptMs,
         physicsMs: this._lastPhysicsMs,
-        publishMs: this._lastPublishMs,
+        publishMs: this.snapshots.lastPublishMs,
         liveActors: this.renderSlots.guidCount,
-        snapshotCapacity: this.snapshots.maxActors,
+        snapshotCapacity: this.snapshots.capacity,
       });
     }
     if (this.trace.isRecording) {
@@ -4142,19 +4101,14 @@ class InProcessRuntime implements RuntimeDriver {
     let steps = 0;
     // Hosts copy the snapshot once after advance(), so catch-up ticks keep their
     // overlay layout and removal pass but compose and write only the burst's
-    // final frame. Any tick may pause or block the session; the flush below still runs.
-    const outermost = !this.deferSnapshotWrites;
-    this.deferSnapshotWrites = true;
-    try {
+    // final frame. Any tick may pause or block the session; the flush still runs.
+    this.snapshots.deferWrites(() => {
       while (!this.paused && !this.stopped && this.accumulator >= this.dt && steps < this.maxCatchUp) {
         this.tick();
         this.accumulator = Math.max(0, this.accumulator - this.dt);
         steps += 1;
       }
-    } finally {
-      if (outermost) this.deferSnapshotWrites = false;
-    }
-    if (outermost) this.flushDeferredSnapshotWrite();
+    });
     if (steps === this.maxCatchUp) {
       this.accumulator = 0;
     }
@@ -4163,8 +4117,7 @@ class InProcessRuntime implements RuntimeDriver {
   copySnapshot(out: Float32Array): boolean {
     if (this.stopped || (this.sceneWorkBlocked && !this.realization?.finished &&
       !this.layers.anyRealized())) return false;
-    if (out.length < this.snapshots.floatCount) return false;
-    return this.snapshots.tryRead(out);
+    return this.snapshots.copy(out);
   }
 
   getWorld(): World {
@@ -4234,131 +4187,6 @@ class InProcessRuntime implements RuntimeDriver {
       severity: "error",
     });
     return diag;
-  }
-
-  private snapshotOrigin = { x: 0, y: 0, z: 0 };
-  private snapshotOriginGeneration = 0;
-
-  /** Publish now; a newer complete frame supersedes any write deferred by `advance()`. */
-  private publishSnapshot(): void {
-    const start = nowMs();
-    this.snapshotWritePending = false;
-    this.pendingPublishMs = 0;
-    this.runPublishPrelude();
-    this.writeSnapshot(this.frameId, this.world.clock.tickIndex, this._lastScriptMs, this._lastPhysicsMs);
-    this._lastPublishMs = nowMs() - start;
-    if (this.diagnosticRecorder?.recording) this.profileTickPublishMs += this._lastPublishMs;
-  }
-
-  /** Per-tick part of a deferred publish: overlay layout, removals and their commands happen in this tick. */
-  private deferSnapshotWrite(): void {
-    const start = nowMs();
-    this.runPublishPrelude();
-    const header = this.pendingSnapshotHeader;
-    header.frameId = this.frameId;
-    header.tickIndex = this.world.clock.tickIndex;
-    header.scriptMs = this._lastScriptMs;
-    header.physicsMs = this._lastPhysicsMs;
-    this.snapshotWritePending = true;
-    const publishMs = nowMs() - start;
-    this.pendingPublishMs += publishMs;
-    if (this.diagnosticRecorder?.recording) this.profileTickPublishMs += publishMs;
-  }
-
-  /**
-   * Write the frame deferred by the last publishing tick of a burst, with that
-   * tick's header. Later ticks that no-op (pause, blocking stream) leave it as is.
-   */
-  private flushDeferredSnapshotWrite(): void {
-    if (!this.snapshotWritePending) return;
-    this.snapshotWritePending = false;
-    const spent = this.pendingPublishMs;
-    this.pendingPublishMs = 0;
-    if (this.stopped) return;
-    const start = nowMs();
-    // A later tick stopped before its publish point (blocking load, scene change)
-    // leaves its removals to the next publish, as per-tick writes did; the write
-    // below already omits actors that left the World. Its scripts may have moved
-    // layout-managed overlay actors, so lay them out first, as every write does.
-    // Otherwise the last publishing tick laid them out and nothing ran after it.
-    if (this.admission.canTickScene() || this.admission.hasReadyLayers()) this.retireRemovedSnapshotActors();
-    else this.overlay.applyLayouts();
-    const header = this.pendingSnapshotHeader;
-    this.writeSnapshot(header.frameId, header.tickIndex, header.scriptMs, header.physicsMs);
-    const publishMs = nowMs() - start;
-    this._lastPublishMs = spent + publishMs;
-    this.diagnosticRecorder?.addPublishCost(header.tickIndex, publishMs);
-  }
-
-  /**
-   * Publish work every publishing tick runs before its write. Overlay layout
-   * moves SceneLayer actors that the next tick's focus navigation and scripts
-   * read, so it stays per tick like removals.
-   */
-  private runPublishPrelude(): void {
-    this.overlay.applyLayouts();
-    this.retireRemovedSnapshotActors();
-  }
-
-  /** Retire detached streams, then despawn and release slots of actors no longer in the World. */
-  private retireRemovedSnapshotActors(): void {
-    this.streams.retireDetached();
-    let removedActors = false;
-    for (const [actorGuid, slotId] of this.renderSlots.guidEntries()) {
-      // The World's guid index answers "any live actor has this guid".
-      if (this.world.findActor(actorGuid)) continue;
-      this.emit({ type: "despawn", slotId, actorGuid });
-      this.renderSlots.release(actorGuid, slotId);
-      removedActors = true;
-    }
-    if (removedActors) this.behaviourTrees.emitSnapshot(true);
-  }
-
-  private writeSnapshot(frameId: number, tickIndex: number, scriptMs: number, physicsMs: number): void {
-    const actors = this.world.getActors();
-    const buf = this.snapshots.beginWrite();
-    const findActor = this.findLiveActor;
-    const worldTransforms = this.snapshotPoses.compose(findActor, actors, this.reportShearedActor);
-    const cameraActor = this.playCameraActor();
-    const cameraPosition = cameraActor ? worldTransforms.get(cameraActor.guid)?.position : undefined;
-    if (cameraPosition) {
-      const next = { x: Math.floor(cameraPosition.x / 1024) * 1024, y: Math.floor(cameraPosition.y / 1024) * 1024, z: Math.floor(cameraPosition.z / 1024) * 1024 };
-      if (next.x !== this.snapshotOrigin.x || next.y !== this.snapshotOrigin.y || next.z !== this.snapshotOrigin.z) { this.snapshotOrigin = next; this.snapshotOriginGeneration++; }
-    }
-    const slot = this.snapshotSlot;
-    let count = 0;
-    for (const actor of actors) {
-      // Layout-only anchors must not create fallback visuals from pose snapshots.
-      if (isSceneLayerAnchorActor(actor)) continue;
-      // Only a guid's first-spawned live actor (the one parents, physics and
-      // the crowd resolve) writes its own slot; later duplicates' slots get no
-      // entry, although the guid maps to the latest-assigned one.
-      if (findActor(actor.guid) !== actor) continue;
-      const slotId = this.renderSlots.recordedSlot(actor);
-      if (slotId === undefined) continue;
-      const world = worldTransforms.get(actor.guid);
-      if (!world) continue;
-      slot.slotId = slotId;
-      slot.position = world.position;
-      slot.rotation = world.rotation;
-      slot.scale = world.scale;
-      slot.flags =
-        (actor.getVariable("visible") === false ? 0 : SNAPSHOT_FLAG_VISIBLE) |
-        (actor.sceneLayerId ? SNAPSHOT_FLAG_OVERLAY : 0);
-      writeActorSlot(buf, count, slot, this.snapshotOrigin);
-      count += 1;
-    }
-    writeSnapshotHeader(buf, {
-      frameId,
-      tickIndex,
-      actorCount: count,
-      scriptMs,
-      physicsMs,
-      layoutGeneration: this._snapshotGeneration,
-      origin: this.snapshotOrigin,
-      originGeneration: this.snapshotOriginGeneration,
-    });
-    this.snapshots.publish();
   }
 
   private emit(command: CommandMessage): void {
