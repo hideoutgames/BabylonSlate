@@ -1,3 +1,4 @@
+import { useOptionalPlay } from "../context/play-context";
 import { DataDefinitionEditingProvider } from "../context/data-definition-editing-context";
 import { InputAssetEditingProvider } from "../context/input-asset-editing-context";
 import { SaveGameEditingProvider } from "../context/save-game-editing-context";
@@ -224,6 +225,7 @@ export function AnimDocumentDocks({
 }
 
 export function DocumentWorkspace() {
+  const simulationDocumentId = useOptionalPlay()?.simulationDocumentId ?? null;
   const {
     tabOrder,
     activeDocumentId,
@@ -278,7 +280,7 @@ export function DocumentWorkspace() {
         if (!doc) return null;
         const active = id === resolvedActiveId;
         const shouldMount =
-          mountedIds.has(id) ||
+          id === simulationDocumentId || mountedIds.has(id) ||
           (doc.ref.kind === "content-browser" && active);
 
         if (doc.ref.kind === "content-browser") {

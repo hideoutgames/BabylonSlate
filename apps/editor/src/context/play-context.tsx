@@ -34,6 +34,7 @@ import { appendOutputLogLine } from "../lib/output-log-ring";
 import { PlayPrepareDialog } from "../components/play-prepare-dialog";
 import { PlayUnsavedDialog, type PlayUnsavedChoice } from "../components/play-unsaved-dialog";
 import { PlayBlockedDialog } from "../components/play-blocked-dialog";
+import { SimulationSessionBar } from "../components/simulation-session-bar";
 import { PlayOverlay } from "../components/play-overlay";
 import { PreparingPreviewDialog, type PreviewPreparePhase } from "../components/preparing-preview-dialog";
 import { PreviewBuildOverlay } from "../components/preview-build-overlay";
@@ -1800,6 +1801,11 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   return (
     <PlayContext.Provider value={value}>
         {children}
+        {sessionState.mode === "simulate" && !sessionState.quarantined ? (
+          <SimulationSessionBar stopping={sessionState.lifecycle === "stopping"}
+            onReturnToScene={() => { if (simulationDocumentId) setActiveDocument(simulationDocumentId); }}
+            onStop={() => { void sessionOwner.stop(); }} />
+        ) : null}
         {projectOpen && (projectEngineState.phase === "preparing" || projectEngineState.phase === "initializing" ||
           (projectEngineState.phase === "failed" && !renderingFailureDismissed)) ? (
           <ProjectRenderingDialog state={projectEngineState}
