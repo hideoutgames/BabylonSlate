@@ -33,6 +33,30 @@ function createMockProjectService(
 }
 
 describe("DocumentService", () => {
+  it("tracks saved content through undo, redo, rename and a save completed during newer edits", async () => {
+    const service = new DocumentService();
+    const original = createDefaultScene();
+    const project = createMockProjectService({ loadDocument: vi.fn(async () => original) });
+    const id = await service.openDocument(project, { kind: "scene", path: MAIN_SCENE_FILE, label: "Main" });
+    const edited = { ...original, name: "Edited" };
+    service.updateScene(id, edited);
+    expect(service.getDocument(id)?.dirty).toBe(true);
+    service.updateScene(id, structuredClone(original));
+    expect(service.getDocument(id)?.dirty).toBe(false);
+    service.updateScene(id, edited);
+    const saved = { ...service.getDocument(id)! };
+    service.updateScene(id, { ...edited, name: "Newer" });
+    service.markAllClean([saved]);
+    expect(service.getDocument(id)?.dirty).toBe(true);
+    service.updateScene(id, structuredClone(edited));
+    expect(service.getDocument(id)?.dirty).toBe(false);
+    const moved = service.repathDocument("scene", MAIN_SCENE_FILE, "assets/Moved.scene.babasset")!;
+    service.updateScene(moved.newId, original);
+    expect(service.getDocument(moved.newId)?.dirty).toBe(true);
+    service.updateScene(moved.newId, structuredClone(edited));
+    expect(service.getDocument(moved.newId)?.dirty).toBe(false);
+  });
+
   it.each(["open", "activate"] as const)("keeps background utility trees dirty and promotes their existing working copy on %s", async (action) => {
     const service = new DocumentService();
     service.ensureContentBrowserTab();
