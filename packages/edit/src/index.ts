@@ -60,6 +60,8 @@ export {
   type JournalLine,
   JOURNAL_REPATH_TYPE,
   JOURNAL_DISCARD_TYPE,
+  JOURNAL_CHECKPOINT_TYPE,
+  journalCheckpointLine,
   journalDiscardLine,
   journalRepathLine,
   parseJournalLine,

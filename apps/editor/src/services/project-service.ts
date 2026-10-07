@@ -1588,7 +1588,10 @@ export class ProjectService {
   }
 
   /** Rename a Class and its name-based referrers as one recoverable file operation. */
-  async renameAsset(guid: string, newName: string): Promise<IndexedAsset> {
+  async renameAsset(guid: string, newName: string, options?: {
+    /** Validate locks and persist recovery before any files change. */
+    beforeWrite?: (paths: string[]) => Promise<void>;
+  }): Promise<IndexedAsset> {
     const registry = this.assetRegistry;
     const before = registry?.getByGuid(guid);
     if (!registry || !before) throw new Error("The asset is unavailable.");
@@ -1596,10 +1599,16 @@ export class ProjectService {
     if (nextPath !== before.path && registry.list().some((asset) => asset.path === nextPath)) {
       throw new Error(`Target path already exists: ${nextPath}`);
     }
-    if (before.header.type !== "Class" && before.header.type !== "Graph") return registry.renameAsset(guid, newName);
+    if (before.header.type !== "Class" && before.header.type !== "Graph") {
+      await options?.beforeWrite?.([before.path, nextPath]);
+      return registry.renameAsset(guid, newName);
+    }
     const classId = classIdFromClassAsset(before);
     const nextClassId = classIdFromClassAsset({ ...before, path: nextPath });
-    if (classId === nextClassId) return registry.renameAsset(guid, newName);
+    if (classId === nextClassId) {
+      await options?.beforeWrite?.([before.path, nextPath]);
+      return registry.renameAsset(guid, newName);
+    }
     if (isLockedEngineClassId(nextClassId)) {
       throw new Error(`"${nextClassId}" is an engine class name. Choose another Class name.`);
     }
@@ -1618,6 +1627,7 @@ export class ProjectService {
     const projectText = await this.storage.readText(PROJECT_FILE);
     const project = JSON.parse(projectText) as ProjectDocument;
     const settings = replaceClassAssetReferences(project.settings, replacements);
+    await options?.beforeWrite?.([before.path, nextPath, ...plans.map((plan) => plan.path), ...(settings.changed ? [PROJECT_FILE] : [])]);
     const renamed = await registry.renameAsset(guid, newName);
     try {
       for (const plan of plans) {

@@ -119,6 +119,14 @@ describe("JournalBuffer", () => {
     expect(documents.get(docId)).toEqual({ opacity: 0.2 });
   });
 
+  it("rejects a required recovery write so a file operation can stop before mutating", async () => {
+    const onError = vi.fn();
+    const buffer = new JournalBuffer(async () => { throw new Error("Recovery storage full"); }, { onError });
+    buffer.append(guid, record(new SetAssetDocumentCommand({ opacity: 1 }, { opacity: 0.5 })));
+    await expect(buffer.flush(guid, { rejectOnError: true })).rejects.toThrow("Recovery storage full");
+    expect(onError).toHaveBeenCalledOnce();
+  });
+
   it.each([
     ["the page unloads", () => window.dispatchEvent(new Event("pagehide"))],
     [

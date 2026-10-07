@@ -67,6 +67,7 @@ import {
   type ParticleLibrary,
 } from "@babylonslate/assets";
 import { encodeRgbaPng } from "@babylonslate/render";
+import { resolveClassRenameRecovery } from "../lib/class-rename-recovery";
 import {
   commandToJournalPayload,
   DEFAULT_EDIT_BYTE_BUDGET,
@@ -75,6 +76,7 @@ import {
   EditSession,
   journalRepathLine,
   journalDiscardLine,
+  journalCheckpointLine,
   replayJournalLines,
   resolveJournalLines,
   SetAssetDocumentCommand,
@@ -878,6 +880,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     () => new Set(),
   );
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const projectWriteQueue = useRef<Promise<void>>(Promise.resolve());
+  const enqueueProjectWrite = useCallback(<T,>(operation: () => Promise<T>): Promise<T> => {
+    const pending = projectWriteQueue.current.then(operation);
+    projectWriteQueue.current = pending.then(() => {}, () => {});
+    return pending;
+  }, []);
   const [autoSaveStatus, setAutoSaveStatus] = useState<DocumentContextValue["autoSaveStatus"]>(null);
   // Keyed by saved revision, and projects made from one template share guids:
   // enterEditor replaces it so one project never shows another's thumbnails.
@@ -1523,9 +1531,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const guid = projectService.guid;
     if (!guid) return;
     const derived = await ensureDerived();
-    const lines = await journalBuffer.afterFlush(guid, () =>
+    const lines = resolveClassRenameRecovery(await journalBuffer.afterFlush(guid, () =>
       readJournalLines(derived, guid),
-    );
+    ), projectService.registry);
     if (lines.length === 0) {
       setRecoveryAvailable(false);
       return;
@@ -1792,7 +1800,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
   }, [attachEnginePlugins, enterEditor, projectService]);
 
-  const saveProject = useCallback(async (): Promise<boolean> => {
+  const saveProject = useCallback((): Promise<boolean> => enqueueProjectWrite(async () => {
     const progress = beginSaveAllProgress();
     const document = projectDocumentRef.current;
     const dirtyBefore = documentService.getDirtyDocuments().length + Number(projectSaveState.current.isDirty(document));
@@ -1947,7 +1955,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     } finally {
       progress.finish();
     }
-  }, [
+  }), [
+    enqueueProjectWrite,
     bump,
     captureAllLayouts,
     captureMtimeSnapshot,
@@ -2360,41 +2369,65 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     bump();
   }, [bump, collectGraphTypeSchemas, documentService, projectService, setProjectDocument]);
 
-  const renameAsset = useCallback(async (guid: string, newName: string) => {
-    const registry = projectService.registry;
-    const before = registry?.getByGuid(guid);
-    if (!registry || !before) throw new Error("The asset is unavailable.");
-    const nextPath = renamedAssetPath(before.path, newName);
-    const replacements: ClassAssetReplacement[] = before.header.type === "Class" || before.header.type === "Graph"
-      ? [{ guid, classId: classIdFromClassAsset(before), replacement: { guid, classId: classIdFromClassAsset({ ...before, path: nextPath }) } }]
-      : [];
-    const schemas = collectGraphTypeSchemas();
-    const openChanges = documentService.getOpenDocumentsOrdered().flatMap((doc) => {
-      if (!doc.content || doc.ref.kind === "content-browser" || doc.ref.kind === "trace") return [];
-      const walked = replaceClassAssetReferences(doc.content, replacements, (definitionGuid) => schemas.structs?.[definitionGuid]?.fields);
-      if (!walked.changed) return [];
-      const asset = registry.list().find((entry) => entry.path === doc.ref.path);
-      if ((asset && registry.getRoot(asset.rootId)?.readOnly) || isPluginDocumentReadOnly(projectService.plugins, doc.ref.path)) {
-        throw new Error(`${doc.ref.path} is read-only and still references this Class.`);
+  const renameAsset = useCallback((guid: string, newName: string) => enqueueProjectWrite(async () => {
+    if (saveDebounceRef.current) { clearTimeout(saveDebounceRef.current); saveDebounceRef.current = null; }
+    try {
+      const registry = projectService.registry;
+      const before = registry?.getByGuid(guid);
+      if (!registry || !before) throw new Error("The asset is unavailable.");
+      const nextPath = renamedAssetPath(before.path, newName);
+      const replacements: ClassAssetReplacement[] = before.header.type === "Class" || before.header.type === "Graph"
+        ? [{ guid, classId: classIdFromClassAsset(before), replacement: { guid, classId: classIdFromClassAsset({ ...before, path: nextPath }) } }]
+        : [];
+      const schemas = collectGraphTypeSchemas();
+      const openChanges = documentService.getOpenDocumentsOrdered().flatMap((doc) => {
+        if (!doc.content || doc.ref.kind === "content-browser" || doc.ref.kind === "trace") return [];
+        const walked = replaceClassAssetReferences(doc.content, replacements, (definitionGuid) => schemas.structs?.[definitionGuid]?.fields);
+        if (!walked.changed) return [];
+        const asset = registry.list().find((entry) => entry.path === doc.ref.path);
+        if ((asset && registry.getRoot(asset.rootId)?.readOnly) || isPluginDocumentReadOnly(projectService.plugins, doc.ref.path)) {
+          throw new Error(`${doc.ref.path} is read-only and still references this Class.`);
+        }
+        return [{ doc, content: walked.value }];
+      });
+      const renamed = await projectService.renameAsset(guid, newName, {
+        beforeWrite: async (paths) => {
+          for (const path of new Set([...paths, ...openChanges.map(({ doc }) => doc.ref.path)])) {
+            const error = sourceControlRef.current.refuseIfTheirs(path);
+            if (error) throw new Error(error);
+          }
+          const projectGuid = projectService.guid;
+          if (!projectGuid || openChanges.length === 0) return;
+          const at = new Date().toISOString();
+          for (const { doc } of openChanges) {
+            const checkpoint = journalCheckpointLine(doc.id, doc.content, at);
+            checkpoint.command.assetGuid = registry.getByPath(doc.ref.path)?.header.guid;
+            checkpoint.command.classReferences = replacements.map(({ guid: classGuid, classId }) => ({ guid: classGuid, classId }));
+            journalBuffer.append(projectGuid, checkpoint);
+          }
+          // Snapshots still name the old Class. Recovery resolves GUIDs against
+          // disk, so a failed rename cannot leave rewritten recovery content.
+          await journalBuffer.flush(projectGuid, { rejectOnError: true });
+        },
+      });
+      for (const { doc, content } of openChanges) {
+        if (doc.dirty) documentService.patchLoadedContent(doc.id, content);
+        else documentService.replaceLoadedContent(doc.id, content);
+        // Content Browser file operations are not undoable. Old edit commands
+        // must not reintroduce the Class id that no longer exists.
+        editSessionRef.current.dropDocument(doc.id);
       }
-      return [{ doc, content: walked.value }];
-    });
-    const renamed = await projectService.renameAsset(guid, newName);
-    for (const { doc, content } of openChanges) {
-      if (doc.dirty) documentService.patchLoadedContent(doc.id, content);
-      else documentService.replaceLoadedContent(doc.id, content);
-      // Content Browser file operations are not undoable. Old edit commands
-      // must not reintroduce the Class id that no longer exists.
-      editSessionRef.current.dropDocument(doc.id);
+      const current = projectDocumentRef.current;
+      if (current && replacements.length) {
+        const settings = replaceClassAssetReferences(current.settings, replacements);
+        if (settings.changed) setProjectDocument({ ...current, settings: settings.value });
+      }
+      bump();
+      return renamed;
+    } finally {
+      if (documentService.getDirtyDocuments().length || projectSaveState.current.isDirty(projectDocumentRef.current)) scheduleDebouncedSave();
     }
-    const current = projectDocumentRef.current;
-    if (current && replacements.length) {
-      const settings = replaceClassAssetReferences(current.settings, replacements);
-      if (settings.changed) setProjectDocument({ ...current, settings: settings.value });
-    }
-    bump();
-    return renamed;
-  }, [bump, collectGraphTypeSchemas, documentService, projectService, setProjectDocument]);
+  }), [bump, collectGraphTypeSchemas, documentService, enqueueProjectWrite, journalBuffer, projectService, scheduleDebouncedSave, setProjectDocument]);
 
   const repairAfterAssetDelete = useCallback(
     async (

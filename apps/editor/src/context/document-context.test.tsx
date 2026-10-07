@@ -1,6 +1,7 @@
-import { act, render, waitFor } from "@testing-library/react";
+import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS,
   MAIN_CLASS_FILE,
   MAIN_SCENE_FILE,
   createActor,
@@ -11,7 +12,8 @@ import {
   type SerializedGraph,
   type SerializedScene,
 } from "@babylonslate/core";
-import { OpfsStorageAdapter, createDerivedStorage } from "@babylonslate/vfs";
+import { MemorySecretStore, OpfsStorageAdapter, createDerivedStorage } from "@babylonslate/vfs";
+import { FakeLockProvider } from "@babylonslate/source-control";
 import { appendJournalLines, readJournalLines } from "@babylonslate/assets";
 import { SetSceneNameCommand, commandToJournalPayload, serializeJournalLine } from "@babylonslate/edit";
 import { createProjectAsset } from "../lib/create-project-asset";
@@ -223,6 +225,102 @@ describe("DocumentProvider actions and route", () => {
     const saved = await actions.loadAssetDocument("scene", MAIN_SCENE_FILE) as SerializedScene;
     expect(saved.actors.find(actor => actor.id === "hero")?.classId).toBe("Champion");
     expect(documents().assetRegistry?.getByGuid(asset.header.guid)?.path).toBe("assets/Champion.class.babasset");
+  });
+
+  it.each([false, true])("recovers unsaved Class instances after a rename and crash (rolled back: %s)", async (failRename) => {
+    const actions = await openProject();
+    const registry = documents().assetRegistry!;
+    const asset = await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "Class", name: "Hero" }));
+    act(() => actions.noteAssetsCreated());
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, {
+      ...openScene(MAIN_SCENE_ID), actors: [createActor("saved", "Saved Hero", { classId: "Hero" })],
+    }));
+    await act(() => actions.saveAll());
+    const handle = new OpfsStorageAdapter().getCurrentFolder()!;
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, {
+      ...openScene(MAIN_SCENE_ID), actors: [...openScene(MAIN_SCENE_ID).actors, createActor("unsaved", "Unsaved Hero", { classId: "Hero" })],
+    }));
+    if (failRename) {
+      const write = OpfsStorageAdapter.prototype.writeBinary;
+      let fail = true;
+      const blocked = vi.spyOn(OpfsStorageAdapter.prototype, "writeBinary").mockImplementation(async function(this: OpfsStorageAdapter, path, bytes) {
+        if (path === MAIN_SCENE_FILE && fail) { fail = false; throw new Error("Scene write failed"); }
+        return write.call(this, path, bytes);
+      });
+      try { await act(async () => { await expect(actions.renameAsset(asset.header.guid, "Champion")).rejects.toThrow("Scene write failed"); }); }
+      finally { blocked.mockRestore(); }
+    } else await act(() => actions.renameAsset(asset.header.guid, "Champion"));
+    // Unmount without Close/Save to preserve the crash-recovery journal.
+    cleanup();
+    render(<DocumentProvider><Probe /></DocumentProvider>);
+    await waitFor(() => expect(documents().homepageReady).toBe(true));
+    const reopened = seen.actions!;
+    await act(() => reopened.openListedProject(handle));
+    act(() => reopened.keepRecovery());
+    await waitFor(() => expect(openScene(MAIN_SCENE_ID).actors.find(actor => actor.id === "unsaved")).toMatchObject({
+      name: "Unsaved Hero", classId: failRename ? "Hero" : "Champion",
+    }));
+    expect(openScene(MAIN_SCENE_ID).actors.find(actor => actor.id === "saved")?.classId).toBe(failRename ? "Hero" : "Champion");
+    expect(documents().dirtyDocuments.some(doc => doc.id === MAIN_SCENE_ID)).toBe(true);
+  });
+
+  it("waits for an in-flight save before renaming a Class used by that save", async () => {
+    const actions = await openProject();
+    const registry = documents().assetRegistry!;
+    const asset = await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "Class", name: "Hero" }));
+    act(() => actions.noteAssetsCreated());
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, {
+      ...openScene(MAIN_SCENE_ID), actors: [createActor("hero", "Hero", { classId: "Hero" })],
+    }));
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let started = false;
+    const original = ProjectService.prototype.saveDocument;
+    const save = vi.spyOn(ProjectService.prototype, "saveDocument").mockImplementation(async function(this: ProjectService, kind, path, content, options) {
+      if (path === MAIN_SCENE_FILE && !started) { started = true; await held; }
+      return original.call(this, kind, path, content, options);
+    });
+    try {
+      let saving!: Promise<boolean>;
+      act(() => { saving = actions.saveAll(); });
+      await waitFor(() => expect(started).toBe(true));
+      let renaming!: ReturnType<DocumentActions["renameAsset"]>;
+      act(() => { renaming = actions.renameAsset(asset.header.guid, "Champion"); });
+      await act(async () => { release(); await saving; await renaming; });
+      const saved = await actions.loadAssetDocument("scene", MAIN_SCENE_FILE) as SerializedScene;
+      expect(saved.actors.find(actor => actor.id === "hero")?.classId).toBe("Champion");
+      expect(openScene(MAIN_SCENE_ID).actors.find(actor => actor.id === "hero")?.classId).toBe("Champion");
+    } finally { release(); save.mockRestore(); }
+  });
+
+  it.each([false, true])("refuses Class renames when a referring scene is locked by another user (open: %s)", async (keepOpen) => {
+    const actions = await openProject();
+    const registry = documents().assetRegistry!;
+    const asset = await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "Class", name: "Hero" }));
+    act(() => actions.noteAssetsCreated());
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, {
+      ...openScene(MAIN_SCENE_ID), actors: [createActor("hero", "Hero", { classId: "Hero" })],
+    }));
+    await act(() => actions.saveAll());
+    if (!keepOpen) act(() => actions.closeDocument(MAIN_SCENE_ID));
+    const storage = new OpfsStorageAdapter();
+    const sceneBytes = await storage.readBinary(MAIN_SCENE_FILE);
+    const classBytes = await storage.readBinary(asset.path);
+    const fake = new FakeLockProvider();
+    fake.addTheirs(MAIN_SCENE_FILE, "Teammate");
+    await act(() => documents().sourceControl.configure({
+      settings: { ...DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, enabled: true }, projectGuid: documents().projectGuid,
+      platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake,
+    }));
+    await act(() => documents().sourceControl.refresh());
+    await act(async () => { await expect(actions.renameAsset(asset.header.guid, "Champion")).rejects.toThrow("Locked by Teammate"); });
+    expect(await storage.readBinary(MAIN_SCENE_FILE)).toEqual(sceneBytes);
+    expect(await storage.readBinary(asset.path)).toEqual(classBytes);
+    expect(await storage.exists("assets/Champion.class.babasset")).toBe(false);
+    expect(documents().assetRegistry!.getByGuid(asset.header.guid)?.path).toBe(asset.path);
   });
 
   it.each(["delete", "replace"] as const)("repairs nested data defaults in open documents during Class %s using live and saved schemas", async (operation) => {
