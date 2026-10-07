@@ -163,6 +163,7 @@ interface PlayContextValue {
   requestSimulate: () => Promise<void>;
   canSimulate: boolean;
   simulationUnavailableReason: string | null;
+  simulationDocumentId: string | null;
   registerSimulationViewport: (viewport: SimulationViewport) => () => void;
   playing: boolean;
   preparing: boolean;
@@ -478,6 +479,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const simulationUnavailableReason = !simulationDocument ? "Open a world Scene to simulate" :
     !simulationViewports.current.has(simulationDocument.id) ? "Open the Scene Viewport to simulate" :
     sessionState.quarantined ? "Reload the editor after the previous session release failure" : null;
+  const simulationDocumentId = simulationRef.current?.baseline.id ?? (sessionState.mode === "simulate" ? simulationDocument?.id ?? null : null);
   const canSimulate = simulationUnavailableReason === null && sessionOwner.canStart();
   void simulationViewportRevision;
   const playPhysics = playScene
@@ -1638,6 +1640,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       requestSimulate,
       canSimulate,
       simulationUnavailableReason,
+      simulationDocumentId,
       registerSimulationViewport,
       playing,
       preparing,
@@ -1674,6 +1677,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       requestSimulate,
       canSimulate,
       simulationUnavailableReason,
+      simulationDocumentId,
       registerSimulationViewport,
       playing,
       preparing,
