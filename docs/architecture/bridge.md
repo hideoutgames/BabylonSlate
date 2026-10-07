@@ -14,6 +14,13 @@ The internal `requestSimulate` path reuses Play preparation with an explicit ope
 
 Simulation's chrome acknowledges whole-session pause requests before showing the result, separates Game Input and Edit, and omits Step. The existing runtime host neutralizes input and freezes game progression; camera-only redraw remains a render-owner capability. The source Scene stays in the document working set while Simulation is active, and a global Stop/Return To Scene bar remains outside hidden document tabs. The existing Inspector/Outliner and transform tools use the runtime adapter below. Public launch/browser qualification remains tracked in the engineplan checkpoint; `__babylonslateSimulationTest` is test-only and never exported to players.
 
+Shared `@babylonslate/input` owns DOM input capture for editor Play and packaged
+Preview, including neutralization and fresh-transition admission. The correlated
+session-boundary client lives in `@babylonslate/bridge`; editor compatibility
+exports reuse it. Preview input ownership and pause requests validate source,
+origin and session identity without arming diagnostics. Capture waits for the
+acknowledged boundary and preserves independent lifecycle/user reasons.
+
 ## Transports
 
 | Path | When | Mechanism |

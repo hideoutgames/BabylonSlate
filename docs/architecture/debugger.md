@@ -259,6 +259,15 @@ transfer before detaching the iframe; a Preview with no diagnostic request does
 not load the diagnostics entry merely to stop. Transfer failures leave an
 explicit error and never substitute a partial profile.
 
+Preview's Profiler, Console and behaviour-tree surfaces share the exclusive DOM
+input owner. Opening one neutralizes keyboard, pointer, touch, virtual-stick and
+gamepad state; returning requires a fresh input transition. Ownership requests
+never start recording. Preview console pause reads the actual correlated input
+reset/pause boundary, and lifecycle pause owns a separate reason. Frame Capture
+waits for that acknowledgement before requesting a render-only frame; failure
+keeps the hold and displays the error.
+
+
 ### Profiler and Frame Debugger use
 
 Open **Profiler** from Debug or session chrome, then explicitly start a Performance

@@ -302,6 +302,11 @@ prepared authoring metadata; native objects, getters, cyclic property data,
 unknown resources, and missing references cause named failures. The normal scene
 codec may add defaults but must not discard or repair a captured value.
 
+Typed asset references validate against known authoring identities without eagerly
+loading deferred assets. Concrete material/resource state and Structure/Enum
+schemas still require their current owned source metadata; a catalog GUID alone
+cannot prove a runtime-generated resource is persistable.
+
 The initial capture boundary rejects a changed root scene identity, independent
 streamed Scene or SceneLayer instances (including empty instances), ambiguous
 runtime identities, Dynamic Runtime Mesh geometry, and material owners whose final
