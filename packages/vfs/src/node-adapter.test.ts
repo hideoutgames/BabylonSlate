@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -25,6 +25,25 @@ describe("node storage adapter", () => {
     await storage.writeBinary("assets/.blobs/abc", bytes);
     expect(await storage.readBinary("assets/.blobs/abc")).toEqual(bytes);
     expect((await storage.listProjects())[0]?.name).toBe("Game.babproject");
+  });
+
+  it("reads only the requested bytes and rejects a replaced source revision", async () => {
+    dir = await mkdtemp(join(tmpdir(), "babylonslate-range-"));
+    const storage = new NodeStorageAdapter(dir);
+    await storage.openDocumentsProject("Game");
+    const bytes = new Uint8Array(1024 * 1024);
+    bytes.set([4, 5, 6], 32);
+    await storage.writeBinary("large.babasset", bytes);
+    const prefix = await storage.readBinaryRange("large.babasset", 32, 3);
+    expect(prefix.bytes).toEqual(new Uint8Array([4, 5, 6]));
+    expect(prefix.totalSize).toBe(1024 * 1024);
+    expect(storage.getReadMetrics()).toMatchObject({ actualBytesRead: 3, fullReads: 0 });
+    await writeFile(join(dir, "Game", "replacement"), bytes);
+    await rename(join(dir, "Game", "replacement"), join(dir, "Game", "large.babasset"));
+    await expect(storage.readBinaryRange("large.babasset", 32, 3, prefix.revision)).rejects.toThrow(/revision/i);
+    await expect(storage.readBinaryRange("large.babasset", bytes.length, 1)).rejects.toThrow(/range/i);
+    await expect(storage.readBinaryRange("large.babasset", -1, 1)).rejects.toThrow(/range/i);
+    expect(storage.getReadMetrics().actualBytesRead).toBe(3);
   });
 
   it("opens an absolute folder outside the documents base", async () => {

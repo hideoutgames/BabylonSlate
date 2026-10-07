@@ -53,6 +53,7 @@ const JSON_TYPES = new Set<string>([
   ...PARTICLE_ASSET_TYPES,
   "Water",
   "Animation",
+  "Skeleton",
   "SceneLayer",
 ]);
 

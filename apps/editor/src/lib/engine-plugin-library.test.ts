@@ -109,6 +109,7 @@ describe("EnginePluginLibrary", () => {
     await store.remove("user-guid");
     expect((await discoverEnginePlugins(captured)).find((entry) => entry.pluginGuid === "user-guid"))
       .toMatchObject({ settings: { enabledByDefault: true } });
+    expect(await captured.readText("user-pack/assets/data.txt")).toBe("original");
     const reloaded = new EnginePluginLibrary(bundled, saved);
     expect((await reloaded.list()).map((entry) => entry.pluginGuid)).toEqual(["bundled-guid"]);
     await expect(captured.writeText("user-pack/assets/data.txt", "changed"))
@@ -131,5 +132,39 @@ describe("EnginePluginLibrary", () => {
     expect(await store.list()).toMatchObject([
       { pluginGuid: "bundled-guid", enabledByDefault: true },
     ]);
+  });
+
+  it("lists and captures imported plugins without reading content until a snapshot requests it", async () => {
+    const { bundled, saved, library: store } = await library();
+    await store.import(await archive("user-guid", "User Pack"));
+    const savedRead = vi.spyOn(saved, "readBinary");
+    const bundledRead = vi.spyOn(bundled, "readBinary");
+    expect(await store.list()).toHaveLength(2);
+    const snapshot = await store.createStorageSnapshot();
+    expect(savedRead.mock.calls.some(([path]) => path.startsWith("content/"))).toBe(false);
+    expect(bundledRead.mock.calls.some(([path]) => path.startsWith("bundled/assets/"))).toBe(false);
+    expect(await snapshot.readText("user-pack/assets/data.txt")).toBe("original");
+    expect(savedRead.mock.calls.some(([path]) => path.endsWith("/assets/data.txt"))).toBe(true);
+  });
+
+  it("keeps the old snapshot usable after a replacement publishes a new generation", async () => {
+    const { library: store } = await library();
+    await store.import(await archive("user-guid", "User Pack"));
+    const original = await store.createStorageSnapshot();
+    await store.import(await archive("user-guid", "User Pack", "replacement"), { replaceGuid: "user-guid" });
+    expect(await original.readText("user-pack/assets/data.txt")).toBe("original");
+    expect(await (await store.createStorageSnapshot()).readText("user-pack/assets/data.txt")).toBe("replacement");
+  });
+
+  it("detects legacy archives without reading them and upgrades only through the explicit operation", async () => {
+    const { saved, library: store } = await library();
+    await saved.writeBinary("legacy.babplugin", await archive("legacy-guid", "Legacy Pack"));
+    const reads = vi.spyOn(saved, "readBinary");
+    await expect(store.list()).rejects.toMatchObject({ code: "engine-plugin-library-upgrade-required" });
+    expect(reads.mock.calls.some(([path]) => path.endsWith(".babplugin"))).toBe(false);
+    expect(await store.upgradeLegacyArchives()).toBe(1);
+    expect(await saved.exists("legacy.babplugin")).toBe(false);
+    expect((await store.list()).some((entry) => entry.pluginGuid === "legacy-guid")).toBe(true);
+    expect(await (await store.createStorageSnapshot()).readText("legacy-pack/assets/data.txt")).toBe("original");
   });
 });

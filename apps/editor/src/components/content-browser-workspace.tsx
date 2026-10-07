@@ -21,6 +21,7 @@ import {
   FolderIcon,
   FolderInputIcon,
   FolderPlusIcon,
+  ImageIcon,
   LinkIcon,
   ListFilterIcon,
   PaintbrushIcon,
@@ -65,7 +66,8 @@ import {
   type TypeVisual,
   type TreeDropPlacement,
 } from "@babylonslate/editor-kit";
-import { enqueueModelThumbnailJobs } from "../lib/model-thumbnail-queue";
+import { enqueueModelThumbnailJobs, type ModelThumbnailJob } from "../lib/model-thumbnail-queue";
+import { createAssetThumbnailRevisionIndex } from "../lib/asset-thumbnail-revision";
 import { AssetReferenceDialog } from "./asset-reference-dialog";
 import { classAssetReference, classDeletionCandidates, validateClassDeletionReplacements } from "../lib/class-deletion";
 import { openOrFocusAssetDocument } from "../lib/open-asset-document";
@@ -285,6 +287,7 @@ function ContentBrowserWorkspaceBody({
     if (hidden || !phone) setFoldersOpen(false);
   }, [hidden, phone]);
   const {
+    projectGuid,
     projectDocument,
     assetRegistry,
     registryEpoch,
@@ -1042,6 +1045,32 @@ function ContentBrowserWorkspaceBody({
         },
       },
       {
+        id: "generate-thumbnail" as const,
+        label: "Generate Thumbnail",
+        icon: <ImageIcon />,
+        onSelect: () => {
+          if (!assetRegistry || !projectGuid || !thumbnailsEnabled) return;
+          const guids = [...menuTargetGuidsRef.current];
+          const revisions = createAssetThumbnailRevisionIndex(
+            assetRegistry.list(), projectDocument?.settings.twoD?.pixelsPerUnit,
+          );
+          void (async () => {
+            const jobs: ModelThumbnailJob[] = [];
+            for (const guid of guids) {
+              const asset = assetRegistry.getByGuid(guid);
+              if (!asset) continue;
+              const type = asset.header.type;
+              if (type !== "Model" && type !== "Animation" && type !== "Material" && type !== "Class" && type !== "Graph") continue;
+              jobs.push({
+                guid, path: asset.path, type, payload: asset.header.payload,
+                projectGuid, cacheKey: await revisions.cacheKey(guid) ?? `${guid}.render-v2`,
+              });
+            }
+            enqueueModelThumbnailJobs(jobs);
+          })().catch((error) => setImportErrors([error instanceof Error ? error.message : String(error)]));
+        },
+      },
+      {
         id: "import-msdf-atlas" as const,
         label: "Import MSDF Atlas…",
         icon: <FileInputIcon />,
@@ -1239,6 +1268,9 @@ function ContentBrowserWorkspaceBody({
     ],
     [
       assetRegistry,
+      projectGuid,
+      projectDocument,
+      thumbnailsEnabled,
       openMoveForSnapshot,
       openOrFocusDocument,
       referenceAssets,
@@ -1975,6 +2007,13 @@ function ContentBrowserWorkspaceBody({
         contentBrowserContextActions({
           assetCount: guids.length,
           folderCount: folders.length,
+          canGenerateThumbnails: Boolean(projectGuid && thumbnailsEnabled) && guids.every((guid) => {
+            const asset = assetRegistry?.getByGuid(guid);
+            if (!asset) return false;
+            const type = asset.header.type;
+            return type === "Model" || type === "Animation" || type === "Material" ||
+              ((type === "Class" || type === "Graph") && classDocumentShowsPrefab(asset.header.parentClass, classParentOf, { assetType: type }));
+          }),
           singleAssetType:
             guids.length === 1 && folders.length === 0
               ? assetRegistry?.getByGuid(guids[0]!)?.header.type
@@ -1988,7 +2027,7 @@ function ContentBrowserWorkspaceBody({
           ),
         }),
       ),
-    [assetRegistry],
+    [assetRegistry, classParentOf, projectGuid, thumbnailsEnabled],
   );
 
   const openSelectionMenu = useCallback(
@@ -2020,7 +2059,9 @@ function ContentBrowserWorkspaceBody({
       const actionIds = selectionActionIds(guids, folders);
       const items: ContextMenuItem[] = tileContextItems.filter((item) =>
         actionIds.has(item.id),
-      );
+      ).map((item) => item.id === "generate-thumbnail"
+        ? { ...item, label: guids.length === 1 ? "Generate Thumbnail" : "Generate Thumbnails" }
+        : item);
       const deleteIndex = items.findIndex((item) => item.id === "delete");
       if (deleteIndex > 0)
         items.splice(deleteIndex, 0, { type: "separator", id: "delete-separator" });

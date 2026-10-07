@@ -445,9 +445,25 @@ Compiled Class bundles include the merged prefab component templates, including 
 
 Class variable connections retain their declared ancestry when the graph editor regenerates pins: a Class constrained to an Actor subclass can feed Spawn Actor. Unrelated classes and implicit downcasts remain incompatible.
 
-Normal Play includes compiled prefab components in resource discovery, so an unplaced class can spawn with its models, materials, textures, sprites, animation graphs, behaviour trees, tilemaps, and fonts. These dependency records only feed the content collectors; they do not add actors to the scene or World.
+**Spawn Actor** is latent: `ctx.spawnActorAsync(classId, transform)` prepares the selected Class and its required resources before spawning an independent actor. Its temporary ownership transfers to the actor and releases on destruction. Class registration uses a lightweight class-ID/GUID catalog; an unspawned prefab does not load its resource library. `ctx.spawnActor` remains synchronous for already-prepared resources and reports a cold-load error when preparation is needed. **Create Scene Layer** likewise awaits `ctx.createSceneLayerAsync`, source preparation and the existing layer readiness acknowledgement; the layer owns those resources until removal.
 
 `shouldSpawnScriptedActor` skips `GameInstance`, `FunctionLibrary`, `EditorUtilityObject`, `EditorFunctionLibrary`, `SceneLayer`, `Scene`, and `Scene:{guid}` when handling explicit bridge spawn requests; loading their scripts never creates Actors. Spawn also refuses classes whose nearest engine base has kind `object` or `gameInstance` (subsystems included), reading the kind from that engine base because a reparented class keeps its registration-time kind. `spawnActor` also returns null for `SceneLayerActor` and subclasses — overlay actors come from SceneLayer documents / Create Scene Layer, not the world Spawn Actor node.
+
+**Set Material Instance** and **Set Material Texture Parameter** await `ctx.setMeshMaterialAsync` and `ctx.setMaterialTextureParameterAsync`. They keep the previous value while the replacement prepares, and failed or superseded requests cannot overwrite a newer value. Their synchronous scripting counterparts accept prepared assets. Repeated automatic requests share ownership for their consuming object; the scope releases when that owner is destroyed. Multi-asset preparation fails as a unit and releases partial acquisition.
+
+Console command names and parameters are registered from the Class catalog without reading command graphs. The console host and **Execute Console Command** node await `executeConsoleCommandAsync` to prepare the selected Class and its required dependencies. Invocation ownership lasts through asynchronous command completion; stopping the session cancels pending preparation. `executeConsoleCommand` remains available for prepared commands and built-in operations.
+
+### Asset preloading
+
+Ordinary authored references load through their consuming actors/components. Explicit preloads provide predictable timing without exposing low-level cache leases.
+
+| Node | Script API and result |
+| --- | --- |
+| Preload Assets | `await ctx.preloadAssets(guids, { sessionWide?, onProgress? })`; Completed/Failed, Preload handle, Progress and Error outputs |
+| Release Preload | `ctx.releasePreload(handle)`; drops this preload's ownership only |
+| Get Asset Load State | `ctx.getAssetLoadState(guid)`; `unloaded`, `loading`, `ready` or `failed` |
+
+Preloads follow the calling runtime object or scene unless Session Wide is selected. Destroying that owner or stopping Play cancels pending requests and releases completed ownership; shared live resources remain valid. Readiness comes from the content host after runtime preparation, not merely byte transfer. Failures identify the asset/consumer and remain retryable. Scene loading continues to use the existing Scene Streaming nodes.
 
 ### Scene streaming nodes
 
@@ -468,7 +484,7 @@ Blocking operations keep realization and resource preparation running while game
 - **Get Scene Reference** from a streamed owner returns that instance's Scene. Setting its Gravity still writes the session's single world physics gravity.
 - A failed or cancelled **Load Scene Blocking** / **Unload Scene Blocking** reports an error, stops that graph at the node, and does not fire **Then**. Async variants report the error and continue immediately.
 
-The nodes realize actors and render resources from the prepared Play/player Scene library; source Scene assets and their dependencies are loaded before these calls. Child Scene Defaults, baked navigation and default SceneLayers do not replace or extend the parent's settings automatically. See [runtime ownership and preparation](render.md#additive-scene-streaming).
+The nodes acquire the requested Scene document and required source dependencies on demand, then prepare runtime resources before publishing Loaded. Child Scene Defaults, baked navigation and default SceneLayers do not replace or extend the parent's settings automatically. See [runtime ownership and preparation](render.md#additive-scene-streaming).
 
 ### Subsystems
 
@@ -693,6 +709,8 @@ Internal entry IDs remain stable through rename, move and undo. Graphs and scrip
 
 **Read Data Entry** (Get Data) takes a Data Tree and **Entry Path**, and returns typed **Value** plus **Found**. Selecting a known entry infers its effective Data Definition, including branch overrides. Both inline and Inspector defaults offer the tree's paths; no selected tree or a dynamically wired tree uses a normal string input. Missing paths stay visible for repair. A dynamically computed path requires an expected Definition: the read checks it internally and returns Found=false on mismatch, without a separate cast node.
 
+Fixed Tree literals on synchronous data nodes are required dependencies of their consuming Class. **Read Data Entry Async** / `ctx.readDataEntryAsync(tree, path, definitionGuid)` handles a dynamically selected cold Tree: it prepares the Tree and schema under the caller's ownership, then returns a detached value. The visual node exposes Completed/Failed, Found and Error. Existing `ctx.data` reads remain synchronous for prepared content; Preload Assets also prepares a dynamic Tree for those reads.
+
 Definitions behave as typed records in graph variables, member values and function signatures. **Make [Definition] Data** builds one; **Break [Definition] Data** exposes its fields. Generic Structures remain available for other scripting tasks; Data Definitions need no Structure asset. Definition typing also refreshes in Animation Object and transition-rule graphs. Graph literal reconciliation preserves stable field renames and diagnoses missing/incompatible values without adopting new defaults during hydration.
 
 **Get Data Children**, **Get Data Descendants** and **Get Data Parent** navigate the hierarchy using paths and return Found. Children/Descendants accept the empty root path; a valid empty branch returns `[]` with Found=true. A top-level entry's parent is the empty root path. Grouping entries remain navigable even though they have no typed value.
@@ -708,7 +726,7 @@ Runtime `ctx.data` provides:
 | `getDescendants(tree, parentPath = "")` | Descendant paths in preorder, excluding the parent |
 | `getParent(tree, path)` | Parent path, or `null` for an unknown entry/root |
 
-The session catalog validates topology and builds hierarchy/path indexes once. Bad topology rejects the tree; invalid values or schemas fail the affected entry's read while valid siblings and hierarchy navigation remain available. Branch on Found before consuming Value; failed reads return `null`. Gameplay edits to returned values never rewrite authored data. Restart Play to load authoring changes. Worker/in-process Play and loose/packed players use the same catalog.
+The session catalog validates topology and builds hierarchy/path indexes when a source scope is prepared; replacing the owned source union removes released trees. Bad topology rejects the tree; invalid values or schemas fail the affected entry's read while valid siblings and hierarchy navigation remain available. Branch on Found before consuming Value; failed reads return `null`. Gameplay edits to returned values never rewrite authored data. Restart Play to load authoring changes. Worker/in-process Play and loose/packed players use the same catalog.
 
 Asset pickers inside NodeGraph nodes omit Open Asset. Inspector/default value pickers retain it.
 

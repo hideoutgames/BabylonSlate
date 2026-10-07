@@ -7,6 +7,7 @@ import {
 } from "./babasset";
 import type { BlobStore } from "./blob-store";
 import { stableStringify } from "./bytes";
+import { collectAssetDependencyMetadata, type AssetDependencyContext, type AssetDependencyMetadata } from "./asset-dependencies";
 
 /** Editor documents keep their JSON body in one chunk so headers stay cheap to scan. */
 export const DOCUMENT_CHUNK_ID = "document";
@@ -53,6 +54,8 @@ export async function encodeAssetDocument(
     headerMeta?: Record<string, unknown>;
     /** Outbound asset guids stored on the scanned header. */
     dependencies?: readonly string[];
+    dependencyContext?: AssetDependencyContext;
+    dependencyMetadata?: AssetDependencyMetadata;
   } = {},
 ): Promise<Uint8Array> {
   const body = new TextEncoder().encode(stableStringify(document.payload));
@@ -60,7 +63,11 @@ export async function encodeAssetDocument(
   const storeInHeader = options.headerPayload !== undefined;
   return encodeBabasset({
     header: {
-      dependencies: [...(options.dependencies ?? [])],
+      ...(options.dependencyMetadata ?? collectAssetDependencyMetadata(document.type, document.payload, {
+        ...options.dependencyContext,
+        parentClass: options.parentClass,
+        dependencies: options.dependencies,
+      })),
       engineVersion: options.engineVersion ?? "0.0.0",
       guid: document.guid,
       mode: "thin",

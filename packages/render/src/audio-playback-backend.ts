@@ -28,6 +28,8 @@ export type AudioPlayRequest = {
   spatial?: AudioSpatialPlayOptions | null;
   reverbSend: boolean;
   clipChunkId?: string;
+  /** Exact decoded source generation; asset identity stays available for diagnostics. */
+  cacheKey?: string;
 };
 
 export interface AudioPlaybackBackend {
@@ -36,6 +38,7 @@ export interface AudioPlaybackBackend {
   unlockAsync(): Promise<void>;
   isUnlocked(): boolean;
   decode(assetGuid: string, bytes: Uint8Array): Promise<{ pcmBytes: number }>;
+  estimateDecodedBytes?(bytes: Uint8Array): number;
   play(request: AudioPlayRequest): Promise<void>;
   stop(voiceId: string): void;
   setVoiceGain(voiceId: string, gain: number): void;
@@ -93,6 +96,8 @@ export class FakeAudioPlaybackBackend implements AudioPlaybackBackend {
   async decode(_assetGuid: string, bytes: Uint8Array): Promise<{ pcmBytes: number }> {
     return { pcmBytes: bytes.byteLength };
   }
+
+  estimateDecodedBytes(bytes: Uint8Array): number { return bytes.byteLength; }
 
   async play(request: AudioPlayRequest): Promise<void> {
     this.plays.push(request);

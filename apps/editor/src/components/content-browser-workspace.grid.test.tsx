@@ -11,6 +11,7 @@ import {
 import type { IndexedAsset } from "@babylonslate/assets";
 import { createDefaultPluginSettings, projectContentRoot } from "@babylonslate/assets";
 import { ContentBrowserWorkspace } from "./content-browser-workspace";
+import { subscribeModelThumbnailJobs, type ModelThumbnailJob } from "../lib/model-thumbnail-queue";
 import {
   CONTENT_BROWSER_GRID_GAP_PX,
   CONTENT_BROWSER_GRID_PAD_PX,
@@ -22,6 +23,7 @@ const { docs, loadAssetThumbnail, layout } = vi.hoisted(() => {
   const loadAssetThumbnail = vi.fn<(guid: string) => Promise<Uint8Array | null>>()
     .mockResolvedValue(new Uint8Array([1, 2, 3]));
   const docs = {
+    projectGuid: "thumbnail-project",
     projectDocument: { settings: {
       pluginOverrides: {},
       gameInstanceClass: null as string | null,
@@ -755,6 +757,35 @@ describe("ContentBrowserWorkspace grid window", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(loadAssetThumbnail).not.toHaveBeenCalled();
+  });
+
+  it("generates only explicitly selected thumbnails without capturing merely browsed assets", async () => {
+    const selected = [texture(0), texture(1)];
+    selected[0]!.header.type = "Material";
+    selected[1]!.header.type = "Class";
+    selected[1]!.header.parentClass = "Actor";
+    const unselected = texture(2);
+    unselected.header.type = "Model";
+    installRegistry([...selected, unselected]);
+    loadAssetThumbnail.mockResolvedValue(null);
+    const jobs: ModelThumbnailJob[] = [];
+    const unsubscribe = subscribeModelThumbnailJobs((batch) => jobs.push(...batch));
+    try {
+      render(<ContentBrowserWorkspace />);
+      await waitFor(() => expect(loadAssetThumbnail).toHaveBeenCalledWith(unselected.header.guid));
+      expect(jobs).toEqual([]);
+      fireEvent.click(screen.getByTestId(`content-item-${selected[0]!.path}`));
+      fireEvent.click(screen.getByTestId(`content-item-${selected[1]!.path}`), { ctrlKey: true });
+      fireEvent.contextMenu(screen.getByTestId(`content-item-${selected[1]!.path}`));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Generate Thumbnails" }));
+      await waitFor(() => expect(jobs).toHaveLength(2));
+      expect(jobs.map(({ guid }) => guid)).toEqual(selected.map(({ header }) => header.guid));
+      expect(jobs.every((job) => job.projectGuid === docs.projectGuid && job.cacheKey?.includes(".preview-v1."))).toBe(true);
+      expect(docs.loadAssetDocument).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+      loadAssetThumbnail.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    }
   });
 
   it.each([["Model", "Animation"], ["Material", "Class"]])("shows %s and %s thumbnails when capture finishes, then replaces recaptures", async (firstType, secondType) => {

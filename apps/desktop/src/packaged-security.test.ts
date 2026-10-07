@@ -43,4 +43,13 @@ describe("packaged renderer boundary", () => {
       ["lfs:fetch", [{ url: "file:///secret" }]], ["unknown", []],
     ] as Array<[string, unknown[]]>) expect(() => validateIpcArguments(channel, args)).toThrow();
   });
+  it("validates positioned reads before native allocation", () => {
+    expect(() => validateIpcArguments("project:readBinaryRange", ["asset.babasset", 12, 24, "revision"])).not.toThrow();
+    for (const args of [
+      ["../asset.babasset", 0, 1, undefined], ["asset.babasset", -1, 1, undefined],
+      ["asset.babasset", 0.5, 1, undefined], ["asset.babasset", 0, Infinity, undefined],
+      ["asset.babasset", 0, 1024 * 1024 * 1024, undefined], ["asset.babasset", Number.MAX_SAFE_INTEGER, 1, undefined],
+      ["asset.babasset", 0, 1, {}],
+    ]) expect(() => validateIpcArguments("project:readBinaryRange", args)).toThrow();
+  });
 });

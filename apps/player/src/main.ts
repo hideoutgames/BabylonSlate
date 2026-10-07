@@ -8,8 +8,8 @@ import { startPlayerWithBackend } from "./player-backend";
 import type { PlayerTestHandle } from "./boot";
 import { mountPlayerHud, mountPlayerDebuggerOverlays } from "./hud";
 import { applyPlayerLayout } from "./layout";
-import { registerPackedFonts } from "./fonts";
 import {
+  createPreviewAssetClient,
   PREVIEW_CONSOLE_REQUEST_MESSAGE,
   PREVIEW_CONSOLE_RESULT_MESSAGE,
   PREVIEW_CONSOLE_EVENT_MESSAGE,
@@ -70,22 +70,31 @@ function layoutFromManifest(manifest: GameManifest): void {
   });
 }
 
-async function launchFromFiles(files: Map<string, Uint8Array>, traceByteBudget?: number): Promise<void> {
-  const game = await loadGameFromFiles(files);
-  await launchLoaded(game, traceByteBudget);
+async function launchFromFiles(files: Map<string, Uint8Array>, traceByteBudget?: number, onDemand = false): Promise<void> {
+  const source = onDemand ? createPreviewAssetClient({ send: message => window.parent.postMessage(message, previewHostOrigin) }) : undefined;
+  const receive = (event: MessageEvent) => {
+    if (isExpectedPreviewHostMessage(event, window.parent, previewHostOrigin)) source?.receive(event.data);
+  };
+  if (source) window.addEventListener("message", receive);
+  const release = () => { source?.dispose(); window.removeEventListener("message", receive); };
+  startupAbort.signal.addEventListener("abort", release, { once: true });
+  try {
+    const game = await loadGameFromFiles(files, { signal: startupAbort.signal, readFile: source?.readFile });
+    const dispose = game.dispose;
+    game.dispose = () => { try { dispose?.(); } finally { startupAbort.signal.removeEventListener("abort", release); release(); } };
+    try { await launchLoaded(game, traceByteBudget); } catch (error) { game.dispose(); throw error; }
+  } catch (error) { startupAbort.signal.removeEventListener("abort", release); release(); throw error; }
 }
 
 async function launchFromHttp(): Promise<void> {
-  const game = await loadGameFromHttp(document.baseURI);
-  await launchLoaded(game);
+  const game = await loadGameFromHttp(document.baseURI, fetch, startupAbort.signal);
+  try { await launchLoaded(game); } catch (error) { game.dispose?.(); throw error; }
 }
 
 async function launchLoaded(
   game: Awaited<ReturnType<typeof loadGameFromFiles>>,
   traceByteBudget?: number,
 ): Promise<void> {
-  startupAbort.signal.throwIfAborted();
-  await registerPackedFonts(game.fontBytes, undefined, game.fontFamilies);
   startupAbort.signal.throwIfAborted();
   const canvas = canvasEl();
   let runtimeRender = game.manifest.render;
@@ -361,7 +370,7 @@ if (previewMode()) {
     // The host may resend the pack until it sees the player boot; ignore repeats.
     if (launched) return;
     launched = true;
-    void launchFromFiles(filesFromPreviewPack(pack), pack.traceByteBudget).catch(bootFailure);
+    void launchFromFiles(filesFromPreviewPack(pack), pack.traceByteBudget, pack.onDemand).catch(bootFailure);
   });
   // Ask only once the listener above exists. Waiting for the parent's iframe
   // `load` event alone raced module evaluation and silently dropped the pack.

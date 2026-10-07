@@ -4,7 +4,7 @@ export type ModelThumbnailJob = {
   payload: Record<string, unknown>;
   type?: "Model" | "Animation" | "Material" | "Class" | "Graph";
   onlyIfMissing?: boolean;
-  /** Identity captured when the visible tile requested this saved asset. */
+  /** Saved asset identity captured when generation was requested. */
   cacheKey?: string;
   projectGuid?: string;
 };

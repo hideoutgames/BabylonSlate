@@ -2,7 +2,6 @@ import { expect, test } from "@playwright/test";
 import { loadPlayerDistFiles } from "../apps/editor/src/services/load-player-files";
 import { DEFAULT_RENDER_PROJECT_SETTINGS } from "../packages/core/src/index.ts";
 import {
-  BOOT_PACK_FILE,
   exportGame,
   GAME_MANIFEST_FILE,
   parseGameManifest,
@@ -47,7 +46,10 @@ async function packTinyGame(playerBaseURL: string) {
   expect(packed.ok).toBe(true);
   if (!packed.ok) throw new Error(packed.error);
   expect(packed.value.files.has("index.html")).toBe(true);
-  expect(packed.value.files.has(BOOT_PACK_FILE)).toBe(true);
+  const source = packed.value.manifest.assets.find(asset => asset.guid === "scene-guid-export");
+  expect(source?.path).toBeTruthy();
+  expect(packed.value.files.get(source!.path!)).toEqual(new TextEncoder().encode(JSON.stringify(scene)));
+  expect(packed.value.manifest.packs).toEqual([]);
   expect(packed.value.manifest.startupSceneGuid).toBe("scene-guid-export");
   expect(packed.value.fileCount).toBeLessThan(800);
   expect(
@@ -72,6 +74,8 @@ test.describe("P14 export smoke", () => {
     );
     expect(manifest.startupSceneGuid).toBe("scene-guid-export");
     expect(manifest.mode).toBe("packed");
+    const startupPath = manifest.assets.find(asset => asset.guid === manifest.startupSceneGuid)!.path!;
+    expect(unzipped[startupPath]).toEqual(artifact.files.get(startupPath));
 
     const files = new Map<string, Uint8Array>();
     for (const [path, bytes] of Object.entries(unzipped)) {
@@ -121,6 +125,9 @@ test.describe("P14 export smoke", () => {
             { timeout: 20_000 },
           )
           .toEqual(EXPECTED_PREVIEW_ACTOR_POSITIONS);
+        expect(server.requests.filter(request => request.path === startupPath)).toEqual([
+          { path: startupPath, status: 200, range: null, bytes: unzipped[startupPath]!.byteLength },
+        ]);
       } finally {
         await server.close();
       }

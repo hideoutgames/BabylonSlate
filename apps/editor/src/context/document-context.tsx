@@ -49,11 +49,14 @@ import {
   replaceClassAssetReferences,
   type ClassAssetReplacement,
   type AssetRegistry,
+  type AssetLoadScope,
+  type AssetLoadPriority,
+  type AssetLoadState,
   type MigrationPending,
   type PluginDescriptor,
   type PluginDiagnostic,
   type ProjectSearchIndex,
-  type ProjectTemplate,
+  type ProjectTemplateCatalogEntry,
   type SpriteAnimationPayload,
   type SpritePayload,
   type TilemapPayload,
@@ -133,7 +136,7 @@ import { ensureEnginePluginStorage, lastEnginePluginLoad } from "../lib/engine-p
 import { ensureEngineExtensionStorage } from "../lib/engine-extensions";
 import { ensureEngineExtensionLibrary } from "../lib/engine-extension-library";
 import { ensureEnginePluginLibrary } from "../lib/engine-plugin-library";
-import { loadTemplateCards } from "../services/template-service";
+import { loadTemplateCards, loadSelectedTemplateFiles } from "../services/template-service";
 import {
   compileAnimGraphScripts,
   compileGraphDocuments,
@@ -152,7 +155,7 @@ import {
   zipGameArtifact,
 } from "../services/export-game";
 import { loadExportDocuments } from "../services/export-game-inputs";
-import { collectFontAssetEntries, collectFontCssStacks, collectFontFacetypeBytes, collectFontMsdfPair } from "../lib/play-fonts";
+import { collectFontAssetEntries, collectFontCssStacks, collectFontFacetypeBytes, collectFontMsdfPair, fontGuidsForSceneRepresentation } from "../lib/play-fonts";
 import { loadPlayerDistFiles } from "../services/load-player-files";
 import { collectAudioReverbFlushScenes, flushAudioReverbForSave } from "../lib/audio-reverb-bake";
 import {
@@ -271,7 +274,6 @@ import {
   sceneLayerGuidsFromGraphs,
   materialGuidsFromGraphs,
   overlayEditorScenesFromLayers,
-  playFontGuidsFromScenes,
   type PlayAnimGraphEntry,
   type PlayBehaviourTreeEntry,
   type PlayBlackboardEntry,
@@ -424,7 +426,7 @@ interface DocumentContextValue {
   dirtyDocuments: OpenDocument[];
   projectDirty: boolean;
   migrationPending: MigrationPending[];
-  templates: ProjectTemplate[];
+  templates: ProjectTemplateCatalogEntry[];
   homepageReady: boolean;
   refreshTemplates: () => Promise<void>;
   openProject: (source?: "folder" | "zip") => Promise<void>;
@@ -507,8 +509,11 @@ interface DocumentContextValue {
     next: Record<string, unknown>,
     mergeKey?: string,
   ) => Promise<boolean>;
+  /** Scene, runtime object, and explicit preload ownership. */
+  createAssetLoadScope: (owner: string) => AssetLoadScope;
+  getAssetLoadState: (guid: string) => AssetLoadState;
   /** Font source / other binary chunks. */
-  readAssetChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>;
+  readAssetChunk: (path: string, chunkId: string, options?: { ownerDocumentId?: string; scope?: AssetLoadScope; signal?: AbortSignal; priority?: AssetLoadPriority }) => Promise<Uint8Array | null>;
   writeAudioClipChunk: (
     path: string,
     chunkId: string,
@@ -567,8 +572,8 @@ interface DocumentContextValue {
   writeAssetThumbnail: (assetGuid: string, bytes: Uint8Array, expected?: AssetThumbnailWriteIdentity) => Promise<void>;
   thumbnailVersions: Readonly<Record<string, number>>;
   thumbnailsEnabled: boolean;
-  /** Compile and validate every project graph for the Play prepare path. */
-  collectPlayPreviewScripts: () => Promise<{
+  /** Compile requested Play graphs, or every graph for explicit project compilation. */
+  collectPlayPreviewScripts: (requiredGuids?: ReadonlySet<string>) => Promise<{
     bundles: ScriptBundleEntry[];
     diagnostics: Diagnostic[];
   }>;
@@ -577,7 +582,7 @@ interface DocumentContextValue {
     kind: AssetDocumentKind,
     path: string,
   ) => Promise<unknown | null>;
-  /** AnimationGraphs referenced by the Play scene (plus any open graph tabs). */
+  /** AnimationGraphs referenced by the Play scene; open tabs override only required graphs. */
   collectPlayAnimGraphs: (
     scene?: SerializedScene | null,
     extraScenes?: readonly SerializedScene[],
@@ -601,9 +606,9 @@ interface DocumentContextValue {
     graphs: readonly PlayAnimGraphEntry[],
     trees?: readonly PlayBehaviourTreeEntry[],
   ) => Promise<Map<string, SpriteAnimationPayload>>;
-  collectPlayWaterContent: () => Promise<Map<string, WaterDefinition>>;
-  collectPlayDataAssets: () => Promise<import("@babylonslate/core").DataAssetCatalogEntry[]>;
-  collectPlayRenderTargets: () => Promise<{ renderTargets: Map<string, RenderTargetPayload>; renderTargetTextures: Map<string, RenderTargetTexturePayload> }>;
+  collectPlayWaterContent: (requiredGuids?: ReadonlySet<string>) => Promise<Map<string, WaterDefinition>>;
+  collectPlayDataAssets: (requiredGuids?: ReadonlySet<string>) => Promise<import("@babylonslate/core").DataAssetCatalogEntry[]>;
+  collectPlayRenderTargets: (requiredGuids?: ReadonlySet<string>) => Promise<{ renderTargets: Map<string, RenderTargetPayload>; renderTargetTextures: Map<string, RenderTargetTexturePayload> }>;
   collectPlayTilemapContent: (
     scene?: SerializedScene | null,
     extraScenes?: readonly SerializedScene[],
@@ -637,7 +642,7 @@ interface DocumentContextValue {
     extraScenes?: readonly SerializedScene[],
   ) => Promise<Map<string, { json: Uint8Array; png: Uint8Array }>>;
   /** FontFace source bytes for Bitmap 2D Text. */
-  collectPlayFontFaceEntries: () => Promise<
+  collectPlayFontFaceEntries: (requiredGuids?: ReadonlySet<string>) => Promise<
     import("@babylonslate/render").FontAssetEntry[]
   >;
   /** Compiled CSS stacks for Bitmap overlay 2D Text. */
@@ -649,6 +654,7 @@ interface DocumentContextValue {
   collectPlayModelBytes: (
     scene?: SerializedScene | null,
     extraScenes?: readonly SerializedScene[],
+    requiredGuids?: ReadonlySet<string>,
   ) => Promise<Map<string, Uint8Array>>;
   /** Model material slots for Play and the editor viewport. */
   collectPlayModelPayloads: (
@@ -656,8 +662,8 @@ interface DocumentContextValue {
     extraScenes?: readonly SerializedScene[],
   ) => Promise<Map<string, import("@babylonslate/assets").ModelPayload>>;
   /** Mixer/channel/attenuation/Audio metadata for Play; source bytes load on first playSound. */
-  collectPlayInputAssets: () => Promise<InputAssetDefinition[]>;
-  collectPlayAudio: () => Promise<{
+  collectPlayInputAssets: (requiredGuids?: ReadonlySet<string>) => Promise<InputAssetDefinition[]>;
+  collectPlayAudio: (requiredGuids?: ReadonlySet<string>) => Promise<{
     library: import("../lib/play-audio").PlayAudioLibrary;
     loadSourceBytes: import("../lib/play-audio").PlayAudioSourceLoader;
   }>;
@@ -671,14 +677,15 @@ interface DocumentContextValue {
     functions: Map<string, MaterialFunctionDocument>;
     textureGuids: string[];
   }>;
-  collectPlayParticles: () => Promise<ParticleLibrary>;
-  /** Mounted Scene assets (all roots) so Play `changescene` can instantiate them. */
-  collectPlaySceneLibrary: () => Promise<
+  collectPlayParticles: (requiredGuids?: ReadonlySet<string>) => Promise<ParticleLibrary>;
+  /** Requested Scene documents; omitted selection is for explicit whole-project operations. */
+  collectPlaySceneLibrary: (requiredGuids?: ReadonlySet<string>) => Promise<
     Array<{ guid: string; scene: SerializedScene }>
   >;
-  /** SceneLayer documents referenced by Play-library scenes and graph pin defaults. */
+  /** Active SceneLayers; graph-reference traversal is an explicit opt-in operation. */
   collectPlaySceneLayers: (
     scenes: readonly SerializedScene[],
+    includeGraphReferences?: boolean,
   ) => Promise<{
     layers: Array<{ guid: string; layer: SerializedSceneLayer }>;
     overlayScenes: SerializedScene[];
@@ -700,7 +707,7 @@ interface DocumentContextValue {
    * epoch advances.
    */
   currentGraphSignature: string;
-  /** Last full-project bundles written by `collectPlayPreviewScripts` (toolbar Compile or Play). */
+  /** Last full-project bundles written by an explicit toolbar Compile. */
   playPreviewBundles: ScriptBundleEntry[];
   playPreviewDiagnostics: Diagnostic[];
   playLoadedSignature: string | null;
@@ -904,7 +911,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [],
   );
   const [homepageReady, setHomepageReady] = useState(false);
-  const templatesRef = useRef<ProjectTemplate[]>([]);
+  const templatesRef = useRef<ProjectTemplateCatalogEntry[]>([]);
   const [templates, setTemplates] = useRefState(templatesRef);
   /** Re-derives the context value after service state it reads changed (edits, tabs, saves). */
   const [contextTick, setContextTick] = useState(0);
@@ -1560,7 +1567,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (documentService.getAuthoringLock() !== authoring) return;
       const ref = parseDocumentId(docId);
       if (!ref || !isAssetDocumentKind(ref.kind)) continue;
-      if (documentService.getState().openDocuments.has(docId)) continue;
+      if (documentService.getState().openDocuments.get(docId)?.content != null) continue;
       const { kind, path } = ref;
       try {
         await documentService.openDocument(
@@ -1738,7 +1745,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       await attachEnginePlugins(true);
       const { document, layouts, migrationPending: pending } =
         await projectService.createFromTemplate({
-          templateFiles: template.files,
+          templateFiles: await loadSelectedTemplateFiles(template.id),
           name,
           pickFolder: options?.pickFolder,
           appearance: options?.appearance,
@@ -2042,6 +2049,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           );
         }
       }
+      await writer.upgradeDependencyMetadata();
       const layouts = documentService.buildLayouts();
       await writer.saveProject(projectDocument, layouts);
       documentService.markAllClean(dirtyDocs);
@@ -2197,6 +2205,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         project: exportDocument?.metadata,
         projectId: projectService.guid ?? undefined,
         saveGameSettings: exportDocument?.settings.saveGame,
+        defaultFontGuid: exportDocument?.settings.fonts.defaultFontGuid ?? null,
         gameInstanceClass: exportDocument?.settings.gameInstanceClass ?? null,
         audioMixerGuid: exportDocument?.settings.audio.audioMixerGuid ?? null,
         occlusionEnabled:
@@ -2591,13 +2600,18 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     (id: string) => {
       const { activeDocumentId } = documentService.getState();
       if (id === activeDocumentId) return;
+      const target = documentService.getState().openDocuments.get(id);
+      if (target?.content === null && target.ref.kind !== "content-browser") {
+        void finishOpenDocument(target.ref);
+        return;
+      }
       if (activeDocumentId) {
         captureLayoutForId(activeDocumentId);
       }
       documentService.setActiveDocument(id);
       bump();
     },
-    [bump, captureLayoutForId, documentService],
+    [bump, captureLayoutForId, documentService, finishOpenDocument],
   );
 
   const reorderClosableTabs = useCallback(
@@ -3047,10 +3061,26 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     return () => projectService.setOpenTextureUsage(null);
   }, [documentService, projectService]);
 
-  const readAssetChunk = useCallback(
-    (path: string, chunkId: string) =>
-      projectService.readAssetChunk(path, chunkId),
+  const createAssetLoadScope = useCallback(
+    (owner: string) => projectService.createAssetLoadScope(owner),
     [projectService],
+  );
+
+  const getAssetLoadState = useCallback(
+    (guid: string): AssetLoadState => projectService.registry
+      ? projectService.assetLoadingService.getLoadState(guid)
+      : "unloaded",
+    [projectService],
+  );
+
+  const readAssetChunk = useCallback(
+    (path: string, chunkId: string, options?: { ownerDocumentId?: string; scope?: AssetLoadScope; signal?: AbortSignal; priority?: AssetLoadPriority }) =>
+      projectService.readAssetChunk(path, chunkId, {
+        scope: options?.scope ?? documentService.getAssetLoadScope(options?.ownerDocumentId ?? documentService.getState().activeDocumentId ?? ""),
+        signal: options?.signal,
+        priority: options?.priority,
+      }),
+    [documentService, projectService],
   );
 
   const writeSceneNavmeshChunk = useCallback(
@@ -3082,10 +3112,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [projectService],
   );
 
-  const loadClassGraphDocuments = useCallback(async (): Promise<
+  const loadClassGraphDocuments = useCallback(async (requiredGuids?: ReadonlySet<string>): Promise<
     Array<{ path: string; content: SerializedGraph }>
   > => {
-    const paths = classAssetPaths(projectService.registry?.list() ?? []);
+    const paths = classAssetPaths((projectService.registry?.list() ?? []).filter((asset) => !requiredGuids || requiredGuids.has(asset.header.guid)));
     const open = documentService.getState().openDocuments;
     const documents: Array<{ path: string; content: SerializedGraph }> = [];
     for (const path of paths) {
@@ -3107,7 +3137,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     return documents;
   }, [documentService, projectService]);
 
-  const loadProjectGraphDocuments = useCallback(async (): Promise<
+  const loadProjectGraphDocuments = useCallback(async (requiredGuids?: ReadonlySet<string>): Promise<
     Array<{
       path: string;
       content: SerializedGraph;
@@ -3115,7 +3145,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       parentClassId?: string | null;
     }>
   > => {
-    const documents = await loadClassGraphDocuments();
+    const documents = await loadClassGraphDocuments(requiredGuids);
     const assets = projectService.registry?.list() ?? [];
     const headers = Object.fromEntries(
       assets.map((asset) => [
@@ -3131,9 +3161,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     return collectPlayScriptDocuments(documents, headers, parentOf);
   }, [loadClassGraphDocuments, projectService]);
 
-  const loadProjectAnimGraphDocuments = useCallback(async () => {
+  const loadProjectAnimGraphDocuments = useCallback(async (requiredGuids?: ReadonlySet<string>) => {
     const assets = (projectService.registry?.list() ?? []).filter(
-      (asset) => asset.header.type === "AnimationGraph",
+      (asset) => asset.header.type === "AnimationGraph" && (!requiredGuids || requiredGuids.has(asset.header.guid)),
     );
     const open = documentService.getState().openDocuments;
     const entries: PlayAnimGraphEntry[] = [];
@@ -3166,7 +3196,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const collectEditorUtilityScripts = useCallback(async (): Promise<
     ScriptBundleEntry[]
   > => {
-    const documents = await loadClassGraphDocuments();
     const assets = projectService.registry?.list() ?? [];
     const headers = Object.fromEntries(
       assets.map((asset) => [
@@ -3187,6 +3216,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         )
         .map((plugin) => plugin.settings),
     );
+    const classIds = new Set(registered.map((id) => id.trim()).filter(Boolean));
+    const selectedGuids = new Set(assets
+      .filter((asset) => classIds.has(asset.header.name.trim() || classIdForGraphPath(asset.path)))
+      .map((asset) => asset.header.guid));
+    const documents = await loadClassGraphDocuments(selectedGuids);
     const selected = selectEditorUtilityGraphs(documents, {
       headers,
       parentOf,
@@ -3214,7 +3248,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         .openDocuments.get(documentId({ kind, path }));
       if (openDoc?.content) return openDoc.content;
       try {
-        return await projectService.loadDocument(kind, path);
+        return await projectService.loadDocument(kind, path, {
+          scope: documentService.getAssetLoadScope(documentService.getState().activeDocumentId ?? ""),
+        });
       } catch (error) {
         console.error(`[editor] failed to load ${kind} ${path}`, error);
         return null;
@@ -3223,12 +3259,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [documentService, projectService],
   );
 
-  const collectPlayPreviewScripts = useCallback(async (): Promise<{
+  const collectPlayPreviewScripts = useCallback(async (requiredGuids?: ReadonlySet<string>): Promise<{
     bundles: ScriptBundleEntry[];
     diagnostics: Diagnostic[];
   }> => {
-    const documents = await loadProjectGraphDocuments();
-    const animDocuments = await loadProjectAnimGraphDocuments();
+    const documents = await loadProjectGraphDocuments(requiredGuids);
+    const animDocuments = await loadProjectAnimGraphDocuments(requiredGuids);
     const parentOf = classParentLookup(projectService.registry?.list() ?? []);
     const assets = projectService.registry?.list() ?? [];
     const openDocuments = [...documentService.getState().openDocuments.values()];
@@ -3284,17 +3320,17 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         structs: typeSchemas.structs,
           dataDefinitions: typeSchemas.dataDefinitions,
         tagRegistry: projectDocumentRef.current?.settings.tags,
-        cache: graphCompileCacheRef.current,
+        cache: requiredGuids ? undefined : graphCompileCacheRef.current,
       }),
       ...compileAnimGraphScripts(animDocuments, {
-        cache: graphCompileCacheRef.current,
+        cache: requiredGuids ? undefined : graphCompileCacheRef.current,
         inputAssets: inputAssetCatalog(assets, openDocuments),
         dataAssets: collectDataGraphAssets(assets, openDocuments),
         ...typeSchemas,
         tagRegistry: projectDocumentRef.current?.settings.tags,
       }),
     ];
-    recordPlayPreviewScripts(bundles, diagnostics);
+    if (!requiredGuids) recordPlayPreviewScripts(bundles, diagnostics);
     return { bundles, diagnostics };
   }, [
     collectGraphTypeSchemas,
@@ -3377,7 +3413,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const needed = new Set([
         ...animationGraphGuidsFromScene(scene),
         ...extraScenes.flatMap((entry) => animationGraphGuidsFromScene(entry)),
-        ...openEntries.map((entry) => entry.guid),
       ]);
       const loaded = new Map<string, unknown>();
       for (const guid of needed) {
@@ -3387,7 +3422,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         if (content) loaded.set(guid, content);
       }
       return mergePlayAnimGraphs(
-        openEntries,
+        openEntries.filter((entry) => needed.has(entry.guid)),
         playAnimGraphsFromGuids(
           [...needed],
           (guid) => loaded.get(guid) ?? null,
@@ -3417,7 +3452,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const needed = new Set([
         ...behaviourTreeGuidsFromScene(scene),
         ...extraScenes.flatMap((entry) => behaviourTreeGuidsFromScene(entry)),
-        ...openEntries.map((entry) => entry.guid),
       ]);
       const loaded = new Map<string, unknown>();
       for (const guid of needed) {
@@ -3427,7 +3461,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         if (content) loaded.set(guid, content);
       }
       return mergePlayBehaviourTrees(
-        openEntries,
+        openEntries.filter((entry) => needed.has(entry.guid)),
         playBehaviourTreesFromGuids([...needed], (guid) => loaded.get(guid) ?? null),
       );
     },
@@ -3453,7 +3487,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const needed = new Set([
         ...blackboardGuidsFromScene(scene),
         ...extraScenes.flatMap((entry) => blackboardGuidsFromScene(entry)),
-        ...openEntries.map((entry) => entry.guid),
       ]);
       const loaded = new Map<string, unknown>();
       for (const guid of needed) {
@@ -3463,7 +3496,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         if (content) loaded.set(guid, content);
       }
       return mergePlayBlackboards(
-        openEntries,
+        openEntries.filter((entry) => needed.has(entry.guid)),
         playBlackboardsFromGuids([...needed], (guid) => loaded.get(guid) ?? null),
       );
     },
@@ -3535,26 +3568,27 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [loadPlayAssetContent, projectService],
   );
 
-  const collectPlayWaterContent = useCallback(async (): Promise<Map<string, WaterDefinition>> => {
+  const collectPlayWaterContent = useCallback(async (requiredGuids?: ReadonlySet<string>): Promise<Map<string, WaterDefinition>> => {
     const waters = new Map<string, WaterDefinition>();
     for (const asset of projectService.registry?.list() ?? []) {
-      if (asset.header.type !== "Water") continue;
+      if (asset.header.type !== "Water" || (requiredGuids && !requiredGuids.has(asset.header.guid))) continue;
       const content = await loadPlayAssetContent("water", asset.path);
       if (content) waters.set(asset.header.guid, normalizeWaterDefinition(content));
     }
     return waters;
   }, [loadPlayAssetContent, projectService]);
 
-  const collectPlayDataAssets = useCallback(() => collectPlayDataCatalog(
-    projectService.registry?.list() ?? [],
+  const collectPlayDataAssets = useCallback((requiredGuids?: ReadonlySet<string>) => collectPlayDataCatalog(
+    (projectService.registry?.list() ?? []).filter((asset) => !requiredGuids || requiredGuids.has(asset.header.guid)),
     documentService.getOpenDocumentsOrdered(),
     loadPlayAssetContent,
   ), [documentService, loadPlayAssetContent, projectService]);
 
-  const collectPlayRenderTargets = useCallback(async () => {
+  const collectPlayRenderTargets = useCallback(async (requiredGuids?: ReadonlySet<string>) => {
     const renderTargets = new Map<string, RenderTargetPayload>();
     const renderTargetTextures = new Map<string, RenderTargetTexturePayload>();
     for (const asset of projectService.registry?.list() ?? []) {
+      if (requiredGuids && !requiredGuids.has(asset.header.guid)) continue;
       if (asset.header.type === "RenderTarget") {
         const content = await loadPlayAssetContent("render-target", asset.path);
         if (content) renderTargets.set(asset.header.guid, normalizeRenderTargetPayload(content));
@@ -3620,9 +3654,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const collectPlayAreaEmissions = useCallback(async (scenes: readonly (SerializedScene | null | undefined)[], includeGraphs = false) => collectAreaEmissions({
     assets: projectService.registry?.list() ?? [], scenes,
     graphs: includeGraphs ? (await loadProjectGraphDocuments()).map((entry) => entry.content) : undefined,
-    readChunk: (path, id) => projectService.readAssetChunk(path, id),
+    readChunk: (path, id) => readAssetChunk(path, id),
     onDiagnostic: (message) => console.warn(message),
-  }), [loadProjectGraphDocuments, projectService]);
+  }), [loadProjectGraphDocuments, projectService, readAssetChunk]);
 
   const collectPlayTextureBytes = useCallback(
     async (
@@ -3647,7 +3681,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           ? (await loadProjectGraphDocuments()).map((entry) => entry.content)
           : undefined,
         readChunk: (path, chunkId) =>
-          projectService.readAssetChunk(path, chunkId),
+          readAssetChunk(path, chunkId),
         editorLod: {
           enabled: settings.editorTextureLodEnabled,
           quality: settings.editorTextureLodQuality,
@@ -3661,7 +3695,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         },
       });
     },
-    [loadProjectGraphDocuments, projectService],
+    [loadProjectGraphDocuments, projectService, readAssetChunk],
   );
 
   const collectPlayTexturePixelSizes = useCallback(
@@ -3695,11 +3729,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }));
       return collectFontFacetypeBytes(
         sources,
-        playFontGuidsFromScenes([scene, ...extraScenes]),
-        (path, chunkId) => projectService.readAssetChunk(path, chunkId),
+        fontGuidsForSceneRepresentation([scene, ...extraScenes], sources, "facetype"),
+        (path, chunkId) => readAssetChunk(path, chunkId),
       );
     },
-    [projectService],
+    [projectService, readAssetChunk],
   );
 
   const collectPlayFontMsdfPair = useCallback(
@@ -3708,21 +3742,23 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       extraScenes: readonly SerializedScene[] = [],
     ) => {
       const assets = projectService.registry?.list() ?? [];
+      const sources = assets.map((asset) => ({
+        guid: asset.header.guid,
+        path: asset.path,
+        type: asset.header.type,
+        payload: asset.header.payload,
+      }));
       return collectFontMsdfPair(
-        assets.map((asset) => ({
-          guid: asset.header.guid,
-          path: asset.path,
-          type: asset.header.type,
-        })),
-        playFontGuidsFromScenes([scene, ...extraScenes]),
-        (path, chunkId) => projectService.readAssetChunk(path, chunkId),
+        sources,
+        fontGuidsForSceneRepresentation([scene, ...extraScenes], sources, "msdf", projectDocumentRef.current?.settings.fonts.defaultFontGuid),
+        (path, chunkId) => readAssetChunk(path, chunkId),
       );
     },
-    [projectService],
+    [projectService, readAssetChunk],
   );
 
-  const collectPlayFontFaceEntries = useCallback(async () => {
-    const assets = projectService.registry?.list() ?? [];
+  const collectPlayFontFaceEntries = useCallback(async (requiredGuids?: ReadonlySet<string>) => {
+    const assets = (projectService.registry?.list() ?? []).filter((asset) => !requiredGuids || requiredGuids.has(asset.header.guid));
     return collectFontAssetEntries(
       assets.map((asset) => ({
         guid: asset.header.guid,
@@ -3730,9 +3766,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         type: asset.header.type,
         payload: asset.header.payload,
       })),
-      (path, chunkId) => projectService.readAssetChunk(path, chunkId),
+      (path, chunkId) => readAssetChunk(path, chunkId),
     );
-  }, [projectService]);
+  }, [projectService, readAssetChunk]);
 
   const collectPlayFontCssStacks = useCallback(() => {
     const assets = projectService.registry?.list() ?? [];
@@ -3751,6 +3787,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     async (
       scene?: SerializedScene | null,
       extraScenes: readonly SerializedScene[] = [],
+      requiredGuids?: ReadonlySet<string>,
     ): Promise<Map<string, Uint8Array>> => {
       const assets = projectService.registry?.list() ?? [];
       const byGuid = new Map(
@@ -3758,7 +3795,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       );
       const bytes = new Map<string, Uint8Array>();
       const animationRows = assets
-        .filter((asset) => asset.header.type === "Animation")
+        .filter((asset) => asset.header.type === "Animation" && (!requiredGuids || requiredGuids.has(asset.header.guid)))
         .map((asset) => ({
           guid: asset.header.guid,
           payload: asset.header.payload,
@@ -3772,12 +3809,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       )) {
         const asset = byGuid.get(guid);
         if (!asset) continue;
-        const source = await projectService.readAssetChunk(asset.path, "source");
+        const source = await readAssetChunk(asset.path, "source");
         if (source && source.byteLength > 0) bytes.set(guid, source);
       }
       return bytes;
     },
-    [projectService],
+    [projectService, readAssetChunk],
   );
 
   const collectPlayModelPayloads = useCallback(
@@ -3808,10 +3845,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [loadPlayAssetContent, projectService],
   );
 
-  const collectPlayInputAssets = useCallback(async (): Promise<InputAssetDefinition[]> => {
+  const collectPlayInputAssets = useCallback(async (requiredGuids?: ReadonlySet<string>): Promise<InputAssetDefinition[]> => {
     const inputs: InputAssetDefinition[] = [];
     for (const asset of projectService.registry?.list() ?? []) {
-      if (!isInputAssetType(asset.header.type)) continue;
+      if (!isInputAssetType(asset.header.type) || (requiredGuids && !requiredGuids.has(asset.header.guid))) continue;
       const content = await loadPlayAssetContent(asset.header.type === "InputAction" ? "input-action" : "input-axis", asset.path);
       if (!content) throw new Error(`Unable to load input asset ${asset.header.name}`);
       inputs.push({ ...normalizeInputAssetPayload(asset.header.type, content), guid: asset.header.guid, name: asset.header.name, type: asset.header.type });
@@ -3819,8 +3856,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     return inputs;
   }, [loadPlayAssetContent, projectService]);
 
-  const collectPlayAudio = useCallback(async () => {
-    const assets = projectService.registry?.list() ?? [];
+  const collectPlayAudio = useCallback(async (requiredGuids?: ReadonlySet<string>) => {
+    const assets = (projectService.registry?.list() ?? []).filter((asset) => !requiredGuids || requiredGuids.has(asset.header.guid));
     const audioAssets = assets.filter((asset) =>
       ["Audio", "AudioMixer", "AudioChannel", "SoundAttenuation"].includes(
         asset.header.type,
@@ -3857,15 +3894,15 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           payload: payloads[index]?.payload,
         })),
         readChunk: (path, chunkId) =>
-          projectService.readAssetChunk(path, chunkId),
+          readAssetChunk(path, chunkId),
       }),
     };
-  }, [loadPlayAssetContent, projectService]);
+  }, [loadPlayAssetContent, projectService, readAssetChunk]);
 
   const collectPlayParticles = useCallback(
-    () =>
+    (requiredGuids?: ReadonlySet<string>) =>
       loadPlayParticleLibrary({
-        assets: projectService.registry?.list() ?? [],
+        assets: (projectService.registry?.list() ?? []).filter((asset) => !requiredGuids || requiredGuids.has(asset.header.guid)),
         loadDocument: loadPlayAssetContent,
       }),
     [loadPlayAssetContent, projectService],
@@ -3968,7 +4005,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [documentService, projectService],
   );
 
-  const collectPlaySceneLibrary = useCallback(async (): Promise<
+  const collectPlaySceneLibrary = useCallback(async (requiredGuids?: ReadonlySet<string>): Promise<
     Array<{ guid: string; scene: SerializedScene }>
   > => {
     const paths = playSceneLibraryPaths(
@@ -3978,6 +4015,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const open = documentService.getState().openDocuments;
     const scenes: Array<{ guid: string; scene: SerializedScene }> = [];
     for (const path of paths) {
+      if (requiredGuids && !requiredGuids.has(projectService.guidForPath(path) ?? documentId({ kind: "scene", path }))) continue;
       const id = documentId({ kind: "scene", path });
       const openDoc = open.get(id);
       try {
@@ -3997,14 +4035,15 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const collectPlaySceneLayers = useCallback(
     async (
       scenes: readonly SerializedScene[],
+      includeGraphReferences = false,
     ): Promise<{
       layers: Array<{ guid: string; layer: SerializedSceneLayer }>;
       overlayScenes: SerializedScene[];
       graphMaterialGuids: string[];
     }> => {
-      const graphs = (await loadProjectGraphDocuments()).map(
-        (entry) => entry.content,
-      );
+      const graphs = includeGraphReferences
+        ? (await loadProjectGraphDocuments()).map((entry) => entry.content)
+        : [];
       const needed = [
         ...sceneLayerGuidsFromScenes(scenes),
         ...sceneLayerGuidsFromGraphs(graphs),
@@ -4078,17 +4117,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (projectService.guid !== guid || thumbnailLruRef.current !== lru ||
         thumbnailRevisionIndexRef.current.revision(assetGuid) !== revision) return null;
       if (bytes) lru.set(key, bytes);
-      else if (asset && (rendered || revision !== null)) {
-        enqueueModelThumbnailJobs([{
-          guid: assetGuid,
-          path: asset.path,
-          payload: asset.header.payload ?? {},
-          type: asset.header.type as "Model" | "Animation" | "Material" | "Class" | "Graph",
-          projectGuid: guid,
-          cacheKey: key,
-          onlyIfMissing: true,
-        }]);
-      }
+      // Browsing may read derived thumbnails but never trigger source loading.
+      // Explicit import/save operations schedule generation separately.
       return bytes;
     },
     [ensureDerived, projectService],
@@ -4125,6 +4155,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         ensureMainGraphOpen: () => Promise<boolean>;
         nudgeActiveGraphNode: () => Promise<boolean>;
         cancelDebouncedSave: () => void;
+        assetLoading: () => { sources: ReturnType<import("@babylonslate/assets").AssetLoadingService["snapshot"]>; storage: import("@babylonslate/core").StorageReadMetrics | null; chunks: ReturnType<import("@babylonslate/assets").AccountedPayloadLoader["snapshot"]> | null; requestedPayloadBytes: number };
+        trimAssetSources: () => void;
         activeGraphNodePosition: () => { x: number; y: number } | null;
         hasRecoveryJournal: () => Promise<boolean>;
         /** Move the first scene actor by a fixed delta through the command layer. */
@@ -4195,6 +4227,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     };
     host.__babylonslateSourceControl = sourceControlRef.current;
     host.__babylonslateTest = {
+      assetLoading: () => ({ sources: projectService.assetLoadingService.snapshot(), storage: projectService.storagePort.getReadMetrics?.() ?? null, chunks: projectService.registry?.payloadLoader.snapshot() ?? null, requestedPayloadBytes: projectService.registry?.accountedPayloadBytes ?? 0 }),
+      trimAssetSources: () => projectService.assetLoadingService.trim({ force: true }),
       cancelDebouncedSave: () => {
         if (saveDebounceRef.current) {
           clearTimeout(saveDebounceRef.current);
@@ -4228,14 +4262,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const existing = [...documentService.getState().openDocuments.values()].find(
           (entry) => entry.ref.kind === "graph",
         );
-        if (existing) return true;
+        if (existing?.content != null) return true;
         const registry = projectService.registry;
         const path =
-          candidates.find((candidate) =>
+          existing?.ref.path ?? candidates.find((candidate) =>
             registry?.list().some((asset) => asset.path === candidate),
           ) ?? candidates[0]!;
         const id = `graph:${path}`;
-        if (!documentService.getState().openDocuments.has(id)) {
+        if (documentService.getState().openDocuments.get(id)?.content == null) {
           await documentService.openDocument(
             projectService,
             { kind: "graph", path, label: path.split("/").pop() ?? path },
@@ -4244,7 +4278,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           );
           bump();
         }
-        return documentService.getState().openDocuments.has(id);
+        return documentService.getState().openDocuments.get(id)?.content != null;
       },
       nudgeActiveGraphNode: async () => {
         const openDocuments = documentService.getState().openDocuments;
@@ -4862,6 +4896,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       reparentClassDocument,
       applySceneChange,
       applyAssetDocumentChange,
+      createAssetLoadScope,
+      getAssetLoadState,
       readAssetChunk,
       writeAudioClipChunk,
       removeAudioClipChunk,
@@ -4977,6 +5013,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       reparentClassDocument,
       applySceneChange,
       applyAssetDocumentChange,
+      createAssetLoadScope,
+      getAssetLoadState,
       readAssetChunk,
       writeAudioClipChunk,
       removeAudioClipChunk,

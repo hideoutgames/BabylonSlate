@@ -254,6 +254,13 @@ export class ClassRegistry {
     return this.classes.has(classId);
   }
 
+  /** Remove an unowned user definition after its instances and children retire. */
+  unregister(classId: string): boolean {
+    if (isLockedEngineClassId(classId)) return false;
+    if ([...this.classes.values()].some((entry) => entry.parentClassId === classId)) return false;
+    return this.classes.delete(classId);
+  }
+
   /** Every registered class id (engine defaults first), in registration order. */
   classIds(): string[] {
     return [...this.classes.keys()];

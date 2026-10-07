@@ -282,6 +282,8 @@ export function DocumentWorkspace() {
       {visibleTabOrder.map((id) => {
         const doc = openDocuments.find((entry) => entry.id === id);
         if (!doc) return null;
+        // Restored tabs become consumers only after their asynchronous activation.
+        if (doc.ref.kind !== "content-browser" && doc.content === null) return null;
         const active = id === resolvedActiveId;
         const shouldMount =
           id === simulationDocumentId || mountedIds.has(id) ||

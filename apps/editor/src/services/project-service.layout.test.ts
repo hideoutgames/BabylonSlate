@@ -21,6 +21,7 @@ function fakeStorage(): ProjectStorage {
     readText: async () => "",
     writeText: async () => {},
     readBinary: async () => new Uint8Array(),
+    readBinaryRange: async (path) => { throw new Error(`File not found: ${path}`); },
     writeBinary: async () => {},
     exists: async () => false,
     readdir: async () => [],

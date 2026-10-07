@@ -122,7 +122,7 @@ async function visiblePositions(host: Locator) {
 }
 
 for (const mode of ["Play", "Preview Build"] as const) {
-  test(`${mode} streams two scene instances at their component origins and unloads them independently`, async ({ page }) => {
+  test(`${mode} streams two scene instances at their component origins and unloads them independently`, async ({ page }, testInfo) => {
     test.setTimeout(180_000);
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
@@ -142,7 +142,16 @@ for (const mode of ["Play", "Preview Build"] as const) {
       await waitForPreviewBuildBoot(page);
       await page.getByRole("button", { name: "Console", exact: true }).click();
     } else {
-      await clickPlayAndWaitForOverlay(page);
+      try {
+        await clickPlayAndWaitForOverlay(page);
+      } catch (error) {
+        await page.getByRole("tab", { name: "Output Log", exact: true }).click();
+        await testInfo.attach("play-preparation-output", {
+          body: JSON.stringify({ errors, output: await page.getByTestId("output-log-line").allTextContents() }),
+          contentType: "application/json",
+        });
+        throw error;
+      }
       await page.getByTestId("play-console-open").click();
     }
     const host = mode === "Play" ? page.getByTestId("play-overlay") : page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("player-root");
@@ -151,19 +160,41 @@ for (const mode of ["Play", "Preview Build"] as const) {
       await page.getByTestId("debug-console-submit").click();
     };
     const positions = async (expected: number[][]) => expect.poll(() => visiblePositions(host), { timeout: 30_000 }).toEqual(expected);
+    const sceneSources = async () => page.evaluate((guid) => {
+      const testHost = (globalThis as unknown as { __babylonslateTest: {
+        assetLoading: () => { sources: { entries: Array<{ assetId: string; owners: string[] }> } };
+        trimAssetSources: () => void;
+      } }).__babylonslateTest;
+      testHost.trimAssetSources();
+      return testHost.assetLoading().sources.entries.filter((entry) => entry.assetId === guid);
+    }, CHILD_GUID);
+    const sceneDocumentReads = async () => page.evaluate(() => {
+      const testHost = (globalThis as unknown as { __babylonslateTest: {
+        assetLoading: () => { chunks: { recentRequests: Array<{ path: string; chunkId: string }> } };
+      } }).__babylonslateTest;
+      return testHost.assetLoading().chunks.recentRequests.filter((entry) =>
+        entry.path === "assets/StreamedRoom.scene.babasset" && entry.chunkId === "document").length;
+    });
     await positions([PARENT_POSITION]);
+    if (mode === "Play") {
+      expect(await sceneSources()).toEqual([]);
+      expect(await sceneDocumentReads()).toBe(0);
+    }
     await run("stream_left_load");
     await positions([...LEFT_POSITIONS, PARENT_POSITION]);
     await run("stream_right_load");
     await positions([...LEFT_POSITIONS, PARENT_POSITION, ...RIGHT_POSITIONS]);
+    if (mode === "Play") expect(await sceneDocumentReads()).toBe(1);
     await run("stream_left_unload");
     await positions([PARENT_POSITION, ...RIGHT_POSITIONS]);
+    if (mode === "Play") expect((await sceneSources()).some((entry) => entry.owners.length > 0)).toBe(true);
     await run("stream_left_load");
     await positions([...LEFT_POSITIONS, PARENT_POSITION, ...RIGHT_POSITIONS]);
     await run("stream_right_unload");
     await positions([...LEFT_POSITIONS, PARENT_POSITION]);
     await run("stream_left_unload");
     await positions([PARENT_POSITION]);
+    if (mode === "Play") await expect.poll(sceneSources).toEqual([]);
     expect(errors).toEqual([]);
     await page.getByTestId(mode === "Play" ? "play-overlay-close" : "preview-build-close").click();
   });

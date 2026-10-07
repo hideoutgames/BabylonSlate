@@ -65,7 +65,7 @@ async function fixture(withWater = false, saveGame?: SaveGameConfiguration) {
   const scene = { ...createDefaultScene(), actors: [] };
   const packed = await exportGame({ bundleDebugger: false, startupSceneGuid: "world", scripts: [], renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
     ...(saveGame ? { saveGame, physicsWorld: "2d" as const } : {}),
-    assets: [{ guid: "world", type: "Scene", sceneGuid: "world", bytes: new TextEncoder().encode(JSON.stringify(scene)) }, ...(withWater ? [{ guid: "water", type: "Water", sceneGuid: "world", bytes: new TextEncoder().encode(JSON.stringify(createDefaultWaterDefinition("stylized"))) }] : [])] });
+    assets: [{ guid: "world", type: "Scene", sceneGuid: "world", requiredDependencies: withWater ? ["water"] : [], bytes: new TextEncoder().encode(JSON.stringify(scene)) }, ...(withWater ? [{ guid: "water", type: "Water", sceneGuid: "world", bytes: new TextEncoder().encode(JSON.stringify(createDefaultWaterDefinition("stylized"))) }] : [])] });
   if (!packed.ok) throw new Error("Fixture export failed");
   const game = await loadGameFromFiles(packed.value.files);
   const root = document.createElement("div");
@@ -77,6 +77,7 @@ async function fixture(withWater = false, saveGame?: SaveGameConfiguration) {
   const handle = {
     engine: { onEndFrameObservable: { add: (callback: () => void) => (endFrame.add(callback), callback), remove: (callback: () => void) => { endFrame.delete(callback); } } },
     loadScene: vi.fn(),
+    acquireSceneSources: vi.fn(async () => () => {}), releaseInitialSources: vi.fn(),
     applySceneEnvironment: vi.fn(),
     resize: vi.fn(), setSize: vi.fn(), dispose: vi.fn(),
     applyCommand: vi.fn(), pushSnapshot: vi.fn(), setPaused: vi.fn(),
@@ -268,6 +269,42 @@ describe("player startup and Stop ownership", () => {
     expect(handle.setSceneStreamingPaused).toHaveBeenLastCalledWith(false);
     worker.command({ channel: "command", payload: { type: "sceneStreamRemoved", actorGuid: "left", streamLoadId: 5 } });
     expect(handle.applyCommand).toHaveBeenCalledWith({ type: "sceneStreamRemoved", actorGuid: "left", streamLoadId: 5 });
+  });
+  it("keeps preload state loading through native preparation and makes failed native preparation retryable", async () => {
+    const { game, canvas, handle } = await fixture();
+    let fail!: (error: Error) => void;
+    handle.acquireSceneSources.mockImplementationOnce(() => new Promise<() => void>((_resolve, reject) => { fail = reject; }));
+    sessions.push(startPlayer({ game, canvas }));
+    const worker = TestWorker.instances[0]!;
+    const state = () => {
+      const message = [...worker.messages].reverse().find(entry => entry.channel === "control" && entry.payload.type === "assetLoadStates");
+      return message?.channel === "control" && message.payload.type === "assetLoadStates" ? message.payload.states.find(entry => entry.guid === "world")?.state : undefined;
+    };
+    worker.command({ channel: "command", payload: { type: "assetPreload", preloadId: "first", ownerId: "actor", assetGuids: ["world"] } });
+    await vi.waitFor(() => expect(fail).toBeTypeOf("function"));
+    expect(game.assets?.getLoadState("world")).toBe("ready");
+    expect(state()).toBe("loading");
+    fail(new Error("Required native resource could not decode."));
+    await vi.waitFor(() => expect(state()).toBe("failed"));
+    expect(worker.messages).toContainEqual({ channel: "control", payload: { type: "assetPreloadResult", preloadId: "first", success: false, error: "Required native resource could not decode." } });
+    worker.command({ channel: "command", payload: { type: "assetPreload", preloadId: "retry", ownerId: "actor", assetGuids: ["world"] } });
+    await vi.waitFor(() => expect(worker.messages).toContainEqual({ channel: "control", payload: { type: "assetPreloadResult", preloadId: "retry", success: true, progress: 1 } }));
+    expect(state()).toBe("ready");
+  });
+  it("waits for worker Class registration before completing a cold preload", async () => {
+    const { game, canvas } = await fixture();
+    const script = { assetGuid: "prefab", classId: "Prefab", source: "export function onBeginPlay() {}", anchors: [], entryPoints: [] };
+    game.acquireAssets = async () => { game.scripts.push(script); return { release() {} }; };
+    sessions.push(startPlayer({ game, canvas }));
+    const worker = TestWorker.instances[0]!;
+    worker.command({ channel: "command", payload: { type: "assetPreload", preloadId: "cold", ownerId: "actor", assetGuids: ["world"] } });
+    await vi.waitFor(() => expect(worker.messages.some(message => message.channel === "control" && message.payload.type === "loadScripts" && message.payload.replace === true)).toBe(true));
+    const message = worker.messages.find(message => message.channel === "control" && message.payload.type === "loadScripts" && message.payload.replace === true);
+    if (message?.channel !== "control" || message.payload.type !== "loadScripts") throw new Error("Class source request was not sent");
+    expect(message.payload.scripts).toEqual([script]);
+    expect(worker.messages).not.toContainEqual({ channel: "control", payload: { type: "assetPreloadResult", preloadId: "cold", success: true, progress: 1 } });
+    worker.command({ channel: "command", payload: { type: "assetSourcesReady", requestId: message.payload.requestId!, success: true } });
+    await vi.waitFor(() => expect(worker.messages).toContainEqual({ channel: "control", payload: { type: "assetPreloadResult", preloadId: "cold", success: true, progress: 1 } }));
   });
   it.each([false, true])("loads the same Water definition into rendering and simulation (fallback=%s)", async (fallbackMode) => {
     const { game, canvas } = await fixture(true);

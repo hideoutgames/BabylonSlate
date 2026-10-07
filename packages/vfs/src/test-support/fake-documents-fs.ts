@@ -9,6 +9,9 @@ export function createFakeDocumentsFs(): FakeDocumentsFs {
   const tree = new Map<string, { kind: "file" | "dir"; data?: string }>();
   tree.set("BabylonSlate/projects", { kind: "dir" });
 
+  let revision = 0;
+  const revisions = new Map<string, string>();
+  const encodings = new Map<string, string | undefined>();
   const normalize = (path: string) => path.replace(/\/+$/, "") || "";
   const missing = () => Object.assign(new Error("missing"), { code: "OS-PLUG-FILE-0008" });
 
@@ -53,10 +56,22 @@ export function createFakeDocumentsFs(): FakeDocumentsFs {
       if (!node || node.kind !== "file") throw missing();
       return { data: node.data ?? "" };
     },
-    async writeFile({ path, data }) {
+    async readFileRange({ path, offset, length, expectedRevision }) {
+      const key = normalize(path);
+      const node = tree.get(key);
+      if (!node || node.kind !== "file") throw missing();
+      const currentRevision = revisions.get(key) ?? "0";
+      if (expectedRevision !== undefined && expectedRevision !== currentRevision) throw new Error("Source revision changed");
+      const bytes = encodings.get(key) === "utf8" ? new TextEncoder().encode(node.data ?? "") : Uint8Array.from(atob(node.data ?? ""), c => c.charCodeAt(0));
+      if (offset + length > bytes.length) throw new RangeError("Range exceeds file size");
+      return { data: btoa(String.fromCharCode(...bytes.subarray(offset, offset + length))), totalSize: bytes.length, revision: currentRevision, actualBytesRead: length };
+    },
+    async writeFile({ path, data, encoding }) {
       const p = normalize(path);
       ensureParents(p);
       tree.set(p, { kind: "file", data });
+      revisions.set(p, String(++revision));
+      encodings.set(p, encoding);
       return {};
     },
     async deleteFile({ path }) {

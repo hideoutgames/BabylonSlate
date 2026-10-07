@@ -204,7 +204,8 @@ test("CEL graph receiver presents a ready frame after edited project reload", as
   await openTestProject(page);
   try {
     await expect(page.getByTestId("document-workspace-content-browser")).toBeVisible();
-    await expect(page.getByTestId("viewport-panel")).toHaveAttribute("data-scene-ready", "false");
+    // Restored tabs keep their metadata until explicitly opened.
+    await expect(page.getByTestId("viewport-panel")).toHaveCount(0);
     await expect(page.getByTestId("scene-loading-dialog")).toBeHidden({
       timeout: 10_000,
     });

@@ -137,7 +137,7 @@ describe("actor nodes", () => {
     );
   });
 
-  it("compiled Spawn Actor calls ctx.spawnActor", () => {
+  it("compiled Spawn Actor waits for cold asset preparation", async () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",
@@ -157,16 +157,22 @@ describe("actor nodes", () => {
       ],
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
-    expect(compiled.source).toContain("ctx.spawnActor");
-    const mod = loadModule(compiled.source);
+        const mod = loadModule(compiled.source);
     const spawned: string[] = [];
-    (mod.onBeginPlay as (ctx: unknown) => void)({
-      spawnActor: (classId: string) => {
+    let ready!: () => void;
+    let finished = false;
+    const pending = (mod.onBeginPlay as (ctx: unknown) => Promise<void>)({
+      spawnActorAsync: (classId: string) => {
         spawned.push(classId);
-        return { classId };
+        return new Promise(resolve => { ready = () => resolve({ classId }); });
       },
-    });
+    }).then(() => { finished = true; });
     expect(spawned).toEqual(["Child"]);
+    await Promise.resolve();
+    expect(finished).toBe(false);
+    ready();
+    await pending;
+    expect(finished).toBe(true);
   });
 
   it("exposes an optional Transform pin on Spawn Actor", () => {
@@ -180,7 +186,7 @@ describe("actor nodes", () => {
     });
   });
 
-  it("compiled Spawn Actor passes transform as the second spawnActor argument", () => {
+  it("compiled Spawn Actor passes the authored transform to asynchronous preparation", async () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",
@@ -200,13 +206,10 @@ describe("actor nodes", () => {
       ],
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
-    expect(compiled.source).toMatch(
-      /ctx\.spawnActor\(\s*[^,]+,\s*[^)]+\)/,
-    );
     const mod = loadModule(compiled.source);
     const calls: Array<{ classId: string; transform: unknown }> = [];
-    (mod.onBeginPlay as (ctx: unknown) => void)({
-      spawnActor: (classId: string, transform: unknown) => {
+    await (mod.onBeginPlay as (ctx: unknown) => Promise<void>)({
+      spawnActorAsync: async (classId: string, transform: unknown) => {
         calls.push({ classId, transform });
         return { classId };
       },

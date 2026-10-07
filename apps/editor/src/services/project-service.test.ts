@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryOpfsRoot } from "../../../../packages/vfs/src/test-support/memory-opfs";
-import { createEmptyProject, MAIN_SCENE_FILE, PROJECT_FILE, type SerializedScene } from "@babylonslate/core";
+import { createEmptyProject, MAIN_SCENE_FILE, PROJECT_FILE, SourceRevisionChangedError, type SerializedScene, type ProjectStorage } from "@babylonslate/core";
 import { MemoryStorageAdapter, OpfsStorageAdapter } from "@babylonslate/vfs";
-import { encodeBabasset, decodeBabasset } from "@babylonslate/assets";
+import { encodeAssetDocument, encodeBabasset, decodeBabasset } from "@babylonslate/assets";
 import { loadKenneyMannequinGlb } from "../lib/kenney-mannequin";
 import { ProjectService } from "./project-service";
 import { setEncodeQueuePauseReason } from "./encode-queue-pause";
+import { DocumentService } from "./document-service";
 
 beforeEach(() => {
   const root = createMemoryOpfsRoot();
@@ -55,6 +56,7 @@ describe("ProjectService lifecycle", () => {
     try {
       await expect(service.saveDocument("scene", MAIN_SCENE_FILE, { ...scene, name: "Blocked" })).rejects.toThrow(/Read-only/);
       await expect(service.saveProject(project.document, project.layouts)).rejects.toThrow(/Read-only/);
+      await expect(service.upgradeDependencyMetadata()).rejects.toThrow(/Read-only/);
       await expect(registry.createFolder("project", "Blocked")).rejects.toThrow(/Read-only/);
       await expect(registry.storageFor("project").writeText("assets/direct.txt", "Blocked")).rejects.toThrow(/Read-only/);
       await expect(blobs.writeBlob("blocked", new Uint8Array([1]))).rejects.toThrow(/Read-only/);
@@ -85,6 +87,7 @@ describe("ProjectService lifecycle", () => {
       await writer.saveDocument("scene", MAIN_SCENE_FILE, { ...scene, name: "Saved baseline" });
       wroteScene();
       await paused;
+      await writer.upgradeDependencyMetadata();
       await writer.saveProject({ ...project.document, metadata: { ...project.document.metadata, version: "2.0" } }, project.layouts);
     });
     await firstWrite;
@@ -126,6 +129,185 @@ describe("ProjectService lifecycle", () => {
     expect([...saved.chunks.values()].some(bytes => bytes.length === 3 && bytes[0] === 9)).toBe(true);
     lease.release();
     await service.closeProject();
+  });
+
+  it.each(["chunk", "document"] as const)("retries a complete %s read after a concurrent save without retaining the failed snapshot", async (kind) => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("ConcurrentRead");
+    const service = new ProjectService(storage);
+    await service.loadCurrentProject();
+    const path = "assets/Racing.scene.babasset";
+    const bytes = (name: string) => encodeAssetDocument({ type: "Scene", name, guid: "racing", version: 4, payload: { name, actors: [] } });
+    await storage.writeBinary(path, await bytes("Before"));
+    await service.registry!.reindexPath(path);
+    const after = await bytes("After saving");
+    const read = storage.readBinaryRange.bind(storage);
+    let saved = false;
+    vi.spyOn(storage, "readBinaryRange").mockImplementation(async (assetPath, offset, length, revision) => {
+      if (assetPath === path && revision !== undefined && !saved) {
+        saved = true;
+        await storage.writeBinary(path, after);
+      }
+      return read(assetPath, offset, length, revision);
+    });
+    const value = kind === "chunk"
+      ? JSON.parse(new TextDecoder().decode((await service.readAssetChunk(path, "document"))!))
+      : await service.loadDocument("scene", path);
+    expect(saved).toBe(true);
+    expect(value).toMatchObject({ name: "After saving", actors: [] });
+    service.assetLoadingService.trim({ force: true });
+    expect(service.assetLoadingService.snapshot()).toMatchObject({ sourceBytes: 0, decodedBytes: 0, temporaryBytes: 0, entries: [] });
+    service.dispose();
+  });
+
+  it.each(["chunk", "document"] as const)("reserves the current revision before a growing %s payload is read", async (kind) => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("GrowingRead");
+    const service = new ProjectService(storage);
+    await service.loadCurrentProject();
+    const path = "assets/Growing.scene.babasset";
+    const before = { name: "Before", actors: [] };
+    const after = { name: "After saving", actors: [], notes: "x".repeat(8192) };
+    const bytes = (payload: Record<string, unknown>) => encodeAssetDocument({ type: "Scene", name: "Growing", guid: "growing", version: 4, payload });
+    await storage.writeBinary(path, await bytes(before));
+    const registry = service.registry!;
+    await registry.reindexPath(path);
+    const replacement = await bytes(after);
+    const estimate = registry.chunkByteLength.bind(registry);
+    let saved = false;
+    vi.spyOn(registry, "chunkByteLength").mockImplementation(async (...args) => {
+      const length = await estimate(...args);
+      if (args[0] === "growing" && !saved) {
+        saved = true;
+        await storage.writeBinary(path, replacement);
+      }
+      return length;
+    });
+    const reservations: Array<{ bytes: number; reserved: number }> = [];
+    const read = storage.readBinaryRange.bind(storage);
+    vi.spyOn(storage, "readBinaryRange").mockImplementation(async (assetPath, offset, length, revision) => {
+      if (assetPath === path && offset > 12 && length > 0) {
+        reservations.push({ bytes: length, reserved: service.assetLoadingService.snapshot().reservedSourceBytes });
+      }
+      return read(assetPath, offset, length, revision);
+    });
+    const value = kind === "chunk"
+      ? JSON.parse(new TextDecoder().decode((await service.readAssetChunk(path, "document"))!))
+      : await service.loadDocument("scene", path);
+    expect(value).toMatchObject({ name: after.name, actors: [] });
+    expect(saved).toBe(true);
+    expect(reservations).toHaveLength(1);
+    expect(reservations[0].reserved).toBeGreaterThanOrEqual(reservations[0].bytes);
+    service.assetLoadingService.trim({ force: true });
+    expect(service.assetLoadingService.snapshot()).toMatchObject({ sourceBytes: 0, decodedBytes: 0, temporaryBytes: 0, entries: [] });
+    service.dispose();
+  });
+
+  it.each(["changing", "cancelled", "corrupt", "project changed"] as const)("bounds ordinary source-read retries for %s failures", async (mode) => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("FailedRead");
+    const service = new ProjectService(storage);
+    await service.loadCurrentProject();
+    const path = "assets/Racing.scene.babasset";
+    await storage.writeBinary(path, await encodeAssetDocument({ type: "Scene", name: "Racing", guid: "racing", version: 4, payload: { actors: [] } }));
+    await service.registry!.reindexPath(path);
+    const read = storage.readBinaryRange.bind(storage);
+    const controller = new AbortController();
+    let attempted = 0;
+    vi.spyOn(storage, "readBinaryRange").mockImplementation(async (assetPath, offset, length, revision) => {
+      if (assetPath === path && revision !== undefined) {
+        attempted++;
+        if (mode === "cancelled") controller.abort();
+        if (mode === "project changed") service.dispose();
+        if (mode === "corrupt") throw new Error("Corrupt chunk data");
+        throw new SourceRevisionChangedError("Concurrent save");
+      }
+      return read(assetPath, offset, length, revision);
+    });
+    await expect(service.readAssetChunk(path, "document", { signal: controller.signal })).rejects.toThrow(
+      mode === "changing" ? "3 read attempts" : mode === "corrupt" ? "Corrupt chunk data" : /abort|project changed/i,
+    );
+    expect(attempted).toBe(mode === "changing" ? 3 : 1);
+    service.dispose();
+  });
+
+  it.each(["catalog", "payload"] as const)("aborts a chunk read's pending %s transport when its consumer cancels", async (phase) => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("CancelledTransport");
+    const service = new ProjectService(storage);
+    await service.loadCurrentProject();
+    const path = "assets/Pending.scene.babasset";
+    await storage.writeBinary(path, await encodeAssetDocument({ type: "Scene", name: "Pending", guid: "pending", version: 4, payload: { actors: [] } }));
+    await service.registry!.reindexPath(path);
+    const port: ProjectStorage = storage;
+    const read = port.readBinaryRange.bind(port);
+    // Project scaffolding leaves its Scene read cached until the retention trim.
+    service.assetLoadingService.trim({ force: true });
+    let transportSignal: AbortSignal | undefined;
+    vi.spyOn(port, "readBinaryRange").mockImplementation(async (...args) => {
+      const [assetPath, offset, , , options] = args;
+      if (assetPath === path && (phase === "catalog" ? offset === 0 : offset > 12)) {
+        transportSignal = options?.signal;
+        if (!transportSignal) throw new Error("Pending transport has no cancellation signal");
+        const signal = transportSignal;
+        signal.throwIfAborted();
+        return new Promise<never>((_, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
+      }
+      return read(...args);
+    });
+    const controller = new AbortController();
+    const reading = service.readAssetChunk(path, "document", { signal: controller.signal });
+    const rejected = expect(reading).rejects.toThrow(/abort|cancel/i);
+    await vi.waitFor(() => expect(transportSignal).toBeDefined());
+    controller.abort();
+    await rejected;
+    expect(transportSignal!.aborted).toBe(true);
+    await vi.waitFor(() => expect(service.assetLoadingService.snapshot()).toMatchObject({ sourceBytes: 0, decodedBytes: 0, temporaryBytes: 0 }));
+    service.dispose();
+  });
+
+  it("opens an idle project without reading inline Scene bodies or unrelated source chunks", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("IdleCatalog");
+    const service = new ProjectService(storage);
+    await service.loadCurrentProject();
+    await storage.writeBinary("assets/unused.scene.babasset", await encodeAssetDocument({
+      type: "Scene", name: "Unused", guid: "unused-scene", version: 4,
+      payload: { name: "Unused", actors: [], notes: "x".repeat(256 * 1024) },
+    }, { extraChunks: [{ id: "unused-source", kind: "source", mime: "application/octet-stream", data: new Uint8Array(1024 * 1024) }] }));
+    const before = storage.getReadMetrics().actualBytesRead;
+    const fullReads = vi.spyOn(storage, "readBinary");
+    await service.loadCurrentProject();
+    expect(service.registry!.getByGuid("unused-scene")?.header.name).toBe("Unused");
+    expect(fullReads.mock.calls.filter(([path]) => path.endsWith(".babasset") || path.includes(".blobs/"))).toEqual([]);
+    expect(storage.getReadMetrics().actualBytesRead - before).toBeLessThan(64 * 1024);
+    expect(service.assetLoadingService.snapshot()).toMatchObject({ sourceBytes: 0, decodedBytes: 0, entries: [] });
+    service.dispose();
+  });
+
+  it("shares source ownership with open asset editors and frees cached sources when their final tab closes", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("ScopedEditors");
+    const project = new ProjectService(storage);
+    await project.loadCurrentProject();
+    const action = project.registry!.list().find((asset) => asset.header.type === "InputAction")!;
+    const documents = new DocumentService();
+    const id = await documents.openDocument(project, { kind: "input-action", path: action.path, label: action.header.name });
+    const working = documents.getDocument(id)!;
+    const changed = { ...(working.content as Record<string, unknown>), name: "Unsaved Name" };
+    documents.updateAssetDocument(id, changed);
+    expect(project.assetLoadingService.snapshot().entries.some((entry) => entry.owners.includes(`Asset Editor: ${id}`))).toBe(true);
+    const other = project.createAssetLoadScope("Preview");
+    const persisted = await project.loadDocument("input-action", action.path, { scope: other });
+    expect(persisted).not.toMatchObject({ name: "Unsaved Name" });
+    documents.closeDocument(id);
+    project.assetLoadingService.trim({ force: true });
+    expect(project.assetLoadingService.snapshot().entries.some((entry) => entry.owners.includes("Preview"))).toBe(true);
+    other.dispose();
+    project.assetLoadingService.trim({ force: true });
+    expect(project.assetLoadingService.snapshot()).toMatchObject({ sourceBytes: 0, decodedBytes: 0, entries: [] });
+    expect(working.content).toMatchObject({ name: "Unsaved Name" });
+    project.dispose();
   });
 
   it("initializes and disposes provider resources idempotently", () => {

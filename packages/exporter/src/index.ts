@@ -89,3 +89,8 @@ export {
 export type { PreviewConsoleRequest } from "./preview-protocol";
 export { createPreviewSaveStorageClient, createPreviewSaveStorageHost } from "./preview-save-storage";
 export * from "./preview-diagnostics";
+
+export { createPreviewAssetClient, createPreviewAssetServer, PREVIEW_ASSET_REQUEST, PREVIEW_ASSET_RESPONSE } from "./preview-assets";
+
+export { packedContentFromGame, packedPlayControls, packedBootControls, packedSourceControls, type PackedAudioLibrary, type PackedGameContent } from "./hydrate";
+export { gameSourceSubset, requiredGameAssets, type GameSourceContent } from "./source-content";

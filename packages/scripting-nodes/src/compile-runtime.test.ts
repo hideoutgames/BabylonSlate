@@ -168,7 +168,7 @@ describe("compiler emits runnable JavaScript", () => {
     expect(logs).toEqual(["7"]);
   });
 
-  it("runs a node reachable from two Sequence outputs without redeclaring vars", () => {
+  it("runs a node reachable from two Sequence outputs without redeclaring vars", async () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",
@@ -193,10 +193,10 @@ describe("compiler emits runnable JavaScript", () => {
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
     const mod = loadModule(compiled.source);
     const logs: string[] = [];
-    (mod.run as (ctx: unknown) => void)({
+    await (mod.run as (ctx: unknown) => Promise<void>)({
       formatValue: (v: unknown) => String(v),
       log: (_s: string, _c: string, message: string) => logs.push(message),
-      executeConsoleCommand: (command: string) => ({
+      executeConsoleCommandAsync: async (command: string) => ({
         success: true,
         output: `ran ${command}`,
       }),
@@ -204,7 +204,7 @@ describe("compiler emits runnable JavaScript", () => {
     expect(logs).toEqual(["ran stat fps", "ran stat fps"]);
   });
 
-  it("keeps impure node outputs readable after a Branch merges", () => {
+  it("keeps impure node outputs readable after a Branch merges", async () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",
@@ -229,11 +229,15 @@ describe("compiler emits runnable JavaScript", () => {
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
     const mod = loadModule(compiled.source);
     const logs: string[] = [];
-    (mod.run as (ctx: unknown) => void)({
+    let complete!: (result: { success: boolean; output: string }) => void;
+    const execution = (mod.run as (ctx: unknown) => Promise<void>)({
       formatValue: (v: unknown) => String(v),
       log: (_s: string, _c: string, message: string) => logs.push(message),
-      executeConsoleCommand: () => ({ success: true, output: "warm" }),
+      executeConsoleCommandAsync: () => new Promise<{ success: boolean; output: string }>(resolve => { complete = resolve; }),
     });
+    expect(logs).toEqual([]);
+    complete({ success: true, output: "warm" });
+    await execution;
     expect(logs).toEqual(["warm"]);
   });
 

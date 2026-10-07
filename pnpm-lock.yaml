@@ -383,6 +383,9 @@ importers:
       '@babylonslate/core':
         specifier: workspace:*
         version: link:../core
+      '@babylonslate/object-model':
+        specifier: workspace:*
+        version: link:../object-model
       '@babylonslate/particle-graph':
         specifier: workspace:*
         version: link:../particle-graph
@@ -503,6 +506,15 @@ importers:
 
   packages/exporter:
     dependencies:
+      '@babylonslate/anim-graph':
+        specifier: workspace:*
+        version: link:../anim-graph
+      '@babylonslate/behaviour-tree':
+        specifier: workspace:*
+        version: link:../behaviour-tree
+      '@babylonslate/shader-graph':
+        specifier: workspace:*
+        version: link:../shader-graph
       '@babylonslate/assets':
         specifier: workspace:*
         version: link:../assets
@@ -703,6 +715,9 @@ importers:
       '@babylonslate/scripting':
         specifier: workspace:*
         version: link:../scripting
+      acorn:
+        specifier: 8.18.0
+        version: 8.18.0
     devDependencies:
       '@babylonslate/scripting-nodes':
         specifier: workspace:*

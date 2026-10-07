@@ -5,7 +5,7 @@ type Result = { success: boolean; output: string };
 
 /** The worker console replies in control-channel order, including while paused. */
 export function createPlayerConsoleHost(options: {
-  execute: () => ((line: string) => Result) | undefined;
+  execute: () => ((line: string) => Result | Promise<Result>) | undefined;
   inspect?: () => (() => DebugInspectSnapshot) | undefined;
   post: (command: ControlMessage) => void;
 }) {
@@ -44,7 +44,7 @@ export function createPlayerConsoleHost(options: {
       const execute = options.execute();
       if (execute) {
         try {
-          return Promise.resolve(execute(line));
+          return Promise.resolve(execute(line)).catch(error => ({ success: false, output: String(error) }));
         } catch (error) {
           return Promise.resolve({ success: false, output: String(error) });
         }

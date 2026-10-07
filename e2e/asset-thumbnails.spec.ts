@@ -123,10 +123,18 @@ async function persistedCaptures(page: Page) {
   }, { storageDirectory: directoryName, projectGuid: PROJECT_GUID, guids: [MATERIAL_GUID, PREFAB_GUID] });
 }
 
-async function showThumbnails(page: Page) {
+async function showThumbnails(page: Page, generate = false) {
   await openContentBrowser(page);
   await selectContentBrowserAssetsFolder(page);
   await page.getByTestId("content-browser-search").fill("Thumbnail");
+  if (generate) {
+    const materialTile = page.locator(`[data-asset-path="${MATERIAL_PATH}"]`);
+    const prefabTile = page.locator(`[data-asset-path="${PREFAB_PATH}"]`);
+    await materialTile.click();
+    await prefabTile.click({ modifiers: ["ControlOrMeta"] });
+    await prefabTile.click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Generate Thumbnails", exact: true }).click();
+  }
   const material = page.locator(`[data-asset-path="${MATERIAL_PATH}"] img`);
   const prefab = page.locator(`[data-asset-path="${PREFAB_PATH}"] img`);
   await expect(material).toBeVisible({ timeout: 30_000 });
@@ -137,7 +145,7 @@ async function showThumbnails(page: Page) {
 test("Content Browser captures a material sphere and inherited actor geometry, then reuses saved thumbnails", async ({ page }) => {
   test.setTimeout(120_000);
   await openMinimalTestProject(page, await thumbnailProjectFiles());
-  const pixels = await showThumbnails(page);
+  const pixels = await showThumbnails(page, true);
   for (const image of [pixels.material, pixels.prefab]) {
     expect([image.width, image.height]).toEqual([128, 128]);
     expect(image.red).toBeGreaterThan(100);

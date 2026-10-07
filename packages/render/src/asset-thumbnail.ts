@@ -157,7 +157,7 @@ export async function captureAssetThumbnailPng(
     } else {
       host.mesh.isVisible = false;
       host.scene.shadowsEnabled = false;
-      sync = new EditorSceneSync(host.scene, undefined, { resolveMaterial, freezeActiveMeshes: false,
+      sync = new EditorSceneSync(host.scene, undefined, { resolveMaterial, freezeActiveMeshes: false, preparationPriority: "background",
         releaseMaterialInstance: (key, guid) => library.releaseInstance(key, guid),
         validateMaterialParameter: (guid, name, value) => {
           const document = request.materials.get(guid);

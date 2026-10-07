@@ -34,7 +34,6 @@ import {
   offBlockGrid,
   previewDraw,
   recordCompressedGpuTextures,
-  settledAlignmentPass,
   textureAlignment,
   watchGpuFailures,
   type CompressedTexture,
@@ -226,7 +225,7 @@ test("A running emitter Preview draws a 1x1 atlas KTX2 on WebGPU and rebinds its
   await openWebGpuProject(page, await atlasTextureFiles());
 
   // A Tileset uses the 1x1 Albedo Texture, so its compressed 1x1 KTX2 stays off the 4x4 block grid.
-  expect(await settledAlignmentPass(page)).not.toContain(ATLAS_TEXTURE_GUID);
+  expect(await textureAlignment(page)).toEqual({ runs: 0, pending: 0, requeued: [] });
   expect(await committedEncode(page)).toEqual({ compressionState: "compressed", ktx2: { width: 1, height: 1 } });
   const materialGuid = await createTextureParticleMaterial(page, "EmberMat", ATLAS_TEXTURE_GUID);
   await saveAllIfEnabled(page);
@@ -269,11 +268,12 @@ test("A running emitter Preview draws a 1x1 atlas KTX2 on WebGPU and rebinds its
     await chooseOption(page, "property-usage", "Particle");
     const particleEncode = { compressionState: "compressed", ktx2: { width: 4, height: 4 } };
     await expect.poll(() => committedEncode(page), { timeout: 60_000 }).toEqual(particleEncode);
-    // A Content Browser change remounts the registry and reruns the alignment
-    // pass while Particle is unsaved: the pass must not undo its encode.
-    const runs = (await textureAlignment(page))?.runs ?? 0;
+    // A Content Browser change remounts catalog metadata while Particle is
+    // unsaved; it must not process textures or undo the chosen encode.
+    await expect.poll(async () => (await textureAlignment(page))?.pending).toBe(0);
+    const before = await textureAlignment(page);
     await createContentBrowserAsset(page, "ParticleEmitter", "Ashes");
-    expect(await settledAlignmentPass(page, runs)).not.toContain(ATLAS_TEXTURE_GUID);
+    expect(await textureAlignment(page)).toEqual(before);
     expect(await committedEncode(page)).toEqual(particleEncode);
     await saveAllIfEnabled(page);
     await expect.poll(() => committedEncode(page)).toEqual(particleEncode);

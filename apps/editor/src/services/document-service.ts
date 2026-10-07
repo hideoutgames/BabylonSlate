@@ -22,6 +22,7 @@ import {
   parseDocumentId,
 } from "@babylonslate/core";
 import type { ProjectDocument } from "@babylonslate/core";
+import type { AssetLoadScope } from "@babylonslate/assets";
 import { recordDocumentDirty } from "../lib/dirty-trace";
 import { editorTabContentForKind } from "../lib/scene-layer-document";
 import type { ProjectService } from "./project-service";
@@ -141,6 +142,8 @@ type TabsSnapshot = { order: readonly string[]; foreground: readonly string[]; a
 
 export class DocumentService {
   private readonly savedScenes = new WeakMap<OpenDocument, SerializedScene>();
+  private readonly assetScopes = new Map<string, AssetLoadScope>();
+  private readonly pendingLoads = new Map<string, Set<AbortController>>();
   private readonly identityListeners = new Set<DocumentIdentityListener>();
   private readonly authoringLocks = new Map<symbol, string>();
   private readonly authoringLockListeners = new Set<() => void>();
@@ -314,6 +317,11 @@ export class DocumentService {
     return this.state.openDocuments.get(id);
   }
 
+  /** Preview source reads inherit the lifetime of their authored editor tab. */
+  getAssetLoadScope(id: string): AssetLoadScope | undefined {
+    return this.assetScopes.get(id);
+  }
+
   getActiveDocument(): OpenDocument | undefined {
     if (!this.state.activeDocumentId) return undefined;
     return this.state.openDocuments.get(this.state.activeDocumentId);
@@ -373,6 +381,10 @@ export class DocumentService {
     this.assertAuthoringWritable();
     const authoringLock = this.authoringLock;
     sceneLoadOptions?.signal?.throwIfAborted();
+    for (const pending of this.pendingLoads.values()) for (const controller of pending) controller.abort();
+    this.pendingLoads.clear();
+    for (const scope of this.assetScopes.values()) scope.dispose();
+    this.assetScopes.clear();
     const closedKinds = [...this.state.openDocuments.values()].map(
       (doc) => doc.ref.kind,
     );
@@ -406,17 +418,17 @@ export class DocumentService {
       const parsed = parseDocumentId(restoredId);
       if (!parsed || !isAssetDocumentKind(parsed.kind)) continue;
       if (parsed.kind === "scene" && restoredId !== lastSceneId) continue;
-      try {
-        await this.openDocument(
-          projectService,
-          { kind: parsed.kind, path: parsed.path, label: labelFromPath(parsed.path) },
-          layouts.documents[restoredId] ?? layouts.documents[id] ?? null,
-          false,
-          isSceneWorkspaceKind(parsed.kind) ? sceneLoadOptions : { signal: sceneLoadOptions?.signal },
-        );
-      } catch (error) {
-        if (parsed.kind !== "trace") throw error;
-      }
+      // Restored navigation is metadata only. Activate through openDocument to
+      // acquire a scope and read the document when the user actually needs it.
+      this.state.openDocuments.set(restoredId, {
+        id: restoredId,
+        ref: { kind: parsed.kind, path: parsed.path, label: labelFromPath(parsed.path) },
+        content: null,
+        layout: layouts.documents[restoredId] ?? layouts.documents[id] ?? null,
+        dirty: false,
+      });
+      this.state.tabOrder.push(restoredId);
+      this.advanceKinds([parsed.kind]);
     }
 
     sceneLoadOptions?.signal?.throwIfAborted();
@@ -454,7 +466,7 @@ export class DocumentService {
     const id = documentId(ref);
     const owner = this.state;
     const existing = this.state.openDocuments.get(id);
-    if (existing) {
+    if (existing && existing.content !== null) {
       options?.beforeCommit?.(ref);
       options?.signal?.throwIfAborted();
       const tabs = this.tabsSnapshot();
@@ -475,61 +487,80 @@ export class DocumentService {
     const authoringLock = this.authoringLock;
     if (ref.kind === "scene") this.assertAuthoringWritable();
 
-    if (options?.beforeLoad) await options.beforeLoad(ref);
-    options?.signal?.throwIfAborted();
-    const loaded = await projectService.loadDocument(ref.kind, ref.path);
-    options?.signal?.throwIfAborted();
-    if (this.state !== owner) {
-      throw new DOMException("The document's project was closed", "AbortError");
-    }
-    const content = editorTabContentForKind(
-      ref.kind,
-      loaded,
-    ) as DocumentContent;
-    const fullRef = createDocumentRef(ref.kind, ref.path, content);
+    const controller = new AbortController();
+    const pending = this.pendingLoads.get(id) ?? new Set<AbortController>();
+    pending.add(controller);
+    this.pendingLoads.set(id, pending);
+    const abort = () => controller.abort();
+    options?.signal?.addEventListener("abort", abort, { once: true });
+    let scope: AssetLoadScope | undefined;
+    let scopeCommitted = false;
+    try {
+      scope = projectService.createAssetLoadScope?.(`Asset Editor: ${id}`);
+      if (options?.beforeLoad) await options.beforeLoad(ref);
+      controller.signal.throwIfAborted();
+      const loaded = await projectService.loadDocument(ref.kind, ref.path, { scope, signal: controller.signal });
+      controller.signal.throwIfAborted();
+      if (this.state !== owner) {
+        throw new DOMException("The document's project was closed", "AbortError");
+      }
+      const content = editorTabContentForKind(
+        ref.kind,
+        loaded,
+      ) as DocumentContent;
+      const fullRef = createDocumentRef(ref.kind, ref.path, content);
 
-    const entry: OpenDocument = {
-      id,
-      ref: fullRef,
-      content,
-      layout,
-      dirty: false,
-      ...(options?.background ? { background: true } : {}),
-    };
+      const entry: OpenDocument = {
+        id,
+        ref: fullRef,
+        content,
+        layout: existing?.layout ?? layout,
+        dirty: false,
+        ...(options?.background ? { background: true } : {}),
+      };
 
-    if (ref.kind === "scene") {
-      this.assertAuthoringWritable();
-      if (this.authoringLock !== authoringLock) throw new Error("Scene loading crossed an authoring lock; retry after stopping the session.");
+      if (ref.kind === "scene") {
+        this.assertAuthoringWritable();
+        if (this.authoringLock !== authoringLock) throw new Error("Scene loading crossed an authoring lock; retry after stopping the session.");
+      }
+      options?.beforeCommit?.(ref);
+      controller.signal.throwIfAborted();
+      if (this.state !== owner) {
+        throw new DOMException("The document's project was closed", "AbortError");
+      }
+      // Another opener may have committed and been edited while this read was
+      // pending. Keep that tab's identity, layout, content, and dirty revision.
+      const tabs = this.tabsSnapshot();
+      const current = this.state.openDocuments.get(id);
+      const alreadyOpened = current !== undefined && current.content !== null;
+      if (!alreadyOpened) {
+        this.state.openDocuments.set(id, entry);
+        if (entry.ref.kind === "scene" && entry.content) this.savedScenes.set(entry, entry.content as SerializedScene);
+        if (!this.state.tabOrder.includes(id)) this.state.tabOrder.push(id);
+        if (scope) this.assetScopes.set(id, scope);
+        scopeCommitted = true;
+        this.advanceKinds([fullRef.kind]);
+      } else if (!options?.background) {
+        // A foreground read can race with a sheet loading this same record.
+        // Promote the canonical object, retaining any edits made during I/O.
+        this.promoteDocument(this.state.openDocuments.get(id)!);
+      }
+      if (ref.kind === "scene") {
+        this.closeOtherSceneDocuments(id);
+      }
+      this.pinStickyTabs();
+      if (setActive && !options?.background) {
+        this.state.activeDocumentId = id;
+      }
+      this.advanceTabsIfChanged(tabs);
+      if (!alreadyOpened) this.emitIdentity({ type: "opened", id });
+      return id;
+    } finally {
+      if (!scopeCommitted) scope?.dispose();
+      options?.signal?.removeEventListener("abort", abort);
+      pending.delete(controller);
+      if (!pending.size && this.pendingLoads.get(id) === pending) this.pendingLoads.delete(id);
     }
-    options?.beforeCommit?.(ref);
-    options?.signal?.throwIfAborted();
-    if (this.state !== owner) {
-      throw new DOMException("The document's project was closed", "AbortError");
-    }
-    // Another opener may have committed and been edited while this read was
-    // pending. Keep that tab's identity, layout, content, and dirty revision.
-    const tabs = this.tabsSnapshot();
-    const alreadyOpened = this.state.openDocuments.has(id);
-    if (!alreadyOpened) {
-      this.state.openDocuments.set(id, entry);
-      if (entry.ref.kind === "scene" && entry.content) this.savedScenes.set(entry, entry.content as SerializedScene);
-      this.state.tabOrder.push(id);
-      this.advanceKinds([fullRef.kind]);
-    } else if (!options?.background) {
-      // A foreground read can race with a sheet loading this same record.
-      // Promote the canonical object, retaining any edits made during I/O.
-      this.promoteDocument(this.state.openDocuments.get(id)!);
-    }
-    if (ref.kind === "scene") {
-      this.closeOtherSceneDocuments(id);
-    }
-    this.pinStickyTabs();
-    if (setActive && !options?.background) {
-      this.state.activeDocumentId = id;
-    }
-    this.advanceTabsIfChanged(tabs);
-    if (!alreadyOpened) this.emitIdentity({ type: "opened", id });
-    return id;
   }
 
   private closeOtherSceneDocuments(keepId: string): void {
@@ -549,6 +580,11 @@ export class DocumentService {
       return;
     }
     this.assertDocumentCanClose(id);
+
+    for (const controller of this.pendingLoads.get(id) ?? []) controller.abort();
+    this.pendingLoads.delete(id);
+    this.assetScopes.get(id)?.dispose();
+    this.assetScopes.delete(id);
 
     const tabs = this.tabsSnapshot();
     const closed = this.state.openDocuments.get(id);
@@ -607,6 +643,11 @@ export class DocumentService {
   ): void {
     const doc = this.state.openDocuments.get(oldId);
     if (!doc) return;
+    const scope = this.assetScopes.get(oldId);
+    if (scope) {
+      this.assetScopes.delete(oldId);
+      this.assetScopes.set(newId, scope);
+    }
     const tabs = this.tabsSnapshot();
     this.state.openDocuments.delete(oldId);
     const next: OpenDocument = {
@@ -636,6 +677,9 @@ export class DocumentService {
   setActiveDocument(id: string): void {
     const doc = this.state.openDocuments.get(id);
     if (doc) {
+      if (doc.ref.kind !== "content-browser" && doc.content === null) {
+        throw new Error("Open the restored document asynchronously before activating it");
+      }
       const tabs = this.tabsSnapshot();
       this.promoteDocument(doc);
       this.state.activeDocumentId = id;

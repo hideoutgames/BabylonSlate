@@ -17,6 +17,7 @@ import { audioNodes } from "./audio";
 import { particleNodes } from "./particles";
 import { sceneNodes } from "./scene";
 import { sceneStreamingNodes } from "./scene-streaming";
+import { assetLoadingNodes } from "./asset-loading";
 import { projectNodes } from "./project";
 import { saveGameNodes } from "./save-game";
 import { gameInstanceNodes } from "./game-instance";
@@ -65,6 +66,7 @@ export * from "./audio";
 export * from "./particles";
 export * from "./scene";
 export * from "./scene-streaming";
+export * from "./asset-loading";
 export * from "./project";
 export * from "./save-game";
 export * from "./game-instance";
@@ -116,6 +118,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...particleNodes,
     ...sceneNodes,
     ...sceneStreamingNodes,
+    ...assetLoadingNodes,
     ...projectNodes,
     ...saveGameNodes,
     ...gameInstanceNodes,

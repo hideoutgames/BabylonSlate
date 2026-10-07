@@ -23,7 +23,7 @@ beforeEach(() => {
   // HUD polling is unrelated to the log feed exercised here.
   const setInterval = window.setInterval.bind(window);
   vi.spyOn(window, "setInterval").mockImplementation((handler, delay, ...args) =>
-    delay === 200 ? 0 : setInterval(handler, delay, ...args));
+    (delay === 200 ? 0 : setInterval(handler, delay, ...args)) as unknown as ReturnType<typeof globalThis.setInterval>);
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 

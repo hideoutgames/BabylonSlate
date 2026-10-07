@@ -13,6 +13,8 @@ import {
   parseBlackboardDocument,
 } from "@babylonslate/behaviour-tree";
 import {
+  applyRuntimeSourceControl,
+  createSceneSourceHost,
   createPlayBootCoordinator,
   createPlayPauseGate,
   createRuntimeFromLoad,
@@ -32,7 +34,7 @@ import {
   type SceneLoadProgress,
 } from "@babylonslate/render";
 import { playFramebufferSize, type ResolvedRenderingPipeline, type SerializedScene } from "@babylonslate/core";
-import type { GameManifest } from "@babylonslate/exporter";
+import { gameSourceSubset, requiredGameAssets, type GameSourceContent, type GameManifest } from "@babylonslate/exporter";
 import { createPlayerWorkerHost, type PlayerWorkerHost } from "./worker-host";
 import { createGameAudioSourceLoader, type LoadedGame } from "./artifact";
 import {
@@ -44,7 +46,7 @@ import {
   waitForPlayerLoadingPaint,
 } from "./scene-loading-state";
 import { mountPlayerPrintOverlay } from "./print-overlay";
-import { packedBootControls, packedContentFromGame, type PackedGameContent } from "./hydrate";
+import { packedBootControls, packedContentFromGame, packedSourceControls, type PackedGameContent } from "./hydrate";
 import { attachInputCapture, playInputStampTick } from "./input";
 import {
   applyPlayerFpsSample,
@@ -182,6 +184,7 @@ function initializePlayer(
   releaseAll: () => unknown[],
 ): PlayerBootHandle {
   const { canvas, game } = options;
+  own(() => game.dispose?.());
   const manifest: GameManifest = game.manifest;
   const startup = manifest.startupSceneGuid;
   const scene: SerializedScene | undefined = game.scenes.get(startup);
@@ -190,16 +193,20 @@ function initializePlayer(
   }
   const content = options.content ?? packedContentFromGame(game);
   const diagnostics: PlayerDiagnostic[] = [];
-  const fontCss = packedFontCssStacks(game.fontFamilies);
+  const fontIds = new Set(manifest.assets.filter(entry => entry.type === "Font").map(entry => entry.guid));
+  const fontFallbacks = new Map(manifest.assets.filter(entry => entry.type === "Font").map(entry => [entry.guid, entry.requiredDependencies?.filter(id => fontIds.has(id)) ?? []]));
+  const fontCss = packedFontCssStacks(game.fontFamilies, "sans-serif", manifest.defaultFontGuid, fontFallbacks);
 
   let worker: PlayerWorkerHost | null = null;
   let runtime: RuntimeDriver | null = null;
   let diagnosticListeners: Set<(command: { type: string } & Record<string, unknown>) => void> | undefined;
   const diagnosticSessionId = options.previewDiagnostics ? newGuid() : "";
   let input: ReturnType<typeof attachInputCapture> | null = null;
+  const resourceFailures = new Set<string>();
+  const clearResourceFailures = (ids: Iterable<string>) => { for (const id of ids) resourceFailures.delete(id); };
   const consoleHost = createPlayerConsoleHost({
     execute: () =>
-      runtime ? (line) => runtime!.executeConsoleCommand(line) : undefined,
+      runtime ? (line) => runtime!.executeConsoleCommandAsync(line) : undefined,
     inspect: () => (runtime ? () => runtime!.inspectWorld() : undefined),
     post: (command) => worker?.postControl(command),
   });
@@ -235,12 +242,26 @@ function initializePlayer(
     sortingLayers: content.sortingLayers,
     pixelPerfect: content.pixelPerfect,
     touchMinTargetPx: manifest.touchMinTargetPx ?? 44,
+    prepareAudioAsset: game.acquireAssets ? async (guid, request) => {
+      const source = await game.acquireAssets!([guid], request);
+      let releaseRender: (() => void) | undefined;
+      try {
+        request.signal.throwIfAborted();
+        releaseRender = await handle.acquireSceneSources(renderSources(gameSourceSubset(game, source.assetGuids ?? requiredGameAssets(manifest, [guid]))), { signal: request.signal });
+        request.signal.throwIfAborted();
+        clearResourceFailures(requiredGameAssets(manifest, [guid]));
+        await refreshSourceContent();
+        request.signal.throwIfAborted();
+        return () => { releaseRender?.(); source.release(); if (!halted) { refreshSourceContent(); publishAssetStates(); } };
+      } catch (error) { releaseRender?.(); source.release(); throw error; }
+    } : undefined,
     textureBytes: game.textureBytes,
     areaEmissions: game.areaEmissions,
     texturePixelSizes: content.texturePixelSizes,
     fontFacetypeBytes: game.fontFacetypeBytes,
     fontMsdfJson: game.fontMsdfJson,
     fontMsdfPng: game.fontMsdfPng,
+    fontFaceEntries: [...game.fontBytes].map(([guid, bytes]) => ({ guid, family: game.fontFamilies.get(guid) ?? guid, bytes: bytes.slice().buffer })),
     fontCssStack: fontCss.fontCssStack,
     fontCssStackByGuid: fontCss.fontCssStackByGuid,
     modelBytes: game.modelBytes,
@@ -476,10 +497,17 @@ function initializePlayer(
       scene.settings.gameInstanceClass ??
       undefined,
     scenes,
+    classAssetGuids: Object.fromEntries(manifest.assets.filter(entry => entry.type === "Class" || entry.type === "Graph").flatMap(entry => [...new Set([entry.classId, entry.name, entry.guid, `scene:${entry.guid}`].filter((id): id is string => !!id))].map(id => [id, entry.guid]))),
+    consoleCommands: manifest.assets.flatMap(entry => {
+      if (!entry.consoleCommand) return [];
+      const classId = entry.classId ?? game.scripts.find(script => script.assetGuid === entry.guid)?.classId ?? entry.name ?? entry.guid;
+      return [{ ...entry.consoleCommand, name: entry.consoleCommand.name || classId.toLowerCase(), classId, assetGuid: entry.guid }];
+    }),
+    ...(game.acquireScene ? { sceneCatalog: manifest.assets.filter(entry => entry.type === "Scene").map(entry => ({ guid: entry.guid, name: entry.name ?? entry.guid })) } : {}),
     sceneLayers,
     sceneNavmeshBytes: Object.fromEntries(content.navmeshByScene),
     ...loopGuardLoadFields(manifest),
-    audioAssetGuids: [...content.audioLibrary.audio.keys()],
+    audioAssetGuids: manifest.assets.filter(entry => entry.type === "Audio").map(entry => entry.guid),
     materialParameterCatalog: buildMaterialParameterCatalog(content.materialDocuments, content.materialFunctions),
     materialTextureAssetGuids: materialParameterTextureAssetGuids(game.textureBytes, content.renderTargetTextures),
     renderTargets: Object.fromEntries(content.renderTargets),
@@ -546,6 +574,7 @@ function initializePlayer(
       if (!applyPlayerActiveScene(handle, game.scenes, { type: "activeScene", sceneAssetGuid }, hostSceneGuid, receivedActiveScene, content.audioReverbByScene)) {
         throw new Error("The requested scene is not available in this build.");
       }
+      if (game.acquireScene && sceneAssetGuid !== startup) { handle.releaseInitialSources(); game.releaseStartup?.(); refreshSourceContent(); publishAssetStates(); }
       hostSceneGuid = sceneAssetGuid;
       receivedActiveScene = true;
     },
@@ -590,8 +619,181 @@ function initializePlayer(
   const saveStorage = options.saveStorage ?? createSaveGameStorage();
   const saveServer = createSaveStorageServer(saveStorage, (response) => worker?.postControl({ type: "saveStorageResponse", response }));
   own(() => saveServer.dispose());
+  const syncMap = <K, V>(target: Map<K, V>, source: ReadonlyMap<K, V>) => {
+    target.clear();
+    for (const [key, value] of source) target.set(key, value);
+  };
+  let nextSourceRequest = 0;
+  let publishedScripts: readonly import("@babylonslate/bridge").ScriptBundleEntry[] | null = [...game.scripts];
+  let sourcePublication: Promise<void> = Promise.resolve();
+  const pendingSourceRequests = new Map<number, { resolve: () => void; reject: (error: unknown) => void }>();
+  own(() => { for (const request of pendingSourceRequests.values()) request.reject(new DOMException("Player stopped", "AbortError")); pendingSourceRequests.clear(); });
+  const refreshSourceContent = () => {
+    const next = packedContentFromGame(game);
+    // Services retain these library objects. Mutate their maps and install the
+    // complete surviving union so releasing one instance cannot break another.
+    for (const key of Object.keys(content) as Array<keyof PackedGameContent>) {
+      const current = content[key];
+      const replacement = next[key];
+      if (current instanceof Map && replacement instanceof Map) syncMap(current as Map<unknown, unknown>, replacement);
+      else if (Array.isArray(current) && Array.isArray(replacement)) current.splice(0, current.length, ...replacement as never[]);
+    }
+    for (const key of ["audio", "mixers", "channels", "attenuations"] as const) syncMap(content.audioLibrary[key] as Map<unknown, unknown>, next.audioLibrary[key]);
+    content.audioLibrary.sourceRevisions = next.audioLibrary.sourceRevisions;
+    content.navmeshBytes = next.navmeshBytes;
+    content.audioReverbBytes = next.audioReverbBytes;
+    syncMap(content.particleLibrary.emitters as Map<unknown, unknown>, next.particleLibrary.emitters);
+    syncMap(content.particleLibrary.systems as Map<unknown, unknown>, next.particleLibrary.systems);
+    for (const control of packedSourceControls(game, content)) {
+      if (control.type === "loadScripts") {
+        if (publishedScripts && control.scripts.length === publishedScripts.length && control.scripts.every((script, index) => script === publishedScripts![index])) continue;
+        const scheduledScripts = [...control.scripts];
+        publishedScripts = scheduledScripts;
+        sourcePublication = sourcePublication.catch(() => {}).then(async () => {
+          if (halted) throw new DOMException("Player stopped", "AbortError");
+          if (worker) {
+            const requestId = ++nextSourceRequest;
+            await new Promise<void>((resolve, reject) => {
+              pendingSourceRequests.set(requestId, { resolve, reject });
+              try { worker!.postControl({ ...control, requestId }); }
+              catch (error) { pendingSourceRequests.delete(requestId); reject(error); }
+            });
+          } else if (runtime) await applyRuntimeSourceControl(runtime, control);
+        });
+        // Acquisition paths await this same promise; eviction-only refreshes
+        // still report an actionable failure without an unhandled rejection.
+        void sourcePublication.catch(error => {
+          if (publishedScripts === scheduledScripts) publishedScripts = null;
+          if (!halted) options.onConsoleEvent?.({ type: "log", severity: "error", message: error instanceof Error ? error.message : String(error) });
+        });
+        continue;
+      }
+      if (worker) worker.postControl(control);
+      else if (runtime) void applyRuntimeSourceControl(runtime, control).catch(error => runtime?.reportError(error));
+    }
+    return sourcePublication;
+  };
+  const renderSources = (sources: GameSourceContent) => {
+    const prepared = packedContentFromGame(sources);
+    const fonts = packedFontCssStacks(sources.fontFamilies, "sans-serif", manifest.defaultFontGuid, fontFallbacks);
+    return {
+      assets: {
+        textureBytes: sources.textureBytes, areaEmissions: sources.areaEmissions,
+        modelBytes: sources.modelBytes, modelPayloads: sources.modelPayloads,
+        modelClipAnimationGuids: prepared.modelClipAnimationGuids, retargetAnimationLoads: prepared.retargetAnimationLoads,
+        spritePayloads: prepared.spritePayloads, spriteAnimations: prepared.spriteAnimationPayloads,
+        tilemaps: prepared.tilemapPayloads, tilesets: prepared.tilesetPayloads, waters: prepared.waterPayloads,
+        renderTargets: prepared.renderTargets, renderTargetTextures: prepared.renderTargetTextures,
+        texturePixelSizes: prepared.texturePixelSizes, pixelsPerUnit: prepared.pixelsPerUnit,
+        fontFacetypeBytes: sources.fontFacetypeBytes, fontMsdfJson: sources.fontMsdfJson, fontMsdfPng: sources.fontMsdfPng,
+        fontCssStack: fonts.fontCssStack, fontCssStackByGuid: fonts.fontCssStackByGuid,
+      },
+      materialDocuments: prepared.materialDocuments, materialFunctions: prepared.materialFunctions,
+      audioLibrary: prepared.audioLibrary, particleLibrary: prepared.particleLibrary,
+      fonts: [...sources.fontBytes].map(([guid, bytes]) => ({ guid, family: sources.fontFamilies.get(guid) ?? guid, bytes: bytes.slice().buffer })),
+    };
+  };
+  if (game.acquireAssets) handle.setCommandSourceLoader?.(async (ids, request) => {
+    const source = await game.acquireAssets!([...ids], { ...request, priority: "gameplay" });
+    let releaseRender: (() => void) | undefined;
+    try {
+      request.signal.throwIfAborted();
+      releaseRender = await handle.acquireSceneSources(renderSources(gameSourceSubset(game, source.assetGuids ?? requiredGameAssets(manifest, ids))), { prepare: true, signal: request.signal });
+      request.signal.throwIfAborted();
+      clearResourceFailures(requiredGameAssets(manifest, ids));
+      await refreshSourceContent();
+      request.signal.throwIfAborted();
+      return () => { releaseRender?.(); source.release(); if (!halted) { refreshSourceContent(); publishAssetStates(); } };
+    } catch (error) { releaseRender?.(); source.release(); throw error; }
+  });
+  const systemAssets = game.systemAssetGuids ?? requiredGameAssets(manifest, manifest.assets.filter(entry => entry.startupRequired).map(entry => entry.guid));
+  const systemSources = game.acquireScene && systemAssets.size ? handle.acquireSceneSources(renderSources(gameSourceSubset(game, systemAssets))).then(release => { if (halted) release(); else own(release); }) : Promise.resolve();
+  const acquireScene = game.acquireScene ? async (guid: string, request: { consumer: string; signal: AbortSignal }) => {
+    const source = await game.acquireScene!(guid, request);
+    let releaseRender: (() => void) | undefined;
+    try {
+      await systemSources;
+      request.signal.throwIfAborted();
+      releaseRender = await handle.acquireSceneSources(renderSources(gameSourceSubset(game, source.assetGuids ?? requiredGameAssets(manifest, [guid]))), { prepare: true, signal: request.signal });
+      request.signal.throwIfAborted();
+      clearResourceFailures(requiredGameAssets(manifest, [guid]));
+      await refreshSourceContent();
+      request.signal.throwIfAborted();
+      publishAssetStates();
+      return { scene: source.scene, release: () => { releaseRender?.(); source.release(); if (!halted) { refreshSourceContent(); publishAssetStates(); } } };
+    } catch (error) { releaseRender?.(); source.release(); if (!halted) refreshSourceContent(); throw error; }
+  } : undefined;
+  const sceneSources = acquireScene ? createSceneSourceHost({ acquireScene, send: control => worker?.postControl(control) }) : undefined;
+  own(() => sceneSources?.dispose());
+  const preloads = new Map<string, { controller: AbortController; release?: () => void }>();
+  const preparingPreloads = new Map<string, Set<string>>();
+  const preloadResult = (result: { preloadId: string; success: boolean; error?: string; progress?: number }) => {
+    if (worker) worker.postControl({ type: "assetPreloadResult", ...result });
+    else runtime?.notifyAssetPreloadResult(result);
+  };
+  const publishAssetStates = () => {
+    const states = manifest.assets.map(entry => ({ guid: entry.guid, state: [...preparingPreloads.values()].some(ids => ids.has(entry.guid)) ? "loading" as const : resourceFailures.has(entry.guid) ? "failed" as const : game.assets?.getLoadState(entry.guid) ?? "ready" as const }));
+    if (worker) worker.postControl({ type: "assetLoadStates", states });
+    else runtime?.setAssetLoadStates(states);
+  };
+  if (game.onSourcesChanged) own(game.onSourcesChanged(() => { if (!halted) { refreshSourceContent(); publishAssetStates(); } }));
+  const releasePreload = (id: string) => {
+    const request = preloads.get(id);
+    if (!request) return;
+    preloads.delete(id);
+    preparingPreloads.delete(id);
+    request.controller.abort();
+    request.release?.();
+    if (!halted) { refreshSourceContent(); publishAssetStates(); }
+  };
+  own(() => { for (const id of preloads.keys()) releasePreload(id); });
+  const receivePreload = (command: { type: string } & Record<string, unknown>): boolean => {
+    if (command.type === "assetPreloadRelease") { releasePreload(String(command.preloadId)); return true; }
+    if (command.type !== "assetPreload") return false;
+    const preloadId = String(command.preloadId);
+    const ids = Array.isArray(command.assetGuids) ? command.assetGuids.filter((id): id is string => typeof id === "string") : [];
+    releasePreload(preloadId);
+    const request: { controller: AbortController; release?: () => void } = { controller: new AbortController() };
+    preloads.set(preloadId, request);
+    preparingPreloads.set(preloadId, requiredGameAssets(manifest, ids));
+    clearResourceFailures(ids);
+    publishAssetStates();
+    void (async () => {
+      if (!game.acquireAssets) throw new Error("This player does not provide demand-driven asset loading.");
+      const source = await game.acquireAssets(ids, { consumer: `preload:${String(command.ownerId)}`, signal: request.controller.signal, priority: "preload",
+        onProgress: ({ completed, total }) => { preloadResult({ preloadId, success: true, progress: total ? Math.min(0.9, completed / total * 0.9) : 0 }); publishAssetStates(); },
+      });
+      let releaseRender: (() => void) | undefined;
+      try {
+        request.controller.signal.throwIfAborted();
+        releaseRender = await handle.acquireSceneSources(renderSources(gameSourceSubset(game, source.assetGuids ?? requiredGameAssets(manifest, ids))), { prepare: true, signal: request.controller.signal, priority: "preload" });
+        request.controller.signal.throwIfAborted();
+        request.release = () => { releaseRender?.(); source.release(); };
+        clearResourceFailures(requiredGameAssets(manifest, ids));
+        await refreshSourceContent();
+        request.controller.signal.throwIfAborted();
+        preparingPreloads.delete(preloadId);
+        publishAssetStates();
+        preloadResult({ preloadId, success: true, progress: 1 });
+      } catch (error) { releaseRender?.(); source.release(); throw error; }
+    })().catch((error: unknown) => {
+      if (preloads.get(preloadId) !== request) return;
+      for (const id of ids) resourceFailures.add(id);
+      releasePreload(preloadId);
+      preloadResult({ preloadId, success: false, error: error instanceof Error ? error.message : String(error) });
+    });
+    return true;
+  };
   const onCommand = (command: { type: string } & Record<string, unknown>) => {
     if (diagnosticListeners) for (const listener of diagnosticListeners) listener(command);
+    if (command.type === "assetSourcesReady") {
+      const requestId = Number(command.requestId);
+      const request = pendingSourceRequests.get(requestId);
+      if (request) { pendingSourceRequests.delete(requestId); if (command.success === true) request.resolve(); else request.reject(new Error(String(command.error ?? "Compiled Class source preparation failed."))); }
+      return;
+    }
+    if (receivePreload(command)) return;
+    if (sceneSources?.receive(command as never)) return;
     if (command.type === "saveStorageRequest") { saveServer.receive(command.request as import("@babylonslate/core").SaveStorageRequest); return; }
     if (halted) return;
     if (command.type === "sceneStreamBlocking") handle.setSceneStreamingPaused(command.blocking === true);
@@ -675,6 +877,7 @@ function initializePlayer(
       handle.pushSnapshot(buffer);
     });
     worker.postControl(loadControl);
+    publishAssetStates();
     for (const control of packedBootControls(content, game.scripts)) {
       worker.postControl(control);
     }
@@ -686,8 +889,10 @@ function initializePlayer(
     const inProcess = createRuntimeFromLoad(loadControl, (command) =>
       onCommand(command as never),
       saveStorage,
+      acquireScene ? { acquireScene } : undefined,
     );
     runtime = inProcess;
+    publishAssetStates();
     own(() => inProcess.stop());
     pauseGate = createPlayPauseGate({
       pause: () => inProcess.pause(),

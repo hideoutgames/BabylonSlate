@@ -22,7 +22,8 @@
     "@babylonslate/navigation": "workspace:*",
     "@babylonslate/object-model": "workspace:*",
     "@babylonslate/physics": "workspace:*",
-    "@babylonslate/scripting": "workspace:*"
+    "@babylonslate/scripting": "workspace:*",
+    "acorn": "8.18.0"
   },
   "devDependencies": {
     "@babylonslate/scripting-nodes": "workspace:*",

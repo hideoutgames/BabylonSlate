@@ -8,11 +8,31 @@ Text + binary filesystem over a bound project folder:
 
 - `pickProjectFolder` / `openDocumentsProject` / `getCurrentFolder` / `releaseFolder`
 - `readText` / `writeText` / `readBinary` / `writeBinary`
+- `readBinaryRange(path, offset, length, expectedRevision?, options?)` — exact, bounded bytes plus file size, opaque revision, and actual bytes read; invalid bounds, short reads, and changed revisions reject
 - `exists` / `readdir` / `mkdir` / `remove` / `stat`
 - Optional `deleteProject` — implemented by OPFS and memory adapters; omitted on Documents / Electron / Capacitor so Homepage list-remove cannot trash native folders
 - Folder handles carry `tier`: `documents` | `external` | `opfs`
 
 UI never imports Capacitor; all I/O goes through `createStorage()` in `@babylonslate/vfs`.
+
+### Bounded asset reads
+
+Catalog mounting reads a `.babasset` prefix and header through `readBinaryRange`; it does not open each asset's payload. A subsequent read carries the catalog revision, and payload hashes validate the selected chunk. Range APIs never implement a partial read by slicing an already-loaded complete file.
+
+- OPFS uses `File.slice().arrayBuffer()` and checks the file metadata before and after reading. Adapter writes also advance a shared revision counter, including equal-size writes within one timestamp tick.
+- Node uses positioned file-descriptor reads and checks inode, size, nanosecond modification/change times, and the current path after reading. Electron forwards the bounded request through validated IPC.
+- Capacitor Documents and external folders use the existing native storage plugin: `FileHandle` seeks on iOS and `pread` on Android. External iOS operations retain coordination/security scope; SAF requires a seekable regular descriptor and reports unsupported providers without falling back to a whole-file read. Native requests validate bounds before allocation and cap a single bridge transfer at 512 MiB.
+- Memory storage gives every write a new revision. Read-only plugin wrappers and mobile read scopes preserve bounded reads and shared accounting.
+- Revision invalidation crosses Electron/Capacitor as a dedicated error code and becomes `SourceRevisionChangedError`; malformed files and ordinary I/O failures remain distinct. A failed OPFS Blob slice is classified as stale only when a bounded metadata recheck confirms a changed revision. Error messages alone never trigger a retry.
+- `getReadMetrics()` reports cumulative full/range operations, requested bytes, and bytes returned by the adapter's filesystem boundary. It includes explicit full reads and range bytes discarded by short-read/revision failures; native failures preserve their byte counts across the bridge. It is separate from source residency. These counters do not measure OS read-ahead, a cloud file provider's internal downloads, base64 transport copies, or physical-device peak memory.
+
+Revisions detect changed sources; they are not filesystem transactions. `hasStrongSourceRevisions` is true only for owned memory generations and immutable HTTP catalogs. Disk adapters, including Node/Electron, conservatively leave it unset because filesystem timestamp precision varies. Asset readers refresh bounded headers for these mutable sources and include the header digest in the logical asset revision; deferred range reads retain the separate storage revision and validate chunk hashes. This detects equal-size header changes even when storage timestamps collide, without scanning payloads. Read-only and mounted views preserve this capability only when their underlying sources provide it. Unsupported bounded access is an actionable load failure, not permission to read the entire project eagerly. Native implementation still requires device qualification; local adapter tests do not establish A16 performance.
+
+Bundled Engine Plugins use an HTTP file catalog. The build emits each `.babasset` prefix, JSON header, and inline chunk as a separate immutable content object; blob files are independently addressable too. Opening the catalog and taking a mounted library view do not download or unpack plugin archives. Normal catalog/chunk requests use whole small objects and work without HTTP Range support. Arbitrary partial reads require validated `206`/`Content-Range` responses; a server returning a full object is rejected before consuming its body. Responses are length-bounded while reading, complete objects are hash-checked, and discarded bytes are accounted.
+
+`readText`, `readBinary`, and `readBinaryRange` accept optional `StorageReadOptions.signal`. Read-only, mounted, and mobile views forward the options. The source service passes its shared operation signal through catalog, chunk, and blob reads; the final interested owner aborts HTTP fetch and any pending body reader. Leaving one of several owners does not cancel their shared transport. Bytes delivered before cancellation remain in storage metrics, including failed full blob reads through mounted views. Source scheduler slots and reservations stay held until the load settles and releases its buffers; cancellation does not pretend an unfinished read has freed memory. Local platform operations without an interruptible primitive finish before the caller observes cancellation. Initial plugin catalog opening is separate from a scoped source request.
+
+`createMountedProjectStorage` combines read-only directory/file views with the most specific path winning, including small settings overrides. Views retain storage locations and metadata, not copies of plugin payloads. Imported plugin generations and their explicit legacy upgrade are described in [plugins](plugins.md).
 
 ## Adapter matrix
 

@@ -449,6 +449,8 @@ debounce; expensive ones stay dirty until **Render**. A manual Render of the
 ready generation queues a fresh render generation. A result from an older
 generation still becomes the last good image unless a newer compile is already
 in flight, so the preview is never blank while editing.
+An explicit Render remains queued while cold Texture or Material Function
+sources arrive; unrelated catalog changes do not reload the preview's textures.
 
 `classifyMaterialCost` prefers measured compile durations once the session has
 two of them and compares them against the **active frame budget**

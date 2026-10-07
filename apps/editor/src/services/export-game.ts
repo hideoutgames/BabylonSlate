@@ -1,4 +1,5 @@
 import { validateSaveGameDefinition, type SaveGameConfiguration } from "@babylonslate/core";
+import { subsystemBaseClassIdOf } from "@babylonslate/object-model";
 import { dataTypeSchemas } from "@babylonslate/scripting";
 import type { DataAssetCatalogEntry } from "@babylonslate/core";
 import { areaEmissionTextureGuids, buildDataTreeIndex, isDataTreeAsset, isInputAssetType, normalizeInputAssetPayload, renderEffectsAssetGuids } from "@babylonslate/core";
@@ -37,6 +38,7 @@ import {
 } from "@babylonslate/core";
 import {
   normalizeFontPayload,
+  resolveAssetCatalogDependencies,
   resolvePluginEnabled,
   resolvePluginGraph,
   type IndexedAsset,
@@ -62,7 +64,13 @@ export function assetsFromIndexed(
     name: asset.header.name,
     path: asset.path,
     parentClass: asset.header.parentClass ?? null,
-    dependencies: asset.header.dependencies ?? [],
+    dependencies: resolveAssetCatalogDependencies(asset.header, list),
+    requiredDependencies: asset.header.requiredDependencies ? resolveAssetCatalogDependencies(asset.header, list, true) : undefined,
+    requiredVariableNames: asset.header.requiredVariableNames,
+    classReferences: asset.header.classReferences,
+    requiredClassReferences: asset.header.requiredClassReferences,
+    consoleCommand: asset.header.consoleCommand,
+    dependencyMetadataVersion: asset.header.dependencyMetadataVersion,
     rootId: asset.rootId,
   }));
 }
@@ -96,6 +104,7 @@ export type CollectExportGameParams = {
   fontMsdfPngByGuid?: (guid: string) => Uint8Array | null;
   audioReverbByGuid?: (guid: string) => Uint8Array | null;
   renderSettings: RenderProjectSettings;
+  defaultFontGuid?: string | null;
   playFrameCap: number;
   touchMinTargetPx?: number;
   pixelsPerUnit?: number;
@@ -278,7 +287,7 @@ export async function collectAndExportGame(
     saveGameDefinitionGuid: params.saveGameSettings?.definitionGuid,
     gameInstanceClass: params.gameInstanceClass,
     audioMixerGuid: params.audioMixerGuid,
-    renderAssetGuids: renderEffectsAssetGuids(params.renderSettings.effects),
+    renderAssetGuids: [...renderEffectsAssetGuids(params.renderSettings.effects), ...(params.defaultFontGuid ? [params.defaultFontGuid] : [])],
     assets: params.assets,
     pluginEnabledGuids,
     parentOf: params.parentOf,
@@ -292,12 +301,14 @@ export async function collectAndExportGame(
 
   const startup = params.startupSceneGuid!;
   const graphDocs: Array<{
+    guid: string;
     path: string;
     content: SerializedGraph;
     parentClassId?: string | null;
   }> = [];
   const animDocs: Array<{ guid: string; path: string; document: unknown }> = [];
   const exportAssets: ExportAssetBytes[] = [];
+  const subsystemHierarchy = { ancestry(classId: string) { const result: string[] = []; const seen = new Set<string>(); let current: string | null | undefined = classId; while (current && !seen.has(current)) { seen.add(current); result.push(current); current = params.parentOf(current); } return result; } };
   const requiredEmissions = new Set<string>();
   for (const guid of closure.value.guids) {
     const asset = params.assets.find((entry) => entry.guid === guid);
@@ -316,6 +327,7 @@ export async function collectAndExportGame(
       const graph = params.graphByGuid(guid);
       if (graph) {
         graphDocs.push({
+          guid,
           path: asset.name,
           content: graph,
           parentClassId: asset.parentClass,
@@ -344,6 +356,15 @@ export async function collectAndExportGame(
       const textureSize = texturePixelSizeFromPayload(payload);
       exportAssets.push({
         guid,
+        parentClass: asset.parentClass,
+        dependencies: asset.dependencies,
+        requiredDependencies: asset.requiredDependencies,
+        requiredVariableNames: asset.requiredVariableNames,
+        classReferences: asset.classReferences,
+        requiredClassReferences: asset.requiredClassReferences,
+        consoleCommand: asset.consoleCommand,
+        dependencyMetadataVersion: asset.dependencyMetadataVersion,
+        startupRequired: asset.type === "InputAction" || asset.type === "InputAxis" || asset.guid === params.audioMixerGuid || asset.guid === params.gameInstanceClass || asset.name === params.gameInstanceClass || (asset.type === "Class" && !!asset.parentClass && subsystemBaseClassIdOf(subsystemHierarchy, asset.parentClass) !== null),
         type: asset.type,
         sceneGuid: packSceneGuidForAsset(
           guid,
@@ -461,16 +482,16 @@ export async function collectAndExportGame(
   params.onPhase?.("Compiling");
   const scripts: ScriptBundleEntry[] = [];
   if (graphDocs.length || animDocs.length) {
-    const { compileAnimGraphScripts, compileGraphDocuments } = await import("./script-compiler");
+    const { compileAnimGraphScripts, compileGraphDocuments, classIdForGraphPath } = await import("./script-compiler");
     scripts.push(
-      ...compileGraphDocuments(graphDocs, {
+      ...compileGraphDocuments(graphDocs.map(document => ({ ...document, classId: classIdForGraphPath(document.path), path: document.guid })), {
         stripDevelopmentOnly: !bundleDebugger,
         inputAssets,
         dataAssets,
         ...typeSchemas,
         tagRegistry: params.tagRegistry,
       }),
-      ...compileAnimGraphScripts(animDocs, {
+      ...compileAnimGraphScripts(animDocs.map(document => ({ ...document, path: document.guid })), {
         stripDevelopmentOnly: !bundleDebugger,
         inputAssets,
         dataAssets,
@@ -508,6 +529,7 @@ export async function collectAndExportGame(
     reverbDecayScale: params.reverbDecayScale,
     reverbDampingScale: params.reverbDampingScale,
     renderSettings: params.renderSettings,
+    defaultFontGuid: params.defaultFontGuid,
     playFrameCap: params.playFrameCap,
     touchMinTargetPx: params.touchMinTargetPx,
     pixelsPerUnit: params.pixelsPerUnit,

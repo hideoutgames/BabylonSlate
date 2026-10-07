@@ -1,13 +1,29 @@
-import type { IndexedAsset } from "@babylonslate/assets";
+import { getRequiredDependencies, type IndexedAsset } from "@babylonslate/assets";
 import { areaEmissionTextureGuids, type SerializedScene } from "@babylonslate/core";
 import {
   environmentTextureGuidsFromScenes, materialGuidsFromScenes, modelAssetGuidsFromScene,
   overlayTextureGuidsFromScene, playFontGuidsFromScenes, postProcessTextureGuidsFromScenes, materialInstanceTextureGuidsFromScenes,
   skyboxFaceGuidsFromScene, spriteAssetGuidsFromScene, tilemapAssetGuidsFromScene,
 } from "./play-content";
+import { assetHeaderDependencyMetadata } from "./content-browser-helpers";
 
 const resourceTypes = new Set(["Water", "Material", "MaterialInstance", "MaterialFunction", "RenderTarget", "RenderTargetTexture", "Model", "Texture", "Sprite",
   "SpriteAnimation", "Tilemap", "Tileset", "Font", "Animation", "Skeleton"]);
+
+/** Live authored values choose roots; deferred Scene/prefab references stay cold. */
+export function sceneViewportRequiredAssets(scene: SerializedScene, assets: readonly IndexedAsset[], extraGuids: readonly string[] = []): Set<string> {
+  const byGuid = new Map(assets.map((asset) => [asset.header.guid, asset]));
+  const pending = [...assetHeaderDependencyMetadata("Scene", scene as unknown as Record<string, unknown>, assets).requiredDependencies, ...extraGuids];
+  const result = new Set<string>();
+  while (pending.length) {
+    const guid = pending.pop()!;
+    if (result.has(guid)) continue;
+    result.add(guid);
+    const asset = byGuid.get(guid);
+    if (asset && !asset.placeholder) pending.push(...getRequiredDependencies(asset.header));
+  }
+  return result;
+}
 
 /** Match the viewport collectors. Transforms and scene autosaves do not alter
  * their inputs. Include saved resource revisions for transitive model slots,

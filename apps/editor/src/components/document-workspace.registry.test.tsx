@@ -20,7 +20,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   openDocuments: state.documents ?? state.tabs.map((id) => ({
     id,
     ref: { kind: "graph", path: `assets/${id}.class.babasset` },
-    content: null,
+    content: { nodes: [], edges: [] },
     layout: null,
   })),
   projectDocument: { metadata: { name: "Test" } },

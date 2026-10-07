@@ -148,7 +148,7 @@ describe("asset documents", () => {
     expect(decoded.payload.name).toBe("Hero");
   });
 
-  it("writes supplied dependencies onto the scanned header", async () => {
+  it("writes supplied deferred references canonically onto the scanned header", async () => {
     const bytes = await encodeAssetDocument(
       {
         type: "Material",
@@ -157,10 +157,11 @@ describe("asset documents", () => {
         version: 2,
         payload: { domain: "surface", nodes: [], edges: [] },
       },
-      { dependencies: ["tex-albedo", "fn-tint"] },
+      { dependencies: ["tex-albedo", "fn-tint", "tex-albedo"] },
     );
     const header = readAssetDocumentHeader(bytes);
-    expect(header.dependencies).toEqual(["tex-albedo", "fn-tint"]);
+    expect(header.dependencies).toEqual(["fn-tint", "tex-albedo"]);
+    expect(header.requiredDependencies).toEqual([]);
   });
 
   it("writes settings payloads onto the header without a document chunk", async () => {

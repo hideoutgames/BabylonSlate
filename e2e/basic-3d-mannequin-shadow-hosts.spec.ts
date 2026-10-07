@@ -92,6 +92,18 @@ test("Basic 3D mannequin preserves real materials, contacts and animation in Pla
       const pose = posedMannequin(geometry, state);
       const points = mannequinShadowSamples(pose, state, size.width, size.height);
       const shadowed = await captureMannequinPixels(canvas, points);
+      if (host === "play") {
+        const renderer = await canvas.evaluate(() => {
+          const api = (window as unknown as { __babylonslatePlayTest: Api & {
+            materialDefines(): Array<{ mesh: string; material: string | null; defines: string }>;
+            renderTasks(): string[];
+          } }).__babylonslatePlayTest;
+          return { materialDefines: api.materialDefines(), rendering: api.rendering(), renderTasks: api.renderTasks() };
+        });
+        await testInfo.attach(`${host}-${mode}-shadow-renderer`, {
+          body: JSON.stringify(renderer), contentType: "application/json",
+        });
+      }
       await settings(canvas, host, { ...render, shadows: { ...render.shadows!, enabled: false } });
       const direct = await captureMannequinPixels(canvas, points);
       const regions = mannequinShadowMetrics(points, shadowed.pixels, shadowed.pixels, direct.pixels);

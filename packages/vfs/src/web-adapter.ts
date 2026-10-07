@@ -1,3 +1,5 @@
+import { checkStorageRevision, rethrowStorageReadFailure, StorageReadCounter, validateStorageRange } from "./storage-range";
+import { SourceRevisionChangedError } from "@babylonslate/core";
 import type {
   DirEntry,
   FileStat,
@@ -10,6 +12,7 @@ const META_KEY = "babylonslate:opfs-meta";
 /** Reads of a file whose snapshot a concurrent write replaced, before giving up. */
 const OPFS_READ_ATTEMPTS = 4;
 const STALE_SNAPSHOT_ERRORS = new Set(["NotReadableError", "NotFoundError"]);
+const writeRevisions = new Map<string, number>();
 const lifecycleQueues = new Map<string, Promise<void>>();
 
 /** Serialize migration/binding across adapters and, with Web Locks, browser tabs. */
@@ -59,6 +62,10 @@ function updateMeta(mutate: (meta: OpfsMeta) => void): Promise<void> {
 
 /** Durable browser storage. Hosts without OPFS must report the failure to the caller. */
 export class OpfsStorageAdapter implements ProjectStorage {
+  private readonly reads = new StorageReadCounter();
+  private readonly rangeHandles = new Map<string, FileSystemFileHandle>();
+  getReadMetrics() { return this.reads.snapshot(); }
+
   private folder: ProjectFolderHandle | null = null;
   private root: FileSystemDirectoryHandle | null = null;
 
@@ -186,6 +193,9 @@ export class OpfsStorageAdapter implements ProjectStorage {
     const dirName = known.directory ?? legacyDirectoryName(known.id);
     const shared = meta.projects.some((project) => project.id !== handle.id &&
       (project.directory ?? legacyDirectoryName(project.id)) === dirName);
+    for (const cached of [...this.rangeHandles.keys()]) {
+      if (cached.startsWith(`${handle.id}/`)) this.rangeHandles.delete(cached);
+    }
     const opfs = await this.getOpfsRoot();
     if (!shared) {
       try { await opfs.removeEntry(dirName, { recursive: true }); }
@@ -259,7 +269,9 @@ export class OpfsStorageAdapter implements ProjectStorage {
         throw new Error(`File not found: ${path}`);
       }
       try {
-        return new Uint8Array(await file.arrayBuffer());
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        this.reads.record("full", bytes.byteLength);
+        return bytes;
       } catch (error) {
         // `getFile()` is a snapshot: a write that closes before it is read
         // (Chromium swaps the new contents in) fails the read with
@@ -271,17 +283,71 @@ export class OpfsStorageAdapter implements ProjectStorage {
     }
   }
 
+  /**
+   * Bounded catalog reads repeat for every revision check. Each OPFS call is a
+   * separate task, which a busy render loop can delay by a frame, so reuse the
+   * file handle and fall back to a fresh lookup when it no longer resolves.
+   */
+  private async rangeFile(key: string, path: string): Promise<{ handle: FileSystemFileHandle; file: File }> {
+    const cached = this.rangeHandles.get(key);
+    if (cached) {
+      try { return { handle: cached, file: await cached.getFile() }; }
+      catch { this.rangeHandles.delete(key); }
+    }
+    const { parent, name } = await this.resolveHandle(path, false);
+    const handle = await parent.getFileHandle(name);
+    const file = await handle.getFile();
+    this.rangeHandles.set(key, handle);
+    return { handle, file };
+  }
+
+  async readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string) {
+    validateStorageRange(offset, length);
+    const key = `${this.assertFolder().id}/${this.split(path).join("/")}`;
+    const { handle, file } = await this.rangeFile(key, path);
+    const revisionOf = (value: File) => `${value.lastModified}:${value.size}:${writeRevisions.get(key) ?? 0}`;
+    const revision = revisionOf(file);
+    checkStorageRevision(path, revision, expectedRevision);
+    validateStorageRange(offset, length, file.size);
+    // Reading the Blob slice is essential: slicing an ArrayBuffer already read
+    // from the complete File would eagerly retain every inline asset payload.
+    let bytes: Uint8Array;
+    try { bytes = new Uint8Array(await file.slice(offset, offset + length).arrayBuffer()); }
+    catch (error) {
+      this.reads.record("range", length, 0);
+      if (STALE_SNAPSHOT_ERRORS.has(String((error as { name?: unknown } | null)?.name ?? ""))) {
+        let current: File | undefined;
+        try { current = await handle.getFile(); }
+        catch { /* A missing/unreadable file alone does not prove a changed revision. */ }
+        if (current && revisionOf(current) !== revision) {
+          throw Object.assign(new SourceRevisionChangedError(`Source revision changed: ${path}`), { cause: error });
+        }
+      }
+      throw error;
+    }
+    this.reads.record("range", length, bytes.byteLength);
+    try {
+      if (bytes.byteLength !== length) throw new Error(`Unexpected end of file: ${path}`);
+      checkStorageRevision(path, revisionOf(await handle.getFile()), revision);
+      return { bytes, totalSize: file.size, revision, actualBytesRead: bytes.byteLength };
+    } catch (error) { rethrowStorageReadFailure(error, bytes.byteLength); }
+  }
+
   async writeBinary(path: string, data: Uint8Array): Promise<void> {
+    const key = `${this.assertFolder().id}/${this.split(path).join("/")}`;
     const { parent, name } = await this.resolveHandle(path, true);
     const writable = await (
       await parent.getFileHandle(name, { create: true })
     ).createWritable();
+    writeRevisions.set(key, (writeRevisions.get(key) ?? 0) + 1);
     try {
       await writable.write(data);
       await writable.close();
     } catch (error) {
       await writable.abort().catch(() => {});
       throw error;
+    } finally {
+      writeRevisions.set(key, (writeRevisions.get(key) ?? 0) + 1);
     }
   }
 
@@ -361,6 +427,10 @@ export class OpfsStorageAdapter implements ProjectStorage {
   }
 
   async remove(path: string): Promise<void> {
+    const key = `${this.assertFolder().id}/${this.split(path).join("/")}`;
+    for (const cached of [...this.rangeHandles.keys()]) {
+      if (cached === key || cached.startsWith(`${key}/`)) this.rangeHandles.delete(cached);
+    }
     try {
       const { parent, name } = await this.resolveHandle(path, false);
       await parent.removeEntry(name, { recursive: true });

@@ -1,15 +1,13 @@
-import { err, ok, DEFAULT_LOOP_COUNT, DEFAULT_SORTING_LAYERS, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, type Result } from "@babylonslate/core";
-import { PARTICLE_ASSET_TYPES } from "@babylonslate/assets";
+import { err, ok, DEFAULT_LOOP_COUNT, DEFAULT_SORTING_LAYERS, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, renderEffectsAssetGuids, consoleCommandMetadataFromGraph, type Result } from "@babylonslate/core";
+import { collectAssetDependencyMetadata, extractPackedModelAsset, peekPackedAudioPayload, sha256Hex, PARTICLE_ASSET_TYPES, type AssetDependencyClass } from "@babylonslate/assets";
 import { zipSync, unzipSync } from "fflate";
-import { encodeBabpack } from "./babpack";
 import {
-  BOOT_PACK_FILE,
   DEFAULT_FILE_COUNT_FAIL,
   DEFAULT_FILE_COUNT_WARN,
   GAME_MANIFEST_FILE,
   SCRIPTS_FILE,
 } from "./constants";
-import { concatenateScripts, serializeScriptRegistry } from "./scripts";
+import { serializeScriptRegistry } from "./scripts";
 import { selectPlayerRuntimeFiles } from "./player-files";
 import type {
   ExportArtifact,
@@ -55,12 +53,10 @@ const JSON_TYPES = new Set<string>([
   // Basic emitters, Particle Graphs and Particle Systems.
   ...PARTICLE_ASSET_TYPES,
   "Animation",
-  "SceneLayer",
+  "Skeleton",
+  "SceneLayer", "AudioMixer", "AudioChannel", "SoundAttenuation", "Water",
+  "DataDefinition", "DataTree", "Structure", "Enum", "SaveGame",
 ]);
-
-function scenePackName(sceneGuid: string): string {
-  return `scene-${sceneGuid}.babpack`;
-}
 
 function countWarning(count: number, warn: number): string {
   return `Export file count ${count} exceeds the warning threshold of ${warn}.`;
@@ -82,7 +78,11 @@ function indexEntry(
     guid: asset.guid,
     type: asset.type,
     encoding: encodingFor(asset),
+    ...(asset.classId ? { classId: asset.classId } : {}),
+    ...(asset.ownerGuid ? { ownerGuid: asset.ownerGuid } : {}),
+    ...(asset.parentClass ? { parentClass: asset.parentClass } : {}),
     ...(asset.name ? { name: asset.name } : {}),
+    ...(asset.consoleCommand ? { consoleCommand: asset.consoleCommand } : {}),
     ...(typeof asset.width === "number" &&
     asset.width > 0 &&
     typeof asset.height === "number" &&
@@ -139,66 +139,96 @@ function inlineCssIntoIndex(files: Map<string, Uint8Array>): void {
   files.set("index.html", encoder.encode(html));
 }
 
-async function writePackedAssets(
+async function writeLooseAssets(
   files: Map<string, Uint8Array>,
   assets: readonly ExportAssetBytes[],
-  startupSceneGuid: string,
 ): Promise<{ packs: string[]; index: GameAssetIndexEntry[] }> {
-  const assigned = new Set<string>();
-  const packs: string[] = [];
-  const index: GameAssetIndexEntry[] = [];
-  const boot = assets.filter((asset) => asset.sceneGuid === startupSceneGuid);
-  for (const asset of boot) assigned.add(asset.guid);
-  files.set(
-    BOOT_PACK_FILE,
-    await encodeBabpack(
-      boot.map((asset) => ({ guid: asset.guid, bytes: asset.bytes })),
-    ),
-  );
-  packs.push(BOOT_PACK_FILE);
-  for (const asset of boot) {
-    index.push(indexEntry(asset, { pack: BOOT_PACK_FILE }));
-  }
-  const otherScenes = [
-    ...new Set(
-      assets
-        .filter((asset) => !assigned.has(asset.guid))
-        .map((asset) => asset.sceneGuid),
-    ),
-  ].sort();
-  for (const sceneGuid of otherScenes) {
-    const group = assets.filter(
-      (asset) => asset.sceneGuid === sceneGuid && !assigned.has(asset.guid),
-    );
-    for (const asset of group) assigned.add(asset.guid);
-    const name = scenePackName(sceneGuid);
-    files.set(
-      name,
-      await encodeBabpack(
-        group.map((asset) => ({ guid: asset.guid, bytes: asset.bytes })),
-      ),
-    );
-    packs.push(name);
-    for (const asset of group) {
-      index.push(indexEntry(asset, { pack: name }));
-    }
-  }
-  return { packs, index };
-}
-
-function writeLooseAssets(
-  files: Map<string, Uint8Array>,
-  assets: readonly ExportAssetBytes[],
-): { packs: string[]; index: GameAssetIndexEntry[] } {
   const index: GameAssetIndexEntry[] = [];
   for (const [indexInExport, asset] of assets.entries()) {
     // Asset IDs include namespaced sidecars (for example area-emission:guid).
     // Keep IDs in the manifest and use portable, collision-free file names.
     const path = `assets/data-${indexInExport}.bin`;
     files.set(path, asset.bytes);
-    index.push(indexEntry(asset, { path }));
+    index.push({ ...indexEntry(asset, { path }), byteLength: asset.bytes.byteLength, revision: await sha256Hex(asset.bytes),
+      dependencies: [...(asset.dependencies ?? [])], requiredDependencies: [...(asset.requiredDependencies ?? [])],
+      ...(asset.startupRequired ? { startupRequired: true } : {}),
+    });
   }
   return { packs: [], index };
+}
+
+function dependencyCatalog(assets: readonly ExportAssetBytes[]): ExportAssetBytes[] {
+  const byId = new Map(assets.map(asset => [asset.guid, asset]));
+  const byName = new Map(assets.filter(asset => asset.name).map(asset => [asset.name!, asset.guid]));
+  const documents = new Map<string, Record<string, unknown>>();
+  const document = (asset: ExportAssetBytes) => {
+    if (documents.has(asset.guid)) return documents.get(asset.guid);
+    if (encodingFor(asset) !== "json") return undefined;
+    try {
+      const value: unknown = JSON.parse(decoder.decode(asset.bytes));
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        documents.set(asset.guid, value as Record<string, unknown>);
+        return value as Record<string, unknown>;
+      }
+    } catch { /* The player reports corrupt requested payloads. */ }
+    return undefined;
+  };
+  const classes: AssetDependencyClass[] = assets.filter(asset => asset.type === "Class" || asset.type === "Graph").map(asset => {
+    const payload = document(asset);
+    return { guid: asset.guid, classId: asset.classId ?? asset.name ?? asset.guid, parentClassId: asset.parentClass,
+      members: Array.isArray(payload?.members) ? payload.members as AssetDependencyClass["members"] : undefined,
+      requiredVariableNames: asset.requiredVariableNames };
+  });
+  const definitionFields = (guid: string): readonly unknown[] | undefined => {
+    const asset = byId.get(guid);
+    const fields = asset && ["DataDefinition", "Structure"].includes(asset.type) ? document(asset)?.fields : undefined;
+    return Array.isArray(fields) ? fields : undefined;
+  };
+  for (const definition of classes) {
+    const payload = document(byId.get(definition.guid)!);
+    if (!definition.requiredVariableNames && payload) definition.requiredVariableNames = collectAssetDependencyMetadata("Class", payload, {
+      classes, parentClass: definition.parentClassId, definitionFields,
+    }).requiredVariableNames;
+  }
+  const sidecars = new Map<string, string[]>();
+  for (const asset of assets) {
+    const separator = asset.guid.indexOf(":");
+    if (separator < 0) continue;
+    const owner = asset.ownerGuid ?? asset.guid.slice(separator + 1);
+    if (!byId.has(owner)) continue;
+    const list = sidecars.get(owner) ?? [];
+    list.push(asset.guid);
+    sidecars.set(owner, list);
+  }
+  return assets.map(asset => {
+    let required = asset.requiredDependencies;
+    let dependencies = asset.dependencies;
+    let classReferences = asset.classReferences;
+    let requiredClassReferences = asset.requiredClassReferences;
+    if (!required) {
+      let payload: unknown;
+      if (asset.type === "Model") payload = extractPackedModelAsset(asset.bytes).payload;
+      else if (asset.type === "Audio") payload = peekPackedAudioPayload(asset.bytes);
+      else payload = document(asset);
+      if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+        const metadata = collectAssetDependencyMetadata(asset.type, payload as Record<string, unknown>, {
+          dependencies, classes, definitionFields, parentClass: asset.parentClass,
+        });
+        required = metadata.requiredDependencies;
+        dependencies = metadata.dependencies;
+        classReferences = metadata.classReferences;
+        requiredClassReferences = metadata.requiredClassReferences;
+      }
+    }
+    const resolve = (refs: readonly string[]) => [...new Set(refs.map(ref => byId.has(ref) ? ref : byName.get(ref) ?? ref))];
+    const resolveClasses = (refs: readonly string[] = []) => refs.flatMap(ref => {
+      const match = classes.find(entry => entry.guid === ref || entry.classId === ref || `scene:${entry.guid}` === ref);
+      return match ? [match.guid] : [];
+    });
+    const consoleCommand = asset.consoleCommand ?? (["Class", "Graph"].includes(asset.type) ? consoleCommandMetadataFromGraph(document(asset)) : undefined);
+    return { ...asset, consoleCommand, dependencies: resolve([...(dependencies ?? []), ...resolveClasses(classReferences), ...(sidecars.get(asset.guid) ?? [])]),
+      requiredDependencies: resolve([...(required ?? []), ...resolveClasses(requiredClassReferences), ...(asset.type === "Font" ? [] : sidecars.get(asset.guid) ?? [])]) };
+  });
 }
 
 export async function exportGame(
@@ -228,26 +258,48 @@ export async function exportGame(
     }
   }
 
-  const bundled = concatenateScripts(options.scripts);
-  const registry = serializeScriptRegistry(options.scripts);
-  const scriptsFile =
-    bundled.source.length > 0 ? `${bundled.source}\n${registry}` : registry;
-  files.set(SCRIPTS_FILE, encoder.encode(scriptsFile));
+  // Keep the historical bootstrap filename without eagerly shipping every
+  // compiled Class source inside it. Class code has the same scoped ownership
+  // and independently addressed source contract as other required sidecars.
+  files.set(SCRIPTS_FILE, encoder.encode(serializeScriptRegistry([])));
+  const scriptByAsset = new Map(options.scripts.map(script => [script.assetGuid, script]));
+  const sourceAssets: ExportAssetBytes[] = options.assets.map(asset => {
+    const script = scriptByAsset.get(asset.guid);
+    return script && ["Class", "Graph"].includes(asset.type) ? { ...asset, classId: script.classId, parentClass: script.parentClassId ?? asset.parentClass,
+      consoleCommand: script.command ?? asset.consoleCommand } : asset;
+  });
+  for (const script of options.scripts) {
+    let owner = sourceAssets.find(asset => asset.guid === script.assetGuid);
+    if (!owner) {
+      owner = { guid: script.assetGuid, type: "Class", classId: script.classId, name: script.classId,
+        parentClass: script.parentClassId, consoleCommand: script.command, sceneGuid: options.startupSceneGuid,
+        bytes: encoder.encode(JSON.stringify({ components: script.components ?? [] })), encoding: "json" };
+      sourceAssets.push(owner);
+    }
+    sourceAssets.push({ guid: `script:${script.assetGuid}:${encodeURIComponent(script.classId)}`, ownerGuid: script.assetGuid, type: "CompiledScript", classId: script.classId,
+      sceneGuid: owner.sceneGuid, encoding: "json", bytes: encoder.encode(JSON.stringify(script)), requiredDependencies: [] });
+  }
 
-  const packed =
-    mode === "packed"
-      ? await writePackedAssets(files, options.assets, options.startupSceneGuid)
-      : writeLooseAssets(files, options.assets);
+  const projectAssetGuids = new Set(renderEffectsAssetGuids(options.renderSettings?.effects));
+  const prepared = dependencyCatalog(sourceAssets).map(asset => ({ ...asset,
+    startupRequired: asset.startupRequired || projectAssetGuids.has(asset.guid) || asset.guid === options.audioMixerGuid ||
+      asset.guid === options.gameInstanceClass || (!!options.gameInstanceClass && asset.name === options.gameInstanceClass) || asset.type === "InputAction" || asset.type === "InputAxis",
+  }));
+  // Packaging choice never changes runtime addressability. A ZIP is only the
+  // delivery container; static hosts serve independent immutable asset files.
+  const packed = await writeLooseAssets(files, prepared);
 
   inlineCssIntoIndex(files);
 
   const manifest: GameManifest = {
+    assetCatalogVersion: 1,
     ...(options.saveGame ? { saveGame: structuredClone(options.saveGame) } : {}),
     project: { name: options.project?.name ?? "", version: options.project?.version ?? "" },
     ...(options.inputAssets !== undefined ? { inputAssets: structuredClone(options.inputAssets) } : {}),
     ...(options.inputMappings !== undefined ? { inputMappings: structuredClone(options.inputMappings) } : {}),
     focusNavigation: normalizeFocusNavigationSettings(options.focusNavigation),
     startupSceneGuid: options.startupSceneGuid,
+    ...(options.defaultFontGuid ? { defaultFontGuid: options.defaultFontGuid } : {}),
     ...(options.gameInstanceClass?.trim()
       ? { gameInstanceClass: options.gameInstanceClass.trim() }
       : {}),
@@ -330,6 +382,7 @@ export function parseGameManifest(source: string): GameManifest {
     ui?: unknown;
     uiDesignerPresets?: unknown;
   };
+  if (parsed.assetCatalogVersion !== undefined && parsed.assetCatalogVersion !== 1) throw new Error("Unsupported asset catalog version; rebuild this game with the current exporter.");
   let scriptsFile = SCRIPTS_FILE;
   if (parsed.scriptsFile !== undefined) {
     if (typeof parsed.scriptsFile !== "string" || parsed.scriptsFile.length === 0) {

@@ -28,8 +28,8 @@ const equal = (left: MaterialParameterValue, right: MaterialParameterValue | und
 
 /** Session-owned values for synchronous worker reads; assets and entry overrides remain immutable. */
 export class RuntimeMaterialParameters {
-  private readonly catalog: MaterialParameterCatalog;
-  private readonly textures: ReadonlySet<string>;
+  private catalog: MaterialParameterCatalog;
+  private textures: ReadonlySet<string>;
   private readonly states = new WeakMap<MaterialInstanceObject, State>();
   constructor(
     catalog: MaterialParameterCatalog | undefined,
@@ -49,6 +49,11 @@ export class RuntimeMaterialParameters {
   describe(material: MaterialInstanceObject): Record<string, MaterialParameterValue> | null {
     const state = this.state(material);
     return state ? Object.fromEntries([...state.values].map(([name, value]) => [name, copy(value)])) : null;
+  }
+
+  replaceCatalog(catalog: MaterialParameterCatalog | undefined, textures: readonly string[] | undefined): void {
+    this.catalog = normalizeMaterialParameterCatalog(catalog);
+    this.textures = new Set(textures);
   }
 
   accepts(

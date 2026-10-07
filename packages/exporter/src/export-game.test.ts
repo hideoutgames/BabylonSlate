@@ -37,6 +37,20 @@ describe("exportGame", () => {
     expect(preview.value.files.has("player-preview-diagnostics.js")).toBe(true);
     expect(preview.value.manifest).not.toHaveProperty("includePreviewDiagnostics");
   });
+  it("marks enabled project render dependencies as startup systems while deferred assets remain catalog-only", async () => {
+    const result = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", scripts: [],
+      renderSettings: { ...DEFAULT_RENDER_PROJECT_SETTINGS, effects: { ...DEFAULT_RENDER_EFFECTS, colorGrading: { enabled: true, lutTextureGuid: "lut" } } },
+      assets: [
+        { guid: "scene", type: "Scene", sceneGuid: "scene", bytes: new TextEncoder().encode("{}"), requiredDependencies: [], dependencies: ["later"] },
+        { guid: "lut", type: "Texture", sceneGuid: "scene", bytes: new Uint8Array([1]) },
+        { guid: "later", type: "Texture", sceneGuid: "scene", bytes: new Uint8Array([2]) },
+      ],
+    });
+    if (!result.ok) throw new Error(result.error);
+    expect(result.value.manifest.assets.find(asset => asset.guid === "lut")?.startupRequired).toBe(true);
+    expect(result.value.manifest.assets.find(asset => asset.guid === "later")?.startupRequired).toBeUndefined();
+    expect(result.value.manifest.assets.find(asset => asset.guid === "scene")).toMatchObject({ dependencies: ["later"], requiredDependencies: [] });
+  });
   it("preserves focus input selections and normalizes unsafe repeat values through player manifests", async () => {
     const result = await exportGame({ mode: "packed", bundleDebugger: false, startupSceneGuid: "scene-1", scripts: [], assets: [], playerFiles: stubPlayer(),
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -210,7 +224,7 @@ describe("exportGame", () => {
     expect(zipExport(artifact as never).byteLength).toBeGreaterThan(0);
   });
 
-  it("defaults to packed mode with a boot pack", async () => {
+  it("defaults to packed delivery with independently addressable runtime assets", async () => {
     const result = await exportGame({
       bundleDebugger: true,
       startupSceneGuid: "scene-1",
@@ -229,7 +243,8 @@ describe("exportGame", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.manifest.mode).toBe("packed");
-    expect(result.value.files.has("boot.babpack")).toBe(true);
+    expect(result.value.manifest.assets[0]?.path).toBe("assets/data-0.bin");
+    expect(result.value.files.get("assets/data-0.bin")).toEqual(new Uint8Array([1, 2, 3]));
     expect(result.value.manifest.bundleDebugger).toBe(true);
   });
 
@@ -286,7 +301,7 @@ describe("exportGame", () => {
     expect(result.value.manifest.loopCount).toBe(50);
   });
 
-  it("groups reached scenes into separate packs", async () => {
+  it("keeps reached scenes independently addressable in packed delivery", async () => {
     const result = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
@@ -322,10 +337,8 @@ describe("exportGame", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.manifest.packs).toEqual(
-      expect.arrayContaining(["boot.babpack", "scene-scene-2.babpack"]),
-    );
-    expect(result.value.files.has("scene-scene-2.babpack")).toBe(true);
+    expect(result.value.manifest.packs).toEqual([]);
+    expect(result.value.files.get(result.value.manifest.assets.find(asset => asset.guid === "scene-2")!.path!)).toEqual(new Uint8Array([3]));
   });
 
   it("keeps loose mode as one file per asset", async () => {
@@ -470,7 +483,7 @@ describe("exportGame", () => {
     );
   });
 
-  it("writes a parseable script registry and generates index.html when omitted", async () => {
+  it("writes a tiny bootstrap and independently addressed compiled script sources", async () => {
     const result = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
@@ -507,10 +520,12 @@ describe("exportGame", () => {
     expect(html).toContain("player.js");
     expect(html.toLowerCase()).toContain("<!doctype html>");
     const scripts = new TextDecoder().decode(result.value.files.get("scripts.js"));
-    expect(scripts).toContain("Hero");
     expect(scripts).toContain("globalThis.__babylonslateScripts");
-    expect(scripts).toContain("sourceURL=babylonslate:///hero.js");
-    expect(parseScriptRegistry(scripts)[0]?.anchors[0]?.line).toBe(1);
+    expect(parseScriptRegistry(scripts)).toEqual([]);
+    const code = result.value.manifest.assets.find(asset => asset.type === "CompiledScript" && asset.ownerGuid === "hero")!;
+    const compiled = JSON.parse(new TextDecoder().decode(result.value.files.get(code.path!)));
+    expect(compiled).toMatchObject({ assetGuid: "hero", classId: "Hero", anchors: [{ line: 1 }] });
+    expect(result.value.manifest.assets.find(asset => asset.guid === "hero")).toMatchObject({ classId: "Hero", requiredDependencies: [code.guid] });
   });
 
   it("packs only the world physics engine when no SceneLayers are exported", async () => {
