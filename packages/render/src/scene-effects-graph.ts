@@ -6,6 +6,7 @@ import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGr
 import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import { FrameGraphBloomTask } from "@babylonjs/core/FrameGraph/Tasks/PostProcesses/bloomTask";
 import { FrameGraphFXAATask } from "@babylonjs/core/FrameGraph/Tasks/PostProcesses/fxaaTask";
+import { FrameGraphFsr1SharpenTask, FrameGraphFsr1UpscaleTask } from "./fsr1-tasks";
 import { FrameGraphImageProcessingTask } from "@babylonjs/core/FrameGraph/Tasks/PostProcesses/imageProcessingTask";
 import { ThinImageProcessingPostProcess } from "@babylonjs/core/PostProcesses/thinImageProcessingPostProcess";
 import type { RenderEffectsSettings } from "@babylonslate/core";
@@ -32,14 +33,19 @@ export interface SceneEffectsGraphOptions {
     task: FrameGraphTask;
     outputTexture: FrameGraphTextureHandle;
   };
+  /** Internal render size: the output size scaled by `plan.upscale`. */
   width: number;
   height: number;
+  /** View output size the FSR 1 tail restores; defaults to the render size. */
+  outputWidth?: number;
+  outputHeight?: number;
 }
 
 /**
  * Settings-driven Display Color stage and display-space effects as FrameGraph
  * tasks: [authored stack output | own scene color] → bloom → image
- * processing → FXAA → the caller's single output copy. Babylon tasks own
+ * processing → FXAA → FSR 1 upscale and sharpen → the caller's single output
+ * copy. Every stage before the upscale runs at the internal render size. Babylon tasks own
  * their internal targets through graph disposal; this object owns the
  * optional scene-color declaration and any image-processing compile
  * generation orphaned by the display-space recompile.
@@ -185,6 +191,32 @@ export class SceneEffectsGraph {
         fxaa.sourceTexture = source;
         this.tasks.push(fxaa);
         source = fxaa.outputTexture;
+      }
+      const outputWidth = options.outputWidth ?? options.width;
+      const outputHeight = options.outputHeight ?? options.height;
+      if (plan.upscale && (outputWidth !== options.width || outputHeight !== options.height)) {
+        // EASU expects display-referred input, so it follows the Display Color
+        // stage and antialiasing; RCAS then sharpens at the output size.
+        const upscaled = graph.textureManager.createRenderTargetTexture("Scene Effects FSR Upscale", {
+          size: { width: outputWidth, height: outputHeight },
+          sizeIsPercentage: false,
+          options: {
+            createMipMaps: false,
+            types: [Constants.TEXTURETYPE_UNSIGNED_BYTE],
+            formats: [Constants.TEXTUREFORMAT_RGBA],
+            samples: 1,
+            useSRGBBuffers: [false],
+          },
+        });
+        const upscale = new FrameGraphFsr1UpscaleTask("Scene Effects FSR Upscale", graph);
+        upscale.sourceTexture = source;
+        upscale.targetTexture = upscaled;
+        this.tasks.push(upscale);
+        const sharpen = new FrameGraphFsr1SharpenTask("Scene Effects FSR Sharpen", graph);
+        sharpen.sharpness = plan.upscale.sharpness;
+        sharpen.sourceTexture = upscale.outputTexture;
+        this.tasks.push(sharpen);
+        source = sharpen.outputTexture;
       }
       this.outputTexture = source;
     } catch (error) {

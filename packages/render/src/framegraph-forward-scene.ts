@@ -8,6 +8,7 @@ import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/
 import { ScenePostProcessOwner } from "./scene-post-process-owner";
 import { SceneEffectsOwner } from "./scene-effects-owner";
 import { SceneEffectsGraph } from "./scene-effects-graph";
+import { upscaledRenderSize } from "./scene-effects";
 import { liveSceneEffectsKey } from "./spatial-effects";
 import type { SharedOutlineView } from "./shared-outline";
 import { FrameGraphSharedOutlineTask } from "./shared-outline-task";
@@ -784,6 +785,9 @@ export class ForwardSceneFrameGraph {
     try {
       assertCurrent();
       const output = this.output(camera);
+      // Everything drawn into an FSR chain, water copy included, runs at its
+      // internal size.
+      const renderSize = upscaledRenderSize(sceneRenderingSettings(scene).effectsPlan, output.width, output.height);
       if (this.preparedPostProcessRevision !== this.postProcessRevision ||
         this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() || !this.waterMatches(camera) ||
         this.clustered?.needsPreparation(camera) ||
@@ -794,7 +798,7 @@ export class ForwardSceneFrameGraph {
       // A water scene copy follows a backbuffer resize in place: like the
       // default graph, the rebuild keeps every task and render pass id.
       else if (this.water && (this.preparedWidth !== output.width || this.preparedHeight !== output.height) &&
-        !this.water.resize(output.width, output.height))
+        !this.water.resize(renderSize.width, renderSize.height))
         this.releaseGraph();
       // Record the inputs the tasks are built from; a change during the awaits
       // below must leave this graph stale.
@@ -840,7 +844,7 @@ export class ForwardSceneFrameGraph {
           for (const diagnostic of plan.diagnostics) postProcessOwner.options.onDiagnostic?.(diagnostic);
           const result = createScenePostProcessGraph({
             frameGraph: this.graph, plan, library: postProcessOwner.options.library,
-            camera, width: output.width, height: output.height,
+            camera, width: renderSize.width, height: renderSize.height,
             resolutionScale: postProcessOwner.options.resolutionScale,
             // Authored passes run inside the Scene Linear stage; their
             // intermediates stay half-float so HDR reaches the display stage.
@@ -869,8 +873,10 @@ export class ForwardSceneFrameGraph {
             effects: effectsState.effects,
             camera,
             authoredOutputTexture: this.postProcessGraph?.outputTexture,
-            width: output.width,
-            height: output.height,
+            width: renderSize.width,
+            height: renderSize.height,
+            outputWidth: output.width,
+            outputHeight: output.height,
             beforeAntialiasing: this.preparedOutlineView ? composeOutline : undefined,
           });
         } else if (this.preparedOutlineView) {
@@ -913,7 +919,7 @@ export class ForwardSceneFrameGraph {
             ? { color: sceneColor, depth: sceneDepth }
             : output.color && output.depth && !HasStencilAspect(output.depth.format) ? { color, depth } : undefined;
           this.water = WaterSceneCopyGraph.create({
-            frameGraph: this.graph, camera, scale: waterScale, width: output.width, height: output.height,
+            frameGraph: this.graph, camera, scale: waterScale, width: renderSize.width, height: renderSize.height,
             clear: this.clear, cull: this.cull, objects: this.objects, scene: sampleable,
             output: { color, texture: Boolean(output.color) },
           });

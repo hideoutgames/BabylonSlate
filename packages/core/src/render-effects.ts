@@ -65,6 +65,19 @@ export interface WhiteBalanceSettings {
   tint: number;
 }
 
+/**
+ * FSR 1 upscaling: the scene and its effect chain render at `renderScale` of
+ * the view, then edge-adaptive upsampling and contrast-adaptive sharpening
+ * restore the output resolution.
+ */
+export interface UpscalingSettings {
+  enabled: boolean;
+  /** Internal render scale per axis. */
+  renderScale: number;
+  /** Sharpening attenuation in stops; 0 is strongest. */
+  sharpness: number;
+}
+
 export interface VolumetricLightingSettings {
   enabled: boolean;
   resolutionScale: number;
@@ -98,6 +111,7 @@ export interface RenderEffectsSettings {
     scale: number;
   };
   fxaa: boolean;
+  upscaling: UpscalingSettings;
   temporalAntiAliasing: TemporalAntiAliasingSettings;
   colorGrading: ColorGradingSettings;
   ambientOcclusion: AmbientOcclusionSettings;
@@ -116,6 +130,8 @@ export const RENDER_EFFECTS_LIMITS = {
   bloomKernel: [1, 512],
   bloomScale: [0.05, 1],
   spatialResolutionScale: [0.25, 1],
+  upscalingRenderScale: [0.5, 1],
+  upscalingSharpness: [0, 2],
   temporalSamples: [4, 32],
   temporalBlend: [0.02, 1],
   ambientOcclusionSamples: [4, 32],
@@ -143,6 +159,7 @@ export const DEFAULT_RENDER_EFFECTS: Readonly<RenderEffectsSettings> = {
   vignette: { enabled: false, weight: 1.5, color: [0, 0, 0] },
   bloom: { enabled: false, threshold: 0.9, weight: 0.15, kernel: 64, scale: 0.5 },
   fxaa: false,
+  upscaling: { enabled: false, renderScale: 0.67, sharpness: 0.2 },
   temporalAntiAliasing: { enabled: false, samples: 8, blend: 0.1 },
   colorGrading: { enabled: false, lutTextureGuid: null },
   ambientOcclusion: {
@@ -196,6 +213,7 @@ export function normalizeRenderEffectsSettings(
   const bloom = object(source.bloom);
   const colorGrading = object(source.colorGrading);
   const temporal = object(source.temporalAntiAliasing);
+  const upscaling = object(source.upscaling);
   const ambientOcclusion = object(source.ambientOcclusion);
   const reflections = object(source.reflections);
   const volumetric = object(source.volumetricLighting);
@@ -269,6 +287,13 @@ export function normalizeRenderEffectsSettings(
       ),
     },
     fxaa: source.fxaa === true,
+    upscaling: {
+      enabled: upscaling.enabled === true,
+      renderScale: finite(upscaling.renderScale, DEFAULT_RENDER_EFFECTS.upscaling.renderScale,
+        ...RENDER_EFFECTS_LIMITS.upscalingRenderScale),
+      sharpness: finite(upscaling.sharpness, DEFAULT_RENDER_EFFECTS.upscaling.sharpness,
+        ...RENDER_EFFECTS_LIMITS.upscalingSharpness),
+    },
     temporalAntiAliasing: {
       enabled: temporal.enabled === true,
       samples: Math.round(finite(temporal.samples, DEFAULT_RENDER_EFFECTS.temporalAntiAliasing.samples,

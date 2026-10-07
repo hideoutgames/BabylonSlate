@@ -17,6 +17,8 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   void import("./testing/lattice-deformer-proof").then(({ runLatticeDeformerProof }) => Object.assign(window, { __latticeDeformerProof: runLatticeDeformerProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("gpuPickProof")) {
   void import("./testing/gpu-pick-proof").then(({ runGpuPickProof }) => Object.assign(window, { __gpuPickProof: runGpuPickProof }));
+} else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("fsrUpscalingProof")) {
+  void import("./testing/fsr-upscaling-proof").then(({ runFsrUpscalingProof }) => Object.assign(window, { __fsrUpscalingProof: runFsrUpscalingProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("renderTargetProof")) {
   void import("./testing/render-target-proof").then(({ runRenderTargetProof }) => Object.assign(window, { __renderTargetProof: runRenderTargetProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("spatialEffectsProof")) {

@@ -54,6 +54,8 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
     patch({ bloom: { ...project.bloom, ...value } });
   const patchWhiteBalance = (value: Partial<RenderEffectsSettings["whiteBalance"]>) =>
     patch({ whiteBalance: { ...project.whiteBalance, ...value } });
+  const patchUpscaling = (value: Partial<RenderEffectsSettings["upscaling"]>) =>
+    patch({ upscaling: { ...project.upscaling, ...value } });
   const patchTemporal = (value: Partial<RenderEffectsSettings["temporalAntiAliasing"]>) =>
     patch({ temporalAntiAliasing: { ...project.temporalAntiAliasing, ...value } });
   return (
@@ -377,6 +379,55 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
                 step={1}
                 onChange={(samples) => patchTemporal({ samples: Math.round(samples) })}
               />
+            </Field>
+          </>
+        ) : null}
+        <Field orientation="horizontal" className="settings-field">
+          <FieldLabel htmlFor="project-effects-upscaling">FSR Upscaling</FieldLabel>
+          <Switch
+            id="project-effects-upscaling"
+            aria-describedby="project-effects-upscaling-description"
+            data-testid="project-effects-upscaling"
+            checked={project.upscaling.enabled}
+            onCheckedChange={(enabled) => patchUpscaling({ enabled: enabled === true })}
+          />
+          <FieldDescription id="project-effects-upscaling-description">
+            Renders the scene and its effects at a lower resolution, then upscales and sharpens with AMD FSR 1.
+          </FieldDescription>
+        </Field>
+        {project.upscaling.enabled ? (
+          <>
+            <Field className="settings-field">
+              <FieldLabel htmlFor="project-effects-upscaling-scale">Render Scale</FieldLabel>
+              <NumberField
+                id="project-effects-upscaling-scale"
+                aria-describedby="project-effects-upscaling-scale-description"
+                data-testid="project-effects-upscaling-scale"
+                value={project.upscaling.renderScale}
+                min={RENDER_EFFECTS_LIMITS.upscalingRenderScale[0]}
+                max={RENDER_EFFECTS_LIMITS.upscalingRenderScale[1]}
+                step={0.01}
+                onChange={(renderScale) => patchUpscaling({ renderScale })}
+              />
+              <FieldDescription id="project-effects-upscaling-scale-description">
+                Fraction of the output width and height rendered. 1 disables upscaling.
+              </FieldDescription>
+            </Field>
+            <Field className="settings-field">
+              <FieldLabel htmlFor="project-effects-upscaling-sharpness">Sharpness</FieldLabel>
+              <NumberField
+                id="project-effects-upscaling-sharpness"
+                aria-describedby="project-effects-upscaling-sharpness-description"
+                data-testid="project-effects-upscaling-sharpness"
+                value={project.upscaling.sharpness}
+                min={RENDER_EFFECTS_LIMITS.upscalingSharpness[0]}
+                max={RENDER_EFFECTS_LIMITS.upscalingSharpness[1]}
+                step={0.05}
+                onChange={(sharpness) => patchUpscaling({ sharpness })}
+              />
+              <FieldDescription id="project-effects-upscaling-sharpness-description">
+                Sharpening reduction in stops. 0 is the sharpest.
+              </FieldDescription>
             </Field>
           </>
         ) : null}

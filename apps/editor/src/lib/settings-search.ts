@@ -141,6 +141,7 @@ export const PROJECT_SETTING_FIELDS = fields([
   ["rendering", "Color Grading LUT Lookup Table", "project-effects-color-grading"],
   ["rendering", "FXAA", "project-effects-fxaa"],
   ["rendering", "Temporal Anti-Aliasing", "project-effects-temporal"],
+  ["rendering", "FSR Upscaling Render Scale Sharpness Resolution", "project-effects-upscaling"],
   ["rendering", "Local Light Budget Auto Manual", "quality-lighting-mode"],
   ["rendering", "Shadow Distance", "project-shadow-distance"],
   ["rendering", "Image-Based Lighting IBL Environment", "project-environment-enabled"],
