@@ -22,13 +22,14 @@ describe("Execute JavaScript Inspector", () => {
   it("adds inputs and outputs and persists object, array and map types", async () => {
     const host = () => <PrefabEditingProvider initialSelectedId={null}><GraphEditingProvider initialSelectedNodeIds={["js"]}><InspectorPanel {...({} as IDockviewPanelProps)} /></GraphEditingProvider></PrefabEditingProvider>;
     const view = render(host());
-    fireEvent.change(screen.getByTestId("js-input-add-name"), { target: { value: "items" } });
     fireEvent.click(screen.getByTestId("js-input-add"));
+    fireEvent.click(await screen.findByTestId("search-item-object"));
     view.rerender(host());
     const inputs = () => state.graph.nodes[0]!.data.inputs as Array<{ id: string; name: string; type: unknown }>;
     const id = inputs()[0]!.id;
-    fireEvent.click(screen.getByTestId(`js-input-${id}-type`));
-    fireEvent.click(await screen.findByTestId("search-item-object"));
+    const rename = screen.getByRole("textbox", { name: "Input 1 name" });
+    fireEvent.change(rename, { target: { value: "items" } });
+    fireEvent.keyDown(rename, { key: "Enter" });
     view.rerender(host());
     fireEvent.click(screen.getByTestId(`js-input-row-${id}`));
     fireEvent.click(screen.getByRole("button", { name: "Array" }));
@@ -37,8 +38,8 @@ describe("Execute JavaScript Inspector", () => {
     fireEvent.click(screen.getByRole("button", { name: "Map" }));
     expect(inputs()[0]).toMatchObject({ name: "items", type: { kind: "map", key: { kind: "string" }, value: { kind: "objectRef", classId: "BObject" } } });
     view.rerender(host());
-    fireEvent.change(screen.getByTestId("js-output-add-name"), { target: { value: "result" } });
     fireEvent.click(screen.getByTestId("js-output-add"));
-    expect(state.graph.nodes[0]!.data.outputs).toEqual([expect.objectContaining({ name: "result", type: { kind: "float" } })]);
+    fireEvent.click(await screen.findByTestId("search-item-float"));
+    expect(state.graph.nodes[0]!.data.outputs).toEqual([expect.objectContaining({ name: "NewOutput", type: { kind: "float" } })]);
   });
 });

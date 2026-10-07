@@ -41,7 +41,10 @@ it("retains field identity while editing names, typed defaults and field rules a
   const details = within(screen.getByTestId("data-definition-details-panel"));
   expect(fields.queryByRole("textbox", { name: "Default Value" })).toBeNull();
   expect(details.getByRole("textbox", { name: "Default Value" })).toBeTruthy();
-  fireEvent.change(screen.getByRole("textbox", { name: "Field 1 name" }), { target: { value: "Power" } });
+  fireEvent.doubleClick(screen.getByTestId("definition-field-damage-name"));
+  const rename = screen.getByRole("textbox", { name: "Field 1 name" });
+  fireEvent.change(rename, { target: { value: "Power" } });
+  fireEvent.keyDown(rename, { key: "Enter" });
   await waitFor(() => expect(state.documents[0]!.content).toMatchObject({ fields: [{ id: "damage", name: "Power", defaultValue: 12 }] }));
   view.rerender(<View />);
   fireEvent.change(screen.getByRole("textbox", { name: "Default Value" }), { target: { value: "25" } });
@@ -59,22 +62,23 @@ it("retains field identity while editing names, typed defaults and field rules a
 
 it("adds fields without a Structure asset and initializes changed collection defaults", async () => {
   const view = render(<View />);
-  fireEvent.change(screen.getByLabelText("Add Field"), { target: { value: "Prices" } });
   fireEvent.click(screen.getByTestId("definition-field-add"));
-  await waitFor(() => expect(state.documents[0]!.content).toMatchObject({ fields: [{ name: "Damage" }, { name: "Prices", typeId: "float", defaultValue: 0 }] }));
+  fireEvent.click(await screen.findByTestId("search-item-float"));
+  await waitFor(() => expect(state.documents[0]!.content).toMatchObject({ fields: [{ name: "Damage" }, { name: "NewField", typeId: "float", defaultValue: 0 }] }));
   view.rerender(<View />);
-  expect((within(screen.getByTestId("data-definition-details-panel")).getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Prices");
+  expect((within(screen.getByTestId("data-definition-details-panel")).getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("NewField");
   // Closing Fields must not lose the document's selected field.
   view.rerender(<View showFields={false} />);
   fireEvent.click(screen.getByTestId("inspector-member-container-array"));
-  await waitFor(() => expect(state.documents[0]!.content).toMatchObject({ fields: [{ name: "Damage" }, { name: "Prices", container: "array", defaultValue: [] }] }));
+  await waitFor(() => expect(state.documents[0]!.content).toMatchObject({ fields: [{ name: "Damage" }, { name: "NewField", container: "array", defaultValue: [] }] }));
 });
 
 it("keeps locked definition fields and rules read-only", () => {
   state.readOnly = true;
   render(<View />);
   expect(screen.queryByTestId("definition-field-add")).toBeNull();
-  expect((screen.getByRole("textbox", { name: "Field 1 name" }) as HTMLInputElement).disabled).toBe(true);
+  fireEvent.doubleClick(screen.getByTestId("definition-field-damage-name"));
+  expect(screen.queryByRole("textbox", { name: "Field 1 name" })).toBeNull();
   expect((screen.getByRole("textbox", { name: "Default Value" }) as HTMLInputElement).disabled).toBe(true);
   expect(state.apply).not.toHaveBeenCalled();
 });
@@ -119,7 +123,7 @@ it("keeps recursive definitions editable without expanding their recursive defau
   state.assets.push({ ...state.assets[0]!, path: "assets/Child.datadefinition.babasset", header: { ...state.assets[0]!.header, guid: "child", name: "Child", payload: child } });
   render(<View />);
   expect(screen.getByRole("alert").textContent).toMatch(/cannot reference themselves/i);
-  expect(screen.getByRole("textbox", { name: "Field 1 name" })).toBeTruthy();
+  expect(screen.getByTestId("definition-field-child-name").textContent).toBe("Child");
   expect(screen.queryByRole("textbox", { name: /^Default Value/ })).toBeNull();
 });
 
@@ -129,7 +133,7 @@ it("changes the selected field from Fields and falls back after removing that fi
     { id: "health", name: "Health", typeId: "int", defaultValue: 100 },
   ] };
   const view = render(<View />);
-  fireEvent.focus(screen.getByRole("textbox", { name: "Field 2 name" }));
+  fireEvent.click(screen.getByTestId("definition-field-health-name"));
   expect((screen.getByRole("textbox", { name: "Default Value" }) as HTMLInputElement).value).toBe("100");
   fireEvent.change(screen.getByRole("textbox", { name: "Default Value" }), { target: { value: "200" } });
   await waitFor(() => expect(state.documents[0]!.content).toMatchObject({ fields: [

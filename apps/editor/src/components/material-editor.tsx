@@ -1135,6 +1135,7 @@ export function MaterialFunctionInterfacePanel(_props: IDockviewPanelProps) {
           onChange={(rows) =>
             commit({ ...document, inputs: fromPinRows(rows, "in", document.inputs) })
           }
+          itemLabel="Input"
           testIdPrefix="material-function-input"
           data-testid="material-function-inputs"
         />
@@ -1154,6 +1155,7 @@ export function MaterialFunctionInterfacePanel(_props: IDockviewPanelProps) {
           onChange={(rows) =>
             commit({ ...document, outputs: fromPinRows(rows, "out", document.outputs) })
           }
+          itemLabel="Output"
           testIdPrefix="material-function-output"
           data-testid="material-function-outputs"
         />

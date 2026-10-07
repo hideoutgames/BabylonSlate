@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { PinListEditor, type PinListRow } from "./pin-list-editor";
+import { PinListEditor, type PinListEditorProps, type PinListRow } from "./pin-list-editor";
 import { AssetOpenProvider } from "./asset-picker-control";
 
 if (typeof window.PointerEvent === "undefined") {
@@ -12,6 +13,17 @@ if (typeof window.PointerEvent === "undefined") {
   Object.defineProperty(window, "PointerEvent", {
     value: PointerEventPolyfill,
   });
+}
+
+function StatefulPinList(props: Omit<PinListEditorProps, "rows" | "onChange"> & { initial: PinListRow[] }) {
+  const { initial, ...rest } = props;
+  const [current, setCurrent] = useState(initial);
+  return <PinListEditor {...rest} rows={current} onChange={setCurrent} />;
+}
+
+async function pickAddType(trigger: string, type: string) {
+  fireEvent.click(screen.getByTestId(trigger));
+  fireEvent.click(await screen.findByTestId(`search-item-${type}`));
 }
 
 const rows: PinListRow[] = [
@@ -28,7 +40,8 @@ describe("PinListEditor", () => {
     render(<PinListEditor rows={rows} onChange={() => {}} />);
     expect(screen.getByTestId("pin-list-editor")).toBeTruthy();
     expect(screen.getByTestId("pin-row-a")).toBeTruthy();
-    expect(screen.getByDisplayValue("amount")).toBeTruthy();
+    expect(screen.getByTestId("pin-a-name").textContent).toBe("amount");
+    expect(screen.queryByRole("textbox")).toBeNull();
     expect(screen.queryByLabelText("Optional")).toBeNull();
     const swatch = screen
       .getByTestId("pin-row-a")
@@ -140,7 +153,7 @@ describe("PinListEditor", () => {
       typeAssets={[{ guid: "item", name: "Item", type: "DataDefinition" }, { guid: "shape", name: "Shape", type: "Structure" }]}
       onChange={onChange} />);
     expect(screen.queryByTestId("pin-input-type-asset")).toBeNull();
-    fireEvent.focus(screen.getByTestId("pin-input-name"));
+    fireEvent.focus(screen.getByTestId("pin-row-input"));
     fireEvent.click(screen.getByTestId("pin-input-type-asset"));
     expect(await screen.findByTestId("search-item-item")).toBeTruthy();
     expect(screen.getByTestId("search-item-shape")).toBeTruthy();
@@ -302,7 +315,7 @@ describe("PinListEditor", () => {
     ]);
   });
 
-  it("keeps compact host-managed field details separate while adding above the list", () => {
+  it("keeps compact host-managed field details separate while adding above the list", async () => {
     const onChange = vi.fn();
     const onSelect = vi.fn();
     render(<PinListEditor rows={[{ id: "stats", name: "Stats", type: "struct" }]}
@@ -310,34 +323,53 @@ describe("PinListEditor", () => {
       showContainer typeAssets={[]} onSelect={onSelect} onChange={onChange} />);
     expect(screen.queryByTestId("pin-stats-type-asset")).toBeNull();
     expect(screen.queryByRole("button", { name: "Array" })).toBeNull();
-    fireEvent.focus(screen.getByRole("textbox", { name: "Field 1 name" }));
+    fireEvent.click(screen.getByTestId("pin-stats-name"));
     expect(onSelect).toHaveBeenCalledWith("stats");
-    const add = screen.getByLabelText("Add Field");
+    const add = screen.getByRole("button", { name: "Add Field" });
     expect(add.compareDocumentPosition(screen.getByTestId("pin-row-stats")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    fireEvent.change(add, { target: { value: "Count" } });
-    fireEvent.click(screen.getByTestId("pin-add"));
+    await pickAddType("pin-add", "int");
     expect(onChange).toHaveBeenCalledWith([
       { id: "stats", name: "Stats", type: "struct" },
-      expect.objectContaining({ name: "Count", type: "float" }),
+      expect.objectContaining({ name: "NewField", type: "int" }),
     ]);
   });
 
-  it("adds an input or output pin", () => {
+  it("adds an output pin of the picked type", async () => {
     const onChange = vi.fn();
     render(
       <PinListEditor rows={[]} onChange={onChange} showDirection />,
     );
-    fireEvent.change(screen.getByPlaceholderText("name"), {
-      target: { value: "hit" },
-    });
-    screen.getByRole("button", { name: "Add Output" }).click();
+    await pickAddType("pin-add-output", "bool");
     expect(onChange).toHaveBeenCalledWith([
       expect.objectContaining({
-        name: "hit",
-        type: "float",
+        name: "NewPin",
+        type: "bool",
         direction: "out",
       }),
     ]);
+  });
+
+  it("names a new row after creation and renames on double-click", async () => {
+    render(<StatefulPinList initial={[{ id: "f", name: "NewField", type: "float" }]} itemLabel="Field" showOptional={false} showDefault={false} />);
+    await pickAddType("pin-add", "string");
+    const input = screen.getByRole("textbox", { name: "Field 2 name" }) as HTMLInputElement;
+    expect(input.value).toBe("NewField_1");
+    await waitFor(() => expect(document.activeElement).toBe(input));
+    expect([input.selectionStart, input.selectionEnd]).toEqual([0, "NewField_1".length]);
+    fireEvent.change(input, { target: { value: "Label" } });
+    const now = performance.now();
+    const clock = vi.spyOn(performance, "now").mockReturnValue(now + 1000);
+    fireEvent.blur(input);
+    clock.mockRestore();
+    expect(screen.queryByRole("textbox")).toBeNull();
+    const name = screen.getByText("Label");
+    fireEvent.doubleClick(name);
+    const again = screen.getByRole("textbox", { name: "Field 2 name" }) as HTMLInputElement;
+    expect(again.value).toBe("Label");
+    fireEvent.change(again, { target: { value: "Ignored" } });
+    fireEvent.keyDown(again, { key: "Escape" });
+    expect(screen.getByText("Label")).toBeTruthy();
+    expect(screen.queryByText("Ignored")).toBeNull();
   });
 
   it("shows optional and default on the selected row", () => {
@@ -409,18 +441,15 @@ describe("PinListEditor", () => {
     expect(cluster?.className).toMatch(/self-center/);
   });
 
-  it("adds an input pin with direction", () => {
+  it("adds an input pin with direction", async () => {
     const onChange = vi.fn();
     render(
       <PinListEditor rows={rows} onChange={onChange} showDirection />,
     );
-    fireEvent.change(screen.getByPlaceholderText("name"), {
-      target: { value: "score" },
-    });
-    fireEvent.click(screen.getByTestId("pin-add-input"));
+    await pickAddType("pin-add-input", "int");
     expect(onChange).toHaveBeenCalledWith(
       expect.arrayContaining([
-        expect.objectContaining({ name: "score", direction: "in" }),
+        expect.objectContaining({ name: "NewPin", type: "int", direction: "in" }),
       ]),
     );
   });
@@ -429,6 +458,7 @@ describe("PinListEditor", () => {
     render(<PinListEditor rows={rows} onChange={() => {}} readOnly />);
     expect(screen.queryByTestId("pin-add")).toBeNull();
     expect(screen.queryByTestId("pin-a-move-up")).toBeNull();
-    expect(screen.getByTestId("pin-a-name")).toHaveProperty("disabled", true);
+    fireEvent.doubleClick(screen.getByTestId("pin-a-name"));
+    expect(screen.queryByRole("textbox")).toBeNull();
   });
 });

@@ -106,15 +106,13 @@ describe("ParameterListEditor", () => {
     );
   });
 
-  it("adds a named row and removes it", () => {
+  it("adds a typed row and removes it", async () => {
     const onChange = vi.fn();
     render(<ParameterListEditor rows={[]} onChange={onChange} />);
-    fireEvent.change(screen.getByPlaceholderText("name"), {
-      target: { value: "health" },
-    });
-    screen.getByRole("button", { name: "Add" }).click();
+    fireEvent.click(screen.getByRole("button", { name: "Add Parameter" }));
+    fireEvent.click(await screen.findByTestId("search-item-int"));
     expect(onChange).toHaveBeenCalledWith([
-      expect.objectContaining({ name: "health", type: "float" }),
+      expect.objectContaining({ name: "NewParameter", type: "int" }),
     ]);
 
     onChange.mockClear();

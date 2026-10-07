@@ -150,25 +150,23 @@ describe("Inspector custom event details", () => {
     expect(screen.queryByTestId("inspector-member-inputs")).toBeNull();
   });
 
-  it("commits Outputs onto the event member and matching Call nodes", () => {
+  it("commits Outputs onto the event member and matching Call nodes", async () => {
     renderEventInspector();
-    fireEvent.change(screen.getByPlaceholderText("name"), {
-      target: { value: "amount" },
-    });
     fireEvent.click(screen.getByTestId("event-out-add"));
+    fireEvent.click(await screen.findByTestId("search-item-float"));
     expect(applyGraphChange).toHaveBeenCalled();
     const next = applyGraphChange.mock.calls[0]?.[1] as {
       members?: Array<{ pins?: Array<{ name: string }> }>;
       nodes?: Array<{ data: { pins?: Array<{ name: string }> } }>;
     };
     expect(next.members?.[0]?.pins).toEqual([
-      { name: "amount", typeId: "float", direction: "out" },
+      { name: "NewOutput", typeId: "float", direction: "out" },
     ]);
     expect(next.nodes?.[0]?.data.pins).toEqual([
-      { name: "amount", typeId: "float", direction: "out" },
+      { name: "NewOutput", typeId: "float", direction: "out" },
     ]);
     expect(next.nodes?.[1]?.data.pins).toEqual([
-      { name: "amount", typeId: "float", direction: "out" },
+      { name: "NewOutput", typeId: "float", direction: "out" },
     ]);
   });
 });
