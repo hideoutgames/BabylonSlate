@@ -92,7 +92,7 @@ async function sampleWindow(
         (hooks as { tickIndex?: () => number | null } | null)?.tickIndex?.() ??
         null;
       const longTasks: number[] = [];
-      let observer: PerformanceObserver | null = null;
+      let observer: PerformanceObserver | null;
       try {
         observer = new PerformanceObserver((list) => {
           for (const entry of list.getEntries()) longTasks.push(entry.duration);

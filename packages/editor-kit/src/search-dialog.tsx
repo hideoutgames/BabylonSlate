@@ -246,7 +246,6 @@ export function SearchDialog({
     setActiveId(filtered[next]!.id);
   };
   // Placed once per opening so filtering does not move the popup.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const frame = useMemo(() => {
     if (!open) return null;
     const { left, top, width, height } = popupMenuFrame(anchor ?? openerAnchor(), {
@@ -254,13 +253,20 @@ export function SearchDialog({
       height: POPUP_CHROME_HEIGHT + pickerListHeightPx(items.length),
     });
     return { left, top, width, maxHeight: height };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- placed once per opening
   }, [open]);
   const lastPinnedIndex = filtered.filter((item) => item.pinned).length - 1;
-  useLayoutEffect(() => {
+  // An external close clears the query while rendering; the list unmounts with it.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (wasOpen !== open) {
+    setWasOpen(open);
     if (!open) {
-      resetQuery("");
-      return;
+      setQuery("");
+      setActiveId(null);
     }
+  }
+  useLayoutEffect(() => {
+    if (!open) return;
     const list = listRef.current;
     if (!list || activeIndex < 0) return;
     const top = activeIndex * WINDOWED_LIST_TOUCH_ROW_HEIGHT;

@@ -128,7 +128,7 @@ export function enginePluginsVitePlugin(options: {
   async function packAll(): Promise<void> {
     mkdirSync(options.publicDir, { recursive: true });
     mkdirSync(path.join(options.publicDir, "content"), { recursive: true });
-    let ids: string[] = [];
+    let ids: string[];
     try {
       ids = readdirSync(options.sourceDir, { withFileTypes: true })
         .filter((entry) => entry.isDirectory())

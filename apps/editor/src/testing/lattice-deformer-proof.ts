@@ -117,7 +117,7 @@ export async function runLatticeDeformerProof(backend: "webgl2" | "webgpu") {
     let coherent = 0;
     while (coherent < 3) {
       engine.beginFrame();
-      let ready = false;
+      let ready: boolean;
       try { const frame = renderer.render(); ready = frame.rendered && frame.readyForPresentation; }
       finally { engine.endFrame(); }
       if (ready) coherent++;

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,13 +45,15 @@ export function NamePromptDialog({
 }: NamePromptDialogProps) {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
+  // Reseed while rendering when the dialog opens or its initial value changes.
+  const [seededFrom, setSeededFrom] = useState<{ open: boolean; initialValue: string } | null>(null);
+  if (seededFrom?.open !== open || seededFrom.initialValue !== initialValue) {
+    setSeededFrom({ open, initialValue });
     if (open) {
       setDraft(initialValue);
       setError(null);
     }
-  }, [open, initialValue]);
+  }
 
   const submit = () => {
     const name = draft.trim();

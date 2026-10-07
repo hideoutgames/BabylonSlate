@@ -468,7 +468,7 @@ export class SourceControlService {
       this.banners.set(newPath, { kind: "unlocked", message });
       this.lastOperationError = message;
       this.emit();
-      throw new Error(message);
+      throw new Error(message, { cause: error });
     }
     this.emit();
   }

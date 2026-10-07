@@ -103,7 +103,7 @@ export async function loadKenneyMannequinGlb(): Promise<Uint8Array> {
     );
   }
   const glb = await fetchPublicBytes(KENNEY_MANNEQUIN_PUBLIC_PATH);
-  let png: Uint8Array | null = null;
+  let png: Uint8Array | null;
   try {
     png = await fetchPublicBytes(KENNEY_MANNEQUIN_PNG_PUBLIC_PATH);
   } catch {

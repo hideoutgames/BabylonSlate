@@ -1017,13 +1017,18 @@ export class SceneShadowController {
           entry.status = "allocation-failed";
           entry.reason =
             "shadow allocation failed at minimum size; awaiting settings change or context recovery";
+          const failures: unknown[] = [error];
           try {
             cleanup(entry.light.getShadowGenerator());
           } catch (cleanupError) {
+            failures.push(cleanupError);
+          }
+          if (failures.length > 1) {
             entry.reason = "shadow allocation cleanup failed";
             throw new AggregateError(
-              [error, cleanupError],
+              failures,
               "Shadow allocation and resource cleanup failed",
+              { cause: error },
             );
           }
           // Standby maps are optional reuse; free them before reducing an admitted map.

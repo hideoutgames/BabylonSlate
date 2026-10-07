@@ -339,12 +339,15 @@ export async function applyPluginImport(
     await cleanupImport(storage, transaction);
     return imported;
   } catch (error) {
+    const failures: unknown[] = [error];
     try {
       if (await storage.exists(folderPath)) await storage.remove(folderPath);
       if (hadOriginal) await copyStorageTree(storage, backup, folderPath);
     } catch (restoreError) {
-      throw new AggregateError([error, restoreError], `Plugin import failed; recovery files remain at ${transaction}`);
+      failures.push(restoreError);
     }
+    if (failures.length > 1)
+      throw new AggregateError(failures, `Plugin import failed; recovery files remain at ${transaction}`, { cause: error });
     await cleanupImport(storage, transaction);
     throw error;
   }
