@@ -2,9 +2,12 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { TracePayload } from "@babylonslate/debugger";
 import { TICK_BUDGET_MS } from "@babylonslate/debugger";
 import { NumberField, SelectableText } from "@babylonslate/editor-kit";
+import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
-import { Field, FieldLabel } from "@babylonslate/ui/components/field";
+import { FieldLabel } from "@babylonslate/ui/components/field";
+import { Separator } from "@babylonslate/ui/components/separator";
 import { Slider } from "@babylonslate/ui/components/slider";
+import { cn } from "@babylonslate/ui/lib/utils";
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -38,6 +41,8 @@ export function TraceTimelineView({
   const length = payload.frames.length;
   const max = Math.max(0, length - 1);
   const frame = payload.frames[index];
+  const tickMs = frame ? frameTickMs(frame) : 0;
+  const overBudget = tickMs > TICK_BUDGET_MS;
   const count = Math.min(length, windowSize ?? length);
   const start = Math.max(
     0,
@@ -84,22 +89,9 @@ export function TraceTimelineView({
       className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto p-2"
       data-testid="trace-playback"
     >
-      <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-        <span data-testid="trace-playback-seed">
-          <SelectableText>Seed {payload.seed}</SelectableText>
-        </span>
-        <span data-testid="trace-playback-frames">
-          <SelectableText>
-            {length} Frames · Fixed Delta {payload.dt.toFixed(4)} s
-          </SelectableText>
-        </span>
-        <span data-testid="trace-retention-summary">
-          <SelectableText>{traceRetentionSummary(payload)}</SelectableText>
-        </span>
-      </div>
       <div className="flex flex-wrap items-center gap-1">
         <Button
-          variant="outline"
+          variant="ghost"
           size={size}
           aria-label="Previous Frame"
           title="Previous Frame"
@@ -109,7 +101,7 @@ export function TraceTimelineView({
           <ChevronLeftIcon />
         </Button>
         <Button
-          variant="outline"
+          variant="ghost"
           size={size}
           aria-label="Next Frame"
           title="Next Frame"
@@ -118,8 +110,9 @@ export function TraceTimelineView({
         >
           <ChevronRightIcon />
         </Button>
+        <Separator orientation="vertical" className="mx-0.5 h-4 self-center" />
         <Button
-          variant="outline"
+          variant="ghost"
           size={size}
           aria-label="Previous Over Budget"
           title="Previous Over Budget"
@@ -131,7 +124,7 @@ export function TraceTimelineView({
           <ChevronsLeftIcon />
         </Button>
         <Button
-          variant="outline"
+          variant="ghost"
           size={size}
           aria-label="Next Over Budget"
           title="Next Over Budget"
@@ -142,8 +135,9 @@ export function TraceTimelineView({
         >
           <ChevronsRightIcon />
         </Button>
+        <Separator orientation="vertical" className="mx-0.5 h-4 self-center" />
         <Button
-          variant="outline"
+          variant="ghost"
           size={size}
           aria-label="Zoom In"
           title="Zoom In Around Selected Frame"
@@ -153,7 +147,7 @@ export function TraceTimelineView({
           <ZoomInIcon />
         </Button>
         <Button
-          variant="outline"
+          variant="ghost"
           size={size}
           aria-label="Zoom Out"
           title="Zoom Out"
@@ -165,49 +159,66 @@ export function TraceTimelineView({
           <ZoomOutIcon />
         </Button>
         <Button
-          variant="outline"
+          variant="ghost"
           size={touch ? "touch" : "sm"}
           disabled={windowSize === null}
           onClick={() => onWindowSizeChange(null)}
         >
           Show All Frames
         </Button>
+        <div className="ml-auto flex min-w-0 flex-wrap justify-end gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+          <span data-testid="trace-playback-seed">
+            <SelectableText>Seed {payload.seed}</SelectableText>
+          </span>
+          <span data-testid="trace-playback-frames">
+            <SelectableText>
+              {length} Frames · Fixed Delta {payload.dt.toFixed(4)} s
+            </SelectableText>
+          </span>
+          <span data-testid="trace-retention-summary">
+            <SelectableText>{traceRetentionSummary(payload)}</SelectableText>
+          </span>
+        </div>
       </div>
       <div
-        className="flex flex-wrap gap-x-3 gap-y-1 text-xs"
+        className="flex flex-wrap items-center gap-1.5 text-xs"
         data-testid="trace-frame-summary"
       >
         {frame ? (
           <>
-            <SelectableText>
-              Frame Index {index} / {max} · Tick {frame.tickIndex}
-            </SelectableText>
-            <SelectableText>
-              Script {frame.scriptMs.toFixed(2)} ms · Physics{" "}
-              {frame.physicsMs.toFixed(2)} ms · Tick Total{" "}
-              {frameTickMs(frame).toFixed(2)} ms
-            </SelectableText>
-            <SelectableText
-              className={
-                frameTickMs(frame) > TICK_BUDGET_MS
-                  ? "text-destructive"
-                  : "text-muted-foreground"
-              }
+            <span className="rounded-md bg-muted px-2 py-0.5 tabular-nums">
+              <SelectableText>
+                Frame Index <span className="font-medium">{index}</span> / {max} · Tick{" "}
+                <span className="font-medium">{frame.tickIndex}</span>
+              </SelectableText>
+            </span>
+            <span className="flex items-center gap-1.5 rounded-md bg-muted px-2 py-0.5 tabular-nums">
+              <span className="size-2 rounded-[2px] bg-trace-script" aria-hidden="true" />
+              <SelectableText>Script {frame.scriptMs.toFixed(2)} ms</SelectableText>
+            </span>
+            <span className="flex items-center gap-1.5 rounded-md bg-muted px-2 py-0.5 tabular-nums">
+              <span className="size-2 rounded-[2px] bg-trace-physics" aria-hidden="true" />
+              <SelectableText>Physics {frame.physicsMs.toFixed(2)} ms</SelectableText>
+            </span>
+            <span className="rounded-md bg-muted px-2 py-0.5 font-medium tabular-nums">
+              <SelectableText>Tick Total {tickMs.toFixed(2)} ms</SelectableText>
+            </span>
+            <Badge
+              variant={overBudget ? "destructive" : "outline"}
+              className={cn(!overBudget && "text-(--success)")}
             >
-              {frameTickMs(frame) > TICK_BUDGET_MS
-                ? "Over Budget"
-                : "Within Budget"}{" "}
-              · {TICK_BUDGET_MS} ms
-            </SelectableText>
+              {overBudget ? "Over Budget" : "Within Budget"} · {TICK_BUDGET_MS} ms
+            </Badge>
           </>
         ) : (
           <span>No Recorded Frames</span>
         )}
       </div>
       {!frame && <TraceEmptyState title="No Recorded Frames" />}
+      <div className="shrink-0 rounded-md border bg-background p-1">
       <div
         ref={chartRef}
-        className="trace-timing-chart relative flex h-32 min-h-32 w-full items-end gap-px overflow-hidden"
+        className="trace-timing-chart relative flex h-40 min-h-40 w-full items-end gap-px overflow-hidden"
         data-testid="trace-playback-graph"
         aria-label="Script And Physics Tick Times"
       >
@@ -264,9 +275,13 @@ export function TraceTimelineView({
           <>
             <div
               data-testid="trace-budget-line"
-              className="pointer-events-none absolute inset-x-0 border-t border-dashed border-destructive"
+              className="pointer-events-none absolute inset-x-0 border-t border-dashed border-destructive/70"
               style={{ bottom: `${(TICK_BUDGET_MS / scale) * 100}%` }}
-            />
+            >
+              <span className="absolute right-0 bottom-0.5 rounded-sm bg-background/80 px-1 text-[0.65rem] text-destructive tabular-nums">
+                {TICK_BUDGET_MS} ms Budget
+              </span>
+            </div>
             <div
               data-testid="trace-selection-indicator"
               className="pointer-events-none absolute inset-y-0 w-0.5 bg-trace-selected"
@@ -277,63 +292,67 @@ export function TraceTimelineView({
           </>
         )}
       </div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+      </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.7rem] text-muted-foreground">
         <span className="flex items-center gap-1">
-          <span className="size-2 bg-trace-script" />
+          <span className="size-2 rounded-[2px] bg-trace-script" />
           Script
         </span>
         <span className="flex items-center gap-1">
-          <span className="size-2 bg-trace-physics" />
+          <span className="size-2 rounded-[2px] bg-trace-physics" />
           Physics
         </span>
         <span className="flex items-center gap-1">
-          <span className="size-2 bg-trace-selected" />
+          <span className="size-2 rounded-[2px] bg-trace-selected" />
           Selected
         </span>
         <span className="flex items-center gap-1">
-          <span className="size-2 bg-destructive" />
+          <span className="h-0.5 w-2 bg-destructive" />
           Over Budget
         </span>
-        <span>• Recorded Events</span>
+        <span className="flex items-center gap-1">
+          <span className="size-1 rounded-full bg-foreground" />
+          Recorded Events
+        </span>
         <SelectableText>Scale 0–{scale.toFixed(1)} ms</SelectableText>
+        <span data-testid="trace-visible-range" className="ml-auto">
+          <SelectableText>
+            {frame
+              ? `Frames ${start}–${end}${buckets.some((bucket) => bucket.end > bucket.start) ? " · Group Peaks — Select A Bar To Inspect Its Slowest Tick" : " · One Bar Per Frame"}`
+              : "No Frames"}
+          </SelectableText>
+        </span>
       </div>
-      <span data-testid="trace-visible-range">
-        <SelectableText className="text-xs text-muted-foreground">
-          {frame
-            ? `Frames ${start}–${end}${buckets.some((bucket) => bucket.end > bucket.start) ? " · Group Peaks — Select A Bar To Inspect Its Slowest Tick" : " · One Bar Per Frame"}`
-            : "No Frames"}
-        </SelectableText>
-      </span>
-      <Field>
-        <FieldLabel htmlFor={frameId}>Frame Index</FieldLabel>
-        <div className="flex min-w-0 items-center gap-2">
-          <Slider
+      <div className="flex min-w-0 items-center gap-2">
+        <FieldLabel htmlFor={frameId} className="shrink-0 text-xs text-muted-foreground">
+          Frame Index
+        </FieldLabel>
+        <Slider
+          min={0}
+          max={max}
+          step={1}
+          value={index}
+          disabled={!frame || max === 0}
+          aria-label="Frame"
+          data-testid="trace-playback-scrubber"
+          onValueChange={(value) => {
+            const next = Array.isArray(value) ? value[0] : value;
+            if (typeof next === "number") onIndexChange(next);
+          }}
+        />
+        <div className="w-20 shrink-0">
+          <NumberField
+            id={frameId}
+            value={index}
             min={0}
             max={max}
-            step={1}
-            value={index}
-            disabled={!frame || max === 0}
-            aria-label="Frame"
-            data-testid="trace-playback-scrubber"
-            onValueChange={(value) => {
-              const next = Array.isArray(value) ? value[0] : value;
-              if (typeof next === "number") onIndexChange(next);
-            }}
+            inputMode="numeric"
+            disabled={!frame}
+            data-testid="trace-playback-frame"
+            onChange={onIndexChange}
           />
-          <div className="w-20 shrink-0">
-            <NumberField
-              id={frameId}
-              value={index}
-              min={0}
-              max={max}
-              inputMode="numeric"
-              disabled={!frame}
-              data-testid="trace-playback-frame"
-              onChange={onIndexChange}
-            />
-          </div>
         </div>
-      </Field>
+      </div>
     </div>
   );
 }

@@ -15,8 +15,10 @@ import {
   type RegisteredCommand,
 } from "@babylonslate/debugger";
 import { SelectableText } from "@babylonslate/editor-kit";
+import { Badge } from "@babylonslate/ui/components/badge";
 import { Button, buttonVariants } from "@babylonslate/ui/components/button";
 import { Input } from "@babylonslate/ui/components/input";
+import { Kbd } from "@babylonslate/ui/components/kbd";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { Separator } from "@babylonslate/ui/components/separator";
 import {
@@ -27,7 +29,13 @@ import {
   SheetTitle,
 } from "@babylonslate/ui/components/sheet";
 import { cn } from "@babylonslate/ui/lib/utils";
-import { ChevronRightIcon, TerminalIcon, XIcon } from "lucide-react";
+import {
+  ChevronRightIcon,
+  CopyIcon,
+  TerminalIcon,
+  Trash2Icon,
+  XIcon,
+} from "lucide-react";
 import {
   mergeDebugConsoleTranscript,
   type DebugConsoleTranscriptEntry,
@@ -60,6 +68,9 @@ const TRANSCRIPT_LIMIT = 500;
 
 type TranscriptEntry = DebugConsoleTranscriptEntry;
 
+const isWarning = (severity: string) =>
+  severity === "warning" || severity === "warn";
+
 /** Rows keep identity across renders, so draft, stats, and inspect polls skip them. */
 const TranscriptRow = memo(function TranscriptRow({
   entry,
@@ -69,14 +80,18 @@ const TranscriptRow = memo(function TranscriptRow({
   return (
     <div
       className={cn(
-        "whitespace-pre-wrap break-words",
+        "border-l-2 border-transparent py-px pr-3 pl-2.5 whitespace-pre-wrap break-words",
         entry.severity === "error"
-          ? "text-destructive"
-          : entry.severity === "info"
-            ? "text-muted-foreground"
-            : "text-foreground",
-        (entry.severity === "warning" || entry.severity === "warn") &&
-          "font-semibold",
+          ? "border-destructive bg-destructive/10 text-destructive"
+          : isWarning(entry.severity)
+            ? "border-(--warning) bg-(--warning)/10 text-(--warning)"
+            : entry.severity === "command"
+              ? "mt-1.5 font-medium text-(--success)"
+              : entry.severity === "result"
+                ? "text-foreground"
+                : entry.severity === "info"
+                  ? "text-muted-foreground"
+                  : "text-foreground/90",
       )}
       data-testid={entry.testId}
       data-severity={entry.severity}
@@ -144,6 +159,15 @@ export function DebugConsole({
       mergeDebugConsoleTranscript(entries, logs, clearedLogId, TRANSCRIPT_LIMIT),
     [entries, logs, clearedLogId],
   );
+  const counts = useMemo(() => {
+    let errors = 0;
+    let warnings = 0;
+    for (const entry of transcript) {
+      if (entry.severity === "error") errors++;
+      else if (isWarning(entry.severity)) warnings++;
+    }
+    return { errors, warnings };
+  }, [transcript]);
 
   useEffect(() => {
     if (open && followOutputRef.current)
@@ -295,37 +319,53 @@ export function DebugConsole({
         onKeyDown={(event) => event.stopPropagation()}
         onKeyUp={(event) => event.stopPropagation()}
       >
-        <SheetHeader className="flex-row items-center justify-between gap-2 px-2 py-1 pr-2">
+        <SheetHeader className="h-8 flex-row items-center justify-between gap-2 bg-panel-header px-2 py-0 pr-1 pointer-coarse:h-12">
           <div className="flex min-w-0 items-center gap-2">
-            <TerminalIcon className="size-4 shrink-0 text-muted-foreground" />
-            <SheetTitle>Console</SheetTitle>
+            <TerminalIcon className="size-3.5 shrink-0 text-muted-foreground" />
+            <SheetTitle className="text-sm">Console</SheetTitle>
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {transcript.length} {transcript.length === 1 ? "Line" : "Lines"}
+            </span>
+            {counts.errors ? (
+              <Badge variant="destructive" className="h-4 px-1.5 tabular-nums">
+                {counts.errors} {counts.errors === 1 ? "Error" : "Errors"}
+              </Badge>
+            ) : null}
+            {counts.warnings ? (
+              <Badge className="h-4 bg-(--warning)/15 px-1.5 text-(--warning) tabular-nums">
+                {counts.warnings} {counts.warnings === 1 ? "Warning" : "Warnings"}
+              </Badge>
+            ) : null}
           </div>
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="flex shrink-0 items-center gap-0.5">
             <Button
               type="button"
-              size="sm"
+              size="xs"
               variant="ghost"
-              className="pointer-coarse:min-h-11"
+              className="text-muted-foreground pointer-coarse:min-h-11"
               data-testid="debug-console-clear"
               onClick={clearTranscript}
             >
+              <Trash2Icon data-icon="inline-start" />
               Clear
             </Button>
             <Button
               type="button"
-              size="sm"
+              size="xs"
               variant="ghost"
-              className="pointer-coarse:min-h-11"
+              className="text-muted-foreground pointer-coarse:min-h-11"
               data-testid="debug-console-copy"
               onClick={() => void copyTranscript()}
             >
+              <CopyIcon data-icon="inline-start" />
               {copyStatus || "Copy Transcript"}
             </Button>
+            <Separator orientation="vertical" className="mx-1 h-4" />
             <SheetClose
               render={
                 <Button
                   variant="ghost"
-                  size="icon-sm"
+                  size="icon-xs"
                   className="pointer-coarse:size-11"
                   aria-label="Close"
                 />
@@ -337,7 +377,7 @@ export function DebugConsole({
         </SheetHeader>
         <Separator />
         <ScrollArea
-          className="min-h-0 flex-1 bg-background"
+          className="min-h-0 flex-1 bg-background/95"
           onScroll={(event) => {
             const viewport = event.target as HTMLElement;
             followOutputRef.current =
@@ -350,7 +390,7 @@ export function DebugConsole({
           <div
             ref={bodyRef}
             tabIndex={-1}
-            className="flex min-h-full flex-col gap-0.5 px-3 py-2 font-mono text-xs outline-none"
+            className="flex min-h-full flex-col py-1.5 font-mono text-xs leading-5 outline-none"
             data-testid="debug-console-transcript"
             role="log"
             aria-label="Play Console Output"
@@ -370,7 +410,7 @@ export function DebugConsole({
               id={listId}
               role="listbox"
               aria-label="Console Suggestions"
-              className="max-h-[min(24dvh,12rem)] shrink-0 overflow-y-auto overscroll-y-contain touch-pan-y"
+              className="max-h-[min(24dvh,12rem)] shrink-0 overflow-y-auto overscroll-y-contain bg-popover py-1 touch-pan-y"
               data-testid="debug-console-suggestions"
             >
               {suggestions.map((name, index) => {
@@ -384,19 +424,26 @@ export function DebugConsole({
                     aria-selected={index === selectedIndex}
                     className={cn(
                       buttonVariants({ variant: "ghost", size: "sm" }),
-                      "flex h-auto min-h-8 w-full justify-start gap-3 rounded-none px-3 py-1 text-left touch-pan-y pointer-coarse:min-h-11",
-                      index === selectedIndex && "bg-secondary",
+                      "flex h-auto min-h-7 w-full justify-start gap-3 rounded-none border-l-2 border-transparent px-3 py-0.5 text-left font-normal touch-pan-y pointer-coarse:min-h-11",
+                      index === selectedIndex && "border-l-(--success) bg-accent",
                     )}
                     data-testid={`debug-console-suggest-${name}`}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => applySuggestion(name)}
                   >
-                    <span className="shrink-0 font-mono">{name}</span>
+                    <span className="w-32 shrink-0 truncate font-mono text-xs font-medium">
+                      {name}
+                    </span>
                     {command ? (
-                      <span className="min-w-0 truncate text-muted-foreground">
-                        {commandUsage(command)}
-                        {command.parameters.length ? " · " : ""}
-                        {command.description}
+                      <span className="flex min-w-0 items-baseline gap-3">
+                        {command.parameters.length ? (
+                          <span className="shrink-0 font-mono text-xs text-muted-foreground/80">
+                            {commandUsage(command)}
+                          </span>
+                        ) : null}
+                        <span className="min-w-0 truncate text-xs text-muted-foreground">
+                          {command.description}
+                        </span>
                       </span>
                     ) : null}
                   </div>
@@ -407,13 +454,13 @@ export function DebugConsole({
         ) : null}
         <Separator />
         <form
-          className="flex shrink-0 items-center gap-2 px-2 py-1.5"
+          className="flex shrink-0 items-center gap-1 bg-background py-1 pr-1.5 pl-2 focus-within:bg-control"
           onSubmit={onSubmit}
         >
-          <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground" />
+          <ChevronRightIcon className="size-4 shrink-0 text-(--success)" />
           <Input
             ref={inputRef}
-            className="min-w-0 flex-1 font-mono pointer-coarse:min-h-11"
+            className="h-7 min-w-0 flex-1 border-transparent bg-transparent px-1 font-mono text-xs shadow-none focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent pointer-coarse:min-h-11"
             value={draft}
             onChange={(event) => updateDraft(event.target.value)}
             onKeyDown={onKeyDown}
@@ -434,7 +481,7 @@ export function DebugConsole({
           />
           <Button
             type="submit"
-            size="sm"
+            size="xs"
             className="pointer-coarse:min-h-11"
             disabled={executing || !draft.trim()}
             data-testid="debug-console-submit"
@@ -442,9 +489,24 @@ export function DebugConsole({
             Run
           </Button>
         </form>
-        <div className="flex shrink-0 items-center justify-between gap-2 px-3 pb-1 text-xs text-muted-foreground pointer-coarse:hidden">
-          <span>↑ ↓ Select / History · Tab Complete · Enter Run</span>
-          <span>Esc Close</span>
+        <div className="flex h-6 shrink-0 items-center gap-3 border-t bg-panel-header px-2 text-[0.7rem] text-muted-foreground pointer-coarse:hidden">
+          <span className="flex items-center gap-1">
+            <Kbd className="h-4 min-w-4">↑</Kbd>
+            <Kbd className="h-4 min-w-4">↓</Kbd>
+            Select / History
+          </span>
+          <span className="flex items-center gap-1">
+            <Kbd className="h-4">Tab</Kbd>
+            Complete
+          </span>
+          <span className="flex items-center gap-1">
+            <Kbd className="h-4">Enter</Kbd>
+            Run
+          </span>
+          <span className="ml-auto flex items-center gap-1">
+            <Kbd className="h-4">Esc</Kbd>
+            Close
+          </span>
         </div>
         <div
           className="hidden shrink-0 flex-wrap gap-1 px-2 pb-1 pointer-coarse:flex"

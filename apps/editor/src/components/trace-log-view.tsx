@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@babylonslate/ui/components/select";
-import { Separator } from "@babylonslate/ui/components/separator";
+import { cn } from "@babylonslate/ui/lib/utils";
 import {
   collectTraceLogWindow,
   filterTraceLogs,
@@ -27,6 +27,19 @@ import {
   TraceEmptyState,
 } from "./trace-inspection-controls";
 import { useTraceTouch } from "../lib/use-trace-touch";
+
+const severityLabel = (severity: string) =>
+  severity === "warn"
+    ? "Warning"
+    : severity.charAt(0).toUpperCase() + severity.slice(1);
+const severityTone = (severity: string) =>
+  severity === "error"
+    ? "text-destructive"
+    : severity === "warn" || severity === "warning"
+      ? "text-(--warning)"
+      : severity === "print"
+        ? "text-trace-script"
+        : "text-muted-foreground";
 
 export type TraceLogState = {
   query: string;
@@ -78,7 +91,7 @@ export function TraceLogView({
   );
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col gap-2 p-2">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-1.5">
         <SearchInput
           aria-label="Search Log"
           placeholder="Search Log…"
@@ -95,10 +108,7 @@ export function TraceLogView({
             <SelectValue>
               {state.severity === "all"
                 ? "All Severities"
-                : state.severity === "warn"
-                  ? "Warning"
-                  : state.severity.charAt(0).toUpperCase() +
-                    state.severity.slice(1)}
+                : severityLabel(state.severity)}
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
@@ -106,9 +116,7 @@ export function TraceLogView({
               <SelectItem value="all">All Severities</SelectItem>
               {severities.map((severity) => (
                 <SelectItem key={severity} value={severity}>
-                  {severity === "warn"
-                    ? "Warning"
-                    : severity.charAt(0).toUpperCase() + severity.slice(1)}
+                  {severityLabel(severity)}
                 </SelectItem>
               ))}
             </SelectGroup>
@@ -116,14 +124,14 @@ export function TraceLogView({
         </Select>
       </div>
       <span data-testid="trace-log-scope">
-        <SelectableText className="text-xs text-muted-foreground">
+        <SelectableText className="text-[0.7rem] text-muted-foreground">
           Selected Frame + Previous {TRACE_LOG_WINDOW_FRAMES - 1} (Up To{" "}
           {TRACE_LOG_WINDOW_FRAMES} Frames)
           {first !== undefined ? ` · Ticks ${first}–${last}` : ""} ·{" "}
           {lines.length} Entries
         </SelectableText>
       </span>
-      <ScrollArea className="min-h-0 flex-1">
+      <ScrollArea className="min-h-0 flex-1 rounded-md border bg-background">
         {lines.length === 0 ? (
           <TraceEmptyState
             title="No Log Output In This Window"
@@ -141,7 +149,10 @@ export function TraceLogView({
                 return (
                   <Button
                     variant="ghost"
-                    className="h-full w-full justify-start gap-2"
+                    className={cn(
+                      "h-full w-full justify-start gap-3 rounded-none border-l-2 border-transparent px-2 text-left font-normal",
+                      selected?.id === line.id && "border-l-trace-selected bg-accent",
+                    )}
                     data-testid="trace-playback-log-line"
                     data-current-tick={
                       line.frameIndex === index ? "true" : "false"
@@ -152,21 +163,24 @@ export function TraceLogView({
                       onIndexChange(line.frameIndex);
                     }}
                   >
-                    <span className="shrink-0 font-mono text-xs">
+                    <span className="w-10 shrink-0 text-right font-mono text-xs text-muted-foreground tabular-nums">
                       {line.tickIndex}
                     </span>
                     <span
-                      className="shrink-0 text-xs"
+                      className={cn(
+                        "w-14 shrink-0 text-left text-xs font-medium",
+                        severityTone(line.severity),
+                      )}
                       data-severity={line.severity}
                     >
-                      {line.severity === "warn"
-                        ? "Warning"
-                        : line.severity.charAt(0).toUpperCase() +
-                          line.severity.slice(1)}
+                      {severityLabel(line.severity)}
+                    </span>
+                    <span className="w-24 shrink-0 truncate text-left text-xs text-muted-foreground">
+                      {line.category}
+                      {line.key ? ` [${line.key}]` : ""}
                     </span>
                     <span className="min-w-0 truncate font-mono text-xs">
-                      {line.category}
-                      {line.key ? ` [${line.key}]` : ""} · {line.text}
+                      {line.text}
                     </span>
                   </Button>
                 );
@@ -177,16 +191,20 @@ export function TraceLogView({
       </ScrollArea>
       {selected && (
         <div
-          className="flex max-h-48 shrink-0 flex-col gap-1 overflow-auto"
+          className="flex max-h-48 shrink-0 flex-col gap-1.5 overflow-auto rounded-md border bg-background p-2"
           data-testid="trace-log-detail"
         >
-          <Separator />
-          <SelectableText className="break-all text-xs">
+          <SelectableText className="break-all text-xs text-muted-foreground">
             Tick {selected.tickIndex} · {selected.severity} ·{" "}
             {selected.category}
             {selected.key ? ` · ${selected.key}` : ""}
           </SelectableText>
-          <SelectableText className="whitespace-pre-wrap break-all font-mono text-xs">
+          <SelectableText
+            className={cn(
+              "whitespace-pre-wrap break-all font-mono text-xs",
+              selected.severity === "error" && "text-destructive",
+            )}
+          >
             {selected.text}
           </SelectableText>
           <TraceCopyButton label="Copy Message" text={selected.text} />
