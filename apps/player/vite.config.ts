@@ -79,14 +79,14 @@ export default defineConfig({
   },
   worker: {
     format: "es",
-    rollupOptions: {
+    rolldownOptions: {
       output: {
         entryFileNames: "worker-[name].js",
       },
     },
   },
+  // Localhost only by default; `--host` opts in to LAN access (see README).
   server: {
-    host: true,
     port: 5174,
   },
 });
