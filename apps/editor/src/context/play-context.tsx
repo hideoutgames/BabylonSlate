@@ -76,6 +76,7 @@ import { useDocuments } from "./document-context";
 import { useValidation } from "./validation-context";
 import { PreviewSessionReport } from "../components/preview-session-report";
 import type { PlaySessionResult } from "../services/play-session";
+import { GameSessionOwner, type GameSessionState, type GameSessionTicket } from "../services/game-session-owner";
 import { PREVIEW_FIXTURE_NODE_ID } from "../services/play-session";
 import {
   canonicalPlaySceneGuid,
@@ -151,6 +152,8 @@ export type LiveBtState = {
 };
 
 interface PlayContextValue {
+  sessionState: GameSessionState;
+  sessionOwner: GameSessionOwner<PlaySessionResult>;
   playing: boolean;
   preparing: boolean;
   playAwaitingMigration: boolean;
@@ -223,6 +226,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const { appendLog, reportBtState } = useContext(PlayDiagnosticsActionsContext)!;
   const { settings: appSettings, updateDebuggerDefaults } = useAppSettings();
   const engineRef = useRef<AbstractEngine | null>(null);
+  const providerMountRef = useRef(0);
   const ownedEngineRef = useRef<AbstractEngine | null>(null);
   const [projectEngine] = useState(createProjectEngineController);
   const projectEngineState = useSyncExternalStore(projectEngine.subscribe, projectEngine.getSnapshot);
@@ -231,7 +235,13 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const preparingRef = useRef(false);
   const pendingPlayOptionsRef = useRef<PlayOptions | undefined>(undefined);
   const pendingScriptsRef = useRef<ScriptBundleEntry[] | null>(null);
-  const [playing, setPlaying] = useState(false);
+  const [sessionOwner] = useState(() => new GameSessionOwner<PlaySessionResult>());
+  const sessionState = useSyncExternalStore(sessionOwner.subscribe, sessionOwner.getSnapshot);
+  const sessionTicketRef = useRef<GameSessionTicket | null>(null);
+  const [playOpen, setPlayOpen] = useState(false);
+  // Presentation may close immediately; editor owners remain held until release.
+  const playing = playOpen || sessionState.lifecycle === "running" ||
+    sessionState.lifecycle === "stopping" || sessionState.quarantined;
   const [playSaveGame, setPlaySaveGame] = useState<import("@babylonslate/core").SaveGameConfiguration>();
   const playingRef = useRef(false);
   const [preparing, setPreparing] = useState(false);
@@ -291,6 +301,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const [previewPreparationError, setPreviewPreparationError] = useState<string | null>(null);
   const [previewCanCancel, setPreviewCanCancel] = useState(true);
   const previewIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const previewReleaseRef = useRef<(() => void) | null>(null);
   const previewSaveHostRef = useRef<ReturnType<typeof createPreviewSaveStorageHost> | null>(null);
   const previewFilesRef = useRef<Map<string, Uint8Array> | null>(null);
   const previewTraceByteBudgetRef = useRef<number | undefined>(undefined);
@@ -444,7 +455,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const playSceneGuid = playScene
     ? canonicalPlaySceneGuid(playScene, guidForPath)
     : undefined;
-  const canPlay = playIsEnabled(openDocuments, activeDocumentId, {
+  const canPlay = !sessionState.quarantined && playIsEnabled(openDocuments, activeDocumentId, {
     previewBuild,
     playFromScene,
     hasStartupScene,
@@ -581,8 +592,14 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (projectDocument) return;
+    void sessionOwner.stop();
+    previewRequestRef.current += 1;
+    preparingRef.current = false;
+    setPreparing(false);
+    setPreviewOpen(false);
+    setPreviewPhase(null);
     setScripts([]);
-    setPlaying(false);
+    setPlayOpen(false);
     setSessionPlayScene(null);
     setPrepareState(null);
     setPlayBlockedOpen(false);
@@ -590,7 +607,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     setPlayAwaitingMigration(false);
     pendingScriptsRef.current = null;
     pendingPlayOptionsRef.current = undefined;
-  }, [projectDocument]);
+  }, [projectDocument, sessionOwner]);
 
   const renderingRequest = useMemo(() => projectOpen && projectGuid ? {
     projectGuid,
@@ -609,10 +626,10 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // A running simulation keeps its Engine. Apply the authored change after Stop.
-    if (renderingRequest && (playing || previewOpen)) return;
+    if (!sessionOwner.canStart()) return;
     setRenderingFailureDismissed(false);
     void projectEngine.sync(renderingRequest);
-  }, [projectEngine, renderingRequest, playing, previewOpen]);
+  }, [projectEngine, renderingRequest, sessionOwner, sessionState]);
 
   useEffect(() => {
     const engine = projectEngineState.session?.engine ?? null;
@@ -626,35 +643,55 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   }, [projectEngineState]);
 
   useEffect(() => {
+    const mount = ++providerMountRef.current;
     return () => {
-      projectEngine.dispose();
-      ownedEngineRef.current = null;
-      engineRef.current = null;
+      queueMicrotask(() => {
+        if (providerMountRef.current !== mount) return;
+        void sessionOwner.stop().then(async (result) => {
+          if (result) await result.released;
+          if (sessionOwner.getSnapshot().quarantined) return;
+          projectEngine.dispose();
+          ownedEngineRef.current = null;
+          engineRef.current = null;
+        });
+      });
     };
-  }, [projectEngine]);
+  }, [projectEngine, sessionOwner]);
 
   const ensureEngine = useCallback((): AbstractEngine | null => {
     const engine = projectEngine.getSnapshot().session?.engine;
     return isUsableEngine(engine) ? engine! : null;
   }, [projectEngine]);
 
+  useEffect(() => {
+    if (sessionOwner.canStart()) {
+      setEncodeQueuePauseReason("play", false);
+      if (sessionState.mode === null) setPlayOpen(false);
+    }
+  }, [sessionOwner, sessionState]);
+
   const launchPlay = useCallback(
     (options?: PlayOptions & { scripts?: ScriptBundleEntry[] }) => {
+      let ticket = sessionTicketRef.current;
+      if (!ticket || !sessionOwner.isCurrent(ticket)) ticket = sessionOwner.begin("play");
+      if (!ticket || ticket.mode !== "play" || sessionOwner.getSnapshot().lifecycle !== "preparing") return;
+      sessionTicketRef.current = ticket;
       if (!ensureEngine()) {
         appendLog("Play failed: could not create Engine.");
+        sessionOwner.fail(ticket, "Play could not create Engine.");
         return;
       }
       setEncodeQueuePauseReason("play", true);
       setInjectThrow(Boolean(options?.injectFixtureThrow));
-      if (options?.scripts) {
-        setScripts(options.scripts);
-      }
-      setPlaying(true);
+      if (options?.scripts) setScripts(options.scripts);
+      setPlayOpen(true);
     },
-    [appendLog, ensureEngine],
+    [appendLog, ensureEngine, sessionOwner],
   );
 
   const closePreview = useCallback(() => {
+    if (sessionTicketRef.current?.mode !== "preview") return;
+    void sessionOwner.stop(sessionTicketRef.current);
     previewClosingRef.current = true;
     previewSaveHostRef.current?.dispose();
     previewSaveHostRef.current = null;
@@ -668,9 +705,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     setPreviewPhase(null);
     setPreviewError(null);
     setPreviewCanCancel(true);
-    setPlaying(false);
+    setPlayOpen(false);
     setSessionPlayScene(null);
-    setEncodeQueuePauseReason("play", false);
     window.setTimeout(() => {
       previewClosingRef.current = false;
       const diagnostics = previewDiagnosticsRef.current;
@@ -681,7 +717,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         setReportOpen(true);
       }
     }, 100);
-  }, []);
+  }, [sessionOwner]);
 
   const sendPreviewPack = useCallback(() => {
     const files = previewFilesRef.current;
@@ -754,7 +790,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   }, [appendLog, closePreview, sendPreviewPack]);
 
   const requestPreviewBuild = useCallback(async (saveConfirmed = false) => {
-    if (playing || preparingRef.current) return;
+    if (!sessionOwner.canStart() || preparingRef.current) return;
     // Read at call time (see playRequestInputsRef); shadows the render values.
     const {
       documents: {
@@ -796,9 +832,12 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       setPlayAwaitingMigration(true);
       return;
     }
+    const ticket = sessionOwner.begin("preview");
+    if (!ticket) return;
+    sessionTicketRef.current = ticket;
     const requestId = ++previewRequestRef.current;
     const traceByteBudget = appSettings.traceByteBudget;
-    const isCurrentRequest = () => previewRequestRef.current === requestId;
+    const isCurrentRequest = () => previewRequestRef.current === requestId && sessionOwner.isCurrent(ticket);
     const fail = (message: string) => {
       const reason = message || "Preview Build could not prepare the game.";
       setPreviewPreparationError(reason);
@@ -829,6 +868,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           return current.loadAssetDocument("save-game", asset.path);
         },
       });
+      if (!isCurrentRequest()) return;
       setPreviewPhase("Collecting Assets");
       const playerFiles = await loadPlayerDistFiles();
       if (!isCurrentRequest()) return;
@@ -859,7 +899,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       setPreviewCanCancel(false);
       setPreviewPhase("Launching");
       setEncodeQueuePauseReason("play", true);
-      setPlaying(true);
+      setPlayOpen(true);
       setPreviewError(null);
       previewOriginRef.current = previewTarget.origin;
       previewSaveHostRef.current?.dispose();
@@ -870,6 +910,25 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         send: (message) => previewIframeRef.current?.contentWindow?.postMessage(message, previewOriginRef.current),
       }) : null;
       setPreviewSrc(previewTarget.src);
+      sessionOwner.attach(ticket, () => {
+        // The iframe owns a separate Engine. Its passive unmount callback
+        // confirms browsing-context destruction; a timer does not.
+        const frame = previewIframeRef.current;
+        frame?.contentWindow?.postMessage({ type: PREVIEW_STOP_MESSAGE }, previewOriginRef.current);
+        previewSaveHostRef.current?.dispose();
+        previewSaveHostRef.current = null;
+        const released = new Promise<{ textureCountAfter: number; textureLeak: boolean; quarantined: boolean }>((resolve) => {
+          const detached = () => resolve({ textureCountAfter: 0, textureLeak: false, quarantined: false });
+          if (!frame?.isConnected) detached();
+          else previewReleaseRef.current = detached;
+        });
+        setPreviewOpen(false);
+        return {
+          diagnostics: [], droppedDiagnostics: 0, textureCountBefore: 0,
+          released,
+          runtimeMode: "in-process", lastTrace: null,
+        };
+      });
       setPreviewOpen(true);
     } catch (error) {
       if (isCurrentRequest()) {
@@ -881,9 +940,10 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         preparingRef.current = false;
         setPreparing(false);
         setPreviewPhase(null);
+        if (sessionOwner.getSnapshot().lifecycle === "preparing") void sessionOwner.stop(ticket);
       }
     }
-  }, [appendLog, appSettings.traceByteBudget, playFromScene, playing]);
+  }, [appendLog, appSettings.traceByteBudget, playFromScene, sessionOwner]);
 
   const requestPlay = useCallback(
     async (options?: PlayOptions) => {
@@ -891,7 +951,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         await requestPreviewBuild(options?.saveChoice === "save");
         return;
       }
-      if (playing || preparingRef.current) return;
+      if (!sessionOwner.canStart() || preparingRef.current) return;
       // Read at call time (see playRequestInputsRef); shadows the render values.
       const {
         documents: {
@@ -974,6 +1034,12 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      const ticket = sessionOwner.begin("play");
+      if (!ticket) return;
+      sessionTicketRef.current = ticket;
+      pendingScriptsRef.current = null;
+      let presentationRequested = false;
+      const current = <T,>(pending: Promise<T>) => sessionOwner.awaitCurrent(ticket, pending);
       preparingRef.current = true;
       setPreparing(true);
       try {
@@ -983,7 +1049,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             dirtyNames: plan.dirtyNames,
           });
           if (plan.needsSave) {
-            const saved = await saveAll();
+            const saved = await current(saveAll());
             if (!saved) {
               setPrepareState(null);
               setPlayAwaitingMigration(true);
@@ -1004,22 +1070,23 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         let nextScripts = playPreviewBundles;
         let nextDiagnostics = playPreviewDiagnostics;
         if (shouldCompile) {
-          const result = await collectPlayPreviewScripts();
+          const result = await current(collectPlayPreviewScripts());
           nextScripts = result.bundles;
           nextDiagnostics = result.diagnostics;
         }
         setScripts(nextScripts);
         setDiagnostics(nextDiagnostics);
         // Snapshot saved and open data once for both worker and in-process Play.
-        setPlayDataAssets(await collectPlayDataAssets());
+        setPlayDataAssets(await current(collectPlayDataAssets()));
         let playLibrary: Array<{
           guid: string;
           scene: import("@babylonslate/core").SerializedScene;
         }> = [];
         try {
-          playLibrary = await collectPlaySceneLibrary();
+          playLibrary = await current(collectPlaySceneLibrary());
           setPlaySceneLibrary(playLibrary);
         } catch (error) {
+          if (!sessionOwner.isCurrent(ticket)) throw error;
           appendLog(
             `Scene library failed: ${error instanceof Error ? error.message : String(error)}`,
           );
@@ -1055,15 +1122,16 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         let overlayScenes: import("@babylonslate/core").SerializedScene[] = [];
         let overlayGraphMaterials: string[] = [];
         try {
-          const collected = await collectPlaySceneLayers([
+          const collected = await current(collectPlaySceneLayers([
             resolvedScene.scene,
             ...playLibrary.map((entry) => entry.scene),
             ...prefabScenes,
-          ]);
+          ]));
           setPlaySceneLayers(collected.layers);
           overlayScenes = collected.overlayScenes;
           overlayGraphMaterials = collected.graphMaterialGuids;
         } catch (error) {
+          if (!sessionOwner.isCurrent(ticket)) throw error;
           appendLog(
             `SceneLayer library failed: ${error instanceof Error ? error.message : String(error)}`,
           );
@@ -1085,12 +1153,13 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         ]);
         let playGraphs: typeof playAnimGraphs = [];
         try {
-          playGraphs = await collectPlayAnimGraphs(
+          playGraphs = await current(collectPlayAnimGraphs(
             resolvedScene?.scene,
             resourceScenes,
-          );
+          ));
           setPlayAnimGraphs(playGraphs);
         } catch (error) {
+          if (!sessionOwner.isCurrent(ticket)) throw error;
           appendLog(
             `AnimationGraph load failed: ${error instanceof Error ? error.message : String(error)}`,
           );
@@ -1098,12 +1167,13 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         }
         let playTrees: typeof playBehaviourTrees = [];
         try {
-          playTrees = await collectPlayBehaviourTrees(
+          playTrees = await current(collectPlayBehaviourTrees(
             resolvedScene?.scene,
             resourceScenes,
-          );
+          ));
           setPlayBehaviourTrees(playTrees);
         } catch (error) {
+          if (!sessionOwner.isCurrent(ticket)) throw error;
           appendLog(
             `BehaviourTree load failed: ${error instanceof Error ? error.message : String(error)}`,
           );
@@ -1111,9 +1181,10 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         }
         try {
           setPlayBlackboards(
-            await collectPlayBlackboards(resolvedScene?.scene, resourceScenes),
+            await current(collectPlayBlackboards(resolvedScene?.scene, resourceScenes)),
           );
         } catch (error) {
+          if (!sessionOwner.isCurrent(ticket)) throw error;
           appendLog(
             `Blackboard load failed: ${error instanceof Error ? error.message : String(error)}`,
           );
@@ -1125,39 +1196,42 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         let textureBytes = new Map<string, Uint8Array>();
         let texturePixelSizes = new Map<string, { width: number; height: number }>();
         try {
-          sprites = await collectPlaySpritePayloads(
+          sprites = await current(collectPlaySpritePayloads(
             resolvedScene?.scene,
             playGraphs,
             resourceScenes,
-          );
+          ));
           setPlaySpritePayloads(sprites);
         } catch (error) {
+          if (!sessionOwner.isCurrent(ticket)) throw error;
           appendLog(
             `Sprite payload load failed: ${error instanceof Error ? error.message : String(error)}`,
           );
           setPlaySpritePayloads(new Map());
         }
         try {
-          spriteAnimations = await collectPlaySpriteAnimationPayloads(
+          spriteAnimations = await current(collectPlaySpriteAnimationPayloads(
             playGraphs,
             playTrees,
-          );
+          ));
           setPlaySpriteAnimationPayloads(spriteAnimations);
         } catch (error) {
+          if (!sessionOwner.isCurrent(ticket)) throw error;
           appendLog(
             `Sprite Animation load failed: ${error instanceof Error ? error.message : String(error)}`,
           );
           setPlaySpriteAnimationPayloads(new Map());
         }
         try {
-          const tileContent = await collectPlayTilemapContent(
+          const tileContent = await current(collectPlayTilemapContent(
             resolvedScene?.scene,
             resourceScenes,
-          );
+          ));
           setPlayTilemaps(tileContent.tilemaps);
           setPlayTilesets(tileContent.tilesets);
           tilesets = tileContent.tilesets;
         } catch (error) {
+          if (!sessionOwner.isCurrent(ticket)) throw error;
           appendLog(
             `Tilemap load failed: ${error instanceof Error ? error.message : String(error)}`,
           );
@@ -1167,12 +1241,12 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         let modelPayloads = new Map<string, ModelPayload>();
         try {
           setPlayModelBytes(
-            await collectPlayModelBytes(resolvedScene?.scene, resourceScenes),
+            await current(collectPlayModelBytes(resolvedScene?.scene, resourceScenes)),
           );
-          modelPayloads = await collectPlayModelPayloads(
+          modelPayloads = await current(collectPlayModelPayloads(
             resolvedScene?.scene,
             resourceScenes,
-          );
+          ));
           setPlayModelPayloads(modelPayloads);
           setPlayModelClipAnimationGuids(
             modelClipAnimationGuidsFromAssets(assetRegistry?.list() ?? []),
@@ -1181,6 +1255,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             retargetAnimationLoadsFromAssets(assetRegistry?.list() ?? []),
           );
         } catch (error) {
+          if (!sessionOwner.isCurrent(ticket)) throw error;
           appendLog(
             `Model load failed: ${error instanceof Error ? error.message : String(error)}`,
           );
@@ -1191,12 +1266,12 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         }
 
         try {
-          setPlayRenderTargets(await collectPlayRenderTargets());
-          const waters = await collectPlayWaterContent();
+          setPlayRenderTargets(await current(collectPlayRenderTargets()));
+          const waters = await current(collectPlayWaterContent());
           setPlayWaters(waters);
-          const particles = await collectPlayParticles();
+          const particles = await current(collectPlayParticles());
           setPlayParticleLibrary(particles);
-          const materials = await collectPlayMaterialLibrary(
+          const materials = await current(collectPlayMaterialLibrary(
             resolvedScene?.scene,
             [
               ...playLibrary.map((entry) => entry.scene),
@@ -1208,10 +1283,10 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
               ...modelSlotMaterialGuidsFromPayloads(modelPayloads),
               ...overlayGraphMaterials,
             ],
-          );
+          ));
           setPlayMaterialDocuments(materials.documents);
           setPlayMaterialFunctions(materials.functions);
-          textureBytes = await collectPlayTextureBytes(
+          textureBytes = await current(collectPlayTextureBytes(
             sprites,
             tilesets,
             [
@@ -1223,7 +1298,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             ],
             spriteAnimations,
             true,
-          );
+          ));
           texturePixelSizes = collectPlayTexturePixelSizes(
             sprites,
             tilesets,
@@ -1239,6 +1314,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           setPlayTextureBytes(textureBytes);
           setPlayTexturePixelSizes(texturePixelSizes);
         } catch (error) {
+          if (!sessionOwner.isCurrent(ticket)) throw error;
           appendLog(
             `Material load failed: ${error instanceof Error ? error.message : String(error)}`,
           );
@@ -1248,7 +1324,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           setPlayMaterialFunctions(new Map());
           setPlayParticleLibrary(emptyParticleLibrary());
           try {
-            textureBytes = await collectPlayTextureBytes(
+            textureBytes = await current(collectPlayTextureBytes(
               sprites,
               tilesets,
               [
@@ -1259,7 +1335,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
               ],
               spriteAnimations,
               true,
-            );
+            ));
             texturePixelSizes = collectPlayTexturePixelSizes(
               sprites,
               tilesets,
@@ -1274,6 +1350,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             setPlayTextureBytes(textureBytes);
             setPlayTexturePixelSizes(texturePixelSizes);
           } catch (textureError) {
+            if (!sessionOwner.isCurrent(ticket)) throw textureError;
             appendLog(
               `Texture load failed: ${textureError instanceof Error ? textureError.message : String(textureError)}`,
             );
@@ -1295,32 +1372,34 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         try {
           // Do not let a failed new session reuse the previous session's data.
           setPlayAreaEmissions(new Map());
-          setPlayAreaEmissions(await collectPlayAreaEmissions(fontScenes, true));
+          setPlayAreaEmissions(await current(collectPlayAreaEmissions(fontScenes, true)));
         } catch (error) {
+          if (!sessionOwner.isCurrent(ticket)) throw error;
           appendLog(`Area-light emission load failed: ${error instanceof Error ? error.message : String(error)}`);
           setPrepareState(null);
           return;
         }
         try {
           setPlayFontFacetypeBytes(
-            await collectPlayFontFacetypeBytes(
+            await current(collectPlayFontFacetypeBytes(
               resolvedScene?.scene,
               [
                 ...playLibrary.map((entry) => entry.scene),
                 ...resourceScenes,
               ],
-            ),
+            )),
           );
           const msdf = fontMsdfMapsFromPairs(
-            await collectPlayFontMsdfPair(resolvedScene?.scene, fontScenes.slice(1)),
+            await current(collectPlayFontMsdfPair(resolvedScene?.scene, fontScenes.slice(1))),
           );
           setPlayFontMsdfJson(msdf.json);
           setPlayFontMsdfPng(msdf.png);
-          setPlayFontFaceEntries(await collectPlayFontFaceEntries());
+          setPlayFontFaceEntries(await current(collectPlayFontFaceEntries()));
           const fontCss = collectPlayFontCssStacks();
           setPlayFontCssStack(fontCss.fontCssStack);
           setPlayFontCssStackByGuid(fontCss.fontCssStackByGuid);
         } catch (error) {
+          if (!sessionOwner.isCurrent(ticket)) throw error;
           appendLog(
             `3D Text font load failed: ${error instanceof Error ? error.message : String(error)}`,
           );
@@ -1332,12 +1411,13 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           setPlayFontCssStackByGuid(new Map());
         }
 
-        setPlayInputAssets(await collectPlayInputAssets());
+        setPlayInputAssets(await current(collectPlayInputAssets()));
         try {
-          const audio = await collectPlayAudio();
+          const audio = await current(collectPlayAudio());
           setPlayAudioSourceLoader(() => audio.loadSourceBytes);
           setPlayAudioLibrary(audio.library);
         } catch (error) {
+          if (!sessionOwner.isCurrent(ticket)) throw error;
           appendLog(
             `Audio load failed: ${error instanceof Error ? error.message : String(error)}`,
           );
@@ -1346,18 +1426,18 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         }
         const bakedSceneGuid = canonicalPlaySceneGuid(resolvedScene, (path) =>
           assetRegistry?.list().find((asset) => asset.path === path)?.header.guid ?? null);
-        const sceneBakes = await readPlaySceneBakes([
+        const sceneBakes = await current(readPlaySceneBakes([
           ...playLibrary.map(({ guid }) => ({ guid, path: assetRegistry?.getByGuid(guid)?.path })),
           { guid: bakedSceneGuid, path: resolvedScene.path },
         ], readAssetChunk, (guid, chunkId, error) => {
           appendLog(`${chunkId} load failed for ${guid}: ${error instanceof Error ? error.message : String(error)}`);
-        });
+        }));
         setPlaySceneNavmeshBytes(sceneBakes.navmeshes);
         setPlayAudioReverbByScene(sceneBakes.audioReverbs);
         setPlayNavmeshBytes(sceneBakes.navmeshes.get(bakedSceneGuid) ?? null);
         setPlayAudioReverbBytes(sceneBakes.audioReverbs.get(bakedSceneGuid) ?? null);
 
-        setPlaySaveGame(await prepareSaveGameConfiguration({
+        setPlaySaveGame(await current(prepareSaveGameConfiguration({
           projectId: playRequestInputsRef.current.documents.projectGuid,
           settings: projectDocument?.settings.saveGame,
           loadDefinition: async (guid) => {
@@ -1366,7 +1446,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             if (!asset) throw new Error("The default Save Game definition is missing.");
             return current.loadAssetDocument("save-game", asset.path);
           },
-        }));
+        })));
         setPrepareState(null);
 
         if (!inject && projectHasBlockingErrors(nextDiagnostics)) {
@@ -1376,26 +1456,32 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           return;
         }
 
+        presentationRequested = true;
         launchPlay({ injectFixtureThrow: inject, scripts: nextScripts });
       } catch (error) {
+        if (!sessionOwner.isCurrent(ticket)) return;
         appendLog(
           `Script compile failed: ${error instanceof Error ? error.message : String(error)}`,
         );
         setPrepareState(null);
         setScripts([]);
         if (inject) {
+          presentationRequested = true;
           launchPlay({ injectFixtureThrow: true, scripts: [] });
         }
       } finally {
-        preparingRef.current = false;
-        setPreparing(false);
+        if (sessionOwner.owns(ticket)) {
+          preparingRef.current = false;
+          setPreparing(false);
+          if (!presentationRequested && !pendingScriptsRef.current) void sessionOwner.stop(ticket);
+        }
       }
     },
     [
       appendLog,
       launchPlay,
       playFromScene,
-      playing,
+      sessionOwner,
       previewBuild,
       requestPreviewBuild,
       setDiagnostics,
@@ -1422,10 +1508,10 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const handleClose = useCallback(
-    (result: PlaySessionResult) => {
-      setPlaying(false);
+    (result: PlaySessionResult, ticket?: GameSessionTicket) => {
+      if (ticket && sessionOwner.getSnapshot().generation !== ticket.generation) return;
+      setPlayOpen(false);
       setSessionPlayScene(null);
-      setEncodeQueuePauseReason("play", false);
       reportBtState(null);
       setDropped(result.droppedDiagnostics);
       setReportEntries(result.diagnostics);
@@ -1436,11 +1522,12 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       appendLog(
         `Play ended (${result.runtimeMode}; textures ${result.textureCountBefore}→pending)`,
       );
-      void result.released.then(({ textureCountAfter, textureLeak }) => {
+      void result.released.then(({ textureCountAfter, textureLeak, quarantined }) => {
+        if (quarantined) appendLog("Game resources did not confirm release. Reload the editor before starting another session.");
         appendLog(
           `Play textures ${result.textureCountBefore}→${textureCountAfter}`,
         );
-        if (textureLeak) {
+        if (textureLeak && !quarantined) {
           appendLog(
             `Texture leak detected: ${result.textureCountBefore} → ${textureCountAfter}`,
           );
@@ -1450,11 +1537,13 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         void openRecordedTrace(result.lastTrace);
       }
     },
-    [appendLog, openRecordedTrace, reportBtState],
+    [appendLog, openRecordedTrace, reportBtState, sessionOwner],
   );
 
   const value = useMemo<PlayContextValue>(
     () => ({
+      sessionState,
+      sessionOwner,
       playing,
       preparing,
       playAwaitingMigration,
@@ -1485,6 +1574,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       reportBtState,
     }),
     [
+      sessionState,
+      sessionOwner,
       playing,
       preparing,
       playAwaitingMigration,
@@ -1533,6 +1624,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             onRetry={() => { void requestPreviewBuild(); }}
             onCancel={() => {
               previewRequestRef.current += 1;
+              void sessionOwner.stop(sessionTicketRef.current ?? undefined);
               setPreviewPhase(null);
               setPreviewPreparationError(null);
               preparingRef.current = false;
@@ -1585,7 +1677,13 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         <PlayBlockedDialog
           open={playBlockedOpen}
           diagnostics={blockedDiagnostics}
-          onOpenChange={setPlayBlockedOpen}
+          onOpenChange={(open) => {
+            setPlayBlockedOpen(open);
+            if (!open && pendingScriptsRef.current) {
+              pendingScriptsRef.current = null;
+              void sessionOwner.stop(sessionTicketRef.current ?? undefined);
+            }
+          }}
           onNavigate={(d) => {
             setFocusDiagnostic(d);
             const revealId = documentIdToRevealForDiagnostic(
@@ -1594,17 +1692,23 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             );
             if (revealId) setActiveDocument(revealId);
             setPlayBlockedOpen(false);
+            pendingScriptsRef.current = null;
+            void sessionOwner.stop(sessionTicketRef.current ?? undefined);
           }}
           onPlayAnyway={() => {
             setPlayBlockedOpen(false);
+            const preparedScripts = pendingScriptsRef.current ?? scripts;
+            pendingScriptsRef.current = null;
             launchPlay({
               injectFixtureThrow: pendingPlayOptionsRef.current?.injectFixtureThrow,
-              scripts: pendingScriptsRef.current ?? scripts,
+              scripts: preparedScripts,
             });
           }}
         />
-        {playing && !previewOpen && engineRef.current ? (
+        {playOpen && !previewOpen && engineRef.current && sessionTicketRef.current ? (
           <PlayOverlay
+            sessionOwner={sessionOwner}
+            sessionTicket={sessionTicketRef.current}
             sharedEngine={engineRef.current}
             injectFixtureThrow={injectThrow}
             scripts={scripts}
@@ -1690,6 +1794,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           <PreviewBuildOverlay
             src={previewSrc}
             iframeRef={previewIframeRef}
+            onDetached={() => { previewReleaseRef.current?.(); previewReleaseRef.current = null; }}
             error={previewError}
             onClose={closePreview}
             onLoad={sendPreviewPack}

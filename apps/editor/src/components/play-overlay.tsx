@@ -27,6 +27,7 @@ import {
   type PlaySession,
   type PlaySessionResult,
 } from "../services/play-session";
+import type { GameSessionOwner, GameSessionTicket } from "../services/game-session-owner";
 import { finishPlaySessionWithTrace } from "../lib/play-trace-spill";
 import type { StatsHudHighlight } from "./stats-hud";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
@@ -90,6 +91,8 @@ import { useDebugConsoleLogs } from "../lib/use-debug-console-logs";
 import { usePlay } from "../context/play-context";
 
 export interface PlayOverlayProps {
+  sessionOwner?: GameSessionOwner<PlaySessionResult>;
+  sessionTicket?: GameSessionTicket;
   saveGame?: import("@babylonslate/core").SaveGameConfiguration;
   sharedEngine: AbstractEngine;
   injectFixtureThrow?: boolean;
@@ -165,7 +168,7 @@ export interface PlayOverlayProps {
     >
   >;
   pauseOnPlay?: boolean;
-  onClose: (result: PlaySessionResult) => void;
+  onClose: (result: PlaySessionResult, ticket?: GameSessionTicket) => void;
 }
 
 function emptyPlayResult(): PlaySessionResult {
@@ -184,6 +187,8 @@ function emptyPlayResult(): PlaySessionResult {
 }
 
 export function PlayOverlay({
+  sessionOwner,
+  sessionTicket,
   saveGame,
   sharedEngine,
   injectFixtureThrow,
@@ -300,10 +305,14 @@ export function PlayOverlay({
     closedRef.current = true;
     const session = sessionRef.current;
     sessionRef.current = null;
+    if (sessionOwner && sessionTicket) {
+      void sessionOwner.stop(sessionTicket).then((result) => {
+        if (!result && !sessionOwner.getSnapshot().quarantined) onCloseRef.current(emptyPlayResult(), sessionTicket);
+      });
+      return;
+    }
     void (async () => {
-      const result = session
-        ? await finishPlaySessionWithTrace(session)
-        : emptyPlayResult();
+      const result = session ? await finishPlaySessionWithTrace(session) : emptyPlayResult();
       onCloseRef.current(result);
     })();
   };
@@ -447,252 +456,273 @@ export function PlayOverlay({
     const overlay = overlayRef.current;
     const canvas = canvasRef.current;
     if (!overlay || !canvas) return;
-    const layoutPlay = () => {
-      applyPlayPreviewCanvasLayout({
-        overlay,
-        canvas,
-        ...initialPlayPreviewRef.current,
-        render: runtimeRenderRef.current,
-        liveSize: liveSizeRef.current,
-      });
-    };
-    const resizeIfSized = createCanvasResizeGuard(
-      () => {
-        sessionRef.current?.handle.resize();
-      },
-      {
-        onHoldChange: (holding) => {
-          sessionRef.current?.handle.scheduler.setResizing(holding);
+    if (sessionOwner && sessionTicket && !sessionOwner.isCurrent(sessionTicket)) return;
+    // StrictMode probes effects with setup/cleanup/setup. Defer acquisition so
+    // the abandoned setup cannot allocate a second shared-Engine consumer.
+    let cancelled = false;
+    let disposePresentation: (() => void) | undefined;
+    queueMicrotask(() => {
+      if (cancelled || closedRef.current || (sessionOwner && sessionTicket && !sessionOwner.isCurrent(sessionTicket))) return;
+      const layoutPlay = () => {
+        applyPlayPreviewCanvasLayout({
+          overlay,
+          canvas,
+          ...initialPlayPreviewRef.current,
+          render: runtimeRenderRef.current,
+          liveSize: liveSizeRef.current,
+        });
+      };
+      const resizeIfSized = createCanvasResizeGuard(
+        () => {
+          sessionRef.current?.handle.resize();
         },
-      },
-    );
-    const syncFramebuffer = (sessionHandle: {
-      setSize: (w: number, h: number) => void;
-      resize: () => void;
-    }) => {
-      const framebuffer = playFramebufferSize(
-        runtimeRenderRef.current,
-        liveSizeRef.current,
+        {
+          onHoldChange: (holding) => {
+            sessionRef.current?.handle.scheduler.setResizing(holding);
+          },
+        },
       );
-      if (framebuffer) {
-        sessionHandle.setSize(framebuffer.width, framebuffer.height);
+      const syncFramebuffer = (sessionHandle: {
+        setSize: (w: number, h: number) => void;
+        resize: () => void;
+      }) => {
+        const framebuffer = playFramebufferSize(
+          runtimeRenderRef.current,
+          liveSizeRef.current,
+        );
+        if (framebuffer) {
+          sessionHandle.setSize(framebuffer.width, framebuffer.height);
+          return;
+        }
+        resizeIfSized(canvas);
+      };
+      layoutPlay();
+      userPausedRef.current = initialPauseOnPlayRef.current;
+      setPaused(initialPauseOnPlayRef.current);
+      let session: PlaySession;
+      if (sessionOwner && sessionTicket && !sessionOwner.attach(sessionTicket, async () => {
+        const result = await finishPlaySessionWithTrace(session);
+        onCloseRef.current(result, sessionTicket);
+        return result;
+      })) return;
+      try {
+        session = startPlaySession({
+          canvas,
+          sharedEngine,
+          mode: sessionTicket?.mode === "simulate" ? "simulate" : "play",
+          sessionGeneration: sessionTicket?.generation,
+          injectFixtureThrow,
+          scripts: scriptsRef.current,
+          physics: physicsRef.current,
+          sceneAssetGuid: sceneRef.current.sceneAssetGuid,
+          scene: sceneRef.current.scene,
+          project: sceneRef.current.project,
+          saveGame: sceneRef.current.saveGame,
+          gameInstanceClass: sceneRef.current.gameInstanceClass,
+          scenes: sceneRef.current.scenes,
+          sceneLayers: sceneRef.current.sceneLayers,
+          frameCap: initialFrameCapRef.current,
+          traceByteBudget: initialTraceByteBudgetRef.current,
+          infiniteLoopDetection: initialInfiniteLoopDetectionRef.current,
+          loopCount: initialLoopCountRef.current,
+          inputAssets: initialInputAssetsRef.current,
+          dataAssets: initialDataAssetsRef.current,
+          inputMappings: initialInputMappingsRef.current,
+          focusNavigation: initialFocusNavigationRef.current,
+          animGraphs: animGraphsRef.current,
+          behaviourTrees: behaviourTreesRef.current,
+          blackboards: blackboardsRef.current,
+          spritePayloads: spritePayloadsRef.current,
+          spriteAnimationPayloads: spriteAnimationPayloadsRef.current,
+          waterPayloads: waterPayloadsRef.current,
+          renderTargets: renderTargetsRef.current,
+          renderTargetTextures: renderTargetTexturesRef.current,
+          tilemapPayloads: tilemapPayloadsRef.current,
+          tilesetPayloads: tilesetPayloadsRef.current,
+          textureBytes: textureBytesRef.current,
+          areaEmissions: areaEmissionsRef.current,
+          texturePixelSizes: texturePixelSizesRef.current,
+          fontFacetypeBytes: fontFacetypeBytesRef.current,
+          fontMsdfJson: fontMsdfJsonRef.current,
+          fontMsdfPng: fontMsdfPngRef.current,
+          fontFaceEntries: fontFaceEntriesRef.current,
+          fontCssStack: fontCssStackRef.current,
+          fontCssStackByGuid: fontCssStackByGuidRef.current,
+          modelBytes: modelBytesRef.current,
+          modelPayloads: modelPayloadsRef.current,
+          modelClipAnimationGuids: modelClipAnimationGuidsRef.current,
+          retargetAnimationLoads: retargetAnimationLoadsRef.current,
+          loadAudioSourceBytes: loadAudioSourceBytesRef.current,
+          audioLibrary: audioLibraryRef.current,
+          animClipCatalog: animClipCatalogRef.current,
+          particleLibrary: particleLibraryRef.current,
+          materialDocuments: materialDocumentsRef.current,
+          materialFunctions: materialFunctionsRef.current,
+          postProcessingEnabled,
+          renderSettings: initialRenderRef.current,
+          consoleRenderSettings: initialConsoleRenderRef.current,
+          hardwareScalingLevel,
+          pixelsPerUnit: pixelsPerUnitRef.current,
+          sortingLayers: sortingLayersRef.current,
+          touchMinTargetPx: touchMinTargetPxRef.current,
+          pixelPerfect: pixelPerfectRef.current,
+          navmeshBytes: navmeshBytesRef.current,
+          sceneNavmeshBytes: sceneNavmeshBytesRef.current,
+          audioReverbByScene: audioReverbBySceneRef.current,
+          audioReverbBytes: audioReverbBytesRef.current,
+          audioProjectSettings: audioProjectSettingsRef.current,
+          pauseOnPlay: initialPauseOnPlayRef.current,
+          onSceneLoading: setSceneLoading,
+          onSessionPaused: (next) => {
+            userPausedRef.current = next;
+            setPaused(next);
+          },
+          onShowFps: (enabled) => {
+            setStatsOpen(enabled);
+            if (!enabled) setStatsHighlight(null);
+          },
+          onFreeCam: (enabled) => {
+            setFreeCamEnabled(enabled);
+          },
+          onStatHighlight: (name, enabled) => {
+            setStatsOpen(true);
+            setStatsHighlight(
+              enabled &&
+                (name === "unit" ||
+                  name === "memory" ||
+                  name === "draws" ||
+                  name === "threads")
+                ? name
+                : null,
+            );
+          },
+          onStats: (stats) => {
+            setFps(stats.fps);
+            setScriptMs(stats.scriptMs);
+            setPhysicsMs(stats.physicsMs);
+            setPublishMs(stats.publishMs);
+            setMoveX(sessionRef.current?.lastMoveX() ?? null);
+          },
+          onLog: (message, severity) => pushLog(severity, message),
+          onPrint: (entry) => {
+            printRef.current?.(entry);
+            pushLog("print", entry.message);
+          },
+          onBehaviourTreeDebug: (enabled) => {
+            setTreeOpen(enabled);
+            if (enabled) setConsoleOpen(false);
+          },
+          onBehaviourTreeSnapshot: setTrees,
+          onBtState: (state) => reportBtState(state),
+          onRenderOutputChanged: (settings) => {
+            runtimeRenderRef.current = settings;
+            liveSizeRef.current = null;
+            layoutPlay();
+          },
+          onSetRenderResolution: (width, height) => {
+            liveSizeRef.current = {
+              width: clampRenderResolution(width),
+              height: clampRenderResolution(height),
+            };
+            layoutPlay();
+            const current = sessionRef.current;
+            if (current) syncFramebuffer(current.handle);
+          },
+          onFatalDiagnostic: () => finishSessionRef.current(),
+        });
+      } catch (error) {
+        if (sessionOwner && sessionTicket) sessionOwner.fail(sessionTicket, error, true);
+        pushLog("error", `Play startup failed: ${error instanceof Error ? error.message : String(error)}`);
+        onCloseRef.current(emptyPlayResult(), sessionTicket);
         return;
       }
-      resizeIfSized(canvas);
-    };
-    layoutPlay();
-    userPausedRef.current = initialPauseOnPlayRef.current;
-    setPaused(initialPauseOnPlayRef.current);
-    const session = startPlaySession({
-      canvas,
-      sharedEngine,
-      injectFixtureThrow,
-      scripts: scriptsRef.current,
-      physics: physicsRef.current,
-      sceneAssetGuid: sceneRef.current.sceneAssetGuid,
-      scene: sceneRef.current.scene,
-      project: sceneRef.current.project,
-      saveGame: sceneRef.current.saveGame,
-      gameInstanceClass: sceneRef.current.gameInstanceClass,
-      scenes: sceneRef.current.scenes,
-      sceneLayers: sceneRef.current.sceneLayers,
-      frameCap: initialFrameCapRef.current,
-      traceByteBudget: initialTraceByteBudgetRef.current,
-      infiniteLoopDetection: initialInfiniteLoopDetectionRef.current,
-      loopCount: initialLoopCountRef.current,
-      inputAssets: initialInputAssetsRef.current,
-      dataAssets: initialDataAssetsRef.current,
-      inputMappings: initialInputMappingsRef.current,
-      focusNavigation: initialFocusNavigationRef.current,
-      animGraphs: animGraphsRef.current,
-      behaviourTrees: behaviourTreesRef.current,
-      blackboards: blackboardsRef.current,
-      spritePayloads: spritePayloadsRef.current,
-      spriteAnimationPayloads: spriteAnimationPayloadsRef.current,
-      waterPayloads: waterPayloadsRef.current,
-      renderTargets: renderTargetsRef.current,
-      renderTargetTextures: renderTargetTexturesRef.current,
-      tilemapPayloads: tilemapPayloadsRef.current,
-      tilesetPayloads: tilesetPayloadsRef.current,
-      textureBytes: textureBytesRef.current,
-      areaEmissions: areaEmissionsRef.current,
-      texturePixelSizes: texturePixelSizesRef.current,
-      fontFacetypeBytes: fontFacetypeBytesRef.current,
-      fontMsdfJson: fontMsdfJsonRef.current,
-      fontMsdfPng: fontMsdfPngRef.current,
-      fontFaceEntries: fontFaceEntriesRef.current,
-      fontCssStack: fontCssStackRef.current,
-      fontCssStackByGuid: fontCssStackByGuidRef.current,
-      modelBytes: modelBytesRef.current,
-      modelPayloads: modelPayloadsRef.current,
-      modelClipAnimationGuids: modelClipAnimationGuidsRef.current,
-      retargetAnimationLoads: retargetAnimationLoadsRef.current,
-      loadAudioSourceBytes: loadAudioSourceBytesRef.current,
-      audioLibrary: audioLibraryRef.current,
-      animClipCatalog: animClipCatalogRef.current,
-      particleLibrary: particleLibraryRef.current,
-      materialDocuments: materialDocumentsRef.current,
-      materialFunctions: materialFunctionsRef.current,
-      postProcessingEnabled,
-      renderSettings: initialRenderRef.current,
-      consoleRenderSettings: initialConsoleRenderRef.current,
-      hardwareScalingLevel,
-      pixelsPerUnit: pixelsPerUnitRef.current,
-      sortingLayers: sortingLayersRef.current,
-      touchMinTargetPx: touchMinTargetPxRef.current,
-      pixelPerfect: pixelPerfectRef.current,
-      navmeshBytes: navmeshBytesRef.current,
-      sceneNavmeshBytes: sceneNavmeshBytesRef.current,
-      audioReverbByScene: audioReverbBySceneRef.current,
-      audioReverbBytes: audioReverbBytesRef.current,
-      audioProjectSettings: audioProjectSettingsRef.current,
-      pauseOnPlay: initialPauseOnPlayRef.current,
-      onSceneLoading: setSceneLoading,
-      onSessionPaused: (next) => {
-        userPausedRef.current = next;
-        setPaused(next);
-      },
-      onShowFps: (enabled) => {
-        setStatsOpen(enabled);
-        if (!enabled) setStatsHighlight(null);
-      },
-      onFreeCam: (enabled) => {
-        setFreeCamEnabled(enabled);
-      },
-      onStatHighlight: (name, enabled) => {
-        setStatsOpen(true);
-        setStatsHighlight(
-          enabled &&
-            (name === "unit" ||
-              name === "memory" ||
-              name === "draws" ||
-              name === "threads")
-            ? name
-            : null,
-        );
-      },
-      onStats: (stats) => {
-        setFps(stats.fps);
-        setScriptMs(stats.scriptMs);
-        setPhysicsMs(stats.physicsMs);
-        setPublishMs(stats.publishMs);
-        setMoveX(sessionRef.current?.lastMoveX() ?? null);
-      },
-      onLog: (message, severity) => pushLog(severity, message),
-      onPrint: (entry) => {
-        printRef.current?.(entry);
-        pushLog("print", entry.message);
-      },
-      onBehaviourTreeDebug: (enabled) => {
-        setTreeOpen(enabled);
-        if (enabled) setConsoleOpen(false);
-      },
-      onBehaviourTreeSnapshot: setTrees,
-      onBtState: (state) => reportBtState(state),
-      onRenderOutputChanged: (settings) => {
-        runtimeRenderRef.current = settings;
-        liveSizeRef.current = null;
-        layoutPlay();
-      },
-      onSetRenderResolution: (width, height) => {
-        liveSizeRef.current = {
-          width: clampRenderResolution(width),
-          height: clampRenderResolution(height),
-        };
-        layoutPlay();
-        const current = sessionRef.current;
-        if (current) syncFramebuffer(current.handle);
-      },
-      onFatalDiagnostic: () => finishSessionRef.current(),
-    });
-    sessionRef.current = session;
-    void createAppSettingsStore()
-      .load()
-      .then((settings) => {
-        if (sessionRef.current !== session) return;
-        applyLiveEngineSettings(
-          session.handle,
-          {
-            renderingOverridesEnabled: settings.renderingOverridesEnabled,
-            hardwareScalingLevel: settings.hardwareScalingLevel,
-            postProcessingEnabled: settings.postProcessingEnabled,
-            textureBudgetEnabled: settings.textureBudgetEnabled,
-            textureByteCeiling: settings.textureByteCeiling,
-            audioBudgetEnabled: settings.audioBudgetEnabled,
-            audioByteCeiling: settings.audioByteCeiling,
-            audioMaxVoices: settings.audioMaxVoices,
-          },
-          { applyFrameCap: false },
-        );
-      });
-    if (initialPauseOnPlayRef.current) {
-      session.setPaused(true);
-    }
-    syncFramebuffer(session.handle);
-    const resizeObserver = new ResizeObserver(() => {
-      layoutPlay();
-      const framebuffer = playFramebufferSize(
-        runtimeRenderRef.current,
-        liveSizeRef.current,
-      );
-      if (!framebuffer) {
-        syncFramebuffer(session.handle);
+      sessionRef.current = session;
+      void createAppSettingsStore()
+        .load()
+        .then((settings) => {
+          if (sessionRef.current !== session) return;
+          applyLiveEngineSettings(
+            session.handle,
+            {
+              renderingOverridesEnabled: settings.renderingOverridesEnabled,
+              hardwareScalingLevel: settings.hardwareScalingLevel,
+              postProcessingEnabled: settings.postProcessingEnabled,
+              textureBudgetEnabled: settings.textureBudgetEnabled,
+              textureByteCeiling: settings.textureByteCeiling,
+              audioBudgetEnabled: settings.audioBudgetEnabled,
+              audioByteCeiling: settings.audioByteCeiling,
+              audioMaxVoices: settings.audioMaxVoices,
+            },
+            { applyFrameCap: false },
+          );
+        });
+      if (initialPauseOnPlayRef.current) {
+        session.setPaused(true);
       }
-    });
-    resizeObserver.observe(overlay);
-    const detachLifecycle = attachLifecyclePause((hidden) => {
-      sessionRef.current?.setPaused(hidden || userPausedRef.current);
-    });
-    const movePoll = window.setInterval(() => {
-      const current = sessionRef.current;
-      setMoveX(current?.lastMoveX() ?? null);
-      setActorGuids([...(current?.spawnedActorGuids() ?? [])]);
-      setActorYs((current?.lastActorPositions() ?? []).map((entry) => entry.y));
-      setAudioQueued(audioStats.queued);
-      setAudioUnlocked(audioStats.unlocked);
-      if (current) {
-        setMemoryBytes(current.accountedBytes());
-        if (!hostMemoryInFlight.current) {
-          hostMemoryInFlight.current = true;
-          void getHostMemoryStats()
-            .then(setHostMemory)
-            .catch(() => setHostMemory(null))
-            .finally(() => {
-              hostMemoryInFlight.current = false;
-            });
+      syncFramebuffer(session.handle);
+      const resizeObserver = new ResizeObserver(() => {
+        layoutPlay();
+        const framebuffer = playFramebufferSize(
+          runtimeRenderRef.current,
+          liveSizeRef.current,
+        );
+        if (!framebuffer) {
+          syncFramebuffer(session.handle);
         }
-        setGeometryBytes(current.handle.accountedGeometryBytes());
-        const counts = current.liveObjectCounts();
-        setMeshCount(counts.meshes);
-        setTextureCount(counts.textures);
-        setDraws(current.drawCalls());
-        setRendering(current.handle.renderDiagnostics());
-        setBridgeRate(current.bridgeMessagesPerSec());
-        setPostProcessPasses(current.handle.postProcessPassCount());
-        setAssignedMaterials(current.handle.assignedMaterialGuids().join(","));
-        setFreeCamEnabled(current.handle.isFreeCamEnabled());
-      }
-    }, 200);
-    const onSettings = (event: Event) => {
-      const detail = (event as CustomEvent<LiveEngineSettings>).detail;
-      if (!detail) return;
-      applyLiveEngineSettings(session.handle, detail, { applyFrameCap: false });
-      setPostProcessPasses(session.handle.postProcessPassCount());
-    };
-    window.addEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);
-    return () => {
-      window.removeEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);
-      resizeIfSized.dispose();
-      resizeObserver.disconnect();
-      window.clearInterval(movePoll);
-      detachLifecycle();
-      reportBtState(null);
-      if (sessionRef.current) {
-        sessionRef.current.stop();
-        sessionRef.current = null;
-      }
-    };
-  }, [sharedEngine, injectFixtureThrow, reportBtState, pushLog]);
+      });
+      resizeObserver.observe(overlay);
+      const detachLifecycle = attachLifecyclePause((hidden) => {
+        sessionRef.current?.setPaused(hidden || userPausedRef.current);
+      });
+      const movePoll = window.setInterval(() => {
+        const current = sessionRef.current;
+        setMoveX(current?.lastMoveX() ?? null);
+        setActorGuids([...(current?.spawnedActorGuids() ?? [])]);
+        setActorYs((current?.lastActorPositions() ?? []).map((entry) => entry.y));
+        setAudioQueued(audioStats.queued);
+        setAudioUnlocked(audioStats.unlocked);
+        if (current) {
+          setMemoryBytes(current.accountedBytes());
+          if (!hostMemoryInFlight.current) {
+            hostMemoryInFlight.current = true;
+            void getHostMemoryStats()
+              .then(setHostMemory)
+              .catch(() => setHostMemory(null))
+              .finally(() => {
+                hostMemoryInFlight.current = false;
+              });
+          }
+          setGeometryBytes(current.handle.accountedGeometryBytes());
+          const counts = current.liveObjectCounts();
+          setMeshCount(counts.meshes);
+          setTextureCount(counts.textures);
+          setDraws(current.drawCalls());
+          setRendering(current.handle.renderDiagnostics());
+          setBridgeRate(current.bridgeMessagesPerSec());
+          setPostProcessPasses(current.handle.postProcessPassCount());
+          setAssignedMaterials(current.handle.assignedMaterialGuids().join(","));
+          setFreeCamEnabled(current.handle.isFreeCamEnabled());
+        }
+      }, 200);
+      const onSettings = (event: Event) => {
+        const detail = (event as CustomEvent<LiveEngineSettings>).detail;
+        if (!detail) return;
+        applyLiveEngineSettings(session.handle, detail, { applyFrameCap: false });
+        setPostProcessPasses(session.handle.postProcessPassCount());
+      };
+      window.addEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);
+      disposePresentation = () => {
+        window.removeEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);
+        resizeIfSized.dispose();
+        resizeObserver.disconnect();
+        window.clearInterval(movePoll);
+        detachLifecycle();
+        reportBtState(null);
+        finishSessionRef.current();
+      };
+    });
+    return () => { cancelled = true; disposePresentation?.(); };
+  }, [sharedEngine, injectFixtureThrow, reportBtState, pushLog, sessionOwner, sessionTicket]);
 
   useEffect(() => {
     if (!isTestModeEnabled()) return;

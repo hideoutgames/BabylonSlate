@@ -36,6 +36,8 @@ export type PreviewBuildOverlayProps = {
   src: string;
   iframeRef: React.RefObject<HTMLIFrameElement | null>;
   onClose: () => void;
+  /** Called after this iframe presentation has unmounted. */
+  onDetached?: () => void;
   onLoad?: () => void;
   onTrace?: (trace: TracePayload) => void;
   /** Boot failure reported by the player, so the black canvas is explained. */
@@ -46,10 +48,14 @@ export function PreviewBuildOverlay({
   src,
   iframeRef,
   onClose,
+  onDetached,
   onLoad,
   onTrace,
   error = null,
 }: PreviewBuildOverlayProps) {
+  const onDetachedRef = useRef(onDetached);
+  onDetachedRef.current = onDetached;
+  useEffect(() => () => { onDetachedRef.current?.(); }, []);
   const [consoleOpen, setConsoleOpen] = useState(false);
   const { logs, pushLog } = useDebugConsoleLogs();
   const [trees, setTrees] = useState<readonly DebugBehaviourTree[]>([]);

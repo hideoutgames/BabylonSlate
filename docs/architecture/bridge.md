@@ -4,6 +4,12 @@ Shared surface for main-thread ↔ game-worker transport (engineplan §2.1, §2.
 
 This is **not** the P3 JSON harness snapshot (`createWorldSnapshot` in `@babylonslate/object-model`). Harness goldens stay JSON; Play and the renderer use the binary layout below.
 
+## Editor session admission and release
+
+`GameSessionOwner` is the headless admission authority for Play and packaged Preview. Its ticket carries a mode (`play`, `simulate`, or `preview`), monotonic generation and cancellation signal; `simulate` is reserved for the viewport integration. Lifecycle is separate from mode. Preparation checks the ticket after each asynchronous result before publishing it, so cancelling or closing the project cannot launch a stale prepared scene. Existing save/migration choices still precede admission, and cancelling preparation does not cancel an already-started authoring save.
+
+Play presentation can close while the owner remains `stopping`. A second session and project Engine replacement wait for `PlaySessionResult.released`; an unconfirmed/rejected release quarantines admission and reports that the editor must reload. Closing React chrome and an elapsed timeout do not establish native release. Preview keeps its packaged iframe path and releases admission when that browsing context detaches. The presentation passes its generation into Play startup; StrictMode's abandoned effect setup never allocates a second game owner. Pause acknowledgment and simulation editing use separate runtime boundaries; admission alone does not acknowledge a paused tick.
+
 ## Transports
 
 | Path | When | Mechanism |
