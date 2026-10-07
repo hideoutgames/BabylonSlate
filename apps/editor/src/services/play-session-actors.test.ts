@@ -24,7 +24,7 @@ vi.mock("@babylonslate/runtime", async (importOriginal) => ({
 }));
 vi.mock("./game-worker-host", () => ({ createGameWorkerHost: vi.fn() }));
 vi.mock("./input-capture", () => ({
-  attachInputCapture: () => ({ dispose() {} }),
+  attachInputCapture: () => ({ dispose() {}, setSuppressed() {}, neutralize() {} }),
 }));
 
 const mainScript: ScriptBundleEntry = {
@@ -61,6 +61,8 @@ describe.each(["worker", "in-process"] as const)(
         scenes?: Parameters<typeof startPlaySession>[0]["scenes"];
         prepareSceneStream?: () => Promise<void>;
         applyCommand?: (command: CommandMessage) => void;
+        captureFrame?: () => Promise<unknown>;
+        onGameTimePaused?: (paused: boolean) => void;
       } = {},
     ): Promise<RuntimeDriver> {
       vi.stubGlobal("window", new EventTarget());
@@ -68,7 +70,12 @@ describe.each(["worker", "in-process"] as const)(
       vi.stubGlobal("cancelAnimationFrame", () => {});
       vi.mocked(createEngine).mockReturnValue({
         applySceneEnvironment() {},
-        scheduler: { invalidate() {}, acquireObstruction: () => () => {} },
+        engine: { isWebGPU: false },
+        scalabilityStatus: () => null,
+        captureFrame: options.captureFrame,
+        cancelFrameCapture() {},
+        setGameTimePaused: options.onGameTimePaused ?? (() => {}),
+        scheduler: { invalidate() {}, acquireObstruction: () => () => {}, gateState: () => ({ frameCap: 60 }) },
         liveObjectCounts: () => ({ meshes: 0, textures: 0 }),
         applyCommand: options.applyCommand ?? (() => {}),
         pushSnapshot() {},
@@ -144,6 +151,8 @@ describe.each(["worker", "in-process"] as const)(
             if (control.type === "sceneStreamReady") runtime.notifySceneStreamReady(control.actorGuid, control.streamLoadId);
             if (control.type === "sceneStreamProgress") runtime.notifySceneStreamProgress(control.actorGuid, control.streamLoadId, control.progress);
             if (control.type === "sceneStreamFailed") runtime.notifySceneStreamFailed(control.actorGuid, control.streamLoadId, control.message);
+            if (control.type === "sessionBoundary") void runtime.requestSessionBoundary(control).then(result => onCommand({ type: "sessionBoundaryResult", ...result }));
+            if (control.type === "diagnosticOperation") void runtime.requestDiagnosticOperation(control).then(result => onCommand({ type: "diagnosticOperationResult", ...result }));
             if (control.type === "stop") {
               boot.reset();
               runtime.stop();
@@ -167,6 +176,27 @@ describe.each(["worker", "in-process"] as const)(
       runtime.tick();
       return runtime;
     }
+
+    it("captures after an acknowledged normal Play pause without clearing another hold or ticking", async () => {
+      let renderPaused = false;
+      const captureFrame = vi.fn(async () => {
+        expect(renderPaused).toBe(true);
+        return { coherent: true };
+      });
+      const runtime = await play({ captureFrame, onGameTimePaused: paused => { renderPaused = paused; } });
+      const before = runtime.getWorld().clock.tickIndex;
+      session!.setPaused(true);
+      await expect(session!.diagnostics!.captureFrame()).resolves.toEqual({ coherent: true });
+      expect(runtime.getWorld().clock.tickIndex).toBe(before);
+      await session!.setPauseReason("lifecycle", true);
+      const resumeUser = await session!.setPauseReason("user", false);
+      expect(resumeUser).toMatchObject({ paused: true, pauseReasons: ["lifecycle"] });
+      runtime.advance(1 / 30);
+      expect(runtime.getWorld().clock.tickIndex).toBe(before);
+      expect(captureFrame).toHaveBeenCalledTimes(1);
+      await session!.setPauseReason("lifecycle", false);
+      expect(renderPaused).toBe(false);
+    });
 
     it("does not create the default model actor when its class is merely loaded", async () => {
       const runtime = await play();

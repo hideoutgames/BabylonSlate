@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
 import { Toggle } from "@babylonslate/ui/components/toggle";
+import { useDiagnosticResultsStore } from "../context/diagnostic-results-context";
 
 export type PlayOverlayChromeProps = {
   paused: boolean;
@@ -19,6 +20,8 @@ export type PlayOverlayChromeProps = {
   showConsole?: boolean;
   showInspector?: boolean;
   onPauseToggle: () => void;
+  pausePending?: boolean;
+  simulation?: { keepChanges?: boolean; inputMode: "game" | "edit"; inputPending: boolean; onInputModeChange: (mode: "game" | "edit") => void };
   onStatsToggle: () => void;
   onConsoleOpen: () => void;
   onInspectorToggle?: () => void;
@@ -37,6 +40,8 @@ export function PlayOverlayChrome({
   showConsole = true,
   showInspector = true,
   onPauseToggle,
+  pausePending = false,
+  simulation,
   onStatsToggle,
   onConsoleOpen,
   onInspectorToggle,
@@ -45,6 +50,7 @@ export function PlayOverlayChrome({
   stats,
   extras,
 }: PlayOverlayChromeProps) {
+  const diagnostics = useDiagnosticResultsStore();
   return (
     <div className="safe-overlay-chrome absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-2">
       <div className="flex min-w-0 flex-1 flex-col gap-2">
@@ -54,12 +60,25 @@ export function PlayOverlayChrome({
         {extras}
       </div>
       <div className="pointer-events-auto flex flex-wrap items-center justify-end gap-2">
+        {!simulation && diagnostics ? <>
+          <Button size="touch" variant="secondary" onClick={() => diagnostics.open("summary")}>Profiler</Button>
+          <Button size="touch" variant="secondary" onClick={() => void diagnostics.captureFrame()}>Capture Frame</Button>
+        </> : null}
+        {simulation ? <>
+          <span className="text-xs font-medium">Simulation · {simulation.keepChanges ? "Keep Changes On Stop" : "Discard On Stop"}</span>
+          <Button size="touch" variant="secondary" disabled={simulation.inputPending}
+            data-testid="simulation-input-mode"
+            onClick={() => simulation.onInputModeChange(simulation.inputMode === "game" ? "edit" : "game")}>
+            {simulation.inputMode === "game" ? "Game Input · Edit" : "Edit · Return To Game"}
+          </Button>
+        </> : null}
         <Button
           size="touch"
           variant="secondary"
           data-testid="play-overlay-pause"
           aria-label={paused ? "Resume" : "Pause"}
           aria-pressed={paused}
+          disabled={pausePending}
           onClick={onPauseToggle}
         >
           {paused ? (
@@ -69,7 +88,7 @@ export function PlayOverlayChrome({
           )}
           {paused ? "Resume" : "Pause"}
         </Button>
-        {paused ? (
+        {paused && onStep ? (
           <Button
             size="touch"
             variant="secondary"

@@ -158,7 +158,7 @@ describe("PreviewBuildOverlay", () => {
     expect(onTrace).toHaveBeenCalledWith(trace);
   });
 
-  it("invokes onClose from Stop so Preview Build can leave the editor", () => {
+  it("invokes onClose from Stop so Preview Build can leave the editor", async () => {
     const onClose = vi.fn();
     const view = render(
       <PreviewBuildOverlay
@@ -168,6 +168,26 @@ describe("PreviewBuildOverlay", () => {
       />,
     );
     fireEvent.click(view.getByTestId("preview-build-close"));
-    expect(onClose).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  });
+
+  it("drains through the shared owner's stop boundary once before detaching", async () => {
+    const iframeRef = createRef<HTMLIFrameElement>();
+    const onTrace = vi.fn();
+    const onClose = vi.fn();
+    let beforeStop!: () => Promise<void>;
+    const unregister = vi.fn();
+    const view = render(<PreviewBuildOverlay src="/player/index.html?preview=1" iframeRef={iframeRef}
+      onTrace={onTrace} onClose={onClose} registerBeforeStop={(finalize) => { beforeStop = finalize; return unregister; }} />);
+    const trace = { version: 1, frames: [], logs: [] };
+    act(() => window.dispatchEvent(new MessageEvent("message", { source: iframeRef.current!.contentWindow!,
+      origin: window.location.origin, data: { type: "babylonslate-preview-console-event", command: { type: "trace", payload: trace } } })));
+    await act(() => beforeStop());
+    expect(onTrace).toHaveBeenCalledExactlyOnceWith(trace);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(iframeRef.current?.isConnected).toBe(true);
+    view.unmount();
+    expect(unregister).toHaveBeenCalledTimes(1);
+    expect(onTrace).toHaveBeenCalledTimes(1);
   });
 });

@@ -13,7 +13,7 @@ import {
   ZoomInIcon,
   ZoomOutIcon,
 } from "lucide-react";
-import { frameTickMs, traceGraphBuckets } from "../lib/trace-view";
+import { frameTickMs, traceGraphBuckets, traceRetentionSummary } from "../lib/trace-view";
 import { TraceEmptyState } from "./trace-inspection-controls";
 import { useTraceTouch } from "../lib/use-trace-touch";
 
@@ -92,6 +92,9 @@ export function TraceTimelineView({
           <SelectableText>
             {length} Frames · Fixed Delta {payload.dt.toFixed(4)} s
           </SelectableText>
+        </span>
+        <span data-testid="trace-retention-summary">
+          <SelectableText>{traceRetentionSummary(payload)}</SelectableText>
         </span>
       </div>
       <div className="flex flex-wrap items-center gap-1">

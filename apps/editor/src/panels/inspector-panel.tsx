@@ -1,3 +1,5 @@
+import { SimulationInspector } from "./simulation-inspector";
+import { useSimulationInspectionStore } from "../context/simulation-inspection-context";
 import { GraphDataLiteralDefaults } from "../components/graph-data-literal-editor";
 import { saveGameVariableNames } from "../lib/save-game-property-rows";
 import { SceneLayerSwitcherFields } from "../components/scene-layer-switcher-fields";
@@ -1025,7 +1027,16 @@ function PrefabComponentDetails({
   );
 }
 
-export function InspectorPanel(_props: IDockviewPanelProps) {
+export function InspectorPanel(props: IDockviewPanelProps) {
+  const { documentId } = useDocumentWorkspace();
+  const { simulationDocumentId } = usePlay();
+  const store = useSimulationInspectionStore();
+  return store && simulationDocumentId === documentId
+    ? <SimulationInspector store={store} panel={props} />
+    : <AuthoringInspectorPanel {...props} />;
+}
+
+function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
   const {

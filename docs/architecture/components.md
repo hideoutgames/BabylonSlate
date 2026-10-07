@@ -180,6 +180,25 @@ uses these slots for highlighted code. `GraphEditor.renderNodeBody` adds host
 content below the shared pin rows; material graphs use a bounded four-line
 static code preview. `CodeBodyEditor` (shared with `JsBodyEditor`) supports GLSL
 and JavaScript, syntax colors, line numbers and a coarse-pointer symbol bar.
+`EditorReadOnlyContext` supplies the document-wide UI policy to PropertyGrid,
+GraphEditor and CodeBodyEditor during Simulation. Explicit read-only props also
+remain effective. Values, selection, copying and source navigation stay usable;
+code transactions, pin defaults and property edits are blocked. Document and
+project command owners independently enforce the authoring lock. Runtime
+Inspector adapters may opt out of this inherited UI policy only for validated
+session mutations; they never unlock the authored document.
+Engine Settings → Debugger reuses Field, Switch, NumberField and
+DisclosureSection for the next-session Keep Simulation Changes preference,
+the shared Pause On Play preference and explicit
+Performance recording duration, GPU request preference and advanced retained
+data budget. Settings search opens Advanced when targeting its budget field.
+These local preferences never arm collection or alter the independent Trace budget.
+The Debug menu and Play chrome open one lazy Profiler and Frame Debugger surface.
+Its PanelFrame content uses the same PropertyGrid and read-only value controls as
+Trace, with Summary, paged Timeline and searchable executed Frame Report stages.
+It retains one recent result. Viewing results does not subscribe to the world or
+start collection; recording/capture controls explicitly dispatch to the active
+Play or packaged Preview owner. Stop Session remains visible in the dialog.
 Material Details also offers the Text domain, with a glyph preview and Text Output. Scene and Prefab Details reuse the existing AssetPicker for Text Materials, filtering by the live material domain, plus a Material UV enum.
 
 Serialized graph pins may supply a compact `typeLabel` and a `group` heading;

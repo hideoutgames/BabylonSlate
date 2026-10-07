@@ -1,6 +1,9 @@
+import { DiagnosticResultsProvider } from "./diagnostic-results-context";
+import { createPortal } from "react-dom";
+import { SimulationInspectionProvider } from "./simulation-inspection-context";
 import { prepareSaveGameConfiguration } from "../services/save-game-configuration";
-import { acquirePlayAssetSources, emptyPlaySourceControls, mergePreparedPlaySources, requiredProjectAssets, type PlayAssetSourceHost } from "../services/play-asset-sources";
-import { createSaveGameStorage } from "@babylonslate/vfs";
+import { createSaveGameStorage, isTestModeEnabled } from "@babylonslate/vfs";
+import { acquirePlayAssetSources, emptyPlaySourceControls, mergePreparedPlaySources, playDocumentOverrides, requiredProjectAssets, type PlayAssetSourceHost } from "../services/play-asset-sources";
 import {
   createContext,
   useCallback,
@@ -36,6 +39,7 @@ import { classIdFromClassAsset } from "../lib/content-browser-helpers";
 import { PlayPrepareDialog } from "../components/play-prepare-dialog";
 import { PlayUnsavedDialog, type PlayUnsavedChoice } from "../components/play-unsaved-dialog";
 import { PlayBlockedDialog } from "../components/play-blocked-dialog";
+import { SimulationSessionBar } from "../components/simulation-session-bar";
 import { PlayOverlay } from "../components/play-overlay";
 import { PreparingPreviewDialog, type PreviewPreparePhase } from "../components/preparing-preview-dialog";
 import { PreviewBuildOverlay } from "../components/preview-build-overlay";
@@ -66,6 +70,7 @@ import type {
 import {
   DEFAULT_PLAY_DEBUGGER_OVERLAY,
   playDebuggerOverlayFromSettings,
+  simulationDefaultsFromSettings,
   type PlayDebuggerOverlaySettings,
 } from "../lib/play-debugger-defaults";
 import { loadPlayerDistFiles } from "../services/load-player-files";
@@ -80,6 +85,9 @@ import { useDocuments } from "./document-context";
 import { useValidation } from "./validation-context";
 import { PreviewSessionReport } from "../components/preview-session-report";
 import type { PlaySessionResult } from "../services/play-session";
+import { SimulationSession } from "../services/simulation-session";
+import { simulationSceneDocument, type SimulationViewport } from "../services/simulation-viewport";
+import { GameSessionOwner, type GameSessionState, type GameSessionTicket } from "../services/game-session-owner";
 import { PREVIEW_FIXTURE_NODE_ID } from "../services/play-session";
 import {
   canonicalPlaySceneGuid,
@@ -128,6 +136,8 @@ import { waitForSceneLoadingPaint } from "../lib/scene-viewport-load";
 import { ProjectRenderingDialog } from "../components/project-rendering-dialog";
 
 type PlayOptions = {
+  /** Internal until the Simulation Inspector and authoring gates are qualified. */
+  mode?: "play" | "simulate";
   injectFixtureThrow?: boolean;
   /** Answer from the Unsaved Changes prompt; unset means ask when dirty. */
   saveChoice?: PlayUnsavedChoice;
@@ -143,6 +153,13 @@ export type LiveBtState = {
 };
 
 interface PlayContextValue {
+  sessionState: GameSessionState;
+  sessionOwner: GameSessionOwner<PlaySessionResult>;
+  requestSimulate: () => Promise<void>;
+  canSimulate: boolean;
+  simulationUnavailableReason: string | null;
+  simulationDocumentId: string | null;
+  registerSimulationViewport: (viewport: SimulationViewport) => () => void;
   playing: boolean;
   preparing: boolean;
   playAwaitingMigration: boolean;
@@ -205,9 +222,11 @@ function PlayDiagnosticsProvider({ children }: { children: ReactNode }) {
 
 export function PlayProvider({ children }: { children: ReactNode }) {
   return (
-    <PlayDiagnosticsProvider>
-      <PlaySessionProvider>{children}</PlaySessionProvider>
-    </PlayDiagnosticsProvider>
+    <DiagnosticResultsProvider>
+      <PlayDiagnosticsProvider>
+        <PlaySessionProvider>{children}</PlaySessionProvider>
+      </PlayDiagnosticsProvider>
+    </DiagnosticResultsProvider>
   );
 }
 
@@ -215,6 +234,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const { appendLog, reportBtState } = useContext(PlayDiagnosticsActionsContext)!;
   const { settings: appSettings, updateDebuggerDefaults } = useAppSettings();
   const engineRef = useRef<AbstractEngine | null>(null);
+  const providerMountRef = useRef(0);
   const ownedEngineRef = useRef<AbstractEngine | null>(null);
   const [projectEngine] = useState(createProjectEngineController);
   const projectEngineState = useSyncExternalStore(projectEngine.subscribe, projectEngine.getSnapshot);
@@ -223,7 +243,18 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const preparingRef = useRef(false);
   const pendingPlayOptionsRef = useRef<PlayOptions | undefined>(undefined);
   const pendingScriptsRef = useRef<ScriptBundleEntry[] | null>(null);
-  const [playing, setPlaying] = useState(false);
+  const [sessionOwner] = useState(() => new GameSessionOwner<PlaySessionResult>());
+  const sessionState = useSyncExternalStore(sessionOwner.subscribe, sessionOwner.getSnapshot);
+  const sessionTicketRef = useRef<GameSessionTicket | null>(null);
+  const [playOpen, setPlayOpen] = useState(false);
+  const simulationViewports = useRef(new Map<string, SimulationViewport>());
+  const [simulationViewportRevision, setSimulationViewportRevision] = useState(0);
+  const [simulationHost, setSimulationHost] = useState<HTMLElement | null>(null);
+  const simulationRef = useRef<SimulationSession | null>(null);
+  // Presentation may close immediately; editor owners remain held until release.
+  const playing = playOpen || sessionState.lifecycle === "running" || sessionState.lifecycle === "paused" ||
+    sessionState.lifecycle === "stopping" || sessionState.quarantined;
+  const [simulationAssetGuids, setSimulationAssetGuids] = useState<readonly string[] | undefined>();
   const [playSaveGame, setPlaySaveGame] = useState<import("@babylonslate/core").SaveGameConfiguration>();
   const playingRef = useRef(false);
   const [preparing, setPreparing] = useState(false);
@@ -283,6 +314,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const [previewPreparationError, setPreviewPreparationError] = useState<string | null>(null);
   const [previewCanCancel, setPreviewCanCancel] = useState(true);
   const previewIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const previewReleaseRef = useRef<(() => void) | null>(null);
   const previewSaveHostRef = useRef<ReturnType<typeof createPreviewSaveStorageHost> | null>(null);
   const previewAssetHostRef = useRef<ReturnType<typeof createPreviewAssetServer> | null>(null);
   const playSourceHostRef = useRef<PlayAssetSourceHost | null>(null);
@@ -482,6 +514,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     projectDocument,
     projectGuid,
     registryEpoch,
+    registerBeforeTransition,
     setActiveDocument,
   } = documents;
   const projectOpen = projectDocument != null;
@@ -522,11 +555,28 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const playSceneGuid = playScene
     ? canonicalPlaySceneGuid(playScene, guidForPath)
     : undefined;
-  const canPlay = playIsEnabled(openDocuments, activeDocumentId, {
+  const canPlay = !sessionState.quarantined && playIsEnabled(openDocuments, activeDocumentId, {
     previewBuild,
     playFromScene,
     hasStartupScene,
   });
+  const simulationDocument = simulationSceneDocument(openDocuments, activeDocumentId);
+  const simulationUnavailableReason = !simulationDocument ? "Open a world Scene to simulate" :
+    !simulationViewports.current.has(simulationDocument.id) ? "Open the Scene Viewport to simulate" :
+    sessionState.quarantined ? "Reload the editor after the previous session release failure" : null;
+  const simulationDocumentId = simulationRef.current?.baseline.id ?? (sessionState.mode === "simulate" ? simulationDocument?.id ?? null : null);
+  const canSimulate = simulationUnavailableReason === null && sessionOwner.canStart();
+
+  useEffect(() => registerBeforeTransition?.((transition) => {
+    if (sessionOwner.canStart()) return true;
+    const sourceId = simulationRef.current?.baseline.id ?? openDocuments.find(document => document.ref.kind === "scene" && document.ref.path === playScene?.path)?.id;
+    if ((transition.kind === "close-document" || transition.kind === "replace-document") && transition.documentId !== sourceId) return true;
+    return sessionOwner.stop().then(async result => {
+      if (result) await result.released;
+      return sessionOwner.canStart();
+    }).catch(error => { appendLog(`Could not release the game session before changing documents: ${String(error)}`); return false; });
+  }), [registerBeforeTransition, sessionOwner, playScene?.path, openDocuments, appendLog]);
+  void simulationViewportRevision;
   const playPhysics = playScene
     ? playPhysicsFromSceneSettings(playScene.scene.settings)
     : playPhysicsFromOpenDocuments(openDocuments, activeDocumentId);
@@ -659,9 +709,14 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (projectDocument) return;
-    releasePlaySources();
+    void sessionOwner.stop();
+    previewRequestRef.current += 1;
+    preparingRef.current = false;
+    setPreparing(false);
+    setPreviewOpen(false);
+    setPreviewPhase(null);
     setScripts([]);
-    setPlaying(false);
+    setPlayOpen(false);
     setSessionPlayScene(null);
     setPrepareState(null);
     setPlayBlockedOpen(false);
@@ -669,9 +724,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     setPlayAwaitingMigration(false);
     pendingScriptsRef.current = null;
     pendingPlayOptionsRef.current = undefined;
-  }, [projectDocument, releasePlaySources]);
-
-  useEffect(() => () => releasePlaySources(), [projectGuid, releasePlaySources]);
+  }, [projectDocument, sessionOwner]);
 
   const renderingRequest = useMemo(() => projectOpen && projectGuid ? {
     projectGuid,
@@ -685,10 +738,10 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // A running simulation keeps its Engine. Apply the authored change after Stop.
-    if (renderingRequest && (playing || previewOpen)) return;
+    if (!sessionOwner.canStart()) return;
     setRenderingFailureDismissed(false);
     void projectEngine.sync(renderingRequest);
-  }, [projectEngine, renderingRequest, playing, previewOpen]);
+  }, [projectEngine, renderingRequest, sessionOwner, sessionState]);
 
   useEffect(() => {
     const engine = projectEngineState.session?.engine ?? null;
@@ -702,36 +755,86 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   }, [projectEngineState]);
 
   useEffect(() => {
+    const mount = ++providerMountRef.current;
     return () => {
-      projectEngine.dispose();
-      ownedEngineRef.current = null;
-      engineRef.current = null;
+      queueMicrotask(() => {
+        if (providerMountRef.current !== mount) return;
+        simulationRef.current?.discardChanges("Simulation host closed; changes discarded.");
+        void sessionOwner.stop().then(async (result) => {
+          if (result) await result.released;
+          if (!sessionOwner.canStart()) return;
+          releasePlaySources();
+          const simulation = simulationRef.current;
+          simulationRef.current = null;
+          simulation?.dispose(false);
+          if (sessionOwner.getSnapshot().quarantined) return;
+          projectEngine.dispose();
+          ownedEngineRef.current = null;
+          engineRef.current = null;
+        });
+      });
     };
-  }, [projectEngine]);
+  }, [projectEngine, sessionOwner, releasePlaySources]);
 
   const ensureEngine = useCallback((): AbstractEngine | null => {
     const engine = projectEngine.getSnapshot().session?.engine;
     return isUsableEngine(engine) ? engine! : null;
   }, [projectEngine]);
 
+  useEffect(() => {
+    if (sessionOwner.canStart()) {
+      releasePlaySources();
+      setEncodeQueuePauseReason("play", false);
+      if (sessionState.mode === null) {
+        setPlayOpen(false);
+        preparingRef.current = false;
+        setPreparing(false);
+        setPrepareState(null);
+      }
+    }
+  }, [sessionOwner, sessionState, releasePlaySources]);
+
+  const registerSimulationViewport = useCallback((viewport: SimulationViewport) => {
+    simulationViewports.current.set(viewport.documentId, viewport);
+    setSimulationViewportRevision((revision) => revision + 1);
+    return () => {
+      if (simulationViewports.current.get(viewport.documentId) !== viewport) return;
+      simulationViewports.current.delete(viewport.documentId);
+      setSimulationViewportRevision((revision) => revision + 1);
+      if (simulationRef.current?.viewport === viewport) void sessionOwner.stop(simulationRef.current.ticket);
+    };
+  }, [sessionOwner]);
+
+  useEffect(() => {
+    const simulation = simulationRef.current;
+    if (!simulation || !sessionOwner.canStart()) return;
+    simulationRef.current = null;
+    simulation.dispose(!sessionState.quarantined);
+    setSimulationHost(null);
+  }, [sessionOwner, sessionState]);
+
   const launchPlay = useCallback(
     (options?: PlayOptions & { scripts?: ScriptBundleEntry[] }) => {
+      let ticket = sessionTicketRef.current;
+      if (!ticket || !sessionOwner.isCurrent(ticket)) ticket = sessionOwner.begin("play");
+      if (!ticket || ticket.mode === "preview" || sessionOwner.getSnapshot().lifecycle !== "preparing") return;
+      sessionTicketRef.current = ticket;
       if (!ensureEngine()) {
         appendLog("Play failed: could not create Engine.");
+        sessionOwner.fail(ticket, "Play could not create Engine.");
         releasePlaySources();
         return;
       }
       setEncodeQueuePauseReason("play", true);
       setInjectThrow(Boolean(options?.injectFixtureThrow));
-      if (options?.scripts) {
-        setScripts(options.scripts);
-      }
-      setPlaying(true);
+      if (options?.scripts) setScripts(options.scripts);
+      if (ticket.mode === "simulate") setSimulationHost(simulationRef.current?.viewport.host ?? null);
+      setPlayOpen(true);
     },
-    [appendLog, ensureEngine, releasePlaySources],
+    [appendLog, ensureEngine, sessionOwner, releasePlaySources],
   );
 
-  const closePreview = useCallback(() => {
+  const finishPreviewPresentation = useCallback(() => {
     previewClosingRef.current = true;
     previewAssetHostRef.current?.dispose();
     previewAssetHostRef.current = null;
@@ -747,9 +850,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     setPreviewPhase(null);
     setPreviewError(null);
     setPreviewCanCancel(true);
-    setPlaying(false);
+    setPlayOpen(false);
     setSessionPlayScene(null);
-    setEncodeQueuePauseReason("play", false);
     window.setTimeout(() => {
       previewClosingRef.current = false;
       const diagnostics = previewDiagnosticsRef.current;
@@ -761,6 +863,17 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       }
     }, 100);
   }, []);
+
+  const closePreview = useCallback(() => {
+    if (sessionTicketRef.current?.mode === "preview") void sessionOwner.stop(sessionTicketRef.current);
+  }, [sessionOwner]);
+
+  const registerPreviewBeforeStop = useCallback((beforeStop: () => Promise<void>) => {
+    const ticket = sessionTicketRef.current;
+    if (!ticket || ticket.mode !== "preview") return () => {};
+    const attached = sessionOwner.setBeforeStop(ticket, async () => { await beforeStop(); return true; });
+    return () => { if (attached) sessionOwner.setBeforeStop(ticket, async () => true); };
+  }, [sessionOwner]);
 
   const sendPreviewPack = useCallback(() => {
     const files = previewFilesRef.current;
@@ -842,7 +955,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   }, [appendLog, closePreview, sendPreviewPack]);
 
   const requestPreviewBuild = useCallback(async (saveConfirmed = false) => {
-    if (playing || preparingRef.current) return;
+    if (!sessionOwner.canStart() || preparingRef.current) return;
     // Read at call time (see playRequestInputsRef); shadows the render values.
     const {
       documents: {
@@ -884,9 +997,12 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       setPlayAwaitingMigration(true);
       return;
     }
+    const ticket = sessionOwner.begin("preview");
+    if (!ticket) return;
+    sessionTicketRef.current = ticket;
     const requestId = ++previewRequestRef.current;
     const traceByteBudget = appSettings.traceByteBudget;
-    const isCurrentRequest = () => previewRequestRef.current === requestId;
+    const isCurrentRequest = () => previewRequestRef.current === requestId && sessionOwner.isCurrent(ticket);
     const fail = (message: string) => {
       const reason = message || "Preview Build could not prepare the game.";
       setPreviewPreparationError(reason);
@@ -917,6 +1033,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           return current.loadAssetDocument("save-game", asset.path);
         },
       });
+      if (!isCurrentRequest()) return;
       setPreviewPhase("Collecting Assets");
       const playerFiles = await loadPlayerDistFiles();
       if (!isCurrentRequest()) return;
@@ -947,7 +1064,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       setPreviewCanCancel(false);
       setPreviewPhase("Launching");
       setEncodeQueuePauseReason("play", true);
-      setPlaying(true);
+      setPlayOpen(true);
       setPreviewError(null);
       previewOriginRef.current = previewTarget.origin;
       previewSaveHostRef.current?.dispose();
@@ -958,6 +1075,22 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         send: (message) => previewIframeRef.current?.contentWindow?.postMessage(message, previewOriginRef.current),
       }) : null;
       setPreviewSrc(previewTarget.src);
+      sessionOwner.attach(ticket, () => {
+        // The iframe owns a separate Engine. Its passive unmount callback
+        // confirms browsing-context destruction; a timer does not.
+        const frame = previewIframeRef.current;
+        const released = new Promise<{ textureCountAfter: number; textureLeak: boolean; quarantined: boolean }>((resolve) => {
+          const detached = () => resolve({ textureCountAfter: 0, textureLeak: false, quarantined: false });
+          if (!frame?.isConnected) detached();
+          else previewReleaseRef.current = detached;
+        });
+        finishPreviewPresentation();
+        return {
+          diagnostics: [], droppedDiagnostics: 0, textureCountBefore: 0,
+          released,
+          runtimeMode: "in-process", lastTrace: null,
+        };
+      });
       setPreviewOpen(true);
     } catch (error) {
       if (isCurrentRequest()) {
@@ -969,17 +1102,19 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         preparingRef.current = false;
         setPreparing(false);
         setPreviewPhase(null);
+        if (sessionOwner.getSnapshot().lifecycle === "preparing") void sessionOwner.stop(ticket);
       }
     }
-  }, [appendLog, appSettings.traceByteBudget, playFromScene, playing]);
+  }, [appendLog, appSettings.traceByteBudget, playFromScene, sessionOwner, finishPreviewPresentation]);
 
   const requestPlay = useCallback(
     async (options?: PlayOptions) => {
-      if (previewBuild) {
+      const simulating = options?.mode === "simulate";
+      if (previewBuild && !simulating) {
         await requestPreviewBuild(options?.saveChoice === "save");
         return;
       }
-      if (playing || preparingRef.current) return;
+      if (!sessionOwner.canStart() || preparingRef.current) return;
       // Read at call time (see playRequestInputsRef); shadows the render values.
       const {
         documents: {
@@ -990,19 +1125,25 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         hasStartupScene,
         openPlaySceneGuid,
       } = playRequestInputsRef.current;
-      if (
+      const simulationTarget = simulating ? simulationSceneDocument(openDocuments, activeDocumentId) : null;
+      const simulationViewport = simulationTarget ? simulationViewports.current.get(simulationTarget.id) : undefined;
+      if (simulating && (!simulationTarget || !simulationViewport)) {
+        appendLog("Open a world Scene and its Scene Viewport to simulate.");
+        return;
+      }
+      if (!simulating && (
         !playIsEnabled(openDocuments, activeDocumentId, {
           playFromScene,
           hasStartupScene,
         })
-      ) {
+      )) {
         if (!hasStartupScene) setStartupAlertOpen(true);
         return;
       }
       pendingPlayOptionsRef.current = options;
       const inject = Boolean(options?.injectFixtureThrow);
       // Play Without Saving runs the open in-memory documents as they are.
-      const skipSave = options?.saveChoice === "skip";
+      const skipSave = simulating || options?.saveChoice === "skip";
       const plan = planPlayPreviewPrepare({
         dirtyDocuments: skipSave ? [] : [
           ...dirtyDocuments.map((doc) => ({ label: doc.ref.label })),
@@ -1026,16 +1167,35 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      const ticket = sessionOwner.begin(simulating ? "simulate" : "play");
+      if (!ticket) return;
+      sessionTicketRef.current = ticket;
+      pendingScriptsRef.current = null;
+      let presentationRequested = false;
+      if (!simulating) setSimulationAssetGuids(undefined);
+      const current = <T,>(pending: Promise<T>) => sessionOwner.awaitCurrent(ticket, pending);
       preparingRef.current = true;
       setPreparing(true);
       try {
+        if (simulating && simulationTarget && simulationViewport) {
+          setPrepareState({ phase: "compiling", dirtyNames: [] });
+          const source = playRequestInputsRef.current.documents;
+          const simulation = await SimulationSession.prepare({
+            ticket, viewport: simulationViewport, source, backingStorage: createSaveGameStorage(),
+            keepChanges: simulationDefaultsFromSettings(appSettings.debuggerDefaults).keepChanges,
+          });
+          if (!sessionOwner.isCurrent(ticket)) { simulation.dispose(false); return; }
+          simulationRef.current = simulation;
+          setSimulationAssetGuids((source.assetRegistry?.list() ?? []).map(asset => asset.header.guid));
+          source.setActiveDocument(simulation.baseline.id);
+        }
         if (plan.action === "prepare") {
           setPrepareState({
             phase: plan.needsSave ? "saving" : "compiling",
             dirtyNames: plan.dirtyNames,
           });
           if (plan.needsSave) {
-            const saved = await saveAll();
+            const saved = await current(saveAll());
             if (!saved) {
               setPrepareState(null);
               setPlayAwaitingMigration(true);
@@ -1049,43 +1209,51 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         }
 
         if (!assetRegistry || !projectDocument) throw new Error("No project catalog is available.");
+        const baselineScene = simulating && simulationRef.current
+          ? playSceneFromOpenDocuments([simulationRef.current.baseline], simulationRef.current.baseline.id) : null;
         const effectiveGuid = resolvePreviewStartupGuid({
-          playFromScene,
-          openSceneGuid: openPlaySceneGuid,
+          playFromScene: simulating || playFromScene,
+          openSceneGuid: baselineScene ? canonicalPlaySceneGuid(baselineScene, path => assetRegistry.list().find(asset => asset.path === path)?.header.guid ?? null) : openPlaySceneGuid,
           startupSceneGuid: projectDocument.settings.startupSceneGuid ?? null,
         });
         if (!effectiveGuid) { setStartupAlertOpen(true); return; }
         releasePlaySources();
         const lifetime = new AbortController();
+        const sourceSignal = AbortSignal.any([lifetime.signal, ticket.signal]);
         playSourceLifetimeRef.current = lifetime;
+        const sourceDocuments = playRequestInputsRef.current.documents.getOpenDocuments().map(document => ({
+          ...(simulationRef.current?.baseline.id === document.id ? simulationRef.current.baseline : document),
+        }));
         const sourceHost: PlayAssetSourceHost = {
           registry: assetRegistry,
+          documentOverrides: playDocumentOverrides(assetRegistry, sourceDocuments),
           project: projectDocument,
           createScope: playRequestInputsRef.current.documents.createAssetLoadScope,
-          compile: collectPlayPreviewScripts,
+          compile: required => collectPlayPreviewScripts(required, sourceDocuments, projectDocument),
         };
         playSourceHostRef.current = sourceHost;
         const projectAssets = requiredProjectAssets(assetRegistry, projectDocument);
         if (projectAssets.length) {
           const persistent = await acquirePlayAssetSources(sourceHost, projectAssets,
-            { consumer: "Play Project Systems", signal: lifetime.signal });
+            { consumer: "Play Project Systems", signal: sourceSignal });
+          if (!sessionOwner.isCurrent(ticket) || playSourceHostRef.current !== sourceHost) { persistent.release(); throw new DOMException("Session changed during asset preparation", "AbortError"); }
           playSourceSetsRef.current.add(persistent);
           setSessionSources(persistent.sources);
         }
         const prepared = await acquirePlayAssetSources(sourceHost,
           [effectiveGuid, ...projectAssets],
-          { consumer: `Play Scene ${effectiveGuid}`, signal: lifetime.signal, allowCompileErrors: true });
-        if (playSourceHostRef.current !== sourceHost) { prepared.release(); throw new DOMException("Project changed during Play preparation", "AbortError"); }
+          { consumer: `Play Scene ${effectiveGuid}`, signal: sourceSignal, allowCompileErrors: true });
+        if (!sessionOwner.isCurrent(ticket) || playSourceHostRef.current !== sourceHost) { prepared.release(); throw new DOMException("Session changed during Play preparation", "AbortError"); }
         playSourceSetsRef.current.add(prepared);
         initialPlaySourceRef.current = prepared;
         const { game, content, sources } = prepared;
         if (requestedBackend === "webgpu") {
           const reason = webGpuMaterialCompatibilityReason(content.materialDocuments, content.materialFunctions);
           if (reason) {
-            await projectEngine.sync({ projectGuid: playRequestInputsRef.current.documents.projectGuid!, backend: requestedBackend,
+            await current(projectEngine.sync({ projectGuid: playRequestInputsRef.current.documents.projectGuid!, backend: requestedBackend,
               prepare: async (signal) => { signal.throwIfAborted(); return reason; },
-            }, true);
-            lifetime.signal.throwIfAborted();
+            }, true));
+            sourceSignal.throwIfAborted();
             registerSharedEngine(projectEngine.getSnapshot().session?.engine ?? null);
           }
         }
@@ -1125,7 +1293,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         setPlayFontFaceEntries([...(sources.fonts ?? [])]);
         setPlayFontCssStack(sources.assets?.fontCssStack ?? "sans-serif");
         setPlayFontCssStackByGuid(new Map(sources.assets?.fontCssStackByGuid ?? []));
-        setPlayInputAssets(await collectPlayInputAssets(prepared.required));
+        setPlayInputAssets(await current(collectPlayInputAssets(prepared.required)));
         setPlayAudioLibrary(content.audioLibrary);
         setPlayAudioSourceLoader(() => async ({ assetGuid, chunkId }: Parameters<PlayAudioSourceLoader>[0]) => {
           for (const entry of playSourceSetsRef.current) {
@@ -1138,7 +1306,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         setPlayAudioReverbByScene(game.audioReverbBytes);
         setPlayNavmeshBytes(game.navmeshBytes.get(effectiveGuid) ?? null);
         setPlayAudioReverbBytes(game.audioReverbBytes.get(effectiveGuid) ?? null);
-        setPlaySaveGame(await prepareSaveGameConfiguration({
+        setPlaySaveGame(await current(prepareSaveGameConfiguration({
+          storage: simulating ? simulationRef.current?.storage : undefined,
           projectId: playRequestInputsRef.current.documents.projectGuid,
           settings: projectDocument?.settings.saveGame,
           loadDefinition: async (guid) => {
@@ -1147,36 +1316,50 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             if (!asset) throw new Error("The default Save Game definition is missing.");
             return current.loadAssetDocument("save-game", asset.path);
           },
-        }));
+        })));
         setPrepareState(null);
 
         if (!inject && projectHasBlockingErrors(nextDiagnostics)) {
+          if (simulating) {
+            appendLog("Simulation could not start because the project has compile errors.");
+            return;
+          }
           pendingScriptsRef.current = nextScripts;
           setBlockedDiagnostics(nextDiagnostics);
           setPlayBlockedOpen(true);
           return;
         }
 
+        if (simulating) {
+          setPrepareState({ phase: "releasing", dirtyNames: [] });
+          await simulationRef.current!.suspendAuthoring(sessionOwner);
+        }
+        setPrepareState(null);
+        presentationRequested = true;
         launchPlay({ injectFixtureThrow: inject, scripts: nextScripts });
       } catch (error) {
-        releasePlaySources();
+        if (!sessionOwner.isCurrent(ticket)) return;
         appendLog(
           `Play preparation failed: ${error instanceof Error ? error.message : String(error)}`,
         );
         setPrepareState(null);
         setScripts([]);
       } finally {
-        preparingRef.current = false;
-        setPreparing(false);
+        if (sessionOwner.owns(ticket)) {
+          preparingRef.current = false;
+          setPreparing(false);
+          if (!presentationRequested && !pendingScriptsRef.current) void sessionOwner.stop(ticket);
+        }
       }
     },
     [
       appendLog,
       launchPlay,
       playFromScene,
-      playing,
+      sessionOwner,
       previewBuild,
       requestPreviewBuild,
+      appSettings.debuggerDefaults,
       releasePlaySources,
       requestedBackend,
       projectEngine,
@@ -1184,6 +1367,17 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       setDiagnostics,
     ],
   );
+
+  const requestSimulate = useCallback(() => requestPlay({ mode: "simulate", saveChoice: "skip" }), [requestPlay]);
+
+  useEffect(() => {
+    if (!isTestModeEnabled()) return;
+    const host = globalThis as typeof globalThis & {
+      __babylonslateSimulationTest?: { start: () => Promise<void>; stop: () => Promise<unknown>; state: () => GameSessionState };
+    };
+    host.__babylonslateSimulationTest = { start: requestSimulate, stop: () => sessionOwner.stop(), state: sessionOwner.getSnapshot };
+    return () => { delete host.__babylonslateSimulationTest; };
+  }, [requestSimulate, sessionOwner]);
 
   const resumePlayAfterMigration = useCallback(async () => {
     setPlayAwaitingMigration(false);
@@ -1205,11 +1399,11 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const handleClose = useCallback(
-    (result: PlaySessionResult) => {
-      releasePlaySources();
-      setPlaying(false);
+    (result: PlaySessionResult, ticket?: GameSessionTicket) => {
+      if (ticket && sessionOwner.getSnapshot().generation !== ticket.generation) return;
+      playSourceLifetimeRef.current?.abort();
+      setPlayOpen(false);
       setSessionPlayScene(null);
-      setEncodeQueuePauseReason("play", false);
       reportBtState(null);
       setDropped(result.droppedDiagnostics);
       setReportEntries(result.diagnostics);
@@ -1220,11 +1414,12 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       appendLog(
         `Play ended (${result.runtimeMode}; textures ${result.textureCountBefore}→pending)`,
       );
-      void result.released.then(({ textureCountAfter, textureLeak }) => {
+      void result.released.then(({ textureCountAfter, textureLeak, quarantined }) => {
+        if (quarantined) appendLog("Game resources did not confirm release. Reload the editor before starting another session.");
         appendLog(
           `Play textures ${result.textureCountBefore}→${textureCountAfter}`,
         );
-        if (textureLeak) {
+        if (textureLeak && !quarantined) {
           appendLog(
             `Texture leak detected: ${result.textureCountBefore} → ${textureCountAfter}`,
           );
@@ -1234,11 +1429,18 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         void openRecordedTrace(result.lastTrace);
       }
     },
-    [appendLog, openRecordedTrace, reportBtState, releasePlaySources],
+    [appendLog, openRecordedTrace, reportBtState, sessionOwner],
   );
 
   const value = useMemo<PlayContextValue>(
     () => ({
+      sessionState,
+      sessionOwner,
+      requestSimulate,
+      canSimulate,
+      simulationUnavailableReason,
+      simulationDocumentId,
+      registerSimulationViewport,
       playing,
       preparing,
       playAwaitingMigration,
@@ -1269,6 +1471,13 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       reportBtState,
     }),
     [
+      sessionState,
+      sessionOwner,
+      requestSimulate,
+      canSimulate,
+      simulationUnavailableReason,
+      simulationDocumentId,
+      registerSimulationViewport,
       playing,
       preparing,
       playAwaitingMigration,
@@ -1299,102 +1508,14 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  return (
-    <PlayContext.Provider value={value}>
-        {children}
-        {projectOpen && (projectEngineState.phase === "preparing" || projectEngineState.phase === "initializing" ||
-          (projectEngineState.phase === "failed" && !renderingFailureDismissed)) ? (
-          <ProjectRenderingDialog state={projectEngineState}
-            onRetry={() => { setRenderingFailureDismissed(false); void projectEngine.sync(renderingRequest, true); }}
-            onDismiss={() => setRenderingFailureDismissed(true)} />
-        ) : null}
-        {previewPhase || previewPreparationError ? (
-          <PreparingPreviewDialog
-            open
-            phase={previewPhase}
-            error={previewPreparationError}
-            canCancel={previewCanCancel}
-            onRetry={() => { void requestPreviewBuild(); }}
-            onCancel={() => {
-              previewRequestRef.current += 1;
-              setPreviewPhase(null);
-              setPreviewPreparationError(null);
-              preparingRef.current = false;
-              setPreparing(false);
-            }}
-          />
-        ) : null}
-        <AlertDialog open={startupAlertOpen} onOpenChange={setStartupAlertOpen}>
-          <AlertDialogContent data-testid="startup-scene-alert">
-            <AlertDialogHeader>
-              <AlertDialogTitle>Startup Scene Required</AlertDialogTitle>
-              <AlertDialogDescription>
-                {MISSING_STARTUP_SCENE_MESSAGE}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogAction
-                data-testid="startup-scene-alert-ok"
-                onClick={() => setStartupAlertOpen(false)}
-              >
-                OK
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-        <PlayUnsavedDialog
-          open={unsavedPrompt !== null}
-          dirtyNames={unsavedPrompt?.dirtyNames ?? []}
-          previewBuild={unsavedPrompt?.previewBuild ?? false}
-          onCancel={() => setUnsavedPrompt(null)}
-          onChoose={(saveChoice) => {
-            const prompt = unsavedPrompt;
-            setUnsavedPrompt(null);
-            if (!prompt) return;
-            if (prompt.previewBuild) {
-              // A migrate-on-save approval resumes through requestPlay.
-              pendingPlayOptionsRef.current = { saveChoice };
-              void requestPreviewBuild(saveChoice === "save");
-            }
-            else void requestPlay({ ...prompt.options, saveChoice });
-          }}
-        />
-        {prepareState ? (
-          <PlayPrepareDialog
-            open
-            phase={prepareState.phase}
-            dirtyNames={prepareState.dirtyNames}
-          />
-        ) : null}
-        <PlayBlockedDialog
-          open={playBlockedOpen}
-          diagnostics={blockedDiagnostics}
-          onOpenChange={(open) => {
-            setPlayBlockedOpen(open);
-            if (!open && pendingScriptsRef.current) releasePlaySources();
-          }}
-          onNavigate={(d) => {
-            const revealId = documentIdToRevealForDiagnostic(
-              d,
-              openDocuments.map((doc) => doc.id),
-            );
-            setFocusDiagnostic(d, revealId ?? undefined);
-            if (revealId) setActiveDocument(revealId);
-            releasePlaySources();
-            setPlayBlockedOpen(false);
-          }}
-          onPlayAnyway={() => {
-            const preparedScripts = pendingScriptsRef.current ?? scripts;
-            pendingScriptsRef.current = null;
-            setPlayBlockedOpen(false);
-            launchPlay({
-              injectFixtureThrow: pendingPlayOptionsRef.current?.injectFixtureThrow,
-              scripts: preparedScripts,
-            });
-          }}
-        />
-        {playing && !previewOpen && engineRef.current ? (
+  const gamePresentation = playOpen && !previewOpen && engineRef.current && sessionTicketRef.current && sessionTicketRef.current.mode !== "preview" ? (
           <PlayOverlay
+            sessionOwner={sessionOwner}
+            sessionTicket={sessionTicketRef.current}
+            simulationSaveStorage={simulationRef.current?.storage}
+            simulationSession={simulationRef.current ?? undefined}
+            simulationAssetGuids={simulationAssetGuids}
+            embedded={sessionTicketRef.current.mode === "simulate"}
             sharedEngine={engineRef.current}
             injectFixtureThrow={injectThrow}
             scripts={scripts}
@@ -1488,13 +1609,132 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             render={projectDocument?.settings.render}
             onClose={handleClose}
           />
+  ) : null;
+
+  return (
+    <PlayContext.Provider value={value}>
+      <SimulationInspectionProvider>
+        {children}
+        {sessionState.mode === "simulate" && !sessionState.quarantined ? (
+          <SimulationSessionBar stopping={sessionState.lifecycle === "stopping"}
+            keepChanges={simulationRef.current?.keepChanges ?? false}
+            onReturnToScene={() => { if (simulationDocumentId) setActiveDocument(simulationDocumentId); }}
+            onStop={() => { void sessionOwner.stop(); }} />
         ) : null}
+        {projectOpen && (projectEngineState.phase === "preparing" || projectEngineState.phase === "initializing" ||
+          (projectEngineState.phase === "failed" && !renderingFailureDismissed)) ? (
+          <ProjectRenderingDialog state={projectEngineState}
+            onRetry={() => { setRenderingFailureDismissed(false); void projectEngine.sync(renderingRequest, true); }}
+            onDismiss={() => setRenderingFailureDismissed(true)} />
+        ) : null}
+        {previewPhase || previewPreparationError ? (
+          <PreparingPreviewDialog
+            open
+            phase={previewPhase}
+            error={previewPreparationError}
+            canCancel={previewCanCancel}
+            onRetry={() => { void requestPreviewBuild(); }}
+            onCancel={() => {
+              previewRequestRef.current += 1;
+              void sessionOwner.stop(sessionTicketRef.current ?? undefined);
+              setPreviewPhase(null);
+              setPreviewPreparationError(null);
+              preparingRef.current = false;
+              setPreparing(false);
+            }}
+          />
+        ) : null}
+        <AlertDialog open={startupAlertOpen} onOpenChange={setStartupAlertOpen}>
+          <AlertDialogContent data-testid="startup-scene-alert">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Startup Scene Required</AlertDialogTitle>
+              <AlertDialogDescription>
+                {MISSING_STARTUP_SCENE_MESSAGE}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogAction
+                data-testid="startup-scene-alert-ok"
+                onClick={() => setStartupAlertOpen(false)}
+              >
+                OK
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+        <PlayUnsavedDialog
+          open={unsavedPrompt !== null}
+          dirtyNames={unsavedPrompt?.dirtyNames ?? []}
+          previewBuild={unsavedPrompt?.previewBuild ?? false}
+          onCancel={() => setUnsavedPrompt(null)}
+          onChoose={(saveChoice) => {
+            const prompt = unsavedPrompt;
+            setUnsavedPrompt(null);
+            if (!prompt) return;
+            if (prompt.previewBuild) {
+              // A migrate-on-save approval resumes through requestPlay.
+              pendingPlayOptionsRef.current = { saveChoice };
+              void requestPreviewBuild(saveChoice === "save");
+            }
+            else void requestPlay({ ...prompt.options, saveChoice });
+          }}
+        />
+        {prepareState ? (
+          <PlayPrepareDialog
+            open
+            phase={prepareState.phase}
+            dirtyNames={prepareState.dirtyNames}
+            title={sessionState.mode === "simulate" ? "Preparing Simulation" : undefined}
+            onCancel={() => {
+              void sessionOwner.stop(sessionTicketRef.current ?? undefined);
+              preparingRef.current = false;
+              setPreparing(false);
+              setPrepareState(null);
+            }}
+          />
+        ) : null}
+        <PlayBlockedDialog
+          open={playBlockedOpen}
+          diagnostics={blockedDiagnostics}
+          onOpenChange={(open) => {
+            setPlayBlockedOpen(open);
+            if (!open && pendingScriptsRef.current) {
+              pendingScriptsRef.current = null;
+              void sessionOwner.stop(sessionTicketRef.current ?? undefined);
+            }
+          }}
+          onNavigate={(d) => {
+            const revealId = documentIdToRevealForDiagnostic(
+              d,
+              openDocuments.map((doc) => doc.id),
+            );
+            setFocusDiagnostic(d, revealId ?? undefined);
+            if (revealId) setActiveDocument(revealId);
+            setPlayBlockedOpen(false);
+            pendingScriptsRef.current = null;
+            void sessionOwner.stop(sessionTicketRef.current ?? undefined);
+          }}
+          onPlayAnyway={() => {
+            setPlayBlockedOpen(false);
+            const preparedScripts = pendingScriptsRef.current ?? scripts;
+            pendingScriptsRef.current = null;
+            launchPlay({
+              injectFixtureThrow: pendingPlayOptionsRef.current?.injectFixtureThrow,
+              scripts: preparedScripts,
+            });
+          }}
+        />
+        {sessionTicketRef.current?.mode === "simulate"
+          ? simulationHost && gamePresentation ? createPortal(gamePresentation, simulationHost) : null
+          : gamePresentation}
         {previewOpen ? (
           <PreviewBuildOverlay
             src={previewSrc}
             iframeRef={previewIframeRef}
+            onDetached={() => { previewReleaseRef.current?.(); previewReleaseRef.current = null; }}
             error={previewError}
             onClose={closePreview}
+            registerBeforeStop={registerPreviewBeforeStop}
             onLoad={sendPreviewPack}
             onTrace={(trace) => void openRecordedTrace(trace)}
           />
@@ -1546,6 +1786,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             {lastRuntimeMode}
           </span>
         ) : null}
+      </SimulationInspectionProvider>
     </PlayContext.Provider>
   );
 }

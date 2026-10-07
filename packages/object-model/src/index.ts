@@ -107,3 +107,5 @@ export {
   type DebugInspectNode,
   type DebugInspectSnapshot,
 } from "./inspect-snapshot";
+export { hydrateScenePropertyReferences } from "./scene-property-values";
+export { sceneActorProvenance, sceneComponentProvenance } from "./scene-provenance";

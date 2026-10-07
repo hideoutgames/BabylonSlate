@@ -1,4 +1,4 @@
-import { TerminalIcon, XIcon } from "lucide-react";
+import { ActivityIcon, CameraIcon, TerminalIcon, XIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   DebugBehaviourTree,
@@ -31,13 +31,19 @@ import {
   AlertTitle,
 } from "@babylonslate/ui/components/alert";
 import { SelectableText } from "@babylonslate/editor-kit";
+import { useDiagnosticResultsStore } from "../context/diagnostic-results-context";
+import { createPreviewDiagnostics } from "../services/preview-diagnostics";
 
 export type PreviewBuildOverlayProps = {
   src: string;
   iframeRef: React.RefObject<HTMLIFrameElement | null>;
   onClose: () => void;
+  /** Called after this iframe presentation has unmounted. */
+  onDetached?: () => void;
   onLoad?: () => void;
   onTrace?: (trace: TracePayload) => void;
+  /** The shared session owner invokes this before closing or replacing Preview. */
+  registerBeforeStop?: (finalize: () => Promise<void>) => () => void;
   /** Boot failure reported by the player, so the black canvas is explained. */
   error?: string | null;
 };
@@ -46,10 +52,15 @@ export function PreviewBuildOverlay({
   src,
   iframeRef,
   onClose,
+  onDetached,
   onLoad,
   onTrace,
+  registerBeforeStop,
   error = null,
 }: PreviewBuildOverlayProps) {
+  const onDetachedRef = useRef(onDetached);
+  onDetachedRef.current = onDetached;
+  useEffect(() => () => { onDetachedRef.current?.(); }, []);
   const [consoleOpen, setConsoleOpen] = useState(false);
   const { logs, pushLog } = useDebugConsoleLogs();
   const [trees, setTrees] = useState<readonly DebugBehaviourTree[]>([]);
@@ -62,6 +73,13 @@ export function PreviewBuildOverlay({
   const lastTrace = useRef<TracePayload | null>(null);
   const ready = useRef(false);
   const [stopping, setStopping] = useState(false);
+  const stoppingRef = useRef(false);
+  const diagnosticResults = useDiagnosticResultsStore();
+  const diagnosticOwner = useRef<{ adapter: ReturnType<typeof createPreviewDiagnostics>; release(): void; reportError(reason: string): void } | null>(null);
+  const finishRef = useRef<() => void | Promise<void>>(() => undefined);
+  const beforeStopRef = useRef<() => Promise<void>>(async () => undefined);
+  const finalization = useRef<Promise<void> | null>(null);
+  const closeRequested = useRef(false);
   const pending = useRef(
     new Map<
       number,
@@ -90,7 +108,7 @@ export function PreviewBuildOverlay({
     }),
     [commands, context],
   );
-  const execute = (line: string) =>
+  const execute = (line: string, timeoutMs = 10000) =>
     new Promise<{ success: boolean; output: string }>((resolve) => {
       const frame = iframeRef.current?.contentWindow;
       if (!frame) {
@@ -104,25 +122,92 @@ export function PreviewBuildOverlay({
           success: false,
           output: "Player did not respond to the command",
         });
-      }, 10000);
+      }, timeoutMs);
       pending.current.set(requestId, { resolve, timer });
       frame.postMessage(
         { type: PREVIEW_CONSOLE_REQUEST_MESSAGE, requestId, line },
         origin,
       );
     });
-  const finish = () => {
-    const close = () => {
-      if (lastTrace.current) onTrace?.(lastTrace.current);
-      onClose();
-    };
-    if (!ready.current || error) {
-      close();
-      return;
-    }
+  const finalize = (): Promise<void> => {
+    if (finalization.current) return finalization.current;
+    stoppingRef.current = true;
     setStopping(true);
-    void execute("snapshot stop").finally(close);
+    finalization.current = (async () => {
+      const owner = diagnosticOwner.current;
+      if (owner) {
+        try { await owner.adapter.finish(); }
+        catch (failure) {
+          const reason = failure instanceof Error ? failure.message : String(failure);
+          pushLog("error", reason);
+          owner.reportError(reason);
+        } finally { owner.release(); }
+      }
+      try {
+        if (ready.current && !error) await execute("snapshot stop", 2000);
+        if (lastTrace.current) onTrace?.(lastTrace.current);
+      } catch (failure) { pushLog("error", failure instanceof Error ? failure.message : String(failure)); }
+    })();
+    return finalization.current;
   };
+  const finish = async () => {
+    if (closeRequested.current) return;
+    closeRequested.current = true;
+    await finalize().finally(onClose);
+  };
+  finishRef.current = finish;
+  beforeStopRef.current = finalize;
+  useEffect(() => registerBeforeStop?.(() => beforeStopRef.current()), [registerBeforeStop]);
+  useEffect(() => {
+    if (!diagnosticResults) return;
+    const adapter = createPreviewDiagnostics({
+      source: () => iframeRef.current?.contentWindow,
+      origin,
+      onProfile: (profile) => { lease.publishProfile(profile); },
+      onError: (reason) => { pushLog("error", reason); lease.publishError(reason); },
+    });
+    const lease = diagnosticResults.bindSession({
+      mode: "preview",
+      async startProfile(settings) {
+        if (stoppingRef.current) throw new Error("Preview Build is stopping.");
+        const result = await adapter.startProfile(settings);
+        if (!result.success) throw new Error(result.reason ?? "Preview recording could not start.");
+      },
+      async stopProfile() {
+        const result = await adapter.stopProfile();
+        if (!result.success) throw new Error(result.reason ?? "Preview recording could not stop.");
+        return adapter.lastProfile;
+      },
+      captureFrame() {
+        if (stoppingRef.current) return Promise.reject(new Error("Preview Build is stopping."));
+        return adapter.captureFrame();
+      },
+      stopSession: () => finishRef.current(),
+    });
+    const owner = { adapter, release: lease.release, reportError: lease.publishError };
+    diagnosticOwner.current = owner;
+    return () => {
+      if (diagnosticOwner.current === owner) diagnosticOwner.current = null;
+      adapter.dispose();
+      lease.release();
+    };
+  }, [diagnosticResults, iframeRef, origin, src, pushLog]);
+  useEffect(() => {
+    let lastSuppressed: boolean | undefined;
+    const sync = () => {
+      if (stoppingRef.current) return;
+      const owner = diagnosticOwner.current;
+      if (!owner) return;
+      const suppressed = consoleOpen || treeOpen || diagnosticResults?.getSnapshot().open === true;
+      if (lastSuppressed === suppressed) return;
+      lastSuppressed = suppressed;
+      void owner.adapter.setInputSuppressed(suppressed).then(result => {
+        if (!result.success && !stoppingRef.current) owner.reportError(result.reason ?? "Preview input ownership failed.");
+      });
+    };
+    sync();
+    return diagnosticResults?.subscribe(sync);
+  }, [diagnosticResults, consoleOpen, treeOpen, src]);
   useEffect(() => {
     const requests = pending.current;
     const receive = (event: MessageEvent) => {
@@ -221,12 +306,35 @@ export function PreviewBuildOverlay({
           </Alert>
         </div>
       ) : null}
-      <div className="safe-overlay-chrome pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-end gap-2">
+      <div className="safe-overlay-chrome pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-wrap items-start justify-end gap-2">
+        {diagnosticResults ? <>
+          <Button
+            size="touch"
+            variant="secondary"
+            className="pointer-events-auto"
+            disabled={stopping || !!error}
+            onClick={() => diagnosticResults.open("summary")}
+          >
+            <ActivityIcon data-icon="inline-start" />
+            Profiler
+          </Button>
+          <Button
+            size="touch"
+            variant="secondary"
+            className="pointer-events-auto"
+            disabled={stopping || !!error}
+            onClick={() => void diagnosticResults.captureFrame()}
+          >
+            <CameraIcon data-icon="inline-start" />
+            Capture Frame
+          </Button>
+        </> : null}
         <Button
           size="touch"
           variant="secondary"
           className="pointer-events-auto"
           aria-label="Console"
+          disabled={stopping}
           onClick={() => setConsoleOpen(true)}
         >
           <TerminalIcon data-icon="inline-start" />

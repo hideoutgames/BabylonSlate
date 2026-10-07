@@ -192,6 +192,23 @@ export class InputResolver {
     });
   }
 
+  /** Clear physical/derived input without advancing time or changing binding overrides. */
+  reset(): ResolvedInputTick {
+    this.state.heldKeys.clear();
+    this.state.heldPointerButtons.clear();
+    this.state.pointerButtons.clear();
+    this.state.heldGamepadButtons.clear();
+    this.state.gamepadAxes.clear();
+    this.state.touchAxes.clear();
+    this.state.connectedPads.clear();
+    this.state.previousHeldActions.clear();
+    this.state.modifiers = { shift: false, ctrl: false, alt: false, meta: false };
+    this.state.cursor.pressed = false;
+    this.state.primaryPointerId = null;
+    this.inputStates = {};
+    return this.resolve([]);
+  }
+
   /** Apply one tick's events and return the resolved action / axis snapshot. */
   resolve(
     events: readonly RawInputEvent[],

@@ -18,7 +18,7 @@ import { isEditorVolumeMesh } from "./editor-volume";
 import { isColliderVisualMesh } from "./collider-visual";
 import { isSkyboxMesh } from "./skybox";
 import { hasSurfaceVisual } from "./scene-loader";
-import { MaterialLibrary } from "./material-library";
+import { MaterialLibrary, type MaterialResolveOptions } from "./material-library";
 import { createMaterialPreviewScene } from "./material-preview";
 import type { MeshAssetContext } from "./mesh-assets";
 import { applyMaterialToVisualMeshes } from "./visual-meshes";
@@ -123,7 +123,14 @@ export async function captureAssetThumbnailPng(
     },
     textureIdentity: (guid) => request.assets?.textureBytes?.has(guid) ? guid : undefined,
   });
-  const resolveMaterial = (guid: string, options?: { unlit?: boolean }): Material | null => {
+  const resolveMaterial = (guid: string, options?: MaterialResolveOptions): Material | null => {
+    if (options?.instanceKey) {
+      const document = request.materials.get(guid);
+      const material = document ? library.resolve(host.scene, guid, document, options) : null;
+      if (material?.mode === NodeMaterialModes.Material) return material;
+      unavailableMaterial = true;
+      return null;
+    }
     const key = `${guid}:${options?.unlit === true}`;
     if (resolved.has(key)) return resolved.get(key) ?? null;
     const document = request.materials.get(guid);
@@ -150,7 +157,13 @@ export async function captureAssetThumbnailPng(
     } else {
       host.mesh.isVisible = false;
       host.scene.shadowsEnabled = false;
-      sync = new EditorSceneSync(host.scene, undefined, { resolveMaterial, freezeActiveMeshes: false, preparationPriority: "background" });
+      sync = new EditorSceneSync(host.scene, undefined, { resolveMaterial, freezeActiveMeshes: false, preparationPriority: "background",
+        releaseMaterialInstance: (key, guid) => library.releaseInstance(key, guid),
+        validateMaterialParameter: (guid, name, value) => {
+          const document = request.materials.get(guid);
+          return !!document && library.acceptsParameter(document, name, value);
+        },
+      });
       // Simplifying imported models for automatic LOD would repeat expensive
       // work for a single 128px frame; thumbnail Scenes have no distant views.
       const modelPayloads = request.assets?.modelPayloads && new Map(

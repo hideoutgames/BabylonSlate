@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   nextPlayInspectorOpen,
   playDebuggerOverlayFromSettings,
+  profileDefaultsFromSettings,
+  simulationDefaultsFromSettings,
 } from "./play-debugger-defaults";
 
 describe("playDebuggerOverlayFromSettings", () => {
@@ -31,6 +33,14 @@ describe("playDebuggerOverlayFromSettings", () => {
       pauseOnPlay: false,
     });
   });
+});
+
+it("snapshots Simulation preferences and bounds explicit recording defaults", () => {
+  const saved = { keepSimulationChanges: true };
+  const launch = simulationDefaultsFromSettings(saved);
+  saved.keepSimulationChanges = false;
+  expect(launch.keepChanges).toBe(true);
+  expect(profileDefaultsFromSettings({ profileDurationSeconds: Infinity, profileByteBudget: 1 })).toMatchObject({ durationMs: 10_000, byteBudget: 4 * 1024 * 1024 });
 });
 
 describe("nextPlayInspectorOpen", () => {

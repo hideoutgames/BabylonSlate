@@ -9,11 +9,59 @@ import { packedContentFromGame, packedPlayControls, packedSourceControls, type G
 import type { SceneSourceAssets } from "@babylonslate/render";
 import type { ControlMessage, ScriptBundleEntry } from "@babylonslate/bridge";
 import type { Diagnostic } from "@babylonslate/scripting";
-import { classIdFromClassAsset } from "../lib/content-browser-helpers";
+import { assetHeaderDependencyMetadata, classIdFromClassAsset } from "../lib/content-browser-helpers";
+import { persistableDocumentContent } from "../lib/scene-layer-document";
+import type { OpenDocument } from "./document-service";
+
+export interface PlayDocumentOverride {
+  readonly payload: Record<string, unknown>;
+  readonly cacheKey: string;
+  readonly requiredDependencies: readonly string[];
+}
+
+const documentIdentities = new WeakMap<object, number>();
+let nextDocumentIdentity = 0;
+
+/** Existing immutable working documents only: this never reads closed asset payloads. */
+export function playDocumentOverrides(registry: AssetRegistry, documents: readonly OpenDocument[]): ReadonlyMap<string, PlayDocumentOverride> {
+  const assets = registry.list();
+  const byPath = new Map(assets.map(asset => [asset.path, asset]));
+  const overrides = new Map<string, PlayDocumentOverride>();
+  for (const document of documents) {
+    const asset = byPath.get(document.ref.path);
+    if (!asset || !document.content || document.ref.kind === "trace") continue;
+    let identity = documentIdentities.get(document.content);
+    if (identity === undefined) { identity = ++nextDocumentIdentity; documentIdentities.set(document.content, identity); }
+    overrides.set(asset.header.guid, {
+      payload: persistableDocumentContent(document.ref.kind, document.content) as Record<string, unknown>,
+      cacheKey: `working-document:${identity}`, requiredDependencies: [],
+    });
+  }
+  // Schema metadata follows open Class/Structure documents as well as scene values.
+  const schemas = assets.map(asset => {
+    const override = overrides.get(asset.header.guid);
+    return override ? { ...asset, header: { ...asset.header, payload: override.payload } } : asset;
+  });
+  for (const asset of schemas) {
+    const override = overrides.get(asset.header.guid);
+    if (override && ["Class", "Graph"].includes(asset.header.type)) {
+      asset.header.requiredVariableNames = assetHeaderDependencyMetadata(asset.header.type, override.payload, schemas, asset.header.parentClass).requiredVariableNames;
+    }
+  }
+  for (const asset of schemas) {
+    const override = overrides.get(asset.header.guid);
+    if (override) overrides.set(asset.header.guid, { ...override,
+      requiredDependencies: assetHeaderDependencyMetadata(asset.header.type, override.payload, schemas, asset.header.parentClass).requiredDependencies,
+    });
+  }
+  return overrides;
+}
 
 export interface PlayAssetSourceHost {
   registry: AssetRegistry;
   project: ProjectDocument;
+  /** Fixed launch snapshots also used by subsequent streamed/demand acquisitions. */
+  documentOverrides?: ReadonlyMap<string, PlayDocumentOverride>;
   createScope: (owner: string) => AssetLoadScope;
   compile: (required: ReadonlySet<string>) => Promise<{ bundles: ScriptBundleEntry[]; diagnostics: readonly Diagnostic[] }>;
 }
@@ -34,7 +82,8 @@ export function requiredPlayAssets(registry: AssetRegistry, roots: readonly stri
 }
 
 /** Resolve mutable catalogs before using their dependency edges for a cold load. */
-async function currentRequiredPlayAssets(registry: AssetRegistry, roots: readonly string[], signal: AbortSignal): Promise<Map<string, string>> {
+async function currentRequiredPlayAssets(host: PlayAssetSourceHost, roots: readonly string[], signal: AbortSignal): Promise<Map<string, string>> {
+  const { registry } = host;
   const revisions = new Map<string, string>();
   const pending = [...roots];
   while (pending.length) {
@@ -46,7 +95,7 @@ async function currentRequiredPlayAssets(registry: AssetRegistry, roots: readonl
     const asset = registry.getByGuid(guid);
     if (!asset || asset.placeholder || asset.locator !== locator) throw new SourceRevisionChangedError(`Required asset changed while resolving: ${guid}`);
     revisions.set(guid, locator.revision);
-    pending.push(...registry.requiredDependenciesFor(guid, asset.header));
+    pending.push(...(host.documentOverrides?.get(guid)?.requiredDependencies ?? registry.requiredDependenciesFor(guid, asset.header)));
   }
   return revisions;
 }
@@ -137,7 +186,7 @@ async function acquirePlayAssetSourcesAttempt(
   roots: readonly string[],
   options: PlayAssetSourceOptions,
 ) {
-  const catalogRevisions = await currentRequiredPlayAssets(host.registry, roots, options.signal);
+  const catalogRevisions = await currentRequiredPlayAssets(host, roots, options.signal);
   const required = new Set(catalogRevisions.keys());
   const scope = host.createScope(options.consumer);
   const project = host.project;
@@ -187,7 +236,7 @@ async function acquirePlayAssetSourcesAttempt(
       const modes = fontModes.get(guid) ?? new Set<string>();
       for (const chunk of chunks) modes.add(chunk);
       fontModes.set(guid, modes);
-      for (const [dependency, revision] of await currentRequiredPlayAssets(host.registry, [guid], options.signal)) {
+      for (const [dependency, revision] of await currentRequiredPlayAssets(host, [guid], options.signal)) {
         const previous = catalogRevisions.get(dependency);
         if (previous && previous !== revision) throw new SourceRevisionChangedError(`Asset ${dependency} changed while resolving font dependencies; retry`);
         catalogRevisions.set(dependency, revision);
@@ -201,7 +250,12 @@ async function acquirePlayAssetSourcesAttempt(
     }
     for (const guid of required) {
       // The catalog closure above has just been refreshed; the prepared result is validated before publication.
-      const value = await scope.acquire<RegistryLoadedAsset>(guid, undefined, { signal: options.signal, dependencies: "none", refresh: false });
+      const override = host.documentOverrides?.get(guid);
+      const header = host.registry.getByGuid(guid)!.header;
+      const value: RegistryLoadedAsset = override ? {
+        revision: catalogRevisions.get(guid)!, chunks: new Map(),
+        document: { guid, type: header.type, name: header.name, version: header.version, payload: override.payload },
+      } : await scope.acquire<RegistryLoadedAsset>(guid, undefined, { signal: options.signal, dependencies: "none", refresh: false });
       if (value.revision !== catalogRevisions.get(guid)) throw new SourceRevisionChangedError(`Asset ${guid} changed after resolving its dependencies; retry`);
       documents.set(guid, value);
       const payload = value.document.payload;
@@ -279,7 +333,7 @@ async function acquirePlayAssetSourcesAttempt(
         game.modelPayloads.set(guid, model);
         if (source) {
           const prepared = await scope.acquire(guid, {
-            key: "model-cpu:collision-and-clips-v1",
+            key: `model-cpu:collision-and-clips-v1:${host.documentOverrides?.get(guid)?.cacheKey ?? "saved"}`,
             estimate: { sourceBytes: 0, decodedBytes: source.byteLength * 4, temporaryBytes: source.byteLength * 2 },
             load: async (_asset, signal) => {
               signal.throwIfAborted();
@@ -334,9 +388,10 @@ async function acquirePlayAssetSourcesAttempt(
       .sort(([a], [b]) => a.localeCompare(b));
     const compileRoot = compileInputs.find(([guid]) => SCRIPT_ASSET_TYPES.has(host.registry.getByGuid(guid)!.header.type))?.[0] ?? root;
     const compileInputBytes = compileInputs.reduce((total, [guid]) => total + JSON.stringify(documents.get(guid)!.document.payload).length * 2, 0);
+    const workingInputs = [...(host.documentOverrides ?? [])].map(([guid, value]) => [guid, value.cacheKey]).sort(([a], [b]) => a.localeCompare(b));
     const compiled = compileRoot ? await scope.acquire(compileRoot, {
       key: `play-scripts:v1:${JSON.stringify([compileInputs, host.registry.generation,
-        project.settings.tags, project.settings.infiniteLoopDetection, project.settings.loopCount])}`,
+        workingInputs, project.settings.tags, project.settings.infiniteLoopDetection, project.settings.loopCount])}`,
       estimate: { sourceBytes: 0, decodedBytes: Math.max(4096, compileInputBytes * 8), temporaryBytes: Math.max(4096, compileInputBytes * 4) },
       load: async (_asset, signal) => {
         signal.throwIfAborted();
@@ -368,7 +423,7 @@ async function acquirePlayAssetSourcesAttempt(
     options.signal.throwIfAborted();
     const cpuBytes = documentBytes * 8;
     const cachedContent = root ? await scope.acquire(root, {
-      key: `play-content:metadata-v2:${JSON.stringify([revisions.sort(([a], [b]) => a.localeCompare(b)), [...fontModes].sort(([a], [b]) => a.localeCompare(b)).map(([guid, modes]) => [guid, [...modes].sort()]), project.settings.fonts, project.settings.twoD, project.settings.audio.audioMixerGuid])}`,
+      key: `play-content:metadata-v2:${JSON.stringify([revisions.sort(([a], [b]) => a.localeCompare(b)), workingInputs, [...fontModes].sort(([a], [b]) => a.localeCompare(b)).map(([guid, modes]) => [guid, [...modes].sort()]), project.settings.fonts, project.settings.twoD, project.settings.audio.audioMixerGuid])}`,
       estimate: { sourceBytes: 0, decodedBytes: cpuBytes, temporaryBytes: sourceBytes },
       load: async (_asset, signal) => {
         signal.throwIfAborted();

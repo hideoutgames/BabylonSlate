@@ -1,5 +1,20 @@
 # Save Games
 
+## Disposable Session Storage
+
+`createSessionSaveStorage` is the storage boundary for disposable Simulation
+sessions. It reads untouched keys from the selected Preview namespace without
+copying save files at launch. Writes and deletions stay in a local overlay;
+disposing it drops them even when scene changes are retained. It never requests
+persistent storage or writes to the backing adapter. Ordinary Play and packaged
+Preview continue to use their existing storage adapters.
+
+The overlay bounds retained key/value data and pending transactions, serializes
+same-key operations, and rejects late results after disposal. Its byte accounting
+covers UTF-16 key/value data, not total browser heap. Oversized writes fail before
+replacing the previous value. This storage primitive alone does not expose a
+Simulation launch workflow or undo arbitrary script network/file side effects.
+
 Save Games persist selected gameplay data independently of project files. A project selects one typed **Save Game** definition, then scripts use the same save/load service in editor Play, Preview Build, and the exported web player. Editor previews use a separate namespace from players' saves.
 
 ## Author a definition

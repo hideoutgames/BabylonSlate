@@ -1,6 +1,6 @@
 import { mockCubeTextureIO, mockDepthTextureIO } from "./texture-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Camera, Constants, InputBlock, KhronosTextureContainer2, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, type Mesh } from "@babylonjs/core";
+import { Camera, Constants, GPUParticleSystem, InputBlock, KhronosTextureContainer2, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, type Mesh } from "@babylonjs/core";
 import { DracoDecoder } from "@babylonjs/core/Meshes/Compression/dracoDecoder";
 import { overlayVisualStyle } from "./overlay-visual-style";
 import {
@@ -30,6 +30,7 @@ import {
 } from "@babylonslate/core";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createEngine, syncEditorPlayState } from "./create-engine";
+import type { RenderPerformanceSample } from "./render-performance";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission, createDefaultParticleSystemPayload, encodeGlbJsonBin, normalizeParticleEmitterPayload } from "@babylonslate/assets";
 import { encodeTriangleGlb } from "./glb-test-fixtures";
@@ -342,6 +343,69 @@ describe("Play createEngine view", () => {
     return { handle, canvas };
   }
 
+  it("drains accepted cold assignment sources before the final authoring fence completes", async () => {
+    const { handle } = playHandle(sharedEngine());
+    handle.applyCommand({ type: "spawn", slotId: 4, actorGuid: "hero", classId: "Actor" });
+    handle.applyCommand({ type: "assignMesh", slotId: 4, actorGuid: "hero", meshAssetGuid: null, meshKind: "box" });
+    const mesh = handle.scene.getMeshByName("actor-4")!;
+    const predecessor = mesh.material;
+    let prepared!: () => void;
+    const preparation = new Promise<void>(resolve => { prepared = resolve; });
+    let sourceReleases = 0;
+    handle.setCommandSourceLoader!(async () => {
+      await preparation;
+      const release = await handle.acquireSceneSources({ materialDocuments: new Map([
+        ["cold-material", createDefaultMaterialDocument("Cold Material")],
+      ]) });
+      return () => { sourceReleases++; release(); };
+    });
+    handle.applyCommand({ type: "assignMaterial", slotId: 4, materialAssetGuid: "cold-material" });
+    handle.setGameTimePaused(true);
+    let settled = false;
+    const captured = handle.quiesceAuthoringRevision(11, new AbortController().signal).then(value => { settled = true; return value; });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    expect(mesh.material).toBe(predecessor);
+    prepared();
+    await expect(captured).resolves.toEqual({ commandRevision: 11 });
+    expect(mesh.material).not.toBe(predecessor);
+    expect(mesh.material?.name).toContain("cold-material");
+    expect(sourceReleases).toBe(0);
+    handle.dispose();
+    await handle.whenReleased();
+    expect(sourceReleases).toBe(1);
+  });
+
+  it("rejects a final capture when a new command arrives during accepted source preparation", async () => {
+    const { handle } = playHandle(sharedEngine());
+    handle.applyCommand({ type: "spawn", slotId: 4, actorGuid: "hero", classId: "Actor" });
+    handle.applyCommand({ type: "assignMesh", slotId: 4, actorGuid: "hero", meshAssetGuid: null, meshKind: "box" });
+    let prepared!: () => void;
+    const preparation = new Promise<void>(resolve => { prepared = resolve; });
+    handle.setCommandSourceLoader!(async () => { await preparation; return () => {}; });
+    handle.applyCommand({ type: "assignMaterial", slotId: 4, materialAssetGuid: "pending" });
+    handle.setGameTimePaused(true);
+    const captured = handle.quiesceAuthoringRevision(12, new AbortController().signal);
+    const rejection = expect(captured).rejects.toThrow("arrived after the final capture fence");
+    handle.applyCommand({ type: "setCursorVisible", visible: true, frameId: 9 });
+    await rejection;
+    // Cancelling a capture wait is not cancelling an already-owned asset load.
+    prepared();
+    await handle.whenEditorModelsReady();
+  });
+
+  it("reports accepted source load failures instead of capturing the predecessor visual", async () => {
+    const { handle } = playHandle(sharedEngine());
+    handle.applyCommand({ type: "spawn", slotId: 4, actorGuid: "hero", classId: "Actor" });
+    handle.applyCommand({ type: "assignMesh", slotId: 4, actorGuid: "hero", meshAssetGuid: null, meshKind: "box" });
+    const predecessor = handle.scene.getMeshByName("actor-4")!.material;
+    handle.setCommandSourceLoader!(async () => { throw new Error("Missing cold source"); });
+    handle.applyCommand({ type: "assignMaterial", slotId: 4, materialAssetGuid: "missing" });
+    handle.setGameTimePaused(true);
+    await expect(handle.quiesceAuthoringRevision(13, new AbortController().signal)).rejects.toThrow("Missing cold source");
+    expect(handle.scene.getMeshByName("actor-4")!.material).toBe(predecessor);
+  });
+
   it("routes cable frames through the shared Play/player command host and ignores retired actors", () => {
     const { handle } = playHandle(sharedEngine());
     const cable = { ...parseCableProperties({ numSegments: 2, numSides: 4, cableWidth: 0.4 }), simulationId: 11 };
@@ -370,6 +434,67 @@ describe("Play createEngine view", () => {
     expect(handle.scheduler.shouldRender(0)).toBe(false);
     handle.setSceneStreamingPaused(false);
     expect(handle.scheduler.shouldRender(0)).toBe(true);
+  });
+
+  it("admits one explicit render-only redraw without clearing other pause reasons", () => {
+    const { handle } = playHandle(sharedEngine());
+    expect(handle.requestPausedRedraw().accepted).toBe(false);
+    handle.setGameTimePaused(true);
+    expect(handle.scheduler.shouldRender(0)).toBe(false);
+    expect(handle.requestPausedRedraw()).toEqual({ accepted: true });
+    expect(handle.scheduler.shouldRender(0)).toBe(true);
+    handle.scheduler.noteRendered(0);
+    expect(handle.scheduler.shouldRender(1)).toBe(false);
+    handle.setPaused(true);
+    handle.setGameTimePaused(false);
+    expect(handle.scheduler.shouldRender(1)).toBe(false);
+    handle.setPaused(false);
+    expect(handle.scheduler.shouldRender(1)).toBe(true);
+  });
+
+  it("refuses paused redraw for an unpaused GPU owner and admits its frozen buffers", () => {
+    const engine = sharedEngine();
+    vi.spyOn(engine, "getCaps").mockReturnValue({ ...engine.getCaps(), supportTransformFeedbacks: true });
+    const { handle } = playHandle(engine);
+    const system = new GPUParticleSystem("Live GPU Emitter", { capacity: 8 }, handle.scene);
+    system.emitter = Vector3.Zero();
+    system.start(0);
+    handle.setGameTimePaused(true);
+    expect(handle.requestPausedRedraw()).toMatchObject({ accepted: false, reason: expect.stringContaining("Live GPU Emitter") });
+    expect(handle.scheduler.shouldRender(0)).toBe(false);
+    system.paused = true;
+    expect(handle.requestPausedRedraw()).toEqual({ accepted: true });
+    system.dispose();
+  });
+
+  it("captures a coherent paused presentation, excludes held attempts and refuses concurrent profiling", async () => {
+    const engine = sharedEngine();
+    const { handle } = playHandle(engine);
+    await handle.prewarmSceneMaterials();
+    handle.setGameTimePaused(true);
+    let ready = false;
+    handle.scene.addIsReadyCheck({ isReady: () => ready });
+    markSceneReadinessDirty(handle.scene);
+    const frame = () => { engine.beginFrame(); renderViews(engine); engine.endFrame(); };
+    let delivered = false;
+    const requested = handle.captureFrame().then((report) => { delivered = true; return report; });
+    expect(() => handle.observePerformance(() => {})).toThrow("frame capture");
+    frame();
+    await Promise.resolve();
+    expect(delivered).toBe(false);
+    expect(handle.renderDiagnostics().presentation!.copied).toBe(0);
+    ready = true;
+    frame();
+    const report = await requested;
+    expect(report.frame).toMatchObject({ tickId: 0, viewId: handle.scene.uniqueId });
+    expect(report.stages.some((stage) => stage.kind === "composition" && stage.name === "World output" && stage.completed)).toBe(true);
+    expect(handle.scheduler.shouldRender(performance.now())).toBe(false);
+    const release = handle.observePerformance(() => {});
+    await expect(handle.captureFrame()).rejects.toThrow("performance recording");
+    release();
+    const cancelled = expect(handle.captureFrame()).rejects.toThrow("disposed");
+    handle.dispose();
+    await cancelled;
   });
 
   function renderViews(engine: NullEngine) {
@@ -737,6 +862,8 @@ describe("Play createEngine view", () => {
     vi.spyOn(canvas, "getContext").mockImplementation(() => ({ putImageData: () => { copied = true; } }));
     const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, present: "rtt", playMode: true });
     handles.push(handle);
+    const performanceSamples: RenderPerformanceSample[] = [];
+    handle.observePerformance((sample) => performanceSamples.push(sample));
     handle.setPaused(true);
     await handle.prewarmSceneMaterials();
     let resolve!: (pixels: Uint8Array) => void;
@@ -758,12 +885,16 @@ describe("Play createEngine view", () => {
       await Promise.resolve();
       expect(ready).toBe(false);
       expect(copied).toBe(false);
+      expect(performanceSamples).toHaveLength(0);
       expect(read).toHaveBeenCalledOnce();
       expect(drawn).toHaveBeenCalledOnce();
       resolve(new Uint8Array(256 * 256 * 4));
       await presented;
       expect(ready).toBe(true);
       expect(copied).toBe(true);
+      expect(performanceSamples).toHaveLength(1);
+      expect(performanceSamples[0]).toMatchObject({ width: 256, height: 256, loading: true });
+      expect(performanceSamples[0]!.copyMs).toBeGreaterThanOrEqual(0);
     } finally {
       handle.dispose();
       await presented.catch(() => {});
@@ -1387,6 +1518,8 @@ describe("Play createEngine view", () => {
     vi.spyOn(canvas, "getContext").mockReturnValue({ clearRect() {}, drawImage: copy });
     const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true });
     handles.push(handle);
+    const performanceSamples: RenderPerformanceSample[] = [];
+    const releasePerformance = handle.observePerformance((sample) => performanceSamples.push(sample));
     await handle.prewarmSceneMaterials();
     const frame = () => { engine.beginFrame(); renderViews(engine); engine.endFrame(); };
     frame();
@@ -1399,10 +1532,16 @@ describe("Play createEngine view", () => {
     expect(copy).toHaveBeenCalledTimes(1);
     expect(handle.scheduler.stats().renderedFrames).toBe(1);
     expect(handle.renderDiagnostics().presentation).toMatchObject({ drawn: 1, copied: 1, held: 2 });
+    expect(performanceSamples).toHaveLength(1);
     ready = true;
     frame();
     expect(copy).toHaveBeenCalledTimes(2);
     expect(handle.scheduler.stats().renderedFrames).toBe(2);
+    expect(performanceSamples).toHaveLength(2);
+    expect(performanceSamples[1]!.completedAtMs).toBeGreaterThanOrEqual(performanceSamples[0]!.completedAtMs);
+    releasePerformance();
+    frame();
+    expect(performanceSamples).toHaveLength(2);
   });
 
   it("retains prepared rendering and material ownership through transform commits and equivalent asset refreshes", async () => {
@@ -3167,6 +3306,22 @@ describe("Play createEngine view", () => {
     expect(backend.listener.y).toBeCloseTo(4, 5);
     expect(backend.listener.z).toBeCloseTo(-6, 5);
     expect(fallback?.globalPosition.x ?? 0).not.toBeCloseTo(10, 0);
+    handle.setSimulationEditMode(true);
+    handle.steerPlayFreeCam(5, 2);
+    const editingCamera = handle.scene.activeCamera;
+    expect(editingCamera?.name).toBe("playFreeCam");
+    // Gameplay may possess another camera while Edit keeps the viewport camera.
+    handle.applyCommand({ type: "possessCamera", slotId: 1 });
+    expect(handle.scene.activeCamera).toBe(editingCamera);
+    writeSnapshotHeader(buf, { frameId: 2, tickIndex: 2, actorCount: 1, scriptMs: 0, physicsMs: 0 });
+    handle.pushSnapshot(buf);
+    runRenderLoop.mock.calls[0]?.[0]?.();
+    expect(backend.listener.x).toBeCloseTo(10, 5);
+    expect(backend.listener.y).toBeCloseTo(4, 5);
+    expect(backend.listener.z).toBeCloseTo(-6, 5);
+    expect(editingCamera?.globalPosition.equalsWithEpsilon(new Vector3(10, 4, -6))).toBe(false);
+    handle.setSimulationEditMode(false);
+    expect(handle.scene.activeCamera?.name).toBe("authoredCamera:1");
     handle.dispose();
   });
 
@@ -3975,6 +4130,49 @@ describe("Play createEngine view", () => {
     canvas.emit("touchstart", {});
     canvas.emit("touchmove", {});
     expect(canvas.prevented).toBe(beforeTouch + 2);
+  });
+
+  it("cancels held SceneLayer input on Edit and requires a fresh game gesture after return", () => {
+    const engine = sharedEngine();
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(256);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(256);
+    const renderLoop = vi.spyOn(engine, "runRenderLoop");
+    const canvas = new FakeCanvas();
+    const events: string[] = [], scrolls: unknown[] = [];
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true,
+      onSceneLayerPointer: event => events.push(event.event), onSceneLayerScroll: event => scrolls.push(event) });
+    handles.push(handle);
+    spawnOverlayButton(handle, () => renderLoop.mock.calls[0]?.[0]?.(), "hud", { width: 9, height: 9 });
+    handle.applyCommand({ type: "sceneLayerLayout", layerId: "hud", entries: [{ actorId: "scroll", componentId: "viewport", slotId: 2,
+      rect: { x: 0, y: 0, width: 9, height: 9 }, clip: null, scrollAncestors: [], scroll: { x: 0, y: 0, maxX: 0, maxY: 20,
+        axis: "vertical", viewport: { x: 0, y: 0, width: 9, height: 9 }, scaleX: 1, scaleY: 1 } }] });
+    canvas.emit("pointerdown", pointerAt(128, 128));
+    expect(events).toContain("onPressStart");
+    handle.setSimulationEditMode(true);
+    expect(events).toContain("onPressEnd");
+    expect(events).toContain("onMouseLeave");
+    expect(events).not.toContain("onClick");
+    expect(handle.isFreeCamEnabled()).toBe(true);
+    const count = events.length;
+    canvas.emit("pointermove", pointerAt(128, 100));
+    canvas.emit("pointerup", pointerAt(128, 128));
+    canvas.emit("wheel", { clientX: 128, clientY: 128, deltaX: 0, deltaY: 32, deltaMode: 0 });
+    expect(events).toHaveLength(count);
+    expect(scrolls).toEqual([]);
+    canvas.emit("pointerdown", pointerAt(128, 128, { pointerId: 2 }));
+    handle.setSimulationEditMode(false);
+    canvas.emit("pointerup", pointerAt(128, 128, { pointerId: 2 }));
+    expect(events).not.toContain("onClick");
+    handle.setGameInputEnabled(false);
+    handle.setSimulationEditMode(true);
+    handle.setSimulationEditMode(false);
+    canvas.emit("pointerdown", pointerAt(128, 128, { pointerId: 3 }));
+    canvas.emit("pointerup", pointerAt(128, 128, { pointerId: 3 }));
+    expect(events).not.toContain("onClick");
+    handle.setGameInputEnabled(true);
+    canvas.emit("pointerdown", pointerAt(128, 128, { pointerId: 4 }));
+    canvas.emit("pointerup", pointerAt(128, 128, { pointerId: 4 }));
+    expect(events.filter(event => event === "onClick")).toHaveLength(1);
   });
 
   it("scrolls nested overlay content with wheel and cancels button activation after touch dragging", () => {

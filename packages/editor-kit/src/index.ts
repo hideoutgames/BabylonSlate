@@ -22,6 +22,7 @@ export {
 export { CatalogResultRow, type CatalogResultRowProps } from "./catalog-result-row";
 export { SearchInput, type SearchInputProps } from "./search-input";
 export { PanelFrame } from "./panel-frame";
+export { EditorReadOnlyContext, useEditorReadOnly } from "./editor-read-only";
 export { DisclosureSection, type DisclosureSectionProps } from "./disclosure-section";
 export { ToolbarStrip } from "./toolbar-strip";
 export { SelectableText } from "./selectable-text";

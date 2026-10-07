@@ -1,11 +1,16 @@
+import { captureSimulationScene, type SimulationSceneCaptureResult, type SimulationCaptureIdentity } from "./simulation-scene-capture";
+import { RuntimeMaterialEditGate } from "./runtime-material-edit-gate";
+import { runtimeEditLocalTransform } from "./runtime-transform-edit";
+import { RuntimeDiagnosticRecorder } from "./runtime-diagnostic-recorder";
+import { RuntimeInspector } from "./runtime-inspector";
 import { SceneLayerActorSwitchers } from "./scene-layer-actor-switcher";
-import { RuntimeDataCatalog } from "./data-catalog";
+import { RuntimeDataCatalog, dataTypeSchemas } from "./data-catalog";
 import { overlayAnchorBindings } from "./overlay-anchor-layout";
 import { SaveGameError, SaveGameService, type SaveGameServiceOptions } from "@babylonslate/core";
 import { SaveGameWorld } from "./save-game-world";
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
 import { RuntimeAssetPreloads } from "./asset-preloads";
-import type { RuntimeAssetLoadState } from "@babylonslate/core";
+import type { RuntimeAssetLoadState, RuntimeAssetPreloadOptions, RuntimeAssetPreloadResult } from "@babylonslate/core";
 import { SceneLayerFocusNavigation } from "./scene-layer-focus";
 import { focusLayoutEntry, revealFocusedElement } from "./scene-layer-focus-layout";
 import type { FocusNavigationSettings } from "@babylonslate/core";
@@ -30,6 +35,17 @@ import {
   type RuntimeSceneContent,
   type DebugBehaviourTree,
   type DebugNavAgent,
+  type GameSessionMode,
+  type SessionPauseReason,
+  type SessionBoundaryRequest,
+  type SessionBoundaryResult,
+  type RuntimeInspectorRequest,
+  type RuntimeInspectorResult,
+  type RuntimeMaterialEditPreparation,
+  type SimulationQuiesceRequest,
+  type SimulationCaptureRequest,
+  type DiagnosticOperationRequest,
+  type DiagnosticOperationResult,
 } from "@babylonslate/bridge";
 import {
   ClassRegistry,
@@ -59,6 +75,7 @@ import {
   isSceneLayerExclusiveComponent,
   sceneAssetClassId,
   hydrateClassVariableValue,
+  hydrateScenePropertyReferences,
   type ClassKind,
   type DebugInspectSnapshot,
   type GameSubsystemHooks,
@@ -209,6 +226,8 @@ import {
 } from "@babylonslate/navigation";
 
 export interface RuntimeDriverOptions {
+  sessionGeneration?: number;
+  sessionMode?: GameSessionMode;
   /** Catalog identity only; registering an available class never reads its source. */
   classAssetGuids?: Readonly<Record<string, string>>;
   consoleCommands?: ReadonlyArray<import("@babylonslate/core").ConsoleCommandMetadata & { classId: string; assetGuid: string }>;
@@ -290,6 +309,8 @@ export interface RuntimeDriverOptions {
    * the exported player set this; in-process tests leave it false.
    */
   deferSceneModelsReady?: boolean;
+  deferMaterialEdits?: boolean;
+  simulationAssetGuids?: string[];
   /** Wait for the host Loading UI to paint before retiring or realizing a Scene. */
   deferSceneLoadingPaint?: boolean;
   /** Real Play/player yield actor work; immediate harnesses keep the default. */
@@ -305,8 +326,15 @@ export interface RuntimeDriver {
   readonly inputBindings: InputBindingControls;
   start(): void;
   stop(): void;
-  pause(): void;
-  resume(): void;
+  pause(reason?: SessionPauseReason): void;
+  resume(reason?: SessionPauseReason): void;
+  requestSessionBoundary(request: SessionBoundaryRequest): Promise<SessionBoundaryResult>;
+  requestRuntimeInspector(request: RuntimeInspectorRequest): Promise<RuntimeInspectorResult>;
+  cancelRuntimeInspector(request: { sessionGeneration: number; requestId: number }): void;
+  requestDiagnosticOperation(request: DiagnosticOperationRequest): Promise<DiagnosticOperationResult>;
+  quiesceSimulation(request: SimulationQuiesceRequest): Promise<SessionBoundaryResult>;
+  captureSimulationState(request: SimulationCaptureRequest): Promise<SimulationSceneCaptureResult>;
+  applyRuntimeMaterialEditResult(message: Extract<ControlMessage, { type: "runtimeMaterialEditPrepared" | "runtimeMaterialEditApplied" }>): void;
   tick(): void;
   /** Fixed-step catch-up from wall/accumulated time; capped. */
   advance(elapsedSeconds: number): void;
@@ -527,7 +555,39 @@ type GameLifecycleHooks = {
   onSceneExit: (self: BObject, sceneName: string) => void;
 };
 
+class RuntimeContinuationCancelled extends Error {
+  constructor() { super("Scene realization was cancelled."); this.name = "AbortError"; }
+}
+
 class InProcessRuntime implements RuntimeDriver {
+  private readonly simulationBaseline: SerializedScene | null;
+  /** Catalog identities are persistable without loading every referenced asset. */
+  private readonly simulationAssets: ReadonlySet<string>;
+  private simulationOwnedAssets: ReadonlySet<string>;
+  private simulationDataAssets: RuntimeDriverOptions["dataAssets"];
+  private simulationStart: Pick<SimulationCaptureIdentity, "sceneAssetGuid" | "sceneInstanceId" | "sceneLoadId"> | null = null;
+  private simulationQuiescent = false;
+  private simulationUnsupportedInstance: { kind: "stream" | "layer"; id: string } | null = null;
+  private lastCaptureRequestId = 0;
+  private readonly sessionGeneration: number;
+  private readonly sessionMode: GameSessionMode;
+  private commandRevision = 0;
+  private lastBoundaryRequestId = 0;
+  private readonly diagnosticsEnabled: boolean;
+  private diagnosticRecorder: RuntimeDiagnosticRecorder | null = null;
+  private profileTickPublishMs = 0;
+  private readonly deferMaterialEdits: boolean;
+  private materialEditGate: RuntimeMaterialEditGate | null = null;
+  private materialEditEmission: { preparation: RuntimeMaterialEditPreparation; emitted: boolean } | null = null;
+  private runtimeInspector: RuntimeInspector | null = null;
+  private inspectorScheduled = false;
+  private lastInspectorRequestId = 0;
+  private readonly inspectorRequests: Array<{ request: RuntimeInspectorRequest; resolve(result: RuntimeInspectorResult): void }> = [];
+  private readonly boundaryRequests: Array<{ request: SessionBoundaryRequest; resolve(result: SessionBoundaryResult): void }> = [];
+  private boundaryScheduled = false;
+  private readonly pauseReasons = new Set<SessionPauseReason>();
+  private readonly pendingPauseChanges = new Map<SessionPauseReason, boolean>();
+  private resetElapsed = false;
   private readonly assetPreloads = new RuntimeAssetPreloads(command => this.emit(command));
   private readonly classAssetGuids = new Map<string, string>();
   private readonly demandAssetCatalog: boolean;
@@ -775,11 +835,19 @@ class InProcessRuntime implements RuntimeDriver {
   get snapshotGeneration(): number { return this._snapshotGeneration; }
 
   constructor(options: RuntimeDriverOptions) {
+    this.simulationBaseline = options.sessionMode === "simulate" ? options.playScene ?? null : null;
+    this.simulationAssets = new Set(options.simulationAssetGuids ?? [...Object.keys(options.materialParameterCatalog ?? {}), ...(options.materialTextureAssetGuids ?? []), ...(options.audioAssetGuids ?? [])]);
+    this.simulationOwnedAssets = this.simulationAssets;
+    this.simulationDataAssets = options.sessionMode === "simulate" ? options.dataAssets : undefined;
+    this.sessionGeneration = options.sessionGeneration ?? 0;
+    this.sessionMode = options.sessionMode ?? "play";
     const projectName = options.project?.name ?? "";
     const projectVersion = options.project?.version ?? "";
     this.demandAssetCatalog = options.classAssetGuids !== undefined;
     for (const [classId, guid] of Object.entries(options.classAssetGuids ?? {})) this.classAssetGuids.set(classId, guid);
     this.trace = new TraceRecorder({ byteBudget: options.traceByteBudget });
+    this.diagnosticsEnabled = options.includeDebugCommands ?? true;
+    this.deferMaterialEdits = options.deferMaterialEdits === true;
     this.materialParameters = new RuntimeMaterialParameters(options.materialParameterCatalog, options.materialTextureAssetGuids);
     this.validateLegacyMeshParameters = options.materialParameterCatalog !== undefined;
     this.scalabilityProjectRenderPath = options.renderSettings?.renderPath ?? "forward";
@@ -937,7 +1005,7 @@ class InProcessRuntime implements RuntimeDriver {
         z: this.overlayGravity[2],
       }),
       {
-        actorFilter: (actor) => actor.sceneLayerId != null && this.canTickActor(actor),
+        actorFilter: (actor) => actor.sceneLayerId != null && this.canTickActor(actor, true),
         deferUnsupportedConstraints: !this.preferSoftwarePhysics,
       },
     );
@@ -1238,7 +1306,7 @@ class InProcessRuntime implements RuntimeDriver {
         }
         const owner = target.owner;
         if (!(owner instanceof Actor) || owner.destroyed) return null;
-        const slotId = this.slotByGuid.get(owner.guid);
+        const slotId = this.slotByActor.get(owner);
         const guid = this.animGraphGuid(target);
         const document = guid ? this.animGraphs.get(guid) : undefined;
         const evalKey = target.guid;
@@ -1284,12 +1352,13 @@ class InProcessRuntime implements RuntimeDriver {
         if (this.demandAssetCatalog && !guid && !isLockedEngineClassId(id)) throw new Error(`Class ${id} is missing from the asset catalog`);
         const preload = this.demandAssetCatalog && guid
           ? await this.assetPreloads.acquire([guid], owner?.guid ?? this.world.currentScene?.guid ?? "session") : null;
-        if (preload && !preload.success) throw new Error(`Cannot spawn ${id} requested by ${owner?.guid ?? "session"}: ${preload.errorMessage}`);
         if (this.stopped || owner?.destroyed) {
           if (preload) this.assetPreloads.release(preload.preloadId);
           throw sceneRealizationCancelled();
         }
         try {
+          { const pending = this.continueSimulation(owner ?? null); if (pending) await pending; }
+          if (preload && !preload.success) throw new Error(`Cannot spawn ${id} requested by ${owner?.guid ?? "session"}: ${preload.errorMessage}`);
           const actor = this.spawnScriptedActor({ classId: id, transform: coerceTransform(transform), streamOwner: owner });
           if (preload) {
             if (actor && !actor.destroyed) this.assetPreloads.transferOwner(preload.preloadId, actor.guid);
@@ -1326,15 +1395,23 @@ class InProcessRuntime implements RuntimeDriver {
       getTargetSceneName: (target) => this.getTargetSceneName(target),
       loadScene: (target, blocking) => this.loadSceneStream(target, blocking),
       unloadScene: (target, blocking) => this.unloadSceneStream(target, blocking),
-      preloadAssets: (assets, owner, options) => this.assetPreloads.acquire(assets, owner?.guid ?? this.world.currentScene?.guid ?? "session", options),
-      prepareAssets: this.demandAssetCatalog ? (assets, owner) => this.assetPreloads.prepare(assets, owner?.guid ?? this.world.currentScene?.guid ?? "session") : undefined,
+      preloadAssets: (assets, owner, options) => this.preloadForGameplay(assets, owner, options),
+      prepareAssets: this.demandAssetCatalog ? async (assets, owner) => {
+        try { await this.assetPreloads.prepare(assets, owner?.guid ?? this.world.currentScene?.guid ?? "session"); }
+        catch (error) {
+          const pending = this.continueSimulation(owner ?? null);
+          if (pending) await pending;
+          throw error;
+        }
+        { const pending = this.continueSimulation(owner ?? null); if (pending) await pending; }
+      } : undefined,
       releasePreload: (preloadId) => this.assetPreloads.release(preloadId),
       getAssetLoadState: (assetGuid) => this.assetPreloads.getState(assetGuid),
       isSceneLoaded: (target) => this.getSceneState(target) === "Loaded",
       getSceneLoadProgress: (target) => this.getSceneLoadProgress(target),
       getSceneState: (target) => this.getSceneState(target),
       resolveInstanceId: (owner, id) => this.streamForOwner(owner)?.idMap.get(id) ?? id,
-      waitForSimulation: (owner) => this.waitForSimulation(owner),
+      waitForSimulation: (owner) => this.continueSimulation(owner) ?? Promise.resolve(),
       getProjectName: () => projectName,
       getProjectVersion: () => projectVersion,
       setWorldGravity: (gravity) => {
@@ -1342,16 +1419,22 @@ class InProcessRuntime implements RuntimeDriver {
       },
       executeConsoleCommand: (command) => this.executeConsoleCommand(command),
       executeConsoleCommandAsync: (command) => this.executeConsoleCommandAsync(command),
-      tween: (request) => this.tweens.start(request),
+      tween: (request) => this.tweens.start(request).then(async completed => {
+        if (!completed) return false;
+        { const pending = this.continueSimulation(request.owner ?? null); if (pending) await pending; }
+        return true;
+      }),
       isTweenSessionActive: () => !this.stopped,
       delay: (seconds, owner) =>
         new Promise<void>((resolve) => {
+          if (this.stopped) { resolve(); return; }
           this.delayWaiters.push({
             remaining: Math.max(0, Number(seconds) || 0),
             resolve,
             owner,
           });
-        }),
+          // A boundary requested after the timer fired still holds the continuation.
+        }).then(() => this.continueSimulation(owner ?? null)),
       reportError: (error) => {
         this.reportError(error);
       },
@@ -1462,79 +1545,7 @@ class InProcessRuntime implements RuntimeDriver {
         this.textAppear.execute(component, operation);
         if (!this.processingTick) this.flushTextAppear();
       },
-      refreshComponent: (component, propertyName) => {
-        const owner = component.owner;
-        if (!owner || owner.destroyed) return;
-        if (isUIControl2DClass(component.classId)) {
-          this.uiControls.refresh(component);
-          if (owner.sceneLayerId) this.applyOverlayLayouts();
-          return;
-        }
-        if ((propertyName === "opacity" || propertyName === "tint") && supportsOverlayVisualStyle(component.classId)) {
-          const slotId = this.slotByGuid.get(owner.guid);
-          if (slotId !== undefined) this.emit({ type: "setOverlayVisualStyle", slotId, componentId: component.guid,
-            style: parseOverlayVisualStyle(Object.fromEntries(component.variables)) });
-          return;
-        }
-        if (component.classId === "2DRichTextComponent") this.textAppear.refresh(component);
-        if (owner.sceneLayerId && component.classId === "2DAnchorComponent") {
-          for (const _ of this.applyOverlayAnchors(this.world.getActors())) void _;
-        }
-        if (owner.sceneLayerId) this.applyOverlayLayouts();
-        if (owner.sceneLayerId && isOverlayScrollClass(component.classId) &&
-          (propertyName === "scroll.offset" || propertyName === "scrollX" || propertyName === "scrollY")) {
-          const scroll = this.overlayLayout.entries(owner.sceneLayerId).get(overlayLayoutKey(owner.guid, component.guid))?.scroll;
-          if (scroll) { component.setVariable("scrollX", scroll.x); component.setVariable("scrollY", scroll.y); }
-        }
-        if (owner.sceneLayerId && (isOverlayLayoutClass(component.classId) || component.classId === "2DAnchorComponent")) return;
-        // Steering/tuning is consumed by the next motor tick; only dimensions
-        // need immediate collider/query refresh after a property write.
-        if (component.classId === "MovementComponent" && propertyName && propertyName !== "radius" && propertyName !== "height") return;
-        const slotId = this.slotByGuid.get(owner.guid);
-        if (component.classId === "DeformerComponent") {
-          if (slotId !== undefined) {
-            if (this.processingTick) this.dirtyDeformerActors.add(owner);
-            else this.emitActorDeformers(owner, slotId);
-          }
-          return;
-        }
-        if (component.classId === "DynamicRuntimeMeshComponent" &&
-          (propertyName === "materialGuid" || propertyName === "enableCollision" || propertyName === "layer" || propertyName === "mask")) {
-          if (propertyName === "materialGuid" && slotId !== undefined) this.emitMaterialAssignments([component], slotId, true);
-          // Geometry collision changes are coalesced by the next physics step.
-          return;
-        }
-        if (slotId !== undefined) {
-          if (component.classId === "RenderTargetCaptureComponent") this.emitRenderTargetCapture(owner, slotId);
-          else if (component.classId === "OutlineComponent") this.emitActorOutlines(owner, slotId);
-          else if (component.classId === "FogVolumeComponent") this.emitActorFogVolumes(owner, slotId);
-          else if (propertyName === "transform") this.emitComponentTransforms(owner, slotId);
-          else if (component.classId !== "PhysicsConstraintComponent" && component.classId !== "RagdollComponent" && component.classId !== "MovementComponent") this.emitMeshAssignment(owner, slotId);
-        }
-        if (component.classId === "ParticleComponent") {
-          this.emitParticleComponents(owner);
-        }
-        if (component.classId === "AudioComponent") {
-          const volume = Number(component.getVariable("volume") ?? 1);
-          this.emit({
-            type: "setVoiceGain",
-            voiceId: component.guid,
-            volume: Number.isFinite(volume) ? volume : 1,
-          });
-        }
-        if (component.classId === "NavAgentComponent") {
-          this.updateNavAgentParams(owner);
-        }
-        const sync = owner.sceneLayerId
-          ? this.overlayPhysicsSync
-          : this.physicsSync;
-        if (component.classId === "RagdollComponent" || component.classId === "MeshComponent") {
-          // Ragdoll and mesh-collision edits can create or retire the owner's
-          // body; reconcile that one actor from its own chain.
-          this.ragdolls.sync();
-          sync.syncActor(owner, this.world);
-        } else sync.applyComponent(component);
-      },
+      refreshComponent: (component, propertyName) => this.refreshRuntimeComponent(component, propertyName),
       playSound: (asset, volume, options) => {
         this.emit({
           type: "playSound",
@@ -1663,12 +1674,55 @@ class InProcessRuntime implements RuntimeDriver {
     });
   }
 
+  private simulationBlocked(owner: BObject | null): boolean {
+    return (this.streamBlockingCount > 0 || this.paused || this.boundaryRequests.some(
+      ({ request }) => request.action.kind === "pause" && request.action.paused) ||
+      [...this.pendingPauseChanges.values()].some(Boolean)) && !this.stopped && !owner?.destroyed;
+  }
+
   private async waitForSimulation(owner: BObject | null): Promise<void> {
-    while ((this.streamBlockingCount > 0 || this.paused) && !this.stopped && !owner?.destroyed)
+    while (this.simulationBlocked(owner))
       await new Promise<void>((resolve) => this.simulationWaiters.add(resolve));
-    const stream = this.streamForOwner(owner);
-    if (this.stopped || owner?.destroyed || !this.sceneStreamReady(stream))
-      throw sceneRealizationCancelled();
+    this.assertContinuable(owner);
+  }
+
+  /** Like waitForSimulation, but an unblocked continuation resumes without extra microtask hops. */
+  private continueSimulation(owner: BObject | null): Promise<void> | undefined {
+    if (this.simulationBlocked(owner)) return this.waitForSimulation(owner);
+    this.assertContinuable(owner);
+    return undefined;
+  }
+
+  private assertContinuable(owner: BObject | null): void {
+    if (this.stopped || owner?.destroyed || !this.sceneStreamReady(this.streamForOwner(owner)))
+      throw new RuntimeContinuationCancelled();
+  }
+
+  private async preloadForGameplay(assets: readonly string[], owner: BObject | null, options: RuntimeAssetPreloadOptions = {}): Promise<RuntimeAssetPreloadResult> {
+    const callbackOwner = owner ?? this.world.gameInstance;
+    let queued = false, active = true, latest = 0;
+    const onProgress = options.onProgress ? (value: number) => {
+      latest = value;
+      if (queued || !active) return;
+      queued = true;
+      // Only the latest progress value waits during Pause; no callback flood or
+      // gameplay continuation is delivered by an I/O completion while frozen.
+      const deliver = () => {
+        queued = false;
+        if (active) this.guardScript(() => options.onProgress!(latest));
+      };
+      if (callbackOwner) this.runOwnerAction(callbackOwner, deliver);
+      else deliver();
+    } : undefined;
+    let result: RuntimeAssetPreloadResult | undefined;
+    try {
+      result = await this.assetPreloads.acquire(assets, owner?.guid ?? this.world.currentScene?.guid ?? "session", { ...options, onProgress });
+      { const pending = this.continueSimulation(owner); if (pending) await pending; }
+      return result;
+    } catch (error) {
+      if (result?.preloadId) this.assetPreloads.release(result.preloadId);
+      throw error;
+    } finally { active = false; }
   }
 
   loadSceneStream(target: unknown, blocking = false): Promise<void> {
@@ -1709,6 +1763,7 @@ class InProcessRuntime implements RuntimeDriver {
       actors: new Set(), idMap: new Map(), scene, controller: new AbortController(), realized: false, notified: false,
       promise, resolve, reject, navObstacles: [] };
     this.sceneStreams.set(actor.guid, stream);
+    this.markUnsupportedSimulationInstance("stream", scene.guid);
     this.streamScenes.set(scene, stream);
     const operation = this.withStreamBlock(promise, blocking);
     this.emit({ type: "sceneStreamLoading", actorGuid: actor.guid, streamLoadId: loadId });
@@ -1769,6 +1824,7 @@ class InProcessRuntime implements RuntimeDriver {
       }
       yield;
     }
+    hydrateScenePropertyReferences([...stream.actors]);
     let realized = 0;
     for (const actor of stream.actors) {
       checkpoint();
@@ -1972,7 +2028,7 @@ class InProcessRuntime implements RuntimeDriver {
       actorFilter: (actor) => actor.sceneLayerId == null && this.streamActorReady(actor),
     });
     const overlayPhysicsSync = new PhysicsWorldSync(overlayBackend, {
-      actorFilter: (actor) => actor.sceneLayerId != null && this.canTickActor(actor),
+      actorFilter: (actor) => actor.sceneLayerId != null && this.canTickActor(actor, true),
     });
     try {
       this.bindPhysicsContent(physicsSync);
@@ -2017,7 +2073,8 @@ class InProcessRuntime implements RuntimeDriver {
       z: next[2],
     });
     if (this.playScene) {
-      this.playScene.settings.gravity = next;
+      // Prepared authoring content is also the immutable Simulation baseline.
+      this.playScene = { ...this.playScene, settings: { ...this.playScene.settings, gravity: next } };
     }
     const scene = this.world.currentScene;
     if (scene && !scene.destroyed) {
@@ -2029,9 +2086,10 @@ class InProcessRuntime implements RuntimeDriver {
     if (this.stopped || owner?.destroyed) throw sceneRealizationCancelled();
     const preload = this.demandAssetCatalog
       ? await this.assetPreloads.acquire([assetGuid], owner?.guid ?? this.world.currentScene?.guid ?? "session") : null;
-    if (preload && !preload.success) throw new Error(`Cannot create SceneLayer ${assetGuid}: ${preload.errorMessage}`);
     let layer: SceneLayer | null = null;
     try {
+      { const pending = this.continueSimulation(owner); if (pending) await pending; }
+      if (preload && !preload.success) throw new Error(`Cannot create SceneLayer ${assetGuid}: ${preload.errorMessage}`);
       if (this.stopped || owner?.destroyed) throw sceneRealizationCancelled();
       layer = this.createSceneLayer(assetGuid, zOrder);
       if (!layer || layer.destroyed) throw new Error(`SceneLayer ${assetGuid} could not be prepared`);
@@ -2049,6 +2107,7 @@ class InProcessRuntime implements RuntimeDriver {
           });
         });
       }
+      { const pending = this.continueSimulation(owner); if (pending) await pending; }
       return layer;
     } catch (error) {
       if (layer) this.removeSceneLayer(layer.guid);
@@ -2171,6 +2230,7 @@ class InProcessRuntime implements RuntimeDriver {
       })),
       layerBounds: document.settings.layerBounds,
     });
+    this.markUnsupportedSimulationInstance("layer", layer.guid);
     ownedLayer = layer;
     work?.layers.push(layer);
     const layerLoad = { layer, loadId: ++this.layerLoadId, realized: false, presented: false, ready: false };
@@ -2211,6 +2271,7 @@ class InProcessRuntime implements RuntimeDriver {
       }
       yield;
     }
+    hydrateScenePropertyReferences(actors);
     for (const actor of actors) {
       checkpoint();
       this.scriptHost.bindInterfaceHandlers(actor);
@@ -2449,7 +2510,7 @@ class InProcessRuntime implements RuntimeDriver {
     const voiceId = String(message.voiceId ?? "").trim();
     if (!voiceId) return;
     for (const actor of this.world.getActors()) {
-      if (actor.destroyed || !this.canTickActor(actor)) continue;
+      if (actor.destroyed) continue;
       const component = actor.components.find(
         (entry) =>
           !entry.destroyed &&
@@ -2457,13 +2518,13 @@ class InProcessRuntime implements RuntimeDriver {
           (entry.guid === voiceId || entry.sourceId === voiceId),
       );
       if (!component) continue;
-      this.scriptHost.invokeEvent(
+      this.runOwnerAction(component, () => this.scriptHost.invokeEvent(
         actor.classId,
         "onAudioFinished",
         actor,
         {},
         component.guid,
-      );
+      ));
       return;
     }
   }
@@ -2490,8 +2551,8 @@ class InProcessRuntime implements RuntimeDriver {
     const snapshot = this.scalability.snapshot();
     // GameSubsystems share the Game Instance's native events, Scalability Changed included.
     const owners = [this.world.gameInstance, ...this.world.getGameSubsystems(), this.world.currentScene, ...this.world.getSceneLayers(), ...this.world.getActors().flatMap((actor) => [actor, ...actor.components])];
-    for (const owner of owners) if (owner && this.canRunOwner(owner)) {
-      this.scriptHost.invokeEvent(owner.classId, "onScalabilityChanged", owner, { settings: snapshot });
+    for (const owner of owners) if (owner && !owner.destroyed) {
+      this.runOwnerAction(owner, () => this.scriptHost.invokeEvent(owner.classId, "onScalabilityChanged", owner, { settings: snapshot }));
     }
   }
 
@@ -2861,8 +2922,88 @@ class InProcessRuntime implements RuntimeDriver {
     };
   };
 
+  private refreshRuntimeComponent(component: ActorComponent, propertyName?: string): void {
+    const owner = component.owner;
+    if (!owner || owner.destroyed) return;
+    if (isUIControl2DClass(component.classId)) {
+      this.uiControls.refresh(component);
+      if (owner.sceneLayerId) this.applyOverlayLayouts();
+      return;
+    }
+    if ((propertyName === "opacity" || propertyName === "tint") && supportsOverlayVisualStyle(component.classId)) {
+      const slotId = this.slotByActor.get(owner);
+      if (slotId !== undefined) this.emit({ type: "setOverlayVisualStyle", slotId, componentId: component.guid,
+        style: parseOverlayVisualStyle(Object.fromEntries(component.variables)) });
+      return;
+    }
+    if (component.classId === "2DRichTextComponent") this.textAppear.refresh(component);
+    if (owner.sceneLayerId && component.classId === "2DAnchorComponent") {
+      for (const _ of this.applyOverlayAnchors(this.world.getActors())) void _;
+    }
+    if (owner.sceneLayerId) this.applyOverlayLayouts();
+    if (owner.sceneLayerId && isOverlayScrollClass(component.classId) &&
+      (propertyName === "scroll.offset" || propertyName === "scrollX" || propertyName === "scrollY")) {
+      const scroll = this.overlayLayout.entries(owner.sceneLayerId).get(overlayLayoutKey(owner.guid, component.guid))?.scroll;
+      if (scroll) { component.setVariable("scrollX", scroll.x); component.setVariable("scrollY", scroll.y); }
+    }
+    if (owner.sceneLayerId && (isOverlayLayoutClass(component.classId) || component.classId === "2DAnchorComponent")) return;
+    // Steering/tuning is consumed by the next motor tick; only dimensions
+    // need immediate collider/query refresh after a property write.
+    if (component.classId === "MovementComponent" && propertyName && propertyName !== "radius" && propertyName !== "height") return;
+    const slotId = this.slotByActor.get(owner);
+    if (component.classId === "DeformerComponent") {
+      if (slotId !== undefined) {
+        if (this.processingTick) this.dirtyDeformerActors.add(owner);
+        else this.emitActorDeformers(owner, slotId);
+      }
+      return;
+    }
+    if (component.classId === "MeshComponent" && propertyName === "materialGuid") {
+      // A staged material belongs to this existing native mesh. Re-emitting the
+      // mesh assignment here would replace that owner between prepare/commit.
+      if (slotId !== undefined) this.emitMaterialAssignments([component], slotId, true);
+      return;
+    }
+    if (component.classId === "DynamicRuntimeMeshComponent" &&
+      (propertyName === "materialGuid" || propertyName === "enableCollision" || propertyName === "layer" || propertyName === "mask")) {
+      if (propertyName === "materialGuid" && slotId !== undefined) this.emitMaterialAssignments([component], slotId, true);
+      // Geometry collision changes are coalesced by the next physics step.
+      return;
+    }
+    if (slotId !== undefined) {
+      if (component.classId === "RenderTargetCaptureComponent") this.emitRenderTargetCapture(owner, slotId);
+      else if (component.classId === "OutlineComponent") this.emitActorOutlines(owner, slotId);
+      else if (component.classId === "FogVolumeComponent") this.emitActorFogVolumes(owner, slotId);
+      else if (propertyName === "transform") this.emitComponentTransforms(owner, slotId);
+      else if (component.classId !== "PhysicsConstraintComponent" && component.classId !== "RagdollComponent" && component.classId !== "MovementComponent") this.emitMeshAssignment(owner, slotId);
+    }
+    if (component.classId === "ParticleComponent") {
+      this.emitParticleComponents(owner);
+    }
+    if (component.classId === "AudioComponent") {
+      const volume = Number(component.getVariable("volume") ?? 1);
+      this.emit({
+        type: "setVoiceGain",
+        voiceId: component.guid,
+        volume: Number.isFinite(volume) ? volume : 1,
+      });
+    }
+    if (component.classId === "NavAgentComponent") {
+      this.updateNavAgentParams(owner);
+    }
+    const sync = owner.sceneLayerId
+      ? this.overlayPhysicsSync
+      : this.physicsSync;
+    if (component.classId === "RagdollComponent" || component.classId === "MeshComponent") {
+      // Ragdoll and mesh-collision edits can create or retire the owner's
+      // body; reconcile that one actor from its own chain.
+      this.ragdolls.sync();
+      sync.syncActor(owner, this.world);
+    } else sync.applyComponent(component);
+  }
+
   private canTickScene(): boolean {
-    return !this.saveBoundaryActive && !this.sceneWorkBlocked && !this.bootLoading && !this.stopped && this.streamBlockingCount === 0;
+    return !this.paused && !this.saveBoundaryActive && !this.sceneWorkBlocked && !this.bootLoading && !this.stopped && this.streamBlockingCount === 0;
   }
 
   private hasReadyLayers(): boolean {
@@ -2871,15 +3012,14 @@ class InProcessRuntime implements RuntimeDriver {
     return false;
   }
 
-  private canTickActor(actor: Actor): boolean {
-    if (this.stopped || actor.destroyed || this.streamBlockingCount > 0 || !this.streamActorReady(actor) ||
-      (this.paused && this.actorStream.has(actor))) return false;
+  private canTickActor(actor: Actor, ignorePause = false): boolean {
+    if ((!ignorePause && this.paused) || this.stopped || actor.destroyed || this.streamBlockingCount > 0 || !this.streamActorReady(actor)) return false;
     if (!actor.sceneLayerId) return this.canTickScene();
     return this.layerLoads.get(actor.sceneLayerId)?.ready === true;
   }
 
-  private setMaterialParameter(material: MaterialInstanceObject, parameterName: string, parameter: MaterialParameterValue): boolean {
-    if (!this.canRunOwner(material)) return false;
+  private setMaterialParameter(material: MaterialInstanceObject, parameterName: string, parameter: MaterialParameterValue, inspector = false): boolean {
+    if (inspector ? !(material instanceof MaterialObject) || !material.component.owner || !this.inspectorActorReady(material.component.owner) : !this.canRunOwner(material)) return false;
     const validated = this.materialParameters.accepts(material, parameterName, parameter);
     if (!validated && (material instanceof PostProcessMaterialObject || this.validateLegacyMeshParameters)) return false;
     if (material instanceof PostProcessMaterialObject) {
@@ -2894,7 +3034,7 @@ class InProcessRuntime implements RuntimeDriver {
       const component = material.component;
       const owner = component.owner;
       if (!owner || owner.destroyed || component.destroyed || component.getVariable("materialObject") !== material) return false;
-      const slotId = this.slotByGuid.get(owner.guid);
+      const slotId = this.slotByActor.get(owner);
       if (slotId === undefined) return false;
       const skipButtonMesh = overlayButtonHasSiblingVisual(owner) || overlayButtonHasParentVisual(owner, this.world);
       if (!owner.components.some((entry) => entry === component && isPlayRenderable(entry, skipButtonMesh))) return false;
@@ -2906,6 +3046,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private canRunOwner(owner: BObject): boolean {
+    if (this.paused && !this.stopped) return false;
     if (this.saveBoundaryActive) return false;
     if (owner instanceof GameSubsystem) return this.canRunGameSubsystem(owner);
     // Callable from creation until its On End returns, even while its Scene
@@ -3359,6 +3500,8 @@ class InProcessRuntime implements RuntimeDriver {
       this.setWorldGravity(gravity);
       work.sceneInstance = this.world.createScene({ assetGuid: guid, sceneName: name,
         postProcessStack: scene.settings.postProcessStack, variables: { gravity } });
+      if (this.sessionMode === "simulate" && !this.simulationStart) this.simulationStart = {
+        sceneAssetGuid: guid, sceneInstanceId: work.sceneInstance.guid, sceneLoadId: loadId };
       checkpoint();
       this.emit({ type: "activeScene", sceneAssetGuid: guid, sceneLoadId: loadId });
       checkpoint();
@@ -3368,6 +3511,7 @@ class InProcessRuntime implements RuntimeDriver {
         if (actor) work.actors.push(actor);
         yield;
       }
+      hydrateScenePropertyReferences(work.actors);
       let realized = 0;
       for (const actor of work.actors) {
         checkpoint();
@@ -3489,6 +3633,8 @@ class InProcessRuntime implements RuntimeDriver {
       return false;
     }
     if (this.stopped) { source?.release(); return true; }
+    if (this.sessionMode === "simulate") this.emit({ type: "simulationRetentionUnavailable", sessionGeneration: this.sessionGeneration,
+      reason: "Keep cannot retain a scene transition into the starting scene document." });
     // The departing Scene's teardown starts here; its SceneSubsystems End at the exit.
     this.duringSceneTeardown(() => {
       for (const stream of [...this.sceneStreams.values()]) this.retireSceneStream(stream);
@@ -3593,14 +3739,21 @@ class InProcessRuntime implements RuntimeDriver {
     return this.lastTrace;
   }
 
-  private finalizeTrace(): void {
-    if (!this.trace.isRecording) return;
-    this.lastTrace = this.trace.stop();
-    if (this.lastTrace) {
+  private finalizeTrace(reason: "requested" | "session-ended" = "requested"): void {
+    const payload = this.trace.stop(reason);
+    if (payload) {
+      this.lastTrace = payload;
       this.emit({
         type: "trace",
-        payload: this.lastTrace as unknown as Record<string, unknown>,
+        payload: payload as unknown as Record<string, unknown>,
       });
+      if (payload.retention?.stopReason === "oversized-frame") {
+        this.reportLog(
+          `Trace recording stopped: an oversized frame exceeds the ${payload.retention.byteBudget}-byte retained-data budget. ` +
+          `${payload.frames.length} complete frames retained; ${payload.retention.droppedFrames} frames dropped.`,
+          "warning", "Trace",
+        );
+      }
     }
   }
 
@@ -3638,6 +3791,12 @@ class InProcessRuntime implements RuntimeDriver {
 
   registerSceneContent(content: RuntimeSceneContent): void {
     const retained = new Set(content.assetGuids);
+    if (this.sessionMode === "simulate") {
+      // Source scopes are acquired/released on demand. Retention must validate
+      // against current owned source metadata, including newly prepared types.
+      this.simulationOwnedAssets = retained;
+      this.simulationDataAssets = content.dataAssets;
+    }
     for (const map of [this.animGraphs, this.behaviourTrees, this.blackboards]) for (const guid of map.keys()) if (!retained.has(guid)) map.delete(guid);
     this.sceneLayerLibrary.clear();
     for (const entry of content.sceneLayers ?? []) this.sceneLayerLibrary.set(entry.guid, entry.layer);
@@ -4968,14 +5127,14 @@ class InProcessRuntime implements RuntimeDriver {
       },
       pause: () => {
         this.pause();
-        this.emit({ type: "sessionPaused", paused: true });
+        this.emit({ type: "sessionPaused", paused: this.paused });
       },
       resume: () => {
         this.resume();
-        this.emit({ type: "sessionPaused", paused: false });
+        this.emit({ type: "sessionPaused", paused: this.paused });
       },
       step: () => {
-        const wasPaused = this.paused;
+        const wasPaused = this.pauseReasons.has("user");
         this.resume();
         this.tick();
         if (wasPaused) this.pause();
@@ -4990,8 +5149,10 @@ class InProcessRuntime implements RuntimeDriver {
           .map((entry) => entry.message)
           .join("\n"),
       startSnapshot: () => {
-        this.lastTrace = null;
+        if (this.sessionMode === "simulate") return { success: false, output: "Use Play or Preview Build to record diagnostics." };
+        if (this.diagnosticRecorder?.busy) return { success: false, output: "Stop the current profile or frame capture first." };
         this.trace.start({ seed: this.seed, dt: this.dt });
+        this.lastTrace = null;
       },
       stopSnapshot: () => {
         this.finalizeTrace();
@@ -5573,6 +5734,13 @@ class InProcessRuntime implements RuntimeDriver {
           ? { componentId: component.guid }
           : {}),
       });
+      const material = component.getVariable("materialObject");
+      if (component.materialInstance?.materialGuid === guid && material instanceof MaterialObject) {
+        for (const [parameterName, parameter] of Object.entries(this.materialParameters.captureOverrides(material) ?? {})) {
+          this.emit({ type: "setMaterialParameter", slotId, componentId: component.guid,
+            materialAssetGuid: material.materialAssetGuid, parameterName, parameter });
+        }
+      }
     }
   }
 
@@ -5870,12 +6038,12 @@ class InProcessRuntime implements RuntimeDriver {
    */
   private gameLifecycleHooks(classId: string): GameLifecycleHooks {
     const sceneEvent = (event: string) => (self: BObject, sceneName: string) => {
-      this.guardScript(() => this.scriptHost.invokeEvent(classId, event, self, { sceneName }));
+      this.runOwnerAction(self, () => this.guardScript(() => this.scriptHost.invokeEvent(classId, event, self, { sceneName })));
     };
     return {
       onCreation: (self) => {
         const hooks = this.scriptHost.hooksFor(classId);
-        this.guardScript(() => hooks?.onCreation?.(self));
+        this.runOwnerCreation(self, () => hooks?.onCreation?.(self));
       },
       onTick: (self, ctx) => {
         const hooks = this.scriptHost.hooksFor(classId);
@@ -5894,7 +6062,7 @@ class InProcessRuntime implements RuntimeDriver {
           if (this.stopped) {
             this.scriptHost.invokeGameShutdownEvent(classId, "onSceneExit", self, { sceneName });
           } else {
-            this.scriptHost.invokeEvent(classId, "onSceneExit", self, { sceneName });
+            this.runOwnerAction(self, () => this.scriptHost.invokeEvent(classId, "onSceneExit", self, { sceneName }));
           }
         });
       },
@@ -6060,7 +6228,10 @@ class InProcessRuntime implements RuntimeDriver {
     this.pendingSceneFinish = null;
     this.flushOwnerActions();
     // Authored creation may immediately replace this Scene or stop Play.
-    if (!this.stopped && this.sceneLoadId === pending.sceneLoadId) this.world.finishSceneLoad(pending.name);
+    const owner = this.world.currentScene;
+    if (!this.stopped && owner && this.sceneLoadId === pending.sceneLoadId) this.runOwnerAction(owner, () => {
+      if (this.world.currentScene === owner && this.sceneLoadId === pending.sceneLoadId) this.world.finishSceneLoad(pending.name);
+    });
   }
 
   notifySceneModelsReady(sceneAssetGuid: string, sceneLoadId: number): void {
@@ -6159,8 +6330,8 @@ class InProcessRuntime implements RuntimeDriver {
             ...this.world.getGameSubsystems(), ...this.world.getSceneSubsystems(),
             ...this.world.getActors().flatMap((actor) => [actor, ...actor.components])];
           for (const owner of owners) {
-            if (owner && !owner.destroyed) this.guardScript(() =>
-              this.scriptHost.invokeEvent(owner.classId, "onGameLoaded", owner, { ...info }));
+            if (owner && !owner.destroyed) this.runOwnerAction(owner, () => this.guardScript(() =>
+              this.scriptHost.invokeEvent(owner.classId, "onGameLoaded", owner, { ...info })));
           }
         };
       },
@@ -6183,7 +6354,6 @@ class InProcessRuntime implements RuntimeDriver {
   start(): void {
     if (this.stopped) return;
     this.running = true;
-    this.paused = false;
     try {
       this.world.start();
     } catch (error) {
@@ -6198,6 +6368,11 @@ class InProcessRuntime implements RuntimeDriver {
     for (const waiter of this.layerReadinessWaiters.values()) waiter.reject(sceneRealizationCancelled());
     this.layerReadinessWaiters.clear();
     this.stopped = true;
+    this.diagnosticRecorder?.stop();
+    this.materialEditGate?.cancel("The game session has stopped.");
+    if (this.inspectorRequests.length) this.flushInspectorRequests();
+    this.flushBoundaryRequests();
+    this.pendingPauseChanges.clear();
     this.tweens.stop();
     this.focusNavigation.clearFocus();
     this.overlayLayout.clear();
@@ -6209,6 +6384,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.running = false;
     for (const resume of this.simulationWaiters) resume();
     this.simulationWaiters.clear();
+    for (const waiter of this.delayWaiters.splice(0)) waiter.resolve();
     for (const stream of [...this.sceneStreams.values()]) this.retireSceneStream(stream);
     for (const work of [...this.independentLayerWork.values()]) {
       work.controller.abort(sceneRealizationCancelled());
@@ -6220,7 +6396,7 @@ class InProcessRuntime implements RuntimeDriver {
     const retiring = this.cancelRealization();
     this.sceneLoadId++;
     this.pendingSceneFinish = null;
-    this.finalizeTrace();
+    this.finalizeTrace("session-ended");
     for (const actor of this.world.getActors()) {
       for (const component of [...actor.components]) {
         if (!component.destroyed) {
@@ -6260,13 +6436,25 @@ class InProcessRuntime implements RuntimeDriver {
     if (this.behaviourTreeDebug) this.emit({ type: "behaviourTreeSnapshot", trees: [] });
   }
 
-  pause(): void {
-    this.paused = true;
+  pause(reason: SessionPauseReason = "user"): void {
+    this.setPauseReason(reason, true);
   }
 
-  resume(): void {
+  resume(reason: SessionPauseReason = "user"): void {
+    this.setPauseReason(reason, false);
+  }
+
+  private setPauseReason(reason: SessionPauseReason, paused: boolean): void {
     if (this.stopped) return;
-    this.paused = false;
+    if (this.simulationQuiescent && !paused) return;
+    if (this.processingTick) { this.pendingPauseChanges.set(reason, paused); return; }
+    const wasPaused = this.paused;
+    if (paused) this.pauseReasons.add(reason); else this.pauseReasons.delete(reason);
+    this.paused = this.pauseReasons.size > 0;
+    if (this.paused === wasPaused) return;
+    this.accumulator = 0;
+    if (this.paused) { this.resetInputState(); return; }
+    this.resetElapsed = true;
     this.flushOwnerActions();
     if (this.streamBlockingCount === 0) {
       const waiters = [...this.simulationWaiters];
@@ -6275,7 +6463,289 @@ class InProcessRuntime implements RuntimeDriver {
     }
   }
 
+  requestSessionBoundary(request: SessionBoundaryRequest): Promise<SessionBoundaryResult> {
+    const invalid = request.sessionGeneration !== this.sessionGeneration ? "Stale session generation." :
+      !Number.isSafeInteger(request.requestId) || request.requestId <= this.lastBoundaryRequestId ? "Invalid or superseded request ID." :
+      request.action?.kind !== "resetInput" && (request.action?.kind !== "pause" ||
+        !["user", "lifecycle", "loading"].includes(request.action.reason) || typeof request.action.paused !== "boolean") ? "Unsupported session boundary operation." :
+      this.stopped ? "The game session has stopped." :
+      this.boundaryRequests.length >= 64 ? "Session boundary queue is full." : null;
+    if (invalid) return Promise.resolve(this.boundaryResult(request, invalid));
+    this.lastBoundaryRequestId = request.requestId;
+    // A microtask runs after the complete synchronous tick and its deferred
+    // snapshot publication, including reentrant host requests from onCommand.
+    const result = new Promise<SessionBoundaryResult>(resolve => {
+      this.boundaryRequests.push({ request: { ...request, action: { ...request.action } }, resolve });
+    });
+    if (!this.boundaryScheduled) {
+      this.boundaryScheduled = true;
+      queueMicrotask(() => this.flushBoundaryRequests());
+    }
+    return result;
+  }
+
+  requestDiagnosticOperation(request: DiagnosticOperationRequest): Promise<DiagnosticOperationResult> {
+    this.diagnosticRecorder ??= new RuntimeDiagnosticRecorder({ generation: this.sessionGeneration, mode: this.sessionMode,
+      enabled: this.diagnosticsEnabled, traceActive: () => this.trace.isRecording, now: nowMs, emit: command => this.emit(command) });
+    if (this.stopped) this.diagnosticRecorder.stop();
+    return this.diagnosticRecorder.request(request);
+  }
+
+  private markUnsupportedSimulationInstance(kind: "stream" | "layer", id: string): void {
+    if (this.sessionMode !== "simulate" || this.simulationUnsupportedInstance) return;
+    this.simulationUnsupportedInstance = { kind, id };
+    this.emit({ type: "simulationRetentionUnavailable", sessionGeneration: this.sessionGeneration,
+      reason: `Keep cannot retain an independent ${kind === "layer" ? "SceneLayer" : "streamed Scene"} instance (${id}), including one removed before Stop.` });
+  }
+
+  quiesceSimulation(request: SimulationQuiesceRequest): Promise<SessionBoundaryResult> {
+    return new Promise(resolve => queueMicrotask(() => {
+      const boundaryRequest: SessionBoundaryRequest = { ...request, action: { kind: "resetInput" } };
+      const invalid = request.sessionGeneration !== this.sessionGeneration ? "Stale session generation." :
+        this.sessionMode !== "simulate" ? "Final scene capture is available only during Simulation Play." :
+        this.stopped ? "The game session has stopped." :
+        !Number.isSafeInteger(request.requestId) || request.requestId <= this.lastCaptureRequestId ? "Invalid or superseded capture request ID." : null;
+      if (invalid) { resolve(this.boundaryResult(boundaryRequest, invalid)); return; }
+      this.lastCaptureRequestId = request.requestId;
+      this.setPauseReason("loading", true);
+      this.materialEditGate?.cancel("Simulation is stopping; the pending material edit was cancelled.");
+      this.simulationQuiescent = true;
+      this.resetInputState();
+      if (this.inspectorRequests.length) this.flushInspectorRequests();
+      this.flushDeferredSnapshotWrite();
+      resolve(this.boundaryResult(boundaryRequest));
+    }));
+  }
+
+  captureSimulationState(request: SimulationCaptureRequest): Promise<SimulationSceneCaptureResult> {
+    return new Promise(resolve => queueMicrotask(() => {
+      const identity: SimulationCaptureIdentity = { generation: this.sessionGeneration, sceneAssetGuid: this.playSceneGuid,
+        sceneInstanceId: this.world.currentScene?.guid ?? "", sceneLoadId: this.sceneLoadId,
+        tickIndex: this.world.clock.tickIndex, commandRevision: this.commandRevision };
+      const fail = (reason: string, code: "boundary" | "ownership" | "budget" | "resource" = "boundary") => resolve({ ok: false, code, path: "scene", reason, identity });
+      if (request.sessionGeneration !== this.sessionGeneration || !Number.isSafeInteger(request.requestId) || request.requestId <= this.lastCaptureRequestId) { fail("Stale or superseded capture request."); return; }
+      this.lastCaptureRequestId = request.requestId;
+      if (this.stopped || !this.simulationQuiescent || !this.simulationBaseline || !this.simulationStart || this.sessionMode !== "simulate") { fail("A live Simulation must acknowledge its final quiescent boundary before capture."); return; }
+      if (this.materialEditGate?.busy || this.materialEditGate?.ownershipFailure) { fail(this.materialEditGate.ownershipFailure ?? "A material edit is still pending.", "ownership"); return; }
+      if (request.maxBytes !== undefined && (!Number.isSafeInteger(request.maxBytes) || request.maxBytes < 1 || request.maxBytes > 64 * 1024 * 1024)) { fail("Invalid final scene capture budget.", "budget"); return; }
+      try {
+        const scene = this.world.currentScene;
+        if (!scene || this.sceneWorkBlocked || this.bootLoading || this.streamBlockingCount > 0) { fail("Scene loading has not reached a complete final boundary."); return; }
+        const postProcessStack: typeof scene.postProcessStack = [];
+        for (const entry of scene.postProcessStack) {
+          const material = getPostProcessMaterialObject(scene, entry.id ?? "");
+          const overrides = material ? this.materialParameters.captureOverrides(material) : null;
+          if (!overrides) { fail(`Post-process material ${entry.materialGuid} has no complete current authoring parameter state.`, "resource"); return; }
+          postProcessStack.push({ ...entry, parameters: overrides });
+        }
+        if (postProcessStack.some(entry => !this.simulationOwnedAssets.has(entry.materialGuid))) { fail("A post-process material has no prepared authoring asset.", "resource"); return; }
+        const schemas = dataTypeSchemas(this.simulationDataAssets ?? []);
+        resolve(captureSimulationScene({ world: this.world, baseline: this.simulationBaseline, identity, startingScene: this.simulationStart,
+          quiescent: true, renderRevision: request.renderRevision, maxBytes: request.maxBytes,
+          sceneSettings: { ...this.simulationBaseline.settings, gravity: [this.gravity[0], this.gravity[1], this.gravity[2]], postProcessStack },
+          ownership: actor => actor.sceneLayerId ? "layer" : this.actorStream.has(actor) ? "stream" : "root",
+          independentInstances: this.simulationUnsupportedInstance ? [this.simulationUnsupportedInstance] : [],
+          materialOverrides: component => {
+            const material = component.getVariable("materialObject");
+            return material instanceof MaterialObject ? this.materialParameters.captureOverrides(material) : null;
+          },
+          prefabComponents: classId => this.world.classRegistry.ancestry(classId).flatMap(ancestor => this.scriptHost.scriptsFor(ancestor))
+            .find(script => script.components !== undefined)?.components ?? [],
+          assetExists: guid => this.simulationAssets.has(guid) || this.simulationOwnedAssets.has(guid),
+          structFields: guid => schemas.structs[guid]?.fields.map(field => ({ ...field, type: field.typeId })) ?? null,
+          enumMembers: guid => schemas.enums[guid]?.members.map(member => member.name) ?? null,
+        }));
+      } catch (error) { fail(error instanceof Error ? error.message : "Final scene capture failed."); }
+    }));
+  }
+
+  private inspectorActorReady(actor: Actor): boolean {
+    if (this.simulationQuiescent || this.stopped || this.saveBoundaryActive || actor.destroyed || actor.world !== this.world || this.world.findActorInstances(actor.guid).length !== 1 || this.streamBlockingCount > 0 || !this.streamActorReady(actor)) return false;
+    return actor.sceneLayerId ? this.layerLoads.get(actor.sceneLayerId)?.ready === true : !this.sceneWorkBlocked && !this.bootLoading;
+  }
+
+  private getRuntimeInspector(): RuntimeInspector {
+    return this.runtimeInspector ??= new RuntimeInspector({
+      world: this.world, materials: this.materialParameters, sessionGeneration: this.sessionGeneration,
+      canWrite: () => this.sessionMode === "simulate" && !this.simulationQuiescent, stopped: () => this.stopped,
+      ready: actor => this.inspectorActorReady(actor),
+      renderSlot: actor => this.slotByActor.get(actor),
+      resolvePick: (guid, slot) => { const actor = this.slotOwners.get(slot); return actor && !actor.destroyed && actor.world === this.world && actor.guid === guid ? actor : null; },
+      sceneIdentity: actor => {
+        const stream = this.actorStream.get(actor);
+        if (stream) return `stream:${stream.actor.guid}:${stream.loadId}`;
+        if (actor.sceneLayerId) return `layer:${actor.sceneLayerId}:${this.layerLoads.get(actor.sceneLayerId)?.loadId ?? -1}`;
+        return `scene:${this.playSceneGuid}:${this.sceneLoadId}:${this.world.currentScene?.guid ?? ""}`;
+      },
+      boundary: () => ({ tickIndex: this.world.clock.tickIndex, frameId: this.frameId,
+        commandRevision: this.commandRevision, structuralRevision: this.world.structuralRevision }),
+      applyProperty: (target, key, value) => {
+        const materialAssignment = target instanceof ActorComponent && key === "materialGuid";
+        const priorSourcePresent = materialAssignment && target.variables.has("materialSource");
+        const priorSource = materialAssignment ? target.getVariable("materialSource") : undefined;
+        const prior = target instanceof Actor && key === "generateHitEvents" ? target.generateHitEvents :
+          target instanceof Actor && key === "generateOverlapEvents" ? target.generateOverlapEvents : target.getVariable(key);
+        const apply = (next: unknown) => {
+          if (target instanceof Actor && key === "generateHitEvents") target.generateHitEvents = next as boolean;
+          else if (target instanceof Actor && key === "generateOverlapEvents") target.generateOverlapEvents = next as boolean;
+          else target.setVariable(key, next);
+          if (target instanceof ActorComponent) this.refreshRuntimeComponent(target, key);
+        };
+        // An explicit None is a real override too, including an untouched model slot.
+        if (materialAssignment) target.setVariable("materialSource", "override");
+        try { apply(value); } catch (error) {
+          if (materialAssignment) {
+            if (priorSourcePresent) target.setVariable("materialSource", priorSource);
+            else target.variables.delete("materialSource");
+          }
+          apply(prior); throw error;
+        }
+        if (target instanceof Actor && key === "visible") this.publishInspectorSnapshot(target);
+      },
+      applyTransform: (target, transform, space) => {
+        const prior = target.transform;
+        const actor = target instanceof Actor ? target : target.owner!;
+        const affected = [actor];
+        if (target instanceof Actor) {
+          const ids = new Set([actor.guid]);
+          let changed = true;
+          while (changed) {
+            changed = false;
+            for (const candidate of this.world.getActors()) {
+              if (candidate.destroyed || candidate.sceneLayerId !== actor.sceneLayerId || ids.has(candidate.guid) || !ids.has(String(candidate.getVariable("parentId") ?? ""))) continue;
+              affected.push(candidate); ids.add(candidate.guid); changed = true;
+            }
+          }
+        }
+        if (affected.some(entry => entry.components.some(component => !component.destroyed && component.classId === "RagdollComponent")))
+          throw new Error("This transform moves an articulated body; preserving its live state requires a new session.");
+        const apply = () => {
+          for (const affectedActor of affected) {
+            this.ragdolls.retire(affectedActor);
+            const sync = affectedActor.sceneLayerId ? this.overlayPhysicsSync : this.physicsSync;
+            sync.teleportActor(affectedActor, this.world);
+          }
+        };
+        target.transform = runtimeEditLocalTransform(this.world, target, transform, space);
+        try { apply(); } catch (error) { target.transform = prior; apply(); throw error; }
+        if (target instanceof ActorComponent) {
+          const slotId = this.slotByActor.get(actor);
+          if (slotId !== undefined) this.emitComponentTransforms(actor, slotId);
+        }
+        this.publishInspectorSnapshot(actor);
+      },
+      applyMaterial: (component, name, value) => {
+        const material = component.getVariable("materialObject");
+        return material instanceof MaterialObject && this.setMaterialParameter(material, name, value, true);
+      },
+    });
+  }
+
+  private getMaterialEditGate(): RuntimeMaterialEditGate {
+    return this.materialEditGate ??= new RuntimeMaterialEditGate({ generation: this.sessionGeneration,
+      inspector: this.getRuntimeInspector(), materials: this.materialParameters,
+      slot: component => component.owner ? this.slotByActor.get(component.owner) : undefined,
+      acquireSource: this.demandAssetCatalog ? async (component, guids, signal) => {
+        const result = await this.assetPreloads.acquire(guids, component.guid, {}, signal);
+        if (!result.success) throw new Error(result.errorMessage || "Material source preparation failed.");
+        return result.preloadId;
+      } : undefined,
+      releaseSource: id => this.assetPreloads.release(id),
+      emit: command => this.emit(command),
+      execute: (request, preparation) => {
+        const emission = { preparation, emitted: false }; this.materialEditEmission = emission;
+        try { return { result: this.getRuntimeInspector().execute(request), emitted: emission.emitted }; }
+        finally { this.materialEditEmission = null; }
+      },
+      restore: component => {
+        const actor = component.owner; const slot = actor ? this.slotByActor.get(actor) : undefined;
+        if (slot === undefined) throw new Error("Material owner is unavailable.");
+        this.emitMaterialAssignments([component], slot, true);
+        const material = component.getVariable("materialObject");
+        if (material instanceof MaterialObject) for (const [name, value] of Object.entries(this.materialParameters.describe(material) ?? {}))
+          this.setMaterialParameter(material, name, value, true);
+      },
+    });
+  }
+
+  applyRuntimeMaterialEditResult(message: Extract<ControlMessage, { type: "runtimeMaterialEditPrepared" | "runtimeMaterialEditApplied" }>): void {
+    if (!this.materialEditGate || this.stopped) return;
+    queueMicrotask(() => { if (!this.stopped) this.materialEditGate?.receive(message); });
+  }
+
+  private publishInspectorSnapshot(actor: Actor): void {
+    // Presentation identity advances, while tick index, delays and physics do not.
+    this.frameId++;
+    const slotId = this.slotByActor.get(actor);
+    if (slotId !== undefined) this.emit({ type: "resetActorInterpolation", actorGuid: actor.guid, slotId, frameId: this.frameId });
+    this.publishSnapshot();
+  }
+
+  requestRuntimeInspector(request: RuntimeInspectorRequest): Promise<RuntimeInspectorResult> {
+    const inspector = this.getRuntimeInspector();
+    const invalid = inspector.validateRequest(request) ??
+      (request.requestId <= this.lastInspectorRequestId ? "Invalid or superseded Inspector request ID." :
+        this.inspectorRequests.length >= 32 ? "Runtime Inspector request queue is full." : null);
+    if (invalid) return Promise.resolve(inspector.result(request, invalid));
+    this.lastInspectorRequestId = request.requestId;
+    const result = new Promise<RuntimeInspectorResult>(resolve => this.inspectorRequests.push({ request: structuredClone(request), resolve }));
+    if (!this.inspectorScheduled) {
+      this.inspectorScheduled = true;
+      queueMicrotask(() => this.flushInspectorRequests());
+    }
+    return result;
+  }
+
+  cancelRuntimeInspector(request: { sessionGeneration: number; requestId: number }): void {
+    if (request.sessionGeneration !== this.sessionGeneration || !Number.isSafeInteger(request.requestId)) return;
+    const index = this.inspectorRequests.findIndex(entry => entry.request.requestId === request.requestId);
+    if (index !== -1) {
+      const [entry] = this.inspectorRequests.splice(index, 1);
+      entry!.resolve(this.getRuntimeInspector().result(entry!.request, "Inspector request cancelled."));
+    }
+    this.materialEditGate?.cancelRequest(request.requestId);
+  }
+
+  private flushInspectorRequests(): void {
+    this.inspectorScheduled = false;
+    const inspector = this.getRuntimeInspector();
+    for (const { request, resolve } of this.inspectorRequests.splice(0)) {
+      if (this.deferMaterialEdits && !this.stopped && this.getMaterialEditGate().stage(request, resolve)) continue;
+      resolve(inspector.execute(request));
+    }
+  }
+
+  private boundaryResult(request: SessionBoundaryRequest, reason?: string): SessionBoundaryResult {
+    const pauseReasons = new Set(this.pauseReasons);
+    if (this.streamBlockingCount > 0) pauseReasons.add("loading");
+    return { sessionGeneration: request.sessionGeneration, requestId: request.requestId, success: !reason,
+      ...(reason ? { reason } : {}), paused: pauseReasons.size > 0, pauseReasons: [...pauseReasons],
+      tickIndex: this.world.clock.tickIndex, sceneAssetGuid: this.playSceneGuid,
+      sceneLoadId: this.sceneLoadId, commandRevision: this.commandRevision };
+  }
+
+  private flushBoundaryRequests(): void {
+    this.boundaryScheduled = false;
+    for (const { request, resolve } of this.boundaryRequests.splice(0)) {
+      if (this.stopped) { resolve(this.boundaryResult(request, "The game session has stopped.")); continue; }
+      try {
+        if (request.action.kind === "pause") this.setPauseReason(request.action.reason, request.action.paused);
+        else this.resetInputState();
+        resolve(this.boundaryResult(request));
+      } catch (error) {
+        resolve(this.boundaryResult(request, error instanceof Error ? error.message : "Session boundary operation failed."));
+      }
+    }
+  }
+
+  private resetInputState(): void {
+    this.input.drain();
+    this.resolvedInput = this.resolver.reset();
+    this.connectionBox.current = this.resolvedInput.gamepadConnections;
+  }
+
   pushInput(events: readonly RawInputEvent[]): void {
+    if (this.stopped || this.paused) return;
     for (const event of events) {
       this.input.push(event);
     }
@@ -6294,6 +6764,10 @@ class InProcessRuntime implements RuntimeDriver {
   tick(): void {
     if (!this.running || this.paused || this.saveBoundaryActive || this.streamBlockingCount > 0 || this.processingTick) return;
     this.processingTick = true;
+    const profiling = this.diagnosticRecorder?.recording === true;
+    const profileStarted = profiling ? nowMs() : 0;
+    const previousTick = profiling ? this.world.clock.tickIndex : 0;
+    if (profiling) this.profileTickPublishMs = 0;
     try {
       this.runTick();
     } catch (error) {
@@ -6302,6 +6776,12 @@ class InProcessRuntime implements RuntimeDriver {
       if (!isInfiniteLoopError(error)) throw error;
     } finally {
       this.processingTick = false;
+      if (profiling && this.world.clock.tickIndex > previousTick) this.diagnosticRecorder?.record(this.world.clock.tickIndex,
+        nowMs() - profileStarted, this._lastScriptMs, this._lastPhysicsMs, this.profileTickPublishMs);
+      if (this.pendingPauseChanges.size) {
+        for (const [reason, paused] of this.pendingPauseChanges) this.setPauseReason(reason, paused);
+        this.pendingPauseChanges.clear();
+      }
     }
   }
 
@@ -6447,12 +6927,14 @@ class InProcessRuntime implements RuntimeDriver {
           ),
         })),
       });
+      if (!this.trace.isRecording) this.finalizeTrace();
     }
   }
 
   advance(elapsedSeconds: number): void {
     if (!this.running || this.paused || this.streamBlockingCount > 0) return;
-    this.accumulator += elapsedSeconds;
+    if (this.resetElapsed) { this.resetElapsed = false; elapsedSeconds = 0; }
+    this.accumulator += Number.isFinite(elapsedSeconds) ? Math.max(0, elapsedSeconds) : 0;
     let steps = 0;
     // Hosts copy the snapshot once after advance(), so catch-up ticks keep their
     // overlay layout and removal pass but compose and write only the burst's
@@ -6460,9 +6942,9 @@ class InProcessRuntime implements RuntimeDriver {
     const outermost = !this.deferSnapshotWrites;
     this.deferSnapshotWrites = true;
     try {
-      while (this.accumulator >= this.dt && steps < this.maxCatchUp) {
+      while (!this.paused && !this.stopped && this.accumulator >= this.dt && steps < this.maxCatchUp) {
         this.tick();
-        this.accumulator -= this.dt;
+        this.accumulator = Math.max(0, this.accumulator - this.dt);
         steps += 1;
       }
     } finally {
@@ -6506,6 +6988,7 @@ class InProcessRuntime implements RuntimeDriver {
     frameId = this.frameId,
     hint?: { btNodeId?: string; assetGuid?: string },
   ): RuntimeDiagnostic | null {
+    if (error instanceof RuntimeContinuationCancelled && this.stopped) return null;
     const err = error instanceof Error ? error : new Error(String(error));
     const stack = err.stack ?? "";
     const anchor = mapStackToAnchor(stack, this.anchors);
@@ -6580,6 +7063,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.runPublishPrelude();
     this.writeSnapshot(this.frameId, this.world.clock.tickIndex, this._lastScriptMs, this._lastPhysicsMs);
     this._lastPublishMs = nowMs() - start;
+    if (this.diagnosticRecorder?.recording) this.profileTickPublishMs += this._lastPublishMs;
   }
 
   /** Per-tick part of a deferred publish: overlay layout, removals and their commands happen in this tick. */
@@ -6592,7 +7076,9 @@ class InProcessRuntime implements RuntimeDriver {
     header.scriptMs = this._lastScriptMs;
     header.physicsMs = this._lastPhysicsMs;
     this.snapshotWritePending = true;
-    this.pendingPublishMs += nowMs() - start;
+    const publishMs = nowMs() - start;
+    this.pendingPublishMs += publishMs;
+    if (this.diagnosticRecorder?.recording) this.profileTickPublishMs += publishMs;
   }
 
   /**
@@ -6615,7 +7101,9 @@ class InProcessRuntime implements RuntimeDriver {
     else this.applyOverlayLayouts();
     const header = this.pendingSnapshotHeader;
     this.writeSnapshot(header.frameId, header.tickIndex, header.scriptMs, header.physicsMs);
-    this._lastPublishMs = spent + (nowMs() - start);
+    const publishMs = nowMs() - start;
+    this._lastPublishMs = spent + publishMs;
+    this.diagnosticRecorder?.addPublishCost(header.tickIndex, publishMs);
   }
 
   /**
@@ -6703,6 +7191,22 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private emit(command: CommandMessage): void {
+    if (this.sessionMode === "simulate" && (command.type === "spawn" || command.type === "assignMesh")) {
+      const actor = this.slotOwners.get(command.slotId);
+      if (actor) command = command.type === "spawn" ? { ...command, runtimeIdentity: this.getRuntimeInspector().identity(actor) } :
+        { ...command, runtimeComponentTokens: actor.components.filter(component => !component.destroyed).map(component => ({
+          componentGuid: component.guid, componentToken: this.getRuntimeInspector().identity(component).componentToken! })) };
+    }
+    const emission = this.materialEditEmission;
+    if (emission && (command.type === "assignMaterial" || command.type === "setMaterialParameter") &&
+      command.slotId === emission.preparation.slotId && command.componentId === emission.preparation.componentId &&
+      command.materialAssetGuid === emission.preparation.materialGuid &&
+      (emission.preparation.parameterName === undefined ? command.type === "assignMaterial" :
+        command.type === "setMaterialParameter" && command.parameterName === emission.preparation.parameterName)) {
+      command = { ...command, preparedEditToken: emission.preparation.editToken }; emission.emitted = true;
+    }
+
+    this.commandRevision++;
     // Every log line and Print String reaches the ring that `dumplog` and the
     // session report read, not only the ones routed through reportLog.
     if (command.type === "log") {

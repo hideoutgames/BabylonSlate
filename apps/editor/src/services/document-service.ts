@@ -42,6 +42,14 @@ export interface OpenDocument {
   background?: boolean;
 }
 
+export interface SimulationDocumentLease {
+  readonly baseline: OpenDocument;
+  /** Synchronous capability: no public writable window exists during admission. */
+  apply<T>(operation: (scene: SerializedScene) => { scene: SerializedScene; value: T }):
+    { ok: true; value: T } | { ok: false; reason: string };
+  release(): void;
+}
+
 export interface DocumentRegistryState {
   openDocuments: Map<string, OpenDocument>;
   tabOrder: string[];
@@ -66,6 +74,14 @@ export type DocumentIdentityEvent =
   | { type: "repathed"; oldId: string; newId: string };
 
 export type DocumentIdentityListener = (event: DocumentIdentityEvent) => void;
+
+/** Session-owned authoring protection, independent of source-control locks. */
+export interface DocumentAuthoringLock {
+  readonly readOnly: boolean;
+  readonly reason: string | null;
+  /** Advances on every lease change, including a lock acquired and released during I/O. */
+  readonly revision: number;
+}
 
 /**
  * One revision per document kind. A kind's revision advances whenever what a
@@ -114,12 +130,24 @@ function sameLayout(
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+function sameSceneContent(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (!left || !right || typeof left !== "object" || typeof right !== "object" || Array.isArray(left) !== Array.isArray(right)) return false;
+  const a = left as Record<string, unknown>, b = right as Record<string, unknown>;
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every(key => Object.hasOwn(b, key) && sameSceneContent(a[key], b[key]));
+}
+
 type TabsSnapshot = { order: readonly string[]; foreground: readonly string[]; active: string | null };
 
 export class DocumentService {
+  private readonly savedScenes = new WeakMap<OpenDocument, SerializedScene>();
   private readonly assetScopes = new Map<string, AssetLoadScope>();
   private readonly pendingLoads = new Map<string, Set<AbortController>>();
   private readonly identityListeners = new Set<DocumentIdentityListener>();
+  private readonly authoringLocks = new Map<symbol, string>();
+  private readonly authoringLockListeners = new Set<() => void>();
+  private authoringLock: DocumentAuthoringLock = Object.freeze({ readOnly: false, reason: null, revision: 0 });
   private revisionSequence = 0;
   private revisions: DocumentRevisions = initialDocumentRevisions();
   private tabsRevision = 0;
@@ -129,6 +157,79 @@ export class DocumentService {
   private updateDirty(doc: OpenDocument): void {
     doc.dirty = documentContentIdentity(doc.content) !== this.savedContent.get(doc);
     if (doc.dirty) recordDocumentDirty(doc.ref.kind, doc.id);
+  }
+
+  getAuthoringLock(): DocumentAuthoringLock {
+    return this.authoringLock;
+  }
+
+  onAuthoringLockChange(listener: () => void): () => void {
+    this.authoringLockListeners.add(listener);
+    return () => { this.authoringLockListeners.delete(listener); };
+  }
+
+  /** Each owner releases only its own lock; repeating a release is harmless. */
+  lockAuthoring(reason: string): () => void {
+    const key = Symbol();
+    this.authoringLocks.set(key, reason.trim() || "Document authoring is read-only.");
+    this.publishAuthoringLock();
+    return () => {
+      if (this.authoringLocks.delete(key)) this.publishAuthoringLock();
+    };
+  }
+
+  /** The private lease alone can install its one fully admitted Simulation result. */
+  beginSimulationDocument(id: string): SimulationDocumentLease {
+    this.assertAuthoringWritable();
+    const document = this.state.openDocuments.get(id);
+    if (!document || document.ref.kind !== "scene" || !document.content) throw new Error("The Simulation Scene is not open.");
+    const baseline = Object.freeze({ ...document, ref: Object.freeze({ ...document.ref }) });
+    if (!document.dirty && !this.savedScenes.has(document)) this.savedScenes.set(document, document.content as SerializedScene);
+    const key = Symbol("simulation-document");
+    this.authoringLocks.set(key, "Read-only during Simulation Play");
+    this.publishAuthoringLock();
+    let applied = false;
+    return {
+      baseline,
+      apply: operation => {
+        if (!this.authoringLocks.has(key) || applied) return { ok: false, reason: "The Simulation document lease is no longer current." };
+        if (this.authoringLocks.size !== 1) return { ok: false, reason: "Another editor operation owns authoring protection." };
+        const current = this.state.openDocuments.get(id);
+        if (current !== document || current.ref.kind !== "scene" || current.content !== baseline.content || current.ref.path !== baseline.ref.path || current.dirty !== baseline.dirty) {
+          return { ok: false, reason: "The authoring Scene changed after Simulation began." };
+        }
+        // The operation must synchronously admit history before returning a changed
+        // scene. All authoring guards remain locked while it runs.
+        const result = operation(baseline.content as SerializedScene);
+        if (result.scene !== baseline.content) {
+          current.content = result.scene; current.dirty = true; applied = true;
+          current.ref = { ...current.ref, label: `${result.scene.name} ${documentKindLabel(current.ref.kind)}` };
+          this.advanceKinds([current.ref.kind]);
+          recordDocumentDirty(current.ref.kind, id);
+        }
+        return { ok: true, value: result.value };
+      },
+      release: () => { if (this.authoringLocks.delete(key)) this.publishAuthoringLock(); },
+    };
+  }
+
+  assertAuthoringWritable(): void {
+    if (this.authoringLock.readOnly) throw new Error(this.authoringLock.reason!);
+  }
+
+  /** Navigation may close a clean asset tab; source-scene/dirty closure needs Stop. */
+  assertDocumentCanClose(id: string): void {
+    const document = this.state.openDocuments.get(id);
+    if (document && (document.ref.kind === "scene" || document.dirty)) this.assertAuthoringWritable();
+  }
+
+  private publishAuthoringLock(): void {
+    this.authoringLock = Object.freeze({
+      readOnly: this.authoringLocks.size > 0,
+      reason: this.authoringLocks.values().next().value ?? null,
+      revision: this.authoringLock.revision + 1,
+    });
+    for (const listener of [...this.authoringLockListeners]) listener();
   }
 
   /** `opened` fires when a new tab entry is created; `repathed` on every path change. */
@@ -284,6 +385,8 @@ export class DocumentService {
     layouts: ProjectLayouts,
     sceneLoadOptions?: DocumentLoadOptions,
   ): Promise<void> {
+    this.assertAuthoringWritable();
+    const authoringLock = this.authoringLock;
     sceneLoadOptions?.signal?.throwIfAborted();
     for (const pending of this.pendingLoads.values()) for (const controller of pending) controller.abort();
     this.pendingLoads.clear();
@@ -317,6 +420,7 @@ export class DocumentService {
       .find((id) => parseDocumentId(id)?.kind === "scene");
 
     for (const id of savedOrder) {
+      if (this.authoringLock !== authoringLock) throw new Error("Project initialization crossed an authoring lock.");
       const restoredId = migrateRestoredDocumentId(id, typeForPath);
       const parsed = parseDocumentId(restoredId);
       if (!parsed || !isAssetDocumentKind(parsed.kind)) continue;
@@ -340,6 +444,7 @@ export class DocumentService {
     }
 
     sceneLoadOptions?.signal?.throwIfAborted();
+    if (this.authoringLock !== authoringLock) throw new Error("Project initialization crossed an authoring lock.");
     const restored = this.tabsSnapshot();
     this.pinStickyTabs();
 
@@ -389,6 +494,11 @@ export class DocumentService {
       return id;
     }
 
+    // The current world document is the session baseline. New asset tabs are
+    // navigation, but a late Scene read must never replace that protected source.
+    const authoringLock = this.authoringLock;
+    if (ref.kind === "scene") this.assertAuthoringWritable();
+
     const controller = new AbortController();
     const pending = this.pendingLoads.get(id) ?? new Set<AbortController>();
     pending.add(controller);
@@ -421,6 +531,10 @@ export class DocumentService {
         ...(options?.background ? { background: true } : {}),
       };
 
+      if (ref.kind === "scene") {
+        this.assertAuthoringWritable();
+        if (this.authoringLock !== authoringLock) throw new Error("Scene loading crossed an authoring lock; retry after stopping the session.");
+      }
       options?.beforeCommit?.(ref);
       controller.signal.throwIfAborted();
       if (this.state !== owner) {
@@ -433,6 +547,7 @@ export class DocumentService {
       const alreadyOpened = current !== undefined && current.content !== null;
       if (!alreadyOpened) {
         this.state.openDocuments.set(id, entry);
+        if (entry.ref.kind === "scene" && entry.content) this.savedScenes.set(entry, entry.content as SerializedScene);
         this.savedContent.set(entry, documentContentIdentity(content));
         if (!this.state.tabOrder.includes(id)) this.state.tabOrder.push(id);
         if (scope) this.assetScopes.set(id, scope);
@@ -477,6 +592,7 @@ export class DocumentService {
     if (isContentBrowserId(id)) {
       return;
     }
+    this.assertDocumentCanClose(id);
 
     for (const controller of this.pendingLoads.get(id) ?? []) controller.abort();
     this.pendingLoads.delete(id);
@@ -501,6 +617,7 @@ export class DocumentService {
    * Content Browser stays open. Returns the closed document ids.
    */
   closeDocumentsForPaths(paths: Iterable<string>): string[] {
+    this.assertAuthoringWritable();
     const pathSet = paths instanceof Set ? paths : new Set(paths);
     const ids: string[] = [];
     for (const doc of this.state.openDocuments.values()) {
@@ -523,6 +640,7 @@ export class DocumentService {
     newPath: string,
   ): { oldId: string; newId: string } | null {
     if (oldPath === newPath) return null;
+    this.assertAuthoringWritable();
     const oldId = documentId({ kind, path: oldPath });
     const newId = documentId({ kind, path: newPath });
     this.retargetOpenDocument(kind, oldId, newId, newPath);
@@ -550,6 +668,8 @@ export class DocumentService {
       id: newId,
       ref: createDocumentRef(kind, newPath, doc.content ?? undefined),
     };
+    const savedScene = this.savedScenes.get(doc);
+    if (savedScene) this.savedScenes.set(next, savedScene);
     this.state.openDocuments.set(newId, next);
     const savedIdentity = this.savedContent.get(doc);
     if (savedIdentity !== undefined) this.savedContent.set(next, savedIdentity);
@@ -627,6 +747,7 @@ export class DocumentService {
   }
 
   updateScene(id: string, scene: SerializedScene): void {
+    this.assertAuthoringWritable();
     const doc = this.state.openDocuments.get(id);
     if (!doc || !isSceneWorkspaceKind(doc.ref.kind)) return;
     doc.content = scene;
@@ -638,7 +759,16 @@ export class DocumentService {
     };
   }
 
+  /** Undo/Redo compares scene content to the last successful saved revision. */
+  updateSceneFromHistory(id: string, scene: SerializedScene): void {
+    this.updateScene(id, scene);
+    const document = this.state.openDocuments.get(id);
+    const saved = document && this.savedScenes.get(document);
+    if (document && saved) document.dirty = !sameSceneContent(saved, scene);
+  }
+
   updateGraph(id: string, graph: SerializedGraph): void {
+    this.assertAuthoringWritable();
     const doc = this.state.openDocuments.get(id);
     if (!doc || doc.ref.kind !== "graph") return;
     doc.content = graph;
@@ -647,6 +777,7 @@ export class DocumentService {
   }
 
   updateAssetDocument(id: string, content: Record<string, unknown>): void {
+    this.assertAuthoringWritable();
     const doc = this.state.openDocuments.get(id);
     if (
       !doc ||
@@ -707,6 +838,7 @@ export class DocumentService {
     for (const snapshot of saved) {
       const doc = this.state.openDocuments.get(snapshot.id);
       if (doc && doc.ref.kind !== "content-browser" && doc.ref.path === snapshot.ref.path) {
+        if (doc.ref.kind === "scene" && snapshot.content) this.savedScenes.set(doc, snapshot.content as SerializedScene);
         const savedIdentity = documentContentIdentity(snapshot.content);
         this.savedContent.set(doc, savedIdentity);
         const dirty = documentContentIdentity(doc.content) !== savedIdentity;
@@ -718,9 +850,11 @@ export class DocumentService {
   }
 
   replaceLoadedContent(id: string, content: DocumentContent): void {
+    this.assertAuthoringWritable();
     const doc = this.state.openDocuments.get(id);
     if (!doc || doc.ref.kind === "content-browser") return;
     doc.content = content;
+    if (doc.ref.kind === "scene") this.savedScenes.set(doc, content as SerializedScene);
     this.savedContent.set(doc, documentContentIdentity(content));
     doc.dirty = false;
     this.advanceKinds([doc.ref.kind]);
@@ -728,6 +862,7 @@ export class DocumentService {
 
   /** Update in-memory content without changing the dirty flag. */
   patchLoadedContent(id: string, content: DocumentContent): void {
+    this.assertAuthoringWritable();
     const doc = this.state.openDocuments.get(id);
     if (!doc || doc.ref.kind === "content-browser") return;
     doc.content = content;

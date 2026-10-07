@@ -1,3 +1,5 @@
+import { activeRenderFrameCapture } from "./render-frame-report";
+import { isSceneGameTimePaused } from "./scene-game-time";
 import {
   Color4, Constants, LinesMesh, Material, Matrix, MultiMaterial, Quaternion, RawTexture,
   RenderTargetTexture, Texture, UniversalCamera, Vector3,
@@ -212,7 +214,7 @@ export class RenderTargetCaptures {
     return { resource: texture, key: `renderTargetTexture:${guid}`, release() {} };
   }
   render(): void {
-    if (this.disposed || drawing.has(this.scene)) return;
+    if (this.disposed || drawing.has(this.scene) || isSceneGameTimePaused(this.scene)) return;
     this.frameOwners.clear();
     for (const [actorId, capture] of this.captures) {
       const settings = capture.settings;
@@ -278,7 +280,13 @@ export class RenderTargetCaptures {
           this.retireCaptureMaterial(target, material);
         }
       }
-      if (!this.draw(target, destination)) continue;
+      const frameCapture = activeRenderFrameCapture(this.scene.getEngine());
+      const drawn = frameCapture
+        ? frameCapture.stage(this.scene, { name: `Render Target Capture: ${guid}`, kind: "auxiliary",
+          actorGuid: actorId, detail: `${destination.getSize().width} × ${destination.getSize().height}; output asset ${guid}` },
+          () => this.draw(target, destination))
+        : this.draw(target, destination);
+      if (!drawn) continue;
       capture.requested = false;
       const wasPublished = target.published;
       if (target.spare) {

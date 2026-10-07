@@ -1011,6 +1011,7 @@ describe("collectExportReachability", () => {
   it("includes mesh materials, post-process stack materials, and header dependencies", () => {
     const mesh = createMeshComponent("mesh-1", "box");
     mesh.properties.materialGuid = "mat-rock";
+    mesh.materialInstance = { materialGuid: "mat-rock", parameters: { Albedo: { kind: "texture", textureAssetGuid: "tex-instance" } } };
     const scene: SerializedScene = {
       ...createDefaultScene(),
       settings: {
@@ -1039,6 +1040,7 @@ describe("collectExportReachability", () => {
         asset({ guid: "fn-tint", type: "MaterialFunction", name: "Tint" }),
         asset({ guid: "tex-albedo", type: "Texture", name: "Albedo" }),
         asset({ guid: "tex-pass-mask", type: "Texture", name: "Pass Mask" }),
+        asset({ guid: "tex-instance", type: "Texture", name: "Instance Texture" }),
         asset({ guid: "unused-mat", type: "Material", name: "Unused" }),
       ],
       pluginEnabledGuids: new Set(),
@@ -1054,6 +1056,7 @@ describe("collectExportReachability", () => {
         "mat-rock",
         "mat-bloom",
         "tex-pass-mask",
+        "tex-instance",
         "fn-tint",
         "tex-albedo",
       ]),

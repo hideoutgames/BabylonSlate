@@ -60,7 +60,7 @@ const {
       setDrawMeshCollision: vi.fn(),
       setSelectedActors: vi.fn(),
       syncSelectionDebug: vi.fn(),
-      gizmos: { setTool: vi.fn(), setSnap: vi.fn() },
+      gizmos: { setTool: vi.fn(), setSpace: vi.fn(), setSnap: vi.fn() },
       grid: { setVisible: vi.fn() },
       setGridSettings: vi.fn(),
     },
@@ -97,7 +97,11 @@ const {
     createEngineMock,
     commitComponentTransforms: vi.fn(),
     commitComponentProperties: vi.fn(),
-    viewportState: { mode: "3d" as "3d" | "2d", tool: "translate" as "translate" | "rotate" | "scale" },
+    viewportState: {
+      mode: "3d" as "3d" | "2d",
+      tool: "translate" as "translate" | "rotate" | "scale",
+      space: "world" as "world" | "local",
+    },
     collectPlayWaterContent: vi.fn(async () => new Map()),
     collectPlayRenderTargets: vi.fn(async () => ({ renderTargets: new Map(), renderTargetTextures: new Map() })),
     collectPlayMaterialLibrary: vi.fn(async () => ({
@@ -229,6 +233,7 @@ vi.mock("../context/document-workspace-context", () => ({
 vi.mock("../context/scene-editing-context", () => ({
   useSceneEditing: () => ({
     gizmoTool: viewportState.tool,
+    gizmoSpace: viewportState.space,
     snapEnabled: false,
     viewportMode: viewportState.mode,
     joystickEnabled: false,
@@ -315,6 +320,7 @@ describe("PrefabViewportPanel engine", () => {
     handle.editor.syncSelectionDebug.mockClear();
     viewportState.mode = "3d";
     viewportState.tool = "translate";
+    viewportState.space = "world";
     prefabDocs.openDocuments = [];
     prefabDocs.assetRegistry = null;
     prefabDocs.registryEpoch = 0;
@@ -555,6 +561,7 @@ describe("PrefabViewportPanel engine", () => {
 
   it("rebinds Prefab when the shared Engine generation changes", () => {
     viewportState.tool = "rotate";
+    viewportState.space = "local";
     const first = { id: "engine-1" };
     const second = { id: "engine-2" };
     play.ensureSharedEngine.mockReturnValue(first);
@@ -575,11 +582,13 @@ describe("PrefabViewportPanel engine", () => {
     );
     handle.editor.syncSelectionDebug.mockClear();
     handle.editor.gizmos.setTool.mockClear();
+    handle.editor.gizmos.setSpace.mockClear();
     play.ensureSharedEngine.mockReturnValue(second);
     play.sharedEngineGeneration = 2;
     rerender(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
     expect(dispose).toHaveBeenCalled();
     expect(handle.editor.gizmos.setTool).toHaveBeenCalledWith("rotate");
+    expect(handle.editor.gizmos.setSpace).toHaveBeenCalledWith("local");
     expect(createEngineMock.mock.calls.at(-1)?.[1]).toMatchObject({
       sharedEngine: second,
       present: "rtt",

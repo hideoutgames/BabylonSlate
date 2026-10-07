@@ -24,6 +24,19 @@ function stubPlayer(): Map<string, Uint8Array> {
 }
 
 describe("exportGame", () => {
+  it("excludes Preview diagnostics from ordinary exports even when debugging is enabled", async () => {
+    const playerFiles = stubPlayer();
+    playerFiles.set("player-preview-diagnostics.js", new TextEncoder().encode("export const previewOnly = true"));
+    const options = { bundleDebugger: true, startupSceneGuid: "scene-1", scripts: [], assets: [], playerFiles,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS };
+    const ordinary = await exportGame(options);
+    if (!ordinary.ok) throw new Error(ordinary.error);
+    expect(ordinary.value.files.has("player-preview-diagnostics.js")).toBe(false);
+    const preview = await exportGame({ ...options, includePreviewDiagnostics: true });
+    if (!preview.ok) throw new Error(preview.error);
+    expect(preview.value.files.has("player-preview-diagnostics.js")).toBe(true);
+    expect(preview.value.manifest).not.toHaveProperty("includePreviewDiagnostics");
+  });
   it("marks enabled project render dependencies as startup systems while deferred assets remain catalog-only", async () => {
     const result = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", scripts: [],
       renderSettings: { ...DEFAULT_RENDER_PROJECT_SETTINGS, effects: { ...DEFAULT_RENDER_EFFECTS, colorGrading: { enabled: true, lutTextureGuid: "lut" } } },

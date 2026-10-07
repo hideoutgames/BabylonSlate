@@ -219,6 +219,46 @@ it("finds the trace budget and persists MiB edits as bytes", async () => {
   }
 });
 
+it("finds and persists the local Keep Simulation Changes preference without changing profiling or Trace", async () => {
+  const store = createAppSettingsStore();
+  const previous = await store.load();
+  await store.update(settings => { settings.debuggerDefaults.keepSimulationChanges = false; });
+  const view = render(<SettingsModal open onOpenChange={() => {}} scope="engine" />);
+  try {
+    fireEvent.change(screen.getByRole("textbox", { name: "Search settings" }), { target: { value: "keep simulation" } });
+    fireEvent.click(screen.getByRole("button", { name: /Keep Simulation Changes/ }));
+    const toggle = await screen.findByRole("switch", { name: "Keep Simulation Changes" });
+    await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("false"));
+    fireEvent.click(toggle);
+    await waitFor(async () => expect((await store.load()).debuggerDefaults.keepSimulationChanges).toBe(true));
+    const saved = await store.load();
+    expect(saved.traceByteBudget).toBe(previous.traceByteBudget);
+    expect(saved.debuggerDefaults.profileDurationSeconds).toBe(previous.debuggerDefaults.profileDurationSeconds);
+    expect(saved.debuggerDefaults.profileByteBudget).toBe(previous.debuggerDefaults.profileByteBudget);
+  } finally {
+    view.unmount();
+    await store.save(previous);
+  }
+});
+
+it("reveals the advanced profile budget through search without changing Trace", async () => {
+  const store = createAppSettingsStore();
+  const previous = await store.load();
+  const view = render(<SettingsModal open onOpenChange={() => {}} scope="engine" />);
+  try {
+    fireEvent.change(screen.getByRole("textbox", { name: "Search settings" }), { target: { value: "profile retained" } });
+    fireEvent.click(screen.getByRole("button", { name: /Profile Retained Data Budget/ }));
+    const input = await screen.findByLabelText("Profile Retained Data Budget (MiB)");
+    fireEvent.change(input, { target: { value: "24" } });
+    fireEvent.blur(input);
+    await waitFor(async () => expect((await store.load()).debuggerDefaults.profileByteBudget).toBe(24 * 1024 * 1024));
+    expect((await store.load()).traceByteBudget).toBe(previous.traceByteBudget);
+  } finally {
+    view.unmount();
+    await store.save(previous);
+  }
+});
+
 describe("SettingsModal project authoring", () => {
   it("explains a failed plugin import and re-enables importing", async () => {
     let reject!: (error: Error) => void;

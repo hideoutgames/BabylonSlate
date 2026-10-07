@@ -1,3 +1,6 @@
+import { useOptionalPlay } from "../context/play-context";
+import { SimulationInspector } from "./simulation-inspector";
+import { useSimulationInspectionStore } from "../context/simulation-inspection-context";
 import { saveGameVariableNames } from "../lib/save-game-property-rows";
 import { SceneLayerSwitcherFields } from "../components/scene-layer-switcher-fields";
 import { parseUIControl2DProperties } from "@babylonslate/core";
@@ -171,7 +174,16 @@ function PostProcessEntryId({ id, index }: { id: string; index: number }) {
   );
 }
 
-export function SceneDetailsPanel(_props: IDockviewPanelProps) {
+export function SceneDetailsPanel(props: IDockviewPanelProps) {
+  const { documentId } = useDocumentWorkspace();
+  const simulationDocumentId = useOptionalPlay()?.simulationDocumentId;
+  const store = useSimulationInspectionStore();
+  return store && simulationDocumentId === documentId
+    ? <SimulationInspector store={store} panel={props} />
+    : <AuthoringSceneDetailsPanel {...props} />;
+}
+
+function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applySceneChange, projectDocument, assetRegistry, registryEpoch } =

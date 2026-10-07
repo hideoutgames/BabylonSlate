@@ -1,4 +1,9 @@
+import { setSceneGameTimePaused } from "./scene-game-time";
+import { captureRenderFrame } from "./render-frame-report";
 import {
+  Animation,
+  PrecisionDate,
+  TransformNode,
   FreeCamera,
   MeshBuilder,
   NodeMaterial,
@@ -77,6 +82,23 @@ function host(engine = new NullEngine()) {
   scene.activeCamera = camera;
   return { engine, scene, camera };
 }
+
+it("captures the actual owner path and reports classic submission explicitly", async () => {
+  const { engine, scene, camera } = host();
+  const owner = new ForwardSceneFrameGraph(scene);
+  await owner.prepare(camera);
+  const graphFrame = captureRenderFrame(engine, () => owner.render(camera));
+  expect(graphFrame.value.path).toBe("frameGraph");
+  expect(graphFrame.report.stages.some((stage) => stage.kind === "task" && stage.completed)).toBe(true);
+  expect(graphFrame.report.graphs).toHaveLength(1);
+  scene.activeCameras = [camera];
+  const nativeFrame = captureRenderFrame(engine, () => owner.render(camera));
+  expect(nativeFrame.value.path).toBe("classic");
+  expect(nativeFrame.report.stages).toMatchObject([{ kind: "native", completed: true,
+    detail: expect.stringContaining("unavailable") }]);
+  expect(nativeFrame.report.tasks).toHaveLength(0);
+  owner.dispose();
+});
 
 it("retains the previous graph during a settings transaction and releases superseded candidates", async () => {
   const { scene, camera } = host();
@@ -860,4 +882,34 @@ it("gives the settings effect chain's offscreen scene color a real depth attachm
   } finally {
     graph.dispose();
   }
+});
+
+
+it.each(["frameGraph", "classic"] as const)("redraws %s without advancing native animation or catching up after resume", async (path) => {
+  const { scene, camera, engine } = host();
+  const moving = new TransformNode("moving", scene);
+  const animation = new Animation("move", "position.x", 60, Animation.ANIMATIONTYPE_FLOAT);
+  animation.setKeys([{ frame: 0, value: 0 }, { frame: 600, value: 100 }]);
+  moving.animations = [animation];
+  scene.beginAnimation(moving, 0, 600, true);
+  const clock = vi.spyOn(PrecisionDate, "Now", "get");
+  clock.mockReturnValue(engine.startTime + 1000);
+  const graph = new ForwardSceneFrameGraph(scene);
+  if (path === "classic") await new Promise<void>((resolve) => scene.freezeActiveMeshes(false, resolve));
+  expect(await graph.prepare(camera)).toMatchObject({ path });
+  graph.render(camera);
+  clock.mockReturnValue(engine.startTime + 1100);
+  graph.render(camera);
+  expect(moving.position.x).toBeCloseTo(1);
+  setSceneGameTimePaused(scene, true);
+  const frame = scene.getFrameId();
+  clock.mockReturnValue(engine.startTime + 11100);
+  expect(graph.render(camera)).toMatchObject({ path });
+  expect(scene.getFrameId()).toBe(frame + 1);
+  expect(moving.position.x).toBeCloseTo(1);
+  setSceneGameTimePaused(scene, false);
+  clock.mockReturnValue(engine.startTime + 11200);
+  graph.render(camera);
+  expect(moving.position.x).toBeCloseTo(2);
+  graph.dispose();
 });

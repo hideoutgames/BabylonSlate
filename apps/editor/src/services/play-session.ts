@@ -1,4 +1,4 @@
-import { createSaveStorageServer } from "@babylonslate/core";
+import { createSaveStorageServer, createSessionSaveStorage } from "@babylonslate/core";
 import { createSaveGameStorage } from "@babylonslate/vfs";
 import type { ScalabilityAcknowledgement, RenderProjectSettings } from "@babylonslate/core";
 import { buildMaterialParameterCatalog } from "@babylonslate/shader-graph";
@@ -76,6 +76,11 @@ import {
   type ScriptBundleEntry,
 } from "@babylonslate/bridge";
 import { attachInputCapture, type InputCaptureHandle } from "./input-capture";
+import { createSessionBoundaryClient } from "./session-boundary-client";
+import { RuntimeInspectorClient, type RuntimeInspectionAction, type RuntimeInspectionWriteOptions } from "./runtime-inspector-client";
+import { RuntimeMaterialEditHost } from "./runtime-material-edit-host";
+import { SimulationCaptureClient } from "./simulation-capture-client";
+import { getBuildIdentity } from "../lib/build-identity";
 import { observedMoveXFromEvents } from "../lib/play-input-observe";
 import { createGameWorkerHost, type GameWorkerHost } from "./game-worker-host";
 import { playLoadControl, type PlayPhysicsSettings } from "./play-physics";
@@ -86,6 +91,9 @@ import {
 } from "../lib/public-engine-assets";
 import {
   INFINITE_LOOP_DIAGNOSTIC_CODE,
+  SessionDiagnostics,
+  createDiagnosticOperationClient,
+  type PerformanceProfile,
   type TracePayload,
 } from "@babylonslate/debugger";
 
@@ -327,7 +335,12 @@ export interface PlaySession {
   runtime: RuntimeDriver | null;
   worker: GameWorkerHost | null;
   runtimeMode: "worker" | "in-process";
+  diagnostics: SessionDiagnostics<import("@babylonslate/render").RenderFrameReport>;
   setPaused: (paused: boolean) => void;
+  setPauseReason: (reason: import("@babylonslate/bridge").SessionPauseReason, paused: boolean) => Promise<import("@babylonslate/bridge").SessionBoundaryResult>;
+  setInputMode: (mode: "game" | "edit") => Promise<void>;
+  setEditorInputSuppressed: (suppressed: boolean) => Promise<void>;
+  requestPausedRedraw: () => { accepted: boolean; reason?: string };
   /** Last resolved Move.x from the in-process runtime; null on the worker path. */
   lastMoveX: () => number | null;
   /** Latest snapshot actor positions for e2e collision / motion. */
@@ -342,6 +355,10 @@ export interface PlaySession {
     line: string,
   ) => Promise<{ success: boolean; output: string }>;
   inspectWorld: () => Promise<DebugInspectSnapshot>;
+  /** Correlated typed selection and live edits; continuous drafts are coalesced. */
+  requestRuntimeInspection: (action: RuntimeInspectionAction, options?: RuntimeInspectionWriteOptions) => Promise<import("@babylonslate/bridge").RuntimeInspectorResult>;
+  /** Complete final canonical scene, captured before destructive Stop/End Play. */
+  captureSimulationScene: (maxBytes?: number) => Promise<import("@babylonslate/runtime").SimulationSceneCaptureResult>;
   /** Advance one simulation tick while paused. */
   step: () => void;
   lastTrace: () => TracePayload | null;
@@ -467,6 +484,14 @@ export function previewFixtureThrowHint(
  * to in-process runtime. Own Scene on the shared app Engine via registerView.
  */
 export function startPlaySession(options: {
+  /** Preview uses the packaged player, never this in-process presentation host. */
+  mode?: "play" | "simulate";
+  sessionGeneration?: number;
+  /** Transfer the preparation overlay, including wipe-on-start, to this owner. */
+  simulationSaveStorage?: ReturnType<typeof createSessionSaveStorage>;
+  /** Authoring asset identities admitted by preparation; this does not load assets. */
+  simulationAssetGuids?: readonly string[];
+  onRetentionUnavailable?: (reason: string) => void;
   saveGame?: import("@babylonslate/core").SaveGameConfiguration;
   renderSettings?: import("@babylonslate/render").RenderShadingSettings;
   consoleRenderSettings?: import("@babylonslate/render").RenderShadingSettings;
@@ -512,6 +537,7 @@ export function startPlaySession(options: {
   frameCap?: number;
   /** Engine Settings trace retention budget, captured when Play starts. */
   traceByteBudget?: number;
+  onProfile?: (profile: PerformanceProfile) => void;
   /** AnimationGraph documents for `loadAnimGraphs` / `registerAnimGraph`. */
   animGraphs?: ReadonlyArray<{ guid: string; document: unknown }>;
   /** BehaviourTree / Blackboard documents for worker load. */
@@ -613,6 +639,80 @@ export function startPlaySession(options: {
 
   let worker: GameWorkerHost | null = null;
   let runtime: RuntimeDriver | null = null;
+  // eslint-disable-next-line prefer-const -- runtime command handlers installed first may run before assignment.
+  let performanceDiagnostics: SessionDiagnostics<import("@babylonslate/render").RenderFrameReport> | undefined;
+  const diagnosticClient = createDiagnosticOperationClient({
+    sessionGeneration: options.sessionGeneration ?? 0,
+    send: async (request) => {
+      if (worker) { worker.postControl({ type: "diagnosticOperation", ...request }); return; }
+      if (!runtime) throw new Error("The game runtime is unavailable.");
+      diagnosticClient.receive(await runtime.requestDiagnosticOperation(request));
+    },
+  });
+  let gameInputMode: "game" | "edit" = "game";
+  let inputTransition = 0;
+  let inputTransitionPending = false;
+  let editorInputSuppressed = false;
+  let editorInputRoutingEnabled = false;
+  let acknowledgedPaused = false;
+  let lastBoundaryId = 0;
+  const requestedPauses = new Set<import("@babylonslate/bridge").SessionPauseReason>();
+  const boundaryClient = createSessionBoundaryClient(options.sessionGeneration ?? 0, (request) => {
+    if (worker) worker.postControl({ type: "sessionBoundary", ...request });
+    else if (runtime) void runtime.requestSessionBoundary(request).then((result) => boundaryClient.receive(result));
+    else throw new Error("The game runtime is unavailable");
+  });
+  const inspectorClient = new RuntimeInspectorClient({
+    sessionGeneration: options.sessionGeneration ?? 0,
+    cancel: request => {
+      if (worker) worker.postControl({ type: "cancelRuntimeInspector", ...request });
+      else runtime?.cancelRuntimeInspector(request);
+    },
+    send: async request => {
+      if (worker) { worker.postControl({ type: "runtimeInspector", ...request }); return; }
+      if (!runtime) throw new Error("The game runtime is unavailable");
+      const owner = runtime;
+      const result = await owner.requestRuntimeInspector(request);
+      if (runtime !== owner || stopped) return;
+      if (result.success && result.payload?.kind === "mutation") {
+        // Apply the authoritative edited pose before acknowledging it. This is
+        // snapshot publication only: paused edits never advance a game tick.
+        if (!owner.copySnapshot(snapBuf)) throw new Error("The runtime edit applied, but its presentation snapshot is unavailable.");
+        lastWorkerTickIndex = applyPlaySnapshotTick(lastWorkerTickIndex, snapBuf);
+        handle.pushSnapshot(snapBuf);
+        if (acknowledgedPaused) handle.requestPausedRedraw();
+      }
+      inspectorClient.receive(result);
+    },
+  });
+  const suppressGameInput = () => {
+    const suppressed = editorInputSuppressed || inputTransitionPending || gameInputMode === "edit" || acknowledgedPaused || requestedPauses.size > 0;
+    const routed = options.mode === "simulate" || editorInputRoutingEnabled;
+    // Ordinary Play keeps shared routing until something actually takes input away.
+    if (routed || suppressed) input?.setSuppressed(suppressed);
+    if (routed) handle.setGameInputEnabled(!suppressed);
+    return suppressed;
+  };
+  let pendingPauseBoundary: Promise<import("@babylonslate/bridge").SessionBoundaryResult> | null = null;
+  const synchronizePauseBoundary = (action: import("@babylonslate/bridge").SessionBoundaryRequest["action"]) => {
+    const work = boundaryClient.request(action).then(result => {
+      if (result.success && result.requestId > lastBoundaryId) {
+        lastBoundaryId = result.requestId;
+        acknowledgedPaused = result.paused;
+        handle.setGameTimePaused(result.paused);
+        if (!result.paused) last = performance.now();
+        suppressGameInput();
+      }
+      return result;
+    });
+    pendingPauseBoundary = work;
+    return work;
+  };
+  const setPauseReason: PlaySession["setPauseReason"] = (reason, paused) => {
+    if (paused) requestedPauses.add(reason); else requestedPauses.delete(reason);
+    suppressGameInput();
+    return synchronizePauseBoundary({ kind: "pause", reason, paused });
+  };
 
   const publishScalabilityStatus = (acknowledgement: ScalabilityAcknowledgement) => {
     if (worker) worker.postControl({ type: "scalabilityStatus", acknowledgement });
@@ -705,14 +805,17 @@ export function startPlaySession(options: {
       );
     },
     onTouchAxis: (controlId, value) => {
-      input?.ring.push({ kind: "touchAxis", controlId, value, tick: playInputStampTick(runtime?.getWorld().clock.tickIndex, lastWorkerTickIndex) });
+      if (options.mode === "simulate") input?.setTouchAxis(controlId, value);
+      else input?.ring.push({ kind: "touchAxis", controlId, value, tick: playInputStampTick(runtime?.getWorld().clock.tickIndex, lastWorkerTickIndex) });
     },
     onSceneLayerScroll: (event) => {
+      if (options.mode === "simulate" && suppressGameInput()) return;
       const control = { type: "sceneLayerScroll" as const, ...event };
       if (worker) worker.postControl(control);
       else runtime?.applySceneLayerScroll(event.layerId, event.actorId, event.componentId, event.deltaX, event.deltaY);
     },
     onSceneLayerControl: (event) => {
+      if (options.mode === "simulate" && suppressGameInput()) return;
       const control = { type: "sceneLayerControl" as const, ...event };
       if (worker) worker.postControl(control);
       else runtime?.applySceneLayerControl(control);
@@ -1098,9 +1201,104 @@ export function startPlaySession(options: {
     }
   };
 
-  const saveStorage = createSaveGameStorage();
+  const simulationSaveStorage = options.mode === "simulate"
+    ? options.simulationSaveStorage ?? createSessionSaveStorage(createSaveGameStorage())
+    : undefined;
+  const saveStorage = simulationSaveStorage ?? createSaveGameStorage();
   const saveServer = createSaveStorageServer(saveStorage, (response) => worker?.postControl({ type: "saveStorageResponse", response }));
+  let captureTask: Promise<import("@babylonslate/runtime").SimulationSceneCaptureResult> | null = null;
+  let captureAbort: AbortController | null = null;
+  let captureRequested = false;
+  let captureFenceActive = false;
+  let captureFenceChanged = false;
+  const acceptQuiesced = (result: import("@babylonslate/bridge").SessionBoundaryResult) => {
+    if (captureClient.receive({ type: "simulationQuiesced", ...result }) && result.success) {
+      captureFenceActive = true;
+      captureFenceChanged = false;
+    }
+  };
+  const captureClient = new SimulationCaptureClient({
+    generation: options.sessionGeneration ?? 0,
+    quiesce: async request => {
+      if (worker) { worker.postControl({ type: "quiesceSimulation", ...request }); return; }
+      if (!runtime) throw new Error("The Simulation runtime is unavailable.");
+      acceptQuiesced(await runtime.quiesceSimulation(request));
+    },
+    capture: async request => {
+      if (worker) { worker.postControl({ type: "captureSimulationState", ...request }); return; }
+      if (!runtime) throw new Error("The Simulation runtime is unavailable.");
+      captureClient.receiveComplete(request, await runtime.captureSimulationState(request));
+    },
+  });
+  const captureSimulationScene: PlaySession["captureSimulationScene"] = (maxBytes) => {
+    if (options.mode !== "simulate" || stopped) return Promise.reject(new Error("A live Simulation session is required for final scene capture."));
+    if (captureTask) return captureTask;
+    captureRequested = true;
+    captureFenceActive = false;
+    inspectorClient.dispose();
+    input?.neutralize();
+    requestedPauses.add("loading");
+    suppressGameInput();
+    const abort = new AbortController();
+    captureAbort = abort;
+    const work = (async () => {
+      const boundary = await captureClient.quiesce();
+      if (!boundary.success) throw new Error(boundary.reason ?? "Simulation did not reach a final boundary.");
+      abort.signal.throwIfAborted();
+      acknowledgedPaused = true;
+      handle.setGameTimePaused(true);
+      const drainTimer = setTimeout(() => abort.abort(new Error("Final render-owned resources did not settle within 30 seconds. Retry or Discard the Simulation changes.")), 30_000);
+      let rendered: { commandRevision: number };
+      try { rendered = await handle.quiesceAuthoringRevision(boundary.commandRevision, abort.signal); }
+      finally { clearTimeout(drainTimer); }
+      if (captureFenceChanged) throw new Error("A render-owned property changed after the final Simulation boundary.");
+      const result = await captureClient.capture(rendered.commandRevision, maxBytes);
+      abort.signal.throwIfAborted();
+      if (captureFenceChanged) throw new Error("A render-owned property changed while the final Simulation scene was transferring.");
+      return result;
+    })();
+    captureTask = work.finally(() => {
+      abort.abort();
+      if (captureAbort === abort) captureAbort = null;
+      captureTask = null;
+    });
+    return captureTask;
+  };
+  const materialEditHost = new RuntimeMaterialEditHost({
+    sessionGeneration: options.sessionGeneration ?? 0,
+    mode: options.mode ?? "play",
+    prepare: request => handle.prepareRuntimeMaterialEdit(request),
+    commit: command => handle.commitRuntimeMaterialEdit(command),
+    release: token => handle.releaseRuntimeMaterialPreparation(token),
+    respond: response => {
+      if (worker) worker.postControl(response);
+      else runtime?.applyRuntimeMaterialEditResult(response);
+    },
+  });
   const onCommand = (command: CommandMessage) => {
+    if (command.type === "simulationRetentionUnavailable") {
+      if (command.sessionGeneration === (options.sessionGeneration ?? 0)) options.onRetentionUnavailable?.(command.reason);
+      return;
+    }
+    if (command.type === "simulationQuiesced") { acceptQuiesced(command); return; }
+    if (command.type === "simulationCaptureChunk" || command.type === "simulationCaptureResult") { captureClient.receive(command); return; }
+    if (captureFenceActive && shouldForwardPlayEngineCommand(command.type)) captureFenceChanged = true;
+    if (materialEditHost.receive(command)) return;
+    if (command.type === "diagnosticOperationResult") { diagnosticClient.receive(command); return; }
+    if (command.type === "performanceTicks") {
+      if (command.sessionGeneration === (options.sessionGeneration ?? 0)) performanceDiagnostics?.receiveTicks(command);
+      return;
+    }
+    if (command.type === "diagnosticOperationStopped") {
+      if (command.sessionGeneration === (options.sessionGeneration ?? 0)) performanceDiagnostics?.runtimeStopped(command);
+      return;
+    }
+    if (command.type === "sessionBoundaryResult") { boundaryClient.receive(command); return; }
+    if (command.type === "runtimeInspectorResult") {
+      if (command.success && command.payload?.kind === "mutation" && acknowledgedPaused) handle.requestPausedRedraw();
+      inspectorClient.receive(command);
+      return;
+    }
     if (command.type === "assetSourcesReady") {
       const request = sourceRequests.get(command.requestId);
       sourceRequests.delete(command.requestId);
@@ -1112,6 +1310,8 @@ export function startPlaySession(options: {
     if (sceneSources?.receive(command)) return;
     if (command.type === "saveStorageRequest") { saveServer.receive(command.request); return; }
     noteCommand();
+    if (command.type === "activeScene") { inspectorClient.invalidateScene(); materialEditHost.invalidate(); }
+    if (command.type === "despawn") { inspectorClient.invalidateActor(command.actorGuid); materialEditHost.invalidateActor(command.actorGuid); }
     if (command.type === "sceneStreamBlocking") handle.setSceneStreamingPaused(command.blocking);
     if (command.type === "snapshotLayout" && runtime)
       snapBuf = new Float32Array(snapshotFloatCount(command.capacity));
@@ -1170,6 +1370,11 @@ export function startPlaySession(options: {
     if (command.type === "trace") {
       recordedTrace = command.payload as unknown as TracePayload;
     }
+    if (command.type === "sessionPaused") {
+      // Console Pause/Resume already changed the runtime reason. Ask for its
+      // completed boundary without rewriting another outstanding pause hold.
+      void synchronizePauseBoundary({ kind: "resetInput" }).catch((error: unknown) => options.onLog?.(String(error), "error"));
+    }
     applyPlaySessionPausedCommand(command, options.onSessionPaused);
     applyPlayHudConsoleCommand(command, {
       onShowFps: options.onShowFps,
@@ -1209,6 +1414,9 @@ export function startPlaySession(options: {
       : entry;
   });
   const loadControl = playLoadControl({
+    sessionMode: options.mode ?? "play",
+    sessionGeneration: options.sessionGeneration,
+    simulationAssetGuids: options.simulationAssetGuids ? [...options.simulationAssetGuids] : undefined,
     saveGame: options.saveGame,
     frameCap: resolvePlayFrameCap(options.frameCap),
     traceByteBudget: options.traceByteBudget,
@@ -1370,6 +1578,7 @@ export function startPlaySession(options: {
   input = attachInputCapture(canvas, {
     skipPointerAndKeyboard: () => handle.isFreeCamEnabled(),
   });
+  if (options.mode === "simulate") input.setSuppressed(false);
 
   const unlock = () => {
     void handle.unlockAudio();
@@ -1450,17 +1659,83 @@ export function startPlaySession(options: {
     });
   }
 
+  const diagnosticSessionId = `play:${options.sessionGeneration ?? 0}:${performance.now()}`;
+  performanceDiagnostics = new SessionDiagnostics({
+    mode: options.mode ?? "play",
+    identity: () => {
+      const build = getBuildIdentity();
+      const render = handle.scalabilityStatus()?.effective?.render ?? options.consoleRenderSettings ?? options.renderSettings;
+      const frameCap = handle.scheduler.gateState().frameCap;
+      return { sessionId: diagnosticSessionId, mode: options.mode ?? "play", sourceSha: build?.sourceSha ?? null,
+        buildId: build ? `${build.packageVersion}:${build.runNumber}.${build.runAttempt}` : null,
+        sceneId: hostSceneGuid ?? options.sceneAssetGuid ?? "play-scene",
+        backend: handle.engine.isWebGPU ? "webgpu" : "webgl2", renderPath: handle.renderPathStatus().effective.renderPath,
+        runtimeHost: runtimeMode, quality: JSON.stringify(render ?? {}), frameCap: Number.isFinite(frameCap) ? frameCap : null,
+        dynamicResolution: render?.quality?.resolution?.dynamic === true,
+        enabledDiagnostics: ["performance"], gpuTiming: "unavailable" };
+    },
+    observeFrames: (listener) => handle.observePerformance(listener),
+    observeGpuTiming: (listener, onError) => handle.observeGpuTiming(listener, onError),
+    runtimeOperation: (request) => diagnosticClient.request(request),
+    captureFrame: async (signal) => {
+      const cancel = () => handle.cancelFrameCapture("Frame capture was cancelled.");
+      signal.addEventListener("abort", cancel, { once: true });
+      try {
+        // A paused report is render-only only after the requested game-clock
+        // boundary has completed; a legacy caller-paused view is insufficient.
+        let pending: typeof pendingPauseBoundary;
+        do {
+          pending = pendingPauseBoundary;
+          if (pending) {
+            const result = await pending;
+            if (!result.success) throw new Error(result.reason ?? "Game pause did not reach its completed boundary.");
+          }
+          signal.throwIfAborted();
+        } while (pending !== pendingPauseBoundary);
+        return await handle.captureFrame();
+      }
+      finally { signal.removeEventListener("abort", cancel); }
+    },
+    onProfile: (profile) => options.onProfile?.(profile),
+  });
   return {
     canvas,
     handle,
     runtime,
     worker,
     runtimeMode,
+    diagnostics: performanceDiagnostics,
     setPaused: (paused: boolean) => {
-      handle.setPaused(paused);
-      pauseGate?.setPaused(paused);
-      worker?.postControl({ type: "setPaused", paused });
+      void setPauseReason("user", paused).catch((error: unknown) => options.onLog?.(String(error), "error"));
     },
+    setPauseReason,
+    setEditorInputSuppressed: async (suppressed) => {
+      const transition = ++inputTransition;
+      inputTransitionPending = true;
+      editorInputRoutingEnabled = true;
+      editorInputSuppressed = suppressed;
+      input.neutralize();
+      suppressGameInput();
+      const result = await boundaryClient.request({ kind: "resetInput" });
+      if (!result.success) throw new Error(result.reason ?? "Editor input ownership could not be reset");
+      if (transition !== inputTransition) return;
+      inputTransitionPending = false;
+      suppressGameInput();
+    },
+    setInputMode: async (mode) => {
+      const transition = ++inputTransition;
+      inputTransitionPending = true;
+      gameInputMode = mode;
+      input.neutralize();
+      suppressGameInput();
+      const result = await boundaryClient.request({ kind: "resetInput" });
+      if (!result.success) throw new Error(result.reason ?? "Game input could not be reset");
+      if (transition !== inputTransition) return;
+      inputTransitionPending = false;
+      suppressGameInput();
+      handle.setSimulationEditMode(mode === "edit");
+    },
+    requestPausedRedraw: () => handle.requestPausedRedraw(),
     lastMoveX: () => {
       if (runtime) {
         return runtime.getResolvedInput().axes2D.Move?.x ?? lastObservedMoveX;
@@ -1478,6 +1753,7 @@ export function startPlaySession(options: {
     },
     spawnedActorGuids: () => spawnedActorGuids,
     executeConsoleCommand: (line) => {
+      if (captureRequested) return Promise.resolve({ success: false, output: "Simulation is resolving its final scene; choose Retry or Discard." });
       if (stopped)
         return Promise.resolve({
           success: false,
@@ -1509,7 +1785,10 @@ export function startPlaySession(options: {
       }
       return Promise.resolve({ tickIndex: 0, nodes: [] });
     },
+    requestRuntimeInspection: (action, options) => inspectorClient.request(action, options),
+    captureSimulationScene,
     step: () => {
+      if (captureRequested) return;
       applyPlaySessionStep({ worker, runtime });
     },
     lastTrace: () => recordedTrace ?? runtime?.stopTrace() ?? null,
@@ -1530,11 +1809,18 @@ export function startPlaySession(options: {
     },
     stop: () => {
       if (stopped && stopResult) return stopResult;
+      void performanceDiagnostics?.dispose().finally(() => diagnosticClient.dispose());
       resetBoot();
       pauseGate?.reset();
       sceneReadiness.dispose();
       streamReadiness.dispose();
       stopped = true;
+      boundaryClient.dispose();
+      inspectorClient.dispose();
+      captureAbort?.abort();
+      captureClient.dispose();
+      materialEditHost.dispose();
+      simulationSaveStorage?.dispose();
       releaseConsoleCapture();
       window.removeEventListener("error", onWindowError);
       window.removeEventListener("unhandledrejection", onRejection);

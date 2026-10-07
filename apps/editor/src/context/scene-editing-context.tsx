@@ -11,6 +11,7 @@ import {
 import type { ViewportMode } from "@babylonslate/core";
 import type {
   EditorCameraSessionState,
+  GizmoSpace,
   GizmoTool,
   ViewportShadingMode,
 } from "@babylonslate/render";
@@ -39,6 +40,9 @@ export interface SceneEditingContextValue {
   setShapeEditTarget: (target: SceneShapeEditTarget | null) => void;
   gizmoTool: GizmoTool;
   setGizmoTool: (tool: GizmoTool) => void;
+  /** Move/rotate handle orientation; scale always uses local axes. */
+  gizmoSpace: GizmoSpace;
+  setGizmoSpace: (space: GizmoSpace) => void;
   snapEnabled: boolean;
   setSnapEnabled: (enabled: boolean) => void;
   joystickEnabled: boolean;
@@ -134,6 +138,7 @@ export function SceneEditingProvider({
   const [selectedActorIds, setSelectedActorIds] = useState<string[]>([]);
   const [shapeEditTarget, setShapeEditTarget] = useState<SceneShapeEditTarget | null>(null);
   const [gizmoTool, setGizmoTool] = useState<GizmoTool>("translate");
+  const [gizmoSpace, setGizmoSpace] = useState<GizmoSpace>("world");
   const [snapEnabled, setSnapEnabled] = useState(
     documentSnapEnabled ?? false,
   );
@@ -257,6 +262,8 @@ export function SceneEditingProvider({
       setShapeEditTarget,
       gizmoTool,
       setGizmoTool,
+      gizmoSpace,
+      setGizmoSpace,
       snapEnabled,
       setSnapEnabled,
       joystickEnabled,
@@ -287,6 +294,7 @@ export function SceneEditingProvider({
     [
       dragSelectActive,
       frameActor,
+      gizmoSpace,
       gizmoTool,
       gridVisible,
       joystickEnabled,

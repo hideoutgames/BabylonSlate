@@ -26,6 +26,7 @@ import {
 } from "@babylonslate/navigation";
 import type { NavBakeCollectExtras } from "@babylonslate/render";
 import type { SerializedScene } from "@babylonslate/core";
+import type { ProjectSceneWriter } from "../services/project-write-admission";
 import {
   navMeshAutoBakeProperties,
   recordNavBakeSaveResult,
@@ -50,7 +51,7 @@ const NavBakeContext = createContext<NavBakeContextValue | null>(null);
 export function NavBakeProvider({ children }: { children: ReactNode }) {
   const {
     openDocuments,
-    writeSceneNavmeshChunk,
+    withSceneWrite,
     collectPlayTilemapContent,
     projectDocument,
   } = useDocuments();
@@ -61,14 +62,14 @@ export function NavBakeProvider({ children }: { children: ReactNode }) {
     openDocuments,
     documentId,
     projectDocument,
-    writeSceneNavmeshChunk,
+    withSceneWrite,
     collectPlayTilemapContent,
   });
   latestRef.current = {
     openDocuments,
     documentId,
     projectDocument,
-    writeSceneNavmeshChunk,
+    withSceneWrite,
     collectPlayTilemapContent,
   };
   const collectorRef = useRef<NavBakeCollector | null>(null);
@@ -83,119 +84,122 @@ export function NavBakeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const startBake = useCallback(
-    async (properties: Record<string, unknown>) => {
-      const {
-        openDocuments,
-        documentId,
-        projectDocument,
-        writeSceneNavmeshChunk,
-        collectPlayTilemapContent,
-      } = latestRef.current;
-      const doc = openDocuments.find((entry) => entry.id === documentId);
-      if (!doc || doc.ref.kind !== "scene" || !doc.content) {
-        const message = "Open a scene before baking a navmesh.";
-        recordNavBakeSaveResult({
-          ok: false,
-          path: doc?.ref.path ?? null,
-          byteLength: 0,
-          error: message,
-        });
-        throw new Error(message);
-      }
-      const parsed = parseNavMeshActorSettings(properties);
-      const settings: NavMeshGenerateSettings = {
-        ...parseNavMeshSettings(properties),
-        supportDynamicObstacles: parsed.supportDynamicObstacles,
-      };
-      const controller = new AbortController();
-      abortRef.current = controller;
-      setError(null);
-      setPhase("showing");
-      setCancellable(false);
-      const worker = createNavBakeWorker();
-      let failed = false;
-      try {
-        const bytes = await runNavBake({
-          waitPaintedFrame,
-          collect: async () => {
-            const scene = doc.content as SerializedScene;
-            const extras: NavBakeCollectExtras = {};
-            if (scene.viewportMode === "2d") {
-              const { tilemaps, tilesets } =
-                await collectPlayTilemapContent(scene);
-              extras.tilemapChains = navBakeTilemapChains(
-                tilemaps,
-                tilesets,
-                projectDocument?.settings.twoD.pixelsPerUnit ?? 100,
-              );
-            }
-            if (parsed.bakeBoundsEnabled) {
-              extras.bakeBounds = {
-                min: parsed.bakeBoundsMin,
-                max: parsed.bakeBoundsMax,
-              };
-            }
-            return (
-              collectorRef.current?.(extras) ?? { positions: [], indices: [] }
-            );
-          },
-          generate: (input) => worker.generate(input),
-          write: async (next) => {
-            await writeSceneNavmeshChunk(
-              doc.ref.path,
-              next,
-              doc.content as Record<string, unknown>,
-            );
-            setLastBytes(next);
-          },
-          settings,
-          onPhase: (next) => {
-            setPhase(next);
-            setCancellable(next === "generating");
-          },
-          signal: controller.signal,
-        });
-        setLastBytes(bytes);
-        recordNavBakeSaveResult({
-          ok: true,
-          path: doc.ref.path,
-          byteLength: bytes.byteLength,
-          error: null,
-        });
-      } catch (caught) {
-        failed = true;
-        const message =
-          caught instanceof Error ? caught.message : String(caught);
-        recordNavBakeSaveResult({
-          ok: false,
-          path: doc.ref.path,
-          byteLength: 0,
-          error: message,
-        });
-        if (!controller.signal.aborted && !/abort/i.test(message)) {
-          setError(message);
-          console.error("[nav-bake]", message);
-        } else {
-          failed = false;
+    async (properties: Record<string, unknown>, admittedWriter?: ProjectSceneWriter) => {
+      const bake = async ({ writeSceneNavmeshChunk }: ProjectSceneWriter) => {
+        const {
+          openDocuments,
+          documentId,
+          projectDocument,
+          collectPlayTilemapContent,
+        } = latestRef.current;
+        const doc = openDocuments.find((entry) => entry.id === documentId);
+        if (!doc || doc.ref.kind !== "scene" || !doc.content) {
+          const message = "Open a scene before baking a navmesh.";
+          recordNavBakeSaveResult({
+            ok: false,
+            path: doc?.ref.path ?? null,
+            byteLength: 0,
+            error: message,
+          });
+          throw new Error(message);
         }
-      } finally {
-        worker.terminate();
-        abortRef.current = null;
+        const parsed = parseNavMeshActorSettings(properties);
+        const settings: NavMeshGenerateSettings = {
+          ...parseNavMeshSettings(properties),
+          supportDynamicObstacles: parsed.supportDynamicObstacles,
+        };
+        const controller = new AbortController();
+        abortRef.current = controller;
+        setError(null);
+        setPhase("showing");
         setCancellable(false);
-        if (!failed) setPhase(null);
-      }
+        const worker = createNavBakeWorker();
+        let failed = false;
+        try {
+          const bytes = await runNavBake({
+            waitPaintedFrame,
+            collect: async () => {
+              const scene = doc.content as SerializedScene;
+              const extras: NavBakeCollectExtras = {};
+              if (scene.viewportMode === "2d") {
+                const { tilemaps, tilesets } =
+                  await collectPlayTilemapContent(scene);
+                extras.tilemapChains = navBakeTilemapChains(
+                  tilemaps,
+                  tilesets,
+                  projectDocument?.settings.twoD.pixelsPerUnit ?? 100,
+                );
+              }
+              if (parsed.bakeBoundsEnabled) {
+                extras.bakeBounds = {
+                  min: parsed.bakeBoundsMin,
+                  max: parsed.bakeBoundsMax,
+                };
+              }
+              return (
+                collectorRef.current?.(extras) ?? { positions: [], indices: [] }
+              );
+            },
+            generate: (input) => worker.generate(input),
+            write: async (next) => {
+              await writeSceneNavmeshChunk(
+                doc.ref.path,
+                next,
+                doc.content as Record<string, unknown>,
+              );
+              setLastBytes(next);
+            },
+            settings,
+            onPhase: (next) => {
+              setPhase(next);
+              setCancellable(next === "generating");
+            },
+            signal: controller.signal,
+          });
+          setLastBytes(bytes);
+          recordNavBakeSaveResult({
+            ok: true,
+            path: doc.ref.path,
+            byteLength: bytes.byteLength,
+            error: null,
+          });
+        } catch (caught) {
+          failed = true;
+          const message =
+            caught instanceof Error ? caught.message : String(caught);
+          recordNavBakeSaveResult({
+            ok: false,
+            path: doc.ref.path,
+            byteLength: 0,
+            error: message,
+          });
+          if (!controller.signal.aborted && !/abort/i.test(message)) {
+            setError(message);
+            console.error("[nav-bake]", message);
+          } else {
+            failed = false;
+          }
+        } finally {
+          worker.terminate();
+          abortRef.current = null;
+          setCancellable(false);
+          if (!failed) setPhase(null);
+        }
+      };
+      if (admittedWriter) return bake(admittedWriter);
+      return latestRef.current.withSceneWrite(bake);
     },
     [],
   );
 
   useEffect(() => {
-    return registerNavBakeSaveFlush(async () => {
+    return registerNavBakeSaveFlush(async (writer) => {
       const { openDocuments, documentId } = latestRef.current;
       const doc = openDocuments.find((entry) => entry.id === documentId);
       if (!doc || doc.ref.kind !== "scene" || !doc.content) return;
       const scene = doc.content as SerializedScene;
       for (const properties of navMeshAutoBakeProperties(scene)) {
-        await startBake(properties);
+        await startBake(properties, writer);
       }
     });
   }, [startBake]);

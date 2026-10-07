@@ -97,6 +97,9 @@ export * from "./particle-preview";
 export * from "./convert-obj-to-glb";
 export * from "./node-rig";
 export type { RenderDiagnostics } from "./render-diagnostics";
+export { captureRenderFrame, activeRenderFrameCapture } from "./render-frame-report";
+export type { RenderFrameReport, RenderFrameReportDraft, RenderFrameStage, RenderFrameTaskDescription, RenderFrameResource } from "./render-frame-report";
+export type { RenderPerformanceSample } from "./render-performance";
 
 export { lightsDebugText } from "./render-diagnostics";
 export { captureShadowDiagnostics, type ShadowDiagnosticOptions, type ShadowDiagnostics } from "./shadow-diagnostics";
@@ -128,3 +131,7 @@ export { createSplineMesh, splineMeshBody, updateSplineMeshBody } from "./spline
 export { createSplineHandles, dragSplineHandle, insertSplinePoint, removeSplinePoint, splineHandles, type SplineHandle } from "./spline-handles";
 export type { ComponentShapeEdit, ShapeHandlesOptions, ShapeHandleTarget } from "./shape-handles";
 export { attachSceneBrushInput, type SceneBrushState } from "./scene-brush-input";
+
+export type { RuntimeTransformTools, RuntimeTransformToolsOptions, RuntimeTransformChange } from "./runtime-transform-tools";
+
+export { observeEngineGpuTiming, type EngineGpuTimingSample, type EngineGpuTimingObservation } from "./engine-gpu-timing";

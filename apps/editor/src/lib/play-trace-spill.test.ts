@@ -112,4 +112,16 @@ describe("play trace spill", () => {
     } finally { vi.useRealTimers(); }
   });
 
+  it("waits for diagnostic capture leases to detach before native Stop", async () => {
+    let detached!: () => void;
+    const releasing = new Promise<void>(resolve => { detached = resolve; });
+    const stop = vi.fn(() => baseResult(null));
+    const finishing = finishPlaySessionWithTrace({ executeConsoleCommand: async () => {},
+      diagnostics: { dispose: () => releasing }, stop });
+    await Promise.resolve(); await Promise.resolve();
+    expect(stop).not.toHaveBeenCalled();
+    detached(); await finishing;
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
 });

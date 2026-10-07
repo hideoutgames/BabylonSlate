@@ -4,6 +4,20 @@ export type MaterialParameterValue =
   | { kind: "color"; value: [number, number, number, number] }
   | { kind: "texture"; textureAssetGuid: string | null };
 
+/** Scene-owned values for one component's selected surface Material instance. */
+export interface MaterialInstanceOverrides {
+  materialGuid: string;
+  parameters: Record<string, MaterialParameterValue>;
+}
+
+export function normalizeMaterialInstanceOverrides(value: unknown): MaterialInstanceOverrides | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const source = value as Record<string, unknown>;
+  if (typeof source.materialGuid !== "string" || !source.materialGuid.trim()) return undefined;
+  const parameters = normalizeMaterialParameterOverrides(source.parameters);
+  return Object.keys(parameters).length ? { materialGuid: source.materialGuid.trim(), parameters } : undefined;
+}
+
 /** Copies valid persisted values; invalid overrides leave the material default intact. */
 export function normalizeMaterialParameterOverrides(value: unknown): Record<string, MaterialParameterValue> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};

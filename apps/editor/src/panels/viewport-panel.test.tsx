@@ -34,7 +34,7 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
       setGridSettings: vi.fn(),
       setSortingLayers: vi.fn(),
       setPixelPerfect: vi.fn(),
-      gizmos: { setTool: vi.fn(), setSnap: vi.fn() },
+      gizmos: { setTool: vi.fn(), setSpace: vi.fn(), setSnap: vi.fn() },
       grid: { setVisible: vi.fn() },
     },
     scheduler: {
@@ -173,6 +173,7 @@ vi.mock("../context/scene-editing-context", () => ({
     selectActor: vi.fn(),
     setSelectedActorIds: vi.fn(),
     gizmoTool: "translate",
+    gizmoSpace: "world",
     snapEnabled: false,
     viewportMode: selection.mode,
     joystickEnabled: false,

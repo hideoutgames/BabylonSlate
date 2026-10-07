@@ -3,6 +3,7 @@ import {
   DocumentEditStack,
   type ApplyResult,
   type DocumentEditStackOptions,
+  type HistoryAdmissionResult,
 } from "./stack";
 
 export const DEFAULT_EDIT_BYTE_BUDGET = 2_000_000;
@@ -93,6 +94,16 @@ export class EditSession {
   ): ApplyResult<TDoc> {
     const result = this.getStack<TDoc>(documentId).apply(doc, command);
     this.evictClosedOverBudget();
+    return result;
+  }
+
+  applyWithHistoryAdmission<TDoc>(
+    documentId: string,
+    doc: TDoc,
+    command: EditCommand<TDoc>,
+  ): HistoryAdmissionResult<TDoc> {
+    const result = this.getStack<TDoc>(documentId).applyWithHistoryAdmission(doc, command);
+    if (result.ok && result.status === "applied") this.evictClosedOverBudget();
     return result;
   }
 

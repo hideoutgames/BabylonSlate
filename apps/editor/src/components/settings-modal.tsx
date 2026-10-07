@@ -217,7 +217,7 @@ const ENGINE_CATEGORIES: Array<
   {
     id: "debugger",
     label: "Debugger",
-    keywords: "trace babtrace snapshot recording frames memory budget",
+    keywords: "trace babtrace snapshot performance profiler recording duration gpu timing frames memory budget pause play simulation",
   },
   {
     id: "viewport",
@@ -637,6 +637,7 @@ export function SettingsModal({
           settings={engineSettings}
           onChange={saveEngine}
           categoryId={activeCategoryId as EngineSettingsCategoryId}
+          focusTargetId={pendingFocus?.targetId}
         />
       ) : null}
 

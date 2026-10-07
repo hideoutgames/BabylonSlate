@@ -7,6 +7,8 @@ import type { DockviewApi } from "dockview-react";
 import { staticAudioGeometryFingerprint } from "../lib/audio-reverb-bake";
 import { convertGlslToMaterial, normalizeMaterialDocument, normalizeMaterialFunctionDocument, validateMaterialParameterNames } from "@babylonslate/shader-graph";
 import { EditorExtensionService } from "./editor-extension-service";
+import { admitOwnerWrites, guardProjectStorage, ProjectWriteAdmission, withProjectWriter, type ProjectSceneWriter, type ProjectWriteLease } from "./project-write-admission";
+import { guardProjectAssetRegistry, guardProjectEncodeQueue } from "./project-authoring-ports";
 import { ENGINE_EXTENSION_LIBRARY_ROOT } from "../lib/engine-extension-library";
 import { installEngineExtensionDefaults, isExtensionPackagePath, isAssetSourceRevisionChanged, type AssetDocument } from "@babylonslate/assets";
 import type {
@@ -314,7 +316,13 @@ type OwnedFolder = { handle: ProjectFolderHandle; createdHere: boolean };
 const PROJECT_CREATION_MARKER = ".babylonslate-creating";
 
 export class ProjectService {
+  private readonly writeAdmission = new ProjectWriteAdmission();
   private readonly storage: ProjectStorage;
+  private readonly publicStorage: ProjectStorage;
+  private readonly registryViews = new WeakMap<AssetRegistry, AssetRegistry>();
+  private readonly encodeWriteReleases = new Map<string, () => void>();
+  private externalEncodePause = false;
+  private manualEncodePause = false;
   readonly extensions: EditorExtensionService;
   private engineExtensionStorage: ProjectStorage | null = null;
   private projectGuid: string | null = null;
@@ -328,6 +336,7 @@ export class ProjectService {
   private sourceSession = 0;
   private projectSearchIndex: ProjectSearchIndex | null = null;
   private readonly encodeQueue: EncodeQueue;
+  private readonly publicEncodeQueue: EncodeQueue;
   private readonly emissionJobs = new Set<AbortController>();
   private readonly processAreaEmission: AreaEmissionProcessor;
   private workerEncode:
@@ -391,7 +400,9 @@ export class ProjectService {
         | null;
     } = {},
   ) {
+    storage = guardProjectStorage(storage, this.writeAdmission, true);
     this.storage = storage;
+    this.publicStorage = guardProjectStorage(storage, this.writeAdmission);
     const assetPath = (path: string) => {
       if (!isExtensionPackagePath(path) || !path.startsWith("assets/") || !path.endsWith(".babasset")) {
         throw new Error("Extension asset writes require a project assets/*.babasset path.");
@@ -453,7 +464,7 @@ export class ProjectService {
         this.diagnostics.push(line);
         for (const listener of this.diagnosticListeners) listener(line);
       },
-    });
+    }, { runAuthoringWrite: operation => this.writeAdmission.run(operation) });
     this.blobs = createVfsBlobStore(storage);
     this.configuredEncode = options.encode;
     this.processAreaEmission = options.processAreaEmission ?? processAreaEmissionInWorker;
@@ -469,6 +480,7 @@ export class ProjectService {
           mime,
         ),
       onState: (guid, state, job) => {
+        if (state === "encoding") this.encodeWriteReleases.set(guid, this.writeAdmission.retain());
         // `compressed` is written with the KTX2 chunk in onComplete. A guarded
         // (alignment) job leaves the saved state alone until it commits, so
         // nothing on disk requeues it later, source control on or not.
@@ -476,53 +488,108 @@ export class ProjectService {
         const registry = this.assetRegistry;
         if (!registry) return;
         const session = this.sourceSession;
-        void registry
-          .setCompressionState(guid, state)
-          .then(() => this.refreshTextureWrite(guid, registry, session))
-          .catch((error) => this.emitTextureEncodeDiagnostic(guid, error));
+        void this.writeAdmission.continue(async () => {
+          await registry.setCompressionState(guid, state);
+          await this.refreshTextureWrite(guid, registry, session);
+        }).catch(error => this.emitTextureEncodeDiagnostic(guid, error));
       },
       onComplete: async (result) => {
-        const registry = this.assetRegistry;
-        if (!registry) return;
-        const session = this.sourceSession;
-        if (!(await registry.commitCompressedTexture(result))) {
-          // Refused (a guarded job the file on disk no longer allows): Texture
-          // Details rechecks whether the Texture is left stale for the user.
-          if (session === this.sourceSession) this.emitRegistryChange();
-          return;
-        }
-        if (session !== this.sourceSession) return;
-        const committed = committedKtx2Sha256(registry.getByGuid(result.assetGuid)?.header);
-        if (committed) this.sessionEncodes.set(result.assetGuid, committed);
-        const current = await this.refreshTextureWrite(result.assetGuid, registry, session);
-        if (!current) return;
-        // A Tileset, Sprite or Sprite Animation may have picked the texture
-        // while it encoded; recheck it with the Usage the pass will use (an
-        // open tab's, else the saved one), unless another Usage chose this
-        // encode: an unsaved Details edit in a tab closed since.
-        const saved = current.getByGuid(result.assetGuid)?.header.payload.usage;
-        const usage = this.openTextureUsage?.(result.assetGuid) ?? String(saved ?? "albedo");
-        if (result.usage === undefined || result.usage === usage) {
-          void this.reconcileTextureAlignment([result.assetGuid]);
+        const release = this.encodeWriteReleases.get(result.assetGuid);
+        this.encodeWriteReleases.delete(result.assetGuid);
+        let succeeded = false;
+        try {
+          const registry = this.assetRegistry;
+          if (!registry) { succeeded = true; return; }
+          const session = this.sourceSession;
+          if (!(await registry.commitCompressedTexture(result))) {
+            // Refused guarded jobs leave the committed file unchanged.
+            if (session === this.sourceSession) this.emitRegistryChange();
+            succeeded = true;
+            return;
+          }
+          if (session !== this.sourceSession) { succeeded = true; return; }
+          const committed = committedKtx2Sha256(registry.getByGuid(result.assetGuid)?.header);
+          if (committed) this.sessionEncodes.set(result.assetGuid, committed);
+          const current = await this.refreshTextureWrite(result.assetGuid, registry, session);
+          if (!current) { succeeded = true; return; }
+          // Recheck atlas changes made while this texture encoded, unless an
+          // unsaved Details edit selected a different Usage for this result.
+          const saved = current.getByGuid(result.assetGuid)?.header.payload.usage;
+          const usage = this.openTextureUsage?.(result.assetGuid) ?? String(saved ?? "albedo");
+          if (result.usage === undefined || result.usage === usage) {
+            void this.reconcileTextureAlignment([result.assetGuid]);
+          }
+          succeeded = true;
+        } finally {
+          if (succeeded) release?.();
+          // The queue's error callback owns the failed-state commit.
+          else if (release) this.encodeWriteReleases.set(result.assetGuid, release);
         }
       },
       onError: (guid, error, job) => {
+        const release = this.encodeWriteReleases.get(guid);
+        this.encodeWriteReleases.delete(guid);
         this.emitTextureEncodeDiagnostic(guid, error);
         const message = error instanceof Error ? error.message : String(error);
         const registry = this.assetRegistry;
-        if (!registry) return;
+        if (!registry) { release?.(); return; }
         const session = this.sourceSession;
-        void registry
-          .setCompressionState(guid, "encode_failed", {
+        void this.writeAdmission.continue(async () => {
+          await registry.setCompressionState(guid, "encode_failed", {
             error: message,
             ...(job.guard ? { canWrite: (_guid: string, current: BabassetHeader) => encodeJobMayWrite(job, current) } : {}),
-          })
-          .then(() => this.refreshTextureWrite(guid, registry, session))
-          .catch((failure) => this.emitTextureEncodeDiagnostic(guid, failure));
+          });
+          await this.refreshTextureWrite(guid, registry, session);
+        }).catch(failure => this.emitTextureEncodeDiagnostic(guid, failure)).finally(() => release?.());
       },
       // A guarded job dropped unencoded may leave its Texture stale for the user.
       onDrop: () => this.emitRegistryChange(),
     });
+    this.publicEncodeQueue = guardProjectEncodeQueue(this.encodeQueue, this.writeAdmission);
+    this.writeAdmission.subscribe(() => this.updateEncodePause());
+    return admitOwnerWrites(this, this.writeAdmission, [
+      "setTranscoderAvailable", "retryTextureEncoding", "retryAllFailedTextureEncoding",
+      "prepareAreaEmission", "deleteListedProject", "openProject", "createEmptyProject",
+      "createFromTemplate", "openListedProject", "closeProject", "renameListedProjectDisplayName",
+      "updateListedProject", "reconnect", "loadCurrentProject", "syncPlugins", "applyPluginOverrides",
+      "createProjectPlugin", "deleteProjectPlugin", "importPlugin", "remountRegistry",
+      "replaceClassReferencesBeforeDelete", "clearDeletedAssetReferences", "saveDocument",
+      "writeSceneNavmeshChunk", "writeSceneAudioReverbChunk", "writeAudioClipChunk",
+      "removeAudioClipChunk", "saveProject", "upgradeDependencyMetadata",
+    ]);
+  }
+
+  /** Close new file-write admissions and wait for complete admitted owner operations. */
+  lockAuthoringWrites(reason: string): ProjectWriteLease {
+    return this.writeAdmission.lock(reason);
+  }
+
+  get authoringWriteBlockedReason(): string | null { return this.writeAdmission.reason; }
+
+  /** Save All owns one admission, even when it saves several documents after awaits. */
+  withBaselineSave<T>(save: (writer: Pick<ProjectService, "saveDocument" | "saveProject" | "upgradeDependencyMetadata"> & ProjectSceneWriter) => Promise<T>): Promise<T> {
+    return withProjectWriter(this.writeAdmission, {
+      saveDocument: this.saveDocument.bind(this),
+      saveProject: this.saveProject.bind(this),
+      upgradeDependencyMetadata: this.upgradeDependencyMetadata.bind(this),
+      ...this.sceneWriter(),
+    }, save);
+  }
+
+  withSceneWrite<T>(work: (writer: ProjectSceneWriter) => Promise<T>): Promise<T> {
+    return withProjectWriter(this.writeAdmission, this.sceneWriter(), work);
+  }
+
+  private sceneWriter(): ProjectSceneWriter {
+    return {
+      writeSceneNavmeshChunk: this.writeSceneNavmeshChunk.bind(this),
+      writeSceneAudioReverbChunk: this.writeSceneAudioReverbChunk.bind(this),
+    };
+  }
+
+  private updateEncodePause(): void {
+    if (this.externalEncodePause || this.manualEncodePause || this.writeAdmission.locked) this.encodeQueue.pause();
+    else this.encodeQueue.resume();
   }
 
   /** Start provider-lifetime resources; safe across Strict Mode effect probes. */
@@ -532,8 +599,8 @@ export class ProjectService {
       this.workerEncode = this.createWorkerEncode();
     }
     this.encodeQueuePauseUnsubscribe = onEncodeQueuePause((paused) => {
-      if (paused) this.encodeQueue.pause();
-      else this.encodeQueue.resume();
+      this.externalEncodePause = paused;
+      this.updateEncodePause();
     });
   }
 
@@ -648,7 +715,7 @@ export class ProjectService {
   }
 
   get textureEncodeQueue(): EncodeQueue {
-    return this.encodeQueue;
+    return this.publicEncodeQueue;
   }
 
   onRegistryChange(listener: () => void): () => void {
@@ -676,11 +743,13 @@ export class ProjectService {
 
   /** Pause encode jobs while Preview runs (engineplan §3.5). */
   pauseTextureEncodeQueue(): void {
-    this.encodeQueue.pause();
+    this.manualEncodePause = true;
+    this.updateEncodePause();
   }
 
   resumeTextureEncodeQueue(): void {
-    this.encodeQueue.resume();
+    this.manualEncodePause = false;
+    this.updateEncodePause();
   }
 
   async retryTextureEncoding(
@@ -756,6 +825,7 @@ export class ProjectService {
    * waits for the user's own edit. Resolves with the number requeued.
    */
   reconcileTextureAlignment(guids?: readonly string[]): Promise<number> {
+    if (this.writeAdmission.blocked) return Promise.resolve(0);
     const run = async () => {
       const registry = this.assetRegistry;
       if (!registry) return 0;
@@ -771,7 +841,7 @@ export class ProjectService {
       return requeued.length;
     };
     this.textureAlignment.pending += 1;
-    const next = this.textureAlignmentChain.then(run, run).finally(() => {
+    const next = this.writeAdmission.run(() => this.textureAlignmentChain.then(run, run)).finally(() => {
       this.textureAlignment.pending -= 1;
     });
     this.textureAlignmentChain = next.catch(() => 0);
@@ -826,11 +896,15 @@ export class ProjectService {
   }
 
   get storagePort(): ProjectStorage {
-    return this.storage;
+    return this.publicStorage;
   }
 
   get registry(): AssetRegistry | null {
-    return this.assetRegistry;
+    const registry = this.assetRegistry;
+    if (!registry) return null;
+    let view = this.registryViews.get(registry);
+    if (!view) { view = guardProjectAssetRegistry(registry, this.writeAdmission); this.registryViews.set(registry, view); }
+    return view;
   }
 
   /**
@@ -1623,11 +1697,11 @@ export class ProjectService {
 
   /** Re-scan project assets after registry file operations (import, create, delete). */
   async remountRegistry(): Promise<AssetRegistry> {
-    const registry = await this.mountAssetRegistry();
+    await this.mountAssetRegistry();
     if (!this.transcoderAvailable) {
       await this.markCompressedTexturesFallback();
     }
-    return registry;
+    return this.registry!;
   }
 
   /** Validate all referrers before writing replacements; never delete a Class here. */

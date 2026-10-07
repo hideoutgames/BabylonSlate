@@ -5,7 +5,6 @@ import { managedRenderReservations } from "./managed-render-resources";
 import type { FramePressureSample } from "./hardware-scaling";
 import type { ResolvedRenderingPipeline } from "@babylonslate/core";
 import {
-  EngineInstrumentation,
   type AbstractEngine,
   type Scene,
 } from "@babylonjs/core";
@@ -16,7 +15,7 @@ import { sceneLightingLimits } from "./scene-lighting";
 import { autoLodDiagnostics, liveMeshCount } from "./model-lod";
 import type { RenderScheduler } from "./render-scheduler";
 
-const instruments = new WeakMap<AbstractEngine, EngineInstrumentation>();
+import { engineGpuTimingUnavailableReason, readEngineGpuTiming } from "./engine-gpu-timing";
 export type GpuAttribution = "view" | "shared-engine" | "unavailable";
 
 export type RenderDiagnostics = {
@@ -115,25 +114,12 @@ export function createRenderDiagnostics(
   }),
 ): () => RenderDiagnostics {
   const engine = scene.getEngine();
-  let instrument = instruments.get(engine);
-  // Babylon 9.20's whole-frame WebGPU path uses the removed encoder-level
-  // writeTimestamp API and records zero when it is absent. A timestamp-query
-  // capability alone therefore does not establish a measured frame duration.
-  // Per-pass WebGPU timestamp attribution is not implemented here.
-  const supported = !engine.isWebGPU && !!engine.getCaps().timerQuery;
-  if (!instrument && supported) {
-    instrument = new EngineInstrumentation(engine);
-    instrument.captureGPUFrameTime = true;
-    instruments.set(engine, instrument);
-    const owned = instrument;
-    engine.onDisposeObservable.addOnce(() => {
-      owned.dispose();
-      instruments.delete(engine);
-    });
-  }
+  // Stats never activates a new query; it can consume an existing renderer or
+  // explicit profiler lease. Profiling has its own fresh-query delivery stream.
+  const supported = engineGpuTimingUnavailableReason(engine) === null;
   return () => {
-    const counter = instrument?.gpuFrameTimeCounter;
-    const available = supported && !!counter?.count;
+    const gpuMs = readEngineGpuTiming(engine);
+    const available = gpuMs !== null;
     const target = scene.activeCamera?.outputRenderTarget;
     const size = target?.getSize();
     // Reading must not install a shadow owner on a Scene that has none.
@@ -149,7 +135,7 @@ export function createRenderDiagnostics(
       readbackMs: readbackMs(),
       shadowDrawCalls: shadows?.shadowDrawCalls() ?? 0,
       shadowTriangles: shadows?.shadowTriangles() ?? 0,
-      gpuMs: available ? counter.current / 1_000_000 : null,
+      gpuMs,
       gpuStatus: available
         ? "available"
         : supported

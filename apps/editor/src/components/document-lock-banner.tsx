@@ -8,10 +8,16 @@ import {
 export function DocumentLockBanner({
   path,
   sourceControl,
+  authoringReason,
 }: {
   path: string;
   sourceControl: SourceControlService;
+  authoringReason?: string | null;
 }) {
+  if (authoringReason) return <Alert data-testid="document-authoring-lock-banner">
+    <AlertTitle>Read-Only During Simulation Play</AlertTitle>
+    <AlertDescription>{authoringReason} Navigation, selection, and copying remain available.</AlertDescription>
+  </Alert>;
   const banner = sourceControl.bannerFor(path);
   if (!banner) return null;
   if (banner.kind === "theirs") {

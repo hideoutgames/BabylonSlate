@@ -61,6 +61,32 @@ async function execute(
 }
 
 describe("runtime material parameters", () => {
+  it("reapplies persisted surface overrides after assignment and drops the seed on material replacement", async () => {
+    const commands: CommandMessage[] = [];
+    const mesh = createMeshComponent("mesh-1", "box");
+    mesh.properties.materialGuid = "mat";
+    mesh.materialInstance = { materialGuid: "mat", parameters: { Gain: { kind: "float", value: 0.25 } } };
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      playScene: { name: "Materials", viewportMode: "3d", folders: [], settings: createDefaultSceneSettings(),
+        actors: [createActor("prop", "Prop", { classId: "Hero", components: [mesh] })] },
+      materialParameterCatalog: { mat: { domain: "surface", planHash: "mat", parameters: { Gain: { kind: "float", value: 1 } } } },
+      onCommand: command => commands.push(command) });
+    try {
+      await runtime.loadScripts([{ classId: "Hero", parentClassId: "Actor", assetGuid: "hero", anchors: [],
+        source: `export function replace(ctx) { const mesh = ctx.getComponentById(ctx.self, "mesh-1");
+          ctx.setVariableOn(mesh, "materialGuid", null); ctx.setVariableOn(mesh, "materialGuid", "mat"); }`,
+        entryPoints: [{ name: "replace", event: "replace", isAsync: false }] }]);
+      runtime.realizePlayWorld(); runtime.start();
+      const assignment = commands.findIndex(command => command.type === "assignMaterial" && command.materialAssetGuid === "mat");
+      expect(assignment).toBeGreaterThanOrEqual(0);
+      expect(commands[assignment + 1]).toMatchObject({ type: "setMaterialParameter", componentId: "mesh-1",
+        parameterName: "Gain", parameter: { kind: "float", value: 0.25 } });
+      commands.length = 0;
+      runtime.invokeScriptEvent("Hero", "replace", runtime.getWorld().findActor("prop"));
+      expect(commands.filter(command => command.type === "assignMaterial")).toHaveLength(2);
+      expect(commands.some(command => command.type === "setMaterialParameter")).toBe(false);
+    } finally { runtime.stop(); }
+  });
   it("emits an authored model None assignment when starting Play before any override was bound", async () => {
     const commands = await execute("export function onBeginPlay() {}", false, {
       meshKind: "model", materialGuid: null, materialSource: "override",

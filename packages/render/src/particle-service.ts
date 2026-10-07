@@ -6,6 +6,7 @@ import {
   type NodeMaterial,
   type NodeParticleSystemSet,
   type ParticleSystem,
+  type GPUParticleSystem,
   type Scene,
 } from "@babylonjs/core";
 import {
@@ -298,8 +299,9 @@ export class ParticleService {
     for (const entry of this.live.values()) for (const record of entry.systems) {
       if (paused) record.updateSpeed = record.system.updateSpeed;
       record.system.updateSpeed = paused ? 0 : record.updateSpeed;
-      // Node Update blocks run every frame whatever the speed; Babylon's flag skips the whole update.
-      if (record.kind === "graph") record.system.paused = paused;
+      // Zero speed still consumes manual emissions and Node Update blocks.
+      // CPU and repository-patched GPU owners skip their simulation at this gate.
+      (record.system as ParticleSystem | GPUParticleSystem).paused = paused;
     }
     if (paused) return;
     // Speeds and the graph flag are restored first: CPU prewarm runs inside `start()`
@@ -465,7 +467,7 @@ export class ParticleService {
       });
       const after = host.onAfterRenderObservable.add(() => {
         if (!this.current(entry, generation)) return;
-        if (entry.state === "playing") {
+        if (entry.state === "playing" && !this.paused) {
           // The driver runs on the simulation clock, so pause (updateSpeed 0) holds it.
           const ratio = host.getAnimationRatio() || 1;
           for (const record of entry.systems) {
@@ -556,7 +558,7 @@ export class ParticleService {
       const ready = bindParticleMaterial(system, lease.resource);
       if (this.paused) {
         system.updateSpeed = 0;
-        if (record.kind === "graph") record.system.paused = true;
+        (record.system as ParticleSystem | GPUParticleSystem).paused = true;
       }
       applySortingToParticleSystem(system, context.sorting);
       const owned = record;

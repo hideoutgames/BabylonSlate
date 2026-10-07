@@ -1,3 +1,4 @@
+import { activeRenderFrameCapture } from "./render-frame-report";
 import { PostProcessParameterState } from "./post-process-parameter-state";
 import { overlayClipAllowsPoint } from "./overlay-layout-render";
 import type { AttachedPostProcessStack } from "./post-process-material";
@@ -294,7 +295,11 @@ export class SceneLayerCompositor {
         let readyForPresentation: boolean;
         if (record.rtt) {
           record.scene.autoClear = true;
-          const result = record.renderer.render();
+          const frameCapture = activeRenderFrameCapture(this.engine);
+          const result = frameCapture
+            ? frameCapture.stage(record.scene, { name: "SceneLayer scene output", kind: "composition", sceneId: record.layerId },
+              () => record.renderer.render())
+            : record.renderer.render();
           if (!record.blitReady && record.blitScene)
             record.blitReady = isSceneFrameReady(record.blitScene);
           if (!result.rendered || !result.readyForPresentation || !record.blitScene || !record.blitReady) {
@@ -310,7 +315,11 @@ export class SceneLayerCompositor {
         } else {
           record.scene.autoClear = false;
           record.scene.autoClearDepthAndStencil = true;
-          const result = record.renderer.render();
+          const frameCapture = activeRenderFrameCapture(this.engine);
+          const result = frameCapture
+            ? frameCapture.stage(record.scene, { name: "SceneLayer scene output", kind: "composition", sceneId: record.layerId },
+              () => record.renderer.render())
+            : record.renderer.render();
           if (!result.rendered) {
             this.blitFallback(record);
             return false;
@@ -654,8 +663,12 @@ export class SceneLayerCompositor {
 
   private blitFallback(layer: LayerRecord): void {
     const fallback = layer.fallback;
-    if (fallback && !fallback.scene.isDisposed && isSceneFrameReady(fallback.scene))
-      fallback.scene.render();
+    if (fallback && !fallback.scene.isDisposed && isSceneFrameReady(fallback.scene)) {
+      const capture = activeRenderFrameCapture(this.engine);
+      if (capture) capture.stage(fallback.scene, { name: "SceneLayer held output", kind: "composition",
+        sceneId: layer.layerId, detail: "Previously coherent layer output; no new layer frame was produced." }, () => fallback.scene.render());
+      else fallback.scene.render();
+    }
   }
 
   private prepareBlit(layer: LayerRecord): void {
@@ -703,7 +716,11 @@ export class SceneLayerCompositor {
 
   private blit(layer: LayerRecord): void {
     this.prepareBlit(layer);
-    layer.blitScene?.render();
+    if (!layer.blitScene) return;
+    const capture = activeRenderFrameCapture(this.engine);
+    if (capture) capture.stage(layer.blitScene, { name: "SceneLayer output composition", kind: "composition",
+      sceneId: layer.layerId }, () => layer.blitScene?.render());
+    else layer.blitScene.render();
   }
 }
 

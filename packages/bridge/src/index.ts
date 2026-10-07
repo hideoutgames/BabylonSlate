@@ -30,6 +30,10 @@ export {
   type BridgeHostMessage,
   type BridgeWorkerMessage,
   type CommandMessage,
+  type GameSessionMode,
+  type SessionPauseReason,
+  type SessionBoundaryRequest,
+  type SessionBoundaryResult,
   type MaterialParameterValue,
   type ControlMessage,
   type RuntimeSceneContent,
@@ -48,3 +52,13 @@ export {
   type PlayEngineCommandType,
 } from "./play-engine-commands";
 export { dynamicMeshTransferables } from "./dynamic-mesh-transfers";
+
+export type { RuntimeObjectIdentity, RuntimeInspectorValue, RuntimePropertyCapability, RuntimePropertyDescriptor, RuntimeIdentityRow, RuntimeIdentityCursor, RuntimeInspectorAction, RuntimeInspectorRequest, RuntimeInspectorPayload, RuntimeInspectorResult } from "./runtime-inspector";
+
+export type { DiagnosticOperation, DiagnosticOperationRequest, DiagnosticOperationResult, PerformanceTickChunk } from "./diagnostic-operation";
+
+export type { RuntimeMaterialEditPreparation, RuntimeMaterialEditResponse } from "./runtime-material-edit";
+
+export type { SimulationQuiesceRequest, SimulationCaptureRequest, SimulationCaptureSummary, SimulationCaptureIdentity } from "./simulation-capture";
+
+export { createSessionBoundaryClient } from "./session-boundary-client";

@@ -34,6 +34,8 @@ if (
 const harness = vi.hoisted(() => ({
   gizmoTool: "translate" as "translate" | "rotate" | "scale",
   setGizmoTool: vi.fn(),
+  gizmoSpace: "world" as "world" | "local",
+  setGizmoSpace: vi.fn(),
   snapEnabled: false,
   setSnapEnabled: vi.fn(),
   joystickEnabled: false,
@@ -88,6 +90,8 @@ vi.mock("../context/scene-editing-context", () => ({
   useSceneEditing: () => ({
     gizmoTool: harness.gizmoTool,
     setGizmoTool: harness.setGizmoTool,
+    gizmoSpace: harness.gizmoSpace,
+    setGizmoSpace: harness.setGizmoSpace,
     snapEnabled: harness.snapEnabled,
     setSnapEnabled: harness.setSnapEnabled,
     joystickEnabled: harness.joystickEnabled,
@@ -130,6 +134,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
 
 beforeEach(() => {
   harness.gizmoTool = "translate";
+  harness.gizmoSpace = "world";
   harness.snapEnabled = false;
   harness.joystickEnabled = false;
   harness.gridVisible = true;
@@ -417,6 +422,25 @@ describe("ViewportToolbar", () => {
       expect(harness.setGizmoTool).toHaveBeenCalledWith(id);
     },
   );
+
+  it("toggles the gizmo between world and local space", () => {
+    const { rerender } = renderToolbar();
+    fireEvent.click(
+      screen.getByRole("button", { name: "World Space; Switch To Local Space" }),
+    );
+    expect(harness.setGizmoSpace).toHaveBeenLastCalledWith("local");
+
+    harness.gizmoSpace = "local";
+    rerender(
+      <TooltipProvider>
+        <ViewportToolbar />
+      </TooltipProvider>,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Local Space; Switch To World Space" }),
+    );
+    expect(harness.setGizmoSpace).toHaveBeenLastCalledWith("world");
+  });
 
   it("toggles viewport mode in both directions with one current-mode button", () => {
     const { rerender } = renderToolbar();

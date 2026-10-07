@@ -73,6 +73,10 @@ export interface WorldOptions {
 }
 
 export class World {
+  /** Identity/hierarchy revision; no properties or world snapshots are collected. */
+  structuralRevision = 0;
+  markStructureChanged(): void { this.structuralRevision++; }
+
   readonly classRegistry: ClassRegistry;
   readonly interfaceRegistry: InterfaceRegistry;
   readonly clock: TickClock;
@@ -435,6 +439,7 @@ export class World {
       guidFactory: this.guidFactory,
     });
     this.currentScene = scene;
+    this.markStructureChanged();
     scene.callOnCreation();
     if (this.currentScene === scene) this.createSceneSubsystems(scene);
     return scene;
@@ -486,6 +491,10 @@ export class World {
     scene.callOnDestroyed();
   }
 
+  findActorInstances(guid: Guid): readonly Actor[] {
+    return this.actorsByGuid.get(guid) ?? [];
+  }
+
   findActor(guid: Guid): Actor | undefined {
     return this.actorsByGuid.get(guid)?.[0];
   }
@@ -495,6 +504,7 @@ export class World {
     actor.world = this;
     actor.spawnIndex = this.actors.length;
     this.actors.push(actor);
+    this.markStructureChanged();
     const sameGuid = this.actorsByGuid.get(actor.guid);
     if (sameGuid) sameGuid.push(actor);
     else this.actorsByGuid.set(actor.guid, [actor]);
@@ -522,6 +532,7 @@ export class World {
     const index = this.actors.indexOf(actor);
     if (index < 0) return;
     this.actors.splice(index, 1);
+    this.markStructureChanged();
     const sameGuid = this.actorsByGuid.get(actor.guid)!;
     sameGuid.splice(sameGuid.indexOf(actor), 1);
     if (sameGuid.length === 0) this.actorsByGuid.delete(actor.guid);
@@ -631,6 +642,7 @@ export class World {
     implementedInterfaces?: string[];
     transform?: ConstructorParameters<typeof Actor>[0]["transform"];
     sceneLayerId?: Guid | null;
+    suppressedComponentSourceIds?: readonly string[];
   }): Actor {
     const defaults = this.classDefaults(options.classId, options);
     const ActorClass = this.classRegistry.isA(options.classId, "SceneStreamingActor")
@@ -656,6 +668,7 @@ export class World {
     sourceId?: string | null;
     transform?: ConstructorParameters<typeof ActorComponent>[0]["transform"];
     parentId?: string | null;
+    materialInstance?: ConstructorParameters<typeof ActorComponent>[0]["materialInstance"];
   }): ActorComponent {
     const defaults = this.classDefaults(options.classId, options);
     return new ActorComponent({

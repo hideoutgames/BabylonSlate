@@ -120,6 +120,9 @@ describe("runtime input bindings", () => {
     const next = new InputResolver(createDefaultInputMappings());
     expect(next.bindings.importBindings(saved)).toBe(true);
     expect(next.resolve([key("KeyJ")]).actions.Jump?.pressed).toBe(true);
+    expect(next.reset().actions.Jump).toEqual({ pressed: false, released: false, held: false });
+    expect(next.bindings.exportBindings()).toBe(saved);
+    expect(next.resolve([key("KeyJ")]).actions.Jump?.pressed).toBe(true);
     const malformed = JSON.parse(saved);
     malformed.overrides[0].code = "KeyH";
     malformed.overrides.push({});

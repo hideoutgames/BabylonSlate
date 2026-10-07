@@ -68,6 +68,24 @@ it("keeps preload ownership until explicit release and waits for usable-resource
   expect(commands.at(-1)).toEqual({ type: "assetPreloadRelease", preloadId: request.preloadId });
 });
 
+it("cancels only the requested candidate source scope and ignores late readiness", async () => {
+  const commands: CommandMessage[] = [];
+  const manager = new RuntimeAssetPreloads(command => commands.push(command));
+  const abort = new AbortController();
+  const candidate = manager.acquire(["new"], "component", {}, abort.signal);
+  const predecessor = manager.acquire(["old"], "component");
+  const requests = commands.filter(command => command.type === "assetPreload");
+  abort.abort();
+  expect(await candidate).toMatchObject({ success: false });
+  manager.receive({ preloadId: requests[0]!.preloadId, success: true });
+  expect(commands.filter(command => command.type === "assetPreloadRelease")).toEqual([
+    { type: "assetPreloadRelease", preloadId: requests[0]!.preloadId },
+  ]);
+  manager.receive({ preloadId: requests[1]!.preloadId, success: true });
+  expect(await predecessor).toMatchObject({ success: true });
+  manager.dispose();
+});
+
 it("cancels destroyed owners, ignores late completions, and retains session-wide preloads until stop", async () => {
   const commands: CommandMessage[] = [];
   const manager = new RuntimeAssetPreloads(command => commands.push(command));

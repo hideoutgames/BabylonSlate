@@ -25,6 +25,7 @@ import {
   actorVisualFingerprint,
   applyActorTransform,
   applyActorComponentSorting,
+  applyAuthoredActorMaterialInstances,
   applyComponentChildTransforms,
   createActorMesh,
   editorComponentMeshName,
@@ -51,17 +52,17 @@ import { isTilemapChunkMesh } from "./tilemap-mesh";
 import { BitmapAllocationLimitError } from "./text2d-bitmap";
 import { refreshText2DMaterials, text2DBitmapBytes } from "./text2d-mesh";
 import { pruneEditorCables } from "./cable-mesh";
+import { authoredMaterialInstancePreparation } from "./authored-material-instance";
 import type { NativePreparationPriority } from "./native-preparation";
 
 export type EditorSceneSyncOptions = {
   /** FrameGraph owns its camera-specific active queue; world matrices still freeze. */
   freezeActiveMeshes?: boolean;
+  resolveMaterial?: MeshAssetContext["resolveMaterial"];
+  releaseMaterialInstance?: MeshAssetContext["releaseMaterialInstance"];
+  validateMaterialParameter?: MeshAssetContext["validateMaterialParameter"];
   /** Preview maintenance yields native model preparation to active gameplay. */
   preparationPriority?: NativePreparationPriority;
-  resolveMaterial?: (
-    guid: string,
-    options?: { scene?: Scene; unlit?: boolean },
-  ) => Material | null;
   /** Fired after meshes/materials are bound so overlays can re-apply. */
   onAfterApply?: () => void;
 };
@@ -87,10 +88,9 @@ export class EditorSceneSync {
 
   private readonly scene: Scene;
   private readonly scheduler?: Pick<RenderScheduler, "invalidate">;
-  private readonly resolveMaterial?: (
-    guid: string,
-    options?: { scene?: Scene; unlit?: boolean },
-  ) => Material | null;
+  private readonly resolveMaterial?: MeshAssetContext["resolveMaterial"];
+  private readonly releaseMaterialInstance?: MeshAssetContext["releaseMaterialInstance"];
+  private readonly validateMaterialParameter?: MeshAssetContext["validateMaterialParameter"];
   private readonly onAfterApply?: () => void;
   private readonly freezeActiveMeshes: boolean;
   private readonly preparationPriority?: NativePreparationPriority;
@@ -121,6 +121,8 @@ export class EditorSceneSync {
     this.scene = scene;
     this.scheduler = scheduler;
     this.resolveMaterial = options?.resolveMaterial;
+    this.releaseMaterialInstance = options?.releaseMaterialInstance;
+    this.validateMaterialParameter = options?.validateMaterialParameter;
     this.onAfterApply = options?.onAfterApply;
     this.freezeActiveMeshes = options?.freezeActiveMeshes !== false;
     this.preparationPriority = options?.preparationPriority;
@@ -562,6 +564,10 @@ export class EditorSceneSync {
   async whenEditorModelsReady(): Promise<void> {
     await this.realization;
     const loads = [...(this.modelLoadBinding.slotAnimLoads?.values() ?? []), ...this.pendingTextureLoads];
+    for (const root of this.meshes.values()) for (const mesh of [root, ...root.getChildMeshes()]) {
+      const preparation = authoredMaterialInstancePreparation(mesh as Mesh);
+      if (preparation) loads.push(preparation);
+    }
     if (loads.length === 0) return Promise.resolve();
     return Promise.all(loads).then(() => undefined);
   }
@@ -639,6 +645,8 @@ export class EditorSceneSync {
         this.resolveMaterial?.(guid, options) ??
         this.assets?.resolveMaterial?.(guid, options) ??
         null,
+      releaseMaterialInstance: this.releaseMaterialInstance ?? this.assets?.releaseMaterialInstance,
+      validateMaterialParameter: this.validateMaterialParameter ?? this.assets?.validateMaterialParameter,
     };
   }
 
@@ -861,6 +869,15 @@ export class EditorSceneSync {
         authoredMaterialGuid(component.properties.materialGuid),
       );
     }
+    applyAuthoredActorMaterialInstances(root, actor, {
+      ...this.assets,
+      resolveMaterial: (guid, options) => this.resolveMaterial?.(guid, options) ?? this.assets?.resolveMaterial?.(guid, options) ?? null,
+      releaseMaterialInstance: this.releaseMaterialInstance ?? this.assets?.releaseMaterialInstance,
+      validateMaterialParameter: this.validateMaterialParameter ?? this.assets?.validateMaterialParameter,
+    }, () => {
+      this.scheduler?.invalidate("asset");
+      this.onAfterApply?.();
+    });
   }
 
   private bindMaterialOverride(

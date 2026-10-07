@@ -4,6 +4,23 @@ Shared surface for graph IR, pin types, validation, and JS codegen (engineplan Â
 
 P4 already owns stackâ†’node mapping (`AnchorEntry`, `loadCompiledModule`, Preview session report). P5 fills the compiler that emits those anchors and the editor that navigates to them. ExecuteJavaScript hoist lines carry `bodyLine` so a runtime throw inside the user body maps to the CodeMirror line; tapping a session-report row opens the owning Class (or BehaviourTree) asset if needed. `Log` at Error severity is a session-report row (`runtime.log`), not only Output Log.
 
+## Runtime pause boundaries
+
+Runtime pause holds compose by reason (`user`, `lifecycle`, `loading`); Resume
+clears only its own hold. `sessionBoundary` requests carry the launch generation
+and an increasing request ID. Their correlated replies follow the completed
+synchronous tick and command publication, reporting tick, scene/load identity,
+effective holds and command revision. The bounded queue also accepts `resetInput`
+without a game tick; input binding overrides survive reset. Resume discards the
+paused wall-clock interval. Boot completion does not release an existing hold.
+
+Engine delays, tween completion, ready-scene lifecycle, audio completion and
+scalability callbacks wait for game-owner admission while paused. Stop cancels
+waiting engine continuations. Asset I/O and readiness may finish during a pause.
+Custom JavaScript timers, promises and external effects remain cooperative and
+are not a suspended-process transaction. Simulation sessions refuse snapshot
+recording at the recorder command boundary; use Play or Preview Build.
+
 ## Render target capture
 
 The rendering nodes expose **Get Render Target Mode** from a RenderTarget asset reference and **Get Texture Render Target** from a RenderTargetTexture reference. The mode output is the engine **Render Target Mode** enum, usable with enum comparison and selection nodes.
@@ -751,3 +768,78 @@ Definitions use `.datadefinition.babasset`; trees use `.datatree.babasset` (vers
 Experimental Data Object and Data Sheet formats are unsupported. Their files are preserved and never silently reinterpreted as empty trees. Unsupported reachable data blocks export with an actionable error.
 
 Editor screenshots: [Data Definition fields](../design/evidence/data-workspace/01-data-definition.png), [Data Tree workspace](../design/evidence/data-workspace/02-data-tree.png), and [typed entry node with Inspector defaults](../design/evidence/data-workspace/03-data-tree-node.png).
+
+### Simulation runtime inspection and edits
+
+The runtime Inspector is an on-demand headless service, separate from the legacy
+formatted `inspectWorld()` snapshot and scene persistence capture. Its correlated
+`runtimeInspector` requests run after the current synchronous tick and deferred
+publication complete; they also run while a user pause is held, without ticking.
+Writes are admitted only in Simulation. The worker sends a completed pose snapshot
+before a successful mutation reply. In-process consumers must refresh that snapshot
+when a paused edit succeeds.
+
+Identity pages contain actor/component GUIDs, a scene-instance identity and lifetime
+tokens. GUID reuse cannot retarget an old selection. The World increments its
+structural revision at actor realization/removal, component attachment/destruction,
+and actor name/parent changes; requesting the unchanged revision returns no tree.
+Pages contain at most 128 identity rows. Selection reads return only reflected
+properties of the requested object, with 64 KiB transport admission and explicit
+pagination/collection summaries. Values are read at a maximum 5 Hz by visible editor
+consumers; closing a consumer means no Inspector requests or collection.
+
+The initial writable set includes exposed primitive, vector and typed object-reference
+variables (including bounded arrays/maps), actor visibility/event flags/name, local
+actor/component transforms, validated camera/light/outline properties, body tuning,
+collider tuning, navigation parameters, audio volume, and catalog-backed surface
+material assignments and instance parameters. Unsupported asset/component internals,
+structural fields, computed fields and types without a validated live codec report
+read-only or restart-required capabilities. Class/type metadata accompanies compiled
+variables; reference edits never evaluate expressions or property paths.
+
+Mutations carry independent request IDs and per-property sequences. At most 32
+bounded requests wait at the boundary; stopped/stale/oversized requests fail explicitly.
+An accepted transform uses the physics teleport owner, preserves body velocity,
+updates affected descendants, and publishes a new presentation frame identity with
+an interpolation reset while keeping the simulation tick unchanged. Runtime edits
+remain outside authoring history; final scene persistence has its own full-state
+capture contract, independent of the Inspector's writable subset.
+
+Runtime timing collection uses an explicit `diagnosticOperation` lease, correlated
+by session generation, request ID and recording ID. Profile, frame capture and trace
+recording exclude one another at runtime dispatch. Simulation and release builds
+reject these operations. A profile allocates one 256-row numeric buffer, sends at
+most one transferable chunk per 200 ms plus its final flush, and stops on duration,
+numeric-byte budget or session end, including while gameplay is paused. Overflowed
+rows are counted. Disabled sessions create no recorder buffers or timers.
+
+Tick records contain the actual tick ID, runtime-local recording elapsed time, and
+separate script, physics, snapshot-publication and remaining tick wall durations.
+Deferred publication work is attributed to the tick whose final snapshot is written;
+per-tick preparation remains on its own tick. These streams are never summed with
+concurrent host rendering time or aligned by subtracting Worker and host clocks.
+
+Renderer-hosted Simulation loads set `deferMaterialEdits`. Material writes then
+hold their user acknowledgment while the renderer prepares a token-owned candidate
+and confirms the final application. The predecessor remains effective during
+preparation. Commands carry the prepared token; invalidation, failures, timeouts and
+Stop release only that preparation. A failed application restores the previous
+runtime material values when the same object and material revision still own them.
+If gameplay has superseded that owner, or application confirmation is lost, final
+scene capture reports an ownership failure instead of retaining an unconfirmed value.
+
+Final retention uses two separate runtime calls. `quiesceSimulation` acknowledges a
+completed tick, holds the loading pause reason, rejects new edits, resolves pending
+material work explicitly and keeps the world intact. `captureSimulationState` requires
+that boundary plus the renderer's acknowledged command revision. The initial prepared
+Scene is the immutable baseline. Canonical capture uses live provenance, typed schemas,
+material state and root ownership; independent streams/layers, scene transitions,
+unavailable authored assets and uncertain renderer ownership fail by name. Failures
+leave the runtime quiescent for Retry or ordinary discard/Stop; Resume cannot release
+that final hold. The discard path never calls the final serializer.
+
+Worker captures send bounded UTF-8 chunks after byte/node admission, with session,
+request and contiguous sequence identities. The transport escapes strings in small
+pieces and does not build a second complete scene JSON string. Stop/replacement cancels
+remaining delivery. Scene loading hydrates retained references in two passes before
+creation hooks, so captured references resolve to the newly loaded runtime objects.

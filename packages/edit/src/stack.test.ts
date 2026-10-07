@@ -49,6 +49,70 @@ class MergeableCommand implements EditCommand<TestDoc> {
 }
 
 describe("DocumentEditStack", () => {
+  it("rejects an unretainable inverse before applying and preserves earlier undo and redo", () => {
+    const stack = new DocumentEditStack<TestDoc>({ maxEntries: 10, maxBytes: 99 });
+    let doc = stack.apply({ value: 0 }, new IncrementCommand(1, 10)).doc;
+    doc = stack.apply(doc, new IncrementCommand(2, 10)).doc;
+    doc = stack.undo(doc)!.doc;
+    const rejected: EditCommand<TestDoc> = {
+      type: "test.rejected", byteSize: 50,
+      apply: () => { throw new Error("Must not apply an unretainable edit"); },
+      invert: () => new IncrementCommand(-100, 50),
+    };
+    expect(stack.applyWithHistoryAdmission(doc, rejected)).toEqual({
+      ok: false, reason: "history-budget", requiredBytes: 100, maxBytes: 99,
+    });
+    expect(doc).toEqual({ value: 1 });
+    expect(stack.undoDepth).toBe(1);
+    expect(stack.historyBytes).toBe(20);
+    expect(stack.redo(doc)?.doc).toEqual({ value: 3 });
+    expect(stack.undo({ value: 3 })?.doc).toEqual({ value: 1 });
+    expect(stack.undo({ value: 1 })?.doc).toEqual({ value: 0 });
+  });
+
+  it("retains an admitted entry while evicting only the ordinary oldest history", () => {
+    const stack = new DocumentEditStack<TestDoc>({ maxEntries: 2, maxBytes: 50 });
+    let doc = stack.apply({ value: 0 }, new IncrementCommand(1, 20)).doc;
+    doc = stack.apply(doc, new IncrementCommand(2, 10)).doc;
+    const applied = stack.applyWithHistoryAdmission(doc, new IncrementCommand(4, 20));
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) throw new Error("Expected admission");
+    expect(applied.doc).toEqual({ value: 7 });
+    expect(stack.historyBytes).toBe(50);
+    doc = stack.undo(applied.doc)!.doc;
+    expect(doc).toEqual({ value: 3 });
+    expect(stack.undo(doc)?.doc).toEqual({ value: 1 });
+    expect(stack.canUndo).toBe(false);
+    expect(stack.redo({ value: 1 })?.doc).toEqual({ value: 3 });
+    expect(stack.redo({ value: 3 })?.doc).toEqual({ value: 7 });
+  });
+
+  it.each([undefined, -1, NaN, Infinity, 1.5])("refuses unaccounted bytes %s without changing history", (bytes) => {
+    const stack = new DocumentEditStack<TestDoc>({ maxEntries: 10, maxBytes: 100 });
+    const doc = stack.apply({ value: 0 }, new IncrementCommand(1, 10)).doc;
+    expect(stack.applyWithHistoryAdmission(doc, new IncrementCommand(3, bytes))).toMatchObject({
+      ok: false, reason: "invalid-byte-size",
+    });
+    expect(stack.undo(doc)?.doc).toEqual({ value: 0 });
+  });
+
+  it("keeps redo when an admitted command throws or returns its unchanged document", () => {
+    const stack = new DocumentEditStack<TestDoc>({ maxEntries: 10, maxBytes: 100 });
+    let doc = stack.apply({ value: 0 }, new IncrementCommand(1, 10)).doc;
+    doc = stack.undo(doc)!.doc;
+    const command: EditCommand<TestDoc> = {
+      type: "test.fail", byteSize: 10,
+      apply: () => { throw new Error("Conflicting document revision"); },
+      invert: () => new IncrementCommand(-1, 10),
+    };
+    expect(() => stack.applyWithHistoryAdmission(doc, command)).toThrow("Conflicting document revision");
+    expect(stack.applyWithHistoryAdmission(doc, { ...command, apply: (current) => current })).toMatchObject({
+      ok: true, status: "unchanged", doc,
+    });
+    expect(stack.undoDepth).toBe(0);
+    expect(stack.redo(doc)?.doc).toEqual({ value: 1 });
+  });
+
   it("keeps the first inverse of a merged gesture across Undo, Redo and another Undo", () => {
     const stack = new DocumentEditStack<TestDoc>({ maxEntries: 10, maxBytes: 1000 });
     let doc = stack.apply({ value: 0 }, new MergeableCommand(0, 1)).doc;

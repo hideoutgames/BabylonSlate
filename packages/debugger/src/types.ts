@@ -60,7 +60,7 @@ export type ConsoleCommandHost = {
   setTimeDilation?(rate: number): void;
   getTimeDilation?(): number;
   dumpLog?(): string;
-  startSnapshot?(): void;
+  startSnapshot?(): void | CommandResult;
   stopSnapshot?(): void;
 };
 

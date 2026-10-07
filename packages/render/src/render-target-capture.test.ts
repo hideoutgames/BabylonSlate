@@ -1,3 +1,4 @@
+import { setSceneGameTimePaused } from "./scene-game-time";
 import {
   Constants, FreeCamera, HemisphericLight, LightConstants, Material, Mesh, MeshBuilder, MultiMaterial, NodeMaterial, NullEngine, ObjectRenderer, ParticleSystem, RawTexture, RenderTargetTexture,
   Scene, StandardMaterial, Vector3,
@@ -501,4 +502,24 @@ it.each(["readiness", "draw"] as const)("restores rendering state and can retry 
   expect(FloatingOriginCurrentScene.getScene).toBe(previousScene);
   expect(FloatingOriginCurrentScene.eyeAtCamera).toBe(false);
   borrowed.dispose(); interrupted.dispose();
+});
+
+
+it("defers periodic and accepted manual captures throughout render-only pause", () => {
+  const { scene, captures, draws, root, settings } = host();
+  captures.configure("capture", { ...settings, captureEveryFrame: true }, () => root);
+  captures.render();
+  expect(draws).toHaveLength(1);
+  setSceneGameTimePaused(scene, true);
+  captures.render();
+  expect(draws).toHaveLength(1);
+  captures.configure("capture", { ...settings, captureEveryFrame: false }, () => root);
+  captures.request("capture");
+  captures.render();
+  expect(draws).toHaveLength(1);
+  setSceneGameTimePaused(scene, false);
+  captures.render();
+  expect(draws).toHaveLength(2);
+  captures.render();
+  expect(draws).toHaveLength(2);
 });

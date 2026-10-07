@@ -8,6 +8,7 @@ export const PLAY_ENGINE_COMMAND_TYPES = [
   "setText2DAppear",
   "setOverlayVisualStyle",
   "setComponentTransforms",
+  "resetActorInterpolation",
   "dynamicMeshUpdate",
   "setAreaLights",
   "setActorOutlines",

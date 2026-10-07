@@ -188,6 +188,19 @@ describe("createActorFromSerialized for SceneLayer rows", () => {
 });
 
 describe("createActorFromSerialized", () => {
+  it("does not realize suppressed source rows for placed actors or fresh prefab identities", () => {
+    const world = testWorld();
+    const removed = { ...createMeshComponent("removed"), sourceId: "source-removed" };
+    const child = { ...createMeshComponent("child"), parentId: "removed" };
+    const placed = createActorFromSerialized(world, createActor("placed", "Placed", {
+      components: [removed, child], suppressedComponentSourceIds: ["source-removed"],
+    }))!;
+    expect(placed.components.map((component) => [component.guid, component.parentId])).toEqual([["child", null]]);
+    const spawned = world.createActor({ classId: "Actor", guid: "spawned", suppressedComponentSourceIds: ["removed"] });
+    attachSerializedComponents(world, spawned, [removed, child], { freshIds: true });
+    expect(spawned.components.map((component) => [component.guid, component.sourceId, component.parentId]))
+      .toEqual([["spawned:child", "child", null]]);
+  });
   it("instantiates the dedicated streaming actor identity and its authored scene target", () => {
     const world = testWorld();
     const actors = documentActors(world, {

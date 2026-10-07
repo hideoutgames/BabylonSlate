@@ -1,3 +1,4 @@
+import type React from "react";
 import { Dialog } from "@babylonslate/ui/components/dialog";
 import { Button } from "@babylonslate/ui/components/button";
 import type { SceneViewportLoadPhase } from "../lib/scene-viewport-load";
@@ -20,6 +21,8 @@ export type SceneLoadingDialogProps = {
   rendering?: boolean;
   onRetry?: () => void;
   onDismiss?: () => void;
+  /** Where focus returns on close, e.g. the game canvas that owns exclusive input. */
+  finalFocus?: React.RefObject<HTMLElement | null>;
 };
 
 export function SceneLoadingDialog({
@@ -31,6 +34,7 @@ export function SceneLoadingDialog({
   onRetry,
   onDismiss,
   onStop,
+  finalFocus,
 }: SceneLoadingDialogProps) {
   return (
     <Dialog open={open} onOpenChange={() => {}}>
@@ -38,6 +42,7 @@ export function SceneLoadingDialog({
         failed={failed}
         overlayClassName="data-closed:pointer-events-none"
         data-testid="scene-loading-dialog"
+        finalFocus={finalFocus}
       >
         {failed ? (
           <ProgressDialogFailure

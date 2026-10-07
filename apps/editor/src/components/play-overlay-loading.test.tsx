@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { StrictMode, useState } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { Engine } from "@babylonjs/core";
@@ -29,7 +29,7 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-function openPendingPlay() {
+async function openPendingPlay(strict = false) {
   const result: PlaySessionResult = {
     diagnostics: [], droppedDiagnostics: 0, textureCountBefore: 0,
     released: Promise.resolve({ textureCountAfter: 0, textureLeak: false, quarantined: false }),
@@ -49,12 +49,13 @@ function openPendingPlay() {
       setClosed(true);
     }} />;
   }
-  render(<Host />);
+  render(strict ? <StrictMode><Host /></StrictMode> : <Host />);
+  await act(async () => {});
   return { stop, result, onClose, callbacks: vi.mocked(startPlaySession).mock.lastCall![0] };
 }
 
 it("blocks from mount through the initial worker handshake and presentation", async () => {
-  const { callbacks } = openPendingPlay();
+  const { callbacks } = await openPendingPlay();
   expect(screen.getByRole("dialog").textContent).toContain("Preparing Scene");
   act(() => callbacks.onSceneLoading?.({ sceneAssetGuid: "scene", sceneLoadId: 1,
     progress: 90, phase: "Presenting First Frame" }));
@@ -64,7 +65,7 @@ it("blocks from mount through the initial worker handshake and presentation", as
 });
 
 it.each(["Stop", "failure"] as const)("closes pending startup on %s before the worker sends a scene token", async (action) => {
-  const { callbacks, stop, result, onClose } = openPendingPlay();
+  const { callbacks, stop, result, onClose } = await openPendingPlay();
   const dialog = screen.getByRole("dialog");
   if (action === "Stop") fireEvent.click(within(dialog).getByRole("button", { name: "Stop" }));
   else act(() => callbacks.onFatalDiagnostic?.());
@@ -72,4 +73,13 @@ it.each(["Stop", "failure"] as const)("closes pending startup on %s before the w
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(stop).toHaveBeenCalledOnce();
   expect(onClose).toHaveBeenCalledExactlyOnceWith(result);
+});
+
+it("does not allocate a second runtime during StrictMode effect probing", async () => {
+  const before = vi.mocked(startPlaySession).mock.calls.length;
+  const { stop } = await openPendingPlay(true);
+  expect(vi.mocked(startPlaySession).mock.calls.length - before).toBe(1);
+  cleanup();
+  await act(async () => {});
+  expect(stop).toHaveBeenCalledOnce();
 });

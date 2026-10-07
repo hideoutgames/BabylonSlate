@@ -57,6 +57,91 @@ describe("DocumentService", () => {
     expect(service.getDocument(moved.newId)?.dirty).toBe(false);
   });
 
+  it("protects document content and revisions while independent authoring owners hold leases", async () => {
+    const service = new DocumentService();
+    const project = createMockProjectService();
+    const sceneId = await service.openDocument(project, { kind: "scene", path: MAIN_SCENE_FILE, label: "Main" });
+    const graphId = await service.openDocument(project, { kind: "graph", path: MAIN_CLASS_FILE, label: "Class" });
+    const assetId = await service.openDocument(project, { kind: "material", path: "assets/Test.material.babasset", label: "Material" });
+    const before = service.getOpenDocumentsOrdered().map(doc => ({ ...doc }));
+    const revisions = service.getRevisions();
+    const changes: Array<string | null> = [];
+    const unsubscribe = service.onAuthoringLockChange(() => { changes.push(service.getAuthoringLock().reason); });
+    const releaseSession = service.lockAuthoring("Session owns the baseline.");
+    const releaseReload = service.lockAuthoring("Reload pending.");
+    const mutations = [
+      () => service.updateScene(sceneId, { ...createDefaultScene(), name: "Changed" }),
+      () => service.updateGraph(graphId, { nodes: [], edges: [] }),
+      () => service.updateAssetDocument(assetId, { name: "Changed" }),
+      () => service.replaceLoadedContent(sceneId, createDefaultScene()),
+      () => service.patchLoadedContent(graphId, { nodes: [], edges: [] }),
+    ];
+    for (const mutation of mutations) expect(mutation).toThrow("Session owns the baseline.");
+    expect(service.getOpenDocumentsOrdered()).toEqual(before);
+    expect(service.getRevisions()).toBe(revisions);
+    releaseSession();
+    releaseSession();
+    expect(service.getAuthoringLock()).toMatchObject({ readOnly: true, reason: "Reload pending." });
+    expect(() => service.updateGraph(graphId, { nodes: [], edges: [] })).toThrow("Reload pending.");
+    releaseReload();
+    expect(service.getAuthoringLock()).toMatchObject({ readOnly: false, reason: null });
+    expect(changes).toEqual(["Session owns the baseline.", "Session owns the baseline.", "Reload pending.", null]);
+    unsubscribe();
+    service.updateGraph(graphId, { nodes: [], edges: [], actorDefaults: { properties: { accepted: true } } });
+    expect(service.getDocument(graphId)).toMatchObject({ dirty: true, content: { actorDefaults: { properties: { accepted: true } } } });
+  });
+
+  it("lets a previously captured safe save acknowledge its content while authoring is locked", async () => {
+    const service = new DocumentService();
+    const id = await service.openDocument(createMockProjectService(), { kind: "scene", path: MAIN_SCENE_FILE, label: "Main" });
+    service.updateScene(id, { ...createDefaultScene(), name: "Unsaved baseline" });
+    const saved = service.getDirtyDocuments().map(doc => ({ ...doc }));
+    const release = service.lockAuthoring("Session owns the baseline.");
+    service.setLayout(id, { camera: "editor" });
+    service.markAllClean(saved);
+    expect(service.getDocument(id)).toMatchObject({ content: { name: "Unsaved baseline" }, dirty: false, layout: { camera: "editor" } });
+    expect(service.getAuthoringLock().readOnly).toBe(true);
+    release();
+  });
+
+  it("protects the source scene and dirty tabs from close, reset, and repath while allowing clean asset navigation", async () => {
+    const service = new DocumentService();
+    const project = createMockProjectService();
+    const scene = await service.openDocument(project, { kind: "scene", path: MAIN_SCENE_FILE, label: "Main" });
+    const graph = await service.openDocument(project, { kind: "graph", path: MAIN_CLASS_FILE, label: "Class" });
+    const dirtyGraph = await service.openDocument(project, { kind: "graph", path: "assets/Dirty.babasset", label: "Dirty" });
+    service.updateGraph(dirtyGraph, { nodes: [], edges: [], actorDefaults: { generateHitEvents: true } });
+    const release = service.lockAuthoring("Stop the session first");
+    expect(() => service.closeDocument(scene)).toThrow("Stop the session first");
+    expect(() => service.closeDocument(dirtyGraph)).toThrow("Stop the session first");
+    expect(() => service.closeDocumentsForPaths([MAIN_CLASS_FILE])).toThrow("Stop the session first");
+    expect(() => service.repathDocument("graph", MAIN_CLASS_FILE, "assets/Renamed.babasset")).toThrow("Stop the session first");
+    await expect(service.initializeFromProject(project, createEmptyProject("Other"), createEmptyLayouts())).rejects.toThrow("Stop the session first");
+    expect(service.getDocument(scene)).toBeDefined();
+    expect(service.getDocument(dirtyGraph)?.dirty).toBe(true);
+    service.closeDocument(graph);
+    expect(service.getDocument(graph)).toBeUndefined();
+    const reopened = await service.openDocument(project, { kind: "graph", path: MAIN_CLASS_FILE, label: "Class" });
+    expect(service.getDocument(reopened)).toBeDefined();
+    release();
+  });
+
+  it("rejects a delayed replacement scene before its close callback after crossing a session lock", async () => {
+    const service = new DocumentService();
+    const original = await service.openDocument(createMockProjectService(), { kind: "scene", path: MAIN_SCENE_FILE, label: "Main" });
+    let finishRead!: (value: ReturnType<typeof createDefaultScene>) => void;
+    const project = createMockProjectService({ loadDocument: () => new Promise(resolve => { finishRead = resolve; }) });
+    const beforeCommit = vi.fn(() => { service.closeDocument(original); });
+    const loading = service.openDocument(project, { kind: "scene", path: "assets/Other.babasset", label: "Other" }, null, true, { beforeCommit });
+    const release = service.lockAuthoring("Protected baseline");
+    release();
+    finishRead(createDefaultScene());
+    await expect(loading).rejects.toThrow("crossed an authoring lock");
+    expect(beforeCommit).not.toHaveBeenCalled();
+    expect(service.getDocument(original)).toBeDefined();
+    expect(service.getOpenDocumentsOrdered().filter(doc => doc.ref.kind === "scene")).toHaveLength(1);
+  });
+
   it.each(["open", "activate"] as const)("keeps background utility trees dirty and promotes their existing working copy on %s", async (action) => {
     const service = new DocumentService();
     service.ensureContentBrowserTab();

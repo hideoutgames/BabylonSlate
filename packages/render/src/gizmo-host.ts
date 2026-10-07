@@ -19,6 +19,12 @@ import { createOverlayTransformBox } from "./overlay-transform-box";
 
 export type GizmoTool = "none" | "translate" | "rotate" | "scale";
 
+/**
+ * Orientation of the translate and rotate handles: aligned to the world axes,
+ * or to the attached mesh's own rotation. Scale always acts on local axes.
+ */
+export type GizmoSpace = "world" | "local";
+
 export type GizmoManipulator = "trs" | "overlay-box";
 
 export interface GizmoSnapSettings {
@@ -31,6 +37,7 @@ export interface GizmoSnapSettings {
 export interface GizmoHostOptions {
   mode?: ViewportMode;
   tool?: GizmoTool;
+  space?: GizmoSpace;
   scheduler?: Pick<RenderScheduler, "invalidate" | "acquireContinuous">;
   onDragStart?: () => void;
   onDrag?: () => void;
@@ -52,6 +59,7 @@ export interface GizmoHostOptions {
 export interface GizmoHost {
   readonly tool: GizmoTool;
   readonly mode: ViewportMode;
+  readonly space: GizmoSpace;
   readonly positionGizmo: PositionGizmo;
   readonly rotationGizmo: RotationGizmo;
   readonly scaleGizmo: ScaleGizmo;
@@ -59,6 +67,7 @@ export interface GizmoHost {
   readonly layer: UtilityLayerRenderer;
   setTool: (tool: GizmoTool) => void;
   setMode: (mode: ViewportMode) => void;
+  setSpace: (space: GizmoSpace) => void;
   setSnap: (snap: GizmoSnapSettings) => void;
   attachTo: (mesh: AbstractMesh | null, visuals?: AbstractMesh[]) => void;
   attachedMesh: () => AbstractMesh | null;
@@ -414,7 +423,6 @@ export function createGizmoHost(
 
   for (const gizmo of [position, rotation]) {
     gizmo.scaleRatio = handleScale;
-    gizmo.updateGizmoRotationToMatchAttachedMesh = false;
   }
   scale.scaleRatio = handleScale;
   scale.sensitivity = GIZMO_SCALE_SENSITIVITY;
@@ -425,6 +433,8 @@ export function createGizmoHost(
 
   let tool: GizmoTool = options.tool ?? "translate";
   let mode: ViewportMode = options.mode ?? "3d";
+  let space: GizmoSpace = options.space ?? "world";
+  let snapSettings: GizmoSnapSettings | null = null;
   const manipulator = options.manipulator ?? "trs";
   let attached: AbstractMesh | null = null;
   let overlayVisuals: AbstractMesh[] = [];
@@ -549,6 +559,31 @@ export function createGizmoHost(
     scale.uniformScaleGizmo.isEnabled = flags.scale.uniform;
   };
 
+  const applySnap = () => {
+    const snap = snapSettings;
+    const translate =
+      snap?.enabled && snap.translate > 0 ? snap.translate : 0;
+    // World space snaps to the world grid in snapTranslateDrag, so the gizmo
+    // drags freely. A local axis crosses that grid diagonally, so local space
+    // keeps Babylon's drag-relative steps along the handle instead.
+    translateSnap = space === "world" ? translate : 0;
+    position.snapDistance = space === "local" ? translate : 0;
+    rotation.snapDistance = snap?.enabled
+      ? (snap.rotateDeg * Math.PI) / 180
+      : 0;
+    scale.snapDistance = snap?.enabled ? snap.scale : 0;
+  };
+
+  const applySpace = () => {
+    const local = space === "local";
+    position.updateGizmoRotationToMatchAttachedMesh = local;
+    rotation.updateGizmoRotationToMatchAttachedMesh = local;
+    applySnap();
+    options.scheduler?.invalidate("gizmo");
+  };
+
+  applySpace();
+
   const overlayBox =
     manipulator === "overlay-box"
       ? createOverlayTransformBox(layer, scene, {
@@ -615,6 +650,9 @@ export function createGizmoHost(
     get mode() {
       return mode;
     },
+    get space() {
+      return space;
+    },
     positionGizmo: position,
     rotationGizmo: rotation,
     scaleGizmo: scale,
@@ -629,15 +667,14 @@ export function createGizmoHost(
       mode = next;
       applyAttachment();
     },
+    setSpace: (next: GizmoSpace) => {
+      if (next === space) return;
+      space = next;
+      applySpace();
+    },
     setSnap: (snap: GizmoSnapSettings) => {
-      // Babylon snaps relative to the drag start; snapTranslateDrag snaps to
-      // the world grid instead, so the gizmo itself drags freely.
-      position.snapDistance = 0;
-      translateSnap = snap.enabled && snap.translate > 0 ? snap.translate : 0;
-      rotation.snapDistance = snap.enabled
-        ? (snap.rotateDeg * Math.PI) / 180
-        : 0;
-      scale.snapDistance = snap.enabled ? snap.scale : 0;
+      snapSettings = { ...snap };
+      applySnap();
       overlayBox?.setSnap(snap);
     },
     attachTo: (mesh: AbstractMesh | null, visuals?: AbstractMesh[]) => {

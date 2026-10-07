@@ -167,6 +167,16 @@ export const engineSettingsSchema = z.object({
       overlayConsole: z.boolean().default(true),
       overlayInspector: z.boolean().default(true),
       pauseOnPlay: z.boolean().default(false),
+      keepSimulationChanges: z.boolean().default(false),
+      profileDurationSeconds: z.preprocess((value) => {
+        if (typeof value !== "number" || !Number.isFinite(value)) return value;
+        return Math.min(60, Math.max(1, Math.round(value)));
+      }, z.number().int().min(1).max(60).default(10)),
+      profileByteBudget: z.preprocess((value) => {
+        if (typeof value !== "number" || !Number.isFinite(value)) return value;
+        return Math.min(64 * 1024 * 1024, Math.max(4 * 1024 * 1024, Math.round(value)));
+      }, z.number().int().min(4 * 1024 * 1024).max(64 * 1024 * 1024).default(16 * 1024 * 1024)),
+      profileGpuTiming: z.boolean().default(false),
     })
     .default({
       previewBuild: false,
@@ -175,6 +185,10 @@ export const engineSettingsSchema = z.object({
       overlayConsole: true,
       overlayInspector: true,
       pauseOnPlay: false,
+      keepSimulationChanges: false,
+      profileDurationSeconds: 10,
+      profileByteBudget: 16 * 1024 * 1024,
+      profileGpuTiming: false,
     }),
   focusKeepPanels: z
     .object({
