@@ -983,7 +983,7 @@ export class PhysicsWorldSync {
           // rotation, so writing earlier bodies cannot change a later ancestor.
           local =
             parent && !parent.destroyed
-              ? localPhysicsTransform(transform, this.readbackPose(parent))
+              ? localPhysicsTransform(transform, this.readbackPose(parent), actor.transform)
               : transform;
         }
         Object.assign(actor.transform.position, local.position);

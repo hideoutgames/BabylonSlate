@@ -67,26 +67,42 @@ describe("authored actor matrices", () => {
     expect(shearedActorIds(actors)).toEqual(["child", "grandchild"]);
   });
 
-  it("match the runtime's matrix composition and shear detection", () => {
+  it("flag only attached actors whose axes are oblique", () => {
+    const quarter: [number, number, number, number] = [0, 0, Math.SQRT1_2, Math.SQRT1_2];
+    const oblique: [number, number, number, number] = [0, 0, Math.sin(Math.PI / 8), Math.cos(Math.PI / 8)];
+    const actors = [
+      actor("stretched", null, { position: [0, 0, 0], rotation: oblique, scale: [2, 1, 1] }),
+      actor("quarter", "stretched", { position: [0, 0, 0], rotation: quarter, scale: [1, -3, 1] }),
+      actor("uniform", null, { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [2, 2, 2] }),
+      actor("turned", "uniform", { position: [0, 0, 0], rotation: oblique, scale: [1, 1, 1] }),
+      actor("mirror", null, { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [-1, 1, 1] }),
+      actor("mirrored", "mirror", { position: [0, 0, 0], rotation: oblique, scale: [1, 1, 1] }),
+      actor("sheared", "stretched", { position: [0, 0, 0], rotation: oblique, scale: [1, 1, 1] }),
+      actor("dangling", "missing", { position: [0, 0, 0], rotation: oblique, scale: [1, 1, 1] }),
+    ];
+    const world = authoredActorMatrices(actors);
+    const axes = world(actors[6]!).m;
+    // The authored matrix itself is sheared: its X and Y axes are not perpendicular.
+    const x = new Vector3(axes[0]!, axes[1]!, axes[2]!), y = new Vector3(axes[4]!, axes[5]!, axes[6]!);
+    expect(Math.abs(Vector3.Dot(x, y))).toBeGreaterThan(0.1);
+    expect(shearedActorIds(actors)).toEqual(["sheared"]);
+  });
+
+  it("match the runtime's matrix composition", () => {
     fc.assert(fc.property(hierarchy, (actors) => {
       const authored = authoredActorMatrices(actors);
       const runtime = runtimeWorlds(actors);
-      const sheared: string[] = [];
       for (const entry of actors) {
+        // Babylon matrices hold float32 values.
         const m = authored(entry).m;
         const expected = runtime.get(entry.id)!;
         for (let row = 0; row < 4; row++) {
           for (let column = 0; column < 3; column++) {
             const value = expected[row * 3 + column]!;
-            expect(Math.abs(m[row * 4 + column]! - value)).toBeLessThan(1e-9 * Math.max(1, Math.abs(value)));
+            expect(Math.abs(m[row * 4 + column]! - value)).toBeLessThan(1e-5 * Math.max(1, Math.abs(value)));
           }
         }
-        const axes = [0, 4, 8].map((offset) => new Vector3(m[offset]!, m[offset + 1]!, m[offset + 2]!));
-        const oblique = [[0, 1], [0, 2], [1, 2]].some(([a, b]) =>
-          Math.abs(Vector3.Dot(axes[a!]!, axes[b!]!)) > 1e-6 * axes[a!]!.length() * axes[b!]!.length());
-        if (entry.parentId && oblique) sheared.push(entry.id);
       }
-      expect(shearedActorIds(actors)).toEqual(sheared);
     }), { numRuns: 200 });
   });
 });

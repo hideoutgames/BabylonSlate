@@ -105,11 +105,12 @@ function hierarchy(rotation: fc.Arbitrary<Quat>): fc.Arbitrary<Node[]> {
 describe("actor world transforms match the authored matrices", () => {
   it("permutes nonuniform parent scale onto a quarter-turned child", () => {
     // Parent scale (2, 1, 1); the child is turned 90 degrees about Z.
-    const [, child] = spawnHierarchy([
+    const actors = spawnHierarchy([
       { parent: -1, transform: transform([0, 0, 0], { x: 0, y: 0, z: 0, w: 1 }, [2, 1, 1]) },
       { parent: 0, transform: transform([0, 0, 0], { x: 0, y: 0, z: S, w: S }, [1, 1, 1]) },
     ]);
-    const world = composeActorWorldTransforms((guid) => child!.world!.findActor(guid), [child!]).get(child!.guid)!;
+    const index = firstSpawnedActorIndex(actors);
+    const world = composeActorWorldTransforms((guid) => index.get(guid), [actors[1]!]).get("actor-1")!;
     expect(world.rotation).toEqual({ x: 0, y: 0, z: S, w: S });
     expect(world.scale.x).toBeCloseTo(1, 12);
     expect(world.scale.y).toBeCloseTo(2, 12);

@@ -519,7 +519,9 @@ it.each([
           z: 0,
         });
         const y = slot.position.y + center.y;
-        expect(y).toBeCloseTo(2 * parentScale.x);
+        // As the editor composes it, the quarter-turned child's local X runs
+        // along the parent's Y, so the parent's Y scale stretches the offset.
+        expect(y).toBeCloseTo(2 * parentScale.y);
         expect(
           backend.lineTrace({ x: -5, y, z: 0 }, { x: 5, y, z: 0 }).hit,
         ).toBe(true);
