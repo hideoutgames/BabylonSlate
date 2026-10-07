@@ -6,10 +6,7 @@ export async function decodeAudioWaveformPeaks(
 ): Promise<{ peaks: AudioWaveformPeak[]; durationSeconds: number } | null> {
   if (bytes.byteLength === 0) return null;
   try {
-    const copy = bytes.buffer.slice(
-      bytes.byteOffset,
-      bytes.byteOffset + bytes.byteLength,
-    );
+    const copy = bytes.slice().buffer;
     const buffer = await decodeAudioData(copy);
     return waveformFromPcmBuffer(buffer);
   } catch {

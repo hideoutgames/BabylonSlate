@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -186,7 +187,9 @@ export function TreeView({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const onExternalDragEndRef = useRef(onExternalDragEnd);
-  onExternalDragEndRef.current = onExternalDragEnd;
+  useLayoutEffect(() => {
+    onExternalDragEndRef.current = onExternalDragEnd;
+  });
   const extraPointerRef = useRef<ExtraPointer | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);

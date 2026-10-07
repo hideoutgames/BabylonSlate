@@ -960,9 +960,10 @@ function initializePlayer(
     }
   } catch (error) {
     worker = null;
-    try { releaseWorker(); } catch (cleanupError) {
-      throw new AggregateError([error, cleanupError], "Player worker startup and termination failed.", { cause: error });
-    }
+    const failures: unknown[] = [error];
+    try { releaseWorker(); } catch (cleanupError) { failures.push(cleanupError); }
+    if (failures.length > 1)
+      throw new AggregateError(failures, "Player worker startup and termination failed.", { cause: error });
     const inProcess = createRuntimeFromLoad(loadControl, (command) =>
       onCommand(command as never),
       saveStorage,

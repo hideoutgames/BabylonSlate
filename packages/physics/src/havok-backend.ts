@@ -985,7 +985,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       ),
     );
     const memberships = new Map<PhysicsShape, number>();
-    let grounded = false;
+    let grounded: boolean;
     try {
       // CCT casts exclude their private body, not the actor's physical body.
       // Filter the owner's complete compound before collecting any contacts.

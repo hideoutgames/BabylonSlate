@@ -362,7 +362,7 @@ export function DataTreeEntriesPanel(_props: IDockviewPanelProps) {
     <OperationError message={actions.error} />
     {!index ? <DataEmpty title="Invalid Hierarchy">Resolve the issues in Validation before editing entries.</DataEmpty> : entries.length === 0 ? <DataEmpty title="No Entries">Add an entry to this branch.</DataEmpty> : filtered.length === 0 ? <DataEmpty title="No Matching Entries">Change the search or filter to show entries.</DataEmpty> : <div role="grid" aria-label="Branch Entries" aria-rowcount={filtered.length + 1} aria-colcount={definition ? visibleFields.length + 2 : 4} aria-activedescendant={selectedIndex >= 0 ? `${gridId}-${selectedEntryId}` : undefined} tabIndex={0} className="min-w-full outline-none" style={{ width: Math.max(420, 265 + (definition ? visibleFields.length * 120 : 190)) }} onKeyDown={(event) => {
       if (event.target !== event.currentTarget || event.nativeEvent.isComposing) return;
-      let next = selectedIndex;
+      let next: number;
       if (event.key === "ArrowDown") next = Math.min(filtered.length - 1, selectedIndex + 1);
       else if (event.key === "ArrowUp") next = Math.max(0, selectedIndex - 1);
       else if (event.key === "Home") next = 0;

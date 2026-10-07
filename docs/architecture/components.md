@@ -316,4 +316,4 @@ Inline NodeGraph asset controls show an icon and truncated name without a subtit
 
 `PinDefaultEditor` supports host-provided string editors with connected-input metadata. `GraphPinDefaultsProvider` derives effective Definition/path catalogs through the shared hierarchy index. Inline and Inspector Entry Path selectors share live tree paths; unavailable authored paths remain visible for repair. Missing or dynamically wired trees use normal string controls.
 
-Camera Details shows Field Of View for Perspective and Orthographic Size for Orthographic projection. Orthographic Size steps by tenths, so whole values remain reachable. Near/Far Clip relationship errors appear only after an invalid edit. Settings footers distinguish automatically persisted Engine Settings from Project Settings saved with Save All.
+Camera Details shows Field Of View for Perspective and Orthographic Size for Orthographic projection. Orthographic Size steps by tenths, so whole values remain reachable. Near/Far Clip relationship errors appear only after an invalid edit.

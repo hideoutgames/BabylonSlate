@@ -6,7 +6,7 @@ import { RuntimeInspector } from "./runtime-inspector";
 import { SceneLayerActorSwitchers } from "./scene-layer-actor-switcher";
 import { RuntimeDataCatalog, dataTypeSchemas } from "./data-catalog";
 import { overlayAnchorBindings } from "./overlay-anchor-layout";
-import { SaveGameError, SaveGameService, type SaveGameServiceOptions } from "@babylonslate/core";
+import { SaveGameError, SaveGameService, resolveActorDefaults, type SaveGameServiceOptions } from "@babylonslate/core";
 import { SaveGameWorld } from "./save-game-world";
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
 import { RuntimeAssetPreloads } from "./asset-preloads";
@@ -5526,15 +5526,13 @@ class InProcessRuntime implements RuntimeDriver {
     for (const component of actor.components) {
       this.scriptHost.bindInterfaceHandlers(component);
     }
-    const script = this.scriptHost.scriptsFor(actor.classId)[0];
-    const defaults = script?.actorDefaults;
-    if (!defaults) return;
-    if (typeof defaults.generateHitEvents === "boolean") {
-      actor.generateHitEvents = defaults.generateHitEvents;
-    }
-    if (typeof defaults.generateOverlapEvents === "boolean") {
-      actor.generateOverlapEvents = defaults.generateOverlapEvents;
-    }
+    const resolved = resolveActorDefaults(
+      this.world.classRegistry.ancestry(actor.classId)
+        .map((classId) => this.scriptHost.scriptsFor(classId)[0]?.actorDefaults),
+    );
+    actor.generateHitEvents = resolved.generateHitEvents;
+    actor.generateOverlapEvents = resolved.generateOverlapEvents;
+    actor.tickEnabled = resolved.eventTick;
   }
 
   private dispatchCollisionEvents(): void {
@@ -5654,7 +5652,7 @@ class InProcessRuntime implements RuntimeDriver {
       try {
         parseColliderProperties({ shape }, actor.sceneLayerId ? "2d" : this.physicsWorldKind);
       } catch (error) {
-        throw new Error(`${actorLabel(actor)} / ${component.guid}: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(`${actorLabel(actor)} / ${component.guid}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
       }
     }
     const slotId = this.assignSlot(actor);
@@ -6041,8 +6039,8 @@ class InProcessRuntime implements RuntimeDriver {
       this.emit({ type: "snapshotLayout", capacity, generation: this._snapshotGeneration });
     } catch (error) {
       const message = `Unable to grow Actor snapshot capacity to ${capacity}: ${error instanceof Error ? error.message : String(error)}`;
-      this.reportError(new Error(message));
-      throw new Error(message);
+      this.reportError(new Error(message, { cause: error }));
+      throw new Error(message, { cause: error });
     }
   }
 

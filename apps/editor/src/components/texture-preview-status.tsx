@@ -48,7 +48,7 @@ export function useTexturePreview(textureGuid: string | null | undefined) {
             "Texture image data is missing. Reimport the texture or pick a replacement in Details.",
           );
         objectUrl = URL.createObjectURL(
-          new Blob([bytes], { type: "image/png" }),
+          new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "image/png" }),
         );
         setLoaded({ sourceKey, url: objectUrl });
       } catch (error) {

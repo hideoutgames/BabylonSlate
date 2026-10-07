@@ -211,7 +211,7 @@ export type UvHierarchyGlbOptions = {
  */
 export function encodeUvHierarchyGlb(
   options: UvHierarchyGlbOptions = {},
-): Uint8Array {
+): Uint8Array<ArrayBuffer> {
   const positionsA = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
   const positionsB = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
   const uvs = new Float32Array([0, 0, 1, 0, 0, 1]);

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { SerializedGraph } from "@babylonslate/core";
 import { createMeshComponent } from "@babylonslate/core";
@@ -58,6 +58,13 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
       layout: null,
       dirty: false,
     },
+    {
+      id: "graph:assets/Quiet.class.babasset",
+      ref: { kind: "graph", path: "assets/Quiet.class.babasset", label: "Quiet Class" },
+      content: { nodes: [], edges: [], actorDefaults: { generateHitEvents: false, eventTick: "disabled" } },
+      layout: null,
+      dirty: false,
+    },
   ],
   applyGraphChange,
   assetRegistry: {
@@ -70,6 +77,10 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
           parentClass: classState.parentClass,
           guid: "hero-1",
         },
+      },
+      {
+        path: "assets/Quiet.class.babasset",
+        header: { type: "Class", name: "Quiet", parentClass: "Actor", guid: "quiet-1" },
       },
     ],
   },
@@ -209,6 +220,25 @@ describe("Inspector prefab component details", () => {
       expect(screen.getByTestId("inspector-parent-class").textContent).toContain(parentClass);
     },
   );
+
+  it("shows inherited Actor Defaults and writes only overrides", async () => {
+    classState.parentClass = "Quiet";
+    renderInspector({ selectedComponentId: PREFAB_ROOT_ID });
+    await waitFor(() =>
+      expect(screen.getByTestId("property-eventTick").textContent).toContain("Inherit (Disabled)"),
+    );
+    const hit = screen.getByTestId("property-generateHitEvents");
+    expect(hit.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(hit);
+    expect(applyGraphChange.mock.calls.at(-1)![1].actorDefaults).toEqual({ generateHitEvents: true });
+    fireEvent.click(screen.getByTestId("property-eventTick"));
+    const enabled = await screen.findByRole("option", { name: "Enabled" });
+    fireEvent.pointerDown(enabled);
+    fireEvent.click(enabled);
+    await waitFor(() =>
+      expect(applyGraphChange.mock.calls.at(-1)![1].actorDefaults).toEqual({ eventTick: "enabled" }),
+    );
+  });
 
   it("shows editable Actor Defaults for an engine Actor subclass", () => {
     classState.parentClass = "SceneLayerActor";

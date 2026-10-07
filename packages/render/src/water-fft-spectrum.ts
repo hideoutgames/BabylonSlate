@@ -382,7 +382,7 @@ export function waterFftButterfly(
  */
 export function waterFftInverse(work: Float64Array, size: number, segments: number, alphaScales?: readonly number[]): Float64Array[] {
   const width = segments * size, stages = waterFftStages(size);
-  let current = work, next = new Float64Array(work.length);
+  let current: Float64Array = work, next: Float64Array = new Float64Array(work.length);
   for (let stage = 0; stage < stages; stage++) {
     waterFftButterfly(current, width, next, width, size, size, stage, true);
     [current, next] = [next, current];

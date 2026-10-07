@@ -206,9 +206,10 @@ async function launchLoaded(
       );
     },
   }).catch((error: unknown) => {
-    try { cleanupPage(); } catch (cleanupError) {
-      throw new AggregateError([error, cleanupError], "Player page startup cleanup failed.", { cause: error });
-    }
+    const failures: unknown[] = [error];
+    try { cleanupPage(); } catch (cleanupError) { failures.push(cleanupError); }
+    if (failures.length > 1)
+      throw new AggregateError(failures, "Player page startup cleanup failed.", { cause: error });
     throw error;
   });
   if (stopped || startupAbort.signal.aborted) {

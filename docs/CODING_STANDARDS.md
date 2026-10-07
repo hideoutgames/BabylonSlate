@@ -16,6 +16,7 @@ Short conventions for BabylonSlate. Tooling (ESLint, TypeScript strict) enforces
 ## TypeScript
 
 - `verbatimModuleSyntax`: use `import type` for type-only imports.
+- TypeScript 6 DOM APIs (`Blob`, `Response`, `crypto.subtle`, file writers) take ArrayBuffer-backed views. Helpers that allocate fresh bytes return `Uint8Array<ArrayBuffer>`; copy with `bytes.slice()` when an owned `ArrayBuffer` is needed, or narrow `Uint8Array` storage bytes with `as Uint8Array<ArrayBuffer>` at the DOM call (never SharedArrayBuffer-backed). Annotate ping-pong or reassigned buffers as plain `Uint8Array` / `Float64Array`. Toolchain details: [testing](architecture/testing.md#verification-scope).
 - Prefer `Result` and explicit errors over thrown exceptions in pure packages (as types land in `core`).
 - No `any` without a one-line justification comment.
 
@@ -35,6 +36,7 @@ Short conventions for BabylonSlate. Tooling (ESLint, TypeScript strict) enforces
 - Use `flex` + `gap-*` for spacing, not `space-y-*`.
 - Global `user-select: none` on the shell; wrap readable text in `SelectableText` from `@babylonslate/editor-kit`. Form `input` / `textarea` / `contenteditable` restore selection in `globals.css`.
 - Use radius tokens (`rounded-md`, `rounded-lg`) — no hardcoded `border-radius` literals in editor CSS except token definitions.
+- Lint enforces only the classic hooks rules (`rules-of-hooks`, `exhaustive-deps`); the `eslint-plugin-react-hooks` 7 React Compiler rules are intentionally not enabled ([lint toolchain](architecture/testing.md#verification-scope)). New code should still follow the Rules of React: read refs in effects and handlers rather than during render, reset state on a prop change while rendering rather than with `setState` in an effect, and do not mutate props, state or module globals during render.
 
 The standalone project browser is a scoped exception to the editor palette, radius, and density rules: `apps/editor/src/components/homepage.css` may define its own semantic color tokens and expressive dimensions under `.homepage-theme` and its landing-only selectors. Portal content must carry the same scope (the project context menu has its own landing-only selector). Mount this stylesheet as text with the Home route so it leaves the document when the editor opens. This exception does not permit changing global editor tokens, compact controls, spacing, or engine styles. Shared UI components, accessible focus, 44pt touch hit areas, and reduced-motion support still apply. See [landing theming](architecture/theming.md#brand-assets).
 

@@ -162,7 +162,7 @@ export const TexturePreview = memo(function TexturePreview({
         setStatus("missing");
         return;
       }
-      objectUrl = URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
+      objectUrl = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "image/png" }));
       setUrl(objectUrl);
       setStatus("ready");
     })();

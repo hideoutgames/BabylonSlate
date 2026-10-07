@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,10 +39,12 @@ export function NumberPromptDialog({
   "data-testid": testId,
 }: NumberPromptDialogProps) {
   const [value, setValue] = useState(initialValue);
-
-  useEffect(() => {
+  // Reseed while rendering when the dialog opens or its initial value changes.
+  const [seededFrom, setSeededFrom] = useState<{ open: boolean; initialValue: number } | null>(null);
+  if (seededFrom?.open !== open || seededFrom.initialValue !== initialValue) {
+    setSeededFrom({ open, initialValue });
     if (open) setValue(initialValue);
-  }, [open, initialValue]);
+  }
 
   const submit = (next = value) => {
     if (!Number.isFinite(next) || next < min) return;

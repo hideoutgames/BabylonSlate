@@ -10,6 +10,8 @@ import { loadGameFromFiles, loadGameFromHttp } from "./artifact";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+/** Response bodies need ArrayBuffer-backed views; exported bytes never use SharedArrayBuffer. */
+const body = (bytes: Uint8Array | undefined) => bytes as Uint8Array<ArrayBuffer> | undefined;
 
 function useScriptsFilename(files: Map<string, Uint8Array>, scriptsFile: string) {
   const customized = new Map(files);
@@ -35,7 +37,7 @@ describe("loadGameFromFiles", () => {
       if (this !== undefined && this !== globalThis) throw new TypeError("Failed to execute 'fetch' on 'Window': Illegal invocation");
       const path = new URL(String(input)).pathname.slice(1);
       requested.push(path);
-      return new Response(exported.value.files.get(path));
+      return new Response(body(exported.value.files.get(path)));
     });
     try {
       const game = await loadGameFromHttp("https://game.example/");
@@ -121,7 +123,7 @@ describe("loadGameFromFiles", () => {
       if (isAsset) { active++; peak = Math.max(peak, active); }
       await Promise.resolve();
       if (isAsset) active--;
-      return new Response(match ? bytes.subarray(Number(match[1]), Number(match[2]) + 1) : bytes, { status: match ? 206 : 200 });
+      return new Response(body(match ? bytes.subarray(Number(match[1]), Number(match[2]) + 1) : bytes), { status: match ? 206 : 200 });
     });
     expect(game.textureBytes.size).toBe(15);
     expect(game.textureBytes.get("texture-14")).toEqual(new Uint8Array([14]));
@@ -142,7 +144,7 @@ describe("loadGameFromFiles", () => {
         pull(controller) { controller.enqueue(new Uint8Array([1, 2])); },
         cancel() { cancelled = true; },
       }));
-      return new Response(exported.value.files.get(path));
+      return new Response(body(exported.value.files.get(path)));
     });
     const before = game.getReadMetrics!().actualBytesRead;
     await expect(game.acquireAssets!(["texture"], { consumer: "test", signal: new AbortController().signal })).rejects.toThrow(/texture.*byte length/i);
@@ -445,7 +447,7 @@ describe("loadGameFromHttp", () => {
       requested.push(url);
       const path = new URL(url).pathname.replace(/^\/game\//, "");
       const bytes = files.get(path);
-      return new Response(bytes, { status: bytes ? 200 : 404 });
+      return new Response(body(bytes), { status: bytes ? 200 : 404 });
     };
 
     const loaded = await loadGameFromHttp("https://example.com/game/", fetchImpl);
@@ -473,7 +475,7 @@ describe("demand-driven exported sources", () => {
       const path = new URL(String(input)).pathname.slice(1);
       reads.push(path);
       const bytes = exported.value.files.get(path);
-      return new Response(bytes, { status: bytes ? 200 : 404 });
+      return new Response(body(bytes), { status: bytes ? 200 : 404 });
     });
     try {
       expect(reads).toEqual(["game.json", "scripts.js", "assets/data-0.bin"]);
@@ -505,7 +507,7 @@ describe("demand-driven exported sources", () => {
     const game = await loadGameFromHttp("https://offline.local/", async input => {
       const path = new URL(String(input)).pathname.slice(1);
       const bytes = missing && path === "assets/data-2.bin" ? undefined : exported.value.files.get(path);
-      return new Response(bytes, { status: bytes ? 200 : 404 });
+      return new Response(body(bytes), { status: bytes ? 200 : 404 });
     });
     try {
       const request = { consumer: "stream", signal: new AbortController().signal };

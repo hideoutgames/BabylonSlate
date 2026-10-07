@@ -1,7 +1,7 @@
 import type { ScalabilityTransaction, ScalabilityAcknowledgement, RenderPathStatus, RenderProjectSettings, ScenePostProcessEntry, MaterialParameterCatalog, MaterialParameterValue } from "@babylonslate/core";
 /** Reliable ordered channel message types (never through the snapshot buffer). */
 
-import type { CollisionTriangleMesh, ProjectInputSettings, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
+import type { ActorDefaults, CollisionTriangleMesh, ProjectInputSettings, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
 
 /** Rest-pose Complex Collision triangles for one Model; typed arrays clone as one memcpy. */
 export type CookedCollisionMeshEntry = { guid: string } & CollisionTriangleMesh;
@@ -109,13 +109,8 @@ export type ScriptBundleEntry = {
     method: string;
     exportName: string;
   }>;
-  /** Omitted flags default to true at spawn. */
-  actorDefaults?: {
-    /** Authored built-in actor properties applied before per-instance overrides. */
-    properties?: Record<string, unknown>;
-    generateHitEvents?: boolean;
-    generateOverlapEvents?: boolean;
-  };
+  /** Omitted flags inherit from the parent Class; engine bases are enabled. */
+  actorDefaults?: ActorDefaults;
   /** Effective prefab component templates for runtime Spawn Actor. */
   components?: SerializedComponent[];
 };

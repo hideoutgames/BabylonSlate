@@ -106,7 +106,7 @@ function pixelsDiffer(a: number[] | null, b: number[] | null): boolean {
 
 function meshSnapshot(mesh: AbstractMesh, scene: Scene): TrackedMeshSnapshot {
   const material = mesh.material;
-  let inFrustum = false;
+  let inFrustum: boolean;
   try {
     inFrustum =
       scene.frustumPlanes.length > 0 &&
@@ -114,7 +114,7 @@ function meshSnapshot(mesh: AbstractMesh, scene: Scene): TrackedMeshSnapshot {
   } catch {
     inFrustum = false;
   }
-  let materialReady = false;
+  let materialReady: boolean;
   try {
     materialReady = material ? material.isReady(mesh) : true;
   } catch {
@@ -382,7 +382,7 @@ export function collectEngineSceneDiagnostics(
         const shadowCapable = light as {
           getShadowGenerator?: () => unknown;
         };
-        let shadowGenerator = false;
+        let shadowGenerator: boolean;
         try {
           shadowGenerator = shadowCapable.getShadowGenerator?.() != null;
         } catch {
@@ -415,7 +415,7 @@ export function collectEngineSceneDiagnostics(
         materials: scene.meshes
           .filter((mesh): mesh is Mesh => mesh instanceof Mesh)
           .map((mesh) => {
-            let ready = false;
+            let ready: boolean;
             try {
               ready = mesh.material ? mesh.material.isReady(mesh) : true;
             } catch {
