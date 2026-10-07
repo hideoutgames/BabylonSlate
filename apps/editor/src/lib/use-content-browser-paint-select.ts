@@ -79,7 +79,9 @@ export function useContentBrowserPaintSelect(options: {
   }, []);
 
   const onPointerDownCapture = useCallback((event: ReactPointerEvent) => {
-    if (sessionRef.current) return;
+    // A menu opened on press can take that press's release, leaving its
+    // session behind; the next press starts over instead of staying suppressed.
+    if (sessionRef.current && !sessionRef.current.menuOpened) return;
     suppressClickRef.current = false;
     const hit = resolveContentBrowserPaintHit(event.target as Element | null);
     if (!hit) return;

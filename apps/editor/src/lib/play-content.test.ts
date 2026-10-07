@@ -743,6 +743,11 @@ describe("scene-referenced Play content", () => {
       }),
     ).toBe(level2);
   });
+
+  it("reloads the boot Scene from the Play library after the boot document is released", () => {
+    const reloaded = createDefaultScene();
+    expect(playSceneByGuid("scene-1", [{ guid: "scene-1", scene: reloaded }], { guid: "scene-1" })).toBe(reloaded);
+  });
 });
 
 describe("readPlayNavmeshBytes", () => {

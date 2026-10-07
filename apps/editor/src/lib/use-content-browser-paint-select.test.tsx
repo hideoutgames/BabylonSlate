@@ -200,4 +200,20 @@ describe("useContentBrowserPaintSelect", () => {
     fireEvent.click(tileB);
     expect(onExclusiveClick).toHaveBeenCalledWith("b");
   });
+
+  it("selects the next tapped card when the menu took the opening press's release", () => {
+    const onExclusiveClick = vi.fn();
+    const { getByTestId } = render(
+      <PaintHost onPaint={vi.fn()} onExclusiveClick={onExclusiveClick} />,
+    );
+    const tileA = getByTestId("tile-a");
+    const tileB = getByTestId("tile-b");
+    // Desktop Linux opens the menu on press; its overlay receives the release.
+    dispatchPointerEvent(tileA, "pointerdown", ORIGIN);
+    fireEvent.click(getByTestId("mark-menu"));
+    dispatchPointerEvent(tileB, "pointerdown", { clientX: 40, clientY: 10 });
+    dispatchPointerEvent(tileB, "pointerup", { clientX: 40, clientY: 10 });
+    fireEvent.click(tileB);
+    expect(onExclusiveClick).toHaveBeenCalledWith("b");
+  });
 });

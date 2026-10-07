@@ -84,16 +84,21 @@ describe("dev server first-run public snapshot", () => {
 
       const index = await get(base, "/engine-plugins/index.json");
       expect(index.status).toBe(200);
-      const entries = JSON.parse(new TextDecoder().decode(index.bytes)) as Array<{
-        id: string;
-        file: string;
-      }>;
-      expect(entries.length).toBeGreaterThan(0);
-      for (const entry of entries) {
+      const entries = JSON.parse(new TextDecoder().decode(index.bytes)) as {
+        plugins: Array<{ id: string; file: string }>;
+        files: Array<{ parts: Array<{ file: string; length: number }> }>;
+      };
+      expect(entries.plugins.length).toBeGreaterThan(0);
+      for (const entry of entries.plugins) {
         const plugin = await get(base, `/engine-plugins/${entry.file}`);
         expect(plugin.status).toBe(200);
         expect([...plugin.bytes.slice(0, 4)]).toEqual([0x50, 0x4b, 0x03, 0x04]);
       }
+
+      const segment = entries.files[0]!.parts[0]!;
+      const object = await get(base, `/engine-plugins/${segment.file}`);
+      expect(object.status).toBe(200);
+      expect(object.bytes.length).toBe(segment.length);
 
       // The whitelist must not pretend arbitrary names are generated assets;
       // a miss falls through to the SPA fallback or a 404.

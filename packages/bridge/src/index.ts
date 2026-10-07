@@ -32,6 +32,7 @@ export {
   type CommandMessage,
   type MaterialParameterValue,
   type ControlMessage,
+  type RuntimeSceneContent,
   type DebugColliderPrimitive,
   type DebugNavAgent,
   type DebugBehaviourTree,

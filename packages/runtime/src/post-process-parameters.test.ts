@@ -537,11 +537,13 @@ describe("Material Instance nodes", () => {
     try {
       await runtime.loadScripts([{ ...compiled, assetGuid: "hero", classId: "Hero", parentClassId: "Actor" }]);
       runtime.realizePlayWorld();
-      expect(commands.filter((command) => command.type === "diagnostic")).toEqual([]);
+      // The material swap is latent; observe its graph continuation's final
+      // bridge command before checking the returned Material Object.
+      await expect.poll(() => commands.filter((command) => command.type === "setMaterialParameter").map((command) => command.parameter))
+        .toEqual([{ kind: "float", value: 0.1 }]);
       const component = runtime.getWorld().getActors()[0]!.components[0]!;
       expect(component.getVariable("materialGuid")).toBe("inst");
-      expect(commands.filter((command) => command.type === "setMaterialParameter").map((command) => command.parameter))
-        .toEqual([{ kind: "float", value: 0.1 }]);
+      expect(commands.filter((command) => command.type === "diagnostic")).toEqual([]);
     } finally {
       runtime.stop();
     }

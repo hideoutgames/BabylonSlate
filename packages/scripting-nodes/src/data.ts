@@ -1,4 +1,4 @@
-import { arrayOf, assetRef, BOOL, pin, STRING, structRef, type NodeDefinition } from "@babylonslate/scripting";
+import { arrayOf, assetRef, BOOL, EXEC, pin, STRING, structRef, type NodeDefinition } from "@babylonslate/scripting";
 
 export function dataDefinitionGuidOf(properties: Record<string, unknown>): string {
   return typeof properties.definitionGuid === "string" ? properties.definitionGuid.trim() : "";
@@ -7,10 +7,28 @@ export function dataDefinitionGuidOf(properties: Record<string, unknown>): strin
 /** Data Definitions supply typed values; trees are navigated by exact name paths. */
 export const dataNodes: NodeDefinition[] = [
   {
+    id: "data.readEntryAsync", title: "Read Data Entry Async", category: "data", latent: true,
+    description: "Loads a dynamically selected Data Tree and its schema, then reads an independent entry copy. Ownership follows this runtime object.",
+    searchAliases: ["data tree", "load data", "record", "configuration"],
+    pins: properties => [
+      pin("execIn", "Exec", "in", EXEC), pin("completed", "Completed", "out", EXEC), pin("failed", "Failed", "out", EXEC),
+      pin("tree", "Tree", "in", assetRef("DataTree")), pin("entryPath", "Entry Path", "in", STRING),
+      pin("value", "Value", "out", structRef(dataDefinitionGuidOf(properties))), pin("found", "Found", "out", BOOL), pin("error", "Error", "out", STRING),
+    ],
+    codegen: ctx => {
+      const result = ctx.output("value");
+      const error = ctx.output("error");
+      ctx.emit(`${error} = "";`);
+      ctx.emit(`try { ${result} = await ctx.readDataEntryAsync(${ctx.input("tree")}, ${ctx.input("entryPath")}, ${JSON.stringify(dataDefinitionGuidOf(ctx.node.properties))}); } catch (error) { if (error?.name === "AbortError") throw error; ${result} = null; ${error} = error instanceof Error ? error.message : String(error); }`);
+      ctx.emit(`${ctx.output("found")} = ${result} !== null;`);
+      ctx.branch?.(`${error} === ""`, "Completed", "Failed");
+    },
+  },
+  {
     id: "data.readEntry",
     title: "Read Data Entry",
     category: "data",
-    description: "Read an independent copy of an entry by its exact path, such as Weapons/Swords/Iron Sword. Found requires valid values matching the selected Data Definition.",
+    description: "Read an already prepared entry copy by its exact path, such as Weapons/Swords/Iron Sword. Found requires valid values matching the selected Data Definition.",
     searchAliases: ["data tree", "record", "configuration"],
     pure: true,
     pins: (properties) => [

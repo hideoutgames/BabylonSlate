@@ -52,6 +52,7 @@ export type ScriptConsoleCommand = {
 
 /** One compiled graph asset shipped to the runtime for a class. */
 export type ScriptBundleEntry = {
+  /** Owning catalog asset identity, independent of the source's authoring path. */
   assetGuid: string;
   classId: string;
   source: string;
@@ -94,7 +95,22 @@ export type ScriptBundleEntry = {
   components?: SerializedComponent[];
 };
 
+/** Complete currently owned source metadata; omitted collections become empty. */
+export interface RuntimeSceneContent {
+  assetGuids: string[];
+  sceneLayers?: Array<{ guid: string; layer: SerializedSceneLayer }>;
+  sceneNavmeshBytes?: Record<string, Uint8Array>;
+  dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
+  audioAssetGuids?: string[];
+  materialParameterCatalog?: MaterialParameterCatalog;
+  materialTextureAssetGuids?: string[];
+  renderTargets?: Record<string, import("@babylonslate/core").RenderTargetPayload>;
+  renderTargetTextures?: Record<string, import("@babylonslate/core").RenderTargetTexturePayload>;
+  animClipCatalog?: Array<{ guid: string; type: string; name: string; clipName?: string; durationMs?: number; skeletonGuid?: string | null; modelGuid?: string }>;
+}
+
 export type ControlMessage =
+  | ({ type: "loadSceneContent" } & RuntimeSceneContent)
   | { type: "saveStorageResponse"; response: import("@babylonslate/core").SaveStorageResponse }
   | { type: "ragdollPoseCaptured"; slotId: number; requestId: string; bones?: import("@babylonslate/core").RagdollBonePose[]; error?: string }
   | {
@@ -126,6 +142,10 @@ export type ControlMessage =
       gameInstanceClass?: string;
       /** Extra authored scenes `changescene` can instantiate by guid or name. */
       scenes?: Array<{ guid: string; scene: SerializedScene }>;
+      /** Metadata-only scene catalog. Documents and dependencies are acquired from the host on demand. */
+      sceneCatalog?: Array<{ guid: string; name: string }>;
+      classAssetGuids?: Record<string, string>;
+      consoleCommands?: Array<import("@babylonslate/core").ConsoleCommandMetadata & { classId: string; assetGuid: string }>;
       /** Baked navigation by canonical scene guid, selected before Begin Play. */
       sceneNavmeshBytes?: Record<string, Uint8Array>;
       /** Overlay documents the session compositor can instantiate by guid or name. */
@@ -163,6 +183,10 @@ export type ControlMessage =
   | {
       type: "loadScripts";
       scripts: ScriptBundleEntry[];
+      /** Complete source union, including every surviving owner. */
+      replace?: boolean;
+      /** Request readiness only after evaluation and class registration finish. */
+      requestId?: number;
       /** Explicit boot spawn requests. Omitted or empty only loads the classes. */
       spawn?: Array<{ classId: string; variables?: Record<string, unknown> }>;
     }
@@ -241,6 +265,8 @@ export type ControlMessage =
       safeAreaInsets?: Partial<import("@babylonslate/core").OverlaySafeAreaInsets>;
     }
   | { type: "audioVoiceEnded"; voiceId: string }
+  | { type: "assetPreloadResult"; preloadId: string; success: boolean; error?: string; progress?: number }
+  | { type: "assetLoadStates"; states: Array<{ guid: string; state: import("@babylonslate/core").RuntimeAssetLoadState }> }
   | { type: "sceneLoadingPainted"; sceneAssetGuid: string; sceneLoadId: number }
   | { type: "sceneLayerLoadingPainted"; layerId: string; layerLoadId: number }
   | { type: "sceneLayerReady"; layerId: string; layerLoadId: number }
@@ -248,6 +274,7 @@ export type ControlMessage =
   | { type: "sceneStreamReady"; actorGuid: string; streamLoadId: number }
   | { type: "sceneStreamProgress"; actorGuid: string; streamLoadId: number; progress: number }
   | { type: "sceneStreamFailed"; actorGuid: string; streamLoadId: number; message: string }
+  | { type: "sceneSourceResponse"; requestId: number; scene?: SerializedScene; error?: string }
   /** Engine-reported render path status for `renderpath` console readback. */
   | ({ type: "renderPathStatus" } & RenderPathStatus)
   | { type: "scalabilityStatus"; acknowledgement: ScalabilityAcknowledgement };
@@ -560,8 +587,13 @@ export type CommandMessage =
   | { type: "sceneLoading"; sceneAssetGuid: string; sceneLoadId: number }
   | { type: "sceneStreamLoading"; actorGuid: string; streamLoadId: number }
   | { type: "sceneStreamBlocking"; blocking: boolean }
+  | { type: "assetPreload"; preloadId: string; ownerId: string; assetGuids: string[] }
+  | { type: "assetPreloadRelease"; preloadId: string }
+  | { type: "assetSourcesReady"; requestId: number; success: boolean; error?: string }
   | { type: "sceneStreamRealized"; actorGuid: string; streamLoadId: number; slotIds: number[] }
   | { type: "sceneStreamRemoved"; actorGuid: string; streamLoadId: number }
+  | { type: "sceneSourceRequested"; requestId: number; assetGuid: string; consumer: string; streamActorGuid?: string; streamLoadId?: number }
+  | { type: "sceneSourceReleased"; requestId: number }
   | { type: "sceneLoadFailed"; sceneAssetGuid: string; sceneLoadId: number; message: string }
   | { type: "sceneLayerLoading"; layerId: string; assetGuid: string; layerLoadId: number }
   | { type: "sceneLayerLoadFailed"; layerId: string; layerLoadId: number; message: string }

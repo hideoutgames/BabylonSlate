@@ -209,6 +209,30 @@ it("keeps Play controls stable across document edits while Play saves the newest
   expect(dialog.textContent).toContain("Hero Class");
 });
 
+it("keeps Play stopped and the preparation error visible even with fixture injection enabled", async () => {
+  const scene = {
+    id: "scene:assets/Main.scene.babasset",
+    ref: { kind: "scene", path: "assets/Main.scene.babasset", label: "Main" },
+    content: createDefaultScene(),
+    dirty: false,
+  };
+  host.documents = { ...host.noProject, openDocuments: [scene], activeDocumentId: scene.id };
+  let controls!: ReturnType<typeof usePlay>;
+  function Consumer() {
+    controls = usePlay();
+    const { lines } = useOutputLog();
+    return <output data-testid="logs">{lines.join("\n")}</output>;
+  }
+  render(<PlayProvider><Consumer /></PlayProvider>);
+
+  await act(async () => { await controls.requestPlay({ injectFixtureThrow: true }); });
+
+  expect(controls.playing).toBe(false);
+  expect(controls.preparing).toBe(false);
+  expect(screen.queryByTestId("play-prepare-dialog")).toBeNull();
+  expect(screen.getByTestId("logs").textContent).toBe("Play preparation failed: No project catalog is available.");
+});
+
 it("cancels or plays without saving from the Unsaved Changes prompt", async () => {
   const scene = {
     id: "scene:assets/Main.scene.babasset",

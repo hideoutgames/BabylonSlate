@@ -1,4 +1,4 @@
-import type { ProjectStorage } from "@babylonslate/core";
+import type { ProjectStorage, ProjectStorageReader } from "@babylonslate/core";
 
 const READ_ONLY_ERROR = "Storage is read-only";
 
@@ -7,6 +7,7 @@ export function createReadOnlyProjectStorage(
   inner: ProjectStorage,
 ): ProjectStorage {
   return {
+    get hasStrongSourceRevisions() { return inner.hasStrongSourceRevisions === true; },
     pickProjectFolder: () => inner.pickProjectFolder(),
     openDocumentsProject: (name) => inner.openDocumentsProject(name),
     openKnownFolder: (handle) => inner.openKnownFolder(handle),
@@ -28,8 +29,22 @@ export function createReadOnlyProjectStorage(
           },
         }
       : {}),
-    readText: (path) => inner.readText(path),
-    readBinary: (path) => inner.readBinary(path),
+    readText: (path, options) => inner.readText(path, options),
+    readBinary: (path, options) => inner.readBinary(path, options),
+    readBinaryRange: (path, offset, length, revision, options) => inner.readBinaryRange(path, offset, length, revision, options),
+    ...(inner.getReadMetrics ? { getReadMetrics: () => inner.getReadMetrics!() } : {}),
+    ...(inner.withReadScope ? {
+      withReadScope: <T>(operation: (storage: ProjectStorageReader) => Promise<T>) => inner.withReadScope!(reader => operation({
+        get hasStrongSourceRevisions() { return reader.hasStrongSourceRevisions === true; },
+        readText: (path, options) => reader.readText(path, options),
+        readBinary: (path, options) => reader.readBinary(path, options),
+        readBinaryRange: (path, offset, length, revision, options) => reader.readBinaryRange(path, offset, length, revision, options),
+        exists: path => reader.exists(path),
+        readdir: path => reader.readdir(path),
+        stat: path => reader.stat(path),
+        ...(reader.getReadMetrics ? { getReadMetrics: () => reader.getReadMetrics!() } : {}),
+      })),
+    } : {}),
     exists: (path) => inner.exists(path),
     readdir: (path) => inner.readdir(path),
     stat: (path) => inner.stat(path),

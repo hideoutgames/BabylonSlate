@@ -1,42 +1,23 @@
 import { describe, expect, it } from "vitest";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readGoldenBinary, writeGoldenBinary } from "@babylonslate/test-kit";
-import { encodeBabasset, readBabassetHeader } from "./babasset";
+import { readGoldenBinary } from "@babylonslate/test-kit";
+import { readBabassetHeader } from "./babasset";
 import { decodeAssetDocument, encodeAssetDocument } from "./asset-document";
 import { loadPayloadWithMigration } from "./migrate-on-load";
 import { createDefaultMigrationRegistry } from "./migration";
-import { bytesEqual } from "./bytes";
 
 const FIXTURE_DIR = dirname(fileURLToPath(import.meta.url));
-const UPDATE = process.env.UPDATE_GOLDENS === "1";
 
 describe("historical migration goldens", () => {
-  it("migrates Graph v0 golden payload to current", async () => {
+  it("migrates Graph v0 golden payload to current", () => {
     const registry = createDefaultMigrationRegistry();
-    // v0 graph babasset: version 0, empty payload (pre-nodes/edges default).
-    const v0 = await encodeBabasset({
-      header: {
-        guid: "00000000-0000-4000-8000-0000000000a0",
-        type: "Graph",
-        name: "Legacy",
-        engineVersion: "0.0.0",
-        version: 0,
-        mode: "thin",
-        dependencies: [],
-        payload: {},
-      },
-      chunks: [],
-      blobThreshold: 1024 * 1024,
-    });
-    const relative = "__fixtures__/graph-v0.babasset";
-    if (UPDATE) {
-      writeGoldenBinary(FIXTURE_DIR, relative, v0);
-    }
-    const golden = readGoldenBinary(FIXTURE_DIR, relative);
-    expect(bytesEqual(v0, golden)).toBe(true);
+    // Frozen pre-nodes/edges file: never regenerate it with the current writer.
+    const golden = readGoldenBinary(FIXTURE_DIR, "__fixtures__/graph-v0.babasset");
     const header = readBabassetHeader(golden);
     expect(header.version).toBe(0);
+    expect(header.payload).toEqual({});
+    expect(header.dependencyMetadataVersion).toBeUndefined();
 
     const loaded = loadPayloadWithMigration(registry, {
       type: "Graph",
@@ -52,23 +33,15 @@ describe("historical migration goldens", () => {
 
   it("migrates a Scene v0 document golden to current", async () => {
     const registry = createDefaultMigrationRegistry();
-    // v0 scene in the shape the editor writes: body in the document chunk.
-    const v0 = await encodeAssetDocument({
-      type: "Scene",
-      name: "Legacy",
-      guid: "00000000-0000-4000-8000-0000000000b0",
-      version: 0,
-      payload: { name: "Legacy" },
-    });
-    const relative = "__fixtures__/scene-v0.babasset";
-    if (UPDATE) {
-      writeGoldenBinary(FIXTURE_DIR, relative, v0);
-    }
-    const golden = readGoldenBinary(FIXTURE_DIR, relative);
-    expect(bytesEqual(v0, golden)).toBe(true);
+    // Frozen v0 document chunk without modern dependency or chunk-length fields.
+    const golden = readGoldenBinary(FIXTURE_DIR, "__fixtures__/scene-v0.babasset");
+    const header = readBabassetHeader(golden);
+    expect(header.dependencyMetadataVersion).toBeUndefined();
+    expect(header.chunks[0]!.byteLength).toBeUndefined();
 
     const decoded = await decodeAssetDocument(golden);
     expect(decoded.version).toBe(0);
+    expect(decoded.payload).toEqual({ name: "Legacy" });
 
     const loaded = loadPayloadWithMigration(registry, {
       type: decoded.type,

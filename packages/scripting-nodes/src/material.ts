@@ -19,6 +19,7 @@ function setter(
     id: `material.set${kind}Parameter`,
     title: `Set Material ${kind} Parameter`,
     category: "material",
+    ...(kind === "Texture" ? { latent: true } : {}),
     pins: () => [
       pin("execIn", "Exec", "in", EXEC),
       pin("execOut", "Then", "out", EXEC),
@@ -28,7 +29,7 @@ function setter(
     ],
     codegen: (ctx) => {
       ctx.emit(
-        `ctx.setMaterial${kind}Parameter(${ctx.input("Material")}, ${ctx.input("Name")}, ${ctx.input("Value")});`,
+        `${kind === "Texture" ? "await " : ""}ctx.setMaterial${kind}Parameter${kind === "Texture" ? "Async" : ""}(${ctx.input("Material")}, ${ctx.input("Name")}, ${ctx.input("Value")});`,
       );
     },
   };
@@ -79,8 +80,9 @@ export const materialNodes: NodeDefinition[] = [
     id: "material.setMaterialInstance",
     title: "Set Material Instance",
     description:
-      "Assigns a Material Instance to a mesh component and returns its Material Object. Instances share their root Material's shader, so switching never compiles.",
+      "Prepares a Material Instance and assigns it to a mesh component. The existing material remains valid until the replacement is ready.",
     category: "material",
+    latent: true,
     pins: () => [
       pin("execIn", "Exec", "in", EXEC),
       pin("execOut", "Then", "out", EXEC),
@@ -90,7 +92,7 @@ export const materialNodes: NodeDefinition[] = [
     ],
     codegen: (ctx) =>
       ctx.emit(
-        `${ctx.output("Material")} = ctx.setMeshMaterial(${ctx.input("Target")}, ${ctx.input("Instance")});`,
+        `${ctx.output("Material")} = await ctx.setMeshMaterialAsync(${ctx.input("Target")}, ${ctx.input("Instance")});`,
       ),
   },
   {

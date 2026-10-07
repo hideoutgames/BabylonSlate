@@ -14,7 +14,7 @@ import {
 import type { MaterialDomain } from "@babylonslate/shader-graph";
 import {
   ASSETS_ROOT,
-  assetHeaderDependencies,
+  assetHeaderDependencyMetadata,
   CREATABLE_ASSET_TYPES,
   buildNewAssetResult,
   buildParentClassTreeRows,
@@ -93,7 +93,7 @@ export async function createProjectAsset(options: {
     dataTree: options.dataTree,
   });
   if (type === "DataDefinition" || type === "DataTree") {
-    result.dependencies = assetHeaderDependencies(type, result.payload, options.registry.list?.() ?? []);
+    Object.assign(result, assetHeaderDependencyMetadata(type, result.payload, options.registry.list?.() ?? [], result.parentClass));
   }
   return options.registry.createAsset(
     options.rootId,

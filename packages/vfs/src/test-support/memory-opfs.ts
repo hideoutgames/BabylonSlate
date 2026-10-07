@@ -23,17 +23,21 @@ export function createMemoryOpfsRoot(name = ""): FileSystemDirectoryHandle {
       let child = entries.get(entry);
       if (!child && options?.create) {
         let bytes = new Uint8Array();
+        let revision = 0;
         child = {
           kind: "file", name: entry,
           async getFile() {
             const snapshot = bytes.slice();
-            return { name: entry, size: snapshot.length, lastModified: 1, arrayBuffer: async () => snapshot.buffer } as File;
+            return { name: entry, size: snapshot.length, lastModified: revision,
+              arrayBuffer: async () => snapshot.buffer,
+              slice: (start?: number, end?: number) => ({ arrayBuffer: async () => snapshot.slice(start, end).buffer }) as Blob,
+            } as File;
           },
           async createWritable() {
             let next = new Uint8Array();
             return {
               async write(value: ArrayBuffer | Uint8Array) { next = new Uint8Array(value instanceof Uint8Array ? value : value.slice(0)); },
-              async close() { bytes = next.slice(); },
+              async close() { bytes = next.slice(); revision++; },
               async abort() {},
             } as unknown as FileSystemWritableFileStream;
           },

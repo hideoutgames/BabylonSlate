@@ -34,6 +34,7 @@ import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission, createDefaultParticleSystemPayload, encodeGlbJsonBin, normalizeParticleEmitterPayload } from "@babylonslate/assets";
 import { encodeTriangleGlb } from "./glb-test-fixtures";
 import { ResourceCache, resourceCacheForEngine } from "./resource-cache";
+import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit/environment-fixtures";
 import { editorComponentMeshName, editorMeshName } from "./scene-loader";
 import { visualMeshes } from "./visual-meshes";
 import { prewarmMaterial } from "./material-compiler";
@@ -199,6 +200,43 @@ describe("Play createEngine view", () => {
     while (engines.length > 0) {
       engines.pop()?.dispose();
     }
+  });
+
+  it("shares prepared models and environment cubes until the final source scope releases", async () => {
+    const engine = sharedEngine();
+    // NullEngine has no prefiltered cube uploader. Keep the real cube wrapper,
+    // preparation admission and cache ownership around its native I/O boundary.
+    vi.spyOn(engine, "createPrefilteredCubeTexture").mockImplementation((url) => {
+      const texture = engine.createTexture(url, false, false, null);
+      texture.isCube = true;
+      return texture;
+    });
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true });
+    handles.push(handle);
+    const models = new Map([["shared-model", encodeTriangleGlb()]]);
+    const environment = buildFloatDdsCubeFixture();
+    const sources = { assets: { modelBytes: models, textureBytes: new Map([["shared-environment", environment]]) } };
+    const first = await handle.acquireSceneSources(sources, { prepare: true });
+    const geometry = handle.accountedGeometryBytes();
+    expect(geometry).toBeGreaterThan(0);
+    const textureCount = handle.resourceCache.resourceStats().wrappers;
+    const environmentLease = handle.resourceCache.acquireTexture("shared-environment", engine, environment, { isCube: true });
+    const cube = environmentLease.resource;
+    expect(cube.isCube).toBe(true);
+    expect(cube.gammaSpace).toBe(false);
+    expect(handle.resourceCache.resourceStats().wrappers).toBe(textureCount);
+    environmentLease.release();
+    const second = await handle.acquireSceneSources(sources, { prepare: true });
+    expect(handle.accountedGeometryBytes()).toBe(geometry);
+    expect(handle.resourceCache.resourceStats().wrappers).toBe(textureCount);
+    first();
+    handle.resourceCache.flushUnreferenced();
+    expect(handle.accountedGeometryBytes()).toBe(geometry);
+    expect(isDisposedGpuTexture(cube)).toBe(false);
+    second();
+    handle.resourceCache.flushUnreferenced();
+    expect(handle.accountedGeometryBytes()).toBe(0);
+    expect(isDisposedGpuTexture(cube)).toBe(true);
   });
 
   it("installs collected editor assets and materials without replaying the previous document", async () => {

@@ -1,3 +1,4 @@
+import { consoleCommandMetadataFromGraph } from "@babylonslate/core";
 import {
   type GraphClassMember,
   type SerializedGraph,
@@ -36,7 +37,6 @@ import {
 } from "./graph-validation";
 import { mergedPrefabComponentsForClass } from "../lib/prefab-instance-sync";
 
-const PARAM_TYPES = new Set(["string", "float", "int", "bool", "enum"]);
 
 type ClassPrefabContext = {
   parentClassId?: string | null;
@@ -94,65 +94,12 @@ export function classIdForGraphPath(path: string): string {
   return cleaned.length > 0 ? cleaned : "Graph";
 }
 
-function paramType(
-  value: unknown,
-): "string" | "float" | "int" | "bool" | "enum" {
-  return typeof value === "string" && PARAM_TYPES.has(value)
-    ? (value as "string" | "float" | "int" | "bool" | "enum")
-    : "float";
-}
 
 export function consoleCommandFromGraph(
   graph: LogicGraph,
   classId: string,
 ): ScriptConsoleCommand | undefined {
-  const node = graph.nodes.find((entry) => entry.typeId === "flow.event.commandRun");
-  if (!node) return undefined;
-  const properties = node.properties;
-  const rawParams = Array.isArray(properties.parameters)
-    ? properties.parameters
-    : [];
-  const name =
-    typeof properties.commandName === "string" && properties.commandName.trim()
-      ? properties.commandName.trim()
-      : classId.toLowerCase();
-  return {
-    name,
-    description:
-      typeof properties.description === "string" ? properties.description : "",
-    category:
-      typeof properties.category === "string" && properties.category.trim()
-        ? properties.category.trim()
-        : "game",
-    parameters: rawParams.flatMap((row) => {
-      if (!row || typeof row !== "object") return [];
-      const param = row as {
-        name?: unknown;
-        type?: unknown;
-        optional?: unknown;
-        defaultValue?: unknown;
-        enumValues?: unknown;
-      };
-      if (typeof param.name !== "string" || !param.name.trim()) return [];
-      return [
-        {
-          name: param.name.trim(),
-          type: paramType(param.type),
-          ...(param.optional === true ? { optional: true } : {}),
-          ...(param.defaultValue !== undefined
-            ? { defaultValue: param.defaultValue }
-            : {}),
-          ...(Array.isArray(param.enumValues)
-            ? {
-                enumValues: param.enumValues.filter(
-                  (value): value is string => typeof value === "string",
-                ),
-              }
-            : {}),
-        },
-      ];
-    }),
-  };
+  return consoleCommandMetadataFromGraph(graph, classId);
 }
 
 function jsIdent(name: string): string {
@@ -549,15 +496,81 @@ function graphDocumentCompileCacheKey(
   });
 }
 
-/** Session-lifetime compiled script cache keyed by graph content hash. */
+/** Unowned editor compiles use bounded retention; scoped Play uses AssetLoadingService. */
 export class GraphScriptCompileCache {
-  readonly graphs = new Map<string, ScriptBundleEntry | null>();
-  readonly animGraphs = new Map<string, ScriptBundleEntry[]>();
+  private readonly graphEntries = new Map<string, ScriptBundleEntry | null>();
+  private readonly animGraphEntries = new Map<string, ScriptBundleEntry[]>();
+  readonly graphs: ReadonlyMap<string, ScriptBundleEntry | null> = this.graphEntries;
+  readonly animGraphs: ReadonlyMap<string, ScriptBundleEntry[]> = this.animGraphEntries;
+  private readonly recent = new Map<string, { kind: "graph" | "animation"; key: string; bytes: number }>();
+  private bytes = 0;
+  private readonly maxBytes: number;
+  private readonly maxEntries: number;
   compiles = 0;
 
+  constructor(options: { maxBytes?: number; maxEntries?: number } = {}) {
+    this.maxBytes = options.maxBytes ?? 16 * 1024 * 1024;
+    this.maxEntries = options.maxEntries ?? 256;
+    for (const limit of [this.maxBytes, this.maxEntries]) {
+      if (!Number.isSafeInteger(limit) || limit < 0) throw new Error("Compile cache limits must be nonnegative safe integers");
+    }
+  }
+
+  get retainedBytes(): number { return this.bytes; }
+
+  getGraph(key: string): ScriptBundleEntry | null | undefined {
+    this.touch(`graph:${key}`);
+    return this.graphEntries.get(key);
+  }
+
+  getAnimation(key: string): ScriptBundleEntry[] | undefined {
+    this.touch(`animation:${key}`);
+    return this.animGraphEntries.get(key);
+  }
+
+  retainGraph(key: string, value: ScriptBundleEntry | null): void {
+    if (this.retain("graph", key, value)) this.graphEntries.set(key, value);
+  }
+
+  retainAnimation(key: string, value: ScriptBundleEntry[]): void {
+    if (this.retain("animation", key, value)) this.animGraphEntries.set(key, value);
+  }
+
+  private touch(token: string): void {
+    const entry = this.recent.get(token);
+    if (!entry) return;
+    this.recent.delete(token);
+    this.recent.set(token, entry);
+  }
+
+  private retain(kind: "graph" | "animation", key: string, value: ScriptBundleEntry | ScriptBundleEntry[] | null): boolean {
+    const token = `${kind}:${key}`;
+    this.forget(token);
+    // Include both retained key strings, UTF-16 serialized result, and entry overhead.
+    const bytes = (key.length + token.length + JSON.stringify(value).length) * 2 + 128;
+    if (!this.maxEntries || bytes > this.maxBytes) return false;
+    while (this.recent.size >= this.maxEntries || this.bytes + bytes > this.maxBytes) {
+      this.forget(this.recent.keys().next().value!);
+    }
+    this.recent.set(token, { kind, key, bytes });
+    this.bytes += bytes;
+    return true;
+  }
+
+  private forget(token: string): void {
+    const entry = this.recent.get(token);
+    if (!entry) return;
+    this.recent.delete(token);
+    this.bytes -= entry.bytes;
+    if (entry.kind === "graph") this.graphEntries.delete(entry.key);
+    else this.animGraphEntries.delete(entry.key);
+  }
+
   clear(): void {
-    this.graphs.clear();
-    this.animGraphs.clear();
+    this.graphEntries.clear();
+    this.animGraphEntries.clear();
+    this.recent.clear();
+    this.bytes = 0;
     this.compiles = 0;
   }
 }
@@ -582,7 +595,7 @@ function compileGraphDocumentCached(
   const cache = options.cache;
   const key = cache ? graphDocumentCompileCacheKey(doc, options) : null;
   if (cache && key && cache.graphs.has(key)) {
-    return cache.graphs.get(key) ?? null;
+    return cache.getGraph(key) ?? null;
   }
   if (cache) cache.compiles += 1;
   try {
@@ -601,7 +614,7 @@ function compileGraphDocumentCached(
       parentOf: options.parentOf,
       otherClassGraphs: options.otherClassGraphs,
     });
-    if (cache && key) cache.graphs.set(key, script);
+    if (cache && key) cache.retainGraph(key, script);
     return script;
   } catch (error) {
     // A graph that fails codegen must not stop Preview; the validator has
@@ -832,13 +845,13 @@ export function compileAnimGraphScripts(
     const cache = options.cache;
     const key = cache ? animGraphCompileCacheKey(entry, cacheOptions) : null;
     if (cache && key && cache.animGraphs.has(key)) {
-      scripts.push(...(cache.animGraphs.get(key) ?? []));
+      scripts.push(...(cache.getAnimation(key) ?? []));
       continue;
     }
     try {
       if (cache) cache.compiles += 1;
       const compiled = compileAnimGraphDocument(entry, options);
-      if (cache && key) cache.animGraphs.set(key, compiled);
+      if (cache && key) cache.retainAnimation(key, compiled);
       scripts.push(...compiled);
     } catch (error) {
       console.error(`[play] failed to compile AnimationGraph ${entry.path}`, error);

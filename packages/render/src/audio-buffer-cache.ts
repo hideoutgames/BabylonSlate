@@ -28,6 +28,7 @@ export class AudioBufferCache {
   private readonly entries = new Map<string, AudioCacheEntry>();
   private clock = 0;
   private totalBytes = 0;
+  private reserved = 0;
 
   constructor(options: AudioBufferCacheOptions = {}) {
     this.ceiling = options.byteCeiling ?? AUDIO_DECODED_PCM_LRU_BYTES;
@@ -96,6 +97,39 @@ export class AudioBufferCache {
   accountedBytes(): number {
     return this.totalBytes;
   }
+
+  removeUnreferenced(assetGuid: string): boolean {
+    const entry = this.entries.get(assetGuid);
+    if (!entry || entry.pins !== 0) return false;
+    this.evictEntry(assetGuid, "source-release");
+    return true;
+  }
+
+  /** Admission includes live PCM and other decoders; oversized work fails instead of waiting. */
+  reserveDecode(bytes: number): { resize: (actualBytes: number) => void; release: () => void } {
+    let held = 0;
+    let released = false;
+    const resize = (next: number) => {
+      if (released) throw new Error("Audio decode reservation was released.");
+      if (!Number.isSafeInteger(next) || next < 0) throw new Error("Invalid Audio decode size.");
+      if (this.budgetEnabled) {
+        if (next > this.ceiling) throw new Error(`Audio decode needs ${next} bytes, exceeding the ${this.ceiling}-byte PCM budget.`);
+        const candidates = [...this.entries.values()].filter((entry) => entry.pins === 0).sort((a, b) => a.lastUsed - b.lastUsed);
+        for (const entry of candidates) {
+          if (this.totalBytes + this.reserved - held + next <= this.ceiling) break;
+          this.evictEntry(entry.assetGuid, "decode-admission");
+        }
+        if (this.totalBytes + this.reserved - held + next > this.ceiling)
+          throw new Error(`Audio decode needs ${next} bytes; active voices and pending decoding occupy the available PCM budget.`);
+      }
+      this.reserved += next - held;
+      held = next;
+    };
+    resize(bytes);
+    return { resize, release: () => { if (released) return; released = true; this.reserved -= held; held = 0; } };
+  }
+
+  reservedBytes(): number { return this.reserved; }
 
   flushUnreferenced(): void {
     for (const entry of [...this.entries.values()]) {

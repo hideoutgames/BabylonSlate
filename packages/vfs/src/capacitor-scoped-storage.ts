@@ -19,7 +19,23 @@ export interface PickedFolder {
   supportsReadScope?: boolean;
 }
 
+export interface NativeRangeRead {
+  data: string;
+  totalSize: number;
+  revision: string;
+  actualBytesRead: number;
+}
+
+export interface NativeRangeOptions {
+  path: string;
+  offset: number;
+  length: number;
+  expectedRevision?: string;
+}
+
 export interface BabylonSlateScopedStoragePlugin {
+  readFileRange(options: NativeRangeOptions & { folder: string; readScope?: string }): Promise<NativeRangeRead>;
+  readDocumentsRange(options: NativeRangeOptions & { directory: string }): Promise<NativeRangeRead>;
   pickFolder(): Promise<{ folder: PickedFolder }>;
   openFolder(options: { id: string }): Promise<{ folder: PickedFolder }>;
   importBookmark?(options: {
@@ -70,6 +86,7 @@ export const ScopedStorageErrorCode = {
   Stale: "STALE",
   AccessRevoked: "ACCESS_REVOKED",
   NotFound: "NOT_FOUND",
+  RevisionChanged: "REVISION_CHANGED",
   Cancelled: "CANCELLED",
   Unreachable: "UNREACHABLE",
 } as const;

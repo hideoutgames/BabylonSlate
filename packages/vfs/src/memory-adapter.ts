@@ -1,8 +1,10 @@
+import { checkStorageRevision, StorageReadCounter, validateStorageRange } from "./storage-range";
 import type {
   DirEntry,
   FileStat,
   ProjectFolderHandle,
   ProjectStorage,
+  StorageReadOptions,
   StorageTier,
 } from "@babylonslate/core";
 
@@ -10,6 +12,7 @@ interface MemoryNode {
   kind: "file";
   data: Uint8Array;
   mtime: number;
+  revision: string;
 }
 
 interface MemoryDir {
@@ -34,6 +37,11 @@ function textDecoder(): TextDecoder {
  * Explicit in-memory ProjectStorage for tests and transient engine content.
  */
 export class MemoryStorageAdapter implements ProjectStorage {
+  readonly hasStrongSourceRevisions: boolean = true;
+  private readonly reads = new StorageReadCounter();
+  private nextRevision = 0;
+  getReadMetrics() { return this.reads.snapshot(); }
+
   private folder: ProjectFolderHandle | null = null;
   private readonly roots = new Map<string, MemoryDir>();
   private readonly tier: StorageTier;
@@ -137,7 +145,8 @@ export class MemoryStorageAdapter implements ProjectStorage {
     return { parent: dir, name: parts[parts.length - 1]! };
   }
 
-  async readBinary(path: string): Promise<Uint8Array> {
+  async readBinary(path: string, options?: StorageReadOptions): Promise<Uint8Array> {
+    options?.signal?.throwIfAborted();
     const parts = this.split(path);
     const { parent, name } = this.walk(parts, false);
     if (!name) {
@@ -147,7 +156,21 @@ export class MemoryStorageAdapter implements ProjectStorage {
     if (!node || node.kind !== "file") {
       throw new Error(`File not found: ${path}`);
     }
+    this.reads.record("full", node.data.byteLength);
     return new Uint8Array(node.data);
+  }
+
+  async readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string, options?: StorageReadOptions) {
+    options?.signal?.throwIfAborted();
+    validateStorageRange(offset, length);
+    const { parent, name } = this.walk(this.split(path), false);
+    const node = name ? parent.children.get(name) : undefined;
+    if (!node || node.kind !== "file") throw new Error(`File not found: ${path}`);
+    validateStorageRange(offset, length, node.data.byteLength);
+    checkStorageRevision(path, node.revision, expectedRevision);
+    const bytes = node.data.slice(offset, offset + length);
+    this.reads.record("range", length);
+    return { bytes, totalSize: node.data.byteLength, revision: node.revision, actualBytesRead: length };
   }
 
   async writeBinary(path: string, data: Uint8Array): Promise<void> {
@@ -159,13 +182,14 @@ export class MemoryStorageAdapter implements ProjectStorage {
     parent.children.set(name, {
       kind: "file",
       data: new Uint8Array(data),
+      revision: String(++this.nextRevision),
       mtime: now(),
     });
     parent.mtime = now();
   }
 
-  async readText(path: string): Promise<string> {
-    return textDecoder().decode(await this.readBinary(path));
+  async readText(path: string, options?: StorageReadOptions): Promise<string> {
+    return textDecoder().decode(await this.readBinary(path, options));
   }
 
   async writeText(path: string, data: string): Promise<void> {

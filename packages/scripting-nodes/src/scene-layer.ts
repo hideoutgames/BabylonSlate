@@ -74,6 +74,7 @@ export const sceneLayerNodes: NodeDefinition[] = [
     id: "scene-layer.create",
     title: "Create Scene Layer",
     category: "scene-layer",
+    latent: true,
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
@@ -84,7 +85,7 @@ export const sceneLayerNodes: NodeDefinition[] = [
     codegen: (ctx) => {
       const out = ctx.output("out");
       ctx.emit(
-        `${out} = ctx.createSceneLayer(${ctx.input("asset")}, ${ctx.input("zOrder")});`,
+        `${out} = await ctx.createSceneLayerAsync(${ctx.input("asset")}, ${ctx.input("zOrder")});`,
       );
     },
   },

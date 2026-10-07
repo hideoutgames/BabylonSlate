@@ -441,6 +441,18 @@ describe("commitLogicGraph", () => {
 });
 
 describe("collectGraphTypeAssets", () => {
+  it.each([null, undefined])("keeps saved Data Definition fields available when a restored tab has %s content", (content) => {
+    const fields = [{ id: "damage", name: "Damage", typeId: "int", defaultValue: 12 }];
+    const catalog = collectGraphTypeAssets({
+      assets: [{ path: "assets/ItemStats.babasset", header: {
+        type: "DataDefinition", guid: "stats", name: "ItemStats", payload: { kind: "dataDefinition", fields },
+      } }],
+      openDocuments: [{ ref: { kind: "data-definition", path: "assets/ItemStats.babasset" }, content }],
+    });
+    expect(catalog.dataDefinitions).toEqual([{ guid: "stats", name: "ItemStats", fields }]);
+    expect(typeSchemasFromGraphAssets(catalog).dataDefinitions?.stats?.fields).toEqual(fields);
+  });
+
   it("keeps Data Definitions independent and projects unsaved fields into graph value schemas", () => {
     const catalog = collectGraphTypeAssets({
       assets: [

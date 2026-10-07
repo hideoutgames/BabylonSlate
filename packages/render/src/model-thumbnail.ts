@@ -18,6 +18,14 @@ import { retargetAnimationGroupWithMeshProxy } from "./node-rig";
 import { waitForPreviewMeshesReady } from "./preview-readiness";
 import { flipReadPixelsRgba } from "./flip-read-pixels";
 import { encodeRgbaPng } from "./png-encode";
+import { nativePreparationForEngine } from "./native-preparation";
+
+type ModelThumbnailOptions = {
+  importScale?: number;
+  clipName?: string;
+  sourceClipBytes?: Uint8Array | null;
+  signal?: AbortSignal;
+};
 
 function rgbaBytesFromReadback(
   buffer: ArrayBuffer | ArrayBufferView,
@@ -48,11 +56,31 @@ export async function captureModelThumbnailPng(
   slots: readonly Pick<ModelMaterialSlot, "index" | "name" | "materialGuid">[],
   resolveMaterial: (guid: string, scene: Scene) => Material | null,
   maxEdge: number = DEFAULT_THUMBNAIL_MAX_EDGE,
-  options: {
-    importScale?: number;
-    clipName?: string;
-    sourceClipBytes?: Uint8Array | null;
-  } = {},
+  options: ModelThumbnailOptions = {},
+): Promise<Uint8Array | null> {
+  if (options.signal?.aborted) return null;
+  const size = Number.isFinite(maxEdge) ? Math.max(1, Math.min(512, Math.floor(maxEdge))) : DEFAULT_THUMBNAIL_MAX_EDGE;
+  // Both decodes, their overlap, readback and cleanup share one reservation.
+  // This construction-GLB path makes no nested scheduler requests. Prefab
+  // captures instead admit their individual scene-owned model loads.
+  const sourceClipBytes = options.clipName === undefined ? 0 : options.sourceClipBytes?.byteLength ?? 0;
+  try {
+    return await nativePreparationForEngine(engine).schedule({
+      label: "Model Thumbnail", priority: "background", signal: options.signal,
+      temporaryBytes: Math.max(1024, (bytes.byteLength + sourceClipBytes) * 4 + size * size * 16),
+    }, () => captureAdmittedModelThumbnail(engine, bytes, slots, resolveMaterial, size, options));
+  } catch {
+    return null;
+  }
+}
+
+async function captureAdmittedModelThumbnail(
+  engine: AbstractEngine,
+  bytes: Uint8Array,
+  slots: readonly Pick<ModelMaterialSlot, "index" | "name" | "materialGuid">[],
+  resolveMaterial: (guid: string, scene: Scene) => Material | null,
+  size: number,
+  options: ModelThumbnailOptions,
 ): Promise<Uint8Array | null> {
   const host = createModelPreviewScene(engine, { transparent: true });
   let loaded: Awaited<ReturnType<typeof loadModelPreviewSource>> = null;
@@ -62,7 +90,7 @@ export async function captureModelThumbnailPng(
   let rtt: RenderTargetTexture | null = null;
   try {
     loaded = await loadModelPreviewSource(host, bytes, options.importScale);
-    if (!loaded) return null;
+    if (!loaded || options.signal?.aborted) return null;
     for (const group of loaded.animationGroups) group.stop();
     if (options.clipName !== undefined) {
       let group: AnimationGroup | null = null;
@@ -72,6 +100,7 @@ export async function captureModelThumbnailPng(
           sourceHost,
           options.sourceClipBytes,
         );
+        if (options.signal?.aborted) return null;
         const sourceGroup = sourceLoaded?.animationGroups.find(
           (entry) => entry.name === options.clipName,
         );
@@ -98,27 +127,16 @@ export async function captureModelThumbnailPng(
     applyModelMaterialSlots(host.mesh, slots, (guid) =>
       resolveMaterial(guid, host.scene),
     );
-    const size = Math.max(1, Math.floor(maxEdge));
-    rtt = new RenderTargetTexture(
-      "modelThumbnail",
-      { width: size, height: size },
-      host.scene,
-      false,
-    );
+    rtt = new RenderTargetTexture("modelThumbnail", { width: size, height: size }, host.scene, false);
     host.camera.outputRenderTarget = rtt;
-    // A one-shot render cannot rely on a later gesture/frame to finish shader
-    // compilation. Include imported PBR materials and textures in readiness.
-    if (!(await waitForPreviewMeshesReady(host.mesh))) return null;
+    // A one-shot render must await imported PBR materials and textures.
+    if (!(await waitForPreviewMeshesReady(host.mesh)) || options.signal?.aborted) return null;
     host.scene.render();
     const buffer = await rtt.readPixels();
-    if (!buffer) return null;
+    if (!buffer || options.signal?.aborted) return null;
     const pixels = rgbaBytesFromReadback(buffer, size * size * 4);
     if (!pixels) return null;
-    return encodeRgbaPng(
-      size,
-      size,
-      new Uint8Array(flipReadPixelsRgba(pixels, size, size)),
-    );
+    return encodeRgbaPng(size, size, new Uint8Array(flipReadPixelsRgba(pixels, size, size)));
   } catch {
     return null;
   } finally {

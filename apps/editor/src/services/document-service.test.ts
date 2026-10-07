@@ -263,6 +263,12 @@ describe("DocumentService", () => {
     expect(state.tabOrder[1]).toBe(sceneId);
     expect(state.tabOrder[2]).toBe(graphId);
     expect(state.activeDocumentId).toBe(CONTENT_BROWSER_ID);
+    expect(projectService.loadDocument).not.toHaveBeenCalled();
+    expect(service.getDocument(sceneId)?.content).toBeNull();
+    await service.openDocument(projectService, service.getDocument(sceneId)!.ref);
+    expect(service.getActiveDocument()?.content).toMatchObject({ name: "Main" });
+    expect(service.getDocument(graphId)?.content).toBeNull();
+    expect(projectService.loadDocument).toHaveBeenCalledOnce();
   });
 
   it("pins an open scene immediately after content browser even when other assets were opened first", async () => {
@@ -795,8 +801,11 @@ describe("DocumentService", () => {
     });
     expect(service.getState().tabOrder).toContain(modelId);
     expect(service.getState().tabOrder).not.toContain(oldId);
-    expect(loadDocument).toHaveBeenCalledWith("model", "assets/hero.babasset");
+    expect(loadDocument).not.toHaveBeenCalled();
     expect(service.getDocument(modelId)?.layout).toEqual({ preview: true });
+    await service.openDocument(projectService, service.getDocument(modelId)!.ref);
+    expect(service.getDocument(modelId)?.content).not.toBeNull();
+    expect(loadDocument).toHaveBeenCalledWith("model", "assets/hero.babasset", expect.any(Object));
   });
 
   it("reopens a saved asset-settings Animation tab as the animation document kind", async () => {
@@ -832,9 +841,12 @@ describe("DocumentService", () => {
     });
     expect(service.getState().tabOrder).toContain(animationId);
     expect(service.getState().tabOrder).not.toContain(oldId);
+    expect(loadDocument).not.toHaveBeenCalled();
+    await service.openDocument(projectService, service.getDocument(animationId)!.ref);
     expect(loadDocument).toHaveBeenCalledWith(
       "animation",
       "assets/hero_idle.babasset",
+      expect.any(Object),
     );
   });
 
@@ -944,7 +956,7 @@ describe("DocumentService", () => {
     ).toEqual({ "default:asset": null });
   });
 
-  it("skips a missing derived Trace tab when restoring layout", async () => {
+  it("defers a restored Trace read and reports a missing file when activated", async () => {
     const service = new DocumentService();
     const project = createEmptyProject("Test");
     const loadDocument = vi.fn(async (kind: string) => {
@@ -967,7 +979,10 @@ describe("DocumentService", () => {
       tabOrder: [sceneId, traceId],
     });
     expect(service.getState().tabOrder).toContain(sceneId);
-    expect(service.getState().tabOrder).not.toContain(traceId);
+    expect(service.getState().tabOrder).toContain(traceId);
+    expect(loadDocument).not.toHaveBeenCalled();
+    await expect(service.openDocument(projectService, service.getDocument(traceId)!.ref)).rejects.toThrow("Trace file is missing");
+    expect(service.getState().activeDocumentId).toBe(CONTENT_BROWSER_ID);
   });
 });
 

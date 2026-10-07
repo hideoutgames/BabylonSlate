@@ -145,7 +145,7 @@ export class FontRegistry {
       await host.load(`16px "${family}"`);
       // Disposal or newer pending content for this guid supersedes this face.
       const latest = this.registrations.get(entry.guid);
-      if (this.disposed || (latest !== undefined && latest !== registration)) {
+      if (this.disposed || latest !== registration) {
         this.remove(face);
         return false;
       }
@@ -175,6 +175,15 @@ export class FontRegistry {
 
   isReady(guid: string): boolean {
     return this.loaded.has(guid);
+  }
+
+  /** Release both a prepared face and any pending registration for this owner. */
+  unregister(guid: string): void {
+    this.registrations.delete(guid);
+    this.loaded.delete(guid);
+    const face = this.faces.get(guid);
+    if (face) this.remove(face);
+    this.faces.delete(guid);
   }
 
   /** Remove this registry's faces from the document; later registrations are ignored. */

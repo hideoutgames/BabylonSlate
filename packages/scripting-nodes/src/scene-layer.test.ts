@@ -36,14 +36,14 @@ describe("scene-layer nodes", () => {
     clearValidationRules();
   });
 
-  it("compiles Create Scene Layer onto ctx.createSceneLayer", () => {
+  it("waits for Create Scene Layer preparation before continuing execution", async () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "create", "scene-layer.create"),
+        node(registry, "create", "scene-layer.create", { "default:asset": "hud", "default:zOrder": 3 }),
       ],
       edges: [
         {
@@ -56,7 +56,19 @@ describe("scene-layer nodes", () => {
       ],
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
-    expect(compiled.source).toContain("ctx.createSceneLayer(");
+    const body = compiled.source.replace(/export\s+(async\s+)?function\s+/g, "$1function ");
+    const onBeginPlay = new Function(`${body}\nreturn onBeginPlay;`)() as (ctx: unknown) => Promise<void>;
+    let ready!: () => void;
+    let finished = false;
+    const operation = onBeginPlay({ createSceneLayerAsync: (guid: string, zOrder: number) => {
+      expect([guid, zOrder]).toEqual(["hud", 3]);
+      return new Promise(resolve => { ready = () => resolve({ guid: "hud-instance" }); });
+    } }).then(() => { finished = true; });
+    await Promise.resolve();
+    expect(finished).toBe(false);
+    ready();
+    await operation;
+    expect(finished).toBe(true);
   });
 
   it("errors when a SceneLayer post-process pin is not a postProcess material", () => {

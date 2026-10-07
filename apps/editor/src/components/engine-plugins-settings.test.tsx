@@ -22,6 +22,7 @@ const { library, download } = vi.hoisted(() => ({
     setEnabledByDefault: vi.fn(),
     remove: vi.fn(),
     export: vi.fn(),
+    upgradeLegacyArchives: vi.fn(),
   },
   download: vi.fn(),
 }));
@@ -56,6 +57,19 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("EnginePluginsSettings", () => {
+  it("upgrades archived plugins only after the user requests it and restores the library list", async () => {
+    const upgrade = Object.assign(new Error("Stored plugins need an upgrade."), { code: "engine-plugin-library-upgrade-required" });
+    library.list.mockRejectedValueOnce(upgrade);
+    library.upgradeLegacyArchives.mockResolvedValue(1);
+    render(<EnginePluginsSettings />);
+    const button = await screen.findByRole("button", { name: "Upgrade Plugin Storage" });
+    expect(library.upgradeLegacyArchives).not.toHaveBeenCalled();
+    fireEvent.click(button);
+    expect(await screen.findByTestId("engine-plugin-row-custom")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(library.upgradeLegacyArchives).toHaveBeenCalledTimes(1);
+  });
+
   it("persists a default toggle and exposes only download for a bundled entry", async () => {
     library.setEnabledByDefault.mockImplementation(
       async (guid: string, enabled: boolean) => {

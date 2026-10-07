@@ -27,7 +27,8 @@ export async function minimalProjectFiles(
   const scene = createDefaultScene();
   scene.actors = [
     createActor("actor-1", "Actor", {
-      classId: "Main",
+      // Class identity follows the case-sensitive file stem, not its display name.
+      classId: "main",
       components: [createMeshComponent("mesh-1", "box")],
     }),
     ...scene.actors.filter(

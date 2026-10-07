@@ -36,7 +36,7 @@ import { openMinimalTestProject } from "./minimal-project";
 import { openAssetFromBrowser, openMainScene } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
-import { compressedGpuTextures, expectPreviewDraws, offBlockGrid, previewDraw, recordCompressedGpuTextures, settledAlignmentPass, watchGpuFailures, type CompressedTexture } from "./webgpu-texture-proof";
+import { compressedGpuTextures, expectPreviewDraws, offBlockGrid, previewDraw, recordCompressedGpuTextures, watchGpuFailures, type CompressedTexture } from "./webgpu-texture-proof";
 
 // Explicit software adapter admission for this functional proof, not GPU qualification.
 test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
@@ -48,7 +48,7 @@ const TEXTURE_PATH = "assets/albedo.babasset";
 const EMITTER_PATH = "assets/OddSparks.emitter.babasset";
 /** A Tileset saved before atlas meta existed: it keeps `TEXTURE_GUID` an atlas, off the grid. */
 const ODD_TILESET_GUID = "00000000-0000-4000-8000-000000000077";
-/** The same 1×1 encode with no atlas: stale, so opening the project re-encodes it 4×4. */
+/** The same 1×1 encode with no atlas: stale until explicitly re-encoded. */
 const LEGACY_TEXTURE_GUID = "00000000-0000-4000-8000-000000000078";
 const LEGACY_TEXTURE_PATH = "assets/legacy-odd.babasset";
 /** Another such Texture, for a project with source control on. */
@@ -152,7 +152,7 @@ async function fixture(backend: Backend, sourceControl = false): Promise<Map<str
   sun.transform.position = [...SUN_POSITION];
   sun.components[0]!.properties.castShadows = false;
   scene.actors = [
-    createActor(TEXTURED_BOX, "Actor", { classId: "Main", components: [textured] }),
+    createActor(TEXTURED_BOX, "Actor", { classId: "main", components: [textured] }),
     createActor(PLAIN_BOX, "Plain Box", {
       transform: { position: [2, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
       components: [createMeshComponent("plain-mesh", "box")],
@@ -251,10 +251,10 @@ test("WebGPU decodes a Basis KTX2 off the 4×4 block grid to RGBA: the viewport 
   const { gpuFailures, consoleProblems } = watchGpuFailures(page);
   await page.addInitScript(recordCompressedGpuTextures);
   await openMinimalTestProject(page, await fixture("webgpu"));
-  // Opening the project re-encodes only the stale non-atlas Texture, 4×4.
-  expect(await settledAlignmentPass(page)).toEqual([LEGACY_TEXTURE_GUID]);
-  await expect.poll(() => committedKtx2(page, LEGACY_TEXTURE_PATH), { timeout: 60_000 })
-    .toEqual({ compressionState: "compressed", ktx2: { width: 4, height: 4 } });
+  // Opening the project leaves even an unused stale non-atlas Texture untouched.
+  expect(await textureAlignment(page)).toEqual({ runs: 0, pending: 0, requeued: [] });
+  expect(await committedKtx2(page, LEGACY_TEXTURE_PATH))
+    .toEqual({ compressionState: "compressed", ktx2: { width: 1, height: 1 } });
   // The Tileset's atlas keeps its seeded 1×1 encode.
   expect(await committedKtx2(page, TEXTURE_PATH)).toEqual({ compressionState: "compressed", ktx2: { width: 1, height: 1 } });
   await openMainScene(page);

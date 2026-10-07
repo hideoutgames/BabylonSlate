@@ -18,13 +18,17 @@ describe("enginePluginsVitePlugin", () => {
       await (plugin.configResolved as () => Promise<void>)();
       const files = readdirSync(dest);
       expect(files).toContain("index.json");
-      const index = JSON.parse(readFileSync(join(dest, "index.json"), "utf8")) as Array<{
-        id: string;
-        file: string;
-      }>;
-      expect(index.length).toBeGreaterThan(0);
-      for (const entry of index) {
+      const index = JSON.parse(readFileSync(join(dest, "index.json"), "utf8")) as {
+        version: number; plugins: Array<{ id: string; file: string }>;
+        files: Array<{ path: string; parts: Array<{ file: string }> }>;
+      };
+      expect(index.plugins.length).toBeGreaterThan(0);
+      for (const entry of index.plugins) {
         expect(files).toContain(entry.file);
+      }
+      for (const file of index.files) {
+        expect(file.parts.length).toBeGreaterThan(0);
+        for (const part of file.parts) expect(readFileSync(join(dest, part.file)).byteLength).toBeGreaterThan(0);
       }
     } finally {
       rmSync(dest, { recursive: true, force: true });

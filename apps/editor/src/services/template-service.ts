@@ -1,7 +1,9 @@
 import {
-  listTemplates,
+  listTemplateCatalog,
+  loadTemplateFiles,
   encodeProjectZip,
-  type ProjectTemplate,
+  type ProjectTemplateCatalogEntry,
+  type ProjectTreeFile,
 } from "@babylonslate/assets";
 import { createTemplateStorage } from "@babylonslate/vfs";
 import { readProjectArchive } from "./project-import";
@@ -30,12 +32,17 @@ export async function importTemplateArchive(
  * List the app-owned ZIP template library. Built-in starters are defined by
  * the launcher.
  */
-export async function loadTemplateCards(): Promise<ProjectTemplate[]> {
-  const library = await listTemplates(
+export async function loadTemplateCards(): Promise<ProjectTemplateCatalogEntry[]> {
+  const library = await listTemplateCatalog(
     await createTemplateStorage(LIBRARY_ROOT),
   ).catch(() => []);
   return library.map((template) => ({
     ...template,
     id: `local:${template.id}`,
   }));
+}
+
+export async function loadSelectedTemplateFiles(id: string): Promise<ProjectTreeFile[]> {
+  if (!id.startsWith("local:")) throw new Error(`Unknown template: ${id}`);
+  return loadTemplateFiles(await createTemplateStorage(LIBRARY_ROOT), id.slice("local:".length));
 }

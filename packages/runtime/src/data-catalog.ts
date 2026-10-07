@@ -37,13 +37,16 @@ function record(value: unknown): value is Record<string, unknown> {
 
 /**
  * Builds hierarchy, exact-path lookups and contiguous descendant ranges once per
- * Play/player session. Reads only copy requested values or indexed path ranges;
+ * prepared source union. Reads only copy requested values or indexed path ranges;
  * no asset I/O, schema validation, or ancestor traversal occurs during reads.
  */
 export class RuntimeDataCatalog implements RuntimeDataApi {
   private readonly trees = new Map<string, RuntimeTree>();
 
-  constructor(catalog: readonly DataAssetCatalogEntry[] = []) {
+  constructor(catalog: readonly DataAssetCatalogEntry[] = []) { this.replace(catalog); }
+
+  replace(catalog: readonly DataAssetCatalogEntry[]): void {
+    this.trees.clear();
     const schemas = dataTypeSchemas(catalog);
     const definitions = new Set<string>();
     for (const asset of catalog) {

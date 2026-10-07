@@ -68,6 +68,7 @@ export function remapImportResultGuids(
     ...result,
     guid: remap.get(result.guid) ?? result.guid,
     dependencies: result.dependencies.map((dep) => remap.get(dep) ?? dep),
+    requiredDependencies: result.requiredDependencies?.map((dep) => remap.get(dep) ?? dep),
     chunks: result.chunks.map((chunk) => {
       if (chunk.id !== "document") return chunk;
       try {
