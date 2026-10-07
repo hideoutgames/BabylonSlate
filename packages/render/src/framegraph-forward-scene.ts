@@ -1006,6 +1006,9 @@ export class ForwardSceneFrameGraph {
       const deadline = performance.now() + 10_000;
       while (!this.disposed && !this.isReady()) {
         assertCurrent();
+        // A failed shader never becomes ready; report it instead of timing out.
+        const compileFailure = this.effectsGraph?.spatial?.compileFailure.message ?? this.outlineTask?.compileFailure.message;
+        if (compileFailure) throw new Error(compileFailure);
         if (performance.now() >= deadline)
           throw new Error("Forward FrameGraph readiness timed out.");
         await new Promise<void>((resolve) => setTimeout(resolve, 16));

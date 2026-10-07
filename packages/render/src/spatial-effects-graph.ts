@@ -17,6 +17,7 @@ import {
   type ManagedRenderLease,
 } from "./managed-render-resources";
 import { managedRenderTextureResource } from "./render-target-resource-cost";
+import { EffectCompileFailure } from "./effect-compile-failure";
 import {
   retireOwnedEffect,
   type OwnedEffectRetirement,
@@ -81,6 +82,8 @@ class SpatialTask extends FrameGraphPostProcessTask {
 
 /** Demand-driven geometry and spatial effects owned by the enclosing view graph. */
 export class SpatialEffectsGraph {
+  /** Set once any spatial stage shader fails to compile. */
+  readonly compileFailure = new EffectCompileFailure();
   private readonly graph: FrameGraph;
   readonly clear: FrameGraphClearTextureTask;
   readonly geometry: LogicalGeometryTask;
@@ -209,6 +212,7 @@ export class SpatialEffectsGraph {
         plan,
         width,
         height,
+        this.compileFailure,
       );
       for (const stage of stages) unattached.add(stage);
       this.jitter = stages.find((stage) => stage.history)?.history;

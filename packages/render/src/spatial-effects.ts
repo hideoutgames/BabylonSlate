@@ -36,6 +36,7 @@ import { TemporalJitter, temporalAntiAliasingShader } from "./temporal-anti-alia
 import { retireOwnedEffect } from "./owned-effect-retirement";
 import { beginManagedRenderAllocation } from "./managed-render-resources";
 import { bindFogVolumes, hasFogVolumes } from "./fog-volumes";
+import type { EffectCompileFailure } from "./effect-compile-failure";
 
 /** Delay native define setters until all settings/camera flags are configured.
  * Babylon otherwise overwrites (and leaks) each intermediate Effect reference. */
@@ -158,6 +159,7 @@ function customWrapper(
   fragment: string,
   uniforms: string[],
   samplers: string[],
+  failure?: EffectCompileFailure,
 ): EffectWrapper {
   const wgsl = scene.getEngine().isWebGPU;
   return new EffectWrapper({
@@ -171,6 +173,7 @@ function customWrapper(
     fragmentShader: fragment,
     uniforms,
     samplers,
+    onError: failure?.for(name),
   });
 }
 
@@ -181,6 +184,7 @@ export function createSpatialStages(
   plan: SceneEffectsPlan,
   width: number,
   height: number,
+  failure?: EffectCompileFailure,
 ): SpatialStage[] {
   if (spatialEffectsUnsupported(scene)) return [];
   const stages: SpatialStage[] = [];
@@ -207,6 +211,7 @@ export function createSpatialStages(
           ambientOcclusionShader(engine.isWebGPU, occlusion.samples),
           ["aoProjection", "aoInverseProjection", "aoView", "aoSettings", "aoCamera", "aoTexelSize"],
           ["depthSampler", "normalSampler"],
+          failure,
         ),
       );
       const inverseProjection = Matrix.Identity();
@@ -243,6 +248,7 @@ export function createSpatialStages(
             ambientOcclusionBlurShader(engine.isWebGPU),
             ["aoBlurStep"],
             ["depthSampler"],
+            failure,
           ),
         );
         stages.push({
@@ -259,6 +265,7 @@ export function createSpatialStages(
           ambientOcclusionCompositeShader(engine.isWebGPU, plan.sceneLinear),
           ["aoTexelSize"],
           ["mainSampler", "depthSampler"],
+          failure,
         ),
       );
       stages.push({
@@ -272,7 +279,10 @@ export function createSpatialStages(
     if (reflections) {
       const scale = Math.max(0.25, reflections.resolutionScale * quality);
       const ssr = own(
-        new PreparedSSR("Scene Reflections", scene, { blockCompilation: true }),
+        new PreparedSSR("Scene Reflections", scene, {
+          blockCompilation: true,
+          onError: failure?.for("Scene Reflections"),
+        }),
       );
       ssr.camera = camera;
       ssr.maxSteps = reflections.maxSteps;
@@ -300,6 +310,7 @@ export function createSpatialStages(
             engine,
             direction,
             0.03,
+            { onError: failure?.for(`Scene Reflections Blur ${axis}`) },
           ),
         );
         blur.textureWidth = Math.max(1, Math.round(width * scale));
@@ -309,6 +320,7 @@ export function createSpatialStages(
       const combine = own(
         new PreparedSSRCombine("Scene Reflections Compose", engine, {
           blockCompilation: true,
+          onError: failure?.for("Scene Reflections Compose"),
         }),
       );
       combine.camera = camera;
@@ -418,6 +430,7 @@ export function createSpatialStages(
           volumetricCompositeShader(engine.isWebGPU, plan.sceneLinear),
           ["fogTexelSize", "cameraFar"],
           ["mainSampler", "depthSampler"],
+          failure,
         ),
       );
       stages.push({
@@ -445,6 +458,7 @@ export function createSpatialStages(
           temporalAntiAliasingShader(engine.isWebGPU),
           ["taaSettings", "taaJitter"],
           ["historySampler", "velocitySampler"],
+          failure,
         ),
       );
       const jitter = new TemporalJitter(scene, camera, temporal.samples, width, height);
