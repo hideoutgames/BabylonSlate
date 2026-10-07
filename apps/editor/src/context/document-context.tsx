@@ -2852,7 +2852,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           return { ok: false, reason: "The Scene is read-only or locked by source control." };
         }
         try {
-          const admitted = lease.apply<HistoryAdmissionResult<SerializedScene>>(previous => {
+          const admitted = lease.apply<HistoryAdmissionResult<SerializedScene> |
+            { ok: true; status: "unchanged"; doc: SerializedScene; command: null }>(previous => {
             if (ReplaceSceneCommand.isNoop(previous, candidate)) return { scene: previous,
               value: { ok: true as const, status: "unchanged" as const, doc: previous, command: null } };
             const command = new ReplaceSceneCommand(previous, candidate, { maxHistoryBytes: editSessionRef.current.getStack(id).byteBudget });
