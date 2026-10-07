@@ -11,6 +11,7 @@ import {
 } from "@babylonslate/object-model";
 
 type State = {
+  revision: number;
   authoredNames?: Set<string>;
   defaults: ReadonlyMap<string, MaterialParameterValue>;
   values: Map<string, MaterialParameterValue>;
@@ -43,6 +44,8 @@ export class RuntimeMaterialParameters {
     return Object.hasOwn(this.catalog, assetGuid) && this.catalog[assetGuid]!.domain === "surface";
   }
 
+  revision(material: MaterialInstanceObject): number { return this.state(material)?.revision ?? -1; }
+
   describe(material: MaterialInstanceObject): Record<string, MaterialParameterValue> | null {
     const state = this.state(material);
     return state ? Object.fromEntries([...state.values].map(([name, value]) => [name, copy(value)])) : null;
@@ -73,7 +76,8 @@ export class RuntimeMaterialParameters {
     value: MaterialParameterValue,
   ): boolean {
     if (!this.accepts(material, name, value)) return false;
-    this.state(material)!.values.set(name, copy(value));
+    const state = this.state(material)!;
+    state.values.set(name, copy(value)); state.revision++;
     return true;
   }
 
@@ -88,6 +92,7 @@ export class RuntimeMaterialParameters {
       state.values.set(name, copy(value));
     }
     state.defaults = defaults;
+    state.revision++;
     return true;
   }
 
@@ -169,6 +174,7 @@ export class RuntimeMaterialParameters {
       defaults.set(name, copy(value));
     }
     const state = {
+      revision: 0,
       authoredNames,
       defaults,
       values: new Map(

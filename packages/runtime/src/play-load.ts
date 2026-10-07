@@ -52,6 +52,7 @@ export function runtimeOptionsFromLoadControl(
   | "audioAssetGuids"
   | "animClipCatalog"
   | "deferSceneModelsReady"
+  | "deferMaterialEdits"
   | "deferSceneLoadingPaint"
   | "cooperativeSceneLoading"
 > {
@@ -114,6 +115,7 @@ export function runtimeOptionsFromLoadControl(
       ? { animClipCatalog: msg.animClipCatalog }
       : {}),
     ...(msg.deferSceneLoadingPaint ? { deferSceneLoadingPaint: true } : {}),
+    ...(msg.deferMaterialEdits ? { deferMaterialEdits: true } : {}),
     ...(msg.deferSceneModelsReady ? { deferSceneModelsReady: true } : {}),
   };
 }

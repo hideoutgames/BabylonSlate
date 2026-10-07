@@ -12,7 +12,7 @@ const MAX_VALUE_BYTES = 48 * 1024;
 const PAGE_ROWS = 128;
 const FORBIDDEN = new Set(["__proto__", "constructor", "prototype", "parentId", "ownerId", "guid", "classId", "locked", "sourceId", "world"]);
 const SCALAR_TYPES = new Set(["bool", "boolean", "float", "int", "number", "string", "vec2", "vec3", "vec4", "color", "quat", "actor", "object", "component", "class", "asset"]);
-const LIVE_COMPONENTS = new Set(["MeshComponent", "CameraComponent", "LightComponent", "HemisphericFillLightComponent", "OutlineComponent", "RigidBodyComponent", "ColliderComponent", "NavAgentComponent"]);
+const LIVE_COMPONENTS = new Set(["MeshComponent", "DynamicRuntimeMeshComponent", "CameraComponent", "LightComponent", "HemisphericFillLightComponent", "OutlineComponent", "RigidBodyComponent", "ColliderComponent", "NavAgentComponent"]);
 const LIVE_MESH_PROPERTIES = new Set(["castShadows", "receiveShadows", "materialGuid"]);
 
 type Target = Actor | ActorComponent;
@@ -66,7 +66,7 @@ export class RuntimeInspector {
       let payload: RuntimeInspectorPayload;
       if (action.kind === "identities") payload = this.identities(action);
       else {
-        const target = this.resolve(action.target);
+        const target = this.resolveTarget(action.target);
         if (!target) throw new Error("The selected object was destroyed, replaced, or belongs to another scene instance.");
         if (action.kind === "selection") payload = this.selection(target, action.target, action.offset, budget);
         else if (action.kind === "value") payload = this.valuePage(target, action.property, action.offset, budget);
@@ -89,7 +89,7 @@ export class RuntimeInspector {
     if (prior !== undefined) return prior;
     const token = ++this.nextToken; this.tokens.set(target, token); return token;
   }
-  private resolve(identity: RuntimeObjectIdentity): Target | null {
+  resolveTarget(identity: RuntimeObjectIdentity): Target | null {
     if (!identity || typeof identity.actorGuid !== "string" || !Number.isSafeInteger(identity.actorToken) || typeof identity.sceneInstanceId !== "string") return null;
     const actor = this.host.world.findActorInstances(identity.actorGuid).find(candidate => !candidate.destroyed &&
       candidate.world === this.host.world && this.tokens.get(candidate) === identity.actorToken && this.host.sceneIdentity(candidate) === identity.sceneInstanceId);
@@ -138,7 +138,7 @@ export class RuntimeInspector {
         const { propertyKey: key, name, typeId, typeClassId, container } = variable;
         let capability: RuntimePropertyCapability = variable.getOnly || FORBIDDEN.has(key) ? "readOnly" : "restart";
         if (capability !== "readOnly" && target instanceof ActorComponent && SCALAR_TYPES.has(typeId) && container !== "map") {
-          if (LIVE_COMPONENTS.has(classId) && (classId !== "MeshComponent" || LIVE_MESH_PROPERTIES.has(key))) capability = "live";
+          if (LIVE_COMPONENTS.has(classId) && (!["MeshComponent", "DynamicRuntimeMeshComponent"].includes(classId) || LIVE_MESH_PROPERTIES.has(key))) capability = "live";
           if (classId === "AudioComponent" && key === "volume") capability = "live";
           if (classId === "ColliderComponent") capability = "rebuild";
         }
@@ -268,7 +268,7 @@ export class RuntimeInspector {
     if (["actor", "object", "component"].includes(type)) {
       if (value === null) return null;
       if (!isRecord(value) || value.$runtime !== "reference" || !isRecord(value.target)) throw new Error("A typed runtime object reference is required.");
-      const target = this.resolve(value.target as unknown as RuntimeObjectIdentity);
+      const target = this.resolveTarget(value.target as unknown as RuntimeObjectIdentity);
       if (!target || (type === "actor" && !(target instanceof Actor)) || (type === "component" && !(target instanceof ActorComponent)) ||
         (descriptor.typeClassId && !this.host.world.classRegistry.isA(target.classId, descriptor.typeClassId))) throw new Error("The referenced object is missing or has the wrong class.");
       return target;

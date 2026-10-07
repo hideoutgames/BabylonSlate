@@ -91,6 +91,10 @@ const pauseGate = createPlayPauseGate({
 
 function handleControl(msg: ControlMessage): void {
   switch (msg.type) {
+    case "runtimeMaterialEditPrepared":
+    case "runtimeMaterialEditApplied":
+      runtime?.applyRuntimeMaterialEditResult(msg);
+      return;
     case "diagnosticOperation": {
       const rt = runtime;
       if (!rt) {

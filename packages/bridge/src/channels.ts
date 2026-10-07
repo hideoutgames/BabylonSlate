@@ -117,6 +117,7 @@ export type ScriptBundleEntry = {
 };
 
 export type ControlMessage =
+  | ({ type: "runtimeMaterialEditPrepared" | "runtimeMaterialEditApplied" } & import("./runtime-material-edit").RuntimeMaterialEditResponse)
   | ({ type: "diagnosticOperation" } & import("./diagnostic-operation").DiagnosticOperationRequest)
   | ({ type: "runtimeInspector" } & import("./runtime-inspector").RuntimeInspectorRequest)
   | ({ type: "sessionBoundary" } & SessionBoundaryRequest)
@@ -126,6 +127,7 @@ export type ControlMessage =
       type: "load";
       sessionGeneration?: number;
       sessionMode?: GameSessionMode;
+      deferMaterialEdits?: boolean;
       saveGame?: import("@babylonslate/core").SaveGameConfiguration;
       dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
       /** Initial session render cap, shared with the renderer for console readback. */
@@ -376,6 +378,8 @@ export type DebugBehaviourTree = {
 };
 
 export type CommandMessage =
+  | ({ type: "prepareRuntimeMaterialEdit" } & import("./runtime-material-edit").RuntimeMaterialEditPreparation)
+  | { type: "releaseRuntimeMaterialPreparation"; sessionGeneration: number; editToken: string; committed: boolean }
   | ({ type: "diagnosticOperationResult" } & import("./diagnostic-operation").DiagnosticOperationResult)
   | ({ type: "performanceTicks" } & import("./diagnostic-operation").PerformanceTickChunk)
   | { type: "diagnosticOperationStopped"; sessionGeneration: number; recordingId: string; kind: "profile" | "frame"; reason: "requested" | "duration" | "budget" | "session-ended" }
@@ -618,12 +622,14 @@ export type CommandMessage =
        * visual component; omitting it overrides the whole actor.
        */
       type: "assignMaterial";
+      preparedEditToken?: string;
       slotId: number;
       materialAssetGuid: string | null;
       componentId?: string | null;
     }
   | {
       type: "setMaterialParameter";
+      preparedEditToken?: string;
       slotId: number;
       componentId?: string | null;
       /** Captured assignment prevents stale writes reaching a replacement. */

@@ -1,3 +1,4 @@
+import { RuntimeMaterialEditGate } from "./runtime-material-edit-gate";
 import { runtimeEditLocalTransform } from "./runtime-transform-edit";
 import { RuntimeDiagnosticRecorder } from "./runtime-diagnostic-recorder";
 import { RuntimeInspector } from "./runtime-inspector";
@@ -36,6 +37,7 @@ import {
   type SessionBoundaryResult,
   type RuntimeInspectorRequest,
   type RuntimeInspectorResult,
+  type RuntimeMaterialEditPreparation,
   type DiagnosticOperationRequest,
   type DiagnosticOperationResult,
 } from "@babylonslate/bridge";
@@ -288,6 +290,7 @@ export interface RuntimeDriverOptions {
    * the exported player set this; in-process tests leave it false.
    */
   deferSceneModelsReady?: boolean;
+  deferMaterialEdits?: boolean;
   /** Wait for the host Loading UI to paint before retiring or realizing a Scene. */
   deferSceneLoadingPaint?: boolean;
   /** Real Play/player yield actor work; immediate harnesses keep the default. */
@@ -306,6 +309,7 @@ export interface RuntimeDriver {
   requestSessionBoundary(request: SessionBoundaryRequest): Promise<SessionBoundaryResult>;
   requestRuntimeInspector(request: RuntimeInspectorRequest): Promise<RuntimeInspectorResult>;
   requestDiagnosticOperation(request: DiagnosticOperationRequest): Promise<DiagnosticOperationResult>;
+  applyRuntimeMaterialEditResult(message: Extract<ControlMessage, { type: "runtimeMaterialEditPrepared" | "runtimeMaterialEditApplied" }>): void;
   tick(): void;
   /** Fixed-step catch-up from wall/accumulated time; capped. */
   advance(elapsedSeconds: number): void;
@@ -531,6 +535,9 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly diagnosticsEnabled: boolean;
   private diagnosticRecorder: RuntimeDiagnosticRecorder | null = null;
   private profileTickPublishMs = 0;
+  private readonly deferMaterialEdits: boolean;
+  private materialEditGate: RuntimeMaterialEditGate | null = null;
+  private materialEditEmission: { preparation: RuntimeMaterialEditPreparation; emitted: boolean } | null = null;
   private runtimeInspector: RuntimeInspector | null = null;
   private inspectorScheduled = false;
   private lastInspectorRequestId = 0;
@@ -769,6 +776,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.sessionMode = options.sessionMode ?? "play";
     this.trace = new TraceRecorder({ byteBudget: options.traceByteBudget });
     this.diagnosticsEnabled = options.includeDebugCommands ?? true;
+    this.deferMaterialEdits = options.deferMaterialEdits === true;
     this.materialParameters = new RuntimeMaterialParameters(options.materialParameterCatalog, options.materialTextureAssetGuids);
     this.validateLegacyMeshParameters = options.materialParameterCatalog !== undefined;
     this.scalabilityProjectRenderPath = options.renderSettings?.renderPath ?? "forward";
@@ -5936,6 +5944,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (this.stopped) return;
     this.stopped = true;
     this.diagnosticRecorder?.stop();
+    this.materialEditGate?.cancel("The game session has stopped.");
     if (this.inspectorRequests.length) this.flushInspectorRequests();
     this.flushBoundaryRequests();
     this.pendingPauseChanges.clear();
@@ -6110,6 +6119,32 @@ class InProcessRuntime implements RuntimeDriver {
     });
   }
 
+  private getMaterialEditGate(): RuntimeMaterialEditGate {
+    return this.materialEditGate ??= new RuntimeMaterialEditGate({ generation: this.sessionGeneration,
+      inspector: this.getRuntimeInspector(), materials: this.materialParameters,
+      slot: component => component.owner ? this.slotByActor.get(component.owner) : undefined,
+      emit: command => this.emit(command),
+      execute: (request, preparation) => {
+        const emission = { preparation, emitted: false }; this.materialEditEmission = emission;
+        try { return { result: this.getRuntimeInspector().execute(request), emitted: emission.emitted }; }
+        finally { this.materialEditEmission = null; }
+      },
+      restore: component => {
+        const actor = component.owner; const slot = actor ? this.slotByActor.get(actor) : undefined;
+        if (slot === undefined) throw new Error("Material owner is unavailable.");
+        this.emitMaterialAssignments([component], slot, true);
+        const material = component.getVariable("materialObject");
+        if (material instanceof MaterialObject) for (const [name, value] of Object.entries(this.materialParameters.describe(material) ?? {}))
+          this.setMaterialParameter(material, name, value, true);
+      },
+    });
+  }
+
+  applyRuntimeMaterialEditResult(message: Extract<ControlMessage, { type: "runtimeMaterialEditPrepared" | "runtimeMaterialEditApplied" }>): void {
+    if (!this.materialEditGate || this.stopped) return;
+    queueMicrotask(() => { if (!this.stopped) this.materialEditGate?.receive(message); });
+  }
+
   private publishInspectorSnapshot(actor: Actor): void {
     // Presentation identity advances, while tick index, delays and physics do not.
     this.frameId++;
@@ -6136,7 +6171,10 @@ class InProcessRuntime implements RuntimeDriver {
   private flushInspectorRequests(): void {
     this.inspectorScheduled = false;
     const inspector = this.getRuntimeInspector();
-    for (const { request, resolve } of this.inspectorRequests.splice(0)) resolve(inspector.execute(request));
+    for (const { request, resolve } of this.inspectorRequests.splice(0)) {
+      if (this.deferMaterialEdits && !this.stopped && this.getMaterialEditGate().stage(request, resolve)) continue;
+      resolve(inspector.execute(request));
+    }
   }
 
   private boundaryResult(request: SessionBoundaryRequest, reason?: string): SessionBoundaryResult {
@@ -6610,6 +6648,15 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private emit(command: CommandMessage): void {
+    const emission = this.materialEditEmission;
+    if (emission && (command.type === "assignMaterial" || command.type === "setMaterialParameter") &&
+      command.slotId === emission.preparation.slotId && command.componentId === emission.preparation.componentId &&
+      command.materialAssetGuid === emission.preparation.materialGuid &&
+      (emission.preparation.parameterName === undefined ? command.type === "assignMaterial" :
+        command.type === "setMaterialParameter" && command.parameterName === emission.preparation.parameterName)) {
+      command = { ...command, preparedEditToken: emission.preparation.editToken }; emission.emitted = true;
+    }
+
     this.commandRevision++;
     // Every log line and Print String reaches the ring that `dumplog` and the
     // session report read, not only the ones routed through reportLog.

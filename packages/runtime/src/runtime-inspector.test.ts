@@ -3,11 +3,11 @@ import { createActor, createDefaultScene, createMeshComponent, identitySerialize
 import type { CommandMessage, RuntimeInspectorAction, RuntimeInspectorResult, RuntimeObjectIdentity } from "@babylonslate/bridge";
 import { createInProcessRuntime } from "./driver";
 
-async function fixture(mode: "simulate" | "play" = "simulate") {
+async function fixture(mode: "simulate" | "play" = "simulate", deferMaterialEdits = false) {
   const commands: CommandMessage[] = [];
   const mesh = createMeshComponent("mesh", "box"); mesh.properties.materialGuid = "mat";
   const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
-    sessionGeneration: 4, sessionMode: mode, playSceneGuid: "root",
+    sessionGeneration: 4, sessionMode: mode, playSceneGuid: "root", deferMaterialEdits,
     playScene: { ...createDefaultScene(), actors: [createActor("hero", "Hero", { classId: "Hero", components: [mesh] })] },
     materialParameterCatalog: { mat: { domain: "surface", planHash: "mat", parameters: { Gain: { kind: "float", value: 1 } } } },
     onCommand: command => commands.push(command) });
@@ -80,6 +80,33 @@ describe("bounded runtime Inspector", () => {
       expect(details.payload).toMatchObject({ kind: "selection", properties: expect.arrayContaining([
         expect.objectContaining({ key: "material:Gain", value: { kind: "float", value: 0.2 } }),
       ]) });
+    } finally { runtime.stop(); }
+  });
+
+  it("holds material acknowledgments through preparation and renderer application, reverting a failed owner", async () => {
+    const { runtime, request, component, commands } = await fixture("simulate", true);
+    try {
+      runtime.pause(); let settled = false;
+      const result = request({ kind: "setMaterialParameter", target: component, sequence: 1, materialGuid: "mat",
+        parameter: "Gain", value: { kind: "float", value: 0.2 } }).then(value => { settled = true; return value; });
+      await Promise.resolve();
+      const prepare = commands.find(command => command.type === "prepareRuntimeMaterialEdit")!;
+      expect(prepare.type).toBe("prepareRuntimeMaterialEdit");
+      if (prepare.type !== "prepareRuntimeMaterialEdit") throw new Error("missing preparation");
+      expect(settled).toBe(false);
+      runtime.applyRuntimeMaterialEditResult({ type: "runtimeMaterialEditPrepared", sessionGeneration: 4,
+        requestId: prepare.requestId, editToken: prepare.editToken, success: true });
+      await Promise.resolve();
+      expect(commands).toContainEqual(expect.objectContaining({ type: "setMaterialParameter", preparedEditToken: prepare.editToken }));
+      expect(settled).toBe(false);
+      runtime.applyRuntimeMaterialEditResult({ type: "runtimeMaterialEditApplied", sessionGeneration: 4,
+        requestId: prepare.requestId, editToken: prepare.editToken, success: false, reason: "Texture became unavailable." });
+      expect(await result).toMatchObject({ success: false, reason: "Texture became unavailable." });
+      const details = await request({ kind: "selection", target: component });
+      expect(details.payload).toMatchObject({ properties: expect.arrayContaining([
+        expect.objectContaining({ key: "material:Gain", value: { kind: "float", value: 1 } }),
+      ]) });
+      expect(commands).toContainEqual(expect.objectContaining({ type: "releaseRuntimeMaterialPreparation", editToken: prepare.editToken, committed: false }));
     } finally { runtime.stop(); }
   });
 

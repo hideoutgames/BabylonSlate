@@ -798,3 +798,12 @@ separate script, physics, snapshot-publication and remaining tick wall durations
 Deferred publication work is attributed to the tick whose final snapshot is written;
 per-tick preparation remains on its own tick. These streams are never summed with
 concurrent host rendering time or aligned by subtracting Worker and host clocks.
+
+Renderer-hosted Simulation loads set `deferMaterialEdits`. Material writes then
+hold their user acknowledgment while the renderer prepares a token-owned candidate
+and confirms the final application. The predecessor remains effective during
+preparation. Commands carry the prepared token; invalidation, failures, timeouts and
+Stop release only that preparation. A failed application restores the previous
+runtime material values when the same object and material revision still own them.
+If gameplay has superseded that owner, or application confirmation is lost, final
+scene capture reports an ownership failure instead of retaining an unconfirmed value.
