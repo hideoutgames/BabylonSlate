@@ -189,3 +189,10 @@ borrowing the editor's identity. The independently built
 `player-preview-diagnostics.js` entry is omitted from ordinary exported games,
 including games that bundle existing debug commands. The player keeps its
 existing single-file runtime build.
+
+Preview's labeled **Profiler** and **Capture Frame** controls use the editor's
+shared diagnostic results surface. Opening the surface does not record. Stop
+settles an already-requested recording start and receives its final bounded
+transfer before detaching the iframe; a Preview with no diagnostic request does
+not load the diagnostics entry merely to stop. Transfer failures leave an
+explicit error and never substitute a partial profile.
