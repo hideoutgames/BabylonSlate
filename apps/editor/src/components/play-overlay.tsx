@@ -93,6 +93,8 @@ import { usePlay } from "../context/play-context";
 export interface PlayOverlayProps {
   sessionOwner?: GameSessionOwner<PlaySessionResult>;
   sessionTicket?: GameSessionTicket;
+  embedded?: boolean;
+  simulationSaveStorage?: Parameters<typeof startPlaySession>[0]["simulationSaveStorage"];
   saveGame?: import("@babylonslate/core").SaveGameConfiguration;
   sharedEngine: AbstractEngine;
   injectFixtureThrow?: boolean;
@@ -189,6 +191,8 @@ function emptyPlayResult(): PlaySessionResult {
 export function PlayOverlay({
   sessionOwner,
   sessionTicket,
+  embedded = false,
+  simulationSaveStorage,
   saveGame,
   sharedEngine,
   injectFixtureThrow,
@@ -254,6 +258,7 @@ export function PlayOverlay({
 }: PlayOverlayProps) {
   const { reportBtState, overlayStats, overlayConsole, overlayInspector } =
     usePlay();
+  const simulating = sessionTicket?.mode === "simulate";
   const overlayRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sessionRef = useRef<PlaySession | null>(null);
@@ -282,6 +287,12 @@ export function PlayOverlay({
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [freeCamEnabled, setFreeCamEnabled] = useState(false);
   const [paused, setPaused] = useState(pauseOnPlay);
+  const [pausePending, setPausePending] = useState(false);
+  const [inputMode, setInputMode] = useState<"game" | "edit">("game");
+  const [inputPending, setInputPending] = useState(false);
+  const [controlError, setControlError] = useState<string | null>(null);
+  const inputModeRef = useRef<"game" | "edit">("game");
+  const inputSequenceRef = useRef(0);
   const [statsOpen, setStatsOpen] = useState(false);
   const [statsHighlight, setStatsHighlight] =
     useState<StatsHudHighlight | null>(null);
@@ -316,6 +327,73 @@ export function PlayOverlay({
       onCloseRef.current(result);
     })();
   };
+  const changeInputModeRef = useRef<(mode: "game" | "edit") => void>(() => {});
+  changeInputModeRef.current = (mode) => {
+    const session = sessionRef.current;
+    if (!session || !simulating || closedRef.current) return;
+    const sequence = ++inputSequenceRef.current;
+    inputModeRef.current = mode;
+    setInputPending(true);
+    setControlError(null);
+    void session.setInputMode(mode).then(() => {
+      if (sessionRef.current !== session || inputSequenceRef.current !== sequence) return;
+      inputModeRef.current = mode;
+      setInputMode(mode);
+      session.requestPausedRedraw();
+    }, (error: unknown) => {
+      if (sessionRef.current === session && inputSequenceRef.current === sequence) setControlError(String(error));
+    }).finally(() => {
+      if (sessionRef.current === session && inputSequenceRef.current === sequence) setInputPending(false);
+    });
+  };
+  const pauseRef = useRef<(reason: "user" | "lifecycle", next: boolean) => void>(() => {});
+  pauseRef.current = (reason, next) => {
+    const session = sessionRef.current;
+    if (!session || closedRef.current) return;
+    if (!simulating) {
+      userPausedRef.current = next;
+      session.setPaused(next);
+      setPaused(next);
+      return;
+    }
+    if (reason === "user") setPausePending(true);
+    setControlError(null);
+    void session.setPauseReason(reason, next).then((result) => {
+      if (sessionRef.current !== session) return;
+      if (!result.success) { setControlError(result.reason ?? "Pause could not reach a completed runtime boundary."); return; }
+      userPausedRef.current = result.pauseReasons.includes("user");
+      setPaused(result.paused);
+      if (sessionOwner && sessionTicket) sessionOwner.acknowledgePaused(sessionTicket, result.paused);
+      if (result.paused) session.requestPausedRedraw();
+    }, (error: unknown) => {
+      if (sessionRef.current === session) setControlError(String(error));
+    }).finally(() => { if (sessionRef.current === session && reason === "user") setPausePending(false); });
+  };
+
+  useEffect(() => {
+    if (!simulating) return;
+    const releaseOutsideGame = (event: PointerEvent) => {
+      if (inputModeRef.current !== "game") return;
+      const target = event.target;
+      // Chrome owns this gesture; it cannot also become a game or camera gesture.
+      if (target instanceof Node && !canvasRef.current?.contains(target) &&
+        !(target instanceof Element && target.closest('[data-testid="simulation-input-mode"]'))) {
+        changeInputModeRef.current("edit");
+      }
+    };
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") changeInputModeRef.current("edit"); };
+    document.addEventListener("pointerdown", releaseOutsideGame, true);
+    document.addEventListener("keydown", escape, true);
+    return () => {
+      document.removeEventListener("pointerdown", releaseOutsideGame, true);
+      document.removeEventListener("keydown", escape, true);
+    };
+  }, [simulating]);
+
+  useEffect(() => {
+    if (simulating && (consoleOpen || inspectorOpen || treeOpen)) changeInputModeRef.current("edit");
+  }, [simulating, consoleOpen, inspectorOpen, treeOpen]);
+
   const scriptsRef = useRef(scripts);
   scriptsRef.current = scripts;
   const animGraphsRef = useRef(animGraphs);
@@ -511,6 +589,7 @@ export function PlayOverlay({
           sharedEngine,
           mode: sessionTicket?.mode === "simulate" ? "simulate" : "play",
           sessionGeneration: sessionTicket?.generation,
+          simulationSaveStorage,
           injectFixtureThrow,
           scripts: scriptsRef.current,
           physics: physicsRef.current,
@@ -574,7 +653,7 @@ export function PlayOverlay({
           pauseOnPlay: initialPauseOnPlayRef.current,
           onSceneLoading: setSceneLoading,
           onSessionPaused: (next) => {
-            userPausedRef.current = next;
+            if (!simulating) userPausedRef.current = next;
             setPaused(next);
           },
           onShowFps: (enabled) => {
@@ -656,9 +735,7 @@ export function PlayOverlay({
             { applyFrameCap: false },
           );
         });
-      if (initialPauseOnPlayRef.current) {
-        session.setPaused(true);
-      }
+      if (initialPauseOnPlayRef.current) pauseRef.current("user", true);
       syncFramebuffer(session.handle);
       const resizeObserver = new ResizeObserver(() => {
         layoutPlay();
@@ -672,7 +749,8 @@ export function PlayOverlay({
       });
       resizeObserver.observe(overlay);
       const detachLifecycle = attachLifecyclePause((hidden) => {
-        sessionRef.current?.setPaused(hidden || userPausedRef.current);
+        if (simulating) pauseRef.current("lifecycle", hidden);
+        else sessionRef.current?.setPaused(hidden || userPausedRef.current);
       });
       const movePoll = window.setInterval(() => {
         const current = sessionRef.current;
@@ -722,7 +800,7 @@ export function PlayOverlay({
       };
     });
     return () => { cancelled = true; disposePresentation?.(); };
-  }, [sharedEngine, injectFixtureThrow, reportBtState, pushLog, sessionOwner, sessionTicket]);
+  }, [sharedEngine, injectFixtureThrow, reportBtState, pushLog, sessionOwner, sessionTicket, simulating, simulationSaveStorage]);
 
   useEffect(() => {
     if (!isTestModeEnabled()) return;
@@ -789,12 +867,13 @@ export function PlayOverlay({
     <div
       ref={overlayRef}
       className={cn(
-        "fixed inset-0 z-50 flex flex-col",
+        embedded ? "absolute inset-0 z-20 flex flex-col" : "fixed inset-0 z-50 flex flex-col",
         playPreview.followSystem
           ? "bg-background"
           : "items-center justify-center bg-black",
       )}
       data-testid="play-overlay"
+      data-mode={simulating ? "simulate" : "play"}
       data-scene-guid={sceneAssetGuid ?? ""}
       data-post-process-passes={String(postProcessPasses)}
       data-assigned-materials={assignedMaterials}
@@ -808,18 +887,13 @@ export function PlayOverlay({
         showStats={overlayStats}
         showConsole={overlayConsole}
         showInspector={overlayInspector}
-        onPauseToggle={() => {
-          setPaused((prev) => {
-            const next = !prev;
-            userPausedRef.current = next;
-            sessionRef.current?.setPaused(next);
-            return next;
-          });
-        }}
+        pausePending={pausePending}
+        simulation={simulating ? { inputMode, inputPending, onInputModeChange: (mode) => changeInputModeRef.current(mode) } : undefined}
+        onPauseToggle={() => pauseRef.current("user", !userPausedRef.current)}
         onStatsToggle={() => setStatsOpen((open) => !open)}
         onConsoleOpen={() => setConsoleOpen(true)}
         onInspectorToggle={() => setInspectorOpen((open) => !open)}
-        onStep={() => sessionRef.current?.step()}
+        onStep={simulating ? undefined : () => sessionRef.current?.step()}
         onClose={() => finishSessionRef.current()}
         stats={
           <StatsHud
@@ -840,6 +914,8 @@ export function PlayOverlay({
         }
         extras={
           <>
+            {controlError ? <p role="alert" className="pointer-events-auto text-xs text-destructive">{controlError}</p> : null}
+            {simulating && inputMode === "edit" ? <p className="pointer-events-none text-xs text-muted-foreground">Pause To Inspect Without Gameplay Changing Values. Editor Camera Does Not Change The Game Camera.</p> : null}
             <span
               data-testid="play-move-x"
               data-move-x={moveX === null ? "" : String(moveX)}

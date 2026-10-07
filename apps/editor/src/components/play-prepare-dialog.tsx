@@ -1,19 +1,24 @@
 import { useEffect, useState } from "react";
+import { Button } from "@babylonslate/ui/components/button";
 import { Dialog } from "@babylonslate/ui/components/dialog";
 import { ProgressDialogContent, ProgressDialogStatus } from "./progress-dialog-parts";
 
-export type PlayPreparePhase = "saving" | "compiling";
+export type PlayPreparePhase = "saving" | "compiling" | "releasing";
 
 export type PlayPrepareDialogProps = {
   open: boolean;
   phase: PlayPreparePhase;
   dirtyNames: readonly string[];
+  title?: string;
+  onCancel?: () => void;
 };
 
 export function PlayPrepareDialog({
   open,
   phase,
   dirtyNames,
+  title = "Preparing Play",
+  onCancel,
 }: PlayPrepareDialogProps) {
   const [takingLonger, setTakingLonger] = useState(false);
   useEffect(() => {
@@ -24,7 +29,7 @@ export function PlayPrepareDialog({
   }, [open]);
   const saving = phase === "saving";
   const names = saving ? dirtyNames.join(", ") : "";
-  const label = !saving
+  const label = phase === "releasing" ? "Releasing Authoring View" : !saving
     ? "Compiling Graphs"
     : dirtyNames.length > 0
       ? `Saving ${dirtyNames.length} ${dirtyNames.length === 1 ? "Document" : "Documents"}`

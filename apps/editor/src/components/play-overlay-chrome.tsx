@@ -19,6 +19,8 @@ export type PlayOverlayChromeProps = {
   showConsole?: boolean;
   showInspector?: boolean;
   onPauseToggle: () => void;
+  pausePending?: boolean;
+  simulation?: { inputMode: "game" | "edit"; inputPending: boolean; onInputModeChange: (mode: "game" | "edit") => void };
   onStatsToggle: () => void;
   onConsoleOpen: () => void;
   onInspectorToggle?: () => void;
@@ -37,6 +39,8 @@ export function PlayOverlayChrome({
   showConsole = true,
   showInspector = true,
   onPauseToggle,
+  pausePending = false,
+  simulation,
   onStatsToggle,
   onConsoleOpen,
   onInspectorToggle,
@@ -54,12 +58,21 @@ export function PlayOverlayChrome({
         {extras}
       </div>
       <div className="pointer-events-auto flex flex-wrap items-center justify-end gap-2">
+        {simulation ? <>
+          <span className="text-xs font-medium">Simulation · Discard On Stop</span>
+          <Button size="touch" variant="secondary" disabled={simulation.inputPending}
+            data-testid="simulation-input-mode"
+            onClick={() => simulation.onInputModeChange(simulation.inputMode === "game" ? "edit" : "game")}>
+            {simulation.inputMode === "game" ? "Game Input · Edit" : "Edit · Return To Game"}
+          </Button>
+        </> : null}
         <Button
           size="touch"
           variant="secondary"
           data-testid="play-overlay-pause"
           aria-label={paused ? "Resume" : "Pause"}
           aria-pressed={paused}
+          disabled={pausePending}
           onClick={onPauseToggle}
         >
           {paused ? (
@@ -69,7 +82,7 @@ export function PlayOverlayChrome({
           )}
           {paused ? "Resume" : "Pause"}
         </Button>
-        {paused ? (
+        {paused && onStep ? (
           <Button
             size="touch"
             variant="secondary"

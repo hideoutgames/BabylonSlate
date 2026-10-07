@@ -142,4 +142,19 @@ describe("PlayOverlayChrome", () => {
     const { queryByTestId } = renderChrome({ paused: false });
     expect(queryByTestId("play-overlay-step")).toBeNull();
   });
+  it("keeps Stop usable during Simulation pause acknowledgment and exposes Return To Game without Step", () => {
+    const onInputModeChange = vi.fn();
+    const onClose = vi.fn();
+    const { getByTestId, queryByTestId } = renderChrome({
+      paused: true, pausePending: true, onClose,
+      simulation: { inputMode: "edit", inputPending: false, onInputModeChange },
+    });
+    expect((getByTestId("play-overlay-pause") as HTMLButtonElement).disabled).toBe(true);
+    expect(queryByTestId("play-overlay-step")).toBeNull();
+    fireEvent.click(getByTestId("simulation-input-mode"));
+    expect(onInputModeChange).toHaveBeenCalledWith("game");
+    fireEvent.click(getByTestId("play-overlay-close"));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
 });

@@ -251,3 +251,38 @@ it("cancels or plays without saving from the Unsaved Changes prompt", async () =
   await waitFor(() => expect(screen.queryByTestId("play-unsaved-dialog")).toBeNull());
   expect(saveAll).not.toHaveBeenCalled();
 });
+
+
+it("cancels Simulation before save admission drains without touching its scene or starting a viewport", async () => {
+  const scene = {
+    id: "scene:assets/Main.scene.babasset",
+    ref: { kind: "scene", path: "assets/Main.scene.babasset", label: "Main" },
+    content: createDefaultScene(), dirty: true,
+  };
+  let resolveReady!: (ready: boolean) => void;
+  const ready = new Promise<boolean>((resolve) => { resolveReady = resolve; });
+  const release = vi.fn(() => resolveReady(false));
+  const lockAuthoring = vi.fn(() => () => {});
+  const saveAll = vi.fn(async () => true);
+  host.documents = {
+    ...host.noProject, openDocuments: [scene], dirtyDocuments: [scene], activeDocumentId: scene.id,
+    lockAuthoringWrites: () => ({ ready, release }), lockAuthoring, saveAll,
+  };
+  let controls!: ReturnType<typeof usePlay>;
+  function Controls() { controls = usePlay(); return null; }
+  render(<PlayProvider><Controls /></PlayProvider>);
+  const suspend = vi.fn(async () => {});
+  act(() => { controls.registerSimulationViewport({ documentId: scene.id, host: document.body, suspend, restore() {} }); });
+  let preparation!: Promise<void>;
+  act(() => { preparation = controls.requestSimulate(); });
+  expect(controls.sessionState.mode).toBe("simulate");
+  expect(lockAuthoring).not.toHaveBeenCalled();
+  await act(async () => { await controls.sessionOwner.stop(); await preparation; });
+  expect(release).toHaveBeenCalled();
+  expect(lockAuthoring).not.toHaveBeenCalled();
+  expect(saveAll).not.toHaveBeenCalled();
+  expect(suspend).not.toHaveBeenCalled();
+  expect(scene.dirty).toBe(true);
+  expect(controls.preparing).toBe(false);
+  expect(controls.canSimulate).toBe(true);
+});
