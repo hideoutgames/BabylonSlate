@@ -1557,7 +1557,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    const { documents } = replayJournalLines(lines, openDocs);
+    const { documents, skipped } = replayJournalLines(lines, openDocs);
     for (const [id, content] of documents) {
       const doc = documentService.getDocument(id);
       if (!doc || doc.content === content) continue;
@@ -1569,7 +1569,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         documentService.updateAssetDocument(id, content as Record<string, unknown>);
       }
     }
-    // Recovered edits remain unsaved. Keep the journal until Save/clean Close.
+    // Undo can leave the journal at the saved content. There is nothing to
+    // save in that case, so retire the replayed journal without a no-op edit.
+    // Retain skipped records and any edits made while the clear is queued.
+    if (skipped.length === 0) {
+      await journalBuffer.afterFlush(guid, () => truncateJournal(derived, guid, () =>
+        projectService.guid === guid &&
+        documentService.getDirtyDocuments().length === 0 &&
+        !projectSaveState.current.isDirty(projectDocumentRef.current),
+      ));
+    }
     setRecoveryAvailable(false);
     bump();
   }, [bump, documentService, ensureDerived, journalBuffer, projectService]);

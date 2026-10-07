@@ -12,7 +12,7 @@ import {
   type SerializedScene,
 } from "@babylonslate/core";
 import { OpfsStorageAdapter, createDerivedStorage } from "@babylonslate/vfs";
-import { appendJournalLines } from "@babylonslate/assets";
+import { appendJournalLines, readJournalLines } from "@babylonslate/assets";
 import { SetSceneNameCommand, commandToJournalPayload, serializeJournalLine } from "@babylonslate/edit";
 import { createProjectAsset } from "../lib/create-project-asset";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
@@ -153,6 +153,25 @@ afterEach(async () => {
 });
 
 describe("DocumentProvider actions and route", () => {
+  it("clears a recovered journal that returns to saved content without another Save", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.saveAll());
+    const originalName = openScene(MAIN_SCENE_ID).name;
+    const derived = await createDerivedStorage();
+    const guid = documents().projectGuid!;
+    await appendJournalLines(derived, guid, [
+      new SetSceneNameCommand(originalName, "Temporary"),
+      new SetSceneNameCommand("Temporary", originalName),
+    ].map((command) => serializeJournalLine({
+      v: 1, docId: MAIN_SCENE_ID, at: new Date().toISOString(), command: commandToJournalPayload(command),
+    })));
+    act(() => actions.keepRecovery());
+    await waitFor(async () => expect(await readJournalLines(derived, guid)).toEqual([]));
+    expect(openScene(MAIN_SCENE_ID).name).toBe(originalName);
+    expect(documents().dirtyDocuments).toEqual([]);
+  });
+
   it("replays a recovery request after an in-flight scene read settles", async () => {
     const actions = await openProject();
     const target = await createScene(actions, "RecoverTarget");

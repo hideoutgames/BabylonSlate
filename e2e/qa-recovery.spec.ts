@@ -75,7 +75,7 @@ async function journalCommands(page: Page) {
   }, directoryName);
 }
 
-test("H6/M4: recovery retains Undo and survives a second reload before Save", async ({ page }) => {
+test("H6/M4: recovery of an undone edit stays clean and clears its journal", async ({ page }) => {
   await openTestProject(page);
   await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
   await expect(
@@ -98,12 +98,14 @@ test("H6/M4: recovery retains Undo and survives a second reload before Save", as
   await recoverAfterReload(page);
   expect(await page.evaluate(() =>
     (globalThis as unknown as TestHost).__babylonslateTest.activeGraphNodePosition())).toEqual(before);
-  await recoverAfterReload(page);
   expect(await page.evaluate(() =>
-    (globalThis as unknown as TestHost).__babylonslateTest.activeGraphNodePosition())).toEqual(before);
-  await saveAllIfEnabled(page);
+    (globalThis as unknown as TestHost).__babylonslateTest.dirtyDocuments())).toEqual([]);
   expect(await page.evaluate(() =>
     (globalThis as unknown as TestHost).__babylonslateTest.hasRecoveryJournal())).toBe(false);
+  await page.reload();
+  await page.getByTestId("open-listed-project-TestProject").click();
+  await expect(page.getByTestId("content-browser-workspace")).toBeVisible();
+  await expect(page.getByTestId("recovery-prompt")).toHaveCount(0);
 });
 
 test("H6: recovery restores a journalled Enum edit", async ({ page }) => {

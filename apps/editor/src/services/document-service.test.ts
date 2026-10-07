@@ -244,10 +244,10 @@ describe("DocumentService", () => {
     const other = "graph:assets/Other.class.babasset";
     const control = "graph:assets/Control.class.babasset";
     service.updateGraph(main, { nodes: [], edges: [], members: [{ id: "saved", kind: "event", name: "Saved revision" }] });
-    service.updateGraph(control, { nodes: [], edges: [] });
+    service.updateGraph(control, { nodes: [], edges: [], members: [{ id: "control", kind: "event", name: "Control edit" }] });
     const saved = service.getDirtyDocuments().map((doc) => ({ ...doc }));
     service.updateGraph(main, { nodes: [], edges: [], members: [{ id: "new", kind: "event", name: "New revision" }] });
-    service.updateGraph(other, { nodes: [], edges: [] });
+    service.updateGraph(other, { nodes: [], edges: [], members: [{ id: "other", kind: "event", name: "Later edit" }] });
     service.markAllClean(saved);
     expect(service.getDocument(main)?.dirty).toBe(true);
     expect(service.getDocument(other)?.dirty).toBe(true);

@@ -94,7 +94,7 @@ const SHAPES = ["box", "sphere", "cylinder", "plane", "ground"] as const;
 const LIGHTS = ["point", "directional", "spot"] as const;
 
 export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
-  { id: "sprite", title: "Sprite", category: "2D", kind: { type: "sprite" } },
+  { id: "sprite", title: "Sprite", category: "Rendering", kind: { type: "sprite" } },
   { id: "cable", title: "Cable", category: "Environment", kind: { type: "cable" } },
   { id: "render-target-capture", title: "Render Target Capture", category: "Camera", kind: { type: "render-target-capture" } },
   ...(["Ocean", "Lake", "River", "Puddle"] as const).map((kind) => ({ id: "water-" + kind.toLowerCase(), title: "Water " + kind, category: "Water", kind: { type: "water" as const, classId: "Water" + kind + "Component" } })),
