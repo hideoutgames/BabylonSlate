@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import {
+  AFFINE_SHEAR_TOLERANCE,
   composeAffineTransform,
   multiplyAffineTransforms,
   type AffineTransform,
@@ -15,6 +16,7 @@ import {
   firstSpawnedActorIndex,
   multiplyQuaternion,
   relativeTransform,
+  WorldTransformComposer,
 } from "./actor-world-transform";
 
 type Node = { parent: number; transform: Transform };
@@ -62,11 +64,11 @@ function authoredWorlds(nodes: readonly Node[]): AffineTransform[] {
   return worlds;
 }
 
-function expectMatrixClose(actual: AffineTransform, expected: AffineTransform, rows = [0, 1, 2, 3]): void {
+function expectMatrixClose(actual: AffineTransform, expected: AffineTransform, rows = [0, 1, 2, 3], slack = 0): void {
   for (const row of rows) {
     for (let column = 0; column < 3; column++) {
       const index = row * 3 + column;
-      const tolerance = 1e-9 * Math.max(1, Math.abs(expected[index]!));
+      const tolerance = 1e-9 * Math.max(1, Math.abs(expected[index]!)) + slack;
       expect(Math.abs(actual[index]! - expected[index]!)).toBeLessThan(tolerance);
     }
   }
@@ -164,13 +166,94 @@ describe("actor world transforms match the authored matrices", () => {
         const expected = authoredWorlds(nodes);
         const index = firstSpawnedActorIndex(actors);
         const worlds = composeActorWorldTransforms((guid) => index.get(guid), actors);
+        // A basis within AFFINE_SHEAR_TOLERANCE of orthogonal counts as shear-free
+        // and continues through its decomposed pose, so descendants may drift by
+        // that tolerance times their lever arm (bounded here by the hierarchy's
+        // largest world offset). Composition bugs differ by O(1).
+        const extent = Math.max(1, ...expected.flatMap((world) => [world[9]!, world[10]!, world[11]!].map(Math.abs)));
+        const slack = 10 * AFFINE_SHEAR_TOLERANCE * extent;
         actors.forEach((actor, i) => {
-          expectMatrixClose(composeAffineTransform(worlds.get(actor.guid)!), expected[i]!, [3]);
-          expectMatrixClose(composeAffineTransform(actorWorldTransform(actor, index)!), expected[i]!, [3]);
+          expectMatrixClose(composeAffineTransform(worlds.get(actor.guid)!), expected[i]!, [3], slack);
+          expectMatrixClose(composeAffineTransform(actorWorldTransform(actor, index)!), expected[i]!, [3], slack);
         });
       }),
       { numRuns: 200 },
     );
+  });
+});
+
+describe("WorldTransformComposer", () => {
+  /** Fresh composition of the live world, with the actors it reports sheared. */
+  function freshPoses(world: World): { poses: Map<string, Transform>; sheared: string[] } {
+    const sheared: string[] = [];
+    const poses = composeActorWorldTransforms((guid) => world.findActor(guid), world.getActors(), (actor) => sheared.push(actor.guid));
+    return { poses, sheared };
+  }
+
+  function composeLive(composer: WorldTransformComposer, world: World) {
+    const sheared: string[] = [];
+    const poses = composer.compose((guid) => world.findActor(guid), world.getActors(), (actor) => sheared.push(actor.guid));
+    return { poses, sheared };
+  }
+
+  // Reusing a composer every publish replaces per-actor allocation (about
+  // eight objects per actor per frame) with in-place writes; no timing is asserted.
+  it("rewrites the same pose objects in place and matches a fresh composition exactly", () => {
+    // Each actor's transform before and after an edit, so shear can appear or vanish between passes.
+    const edited = hierarchy(anyRotation).chain((nodes) =>
+      fc.tuple(fc.constant(nodes), fc.array(fc.tuple(fc.tuple(position, position, position), anyRotation,
+        fc.tuple(signedScale, signedScale, signedScale)).map(([p, r, s]) => transform(p, r, s)),
+      { minLength: nodes.length, maxLength: nodes.length })));
+    fc.assert(
+      fc.property(edited, ([nodes, next]) => {
+        const actors = spawnHierarchy(nodes);
+        const world = actors[0]!.world as World;
+        const composer = new WorldTransformComposer();
+        const first = composeLive(composer, world);
+        // toEqual compares numbers with Object.is, so poses must be bit-identical.
+        expect(first).toEqual(freshPoses(world));
+        const objects = new Map(first.poses);
+
+        const again = composeLive(composer, world);
+        expect(again).toEqual(freshPoses(world));
+        for (const [guid, pose] of again.poses) expect(pose).toBe(objects.get(guid));
+
+        actors.forEach((actor, index) => { actor.transform = structuredClone(next[index]!); });
+        const moved = composeLive(composer, world);
+        expect(moved).toEqual(freshPoses(world));
+        for (const [guid, pose] of moved.poses) expect(pose).toBe(objects.get(guid));
+      }),
+      { numRuns: 200 },
+    );
+  });
+
+  it("releases poses of removed actors and composes a returning guid afresh", () => {
+    const actors = spawnHierarchy([
+      { parent: -1, transform: transform([1, 2, 3], { x: 0, y: 0, z: 0, w: 1 }, [2, 1, 1]) },
+      { parent: 0, transform: transform([1, 0, 0], { x: 0, y: 0, z: Math.sin(Math.PI / 8), w: Math.cos(Math.PI / 8) }, [1, 1, 1]) },
+      { parent: 1, transform: transform([0, 1, 0], { x: 0, y: 0, z: 0, w: 1 }, [1, 1, 1]) },
+    ]);
+    const world = actors[0]!.world as World;
+    const composer = new WorldTransformComposer();
+    expect([...composeLive(composer, world).poses.keys()].sort()).toEqual(["actor-0", "actor-1", "actor-2"]);
+
+    world.destroyActor("actor-1");
+    world.destroyActor("actor-2");
+    world.flushPending();
+    const remaining = composeLive(composer, world);
+    expect([...remaining.poses.keys()]).toEqual(["actor-0"]);
+    expect(remaining).toEqual(freshPoses(world));
+
+    // A new actor reusing a released guid (now unrotated, so unsheared) composes from scratch.
+    world.spawnActorNow(world.createActor({
+      classId: "Actor",
+      guid: "actor-1",
+      transform: transform([0, 0, 4], { x: 0, y: 0, z: 0, w: 1 }, [1, 1, 1]),
+      variables: { parentId: "actor-0" },
+    }));
+    const returned = composeLive(composer, world);
+    expect(returned).toEqual(freshPoses(world));
+    expect(returned.sheared).toEqual([]);
   });
 });
 

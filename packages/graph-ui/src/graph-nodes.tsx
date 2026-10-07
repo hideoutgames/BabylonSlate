@@ -2,10 +2,17 @@ import {
   Handle,
   Position,
   useStore,
+  useUpdateNodeInternals,
   type Node,
   type NodeProps,
 } from "@xyflow/react";
-import { useCallback, type MouseEvent, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import { ClockIcon, Gamepad2Icon, PlugIcon, PlugZapIcon } from "lucide-react";
 import {
   ContextMenuOverlay,
@@ -68,9 +75,23 @@ function visualFromData(
   };
 }
 
+/**
+ * Pair input and output pins into node rows. Exec pins are lifted to the top
+ * unless `declaredOrder` is set (function signatures), which keeps each side
+ * in the order the pins were declared.
+ */
 export function zipPinRows(
   pins: SerializedPin[],
+  options?: { declaredOrder?: boolean },
 ): Array<{ in?: SerializedPin; out?: SerializedPin }> {
+  if (options?.declaredOrder) {
+    const inputs = pins.filter((pin) => pin.direction === "in");
+    const outputs = pins.filter((pin) => pin.direction === "out");
+    return Array.from(
+      { length: Math.max(inputs.length, outputs.length) },
+      (_, index) => ({ in: inputs[index], out: outputs[index] }),
+    );
+  }
   const execIn = pins.filter(
     (pin) => pin.kind === "exec" && pin.direction === "in",
   );
@@ -460,7 +481,20 @@ export function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
   const menu = useContextMenu({ items, enabled: items.length > 0 });
   const pins = hasSerializedPins(data) ? data.__pins : [];
   const { title, role } = visualFromData(data, type);
-  const rows = zipPinRows(pins);
+  const rows = zipPinRows(pins, {
+    declaredOrder: data.__declaredPinOrder === true,
+  });
+  // Reordering pins moves handles without resizing the node, so React Flow
+  // would keep drawing edges to the old handle positions. Mount is measured
+  // normally; re-measuring there disturbs initial layout of off-screen nodes.
+  const updateNodeInternals = useUpdateNodeInternals();
+  const handleOrder = pins.map((pin) => `${pin.direction}:${pin.id}`).join("|");
+  const measuredHandleOrder = useRef(handleOrder);
+  useEffect(() => {
+    if (measuredHandleOrder.current === handleOrder) return;
+    measuredHandleOrder.current = handleOrder;
+    updateNodeInternals(id);
+  }, [handleOrder, id, updateNodeInternals]);
 
   return (
     <div

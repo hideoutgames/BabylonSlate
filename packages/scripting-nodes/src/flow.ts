@@ -707,6 +707,7 @@ export const flowNodes: NodeDefinition[] = [
     id: "flow.function.input",
     title: "Input",
     category: "flow",
+    declaredPinOrder: true,
     pure: true,
     pins: (properties) =>
       functionEndpointPins(properties, "input"),
@@ -724,6 +725,7 @@ export const flowNodes: NodeDefinition[] = [
     id: "flow.function.output",
     title: "Output",
     category: "flow",
+    declaredPinOrder: true,
     pins: (properties) =>
       functionEndpointPins(properties, "output"),
     codegen: (ctx) => {
