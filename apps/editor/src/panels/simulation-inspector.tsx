@@ -2,13 +2,16 @@ import { useEffect, useMemo, useRef, useState, type FocusEvent } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { RuntimeInspectorValue, RuntimeObjectIdentity, RuntimePropertyDescriptor } from "@babylonslate/bridge";
 import type { MaterialParameterValue, SerializedTransform, ViewportMode } from "@babylonslate/core";
-import { AssetPicker, EditorReadOnlyContext, PanelFrame, PropertyGrid, SearchInput, type PropertyRow } from "@babylonslate/editor-kit";
+import { AssetPicker, EditorReadOnlyContext, PanelFrame, PropertyGrid, SearchInput, type AssetPickerEntry, type PropertyRow } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
 import { useDocuments } from "../context/document-context";
 import { useOptionalSceneEditing } from "../context/scene-editing-context";
 import { useSimulationInspection } from "../context/simulation-inspection-context";
 import { runtimeIdentityKey, type SimulationInspectionStore } from "../services/simulation-inspection-store";
 import { spatialTransformPropertyRows } from "../lib/transform-property-rows";
+
+const MATERIAL_ASSET_TYPES = ["Material", "MaterialInstance"];
+const TEXTURE_ASSET_TYPES = ["Texture"];
 
 function valueLabel(value: RuntimeInspectorValue): string {
   if (value && typeof value === "object" && !Array.isArray(value)) {
@@ -61,15 +64,10 @@ function RuntimeTransformFields({ store, target, transform, mode, disabled, reas
   </div>;
 }
 
-function RuntimePropertyField({ descriptor, target, store, materialGuid }: {
-  descriptor: RuntimePropertyDescriptor; target: RuntimeObjectIdentity; store: SimulationInspectionStore; materialGuid?: string;
+function RuntimePropertyField({ descriptor, target, store, materialGuid, assets }: {
+  descriptor: RuntimePropertyDescriptor; target: RuntimeObjectIdentity; store: SimulationInspectionStore; materialGuid?: string; assets: AssetPickerEntry[];
 }) {
   const field = useRuntimeDraft(descriptor.value);
-  const { assetRegistry, registryEpoch } = useDocuments();
-  const assets = useMemo(() => {
-    void registryEpoch;
-    return (assetRegistry?.list() ?? []).map(asset => ({ guid: asset.header.guid, name: asset.header.name, type: asset.header.type, path: asset.path }));
-  }, [assetRegistry, registryEpoch]);
   const [picker, setPicker] = useState(false);
   const [expandedValue, setExpandedValue] = useState<RuntimeInspectorValue | null>(null);
   const [nextOffset, setNextOffset] = useState<number | undefined>();
@@ -84,6 +82,19 @@ function RuntimePropertyField({ descriptor, target, store, materialGuid }: {
     }
     return store.request({ kind: "setProperty", target, property: descriptor.key, value }, final ? { final: true } : { continuous: true });
   });
+  const colorFinalRef = useRef<(() => void) | null>(null);
+  const colorTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const finishColor = () => {
+    clearTimeout(colorTimerRef.current); colorTimerRef.current = undefined;
+    const commit = colorFinalRef.current; colorFinalRef.current = null; commit?.();
+  };
+  useEffect(() => () => { clearTimeout(colorTimerRef.current); colorFinalRef.current?.(); }, []);
+  const sendColor = (value: RuntimeInspectorValue) => {
+    send(value, false);
+    colorFinalRef.current = () => send(value, true);
+    clearTimeout(colorTimerRef.current);
+    colorTimerRef.current = setTimeout(finishColor, 150);
+  };
   const raw = field.draft;
   const materialValue = material && raw && typeof raw === "object" && !Array.isArray(raw) ? raw : null;
   const value = materialValue ? materialValue.kind === "texture" ? materialValue.textureAssetGuid : materialValue.value : raw;
@@ -98,7 +109,7 @@ function RuntimePropertyField({ descriptor, target, store, materialGuid }: {
     row = { ...base, kind: "asset", value: value as string | null, displayLabel: selected?.name, displayType: selected?.type,
       onPick: () => setPicker(true), onChange: next => send(wrap(next)) };
   } else if (descriptor.typeId === "material:color" && Array.isArray(value) && value.length === 4 && value.every(item => typeof item === "number")) {
-    row = { ...base, kind: "color4", value: value as [number, number, number, number], onChange: next => send(wrap(next)) };
+    row = { ...base, kind: "color4", value: value as [number, number, number, number], onChange: next => sendColor(wrap(next)) };
   } else if (typeof value === "number") {
     row = { ...base, kind: "number", value, onChange: next => send(wrap(next), false), onCommit: next => send(wrap(next), true) };
   } else if (typeof value === "boolean") {
@@ -124,19 +135,26 @@ function RuntimePropertyField({ descriptor, target, store, materialGuid }: {
       if (result.payload?.kind === "value") { setExpandedValue(result.payload.value); setNextOffset(result.payload.nextOffset); setValueError(null); }
     } catch (error) { setValueError(String(error)); }
   };
-  return <div {...field.focusProps}>
+  return <div {...field.focusProps} onPointerUpCapture={finishColor}
+    onBlurCapture={event => { field.focusProps.onBlurCapture(event); finishColor(); }}>
     <PropertyGrid rows={[row]} />
     <p role="status" className="px-2 text-xs text-muted-foreground">{field.status ?? capabilityLabel}</p>
     {canExpand ? <Button size="sm" variant="ghost" onClick={() => { if (expandedValue) setExpandedValue(null); else void expand(); }}>{expandedValue ? "Close Value" : "Inspect Value"}</Button> : null}
     {expandedValue ? <div className="px-2"><pre className="max-h-48 overflow-auto whitespace-pre-wrap text-xs">{JSON.stringify(expandedValue, null, 2)}</pre><p className="text-xs text-muted-foreground">Last requested value · does not poll while expanded.</p>{nextOffset !== undefined ? <Button size="sm" variant="outline" onClick={() => void expand(nextOffset)}>Next Value Page</Button> : null}</div> : null}
     {valueError ? <p role="status" className="px-2 text-xs text-destructive">{valueError}</p> : null}
-    <AssetPicker open={picker} onOpenChange={setPicker} assets={assets} allowedTypes={assetType === "Material" ? ["Material", "MaterialInstance"] : ["Texture"]}
-      createTypes={[]} title={`Pick ${assetType ?? "Asset"}`} onPick={guid => { send(wrap(guid)); setPicker(false); }} />
+    {assetType ? <AssetPicker open={picker} onOpenChange={setPicker} assets={assets} allowedTypes={assetType === "Material" ? MATERIAL_ASSET_TYPES : TEXTURE_ASSET_TYPES}
+      createTypes={[]} title={`Pick ${assetType ?? "Asset"}`} onPick={guid => { send(wrap(guid)); setPicker(false); }} /> : null}
   </div>;
 }
 
 export function SimulationInspector({ store, panel }: { store: SimulationInspectionStore; panel: IDockviewPanelProps }) {
   const state = useSimulationInspection(store, panel, "selection");
+  const { assetRegistry, registryEpoch } = useDocuments();
+  const assets = useMemo(() => {
+    void registryEpoch;
+    return (assetRegistry?.list() ?? []).map(asset => ({ guid: asset.header.guid, name: asset.header.name, type: asset.header.type, path: asset.path }));
+  }, [assetRegistry, registryEpoch]);
+
   const mode = useOptionalSceneEditing()?.viewportMode ?? "3d";
   const [search, setSearch] = useState("");
   const selection = state.selection;
@@ -151,7 +169,7 @@ export function SimulationInspector({ store, panel }: { store: SimulationInspect
       {!search ? <RuntimeTransformFields store={store} target={selection.target} transform={selection.transform} mode={mode}
         disabled={selection.transformCapability !== "live"} reason={selection.transformReason} /> : null}
       {selection.properties.filter(property => `${property.name} ${property.typeId}`.toLocaleLowerCase().includes(search.toLocaleLowerCase())).map(descriptor =>
-        <RuntimePropertyField key={descriptor.key} descriptor={descriptor} target={selection.target} store={store} materialGuid={typeof materialGuid === "string" ? materialGuid : undefined} />)}
+        <RuntimePropertyField key={descriptor.key} descriptor={descriptor} target={selection.target} store={store} assets={assets} materialGuid={typeof materialGuid === "string" ? materialGuid : undefined} />)}
       {selection.nextOffset !== undefined ? <Button size="sm" variant="outline" className="mx-2" onClick={store.loadMoreProperties}>Next Property Page</Button> : null}
       <Button size="sm" variant="ghost" className="mx-2" onClick={store.firstProperties}>First Property Page</Button>
     </div></EditorReadOnlyContext.Provider> : state.selected && !state.selectionError ? <p role="status" className="p-2 text-xs">Loading Selection…</p> : null}
