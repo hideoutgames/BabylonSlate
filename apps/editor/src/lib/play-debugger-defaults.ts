@@ -31,3 +31,28 @@ export function nextPlayInspectorOpen(
 ): boolean {
   return inspectorOpen && overlayInspector;
 }
+
+/** Snapshot these local preferences when preparing a session; no active state is saved. */
+export function simulationDefaultsFromSettings(defaults?: {
+  keepSimulationChanges?: boolean;
+  graphObservation?: boolean;
+} | null) {
+  return Object.freeze({
+    keepChanges: defaults?.keepSimulationChanges === true,
+    graphObservation: defaults?.graphObservation === true,
+  });
+}
+
+export function profileDefaultsFromSettings(defaults?: {
+  profileDurationSeconds?: number;
+  profileByteBudget?: number;
+  profileGpuTiming?: boolean;
+} | null) {
+  const finite = (value: number | undefined, fallback: number, min: number, max: number) =>
+    typeof value === "number" && Number.isFinite(value) ? Math.min(max, Math.max(min, Math.round(value))) : fallback;
+  return {
+    durationMs: finite(defaults?.profileDurationSeconds, 10, 1, 60) * 1000,
+    byteBudget: finite(defaults?.profileByteBudget, 16 * 1024 * 1024, 4 * 1024 * 1024, 64 * 1024 * 1024),
+    gpuTiming: defaults?.profileGpuTiming === true,
+  };
+}

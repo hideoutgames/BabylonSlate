@@ -3,6 +3,8 @@ import {
   DEFAULT_PLAY_DEBUGGER_OVERLAY,
   nextPlayInspectorOpen,
   playDebuggerOverlayFromSettings,
+  profileDefaultsFromSettings,
+  simulationDefaultsFromSettings,
 } from "./play-debugger-defaults";
 
 describe("playDebuggerOverlayFromSettings", () => {
@@ -44,6 +46,17 @@ describe("playDebuggerOverlayFromSettings", () => {
       pauseOnPlay: false,
     });
   });
+});
+
+it("snapshots Simulation preferences and bounds explicit recording defaults", () => {
+  const saved = { keepSimulationChanges: true, graphObservation: false };
+  const launch = simulationDefaultsFromSettings(saved);
+  saved.keepSimulationChanges = false;
+  expect(launch.keepChanges).toBe(true);
+  expect(Object.isFrozen(launch)).toBe(true);
+  expect(simulationDefaultsFromSettings()).toEqual({ keepChanges: false, graphObservation: false });
+  expect(profileDefaultsFromSettings()).toEqual({ durationMs: 10_000, byteBudget: 16 * 1024 * 1024, gpuTiming: false });
+  expect(profileDefaultsFromSettings({ profileDurationSeconds: Infinity, profileByteBudget: 1 })).toMatchObject({ durationMs: 10_000, byteBudget: 4 * 1024 * 1024 });
 });
 
 describe("nextPlayInspectorOpen", () => {

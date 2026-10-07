@@ -185,6 +185,11 @@ code transactions, pin defaults and property edits are blocked. Document and
 project command owners independently enforce the authoring lock. Runtime
 Inspector adapters may opt out of this inherited UI policy only for validated
 session mutations; they never unlock the authored document.
+Engine Settings → Debugger reuses Field, Switch, NumberField and
+DisclosureSection for the shared Pause On Play preference and explicit
+Performance recording duration, GPU request preference and advanced retained
+data budget. Settings search opens Advanced when targeting its budget field.
+These local preferences never arm collection or alter the independent Trace budget.
 Material Details also offers the Text domain, with a glyph preview and Text Output. Scene and Prefab Details reuse the existing AssetPicker for Text Materials, filtering by the live material domain, plus a Material UV enum.
 
 Serialized graph pins may supply a compact `typeLabel` and a `group` heading;

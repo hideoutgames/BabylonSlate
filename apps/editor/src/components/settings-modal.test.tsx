@@ -219,6 +219,24 @@ it("finds the trace budget and persists MiB edits as bytes", async () => {
   }
 });
 
+it("reveals the advanced profile budget through search without changing Trace", async () => {
+  const store = createAppSettingsStore();
+  const previous = await store.load();
+  const view = render(<SettingsModal open onOpenChange={() => {}} scope="engine" />);
+  try {
+    fireEvent.change(screen.getByRole("textbox", { name: "Search settings" }), { target: { value: "profile retained" } });
+    fireEvent.click(screen.getByRole("button", { name: /Profile Retained Data Budget/ }));
+    const input = await screen.findByLabelText("Profile Retained Data Budget (MiB)");
+    fireEvent.change(input, { target: { value: "24" } });
+    fireEvent.blur(input);
+    await waitFor(async () => expect((await store.load()).debuggerDefaults.profileByteBudget).toBe(24 * 1024 * 1024));
+    expect((await store.load()).traceByteBudget).toBe(previous.traceByteBudget);
+  } finally {
+    view.unmount();
+    await store.save(previous);
+  }
+});
+
 describe("SettingsModal project authoring", () => {
   it("edits the authored project version from General", () => {
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
