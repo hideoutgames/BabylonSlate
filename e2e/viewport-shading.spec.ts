@@ -69,6 +69,32 @@ async function expectSkyboxPixels(canvas: Locator) {
   }), { timeout: 20_000 }).toBeGreaterThan(100);
 }
 
+test("Emissive color popup stays reachable outside the graph and within a short viewport", async ({ page }) => {
+  await openTestProject(page);
+  await createContentBrowserAsset(page, "Material", "EmissivePicker");
+  await openAssetFromBrowser(page, "assets/EmissivePicker.material.babasset");
+  const graph = page.getByTestId("material-graph-editor");
+  await page.setViewportSize({ width: 1100, height: 420 });
+  await graph.getByRole("button", { name: "Size Graph To Fit" }).click();
+  const trigger = graph.getByTestId("pin-default-output-emissive");
+  await trigger.click();
+  const dialog = page.getByTestId("pin-default-output-emissive-dialog");
+  await expect(dialog).toBeVisible();
+  const bounds = await dialog.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.y).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(1100);
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(420);
+  // Filling and clicking use Playwright actionability checks, catching content
+  // clipped by the graph's transform/scrollport as well as viewport overflow.
+  await dialog.getByRole("textbox", { name: "Hex", exact: true }).fill("#00ff00");
+  await dialog.getByRole("button", { name: "Done", exact: true }).click();
+  await trigger.click();
+  await expect(dialog.getByRole("textbox", { name: "Hex", exact: true })).toHaveValue("#00ff00");
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+});
+
 test("Emissive surface stays self-lit on a curved mesh without scene lights", async ({
   page,
 }) => {
