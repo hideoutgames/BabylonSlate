@@ -33,6 +33,8 @@ const { docs, loadAssetThumbnail, layout } = vi.hoisted(() => {
     assetRegistry: null as unknown,
     registryEpoch: 1,
     refreshAssetRegistry: vi.fn(),
+    renameAsset: (guid: string, name: string): Promise<IndexedAsset> =>
+      (docs.assetRegistry as { renameAsset: (guid: string, name: string) => Promise<IndexedAsset> }).renameAsset(guid, name),
     repathDocument: vi.fn(),
     openDocument: vi.fn(),
     closeDocumentsForPaths: vi.fn(),
@@ -487,6 +489,75 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(await screen.findByText("Lock service unavailable")).toBeTruthy();
     expect(docs.sourceControl.transferLock).toHaveBeenCalledWith(asset.path, renamed.path);
     expect(screen.queryByTestId("content-browser-name-dialog")).toBeNull();
+  });
+
+  it("replaces an unrelated selection before a context-menu delete", async () => {
+    installRegistry([texture(0), texture(1)], ["Characters"]);
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId("content-folder-assets/Characters"));
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.babasset"), { ctrlKey: true });
+    fireEvent.contextMenu(screen.getByTestId("content-item-assets/tex-1.babasset"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
+    const list = screen.getByTestId("content-browser-delete-list");
+    expect(list.textContent).toContain("tex-1");
+    expect(list.textContent).not.toContain("tex-0");
+    expect(list.textContent).not.toContain("Characters");
+  });
+
+  it("offers folder Rename after an unrelated asset selection and submits it with Enter", async () => {
+    installRegistry([texture(0)], ["Characters"]);
+    const moveFolder = vi.fn().mockResolvedValue(undefined);
+    docs.assetRegistry = { ...(docs.assetRegistry as object), moveFolder };
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.babasset"));
+    fireEvent.contextMenu(screen.getByTestId("content-folder-assets/Characters"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+    const input = screen.getByTestId("content-browser-name-input");
+    fireEvent.change(input, { target: { value: "Heroes" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(screen.queryByTestId("content-browser-name-dialog")).toBeNull());
+    expect(moveFolder).toHaveBeenCalledWith("project", "Characters", "", "Heroes");
+  });
+
+  it("rejects duplicate typed asset names before submitting a rename", () => {
+    const assets = [texture(0), texture(1)];
+    assets[0]!.path = "assets/Hero.class.babasset";
+    assets[0]!.header.name = "Hero.class";
+    assets[1]!.path = "assets/Villain.class.babasset";
+    installRegistry(assets);
+    const renameAsset = vi.fn();
+    docs.assetRegistry = { ...(docs.assetRegistry as object), renameAsset };
+    render(<ContentBrowserWorkspace />);
+    fireEvent.contextMenu(screen.getByTestId(`content-item-${assets[0]!.path}`));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+    const input = screen.getByTestId("content-browser-name-input") as HTMLInputElement;
+    expect(input.value).toBe("Hero");
+    fireEvent.change(input, { target: { value: "Villain" } });
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getByTestId("content-browser-name-confirm").hasAttribute("disabled")).toBe(true);
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(renameAsset).not.toHaveBeenCalled();
+  });
+
+  it("validates a single folder name and creates in the viewed folder with Enter", async () => {
+    installRegistry([], ["Characters"]);
+    const createFolder = vi.fn().mockResolvedValue(undefined);
+    docs.assetRegistry = { ...(docs.assetRegistry as object), createFolder };
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId("content-folder-assets/Characters"));
+    fireEvent.click(screen.getByTestId("content-browser-new-folder"));
+    const input = screen.getByTestId("content-browser-name-input");
+    for (const name of ["..", "a/b", "a\\b", ""]) {
+      fireEvent.change(input, { target: { value: name } });
+      fireEvent.keyDown(input, { key: "Enter" });
+      expect(input.getAttribute("aria-invalid")).toBe("true");
+      expect(screen.getByTestId("content-browser-name-confirm").hasAttribute("disabled")).toBe(true);
+    }
+    expect(createFolder).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: "Hero 🤖 Ünïcødé" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(screen.queryByTestId("content-browser-name-dialog")).toBeNull());
+    expect(createFolder).toHaveBeenCalledWith("project", "Hero 🤖 Ünïcødé");
   });
 
   it("retains the new asset draft when the storage write fails", async () => {

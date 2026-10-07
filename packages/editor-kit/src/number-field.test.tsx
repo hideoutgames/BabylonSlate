@@ -75,6 +75,31 @@ describe("NumberField", () => {
 
     expect(input.value).toBe("60");
     expect(onChange).not.toHaveBeenCalled();
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getByRole("alert")).toBeTruthy();
+  });
+
+  it("rejects invalid intervals without changing the saved value", () => {
+    const onChange = vi.fn();
+    render(<NumberField value={120} min={1} rejectOutOfRange onChange={onChange} data-testid="field" />);
+    const input = screen.getByTestId("field") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "0" } });
+    fireEvent.blur(input);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(input.value).toBe("120");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getByRole("alert").textContent).toContain("1");
+  });
+
+  it("restores the pre-edit value when Escape cancels a live edit", () => {
+    const onChange = vi.fn();
+    render(<StatefulField initial={120} onChange={onChange} />);
+    const input = screen.getByTestId("field") as HTMLInputElement;
+    input.focus();
+    fireEvent.change(input, { target: { value: "30" } });
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(onChange).toHaveBeenLastCalledWith(120);
+    expect(input.value).toBe("120");
   });
 
   it("does not commit out-of-range drafts until blur, then clamps", () => {

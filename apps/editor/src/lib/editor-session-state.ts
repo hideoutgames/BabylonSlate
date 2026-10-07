@@ -1,3 +1,4 @@
+import type { SerializedActor } from "@babylonslate/core";
 import type { EditorCameraSessionState } from "@babylonslate/render";
 import { moveKeyedEntry } from "./move-keyed-entry";
 import type { ParticleModuleId } from "./particle-value-modes";
@@ -13,6 +14,22 @@ export type GraphSessionViewport = { x: number; y: number; zoom: number };
  * (reopening a Scene restores its view); a new project session starts empty.
  */
 export class EditorSessionState {
+  private actorClipboard: { overlay: boolean; actors: SerializedActor[] } | null = null;
+
+  copyActors(actors: SerializedActor[], overlay: boolean): void {
+    this.actorClipboard = { actors: structuredClone(actors), overlay };
+  }
+
+  hasCopiedActors(overlay: boolean): boolean {
+    return this.actorClipboard?.overlay === overlay && this.actorClipboard.actors.length > 0;
+  }
+
+  readCopiedActors(overlay: boolean): SerializedActor[] {
+    return this.actorClipboard?.overlay === overlay
+      ? structuredClone(this.actorClipboard.actors)
+      : [];
+  }
+
   private readonly cameraPoses = new Map<string, EditorCameraSessionState>();
   private readonly graphViewports = new Map<string, Map<string, GraphSessionViewport>>();
   private readonly closedModules = new Map<string, ReadonlySet<ParticleModuleId>>();

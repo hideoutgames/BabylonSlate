@@ -123,12 +123,12 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
                   onSelect={() => {
                     setSelectedDiagnostic(d);
                     clearFocusedNode();
-                    setFocusDiagnostic(d);
                     if (d.actorId) sceneEditing?.selectActor(d.actorId);
                     const revealId = documentIdToRevealForDiagnostic(
                       d,
                       openDocuments.map((doc) => doc.id),
                     );
+                    setFocusDiagnostic(d, revealId ?? undefined);
                     if (revealId) setActiveDocument(revealId);
                   }}
                 />

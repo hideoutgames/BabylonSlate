@@ -7,6 +7,8 @@ import {
   type NodeRegistry,
 } from "@babylonslate/scripting";
 import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+import { createActor, createDefaultSceneSettings } from "@babylonslate/core";
+import { animGraphScriptClassId, createDefaultAnimGraph } from "@babylonslate/anim-graph";
 import { INFINITE_LOOP_DIAGNOSTIC_CODE } from "@babylonslate/debugger";
 import { createInProcessRuntime } from "./driver";
 import type { CompiledScript } from "./script-host";
@@ -41,7 +43,7 @@ function edge(
 function jsGraph(
   registry: NodeRegistry,
   body: string,
-  eventTypeId: "flow.event.tick" | "flow.event.beginPlay",
+  eventTypeId: "flow.event.tick" | "flow.event.beginPlay" | "flow.event.init" | "flow.event.end" | "anim.event.update",
 ): LogicGraph {
   return {
     id: "event-graph",
@@ -111,7 +113,7 @@ function diagnosticCodes(commands: readonly CommandMessage[]): string[] {
 }
 
 describe("runtime infinite loop guard", () => {
-  it("reports runtime.infinite_loop and stops the runaway script", async () => {
+  it.each([true, false])("reports the runaway node with source anchors available: %s", async (withAnchors) => {
     const registry = createDefaultNodeRegistry();
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
@@ -122,14 +124,10 @@ describe("runtime infinite loop guard", () => {
       loopCount: 5,
       onCommand: (command) => commands.push(command),
     });
-    await runtime.loadScripts([
-      toScript(
-        jsGraph(registry, "while (true) {}", "flow.event.tick"),
-        registry,
-        "Looper",
-        "loop-asset",
-      ),
-    ]);
+    const script = toScript(jsGraph(registry, "while (true) {}", "flow.event.tick"), registry, "Looper", "loop-asset");
+    // Browsers may omit sourceURL frames; explicit guard locations must survive.
+    if (!withAnchors) script.anchors = [];
+    await runtime.loadScripts([script]);
     runtime.spawnScriptedActor({ classId: "Looper" });
     runtime.start();
     runtime.tick();
@@ -142,6 +140,8 @@ describe("runtime infinite loop guard", () => {
           code: INFINITE_LOOP_DIAGNOSTIC_CODE,
           message: "Infinite loop detected",
           nodeId: "js",
+          assetGuid: "loop-asset",
+          graphId: "event-graph",
         }),
       ]),
     );
@@ -170,6 +170,37 @@ describe("runtime infinite loop guard", () => {
     expect(() => runtime.spawnScriptedActor({ classId: "Looper" })).not.toThrow();
     expect(diagnosticCodes(commands)).toContain(INFINITE_LOOP_DIAGNOSTIC_CODE);
     expect(diagnosticCodes(commands)).not.toContain("runtime.uncaught");
+    runtime.stop();
+  });
+
+  it.each(["flow.event.init", "flow.event.end"] as const)("contains a Game Instance loop in %s", async (event) => {
+    const registry = createDefaultNodeRegistry();
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false,
+      includeDebugCommands: true, infiniteLoopDetection: true, loopCount: 5 });
+    await runtime.loadScripts([{
+      ...toScript(jsGraph(registry, "while (true) {}", event), registry, "GameInstance", "game-instance"),
+      parentClassId: "GameInstance",
+    }]);
+    expect(() => runtime.start()).not.toThrow();
+    expect(() => runtime.stop()).not.toThrow();
+    expect(runtime.getDiagnostics().entries()).toContainEqual(expect.objectContaining({
+      code: INFINITE_LOOP_DIAGNOSTIC_CODE, assetGuid: "game-instance", nodeId: "js",
+    }));
+  });
+
+  it("contains loops in Animation Object updates outside the Actor tick phase", async () => {
+    const registry = createDefaultNodeRegistry();
+    const actor = createActor("hero", "Hero", { components: [{ id: "anim", classId: "AnimationGraphComponent", properties: { graphGuid: "graph" } }] });
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false,
+      includeDebugCommands: true, infiniteLoopDetection: true, loopCount: 5,
+      playScene: { name: "Anim", viewportMode: "3d", settings: createDefaultSceneSettings(), folders: [], actors: [actor] },
+      animGraphs: { graph: createDefaultAnimGraph() },
+    });
+    await runtime.loadScripts([toScript(jsGraph(registry, "while (true) {}", "anim.event.update"), registry, animGraphScriptClassId("graph"), "graph")]);
+    runtime.start();
+    runtime.realizePlayWorld();
+    expect(() => runtime.tick()).not.toThrow();
+    expect(runtime.getDiagnostics().entries()).toContainEqual(expect.objectContaining({ code: INFINITE_LOOP_DIAGNOSTIC_CODE, assetGuid: "graph", nodeId: "js" }));
     runtime.stop();
   });
 

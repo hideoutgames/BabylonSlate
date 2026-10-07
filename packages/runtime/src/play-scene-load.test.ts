@@ -545,6 +545,24 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
+  it.each([true, false])("respects a valid Default Camera before opt-in possession (valid: %s)", async (valid) => {
+    const commands: CommandMessage[] = [];
+    const scene = cameraPossessScene(true);
+    scene.actors.push(createActor("default-camera", "Default Camera", {
+      components: [{ id: "default-camera-component", classId: "CameraComponent", properties: {} }],
+    }));
+    scene.settings.mainCameraActorId = "default-camera";
+    scene.settings.mainCameraComponentId = valid ? "default-camera-component" : "missing-component";
+    const runtime = createRuntimeFromLoad({ type: "load", sceneAssetGuid: "cameras", scene },
+      (command) => commands.push(command));
+    try {
+      await runtime.realizePlayWorld();
+      const possessions = commands.filter((command) => command.type === "possessCamera");
+      if (valid) expect(possessions).toEqual([]);
+      else expect(possessions).toHaveLength(1);
+    } finally { runtime.stop(); }
+  });
+
   it("does not possess a camera whose actor never reached the world", async () => {
     const commands: CommandMessage[] = [];
     const scene = cameraPossessScene(true);
@@ -995,9 +1013,10 @@ describe("p7-play-scene-load", () => {
         componentId: "box-mesh",
       },
     ]);
-    expect(commands.some((command) => command.type === "possessCamera")).toBe(
-      true,
-    );
+    expect(commands).toContainEqual(expect.objectContaining({
+      type: "assignMesh", meshKind: "camera", camera: expect.objectContaining({ isDefault: true }),
+    }));
+    expect(commands.some((command) => command.type === "possessCamera")).toBe(false);
     runtime.stop();
   });
 

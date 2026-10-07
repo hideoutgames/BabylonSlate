@@ -850,6 +850,7 @@ describe("SceneDetailsPanel authoring", () => {
     fireEvent.change(screen.getByTestId("property-scene-fog-end"), {
       target: { value: "-10" },
     });
+    fireEvent.blur(screen.getByTestId("property-scene-fog-end"));
     expect(harness.applySceneChange.mock.calls.at(-1)![1].settings).toMatchObject({
       fogStart: 0, fogEnd: 0.01,
     });
@@ -863,6 +864,7 @@ describe("SceneDetailsPanel authoring", () => {
     fireEvent.change(screen.getByTestId("property-scene-fog-density"), {
       target: { value: "-0.5" },
     });
+    fireEvent.blur(screen.getByTestId("property-scene-fog-density"));
     expect(harness.applySceneChange.mock.calls.at(-1)![1].settings).toMatchObject({
       fogEnabled: true, fogMode: "exponential", fogDensity: 0, fogStart: 25, fogEnd: 350,
     });

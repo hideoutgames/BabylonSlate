@@ -55,6 +55,11 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
         ],
       },
     },
+    {
+      id: "graph:assets/Hero.class.babasset",
+      ref: { kind: "graph", path: "assets/Hero.class.babasset", label: "Hero" },
+      content: { nodes: [], edges: [] },
+    },
   ],
   setActiveDocument,
   activeDocumentId: "scene:assets/Main.scene.babasset",
@@ -104,6 +109,7 @@ afterEach(() => {
   selectActor.mockClear();
   setDiagnostics.mockClear();
   setFocusDiagnostic.mockClear();
+  setActiveDocument.mockClear();
   clearFocusedNode.mockClear();
   diagnostics.current = [pairingWarning];
 });
@@ -139,13 +145,14 @@ describe("CompilerResultsPanel", () => {
       code: "graph.missing_exec",
       message: "Exec pin is not connected.",
       assetGuid: "assets/Hero.class.babasset",
-      graphId: "class:assets/Hero.class.babasset",
+      graphId: "graph:assets/Hero.class.babasset",
       nodeId: "tick",
     };
     diagnostics.current = [graphDiagnostic];
     render(<CompilerResultsPanel {...({} as IDockviewPanelProps)} />);
     fireEvent.click(screen.getByTestId("compiler-result-row"));
-    expect(setFocusDiagnostic).toHaveBeenCalledWith(graphDiagnostic);
+    expect(setFocusDiagnostic).toHaveBeenCalledWith(graphDiagnostic, graphDiagnostic.graphId);
+    expect(setActiveDocument).toHaveBeenCalledWith(graphDiagnostic.graphId);
     expect(clearFocusedNode).toHaveBeenCalled();
   });
 

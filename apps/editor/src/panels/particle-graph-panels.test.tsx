@@ -127,8 +127,11 @@ function renderDetails(initial: ParticleGraphDocument, selectedNodeId: string | 
   return { stack, read: () => normalizeParticleGraphDocument(current) };
 }
 
+// Out-of-range numbers commit their clamped value when the field loses focus.
 function type(testId: string, value: string) {
-  fireEvent.change(screen.getByTestId(testId), { target: { value } });
+  const field = screen.getByTestId(testId);
+  fireEvent.change(field, { target: { value } });
+  fireEvent.blur(field);
 }
 
 async function pickOption(testId: string, label: string) {

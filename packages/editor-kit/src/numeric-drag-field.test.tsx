@@ -177,6 +177,33 @@ describe("NumericDragField", () => {
     fireEvent.blur(input);
     expect(input.value).toBe("60");
     expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toBeTruthy();
+  });
+
+  it("cancels a live typed value with Escape without committing on blur", () => {
+    const onChange = vi.fn();
+    const onDragEnd = vi.fn();
+    render(<StatefulField initial={12} onChange={onChange} onDragEnd={onDragEnd} />);
+    const input = screen.getByTestId("field") as HTMLInputElement;
+    input.focus();
+    fireEvent.change(input, { target: { value: "27" } });
+    fireEvent.keyDown(input, { key: "Escape", isComposing: true });
+    expect(input.value).toBe("27");
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(input.value).toBe("12");
+    expect(onChange).toHaveBeenLastCalledWith(12);
+    expect(onDragEnd).not.toHaveBeenCalled();
+  });
+
+  it("keeps out-of-range text as a draft and explains clamping on blur", () => {
+    const onChange = vi.fn();
+    render(<NumericDragField value={1} min={0.001} onChange={onChange} data-testid="field" />);
+    const input = screen.getByTestId("field");
+    fireEvent.change(input, { target: { value: "0" } });
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.blur(input);
+    expect(onChange).toHaveBeenLastCalledWith(0.001);
+    expect(screen.getByRole("status").textContent).toContain("0.001");
   });
 
   it("selects the value on tap so typing overwrites it", async () => {

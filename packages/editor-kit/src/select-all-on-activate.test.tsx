@@ -105,4 +105,17 @@ describe("useSelectAllOnActivate", () => {
     input.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
     await expectSelected(input);
   });
+
+  it("does not select newly typed characters when a delayed animation frame runs", async () => {
+    render(<Host />);
+    const input = screen.getByTestId("field") as HTMLInputElement;
+    activateWithPointer(input);
+    dispatchPointerEvent(input, "pointerup", { pointerType: "touch" });
+    await Promise.resolve();
+    input.value = "2";
+    input.setSelectionRange(1, 1);
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    expect(input.selectionStart).toBe(1);
+    expect(input.selectionEnd).toBe(1);
+  });
 });

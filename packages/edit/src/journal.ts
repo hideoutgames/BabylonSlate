@@ -72,6 +72,9 @@ export function registerCommandReviver(
 export function reviveCommand(
   payload: { type: string; [key: string]: unknown },
 ): EditCommand<unknown> | null {
+  if (payload.type === JOURNAL_CHECKPOINT_TYPE && payload.content && typeof payload.content === "object") {
+    return createSetAssetDocumentCommandFromJson({ from: {}, to: payload.content });
+  }
   if (payload.type === "edit.batch") {
     if (!Array.isArray(payload.commands)) return null;
     const commands: EditCommand<unknown>[] = [];
@@ -97,6 +100,12 @@ export function reviveCommand(
  */
 export const JOURNAL_REPATH_TYPE = "document.repath";
 export const JOURNAL_DISCARD_TYPE = "document.discard";
+export const JOURNAL_CHECKPOINT_TYPE = "document.checkpoint";
+
+/** One recoverable snapshot superseding every earlier edit to this document. */
+export function journalCheckpointLine(docId: string, content: unknown, at: string): JournalLine {
+  return { v: 1, docId, at, command: { type: JOURNAL_CHECKPOINT_TYPE, content } };
+}
 
 /** Ends recovery for earlier edits to this document, without clearing others. */
 export function journalDiscardLine(docId: string, at: string): JournalLine {

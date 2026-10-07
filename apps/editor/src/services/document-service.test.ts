@@ -33,6 +33,30 @@ function createMockProjectService(
 }
 
 describe("DocumentService", () => {
+  it("tracks saved content through undo, redo, rename and a save completed during newer edits", async () => {
+    const service = new DocumentService();
+    const original = createDefaultScene();
+    const project = createMockProjectService({ loadDocument: vi.fn(async () => original) });
+    const id = await service.openDocument(project, { kind: "scene", path: MAIN_SCENE_FILE, label: "Main" });
+    const edited = { ...original, name: "Edited" };
+    service.updateScene(id, edited);
+    expect(service.getDocument(id)?.dirty).toBe(true);
+    service.updateScene(id, structuredClone(original));
+    expect(service.getDocument(id)?.dirty).toBe(false);
+    service.updateScene(id, edited);
+    const saved = { ...service.getDocument(id)! };
+    service.updateScene(id, { ...edited, name: "Newer" });
+    service.markAllClean([saved]);
+    expect(service.getDocument(id)?.dirty).toBe(true);
+    service.updateScene(id, structuredClone(edited));
+    expect(service.getDocument(id)?.dirty).toBe(false);
+    const moved = service.repathDocument("scene", MAIN_SCENE_FILE, "assets/Moved.scene.babasset")!;
+    service.updateScene(moved.newId, original);
+    expect(service.getDocument(moved.newId)?.dirty).toBe(true);
+    service.updateScene(moved.newId, structuredClone(edited));
+    expect(service.getDocument(moved.newId)?.dirty).toBe(false);
+  });
+
   it.each(["open", "activate"] as const)("keeps background utility trees dirty and promotes their existing working copy on %s", async (action) => {
     const service = new DocumentService();
     service.ensureContentBrowserTab();
@@ -220,10 +244,10 @@ describe("DocumentService", () => {
     const other = "graph:assets/Other.class.babasset";
     const control = "graph:assets/Control.class.babasset";
     service.updateGraph(main, { nodes: [], edges: [], members: [{ id: "saved", kind: "event", name: "Saved revision" }] });
-    service.updateGraph(control, { nodes: [], edges: [] });
+    service.updateGraph(control, { nodes: [], edges: [], members: [{ id: "control", kind: "event", name: "Control edit" }] });
     const saved = service.getDirtyDocuments().map((doc) => ({ ...doc }));
     service.updateGraph(main, { nodes: [], edges: [], members: [{ id: "new", kind: "event", name: "New revision" }] });
-    service.updateGraph(other, { nodes: [], edges: [] });
+    service.updateGraph(other, { nodes: [], edges: [], members: [{ id: "other", kind: "event", name: "Later edit" }] });
     service.markAllClean(saved);
     expect(service.getDocument(main)?.dirty).toBe(true);
     expect(service.getDocument(other)?.dirty).toBe(true);
@@ -265,10 +289,14 @@ describe("DocumentService", () => {
     expect(state.activeDocumentId).toBe(CONTENT_BROWSER_ID);
     expect(projectService.loadDocument).not.toHaveBeenCalled();
     expect(service.getDocument(sceneId)?.content).toBeNull();
+    const restoredLabels = [sceneId, graphId].map((id) => service.getDocument(id)?.ref.label);
     await service.openDocument(projectService, service.getDocument(sceneId)!.ref);
     expect(service.getActiveDocument()?.content).toMatchObject({ name: "Main" });
     expect(service.getDocument(graphId)?.content).toBeNull();
     expect(projectService.loadDocument).toHaveBeenCalledOnce();
+    await service.openDocument(projectService, service.getDocument(graphId)!.ref);
+    // Unloaded tabs already show the label loading produces.
+    expect([sceneId, graphId].map((id) => service.getDocument(id)?.ref.label)).toEqual(restoredLabels);
   });
 
   it("pins an open scene immediately after content browser even when other assets were opened first", async () => {

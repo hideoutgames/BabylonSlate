@@ -127,15 +127,6 @@ export function ProjectSearchProvider({ children }: { children: ReactNode }) {
       if (dest.kind !== "content-browser") {
         const id = documentId({ kind: dest.kind, path: dest.path });
         const alreadyOpen = getOpenDocuments().some((doc) => doc.id === id);
-        if (alreadyOpen) {
-          setActiveDocument(id);
-        } else {
-          await openDocument({
-            kind: dest.kind,
-            path: dest.path,
-            label: labelFromPath(dest.path),
-          });
-        }
         const nodeId = graphFocusNodeId(entry.target);
         if (nodeId) {
           setFocusDiagnostic({
@@ -145,6 +136,15 @@ export function ProjectSearchProvider({ children }: { children: ReactNode }) {
             assetGuid: dest.path,
             graphId: id,
             nodeId,
+          }, id);
+        }
+        if (alreadyOpen) {
+          setActiveDocument(id);
+        } else {
+          await openDocument({
+            kind: dest.kind,
+            path: dest.path,
+            label: labelFromPath(dest.path),
           });
         }
         return;

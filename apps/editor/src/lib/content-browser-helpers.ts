@@ -30,6 +30,8 @@ import {
   normalizeAnimationPayload,
   spriteAnimationTextureGuids,
   isEnvironmentTexturePayload,
+  contentEntryNameError,
+  renamedAssetPath,
 } from "@babylonslate/assets";
 import {
   classIdsFromVariableMembers,
@@ -419,26 +421,6 @@ export type ClassAssetRef = {
 export function classIdFromClassAsset(asset: ClassAssetRef): string {
   if (asset.path) return classIdForGraphPath(asset.path);
   return displayAssetTitle(asset.header.name) || asset.header.name;
-}
-
-/** Additive Content Browser tile selection. Long-press / context menu never replaces. */
-export function addSelectedAssetGuid(
-  selected: ReadonlySet<string>,
-  guid: string,
-): Set<string> {
-  const next = new Set(selected);
-  next.add(guid);
-  return next;
-}
-
-/** Additive Content Browser folder-tile selection. Long-press / context menu never replaces. */
-export function addSelectedFolderPath(
-  selected: ReadonlySet<string>,
-  path: string,
-): Set<string> {
-  const next = new Set(selected);
-  next.add(path);
-  return next;
 }
 
 /** Single tap / click replaces the whole Content Browser selection with one asset. */
@@ -2363,12 +2345,8 @@ export function isRenameNameTaken(
   currentPath: string,
   newName: string,
 ): boolean {
-  const safe = newName.trim().replace(/[^a-zA-Z0-9_.-]+/g, "_");
-  if (!safe) return false;
-  const dir = currentPath.includes("/")
-    ? currentPath.slice(0, currentPath.lastIndexOf("/"))
-    : "";
-  const newPath = dir ? `${dir}/${safe}.babasset` : `${safe}.babasset`;
+  if (contentEntryNameError(newName)) return false;
+  const newPath = renamedAssetPath(currentPath, newName);
   if (newPath === currentPath) return false;
   for (const existing of existingPaths) {
     if (existing === newPath) return true;

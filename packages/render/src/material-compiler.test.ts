@@ -131,6 +131,62 @@ function multiplyMaterial(): MaterialDocument {
 }
 
 describe("material compiler", () => {
+  it.each(["pbr", "unlit"] as const)("builds %s fog with the WGSL vector color conversion", async (shadingModel) => {
+    const scene = host();
+    vi.spyOn(scene.getEngine(), "isWebGPU", "get").mockReturnValue(true);
+    const doc = createDefaultMaterialDocument();
+    doc.shadingModel = shadingModel;
+    const result = compileMaterialPlan(planFor(doc), { scene, name: "fogged" });
+    if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+    disposers.push(() => result.dispose());
+    expect(await result.ready).toEqual([]);
+    expect(result.material.compiledShaders).toContain("= CalcFogFactor(");
+    expect(result.material.compiledShaders).toMatch(/= toLinearSpaceVec3\(uniforms\.[^)]*fogColor[^)]*\)/);
+  });
+
+  it.each(["pbr", "unlit"] as const)("compiles live scene fog into %s surfaces", async (shadingModel) => {
+    const scene = host();
+    scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
+    scene.fogMode = Scene.FOGMODE_LINEAR;
+    scene.fogStart = 2;
+    scene.fogEnd = 10;
+    const doc = createDefaultMaterialDocument();
+    doc.shadingModel = shadingModel;
+    const result = compileMaterialPlan(planFor(doc), { scene, name: "fogged" });
+    if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+    disposers.push(() => result.dispose());
+    expect(await result.ready).toEqual([]);
+    const mesh = MeshBuilder.CreateBox("fogged-box", {}, scene);
+    mesh.material = result.material;
+    await result.material.forceCompilationAsync(mesh);
+    const subMesh = mesh.subMeshes![0]!;
+    expect(result.material.isReadyForSubMesh(mesh, subMesh)).toBe(true);
+    const effect = subMesh.effect!;
+    expect(effect.defines).toMatch(/^#define FOG$/m);
+    // The final compiled fragment shader must actually evaluate the fog factor.
+    expect(result.material.compiledShaders).toContain("= CalcFogFactor(");
+    const setFloat4 = vi.spyOn(effect, "setFloat4");
+    result.material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, subMesh);
+    expect(setFloat4).toHaveBeenCalledWith(expect.stringMatching(/^fogParameters/), Scene.FOGMODE_LINEAR, 2, 10, scene.fogDensity);
+    scene.fogMode = Scene.FOGMODE_EXP2;
+    scene.fogDensity = 0.7;
+    scene.resetCachedMaterial();
+    result.material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, subMesh);
+    expect(setFloat4).toHaveBeenCalledWith(expect.stringMatching(/^fogParameters/), Scene.FOGMODE_EXP2, 2, 10, 0.7);
+  });
+
+  it("keeps screen overlays independent of world fog", async () => {
+    const scene = host();
+    scene.fogMode = Scene.FOGMODE_LINEAR;
+    const doc = createDefaultMaterialDocument();
+    doc.shadingModel = "unlit";
+    const result = compileMaterialPlan(planFor(doc), { scene, name: "overlay", overlay: true });
+    if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+    disposers.push(() => result.dispose());
+    expect(await result.ready).toEqual([]);
+    expect(result.material.compiledShaders).not.toContain("CalcFogFactor(");
+  });
+
   it("reports deferred Babylon build failures through readiness", async () => {
     const scene = host();
     const doc = createDefaultMaterialDocument();

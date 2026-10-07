@@ -17,13 +17,13 @@ import {
   isAssetDocumentKind,
   isContentBrowserId,
   isSceneWorkspaceKind,
-  labelFromPath,
   migrateRestoredDocumentId,
   parseDocumentId,
 } from "@babylonslate/core";
 import type { ProjectDocument } from "@babylonslate/core";
 import type { AssetLoadScope } from "@babylonslate/assets";
 import { recordDocumentDirty } from "../lib/dirty-trace";
+import { documentContentIdentity } from "../lib/document-content-identity";
 import { editorTabContentForKind } from "../lib/scene-layer-document";
 import type { ProjectService } from "./project-service";
 
@@ -123,6 +123,13 @@ export class DocumentService {
   private revisionSequence = 0;
   private revisions: DocumentRevisions = initialDocumentRevisions();
   private tabsRevision = 0;
+  /** Weak keys follow tab renames without retaining closed project content. */
+  private readonly savedContent = new WeakMap<OpenDocument, string>();
+
+  private updateDirty(doc: OpenDocument): void {
+    doc.dirty = documentContentIdentity(doc.content) !== this.savedContent.get(doc);
+    if (doc.dirty) recordDocumentDirty(doc.ref.kind, doc.id);
+  }
 
   /** `opened` fires when a new tab entry is created; `repathed` on every path change. */
   onIdentityChange(listener: DocumentIdentityListener): () => void {
@@ -314,11 +321,16 @@ export class DocumentService {
       const parsed = parseDocumentId(restoredId);
       if (!parsed || !isAssetDocumentKind(parsed.kind)) continue;
       if (parsed.kind === "scene" && restoredId !== lastSceneId) continue;
+      // Legacy layouts have only paths. Drop a tab whose file was deleted or
+      // renamed rather than restoring one that cannot load; saved GUIDs repair
+      // newer layouts.
+      if (parsed.kind !== "trace" && projectService.documentExists && !(await projectService.documentExists(parsed.path))) continue;
       // Restored navigation is metadata only. Activate through openDocument to
       // acquire a scope and read the document when the user actually needs it.
       this.state.openDocuments.set(restoredId, {
         id: restoredId,
-        ref: { kind: parsed.kind, path: parsed.path, label: labelFromPath(parsed.path) },
+        // Same kind suffix openDocument adds on load ("Main Scene", not "Main").
+        ref: createDocumentRef(parsed.kind, parsed.path),
         content: null,
         layout: layouts.documents[restoredId] ?? layouts.documents[id] ?? null,
         dirty: false,
@@ -421,6 +433,7 @@ export class DocumentService {
       const alreadyOpened = current !== undefined && current.content !== null;
       if (!alreadyOpened) {
         this.state.openDocuments.set(id, entry);
+        this.savedContent.set(entry, documentContentIdentity(content));
         if (!this.state.tabOrder.includes(id)) this.state.tabOrder.push(id);
         if (scope) this.assetScopes.set(id, scope);
         scopeCommitted = true;
@@ -538,6 +551,8 @@ export class DocumentService {
       ref: createDocumentRef(kind, newPath, doc.content ?? undefined),
     };
     this.state.openDocuments.set(newId, next);
+    const savedIdentity = this.savedContent.get(doc);
+    if (savedIdentity !== undefined) this.savedContent.set(next, savedIdentity);
     this.state.tabOrder = this.state.tabOrder.map((id) =>
       id === oldId ? newId : id,
     );
@@ -616,8 +631,7 @@ export class DocumentService {
     if (!doc || !isSceneWorkspaceKind(doc.ref.kind)) return;
     doc.content = scene;
     this.advanceKinds([doc.ref.kind]);
-    doc.dirty = true;
-    recordDocumentDirty(doc.ref.kind, id);
+    this.updateDirty(doc);
     doc.ref = {
       ...doc.ref,
       label: `${scene.name} ${documentKindLabel(doc.ref.kind)}`,
@@ -629,8 +643,7 @@ export class DocumentService {
     if (!doc || doc.ref.kind !== "graph") return;
     doc.content = graph;
     this.advanceKinds([doc.ref.kind]);
-    doc.dirty = true;
-    recordDocumentDirty(doc.ref.kind, id);
+    this.updateDirty(doc);
   }
 
   updateAssetDocument(id: string, content: Record<string, unknown>): void {
@@ -645,8 +658,7 @@ export class DocumentService {
     }
     doc.content = content;
     this.advanceKinds([doc.ref.kind]);
-    doc.dirty = true;
-    recordDocumentDirty(doc.ref.kind, id);
+    this.updateDirty(doc);
     if (typeof content.name === "string" && content.name.trim() !== "") {
       doc.ref = {
         ...doc.ref,
@@ -695,7 +707,9 @@ export class DocumentService {
     for (const snapshot of saved) {
       const doc = this.state.openDocuments.get(snapshot.id);
       if (doc && doc.ref.kind !== "content-browser" && doc.ref.path === snapshot.ref.path) {
-        const dirty = doc.content !== snapshot.content;
+        const savedIdentity = documentContentIdentity(snapshot.content);
+        this.savedContent.set(doc, savedIdentity);
+        const dirty = documentContentIdentity(doc.content) !== savedIdentity;
         if (doc.dirty !== dirty) changed.push(doc.ref.kind);
         doc.dirty = dirty;
       }
@@ -707,6 +721,7 @@ export class DocumentService {
     const doc = this.state.openDocuments.get(id);
     if (!doc || doc.ref.kind === "content-browser") return;
     doc.content = content;
+    this.savedContent.set(doc, documentContentIdentity(content));
     doc.dirty = false;
     this.advanceKinds([doc.ref.kind]);
   }
@@ -716,6 +731,7 @@ export class DocumentService {
     const doc = this.state.openDocuments.get(id);
     if (!doc || doc.ref.kind === "content-browser") return;
     doc.content = content;
+    if (!doc.dirty) this.savedContent.set(doc, documentContentIdentity(content));
     this.advanceKinds([doc.ref.kind]);
   }
 

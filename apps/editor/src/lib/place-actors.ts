@@ -50,6 +50,7 @@ export type PlaceActorKind =
   | { type: "particle" }
   | { type: "water"; classId: string }
   | { type: "tilemap" }
+  | { type: "sprite" }
   | { type: "empty" }
   | { type: "scene-layer-switcher" }
   | {
@@ -93,6 +94,7 @@ const SHAPES = ["box", "sphere", "cylinder", "plane", "ground"] as const;
 const LIGHTS = ["point", "directional", "spot"] as const;
 
 export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
+  { id: "sprite", title: "Sprite", category: "Rendering", kind: { type: "sprite" } },
   { id: "cable", title: "Cable", category: "Environment", kind: { type: "cable" } },
   { id: "render-target-capture", title: "Render Target Capture", category: "Camera", kind: { type: "render-target-capture" } },
   ...(["Ocean", "Lake", "River", "Puddle"] as const).map((kind) => ({ id: "water-" + kind.toLowerCase(), title: "Water " + kind, category: "Water", kind: { type: "water" as const, classId: "Water" + kind + "Component" } })),
@@ -285,6 +287,7 @@ export const PLACEABLE_PROJECT_TYPES = new Set([
   "ParticleSystem",
   "Water",
   "Tilemap",
+  "Sprite",
 ]);
 
 export function prefabComponentsForGuid(
@@ -443,6 +446,7 @@ export function visualForPlaceActor(item: PlaceActorItem): TypeVisual {
   if (kind.type === "particle") {
     return resolveTypeVisual({ classId: "ParticleComponent", family: "class" });
   }
+  if (kind.type === "sprite") return resolveTypeVisual({ classId: "SpriteComponent", family: "class" });
   if (kind.type === "tilemap") {
     return resolveTypeVisual({ classId: "TilemapComponent", family: "class" });
   }
@@ -647,6 +651,9 @@ export function spawnPlacedActor(
       ],
     }));
   }
+  if (kind.type === "sprite") {
+    return finish(createActor(id, item.title, { transform, components: [{ id: `${id}-sprite`, classId: "SpriteComponent", properties: defaultPropertiesFor("SpriteComponent") }] }));
+  }
   if (kind.type === "tilemap") {
     return finish(createActor(id, "Tilemap", {
       transform,
@@ -706,6 +713,9 @@ export function spawnPlacedActor(
           },
         ],
       }));
+    }
+    if (kind.assetType === "Sprite") {
+      return finish(createActor(id, kind.name, { transform, components: [{ id: `${id}-sprite`, classId: "SpriteComponent", properties: { ...defaultPropertiesFor("SpriteComponent"), assetGuid: kind.guid } }] }));
     }
     if (kind.assetType === "Tilemap") {
       return finish(createActor(id, kind.name, {
@@ -799,13 +809,19 @@ export function duplicateSceneActor(
 export function duplicateSceneActors(
   scene: SerializedScene,
   actorIds: readonly string[],
+  sources: readonly SerializedActor[] = scene.actors,
 ): SerializedActor[] {
-  let next = scene;
+  // Source ids may overlap freshly allocated destination ids on cross-scene
+  // paste. Reserve them until every reference has been remapped exactly once.
+  const destinationIds = new Set(scene.actors.map((actor) => actor.id));
+  let next = { ...scene, actors: [...scene.actors, ...sources
+    .filter((actor) => !destinationIds.has(actor.id))
+    .map((actor) => ({ ...actor, name: "" }))] };
   const actorCopies = new Map<string, string>();
   const componentCopies = new Map<string, Map<string, string>>();
   const copies: SerializedActor[] = [];
   for (const id of new Set(actorIds)) {
-    const source = scene.actors.find((actor) => actor.id === id);
+    const source = sources.find((actor) => actor.id === id);
     if (!source) continue;
     const copy = duplicateSceneActor(next, source);
     actorCopies.set(source.id, copy.id);
@@ -816,6 +832,7 @@ export function duplicateSceneActors(
   const focusReferences = new Map([...actorCopies, ...[...componentCopies.values()].flatMap((ids) => [...ids])]);
   return copies.map((copy) => ({
     ...copy,
+    parentId: copy.parentId ? actorCopies.get(copy.parentId) ?? copy.parentId : null,
     components: copy.components.map((component) => {
       if (isFocusTargetClass(component.classId)) return remapFocusNeighbors(component, focusReferences);
       if (component.classId === "RenderTargetCaptureComponent" && Array.isArray(component.properties.actorIds)) {
