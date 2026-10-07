@@ -5,7 +5,7 @@ import {
 import { Actor, ActorComponent } from "@babylonslate/object-model";
 import {
   actorChainWorldTransform, actorParentGuid, composeParentChildTransform, copyTransform,
-  inverseQuaternion, multiplyQuaternion, rotateVector,
+  inverseQuaternion, multiplyQuaternion, relativeTransform, rotateVector,
 } from "./actor-world-transform";
 
 export type TweenTransformTarget = Actor | ActorComponent;
@@ -118,21 +118,33 @@ export function applyTweenTransform(
     if (!parent) return false;
     // Inverting position or scale through a collapsed parent has no unique result.
     if ((sample.position || sample.scale) && [parent.scale.x, parent.scale.y, parent.scale.z].some(axis => axis === 0)) return false;
-    const inverseRotation = inverseQuaternion(parent.rotation);
-    if (sample.position) {
-      const relative = rotateVector(inverseRotation, {
-        x: sample.position.x - parent.position.x,
-        y: sample.position.y - parent.position.y,
-        z: sample.position.z - parent.position.z,
-      });
-      next.position = { x: relative.x / parent.scale.x, y: relative.y / parent.scale.y, z: relative.z / parent.scale.z };
+    const { x: sx, y: sy, z: sz } = parent.scale;
+    if ((sx === sy && sy === sz) || sx === 0 || sy === 0 || sz === 0) {
+      const inverseRotation = inverseQuaternion(parent.rotation);
+      if (sample.position) {
+        const relative = rotateVector(inverseRotation, {
+          x: sample.position.x - parent.position.x,
+          y: sample.position.y - parent.position.y,
+          z: sample.position.z - parent.position.z,
+        });
+        next.position = { x: relative.x / sx, y: relative.y / sy, z: relative.z / sz };
+      }
+      if (sample.rotation) next.rotation = normalizeQuat(multiplyQuaternion(inverseRotation, sample.rotation));
+      if (sample.scale) next.scale = { x: sample.scale.x / sx, y: sample.scale.y / sy, z: sample.scale.z / sz };
+    } else {
+      // Nonuniform or mirrored parents invert through the authored matrices;
+      // untouched channels keep their current world values.
+      const current = composeParentChildTransform(parent, target.transform);
+      const local = relativeTransform(parent, {
+        position: sample.position ?? current.position,
+        rotation: sample.rotation ?? current.rotation,
+        scale: sample.scale ?? current.scale,
+      }, target.transform);
+      if (!local) return false;
+      if (sample.position) next.position = local.position;
+      if (sample.rotation) next.rotation = normalizeQuat(local.rotation);
+      if (sample.scale) next.scale = local.scale;
     }
-    if (sample.rotation) next.rotation = normalizeQuat(multiplyQuaternion(inverseRotation, sample.rotation));
-    if (sample.scale) next.scale = {
-      x: sample.scale.x / parent.scale.x,
-      y: sample.scale.y / parent.scale.y,
-      z: sample.scale.z / parent.scale.z,
-    };
   } else {
     if (sample.position) next.position = sample.position;
     if (sample.rotation) next.rotation = sample.rotation;

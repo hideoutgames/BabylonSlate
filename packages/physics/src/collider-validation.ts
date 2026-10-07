@@ -47,7 +47,9 @@ export function prepareColliderShape(shape: ColliderShape): ColliderShape {
   validateColliderShape(shape);
   const owned = structuredClone(shape);
   const freeze = (value: unknown): void => {
-    if (!value || typeof value !== "object") return;
+    // Typed geometry cannot be frozen. The clone above is still owned here, so
+    // caller mutations of the input cannot reach it; consumers treat it as read-only.
+    if (!value || typeof value !== "object" || ArrayBuffer.isView(value)) return;
     for (const child of Object.values(value)) freeze(child);
     Object.freeze(value);
   };
@@ -140,26 +142,28 @@ export function validateColliderShape(shape: ColliderShape): void {
       break;
     }
     case "mesh": {
+      const { positions: p, indices } = shape;
+      const vertexCount = p instanceof Float32Array ? p.length / 3 : -1;
       if (
-        shape.vertices.length < 3 ||
-        !shape.vertices.every(finiteVector) ||
-        shape.indices.length < 3 ||
-        shape.indices.length % 3 !== 0 ||
-        !shape.indices.every(
-          (i) => Number.isInteger(i) && i >= 0 && i < shape.vertices.length,
-        )
+        !(indices instanceof Uint16Array || indices instanceof Uint32Array) ||
+        !Number.isInteger(vertexCount) ||
+        vertexCount < 3 ||
+        !p.every(Number.isFinite) ||
+        indices.length < 3 ||
+        indices.length % 3 !== 0 ||
+        !indices.every((i) => i < vertexCount)
       )
         throw new Error("Invalid triangle mesh collider");
-      for (let i = 0; i < shape.indices.length; i += 3) {
-        const a = shape.vertices[shape.indices[i]!]!,
-          b = shape.vertices[shape.indices[i + 1]!]!,
-          c = shape.vertices[shape.indices[i + 2]!]!;
-        const ux = b.x - a.x,
-          uy = b.y - a.y,
-          uz = b.z - a.z,
-          vx = c.x - a.x,
-          vy = c.y - a.y,
-          vz = c.z - a.z;
+      for (let i = 0; i < indices.length; i += 3) {
+        const a = indices[i]! * 3,
+          b = indices[i + 1]! * 3,
+          c = indices[i + 2]! * 3;
+        const ux = p[b]! - p[a]!,
+          uy = p[b + 1]! - p[a + 1]!,
+          uz = p[b + 2]! - p[a + 2]!,
+          vx = p[c]! - p[a]!,
+          vy = p[c + 1]! - p[a + 1]!,
+          vz = p[c + 2]! - p[a + 2]!;
         if (
           Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx) <
           1e-12
@@ -222,8 +226,9 @@ export function sameColliderGeometry(
     case "mesh": {
       const other = b as typeof a;
       return (
-        samePoints(a.vertices, other.vertices) &&
+        a.positions.length === other.positions.length &&
         a.indices.length === other.indices.length &&
+        a.positions.every((v, i) => v === other.positions[i]) &&
         a.indices.every((v, i) => v === other.indices[i])
       );
     }

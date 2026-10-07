@@ -369,6 +369,48 @@ describe("My Class members", () => {
     );
   });
 
+  it("nests categorized variables and functions in folders and keeps uncategorized rows at the section root", () => {
+    const members = membersForGraph({
+      nodes: [],
+      edges: [],
+      members: [
+        { id: "fn-1", kind: "function", name: "Jump", category: "Movement" },
+        { id: "fn-2", kind: "function", name: "Reset" },
+        { id: "var-1", kind: "variable", name: "Health", category: "Stats|Vital" },
+        { id: "var-2", kind: "variable", name: "Armor", category: " Stats | | Vital " },
+        { id: "var-3", kind: "variable", name: "Level", category: "Stats" },
+        { id: "var-4", kind: "variable", name: "Score", category: " | " },
+      ],
+    });
+    const rows = blueprintTreeNodes(members, new Set());
+    const variables = rows.slice(
+      rows.findIndex((row) => row.id === "section-variables") + 1,
+      rows.findIndex((row) => row.id === "section-events"),
+    );
+    expect(variables.map((row) => [row.label, row.depth, row.hasChildren])).toEqual([
+      ["Stats", 1, true],
+      ["Vital", 2, true],
+      ["Health", 3, false],
+      ["Armor", 3, false],
+      ["Level", 2, false],
+      ["Score", 1, false],
+    ]);
+    const functions = rows.slice(1, rows.findIndex((row) => row.id === "section-variables"));
+    expect(functions.map((row) => [row.label, row.depth])).toEqual([
+      ["Movement", 1],
+      ["Jump", 2],
+      ["Reset", 1],
+    ]);
+
+    const statsId = variables[0]!.id;
+    const collapsed = blueprintTreeNodes(
+      members,
+      new Set([statsId.replace(/^section-/, "")]),
+    );
+    expect(collapsed.find((row) => row.id === statsId)?.expanded).toBe(false);
+    expect(collapsed.some((row) => row.id === "var-1" || row.id === "var-3")).toBe(false);
+  });
+
   it("lists persisted functions, variables, and interfaces from graph members", () => {
     const graph: SerializedGraph = {
       nodes: [],

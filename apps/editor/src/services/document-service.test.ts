@@ -41,20 +41,40 @@ describe("DocumentService", () => {
     const edited = { ...original, name: "Edited" };
     service.updateScene(id, edited);
     expect(service.getDocument(id)?.dirty).toBe(true);
-    service.updateScene(id, structuredClone(original));
+    service.updateSceneFromHistory(id, structuredClone(original));
     expect(service.getDocument(id)?.dirty).toBe(false);
     service.updateScene(id, edited);
     const saved = { ...service.getDocument(id)! };
     service.updateScene(id, { ...edited, name: "Newer" });
     service.markAllClean([saved]);
     expect(service.getDocument(id)?.dirty).toBe(true);
-    service.updateScene(id, structuredClone(edited));
+    service.updateSceneFromHistory(id, structuredClone(edited));
     expect(service.getDocument(id)?.dirty).toBe(false);
     const moved = service.repathDocument("scene", MAIN_SCENE_FILE, "assets/Moved.scene.babasset")!;
-    service.updateScene(moved.newId, original);
+    service.updateScene(moved.newId, original, "compare");
     expect(service.getDocument(moved.newId)?.dirty).toBe(true);
-    service.updateScene(moved.newId, structuredClone(edited));
+    service.updateScene(moved.newId, structuredClone(edited), "compare");
     expect(service.getDocument(moved.newId)?.dirty).toBe(false);
+  });
+
+  it("keeps forward edits dirty, even back to the saved content, until Undo, replay or a save", async () => {
+    const service = new DocumentService();
+    const saved = { name: "Saved", roughness: 0.5 };
+    const project = createMockProjectService({ loadDocument: vi.fn(async () => structuredClone(saved)) });
+    const id = await service.openDocument(project, { kind: "material", path: "assets/Test.material.babasset", label: "Material" });
+    service.updateAssetDocument(id, { ...saved, roughness: 0.9 });
+    expect(service.getDocument(id)?.dirty).toBe(true);
+    // Forward edits do not hash the document, so editing back stays dirty.
+    service.updateAssetDocument(id, structuredClone(saved));
+    expect(service.getDocument(id)?.dirty).toBe(true);
+    service.updateAssetDocument(id, { ...saved, roughness: 0.9 });
+    service.updateAssetDocument(id, structuredClone(saved), "compare");
+    expect(service.getDocument(id)?.dirty).toBe(false);
+    service.updateAssetDocument(id, { ...saved, roughness: 0.2 });
+    service.markAllClean([{ ...service.getDocument(id)! }]);
+    expect(service.getDocument(id)?.dirty).toBe(false);
+    service.updateAssetDocument(id, structuredClone(saved), "compare");
+    expect(service.getDocument(id)?.dirty).toBe(true);
   });
 
   it("protects document content and revisions while independent authoring owners hold leases", async () => {

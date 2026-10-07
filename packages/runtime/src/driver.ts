@@ -22,7 +22,7 @@ import { createDefaultRenderTargetCaptureProperties, normalizeRenderTargetPayloa
 import { normalizeWaterDefinition, normalizeWaterBody, normalizeWaterRemoval, waterKindForClass, type WaterDefinition } from "@babylonslate/core";
 import { areaRectLightBindings, fogVolumeBindings, outlineBindings, deformerBindings, DEFORMER_PROPERTY_KEYS } from "@babylonslate/core";
 import { ScalabilitySession, type ScalabilityRequest, type ScalabilityResult, type ScalabilitySnapshot, type ScalabilityAcknowledgement, type RenderPath, type RenderProjectSettings } from "@babylonslate/core";
-import type { InputAssetDefinition } from "@babylonslate/core";
+import type { CollisionTriangleMesh, InputAssetDefinition } from "@babylonslate/core";
 import { inputMappingsFromAssets } from "@babylonslate/input";
 import {
   SNAPSHOT_FLAG_OVERLAY,
@@ -296,12 +296,7 @@ export interface RuntimeDriverOptions {
   sprites?: Readonly<Record<string, SpritePayload>>;
   spriteAnimations?: Readonly<Record<string, SpriteAnimationPayload>>;
   models?: Readonly<Record<string, ModelPayload>>;
-  complexMeshes?: Readonly<
-    Record<
-      string,
-      { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
-    >
-  >;
+  complexMeshes?: Readonly<Record<string, CollisionTriangleMesh>>;
   pixelsPerUnit?: number;
   texturePixelSizes?: Readonly<Record<string, { width: number; height: number }>>;
   /**
@@ -464,17 +459,11 @@ export interface RuntimeDriver {
   registerModelContent(options: {
     models: Readonly<Record<string, ModelPayload>> | ReadonlyMap<string, ModelPayload>;
     complexMeshes?:
-      | Readonly<
-          Record<
-            string,
-            { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
-          >
-        >
-      | ReadonlyMap<
-          string,
-          { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
-        >;
+      | Readonly<Record<string, CollisionTriangleMesh>>
+      | ReadonlyMap<string, CollisionTriangleMesh>;
   }): void;
+  /** Install host answers to `requestComplexCollision`; they survive later `loadModels` replacements. */
+  registerComplexCollisionMeshes(meshes: ReadonlyMap<string, CollisionTriangleMesh>, unavailable?: readonly string[]): void;
   /** Import a baked Scene navmesh chunk. Never generates. */
   loadNavMesh(bytes: Uint8Array): Promise<void>;
   setNavAgentTarget(actorGuid: string, target: NavPoint): boolean;
@@ -674,6 +663,18 @@ class InProcessRuntime implements RuntimeDriver {
   /** Each actor's own slot; `slotByGuid` holds a guid's latest-assigned one. */
   private readonly slotByActor = new WeakMap<Actor, number>();
   private readonly removingActors = new WeakSet<Actor>();
+  /** Actors whose sheared world pose has been reported to the Output Log. */
+  private readonly shearedActors = new WeakSet<Actor>();
+  private readonly reportShearedActor = (actor: Actor): void => {
+    if (this.shearedActors.has(actor)) return;
+    this.shearedActors.add(actor);
+    this.reportLog(
+      `${actorLabel(actor)} has a sheared world transform (nonuniform parent scale with an oblique rotation). ` +
+        "Play shows its nearest rotation and scale; attached actors keep their exact positions.",
+      "warning",
+      "actor",
+    );
+  };
   private readonly componentsWithMaterialAssignment = new WeakSet<ActorComponent>();
   private readonly freeSlots: number[] = [];
   private nextUnusedSlot = 0;
@@ -794,10 +795,20 @@ class InProcessRuntime implements RuntimeDriver {
   private sprites = new Map<string, SpritePayload>();
   private spriteAnimations = new Map<string, SpriteAnimationPayload>();
   private models = new Map<string, ModelPayload>();
-  private complexMeshes = new Map<
-    string,
-    { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
-  >();
+  /** Installed union: on-demand answers overlaid by the latest `loadModels` meshes. */
+  private complexMeshes = new Map<string, CollisionTriangleMesh>();
+  private lastProvidedComplexMeshes: ReadonlyMap<string, CollisionTriangleMesh> = new Map();
+  private demandComplexMeshes = new Map<string, CollisionTriangleMesh>();
+  private pendingComplexMeshes = new Set<string>();
+  private unavailableComplexMeshes = new Set<string>();
+  private warnedComplexMeshes = new Set<string>();
+  /** Physics found a Complex Collision Model without a mesh: ask the host once to cook it. */
+  private readonly missingComplexMesh = (assetGuid: string): void => {
+    if (this.complexMeshes.has(assetGuid) || this.pendingComplexMeshes.has(assetGuid) ||
+      this.unavailableComplexMeshes.has(assetGuid)) return;
+    this.pendingComplexMeshes.add(assetGuid);
+    this.emit({ type: "requestComplexCollision", assetGuid });
+  };
   private pendingAnimJumpByComponent = new Map<string, string>();
   private pixelsPerUnit = 100;
   private readonly texturePixelSizes: Readonly<Record<string, { width: number; height: number }>>;
@@ -1009,6 +1020,8 @@ class InProcessRuntime implements RuntimeDriver {
         deferUnsupportedConstraints: !this.preferSoftwarePhysics,
       },
     );
+    this.physicsSync.setMissingComplexMeshHandler(this.missingComplexMesh);
+    this.overlayPhysicsSync.setMissingComplexMeshHandler(this.missingComplexMesh);
     if (options.tilemaps || options.tilesets) {
       this.bindPhysicsContent(this.physicsSync);
       this.bindPhysicsContent(this.overlayPhysicsSync);
@@ -1045,8 +1058,12 @@ class InProcessRuntime implements RuntimeDriver {
             this.scriptHost.bindInterfaceHandlers(self);
             this.runOwnerCreation(self, () => this.scriptHost.hooksFor(classId)?.onCreation?.(self));
           },
-          onTick: (self, ctx) =>
-            this.guardScript(() => this.scriptHost.hooksFor(classId)?.onTick?.(self, ctx)),
+          // Engine component classes never carry scripts, so they skip the
+          // per-frame script lookup; project components keep it for reloads.
+          onTick: isLockedEngineClassId(classId)
+            ? undefined
+            : (self, ctx) =>
+                this.guardScript(() => this.scriptHost.hooksFor(classId)?.onTick?.(self, ctx)),
           onDestroyed: (self) => {
             this.runOwnerDestroyed(self, () => this.scriptHost.hooksFor(classId)?.onDestroyed?.(self));
             this.dynamicMeshes.remove(self);
@@ -2657,6 +2674,7 @@ class InProcessRuntime implements RuntimeDriver {
       models: this.models,
       complexMeshes: this.complexMeshes,
     });
+    sync.setMissingComplexMeshHandler(this.missingComplexMesh);
   }
 
   async loadScripts(scripts: readonly CompiledScript[]): Promise<void> {
@@ -2914,7 +2932,10 @@ class InProcessRuntime implements RuntimeDriver {
     const hooks = this.scriptHost.hooksFor(classId);
     return {
       onCreation: (self) => this.runOwnerCreation(self, () => hooks?.onCreation?.(self)),
-      onTick: (self, ctx) => this.guardScript(() => hooks?.onTick?.(self, ctx)),
+      // Logic-free actors (Prefabs, scriptless classes) add no per-frame call.
+      onTick: hooks?.onTick
+        ? (self, ctx) => this.guardScript(() => hooks.onTick?.(self, ctx))
+        : undefined,
       onDestroyed: (self) => {
         this.sceneLayerSwitchers.retire(self);
         this.runOwnerDestroyed(self, () => hooks?.onDestroyed?.(self));
@@ -3888,26 +3909,52 @@ class InProcessRuntime implements RuntimeDriver {
   registerModelContent(options: {
     models: Readonly<Record<string, ModelPayload>> | ReadonlyMap<string, ModelPayload>;
     complexMeshes?:
-      | Readonly<
-          Record<
-            string,
-            { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
-          >
-        >
-      | ReadonlyMap<
-          string,
-          { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
-        >;
+      | Readonly<Record<string, CollisionTriangleMesh>>
+      | ReadonlyMap<string, CollisionTriangleMesh>;
   }): void {
     this.models =
       options.models instanceof Map
         ? new Map(options.models)
         : new Map(Object.entries(options.models));
-    this.complexMeshes = options.complexMeshes
+    const provided = options.complexMeshes
       ? options.complexMeshes instanceof Map
-        ? new Map(options.complexMeshes)
+        ? options.complexMeshes
         : new Map(Object.entries(options.complexMeshes))
-      : new Map();
+      : new Map<string, CollisionTriangleMesh>();
+    // A new source union may now hold a Model the host could not cook before.
+    this.unavailableComplexMeshes.clear();
+    this.installComplexMeshes(provided);
+  }
+
+  registerComplexCollisionMeshes(meshes: ReadonlyMap<string, CollisionTriangleMesh>, unavailable: readonly string[] = []): void {
+    for (const [guid, mesh] of meshes) {
+      this.pendingComplexMeshes.delete(guid);
+      this.demandComplexMeshes.set(guid, mesh);
+    }
+    for (const guid of unavailable) {
+      this.pendingComplexMeshes.delete(guid);
+      this.unavailableComplexMeshes.add(guid);
+      if (this.warnedComplexMeshes.has(guid)) continue;
+      this.warnedComplexMeshes.add(guid);
+      const diag: RuntimeDiagnostic = {
+        code: "physics.complex_collision_unavailable",
+        message: `Model ${guid} uses Use Complex Collision, but its collision mesh could not be cooked (source not loaded, or no triangles). The Mesh has no collider; preload the Model or use Use Simple Collision.`,
+        severity: "warning",
+        assetGuid: guid,
+        frameId: this.frameId,
+        tickIndex: this.world.clock.tickIndex,
+      };
+      this.diagnostics.push(diag);
+      this.emit({ type: "diagnostic", code: diag.code, message: diag.message, assetGuid: guid, frameId: this.frameId, severity: "warning" });
+    }
+    if (meshes.size > 0) this.installComplexMeshes(this.lastProvidedComplexMeshes);
+  }
+
+  /** `loadModels` meshes win; on-demand answers fill the rest for the whole session. */
+  private installComplexMeshes(provided: ReadonlyMap<string, CollisionTriangleMesh>): void {
+    // Own the index: an in-process host may clear its map when it releases sources.
+    this.lastProvidedComplexMeshes = new Map(provided);
+    this.complexMeshes = new Map([...this.demandComplexMeshes, ...provided]);
     this.physicsSync.setModelContent({
       models: this.models,
       complexMeshes: this.complexMeshes,
@@ -4379,11 +4426,14 @@ class InProcessRuntime implements RuntimeDriver {
                 loopCount: 0,
                 justLooped: false,
                 justFinished: false,
+                totalNormalisedTime: 0,
+                previousTotalNormalisedTime: 0,
               },
               layers: [],
               blendFromStateId: null,
               blendFromTimeMs: 0,
               blendElapsedMs: 0,
+              blendSeconds: 0,
               loopCount: 0,
             });
           }
@@ -7145,7 +7195,7 @@ class InProcessRuntime implements RuntimeDriver {
     const actors = this.world.getActors();
     const buf = this.snapshots.beginWrite();
     const findActor = (guid: string) => this.world.findActor(guid);
-    const worldTransforms = composeActorWorldTransforms(findActor, actors);
+    const worldTransforms = composeActorWorldTransforms(findActor, actors, this.reportShearedActor);
     const cameraActor = this.playCameraActor();
     const cameraPosition = cameraActor ? worldTransforms.get(cameraActor.guid)?.position : undefined;
     if (cameraPosition) {

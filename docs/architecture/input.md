@@ -90,6 +90,7 @@ interface ResolvedInputTick {
 - **`kind: "2d"`** axes fold x/y bindings into `axes2D[name]`; magnitude also exposed on `axes[name]` for 1D callers.
 - **Raw kinds.** `pointer` (mouse and touch arrive as Pointer Events), `key`, polled `gamepad` samples, `gamepadDisconnect`, and `touchAxis`.
 - **Cursor.** Primary `kind: "pointer"` (mouse or first `pointerId`; extra fingers ignored) keeps `{ x, y, pressed }` in canvas CSS pixels. XY sticks after up/cancel. Touch uses the same cursor sample as mouse.
+- **Chorded mouse buttons.** Pointer Events fire `pointerdown`/`pointerup` only for the first and last held button; a second button changes `buttons` on a `pointermove`. Capture (`@babylonslate/input/dom`, used by Play and the exported player) tracks each pointer's mask and turns that move into a per-button `down`/`up` edge, and `pointerup` first emits `up` for every other chorded button still held. The resolver also treats an `up` naming a button the contact never pressed as a missed chord and releases the whole contact.
 - **Gamepad connections.** A pad reports `connected: true` on its first sample. Play and the exported player compare each gamepad poll with the previous one and push `gamepadDisconnect` for a pad that is no longer returned (empty slot or `connected: false`). The resolver then reports `connected: false` once and drops that pad's held buttons and stick values; a later sample reconnects it. **On Gamepad Connected** and **On Gamepad Disconnected** run once per transition with the pad index.
 
 Pure with respect to the browser — feed synthetic streams from the deterministic harness.
@@ -110,6 +111,9 @@ Pure with respect to the browser — feed synthetic streams from the determinist
 | `setGamepadRumble(index, intensity, durationMs)` | forwarded to main thread when supported |
 
 Wired in `packages/runtime/src/driver.ts`: ring buffer → `InputResolver.resolve` → `TickContext` for script/physics phases. Each `tick()` consumes **all** events queued since the previous tick. Event `tick` is recorded on traces; it does not gate consumption. Play's worker host stamps canvas/gamepad samples with the last worker `stats.tickIndex` (not `performance.now() / 16.67`), so compiled Input Axis events see the same stick as the host input stream.
+
+- **Overflow.** `InputRingBuffer` (capture 512, runtime 512) fills while ticks are held back, such as blocking stream loads or save boundaries. At capacity it coalesces the oldest continuous sample (pointer move, gamepad or touch-axis sample) whose next event for the same control keeps every resolver threshold edge (zero and 0.5), so the latest value and complete taps survive. A queue of press/release edges grows up to four times capacity; beyond that the oldest press or sample is dropped. Releases (key up, pointer up/cancel, zero touch axis, all-zero pad sample, disconnect) are never dropped while a press remains.
+- **Wire encoding.** `encodeInputEvents` stores a pointer's `pointerId` as signed 32-bit (`PointerEvent.pointerId` is a `long`) and `button` as signed 8-bit, so pen/touch ids above 65535 stay distinct and hover moves keep `button: -1`. Host and worker share one build; the format is transient and not persisted.
 
 
 ## Testing

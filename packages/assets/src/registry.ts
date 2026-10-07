@@ -155,6 +155,13 @@ export class AssetRegistry {
   private readonly textureWriteChain = new Map<string, Promise<void>>();
   private folderWriteChain: Promise<void> = Promise.resolve();
   private readonly creationWrites = new Set<Promise<void>>();
+  /**
+   * Destination paths a create, duplicate, move or rename is writing right
+   * now, case-folded as `moveStorageFile` treats spellings that alias. Each
+   * operation claims its path synchronously with its index check, so two
+   * overlapping writers cannot both pass the check before either indexes.
+   */
+  private readonly pathReservations = new Set<string>();
   /** Atlas referrer (Tileset, Sprite, Sprite Animation) guid -> textures it samples. */
   private readonly atlasByReferrer = new Map<string, readonly string[]>();
   /** Texture guid -> atlas referrers sampling it. */
@@ -212,6 +219,45 @@ export class AssetRegistry {
 
   private removeKnownFolder(path: string): void {
     if (this.knownFolders.delete(path)) this.changed();
+  }
+
+  private isPathReserved(path: string): boolean {
+    return this.pathReservations.has(path.toLowerCase());
+  }
+
+  /**
+   * Claim `path` for one write; the returned release is idempotent. Throws
+   * `conflict` when another operation holds it or an asset is indexed there.
+   * Call it before the operation's first await on that path.
+   */
+  private reservePath(path: string, conflict: string): () => void {
+    const key = path.toLowerCase();
+    if (this.pathReservations.has(key) || this.byPath.has(path)) throw new Error(conflict);
+    this.pathReservations.add(key);
+    let held = true;
+    return () => {
+      if (held) this.pathReservations.delete(key);
+      held = false;
+    };
+  }
+
+  /** Reserve synchronously, then hold `path` until `work` settles. */
+  private async withReservedPath<T>(path: string, conflict: string, work: () => Promise<T>): Promise<T> {
+    const release = this.reservePath(path, conflict);
+    try {
+      return await work();
+    } finally {
+      release();
+    }
+  }
+
+  /** Index a file this registry just created; never evicts another asset's entry. */
+  private indexCreatedHeader(rootId: string, path: string, header: BabassetHeader, mtime: number | null = null): IndexedAsset {
+    const existing = this.byPath.get(path);
+    if (existing && existing.header.guid !== header.guid) {
+      throw new Error(`Asset already exists: ${path} (indexed as ${existing.header.guid})`);
+    }
+    return this.reportCreatedTexture(this.indexHeader(rootId, path, header, false, mtime));
   }
 
   /** Bind the §3.5 encode scheduler (ProjectService owns the queue lifetime). */
@@ -357,10 +403,22 @@ export class AssetRegistry {
   }
 
   unmountRoot(rootId: string): void {
+    const root = this.roots.get(rootId);
     if (this.roots.delete(rootId)) this.changed();
     for (const asset of [...this.byGuid.values()]) {
       if (asset.rootId === rootId) {
         this.removeFromIndex(asset);
+      }
+    }
+    if (!root) return;
+    // A remount walks storage again; folders removed meanwhile must not linger.
+    const remaining = [...this.roots.values()];
+    for (const folder of [...this.knownFolders]) {
+      if (
+        isWithinFolder(folder, root.pathPrefix) &&
+        !remaining.some((other) => isWithinFolder(folder, other.pathPrefix))
+      ) {
+        this.removeKnownFolder(folder);
       }
     }
   }
@@ -507,11 +565,14 @@ export class AssetRegistry {
   private async createAssetUnlocked(rootId: string, relativePath: string, result: ImportResult): Promise<IndexedAsset> {
     const root = this.getRootOrThrow(rootId);
     this.assertWritable(root);
-    const storage = this.storageOf(root);
     const path = joinRootPath(root, relativePath);
-    if (this.byPath.has(path) || (await storage.exists(path))) {
-      throw new Error(`Asset already exists: ${path}`);
-    }
+    const conflict = `Asset already exists: ${path}`;
+    return this.withReservedPath(path, conflict, () => this.writeCreatedAsset(root, path, result, conflict));
+  }
+
+  private async writeCreatedAsset(root: ContentRoot, path: string, result: ImportResult, conflict: string): Promise<IndexedAsset> {
+    const storage = this.storageOf(root);
+    if (await storage.exists(path)) throw new Error(conflict);
     const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
     if (dir) {
       await storage.mkdir(dir, true);
@@ -561,7 +622,7 @@ export class AssetRegistry {
     await storage.writeBinary(path, bytes);
     const header = readBabassetHeader(bytes);
     const mtime = await this.statMtime(storage, path);
-    return this.reportCreatedTexture(this.indexHeader(rootId, path, header, false, mtime));
+    return this.indexCreatedHeader(root.id, path, header, mtime);
   }
 
   /** Re-read a .babasset header after an in-place save so catalog fields stay current. */
@@ -626,17 +687,18 @@ export class AssetRegistry {
   private async createFolderUnlocked(rootId: string, relativeFolder: string): Promise<void> {
     const root = this.getRootOrThrow(rootId);
     this.assertWritable(root);
-    const storage = this.storageOf(root);
     const folderPath = joinRootPath(root, relativeFolder);
     if (!relativeFolder.replace(/^\/+|\/+$/g, "")) {
       throw new Error("Cannot create the assets root folder");
     }
-    if (
-      this.knownFolders.has(folderPath) ||
-      (await storage.exists(folderPath))
-    ) {
-      throw new Error(`Folder already exists: ${folderPath}`);
-    }
+    const conflict = `Folder already exists: ${folderPath}`;
+    if (this.knownFolders.has(folderPath)) throw new Error(conflict);
+    return this.withReservedPath(folderPath, conflict, () => this.writeCreatedFolder(root, folderPath, conflict));
+  }
+
+  private async writeCreatedFolder(root: ContentRoot, folderPath: string, conflict: string): Promise<void> {
+    const storage = this.storageOf(root);
+    if (await storage.exists(folderPath)) throw new Error(conflict);
     await storage.mkdir(folderPath, true);
     await storage.writeText(
       `${folderPath}/${FOLDER_MARKER_NAME}`,
@@ -675,20 +737,19 @@ export class AssetRegistry {
     const storage = this.storageOf(root);
     const newPath = joinRootPath(root, newRelativePath);
     if (newPath === asset.path) return asset;
-    if (this.byPath.has(newPath)) {
-      throw new Error(`Target path already exists: ${newPath}`);
-    }
-    const bytes = await storage.readBinary(asset.path);
-    await moveStorageFile(storage, asset.path, newPath, bytes);
-    // Keep inbound refs: guid identity is unchanged, only the storage path moves.
-    if (this.byPath.get(asset.path) === asset) {
-      this.byPath.delete(asset.path);
-    }
-    const moved: IndexedAsset = { ...asset, path: newPath };
-    this.byGuid.set(guid, moved);
-    this.byPath.set(newPath, moved);
-    this.changed();
-    return moved;
+    return this.withReservedPath(newPath, `Target path already exists: ${newPath}`, async () => {
+      const bytes = await storage.readBinary(asset.path);
+      await moveStorageFile(storage, asset.path, newPath, bytes);
+      // Keep inbound refs: guid identity is unchanged, only the storage path moves.
+      if (this.byPath.get(asset.path) === asset) {
+        this.byPath.delete(asset.path);
+      }
+      const moved: IndexedAsset = { ...asset, path: newPath };
+      this.byGuid.set(guid, moved);
+      this.byPath.set(newPath, moved);
+      this.changed();
+      return moved;
+    });
   }
 
   async renameAsset(guid: string, newName: string): Promise<IndexedAsset> {
@@ -700,13 +761,15 @@ export class AssetRegistry {
     if (!asset) throw new Error(`Unknown asset ${guid}`);
     const root = this.roots.get(asset.rootId);
     if (root) this.assertWritable(root);
-    const storage = this.storageForAsset(asset);
-    const blobs = this.blobsForAsset(asset);
     const safe = newName.trim();
     const newPath = renamedAssetPath(asset.path, safe);
-    if (newPath !== asset.path && this.byPath.has(newPath)) {
-      throw new Error(`Target path already exists: ${newPath}`);
-    }
+    if (newPath === asset.path) return this.rewriteRenamedAsset(asset, safe, newPath);
+    return this.withReservedPath(newPath, `Target path already exists: ${newPath}`, () => this.rewriteRenamedAsset(asset, safe, newPath));
+  }
+
+  private async rewriteRenamedAsset(asset: IndexedAsset, safe: string, newPath: string): Promise<IndexedAsset> {
+    const storage = this.storageForAsset(asset);
+    const blobs = this.blobsForAsset(asset);
     const fileBytes = await storage.readBinary(asset.path);
     const decoded = await decodeBabasset(fileBytes, (sha256) =>
       blobs.readBlob(sha256),
@@ -797,28 +860,45 @@ export class AssetRegistry {
         : other.path;
       siblingStems.push(stripAssetFileSuffix(otherFile));
     }
-    const uniqueName = nextCopyName(stemSource, siblingStems);
-    const relativePath = joinRelative(
-      targetFolderRelative,
-      `${uniqueName}${suffix}`,
-    );
-    const candidate = joinRootPath(root, relativePath);
-    const { chunks, ...headerRest } = decoded.header;
-    void chunks;
-    if (decoded.header.type === "Scene") {
-      stampDocumentChunkName(chunksById, uniqueName);
+    // Pick and claim the copy's name together, skipping names another write
+    // holds and unindexed files already on disk.
+    let uniqueName: string;
+    let candidate: string;
+    let release: () => void;
+    for (;;) {
+      uniqueName = nextCopyName(stemSource, siblingStems);
+      candidate = joinRootPath(root, joinRelative(targetFolderRelative, `${uniqueName}${suffix}`));
+      siblingStems.push(uniqueName);
+      if (this.isPathReserved(candidate) || this.byPath.has(candidate)) continue;
+      release = this.reservePath(candidate, `Asset already exists: ${candidate}`);
+      let free = false;
+      try {
+        free = !(await destStorage.exists(candidate));
+      } finally {
+        if (!free) release();
+      }
+      if (free) break;
     }
-    const encoded = await encodeBabasset({
-      header: { ...headerRest, guid: newGuid, name: uniqueName },
-      chunks: [...chunksById.values()],
-      writeBlob: (sha256, data) => destBlobs.writeBlob(sha256, data),
-    });
-    const dir = candidate.includes("/")
-      ? candidate.slice(0, candidate.lastIndexOf("/"))
-      : "";
-    if (dir) await destStorage.mkdir(dir, true);
-    await destStorage.writeBinary(candidate, encoded);
-    return this.reportCreatedTexture(this.indexHeader(rootId, candidate, readBabassetHeader(encoded)));
+    try {
+      const { chunks, ...headerRest } = decoded.header;
+      void chunks;
+      if (decoded.header.type === "Scene") {
+        stampDocumentChunkName(chunksById, uniqueName);
+      }
+      const encoded = await encodeBabasset({
+        header: { ...headerRest, guid: newGuid, name: uniqueName },
+        chunks: [...chunksById.values()],
+        writeBlob: (sha256, data) => destBlobs.writeBlob(sha256, data),
+      });
+      const dir = candidate.includes("/")
+        ? candidate.slice(0, candidate.lastIndexOf("/"))
+        : "";
+      if (dir) await destStorage.mkdir(dir, true);
+      await destStorage.writeBinary(candidate, encoded);
+      return this.indexCreatedHeader(rootId, candidate, readBabassetHeader(encoded));
+    } finally {
+      release();
+    }
   }
 
   /** Copy into a folder (same as duplicate with an explicit destination folder). */

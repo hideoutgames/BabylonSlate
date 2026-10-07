@@ -36,6 +36,7 @@ import {
   type TilemapPayload,
   type TilesetPayload,
   type ModelPayload,
+  complexCollisionModelGuids,
   cookComplexCollisionMeshes,
 } from "@babylonslate/assets";
 import {
@@ -43,7 +44,7 @@ import {
   parseBlackboardDocument,
 } from "@babylonslate/behaviour-tree";
 import type { ControlMessage, ScriptBundleEntry } from "@babylonslate/bridge";
-import type { ScenePostProcessEntry } from "@babylonslate/core";
+import type { CollisionTriangleMesh, ScenePostProcessEntry } from "@babylonslate/core";
 import {
   buildMaterialParameterCatalog,
   materializeMaterialInstances,
@@ -102,10 +103,8 @@ export type PackedGameContent = {
   modelClipAnimationGuids: Map<string, Map<string, string>>;
   retargetAnimationLoads: Map<string, RetargetAnimationLoad[]>;
   modelPayloads: Map<string, ModelPayload>;
-  complexMeshes: Map<
-    string,
-    { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
-  >;
+  /** Cooked only for Models the content scan marks as Use Complex Collision. */
+  complexMeshes: Map<string, CollisionTriangleMesh>;
   /** Authored Texture payload pixels for overlay 2DTexture world size. */
   texturePixelSizes: Map<string, { width: number; height: number }>;
 };
@@ -154,6 +153,13 @@ function navmeshArrayBuffer(bytes: Uint8Array): ArrayBuffer {
     copy.byteOffset,
     copy.byteOffset + copy.byteLength,
   ) as ArrayBuffer;
+}
+
+/** Models this source set's Scenes, SceneLayers and Classes simulate with Use Complex Collision. */
+export function gameComplexCollisionModelGuids(game: GameSourceContent): Set<string> {
+  return complexCollisionModelGuids([
+    ...game.scenes.values(), ...game.sceneLayers.values(), ...game.scripts, ...(game.decodedPayloads?.values() ?? []),
+  ]);
 }
 
 export function packedContentFromGame(game: GameSourceContent): PackedGameContent {
@@ -372,7 +378,8 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
       [...animationPayloads.entries()].map(([guid, payload]) => ({ guid, payload })),
     ),
     modelPayloads: new Map(game.modelPayloads),
-    complexMeshes: game.complexMeshes ? new Map(game.complexMeshes) : cookComplexCollisionMeshes(game.modelBytes, game.modelPayloads),
+    complexMeshes: game.complexMeshes ? new Map(game.complexMeshes)
+      : cookComplexCollisionMeshes(game.modelBytes, game.modelPayloads, gameComplexCollisionModelGuids(game)),
     texturePixelSizes: texturePixelSizesFromManifest(game.manifest.assets),
   };
 }
@@ -429,7 +436,7 @@ export function packedPlayControls(content: PackedGameContent): ControlMessage[]
             complexMeshes: [...content.complexMeshes.entries()].map(
               ([guid, mesh]) => ({
                 guid,
-                vertices: mesh.vertices,
+                positions: mesh.positions,
                 indices: mesh.indices,
               }),
             ),

@@ -18,7 +18,7 @@
     "@babylonslate/vfs": "workspace:*",
     "@electron/asar": "4.3.0",
     "@types/node": "^22.13.10",
-    "electron": "44.2.0",
+    "electron": "44.6.0",
     "electron-builder": "26.15.3",
     "electron-updater": "6.8.9",
     "esbuild": "0.28.2",
