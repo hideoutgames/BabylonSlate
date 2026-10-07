@@ -1,3 +1,4 @@
+import { activeRenderFrameCapture } from "./render-frame-report";
 import { pausedSceneRedrawIssue, renderSceneWithGameTime } from "./scene-game-time";
 import { PostProcessRetirement } from "./post-process-retirement";
 import { renderTargetCaptureDrawing } from "./render-target-capture-state";
@@ -618,7 +619,10 @@ export class ForwardSceneFrameGraph {
       this.graphRender = this.scene.customRenderFunction!;
       this.scene.customRenderFunction = this.pinnedGraphRender;
       const revision = this.readinessRevision;
-      renderSceneWithGameTime(this.scene, updateCameras);
+      const capture = activeRenderFrameCapture(engine);
+      if (capture) capture.frameGraph(this.scene, graph, this.work.graphBuilds,
+        () => renderSceneWithGameTime(this.scene, updateCameras));
+      else renderSceneWithGameTime(this.scene, updateCameras);
       this.syncMembership();
       return { path: "frameGraph", ...(revision === this.readinessRevision ? {} : { rendered: false }) };
     } finally {
@@ -651,7 +655,11 @@ export class ForwardSceneFrameGraph {
       }
     }
     const revision = this.readinessRevision;
-    withSceneStreamNativeVisibility(this.scene, () => renderSceneWithGameTime(this.scene, updateCameras));
+    const capture = activeRenderFrameCapture(this.scene.getEngine());
+    if (capture) capture.stage(this.scene, { name: "Native scene submission", kind: "native",
+      detail: "Classic renderer stage; internal pass/resource detail is unavailable." },
+      () => withSceneStreamNativeVisibility(this.scene, () => renderSceneWithGameTime(this.scene, updateCameras)));
+    else withSceneStreamNativeVisibility(this.scene, () => renderSceneWithGameTime(this.scene, updateCameras));
     this.syncMembership();
     // A successful probe after drawing cannot prove a mesh was not skipped.
     // Hold a candidate dirtied by render callbacks and retry on the next frame.

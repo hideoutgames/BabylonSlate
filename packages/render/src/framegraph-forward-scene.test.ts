@@ -1,4 +1,5 @@
 import { setSceneGameTimePaused } from "./scene-game-time";
+import { captureRenderFrame } from "./render-frame-report";
 import {
   Animation,
   PrecisionDate,
@@ -81,6 +82,23 @@ function host(engine = new NullEngine()) {
   scene.activeCamera = camera;
   return { engine, scene, camera };
 }
+
+it("captures the actual owner path and reports classic submission explicitly", async () => {
+  const { engine, scene, camera } = host();
+  const owner = new ForwardSceneFrameGraph(scene);
+  await owner.prepare(camera);
+  const graphFrame = captureRenderFrame(engine, () => owner.render(camera));
+  expect(graphFrame.value.path).toBe("frameGraph");
+  expect(graphFrame.report.stages.some((stage) => stage.kind === "task" && stage.completed)).toBe(true);
+  expect(graphFrame.report.graphs).toHaveLength(1);
+  scene.activeCameras = [camera];
+  const nativeFrame = captureRenderFrame(engine, () => owner.render(camera));
+  expect(nativeFrame.value.path).toBe("classic");
+  expect(nativeFrame.report.stages).toMatchObject([{ kind: "native", completed: true,
+    detail: expect.stringContaining("unavailable") }]);
+  expect(nativeFrame.report.tasks).toHaveLength(0);
+  owner.dispose();
+});
 
 it("retains the previous graph during a settings transaction and releases superseded candidates", async () => {
   const { scene, camera } = host();

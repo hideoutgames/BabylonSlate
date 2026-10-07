@@ -1,3 +1,4 @@
+import { activeRenderFrameCapture } from "./render-frame-report";
 import type { AttachedPostProcessStack, AttachPostProcessStackOptions } from "./post-process-material";
 import type { Camera, Scene } from "@babylonjs/core";
 import { ForwardSceneFrameGraph, type ForwardSceneGraphResult } from "./framegraph-forward-scene";
@@ -212,7 +213,12 @@ export class SceneRenderCoordinator {
     if (!status.ready) this.requestPreparation();
     // Draw on readiness's admission; graph preparation or invalidation re-admits.
     const result = this.graph.render(camera, true, true);
-    if (result.rendered !== false) this.editorOverlay?.(camera);
+    if (result.rendered !== false && this.editorOverlay) {
+      const capture = activeRenderFrameCapture(this.scene.getEngine());
+      if (capture) capture.stage(this.scene, { name: "Viewport editor overlay", kind: "overlay" },
+        () => this.editorOverlay?.(camera));
+      else this.editorOverlay(camera);
+    }
     if (!validatePresentation && result.rendered !== false)
       return { ...result, rendered: true, readyForPresentation: false };
     const after = this.graph.readiness(camera);

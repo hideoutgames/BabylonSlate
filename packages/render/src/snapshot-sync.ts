@@ -43,6 +43,8 @@ export class SnapshotInterpolator {
   private readonly nextSlot = emptySlot();
   private readonly sampled: SampledSnapshot;
   private generation = 0;
+  private resetFromFrame: number | null = null;
+  private resetThroughFrame = 0;
 
   constructor(maxActors: number) {
     this.maxActors = maxActors;
@@ -88,12 +90,36 @@ export class SnapshotInterpolator {
     this.prev = this.next;
     this.next = dest;
     this.write = 1 - this.write;
+    this.applyInterpolationReset();
+  }
+
+  /** A teleport's authoritative snapshot also moves descendants in world space.
+   * Discard the old endpoint once that publication arrives, keeping its newest
+   * pose. Two numbers bound any number of coalesced edit publications. */
+  resetInterpolationFrom(frameId: number): void {
+    if (!Number.isSafeInteger(frameId) || frameId < 0) return;
+    this.resetFromFrame = Math.min(this.resetFromFrame ?? frameId, frameId);
+    this.resetThroughFrame = Math.max(this.resetThroughFrame, frameId);
+    this.applyInterpolationReset();
+  }
+
+  private applyInterpolationReset(): void {
+    if (this.resetFromFrame === null || !this.next) return;
+    const frameId = readSnapshotHeader(this.next).frameId;
+    if (frameId < this.resetFromFrame) return;
+    this.prev = null;
+    if (frameId >= this.resetThroughFrame) {
+      this.resetFromFrame = null;
+      this.resetThroughFrame = 0;
+    }
   }
 
   /** Drop buffered snapshots so the next sample is null until a fresh push. */
   clear(): void {
     this.prev = null;
     this.next = null;
+    this.resetFromFrame = null;
+    this.resetThroughFrame = 0;
   }
 
   sample(alpha: number): SampledSnapshot | null {

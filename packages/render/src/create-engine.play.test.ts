@@ -366,6 +366,36 @@ describe("Play createEngine view", () => {
     system.dispose();
   });
 
+  it("captures a coherent paused presentation, excludes held attempts and refuses concurrent profiling", async () => {
+    const engine = sharedEngine();
+    const { handle } = playHandle(engine);
+    await handle.prewarmSceneMaterials();
+    handle.setGameTimePaused(true);
+    let ready = false;
+    handle.scene.addIsReadyCheck({ isReady: () => ready });
+    markSceneReadinessDirty(handle.scene);
+    const frame = () => { engine.beginFrame(); renderViews(engine); engine.endFrame(); };
+    let delivered = false;
+    const requested = handle.captureFrame().then((report) => { delivered = true; return report; });
+    expect(() => handle.observePerformance(() => {})).toThrow("frame capture");
+    frame();
+    await Promise.resolve();
+    expect(delivered).toBe(false);
+    expect(handle.renderDiagnostics().presentation!.copied).toBe(0);
+    ready = true;
+    frame();
+    const report = await requested;
+    expect(report.frame).toMatchObject({ tickId: 0, viewId: handle.scene.uniqueId });
+    expect(report.stages.some((stage) => stage.kind === "composition" && stage.name === "World output" && stage.completed)).toBe(true);
+    expect(handle.scheduler.shouldRender(performance.now())).toBe(false);
+    const release = handle.observePerformance(() => {});
+    await expect(handle.captureFrame()).rejects.toThrow("performance recording");
+    release();
+    const cancelled = expect(handle.captureFrame()).rejects.toThrow("disposed");
+    handle.dispose();
+    await cancelled;
+  });
+
   function renderViews(engine: NullEngine) {
     if (!engine.getRenderingCanvas())
       vi.spyOn(engine, "getRenderingCanvas").mockReturnValue(new FakeCanvas() as unknown as HTMLCanvasElement);

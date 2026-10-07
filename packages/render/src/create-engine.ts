@@ -1,3 +1,4 @@
+import { beginRenderFrameCapture, RenderFrameReportFeed, type RenderFrameReport, type RenderFrameReportReceipt } from "./render-frame-report";
 import { pausedSceneRedrawIssue, setSceneGameTimePaused } from "./scene-game-time";
 import { applyDynamicRuntimeMeshUpdate } from "./dynamic-runtime-mesh";
 import { PostProcessRetirement } from "./post-process-retirement";
@@ -302,6 +303,9 @@ export interface EngineHandle {
   renderDiagnostics: () => RenderDiagnostics;
   /** Explicit CPU timing only; host controls finite capture, session mode and result retention. */
   observePerformance: (onFrame: (sample: RenderPerformanceSample) => void) => () => void;
+  /** Explicit next coherent game presentation; rejects concurrent profiling. */
+  captureFrame: () => Promise<RenderFrameReport>;
+  cancelFrameCapture: (reason?: string) => void;
   renderPathStatus: () => ResolvedRenderingPipeline;
   scalabilityStatus: () => ScalabilityAcknowledgement | undefined;
   /** Non-persistent game-wide session render path request; null resumes the project path. */
@@ -989,6 +993,9 @@ function initializeEngine(
   };
   let captureFramePhases = false;
   const performanceFeed = new RenderPerformanceFeed();
+  const frameReportFeed = new RenderFrameReportFeed();
+  let pendingFrameReportReceipt: RenderFrameReportReceipt | null = null;
+  onRollback(() => frameReportFeed.cancel("Scene construction failed."));
   let pendingPerformanceReceipt: RenderPerformanceReceipt | null = null;
   let admissionPreparationMs = 0;
   onRollback(() => performanceFeed.dispose());
@@ -1700,6 +1707,7 @@ function initializeEngine(
     load.signal.throwIfAborted();
     assertCurrent(loadGeneration);
     if (!editorSync) throw new Error("Chunked scene realization requires an editor scene.");
+    frameReportFeed.cancel("The scene changed before frame capture completed.");
     const generation = ++loadGeneration;
     worldRenderer.invalidate();
     cancelPresentation(new Error("Scene loading was superseded."), "world");
@@ -1739,6 +1747,7 @@ function initializeEngine(
       return;
     }
     loadGeneration += 1;
+    frameReportFeed.cancel("The scene changed before frame capture completed.");
     worldRenderer.invalidate();
     cancelPresentation(new Error("Scene loading was superseded."), "world");
     setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
@@ -2260,8 +2269,9 @@ function initializeEngine(
     } else worldLoading = false;
     pending.resolve();
   };
-  function acknowledgeFrameCopy(owners = [...frameOwners], receipt = pendingPerformanceReceipt, copyMs = 0) {
+  function acknowledgeFrameCopy(owners = [...frameOwners], receipt = pendingPerformanceReceipt, copyMs = 0, frameReport = pendingFrameReportReceipt) {
     presentationStats.copied += 1;
+    frameReportFeed.complete(frameReport, loadGeneration);
     if (receipt) performanceFeed.complete(receipt, copyMs, performance.now(), loadGeneration);
     if (!frameWasLoading) framePresented = true;
     for (const [key, pending] of owners) {
@@ -2385,6 +2395,7 @@ function initializeEngine(
     if (registeredView && engine.activeView && engine.activeView !== registeredView) return;
     frameCopyReady = false;
     pendingPerformanceReceipt = null;
+    pendingFrameReportReceipt = null;
     frameOwners.clear();
     const measurePhases = captureFramePhases || performanceFeed.active;
     const preparationStart = measurePhases ? performance.now() : 0;
@@ -2425,6 +2436,15 @@ function initializeEngine(
       // hidden/paused views); sleeping cables skip their anchor math.
       if (stepEditorCables(scene, frameStart)) scheduler.invalidate("asset");
     }
+    const frameScope = frameReportFeed.active && (!worldLoading || pendingPresentations.has("world"))
+      ? beginRenderFrameCapture(engine) : null;
+    const frameReportReceipt = frameScope ? frameReportFeed.candidate({ ...frameScope.capture.report, frame: {
+      renderFrameId: engine.frameId, snapshotFrameId: sampled?.frameId ?? 0, tickId: sampled?.tickIndex ?? 0,
+      sceneGeneration: loadGeneration, sceneAssetGuid: lastSceneAssetGuid, viewId: scene.uniqueId,
+      width: scene.activeCamera?.outputRenderTarget?.getSize().width ?? engine.getRenderWidth(true),
+      height: scene.activeCamera?.outputRenderTarget?.getSize().height ?? engine.getRenderHeight(true),
+      backend: engine.isWebGPU ? "webgpu" : engine.webGLVersion === 2 ? "webgl2" : engine.webGLVersion === 1 ? "webgl1" : "unknown",
+    } }) : null;
     try {
       const presentingLayers = new Set([...pendingPresentations.values()].flatMap((pending) => pending.owner ? [pending.owner.layerId] : []));
       const drawOwner = (key: string, draw: () => boolean, fallback?: () => void) => {
@@ -2471,8 +2491,11 @@ function initializeEngine(
         });
       };
       if (!worldLoading || pendingPresentations.has("world")) drawOwner("world", () => {
-        const result = worldRenderer.render(pendingPresentations.has("world"));
-        coherentFrame = result.rendered;
+        const result = frameScope
+          ? frameScope.capture.stage(scene, { name: "World output", kind: "composition", sceneId: lastSceneAssetGuid },
+            () => worldRenderer.render(true))
+          : worldRenderer.render(pendingPresentations.has("world"));
+        coherentFrame = result.rendered && (!frameScope || result.readyForPresentation);
         return result.readyForPresentation;
       }, () => {
         // A newly bound output may invalidate admission between scheduling and
@@ -2496,14 +2519,16 @@ function initializeEngine(
           submission?.cancel();
         }
         presentationStats.held += 1;
+        if (frameReportFeed.active) scheduler.requestPausedFrame();
         return;
       }
       if (rttPresent) {
         const owners = [...frameOwners];
         const copyStart = profileReceipt ? performance.now() : 0;
         void rttPresent.blit().then(() => {
-          acknowledgeFrameCopy(owners, profileReceipt, profileReceipt ? performance.now() - copyStart : 0);
+          acknowledgeFrameCopy(owners, profileReceipt, profileReceipt ? performance.now() - copyStart : 0, frameReportReceipt);
         }, (error: unknown) => {
+          if (frameReportReceipt) frameReportFeed.cancel(`Frame presentation failed: ${String(error)}`);
           if (!owners.length && !disposed) console.warn(`[render] RTT presentation failed: ${String(error)}`);
           for (const [key, pending] of owners) {
             if (pendingPresentations.get(key) === pending) cancelPresentation(error instanceof Error ? error : new Error(String(error)), key);
@@ -2511,10 +2536,16 @@ function initializeEngine(
         });
       }
     } catch (error) {
+      frameReportFeed.cancel(`Frame capture failed: ${String(error)}`);
       if (!pendingPresentations.size) throw error;
       cancelPresentation(error instanceof Error ? error : new Error(String(error)));
       return;
+    } finally {
+      frameScope?.dispose();
+      // Capture counters change during collection; receipt rows share the bounded arrays.
+      if (frameScope && frameReportReceipt) Object.assign(frameReportReceipt.report, frameScope.capture.report);
     }
+    pendingFrameReportReceipt = frameReportReceipt;
     if (sampled) lastRenderedSnapshotFrame = sampled.frameId;
     frameCopyReady = true;
     presentationStats.drawn += 1;
@@ -2569,6 +2600,7 @@ function initializeEngine(
     framePresented = false;
     frameCopyReady = false;
     pendingPerformanceReceipt = null;
+    pendingFrameReportReceipt = null;
   });
   onRollback(() => engine.onEndFrameObservable.remove(presentationObserver));
   onRollback(() => engine.stopRenderLoop(renderLoop));
@@ -2587,6 +2619,7 @@ function initializeEngine(
   const contextLostObserver = engine.onContextLostObservable.add(() => {
     if (disposed) return;
     contextLost = true;
+    frameReportFeed.cancel("The graphics context was lost before frame capture completed.");
     presentationStats.contextLosses += 1;
     loadGeneration += 1;
     cancelPresentation(new Error("Rendering context was lost during scene loading."));
@@ -2814,7 +2847,9 @@ function initializeEngine(
       resetJoysticks();
       disposed = true;
       performanceFeed.dispose();
+      frameReportFeed.cancel("The game view was disposed.");
       pendingPerformanceReceipt = null;
+      pendingFrameReportReceipt = null;
       streamAdmission?.clear();
       runtimeScalability?.dispose();
       unsubscribeRenderPath();
@@ -2957,6 +2992,13 @@ function initializeEngine(
         interpolator.installLayout(command.capacity, command.generation);
         appliedSnapshotIdentity = null;
         scheduler.invalidate("snapshot");
+        return;
+      }
+      if (command.type === "resetActorInterpolation") {
+        if (captureActorSlots.get(command.slotId) !== command.actorGuid) return;
+        interpolator.resetInterpolationFrom(command.frameId);
+        appliedSnapshotIdentity = null;
+        scheduler.requestPausedFrame();
         return;
       }
       if (!simulationEditMode || (command.type !== "possessCamera" && command.type !== "setFreeCam"))
@@ -3375,7 +3417,27 @@ function initializeEngine(
     }),
     drawCalls: () => lastDrawCalls,
     renderDiagnostics,
-    observePerformance: (onFrame) => performanceFeed.subscribe(onFrame),
+    observePerformance: (onFrame) => {
+      if (frameReportFeed.active) throw new Error("Stop frame capture before recording performance.");
+      return performanceFeed.subscribe(onFrame);
+    },
+    captureFrame: () => {
+      if (disposed || contextLost) return Promise.reject(new Error("The game view is unavailable."));
+      if (performanceFeed.active) return Promise.reject(new Error("Stop performance recording before capturing a frame."));
+      if (binding.paused && !gameTimePaused)
+        return Promise.reject(new Error("Paused frame capture requires the game-time pause boundary."));
+      if (gameTimePaused) {
+        for (const target of [scene, ...(sceneLayerCompositor?.layers().map((layer) => layer.scene) ?? [])]) {
+          const reason = pausedSceneRedrawIssue(target);
+          if (reason) return Promise.reject(new Error(reason));
+        }
+      }
+      const result = frameReportFeed.arm(loadGeneration);
+      scheduler.requestPausedFrame();
+      scheduler.invalidate("manual");
+      return result;
+    },
+    cancelFrameCapture: (reason) => frameReportFeed.cancel(reason),
     renderPathStatus: () => sceneRenderPathStatus(scene),
     scalabilityStatus: () => lastScalabilityStatus,
     setRenderPath: (renderPath: RenderPath | null) => {

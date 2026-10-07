@@ -2161,3 +2161,36 @@ Performance contract:
 - The existing scene-load readiness path includes pending instance preparation and reports invalid parameter names/types, missing materials and texture failures. These persistence/rendering boundaries do not by themselves qualify complete Simulation retention.
 
 - `setGameInputEnabled` independently gates SceneLayer pointer, wheel, keyboard, and programmatic focus entry. Input ownership changes cancel pressed/hovered buttons, controls, scrolling and captured pointers; repeat keys and a gesture started under another owner cannot become fresh game input. `setSimulationEditMode` resets debug-camera gestures and switches the existing free camera without releasing the host's input gate or pause reasons. Movement requests a render-only redraw while paused. Running Edit follows the possessed/default game camera for positional audio, including gameplay camera possession changes; the debug camera remains a viewport-only choice. The ordinary console free-camera behavior is unchanged.
+
+Explicit frame reports use `EngineHandle.captureFrame()` and
+`cancelFrameCapture()`. The view admits one request for ten seconds and resolves
+it only after a coherent world presentation reaches that view's copy destination.
+A held candidate is discarded; RTT promises carry their own generation and frame
+receipt, so an old copy cannot complete a later request. Scene replacement,
+context loss, disposal, cancellation, and drawing failure reject the request.
+Performance recording and frame capture exclude one another. A paused request
+uses the acknowledged game-time pause path and requests one render-only frame;
+a presentation-only pause cannot safely substitute for that boundary. Session
+hosts restrict these expensive diagnostics to normal Play and packaged Preview.
+
+A capture attaches public FrameGraph task observers only around the requested
+synchronous draw, removes them in `finally`, and records configured task/pass
+branches separately from actual task execution. Task timings are inclusive wall
+time, may contain driver waits, and are not per-pass or GPU timings. Public
+texture handles, dimensions, formats and sample counts retain their graph
+identity; absent details remain unavailable. Native submission, world output,
+SceneLayer scene output/composition, editor overlays, and existing Render Target
+Capture owners have explicit stages. Known capture actors are attributed by
+identity; batched rendering is not guessed. The collector retains at most 256
+records in each collection, 16 graph submissions, 32 passes per branch, and a
+256 KiB serialized-record admission budget. Omitted records make the report
+incomplete and increment its drop count. This is not browser heap accounting.
+Ordinary frames allocate no report buffers or descriptors and attach no report
+observers. Texture readback/previews, Spector, and GPU pass timings are absent.
+
+A validated runtime transform edit announces its authoritative snapshot frame
+with `resetActorInterpolation`. The renderer checks GUID/slot ownership and
+removes the previous interpolation endpoint when that publication arrives,
+including world-space descendant poses. It does not apply authored local
+coordinates to the flattened render roots. Coalesced pending reset publications
+use a bounded frame interval; subsequent ordinary snapshots resume interpolation.
