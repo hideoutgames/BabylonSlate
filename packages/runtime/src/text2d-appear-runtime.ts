@@ -1,11 +1,12 @@
 import { countText2DRevealCharacters, parseText2DProperties, text2DAppearDuration } from "@babylonslate/core";
 import type { Actor, ActorComponent } from "@babylonslate/object-model";
+import type { RuntimeSubsystem } from "./runtime-subsystems";
 
 type AppearState = { progress: number; direction: -1 | 0 | 1; duration: number };
 export type Text2DAppearOperation = "triggerAppear" | "play" | "playReverse";
 
 /** Simulation-owned reveal timing; renderers only consume its normalized position. */
-export class Text2DAppearRuntime {
+export class Text2DAppearRuntime implements RuntimeSubsystem {
   private readonly states = new WeakMap<ActorComponent, AppearState>();
   private readonly dirty = new Set<ActorComponent>();
 
@@ -58,6 +59,11 @@ export class Text2DAppearRuntime {
   remove(component: ActorComponent): void {
     this.states.delete(component);
     this.dirty.delete(component);
+  }
+
+  /** A released slot's owner forgets its reveal state. */
+  releaseSlot(_slotId: number, owner: Actor | undefined): void {
+    if (owner) for (const component of owner.components) this.remove(component);
   }
 
   private state(component: ActorComponent): AppearState {

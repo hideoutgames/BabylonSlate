@@ -191,6 +191,8 @@ import { composeParentChildTransform } from "./actor-world-transform";
 import type { ModelPayload, SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import { initNavigation, type NavObstacleKind, type NavPoint } from "@babylonslate/navigation";
 import { RuntimeSubsystems } from "./runtime-subsystems";
+import { RenderSlots } from "./render-slots";
+import { RenderCommandState } from "./render-command-state";
 import { RuntimeNavigation } from "./runtime-navigation";
 import { AnimGraphRuntime } from "./anim-graph-runtime";
 import { BehaviourTreeRuntime } from "./behaviour-tree-runtime";
@@ -617,17 +619,8 @@ class InProcessRuntime implements RuntimeDriver {
   private processingTick = false;
   private flushingConsoleActors = false;
   private frameId = 0;
-  private slotByGuid = new Map<string, number>();
-  private areaLightSlots = new Set<number>();
-  private outlineSlots = new Set<number>();
-  private readonly deformerSnapshots = new Map<number, string>();
-  private readonly dirtyDeformerActors = new Set<Actor>();
+  private readonly renderCommands = new RenderCommandState();
   private deformerRevision = 0;
-  private captureSlots = new Set<number>();
-  private fogVolumeSlots = new Set<number>();
-  private readonly slotOwners = new Map<number, Actor>();
-  /** Each actor's own slot; `slotByGuid` holds a guid's latest-assigned one. */
-  private readonly slotByActor = new WeakMap<Actor, number>();
   private readonly removingActors = new WeakSet<Actor>();
   /** Actors whose sheared world pose has been reported to the Output Log. */
   private readonly shearedActors = new WeakSet<Actor>();
@@ -653,8 +646,6 @@ class InProcessRuntime implements RuntimeDriver {
     flags: 0,
   };
   private readonly componentsWithMaterialAssignment = new WeakSet<ActorComponent>();
-  private readonly freeSlots: number[] = [];
-  private nextUnusedSlot = 0;
   private _snapshotGeneration = 0;
   private _lastScriptMs = 0;
   private _lastPhysicsMs = 0;
@@ -780,6 +771,10 @@ class InProcessRuntime implements RuntimeDriver {
    * constructor) is the order Stop and Scene replacement run their hooks.
    */
   private readonly subsystems = new RuntimeSubsystems();
+  private readonly renderSlots = new RenderSlots(this.subsystems, {
+    ensureCapacity: (required) => this.ensureSnapshotCapacity(required),
+    findActor: (guid) => this.world.findActor(guid),
+  });
   private readonly delays = new LatentDelays({ canRun: (owner) => this.canRunOwnerActions(owner) });
   private readonly navigation = new RuntimeNavigation({
     world: () => this.world,
@@ -796,7 +791,7 @@ class InProcessRuntime implements RuntimeDriver {
     stopped: () => this.stopped,
     canTick: (actor) => this.canTickActor(actor),
     slot: (actor) => this.actorSlot(actor),
-    hasRenderSlot: (actor) => this.slotByActor.get(actor) !== undefined,
+    hasRenderSlot: (actor) => this.renderSlots.recordedSlot(actor) !== undefined,
     playAnimationOwns: (slotId) => this.behaviourTrees.playAnimationOwns(slotId),
     dt: () => this.simulationDt(),
     scripts: () => this.scriptHost,
@@ -1551,7 +1546,9 @@ class InProcessRuntime implements RuntimeDriver {
     // Stop order: Delays resume in phase 1; physics-owning syncs release before
     // the physics worlds, then the crowd and the remaining debug overlays.
     // Actor removal retires ragdolls, cables, dynamic meshes, then animation
-    // graphs; a released slot then drops its ragdoll/cable/mesh and BT state.
+    // graphs; a released slot then drops its ragdoll/cable/mesh and BT state,
+    // its owner's text reveal, its sent component-command state and, last,
+    // a camera possession that targeted it.
     this.subsystems.register(this.delays);
     this.subsystems.register(this.ragdolls);
     this.subsystems.register(this.cables);
@@ -1566,6 +1563,15 @@ class InProcessRuntime implements RuntimeDriver {
     this.subsystems.register(this.navigation);
     this.subsystems.register(this.animGraphs);
     this.subsystems.register(this.behaviourTrees);
+    this.subsystems.register(this.textAppear);
+    this.subsystems.register(this.renderCommands);
+    this.subsystems.register({
+      releaseSlot: (slotId) => {
+        if (this.possessedCameraSlotId !== slotId) return;
+        this.possessedCameraSlotId = null;
+        this.cameraPossessedByScript = false;
+      },
+    });
 
     this.registerPlaySceneTypes();
     this.bindGameInstance();
@@ -2217,7 +2223,7 @@ class InProcessRuntime implements RuntimeDriver {
     const remapped = yield* remapOverlaySerializedActors(
       serializedActors,
       layer.guid,
-      (id) => this.slotByGuid.has(id) || this.world.findActor(id) != null,
+      (id) => this.renderSlots.hasGuid(id) || this.world.findActor(id) != null,
     );
     for (const serialized of remapped) {
       checkpoint();
@@ -2892,7 +2898,7 @@ class InProcessRuntime implements RuntimeDriver {
       return;
     }
     if ((propertyName === "opacity" || propertyName === "tint") && supportsOverlayVisualStyle(component.classId)) {
-      const slotId = this.slotByActor.get(owner);
+      const slotId = this.renderSlots.recordedSlot(owner);
       if (slotId !== undefined) this.emit({ type: "setOverlayVisualStyle", slotId, componentId: component.guid,
         style: parseOverlayVisualStyle(Object.fromEntries(component.variables)) });
       return;
@@ -2911,10 +2917,10 @@ class InProcessRuntime implements RuntimeDriver {
     // Steering/tuning is consumed by the next motor tick; only dimensions
     // need immediate collider/query refresh after a property write.
     if (component.classId === "MovementComponent" && propertyName && propertyName !== "radius" && propertyName !== "height") return;
-    const slotId = this.slotByActor.get(owner);
+    const slotId = this.renderSlots.recordedSlot(owner);
     if (component.classId === "DeformerComponent") {
       if (slotId !== undefined) {
-        if (this.processingTick) this.dirtyDeformerActors.add(owner);
+        if (this.processingTick) this.renderCommands.dirtyDeformerActors.add(owner);
         else this.emitActorDeformers(owner, slotId);
       }
       return;
@@ -2995,7 +3001,7 @@ class InProcessRuntime implements RuntimeDriver {
       const component = material.component;
       const owner = component.owner;
       if (!owner || owner.destroyed || component.destroyed || component.getVariable("materialObject") !== material) return false;
-      const slotId = this.slotByActor.get(owner);
+      const slotId = this.renderSlots.recordedSlot(owner);
       if (slotId === undefined) return false;
       const skipButtonMesh = overlayButtonHasSiblingVisual(owner) || overlayButtonHasParentVisual(owner, this.world);
       if (!owner.components.some((entry) => entry === component && isPlayRenderable(entry, skipButtonMesh))) return false;
@@ -3183,13 +3189,13 @@ class InProcessRuntime implements RuntimeDriver {
     this.pendingOwnerActions.delete(actor);
     for (const component of actor.components) this.pendingOwnerActions.delete(component);
     const slotId = this.actorSlot(actor);
-    const ownsSlot = () => slotId !== undefined && this.slotOwners.get(slotId) === actor;
+    const ownsSlot = () => slotId !== undefined && this.renderSlots.owner(slotId) === actor;
     try {
       if (ownsSlot()) this.emitAudioStops(actor);
       if (ownsSlot()) this.emitParticleStops(actor);
       if (ownsSlot()) this.emit({ type: "despawn", slotId: slotId!, actorGuid: actor.guid });
     } finally {
-      if (ownsSlot()) this.releaseSlot(actor.guid, slotId!);
+      if (ownsSlot()) this.renderSlots.release(actor.guid, slotId!);
       if (this.world.findActor(actor.guid) === actor) {
         this.overlayDesignPose.delete(actor.guid);
         this.anchoredOverlayActors.delete(actor.guid);
@@ -4071,45 +4077,45 @@ class InProcessRuntime implements RuntimeDriver {
 
   private emitActorOutlines(actor: Actor, slotId: number): void {
     const components = actor.components.filter((component) => !component.destroyed && component.classId === "OutlineComponent");
-    if (components.length || this.outlineSlots.has(slotId)) {
+    if (components.length || this.renderCommands.outlineSlots.has(slotId)) {
       const outlines = outlineBindings(actor.guid, components.map((component) => ({
         id: component.guid, classId: component.classId,
         properties: Object.fromEntries(["enabled", "color", "width", "throughMeshes"].map((key) =>
           [key, key === "color" && component.getVariable(key) != null ? rgbTuple(component.getVariable(key)) : component.getVariable(key)])),
       })));
       this.emit({ type: "setActorOutlines", slotId, actorId: actor.guid, outlines });
-      if (outlines.length) this.outlineSlots.add(slotId); else this.outlineSlots.delete(slotId);
+      if (outlines.length) this.renderCommands.outlineSlots.add(slotId); else this.renderCommands.outlineSlots.delete(slotId);
     }
   }
 
   private emitActorDeformers(actor: Actor, slotId: number): void {
-    this.dirtyDeformerActors.delete(actor);
+    this.renderCommands.dirtyDeformerActors.delete(actor);
     const components = actor.components.filter((component) => !component.destroyed &&
       (component.classId === "DeformerComponent" || component.classId === "MeshComponent"));
-    if (!components.some((component) => component.classId === "DeformerComponent") && !this.deformerSnapshots.has(slotId)) return;
+    if (!components.some((component) => component.classId === "DeformerComponent") && !this.renderCommands.deformerSnapshots.has(slotId)) return;
     const deformers = actor.sceneLayerId ? [] : deformerBindings(actor.guid, components.map((component) => ({
       id: component.guid, classId: component.classId, ...(component.sourceId ? { sourceId: component.sourceId } : {}),
       properties: component.classId === "DeformerComponent"
         ? Object.fromEntries(DEFORMER_PROPERTY_KEYS.map((key) => [key, component.getVariable(key)])) : {},
     })));
     const snapshot = JSON.stringify(deformers);
-    if (snapshot === this.deformerSnapshots.get(slotId) || (!deformers.length && !this.deformerSnapshots.has(slotId))) return;
-    this.deformerSnapshots.set(slotId, snapshot);
+    if (snapshot === this.renderCommands.deformerSnapshots.get(slotId) || (!deformers.length && !this.renderCommands.deformerSnapshots.has(slotId))) return;
+    this.renderCommands.deformerSnapshots.set(slotId, snapshot);
     this.emit({ type: "setActorDeformers", slotId, actorId: actor.guid, revision: ++this.deformerRevision, deformers });
   }
 
   private flushDeformers(): void {
-    for (const actor of this.dirtyDeformerActors) {
+    for (const actor of this.renderCommands.dirtyDeformerActors) {
       const slotId = this.actorSlot(actor);
       if (!actor.destroyed && slotId !== undefined) this.emitActorDeformers(actor, slotId);
     }
-    this.dirtyDeformerActors.clear();
+    this.renderCommands.dirtyDeformerActors.clear();
   }
 
   private emitActorFogVolumes(actor: Actor, slotId: number): void {
     const hasVolume = !actor.sceneLayerId && actor.components.some((component) =>
       !component.destroyed && component.classId === "FogVolumeComponent");
-    if (!hasVolume && !this.fogVolumeSlots.has(slotId)) return;
+    if (!hasVolume && !this.renderCommands.fogVolumeSlots.has(slotId)) return;
     const volumes = hasVolume ? fogVolumeBindings(actor.components.filter((component) => !component.destroyed).map((component) => {
       const { position, rotation, scale } = component.transform;
       const size = component.getVariable("size");
@@ -4126,7 +4132,7 @@ class InProcessRuntime implements RuntimeDriver {
       };
     })) : [];
     this.emit({ type: "setFogVolumes", slotId, actorId: actor.guid, volumes });
-    if (volumes.length) this.fogVolumeSlots.add(slotId); else this.fogVolumeSlots.delete(slotId);
+    if (volumes.length) this.renderCommands.fogVolumeSlots.add(slotId); else this.renderCommands.fogVolumeSlots.delete(slotId);
   }
 
   private cameraAssignPayload(
@@ -4150,13 +4156,13 @@ class InProcessRuntime implements RuntimeDriver {
 
   private emitRenderTargetCapture(actor: Actor, slotId: number): void {
     const component = captureComponent(actor);
-    if (!component && !this.captureSlots.has(slotId)) return;
+    if (!component && !this.renderCommands.captureSlots.has(slotId)) return;
     this.emit({
       type: "configureRenderTargetCapture", actorGuid: actor.guid, slotId,
       settings: component ? captureProperties(component) : null,
       ...(component ? { transform: captureLocalTransform(component) } : {}),
     });
-    if (component) this.captureSlots.add(slotId); else this.captureSlots.delete(slotId);
+    if (component) this.renderCommands.captureSlots.add(slotId); else this.renderCommands.captureSlots.delete(slotId);
   }
 
   private emitComponentTransforms(actor: Actor, slotId: number): void {
@@ -4178,7 +4184,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.emitActorDeformers(actor, slotId);
     this.emitActorFogVolumes(actor, slotId);
     const hasAreaLight = actor.components.some((component) => component.classId === "AreaRectLightComponent" && !component.destroyed);
-    if (hasAreaLight || this.areaLightSlots.has(slotId)) {
+    if (hasAreaLight || this.renderCommands.areaLightSlots.has(slotId)) {
     const lights = hasAreaLight ? areaRectLightBindings(actor.components.filter((component) => !component.destroyed).map((component) => {
       const { position, rotation, scale } = component.transform;
       return {
@@ -4190,7 +4196,7 @@ class InProcessRuntime implements RuntimeDriver {
     // A separate component command also handles actors with meshes, multiple
     // emitters and asynchronous model loading. It uses the same view owner.
     this.emit({ type: "setAreaLights", slotId, lights });
-    if (lights.length) this.areaLightSlots.add(slotId); else this.areaLightSlots.delete(slotId);
+    if (lights.length) this.renderCommands.areaLightSlots.add(slotId); else this.renderCommands.areaLightSlots.delete(slotId);
     }
     const skipButtonMesh =
       overlayButtonHasSiblingVisual(actor) ||
@@ -4353,7 +4359,7 @@ class InProcessRuntime implements RuntimeDriver {
         meshKind: "rigidbody",
         parts: [playMeshPartOf(rigid)],
       });
-    } else if (this.fogVolumeSlots.has(slotId)) {
+    } else if (this.renderCommands.fogVolumeSlots.has(slotId)) {
       this.emit({ type: "assignMesh", slotId, meshAssetGuid: null, meshKind: null });
     }
   }
@@ -4835,12 +4841,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private assignSlot(actor: Actor): number {
-    const slotId = this.freeSlots.pop() ?? this.nextUnusedSlot;
-    this.ensureSnapshotCapacity(slotId + 1);
-    if (slotId === this.nextUnusedSlot) this.nextUnusedSlot += 1;
-    this.slotByGuid.set(actor.guid, slotId);
-    this.slotOwners.set(slotId, actor);
-    this.slotByActor.set(actor, slotId);
+    const slotId = this.renderSlots.allocate(actor);
     const stream = this.actorStream.get(actor);
     this.emit({
       type: "spawn",
@@ -4853,17 +4854,14 @@ class InProcessRuntime implements RuntimeDriver {
     return slotId;
   }
 
-  /** The render slot this actor's own commands target. Never resolve one
-   * through `slotByGuid`: a same-guid duplicate spawned later owns that. */
+  /** The render slot this actor's own commands target (`RenderSlots.actorSlot`). */
   private actorSlot(actor: Actor): number | undefined {
-    const slot = this.slotByActor.get(actor);
-    return slot !== undefined && this.slotOwners.get(slot) === actor ? slot : undefined;
+    return this.renderSlots.actorSlot(actor);
   }
 
   /** The slot of a guid's first-spawned live actor, the one guid lookups resolve. */
   private guidSlot(guid: string): number | undefined {
-    const actor = this.world.findActor(guid);
-    return actor ? this.actorSlot(actor) : undefined;
+    return this.renderSlots.guidSlot(guid);
   }
 
   private ensureSnapshotCapacity(required: number): void {
@@ -4879,28 +4877,6 @@ class InProcessRuntime implements RuntimeDriver {
       this.reportError(new Error(message, { cause: error }));
       throw new Error(message, { cause: error });
     }
-  }
-
-  private releaseSlot(actorGuid: string, slotId: number): void {
-    const owner = this.slotOwners.get(slotId);
-    this.subsystems.releaseSlot(slotId, owner);
-    if (owner) {
-      for (const component of owner.components) this.textAppear.remove(component);
-    }
-    this.areaLightSlots.delete(slotId);
-    this.outlineSlots.delete(slotId);
-    this.deformerSnapshots.delete(slotId);
-    if (owner) this.dirtyDeformerActors.delete(owner);
-    this.captureSlots.delete(slotId);
-    this.fogVolumeSlots.delete(slotId);
-    if (this.slotByGuid.get(actorGuid) === slotId) this.slotByGuid.delete(actorGuid);
-    if (owner && this.slotByActor.get(owner) === slotId) this.slotByActor.delete(owner);
-    this.slotOwners.delete(slotId);
-    if (this.possessedCameraSlotId === slotId) {
-      this.possessedCameraSlotId = null;
-      this.cameraPossessedByScript = false;
-    }
-    this.freeSlots.push(slotId);
   }
 
   private bindGameInstance(): void {
@@ -5453,8 +5429,8 @@ class InProcessRuntime implements RuntimeDriver {
       world: this.world, materials: this.materialParameters, sessionGeneration: this.sessionGeneration,
       canWrite: () => this.sessionMode === "simulate" && !this.simulationQuiescent, stopped: () => this.stopped,
       ready: actor => this.inspectorActorReady(actor),
-      renderSlot: actor => this.slotByActor.get(actor),
-      resolvePick: (guid, slot) => { const actor = this.slotOwners.get(slot); return actor && !actor.destroyed && actor.world === this.world && actor.guid === guid ? actor : null; },
+      renderSlot: actor => this.renderSlots.recordedSlot(actor),
+      resolvePick: (guid, slot) => { const actor = this.renderSlots.owner(slot); return actor && !actor.destroyed && actor.world === this.world && actor.guid === guid ? actor : null; },
       sceneIdentity: actor => {
         const stream = this.actorStream.get(actor);
         if (stream) return `stream:${stream.actor.guid}:${stream.loadId}`;
@@ -5513,7 +5489,7 @@ class InProcessRuntime implements RuntimeDriver {
         target.transform = runtimeEditLocalTransform(this.world, target, transform, space);
         try { apply(); } catch (error) { target.transform = prior; apply(); throw error; }
         if (target instanceof ActorComponent) {
-          const slotId = this.slotByActor.get(actor);
+          const slotId = this.renderSlots.recordedSlot(actor);
           if (slotId !== undefined) this.emitComponentTransforms(actor, slotId);
         }
         this.publishInspectorSnapshot(actor);
@@ -5528,7 +5504,7 @@ class InProcessRuntime implements RuntimeDriver {
   private getMaterialEditGate(): RuntimeMaterialEditGate {
     return this.materialEditGate ??= new RuntimeMaterialEditGate({ generation: this.sessionGeneration,
       inspector: this.getRuntimeInspector(), materials: this.materialParameters,
-      slot: component => component.owner ? this.slotByActor.get(component.owner) : undefined,
+      slot: component => component.owner ? this.renderSlots.recordedSlot(component.owner) : undefined,
       acquireSource: this.demandAssetCatalog ? async (component, guids, signal) => {
         const result = await this.assetPreloads.acquire(guids, component.guid, {}, signal);
         if (!result.success) throw new Error(result.errorMessage || "Material source preparation failed.");
@@ -5542,7 +5518,7 @@ class InProcessRuntime implements RuntimeDriver {
         finally { this.materialEditEmission = null; }
       },
       restore: component => {
-        const actor = component.owner; const slot = actor ? this.slotByActor.get(actor) : undefined;
+        const actor = component.owner; const slot = actor ? this.renderSlots.recordedSlot(actor) : undefined;
         if (slot === undefined) throw new Error("Material owner is unavailable.");
         this.emitMaterialAssignments([component], slot, true);
         const material = component.getVariable("materialObject");
@@ -5560,7 +5536,7 @@ class InProcessRuntime implements RuntimeDriver {
   private publishInspectorSnapshot(actor: Actor): void {
     // Presentation identity advances, while tick index, delays and physics do not.
     this.frameId++;
-    const slotId = this.slotByActor.get(actor);
+    const slotId = this.renderSlots.recordedSlot(actor);
     if (slotId !== undefined) this.emit({ type: "resetActorInterpolation", actorGuid: actor.guid, slotId, frameId: this.frameId });
     this.publishSnapshot();
   }
@@ -5762,7 +5738,7 @@ class InProcessRuntime implements RuntimeDriver {
         scriptMs: this._lastScriptMs,
         physicsMs: this._lastPhysicsMs,
         publishMs: this._lastPublishMs,
-        liveActors: this.slotByGuid.size,
+        liveActors: this.renderSlots.guidCount,
         snapshotCapacity: this.snapshots.maxActors,
       });
     }
@@ -5978,11 +5954,11 @@ class InProcessRuntime implements RuntimeDriver {
       break;
     }
     let removedActors = false;
-    for (const [actorGuid, slotId] of this.slotByGuid) {
+    for (const [actorGuid, slotId] of this.renderSlots.guidEntries()) {
       // The World's guid index answers "any live actor has this guid".
       if (this.world.findActor(actorGuid)) continue;
       this.emit({ type: "despawn", slotId, actorGuid });
-      this.releaseSlot(actorGuid, slotId);
+      this.renderSlots.release(actorGuid, slotId);
       removedActors = true;
     }
     if (removedActors) this.behaviourTrees.emitSnapshot(true);
@@ -6010,9 +5986,9 @@ class InProcessRuntime implements RuntimeDriver {
       if (isSceneLayerAnchorActor(actor)) continue;
       // Only a guid's first-spawned live actor (the one parents, physics and
       // the crowd resolve) writes its own slot; later duplicates' slots get no
-      // entry, although `slotByGuid` holds the latest-assigned one.
+      // entry, although the guid maps to the latest-assigned one.
       if (findActor(actor.guid) !== actor) continue;
-      const slotId = this.slotByActor.get(actor);
+      const slotId = this.renderSlots.recordedSlot(actor);
       if (slotId === undefined) continue;
       const world = worldTransforms.get(actor.guid);
       if (!world) continue;
@@ -6041,7 +6017,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   private emit(command: CommandMessage): void {
     if (this.sessionMode === "simulate" && (command.type === "spawn" || command.type === "assignMesh")) {
-      const actor = this.slotOwners.get(command.slotId);
+      const actor = this.renderSlots.owner(command.slotId);
       if (actor) command = command.type === "spawn" ? { ...command, runtimeIdentity: this.getRuntimeInspector().identity(actor) } :
         { ...command, runtimeComponentTokens: actor.components.filter(component => !component.destroyed).map(component => ({
           componentGuid: component.guid, componentToken: this.getRuntimeInspector().identity(component).componentToken! })) };
