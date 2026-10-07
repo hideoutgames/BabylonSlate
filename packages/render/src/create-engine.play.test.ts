@@ -350,7 +350,7 @@ describe("Play createEngine view", () => {
     expect(handle.scheduler.shouldRender(1)).toBe(true);
   });
 
-  it("refuses paused redraw while GPU particles would advance and leaves the frame held", () => {
+  it("refuses paused redraw for an unpaused GPU owner and admits its frozen buffers", () => {
     const engine = sharedEngine();
     vi.spyOn(engine, "getCaps").mockReturnValue({ ...engine.getCaps(), supportTransformFeedbacks: true });
     const { handle } = playHandle(engine);
@@ -360,8 +360,9 @@ describe("Play createEngine view", () => {
     handle.setGameTimePaused(true);
     expect(handle.requestPausedRedraw()).toMatchObject({ accepted: false, reason: expect.stringContaining("Live GPU Emitter") });
     expect(handle.scheduler.shouldRender(0)).toBe(false);
-    system.dispose();
+    system.paused = true;
     expect(handle.requestPausedRedraw()).toEqual({ accepted: true });
+    system.dispose();
   });
 
   function renderViews(engine: NullEngine) {

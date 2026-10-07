@@ -1,4 +1,4 @@
-import { ParticleSystem, PrecisionDate, type Scene } from "@babylonjs/core";
+import { GPUParticleSystem, ParticleSystem, PrecisionDate, type Scene } from "@babylonjs/core";
 
 interface SceneGameClock {
   pausedAt: number | null;
@@ -41,11 +41,9 @@ export function sceneGameTimeNow(scene: Scene): number {
 /** Capability validation runs only for an explicitly requested paused redraw. */
 export function pausedSceneRedrawIssue(scene: Scene): string | undefined {
   if (!isSceneGameTimePaused(scene)) return;
-  if (scene.actionManagers.length)
-    return "Paused redraw is unavailable while native Babylon actions are active.";
   for (const system of scene.particleSystems) {
     if (!system.isStarted()) continue;
-    if (!(system instanceof ParticleSystem && system.paused))
+    if (!((system instanceof ParticleSystem || system instanceof GPUParticleSystem) && system.paused))
       return `Paused redraw is unavailable for particle system "${system.name}" (${system.getClassName()}).`;
   }
 }
@@ -54,5 +52,6 @@ export function pausedSceneRedrawIssue(scene: Scene): string | undefined {
 export function renderSceneWithGameTime(scene: Scene, updateCameras = true): void {
   const issue = pausedSceneRedrawIssue(scene);
   if (issue) throw new Error(issue);
-  scene.render(updateCameras, isSceneGameTimePaused(scene));
+  const paused = isSceneGameTimePaused(scene);
+  scene.render(updateCameras, paused, paused);
 }
