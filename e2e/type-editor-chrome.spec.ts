@@ -7,6 +7,15 @@ import {
 } from "./open-test-project";
 import { pickCatalogItem } from "./pick-catalog-item";
 
+async function addClassVariable(page: Page, name: string, type = "float"): Promise<void> {
+  await page.getByTestId("class-add-variables").click();
+  await page.getByTestId("class-add-variables-menu").getByTestId(`search-item-${type}`).click();
+  const rename = page.getByTestId("my-class-panel").getByRole("textbox", { name: "Rename NewVariable", exact: true });
+  await expect(rename).toBeFocused();
+  await rename.fill(name);
+  await rename.press("Enter");
+}
+
 async function showContentBrowser(page: Page): Promise<void> {
   await page
     .locator(
@@ -132,9 +141,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     await expect(page.getByTestId("my-class-panel")).toBeVisible({
       timeout: 15_000,
     });
-    await page.getByTestId("class-add-variables").click();
-    await page.getByTestId("name-prompt-input").fill("Scores");
-    await page.getByTestId("name-prompt-confirm").click();
+    await addClassVariable(page, "Scores");
     await expect(page.getByTestId("inspector-member-type")).toBeVisible();
     await page.getByTestId("inspector-member-container-array").click();
     const add = page.getByTestId("inspector-member-defaults-add");
@@ -159,9 +166,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     await expect(page.getByTestId("my-class-panel")).toBeVisible({
       timeout: 15_000,
     });
-    await page.getByTestId("class-add-variables").click();
-    await page.getByTestId("name-prompt-input").fill("Health");
-    await page.getByTestId("name-prompt-confirm").click();
+    await addClassVariable(page, "Health");
     await expect(page.getByTestId("inspector-member-type")).toBeVisible();
     await expect(page.getByTestId("class-add-local-variables")).toHaveCount(0);
 
@@ -184,9 +189,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     await expect(page.getByTestId("my-class-panel")).toBeVisible({
       timeout: 15_000,
     });
-    await page.getByTestId("class-add-variables").click();
-    await page.getByTestId("name-prompt-input").fill("Target");
-    await page.getByTestId("name-prompt-confirm").click();
+    await addClassVariable(page, "Target");
     await expect(page.getByTestId("inspector-member-type")).toBeVisible();
     await page.getByTestId("inspector-member-type").click();
     await page.getByTestId("search-item-object").click();
@@ -222,9 +225,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     await expect(page.getByTestId("my-class-panel")).toBeVisible({
       timeout: 15_000,
     });
-    await page.getByTestId("class-add-variables").click();
-    await page.getByTestId("name-prompt-input").fill("Kind");
-    await page.getByTestId("name-prompt-confirm").click();
+    await addClassVariable(page, "Kind");
     await expect(page.getByTestId("inspector-member-type")).toBeVisible();
     await page.getByTestId("inspector-member-type").click();
     await page.getByTestId("search-item-class").click();

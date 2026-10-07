@@ -177,24 +177,23 @@ describe("MyClassPanel name prompt", () => {
     expect(screen.getByTestId("class-add-local-variables")).toBeTruthy();
   });
 
-  it("adds a local variable with the open function id", () => {
+  it("adds a local variable of the picked type with the open function id", async () => {
     render(
       <GraphEditingProvider initialActiveFunctionId="fn-1">
         <MyClassPanel {...({} as IDockviewPanelProps)} />
       </GraphEditingProvider>,
     );
     fireEvent.click(screen.getByTestId("class-add-local-variables"));
-    fireEvent.change(screen.getByTestId("name-prompt-input"), {
-      target: { value: "Temp" },
-    });
-    fireEvent.click(screen.getByTestId("name-prompt-confirm"));
+    fireEvent.click(await screen.findByTestId("search-item-int"));
     expect(applyGraphChange).toHaveBeenCalledWith(
       "graph:assets/Hero.class.babasset",
       expect.objectContaining({
         members: expect.arrayContaining([
           expect.objectContaining({
             kind: "variable",
-            name: "Temp",
+            name: "NewVariable",
+            typeId: "int",
+            defaultValue: 0,
             functionId: "fn-1",
           }),
         ]),

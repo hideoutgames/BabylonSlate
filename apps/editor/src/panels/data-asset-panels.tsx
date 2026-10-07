@@ -3,7 +3,7 @@ import type { IDockviewPanelProps } from "dockview-react";
 import { buildDataTreeIndex, type DataTreeEntry } from "@babylonslate/core";
 import { createDataEntryForDefinition, reconcileDataEntry, type StructField } from "@babylonslate/scripting";
 import { normalizeTag, type TagContainer } from "@babylonslate/core";
-import { AssetPicker, ContextMenuOverlay, NamePromptDialog, NestedMenu, NumberField, PanelFrame, PropertySectionTitle, SearchInput, SearchDropdown, TagPicker, TreeView, TypeVisualIcon, WindowedList, humanizePropertyLabel, isCoarsePointerEnvironment, resolveTypeVisual, tagDisplayName, useContextMenu, useTags, type NestedMenuItem, type TreeViewNode } from "@babylonslate/editor-kit";
+import { AssetPicker, ContextMenuOverlay, NestedMenu, NumberField, PanelFrame, PropertySectionTitle, SearchInput, SearchDropdown, TagPicker, TreeView, TypeVisualIcon, WindowedList, humanizePropertyLabel, isCoarsePointerEnvironment, resolveTypeVisual, tagDisplayName, useContextMenu, useTags, type NestedMenuItem, type TreeViewNode } from "@babylonslate/editor-kit";
 import { ArrowUpIcon, BetweenHorizontalStartIcon, ChevronDownIcon, DatabaseIcon, ListPlusIcon, MoreHorizontalIcon, PlusIcon } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
 import { Input } from "@babylonslate/ui/components/input";
@@ -143,7 +143,7 @@ function DataEntryCell({ field, value, label, editable, enums, onChange, preview
 function useTreeActions(state: TreeState) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [renameId, setRenameId] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
   const [moveId, setMoveId] = useState<string | null>(null);
   const [removeId, setRemoveId] = useState<string | null>(null);
   const pending = useRef(0);
@@ -164,7 +164,7 @@ function useTreeActions(state: TreeState) {
     const disabled = state.readOnly || busy || !entry;
     return [
       { id: "add-child", label: "Add Child", disabled, onSelect: () => void run(() => state.addEntry(id)) },
-      { id: "rename-entry", label: "Rename", disabled, onSelect: () => setRenameId(id) },
+      { id: "rename-entry", label: "Rename", disabled, onSelect: () => setRenamingId(id) },
       { id: "move-entry", label: "Move To", disabled, onSelect: () => setMoveId(id) },
       { id: "move-up", label: "Move Up", disabled: disabled || position <= 0, onSelect: () => void run(() => state.moveEntry(id, siblings[position - 1]!.id, "before")) },
       { id: "move-down", label: "Move Down", disabled: disabled || position >= siblings.length - 1, onSelect: () => void run(() => state.moveEntry(id, siblings[position + 1]!.id, "after")) },
@@ -178,17 +178,21 @@ function useTreeActions(state: TreeState) {
   const removedPath = removeId ? state.index?.pathById.get(removeId) : undefined;
   const removeCount = removedPath ? state.index!.orderedEntries.filter((entry) => entry.id === removeId || state.index!.pathById.get(entry.id)!.startsWith(`${removedPath}/`)).length : 0;
   const dialogs = <>
-    <NamePromptDialog open={renameId !== null} onOpenChange={(open) => { if (!open) setRenameId(null); }} title="Rename Entry" label="Name" confirmLabel="Rename" initialValue={state.index?.byId.get(renameId ?? "")?.name ?? ""} validate={(name) => {
-      if (!state.tree || !renameId) return "This entry is no longer available.";
-      return buildDataTreeIndex({ ...state.tree, entries: state.tree.entries.map((entry) => entry.id === renameId ? { ...entry, name: name.trim() } : entry) }).issues[0]?.message ?? null;
-    }} onSubmit={(name) => { if (renameId) void run(() => state.renameEntry(renameId, name)); }} />
     <DataTreeEntryPicker open={moveId !== null} onOpenChange={(open) => { if (!open) setMoveId(null); }} title="Move Entry To" entries={destinations} includeRoot testId="data-tree-move-picker" onPick={(path) => {
       if (moveId) void run(() => state.moveEntry(moveId, path ? state.index?.idByPath.get(path) ?? null : null));
       setMoveId(null);
     }} />
     <AlertDialog open={removeId !== null} onOpenChange={(open) => { if (!open) setRemoveId(null); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Remove Subtree</AlertDialogTitle><AlertDialogDescription>Remove {removedPath ?? "this entry"}{removeCount > 1 ? ` and ${removeCount - 1} descendant${removeCount === 2 ? "" : "s"}` : ""}? Undo restores these entries and their values.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => { if (removeId) void run(() => state.removeEntry(removeId)); setRemoveId(null); }}>Remove</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
   </>;
-  return { error, busy, run, menuItems, dialogs };
+  const addAndRename = (parentId: string | null) => void run(async () => setRenamingId(await state.addEntry(parentId)));
+  const finishRename = (id: string, name: string | null) => {
+    setRenamingId(null);
+    if (!name || !state.tree) return;
+    const issue = buildDataTreeIndex({ ...state.tree, entries: state.tree.entries.map((entry) => entry.id === id ? { ...entry, name } : entry) }).issues[0]?.message;
+    if (issue) { setError(issue); return; }
+    void run(() => state.renameEntry(id, name));
+  };
+  return { error, busy, run, menuItems, dialogs, renamingId, setRenamingId, addAndRename, finishRename };
 }
 
 export function DataTreeHierarchyPanel(_props: IDockviewPanelProps) {
@@ -221,7 +225,7 @@ export function DataTreeHierarchyPanel(_props: IDockviewPanelProps) {
   const nodes: TreeViewNode[] = visible.map((entry) => {
     const children = index!.childrenByParentId.get(entry.id)?.length ?? 0;
     return { id: entry.id, label: entry.name, depth: index!.pathById.get(entry.id)!.split("/").length - 1, hasChildren: children > 0, expanded: Boolean(query.trim()) || !collapsedIds.has(entry.id),
-      icon: <BetweenHorizontalStartIcon className="size-3.5" />,
+      icon: <BetweenHorizontalStartIcon className="size-3.5" />, renamable: !readOnly,
       preview: children ? <span className="text-xs tabular-nums text-muted-foreground">{children}</span> : undefined,
       trailing: <NestedMenu size="chrome" items={actions.menuItems(entry.id)} trigger={<Button variant="ghost" size="icon-xs" className="pointer-coarse:min-h-11 pointer-coarse:min-w-11" aria-label={`Entry Menu For ${entry.name}`}><MoreHorizontalIcon className="size-3.5" /></Button>} />,
     };
@@ -233,13 +237,13 @@ export function DataTreeHierarchyPanel(_props: IDockviewPanelProps) {
       <div className="flex items-center gap-2"><span className="shrink-0 text-xs text-muted-foreground">Default Definition</span><DefinitionButton label="Tree Default Definition" testId="data-tree-default-definition" assigned={Boolean(definition)} name={definition?.name ?? (tree.defaultDefinitionGuid ? "Missing Definition" : "None")} disabled={readOnly || actions.busy} onClick={() => setDefinitionPicker(true)} /></div>
       <div className="flex items-center gap-1">
         <SearchInput value={query} onChange={setQuery} placeholder="Search Tree" aria-label="Search Tree" className="h-7 min-h-7 min-w-0 flex-1 pointer-coarse:min-h-11" />
-        <IconActionButton label="Add Root" variant="ghost" className={TOUCH_ICON_ACTION} disabled={readOnly || actions.busy} onClick={() => void actions.run(() => state.addEntry(null))}><PlusIcon /></IconActionButton>
-        <IconActionButton label="Add Child" variant="ghost" className={TOUCH_ICON_ACTION} disabled={readOnly || actions.busy || !selectedEntryId} onClick={() => { if (selectedEntryId) void actions.run(() => state.addEntry(selectedEntryId)); }}><ListPlusIcon /></IconActionButton>
+        <IconActionButton label="Add Root" variant="ghost" className={TOUCH_ICON_ACTION} disabled={readOnly || actions.busy} onClick={() => actions.addAndRename(null)}><PlusIcon /></IconActionButton>
+        <IconActionButton label="Add Child" variant="ghost" className={TOUCH_ICON_ACTION} disabled={readOnly || actions.busy || !selectedEntryId} onClick={() => { if (selectedEntryId) actions.addAndRename(selectedEntryId); }}><ListPlusIcon /></IconActionButton>
       </div>
     </div>
     <OperationError message={actions.error} />
     <div className="px-1 pt-1"><Button variant="ghost" size="sm" className={cn("h-7 w-full justify-start gap-1 rounded-sm px-1 text-[13px] font-normal", TOUCH_ACTION, !state.browseBranchId && !selectedEntryId ? "bg-accent font-medium" : "hover:bg-accent/50")} onClick={() => state.browse(null)}><span className="flex size-5 items-center justify-center text-muted-foreground"><DatabaseIcon className="size-3.5" /></span>Tree Root<span className="ml-auto pr-1 text-xs tabular-nums text-muted-foreground">{tree.entries.length}</span></Button></div>
-    {!index ? <DataEmpty title="Invalid Hierarchy">Resolve the issues in Validation before editing this tree. Stored entries are preserved.</DataEmpty> : <TreeView nodes={nodes} selectedId={selectedEntryId} data-testid="data-tree-hierarchy" aria-label="Data Tree" rowHeight={isCoarsePointerEnvironment() ? 44 : 28} emptyLabel={tree.entries.length ? "No Matching Entries" : "No Entries"} onSelect={(id) => state.selectEntry(id)} onToggleExpanded={(id) => state.setCollapsedIds((previous) => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next; })} onActivate={(id) => state.browse(id)} onReparent={readOnly ? undefined : (id, targetId, placement) => void actions.run(() => state.moveEntry(id, targetId, placement))} onContextMenu={(id, x, y) => { state.selectEntry(id, false); context.openMenuAt(x, y, actions.menuItems(id)); }} />}
+    {!index ? <DataEmpty title="Invalid Hierarchy">Resolve the issues in Validation before editing this tree. Stored entries are preserved.</DataEmpty> : <TreeView nodes={nodes} selectedId={selectedEntryId} data-testid="data-tree-hierarchy" aria-label="Data Tree" rowHeight={isCoarsePointerEnvironment() ? 44 : 28} emptyLabel={tree.entries.length ? "No Matching Entries" : "No Entries"} onSelect={(id) => state.selectEntry(id)} onToggleExpanded={(id) => state.setCollapsedIds((previous) => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next; })} onActivate={(id) => state.browse(id)} renamingId={actions.renamingId} onRenameRequest={readOnly ? undefined : actions.setRenamingId} onRenameDone={actions.finishRename} onReparent={readOnly ? undefined : (id, targetId, placement) => void actions.run(() => state.moveEntry(id, targetId, placement))} onContextMenu={(id, x, y) => { state.selectEntry(id, false); context.openMenuAt(x, y, actions.menuItems(id)); }} />}
     <AssetPicker open={definitionPicker} onOpenChange={setDefinitionPicker} title="Choose Tree Default Definition" allowedTypes={["DataDefinition"]} assets={catalog.types.dataDefinitions.map((entry) => ({ ...entry, type: "DataDefinition" }))} allowNone onPick={(guid) => { setDefinitionPicker(false); void actions.run(() => state.setDefaultDefinition(guid)); }} />
     <ContextMenuOverlay menu={context.menu} onClose={context.closeMenu} />
     {actions.dialogs}

@@ -27,12 +27,15 @@ export interface AddFunctionDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   items: AddFunctionDialogItem[];
-  onCreateEmpty: (name: string) => void;
+  /** `named` is false when the user left the name empty and `defaultName` was used. */
+  onCreateEmpty: (name: string, named: boolean) => void;
   onPick: (id: string) => void;
   title?: string;
   description?: string;
   emptyLabel?: string;
   nameLabel?: string;
+  /** Used when the name is left empty, so the host can rename the new member inline. */
+  defaultName?: string;
   "data-testid"?: string;
 }
 
@@ -51,6 +54,7 @@ export function AddFunctionDialog({
   description = "Create an empty function or implement an overridable one.",
   emptyLabel = "New Empty Function",
   nameLabel = "Function Name",
+  defaultName,
   "data-testid": testId = "add-function-dialog",
 }: AddFunctionDialogProps) {
   const [mode, setMode] = useState<"empty" | "pick">("empty");
@@ -65,9 +69,10 @@ export function AddFunctionDialog({
   }, [open]);
 
   const submitEmpty = () => {
-    const name = draft.trim();
+    const typed = draft.trim();
+    const name = typed || defaultName?.trim() || "";
     if (!name) return;
-    onCreateEmpty(name);
+    onCreateEmpty(name, Boolean(typed));
     onOpenChange(false);
   };
 
@@ -145,6 +150,7 @@ export function AddFunctionDialog({
               id={`${prefix}-name`}
               className="min-h-[var(--touch-target,44px)]"
               value={draft}
+              placeholder={defaultName}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {

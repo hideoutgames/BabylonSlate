@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   AddFunctionDialog,
@@ -6,6 +6,7 @@ import {
   ContextMenuOverlay,
   NamePromptDialog,
   PanelFrame,
+  PinTypeMenu,
   TreeView,
   PinShapeGlyph,
   TypeColorMark,
@@ -31,6 +32,8 @@ import {
   isObjectInstanceVariableType,
   memberNamePromptCopy,
   nativeStubId,
+  nextNewMemberName,
+  variableFieldsForPickerType,
   patchClassMember,
   removeClassMember,
   resolveClassMemberDrop,
@@ -178,16 +181,19 @@ function eventDisplayName(node: SerializedGraph["nodes"][number]): string {
   return formatEventTitle(typeName);
 }
 
+function variablePickerType(member: Pick<MyClassMember, "typeId" | "typeClassId">): string {
+  return member.typeId === "struct" && member.typeClassId === "engine:TagContainer" ? "tagContainer" : member.typeId ?? "float";
+}
+
 function memberIcon(member: MyClassMember) {
   if (member.kind === "variable") {
-    return (
-      <PinShapeGlyph
-        shape={pinShapeForContainer(member.container)}
-        connected
-        color={pinPickerColorVar(member.typeId ?? "float")}
-        size={12}
-        data-testid={`class-var-type-${member.detail ?? member.name}`}
-      />
+    const shape = pinShapeForContainer(member.container);
+    const color = pinPickerColorVar(variablePickerType(member));
+    const testId = `class-var-type-${member.detail ?? member.name}`;
+    return shape === "circle" ? (
+      <TypeColorMark colorVar={color} data-testid={testId} />
+    ) : (
+      <PinShapeGlyph shape={shape} connected outlined={false} color={color} size={12} data-testid={testId} />
     );
   }
   if (member.kind === "function") {
@@ -402,7 +408,7 @@ export function ClassMembersView({
   const [memberPromptKind, setMemberPromptKind] =
     useState<GraphClassMemberKind | null>(null);
   const [memberPromptLocal, setMemberPromptLocal] = useState(false);
-  const [renameMemberId, setRenameMemberId] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
   const [interfacePickerOpen, setInterfacePickerOpen] = useState(false);
   const [functionDialogOpen, setFunctionDialogOpen] = useState(false);
   const [eventDialogOpen, setEventDialogOpen] = useState(false);
@@ -416,6 +422,63 @@ export function ClassMembersView({
     [graph, membersOptions],
   );
   const treeSections = sectionsForTree(activeFunctionId, membersOptions);
+  const renamableIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const member of graph?.members ?? []) {
+      if (member.kind === "variable" || member.kind === "function") ids.add(member.id);
+      else if (
+        member.kind === "event" &&
+        graph?.nodes.some((node) => node.id === member.id && node.type === "flow.event.custom")
+      ) {
+        ids.add(member.id);
+      }
+    }
+    return ids;
+  }, [graph]);
+  const namesOfKind = (kind: GraphClassMemberKind) =>
+    members.filter((member) => member.kind === kind).map((member) => member.name);
+  const startRename = (id: string) => {
+    if (renamableIds.has(id)) setRenamingId(id);
+  };
+  const finishRename = (id: string, name: string | null) => {
+    setRenamingId(null);
+    if (!graph || !name) return;
+    const member = (graph.members ?? []).find((entry) => entry.id === id);
+    if (!member) return;
+    const taken = members.some(
+      (entry) =>
+        entry.kind === member.kind &&
+        entry.name === name &&
+        (entry.detail ?? `${entry.kind}-${entry.name}`) !== id,
+    );
+    if (taken) return;
+    onGraphChange(patchClassMember(graph, id, { name }));
+  };
+  const addVariable = (pickerType: string, local: boolean) => {
+    if (!graph) return;
+    const next = addClassMember(
+      graph,
+      "variable",
+      nextNewMemberName("variable", namesOfKind("variable")),
+      undefined,
+      {
+        ...variableFieldsForPickerType(pickerType),
+        ...(local && activeFunctionId ? { functionId: activeFunctionId } : {}),
+      },
+    );
+    onGraphChange(next);
+    const added = next.members?.[next.members.length - 1];
+    if (!added) return;
+    onSelectMember?.(added.id, {
+      kind: added.kind,
+      name: added.name,
+      detail: added.id,
+      typeId: added.typeId,
+    });
+    setRenamingId(added.id);
+  };
+  const addVariableRef = useRef(addVariable);
+  addVariableRef.current = addVariable;
   const addKind = (kind: GraphClassMemberKind, local = false) => {
     if (kind === "interface") {
       setInterfacePickerOpen(true);
@@ -432,7 +495,7 @@ export function ClassMembersView({
     setMemberPromptLocal(local);
     setMemberPromptKind(kind);
   };
-  const selectAddedFunction = (next: SerializedGraph) => {
+  const selectAddedFunction = (next: SerializedGraph, rename = false) => {
     onGraphChange(next);
     const added = next.members?.[next.members.length - 1];
     if (added) {
@@ -442,6 +505,7 @@ export function ClassMembersView({
         detail: added.id,
         typeId: added.typeId,
       });
+      if (rename) setRenamingId(added.id);
     }
   };
   const overridableEventRows = useMemo(
@@ -554,11 +618,32 @@ export function ClassMembersView({
         ) {
           return row;
         }
+        const addLabel = `Add ${section.label.replace(/s$/, "")}`;
+        if (kind === "variable") {
+          return {
+            ...row,
+            trailing: (
+              <PinTypeMenu
+                title={`${addLabel} Type`}
+                onSelect={(type) => addVariableRef.current(type, section.local === true)}
+                data-testid={`class-add-${section.id}-menu`}
+              >
+                <IconActionButton
+                  label={addLabel}
+                  size={phone ? "touch-icon" : "icon-sm"}
+                  data-testid={`class-add-${section.id}`}
+                >
+                  <PlusIcon />
+                </IconActionButton>
+              </PinTypeMenu>
+            ),
+          };
+        }
         return {
           ...row,
           trailing: (
             <IconActionButton
-              label={`Add ${section.label.replace(/s$/, "")}`}
+              label={addLabel}
               size={phone ? "touch-icon" : "icon-sm"}
               data-testid={`class-add-${section.id}`}
               onClick={(event) => {
@@ -570,8 +655,8 @@ export function ClassMembersView({
             </IconActionButton>
           ),
         };
-      }),
-    [activeFunctionId, collapsed, members, membersOptions, treeSections, phone],
+      }).map((row) => renamableIds.has(row.id) ? { ...row, renamable: true } : row),
+    [activeFunctionId, collapsed, members, membersOptions, treeSections, phone, renamableIds],
   );
 
   const { menu, closeMenu, openMenuAt } = useContextMenu({
@@ -581,11 +666,7 @@ export function ClassMembersView({
         label: "Rename",
         onSelect: () => {
           if (!selectedId || selectedId.startsWith("section-")) return;
-          const member = members.find(
-            (entry) => (entry.detail ?? `${entry.kind}-${entry.name}`) === selectedId,
-          );
-          if (!member || member.kind === "event" || member.inherited) return;
-          setRenameMemberId(selectedId);
+          startRename(selectedId);
         },
       },
       {
@@ -611,6 +692,9 @@ export function ClassMembersView({
         rowHeight={phone ? 44 : undefined}
         nodes={nodes}
         selectedId={selectedId}
+        renamingId={renamingId}
+        onRenameRequest={startRename}
+        onRenameDone={finishRename}
         onSelect={(id) => {
           if (id.startsWith("section-")) return;
           const member = members.find(
@@ -652,15 +736,12 @@ export function ClassMembersView({
                       ]),
                 ]
               : []),
-            ...(member &&
-            !member.inherited &&
-            member.kind !== "event" &&
-            !member.componentId
+            ...(renamableIds.has(id)
               ? [
                   {
                     id: "rename",
                     label: "Rename",
-                    onSelect: () => setRenameMemberId(id),
+                    onSelect: () => startRename(id),
                   },
                 ]
               : []),
@@ -784,9 +865,10 @@ export function ClassMembersView({
         open={functionDialogOpen}
         onOpenChange={setFunctionDialogOpen}
         items={overridableRows}
-        onCreateEmpty={(name) => {
+        defaultName={nextNewMemberName("function", namesOfKind("function"))}
+        onCreateEmpty={(name, named) => {
           if (!graph) return;
-          selectAddedFunction(addClassMember(graph, "function", name));
+          selectAddedFunction(addClassMember(graph, "function", name), !named);
         }}
         onPick={(id) => {
           if (!graph) return;
@@ -809,14 +891,16 @@ export function ClassMembersView({
         emptyLabel="New Empty Event"
         nameLabel="Event Name"
         items={overridableEventRows}
+        defaultName={nextNewMemberName("event", namesOfKind("event"))}
         data-testid="add-event-dialog"
-        onCreateEmpty={(name) => {
+        onCreateEmpty={(name, named) => {
           if (!graph) return;
           const next = addClassMember(graph, "event", name);
           onGraphChange(next);
           const node = next.nodes[next.nodes.length - 1];
           if (node) {
             onFocusEventNode?.(node.id, node.data.name as string);
+            if (!named) setRenamingId(node.id);
           }
         }}
         onPick={(id) => {
@@ -852,19 +936,6 @@ export function ClassMembersView({
           if (node) {
             onFocusEventNode?.(node.id, row.name);
           }
-        }}
-      />
-      <NamePromptDialog
-        open={renameMemberId !== null}
-        onOpenChange={(open) => {
-          if (!open) setRenameMemberId(null);
-        }}
-        title="Rename"
-        label="Name"
-        confirmLabel="Rename"
-        onSubmit={(name) => {
-          if (!graph || !renameMemberId) return;
-          onGraphChange(patchClassMember(graph, renameMemberId, { name }));
         }}
       />
       <AssetPicker

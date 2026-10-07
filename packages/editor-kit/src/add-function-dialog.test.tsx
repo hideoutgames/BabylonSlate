@@ -51,8 +51,25 @@ describe("AddFunctionDialog", () => {
       target: { value: " Dash " },
     });
     fireEvent.click(screen.getByTestId("add-function-confirm"));
-    expect(onCreateEmpty).toHaveBeenCalledWith("Dash");
+    expect(onCreateEmpty).toHaveBeenCalledWith("Dash", true);
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("falls back to the default name so the host can rename inline", () => {
+    const onCreateEmpty = vi.fn();
+    render(
+      <AddFunctionDialog
+        open
+        onOpenChange={() => {}}
+        items={[]}
+        defaultName="NewFunction_1"
+        onCreateEmpty={onCreateEmpty}
+        onPick={() => {}}
+      />,
+    );
+    expect(screen.getByTestId("add-function-name").getAttribute("placeholder")).toBe("NewFunction_1");
+    fireEvent.click(screen.getByTestId("add-function-confirm"));
+    expect(onCreateEmpty).toHaveBeenCalledWith("NewFunction_1", false);
   });
 
   it("picks a live interface row and ignores overwritten rows", () => {
@@ -138,7 +155,7 @@ describe("AddFunctionDialog", () => {
       target: { value: "On Hit" },
     });
     fireEvent.click(screen.getByTestId("add-event-confirm"));
-    expect(onCreateEmpty).toHaveBeenCalledWith("On Hit");
+    expect(onCreateEmpty).toHaveBeenCalledWith("On Hit", true);
   });
 
   it("uses non-button option rows so a finger pan can scroll the list", () => {

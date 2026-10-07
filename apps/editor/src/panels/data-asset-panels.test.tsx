@@ -246,14 +246,18 @@ it("adds children with owned defaults, keeps stable identities on rename, and in
   expect(child.definitionGuid).toBeUndefined();
   expect(tree().entries[0]?.values.Damage).toBe(25);
   view.rerender(<TreeViewFixture />);
+  const created = screen.getByRole("textbox", { name: "Rename New Entry" }) as HTMLInputElement;
+  expect([created.selectionStart, created.selectionEnd]).toEqual([0, "New Entry".length]);
+  fireEvent.keyDown(created, { key: "Escape" });
   fireEvent.change(screen.getByRole("textbox", { name: "New Entry Damage" }), { target: { value: "40" } });
   await waitFor(() => expect(tree().entries[1]?.values.Damage).toBe(40));
   expect(tree().entries[0]?.values.Damage).toBe(25);
   view.rerender(<TreeViewFixture />);
   fireEvent.click(screen.getByRole("button", { name: "Entry Menu For New Entry" }));
   fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
-  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Iron Sword" } });
-  fireEvent.click(screen.getByTestId("name-prompt-confirm"));
+  const rename = screen.getByRole("textbox", { name: "Rename New Entry" });
+  fireEvent.change(rename, { target: { value: "Iron Sword" } });
+  fireEvent.keyDown(rename, { key: "Enter" });
   await waitFor(() => expect(tree().entries[1]).toMatchObject({ id: child.id, parentId: "sword", name: "Iron Sword", values: { Damage: 40 } }));
   expect(state.apply).toHaveBeenCalledTimes(3);
 });
@@ -302,14 +306,17 @@ it("moves entries by canonical paths, excludes descendants from destinations, an
 it("rejects sibling name collisions and names containing path separators", async () => {
   configureEntries(fields, [{ id: "sword", name: "Sword", values: { Damage: 5 } }, { id: "axe", name: "Axe", values: { Damage: 25 } }]);
   render(<TreeViewFixture />);
-  fireEvent.click(screen.getByRole("button", { name: "Entry Menu For Axe" }));
-  fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
-  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "sWORD" } });
-  fireEvent.click(screen.getByTestId("name-prompt-confirm"));
+  const renameAxe = (name: string) => {
+    fireEvent.click(screen.getByRole("button", { name: "Entry Menu For Axe" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+    const input = screen.getByRole("textbox", { name: "Rename Axe" });
+    fireEvent.change(input, { target: { value: name } });
+    fireEvent.keyDown(input, { key: "Enter" });
+  };
+  renameAxe("sWORD");
   expect(screen.getByText(/unique among siblings/i)).toBeTruthy();
   expect(state.apply).not.toHaveBeenCalled();
-  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Sword/Child" } });
-  fireEvent.click(screen.getByTestId("name-prompt-confirm"));
+  renameAxe("Sword/Child");
   expect(state.apply).not.toHaveBeenCalled();
 });
 
