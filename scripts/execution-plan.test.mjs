@@ -92,7 +92,7 @@ test("partial/spurious CI context cannot select hosted execution", async () => {
   }
   const plan = await resolveExecutionPlan("unit", hosted);
   assert.equal(plan.hosted, true);
-  assert.equal(plan.workers, 2);
+  assert.equal(plan.workers, 4);
   assert.equal(plan.browserWorkers, 1);
 });
 

@@ -11,7 +11,8 @@ export async function resolveExecutionPlan(profile, env = process.env) {
     ...env,
     BL_TEST_PROFILE: lowMemory ? "shared" : env.BL_TEST_PROFILE,
   });
-  const workers = hosted ? 2 : lowMemory ? 1 : request.workers;
+  // Public-repository ubuntu-latest runners have four vCPUs and 16 GB.
+  const workers = hosted ? 4 : lowMemory ? 1 : request.workers;
   const browserWorkers =
     !hosted && !lowMemory && env.BL_TEST_PROFILE === "fast" ? 2 : 1;
   return Object.freeze({
