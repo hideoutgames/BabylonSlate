@@ -3,13 +3,16 @@ import { createActor, createDefaultScene, createMeshComponent, identitySerialize
 import type { CommandMessage, RuntimeInspectorAction, RuntimeInspectorResult, RuntimeObjectIdentity } from "@babylonslate/bridge";
 import { createInProcessRuntime } from "./driver";
 
-async function fixture(mode: "simulate" | "play" = "simulate", deferMaterialEdits = false) {
+const catalog = { mat: { domain: "surface" as const, planHash: "mat", parameters: { Gain: { kind: "float" as const, value: 1 } } } };
+const flush = async () => { for (let index = 0; index < 12; index++) await Promise.resolve(); };
+async function fixture(mode: "simulate" | "play" = "simulate", deferMaterialEdits = false, demandAssets = false) {
   const commands: CommandMessage[] = [];
   const mesh = createMeshComponent("mesh", "box"); mesh.properties.materialGuid = "mat";
   const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
     sessionGeneration: 4, sessionMode: mode, playSceneGuid: "root", deferMaterialEdits,
+    classAssetGuids: demandAssets ? { Hero: "hero-class" } : undefined,
     playScene: { ...createDefaultScene(), actors: [createActor("hero", "Hero", { classId: "Hero", components: [mesh] })] },
-    materialParameterCatalog: { mat: { domain: "surface", planHash: "mat", parameters: { Gain: { kind: "float", value: 1 } } } },
+    materialParameterCatalog: catalog,
     onCommand: command => commands.push(command) });
   await runtime.loadScripts([{ classId: "Hero", assetGuid: "hero-class", parentClassId: "Actor", source: "", anchors: [], entryPoints: [],
     variables: [{ name: "health", type: "float", defaultValue: 10 }, { name: "target", type: "actor", defaultValue: null },
@@ -124,6 +127,67 @@ describe("bounded runtime Inspector", () => {
         expect.objectContaining({ key: "material:Gain", value: { kind: "float", value: 1 } }),
       ]) });
       expect(commands).toContainEqual(expect.objectContaining({ type: "releaseRuntimeMaterialPreparation", editToken: prepare.editToken, committed: false }));
+    } finally { runtime.stop(); }
+  });
+
+  it("prepares cold material sources while paused and keeps the prior lease until the replacement is applied", async () => {
+    const { runtime, request, component, commands } = await fixture("simulate", true, true);
+    try {
+      runtime.pause(); commands.length = 0;
+      let settled = false;
+      const pending = request({ kind: "setProperty", target: component, sequence: 1, property: "materialGuid", value: "cold" })
+        .then(result => { settled = true; return result; });
+      await flush();
+      const preload = commands.find(command => command.type === "assetPreload");
+      expect(preload).toMatchObject({ type: "assetPreload", ownerId: component.componentGuid, assetGuids: ["cold"] });
+      if (preload?.type !== "assetPreload") throw new Error("missing source preload");
+      expect(commands.some(command => command.type === "prepareRuntimeMaterialEdit")).toBe(false);
+      runtime.registerSceneContent({ assetGuids: ["root", "hero-class", "mat", "cold"],
+        materialParameterCatalog: { ...catalog, cold: { ...catalog.mat, planHash: "cold" } } });
+      runtime.notifyAssetPreloadResult({ preloadId: preload.preloadId, success: true });
+      await flush();
+      const preparation = commands.find(command => command.type === "prepareRuntimeMaterialEdit");
+      if (preparation?.type !== "prepareRuntimeMaterialEdit") throw new Error("missing material preparation");
+      runtime.applyRuntimeMaterialEditResult({ type: "runtimeMaterialEditPrepared", sessionGeneration: 4, requestId: preparation.requestId,
+        editToken: preparation.editToken, success: true });
+      await flush();
+      expect(settled).toBe(false);
+      expect(commands).toContainEqual(expect.objectContaining({ type: "assignMaterial", materialAssetGuid: "cold", preparedEditToken: preparation.editToken }));
+      expect(commands.some(command => command.type === "assignMesh")).toBe(false);
+      runtime.applyRuntimeMaterialEditResult({ type: "runtimeMaterialEditApplied", sessionGeneration: 4, requestId: preparation.requestId,
+        editToken: preparation.editToken, success: true });
+      expect(await pending).toMatchObject({ success: true, tickIndex: 0, payload: { effectiveValue: "cold" } });
+      expect(runtime.getWorld().findActor("hero")!.components[0]!.getVariable("materialSource")).toBe("override");
+      const clear = request({ kind: "setProperty", target: component, sequence: 2, property: "materialGuid", value: null });
+      await flush();
+      const none = commands.filter(command => command.type === "prepareRuntimeMaterialEdit").at(-1)!;
+      runtime.applyRuntimeMaterialEditResult({ type: "runtimeMaterialEditPrepared", sessionGeneration: 4, requestId: none.requestId,
+        editToken: none.editToken, success: true });
+      await flush();
+      expect(commands.some(command => command.type === "assetPreloadRelease" && command.preloadId === preload.preloadId)).toBe(false);
+      runtime.applyRuntimeMaterialEditResult({ type: "runtimeMaterialEditApplied", sessionGeneration: 4, requestId: none.requestId,
+        editToken: none.editToken, success: true });
+      expect((await clear).success).toBe(true);
+      expect(commands).toContainEqual({ type: "assetPreloadRelease", preloadId: preload.preloadId });
+      expect(runtime.getWorld().clock.tickIndex).toBe(0);
+    } finally { runtime.stop(); }
+  });
+
+  it("cancels a pending source lease immediately and ignores its late completion without changing the material", async () => {
+    const { runtime, component, commands } = await fixture("simulate", true, true);
+    try {
+      const pending = runtime.requestRuntimeInspector({ sessionGeneration: 4, requestId: 200,
+        action: { kind: "setProperty", target: component, sequence: 1, property: "materialGuid", value: "cold" } });
+      await flush();
+      const preload = commands.find(command => command.type === "assetPreload");
+      if (preload?.type !== "assetPreload") throw new Error("missing source preload");
+      runtime.cancelRuntimeInspector({ sessionGeneration: 4, requestId: 200 });
+      expect(await pending).toMatchObject({ success: false, reason: "Inspector request cancelled." });
+      expect(commands).toContainEqual({ type: "assetPreloadRelease", preloadId: preload.preloadId });
+      runtime.notifyAssetPreloadResult({ preloadId: preload.preloadId, success: true });
+      await flush();
+      expect(commands.some(command => command.type === "prepareRuntimeMaterialEdit")).toBe(false);
+      expect(runtime.getWorld().findActor("hero")!.components[0]!.getVariable("materialGuid")).toBe("mat");
     } finally { runtime.stop(); }
   });
 

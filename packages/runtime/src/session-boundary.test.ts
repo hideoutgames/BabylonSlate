@@ -120,6 +120,59 @@ describe("runtime session boundaries", () => {
     } finally { runtime.stop(); }
   });
 
+  it.each(["resume", "stop"] as const)("gates on-demand preload progress and completion until %s", async finish => {
+    const commands: CommandMessage[] = [];
+    const runtime = makeRuntime({ classAssetGuids: { Loading: "loading-class" },
+      playScene: { ...createDefaultScene(), actors: [createActor("actor", "Actor", { classId: "Loading" })] },
+      onCommand: command => commands.push(command) });
+    try {
+      await runtime.loadScripts([{ classId: "Loading", parentClassId: "Actor", assetGuid: "loading-class", anchors: [],
+        source: 'export async function begin(ctx) { await ctx.preloadAssets(["cold"], { onProgress: value => ctx.setVariable("progress", value) }); ctx.setVariable("continued", true); }',
+        entryPoints: [{ name: "begin", event: "onBeginPlay", isAsync: true }] }]);
+      runtime.realizePlayWorld(); runtime.start();
+      const actor = runtime.getWorld().findActor("actor")!;
+      const request = commands.find(command => command.type === "assetPreload");
+      if (request?.type !== "assetPreload") throw new Error("missing gameplay preload");
+      await runtime.requestSessionBoundary({ sessionGeneration: 7, requestId: 1, action: { kind: "pause", reason: "user", paused: true } });
+      runtime.notifyAssetPreloadResult({ preloadId: request.preloadId, success: true, progress: 0.2 });
+      runtime.notifyAssetPreloadResult({ preloadId: request.preloadId, success: true, progress: 0.8 });
+      runtime.notifyAssetPreloadResult({ preloadId: request.preloadId, success: true });
+      await flush();
+      expect(actor.getVariable("continued")).toBeUndefined();
+      expect(actor.getVariable("progress")).toBe(0);
+      if (finish === "resume") runtime.resume(); else runtime.stop();
+      await flush();
+      expect(actor.getVariable("continued")).toBe(finish === "resume" ? true : undefined);
+      expect(actor.getVariable("progress")).toBe(finish === "resume" ? 1 : 0);
+      expect(runtime.getWorld().clock.tickIndex).toBe(0);
+    } finally { runtime.stop(); }
+  });
+
+  it("defers a cold spawn after its sources become ready while user-paused", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = makeRuntime({ classAssetGuids: { Loading: "loading-class", Cold: "cold-class" },
+      playScene: { ...createDefaultScene(), actors: [createActor("actor", "Actor", { classId: "Loading" })] },
+      onCommand: command => commands.push(command) });
+    try {
+      await runtime.loadScripts([{ classId: "Loading", parentClassId: "Actor", assetGuid: "loading-class", anchors: [],
+        source: 'export async function begin(ctx) { await ctx.spawnActorAsync("Cold"); ctx.setVariable("continued", true); }',
+        entryPoints: [{ name: "begin", event: "onBeginPlay", isAsync: true }] }]);
+      runtime.realizePlayWorld(); runtime.start();
+      const request = commands.find(command => command.type === "assetPreload");
+      if (request?.type !== "assetPreload") throw new Error("missing class preload");
+      runtime.pause();
+      await runtime.loadScripts([{ classId: "Cold", parentClassId: "Actor", assetGuid: "cold-class", anchors: [], source: "", entryPoints: [] }]);
+      runtime.setAssetLoadStates([{ guid: "cold-class", state: "ready" }]);
+      runtime.notifyAssetPreloadResult({ preloadId: request.preloadId, success: true });
+      await flush();
+      expect(runtime.getWorld().getActors()).toHaveLength(1);
+      runtime.resume(); await flush();
+      expect(runtime.getWorld().getActors().map(actor => actor.classId)).toEqual(["Loading", "Cold"]);
+      expect(runtime.getWorld().findActor("actor")!.getVariable("continued")).toBe(true);
+      expect(runtime.getWorld().clock.tickIndex).toBe(0);
+    } finally { runtime.stop(); }
+  });
+
   it("queues ready-scene Begin Play and audio callbacks until the user hold clears", async () => {
     const runtime = makeRuntime({ deferSceneModelsReady: true,
       playScene: { ...createDefaultScene(), actors: [createActor("actor", "Actor", { classId: "Listener", components: [

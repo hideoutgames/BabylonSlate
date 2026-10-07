@@ -11,13 +11,16 @@ type Pending = {
   originalMaterial: MaterialObject | null; originalRevision: number;
   originalOverrides: Record<string, MaterialParameterValue> | null; originalValue: MaterialParameterValue | null;
   appliedMaterial?: MaterialObject | null; appliedRevision?: number;
-  result?: RuntimeInspectorResult; phase: "preparing" | "applying";
+  sourceLease?: string;
+  sourceController?: AbortController;
+  result?: RuntimeInspectorResult; phase: "sources" | "preparing" | "applying";
   resolve(result: RuntimeInspectorResult): void; timer: ReturnType<typeof setTimeout>;
 };
 
 /** Two acknowledgments: preparation leaves the predecessor visible, commit confirms the effective owner. */
 export class RuntimeMaterialEditGate {
   private readonly pending = new Map<string, Pending>();
+  private readonly sourceLeases = new WeakMap<ActorComponent, Map<string, string>>();
   private captureFailure: string | null = null;
   private readonly host: {
     generation: number; inspector: RuntimeInspector; materials: RuntimeMaterialParameters;
@@ -25,6 +28,8 @@ export class RuntimeMaterialEditGate {
     emit(command: CommandMessage): void;
     execute(request: RuntimeInspectorRequest, preparation: RuntimeMaterialEditPreparation): { result: RuntimeInspectorResult; emitted: boolean };
     restore(component: ActorComponent): void;
+    acquireSource?(component: ActorComponent, guids: readonly string[], signal: AbortSignal): Promise<string>;
+    releaseSource(id: string): void;
   };
   constructor(host: {
     generation: number; inspector: RuntimeInspector; materials: RuntimeMaterialParameters;
@@ -32,6 +37,8 @@ export class RuntimeMaterialEditGate {
     emit(command: CommandMessage): void;
     execute(request: RuntimeInspectorRequest, preparation: RuntimeMaterialEditPreparation): { result: RuntimeInspectorResult; emitted: boolean };
     restore(component: ActorComponent): void;
+    acquireSource?(component: ActorComponent, guids: readonly string[], signal: AbortSignal): Promise<string>;
+    releaseSource(id: string): void;
   }) { this.host = host; }
   get busy(): boolean { return this.pending.size > 0; }
   get ownershipFailure(): string | null { return this.captureFailure; }
@@ -50,8 +57,9 @@ export class RuntimeMaterialEditGate {
     const material = component.getVariable("materialObject");
     const originalMaterial = material instanceof MaterialObject ? material : null;
     const materialGuid = action.kind === "setProperty" ? action.value : action.materialGuid;
-    if (materialGuid !== null && (typeof materialGuid !== "string" || !this.host.materials.acceptsAssignment(materialGuid))) return fail("The material is unavailable or is not a surface material.");
-    if (action.kind === "setMaterialParameter" && (!originalMaterial || originalMaterial.materialAssetGuid !== action.materialGuid || !this.host.materials.accepts(originalMaterial, action.parameter, action.value))) return fail("The material instance, parameter or typed value is unavailable.");
+    if (materialGuid !== null && (typeof materialGuid !== "string" || !materialGuid.trim())) return fail("A valid material asset identity is required.");
+    if (action.kind === "setMaterialParameter" && (!action.value || !["float", "color", "texture"].includes(action.value.kind))) return fail("A typed material value is required.");
+    if (action.kind === "setMaterialParameter" && (!originalMaterial || originalMaterial.materialAssetGuid !== action.materialGuid)) return fail("The material instance is unavailable.");
     for (const previous of this.pending.values()) if (previous.component === component) {
       // A single instance lease cannot promote competing candidates. Host scrubs coalesce before dispatch.
       return fail("A material change is already pending for this component.");
@@ -66,10 +74,42 @@ export class RuntimeMaterialEditGate {
       originalRevision: originalMaterial ? this.host.materials.revision(originalMaterial) : -1,
       originalOverrides: originalMaterial ? this.host.materials.captureOverrides(originalMaterial) : null,
       originalValue: action.kind === "setMaterialParameter" && originalMaterial ? this.host.materials.get(originalMaterial, action.parameter, action.value.kind) : null,
-      phase: "preparing", resolve, timer: setTimeout(() => this.reject(editToken, "Material preparation or application timed out.", true), 15_000) };
+      phase: "sources", resolve, timer: setTimeout(() => this.reject(editToken, "Material preparation or application timed out.", true), 15_000) };
     this.pending.set(editToken, pending);
-    this.host.emit({ type: "prepareRuntimeMaterialEdit", ...preparation });
+    const guids = action.kind === "setProperty" ? (typeof materialGuid === "string" ? [materialGuid] : [])
+      : action.value?.kind === "texture" && typeof action.value.textureAssetGuid === "string" ? [action.value.textureAssetGuid] : [];
+    if (guids.length && this.host.acquireSource) {
+      pending.sourceController = new AbortController();
+      void this.host.acquireSource(component, guids, pending.sourceController.signal).then(lease => {
+        if (this.pending.get(editToken) !== pending) { this.host.releaseSource(lease); return; }
+        pending.sourceLease = lease;
+        this.prepare(pending);
+      }).catch(error => this.reject(editToken, error instanceof Error ? error.message : "Material source preparation failed."));
+    } else this.prepare(pending);
     return true;
+  }
+  private ownsOriginal(pending: Pending): boolean {
+    const action = pending.request.action;
+    const selected = this.host.inspector.resolveTarget("target" in action ? action.target : null!);
+    const current = pending.component.getVariable("materialObject");
+    return selected === pending.component && pending.component.getVariable("materialGuid") === pending.originalGuid &&
+      pending.component.getVariable("materialSource") === pending.originalSource && current === pending.originalMaterial &&
+      (!(current instanceof MaterialObject) || this.host.materials.revision(current) === pending.originalRevision);
+  }
+  private prepare(pending: Pending): void {
+    const { request, preparation } = pending;
+    const invalid = this.host.inspector.validateRequest(request);
+    if (invalid || !this.ownsOriginal(pending)) { this.reject(preparation.editToken, invalid ?? "Gameplay replaced the material while its source was being prepared."); return; }
+    const action = request.action;
+    if (action.kind === "setProperty" && preparation.materialGuid !== null && !this.host.materials.acceptsAssignment(preparation.materialGuid)) {
+      this.reject(preparation.editToken, "The material is unavailable or is not a surface material."); return;
+    }
+    if (action.kind === "setMaterialParameter" && (!pending.originalMaterial || !this.host.materials.accepts(pending.originalMaterial, action.parameter, action.value))) {
+      this.reject(preparation.editToken, "The material parameter or typed value is unavailable."); return;
+    }
+    pending.phase = "preparing";
+    try { this.host.emit({ type: "prepareRuntimeMaterialEdit", ...preparation }); }
+    catch (error) { this.reject(preparation.editToken, error instanceof Error ? error.message : "Material preparation transport failed."); }
   }
   receive(message: Response): void {
     if (message.sessionGeneration !== this.host.generation) return;
@@ -78,10 +118,7 @@ export class RuntimeMaterialEditGate {
     if (message.type === "runtimeMaterialEditPrepared") {
       if (pending.phase !== "preparing") return;
       if (!message.success) { this.reject(message.editToken, message.reason ?? "Material preparation failed."); return; }
-      const selected = this.host.inspector.resolveTarget("target" in pending.request.action ? pending.request.action.target : null!);
-      const current = pending.component.getVariable("materialObject");
-      if (selected !== pending.component || pending.component.getVariable("materialGuid") !== pending.originalGuid || current !== pending.originalMaterial ||
-        (current instanceof MaterialObject && this.host.materials.revision(current) !== pending.originalRevision)) {
+      if (!this.ownsOriginal(pending)) {
         this.reject(message.editToken, "Gameplay replaced the material while its edit was being prepared."); return;
       }
       const { result, emitted } = this.host.execute(pending.request, pending.preparation);
@@ -101,12 +138,26 @@ export class RuntimeMaterialEditGate {
   private complete(token: string): void {
     const pending = this.pending.get(token); if (!pending) return;
     this.pending.delete(token); clearTimeout(pending.timer);
+    const action = pending.request.action;
+    let leases = this.sourceLeases.get(pending.component);
+    if (action.kind === "setProperty") {
+      for (const lease of leases?.values() ?? []) this.host.releaseSource(lease);
+      leases?.clear();
+    }
+    const key = action.kind === "setMaterialParameter" ? `texture:${action.parameter}` : "material";
+    const previous = leases?.get(key);
+    if (pending.sourceLease) {
+      if (!leases) { leases = new Map(); this.sourceLeases.set(pending.component, leases); }
+      leases.set(key, pending.sourceLease);
+    } else if (action.kind === "setProperty" || (action.kind === "setMaterialParameter" && action.value.kind === "texture")) leases?.delete(key);
+    if (previous && previous !== pending.sourceLease) this.host.releaseSource(previous);
     this.host.emit({ type: "releaseRuntimeMaterialPreparation", sessionGeneration: this.host.generation, editToken: token, committed: true });
     pending.resolve(pending.result!);
   }
   private reject(token: string, reason: string, uncertain = false): void {
     const pending = this.pending.get(token); if (!pending) return;
     this.pending.delete(token); clearTimeout(pending.timer);
+    pending.sourceController?.abort();
     if (pending.phase === "applying") {
       const action = pending.request.action;
       const selected = this.host.inspector.resolveTarget("target" in action ? action.target : null!);
@@ -130,7 +181,12 @@ export class RuntimeMaterialEditGate {
       if (uncertain) this.captureFailure = "A material application acknowledgment was lost; final renderer ownership is unconfirmed.";
     }
     this.host.emit({ type: "releaseRuntimeMaterialPreparation", sessionGeneration: this.host.generation, editToken: token, committed: false });
+    if (pending.sourceLease) this.host.releaseSource(pending.sourceLease);
     pending.resolve(this.host.inspector.result(pending.request, reason));
   }
   cancel(reason: string): void { for (const token of [...this.pending.keys()]) this.reject(token, reason, true); }
+  cancelRequest(requestId: number): void {
+    for (const [token, pending] of this.pending) if (pending.request.requestId === requestId)
+      this.reject(token, pending.phase === "applying" ? "Inspector request cancelled during renderer application; final ownership is unconfirmed." : "Inspector request cancelled.", true);
+  }
 }

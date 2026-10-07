@@ -4,6 +4,24 @@ import { createInProcessRuntime } from "./driver";
 import { simulationCaptureChunks } from "./simulation-capture-transport";
 
 describe("Simulation final capture boundary", () => {
+  it("captures gameplay gravity without mutating the frozen prepared document", async () => {
+    const baseline = { ...createDefaultScene(), actors: [createActor("hero", "Hero", { classId: "Hero" })] };
+    const gravity = [...baseline.settings.gravity];
+    Object.freeze(baseline.settings); Object.freeze(baseline);
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      sessionGeneration: 6, sessionMode: "simulate", playScene: baseline, playSceneGuid: "root" });
+    try {
+      await runtime.loadScripts([{ classId: "Hero", parentClassId: "Actor", assetGuid: "hero", anchors: [],
+        source: 'export function onBeginPlay(ctx) { ctx.setVariableOn(ctx.getSceneReference(), "gravity", {x:1,y:-3,z:2}); }',
+        entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }] }]);
+      runtime.realizePlayWorld(); runtime.start();
+      const boundary = await runtime.quiesceSimulation({ sessionGeneration: 6, requestId: 1 });
+      const result = await runtime.captureSimulationState({ sessionGeneration: 6, requestId: 2, renderRevision: boundary.commandRevision });
+      expect(result).toMatchObject({ ok: true, scene: { settings: { gravity: [1, -3, 2] } } });
+      expect(baseline.settings.gravity).toEqual(gravity);
+    } finally { runtime.stop(); }
+  });
+
   it("captures before destructive End Play, hydrates retained references, and keeps the quiescent clock frozen", async () => {
     const baseline = { ...createDefaultScene(), actors: [createActor("before", "Before", { classId: "Hero" })] };
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,

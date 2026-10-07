@@ -137,6 +137,7 @@ export type ControlMessage =
   | ({ type: "runtimeMaterialEditPrepared" | "runtimeMaterialEditApplied" } & import("./runtime-material-edit").RuntimeMaterialEditResponse)
   | ({ type: "diagnosticOperation" } & import("./diagnostic-operation").DiagnosticOperationRequest)
   | ({ type: "runtimeInspector" } & import("./runtime-inspector").RuntimeInspectorRequest)
+  | { type: "cancelRuntimeInspector"; sessionGeneration: number; requestId: number }
   | ({ type: "sessionBoundary" } & SessionBoundaryRequest)
   | ({ type: "loadSceneContent" } & RuntimeSceneContent)
   | { type: "saveStorageResponse"; response: import("@babylonslate/core").SaveStorageResponse }

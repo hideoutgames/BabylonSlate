@@ -10,7 +10,7 @@ import { SaveGameError, SaveGameService, type SaveGameServiceOptions } from "@ba
 import { SaveGameWorld } from "./save-game-world";
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
 import { RuntimeAssetPreloads } from "./asset-preloads";
-import type { RuntimeAssetLoadState } from "@babylonslate/core";
+import type { RuntimeAssetLoadState, RuntimeAssetPreloadOptions, RuntimeAssetPreloadResult } from "@babylonslate/core";
 import { SceneLayerFocusNavigation } from "./scene-layer-focus";
 import { focusLayoutEntry, revealFocusedElement } from "./scene-layer-focus-layout";
 import type { FocusNavigationSettings } from "@babylonslate/core";
@@ -329,6 +329,7 @@ export interface RuntimeDriver {
   resume(reason?: SessionPauseReason): void;
   requestSessionBoundary(request: SessionBoundaryRequest): Promise<SessionBoundaryResult>;
   requestRuntimeInspector(request: RuntimeInspectorRequest): Promise<RuntimeInspectorResult>;
+  cancelRuntimeInspector(request: { sessionGeneration: number; requestId: number }): void;
   requestDiagnosticOperation(request: DiagnosticOperationRequest): Promise<DiagnosticOperationResult>;
   quiesceSimulation(request: SimulationQuiesceRequest): Promise<SessionBoundaryResult>;
   captureSimulationState(request: SimulationCaptureRequest): Promise<SimulationSceneCaptureResult>;
@@ -1347,12 +1348,13 @@ class InProcessRuntime implements RuntimeDriver {
         if (this.demandAssetCatalog && !guid && !isLockedEngineClassId(id)) throw new Error(`Class ${id} is missing from the asset catalog`);
         const preload = this.demandAssetCatalog && guid
           ? await this.assetPreloads.acquire([guid], owner?.guid ?? this.world.currentScene?.guid ?? "session") : null;
-        if (preload && !preload.success) throw new Error(`Cannot spawn ${id} requested by ${owner?.guid ?? "session"}: ${preload.errorMessage}`);
         if (this.stopped || owner?.destroyed) {
           if (preload) this.assetPreloads.release(preload.preloadId);
           throw sceneRealizationCancelled();
         }
         try {
+          await this.waitForSimulation(owner ?? null);
+          if (preload && !preload.success) throw new Error(`Cannot spawn ${id} requested by ${owner?.guid ?? "session"}: ${preload.errorMessage}`);
           const actor = this.spawnScriptedActor({ classId: id, transform: coerceTransform(transform), streamOwner: owner });
           if (preload) {
             if (actor && !actor.destroyed) this.assetPreloads.transferOwner(preload.preloadId, actor.guid);
@@ -1389,8 +1391,12 @@ class InProcessRuntime implements RuntimeDriver {
       getTargetSceneName: (target) => this.getTargetSceneName(target),
       loadScene: (target, blocking) => this.loadSceneStream(target, blocking),
       unloadScene: (target, blocking) => this.unloadSceneStream(target, blocking),
-      preloadAssets: (assets, owner, options) => this.assetPreloads.acquire(assets, owner?.guid ?? this.world.currentScene?.guid ?? "session", options),
-      prepareAssets: this.demandAssetCatalog ? (assets, owner) => this.assetPreloads.prepare(assets, owner?.guid ?? this.world.currentScene?.guid ?? "session") : undefined,
+      preloadAssets: (assets, owner, options) => this.preloadForGameplay(assets, owner, options),
+      prepareAssets: this.demandAssetCatalog ? async (assets, owner) => {
+        try { await this.assetPreloads.prepare(assets, owner?.guid ?? this.world.currentScene?.guid ?? "session"); }
+        catch (error) { await this.waitForSimulation(owner ?? null); throw error; }
+        await this.waitForSimulation(owner ?? null);
+      } : undefined,
       releasePreload: (preloadId) => this.assetPreloads.release(preloadId),
       getAssetLoadState: (assetGuid) => this.assetPreloads.getState(assetGuid),
       isSceneLoaded: (target) => this.getSceneState(target) === "Loaded",
@@ -1666,6 +1672,31 @@ class InProcessRuntime implements RuntimeDriver {
     const stream = this.streamForOwner(owner);
     if (this.stopped || owner?.destroyed || !this.sceneStreamReady(stream))
       throw new RuntimeContinuationCancelled();
+  }
+
+  private async preloadForGameplay(assets: readonly string[], owner: BObject | null, options: RuntimeAssetPreloadOptions = {}): Promise<RuntimeAssetPreloadResult> {
+    const callbackOwner = owner ?? this.world.gameInstance;
+    let queued = false, active = true, latest = 0;
+    const onProgress = options.onProgress ? (value: number) => {
+      latest = value;
+      if (queued || !active) return;
+      queued = true;
+      // Only the latest progress value waits during Pause; no callback flood or
+      // gameplay continuation is delivered by an I/O completion while frozen.
+      this.runOwnerAction(callbackOwner, () => {
+        queued = false;
+        if (active) this.guardScript(() => options.onProgress!(latest));
+      });
+    } : undefined;
+    let result: RuntimeAssetPreloadResult | undefined;
+    try {
+      result = await this.assetPreloads.acquire(assets, owner?.guid ?? this.world.currentScene?.guid ?? "session", { ...options, onProgress });
+      await this.waitForSimulation(owner);
+      return result;
+    } catch (error) {
+      if (result?.preloadId) this.assetPreloads.release(result.preloadId);
+      throw error;
+    } finally { active = false; }
   }
 
   loadSceneStream(target: unknown, blocking = false): Promise<void> {
@@ -2029,9 +2060,10 @@ class InProcessRuntime implements RuntimeDriver {
     if (this.stopped || owner?.destroyed) throw sceneRealizationCancelled();
     const preload = this.demandAssetCatalog
       ? await this.assetPreloads.acquire([assetGuid], owner?.guid ?? this.world.currentScene?.guid ?? "session") : null;
-    if (preload && !preload.success) throw new Error(`Cannot create SceneLayer ${assetGuid}: ${preload.errorMessage}`);
     let layer: SceneLayer | null = null;
     try {
+      await this.waitForSimulation(owner);
+      if (preload && !preload.success) throw new Error(`Cannot create SceneLayer ${assetGuid}: ${preload.errorMessage}`);
       if (this.stopped || owner?.destroyed) throw sceneRealizationCancelled();
       layer = this.createSceneLayer(assetGuid, zOrder);
       if (!layer || layer.destroyed) throw new Error(`SceneLayer ${assetGuid} could not be prepared`);
@@ -2049,6 +2081,7 @@ class InProcessRuntime implements RuntimeDriver {
           });
         });
       }
+      await this.waitForSimulation(owner);
       return layer;
     } catch (error) {
       if (layer) this.removeSceneLayer(layer.guid);
@@ -6558,6 +6591,12 @@ class InProcessRuntime implements RuntimeDriver {
     return this.materialEditGate ??= new RuntimeMaterialEditGate({ generation: this.sessionGeneration,
       inspector: this.getRuntimeInspector(), materials: this.materialParameters,
       slot: component => component.owner ? this.slotByActor.get(component.owner) : undefined,
+      acquireSource: this.demandAssetCatalog ? async (component, guids, signal) => {
+        const result = await this.assetPreloads.acquire(guids, component.guid, {}, signal);
+        if (!result.success) throw new Error(result.errorMessage || "Material source preparation failed.");
+        return result.preloadId;
+      } : undefined,
+      releaseSource: id => this.assetPreloads.release(id),
       emit: command => this.emit(command),
       execute: (request, preparation) => {
         const emission = { preparation, emitted: false }; this.materialEditEmission = emission;
@@ -6601,6 +6640,16 @@ class InProcessRuntime implements RuntimeDriver {
       queueMicrotask(() => this.flushInspectorRequests());
     }
     return result;
+  }
+
+  cancelRuntimeInspector(request: { sessionGeneration: number; requestId: number }): void {
+    if (request.sessionGeneration !== this.sessionGeneration || !Number.isSafeInteger(request.requestId)) return;
+    const index = this.inspectorRequests.findIndex(entry => entry.request.requestId === request.requestId);
+    if (index !== -1) {
+      const [entry] = this.inspectorRequests.splice(index, 1);
+      entry!.resolve(this.getRuntimeInspector().result(entry!.request, "Inspector request cancelled."));
+    }
+    this.materialEditGate?.cancelRequest(request.requestId);
   }
 
   private flushInspectorRequests(): void {

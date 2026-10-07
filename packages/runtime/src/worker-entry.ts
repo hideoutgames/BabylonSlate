@@ -142,6 +142,9 @@ function handleControl(msg: ControlMessage): void {
       void rt.requestDiagnosticOperation(msg).then(result => onCommand({ type: "diagnosticOperationResult", ...result }));
       return;
     }
+    case "cancelRuntimeInspector":
+      runtime?.cancelRuntimeInspector(msg);
+      return;
     case "runtimeInspector": {
       const rt = runtime;
       if (!rt) {
