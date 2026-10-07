@@ -200,7 +200,7 @@ describe("WorldTransformComposer", () => {
     fc.assert(
       fc.property(edited, ([nodes, next]) => {
         const actors = spawnHierarchy(nodes);
-        const world = actors[0]!.world!;
+        const world = actors[0]!.world as World;
         const composer = new WorldTransformComposer();
         const first = composeLive(composer, world);
         // toEqual compares numbers with Object.is, so poses must be bit-identical.
@@ -226,7 +226,7 @@ describe("WorldTransformComposer", () => {
       { parent: 0, transform: transform([1, 0, 0], { x: 0, y: 0, z: Math.sin(Math.PI / 8), w: Math.cos(Math.PI / 8) }, [1, 1, 1]) },
       { parent: 1, transform: transform([0, 1, 0], { x: 0, y: 0, z: 0, w: 1 }, [1, 1, 1]) },
     ]);
-    const world = actors[0]!.world!;
+    const world = actors[0]!.world as World;
     const composer = new WorldTransformComposer();
     expect([...composeLive(composer, world).poses.keys()].sort()).toEqual(["actor-0", "actor-1", "actor-2"]);
 
