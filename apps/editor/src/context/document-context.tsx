@@ -82,6 +82,7 @@ import {
   SetAssetDocumentCommand,
   ReplaceSceneCommand,
   type EditCommand,
+  type HistoryAdmissionResult,
 } from "@babylonslate/edit";
 import { attachJournalFlushOnHide, JournalBuffer } from "../lib/journal-buffer";
 import {
@@ -2851,7 +2852,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           return { ok: false, reason: "The Scene is read-only or locked by source control." };
         }
         try {
-          const admitted = lease.apply(previous => {
+          const admitted = lease.apply<HistoryAdmissionResult<SerializedScene>>(previous => {
             if (ReplaceSceneCommand.isNoop(previous, candidate)) return { scene: previous,
               value: { ok: true as const, status: "unchanged" as const, doc: previous, command: null } };
             const command = new ReplaceSceneCommand(previous, candidate, { maxHistoryBytes: editSessionRef.current.getStack(id).byteBudget });

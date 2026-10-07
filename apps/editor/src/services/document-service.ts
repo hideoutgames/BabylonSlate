@@ -188,7 +188,7 @@ export class DocumentService {
         if (!this.authoringLocks.has(key) || applied) return { ok: false, reason: "The Simulation document lease is no longer current." };
         if (this.authoringLocks.size !== 1) return { ok: false, reason: "Another editor operation owns authoring protection." };
         const current = this.state.openDocuments.get(id);
-        if (current !== document || current.content !== baseline.content || current.ref.path !== baseline.ref.path || current.dirty !== baseline.dirty) {
+        if (current !== document || current.ref.kind !== "scene" || current.content !== baseline.content || current.ref.path !== baseline.ref.path || current.dirty !== baseline.dirty) {
           return { ok: false, reason: "The authoring Scene changed after Simulation began." };
         }
         // The operation must synchronously admit history before returning a changed
