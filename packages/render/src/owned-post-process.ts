@@ -6,7 +6,7 @@ import { retireOwnedEffect, type OwnedEffectRetirement } from "./owned-effect-re
 const guardedEffects = new WeakSet<Effect>();
 function guardDisposedEffectPolling(effect: Effect): void {
   if (guardedEffects.has(effect)) return;
-  // Babylon 9.20 checks its pipeline before the disposed flag in _checkIsReady.
+  // Babylon 9.29 checks its pipeline before the disposed flag in _checkIsReady.
   const owned = effect as unknown as { _isReadyInternal(): boolean };
   const ready = owned._isReadyInternal;
   owned._isReadyInternal = function (this: Effect) {

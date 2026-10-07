@@ -11,7 +11,7 @@ export class SceneReflectionBlock extends ReflectionBlock {
     return "SceneReflectionBlock";
   }
 
-  // Babylon 9.20 PBRMetallicRoughnessBlock uses this getter to decide whether
+  // Babylon 9.29 PBRMetallicRoughnessBlock uses this getter to decide whether
   // to emit reflection code at build time. Scene environments arrive later.
   // Emit the optional branch from the start; native prepareDefines/isReady/bind
   // still inspect the actual texture and disable it while none is admitted.

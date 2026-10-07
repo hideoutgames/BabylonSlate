@@ -36,7 +36,7 @@ async function fixture(floatingOrigin = false) {
   const engine = new NullEngine(options);
   engines.push(engine);
   Object.assign(engine.getCaps(), { maxTexturesImageUnits: 16 });
-  // Complete Babylon 9.20 NullEngine's missing cube texture/wrapper attachment.
+  // Complete Babylon 9.29 NullEngine's missing cube texture/wrapper attachment.
   const createCube = engine.createRenderTargetCubeTexture.bind(engine);
   engine.createRenderTargetCubeTexture = (...args) => {
     const target = createCube(...args);

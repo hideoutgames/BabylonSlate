@@ -10,7 +10,7 @@ import type {
   Result,
 } from "@babylonjs/havok";
 
-// Pinned Babylon 9.20.0/Havok 1.3.14 worker adapter. The binding has no query
+// Pinned Babylon 9.29.0/Havok 1.3.14 worker adapter. The binding has no query
 // broadphase refresh operation. SetQTransform changes pose but leaves an existing
 // world's query index stale until a step. Reinsert the same native body, as the
 // plugin's own region migration does; never remove its Babylon lookup/callbacks.
@@ -58,7 +58,7 @@ function restoreWorldMembership(plugin: HavokPlugin, body: PhysicsBody): void {
   data.worldTransformOffset = offset;
 }
 
-/** Babylon 9.20.0's body setter skips native detachment for null. Keep JS/native state aligned. */
+/** Babylon 9.29.0's body setter skips native detachment for null. Keep JS/native state aligned. */
 export function attachHavokShape(
   plugin: HavokPlugin,
   body: PhysicsBody,
@@ -78,7 +78,7 @@ export function attachHavokShape(
 }
 
 /**
- * Babylon 9.20's controller creates a second body, although its solver uses
+ * Babylon 9.29's controller creates a second body, although its solver uses
  * independent shape queries. Keep that body's lifetime native, but leave its
  * shape detached: the actor body owns physical contacts and query identity.
  */

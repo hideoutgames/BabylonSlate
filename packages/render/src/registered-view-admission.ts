@@ -92,7 +92,7 @@ export function retainOffscreenFrameDispatch(engine: AbstractEngine): () => void
     const dispatch = function (this: AbstractEngine): boolean {
       const enabled = this.views?.some((view) => view.enabled) ?? false;
       const rendered = renderViews.call(this);
-      // Babylon 9.20 returns true for a nonempty all-disabled views array,
+      // Babylon 9.29 returns true for a nonempty all-disabled views array,
       // suppressing _renderFrame entirely. Native dispatch still restores
       // activeView; returning false lets its ordinary frame loop run once.
       return enabled && rendered;

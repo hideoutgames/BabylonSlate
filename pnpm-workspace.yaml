@@ -3,7 +3,7 @@ packages:
   - "packages/*"
 
 patchedDependencies:
-  "@babylonjs/core@9.20.0": "patches/@babylonjs__core@9.20.0.patch"
+  "@babylonjs/core@9.29.0": "patches/@babylonjs__core@9.29.0.patch"
 
 # Keep transitive security fixes within each consumer's supported release line.
 overrides:

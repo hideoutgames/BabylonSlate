@@ -401,7 +401,7 @@ function blendsFor(scene: Scene): Map<NamedSeekableGroup, () => void> {
   // cannot mix with a stale weighted seek.
   const observer = scene.onBeforeAnimationsObservable.add(() => {
     if (!blends.size || !scene.animationsEnabled || isSceneGameTimePaused(scene)) return;
-    // Pinned Babylon 9.20 adapter: Scene._animate skips its first pass,
+    // Pinned Babylon 9.29 adapter: Scene._animate skips its first pass,
     // late bindings included, while pending data exists. This observer also
     // assumes an animation pass follows the notification. Babylon still
     // notifies during render-only redraws; the game-time guard above keeps the

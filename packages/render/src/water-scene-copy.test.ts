@@ -53,9 +53,12 @@ function host({ sharedDepth = true, options = new NullEngineOptions() } = {}) {
   vi.spyOn(engine, "buildTextureLayout").mockImplementation((enabled, backbuffer) =>
     backbuffer ? [0x0405] : enabled.map((value, index) => (value ? 0x8ce0 + index : 0)));
   vi.spyOn(engine, "bindAttachments").mockImplementation(() => {});
+  // Babylon 9.29 graph clears go through the extension's clearAttachments,
+  // which reads the absent WebGL context. NullEngine.clear draws nothing either.
+  vi.spyOn(engine, "clearAttachments").mockImplementation(() => {});
   vi.spyOn(engine, "restoreSingleAttachment").mockImplementation(() => {});
   vi.spyOn(engine, "restoreSingleAttachmentForRenderTarget").mockImplementation(() => {});
-  // Babylon 9.20 NullEngine has no FrameGraph allocation overrides. Adapt only
+  // Babylon 9.29 NullEngine has no FrameGraph allocation overrides. Adapt only
   // those hardware boundaries, retaining real textures, wrappers and refcounts.
   vi.spyOn(engine, "_createInternalTexture").mockImplementation((size, options) => {
     const wrapper = engine.createRenderTargetTexture(size, {

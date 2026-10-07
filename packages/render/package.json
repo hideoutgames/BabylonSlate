@@ -26,9 +26,9 @@
     "test": "node ../../scripts/run-tests.mjs unit packages/render"
   },
   "dependencies": {
-    "@babylonjs/core": "9.20.0",
-    "@babylonjs/loaders": "9.20.0",
-    "@babylonjs/serializers": "9.20.0",
+    "@babylonjs/core": "9.29.0",
+    "@babylonjs/loaders": "9.29.0",
+    "@babylonjs/serializers": "9.29.0",
     "@babylonslate/assets": "workspace:*",
     "@babylonslate/bridge": "workspace:*",
     "@babylonslate/core": "workspace:*",

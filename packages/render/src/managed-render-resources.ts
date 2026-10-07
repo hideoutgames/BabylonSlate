@@ -272,7 +272,7 @@ export function releaseManagedRenderLeaseAfterDisposal(
       }
     };
     const disposeObserver = engine.onDisposeObservable.addOnce(finish);
-    // Babylon 9.20 drains deferred resources BEFORE notifying end-frame. A
+    // Babylon 9.29 drains deferred resources BEFORE notifying end-frame. A
     // disposal requested inside that notification must await the NEXT drain;
     // registering synchronously could run our observer in the current iteration.
     queueMicrotask(() => {
