@@ -577,9 +577,6 @@ export function SettingsModal({
       data-testid={resolvedTestId}
       footer={
         <div className="flex items-center justify-end gap-2">
-          <span className="mr-auto text-xs text-muted-foreground">
-            {scope === "engine" ? "Engine settings save automatically." : "Project settings are saved with Save All."}
-          </span>
           {scope === "project" && projectDocument && onCloseProject ? (
             <Button
               variant="outline"

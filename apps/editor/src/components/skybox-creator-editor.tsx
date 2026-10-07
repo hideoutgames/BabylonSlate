@@ -94,7 +94,7 @@ function useSkyboxCreatorDecodedSource(sourceTextureGuid: string | null) {
       const image = await readTextureImageBytes(readAssetChunk, texturePath);
       if (!image || cancelled) return;
       objectUrl = URL.createObjectURL(
-        new Blob([image.bytes], image.mime ? { type: image.mime } : undefined),
+        new Blob([image.bytes as Uint8Array<ArrayBuffer>], image.mime ? { type: image.mime } : undefined),
       );
       if (!cancelled) setUrl(objectUrl);
       try {

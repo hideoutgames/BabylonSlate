@@ -70,7 +70,7 @@ export function splitGlbJsonBin(
 
   let offset = 12;
   let json: Record<string, unknown> | null = null;
-  let bin = new Uint8Array(0);
+  let bin: Uint8Array = new Uint8Array(0);
 
   while (offset + 8 <= bytes.byteLength) {
     const chunkLength = readU32(view, offset);
@@ -98,7 +98,7 @@ export function splitGlbJsonBin(
 export function encodeGlbJsonBin(
   json: Record<string, unknown>,
   bin: Uint8Array,
-): Uint8Array {
+): Uint8Array<ArrayBuffer> {
   // Pad by UTF-8 byte length; non-ASCII names make it differ from the UTF-16 length.
   const encoded = new TextEncoder().encode(JSON.stringify(json));
   const jsonBytes = new Uint8Array(encoded.byteLength + pad4(encoded.byteLength));
@@ -412,7 +412,7 @@ function gltfJsonToGlb(
   } catch {
     return null;
   }
-  let bin = new Uint8Array(0);
+  let bin: Uint8Array = new Uint8Array(0);
   const buffers = Array.isArray(json.buffers)
     ? [...(json.buffers as Record<string, unknown>[])]
     : [];

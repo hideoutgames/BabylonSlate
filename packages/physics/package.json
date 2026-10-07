@@ -17,6 +17,6 @@
     "@dimforge/rapier2d-deterministic-compat": "^0.21.0"
   },
   "devDependencies": {
-    "typescript": "~5.8.2"
+    "typescript": "~6.0.3"
   }
 }

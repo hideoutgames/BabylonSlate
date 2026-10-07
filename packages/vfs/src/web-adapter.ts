@@ -383,7 +383,9 @@ export class OpfsStorageAdapter implements ProjectStorage {
     ).createWritable();
     writeRevisions.set(key, (writeRevisions.get(key) ?? 0) + 1);
     try {
-      await writable.write(data);
+      // Storage bytes are never SharedArrayBuffer-backed; DOM BufferSource
+      // requires an ArrayBuffer-backed view.
+      await writable.write(data as Uint8Array<ArrayBuffer>);
       await writable.close();
     } catch (error) {
       await writable.abort().catch(() => {});

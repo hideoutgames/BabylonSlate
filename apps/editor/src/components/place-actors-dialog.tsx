@@ -95,7 +95,7 @@ function useThumbnailUrls(
         const bytes = await load(guid).catch(() => null);
         if (cancelled) return;
         if (!bytes) continue;
-        const url = URL.createObjectURL(new Blob([bytes], { type: thumbnailMime(bytes) }));
+        const url = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: thumbnailMime(bytes) }));
         created.push(url);
         next[guid] = url;
       }

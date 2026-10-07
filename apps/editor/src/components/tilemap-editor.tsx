@@ -1343,7 +1343,7 @@ function useTilesetAtlases(
         const bytes = await readAssetChunk(texture.path, "pixels");
         if (!bytes || bytes.byteLength === 0) continue;
         const objectUrl = URL.createObjectURL(
-          new Blob([bytes], { type: "image/png" }),
+          new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "image/png" }),
         );
         objectUrls.push(objectUrl);
         const image = new Image();

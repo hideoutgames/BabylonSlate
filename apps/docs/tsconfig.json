@@ -2,7 +2,8 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "rootDir": ".",
-    "outDir": "dist"
+    "outDir": "dist",
+    "types": ["node", "vitepress/client"]
   },
   "include": ["src", ".vitepress/config.ts", ".vitepress/theme/index.ts"]
 }
