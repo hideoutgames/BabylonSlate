@@ -5,7 +5,7 @@ import { createDefaultMigrationRegistry } from "../packages/assets/src/migration
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
 import { openMinimalTestProject } from "./minimal-project";
 import { openMainScene, waitForSceneViewportReady } from "./open-test-project";
-import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot } from "./play";
+import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot, showOverlayButtons } from "./play";
 
 const SCENE_GUID = "00000000-0000-4000-8000-000000000001";
 
@@ -91,6 +91,7 @@ for (const mode of ["Play"] as ("Play" | "Preview Build")[]) {
     }));
     files.set(MAIN_SCENE_FILE, await encodeAssetDocument({ guid: SCENE_GUID, type: "Scene", name: "Main", version: createDefaultMigrationRegistry().currentVersion("Scene"), payload: scene as unknown as Record<string, unknown> }));
     await openMinimalTestProject(page, files);
+    await showOverlayButtons(page, ["console"]);
     await openMainScene(page);
     await waitForSceneViewportReady(page);
     if (mode === "Preview Build") {

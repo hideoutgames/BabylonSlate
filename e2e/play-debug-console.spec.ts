@@ -1,11 +1,12 @@
 import { expect, test } from "@playwright/test";
 import { openMainScene, openTestProject } from "./open-test-project";
-import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot } from "./play";
+import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot, showOverlayButtons } from "./play";
 
 for (const mode of ["Play"] as ("Play" | "Preview Build")[]) {
   test(`${mode} console overlays the view, captures warnings and runs debug commands`, async ({ page }, testInfo) => {
     test.setTimeout(180_000);
     await openTestProject(page);
+    await showOverlayButtons(page, ["console"]);
     await openMainScene(page);
     if (mode === "Preview Build") {
       await page.getByTestId("debug-menu").click();

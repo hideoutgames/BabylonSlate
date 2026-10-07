@@ -6,7 +6,7 @@ import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal
 import type { EngineHandle } from "../packages/render/src/create-engine";
 import { openMinimalTestProject } from "./minimal-project";
 import { openMainScene } from "./open-test-project";
-import { clickPlayAndWaitForOverlay } from "./play";
+import { clickPlayAndWaitForOverlay, showOverlayButtons } from "./play";
 import { scalabilityGraphDefinitions } from "./scalability-graph-fixture";
 import { renderingEvidence } from "./rendering-evidence";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
@@ -91,6 +91,7 @@ test(`saved Class scalability graphs compile and run with confirmed events in ed
   }
   files.set(MAIN_CLASS_FILE, await encodeAssetDocument({ guid: "00000000-0000-4000-8000-000000000002", type: "Class", name: "Main", version, payload: observer as unknown as Record<string, unknown> }, { parentClass: "Actor" }));
   await openMinimalTestProject(page, files);
+  await showOverlayButtons(page, ["console"]);
   await openMainScene(page);
   const editorSize = await page.getByTestId("viewport-canvas").evaluate((canvas: HTMLCanvasElement) => [canvas.width, canvas.height]);
   await clickPlayAndWaitForOverlay(page);

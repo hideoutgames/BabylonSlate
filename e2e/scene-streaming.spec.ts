@@ -13,7 +13,7 @@ import { createDefaultMigrationRegistry } from "../packages/assets/src/migration
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
 import { openMinimalTestProject } from "./minimal-project";
 import { openMainScene, waitForSceneViewportReady } from "./open-test-project";
-import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot } from "./play";
+import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot, showOverlayButtons } from "./play";
 
 const MAIN_GUID = "00000000-0000-4000-8000-000000000001";
 const CHILD_GUID = "20000000-0000-4000-8000-000000000001";
@@ -127,6 +127,7 @@ for (const mode of ["Play"] as ("Play" | "Preview Build")[]) {
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await openMinimalTestProject(page, await streamingProject());
+    await showOverlayButtons(page, ["console"]);
     await openMainScene(page);
     await waitForSceneViewportReady(page);
     const editorActors = await page.evaluate(() => (globalThis as unknown as {

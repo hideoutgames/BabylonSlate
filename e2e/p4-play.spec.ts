@@ -28,10 +28,11 @@ test.describe("P4 Play overlay and session report", () => {
     await expect(page.getByTestId("play-frame-cap")).toHaveCount(0);
     await expect(page.getByTestId("play-overlay-pause")).toContainText("Pause");
     await expect(page.getByTestId("play-overlay-close")).toContainText("Stop");
-    await expect(page.getByTestId("play-console-open")).toContainText("Console");
-    await expect(page.getByTestId("play-inspector-toggle")).toContainText(
-      "Inspector",
-    );
+    // Debug-menu defaults show only Stats beside Pause and Stop.
+    await expect(page.getByTestId("play-stats-toggle")).toContainText("Stats");
+    await expect(page.getByTestId("play-console-open")).toHaveCount(0);
+    await expect(page.getByTestId("play-inspector-toggle")).toHaveCount(0);
+    await expect(page.getByTestId("play-profiler-open")).toHaveCount(0);
     await expect(page.getByTestId("stats-hud")).toBeHidden();
 
     await page.getByTestId("play-overlay-close").click();
