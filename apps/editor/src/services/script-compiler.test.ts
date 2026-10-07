@@ -116,7 +116,7 @@ describe("script compiler service", () => {
     }, { path: "assets/Tags.class.babasset", tagRegistry: stateTags });
     expect(script?.variables).toEqual([
       { name: "State", type: "tag", defaultValue: 2 },
-      { name: "States", type: "struct:engine:TagContainer", defaultValue: { Tags: [1, 2] } },
+      { name: "States", type: "struct:engine:TagContainer", typeClassId: "engine:TagContainer", defaultValue: { Tags: [1, 2] } },
     ]);
   });
 
@@ -513,7 +513,7 @@ describe("script compiler service", () => {
       { path: "assets/Hero.class.babasset", parentClassId: "Actor" },
     );
     expect(script?.variables).toEqual([
-      { name: "cue", type: "asset", defaultValue: "audio-1" },
+      { name: "cue", type: "asset", typeClassId: "Audio", defaultValue: "audio-1" },
     ]);
   });
 
