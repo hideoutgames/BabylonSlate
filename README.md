@@ -113,16 +113,22 @@ That builds the editor and the VitePress docs site, then copies docs into `apps/
 
 See [docs/architecture/testing.md](docs/architecture/testing.md). iOS Capacitor / Files App device spikes remain under `p1-device-spikes`.
 
-## iOS (Capacitor) — requires Mac
+## iOS and Android (Capacitor)
 
 ```bash
-cd apps/editor
-pnpm build
-npx cap sync ios
-npx cap open ios
+# iOS — requires a Mac with Xcode
+pnpm --filter editor ios:sync
+pnpm --filter editor exec cap open ios
+
+# Android — requires the Android SDK
+pnpm --filter editor android:sync
+pnpm --filter editor exec cap open android
 ```
 
-Requires Xcode. The scoped-storage plugin needs these `Info.plist` keys:
+- `ios:sync` / `android:sync` build the editor (and embedded player) and run `cap sync`. `ios:sync` then restores the custom Secrets, ScopedStorage, AudioLifecycle and Memory plugin classes in `capacitor.config.json`, so do not run `cap sync ios` directly.
+- `ios:build` / `android:build` add an unsigned simulator / debug APK compile. Signing, archives and uploads are separate distribution operations; see [docs/development/distribution.md](docs/development/distribution.md).
+
+The scoped-storage plugin needs these `Info.plist` keys:
 
 ```xml
 <key>LSSupportsOpeningDocumentsInPlace</key>
