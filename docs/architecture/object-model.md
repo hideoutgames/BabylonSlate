@@ -16,7 +16,7 @@ Shared surface for the headless runtime object graph (engineplan §5, §16). Imp
 | Export | Role |
 | --- | --- |
 | `BObject` | Base instance: guid, classId, variables, `onCreation` / `onTick` / `onDestroyed` |
-| `Actor` | World-placed object with transform and ordered component list |
+| `Actor` | World-placed object with transform and ordered component list. Its `variables` map marks the World's `structuralRevision` on any `set`/`delete`/`clear` that changes `parentId` or `name`, so direct map writes cannot bypass identity/hierarchy bookkeeping. |
 | `Scene` | Live Play scene `BObject` (`classId` `Scene:{assetGuid}`). `variables.sceneName` is the authored display name; `variables.assetGuid` is the document guid (Get-only); `variables.gravity` is the live world gravity `{ x, y, z }` (Get/Set). Not spawnable. |
 | `SceneLayer` | Session overlay instance (`BObject`); not an Actor. Stores `layerBounds` (orange design canvas, default 32×18). |
 | `SceneLayerActor` | Overlay actor tagged `sceneLayerId`; same World tick as world actors |
@@ -98,6 +98,12 @@ Engine-managed singletons: a user Class opts in by parenting to `GameSubsystem` 
 Mid-tick `destroy` and `spawn` enqueue work. Deferred queues flush after the current phase (or end of tick) so destroying one actor never skips a sibling in the same phase.
 
 `World.findActor` uses an incrementally maintained GUID index, so navigation and contact dispatch lookups do not scan the actor array. The index changes when spawn/destroy commits, before lifecycle callbacks; queued spawns remain invisible and queued destroys remain visible until then. Temporary duplicate GUIDs resolve to the first actor in spawn order. Tick/snapshot iteration still uses the ordered array, and removing actors still maintains dense spawn indices.
+
+Complexity (hook order and hook-visible state are unchanged):
+
+- Removal finds an actor through its dense `spawnIndex` (O(1)), falling back to a scan only while a re-entrant removal is settling. It reassigns indices only from the earliest removed position onward, after that actor's hooks, as before. SceneLayer teardown still removes and notifies one actor at a time.
+- Deferred spawn/destroy queues drain through World-owned cursors, not `shift()`. Entries enqueued during a flush, including by a re-entrant `flushPending`, still drain in the same pass.
+- The actors and components phases do not copy lists per tick. A phase reads the live actor array up to its starting length (spawns only append) and copies that prefix only if an actor is removed mid-phase. Each actor's components go into reused scratch before its first callback. Actors and components added during a phase still wait for the next tick; ones attached to an actor the phase has not reached still tick.
 
 Preparation rollback uses `World.destroyActorInstance` to target the owned object rather than a reusable guid. An actor cancelled before spawn is removed from the pending queue without firing creation/destruction hooks; an already spawned actor follows normal deferred destruction. Repeated cleanup cannot destroy a later actor with the same guid. SceneLayer destruction removes the owned layer from the live registry before its destruction hooks and removes actors by identity, protecting layers/actors created reentrantly by those hooks.
 
