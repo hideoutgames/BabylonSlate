@@ -14,13 +14,14 @@ type SimulationAuthoringSource = {
 export interface SimulationRetentionState {
   readonly status: "inactive" | "capturing" | "failed" | "applied" | "discarded";
   readonly reason: string | null;
+  readonly unavailableReason: string | null;
 }
 
 /** Immutable authoring baseline and disposable session leases, never runtime edits. */
 export class SimulationSession {
   private detached = false;
   private disposed = false;
-  private retention: SimulationRetentionState = Object.freeze({ status: "inactive", reason: null });
+  private retention: SimulationRetentionState = Object.freeze({ status: "inactive", reason: null, unavailableReason: null });
   private readonly listeners = new Set<() => void>();
   private pendingStop: Promise<boolean> | null = null;
   private captured: Extract<SimulationSceneCaptureResult, { ok: true }> | null = null;
@@ -64,6 +65,7 @@ export class SimulationSession {
         : scene.actors.some(actor => actor.components.some(component => component.classId === "DynamicRuntimeMeshComponent"))
           ? "Keep is unavailable for Dynamic Runtime Mesh geometry without an authored resource representation."
           : null;
+    this.retention = Object.freeze({ ...this.retention, unavailableReason: this.retentionUnavailableReason });
   }
 
   static async prepare(options: {
@@ -117,12 +119,14 @@ export class SimulationSession {
     if (this.pendingStop) return this.pendingStop;
     if (!this.keepChanges || this.discardRequested || this.retention.status === "applied") return Promise.resolve(true);
     if (this.disposed) return Promise.resolve(false);
-    if (this.retentionUnavailableReason) { this.publishRetention("failed", this.retentionUnavailableReason); return Promise.resolve(false); }
     this.publishRetention("capturing", null);
     const attempt = (async () => {
       try {
         const result = this.captured ?? await capture();
         if (this.discardRequested) return true;
+        // Even known unsupported state must enter the acknowledged quiescent
+        // boundary before a failed Stop exposes Retry/Discard.
+        if (this.retention.unavailableReason) { this.publishRetention("failed", this.retention.unavailableReason); return false; }
         if (!result.ok) { this.publishRetention("failed", `${result.path}: ${result.reason}`); return false; }
         if (result.identity.generation !== this.ticket.generation) {
           this.publishRetention("failed", "The final scene belongs to a different Simulation session."); return false;
@@ -154,8 +158,15 @@ export class SimulationSession {
     this.publishRetention("discarded", reason);
   }
 
+  /** Latch unsupported topology as soon as it occurs, without pausing gameplay. */
+  reportRetentionUnavailable(reason: string): void {
+    if (this.disposed || this.retention.unavailableReason) return;
+    this.retention = Object.freeze({ ...this.retention, unavailableReason: reason });
+    for (const listener of this.listeners) listener();
+  }
+
   private publishRetention(status: SimulationRetentionState["status"], reason: string | null): void {
-    this.retention = Object.freeze({ status, reason });
+    this.retention = Object.freeze({ status, reason, unavailableReason: this.retention.unavailableReason });
     for (const listener of this.listeners) listener();
   }
 

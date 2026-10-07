@@ -120,7 +120,7 @@ it("rejects an un-undoable result atomically and allows explicit discard", async
   const { simulation, capture, documents, edits, original, id } = await retainingFixture(32);
   const revisions = documents.getRevisions();
   expect(await simulation.resolveStop(capture)).toBe(false);
-  expect(simulation.getRetention()).toEqual({ status: "failed", reason: "Undo history budget exceeded" });
+  expect(simulation.getRetention()).toEqual({ status: "failed", reason: "Undo history budget exceeded", unavailableReason: null });
   expect(documents.getState().openDocuments.get(id)).toMatchObject({ content: original, dirty: false });
   expect(documents.getRevisions()).toBe(revisions);
   expect(edits.getStack(id).historyBytes).toBe(0);
@@ -141,5 +141,17 @@ it("lets Discard release a pending capture and ignores its late final state", as
   await Promise.resolve();
   expect(documents.getState().openDocuments.get(id)).toMatchObject({ content: original, dirty: false });
   expect(edits.getStack(id).historyBytes).toBe(0);
-  expect(simulation.getRetention()).toEqual({ status: "discarded", reason: "Host closed" });
+  expect(simulation.getRetention()).toEqual({ status: "discarded", reason: "Host closed", unavailableReason: null });
+});
+
+
+it("latches unsupported topology while gameplay runs but still quiesces on Stop", async () => {
+  const { simulation, capture, documents, original, id } = await retainingFixture();
+  simulation.reportRetentionUnavailable("An independent streamed Scene was created");
+  expect(simulation.getRetention()).toMatchObject({ status: "inactive", unavailableReason: "An independent streamed Scene was created" });
+  expect(await simulation.resolveStop(capture)).toBe(false);
+  expect(capture).toHaveBeenCalledOnce();
+  expect(simulation.getRetention()).toMatchObject({ status: "failed", reason: "An independent streamed Scene was created" });
+  expect(documents.getState().openDocuments.get(id)!.content).toBe(original);
+  simulation.discardChanges(); simulation.dispose(true);
 });
