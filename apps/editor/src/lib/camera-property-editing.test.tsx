@@ -1,11 +1,14 @@
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { useState } from "react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SerializedComponent } from "@babylonslate/core";
 import { PropertyGrid } from "@babylonslate/editor-kit";
 import { componentPropertyRows } from "./component-property-rows";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 function cameraEditor(projectionMode = "perspective") {
   let committed: SerializedComponent = {
@@ -30,6 +33,16 @@ function cameraEditor(projectionMode = "perspective") {
 }
 
 describe("camera Details editing", () => {
+  it("can reach whole orthographic sizes from the slider's fractional minimum", async () => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 100, 20));
+    const editor = cameraEditor("orthographic");
+    const slider = await editor.findByRole("slider", { name: "Orthographic Size" });
+    fireEvent.keyDown(slider, { key: "Home" });
+    for (let step = 0; step < 9; step += 1) fireEvent.keyDown(slider, { key: "ArrowRight" });
+    expect(editor.current().orthographicSize).toBe(1);
+    expect((editor.getByTestId("property-actor-camera-orthographicSize") as HTMLInputElement).value).toBe("1");
+  });
+
   it.each(["perspective", "orthographic"])("shows controls used by %s projection without validation warnings", (projectionMode) => {
     const editor = cameraEditor(projectionMode);
     expect(Boolean(editor.queryByTestId("property-actor-camera-fieldOfView"))).toBe(projectionMode === "perspective");
