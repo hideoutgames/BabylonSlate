@@ -72,6 +72,9 @@ export interface WorldOptions {
   canTickSceneSubsystem?: (subsystem: SceneSubsystem) => boolean;
 }
 
+/** An in-progress actor/component phase's view of the actor list. */
+type ActorIteration = { list: readonly Actor[]; length: number };
+
 export class World {
   /** Identity/hierarchy revision; no properties or world snapshots are collected. */
   structuralRevision = 0;
@@ -107,8 +110,17 @@ export class World {
   /** Preserve first-spawned lookup while replacement actors share a guid. */
   private readonly actorsByGuid = new Map<Guid, Actor[]>();
   private readonly sceneLayers: SceneLayer[] = [];
+  /** Earliest `actors` position whose spawnIndex a removal shifted and has not yet reassigned. */
+  private staleSpawnIndexFrom = Number.POSITIVE_INFINITY;
+  /** Phase views by re-entrancy depth; reused so ticking allocates no actor/component copies. */
+  private readonly actorIterations: ActorIteration[] = [];
+  private actorIterationDepth = 0;
+  private readonly componentScratch: Array<Array<ActorComponent | undefined>> = [];
+  /** Deferred queues; entries before each cursor are already consumed by the running flush. */
   private readonly pendingSpawn: Actor[] = [];
+  private spawnCursor = 0;
   private readonly pendingDestroy: Array<Guid | Actor> = [];
+  private destroyCursor = 0;
   private started = false;
   /** True while a tick phase is executing (before deferred flush). */
   private ticking = false;
@@ -352,7 +364,7 @@ export class World {
       return;
     }
     if (actor.world || actor.destroyed) return;
-    const pending = this.pendingSpawn.indexOf(actor);
+    const pending = this.pendingSpawn.indexOf(actor, this.spawnCursor);
     if (pending >= 0) this.pendingSpawn.splice(pending, 1);
     // An unspawned actor never received creation hooks and has no live world.
     for (const component of actor.components) {
@@ -513,25 +525,43 @@ export class World {
     for (const component of actor.components) component.callOnCreation();
   }
 
+  /**
+   * Drains both queues, including entries hooks enqueue meanwhile. Cursors live
+   * on the World so a re-entrant flush consumes the same entries a nested
+   * `shift()` would; a drained queue is truncated in place.
+   */
   private flushDeferred(): void {
-    while (this.pendingSpawn.length > 0 || this.pendingDestroy.length > 0) {
-      while (this.pendingSpawn.length > 0) {
-        const actor = this.pendingSpawn.shift()!;
-        this.commitSpawn(actor);
+    while (
+      this.spawnCursor < this.pendingSpawn.length ||
+      this.destroyCursor < this.pendingDestroy.length
+    ) {
+      while (this.spawnCursor < this.pendingSpawn.length) {
+        this.commitSpawn(this.pendingSpawn[this.spawnCursor++]!);
       }
-      while (this.pendingDestroy.length > 0) {
-        const guid = this.pendingDestroy.shift()!;
-        this.commitDestroy(guid);
+      this.pendingSpawn.length = 0;
+      this.spawnCursor = 0;
+      while (this.destroyCursor < this.pendingDestroy.length) {
+        this.commitDestroy(this.pendingDestroy[this.destroyCursor++]!);
       }
+      this.pendingDestroy.length = 0;
+      this.destroyCursor = 0;
     }
+  }
+
+  /** O(1) while spawn indices are dense; scans only while a removal is still settling. */
+  private actorIndex(actor: Actor): number {
+    const index = actor.spawnIndex;
+    return this.actors[index] === actor ? index : this.actors.indexOf(actor);
   }
 
   private commitDestroy(target: Guid | Actor): void {
     const actor = typeof target === "string" ? this.findActor(target) : target;
     if (!actor) return;
-    const index = this.actors.indexOf(actor);
+    const index = this.actorIndex(actor);
     if (index < 0) return;
+    this.detachActorIterations();
     this.actors.splice(index, 1);
+    this.staleSpawnIndexFrom = Math.min(this.staleSpawnIndexFrom, index);
     this.markStructureChanged();
     const sameGuid = this.actorsByGuid.get(actor.guid)!;
     sameGuid.splice(sameGuid.indexOf(actor), 1);
@@ -555,8 +585,38 @@ export class World {
     actor.callOnDestroyed();
     actor.world = null;
     // Reassign dense spawn indices so order stays contiguous after removal.
-    for (let i = 0; i < this.actors.length; i++) {
+    // Hooks above still saw the shifted indices, as before; positions ahead of
+    // the earliest unsettled removal (including a re-entrant one) never moved.
+    for (let i = this.staleSpawnIndexFrom; i < this.actors.length; i++) {
       this.actors[i]!.spawnIndex = i;
+    }
+    this.staleSpawnIndexFrom = Number.POSITIVE_INFINITY;
+  }
+
+  /**
+   * A phase ticks the actors present when it started. The live array only
+   * grows at its end until a removal, so a phase reads it in place and copies
+   * its starting prefix only when an actor is removed mid-phase.
+   */
+  private beginActorIteration(): ActorIteration {
+    const depth = this.actorIterationDepth++;
+    const iteration = (this.actorIterations[depth] ??= { list: this.actors, length: 0 });
+    iteration.list = this.actors;
+    iteration.length = this.actors.length;
+    return iteration;
+  }
+
+  private endActorIteration(): void {
+    // Release a detached copy so it does not retain destroyed actors.
+    this.actorIterations[--this.actorIterationDepth]!.list = this.actors;
+  }
+
+  private detachActorIterations(): void {
+    for (let depth = 0; depth < this.actorIterationDepth; depth++) {
+      const iteration = this.actorIterations[depth]!;
+      if (iteration.list === this.actors) {
+        iteration.list = this.actors.slice(0, iteration.length);
+      }
     }
   }
 
@@ -592,20 +652,10 @@ export class World {
           }
           break;
         case "actors":
-          for (const actor of [...this.actors]) {
-            if (!this.canTickScene()) break;
-            if (!actor.destroyed && this.canTickActor(actor)) actor.callOnTick(ctx);
-          }
+          this.tickActors(ctx);
           break;
         case "components":
-          for (const actor of [...this.actors]) {
-            if (!this.canTickScene()) break;
-            if (actor.destroyed || !this.canTickActor(actor)) continue;
-            for (const component of [...actor.components]) {
-              if (!this.canTickScene() || !this.canTickActor(actor)) break;
-              if (!component.destroyed) component.callOnTick(ctx);
-            }
-          }
+          this.tickComponents(ctx);
           break;
         case "physics":
           this.onPhysics?.(ctx);
@@ -617,6 +667,42 @@ export class World {
     }
 
     this.flushDeferred();
+  }
+
+  private tickActors(ctx: TickContext): void {
+    const iteration = this.beginActorIteration();
+    try {
+      for (let i = 0; i < iteration.length; i++) {
+        if (!this.canTickScene()) break;
+        const actor = iteration.list[i]!;
+        if (!actor.destroyed && this.canTickActor(actor)) actor.callOnTick(ctx);
+      }
+    } finally {
+      this.endActorIteration();
+    }
+  }
+
+  /** Each actor's component list is captured into reused scratch before its first callback. */
+  private tickComponents(ctx: TickContext): void {
+    const iteration = this.beginActorIteration();
+    const scratch = (this.componentScratch[this.actorIterationDepth - 1] ??= []);
+    try {
+      for (let i = 0; i < iteration.length; i++) {
+        if (!this.canTickScene()) break;
+        const actor = iteration.list[i]!;
+        if (actor.destroyed || !this.canTickActor(actor)) continue;
+        const count = actor.components.length;
+        for (let c = 0; c < count; c++) scratch[c] = actor.components[c];
+        for (let c = 0; c < count; c++) {
+          if (!this.canTickScene() || !this.canTickActor(actor)) break;
+          const component = scratch[c]!;
+          if (!component.destroyed) component.callOnTick(ctx);
+        }
+      }
+    } finally {
+      scratch.fill(undefined);
+      this.endActorIteration();
+    }
   }
 
   tick(): number {
