@@ -319,8 +319,9 @@ describe("project round-trip", () => {
     expect(storage.getCurrentFolder()?.name).toBe("Broken");
   });
 
-  it("allows retrying an interrupted app-owned project after its manifest was written", async () => {
+  it.each([true, false])("allows retrying an interrupted app-owned project (deleteProject supported: %s)", async (supportsDeleteProject) => {
     const storage = new MemoryStorageAdapter("documents");
+    if (!supportsDeleteProject) Object.defineProperty(storage, "deleteProject", { value: undefined });
     await storage.openDocumentsProject("Interrupted");
     await storage.writeText(".babylonslate-creating", "Project creation in progress\n");
     await storage.writeText(PROJECT_FILE, JSON.stringify(createEmptyProject("Interrupted")));

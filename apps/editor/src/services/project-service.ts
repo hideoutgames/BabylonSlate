@@ -1012,7 +1012,7 @@ export class ProjectService {
         await this.storage.deleteProject(handle);
         return { handle: await this.storage.openDocumentsProject(name), createdHere: true };
       }
-      for (const entry of await this.storage.readdir(".")) await this.storage.remove(entry.name, true);
+      for (const entry of await this.storage.readdir(".")) await this.storage.remove(entry.name);
       return { handle, createdHere: true };
     }
     return { handle, createdHere: !registered && empty };
