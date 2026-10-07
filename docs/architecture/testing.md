@@ -18,6 +18,13 @@ Browser probes of persisted OPFS assets, journals, and thumbnails resolve each l
 
 Security scans keep pull-request, push and individual comment events in separate cancellation groups. A comment cannot cancel the PR commit scan, and newer comments cannot cancel scans of earlier comments. Root Node tooling and distribution scripts use ESLint's recommended JavaScript rules, including undefined-name and unused-binding checks. `pnpm lint <files>` checks only those paths, and `pnpm typecheck --filter <workspace>` selects that workspace before invoking its script; unfiltered commands retain the full CI scope.
 
+Lint toolchain (root `eslint.config.js`, flat config via `defineConfig`):
+
+- ESLint 10 (Node 20.19+ / 22.13+), `@eslint/js` recommended, `typescript-eslint` 8 recommended for `*.ts(x)`. ESLint 10's recommended set adds `no-useless-assignment`, `no-unassigned-vars` and `preserve-caught-error` (rethrown errors pass `{ cause }`).
+- `eslint-plugin-react-hooks` 7 `configs.flat.recommended`: the hooks rules plus the React Compiler diagnostics as errors (`refs`, `set-state-in-effect`, `set-state-in-render`, `immutability`, `purity`, `globals`, `static-components`, `preserve-manual-memoization`, `use-memo`, `error-boundaries`, `config`, `gating`); `incompatible-library` / `unsupported-syntax` warn. Fix violations rather than disabling them; a disable needs a one-line false-positive justification.
+- `eslint-plugin-react-refresh` 0.5 `only-export-components` (warn, constant exports allowed).
+- Package import boundaries are `no-restricted-imports` blocks in the same file (see [CODING_STANDARDS](../CODING_STANDARDS.md)).
+
 GPU proof harnesses keep typed capture and lifecycle records. Missing native preprocessing textures or active WebGL sampler locations fail qualification with an explicit diagnostic.
 
 Agents run only explicit targeted test files/cases for changed behavior and directly affected consumers, with scoped static checks where relevant. Full local suites, coverage, all browser tests, workspace-wide checks and the cumulative `verify:local` diagnostic require an explicit user request; they are not automatic PR prerequisites. Prose/instruction-only changes use diff/link review. After repairs, rerun only affected checks and document why reused results still apply. Required GitHub CI is unchanged. The cumulative tooling described below remains available as an opt-in diagnostic; its `deliveryEligible` certificate is not required for targeted agent delivery.

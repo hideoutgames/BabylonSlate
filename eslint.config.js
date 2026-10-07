@@ -1,4 +1,5 @@
 import js from "@eslint/js";
+import { defineConfig } from "eslint/config";
 import globals from "globals";
 import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
@@ -229,7 +230,7 @@ const appNoCapacitor = boundary(
   ],
 );
 
-export default tseslint.config(
+export default defineConfig(
   {
     ignores: [
       "dist",
@@ -263,7 +264,9 @@ export default tseslint.config(
       "react-refresh": reactRefresh,
     },
     rules: {
-      ...reactHooks.configs.recommended.rules,
+      // Hooks rules plus the React Compiler diagnostics (purity, refs,
+      // set-state-in-effect, immutability, ...) from the stable preset.
+      ...reactHooks.configs.flat.recommended.rules,
       "react-refresh/only-export-components": [
         "warn",
         { allowConstantExport: true },
