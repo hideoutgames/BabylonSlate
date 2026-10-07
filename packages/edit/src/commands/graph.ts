@@ -97,8 +97,14 @@ export class SetNodeDataCommand implements EditCommand<SerializedGraph> {
   readonly nodeId: string;
   readonly from: Record<string, unknown>;
   readonly to: Record<string, unknown>;
-  /** Captured payload size so snapshot-style data edits count toward the byte budget. */
-  readonly byteSize: number;
+  #byteSize?: number;
+  /**
+   * Captured payload size so snapshot-style data edits count toward the byte
+   * budget; measured on first read and memoised.
+   */
+  get byteSize(): number {
+    return (this.#byteSize ??= snapshotBytes({ from: this.from, to: this.to }));
+  }
 
   constructor(
     nodeId: string,
@@ -110,9 +116,6 @@ export class SetNodeDataCommand implements EditCommand<SerializedGraph> {
     this.from = from;
     this.to = to;
     this.mergeKey = mergeKey ?? `data:${nodeId}`;
-    this.byteSize = new TextEncoder().encode(
-      JSON.stringify({ from, to }),
-    ).byteLength;
   }
 
   apply(doc: SerializedGraph): SerializedGraph {
@@ -125,12 +128,27 @@ export class SetNodeDataCommand implements EditCommand<SerializedGraph> {
   }
 
   invert(): SetNodeDataCommand {
-    return new SetNodeDataCommand(
+    const inverse = new SetNodeDataCommand(
       this.nodeId,
       this.to,
       this.from,
       this.mergeKey,
     );
+    // Swapping `from` and `to` keeps the measured size.
+    inverse.#byteSize = this.#byteSize;
+    return inverse;
+  }
+
+  /** A gesture keeps only its first `from` and its latest `to`. */
+  coalesce(next: EditCommand<SerializedGraph>): SetNodeDataCommand | undefined {
+    if (
+      !(next instanceof SetNodeDataCommand) ||
+      next.nodeId !== this.nodeId ||
+      next.mergeKey !== this.mergeKey
+    ) {
+      return undefined;
+    }
+    return new SetNodeDataCommand(this.nodeId, this.from, next.to, this.mergeKey);
   }
 }
 
@@ -138,7 +156,11 @@ export class AddNodeCommand implements EditCommand<SerializedGraph> {
   readonly type = "graph.addNode";
   readonly node: SerializedGraph["nodes"][number];
   readonly index?: number;
-  readonly byteSize: number;
+  #byteSize?: number;
+  /** Retained snapshot cost, measured on first read and memoised. */
+  get byteSize(): number {
+    return (this.#byteSize ??= snapshotBytes(this.node));
+  }
 
   constructor(
     node: SerializedGraph["nodes"][number],
@@ -146,7 +168,6 @@ export class AddNodeCommand implements EditCommand<SerializedGraph> {
   ) {
     this.node = node;
     this.index = index;
-    this.byteSize = snapshotBytes(node);
   }
 
   apply(doc: SerializedGraph): SerializedGraph {
@@ -172,7 +193,11 @@ export class RemoveNodeCommand implements EditCommand<SerializedGraph> {
   readonly type = "graph.removeNode";
   readonly node: SerializedGraph["nodes"][number];
   readonly index?: number;
-  readonly byteSize: number;
+  #byteSize?: number;
+  /** Retained snapshot cost, measured on first read and memoised. */
+  get byteSize(): number {
+    return (this.#byteSize ??= snapshotBytes(this.node));
+  }
 
   constructor(
     node: SerializedGraph["nodes"][number],
@@ -180,7 +205,6 @@ export class RemoveNodeCommand implements EditCommand<SerializedGraph> {
   ) {
     this.node = node;
     this.index = index;
-    this.byteSize = snapshotBytes(node);
   }
 
   apply(doc: SerializedGraph): SerializedGraph {
@@ -202,7 +226,11 @@ export class SetGraphMembersCommand implements EditCommand<SerializedGraph> {
   readonly type = "graph.setMembers";
   readonly from: SerializedGraph["members"];
   readonly to: SerializedGraph["members"];
-  readonly byteSize: number;
+  #byteSize?: number;
+  /** Retained snapshot cost, measured on first read and memoised. */
+  get byteSize(): number {
+    return (this.#byteSize ??= snapshotBytes({ from: this.from, to: this.to }));
+  }
 
   constructor(
     from: SerializedGraph["members"],
@@ -210,7 +238,6 @@ export class SetGraphMembersCommand implements EditCommand<SerializedGraph> {
   ) {
     this.from = from;
     this.to = to;
-    this.byteSize = snapshotBytes({ from, to });
   }
 
   apply(doc: SerializedGraph): SerializedGraph {
@@ -231,7 +258,11 @@ export class SetGraphComponentsCommand implements EditCommand<SerializedGraph> {
   readonly type = "graph.setComponents";
   readonly from: SerializedGraph["components"];
   readonly to: SerializedGraph["components"];
-  readonly byteSize: number;
+  #byteSize?: number;
+  /** Retained snapshot cost, measured on first read and memoised. */
+  get byteSize(): number {
+    return (this.#byteSize ??= snapshotBytes({ from: this.from, to: this.to }));
+  }
 
   constructor(
     from: SerializedGraph["components"],
@@ -239,7 +270,6 @@ export class SetGraphComponentsCommand implements EditCommand<SerializedGraph> {
   ) {
     this.from = from;
     this.to = to;
-    this.byteSize = snapshotBytes({ from, to });
   }
 
   apply(doc: SerializedGraph): SerializedGraph {
@@ -260,7 +290,11 @@ export class SetGraphFunctionGraphsCommand implements EditCommand<SerializedGrap
   readonly type = "graph.setFunctionGraphs";
   readonly from: SerializedGraph["functionGraphs"];
   readonly to: SerializedGraph["functionGraphs"];
-  readonly byteSize: number;
+  #byteSize?: number;
+  /** Retained snapshot cost, measured on first read and memoised. */
+  get byteSize(): number {
+    return (this.#byteSize ??= snapshotBytes({ from: this.from, to: this.to }));
+  }
 
   constructor(
     from: SerializedGraph["functionGraphs"],
@@ -268,7 +302,6 @@ export class SetGraphFunctionGraphsCommand implements EditCommand<SerializedGrap
   ) {
     this.from = from;
     this.to = to;
-    this.byteSize = snapshotBytes({ from, to });
   }
 
   apply(doc: SerializedGraph): SerializedGraph {
@@ -282,6 +315,35 @@ export class SetGraphFunctionGraphsCommand implements EditCommand<SerializedGrap
 
   invert(): SetGraphFunctionGraphsCommand {
     return new SetGraphFunctionGraphsCommand(this.to, this.from);
+  }
+}
+
+export class SetGraphActorDefaultsCommand implements EditCommand<SerializedGraph> {
+  readonly type = "graph.setActorDefaults";
+  readonly from: SerializedGraph["actorDefaults"];
+  readonly to: SerializedGraph["actorDefaults"];
+  readonly byteSize: number;
+
+  constructor(
+    from: SerializedGraph["actorDefaults"],
+    to: SerializedGraph["actorDefaults"],
+  ) {
+    this.from = from;
+    this.to = to;
+    this.byteSize = snapshotBytes({ from, to });
+  }
+
+  apply(doc: SerializedGraph): SerializedGraph {
+    if (this.to === undefined) {
+      const next = { ...doc };
+      delete next.actorDefaults;
+      return next;
+    }
+    return { ...doc, actorDefaults: this.to };
+  }
+
+  invert(): SetGraphActorDefaultsCommand {
+    return new SetGraphActorDefaultsCommand(this.to, this.from);
   }
 }
 
@@ -364,5 +426,14 @@ export function createSetGraphFunctionGraphsCommandFromJson(
   return new SetGraphFunctionGraphsCommand(
     payload.from as SerializedGraph["functionGraphs"],
     payload.to as SerializedGraph["functionGraphs"],
+  );
+}
+
+export function createSetGraphActorDefaultsCommandFromJson(
+  payload: Record<string, unknown>,
+): SetGraphActorDefaultsCommand {
+  return new SetGraphActorDefaultsCommand(
+    payload.from as SerializedGraph["actorDefaults"],
+    payload.to as SerializedGraph["actorDefaults"],
   );
 }

@@ -3,7 +3,9 @@ export {
   DocumentEditStack,
   type ApplyResult,
   type DocumentEditStackOptions,
+  type EditApplyResult,
   type HistoryAdmissionResult,
+  type HistoryOutcome,
 } from "./stack";
 export { EditSession, DEFAULT_EDIT_BYTE_BUDGET } from "./session";
 export {
@@ -15,6 +17,7 @@ export {
   SetGraphMembersCommand,
   SetGraphComponentsCommand,
   SetGraphFunctionGraphsCommand,
+  SetGraphActorDefaultsCommand,
   SetNodeDataCommand,
   createMoveNodeCommandFromJson,
   createAddEdgeCommandFromJson,
@@ -25,6 +28,7 @@ export {
   createSetGraphMembersCommandFromJson,
   createSetGraphComponentsCommandFromJson,
   createSetGraphFunctionGraphsCommandFromJson,
+  createSetGraphActorDefaultsCommandFromJson,
 } from "./commands/graph";
 export { diffGraphCommands } from "./commands/graph-diff";
 export {

@@ -5,6 +5,7 @@ export const ASSET_DOCUMENT_KINDS = [
   "scene",
   "scene-layer",
   "graph",
+  "prefab",
   "font",
   "sprite",
   "sprite-animation",
@@ -85,6 +86,8 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "SceneLayer";
     case "graph":
       return "Class";
+    case "prefab":
+      return "Prefab";
     case "font":
       return "Font";
     case "sprite":
@@ -191,6 +194,8 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
     case "Graph":
     case "Class":
       return "graph";
+    case "Prefab":
+      return "prefab";
     case "Font":
       return "font";
     case "Sprite":
@@ -278,6 +283,8 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Scene Layer";
     case "graph":
       return "Class";
+    case "prefab":
+      return "Prefab";
     case "font":
       return "Font";
     case "sprite":
@@ -443,7 +450,7 @@ export function labelFromPath(path: string): string {
       .split("/")
       .pop()
       ?.replace(
-        /\.(inputaction|inputaxis|scene|scenelayer|graph|eui|ui|spriteanim|sprite|anim|shader|material|matfunc|class|tileset|tilemap|datadefinition|datatree|plugin|mixer|channel|atten|emitter|particlegraph|particles|skyboxcreator|rendertargettexture|rendertarget|savegame)\.(babasset|json)$/i,
+        /\.(inputaction|inputaxis|scene|scenelayer|graph|prefab|eui|ui|spriteanim|sprite|anim|shader|material|matfunc|class|tileset|tilemap|datadefinition|datatree|plugin|mixer|channel|atten|emitter|particlegraph|particles|skyboxcreator|rendertargettexture|rendertarget|savegame)\.(babasset|json)$/i,
         "",
       )
       .replace(/\.babasset$/i, "")

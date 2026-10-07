@@ -5,7 +5,7 @@ import type {
   RevoluteImpulseJoint,
   QueryFilterFlags,
   PhysicsHooks,
-} from "@dimforge/rapier2d-compat";
+} from "@dimforge/rapier2d-deterministic-compat";
 import type { PhysicsBackend } from "./backend";
 import type {
   CharacterControllerDesc,
@@ -49,7 +49,6 @@ type RapierApi = {
     timestep: number;
     step(eventQueue?: RapierEventQueue, hooks?: PhysicsHooks): void;
     propagateModifiedBodyPositionsToColliders(): void;
-    updateSceneQueries(): void;
     free(): void;
     createRigidBody(desc: unknown): RapierRigidBody;
     removeRigidBody(body: RapierRigidBody): void;
@@ -77,6 +76,11 @@ type RapierApi = {
       position: { x: number; y: number },
       rotation: number,
       shape: unknown,
+      callback: (collider: RapierCollider) => boolean,
+    ): void;
+    collidersWithAabbIntersectingAabb(
+      center: { x: number; y: number },
+      halfExtents: { x: number; y: number },
       callback: (collider: RapierCollider) => boolean,
     ): void;
   };
@@ -242,7 +246,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
   static async create(
     options: PhysicsBackendOptions,
   ): Promise<Rapier2DPhysicsBackend> {
-    const mod = await import("@dimforge/rapier2d-compat");
+    const mod = await import("@dimforge/rapier2d-deterministic-compat");
     const RAPIER = (mod.default ?? mod) as unknown as RapierApi;
     await RAPIER.init();
     return new Rapier2DPhysicsBackend(RAPIER, options.gravity);
@@ -339,7 +343,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     let joint: ImpulseJoint | undefined;
     try {
       joint = this.world.createImpulseJoint(params, a.body, b.body, true);
-      // Rapier 0.14's revolute descriptor ignores limits; set them on the native joint.
+      // Rapier's revolute descriptor ignores limits; set them on the native joint.
       if (limits) (joint as RevoluteImpulseJoint).setLimits(limits[0], limits[1]);
       joint.setContactsEnabled(desc.collideConnected ?? false);
       const previous = this.constraints.get(desc.id);
@@ -624,9 +628,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     this.world.timestep = dt;
     this.world.step(this.eventQueue, this.collisionHooks);
     this.queriesDirty = false;
-    this.eventQueue.drainCollisionEvents((handleA, handleB, started) => {
-      this.recordCollisionEvent(handleA, handleB, started);
-    });
+    this.drainCollisionEvents();
     // A replaced collider's overlap that this step did not start again ended.
     for (const key of this.refreshingTriggerKeys) {
       const pair = parseContactKey(key);
@@ -786,11 +788,12 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     const reposition = position.x !== current.x || position.y !== current.y || rotation !== currentRotation;
     try {
       if (reposition) {
-        // Query from the authored pose, including inherited parent motion.
+        // Query from the authored pose, including inherited parent motion. Only
+        // the character's own shape moves; obstacles come from the flushed tree,
+        // so no collision detection runs at this temporary pose.
         bodyRecord.body.setTranslation(position, true);
         bodyRecord.body.setRotation(rotation, true);
-        this.queriesDirty = true;
-        this.flushSceneQueries();
+        this.world.propagateModifiedBodyPositionsToColliders();
       }
       character.controller.computeColliderMovement(collider.collider, {
         x: translation.x,
@@ -890,11 +893,44 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     return this.world.createCollider(segment, body);
   }
 
+  /**
+   * Scene queries and the character controller read the broad-phase tree,
+   * which Rapier only refreshes while stepping (0.18 removed
+   * `updateSceneQueries`). A zero-length step applies pending user changes and
+   * collision detection without simulating time; kinematic targets stay
+   * pending. Its contacts are those the next step would detect from the same
+   * poses, so they are recorded now and not repeated.
+   */
   private flushSceneQueries(): void {
     if (!this.queriesDirty) return;
-    this.world.propagateModifiedBodyPositionsToColliders();
-    this.world.updateSceneQueries();
+    this.world.timestep = 0;
+    this.world.step(this.eventQueue, this.collisionHooks);
+    // Rapier 0.21 returns from a zero-length step without re-attaching a tree
+    // optimization it deferred, which hides every collider from queries. The
+    // next step re-attaches it and, with nothing changed, defers nothing.
+    if (this.colliders.size > 0 && !this.queryTreeHasLeaves())
+      this.world.step(this.eventQueue, this.collisionHooks);
     this.queriesDirty = false;
+    this.drainCollisionEvents();
+  }
+
+  private queryTreeHasLeaves(): boolean {
+    let found = false;
+    this.world.collidersWithAabbIntersectingAabb(
+      { x: 0, y: 0 },
+      { x: 1e30, y: 1e30 },
+      () => {
+        found = true;
+        return false;
+      },
+    );
+    return found;
+  }
+
+  private drainCollisionEvents(): void {
+    this.eventQueue.drainCollisionEvents((handleA, handleB, started) => {
+      this.recordCollisionEvent(handleA, handleB, started);
+    });
   }
 
   /** Native exits cannot resolve an old handle after its collider is removed. */

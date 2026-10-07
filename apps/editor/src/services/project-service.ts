@@ -32,6 +32,7 @@ import {
   normalizeProjectAppearance,
   normalizeScene,
   normalizeSceneLayer,
+  normalizePrefab,
   classHeaderMeta,
   documentId,
   parseDocumentId,
@@ -187,6 +188,8 @@ function headerMetaForSave(
     content as Record<string, unknown>,
   );
   if (materialMeta) return materialMeta;
+  // Closed Prefabs sync placed instances and place new ones from the header alone.
+  if (type === "Prefab") return { components: normalizePrefab(content).components };
   if (type === "Class" || type === "Graph") {
     return classHeaderMeta(
       content as {
@@ -2104,6 +2107,7 @@ export class ProjectService {
     if (kind === "scene-layer") {
       return normalizeSceneLayer(content);
     }
+    if (kind === "prefab") return { ...normalizePrefab(content) };
     if (kind === "graph") {
       return hydrateClassDocumentPayload(
         content as unknown as Record<string, unknown>,

@@ -4,7 +4,7 @@ import {
   createDefaultScene,
   createMeshComponent,
 } from "@babylonslate/core";
-import { MoveNodeCommand, SetGraphFunctionGraphsCommand } from "./commands/graph";
+import { MoveNodeCommand, SetGraphActorDefaultsCommand, SetGraphFunctionGraphsCommand } from "./commands/graph";
 import {
   AddActorCommand,
   AddComponentCommand,
@@ -136,6 +136,13 @@ describe("journal", () => {
     expect(next.functionGraphs).toEqual(functionGraphs);
   });
 
+  it("round-trips SetGraphActorDefaultsCommand through the journal", () => {
+    const actorDefaults = { generateOverlapEvents: false, eventTick: "disabled" as const };
+    const revived = reviveCommand(commandToJournalPayload(new SetGraphActorDefaultsCommand(undefined, actorDefaults)));
+    expect(revived).toBeInstanceOf(SetGraphActorDefaultsCommand);
+    expect((revived!.apply({ nodes: [], edges: [] }) as { actorDefaults?: unknown }).actorDefaults).toEqual(actorDefaults);
+  });
+
   it("round-trips every scene command type through the journal", () => {
     const scene = createDefaultScene();
     scene.actors[0]!.components.push(createMeshComponent("c1", "box"));
@@ -232,11 +239,19 @@ describe("journal", () => {
       { n: 2 },
       "tilemap-stroke:abc",
     );
+    // Undo history has already measured the command; its size stays out of the journal.
+    expect(command.byteSize).toBe(new TextEncoder().encode('{"from":{"n":1},"to":{"n":2}}').byteLength);
     const payload = commandToJournalPayload(command);
-    expect(payload.mergeKey).toBe("tilemap-stroke:abc");
+    expect(payload).toEqual({
+      type: "asset.setDocument",
+      from: { n: 1 },
+      to: { n: 2 },
+      mergeKey: "tilemap-stroke:abc",
+    });
     const revived = reviveCommand(payload) as SetAssetDocumentCommand | null;
     expect(revived).toBeInstanceOf(SetAssetDocumentCommand);
     expect(revived!.mergeKey).toBe("tilemap-stroke:abc");
     expect(revived!.apply({ n: 1 })).toEqual({ n: 2 });
+    expect(revived!.byteSize).toBe(command.byteSize);
   });
 });

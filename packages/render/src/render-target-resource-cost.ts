@@ -231,7 +231,7 @@ export function managedRenderTargetResources(
       : 1;
     result.push(managedRenderTextureResource(depth, "depth", { samples }));
   }
-  // Pinned WebGL 9.20: depth renderbuffers belong to the wrapper, separately
+  // Pinned WebGL 9.29: depth renderbuffers belong to the wrapper, separately
   // from its sampleable texture. Preserve their own identity when wrappers share
   // an attachment. WebGPU stores depth as an InternalTexture above.
   const glTarget = target as RenderTargetWrapper & {

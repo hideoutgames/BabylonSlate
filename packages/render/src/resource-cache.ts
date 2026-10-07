@@ -488,7 +488,7 @@ export class ResourceCache {
     const uploadKey = uploadSamplingKey(options);
     const blobUrl = this.blobUrlForSamplingKey(entry, uploadKey);
     const ktx2 = ktx2LoaderHints(bytes);
-    // Babylon 9.20 uploads a block-compressed KTX2 without invertY (WebGPU
+    // Babylon 9.29 uploads a block-compressed KTX2 without invertY (WebGPU
     // passes false, WebGL2 sets no UNPACK_FLIP_Y) and, unlike KTX1 and .basis,
     // sets no _invertVScale for it. Upload a 2D KTX2 unflipped whatever the
     // request, and flip V on the wrapper instead, so it reads the same way up
@@ -725,7 +725,7 @@ export class ResourceCache {
     const update = () => {
       if (!current() || headerPending || isDisposedGpuTexture(texture)) return;
       const internal = texture.getInternalTexture();
-      // Babylon 9.20's RGBA KTX2 uploader leaves internal width/height at the
+      // Babylon 9.29's RGBA KTX2 uploader leaves internal width/height at the
       // final mip. Header base dimensions and levelCount describe its uploads.
       const uploaded = uploadedTextureBytes(internal, size?.ktx2MipLevels ?? size?.mipLevels, size?.ktx2MipLevels !== undefined ? size : undefined);
       const estimate = uploaded ?? (size ? uploadedTextureBytes({

@@ -8,7 +8,7 @@ Particles wrap Babylon `GPUParticleSystem` / `ParticleSystem` as **billboard qua
 
 ## Why wrap Babylon
 
-`GPUParticleSystem` (WebGPU compute or WebGL2 transform feedback; the A16 iPad default) and `ParticleSystem` (CPU simulation, GPU draw) already render plane particles: shape emitters, gradients, `isLocal`, prewarm, `targetStopDuration`, `blendMode`, `billboardMode`. Babylon 9.20 Node Particle blocks already are a particle-graph runtime (CPU only). The look is `NodeMaterial.createEffectForParticles(system)` in **Particle** mode.
+`GPUParticleSystem` (WebGPU compute or WebGL2 transform feedback; the A16 iPad default) and `ParticleSystem` (CPU simulation, GPU draw) already render plane particles: shape emitters, gradients, `isLocal`, prewarm, `targetStopDuration`, `blendMode`, `billboardMode`. Babylon 9.29 Node Particle blocks already are a particle-graph runtime (CPU only). The look is `NodeMaterial.createEffectForParticles(system)` in **Particle** mode.
 
 - Do **not** write a custom tick or simulator, thin-instance particles, Solid Particle System, points cloud, fluid renderer, mesh particles or `MeshParticleEmitter`.
 - Do **not** use the Node Particle Editor UI, snippets, `ParticleHelper` or Babylon JSON payloads. Never store `ParticleSystem.serialize()` or `NodeParticleSystemSet.serialize()` as a payload.
@@ -207,12 +207,12 @@ Render adds node-anchored build codes: `particle.compile.unsupportedNode` (no bl
     - `targetStopDuration.value` (Duration on Once, 0 on Infinite);
     - `isLocal`, the service's emitter mesh, `disposeOnStop = false` and `manualEmitCount = -1`.
   - Emit Rate is a Babylon Int port, so it connects without Babylon's type check.
-  - `SlateSystemBlock` seeds Babylon 9.20's uninitialised `_buildId`, so a value node with several consumers builds once.
+  - `SlateSystemBlock` seeds Babylon 9.29's uninitialised `_buildId`, so a value node with several consumers builds once.
   - The required texture input takes an empty `ParticleTextureSourceBlock`, which creates no texture. After `createSystem` and `emitErrors` the system gets its own readiness texture ([Look](#look)).
   - A failure returns `particle.compile.*` diagnostics anchored to the graph node (and pin when known). Babylon's string throws are attributed to the block that was building. The set and any partial system are disposed, and no texture is created.
 - The Material binds after the build through the Basic path (`bindParticleMaterial`).
 - Retiring a slot stops the system, then calls `set.dispose()`, which disposes the blocks, the system and its readiness texture. `ParticleSystemSet.emitterNode` is never used, because its dispose would destroy the actor's emitter mesh.
-- **CPU cost:** graph slots are always CPU `ParticleSystem`s (Babylon 9.20 has no GPU node path), at the authored capacity up to 4096. Device cost on the A16 iPad is unmeasured.
+- **CPU cost:** graph slots are always CPU `ParticleSystem`s (Babylon 9.29 has no GPU node path), at the authored capacity up to 4096. Device cost on the A16 iPad is unmeasured.
 
 ### Local Space
 
@@ -401,11 +401,11 @@ A live component has an exact incarnation and a preparation generation. Its desi
 
 - Repeated Play while preparing or playing is idempotent: no native reset, repeated acquisition, or new material preparation. Stop while preparing cancels that generation. Late completions cannot start it or a successor with the same actor/component key.
 - Normal Stop stops new emission and drains existing particles. CPU completion uses the native live-particle count. GPU completion uses a conservative historical maximum lifetime (including lifetime curves and pre-stop edits), advanced by native simulation time on actual draws. GPU processed-slot counts are recorded separately and never used as a nonzero live-particle count. Drained native systems and their leases are retired; a later Play prepares one new run. Play during drain explicitly replaces the draining run.
-- GPU creation uses the owning engine's transform-feedback/compute capabilities and `emitRateControl: true`. The factory's Babylon 9.20 adapter records the public `animate` clock, including prewarm; draw observations avoid double-counting multiply/add passes. No GPU readback is used in gameplay. Pausing freezes simulation time and therefore drain time.
+- GPU creation uses the owning engine's transform-feedback/compute capabilities and `emitRateControl: true`. The factory's Babylon 9.29 adapter records the public `animate` clock, including prewarm; draw observations avoid double-counting multiply/add passes. No GPU readback is used in gameplay. Pausing freezes simulation time and therefore drain time.
 - Each emitter leases a scene-local, generation-specific MaterialLibrary instance (`acquireParticleMaterial`); a Material outside the Particle domain is released and refused. Each native system owns its readiness texture; there are no particle texture leases.
 - Missing SceneLayers keep assignments pending without creating world-scene resources. Owner migration creates a new native bundle. Despawn, SceneLayer loading/removal/clear, world replacement, session reset, scene disposal, and handle disposal invalidate pending callbacks and release the matching resources.
 
-## Babylon 9.20 adapter notes
+## Babylon 9.29 adapter notes
 
 Particle NodeMaterial define changes retire the replaced DrawWrapper after the current frame; Babylon delays effect disposal but destroys its WebGPU draw context immediately. The adapter also releases queued wrappers on engine disposal. Browser proofs count playback resets separately from CPU disposal resets.
 

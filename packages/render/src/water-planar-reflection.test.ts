@@ -266,7 +266,10 @@ it("allocates nothing until a view's water asks for a reflection that can draw",
 it("leases its target under the water category, resizes in place and frees idle storage without scene membership", () => {
   const { engine, scene, camera, frame, release } = host();
   const water = lake(scene, "lake", 40, Vector3.Zero());
-  const textures = scene.textures.length;
+  // The material's field placeholder joins on its first bind, which Babylon
+  // 9.29's process-wide shader imports can place before or after this count.
+  const sceneTextures = () => scene.textures.filter((texture) => texture.name !== "water-field-placeholder").length;
+  const textures = sceneTextures();
   frame();
   const reflection = frame()!;
   const allocated = waterBytes(engine);
@@ -275,7 +278,7 @@ it("leases its target under the water category, resizes in place and frees idle 
   expect(allocated).toBeGreaterThanOrEqual(384 * 192 * 4);
   expect(scene.customRenderTargets).toEqual([]);
   // The mirror camera and target never join the scene: no readiness-relevant membership change.
-  const membership = () => ({ cameras: scene.cameras.length, textures: scene.textures.length });
+  const membership = () => ({ cameras: scene.cameras.length, textures: sceneTextures() });
   expect(membership()).toEqual({ cameras: 1, textures });
   // A smaller view resizes the same target and swaps its charge.
   camera.viewport.width = 0.5;

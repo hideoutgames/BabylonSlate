@@ -7,6 +7,7 @@ import {
   RemoveEdgeCommand,
   RemoveNodeCommand,
   SetGraphMembersCommand,
+  SetGraphActorDefaultsCommand,
   SetGraphComponentsCommand,
   SetGraphFunctionGraphsCommand,
   SetNodeDataCommand,
@@ -18,6 +19,7 @@ import {
   createSetGraphMembersCommandFromJson,
   createSetGraphComponentsCommandFromJson,
   createSetGraphFunctionGraphsCommandFromJson,
+  createSetGraphActorDefaultsCommandFromJson,
   createSetNodeDataCommandFromJson,
 } from "./commands/graph";
 import {
@@ -242,14 +244,24 @@ export function commandToJournalPayload(
         to: functionGraphs.to,
       };
     }
+    case "graph.setActorDefaults": {
+      const actorDefaults = command as SetGraphActorDefaultsCommand;
+      return {
+        type: actorDefaults.type,
+        from: actorDefaults.from,
+        to: actorDefaults.to,
+      };
+    }
     default: {
       if (
         command.type.startsWith("scene.") ||
         command.type.startsWith("asset.")
       ) {
-        // Undo bookkeeping is not target identity; snapshot sizes vary during a scrub.
-        const { byteSize: _byteSize, ...payload } = command;
-        void _byteSize;
+        // Undo bookkeeping is not target identity; snapshot sizes vary during a
+        // scrub. Spreading copies own fields only, so journaling never runs a
+        // command's lazy `byteSize` measurement.
+        const payload: { type: string; [key: string]: unknown } = { ...command };
+        delete payload.byteSize;
         return payload;
       }
       return { type: command.type };
@@ -324,6 +336,10 @@ export function registerGraphCommandRevivers(): void {
   registerCommandReviver(
     "graph.setFunctionGraphs",
     createSetGraphFunctionGraphsCommandFromJson,
+  );
+  registerCommandReviver(
+    "graph.setActorDefaults",
+    createSetGraphActorDefaultsCommandFromJson,
   );
 }
 

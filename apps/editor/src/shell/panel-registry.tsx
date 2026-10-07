@@ -122,6 +122,9 @@ export const panelComponents = {
   "save-game-definition": (props: IDockviewPanelProps) => <SaveGameDefinitionPanel {...props} />,
   viewport: (props: IDockviewPanelProps) => <ViewportPanel {...props} />,
   graph: (props: IDockviewPanelProps) => <GraphPanel {...props} />,
+  // FUNCTION_GRAPH_PANEL_COMPONENT; a literal key, since an imported constant
+  // can still be undefined here when bundle chunks evaluate in a cycle.
+  "function-graph": (props: IDockviewPanelProps) => <GraphPanel {...props} />,
   inspector: (props: IDockviewPanelProps) => <InspectorPanel {...props} />,
   "output-log": (props: IDockviewPanelProps) => <OutputLogPanel {...props} />,
   "compiler-results": (props: IDockviewPanelProps) => (

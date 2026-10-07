@@ -1,6 +1,6 @@
 # GitHub Actions — PR cadence
 
-Verify uses standard runners: `static` + `unit` + four `e2e` shards = 6 jobs per ready PR. At most four counted ready PRs use 24 jobs, and a merge adds `main` Verify + Preview on top. That exceeds GitHub Free's 20-job concurrency cap, so GitHub queues the overflow jobs until runners free up. Draft PRs record skipped checks but do not run these jobs.
+Verify uses standard runners: `static` + `unit` + four `e2e` shards = 6 jobs per ready PR. At most four counted ready PRs use 24 jobs, and a merge adds `main` Verify + Preview + the optional WebKit smoke job on top. That exceeds GitHub Free's 20-job concurrency cap, so GitHub queues the overflow jobs until runners free up. Draft PRs record skipped checks but do not run these jobs.
 
 ## Local verification before opening
 

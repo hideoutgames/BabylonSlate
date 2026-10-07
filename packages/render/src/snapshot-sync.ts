@@ -2,6 +2,7 @@ import {
   isPublishedSnapshot,
   readActorSlotInto,
   readSnapshotHeader,
+  snapshotActiveFloatCount,
   snapshotFloatCount,
   type ActorSlot,
 } from "@babylonslate/bridge";
@@ -82,11 +83,14 @@ export class SnapshotInterpolator {
 
   push(buffer: Float32Array): void {
     if (!isPublishedSnapshot(buffer)) return;
-    if (readSnapshotHeader(buffer).layoutGeneration !== this.generation) return;
+    const header = readSnapshotHeader(buffer);
+    if (header.layoutGeneration !== this.generation) return;
     const dest = this.pair[this.write]!;
-    if (buffer.length > dest.length) return;
-    dest.set(buffer);
-    if (buffer.length < dest.length) dest.fill(0, buffer.length);
+    // Copy only the header and live rows; `sample` never reads past
+    // `actorCount`, so a count the buffer cannot hold would expose stale rows.
+    const span = snapshotActiveFloatCount(buffer);
+    if (span > dest.length || snapshotFloatCount(header.actorCount) > buffer.length) return;
+    dest.set(span === buffer.length ? buffer : buffer.subarray(0, span));
     this.prev = this.next;
     this.next = dest;
     this.write = 1 - this.write;

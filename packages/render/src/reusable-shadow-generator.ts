@@ -25,7 +25,7 @@ export class ReusableShadowGenerator extends ShadowGenerator {
   }
 
   /**
-   * Babylon 9.20 reads the owning light live everywhere except its transform
+   * Babylon 9.29 reads the owning light live everywhere except its transform
    * cache. Receivers are not dirtied; the caller owns their transition.
    */
   moveTo(light: LocalShadowLight): void {
