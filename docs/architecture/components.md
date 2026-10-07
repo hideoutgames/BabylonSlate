@@ -190,6 +190,12 @@ DisclosureSection for the shared Pause On Play preference and explicit
 Performance recording duration, GPU request preference and advanced retained
 data budget. Settings search opens Advanced when targeting its budget field.
 These local preferences never arm collection or alter the independent Trace budget.
+The Debug menu and Play chrome open one lazy Profiler / Frame Debugger surface.
+Its PanelFrame content uses the same PropertyGrid and read-only value controls as
+Trace, with Summary, paged Timeline and searchable executed Frame Report stages.
+It retains one recent result. Viewing results does not subscribe to the world or
+start collection; recording/capture controls explicitly dispatch to the active
+Play or packaged Preview owner. Stop Session remains visible in the dialog.
 Material Details also offers the Text domain, with a glyph preview and Text Output. Scene and Prefab Details reuse the existing AssetPicker for Text Materials, filtering by the live material domain, plus a Material UV enum.
 
 Serialized graph pins may supply a compact `typeLabel` and a `group` heading;

@@ -3,8 +3,10 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuLabel,
+  DropdownMenuItem,
   DropdownMenuSeparator,
 } from "@babylonslate/ui/components/dropdown-menu";
+import { useDiagnosticResultsStore } from "../context/diagnostic-results-context";
 
 export type PlayDebugMenuItemsProps = {
   overlayStats: boolean;
@@ -38,8 +40,13 @@ export function PlayDebugMenuItems({
   onPreviewBuildChange,
   onPlayFromSceneChange,
 }: PlayDebugMenuItemsProps) {
+  const diagnostics = useDiagnosticResultsStore();
   return (
     <DropdownMenuContent align="center" className="w-max min-w-56 whitespace-nowrap">
+      {diagnostics ? <DropdownMenuGroup>
+        <DropdownMenuItem data-testid="open-profiler" onSelect={() => diagnostics.open("summary")}>Profiler / Frame Debugger</DropdownMenuItem>
+        <DropdownMenuSeparator />
+      </DropdownMenuGroup> : null}
       <DropdownMenuGroup>
         <DropdownMenuLabel>Play Overlay</DropdownMenuLabel>
         <DropdownMenuSeparator />
