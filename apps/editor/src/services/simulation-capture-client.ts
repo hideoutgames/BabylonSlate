@@ -38,9 +38,9 @@ export class SimulationCaptureClient {
     return this.request("capture", maxBytes, renderRevision) as Promise<SimulationSceneCaptureResult>;
   }
 
-  receive(command: CaptureCommand): void {
+  receive(command: CaptureCommand): boolean {
     const pending = this.pending;
-    if (!pending || this.stopped || command.sessionGeneration !== this.ports.generation || command.requestId !== pending.requestId) return;
+    if (!pending || this.stopped || command.sessionGeneration !== this.ports.generation || command.requestId !== pending.requestId) return false;
     try {
       if (command.type === "simulationQuiesced") {
         if (pending.kind !== "quiesce" || !Number.isSafeInteger(command.commandRevision) || command.commandRevision < 0 ||
@@ -62,7 +62,7 @@ export class SimulationCaptureClient {
         const result = command.result;
         if (!result.ok) {
           if (result.identity.generation !== this.ports.generation) throw new Error("Stale final capture failure.");
-          this.finish(result); return;
+          this.finish(result); return true;
         }
         this.validateIdentity(result.identity, pending);
         if (result.byteSize !== pending.bytes || result.chunkCount !== pending.sequence || !pending.sequence)
@@ -73,7 +73,8 @@ export class SimulationCaptureClient {
           throw new Error("The final scene capture is not a Scene document.");
         this.finish({ ok: true, identity: result.identity, byteSize: result.byteSize, scene: scene as SerializedScene });
       }
-    } catch (reason) { this.fail(reason); }
+      return true;
+    } catch (reason) { this.fail(reason); return false; }
   }
 
   /** In-process runtime already owns a complete canonical candidate: no JSON copy. */

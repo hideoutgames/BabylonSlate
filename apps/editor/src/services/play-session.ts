@@ -934,11 +934,10 @@ export function startPlaySession(options: {
   let captureFenceActive = false;
   let captureFenceChanged = false;
   const acceptQuiesced = (result: import("@babylonslate/bridge").SessionBoundaryResult) => {
-    if (result.success && result.sessionGeneration === (options.sessionGeneration ?? 0)) {
+    if (captureClient.receive({ type: "simulationQuiesced", ...result }) && result.success) {
       captureFenceActive = true;
       captureFenceChanged = false;
     }
-    captureClient.receive({ type: "simulationQuiesced", ...result });
   };
   const captureClient = new SimulationCaptureClient({
     generation: options.sessionGeneration ?? 0,
