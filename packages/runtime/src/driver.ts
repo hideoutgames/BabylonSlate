@@ -18,7 +18,7 @@ import { CableWorldSync } from "./cable-sync";
 import { DynamicRuntimeMeshSync } from "./dynamic-runtime-mesh";
 import { MovementWorldSync } from "./movement";
 import { captureComponent } from "./render-targets";
-import { createDefaultRenderTargetCaptureProperties, normalizeRenderTargetPayload, normalizeRenderTargetTexturePayload, type RenderTargetPayload, type RenderTargetTexturePayload } from "@babylonslate/core";
+import { createDefaultRenderTargetCaptureProperties, type RenderTargetPayload, type RenderTargetTexturePayload } from "@babylonslate/core";
 import { normalizeWaterDefinition, type WaterDefinition } from "@babylonslate/core";
 import { ScalabilitySession, type ScalabilityRequest, type ScalabilityResult, type ScalabilitySnapshot, type ScalabilityAcknowledgement, type RenderPath, type RenderProjectSettings } from "@babylonslate/core";
 import type { CollisionTriangleMesh, InputAssetDefinition } from "@babylonslate/core";
@@ -70,7 +70,6 @@ import {
   SCENE_SUBSYSTEM_CLASS_ID,
   instantiableSubsystemClassIds,
   isLockedEngineClassId,
-  isSceneLayerExclusiveComponent,
   sceneAssetClassId,
   hydrateClassVariableValue,
   hydrateScenePropertyReferences,
@@ -87,7 +86,6 @@ import {
   createDefaultSceneSettings,
   cloneSceneStreamingActorsSteps,
   DEFAULT_PLAY_FRAME_CAP,
-  isSceneLayerDeniedComponent,
   parseSceneLayerAnchor,
   normalizeSceneLayer,
   newGuid,
