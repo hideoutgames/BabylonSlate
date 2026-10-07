@@ -88,7 +88,8 @@ const idleControls = {
  * Loads each slot's Basic emitter or Particle Graph (open tab first, then its
  * document) and previews them together.
  */
-const EMITTER_KINDS = ["particle-emitter"] as const;
+/** Basic emitters and Particle Graphs: the asset types a system can reference. */
+const EMITTER_KINDS = ["particle-emitter", "particle-graph"] as const;
 
 export function ParticleSystemPreview({
   payload,

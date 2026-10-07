@@ -8,8 +8,9 @@
  *     ),
  *   );
  *
- * `useValue` runs inside `useDocuments()` (it may call hooks) and returns the
- * fields the test controls. The returned object is used as-is: getters and
+ * `useValue` runs inside every mocked hook call (it may call hooks) and returns
+ * the fields the test controls. A component can call several document hooks,
+ * so keep state the test changes in `sharedMockState`, not `useState`. The returned object is used as-is: getters and
  * later mutations stay live, and returning the same object keeps the value's
  * identity. Fields it does not define read inert defaults: no project, no
  * open documents, actions that do nothing, and loaders that find nothing.
@@ -28,7 +29,7 @@
  * document (`useActiveDocumentId`, `useOpenDocument`, …) read it from the
  * value; add an entry for any new such hook.
  */
-import type { ReactNode } from "react";
+import { useSyncExternalStore, type ReactNode } from "react";
 import { ASSET_DOCUMENT_KINDS, type DocumentKind } from "@babylonslate/core";
 import { documentKindsRevision, type DocumentRevisions } from "../services/document-service";
 import type { ExtensionSnapshot } from "../services/editor-extension-service";
@@ -283,6 +284,33 @@ function withDefaults(overrides: object, defaults: DocumentsValue): DocumentsVal
       return { configurable: true, enumerable: true, writable: true, value: Reflect.get(defaults, key) };
     },
   }) as DocumentsValue;
+}
+
+/**
+ * State a `useValue` callback reads and an action it returns updates. A
+ * component may call several document hooks (`useDocumentActions`,
+ * `useProjectState`, …) and each runs the callback, so `useState` there would
+ * give each call its own copy; this store is shared by all of them. It starts
+ * from `initial()` again once its last subscriber unmounts.
+ */
+export function sharedMockState<T>(initial: () => T): {
+  use: () => [T, (update: (current: T) => T) => void];
+} {
+  let state: { value: T } | null = null;
+  const listeners = new Set<() => void>();
+  const get = () => (state ??= { value: initial() }).value;
+  const set = (update: (current: T) => T) => {
+    state = { value: update(get()) };
+    for (const listener of [...listeners]) listener();
+  };
+  const subscribe = (listener: () => void) => {
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+      if (listeners.size === 0) state = null;
+    };
+  };
+  return { use: () => [useSyncExternalStore(subscribe, get), set] };
 }
 
 function isHookName(key: string | symbol): key is string {

@@ -32,7 +32,8 @@ it("refreshes audio drafts and registry changes while ignoring scene edits", asy
   documents.openDocuments = [{ id: "scene:S", ref: { kind: "scene" }, content: { actors: [] } }];
   rerender();
   expect(documents.collectPlayAudio).toHaveBeenCalledTimes(1);
-  documents.openDocuments.push({ id: "sound-attenuation:A", ref: { kind: "sound-attenuation" }, content: { innerRadius: 7 } });
+  // The provider publishes a new revision for the new tab, as for any open.
+  documents.openDocuments = [...documents.openDocuments, { id: "sound-attenuation:A", ref: { kind: "sound-attenuation" }, content: { innerRadius: 7 } }];
   rerender();
   await waitFor(() => expect(documents.collectPlayAudio).toHaveBeenCalledTimes(2));
   documents.registryEpoch += 1;

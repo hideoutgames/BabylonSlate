@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import {
   cleanup,
@@ -24,30 +23,34 @@ const harness = vi.hoisted(() => ({
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({ documentId: "plugin-settings:pack" }),
 }));
-vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => {
-  const [content, setContent] = useState(harness.content);
-  return {
-    openDocuments: [
-      {
-        id: "plugin-settings:pack",
-        ref: { path: "plugins/pack/pack.plugin.babasset", label: "Pack" },
-        content,
+vi.mock("../context/document-context", async () => {
+  const { documentContextMock, sharedMockState } = await import("../testing/document-context-mock");
+  const contentState = sharedMockState(() => harness.content);
+  return documentContextMock(() => {
+    const [content, setContent] = contentState.use();
+    return {
+      openDocuments: [
+        {
+          id: "plugin-settings:pack",
+          ref: { path: "plugins/pack/pack.plugin.babasset", label: "Pack" },
+          content,
+        },
+      ],
+      pluginDescriptors: harness.plugins,
+      assetRegistry: null,
+      applyAssetDocumentChange: async (
+        _id: string,
+        value: PluginSettingsPayload,
+      ) => {
+        harness.content = normalizePluginSettings(value, {
+          pluginGuid: "pack",
+        });
+        setContent(() => harness.content);
+        return true;
       },
-    ],
-    pluginDescriptors: harness.plugins,
-    assetRegistry: null,
-    applyAssetDocumentChange: async (
-      _id: string,
-      value: PluginSettingsPayload,
-    ) => {
-      harness.content = normalizePluginSettings(value, {
-        pluginGuid: "pack",
-      });
-      setContent(harness.content);
-      return true;
-    },
-  };
-}));
+    };
+  });
+});
 
 function plugin(guid: string, displayName: string): PluginDescriptor {
   return {
