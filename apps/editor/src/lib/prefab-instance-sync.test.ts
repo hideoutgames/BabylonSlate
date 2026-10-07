@@ -4,6 +4,7 @@ import {
   createDefaultScene,
   createMeshComponent,
   identitySerializedTransform,
+  normalizeScene,
 } from "@babylonslate/core";
 import {
   PREFAB_PARENT_OVERRIDE,
@@ -17,10 +18,64 @@ import {
 import { EditSession, commandToJournalPayload, diffSceneCommands, replayJournalLines, serializeJournalLine } from "@babylonslate/edit";
 import { instantiatePrefabComponents } from "./prefab-preview";
 import { MODEL_MATERIALS_PICKER_VALUE, patchInspectorComponentProperty } from "./mesh-material-properties";
+import { duplicateSceneActor } from "./place-actors";
 
 const identity = identitySerializedTransform();
 
 describe("syncActorComponentsFromPrefab", () => {
+  it("persists a sourced deletion through history, recovery, duplicate and future prefab sync", () => {
+    const prefab = [createMeshComponent("removed"), createMeshComponent("survivor")];
+    const before = { ...createDefaultScene(), actors: [createActor("actor", "Actor", {
+      classId: "Hero", components: instantiatePrefabComponents(prefab, "actor"),
+    })] };
+    const edited = structuredClone(before);
+    edited.actors[0]!.components.splice(0, 1);
+    const stamped = stampUserComponentOverrides(before, edited, { Hero: prefab });
+    expect(stamped.actors[0]!.suppressedComponentSourceIds).toEqual(["removed"]);
+    const session = new EditSession();
+    const applied = session.applyBatch("scene", before, diffSceneCommands(before, stamped))!;
+    expect(applied.doc).toStrictEqual(stamped);
+    const undo = session.undo("scene", applied.doc)!;
+    expect(undo.doc).toStrictEqual(before);
+    const redo = session.redo("scene", undo.doc)!;
+    expect(redo.doc).toStrictEqual(stamped);
+    const restored = normalizeScene(JSON.parse(JSON.stringify(redo.doc)));
+    const duplicate = duplicateSceneActor(restored, restored.actors[0]!);
+    const synced = syncSceneActorsFromPrefabs({ ...restored, actors: [...restored.actors, duplicate] }, { Hero: prefab });
+    expect(synced.actors.map((actor) => actor.components.map((component) => component.sourceId))).toEqual([["survivor"], ["survivor"]]);
+    const line = serializeJournalLine({ v: 1, docId: "scene", at: "2026-10-07", command: commandToJournalPayload(applied.command) });
+    expect(replayJournalLines([line], new Map([["scene", before]])).documents.get("scene")).toStrictEqual(stamped);
+  });
+
+  it("does not migrate instance-only components onto a suppressed template", () => {
+    const extra = createMeshComponent("extra", "sphere");
+    const actor = createActor("actor", "Actor", { components: [extra], suppressedComponentSourceIds: ["removed"] });
+    expect(syncActorComponentsFromPrefab(actor, [createMeshComponent("removed")])).toStrictEqual([extra]);
+  });
+
+  it("keeps private material state through prefab changes, undo and reset", () => {
+    const prefab = createMeshComponent("mesh");
+    prefab.properties.materialGuid = "surface";
+    const before = { ...createDefaultScene(), actors: [createActor("actor", "Actor", { classId: "Hero", components: instantiatePrefabComponents([prefab], "actor") })] };
+    const edited = structuredClone(before);
+    edited.actors[0]!.components[0]!.materialInstance = { materialGuid: "surface", parameters: { Gain: { kind: "float", value: 0.4 } } };
+    const stamped = stampUserComponentOverrides(before, edited, { Hero: [prefab] });
+    const session = new EditSession();
+    const applied = session.applyBatch("scene", before, diffSceneCommands(before, stamped))!;
+    expect(applied.doc).toStrictEqual(stamped);
+    const updated = { ...prefab, properties: { ...prefab.properties, meshKind: "sphere" } };
+    expect(syncSceneActorsFromPrefabs(applied.doc, { Hero: [updated] }).actors[0]!.components[0]!.materialInstance)
+      .toEqual(edited.actors[0]!.components[0]!.materialInstance);
+    expect(session.undo("scene", applied.doc)?.doc).toStrictEqual(before);
+    const reset = structuredClone(stamped);
+    delete reset.actors[0]!.components[0]!.materialInstance;
+    const resetStamped = stampUserComponentOverrides(stamped, reset, { Hero: [prefab] });
+    const resetCommands = diffSceneCommands(stamped, resetStamped);
+    const resetApplied = session.applyBatch("scene", stamped, resetCommands)!;
+    expect(resetApplied.doc).toStrictEqual(before);
+    const line = serializeJournalLine({ v: 1, docId: "scene", at: "2026-10-07", command: commandToJournalPayload(resetApplied.command) });
+    expect(replayJournalLines([line], new Map([["scene", stamped]])).documents.get("scene")).toStrictEqual(before);
+  });
   it("pushes prefab property changes unless the instance overrode them", () => {
     const prefab = [
       {

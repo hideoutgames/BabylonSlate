@@ -42,6 +42,7 @@ import {
   skyboxFaceGuidsFromScene,
   environmentTextureGuidsFromScenes,
   postProcessTextureGuidsFromScenes,
+  materialInstanceTextureGuidsFromScenes,
   tilemapAssetGuidsFromScene,
   tilesetGuidsFromTilemaps,
   textureGuidsFromPlayPayloads,
@@ -935,6 +936,19 @@ it("includes textures from disabled and duplicate post-process entry overrides i
     } },
   ];
   expect(postProcessTextureGuidsFromScenes([null, scene, scene])).toEqual(['mask']);
+});
+
+it("prepares retained surface textures only for the current component assignment", () => {
+  const scene = createDefaultScene();
+  scene.actors = [createActor("actor", "Actor", { components: [
+    { id: "current", classId: "MeshComponent", properties: { materialGuid: "surface" }, materialInstance: {
+      materialGuid: "surface", parameters: { Image: { kind: "texture", textureAssetGuid: "instance-texture" }, Empty: { kind: "texture", textureAssetGuid: null } },
+    } },
+    { id: "stale", classId: "MeshComponent", properties: { materialGuid: "other" }, materialInstance: {
+      materialGuid: "surface", parameters: { Image: { kind: "texture", textureAssetGuid: "stale-texture" } },
+    } },
+  ] })];
+  expect(materialInstanceTextureGuidsFromScenes([null, scene, scene])).toEqual(["instance-texture"]);
 });
 
 describe("SceneLayer control and switcher dependencies", () => {

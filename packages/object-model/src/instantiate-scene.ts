@@ -99,6 +99,7 @@ export function createActorFromSerialized(
     transform: runtimeTransformFromSerialized(serialized.transform),
     hooks: hooksFor?.(serialized.classId),
     sceneLayerId: sceneLayerId ?? null,
+    suppressedComponentSourceIds: serialized.suppressedComponentSourceIds,
   });
   attachSerializedComponents(world, actor, serialized.components);
   return actor;
@@ -111,13 +112,18 @@ export function attachSerializedComponents(
   components: readonly SerializedComponent[],
   options: { freshIds?: boolean } = {},
 ): void {
+  const suppressed = actor.suppressedComponentSourceIds.length ? new Set(components.filter((component) => {
+    const sourceId = options.freshIds ? component.id : component.sourceId;
+    return !!sourceId && actor.suppressedComponentSourceIds.includes(sourceId);
+  }).map((component) => component.id)) : null;
+  const activeComponents = suppressed ? components.filter((component) => !suppressed.has(component.id)) : components;
   const ids = new Map(
-    components.map((component) => [
+    activeComponents.map((component) => [
       component.id,
       options.freshIds ? `${actor.guid}:${component.id}` : component.id,
     ]),
   );
-  for (const component of components) {
+  for (const component of activeComponents) {
     if (actor.sceneLayerId && isSceneLayerDeniedComponent(component.classId)) {
       continue;
     }
@@ -136,10 +142,11 @@ export function attachSerializedComponents(
         sourceId: options.freshIds
           ? component.id
           : (component.sourceId ?? null),
-        parentId: component.parentId
+        parentId: component.parentId && !suppressed?.has(component.parentId)
           ? (ids.get(component.parentId) ??
             (options.freshIds ? null : component.parentId))
           : null,
+        materialInstance: component.materialInstance,
         transform: runtimeTransformFromSerialized(
           component.transform ?? identitySerializedTransform(),
         ),

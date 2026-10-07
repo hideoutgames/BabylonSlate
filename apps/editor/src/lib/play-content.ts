@@ -643,6 +643,21 @@ export function materialAssetGuidsFromScene(
   return guids;
 }
 
+/** Surface instance textures are scoped to the component's current assignment. */
+export function materialInstanceTextureGuidsFromScenes(
+  scenes: readonly (SerializedScene | null | undefined)[],
+): string[] {
+  const guids = new Set<string>();
+  for (const scene of scenes) for (const actor of scene?.actors ?? []) for (const component of actor.components) {
+    const instance = component.materialInstance;
+    if (!instance || instance.materialGuid !== component.properties.materialGuid) continue;
+    for (const parameter of Object.values(instance.parameters)) {
+      if (parameter.kind === "texture" && parameter.textureAssetGuid?.trim()) guids.add(parameter.textureAssetGuid.trim());
+    }
+  }
+  return [...guids];
+}
+
 /** Include saved overrides even while their pass is disabled, so later activation needs no missing texture. */
 export function postProcessTextureGuidsFromScenes(
   scenes: readonly (SerializedScene | null | undefined)[],

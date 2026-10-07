@@ -11,6 +11,7 @@ import {
 } from "@babylonslate/object-model";
 
 type State = {
+  authoredNames?: Set<string>;
   defaults: ReadonlyMap<string, MaterialParameterValue>;
   values: Map<string, MaterialParameterValue>;
 };
@@ -18,6 +19,11 @@ const copy = (value: MaterialParameterValue): MaterialParameterValue =>
   value.kind === "color"
     ? { kind: "color", value: [...value.value] }
     : { ...value };
+
+const equal = (left: MaterialParameterValue, right: MaterialParameterValue | undefined): boolean =>
+  right?.kind === left.kind && (left.kind === "float" ? left.value === (right as typeof left).value
+    : left.kind === "texture" ? left.textureAssetGuid === (right as typeof left).textureAssetGuid
+      : left.value.every((channel, index) => channel === (right as typeof left).value[index]));
 
 /** Session-owned values for synchronous worker reads; assets and entry overrides remain immutable. */
 export class RuntimeMaterialParameters {
@@ -39,7 +45,7 @@ export class RuntimeMaterialParameters {
   ): boolean {
     const state = this.state(material);
     const expected = state?.defaults.get(name);
-    return !!expected && expected.kind === value.kind && this.valid(value);
+    return !!expected && this.valid(value) && expected.kind === value.kind;
   }
 
   get(
@@ -61,6 +67,30 @@ export class RuntimeMaterialParameters {
     return true;
   }
 
+  /** Atomic reapply boundary; validates every value before changing any state. */
+  seed(material: MaterialInstanceObject, overrides: Readonly<Record<string, MaterialParameterValue>>): boolean {
+    const state = this.state(material);
+    if (!state || Object.entries(overrides).some(([name, value]) => !this.accepts(material, name, value))) return false;
+    const defaults = new Map(state.defaults);
+    for (const [name, value] of Object.entries(overrides)) {
+      defaults.set(name, copy(value));
+      (state.authoredNames ??= new Set()).add(name);
+      state.values.set(name, copy(value));
+    }
+    state.defaults = defaults;
+    return true;
+  }
+
+  /** Copies authoring data only; never exposes WeakMap or MaterialObject references. */
+  captureOverrides(material: MaterialInstanceObject): Record<string, MaterialParameterValue> | null {
+    const state = this.state(material);
+    if (!state) return null;
+    const assetDefaults = this.catalog[material.materialAssetGuid]!.parameters;
+    return Object.fromEntries([...state.values]
+      .filter(([name, value]) => state.authoredNames?.has(name) || !equal(value, assetDefaults[name]))
+      .map(([name, value]) => [name, copy(value)]));
+  }
+
   resetValue(
     material: MaterialInstanceObject,
     name: string,
@@ -78,14 +108,15 @@ export class RuntimeMaterialParameters {
   }
 
   private valid(value: MaterialParameterValue): boolean {
+    if (!value || typeof value !== "object") return false;
     if (value.kind === "texture")
       return (
         value.textureAssetGuid === null ||
         this.textures.has(value.textureAssetGuid)
       );
     return value.kind === "float"
-      ? Number.isFinite(value.value)
-      : value.value.length === 4 && value.value.every(Number.isFinite);
+      ? typeof value.value === "number" && Number.isFinite(value.value)
+      : value.kind === "color" && Array.isArray(value.value) && value.value.length === 4 && value.value.every(Number.isFinite);
   }
 
   private state(material: MaterialInstanceObject): State | undefined {
@@ -109,8 +140,11 @@ export class RuntimeMaterialParameters {
     const authored =
       material instanceof PostProcessMaterialObject
         ? normalizeMaterialParameterOverrides(material.entry.parameters)
-        : {};
+        : material.component.materialInstance?.materialGuid === material.materialAssetGuid
+          ? normalizeMaterialParameterOverrides(material.component.materialInstance.parameters)
+          : {};
     const defaults = new Map<string, MaterialParameterValue>();
+    let authoredNames: Set<string> | undefined;
     for (const [name, fallback] of Object.entries(definition.parameters)) {
       const override = Object.hasOwn(authored, name)
         ? authored[name]
@@ -119,11 +153,13 @@ export class RuntimeMaterialParameters {
         override?.kind === fallback.kind && this.valid(override)
           ? override
           : fallback;
+      if (override?.kind === fallback.kind && this.valid(override)) (authoredNames ??= new Set()).add(name);
       // An unavailable default must not remove the declared parameter: a later
       // valid texture assignment can recover it, while reset remains rejected.
       defaults.set(name, copy(value));
     }
     const state = {
+      authoredNames,
       defaults,
       values: new Map(
         [...defaults]

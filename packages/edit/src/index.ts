@@ -58,6 +58,7 @@ export {
 } from "./commands/scene";
 export { diffSceneCommands } from "./commands/scene-diff";
 export { ReplaceSceneCommand, createReplaceSceneCommandFromJson } from "./commands/replace-scene";
+export { SetActorSuppressedComponentsCommand, SetComponentMaterialInstanceCommand } from "./commands/scene-instance";
 export {
   type JournalLine,
   JOURNAL_REPATH_TYPE,

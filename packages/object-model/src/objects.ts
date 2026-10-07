@@ -3,6 +3,9 @@ import {
   newGuid,
   normalizeScenePostProcessStack,
   normalizeSceneStreamingProperties,
+  normalizeMaterialInstanceOverrides,
+  normalizeSuppressedComponentSourceIds,
+  type MaterialInstanceOverrides,
   type ScenePostProcessEntry,
   SCENE_LAYER_DEFAULT_LAYER_BOUNDS,
   supportsOverlayVisualStyle,
@@ -128,6 +131,7 @@ export class Actor extends BObject {
   generateOverlapEvents = true;
   /** Owning overlay instance; null for world-scene actors. */
   sceneLayerId: Guid | null = null;
+  readonly suppressedComponentSourceIds: readonly string[];
 
   constructor(
     options: {
@@ -139,6 +143,7 @@ export class Actor extends BObject {
       implementedInterfaces?: string[];
       transform?: Transform;
       sceneLayerId?: Guid | null;
+      suppressedComponentSourceIds?: readonly string[];
     },
   ) {
     super({
@@ -153,6 +158,7 @@ export class Actor extends BObject {
         }
       : identityTransform();
     this.sceneLayerId = options.sceneLayerId ?? null;
+    this.suppressedComponentSourceIds = Object.freeze(normalizeSuppressedComponentSourceIds(options.suppressedComponentSourceIds));
   }
 
   attachComponent(component: ActorComponent): void {
@@ -240,6 +246,8 @@ export class ActorComponent extends BObject {
   sourceId: string | null = null;
   transform: Transform;
   parentId: string | null;
+  /** Authored seed only; current values belong to RuntimeMaterialParameters. */
+  materialInstance?: MaterialInstanceOverrides;
 
   constructor(
     options: {
@@ -253,6 +261,7 @@ export class ActorComponent extends BObject {
       sourceId?: string | null;
       transform?: Transform;
       parentId?: string | null;
+      materialInstance?: MaterialInstanceOverrides;
     },
   ) {
     super({
@@ -265,6 +274,8 @@ export class ActorComponent extends BObject {
         ? options.sourceId.trim()
         : null;
     this.parentId = options.parentId ?? null;
+    const materialInstance = normalizeMaterialInstanceOverrides(options.materialInstance);
+    if (materialInstance?.materialGuid === this.getVariable("materialGuid")) this.materialInstance = materialInstance;
     this.transform = options.transform
       ? {
           position: { ...options.transform.position },
@@ -314,6 +325,7 @@ export class ActorComponent extends BObject {
       if (name === "materialGuid" && value !== super.getVariable(name)) {
         if (this.materialObject) this.materialObject.destroyed = true;
         this.materialObject = null;
+        this.materialInstance = undefined;
       }
     }
     super.setVariable(name, value);

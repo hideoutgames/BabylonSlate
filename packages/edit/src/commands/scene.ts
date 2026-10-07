@@ -10,6 +10,7 @@ import type {
 import type { EditCommand } from "../command";
 import { isSceneLayerAnchorActor } from "@babylonslate/core";
 import type { ReplaceSceneCommand } from "./replace-scene";
+import type { SetActorSuppressedComponentsCommand, SetComponentMaterialInstanceCommand } from "./scene-instance";
 
 function byteSizeOf(value: unknown): number {
   return new TextEncoder().encode(JSON.stringify(value)).byteLength;
@@ -794,6 +795,8 @@ export class SetSceneNameCommand implements EditCommand<SerializedScene> {
 }
 
 export type SceneEditCommand =
+  | SetActorSuppressedComponentsCommand
+  | SetComponentMaterialInstanceCommand
   | ReplaceSceneCommand
   | AddActorCommand
   | RemoveActorCommand
@@ -820,6 +823,8 @@ export type SceneEditCommand =
   | SetActorFolderCommand;
 
 export const SCENE_COMMAND_TYPES = [
+  "scene.setActorSuppressedComponents",
+  "scene.setComponentMaterialInstance",
   "scene.replace",
   "scene.addActor",
   "scene.removeActor",

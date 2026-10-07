@@ -631,6 +631,7 @@ export class World {
     implementedInterfaces?: string[];
     transform?: ConstructorParameters<typeof Actor>[0]["transform"];
     sceneLayerId?: Guid | null;
+    suppressedComponentSourceIds?: readonly string[];
   }): Actor {
     const defaults = this.classDefaults(options.classId, options);
     const ActorClass = this.classRegistry.isA(options.classId, "SceneStreamingActor")
@@ -656,6 +657,7 @@ export class World {
     sourceId?: string | null;
     transform?: ConstructorParameters<typeof ActorComponent>[0]["transform"];
     parentId?: string | null;
+    materialInstance?: ConstructorParameters<typeof ActorComponent>[0]["materialInstance"];
   }): ActorComponent {
     const defaults = this.classDefaults(options.classId, options);
     return new ActorComponent({

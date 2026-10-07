@@ -2,7 +2,7 @@ import type { IndexedAsset } from "@babylonslate/assets";
 import { areaEmissionTextureGuids, type SerializedScene } from "@babylonslate/core";
 import {
   environmentTextureGuidsFromScenes, materialGuidsFromScenes, modelAssetGuidsFromScene,
-  overlayTextureGuidsFromScene, playFontGuidsFromScenes, postProcessTextureGuidsFromScenes,
+  overlayTextureGuidsFromScene, playFontGuidsFromScenes, postProcessTextureGuidsFromScenes, materialInstanceTextureGuidsFromScenes,
   skyboxFaceGuidsFromScene, spriteAssetGuidsFromScene, tilemapAssetGuidsFromScene,
 } from "./play-content";
 
@@ -17,7 +17,7 @@ export function sceneViewportAssetKey(scene: SerializedScene | null, assets: rea
     ...spriteAssetGuidsFromScene(scene), ...tilemapAssetGuidsFromScene(scene),
     ...modelAssetGuidsFromScene(scene), ...materialGuidsFromScenes([scene]),
     ...playFontGuidsFromScenes([scene]), ...environmentTextureGuidsFromScenes([scene]),
-    ...postProcessTextureGuidsFromScenes([scene]), ...skyboxFaceGuidsFromScene(scene),
+    ...postProcessTextureGuidsFromScenes([scene]), ...materialInstanceTextureGuidsFromScenes([scene]), ...skyboxFaceGuidsFromScene(scene),
     ...overlayTextureGuidsFromScene(scene), ...areaEmissionTextureGuids(scene),
   ]);
   return JSON.stringify([

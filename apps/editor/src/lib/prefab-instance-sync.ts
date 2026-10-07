@@ -1,5 +1,7 @@
 import {
   identitySerializedTransform,
+  normalizeMaterialInstanceOverrides,
+  normalizeSuppressedComponentSourceIds,
   type SerializedActor,
   type SerializedComponent,
   type SerializedScene,
@@ -9,6 +11,7 @@ import { mergePrefabComponents } from "./prefab-preview";
 
 export const PREFAB_TRANSFORM_OVERRIDE = "transform";
 export const PREFAB_PARENT_OVERRIDE = "parentId";
+export const PREFAB_MATERIAL_INSTANCE_OVERRIDE = "materialInstance";
 
 function cloneTransform(
   transform: SerializedTransform | undefined,
@@ -87,6 +90,7 @@ function differingOverrideKeys(
   ) {
     keys.add(PREFAB_TRANSFORM_OVERRIDE);
   }
+  if (!jsonEqual(instance.materialInstance, prefab.materialInstance)) keys.add(PREFAB_MATERIAL_INSTANCE_OVERRIDE);
   expandMeshMaterialOverrides(keys, instance);
   if (instance.classId === "MeshComponent" && jsonEqual(meshMaterialSelection(instance), meshMaterialSelection(prefab))) {
     for (const key of MESH_MATERIAL_KEYS) keys.delete(key);
@@ -121,6 +125,7 @@ function instantiateFromPrefab(
     parentId: null,
     sourceId: prefab.id,
     transform: cloneTransform(prefab.transform),
+    ...(prefab.materialInstance ? { materialInstance: normalizeMaterialInstanceOverrides(prefab.materialInstance) } : {}),
   };
 }
 
@@ -167,7 +172,11 @@ export function syncActorComponentsFromPrefab(
   actor: SerializedActor,
   prefabComponents: readonly SerializedComponent[],
 ): SerializedComponent[] {
-  const migrated = migrateUnsourcedComponents(actor.components, prefabComponents);
+  const suppressed = new Set(actor.suppressedComponentSourceIds ?? []);
+  const activePrefabs = prefabComponents.filter((component) => !suppressed.has(component.id));
+  const migrated = migrateUnsourcedComponents(
+    actor.components.filter((component) => !component.sourceId || !suppressed.has(component.sourceId)), activePrefabs,
+  );
   const usedIds = new Set(migrated.map((component) => component.id));
   const bySource = new Map<string, SerializedComponent>();
   const extras: SerializedComponent[] = [];
@@ -180,7 +189,7 @@ export function syncActorComponentsFromPrefab(
   }
 
   const synced: SerializedComponent[] = [];
-  for (const prefab of prefabComponents) {
+  for (const prefab of activePrefabs) {
     const existing = bySource.get(prefab.id);
     if (!existing) {
       synced.push(instantiateFromPrefab(prefab, actor.id, usedIds));
@@ -190,7 +199,7 @@ export function syncActorComponentsFromPrefab(
     expandMeshMaterialOverrides(keys, existing);
     const properties = { ...prefab.properties };
     for (const key of keys) {
-      if (key === PREFAB_TRANSFORM_OVERRIDE || key === PREFAB_PARENT_OVERRIDE) {
+      if (key === PREFAB_TRANSFORM_OVERRIDE || key === PREFAB_PARENT_OVERRIDE || key === PREFAB_MATERIAL_INSTANCE_OVERRIDE) {
         continue;
       }
       if (key in existing.properties) {
@@ -199,7 +208,7 @@ export function syncActorComponentsFromPrefab(
         delete properties[key];
       }
     }
-    synced.push({
+    const syncedComponent: SerializedComponent = {
       ...existing,
       classId: prefab.classId,
       properties,
@@ -211,7 +220,10 @@ export function syncActorComponentsFromPrefab(
         ? (existing.parentId ?? null)
         : null,
       ...withOverrideKeys(keys),
-    });
+      materialInstance: normalizeMaterialInstanceOverrides(keys.has(PREFAB_MATERIAL_INSTANCE_OVERRIDE) ? existing.materialInstance : prefab.materialInstance),
+    };
+    if (!syncedComponent.materialInstance) delete syncedComponent.materialInstance;
+    synced.push(syncedComponent);
   }
 
   const sourceToId = new Map(
@@ -347,6 +359,10 @@ function pruneMatchingPrefabOverrides(
     if (key === PREFAB_PARENT_OVERRIDE) {
       continue;
     }
+    if (key === PREFAB_MATERIAL_INSTANCE_OVERRIDE) {
+      if (jsonEqual(component.materialInstance, prefab.materialInstance)) keys.delete(key);
+      continue;
+    }
     if (jsonEqual(component.properties[key], prefab.properties[key])) {
       keys.delete(key);
     }
@@ -375,6 +391,11 @@ export function stampUserComponentOverrides(
       const beforeComponents = new Map(
         beforeActor.components.map((component) => [component.id, component]),
       );
+      const surviving = new Set(actor.components.map((component) => component.id));
+      const suppressed = normalizeSuppressedComponentSourceIds([
+        ...(actor.suppressedComponentSourceIds ?? beforeActor.suppressedComponentSourceIds ?? []),
+        ...beforeActor.components.filter((component) => component.sourceId && !surviving.has(component.id)).map((component) => component.sourceId!),
+      ]);
       const prefabRows = prefabsByClassId?.[actor.classId] ?? [];
       const nextComponents = actor.components.map((component) => {
         const before = beforeComponents.get(component.id);
@@ -400,6 +421,7 @@ export function stampUserComponentOverrides(
         if ((before.parentId ?? null) !== (component.parentId ?? null)) {
           keys.add(PREFAB_PARENT_OVERRIDE);
         }
+        if (!jsonEqual(before.materialInstance, component.materialInstance)) keys.add(PREFAB_MATERIAL_INSTANCE_OVERRIDE);
         expandMeshMaterialOverrides(keys, component);
         const next = pruneMatchingPrefabOverrides(
           {
@@ -414,11 +436,11 @@ export function stampUserComponentOverrides(
           ? component
           : next;
       });
-      return nextComponents.every(
+      return jsonEqual(actor.suppressedComponentSourceIds ?? [], suppressed) && nextComponents.every(
         (component, index) => component === actor.components[index],
       )
         ? actor
-        : { ...actor, components: nextComponents };
+        : { ...actor, components: nextComponents, ...(suppressed.length ? { suppressedComponentSourceIds: suppressed } : {}) };
     }),
   };
 }
