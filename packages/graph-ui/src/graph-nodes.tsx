@@ -9,6 +9,7 @@ import {
 import {
   useCallback,
   useEffect,
+  useRef,
   type MouseEvent,
   type ReactNode,
 } from "react";
@@ -484,10 +485,14 @@ export function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
     declaredOrder: data.__declaredPinOrder === true,
   });
   // Reordering pins moves handles without resizing the node, so React Flow
-  // would keep drawing edges to the old handle positions.
+  // would keep drawing edges to the old handle positions. Mount is measured
+  // normally; re-measuring there disturbs initial layout of off-screen nodes.
   const updateNodeInternals = useUpdateNodeInternals();
   const handleOrder = pins.map((pin) => `${pin.direction}:${pin.id}`).join("|");
+  const measuredHandleOrder = useRef(handleOrder);
   useEffect(() => {
+    if (measuredHandleOrder.current === handleOrder) return;
+    measuredHandleOrder.current = handleOrder;
     updateNodeInternals(id);
   }, [handleOrder, id, updateNodeInternals]);
 
