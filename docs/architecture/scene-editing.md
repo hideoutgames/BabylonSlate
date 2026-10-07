@@ -90,7 +90,7 @@ Folders organize the Outliner. They are **not** actors and never reach the objec
 
 Place Actors spawns at the viewport's view-center point; a 3D **Ground** keeps that X/Z but sits at y = 0. Place Actors copies the **ancestor-merged** Class prefab onto the spawned actor (same merge as the Prefab tab) and stamps each row’s `sourceId` to the prefab component id. Actor placement fields (`name`, actor `transform`, `visible`, `locked`, `parentId`, `folderId`) stay instance-owned.
 
-Opening a Scene quietly syncs its instances to the current Class prefabs (`DocumentService.patchLoadedContent`, no command); when that changes the Scene, its Undo / Redo history is dropped so older inverses cannot replay onto the synced instances. Prefab edits while the Scene is open sync through scene commands instead.
+Opening a Scene quietly syncs its instances to the current Class prefabs (`DocumentService.patchLoadedContent`, no command); when that changes the Scene, its Undo / Redo history is dropped so older inverses cannot replay onto the synced instances. Prefab edits while the Scene is open sync through scene commands instead (dirty + Undo + journal), including retyped rows (`scene.setComponentClass`) and transforms a prefab row adds or drops (`scene.setComponentTransformPresence`).
 
 Prefab linkage and override keys travel through the same commands as property and transform edits, including continuous scrubs. Undo restores inheritance, Redo restores the override, and recovery preserves which fields remain instance-owned before a later prefab sync. Metadata-only linkage changes are also reversible and journalled.
 
@@ -100,7 +100,7 @@ Duplicate assigns fresh actor and component IDs and remaps component `parentId` 
 
 `SerializedComponent.materialInstance` stores `{ materialGuid, parameters }` for private surface float/color/texture values. Normalization copies valid typed values; parameter textures join scene preparation and export dependencies. A seed applies only to its matching current material assignment. `RuntimeMaterialParameters.captureOverrides` copies authored values plus runtime differences, while `seed` validates the complete reapply batch before mutation. Changing the runtime material assignment invalidates the old seed and MaterialObject. Source Material assets and other components remain independent. The `materialInstance` prefab override key and `scene.setComponentMaterialInstance` command preserve these values and their absence/reset through sync, Undo/Redo and journal recovery. Canonical Simulation capture uses these boundaries for gameplay changes as well as Inspector edits. The required dependency collector includes matching private texture overrides in saved Scene/Class metadata and live viewport preparation; stale assignments do not eagerly load their old textures.
 
-When the Class Prefab list changes (`graph.setComponents`), the **open** scene re-merges every actor of that class (and descendants, using the same ancestor merge as the Prefab tab) through the scene command layer (dirty + undo). Undo/redo of that Class document re-runs the merge when `components` change. Opening a scene runs the same merge **in memory** so the viewport is current without auto-locking the file; Save All after a Prefab edit while the scene is open persists the instance rows. Closed scene files are not rewritten in the background.
+When the Class Prefab list changes (`graph.setComponents`), the **open** scene re-merges every actor of that class (and descendants, using the same ancestor merge as the Prefab tab) through the scene command layer (dirty + Undo + journal). Undo/redo of that Class document re-runs the merge when `components` change. Opening a scene runs the same merge **in memory** so the viewport is current without auto-locking the file; Save All after a Prefab edit while the scene is open persists the instance rows. Closed scene files are not rewritten in the background.
 
 | Prefab change | Scene instance |
 | --- | --- |
@@ -128,7 +128,7 @@ Panels never mutate selection independently — they consume `useSceneEditing()`
 
 ## Command layer
 
-Every scene Details / outliner / viewport mutation routes through `applySceneChange` → `diffSceneCommands` → the undo stack. Notable command types:
+Every scene Details / outliner / viewport mutation routes through `applySceneChange` → `planSceneChange` → the undo stack and crash journal. No accepted edit bypasses them: `diffSceneCommands` has a delta for every authored `SerializedScene` field, and an edit its deltas cannot reproduce (a field added later without a command) becomes one `scene.replace` instead of being dropped or applied silently. See [command-layer.md](command-layer.md#scene-apply-path).
 
 Optional Scene settings, such as the sparse shadow overrides, reset by removing their key. The diff records removals as well as additions so Reset, Undo, Redo, and journal recovery preserve inheritance without changing unrelated settings.
 
@@ -139,7 +139,11 @@ Notable command types:
 | `SetSceneNameCommand`      | `scene.name`                                                                                |
 | `SetViewportModeCommand`   | `scene.viewportMode`                                                                        |
 | `SetSceneSettingCommand`   | any `settings.*` field (including `grid.snapEnabled`, `grid.showGrid`, `gameInstanceClass`) |
-| `ReorderComponentCommand`  | component list order change with the same ids                                               |
+| `ReorderComponentCommand` / `ReorderActorCommand` / `ReorderFolderCommand` | row order change, including alongside adds and removes |
+| `SetActorPropertiesCommand` | `actor.properties` per-instance overrides, e.g. SceneLayer switcher entries (merge key `actorProperties:{actorId}`) |
+| `SetActorClassCommand` / `SetComponentClassCommand` | `classId` change on an existing actor / component id                    |
+| `SetComponentTransformPresenceCommand` | component `transform` added or removed (a 2D anchor never gains one)          |
+| `SetSceneOverlayEditorCommand` | editor-only `scene.overlayEditor` flag                                                 |
 | `SetActorTransformCommand` | single-actor gizmo drag / Details transform (merge key `transform:{actorId}`)               |
 | `SetActorsTransformsCommand` | multi-select gizmo drag (merge key `transforms:{sortedIds}`) — one undo for the group     |
 

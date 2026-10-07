@@ -91,8 +91,10 @@ function planList<T extends { id: string }>(before: readonly T[], after: readonl
   const moves: ListPlan<T>["moves"] = [];
   for (let to = 0; to < desired.length; to++) {
     const id = desired[to]!;
-    const from = working.indexOf(id);
-    if (from === to || from === -1) continue;
+    if (working[to] === id) continue;
+    // Earlier slots already match `desired`, so the row can only be later.
+    const from = working.indexOf(id, to);
+    if (from === -1) continue;
     moves.push({ id, from, to });
     working.splice(from, 1);
     working.splice(to, 0, id);
@@ -401,7 +403,7 @@ function withGuardedAnchorPoses(after: SerializedScene, applied: SerializedScene
   let changed = false;
   const actors = after.actors.map((actor) => {
     const current = appliedActors.get(actor.id);
-    if (!current) return actor;
+    if (!current || current === actor) return actor;
     let next = actor;
     if (isSceneLayerAnchorActor(actor) && !jsonEquivalent(actor.transform, current.transform)) {
       next = { ...next, transform: current.transform };
