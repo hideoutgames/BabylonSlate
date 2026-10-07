@@ -34,7 +34,7 @@ import type {
   SerializedScene,
   SerializedSceneLayer,
 } from "@babylonslate/core";
-import { ASSET_DOCUMENT_KINDS, documentId, parseDocumentId, isAssetDocumentKind, isSceneWorkspaceKind, normalizeProjectSettings, normalizeScene, defaultExportPreset, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@babylonslate/core";
+import { ASSET_DOCUMENT_KINDS, documentId, isAssetDocumentKind, isSceneWorkspaceKind, normalizeProjectSettings, normalizeScene, defaultExportPreset, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@babylonslate/core";
 import {
   appendJournalLines,
   getTile,
@@ -71,23 +71,13 @@ import {
   type ParticleLibrary,
 } from "@babylonslate/assets";
 import { encodeRgbaPng } from "@babylonslate/render";
-import { resolveClassRenameRecovery } from "../lib/class-rename-recovery";
 import {
-  commandToJournalPayload,
   DEFAULT_EDIT_BYTE_BUDGET,
-  diffGraphCommands,
-  planSceneChange,
   EditSession,
   journalRepathLine,
   journalDiscardLine,
   journalCheckpointLine,
-  replayJournalLines,
   resolveJournalLines,
-  SetAssetDocumentCommand,
-  ReplaceSceneCommand,
-  type EditApplyResult,
-  type EditCommand,
-  type HistoryAdmissionResult,
 } from "@babylonslate/edit";
 import { attachJournalFlushOnHide, JournalBuffer } from "../lib/journal-buffer";
 import {
@@ -109,11 +99,11 @@ import type { TracePayload } from "@babylonslate/debugger";
 import {
   DocumentService,
   documentKindsRevision,
-  type DocumentContent,
   type DocumentIdentityListener,
   type DocumentRevisions,
   type OpenDocument,
 } from "../services/document-service";
+import { DocumentEditingService } from "../services/document-editing-service";
 import { attachEditGestureBoundaries } from "../services/edit-gesture-boundaries";
 import { ProjectService, type PluginImportResult } from "../services/project-service";
 import { DocumentTransitionGate } from "../services/document-transition-gate";
@@ -123,17 +113,11 @@ import {
   SourceControlService,
 } from "../services/source-control-service";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
-import {
-  afterMutatingApply,
-  requeueWithEditLock,
-  isMutatingApplyBlocked,
-} from "../lib/document-lock-apply";
+import { requeueWithEditLock } from "../lib/document-lock-apply";
 import { dirtyScenesBlockingOpen } from "../lib/exclusive-scene";
 import { moveKeyedEntry } from "../lib/move-keyed-entry";
 import { documentContentIdentity } from "../lib/document-content-identity";
-import { notifyDocumentEdited } from "../lib/notify-document-edited";
 import { advanceTestIdleClock } from "../lib/document-working-set";
-import { shouldApplyAssetDocumentChange } from "../lib/asset-document-change";
 import { collectGpuTextureBytes, texturePixelSizesFromHeaders } from "../lib/collect-gpu-texture-bytes";
 import { collectAreaEmissions } from "../lib/collect-area-emissions";
 import {
@@ -216,15 +200,6 @@ import {
   persistableDocumentContent,
 } from "../lib/scene-layer-document";
 import { tryReparentUserClass } from "../lib/reparent-class";
-import {
-  descendantClassIds,
-  prefabAssetTemplateKey,
-  prefabAssetTemplates,
-  prefabTemplatesByClassId,
-  scenesEqualForPrefabSync,
-  stampUserComponentOverrides,
-  syncSceneActorsFromPrefabs,
-} from "../lib/prefab-instance-sync";
 import {
   classAssetPaths,
   createProjectPluginAndRevealContent,
@@ -322,13 +297,6 @@ import {
   type MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
 export type AppRoute = "home" | "editor";
-
-/** Scene instance sync scope; omit both lists to sync every Class and Prefab. */
-type PrefabSyncOptions = {
-  classIds?: readonly string[];
-  prefabGuids?: readonly string[];
-  quiet?: boolean;
-};
 
 interface DocumentContextValue {
   registerBeforeTransition: DocumentTransitionGate["register"];
@@ -904,9 +872,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const editSessionRef = useRef(
     new EditSession({ maxBytes: DEFAULT_EDIT_BYTE_BUDGET }),
   );
-  const syncPrefabInstancesRef = useRef<
-    (options?: PrefabSyncOptions) => Promise<void>
-  >(async () => {});
   const dockviewApisRef = useRef(new Map<string, DockviewApi>());
   const dockSubscriptionsRef = useRef(new Map<string, Array<{ dispose: () => void }>>());
   const preFocusLayoutsRef = useRef(new Map<string, PreFocusSnapshot>());
@@ -929,9 +894,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const [autoSaveStatus, setAutoSaveStatus] = useState<DocumentContextValue["autoSaveStatus"]>(null);
   const [undoHistoryNotice, setUndoHistoryNotice] = useState<DocumentContextValue["undoHistoryNotice"]>(null);
   const dismissUndoHistoryNotice = useCallback(() => setUndoHistoryNotice(null), []);
-  /** Tell the user once per gesture when an edit could not reach Undo history. */
-  const reportHistoryOutcome = useCallback((id: string, result: EditApplyResult<unknown>) => {
-    if (result.history !== "cleared") return;
+  const noteUndoHistoryCleared = useCallback((id: string) => {
     setUndoHistoryNotice((current) => ({ documentId: id, sequence: (current?.sequence ?? 0) + 1 }));
   }, []);
   // Keyed by saved revision, and projects made from one template share guids:
@@ -1603,77 +1566,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [projectService],
   );
 
-  const replayRecoveryJournal = useCallback(async () => {
-    const authoring = documentService.getAuthoringLock();
-    if (authoring.readOnly) return;
-    const guid = projectService.guid;
-    if (!guid) return;
-    const derived = await ensureDerived();
-    const lines = resolveClassRenameRecovery(await journalBuffer.afterFlush(guid, () =>
-      readJournalLines(derived, guid),
-    ), projectService.registry);
-    if (documentService.getAuthoringLock() !== authoring) return;
-    if (lines.length === 0) {
-      setRecoveryAvailable(false);
-      return;
-    }
-
-    // Ensure every journal target document is open so replay is not skipped.
-    // Resolved ids follow renames, so a renamed document opens at its new path.
-    for (const { docId } of resolveJournalLines(lines)) {
-      if (documentService.getAuthoringLock() !== authoring) return;
-      const ref = parseDocumentId(docId);
-      if (!ref || !isAssetDocumentKind(ref.kind)) continue;
-      if (documentService.getState().openDocuments.get(docId)?.content != null) continue;
-      const { kind, path } = ref;
-      try {
-        await documentService.openDocument(
-          projectService,
-          { kind, path, label: path.split("/").pop() ?? path },
-          null,
-          false,
-        );
-      } catch {
-        // A missing document is skipped by replayJournalLines too.
-      }
-    }
-
-    if (documentService.getAuthoringLock() !== authoring) return;
-
-    const openDocs = new Map<string, DocumentContent>();
-    for (const doc of documentService.getOpenDocumentsOrdered()) {
-      if (isAssetDocumentKind(doc.ref.kind) && doc.content) {
-        openDocs.set(doc.id, doc.content);
-      }
-    }
-
-    const { documents, skipped } = replayJournalLines(lines, openDocs);
-    for (const [id, content] of documents) {
-      const doc = documentService.getDocument(id);
-      if (!doc || doc.content === content) continue;
-      // Replay can end at the saved content, so compare rather than mark dirty.
-      if (isSceneWorkspaceKind(doc.ref.kind)) {
-        documentService.updateScene(id, content as SerializedScene, "compare");
-      } else if (doc.ref.kind === "graph") {
-        documentService.updateGraph(id, content as SerializedGraph, "compare");
-      } else {
-        documentService.updateAssetDocument(id, content as Record<string, unknown>, "compare");
-      }
-    }
-    // Undo can leave the journal at the saved content. There is nothing to
-    // save in that case, so retire the replayed journal without a no-op edit.
-    // Retain skipped records and any edits made while the clear is queued.
-    if (skipped.length === 0) {
-      await journalBuffer.afterFlush(guid, () => truncateJournal(derived, guid, () =>
-        projectService.guid === guid &&
-        documentService.getDirtyDocuments().length === 0 &&
-        !projectSaveState.current.isDirty(projectDocumentRef.current),
-      ));
-    }
-    setRecoveryAvailable(false);
-    bump();
-  }, [bump, documentService, ensureDerived, journalBuffer, projectService]);
-
   const enterEditor = useCallback(
     async (
       document: ProjectDocument,
@@ -2095,6 +1987,28 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }, interval);
   }, [projectService, saveProject]);
 
+  // The edit pipeline (apply*, Undo / Redo, Simulation apply, journal append
+  // and recovery replay, prefab sync). Every input is stable, so it is built
+  // once and the actions below delegate to it.
+  const editing = useMemo(
+    () =>
+      new DocumentEditingService({
+        documents: documentService,
+        editSession: editSessionRef.current,
+        project: projectService,
+        sourceControl: sourceControlRef.current,
+        journal: journalBuffer,
+        derivedStorage: ensureDerived,
+        bump,
+        scheduleDebouncedSave,
+        onHistoryCleared: noteUndoHistoryCleared,
+        registryTick: () => registryTickRef.current,
+        isProjectDirty: () => projectSaveState.current.isDirty(projectDocumentRef.current),
+        onRecoveryResolved: () => setRecoveryAvailable(false),
+      }),
+    [bump, documentService, ensureDerived, journalBuffer, noteUndoHistoryCleared, projectService, scheduleDebouncedSave],
+  );
+
   const setShowPluginContent = useCallback(
     (show: boolean) => {
       documentService.setShowPluginContent(show);
@@ -2370,8 +2284,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!recoveryRequested || sceneDocumentLoad) return;
     setRecoveryRequested(false);
-    void replayRecoveryJournal();
-  }, [recoveryRequested, replayRecoveryJournal, sceneDocumentLoad]);
+    void editing.replayRecoveryJournal();
+  }, [editing, recoveryRequested, sceneDocumentLoad]);
 
   const performCloseDocument = useCallback(
     (id: string) => {
@@ -2671,10 +2585,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       sourceControlRef.current.onOpenDocument(ref.path);
       bump();
       if (ref.kind === "scene") {
-        await syncPrefabInstancesRef.current({ quiet: true });
+        await editing.syncPrefabInstances({ quiet: true });
       }
     },
-    [bump, captureLayoutForId, performCloseDocument, documentService, projectService, cancelSceneDocumentLoad, documentTransitions],
+    [bump, captureLayoutForId, editing, performCloseDocument, documentService, projectService, cancelSceneDocumentLoad, documentTransitions],
   );
 
   const ensureAssetDocument = useCallback(async (ref: DocumentRef): Promise<string> => {
@@ -2878,130 +2792,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     return readGitPrefill(projectService.storagePort);
   }, [projectService]);
 
-  const classGraphsForPrefabSync = useCallback(() => {
-    const assets = projectService.registry?.list() ?? [];
-    const graphs = collectClassGraphsForPalette({
-      assets,
-      openDocuments: [...documentService.getState().openDocuments.values()],
-      classIdForPath: classIdForGraphPath,
-    });
-    return {
-      graphs,
-      parentOf: classParentLookup(assets),
-    };
-  }, [documentService, projectService]);
-
-  /**
-   * Prefab templates for stamping user component overrides (Class prefabs and
-   * Prefab assets), rebuilt only when one can have changed: the registry (its
-   * generation or `registryEpoch` tick) or an open Class or Prefab document
-   * (the graph- and prefab-kind revisions).
-   */
-  const prefabTemplatesCacheRef = useRef<{
-    registry: unknown;
-    key: string;
-    templates: ReturnType<typeof prefabTemplatesByClassId>;
-  } | null>(null);
-  const prefabTemplatesForStamping = useCallback(() => {
-    const registry = projectService.registry;
-    const revisions = documentService.getRevisions();
-    const key = `${projectService.registryGeneration}:${registryTickRef.current}:${revisions.graph}:${revisions.prefab}`;
-    const cached = prefabTemplatesCacheRef.current;
-    if (cached && cached.registry === registry && cached.key === key) return cached.templates;
-    const { graphs, parentOf } = classGraphsForPrefabSync();
-    const templates = {
-      ...prefabTemplatesByClassId({
-        classIds: Object.keys(graphs),
-        parentOf,
-        graphs,
-      }),
-      ...prefabAssetTemplates({
-        assets: registry?.list() ?? [],
-        openDocuments: [...documentService.getState().openDocuments.values()],
-      }),
-    };
-    prefabTemplatesCacheRef.current = { registry, key, templates };
-    return templates;
-  }, [classGraphsForPrefabSync, documentService, projectService]);
-
-  const enqueuePrefabSyncForClassPath = useCallback(
-    async (path: string) => {
-      const { graphs, parentOf } = classGraphsForPrefabSync();
-      await syncPrefabInstancesRef.current({
-        classIds: descendantClassIds(
-          classIdForGraphPath(path),
-          Object.keys(graphs),
-          parentOf,
-        ),
-      });
-    },
-    [classGraphsForPrefabSync],
-  );
-
-  const enqueuePrefabSyncForPrefabPath = useCallback(
-    async (path: string) => {
-      const guid = projectService.registry?.getByPath(path)?.header.guid;
-      if (guid) await syncPrefabInstancesRef.current({ prefabGuids: [guid] });
-    },
-    [projectService],
-  );
-
-  const notifyAppliedCommand = useCallback(
-    (id: string, command: EditCommand<unknown>) => {
-      const guid = projectService.guid;
-      const line = {
-        v: 1 as const,
-        docId: id,
-        at: new Date().toISOString(),
-        command: commandToJournalPayload(command),
-      };
-      return notifyDocumentEdited({
-        scheduleDebouncedSave,
-        bump,
-        journal: async () => {
-          if (guid) journalBuffer.append(guid, line);
-        },
-      });
-    },
-    [bump, journalBuffer, projectService, scheduleDebouncedSave],
-  );
-
-  const applyGraphChange = useCallback(
-    async (id: string, next: SerializedGraph): Promise<boolean> => {
-      const doc = documentService.getState().openDocuments.get(id);
-      if (!doc || doc.ref.kind !== "graph" || !doc.content) {
-        return false;
-      }
-      if (isMutatingApplyBlocked(
-        sourceControlRef.current,
-        doc.ref.path,
-        isPluginDocumentReadOnly(projectService.plugins, doc.ref.path),
-        documentService.getAuthoringLock().readOnly,
-      )) {
-        return false;
-      }
-      const previous = doc.content as SerializedGraph;
-      const commands = diffGraphCommands(previous, next);
-      if (commands.length === 0) {
-        return false;
-      }
-      const result = editSessionRef.current.applyBatch(id, previous, commands)!;
-      documentService.updateGraph(id, result.doc);
-      reportHistoryOutcome(id, result);
-      await notifyAppliedCommand(id, result.command);
-      void afterMutatingApply(sourceControlRef.current, doc.ref.path);
-      if (commands.some((command) => command.type === "graph.setComponents")) {
-        await enqueuePrefabSyncForClassPath(doc.ref.path);
-      }
-      return true;
-    },
-    [
-      documentService,
-      enqueuePrefabSyncForClassPath,
-      notifyAppliedCommand,
-      projectService,
-      reportHistoryOutcome,
-    ],
+  const applyGraphChange = useCallback<DocumentContextValue["applyGraphChange"]>(
+    (id, next) => editing.applyGraphChange(id, next),
+    [editing],
   );
 
   const reparentClassDocument = useCallback(
@@ -3010,14 +2803,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (!doc || doc.ref.kind !== "graph" || !doc.content) {
         return "Class document is not open.";
       }
-      if (
-        isMutatingApplyBlocked(
-          sourceControlRef.current,
-          doc.ref.path,
-          isPluginDocumentReadOnly(projectService.plugins, doc.ref.path),
-          documentService.getAuthoringLock().readOnly,
-        )
-      ) {
+      if (editing.isApplyBlocked(doc.ref.path)) {
         return documentService.getAuthoringLock().reason ?? "This Class is locked.";
       }
       const classId = classIdForGraphPath(doc.ref.path);
@@ -3037,183 +2823,22 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       bump();
       return null;
     },
-    [bump, documentService, projectService],
+    [bump, documentService, editing, projectService],
   );
 
-  const beginSimulationDocument = useCallback((id: string): SimulationDocumentTransaction => {
-    const lease = documentService.beginSimulationDocument(id);
-    return {
-      baseline: lease.baseline,
-      release: lease.release,
-      applyScene: async (candidate) => {
-        const path = lease.baseline.ref.path;
-        const registry = projectService.registry;
-        const asset = registry?.list().find(entry => entry.path === path);
-        if (asset && registry?.getRoot(asset.rootId)?.readOnly) return { ok: false, reason: "The Scene belongs to a read-only asset source." };
-        if (isMutatingApplyBlocked(sourceControlRef.current, path, isPluginDocumentReadOnly(projectService.plugins, path), false)) {
-          return { ok: false, reason: "The Scene is read-only or locked by source control." };
-        }
-        try {
-          const admitted = lease.apply<HistoryAdmissionResult<SerializedScene> |
-            { ok: true; status: "unchanged"; doc: SerializedScene; command: null }>(previous => {
-            if (ReplaceSceneCommand.isNoop(previous, candidate)) return { scene: previous,
-              value: { ok: true as const, status: "unchanged" as const, doc: previous, command: null } };
-            const command = new ReplaceSceneCommand(previous, candidate, { maxHistoryBytes: editSessionRef.current.getStack(id).byteBudget });
-            const result = editSessionRef.current.applyWithHistoryAdmission(id, previous, command);
-            return { scene: result.ok ? result.doc : previous, value: result };
-          });
-          if (!admitted.ok) return admitted;
-          const result = admitted.value;
-          if (!result.ok) return { ok: false, reason: result.reason === "history-budget"
-            ? `Apply Simulation Changes needs ${result.requiredBytes} bytes of Undo history; the limit is ${result.maxBytes} bytes. The document is unchanged; discard or retry after the budget is changed.`
-            : "The complete Simulation transaction could not account for its Undo history." };
-          if (result.status === "applied" && result.command) {
-            // The commit is already atomic. Notification failures must never be
-            // reported as a failed Keep after the document/history changed.
-            try { await notifyAppliedCommand(id, result.command); }
-            catch (error) { console.error("Simulation changes applied; editor notification failed", error); }
-            void afterMutatingApply(sourceControlRef.current, path);
-          }
-          return { ok: true, status: result.status };
-        } catch (error) {
-          return { ok: false, reason: error instanceof Error ? error.message : "The complete Simulation transaction could not be applied." };
-        }
-      },
-    };
-  }, [documentService, notifyAppliedCommand, projectService]);
-
-  const applySceneChange = useCallback(
-    async (
-      id: string,
-      next: SerializedScene,
-      options?: { prefabSync?: boolean },
-    ): Promise<boolean> => {
-      const doc = documentService.getState().openDocuments.get(id);
-      if (!doc || !isSceneWorkspaceKind(doc.ref.kind) || !doc.content) {
-        return false;
-      }
-      if (isMutatingApplyBlocked(
-        sourceControlRef.current,
-        doc.ref.path,
-        isPluginDocumentReadOnly(projectService.plugins, doc.ref.path),
-        documentService.getAuthoringLock().readOnly,
-      )) {
-        return false;
-      }
-      const previous = doc.content as SerializedScene;
-      const intended = options?.prefabSync
-        ? next
-        : stampUserComponentOverrides(previous, next, prefabTemplatesForStamping());
-      // Deltas, or one whole-scene replacement for fields no delta covers:
-      // either way the edit reaches Undo and the journal.
-      const commands = planSceneChange(previous, intended);
-      if (commands.length === 0) {
-        return false;
-      }
-      const result = editSessionRef.current.applyBatch(id, previous, commands)!;
-      documentService.updateScene(id, result.doc);
-      reportHistoryOutcome(id, result);
-      await notifyAppliedCommand(id, result.command);
-      void afterMutatingApply(sourceControlRef.current, doc.ref.path);
-      return true;
-    },
-    [
-      documentService,
-      notifyAppliedCommand,
-      prefabTemplatesForStamping,
-      projectService,
-      reportHistoryOutcome,
-    ],
+  const beginSimulationDocument = useCallback<DocumentContextValue["beginSimulationDocument"]>(
+    (id) => editing.beginSimulationDocument(id),
+    [editing],
   );
 
-  const syncPrefabInstances = useCallback(async (
-    options?: PrefabSyncOptions,
-  ) => {
-    if (documentService.getAuthoringLock().readOnly) return;
-    const open = [...documentService.getState().openDocuments.values()];
-    const sceneDoc = open.find((entry) => entry.ref.kind === "scene");
-    if (!sceneDoc?.content) return;
-    const assets = projectService.registry?.list() ?? [];
-    const graphs = collectClassGraphsForPalette({
-      assets,
-      openDocuments: open,
-      classIdForPath: classIdForGraphPath,
-    });
-    const parentOf = classParentLookup(assets);
-    // A targeted sync touches only the edited Class lineage or Prefab assets.
-    const targeted = options?.classIds !== undefined || options?.prefabGuids !== undefined;
-    const classIds = options?.classIds ?? (targeted ? [] : Object.keys(graphs));
-    const assetTemplates = prefabAssetTemplates({ assets, openDocuments: open });
-    const prefabKeys = options?.prefabGuids?.map(prefabAssetTemplateKey);
-    const templates = {
-      ...prefabTemplatesByClassId({
-        classIds: [...classIds],
-        parentOf,
-        graphs,
-      }),
-      ...(targeted
-        ? Object.fromEntries((prefabKeys ?? []).flatMap((key) =>
-            assetTemplates[key] ? [[key, assetTemplates[key]] as const] : []))
-        : assetTemplates),
-    };
-    const scene = sceneDoc.content as SerializedScene;
-    const next = syncSceneActorsFromPrefabs(scene, templates);
-    if (scenesEqualForPrefabSync(scene, next)) return;
-    if (options?.quiet) {
-      // The open-time sync rewrites instances without a command, so history
-      // recorded before it (such as history kept from a closed tab) no longer
-      // fits the content and must not replay onto it.
-      editSessionRef.current.dropDocument(sceneDoc.id);
-      documentService.patchLoadedContent(sceneDoc.id, next);
-      bump();
-      return;
-    }
-    await applySceneChange(sceneDoc.id, next, { prefabSync: true });
-  }, [applySceneChange, bump, documentService, projectService]);
-  // Callbacks declared above (scene open, Class component edits) reach it here.
-  useLayoutEffect(() => {
-    syncPrefabInstancesRef.current = syncPrefabInstances;
-  }, [syncPrefabInstances]);
+  const applySceneChange = useCallback<DocumentContextValue["applySceneChange"]>(
+    (id, next, options) => editing.applySceneChange(id, next, options),
+    [editing],
+  );
 
-  const applyAssetDocumentChange = useCallback(
-    async (
-      id: string,
-      next: Record<string, unknown>,
-      mergeKey?: string,
-    ): Promise<boolean> => {
-      const doc = documentService.getState().openDocuments.get(id);
-      if (
-        !doc ||
-        !isAssetDocumentKind(doc.ref.kind) ||
-        doc.ref.kind === "scene" ||
-        doc.ref.kind === "graph" ||
-        doc.ref.kind === "trace" ||
-        !doc.content
-      ) {
-        return false;
-      }
-      if (isMutatingApplyBlocked(
-        sourceControlRef.current,
-        doc.ref.path,
-        isPluginDocumentReadOnly(projectService.plugins, doc.ref.path),
-        documentService.getAuthoringLock().readOnly,
-      )) {
-        return false;
-      }
-      const previous = doc.content as Record<string, unknown>;
-      if (!shouldApplyAssetDocumentChange(previous, next)) {
-        return false;
-      }
-      const command = new SetAssetDocumentCommand(previous, next, mergeKey);
-      const result = editSessionRef.current.apply(id, previous, command);
-      documentService.updateAssetDocument(id, result.doc);
-      reportHistoryOutcome(id, result);
-      await notifyAppliedCommand(id, command);
-      void afterMutatingApply(sourceControlRef.current, doc.ref.path);
-      if (doc.ref.kind === "prefab") await enqueuePrefabSyncForPrefabPath(doc.ref.path);
-      return true;
-    },
-    [documentService, enqueuePrefabSyncForPrefabPath, notifyAppliedCommand, projectService, reportHistoryOutcome],
+  const applyAssetDocumentChange = useCallback<DocumentContextValue["applyAssetDocumentChange"]>(
+    (id, next, mergeKey) => editing.applyAssetDocumentChange(id, next, mergeKey),
+    [editing],
   );
 
   const textureUsageBlockedReason = useCallback(
@@ -4714,66 +4339,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     updateProjectSettings,
   ]);
 
-  const stepDocumentHistory = useCallback(
-    (direction: "undo" | "redo", targetId?: string) => {
-      const { activeDocumentId: currentId, openDocuments } = documentService.getState();
-      const activeDocumentId = targetId ?? currentId;
-      if (!activeDocumentId) return;
-      const doc = openDocuments.get(activeDocumentId);
-      if (!doc?.content) return;
-      if (isMutatingApplyBlocked(sourceControlRef.current, doc.ref.path, isPluginDocumentReadOnly(projectService.plugins, doc.ref.path), documentService.getAuthoringLock().readOnly)) return;
-      if (doc.ref.kind === "graph") {
-        const stack =
-          editSessionRef.current.getStack<SerializedGraph>(activeDocumentId);
-        const content = doc.content as SerializedGraph;
-        const result =
-          direction === "undo" ? stack.undo(content) : stack.redo(content);
-        if (!result) return;
-        documentService.updateGraph(activeDocumentId, result.doc, "compare");
-        void notifyAppliedCommand(activeDocumentId, result.command);
-        if (
-          JSON.stringify(content.components) !==
-          JSON.stringify(result.doc.components)
-        ) {
-          void enqueuePrefabSyncForClassPath(doc.ref.path);
-        }
-        return;
-      }
-      if (doc.ref.kind === "scene" || doc.ref.kind === "scene-layer") {
-        const stack =
-          editSessionRef.current.getStack<SerializedScene>(activeDocumentId);
-        const content = doc.content as SerializedScene;
-        const result =
-          direction === "undo" ? stack.undo(content) : stack.redo(content);
-        if (!result) return;
-        documentService.updateSceneFromHistory(activeDocumentId, result.doc);
-        void notifyAppliedCommand(activeDocumentId, result.command);
-        return;
-      }
-      if (isAssetDocumentKind(doc.ref.kind)) {
-        const stack = editSessionRef.current.getStack<Record<string, unknown>>(
-          activeDocumentId,
-        );
-        const content = doc.content as Record<string, unknown>;
-        const result =
-          direction === "undo" ? stack.undo(content) : stack.redo(content);
-        if (!result) return;
-        documentService.updateAssetDocument(activeDocumentId, result.doc, "compare");
-        void notifyAppliedCommand(activeDocumentId, result.command);
-        if (doc.ref.kind === "prefab") void enqueuePrefabSyncForPrefabPath(doc.ref.path);
-      }
-    },
-    [documentService, enqueuePrefabSyncForClassPath, enqueuePrefabSyncForPrefabPath, notifyAppliedCommand, projectService],
-  );
-
-
   const undoActiveDocument = useCallback(() => {
-    stepDocumentHistory("undo");
-  }, [stepDocumentHistory]);
+    editing.stepHistory("undo");
+  }, [editing]);
 
   const redoActiveDocument = useCallback(() => {
-    stepDocumentHistory("redo");
-  }, [stepDocumentHistory]);
+    editing.stepHistory("redo");
+  }, [editing]);
 
   const registerDockviewApi = useCallback((
     id: string,
