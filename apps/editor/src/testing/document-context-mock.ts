@@ -91,6 +91,9 @@ function revisionsFollowingDocuments(): (documents: unknown) => DocumentRevision
 function inertDocuments(current: () => DocumentsValue | undefined): DocumentsValue {
   const revisionsFor = revisionsFollowingDocuments();
   return {
+    lockAuthoring: unsubscribe,
+    getAuthoringLock: () => ({ readOnly: false, reason: null, revision: 0 }),
+    subscribeAuthoringLock: unsubscribe,
     route: "home",
     projectDocument: null,
     projectName: null,

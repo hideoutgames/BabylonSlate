@@ -308,6 +308,10 @@ import {
 export type AppRoute = "home" | "editor";
 
 interface DocumentContextValue {
+  /** Protect in-memory authoring; the owner must release its lease on every exit. */
+  lockAuthoring: DocumentService["lockAuthoring"];
+  getAuthoringLock: DocumentService["getAuthoringLock"];
+  subscribeAuthoringLock: DocumentService["onAuthoringLockChange"];
   route: AppRoute;
   projectDocument: ProjectDocument | null;
   projectName: string | null;
@@ -985,6 +989,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const bump = useCallback(() => setContextTick((v) => v + 1), []);
+  const lockAuthoring = useCallback((reason: string) => documentService.lockAuthoring(reason), [documentService]);
+  const getAuthoringLock = useCallback(() => documentService.getAuthoringLock(), [documentService]);
+  const subscribeAuthoringLock = useCallback((listener: () => void) => documentService.onAuthoringLockChange(listener), [documentService]);
+  useEffect(() => documentService.onAuthoringLockChange(bump), [bump, documentService]);
   /** Plugins, search index or Show Plugin Content changed: advance `registryEpoch`. */
   const bumpRegistry = useCallback(() => setRegistryTick((v) => v + 1), []);
   const bumpDockWindows = useCallback(() => {
@@ -1268,6 +1276,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const reloadDocumentsFromDisk = useCallback(
     async (paths: string[]) => {
+      const authoring = documentService.getAuthoringLock();
+      if (authoring.readOnly) return;
       for (const path of paths) {
         const doc = [...documentService.getState().openDocuments.values()].find(
           (entry) => entry.ref.path === path,
@@ -1278,6 +1288,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
             doc.ref.kind,
             doc.ref.path,
           );
+          if (documentService.getAuthoringLock() !== authoring) return;
           documentService.replaceLoadedContent(
             doc.id,
             editorTabContentForKind(doc.ref.kind, loaded) as NonNullable<typeof doc.content>,
@@ -1328,7 +1339,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, [runForegroundRescan]);
 
   const confirmExternalChangeReloadProject = useCallback(async () => {
+    const authoring = documentService.getAuthoringLock();
+    if (authoring.readOnly) return;
     const { document } = await projectService.loadCurrentProject();
+    if (documentService.getAuthoringLock() !== authoring) return;
     projectSaveState.current.reset(document);
     setProjectDocument(document);
     const paths = documentService
@@ -1348,10 +1362,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const confirmExternalChangeReloadDocs = useCallback(
     async (paths: string[]) => {
+      if (documentService.getAuthoringLock().readOnly) return;
       await reloadDocumentsFromDisk(paths);
       setExternalChangePrompt(null);
     },
-    [reloadDocumentsFromDisk],
+    [documentService, reloadDocumentsFromDisk],
   );
 
   const dismissExternalChange = useCallback(() => {
@@ -1513,12 +1528,15 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
 
   const replayRecoveryJournal = useCallback(async () => {
+    const authoring = documentService.getAuthoringLock();
+    if (authoring.readOnly) return;
     const guid = projectService.guid;
     if (!guid) return;
     const derived = await ensureDerived();
     const lines = await journalBuffer.afterFlush(guid, () =>
       readJournalLines(derived, guid),
     );
+    if (documentService.getAuthoringLock() !== authoring) return;
     if (lines.length === 0) {
       setRecoveryAvailable(false);
       return;
@@ -1527,6 +1545,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     // Ensure every journal target document is open so replay is not skipped.
     // Resolved ids follow renames, so a renamed document opens at its new path.
     for (const { docId } of resolveJournalLines(lines)) {
+      if (documentService.getAuthoringLock() !== authoring) return;
       const ref = parseDocumentId(docId);
       if (!ref || !isAssetDocumentKind(ref.kind)) continue;
       if (documentService.getState().openDocuments.has(docId)) continue;
@@ -1542,6 +1561,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         // A missing document is skipped by replayJournalLines too.
       }
     }
+
+    if (documentService.getAuthoringLock() !== authoring) return;
 
     const openDocs = new Map<string, DocumentContent>();
     for (const doc of documentService.getOpenDocumentsOrdered()) {
@@ -2541,6 +2562,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const updateScene = useCallback(
     (id: string, scene: SerializedScene) => {
+      if (documentService.getAuthoringLock().readOnly) return;
       documentService.updateScene(id, scene);
       bump();
     },
@@ -2549,6 +2571,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const updateGraph = useCallback(
     (id: string, graph: SerializedGraph) => {
+      if (documentService.getAuthoringLock().readOnly) return;
       documentService.updateGraph(id, graph);
       bump();
     },
@@ -2556,15 +2579,17 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
 
   const updateProjectVersion = useCallback((version: string) => {
+    if (documentService.getAuthoringLock().readOnly) return;
     setProjectDocument(current => current ? {
       ...current,
       metadata: { ...current.metadata, version, updatedAt: new Date().toISOString() },
     } : current);
     scheduleDebouncedSave();
-  }, [scheduleDebouncedSave, setProjectDocument]);
+  }, [documentService, scheduleDebouncedSave, setProjectDocument]);
 
   const updateProjectSettings = useCallback(
     (settings: Partial<ProjectDocument["settings"]>) => {
+      if (documentService.getAuthoringLock().readOnly) return;
       setProjectDocument((current) => {
         if (!current) return current;
         return {
@@ -2616,7 +2641,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       });
       scheduleDebouncedSave();
     },
-    [scheduleDebouncedSave, setProjectDocument],
+    [documentService, scheduleDebouncedSave, setProjectDocument],
   );
 
   const prefillSourceControlFromGit = useCallback(async () => {
@@ -2680,6 +2705,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         sourceControlRef.current,
         doc.ref.path,
         isPluginDocumentReadOnly(projectService.plugins, doc.ref.path),
+        documentService.getAuthoringLock().readOnly,
       )) {
         return false;
       }
@@ -2716,9 +2742,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           sourceControlRef.current,
           doc.ref.path,
           isPluginDocumentReadOnly(projectService.plugins, doc.ref.path),
+          documentService.getAuthoringLock().readOnly,
         )
       ) {
-        return "This Class is locked.";
+        return documentService.getAuthoringLock().reason ?? "This Class is locked.";
       }
       const classId = classIdForGraphPath(doc.ref.path);
       const assets = projectService.registry?.list() ?? [];
@@ -2754,6 +2781,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         sourceControlRef.current,
         doc.ref.path,
         isPluginDocumentReadOnly(projectService.plugins, doc.ref.path),
+        documentService.getAuthoringLock().readOnly,
       )) {
         return false;
       }
@@ -2803,6 +2831,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const syncPrefabInstances = useCallback(async (
     options?: { classIds?: readonly string[]; quiet?: boolean },
   ) => {
+    if (documentService.getAuthoringLock().readOnly) return;
     const open = [...documentService.getState().openDocuments.values()];
     const sceneDoc = open.find((entry) => entry.ref.kind === "scene");
     if (!sceneDoc?.content) return;
@@ -2859,6 +2888,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         sourceControlRef.current,
         doc.ref.path,
         isPluginDocumentReadOnly(projectService.plugins, doc.ref.path),
+        documentService.getAuthoringLock().readOnly,
       )) {
         return false;
       }
@@ -4351,7 +4381,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (!activeDocumentId) return;
       const doc = openDocuments.get(activeDocumentId);
       if (!doc?.content) return;
-      if (isMutatingApplyBlocked(sourceControlRef.current, doc.ref.path, isPluginDocumentReadOnly(projectService.plugins, doc.ref.path))) return;
+      if (isMutatingApplyBlocked(sourceControlRef.current, doc.ref.path, isPluginDocumentReadOnly(projectService.plugins, doc.ref.path), documentService.getAuthoringLock().readOnly)) return;
       if (doc.ref.kind === "graph") {
         const stack =
           editSessionRef.current.getStack<SerializedGraph>(activeDocumentId);
@@ -4674,6 +4704,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   // and action-only consumers never re-render when documents change.
   const actions = useMemo<DocumentActions>(
     () => ({
+      lockAuthoring,
+      getAuthoringLock,
+      subscribeAuthoringLock,
       refreshAssetRegistry,
       noteAssetsCreated,
       setShowPluginContent,
@@ -4782,6 +4815,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       loadGraphDocument,
     }),
     [
+      lockAuthoring,
+      getAuthoringLock,
+      subscribeAuthoringLock,
       refreshAssetRegistry,
       noteAssetsCreated,
       setShowPluginContent,
@@ -4973,8 +5009,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         pendingExclusiveScene,
         sourceControl: sourceControlRef.current,
         externalChangePrompt,
-        canUndoActiveDocument: activeStack?.canUndo ?? false,
-        canRedoActiveDocument: activeStack?.canRedo ?? false,
+        canUndoActiveDocument: !documentService.getAuthoringLock().readOnly && (activeStack?.canUndo ?? false),
+        canRedoActiveDocument: !documentService.getAuthoringLock().readOnly && (activeStack?.canRedo ?? false),
         animEditorMode: activeId
           ? animEditorModeForDocument(activeId, animEditorModes, activeDoc)
           : "stateMachine",

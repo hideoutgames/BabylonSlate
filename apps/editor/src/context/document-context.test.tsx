@@ -151,6 +151,72 @@ afterEach(async () => {
 });
 
 describe("DocumentProvider actions and route", () => {
+  it("preserves authored content and existing Redo when authoring rejects edits and history actions", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    const baseline = openScene(MAIN_SCENE_ID);
+    const edited = movedScene(baseline, 2);
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, edited));
+    act(() => actions.undoActiveDocument());
+    expect(documents().canRedoActiveDocument).toBe(true);
+    const restored = openScene(MAIN_SCENE_ID);
+    const revisions = documents().documentRevisions;
+    const settings = documents().projectDocument!.settings;
+    let release!: () => void;
+    act(() => { release = actions.lockAuthoring("Read-only during a session."); });
+    expect(documents().canUndoActiveDocument).toBe(false);
+    expect(documents().canRedoActiveDocument).toBe(false);
+    await act(async () => {
+      expect(await actions.applySceneChange(MAIN_SCENE_ID, movedScene(restored, 20))).toBe(false);
+      actions.updateScene(MAIN_SCENE_ID, movedScene(restored, 30));
+      actions.undoActiveDocument();
+      actions.redoActiveDocument();
+      actions.updateProjectSettings({ compileOnSave: !settings.compileOnSave });
+      await actions.confirmExternalChangeReloadDocs([MAIN_SCENE_FILE]);
+    });
+    expect(openScene(MAIN_SCENE_ID)).toBe(restored);
+    expect(documents().documentRevisions).toBe(revisions);
+    expect(documents().projectDocument!.settings).toBe(settings);
+    act(release);
+    expect(documents().canRedoActiveDocument).toBe(true);
+    act(() => actions.redoActiveDocument());
+    expect(firstActorPosition(MAIN_SCENE_ID)).toEqual(edited.actors[0]!.transform.position);
+    act(() => actions.undoActiveDocument());
+    expect(firstActorPosition(MAIN_SCENE_ID)).toEqual(baseline.actors[0]!.transform.position);
+  });
+
+  it("ignores an external reload that crosses an authoring lease even when it finishes after release", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    const stored = openScene(MAIN_SCENE_ID);
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(stored, 4)));
+    const authored = openScene(MAIN_SCENE_ID);
+    let finishRead!: (content: Awaited<ReturnType<ProjectService["loadDocument"]>>) => void;
+    const original = ProjectService.prototype.loadDocument;
+    const read = vi.spyOn(ProjectService.prototype, "loadDocument").mockImplementation(function (this: ProjectService, kind, path) {
+      if (kind === "scene" && path === MAIN_SCENE_FILE) {
+        return new Promise<Awaited<ReturnType<ProjectService["loadDocument"]>>>(resolve => { finishRead = resolve; });
+      }
+      return original.call(this, kind, path);
+    });
+    try {
+      let pending!: Promise<void>;
+      act(() => { pending = actions.confirmExternalChangeReloadDocs([MAIN_SCENE_FILE]); });
+      await waitFor(() => expect(finishRead).toBeTypeOf("function"));
+      act(() => {
+        const release = actions.lockAuthoring("Read-only during a session.");
+        release();
+      });
+      await act(async () => { finishRead(stored); await pending; });
+      expect(openScene(MAIN_SCENE_ID)).toBe(authored);
+      expect(documents().canUndoActiveDocument).toBe(true);
+      act(() => actions.undoActiveDocument());
+      expect(firstActorPosition(MAIN_SCENE_ID)).toEqual(stored.actors[0]!.transform.position);
+    } finally {
+      read.mockRestore();
+    }
+  });
+
   it.each(["delete", "replace"] as const)("repairs nested data defaults in open documents during Class %s using live and saved schemas", async (operation) => {
     const actions = await openProject();
     const registry = documents().assetRegistry!;

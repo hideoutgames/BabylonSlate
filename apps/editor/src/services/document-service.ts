@@ -66,6 +66,14 @@ export type DocumentIdentityEvent =
 
 export type DocumentIdentityListener = (event: DocumentIdentityEvent) => void;
 
+/** Session-owned authoring protection, independent of source-control locks. */
+export interface DocumentAuthoringLock {
+  readonly readOnly: boolean;
+  readonly reason: string | null;
+  /** Advances on every lease change, including a lock acquired and released during I/O. */
+  readonly revision: number;
+}
+
 /**
  * One revision per document kind. A kind's revision advances whenever what a
  * reader of that kind's open documents sees changes: a document of the kind
@@ -117,9 +125,44 @@ type TabsSnapshot = { order: readonly string[]; foreground: readonly string[]; a
 
 export class DocumentService {
   private readonly identityListeners = new Set<DocumentIdentityListener>();
+  private readonly authoringLocks = new Map<symbol, string>();
+  private readonly authoringLockListeners = new Set<() => void>();
+  private authoringLock: DocumentAuthoringLock = Object.freeze({ readOnly: false, reason: null, revision: 0 });
   private revisionSequence = 0;
   private revisions: DocumentRevisions = initialDocumentRevisions();
   private tabsRevision = 0;
+
+  getAuthoringLock(): DocumentAuthoringLock {
+    return this.authoringLock;
+  }
+
+  onAuthoringLockChange(listener: () => void): () => void {
+    this.authoringLockListeners.add(listener);
+    return () => { this.authoringLockListeners.delete(listener); };
+  }
+
+  /** Each owner releases only its own lock; repeating a release is harmless. */
+  lockAuthoring(reason: string): () => void {
+    const key = Symbol();
+    this.authoringLocks.set(key, reason.trim() || "Document authoring is read-only.");
+    this.publishAuthoringLock();
+    return () => {
+      if (this.authoringLocks.delete(key)) this.publishAuthoringLock();
+    };
+  }
+
+  assertAuthoringWritable(): void {
+    if (this.authoringLock.readOnly) throw new Error(this.authoringLock.reason!);
+  }
+
+  private publishAuthoringLock(): void {
+    this.authoringLock = Object.freeze({
+      readOnly: this.authoringLocks.size > 0,
+      reason: this.authoringLocks.values().next().value ?? null,
+      revision: this.authoringLock.revision + 1,
+    });
+    for (const listener of [...this.authoringLockListeners]) listener();
+  }
 
   /** `opened` fires when a new tab entry is created; `repathed` on every path change. */
   onIdentityChange(listener: DocumentIdentityListener): () => void {
@@ -568,6 +611,7 @@ export class DocumentService {
   }
 
   updateScene(id: string, scene: SerializedScene): void {
+    this.assertAuthoringWritable();
     const doc = this.state.openDocuments.get(id);
     if (!doc || !isSceneWorkspaceKind(doc.ref.kind)) return;
     doc.content = scene;
@@ -581,6 +625,7 @@ export class DocumentService {
   }
 
   updateGraph(id: string, graph: SerializedGraph): void {
+    this.assertAuthoringWritable();
     const doc = this.state.openDocuments.get(id);
     if (!doc || doc.ref.kind !== "graph") return;
     doc.content = graph;
@@ -590,6 +635,7 @@ export class DocumentService {
   }
 
   updateAssetDocument(id: string, content: Record<string, unknown>): void {
+    this.assertAuthoringWritable();
     const doc = this.state.openDocuments.get(id);
     if (
       !doc ||
@@ -660,6 +706,7 @@ export class DocumentService {
   }
 
   replaceLoadedContent(id: string, content: DocumentContent): void {
+    this.assertAuthoringWritable();
     const doc = this.state.openDocuments.get(id);
     if (!doc || doc.ref.kind === "content-browser") return;
     doc.content = content;
@@ -669,6 +716,7 @@ export class DocumentService {
 
   /** Update in-memory content without changing the dirty flag. */
   patchLoadedContent(id: string, content: DocumentContent): void {
+    this.assertAuthoringWritable();
     const doc = this.state.openDocuments.get(id);
     if (!doc || doc.ref.kind === "content-browser") return;
     doc.content = content;

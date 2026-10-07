@@ -33,6 +33,53 @@ function createMockProjectService(
 }
 
 describe("DocumentService", () => {
+  it("protects document content and revisions while independent authoring owners hold leases", async () => {
+    const service = new DocumentService();
+    const project = createMockProjectService();
+    const sceneId = await service.openDocument(project, { kind: "scene", path: MAIN_SCENE_FILE, label: "Main" });
+    const graphId = await service.openDocument(project, { kind: "graph", path: MAIN_CLASS_FILE, label: "Class" });
+    const assetId = await service.openDocument(project, { kind: "material", path: "assets/Test.material.babasset", label: "Material" });
+    const before = service.getOpenDocumentsOrdered().map(doc => ({ ...doc }));
+    const revisions = service.getRevisions();
+    const changes: Array<string | null> = [];
+    const unsubscribe = service.onAuthoringLockChange(() => { changes.push(service.getAuthoringLock().reason); });
+    const releaseSession = service.lockAuthoring("Session owns the baseline.");
+    const releaseReload = service.lockAuthoring("Reload pending.");
+    const mutations = [
+      () => service.updateScene(sceneId, { ...createDefaultScene(), name: "Changed" }),
+      () => service.updateGraph(graphId, { nodes: [], edges: [] }),
+      () => service.updateAssetDocument(assetId, { name: "Changed" }),
+      () => service.replaceLoadedContent(sceneId, createDefaultScene()),
+      () => service.patchLoadedContent(graphId, { nodes: [], edges: [] }),
+    ];
+    for (const mutation of mutations) expect(mutation).toThrow("Session owns the baseline.");
+    expect(service.getOpenDocumentsOrdered()).toEqual(before);
+    expect(service.getRevisions()).toBe(revisions);
+    releaseSession();
+    releaseSession();
+    expect(service.getAuthoringLock()).toMatchObject({ readOnly: true, reason: "Reload pending." });
+    expect(() => service.updateGraph(graphId, { nodes: [], edges: [] })).toThrow("Reload pending.");
+    releaseReload();
+    expect(service.getAuthoringLock()).toMatchObject({ readOnly: false, reason: null });
+    expect(changes).toEqual(["Session owns the baseline.", "Session owns the baseline.", "Reload pending.", null]);
+    unsubscribe();
+    service.updateGraph(graphId, { nodes: [], edges: [], properties: { accepted: true } });
+    expect(service.getDocument(graphId)).toMatchObject({ dirty: true, content: { properties: { accepted: true } } });
+  });
+
+  it("lets a previously captured safe save acknowledge its content while authoring is locked", async () => {
+    const service = new DocumentService();
+    const id = await service.openDocument(createMockProjectService(), { kind: "scene", path: MAIN_SCENE_FILE, label: "Main" });
+    service.updateScene(id, { ...createDefaultScene(), name: "Unsaved baseline" });
+    const saved = service.getDirtyDocuments().map(doc => ({ ...doc }));
+    const release = service.lockAuthoring("Session owns the baseline.");
+    service.setLayout(id, { camera: "editor" });
+    service.markAllClean(saved);
+    expect(service.getDocument(id)).toMatchObject({ content: { name: "Unsaved baseline" }, dirty: false, layout: { camera: "editor" } });
+    expect(service.getAuthoringLock().readOnly).toBe(true);
+    release();
+  });
+
   it.each(["open", "activate"] as const)("keeps background utility trees dirty and promotes their existing working copy on %s", async (action) => {
     const service = new DocumentService();
     service.ensureContentBrowserTab();

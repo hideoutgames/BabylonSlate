@@ -14,6 +14,18 @@ Opening or restoring a Scene or SceneLayer document paints **Loading Scene / Loa
 
 Concurrent opens of the same asset share one committed tab: a late read preserves that tab's edits and dirty revision. Reads belonging to a previous project cannot populate its replacement. Class assets also report storage and decode failures; a failed read never opens a fabricated empty graph that could overwrite the original on Save.
 
+`DocumentService.lockAuthoring(reason)` acquires a session-owned lease over
+in-memory authoring writes. Its idempotent release cannot release another owner's
+lease. `getAuthoringLock()` and `onAuthoringLockChange()` expose the effective
+reason and a revision that also invalidates reloads crossing a lock transition.
+The document context exposes the same lock/access/subscription actions; content
+setters, command application, Undo/Redo, prefab sync and disk/recovery reloads
+respect the lock before changing content or history. Layout/navigation remain
+available, and a previously captured safe save can still acknowledge its content.
+This is an integration prerequisite, not a Simulation mode or complete project
+write barrier: project/file/extension writes, project and Scene replacement, and
+individual editor read-only controls still need the session owner's policy.
+
 Add Component (Scene Details and the Class/Prefab Components toolbar) is an Add Node-style `CatalogMenu` popup anchored under its button: search, collapsible A–Z categories with type icons, and keyboard navigation. Place Actors is a medium `CatalogDialog` that opens on **Featured** (`FEATURED_PLACE_ACTOR_IDS`, cards for common actors available to the host). Its sidebar lists the **Content** group first: **Models** shows project Model assets as thumbnail cards (Content Browser thumbnails, loaded only while that page is shown), and **Project** lists the other placeable assets with their type and folder. Both pages have a sticky toolbar with an asset count and the Content Browser's **Filter** and **Sort** menus: Filter holds Asset Types checkboxes (Project) and a Folder choice (when assets span several folders); Sort offers Name and Folder, and Project adds Type. Clear Filters appears when nothing matches. Filters reset when the dialog closes; sort order persists. The **Engine** group holds Featured and the built-in categories as striped-row lists. Scene assets are not listed; place **Scene Streaming** and choose its Target Scene. Search matches titles, categories, asset types and folders, and shows one list across all categories with sidebar counts following the matches. Actor/component results stay unwindowed.
 
 ## Scene streaming
