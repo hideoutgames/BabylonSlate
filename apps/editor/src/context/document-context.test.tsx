@@ -733,11 +733,15 @@ describe("DocumentProvider closed document history", () => {
     await act(() => actions.saveAll());
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const save = vi.spyOn(ProjectService.prototype, "saveProject").mockRejectedValueOnce(new Error("Storage unavailable"));
-    // Fire the debounce, then let the save's own timers run until it settles.
+    // Fire the debounce, then let the save's own timers and storage I/O run
+    // until it settles; a real macrotask per step lets slow I/O finish.
     const runAutoSave = async () => {
       await act(() => vi.advanceTimersByTimeAsync(120_000));
-      for (let i = 0; i < 20 && documents().autoSaveStatus?.state === "saving"; i++) {
-        await act(() => vi.advanceTimersByTimeAsync(1_000));
+      for (let i = 0; i < 1_000 && documents().autoSaveStatus?.state === "saving"; i++) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(100);
+          await new Promise((resolve) => setImmediate(resolve));
+        });
       }
     };
     try {
