@@ -91,6 +91,8 @@ export function isDockviewDocumentKind(
 }
 
 export const CLASS_PANEL_TITLE = "Class";
+/** Primary Class graph tab; function graphs open as tabs beside it. */
+export const EVENT_GRAPH_TITLE = "Event Graph";
 /** About half the left stack so Class is not a 180px stub under Components. */
 export const CLASS_PANEL_INITIAL_HEIGHT = 400;
 /** About 25% of a typical editor so the Material graph keeps ~75% width. */
@@ -295,7 +297,7 @@ const SCENE_WINDOWS: DockWindowDefinition[] = [
 ];
 
 const GRAPH_WINDOWS: DockWindowDefinition[] = [
-  { id: "graph", component: "graph", title: "Graph" },
+  { id: "graph", component: "graph", title: EVENT_GRAPH_TITLE },
   {
     id: "prefab-viewport",
     component: "prefab-viewport",
@@ -373,7 +375,7 @@ const PREFAB_WINDOWS: DockWindowDefinition[] = [
 ];
 
 const OBJECT_GRAPH_WINDOWS: DockWindowDefinition[] = [
-  { id: "graph", component: "graph", title: "Graph" },
+  { id: "graph", component: "graph", title: EVENT_GRAPH_TITLE },
   {
     id: "my-class",
     component: "my-class",
