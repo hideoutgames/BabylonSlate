@@ -4,6 +4,21 @@ import { createInProcessRuntime } from "./driver";
 import { simulationCaptureChunks } from "./simulation-capture-transport";
 
 describe("Simulation final capture boundary", () => {
+  it("retains known cold asset references without treating their identity as a loaded resource", async () => {
+    const baseline = { ...createDefaultScene(), actors: [createActor("hero", "Hero", { classId: "Hero", properties: { lookup: "cold" } })] };
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      sessionGeneration: 6, sessionMode: "simulate", playScene: baseline, playSceneGuid: "root", simulationAssetGuids: ["root", "hero-class", "cold"] });
+    try {
+      await runtime.loadScripts([{ classId: "Hero", parentClassId: "Actor", assetGuid: "hero-class", anchors: [], source: "", entryPoints: [],
+        variables: [{ name: "lookup", type: "asset", defaultValue: null }] }]);
+      runtime.registerSceneContent({ assetGuids: ["root", "hero-class"] });
+      runtime.realizePlayWorld(); runtime.start();
+      const boundary = await runtime.quiesceSimulation({ sessionGeneration: 6, requestId: 1 });
+      const result = await runtime.captureSimulationState({ sessionGeneration: 6, requestId: 2, renderRevision: boundary.commandRevision });
+      expect(result).toMatchObject({ ok: true, scene: { actors: [expect.objectContaining({ properties: expect.objectContaining({ lookup: "cold" }) })] } });
+    } finally { runtime.stop(); }
+  });
+
   it("captures gameplay gravity without mutating the frozen prepared document", async () => {
     const baseline = { ...createDefaultScene(), actors: [createActor("hero", "Hero", { classId: "Hero" })] };
     const gravity = [...baseline.settings.gravity];

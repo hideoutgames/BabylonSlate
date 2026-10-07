@@ -560,7 +560,9 @@ class RuntimeContinuationCancelled extends Error {
 
 class InProcessRuntime implements RuntimeDriver {
   private readonly simulationBaseline: SerializedScene | null;
-  private simulationAssets: ReadonlySet<string>;
+  /** Catalog identities are persistable without loading every referenced asset. */
+  private readonly simulationAssets: ReadonlySet<string>;
+  private simulationOwnedAssets: ReadonlySet<string>;
   private simulationDataAssets: RuntimeDriverOptions["dataAssets"];
   private simulationStart: Pick<SimulationCaptureIdentity, "sceneAssetGuid" | "sceneInstanceId" | "sceneLoadId"> | null = null;
   private simulationQuiescent = false;
@@ -834,6 +836,7 @@ class InProcessRuntime implements RuntimeDriver {
   constructor(options: RuntimeDriverOptions) {
     this.simulationBaseline = options.sessionMode === "simulate" ? options.playScene ?? null : null;
     this.simulationAssets = new Set(options.simulationAssetGuids ?? [...Object.keys(options.materialParameterCatalog ?? {}), ...(options.materialTextureAssetGuids ?? []), ...(options.audioAssetGuids ?? [])]);
+    this.simulationOwnedAssets = this.simulationAssets;
     this.simulationDataAssets = options.sessionMode === "simulate" ? options.dataAssets : undefined;
     this.sessionGeneration = options.sessionGeneration ?? 0;
     this.sessionMode = options.sessionMode ?? "play";
@@ -3763,7 +3766,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (this.sessionMode === "simulate") {
       // Source scopes are acquired/released on demand. Retention must validate
       // against current owned source metadata, including newly prepared types.
-      this.simulationAssets = retained;
+      this.simulationOwnedAssets = retained;
       this.simulationDataAssets = content.dataAssets;
     }
     for (const map of [this.animGraphs, this.behaviourTrees, this.blackboards]) for (const guid of map.keys()) if (!retained.has(guid)) map.delete(guid);
@@ -6486,7 +6489,7 @@ class InProcessRuntime implements RuntimeDriver {
           if (!overrides) { fail(`Post-process material ${entry.materialGuid} has no complete current authoring parameter state.`, "resource"); return; }
           postProcessStack.push({ ...entry, parameters: overrides });
         }
-        if (postProcessStack.some(entry => !this.simulationAssets.has(entry.materialGuid))) { fail("A post-process material has no prepared authoring asset.", "resource"); return; }
+        if (postProcessStack.some(entry => !this.simulationOwnedAssets.has(entry.materialGuid))) { fail("A post-process material has no prepared authoring asset.", "resource"); return; }
         const schemas = dataTypeSchemas(this.simulationDataAssets ?? []);
         resolve(captureSimulationScene({ world: this.world, baseline: this.simulationBaseline, identity, startingScene: this.simulationStart,
           quiescent: true, renderRevision: request.renderRevision, maxBytes: request.maxBytes,
@@ -6499,7 +6502,7 @@ class InProcessRuntime implements RuntimeDriver {
           },
           prefabComponents: classId => this.world.classRegistry.ancestry(classId).flatMap(ancestor => this.scriptHost.scriptsFor(ancestor))
             .find(script => script.components !== undefined)?.components ?? [],
-          assetExists: guid => this.simulationAssets.has(guid),
+          assetExists: guid => this.simulationAssets.has(guid) || this.simulationOwnedAssets.has(guid),
           structFields: guid => schemas.structs[guid]?.fields.map(field => ({ ...field, type: field.typeId })) ?? null,
           enumMembers: guid => schemas.enums[guid]?.members.map(member => member.name) ?? null,
         }));
