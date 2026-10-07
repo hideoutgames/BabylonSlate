@@ -285,6 +285,35 @@ export class SetGraphFunctionGraphsCommand implements EditCommand<SerializedGrap
   }
 }
 
+export class SetGraphActorDefaultsCommand implements EditCommand<SerializedGraph> {
+  readonly type = "graph.setActorDefaults";
+  readonly from: SerializedGraph["actorDefaults"];
+  readonly to: SerializedGraph["actorDefaults"];
+  readonly byteSize: number;
+
+  constructor(
+    from: SerializedGraph["actorDefaults"],
+    to: SerializedGraph["actorDefaults"],
+  ) {
+    this.from = from;
+    this.to = to;
+    this.byteSize = snapshotBytes({ from, to });
+  }
+
+  apply(doc: SerializedGraph): SerializedGraph {
+    if (this.to === undefined) {
+      const next = { ...doc };
+      delete next.actorDefaults;
+      return next;
+    }
+    return { ...doc, actorDefaults: this.to };
+  }
+
+  invert(): SetGraphActorDefaultsCommand {
+    return new SetGraphActorDefaultsCommand(this.to, this.from);
+  }
+}
+
 export function createMoveNodeCommandFromJson(
   payload: Record<string, unknown>,
 ): MoveNodeCommand {
@@ -364,5 +393,14 @@ export function createSetGraphFunctionGraphsCommandFromJson(
   return new SetGraphFunctionGraphsCommand(
     payload.from as SerializedGraph["functionGraphs"],
     payload.to as SerializedGraph["functionGraphs"],
+  );
+}
+
+export function createSetGraphActorDefaultsCommandFromJson(
+  payload: Record<string, unknown>,
+): SetGraphActorDefaultsCommand {
+  return new SetGraphActorDefaultsCommand(
+    payload.from as SerializedGraph["actorDefaults"],
+    payload.to as SerializedGraph["actorDefaults"],
   );
 }

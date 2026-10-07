@@ -4,7 +4,7 @@ import {
   createDefaultScene,
   createMeshComponent,
 } from "@babylonslate/core";
-import { MoveNodeCommand, SetGraphFunctionGraphsCommand } from "./commands/graph";
+import { MoveNodeCommand, SetGraphActorDefaultsCommand, SetGraphFunctionGraphsCommand } from "./commands/graph";
 import {
   AddActorCommand,
   AddComponentCommand,
@@ -134,6 +134,13 @@ describe("journal", () => {
       functionGraphs?: typeof functionGraphs;
     };
     expect(next.functionGraphs).toEqual(functionGraphs);
+  });
+
+  it("round-trips SetGraphActorDefaultsCommand through the journal", () => {
+    const actorDefaults = { generateOverlapEvents: false, eventTick: "disabled" as const };
+    const revived = reviveCommand(commandToJournalPayload(new SetGraphActorDefaultsCommand(undefined, actorDefaults)));
+    expect(revived).toBeInstanceOf(SetGraphActorDefaultsCommand);
+    expect((revived!.apply({ nodes: [], edges: [] }) as { actorDefaults?: unknown }).actorDefaults).toEqual(actorDefaults);
   });
 
   it("round-trips every scene command type through the journal", () => {

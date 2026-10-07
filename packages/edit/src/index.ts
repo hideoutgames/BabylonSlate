@@ -15,6 +15,7 @@ export {
   SetGraphMembersCommand,
   SetGraphComponentsCommand,
   SetGraphFunctionGraphsCommand,
+  SetGraphActorDefaultsCommand,
   SetNodeDataCommand,
   createMoveNodeCommandFromJson,
   createAddEdgeCommandFromJson,
@@ -25,6 +26,7 @@ export {
   createSetGraphMembersCommandFromJson,
   createSetGraphComponentsCommandFromJson,
   createSetGraphFunctionGraphsCommandFromJson,
+  createSetGraphActorDefaultsCommandFromJson,
 } from "./commands/graph";
 export { diffGraphCommands } from "./commands/graph-diff";
 export {

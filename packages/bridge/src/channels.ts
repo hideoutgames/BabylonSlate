@@ -1,7 +1,7 @@
 import type { ScalabilityTransaction, ScalabilityAcknowledgement, RenderPathStatus, RenderProjectSettings, ScenePostProcessEntry, MaterialParameterCatalog, MaterialParameterValue } from "@babylonslate/core";
 /** Reliable ordered channel message types (never through the snapshot buffer). */
 
-import type { ProjectInputSettings, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
+import type { ActorDefaults, ProjectInputSettings, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
 
 /** Serializable runtime override of one named Material Graph parameter. */
 export type { MaterialParameterValue } from "@babylonslate/core";
@@ -106,13 +106,8 @@ export type ScriptBundleEntry = {
     method: string;
     exportName: string;
   }>;
-  /** Omitted flags default to true at spawn. */
-  actorDefaults?: {
-    /** Authored built-in actor properties applied before per-instance overrides. */
-    properties?: Record<string, unknown>;
-    generateHitEvents?: boolean;
-    generateOverlapEvents?: boolean;
-  };
+  /** Omitted flags inherit from the parent Class; engine bases are enabled. */
+  actorDefaults?: ActorDefaults;
   /** Effective prefab component templates for runtime Spawn Actor. */
   components?: SerializedComponent[];
 };

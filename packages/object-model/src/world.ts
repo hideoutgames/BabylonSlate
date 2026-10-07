@@ -594,7 +594,7 @@ export class World {
         case "actors":
           for (const actor of [...this.actors]) {
             if (!this.canTickScene()) break;
-            if (!actor.destroyed && this.canTickActor(actor)) actor.callOnTick(ctx);
+            if (actor.tickEnabled && !actor.destroyed && this.canTickActor(actor)) actor.callOnTick(ctx);
           }
           break;
         case "components":

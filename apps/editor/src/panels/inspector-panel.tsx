@@ -1,4 +1,5 @@
 import { SimulationInspector } from "./simulation-inspector";
+import { ActorDefaultsGrid } from "./actor-defaults-grid";
 import { useSimulationInspectionStore } from "../context/simulation-inspection-context";
 import { GraphDataLiteralDefaults } from "../components/graph-data-literal-editor";
 import { saveGameVariableNames } from "../lib/save-game-property-rows";
@@ -1501,35 +1502,10 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
         />
         {walkAncestry(parentClass ?? "Actor", parentOf).includes("SceneLayerActorSwitcher") ? <SceneLayerSwitcherFields classId={selfClassId} properties={defaults.properties ?? {}} onChange={properties => persistGraph({ ...graph, actorDefaults: { ...defaults, properties } })} /> : null}
         {showActorDefaults ? <>
-        <PropertyGrid
-          title="Actor Defaults"
-          data-testid="inspector-actor-defaults"
-          rows={[
-            {
-              id: "generateHitEvents",
-              kind: "boolean" as const,
-              label: "Generate Hit Events",
-              value: defaults.generateHitEvents !== false,
-              defaultValue: true,
-              onChange: (generateHitEvents: boolean) =>
-                persistGraph({
-                  ...graph,
-                  actorDefaults: { ...defaults, generateHitEvents },
-                }),
-            },
-            {
-              id: "generateOverlapEvents",
-              kind: "boolean" as const,
-              label: "Generate Overlap Events",
-              value: defaults.generateOverlapEvents !== false,
-              defaultValue: true,
-              onChange: (generateOverlapEvents: boolean) =>
-                persistGraph({
-                  ...graph,
-                  actorDefaults: { ...defaults, generateOverlapEvents },
-                }),
-            },
-          ]}
+        <ActorDefaultsGrid
+          parentClass={parentClass ?? "Actor"}
+          defaults={defaults}
+          onChange={(actorDefaults) => persistGraph({ ...graph, actorDefaults })}
         />
         <p
           className="p-4 text-sm text-muted-foreground"
