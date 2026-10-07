@@ -1,12 +1,9 @@
 import type { CommandMessage } from "@babylonslate/bridge";
 import type { Actor, ActorComponent } from "@babylonslate/object-model";
+import type { OwnerAdmission } from "./owner-admission";
 import type { ScriptHostServices } from "./script-host";
 
 interface AudioParticleEmitterHost {
-  /** The actor's owner has loaded, so authored playback may start now. */
-  canRun(actor: Actor): boolean;
-  /** Run once the actor's owner can run (`runOwnerAction`). */
-  defer(actor: Actor, action: () => void): void;
   slot(actor: Actor): number | undefined;
   frameId(): number;
   emit(command: CommandMessage): void;
@@ -19,13 +16,18 @@ interface AudioParticleEmitterHost {
  * state; the driver decides when each runs.
  */
 export class AudioParticleEmitter {
+  /** Authored playback starts once the actor's owner can run, else waits in its owner queue. */
+  private readonly admission: Pick<OwnerAdmission, "canRun" | "run">;
   private readonly host: AudioParticleEmitterHost;
 
-  constructor(host: AudioParticleEmitterHost) { this.host = host; }
+  constructor(admission: Pick<OwnerAdmission, "canRun" | "run">, host: AudioParticleEmitterHost) {
+    this.admission = admission;
+    this.host = host;
+  }
 
   emitAudio(actor: Actor): void {
-    if (!this.host.canRun(actor)) {
-      this.host.defer(actor, () => this.emitAudio(actor));
+    if (!this.admission.canRun(actor)) {
+      this.admission.run(actor, () => this.emitAudio(actor));
       return;
     }
     for (const component of actor.components) {
@@ -86,7 +88,7 @@ export class AudioParticleEmitter {
         actorGuid: actor.guid,
         componentId: component.guid,
         particleSystemGuid: assetGuid,
-        play: this.host.canRun(actor) && component.getVariable("playOnStart") !== false,
+        play: this.admission.canRun(actor) && component.getVariable("playOnStart") !== false,
         sortingLayer:
           typeof sortingLayer === "string" && sortingLayer.trim() !== ""
             ? sortingLayer
@@ -96,8 +98,8 @@ export class AudioParticleEmitter {
             ? Math.round(orderInLayer)
             : 0,
       });
-      if (component.getVariable("playOnStart") !== false && !this.host.canRun(actor)) {
-        this.host.defer(actor, () => this.host.emit({ type: "setParticlePlaying", actorGuid: actor.guid,
+      if (component.getVariable("playOnStart") !== false && !this.admission.canRun(actor)) {
+        this.admission.run(actor, () => this.host.emit({ type: "setParticlePlaying", actorGuid: actor.guid,
           componentId: component.guid, playing: true }));
       }
     }
