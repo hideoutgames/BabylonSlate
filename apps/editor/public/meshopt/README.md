@@ -7,5 +7,5 @@ GLBs decode through this URL.
 | --- | --- |
 | `meshopt_decoder.js` | `MeshoptCompression.Configuration.decoder.url` |
 
-Copied from `https://cdn.babylonjs.com/meshopt_decoder.js` (Babylon 9.20).
+Copied from `https://cdn.babylonjs.com/meshopt_decoder.js` (Babylon 9.20; the decoder configuration is unchanged through 9.29).
 The editor serves it at `/meshopt/meshopt_decoder.js`.
