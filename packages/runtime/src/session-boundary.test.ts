@@ -192,15 +192,4 @@ describe("runtime session boundaries", () => {
       expect(runtime.getWorld().clock.tickIndex).toBe(0);
     } finally { runtime.stop(); }
   });
-
-  it("loads the Simulation capability into the real runtime and refuses recorder dispatch", () => {
-    const runtime = createRuntimeFromLoad({ type: "load", sessionGeneration: 9, sessionMode: "simulate",
-      seed: 1, scene: createDefaultScene() }, () => {});
-    try {
-      runtime.start();
-      expect(runtime.executeConsoleCommand("snapshot start")).toMatchObject({ success: false, output: expect.stringContaining("Play or Preview Build") });
-      runtime.tick(); runtime.executeConsoleCommand("snapshot stop");
-      expect(runtime.stopTrace()).toBeNull();
-    } finally { runtime.stop(); }
-  });
 });

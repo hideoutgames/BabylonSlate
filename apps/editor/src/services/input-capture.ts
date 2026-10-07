@@ -1,5 +1,5 @@
-import { attachInputCapture as attachDomInputCapture } from "@babylonslate/input";
-export type { InputCaptureHandle } from "@babylonslate/input";
+import { attachInputCapture as attachDomInputCapture } from "@babylonslate/input/dom";
+export type { InputCaptureHandle } from "@babylonslate/input/dom";
 
 /** Shared device ownership plus the editor's existing qualification inputs. */
 export function attachInputCapture(canvas: HTMLCanvasElement, options: Parameters<typeof attachDomInputCapture>[1] = {}) {

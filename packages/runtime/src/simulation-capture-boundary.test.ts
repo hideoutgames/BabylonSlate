@@ -41,7 +41,7 @@ describe("Simulation final capture boundary", () => {
     const baseline = { ...createDefaultScene(), actors: [createActor("before", "Before", { classId: "Hero" })] };
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
       sessionGeneration: 6, sessionMode: "simulate", playScene: baseline, playSceneGuid: "root" });
-    let captured;
+    let captured: Awaited<ReturnType<typeof runtime.captureSimulationState>> | undefined;
     try {
       await runtime.loadScripts([{ classId: "Hero", parentClassId: "Actor", assetGuid: "hero", source: "", anchors: [], entryPoints: [],
         variables: [{ name: "target", type: "actor", defaultValue: null }, { name: "health", type: "float", defaultValue: 1 }] }]);
@@ -56,7 +56,7 @@ describe("Simulation final capture boundary", () => {
       if (!captured.ok) throw new Error(captured.reason);
       expect(captured.scene.actors).toHaveLength(2);
       expect(baseline.actors).toHaveLength(1);
-      expect(captured.scene.actors.find(actor => actor.id === "before")!.properties.target).toMatchObject({ $sceneValue: "reference" });
+      expect(captured.scene.actors.find(actor => actor.id === "before")!.properties?.target).toMatchObject({ $sceneValue: "reference" });
       runtime.resume("loading"); runtime.advance(200); runtime.tick();
       expect(world.clock.tickIndex).toBe(boundary.tickIndex);
     } finally { runtime.stop(); }

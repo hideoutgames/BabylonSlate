@@ -1104,7 +1104,7 @@ function initializePlayer(
       ...(options.previewDiagnostics && manifest.bundleDebugger ? { previewDiagnostics: {
         sessionGeneration: 0,
         identity: () => {
-          const render = handle.scalabilityStatus()?.effective.render ?? runtimeOutput;
+          const render = handle.scalabilityStatus()?.effective?.render ?? runtimeOutput;
           const frameCap = handle.scheduler.gateState().frameCap;
           return { sessionId: diagnosticSessionId, mode: "preview" as const,
             sourceSha: null, buildId: null, sceneId: hostSceneGuid ?? startup,

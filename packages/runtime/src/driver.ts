@@ -1686,10 +1686,12 @@ class InProcessRuntime implements RuntimeDriver {
       queued = true;
       // Only the latest progress value waits during Pause; no callback flood or
       // gameplay continuation is delivered by an I/O completion while frozen.
-      this.runOwnerAction(callbackOwner, () => {
+      const deliver = () => {
         queued = false;
         if (active) this.guardScript(() => options.onProgress!(latest));
-      });
+      };
+      if (callbackOwner) this.runOwnerAction(callbackOwner, deliver);
+      else deliver();
     } : undefined;
     let result: RuntimeAssetPreloadResult | undefined;
     try {
