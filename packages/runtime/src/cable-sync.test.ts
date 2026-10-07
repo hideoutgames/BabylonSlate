@@ -38,9 +38,9 @@ it("retires a destroyed actor's cable query before another simulation step", () 
     world.destroyActor(actor.guid);
     world.flushPending();
     expect(component.owner).toBeNull();
-    cables.retire(actor);
+    cables.retireActor(actor);
     expect(backend.queryDisposals).toBe(1);
-    cables.retire(actor);
+    cables.retireActor(actor);
     expect(backend.queryDisposals).toBe(1);
     commands.length = 0;
     cables.step(1 / 60, [0, -9.81, 0], 2);

@@ -1,6 +1,7 @@
 import { DynamicRuntimeMeshGeometry, type DynamicMeshUpdate } from "@babylonslate/core";
 import type { CommandMessage } from "@babylonslate/bridge";
 import type { Actor, ActorComponent } from "@babylonslate/object-model";
+import type { RuntimeSubsystem } from "./runtime-subsystems";
 
 const geometryByComponent = new WeakMap<ActorComponent, DynamicRuntimeMeshGeometry>();
 
@@ -17,7 +18,7 @@ type MeshSyncHost = {
 };
 
 /** Registered on demand; clean ticks do not walk components or geometry buffers. */
-export class DynamicRuntimeMeshSync {
+export class DynamicRuntimeMeshSync implements RuntimeSubsystem {
   private readonly states = new Map<ActorComponent, State>();
   private readonly dirty = new Set<ActorComponent>();
   private sequence = 0;
@@ -80,8 +81,12 @@ export class DynamicRuntimeMeshSync {
     geometryByComponent.delete(component);
   }
 
-  retire(actor: Actor): void {
+  retireActor(actor: Actor): void {
     for (const [component, state] of this.states) if (state.owner === actor) this.remove(component);
+  }
+
+  releaseSlot(_slotId: number, owner: Actor | undefined): void {
+    if (owner) this.retireActor(owner);
   }
 
   dispose(): void {

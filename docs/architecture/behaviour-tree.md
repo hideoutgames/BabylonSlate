@@ -65,7 +65,7 @@ The Behaviour Tree editor calls `validateBehaviourTree` directly for canvas badg
 ## Authoring (`p11-bt-authoring`)
 
 - Engine bases: `BTTask`, `BTDecorator`, `BTService`, `BTComposite`. Built-ins: Wait, MoveTo (crowd when the runtime host is attached), RotateToFace, Play Animation, PlaySound, SetBlackboardValue, Loop / Cooldown / TimeLimit, BlackboardIsSet, CompareBlackboardValue.
-- `BehaviourTreeComponent` has `treeGuid` + `blackboardGuid`. Search / Add Component list it. Play loads trees like AnimationGraphs (`loadBehaviourTrees`) and `tickBehaviourTrees()` emits `btState`.
+- `BehaviourTreeComponent` has `treeGuid` + `blackboardGuid`. Search / Add Component list it. Play loads trees like AnimationGraphs (`loadBehaviourTrees`); `BehaviourTreeRuntime.tick` (`packages/runtime/src/behaviour-tree-runtime.ts`, owned by the runtime driver) emits `btState`, and a released render slot drops its evaluation state.
 - Missing `treeGuid` / unloaded tree emits `bt.missing_tree`.
 - Custom `classId` values run compiled graphs: tasks `On Activate` / `On Tick` / `On Abort` (`bt.event.*`) and finish via `bt.finish`; decorators `On Evaluate` plus `bt.returnCondition` (`ctx.btEvaluate`); services `On Tick`. Get/Set Blackboard (`bt.blackboard.get` / `bt.blackboard.set`) compile to `ctx.getBlackboard` / `ctx.setBlackboard`. Abort mode on a decorator stays a tree attachment property, not a class event.
 - Runtime `BTTask_MoveTo` abort calls `stopNavAgent` and clears `__moveRequested` so the crowd does not keep walking the aborted path.
