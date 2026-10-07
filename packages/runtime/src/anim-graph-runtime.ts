@@ -10,6 +10,7 @@ import {
   type AnimGraphDocument,
   type AnimGraphInputs,
 } from "@babylonslate/anim-graph";
+import type { RuntimeSubsystem } from "./runtime-subsystems";
 import type { AnimGraphControl, ScriptHost } from "./script-host";
 
 type SpriteClip = { assetGuid: string; clipName: string; normalisedTime: number };
@@ -31,7 +32,7 @@ interface AnimGraphRuntimeHost {
 }
 
 /** AnimationGraph documents and per-component evaluation state for Play. */
-export class AnimGraphRuntime {
+export class AnimGraphRuntime implements RuntimeSubsystem {
   private readonly documents = new Map<string, AnimGraphDocument>();
   private readonly evalByComponent = new Map<string, AnimEvalState>();
   private readonly initializedBySlot = new Set<string>();
@@ -51,12 +52,14 @@ export class AnimGraphRuntime {
     for (const guid of this.documents.keys()) if (!retained.has(guid)) this.documents.delete(guid);
   }
 
-  /** Forget a removed component's evaluation, pending jump and initialization. */
-  forgetComponent(component: ActorComponent): void {
-    this.evalByComponent.delete(component.guid);
-    this.pendingJumpByComponent.delete(component.guid);
-    for (const key of this.initializedBySlot) {
-      if (key.startsWith(`${component.guid}:`)) this.initializedBySlot.delete(key);
+  /** Forget a removed actor's component evaluations, pending jumps and initialization. */
+  retireActor(actor: Actor): void {
+    for (const component of actor.components) {
+      this.evalByComponent.delete(component.guid);
+      this.pendingJumpByComponent.delete(component.guid);
+      for (const key of this.initializedBySlot) {
+        if (key.startsWith(`${component.guid}:`)) this.initializedBySlot.delete(key);
+      }
     }
   }
 

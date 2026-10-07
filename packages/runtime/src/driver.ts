@@ -34,7 +34,6 @@ import {
   type CommandMessage,
   type ControlMessage,
   type RuntimeSceneContent,
-  type DebugBehaviourTree,
   type GameSessionMode,
   type SessionPauseReason,
   type SessionBoundaryRequest,
@@ -89,7 +88,6 @@ import {
   createDefaultSceneSettings,
   cloneSceneStreamingActorsSteps,
   DEFAULT_PLAY_FRAME_CAP,
-  eulerDegreesToQuaternion,
   isSceneLayerDeniedComponent,
   parseSceneLayerAnchor,
   parseSceneLayerHitTest,
@@ -175,15 +173,7 @@ import { Text2DAppearRuntime } from "./text2d-appear-runtime";
 import { TweenRuntime } from "./tween-runtime";
 import { parseOverlayVisualStyle, supportsOverlayVisualStyle } from "@babylonslate/core";
 import type { AnimClipCatalogEntry, AnimGraphDocument } from "@babylonslate/anim-graph";
-import {
-  evaluateBehaviourTree,
-  builtinClassId,
-  type BehaviourTreeDocument,
-  type BlackboardDocument,
-  type BlackboardValues,
-  type BtEvalState,
-  type BtResult,
-} from "@babylonslate/behaviour-tree";
+import type { BehaviourTreeDocument, BlackboardDocument } from "@babylonslate/behaviour-tree";
 import { ScriptHost, compiledScriptKey, compiledScriptSourceLabel, type CompiledScript } from "./script-host";
 import { COMPILED_MODULE_LINE_OFFSET } from "./module-loader";
 import { shouldSpawnScriptedActor } from "./play-load";
@@ -198,12 +188,12 @@ import { SceneLayerLayout } from "./scene-layer-layout";
 import { SceneLayerVirtualization } from "./scene-layer-virtualization";
 import { isOverlayLayoutClass, isOverlayScrollClass, overlayLayoutKey, type OverlaySafeAreaInsets } from "@babylonslate/core";
 import { composeParentChildTransform } from "./actor-world-transform";
-import { blackboardInspectTypes, blackboardTargetPosition, snapshotBlackboard } from "./bt-blackboard";
 import type { ModelPayload, SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import { initNavigation, type NavObstacleKind, type NavPoint } from "@babylonslate/navigation";
 import { RuntimeSubsystems } from "./runtime-subsystems";
-import { RuntimeNavigation, navPointFromUnknown } from "./runtime-navigation";
+import { RuntimeNavigation } from "./runtime-navigation";
 import { AnimGraphRuntime } from "./anim-graph-runtime";
+import { BehaviourTreeRuntime } from "./behaviour-tree-runtime";
 import { LatentDelays } from "./latent-delays";
 
 export interface RuntimeDriverOptions {
@@ -464,11 +454,6 @@ export function createInProcessRuntime(
 ): RuntimeDriver {
   return new InProcessRuntime(options);
 }
-
-// Shallow BT memory copies retain this live activation, while trace JSON omits
-// it. A resumed task writes to its current board and cannot finish a later run.
-const BT_TASK_ACTIVATION = Symbol("btTaskActivation");
-type BtTaskActivation = { active: boolean; blackboard: BlackboardValues; result?: "success" | "failure" };
 
 interface SceneDeparture {
   guid: string;
@@ -766,12 +751,6 @@ class InProcessRuntime implements RuntimeDriver {
   private lastTrace: TracePayload | null = null;
   private readonly seed: number;
   private tickPrints: Array<{ message: string; key: string }> = [];
-  private readonly behaviourTrees = new Map<string, BehaviourTreeDocument>();
-  private readonly blackboards = new Map<string, BlackboardDocument>();
-  private readonly btEvalBySlot = new Map<number, BtEvalState>();
-  private readonly btMissingWarned = new Set<string>();
-  private currentBtNodeId: string | null = null;
-  private currentBtAssetGuid: string | null = null;
   private tilemaps = new Map<string, TilemapPayload>();
   private waters = new Map<string, WaterDefinition>();
   private tilesets = new Map<string, TilesetPayload>();
@@ -818,23 +797,33 @@ class InProcessRuntime implements RuntimeDriver {
     canTick: (actor) => this.canTickActor(actor),
     slot: (actor) => this.actorSlot(actor),
     hasRenderSlot: (actor) => this.slotByActor.get(actor) !== undefined,
-    playAnimationOwns: (slotId) => this.btPlayAnimOwnedSlots.has(slotId),
+    playAnimationOwns: (slotId) => this.behaviourTrees.playAnimationOwns(slotId),
     dt: () => this.simulationDt(),
     scripts: () => this.scriptHost,
-    setSpriteClip: (actor, clip) =>
-      (actor.sceneLayerId ? this.overlayPhysicsSync : this.physicsSync).setActorSpriteClip(actor, clip),
+    setSpriteClip: (actor, clip) => this.setActorSpriteClip(actor, clip),
     emit: (command) => this.emit(command),
   });
+  private readonly behaviourTrees = new BehaviourTreeRuntime({
+    world: () => this.world,
+    frameActors: () => this.navFrameActors ?? undefined,
+    stopped: () => this.stopped,
+    canTick: (actor) => this.canTickActor(actor),
+    slot: (actor) => this.actorSlot(actor),
+    navigation: () => this.navigation,
+    worldKind: () => this.physicsWorldKind,
+    seed: () => this.seed,
+    dt: () => this.simulationDt(),
+    frameId: () => this.frameId,
+    tickIndex: () => this.world.clock.tickIndex,
+    scripts: () => this.scriptHost,
+    setSpriteClip: (actor, clip) => this.setActorSpriteClip(actor, clip),
+    actorName: (actor) => this.debugActorName(actor),
+    recordDiagnostic: (diagnostic) => this.diagnostics.push(diagnostic),
+    emit: (command) => this.emit(command),
+  }, nowMs);
   /** Frame index (first-spawned actor per guid) the BT and crowd ticks share. */
   private navFrameActors: Map<string, Actor> | null = null;
-  private readonly audioAssetGuids = new Set<string>();
-  private readonly animClipCatalog = new Map<string, AnimClipCatalogEntry>();
-  private readonly btPlayAnimOwnedSlots = new Set<number>();
-  private readonly btVoiceByActor = new Map<string, string>();
   private lastStatsEmitMs: number | null = null;
-  private readonly lastBtStateJson = new Map<number, string>();
-  private behaviourTreeDebug = false;
-  private lastBehaviourTreeDebugMs = -Infinity;
 
   get lastScriptMs(): number {
     return this._lastScriptMs;
@@ -948,12 +937,12 @@ class InProcessRuntime implements RuntimeDriver {
     }
     if (options.behaviourTrees) {
       for (const [guid, document] of Object.entries(options.behaviourTrees)) {
-        this.behaviourTrees.set(guid, document);
+        this.behaviourTrees.register(guid, document);
       }
     }
     if (options.blackboards) {
       for (const [guid, document] of Object.entries(options.blackboards)) {
-        this.blackboards.set(guid, document);
+        this.behaviourTrees.registerBlackboard(guid, document);
       }
     }
     this.texturePixelSizes = options.texturePixelSizes ?? {};
@@ -967,16 +956,8 @@ class InProcessRuntime implements RuntimeDriver {
       this.tilesets = new Map(Object.entries(options.tilesets));
     }
     this.refreshTilemapAnimationContent();
-    if (options.audioAssetGuids) {
-      for (const guid of options.audioAssetGuids) {
-        if (guid) this.audioAssetGuids.add(guid);
-      }
-    }
-    if (options.animClipCatalog) {
-      for (const entry of options.animClipCatalog) {
-        if (entry.guid) this.animClipCatalog.set(entry.guid, entry);
-      }
-    }
+    this.behaviourTrees.replaceAudioAssets((options.audioAssetGuids ?? []).filter((guid) => guid));
+    this.behaviourTrees.replaceAnimClipCatalog((options.animClipCatalog ?? []).filter((entry) => entry.guid));
     const maxActors = options.maxActors ?? 256;
     this.snapshots = SeqLockSnapshotPair.create(maxActors);
 
@@ -1442,7 +1423,7 @@ class InProcessRuntime implements RuntimeDriver {
         sync.moveCharacter(target, translation, dt, offset);
       },
       teleportActor: (actor, options) => {
-        this.ragdolls.retire(actor);
+        this.ragdolls.retireActor(actor);
         const sync = actor.sceneLayerId ? this.overlayPhysicsSync : this.physicsSync;
         sync.teleportActor(actor, this.world, options);
       },
@@ -1569,6 +1550,8 @@ class InProcessRuntime implements RuntimeDriver {
 
     // Stop order: Delays resume in phase 1; physics-owning syncs release before
     // the physics worlds, then the crowd and the remaining debug overlays.
+    // Actor removal retires ragdolls, cables, dynamic meshes, then animation
+    // graphs; a released slot then drops its ragdoll/cable/mesh and BT state.
     this.subsystems.register(this.delays);
     this.subsystems.register(this.ragdolls);
     this.subsystems.register(this.cables);
@@ -1581,9 +1564,8 @@ class InProcessRuntime implements RuntimeDriver {
       },
     });
     this.subsystems.register(this.navigation);
-    this.subsystems.register({
-      dispose: () => { if (this.behaviourTreeDebug) this.emit({ type: "behaviourTreeSnapshot", trees: [] }); },
-    });
+    this.subsystems.register(this.animGraphs);
+    this.subsystems.register(this.behaviourTrees);
 
     this.registerPlaySceneTypes();
     this.bindGameInstance();
@@ -3197,14 +3179,9 @@ class InProcessRuntime implements RuntimeDriver {
     this.sceneLayerSwitchers.retire(actor);
     const stream = this.sceneStreams.get(actor.guid);
     if (stream) this.retireSceneStream(stream);
-    this.ragdolls.retire(actor);
-    this.cables.retire(actor);
-    this.dynamicMeshes.retire(actor);
+    this.subsystems.retireActor(actor);
     this.pendingOwnerActions.delete(actor);
-    for (const component of actor.components) {
-      this.pendingOwnerActions.delete(component);
-      this.animGraphs.forgetComponent(component);
-    }
+    for (const component of actor.components) this.pendingOwnerActions.delete(component);
     const slotId = this.actorSlot(actor);
     const ownsSlot = () => slotId !== undefined && this.slotOwners.get(slotId) === actor;
     try {
@@ -3625,7 +3602,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (!current()) return true;
     if (this.canTickScene()) {
       this.navigation.emitDebug(true);
-      this.emitBehaviourTreeSnapshot(true);
+      this.behaviourTrees.emitSnapshot(true);
     }
     return true;
   }
@@ -3720,23 +3697,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   restoreBtFromTrace(states: readonly TraceBtState[]): void {
-    this.btEvalBySlot.clear();
-    this.lastBtStateJson.clear();
-    for (const row of states) {
-      this.btEvalBySlot.set(row.slotId, {
-        stack: row.stack.map((frame) => ({ ...frame })),
-        status: row.status as BtEvalState["status"],
-        lastResults: { ...row.lastResults } as BtEvalState["lastResults"],
-        btNodeId: row.btNodeId,
-        blackboard: { ...row.blackboard },
-        nodeMemory: Object.fromEntries(
-          Object.entries(row.nodeMemory ?? {}).map(([id, memory]) => [
-            id,
-            { ...memory },
-          ]),
-        ),
-      });
-    }
+    this.behaviourTrees.restoreFromTrace(states);
   }
 
   registerAnimGraph(guid: string, document: AnimGraphDocument): void {
@@ -3744,11 +3705,11 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   registerBehaviourTree(guid: string, document: BehaviourTreeDocument): void {
-    this.behaviourTrees.set(guid, document);
+    this.behaviourTrees.register(guid, document);
   }
 
   registerBlackboard(guid: string, document: BlackboardDocument): void {
-    this.blackboards.set(guid, document);
+    this.behaviourTrees.registerBlackboard(guid, document);
   }
 
   registerSceneContent(content: RuntimeSceneContent): void {
@@ -3760,14 +3721,12 @@ class InProcessRuntime implements RuntimeDriver {
       this.simulationDataAssets = content.dataAssets;
     }
     this.animGraphs.retain(retained);
-    for (const map of [this.behaviourTrees, this.blackboards]) for (const guid of map.keys()) if (!retained.has(guid)) map.delete(guid);
+    this.behaviourTrees.retain(retained);
     this.sceneLayerLibrary.clear();
     for (const entry of content.sceneLayers ?? []) this.sceneLayerLibrary.set(entry.guid, entry.layer);
     this.navigation.replaceSceneNavMeshes(content.sceneNavmeshBytes ?? {});
-    this.animClipCatalog.clear();
-    for (const entry of content.animClipCatalog ?? []) this.animClipCatalog.set(entry.guid, entry);
-    this.audioAssetGuids.clear();
-    for (const guid of content.audioAssetGuids ?? []) this.audioAssetGuids.add(guid);
+    this.behaviourTrees.replaceAnimClipCatalog(content.animClipCatalog ?? []);
+    this.behaviourTrees.replaceAudioAssets(content.audioAssetGuids ?? []);
     this.sourceRenderTargets.clear();
     for (const [guid, value] of Object.entries(content.renderTargets ?? {})) this.sourceRenderTargets.set(guid, value);
     this.sourceRenderTargetTextures.clear();
@@ -3941,417 +3900,6 @@ class InProcessRuntime implements RuntimeDriver {
     this.navigation.stopAgent(actorGuid);
   }
 
-  private stringGuid(value: unknown): string | null {
-    return typeof value === "string" && value.length > 0 ? value : null;
-  }
-
-  private behaviourTreeGuid(component: {
-    assetGuid: string | null;
-    getVariable(name: string): unknown;
-  }): string | null {
-    return this.stringGuid(component.getVariable("treeGuid")) ?? component.assetGuid;
-  }
-
-  private blackboardDefaults(guid: string | null): BlackboardValues {
-    if (!guid) return {};
-    const document = this.blackboards.get(guid);
-    if (!document) return {};
-    const values: BlackboardValues = {};
-    for (const key of document.keys) {
-      if (key.defaultValue !== undefined) values[key.name] = key.defaultValue;
-    }
-    return values;
-  }
-
-  private tickBtTask(
-    actor: Actor,
-    node: { id: string; classId: string; properties?: Record<string, unknown> },
-    blackboard: BlackboardValues,
-    dtSeconds: number,
-    memory: Record<string, unknown>,
-  ): BtResult {
-    this.currentBtNodeId = node.id;
-    if (builtinClassId(node.classId) === "bt.task.moveTo") {
-      return this.navigation.tickMoveTo(actor, node, memory, navPointFromUnknown(node.properties?.destination));
-    }
-    if (builtinClassId(node.classId) === "bt.task.moveToBlackboardKey") {
-      const key = typeof node.properties?.key === "string" ? node.properties.key : "";
-      return this.navigation.tickMoveTo(actor, node, memory, blackboardTargetPosition(
-        blackboard[key], this.world, this.navFrameActors ?? undefined,
-      ));
-    }
-    if (builtinClassId(node.classId) === "bt.task.rotateToFace") {
-      return this.tickRotateToFace(actor, node);
-    }
-    if (builtinClassId(node.classId) === "bt.task.playAnimation") {
-      return this.tickPlayAnimation(actor, node, dtSeconds, memory);
-    }
-    if (builtinClassId(node.classId) === "bt.task.playSound") {
-      return this.tickPlaySound(actor, node, memory);
-    }
-    if (!this.scriptHost.hasClass(node.classId)) return "failure";
-    const liveMemory = memory as Record<string | symbol, unknown>;
-    let activation = liveMemory[BT_TASK_ACTIVATION] as BtTaskActivation | undefined;
-    if (!activation) {
-      activation = { active: true, blackboard };
-      liveMemory[BT_TASK_ACTIVATION] = activation;
-      memory.__activated = false;
-    }
-    activation.blackboard = blackboard;
-    const current = activation;
-    const isLive = () => current.active && !actor.destroyed && !this.stopped;
-    const extras = {
-      btFinish: (result: "success" | "failure") => {
-        if (isLive()) current.result = result;
-      },
-      btEvaluate: () => undefined,
-      getBlackboard: (key: string) => current.blackboard[key],
-      setBlackboard: (key: string, value: unknown) => {
-        if (isLive()) current.blackboard[key] = value;
-      },
-    };
-    if (memory.__activated !== true) {
-      memory.__activated = true;
-      this.scriptHost.invokeBtEvent(
-        node.classId,
-        "onActivate",
-        actor,
-        dtSeconds,
-        extras,
-      );
-    }
-    this.scriptHost.invokeBtEvent(node.classId, "onBtTick", actor, dtSeconds, extras);
-    const result = current.result;
-    if (result === "success" || result === "failure") {
-      current.active = false;
-      memory.__btResult = result;
-      return result;
-    }
-    return "running";
-  }
-
-  private tickRotateToFace(
-    actor: Actor,
-    node: { properties?: Record<string, unknown> },
-  ): BtResult {
-    const target = navPointFromUnknown(node.properties?.target);
-    if (!target) return "failure";
-    const position = actor.transform.position;
-    const twoD = this.physicsWorldKind === "2d";
-    const yawRad = twoD
-      ? Math.atan2(target.y - position.y, target.x - position.x)
-      : Math.atan2(target.x - position.x, target.z - position.z);
-    const yawDeg = (yawRad * 180) / Math.PI;
-    const euler: [number, number, number] = twoD
-      ? [0, 0, yawDeg]
-      : [0, yawDeg, 0];
-    const quat = eulerDegreesToQuaternion(euler);
-    actor.transform.rotation.x = quat[0];
-    actor.transform.rotation.y = quat[1];
-    actor.transform.rotation.z = quat[2];
-    actor.transform.rotation.w = quat[3];
-    this.navigation.faceYaw(actor.guid, yawRad);
-    return "success";
-  }
-
-  private resolvePlayAnimationClip(
-    properties: Record<string, unknown> | undefined,
-  ): {
-    guid: string;
-    clipName: string;
-    clipKind: "animation" | "sprite";
-    durationMs: number;
-  } | null {
-    const guid =
-      typeof properties?.clipAssetGuid === "string"
-        ? properties.clipAssetGuid.trim()
-        : "";
-    if (!guid) return null;
-    const entry = this.animClipCatalog.get(guid);
-    if (!entry) return null;
-    const requested =
-      properties?.clipKind === "sprite"
-        ? "sprite"
-        : properties?.clipKind === "animation"
-          ? "animation"
-          : entry.type === "SpriteAnimation"
-            ? "sprite"
-            : "animation";
-    if (requested === "sprite" && entry.type !== "SpriteAnimation") return null;
-    if (requested === "animation" && entry.type !== "Animation") return null;
-    const durationMs = entry.durationMs;
-    if (typeof durationMs !== "number" || !Number.isFinite(durationMs) || durationMs <= 0) {
-      return null;
-    }
-    const clipName =
-      requested === "animation" && typeof entry.clipName === "string"
-        ? entry.clipName
-        : "";
-    return { guid, clipName, clipKind: requested, durationMs };
-  }
-
-  private tickPlayAnimation(
-    actor: Actor,
-    node: { properties?: Record<string, unknown> },
-    dtSeconds: number,
-    memory: Record<string, unknown>,
-  ): BtResult {
-    const clip = this.resolvePlayAnimationClip(node.properties);
-    const slotId = this.actorSlot(actor);
-    if (!clip || slotId === undefined) {
-      if (slotId !== undefined) this.btPlayAnimOwnedSlots.delete(slotId);
-      return "failure";
-    }
-    const elapsed =
-      (typeof memory.elapsedMs === "number" ? memory.elapsedMs : 0) +
-      dtSeconds * 1000;
-    memory.elapsedMs = elapsed;
-    const normalisedTime = Math.min(1, elapsed / clip.durationMs);
-    const justFinished = normalisedTime >= 1;
-    this.btPlayAnimOwnedSlots.add(slotId);
-    if (clip.clipKind === "sprite") {
-      (actor.sceneLayerId ? this.overlayPhysicsSync : this.physicsSync).setActorSpriteClip(actor, {
-        assetGuid: clip.guid,
-        clipName: clip.clipName,
-        normalisedTime,
-      });
-    } else {
-      (actor.sceneLayerId ? this.overlayPhysicsSync : this.physicsSync).setActorSpriteClip(actor, null);
-    }
-    this.emit({
-      type: "animState",
-      slotId,
-      stateId: "bt.playAnimation",
-      normalisedTime,
-      blendWeights: { "bt.playAnimation": 1 },
-      clipName: clip.clipName,
-      clipKind: clip.clipKind,
-      clipAssetGuid: clip.guid,
-      justFinished,
-      justLooped: false,
-      layers: [
-        {
-          stateId: "bt.playAnimation",
-          clipAssetGuid: clip.guid,
-          clipName: clip.clipName,
-          clipKind: clip.clipKind,
-          normalisedTime,
-          weight: 1,
-        },
-      ],
-    });
-    if (!justFinished) return "running";
-    this.btPlayAnimOwnedSlots.delete(slotId);
-    return "success";
-  }
-
-  private tickPlaySound(
-    actor: Actor,
-    node: { id: string; properties?: Record<string, unknown> },
-    memory: Record<string, unknown>,
-  ): BtResult {
-    const guid =
-      typeof node.properties?.audioAssetGuid === "string"
-        ? node.properties.audioAssetGuid.trim()
-        : "";
-    if (!guid || !this.audioAssetGuids.has(guid)) return "failure";
-    const volumeRaw = Number(node.properties?.volume ?? 1);
-    const volume = Number.isFinite(volumeRaw)
-      ? Math.min(1, Math.max(0, volumeRaw))
-      : 1;
-    const voiceId = `bt:${actor.guid}:${node.id}`;
-    if (memory.__soundPlayed !== true) {
-      memory.__soundPlayed = true;
-      this.btVoiceByActor.set(actor.guid, voiceId);
-      this.emit({
-        type: "playSound",
-        assetGuid: guid,
-        volume,
-        frameId: this.frameId,
-        emitterActorGuid: actor.guid,
-        voiceId,
-      });
-    }
-    return "success";
-  }
-
-  private stopBtPlaySound(actorGuid: string, nodeId?: string): void {
-    const voiceId =
-      nodeId !== undefined
-        ? `bt:${actorGuid}:${nodeId}`
-        : this.btVoiceByActor.get(actorGuid);
-    if (!voiceId) return;
-    this.emit({ type: "stopSound", voiceId });
-    this.btVoiceByActor.delete(actorGuid);
-  }
-
-  private abortPlayAnimation(actor: Actor, memory: Record<string, unknown>): void {
-    delete memory.elapsedMs;
-    const slotId = this.actorSlot(actor);
-    if (slotId !== undefined) this.btPlayAnimOwnedSlots.delete(slotId);
-    (actor.sceneLayerId ? this.overlayPhysicsSync : this.physicsSync).setActorSpriteClip(actor, null);
-  }
-
-  private abortBtTask(
-    actor: Actor,
-    node: { id: string; classId: string },
-    blackboard: BlackboardValues,
-    memory: Record<string, unknown>,
-  ): void {
-    const liveMemory = memory as Record<string | symbol, unknown>;
-    const activation = liveMemory[BT_TASK_ACTIVATION] as BtTaskActivation | undefined;
-    if (activation) activation.active = false;
-    delete liveMemory[BT_TASK_ACTIVATION];
-    memory.__activated = false;
-    delete memory.__btResult;
-    delete memory.__moveRequested;
-    delete memory.__soundPlayed;
-    const classId = builtinClassId(node.classId);
-    if (classId === "bt.task.moveTo" || classId === "bt.task.moveToBlackboardKey") {
-      this.stopNavAgent(actor.guid);
-    }
-    if (classId === "bt.task.playAnimation") {
-      this.abortPlayAnimation(actor, memory);
-    }
-    if (classId === "bt.task.playSound") {
-      this.stopBtPlaySound(actor.guid, node.id);
-    } else if (this.btVoiceByActor.has(actor.guid)) {
-      this.stopBtPlaySound(actor.guid);
-    }
-    this.scriptHost.invokeBtEvent(node.classId, "onAbort", actor, this.simulationDt(), {
-      btFinish: () => undefined,
-      btEvaluate: () => undefined,
-      getBlackboard: (key) => blackboard[key],
-      setBlackboard: (key, value) => {
-        blackboard[key] = value;
-      },
-    });
-  }
-
-  private evaluateBtDecorator(
-    actor: Actor,
-    classId: string,
-    blackboard: BlackboardValues,
-  ): boolean {
-    if (!this.scriptHost.hasClass(classId)) return true;
-    let result = true;
-    this.scriptHost.invokeBtEvent(classId, "onEvaluate", actor, this.simulationDt(), {
-      btFinish: () => undefined,
-      btEvaluate: (value) => {
-        result = Boolean(value);
-      },
-      getBlackboard: (key) => blackboard[key],
-      setBlackboard: (key, value) => {
-        blackboard[key] = value;
-      },
-    });
-    return result;
-  }
-
-  private emitBtMissing(actorGuid: string, message: string): void {
-    if (this.btMissingWarned.has(actorGuid)) return;
-    this.btMissingWarned.add(actorGuid);
-    const diag: RuntimeDiagnostic = {
-      code: "bt.missing_tree",
-      message,
-      severity: "error",
-      frameId: this.frameId,
-      tickIndex: this.world.clock.tickIndex,
-    };
-    this.diagnostics.push(diag);
-    this.emit({
-      type: "diagnostic",
-      code: diag.code,
-      message: diag.message,
-      frameId: this.frameId,
-      severity: "error",
-    });
-  }
-
-  private tickBehaviourTrees(): void {
-    for (const actor of this.world.getActors()) {
-      if (this.stopped) return;
-      if (!this.canTickActor(actor)) continue;
-      const slotId = this.actorSlot(actor);
-      if (slotId === undefined) continue;
-      const component = actor.components.find(
-        (entry) =>
-          entry.classId === "BehaviourTreeComponent" && !entry.destroyed,
-      );
-      if (!component) continue;
-      const guid = this.behaviourTreeGuid(component);
-      if (!guid) {
-        this.emitBtMissing(actor.guid, "BehaviourTreeComponent has no treeGuid");
-        continue;
-      }
-      this.currentBtAssetGuid = guid;
-      const document = this.behaviourTrees.get(guid);
-      if (!document) {
-        this.emitBtMissing(actor.guid, `Behaviour tree not loaded: ${guid}`);
-        continue;
-      }
-      const blackboardGuid = this.stringGuid(component.getVariable("blackboardGuid")) ?? document.blackboardGuid;
-      const previous = this.btEvalBySlot.get(slotId) ?? null;
-      const blackboard: BlackboardValues = previous
-        ? { ...previous.blackboard }
-        : this.blackboardDefaults(blackboardGuid);
-      const next = evaluateBehaviourTree(document, previous, this.simulationDt(), {
-        seed: this.seed,
-        blackboard,
-        host: {
-          tick: (node, board, dtSeconds, memory) =>
-            this.tickBtTask(actor, node, board, dtSeconds, memory),
-          abort: (node, board, memory) =>
-            this.abortBtTask(actor, node, board, memory),
-        },
-        decoratorHost: {
-          evaluate: (decorator, _node, board) =>
-            this.evaluateBtDecorator(actor, decorator.classId, board),
-        },
-        serviceHost: {
-          tick: (service, _node, board, dtSeconds) => {
-            this.scriptHost.invokeBtEvent(
-              service.classId,
-              "onBtTick",
-              actor,
-              dtSeconds,
-              {
-                btFinish: () => undefined,
-                btEvaluate: () => undefined,
-                getBlackboard: (key) => board[key],
-                setBlackboard: (key, value) => {
-                  board[key] = value;
-                },
-              },
-            );
-          },
-        },
-      });
-      this.btEvalBySlot.set(slotId, next);
-      this.currentBtNodeId = null;
-      this.currentBtAssetGuid = null;
-      const blackboardSnapshot = snapshotBlackboard(next.blackboard);
-      const payload = JSON.stringify({
-        status: next.status,
-        btNodeId: next.btNodeId,
-        lastResults: next.lastResults,
-        blackboard: blackboardSnapshot,
-        stack: next.stack,
-      });
-      if (this.lastBtStateJson.get(slotId) === payload) continue;
-      this.lastBtStateJson.set(slotId, payload);
-      this.emit({
-        type: "btState",
-        slotId,
-        status: next.status,
-        btNodeId: next.btNodeId,
-        lastResults: next.lastResults,
-        blackboard: blackboardSnapshot,
-        stack: next.stack,
-      });
-    }
-  }
-
   private simulationDt(): number {
     return this.dt * this.timeDilation;
   }
@@ -4361,46 +3909,12 @@ class InProcessRuntime implements RuntimeDriver {
     return typeof name === "string" && name.trim() ? name : actor.classId;
   }
 
-  private emitBehaviourTreeSnapshot(force = false): void {
-    if (!this.behaviourTreeDebug) return;
-    const now = nowMs();
-    if (!force && now - this.lastBehaviourTreeDebugMs < 200) return;
-    this.lastBehaviourTreeDebugMs = now;
-    const trees: DebugBehaviourTree[] = [];
-    for (const actor of this.world.getActors()) {
-      if (actor.destroyed) continue;
-      const slotId = this.actorSlot(actor);
-      if (slotId === undefined) continue;
-      const component = actor.components.find((entry) =>
-        entry.classId === "BehaviourTreeComponent" && !entry.destroyed);
-      if (!component) continue;
-      const treeGuid = this.behaviourTreeGuid(component);
-      const document = treeGuid ? this.behaviourTrees.get(treeGuid) : null;
-      if (!treeGuid || !document) continue;
-      const state = this.btEvalBySlot.get(slotId);
-      const blackboardGuid = this.stringGuid(component.getVariable("blackboardGuid")) ?? document.blackboardGuid;
-      const blackboardTypes = blackboardInspectTypes(blackboardGuid ? this.blackboards.get(blackboardGuid) : undefined);
-      trees.push({
-        actorGuid: actor.guid,
-        actorName: this.debugActorName(actor),
-        treeGuid,
-        treeName: document.name || treeGuid,
-        slotId,
-        status: state?.status ?? "idle",
-        btNodeId: state?.btNodeId ?? null,
-        lastResults: { ...state?.lastResults },
-        blackboard: snapshotBlackboard(state?.blackboard ?? this.blackboardDefaults(blackboardGuid)),
-        ...(blackboardTypes ? { blackboardTypes } : {}),
-        stack: state?.stack.map((frame) => ({ ...frame })) ?? [],
-        nodes: document.nodes.map((node) => ({
-          id: node.id, kind: node.kind, classId: node.classId,
-          children: [...node.children],
-          decorators: node.decorators.map(({ id, classId }) => ({ id, classId })),
-          services: node.services.map(({ id, classId }) => ({ id, classId })),
-        })),
-      });
-    }
-    this.emit({ type: "behaviourTreeSnapshot", trees });
+  /** Animation graphs and BT Play Animation drive sprite clips in the actor's physics world. */
+  private setActorSpriteClip(
+    actor: Actor,
+    clip: { assetGuid: string; clipName: string; normalisedTime: number } | null,
+  ): void {
+    (actor.sceneLayerId ? this.overlayPhysicsSync : this.physicsSync).setActorSpriteClip(actor, clip);
   }
 
   private emitDebugColliders(): void {
@@ -4459,12 +3973,7 @@ class InProcessRuntime implements RuntimeDriver {
       },
       setShowPathfinding: (enabled) => this.navigation.setShowPathfinding(enabled),
       setShowNavAgent: (enabled) => this.navigation.setShowNavAgent(enabled),
-      setBehaviourTreeDebug: (enabled) => {
-        this.behaviourTreeDebug = enabled;
-        this.emit({ type: "setBehaviourTreeDebug", enabled });
-        if (enabled) this.emitBehaviourTreeSnapshot(true);
-        else this.emit({ type: "behaviourTreeSnapshot", trees: [] });
-      },
+      setBehaviourTreeDebug: (enabled) => this.behaviourTrees.setDebug(enabled),
       setShowAudioDebug: (enabled) => {
         this.emit({ type: "setShowAudioDebug", enabled: Boolean(enabled) });
       },
@@ -5374,10 +4883,8 @@ class InProcessRuntime implements RuntimeDriver {
 
   private releaseSlot(actorGuid: string, slotId: number): void {
     const owner = this.slotOwners.get(slotId);
+    this.subsystems.releaseSlot(slotId, owner);
     if (owner) {
-      this.ragdolls.retire(owner);
-      this.cables.retire(owner);
-      this.dynamicMeshes.retire(owner);
       for (const component of owner.components) this.textAppear.remove(component);
     }
     this.areaLightSlots.delete(slotId);
@@ -5389,8 +4896,6 @@ class InProcessRuntime implements RuntimeDriver {
     if (this.slotByGuid.get(actorGuid) === slotId) this.slotByGuid.delete(actorGuid);
     if (owner && this.slotByActor.get(owner) === slotId) this.slotByActor.delete(owner);
     this.slotOwners.delete(slotId);
-    this.btEvalBySlot.delete(slotId);
-    this.lastBtStateJson.delete(slotId);
     if (this.possessedCameraSlotId === slotId) {
       this.possessedCameraSlotId = null;
       this.cameraPossessedByScript = false;
@@ -6000,7 +5505,7 @@ class InProcessRuntime implements RuntimeDriver {
           throw new Error("This transform moves an articulated body; preserving its live state requires a new session.");
         const apply = () => {
           for (const affectedActor of affected) {
-            this.ragdolls.retire(affectedActor);
+            this.ragdolls.retireActor(affectedActor);
             const sync = affectedActor.sceneLayerId ? this.overlayPhysicsSync : this.physicsSync;
             sync.teleportActor(affectedActor, this.world);
           }
@@ -6222,9 +5727,9 @@ class InProcessRuntime implements RuntimeDriver {
       this.tilemapAnimationTimeMs += simDt * 1000;
       if (this.hasAnimatedTiles) this.emit({ type: "tilemapAnimationTime", elapsedMs: this.tilemapAnimationTimeMs });
       // Only behaviour trees and the crowd read the frame index.
-      this.navFrameActors = this.navigation.active || this.behaviourTrees.size > 0 ? firstSpawnedActorIndex(this.world.getActors()) : null;
+      this.navFrameActors = this.navigation.active || this.behaviourTrees.hasTrees ? firstSpawnedActorIndex(this.world.getActors()) : null;
       try {
-        this.tickBehaviourTrees();
+        this.behaviourTrees.tick();
         if (this.navigation.active && this.canTickScene()) this.navigation.tickCrowd(this.navFrameActors ?? firstSpawnedActorIndex(this.world.getActors()));
       } finally {
         this.navFrameActors = null;
@@ -6245,7 +5750,7 @@ class InProcessRuntime implements RuntimeDriver {
       else this.publishSnapshot();
       this.emitDebugColliders();
       this.navigation.emitDebug();
-      this.emitBehaviourTreeSnapshot();
+      this.behaviourTrees.emitSnapshot();
     }
     const statsNow = nowMs();
     if (shouldEmitStatsCommand(statsNow, this.lastStatsEmitMs)) {
@@ -6291,20 +5796,7 @@ class InProcessRuntime implements RuntimeDriver {
           }
           return { type: event.kind, tick: event.tick };
         }),
-        bt: [...this.btEvalBySlot.entries()].map(([slotId, state]) => ({
-          slotId,
-          status: state.status,
-          btNodeId: state.btNodeId,
-          lastResults: { ...state.lastResults },
-          blackboard: snapshotBlackboard(state.blackboard),
-          stack: state.stack.map((frame) => ({ ...frame })),
-          nodeMemory: Object.fromEntries(
-            Object.entries(state.nodeMemory).map(([id, memory]) => [
-              id,
-              { ...memory },
-            ]),
-          ),
-        })),
+        bt: this.behaviourTrees.traceStates(),
       });
       if (!this.trace.isRecording) this.finalizeTrace();
     }
@@ -6378,11 +5870,11 @@ class InProcessRuntime implements RuntimeDriver {
         : "runtime.uncaught",
       message: err.message,
       severity: "error",
-      assetGuid: hint?.assetGuid ?? this.currentBtAssetGuid ?? location?.assetGuid ?? anchor?.assetGuid,
+      assetGuid: hint?.assetGuid ?? this.behaviourTrees.currentAssetGuid ?? location?.assetGuid ?? anchor?.assetGuid,
       graphId: location?.graphId ?? anchor?.graphId,
       nodeId: hint?.btNodeId ? undefined : location?.nodeId ?? anchor?.nodeId,
       bodyLine: anchor?.bodyLine,
-      btNodeId: hint?.btNodeId ?? this.currentBtNodeId ?? anchor?.btNodeId,
+      btNodeId: hint?.btNodeId ?? this.behaviourTrees.currentNodeId ?? anchor?.btNodeId,
       stack,
       frameId,
       tickIndex: this.world.clock.tickIndex,
@@ -6493,7 +5985,7 @@ class InProcessRuntime implements RuntimeDriver {
       this.releaseSlot(actorGuid, slotId);
       removedActors = true;
     }
-    if (removedActors) this.emitBehaviourTreeSnapshot(true);
+    if (removedActors) this.behaviourTrees.emitSnapshot(true);
   }
 
   private sceneStreamDetached(stream: SceneStream): boolean {

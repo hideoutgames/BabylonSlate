@@ -442,6 +442,61 @@ describe("runtime AnimationGraph scripts", () => {
     runtime.stop();
   });
 
+  it("starts a reloaded Scene's graph from its entry state instead of the departed actor's state", () => {
+    const doc = createDefaultAnimGraph();
+    doc.states.push({
+      id: "run",
+      name: "Run",
+      clipId: "run-clip",
+      speed: 1,
+      loop: true,
+      position: { x: 300, y: 80 },
+    });
+    doc.clips.push({
+      id: "run-clip",
+      kind: "sprite",
+      assetGuid: "sprite-1",
+      clipName: "Run",
+      durationMs: 400,
+    });
+    doc.transitions.push({
+      id: "idle-to-run",
+      fromStateId: "idle",
+      toStateId: "run",
+      blendSeconds: 0.2,
+      priority: 0,
+      condition: "moving",
+      ruleGraph: createDefaultTransitionRuleGraph(),
+    });
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 4,
+      seedDemoActors: false,
+      playScene: animScene({ graphGuid: "graph-1", conditions: { moving: true } }),
+      playSceneGuid: "anim",
+      animGraphs: { "graph-1": doc },
+      onCommand: (command) => commands.push(command),
+    });
+    try {
+      runtime.start();
+      runtime.realizePlayWorld();
+      for (let tick = 0; tick < 30; tick += 1) runtime.tick();
+      expect(lastAnimState(commands)?.layers).toHaveLength(1);
+      // The replacement reuses the departed actor's component guid before any
+      // animation tick could prune the old evaluation.
+      expect(runtime.executeConsoleCommand("changescene anim").success).toBe(true);
+      runtime.realizePlayWorld();
+      commands.length = 0;
+      runtime.tick();
+      const restarted = lastAnimState(commands);
+      expect(restarted?.stateId).toBe("run");
+      expect(restarted?.layers).toHaveLength(2);
+    } finally {
+      runtime.stop();
+    }
+  });
+
   it("jumps only the wired AnimationGraphComponent when an actor has two graphs", async () => {
     const registry = createDefaultNodeRegistry();
     const secondDoc = createDefaultAnimGraph();

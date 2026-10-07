@@ -5,6 +5,7 @@ import { RagdollPhysics, type Vec3 } from "@babylonslate/physics";
 import { firstSpawnedWorldTransforms } from "./actor-world-transform";
 import { actorLocalPhysicsTransform, type PhysicsWorldSync } from "./physics-sync";
 import { sameDescriptor } from "./physics-preparation";
+import type { RuntimeSubsystem } from "./runtime-subsystems";
 
 type CapturedPose = Extract<ControlMessage, { type: "ragdollPoseCaptured" }>;
 
@@ -34,7 +35,7 @@ interface RagdollState {
 }
 
 /** Renderer captures animation; only the worker creates and steps ragdoll bodies. */
-export class RagdollWorldSync {
+export class RagdollWorldSync implements RuntimeSubsystem {
   private readonly states = new Map<Actor, RagdollState>();
   private sequence = 0;
   private readonly host: RagdollHost;
@@ -57,7 +58,7 @@ export class RagdollWorldSync {
       }
       if (component) candidates.set(actor, { component, count });
     }
-    for (const actor of this.states.keys()) if (!candidates.has(actor)) this.retire(actor);
+    for (const actor of this.states.keys()) if (!candidates.has(actor)) this.retireActor(actor);
     // Component membership is mutable, so scan it each tick, but leave unrelated
     // actor transforms alone. Disabled ragdolls need no hierarchy preparation.
     if (!candidates.size) return;
@@ -74,7 +75,7 @@ export class RagdollWorldSync {
         }
         continue;
       }
-      this.retire(actor);
+      this.retireActor(actor);
       const state: RagdollState = {
         actor, component, descriptor, slotId,
         requestId: `ragdoll:${++this.sequence}:${actor.guid}:${component.guid}`,
@@ -188,7 +189,7 @@ export class RagdollWorldSync {
     return true;
   }
 
-  retire(actor: Actor): void {
+  retireActor(actor: Actor): void {
     const state = this.states.get(actor);
     if (!state) return;
     state.physics?.dispose();
@@ -198,8 +199,12 @@ export class RagdollWorldSync {
     this.host.emit({ type: "clearRagdollPose", slotId: state.slotId, requestId: state.requestId });
   }
 
+  releaseSlot(_slotId: number, owner: Actor | undefined): void {
+    if (owner) this.retireActor(owner);
+  }
+
   dispose(): void {
-    for (const actor of this.states.keys()) this.retire(actor);
+    for (const actor of this.states.keys()) this.retireActor(actor);
   }
 
   private fail(state: RagdollState, error: unknown): void {

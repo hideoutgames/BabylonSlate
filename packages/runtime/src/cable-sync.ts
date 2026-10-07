@@ -2,6 +2,7 @@ import { CableSimulation, cablePropertiesEqual, parseCableProperties, DEFAULT_SP
 import type { CommandMessage } from "@babylonslate/bridge";
 import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
 import type { PhysicsBackend, SphereSweepQuery, PhysicsTransform } from "@babylonslate/physics";
+import type { RuntimeSubsystem } from "./runtime-subsystems";
 
 interface CableHost {
   world: World;
@@ -33,7 +34,7 @@ type CableState = {
 };
 
 /** Event-registered cables; clean ticks never rescan the World's component lists. */
-export class CableWorldSync {
+export class CableWorldSync implements RuntimeSubsystem {
   private readonly states = new Map<ActorComponent, CableState>();
   private sequence = 0;
   private readonly host: CableHost;
@@ -141,12 +142,16 @@ export class CableWorldSync {
     this.states.clear();
   }
 
-  retire(actor: Actor): void {
+  retireActor(actor: Actor): void {
     for (const [component, state] of this.states) {
       if (state.owner !== actor) continue;
       state.query?.dispose();
       this.states.delete(component);
     }
+  }
+
+  releaseSlot(_slotId: number, owner: Actor | undefined): void {
+    if (owner) this.retireActor(owner);
   }
 }
 
