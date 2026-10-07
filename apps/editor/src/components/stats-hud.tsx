@@ -123,11 +123,7 @@ export function StatsHud({
       </div>
       {showUnit ? (
         <>
-          <GroupRow group="unit">
-            <Metric label="tick" value={`${(scriptMs + physicsMs).toFixed(2)} / ${TICK_BUDGET_MS} ms`} tone={overBudget ? "warn" : undefined} />
-            {publishMs != null ? <Metric label="publish" value={`${publishMs.toFixed(2)} ms`} testId="play-publish-ms" data={{ "data-ms": String(publishMs) }} /> : null}
-          </GroupRow>
-          {/* Tick history on its own line, aligned with the row values. */}
+          {/* Tick history on its own line above the Unit row, aligned with the values. */}
           <div className="flex h-5 items-end gap-px pl-[4.25rem]" data-testid="stats-hud-graph" aria-hidden>
             {samples.map((sample, index) => {
               const total = sample.scriptMs + sample.physicsMs;
@@ -140,6 +136,10 @@ export function StatsHud({
               );
             })}
           </div>
+          <GroupRow group="unit">
+            <Metric label="tick" value={`${(scriptMs + physicsMs).toFixed(2)} / ${TICK_BUDGET_MS} ms`} tone={overBudget ? "warn" : undefined} />
+            {publishMs != null ? <Metric label="publish" value={`${publishMs.toFixed(2)} ms`} testId="play-publish-ms" data={{ "data-ms": String(publishMs) }} /> : null}
+          </GroupRow>
         </>
       ) : null}
       {groups.includes("memory") ? (

@@ -174,11 +174,11 @@ export function mountPlayerHud(
         bar.style.cssText = `width:2px;height:${Math.max(8, Math.min(100, (total / TICK_BUDGET_MS) * 100))}%;background:${total > TICK_BUDGET_MS ? "#f87171" : "rgba(238,238,238,0.55)"};`;
         graph.append(bar);
       }
+      lines.push(graph);
       lines.push(row("unit", [
         metric("tick", `${(stats.scriptMs + stats.physicsMs).toFixed(2)} / ${TICK_BUDGET_MS} ms`, over),
         metric("publish", `${(stats.publishMs ?? 0).toFixed(2)} ms`),
       ]));
-      lines.push(graph);
     }
     if (groups.includes("memory")) {
       const parts = [
