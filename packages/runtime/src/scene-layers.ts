@@ -4,6 +4,7 @@ import { hydrateScenePropertyReferences, type Actor, type BObject, type SceneLay
 import type { RuntimeAssetPreloads } from "./asset-preloads";
 import type { OwnerAdmission } from "./owner-admission";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
+import type { SceneLayerOverlay } from "./scene-layer-overlay";
 import { runSceneRealizationWork, sceneRealizationCancelled, waitForSceneWork, type CooperativeSceneLoadingOptions } from "./scene-realization-work";
 import type { ScriptHostServices } from "./script-host";
 
@@ -59,14 +60,10 @@ interface SceneLayersHost {
   /** An actor id already names a render slot or World actor. */
   guidTaken(id: string): boolean;
   createActor(serialized: SerializedActor, layerGuid: string): Actor | null;
-  /** Spawn, anchor and assign a layer's created actors, yielding between bounded passes. */
-  realizeActors(actors: readonly Actor[], checkpoint: () => void): Generator<void, void, unknown>;
   publishSnapshot(): void;
   syncOverlayPhysics(): void;
   /** A layer became ready; the main Scene's load may be waiting for it. */
   tryCompleteSceneLoad(): void;
-  /** Drop the removed layer's overlay layout, virtualization and focus state. */
-  forgetOverlay(layerGuid: string): void;
   /** Remove an actor instance the way the driver removes any owned actor. */
   removeActor(actor: Actor): void;
   cancelInvalidTweens(): void;
@@ -78,8 +75,8 @@ interface SceneLayersHost {
  * Scene Layer lifecycle: the load table keyed by layer guid, creation (immediate,
  * cooperative after the host's loading paint, or a script's latent create that
  * waits for readiness), host readiness, removal and clearing, and the layer
- * post-process stack. Overlay layout, anchors, focus and pointer input stay in
- * the driver, which realizes a layer's actors through `realizeActors`.
+ * post-process stack. The overlay realizes a layer's created actors and owns
+ * its layout, anchors, focus and pointer input.
  */
 export class SceneLayers implements RuntimeSubsystem {
   private loadId = 0;
@@ -87,10 +84,12 @@ export class SceneLayers implements RuntimeSubsystem {
   private readonly independentWork = new Map<string, IndependentLayerWork>();
   private readonly readinessWaiters = new Map<string, { resolve: () => void; reject: (error: unknown) => void }>();
   private readonly admission: OwnerAdmission;
+  private readonly overlay: Pick<SceneLayerOverlay, "realizeActors" | "forget">;
   private readonly host: SceneLayersHost;
 
-  constructor(admission: OwnerAdmission, host: SceneLayersHost) {
+  constructor(admission: OwnerAdmission, overlay: Pick<SceneLayerOverlay, "realizeActors" | "forget">, host: SceneLayersHost) {
     this.admission = admission;
+    this.overlay = overlay;
     this.host = host;
   }
 
@@ -285,7 +284,7 @@ export class SceneLayers implements RuntimeSubsystem {
     const layer = world.findSceneLayer(layerGuid);
     if (!layer) return;
     this.loads.delete(layerGuid);
-    this.host.forgetOverlay(layerGuid);
+    this.overlay.forget(layerGuid);
     const work = this.independentWork.get(layerGuid);
     if (work?.layer === layer) {
       this.independentWork.delete(layerGuid);
@@ -428,7 +427,7 @@ export class SceneLayers implements RuntimeSubsystem {
         yield;
       }
       hydrateScenePropertyReferences(actors);
-      yield* this.host.realizeActors(actors, checkpoint);
+      yield* this.overlay.realizeActors(actors, checkpoint);
       layerLoad.realized = true;
       this.host.publishSnapshot();
       this.host.emit({ type: "sceneLayerRealized", layerId: layer.guid, layerLoadId: layerLoad.loadId });

@@ -3,16 +3,13 @@ import { RuntimeMaterialEditGate } from "./runtime-material-edit-gate";
 import { runtimeEditLocalTransform } from "./runtime-transform-edit";
 import { RuntimeDiagnosticRecorder } from "./runtime-diagnostic-recorder";
 import { RuntimeInspector } from "./runtime-inspector";
-import { SceneLayerActorSwitchers } from "./scene-layer-actor-switcher";
 import { RuntimeDataCatalog, dataTypeSchemas } from "./data-catalog";
-import { overlayAnchorBindings } from "./overlay-anchor-layout";
 import { SaveGameError, SaveGameService, resolveActorDefaults, type SaveGameServiceOptions } from "@babylonslate/core";
 import { SaveGameWorld } from "./save-game-world";
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
 import { RuntimeAssetPreloads } from "./asset-preloads";
 import type { RuntimeAssetLoadState, RuntimeAssetPreloadOptions, RuntimeAssetPreloadResult } from "@babylonslate/core";
-import { SceneLayerFocusNavigation } from "./scene-layer-focus";
-import { focusLayoutEntry, revealFocusedElement } from "./scene-layer-focus-layout";
+import { SceneLayerOverlay, createSceneLayerOverlayHostBindings } from "./scene-layer-overlay";
 import type { FocusNavigationSettings } from "@babylonslate/core";
 import { CableWorldSync } from "./cable-sync";
 import { DynamicRuntimeMeshSync } from "./dynamic-runtime-mesh";
@@ -82,11 +79,7 @@ import {
 import {
   createDefaultSceneSettings,
   DEFAULT_PLAY_FRAME_CAP,
-  parseSceneLayerAnchor,
-  sceneLayerRelativeAnchorWorldPosition,
   isSceneLayerAnchorActor,
-  identityTransform,
-  SCENE_LAYER_DEFAULT_LAYER_BOUNDS,
   deprojectCursorRay,
   type MaterialParameterCatalog,
   type MaterialParameterValue,
@@ -148,7 +141,7 @@ import {
 import { mapStackToAnchor, type AnchorEntry } from "./stack-map";
 import { Painter2DRuntime } from "./painter2d-runtime";
 import { UIControls2DRuntime } from "./ui-controls2d-runtime";
-import { isUIControl2DClass, isInteractiveUIControl2DClass } from "@babylonslate/core";
+import { isUIControl2DClass } from "@babylonslate/core";
 import { Text2DAppearRuntime } from "./text2d-appear-runtime";
 import { TweenRuntime } from "./tween-runtime";
 import { parseOverlayVisualStyle, supportsOverlayVisualStyle } from "@babylonslate/core";
@@ -163,15 +156,13 @@ import {
   formatDumpActors,
   formatInspectActor,
 } from "./console-inspect";
-import { actorChainWorldTransform, actorLabel, actorParentGuid, breakParentCycles, firstSpawnedActorIndex, WorldTransformComposer } from "./actor-world-transform";
-import { SceneLayerLayout } from "./scene-layer-layout";
-import { SceneLayerVirtualization } from "./scene-layer-virtualization";
-import { isOverlayLayoutClass, isOverlayScrollClass, overlayLayoutKey, type OverlaySafeAreaInsets } from "@babylonslate/core";
+import { actorChainWorldTransform, actorLabel, breakParentCycles, firstSpawnedActorIndex, WorldTransformComposer } from "./actor-world-transform";
+import type { OverlaySafeAreaInsets } from "@babylonslate/core";
 import type { ModelPayload, SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import { initNavigation, type NavObstacleKind, type NavPoint } from "@babylonslate/navigation";
 import { RuntimeSubsystems } from "./runtime-subsystems";
 import { RenderSlots } from "./render-slots";
-import { RenderCommandEmitter, liveOverlayButtons } from "./render-command-emitter";
+import { RenderCommandEmitter } from "./render-command-emitter";
 import { AudioParticleEmitter, createAudioHostBindings } from "./audio-particle-emitter";
 import { createActorHostBindings, createAssetHostBindings } from "./runtime-host-actors";
 import { createComponentHostBindings } from "./runtime-host-components";
@@ -536,18 +527,13 @@ class InProcessRuntime implements RuntimeDriver {
   private saveGameService?: SaveGameService;
   private saveGameWorld?: SaveGameWorld;
   private saveBoundaryActive = false;
-  private saveOverlayLayoutPending = false;
   private readonly savedActors = new WeakSet<Actor>();
   private pendingGameLoaded: (() => void) | null = null;
   private readonly world: World;
   private snapshots: SeqLockSnapshotPair;
   private readonly input = new InputRingBuffer(512);
   private readonly resolver: InputResolver;
-  private readonly focusNavigation: SceneLayerFocusNavigation;
-  private readonly overlayLayout = new SceneLayerLayout();
-  private readonly overlayVirtualization = new SceneLayerVirtualization();
-  private applyingOverlayLayouts = false;
-  private safeAreaInsetsPixels: OverlaySafeAreaInsets = { left: 0, right: 0, top: 0, bottom: 0 };
+  private readonly overlay: SceneLayerOverlay;
   private resolvedInput: ResolvedInputTick = {
     inputs: {},
     actions: {},
@@ -641,9 +627,6 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly dynamicMeshes: DynamicRuntimeMeshSync;
   private readonly movement: MovementWorldSync;
   private readonly overlayGravity: [number, number, number];
-  private readonly overlayDesignPose = new Map<string, { x: number; y: number }>();
-  private playCanvasWidth = 1;
-  private playCanvasHeight = 1;
   private playScene: SerializedScene | undefined;
   private playSceneGuid: string;
   private readonly gameInstanceClass: string;
@@ -652,8 +635,6 @@ class InProcessRuntime implements RuntimeDriver {
   private activeSceneSource?: RuntimeSceneSource;
   private pendingSceneSource?: AbortController;
   private readonly sceneGuidByKey = new Map<string, string>();
-  private readonly sceneLayerSwitchers: SceneLayerActorSwitchers;
-  private sceneLayerSpawnDepth = 0;
   private readonly sceneLayerLibrary = new Map<string, SerializedSceneLayer>();
   private playWorldRealized = false;
   private sceneLoadingProgress = 1;
@@ -806,36 +787,7 @@ class InProcessRuntime implements RuntimeDriver {
     },
     emit: (command) => this.emit(command),
   });
-  private readonly layers: SceneLayers = new SceneLayers(this.admission, {
-    world: () => this.world,
-    stopped: () => this.stopped,
-    frameId: () => this.frameId,
-    bootLoading: () => this.bootLoading,
-    cooperativeLoading: () => this.cooperativeSceneLoading,
-    deferModelsReady: () => this.deferSceneModelsReady,
-    deferLoadingPaint: () => this.deferSceneLoadingPaint,
-    document: (assetGuid) => this.sceneLayerLibrary.get(assetGuid),
-    demandAssets: () => this.demandAssetCatalog,
-    assetPreloads: () => this.assetPreloads,
-    continueSimulation: (owner) => this.continueSimulation(owner),
-    setOverlayGravity: (gravity) => this.overlayPhysicsSync.getBackend().setGravity(gravity),
-    markUnsupportedInstance: (layerGuid) => this.markUnsupportedSimulationInstance("layer", layerGuid),
-    guidTaken: (id) => this.renderSlots.hasGuid(id) || this.world.findActor(id) != null,
-    createActor: (serialized, layerGuid) => createActorFromSerialized(this.world, serialized, this.sceneActorHooks, layerGuid),
-    realizeActors: (actors, checkpoint) => this.realizeSceneLayerActors(actors, checkpoint),
-    publishSnapshot: () => this.publishSnapshot(),
-    syncOverlayPhysics: () => this.overlayPhysicsSync.syncFromWorld(this.world),
-    tryCompleteSceneLoad: () => this.tryCompleteSceneLoad(),
-    forgetOverlay: (layerGuid) => {
-      this.overlayLayout.remove(layerGuid);
-      this.overlayVirtualization.remove(layerGuid);
-      this.focusNavigation.refresh();
-    },
-    removeActor: (actor) => this.removeOwnedActor(actor),
-    cancelInvalidTweens: () => this.tweens.cancelInvalid(),
-    reportError: (error) => { this.reportError(error); },
-    emit: (command) => this.emit(command),
-  });
+  private readonly layers: SceneLayers;
   private readonly animGraphs = new AnimGraphRuntime({
     actors: () => this.world.getActors(),
     stopped: () => this.stopped,
@@ -1081,21 +1033,6 @@ class InProcessRuntime implements RuntimeDriver {
         this.dispatchCollisionEvents();
       },
     });
-    this.sceneLayerSwitchers = new SceneLayerActorSwitchers({
-      classes: registry,
-      alive: (actor) => !this.stopped && !actor.destroyed && !this.removingActors.has(actor) &&
-        !!actor.sceneLayerId && !!this.world.findSceneLayer(actor.sceneLayerId),
-      spawn: (parent, classId, defaults) => this.spawnSceneLayerActor(parent, classId, defaults),
-      remove: (actor) => this.removeSceneLayerActorSubtree(actor),
-      event: (actor, event, args) => {
-        // Switching during Tick queues the new actor's World spawn. Its Begin
-        // Play and Switched To precede the switcher's completion notification.
-        const readyOwner = event === "onSceneLayerActorSwitched" && args.currentActor instanceof Actor
-          ? args.currentActor : actor;
-        this.admission.run(readyOwner, () =>
-          this.admission.guard(() => this.scriptHost.invokeEvent(actor.classId, event, actor, args)));
-      },
-    });
     this.dynamicMeshes = new DynamicRuntimeMeshSync({
       eligible: (actor) => !actor.sceneLayerId && this.admission.canRun(actor),
       slot: (actor) => this.actorSlot(actor),
@@ -1144,25 +1081,58 @@ class InProcessRuntime implements RuntimeDriver {
         }
       },
     });
-    this.focusNavigation = new SceneLayerFocusNavigation(this.world, options.focusNavigation, {
-      canRun: (actor) => this.admission.canTickActor(actor),
-      event: (actor, component, event) => {
-        if (isUIControl2DClass(component.classId) && (event === "onFocusEnter" || event === "onFocusLeave")) {
-          const slotId = this.actorSlot(actor);
-          if (slotId !== undefined) this.emit({ type: "setUIControl2D", slotId, componentId: component.guid,
-            uiControl: { classId: component.classId, properties: this.uiControls.payload(component) }, focused: event === "onFocusEnter" });
-        }
-        if (event === "onFocusActivate") this.uiControls.activate(component);
-        this.scriptHost.invokeEvent(actor.classId, event, actor, {}, component.guid);
+    this.overlay = new SceneLayerOverlay({
+      world: this.world,
+      focusNavigation: options.focusNavigation,
+      admission: this.admission,
+      uiControls: this.uiControls,
+      render: this.renderEmitter,
+      audioParticles: this.audioParticles,
+      texturePixelSizes: this.texturePixelSizes,
+    }, {
+      stopped: () => this.stopped,
+      saveBoundaryActive: () => this.saveBoundaryActive,
+      removing: (actor) => this.removingActors.has(actor),
+      pixelsPerUnit: () => this.pixelsPerUnit,
+      scripts: () => this.scriptHost,
+      slot: (actor) => this.actorSlot(actor),
+      guidSlot: (guid) => this.guidSlot(guid),
+      actorHooks: (classId) => this.sceneActorHooks(classId),
+      prepareActor: (actor) => {
+        this.scriptHost.bindInterfaceHandlers(actor);
+        this.applyActorDefaults(actor);
+        this.assignSlot(actor);
       },
-      bounds: (actor, component) => {
-        const entry = focusLayoutEntry(this.overlayLayout, this.world, actor, component);
-        const visual = entry?.componentId ? this.world.findActor(entry.actorId)?.components.find((target) => target.guid === entry.componentId) : undefined;
-        if (visual?.getVariable("visible") === false || visual?.getVariable("enabled") === false) return null;
-        return entry?.rect;
-      },
-      onFocusChange: (actor, component) => revealFocusedElement(this.overlayLayout, this.world, actor, component,
-        (layerId, actorId, componentId, x, y) => this.applySceneLayerScroll(layerId, actorId, componentId, x, y)),
+      breakParentCycles: (actors) => this.breakLoadedParentCycles(actors),
+      realizeActor: (actor) => this.realizeActor(actor),
+      removeActor: (actor) => this.removeOwnedActor(actor),
+      publishSnapshot: () => this.publishSnapshot(),
+      syncOverlayPhysics: () => this.overlayPhysicsSync.syncFromWorld(this.world),
+      emit: (command) => this.emit(command),
+    });
+    this.layers = new SceneLayers(this.admission, this.overlay, {
+      world: () => this.world,
+      stopped: () => this.stopped,
+      frameId: () => this.frameId,
+      bootLoading: () => this.bootLoading,
+      cooperativeLoading: () => this.cooperativeSceneLoading,
+      deferModelsReady: () => this.deferSceneModelsReady,
+      deferLoadingPaint: () => this.deferSceneLoadingPaint,
+      document: (assetGuid) => this.sceneLayerLibrary.get(assetGuid),
+      demandAssets: () => this.demandAssetCatalog,
+      assetPreloads: () => this.assetPreloads,
+      continueSimulation: (owner) => this.continueSimulation(owner),
+      setOverlayGravity: (gravity) => this.overlayPhysicsSync.getBackend().setGravity(gravity),
+      markUnsupportedInstance: (layerGuid) => this.markUnsupportedSimulationInstance("layer", layerGuid),
+      guidTaken: (id) => this.renderSlots.hasGuid(id) || this.world.findActor(id) != null,
+      createActor: (serialized, layerGuid) => createActorFromSerialized(this.world, serialized, this.sceneActorHooks, layerGuid),
+      publishSnapshot: () => this.publishSnapshot(),
+      syncOverlayPhysics: () => this.overlayPhysicsSync.syncFromWorld(this.world),
+      tryCompleteSceneLoad: () => this.tryCompleteSceneLoad(),
+      removeActor: (actor) => this.removeOwnedActor(actor),
+      cancelInvalidTweens: () => this.tweens.cancelInvalid(),
+      reportError: (error) => { this.reportError(error); },
+      emit: (command) => this.emit(command),
     });
     this.world.setInputProvider(createWorldInputProvider({
       resolved: () => this.resolvedInput,
@@ -1291,10 +1261,7 @@ class InProcessRuntime implements RuntimeDriver {
         this.applyChangeScene(scene);
       },
       ...createSceneLayerHostBindings({ layers: this.layers }),
-      switchSceneLayerActor: (target, index) => this.sceneLayerSwitchers.switchTo(target, index),
-      getCurrentSceneLayerActor: (target) => this.sceneLayerSwitchers.current(target),
-      setFocusTarget: (target) => this.focusNavigation.setFocus(target),
-      clearFocusTarget: (target) => this.focusNavigation.clearFocus(target),
+      ...createSceneLayerOverlayHostBindings({ overlay: this.overlay }),
     });
 
     // Stop order: Delays resume in phase 1, then every scene stream retires;
@@ -1539,83 +1506,8 @@ class InProcessRuntime implements RuntimeDriver {
     this.layers.notifyLoadingPainted(layerId, layerLoadId);
   }
 
-  /** Spawn, anchor and assign a Scene Layer's created actors in bounded passes. */
-  private *realizeSceneLayerActors(actors: readonly Actor[], checkpoint: () => void): Generator<void, void, unknown> {
-    for (const actor of actors) {
-      checkpoint();
-      this.scriptHost.bindInterfaceHandlers(actor);
-      this.applyActorDefaults(actor);
-      this.assignSlot(actor);
-      checkpoint();
-      this.world.spawnActorNow(actor);
-      checkpoint();
-      yield;
-    }
-    for (const actor of actors) this.sceneLayerSwitchers.initialize(actor);
-    this.breakLoadedParentCycles(actors);
-    for (const actor of actors) {
-      checkpoint();
-      this.ensureOverlayDesignPose(actor);
-      yield;
-    }
-    for (const _ of this.applyOverlayAnchors(actors)) {
-      checkpoint();
-      yield _;
-    }
-    for (const actor of actors) {
-      checkpoint();
-      const slotId = this.actorSlot(actor);
-      if (slotId === undefined) continue;
-      this.renderEmitter.emitMeshAssignment(actor, slotId);
-      checkpoint();
-      this.audioParticles.emitAudio(actor);
-      checkpoint();
-      this.audioParticles.emitParticles(actor);
-      checkpoint();
-      yield;
-    }
-  }
-
-  private applyOverlayLayouts(): void {
-    // Virtual layout creates and retires ordinary UI actors. Their lifecycle
-    // must run after restoration, outside the restored-world hook suppression.
-    if (this.saveBoundaryActive) { this.saveOverlayLayoutPending = true; return; }
-    if (this.applyingOverlayLayouts) return;
-    this.applyingOverlayLayouts = true;
-    try {
-      for (const layer of this.world.getSceneLayers()) {
-        const safeAreaInsets = {
-          left: this.safeAreaInsetsPixels.left * layer.layerBounds.width / this.playCanvasWidth,
-          right: this.safeAreaInsetsPixels.right * layer.layerBounds.width / this.playCanvasWidth,
-          top: this.safeAreaInsetsPixels.top * layer.layerBounds.height / this.playCanvasHeight,
-          bottom: this.safeAreaInsetsPixels.bottom * layer.layerBounds.height / this.playCanvasHeight,
-        };
-        let result = this.overlayLayout.update(layer.guid, this.world.getActors(), this.pixelsPerUnit, this.texturePixelSizes, safeAreaInsets);
-        if (this.overlayVirtualization.sync(layer.guid, this.world.getActors(), result?.entries ?? this.overlayLayout.entries(layer.guid),
-          (owner, classId, defaults) => this.spawnSceneLayerActor(owner, classId, defaults),
-          (actor) => this.removeSceneLayerActorSubtree(actor))) {
-          result = this.overlayLayout.update(layer.guid, this.world.getActors(), this.pixelsPerUnit, this.texturePixelSizes, safeAreaInsets) ?? result;
-        }
-        if (!result || layer.destroyed) continue;
-        const transforms = new Map(result.actors.flatMap(actor => actor.components.map(component => [overlayLayoutKey(actor.id, component.id), component.transform] as const)));
-        this.emit({ type: "sceneLayerLayout", layerId: layer.guid, entries: [...result.entries].flatMap(([key, entry]) => {
-          const slotId = this.guidSlot(entry.actorId);
-          return slotId === undefined ? [] : [{ ...entry, slotId, transform: transforms.get(key) }];
-        }) });
-      }
-    } finally { this.applyingOverlayLayouts = false; }
-  }
-
   applySceneLayerScroll(layerId: string, actorId: string, componentId: string, deltaX: number, deltaY: number): void {
-    const actor = this.world.findActor(actorId);
-    if (!actor || actor.sceneLayerId !== layerId || !this.admission.canTickActor(actor)) return;
-    const component = actor.components.find(c => c.guid === componentId && isOverlayScrollClass(c.classId) && !c.destroyed);
-    const state = this.overlayLayout.entries(layerId).get(overlayLayoutKey(actorId, componentId))?.scroll;
-    if (!component || !state) return;
-    component.setVariable("scrollX", Math.max(0, Math.min(state.maxX, state.x + (Number.isFinite(deltaX) ? deltaX : 0))));
-    component.setVariable("scrollY", Math.max(0, Math.min(state.maxY, state.y + (Number.isFinite(deltaY) ? deltaY : 0))));
-    this.applyOverlayLayouts();
-    this.publishSnapshot();
+    this.overlay.applyScroll(layerId, actorId, componentId, deltaX, deltaY);
   }
 
   removeSceneLayer(layerGuid: string): void {
@@ -1644,70 +1536,21 @@ class InProcessRuntime implements RuntimeDriver {
     canvasHeight?: number,
     safeAreaInsets?: Partial<OverlaySafeAreaInsets>,
   ): void {
-    const width = Number(frustumWidth);
-    const height = Number(frustumHeight);
-    if (!Number.isFinite(width) || width <= 0) return;
-    if (!Number.isFinite(height) || height <= 0) return;
-    if (typeof canvasWidth === "number" && canvasWidth > 0) {
-      this.playCanvasWidth = canvasWidth;
-    }
-    if (typeof canvasHeight === "number" && canvasHeight > 0) {
-      this.playCanvasHeight = canvasHeight;
-    }
-    const inset = (value: number | undefined) =>
-      typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;
-    this.safeAreaInsetsPixels = {
-      left: inset(safeAreaInsets?.left),
-      right: inset(safeAreaInsets?.right),
-      top: inset(safeAreaInsets?.top),
-      bottom: inset(safeAreaInsets?.bottom),
-    };
-    for (const _ of this.applyOverlayAnchors(this.world.getActors())) void _;
-    this.applyOverlayLayouts();
-    this.overlayPhysicsSync.syncFromWorld(this.world);
+    this.overlay.resize(frustumWidth, frustumHeight, canvasWidth, canvasHeight, safeAreaInsets);
   }
 
   applySceneLayerFocusNavigate(reverse: boolean): void {
-    const focused = this.focusNavigation.advance(reverse);
-    const actor = focused?.owner;
-    const slotId = actor ? this.actorSlot(actor) : undefined;
-    // A single remaining target may not transition. Acknowledge it so the host
-    // can reopen a text editor after Tab without inventing another focus order.
-    if (focused && isUIControl2DClass(focused.classId) && slotId !== undefined) {
-      this.emit({ type: "setUIControl2D", slotId, componentId: focused.guid,
-        uiControl: { classId: focused.classId, properties: this.uiControls.payload(focused) }, focused: true, beginEditing: true });
-    }
+    this.overlay.focusNavigate(reverse);
   }
 
   applySceneLayerControl(message: Extract<ControlMessage, { type: "sceneLayerControl" }>): void {
-    const actor = this.world.findActor(message.actorGuid);
-    if (!actor || actor.destroyed || actor.sceneLayerId !== message.layerId || !actor.sceneLayerId || !this.admission.canTickActor(actor)) return;
-    const component = actor.components.find((entry) => entry.guid === message.componentId || entry.sourceId === message.componentId);
-    if (!component || component.destroyed || !isInteractiveUIControl2DClass(component.classId)) return;
-    if (message.action === "focus") this.focusNavigation.setFocus(component);
-    else if (message.action === "blur") this.focusNavigation.clearFocus(component);
-    else this.uiControls.input(component, message);
+    this.overlay.control(message);
   }
 
   applySceneLayerPointer(
     message: Extract<ControlMessage, { type: "sceneLayerPointer" }>,
   ): void {
-    const actor = this.world.findActor(message.actorGuid);
-    if (!actor || actor.destroyed || !actor.sceneLayerId) return;
-    if (!this.admission.canTickActor(actor)) return;
-    const requested =
-      typeof message.componentId === "string" ? message.componentId.trim() : "";
-    const resolved = resolveOverlayPointerButton(this.world, actor, requested);
-    if (!resolved) return;
-    if (resolved.button?.getVariable("enabled") === false) return;
-    if (message.event === "onPressStart" && resolved.button) this.focusNavigation.setFocus(resolved.button);
-    this.scriptHost.invokeEvent(
-      resolved.owner.classId,
-      message.event,
-      resolved.owner,
-      {},
-      resolved.button?.guid,
-    );
+    this.overlay.pointer(message);
   }
 
   applyAudioVoiceEnded(
@@ -1762,36 +1605,6 @@ class InProcessRuntime implements RuntimeDriver {
     }
   }
 
-  private ensureOverlayDesignPose(actor: Actor): void {
-    if (!actor.sceneLayerId) return;
-    if (this.overlayDesignPose.has(actor.guid)) return;
-    this.overlayDesignPose.set(actor.guid, {
-      x: actor.transform.position.x,
-      y: actor.transform.position.y,
-    });
-  }
-
-  private readonly anchoredOverlayActors = new Set<string>();
-
-  private *applyOverlayAnchors(actors: readonly Actor[]): Generator<void, void, unknown> {
-    const bindings = overlayAnchorBindings(actors);
-    for (const actor of actors) {
-      if (!actor.sceneLayerId || actor.destroyed) continue;
-      this.ensureOverlayDesignPose(actor);
-      if (isSceneLayerAnchorActor(actor)) actor.transform = identityTransform();
-      const anchor = bindings.get(actor);
-      if (anchor) {
-        this.applyRelativeOverlayAnchor(actor, anchor);
-        this.anchoredOverlayActors.add(actor.guid);
-      } else if (this.anchoredOverlayActors.delete(actor.guid)) {
-        const authored = this.overlayDesignPose.get(actor.guid)!;
-        actor.transform.position.x = authored.x;
-        actor.transform.position.y = authored.y;
-      }
-      yield;
-    }
-  }
-
   private flushPainters(): void {
     this.painters.flush((component, painter) => {
       const slotId = component.owner ? this.actorSlot(component.owner) : undefined;
@@ -1804,29 +1617,6 @@ class InProcessRuntime implements RuntimeDriver {
       const slotId = component.owner ? this.actorSlot(component.owner) : undefined;
       if (slotId !== undefined) this.emit({ type: "setText2DAppear", slotId, componentId: component.guid, progress });
     });
-  }
-
-  private applyRelativeOverlayAnchor(actor: Actor, anchorComp: ActorComponent): void {
-    this.ensureOverlayDesignPose(actor);
-    const authored = this.overlayDesignPose.get(actor.guid) ?? {
-      x: actor.transform.position.x,
-      y: actor.transform.position.y,
-    };
-    const layer = this.world.findSceneLayer(actor.sceneLayerId!);
-    const bounds = layer?.layerBounds ?? SCENE_LAYER_DEFAULT_LAYER_BOUNDS;
-    const pos = sceneLayerRelativeAnchorWorldPosition({
-      anchor: parseSceneLayerAnchor(anchorComp.getVariable("anchor")),
-      authoredX: authored.x,
-      authoredY: authored.y,
-      offsetX: Number(anchorComp.getVariable("offsetX")) || 0,
-      offsetY: Number(anchorComp.getVariable("offsetY")) || 0,
-      layerWidth: bounds.width,
-      layerHeight: bounds.height,
-      frustumWidth: bounds.width,
-      frustumHeight: bounds.height,
-    });
-    actor.transform.position.x = pos.x;
-    actor.transform.position.y = pos.y;
   }
 
   private *spawnOwnedSceneLayers(work: SceneRealization): Generator<void, void, unknown> {
@@ -2054,56 +1844,6 @@ class InProcessRuntime implements RuntimeDriver {
     return actor;
   }
 
-  /** Selection-owned descendants must never outlive their removed screen. */
-  private removeSceneLayerActorSubtree(root: Actor): void {
-    const descendants = [root];
-    const seen = new Set<Actor>(descendants);
-    const actors = [...this.world.getActors()];
-    for (let index = 0; index < descendants.length; index++) {
-      const parent = descendants[index]!;
-      for (const actor of actors) {
-        if (seen.has(actor) || actor.sceneLayerId !== root.sceneLayerId || actor.getVariable("parentId") !== parent.guid) continue;
-        descendants.push(actor); seen.add(actor);
-      }
-    }
-    for (const actor of descendants.reverse()) this.removeOwnedActor(actor);
-  }
-
-  /** Spawn a prefab in its owner's overlay; transforms stay local to the parent. */
-  private spawnSceneLayerActor(parent: Actor, classId: string, defaults: Record<string, unknown> = {}): Actor | null {
-    if (this.stopped || parent.destroyed || !parent.sceneLayerId || !this.world.findSceneLayer(parent.sceneLayerId) ||
-      !this.world.classRegistry.isA(classId, "SceneLayerActor") || this.sceneLayerSpawnDepth >= 32) return null;
-    this.sceneLayerSpawnDepth++;
-    let actor: Actor | null = null;
-    try {
-      const variables = structuredClone(defaults);
-      for (const variable of this.world.classRegistry.inheritedVariables(classId)) {
-        if (!Object.hasOwn(variables, variable.name) || !variable.container) continue;
-        variables[variable.name] = hydrateClassVariableValue({ ...variable, defaultValue: variables[variable.name] });
-      }
-      actor = this.world.createActor({
-        classId, sceneLayerId: parent.sceneLayerId,
-        variables: { ...variables, parentId: parent.guid },
-        hooks: this.sceneActorHooks(classId),
-      });
-      const components = this.world.classRegistry.ancestry(classId)
-        .flatMap((ancestor) => this.scriptHost.scriptsFor(ancestor))
-        .find((script) => script.components !== undefined)?.components;
-      if (components) attachSerializedComponents(this.world, actor, components, { freshIds: true });
-      this.scriptHost.bindInterfaceHandlers(actor);
-      this.ensureOverlayDesignPose(actor);
-      for (const _ of this.applyOverlayAnchors([actor])) { void _; }
-      this.realizeActor(actor);
-      this.sceneLayerSwitchers.initialize(actor);
-      return actor.destroyed ? null : actor;
-    } catch (error) {
-      if (actor) this.removeOwnedActor(actor);
-      throw error;
-    } finally {
-      this.sceneLayerSpawnDepth--;
-    }
-  }
-
   private readonly sceneActorHooks: SceneActorHooks = (classId) => {
     const hooks = this.scriptHost.hooksFor(classId);
     return {
@@ -2113,7 +1853,7 @@ class InProcessRuntime implements RuntimeDriver {
         ? (self, ctx) => this.admission.guard(() => hooks.onTick?.(self, ctx))
         : undefined,
       onDestroyed: (self) => {
-        this.sceneLayerSwitchers.retire(self);
+        this.overlay.retireSwitcher(self);
         this.admission.runDestroyed(self, () => hooks?.onDestroyed?.(self));
       },
     };
@@ -2124,7 +1864,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (!owner || owner.destroyed) return;
     if (isUIControl2DClass(component.classId)) {
       this.uiControls.refresh(component);
-      if (owner.sceneLayerId) this.applyOverlayLayouts();
+      if (owner.sceneLayerId) this.overlay.applyLayouts();
       return;
     }
     if ((propertyName === "opacity" || propertyName === "tint") && supportsOverlayVisualStyle(component.classId)) {
@@ -2134,16 +1874,7 @@ class InProcessRuntime implements RuntimeDriver {
       return;
     }
     if (component.classId === "2DRichTextComponent") this.textAppear.refresh(component);
-    if (owner.sceneLayerId && component.classId === "2DAnchorComponent") {
-      for (const _ of this.applyOverlayAnchors(this.world.getActors())) void _;
-    }
-    if (owner.sceneLayerId) this.applyOverlayLayouts();
-    if (owner.sceneLayerId && isOverlayScrollClass(component.classId) &&
-      (propertyName === "scroll.offset" || propertyName === "scrollX" || propertyName === "scrollY")) {
-      const scroll = this.overlayLayout.entries(owner.sceneLayerId).get(overlayLayoutKey(owner.guid, component.guid))?.scroll;
-      if (scroll) { component.setVariable("scrollX", scroll.x); component.setVariable("scrollY", scroll.y); }
-    }
-    if (owner.sceneLayerId && (isOverlayLayoutClass(component.classId) || component.classId === "2DAnchorComponent")) return;
+    if (this.overlay.refreshComponent(owner, component, propertyName)) return;
     // Steering/tuning is consumed by the next motor tick; only dimensions
     // need immediate collider/query refresh after a property write.
     if (component.classId === "MovementComponent" && propertyName && propertyName !== "radius" && propertyName !== "height") return;
@@ -2274,7 +2005,7 @@ class InProcessRuntime implements RuntimeDriver {
   private removeOwnedActor(actor: Actor): void {
     if (this.removingActors.has(actor)) return;
     this.removingActors.add(actor);
-    this.sceneLayerSwitchers.retire(actor);
+    this.overlay.retireSwitcher(actor);
     this.subsystems.retireActor(actor);
     this.admission.dropActor(actor);
     const slotId = this.actorSlot(actor);
@@ -2285,10 +2016,7 @@ class InProcessRuntime implements RuntimeDriver {
       if (ownsSlot()) this.emit({ type: "despawn", slotId: slotId!, actorGuid: actor.guid });
     } finally {
       if (ownsSlot()) this.renderSlots.release(actor.guid, slotId!);
-      if (this.world.findActor(actor.guid) === actor) {
-        this.overlayDesignPose.delete(actor.guid);
-        this.anchoredOverlayActors.delete(actor.guid);
-      }
+      this.overlay.forgetActor(actor);
       this.world.destroyActorInstance(actor);
       this.tweens.cancelInvalid();
       this.removingActors.delete(actor);
@@ -3377,7 +3105,7 @@ class InProcessRuntime implements RuntimeDriver {
     const pose = actorChainWorldTransform(camera, (guid) => this.world.findActor(guid)) ?? camera.transform;
     const ray = deprojectCursorRay(
       this.resolvedInput.cursor,
-      { width: this.playCanvasWidth, height: this.playCanvasHeight },
+      this.overlay.canvasSize(),
       {
         position: pose.position,
         rotation: pose.rotation,
@@ -3820,8 +3548,7 @@ class InProcessRuntime implements RuntimeDriver {
           this.saveBoundaryActive = false;
           const loaded = this.pendingGameLoaded;
           this.pendingGameLoaded = null;
-          const publishOverlays = this.saveOverlayLayoutPending;
-          this.saveOverlayLayoutPending = false;
+          const publishOverlays = this.overlay.takeDeferredLayout();
           if (!this.stopped) {
             // User callbacks run after commit. They cannot turn an applied
             // checkpoint into an apparent load failure.
@@ -3894,9 +3621,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.flushBoundaryRequests();
     this.pendingPauseChanges.clear();
     this.tweens.stop();
-    this.focusNavigation.clearFocus();
-    this.overlayLayout.clear();
-    this.overlayVirtualization.clear();
+    this.overlay.clear();
     this.lifecycleId++;
     this.sceneChangeId++;
     this.pendingSceneSource?.abort(sceneRealizationCancelled());
@@ -4318,7 +4043,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.textAppear.advance(this.world.getActors(), simDt, (actor) => this.admission.canTickActor(actor));
     this.painters.beginFrame(this.world.getActors(), (actor) => this.admission.canTickActor(actor));
     try {
-      this.focusNavigation.tick(pending, this.resolvedInput, simDt);
+      this.overlay.tickFocus(pending, this.resolvedInput, simDt);
       this.world.tick();
       // World committed actors queued by this tick; deliver their deferred
       // notifications after actor and component creation hooks have completed.
@@ -4557,7 +4282,7 @@ class InProcessRuntime implements RuntimeDriver {
     // layout-managed overlay actors, so lay them out first, as every write does.
     // Otherwise the last publishing tick laid them out and nothing ran after it.
     if (this.admission.canTickScene() || this.admission.hasReadyLayers()) this.retireRemovedSnapshotActors();
-    else this.applyOverlayLayouts();
+    else this.overlay.applyLayouts();
     const header = this.pendingSnapshotHeader;
     this.writeSnapshot(header.frameId, header.tickIndex, header.scriptMs, header.physicsMs);
     const publishMs = nowMs() - start;
@@ -4571,7 +4296,7 @@ class InProcessRuntime implements RuntimeDriver {
    * read, so it stays per tick like removals.
    */
   private runPublishPrelude(): void {
-    this.applyOverlayLayouts();
+    this.overlay.applyLayouts();
     this.retireRemovedSnapshotActors();
   }
 
@@ -4685,53 +4410,6 @@ class InProcessRuntime implements RuntimeDriver {
     const kind = classes.get(engineBase ?? classId)?.kind;
     return kind !== "object" && kind !== "gameInstance";
   }
-}
-
-function findOverlayButton(
-  buttons: readonly ActorComponent[],
-  requested: string,
-): ActorComponent | undefined {
-  return buttons.find(
-    (component) =>
-      component.guid === requested || component.sourceId === requested,
-  );
-}
-
-function resolveOverlayPointerButton(
-  world: World,
-  actor: Actor,
-  requested: string,
-): { owner: Actor; button: ActorComponent | undefined } | null {
-  const own = liveOverlayButtons(actor);
-  if (own.length > 0) {
-    const button = requested
-      ? findOverlayButton(own, requested)
-      : own.length === 1
-        ? own[0]
-        : undefined;
-    if (requested && !button) return null;
-    return { owner: actor, button };
-  }
-  const children = world
-    .getActors()
-    .filter((child) => actorParentGuid(child) === actor.guid);
-  if (requested) {
-    for (const child of children) {
-      const button = findOverlayButton(liveOverlayButtons(child), requested);
-      if (button) return { owner: child, button };
-    }
-    return null;
-  }
-  const withButtons = children.filter(
-    (child) => liveOverlayButtons(child).length > 0,
-  );
-  if (withButtons.length === 0) return null;
-  const owner = withButtons[0]!;
-  const buttons = liveOverlayButtons(owner);
-  return {
-    owner,
-    button: buttons.length === 1 ? buttons[0] : undefined,
-  };
 }
 
 function nowMs(): number {
