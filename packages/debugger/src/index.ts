@@ -43,5 +43,7 @@ export {
   type TraceFrame,
   type TraceInputEvent,
   type TracePayload,
+  type TraceRetention,
+  type TraceStopReason,
   type TraceRecorderOptions,
 } from "./trace-recorder";

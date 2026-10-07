@@ -206,7 +206,7 @@ describe("player startup and Stop ownership", () => {
 
   it.each([
     { traceByteBudget: undefined, retainedTicks: [1, 2, 3, 4, 5, 6, 7, 8] },
-    { traceByteBudget: 1024, retainedTicks: [8] },
+    { traceByteBudget: 1024, retainedTicks: [] },
   ])("records using the Preview session trace budget of $traceByteBudget", async ({ traceByteBudget, retainedTicks }) => {
     const { game, canvas } = await fixture();
     game.manifest.bundleDebugger = true;
@@ -225,6 +225,9 @@ describe("player startup and Stop ownership", () => {
       for (let i = 0; i < 8; i++) runtime.tick();
       runtime.executeConsoleCommand("snapshot stop");
       expect(runtime.stopTrace()?.frames.map((frame) => frame.tickIndex)).toEqual(retainedTicks);
+      expect(runtime.stopTrace()?.retention).toMatchObject(traceByteBudget === undefined
+        ? { complete: true, droppedFrames: 0, stopReason: "requested" }
+        : { byteBudget: traceByteBudget, complete: false, droppedFrames: 1, stopReason: "oversized-frame" });
     } finally {
       runtime.stop();
     }

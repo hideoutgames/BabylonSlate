@@ -18,6 +18,7 @@ describe("trace documents", () => {
     const payload = {
       seed: 9,
       dt: 1 / 60,
+      retention: { byteBudget: 1024, droppedFrames: 1, complete: false, stopReason: "oversized-frame" },
       frames: [
         {
           tickIndex: 1,

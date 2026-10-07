@@ -39,14 +39,28 @@ export type TraceFrame = {
   bt?: TraceBtState[];
 };
 
+export type TraceStopReason = "requested" | "session-ended" | "oversized-frame";
+
+export type TraceRetention = {
+  /** UTF-8 JSON payload budget, including metadata; not a heap limit. */
+  byteBudget: number;
+  /** Evicted complete frames plus an oversized rejected frame, if any. */
+  droppedFrames: number;
+  /** False when any frame was omitted from the recording. */
+  complete: boolean;
+  stopReason: TraceStopReason;
+};
+
 export type TracePayload = {
   seed: number;
   dt: number;
   frames: TraceFrame[];
+  /** Optional so existing .babtrace documents remain readable. */
+  retention?: TraceRetention;
 };
 
 export type TraceRecorderOptions = {
-  /** Drop oldest frames when UTF-8 JSON exceeds this many bytes; always keep the newest frame. */
+  /** Drop oldest complete frames at this UTF-8 JSON budget. An oversized frame stops recording. */
   byteBudget?: number;
 };
 
@@ -55,12 +69,15 @@ const encoder = new TextEncoder();
 export class TraceRecorder {
   private readonly byteBudget: number;
   private recording = false;
-  private payload: TracePayload | null = null;
+  private payload: (TracePayload & { retention: TraceRetention }) | null = null;
   private frameBytes: number[] = [];
   private encodedBytes = 0;
+  private headerBytes = 0;
 
   constructor(options: TraceRecorderOptions = {}) {
     this.byteBudget = options.byteBudget ?? DEFAULT_TRACE_BYTE_BUDGET;
+    if (!Number.isSafeInteger(this.byteBudget) || this.byteBudget <= 0)
+      throw new RangeError("Trace data budget must be a positive safe integer.");
   }
 
   get isRecording(): boolean {
@@ -68,15 +85,39 @@ export class TraceRecorder {
   }
 
   start(meta: { seed: number; dt: number }): void {
+    const retention: TraceRetention = {
+      byteBudget: this.byteBudget,
+      droppedFrames: 0,
+      complete: true,
+      stopReason: "requested",
+    };
+    // Reserve the longest terminal metadata once. Stopping on an oversized
+    // frame must never evict a previously accepted frame just to fit its reason.
+    const headerBytes = encoder.encode(JSON.stringify({
+      ...meta, frames: [], retention: {
+        ...retention, droppedFrames: Number.MAX_SAFE_INTEGER,
+        complete: false, stopReason: "oversized-frame",
+      },
+    })).byteLength;
+    if (headerBytes > this.byteBudget)
+      throw new RangeError("Trace data budget cannot hold recording metadata.");
     this.recording = true;
-    this.payload = { seed: meta.seed, dt: meta.dt, frames: [] };
+    this.payload = { seed: meta.seed, dt: meta.dt, frames: [], retention };
     this.frameBytes = [];
-    this.encodedBytes = encoder.encode(JSON.stringify(this.payload)).byteLength;
+    this.headerBytes = headerBytes;
+    this.encodedBytes = headerBytes;
   }
 
   recordFrame(frame: TraceFrame): void {
     if (!this.recording || !this.payload) return;
     const bytes = encoder.encode(JSON.stringify(frame)).byteLength;
+    if (bytes > this.byteBudget - this.headerBytes) {
+      this.recording = false;
+      this.payload.retention.droppedFrames += 1;
+      this.payload.retention.complete = false;
+      this.payload.retention.stopReason = "oversized-frame";
+      return;
+    }
     // The empty payload already accounts for the header and array brackets.
     this.encodedBytes += bytes + (this.payload.frames.length > 0 ? 1 : 0);
     this.payload.frames.push(frame);
@@ -84,13 +125,15 @@ export class TraceRecorder {
     this.trimToBudget();
   }
 
-  stop(): TracePayload | null {
-    if (!this.recording) return null;
+  stop(reason: Exclude<TraceStopReason, "oversized-frame"> = "requested"): TracePayload | null {
+    if (!this.payload) return null;
+    if (this.recording) this.payload.retention.stopReason = reason;
     this.recording = false;
     const result = this.payload;
     this.payload = null;
     this.frameBytes = [];
     this.encodedBytes = 0;
+    this.headerBytes = 0;
     return result;
   }
 
@@ -102,6 +145,8 @@ export class TraceRecorder {
     ) {
       this.payload.frames.shift();
       this.encodedBytes -= this.frameBytes.shift()! + 1;
+      this.payload.retention.droppedFrames += 1;
+      this.payload.retention.complete = false;
     }
   }
 }

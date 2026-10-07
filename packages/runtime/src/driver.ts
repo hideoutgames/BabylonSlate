@@ -3309,14 +3309,21 @@ class InProcessRuntime implements RuntimeDriver {
     return this.lastTrace;
   }
 
-  private finalizeTrace(): void {
-    if (!this.trace.isRecording) return;
-    this.lastTrace = this.trace.stop();
-    if (this.lastTrace) {
+  private finalizeTrace(reason: "requested" | "session-ended" = "requested"): void {
+    const payload = this.trace.stop(reason);
+    if (payload) {
+      this.lastTrace = payload;
       this.emit({
         type: "trace",
-        payload: this.lastTrace as unknown as Record<string, unknown>,
+        payload: payload as unknown as Record<string, unknown>,
       });
+      if (payload.retention?.stopReason === "oversized-frame") {
+        this.reportLog(
+          `Trace recording stopped: an oversized frame exceeds the ${payload.retention.byteBudget}-byte retained-data budget. ` +
+          `${payload.frames.length} complete frames retained; ${payload.retention.droppedFrames} frames dropped.`,
+          "warning", "Trace",
+        );
+      }
     }
   }
 
@@ -4687,8 +4694,8 @@ class InProcessRuntime implements RuntimeDriver {
           .map((entry) => entry.message)
           .join("\n"),
       startSnapshot: () => {
-        this.lastTrace = null;
         this.trace.start({ seed: this.seed, dt: this.dt });
+        this.lastTrace = null;
       },
       stopSnapshot: () => {
         this.finalizeTrace();
@@ -5890,7 +5897,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.cancelRealization();
     this.sceneLoadId++;
     this.pendingSceneFinish = null;
-    this.finalizeTrace();
+    this.finalizeTrace("session-ended");
     for (const actor of this.world.getActors()) {
       for (const component of [...actor.components]) {
         if (!component.destroyed) {
@@ -6102,6 +6109,7 @@ class InProcessRuntime implements RuntimeDriver {
           ),
         })),
       });
+      if (!this.trace.isRecording) this.finalizeTrace();
     }
   }
 
