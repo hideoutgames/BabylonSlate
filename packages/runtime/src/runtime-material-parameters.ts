@@ -106,6 +106,7 @@ export class RuntimeMaterialParameters {
     const state = this.state(material);
     if (!state) return null;
     const assetDefaults = this.catalog[material.materialAssetGuid]!.parameters;
+    if ([...state.values].some(([name, value]) => assetDefaults[name]?.kind !== value.kind || !this.valid(value))) return null;
     return Object.fromEntries([...state.values]
       .filter(([name, value]) => state.authoredNames?.has(name) || !equal(value, assetDefaults[name]))
       .map(([name, value]) => [name, copy(value)]));

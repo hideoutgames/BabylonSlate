@@ -6482,7 +6482,8 @@ class InProcessRuntime implements RuntimeDriver {
         const postProcessStack = scene.postProcessStack.map(entry => {
           const material = getPostProcessMaterialObject(scene, entry.id ?? "");
           const overrides = material ? this.materialParameters.captureOverrides(material) : null;
-          return overrides ? { ...entry, parameters: overrides } : entry;
+          if (!overrides) throw new Error(`Post-process material ${entry.materialGuid} has no complete current authoring parameter state.`);
+          return { ...entry, parameters: overrides };
         });
         if (postProcessStack.some(entry => !this.simulationAssets.has(entry.materialGuid))) { fail("A post-process material has no prepared authoring asset.", "resource"); return; }
         const schemas = dataTypeSchemas(this.simulationDataAssets ?? []);
