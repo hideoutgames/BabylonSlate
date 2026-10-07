@@ -4,7 +4,6 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { SmartArray } from "@babylonjs/core/Misc/smartArray";
 import type { ObjectRenderer } from "@babylonjs/core/Rendering/objectRenderer";
 import { RenderingGroup } from "@babylonjs/core/Rendering/renderingGroup";
-import type { RenderingManager } from "@babylonjs/core/Rendering/renderingManager";
 import { isMeshFrameReady } from "./scene-perf";
 
 type SortCompare = (a: SubMesh, b: SubMesh) => number;
@@ -133,22 +132,4 @@ export function attachObjectRendererDepthPrePass(scene: Scene, renderer: ObjectR
   const prePass = new TransparentDepthPrePass(scene, renderer.name);
   renderer.customRenderTransparentSubMeshes = prePass.renderTransparent;
   return prePass;
-}
-
-/**
- * The same for a scene's own camera passes (classic frames): `Scene.render` passes its rendering manager no
- * transparent hook, so the manager's `render` is wrapped while attached. Returns the detach function.
- */
-export function attachSceneDepthPrePass(scene: Scene): () => void {
-  const manager = (scene as unknown as { _renderingManager: RenderingManager })._renderingManager;
-  const prePass = new TransparentDepthPrePass(scene, "Scene");
-  const render = manager.render;
-  const wrapped: RenderingManager["render"] = function (this: RenderingManager, custom, meshes, particles, sprites, depthOnly, opaque, alphaTest, transparent, hook, spriteManagers) {
-    render.call(this, custom, meshes, particles, sprites, depthOnly, opaque, alphaTest, transparent, hook ?? prePass.renderTransparent, spriteManagers);
-  };
-  manager.render = wrapped;
-  return () => {
-    if (manager.render === wrapped) manager.render = render;
-    prePass.dispose();
-  };
 }

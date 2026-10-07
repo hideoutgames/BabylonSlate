@@ -1,6 +1,14 @@
 import { PBRMaterial, RenderTargetTexture, type Mesh } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine as createNullTestEngine } from "./create-null-engine";
+import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
+
+/** Thumbnails draw through the FrameGraph into a color/depth target. */
+function createTestEngine() {
+  const handle = createNullTestEngine();
+  adaptNullEngineFrameGraph(handle.engine);
+  return handle;
+}
 import {
   encodeParentedAnimatedTriangleGlb,
   encodeTriangleGlb,

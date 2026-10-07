@@ -4,52 +4,30 @@ import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { MaterialLibrary } from "./material-library";
 import { ScenePostProcessOwner } from "./scene-post-process-owner";
 
-it("replays entry values across native detach and rebuild while preserving authored reset defaults", () => {
+it("replays entry values onto each rebuilt graph while preserving authored reset defaults", () => {
   const engine = new NullEngine();
   const scene = new Scene(engine);
   const camera = new FreeCamera("camera", Vector3.Zero(), scene);
   const library = new MaterialLibrary();
   const document = gainDocument();
   const owner = new ScenePostProcessOwner({ scene, camera, library, documentFor: () => document,
-    deviceBuffers: { sceneDepth: false, sceneNormal: false },
     stack: [{ id: "a", materialGuid: "gain", enabled: true, order: 0,
       parameters: { Gain: { kind: "float", value: 0.2 } } }] });
+  const graph = () => ({ setParameter: vi.fn(() => true), getParameter: vi.fn(() => null), resetParameter: vi.fn(() => true) });
   try {
-    expect(camera._postProcesses.filter(Boolean)).toHaveLength(0);
-    owner.useNative(camera);
     expect(owner.setParameter("a", "Gain", { kind: "float", value: 0.75 })).toBe(true);
-    owner.useGraph();
-    expect(camera._postProcesses.filter(Boolean)).toHaveLength(0);
-    expect(owner.getParameter("a", "Gain")).toEqual({ kind: "float", value: 0.75 });
-    owner.useNative(camera);
+    const first = graph();
+    owner.useGraph(first);
+    expect(first.setParameter).toHaveBeenCalledWith("a", "Gain", { kind: "float", value: 0.75 });
+    owner.clearGraph();
     expect(owner.getParameter("a", "Gain")).toEqual({ kind: "float", value: 0.75 });
     expect(owner.resetParameter("a", "Gain")).toBe(true);
     expect(owner.getParameter("a", "Gain")).toEqual({ kind: "float", value: 0.2 });
-    owner.useGraph();
-    owner.useNative(camera);
-    expect(owner.getParameter("a", "Gain")).toEqual({ kind: "float", value: 0.2 });
+    const second = graph();
+    owner.useGraph(second);
+    expect(second.setParameter).toHaveBeenCalledWith("a", "Gain", { kind: "float", value: 0.2 });
     owner.dispose();
     expect(owner.setParameter("a", "Gain", { kind: "float", value: 1 })).toBe(false);
-    expect(camera._postProcesses.filter(Boolean)).toHaveLength(0);
-  } finally { owner.dispose(); library.dispose(); scene.dispose(); engine.dispose(); }
-});
-
-it("retries a native stack whose attach threw instead of reporting it ready", () => {
-  const engine = new NullEngine();
-  const scene = new Scene(engine);
-  const camera = new FreeCamera("camera", Vector3.Zero(), scene);
-  const library = new MaterialLibrary();
-  const document = gainDocument();
-  const owner = new ScenePostProcessOwner({ scene, camera, library, documentFor: () => document,
-    deviceBuffers: { sceneDepth: false, sceneNormal: false },
-    stack: [{ id: "a", materialGuid: "gain", enabled: true, order: 0 }] });
-  try {
-    vi.spyOn(library, "acquire").mockImplementationOnce(() => { throw new Error("controlled compile failure"); });
-    expect(() => owner.useNative(camera)).toThrow("controlled compile failure");
-    expect(owner.nativeReadyFor(camera)).toBe(false);
-    owner.useNative(camera);
-    expect(owner.nativeReadyFor(camera)).toBe(true);
-    expect(camera._postProcesses.filter(Boolean)).toHaveLength(1);
   } finally { owner.dispose(); library.dispose(); scene.dispose(); engine.dispose(); }
 });
 

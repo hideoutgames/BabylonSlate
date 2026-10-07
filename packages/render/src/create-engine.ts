@@ -381,7 +381,7 @@ export interface EngineHandle {
   }>;
   /** Authored camera post-process passes currently attached. */
   postProcessPassCount: () => number;
-  /** Prepared FrameGraph task names in record order, or [] on classic. */
+  /** Prepared FrameGraph task names in record order, or [] before preparation. */
   renderTaskNames: () => string[];
   /** Unique Material guids currently assigned to Play meshes. */
   assignedMaterialGuids: () => string[];

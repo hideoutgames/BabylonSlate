@@ -4,8 +4,8 @@
  * One dominant flat water body per view is mirrored: a rigid camera at the eye reflected across the body's rest
  * plane renders the opaque scene into a leased target, with an oblique near plane on that plane, so nothing below
  * the water reflects and no material compiles a clip-plane variant. The pass is drawn capture-style from
- * `onBeforeRender` (`drawBorrowedTarget`), never through `scene.customRenderTargets`, so it works on the Forward
- * FrameGraph and classic paths alike and never forces the classic path.
+ * `onBeforeRender` (`drawBorrowedTarget`), never through `scene.customRenderTargets`, which the Forward
+ * FrameGraph does not support.
  *
  * Cost model (mobile first): nothing runs until a view's water asks for a reflection
  * (`waterPlanarReflectionForCamera`) while the device-effective Reflections are Planar; only views of a scene

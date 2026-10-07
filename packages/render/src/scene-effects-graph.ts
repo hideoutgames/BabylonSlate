@@ -130,7 +130,7 @@ export class SceneEffectsGraph {
         }
       }
       if (plan.bloom) {
-        // `kernel` is relative to final output size on both paths; the task
+        // `kernel` is relative to final output size; the task
         // scales its internal targets through `bloom.scale` itself.
         const bloom = new FrameGraphBloomTask(
           "Scene Effects Bloom",

@@ -10,7 +10,6 @@ type Scope = {
   textures: Set<BaseTexture>;
   particles: Set<IParticleSystem>;
   slots: Map<number, SceneStreamIdentity & { instanceActorGuid: string }>;
-  restore: AbstractMesh[];
   textureScratch: Set<BaseTexture>;
   liveScratch: Set<BaseTexture | IParticleSystem>;
   cached?: {
@@ -100,25 +99,6 @@ export function admittedSceneTextures(scene: Scene, meshes: readonly AbstractMes
   return textures;
 }
 
-/** Native fallback draws only admitted consumers without mutating import templates between tasks. */
-export function withSceneStreamNativeVisibility<T>(scene: Scene, draw: () => T): T {
-  const admitted = admittedSceneMeshes(scene);
-  if (!admitted) return draw();
-  const scope = scopes.get(scene)!;
-  const included = scope.cached!.meshSet;
-  const restore = scope.restore.length ? [] : scope.restore;
-  try {
-    for (const mesh of scene.meshes) {
-      if (included.has(mesh) || !mesh.isEnabled(false)) continue;
-      restore.push(mesh); mesh.setEnabled(false);
-    }
-    return draw();
-  } finally {
-    for (const mesh of restore) if (!mesh.isDisposed()) mesh.setEnabled(true);
-    restore.length = 0;
-  }
-}
-
 /** Hold new instances outside the parent's readiness and drawing membership. */
 export function createSceneStreamAdmission(scene: Scene, binding: SnapshotSceneBinding) {
   const streams = new Map<string, { loadId: number; loading: boolean }>();
@@ -131,7 +111,7 @@ export function createSceneStreamAdmission(scene: Scene, binding: SnapshotSceneB
     if (!scope) {
       scope = {
         binding, baseline: new Set(scene.meshes), textures: new Set(scene.textures),
-        particles: new Set(scene.particleSystems), slots: new Map(), restore: [],
+        particles: new Set(scene.particleSystems), slots: new Map(),
         textureScratch: new Set(), liveScratch: new Set(),
       };
       scopes.set(scene, scope);

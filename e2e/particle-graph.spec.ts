@@ -358,7 +358,7 @@ test.describe("Particle Graph", () => {
       .poll(async () => particleStats(page), { timeout: 15_000 })
       .toEqual({ systems: 2, playing: 1, graphSystems: 1 });
     // Play draws through the FrameGraph, whose culling gates each particle draw on its emitter.
-    // Both slots must show on nearly every frame, not only on the classic frame after a resize.
+    // Both slots must show on nearly every frame, not only on the first frame after a resize.
     // Without particles the animated scene still adds up to ~130 grey pixels, never green or blue.
     let frames: ParticleFrame[] = [];
     try {

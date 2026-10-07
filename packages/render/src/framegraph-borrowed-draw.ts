@@ -44,7 +44,7 @@ export function drawBorrowedTarget(
   const errors: unknown[] = [];
   try {
     // Same pinned RTT stage switch as the official shadow task, borrowed
-    // only for this draw so classic rendering retains its original state.
+    // only for this draw so the map retains its original state.
     map._disableEngineStages = true;
     draw();
   } catch (error) {

@@ -68,7 +68,7 @@ export interface MaterialValidationContext {
 const DEFAULT_CAPABILITIES: Required<MaterialCapabilities> = {
   derivatives: true,
   textureLod: true,
-  // Authoring assumes buffers exist; attachPostProcessStack probes the device.
+  // Authoring assumes buffers exist; the FrameGraph post-process task checks its logical buffers.
   sceneDepth: true,
   sceneNormal: true,
   vertexTexture: false,

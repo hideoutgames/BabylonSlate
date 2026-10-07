@@ -430,8 +430,8 @@ function lodsFor(scene: Scene): SceneLods {
   if (lods) return lods;
   const state: SceneLods = { bindings: new Set(), masters: new WeakMap() };
   sceneLods.set(scene, state);
-  // Babylon consults the Scene selector on the classic path and in every
-  // ObjectRenderer pass (FrameGraph, shadow maps, outline masks).
+  // Babylon consults the Scene selector in direct Scene.render calls and in
+  // every ObjectRenderer pass (FrameGraph, shadow maps, outline masks).
   scene.customLODSelector = (mesh, camera) => {
     const binding = state.masters.get(mesh);
     if (!binding) return mesh.getLOD(camera);

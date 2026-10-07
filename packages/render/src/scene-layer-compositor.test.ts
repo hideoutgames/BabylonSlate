@@ -1,7 +1,8 @@
-import { Camera, Constants, InternalTexture, InternalTextureSource, MeshBuilder, Matrix, NullEngine, Scene, UniversalCamera, Vector3 } from "@babylonjs/core";
+import { Camera, Constants, InternalTexture, InternalTextureSource, MeshBuilder, Matrix, NullEngine, RenderTargetTexture, Scene, UniversalCamera, Vector3 } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SceneLayerCompositor } from "./scene-layer-compositor";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
+import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import * as scenePerf from "./scene-perf";
 
 describe("SceneLayerCompositor", () => {
@@ -368,11 +369,17 @@ describe("SceneLayerCompositor", () => {
 
   it("keeps only the last presented layer image while replacement graphs prepare without acknowledging it", async () => {
     const { engine } = world();
+    adaptNullEngineFrameGraph(engine);
     // NullEngine omits the raw upload-ready flag that the real backends set.
     // Preserve actual texture ownership and the production readiness checks.
     const upload = engine.createRawTexture.bind(engine);
     vi.spyOn(engine, "createRawTexture").mockImplementation((...args) => {
       const texture = upload(...args); texture.isReady = true; return texture;
+    });
+    // NullEngine has no depth-texture driver; the layer graph only needs a
+    // depth attachment to borrow. Supply that boundary for each layer target.
+    vi.spyOn(RenderTargetTexture.prototype, "depthStencilTexture", "get").mockImplementation(function (this: RenderTargetTexture) {
+      return this.getInternalTexture();
     });
     const renderers: SceneRenderCoordinator[] = [];
     const compositor = new SceneLayerCompositor({ engine, attachLayerPostProcess: (_layer, _stack, renderer) => {
@@ -392,7 +399,7 @@ describe("SceneLayerCompositor", () => {
     compositor.setPostProcess("overlay", [{ materialGuid: "second", enabled: true }]);
     const unrendered = layer.camera.outputRenderTarget!;
     const disposeUnrendered = vi.spyOn(unrendered, "dispose");
-    vi.spyOn(renderers[1]!, "render").mockReturnValue({ path: "classic", reason: "Waiting for native upload.", rendered: false, readyForPresentation: false });
+    vi.spyOn(renderers[1]!, "render").mockReturnValue({ path: "frameGraph", reason: "Waiting for native upload.", rendered: false, readyForPresentation: false });
     compositor.render(new Set(), (_id, draw) => { acknowledged = draw(); });
     expect(acknowledged).toBe(false);
     expect(fallbackDraw).toHaveBeenCalledOnce();

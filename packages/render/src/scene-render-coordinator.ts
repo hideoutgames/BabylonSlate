@@ -34,13 +34,15 @@ export class SceneRenderCoordinator {
   /** Views may draw planar water reflections; previews and thumbnails never retain one. */
   private readonly releaseWaterPlanarReflections: () => void;
 
-  constructor(scene: Scene) {
+  constructor(scene: Scene, options: { waterPlanarReflections?: boolean } = {}) {
     this.scene = scene;
     this.graph = new ForwardSceneFrameGraph(scene);
     this.detachReadinessDirty = onSceneReadinessDirty(scene, () =>
       this.graph.markReadinessDirty(),
     );
-    this.releaseWaterPlanarReflections = retainWaterPlanarReflections(scene);
+    this.releaseWaterPlanarReflections = options.waterPlanarReflections === false
+      ? () => {}
+      : retainWaterPlanarReflections(scene);
   }
 
   attachPostProcess(options: AttachPostProcessStackOptions): AttachedPostProcessStack {
@@ -48,7 +50,7 @@ export class SceneRenderCoordinator {
   }
 
   /** The view owns its overlay across graph rebuilds. Draw after final output,
-   * before the host copies the view/RTT, on both graph and native paths. */
+   * before the host copies the view/RTT. */
   attachEditorOverlay(draw: (camera: Camera) => void): () => void {
     if (this.disposed || this.editorOverlay)
       throw new Error("Editor overlay requires a live, unattached view.");
@@ -75,7 +77,7 @@ export class SceneRenderCoordinator {
 
   postProcessPassCount(): number { return this.graph.postProcessPassCount(); }
 
-  /** Prepared graph task names in record order; [] on the classic path. */
+  /** Prepared graph task names in record order; [] before preparation. */
   taskNames(): string[] { return this.graph.taskNames(); }
 
   sharedOutlineDiagnostics(): { drawingPassCount: number; renderRecordCount: number } {
@@ -146,7 +148,7 @@ export class SceneRenderCoordinator {
           const status = this.graph.readiness(camera);
           if (status.ready) {
             this.failure = undefined;
-            return status.path === "frameGraph" ? { path: "frameGraph" as const } : { path: "classic" as const, reason: status.reason };
+            return { path: "frameGraph" as const };
           }
         } catch (error) {
           check();
@@ -194,18 +196,19 @@ export class SceneRenderCoordinator {
     return status.ready;
   }
 
-  /** Ready owners may draw a validated native frame while their graph rebuilds.
+  /** A frame the graph cannot draw yet (preparing, rebuilding, not ready) is
+   * skipped and reported as not rendered.
    * Without presentation validation a drawn frame skips the post-draw probe and
    * is never readyForPresentation; the next frame's readiness admits again. */
-  render(validatePresentation = true): ForwardSceneGraphResult & { rendered: boolean; readyForPresentation: boolean } {
+  render(validatePresentation = true): ForwardSceneGraphResult & { rendered: boolean; readyForPresentation: boolean; reason?: string } {
     this.refreshOutline();
     const camera = this.scene.activeCamera;
     if (this.disposed || this.scene.isDisposed || !camera)
-      return { path: "classic", reason: "Scene is not ready to render.", rendered: false, readyForPresentation: false };
+      return { path: "frameGraph", reason: "Scene is not ready to render.", rendered: false, readyForPresentation: false };
     flushSceneLatticeDeformers(this.scene);
     if (!this.graph.sceneStrictlyReady(camera)) {
       this.advanceReadiness(camera);
-      return { path: "classic", reason: "Scene is not ready to render.", rendered: false, readyForPresentation: false };
+      return { path: "frameGraph", reason: "Scene is not ready to render.", rendered: false, readyForPresentation: false };
     }
     // Dynamic cable bounds must reach shadow admission before its cached caster
     // decision. The scene observer covers direct/native Scene.render callers.
@@ -225,7 +228,7 @@ export class SceneRenderCoordinator {
       return { ...result, rendered: true, readyForPresentation: false };
     const after = this.graph.readiness(camera);
     return { ...result, rendered: result.rendered !== false,
-      readyForPresentation: result.rendered !== false && !this.pending && status.ready && after.ready && result.path === status.path && result.path === after.path };
+      readyForPresentation: result.rendered !== false && !this.pending && status.ready && after.ready };
   }
 
   dispose(): void {

@@ -330,7 +330,7 @@ it("rechecks admission after scene callbacks so revoked maps are never rendered 
   expect(light.getShadowGenerator()).not.toBe(generator);
   expect(scene.textures).not.toContain(map);
   expect(graph.render(camera)).toMatchObject({
-    path: "classic",
+    rendered: false,
     reason: expect.stringContaining("preparation"),
   });
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
@@ -407,7 +407,7 @@ it("moves the admitted map to a compatible camera handoff within one presented f
   const lightDirty = vi.spyOn(mesh, "_markSubMeshesAsLightDirty");
   vi.spyOn(performance, "now").mockReturnValue(performance.now() + 500);
   camera.position.x = 40;
-  // No classic fallback, held frame, preparation or receiver shader change.
+  // No held frame, preparation or receiver shader change.
   expect(graph.render(camera, false)).toEqual({ path: "frameGraph" });
   expect(controller.generator(incoming)).toBe(previous);
   expect(controller.generator(light)).toBeNull();
@@ -536,10 +536,7 @@ it("keeps admitted maps alive when the graph build fails", async () => {
   ).mockImplementationOnce(() => {
     throw new Error("object build failed");
   });
-  expect(await graph.prepare(camera)).toEqual({
-    path: "classic",
-    reason: "object build failed",
-  });
+  await expect(graph.prepare(camera)).rejects.toThrow("object build failed");
   expect(controller.generator(light)).toBe(generator);
   expect(scene.textures).toContain(map);
   graph.invalidate();

@@ -600,7 +600,7 @@ export class SceneLayerCompositor {
     // The layer clear is transparent; preserve world pixels outside its content.
     layer.rtt.hasAlpha = true;
     // The graph borrows both native attachments; the host retains their owner.
-    // Unsupported devices keep the coordinator's classic fallback available.
+    // Without depth textures the coordinator reports the layer as unsupported.
     if (this.engine.getCaps().depthTextureExtension)
       layer.rtt.createDepthStencilTexture(0, false, false, 1, Constants.TEXTUREFORMAT_DEPTH24);
     layer.camera.outputRenderTarget = layer.rtt;

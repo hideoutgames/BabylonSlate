@@ -86,7 +86,7 @@ function host(engine = new NullEngine()) {
   return { engine, scene, camera };
 }
 
-it("captures the actual owner path and reports classic submission explicitly", async () => {
+it("captures graph frames and skips an unsupported camera setup without drawing", async () => {
   const { engine, scene, camera } = host();
   const owner = new ForwardSceneFrameGraph(scene);
   await owner.prepare(camera);
@@ -95,11 +95,10 @@ it("captures the actual owner path and reports classic submission explicitly", a
   expect(graphFrame.report.stages.some((stage) => stage.kind === "task" && stage.completed)).toBe(true);
   expect(graphFrame.report.graphs).toHaveLength(1);
   scene.activeCameras = [camera];
-  const nativeFrame = captureRenderFrame(engine, () => owner.render(camera));
-  expect(nativeFrame.value.path).toBe("classic");
-  expect(nativeFrame.report.stages).toMatchObject([{ kind: "native", completed: true,
-    detail: expect.stringContaining("unavailable") }]);
-  expect(nativeFrame.report.tasks).toHaveLength(0);
+  const skipped = captureRenderFrame(engine, () => owner.render(camera));
+  expect(skipped.value).toMatchObject({ rendered: false, reason: expect.stringContaining("Multiple") });
+  expect(skipped.report.stages).toHaveLength(0);
+  expect(skipped.report.tasks).toHaveLength(0);
   owner.dispose();
 });
 
@@ -195,7 +194,7 @@ it("keeps the authored cutout draw order when a FrameGraph owns the rendering ma
   graph.dispose();
 });
 
-it("restores classic ownership after a callback throws and leaves a shared Engine scene usable", async () => {
+it("restores scene ownership after a callback throws and leaves a shared Engine scene usable", async () => {
   const first = host();
   const second = host(first.engine);
   const graph = new ForwardSceneFrameGraph(first.scene);
@@ -228,13 +227,10 @@ it("rejects foreign and disposed cameras without changing or rendering either sc
   disposed.dispose();
   for (const invalid of [second.camera, disposed]) {
     expect(graph.render(invalid)).toMatchObject({
-      path: "classic",
+      rendered: false,
       reason: expect.stringContaining("Camera"),
     });
-    expect(await graph.prepare(invalid)).toMatchObject({
-      path: "classic",
-      reason: expect.stringContaining("Camera"),
-    });
+    await expect(graph.prepare(invalid)).rejects.toThrow("Camera");
   }
   expect(first.scene.activeCamera).toBe(first.camera);
   expect(second.scene.activeCamera).toBe(second.camera);
@@ -270,10 +266,7 @@ it("restores floating-origin matrices, viewport and shadow flags when object rea
   const viewport = new Viewport(0.2, 0.1, 0.5, 0.7);
   engine.setViewport(viewport);
   engine.currentRenderPassId = 42;
-  expect(await graph.prepare(camera)).toEqual({
-    path: "classic",
-    reason: "object readiness failed",
-  });
+  await expect(graph.prepare(camera)).rejects.toThrow("object readiness failed");
   expect(scene.activeCamera).toBe(camera);
   expect(scene.getSceneUniformBuffer()).toBe(ubo);
   expect(Array.from(scene.getViewMatrix().asArray())).toEqual(view);
@@ -288,7 +281,7 @@ it("restores floating-origin matrices, viewport and shadow flags when object rea
   graph.dispose();
 });
 
-it("falls back before replacing unmanaged shadows or a shared-view target", async () => {
+it("rejects unmanaged shadows, native passes, unsupported targets and frozen queues without replacing them", async () => {
   const { scene, camera } = host();
   const graph = new ForwardSceneFrameGraph(scene);
   await graph.prepare(camera);
@@ -296,98 +289,36 @@ it("falls back before replacing unmanaged shadows or a shared-view target", asyn
   const shadow = new ShadowGenerator(32, light);
   const texture = shadow.getShadowMap();
   expect(graph.render(camera)).toMatchObject({
-    path: "classic",
+    rendered: false,
     reason: expect.stringContaining("Unmanaged shadow allocations"),
   });
   expect(light.getShadowGenerator()).toBe(shadow);
   expect(shadow.getShadowMap()).toBe(texture);
   shadow.dispose();
-  // An unowned native pass keeps classic rendering; its detached slot does not.
+  // A native camera pass is unsupported; its detached slot is not.
   const external = new PassPostProcess("external", 1, camera);
   expect(graph.render(camera)).toMatchObject({
-    path: "classic",
-    reason: expect.stringContaining("Scene post-processing"),
+    rendered: false,
+    reason: expect.stringContaining("Native camera post-processes"),
   });
   external.dispose(camera);
   const target = new RenderTargetTexture("shared view", 32, scene);
   camera.outputRenderTarget = target;
-  expect(await graph.prepare(camera)).toMatchObject({
-    path: "classic",
-    reason: expect.stringContaining("color/depth texture"),
-  });
+  await expect(graph.prepare(camera)).rejects.toThrow("color/depth texture");
   camera.outputRenderTarget = null;
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   expect(graph.render(camera)).toEqual({ path: "frameGraph" });
   await new Promise<void>((resolve) =>
     scene.freezeActiveMeshes(false, resolve),
   );
-  expect(await graph.prepare(camera)).toMatchObject({ path: "classic", reason: expect.stringContaining("Frozen active-mesh queues") });
-  expect(graph.render(camera)).toMatchObject({ path: "classic" });
+  await expect(graph.prepare(camera)).rejects.toThrow("Frozen active-mesh queues");
+  expect(graph.render(camera)).toMatchObject({ rendered: false });
   scene.unfreezeActiveMeshes();
   await new Promise<void>((resolve) =>
     scene.freezeActiveMeshes(false, resolve, undefined, true, true),
   );
-  expect(await graph.prepare(camera)).toMatchObject({
-    path: "classic",
-    reason: expect.stringContaining("Frozen active-mesh queues"),
-  });
+  await expect(graph.prepare(camera)).rejects.toThrow("Frozen active-mesh queues");
   scene.unfreezeActiveMeshes();
-  graph.dispose();
-});
-
-it("preserves the native frozen queue across camera-mask changes before returning to graph culling", async () => {
-  const { scene, camera } = host();
-  const visible = MeshBuilder.CreateBox("visible", {}, scene);
-  visible.layerMask = camera.layerMask = 1;
-  const hidden = MeshBuilder.CreateBox("outside frustum", {}, scene);
-  hidden.layerMask = 1;
-  hidden.position.x = 1000;
-  // Babylon 9.29 shares StandardMaterial's shader import across scenes, so a
-  // later freeze can be ready in the creation render id, whose cached world
-  // matrix predates this in-place edit.
-  hidden.computeWorldMatrix(true);
-  await new Promise<void>((resolve) => scene.freezeActiveMeshes(false, resolve));
-  const otherCamera = new FreeCamera("different mask", camera.position.clone(), scene);
-  otherCamera.layerMask = 2;
-  scene.activeCamera = otherCamera;
-  const visibleDraw = vi.spyOn(visible, "render");
-  const hiddenDraw = vi.spyOn(hidden, "render");
-  scene.render(false);
-  expect(visibleDraw).toHaveBeenCalledTimes(1);
-  expect(hiddenDraw).not.toHaveBeenCalled();
-  const graph = new ForwardSceneFrameGraph(scene);
-  expect(await graph.prepare(otherCamera)).toMatchObject({ path: "classic" });
-  expect(graph.render(otherCamera, false)).toMatchObject({ path: "classic" });
-  expect(visibleDraw).toHaveBeenCalledTimes(2);
-  expect(hiddenDraw).not.toHaveBeenCalled();
-  scene.unfreezeActiveMeshes();
-  hidden.position.x = 0;
-  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-  expect(graph.render(camera, false)).toEqual({ path: "frameGraph" });
-  expect(hiddenDraw).toHaveBeenCalledTimes(1);
-  graph.dispose();
-});
-
-it("applies unfreeze from a before-render observer in that same frame", async () => {
-  const { scene, camera } = host();
-  MeshBuilder.CreateBox("visible", {}, scene);
-  const hidden = MeshBuilder.CreateBox("outside frustum", {}, scene);
-  hidden.position.x = 1000;
-  const graph = new ForwardSceneFrameGraph(scene);
-  await graph.prepare(camera);
-  await new Promise<void>((resolve) => scene.freezeActiveMeshes(false, resolve));
-  const hiddenDraw = vi.spyOn(hidden, "render");
-  scene.onBeforeRenderObservable.addOnce(() => {
-    scene.unfreezeActiveMeshes();
-    hidden.position.x = 0;
-  });
-  // This frame retains native scene ownership so its observer can rebuild the
-  // active queue immediately. The following frame can use graph culling again.
-  expect(graph.render(camera, false)).toMatchObject({ path: "classic" });
-  expect(hiddenDraw).toHaveBeenCalledTimes(1);
-  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-  expect(graph.render(camera, false)).toEqual({ path: "frameGraph" });
-  expect(hiddenDraw).toHaveBeenCalledTimes(2);
   graph.dispose();
 });
 
@@ -400,10 +331,7 @@ it("disposes task resources after a build failure and can prepare a new graph", 
     .mockImplementationOnce(() => {
       throw new Error("build boundary failure");
     });
-  expect(await graph.prepare(camera)).toEqual({
-    path: "classic",
-    reason: "build boundary failure",
-  });
+  await expect(graph.prepare(camera)).rejects.toThrow("build boundary failure");
   expect(release).toHaveBeenCalledTimes(1);
   expect(scene.frameGraphs).toHaveLength(0);
   expect(scene.activeCamera).toBe(camera);
@@ -423,10 +351,7 @@ it("settles a pending readiness wait when the scene is disposed", async () => {
   );
   const prepare = graph.prepare(camera);
   scene.dispose();
-  expect(await prepare).toMatchObject({
-    path: "classic",
-    reason: expect.stringContaining("disposed"),
-  });
+  await expect(prepare).rejects.toThrow("disposed");
   expect(scene.frameGraphs).toHaveLength(0);
 });
 
@@ -443,7 +368,7 @@ it("refreshes the resized backbuffer dimensions while retaining the object rende
   options.renderWidth = 96;
   options.renderHeight = 72;
   expect(graph.render(camera)).toMatchObject({
-    path: "classic",
+    rendered: false,
     reason: expect.stringContaining("preparation"),
   });
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
@@ -453,7 +378,7 @@ it("refreshes the resized backbuffer dimensions while retaining the object rende
   graph.dispose();
 });
 
-it("draws Play particle systems on graph frames, not only on classic fallback frames", async () => {
+it("draws Play particle systems on graph frames", async () => {
   const { scene, camera } = host();
   scene.performancePriority = ScenePerformancePriority.Intermediate;
   const material = new NodeMaterial("particle", scene);
@@ -488,11 +413,10 @@ it("draws Play particle systems on graph frames, not only on classic fallback fr
 
 it("draws a transparent depth pre-pass with its depth-only variant and the colour pass with the full one, frozen or not", async () => {
   const priorities = [ScenePerformancePriority.BackwardCompatible, ScenePerformancePriority.Intermediate];
-  for (const path of ["frameGraph", "classic"] as const) for (const priority of priorities) {
+  const path = "frameGraph";
+  for (const priority of priorities) {
     const { engine, scene, camera } = host();
     scene.performancePriority = priority;
-    // An active camera list keeps the frame on the classic path, through the scene's own rendering manager.
-    if (path === "classic") scene.activeCameras = [camera];
     const glass = MeshBuilder.CreateBox("glass", {}, scene);
     const material = new PBRMaterial("glass", scene);
     material.alpha = 0.5;
@@ -509,8 +433,7 @@ it("draws a transparent depth pre-pass with its depth-only variant and the colou
     const created = vi.spyOn(engine, "createEffect");
     expect(await graph.prepare(camera)).toMatchObject({ path });
     // The graph's strict readiness probe compiles the depth-only variant too, before the first presented frame.
-    if (path === "frameGraph")
-      expect(created.mock.results.some(({ value }) => value.defines.includes("#define DEPTHPREPASS\n"))).toBe(true);
+    expect(created.mock.results.some(({ value }) => value.defines.includes("#define DEPTHPREPASS\n"))).toBe(true);
     const frame = () => {
       draws.length = 0;
       expect(graph.render(camera)).toMatchObject({ path });
@@ -634,10 +557,10 @@ it("keeps probing every frame while unready, then caches once admitted", async (
   graph.invalidate();
   const before = graph.strictReadinessChecks;
   for (let frame = 0; frame < 3; frame += 1)
-    expect(graph.render(camera)).toMatchObject({ path: "classic" });
+    expect(graph.render(camera)).toMatchObject({ rendered: false });
   expect(graph.strictReadinessChecks).toBe(before + 3);
   probe.mockRestore();
-  // The restored probe may compile asynchronously; fall back until it passes.
+  // The restored probe may compile asynchronously; skip frames until it passes.
   await vi.waitFor(() => {
     expect(graph.render(camera)).toEqual({ path: "frameGraph" });
   });
@@ -770,7 +693,6 @@ it("rebuilds the effect chain on a settings change without drawing stale output"
   });
   // The prepared key is stale: hold the frame until the graph reprepares.
   expect(graph.render(camera)).toMatchObject({
-    path: "classic",
     rendered: false,
   });
   expect(graph.readiness(camera)).toEqual({ path: "frameGraph", ready: false, preparationRequired: true });
@@ -779,7 +701,7 @@ it("rebuilds the effect chain on a settings change without drawing stale output"
   expect(graph.render(camera)).toEqual({ path: "frameGraph" });
   // The session toggle releases the chain the same way.
   setSceneEffectsEnabled(scene, false);
-  expect(graph.render(camera)).toMatchObject({ path: "classic" });
+  expect(graph.render(camera)).toMatchObject({ rendered: false });
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   expect(graph.taskNames()).not.toContain("Scene Effects FXAA");
   graph.dispose();
@@ -810,7 +732,7 @@ it("re-plans the graph when project Water quality changes, including during prep
   // Water-owned passes (scene copy, planar, FFT) are planned at graph build.
   updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { refraction: false } }) });
   expect(graph.readiness(camera)).toEqual({ path: "frameGraph", ready: false, preparationRequired: true });
-  expect(graph.render(camera)).toMatchObject({ path: "classic", reason: "FrameGraph preparation is required." });
+  expect(graph.render(camera)).toMatchObject({ rendered: false, reason: "FrameGraph preparation is required." });
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   expect(release).toHaveBeenCalledTimes(1);
   expect(graph.readiness(camera)).toEqual({ path: "frameGraph", ready: true });
@@ -892,7 +814,8 @@ it("gives the settings effect chain's offscreen scene color a real depth attachm
 });
 
 
-it.each(["frameGraph", "classic"] as const)("redraws %s without advancing native animation or catching up after resume", async (path) => {
+it("redraws without advancing native animation or catching up after resume", async () => {
+  const path = "frameGraph";
   const { scene, camera, engine } = host();
   const moving = new TransformNode("moving", scene);
   const animation = new Animation("move", "position.x", 60, Animation.ANIMATIONTYPE_FLOAT);
@@ -902,7 +825,6 @@ it.each(["frameGraph", "classic"] as const)("redraws %s without advancing native
   const clock = vi.spyOn(PrecisionDate, "Now", "get");
   clock.mockReturnValue(engine.startTime + 1000);
   const graph = new ForwardSceneFrameGraph(scene);
-  if (path === "classic") await new Promise<void>((resolve) => scene.freezeActiveMeshes(false, resolve));
   expect(await graph.prepare(camera)).toMatchObject({ path });
   graph.render(camera);
   clock.mockReturnValue(engine.startTime + 1100);

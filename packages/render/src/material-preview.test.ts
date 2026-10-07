@@ -18,7 +18,7 @@ import { isEngineDefaultMaterial } from "./default-material";
 import { CelMaterial } from "./cel-material";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { MaterialLibrary } from "./material-library";
-import { OwnedPostProcess } from "./owned-post-process";
+import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import {
   MATERIAL_PREVIEW_MESH_NAME,
   aimPreviewCameraAtMesh,
@@ -26,6 +26,7 @@ import {
   createMaterialPreviewMesh,
   createMaterialPreviewPresenter,
   createMaterialPreviewScene,
+  type MaterialPreviewScene,
 } from "./material-preview";
 import { encodeTriangleGlb, encodeUvHierarchyGlb } from "./glb-test-fixtures";
 import { visualMeshes } from "./visual-meshes";
@@ -135,7 +136,7 @@ afterEach(() => {
 });
 
 function engine(): NullEngine {
-  const created = new NullEngine();
+  const created = adaptNullEngineFrameGraph(new NullEngine());
   disposers.push(() => created.dispose());
   return created;
 }
@@ -366,35 +367,34 @@ describe("material preview scene", () => {
     expect(host.camera.target.z).toBeCloseTo(center.z);
   });
 
-  it("disposes its scene on close", () => {
+  it("disposes its scene on close", async () => {
     const created = engine();
     const host = createMaterialPreviewScene(created as never);
     const scene = host.scene;
     host.dispose();
-    expect(scene.isDisposed).toBe(true);
+    await vi.waitFor(() => expect(scene.isDisposed).toBe(true));
   });
 
-  it("defers preview Scene disposal until a retired post-process pass confirms release", async () => {
+  it("previews a post-process material as a FrameGraph pass, never a camera pass", async () => {
     const host = createMaterialPreviewScene(engine() as never);
+    disposers.push(() => host.dispose());
     const library = new MaterialLibrary();
     disposers.push(() => library.dispose());
-    const acquired = library.acquire(
-      host.scene,
-      "pp",
-      createDefaultMaterialDocument("Blur", "postProcess"),
-    );
-    if (!acquired.ok) throw new Error("Invalid post-process fixture");
-    host.applyPostProcess(acquired.material);
-    const pass = host.camera._postProcesses.filter(Boolean).at(-1);
-    expect(pass).toBeInstanceOf(OwnedPostProcess);
-    // Hold only the actual-release boundary; the pass detaches immediately.
+    host.applyPostProcess({ library, materialGuid: "pp", document: createDefaultMaterialDocument("Blur", "postProcess") });
+    await host.renderer.prepare();
+    expect(host.camera._postProcesses.filter(Boolean)).toEqual([]);
+    expect(host.renderer.postProcessPassCount()).toBe(1);
+    host.applyPostProcess(null);
+    await host.renderer.prepare();
+    expect(host.renderer.postProcessPassCount()).toBe(0);
+  });
+
+  it("defers preview Scene disposal until its renderer confirms release", async () => {
+    const host = createMaterialPreviewScene(engine() as never);
     let release!: () => void;
     const held = new Promise<void>((resolve) => { release = resolve; });
-    vi.spyOn(pass as OwnedPostProcess, "isReleased", "get").mockReturnValue(false);
-    vi.spyOn(pass as OwnedPostProcess, "whenReleased").mockReturnValue(held);
+    vi.spyOn(host.renderer, "whenReleased").mockReturnValue(held);
     const scene = host.scene;
-    host.applyPostProcess(null);
-    expect(host.camera._postProcesses.filter(Boolean)).toEqual([]);
     host.dispose();
     await Promise.resolve();
     expect(scene.isDisposed).toBe(false);
@@ -554,6 +554,12 @@ describe("material preview orbit gestures", () => {
 });
 
 describe("material preview presenter", () => {
+  /** The first present binds the preview RTT; its graph then prepares. */
+  async function prime(presenter: ReturnType<typeof createMaterialPreviewPresenter>, host: MaterialPreviewScene) {
+    presenter.present({ force: true });
+    await host.renderer.prepare();
+  }
+
   async function previewHost(created = engine()) {
     const host = createMaterialPreviewScene(created as never);
     disposers.push(() => host.dispose());
@@ -570,6 +576,7 @@ describe("material preview presenter", () => {
     const onError = vi.fn();
     const presenter = createMaterialPreviewPresenter(host, new FakeCanvas() as unknown as HTMLCanvasElement, { onError });
     disposers.push(() => presenter.dispose());
+    await prime(presenter, host);
     expect(() => presenter.present({ force: true })).not.toThrow();
     expect(onError).toHaveBeenLastCalledWith("shader failed");
     presenter.present({ force: true });
@@ -586,6 +593,7 @@ describe("material preview presenter", () => {
     disposers.push(() => presenter.dispose());
     expect(() => presenter.present({ force: true })).not.toThrow();
     expect(onError).toHaveBeenLastCalledWith("compile failed");
+    await host.renderer.prepare();
     presenter.present({ force: true });
     expect(render).toHaveBeenCalledOnce();
     expect(onError).toHaveBeenLastCalledWith(null);
@@ -612,6 +620,7 @@ describe("material preview presenter", () => {
     presenter.present({ force: true });
     expect(render).not.toHaveBeenCalled();
     ready.mockReturnValue(true);
+    await host.renderer.prepare();
     presenter.present();
     expect(render).toHaveBeenCalledTimes(1);
   });
@@ -635,6 +644,7 @@ describe("material preview presenter", () => {
       { maxFps: 1, now: () => 0 },
     );
     disposers.push(() => presenter.dispose());
+    await prime(presenter, host);
 
     presenter.present();
     presenter.present({ force: true });
@@ -688,6 +698,7 @@ describe("material preview presenter", () => {
       { maxFps: 1000 },
     );
     disposers.push(() => presenter.dispose());
+    await prime(presenter, host);
     presenter.present();
     await vi.waitFor(() => expect(canvas.widthAssigns).toBeGreaterThan(0));
     const assigns = canvas.widthAssigns + canvas.heightAssigns;
@@ -711,6 +722,7 @@ describe("material preview presenter", () => {
       { maxFps: 1000, now: () => (now += 50) },
     );
     disposers.push(() => presenter.dispose());
+    await prime(presenter, host);
     presenter.present();
     const render = vi.spyOn(host.scene, "render");
     presenter.present();
@@ -731,6 +743,7 @@ describe("material preview presenter", () => {
       { maxFps: 1, now: () => now },
     );
     disposers.push(() => presenter.dispose());
+    await prime(presenter, host);
     presenter.present();
     await Promise.resolve();
     await Promise.resolve();
@@ -761,6 +774,7 @@ describe("material preview presenter", () => {
       { maxFps: 30, now: () => now },
     );
     disposers.push(() => presenter.dispose());
+    await prime(presenter, host);
     presenter.present();
     await Promise.resolve();
     await Promise.resolve();
@@ -837,6 +851,7 @@ describe("material preview presenter", () => {
       { maxFps: 1000 },
     );
     disposers.push(() => presenter.dispose());
+    await prime(presenter, host);
     presenter.present({ force: true });
     await vi.waitFor(() =>
       expect(canvas.capturedImages.length).toBeGreaterThan(0),
@@ -894,6 +909,7 @@ describe("material preview presenter", () => {
       { maxFps: 1000, onError },
     );
     disposers.push(() => presenter.dispose());
+    await prime(presenter, host);
 
     presenter.present({ force: true });
     await vi.waitFor(() =>
@@ -925,6 +941,7 @@ describe("material preview presenter", () => {
       canvas as unknown as HTMLCanvasElement,
       { maxFps: 1000 },
     );
+    await prime(presenter, host);
 
     presenter.present({ force: true });
     presenter.dispose();
@@ -969,6 +986,7 @@ describe("material preview presenter", () => {
       { maxFps: 1000 },
     );
     disposers.push(() => presenter.dispose());
+    await prime(presenter, host);
 
     // The first present starts an RTT readback. A resize during that flight
     // latches a forced redraw; the stale frame may land first but the next
@@ -980,7 +998,10 @@ describe("material preview presenter", () => {
     finishRead(new Uint8Array(320 * 180 * 4));
     await Promise.resolve();
     await Promise.resolve();
-    // The app's rAF loop drives the next present once the flight clears.
+    // The app's rAF loop drives the next present once the flight clears; the
+    // resized output prepares its graph before that frame draws.
+    presenter.present();
+    await host.renderer.prepare();
     presenter.present();
     await vi.waitFor(() =>
       expect(
@@ -1002,6 +1023,7 @@ describe("material preview presenter", () => {
       { maxFps: 1000, onError },
     );
     disposers.push(() => presenter.dispose());
+    await prime(presenter, host);
     presenter.present({ force: true });
     await Promise.resolve();
     await Promise.resolve();

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ACTOR_FRAMING_MIN_RADIUS } from "./actor-framing";
+import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import {
   Mesh,
   NullEngine,
@@ -85,7 +86,7 @@ describe("p20-editor-scene-freeze", () => {
   });
 
   function sharedEngine(): NullEngine {
-    const engine = new NullEngine();
+    const engine = adaptNullEngineFrameGraph(new NullEngine());
     engines.push(engine);
     return engine;
   }

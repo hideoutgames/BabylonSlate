@@ -1,4 +1,5 @@
-import { mockCubeTextureIO, mockDepthTextureIO } from "./texture-test-fixtures";
+import { mockCubeTextureIO } from "./texture-test-fixtures";
+import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Camera, Constants, GPUParticleSystem, InputBlock, KhronosTextureContainer2, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, type Mesh } from "@babylonjs/core";
 import { DracoDecoder } from "@babylonjs/core/Meshes/Compression/dracoDecoder";
@@ -53,16 +54,22 @@ import { hasFogVolumes, selectFogVolumes } from "./fog-volumes";
 import { sceneRenderingSettings, setSceneEffectsEnabled } from "./render-settings";
 import { uiControl2DMesh } from "./ui-controls2d-mesh";
 
+const createEffectForPostProcess = NodeMaterial.prototype.createEffectForPostProcess;
+
+/** Graph post-process passes in creation order; shader prewarm passes excluded. */
+function captureGraphPasses(): OwnedPostProcess[] {
+  const passes: OwnedPostProcess[] = [];
+  vi.spyOn(NodeMaterial.prototype, "createEffectForPostProcess").mockImplementation(function (this: NodeMaterial, postProcess, ...rest) {
+    if (postProcess instanceof OwnedPostProcess && !postProcess.name.endsWith("PostProcess")) passes.push(postProcess);
+    return createEffectForPostProcess.call(this, postProcess, ...rest);
+  });
+  return passes;
+}
+
 /**
  * The babylon Vitest project runs under Node. createEngine only needs a
  * listener surface plus width/height for registerView.
  */
-function livePassCount(
-  camera: { _postProcesses?: Array<unknown | null> } | null | undefined,
-): number {
-  return camera?._postProcesses?.filter((pass) => pass != null).length ?? 0;
-}
-
 class FakeCanvas {
   width = 256;
   height = 256;
@@ -307,28 +314,16 @@ describe("Play createEngine view", () => {
   });
 
   function sharedEngine(): NullEngine {
-    const engine = new NullEngine();
+    // Production FrameGraph ownership; only absent NullEngine driver calls are adapted.
+    const engine = adaptNullEngineFrameGraph(new NullEngine());
     // These tests drive frames explicitly; keep real loop registration without
     // a competing timer drawing while an async preparation assertion waits.
     engine.customAnimationFrameRequester = { requestAnimationFrame: () => 0, cancelAnimationFrame: () => {} };
     mockCubeTextureIO(engine);
-    mockDepthTextureIO(engine);
-    // NullEngine stores raw bytes but never marks the upload complete. Model
-    // the real synchronous raw-texture upload boundary without bypassing the
-    // scene's texture readiness checks (individual tests can hold a texture).
-    const upload = engine.createRawTexture.bind(engine);
-    vi.spyOn(engine, "createRawTexture").mockImplementation((...args) => {
-      const texture = upload(...args);
-      texture.isReady = true;
-      return texture;
+    Object.assign(engine.getCaps(), {
+      maxTextureSize: 4096, maxDrawBuffers: 4, drawBuffersExtension: true,
+      depthTextureExtension: true, textureFloatRender: true, textureHalfFloatRender: true,
     });
-    // Keep production FrameGraph ownership, replacing only absent NullEngine
-    // MRT driver calls.
-    vi.spyOn(engine, "buildTextureLayout").mockImplementation((enabled, backbuffer) =>
-      backbuffer ? [0x0405] : enabled.map((value, index) => value ? 0x8ce0 + index : 0));
-    vi.spyOn(engine, "bindAttachments").mockImplementation(() => {});
-    vi.spyOn(engine, "restoreSingleAttachment").mockImplementation(() => {});
-    vi.spyOn(engine, "restoreSingleAttachmentForRenderTarget").mockImplementation(() => {});
     engines.push(engine);
     return engine;
   }
@@ -558,30 +553,6 @@ describe("Play createEngine view", () => {
     expect(liveLeases).toBe(0);
   });
 
-  function postProcessGraphEngine(): NullEngine {
-    const engine = sharedEngine();
-    Object.assign(engine.getCaps(), {
-      maxTextureSize: 4096, maxDrawBuffers: 4, drawBuffersExtension: true,
-      depthTextureExtension: true, textureFloatRender: true, textureHalfFloatRender: true,
-    });
-    // Same absent native allocation boundary as scene-post-process-graph.test:
-    // real wrappers/textures and the production graph retain all ownership.
-    vi.spyOn(engine, "_createInternalTexture").mockImplementation((size, options) => {
-      const creation = typeof options === "object" ? options : {};
-      const wrapper = engine.createRenderTargetTexture(size, { ...creation, generateDepthBuffer: false });
-      const texture = wrapper.texture!;
-      texture.format = creation.format ?? Constants.TEXTUREFORMAT_RGBA;
-      wrapper.dispose(true);
-      return texture;
-    });
-    vi.spyOn(engine, "createMultipleRenderTarget").mockImplementation((size) =>
-      engine._createHardwareRenderTargetWrapper(true, false, size));
-    // Babylon 9.29 graph clears go through the extension's clearAttachments,
-    // which reads the absent WebGL context. NullEngine.clear draws nothing either.
-    vi.spyOn(engine, "clearAttachments").mockImplementation(() => {});
-    return engine;
-  }
-
   function editorHandle(engine: NullEngine) {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, { sharedEngine: engine });
@@ -772,8 +743,8 @@ describe("Play createEngine view", () => {
     renderViews(engine);
     engine.onEndFrameObservable.notifyObservers(engine);
     await presented;
-    // A stored preparation failure rethrows from readiness while the classic
-    // fallback still draws and copies the steady-state frame.
+    // A stored preparation failure rethrows from readiness; the frame loop
+    // must survive it.
     const probe = vi.spyOn(SceneRenderCoordinator.prototype, "isReady").mockImplementation(() => {
       throw new Error("Scene rendering preparation timed out.");
     });
@@ -842,11 +813,15 @@ describe("Play createEngine view", () => {
     const previewDraw = vi.fn();
     main.scene.onAfterRenderObservable.add(mainDraw);
     preview.scene.onAfterRenderObservable.add(previewDraw);
-    engine.beginFrame();
-    expect(engine.views?.every((view) => !view.enabled)).toBe(true);
-    if (!renderViews(engine)) engine._renderFrame();
-    engine.endFrame();
-    await Promise.resolve();
+    // A lighting allocation first admitted at frame time skips that frame and
+    // re-prepares; the next frame draws.
+    for (let frame = 0; frame < 20 && !previewDraw.mock.calls.length; frame += 1) {
+      engine.beginFrame();
+      expect(engine.views?.every((view) => !view.enabled)).toBe(true);
+      if (!renderViews(engine)) engine._renderFrame();
+      engine.endFrame();
+      await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    }
     expect(previewDraw).toHaveBeenCalledOnce();
     expect(mainDraw).not.toHaveBeenCalled();
     expect(clear).not.toHaveBeenCalled();
@@ -858,7 +833,7 @@ describe("Play createEngine view", () => {
   });
 
   it("waits for the exact RTT canvas copy after engine end-frame", async () => {
-    const engine = postProcessGraphEngine();
+    const engine = sharedEngine();
     const loops = vi.spyOn(engine, "runRenderLoop");
     const canvas = new FakeCanvas();
     let copied = false;
@@ -1332,10 +1307,11 @@ describe("Play createEngine view", () => {
     expect(stopRenderLoop).toHaveBeenCalledWith(callback);
   });
 
-  it("snapshots _drawCalls after scene.render instead of reading unset engine.drawCalls", () => {
+  it("snapshots _drawCalls after scene.render instead of reading unset engine.drawCalls", async () => {
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
     const { handle } = playHandle(engine);
+    await handle.prewarmSceneMaterials();
     const callback = runRenderLoop.mock.calls[0]?.[0];
     expect(callback).toBeTypeOf("function");
     expect((engine as { drawCalls?: number }).drawCalls).toBeUndefined();
@@ -1354,9 +1330,7 @@ describe("Play createEngine view", () => {
     expect(handle.drawCalls()).toBe(1);
   });
 
-  it("honors live Play frame caps without adding render cost to the interval", () => {
-    let now = 0;
-    vi.spyOn(performance, "now").mockImplementation(() => now);
+  it("honors live Play frame caps without adding render cost to the interval", async () => {
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
@@ -1366,6 +1340,9 @@ describe("Play createEngine view", () => {
       frameCap: 30,
     });
     handles.push(handle);
+    await handle.prewarmSceneMaterials();
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
     const renderLoop = runRenderLoop.mock.calls[0]![0];
     let renders = 0;
     // Keep Babylon rendering real; only model its elapsed CPU cost.
@@ -2081,21 +2058,22 @@ describe("Play createEngine view", () => {
         { materialGuid: "pp", enabled: true },
         { materialGuid: "pp", enabled: true },
       ]);
+      const created = captureGraphPasses();
       await handle.prewarmSceneMaterials();
       const material = handle.scene.getMaterialByName("material:pp");
       expect(material).toBeInstanceOf(NodeMaterial);
-      const camera = handle.scene.activeCamera!;
-      const passes = camera._postProcesses.filter((pass) => pass != null);
-      expect(passes).toHaveLength(2);
+      expect(handle.postProcessPassCount()).toBe(2);
+      const passes = [...created];
 
       await prewarmMaterial(material as NodeMaterial, null);
       // Two independent pass materials intentionally share this display name.
       expect(handle.scene.materials).toContain(material);
-      expect(camera._postProcesses.filter((pass) => pass != null)).toEqual(passes);
+      expect(created).toEqual(passes);
       expect(handle.postProcessPassCount()).toBe(2);
 
       handle.setPostProcessStack([]);
-      expect(livePassCount(camera)).toBe(0);
+      await handle.prewarmSceneMaterials();
+      expect(handle.postProcessPassCount()).toBe(0);
       expect(handle.scene.getMaterialByName("material:pp")).toBeNull();
     } finally {
       handle.dispose();
@@ -2109,14 +2087,14 @@ describe("Play createEngine view", () => {
     handles.push(editor);
     editor.setPostProcessStack(options.postProcessStack);
     await editor.prewarmSceneMaterials();
-    expect(attach.mock.calls.some(([value]) => value.scene === editor.scene && value.camera === editor.scene.activeCamera && value.deviceBuffers === undefined)).toBe(true);
+    expect(attach.mock.calls.some(([value]) => value.scene === editor.scene && value.camera === editor.scene.activeCamera)).toBe(true);
     expect(editor.postProcessPassCount()).toBe(1);
     const play = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { ...options, playMode: true });
     handles.push(play);
-    expect(attach.mock.calls.some(([value]) => value.scene === play.scene && value.camera === play.scene.activeCamera && value.deviceBuffers === undefined)).toBe(true);
+    expect(attach.mock.calls.some(([value]) => value.scene === play.scene && value.camera === play.scene.activeCamera)).toBe(true);
     play.applyCommand({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, postProcessStack: options.postProcessStack });
     const layer = play.sceneLayerScenes()[0]!.scene;
-    expect(attach.mock.calls.some(([value]) => value.scene === layer && value.camera === layer.activeCamera && value.deviceBuffers === undefined)).toBe(true);
+    expect(attach.mock.calls.some(([value]) => value.scene === layer && value.camera === layer.activeCamera)).toBe(true);
   });
 
   it("keeps shared Scene and cache resources alive until graph retirement settles after Stop", async () => {
@@ -2153,8 +2131,9 @@ describe("Play createEngine view", () => {
     handles.push(handle);
     // Editor handles seed the default scene, which owns the post-process stack.
     handle.setPostProcessStack([{ materialGuid: "pp", enabled: true }]);
+    const passes = captureGraphPasses();
     await handle.prewarmSceneMaterials();
-    const pass = handle.scene.activeCamera!._postProcesses.filter(Boolean).at(-1) as OwnedPostProcess;
+    const pass = passes.at(-1)!;
     expect(pass).toBeInstanceOf(OwnedPostProcess);
     let release!: () => void;
     const held = new Promise<void>((resolve) => { release = resolve; });
@@ -2245,8 +2224,9 @@ describe("Play createEngine view", () => {
     });
     handles.push(handle);
     handle.setPostProcessStack([{ materialGuid: "pp", enabled: true }]);
+    const passes = captureGraphPasses();
     await handle.prewarmSceneMaterials();
-    const retired = handle.scene.activeCamera!._postProcesses.filter(Boolean).at(-1) as OwnedPostProcess;
+    const retired = passes.at(-1)!;
     expect(retired).toBeInstanceOf(OwnedPostProcess);
     let release!: () => void;
     const held = new Promise<void>((resolve) => { release = resolve; });
@@ -2258,7 +2238,7 @@ describe("Play createEngine view", () => {
     handle.setLocalQualityOverrides({ postprocessing: { resolutionScale: 0.25 } });
     await handle.prewarmSceneMaterials();
     expect(handle.postProcessPassCount()).toBe(1);
-    expect(handle.scene.activeCamera!._postProcesses.filter(Boolean).at(-1)).not.toBe(retired);
+    expect(passes.at(-1)).not.toBe(retired);
     handle.dispose();
     expect(handle.scene.isDisposed).toBe(false);
     release();
@@ -2277,8 +2257,9 @@ describe("Play createEngine view", () => {
     });
     handles.push(handle);
     handle.setPostProcessStack([{ materialGuid: "pp", enabled: true }]);
+    const passes = captureGraphPasses();
     await handle.prewarmSceneMaterials();
-    const pass = handle.scene.activeCamera!._postProcesses.filter(Boolean).at(-1) as OwnedPostProcess;
+    const pass = passes.at(-1)!;
     expect(pass).toBeInstanceOf(OwnedPostProcess);
     vi.spyOn(pass, "isReleased", "get").mockReturnValue(false);
     vi.spyOn(pass, "whenReleased").mockRejectedValue(new Error("Native release never confirmed."));
@@ -2302,8 +2283,9 @@ describe("Play createEngine view", () => {
     });
     handles.push(handle);
     handle.setPostProcessStack([{ materialGuid: "pp", enabled: true }]);
+    const passes = captureGraphPasses();
     await handle.prewarmSceneMaterials();
-    const pass = handle.scene.activeCamera!._postProcesses.filter(Boolean).at(-1) as OwnedPostProcess;
+    const pass = passes.at(-1)!;
     expect(pass).toBeInstanceOf(OwnedPostProcess);
     // An uncertain bounded report warns but never authorizes or blocks
     // disposal: the confirmed actual release still permits it.
@@ -2320,7 +2302,7 @@ describe("Play createEngine view", () => {
   });
 
   it("routes current-owner entry writes into independent instances and replays disabled passes after rebuild", async () => {
-    const engine = postProcessGraphEngine();
+    const engine = sharedEngine();
     const document = createDefaultMaterialDocument("Gain", "postProcess");
     document.nodes.push(
       { id: "gain", type: "param.float", position: { x: 0, y: 0 }, properties: { name: "Gain", value: [0.5] } },
@@ -2403,7 +2385,7 @@ describe("Play createEngine view", () => {
   it("attaches an authored post-process stack when the local gate is on", async () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {
-      sharedEngine: postProcessGraphEngine(),
+      sharedEngine: sharedEngine(),
       playMode: true,
       postProcessingEnabled: true,
       postProcessStack: [{ materialGuid: "pp", enabled: true, order: 0 }],
@@ -2419,7 +2401,7 @@ describe("Play createEngine view", () => {
   it("keeps world post-process on the world camera when a SceneLayer is created", async () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {
-      sharedEngine: postProcessGraphEngine(),
+      sharedEngine: sharedEngine(),
       playMode: true,
       postProcessingEnabled: true,
       postProcessStack: [{ materialGuid: "pp", enabled: true, order: 0 }],
@@ -2444,7 +2426,6 @@ describe("Play createEngine view", () => {
     expect(overlay?.scene).not.toBe(handle.scene);
     expect(overlay?.scene.autoClear).toBe(false);
     expect(overlay?.scene.lightsEnabled).toBe(false);
-    expect(livePassCount(overlay?.scene.activeCamera)).toBe(0);
   });
 
   it("parents overlay spawn meshes into the SceneLayer scene and draws by z-order", async () => {
@@ -2501,7 +2482,12 @@ describe("Play createEngine view", () => {
       });
     }
     handle.setPaused(false);
-    runRenderLoop.mock.calls[0]?.[0]?.();
+    // Each Scene draws once its FrameGraph is prepared; frames before that are skipped.
+    for (let frame = 0; frame < 30 && order.length < 3; frame += 1) {
+      order.length = 0;
+      runRenderLoop.mock.calls[0]?.[0]?.();
+      await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    }
     expect(order).toEqual(["world", "back", "front"]);
   });
 
@@ -2713,7 +2699,7 @@ describe("Play createEngine view", () => {
     expect(handle.postProcessPassCount()).toBe(0);
   });
 
-  it("applies project effects after the editor coordinator prepares its native capability fallback", async () => {
+  it("applies project effects after the editor coordinator prepares its FrameGraph", async () => {
     const engine = sharedEngine();
     const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true });
     handles.push(handle);
@@ -2729,19 +2715,8 @@ describe("Play createEngine view", () => {
     });
     handle.scene.onBeforeRenderObservable.notifyObservers(handle.scene);
     await handle.prewarmSceneMaterials();
-    const camera = handle.scene.activeCamera!;
-    const passes = camera._postProcesses.filter(Boolean);
-    expect(passes.map((pass) => pass!.getClassName())).toEqual([
-      "ExtractHighlightsPostProcess",
-      "BlurPostProcess",
-      "BlurPostProcess",
-      "BloomMergePostProcess",
-    ]);
-    expect(handle.postProcessPassCount()).toBe(4);
-    // Admission gates on camera.isReady: a deferred-compile pass can never
-    // become ready while the gate withholds the frame that would compile it.
-    for (const pass of passes)
-      expect(pass!.getEffect(), pass!.name).toBeTruthy();
+    expect(handle.renderTaskNames()).toContain("Scene Effects Bloom");
+    expect(handle.postProcessPassCount()).toBe(1);
   });
 
   it("keeps overlay 2DMaterial assignMaterial as an overlay unlit compile", () => {
@@ -2936,7 +2911,7 @@ describe("Play createEngine view", () => {
     expect(handle.assignedMaterialGuids()).toEqual(["mat-rock"]);
   });
 
-  it("moves the native fallback post-process stack onto the authored Default Camera", async () => {
+  it("draws the post-process stack from the authored Default Camera", async () => {
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
@@ -2949,10 +2924,10 @@ describe("Play createEngine view", () => {
       ]),
     });
     handles.push(handle);
-    await new Promise<void>((resolve) => handle.scene.freezeActiveMeshes(false, resolve));
     await handle.prewarmSceneMaterials();
     const fallback = handle.scene.getCameraByName("camera");
-    expect(livePassCount(fallback)).toBeGreaterThan(0);
+    expect(handle.scene.activeCamera).toBe(fallback);
+    expect(handle.postProcessPassCount()).toBeGreaterThan(0);
 
     handle.applyCommand({
       type: "assignMesh",
@@ -2982,11 +2957,10 @@ describe("Play createEngine view", () => {
 
     const authored = handle.scene.activeCamera;
     expect(authored?.name).toBe("authoredCamera:1");
-    expect(livePassCount(authored)).toBeGreaterThan(0);
-    expect(livePassCount(fallback)).toBe(0);
+    expect(handle.postProcessPassCount()).toBeGreaterThan(0);
   });
 
-  it("reattaches the native post-process stack to the fallback camera after Default Camera despawn", async () => {
+  it("keeps the post-process stack on the fallback camera after Default Camera despawn", async () => {
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
@@ -2999,7 +2973,6 @@ describe("Play createEngine view", () => {
       ]),
     });
     handles.push(handle);
-    await new Promise<void>((resolve) => handle.scene.freezeActiveMeshes(false, resolve));
     const callback = runRenderLoop.mock.calls[0]?.[0];
     handle.applyCommand({
       type: "assignMesh",
@@ -3027,7 +3000,7 @@ describe("Play createEngine view", () => {
     callback?.();
     await handle.prewarmSceneMaterials();
     expect(handle.scene.activeCamera?.name).toBe("authoredCamera:1");
-    expect(livePassCount(handle.scene.activeCamera)).toBeGreaterThan(0);
+    expect(handle.postProcessPassCount()).toBeGreaterThan(0);
 
     const empty = new Float32Array(snapshotFloatCount(8));
     writeSnapshotHeader(empty, {
@@ -3044,7 +3017,6 @@ describe("Play createEngine view", () => {
     const fallback = handle.scene.getCameraByName("camera");
     expect(handle.scene.activeCamera).toBe(fallback);
     expect(fallback?.isDisposed()).toBe(false);
-    expect(livePassCount(fallback)).toBeGreaterThan(0);
     expect(handle.postProcessPassCount()).toBeGreaterThan(0);
   });
 
@@ -3599,10 +3571,10 @@ describe("Play createEngine view", () => {
       id: "fog", classId: "FogVolumeComponent", properties: { density: 0.1, edgeFalloff: 0.2 },
     }] })];
     handle.loadScene(data);
+    const created = captureGraphPasses();
     await handle.prewarmSceneMaterials();
-    const camera = handle.scene.activeCamera!;
-    const passes = camera._postProcesses.filter((pass) => pass != null);
-    expect(passes).toHaveLength(1);
+    expect(handle.postProcessPassCount()).toBe(1);
+    const passes = [...created];
     const guideName = editorComponentMeshName("fog-bank", "fog");
     const guide = handle.scene.getMeshByName(guideName)!;
     const probe = new UniversalCamera("fog-probe", new Vector3(0, 0, -15), handle.scene);
@@ -3612,9 +3584,8 @@ describe("Play createEngine view", () => {
       Object.assign(data.actors[0]!.components[0]!.properties, properties);
       handle.loadScene(data);
       expect(handle.scene.getMeshByName(guideName)).toBe(guide);
-      const currentPasses = camera._postProcesses.filter((pass) => pass != null);
-      expect(currentPasses).toHaveLength(1);
-      expect(currentPasses[0]).toBe(passes[0]);
+      expect(handle.postProcessPassCount()).toBe(1);
+      expect(created).toEqual(passes);
       expect(selectFogVolumes(handle.scene, probe, 50)[0]?.properties).toMatchObject(properties);
     }
     data = structuredClone(data);
@@ -3643,7 +3614,6 @@ describe("Play createEngine view", () => {
     handle.loadScene(data);
     expect(hasFogVolumes(handle.scene)).toBe(true);
     expect(handle.postProcessPassCount()).toBe(0);
-    expect(camera._postProcesses.filter((pass) => pass != null)).toHaveLength(0);
   });
 
   it("retains Play fog volumes across visual replacement and releases their pass on removal", () => {
@@ -3978,11 +3948,16 @@ describe("Play createEngine view", () => {
     handles.push(handle);
     let color = 0xff8040;
     handle.scene.onAfterRenderObservable.add(() => { source.pixel = color; });
+    await handle.prewarmSceneMaterials();
     let now = performance.now();
     const time = vi.spyOn(performance, "now").mockImplementation(() => now);
     const frame = () => { now += 1000; engine.beginFrame(); renderViews(engine); engine.endFrame(); };
     try {
-      frame();
+      // A frame that first admits a lighting allocation is skipped while the graph re-prepares.
+      for (let attempt = 0; attempt < 20 && canvas.pixel !== color; attempt += 1) {
+        frame();
+        if (canvas.pixel !== color) await handle.prewarmSceneMaterials();
+      }
       expect(canvas.pixel).toBe(color);
       handle.applyCommand({ type: "sceneLoading", sceneAssetGuid: "next", sceneLoadId: 2 });
       if (sizing === "CSS") { canvas.clientWidth = 512; canvas.clientHeight = 288; handle.resize(); }
