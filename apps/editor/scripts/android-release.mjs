@@ -59,14 +59,14 @@ const releaseDir = join(androidDir, "app/build/outputs/apk/release");
 const apk = join(releaseDir, "app-release.apk");
 try {
   await access(apk);
-} catch {
-  try {
-    await access(join(releaseDir, "app-release-unsigned.apk"));
-    throw new Error("Android release APK is unsigned");
-  } catch (error) {
-    if (error instanceof Error && error.message === "Android release APK is unsigned") throw error;
-    throw new Error("Android release APK was not produced");
-  }
+} catch (missing) {
+  const unsigned = await access(join(releaseDir, "app-release-unsigned.apk")).then(
+    () => true,
+    () => false,
+  );
+  throw new Error(unsigned ? "Android release APK is unsigned" : "Android release APK was not produced", {
+    cause: missing,
+  });
 }
 
 const sdkRoot = process.env.ANDROID_HOME ?? process.env.ANDROID_SDK_ROOT;
