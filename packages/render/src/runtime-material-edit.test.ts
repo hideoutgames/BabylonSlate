@@ -4,6 +4,7 @@ import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { MaterialLibrary, ownedMaterialPreparation } from "./material-library";
 import { applyAssignMaterial, createSnapshotSceneBinding } from "./snapshot-apply";
 import { RuntimeMaterialEditOwner, type RuntimeMaterialPreparationRequest } from "./runtime-material-edit";
+import { drainFinalAuthoringResources } from "./final-authoring-drain";
 
 const disposers: (() => void)[] = [];
 afterEach(() => { while (disposers.length) disposers.pop()?.(); });
@@ -64,6 +65,18 @@ it("prepares a private candidate without changing the visual, then adopts its ex
   f.owner.release(f.request.editToken);
   expect(f.scene.materials).toContain(applied);
   expect(f.scene.materials).toContain(previous);
+  await expect(drainFinalAuthoringResources(f.scene, f.binding, f.library,
+    { signal: new AbortController().signal, assertCurrent: () => {} })).resolves.toBeUndefined();
+});
+
+it("rejects a final resource fence when gameplay assigned an unavailable material", async () => {
+  const f = await fixture();
+  const previous = f.mesh.material;
+  applyAssignMaterial(f.scene, f.binding, { type: "assignMaterial", slotId: 1, componentId: "body", materialAssetGuid: "missing" });
+  expect(f.mesh.material).toBe(previous);
+  await expect(drainFinalAuthoringResources(f.scene, f.binding, f.library,
+    { signal: new AbortController().signal, assertCurrent: () => {} })).rejects.toThrow("no complete native owner");
+  expect(f.mesh.material).toBe(previous);
 });
 
 it("rejects missing material and stale gameplay ownership without disturbing the last valid owner", async () => {
