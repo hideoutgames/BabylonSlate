@@ -1,4 +1,4 @@
-import { createSaveStorageServer } from "@babylonslate/core";
+import { createSaveStorageServer, createSessionSaveStorage } from "@babylonslate/core";
 import { createSaveGameStorage } from "@babylonslate/vfs";
 import type { ScalabilityAcknowledgement, RenderProjectSettings } from "@babylonslate/core";
 import { buildMaterialParameterCatalog } from "@babylonslate/shader-graph";
@@ -447,6 +447,11 @@ export function previewFixtureThrowHint(
  * to in-process runtime. Own Scene on the shared app Engine via registerView.
  */
 export function startPlaySession(options: {
+  /** Preview uses the packaged player, never this in-process presentation host. */
+  mode?: "play" | "simulate";
+  sessionGeneration?: number;
+  /** Transfer the preparation overlay, including wipe-on-start, to this owner. */
+  simulationSaveStorage?: ReturnType<typeof createSessionSaveStorage>;
   saveGame?: import("@babylonslate/core").SaveGameConfiguration;
   renderSettings?: import("@babylonslate/render").RenderShadingSettings;
   consoleRenderSettings?: import("@babylonslate/render").RenderShadingSettings;
@@ -837,7 +842,10 @@ export function startPlaySession(options: {
     }
   };
 
-  const saveStorage = createSaveGameStorage();
+  const simulationSaveStorage = options.mode === "simulate"
+    ? options.simulationSaveStorage ?? createSessionSaveStorage(createSaveGameStorage())
+    : undefined;
+  const saveStorage = simulationSaveStorage ?? createSaveGameStorage();
   const saveServer = createSaveStorageServer(saveStorage, (response) => worker?.postControl({ type: "saveStorageResponse", response }));
   const onCommand = (command: CommandMessage) => {
     if (command.type === "saveStorageRequest") { saveServer.receive(command.request); return; }
@@ -1261,6 +1269,7 @@ export function startPlaySession(options: {
       sceneReadiness.dispose();
       streamReadiness.dispose();
       stopped = true;
+      simulationSaveStorage?.dispose();
       releaseConsoleCapture();
       window.removeEventListener("error", onWindowError);
       window.removeEventListener("unhandledrejection", onRejection);
