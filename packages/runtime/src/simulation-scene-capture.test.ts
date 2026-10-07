@@ -12,6 +12,7 @@ function registry(): ClassRegistry {
     { name: "Parts", type: "object", typeClassId: "ActorComponent", container: "map", keyTypeId: "string", defaultValue: [] },
     { name: "State", type: "struct", typeClassId: "stats", defaultValue: { Score: 0, Target: null } },
     { name: "Note", type: "string", defaultValue: "" },
+    { name: "Tags", type: "struct:engine:TagContainer", defaultValue: { Tags: [] } },
   ] });
   return registry;
 }
@@ -72,6 +73,7 @@ describe("complete simulation scene capture", () => {
     hero.setVariable("Parts", new Map([["created", spawnedMesh]]));
     hero.setVariable("State", { Score: 8, Target: spawned });
     hero.setVariable("Note", undefined);
+    hero.setVariable("Tags", { Tags: [1, 2] });
     hero.transform.position.x = 12;
     spawnedMesh.transform.position.y = 2;
     const material = hero.components[0]!.getVariable("materialObject") as MaterialObject;
@@ -94,6 +96,7 @@ describe("complete simulation scene capture", () => {
     expect(loadedHero!.getVariable("State")).toEqual({ Score: 8, Target: loadedSpawn });
     expect(loadedHero!.variables.has("Note")).toBe(true);
     expect(loadedHero!.getVariable("Note")).toBeUndefined();
+    expect(loadedHero!.getVariable("Tags")).toEqual({ Tags: [1, 2] });
     expect(loadedHero!.components).toHaveLength(1);
     const reloadedParameters = new RuntimeMaterialParameters({ mat: { domain: "surface", planHash: "m", parameters: {
       Gain: { kind: "float", value: 1 }, Texture: { kind: "texture", textureAssetGuid: null },

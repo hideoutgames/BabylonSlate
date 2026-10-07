@@ -214,9 +214,9 @@ export function captureSimulationScene(input: SimulationSceneCaptureInput): Simu
         });
       }
       if (value !== null && value !== undefined) {
-        if (field.type === "struct" || field.type === "tagContainer") {
+        if (field.type === "struct" || field.type === "tagContainer" || field.type === "struct:engine:TagContainer") {
           if (typeof value !== "object" || Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype || Object.getOwnPropertySymbols(value).length) fail("value", path, "A reflected Structure must contain plain authorable fields.");
-          const schema = field.type === "tagContainer" || field.typeClassId === "engine:TagContainer"
+          const schema = field.type === "tagContainer" || field.type === "struct:engine:TagContainer" || field.typeClassId === "engine:TagContainer"
             ? [{ name: "Tags", type: "tag", container: "array" as const }] : field.typeClassId ? input.structFields?.(field.typeClassId) : null;
           if (!schema) fail("resource", path, `Structure ${field.typeClassId ?? "(unspecified)"} has no prepared authoring schema.`);
           const result: Record<string, unknown> = {};
