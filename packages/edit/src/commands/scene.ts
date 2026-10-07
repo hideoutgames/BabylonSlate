@@ -9,6 +9,7 @@ import type {
 } from "@babylonslate/core";
 import type { EditCommand } from "../command";
 import { isSceneLayerAnchorActor } from "@babylonslate/core";
+import type { ReplaceSceneCommand } from "./replace-scene";
 
 function byteSizeOf(value: unknown): number {
   return new TextEncoder().encode(JSON.stringify(value)).byteLength;
@@ -793,6 +794,7 @@ export class SetSceneNameCommand implements EditCommand<SerializedScene> {
 }
 
 export type SceneEditCommand =
+  | ReplaceSceneCommand
   | AddActorCommand
   | RemoveActorCommand
   | SetActorTransformCommand
@@ -818,6 +820,7 @@ export type SceneEditCommand =
   | SetActorFolderCommand;
 
 export const SCENE_COMMAND_TYPES = [
+  "scene.replace",
   "scene.addActor",
   "scene.removeActor",
   "scene.setActorTransform",

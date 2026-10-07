@@ -31,6 +31,19 @@ class IncrementCommand implements EditCommand<TestDoc> {
 }
 
 describe("EditSession", () => {
+  it("does not evict another document's retained history when admission fails", () => {
+    const session = new EditSession({ maxBytes: 100 });
+    session.apply("closed", { value: 0 }, new IncrementCommand(3, 40));
+    session.closeDocument("closed", () => "saved");
+    session.apply("active", { value: 0 }, new IncrementCommand(1, 10));
+    const undone = session.undo("active", { value: 1 })!;
+    expect(session.applyWithHistoryAdmission("active", undone.doc, new IncrementCommand(9, 60)))
+      .toMatchObject({ ok: false, reason: "history-budget", requiredBytes: 120 });
+    expect(session.reopenDocument("closed", () => "saved")).toBe(true);
+    expect(session.undo("closed", { value: 3 })?.doc).toEqual({ value: 0 });
+    expect(session.redo("active", undone.doc)?.doc).toEqual({ value: 1 });
+  });
+
   it("undoes and redoes a node deletion with every incident edge as one operation", () => {
     const session = new EditSession();
     const before: SerializedGraph = {

@@ -48,6 +48,7 @@ import {
 import {
   createSetAssetDocumentCommandFromJson,
 } from "./commands/asset-document";
+import { createReplaceSceneCommandFromJson } from "./commands/replace-scene";
 
 export interface JournalLine {
   v: 1;
@@ -308,6 +309,7 @@ export function registerGraphCommandRevivers(): void {
 }
 
 export function registerSceneCommandRevivers(): void {
+  registerCommandReviver("scene.replace", createReplaceSceneCommandFromJson);
   registerCommandReviver("scene.setComponentLinkage", createSetComponentLinkageCommandFromJson);
   registerCommandReviver("scene.addActor", createAddActorCommandFromJson);
   registerCommandReviver("scene.removeActor", createRemoveActorCommandFromJson);

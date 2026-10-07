@@ -32,6 +32,7 @@ import {
   SCENE_COMMAND_TYPES,
 } from "./commands/scene";
 import { SetAssetDocumentCommand } from "./commands/asset-document";
+import { ReplaceSceneCommand } from "./commands/replace-scene";
 import {
   commandToJournalPayload,
   parseJournalLine,
@@ -132,6 +133,7 @@ describe("journal", () => {
     const actorId = scene.actors[0]!.id;
     const componentId = scene.actors[0]!.components[0]!.id;
     const commands = [
+      new ReplaceSceneCommand(scene, { ...scene, name: "Replaced" }),
       new AddActorCommand(createActor("added", "Added"), 1),
       new RemoveActorCommand(scene.actors[0]!, 0),
       new SetActorTransformCommand(

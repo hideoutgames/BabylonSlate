@@ -75,6 +75,14 @@ interface EditCommand<TDoc = unknown> {
 
 Merge: if the new command’s `mergeKey` equals the top undo entry’s key, replace the top entry with a coalesced command (one undo step per gesture). `diffSceneCommands` emits `SetActorsTransformsCommand` when two or more actors change transform in one snapshot so a multi-select gizmo drag is one stack entry.
 
+### Guaranteed history admission
+
+`DocumentEditStack.applyWithHistoryAdmission` and `EditSession.applyWithHistoryAdmission` are explicit transaction entry points. Both forward and inverse commands must declare finite, nonnegative integer byte costs; their sum must fit the document budget before `apply` runs. Failure returns `history-budget` or `invalid-byte-size` without changing Undo, Redo, or gesture state. A successful change creates one separate entry and permits ordinary oldest-entry eviction. A command returning its unchanged input creates no history and preserves Redo. Existing `apply` behavior remains unchanged, including applying an oversized ordinary edit whose history is then evicted.
+
+`ReplaceSceneCommand` (`scene.replace`) preserves a complete canonical `SerializedScene`, including actor properties, ordering, references, component linkage, settings and editor metadata. It snapshots immutable before/after data once, shares those snapshots with its inverse, and restores mutable document copies without running gameplay. Its UTF-8 byte cost includes both complete snapshots; admission conservatively counts both command directions even though the immutable data is shared. This budget describes retained serialized data, not browser heap usage.
+
+The replacement command rejects values JSON would silently lose or coerce (including undefined properties, non-finite numbers, negative zero, sparse arrays, runtime objects and cycles). Capture must encode supported typed values and canonicalize numbers before constructing it. It is a command-layer prerequisite, not Simulation Keep: callers must bound capture memory, validate scene schema/references/resources, check revision and permission ownership, and supply a complete candidate before admission. Journal revival reuses the same validation and restores the whole replacement as one record; it never selects an arbitrary valid subset.
+
 ## Journal format
 
 Path: `derived/{projectGuid}/journal/00000000.jsonl`, `00000001.jsonl`, … (app-private storage; see [containers.md](containers.md)). Lines are read in segment order. A project journalled by an older build may still have the single file `derived/{projectGuid}/journal.jsonl`; it is read first, and every clear removes both layouts.

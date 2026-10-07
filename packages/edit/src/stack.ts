@@ -10,6 +10,15 @@ export interface ApplyResult<TDoc> {
   command: EditCommand<TDoc>;
 }
 
+export type HistoryAdmissionResult<TDoc> =
+  | (ApplyResult<TDoc> & { ok: true; status: "applied" | "unchanged" })
+  | {
+      ok: false;
+      reason: "history-budget" | "invalid-byte-size";
+      requiredBytes: number | null;
+      maxBytes: number;
+    };
+
 interface BudgetedEntry<TDoc> extends StackEntry<TDoc> {
   bytes: number;
 }
@@ -79,6 +88,40 @@ export class DocumentEditStack<TDoc> {
     this.mergeOpen = true;
     this.trim();
     return { doc: next, command };
+  }
+
+  /**
+   * Apply one separate undo step only when its complete forward and inverse
+   * costs fit. Rejection (or a throwing pure command) changes neither stack.
+   * Unlike ordinary edits, both commands must explicitly account for bytes.
+   */
+  applyWithHistoryAdmission(
+    doc: TDoc,
+    command: EditCommand<TDoc>,
+  ): HistoryAdmissionResult<TDoc> {
+    const inverse = command.invert();
+    const forwardBytes = command.byteSize;
+    const inverseBytes = inverse.byteSize;
+    if (
+      forwardBytes === undefined || inverseBytes === undefined ||
+      !Number.isSafeInteger(forwardBytes) || forwardBytes < 0 ||
+      !Number.isSafeInteger(inverseBytes) || inverseBytes < 0 ||
+      !Number.isSafeInteger(forwardBytes + inverseBytes)
+    ) {
+      return { ok: false, reason: "invalid-byte-size", requiredBytes: null, maxBytes: this.maxBytes };
+    }
+    const bytes = forwardBytes + inverseBytes;
+    if (bytes > this.maxBytes) {
+      return { ok: false, reason: "history-budget", requiredBytes: bytes, maxBytes: this.maxBytes };
+    }
+    const next = command.apply(doc);
+    if (next === doc) return { ok: true, status: "unchanged", doc, command };
+    this.undoStack.push({ command, inverse, bytes });
+    this.redoStack = [];
+    // A later ordinary gesture must not merge into this discrete transaction.
+    this.endGesture();
+    this.trim();
+    return { ok: true, status: "applied", doc: next, command };
   }
 
   undo(doc: TDoc): ApplyResult<TDoc> | null {

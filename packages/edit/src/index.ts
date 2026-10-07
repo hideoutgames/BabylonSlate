@@ -3,6 +3,7 @@ export {
   DocumentEditStack,
   type ApplyResult,
   type DocumentEditStackOptions,
+  type HistoryAdmissionResult,
 } from "./stack";
 export { EditSession, DEFAULT_EDIT_BYTE_BUDGET } from "./session";
 export {
@@ -56,6 +57,7 @@ export {
   type SceneEditCommand,
 } from "./commands/scene";
 export { diffSceneCommands } from "./commands/scene-diff";
+export { ReplaceSceneCommand, createReplaceSceneCommandFromJson } from "./commands/replace-scene";
 export {
   type JournalLine,
   JOURNAL_REPATH_TYPE,
