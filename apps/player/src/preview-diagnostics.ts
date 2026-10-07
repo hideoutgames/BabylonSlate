@@ -18,7 +18,7 @@ export function installPreviewDiagnostics(ports: PlayerPreviewDiagnosticPorts, e
       const { frames, ticks, ...metadata } = profile;
       transfer = server.publishProfile({ metadata: { ...metadata,
         frames: { columns: frames.columns, count: frames.count }, ticks: { columns: ticks.columns, count: ticks.count } },
-        frames: frames.chunks, ticks: ticks.chunks });
+        frames: frames.chunks, ticks: ticks.chunks }).finally(() => session.forgetProfile(profile));
     },
   });
   const server = createPreviewDiagnosticServer(endpoint, {

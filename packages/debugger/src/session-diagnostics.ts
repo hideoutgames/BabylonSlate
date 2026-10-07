@@ -39,6 +39,8 @@ export class SessionDiagnostics<FrameReport> {
   }
   get active(): "profile" | "frame" | null { return this.operation?.kind ?? null; }
   get lastProfile(): PerformanceProfile | null { return this.retained; }
+  /** Transfer owners release the player's copy after the editor has received it. */
+  forgetProfile(profile: PerformanceProfile): void { if (this.retained === profile) this.retained = null; }
 
   async startProfile(options: { durationMs?: number; byteBudget?: number } = {}): Promise<DiagnosticOperationResult> {
     const refusal = this.refusal();

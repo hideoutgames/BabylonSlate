@@ -115,10 +115,12 @@ export function createPreviewDiagnosticClient(endpoint: PreviewDiagnosticEndpoin
     },
     dispose(): void {
       if (closed) return;
-      if (session) send({ action: "close" });
-      closed = true;
-      if (opening) { clearTimeout(opening.timer); opening.reject(new Error("Preview diagnostics closed.")); opening = undefined; }
-      cancelRequests("Preview diagnostics closed."); clearCapture(); session = undefined;
+      try { if (session) send({ action: "close" }); }
+      finally {
+        closed = true;
+        if (opening) { clearTimeout(opening.timer); opening.reject(new Error("Preview diagnostics closed.")); opening = undefined; }
+        cancelRequests("Preview diagnostics closed."); clearCapture(); session = undefined;
+      }
     },
   };
 }
