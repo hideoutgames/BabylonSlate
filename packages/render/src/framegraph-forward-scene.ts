@@ -1,3 +1,4 @@
+import { pausedSceneRedrawIssue, renderSceneWithGameTime } from "./scene-game-time";
 import { PostProcessRetirement } from "./post-process-retirement";
 import { renderTargetCaptureDrawing } from "./render-target-capture-state";
 import { createScenePostProcessGraph, type ScenePostProcessGraph } from "./scene-post-process-graph";
@@ -544,7 +545,7 @@ export class ForwardSceneFrameGraph {
   render(camera: Camera, updateCameras = true, reuseAdmission = false): ForwardSceneGraphResult & { rendered?: boolean } {
     const admitted = this.admittedCamera;
     this.admittedCamera = undefined;
-    const unavailable = this.unavailable(camera);
+    const unavailable = this.unavailable(camera) ?? pausedSceneRedrawIssue(this.scene);
     if (unavailable) return { path: "classic", reason: unavailable, rendered: false };
     this.syncMembership();
     if (!reuseAdmission || admitted !== camera || this.admittedRevision !== this.readinessRevision ||
@@ -617,7 +618,7 @@ export class ForwardSceneFrameGraph {
       this.graphRender = this.scene.customRenderFunction!;
       this.scene.customRenderFunction = this.pinnedGraphRender;
       const revision = this.readinessRevision;
-      this.scene.render(updateCameras);
+      renderSceneWithGameTime(this.scene, updateCameras);
       this.syncMembership();
       return { path: "frameGraph", ...(revision === this.readinessRevision ? {} : { rendered: false }) };
     } finally {
@@ -650,7 +651,7 @@ export class ForwardSceneFrameGraph {
       }
     }
     const revision = this.readinessRevision;
-    withSceneStreamNativeVisibility(this.scene, () => this.scene.render(updateCameras));
+    withSceneStreamNativeVisibility(this.scene, () => renderSceneWithGameTime(this.scene, updateCameras));
     this.syncMembership();
     // A successful probe after drawing cannot prove a mesh was not skipped.
     // Hold a candidate dirtied by render callbacks and retry on the next frame.

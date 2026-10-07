@@ -1,3 +1,4 @@
+import { renderSceneWithGameTime, setSceneGameTimePaused } from "./scene-game-time";
 import { installAssetBytes } from "@babylonslate/assets";
 import { FreeCamera, Vector3, MeshBuilder, TransformNode, type Mesh } from "@babylonjs/core";
 import { encodeGlbJsonBin, splitGlbJsonBin } from "@babylonslate/assets";
@@ -252,6 +253,20 @@ describe("beginSlotModelAnimLoad", () => {
     const [part, root] = model.pose();
     expect(part).toBeCloseTo(1);
     expect(root).toBeCloseTo(0);
+  });
+
+  it("retains a queued weighted pose while a paused scene redraws", async () => {
+    const model = await loadCrossfadeModel();
+    model.scene.render();
+    const before = model.pose();
+    setSceneGameTimePaused(model.scene, true);
+    model.apply([["First", 1, 0.5], ["Second", 0.5, 0.5]]);
+    renderSceneWithGameTime(model.scene);
+    expect(model.pose()).toEqual(before);
+    setSceneGameTimePaused(model.scene, false);
+    model.scene.render();
+    expect(model.pose()[0]).toBeCloseTo(0.75);
+    expect(model.pose()[1]).toBeCloseTo(0.25);
   });
 
   it("accounts a mesh shared by two glTF nodes once", async () => {

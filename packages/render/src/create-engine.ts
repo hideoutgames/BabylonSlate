@@ -1,3 +1,4 @@
+import { pausedSceneRedrawIssue, setSceneGameTimePaused } from "./scene-game-time";
 import { applyDynamicRuntimeMeshUpdate } from "./dynamic-runtime-mesh";
 import { PostProcessRetirement } from "./post-process-retirement";
 import { OverlayLayoutRenderer } from "./overlay-layout-render";
@@ -280,6 +281,10 @@ export interface EngineHandle {
   /** Apply a structural command (spawn/assignMesh) from the game worker. */
   applyCommand: (command: CommandMessage) => void;
   setPaused: (paused: boolean) => void;
+  /** Freeze render-owned game time independently of presentation/input pause reasons. */
+  setGameTimePaused: (paused: boolean) => void;
+  /** Request one supported render-only frame; unsupported owners retain the last image. */
+  requestPausedRedraw: () => { accepted: boolean; reason?: string };
   /** Streaming owns a separate pause, so releasing it cannot resume manual Pause. */
   setSceneStreamingPaused: (paused: boolean) => void;
   /** Enable or disable this canvas's `registerView` client (overlay Play). */
@@ -2266,7 +2271,7 @@ function initializeEngine(
         audioService.syncSnapshot(audioPoses);
       }
       const camera = scene.activeCamera;
-      if (camera) {
+      if (camera && !gameTimePaused) {
         const pos = camera.globalPosition ?? camera.position;
         const rot = camera.absoluteRotation;
         audioService.syncListener({
@@ -2706,8 +2711,11 @@ function initializeEngine(
 
   let callerPaused = false;
   let sceneStreamingPaused = false;
+  let gameTimePaused = false;
   const applyPause = () => {
-    const paused = callerPaused || sceneStreamingPaused;
+    const paused = callerPaused || sceneStreamingPaused || gameTimePaused;
+    setSceneGameTimePaused(scene, gameTimePaused);
+    for (const layer of sceneLayerCompositor?.layers() ?? []) setSceneGameTimePaused(layer.scene, gameTimePaused);
     binding.paused = paused;
     if (paused) { scrollDrag = null; joysticks.reset(); uiControls.reset(); }
     scheduler.setPaused(paused);
@@ -2975,7 +2983,10 @@ function initializeEngine(
       if (command.type === "sceneLayerCreate") {
         const layer = sceneLayerCompositor?.create(command);
         // Layers resolve project quality (Geometry, Water) through the world view.
-        if (layer) followSceneRenderSettings(layer.scene, scene);
+        if (layer) {
+          followSceneRenderSettings(layer.scene, scene);
+          setSceneGameTimePaused(layer.scene, gameTimePaused);
+        }
         syncOverlayLayer(command.layerId);
         scheduler.invalidate("snapshot");
       }
@@ -3227,6 +3238,23 @@ function initializeEngine(
     setPaused: (paused: boolean) => {
       callerPaused = paused;
       applyPause();
+    },
+    setGameTimePaused: (paused: boolean) => {
+      if (disposed) return;
+      gameTimePaused = paused;
+      applyPause();
+    },
+    requestPausedRedraw: () => {
+      if (disposed) return { accepted: false, reason: "The view has been disposed." };
+      if (!gameTimePaused) return { accepted: false, reason: "Render-only redraw requires paused game time." };
+      const worldIssue = pausedSceneRedrawIssue(scene);
+      if (worldIssue) return { accepted: false, reason: worldIssue };
+      for (const layer of sceneLayerCompositor?.layers() ?? []) {
+        const reason = pausedSceneRedrawIssue(layer.scene);
+        if (reason) return { accepted: false, reason };
+      }
+      scheduler.requestPausedFrame();
+      return { accepted: true };
     },
     setSceneStreamingPaused: (paused: boolean) => {
       sceneStreamingPaused = paused;

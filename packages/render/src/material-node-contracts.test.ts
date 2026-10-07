@@ -1,3 +1,4 @@
+import { setSceneGameTimePaused } from "./scene-game-time";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ArcRotateCamera, Constants, DiscardBlock, FragmentOutputBlock, InputBlock, MeshBuilder, MultiplyBlock, NullEngine, PrecisionDate, Scene, Vector3, VectorMergerBlock, type NodeMaterialConnectionPoint } from "@babylonjs/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument, type MaterialDocument } from "@babylonslate/shader-graph";
@@ -271,6 +272,15 @@ describe("material node contracts", () => {
     clock.mockReturnValue(engine.startTime + 1250);
     scene.render();
     expect(scalar(time) - before).toBeCloseTo(1);
+    const frozen = scalar(time);
+    setSceneGameTimePaused(scene, true);
+    clock.mockReturnValue(engine.startTime + 11250);
+    scene.render(true, true);
+    expect(scalar(time)).toBe(frozen);
+    setSceneGameTimePaused(scene, false);
+    clock.mockReturnValue(engine.startTime + 11500);
+    scene.render();
+    expect(scalar(time) - frozen).toBeCloseTo(0.25);
   });
   it.each(["a", "b"])("compiles animated normal displacement with Time on Multiply %s", async (timePin) => {
     const doc = createDefaultMaterialDocument();

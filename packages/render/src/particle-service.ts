@@ -298,8 +298,9 @@ export class ParticleService {
     for (const entry of this.live.values()) for (const record of entry.systems) {
       if (paused) record.updateSpeed = record.system.updateSpeed;
       record.system.updateSpeed = paused ? 0 : record.updateSpeed;
-      // Node Update blocks run every frame whatever the speed; Babylon's flag skips the whole update.
-      if (record.kind === "graph") record.system.paused = paused;
+      // Zero speed still consumes CPU manual emissions and Node Update blocks.
+      // Babylon's public paused flag skips the whole CPU update.
+      if (!record.gpu) (record.system as ParticleSystem).paused = paused;
     }
     if (paused) return;
     // Speeds and the graph flag are restored first: CPU prewarm runs inside `start()`
@@ -464,7 +465,7 @@ export class ParticleService {
         } catch (error) { this.fail(entry, generation, error); }
       });
       const after = host.onAfterRenderObservable.add(() => {
-        if (!this.current(entry, generation)) return;
+        if (!this.current(entry, generation) || this.paused) return;
         if (entry.state === "playing") {
           // The driver runs on the simulation clock, so pause (updateSpeed 0) holds it.
           const ratio = host.getAnimationRatio() || 1;
@@ -556,7 +557,7 @@ export class ParticleService {
       const ready = bindParticleMaterial(system, lease.resource);
       if (this.paused) {
         system.updateSpeed = 0;
-        if (record.kind === "graph") record.system.paused = true;
+        if (!record.gpu) (record.system as ParticleSystem).paused = true;
       }
       applySortingToParticleSystem(system, context.sorting);
       const owned = record;

@@ -1,3 +1,4 @@
+import { isSceneGameTimePaused } from "./scene-game-time";
 import "./gltf-loader";
 import { Animation } from "@babylonjs/core/Animations/animation";
 import type {
@@ -369,14 +370,14 @@ function blendsFor(scene: Scene): Map<NamedSeekableGroup, () => void> {
   // right before animate() lets that pass consume them, so a later command
   // cannot mix with a stale weighted seek.
   const observer = scene.onBeforeAnimationsObservable.add(() => {
-    if (!blends.size || !scene.animationsEnabled) return;
+    if (!blends.size || !scene.animationsEnabled || isSceneGameTimePaused(scene)) return;
     // Pinned Babylon 9.20 adapter: Scene._animate skips its first pass,
     // late bindings included, while pending data exists. This observer also
     // assumes an animation pass follows the notification. Babylon still
-    // notifies without one for `scene.render(_, true)` (ignoreAnimations) and
-    // for a deterministic-lockstep frame that takes zero steps. Neither runs in
-    // production; either would clear these blends and leave stale late
-    // bindings for the next pass.
+    // notifies during render-only redraws; the game-time guard above keeps the
+    // last accepted blends queued for the next real animation pass. Direct
+    // ignoreAnimations callers and zero-step deterministic lockstep frames
+    // must likewise avoid consuming this queue.
     if (!scene._animationTimeLast && scene._pendingData.length > 0) return;
     for (const apply of blends.values()) apply();
     blends.clear();

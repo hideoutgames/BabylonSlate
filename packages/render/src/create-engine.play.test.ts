@@ -1,6 +1,6 @@
 import { mockCubeTextureIO, mockDepthTextureIO } from "./texture-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Camera, Constants, InputBlock, KhronosTextureContainer2, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, type Mesh } from "@babylonjs/core";
+import { Camera, Constants, GPUParticleSystem, InputBlock, KhronosTextureContainer2, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, type Mesh } from "@babylonjs/core";
 import { DracoDecoder } from "@babylonjs/core/Meshes/Compression/dracoDecoder";
 import { overlayVisualStyle } from "./overlay-visual-style";
 import {
@@ -332,6 +332,36 @@ describe("Play createEngine view", () => {
     expect(handle.scheduler.shouldRender(0)).toBe(false);
     handle.setSceneStreamingPaused(false);
     expect(handle.scheduler.shouldRender(0)).toBe(true);
+  });
+
+  it("admits one explicit render-only redraw without clearing other pause reasons", () => {
+    const { handle } = playHandle(sharedEngine());
+    expect(handle.requestPausedRedraw().accepted).toBe(false);
+    handle.setGameTimePaused(true);
+    expect(handle.scheduler.shouldRender(0)).toBe(false);
+    expect(handle.requestPausedRedraw()).toEqual({ accepted: true });
+    expect(handle.scheduler.shouldRender(0)).toBe(true);
+    handle.scheduler.noteRendered(0);
+    expect(handle.scheduler.shouldRender(1)).toBe(false);
+    handle.setPaused(true);
+    handle.setGameTimePaused(false);
+    expect(handle.scheduler.shouldRender(1)).toBe(false);
+    handle.setPaused(false);
+    expect(handle.scheduler.shouldRender(1)).toBe(true);
+  });
+
+  it("refuses paused redraw while GPU particles would advance and leaves the frame held", () => {
+    const engine = sharedEngine();
+    vi.spyOn(engine, "getCaps").mockReturnValue({ ...engine.getCaps(), supportTransformFeedbacks: true });
+    const { handle } = playHandle(engine);
+    const system = new GPUParticleSystem("Live GPU Emitter", { capacity: 8 }, handle.scene);
+    system.emitter = Vector3.Zero();
+    system.start(0);
+    handle.setGameTimePaused(true);
+    expect(handle.requestPausedRedraw()).toMatchObject({ accepted: false, reason: expect.stringContaining("Live GPU Emitter") });
+    expect(handle.scheduler.shouldRender(0)).toBe(false);
+    system.dispose();
+    expect(handle.requestPausedRedraw()).toEqual({ accepted: true });
   });
 
   function renderViews(engine: NullEngine) {

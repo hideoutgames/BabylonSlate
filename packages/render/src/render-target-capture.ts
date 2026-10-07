@@ -1,3 +1,4 @@
+import { isSceneGameTimePaused } from "./scene-game-time";
 import {
   Color4, Constants, LinesMesh, Material, Matrix, MultiMaterial, Quaternion, RawTexture,
   RenderTargetTexture, Texture, UniversalCamera, Vector3,
@@ -212,7 +213,7 @@ export class RenderTargetCaptures {
     return { resource: texture, key: `renderTargetTexture:${guid}`, release() {} };
   }
   render(): void {
-    if (this.disposed || drawing.has(this.scene)) return;
+    if (this.disposed || drawing.has(this.scene) || isSceneGameTimePaused(this.scene)) return;
     this.frameOwners.clear();
     for (const [actorId, capture] of this.captures) {
       const settings = capture.settings;
