@@ -67,7 +67,7 @@ export function SearchDropdown({
       <DropdownMenuContent
         align="start"
         className={
-          contentClassName ?? "max-h-96 w-max min-w-64 max-w-sm overflow-y-auto"
+          contentClassName ?? "max-h-96 w-max min-w-52 max-w-sm overflow-y-auto"
         }
         data-testid={testId}
       >
@@ -88,7 +88,7 @@ export function SearchDropdown({
           onClick={(event) => event.stopPropagation()}
         >
           <SearchInput
-            className="min-h-[var(--touch-target,44px)]"
+            className="h-7 pointer-coarse:h-[var(--touch-target,44px)]"
             aria-label={placeholder}
             placeholder={placeholder}
             value={query}
@@ -104,7 +104,7 @@ export function SearchDropdown({
             {section.items.map((item) => (
               <DropdownMenuItem
                 key={item.id}
-                className="min-h-[var(--touch-target,44px)]"
+                className="min-h-7 pointer-coarse:min-h-[var(--touch-target,44px)]"
                 onClick={() => {
                   onSelect(item.id);
                   onOpenChange?.(false);

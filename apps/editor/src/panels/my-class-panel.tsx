@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
-  AddFunctionDialog,
+  AddMemberMenu,
   AssetPicker,
   ContextMenuOverlay,
   NamePromptDialog,
@@ -410,8 +410,6 @@ export function ClassMembersView({
   const [memberPromptLocal, setMemberPromptLocal] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [interfacePickerOpen, setInterfacePickerOpen] = useState(false);
-  const [functionDialogOpen, setFunctionDialogOpen] = useState(false);
-  const [eventDialogOpen, setEventDialogOpen] = useState(false);
   const [accessDrop, setAccessDrop] = useState<{
     memberId: string;
     position: { x: number; y: number };
@@ -484,14 +482,6 @@ export function ClassMembersView({
       setInterfacePickerOpen(true);
       return;
     }
-    if (kind === "function" && !local) {
-      setFunctionDialogOpen(true);
-      return;
-    }
-    if (kind === "event" && !local) {
-      setEventDialogOpen(true);
-      return;
-    }
     setMemberPromptLocal(local);
     setMemberPromptKind(kind);
   };
@@ -531,6 +521,66 @@ export function ClassMembersView({
       }),
     [classId, graph, membersOptions],
   );
+  const createEmptyFunction = () => {
+    if (!graph) return;
+    selectAddedFunction(
+      addClassMember(graph, "function", nextNewMemberName("function", namesOfKind("function"))),
+      true,
+    );
+  };
+  const pickFunction = (id: string) => {
+    if (!graph) return;
+    const row = overridableRows.find((entry) => entry.id === id);
+    if (!row || row.overwritten) return;
+    selectAddedFunction(
+      addClassMember(graph, "function", row.name, undefined, {
+        pins: row.pins,
+        implementsInterface: row.implementsInterface,
+        overrides: row.overrides,
+      }),
+    );
+  };
+  const createEmptyEvent = () => {
+    if (!graph) return;
+    const next = addClassMember(graph, "event", nextNewMemberName("event", namesOfKind("event")));
+    onGraphChange(next);
+    const node = next.nodes[next.nodes.length - 1];
+    if (node) {
+      onFocusEventNode?.(node.id, node.data.name as string);
+      setRenamingId(node.id);
+    }
+  };
+  const pickEvent = (id: string) => {
+    if (!graph) return;
+    const row = overridableEventRows.find((entry) => entry.id === id);
+    if (!row || row.overwritten) return;
+    const next =
+      row.kind === "native"
+        ? ensureEventNodeOnGraph(graph, row.eventType)
+        : row.kind === "component"
+          ? ensureEventNodeOnGraph(graph, row.eventType, {
+              name: row.eventType === "flow.event.custom" ? row.name : undefined,
+              pins: row.pins,
+              componentId: row.componentId,
+              eventQualifier: row.eventQualifier,
+            })
+          : ensureEventNodeOnGraph(graph, "flow.event.custom", {
+              name: row.name,
+              pins: row.pins,
+              parentClassId: row.parentClassId,
+              eventQualifier: row.eventQualifier ?? "Inherited",
+            });
+    onGraphChange(next);
+    const node = next.nodes.find((entry) => {
+      if (entry.type !== row.eventType) return false;
+      if (row.componentId) return entry.data.componentId === row.componentId;
+      if (row.eventType !== "flow.event.custom") return true;
+      return entry.data.name === row.name;
+    });
+    if (node) onFocusEventNode?.(node.id, row.name);
+  };
+  const addMenuRef = useRef({ createEmptyFunction, pickFunction, createEmptyEvent, pickEvent });
+  addMenuRef.current = { createEmptyFunction, pickFunction, createEmptyEvent, pickEvent };
   const spawnAccess = (
     access: VariableAccessKind,
     memberId: string | null | undefined = selectedId,
@@ -639,6 +689,36 @@ export function ClassMembersView({
             ),
           };
         }
+        if ((kind === "function" || kind === "event") && section.local !== true) {
+          const event = kind === "event";
+          return {
+            ...row,
+            trailing: (
+              <AddMemberMenu
+                title={addLabel}
+                emptyLabel={event ? "New Event" : "New Function"}
+                items={event ? overridableEventRows : overridableRows}
+                onCreateEmpty={() =>
+                  event
+                    ? addMenuRef.current.createEmptyEvent()
+                    : addMenuRef.current.createEmptyFunction()
+                }
+                onPick={(id) =>
+                  event ? addMenuRef.current.pickEvent(id) : addMenuRef.current.pickFunction(id)
+                }
+                data-testid={event ? "add-event-menu" : "add-function-menu"}
+              >
+                <IconActionButton
+                  label={addLabel}
+                  size={phone ? "touch-icon" : "icon-sm"}
+                  data-testid={`class-add-${section.id}`}
+                >
+                  <PlusIcon />
+                </IconActionButton>
+              </AddMemberMenu>
+            ),
+          };
+        }
         return {
           ...row,
           trailing: (
@@ -656,7 +736,17 @@ export function ClassMembersView({
           ),
         };
       }).map((row) => renamableIds.has(row.id) ? { ...row, renamable: true } : row),
-    [activeFunctionId, collapsed, members, membersOptions, treeSections, phone, renamableIds],
+    [
+      activeFunctionId,
+      collapsed,
+      members,
+      membersOptions,
+      treeSections,
+      phone,
+      renamableIds,
+      overridableRows,
+      overridableEventRows,
+    ],
   );
 
   const { menu, closeMenu, openMenuAt } = useContextMenu({
@@ -858,83 +948,6 @@ export function ClassMembersView({
               detail: added.id,
               typeId: added.typeId,
             });
-          }
-        }}
-      />
-      <AddFunctionDialog
-        open={functionDialogOpen}
-        onOpenChange={setFunctionDialogOpen}
-        items={overridableRows}
-        defaultName={nextNewMemberName("function", namesOfKind("function"))}
-        onCreateEmpty={(name, named) => {
-          if (!graph) return;
-          selectAddedFunction(addClassMember(graph, "function", name), !named);
-        }}
-        onPick={(id) => {
-          if (!graph) return;
-          const row = overridableRows.find((entry) => entry.id === id);
-          if (!row || row.overwritten) return;
-          selectAddedFunction(
-            addClassMember(graph, "function", row.name, undefined, {
-              pins: row.pins,
-              implementsInterface: row.implementsInterface,
-              overrides: row.overrides,
-            }),
-          );
-        }}
-      />
-      <AddFunctionDialog
-        open={eventDialogOpen}
-        onOpenChange={setEventDialogOpen}
-        title="Add Event"
-        description="Create an empty custom event or override a native, inherited, or attached-component one."
-        emptyLabel="New Empty Event"
-        nameLabel="Event Name"
-        items={overridableEventRows}
-        defaultName={nextNewMemberName("event", namesOfKind("event"))}
-        data-testid="add-event-dialog"
-        onCreateEmpty={(name, named) => {
-          if (!graph) return;
-          const next = addClassMember(graph, "event", name);
-          onGraphChange(next);
-          const node = next.nodes[next.nodes.length - 1];
-          if (node) {
-            onFocusEventNode?.(node.id, node.data.name as string);
-            if (!named) setRenamingId(node.id);
-          }
-        }}
-        onPick={(id) => {
-          if (!graph) return;
-          const row = overridableEventRows.find((entry) => entry.id === id);
-          if (!row || row.overwritten) return;
-          const next =
-            row.kind === "native"
-              ? ensureEventNodeOnGraph(graph, row.eventType)
-              : row.kind === "component"
-                ? ensureEventNodeOnGraph(graph, row.eventType, {
-                    name:
-                      row.eventType === "flow.event.custom" ? row.name : undefined,
-                    pins: row.pins,
-                    componentId: row.componentId,
-                    eventQualifier: row.eventQualifier,
-                  })
-                : ensureEventNodeOnGraph(graph, "flow.event.custom", {
-                    name: row.name,
-                    pins: row.pins,
-                    parentClassId: row.parentClassId,
-                    eventQualifier: row.eventQualifier ?? "Inherited",
-                  });
-          onGraphChange(next);
-          const node = next.nodes.find((entry) => {
-            if (entry.type !== row.eventType) return false;
-            if (row.componentId) {
-              return entry.data.componentId === row.componentId;
-            }
-            if (row.eventType !== "flow.event.custom") return true;
-            return entry.data.name === row.name;
-          });
-          if (node) {
-            onFocusEventNode?.(node.id, row.name);
           }
         }}
       />

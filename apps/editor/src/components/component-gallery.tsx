@@ -40,7 +40,7 @@ import {
   ArrayProperty,
   DisclosureSection,
   NamePromptDialog,
-  AddFunctionDialog,
+  AddMemberMenu,
   NestedMenu,
   NumericDragField,
   PanelFrame,
@@ -755,7 +755,6 @@ function GalleryComposites() {
   const [sceneComponentPickerOpen, setSceneComponentPickerOpen] =
     useState(false);
   const [namePromptOpen, setNamePromptOpen] = useState(false);
-  const [addFunctionOpen, setAddFunctionOpen] = useState(false);
   const [layers, setLayers] = useState(["Default", "Foreground"]);
   const [entryItems, setEntryItems] = useState(["One", "Two"]);
   const [arrayItems, setArrayItems] = useState(["foreground"]);
@@ -1175,6 +1174,22 @@ function GalleryComposites() {
         <Button variant="outline" onClick={() => setNamePromptOpen(true)}>
           Open name prompt
         </Button>
+        <AddMemberMenu
+          items={[
+            {
+              id: "interface:g:Apply Damage",
+              name: "Apply Damage",
+              description: "Interface · Damageable",
+              overwritten: false,
+              kind: "interface",
+            },
+          ]}
+          onCreateEmpty={() => {}}
+          onPick={() => {}}
+          data-testid="gallery-add-member-menu"
+        >
+          <Button variant="outline">Open add function menu</Button>
+        </AddMemberMenu>
       </div>
       <GalleryNestedMenus />
       <GalleryCatalogRows />
@@ -1285,21 +1300,6 @@ function GalleryComposites() {
         label="Variable Name"
         onSubmit={() => {}}
         data-testid="gallery-name-prompt"
-      />
-      <AddFunctionDialog
-        open={addFunctionOpen}
-        onOpenChange={setAddFunctionOpen}
-        items={[
-          {
-            id: "interface:g:Apply Damage",
-            name: "Apply Damage",
-            description: "Interface · Damageable",
-            overwritten: false,
-            kind: "interface",
-          },
-        ]}
-        onCreateEmpty={() => {}}
-        onPick={() => {}}
       />
     </div>
     </AssetOpenProvider>

@@ -267,10 +267,11 @@ export {
   type AtlasTileGridTool,
 } from "./atlas-tile-grid";
 export {
-  AddFunctionDialog,
-  type AddFunctionDialogItem,
-  type AddFunctionDialogProps,
-} from "./add-function-dialog";
+  ADD_MEMBER_EMPTY_ID,
+  AddMemberMenu,
+  type AddMemberMenuItem,
+  type AddMemberMenuProps,
+} from "./add-member-menu";
 export {
   MultilineTextField,
   type MultilineTextFieldProps,

@@ -62,7 +62,6 @@ The editor shell is a full-viewport IDE, not a scrollable web page. Document rub
 - Global Search results (`global-search-results`) — overflow list inside a fixed-height dialog
 - SearchDialog / AssetPicker / ClassPicker / SceneComponentPicker (`*-body`) — native `overflow-y-auto overscroll-y-contain touch-pan-y` with a definite `pickerListHeightPx` cap (16rem). Rows are `role="option"` divs (`buttonVariants` ghost touch, `touch-pan-y`), not native buttons, so a finger pan on a row scrolls. WindowedList slots also use `touch-pan-y`. The document overscroll guard allows the body because it is `overflow-y: auto`.
 - MarkupAutocompleteTextarea (2D Rich Text modal and gallery) — always-on `h-64` listbox with the same non-button `touch-pan-y` rows. Unfiltered lists every applicable tag.
-- AddFunctionDialog / Add Event (`*-body`) — same native overflow list and non-button option rows as SearchDialog
 
 ## Virtual keyboard
 

@@ -12,7 +12,7 @@ export const WINDOWED_LIST_TOUCH_ROW_HEIGHT = 44;
 /** 16rem — Tailwind `h-64`. Content-sized dialogs cannot grow `h-0 flex-1`. */
 export const PICKER_LIST_MAX_HEIGHT_PX = 256;
 
-/** Definite list height for SearchDialog / AddFunctionDialog pickers. */
+/** Definite list height for SearchDialog pickers. */
 export function pickerListHeightPx(itemCount: number): number {
   if (itemCount <= 0) return WINDOWED_LIST_TOUCH_ROW_HEIGHT;
   return Math.min(
