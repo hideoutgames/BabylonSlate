@@ -75,6 +75,7 @@ import { attachInputCapture, type InputCaptureHandle } from "./input-capture";
 import { createSessionBoundaryClient } from "./session-boundary-client";
 import { RuntimeInspectorClient, type RuntimeInspectionAction, type RuntimeInspectionWriteOptions } from "./runtime-inspector-client";
 import { RuntimeMaterialEditHost } from "./runtime-material-edit-host";
+import { SimulationCaptureClient } from "./simulation-capture-client";
 import { getBuildIdentity } from "../lib/build-identity";
 import { observedMoveXFromEvents } from "../lib/play-input-observe";
 import { createGameWorkerHost, type GameWorkerHost } from "./game-worker-host";
@@ -351,6 +352,8 @@ export interface PlaySession {
   inspectWorld: () => Promise<DebugInspectSnapshot>;
   /** Correlated typed selection and live edits; continuous drafts are coalesced. */
   requestRuntimeInspection: (action: RuntimeInspectionAction, options?: RuntimeInspectionWriteOptions) => Promise<import("@babylonslate/bridge").RuntimeInspectorResult>;
+  /** Complete final canonical scene, captured before destructive Stop/End Play. */
+  captureSimulationScene: (maxBytes?: number) => Promise<import("@babylonslate/runtime").SimulationSceneCaptureResult>;
   /** Advance one simulation tick while paused. */
   step: () => void;
   lastTrace: () => TracePayload | null;
@@ -465,6 +468,8 @@ export function startPlaySession(options: {
   sessionGeneration?: number;
   /** Transfer the preparation overlay, including wipe-on-start, to this owner. */
   simulationSaveStorage?: ReturnType<typeof createSessionSaveStorage>;
+  /** Authoring asset identities admitted by preparation; this does not load assets. */
+  simulationAssetGuids?: readonly string[];
   saveGame?: import("@babylonslate/core").SaveGameConfiguration;
   renderSettings?: import("@babylonslate/render").RenderShadingSettings;
   consoleRenderSettings?: import("@babylonslate/render").RenderShadingSettings;
@@ -922,6 +927,62 @@ export function startPlaySession(options: {
     : undefined;
   const saveStorage = simulationSaveStorage ?? createSaveGameStorage();
   const saveServer = createSaveStorageServer(saveStorage, (response) => worker?.postControl({ type: "saveStorageResponse", response }));
+  let captureTask: Promise<import("@babylonslate/runtime").SimulationSceneCaptureResult> | null = null;
+  let captureAbort: AbortController | null = null;
+  let captureRequested = false;
+  let captureFenceActive = false;
+  let captureFenceChanged = false;
+  const acceptQuiesced = (result: import("@babylonslate/bridge").SessionBoundaryResult) => {
+    if (result.success && result.sessionGeneration === (options.sessionGeneration ?? 0)) {
+      captureFenceActive = true;
+      captureFenceChanged = false;
+    }
+    captureClient.receive({ type: "simulationQuiesced", ...result });
+  };
+  const captureClient = new SimulationCaptureClient({
+    generation: options.sessionGeneration ?? 0,
+    quiesce: async request => {
+      if (worker) { worker.postControl({ type: "quiesceSimulation", ...request }); return; }
+      if (!runtime) throw new Error("The Simulation runtime is unavailable.");
+      acceptQuiesced(await runtime.quiesceSimulation(request));
+    },
+    capture: async request => {
+      if (worker) { worker.postControl({ type: "captureSimulationState", ...request }); return; }
+      if (!runtime) throw new Error("The Simulation runtime is unavailable.");
+      captureClient.receiveComplete(request, await runtime.captureSimulationState(request));
+    },
+  });
+  const captureSimulationScene: PlaySession["captureSimulationScene"] = (maxBytes) => {
+    if (options.mode !== "simulate" || stopped) return Promise.reject(new Error("A live Simulation session is required for final scene capture."));
+    if (captureTask) return captureTask;
+    captureRequested = true;
+    captureFenceActive = false;
+    inspectorClient.dispose();
+    input?.neutralize();
+    requestedPauses.add("loading");
+    suppressGameInput();
+    const abort = new AbortController();
+    captureAbort = abort;
+    const work = (async () => {
+      const boundary = await captureClient.quiesce();
+      if (!boundary.success) throw new Error(boundary.reason ?? "Simulation did not reach a final boundary.");
+      abort.signal.throwIfAborted();
+      acknowledgedPaused = true;
+      handle.setGameTimePaused(true);
+      const rendered = await handle.quiesceAuthoringRevision(boundary.commandRevision, abort.signal);
+      if (captureFenceChanged) throw new Error("A render-owned property changed after the final Simulation boundary.");
+      const result = await captureClient.capture(rendered.commandRevision, maxBytes);
+      abort.signal.throwIfAborted();
+      if (captureFenceChanged) throw new Error("A render-owned property changed while the final Simulation scene was transferring.");
+      return result;
+    })();
+    captureTask = work.finally(() => {
+      abort.abort();
+      if (captureAbort === abort) captureAbort = null;
+      captureTask = null;
+    });
+    return captureTask;
+  };
   const materialEditHost = new RuntimeMaterialEditHost({
     sessionGeneration: options.sessionGeneration ?? 0,
     mode: options.mode ?? "play",
@@ -934,6 +995,9 @@ export function startPlaySession(options: {
     },
   });
   const onCommand = (command: CommandMessage) => {
+    if (command.type === "simulationQuiesced") { acceptQuiesced(command); return; }
+    if (command.type === "simulationCaptureChunk" || command.type === "simulationCaptureResult") { captureClient.receive(command); return; }
+    if (captureFenceActive && shouldForwardPlayEngineCommand(command.type)) captureFenceChanged = true;
     if (materialEditHost.receive(command)) return;
     if (command.type === "diagnosticOperationResult") { diagnosticClient.receive(command); return; }
     if (command.type === "performanceTicks") {
@@ -1053,6 +1117,7 @@ export function startPlaySession(options: {
   const loadControl = playLoadControl({
     sessionMode: options.mode ?? "play",
     sessionGeneration: options.sessionGeneration,
+    simulationAssetGuids: options.simulationAssetGuids ? [...options.simulationAssetGuids] : undefined,
     saveGame: options.saveGame,
     frameCap: resolvePlayFrameCap(options.frameCap),
     traceByteBudget: options.traceByteBudget,
@@ -1296,7 +1361,7 @@ export function startPlaySession(options: {
     mode: options.mode ?? "play",
     identity: () => {
       const build = getBuildIdentity();
-      const render = handle.scalabilityStatus()?.effective.render ?? options.consoleRenderSettings ?? options.renderSettings;
+      const render = handle.scalabilityStatus()?.effective?.render ?? options.consoleRenderSettings ?? options.renderSettings;
       const frameCap = handle.scheduler.gateState().frameCap;
       return { sessionId: diagnosticSessionId, mode: options.mode ?? "play", sourceSha: build?.sourceSha ?? null,
         buildId: build ? `${build.packageVersion}:${build.runNumber}.${build.runAttempt}` : null,
@@ -1364,6 +1429,7 @@ export function startPlaySession(options: {
     },
     spawnedActorGuids: () => spawnedActorGuids,
     executeConsoleCommand: (line) => {
+      if (captureRequested) return Promise.resolve({ success: false, output: "Simulation is resolving its final scene; choose Retry or Discard." });
       if (stopped)
         return Promise.resolve({
           success: false,
@@ -1396,7 +1462,9 @@ export function startPlaySession(options: {
       return Promise.resolve({ tickIndex: 0, nodes: [] });
     },
     requestRuntimeInspection: (action, options) => inspectorClient.request(action, options),
+    captureSimulationScene,
     step: () => {
+      if (captureRequested) return;
       applyPlaySessionStep({ worker, runtime });
     },
     lastTrace: () => recordedTrace ?? runtime?.stopTrace() ?? null,
@@ -1425,6 +1493,8 @@ export function startPlaySession(options: {
       stopped = true;
       boundaryClient.dispose();
       inspectorClient.dispose();
+      captureAbort?.abort();
+      captureClient.dispose();
       materialEditHost.dispose();
       simulationSaveStorage?.dispose();
       releaseConsoleCapture();
