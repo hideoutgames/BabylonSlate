@@ -1,4 +1,4 @@
-import type { SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
+import type { CollisionTriangleMesh, SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import type { AreaEmissionPixels, AudioPayload, ModelPayload } from "@babylonslate/assets";
 import type { GameManifest } from "./types";
@@ -7,7 +7,8 @@ import type { GameManifest } from "./types";
 export type GameSourceContent = {
   decodedPayloads?: ReadonlyMap<string, unknown>;
   audioSourceRevisions?: ReadonlyMap<string, string>;
-  complexMeshes?: ReadonlyMap<string, { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }>;
+  /** Cooked Complex Collision meshes; omitted means "cook the scanned Models from `modelBytes`". */
+  complexMeshes?: ReadonlyMap<string, CollisionTriangleMesh>;
   modelAnimationDurations?: ReadonlyMap<string, ReadonlyMap<string, number | undefined>>;
   manifest: GameManifest;
   scripts: ScriptBundleEntry[];

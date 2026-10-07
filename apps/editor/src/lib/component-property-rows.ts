@@ -185,7 +185,10 @@ function assetRow(
   };
 }
 
-function defaultShape(kind: string): ColliderShape {
+/** Authored rows keep object-per-vertex mesh data; physics packs it when parsing. */
+function defaultShape(kind: string):
+  | Exclude<ColliderShape, { kind: "mesh" }>
+  | { kind: "mesh"; vertices: never[]; indices: never[] } {
   switch (kind) {
     case "sphere":
       return { kind: "sphere", radius: 0.5 };

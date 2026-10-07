@@ -10,6 +10,7 @@ import {
 } from "@babylonslate/core";
 import {
   buildBoxGlbFixture,
+  cookComplexCollisionMeshes,
   createDefaultSpriteAnimationPayload,
   createDefaultSpritePayload,
   createDefaultTilemapPayload,
@@ -35,7 +36,6 @@ import {
   playSpritePayloadsFromGuids,
   playLoadSpritesControl,
   playLoadModelsControl,
-  cookPlayComplexMeshes,
   spriteAnimationGuidsFromAnimGraphs,
   spriteAnimationGuidsFromBehaviourTrees,
   spriteAssetGuidsFromScene,
@@ -390,16 +390,16 @@ describe("scene-referenced Play content", () => {
       simpleColliders: [],
       autoLod: true,
     };
-    const cooked = cookPlayComplexMeshes(
+    const cooked = cookComplexCollisionMeshes(
       new Map([["hero-model", buildBoxGlbFixture(1)]]),
       new Map([["hero-model", payload]]),
     );
-    expect(cooked.get("hero-model")?.vertices.length).toBeGreaterThanOrEqual(3);
     expect(
       playLoadModelsControl(new Map([["hero-model", payload]]), cooked),
     ).toMatchObject({
       type: "loadModels",
       models: [{ guid: "hero-model", document: payload }],
+      complexMeshes: [{ guid: "hero-model", positions: expect.any(Float32Array), indices: expect.any(Uint16Array) }],
     });
     expect(playLoadModelsControl(new Map())).toBeNull();
   });

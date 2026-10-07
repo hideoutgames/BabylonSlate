@@ -36,6 +36,7 @@ export {
   type SessionBoundaryResult,
   type MaterialParameterValue,
   type ControlMessage,
+  type CookedCollisionMeshEntry,
   type RuntimeSceneContent,
   type DebugColliderPrimitive,
   type DebugNavAgent,

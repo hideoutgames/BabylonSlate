@@ -356,6 +356,8 @@ export interface GraphClassMember {
   propertyKey?: string;
   /** Native runtime function id when it differs from the display `name` (engine APIs). */
   runtime?: string;
+  /** Class tree folder for variables and functions; `|` nests subcategories. Missing is uncategorized. */
+  category?: string;
 }
 
 export interface SerializedGraph {

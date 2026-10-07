@@ -33,6 +33,7 @@ import { createWorkerScheduler } from "./worker-scheduler";
 import { captureConsoleLogs } from "./console-capture";
 import { createSceneSnapshotDelivery } from "./scene-snapshot-delivery";
 import { createSceneSourceClient } from "./scene-source";
+import { cookedCollisionMeshMap } from "./source-content-control";
 
 let runtime: RuntimeDriver | null = null;
 let sceneSources = createSceneSourceClient(onCommand);
@@ -292,17 +293,11 @@ function handleControl(msg: ControlMessage): void {
       for (const entry of msg.models) {
         models[entry.guid] = normalizeModelPayload(entry.document);
       }
-      const complexMeshes: Record<
-        string,
-        { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
-      > = {};
-      for (const entry of msg.complexMeshes ?? []) {
-        complexMeshes[entry.guid] = {
-          vertices: entry.vertices,
-          indices: entry.indices,
-        };
-      }
-      rt.registerModelContent({ models, complexMeshes });
+      rt.registerModelContent({ models, complexMeshes: cookedCollisionMeshMap(msg.complexMeshes) });
+      return;
+    }
+    case "loadComplexCollision": {
+      ensureRuntime().registerComplexCollisionMeshes(cookedCollisionMeshMap(msg.meshes), msg.unavailable);
       return;
     }
     case "loadNavMesh": {

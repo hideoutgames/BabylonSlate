@@ -1,13 +1,12 @@
 import { parseAnimGraphDocument, resolveAnimGraphClips } from "@babylonslate/anim-graph";
 import type { AnimClipCatalogEntry } from "@babylonslate/anim-graph";
-import type { ScriptBundleEntry } from "@babylonslate/bridge";
+import type { ControlMessage, ScriptBundleEntry } from "@babylonslate/bridge";
 import {
   parseBehaviourTreeDocument,
   parseBlackboardDocument,
   builtinClassId,
 } from "@babylonslate/behaviour-tree";
 import {
-  cookComplexCollisionMeshes,
   modelMaterialGuids,
   normalizeAnimationPayload,
   parseSpriteAnimationPayload,
@@ -38,6 +37,7 @@ import {
   text2dFontGuidsFromScene,
   text2dImageGuidsFromScene,
   text3DFontGuidsFromScene,
+  type CollisionTriangleMesh,
   type SerializedGraph,
   type SerializedScene,
   type SerializedSceneLayer,
@@ -936,32 +936,11 @@ export function playLoadSpritesControl(
   };
 }
 
-export function cookPlayComplexMeshes(
-  modelBytes: ReadonlyMap<string, Uint8Array> | undefined,
-  modelPayloads: ReadonlyMap<string, ModelPayload> | undefined,
-): Map<
-  string,
-  { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
-> {
-  return cookComplexCollisionMeshes(modelBytes, modelPayloads);
-}
-
 /** Worker `loadModels` control, or null when Play has no Model payloads. */
 export function playLoadModelsControl(
   models: ReadonlyMap<string, ModelPayload> | undefined,
-  complexMeshes?: ReadonlyMap<
-    string,
-    { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
-  >,
-): {
-  type: "loadModels";
-  models: Array<{ guid: string; document: unknown }>;
-  complexMeshes?: Array<{
-    guid: string;
-    vertices: Array<{ x: number; y: number; z: number }>;
-    indices: number[];
-  }>;
-} | null {
+  complexMeshes?: ReadonlyMap<string, CollisionTriangleMesh>,
+): Extract<ControlMessage, { type: "loadModels" }> | null {
   if (!models || models.size === 0) return null;
   return {
     type: "loadModels",
@@ -970,7 +949,7 @@ export function playLoadModelsControl(
       ? {
           complexMeshes: [...complexMeshes.entries()].map(([guid, mesh]) => ({
             guid,
-            vertices: mesh.vertices,
+            positions: mesh.positions,
             indices: mesh.indices,
           })),
         }

@@ -1,7 +1,11 @@
 import {
   InputRingBuffer,
+  isInputReleaseEvent,
   type RawInputEvent,
 } from "./ring-buffer";
+
+/** `PointerEvent.buttons` bit for each `PointerEvent.button` (middle and right swap). */
+const BUTTON_BITS: readonly number[] = [1, 4, 2, 8, 16, 32];
 
 export interface InputCaptureHandle {
   ring: InputRingBuffer;
@@ -48,6 +52,8 @@ export function attachInputCapture(
   let disposed = false;
   const blockedKeys = new Set<string>();
   const pointers = new Map<number, Extract<RawInputEvent, { kind: "pointer" }>>();
+  /** Buttons already reported down for each tracked pointer, as a `buttons` mask. */
+  const pointerMasks = new Map<number, number>();
   const blockedPointers = new Set<number>();
   const touchAxes = new Map<string, number>();
   const blockedTouchAxes = new Set<string>();
@@ -61,17 +67,17 @@ export function attachInputCapture(
     ring.push(raw);
   };
 
+  const forgetPointer = (pointerId: number) => {
+    pointers.delete(pointerId);
+    pointerMasks.delete(pointerId);
+  };
   const releasePointer = (pointerId: number) => {
     try { canvas.releasePointerCapture?.(pointerId); } catch { /* The browser may have released it already. */ }
   };
   const neutralize = () => {
     if (disposed) return;
     // Queued presses must not reach gameplay after this ownership boundary.
-    const releases = ring.drain().filter(event =>
-      event.kind === "key" ? event.phase === "up" :
-      event.kind === "pointer" ? event.phase === "up" || event.phase === "cancel" :
-      event.kind === "touchAxis" ? event.value === 0 :
-      event.kind === "gamepad" ? event.axes.every(value => value === 0) && event.buttons.every(value => value === 0) : true);
+    const releases = ring.drain().filter(isInputReleaseEvent);
     // A second pause/focus notification must not erase undelivered releases.
     for (const event of releases) push(event);
     for (const code of heldKeys) blockedKeys.add(code);
@@ -82,6 +88,7 @@ export function attachInputCapture(
     }
     const captured = [...pointers.keys()];
     pointers.clear();
+    pointerMasks.clear();
     for (const id of captured) releasePointer(id);
     for (const [controlId, value] of touchAxes) {
       if (value !== 0) blockedTouchAxes.add(controlId);
@@ -112,18 +119,38 @@ export function attachInputCapture(
         }
         canvas.setPointerCapture(event.pointerId);
       }
-      const raw: RawInputEvent = {
+      if (options.skipPointerAndKeyboard?.()) return;
+      const id = event.pointerId;
+      const bit = BUTTON_BITS[event.button] ?? 0;
+      const mask = pointerMasks.get(id) ?? 0;
+      let reported: typeof phase = phase;
+      if (phase === "down") pointerMasks.set(id, mask | bit);
+      else if (phase === "move" && bit && typeof event.buttons === "number" && pointers.has(id)) {
+        // Pointer Events report a chorded button change as pointermove with
+        // `button` set; pointerdown/up only bracket the first and last button.
+        const held = (event.buttons & bit) !== 0;
+        if (held !== ((mask & bit) !== 0)) {
+          reported = held ? "down" : "up";
+          pointerMasks.set(id, held ? mask | bit : mask & ~bit);
+        }
+      }
+      const raw: Extract<RawInputEvent, { kind: "pointer" }> = {
         kind: "pointer",
         tick,
-        pointerId: event.pointerId,
-        phase,
+        pointerId: id,
+        phase: reported,
         x: event.offsetX,
         y: event.offsetY,
         button: event.button,
       };
-      if (options.skipPointerAndKeyboard?.()) return;
-      if (phase === "down" || (phase === "move" && pointers.has(event.pointerId))) pointers.set(event.pointerId, raw);
-      if (phase === "up" || phase === "cancel") pointers.delete(event.pointerId);
+      if (phase === "up") {
+        // pointerup means no buttons remain; release any chorded button first.
+        BUTTON_BITS.forEach((other, button) => {
+          if (button !== event.button && (mask & other) !== 0) push({ ...raw, phase: "up", button });
+        });
+      }
+      if (phase === "down" || (phase === "move" && pointers.has(id))) pointers.set(id, raw);
+      if (phase === "up" || phase === "cancel") forgetPointer(id);
       push(raw);
     };
 
@@ -170,14 +197,14 @@ export function attachInputCapture(
     blockedPointers.delete(event.pointerId);
     const pointer = pointers.get(event.pointerId);
     if (!pointer || !exclusive) return;
-    pointers.delete(event.pointerId);
+    forgetPointer(event.pointerId);
     push({ ...pointer, tick, phase: "cancel" });
     releasePointer(event.pointerId);
   };
   const onLostPointerCapture = (event: PointerEvent) => {
     const pointer = pointers.get(event.pointerId);
     if (!exclusive || !pointer) return;
-    pointers.delete(event.pointerId);
+    forgetPointer(event.pointerId);
     blockedPointers.add(event.pointerId);
     push({ ...pointer, tick, phase: "cancel" });
   };
@@ -318,6 +345,7 @@ export function attachInputCapture(
       heldKeys.clear();
       blockedKeys.clear();
       pointers.clear();
+      pointerMasks.clear();
       blockedPointers.clear();
       touchAxes.clear();
       blockedTouchAxes.clear();

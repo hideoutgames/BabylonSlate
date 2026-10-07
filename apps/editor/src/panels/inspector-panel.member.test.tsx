@@ -292,6 +292,27 @@ describe("Inspector class member details", () => {
     expect(screen.getByTestId("property-overridable")).toBeTruthy();
   });
 
+  it("commits a normalized Category for functions and variables", () => {
+    renderMemberInspector("fn-1");
+    const category = screen.getByTestId("property-category") as HTMLInputElement;
+    expect(category.value).toBe("");
+    fireEvent.change(category, { target: { value: " Combat | | AI " } });
+    expect(applyGraphChange).not.toHaveBeenCalled();
+    fireEvent.blur(category);
+    const fn = applyGraphChange.mock.calls.at(-1)![1].members?.find((entry) => entry.id === "fn-1");
+    expect(fn?.category).toBe("Combat|AI");
+
+    cleanup();
+    applyGraphChange.mockClear();
+    renderMemberInspector("var-1");
+    const variableCategory = screen.getByTestId("property-category");
+    fireEvent.change(variableCategory, { target: { value: "Stats" } });
+    fireEvent.blur(variableCategory);
+    expect(
+      applyGraphChange.mock.calls.at(-1)![1].members?.find((entry) => entry.id === "var-1"),
+    ).toMatchObject({ category: "Stats" });
+  });
+
   it("locks Inputs and Outputs for an interface implementation", () => {
     renderMemberInspector("fn-impl");
     expect(screen.getByTestId("inspector-member-interface-impl")).toBeTruthy();

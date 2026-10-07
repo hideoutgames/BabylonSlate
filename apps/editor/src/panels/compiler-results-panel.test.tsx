@@ -52,6 +52,11 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
             id: "hero",
             components: [{ id: "rb", classId: "RigidBodyComponent" }],
           },
+          // Nonuniform parent scale: a quarter-turned child stays shear-free,
+          // a 45 degree child is sheared.
+          { id: "arm", parentId: null, components: [], transform: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [2, 1, 1] } },
+          { id: "wrist", parentId: "arm", components: [], transform: { position: [0, 0, 0], rotation: [0, 0, Math.SQRT1_2, Math.SQRT1_2], scale: [1, 1, 1] } },
+          { id: "hand", parentId: "arm", components: [], transform: { position: [1, 0, 0], rotation: [0, 0, Math.sin(Math.PI / 8), Math.cos(Math.PI / 8)], scale: [1, 1, 1] } },
         ],
       },
     },
@@ -132,6 +137,15 @@ describe("CompilerResultsPanel", () => {
       else Reflect.deleteProperty(navigator, "clipboard");
     }
   });
+  it("publishes the active scene's pairing and sheared transform warnings", () => {
+    render(<CompilerResultsPanel {...({} as IDockviewPanelProps)} />);
+    const published = setDiagnostics.mock.lastCall![0] as Diagnostic[];
+    expect(published.map(({ code, actorId, severity }) => ({ code, actorId, severity }))).toEqual([
+      { code: "physics.body_without_collider", actorId: "hero", severity: "warning" },
+      { code: "scene.sheared_actor_transform", actorId: "hand", severity: "warning" },
+    ]);
+  });
+
   it("selects the actor when a physics pairing warning is tapped", () => {
     render(<CompilerResultsPanel {...({} as IDockviewPanelProps)} />);
     fireEvent.click(screen.getByTestId("compiler-result-row"));

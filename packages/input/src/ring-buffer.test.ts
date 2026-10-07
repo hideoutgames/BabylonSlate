@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { InputResolver } from "./resolver";
 import {
   InputRingBuffer,
   decodeInputEvents,
@@ -44,15 +45,55 @@ describe("input ring buffer", () => {
     expect(decodeInputEvents(bytes)).toEqual(events);
   });
 
-  it("ring drops oldest when over capacity", () => {
+  it("keeps pointer ids above 16 bits distinct and a hover move's button -1", () => {
+    const pointer = (pointerId: number, phase: "down" | "move", button: number): RawInputEvent =>
+      ({ kind: "pointer", tick: 1, pointerId, phase, x: 1, y: 2, button });
+    const events = [pointer(70000, "down", 0), pointer(1, "down", 0), pointer(65537, "down", 0), pointer(1, "move", -1)];
+    expect(decodeInputEvents(encodeInputEvents(events))).toEqual(events);
+  });
+});
+
+describe("input ring buffer overflow", () => {
+  const pad = (axis: number, button = 0): RawInputEvent =>
+    ({ kind: "gamepad", tick: 2, gamepadIndex: 0, axes: [axis], buttons: [button] });
+  const move = (x: number): RawInputEvent =>
+    ({ kind: "pointer", tick: 2, pointerId: 1, phase: "move", x, y: 0, button: -1 });
+
+  it("delivers a key release queued ahead of hundreds of samples and keeps the latest sample", () => {
+    const resolver = new InputResolver({
+      actions: [{ name: "Forward", bindings: [{ device: "key", code: "KeyW" }] }],
+      axes: [{ name: "Steer", bindings: [{ device: "gamepadAxis", code: "0:0" }] }],
+    });
+    const ring = new InputRingBuffer(512);
+    ring.push({ kind: "key", tick: 1, code: "KeyW", phase: "down" });
+    expect(resolver.resolve(ring.drain()).actions.Forward.held).toBe(true);
+    ring.push({ kind: "key", tick: 2, code: "KeyW", phase: "up" });
+    for (let i = 0; i < 600; i++) {
+      ring.push(pad(0.6 + (i % 3) / 10));
+      ring.push(move(i));
+    }
+    const state = resolver.resolve(ring.drain());
+    expect(state.actions.Forward).toEqual({ held: false, pressed: false, released: true });
+    expect(state.axes.Steer).toBeCloseTo(0.8);
+    expect(state.cursor.x).toBe(599);
+  });
+
+  it("keeps a gamepad button tap while coalescing the samples around it", () => {
+    const resolver = new InputResolver({ actions: [{ name: "Jump", bindings: [{ device: "gamepadButton", code: "0:0" }] }], axes: [] });
+    const ring = new InputRingBuffer(4);
+    for (let i = 0; i < 10; i++) ring.push(pad(i / 100));
+    ring.push(pad(0, 1));
+    for (let i = 0; i < 10; i++) ring.push(pad(i / 100));
+    expect(resolver.resolve(ring.drain()).actions.Jump).toEqual({ held: false, pressed: true, released: true });
+  });
+
+  it("grows for press and release edges, then drops the oldest presses before any release", () => {
+    const key = (code: string, phase: "down" | "up"): RawInputEvent => ({ kind: "key", tick: 1, code, phase });
     const ring = new InputRingBuffer(2);
-    ring.push({ kind: "key", tick: 1, code: "KeyA", phase: "down" });
-    ring.push({ kind: "key", tick: 2, code: "KeyB", phase: "down" });
-    ring.push({ kind: "key", tick: 3, code: "KeyC", phase: "down" });
-    const drained = ring.drain();
-    expect(drained.map((e) => (e.kind === "key" ? e.code : ""))).toEqual([
-      "KeyB",
-      "KeyC",
+    for (const code of ["KeyA", "KeyB", "KeyC", "KeyD", "KeyE", "KeyF", "KeyG", "KeyH"]) ring.push(key(code, "down"));
+    for (const code of ["KeyA", "KeyB", "KeyC"]) ring.push(key(code, "up"));
+    expect(ring.drain().map(event => event.kind === "key" ? `${event.phase} ${event.code}` : "")).toEqual([
+      "down KeyD", "down KeyE", "down KeyF", "down KeyG", "down KeyH", "up KeyA", "up KeyB", "up KeyC",
     ]);
   });
 });

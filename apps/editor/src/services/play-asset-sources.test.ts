@@ -385,6 +385,8 @@ describe("Play source ownership", () => {
     };
     const document = new TextEncoder().encode(JSON.stringify({ name: "Scene", actors: [{
       id: "text", name: "Label", components: [{ id: "label", classId: "Text3DComponent", properties: { fontAssetGuid: "font" } }],
+    }, {
+      id: "rock", name: "Rock", components: [{ id: "mesh", classId: "MeshComponent", properties: { assetGuid: "model", collisionMode: "complex" } }],
     }] }));
     for (const id of ["scene-a", "scene-b"]) await write(id, "Scene", {}, [
       { id: "document", kind: "document", mime: "application/json", data: document },
@@ -417,7 +419,9 @@ describe("Play source ownership", () => {
     expect(first.audioChunks.get("audio")?.get("second")).toEqual(new Uint8Array([3, 4, 5]));
     expect(first.game.fontBytes.size).toBe(0);
     expect(first.game.fontFacetypeBytes.has("font")).toBe(true);
-    expect(first.content.complexMeshes.get("model")?.vertices.length).toBeGreaterThan(0);
+    expect(first.content.complexMeshes.get("model")?.positions).toHaveLength(8 * 3);
+    // The runtime fallback reuses the up-front result instead of cooking again.
+    expect(await first.cookComplexCollision("model")).toBe(first.content.complexMeshes.get("model"));
     const second = await acquirePlayAssetSources(host, ["scene-b"], { consumer: "Scene B", signal: new AbortController().signal });
     expect(second.content.complexMeshes.get("model")).toBe(first.content.complexMeshes.get("model"));
     expect(storage.getReadMetrics().actualBytesRead - before).toBe(document.byteLength * 2 + model.byteLength + 17);
@@ -433,7 +437,7 @@ describe("Play source ownership", () => {
     expect(first.content.navmeshBytes).toBeNull();
     expect(first.content.audioReverbBytes).toBeNull();
     expect(first.sources.audioLibrary?.audio.size).toBe(0);
-    expect(second.content.complexMeshes.get("model")?.vertices.length).toBeGreaterThan(0);
+    expect(second.content.complexMeshes.get("model")?.positions).toHaveLength(8 * 3);
     expect(second.content.navmeshBytes).toEqual(new Uint8Array([1, 2, 3]));
     expect(second.content.audioReverbBytes).toEqual(new Uint8Array([4, 5]));
     expect(second.sources.audioLibrary?.audio.has("audio")).toBe(true);
@@ -444,6 +448,42 @@ describe("Play source ownership", () => {
     expect(second.content.audioReverbByScene.size).toBe(0);
     expect(loading.snapshot()).toMatchObject({ sourceBytes: 0, decodedBytes: 0, temporaryBytes: 0, entries: [] });
     expect(emptyPlaySourceControls()).toContainEqual({ type: "loadModels", models: [], complexMeshes: [] });
+    loading.dispose();
+  });
+
+  it("cooks no collision for a Model without Complex Collision until the runtime asks for it", async () => {
+    const storage = new MemoryStorageAdapter();
+    await storage.pickProjectFolder();
+    await storage.mkdir("assets");
+    const scene = new TextEncoder().encode(JSON.stringify({ name: "Scene", actors: [{
+      id: "crate", name: "Crate", components: [{ id: "mesh", classId: "MeshComponent", properties: { assetGuid: "model", collisionMode: "simple" } }],
+    }] }));
+    await storage.writeBinary("assets/scene.babasset", await encodeBabasset({
+      header: { guid: "scene", name: "scene", type: "Scene", version: 1, engineVersion: "0.0.0", mode: "thin", payload: {},
+        dependencies: ["model"], requiredDependencies: ["model"], dependencyMetadataVersion: 1 },
+      chunks: [{ id: "document", kind: "document", mime: "application/json", data: scene }],
+    }));
+    await storage.writeBinary("assets/model.babasset", await encodeBabasset({
+      header: { guid: "model", name: "model", type: "Model", version: 1, engineVersion: "0.0.0", mode: "thin", payload: {},
+        dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1 },
+      chunks: [{ id: "source", kind: "model", mime: "model/gltf-binary", data: buildBoxGlbFixture() }],
+    }));
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const loading = createRegistryAssetLoadingService(registry, { projectId: "play" });
+    const prepared = await acquirePlayAssetSources({
+      registry, project: createEmptyProject("Play"), createScope: owner => loading.createScope(owner),
+      compile: async () => ({ bundles: [], diagnostics: [] }),
+    }, ["scene"], { consumer: "Scene", signal: new AbortController().signal });
+    expect(prepared.content.complexMeshes.size).toBe(0);
+    const loadModels = prepared.controls.find((control) => control.type === "loadModels");
+    expect(loadModels?.type === "loadModels" ? loadModels.complexMeshes ?? [] : null).toEqual([]);
+    const cooked = await prepared.cookComplexCollision("model");
+    expect(cooked?.positions).toHaveLength(8 * 3);
+    expect(await prepared.cookComplexCollision("model")).toBe(cooked);
+    expect(await prepared.cookComplexCollision("not-prepared")).toBeNull();
+    prepared.release();
+    expect(await prepared.cookComplexCollision("model")).toBeNull();
     loading.dispose();
   });
 });
