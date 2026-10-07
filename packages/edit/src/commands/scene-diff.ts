@@ -37,6 +37,7 @@ import {
   SetActorClassCommand,
   SetActorPropertiesCommand,
   SetComponentClassCommand,
+  SetComponentNameCommand,
   SetComponentTransformPresenceCommand,
   SetSceneOverlayEditorCommand,
 } from "./scene-fields";
@@ -120,6 +121,9 @@ function diffComponents(
     // the component's final class.
     if (previous.classId !== component.classId) {
       commands.push(new SetComponentClassCommand(actorId, id, previous.classId, component.classId));
+    }
+    if (previous.name !== component.name) {
+      commands.push(new SetComponentNameCommand(actorId, id, previous.name, component.name));
     }
     const linkage = {
       from: { sourceId: previous.sourceId, overrideKeys: previous.overrideKeys },

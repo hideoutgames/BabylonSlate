@@ -130,6 +130,7 @@ export function instantiatePrefabComponents(
         idMap.get(component.id) ??
         `${actorId}-${component.classId}-${index + 1}`,
       classId: component.classId,
+      ...(component.name ? { name: component.name } : {}),
       properties: { ...component.properties },
       parentId,
       sourceId: component.id,

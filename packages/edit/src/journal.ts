@@ -57,6 +57,7 @@ import {
   createSetActorClassCommandFromJson,
   createSetActorPropertiesCommandFromJson,
   createSetComponentClassCommandFromJson,
+  createSetComponentNameCommandFromJson,
   createSetComponentTransformPresenceCommandFromJson,
   createSetSceneOverlayEditorCommandFromJson,
 } from "./commands/scene-fields";
@@ -349,6 +350,7 @@ export function registerSceneCommandRevivers(): void {
   registerCommandReviver("scene.setActorProperties", createSetActorPropertiesCommandFromJson);
   registerCommandReviver("scene.setActorClass", createSetActorClassCommandFromJson);
   registerCommandReviver("scene.setComponentClass", createSetComponentClassCommandFromJson);
+  registerCommandReviver("scene.setComponentName", createSetComponentNameCommandFromJson);
   registerCommandReviver("scene.setComponentTransformPresence", createSetComponentTransformPresenceCommandFromJson);
   registerCommandReviver("scene.reorderFolder", createReorderFolderCommandFromJson);
   registerCommandReviver("scene.setOverlayEditor", createSetSceneOverlayEditorCommandFromJson);

@@ -624,6 +624,22 @@ describe("SceneDetailsPanel authoring", () => {
     expect(screen.queryByTestId("search-item-tex-1")).toBeNull();
   });
 
+  it("renames a component card name inline and keeps the asset name in brackets", async () => {
+    harness.selectedActorIds = ["actor-1"];
+    scene().actors[0]!.components.push(createMeshComponent("component-1", "box"));
+    scene().actors[0]!.components[0]!.properties.assetGuid = "mesh-1";
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.doubleClick(screen.getByText("Mesh (Rock)"));
+    const input = screen.getByTestId("component-rename-component-1") as HTMLInputElement;
+    expect(input.value).toBe("Mesh");
+    expect([input.selectionStart, input.selectionEnd]).toEqual([0, "Mesh".length]);
+    fireEvent.change(input, { target: { value: "MyCustomNamedComponent" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(harness.applySceneChange).toHaveBeenCalled());
+    const [, next] = harness.applySceneChange.mock.calls.at(-1)!;
+    expect(next.actors[0]!.components[0]!.name).toBe("MyCustomNamedComponent");
+  });
+
   it("creates a Render Target from the capture picker and assigns it in one scene edit", async () => {
     const createAsset = vi.fn(async () => "rt-new");
     scene().actors = [createActor("cam", "Capture", { components: [

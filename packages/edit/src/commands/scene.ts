@@ -16,6 +16,7 @@ import type {
   SetActorClassCommand,
   SetActorPropertiesCommand,
   SetComponentClassCommand,
+  SetComponentNameCommand,
   SetComponentTransformPresenceCommand,
   SetSceneOverlayEditorCommand,
 } from "./scene-fields";
@@ -826,6 +827,7 @@ export type SceneEditCommand =
   | SetActorPropertiesCommand
   | SetActorClassCommand
   | SetComponentClassCommand
+  | SetComponentNameCommand
   | SetComponentTransformPresenceCommand
   | ReorderFolderCommand
   | SetSceneOverlayEditorCommand
@@ -860,6 +862,7 @@ export const SCENE_COMMAND_TYPES = [
   "scene.setActorProperties",
   "scene.setActorClass",
   "scene.setComponentClass",
+  "scene.setComponentName",
   "scene.setComponentTransformPresence",
   "scene.reorderFolder",
   "scene.setOverlayEditor",

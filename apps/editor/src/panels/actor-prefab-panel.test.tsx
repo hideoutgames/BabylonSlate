@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { createMeshComponent } from "@babylonslate/core";
 import {
@@ -20,8 +20,9 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
 
 const frameActor = vi.hoisted(() => vi.fn());
 const setSelectedIds = vi.hoisted(() => vi.fn());
+const renameComponent = vi.hoisted(() => vi.fn());
 const harness = vi.hoisted(() => ({
-  components: [] as Array<{ id: string; classId: string; parentId?: string | null }>,
+  components: [] as Array<{ id: string; classId: string; name?: string; parentId?: string | null; properties?: Record<string, unknown> }>,
   selectedId: "prefab-root" as string | null,
   selectedIds: ["prefab-root"] as string[],
   assets: [] as ProjectAddComponentAsset[],
@@ -36,6 +37,7 @@ vi.mock("../context/prefab-editing-context", () => ({
     addComponent: vi.fn(),
     removeSelected: vi.fn(),
     reparentComponent: vi.fn(),
+    renameComponent,
   }),
 }));
 
@@ -88,6 +90,7 @@ afterEach(() => {
   cleanup();
   frameActor.mockClear();
   setSelectedIds.mockClear();
+  renameComponent.mockClear();
   harness.assets = [];
 });
 
@@ -122,5 +125,24 @@ describe("ActorPrefabPanel", () => {
     render(<ActorPrefabPanel {...({} as IDockviewPanelProps)} />);
     doubleTap("mesh-1");
     expect(frameActor).toHaveBeenCalledWith("mesh-1");
+  });
+
+  it("renames a component from a label double-tap without its asset detail", async () => {
+    harness.components = [{ id: "mesh-1", classId: "MeshComponent", parentId: null, properties: { assetGuid: "model-1" } }];
+    harness.assets = [{ path: "assets/mannequin.model.babasset", header: { guid: "model-1", name: "mannequin", type: "Model" } } as unknown as ProjectAddComponentAsset];
+    harness.selectedId = "mesh-1";
+    harness.selectedIds = ["mesh-1"];
+    render(<ActorPrefabPanel {...({} as IDockviewPanelProps)} />);
+    const label = screen.getByText("Mesh (mannequin)");
+    for (let tap = 0; tap < 2; tap++) {
+      dispatchPointerEvent(label, "pointerdown");
+      dispatchPointerEvent(label, "pointerup");
+    }
+    expect(frameActor).not.toHaveBeenCalled();
+    const input = await screen.findByRole("textbox", { name: "Rename Mesh (mannequin)" }) as HTMLInputElement;
+    expect(input.value).toBe("Mesh");
+    fireEvent.change(input, { target: { value: "MyCustomNamedComponent" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(renameComponent).toHaveBeenCalledWith("mesh-1", "MyCustomNamedComponent");
   });
 });

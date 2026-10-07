@@ -25,9 +25,10 @@ import { IconActionButton } from "../components/icon-action-button";
 import { AddComponentMenu } from "../components/add-component-menu";
 import { anchorBelow } from "../lib/menu-anchor";
 import {
-  prefabComponentLabel,
+  prefabComponentLabelParts,
   physicsWorldFromOpenDocuments,
   projectAddComponentItems,
+  renamedComponentName,
 } from "./add-component-catalog";
 import { useRegistryState, useOpenDocument } from "../context/document-context";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
@@ -59,9 +60,13 @@ export function flattenPrefabComponents(
       const kids = childrenOfPrefabParent(components, component.id);
       const expanded = !collapsed.has(component.id);
       const inherited = Boolean(component.inheritedFrom);
+      const { name, detail } = prefabComponentLabelParts(component, assetLabel);
       rows.push({
         id: component.id,
-        label: prefabComponentLabel(component, assetLabel),
+        label: detail ? `${name} ${detail}` : name,
+        renamable: true,
+        renameValue: name,
+        renameSuffix: detail,
         depth,
         hasChildren: kids.length > 0,
         expanded,
@@ -106,6 +111,7 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
     addComponent,
     removeSelected,
     reparentComponent,
+    renameComponent,
   } = usePrefabEditing();
   const { assetRegistry } = useRegistryState();
   const { documentId } = useDocumentWorkspace();
@@ -116,6 +122,7 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
   const { frameActor } = useSceneEditing();
   const [addAnchor, setAddAnchor] = useState<{ x: number; y: number } | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const [renamingId, setRenamingId] = useState<string | null>(null);
   const listedAssets = assetRegistry?.list() ?? [];
   const isPrefabAsset = doc?.ref.kind === "prefab";
   const docPath = doc?.ref.path;
@@ -208,6 +215,15 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
           }
           onReparent={reparentComponent}
           onActivate={(id) => frameActor(id)}
+          renamingId={renamingId}
+          onRenameRequest={setRenamingId}
+          onRenameDone={(id, name) => {
+            setRenamingId(null);
+            const component = components.find((entry) => entry.id === id);
+            if (name !== null && component) {
+              renameComponent(id, renamedComponentName(component.classId, name));
+            }
+          }}
           emptyLabel="No components"
           data-testid="prefab-tree"
         />

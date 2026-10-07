@@ -68,6 +68,8 @@ interface PrefabEditingContextValue {
     property: string,
     value: unknown,
   ) => void;
+  /** Sets the display name; undefined restores the class label. */
+  renameComponent: (componentId: string, name: string | undefined) => void;
   updateComponentTransform: (
     componentId: string,
     transform: SerializedTransform,
@@ -103,6 +105,7 @@ function stripInheritance(
     return {
       id: rest.id,
       classId: rest.classId,
+      ...(rest.name ? { name: rest.name } : {}),
       properties: { ...rest.properties },
       parentId: rest.parentId ?? null,
       ...(rest.transform ? { transform: rest.transform } : {}),
@@ -384,6 +387,21 @@ export function PrefabEditingProvider({
     [assetRegistry, components, upsertLocalFromViews],
   );
 
+  const renameComponent = useCallback(
+    (componentId: string, name: string | undefined) => {
+      const target = components.find((component) => component.id === componentId);
+      if (!target || target.name === name) return;
+      upsertLocalFromViews(components.map((component) => {
+        if (component.id !== componentId) return component;
+        const next = { ...component };
+        if (name === undefined) delete next.name;
+        else next.name = name;
+        return next;
+      }));
+    },
+    [components, upsertLocalFromViews],
+  );
+
   const updateComponentTransform = useCallback(
     (componentId: string, transform: SerializedTransform) => {
       upsertLocalFromViews(
@@ -482,6 +500,7 @@ export function PrefabEditingProvider({
       removeSelected,
       reparentComponent,
       updateComponent,
+      renameComponent,
       updateComponentTransform,
       commitComponentProperties,
       commitComponentGizmo,
@@ -498,6 +517,7 @@ export function PrefabEditingProvider({
       selectedIds,
       setSelectedId,
       updateComponent,
+      renameComponent,
       updateComponentTransform,
       commitComponentProperties,
       commitComponentGizmo,

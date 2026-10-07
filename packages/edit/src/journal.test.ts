@@ -39,6 +39,7 @@ import {
   SetActorClassCommand,
   SetActorPropertiesCommand,
   SetComponentClassCommand,
+  SetComponentNameCommand,
   SetComponentTransformPresenceCommand,
   SetSceneOverlayEditorCommand,
 } from "./commands/scene-fields";
@@ -155,6 +156,7 @@ describe("journal", () => {
       new SetActorPropertiesCommand(actorId, undefined, { sceneLayerActors: [{ classId: "Hud", defaults: {} }] }),
       new SetActorClassCommand(actorId, "Actor", "Door"),
       new SetComponentClassCommand(actorId, componentId, "MeshComponent", "LightComponent"),
+      new SetComponentNameCommand(actorId, componentId, undefined, "Hero Body"),
       new SetComponentTransformPresenceCommand(actorId, componentId, scene.actors[0]!.components[0]!.transform, undefined),
       new ReorderFolderCommand("f1", 0, 1),
       new SetSceneOverlayEditorCommand(undefined, true),

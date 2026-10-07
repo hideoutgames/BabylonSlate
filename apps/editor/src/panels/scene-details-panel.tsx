@@ -21,6 +21,7 @@ import {
   AssetPickerControl,
   MultilineTextField,
   EntryListEditor,
+  InlineRenameInput,
   NamedListEditor,
   DisclosureSection,
   NumberField,
@@ -35,6 +36,7 @@ import {
   humanizePropertyLabel,
   resolveTypeVisual,
   selectedPickerIdentity,
+  useDoubleTap,
   walkAncestry,
   type PropertyRow,
 } from "@babylonslate/editor-kit";
@@ -108,8 +110,9 @@ import { anchorBelow } from "../lib/menu-anchor";
 import { RagdollBoneNamesEditor } from "../components/ragdoll-bone-names-editor";
 import {
   defaultPropertiesFor,
-  prefabComponentLabel,
+  prefabComponentLabelParts,
   projectAddComponentItems,
+  renamedComponentName,
 } from "./add-component-catalog";
 import {
   applyPrefabPropertyDefaults,
@@ -185,6 +188,25 @@ function PostProcessEntryId({ id, index }: { id: string; index: number }) {
   );
 }
 
+/** Component card name; double-click or double-tap starts an inline rename. */
+function ComponentCardName({ title, onRename }: { title: string; onRename: () => void }) {
+  const onTap = useDoubleTap(onRename);
+  return (
+    <span
+      className="truncate"
+      title={`${title} · Double-click to rename`}
+      data-component-name=""
+      onDoubleClick={(event) => {
+        event.stopPropagation();
+        onRename();
+      }}
+      onPointerUp={onTap}
+    >
+      {title}
+    </span>
+  );
+}
+
 export function SceneDetailsPanel(props: IDockviewPanelProps) {
   const { documentId } = useDocumentWorkspace();
   const simulationDocumentId = useOptionalPlay()?.simulationDocumentId;
@@ -213,6 +235,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
   const [filterCollapsedComponents, setFilterCollapsedComponents] = useState<
     Set<string>
   >(() => new Set());
+  const [renamingComponentKey, setRenamingComponentKey] = useState<string | null>(null);
   const needle = propertyQuery.trim().toLowerCase();
   const matches = (label: string) =>
     !needle || humanizePropertyLabel(label).toLowerCase().includes(needle);
@@ -1182,7 +1205,8 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
   const visibleTransformRows = filterRows(transformRows, "Actor Transform");
   const componentDetails = actor.components
     .map((component, index) => {
-      const title = prefabComponentLabel(component, assetLabel);
+      const nameParts = prefabComponentLabelParts(component, assetLabel);
+      const title = nameParts.detail ? `${nameParts.name} ${nameParts.detail}` : nameParts.name;
       const template = component.sourceId
         ? prefabTemplates[prefabTemplateKey(actor)]?.find(
             (entry) => entry.id === component.sourceId,
@@ -1279,6 +1303,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
         template,
         index,
         title,
+        nameParts,
         rows: filterRows(rows, title),
         colliderRows: filterRows(colliderRows, `${title} Transform`),
         showExtras:
@@ -1350,6 +1375,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
             template,
             index,
             title,
+            nameParts,
             rows,
             colliderRows,
             showExtras,
@@ -1361,40 +1387,77 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
               data-testid={`component-card-${component.id}`}
             >
               <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-panel-header px-2 py-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="min-w-0 flex-1 justify-start px-0"
-                  aria-label={title}
-                  aria-expanded={expanded}
-                  aria-controls={`component-details-${actor.id}-${component.id}`}
-                  onClick={() => {
-                    (needle
-                      ? setFilterCollapsedComponents
-                      : setCollapsedComponents)((current) => {
-                      const next = new Set(current);
-                      const key = `${actor.id}:${component.id}`;
-                      if (expanded) next.add(key);
-                      else next.delete(key);
-                      return next;
-                    });
-                  }}
-                >
-                  <ChevronDownIcon
-                    className={expanded ? undefined : "-rotate-90"}
-                  />
-                  <TypeVisualIcon
-                    visual={resolveTypeVisual({
-                      classId: component.classId,
-                      ancestry: walkAncestry(
-                        component.classId,
-                        parentOf,
-                      ),
-                    })}
-                    data-testid={`component-type-icon-${component.id}`}
-                  />
-                  <span className="truncate">{title}</span>
-                </Button>
+                {renamingComponentKey === `${actor.id}:${component.id}` ? (
+                  <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                    <TypeVisualIcon
+                      visual={resolveTypeVisual({
+                        classId: component.classId,
+                        ancestry: walkAncestry(component.classId, parentOf),
+                      })}
+                    />
+                    <InlineRenameInput
+                      value={nameParts.name}
+                      aria-label={`Rename ${title}`}
+                      data-testid={`component-rename-${component.id}`}
+                      onDone={(name) => {
+                        setRenamingComponentKey(null);
+                        if (name === null) return;
+                        updateActor((entry) => ({
+                          ...entry,
+                          components: entry.components.map((candidate) => {
+                            if (candidate.id !== component.id) return candidate;
+                            const next = { ...candidate };
+                            const renamed = renamedComponentName(candidate.classId, name);
+                            if (renamed === undefined) delete next.name;
+                            else next.name = renamed;
+                            return next;
+                          }),
+                        }));
+                      }}
+                    />
+                    {nameParts.detail ? (
+                      <span className="shrink-0 text-[13px] text-muted-foreground">{nameParts.detail}</span>
+                    ) : null}
+                  </div>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="min-w-0 flex-1 justify-start px-0"
+                    aria-label={title}
+                    aria-expanded={expanded}
+                    aria-controls={`component-details-${actor.id}-${component.id}`}
+                    onClick={() => {
+                      (needle
+                        ? setFilterCollapsedComponents
+                        : setCollapsedComponents)((current) => {
+                        const next = new Set(current);
+                        const key = `${actor.id}:${component.id}`;
+                        if (expanded) next.add(key);
+                        else next.delete(key);
+                        return next;
+                      });
+                    }}
+                  >
+                    <ChevronDownIcon
+                      className={expanded ? undefined : "-rotate-90"}
+                    />
+                    <TypeVisualIcon
+                      visual={resolveTypeVisual({
+                        classId: component.classId,
+                        ancestry: walkAncestry(
+                          component.classId,
+                          parentOf,
+                        ),
+                      })}
+                      data-testid={`component-type-icon-${component.id}`}
+                    />
+                    <ComponentCardName
+                      title={title}
+                      onRename={() => setRenamingComponentKey(`${actor.id}:${component.id}`)}
+                    />
+                  </Button>
+                )}
                 <div className="flex shrink-0 items-center gap-1">
                   <IconActionButton
                     label={`Move ${title} Up`}

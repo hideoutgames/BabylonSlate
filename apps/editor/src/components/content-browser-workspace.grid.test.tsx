@@ -532,6 +532,36 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(moveFolder).toHaveBeenCalledWith("project", "Characters", "", "Heroes");
   });
 
+  it("renames an asset inline from a tree label double-tap", async () => {
+    const asset = texture(0);
+    installRegistry([asset]);
+    const renameAsset = vi.fn(async () => ({ ...asset, path: "assets/Renamed.babasset" }));
+    docs.assetRegistry = { ...(docs.assetRegistry as object), renameAsset };
+    render(<ContentBrowserWorkspace />);
+    const tree = screen.getByTestId("content-browser-folder-tree");
+    const label = within(tree).getByTestId(`tree-row-${asset.path}`).querySelector("[data-tree-label]")!;
+    tapTreeRow(label, "touch");
+    tapTreeRow(label, "touch");
+    expect(docs.openDocument).not.toHaveBeenCalled();
+    const input = within(tree).getByRole("textbox") as HTMLInputElement;
+    expect(input.value).toBe("tex-0");
+    fireEvent.change(input, { target: { value: "Renamed" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(renameAsset).toHaveBeenCalledWith(asset.header.guid, "Renamed"));
+  });
+
+  it("opens the selected asset from the toolbar Open action", async () => {
+    installRegistry([texture(0)]);
+    render(<ContentBrowserWorkspace />);
+    expect(screen.queryByTestId("content-browser-open-selected")).toBeNull();
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.babasset"));
+    expect(screen.getByTestId("content-browser-deselect-all").textContent).toBe("Deselect");
+    fireEvent.click(screen.getByTestId("content-browser-open-selected"));
+    await waitFor(() =>
+      expect(docs.openDocument).toHaveBeenCalledWith({ kind: "texture", path: "assets/tex-0.babasset", label: "Tex 0" }),
+    );
+  });
+
   it("rejects duplicate typed asset names before submitting a rename", () => {
     const assets = [texture(0), texture(1)];
     assets[0]!.path = "assets/Hero.class.babasset";

@@ -47,6 +47,8 @@ export interface SerializedTransform {
 export interface SerializedComponent {
   id: string;
   classId: string;
+  /** Editor display name; missing shows the class label. Asset details in brackets are never part of it. */
+  name?: string;
   properties: Record<string, unknown>;
   /** Prefab / actor component attach parent; missing documents normalize to null. */
   parentId?: string | null;
@@ -372,10 +374,12 @@ function normalizeComponent(
       : undefined;
   const overrideKeys = normalizeOverrideKeys(source.overrideKeys);
   const materialInstance = normalizeMaterialInstanceOverrides(source.materialInstance);
+  const name = typeof source.name === "string" ? source.name.trim() : "";
   return {
     id: typeof source.id === "string" ? source.id : `component-${index}`,
     classId:
       typeof source.classId === "string" ? source.classId : "MeshComponent",
+    ...(name ? { name } : {}),
     properties:
       source.classId === "CableComponent" ? { ...parseCableProperties(source.properties) } :
       source.classId === SPLINE_COMPONENT_CLASS_ID ? { ...parseSplineProperties(source.properties) } :

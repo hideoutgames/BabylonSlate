@@ -183,6 +183,8 @@ export function flattenOutliner(
       rows.push({
         id: folderRowId(folder.id),
         label: folderPath(folder.id),
+        renamable: true,
+        renameValue: folder.name,
         depth: 0,
         hasChildren: false,
         expanded: false,
@@ -195,6 +197,8 @@ export function flattenOutliner(
       rows.push({
         id: actorRowId(actor.id),
         label: path ? `${path} / ${names.get(actor.id)!}` : names.get(actor.id)!,
+        renamable: true,
+        renameValue: actor.name,
         depth: 0,
         hasChildren: false,
         expanded: false,
@@ -215,6 +219,8 @@ export function flattenOutliner(
       rows.push({
         id: rowId,
         label: names.get(actor.id)!,
+        renamable: true,
+        renameValue: actor.name,
         depth,
         hasChildren: children.length > 0,
         expanded,
@@ -247,6 +253,7 @@ export function flattenOutliner(
       rows.push({
         id: rowId,
         label: folder.name,
+        renamable: true,
         depth,
         hasChildren,
         expanded,
@@ -261,6 +268,8 @@ export function flattenOutliner(
         rows.push({
           id: actorRow,
           label: names.get(actor.id)!,
+        renamable: true,
+        renameValue: actor.name,
           depth: depth + 1,
           hasChildren: children.length > 0,
           expanded: actorExpanded,
@@ -280,6 +289,8 @@ export function flattenOutliner(
     rows.push({
       id: rowId,
       label: names.get(actor.id)!,
+      renamable: true,
+      renameValue: actor.name,
       depth: 0,
       hasChildren: children.length > 0,
       expanded,
@@ -330,6 +341,7 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
   const [search, setSearch] = useState("");
   const [placeOpen, setPlaceOpen] = useState(false);
   const [renameFolderId, setRenameFolderId] = useState<string | null>(null);
+  const [renamingRowId, setRenamingRowId] = useState<string | null>(null);
   const [deleteFolderId, setDeleteFolderId] = useState<string | null>(null);
   const [deleteActorChoice, setDeleteActorChoice] = useState<{
     actorId: string;
@@ -628,6 +640,25 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
       });
     },
     [mutate, scene],
+  );
+
+  const finishRowRename = useCallback(
+    (rowId: string, name: string | null) => {
+      setRenamingRowId(null);
+      const target = outlinerRowTarget(rowId);
+      if (!scene || name === null || !target) return;
+      if (target.kind === "folder") {
+        renameFolder(target.id, name);
+        return;
+      }
+      mutate({
+        ...scene,
+        actors: scene.actors.map((actor) =>
+          actor.id === target.id ? { ...actor, name } : actor,
+        ),
+      });
+    },
+    [mutate, renameFolder, scene],
   );
 
   /** Keep each choice in one scene mutation so undo restores the whole operation. */
@@ -1016,6 +1047,9 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
           const target = outlinerRowTarget(id);
           if (target?.kind === "actor") frameActor(target.id);
         }}
+        renamingId={renamingRowId}
+        onRenameRequest={setRenamingRowId}
+        onRenameDone={finishRowRename}
         onToggleExpanded={(id) =>
           setCollapsed((current) => {
             const next = new Set(current);
@@ -1042,12 +1076,14 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
       actionSize,
       actorMenuItems,
       dropActorRow,
+      finishRowRename,
       folderMenuItems,
       frameActor,
       lockedIds,
       moveActorDropHint,
       nodes,
       phone,
+      renamingRowId,
       reparentRow,
       scene,
       search,
