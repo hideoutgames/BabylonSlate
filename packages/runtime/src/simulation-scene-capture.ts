@@ -377,7 +377,7 @@ export function captureSimulationScene(input: SimulationSceneCaptureInput): Simu
       const visible = actor.getVariable("visible");
       if (visible !== undefined && typeof visible !== "boolean") fail("value", `${id}.visible`, "Actor visibility is not a Boolean.");
       actors.push({
-        id, classId: actor.classId, name: before?.name ?? (runtimeName as string | undefined) ?? actor.classId,
+        id, classId: actor.classId, name: (runtimeName as string | undefined) ?? before?.name ?? actor.classId,
         parentId: parentActorId(actor), transform: transform(actor.transform, `${id}.transform`),
         visible: visible !== false, locked: before?.locked ?? false, folderId: before?.folderId ?? null, components,
         ...(Object.keys(actorProperties).length || before?.properties ? { properties: actorProperties } : {}),

@@ -94,7 +94,7 @@ The shared `ParameterListEditor` in `editor-kit` authors those rows (types, opti
 
 Editor Output Log lines and live behaviour-tree snapshots live in an isolated diagnostics provider. `useOutputLog` and `useLiveBtState` subscribe independently; the broad Play context exposes only stable write callbacks alongside session controls. Writers that need nothing else (the editor utility ScriptHost) use `usePlayDiagnosticsActions`, which never changes with Play state. Diagnostic updates do not rerender the session owner, its overlays, or unrelated Play consumers. Logs retain their existing bounded history, and stopping Play clears the live BT snapshot.
 
-Play overlay chrome is a labeled top bar (**Pause** / **Resume**, **Stats**, **Console**, **Inspector**, **Stop**, plus **Step** while paused) with 44px targets. **Stats** and **Inspector** stay filled in both states; the primary outline marks their pressed state. `StatsHud` stays **collapsed** until Stats is tapped so the first Play frame reads as a game view. Pause calls `session.setPaused` (the same path as `attachLifecyclePause`), which pauses the render scheduler **and** live AudioV2 voices. Close is one tap (**Stop**). Preview Build uses the same labeled **Stop** over its player iframe (the packaged player keeps its own stats HUD, which samples completed renders per elapsed second; the shared Console button also controls Preview Build; the separate Pause / Inspector buttons remain in overlay Play). When Preview Build is on, the chrome launch control reads **Preview**.
+Play overlay chrome is a labeled top bar (**Pause** / **Resume**, **Stats**, **Console**, **Inspector**, **Stop**, plus **Step** while paused) with 44px targets. **Stats** and **Inspector** stay filled in both states; the primary outline marks their pressed state. `StatsHud` stays **collapsed** until Stats is tapped so the first Play frame reads as a game view. User and lifecycle pause requests wait for a correlated completed-boundary acknowledgement, then freeze render-owned game time and live AudioV2 voices. A requested supported redraw or Frame Capture can present without a new game tick. Console pause/resume reflects the effective boundary and cannot clear another owner's hold. Close is one tap (**Stop**). Preview Build uses the same labeled **Stop** over its player iframe (the packaged player keeps its own stats HUD, which samples completed renders per elapsed second; the shared Console button also controls Preview Build; the separate Pause / Inspector buttons remain in overlay Play). When Preview Build is on, the chrome launch control reads **Preview**.
 
 **Debug menu** (next to Play) uses the same content-sized, minimum 14rem width as the viewport settings island so labels stay on one line. It persists overlay chrome in Engine Settings `debuggerDefaults` (same store as Preview Build). Retired `showFps` / `logLevel` keys in older saved settings are dropped on load; do not reuse those names.
 
@@ -103,7 +103,7 @@ Stats keeps the measured timings and **Over Budget** warning; normal ticks no lo
 | Group | Item | Default | Notes |
 | --- | --- | --- | --- |
 | Play Overlay | Stats, Console, Inspector | on | Hides that overlay control when off. Checkboxes stay enabled while playing, but the Play overlay is `z-50` full-screen so the toolbar Debug menu is not reachable mid-session — toggle before Play, or hide via overlay chrome. Unchecking Inspector also closes the dialog (it does not reopen when checked again). |
-| Session | Pause On Play | off | After Play boot, `setPaused(true)` via `createPlayPauseGate` so `boot.play`'s `resume()` cannot undo it. `start()` / Begin Play may still run; the first tick after that waits for Resume / Step. Overlay boot also posts `{ type: "setPaused", paused: true }` after `{ type: "play" }`. |
+| Session | Pause On Play | off | Shared by Play and Simulation. After Play boot, `setPaused(true)` via `createPlayPauseGate` so `boot.play`'s `resume()` cannot undo it. `start()` / Begin Play may still run; the first tick after that waits for Resume / Step. Overlay boot also posts `{ type: "setPaused", paused: true }` after `{ type: "play" }`. |
 | Session | Preview Build | off | Disabled while playing or preparing |
 | Session | Play from Scene | on | Overlay Play and Preview Build seed the open scene tab; off seeds project startup. Disabled while playing or preparing. Export Game ignores this. |
 
@@ -117,6 +117,68 @@ Play overlay **extends** the existing FPS / `scriptMs` / `physicsMs` / `publishM
 - Host memory: `getHostMemoryStats()` in `@babylonslate/vfs` merges whatever the platform exposes. Chromium/Electron report the real JS heap (`performance.memory` → `js`); iOS bridges `BabylonSlateMemory` to app-process `phys_footprint` (`app`), bytes before jetsam would kill the app (`headroom`, `os_proc_available_memory`), and device-wide free+inactive+purgeable (`free`, `host_statistics64`). WKWebView renders in a separate WebContent process whose memory is not exposed to JS or the host app, so `app`/`headroom`/`free` are never a full page-RAM figure — labels distinguish them from engine-accounted `mem`/`geo`. The editor overlay polls it on the existing 200 ms stats tick; the packaged player polls at 1 Hz and merges it into `PlayerHudStats`.
 
 Output Log, keyed Print, and the Preview session report are unchanged. Print HUD and Draw Debug wireframes are **not** debugger chrome: overlay Play and the packed player apply `{ type: "print" }` / `{ type: "debugDraw" }` even when `bundleDebugger` is false. Stats HUD, console, and inspect stay debugger-bundled. Print / Print String / Draw Debug still default to Inspector **Development Only**, so a release compile omits them unless the author unchecks the flag.
+
+## Simulation Play
+
+Simulation hosts the normal game runtime in the open world Scene Viewport, using
+its prepared in-memory Scene and a separate game Scene on the shared Engine.
+Class/asset previews are not Simulation targets, and Play From Scene/startup
+preferences do not select a different root. Public launch qualification is tracked
+in [the implementation checkpoint](../engineplan.md); the contracts here describe
+the integrated branch, not completed browser or device acceptance.
+
+Start in **Game Input**. **Edit** releases game input and enables runtime selection,
+the existing Inspector/Outliner and transform tools; **Return To Game** restores
+routing after a fresh input transition. Entering Edit does not pause gameplay.
+**Pause** waits for a completed runtime boundary; editor camera and supported
+render-only redraws remain available without advancing game time. Gameplay can
+write a value again on its next tick, so Pause is the reliable placement/inspection
+mode. User pause survives background/loading holds, and Resume does not accumulate
+the paused interval. Stop remains available outside hidden document tabs.
+
+| Live edit | Current owner/capability |
+| --- | --- |
+| Actor/local component pose | Validated transform/physics boundary; teleports preserve velocity and reset interpolation; unsafe owners report restart required |
+| Exposed Class scalar/vector/reference values | Reflected typed setter when supported; Maps/structures and unsupported types remain inspection-only |
+| Existing Mesh shadows/material assignment, camera/light/outline, rigid body/collider/navigation fields, audio volume | Explicit runtime descriptors; colliders use their owner rebuild boundary; other asset replacements/rebuilds may require restart |
+| Surface float/color/texture parameters | Session-owned `MaterialObject` parameters with staged asset preparation; no shared source-material writes |
+| IDs, computed/native fields, actor/component structure, source assets and logic | Read-only; gameplay may still spawn/delete runtime objects |
+
+Selection uses generation, scene-instance identity, runtime GUID and lifetime
+token. Destroyed targets become unavailable rather than selecting a recycled slot.
+Only visible consumers poll, at most 5 Hz, with bounded value pages and no
+concurrent selection read. Continuous writes coalesce per target; focused drafts
+remain separate from acknowledged values. See [the bridge](bridge.md) for bounds.
+
+**Engine Settings → Debugger → Simulation → Keep Simulation Changes** defaults
+off and applies to the next launch. The viewport shows the effective session
+value. Off discards gameplay and deliberate live edits without a document command,
+dirty change or loss of earlier history. On captures the complete final persistable
+root scene before cleanup and applies one **Apply Simulation Changes** command.
+Undo restores the baseline; Redo restores the captured document without rerunning
+Begin Play. Save remains explicit. Failure offers **Retry** or **Discard** and
+never applies a partial scene or a command that cannot fit its inverse in history.
+
+Keep cannot represent independent streamed Scenes, SceneLayers, scene transitions
+or native/generated resources without an authored representation. Known cases
+are labeled before launch; runtime topology changes are latched when they occur,
+even if later removed. Material owners or typed values without a lossless capture
+codec fail with their exact reason. Simulation can continue with discard.
+
+Logic, Class, prefab and asset editors show **Read-only During Simulation Play**;
+navigation, copying and source-linked errors remain useful. Authoring commands,
+global Undo/Redo, file writes and engine-managed utilities obey central locks.
+Already-admitted safe saves finish before the baseline is taken; later authoring
+saves defer. Save Game reads see selected Preview data through a copy-on-write
+overlay; writes/deletes, including wipe-on-start, are dropped on Stop even with
+Keep on. Arbitrary custom JavaScript timers and external network/file effects are
+outside this scene rollback and cooperative game-clock boundary.
+
+Performance recording, Frame Capture and `snapshot start` are rejected in
+Simulation with **Use Play Or Preview Build**. Existing basic Stats, source-linked
+errors and bounded inspection remain available. Selected-graph observation, watched
+pin activity, node breakpoints/stepping, shader readbacks and advanced Spector
+capture are not delivered; JavaScript debugging remains in browser developer tools.
 
 ## Live Play debugging
 
@@ -144,7 +206,7 @@ The limit accounts for the payload's UTF-8 JSON bytes, including snapshots, even
 
 World snapshot variables use the same JSON-safe values as Inspect: live object references retain `{ guid, classId }`, Maps retain their entries, and other circular/non-cloneable values use their formatted representation. Recording a reference never traverses its live World or owner.
 
-`snapshot start` / `snapshot stop` fill a `TraceRecorder` (stats, logs, prints, world snapshots, input, RNG seed) with a byte budget. Stop emits a `trace` command. Runtime `stop()` also finalizes an in-flight recording. Editor Stop waits at most two seconds for the Worker trace reply before terminating the session, so an unavailable Worker cannot trap the user in Play or Scene Loading; a payload that has already arrived is retained. `@babylonslate/assets` writes the payload as a `Trace` document under app-private derived data (`derived/{projectGuid}/traces/*.babtrace`, same root as thumbnails/journal — not `assets/` / Content Browser). Overlay Play does not show a playback card. When Play ends with a payload, the editor opens a read-only DockView **Trace** tab: Timeline graphs (script/physics ms vs tick) + scrubber, Snapshot of the selected frame, and Log filtered to the selected and preceding 29 recorded frames (logs **and** prints). Headless replay: seed + ticks **or** feeding each frame’s `inputEvents` then `tick()` → same `stringifyWorldSnapshot`.
+In normal Play/Preview, `snapshot start` / `snapshot stop` fill a `TraceRecorder` (stats, logs, prints, world snapshots, input, RNG seed) with a byte budget. Stop emits a `trace` command. Runtime `stop()` also finalizes an in-flight recording. Editor Stop waits at most two seconds for the Worker trace reply before terminating the session, so an unavailable Worker cannot trap the user in Play or Scene Loading; a payload that has already arrived is retained. `@babylonslate/assets` writes the payload as a `Trace` document under app-private derived data (`derived/{projectGuid}/traces/*.babtrace`, same root as thumbnails/journal — not `assets/` / Content Browser). Overlay Play does not show a playback card. When Play ends with a payload, the editor opens a read-only DockView **Trace** tab: Timeline graphs (script/physics ms vs tick) + scrubber, Snapshot of the selected frame, and Log filtered to the selected and preceding 29 recorded frames (logs **and** prints). Headless replay: seed + ticks **or** feeding each frame’s `inputEvents` then `tick()` → same `stringifyWorldSnapshot`.
 
 ## Export settings (P14)
 
@@ -196,3 +258,38 @@ settles an already-requested recording start and receives its final bounded
 transfer before detaching the iframe; a Preview with no diagnostic request does
 not load the diagnostics entry merely to stop. Transfer failures leave an
 explicit error and never substitute a partial profile.
+
+### Profiler and Frame Debugger use
+
+Open **Profiler** from Debug or session chrome, then explicitly start a Performance
+recording or **Capture Frame**. Viewing old results does not collect new data.
+Summary, paged Timeline and selected-sample details share one lazy diagnostic
+surface with Copy/Export and a visible Stop Session action. One recent result is
+retained; a finite recording stops on its duration, data budget or session end and
+reports the reason/dropped records. Only one expensive recording or frame capture
+may be active; full-world Trace remains a separate explicit workflow.
+
+Engine Settings → Debugger keeps these preferences local and searchable:
+
+| Setting | Default/range | Effective use |
+| --- | --- | --- |
+| Recording Duration | 10 seconds / 1–60 | Next explicit Play/Preview recording |
+| Profile Retained Data Budget | 16 MiB / 4–64, Advanced | Timing buffers/metadata; separate from Trace and browser heap |
+| GPU Timing | off | Request preference only; current collector reports unavailable and creates no new GPU queries |
+| Trace Memory Budget | 128 MiB / 1–256 | Existing saved values preserved; serialized-data retention, allocated as records arrive |
+
+Capture Frame waits for the next coherent completed game presentation, with a
+finite timeout; held/loading images cannot become successful captures. Paused
+capture requests a supported render-only presentation without a physics tick.
+Reports distinguish actual executed stages from public FrameGraph task/pass
+metadata, include graph generation and exposed resource dimensions/formats/samples,
+and report measured draw-call deltas and inclusive submission wall times. Native
+rendering reports its owned stages rather than an empty graph. Missing attribution
+or backend detail is labeled unavailable; nested stage times must not be added.
+
+No target thumbnails, pixel readbacks, allocation-optimization changes, pass enable
+toggles or replay are introduced. Actor/material links appear only when their
+render owner supplies the identity; batching is not guessed. Shared Engine GPU
+per-pass timing, WebGPU command capture and Spector integration remain unavailable.
+The CPU recording overhead, repeated-release counts, sustained route and real
+browser/device matrix remain qualification gates in the engineplan checkpoint.

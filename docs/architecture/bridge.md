@@ -10,9 +10,9 @@ This is **not** the P3 JSON harness snapshot (`createWorldSnapshot` in `@babylon
 
 Play presentation can close while the owner remains `stopping`. A second session and project Engine replacement wait for `PlaySessionResult.released`; an unconfirmed/rejected release quarantines admission and reports that the editor must reload. Closing React chrome and an elapsed timeout do not establish native release. Preview keeps its packaged iframe path and releases admission when that browsing context detaches. The presentation passes its generation into Play startup; StrictMode's abandoned effect setup never allocates a second game owner. Pause acknowledgment and simulation editing use separate runtime boundaries; admission alone does not acknowledge a paused tick.
 
-The internal `requestSimulate` path reuses Play preparation with an explicit open world Scene, independent of startup-scene preferences. It first drains admitted project writes, then leases the authoring lock and preserves the in-memory scene document. Save Game preparation (including wipe-on-start) and gameplay share one disposable storage overlay. A world-only `SimulationViewport` adapter releases the authoring handle and waits for `whenReleased()` before the existing game presentation mounts through a portal into that panel. Cancellation retains an outgoing-release barrier. After game release, the unchanged authoring document reconstructs through the normal viewport path, retaining the SceneEditingProvider's selection and stored camera pose. No Keep capture or undo command runs.
+The internal `requestSimulate` path reuses Play preparation with an explicit open world Scene, independent of startup-scene preferences. It first drains admitted project writes, then leases the authoring lock and preserves the in-memory scene document. Save Game preparation (including wipe-on-start) and gameplay share one disposable storage overlay. A world-only `SimulationViewport` adapter releases the authoring handle and waits for `whenReleased()` before the existing game presentation mounts through a portal into that panel. Cancellation retains an outgoing-release barrier. After game release, authoring presentation reconstructs from the unchanged baseline or the successfully retained scene through the normal viewport path, retaining the SceneEditingProvider's selection and stored camera pose. Keep is snapshotted at launch; its complete capture and admitted command run before native cleanup. Discard requests no final scene serialization.
 
-Simulation's internal chrome acknowledges whole-session pause requests before showing the result, separates Game Input and Edit, and omits Step. The existing runtime host neutralizes input and freezes game progression; camera-only redraw remains a render-owner capability. The source Scene stays in the document working set while Simulation is active, and a global Stop/Return To Scene bar remains outside hidden document tabs. The shell is an implementation checkpoint, not a qualified live Inspector/gizmo release. Test-mode access is `__babylonslateSimulationTest`; it is not exported to players or offered as a public toolbar action.
+Simulation's chrome acknowledges whole-session pause requests before showing the result, separates Game Input and Edit, and omits Step. The existing runtime host neutralizes input and freezes game progression; camera-only redraw remains a render-owner capability. The source Scene stays in the document working set while Simulation is active, and a global Stop/Return To Scene bar remains outside hidden document tabs. The existing Inspector/Outliner and transform tools use the runtime adapter below. Public launch/browser qualification remains tracked in the engineplan checkpoint; `__babylonslateSimulationTest` is test-only and never exported to players.
 
 ## Transports
 
@@ -156,7 +156,10 @@ Live controls reuse `PropertyGrid`, with runtime capability descriptors, protect
 focused drafts, correlated acknowledgements, and explicit pending/rejection state.
 Only validated runtime controls override the editor's read-only presentation context;
 source asset creation and structural authoring stay locked. A polling response older
-than an accepted command revision cannot overwrite its acknowledged value. Material
+than an accepted command revision cannot overwrite its acknowledged value. Timeout,
+selection invalidation and Stop send correlated `cancelRuntimeInspector` requests,
+so a rejected deferred material/source preparation cannot later apply. A synchronous
+write that already completed cannot be recalled. Material
 instance edits use typed material requests, while assignment uses the component's
 validated property owner. Expanding a container requests one bounded value page,
 without starting another polling system. Runtime selection is kept separately from
@@ -174,9 +177,25 @@ Every Stop route passes the common owner's asynchronous retention admission gate
 A refused capture leaves the ticket un-aborted in `retention-resolution`, with
 Retry/Discard controls; native End Play and release cannot run first. Successful
 admission then finalizes diagnostics, disables capture leases, and stops the native
-runtime. The local Keep preference and authored asset GUID scope are snapshotted
-at preparation. Unsupported initial or runtime topology is shown explicitly;
+runtime. The local Keep preference is snapshotted at preparation; source controls track
+the current leased asset metadata after on-demand acquisitions. Unsupported initial or runtime topology is shown explicitly;
 quiescence still precedes any failed Stop resolution. Source-document and project
 transitions await Stop and actual release before recovery cleanup or replacement.
 Unexpected host teardown requests discard, while an unconfirmed native release
 keeps the authoring protection and shared Engine quarantined until reload.
+
+### Final authoring capture transport
+
+`quiesceSimulation` is correlated by session generation and request ID. It rejects
+new mutations, settles accepted writes at a completed boundary, and reports tick,
+scene/load identity and command revision without running End Play. The host drains
+that exact render revision, including staged material preparation, before sending
+`captureSimulationState`. A mismatched revision, stale identity or unconfirmed
+resource owner fails the capture. Worker and in-process hosts use the same capture
+service; Inspector/trace snapshots are never used as a fallback.
+
+Successful candidates travel in ordered, bounded 64 KiB UTF-8 chunks followed by
+a correlated summary. Count, sequence, byte budget, JSON shape and identity are
+validated before publication. Stop/cancellation clears pending requests and partial
+buffers. Capture failures keep the runtime quiescent for explicit Retry/Discard;
+a stopped or unresponsive Worker cannot provide a guaranteed retained result.

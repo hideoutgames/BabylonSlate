@@ -69,6 +69,7 @@ describe("complete simulation scene capture", () => {
     world.destroyActor("deleted"); world.tick();
     hero.components[1]!.destroyed = true;
     hero.setVariable("Health", 5);
+    hero.setVariable("name", "Renamed During Play");
     hero.setVariable("Target", spawned);
     hero.setVariable("Parts", new Map([["created", spawnedMesh]]));
     hero.setVariable("State", { Score: 8, Target: spawned });
@@ -84,13 +85,14 @@ describe("complete simulation scene capture", () => {
     expect(result.identity).toEqual(input.identity);
     expect(result.byteSize).toBe(new TextEncoder().encode(JSON.stringify(result.scene)).byteLength);
     expect(result.scene.actors).toHaveLength(2);
-    expect(result.scene.actors[0]).toMatchObject({ id: "hero", name: "Hero", locked: true, folderId: "folder", suppressedComponentSourceIds: ["source-removed"],
+    expect(result.scene.actors[0]).toMatchObject({ id: "hero", name: "Renamed During Play", locked: true, folderId: "folder", suppressedComponentSourceIds: ["source-removed"],
       transform: { position: [12, 0, 0] }, properties: { Health: 5 }, components: [{ id: "mesh", sourceId: "source-mesh", materialInstance: {
         materialGuid: "mat", parameters: { Gain: { kind: "float", value: 0.25 }, Texture: { kind: "texture", textureAssetGuid: "texture" } },
       } }] });
     expect(result.scene.actors[1]).toMatchObject({ name: "Created", parentId: "hero", components: [{ transform: { position: [0, 2, 0] } }] });
     const reopened = load(normalizeScene(JSON.parse(JSON.stringify(result.scene))));
     const [loadedHero, loadedSpawn] = reopened.actors;
+    expect(loadedHero!.getVariable("name")).toBe("Renamed During Play");
     expect(loadedHero!.getVariable("Target")).toBe(loadedSpawn);
     expect(loadedHero!.getVariable("Parts")).toEqual(new Map([["created", loadedSpawn!.components[0]]]));
     expect(loadedHero!.getVariable("State")).toEqual({ Score: 8, Target: loadedSpawn });

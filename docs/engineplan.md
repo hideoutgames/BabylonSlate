@@ -26,8 +26,11 @@ merged at **06:46:55 UTC**, head `9202dc0e54a2a03cba60f6a80cca73d3b4276bcc`;
 remote main was `edabd639a472bb563eb47e7fe12a18ad26beb554`.
 [#830](https://github.com/hideoutgames/BabylonSlate/pull/830) remained open at
 head `52056fcea278c0febea0deaa436aef45213f63d5`, updated **06:57:49 UTC**.
-Integration of the newly merged asset changes and requalification are pending
-at this checkpoint; do not infer either PR was part of the original baseline.
+The branch integrated that main revision in merge `c4d50898`. Lazy source scopes,
+abortable cold document reads and dependency metadata were retained. Scene-owned
+material texture overrides now join the required source closure; independent
+stream/overlay ownership still has no single-document persistence representation.
+Post-merge requalification is pending; neither PR was part of the original baseline.
 
 | Integration owner | Contract |
 | --- | --- |
@@ -53,8 +56,16 @@ reported rAF-cadence median **116.665 ms**, p95 **166.66 ms**, p99 **183.325 ms*
 average cadence was **7.9073 / 7.8654 FPS**, runtime **60.0688 / 60.2347 Hz**,
 with **0 page errors**. This software-renderer cadence proxy is not a measurement
 of the new completed-game-frame population, GPU time, Windows performance or A16
-performance. Equivalent post-change comparison, real Computer Use journeys,
-20-cycle release accounting and sustained qualification remain pending.
+performance.
+
+After integrating #828, the equivalent `edabd639` baseline used the same browser,
+backend, dimensions, quality and warm-up/windows: **231 / 232** samples,
+**7.666 / 7.725 FPS**, median **116.665 ms**, p95 **166.665 / 166.660 ms**,
+p99 **199.995 / 183.330 ms**, runtime **60.168 / 60.235 Hz**, and **0 page errors**.
+Artifacts were retained under `baseline-edabd639` in the session evidence. This
+remains a software rAF-cadence proxy. Equivalent post-change comparison, real
+Computer Use journeys, 20-cycle release accounting and sustained qualification
+remain pending.
 
 Selected-graph observation, true graph breakpoints/stepping, GPU query profiling,
 output thumbnails and advanced Spector capture are not delivered at this
