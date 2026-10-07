@@ -52,6 +52,19 @@ Whole-asset replacements, graph node snapshots, and graph members/components/fun
 
 Dependencies are explicit constructor options: `DocumentService`, the `EditSession`, `ProjectService`, `SourceControlService`, the `JournalBuffer` and derived storage. React effects are injected callbacks: `bump` (context update), `scheduleDebouncedSave`, `onHistoryCleared`, `onRecoveryResolved`, plus `registryTick` and `isProjectDirty` readers. `document-editing-service.test.ts` covers it without React.
 
+### Play content service
+
+`createPlayContentService` (`apps/editor/src/services/play-content-service.ts`) is the plain TypeScript Play and export content layer. `DocumentProvider` builds one per mount and exposes its functions as the same actions (names, signatures, return values and lifetime identities unchanged).
+
+| Owned by the Play content service | Stays in `DocumentProvider` |
+| --- | --- |
+| The 25 `collectPlay*` loaders (open tabs override saved files; `requiredGuids` limits reads) and `collectEditorUtilityScripts` | `loadAssetDocument`, `loadGraphDocument` and `readAssetChunk` (injected into the service) |
+| Class / Animation Graph compilation and the `GraphScriptCompileCache` (`clearCompileCache` on project open / close) | `lastCompiledSignature`, `playLoadedSignature`, `playPreviewBundles` / `playPreviewDiagnostics` state, `scriptsStale` and `graphsNeedCompile` |
+| Compile signatures: `graphSignature` (the `currentGraphSignature` memo, keyed on `GRAPH_SIGNATURE_KINDS` revisions), Compile on Save (`compileOpenGraphs`) and the signature a whole-project Play compile records | When Compile on Save runs |
+| `collectGraphTypeSchemas` (also used by rename / delete reference repair) | |
+
+Dependencies are explicit options: `DocumentService`, `ProjectService`, `readAssetChunk` and a `projectDocument` reader. React state is set through the injected `onPreviewScriptsCompiled(signature, bundles, diagnostics)`. Play source preparation (`play-asset-sources.ts`, including Complex Collision cooking) is unchanged and does not go through it. `play-content-service.test.ts` covers it without React.
+
 ## Ownership
 
 | Concern                                          | Owner                                                                 |
