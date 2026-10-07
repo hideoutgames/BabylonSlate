@@ -78,6 +78,11 @@ type RapierApi = {
       shape: unknown,
       callback: (collider: RapierCollider) => boolean,
     ): void;
+    collidersWithAabbIntersectingAabb(
+      center: { x: number; y: number },
+      halfExtents: { x: number; y: number },
+      callback: (collider: RapierCollider) => boolean,
+    ): void;
   };
   RigidBodyDesc: {
     fixed(): RapierBodyDesc;
@@ -889,18 +894,37 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
   }
 
   /**
-   * Scene queries read the broad-phase tree, which Rapier only refreshes while
-   * stepping (0.18 removed `updateSceneQueries`). A zero-length step applies
-   * pending user changes and collision detection without simulating time;
-   * kinematic targets stay pending. Its contacts are those the next step would
-   * detect from the same poses, so they are recorded now and not repeated.
+   * Scene queries and the character controller read the broad-phase tree,
+   * which Rapier only refreshes while stepping (0.18 removed
+   * `updateSceneQueries`). A zero-length step applies pending user changes and
+   * collision detection without simulating time; kinematic targets stay
+   * pending. Its contacts are those the next step would detect from the same
+   * poses, so they are recorded now and not repeated.
    */
   private flushSceneQueries(): void {
     if (!this.queriesDirty) return;
     this.world.timestep = 0;
     this.world.step(this.eventQueue, this.collisionHooks);
+    // Rapier 0.21 returns from a zero-length step without re-attaching a tree
+    // optimization it deferred, which hides every collider from queries. The
+    // next step re-attaches it and, with nothing changed, defers nothing.
+    if (this.colliders.size > 0 && !this.queryTreeHasLeaves())
+      this.world.step(this.eventQueue, this.collisionHooks);
     this.queriesDirty = false;
     this.drainCollisionEvents();
+  }
+
+  private queryTreeHasLeaves(): boolean {
+    let found = false;
+    this.world.collidersWithAabbIntersectingAabb(
+      { x: 0, y: 0 },
+      { x: 1e30, y: 1e30 },
+      () => {
+        found = true;
+        return false;
+      },
+    );
+    return found;
   }
 
   private drainCollisionEvents(): void {
