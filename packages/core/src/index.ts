@@ -72,6 +72,7 @@ export * from "./movement";
 export * from "./water";
 export * from "./water-removal";
 export * from "./landscape";
+export * from "./collision-mesh";
 export * from "./foliage";
 export * from "./spring-arm-component";
 export * from "./cable-component";
