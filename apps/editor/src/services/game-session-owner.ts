@@ -1,6 +1,6 @@
 /** Game lifetime is independent of the canvas or React surface presenting it. */
 export type GameSessionMode = "play" | "simulate" | "preview";
-export type GameSessionLifecycle = "idle" | "preparing" | "running" | "stopping" | "failure";
+export type GameSessionLifecycle = "idle" | "preparing" | "running" | "paused" | "stopping" | "failure";
 
 export interface GameSessionTicket {
   readonly generation: number;
@@ -41,6 +41,7 @@ export class GameSessionOwner<Result extends GameSessionStopResult> {
     ticket: GameSessionTicket;
     abort: AbortController;
     stop?: () => Result | Promise<Result>;
+    releaseBarrier?: Promise<{ quarantined: boolean }>;
     stopping?: Promise<Result | undefined>;
   } | null = null;
 
@@ -79,11 +80,28 @@ export class GameSessionOwner<Result extends GameSessionStopResult> {
     return value;
   }
 
+  /** Outgoing authoring presentation may still own native resources during preparation. */
+  holdRelease(ticket: GameSessionTicket, released: Promise<{ quarantined: boolean }>): boolean {
+    if (!this.isCurrent(ticket) || this.state.lifecycle !== "preparing") return false;
+    const previous = this.current!.releaseBarrier;
+    this.current!.releaseBarrier = Promise.all([previous, released]).then(
+      (releases) => ({ quarantined: releases.some((release) => release?.quarantined) }),
+      () => ({ quarantined: true }),
+    );
+    return true;
+  }
+
   attach(ticket: GameSessionTicket, stop: () => Result | Promise<Result>): boolean {
     if (!this.isCurrent(ticket) || this.state.lifecycle !== "preparing") return false;
     this.current!.stop = stop;
     this.publish({ ...this.state, lifecycle: "running" });
     return true;
+  }
+
+  acknowledgePaused(ticket: GameSessionTicket, paused: boolean): void {
+    if (!this.isCurrent(ticket) || !["running", "paused"].includes(this.state.lifecycle)) return;
+    const lifecycle = paused ? "paused" : "running";
+    if (this.state.lifecycle !== lifecycle) this.publish({ ...this.state, lifecycle });
   }
 
   /** Failure cannot release an attached native owner without its release result. */
@@ -100,22 +118,26 @@ export class GameSessionOwner<Result extends GameSessionStopResult> {
     const current = this.current!;
     if (current.stopping) return current.stopping;
     if (this.state.quarantined && !current.stop) return Promise.resolve(undefined);
+    if (!current.stop && current.releaseBarrier) {
+      current.stopping = current.releaseBarrier.then((release) => {
+        this.completeRelease(ticket, release.quarantined);
+        return undefined;
+      });
+      current.abort.abort();
+      this.publish({ ...this.state, lifecycle: "stopping" });
+      return current.stopping;
+    }
     if (!current.stop) {
       this.current = null;
       current.abort.abort();
-      this.publish({ ...this.state, mode: null, lifecycle: "idle", error: null });
+      this.publish({ ...this.state, mode: null, lifecycle: "idle", quarantined: false, error: null });
       return Promise.resolve(undefined);
     }
     current.stopping = Promise.resolve().then(current.stop).then((result) => {
-      void result.released.then((release) => {
-        if (!this.owns(ticket)) return;
-        if (release.quarantined) {
-          this.fail(ticket, "Game resources did not confirm release. Reload the editor before starting another session.", true);
-        } else {
-          this.current = null;
-          this.publish({ ...this.state, mode: null, lifecycle: "idle", error: null });
-        }
-      }, (error: unknown) => this.fail(ticket, error, true));
+      void Promise.all([current.releaseBarrier, result.released]).then(
+        (releases) => this.completeRelease(ticket, releases.some((release) => release?.quarantined)),
+        (error: unknown) => this.fail(ticket, error, true),
+      );
       return result;
     }, (error: unknown) => {
       // A failed stop does not establish that a native owner released anything.
@@ -125,6 +147,16 @@ export class GameSessionOwner<Result extends GameSessionStopResult> {
     current.abort.abort();
     this.publish({ ...this.state, lifecycle: "stopping" });
     return current.stopping;
+  }
+
+  private completeRelease(ticket: GameSessionTicket, quarantined: boolean): void {
+    if (!this.owns(ticket)) return;
+    if (quarantined) {
+      this.fail(ticket, "Game resources did not confirm release. Reload the editor before starting another session.", true);
+    } else {
+      this.current = null;
+      this.publish({ ...this.state, mode: null, lifecycle: "idle", quarantined: false, error: null });
+    }
   }
 
   private publish(state: GameSessionState): void {

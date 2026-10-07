@@ -29,6 +29,18 @@ describe("game session ownership", () => {
     expect(owner.begin("simulate")?.mode).toBe("simulate");
   });
 
+  it("holds cancelled preparation until the outgoing viewport really releases", async () => {
+    const owner = new GameSessionOwner<GameSessionStopResult>();
+    const release = deferred<{ quarantined: boolean }>();
+    const ticket = owner.begin("simulate")!;
+    owner.holdRelease(ticket, release.promise);
+    const stopping = owner.stop(ticket);
+    expect(owner.begin("play")).toBeNull();
+    release.resolve({ quarantined: false });
+    await stopping;
+    expect(owner.begin("play")).not.toBeNull();
+  });
+
   it("rejects stale preparation and leaves a later session untouched", async () => {
     const owner = new GameSessionOwner<GameSessionStopResult>();
     const pending = deferred<string>();
