@@ -58,7 +58,8 @@ export type ColliderShape3D =
   | { kind: "capsule"; radius: number; halfHeight: number }
   | { kind: "cylinder"; radius: number; height: number }
   | { kind: "convex"; points: readonly Vec3[] }
-  | { kind: "mesh"; vertices: readonly Vec3[]; indices: readonly number[] };
+  /** Flat xyz `positions` plus triangle-list `indices` (see `CollisionTriangleMesh`). */
+  | { kind: "mesh"; positions: Float32Array; indices: Uint16Array | Uint32Array };
 
 export type ColliderShape2D =
   | { kind: "box2d"; halfExtents: { x: number; y: number } }

@@ -232,11 +232,19 @@ describe("journal", () => {
       { n: 2 },
       "tilemap-stroke:abc",
     );
+    // Undo history has already measured the command; its size stays out of the journal.
+    expect(command.byteSize).toBe(new TextEncoder().encode('{"from":{"n":1},"to":{"n":2}}').byteLength);
     const payload = commandToJournalPayload(command);
-    expect(payload.mergeKey).toBe("tilemap-stroke:abc");
+    expect(payload).toEqual({
+      type: "asset.setDocument",
+      from: { n: 1 },
+      to: { n: 2 },
+      mergeKey: "tilemap-stroke:abc",
+    });
     const revived = reviveCommand(payload) as SetAssetDocumentCommand | null;
     expect(revived).toBeInstanceOf(SetAssetDocumentCommand);
     expect(revived!.mergeKey).toBe("tilemap-stroke:abc");
     expect(revived!.apply({ n: 1 })).toEqual({ n: 2 });
+    expect(revived!.byteSize).toBe(command.byteSize);
   });
 });

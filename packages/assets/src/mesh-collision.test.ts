@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildBoxGlbFixture } from "./glb-geometry";
 import {
   complexCollisionMeshForMeshKind,
+  complexCollisionModelGuids,
   cookComplexCollisionMeshes,
   meshCollisionFingerprint,
   parseMeshCollisionMode,
@@ -115,9 +116,26 @@ describe("resolveMeshCollisions", () => {
 describe("complexCollisionMeshForMeshKind", () => {
   it("tessellates primitives into a triangle soup", () => {
     const box = complexCollisionMeshForMeshKind("box");
-    expect(box.vertices).toHaveLength(8);
+    expect(box.positions).toHaveLength(8 * 3);
     expect(box.indices.length).toBeGreaterThan(0);
     expect(box.indices.length % 3).toBe(0);
+  });
+});
+
+describe("complexCollisionModelGuids", () => {
+  const mesh = (assetGuid: string, collisionMode?: string) => ({
+    id: assetGuid, classId: "MeshComponent",
+    properties: { assetGuid, ...(collisionMode ? { collisionMode } : {}) },
+  });
+
+  it("selects complex Models from Scene actors and Class prefab components only", () => {
+    const scene = { actors: [{ id: "rock", components: [mesh("rock-model", "complex"), mesh("crate-model", "simple")] }] };
+    const layer = { actors: [{ id: "sign", components: [mesh("sign-model", "none")] }] };
+    const enemyClass = { components: [mesh("enemy-model", "complex"), { id: "c", classId: "ColliderComponent", properties: { collisionMode: "complex", assetGuid: "not-a-mesh" } }] };
+    const legacy = { components: [mesh("legacy-model")] };
+    const primitive = { components: [{ id: "p", classId: "MeshComponent", properties: { meshKind: "box", collisionMode: "complex" } }] };
+    expect(complexCollisionModelGuids([scene, layer, enemyClass, legacy, primitive, null, "text"]))
+      .toEqual(new Set(["rock-model", "enemy-model"]));
   });
 });
 
@@ -182,15 +200,22 @@ describe("cookComplexCollisionMeshes", () => {
       ]),
     );
     const mesh = meshes.get("model-1");
-    expect(mesh?.vertices.length).toBeGreaterThanOrEqual(3);
-    expect(mesh?.indices.length).toBeGreaterThan(0);
-    expect(mesh?.vertices.some((point) => Math.abs(point.x) > 0.9)).toBe(true);
+    // The unit box fixture has 8 corners; Import Scale 2 bakes them to ±1.
+    expect(mesh?.positions).toBeInstanceOf(Float32Array);
+    expect(mesh?.indices).toBeInstanceOf(Uint16Array);
+    expect(mesh?.positions).toHaveLength(8 * 3);
+    expect(mesh?.indices).toHaveLength(36);
+    expect(Math.max(...mesh!.positions)).toBe(1);
+    expect(cookComplexCollisionMeshes(new Map([["model-1", buildBoxGlbFixture(1)]]), undefined, new Set())).toEqual(new Map());
   });
 });
 
 
 it("omits degenerate pole triangles while preserving complex sphere bounds", () => {
-  const { vertices, indices } = complexCollisionMeshForMeshKind("sphere");
+  const { positions, indices } = complexCollisionMeshForMeshKind("sphere");
+  const vertices = Array.from({ length: positions.length / 3 }, (_, i) => ({
+    x: positions[i * 3]!, y: positions[i * 3 + 1]!, z: positions[i * 3 + 2]!,
+  }));
   let area = 0;
   for (let i = 0; i < indices.length; i += 3) {
     const a = vertices[indices[i]!]!, b = vertices[indices[i + 1]!]!, c = vertices[indices[i + 2]!]!;

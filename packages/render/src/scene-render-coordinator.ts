@@ -116,9 +116,11 @@ export class SceneRenderCoordinator {
     };
     const promise = (async () => {
       if (previous) {
-        // A previous owner's cancellation cannot reject its replacement.
+        // A previous owner's cancellation cannot reject its replacement. The
+        // previous owner is always superseded here: a same-generation owner
+        // is reused above.
         try { await previous.promise; }
-        catch (error) { if (previous.generation === generation) throw error; }
+        catch { /* superseded owner's outcome */ }
       }
       check();
       const deadline = performance.now() + 10_000;
