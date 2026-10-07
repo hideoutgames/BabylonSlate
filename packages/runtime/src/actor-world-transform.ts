@@ -177,8 +177,11 @@ interface PoseStore {
 /** Fresh poses into a caller's map; sheared matrices last one pass. */
 class MapPoseStore implements PoseStore {
   private shears: Map<string, AffineTransform> | undefined;
+  private readonly poses: Map<string, Transform>;
 
-  constructor(private readonly poses: Map<string, Transform>) {}
+  constructor(poses: Map<string, Transform>) {
+    this.poses = poses;
+  }
 
   resolved(guid: string): Transform | undefined {
     return this.poses.get(guid);
