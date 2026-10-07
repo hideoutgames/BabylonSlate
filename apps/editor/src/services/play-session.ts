@@ -605,6 +605,7 @@ export function startPlaySession(options: {
   const suppressGameInput = () => {
     const suppressed = inputTransitionPending || gameInputMode === "edit" || acknowledgedPaused || requestedPauses.size > 0;
     input?.setSuppressed(suppressed);
+    if (options.mode === "simulate") handle.setGameInputEnabled(!suppressed);
     return suppressed;
   };
   const setPauseReason: PlaySession["setPauseReason"] = async (reason, paused) => {
@@ -1251,7 +1252,7 @@ export function startPlaySession(options: {
       if (transition !== inputTransition) return;
       inputTransitionPending = false;
       suppressGameInput();
-      handle.applyCommand({ type: "setFreeCam", enabled: mode === "edit" });
+      handle.setSimulationEditMode(mode === "edit");
     },
     requestPausedRedraw: () => handle.requestPausedRedraw(),
     lastMoveX: () => {
