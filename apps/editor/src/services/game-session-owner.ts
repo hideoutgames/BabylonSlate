@@ -86,11 +86,12 @@ export class GameSessionOwner<Result extends GameSessionStopResult> {
     return true;
   }
 
-  /** Startup failure after native allocation must set quarantine explicitly. */
+  /** Failure cannot release an attached native owner without its release result. */
   fail(ticket: GameSessionTicket, error: unknown, quarantined = false): void {
     if (!this.owns(ticket)) return;
+    const mustQuarantine = quarantined || Boolean(this.current!.stop);
     this.current!.abort.abort();
-    this.publish({ ...this.state, lifecycle: "failure", quarantined,
+    this.publish({ ...this.state, lifecycle: "failure", quarantined: mustQuarantine,
       error: error instanceof Error ? error.message : String(error) });
   }
 
