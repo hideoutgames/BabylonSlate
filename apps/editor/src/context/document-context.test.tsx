@@ -237,7 +237,7 @@ describe("DocumentProvider actions and route", () => {
       ...openScene(MAIN_SCENE_ID), actors: [createActor("saved", "Saved Hero", { classId: "Hero" })],
     }));
     await act(() => actions.saveAll());
-    const handle = new OpfsStorageAdapter().getCurrentFolder()!;
+    const handle = await new OpfsStorageAdapter().openDocumentsProject("Stable");
     await act(() => actions.applySceneChange(MAIN_SCENE_ID, {
       ...openScene(MAIN_SCENE_ID), actors: [...openScene(MAIN_SCENE_ID).actors, createActor("unsaved", "Unsaved Hero", { classId: "Hero" })],
     }));
@@ -307,6 +307,7 @@ describe("DocumentProvider actions and route", () => {
     await act(() => actions.saveAll());
     if (!keepOpen) act(() => actions.closeDocument(MAIN_SCENE_ID));
     const storage = new OpfsStorageAdapter();
+    await storage.openDocumentsProject("Stable");
     const sceneBytes = await storage.readBinary(MAIN_SCENE_FILE);
     const classBytes = await storage.readBinary(asset.path);
     const fake = new FakeLockProvider();
