@@ -27,7 +27,7 @@ export type DropBounds = { min: Vector3; max: Vector3 };
 type TriangleShape = {
   kind: "mesh";
   vertices: Vector3[];
-  indices: readonly number[];
+  indices: ArrayLike<number>;
   convex: boolean;
 };
 type QueryShape =
@@ -107,7 +107,14 @@ export function collisionSurfaces(
       baked.kind === "convex"
         ? convexHullMesh(baked.points)
         : baked.kind === "mesh"
-          ? baked
+          ? {
+              vertices: Array.from({ length: baked.positions.length / 3 }, (_, i) => ({
+                x: baked.positions[i * 3]!,
+                y: baked.positions[i * 3 + 1]!,
+                z: baked.positions[i * 3 + 2]!,
+              })),
+              indices: baked.indices,
+            }
           : null;
     const prepared: QueryShape = triangles
       ? {

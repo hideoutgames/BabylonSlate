@@ -248,7 +248,8 @@ export default tseslint.config(
   },
   {
     ...js.configs.recommended,
-    files: ["scripts/**/*.mjs", "eslint.config.js"],
+    // Node tooling: root scripts plus app-local scripts (apps/*/scripts).
+    files: ["**/scripts/**/*.mjs", "eslint.config.js"],
     languageOptions: { globals: globals.node },
   },
   {

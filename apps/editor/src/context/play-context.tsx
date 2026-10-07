@@ -29,6 +29,7 @@ import {
   isErr,
   normalizeRenderingPipeline,
   resolveGameInstanceClass,
+  type CollisionTriangleMesh,
 } from "@babylonslate/core";
 import type { SessionReportEntry } from "@babylonslate/runtime";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
@@ -368,6 +369,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     setPlayTilemaps(new Map());
     setPlayTilesets(new Map());
     setPlayModelBytes(new Map());
+    setPlayComplexMeshes(new Map());
     setPlayModelPayloads(new Map());
     setPlayModelClipAnimationGuids(new Map());
     setPlayRetargetAnimationLoads(new Map());
@@ -389,6 +391,12 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     setPlayAudioReverbByScene(new Map());
     setPlayNavmeshBytes(null);
     setPlayAudioReverbBytes(null);
+  }, []);
+  /** On-demand Complex Collision: cook from whichever retained source set holds the Model. */
+  const cookPlayComplexCollision = useCallback(async (guid: string) => {
+    for (const prepared of playSourceSetsRef.current)
+      if (prepared.game.modelBytes.has(guid)) return prepared.cookComplexCollision(guid);
+    return null;
   }, []);
   const releasePlaySources = useCallback(() => {
     playSourceLifetimeRef.current?.abort();
@@ -461,6 +469,9 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   );
   const [playModelPayloads, setPlayModelPayloads] = useState<
     Map<string, ModelPayload>
+  >(() => new Map());
+  const [playComplexMeshes, setPlayComplexMeshes] = useState<
+    ReadonlyMap<string, CollisionTriangleMesh>
   >(() => new Map());
   const [playModelClipAnimationGuids, setPlayModelClipAnimationGuids] = useState<
     Map<string, Map<string, string>>
@@ -1277,6 +1288,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         setPlayTilesets(content.tilesetPayloads);
         setPlayModelBytes(game.modelBytes);
         setPlayModelPayloads(content.modelPayloads);
+        // Already cooked by source preparation; Play installs these instead of cooking again.
+        setPlayComplexMeshes(content.complexMeshes);
         setPlayModelClipAnimationGuids(content.modelClipAnimationGuids);
         setPlayRetargetAnimationLoads(content.retargetAnimationLoads);
         setPlayRenderTargets({ renderTargets: content.renderTargets, renderTargetTextures: content.renderTargetTextures });
@@ -1564,6 +1577,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             fontCssStackByGuid={playFontCssStackByGuid}
             modelBytes={playModelBytes}
             modelPayloads={playModelPayloads}
+            complexMeshes={playComplexMeshes}
+            cookComplexCollision={cookPlayComplexCollision}
             modelClipAnimationGuids={playModelClipAnimationGuids}
             retargetAnimationLoads={playRetargetAnimationLoads}
             loadAudioSourceBytes={playAudioSourceLoader}

@@ -6,6 +6,7 @@ export type DockviewDocumentKind =
   | "scene"
   | "scene-layer"
   | "graph"
+  | "prefab"
   | "enum"
   | "structure"
   | "data-definition"
@@ -46,6 +47,7 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "scene",
   "scene-layer",
   "graph",
+  "prefab",
   "enum",
   "structure",
   "data-definition",
@@ -110,6 +112,7 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   scene: "viewport",
   "scene-layer": "viewport",
   graph: "graph",
+  prefab: "prefab-viewport",
   enum: "enum-members",
   structure: "structure-members",
   "data-definition": "data-definition-fields",
@@ -340,6 +343,31 @@ const GRAPH_WINDOWS: DockWindowDefinition[] = [
       referencePanelId: "graph",
       direction: "below",
       initialHeight: 160,
+    },
+  },
+];
+
+/** Logic-free Prefab documents: no Graph, Class members or Compiler Results. */
+const PREFAB_WINDOWS: DockWindowDefinition[] = [
+  { id: "prefab-viewport", component: "prefab-viewport", title: "Prefab" },
+  {
+    id: "actor-prefab",
+    component: "actor-prefab",
+    title: "Components",
+    defaultPosition: {
+      referencePanelId: "prefab-viewport",
+      direction: "left",
+      initialWidth: 260,
+    },
+  },
+  {
+    id: "inspector",
+    component: "inspector",
+    title: "Inspector",
+    defaultPosition: {
+      referencePanelId: "prefab-viewport",
+      direction: "right",
+      initialWidth: 280,
     },
   },
 ];
@@ -967,6 +995,7 @@ export function listDockWindows(
     if (kind === "scene" && options?.sceneMode === "foliage") return withOptionalLocks(kind, FOLIAGE_WINDOWS, options);
     return withOptionalLocks(kind, SCENE_WINDOWS, options);
   }
+  if (kind === "prefab") return withOptionalLocks(kind, PREFAB_WINDOWS, options);
   if (kind === "save-game") return withOptionalLocks(kind, SAVE_GAME_WINDOWS, options);
   if (kind === "input-action" || kind === "input-axis") return withOptionalLocks(kind, INPUT_WINDOWS, options);
   if (kind === "enum") return withOptionalLocks(kind, ENUM_WINDOWS, options);

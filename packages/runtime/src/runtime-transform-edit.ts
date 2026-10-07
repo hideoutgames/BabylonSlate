@@ -1,6 +1,6 @@
 import type { SerializedTransform, Transform } from "@babylonslate/core";
 import { Actor, ActorComponent, runtimeTransformFromSerialized, type World } from "@babylonslate/object-model";
-import { actorChainWorldTransform, actorParentGuid, composeParentChildTransform, inverseQuaternion, multiplyQuaternion, rotateVector } from "./actor-world-transform";
+import { actorChainWorldTransform, actorParentGuid, composeParentChildTransform, relativeTransform } from "./actor-world-transform";
 
 function runtimeEditParentTransform(world: World, target: Actor | ActorComponent): Transform | null {
   const actor = target instanceof Actor ? target : target.owner!;
@@ -43,9 +43,7 @@ export function runtimeEditLocalTransform(world: World, target: Actor | ActorCom
   const parent = runtimeEditParentTransform(world, target);
   if (!parent) return requested;
   if (Object.values(parent.scale).some(value => !Number.isFinite(value) || Math.abs(value) < 1e-6)) throw new Error("The parent has a non-invertible scale.");
-  const inverse = inverseQuaternion(parent.rotation);
-  const offset = rotateVector(inverse, { x: requested.position.x - parent.position.x, y: requested.position.y - parent.position.y, z: requested.position.z - parent.position.z });
-  return { position: { x: offset.x / parent.scale.x, y: offset.y / parent.scale.y, z: offset.z / parent.scale.z },
-    rotation: multiplyQuaternion(inverse, requested.rotation),
-    scale: { x: requested.scale.x / parent.scale.x, y: requested.scale.y / parent.scale.y, z: requested.scale.z / parent.scale.z } };
+  const local = relativeTransform(parent, requested, target.transform);
+  if (!local) throw new Error("The parent has a non-invertible scale.");
+  return local;
 }

@@ -1,6 +1,7 @@
 import {
   identitySerializedTransform,
   normalizeMaterialInstanceOverrides,
+  normalizePrefab,
   normalizeSuppressedComponentSourceIds,
   type SerializedActor,
   type SerializedComponent,
@@ -12,6 +13,48 @@ import { mergePrefabComponents } from "./prefab-preview";
 export const PREFAB_TRANSFORM_OVERRIDE = "transform";
 export const PREFAB_PARENT_OVERRIDE = "parentId";
 export const PREFAB_MATERIAL_INSTANCE_OVERRIDE = "materialInstance";
+
+/**
+ * Template map key for a Prefab asset. Class ids are identifiers, so the colon
+ * keeps Prefab and Class templates apart in one map.
+ */
+export function prefabAssetTemplateKey(guid: string): string {
+  return `prefab:${guid}`;
+}
+
+/** Template key for a scene actor: its Prefab asset when placed from one, else its class. */
+export function prefabTemplateKey(
+  actor: Pick<SerializedActor, "classId" | "prefabGuid">,
+): string {
+  return actor.prefabGuid ? prefabAssetTemplateKey(actor.prefabGuid) : actor.classId;
+}
+
+/**
+ * Prefab asset component templates keyed by `prefabAssetTemplateKey`. Closed
+ * assets read their header; open tabs win with their unsaved components.
+ */
+export function prefabAssetTemplates(options: {
+  assets: ReadonlyArray<{
+    path: string;
+    header: { type: string; guid: string; payload?: Record<string, unknown> };
+  }>;
+  openDocuments: ReadonlyArray<{ ref: { kind: string; path: string }; content: unknown }>;
+}): Record<string, SerializedComponent[]> {
+  const templates: Record<string, SerializedComponent[]> = {};
+  const guidByPath = new Map<string, string>();
+  for (const asset of options.assets) {
+    if (asset.header.type !== "Prefab" || !asset.header.guid) continue;
+    guidByPath.set(asset.path, asset.header.guid);
+    templates[prefabAssetTemplateKey(asset.header.guid)] =
+      normalizePrefab(asset.header.payload).components;
+  }
+  for (const doc of options.openDocuments) {
+    if (doc.ref.kind !== "prefab" || !doc.content) continue;
+    const guid = guidByPath.get(doc.ref.path);
+    if (guid) templates[prefabAssetTemplateKey(guid)] = normalizePrefab(doc.content).components;
+  }
+  return templates;
+}
 
 function cloneTransform(
   transform: SerializedTransform | undefined,
@@ -253,7 +296,7 @@ export function syncSceneActorsFromPrefabs(
 ): SerializedScene {
   let changed = false;
   const actors = scene.actors.map((actor) => {
-    const prefab = prefabsByClassId[actor.classId];
+    const prefab = prefabsByClassId[prefabTemplateKey(actor)];
     if (!prefab) return actor;
     const components = syncActorComponentsFromPrefab(actor, prefab);
     if (jsonEqual(components, actor.components)) return actor;
@@ -396,7 +439,7 @@ export function stampUserComponentOverrides(
         ...(actor.suppressedComponentSourceIds ?? beforeActor.suppressedComponentSourceIds ?? []),
         ...beforeActor.components.filter((component) => component.sourceId && !surviving.has(component.id)).map((component) => component.sourceId!),
       ]);
-      const prefabRows = prefabsByClassId?.[actor.classId] ?? [];
+      const prefabRows = prefabsByClassId?.[prefabTemplateKey(actor)] ?? [];
       const nextComponents = actor.components.map((component) => {
         const before = beforeComponents.get(component.id);
         const sourceId = component.sourceId ?? before?.sourceId;

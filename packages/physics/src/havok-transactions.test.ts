@@ -192,12 +192,8 @@ describe("Havok attachment transactions", () => {
           shape: bakeColliderLocal(
             {
               kind: "mesh",
-              vertices: [
-                { x: 0, y: 0, z: 0 },
-                { x: 2, y: 0, z: 0 },
-                { x: 0, y: 0, z: 1 },
-              ],
-              indices: [0, 1, 2],
+              positions: new Float32Array([0, 0, 0, 2, 0, 0, 0, 0, 1]),
+              indices: new Uint16Array([0, 1, 2]),
             },
             local,
             { x: 1, y: 1, z: 1 },

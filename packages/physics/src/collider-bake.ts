@@ -261,15 +261,15 @@ export function scaleColliderShape(
           z: p.z * scale.z,
         })),
       };
-    case "mesh":
-      return {
-        kind: "mesh",
-        vertices: shape.vertices.map((p) => ({
-          x: p.x * scale.x,
-          y: p.y * scale.y,
-          z: p.z * scale.z,
-        })),
-        indices: [...shape.indices],
-      };
+    case "mesh": {
+      const positions = new Float32Array(shape.positions.length);
+      for (let i = 0; i < positions.length; i += 3) {
+        positions[i] = shape.positions[i]! * scale.x;
+        positions[i + 1] = shape.positions[i + 1]! * scale.y;
+        positions[i + 2] = shape.positions[i + 2]! * scale.z;
+      }
+      // Indices are immutable topology; scaled copies share them.
+      return { kind: "mesh", positions, indices: shape.indices };
+    }
   }
 }
