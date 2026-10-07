@@ -114,6 +114,9 @@ function RuntimePropertyField({ descriptor, target, store, materialGuid }: {
       row = { ...base, kind: "vector3", value: count === 4 ? [vector.x, vector.y, Number(vector.z), Number(vector.w)] : [vector.x, vector.y, Number(vector.z ?? 0)], axes: ["X", "Y", "Z", "W"].slice(0, count), onChange: next => send(encode(next), false), onCommit: next => send(encode(next)) };
     } else row = { ...base, kind: "text", disabled: false, readOnly: true, value: valueLabel(raw), onChange: () => {} };
   }
+  const controlWritable = writable && !(row.kind === "text" && row.readOnly);
+  const capabilityLabel = !controlWritable ? descriptor.capability === "restart" ? "Restart Required"
+    : writable ? "Value inspection only for this type." : "Read-only" : null;
   const canExpand = raw !== null && typeof raw === "object" && !material && descriptor.container && descriptor.container !== "single";
   const expand = async (offset = 0) => {
     try {
@@ -123,7 +126,7 @@ function RuntimePropertyField({ descriptor, target, store, materialGuid }: {
   };
   return <div {...field.focusProps}>
     <PropertyGrid rows={[row]} />
-    <p role="status" className="px-2 text-xs text-muted-foreground">{field.status ?? (!writable ? descriptor.capability === "restart" ? "Restart Required" : "Read-only" : null)}</p>
+    <p role="status" className="px-2 text-xs text-muted-foreground">{field.status ?? capabilityLabel}</p>
     {canExpand ? <Button size="sm" variant="ghost" onClick={() => { if (expandedValue) setExpandedValue(null); else void expand(); }}>{expandedValue ? "Close Value" : "Inspect Value"}</Button> : null}
     {expandedValue ? <div className="px-2"><pre className="max-h-48 overflow-auto whitespace-pre-wrap text-xs">{JSON.stringify(expandedValue, null, 2)}</pre><p className="text-xs text-muted-foreground">Last requested value · does not poll while expanded.</p>{nextOffset !== undefined ? <Button size="sm" variant="outline" onClick={() => void expand(nextOffset)}>Next Value Page</Button> : null}</div> : null}
     {valueError ? <p role="status" className="px-2 text-xs text-destructive">{valueError}</p> : null}

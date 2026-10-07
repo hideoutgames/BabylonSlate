@@ -180,7 +180,8 @@ export class SimulationInspectionStore {
       }
       if (Object.keys(patch).length) this.publish(patch);
     } catch (error) {
-      if (generation === this.generation && this.hasConsumers()) this.publish({ identityError: String(error) });
+      if (generation === this.generation && this.hasConsumers()) this.publish({ identityError: String(error),
+        ...(this.consumers.selection && this.state.selected ? { selectionError: String(error) } : {}) });
     } finally {
       if (generation === this.generation) { this.reading = false; this.schedule(200); }
     }
