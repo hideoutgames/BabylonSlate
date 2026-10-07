@@ -127,7 +127,7 @@ describe("ActorPrefabPanel", () => {
     expect(frameActor).toHaveBeenCalledWith("mesh-1");
   });
 
-  it("renames a component from a label double-tap without its asset detail", () => {
+  it("renames a component from a label double-tap without its asset detail", async () => {
     harness.components = [{ id: "mesh-1", classId: "MeshComponent", parentId: null, properties: { assetGuid: "model-1" } }];
     harness.assets = [{ path: "assets/mannequin.model.babasset", header: { guid: "model-1", name: "mannequin", type: "Model" } } as unknown as ProjectAddComponentAsset];
     harness.selectedId = "mesh-1";
@@ -139,7 +139,7 @@ describe("ActorPrefabPanel", () => {
       dispatchPointerEvent(label, "pointerup");
     }
     expect(frameActor).not.toHaveBeenCalled();
-    const input = screen.getByRole("textbox", { name: "Rename Mesh (mannequin)" }) as HTMLInputElement;
+    const input = await screen.findByRole("textbox", { name: "Rename Mesh (mannequin)" }) as HTMLInputElement;
     expect(input.value).toBe("Mesh");
     fireEvent.change(input, { target: { value: "MyCustomNamedComponent" } });
     fireEvent.keyDown(input, { key: "Enter" });

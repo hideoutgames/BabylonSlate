@@ -138,7 +138,7 @@ describe("Scene Outliner folders", () => {
     expect(lastScene().folders[0]!.name).toBe("Lighting");
   });
 
-  it("renames an actor inline from a label double-click without its duplicate-name suffix", () => {
+  it("renames an actor inline from a label double-click without its duplicate-name suffix", async () => {
     renderOutliner({
       ...createDefaultScene(),
       folders: [],
@@ -149,7 +149,7 @@ describe("Scene Outliner folders", () => {
       dispatchPointerEvent(label, "pointerdown", { clientX: 0, clientY: 0 });
       dispatchPointerEvent(label, "pointerup", { clientX: 0, clientY: 0 });
     }
-    const input = screen.getByRole("textbox", { name: "Rename Lamp (lamp-1)" }) as HTMLInputElement;
+    const input = await screen.findByRole("textbox", { name: "Rename Lamp (lamp-1)" }) as HTMLInputElement;
     expect(input.value).toBe("Lamp");
     fireEvent.change(input, { target: { value: "Desk Lamp" } });
     fireEvent.keyDown(input, { key: "Enter" });
