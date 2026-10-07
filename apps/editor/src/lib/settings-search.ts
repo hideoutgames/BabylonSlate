@@ -126,6 +126,7 @@ export const PROJECT_SETTING_FIELDS = fields([
   ["rendering", "Tone Mapping", "project-effects-tone-mapping"],
   ["rendering", "Exposure", "project-effects-exposure"],
   ["rendering", "Contrast", "project-effects-contrast"],
+  ["rendering", "White Balance Temperature Tint Kelvin", "project-effects-white-balance"],
   ["rendering", "Bloom", "project-effects-bloom"],
   ["rendering", "Ambient Occlusion SSAO AO", "project-effects-ambient-occlusion"],
   ["rendering", "Real-Time Reflections Screen Space SSR", "project-effects-reflections"],

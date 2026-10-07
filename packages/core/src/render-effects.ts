@@ -53,6 +53,18 @@ export interface TemporalAntiAliasingSettings {
   blend: number;
 }
 
+/**
+ * Scene Linear white balance: neutralizes an illuminant of the given
+ * correlated color temperature, then offsets along the green/magenta axis.
+ */
+export interface WhiteBalanceSettings {
+  enabled: boolean;
+  /** Illuminant temperature in Kelvin; 6500 is neutral daylight. */
+  temperature: number;
+  /** Positive shifts toward magenta, negative toward green. */
+  tint: number;
+}
+
 export interface VolumetricLightingSettings {
   enabled: boolean;
   resolutionScale: number;
@@ -71,6 +83,7 @@ export interface RenderEffectsSettings {
   toneMapping: RenderEffectsToneMapping;
   exposure: number;
   contrast: number;
+  whiteBalance: WhiteBalanceSettings;
   vignette: {
     enabled: boolean;
     weight: number;
@@ -95,6 +108,8 @@ export interface RenderEffectsSettings {
 export const RENDER_EFFECTS_LIMITS = {
   exposure: [0.01, 100],
   contrast: [0, 10],
+  whiteBalanceTemperature: [1700, 15000],
+  whiteBalanceTint: [-150, 150],
   vignetteWeight: [0, 10],
   bloomThreshold: [0, 100],
   bloomWeight: [0, 10],
@@ -124,6 +139,7 @@ export const DEFAULT_RENDER_EFFECTS: Readonly<RenderEffectsSettings> = {
   toneMapping: "none",
   exposure: 1,
   contrast: 1,
+  whiteBalance: { enabled: false, temperature: 6500, tint: 0 },
   vignette: { enabled: false, weight: 1.5, color: [0, 0, 0] },
   bloom: { enabled: false, threshold: 0.9, weight: 0.15, kernel: 64, scale: 0.5 },
   fxaa: false,
@@ -176,6 +192,7 @@ export function normalizeRenderEffectsSettings(
   const source = object(value);
   const colorPipeline = object(source.colorPipeline);
   const vignette = object(source.vignette);
+  const whiteBalance = object(source.whiteBalance);
   const bloom = object(source.bloom);
   const colorGrading = object(source.colorGrading);
   const temporal = object(source.temporalAntiAliasing);
@@ -210,6 +227,13 @@ export function normalizeRenderEffectsSettings(
       DEFAULT_RENDER_EFFECTS.contrast,
       ...RENDER_EFFECTS_LIMITS.contrast,
     ),
+    whiteBalance: {
+      enabled: whiteBalance.enabled === true,
+      temperature: finite(whiteBalance.temperature, DEFAULT_RENDER_EFFECTS.whiteBalance.temperature,
+        ...RENDER_EFFECTS_LIMITS.whiteBalanceTemperature),
+      tint: finite(whiteBalance.tint, DEFAULT_RENDER_EFFECTS.whiteBalance.tint,
+        ...RENDER_EFFECTS_LIMITS.whiteBalanceTint),
+    },
     vignette: {
       enabled: vignette.enabled === true,
       weight: finite(

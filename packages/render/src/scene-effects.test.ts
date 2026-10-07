@@ -141,9 +141,15 @@ it("plans nothing while the post-processing toggle is off", () => {
 
 it("configures display processing only for the linear stage", () => {
   const config = sceneEffectsImageProcessingConfiguration(
-    effects({ toneMapping: "aces", exposure: 1.5, contrast: 1.2 }),
+    effects({
+      toneMapping: "aces", exposure: 1.5, contrast: 1.2,
+      whiteBalance: { enabled: true, temperature: 3200, tint: -20 },
+    }),
     { sceneLinear: true, vignette: null, colorGrading: null },
   );
+  expect(config.whiteBalanceEnabled).toBe(true);
+  expect(config.temperature).toBe(3200);
+  expect(config.tint).toBe(-20);
   expect(config.toneMappingEnabled).toBe(true);
   expect(config.toneMappingType).toBe(
     ImageProcessingConfiguration.TONEMAPPING_ACES,
@@ -155,7 +161,10 @@ it("configures display processing only for the linear stage", () => {
 
 it("holds processing at identity when the stage only carries a vignette", () => {
   const config = sceneEffectsImageProcessingConfiguration(
-    effects({ toneMapping: "aces", exposure: 4, contrast: 3 }),
+    effects({
+      toneMapping: "aces", exposure: 4, contrast: 3,
+      whiteBalance: { enabled: true, temperature: 3200, tint: -20 },
+    }),
     {
       sceneLinear: false,
       vignette: { enabled: true, weight: 2, color: [0.25, 0.5, 0.75] },
@@ -165,6 +174,7 @@ it("holds processing at identity when the stage only carries a vignette", () => 
   expect(config.toneMappingEnabled).toBe(false);
   expect(config.exposure).toBe(1);
   expect(config.contrast).toBe(1);
+  expect(config.whiteBalanceEnabled).toBe(false);
   expect(config.vignetteEnabled).toBe(true);
   expect(config.vignetteWeight).toBe(2);
   expect(config.vignetteColor.r).toBeCloseTo(0.25);

@@ -31,6 +31,7 @@ describe("render effects settings", () => {
       toneMapping: "aces",
       exposure: 2.5,
       contrast: 1.2,
+      whiteBalance: { enabled: true, temperature: 3200, tint: -20 },
       vignette: { enabled: true, weight: 2.25, color: [0.1, 0.2, 0.3] },
       bloom: { enabled: true, threshold: 0.75, weight: 0.4, kernel: 96, scale: 0.25 },
       fxaa: true,
@@ -42,6 +43,7 @@ describe("render effects settings", () => {
       toneMapping: "aces",
       exposure: 2.5,
       contrast: 1.2,
+      whiteBalance: { enabled: true, temperature: 3200, tint: -20 },
       vignette: { enabled: true, weight: 2.25, color: [0.1, 0.2, 0.3] },
       bloom: { enabled: true, threshold: 0.75, weight: 0.4, kernel: 96, scale: 0.25 },
       fxaa: true,
@@ -50,12 +52,14 @@ describe("render effects settings", () => {
     const clamped = normalizeRenderEffectsSettings({
       exposure: 1000,
       contrast: -4,
+      whiteBalance: { enabled: true, temperature: 100, tint: 900 },
       vignette: { enabled: true, weight: 50, color: [2, -1, 0.5, 9] },
       bloom: { enabled: true, threshold: -3, weight: 99, kernel: 8192.7, scale: 0 },
       temporalAntiAliasing: { enabled: true, samples: 99.6, blend: 0 },
     });
     expect(clamped.exposure).toBe(100);
     expect(clamped.contrast).toBe(0);
+    expect(clamped.whiteBalance).toEqual({ enabled: true, temperature: 1700, tint: 150 });
     expect(clamped.vignette.weight).toBe(10);
     expect(clamped.vignette.color).toEqual([1, 0, 0.5]);
     expect(clamped.bloom.threshold).toBe(0);

@@ -105,6 +105,11 @@ export function sceneEffectsImageProcessingConfiguration(
     : ImageProcessingConfiguration.TONEMAPPING_STANDARD;
   config.exposure = linear ? effects.exposure : 1;
   config.contrast = linear ? effects.contrast : 1;
+  if (linear && effects.whiteBalance.enabled) {
+    config.whiteBalanceEnabled = true;
+    config.temperature = effects.whiteBalance.temperature;
+    config.tint = effects.whiteBalance.tint;
+  }
   const vignette = plan.vignette;
   if (vignette) {
     config.vignetteEnabled = true;

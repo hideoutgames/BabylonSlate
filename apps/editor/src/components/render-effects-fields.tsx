@@ -52,6 +52,8 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
     patch({ vignette: { ...project.vignette, ...value } });
   const patchBloom = (value: Partial<RenderEffectsSettings["bloom"]>) =>
     patch({ bloom: { ...project.bloom, ...value } });
+  const patchWhiteBalance = (value: Partial<RenderEffectsSettings["whiteBalance"]>) =>
+    patch({ whiteBalance: { ...project.whiteBalance, ...value } });
   const patchTemporal = (value: Partial<RenderEffectsSettings["temporalAntiAliasing"]>) =>
     patch({ temporalAntiAliasing: { ...project.temporalAntiAliasing, ...value } });
   return (
@@ -138,6 +140,58 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
             Scene Linear contrast curve strength.
           </FieldDescription>
         </Field>
+        <Field orientation="horizontal" className="settings-field">
+          <FieldLabel htmlFor="project-effects-white-balance">White Balance</FieldLabel>
+          <Switch
+            id="project-effects-white-balance"
+            aria-describedby="project-effects-white-balance-description"
+            data-testid="project-effects-white-balance"
+            checked={project.whiteBalance.enabled}
+            disabled={project.colorPipeline.mode !== "sceneLinear"}
+            onCheckedChange={(enabled) => patchWhiteBalance({ enabled: enabled === true })}
+          />
+          <FieldDescription id="project-effects-white-balance-description">
+            Scene Linear correction for the color of the scene lighting.
+          </FieldDescription>
+        </Field>
+        {project.whiteBalance.enabled ? (
+          <>
+            <Field className="settings-field">
+              <FieldLabel htmlFor="project-effects-white-balance-temperature">Temperature (K)</FieldLabel>
+              <NumberField
+                id="project-effects-white-balance-temperature"
+                aria-describedby="project-effects-white-balance-temperature-description"
+                data-testid="project-effects-white-balance-temperature"
+                value={project.whiteBalance.temperature}
+                min={RENDER_EFFECTS_LIMITS.whiteBalanceTemperature[0]}
+                max={RENDER_EFFECTS_LIMITS.whiteBalanceTemperature[1]}
+                step={50}
+                disabled={project.colorPipeline.mode !== "sceneLinear"}
+                onChange={(temperature) => patchWhiteBalance({ temperature })}
+              />
+              <FieldDescription id="project-effects-white-balance-temperature-description">
+                Illuminant to neutralize. Low values cool warm light; 6500 is neutral.
+              </FieldDescription>
+            </Field>
+            <Field className="settings-field">
+              <FieldLabel htmlFor="project-effects-white-balance-tint">Tint</FieldLabel>
+              <NumberField
+                id="project-effects-white-balance-tint"
+                aria-describedby="project-effects-white-balance-tint-description"
+                data-testid="project-effects-white-balance-tint"
+                value={project.whiteBalance.tint}
+                min={RENDER_EFFECTS_LIMITS.whiteBalanceTint[0]}
+                max={RENDER_EFFECTS_LIMITS.whiteBalanceTint[1]}
+                step={1}
+                disabled={project.colorPipeline.mode !== "sceneLinear"}
+                onChange={(tint) => patchWhiteBalance({ tint })}
+              />
+              <FieldDescription id="project-effects-white-balance-tint-description">
+                Positive shifts toward magenta, negative toward green.
+              </FieldDescription>
+            </Field>
+          </>
+        ) : null}
         <Field orientation="horizontal" className="settings-field">
           <FieldLabel htmlFor="project-effects-bloom">Bloom</FieldLabel>
           <Switch
