@@ -15,6 +15,54 @@ Scene authoring includes **Design**, **Landscape**, and **Foliage** modes with s
 > **Baseline device:** 11-inch A16 iPad (6 GB RAM, WebGL2, WKWebView).
 > **Related docs:** [CODING_STANDARDS.md](CODING_STANDARDS.md), [design/perf-budget.md](design/perf-budget.md), [architecture/](architecture/), [agents/issue-tracker.md](agents/issue-tracker.md).
 
+## Simulation/debugging overhaul — implementation checkpoint (7 October 2026)
+
+This work started from `main` at `94f3692a27b6783e6824b8a74a3f475f84710c99`
+with the repository-patched Babylon.js **9.20.0**. It remains unmerged on
+`agent/simulation-debugging-c37a`; implementation presence is not browser or
+performance qualification. At the initial audit, #828 and #830 were open. A
+subsequent GitHub read found [#828](https://github.com/hideoutgames/BabylonSlate/pull/828)
+merged at **06:46:55 UTC**, head `9202dc0e54a2a03cba60f6a80cca73d3b4276bcc`;
+remote main was `edabd639a472bb563eb47e7fe12a18ad26beb554`.
+[#830](https://github.com/hideoutgames/BabylonSlate/pull/830) remained open at
+head `52056fcea278c0febea0deaa436aef45213f63d5`, updated **06:57:49 UTC**.
+Integration of the newly merged asset changes and requalification are pending
+at this checkpoint; do not infer either PR was part of the original baseline.
+
+| Integration owner | Contract |
+| --- | --- |
+| `GameSessionOwner`, `SimulationSession`, existing Play preparation | One active session; viewport handoff waits for actual release; Stop gates retention before abort/disposal |
+| `DocumentService`, project write admission, `EditSession` | Protected immutable baseline; one private, history-admitted scene replacement; ordinary authoring stays locked |
+| Runtime inspector, World and physics/material owners | Correlated typed edits and instance identity; bounded selection requests; no authoring commands during live edits |
+| Canonical capture and scene codecs | Root-scene actor/component provenance, typed references, prefab suppression and private material overrides |
+| Existing render coordinator and player diagnostics | Explicit timing/frame requests; packaged Preview collects inside the player; Simulation rejects expensive recording |
+
+| Retention state | Current implementation boundary |
+| --- | --- |
+| Root actor/component spawn, deletion, local pose, declared variables and hierarchy | Complete candidate or named failure; real runtime/browser round-trip qualification pending |
+| Typed arrays/Maps/structures/tags and actor/component references | Schema-driven capture and two-pass load; unavailable schemas, invalid values and dangling references fail |
+| Prefab component deletion and material-instance parameters | Persisted suppression and explicit material state; load/duplication/Undo/journal integration; browser qualification pending |
+| Undo/Redo and budget refusal | One admitted full-scene command; failed admission leaves document/history untouched; save/reopen journey pending |
+| Independent streamed Scenes, SceneLayers and scene transitions | Unsupported; occurrence is latched even if an instance is later removed; no flattening or shared-source rewrite |
+| Native/generated resources without an authored representation | Unsupported named failure; no invented GUIDs or partial Keep |
+
+Initial comparison metadata: Linux Playwright **Chromium 151.0.7922.34**,
+SwiftShader/Vulkan WebGL2, Low quality, actual **640 × 360**, CSS **1280 × 720**,
+DPR **1**, 10-second warm-up followed by two 30-second windows. Both windows
+reported rAF-cadence median **116.665 ms**, p95 **166.66 ms**, p99 **183.325 ms**;
+average cadence was **7.9073 / 7.8654 FPS**, runtime **60.0688 / 60.2347 Hz**,
+with **0 page errors**. This software-renderer cadence proxy is not a measurement
+of the new completed-game-frame population, GPU time, Windows performance or A16
+performance. Equivalent post-change comparison, real Computer Use journeys,
+20-cycle release accounting and sustained qualification remain pending.
+
+Selected-graph observation, true graph breakpoints/stepping, GPU query profiling,
+output thumbnails and advanced Spector capture are not delivered at this
+checkpoint. Existing trace and debug visualization tools remain the reuse path.
+See [debugger](architecture/debugger.md), [scene editing](architecture/scene-editing.md),
+[command layer](architecture/command-layer.md) and [bridge](architecture/bridge.md)
+for the implemented boundaries; none substitutes for the outstanding acceptance runs.
+
 ## Overview
 
 Project rendering selects default **PBR** or native **CEL** under **Project Settings → Rendering**. That page keeps Render Path, GPU Backend and Render Mode visible and groups the remaining options into disclosures that start closed: Scalability, Shadows, Environment Lighting, Post Processing, CEL Shading (CEL only), Resolution and Play Preview; settings search opens the disclosure holding the chosen field. CEL supplies color-preserving hard-stepped bands, shadow visibility and specular controls with all authored light types — no softness lobes in any mode; Scene Defaults → Post Processing can override/reset each style field independently. The same policy reaches viewports, asset previews, Play and the player. **Render Path is global and project-owned**: `settings.render.renderPath` is the only persisted request, scenes carry no path key, and a non-persistent per-Engine session request — the Play `renderpath` console command or `EngineHandle.setRenderPath` — overrides it for every live Scene until reset without touching any document. See [rendering mode and inheritance](architecture/render.md#project-pbr-cel-rendering).
