@@ -80,7 +80,16 @@ export {
   type ParameterValueType,
   type ParameterListEditorProps,
 } from "./parameter-list-editor";
-export { PinTypePicker, type PinTypePickerProps } from "./pin-type-picker";
+export { PinTypeMenu, PinTypePicker, type PinTypeMenuProps, type PinTypePickerProps } from "./pin-type-picker";
+export {
+  EditableName,
+  InlineRenameInput,
+  INLINE_RENAME_DOUBLE_TAP_MS,
+  useDoubleTap,
+  type EditableNameProps,
+  type InlineRenameEnd,
+  type InlineRenameInputProps,
+} from "./inline-rename";
 export {
   VariableTypeFields,
   VARIABLE_CONTAINERS,
@@ -90,6 +99,7 @@ export {
 } from "./variable-type-fields";
 export {
   PinListEditor,
+  nextPinRowName,
   type PinListEditorProps,
   type PinListRow,
 } from "./pin-list-editor";
