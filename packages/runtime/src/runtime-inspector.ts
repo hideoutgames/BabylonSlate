@@ -148,7 +148,7 @@ export class RuntimeInspector {
       for (const variable of engineScriptApiFor(classId)?.variables ?? []) {
         const { propertyKey: key, name, typeId, typeClassId, container } = variable;
         let capability: RuntimePropertyCapability = variable.getOnly || FORBIDDEN.has(key) ? "readOnly" : "restart";
-        if (capability !== "readOnly" && target instanceof ActorComponent && SCALAR_TYPES.has(typeId) && container !== "map") {
+        if (capability !== "readOnly" && target instanceof ActorComponent && classId === target.classId && SCALAR_TYPES.has(typeId) && container !== "map") {
           if (LIVE_COMPONENTS.has(classId) && (!["MeshComponent", "DynamicRuntimeMeshComponent"].includes(classId) || LIVE_MESH_PROPERTIES.has(key))) capability = "live";
           if (classId === "AudioComponent" && key === "volume") capability = "live";
           if (classId === "ColliderComponent") capability = "rebuild";
@@ -368,7 +368,13 @@ function validateProperty(target: Target, key: string, value: unknown): void {
     if (key === "motionType" && !["static", "dynamic", "kinematic"].includes(String(value))) throw new Error("Unknown physics motion type.");
     if (key === "projectionMode" && !["perspective", "orthographic"].includes(String(value))) throw new Error("Unknown camera projection mode.");
     if (key === "lightKind" && !["directional", "point", "spot"].includes(String(value))) throw new Error("Unknown light kind.");
-    if (["mass", "friction", "restitution", "linearDamping", "angularDamping", "volume", "intensity", "range", "width"].includes(key) && typeof value === "number" && value < 0) throw new Error("This property must be nonnegative.");
+    if (["mass", "friction", "restitution", "linearDamping", "angularDamping", "volume", "intensity", "range", "width", "maxSpeed", "acceleration"].includes(key) && typeof value === "number" && value < 0) throw new Error("This property must be nonnegative.");
     if (["nearClip", "farClip", "orthographicSize", "fieldOfView"].includes(key) && (typeof value !== "number" || value <= 0)) throw new Error("This camera property must be positive.");
+    if (target.classId === "CameraComponent" && typeof value === "number") {
+      if (key === "fieldOfView" && value >= 180) throw new Error("Field of view must be below 180 degrees.");
+      if (key === "nearClip" && value >= Number(target.getVariable("farClip") ?? 1000)) throw new Error("Near clip must be below far clip.");
+      if (key === "farClip" && value <= Number(target.getVariable("nearClip") ?? 0.1)) throw new Error("Far clip must exceed near clip.");
+    }
+    if (target.classId === "NavAgentComponent" && ["radius", "height"].includes(key) && (typeof value !== "number" || value <= 0)) throw new Error("Navigation dimensions must be positive.");
   }
 }

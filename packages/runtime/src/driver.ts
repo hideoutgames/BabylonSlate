@@ -1904,7 +1904,8 @@ class InProcessRuntime implements RuntimeDriver {
       z: next[2],
     });
     if (this.playScene) {
-      this.playScene.settings.gravity = next;
+      // Prepared authoring content is also the immutable Simulation baseline.
+      this.playScene = { ...this.playScene, settings: { ...this.playScene.settings, gravity: next } };
     }
     const scene = this.world.currentScene;
     if (scene && !scene.destroyed) {
@@ -2712,6 +2713,12 @@ class InProcessRuntime implements RuntimeDriver {
         if (this.processingTick) this.dirtyDeformerActors.add(owner);
         else this.emitActorDeformers(owner, slotId);
       }
+      return;
+    }
+    if (component.classId === "MeshComponent" && propertyName === "materialGuid") {
+      // A staged material belongs to this existing native mesh. Re-emitting the
+      // mesh assignment here would replace that owner between prepare/commit.
+      if (slotId !== undefined) this.emitMaterialAssignments([component], slotId, true);
       return;
     }
     if (component.classId === "DynamicRuntimeMeshComponent" &&
@@ -6166,6 +6173,9 @@ class InProcessRuntime implements RuntimeDriver {
       boundary: () => ({ tickIndex: this.world.clock.tickIndex, frameId: this.frameId,
         commandRevision: this.commandRevision, structuralRevision: this.world.structuralRevision }),
       applyProperty: (target, key, value) => {
+        const materialAssignment = target instanceof ActorComponent && key === "materialGuid";
+        const priorSourcePresent = materialAssignment && target.variables.has("materialSource");
+        const priorSource = materialAssignment ? target.getVariable("materialSource") : undefined;
         const prior = target instanceof Actor && key === "generateHitEvents" ? target.generateHitEvents :
           target instanceof Actor && key === "generateOverlapEvents" ? target.generateOverlapEvents : target.getVariable(key);
         const apply = (next: unknown) => {
@@ -6174,7 +6184,15 @@ class InProcessRuntime implements RuntimeDriver {
           else target.setVariable(key, next);
           if (target instanceof ActorComponent) this.refreshRuntimeComponent(target, key);
         };
-        try { apply(value); } catch (error) { apply(prior); throw error; }
+        // An explicit None is a real override too, including an untouched model slot.
+        if (materialAssignment) target.setVariable("materialSource", "override");
+        try { apply(value); } catch (error) {
+          if (materialAssignment) {
+            if (priorSourcePresent) target.setVariable("materialSource", priorSource);
+            else target.variables.delete("materialSource");
+          }
+          apply(prior); throw error;
+        }
         if (target instanceof Actor && key === "visible") this.publishInspectorSnapshot(target);
       },
       applyTransform: (target, transform, space) => {
@@ -6192,6 +6210,8 @@ class InProcessRuntime implements RuntimeDriver {
             }
           }
         }
+        if (affected.some(entry => entry.components.some(component => !component.destroyed && component.classId === "RagdollComponent")))
+          throw new Error("This transform moves an articulated body; preserving its live state requires a new session.");
         const apply = () => {
           for (const affectedActor of affected) {
             this.ragdolls.retire(affectedActor);

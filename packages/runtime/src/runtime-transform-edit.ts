@@ -8,7 +8,10 @@ function runtimeEditParentTransform(world: World, target: Actor | ActorComponent
   if (target instanceof Actor) {
     const parentId = actorParentGuid(actor);
     const parentActor = parentId ? world.findActor(parentId) : undefined;
-    if (parentActor) parent = actorChainWorldTransform(parentActor, id => world.findActor(id));
+    if (parentActor) {
+      parent = actorChainWorldTransform(parentActor, id => world.findActor(id));
+      if (!parent) throw new Error("The actor hierarchy contains a cycle.");
+    }
   } else {
     parent = actorChainWorldTransform(actor, id => world.findActor(id));
     if (!parent) throw new Error("The actor hierarchy contains a cycle.");

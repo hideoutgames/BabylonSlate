@@ -7,7 +7,8 @@ import type { RuntimeMaterialParameters } from "./runtime-material-parameters";
 type Response = Extract<ControlMessage, { type: "runtimeMaterialEditPrepared" | "runtimeMaterialEditApplied" }>;
 type Pending = {
   request: RuntimeInspectorRequest; preparation: RuntimeMaterialEditPreparation; component: ActorComponent;
-  originalGuid: unknown; originalMaterial: MaterialObject | null; originalRevision: number;
+  originalGuid: unknown; originalSource: unknown; originalSourcePresent: boolean;
+  originalMaterial: MaterialObject | null; originalRevision: number;
   originalOverrides: Record<string, MaterialParameterValue> | null; originalValue: MaterialParameterValue | null;
   appliedMaterial?: MaterialObject | null; appliedRevision?: number;
   result?: RuntimeInspectorResult; phase: "preparing" | "applying";
@@ -61,6 +62,7 @@ export class RuntimeMaterialEditGate {
       editToken, slotId, actorGuid: component.owner!.guid, componentId: component.guid, materialGuid,
       ...(action.kind === "setMaterialParameter" ? { parameterName: action.parameter, parameter: action.value } : {}) };
     const pending: Pending = { request, preparation, component, originalGuid: component.getVariable("materialGuid"), originalMaterial,
+      originalSource: component.getVariable("materialSource"), originalSourcePresent: component.variables.has("materialSource"),
       originalRevision: originalMaterial ? this.host.materials.revision(originalMaterial) : -1,
       originalOverrides: originalMaterial ? this.host.materials.captureOverrides(originalMaterial) : null,
       originalValue: action.kind === "setMaterialParameter" && originalMaterial ? this.host.materials.get(originalMaterial, action.parameter, action.value.kind) : null,
@@ -114,6 +116,8 @@ export class RuntimeMaterialEditGate {
       if (owns) {
         try {
           if (action.kind === "setProperty") {
+            if (pending.originalSourcePresent) pending.component.setVariable("materialSource", pending.originalSource);
+            else pending.component.variables.delete("materialSource");
             pending.component.setVariable("materialGuid", pending.originalGuid);
             const original = pending.component.getVariable("materialObject");
             if (original instanceof MaterialObject && pending.originalOverrides) this.host.materials.seed(original, pending.originalOverrides);
