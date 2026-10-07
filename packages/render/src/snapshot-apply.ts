@@ -430,7 +430,7 @@ function applyLoadedModelMaterials(
   applyMaterialToActorMeshes(binding, slotId, root);
 }
 
-function wantsOverlayUnlitMaterial(
+export function wantsOverlayUnlitMaterial(
   binding: SnapshotSceneBinding,
   slotId: number,
 ): boolean {
@@ -506,7 +506,7 @@ export function applyMaterialToActorMeshes(
 }
 
 /** Imported glTF child names are arbitrary; their component is on an ancestor. */
-function componentIdForPlayMesh(
+export function componentIdForPlayMesh(
   mesh: AbstractMesh,
   slotId: number,
   binding: SnapshotSceneBinding,

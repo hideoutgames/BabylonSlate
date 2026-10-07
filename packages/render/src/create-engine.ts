@@ -258,6 +258,8 @@ export interface EditorSceneLoadOptions {
 }
 
 export interface EngineHandle {
+import { RuntimeMaterialEditOwner, type RuntimeMaterialPreparationRequest, type RuntimeMaterialCommitCommand } from "./runtime-material-edit";
+
   engine: AbstractEngine;
   scene: Scene;
   scheduler: RenderScheduler;
@@ -284,6 +286,9 @@ export interface EngineHandle {
   /** Apply a structural command (spawn/assignMesh) from the game worker. */
   applyCommand: (command: CommandMessage) => void;
   setPaused: (paused: boolean) => void;
+  prepareRuntimeMaterialEdit: (request: RuntimeMaterialPreparationRequest) => Promise<void>;
+  commitRuntimeMaterialEdit: (command: RuntimeMaterialCommitCommand) => { success: boolean; reason?: string };
+  releaseRuntimeMaterialPreparation: (editToken: string) => void;
   /** Freeze render-owned game time independently of presentation/input pause reasons. */
   setGameTimePaused: (paused: boolean) => void;
   /** SceneLayer input gate, independent of Simulation Edit and pause ownership. */
@@ -1252,6 +1257,8 @@ function initializeEngine(
     const material = materialLibrary.resolve(host, guid, document, options);
     if (!material) return null;
     if (materialLibrary.isReady(host, guid, document, options)) compiledMaterialGuids.add(guid);
+  const runtimeMaterialEdits = new RuntimeMaterialEditOwner(binding, materialLibrary);
+  onRollback(() => runtimeMaterialEdits.dispose());
     else compiledMaterialGuids.delete(guid);
     return material;
   };
@@ -2627,6 +2634,7 @@ function initializeEngine(
   });
   onRollback(() => engine.onContextLostObservable.remove(contextLostObserver));
   const contextRestoredObserver = engine.onContextRestoredObservable.add(() => {
+    runtimeMaterialEdits.cancelAll();
     if (disposed) return;
     contextLost = false;
     presentationStats.contextRestorations += 1;
@@ -2854,6 +2862,7 @@ function initializeEngine(
       runtimeScalability?.dispose();
       unsubscribeRenderPath();
       unsubscribeRenderPathSession();
+      runtimeMaterialEdits.dispose();
       loadGeneration += 1;
       cancelPresentation(new Error("Scene loading was disposed."));
       engine.onContextLostObservable.remove(contextLostObserver);
@@ -2982,6 +2991,17 @@ function initializeEngine(
       if (sampled) positionsFromSample(sampled, lastPositions);
       if (sampled && sampled.frameId !== lastRenderedSnapshotFrame) scheduler.requestPausedFrame();
       if (isPublishedSnapshot(buffer)) {
+    prepareRuntimeMaterialEdit: (request) => {
+      if (disposed || contextLost || worldLoading) return Promise.reject(new Error("The game view is unavailable or loading."));
+      return runtimeMaterialEdits.prepare(request);
+    },
+    commitRuntimeMaterialEdit: (command) => {
+      if (disposed || contextLost || worldLoading) return { success: false, reason: "The game view is unavailable or loading." };
+      const result = runtimeMaterialEdits.commit(command);
+      if (result.success) { appliedSnapshotIdentity = null; scheduler.invalidate("asset"); scheduler.requestPausedFrame(); }
+      return result;
+    },
+    releaseRuntimeMaterialPreparation: (token) => runtimeMaterialEdits.release(token),
         playDebugDraw?.noteSimTick(readSnapshotHeader(buffer).tickIndex);
       }
       scheduler.invalidate("snapshot");
@@ -3107,6 +3127,7 @@ function initializeEngine(
         const previous = layerLoads.get(command.layerId);
         if (!previous || previous.loadId < command.layerLoadId) {
           particleService?.retireSlots((slotId) => sceneLayerCompositor?.layerIdForSlot(slotId) === command.layerId);
+        runtimeMaterialEdits.cancelAll();
           cancelPresentation(new Error("SceneLayer loading was superseded."), `layer:${command.layerId}`);
           layerLoads.set(command.layerId, { loadId: command.layerLoadId, ready: false });
         }

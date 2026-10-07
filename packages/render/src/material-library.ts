@@ -517,6 +517,35 @@ export class MaterialLibrary {
   }
 
   /** Retire one replaced asset, or all private materials when the owner despawns. */
+  adoptPreparedInstance(scene: Scene, assetGuid: string, preparedKey: string, targetKey: string,
+    material: NodeMaterial, options?: Pick<MaterialAcquireOptions, "unlit" | "logicalSceneBuffers">): { commit(): void; rollback(): void } {
+    const entries = this.scenes.get(scene);
+    const from = cacheKey(assetGuid, options?.unlit, preparedKey, options?.logicalSceneBuffers);
+    const to = cacheKey(assetGuid, options?.unlit, targetKey, options?.logicalSceneBuffers);
+    const entry = entries?.get(from);
+    if (!entry || entry.material !== material || scene.isDisposed || isDisposedNodeMaterial(material, scene) || this.pending.get(scene)?.has(from))
+      throw new Error("The prepared material instance is no longer available.");
+    if (this.pending.get(scene)?.has(to)) throw new Error("The current material instance is still preparing another replacement.");
+    const previous = entries!.get(to);
+    entries!.delete(from);
+    entry.instanceKey = targetKey;
+    entries!.set(to, entry);
+    // The caller moves native consumers synchronously before releasing their predecessor.
+    let resolved = false;
+    return {
+      commit: () => { if (!resolved) { resolved = true; previous?.dispose(); } },
+      rollback: () => {
+        if (resolved) return;
+        resolved = true;
+        if (entries!.get(to) !== entry) throw new Error("Prepared material ownership changed during commit.");
+        if (previous) entries!.set(to, previous); else entries!.delete(to);
+        entry.instanceKey = preparedKey;
+        entries!.set(from, entry);
+      },
+    };
+  }
+
+  /** Retire one replaced asset, or all private materials when the owner despawns. */
   releaseInstance(instanceKey: string, assetGuid?: string): void {
     for (const scene of this.tracked) {
       const pending = this.pending.get(scene)!;
