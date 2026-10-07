@@ -19,6 +19,7 @@ import {
 } from "@babylonslate/object-model";
 import type { PhysicsWorldKind } from "@babylonslate/physics";
 import { composeParentChildTransform } from "./actor-world-transform";
+import type { OwnerAdmission } from "./owner-admission";
 import type { RuntimeNavigation } from "./runtime-navigation";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 import { runSceneRealizationWork, sceneRealizationCancelled, waitForSceneWork, type CooperativeSceneLoadingOptions } from "./scene-realization-work";
@@ -62,8 +63,6 @@ interface SceneStreamsHost {
   /** The host acknowledges model readiness itself (`notifyReady`). */
   deferModelsReady(): boolean;
   scripts(): Pick<ScriptHost, "hooksFor" | "bindInterfaceHandlers">;
-  /** Lifecycle hooks of a streamed Scene of this class, when it has a script. */
-  sceneHooks(classId: string): LifecycleHooks | undefined;
   createActor(serialized: SerializedActor): Actor | null;
   realizeActor(actor: Actor, checkpoint: () => void): void;
   /** Break parent cycles in a loaded batch; `detach` reparents a broken child. */
@@ -72,9 +71,6 @@ interface SceneStreamsHost {
   slot(actor: Actor): number | undefined;
   syncPhysics(): void;
   navigation(): Pick<RuntimeNavigation, "registerAgents" | "registerObstacles" | "removeObstacle" | "removeActor">;
-  flushOwnerActions(): void;
-  runOwnerAction(owner: BObject, action: () => void): void;
-  dropOwnerActions(owner: BObject): void;
   /** Remove an actor instance the way the driver removes any owned actor. */
   removeActor(actor: Actor): void;
   cancelInvalidTweens(): void;
@@ -100,9 +96,13 @@ export class SceneStreams implements RuntimeSubsystem {
   private readonly streamScenes = new WeakMap<Scene, SceneStream>();
   /** Streams announced as Streamed Scene Loaded; only these report Unloaded. */
   private readonly announced = new WeakSet<SceneStream>();
+  private readonly admission: OwnerAdmission;
   private readonly host: SceneStreamsHost;
 
-  constructor(host: SceneStreamsHost) { this.host = host; }
+  constructor(admission: OwnerAdmission, host: SceneStreamsHost) {
+    this.admission = admission;
+    this.host = host;
+  }
 
   /** Stop, phase 1: every stream is retired. */
   cancelPending(): void {
@@ -232,7 +232,7 @@ export class SceneStreams implements RuntimeSubsystem {
     // Cancellation may happen before a graph attaches its awaited continuation.
     void promise.catch(() => {});
     const scene = new Scene({ guid: `stream:${actor.guid}:${loadId}`, assetGuid: guid, sceneName: document?.name ?? String(component?.getVariable("sceneName") ?? guid),
-      hooks: this.host.sceneHooks(sceneAssetClassId(guid)) });
+      hooks: this.sceneHooks(sceneAssetClassId(guid)) });
     const stream: SceneStream = { actor, loadId, assetGuid: guid, state: "Loading", progress: 0,
       actors: new Set(), idMap: new Map(), scene, controller: new AbortController(), realized: false, notified: false,
       promise, resolve, reject, navObstacles: [] };
@@ -287,10 +287,10 @@ export class SceneStreams implements RuntimeSubsystem {
       stream.progress = 1;
       stream.resolve();
       for (const pending of [...this.streams.values()]) this.publishRealized(pending);
-      this.host.flushOwnerActions();
+      this.admission.flush();
       // After the streamed actors' Begin Play, as Scene Loaded follows the main
       // scene's: the stream's Scene is admitted with its actors (not while paused).
-      this.host.runOwnerAction(stream.scene, () => {
+      this.admission.run(stream.scene, () => {
         if (this.streams.get(actorGuid) !== stream || stream.state !== "Loaded" ||
           !(stream.actor instanceof SceneStreamingActor)) return;
         this.announced.add(stream);
@@ -340,6 +340,16 @@ export class SceneStreams implements RuntimeSubsystem {
       }
       break;
     }
+  }
+
+  /** Lifecycle hooks of a streamed Scene of this class, when it has a script. */
+  private sceneHooks(classId: string): LifecycleHooks | undefined {
+    const hooks = this.host.scripts().hooksFor(classId);
+    return hooks ? {
+      onCreation: (self) => this.admission.runCreation(self, () => hooks.onCreation?.(self)),
+      onTick: (self, context) => this.admission.guard(() => hooks.onTick?.(self, context)),
+      onDestroyed: (self) => this.admission.runDestroyed(self, () => hooks.onDestroyed?.(self)),
+    } : undefined;
   }
 
   private streamFor(owner?: BObject | null): SceneStream | undefined {
@@ -485,7 +495,7 @@ export class SceneStreams implements RuntimeSubsystem {
     stream.scene.destroyed = true;
     this.host.cancelInvalidTweens();
     stream.scene.callOnDestroyed();
-    this.host.dropOwnerActions(stream.scene);
+    this.admission.drop(stream.scene);
     // Paired with Streamed Scene Loaded; a stream that never became ready is silent.
     if (this.announced.delete(stream) && stream.actor instanceof SceneStreamingActor) {
       this.host.world().notifyStreamedSceneUnloaded(stream.actor, stream.scene);
