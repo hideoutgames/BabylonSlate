@@ -1,89 +1,80 @@
-import type { AssimpModule } from "./assimp-types";
-import {
-  encodeGlbJsonBin,
-  ingestGltfForImport,
-  splitGlbJsonBin,
-} from "@babylonslate/assets";
-import { fbxCoordinateMatrix } from "./fbx-coordinate-system";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { FBXFileLoader } from "@babylonjs/loaders/FBX/fbxFileLoader";
+import { ingestGltfForImport } from "@babylonslate/assets";
+import { exportConvertedSceneToGlb } from "./convert-obj-to-glb";
 
 export type ModelImportFile = { name: string; bytes: Uint8Array };
+
+/** Texture URLs the loader builds from FBX relative paths; never fetched. */
+const SIDECAR_ROOT = "file:";
 
 function basename(path: string): string {
   return path.replaceAll("\\", "/").split("/").pop()!.toLowerCase();
 }
 
-/** Engine-independent WASM boundary, shared by the import worker and fixture tests. */
-export function convertFbxWithAssimp(
-  importer: AssimpModule,
+/**
+ * The selected image for an FBX texture path. Babylon 9.29's ASCII FBX parser
+ * reads `Textures\albedo.png` as `Texturesalbedo.png`, so a path that matches
+ * no basename falls back to the longest selected name it ends with.
+ */
+function sidecarFor(
+  path: string,
+  sidecars: ReadonlyMap<string, ModelImportFile>,
+): ModelImportFile | undefined {
+  const name = basename(path);
+  const exact = sidecars.get(name);
+  if (exact) return exact;
+  let best: [string, ModelImportFile] | undefined;
+  for (const entry of sidecars)
+    if (name.endsWith(entry[0]) && entry[0].length > (best?.[0].length ?? 0))
+      best = entry;
+  return best?.[1];
+}
+
+/**
+ * Load FBX with Babylon's FBX loader on a scratch scene and export canonical
+ * GLB. The loader converts source axes and units to Y-up meters and builds
+ * PBR materials; external textures resolve to the selected image sidecars.
+ */
+export async function convertFbxToGlb(
   file: ModelImportFile,
   sidecars: readonly ModelImportFile[] = [],
   consumedSidecars?: Set<string>,
-): Uint8Array {
-  const files = new Map<string, Uint8Array>();
+): Promise<Uint8Array> {
+  const byName = new Map<string, ModelImportFile>();
   for (const sidecar of sidecars) {
     const key = basename(sidecar.name);
-    if (files.has(key)) throw new Error(`Ambiguous FBX sidecar name: ${key}`);
-    files.set(key, sidecar.bytes);
+    if (byName.has(key)) throw new Error(`Ambiguous FBX sidecar name: ${key}`);
+    byName.set(key, sidecar);
   }
-  const result = importer.ConvertFile(
-    file.name,
-    "glb2",
-    file.bytes,
-    (name) => files.has(basename(name)),
-    (name) => files.get(basename(name)) ?? new Uint8Array(),
-  );
+  const engine = new NullEngine();
+  const scene = new Scene(engine);
   try {
-    if (!result.IsSuccess())
-      throw new Error(
-        `FBX conversion failed (Assimp ${result.GetErrorCode()}).`,
-      );
-    let glb: Uint8Array | undefined;
-    for (let i = 0; i < result.FileCount(); i++) {
-      const output = result.GetFile(i);
-      try {
-        const name = output.GetPath();
-        const bytes = output.GetContent().slice();
-        if (/\.glb$/i.test(name)) glb = bytes;
-        else files.set(basename(name), bytes);
-      } finally {
-        output.delete();
-      }
+    const loader = new FBXFileLoader({ materials: "pbr", unitScale: "meters" });
+    let container;
+    try {
+      container = await loader.loadAssetContainerAsync(scene, file.bytes.slice().buffer, SIDECAR_ROOT);
+    } catch (error) {
+      throw new Error(`FBX conversion failed: ${error instanceof Error ? error.message : String(error)}`);
     }
-    const split = glb && splitGlbJsonBin(glb);
-    if (
-      !glb ||
-      !split ||
-      !Array.isArray(split.json.meshes) ||
-      !split.json.meshes.length
-    ) {
-      throw new Error("FBX conversion produced no model meshes.");
+    container.addAllToScene();
+    for (const texture of container.textures) {
+      const internal = texture.getInternalTexture();
+      if (!internal?.url.startsWith(SIDECAR_ROOT)) continue;
+      const path = internal.url.slice(SIDECAR_ROOT.length);
+      const sidecar = sidecarFor(path, byName);
+      // Fail visibly instead of silently dropping missing materials' image inputs.
+      if (!sidecar)
+        throw new Error(`Missing FBX texture: ${path}. Select its image file with the FBX.`);
+      // The glTF serializer embeds a URL texture's cached source bytes as-is.
+      internal._buffer = sidecar.bytes.slice();
+      consumedSidecars?.add(sidecar.name);
     }
-    // Fail visibly instead of silently dropping missing materials' image inputs.
-    for (const image of (split.json.images ?? []) as { uri?: string }[]) {
-      if (!image.uri || image.uri.startsWith("data:")) continue;
-      const key = basename(decodeURIComponent(image.uri));
-      const bytes = files.get(key);
-      if (!bytes)
-        throw new Error(
-          `Missing FBX texture: ${image.uri}. Select its image file with the FBX.`,
-        );
-      files.set(image.uri, bytes);
-      const sidecar = sidecars.find((entry) => basename(entry.name) === key);
-      if (sidecar) consumedSidecars?.add(sidecar.name);
-    }
-    const nodes = split.json.nodes as Record<string, unknown>[];
-    const matrix = fbxCoordinateMatrix(file.bytes);
-    for (const scene of split.json.scenes as { nodes: number[] }[]) {
-      const index = nodes.length;
-      nodes.push({ name: "FBX_Coordinates", matrix, children: scene.nodes });
-      scene.nodes = [index];
-    }
-    return ingestGltfForImport(
-      "import.glb",
-      encodeGlbJsonBin(split.json, split.bin),
-      files,
-    ).bytes;
+    const glb = await exportConvertedSceneToGlb(scene, "FBX");
+    return ingestGltfForImport("import.glb", glb, new Map()).bytes;
   } finally {
-    result.delete();
+    scene.dispose();
+    engine.dispose();
   }
 }
