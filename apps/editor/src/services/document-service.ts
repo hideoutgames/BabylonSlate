@@ -155,6 +155,12 @@ export class DocumentService {
     if (this.authoringLock.readOnly) throw new Error(this.authoringLock.reason!);
   }
 
+  /** Navigation may close a clean asset tab; source-scene/dirty closure needs Stop. */
+  assertDocumentCanClose(id: string): void {
+    const document = this.state.openDocuments.get(id);
+    if (document && (document.ref.kind === "scene" || document.dirty)) this.assertAuthoringWritable();
+  }
+
   private publishAuthoringLock(): void {
     this.authoringLock = Object.freeze({
       readOnly: this.authoringLocks.size > 0,
@@ -312,6 +318,8 @@ export class DocumentService {
     layouts: ProjectLayouts,
     sceneLoadOptions?: DocumentLoadOptions,
   ): Promise<void> {
+    this.assertAuthoringWritable();
+    const authoringLock = this.authoringLock;
     sceneLoadOptions?.signal?.throwIfAborted();
     const closedKinds = [...this.state.openDocuments.values()].map(
       (doc) => doc.ref.kind,
@@ -341,6 +349,7 @@ export class DocumentService {
       .find((id) => parseDocumentId(id)?.kind === "scene");
 
     for (const id of savedOrder) {
+      if (this.authoringLock !== authoringLock) throw new Error("Project initialization crossed an authoring lock.");
       const restoredId = migrateRestoredDocumentId(id, typeForPath);
       const parsed = parseDocumentId(restoredId);
       if (!parsed || !isAssetDocumentKind(parsed.kind)) continue;
@@ -359,6 +368,7 @@ export class DocumentService {
     }
 
     sceneLoadOptions?.signal?.throwIfAborted();
+    if (this.authoringLock !== authoringLock) throw new Error("Project initialization crossed an authoring lock.");
     const restored = this.tabsSnapshot();
     this.pinStickyTabs();
 
@@ -408,6 +418,11 @@ export class DocumentService {
       return id;
     }
 
+    // The current world document is the session baseline. New asset tabs are
+    // navigation, but a late Scene read must never replace that protected source.
+    const authoringLock = this.authoringLock;
+    if (ref.kind === "scene") this.assertAuthoringWritable();
+
     if (options?.beforeLoad) await options.beforeLoad(ref);
     options?.signal?.throwIfAborted();
     const loaded = await projectService.loadDocument(ref.kind, ref.path);
@@ -430,6 +445,10 @@ export class DocumentService {
       ...(options?.background ? { background: true } : {}),
     };
 
+    if (ref.kind === "scene") {
+      this.assertAuthoringWritable();
+      if (this.authoringLock !== authoringLock) throw new Error("Scene loading crossed an authoring lock; retry after stopping the session.");
+    }
     options?.beforeCommit?.(ref);
     options?.signal?.throwIfAborted();
     if (this.state !== owner) {
@@ -476,6 +495,7 @@ export class DocumentService {
     if (isContentBrowserId(id)) {
       return;
     }
+    this.assertDocumentCanClose(id);
 
     const tabs = this.tabsSnapshot();
     const closed = this.state.openDocuments.get(id);
@@ -495,6 +515,7 @@ export class DocumentService {
    * Content Browser stays open. Returns the closed document ids.
    */
   closeDocumentsForPaths(paths: Iterable<string>): string[] {
+    this.assertAuthoringWritable();
     const pathSet = paths instanceof Set ? paths : new Set(paths);
     const ids: string[] = [];
     for (const doc of this.state.openDocuments.values()) {
@@ -517,6 +538,7 @@ export class DocumentService {
     newPath: string,
   ): { oldId: string; newId: string } | null {
     if (oldPath === newPath) return null;
+    this.assertAuthoringWritable();
     const oldId = documentId({ kind, path: oldPath });
     const newId = documentId({ kind, path: newPath });
     this.retargetOpenDocument(kind, oldId, newId, newPath);

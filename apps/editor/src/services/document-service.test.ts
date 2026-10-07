@@ -80,6 +80,44 @@ describe("DocumentService", () => {
     release();
   });
 
+  it("protects the source scene and dirty tabs from close, reset, and repath while allowing clean asset navigation", async () => {
+    const service = new DocumentService();
+    const project = createMockProjectService();
+    const scene = await service.openDocument(project, { kind: "scene", path: MAIN_SCENE_FILE, label: "Main" });
+    const graph = await service.openDocument(project, { kind: "graph", path: MAIN_CLASS_FILE, label: "Class" });
+    const dirtyGraph = await service.openDocument(project, { kind: "graph", path: "assets/Dirty.babasset", label: "Dirty" });
+    service.updateGraph(dirtyGraph, { nodes: [], edges: [], actorDefaults: { generateHitEvents: true } });
+    const release = service.lockAuthoring("Stop the session first");
+    expect(() => service.closeDocument(scene)).toThrow("Stop the session first");
+    expect(() => service.closeDocument(dirtyGraph)).toThrow("Stop the session first");
+    expect(() => service.closeDocumentsForPaths([MAIN_CLASS_FILE])).toThrow("Stop the session first");
+    expect(() => service.repathDocument("graph", MAIN_CLASS_FILE, "assets/Renamed.babasset")).toThrow("Stop the session first");
+    await expect(service.initializeFromProject(project, createEmptyProject("Other"), createEmptyLayouts())).rejects.toThrow("Stop the session first");
+    expect(service.getDocument(scene)).toBeDefined();
+    expect(service.getDocument(dirtyGraph)?.dirty).toBe(true);
+    service.closeDocument(graph);
+    expect(service.getDocument(graph)).toBeUndefined();
+    const reopened = await service.openDocument(project, { kind: "graph", path: MAIN_CLASS_FILE, label: "Class" });
+    expect(service.getDocument(reopened)).toBeDefined();
+    release();
+  });
+
+  it("rejects a delayed replacement scene before its close callback after crossing a session lock", async () => {
+    const service = new DocumentService();
+    const original = await service.openDocument(createMockProjectService(), { kind: "scene", path: MAIN_SCENE_FILE, label: "Main" });
+    let finishRead!: (value: ReturnType<typeof createDefaultScene>) => void;
+    const project = createMockProjectService({ loadDocument: () => new Promise(resolve => { finishRead = resolve; }) });
+    const beforeCommit = vi.fn(() => { service.closeDocument(original); });
+    const loading = service.openDocument(project, { kind: "scene", path: "assets/Other.babasset", label: "Other" }, null, true, { beforeCommit });
+    const release = service.lockAuthoring("Protected baseline");
+    release();
+    finishRead(createDefaultScene());
+    await expect(loading).rejects.toThrow("crossed an authoring lock");
+    expect(beforeCommit).not.toHaveBeenCalled();
+    expect(service.getDocument(original)).toBeDefined();
+    expect(service.getOpenDocumentsOrdered().filter(doc => doc.ref.kind === "scene")).toHaveLength(1);
+  });
+
   it.each(["open", "activate"] as const)("keeps background utility trees dirty and promotes their existing working copy on %s", async (action) => {
     const service = new DocumentService();
     service.ensureContentBrowserTab();

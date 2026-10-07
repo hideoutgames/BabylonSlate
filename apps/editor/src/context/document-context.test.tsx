@@ -200,6 +200,9 @@ describe("DocumentProvider actions and route", () => {
     const settings = documents().projectDocument!.settings;
     let release!: () => void;
     act(() => { release = actions.lockAuthoring("Read-only during a session."); });
+    expect(() => actions.closeDocument(MAIN_SCENE_ID)).toThrow("Read-only during a session.");
+    expect(() => actions.closeDocumentsForPaths([MAIN_SCENE_FILE])).toThrow("Read-only during a session.");
+    expect(() => actions.repathDocument("scene", MAIN_SCENE_FILE, "assets/Renamed.babasset")).toThrow("Read-only during a session.");
     expect(documents().canUndoActiveDocument).toBe(false);
     expect(documents().canRedoActiveDocument).toBe(false);
     await act(async () => {

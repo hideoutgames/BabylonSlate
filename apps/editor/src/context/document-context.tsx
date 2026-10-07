@@ -1415,6 +1415,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
    */
   const repathDocument = useCallback(
     (kind: AssetDocumentKind, oldPath: string, newPath: string) => {
+      if (oldPath !== newPath) documentService.assertAuthoringWritable();
       const oldId = documentId({ kind, path: oldPath });
       const wasOpen = oldPath !== newPath && !!documentService.getDocument(oldId);
       // The workspace remounts under the new id; keep its live dock layout.
@@ -2248,6 +2249,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const closeDocument = useCallback(
     (id: string) => {
+      documentService.assertDocumentCanClose(id);
       const doc = documentService.getDocument(id);
       const guid = projectService.guid;
       if (doc && doc.ref.kind !== "content-browser" && guid) {
@@ -2298,6 +2300,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const closeDocumentsForPaths = useCallback(
     (paths: Iterable<string>) => {
+      documentService.assertAuthoringWritable();
       const pathSet = paths instanceof Set ? paths : new Set(paths);
       // The assets are being deleted: their history, open or kept from a
       // closed tab, must not reach a new asset created at the same path.
