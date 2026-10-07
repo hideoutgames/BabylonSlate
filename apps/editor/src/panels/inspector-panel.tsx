@@ -168,6 +168,7 @@ function memberPinRows(
       id: `${memberId}-${direction}-${index}`,
       name: pin.name,
       type: pin.typeId,
+      ...(pin.container ? { container: pin.container } : {}),
       ...(pin.typeClassId ? { typeClassId: pin.typeClassId } : {}),
     }));
 }
@@ -182,6 +183,7 @@ function memberPinsFromRows(
       typeId: String(row.type),
       direction,
     };
+    if (row.container && row.container !== "single") pin.container = row.container;
     if (row.typeClassId?.trim()) pin.typeClassId = row.typeClassId.trim();
     return pin;
   };

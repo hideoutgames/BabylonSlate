@@ -859,7 +859,13 @@ function editorLatentFunctions(
 function withVisualMeta(
   data: Record<string, unknown>,
   def:
-    | { category: string; pure?: boolean; latent?: boolean; editorOnly?: boolean }
+    | {
+        category: string;
+        pure?: boolean;
+        latent?: boolean;
+        editorOnly?: boolean;
+        declaredPinOrder?: boolean;
+      }
     | undefined,
   typeId: string,
   callLatent = false,
@@ -880,6 +886,9 @@ function withVisualMeta(
   };
   if (def?.editorOnly === true) {
     next.__editorOnly = true;
+  }
+  if (def?.declaredPinOrder === true) {
+    next.__declaredPinOrder = true;
   }
   return next;
 }
