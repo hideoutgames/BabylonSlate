@@ -159,7 +159,7 @@ function RecoveryBanner() {
     >
       <AlertTitle>Recovery journal found</AlertTitle>
       <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
-        <span>Replay unsaved graph edits, or discard the journal.</span>
+        <span>Replay unsaved document edits, or discard the journal.</span>
         <div className="flex gap-2">
           <Button
             data-testid="recover-journal"
