@@ -319,6 +319,20 @@ describe("project round-trip", () => {
     expect(storage.getCurrentFolder()?.name).toBe("Broken");
   });
 
+  it("allows retrying an interrupted app-owned project after its manifest was written", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("Interrupted");
+    await storage.writeText(".babylonslate-creating", "Project creation in progress\n");
+    await storage.writeText(PROJECT_FILE, JSON.stringify(createEmptyProject("Interrupted")));
+    await storage.releaseFolder();
+    const service = new ProjectService(storage);
+    const result = await service.createEmptyProject("Interrupted", { kind: "blank" });
+    expect(result.document.metadata.name).toBe("Interrupted");
+    expect(await storage.exists(".babylonslate-creating")).toBe(false);
+    expect((await service.listProjects()).map((project) => project.name)).toEqual(["Interrupted"]);
+    await expect(service.createEmptyProject("Interrupted")).rejects.toThrow(/already exists/);
+  });
+
   it("keeps a pre-existing folder that lacks project.json when scaffolding fails", async () => {
     localStorage.clear();
     const storage = new OpfsStorageAdapter();

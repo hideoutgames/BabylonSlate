@@ -106,6 +106,84 @@ async function scaffolded(authentic = false) {
 }
 
 describe("project documents as .babasset", () => {
+  it.each(["rename", "move"])("restores saved Scene and Class tabs by GUID after a %s", async (operation) => {
+    const { service, storage, loaded } = await scaffolded();
+    const documents = new DocumentService();
+    const sceneId = await documents.openDocument(service, { kind: "scene", path: MAIN_SCENE_FILE, label: "Main" }, { panel: "viewport" });
+    const classId = await documents.openDocument(service, { kind: "graph", path: MAIN_CLASS_FILE, label: "Main" }, { panel: "graph" });
+    documents.setPanelPlacement(classId, "graph", { direction: "right", width: 300 });
+    await service.saveProject(loaded.document, documents.buildLayouts());
+    const sceneGuid = service.guidForPath(MAIN_SCENE_FILE)!;
+    const classGuid = service.guidForPath(MAIN_CLASS_FILE)!;
+    const scene = operation === "rename"
+      ? await service.registry!.renameAsset(sceneGuid, "Arena")
+      : await service.registry!.moveAsset(sceneGuid, "project", "Levels/main.scene.babasset");
+    const graph = operation === "rename"
+      ? await service.renameAsset(classGuid, "Hero")
+      : await service.registry!.moveAsset(classGuid, "project", "Classes/main.class.babasset");
+    const fresh = new ProjectService(storage);
+    const restored = await fresh.loadCurrentProject();
+    const reopened = new DocumentService();
+    await reopened.initializeFromProject(fresh, restored.document, restored.layouts);
+    const newSceneId = documentId({ kind: "scene", path: scene.path });
+    const newClassId = documentId({ kind: "graph", path: graph.path });
+    expect(reopened.getDocument(newSceneId)?.layout).toEqual({ panel: "viewport" });
+    expect(reopened.getDocument(newClassId)?.layout).toEqual({ panel: "graph" });
+    expect(reopened.getPanelPlacements(newClassId).graph).toEqual({ direction: "right", width: 300 });
+    expect(reopened.getDocument(sceneId)).toBeUndefined();
+    expect(reopened.getDocument(classId)).toBeUndefined();
+  });
+
+  it("opens a legacy project with stale saved tabs while retaining tabs whose assets exist", async () => {
+    const { service, loaded } = await scaffolded();
+    const documents = new DocumentService();
+    const sceneId = documentId({ kind: "scene", path: "assets/Removed.scene.babasset" });
+    const graphId = documentId({ kind: "graph", path: MAIN_CLASS_FILE });
+    await documents.initializeFromProject(service, loaded.document, { documents: {}, tabOrder: [sceneId, graphId] });
+    expect(documents.getDocument(sceneId)).toBeUndefined();
+    expect(documents.getDocument(graphId)?.content).toMatchObject({ nodes: [], edges: [] });
+  });
+
+  it("renames a Class without detaching scene instances, child Classes, or project settings", async () => {
+    const { service, storage, loaded } = await scaffolded();
+    const sourcePath = "assets/Hero.class.babasset";
+    const childPath = "assets/Child.class.babasset";
+    await service.saveDocument("graph", sourcePath, { nodes: [], edges: [], components: [createMeshComponent("body", "sphere")] }, { parentClass: "Actor" });
+    await service.saveDocument("graph", childPath, { nodes: [], edges: [], properties: { "default:classId": "Hero", label: "Hero" } }, { parentClass: "Hero" });
+    await service.saveDocument("scene", MAIN_SCENE_FILE, { ...createDefaultScene(), actors: [createActor("hero", "Hero", { classId: "Hero" })] });
+    await service.saveProject({ ...loaded.document, settings: { ...loaded.document.settings, gameInstanceClass: "Hero" } }, loaded.layouts);
+    const sourceGuid = service.guidForPath(sourcePath)!;
+    const renamed = await service.renameAsset(sourceGuid, "Champion");
+    const fresh = new ProjectService(storage);
+    const reopened = await fresh.loadCurrentProject();
+    expect(renamed.path).toBe("assets/Champion.class.babasset");
+    expect(fresh.guidForPath(renamed.path)).toBe(sourceGuid);
+    expect((await fresh.loadDocument("scene", MAIN_SCENE_FILE) as SerializedScene).actors[0]).toMatchObject({ id: "hero", name: "Hero", classId: "Champion" });
+    expect(readAssetDocumentHeader(await storage.readBinary(childPath)).parentClass).toBe("Champion");
+    expect(await fresh.loadDocument("graph", childPath)).toMatchObject({ properties: { "default:classId": "Champion", label: "Hero" } });
+    expect(reopened.document.settings.gameInstanceClass).toBe("Champion");
+  });
+
+  it("restores a Class rename if saving a dependent scene fails", async () => {
+    const { service, storage } = await scaffolded();
+    const sourcePath = "assets/Hero.class.babasset";
+    await service.saveDocument("graph", sourcePath, { nodes: [], edges: [] }, { parentClass: "Actor" });
+    await service.saveDocument("scene", MAIN_SCENE_FILE, { ...createDefaultScene(), actors: [createActor("hero", "Hero", { classId: "Hero" })] });
+    const sourceGuid = service.guidForPath(sourcePath)!;
+    const sceneBytes = await storage.readBinary(MAIN_SCENE_FILE);
+    const write = storage.writeBinary.bind(storage);
+    let fail = true;
+    vi.spyOn(storage, "writeBinary").mockImplementation(async (path, bytes) => {
+      if (path === MAIN_SCENE_FILE && fail) { fail = false; throw new Error("Disk full"); }
+      return write(path, bytes);
+    });
+    await expect(service.renameAsset(sourceGuid, "Champion")).rejects.toThrow("Disk full");
+    expect(await storage.exists(sourcePath)).toBe(true);
+    expect(await storage.exists("assets/Champion.class.babasset")).toBe(false);
+    expect(await storage.readBinary(MAIN_SCENE_FILE)).toEqual(sceneBytes);
+    expect(service.registry!.getByGuid(sourceGuid)?.path).toBe(sourcePath);
+  });
+
   it.each(["read", "decode"])("rejects a Class %s failure instead of opening an empty graph", async (failure) => {
     const { service, storage } = await scaffolded();
     const path = "assets/Unreadable.class.babasset";

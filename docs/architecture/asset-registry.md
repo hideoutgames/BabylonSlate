@@ -13,6 +13,10 @@ Saving or renaming an indexed asset preserves inbound GUID references while rebu
 
 Folder moves and deletions wait for pending asset writes and creations before enumerating the tree. Writes submitted during relocation wait until it finishes; GUID-based saves resolve their current path after admission. This includes newly created assets that were not indexed when the move was requested.
 
+Asset renames preserve Unicode display names and the complete asset suffix (including `.class.babasset` and `.scene.babasset`). Invalid path names are rejected. Class renames update saved and open instances, child-Class parents, typed Class references and project settings; an unwritable referrer blocks the operation. Referrer write failures restore the original bytes and Class path. Open referrers retain unsaved edits; their old undo commands are discarded so undo cannot restore a missing Class name.
+
+Saved layouts include each tab's asset GUID, allowing tabs, dock layouts and panel placements to follow renames or folder moves on reopen. Legacy layout entries with missing paths are skipped so a stale tab cannot prevent opening the project; other read failures remain visible.
+
 Retained `.babylonslate-move-*` recovery folders stay on disk for recovery/export but are excluded from asset discovery, so their duplicate GUIDs cannot replace live entries after reopening.
 
 ## Content roots
