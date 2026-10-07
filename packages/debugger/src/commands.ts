@@ -91,12 +91,13 @@ function flagCommand(
 function statCommand(
   name: "stat unit" | "stat memory" | "stat draws" | "stat threads",
   stat: string,
+  description: string,
 ): RegisteredCommand {
   return {
     name,
     tier: "debug",
     category: "engine",
-    description: name,
+    description,
     parameters: [FLAG],
     run(args, host) {
       const enabled = Boolean(args.enabled);
@@ -201,11 +202,11 @@ export function builtinCommands(): RegisteredCommand[] {
         return ok("quit");
       },
     },
-    flagCommand("showfps", (host, enabled) => host.setShowFps?.(enabled)),
-    statCommand("stat unit", "unit"),
-    statCommand("stat memory", "memory"),
-    statCommand("stat draws", "draws"),
-    statCommand("stat threads", "threads"),
+    flagCommand("showfps", (host, enabled) => host.setShowFps?.(enabled), "Show or hide Stats (FPS, frame time and tick timings)"),
+    statCommand("stat unit", "unit", "Add the tick breakdown and history graph to Stats"),
+    statCommand("stat memory", "memory", "Add heap, app and geometry memory to Stats"),
+    statCommand("stat draws", "draws", "Add draw calls, meshes, textures and render timings to Stats"),
+    statCommand("stat threads", "threads", "Add Worker bridge traffic, actors and ticks to Stats"),
     flagCommand("showcollision", (host, enabled) =>
       host.setShowCollision?.(enabled),
     ),

@@ -1,4 +1,4 @@
-import { ActivityIcon, CameraIcon, TerminalIcon, XIcon } from "lucide-react";
+import { ActivityIcon, CameraIcon, GaugeIcon, TerminalIcon, XIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   DebugBehaviourTree,
@@ -25,6 +25,7 @@ import { DebugConsole } from "./debug-console";
 import { useDebugConsoleLogs } from "../lib/use-debug-console-logs";
 import { DebugBehaviourTreeDialog } from "./debug-behaviour-tree-dialog";
 import { Button } from "@babylonslate/ui/components/button";
+import { Toggle } from "@babylonslate/ui/components/toggle";
 import {
   Alert,
   AlertDescription,
@@ -46,6 +47,10 @@ export type PreviewBuildOverlayProps = {
   registerBeforeStop?: (finalize: () => Promise<void>) => () => void;
   /** Boot failure reported by the player, so the black canvas is explained. */
   error?: string | null;
+  /** Debug-menu overlay buttons, shared with Play. */
+  showStats?: boolean;
+  showConsole?: boolean;
+  showProfiler?: boolean;
 };
 
 export function PreviewBuildOverlay({
@@ -57,11 +62,16 @@ export function PreviewBuildOverlay({
   onTrace,
   registerBeforeStop,
   error = null,
+  showStats = true,
+  showConsole = true,
+  showProfiler = true,
 }: PreviewBuildOverlayProps) {
   const onDetachedRef = useRef(onDetached);
   onDetachedRef.current = onDetached;
   useEffect(() => () => { onDetachedRef.current?.(); }, []);
   const [consoleOpen, setConsoleOpen] = useState(false);
+  // The player starts with Stats hidden; console commands report changes back.
+  const [statsOpen, setStatsOpen] = useState(false);
   const { logs, pushLog } = useDebugConsoleLogs();
   const [trees, setTrees] = useState<readonly DebugBehaviourTree[]>([]);
   const [treeOpen, setTreeOpen] = useState(false);
@@ -256,6 +266,8 @@ export function PreviewBuildOverlay({
         if (command.enabled) setConsoleOpen(false);
       }
       if (command?.type === "behaviourTreeSnapshot") setTrees(command.trees);
+      if (command?.type === "setShowFps") setStatsOpen(command.enabled === true);
+      if (command?.type === "setStat" && command.enabled === true) setStatsOpen(true);
       if (command?.type === "trace")
         lastTrace.current = command.payload as TracePayload;
     };
@@ -307,21 +319,23 @@ export function PreviewBuildOverlay({
         </div>
       ) : null}
       <div className="safe-overlay-chrome pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-wrap items-start justify-end gap-2">
-        {diagnosticResults ? <>
+        {showProfiler && diagnosticResults ? <>
           <Button
             size="touch"
             variant="secondary"
             className="pointer-events-auto"
+            data-testid="preview-build-profiler-open"
             disabled={stopping || !!error}
             onClick={() => diagnosticResults.open("summary")}
           >
-            <ActivityIcon data-icon="inline-start" />
+            <GaugeIcon data-icon="inline-start" />
             Profiler
           </Button>
           <Button
             size="touch"
             variant="secondary"
             className="pointer-events-auto"
+            data-testid="preview-build-capture-frame"
             disabled={stopping || !!error}
             onClick={() => void diagnosticResults.captureFrame()}
           >
@@ -329,17 +343,38 @@ export function PreviewBuildOverlay({
             Capture Frame
           </Button>
         </> : null}
-        <Button
-          size="touch"
-          variant="secondary"
-          className="pointer-events-auto"
-          aria-label="Console"
-          disabled={stopping}
-          onClick={() => setConsoleOpen(true)}
-        >
-          <TerminalIcon data-icon="inline-start" />
-          Console
-        </Button>
+        {showStats ? (
+          <Toggle
+            size="touch"
+            variant="secondary"
+            className="pointer-events-auto"
+            pressed={statsOpen}
+            data-testid="preview-build-stats-toggle"
+            aria-label="Stats"
+            disabled={stopping || !!error}
+            onPressedChange={(pressed) => {
+              setStatsOpen(pressed);
+              void execute(`showfps ${pressed ? "on" : "off"}`);
+            }}
+          >
+            <ActivityIcon data-icon="inline-start" />
+            Stats
+          </Toggle>
+        ) : null}
+        {showConsole ? (
+          <Button
+            size="touch"
+            variant="secondary"
+            className="pointer-events-auto"
+            aria-label="Console"
+            data-testid="preview-build-console-open"
+            disabled={stopping}
+            onClick={() => setConsoleOpen(true)}
+          >
+            <TerminalIcon data-icon="inline-start" />
+            Console
+          </Button>
+        ) : null}
         <Button
           size="touch"
           variant="secondary"

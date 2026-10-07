@@ -8,6 +8,7 @@ import { useSimulationInspectionStore } from "../context/simulation-inspection-c
 import { useAppSettings } from "../context/app-settings-context";
 import { captureShadowDiagnostics, lightsDebugText } from "@babylonslate/render";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
+import { nextStatGroups, type StatGroup } from "@babylonslate/debugger";
 import type { SceneLoadProgress } from "@babylonslate/render";
 import type { RenderDiagnostics } from "@babylonslate/render";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -38,7 +39,6 @@ import {
 } from "../services/play-session";
 import type { GameSessionOwner, GameSessionTicket } from "../services/game-session-owner";
 import { finishPlaySessionWithTrace } from "../lib/play-trace-spill";
-import type { StatsHudHighlight } from "./stats-hud";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import {
   applyLiveEngineSettings,
@@ -290,7 +290,7 @@ export function PlayOverlay({
   pauseOnPlay = false,
   onClose,
 }: PlayOverlayProps) {
-  const { reportBtState, overlayStats, overlayConsole, overlayInspector } =
+  const { reportBtState, overlayStats, overlayConsole, overlayInspector, overlayProfiler } =
     usePlay();
   const simulating = sessionTicket?.mode === "simulate";
   const inspectionStore = useSimulationInspectionStore();
@@ -338,8 +338,7 @@ export function PlayOverlay({
   const inputModeRef = useRef<"game" | "edit">("game");
   const inputSequenceRef = useRef(0);
   const [statsOpen, setStatsOpen] = useState(false);
-  const [statsHighlight, setStatsHighlight] =
-    useState<StatsHudHighlight | null>(null);
+  const [statGroups, setStatGroups] = useState<readonly StatGroup[]>([]);
   const inspectSelectionRef = useRef<string | null>(null);
   const hostMemoryInFlight = useRef(false);
   const userPausedRef = useRef(pauseOnPlay);
@@ -761,22 +760,13 @@ export function PlayOverlay({
           },
           onShowFps: (enabled) => {
             setStatsOpen(enabled);
-            if (!enabled) setStatsHighlight(null);
           },
           onFreeCam: (enabled) => {
             setFreeCamEnabled(enabled);
           },
           onStatHighlight: (name, enabled) => {
             setStatsOpen(true);
-            setStatsHighlight(
-              enabled &&
-                (name === "unit" ||
-                  name === "memory" ||
-                  name === "draws" ||
-                  name === "threads")
-                ? name
-                : null,
-            );
+            setStatGroups((groups) => nextStatGroups(groups, name, enabled));
           },
           onStats: (stats) => {
             setFps(stats.fps);
@@ -1048,6 +1038,7 @@ export function PlayOverlay({
         showStats={overlayStats}
         showConsole={overlayConsole}
         showInspector={overlayInspector && !simulating}
+        showProfiler={overlayProfiler}
         pausePending={pausePending}
         simulation={simulating ? { inputMode, inputPending, keepChanges: simulationSession?.keepChanges, onInputModeChange: (mode) => changeInputModeRef.current(mode) } : undefined}
         onPauseToggle={() => pauseRef.current("user", !userPausedRef.current)}
@@ -1070,7 +1061,7 @@ export function PlayOverlay({
             draws={draws}
             rendering={rendering}
             bridgeMessagesPerSec={bridgeRate}
-            highlight={statsHighlight}
+            groups={statGroups}
           />
         }
         extras={

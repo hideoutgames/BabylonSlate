@@ -3,15 +3,14 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuLabel,
-  DropdownMenuItem,
   DropdownMenuSeparator,
 } from "@babylonslate/ui/components/dropdown-menu";
-import { useDiagnosticResultsStore } from "../context/diagnostic-results-context";
 
 export type PlayDebugMenuItemsProps = {
   overlayStats: boolean;
   overlayConsole: boolean;
   overlayInspector: boolean;
+  overlayProfiler: boolean;
   pauseOnPlay: boolean;
   previewBuild: boolean;
   playFromScene: boolean;
@@ -19,6 +18,7 @@ export type PlayDebugMenuItemsProps = {
   onOverlayStatsChange: (checked: boolean) => void;
   onOverlayConsoleChange: (checked: boolean) => void;
   onOverlayInspectorChange: (checked: boolean) => void;
+  onOverlayProfilerChange: (checked: boolean) => void;
   onPauseOnPlayChange: (checked: boolean) => void;
   onPreviewBuildChange: (checked: boolean) => void;
   onPlayFromSceneChange: (checked: boolean) => void;
@@ -29,6 +29,7 @@ export function PlayDebugMenuItems({
   overlayStats,
   overlayConsole,
   overlayInspector,
+  overlayProfiler,
   pauseOnPlay,
   previewBuild,
   playFromScene,
@@ -36,17 +37,13 @@ export function PlayDebugMenuItems({
   onOverlayStatsChange,
   onOverlayConsoleChange,
   onOverlayInspectorChange,
+  onOverlayProfilerChange,
   onPauseOnPlayChange,
   onPreviewBuildChange,
   onPlayFromSceneChange,
 }: PlayDebugMenuItemsProps) {
-  const diagnostics = useDiagnosticResultsStore();
   return (
     <DropdownMenuContent align="center" className="w-max min-w-56 whitespace-nowrap">
-      {diagnostics ? <DropdownMenuGroup>
-        <DropdownMenuItem data-testid="open-profiler" onSelect={() => diagnostics.open("summary")}>Profiler and Frame Debugger</DropdownMenuItem>
-        <DropdownMenuSeparator />
-      </DropdownMenuGroup> : null}
       <DropdownMenuGroup>
         <DropdownMenuLabel>Play Overlay</DropdownMenuLabel>
         <DropdownMenuSeparator />
@@ -55,7 +52,7 @@ export function PlayDebugMenuItems({
           checked={overlayStats}
           onCheckedChange={(checked) => onOverlayStatsChange(checked === true)}
         >
-          Stats Button
+          Stats
         </DropdownMenuCheckboxItem>
         <DropdownMenuCheckboxItem
           data-testid="overlay-console-toggle"
@@ -64,7 +61,7 @@ export function PlayDebugMenuItems({
             onOverlayConsoleChange(checked === true)
           }
         >
-          Console Button
+          Console
         </DropdownMenuCheckboxItem>
         <DropdownMenuCheckboxItem
           data-testid="overlay-inspector-toggle"
@@ -73,7 +70,16 @@ export function PlayDebugMenuItems({
             onOverlayInspectorChange(checked === true)
           }
         >
-          Inspector Button
+          Inspector
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem
+          data-testid="overlay-profiler-toggle"
+          checked={overlayProfiler}
+          onCheckedChange={(checked) =>
+            onOverlayProfilerChange(checked === true)
+          }
+        >
+          Profiler
         </DropdownMenuCheckboxItem>
       </DropdownMenuGroup>
       <DropdownMenuGroup>
