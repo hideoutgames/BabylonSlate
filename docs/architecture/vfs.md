@@ -113,7 +113,7 @@ Capacitor `webDir` is editor `dist`. `cap sync ios` fills gitignored `ios/App/Ap
 
 ## WebContent termination (iOS)
 
-Capacitor 8.5.0 handles `webViewWebContentProcessDidTerminate` natively — `WebViewDelegationHandler` resets the bridge and reloads the WebView, unbounded, and there is no app-level hook without replacing the private delegate, which we do not do. The reload restarts the editor at Home without a notice. Reopening the project recovers journaled edits; in-memory edits never journaled are lost. Play and bakes are never restarted automatically.
+Capacitor 8.5.2 handles `webViewWebContentProcessDidTerminate` natively — `WebViewDelegationHandler` resets the bridge and reloads the WebView, unbounded, and there is no app-level hook without replacing the private delegate, which we do not do. The reload restarts the editor at Home without a notice. Reopening the project recovers journaled edits; in-memory edits never journaled are lost. Play and bakes are never restarted automatically.
 
 ## Template library
 
