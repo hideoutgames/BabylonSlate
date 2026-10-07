@@ -138,6 +138,13 @@ function sameSceneContent(left: unknown, right: unknown): boolean {
   return keys.length === Object.keys(b).length && keys.every(key => Object.hasOwn(b, key) && sameSceneContent(a[key], b[key]));
 }
 
+/**
+ * How a content update sets the dirty flag: `edit` (a forward edit) marks the
+ * document dirty without hashing; `compare` (Undo, Redo, journal replay)
+ * clears it when the content equals the saved content.
+ */
+export type DirtyUpdate = "edit" | "compare";
+
 type TabsSnapshot = { order: readonly string[]; foreground: readonly string[]; active: string | null };
 
 export class DocumentService {
@@ -154,8 +161,15 @@ export class DocumentService {
   /** Weak keys follow tab renames without retaining closed project content. */
   private readonly savedContent = new WeakMap<OpenDocument, string>();
 
-  private updateDirty(doc: OpenDocument): void {
-    doc.dirty = documentContentIdentity(doc.content) !== this.savedContent.get(doc);
+  /**
+   * A forward edit always changes content, so it marks the document dirty
+   * without hashing it. Undo, Redo and journal replay can return to the saved
+   * content, so they compare with it (a saved Scene structurally, when known).
+   */
+  private updateDirty(doc: OpenDocument, update: DirtyUpdate, savedScene?: SerializedScene): void {
+    doc.dirty = update === "edit" || (savedScene
+      ? !sameSceneContent(savedScene, doc.content)
+      : documentContentIdentity(doc.content) !== this.savedContent.get(doc));
     if (doc.dirty) recordDocumentDirty(doc.ref.kind, doc.id);
   }
 
@@ -746,37 +760,38 @@ export class DocumentService {
     this.advanceTabsIfChanged(tabs);
   }
 
-  updateScene(id: string, scene: SerializedScene): void {
+  updateScene(id: string, scene: SerializedScene, update: DirtyUpdate = "edit"): void {
+    this.writeScene(id, scene, update, false);
+  }
+
+  /** Undo/Redo compares scene content to the last successful saved revision. */
+  updateSceneFromHistory(id: string, scene: SerializedScene): void {
+    this.writeScene(id, scene, "compare", true);
+  }
+
+  private writeScene(id: string, scene: SerializedScene, update: DirtyUpdate, fromHistory: boolean): void {
     this.assertAuthoringWritable();
     const doc = this.state.openDocuments.get(id);
     if (!doc || !isSceneWorkspaceKind(doc.ref.kind)) return;
     doc.content = scene;
     this.advanceKinds([doc.ref.kind]);
-    this.updateDirty(doc);
+    this.updateDirty(doc, update, fromHistory ? this.savedScenes.get(doc) : undefined);
     doc.ref = {
       ...doc.ref,
       label: `${scene.name} ${documentKindLabel(doc.ref.kind)}`,
     };
   }
 
-  /** Undo/Redo compares scene content to the last successful saved revision. */
-  updateSceneFromHistory(id: string, scene: SerializedScene): void {
-    this.updateScene(id, scene);
-    const document = this.state.openDocuments.get(id);
-    const saved = document && this.savedScenes.get(document);
-    if (document && saved) document.dirty = !sameSceneContent(saved, scene);
-  }
-
-  updateGraph(id: string, graph: SerializedGraph): void {
+  updateGraph(id: string, graph: SerializedGraph, update: DirtyUpdate = "edit"): void {
     this.assertAuthoringWritable();
     const doc = this.state.openDocuments.get(id);
     if (!doc || doc.ref.kind !== "graph") return;
     doc.content = graph;
     this.advanceKinds([doc.ref.kind]);
-    this.updateDirty(doc);
+    this.updateDirty(doc, update);
   }
 
-  updateAssetDocument(id: string, content: Record<string, unknown>): void {
+  updateAssetDocument(id: string, content: Record<string, unknown>, update: DirtyUpdate = "edit"): void {
     this.assertAuthoringWritable();
     const doc = this.state.openDocuments.get(id);
     if (
@@ -789,7 +804,7 @@ export class DocumentService {
     }
     doc.content = content;
     this.advanceKinds([doc.ref.kind]);
-    this.updateDirty(doc);
+    this.updateDirty(doc, update);
     if (typeof content.name === "string" && content.name.trim() !== "") {
       doc.ref = {
         ...doc.ref,
@@ -841,7 +856,9 @@ export class DocumentService {
         if (doc.ref.kind === "scene" && snapshot.content) this.savedScenes.set(doc, snapshot.content as SerializedScene);
         const savedIdentity = documentContentIdentity(snapshot.content);
         this.savedContent.set(doc, savedIdentity);
-        const dirty = documentContentIdentity(doc.content) !== savedIdentity;
+        // Content untouched since the save started needs no second hash.
+        const dirty = doc.content !== snapshot.content &&
+          documentContentIdentity(doc.content) !== savedIdentity;
         if (doc.dirty !== dirty) changed.push(doc.ref.kind);
         doc.dirty = dirty;
       }

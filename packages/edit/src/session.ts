@@ -3,23 +3,29 @@ import {
   DocumentEditStack,
   type ApplyResult,
   type DocumentEditStackOptions,
+  type EditApplyResult,
   type HistoryAdmissionResult,
 } from "./stack";
 
-export const DEFAULT_EDIT_BYTE_BUDGET = 2_000_000;
+/** Default per-document Undo memory limit (16 MB). */
+export const DEFAULT_EDIT_BYTE_BUDGET = 16 * 1024 * 1024;
 
 /** One editor operation may contain several journalled deltas. */
 export class CommandBatch<TDoc> implements EditCommand<TDoc> {
   readonly type = "edit.batch";
-  readonly byteSize: number;
   readonly commands: readonly EditCommand<TDoc>[];
+  #byteSize?: number;
 
   constructor(commands: readonly EditCommand<TDoc>[]) {
     this.commands = [...commands];
-    this.byteSize = commands.reduce(
+  }
+
+  /** Sum of the parts' sizes, measured on first read and memoised. */
+  get byteSize(): number {
+    return (this.#byteSize ??= this.commands.reduce(
       (sum, command) => sum + (command.byteSize ?? 0),
       0,
-    );
+    ));
   }
 
   apply(doc: TDoc): TDoc {
@@ -68,14 +74,19 @@ export class EditSession {
     };
   }
 
+  /**
+   * Change the limits for every document, open or closed, and for documents
+   * opened later. History over a lowered limit is evicted oldest first.
+   */
   configure(options: Partial<DocumentEditStackOptions>): void {
     if (options.maxEntries !== undefined) {
       this.defaults.maxEntries = Math.max(1, options.maxEntries);
     }
     if (options.maxBytes !== undefined) {
       this.defaults.maxBytes = Math.max(1, options.maxBytes);
-      this.evictClosedOverBudget();
     }
+    for (const stack of this.stacks.values()) stack.configure(this.defaults);
+    this.evictClosedOverBudget();
   }
 
   getStack<TDoc>(documentId: string): DocumentEditStack<TDoc> {
@@ -91,7 +102,7 @@ export class EditSession {
     documentId: string,
     doc: TDoc,
     command: EditCommand<TDoc>,
-  ): ApplyResult<TDoc> {
+  ): EditApplyResult<TDoc> {
     const result = this.getStack<TDoc>(documentId).apply(doc, command);
     this.evictClosedOverBudget();
     return result;
@@ -116,7 +127,7 @@ export class EditSession {
     documentId: string,
     doc: TDoc,
     commands: readonly EditCommand<TDoc>[],
-  ): ApplyResult<TDoc> | null {
+  ): EditApplyResult<TDoc> | null {
     if (commands.length === 0) return null;
     return this.apply(
       documentId,

@@ -29,7 +29,11 @@ function updateComponent(
 export class SetActorPropertiesCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.setActorProperties";
   readonly mergeKey: string;
-  readonly byteSize: number;
+  #byteSize?: number;
+  /** Retained snapshot cost, measured on first read and memoised. */
+  get byteSize(): number {
+    return (this.#byteSize ??= snapshotBytes({ from: this.from, to: this.to }));
+  }
   readonly actorId: string;
   readonly from: Record<string, unknown> | undefined;
   readonly to: Record<string, unknown> | undefined;
@@ -39,7 +43,6 @@ export class SetActorPropertiesCommand implements EditCommand<SerializedScene> {
     this.from = from;
     this.to = to;
     this.mergeKey = `actorProperties:${actorId}`;
-    this.byteSize = snapshotBytes({ from, to });
   }
 
   apply(doc: SerializedScene): SerializedScene {
@@ -52,14 +55,27 @@ export class SetActorPropertiesCommand implements EditCommand<SerializedScene> {
   }
 
   invert(): SetActorPropertiesCommand {
-    return new SetActorPropertiesCommand(this.actorId, this.to, this.from);
+    const inverse = new SetActorPropertiesCommand(this.actorId, this.to, this.from);
+    // Swapping `from` and `to` keeps the measured size.
+    inverse.#byteSize = this.#byteSize;
+    return inverse;
+  }
+
+  /** A gesture keeps only its first `from` and its latest `to`. */
+  coalesce(next: EditCommand<SerializedScene>): SetActorPropertiesCommand | undefined {
+    if (!(next instanceof SetActorPropertiesCommand) || next.actorId !== this.actorId) return undefined;
+    return new SetActorPropertiesCommand(this.actorId, this.from, next.to);
   }
 }
 
 /** Retargets an actor instance to another Class while keeping its id. */
 export class SetActorClassCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.setActorClass";
-  readonly byteSize: number;
+  #byteSize?: number;
+  /** Retained snapshot cost, measured on first read and memoised. */
+  get byteSize(): number {
+    return (this.#byteSize ??= snapshotBytes({ from: this.from, to: this.to }));
+  }
   readonly actorId: string;
   readonly from: string;
   readonly to: string;
@@ -68,7 +84,6 @@ export class SetActorClassCommand implements EditCommand<SerializedScene> {
     this.actorId = actorId;
     this.from = from;
     this.to = to;
-    this.byteSize = snapshotBytes({ from, to });
   }
 
   apply(doc: SerializedScene): SerializedScene {
@@ -83,7 +98,11 @@ export class SetActorClassCommand implements EditCommand<SerializedScene> {
 /** Changes a component's class in place, as prefab sync does for a retyped Class row. */
 export class SetComponentClassCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.setComponentClass";
-  readonly byteSize: number;
+  #byteSize?: number;
+  /** Retained snapshot cost, measured on first read and memoised. */
+  get byteSize(): number {
+    return (this.#byteSize ??= snapshotBytes({ from: this.from, to: this.to }));
+  }
   readonly actorId: string;
   readonly componentId: string;
   readonly from: string;
@@ -94,7 +113,6 @@ export class SetComponentClassCommand implements EditCommand<SerializedScene> {
     this.componentId = componentId;
     this.from = from;
     this.to = to;
-    this.byteSize = snapshotBytes({ from, to });
   }
 
   apply(doc: SerializedScene): SerializedScene {
@@ -112,7 +130,11 @@ export class SetComponentClassCommand implements EditCommand<SerializedScene> {
  */
 export class SetComponentTransformPresenceCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.setComponentTransformPresence";
-  readonly byteSize: number;
+  #byteSize?: number;
+  /** Retained snapshot cost, measured on first read and memoised. */
+  get byteSize(): number {
+    return (this.#byteSize ??= snapshotBytes({ from: this.from, to: this.to }));
+  }
   readonly actorId: string;
   readonly componentId: string;
   readonly from: SerializedTransform | undefined;
@@ -128,7 +150,6 @@ export class SetComponentTransformPresenceCommand implements EditCommand<Seriali
     this.componentId = componentId;
     this.from = from;
     this.to = to;
-    this.byteSize = snapshotBytes({ from, to });
   }
 
   apply(doc: SerializedScene): SerializedScene {
@@ -149,7 +170,11 @@ export class SetComponentTransformPresenceCommand implements EditCommand<Seriali
 /** Outliner folder order; `to` is the index after the folder leaves `from`. */
 export class ReorderFolderCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.reorderFolder";
-  readonly byteSize: number;
+  #byteSize?: number;
+  /** Retained snapshot cost, measured on first read and memoised. */
+  get byteSize(): number {
+    return (this.#byteSize ??= snapshotBytes({ folderId: this.folderId, from: this.from, to: this.to }));
+  }
   readonly folderId: string;
   readonly from: number;
   readonly to: number;
@@ -158,7 +183,6 @@ export class ReorderFolderCommand implements EditCommand<SerializedScene> {
     this.folderId = folderId;
     this.from = from;
     this.to = to;
-    this.byteSize = snapshotBytes({ folderId, from, to });
   }
 
   apply(doc: SerializedScene): SerializedScene {
@@ -178,14 +202,17 @@ export class ReorderFolderCommand implements EditCommand<SerializedScene> {
 /** Editor-only SceneLayer tab flag; `undefined` removes the key. */
 export class SetSceneOverlayEditorCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.setOverlayEditor";
-  readonly byteSize: number;
+  #byteSize?: number;
+  /** Retained snapshot cost, measured on first read and memoised. */
+  get byteSize(): number {
+    return (this.#byteSize ??= snapshotBytes({ from: this.from, to: this.to }));
+  }
   readonly from: boolean | undefined;
   readonly to: boolean | undefined;
 
   constructor(from: boolean | undefined, to: boolean | undefined) {
     this.from = from;
     this.to = to;
-    this.byteSize = snapshotBytes({ from, to });
   }
 
   apply(doc: SerializedScene): SerializedScene {
