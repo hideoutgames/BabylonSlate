@@ -159,7 +159,7 @@ export function mountPlayerHud(
     fpsValue.textContent = stats.fps.toFixed(0);
     fps.append(fpsValue, doc.createTextNode(" fps"));
     fps.dataset.stat = "fps";
-    const lines = [row(null, [
+    const lines: HTMLElement[] = [row(null, [
       fps,
       metric(null, stats.fps > 0 ? `${(1000 / stats.fps).toFixed(1)} ms` : "— ms"),
       metric("script", `${stats.scriptMs.toFixed(2)} ms`, over),
