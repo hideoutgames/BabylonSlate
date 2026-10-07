@@ -102,11 +102,12 @@ export function isThumbnailableAssetType(type: string): boolean {
 export async function upgradeTextureThumbnail(
   cached: Uint8Array | null,
   sourceMime: string | undefined,
-  readSource: () => Promise<Uint8Array>,
+  readSource: () => Promise<Uint8Array | null>,
 ): Promise<Uint8Array | null> {
   if (cached && (sourceMime === "image/jpeg" || thumbnailMime(cached) === "image/png")) return cached;
   try {
-    return await generateThumbnailBytes(await readSource(), DEFAULT_THUMBNAIL_MAX_EDGE, sourceMime) ?? cached;
+    const source = await readSource();
+    return source ? await generateThumbnailBytes(source, DEFAULT_THUMBNAIL_MAX_EDGE, sourceMime) ?? cached : cached;
   } catch {
     // A missing source or unavailable decoder should retain the existing tile.
     return cached;
