@@ -6,6 +6,8 @@ Vitest and its coverage provider use the patched 4.1.11 release line. Narrow wor
 
 Two upstream constraints remain. VitePress 1.6.4 declares Vite 5, whose dev server has no compatible fixes for [optimized-dependency traversal](https://github.com/advisories/GHSA-4w7w-66w2-5vf9), [Windows denied-file bypass](https://github.com/advisories/GHSA-fx2h-pf6j-xcff) and [Windows UNC editor paths](https://github.com/advisories/GHSA-v6wh-96g9-6wx3). Keep docs development local; the Windows UNC issue can still affect a local server. Published docs are static files. Vite also retains esbuild 0.21's [development-server cross-origin advisory](https://github.com/advisories/GHSA-67mh-4wv8-2f99), but the normal VitePress path uses esbuild's build/transform APIs, not its affected serve API.
 
+The editor and player use Vite 8.3.3. Their dev servers (and `vite preview`) bind to localhost only; LAN exposure is opt-in with Vite's `--host` flag, for example `pnpm dev --host` to reach a dev server from a physical iPad (see the README's iPad section). Browser tests own an ephemeral loopback preview server and do not depend on LAN access.
+
 Capacitor's Xcode tooling retains uuid 7 through xcode 3.0.1; its consumer uses `v4()` without a caller buffer, while the [reported bounds issue](https://github.com/advisories/GHSA-w5hq-g745-h8pq) concerns buffered v3/v5/v6 calls. Resolve these constraints through compatible upstream upgrades rather than unqualified major-version overrides.
 
 ## Verification scope
