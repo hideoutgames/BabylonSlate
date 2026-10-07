@@ -386,6 +386,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
             key={`${documentId}:${activeFunctionId ?? "event"}`}
             initialGraph={graph}
             commitPositionsOnDragEnd
+            singleExecOutputOnConnect
             colorMode="dark"
             defaultZoom={defaultZoom}
             sessionViewport={sessionViewport}

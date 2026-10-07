@@ -38,6 +38,11 @@ export type PinDefaultPreview =
         | "actorRef"
         | "structRef";
       text: string;
+      /**
+       * The text names the expected type, not a stored value: the pin is
+       * empty and must be wired (or is the implicit Self target).
+       */
+      placeholder?: boolean;
     };
 
 export function literalPinType(
@@ -127,7 +132,11 @@ function pinConstraintPreview(
   const type = pin.type;
   switch (type.kind) {
     case "objectRef":
-    case "actorRef":
+    case "actorRef": {
+      const classId =
+        typeof type.classId === "string" ? type.classId.trim() : "";
+      return { kind: type.kind, text: classId, placeholder: true };
+    }
     case "classRef": {
       const classId =
         typeof type.classId === "string" ? type.classId.trim() : "";
@@ -181,6 +190,13 @@ export function pinDefaultPreview(
     if (selectedClass !== undefined) {
       return { kind: "classRef", text: pinDefaultAsString(selectedClass) };
     }
+  }
+  if (
+    pin.name === "target" &&
+    properties.implicitSelf === true &&
+    (pin.type.kind === "objectRef" || pin.type.kind === "actorRef")
+  ) {
+    return { kind: pin.type.kind, text: "Self" };
   }
   const constraint = pinConstraintPreview(pin, pinTypeNames);
   if (constraint) return constraint;

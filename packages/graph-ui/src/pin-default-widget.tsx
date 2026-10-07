@@ -66,7 +66,12 @@ export function PinDefaultPreviewWidget({
     <span
       data-pin-default={preview.kind}
       data-pin-default-field
-      className={FIELD_CLASS}
+      data-pin-placeholder={preview.placeholder ? "true" : undefined}
+      className={cn(
+        FIELD_CLASS,
+        // An empty reference pin: name the expected type without looking filled.
+        preview.placeholder && "border-dashed bg-transparent text-muted-foreground italic",
+      )}
       aria-hidden="true"
     >
       {preview.text}

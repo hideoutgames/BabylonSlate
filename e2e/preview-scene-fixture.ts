@@ -67,7 +67,7 @@ export function previewPhysicsScene(): SerializedScene {
       rotation: [0, 0, -Math.sin(Math.PI / 18), Math.cos(Math.PI / 18)],
       scale: [80, 1, 28],
     },
-    components: [createMeshComponent("ramp-mesh", "box")],
+    components: [createMeshComponent("ramp-mesh", "box", "simple")],
   });
   scene.actors.push(ramp);
   for (let index = 0; index < 8; index += 1) {
@@ -79,7 +79,7 @@ export function previewPhysicsScene(): SerializedScene {
         },
         // Older editor duplication copied these ids verbatim between actors.
         components: [
-          createMeshComponent("shared-sphere-mesh", "sphere"),
+          createMeshComponent("shared-sphere-mesh", "sphere", "simple"),
           {
             id: "shared-body",
             classId: "RigidBodyComponent",

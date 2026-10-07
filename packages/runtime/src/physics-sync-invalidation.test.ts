@@ -419,7 +419,7 @@ it.each([
 ])(
   "keeps collision aligned with the published visual transform under parent scale %j",
   (parentScale) => {
-    const mesh = createMeshComponent("offset-box", "box");
+    const mesh = createMeshComponent("offset-box", "box", "simple");
     mesh.transform!.position = [2, 0, 0];
     let childSlot: number | undefined;
     const runtime = createInProcessRuntime({

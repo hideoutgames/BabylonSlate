@@ -174,7 +174,7 @@ describe("Inspector prefab component details", () => {
     const mesh = next.components?.find(
       (component) => component.id === "prefab-mesh",
     );
-    expect(mesh?.transform?.position[2]).toBe(4);
+    expect(mesh?.transform?.position[2]).toBe(-4);
   });
 
   it("keeps class member details when Prefab Root is selected", () => {

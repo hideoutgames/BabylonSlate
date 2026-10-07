@@ -70,6 +70,7 @@ import {
 import { parseNavMeshActorSettings } from "@babylonslate/navigation";
 import { classParentLookup, classIdFromClassAsset } from "./content-browser-helpers";
 import { physicsConstraintPropertyRows } from "./physics-constraint-property-rows";
+import { fittedColliderShape } from "./fitted-collider";
 import { cablePropertyRows } from "./cable-property-rows";
 import { deformerPropertyRows } from "./deformer-property-rows";
 import { movementPropertyRows } from "./movement-property-rows";
@@ -80,9 +81,14 @@ import { richTextAppearPropertyRows } from "./rich-text-appear-property-rows";
 
 const MESH_KINDS = ["box", "sphere", "cylinder", "plane", "ground"];
 const MOTION_TYPES = ["static", "kinematic", "dynamic"] as const;
-const SHAPE_KINDS_3D = ["box", "sphere", "capsule"] as const;
+const SHAPE_KINDS_3D = ["box", "sphere", "capsule", "cylinder"] as const;
 const SHAPE_KINDS_2D = ["box2d", "circle", "capsule2d"] as const;
 const POINT_CLOUD_KINDS = new Set(["convex", "mesh", "polygon", "chain"]);
+const MIN_RIGID_BODY_MASS = 0.001;
+/** Physics rejects zero-sized primitives; sizes are unsigned. */
+const MIN_COLLIDER_EXTENT = 0.001;
+const colliderExtent = (value: number) =>
+  Math.max(MIN_COLLIDER_EXTENT, Math.abs(value));
 
 export type AssetPickRequest = {
   componentId: string;
@@ -185,6 +191,8 @@ function defaultShape(kind: string): ColliderShape {
       return { kind: "sphere", radius: 0.5 };
     case "capsule":
       return { kind: "capsule", radius: 0.25, halfHeight: 0.5 };
+    case "cylinder":
+      return { kind: "cylinder", radius: 0.5, height: 1 };
     case "box2d":
       return { kind: "box2d", halfExtents: { x: 0.5, y: 0.5 } };
     case "circle":
@@ -310,6 +318,7 @@ function colliderShapeRows(
   component: SerializedComponent,
   update: (property: string, value: unknown) => void,
   physicsWorld: "3d" | "2d",
+  siblings: readonly SerializedComponent[],
 ): PropertyRow[] {
   const parsed = parseColliderProperties(component.properties, physicsWorld, { validation: "authoring" });
   const shape = parsed.shape;
@@ -325,7 +334,8 @@ function colliderShapeRows(
       label: "Shape Kind",
       value: shape.kind,
       options: kinds.map((kind) => ({ value: kind, label: kind })),
-      onChange: (next) => update("shape", defaultShape(next)),
+      onChange: (next) =>
+        update("shape", fittedColliderShape(next, siblings) ?? defaultShape(next)),
     },
   ];
 
@@ -338,7 +348,11 @@ function colliderShapeRows(
       onChange: (value) =>
         update("shape", {
           kind: "box",
-          halfExtents: { x: value[0], y: value[1], z: value[2] },
+          halfExtents: {
+            x: colliderExtent(value[0]),
+            y: colliderExtent(value[1]),
+            z: colliderExtent(value[2]),
+          },
         }),
     });
   } else if (shape.kind === "box2d") {
@@ -351,7 +365,7 @@ function colliderShapeRows(
       onChange: (value) =>
         update("shape", {
           kind: "box2d",
-          halfExtents: { x: value[0], y: value[1] },
+          halfExtents: { x: colliderExtent(value[0]), y: colliderExtent(value[1]) },
         }),
     });
   } else if (shape.kind === "sphere" || shape.kind === "circle") {
@@ -360,7 +374,7 @@ function colliderShapeRows(
       id: rowId(actorId, component.id, "shape-radius"),
       label: "Radius",
       value: shape.radius,
-      min: 0,
+      min: MIN_COLLIDER_EXTENT,
       onChange: (radius) => update("shape", { ...shape, radius }),
     });
   } else if (shape.kind === "capsule" || shape.kind === "capsule2d") {
@@ -370,7 +384,7 @@ function colliderShapeRows(
         id: rowId(actorId, component.id, "shape-radius"),
         label: "Radius",
         value: shape.radius,
-        min: 0,
+        min: MIN_COLLIDER_EXTENT,
         onChange: (radius) => update("shape", { ...shape, radius }),
       },
       {
@@ -380,6 +394,25 @@ function colliderShapeRows(
         value: shape.halfHeight,
         min: 0,
         onChange: (halfHeight) => update("shape", { ...shape, halfHeight }),
+      },
+    );
+  } else if (shape.kind === "cylinder") {
+    rows.push(
+      {
+        kind: "number",
+        id: rowId(actorId, component.id, "shape-radius"),
+        label: "Radius",
+        value: shape.radius,
+        min: MIN_COLLIDER_EXTENT,
+        onChange: (radius) => update("shape", { ...shape, radius }),
+      },
+      {
+        kind: "number",
+        id: rowId(actorId, component.id, "shape-height"),
+        label: "Height",
+        value: shape.height,
+        min: MIN_COLLIDER_EXTENT,
+        onChange: (height) => update("shape", { ...shape, height }),
       },
     );
   } else if (!POINT_CLOUD_KINDS.has(shape.kind)) {
@@ -1142,20 +1175,42 @@ export function componentPropertyRows(
             ]
           : []),
       ];
-    case "RigidBodyComponent":
+    case "RigidBodyComponent": {
+      const motionType =
+        component.properties.motionType === "static" ||
+        component.properties.motionType === "kinematic" ||
+        component.properties.motionType === "dynamic"
+          ? component.properties.motionType
+          : "dynamic";
+      const motionRow: PropertyRow = {
+        kind: "enum",
+        id: rowId(actorId, component.id, "motionType"),
+        label: "Motion Type",
+        value: motionType,
+        options: MOTION_TYPES.map((type) => ({ value: type, label: type })),
+        onChange: (next) => update("motionType", next),
+      };
+      const skip = new Set([
+        "motionType",
+        "mass",
+        "gravityScale",
+        "linearDamping",
+        "angularDamping",
+      ]);
+      // A static body never moves, so mass, gravity and damping do nothing.
+      if (motionType === "static") {
+        return [motionRow, ...genericRows(actorId, component, update, skip)];
+      }
       return [
+        motionRow,
         {
-          kind: "enum",
-          id: rowId(actorId, component.id, "motionType"),
-          label: "Motion Type",
-          value:
-            component.properties.motionType === "static" ||
-            component.properties.motionType === "kinematic" ||
-            component.properties.motionType === "dynamic"
-              ? component.properties.motionType
-              : "dynamic",
-          options: MOTION_TYPES.map((type) => ({ value: type, label: type })),
-          onChange: (next) => update("motionType", next),
+          kind: "number",
+          id: rowId(actorId, component.id, "mass"),
+          label: "Mass",
+          value: asNumber(component.properties.mass, 1),
+          // Physics needs a positive mass; zero or negative would vanish (NaN).
+          min: MIN_RIGID_BODY_MASS,
+          onChange: (next) => update("mass", Math.max(MIN_RIGID_BODY_MASS, next)),
         },
         sliderRow(
           actorId,
@@ -1187,18 +1242,9 @@ export function componentPropertyRows(
           10,
           update,
         ),
-        ...genericRows(
-          actorId,
-          component,
-          update,
-          new Set([
-            "motionType",
-            "gravityScale",
-            "linearDamping",
-            "angularDamping",
-          ]),
-        ),
+        ...genericRows(actorId, component, update, skip),
       ];
+    }
     case "ColliderComponent":
       return [
         ...colliderShapeRows(
@@ -1206,6 +1252,7 @@ export function componentPropertyRows(
           component,
           update,
           context.physicsWorld,
+          context.actorComponents?.(actorId) ?? [],
         ),
         sliderRow(
           actorId,

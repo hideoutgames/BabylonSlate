@@ -4,6 +4,7 @@ import { createDataEntryForDefinition, reconcileDataEntry, validateDataDefinitio
 import { useDocuments } from "./document-context";
 import { useDocumentWorkspace } from "./document-workspace-context";
 import { useDataCatalog } from "../lib/use-data-catalog";
+import { duplicateBaseName } from "../lib/scene-actor-names";
 
 type Placement = "before" | "into" | "after";
 type Migration = ReturnType<typeof reconcileDataEntry>;
@@ -177,7 +178,7 @@ function useDataTreeState() {
       const copies = currentIndex.orderedEntries.filter((entry) => ids.has(entry.id)).map((entry) => ({ source: entry, copy: createDataTreeEntry({ ...entry, id: undefined }) }));
       const remap = new Map(copies.map(({ source: original, copy }) => [original.id, copy.id]));
       for (const { source: original, copy } of copies) {
-        if (original.id === id) { copy.name = uniqueName(currentIndex, source.parentId, `${source.name} Copy`); createdId = copy.id; }
+        if (original.id === id) { copy.name = uniqueName(currentIndex, source.parentId, duplicateBaseName(source.name)); createdId = copy.id; }
         else copy.parentId = remap.get(original.parentId!)!;
       }
       const entries = [...current.entries];

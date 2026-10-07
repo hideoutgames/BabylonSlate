@@ -37,7 +37,7 @@ afterEach(() => {
 function box(id: string, position: [number, number, number]): SerializedActor {
   return createActor(id, id, {
     transform: { ...identitySerializedTransform(), position },
-    components: [createMeshComponent(`${id}-mesh`, "box")],
+    components: [createMeshComponent(`${id}-mesh`, "box", "simple")],
   });
 }
 

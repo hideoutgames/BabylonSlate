@@ -1168,7 +1168,26 @@ type FunctionRow = {
   description?: string;
   pins: GraphClassMemberPin[];
   runtime?: string;
+  /** Stored literal defaults by input pin name for a newly placed node. */
+  defaults?: Record<string, unknown>;
 };
+
+/**
+ * Engine API scalar inputs start at their type default, like catalog nodes:
+ * an unwired Yaw on Convert Input means 0 (and 2D ignores it), not a
+ * missing-input warning.
+ */
+function engineScalarInputDefaults(
+  pins: readonly { name: string; typeId: string; direction: "in" | "out"; container?: string }[],
+): Record<string, unknown> | undefined {
+  const defaults: Record<string, unknown> = {};
+  for (const pin of pins) {
+    if (pin.direction !== "in" || (pin.container && pin.container !== "single")) continue;
+    if (pin.typeId === "float" || pin.typeId === "int") defaults[pin.name] = 0;
+    else if (pin.typeId === "bool") defaults[pin.name] = false;
+  }
+  return Object.keys(defaults).length > 0 ? defaults : undefined;
+}
 
 function functionRows(graph?: SerializedGraph): FunctionRow[] {
   const byName = new Map<string, FunctionRow>();
@@ -1286,6 +1305,7 @@ function callFunctionPaletteNodes(
             ...(pin.container ? { container: pin.container } : {}),
           })),
           runtime: fn.runtime,
+          defaults: engineScalarInputDefaults(fn.pins),
         },
         false,
         false,
@@ -1320,6 +1340,9 @@ function callFunctionPaletteNodes(
     };
     if (staticCall) defaultData.static = true;
     if (fn.runtime) defaultData.runtime = fn.runtime;
+    for (const [pinName, value] of Object.entries(fn.defaults ?? {})) {
+      defaultData[`default:${pinName}`] = value;
+    }
     return {
       id: `functions.call:${classId}:${fn.name}`,
       nodeType: "functions.call",
@@ -2102,14 +2125,37 @@ function markOutOfContext(
   nodes: PaletteNode[],
   options?: ScriptPaletteOptions,
 ): PaletteNode[] {
+  const components = hostComponentAncestry(options);
   return nodes.map((node) => {
     if (node.defaultData?.implicitSelf !== false) return node;
     const owner = node.defaultData.classId;
     if (typeof owner === "string" && callImplicitSelf(owner, options)) {
       return node;
     }
+    // A component the host actor owns (Movement on a character) is reachable
+    // from its graph, so its API stays listed, still with a Target pin.
+    if (typeof owner === "string" && components.has(owner)) return node;
     return { ...node, outOfContext: true };
   });
+}
+
+/** Classes (and their ancestors) of components on the host's own and inherited prefab. */
+function hostComponentAncestry(options?: ScriptPaletteOptions): Set<string> {
+  const result = new Set<string>();
+  const localId = options?.classId;
+  if (!localId) return result;
+  const parentOf =
+    options?.parentOf ?? ((id: string) => engineParentOf(id) ?? null);
+  for (const classId of walkAncestry(localId, parentOf)) {
+    const graph =
+      classId === localId ? options?.graph : options?.otherClassGraphs?.[classId];
+    for (const component of graph?.components ?? []) {
+      for (const ancestor of walkAncestry(component.classId, parentOf)) {
+        result.add(ancestor);
+      }
+    }
+  }
+  return result;
 }
 
 function scriptPaletteInjectorNodes(

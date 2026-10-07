@@ -76,6 +76,34 @@ describe("useContextMenu", () => {
     expect(notPrevented).toBe(false);
   });
 
+  it("keeps the menu closed after a right-button drag (viewport orbit)", () => {
+    const { target, state } = renderHost();
+    const mouse = { pointerType: "mouse" as const, button: 2 };
+    dispatchPointerEvent(target, "pointerdown", { ...ORIGIN, ...mouse, buttons: 2 });
+    dispatchPointerEvent(target, "pointermove", {
+      ...mouse,
+      clientX: ORIGIN.clientX + CONTEXT_MENU_MOVE_TOLERANCE_PX + 20,
+      clientY: ORIGIN.clientY,
+      buttons: 2,
+    });
+    dispatchPointerEvent(target, "pointerup", { ...mouse, clientX: 40, clientY: 5 });
+    const notPrevented = fireEvent.contextMenu(target, { clientX: 40, clientY: 5 });
+    expect(notPrevented).toBe(false);
+    expect(state()).toBe("closed");
+  });
+
+  it("defers a press-time contextmenu to a stationary right-button release", () => {
+    const { target, state } = renderHost();
+    const mouse = { pointerType: "mouse" as const, button: 2 };
+    dispatchPointerEvent(target, "pointerdown", { ...ORIGIN, ...mouse, buttons: 2 });
+    fireEvent.contextMenu(target, { ...ORIGIN, buttons: 2 });
+    expect(state()).toBe("closed");
+    act(() => {
+      dispatchPointerEvent(target, "pointerup", { ...ORIGIN, ...mouse });
+    });
+    expect(state()).toBe("open");
+  });
+
   it("dismisses on a fresh outside press without waiting for a synthesized click", () => {
     const { target, state } = renderHost();
     fireEvent.contextMenu(target, { clientX: 10, clientY: 20 });

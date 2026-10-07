@@ -33,6 +33,7 @@ import { emptyPlayAudioLibrary, type PlayAudioLibrary, type PlayAudioSourceLoade
 import { appendOutputLogLine } from "../lib/output-log-ring";
 import { classIdFromClassAsset } from "../lib/content-browser-helpers";
 import { PlayPrepareDialog } from "../components/play-prepare-dialog";
+import { PlayUnsavedDialog, type PlayUnsavedChoice } from "../components/play-unsaved-dialog";
 import { PlayBlockedDialog } from "../components/play-blocked-dialog";
 import { PlayOverlay } from "../components/play-overlay";
 import { PreparingPreviewDialog, type PreviewPreparePhase } from "../components/preparing-preview-dialog";
@@ -125,7 +126,11 @@ import { createProjectEngineController } from "../lib/project-engine";
 import { waitForSceneLoadingPaint } from "../lib/scene-viewport-load";
 import { ProjectRenderingDialog } from "../components/project-rendering-dialog";
 
-type PlayOptions = { injectFixtureThrow?: boolean };
+type PlayOptions = {
+  injectFixtureThrow?: boolean;
+  /** Answer from the Unsaved Changes prompt; unset means ask when dirty. */
+  saveChoice?: PlayUnsavedChoice;
+};
 
 export type LiveBtState = {
   slotId: number;
@@ -257,6 +262,11 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     DEFAULT_PLAY_DEBUGGER_OVERLAY.pauseOnPlay,
   );
   const [startupAlertOpen, setStartupAlertOpen] = useState(false);
+  const [unsavedPrompt, setUnsavedPrompt] = useState<{
+    dirtyNames: string[];
+    previewBuild: boolean;
+    options?: PlayOptions;
+  } | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const previewOpenRef = useRef(false);
   const initialPreviewTarget = useMemo(
@@ -830,7 +840,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     };
   }, [appendLog, closePreview, sendPreviewPack]);
 
-  const requestPreviewBuild = useCallback(async () => {
+  const requestPreviewBuild = useCallback(async (saveConfirmed = false) => {
     if (playing || preparingRef.current) return;
     // Read at call time (see playRequestInputsRef); shadows the render values.
     const {
@@ -859,6 +869,16 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     }
     setPreviewPreparationError(null);
     const needsSave = dirtyDocuments.length > 0 || projectDirty;
+    if (needsSave && !saveConfirmed) {
+      setUnsavedPrompt({
+        dirtyNames: [
+          ...dirtyDocuments.map((doc) => doc.ref.label),
+          ...(projectDirty ? ["Project Settings"] : []),
+        ],
+        previewBuild: true,
+      });
+      return;
+    }
     if (needsSave && migrationPending.length > 0) {
       setPlayAwaitingMigration(true);
       return;
@@ -955,7 +975,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const requestPlay = useCallback(
     async (options?: PlayOptions) => {
       if (previewBuild) {
-        await requestPreviewBuild();
+        await requestPreviewBuild(options?.saveChoice === "save");
         return;
       }
       if (playing || preparingRef.current) return;
@@ -980,8 +1000,10 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       }
       pendingPlayOptionsRef.current = options;
       const inject = Boolean(options?.injectFixtureThrow);
+      // Play Without Saving runs the open in-memory documents as they are.
+      const skipSave = options?.saveChoice === "skip";
       const plan = planPlayPreviewPrepare({
-        dirtyDocuments: [
+        dirtyDocuments: skipSave ? [] : [
           ...dirtyDocuments.map((doc) => ({ label: doc.ref.label })),
           ...(projectDirty ? [{ label: "Project Settings" }] : []),
         ],
@@ -989,6 +1011,15 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         migrationPending: migrationPending.length > 0,
       });
 
+      const dirtyNames = plan.action === "prepare" ? plan.dirtyNames : [
+        ...dirtyDocuments.map((doc) => doc.ref.label),
+        ...(projectDirty ? ["Project Settings"] : []),
+      ];
+      // Ask before writing anything (including a migrate-on-save) to disk.
+      if (!skipSave && options?.saveChoice !== "save" && dirtyNames.length > 0) {
+        setUnsavedPrompt({ dirtyNames, previewBuild: false, options });
+        return;
+      }
       if (plan.action === "migrate") {
         setPlayAwaitingMigration(true);
         return;
@@ -1310,6 +1341,23 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+        <PlayUnsavedDialog
+          open={unsavedPrompt !== null}
+          dirtyNames={unsavedPrompt?.dirtyNames ?? []}
+          previewBuild={unsavedPrompt?.previewBuild ?? false}
+          onCancel={() => setUnsavedPrompt(null)}
+          onChoose={(saveChoice) => {
+            const prompt = unsavedPrompt;
+            setUnsavedPrompt(null);
+            if (!prompt) return;
+            if (prompt.previewBuild) {
+              // A migrate-on-save approval resumes through requestPlay.
+              pendingPlayOptionsRef.current = { saveChoice };
+              void requestPreviewBuild(saveChoice === "save");
+            }
+            else void requestPlay({ ...prompt.options, saveChoice });
+          }}
+        />
         {prepareState ? (
           <PlayPrepareDialog
             open
