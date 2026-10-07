@@ -11,6 +11,14 @@ Shared surface for the headless runtime object graph (engineplan §5, §16). Imp
 - Serialized offset and bound coordinates clamp to ±10¹⁰ before Float32 upload, matching dynamic geometry's envelope. Set Control Point Offset rejects values outside that envelope.
 - Deformation follows model animation and material World Position Offset in the renderer. This is visual geometry: physics, navigation and CPU picking keep the original shape. GPU cost scales with affected vertices and rendering passes; the control limit is not a device performance guarantee.
 
+## Prefab assets
+
+- **Prefab** (`.prefab.babasset`, document kind `prefab`) is a logic-free alternative to an Actor Class: its payload is only `{ components }` (`SerializedPrefab`, `normalizePrefab`). No graph, events, variables, functions, parent class or Tick.
+- The editor opens it with **Prefab**, **Components** and **Inspector** windows only. Scripted project components are not offered in Add Component. The header carries the components so closed Prefabs can be placed and synced without loading the body.
+- New Asset lists it under **World**; Place Actors lists Prefab assets beside Classes. A placed Prefab is a plain `Actor` with baked components (`sourceId` per row) and `SerializedActor.prefabGuid`.
+- Prefab edits, undo and redo sync placed instances like Class prefabs, keyed by `prefabAssetTemplateKey(guid)`; instance overrides and suppressed rows are kept.
+- The runtime ignores `prefabGuid` and never loads the Prefab asset: it is a non-required editor dependency of the scene, and there is no class, script or tick hook for the instance. Graph **Spawn Actor** cannot spawn Prefabs.
+
 ## Package API (`@babylonslate/object-model`)
 
 | Export | Role |
@@ -54,6 +62,8 @@ Never iterate a `Map` for tick or snapshot order. Spawn and attach use stable ar
 `WorldOptions.componentHooksFor` binds script lifecycle hooks to both serialized and dynamically created components. Component creation is deferred until its owner enters the world, runs once, and is skipped for cancelled preparation. In Play, component callbacks use the owning Scene or SceneLayer readiness gate: Begin Play waits for its valid presented frame, retained ready layers continue ticking, and cancelled components never run Begin Play or Destroyed. Adding a component to a ready live Actor begins it immediately. ActorComponent subclasses expose Begin Play, Tick, and Destroyed in Class graphs; Self is the attached component itself.
 
 `WorldOptions.canTickScene` can suspend the SceneSubsystem, actor, component, physics and post-physics phases during cooperative scene preparation while Game Instance and GameSubsystems continue ticking. It is rechecked after Game Instance and between subsystems/actors/components, so a scene switch initiated during the tick stops the remaining incomplete scene work immediately. `createActorFromSerialized` builds one unspawned actor per document row, so preparation can yield between rows.
+
+Play binds a per-frame `onTick` only where a script can run: scene actors get one only when their class lineage has scripts, and engine component classes (`isLockedEngineClassId`) never get one. Logic-free actors and engine components therefore cost no script lookup per frame; project component classes keep a live lookup so script reloads still reach them.
 
 `WorldOptions.canTickActor` adds an independent owner gate for world actors and each SceneLayer. The World rechecks it between actor and component callbacks, so a newly blocked owner cannot continue the same tick while another ready layer remains active. It does not defer structural spawning or replace the driver's separate physics and authored creation-callback readiness policy.
 
