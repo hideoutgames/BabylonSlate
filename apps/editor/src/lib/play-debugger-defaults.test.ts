@@ -7,29 +7,32 @@ import {
 } from "./play-debugger-defaults";
 
 describe("playDebuggerOverlayFromSettings", () => {
-  it("keeps overlay chrome on when saved defaults omit the new fields", () => {
+  it("shows only Stats when saved defaults omit the overlay fields", () => {
     expect(
       playDebuggerOverlayFromSettings({ pauseOnPlay: true }),
     ).toEqual({
       overlayStats: true,
-      overlayConsole: true,
-      overlayInspector: true,
+      overlayConsole: false,
+      overlayInspector: false,
+      overlayProfiler: false,
       pauseOnPlay: true,
     });
   });
 
-  it("honors explicit overlay chrome off", () => {
+  it("honors explicit overlay chrome choices", () => {
     expect(
       playDebuggerOverlayFromSettings({
         overlayStats: false,
-        overlayConsole: false,
-        overlayInspector: false,
+        overlayConsole: true,
+        overlayInspector: true,
+        overlayProfiler: true,
         pauseOnPlay: false,
       }),
     ).toEqual({
       overlayStats: false,
-      overlayConsole: false,
-      overlayInspector: false,
+      overlayConsole: true,
+      overlayInspector: true,
+      overlayProfiler: true,
       pauseOnPlay: false,
     });
   });

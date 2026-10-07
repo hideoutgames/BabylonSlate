@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import {
   ActivityIcon,
+  CameraIcon,
+  GaugeIcon,
   ListTreeIcon,
   PauseIcon,
   PlayIcon,
@@ -19,6 +21,7 @@ export type PlayOverlayChromeProps = {
   showStats?: boolean;
   showConsole?: boolean;
   showInspector?: boolean;
+  showProfiler?: boolean;
   onPauseToggle: () => void;
   pausePending?: boolean;
   simulation?: { keepChanges?: boolean; inputMode: "game" | "edit"; inputPending: boolean; onInputModeChange: (mode: "game" | "edit") => void };
@@ -31,7 +34,7 @@ export type PlayOverlayChromeProps = {
   extras?: ReactNode;
 };
 
-/** Labeled Play chrome: Pause, Stats, Console, Inspector, Stop. Stats dump stays collapsed. */
+/** Labeled Play chrome: Profiler, Pause, Stats, Console, Inspector, Stop. Stats stay collapsed until toggled. */
 export function PlayOverlayChrome({
   paused,
   statsOpen,
@@ -39,6 +42,7 @@ export function PlayOverlayChrome({
   showStats = true,
   showConsole = true,
   showInspector = true,
+  showProfiler = true,
   onPauseToggle,
   pausePending = false,
   simulation,
@@ -60,9 +64,15 @@ export function PlayOverlayChrome({
         {extras}
       </div>
       <div className="pointer-events-auto flex flex-wrap items-center justify-end gap-2">
-        {!simulation && diagnostics ? <>
-          <Button size="touch" variant="secondary" onClick={() => diagnostics.open("summary")}>Profiler</Button>
-          <Button size="touch" variant="secondary" onClick={() => void diagnostics.captureFrame()}>Capture Frame</Button>
+        {!simulation && showProfiler && diagnostics ? <>
+          <Button size="touch" variant="secondary" data-testid="play-profiler-open" onClick={() => diagnostics.open("summary")}>
+            <GaugeIcon data-icon="inline-start" />
+            Profiler
+          </Button>
+          <Button size="touch" variant="secondary" data-testid="play-capture-frame" onClick={() => void diagnostics.captureFrame()}>
+            <CameraIcon data-icon="inline-start" />
+            Capture Frame
+          </Button>
         </> : null}
         {simulation ? <>
           <span className="text-xs font-medium">Simulation · {simulation.keepChanges ? "Keep Changes On Stop" : "Discard On Stop"}</span>

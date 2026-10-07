@@ -16,6 +16,26 @@ export async function waitForPlayOverlay(page: Page): Promise<void> {
   });
 }
 
+/**
+ * Turn on Debug-menu overlay buttons beyond the default Stats before Play or
+ * Preview Build. The choice persists in Engine Settings for the session.
+ */
+export async function showOverlayButtons(
+  page: Page,
+  buttons: readonly ("console" | "inspector" | "profiler")[],
+): Promise<void> {
+  const trigger = page.getByTestId("debug-menu");
+  for (const button of buttons) {
+    const item = page.getByTestId(`overlay-${button}-toggle`);
+    if (!(await item.isVisible())) await trigger.click();
+    if ((await item.getAttribute("aria-checked")) !== "true") await item.click();
+    if (!(await item.isVisible())) await trigger.click();
+    await expect(item).toHaveAttribute("aria-checked", "true");
+  }
+  if (await page.getByTestId(`overlay-${buttons[0]}-toggle`).isVisible())
+    await page.keyboard.press("Escape");
+}
+
 /** Click Play and wait until the overlay is up, including a prepare dialog. */
 export async function clickPlayAndWaitForOverlay(page: Page): Promise<void> {
   await acceptUnsavedPlayPrompts(page);

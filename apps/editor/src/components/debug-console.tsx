@@ -18,7 +18,6 @@ import { SelectableText } from "@babylonslate/editor-kit";
 import { Button, buttonVariants } from "@babylonslate/ui/components/button";
 import { Input } from "@babylonslate/ui/components/input";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
-import { Separator } from "@babylonslate/ui/components/separator";
 import {
   Sheet,
   SheetClose,
@@ -27,7 +26,7 @@ import {
   SheetTitle,
 } from "@babylonslate/ui/components/sheet";
 import { cn } from "@babylonslate/ui/lib/utils";
-import { ChevronRightIcon, TerminalIcon, XIcon } from "lucide-react";
+import { XIcon } from "lucide-react";
 import {
   mergeDebugConsoleTranscript,
   type DebugConsoleTranscriptEntry,
@@ -60,6 +59,9 @@ const TRANSCRIPT_LIMIT = 500;
 
 type TranscriptEntry = DebugConsoleTranscriptEntry;
 
+const isWarning = (severity: string) =>
+  severity === "warning" || severity === "warn";
+
 /** Rows keep identity across renders, so draft, stats, and inspect polls skip them. */
 const TranscriptRow = memo(function TranscriptRow({
   entry,
@@ -72,11 +74,13 @@ const TranscriptRow = memo(function TranscriptRow({
         "whitespace-pre-wrap break-words",
         entry.severity === "error"
           ? "text-destructive"
-          : entry.severity === "info"
-            ? "text-muted-foreground"
-            : "text-foreground",
-        (entry.severity === "warning" || entry.severity === "warn") &&
-          "font-semibold",
+          : isWarning(entry.severity)
+            ? "text-(--warning)"
+            : entry.severity === "command"
+              ? "text-foreground"
+              : entry.severity === "info"
+                ? "text-muted-foreground"
+                : "text-foreground/85",
       )}
       data-testid={entry.testId}
       data-severity={entry.severity}
@@ -144,6 +148,15 @@ export function DebugConsole({
       mergeDebugConsoleTranscript(entries, logs, clearedLogId, TRANSCRIPT_LIMIT),
     [entries, logs, clearedLogId],
   );
+  const counts = useMemo(() => {
+    let errors = 0;
+    let warnings = 0;
+    for (const entry of transcript) {
+      if (entry.severity === "error") errors++;
+      else if (isWarning(entry.severity)) warnings++;
+    }
+    return { errors, warnings };
+  }, [transcript]);
 
   useEffect(() => {
     if (open && followOutputRef.current)
@@ -287,7 +300,7 @@ export function DebugConsole({
         side="bottom"
         showCloseButton={false}
         showOverlay={false}
-        className="w-full gap-0 overflow-hidden rounded-none shadow-none data-[side=bottom]:h-[min(58dvh,38rem)]"
+        className="w-full gap-0 overflow-hidden rounded-none border-t-border bg-background/92 font-mono text-xs shadow-none backdrop-blur-sm data-[side=bottom]:h-[min(40dvh,22rem)] pointer-coarse:data-[side=bottom]:h-[min(50dvh,26rem)]"
         data-testid="debug-console"
         initialFocus={(interaction) =>
           interaction === "keyboard" ? inputRef.current : bodyRef.current
@@ -295,17 +308,31 @@ export function DebugConsole({
         onKeyDown={(event) => event.stopPropagation()}
         onKeyUp={(event) => event.stopPropagation()}
       >
-        <SheetHeader className="flex-row items-center justify-between gap-2 px-2 py-1 pr-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <TerminalIcon className="size-4 shrink-0 text-muted-foreground" />
-            <SheetTitle>Console</SheetTitle>
-          </div>
-          <div className="flex shrink-0 items-center gap-1">
+        <SheetHeader className="h-6 flex-row items-center gap-3 border-b bg-panel-header/80 py-0 pr-0.5 pl-2 pointer-coarse:h-11">
+          <SheetTitle className="font-mono text-xs font-medium text-muted-foreground">
+            Console
+          </SheetTitle>
+          <span className="text-[11px] text-muted-foreground/70 tabular-nums">
+            {transcript.length} {transcript.length === 1 ? "line" : "lines"}
+            {counts.errors ? (
+              <span className="text-destructive">
+                {" · "}
+                {counts.errors} {counts.errors === 1 ? "error" : "errors"}
+              </span>
+            ) : null}
+            {counts.warnings ? (
+              <span className="text-(--warning)">
+                {" · "}
+                {counts.warnings} {counts.warnings === 1 ? "warning" : "warnings"}
+              </span>
+            ) : null}
+          </span>
+          <div className="ml-auto flex shrink-0 items-center">
             <Button
               type="button"
-              size="sm"
+              size="xs"
               variant="ghost"
-              className="pointer-coarse:min-h-11"
+              className="h-5 font-sans text-[11px] text-muted-foreground pointer-coarse:min-h-11"
               data-testid="debug-console-clear"
               onClick={clearTranscript}
             >
@@ -313,9 +340,9 @@ export function DebugConsole({
             </Button>
             <Button
               type="button"
-              size="sm"
+              size="xs"
               variant="ghost"
-              className="pointer-coarse:min-h-11"
+              className="h-5 font-sans text-[11px] text-muted-foreground pointer-coarse:min-h-11"
               data-testid="debug-console-copy"
               onClick={() => void copyTranscript()}
             >
@@ -325,9 +352,10 @@ export function DebugConsole({
               render={
                 <Button
                   variant="ghost"
-                  size="icon-sm"
-                  className="pointer-coarse:size-11"
+                  size="icon-xs"
+                  className="size-5 text-muted-foreground pointer-coarse:size-11"
                   aria-label="Close"
+                  title="Close (Esc)"
                 />
               }
             >
@@ -335,42 +363,40 @@ export function DebugConsole({
             </SheetClose>
           </div>
         </SheetHeader>
-        <Separator />
-        <ScrollArea
-          className="min-h-0 flex-1 bg-background"
-          onScroll={(event) => {
-            const viewport = event.target as HTMLElement;
-            followOutputRef.current =
-              viewport.scrollHeight -
-                viewport.scrollTop -
-                viewport.clientHeight <
-              48;
-          }}
-        >
-          <div
-            ref={bodyRef}
-            tabIndex={-1}
-            className="flex min-h-full flex-col gap-0.5 px-3 py-2 font-mono text-xs outline-none"
-            data-testid="debug-console-transcript"
-            role="log"
-            aria-label="Play Console Output"
-            aria-live="polite"
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <ScrollArea
+            className="min-h-0 flex-1"
+            onScroll={(event) => {
+              const viewport = event.target as HTMLElement;
+              followOutputRef.current =
+                viewport.scrollHeight -
+                  viewport.scrollTop -
+                  viewport.clientHeight <
+                48;
+            }}
           >
-            {transcript.map((entry) => (
-              <TranscriptRow key={entry.id} entry={entry} />
-            ))}
-            <div ref={transcriptEndRef} />
-          </div>
-        </ScrollArea>
-        {suggestions.length > 0 ? (
-          <>
-            <Separator />
+            <div
+              ref={bodyRef}
+              tabIndex={-1}
+              className="flex min-h-full flex-col justify-end px-2 py-1 leading-[18px] outline-none"
+              data-testid="debug-console-transcript"
+              role="log"
+              aria-label="Play Console Output"
+              aria-live="polite"
+            >
+              {transcript.map((entry) => (
+                <TranscriptRow key={entry.id} entry={entry} />
+              ))}
+              <div ref={transcriptEndRef} />
+            </div>
+          </ScrollArea>
+          {suggestions.length > 0 ? (
             <div
               ref={suggestionsRef}
               id={listId}
               role="listbox"
               aria-label="Console Suggestions"
-              className="max-h-[min(24dvh,12rem)] shrink-0 overflow-y-auto overscroll-y-contain touch-pan-y"
+              className="absolute bottom-0 left-6 z-10 max-h-[min(24dvh,12rem)] w-[min(44rem,calc(100%-2rem))] overflow-y-auto overscroll-y-contain border bg-popover py-0.5 shadow-md touch-pan-y"
               data-testid="debug-console-suggestions"
             >
               {suggestions.map((name, index) => {
@@ -383,41 +409,42 @@ export function DebugConsole({
                     tabIndex={-1}
                     aria-selected={index === selectedIndex}
                     className={cn(
-                      buttonVariants({ variant: "ghost", size: "sm" }),
-                      "flex h-auto min-h-8 w-full justify-start gap-3 rounded-none px-3 py-1 text-left touch-pan-y pointer-coarse:min-h-11",
-                      index === selectedIndex && "bg-secondary",
+                      buttonVariants({ variant: "ghost", size: "xs" }),
+                      "flex h-auto min-h-5 w-full justify-start gap-3 rounded-none px-2 py-0 text-left font-mono text-xs font-normal touch-pan-y pointer-coarse:min-h-11",
+                      index === selectedIndex && "bg-accent text-accent-foreground",
                     )}
                     data-testid={`debug-console-suggest-${name}`}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => applySuggestion(name)}
                   >
-                    <span className="shrink-0 font-mono">{name}</span>
+                    <span className="shrink-0">{name}</span>
                     {command ? (
                       <span className="min-w-0 truncate text-muted-foreground">
                         {commandUsage(command)}
-                        {command.parameters.length ? " · " : ""}
-                        {command.description}
+                        {command.parameters.length ? "  " : ""}
+                        <span className="font-sans">— {command.description}</span>
                       </span>
                     ) : null}
                   </div>
                 );
               })}
             </div>
-          </>
-        ) : null}
-        <Separator />
+          ) : null}
+        </div>
         <form
-          className="flex shrink-0 items-center gap-2 px-2 py-1.5"
+          className="flex h-7 shrink-0 items-center gap-1 border-t pr-0.5 pl-2 pointer-coarse:h-12"
           onSubmit={onSubmit}
         >
-          <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground" />
+          <span aria-hidden="true" className="shrink-0 text-muted-foreground">
+            &gt;
+          </span>
           <Input
             ref={inputRef}
-            className="min-w-0 flex-1 font-mono pointer-coarse:min-h-11"
+            className="h-6 min-w-0 flex-1 rounded-none border-0 bg-transparent px-1 font-mono text-xs shadow-none focus-visible:ring-0 dark:bg-transparent pointer-coarse:min-h-11"
             value={draft}
             onChange={(event) => updateDraft(event.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="Enter A Command…"
+            placeholder="Tab completes · ↑ ↓ history · Esc closes"
             aria-label="Console command"
             role="combobox"
             aria-autocomplete="list"
@@ -434,18 +461,15 @@ export function DebugConsole({
           />
           <Button
             type="submit"
-            size="sm"
-            className="pointer-coarse:min-h-11"
+            size="xs"
+            variant="ghost"
+            className="h-5 font-sans text-[11px] text-muted-foreground pointer-coarse:min-h-11"
             disabled={executing || !draft.trim()}
             data-testid="debug-console-submit"
           >
             Run
           </Button>
         </form>
-        <div className="flex shrink-0 items-center justify-between gap-2 px-3 pb-1 text-xs text-muted-foreground pointer-coarse:hidden">
-          <span>↑ ↓ Select / History · Tab Complete · Enter Run</span>
-          <span>Esc Close</span>
-        </div>
         <div
           className="hidden shrink-0 flex-wrap gap-1 px-2 pb-1 pointer-coarse:flex"
           data-testid="debug-console-accessory"

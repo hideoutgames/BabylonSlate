@@ -1,12 +1,9 @@
-import { useEffect, useRef, useState } from "react";
-import { isTickOverBudget } from "@babylonslate/debugger";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { isTickOverBudget, STAT_GROUP_LABELS, TICK_BUDGET_MS, type StatGroup } from "@babylonslate/debugger";
 import type { HostMemoryStats } from "@babylonslate/vfs";
 import { drawCallCeilingWarning, geometryByteCeilingWarning, type RenderDiagnostics } from "@babylonslate/render";
 import { SelectableText } from "@babylonslate/editor-kit";
-import { Badge } from "@babylonslate/ui/components/badge";
 import { cn } from "@babylonslate/ui/lib/utils";
-
-export type StatsHudHighlight = "unit" | "memory" | "draws" | "threads";
 
 export type StatsHudProps = {
   fps: number;
@@ -22,13 +19,14 @@ export type StatsHudProps = {
   draws?: number;
   rendering?: RenderDiagnostics;
   bridgeMessagesPerSec?: number;
-  highlight?: StatsHudHighlight | null;
+  /** Optional rows enabled with `stat <group>`, in display order. */
+  groups?: readonly StatGroup[];
 };
 
 type Sample = { scriptMs: number; physicsMs: number };
 
 const SAMPLE_MS = 200;
-const SAMPLE_COUNT = 30;
+const SAMPLE_COUNT = 40;
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -36,7 +34,33 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** Play/export stats strip sampled at ~5 Hz, including the tick-budget flag. */
+function Metric({ label, value, testId, tone, data }: {
+  label?: string;
+  value: ReactNode;
+  testId?: string;
+  tone?: "warn";
+  data?: Record<`data-${string}`, string>;
+}) {
+  return (
+    <span data-testid={testId} className={cn("whitespace-nowrap", tone === "warn" && "text-destructive")} {...data}>
+      <SelectableText>
+        {label ? <span className="text-muted-foreground">{label} </span> : null}
+        {value}
+      </SelectableText>
+    </span>
+  );
+}
+
+function GroupRow({ group, children }: { group: StatGroup; children: ReactNode }) {
+  return (
+    <div className="flex items-baseline gap-3" data-testid={`stats-hud-group-${group}`}>
+      <span className="w-14 shrink-0 text-muted-foreground">{STAT_GROUP_LABELS[group]}</span>
+      <div className="flex min-w-0 flex-wrap items-baseline gap-x-3">{children}</div>
+    </div>
+  );
+}
+
+/** Play Stats: FPS and tick timings, plus rows the `stat` console commands add. */
 export function StatsHud({
   fps,
   scriptMs,
@@ -50,13 +74,15 @@ export function StatsHud({
   draws,
   rendering,
   bridgeMessagesPerSec,
-  highlight = null,
+  groups = [],
 }: StatsHudProps) {
   const latest = useRef({ scriptMs, physicsMs });
   latest.current = { scriptMs, physicsMs };
   const [samples, setSamples] = useState<Sample[]>([{ scriptMs, physicsMs }]);
+  const showUnit = groups.includes("unit");
 
   useEffect(() => {
+    if (!showUnit) return;
     const id = window.setInterval(() => {
       setSamples((prev) => {
         const next = [...prev, latest.current];
@@ -64,182 +90,84 @@ export function StatsHud({
       });
     }, SAMPLE_MS);
     return () => window.clearInterval(id);
-  }, []);
+  }, [showUnit]);
 
   const overBudget = isTickOverBudget(scriptMs, physicsMs);
-  const drawsHigh =
-    draws != null ? drawCallCeilingWarning(draws) !== null : false;
-  const geoHigh =
-    geometryBytes != null
-      ? geometryByteCeilingWarning(geometryBytes) !== null
-      : false;
+  const drawsHigh = draws != null && drawCallCeilingWarning(draws) !== null;
+  const geoHigh = geometryBytes != null && geometryByteCeilingWarning(geometryBytes) !== null;
+  const memoryRows = [
+    memoryBytes != null ? <Metric key="mem" label="mem" value={formatBytes(memoryBytes)} testId="stats-hud-memory" /> : null,
+    hostMemory?.jsHeapBytes != null ? <Metric key="js" label="js" value={formatBytes(hostMemory.jsHeapBytes)} testId="stats-hud-js-heap" /> : null,
+    hostMemory?.appFootprintBytes != null ? <Metric key="app" label="app" value={formatBytes(hostMemory.appFootprintBytes)} testId="stats-hud-app-footprint" /> : null,
+    hostMemory?.appAvailableBytes != null ? <Metric key="headroom" label="headroom" value={formatBytes(hostMemory.appAvailableBytes)} testId="stats-hud-app-headroom" /> : null,
+    hostMemory?.systemAvailableBytes != null ? <Metric key="free" label="free" value={formatBytes(hostMemory.systemAvailableBytes)} testId="stats-hud-system-memory" /> : null,
+    geometryBytes != null ? <Metric key="geo" label="geo" value={formatBytes(geometryBytes)} testId="stats-hud-geo" tone={geoHigh ? "warn" : undefined} /> : null,
+  ].filter(Boolean);
 
   return (
     <div
-      className="pointer-events-none flex flex-col gap-1 rounded-md bg-background/80 px-2 py-1 text-xs text-muted-foreground"
+      className="pointer-events-none inline-flex max-w-full flex-col gap-0.5 rounded-sm bg-background/75 px-2 py-1 font-mono text-[11px] leading-4 text-foreground backdrop-blur-sm"
       data-testid="stats-hud"
-      data-highlight={highlight ?? ""}
+      data-groups={groups.join(" ")}
     >
-      <div className="flex flex-wrap items-center gap-2">
-        {rendering ? <span data-testid="stats-hud-rendering"><SelectableText>
-          {`render CPU ${rendering.cpuMs.toFixed(2)} ms · engine GPU ${rendering.gpuMs === null ? rendering.gpuStatus : `${rendering.gpuMs.toFixed(2)} ms`} · ${rendering.width}×${rendering.height} · ${rendering.samples} sample · shadows ${rendering.shadowDrawCalls} draws / ${Math.round(rendering.shadowTriangles)} triangles / ${rendering.shadowPasses} allocated passes / ~${formatBytes(rendering.shadowMapBytes)}`}
-          {rendering.readbackMs === null ? "" : ` · readback + copy ${rendering.readbackMs.toFixed(2)} ms`}
-          {rendering.autoLod.meshes ? ` · LOD ${rendering.autoLod.reduced}/${rendering.autoLod.meshes} meshes reduced, ${Math.round(rendering.autoLod.trianglesSaved)} triangles saved` : ""}
-          {rendering.qualityLimits.length ? ` · ${rendering.qualityLimits.join(", ")}` : ""}
-        </SelectableText></span> : null}
-        <span
-          data-testid="play-fps"
-          data-fps={String(fps)}
-          className={cn(highlight === "threads" && "text-foreground ring-1 ring-ring")}
-        >
-          <SelectableText>{fps} fps</SelectableText>
+      <div className="flex flex-wrap items-baseline gap-x-3">
+        <span data-testid="play-fps" data-fps={String(fps)} className="whitespace-nowrap">
+          <SelectableText>
+            <span className="text-xs font-semibold">{fps}</span> fps
+          </SelectableText>
         </span>
-        <span
-          data-testid="play-script-ms"
-          data-ms={String(scriptMs)}
-          className={cn(
-            (highlight === "unit" || highlight === "threads") &&
-              "text-foreground ring-1 ring-ring",
-          )}
-        >
-          <SelectableText>script {scriptMs.toFixed(2)} ms</SelectableText>
-        </span>
-        <span
-          data-testid="play-physics-ms"
-          data-ms={String(physicsMs)}
-          className={cn(
-            (highlight === "unit" || highlight === "threads") &&
-              "text-foreground ring-1 ring-ring",
-          )}
-        >
-          <SelectableText>physics {physicsMs.toFixed(2)} ms</SelectableText>
-        </span>
-        {publishMs != null ? (
-          <span
-            data-testid="play-publish-ms"
-            data-ms={String(publishMs)}
-            className={cn(
-              (highlight === "unit" || highlight === "threads") &&
-                "text-foreground ring-1 ring-ring",
-            )}
-          >
-            <SelectableText>publish {publishMs.toFixed(2)} ms</SelectableText>
-          </span>
-        ) : null}
-        {overBudget ? (
-          <Badge
-            variant="destructive"
-            data-testid="stats-hud-over-budget"
-          >
-            Over Budget
-          </Badge>
-        ) : null}
-        {memoryBytes != null ? (
-          <span
-            data-testid="stats-hud-memory"
-            className={cn(highlight === "memory" && "text-foreground ring-1 ring-ring")}
-          >
-            <SelectableText>mem {formatBytes(memoryBytes)}</SelectableText>
-          </span>
-        ) : null}
-        {hostMemory?.jsHeapBytes != null ? (
-          <span
-            data-testid="stats-hud-js-heap"
-            className={cn(highlight === "memory" && "text-foreground ring-1 ring-ring")}
-          >
-            <SelectableText>js {formatBytes(hostMemory.jsHeapBytes)}</SelectableText>
-          </span>
-        ) : null}
-        {hostMemory?.appFootprintBytes != null ? (
-          <span
-            data-testid="stats-hud-app-footprint"
-            className={cn(highlight === "memory" && "text-foreground ring-1 ring-ring")}
-          >
-            <SelectableText>app {formatBytes(hostMemory.appFootprintBytes)}</SelectableText>
-          </span>
-        ) : null}
-        {hostMemory?.appAvailableBytes != null ? (
-          <span
-            data-testid="stats-hud-app-headroom"
-            className={cn(highlight === "memory" && "text-foreground ring-1 ring-ring")}
-          >
-            <SelectableText>headroom {formatBytes(hostMemory.appAvailableBytes)}</SelectableText>
-          </span>
-        ) : null}
-        {hostMemory?.systemAvailableBytes != null ? (
-          <span
-            data-testid="stats-hud-system-memory"
-            className={cn(highlight === "memory" && "text-foreground ring-1 ring-ring")}
-          >
-            <SelectableText>free {formatBytes(hostMemory.systemAvailableBytes)}</SelectableText>
-          </span>
-        ) : null}
-        {geometryBytes != null ? (
-          <span data-testid="stats-hud-geo">
-            <SelectableText>geo {formatBytes(geometryBytes)}</SelectableText>
-          </span>
-        ) : null}
-        {geoHigh ? (
-          <Badge
-            variant="destructive"
-            data-testid="stats-hud-geo-warn"
-          >
-            Geo High
-          </Badge>
-        ) : null}
-        {meshCount != null ? (
-          <span data-testid="stats-hud-meshes">
-            <SelectableText>meshes {meshCount}</SelectableText>
-          </span>
-        ) : null}
-        {textureCount != null ? (
-          <span data-testid="stats-hud-textures">
-            <SelectableText>tex {textureCount}</SelectableText>
-          </span>
-        ) : null}
-        {draws != null ? (
-          <span
-            data-testid="stats-hud-draws"
-            data-draws={String(draws)}
-            className={cn(highlight === "draws" && "text-foreground ring-1 ring-ring")}
-          >
-            <SelectableText>draws {draws}</SelectableText>
-          </span>
-        ) : null}
-        {drawsHigh ? (
-          <Badge
-            variant="destructive"
-            data-testid="stats-hud-draw-warn"
-          >
-            Draws High
-          </Badge>
-        ) : null}
-        {bridgeMessagesPerSec != null ? (
-          <span data-testid="stats-hud-bridge">
-            <SelectableText>bridge {bridgeMessagesPerSec}/s</SelectableText>
-          </span>
-        ) : null}
+        <Metric value={fps > 0 ? `${(1000 / fps).toFixed(1)} ms` : "— ms"} testId="play-frame-ms" />
+        <Metric label="script" value={`${scriptMs.toFixed(2)} ms`} testId="play-script-ms" data={{ "data-ms": String(scriptMs) }} tone={overBudget ? "warn" : undefined} />
+        <Metric label="physics" value={`${physicsMs.toFixed(2)} ms`} testId="play-physics-ms" data={{ "data-ms": String(physicsMs) }} tone={overBudget ? "warn" : undefined} />
+        {overBudget ? <span data-testid="stats-hud-over-budget" className="whitespace-nowrap text-destructive">over {TICK_BUDGET_MS} ms budget</span> : null}
       </div>
-      <div
-        className="flex h-6 items-end gap-px"
-        data-testid="stats-hud-graph"
-        aria-hidden
-      >
-        {samples.map((sample, index) => {
-          const total = sample.scriptMs + sample.physicsMs;
-          const height = Math.max(2, Math.min(100, (total / 8) * 100));
-          return (
-            <span
-              key={index}
-              className={cn(
-                "w-1 rounded-sm",
-                total > 8 ? "bg-destructive" : "bg-muted-foreground",
-              )}
-              style={{ height: `${height}%` }}
-            />
-          );
-        })}
-      </div>
+      {showUnit ? (
+        <>
+          {/* Tick history on its own line above the Unit row, aligned with the values. */}
+          <div className="flex h-5 items-end gap-px pl-[4.25rem]" data-testid="stats-hud-graph" aria-hidden>
+            {samples.map((sample, index) => {
+              const total = sample.scriptMs + sample.physicsMs;
+              return (
+                <span
+                  key={index}
+                  className={cn("w-0.5", total > TICK_BUDGET_MS ? "bg-destructive" : "bg-muted-foreground")}
+                  style={{ height: `${Math.max(8, Math.min(100, (total / TICK_BUDGET_MS) * 100))}%` }}
+                />
+              );
+            })}
+          </div>
+          <GroupRow group="unit">
+            <Metric label="tick" value={`${(scriptMs + physicsMs).toFixed(2)} / ${TICK_BUDGET_MS} ms`} tone={overBudget ? "warn" : undefined} />
+            {publishMs != null ? <Metric label="publish" value={`${publishMs.toFixed(2)} ms`} testId="play-publish-ms" data={{ "data-ms": String(publishMs) }} /> : null}
+          </GroupRow>
+        </>
+      ) : null}
+      {groups.includes("memory") ? (
+        <GroupRow group="memory">{memoryRows.length ? memoryRows : <span className="text-muted-foreground">unavailable</span>}</GroupRow>
+      ) : null}
+      {groups.includes("draws") ? (
+        <GroupRow group="draws">
+          {draws != null ? <Metric label="draws" value={draws} testId="stats-hud-draws" data={{ "data-draws": String(draws) }} tone={drawsHigh ? "warn" : undefined} /> : null}
+          {meshCount != null ? <Metric label="meshes" value={meshCount} testId="stats-hud-meshes" /> : null}
+          {textureCount != null ? <Metric label="tex" value={textureCount} testId="stats-hud-textures" /> : null}
+          {rendering ? <>
+            <Metric label="cpu" value={`${rendering.cpuMs.toFixed(2)} ms`} />
+            <Metric label="gpu" value={rendering.gpuMs === null ? rendering.gpuStatus : `${rendering.gpuMs.toFixed(2)} ms`} />
+            <Metric value={`${rendering.width}×${rendering.height}`} />
+            <Metric label="shadows" value={`${rendering.shadowDrawCalls} draws`} />
+            {rendering.readbackMs === null ? null : <Metric label="readback" value={`${rendering.readbackMs.toFixed(2)} ms`} />}
+            {rendering.autoLod.meshes ? <Metric label="lod" value={`${rendering.autoLod.reduced}/${rendering.autoLod.meshes}`} /> : null}
+            {rendering.qualityLimits.length ? <Metric value={rendering.qualityLimits.join(", ")} tone="warn" /> : null}
+          </> : null}
+          {drawsHigh ? <span data-testid="stats-hud-draw-warn" className="text-destructive">draws high</span> : null}
+          {geoHigh ? <span data-testid="stats-hud-geo-warn" className="text-destructive">geo high</span> : null}
+        </GroupRow>
+      ) : null}
+      {groups.includes("threads") ? (
+        <GroupRow group="threads">
+          {bridgeMessagesPerSec != null ? <Metric label="bridge" value={`${bridgeMessagesPerSec}/s`} testId="stats-hud-bridge" /> : <span className="text-muted-foreground">unavailable</span>}
+        </GroupRow>
+      ) : null}
     </div>
   );
 }

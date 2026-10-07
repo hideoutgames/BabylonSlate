@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { openMainScene, openTestProject } from "./open-test-project";
-import { clickPlayAndWaitForOverlay } from "./play";
+import { clickPlayAndWaitForOverlay, showOverlayButtons } from "./play";
 
 async function playTickIndex(
   page: import("@playwright/test").Page,
@@ -40,6 +40,7 @@ test.describe("P8 Trace document tab", () => {
   }, testInfo) => {
     test.setTimeout(90_000);
     await openTestProject(page);
+    await showOverlayButtons(page, ["console"]);
     await openMainScene(page);
     await clickPlayAndWaitForOverlay(page);
     await expect(page.getByTestId("play-trace-playback")).toHaveCount(0);

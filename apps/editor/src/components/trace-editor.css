@@ -1,7 +1,8 @@
 .trace-timing-chart .trace-timing-bar {
   padding: 0;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: 2px 2px 0 0;
+  overflow: hidden;
   min-width: 0;
   background: transparent;
 }
@@ -23,7 +24,7 @@
   outline-offset: -2px;
 }
 [data-testid="trace-playback-log-line"][data-current-tick="true"] {
-  background: color-mix(in oklab, var(--trace-selected) 18%, var(--background));
+  background: color-mix(in oklab, var(--trace-selected) 10%, var(--background));
 }
 [data-testid="trace-playback-log-line"] [data-severity="error"] {
   color: var(--destructive);

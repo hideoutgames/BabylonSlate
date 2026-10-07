@@ -1,11 +1,12 @@
 import { expect, test } from "@playwright/test";
 import { createActor, createDefaultScene } from "../packages/core/src/index.ts";
 import { openMainScene, openTestProject } from "./open-test-project";
-import { clickPlayAndWaitForOverlay } from "./play";
+import { clickPlayAndWaitForOverlay, showOverlayButtons } from "./play";
 import { setPreviewScene } from "./preview-parity";
 
 test("D780: Inspector switches cameras and destroys only the live actor while paused", async ({ page }) => {
   await openTestProject(page);
+  await showOverlayButtons(page, ["inspector"]);
   await openMainScene(page);
   const scene = createDefaultScene();
   scene.actors = ["camera-a", "camera-b"].map((id, index) => createActor(id, "Camera", {

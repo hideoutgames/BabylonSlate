@@ -2,24 +2,27 @@ export type PlayDebuggerOverlaySettings = {
   overlayStats: boolean;
   overlayConsole: boolean;
   overlayInspector: boolean;
+  overlayProfiler: boolean;
   pauseOnPlay: boolean;
 };
 
 export const DEFAULT_PLAY_DEBUGGER_OVERLAY: PlayDebuggerOverlaySettings = {
   overlayStats: true,
-  overlayConsole: true,
-  overlayInspector: true,
+  overlayConsole: false,
+  overlayInspector: false,
+  overlayProfiler: false,
   pauseOnPlay: false,
 };
 
-/** Overlay Debug-menu flags. Missing keys keep Stats/Console/Inspector on. */
+/** Overlay Debug-menu flags. Missing keys show only Stats. */
 export function playDebuggerOverlayFromSettings(
   defaults?: Partial<PlayDebuggerOverlaySettings> | null,
 ): PlayDebuggerOverlaySettings {
   return {
     overlayStats: defaults?.overlayStats !== false,
-    overlayConsole: defaults?.overlayConsole !== false,
-    overlayInspector: defaults?.overlayInspector !== false,
+    overlayConsole: defaults?.overlayConsole === true,
+    overlayInspector: defaults?.overlayInspector === true,
+    overlayProfiler: defaults?.overlayProfiler === true,
     pauseOnPlay: defaults?.pauseOnPlay === true,
   };
 }

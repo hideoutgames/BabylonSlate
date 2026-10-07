@@ -17,7 +17,7 @@ import {
   ToggleGroupItem,
 } from "@babylonslate/ui/components/toggle-group";
 import { Button } from "@babylonslate/ui/components/button";
-import { Separator } from "@babylonslate/ui/components/separator";
+import { cn } from "@babylonslate/ui/lib/utils";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import {
   compareTraceSnapshots,
@@ -137,7 +137,7 @@ export function TraceSnapshotView({
           <ToggleGroupItem value="changes">Changes</ToggleGroupItem>
           <ToggleGroupItem value="raw">Raw Snapshot</ToggleGroupItem>
         </ToggleGroup>
-        <SelectableText className="text-xs text-muted-foreground">
+        <SelectableText className="ml-auto rounded-md bg-muted px-2 py-0.5 text-xs tabular-nums">
           {frame ? `Tick ${frame.tickIndex}` : "No Recorded Frames"}
         </SelectableText>
       </div>
@@ -158,9 +158,9 @@ export function TraceSnapshotView({
       ) : state.mode === "raw" ? (
         <>
           <TraceCopyButton label="Copy JSON" text={frame.snapshotText ?? ""} />
-          <ScrollArea className="min-h-0 flex-1">
+          <ScrollArea className="min-h-0 flex-1 rounded-md border bg-background">
             <pre
-              className="whitespace-pre-wrap break-all font-mono text-xs"
+              className="whitespace-pre-wrap break-all p-2 font-mono text-xs"
               data-testid="trace-snapshot-raw"
             >
               <SelectableText>
@@ -194,7 +194,7 @@ export function TraceSnapshotView({
             />
           ) : (
             <ScrollArea
-              className="min-h-0 flex-1"
+              className="min-h-0 flex-1 rounded-md border bg-background"
               data-testid="trace-snapshot-changes"
             >
               <WindowedList
@@ -206,12 +206,26 @@ export function TraceSnapshotView({
                   return (
                     <Button
                       variant="ghost"
-                      className="h-full w-full justify-start gap-2"
+                      className={cn(
+                        "h-full w-full justify-start gap-3 rounded-none px-2 text-left font-normal",
+                        entry.id === state.changeId && "bg-accent",
+                      )}
                       aria-pressed={entry.id === state.changeId}
                       onClick={() => patch({ changeId: entry.id })}
                     >
-                      <span className="shrink-0">{entry.kind}</span>
-                      <span className="min-w-0 flex-1 truncate">
+                      <span
+                        className={cn(
+                          "w-16 shrink-0 text-xs font-medium",
+                          entry.kind === "Added"
+                            ? "text-(--success)"
+                            : entry.kind === "Removed"
+                              ? "text-destructive"
+                              : "text-(--warning)",
+                        )}
+                      >
+                        {entry.kind}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-xs">
                         {entry.label} · {entry.path}
                       </span>
                       <span className="max-w-40 truncate font-mono text-xs">
@@ -226,10 +240,9 @@ export function TraceSnapshotView({
           )}
           {change && (
             <div
-              className="flex max-h-48 shrink-0 flex-col gap-1 overflow-auto"
+              className="flex max-h-48 shrink-0 flex-col gap-1.5 overflow-auto rounded-md border bg-background p-2"
               data-testid="trace-change-detail"
             >
-              <Separator />
               <SelectableText className="break-all text-xs">
                 {change.kind} · {change.path}
               </SelectableText>
@@ -256,7 +269,7 @@ export function TraceSnapshotView({
               No Snapshot Recorded
             </p>
           )}
-          <div className="min-h-0 flex-1">
+          <div className="min-h-0 flex-1 overflow-hidden rounded-md border bg-background py-0.5">
             <TreeView
               aria-label="Snapshot"
               nodes={treeNodes}
@@ -273,10 +286,9 @@ export function TraceSnapshotView({
             />
           </div>
           <div
-            className="flex max-h-48 shrink-0 flex-col gap-1 overflow-auto"
+            className="flex max-h-48 shrink-0 flex-col gap-1.5 overflow-auto rounded-md border bg-background p-2"
             data-testid="trace-value-detail"
           >
-            <Separator />
             {selected ? (
               <>
                 <SelectableText className="break-all text-xs text-muted-foreground">

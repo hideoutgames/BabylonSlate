@@ -173,10 +173,12 @@ interface PlayContextValue {
   overlayStats: boolean;
   overlayConsole: boolean;
   overlayInspector: boolean;
+  overlayProfiler: boolean;
   pauseOnPlay: boolean;
   setOverlayStats: (value: boolean) => void;
   setOverlayConsole: (value: boolean) => void;
   setOverlayInspector: (value: boolean) => void;
+  setOverlayProfiler: (value: boolean) => void;
   setPauseOnPlay: (value: boolean) => void;
   launchPlay: (options?: PlayOptions & { scripts?: ScriptBundleEntry[] }) => void;
   resumePlayAfterMigration: () => Promise<void>;
@@ -290,6 +292,9 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   );
   const [overlayInspector, setOverlayInspectorState] = useState(
     DEFAULT_PLAY_DEBUGGER_OVERLAY.overlayInspector,
+  );
+  const [overlayProfiler, setOverlayProfilerState] = useState(
+    DEFAULT_PLAY_DEBUGGER_OVERLAY.overlayProfiler,
   );
   const [pauseOnPlay, setPauseOnPlayState] = useState(
     DEFAULT_PLAY_DEBUGGER_OVERLAY.pauseOnPlay,
@@ -607,6 +612,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       setOverlayStatsState(overlay.overlayStats);
       setOverlayConsoleState(overlay.overlayConsole);
       setOverlayInspectorState(overlay.overlayInspector);
+      setOverlayProfilerState(overlay.overlayProfiler);
       setPauseOnPlayState(overlay.pauseOnPlay);
     };
     const apply = (settings: {
@@ -673,6 +679,11 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const setOverlayInspector = useCallback((value: boolean) => {
     setOverlayInspectorState(value);
     void persistDebuggerDefaults({ overlayInspector: value });
+  }, [persistDebuggerDefaults]);
+
+  const setOverlayProfiler = useCallback((value: boolean) => {
+    setOverlayProfilerState(value);
+    void persistDebuggerDefaults({ overlayProfiler: value });
   }, [persistDebuggerDefaults]);
 
   const setPauseOnPlay = useCallback((value: boolean) => {
@@ -1466,10 +1477,12 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       overlayStats,
       overlayConsole,
       overlayInspector,
+      overlayProfiler,
       pauseOnPlay,
       setOverlayStats,
       setOverlayConsole,
       setOverlayInspector,
+      setOverlayProfiler,
       setPauseOnPlay,
       launchPlay,
       resumePlayAfterMigration,
@@ -1503,10 +1516,12 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       overlayStats,
       overlayConsole,
       overlayInspector,
+      overlayProfiler,
       pauseOnPlay,
       setOverlayStats,
       setOverlayConsole,
       setOverlayInspector,
+      setOverlayProfiler,
       setPauseOnPlay,
       launchPlay,
       resumePlayAfterMigration,
@@ -1752,6 +1767,9 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             registerBeforeStop={registerPreviewBeforeStop}
             onLoad={sendPreviewPack}
             onTrace={(trace) => void openRecordedTrace(trace)}
+            showStats={overlayStats}
+            showConsole={overlayConsole}
+            showProfiler={overlayProfiler}
           />
         ) : null}
         <PreviewSessionReport

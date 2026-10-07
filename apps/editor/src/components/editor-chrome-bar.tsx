@@ -282,10 +282,12 @@ export function EditorChromeBar({
     overlayStats,
     overlayConsole,
     overlayInspector,
+    overlayProfiler,
     pauseOnPlay,
     setOverlayStats,
     setOverlayConsole,
     setOverlayInspector,
+    setOverlayProfiler,
     setPauseOnPlay,
   } = usePlay();
   const { errorCount, setDiagnostics } = useValidation();
@@ -402,6 +404,7 @@ export function EditorChromeBar({
         overlayStats={overlayStats}
         overlayConsole={overlayConsole}
         overlayInspector={overlayInspector}
+        overlayProfiler={overlayProfiler}
         pauseOnPlay={pauseOnPlay}
         previewBuild={previewBuild}
         playFromScene={playFromScene}
@@ -409,6 +412,7 @@ export function EditorChromeBar({
         onOverlayStatsChange={setOverlayStats}
         onOverlayConsoleChange={setOverlayConsole}
         onOverlayInspectorChange={setOverlayInspector}
+        onOverlayProfilerChange={setOverlayProfiler}
         onPauseOnPlayChange={setPauseOnPlay}
         onPreviewBuildChange={setPreviewBuild}
         onPlayFromSceneChange={setPlayFromScene}

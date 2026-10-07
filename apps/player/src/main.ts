@@ -101,7 +101,8 @@ async function launchLoaded(
   layoutFromManifest(game.manifest);
   const hud = mountPlayerHud(
     document.getElementById("player-hud") ?? document.createElement("div"),
-    { bundleDebugger: game.manifest.bundleDebugger },
+    // Preview Build starts with Stats closed, like Play; its overlay toggles them.
+    { bundleDebugger: game.manifest.bundleDebugger, visible: !(previewMode() && window.parent !== window) },
   );
   let currentLightsDebugText: string | null = null;
   const stopAudioOverlays = mountPlayerDebuggerOverlays(rootEl(), {
@@ -176,6 +177,8 @@ async function launchLoaded(
           "setBehaviourTreeDebug",
           "behaviourTreeSnapshot",
           "trace",
+          "setShowFps",
+          "setStat",
         ].includes(command.type)
       ) {
         window.parent.postMessage(

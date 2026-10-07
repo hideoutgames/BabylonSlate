@@ -3,7 +3,7 @@ import { expect, test, type Locator } from "@playwright/test";
 import { lookAtRotation, normalizeRenderingQuality, type SerializedScene } from "../packages/core/src/index";
 import type { RenderShadingSettings, ShadowDiagnostics } from "../packages/render/src/index";
 import { openMainScene, waitForEditorInteractive } from "./open-test-project";
-import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot } from "./play";
+import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot, showOverlayButtons } from "./play";
 import { setPreviewScene } from "./preview-parity";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 import { captureMannequinPixels, mannequinShadowMetrics, mannequinShadowSamples, posedMannequin, type MannequinGeometry } from "./mannequin-shadow-pixels";
@@ -48,6 +48,7 @@ test("Basic 3D mannequin preserves real materials, contacts and animation in Pla
   await page.getByTestId("create-project-name").fill("TestProject");
   await page.getByTestId("create-project-submit").click();
   await waitForEditorInteractive(page);
+  await showOverlayButtons(page, ["console"]);
   await openMainScene(page);
   const scene = await page.evaluate(() => (window as unknown as { __babylonslateTest: { activeSceneContent(): SerializedScene } }).__babylonslateTest.activeSceneContent());
   const camera = scene.actors.find(actor => actor.id === scene.settings.mainCameraActorId)!;

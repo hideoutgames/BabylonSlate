@@ -1,4 +1,5 @@
 import { snapshotTickIndex } from "@babylonslate/bridge";
+import { isStatGroup, isTickOverBudget, nextStatGroups, STAT_GROUP_LABELS, TICK_BUDGET_MS, type StatGroup } from "@babylonslate/debugger";
 import {
   audioDebugOverlayText,
   audioStats,
@@ -91,9 +92,14 @@ export function applyPlayerSnapshotTick(
   return snapshotTickIndex(buffer) ?? previous;
 }
 
+const HUD_STYLE = "display:inline-flex;flex-direction:column;gap:2px;max-width:calc(100vw - 16px);padding:4px 8px;border-radius:2px;background:rgba(20,20,20,0.72);backdrop-filter:blur(4px);color:#eee;font:11px/16px ui-monospace,SFMono-Regular,Menlo,monospace;";
+const MUTED = "color:rgba(238,238,238,0.6);";
+const WARN = "color:#f87171;";
+
+/** Preview/export Stats, matching Play: FPS and tick timings, plus `stat <group>` rows. */
 export function mountPlayerHud(
   element: HTMLElement,
-  options: { bundleDebugger: boolean },
+  options: { bundleDebugger: boolean; visible?: boolean },
 ): {
   setStats: (stats: PlayerHudStats) => void;
   applyCommand: (command: { type: string; enabled?: unknown; name?: unknown }) => boolean;
@@ -102,61 +108,111 @@ export function mountPlayerHud(
     element.hidden = true;
     return { setStats: () => {}, applyCommand: () => false };
   }
-  element.hidden = false;
-  type Highlight = "unit" | "memory" | "draws" | "threads";
-  let highlight: Highlight | null = null;
-  const fields = new Map<string, HTMLSpanElement>();
-  element.replaceChildren();
-  for (const name of ["threads", "unit", "actors", "draws", "memory", "ticks", "warnings"]) {
-    const field = element.ownerDocument.createElement("span");
-    field.dataset.stat = name;
-    fields.set(name, field);
-    element.append(field, element.ownerDocument.createTextNode("  "));
-  }
-  const applyHighlight = () => {
-    element.dataset.highlight = highlight ?? "";
-    for (const [name, field] of fields) {
-      const active = name === highlight || (highlight === "threads" && name === "unit");
-      field.dataset.highlighted = String(active);
-      field.style.fontWeight = active ? "700" : "";
-      field.style.textDecoration = active ? "underline" : "";
+  element.hidden = options.visible === false;
+  const doc = element.ownerDocument;
+  // Panel styles live on a child so the host element's `hidden` still applies.
+  const panel = doc.createElement("div");
+  panel.style.cssText = HUD_STYLE;
+  element.replaceChildren(panel);
+  let groups: readonly StatGroup[] = [];
+  let latest: PlayerHudStats = { ticks: 0, fps: 0, scriptMs: 0, physicsMs: 0, draws: 0, liveActors: 0, snapshotCapacity: 0 };
+  const history: number[] = [];
+  const metric = (label: string | null, value: string, warn = false) => {
+    const span = doc.createElement("span");
+    span.style.whiteSpace = "nowrap";
+    if (label) {
+      const name = doc.createElement("span");
+      name.style.cssText = MUTED;
+      name.textContent = `${label} `;
+      span.append(name);
     }
+    const text = doc.createElement("span");
+    if (warn) text.style.cssText = WARN;
+    text.textContent = value;
+    span.append(text);
+    return span;
   };
-  const setStats = (stats: PlayerHudStats) => {
-    const warn = drawCallCeilingWarning(stats.draws);
-    const geoWarn =
-      stats.geometryBytes != null
-        ? geometryByteCeilingWarning(stats.geometryBytes)
-        : null;
+  const row = (group: StatGroup | null, parts: (HTMLElement | null)[]) => {
+    const line = doc.createElement("div");
+    line.style.cssText = "display:flex;flex-wrap:wrap;align-items:baseline;column-gap:12px;";
+    if (group) {
+      line.dataset.stat = group;
+      const name = doc.createElement("span");
+      name.style.cssText = `${MUTED}width:56px;flex-shrink:0;`;
+      name.textContent = STAT_GROUP_LABELS[group];
+      line.append(name);
+    }
+    line.append(...parts.filter((part): part is HTMLElement => part !== null));
+    return line;
+  };
+  const mb = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  const render = () => {
+    const stats = latest;
+    const over = isTickOverBudget(stats.scriptMs, stats.physicsMs);
     element.dataset.fps = String(Math.round(stats.fps));
     element.dataset.ticks = String(stats.ticks);
-    fields.get("threads")!.textContent = `fps ${stats.fps.toFixed(0)}`;
-    fields.get("unit")!.textContent = `script ${stats.scriptMs.toFixed(2)}ms  phys ${stats.physicsMs.toFixed(2)}ms  publish ${(stats.publishMs ?? 0).toFixed(2)}ms`;
-    fields.get("actors")!.textContent = `actors ${stats.liveActors ?? 0}/${stats.snapshotCapacity ?? 0}`;
-    fields.get("draws")!.textContent = `draws ${stats.draws}`;
-    const mb = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
-    fields.get("memory")!.textContent = [
-      stats.geometryBytes != null ? `geo ${mb(stats.geometryBytes)}` : null,
-      stats.jsHeapBytes != null ? `js ${mb(stats.jsHeapBytes)}` : null,
-      stats.appFootprintBytes != null ? `app ${mb(stats.appFootprintBytes)}` : null,
-      stats.appAvailableBytes != null ? `headroom ${mb(stats.appAvailableBytes)}` : null,
-      stats.systemAvailableBytes != null ? `free ${mb(stats.systemAvailableBytes)}` : null,
-    ]
-      .filter((segment) => segment !== null)
-      .join("  ");
-    fields.get("ticks")!.textContent = `ticks ${stats.ticks}`;
-    fields.get("warnings")!.textContent = `${warn ? "DRAWS HIGH" : ""}${geoWarn ? "  GEO HIGH" : ""}`;
+    element.dataset.groups = groups.join(" ");
+    const fps = doc.createElement("span");
+    fps.style.whiteSpace = "nowrap";
+    const fpsValue = doc.createElement("span");
+    fpsValue.style.cssText = "font-size:12px;font-weight:600;";
+    fpsValue.textContent = stats.fps.toFixed(0);
+    fps.append(fpsValue, doc.createTextNode(" fps"));
+    fps.dataset.stat = "fps";
+    const lines: HTMLElement[] = [row(null, [
+      fps,
+      metric(null, stats.fps > 0 ? `${(1000 / stats.fps).toFixed(1)} ms` : "— ms"),
+      metric("script", `${stats.scriptMs.toFixed(2)} ms`, over),
+      metric("physics", `${stats.physicsMs.toFixed(2)} ms`, over),
+      over ? metric(null, `over ${TICK_BUDGET_MS} ms budget`, true) : null,
+    ])];
+    if (groups.includes("unit")) {
+      const graph = doc.createElement("span");
+      graph.style.cssText = "display:flex;align-items:flex-end;gap:1px;height:20px;padding-left:68px;";
+      for (const total of history) {
+        const bar = doc.createElement("span");
+        bar.style.cssText = `width:2px;height:${Math.max(8, Math.min(100, (total / TICK_BUDGET_MS) * 100))}%;background:${total > TICK_BUDGET_MS ? "#f87171" : "rgba(238,238,238,0.55)"};`;
+        graph.append(bar);
+      }
+      lines.push(graph);
+      lines.push(row("unit", [
+        metric("tick", `${(stats.scriptMs + stats.physicsMs).toFixed(2)} / ${TICK_BUDGET_MS} ms`, over),
+        metric("publish", `${(stats.publishMs ?? 0).toFixed(2)} ms`),
+      ]));
+    }
+    if (groups.includes("memory")) {
+      const parts = [
+        stats.jsHeapBytes != null ? metric("js", mb(stats.jsHeapBytes)) : null,
+        stats.appFootprintBytes != null ? metric("app", mb(stats.appFootprintBytes)) : null,
+        stats.appAvailableBytes != null ? metric("headroom", mb(stats.appAvailableBytes)) : null,
+        stats.systemAvailableBytes != null ? metric("free", mb(stats.systemAvailableBytes)) : null,
+        stats.geometryBytes != null ? metric("geo", mb(stats.geometryBytes), geometryByteCeilingWarning(stats.geometryBytes) !== null) : null,
+      ].filter((part) => part !== null);
+      lines.push(row("memory", parts.length ? parts : [metric(null, "unavailable")]));
+    }
+    if (groups.includes("draws")) {
+      const drawsHigh = drawCallCeilingWarning(stats.draws) !== null;
+      lines.push(row("draws", [
+        metric("draws", String(stats.draws), drawsHigh),
+        drawsHigh ? metric(null, "draws high", true) : null,
+        stats.geometryBytes != null && geometryByteCeilingWarning(stats.geometryBytes) !== null ? metric(null, "geo high", true) : null,
+      ]));
+    }
+    if (groups.includes("threads")) {
+      lines.push(row("threads", [
+        metric("actors", `${stats.liveActors ?? 0}/${stats.snapshotCapacity ?? 0}`),
+        metric("ticks", String(stats.ticks)),
+      ]));
+    }
+    panel.replaceChildren(...lines);
   };
-  setStats({
-    ticks: 0,
-    fps: 0,
-    scriptMs: 0,
-    physicsMs: 0,
-    draws: 0,
-    liveActors: 0,
-    snapshotCapacity: 0,
-  });
-  applyHighlight();
+  const setStats = (stats: PlayerHudStats) => {
+    latest = stats;
+    history.push(stats.scriptMs + stats.physicsMs);
+    if (history.length > 40) history.shift();
+    render();
+  };
+  render();
   return {
     setStats,
     applyCommand(command) {
@@ -164,15 +220,10 @@ export function mountPlayerHud(
         element.hidden = command.enabled !== true;
         return true;
       }
-      if (command.type === "setStat" && typeof command.name === "string" &&
-        ["unit", "memory", "draws", "threads"].includes(command.name)) {
-        if (command.enabled === true) {
-          element.hidden = false;
-          highlight = command.name as Highlight;
-        } else if (highlight === command.name) {
-          highlight = null;
-        }
-        applyHighlight();
+      if (command.type === "setStat" && isStatGroup(command.name)) {
+        groups = nextStatGroups(groups, command.name, command.enabled === true);
+        if (command.enabled === true) element.hidden = false;
+        render();
         return true;
       }
       return false;
