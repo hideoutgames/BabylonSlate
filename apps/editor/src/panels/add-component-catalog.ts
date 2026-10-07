@@ -3,6 +3,7 @@ import { normalizeWaterBody, normalizeWaterBuoyancy, normalizeWaterRemoval, wate
 import { OVERLAY_LAYOUT_CLASSES, isOverlayLayoutClass, parseOverlayLayoutProperties } from "@babylonslate/core";
 import type {
   PhysicsWorldKind,
+  SerializedComponent,
   SerializedScene,
   ViewportMode,
 } from "@babylonslate/core";
@@ -42,6 +43,7 @@ import {
   classIdFromClassAsset,
   classParentLookup,
 } from "../lib/content-browser-helpers";
+import { fittedColliderShape } from "../lib/fitted-collider";
 
 export type AddComponentItem = {
   id: string;
@@ -241,6 +243,8 @@ export function defaultPropertiesFor(
   classId: string,
   physicsWorld: PhysicsWorldKind = "3d",
   viewportMode: ViewportMode = "3d",
+  /** The host's existing components; a new collider wraps its primitive mesh. */
+  siblings: readonly SerializedComponent[] = [],
 ): Record<string, unknown> {
   if (isUIControl2DClass(classId)) return { ...parseUIControl2DProperties(classId, {}) };
   if (isOverlayLayoutClass(classId)) return { ...parseOverlayLayoutProperties({}, classId), ...((OVERLAY_CONTAINER_CLASSES as readonly string[]).includes(classId) ? parseOverlayContainerProperties({}) : {}) };
@@ -259,7 +263,7 @@ export function defaultPropertiesFor(
       return {
         meshKind: "box",
         assetGuid: null,
-        collisionMode: "simple",
+        collisionMode: "none",
         layer: 1,
         mask: 0xffffffff,
       };
@@ -369,8 +373,11 @@ export function defaultPropertiesFor(
       return { ...createRichText2DComponent("rich").properties };
     case "RigidBodyComponent":
       return { ...parseRigidBodyProperties({}) };
-    case "ColliderComponent":
-      return { ...parseColliderProperties({}, physicsWorld) };
+    case "ColliderComponent": {
+      const defaults = parseColliderProperties({}, physicsWorld);
+      const shape = fittedColliderShape(defaults.shape.kind, siblings) ?? defaults.shape;
+      return { ...defaults, shape };
+    }
     case "PhysicsConstraintComponent":
       return { ...parseConstraintProperties({}, physicsWorld) };
     case "RagdollComponent":

@@ -997,6 +997,32 @@ describe("validateGraphs", () => {
     };
     const diags = validateGraphs([graph], { assetGuid: "a" });
     expect(diags.some((d) => d.code === "pin.duplicate_connection")).toBe(false);
+    expect(diags.some((d) => d.code === "exec.multiple_wires")).toBe(false);
+  });
+
+  it("warns when one exec output drives several wires", () => {
+    const logNode = (id: string) => ({
+      id,
+      typeId: "debug.log",
+      position: { x: 200, y: 0 },
+      pins: [pin("execIn", "exec", "in", EXEC), pin("execOut", "then", "out", EXEC)],
+      properties: {},
+    });
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        { id: "a", typeId: "flow.entry", position: { x: 0, y: 0 }, pins: [pin("execOut", "then", "out", EXEC)], properties: {} },
+        logNode("b"),
+        logNode("c"),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "a", sourcePinId: "execOut", targetNodeId: "b", targetPinId: "execIn" },
+        { id: "e2", sourceNodeId: "a", sourcePinId: "execOut", targetNodeId: "c", targetPinId: "execIn" },
+      ],
+    };
+    const fanOut = validateGraphs([graph], { assetGuid: "a" }).filter((d) => d.code === "exec.multiple_wires");
+    expect(fanOut).toEqual([expect.objectContaining({ severity: "warning", nodeId: "a", pinId: "execOut" })]);
   });
 
   it("errors when a declared ScriptInterface method is not implemented", () => {

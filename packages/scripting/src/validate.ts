@@ -392,6 +392,33 @@ function validatePinTyping(
     seenDataTargets.add(key);
   }
 
+  // Each exec output drives one wire (inputs may merge many). Graphs saved
+  // before the editor enforced that still compile, wire after wire.
+  const execFanOut = new Map<string, number>();
+  for (const edge of graph.edges) {
+    const source = findNode(graph, edge.sourceNodeId);
+    const sp = source ? pinById(source, edge.sourcePinId) : undefined;
+    if (!sp || sp.kind !== "exec" || sp.direction !== "out") continue;
+    const key = `${edge.sourceNodeId}\u0000${edge.sourcePinId}`;
+    execFanOut.set(key, (execFanOut.get(key) ?? 0) + 1);
+  }
+  for (const [key, count] of execFanOut) {
+    if (count < 2) continue;
+    const [nodeId, pinId] = key.split("\u0000") as [string, string];
+    const pin = pinById(findNode(graph, nodeId)!, pinId)!;
+    out.push(
+      diagnostic({
+        severity: "warning",
+        code: "exec.multiple_wires",
+        message: `Exec output "${pin.name}" has ${count} wires; an exec output supports one. Use a Sequence node to run several in order.`,
+        assetGuid: ctx.assetGuid,
+        graphId: graph.id,
+        nodeId,
+        pinId,
+      }),
+    );
+  }
+
   for (const node of graph.nodes) {
     for (const pin of node.pins) {
       if (pin.direction !== "in" || pin.kind !== "data" || pin.optional) {

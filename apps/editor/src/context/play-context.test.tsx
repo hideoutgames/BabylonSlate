@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { createDefaultScene, engineCommandBus } from "@babylonslate/core";
 import {
@@ -193,12 +193,61 @@ it("keeps Play controls stable across document edits while Play saves the newest
   );
   expect(controls).toBe(beforeEdit);
 
-  // A Play button rendered before the edit still saves the edited graph.
+  // A Play button rendered before the edit still sees the edited graph, and
+  // asks before saving it.
   await act(async () => {
     void beforeEdit.requestPlay();
+  });
+  expect(saveAll).not.toHaveBeenCalled();
+  expect(screen.getByTestId("play-unsaved-names").textContent).toBe("Hero Class");
+  await act(async () => {
+    fireEvent.click(screen.getByTestId("play-unsaved-save"));
   });
   expect(saveAll).toHaveBeenCalledTimes(1);
   const dialog = screen.getByTestId("play-prepare-dialog");
   expect(dialog.textContent).toContain("Saving 1 Document");
   expect(dialog.textContent).toContain("Hero Class");
+});
+
+it("cancels or plays without saving from the Unsaved Changes prompt", async () => {
+  const scene = {
+    id: "scene:assets/Main.scene.babasset",
+    ref: { kind: "scene", path: "assets/Main.scene.babasset", label: "Main" },
+    content: createDefaultScene(),
+    dirty: true,
+  };
+  const saveAll = vi.fn(async () => true);
+  host.documents = {
+    ...host.noProject,
+    openDocuments: [scene],
+    dirtyDocuments: [scene],
+    activeDocumentId: scene.id,
+    saveAll,
+  };
+  let controls!: ReturnType<typeof usePlay>;
+  function PlayConsumer() {
+    controls = usePlay();
+    return null;
+  }
+  render(
+    <PlayProvider>
+      <PlayConsumer />
+    </PlayProvider>,
+  );
+  await act(async () => {
+    void controls.requestPlay();
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByTestId("play-unsaved-cancel"));
+  });
+  // The dialog unmounts after its closing animation.
+  await waitFor(() => expect(screen.queryByTestId("play-unsaved-dialog")).toBeNull());
+  await act(async () => {
+    void controls.requestPlay();
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByTestId("play-unsaved-skip"));
+  });
+  await waitFor(() => expect(screen.queryByTestId("play-unsaved-dialog")).toBeNull());
+  expect(saveAll).not.toHaveBeenCalled();
 });

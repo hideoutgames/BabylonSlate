@@ -170,7 +170,12 @@ export function edgesAfterConnect<T extends PinEdgeRef>(
   edges: readonly T[],
   next: T,
   pinFor: ConnectPinLookup,
-  options?: { replaceIncoming?: boolean; uniqueDirectedPair?: boolean },
+  options?: {
+    replaceIncoming?: boolean;
+    uniqueDirectedPair?: boolean;
+    /** Scripting graphs: an exec output drives one wire; a new one replaces it. */
+    singleExecOutput?: boolean;
+  },
 ): T[] {
   const oriented = orientConnectionByPins(next, pinFor);
   if (
@@ -231,7 +236,9 @@ export function edgesAfterConnect<T extends PinEdgeRef>(
   const sourcePin = pinFor(candidate.source, candidate.sourceHandle ?? "");
   const exclusiveTarget =
     options?.replaceIncoming === true || !pinAllowsMultipleIncoming(targetPin);
-  const exclusiveSource = !pinAllowsMultipleOutgoing(sourcePin);
+  const exclusiveSource =
+    !pinAllowsMultipleOutgoing(sourcePin) ||
+    (options?.singleExecOutput === true && sourcePin?.kind === "exec");
   // A new wire replaces the old one on an exclusive input or single-link output.
   const kept = edges.filter(
     (edge) =>

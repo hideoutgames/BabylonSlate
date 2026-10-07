@@ -1,4 +1,4 @@
-import { quatToRotator, rotatorToQuat, type RotatorObject } from "./euler";
+import type { RotatorObject } from "./euler";
 import type { Quat, Transform, Vec3 } from "./math-rng";
 
 export const ENGINE_TWEEN_SPACE_ENUM_ID = "engine:TweenSpace";
@@ -120,7 +120,9 @@ export function interpolateTweenValue(type: TweenValueType, a: TweenValue, b: Tw
     case "vec4":
     case "color": return lerpFields(a as Quat, b as Quat, ["x", "y", "z", "w"], alpha);
     case "quat": return interpolateQuaternion(a as Quat, b as Quat, alpha);
-    case "rotator": return quatToRotator(interpolateQuaternion(rotatorToQuat(a as RotatorObject), rotatorToQuat(b as RotatorObject), alpha));
+    // Rotators interpolate the authored degrees, so 0 -> 360 spins a full turn
+    // and 170 -> -170 sweeps 340 degrees. Quaternion channels take the short path.
+    case "rotator": return lerpFields(a as RotatorObject, b as RotatorObject, ["pitch", "yaw", "roll"], alpha);
     case "transform": {
       const left = a as Transform;
       const right = b as Transform;

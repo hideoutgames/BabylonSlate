@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ACTOR_FRAMING_MIN_RADIUS } from "./actor-framing";
 import {
   Mesh,
   NullEngine,
@@ -250,7 +251,7 @@ describe("p20-editor-scene-freeze", () => {
 
     expect(editor.camera.camera.target).not.toBe(mesh.getAbsolutePosition());
     expect(editor.camera.camera.target.x).toBeCloseTo(8, 1);
-    expect(editor.camera.camera.radius).toBeGreaterThanOrEqual(12);
+    expect(editor.camera.camera.radius).toBeGreaterThanOrEqual(ACTOR_FRAMING_MIN_RADIUS);
     expect(editor.camera.camera.radius).toBeGreaterThan(editor.camera.camera.minZ);
 
     const framedTarget = editor.camera.camera.target.clone();
@@ -277,7 +278,7 @@ describe("p20-editor-scene-freeze", () => {
     editor.camera.camera.radius = 0.5;
     editor.frameActor("hero");
     editor.camera.camera.getViewMatrix();
-    expect(editor.camera.camera.radius).toBeGreaterThanOrEqual(12);
+    expect(editor.camera.camera.radius).toBeGreaterThanOrEqual(ACTOR_FRAMING_MIN_RADIUS);
   });
 
   it("removes a hidden editor grid from active drawing without discarding its mesh", () => {

@@ -53,6 +53,15 @@ describe("applyPrintHudCommand", () => {
   });
 });
 
+describe("applyPrintHudCommand order", () => {
+  it("keeps a visible keyed print in its slot while others append", () => {
+    let entries = applyPrintHudCommand([], { message: "hp 10", key: "hp", duration: 5 }, 0);
+    entries = applyPrintHudCommand(entries, { message: "hello", duration: 5 }, 10);
+    entries = applyPrintHudCommand(entries, { message: "hp 9", key: "hp", duration: 5 }, 20);
+    expect(entries.map((entry) => entry.message)).toEqual(["hp 9", "hello"]);
+  });
+});
+
 describe("applyPrintHudCommand expiry", () => {
   it("drops expired prints so a print every frame stays bounded", () => {
     let entries = applyPrintHudCommand([], { message: "keep", key: "hp", duration: 60 }, 0);

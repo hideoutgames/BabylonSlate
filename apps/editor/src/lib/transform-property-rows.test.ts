@@ -33,11 +33,12 @@ describe("spatialTransformPropertyRows", () => {
     expect(rows.find((row) => row.id === "actor-z-order")).toMatchObject({
       kind: "number",
       label: "Z-Order",
-      value: 3,
+      // The 2D camera looks down +Z, so nearer (in front) is a smaller Z.
+      value: -3,
     });
   });
 
-  it("writes Z-Order into transform.position z without changing XY", () => {
+  it("writes Z-Order as negated transform.position z without changing XY", () => {
     const onUpdate = vi.fn();
     const transform = {
       ...identitySerializedTransform(),
@@ -50,7 +51,7 @@ describe("spatialTransformPropertyRows", () => {
     zOrder.onChange(9);
     expect(onUpdate).toHaveBeenCalledWith({
       ...transform,
-      position: [4, 5, 9],
+      position: [4, 5, -9],
     });
   });
 

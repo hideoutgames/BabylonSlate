@@ -102,10 +102,10 @@ describe("scene-loader", () => {
       scene,
       sceneWithActors([
         createActor("box-a", "A", {
-          components: [createMeshComponent("c1", "box")],
+          components: [createMeshComponent("c1", "box", "simple")],
         }),
         createActor("box-b", "B", {
-          components: [createMeshComponent("c2", "sphere")],
+          components: [createMeshComponent("c2", "sphere", "simple")],
         }),
       ]),
     );
@@ -458,7 +458,7 @@ describe("scene-loader", () => {
       scene,
       sceneWithActors([
         createActor("crate", "Crate", {
-          components: [createMeshComponent("mesh", "box")],
+          components: [createMeshComponent("mesh", "box", "simple")],
         }),
       ]),
     );
@@ -528,7 +528,7 @@ describe("scene-loader", () => {
 
   it("includes Mesh collision mode in the visual fingerprint", () => {
     const actor = createActor("crate", "Crate", {
-      components: [createMeshComponent("mesh", "box")],
+      components: [createMeshComponent("mesh", "box", "simple")],
     });
     const none = {
       ...actor,

@@ -923,7 +923,9 @@ function createComponentMesh(
     return createColliderVisualMesh(
       scene,
       name,
-      parseColliderProperties(component.properties, world).shape,
+      // Draw draft or legacy sizes rather than failing the whole scene load;
+      // Details still shows the collider so it can be corrected.
+      parseColliderProperties(component.properties, world, { validation: "authoring" }).shape,
     );
   }
   const assetGuid = stringProp(component.properties.assetGuid);

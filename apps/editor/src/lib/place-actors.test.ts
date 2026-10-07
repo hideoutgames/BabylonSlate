@@ -114,8 +114,10 @@ describe("camera names", () => {
     const source = scene.actors[0]!;
     scene.actors.push(duplicateSceneActor(scene, source));
     scene.actors.push(duplicateSceneActor(scene, source));
+    scene.actors.push(duplicateSceneActor(scene, scene.actors[3]!));
+    scene.actors.push(duplicateSceneActor(scene, scene.actors[4]!));
     expect(scene.actors.slice(3).map((actor) => actor.name)).toEqual([
-      "Camera Copy", "Camera Copy 2",
+      "Camera Copy", "Camera Copy 2", "Camera Copy 3", "Camera Copy 4",
     ]);
     expect(source.name).toBe("Camera");
   });
@@ -352,6 +354,14 @@ describe("spawnPlacedActor", () => {
     expect(actor.name).toBe("sphere");
     expect(actor.components[0]?.classId).toBe("MeshComponent");
     expect(actor.components[0]?.properties.meshKind).toBe("sphere");
+  });
+
+  it("seats a 3D Ground on the floor at the view-center X/Z", () => {
+    const item = ENGINE_PLACE_ACTORS.find((entry) => entry.id === "shape-ground")!;
+    const actor = spawnPlacedActor(scene, item, "actor-1", [3, 0.93, -2]);
+    expect(actor.transform.position).toEqual([3, 0, -2]);
+    const box = ENGINE_PLACE_ACTORS.find((entry) => entry.id === "shape-box")!;
+    expect(spawnPlacedActor(scene, box, "actor-2", [3, 0.93, -2]).transform.position).toEqual([3, 0.93, -2]);
   });
 
   it("spawns a light actor", () => {

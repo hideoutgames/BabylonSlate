@@ -143,6 +143,15 @@ describe("app settings", () => {
     expect(parsed.viewportFrameCap).toBe(30);
   });
 
+  it("bounds undo history length and the viewport frame cap", () => {
+    const high = engineSettingsSchema.parse({ undoHistoryLength: 1e9, viewportFrameCap: 1000 });
+    expect(high.undoHistoryLength).toBe(1000);
+    expect(high.viewportFrameCap).toBe(240);
+    const low = engineSettingsSchema.parse({ undoHistoryLength: 2.6, viewportFrameCap: 0 });
+    expect(low.undoHistoryLength).toBe(3);
+    expect(low.viewportFrameCap).toBe(10);
+  });
+
   it("fills model import default scale at 1 when saved JSON omits the field", () => {
     const parsed = engineSettingsSchema.parse({
       undoHistoryLength: 50,

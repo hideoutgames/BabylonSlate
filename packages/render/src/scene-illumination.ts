@@ -32,6 +32,7 @@ import type { MeshAssetContext } from "./mesh-assets";
 import { sceneShadowController } from "./shadow-controller";
 import { applyEnvironmentLighting } from "./environment-lighting";
 import { sceneClearColor } from "./editor-clear-color";
+import { syncEngineDefaultMaterialEmission } from "./default-material";
 import { setSceneEffectsAssets, updateSceneRenderingSettings } from "./render-settings";
 
 export const AUTHORED_LIGHT_PREFIX = "authoredLight:";
@@ -520,6 +521,7 @@ export function applySceneEnvironment(
 ): void {
   const settings = sceneData.settings;
   if (options.applyClearColor) scene.clearColor = sceneClearColor(settings.environmentColor);
+  syncEngineDefaultMaterialEmission(scene, sceneData.viewportMode === "2d");
   if (settings.fogEnabled) {
     const fog = normalizeSceneFogSettings(settings);
     scene.fogMode =

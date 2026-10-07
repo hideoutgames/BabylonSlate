@@ -49,11 +49,11 @@ describe("actorFramingTarget", () => {
 });
 
 describe("actorFramingRadius", () => {
-  it("floors helper-sized bounds at the default viewing distance", () => {
+  it("frames a small prop close instead of pulling back to the orbit default", () => {
     const { scene } = createHandle();
     const helper = MeshBuilder.CreatePlane("icon", { size: 0.5 }, scene);
     const radius = actorFramingRadius(helper, { minZ: 1 });
-    expect(radius).toBe(DEFAULT_CAMERA_RADIUS);
+    expect(radius).toBeLessThan(DEFAULT_CAMERA_RADIUS / 2);
     expect(radius).toBeGreaterThan(1 * 2);
   });
 

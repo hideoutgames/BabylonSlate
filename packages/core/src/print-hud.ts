@@ -58,16 +58,26 @@ export function applyPrintHudCommand(
   const key = command.key?.trim() || `print_${now}_${random()}`;
   // Expired entries are already invisible; dropping them keeps a print every
   // frame from growing the list (and this filter) for the whole session.
-  const next = entries.filter(
-    (entry) => entry.key !== key && entry.expiresAt > now,
-  );
-  next.push({
+  const entry: PrintHudEntry = {
     key,
     message: command.message,
     color: printHudCssColor(command.color),
     expiresAt: now + printHudDurationMs(command.duration),
-  });
-  return next;
+  };
+  const next = entries.filter(
+    (existing) => existing.key === key || existing.expiresAt > now,
+  );
+  // A visible keyed print keeps its slot, so per-frame updates do not reorder.
+  const slot = next.findIndex(
+    (existing) => existing.key === key && existing.expiresAt > now,
+  );
+  if (slot >= 0) {
+    next[slot] = entry;
+    return next.filter((existing, index) => index === slot || existing.key !== key);
+  }
+  const fresh = next.filter((existing) => existing.key !== key);
+  fresh.push(entry);
+  return fresh;
 }
 
 export function visiblePrintHudEntries(

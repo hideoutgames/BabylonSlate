@@ -17,3 +17,13 @@ export function uniqueSceneActorName(scene: SerializedScene, preferred: string):
   for (let suffix = 2; names.has(name); suffix += 1) name = `${preferred} ${suffix}`;
   return name;
 }
+
+/**
+ * The name a duplicate starts from: "Box" → "Box Copy", while duplicating
+ * "Box Copy" or "Box Copy 3" stays "Box Copy" (the caller numbers it) instead
+ * of growing "Box Copy Copy".
+ */
+export function duplicateBaseName(name: string): string {
+  const base = name.replace(/ Copy(?: \d+)?$/, "");
+  return `${base} Copy`;
+}

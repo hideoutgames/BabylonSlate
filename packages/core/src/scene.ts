@@ -255,9 +255,14 @@ export function createDefaultSceneSettings(
   };
 }
 
+/**
+ * A new MeshComponent draws only: collision is opt-in ("simple" or "complex"),
+ * so it never adds a hidden shape beside the actor's explicit colliders.
+ */
 export function createMeshComponent(
   id: string,
   meshKind = "box",
+  collisionMode: "none" | "simple" | "complex" = "none",
 ): SerializedComponent {
   return {
     id,
@@ -268,7 +273,7 @@ export function createMeshComponent(
       meshKind,
       assetGuid: null,
       materialGuid: null,
-      collisionMode: "simple",
+      collisionMode,
       layer: 1,
       mask: 0xffffffff,
     },

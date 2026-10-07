@@ -280,7 +280,11 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
         bodyDesc = R.RigidBodyDesc.kinematicPositionBased();
         break;
       default:
-        bodyDesc = R.RigidBodyDesc.dynamic().setAdditionalMass(desc.mass);
+        // Same floor as updateBody (and Havok): a zero or negative mass makes
+        // Rapier integrate NaN and the body disappears.
+        bodyDesc = R.RigidBodyDesc.dynamic().setAdditionalMass(
+          Math.max(desc.mass, 1e-6),
+        );
         break;
     }
     bodyDesc

@@ -977,7 +977,7 @@ describe("Play createEngine view", () => {
       handles.push(handle);
       handle.loadScene({ ...createDefaultScene(), actors: [
         createActor("selected", "Selected", { transform: { position: [0, 10, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, components: [createMeshComponent("mesh", "box")] }),
-        createActor("floor", "Floor", { transform: { position: [0, floorY, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, components: [createMeshComponent("floor-mesh", "box")] }),
+        createActor("floor", "Floor", { transform: { position: [0, floorY, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, components: [createMeshComponent("floor-mesh", "box", "simple")] }),
       ] });
       return handle;
     };

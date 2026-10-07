@@ -543,9 +543,9 @@ describe("scene schema", () => {
     );
   });
 
-  it("defaults MeshComponent collision to Use Simple Collision with layer/mask", () => {
+  it("defaults MeshComponent collision to No Collision with layer/mask", () => {
     expect(createMeshComponent("c1", "box").properties).toMatchObject({
-      collisionMode: "simple",
+      collisionMode: "none",
       layer: 1,
       mask: 0xffffffff,
     });

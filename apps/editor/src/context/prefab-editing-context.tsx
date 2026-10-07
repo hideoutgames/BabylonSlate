@@ -291,6 +291,7 @@ export function PrefabEditingProvider({
               // Read when the component is added, not on every edit.
               physicsWorldFromOpenDocuments(getOpenDocuments()),
               viewportMode,
+              components,
             ),
             ...selection.properties,
           },

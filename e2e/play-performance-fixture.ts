@@ -21,7 +21,7 @@ export function playPerformanceRoom(): SerializedScene {
   ) =>
     createActor(id, id, {
       transform: { ...identitySerializedTransform(), position, scale },
-      components: [createMeshComponent(`${id}-mesh`, "box")],
+      components: [createMeshComponent(`${id}-mesh`, "box", "simple")],
     });
   scene.actors.push(box("Floor", [0, -1.25, 0], [44, 0.5, 44]));
   scene.actors.push(box("Back Wall", [0, 3, 22], [44, 8, 0.5]));
@@ -50,7 +50,7 @@ export function playPerformanceRoom(): SerializedScene {
           position: [(index % 4) * 4 - 6, 6 + (index % 3) * 2, Math.floor(index / 4) * 4 - 6],
         },
         components: [
-          createMeshComponent(`sphere-${index}-mesh`, "sphere"),
+          createMeshComponent(`sphere-${index}-mesh`, "sphere", "simple"),
           {
             id: `sphere-${index}-body`,
             classId: "RigidBodyComponent",

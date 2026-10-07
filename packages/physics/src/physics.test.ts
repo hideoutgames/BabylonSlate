@@ -527,6 +527,25 @@ describe("@babylonslate/physics", () => {
     backend.dispose();
   });
 
+  it("reads negative primitive sizes as unsigned so simulation still accepts them", () => {
+    expect(
+      parseColliderProperties(
+        { shape: { kind: "box2d", halfExtents: { x: -1, y: 0.5 } } },
+        "2d",
+      ).shape,
+    ).toEqual({ kind: "box2d", halfExtents: { x: 1, y: 0.5 } });
+    expect(
+      parseColliderProperties({ shape: { kind: "sphere", radius: -0.5 } }, "3d")
+        .shape,
+    ).toEqual({ kind: "sphere", radius: 0.5 });
+    expect(() =>
+      parseColliderProperties(
+        { shape: { kind: "box", halfExtents: { x: 0, y: 1, z: 1 } } },
+        "3d",
+      ),
+    ).toThrow("finite and positive");
+  });
+
   it("parses extended collider shapes for both worlds", () => {
     expect(
       parseColliderProperties({ shape: { kind: "sphere", radius: 2 } }, "3d")

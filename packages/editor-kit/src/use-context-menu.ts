@@ -94,6 +94,15 @@ export function useContextMenu(
   const itemsRef = useRef(items);
   itemsRef.current = items;
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
+  // Right mouse press: a drag (viewport orbit) must not end in a menu, and
+  // platforms that fire contextmenu on press defer it to the release.
+  const rightPressRef = useRef<{
+    x: number;
+    y: number;
+    moved: boolean;
+    pending: boolean;
+    cleanup: () => void;
+  } | null>(null);
 
   const closeMenu = useCallback(() => setMenu(null), []);
 
@@ -116,17 +125,80 @@ export function useContextMenu(
     [enabled],
   );
 
+  const clearRightPress = useCallback(() => {
+    rightPressRef.current?.cleanup();
+    rightPressRef.current = null;
+  }, []);
+
   const onContextMenu = useCallback(
     (event: ReactMouseEvent) => {
       if (!enabled || !eventTargetIsInside(event)) return;
       event.preventDefault();
+      const right = rightPressRef.current;
+      if (right?.moved) return;
+      if (right && (event.buttons & 2) !== 0) {
+        right.pending = true;
+        return;
+      }
       openAt(event.clientX, event.clientY);
     },
     [enabled, openAt],
   );
 
+  const beginRightPress = useCallback(
+    (event: React.PointerEvent) => {
+      clearRightPress();
+      const { pointerId } = event;
+      const onMove = (next: PointerEvent) => {
+        const right = rightPressRef.current;
+        if (
+          right &&
+          next.pointerId === pointerId &&
+          distance(right.x, right.y, next.clientX, next.clientY) >
+            CONTEXT_MENU_MOVE_TOLERANCE_PX
+        ) {
+          right.moved = true;
+        }
+      };
+      const onUp = (next: PointerEvent) => {
+        if (next.pointerId !== pointerId || (next.buttons & 2) !== 0) return;
+        const right = rightPressRef.current;
+        // Windows fires contextmenu after this release; keep a drag flagged
+        // until then so the menu stays closed.
+        if (right?.pending && !right.moved) openAt(right.x, right.y);
+        setTimeout(() => {
+          if (rightPressRef.current === right) clearRightPress();
+        }, 0);
+      };
+      document.addEventListener("pointermove", onMove, true);
+      document.addEventListener("pointerup", onUp, true);
+      document.addEventListener("pointercancel", onUp, true);
+      rightPressRef.current = {
+        x: event.clientX,
+        y: event.clientY,
+        moved: false,
+        pending: false,
+        cleanup: () => {
+          document.removeEventListener("pointermove", onMove, true);
+          document.removeEventListener("pointerup", onUp, true);
+          document.removeEventListener("pointercancel", onUp, true);
+        },
+      };
+    },
+    [clearRightPress, openAt],
+  );
+
   const onPointerDown = useCallback(
     (event: React.PointerEvent) => {
+      if (
+        enabled &&
+        event.pointerType === "mouse" &&
+        event.button === 2 &&
+        eventTargetIsInside(event)
+      ) {
+        beginRightPress(event);
+        return;
+      }
       if (!enabled || event.pointerType === "mouse" || !eventTargetIsInside(event))
         return;
       clearPress();
@@ -179,7 +251,7 @@ export function useContextMenu(
         },
       };
     },
-    [clearPress, enabled, longPressMs, openAt],
+    [beginRightPress, clearPress, enabled, longPressMs, openAt],
   );
 
   const onPointerMove = useCallback(
@@ -242,9 +314,15 @@ export function useContextMenu(
   }, [clearPress, closeMenu, enabled]);
 
   useEffect(() => {
-    if (!enabled) clearPress();
-    return clearPress;
-  }, [enabled, clearPress]);
+    if (!enabled) {
+      clearPress();
+      clearRightPress();
+    }
+    return () => {
+      clearPress();
+      clearRightPress();
+    };
+  }, [enabled, clearPress, clearRightPress]);
 
   return {
     menu,
