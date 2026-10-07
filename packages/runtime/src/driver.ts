@@ -35,7 +35,6 @@ import {
   type ControlMessage,
   type RuntimeSceneContent,
   type DebugBehaviourTree,
-  type DebugNavAgent,
   type GameSessionMode,
   type SessionPauseReason,
   type SessionBoundaryRequest,
@@ -135,7 +134,6 @@ import {
   createPhysicsBackend,
   createSoftwarePhysicsBackend,
   parseColliderProperties,
-  parseRigidBodyProperties,
   SoftwarePhysicsBackend,
   type PhysicsBackend,
   type PhysicsWorldKind,
@@ -189,13 +187,13 @@ import {
 import { ScriptHost, compiledScriptKey, compiledScriptSourceLabel, type CompiledScript } from "./script-host";
 import { COMPILED_MODULE_LINE_OFFSET } from "./module-loader";
 import { shouldSpawnScriptedActor } from "./play-load";
-import { actorLocalPhysicsTransform, PhysicsWorldSync } from "./physics-sync";
+import { PhysicsWorldSync } from "./physics-sync";
 import { RagdollWorldSync } from "./ragdoll-sync";
 import {
   formatDumpActors,
   formatInspectActor,
 } from "./console-inspect";
-import { actorChainWorldTransform, actorLabel, actorParentGuid, breakParentCycles, composeActorWorldTransforms, firstSpawnedActorIndex, firstSpawnedWorldTransforms, WorldTransformComposer } from "./actor-world-transform";
+import { actorChainWorldTransform, actorLabel, actorParentGuid, breakParentCycles, firstSpawnedActorIndex, WorldTransformComposer } from "./actor-world-transform";
 import { SceneLayerLayout } from "./scene-layer-layout";
 import { SceneLayerVirtualization } from "./scene-layer-virtualization";
 import { isOverlayLayoutClass, isOverlayScrollClass, overlayLayoutKey, type OverlaySafeAreaInsets } from "@babylonslate/core";
