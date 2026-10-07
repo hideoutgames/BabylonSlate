@@ -1,8 +1,24 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createActor, createDefaultScene, createDefaultSceneLayer } from "@babylonslate/core";
+import {
+  readSnapshotHeader,
+  snapshotFloatCount,
+  type BridgeHostMessage,
+  type BridgeWorkerMessage,
+  type CommandMessage,
+  type ControlMessage,
+} from "@babylonslate/bridge";
+import { createInProcessRuntime, type RuntimeDriver } from "./driver";
+import { createRuntimeFromLoad, runtimeOptionsFromLoadControl } from "./play-load";
 import {
   createWorkerScheduler,
   type WorkerSchedulerHost,
 } from "./worker-scheduler";
+
+vi.mock("./play-load", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./play-load")>()),
+  createRuntimeFromLoad: vi.fn(),
+}));
 
 interface ScheduledCallback {
   callback: (now: number) => void;
@@ -89,5 +105,114 @@ describe.each([
     expect(harness.activeCount()).toBe(0);
     expect(() => harness.runNext(16)).toThrow("No scheduled worker callback");
     expect(advance).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("worker entry snapshot transport", () => {
+  type Post =
+    | { kind: "snapshot"; frameId: number; buffer: ArrayBuffer }
+    | { kind: "command"; command: CommandMessage };
+  let send: ((control: ControlMessage) => void) | undefined;
+  afterEach(() => {
+    send?.({ type: "stop" });
+    send = undefined;
+    vi.unstubAllGlobals();
+  });
+
+  it("holds poses at two outstanding transfers, then publishes the newest one before held markers", async () => {
+    vi.resetModules();
+    let now = 0;
+    const frames: FrameRequestCallback[] = [];
+    const host = {
+      onmessage: undefined as ((event: { data: BridgeHostMessage }) => void) | undefined,
+      performance: { now: () => now },
+      requestAnimationFrame: (callback: FrameRequestCallback) => frames.push(callback),
+      cancelAnimationFrame() {},
+      addEventListener() {},
+    };
+    vi.stubGlobal("self", host);
+    const deliver = (data: BridgeHostMessage) => host.onmessage!({ data });
+    const posts: Post[] = [];
+    vi.stubGlobal("postMessage", (message: BridgeWorkerMessage) => {
+      if (message.channel === "snapshot") {
+        const frameId = readSnapshotHeader(new Float32Array(message.payload)).frameId;
+        posts.push({ kind: "snapshot", frameId, buffer: message.payload });
+        return;
+      }
+      const command = message.payload;
+      posts.push({ kind: "command", command });
+      // Like the real hosts, acknowledge a layout change on a later task.
+      if (command.type === "snapshotLayout") {
+        queueMicrotask(() => deliver({ channel: "snapshotLayoutAck", generation: command.generation }));
+      }
+    });
+    const emitted: CommandMessage[] = [];
+    let runtime!: RuntimeDriver;
+    const hud = { ...createDefaultSceneLayer(), actors: [createActor("badge", "Badge", { classId: "SceneLayerActor" })] };
+    vi.mocked(createRuntimeFromLoad).mockImplementation((load, onCommand) => {
+      runtime = createInProcessRuntime({
+        ...runtimeOptionsFromLoadControl(load),
+        preferSoftwarePhysics: true,
+        sceneLayerLibrary: { hud },
+        onCommand: (command) => {
+          emitted.push(command);
+          onCommand(command);
+        },
+      });
+      return runtime;
+    });
+    await import("./worker-entry");
+    send = (payload) => deliver({ channel: "control", payload });
+    send({ type: "load", sceneAssetGuid: "main", scene: { ...createDefaultScene(), actors: [createActor("prop", "Prop")] } });
+    send({ type: "play" });
+    await vi.waitFor(() => expect(frames.length).toBeGreaterThan(0));
+
+    const runFrames = (count: number) => {
+      for (let i = 0; i < count; i++) {
+        now += 1000 / 60;
+        frames.shift()!(now);
+      }
+    };
+    const kinds = (list = posts) => list.map((post) => post.kind === "snapshot" ? "snapshot" : post.command.type);
+    const snapshots = () => posts.flatMap((post) => post.kind === "snapshot" ? [post] : []);
+    const newestFrame = () => {
+      const buffer = new Float32Array(snapshotFloatCount(runtime.snapshotCapacity));
+      expect(runtime.copySnapshot(buffer)).toBe(true);
+      return readSnapshotHeader(buffer).frameId;
+    };
+
+    // The host never recycles: after two poses, ticks keep simulating
+    // without queueing more transfers.
+    runFrames(8);
+    expect(kinds().indexOf("snapshot")).toBeLessThan(kinds().indexOf("sceneRealized"));
+    expect(snapshots()).toHaveLength(2);
+
+    // A SceneLayer realized meanwhile waits for a pose that includes it.
+    runtime.createSceneLayer("hud");
+    for (let i = 0; i < 50 && !emitted.some((command) => command.type === "sceneLayerRealized"); i++) {
+      runFrames(1);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(emitted.some((command) => command.type === "sceneLayerRealized")).toBe(true);
+    runFrames(3);
+    expect(snapshots()).toHaveLength(2);
+    expect(kinds()).not.toContain("sceneLayerRealized");
+
+    let newest = newestFrame();
+    expect(newest).toBeGreaterThan(snapshots()[1]!.frameId);
+    let before = posts.length;
+    deliver({ channel: "recycleSnapshot", payload: snapshots()[0]!.buffer });
+    expect(kinds(posts.slice(before))).toEqual(["snapshot", "sceneLayerRealized"]);
+    expect(snapshots()[2]!.frameId).toBe(newest);
+
+    // Without a held marker, a returned buffer carries the newest skipped pose at once.
+    runFrames(2);
+    expect(snapshots()).toHaveLength(3);
+    newest = newestFrame();
+    expect(newest).toBeGreaterThan(snapshots()[2]!.frameId);
+    before = posts.length;
+    deliver({ channel: "recycleSnapshot", payload: snapshots()[1]!.buffer });
+    expect(kinds(posts.slice(before))).toEqual(["snapshot"]);
+    expect(snapshots()[3]!.frameId).toBe(newest);
   });
 });

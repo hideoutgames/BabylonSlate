@@ -47,6 +47,13 @@ const sceneSnapshots = createSceneSnapshotDelivery({
 // Recycled via the host's `recycleSnapshot` message so the per-frame
 // snapshot transfer never allocates a fresh ArrayBuffer once warmed up.
 let snapshotPing = new TransferablePingPong(256);
+// Poses are latest-state. A host that stops returning buffers (a stalled main
+// thread or a hidden tab) must not queue a transfer every tick: with this many
+// outstanding, a tick's pose is skipped and the newest one is published as
+// soon as a buffer comes back. Structural commands are never held.
+const MAX_IN_FLIGHT_SNAPSHOTS = 2;
+let inFlightSnapshots = 0;
+let snapshotSkipped = false;
 let installedGeneration = 0;
 let pendingGeneration: number | null = null;
 let stopConsoleCapture: (() => void) | null = null;
@@ -427,12 +434,18 @@ function handleControl(msg: ControlMessage): void {
 function publishSnapshot(): boolean {
   const rt = runtime;
   if (!rt || pendingGeneration !== null) return false;
+  if (inFlightSnapshots >= MAX_IN_FLIGHT_SNAPSHOTS) {
+    snapshotSkipped = true;
+    return false;
+  }
   const buf = snapshotPing.beginWrite();
   if (!rt.copySnapshot(buf)) {
     snapshotPing.cancelWrite();
     return false;
   }
   const ab = snapshotPing.commitWrite();
+  inFlightSnapshots++;
+  snapshotSkipped = false;
   postMessage({ channel: "snapshot", payload: ab, generation: installedGeneration }, [ab]);
   return true;
 }
@@ -459,8 +472,10 @@ self.onmessage = (event: MessageEvent<BridgeHostMessage>) => {
     return;
   }
   if (msg.channel === "recycleSnapshot") {
+    // Every posted buffer comes back once, stale layout generations included.
+    inFlightSnapshots = Math.max(0, inFlightSnapshots - 1);
     snapshotPing.recycle(msg.payload);
-    sceneSnapshots.flush();
+    if (!sceneSnapshots.flush() && snapshotSkipped) publishSnapshot();
     return;
   }
   if (msg.channel === "snapshotLayoutAck" && msg.generation === pendingGeneration) {
