@@ -1118,10 +1118,7 @@ class InProcessRuntime implements RuntimeDriver {
     });
     this.dynamicMeshes = new DynamicRuntimeMeshSync({
       eligible: (actor) => !actor.sceneLayerId && this.canRunOwner(actor),
-      slot: (actor) => {
-        const slot = this.slotByGuid.get(actor.guid);
-        return slot !== undefined && this.slotOwners.get(slot) === actor ? slot : undefined;
-      },
+      slot: (actor) => this.actorSlot(actor),
       emit: (command) => this.emit(command),
     });
     this.movement = new MovementWorldSync({
@@ -1140,19 +1137,13 @@ class InProcessRuntime implements RuntimeDriver {
       world: this.world,
       physics: () => this.physicsSync.getBackend(),
       eligible: (actor) => this.canTickActor(actor),
-      slot: (actor) => {
-        const slot = this.slotByGuid.get(actor.guid);
-        return slot !== undefined && this.slotOwners.get(slot) === actor ? slot : undefined;
-      },
+      slot: (actor) => this.actorSlot(actor),
       emit: (command) => this.emit(command),
     });
     this.ragdolls = new RagdollWorldSync({
       world: this.world,
       physics: () => this.physicsSync,
-      slot: (actor) => {
-        const slot = this.slotByGuid.get(actor.guid);
-        return slot !== undefined && this.slotOwners.get(slot) === actor ? slot : undefined;
-      },
+      slot: (actor) => this.actorSlot(actor),
       eligible: (actor) => this.canTickActor(actor),
       deferNative: !this.preferSoftwarePhysics,
       emit: (command) => this.emit(command),
@@ -1162,7 +1153,7 @@ class InProcessRuntime implements RuntimeDriver {
       actors: () => this.world.getActors(),
       canRun: (actor) => !this.stopped && this.canTickActor(actor),
       update: (component, properties) => {
-        const slotId = component.owner ? this.slotByGuid.get(component.owner.guid) : undefined;
+        const slotId = component.owner ? this.actorSlot(component.owner) : undefined;
         if (slotId !== undefined) this.emit({ type: "setUIControl2D", slotId, componentId: component.guid,
           uiControl: { classId: component.classId, properties } });
       },
@@ -1177,7 +1168,7 @@ class InProcessRuntime implements RuntimeDriver {
       canRun: (actor) => this.canTickActor(actor),
       event: (actor, component, event) => {
         if (isUIControl2DClass(component.classId) && (event === "onFocusEnter" || event === "onFocusLeave")) {
-          const slotId = this.slotByGuid.get(actor.guid);
+          const slotId = this.actorSlot(actor);
           if (slotId !== undefined) this.emit({ type: "setUIControl2D", slotId, componentId: component.guid,
             uiControl: { classId: component.classId, properties: this.uiControls.payload(component) }, focused: event === "onFocusEnter" });
         }
@@ -1404,8 +1395,8 @@ class InProcessRuntime implements RuntimeDriver {
       getSaveActorId: (actor) => this.saveGameWorld?.persistentId(actor) ?? actor.guid,
       resolveSaveActor: (id) => this.saveGameWorld?.findActor(id) ?? this.world.findActor(id),
       attachToBone: (actor, target, boneName) => {
-        const slotId = this.slotByGuid.get(actor.guid);
-        const targetSlotId = target ? this.slotByGuid.get(target.guid) : null;
+        const slotId = this.actorSlot(actor);
+        const targetSlotId = target ? this.actorSlot(target) : null;
         if (slotId === undefined || targetSlotId === undefined) return;
         this.emit({ type: "attachToBone", slotId, targetSlotId, boneName });
       },
@@ -1882,7 +1873,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.publishSnapshot();
     if (this.sceneStreams.get(stream.actor.guid) !== stream) return;
     this.emit({ type: "sceneStreamRealized", actorGuid: stream.actor.guid, streamLoadId: stream.loadId,
-      slotIds: [...stream.actors].flatMap((actor) => { const slot = this.slotByGuid.get(actor.guid); return slot === undefined ? [] : [slot]; }) });
+      slotIds: [...stream.actors].flatMap((actor) => { const slot = this.actorSlot(actor); return slot === undefined ? [] : [slot]; }) });
     if (!this.deferSceneModelsReady) this.notifySceneStreamReady(stream.actor.guid, stream.loadId);
   }
 
@@ -2324,7 +2315,7 @@ class InProcessRuntime implements RuntimeDriver {
     }
     for (const actor of actors) {
       checkpoint();
-      const slotId = this.slotByGuid.get(actor.guid);
+      const slotId = this.actorSlot(actor);
       if (slotId === undefined) continue;
       this.emitMeshAssignment(actor, slotId);
       checkpoint();
@@ -2376,7 +2367,7 @@ class InProcessRuntime implements RuntimeDriver {
         if (!result || layer.destroyed) continue;
         const transforms = new Map(result.actors.flatMap(actor => actor.components.map(component => [overlayLayoutKey(actor.id, component.id), component.transform] as const)));
         this.emit({ type: "sceneLayerLayout", layerId: layer.guid, entries: [...result.entries].flatMap(([key, entry]) => {
-          const slotId = this.slotByGuid.get(entry.actorId);
+          const slotId = this.guidSlot(entry.actorId);
           return slotId === undefined ? [] : [{ ...entry, slotId, transform: transforms.get(key) }];
         }) });
       }
@@ -2493,7 +2484,7 @@ class InProcessRuntime implements RuntimeDriver {
   applySceneLayerFocusNavigate(reverse: boolean): void {
     const focused = this.focusNavigation.advance(reverse);
     const actor = focused?.owner;
-    const slotId = actor ? this.slotByGuid.get(actor.guid) : undefined;
+    const slotId = actor ? this.actorSlot(actor) : undefined;
     // A single remaining target may not transition. Acknowledge it so the host
     // can reopen a text editor after Tab without inventing another focus order.
     if (focused && isUIControl2DClass(focused.classId) && slotId !== undefined) {
@@ -2617,14 +2608,14 @@ class InProcessRuntime implements RuntimeDriver {
 
   private flushPainters(): void {
     this.painters.flush((component, painter) => {
-      const slotId = component.owner ? this.slotByGuid.get(component.owner.guid) : undefined;
+      const slotId = component.owner ? this.actorSlot(component.owner) : undefined;
       if (slotId !== undefined) this.emit({ type: "setPainter2D", slotId, componentId: component.guid, painter });
     });
   }
 
   private flushTextAppear(): void {
     this.textAppear.flush((component, progress) => {
-      const slotId = component.owner ? this.slotByGuid.get(component.owner.guid) : undefined;
+      const slotId = component.owner ? this.actorSlot(component.owner) : undefined;
       if (slotId !== undefined) this.emit({ type: "setText2DAppear", slotId, componentId: component.guid, progress });
     });
   }
@@ -3263,7 +3254,7 @@ class InProcessRuntime implements RuntimeDriver {
         if (key.startsWith(`${component.guid}:`)) this.animInitializedBySlot.delete(key);
       }
     }
-    const slotId = this.slotByGuid.get(actor.guid);
+    const slotId = this.actorSlot(actor);
     const ownsSlot = () => slotId !== undefined && this.slotOwners.get(slotId) === actor;
     try {
       if (ownsSlot()) this.emitAudioStops(actor);
@@ -3587,7 +3578,7 @@ class InProcessRuntime implements RuntimeDriver {
     const defaultActor = scene?.actors.find((actor) => actor.id === scene.settings.mainCameraActorId);
     if (defaultActor?.components.some((component) =>
       component.id === scene?.settings.mainCameraComponentId && component.classId === "CameraComponent",
-    ) && this.slotByGuid.has(defaultActor.id)) return;
+    ) && this.guidSlot(defaultActor.id) !== undefined) return;
     for (const actor of this.playScene?.actors ?? []) {
       const opted = actor.components.some(
         (component) =>
@@ -3595,7 +3586,7 @@ class InProcessRuntime implements RuntimeDriver {
           component.properties.attemptPossessViewTarget === true,
       );
       if (!opted) continue;
-      const slotId = this.slotByGuid.get(actor.id);
+      const slotId = this.guidSlot(actor.id);
       if (slotId === undefined) continue;
       this.emit({ type: "possessCamera", slotId });
       this.possessedCameraSlotId = slotId;
@@ -4398,7 +4389,7 @@ class InProcessRuntime implements RuntimeDriver {
     for (const actor of this.world.getActors()) {
       if (this.stopped) return;
       if (!this.canTickActor(actor)) continue;
-      const slotId = this.slotByGuid.get(actor.guid);
+      const slotId = this.actorSlot(actor);
       if (slotId === undefined) continue;
       if (this.btPlayAnimOwnedSlots.has(slotId)) continue;
       for (const component of actor.components) {
@@ -4740,7 +4731,7 @@ class InProcessRuntime implements RuntimeDriver {
     memory: Record<string, unknown>,
   ): BtResult {
     const clip = this.resolvePlayAnimationClip(node.properties);
-    const slotId = this.slotByGuid.get(actor.guid);
+    const slotId = this.actorSlot(actor);
     if (!clip || slotId === undefined) {
       if (slotId !== undefined) this.btPlayAnimOwnedSlots.delete(slotId);
       return "failure";
@@ -4830,7 +4821,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   private abortPlayAnimation(actor: Actor, memory: Record<string, unknown>): void {
     delete memory.elapsedMs;
-    const slotId = this.slotByGuid.get(actor.guid);
+    const slotId = this.actorSlot(actor);
     if (slotId !== undefined) this.btPlayAnimOwnedSlots.delete(slotId);
     (actor.sceneLayerId ? this.overlayPhysicsSync : this.physicsSync).setActorSpriteClip(actor, null);
   }
@@ -4915,7 +4906,7 @@ class InProcessRuntime implements RuntimeDriver {
     for (const actor of this.world.getActors()) {
       if (this.stopped) return;
       if (!this.canTickActor(actor)) continue;
-      const slotId = this.slotByGuid.get(actor.guid);
+      const slotId = this.actorSlot(actor);
       if (slotId === undefined) continue;
       const component = actor.components.find(
         (entry) =>
@@ -5036,7 +5027,7 @@ class InProcessRuntime implements RuntimeDriver {
     const trees: DebugBehaviourTree[] = [];
     for (const actor of this.world.getActors()) {
       if (actor.destroyed) continue;
-      const slotId = this.slotByGuid.get(actor.guid);
+      const slotId = this.actorSlot(actor);
       if (slotId === undefined) continue;
       const component = actor.components.find((entry) =>
         entry.classId === "BehaviourTreeComponent" && !entry.destroyed);
@@ -5157,7 +5148,7 @@ class InProcessRuntime implements RuntimeDriver {
         if (!(target instanceof Actor)) return target;
         if (!target.components.some((component) =>
           component.classId === "CameraComponent" && !component.destroyed,
-        ) || !this.slotByGuid.has(target.guid)) {
+        ) || this.actorSlot(target) === undefined) {
           return { success: false, output: `actor '${query}' has no live camera` };
         }
         this.emit({ type: "setFreeCam", enabled: false });
@@ -5272,7 +5263,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   private flushDeformers(): void {
     for (const actor of this.dirtyDeformerActors) {
-      const slotId = this.slotByGuid.get(actor.guid);
+      const slotId = this.actorSlot(actor);
       if (!actor.destroyed && slotId !== undefined) this.emitActorDeformers(actor, slotId);
     }
     this.dirtyDeformerActors.clear();
@@ -5721,7 +5712,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private emitParticleComponents(actor: Actor): void {
-    const slotId = this.slotByGuid.get(actor.guid);
+    const slotId = this.actorSlot(actor);
     if (slotId === undefined) return;
     for (const component of actor.components) {
       if (component.destroyed || component.classId !== "ParticleComponent") {
@@ -5758,7 +5749,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private emitParticleStops(actor: Actor): void {
-    const slotId = this.slotByGuid.get(actor.guid) ?? 0;
+    const slotId = this.actorSlot(actor) ?? 0;
     for (const component of actor.components) {
       if (component.classId !== "ParticleComponent") continue;
       this.emit({
@@ -5809,7 +5800,7 @@ class InProcessRuntime implements RuntimeDriver {
   private possessCamera(target: unknown): void {
     const actor = actorFromIlluminationTarget(target);
     if (!actor) return;
-    const slotId = this.slotByGuid.get(actor.guid);
+    const slotId = this.actorSlot(actor);
     if (slotId === undefined) return;
     this.cameraPossessedByScript = true;
     this.possessedCameraSlotId = slotId;
@@ -5820,7 +5811,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (this.possessedCameraSlotId != null) {
       for (const actor of this.world.getActors()) {
         if (actor.destroyed) continue;
-        if (this.slotByGuid.get(actor.guid) === this.possessedCameraSlotId) {
+        if (this.actorSlot(actor) === this.possessedCameraSlotId) {
           return actor;
         }
       }
@@ -5930,7 +5921,7 @@ class InProcessRuntime implements RuntimeDriver {
   private reemitIllumination(target: unknown): void {
     const actor = actorFromIlluminationTarget(target);
     if (!actor) return;
-    const slotId = this.slotByGuid.get(actor.guid);
+    const slotId = this.actorSlot(actor);
     if (slotId === undefined) return;
     this.emitMeshAssignment(actor, slotId);
   }
@@ -6025,6 +6016,19 @@ class InProcessRuntime implements RuntimeDriver {
       ...(stream ? { sceneStreamActorGuid: stream.actor.guid, streamLoadId: stream.loadId } : {}),
     });
     return slotId;
+  }
+
+  /** The render slot this actor's own commands target. Never resolve one
+   * through `slotByGuid`: a same-guid duplicate spawned later owns that. */
+  private actorSlot(actor: Actor): number | undefined {
+    const slot = this.slotByActor.get(actor);
+    return slot !== undefined && this.slotOwners.get(slot) === actor ? slot : undefined;
+  }
+
+  /** The slot of a guid's first-spawned live actor, the one guid lookups resolve. */
+  private guidSlot(guid: string): number | undefined {
+    const actor = this.world.findActor(guid);
+    return actor ? this.actorSlot(actor) : undefined;
   }
 
   private ensureSnapshotCapacity(required: number): void {

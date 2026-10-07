@@ -18,7 +18,7 @@ interface Preparation {
 const preparations = new WeakMap<InternalTexture, Preparation>();
 
 /**
- * Pinned Babylon 9.20 adapter: inspect existing coefficients without invoking
+ * Pinned Babylon 9.29 adapter: inspect existing coefficients without invoking
  * BaseTexture's lazy getter. That getter captures a disposable wrapper across
  * asynchronous readback and dereferences its cleared InternalTexture afterward.
  * Only these owned views override the getter; no prototype or shared data changes.

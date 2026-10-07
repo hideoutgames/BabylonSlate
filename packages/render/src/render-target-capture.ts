@@ -64,7 +64,7 @@ class CaptureRenderTarget extends RenderTargetTexture {
   configurePass(): void {
     this._objectRenderer.enableOutlineRendering = false;
     this._objectRenderer.disableDepthPrePass = true;
-    // Babylon 9.20 installs only its clustered-light preparation observer on
+    // Babylon 9.29 installs only its clustered-light preparation observer on
     // this privately owned renderer. Readiness already runs that GPU work;
     // skip the same observer on the immediately following prepared draw.
     this._objectRenderer.onInitRenderingObservable.add((_renderer, state) => {

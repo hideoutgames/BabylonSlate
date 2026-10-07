@@ -6,7 +6,7 @@ import {
 } from "@babylonjs/core";
 
 /**
- * Babylon 9.20 keeps NodeMaterial's uniform/sampler arrays across light variants.
+ * Babylon 9.29 keeps NodeMaterial's uniform/sampler arrays across light variants.
  * Its light blocks skip sampler additions when vLightData already exists, so a
  * conventional→clustered slot otherwise compiles without the two mask samplers.
  * Wrap only this owner's concrete blocks; never replace a shared prototype.

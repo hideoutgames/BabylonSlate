@@ -89,7 +89,8 @@ export function copyTextureBytesForUpload(bytes: Uint8Array): Uint8Array {
   if (!isKtx2Bytes(bytes) || bytes.length < 80) return copy;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   // The vendored Basis encoder uses Zstd and the older, unsized DFD convention.
-  // Babylon 9.20 multiplies by bytesPlane0, turning zero into empty image data.
+  // Decoders before Babylon 9.29 multiply by bytesPlane0, turning zero into empty
+  // image data; normalizing keeps previously cached decoder scripts working.
   if (view.getUint32(12, true) !== 0 || view.getUint32(44, true) !== 2) return copy;
   const dfd = view.getUint32(48, true);
   const length = view.getUint32(52, true);

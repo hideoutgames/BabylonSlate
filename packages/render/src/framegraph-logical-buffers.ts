@@ -8,12 +8,14 @@ import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
 export class LogicalGeometryTask extends FrameGraphGeometryRendererTask {
   protected override _prepareRendering(context: FrameGraphRenderContext, depthEnabled: boolean): number[] {
     const layout = super._prepareRendering(context, depthEnabled);
-    // Babylon 9.20 initializes MaxViewZ's clear color to zero. A sky pixel must
+    // Babylon 9.29 initializes MaxViewZ's clear color to zero. A sky pixel must
     // terminate a view-depth ray at the far plane, not at the camera origin.
     if (this.textureDescriptions.some((texture) => texture.type === Constants.PREPASS_DEPTH_TEXTURE_TYPE)) {
       const far = Math.min(65000, this.camera?.maxZ || 65000);
-      const depth = this.textureDescriptions.map((texture) => texture.type === Constants.PREPASS_DEPTH_TEXTURE_TYPE);
-      if (this.targetTexture !== undefined) depth.push(...(Array.isArray(this.targetTexture) ? this.targetTexture : [this.targetTexture]).map(() => false));
+      // Babylon 9.29 orders caller targets before the geometry textures.
+      const targets = this.targetTexture === undefined ? 0 : Array.isArray(this.targetTexture) ? this.targetTexture.length : 1;
+      const depth = new Array<boolean>(targets).fill(false)
+        .concat(this.textureDescriptions.map((texture) => texture.type === Constants.PREPASS_DEPTH_TEXTURE_TYPE));
       context.clearColorAttachments(new Color4(far, 0, 0, 1), this._frameGraph.engine.buildTextureLayout(depth));
       context.restoreDefaultFramebuffer();
     }
@@ -33,7 +35,7 @@ export class LogicalGeometryTask extends FrameGraphGeometryRendererTask {
 
   protected override _checkTextureCompatibility(targets: FrameGraphTextureHandle[]): boolean {
     const depthEnabled = super._checkTextureCompatibility(targets);
-    // Babylon 9.20 short-circuits its base compatibility method when explicit
+    // Babylon 9.29 short-circuits its base compatibility method when explicit
     // depth is present. That also skips viewport dimensions, yielding no pixels.
     const target = targets[0] ?? this.depthTexture;
     if (target !== undefined) {
@@ -42,14 +44,5 @@ export class LogicalGeometryTask extends FrameGraphGeometryRendererTask {
       this._textureHeight = size.height;
     }
     return depthEnabled;
-  }
-
-  override record(...args: Parameters<FrameGraphGeometryRendererTask["record"]>) {
-    const previous = this._frameGraph.scene.needsPreviousWorldMatrices;
-    try { return super.record(...args); }
-    finally {
-      // Depth/normal consumers must not switch off another owner's velocity.
-      this._frameGraph.scene.needsPreviousWorldMatrices ||= previous;
-    }
   }
 }
