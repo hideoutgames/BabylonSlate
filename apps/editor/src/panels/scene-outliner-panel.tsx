@@ -1,3 +1,6 @@
+import { SimulationOutliner } from "./simulation-outliner";
+import { useSimulationInspectionStore } from "../context/simulation-inspection-context";
+import { useOptionalPlay } from "../context/play-context";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { IndexedAsset } from "@babylonslate/assets";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -277,7 +280,16 @@ export function flattenOutliner(
   return rows;
 }
 
-export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
+export function SceneOutlinerPanel(props: IDockviewPanelProps) {
+  const { documentId } = useDocumentWorkspace();
+  const simulationDocumentId = useOptionalPlay()?.simulationDocumentId;
+  const store = useSimulationInspectionStore();
+  return store && simulationDocumentId === documentId
+    ? <SimulationOutliner store={store} panel={props} />
+    : <AuthoringSceneOutlinerPanel {...props} />;
+}
+
+function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
   void _props;
   const phone = usePhoneLayout();
   const actionSize = phone ? "touch-icon" : "icon-sm";

@@ -142,3 +142,22 @@ The Worker's per-frame snapshot is produced by `TransferablePingPong` (`packages
 - [render.md](render.md) — snapshot apply + resource cache (P4)
 
 Snapshot layout version 2 retains the 16-float header and actor stride. Positions are relative to a camera-selected 1024-unit origin cell. Header origin and actor residuals preserve precision without increasing transport bytes. Readers reconstruct authored world coordinates before interpolation, so a change of origin is atomic and cannot create an interpolation jump. This does not change authored transforms or imply unlimited physics precision.
+
+Simulation's existing Inspector and Outliner use one headless `SimulationInspectionStore`.
+The store requests the runtime identity tree by structural revision and details only
+for the exact selected scene-instance/GUID/lifetime-token tuple. Visible DockView
+consumers admit serialized reads at no more than 5 Hz; hidden documents and panels
+release their subscriptions. The tree is capped at 4,096 identities or 512 KiB of
+accounted serialized strings, and property/value pages retain the bridge's 64 KiB
+message bound. Additional pages require explicit navigation. These are retained-data
+limits, not browser heap measurements.
+
+Live controls reuse `PropertyGrid`, with runtime capability descriptors, protected
+focused drafts, correlated acknowledgements, and explicit pending/rejection state.
+Only validated runtime controls override the editor's read-only presentation context;
+source asset creation and structural authoring stay locked. A polling response older
+than an accepted command revision cannot overwrite its acknowledged value. Material
+instance edits use typed material requests, while assignment uses the component's
+validated property owner. Expanding a container requests one bounded value page,
+without starting another polling system. Runtime selection is kept separately from
+the immutable authored selection and never changes automatically when slots recycle.

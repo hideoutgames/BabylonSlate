@@ -1,3 +1,4 @@
+import { useSimulationInspectionStore } from "../context/simulation-inspection-context";
 import { useAppSettings } from "../context/app-settings-context";
 import { captureShadowDiagnostics, lightsDebugText } from "@babylonslate/render";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
@@ -259,6 +260,8 @@ export function PlayOverlay({
   const { reportBtState, overlayStats, overlayConsole, overlayInspector } =
     usePlay();
   const simulating = sessionTicket?.mode === "simulate";
+  const inspectionStore = useSimulationInspectionStore();
+  const inspectionDetachRef = useRef<(() => void) | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sessionRef = useRef<PlaySession | null>(null);
@@ -314,6 +317,8 @@ export function PlayOverlay({
   finishSessionRef.current = () => {
     if (closedRef.current) return;
     closedRef.current = true;
+    inspectionDetachRef.current?.();
+    inspectionDetachRef.current = null;
     const session = sessionRef.current;
     sessionRef.current = null;
     if (sessionOwner && sessionTicket) {
@@ -372,7 +377,7 @@ export function PlayOverlay({
 
   useEffect(() => {
     if (!simulating) return;
-    const releaseOutsideGame = (event: PointerEvent) => {
+    const releaseOutsideGame = (event: Event) => {
       if (inputModeRef.current !== "game") return;
       const target = event.target;
       // Chrome owns this gesture; it cannot also become a game or camera gesture.
@@ -383,9 +388,11 @@ export function PlayOverlay({
     };
     const escape = (event: KeyboardEvent) => { if (event.key === "Escape") changeInputModeRef.current("edit"); };
     document.addEventListener("pointerdown", releaseOutsideGame, true);
+    document.addEventListener("focusin", releaseOutsideGame, true);
     document.addEventListener("keydown", escape, true);
     return () => {
       document.removeEventListener("pointerdown", releaseOutsideGame, true);
+      document.removeEventListener("focusin", releaseOutsideGame, true);
       document.removeEventListener("keydown", escape, true);
     };
   }, [simulating]);
@@ -716,6 +723,7 @@ export function PlayOverlay({
         return;
       }
       sessionRef.current = session;
+      if (simulating && inspectionStore) inspectionDetachRef.current = inspectionStore.attach((action, options) => session.requestRuntimeInspection(action, options));
       void createAppSettingsStore()
         .load()
         .then((settings) => {
@@ -800,7 +808,7 @@ export function PlayOverlay({
       };
     });
     return () => { cancelled = true; disposePresentation?.(); };
-  }, [sharedEngine, injectFixtureThrow, reportBtState, pushLog, sessionOwner, sessionTicket, simulating, simulationSaveStorage]);
+  }, [sharedEngine, injectFixtureThrow, reportBtState, pushLog, sessionOwner, sessionTicket, simulating, simulationSaveStorage, inspectionStore]);
 
   useEffect(() => {
     if (!isTestModeEnabled()) return;

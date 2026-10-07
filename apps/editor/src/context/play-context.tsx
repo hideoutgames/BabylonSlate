@@ -1,4 +1,5 @@
 import { createPortal } from "react-dom";
+import { SimulationInspectionProvider } from "./simulation-inspection-context";
 import { prepareSaveGameConfiguration } from "../services/save-game-configuration";
 import { createSaveGameStorage, isTestModeEnabled } from "@babylonslate/vfs";
 import {
@@ -1800,6 +1801,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
 
   return (
     <PlayContext.Provider value={value}>
+      <SimulationInspectionProvider>
         {children}
         {sessionState.mode === "simulate" && !sessionState.quarantined ? (
           <SimulationSessionBar stopping={sessionState.lifecycle === "stopping"}
@@ -1970,6 +1972,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             {lastRuntimeMode}
           </span>
         ) : null}
+      </SimulationInspectionProvider>
     </PlayContext.Provider>
   );
 }
