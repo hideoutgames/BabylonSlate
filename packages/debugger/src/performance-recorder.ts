@@ -231,7 +231,7 @@ function validIdentity(value: unknown): value is PerformanceIdentity {
   for (const key of ["sessionId", "sceneId", "backend", "renderPath", "quality", "sourceSha", "buildId"] as const) {
     const field = identity[key];
     if ((key === "sourceSha" || key === "buildId") && field === null) continue;
-    if (typeof field !== "string" || field.length > 4096) return false;
+    if (typeof field !== "string" || field.length > (key === "quality" ? 32_768 : 4096)) return false;
   }
   return metadataBytes(identity) <= MAX_METADATA_BYTES;
 }

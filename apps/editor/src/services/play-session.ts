@@ -74,6 +74,7 @@ import {
 import { attachInputCapture, type InputCaptureHandle } from "./input-capture";
 import { createSessionBoundaryClient } from "./session-boundary-client";
 import { RuntimeInspectorClient, type RuntimeInspectionAction, type RuntimeInspectionWriteOptions } from "./runtime-inspector-client";
+import { getBuildIdentity } from "../lib/build-identity";
 import { observedMoveXFromEvents } from "../lib/play-input-observe";
 import { createGameWorkerHost, type GameWorkerHost } from "./game-worker-host";
 import { playLoadControl, type PlayPhysicsSettings } from "./play-physics";
@@ -84,6 +85,9 @@ import {
 } from "../lib/public-engine-assets";
 import {
   INFINITE_LOOP_DIAGNOSTIC_CODE,
+  SessionDiagnostics,
+  createDiagnosticOperationClient,
+  type PerformanceProfile,
   type TracePayload,
 } from "@babylonslate/debugger";
 
@@ -325,6 +329,7 @@ export interface PlaySession {
   runtime: RuntimeDriver | null;
   worker: GameWorkerHost | null;
   runtimeMode: "worker" | "in-process";
+  diagnostics: SessionDiagnostics<import("@babylonslate/render").RenderFrameReport>;
   setPaused: (paused: boolean) => void;
   setPauseReason: (reason: import("@babylonslate/bridge").SessionPauseReason, paused: boolean) => Promise<import("@babylonslate/bridge").SessionBoundaryResult>;
   setInputMode: (mode: "game" | "edit") => Promise<void>;
@@ -494,6 +499,7 @@ export function startPlaySession(options: {
   frameCap?: number;
   /** Engine Settings trace retention budget, captured when Play starts. */
   traceByteBudget?: number;
+  onProfile?: (profile: PerformanceProfile) => void;
   /** AnimationGraph documents for `loadAnimGraphs` / `registerAnimGraph`. */
   animGraphs?: ReadonlyArray<{ guid: string; document: unknown }>;
   /** BehaviourTree / Blackboard documents for worker load. */
@@ -594,6 +600,15 @@ export function startPlaySession(options: {
 
   let worker: GameWorkerHost | null = null;
   let runtime: RuntimeDriver | null = null;
+  let performanceDiagnostics: SessionDiagnostics<import("@babylonslate/render").RenderFrameReport> | undefined;
+  const diagnosticClient = createDiagnosticOperationClient({
+    sessionGeneration: options.sessionGeneration ?? 0,
+    send: async (request) => {
+      if (worker) { worker.postControl({ type: "diagnosticOperation", ...request }); return; }
+      if (!runtime) throw new Error("The game runtime is unavailable.");
+      diagnosticClient.receive(await runtime.requestDiagnosticOperation(request));
+    },
+  });
   let gameInputMode: "game" | "edit" = "game";
   let inputTransition = 0;
   let inputTransitionPending = false;
@@ -907,6 +922,15 @@ export function startPlaySession(options: {
   const saveStorage = simulationSaveStorage ?? createSaveGameStorage();
   const saveServer = createSaveStorageServer(saveStorage, (response) => worker?.postControl({ type: "saveStorageResponse", response }));
   const onCommand = (command: CommandMessage) => {
+    if (command.type === "diagnosticOperationResult") { diagnosticClient.receive(command); return; }
+    if (command.type === "performanceTicks") {
+      if (command.sessionGeneration === (options.sessionGeneration ?? 0)) performanceDiagnostics?.receiveTicks(command);
+      return;
+    }
+    if (command.type === "diagnosticOperationStopped") {
+      if (command.sessionGeneration === (options.sessionGeneration ?? 0)) performanceDiagnostics?.runtimeStopped(command);
+      return;
+    }
     if (command.type === "sessionBoundaryResult") { boundaryClient.receive(command); return; }
     if (command.type === "runtimeInspectorResult") {
       if (command.success && command.payload?.kind === "mutation" && acknowledgedPaused) handle.requestPausedRedraw();
@@ -1254,12 +1278,38 @@ export function startPlaySession(options: {
     });
   }
 
+  const diagnosticSessionId = `play:${options.sessionGeneration ?? 0}:${performance.now()}`;
+  performanceDiagnostics = new SessionDiagnostics({
+    mode: options.mode ?? "play",
+    identity: () => {
+      const build = getBuildIdentity();
+      const render = handle.scalabilityStatus()?.effective.render ?? options.consoleRenderSettings ?? options.renderSettings;
+      const frameCap = handle.scheduler.gateState().frameCap;
+      return { sessionId: diagnosticSessionId, mode: options.mode ?? "play", sourceSha: build?.sourceSha ?? null,
+        buildId: build ? `${build.packageVersion}:${build.runNumber}.${build.runAttempt}` : null,
+        sceneId: hostSceneGuid ?? options.sceneAssetGuid ?? "play-scene",
+        backend: handle.engine.isWebGPU ? "webgpu" : "webgl2", renderPath: handle.renderPathStatus().effective.renderPath,
+        runtimeHost: runtimeMode, quality: JSON.stringify(render ?? {}), frameCap: Number.isFinite(frameCap) ? frameCap : null,
+        dynamicResolution: render?.quality?.resolution?.dynamic === true,
+        enabledDiagnostics: ["performance"], gpuTiming: "unavailable" };
+    },
+    observeFrames: (listener) => handle.observePerformance(listener),
+    runtimeOperation: (request) => diagnosticClient.request(request),
+    captureFrame: async (signal) => {
+      const cancel = () => handle.cancelFrameCapture("Frame capture was cancelled.");
+      signal.addEventListener("abort", cancel, { once: true });
+      try { signal.throwIfAborted(); return await handle.captureFrame(); }
+      finally { signal.removeEventListener("abort", cancel); }
+    },
+    onProfile: (profile) => options.onProfile?.(profile),
+  });
   return {
     canvas,
     handle,
     runtime,
     worker,
     runtimeMode,
+    diagnostics: performanceDiagnostics,
     setPaused: (paused: boolean) => {
       if (options.mode === "simulate") {
         void setPauseReason("user", paused).catch((error: unknown) => options.onLog?.(String(error), "error"));
@@ -1354,6 +1404,7 @@ export function startPlaySession(options: {
     },
     stop: () => {
       if (stopped && stopResult) return stopResult;
+      void performanceDiagnostics?.dispose().finally(() => diagnosticClient.dispose());
       resetBoot();
       pauseGate?.reset();
       sceneReadiness.dispose();
