@@ -7,6 +7,7 @@ import {
   type BridgeWorkerMessage,
   type CommandMessage,
   type ControlMessage,
+  type RuntimeInspectorAction,
 } from "@babylonslate/bridge";
 import { createInProcessRuntime, type RuntimeDriver } from "./driver";
 import { createRuntimeFromLoad, runtimeOptionsFromLoadControl } from "./play-load";
@@ -119,7 +120,8 @@ describe("worker entry snapshot transport", () => {
     vi.unstubAllGlobals();
   });
 
-  it("holds poses at two outstanding transfers, then publishes the newest one before held markers", async () => {
+  /** Boot the real worker entry against a host that recycles only when told to. */
+  async function bootWorker(load: Extract<ControlMessage, { type: "load" }>, before: ControlMessage[] = []) {
     vi.resetModules();
     let now = 0;
     const frames: FrameRequestCallback[] = [];
@@ -149,9 +151,9 @@ describe("worker entry snapshot transport", () => {
     const emitted: CommandMessage[] = [];
     let runtime!: RuntimeDriver;
     const hud = { ...createDefaultSceneLayer(), actors: [createActor("badge", "Badge", { classId: "SceneLayerActor" })] };
-    vi.mocked(createRuntimeFromLoad).mockImplementation((load, onCommand) => {
+    vi.mocked(createRuntimeFromLoad).mockImplementation((control, onCommand) => {
       runtime = createInProcessRuntime({
-        ...runtimeOptionsFromLoadControl(load),
+        ...runtimeOptionsFromLoadControl(control),
         preferSoftwarePhysics: true,
         sceneLayerLibrary: { hud },
         onCommand: (command) => {
@@ -163,23 +165,31 @@ describe("worker entry snapshot transport", () => {
     });
     await import("./worker-entry");
     send = (payload) => deliver({ channel: "control", payload });
-    send({ type: "load", sceneAssetGuid: "main", scene: { ...createDefaultScene(), actors: [createActor("prop", "Prop")] } });
+    send(load);
+    for (const control of before) send(control);
     send({ type: "play" });
     await vi.waitFor(() => expect(frames.length).toBeGreaterThan(0));
+    return {
+      deliver, posts, emitted, runtime,
+      runFrames(count: number) {
+        for (let i = 0; i < count; i++) {
+          now += 1000 / 60;
+          frames.shift()!(now);
+        }
+      },
+      kinds: (list = posts) => list.map((post) => post.kind === "snapshot" ? "snapshot" : post.command.type),
+      snapshots: () => posts.flatMap((post) => post.kind === "snapshot" ? [post] : []),
+      newestFrame() {
+        const buffer = new Float32Array(snapshotFloatCount(runtime.snapshotCapacity));
+        expect(runtime.copySnapshot(buffer)).toBe(true);
+        return readSnapshotHeader(buffer).frameId;
+      },
+    };
+  }
 
-    const runFrames = (count: number) => {
-      for (let i = 0; i < count; i++) {
-        now += 1000 / 60;
-        frames.shift()!(now);
-      }
-    };
-    const kinds = (list = posts) => list.map((post) => post.kind === "snapshot" ? "snapshot" : post.command.type);
-    const snapshots = () => posts.flatMap((post) => post.kind === "snapshot" ? [post] : []);
-    const newestFrame = () => {
-      const buffer = new Float32Array(snapshotFloatCount(runtime.snapshotCapacity));
-      expect(runtime.copySnapshot(buffer)).toBe(true);
-      return readSnapshotHeader(buffer).frameId;
-    };
+  it("holds poses at two outstanding transfers, then publishes the newest one before held markers", async () => {
+    const { deliver, posts, emitted, runtime, runFrames, kinds, snapshots, newestFrame } = await bootWorker(
+      { type: "load", sceneAssetGuid: "main", scene: { ...createDefaultScene(), actors: [createActor("prop", "Prop")] } });
 
     // The host never recycles: after two poses, ticks keep simulating
     // without queueing more transfers.
@@ -214,5 +224,38 @@ describe("worker entry snapshot transport", () => {
     deliver({ channel: "recycleSnapshot", payload: snapshots()[1]!.buffer });
     expect(kinds(posts.slice(before))).toEqual(["snapshot"]);
     expect(snapshots()[3]!.frameId).toBe(newest);
+  });
+
+  it("delivers a held runtime Inspector edit result right after the pose that shows the edit", async () => {
+    const { deliver, posts, runFrames, kinds, snapshots } = await bootWorker({
+      type: "load", sceneAssetGuid: "main", sessionGeneration: 4, sessionMode: "simulate",
+      scene: { ...createDefaultScene(), actors: [createActor("hero", "Hero", { classId: "Hero" })] },
+    }, [{ type: "loadScripts", scripts: [{ classId: "Hero", assetGuid: "hero-class", parentClassId: "Actor", source: "", anchors: [],
+      entryPoints: [], variables: [{ name: "health", type: "float", defaultValue: 10 }] }] }]);
+    const inspect = async (requestId: number, action: RuntimeInspectorAction) => {
+      deliver({ channel: "control", payload: { type: "runtimeInspector", sessionGeneration: 4, requestId, action } });
+      await vi.waitFor(() => expect(posts.some((post) => post.kind === "command" &&
+        post.command.type === "runtimeInspectorResult" && post.command.requestId === requestId)).toBe(true));
+    };
+    runFrames(8);
+    expect(snapshots()).toHaveLength(2);
+    await inspect(1, { kind: "identities" });
+    const identities = posts.flatMap((post) => post.kind === "command" && post.command.type === "runtimeInspectorResult" &&
+      post.command.payload?.kind === "identities" ? post.command.payload.rows : []);
+    const hero = identities.find((row) => row.kind === "actor")!.identity;
+
+    deliver({ channel: "control", payload: { type: "runtimeInspector", sessionGeneration: 4, requestId: 2,
+      action: { kind: "setProperty", target: hero, sequence: 1, property: "health", value: 42 } } });
+    for (let i = 0; i < 12; i++) await Promise.resolve();
+    // Both transfers are still outstanding, so the reply waits rather than
+    // letting a paused host redraw an older pose.
+    expect(posts.some((post) => post.kind === "command" && post.command.type === "runtimeInspectorResult" &&
+      post.command.requestId === 2)).toBe(false);
+
+    const before = posts.length;
+    deliver({ channel: "recycleSnapshot", payload: snapshots()[0]!.buffer });
+    const released = posts.slice(before);
+    expect(kinds(released)).toEqual(["snapshot", "runtimeInspectorResult"]);
+    expect(released[1]).toMatchObject({ command: { requestId: 2, success: true, payload: { kind: "mutation", effectiveValue: 42 } } });
   });
 });

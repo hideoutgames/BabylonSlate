@@ -55,6 +55,15 @@ let snapshotPing = new TransferablePingPong(256);
 const MAX_IN_FLIGHT_SNAPSHOTS = 2;
 let inFlightSnapshots = 0;
 let snapshotSkipped = false;
+// One-shot replies that describe a pose and were held by backpressure; each
+// is sent, in order, right after the next pose snapshot. Never dropped.
+let afterPose: CommandMessage[] = [];
+
+function releaseAfterPose(): void {
+  const held = afterPose;
+  afterPose = [];
+  for (const command of held) onCommand(command);
+}
 let installedGeneration = 0;
 let pendingGeneration: number | null = null;
 let stopConsoleCapture: (() => void) | null = null;
@@ -163,8 +172,13 @@ function handleControl(msg: ControlMessage): void {
         return;
       }
       void rt.requestRuntimeInspector(msg).then(result => {
-        if (runtime === rt && result.success && result.payload?.kind === "mutation") publishSnapshot();
-        onCommand({ type: "runtimeInspectorResult", ...result });
+        const command: CommandMessage = { type: "runtimeInspectorResult", ...result };
+        // A paused host redraws on this result, so it must follow the edited pose.
+        if (runtime === rt && result.success && result.payload?.kind === "mutation" && !publishSnapshot() && snapshotSkipped) {
+          afterPose.push(command);
+          return;
+        }
+        onCommand(command);
       });
       return;
     }
@@ -190,6 +204,7 @@ function handleControl(msg: ControlMessage): void {
       sceneSources.receive(msg);
       return;
     case "load": {
+      releaseAfterPose();
       bootGeneration++;
       boot.reset();
       pauseGate.reset();
@@ -335,6 +350,7 @@ function handleControl(msg: ControlMessage): void {
       return;
     }
     case "stop":
+      releaseAfterPose();
       bootGeneration++;
       boot.reset();
       pauseGate.reset();
@@ -442,6 +458,7 @@ function publishSnapshot(): boolean {
   inFlightSnapshots++;
   snapshotSkipped = false;
   postMessage({ channel: "snapshot", payload: ab, generation: installedGeneration }, [ab]);
+  releaseAfterPose();
   return true;
 }
 
