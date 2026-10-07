@@ -21,14 +21,16 @@
  * would follow edits in the real provider.
  *
  * `useDocumentActions()` returns that same value (it carries every action) and
- * `useAppRoute()` its `route`. Exports added to `document-context.tsx` later
- * resolve without editing every mock: an unknown `use…` hook returns the same
- * documents value (narrow hooks return slices of it). Add an explicit entry
- * here for anything else, such as a hook returning a single field.
+ * `useAppRoute()` its `route`. The slice hooks (`useRegistryState`,
+ * `useProjectState`, `useSaveState`, …) return objects with the value's own
+ * field names, so they return the same documents value, as does any `use…`
+ * hook added later without an entry here. Hooks returning one field or one
+ * document (`useActiveDocumentId`, `useOpenDocument`, …) read it from the
+ * value; add an entry for any new such hook.
  */
 import type { ReactNode } from "react";
 import { ASSET_DOCUMENT_KINDS, type DocumentKind } from "@babylonslate/core";
-import type { DocumentRevisions } from "../services/document-service";
+import { documentKindsRevision, type DocumentRevisions } from "../services/document-service";
 import type { ExtensionSnapshot } from "../services/editor-extension-service";
 import { SourceControlService } from "../services/source-control-service";
 
@@ -313,6 +315,28 @@ export function documentContextMock(
     useDocumentActions: useDocuments,
     useAppRoute: () => useDocuments().route,
     useDockWindowTick: options.useDockWindowTick ?? (() => 0),
+    // Slices use the value's field names, so the value serves them as-is.
+    useProjectState: useDocuments,
+    useRegistryState: useDocuments,
+    useActiveDocumentState: useDocuments,
+    useSaveState: useDocuments,
+    useCompileState: useDocuments,
+    useEditorShellState: useDocuments,
+    useSourceControl: useDocuments,
+    // Single-value narrow hooks read their field of the same value.
+    useActiveDocumentId: () => useDocuments().activeDocumentId,
+    useTabOrder: () => useDocuments().tabOrder,
+    useOpenDocumentTabs: () => useDocuments().openDocuments,
+    useOpenDocument: (id: string | null | undefined) => {
+      const { openDocuments } = useDocuments();
+      return id ? openDocuments.find((doc) => doc.id === id) : undefined;
+    },
+    useDocumentDirty: (id: string | null | undefined) => {
+      const { openDocuments } = useDocuments();
+      return Boolean(id && openDocuments.find((doc) => doc.id === id)?.dirty);
+    },
+    useDocumentKindsRevision: (kinds: readonly DocumentKind[]) =>
+      documentKindsRevision(useDocuments().documentRevisions, kinds),
   };
   return new Proxy(moduleExports, {
     has: (target, key) => Reflect.has(target, key) || isHookName(key),

@@ -13,14 +13,18 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
+  type Context,
   type ReactNode,
   type RefObject,
 } from "react";
+import { DocumentSubscriptions } from "./document-subscriptions";
 import { flushSync } from "react-dom";
 import { SceneLoadingDialog } from "../components/scene-loading-dialog";
 import { waitForSceneLoadingPaint } from "../lib/scene-viewport-load";
 import type {
   AssetDocumentKind,
+  DocumentKind,
   DocumentRef,
   ProjectDocument,
   PluginEnableOverride,
@@ -656,9 +660,78 @@ type DocumentActionName = {
  * provider's lifetime and reads documents, the project, Anim modes and other
  * provider state when it runs. A component that calls one while rendering
  * (`isDockWindowOpen`, `textureUsageBlockedReason`, …) and shows the result
- * must also subscribe to the state it depends on through `useDocuments()`.
+ * must also subscribe to the state it depends on through a narrow hook (or
+ * `useDocuments()`).
  */
 export type DocumentActions = Pick<DocumentContextValue, DocumentActionName>;
+
+/*
+ * Narrow slices of the document context. Each object keeps its identity until
+ * one of its fields changes, so its readers re-render only for that state.
+ * Field names match `useDocuments()`, so a component moves to a slice by
+ * changing only the hook it calls.
+ */
+
+/** `useProjectState()`: changes when the project document is replaced. */
+export type ProjectState = Pick<DocumentContextValue, "projectDocument" | "projectName">;
+/**
+ * `useRegistryState()`: the asset registry and the registry-adjacent state
+ * that advances `registryEpoch`. Document edits and tab changes leave it.
+ */
+export type RegistryState = Pick<
+  DocumentContextValue,
+  | "assetRegistry"
+  | "registryEpoch"
+  | "projectGuid"
+  | "extensionService"
+  | "pluginDescriptors"
+  | "pluginDiagnostics"
+  | "showPluginContent"
+  | "searchIndex"
+>;
+/** `useActiveDocumentState()`: the active tab and its chrome state. */
+export type ActiveDocumentState = Pick<
+  DocumentContextValue,
+  | "activeDocumentId"
+  | "animEditorMode"
+  | "sceneMode"
+  | "isLayoutFocused"
+  | "canUndoActiveDocument"
+  | "canRedoActiveDocument"
+>;
+/**
+ * `useSaveState()`: unsaved work and Auto-Save. `dirtyDocuments` keeps its
+ * identity while the same documents (with the same labels) are dirty, so
+ * further edits of an already dirty document do not change it.
+ */
+export type SaveState = Pick<DocumentContextValue, "dirtyDocuments" | "projectDirty" | "autoSaveStatus">;
+/** `useCompileState()`: compile staleness and the Play preview bundles. */
+export type CompileState = Pick<
+  DocumentContextValue,
+  | "graphsNeedCompile"
+  | "scriptsStale"
+  | "currentGraphSignature"
+  | "playPreviewBundles"
+  | "playPreviewDiagnostics"
+  | "playLoadedSignature"
+>;
+/** `useEditorShellState()`: Homepage, recovery, prompts and thumbnails. */
+export type EditorShellState = Pick<
+  DocumentContextValue,
+  | "listedProjects"
+  | "needsReconnect"
+  | "recoveryAvailable"
+  | "migrationPending"
+  | "templates"
+  | "homepageReady"
+  | "pendingExclusiveScene"
+  | "externalChangePrompt"
+  | "undoHistoryNotice"
+  | "thumbnailVersions"
+  | "thumbnailsEnabled"
+>;
+/** `useSourceControl()`: a new object whenever source control state changes. */
+export type SourceControlState = Pick<DocumentContextValue, "sourceControl">;
 
 /**
  * React state mirrored in `ref` for callbacks that read it when they run.
@@ -689,6 +762,15 @@ const DocumentContext = createContext<DocumentContextValue | null>(null);
 const DocumentActionsContext = createContext<DocumentActions | null>(null);
 /** Changes only when the app moves between Homepage and the editor. */
 const AppRouteContext = createContext<AppRoute | null>(null);
+/** Created once per provider; the per-document hooks read the service through it. */
+const DocumentSubscriptionsContext = createContext<DocumentSubscriptions | null>(null);
+const ProjectStateContext = createContext<ProjectState | null>(null);
+const RegistryStateContext = createContext<RegistryState | null>(null);
+const ActiveDocumentStateContext = createContext<ActiveDocumentState | null>(null);
+const SaveStateContext = createContext<SaveState | null>(null);
+const CompileStateContext = createContext<CompileState | null>(null);
+const EditorShellStateContext = createContext<EditorShellState | null>(null);
+const SourceControlStateContext = createContext<SourceControlState | null>(null);
 
 const THUMBNAIL_DECODE_LRU_ENTRIES = 64;
 
@@ -3865,6 +3947,20 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     void documentRevisions;
     return documentService.getDirtyDocuments();
   }, [documentRevisions, documentService]);
+  // The save slice keeps its list while the same documents, with the same
+  // labels, are dirty: a second edit of a dirty document does not change it.
+  const stableDirtyRef = useRef<{ list: OpenDocument[]; refs: DocumentRef[] }>({ list: [], refs: [] });
+  const stableDirtyDocuments = useMemo(() => {
+    const previous = stableDirtyRef.current;
+    if (
+      previous.list.length === dirtyDocuments.length &&
+      dirtyDocuments.every((doc, index) => doc === previous.list[index] && doc.ref === previous.refs[index])
+    ) {
+      return previous.list;
+    }
+    stableDirtyRef.current = { list: dirtyDocuments, refs: dirtyDocuments.map((doc) => doc.ref) };
+    return dirtyDocuments;
+  }, [dirtyDocuments]);
   const graphSignatureRevision = documentKindsRevision(
     documentRevisions,
     GRAPH_SIGNATURE_KINDS,
@@ -3875,99 +3971,92 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     return playContent.graphSignature(projectDocument?.settings.tags);
   }, [graphSignatureRevision, playContent, projectDocument?.settings.tags, registryEpoch]);
 
-  /** The `useDocuments()` facade: the stable actions plus per-edit state. */
-  const value = useMemo<DocumentContextValue>(
-    () => {
-      void sourceControlTick;
-      // Service state read below (active tab, undo stacks, layouts) changed.
-      void contextTick;
-      const activeId = documentService.getState().activeDocumentId;
-      const activeDoc = activeId ? documentService.getDocument(activeId) : undefined;
-      const activeStack = activeId ? editSessionRef.current.getStack(activeId) : null;
-      const sceneMode = parseSceneDocumentLayout(activeDoc?.layout).sceneMode;
-      const focusKey =
-        activeId && activeDoc?.ref.kind === "scene"
-          ? dockviewApiKey(activeId, sceneMode)
-          : activeId;
-      return {
-        ...actions,
-        route,
-        projectDocument,
-        projectName: projectDocument?.metadata.name ?? null,
-        openDocuments,
-        documentRevisions,
-        tabsRevision,
-        tabOrder,
-        activeDocumentId: activeId,
-        listedProjects,
-        needsReconnect,
-        recoveryAvailable,
-        dirtyDocuments,
-        projectDirty: projectSaveState.current.isDirty(projectDocument),
-        autoSaveStatus,
-        undoHistoryNotice,
-        migrationPending,
-        templates,
-        homepageReady,
-        pendingExclusiveScene,
-        sourceControl: sourceControlRef.current,
-        externalChangePrompt,
-        canUndoActiveDocument: !documentService.getAuthoringLock().readOnly && (activeStack?.canUndo ?? false),
-        canRedoActiveDocument: !documentService.getAuthoringLock().readOnly && (activeStack?.canRedo ?? false),
-        animEditorMode: activeId
-          ? animEditorModeForDocument(activeId, animEditorModes, activeDoc)
-          : "stateMachine",
-        sceneMode,
-        isLayoutFocused: focusKey ? focusedLayoutIds.has(focusKey) : false,
-        assetRegistry: projectService.registry,
-        extensionService: projectService.extensions,
-        projectGuid: projectService.guid,
-        registryEpoch,
-        pluginDescriptors: projectService.plugins,
-        pluginDiagnostics: projectService.pluginGraphDiagnostics,
-        showPluginContent:
-          documentService.getState().showPluginContent === true,
-        thumbnailVersions,
-        thumbnailsEnabled,
-        graphsNeedCompile: compileSignatureIsStale(
-          currentGraphSignature,
-          lastCompiledSignature,
-        ),
-        currentGraphSignature,
-        scriptsStale: playBundlesNeedCollect({
-          playLoadedSignature,
-          currentGraphSignature,
-          scriptsLength: playPreviewBundles.length,
-          editorCompileSignature: lastCompiledSignature,
-        }),
-        playPreviewBundles,
-        playPreviewDiagnostics,
-        playLoadedSignature,
-        searchIndex: projectService.searchIndex,
-      };
-    },
-    [
-      actions,
-      contextTick,
+  // Narrow subscriptions: per-document hooks read the service through this
+  // store, and every commit (each service mutation is followed by one) lets
+  // them compare their snapshots in the same frame as the facade below.
+  const subscriptions = useMemo(() => new DocumentSubscriptions(documentService), [documentService]);
+  useLayoutEffect(() => {
+    subscriptions.publish();
+  });
+
+  // Service state read on each render: every service mutation is followed by
+  // a context update. The slices below change only when their fields do.
+  const activeId = documentService.getState().activeDocumentId;
+  const activeDoc = activeId ? documentService.getDocument(activeId) : undefined;
+  const activeStack = activeId ? editSessionRef.current.getStack(activeId) : null;
+  const authoringReadOnly = documentService.getAuthoringLock().readOnly;
+  const sceneMode = parseSceneDocumentLayout(activeDoc?.layout).sceneMode;
+  const focusKey =
+    activeId && activeDoc?.ref.kind === "scene"
+      ? dockviewApiKey(activeId, sceneMode)
+      : activeId;
+  const animEditorMode = activeId
+    ? animEditorModeForDocument(activeId, animEditorModes, activeDoc)
+    : "stateMachine";
+  const isLayoutFocused = focusKey ? focusedLayoutIds.has(focusKey) : false;
+  const canUndoActiveDocument = !authoringReadOnly && (activeStack?.canUndo ?? false);
+  const canRedoActiveDocument = !authoringReadOnly && (activeStack?.canRedo ?? false);
+  const activeDocumentState = useMemo<ActiveDocumentState>(
+    () => ({
+      activeDocumentId: activeId,
+      animEditorMode,
+      sceneMode,
+      isLayoutFocused,
+      canUndoActiveDocument,
+      canRedoActiveDocument,
+    }),
+    [activeId, animEditorMode, sceneMode, isLayoutFocused, canUndoActiveDocument, canRedoActiveDocument],
+  );
+  const projectState = useMemo<ProjectState>(
+    () => ({ projectDocument, projectName: projectDocument?.metadata.name ?? null }),
+    [projectDocument],
+  );
+  const assetRegistry = projectService.registry;
+  const extensionService = projectService.extensions;
+  const projectGuid = projectService.guid;
+  const pluginDescriptors = projectService.plugins;
+  const pluginDiagnostics = projectService.pluginGraphDiagnostics;
+  const showPluginContent = documentService.getState().showPluginContent === true;
+  const searchIndex = projectService.searchIndex;
+  const registryState = useMemo<RegistryState>(
+    () => ({
+      assetRegistry,
       registryEpoch,
-      openDocuments,
-      documentRevisions,
-      tabsRevision,
-      tabOrder,
-      dirtyDocuments,
-      autoSaveStatus,
-      undoHistoryNotice,
+      projectGuid,
+      extensionService,
+      pluginDescriptors,
+      pluginDiagnostics,
+      showPluginContent,
+      searchIndex,
+    }),
+    [assetRegistry, registryEpoch, projectGuid, extensionService, pluginDescriptors, pluginDiagnostics, showPluginContent, searchIndex],
+  );
+  const projectDirty = projectSaveState.current.isDirty(projectDocument);
+  const saveState = useMemo<SaveState>(
+    () => ({ dirtyDocuments: stableDirtyDocuments, projectDirty, autoSaveStatus }),
+    [stableDirtyDocuments, projectDirty, autoSaveStatus],
+  );
+  const compileState = useMemo<CompileState>(
+    () => ({
+      graphsNeedCompile: compileSignatureIsStale(
+        currentGraphSignature,
+        lastCompiledSignature,
+      ),
       currentGraphSignature,
-      route,
-      projectDocument,
-      documentService,
-      projectService,
-      thumbnailVersions,
-      thumbnailsEnabled,
-      lastCompiledSignature,
-      playLoadedSignature,
+      scriptsStale: playBundlesNeedCollect({
+        playLoadedSignature,
+        currentGraphSignature,
+        scriptsLength: playPreviewBundles.length,
+        editorCompileSignature: lastCompiledSignature,
+      }),
       playPreviewBundles,
       playPreviewDiagnostics,
+      playLoadedSignature,
+    }),
+    [currentGraphSignature, lastCompiledSignature, playLoadedSignature, playPreviewBundles, playPreviewDiagnostics],
+  );
+  const editorShellState = useMemo<EditorShellState>(
+    () => ({
       listedProjects,
       needsReconnect,
       recoveryAvailable,
@@ -3975,29 +4064,94 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       templates,
       homepageReady,
       pendingExclusiveScene,
-      sourceControlTick,
       externalChangePrompt,
-      animEditorModes,
-      focusedLayoutIds,
+      undoHistoryNotice,
+      thumbnailVersions,
+      thumbnailsEnabled,
+    }),
+    [listedProjects, needsReconnect, recoveryAvailable, migrationPending, templates, homepageReady, pendingExclusiveScene, externalChangePrompt, undoHistoryNotice, thumbnailVersions, thumbnailsEnabled],
+  );
+  const sourceControlState = useMemo<SourceControlState>(() => {
+    void sourceControlTick;
+    return { sourceControl: sourceControlRef.current };
+  }, [sourceControlTick]);
+
+  /** The `useDocuments()` facade: the stable actions plus per-edit state. */
+  const value = useMemo<DocumentContextValue>(
+    () => {
+      // Service state read below (undo stacks, layouts) changed.
+      void contextTick;
+      return {
+        ...actions,
+        ...projectState,
+        ...registryState,
+        ...activeDocumentState,
+        ...compileState,
+        ...editorShellState,
+        ...sourceControlState,
+        route,
+        openDocuments,
+        documentRevisions,
+        tabsRevision,
+        tabOrder,
+        // Unlike the save slice's list, recomputed on every revision.
+        dirtyDocuments,
+        projectDirty,
+        autoSaveStatus,
+      };
+    },
+    [
+      actions,
+      contextTick,
+      projectState,
+      registryState,
+      activeDocumentState,
+      compileState,
+      editorShellState,
+      sourceControlState,
+      route,
+      openDocuments,
+      documentRevisions,
+      tabsRevision,
+      tabOrder,
+      dirtyDocuments,
+      projectDirty,
+      autoSaveStatus,
     ],
   );
 
   return (
     <DocumentActionsContext.Provider value={actions}>
       <AppRouteContext.Provider value={route}>
-        <DocumentContext.Provider value={value}>
-          <DockWindowTickContext.Provider value={dockWindowTick}>
-            {children}
-          </DockWindowTickContext.Provider>
-          <SceneLoadingDialog
-            open={sceneDocumentLoad !== null}
-            progress={null}
-            phase="Loading Document"
-            failed={sceneDocumentLoad?.failed}
-            onRetry={() => { if (sceneDocumentLoad) void finishOpenDocument(sceneDocumentLoad.ref); }}
-            onDismiss={cancelSceneDocumentLoad}
-          />
-        </DocumentContext.Provider>
+        <DocumentSubscriptionsContext.Provider value={subscriptions}>
+          <ProjectStateContext.Provider value={projectState}>
+            <RegistryStateContext.Provider value={registryState}>
+              <ActiveDocumentStateContext.Provider value={activeDocumentState}>
+                <SaveStateContext.Provider value={saveState}>
+                  <CompileStateContext.Provider value={compileState}>
+                    <EditorShellStateContext.Provider value={editorShellState}>
+                      <SourceControlStateContext.Provider value={sourceControlState}>
+                        <DocumentContext.Provider value={value}>
+                          <DockWindowTickContext.Provider value={dockWindowTick}>
+                            {children}
+                          </DockWindowTickContext.Provider>
+                          <SceneLoadingDialog
+                            open={sceneDocumentLoad !== null}
+                            progress={null}
+                            phase="Loading Document"
+                            failed={sceneDocumentLoad?.failed}
+                            onRetry={() => { if (sceneDocumentLoad) void finishOpenDocument(sceneDocumentLoad.ref); }}
+                            onDismiss={cancelSceneDocumentLoad}
+                          />
+                        </DocumentContext.Provider>
+                      </SourceControlStateContext.Provider>
+                    </EditorShellStateContext.Provider>
+                  </CompileStateContext.Provider>
+                </SaveStateContext.Provider>
+              </ActiveDocumentStateContext.Provider>
+            </RegistryStateContext.Provider>
+          </ProjectStateContext.Provider>
+        </DocumentSubscriptionsContext.Provider>
       </AppRouteContext.Provider>
     </DocumentActionsContext.Provider>
   );
@@ -4007,8 +4161,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 /* eslint-disable react-refresh/only-export-components -- context module */
 /**
  * Everything: the stable actions plus documents, project and registry state.
- * The value changes after every edit, tab change and save, so every caller
- * re-renders with it. Prefer `useDocumentActions()` when no state is needed.
+ *
+ * @deprecated The value changes after every edit, tab change and save, so
+ * every caller re-renders with it. Use `useDocumentActions()` for callbacks
+ * and the narrow hooks below for state (see "Document subscriptions" in
+ * docs/architecture/command-layer.md).
  */
 export function useDocuments(): DocumentContextValue {
   const context = useContext(DocumentContext);
@@ -4043,5 +4200,107 @@ export function useAppRoute(): AppRoute {
 
 export function useDockWindowTick(): number {
   return useContext(DockWindowTickContext);
+}
+
+function useSlice<T>(context: Context<T | null>, name: string): T {
+  const value = useContext(context);
+  if (value === null) {
+    throw new Error(`${name} must be used within DocumentProvider`);
+  }
+  return value;
+}
+
+/** `projectDocument` and `projectName`; changes when the project document does. */
+export function useProjectState(): ProjectState {
+  return useSlice(ProjectStateContext, "useProjectState");
+}
+
+/**
+ * `assetRegistry`, `registryEpoch` and the registry-adjacent project state
+ * (GUID, extensions, plugins, Show Plugin Content, search index). Changes
+ * when `registryEpoch` advances, never on document edits or tab changes, so
+ * reading the registry while rendering stays current.
+ */
+export function useRegistryState(): RegistryState {
+  return useSlice(RegistryStateContext, "useRegistryState");
+}
+
+/** The active tab with its Anim / Scene mode, Focus and Undo / Redo state. */
+export function useActiveDocumentState(): ActiveDocumentState {
+  return useSlice(ActiveDocumentStateContext, "useActiveDocumentState");
+}
+
+/** Dirty documents (stable while the dirty set is), project dirty and Auto-Save. */
+export function useSaveState(): SaveState {
+  return useSlice(SaveStateContext, "useSaveState");
+}
+
+/** Compile staleness and Play preview bundles; changes on Compile, not per edit. */
+export function useCompileState(): CompileState {
+  return useSlice(CompileStateContext, "useCompileState");
+}
+
+/** Homepage lists, recovery, migration and exclusive Scene prompts, thumbnails. */
+export function useEditorShellState(): EditorShellState {
+  return useSlice(EditorShellStateContext, "useEditorShellState");
+}
+
+/** The source control service; a new object whenever its state changes. */
+export function useSourceControl(): SourceControlState {
+  return useSlice(SourceControlStateContext, "useSourceControl");
+}
+
+/** The active tab's id. Re-renders only when another tab becomes active. */
+export function useActiveDocumentId(): string | null {
+  const subscriptions = useSlice(DocumentSubscriptionsContext, "useActiveDocumentId");
+  return useSyncExternalStore(subscriptions.subscribe, subscriptions.activeDocumentId);
+}
+
+/** Tab ids in order; re-renders only when a tab opens, closes or moves. */
+export function useTabOrder(): readonly string[] {
+  const subscriptions = useSlice(DocumentSubscriptionsContext, "useTabOrder");
+  return useSyncExternalStore(subscriptions.subscribe, subscriptions.tabOrderSnapshot);
+}
+
+/**
+ * Open documents in tab order, for tab strips and lists of open documents.
+ * Re-renders when a document opens, closes, moves or changes its label,
+ * dirty state or background flag; content and layout edits do not. Read
+ * content through `useOpenDocument`.
+ */
+export function useOpenDocumentTabs(): OpenDocument[] {
+  const subscriptions = useSlice(DocumentSubscriptionsContext, "useOpenDocumentTabs");
+  return useSyncExternalStore(subscriptions.subscribe, subscriptions.tabsSnapshot);
+}
+
+/**
+ * One open document: the same entry `openDocuments` holds. Re-renders when
+ * that document opens, closes or changes its content, label, layout or dirty
+ * state; edits of other documents and tab switches do not. The entry is
+ * mutated in place, so key memos on `document.content`, not on the entry.
+ */
+export function useOpenDocument(id: string | null | undefined): OpenDocument | undefined {
+  const subscriptions = useSlice(DocumentSubscriptionsContext, "useOpenDocument");
+  const key = useSyncExternalStore(subscriptions.subscribe, () =>
+    id ? subscriptions.documentKey(id) : undefined,
+  );
+  return key?.document;
+}
+
+/** Whether one open document has unsaved edits; false when it is not open. */
+export function useDocumentDirty(id: string | null | undefined): boolean {
+  const subscriptions = useSlice(DocumentSubscriptionsContext, "useDocumentDirty");
+  return useSyncExternalStore(subscriptions.subscribe, () =>
+    id ? subscriptions.dirty(id) : false,
+  );
+}
+
+/**
+ * `documentKindsRevision` for `kinds`: changes exactly when a document of one
+ * of them changes. Key memos that read those documents on it.
+ */
+export function useDocumentKindsRevision(kinds: readonly DocumentKind[]): number {
+  const subscriptions = useSlice(DocumentSubscriptionsContext, "useDocumentKindsRevision");
+  return useSyncExternalStore(subscriptions.subscribe, () => subscriptions.kindsRevision(kinds));
 }
 /* eslint-enable react-refresh/only-export-components */
