@@ -25,7 +25,7 @@ export type DecodedBabpack = {
 
 const MAGIC = new TextEncoder().encode(BABPACK_MAGIC);
 
-export async function encodeBabpack(blobs: readonly BabpackBlob[]): Promise<Uint8Array> {
+export async function encodeBabpack(blobs: readonly BabpackBlob[]): Promise<Uint8Array<ArrayBuffer>> {
   const payloadParts: Uint8Array[] = [];
   const meta: Array<{
     guid: string;

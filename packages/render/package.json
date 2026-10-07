@@ -42,6 +42,6 @@
   },
   "devDependencies": {
     "@babylonslate/test-kit": "workspace:*",
-    "typescript": "~5.8.2"
+    "typescript": "~6.0.3"
   }
 }

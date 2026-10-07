@@ -51,7 +51,7 @@ export async function syncContentBrowserThumbnailUrls({
       if (isCancelled()) return;
       if (!bytes) continue;
       const url = createObjectURL(
-        new Blob([bytes], { type: thumbnailMime(bytes) }),
+        new Blob([bytes as Uint8Array<ArrayBuffer>], { type: thumbnailMime(bytes) }),
       );
       if (next[guid]) evicted.push(next[guid]);
       created.push(url);

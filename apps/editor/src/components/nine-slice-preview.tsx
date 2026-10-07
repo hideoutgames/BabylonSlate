@@ -151,7 +151,7 @@ export function NineSlicePreview({
         if (!cancelled) setEmptyReason("none");
         return;
       }
-      objectUrl = URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
+      objectUrl = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "image/png" }));
       if (!cancelled) {
         setEmptyReason("loading");
         setUrl(objectUrl);

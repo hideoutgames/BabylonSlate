@@ -25,6 +25,6 @@
     "@babylonslate/test-kit": "workspace:*",
     "@babylonslate/vfs": "workspace:*",
     "ktx-parse": "^1.1.0",
-    "typescript": "~5.8.2"
+    "typescript": "~6.0.3"
   }
 }

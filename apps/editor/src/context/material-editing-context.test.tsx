@@ -112,7 +112,7 @@ const harness = vi.hoisted(() => ({
   cacheDisposeCalls: 0,
   content: null as ReturnType<typeof createDefaultMaterialDocument> | null,
   readAssetChunk: vi.fn(
-    async (_path: string, chunkId: string) =>
+    async (_path: string, chunkId: string): Promise<Uint8Array | null> =>
       chunkId === "pixels" ? new Uint8Array([1, 2, 3, 4]) : null,
   ),
   textureAsset: {
