@@ -1045,8 +1045,12 @@ class InProcessRuntime implements RuntimeDriver {
             this.scriptHost.bindInterfaceHandlers(self);
             this.runOwnerCreation(self, () => this.scriptHost.hooksFor(classId)?.onCreation?.(self));
           },
-          onTick: (self, ctx) =>
-            this.guardScript(() => this.scriptHost.hooksFor(classId)?.onTick?.(self, ctx)),
+          // Engine component classes never carry scripts, so they skip the
+          // per-frame script lookup; project components keep it for reloads.
+          onTick: isLockedEngineClassId(classId)
+            ? undefined
+            : (self, ctx) =>
+                this.guardScript(() => this.scriptHost.hooksFor(classId)?.onTick?.(self, ctx)),
           onDestroyed: (self) => {
             this.runOwnerDestroyed(self, () => this.scriptHost.hooksFor(classId)?.onDestroyed?.(self));
             this.dynamicMeshes.remove(self);
@@ -2914,7 +2918,10 @@ class InProcessRuntime implements RuntimeDriver {
     const hooks = this.scriptHost.hooksFor(classId);
     return {
       onCreation: (self) => this.runOwnerCreation(self, () => hooks?.onCreation?.(self)),
-      onTick: (self, ctx) => this.guardScript(() => hooks?.onTick?.(self, ctx)),
+      // Logic-free actors (Prefabs, scriptless classes) add no per-frame call.
+      onTick: hooks?.onTick
+        ? (self, ctx) => this.guardScript(() => hooks.onTick?.(self, ctx))
+        : undefined,
       onDestroyed: (self) => {
         this.sceneLayerSwitchers.retire(self);
         this.runOwnerDestroyed(self, () => hooks?.onDestroyed?.(self));

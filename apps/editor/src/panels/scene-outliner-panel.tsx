@@ -100,8 +100,10 @@ import {
   outlinerTreeDropMoves,
 } from "../lib/outliner-drop";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
+import { prefabAssetTemplateKey, prefabAssetTemplates } from "../lib/prefab-instance-sync";
 
 const CLASS_KINDS = ["graph"] as const;
+const PREFAB_KINDS = ["prefab"] as const;
 
 const QUIET_ROW_ACTION =
   "[@media(hover:hover)_and_(pointer:fine)]:opacity-0 [@media(hover:hover)_and_(pointer:fine)]:[[role=treeitem]:hover_&]:opacity-100 [@media(hover:hover)_and_(pointer:fine)]:[[role=treeitem]:focus-within_&]:opacity-100";
@@ -310,6 +312,7 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
     thumbnailVersions,
   } = useDocuments();
   const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
+  const prefabDocuments = useOpenDocumentsOfKinds(PREFAB_KINDS);
   const {
     selectedActorIds,
     selectActor,
@@ -442,9 +445,12 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
   const projectItems = useMemo(() => {
     void registryEpoch; // Registry headers mutate without replacing the registry.
     const assets = assetRegistry?.list() ?? [];
+    // Prefab assets carry their components in the header; open tabs win.
+    const prefabAssets = prefabAssetTemplates({ assets, openDocuments: prefabDocuments });
     return projectPlaceActors(
       assets,
       (guid) =>
+        prefabAssets[prefabAssetTemplateKey(guid)] ??
         prefabComponentsForGuid(guid, {
           assets,
           graphForPath: (path) => {
@@ -455,7 +461,7 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
         }),
       { overlay },
     );
-  }, [assetRegistry, classDocuments, diskGraphs, overlay, registryEpoch]);
+  }, [assetRegistry, classDocuments, diskGraphs, overlay, prefabDocuments, registryEpoch]);
 
   useEffect(() => {
     if (!placeOpen) return;
