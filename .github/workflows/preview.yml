@@ -33,6 +33,10 @@ jobs:
           VITE_BASE_PATH: /BabylonSlate/
           VITE_TEST_MODE: "true"
         run: pnpm --filter editor build
+      # Measurement only: no size thresholds, and a report failure never blocks deploy.
+      - name: Report bundle sizes
+        continue-on-error: true
+        run: node scripts/bundle-report.mjs apps/player/dist apps/editor/dist >> "$GITHUB_STEP_SUMMARY"
       - name: Build docs site
         env:
           VITEPRESS_BASE: /BabylonSlate/docs/
