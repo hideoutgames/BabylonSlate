@@ -10,7 +10,7 @@ import {
 } from "@babylonslate/core";
 import {
   AssetPicker, DisclosureSection, EntryListEditor, NamePromptDialog, PanelFrame,
-  PinShapeGlyph, PinTypePicker, PropertyGrid, SearchInput, TreeView,
+  PinShapeGlyph, PinTypePicker, PropertyGrid, SearchInput, TreeView, TypeColorMark,
   isCoarsePointerEnvironment, pinPickerColorVar, type PropertyRow,
 } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
@@ -126,7 +126,7 @@ export function SaveGameFieldsPanel(_props: IDockviewPanelProps) {
       {definition?.fields.length === 0 ? <Empty><EmptyHeader><EmptyTitle>No Save Fields</EmptyTitle><EmptyDescription>Add progress such as Score, Level, or Unlocked Items, then edit its type and starting value in Details.</EmptyDescription></EmptyHeader></Empty> : <TreeView
         nodes={fields.map((field) => ({
           id: field.id, label: field.name, depth: 0, hasChildren: false, expanded: false,
-          icon: <PinShapeGlyph shape={field.array ? "list" : "circle"} connected color={pinPickerColorVar(fieldPickerType(field.type))} size={14} />,
+          icon: field.array ? <PinShapeGlyph shape="list" connected outlined={false} color={pinPickerColorVar(fieldPickerType(field.type))} size={12} /> : <TypeColorMark colorVar={pinPickerColorVar(fieldPickerType(field.type))} />,
           preview: <span className="text-xs text-muted-foreground">{FIELD_TYPE_LABELS[field.type]}{field.array ? " Array" : ""}</span>,
         }))}
         selectedId={selectedField?.id}
@@ -175,7 +175,7 @@ export function SaveGameDefinitionPanel(_props: IDockviewPanelProps) {
           if (value !== "single" && value !== "array") return;
           const array = value === "array";
           if (array !== !!selectedField.array) patch({ array, defaultValue: array ? [] : initialValue(selectedField.type) });
-        }}><ToggleGroupItem value="single">Single</ToggleGroupItem><ToggleGroupItem value="array"><PinShapeGlyph shape="list" connected data-icon="inline-start" />Array</ToggleGroupItem></ToggleGroup></Field>
+        }}><ToggleGroupItem value="single"><PinShapeGlyph shape="circle" connected outlined={false} color="currentColor" size={8} data-icon="inline-start" />Single</ToggleGroupItem><ToggleGroupItem value="array"><PinShapeGlyph shape="list" connected data-icon="inline-start" />Array</ToggleGroupItem></ToggleGroup></Field>
         {selectedField.array ? <FieldSet className="gap-2"><FieldLegend variant="label">Default Value</FieldLegend><EntryListEditor
           items={selectedField.defaultValue as SaveGameValue[]}
           onChange={(defaultValue) => patch({ defaultValue })}
