@@ -149,6 +149,8 @@ describe("ProjectService lifecycle", () => {
     await service.registry!.reindexPath(path);
     const port: ProjectStorage = storage;
     const read = port.readBinaryRange.bind(port);
+    // Project scaffolding leaves its Scene read cached until the retention trim.
+    service.assetLoadingService.trim({ force: true });
     let transportSignal: AbortSignal | undefined;
     vi.spyOn(port, "readBinaryRange").mockImplementation(async (...args) => {
       const [assetPath, offset, , , options] = args;
