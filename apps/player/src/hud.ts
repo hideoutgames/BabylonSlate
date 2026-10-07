@@ -168,7 +168,7 @@ export function mountPlayerHud(
     ])];
     if (groups.includes("unit")) {
       const graph = doc.createElement("span");
-      graph.style.cssText = "display:inline-flex;align-items:flex-end;gap:1px;height:16px;align-self:center;";
+      graph.style.cssText = "display:flex;align-items:flex-end;gap:1px;height:20px;padding-left:68px;";
       for (const total of history) {
         const bar = doc.createElement("span");
         bar.style.cssText = `width:2px;height:${Math.max(8, Math.min(100, (total / TICK_BUDGET_MS) * 100))}%;background:${total > TICK_BUDGET_MS ? "#f87171" : "rgba(238,238,238,0.55)"};`;
@@ -177,8 +177,8 @@ export function mountPlayerHud(
       lines.push(row("unit", [
         metric("tick", `${(stats.scriptMs + stats.physicsMs).toFixed(2)} / ${TICK_BUDGET_MS} ms`, over),
         metric("publish", `${(stats.publishMs ?? 0).toFixed(2)} ms`),
-        graph,
       ]));
+      lines.push(graph);
     }
     if (groups.includes("memory")) {
       const parts = [

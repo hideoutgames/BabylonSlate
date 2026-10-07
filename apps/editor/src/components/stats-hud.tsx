@@ -122,10 +122,13 @@ export function StatsHud({
         {overBudget ? <span data-testid="stats-hud-over-budget" className="whitespace-nowrap text-destructive">over {TICK_BUDGET_MS} ms budget</span> : null}
       </div>
       {showUnit ? (
-        <GroupRow group="unit">
-          <Metric label="tick" value={`${(scriptMs + physicsMs).toFixed(2)} / ${TICK_BUDGET_MS} ms`} tone={overBudget ? "warn" : undefined} />
-          {publishMs != null ? <Metric label="publish" value={`${publishMs.toFixed(2)} ms`} testId="play-publish-ms" data={{ "data-ms": String(publishMs) }} /> : null}
-          <span className="flex h-4 items-end gap-px self-center" data-testid="stats-hud-graph" aria-hidden>
+        <>
+          <GroupRow group="unit">
+            <Metric label="tick" value={`${(scriptMs + physicsMs).toFixed(2)} / ${TICK_BUDGET_MS} ms`} tone={overBudget ? "warn" : undefined} />
+            {publishMs != null ? <Metric label="publish" value={`${publishMs.toFixed(2)} ms`} testId="play-publish-ms" data={{ "data-ms": String(publishMs) }} /> : null}
+          </GroupRow>
+          {/* Tick history on its own line, aligned with the row values. */}
+          <div className="flex h-5 items-end gap-px pl-[4.25rem]" data-testid="stats-hud-graph" aria-hidden>
             {samples.map((sample, index) => {
               const total = sample.scriptMs + sample.physicsMs;
               return (
@@ -136,8 +139,8 @@ export function StatsHud({
                 />
               );
             })}
-          </span>
-        </GroupRow>
+          </div>
+        </>
       ) : null}
       {groups.includes("memory") ? (
         <GroupRow group="memory">{memoryRows.length ? memoryRows : <span className="text-muted-foreground">unavailable</span>}</GroupRow>
