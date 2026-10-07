@@ -82,7 +82,21 @@ for (const variant of [
       playerFiles: await loadPlayerDistFiles(new URL("/player/", baseURL).href),
     });
     if (!exported.ok) throw new Error(exported.error);
-    const server = await serveExportFiles(exported.value.files, { honorRange: true });
+    // The packaged player may use only included files on this local origin.
+    // This simulates a host without Internet/editor services, while retaining
+    // local HTTP needed to serve cold files to the browser.
+    const server = await serveExportFiles(exported.value.files, { honorRange: false });
+    const blockedOrigins: string[] = [];
+    const origin = new URL(server.url).origin;
+    await page.context().route(/^https?:\/\//, async route => {
+      if (new URL(route.request().url()).origin === origin) await route.continue();
+      else { blockedOrigins.push(route.request().url()); await route.abort("blockedbyclient"); }
+    });
+    const entry = (guid: string) => exported.value.manifest.assets.find(asset => asset.guid === guid)!;
+    const secondPath = entry("second").path!;
+    const commandClass = exported.value.manifest.assets.find(asset => asset.classId === "qual_pbr" && asset.type === "Class")!;
+    const commandCode = exported.value.manifest.assets.find(asset => asset.ownerGuid === commandClass.guid && asset.type === "CompiledScript")!;
+    const requestsFor = (path: string) => server.requests.filter(request => request.path === path);
     try {
       await page.goto(server.url);
       const root = page.getByTestId("player-root");
@@ -111,11 +125,18 @@ for (const variant of [
         return live;
       };
       const boot = await ready(1.25);
+      expect(exported.value.manifest.packs).toEqual([]);
+      expect(requestsFor(secondPath), "deferred Scene document stays unread at startup").toEqual([]);
+      expect(requestsFor(commandClass.path!), "available console Class stays unread at startup").toEqual([]);
+      expect(requestsFor(commandCode.path!), "available compiled command code stays unread at startup").toEqual([]);
+      const startupRequests = server.requests.map(request => ({ ...request }));
       // Graph surfaces keep their names when switching mode: compare actual
       // presented shading, then restore the complete authored settings.
       const celPixels = await pixels(page);
       await testInfo.attach("authored-cel", { body: Buffer.from(celPixels, "base64"), contentType: "image/png" });
       expect(await command(page, "qual_pbr")).toMatchObject({ success: true });
+      expect(requestsFor(commandClass.path!)).toEqual([{ path: commandClass.path!, status: 200, range: null, bytes: commandClass.byteLength! }]);
+      expect(requestsFor(commandCode.path!)).toEqual([{ path: commandCode.path!, status: 200, range: null, bytes: commandCode.byteLength! }]);
       await expect.poll(async () => (await read(page)).scalability?.effective?.render.mode).toBe("pbr");
       await expect.poll(async () => await pixels(page) !== celPixels).toBe(true);
       await testInfo.attach("runtime-pbr", { body: Buffer.from(await pixels(page), "base64"), contentType: "image/png" });
@@ -141,8 +162,10 @@ for (const variant of [
       expect(changed.scalability?.effective?.frameCap).toBe(20);
       for (let repeat = 0; repeat < 20; repeat++) expect(await command(page, "qual_runtime")).toMatchObject({ success: true });
       expect((await read(page)).scalability?.revision).toBe(changed.scalability?.revision);
+      expect(requestsFor(secondPath), "unrelated commands do not prepare the deferred Scene").toEqual([]);
       expect(await command(page, "changescene second")).toMatchObject({ success: true });
       const transitioned = await ready(2, "second");
+      expect(requestsFor(secondPath)).toEqual([{ path: secondPath, status: 200, range: null, bytes: entry("second").byteLength! }]);
       expect(transitioned.scalability?.effective?.render.cel).toMatchObject({ outlinesEnabled: true, outlineColor: [0.1875, 0.75, 0.375], outlineWidth: 4 });
       await expect.poll(async () => (await read(page)).scalability?.effective?.render.cel?.shadowBands).toBe(7);
       expect((await read(page)).scalability?.effective?.render.environmentLighting?.intensity).toBe(3);
@@ -154,7 +177,8 @@ for (const variant of [
       const environment = await page.evaluate(() => ({ userAgent: navigator.userAgent, devicePixelRatio: window.devicePixelRatio }));
       await testInfo.attach("standalone-settings", { body: JSON.stringify({
         evidence: renderingEvidence("e2e/render-settings-export.spec.ts"), environment,
-        variant, boot, transitioned, stored,
+        variant, boot, transitioned, stored, startupRequests,
+        deferredLoading: { secondPath, commandClassPath: commandClass.path, commandCodePath: commandCode.path, requests: server.requests, blockedOrigins },
       }), contentType: "application/json" });
       await testInfo.attach("standalone-settings-canvas", { body: await page.getByTestId("player-canvas").screenshot(), contentType: "image/png" });
       expect(await command(page, "qual_reset")).toMatchObject({ success: true });
@@ -201,12 +225,14 @@ for (const variant of [
       }
       await page.reload();
       await ready(1.25);
+      expect(requestsFor(secondPath), "restarting Scene A does not request Scene B again").toHaveLength(1);
       expect(await magentaPixels(page, await pixels(page))).toBeGreaterThan(8);
       expect(await command(page, "framecap")).toMatchObject({ success: true, output: "framecap 30" });
       expect(errors).toEqual([]);
+      expect(blockedOrigins, "packaged startup and cold loads need no external origin").toEqual([]);
     } finally {
       await testInfo.attach("standalone-final-diagnostics", {
-        body: JSON.stringify({ errors, rendererMessages,
+        body: JSON.stringify({ errors, rendererMessages, servedRequests: server.requests, blockedOrigins,
           state: await read(page).catch((error: unknown) => ({ unavailable: String(error) })),
           shutdown: await page.evaluate(() =>
             (window as unknown as { __babylonslatePlayerTest: PlayerTestHandle }).__babylonslatePlayerTest.stop()

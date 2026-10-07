@@ -4,6 +4,7 @@ import type {
   ProjectFolderHandle,
   ProjectStorage,
   ProjectStorageReader,
+  StorageReadOptions,
 } from "@babylonslate/core";
 import { DocumentsStorageAdapter } from "./documents-adapter";
 import { ScopedStorageAdapter } from "./scoped-storage-adapter";
@@ -94,9 +95,9 @@ export class MobileStorageAdapter implements ProjectStorage {
     return handle;
   }
 
-  async readText(path: string): Promise<string> {
+  async readText(path: string, options?: StorageReadOptions): Promise<string> {
     await this.init();
-    return this.port().readText(path);
+    return this.port().readText(path, options);
   }
 
   async withReadScope<T>(operation: (storage: ProjectStorageReader) => Promise<T>): Promise<T> {
@@ -110,9 +111,17 @@ export class MobileStorageAdapter implements ProjectStorage {
     return this.port().writeText(path, data);
   }
 
-  async readBinary(path: string): Promise<Uint8Array> {
+  getReadMetrics() { return this.port().getReadMetrics?.() ?? { operations: 0, fullReads: 0, rangeReads: 0, requestedBytes: 0, actualBytesRead: 0 }; }
+  get hasStrongSourceRevisions() { return this.port().hasStrongSourceRevisions === true; }
+
+  async readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string, options?: StorageReadOptions) {
     await this.init();
-    return this.port().readBinary(path);
+    return this.port().readBinaryRange(path, offset, length, expectedRevision, options);
+  }
+
+  async readBinary(path: string, options?: StorageReadOptions): Promise<Uint8Array> {
+    await this.init();
+    return this.port().readBinary(path, options);
   }
 
   async writeBinary(path: string, data: Uint8Array): Promise<void> {

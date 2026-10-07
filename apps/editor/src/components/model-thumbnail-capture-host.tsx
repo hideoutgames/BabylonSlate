@@ -11,6 +11,7 @@ import {
   type ModelThumbnailJob,
 } from "../lib/model-thumbnail-queue";
 import { prepareAssetThumbnailInput } from "../lib/asset-thumbnail-input";
+import { collectGpuTextureBytes } from "../lib/collect-gpu-texture-bytes";
 
 /**
  * One serialized queue for Content Browser captures on the shared Engine.
@@ -26,17 +27,18 @@ export function ModelThumbnailCaptureHost() {
     projectDocument,
     thumbnailsEnabled,
     readAssetChunk,
+    createAssetLoadScope,
     writeAssetThumbnail,
-    collectPlayTextureBytes,
   } = useDocuments();
   const tail = useRef(Promise.resolve());
-  const latest = useRef({ assetRegistry, play, readAssetChunk, writeAssetThumbnail, collectPlayTextureBytes, projectDocument });
-  latest.current = { assetRegistry, play, readAssetChunk, writeAssetThumbnail, collectPlayTextureBytes, projectDocument };
+  const latest = useRef({ assetRegistry, play, readAssetChunk, createAssetLoadScope, writeAssetThumbnail, projectDocument });
+  latest.current = { assetRegistry, play, readAssetChunk, createAssetLoadScope, writeAssetThumbnail, projectDocument };
 
   useEffect(() => {
     let cancelled = false;
     let draining = false;
     let activeKey: string | null = null;
+    let activeWork: { guid: string; cancel: () => void } | null = null;
     const pending = new Map<string, ModelThumbnailJob>();
     const attemptedMissing = new Set<string>();
     const jobKey = (job: ModelThumbnailJob) => job.cacheKey ?? JSON.stringify([job.guid, job.path, job.payload]);
@@ -50,11 +52,11 @@ export function ModelThumbnailCaptureHost() {
           (job.onlyIfMissing && attemptedMissing.has(key))
         )
           continue;
-        // A later save replaces queued work for that asset. Bound the backlog
-        // during fast scrolling; dropped jobs can be requested on the next visit.
+        // Keep every explicitly selected descriptor; only the active job reads
+        // payloads. A later save replaces queued work for the same asset.
         pending.delete(job.guid);
         pending.set(job.guid, job);
-        if (pending.size > 128) pending.delete(pending.keys().next().value!);
+        if (activeWork?.guid === job.guid) activeWork.cancel();
       }
       if (draining || pending.size === 0) return;
       draining = true;
@@ -85,9 +87,37 @@ export function ModelThumbnailCaptureHost() {
     });
 
     async function captureJob(job: ModelThumbnailJob): Promise<void> {
-      const shouldContinue = () => !cancelled && (!pending.has(job.guid) || jobKey(pending.get(job.guid)!) === jobKey(job));
+      if (cancelled) return;
+      const scope = latest.current.createAssetLoadScope(`Thumbnail: ${job.guid}`);
+      const controller = new AbortController();
+      let released = false;
+      const release = () => {
+        if (released) return;
+        released = true;
+        scope.dispose();
+      };
+      const work = { guid: job.guid, cancel: () => { controller.abort(); release(); } };
+      activeWork = work;
+      const { readAssetChunk } = latest.current;
+      try {
+        await captureOwnedJob(job, controller.signal, (path, chunkId) => {
+          controller.signal.throwIfAborted();
+          return readAssetChunk(path, chunkId, { scope, signal: controller.signal, priority: "background" });
+        });
+      } finally {
+        release();
+        if (activeWork === work) activeWork = null;
+      }
+    }
+
+    async function captureOwnedJob(
+      job: ModelThumbnailJob,
+      signal: AbortSignal,
+      readChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>,
+    ): Promise<void> {
+      const shouldContinue = () => !cancelled && !signal.aborted && (!pending.has(job.guid) || jobKey(pending.get(job.guid)!) === jobKey(job));
       if (!shouldContinue()) return;
-      const { assetRegistry, play, readAssetChunk, writeAssetThumbnail, collectPlayTextureBytes, projectDocument } = latest.current;
+      const { assetRegistry, play, writeAssetThumbnail, projectDocument } = latest.current;
       const engine = play?.ensureSharedEngine() ?? null;
       if (!engine) return;
       const write = async (png: Uint8Array | null) => {
@@ -104,8 +134,8 @@ export function ModelThumbnailCaptureHost() {
         const input = await prepareAssetThumbnailInput({
           asset,
           registry: assetRegistry,
-          readAssetChunk,
-          collectTextureBytes: (guids) => collectPlayTextureBytes(new Map(), new Map(), guids),
+          readAssetChunk: readChunk,
+          collectTextureBytes: (guids) => collectGpuTextureBytes({ assets: assetRegistry.list(), guids, readChunk }),
           shouldContinue,
           pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit,
         });
@@ -124,7 +154,7 @@ export function ModelThumbnailCaptureHost() {
       const modelPayload = normalizeModelPayload(
         model?.header.payload ?? job.payload,
       );
-      const bytes = await readAssetChunk(modelPath, "source");
+      const bytes = await readChunk(modelPath, "source");
       if (!bytes?.byteLength) return;
       let sourceClipBytes: Uint8Array | null = null;
       if (animation?.sourceAnimationGuid) {
@@ -137,7 +167,7 @@ export function ModelThumbnailCaptureHost() {
         ).modelGuid;
         const sourceModel = assetRegistry?.getByGuid(sourceModelGuid);
         if (sourceModel?.header.type !== "Model") return;
-        sourceClipBytes = await readAssetChunk(sourceModel.path, "source");
+        sourceClipBytes = await readChunk(sourceModel.path, "source");
         if (!sourceClipBytes?.byteLength) return;
       }
       if (!shouldContinue()) return;
@@ -149,6 +179,7 @@ export function ModelThumbnailCaptureHost() {
         undefined,
         {
           importScale: modelPayload.importScale,
+          signal,
           ...(animation
             ? { clipName: animation.clipName, sourceClipBytes }
             : {}),
@@ -158,6 +189,7 @@ export function ModelThumbnailCaptureHost() {
     }
     return () => {
       cancelled = true;
+      activeWork?.cancel();
       pending.clear();
       unsubscribe();
     };

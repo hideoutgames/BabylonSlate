@@ -37,6 +37,20 @@ function mockHost(options: { fail?: boolean } = {}): MockFontHost {
 }
 
 describe("FontRegistry", () => {
+  it("does not publish a pending face after its source owner is released", async () => {
+    const host = mockHost();
+    let complete!: (faces: FontFaceLike[]) => void;
+    host.load = () => new Promise((resolve) => { complete = resolve; });
+    const registry = new FontRegistry(host);
+    const loading = registry.register({ guid: "font", family: "Family", bytes: new Uint8Array([1]).buffer });
+    registry.unregister("font");
+    complete(host.faces);
+    expect(await loading).toBe(false);
+    expect(registry.isReady("font")).toBe(false);
+    expect(host.faces).toEqual([]);
+    registry.dispose();
+  });
+
   it("awaits FontFace load before reporting ready", async () => {
     const registry = new FontRegistry(mockHost());
     const ok = await registry.register({

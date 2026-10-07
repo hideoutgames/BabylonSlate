@@ -3,6 +3,17 @@ import { encodeBabpack } from "./babpack";
 import { createHttpPackSource, createMemoryPackSource } from "./pack-source";
 
 describe("pack sources", () => {
+  it("rejects an incorrectly labelled partial response and counts its actual body", async () => {
+    const source = createHttpPackSource("boot.babpack", undefined, async () => new Response(new Uint8Array(8), { status: 206, headers: { "Content-Range": "bytes 10-17/100" } }));
+    await expect(source.read("a")).rejects.toThrow(/range response/);
+    expect(source.getReadMetrics?.()).toMatchObject({ actualBytesRead: 8, rangeReads: 1 });
+  });
+  it("rejects corrupted in-memory payloads against the packed hash", async () => {
+    const pack = await encodeBabpack([{ guid: "a", bytes: new Uint8Array([1, 2]) }]);
+    pack[pack.length - 1] = 9;
+    await expect(createMemoryPackSource(pack).read("a")).rejects.toThrow(/Corrupt/);
+  });
+
   it.each([true, false])("shares the index probe across simultaneous reads (range-capable=%s)", async (rangesSupported) => {
     const pack = await encodeBabpack([{ guid: "a", bytes: new Uint8Array([1]) }, { guid: "b", bytes: new Uint8Array([2]) }]);
     const ranges: string[] = [];
@@ -12,7 +23,7 @@ describe("pack sources", () => {
       await Promise.resolve();
       if (!rangesSupported) return new Response(pack, { status: 200 });
       const match = /^bytes=(\d+)-(\d+)$/.exec(range)!;
-      return new Response(pack.subarray(Number(match[1]), Number(match[2]) + 1), { status: 206 });
+      return new Response(pack.subarray(Number(match[1]), Number(match[2]) + 1), { status: 206, headers: { "Content-Range": `bytes ${match[1]}-${match[2]}/${pack.byteLength}` } });
     });
     expect(await Promise.all([source.read("a"), source.read("b")])).toEqual([new Uint8Array([1]), new Uint8Array([2])]);
     expect(ranges.filter((range) => range === "bytes=0-7")).toHaveLength(1);
@@ -112,5 +123,6 @@ describe("pack sources", () => {
     const source = createHttpPackSource("boot.babpack", undefined, fetchFn);
     expect(await source.read("a")).toEqual(bytes);
     expect(rangeAsked).toBe(true);
+    expect(source.getReadMetrics?.()).toMatchObject({ fullReads: 1, actualBytesRead: pack.byteLength, requestedBytes: 8 });
   });
 });

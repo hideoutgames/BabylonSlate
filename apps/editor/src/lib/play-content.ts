@@ -707,7 +707,8 @@ export function playSceneByGuid(
   library: ReadonlyArray<{ guid: string; scene: SerializedScene }>,
   current?: { guid?: string; scene?: SerializedScene },
 ): SerializedScene | undefined {
-  if (current?.guid === guid) return current.scene;
+  // Play drops the boot document once streamed sources own the Scene.
+  if (current?.guid === guid && current.scene) return current.scene;
   return library.find((entry) => entry.guid === guid)?.scene;
 }
 

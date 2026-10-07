@@ -105,7 +105,7 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     const isCurrent = () => !this.disposed && this.pendingVoices.get(request.voiceId) === pending;
     const engine = await this.ensureEngine();
     if (!isCurrent()) return;
-    const cacheKey = request.clipChunkId ? `${request.assetGuid}:${request.clipChunkId}` : request.assetGuid;
+    const cacheKey = request.cacheKey ?? (request.clipChunkId ? `${request.assetGuid}:${request.clipChunkId}` : request.assetGuid);
     let buffer = this.buffers.get(cacheKey);
     if (!buffer) {
       buffer = await CreateSoundBufferAsync(

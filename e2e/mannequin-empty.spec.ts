@@ -57,7 +57,7 @@ test.describe("3D Empty Kenney Mannequin", () => {
     });
   });
 
-  test("existing Model and Animation assets receive rendered browser thumbnails", async ({
+  test("selected Model and Animation assets generate rendered browser thumbnails", async ({
     page,
   }) => {
     await openTestProject(page);
@@ -68,7 +68,11 @@ test.describe("3D Empty Kenney Mannequin", () => {
       "assets/Mannequin/mannequin.babasset",
       "assets/Mannequin/mannequin_idle.babasset",
     ]) {
-      const thumbnail = page.locator(`[data-asset-path="${path}"] img`);
+      const tile = page.locator(`[data-asset-path="${path}"]`);
+      await tile.click();
+      await tile.click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Generate Thumbnail", exact: true }).click();
+      const thumbnail = tile.locator("img");
       await expect(thumbnail).toBeVisible({ timeout: 30_000 });
       await expect
         .poll(async () => (await previewPixels(thumbnail)).model)

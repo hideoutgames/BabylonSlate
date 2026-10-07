@@ -243,7 +243,12 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
     await expect(page.getByTestId("bt-remove-attachment")).toHaveCount(0);
   });
 
-  test("task throw session report focuses the tree node", async ({ page }) => {
+  test("task throw session report focuses the tree node", async ({ page }, testInfo) => {
+    // Leave room to attach the original preparation log after Play's own
+    // bounded wait, rather than losing it to the overall test deadline.
+    test.setTimeout(120_000);
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
     await openTestProject(page, "/?test=1&previewThrow=1");
     await createAsset(page, "BehaviourTree", "Patrol");
     await page.locator('[data-asset-path="assets/Patrol.bt.babasset"]').dblclick();
@@ -262,19 +267,37 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
     expect(treeGuid.length).toBeGreaterThan(0);
     await pickSelectedAsset(page, "Behaviour Tree", treeGuid);
 
-    await clickPlayAndWaitForOverlay(page);
-    await page.getByTestId("play-overlay-close").click();
-    await expect(page.getByTestId("preview-session-report")).toBeVisible();
-    await expect(page.getByTestId("session-report-row")).toHaveAttribute(
-      "data-node-id",
-      "task",
-    );
-    await page.getByTestId("session-report-row").click();
-    await expect(page.getByTestId("focused-graph-node")).toHaveAttribute(
-      "data-node-id",
-      "task",
-    );
-    await expect(page.getByTestId("behaviour-tree-editor")).toBeVisible();
+    // Mount the log before an overlay or premature session report can cover
+    // its tab; diagnostic reads below work without dismissing either surface.
+    await page.getByRole("tab", { name: "Output Log", exact: true }).click();
+    try {
+      await clickPlayAndWaitForOverlay(page);
+      await page.getByTestId("play-overlay-close").click({ timeout: 5_000 });
+      await expect(page.getByTestId("preview-session-report")).toBeVisible();
+      await expect(page.getByTestId("session-report-row")).toHaveAttribute(
+        "data-node-id",
+        "task",
+      );
+      await page.getByTestId("session-report-row").click();
+      await expect(page.getByTestId("focused-graph-node")).toHaveAttribute(
+        "data-node-id",
+        "task",
+      );
+      await expect(page.getByTestId("behaviour-tree-editor")).toBeVisible();
+    } catch (error) {
+      await testInfo.attach("task-throw-play-preparation", {
+        body: JSON.stringify({
+          errors,
+          output: await page.getByTestId("output-log-line").allTextContents(),
+          report: await page.getByTestId("session-report-row").evaluateAll((rows) => rows.map((row) => ({
+            nodeId: row.getAttribute("data-node-id"),
+            text: row.textContent,
+          }))),
+        }),
+        contentType: "application/json",
+      });
+      throw error;
+    }
   });
 
   test("New Class parent BTDecorator lists On Evaluate and appears in Add Decorator", async ({

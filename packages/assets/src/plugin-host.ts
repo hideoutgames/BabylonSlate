@@ -1,6 +1,7 @@
 import { ENGINE_VERSION, type PluginEnableOverride, type ProjectStorage } from "@babylonslate/core";
-import { decodeAssetDocument } from "./asset-document";
-import { readBabassetHeader } from "./babasset";
+import { DOCUMENT_CHUNK_ID } from "./asset-document";
+import { AccountedPayloadLoader, readAssetCatalog, validateAssetSourceLocator, type AssetCatalogRead } from "./payload-loader";
+import { createVfsBlobStore } from "./blob-store";
 import { ASSETS_DIR, PLUGINS_DIR } from "./babproject";
 import { pluginContentRoot } from "./content-root";
 import {
@@ -112,10 +113,10 @@ export function resolvePluginEnabled(
   return enabledByDefault;
 }
 
-async function findPluginSettingsPath(
+async function findPluginSettings(
   storage: ProjectStorage,
   folderPath: string,
-): Promise<string | null> {
+): Promise<AssetCatalogRead | null> {
   let entries;
   try {
     entries = await storage.readdir(folderPath);
@@ -135,8 +136,8 @@ async function findPluginSettingsPath(
   for (const file of candidates) {
     const path = `${folderPath}/${file.name}`;
     try {
-      const header = readBabassetHeader(await storage.readBinary(path));
-      if (header.type === PLUGIN_SETTINGS_TYPE) return path;
+      const catalog = await readAssetCatalog(storage, path);
+      if (catalog.header.type === PLUGIN_SETTINGS_TYPE) return catalog;
     } catch {
       continue;
     }
@@ -149,19 +150,26 @@ async function describePluginFolder(
   folderPath: string,
   source: PluginSource,
 ): Promise<PluginDescriptor | null> {
-  const settingsPath = await findPluginSettingsPath(storage, folderPath);
-  if (!settingsPath) return null;
-  const bytes = await storage.readBinary(settingsPath);
-  const document = await decodeAssetDocument(bytes);
-  const settings = normalizePluginSettings(document.payload, {
-    pluginGuid: document.guid,
-    displayName: document.name,
+  // The discovery read is the catalog snapshot; the chunk read validates it again.
+  const catalog = await findPluginSettings(storage, folderPath);
+  if (!catalog) return null;
+  const { header, locator } = catalog;
+  const settingsPath = locator.path;
+  const body = header.chunks.find((chunk) => chunk.id === DOCUMENT_CHUNK_ID);
+  const blobs = createVfsBlobStore(storage, `${folderPath}/${ASSETS_DIR}/.blobs`);
+  const payload = body
+    ? JSON.parse(new TextDecoder().decode(await new AccountedPayloadLoader(storage, { blobs }).loadChunk(locator, body)))
+    : header.payload;
+  if (!body) await validateAssetSourceLocator(storage, locator);
+  const settings = normalizePluginSettings(payload, {
+    pluginGuid: header.guid,
+    displayName: header.name,
   });
   const folderName = folderPath.includes("/")
     ? folderPath.slice(folderPath.lastIndexOf("/") + 1)
     : folderPath;
   return {
-    pluginGuid: document.guid,
+    pluginGuid: header.guid,
     folderName,
     folderPath,
     settingsPath,

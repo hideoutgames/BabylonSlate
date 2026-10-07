@@ -1,5 +1,6 @@
 import Capacitor
 import Foundation
+import Darwin
 import UniformTypeIdentifiers
 
 private enum ScopedStoragePluginError: LocalizedError {
@@ -27,6 +28,8 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "pickFolder", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openFolder", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "importBookmark", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "readFileRange", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "readDocumentsRange", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "readFile", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "writeFile", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "mkdir", returnType: CAPPluginReturnPromise),
@@ -103,6 +106,90 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     // MARK: - File operations
+
+    @objc func readFileRange(_ call: CAPPluginCall) {
+        guard let (folderUrl, path) = folderAndPath(call: call) else { return }
+        withCoordinatedRead(folderUrl: folderUrl, path: path, materialize: false, execute: { target in
+            try self.readRange(target: target, call: call)
+        }) { result in
+            switch result {
+            case .success(let value): call.resolve(value)
+            case .failure(let error): self.reject(call, error: error)
+            }
+        }
+    }
+
+    @objc func readDocumentsRange(_ call: CAPPluginCall) {
+        guard let path = call.getString("path"), path.hasPrefix("BabylonSlate/projects/"),
+              ["DOCUMENTS", "DATA"].contains(call.getString("directory") ?? "") else {
+            call.reject("Invalid Documents range location", "UNREACHABLE")
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let root = try FileManager.default.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
+                let target = try self.childURL(folderUrl: root, path: path)
+                let coordinator = NSFileCoordinator(filePresenter: nil)
+                var coordinationError: NSError?
+                var result: Result<[String: Any], Error>?
+                coordinator.coordinate(readingItemAt: target, options: [], error: &coordinationError) { url in
+                    result = Result { try self.readRange(target: self.confinedURL(url, folderUrl: root), call: call) }
+                }
+                if let error = coordinationError { throw error }
+                guard let result = result else { throw NSError(domain: NSCocoaErrorDomain, code: NSFileReadUnknownError) }
+                call.resolve(try result.get())
+            } catch { self.reject(call, error: error) }
+        }
+    }
+
+    private func rangeFailure(_ message: String, revisionChanged: Bool = false) -> NSError {
+        NSError(domain: "BabylonSlate.StorageRange", code: revisionChanged ? 2 : 1, userInfo: [NSLocalizedDescriptionKey: message])
+    }
+
+    private func descriptorRevision(_ descriptor: Int32) throws -> (String, Int64) {
+        var value = Darwin.stat()
+        guard Darwin.fstat(descriptor, &value) == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+        guard (value.st_mode & S_IFMT) == S_IFREG else { throw rangeFailure("Bounded reads require a regular file") }
+        let revision = "\(value.st_dev):\(value.st_ino):\(value.st_size):\(value.st_mtimespec.tv_sec):\(value.st_mtimespec.tv_nsec):\(value.st_ctimespec.tv_sec):\(value.st_ctimespec.tv_nsec)"
+        return (revision, value.st_size)
+    }
+
+    private func readRange(target: URL, call: CAPPluginCall) throws -> [String: Any] {
+        guard let offset = call.getDouble("offset"), let length = call.getDouble("length"),
+              offset.isFinite, length.isFinite, offset >= 0, length >= 0,
+              offset.rounded(.down) == offset, length.rounded(.down) == length,
+              offset + length <= 9007199254740991, length <= 512 * 1024 * 1024 else {
+            throw rangeFailure("Invalid storage byte range")
+        }
+        let handle = try FileHandle(forReadingFrom: target)
+        defer { try? handle.close() }
+        let (revision, size) = try descriptorRevision(handle.fileDescriptor)
+        if let expected = call.getString("expectedRevision"), expected != revision {
+            throw rangeFailure("Source revision changed: \(target.lastPathComponent)", revisionChanged: true)
+        }
+        guard offset + length <= Double(size) else { throw rangeFailure("Storage byte range exceeds file size") }
+        try handle.seek(toOffset: UInt64(offset))
+        var bytes = Data()
+        bytes.reserveCapacity(Int(length))
+        do {
+            while bytes.count < Int(length) {
+                guard let part = try handle.read(upToCount: Int(length) - bytes.count), !part.isEmpty else {
+                    throw rangeFailure("Unexpected end of file")
+                }
+                bytes.append(part)
+            }
+            guard try descriptorRevision(handle.fileDescriptor).0 == revision else { throw rangeFailure("Source revision changed during read", revisionChanged: true) }
+            let current = try FileHandle(forReadingFrom: target)
+            defer { try? current.close() }
+            guard try descriptorRevision(current.fileDescriptor).0 == revision else { throw rangeFailure("Source revision changed during read", revisionChanged: true) }
+            return ["data": bytes.base64EncodedString(), "totalSize": size, "revision": revision, "actualBytesRead": bytes.count]
+        } catch {
+            let failure = error as NSError
+            var information = failure.userInfo
+            information["actualBytesRead"] = bytes.count
+            throw NSError(domain: failure.domain, code: failure.code, userInfo: information)
+        }
+    }
 
     @objc func readFile(_ call: CAPPluginCall) {
         guard let (folderUrl, path) = folderAndPath(call: call) else { return }
@@ -557,25 +644,29 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func reject(_ call: CAPPluginCall, error: Error) {
+        let bytesRead = (error as NSError).userInfo["actualBytesRead"] as? Int
+        let readData: [String: Any]? = bytesRead.map { ["actualBytesRead": $0] }
         if let storageError = error as? ScopedStoragePluginError {
             switch storageError {
             case .accessRevoked:
-                call.reject(storageError.localizedDescription, "ACCESS_REVOKED", error)
+                call.reject(storageError.localizedDescription, "ACCESS_REVOKED", error, readData)
             case .stale:
-                call.reject(storageError.localizedDescription, "STALE", error)
+                call.reject(storageError.localizedDescription, "STALE", error, readData)
             case .invalidPath:
-                call.reject(storageError.localizedDescription, "UNREACHABLE", error)
+                call.reject(storageError.localizedDescription, "UNREACHABLE", error, readData)
             }
             return
         }
         let nsError = error as NSError
-        if isNotFound(error) {
-            call.reject("File not found", "NOT_FOUND", error)
+        if nsError.domain == "BabylonSlate.StorageRange" && nsError.code == 2 {
+            call.reject(error.localizedDescription, "REVISION_CHANGED", error, readData)
+        } else if isNotFound(error) {
+            call.reject("File not found", "NOT_FOUND", error, readData)
         } else if (nsError.domain == NSCocoaErrorDomain && [NSFileReadNoPermissionError, NSFileWriteNoPermissionError].contains(nsError.code)) ||
                     (nsError.domain == NSPOSIXErrorDomain && [1, 13].contains(nsError.code)) {
-            call.reject("Folder access has been revoked", "ACCESS_REVOKED", error)
+            call.reject("Folder access has been revoked", "ACCESS_REVOKED", error, readData)
         } else {
-            call.reject(error.localizedDescription, "UNREACHABLE", error)
+            call.reject(error.localizedDescription, "UNREACHABLE", error, readData)
         }
     }
 }

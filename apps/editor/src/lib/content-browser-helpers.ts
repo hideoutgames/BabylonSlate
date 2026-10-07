@@ -3,6 +3,9 @@ import { createDataDefinitionAsset, createDataTreeAsset, type DataDefinitionAsse
 import type { ImportResult, IndexedAsset } from "@babylonslate/assets";
 import {
   DOCUMENT_CHUNK_ID,
+  collectAssetDependencyMetadata,
+  resolveAssetCatalogDependencies,
+  type AssetDependencyMetadata,
   findClassAssetReferences,
   dataAssetDependencies,
   dataGraphAssetDependencies,
@@ -408,6 +411,7 @@ export type ClassAssetRef = {
     parentClass?: string | null;
     guid?: string;
     payload?: Record<string, unknown>;
+    requiredVariableNames?: readonly string[];
   };
 };
 
@@ -941,6 +945,7 @@ export function isValidSelectionMoveDestination(options: {
 
 export type ContentBrowserContextAction =
   | "open"
+  | "generate-thumbnail"
   | "import-msdf-atlas"
   | "create-material-instance"
   | "duplicate"
@@ -966,11 +971,15 @@ export function contentBrowserContextActions(options: {
   assetCount: number;
   folderCount: number;
   canRetarget?: boolean;
+  canGenerateThumbnails?: boolean;
   singleAssetType?: string;
 }): ContentBrowserContextAction[] {
   const total = options.assetCount + options.folderCount;
   if (total === 0) return [];
   const actions: ContentBrowserContextAction[] = [];
+  if (options.canGenerateThumbnails && options.assetCount > 0 && options.folderCount === 0) {
+    actions.push("generate-thumbnail");
+  }
   if (options.assetCount === 1 && options.folderCount === 0) {
     actions.push("open");
     if (options.singleAssetType === "Font") {
@@ -1900,7 +1909,7 @@ export function materialAssetDependencies(
 }
 
 /** Header `dependencies[]` written on save for Show References, remap, and export. */
-export function assetHeaderDependencies(
+function legacyAssetHeaderDependencies(
   assetType: string,
   payload: Record<string, unknown>,
   classes: readonly ClassAssetRef[] = [],
@@ -2009,6 +2018,43 @@ export function assetHeaderDependencies(
   return [...unique].sort();
 }
 
+/** Shared typed reference collection, using only catalog schemas and this document. */
+export function assetHeaderDependencyMetadata(
+  assetType: string,
+  payload: Record<string, unknown>,
+  classes: readonly ClassAssetRef[] = [],
+  parentClass?: string | null,
+): AssetDependencyMetadata {
+  const definitions = new Map(classes.flatMap(asset => {
+    const fields = asset.header.payload?.fields;
+    return asset.header.guid && Array.isArray(fields) ? [[asset.header.guid, fields] as const] : [];
+  }));
+  return collectAssetDependencyMetadata(assetType, payload, {
+    dependencies: legacyAssetHeaderDependencies(assetType, payload, classes, parentClass),
+    parentClass,
+    classes: classes.flatMap(asset => asset.header.guid && ["Class", "Graph"].includes(asset.header.type) ? [{
+      guid: asset.header.guid,
+      classId: classIdFromClassAsset(asset),
+      parentClassId: asset.header.parentClass,
+      requiredVariableNames: asset.header.requiredVariableNames,
+      members: (asset.header.payload?.members ?? (Array.isArray(asset.header.payload?.variables)
+        ? asset.header.payload.variables.map(variable => ({ ...variable, kind: "variable" })) : [])) as import("@babylonslate/core").GraphClassMember[],
+    }] : []),
+    definitionFields: guid => definitions.get(guid),
+    graphPins: (type, properties) => defaultNodeRegistry.get(typeof properties.__nodeType === "string" ? properties.__nodeType : type)?.pins(properties),
+  });
+}
+
+/** Complete graph for references/export, including deferred gameplay selections. */
+export function assetHeaderDependencies(
+  assetType: string,
+  payload: Record<string, unknown>,
+  classes: readonly ClassAssetRef[] = [],
+  parentClass?: string | null,
+): string[] {
+  return assetHeaderDependencyMetadata(assetType, payload, classes, parentClass).dependencies;
+}
+
 /** Saved dependencies plus already-loaded edits, without reading closed payloads. */
 export function assetDependenciesIncludingOpenDocuments(
   assets: readonly IndexedAsset[],
@@ -2017,7 +2063,7 @@ export function assetDependenciesIncludingOpenDocuments(
   const result = new Map<string, string[]>();
   const documentsByPath = new Map(openDocuments.map((doc) => [doc.ref.path, doc]));
   for (const asset of assets) {
-    const dependencies = new Set(asset.header.dependencies);
+    const dependencies = new Set(resolveAssetCatalogDependencies(asset.header, assets));
     const open = documentsByPath.get(asset.path);
     if (open?.content && typeof open.content === "object") {
       for (const dependency of assetHeaderDependencies(

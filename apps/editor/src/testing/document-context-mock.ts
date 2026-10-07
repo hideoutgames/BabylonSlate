@@ -95,6 +95,8 @@ function inertDocuments(current: () => DocumentsValue | undefined): DocumentsVal
     projectDocument: null,
     projectName: null,
     assetRegistry: null,
+    createAssetLoadScope: () => { throw new Error("createAssetLoadScope is not mocked in this test."); },
+    getAssetLoadState: () => "unloaded",
     extensionService: inertExtensionService(),
     projectGuid: null,
     registryEpoch: 0,

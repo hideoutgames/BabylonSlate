@@ -486,10 +486,10 @@ describe("texture encode alignment", () => {
     });
     const { registry, queue } = await mount(storage);
     let refused = false;
-    const readBinary = storage.readBinary.bind(storage);
-    vi.spyOn(storage, "readBinary").mockImplementation(async (path) => {
+    const readBinaryRange = storage.readBinaryRange.bind(storage);
+    vi.spyOn(storage, "readBinaryRange").mockImplementation(async (path, offset, length, revision) => {
       if (path === "assets/unsized-odd.babasset") refused = true;
-      return readBinary(path);
+      return readBinaryRange(path, offset, length, revision);
     });
 
     expect(await registry.reconcileTextureAlignment({ canWrite: () => !refused })).toEqual([]);

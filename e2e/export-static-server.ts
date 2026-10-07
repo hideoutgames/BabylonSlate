@@ -23,15 +23,25 @@ function parseRange(
   return { start, end: Math.min(end, size - 1) };
 }
 
+export type ServedExportRequest = {
+  path: string;
+  status: number;
+  range: string | null;
+  /** Response body bytes handed to the local static server connection. */
+  bytes: number;
+};
+
 export async function serveExportFiles(
   files: Map<string, Uint8Array>,
   options: { honorRange: boolean },
-): Promise<{ url: string; close: () => Promise<void> }> {
+): Promise<{ url: string; requests: ServedExportRequest[]; close: () => Promise<void> }> {
+  const requests: ServedExportRequest[] = [];
   const server: Server = createServer((req, res) => {
     const url = req.url?.split("?")[0] ?? "/";
     const rel = decodeURIComponent(url.replace(/^\//, "")) || "index.html";
     const body = files.get(rel);
     if (!body) {
+      requests.push({ path: rel, status: 404, range: req.headers.range ?? null, bytes: 9 });
       res.writeHead(404);
       res.end("not found");
       return;
@@ -42,6 +52,7 @@ export async function serveExportFiles(
     res.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
     if (range) {
       const slice = body.subarray(range.start, range.end + 1);
+      requests.push({ path: rel, status: 206, range: req.headers.range ?? null, bytes: slice.byteLength });
       res.writeHead(206, {
         "Content-Type": type,
         "Content-Range": `bytes ${range.start}-${range.end}/${body.byteLength}`,
@@ -50,6 +61,7 @@ export async function serveExportFiles(
       res.end(Buffer.from(slice));
       return;
     }
+    requests.push({ path: rel, status: 200, range: req.headers.range ?? null, bytes: body.byteLength });
     res.writeHead(200, {
       "Content-Type": type,
       "Content-Length": body.byteLength,
@@ -61,6 +73,7 @@ export async function serveExportFiles(
       const { port } = server.address() as AddressInfo;
       resolve({
         url: `http://127.0.0.1:${port}/`,
+        requests,
         close: () =>
           new Promise((done, fail) =>
             server.close((error) => (error ? fail(error) : done())),

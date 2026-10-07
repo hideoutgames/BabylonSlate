@@ -4,6 +4,7 @@ import { readActorSlot, readSnapshotHeader, snapshotFloatCount, type CommandMess
 import { sceneAssetClassId } from "@babylonslate/object-model";
 import { createInProcessRuntime, type RuntimeDriver } from "./driver";
 import type { CompiledScript } from "./script-host";
+import type { AcquireRuntimeScene } from "./scene-source";
 
 function marker(id: string, x = 0, target = "child") {
   return createActor(id, id, { classId: "SceneStreamingActor",
@@ -20,7 +21,7 @@ function logic(classId: string, parentClassId = "Actor", begin = ""): CompiledSc
     entryPoints: [{ name: "begin", event: "onBeginPlay", isAsync: false }, { name: "tick", event: "onTick", isAsync: false }] };
 }
 
-async function setup(options: { child?: SerializedScene; deferred?: boolean; scripts?: CompiledScript[]; scenes?: Record<string, SerializedScene>; yieldControl?: (signal: AbortSignal) => Promise<void> } = {}) {
+async function setup(options: { child?: SerializedScene; deferred?: boolean; scripts?: CompiledScript[]; scenes?: Record<string, SerializedScene>; acquireScene?: AcquireRuntimeScene; yieldControl?: (signal: AbortSignal) => Promise<void> } = {}) {
   const commands: CommandMessage[] = [];
   const scene = { ...createDefaultScene(), actors: [marker("left", 10), marker("right", 100),
     createActor("authored", "Parent", { classId: "Parent", components: [createMeshComponent("parent-mesh", "box")] })] };
@@ -31,7 +32,8 @@ async function setup(options: { child?: SerializedScene; deferred?: boolean; scr
         { id: "body", classId: "RigidBodyComponent", properties: { motionType: "static" } },
         { id: "collider", classId: "ColliderComponent", properties: { shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } } } ] })] };
   const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
-    playScene: scene, playSceneGuid: "parent", sceneLibrary: { child, ...options.scenes }, deferSceneModelsReady: options.deferred ?? true,
+    playScene: scene, playSceneGuid: "parent", sceneLibrary: options.acquireScene ? undefined : { child, ...options.scenes },
+    acquireScene: options.acquireScene, deferSceneModelsReady: options.deferred ?? true,
     ...(options.yieldControl ? { cooperativeSceneLoading: { yieldControl: options.yieldControl } } : {}),
     onCommand: (command) => commands.push(command) });
   await runtime.loadScripts([logic("Parent"), logic("ChildActor"), ...(options.scripts ?? [])]);
@@ -52,6 +54,48 @@ function acknowledge(runtime: RuntimeDriver, command: { actorGuid: string; strea
 }
 
 describe("additive scene streaming", () => {
+  it("acquires cold sources only on demand and retains each instance through readiness and teardown", async () => {
+    const child = { ...createDefaultScene(), name: "Cold Child", actors: [createActor("kid", "Kid", { classId: "ChildActor" })] };
+    const releasedAtActorCounts: number[] = [];
+    const acquire = vi.fn(async () => ({ scene: child, release: () => {
+      releasedAtActorCounts.push(runtime.getWorld().getActors().filter((actor) => actor.classId === "ChildActor").length);
+    } }));
+    const { runtime, commands, left, right } = await setup({ acquireScene: acquire });
+    try {
+      expect(acquire).not.toHaveBeenCalled();
+      const loading = runtime.loadSceneStream(left);
+      const leftReady = await realized(commands, "left");
+      expect(runtime.getSceneState(left)).toBe("Loading");
+      expect(releasedAtActorCounts).toEqual([]);
+      acknowledge(runtime, leftReady);
+      await loading;
+      const sibling = runtime.loadSceneStream(right);
+      acknowledge(runtime, await realized(commands, "right"));
+      await sibling;
+      await runtime.unloadSceneStream(left);
+      expect(releasedAtActorCounts).toEqual([1]);
+      expect(runtime.getSceneState(right)).toBe("Loaded");
+      await runtime.unloadSceneStream(right);
+      expect(releasedAtActorCounts).toEqual([1, 0]);
+    } finally { runtime.stop(); }
+  });
+
+  it("cancels cold loading before realization and releases an ignored cancellation's late source", async () => {
+    let complete!: (value: { scene: SerializedScene; release: () => void }) => void;
+    const release = vi.fn();
+    const { runtime, commands, left } = await setup({ acquireScene: () => new Promise((resolve) => { complete = resolve; }) });
+    try {
+      const loading = runtime.loadSceneStream(left);
+      await Promise.resolve();
+      await runtime.unloadSceneStream(left);
+      await expect(loading).rejects.toThrow();
+      complete({ scene: createDefaultScene(), release });
+      await vi.waitFor(() => expect(release).toHaveBeenCalledOnce());
+      expect(runtime.getSceneState(left)).toBe("Unloaded");
+      expect(commands.some((command) => command.type === "sceneStreamRealized")).toBe(false);
+    } finally { runtime.stop(); }
+  });
+
   it("instances the same scene at component origins and removes only the requested instance", async () => {
     const { runtime, commands, world, left, right } = await setup();
     try {

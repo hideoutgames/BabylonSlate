@@ -6,6 +6,14 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.ParcelFileDescriptor;
+import android.os.Build;
+import android.system.Os;
+import android.system.OsConstants;
+import android.system.StructStat;
+import java.io.File;
+import java.io.FileDescriptor;
+import java.io.FileInputStream;
 import android.provider.DocumentsContract;
 import android.util.Base64;
 import android.webkit.WebView;
@@ -61,6 +69,7 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
 
     private static class PluginFailure extends Exception {
         final String code;
+        int actualBytesRead;
 
         PluginFailure(String message, String code) {
             super(message);
@@ -179,6 +188,102 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
         }
         String name = preferences().getString(NAME_PREFIX + id, "Project");
         call.resolve(folderResult(id, name));
+    }
+
+    @PluginMethod
+    public void readFileRange(PluginCall call) {
+        executeFileOperation(call, () -> {
+            FolderAccess folder = folder(call, true);
+            Uri target = resolve(folder, path(call, false)).uri;
+            // A read-scope directory cache is not a snapshot. Fetch live metadata.
+            DocumentMetadata before = metadata(target);
+            try (ParcelFileDescriptor descriptor = getContext().getContentResolver().openFileDescriptor(target, "r")) {
+                if (descriptor == null) throw new FileNotFoundException(target.toString());
+                String providerRevision = before.uri + ":" + before.size + ":" + before.modified;
+                JSObject result = readRange(descriptor.getFileDescriptor(), providerRevision, call);
+                try {
+                    DocumentMetadata after = metadata(target);
+                    if (!(after.uri + ":" + after.size + ":" + after.modified).equals(providerRevision)) {
+                        throw new PluginFailure("Source revision changed during read", "REVISION_CHANGED");
+                    }
+                } catch (Exception error) { throw rangeFailure(error, result.getInteger("actualBytesRead", 0)); }
+                call.resolve(result);
+            }
+        });
+    }
+
+    @PluginMethod
+    public void readDocumentsRange(PluginCall call) {
+        executeFileOperation(call, () -> {
+            // Android Documents projects use Capacitor Directory.Data (filesDir).
+            if (!"DATA".equals(call.getString("directory"))) throw new PluginFailure("Invalid Documents directory", "UNREACHABLE");
+            String path = path(call, false);
+            if (!path.startsWith("BabylonSlate/projects/")) throw new PluginFailure("Invalid Documents path", "UNREACHABLE");
+            File root = getContext().getFilesDir().getCanonicalFile();
+            File target = new File(root, path).getCanonicalFile();
+            if (!target.getPath().startsWith(root.getPath() + File.separator)) throw new PluginFailure("Path escapes project root", "UNREACHABLE");
+            try (FileInputStream input = new FileInputStream(target)) {
+                String identity = target.getPath() + ":" + target.lastModified();
+                JSObject result = readRange(input.getFD(), identity, call);
+                try (FileInputStream current = new FileInputStream(target)) {
+                    String revision = target.getPath() + ":" + target.lastModified() + ":" + descriptorRevision(Os.fstat(current.getFD()));
+                    if (!revision.equals(result.getString("revision"))) throw new PluginFailure("Source revision changed during read", "REVISION_CHANGED");
+                } catch (Exception error) { throw rangeFailure(error, result.getInteger("actualBytesRead", 0)); }
+                call.resolve(result);
+            }
+        });
+    }
+
+    private String descriptorRevision(StructStat value) {
+        String identity = value.st_dev + ":" + value.st_ino + ":" + value.st_size + ":";
+        if (Build.VERSION.SDK_INT >= 27) return identity + value.st_mtim.tv_sec + ":" + value.st_mtim.tv_nsec + ":" + value.st_ctim.tv_sec + ":" + value.st_ctim.tv_nsec;
+        return identity + value.st_mtime + ":" + value.st_ctime;
+    }
+
+    private JSObject readRange(FileDescriptor descriptor, String identity, PluginCall call) throws Exception {
+        Object rawOffset = call.getData().opt("offset");
+        Object rawLength = call.getData().opt("length");
+        Double offsetValue = rawOffset instanceof Number ? ((Number) rawOffset).doubleValue() : null;
+        Double lengthValue = rawLength instanceof Number ? ((Number) rawLength).doubleValue() : null;
+        if (offsetValue == null || lengthValue == null || !Double.isFinite(offsetValue) || !Double.isFinite(lengthValue) ||
+            offsetValue < 0 || lengthValue < 0 || offsetValue != Math.floor(offsetValue) || lengthValue != Math.floor(lengthValue) ||
+            offsetValue + lengthValue > 9007199254740991d || lengthValue > 512 * 1024 * 1024) {
+            throw new PluginFailure("Invalid storage byte range", "INVALID_RANGE");
+        }
+        long offset = offsetValue.longValue();
+        int length = lengthValue.intValue();
+        StructStat before = Os.fstat(descriptor);
+        if (!OsConstants.S_ISREG(before.st_mode)) throw new PluginFailure("Provider does not support bounded file reads", "RANGE_UNSUPPORTED");
+        String revision = identity + ":" + descriptorRevision(before);
+        String expected = call.getString("expectedRevision");
+        if (expected != null && !expected.equals(revision)) throw new PluginFailure("Source revision changed", "REVISION_CHANGED");
+        if (offset + length > before.st_size) throw new PluginFailure("Storage byte range exceeds file size", "INVALID_RANGE");
+        byte[] bytes = new byte[length];
+        int count = 0;
+        try {
+            while (count < length) {
+                int read = Os.pread(descriptor, bytes, count, length - count, offset + count);
+                if (read <= 0) throw new PluginFailure("Unexpected end of file", "INVALID_RANGE");
+                count += read;
+            }
+            if (!descriptorRevision(Os.fstat(descriptor)).equals(descriptorRevision(before))) {
+                throw new PluginFailure("Source revision changed during read", "REVISION_CHANGED");
+            }
+            JSObject result = new JSObject();
+            result.put("data", Base64.encodeToString(bytes, Base64.NO_WRAP));
+            result.put("totalSize", before.st_size);
+            result.put("revision", revision);
+            result.put("actualBytesRead", count);
+            return result;
+        } catch (Exception error) {
+            throw rangeFailure(error, count);
+        }
+    }
+
+    private PluginFailure rangeFailure(Exception error, int actualBytesRead) {
+        PluginFailure failure = error instanceof PluginFailure ? (PluginFailure) error : new PluginFailure(error.getMessage(), "READ_FAILED");
+        failure.actualBytesRead = actualBytesRead;
+        return failure;
     }
 
     @PluginMethod
@@ -349,7 +454,9 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
                     if (mutation) invalidateReadScopes();
                     operation.run();
                 } catch (PluginFailure error) {
-                    call.reject(error.getMessage(), error.code, error);
+                    JSObject data = new JSObject();
+                    data.put("actualBytesRead", error.actualBytesRead);
+                    call.reject(error.getMessage(), error.code, error, data);
                 } catch (SecurityException error) {
                     call.reject("Folder access has been revoked", "ACCESS_REVOKED", error);
                 } catch (FileNotFoundException error) {
