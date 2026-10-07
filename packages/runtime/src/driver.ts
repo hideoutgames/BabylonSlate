@@ -674,6 +674,18 @@ class InProcessRuntime implements RuntimeDriver {
   /** Each actor's own slot; `slotByGuid` holds a guid's latest-assigned one. */
   private readonly slotByActor = new WeakMap<Actor, number>();
   private readonly removingActors = new WeakSet<Actor>();
+  /** Actors whose sheared world pose has been reported to the Output Log. */
+  private readonly shearedActors = new WeakSet<Actor>();
+  private readonly reportShearedActor = (actor: Actor): void => {
+    if (this.shearedActors.has(actor)) return;
+    this.shearedActors.add(actor);
+    this.reportLog(
+      `${actorLabel(actor)} has a sheared world transform (nonuniform parent scale with an oblique rotation). ` +
+        "Play shows its nearest rotation and scale; attached actors keep their exact positions.",
+      "warning",
+      "actor",
+    );
+  };
   private readonly componentsWithMaterialAssignment = new WeakSet<ActorComponent>();
   private readonly freeSlots: number[] = [];
   private nextUnusedSlot = 0;
@@ -7155,7 +7167,7 @@ class InProcessRuntime implements RuntimeDriver {
     const actors = this.world.getActors();
     const buf = this.snapshots.beginWrite();
     const findActor = (guid: string) => this.world.findActor(guid);
-    const worldTransforms = composeActorWorldTransforms(findActor, actors);
+    const worldTransforms = composeActorWorldTransforms(findActor, actors, this.reportShearedActor);
     const cameraActor = this.playCameraActor();
     const cameraPosition = cameraActor ? worldTransforms.get(cameraActor.guid)?.position : undefined;
     if (cameraPosition) {
