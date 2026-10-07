@@ -635,10 +635,18 @@ describe("@babylonslate/physics", () => {
     expect(() =>
       parseColliderProperties({ shape: { kind: "sphere", radius: NaN } }, "3d"),
     ).toThrow("finite numbers");
-    for (const shape of [{ kind: "sphere", radius: 0 }, { kind: "mesh", vertices: [], indices: [] }]) {
+    for (const [shape, parsed] of [
+      [{ kind: "sphere", radius: 0 }, { kind: "sphere", radius: 0 }],
+      // Authored mesh rows stay object-per-vertex; parsing packs them for physics.
+      [{ kind: "mesh", vertices: [], indices: [] }, { kind: "mesh", positions: new Float32Array(), indices: new Uint16Array() }],
+    ]) {
       expect(() => parseColliderProperties({ shape }, "3d")).toThrow();
-      expect(parseColliderProperties({ shape }, "3d", { validation: "authoring" }).shape).toEqual(shape);
+      expect(parseColliderProperties({ shape }, "3d", { validation: "authoring" }).shape).toEqual(parsed);
     }
+    // Out-of-range authored indices stay visible to authoring and still fail simulation validation.
+    const dangling = { kind: "mesh", vertices: [{ x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, { x: 0, y: 1, z: 0 }], indices: [0, 1, 7] };
+    expect(() => parseColliderProperties({ shape: dangling }, "3d")).toThrow("Invalid triangle mesh");
+    expect(parseColliderProperties({ shape: dangling }, "3d", { validation: "authoring" }).shape.kind).toBe("mesh");
     expect(
       parseRigidBodyProperties({ motionType: "kinematic", mass: 2 }).motionType,
     ).toBe("kinematic");

@@ -1,3 +1,5 @@
+import { normalizeClassMemberCategory } from "./class-member-category";
+
 /** Editor-only assets stripped from Play compile and game export (P12 / P14). */
 
 export function isEditorOnlyAssetType(type: string): boolean {
@@ -88,6 +90,7 @@ export type ClassHeaderFunction = {
   overridable?: boolean;
   implementsInterface?: { assetGuid: string; methodName: string };
   overrides?: { classId: string; name: string };
+  category?: string;
 };
 
 export type ClassHeaderVariable = {
@@ -98,6 +101,7 @@ export type ClassHeaderVariable = {
   container?: "single" | "array" | "map";
   keyTypeId?: string;
   keyTypeClassId?: string;
+  category?: string;
 };
 
 export type ClassHeaderEvent = {
@@ -162,6 +166,7 @@ export function classHeaderMeta(graph: {
     overridable?: boolean;
     implementsInterface?: { assetGuid: string; methodName: string };
     overrides?: { classId: string; name: string };
+    category?: string;
   }>;
   components?: Array<{
     id?: string;
@@ -196,6 +201,8 @@ export function classHeaderMeta(graph: {
           name: member.overrides.name,
         };
       }
+      const fnCategory = normalizeClassMemberCategory(member.category);
+      if (fnCategory) fn.category = fnCategory;
       functions.push(fn);
       continue;
     }
@@ -212,6 +219,8 @@ export function classHeaderMeta(graph: {
       }
       if (member.keyTypeId) variable.keyTypeId = member.keyTypeId;
       if (member.keyTypeClassId) variable.keyTypeClassId = member.keyTypeClassId;
+      const variableCategory = normalizeClassMemberCategory(member.category);
+      if (variableCategory) variable.category = variableCategory;
       variables.push(variable);
       continue;
     }

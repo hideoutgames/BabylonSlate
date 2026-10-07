@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { SourceRevisionChangedError } from "@babylonslate/core";
+import { isStorageNotFound, SourceRevisionChangedError } from "@babylonslate/core";
 import { ElectronStorageAdapter } from "./electron-storage-adapter";
 import type { ElectronProjectBridge } from "./platform";
 import { createMountedProjectStorage } from "./mounted-storage";
@@ -89,5 +89,21 @@ describe("ElectronStorageAdapter", () => {
     expect(failure).not.toBeInstanceOf(SourceRevisionChangedError);
     expect(failure).toMatchObject({ message });
     expect(storage.getReadMetrics()).toMatchObject({ actualBytesRead: 0, rangeReads: 1 });
+  });
+
+  it("restores the main process's not-found type and keeps other invoke failures", async () => {
+    const bridge = fakeProjectBridge();
+    // Electron's renderer sees only this message for a rejected invoke.
+    vi.mocked(bridge.readBinary).mockRejectedValueOnce(new Error(
+      "Error invoking remote method 'project:readBinary': StorageNotFoundError: File not found: missing.json"));
+    vi.mocked(bridge.stat).mockRejectedValueOnce(new Error(
+      "Error invoking remote method 'project:stat': Error: EACCES: permission denied, stat '/p/project.json'"));
+    const storage = new ElectronStorageAdapter(bridge);
+    const missing = await storage.readBinary("missing.json").catch((error: unknown) => error);
+    expect(isStorageNotFound(missing)).toBe(true);
+    expect(missing).toMatchObject({ message: "File not found: missing.json" });
+    const denied = await storage.stat("project.json").catch((error: unknown) => error);
+    expect(isStorageNotFound(denied)).toBe(false);
+    expect((denied as Error).message).toMatch(/EACCES/);
   });
 });

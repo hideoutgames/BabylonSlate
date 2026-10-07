@@ -56,6 +56,22 @@ describe("AddComponentMenu", () => {
     });
   });
 
+  it("lists the Project category after every engine category", () => {
+    render(
+      <AddComponentMenu
+        open
+        onOpenChange={vi.fn()}
+        onSelect={vi.fn()}
+        projectItems={[projectModel]}
+      />,
+    );
+    const categories = screen
+      .getAllByTestId(/^add-component-catalog-category-/)
+      .map((row) => row.dataset.testid);
+    expect(categories.length).toBeGreaterThan(1);
+    expect(categories.at(-1)).toBe("add-component-catalog-category-Project");
+  });
+
   it("still reports engine class picks as classId with no extra properties", () => {
     const onSelect = vi.fn();
     render(

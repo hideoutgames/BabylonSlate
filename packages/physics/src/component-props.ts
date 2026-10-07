@@ -1,3 +1,4 @@
+import { packCollisionTriangleMesh } from "@babylonslate/core";
 import { validateColliderShape } from "./collider-validation";
 import type { ColliderShape, ConstraintDesc, MotionType, Quat, Vec3 } from "./types";
 
@@ -189,14 +190,21 @@ function parseShape(value: unknown, worldKind: "3d" | "2d"): ColliderShape {
       };
     case "convex":
       return { kind: "convex", points: parsePoints3(source.points) };
-    case "mesh":
+    case "mesh": {
+      // Authored rows stay object-per-vertex; physics consumes packed arrays.
+      const vertices = parsePoints3(source.vertices);
+      const indices = Array.isArray(source.indices)
+        ? source.indices.map((n) => shapeNumber(n, 0))
+        : [];
+      const inRange = (i: number) => Number.isInteger(i) && i >= 0 && i < vertices.length;
+      if (indices.every(inRange)) return { kind: "mesh", ...packCollisionTriangleMesh(vertices, indices) };
+      // Authoring may show unfinished rows; simulation validation rejects the sentinel.
       return {
         kind: "mesh",
-        vertices: parsePoints3(source.vertices),
-        indices: Array.isArray(source.indices)
-          ? source.indices.map((n) => shapeNumber(n, 0))
-          : [],
+        positions: packCollisionTriangleMesh(vertices, []).positions,
+        indices: Uint32Array.from(indices, (i) => (inRange(i) ? i : 0xffffffff)),
       };
+    }
     case "box":
     default:
       return {

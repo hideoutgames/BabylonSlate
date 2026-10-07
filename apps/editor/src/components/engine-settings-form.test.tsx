@@ -94,6 +94,18 @@ describe("EngineSettingsForm graph", () => {
   });
 });
 
+describe("EngineSettingsForm undo", () => {
+  it("shows the Undo Memory Limit in megabytes and saves it in bytes", () => {
+    const onChange = vi.fn();
+    const view = render(<EngineSettingsForm settings={defaultEngineSettings()} onChange={onChange} categoryId="undo" />);
+    const field = view.getByLabelText("Undo Memory Limit (MB)");
+    expect(field).toHaveProperty("value", "16");
+    fireEvent.change(field, { target: { value: "48" } });
+    fireEvent.blur(field);
+    expect(onChange).toHaveBeenCalledWith({ undoByteBudget: 50_331_648 });
+  });
+});
+
 describe("EngineSettingsForm viewport", () => {
   it("edits the Drop distance through the viewport settings", () => {
     const onChange = vi.fn();

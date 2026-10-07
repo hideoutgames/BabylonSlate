@@ -55,9 +55,10 @@ import type {
   TeleportOptions,
   Vec3,
 } from "@babylonslate/physics";
-import type {
-  AnimStateFacts,
-  AnimTransitionDecision,
+import {
+  animExitTimeReached,
+  type AnimStateFacts,
+  type AnimTransitionDecision,
 } from "@babylonslate/anim-graph";
 import { loadCompiledModule, type CompiledModuleExports } from "./module-loader";
 import type { LogSeverity } from "./log-ring";
@@ -646,6 +647,8 @@ export interface ScriptContext {
   addObstacle(kind: string, pose: Vec3, size: Vec3): string;
   removeObstacle(id: string): void;
   animFacts?: AnimStateFacts;
+  /** Exit Time Reached: whether this tick's `animFacts` crossed `exitTime`. */
+  animExitTimeReached(exitTime: number): boolean;
   /**
    * Per-script-instance / per-node mutable state for Do Once, Do N, Flip Flop,
    * Gate. Never module-global — keyed by the receiving BObject.
@@ -1286,6 +1289,8 @@ export class ScriptHost {
       commandArgs,
       args: commandArgs,
       animFacts: extras?.animFacts,
+      animExitTimeReached: (exitTime) =>
+        extras?.animFacts ? animExitTimeReached(extras.animFacts, Number(exitTime)) : false,
       flowState: (nodeId: string) =>
         this.flowStateFor(self, String(nodeId), flowNamespace),
       reportCommand: (success, output) => {

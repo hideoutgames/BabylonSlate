@@ -24,7 +24,10 @@ describe("Water removal and terrain cut-outs", () => {
     const data = parseLandscapeProperties({ width: 8, depth: 8, subdivisions: 4, heights });
     const mesh = landscapeCollisionMesh({ ...data, collisionsEnabled: true })!;
     for (let t = 0; t < mesh.indices.length; t += 3) {
-      const [a, b, c] = [0, 1, 2].map((k) => mesh.vertices[mesh.indices[t + k]!]!);
+      const [a, b, c] = [0, 1, 2].map((k) => {
+        const i = mesh.indices[t + k]! * 3;
+        return { x: mesh.positions[i]!, y: mesh.positions[i + 1]!, z: mesh.positions[i + 2]! };
+      });
       // Centroid of every rendered/collision triangle.
       const x = (a!.x + b!.x + c!.x) / 3, z = (a!.z + b!.z + c!.z) / 3;
       expect(landscapeHeightAt(data, x, z)).toBeCloseTo((a!.y + b!.y + c!.y) / 3, 9);

@@ -64,7 +64,7 @@ it("preserves scaled asymmetric vertices and one local pose while rejecting non-
     copyColliderDesc({
       id: "bad",
       bodyId: "body",
-      shape: { kind: "mesh", vertices: shape.points, indices: [0, 0, 1] },
+      shape: { kind: "mesh", positions: new Float32Array([0, 0, 0, 2, 0, 0, 0, 1, 0]), indices: new Uint16Array([0, 0, 1]) },
       friction: 0,
       restitution: 0,
       isTrigger: false,
