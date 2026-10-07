@@ -1,3 +1,4 @@
+import { acquireEngineGpuTiming, observeEngineGpuTiming, type EngineGpuTimingLease, type EngineGpuTimingObservation, type EngineGpuTimingSample } from "./engine-gpu-timing";
 import { RuntimeMaterialEditOwner, type RuntimeMaterialPreparationRequest, type RuntimeMaterialCommitCommand } from "./runtime-material-edit";
 import { drainFinalAuthoringResources } from "./final-authoring-drain";
 import { createRuntimeTransformTools, type RuntimeTransformTools, type RuntimeTransformToolsOptions, type RuntimeTransformToolsOwner } from "./runtime-transform-tools";
@@ -318,6 +319,8 @@ export interface EngineHandle {
   renderDiagnostics: () => RenderDiagnostics;
   /** Explicit CPU timing only; host controls finite capture, session mode and result retention. */
   observePerformance: (onFrame: (sample: RenderPerformanceSample) => void) => () => void;
+  /** Explicit unpaired engine-wide GPU queries; unavailable backends explain why. */
+  observeGpuTiming: (onSample: (sample: EngineGpuTimingSample) => void, onError?: (error: unknown) => void) => EngineGpuTimingObservation;
   /** Explicit next coherent game presentation; rejects concurrent profiling. */
   captureFrame: () => Promise<RenderFrameReport>;
   cancelFrameCapture: (reason?: string) => void;
@@ -2278,7 +2281,13 @@ function initializeEngine(
   let previousFramePresented = false;
   let lastPresentedAt = 0;
   let lastPressureSample: FramePressureSample | null = null;
-  let gpuFrameCaptureRequested = false;
+  let rendererGpuLease: EngineGpuTimingLease | null = null;
+  const gpuObservers = new Set<() => void>();
+  onRollback(() => {
+    for (const release of [...gpuObservers]) release();
+    rendererGpuLease?.release();
+    rendererGpuLease = null;
+  });
   const soleRenderingView = () => {
     let enabled = 0;
     for (const view of engine.views ?? []) {
@@ -2663,9 +2672,8 @@ function initializeEngine(
       // GPU timing only means this view when it owns the Engine's render —
       // siblings would fold their cost into the same counter.
       const sole = soleRenderingView();
-      if (!engine.isWebGPU && sole && presentationSignals && !gpuFrameCaptureRequested && engine.getCaps().timerQuery) {
-        gpuFrameCaptureRequested = true;
-        engine.captureGPUFrameTime(true);
+      if (!engine.isWebGPU && sole && presentationSignals && !rendererGpuLease && engine.getCaps().timerQuery) {
+        rendererGpuLease = acquireEngineGpuTiming(engine);
       }
       const counter = !engine.isWebGPU && presentationSignals && sole && engine.getCaps().timerQuery ? engine.getGPUFrameTimeCounter() : null;
       lastPressureSample = {
@@ -2937,6 +2945,9 @@ function initializeEngine(
       finalAuthoringDrain?.abort(new Error("The game view stopped during final scene capture."));
       runtimeMaterialEdits.dispose();
       performanceFeed.dispose();
+      for (const release of [...gpuObservers]) release();
+      rendererGpuLease?.release();
+      rendererGpuLease = null;
       frameReportFeed.cancel("The game view was disposed.");
       pendingPerformanceReceipt = null;
       pendingFrameReportReceipt = null;
@@ -3584,6 +3595,14 @@ function initializeEngine(
     observePerformance: (onFrame) => {
       if (frameReportFeed.active) throw new Error("Stop frame capture before recording performance.");
       return performanceFeed.subscribe(onFrame);
+    },
+    observeGpuTiming: (onSample, onError) => {
+      if (disposed || contextLost) return { status: "unavailable", reason: "The game graphics context is unavailable.", release() {} };
+      const observation = observeEngineGpuTiming(engine, onSample, { onError: error => { release(); onError?.(error); } });
+      if (observation.status === "unavailable") return observation;
+      const release = () => { gpuObservers.delete(release); observation.release(); };
+      gpuObservers.add(release);
+      return { ...observation, release };
     },
     captureFrame: () => {
       if (disposed || contextLost) return Promise.reject(new Error("The game view is unavailable."));

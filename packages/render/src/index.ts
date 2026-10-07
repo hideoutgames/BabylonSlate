@@ -132,3 +132,5 @@ export type { ComponentShapeEdit, ShapeHandlesOptions, ShapeHandleTarget } from 
 export { attachSceneBrushInput, type SceneBrushState } from "./scene-brush-input";
 
 export type { RuntimeTransformTools, RuntimeTransformToolsOptions, RuntimeTransformChange } from "./runtime-transform-tools";
+
+export { observeEngineGpuTiming, type EngineGpuTimingSample, type EngineGpuTimingObservation } from "./engine-gpu-timing";
