@@ -263,7 +263,7 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
       // Scene-owned private values follow only the current assignment. Stale
       // overrides must not pull an unrelated material or texture into startup.
       const materialInstance = normalizeMaterialInstanceOverrides(component.materialInstance);
-      if (materialInstance?.materialGuid === properties.materialGuid) {
+      if (materialInstance && materialInstance.materialGuid === properties.materialGuid) {
         materialParameters(materialInstance.parameters);
       }
       for (const guid of Object.values(row(properties.materialSlotOverrides))) add(guid);
