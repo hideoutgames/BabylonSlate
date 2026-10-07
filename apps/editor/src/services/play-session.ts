@@ -639,6 +639,7 @@ export function startPlaySession(options: {
 
   let worker: GameWorkerHost | null = null;
   let runtime: RuntimeDriver | null = null;
+  // eslint-disable-next-line prefer-const -- runtime command handlers installed first may run before assignment.
   let performanceDiagnostics: SessionDiagnostics<import("@babylonslate/render").RenderFrameReport> | undefined;
   const diagnosticClient = createDiagnosticOperationClient({
     sessionGeneration: options.sessionGeneration ?? 0,

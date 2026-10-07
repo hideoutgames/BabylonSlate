@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { createActor, createDefaultScene } from "@babylonslate/core";
 import type { CommandMessage, SessionBoundaryResult } from "@babylonslate/bridge";
 import { createInProcessRuntime, type RuntimeDriver } from "./driver";
-import { createRuntimeFromLoad } from "./play-load";
 
 const makeRuntime = (options: Partial<Parameters<typeof createInProcessRuntime>[0]> = {}) =>
   createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, sessionGeneration: 7,
@@ -12,10 +11,9 @@ const flush = async () => { for (let index = 0; index < 12; index++) await Promi
 describe("runtime session boundaries", () => {
   it("acknowledges reentrant pause only after the completed tick and render commands", async () => {
     const commands: CommandMessage[] = [];
-    let runtime: RuntimeDriver;
     let armed = false;
     let result: Promise<SessionBoundaryResult> | undefined;
-    runtime = makeRuntime({ onCommand: command => {
+    const runtime: RuntimeDriver = makeRuntime({ onCommand: command => {
       commands.push(command);
       if (armed && command.type === "stats") {
         armed = false;

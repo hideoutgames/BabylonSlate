@@ -1428,7 +1428,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         void openRecordedTrace(result.lastTrace);
       }
     },
-    [appendLog, openRecordedTrace, reportBtState, sessionOwner, releasePlaySources],
+    [appendLog, openRecordedTrace, reportBtState, sessionOwner],
   );
 
   const value = useMemo<PlayContextValue>(

@@ -109,7 +109,6 @@ describe("saved component material instances", () => {
     const failed = new Promise<void>((_yes, no) => { reject = no; });
     const cancelled = new Promise<void>((yes) => { finish = yes; });
     const leases = new Map<string, number>();
-    let texture!: RawTexture;
     const f = fixture(document, {
       textureIdentity: (guid) => guid,
       acquireTexture: (guid) => {
@@ -119,7 +118,7 @@ describe("saved component material instances", () => {
           release: () => { if (!released) { released = true; leases.set(guid, leases.get(guid)! - 1); } } };
       },
     });
-    texture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, f.scene);
+    const texture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, f.scene);
     texture.getInternalTexture()!.isReady = true;
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const working = sceneDocument({ Albedo: { kind: "texture", textureAssetGuid: "working" } });
