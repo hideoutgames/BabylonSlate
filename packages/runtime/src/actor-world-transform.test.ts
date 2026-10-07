@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import {
+  AFFINE_SHEAR_TOLERANCE,
   composeAffineTransform,
   multiplyAffineTransforms,
   type AffineTransform,
@@ -63,11 +64,11 @@ function authoredWorlds(nodes: readonly Node[]): AffineTransform[] {
   return worlds;
 }
 
-function expectMatrixClose(actual: AffineTransform, expected: AffineTransform, rows = [0, 1, 2, 3]): void {
+function expectMatrixClose(actual: AffineTransform, expected: AffineTransform, rows = [0, 1, 2, 3], slack = 0): void {
   for (const row of rows) {
     for (let column = 0; column < 3; column++) {
       const index = row * 3 + column;
-      const tolerance = 1e-9 * Math.max(1, Math.abs(expected[index]!));
+      const tolerance = 1e-9 * Math.max(1, Math.abs(expected[index]!)) + slack;
       expect(Math.abs(actual[index]! - expected[index]!)).toBeLessThan(tolerance);
     }
   }
@@ -165,9 +166,15 @@ describe("actor world transforms match the authored matrices", () => {
         const expected = authoredWorlds(nodes);
         const index = firstSpawnedActorIndex(actors);
         const worlds = composeActorWorldTransforms((guid) => index.get(guid), actors);
+        // A basis within AFFINE_SHEAR_TOLERANCE of orthogonal counts as shear-free
+        // and continues through its decomposed pose, so descendants may drift by
+        // that tolerance times their lever arm (bounded here by the hierarchy's
+        // largest world offset). Composition bugs differ by O(1).
+        const extent = Math.max(1, ...expected.flatMap((world) => [world[9]!, world[10]!, world[11]!].map(Math.abs)));
+        const slack = 10 * AFFINE_SHEAR_TOLERANCE * extent;
         actors.forEach((actor, i) => {
-          expectMatrixClose(composeAffineTransform(worlds.get(actor.guid)!), expected[i]!, [3]);
-          expectMatrixClose(composeAffineTransform(actorWorldTransform(actor, index)!), expected[i]!, [3]);
+          expectMatrixClose(composeAffineTransform(worlds.get(actor.guid)!), expected[i]!, [3], slack);
+          expectMatrixClose(composeAffineTransform(actorWorldTransform(actor, index)!), expected[i]!, [3], slack);
         });
       }),
       { numRuns: 200 },
