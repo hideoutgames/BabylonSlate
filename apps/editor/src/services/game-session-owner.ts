@@ -134,8 +134,13 @@ export class GameSessionOwner<Result extends GameSessionStopResult> {
       return Promise.resolve(undefined);
     }
     current.stopping = Promise.resolve().then(current.stop).then((result) => {
-      void Promise.all([current.releaseBarrier, result.released]).then(
-        (releases) => this.completeRelease(ticket, releases.some((release) => release?.quarantined)),
+      const released = current.releaseBarrier
+        ? Promise.all([current.releaseBarrier, result.released]).then((releases) => ({
+            quarantined: releases.some((release) => release.quarantined),
+          }))
+        : result.released;
+      void released.then(
+        (release) => this.completeRelease(ticket, release.quarantined),
         (error: unknown) => this.fail(ticket, error, true),
       );
       return result;
