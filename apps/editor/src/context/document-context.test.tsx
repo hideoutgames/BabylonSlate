@@ -307,6 +307,29 @@ describe("DocumentProvider actions and route", () => {
     expect(documents().recoveryAvailable).toBe(false);
   });
 
+  it("compiles the launch snapshot after an open Class is edited again", async () => {
+    const actions = await openProject();
+    const ref = { kind: "graph" as const, path: MAIN_CLASS_FILE, label: "Main" };
+    await act(() => actions.openDocument(ref));
+    const id = documentId(ref);
+    const graph = actions.getOpenDocuments().find(document => document.id === id)!.content as SerializedGraph;
+    const withSpeed = (speed: number): SerializedGraph => ({ ...graph, members: [
+      ...(graph.members ?? []), { id: "speed", kind: "variable", name: "Speed", typeId: "float", defaultValue: speed },
+    ] });
+    act(() => actions.applyGraphChange(id, withSpeed(7)));
+    const snapshot = actions.getOpenDocuments().map(document => ({ ...document }));
+    act(() => actions.applyGraphChange(id, withSpeed(19)));
+    const guid = documents().assetRegistry!.list().find(asset => asset.path === MAIN_CLASS_FILE)!.header.guid;
+    const required = new Set([guid]);
+    const captured = await actions.collectPlayPreviewScripts(required, snapshot);
+    const current = await actions.collectPlayPreviewScripts(required);
+    expect(captured.bundles.find(bundle => bundle.classId === classIdForGraphPath(MAIN_CLASS_FILE))?.variables)
+      .toContainEqual({ name: "Speed", type: "float", defaultValue: 7 });
+    expect(current.bundles.find(bundle => bundle.classId === classIdForGraphPath(MAIN_CLASS_FILE))?.variables)
+      .toContainEqual({ name: "Speed", type: "float", defaultValue: 19 });
+    expect(actions.getOpenDocuments().find(document => document.id === id)?.dirty).toBe(true);
+  });
+
   it("keeps unrequested scene, script, and resource payloads unread during selected Play collection", async () => {
     const actions = await openProject();
     const registry = documents().assetRegistry!;

@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { SimulationInspectionProvider } from "./simulation-inspection-context";
 import { prepareSaveGameConfiguration } from "../services/save-game-configuration";
 import { createSaveGameStorage, isTestModeEnabled } from "@babylonslate/vfs";
-import { acquirePlayAssetSources, emptyPlaySourceControls, mergePreparedPlaySources, requiredProjectAssets, type PlayAssetSourceHost } from "../services/play-asset-sources";
+import { acquirePlayAssetSources, emptyPlaySourceControls, mergePreparedPlaySources, playDocumentOverrides, requiredProjectAssets, type PlayAssetSourceHost } from "../services/play-asset-sources";
 import {
   createContext,
   useCallback,
@@ -1220,11 +1220,15 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         const lifetime = new AbortController();
         const sourceSignal = AbortSignal.any([lifetime.signal, ticket.signal]);
         playSourceLifetimeRef.current = lifetime;
+        const sourceDocuments = playRequestInputsRef.current.documents.getOpenDocuments().map(document => ({
+          ...(simulationRef.current?.baseline.id === document.id ? simulationRef.current.baseline : document),
+        }));
         const sourceHost: PlayAssetSourceHost = {
           registry: assetRegistry,
+          documentOverrides: playDocumentOverrides(assetRegistry, sourceDocuments),
           project: projectDocument,
           createScope: playRequestInputsRef.current.documents.createAssetLoadScope,
-          compile: collectPlayPreviewScripts,
+          compile: required => collectPlayPreviewScripts(required, sourceDocuments, projectDocument),
         };
         playSourceHostRef.current = sourceHost;
         const projectAssets = requiredProjectAssets(assetRegistry, projectDocument);

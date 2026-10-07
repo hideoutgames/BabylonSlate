@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createEmptyProject } from "@babylonslate/core";
+import { createDocumentRef, createEmptyProject, documentId } from "@babylonslate/core";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { createInProcessRuntime } from "@babylonslate/runtime";
 import type { CommandMessage, ScriptBundleEntry } from "@babylonslate/bridge";
@@ -7,7 +7,8 @@ import {
   AssetRegistry, buildBoxGlbFixture, createRegistryAssetLoadingService, encodeBabasset,
   FONT_FACETYPE_CHUNK_ID, projectContentRoot, type ChunkInput,
 } from "@babylonslate/assets";
-import { acquirePlayAssetSources, emptyPlaySourceControls, mergePreparedPlaySources, requiredProjectAssets } from "./play-asset-sources";
+import { acquirePlayAssetSources, emptyPlaySourceControls, mergePreparedPlaySources, playDocumentOverrides, requiredProjectAssets } from "./play-asset-sources";
+import type { OpenDocument } from "./document-service";
 
 async function sceneSaveDuringCompilationFixture() {
   const storage = new MemoryStorageAdapter();
@@ -44,6 +45,68 @@ async function sceneSaveDuringCompilationFixture() {
 }
 
 describe("Play source ownership", () => {
+  it("uses fixed unsaved scene dependencies without writing or reusing another working document's packed content", async () => {
+    const storage = new MemoryStorageAdapter();
+    await storage.pickProjectFolder();
+    await storage.mkdir("assets");
+    const scenePath = "assets/scene.babasset";
+    const scenePayload = (name: string, font: string) => ({ name, actors: [{
+      id: "label", name: "Label", classId: "Actor", components: [
+        { id: "text", classId: "Text3DComponent", properties: { fontAssetGuid: font } },
+        { id: "mesh", classId: "MeshComponent", properties: { meshKind: "box", materialGuid: "material" } },
+      ],
+    }] });
+    const savedBytes = await encodeBabasset({ header: {
+      guid: "scene", name: "Scene", type: "Scene", version: 1, engineVersion: "0.0.0", mode: "thin",
+      payload: scenePayload("Saved", "saved-font"), dependencies: ["saved-font"], requiredDependencies: ["saved-font"], dependencyMetadataVersion: 1,
+    }, chunks: [] });
+    await storage.writeBinary(scenePath, savedBytes);
+    await storage.writeBinary("assets/material.babasset", await encodeBabasset({ header: {
+      guid: "material", name: "Material", type: "Material", version: 1, engineVersion: "0.0.0", mode: "thin",
+      payload: { name: "Saved material", nodes: [], edges: [] }, dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1,
+    }, chunks: [] }));
+    for (const guid of ["saved-font", "live-font", "unrelated-font"]) await storage.writeBinary(`assets/${guid}.babasset`, await encodeBabasset({
+      header: { guid, name: guid, type: "Font", version: 1, engineVersion: "0.0.0", mode: "thin", payload: { family: guid },
+        dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1 },
+      chunks: [{ id: FONT_FACETYPE_CHUNK_ID, kind: "font", mime: "application/json", data: new Uint8Array([123, 125]) }],
+    }));
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const loading = createRegistryAssetLoadingService(registry, { projectId: "working-scene" });
+    const ref = createDocumentRef("scene", scenePath);
+    const document: OpenDocument = { id: documentId(ref), ref, content: scenePayload("First draft", "live-font"), dirty: true, layout: null };
+    const materialRef = createDocumentRef("material", "assets/material.babasset");
+    const material: OpenDocument = { id: documentId(materialRef), ref: materialRef, content: { name: "First material", nodes: [], edges: [] }, dirty: true, layout: null };
+    const firstOverrides = playDocumentOverrides(registry, [document, material]);
+    const compile = vi.fn(async () => ({ bundles: [], diagnostics: [] }));
+    const host = { registry, project: createEmptyProject("Working scene"), createScope: (owner: string) => loading.createScope(owner), compile,
+      documentOverrides: firstOverrides };
+    const options = { consumer: "Working Scene", signal: new AbortController().signal };
+    const first = await acquirePlayAssetSources(host, ["scene"], options);
+    expect(first.required).toEqual(new Set(["scene", "live-font", "material"]));
+    expect(first.game.scenes.get("scene")?.name).toBe("First draft");
+    expect(first.content.materialDocuments.get("material")?.name).toBe("First material");
+    expect(first.game.fontFacetypeBytes.size).toBe(1);
+    expect(loading.snapshot().entries.some(entry => ["saved-font", "unrelated-font"].includes(entry.assetId))).toBe(false);
+    const nextOverrides = playDocumentOverrides(registry, [
+      { ...document, content: scenePayload("Second draft", "live-font") },
+      { ...material, content: { name: "Second material", nodes: [], edges: [] } },
+    ]);
+    const second = await acquirePlayAssetSources({ ...host, documentOverrides: nextOverrides }, ["scene"], options);
+    const demand = await acquirePlayAssetSources(host, ["scene"], options);
+    expect(second.game.scenes.get("scene")?.name).toBe("Second draft");
+    expect(second.content.materialDocuments.get("material")?.name).toBe("Second material");
+    expect(demand.game.scenes.get("scene")?.name).toBe("First draft");
+    expect(demand.content.materialDocuments.get("material")?.name).toBe("First material");
+    expect(demand.game.fontFamilies).toEqual(first.game.fontFamilies);
+    expect(compile).toHaveBeenCalledTimes(2);
+    expect(await storage.readBinary(scenePath)).toEqual(savedBytes);
+    first.release(); second.release(); demand.release();
+    loading.trim({ force: true });
+    expect(loading.snapshot()).toMatchObject({ sourceBytes: 0, decodedBytes: 0, entries: [] });
+    loading.dispose();
+  });
+
   it("retries a scene snapshot when a background reverb save completes during compilation", async () => {
     const fixture = await sceneSaveDuringCompilationFixture();
     fixture.host.compile.mockImplementationOnce(async () => {

@@ -408,12 +408,6 @@ export function PlayOverlay({
   pauseRef.current = (reason, next) => {
     const session = sessionRef.current;
     if (!session || closedRef.current) return;
-    if (!simulating) {
-      userPausedRef.current = next;
-      session.setPaused(next);
-      setPaused(next);
-      return;
-    }
     if (reason === "user") setPausePending(true);
     setControlError(null);
     void session.setPauseReason(reason, next).then((result) => {
@@ -909,8 +903,7 @@ export function PlayOverlay({
       });
       resizeObserver.observe(overlay);
       const detachLifecycle = attachLifecyclePause((hidden) => {
-        if (simulating) pauseRef.current("lifecycle", hidden);
-        else sessionRef.current?.setPaused(hidden || userPausedRef.current);
+        pauseRef.current("lifecycle", hidden);
       });
       const movePoll = window.setInterval(() => {
         const current = sessionRef.current;

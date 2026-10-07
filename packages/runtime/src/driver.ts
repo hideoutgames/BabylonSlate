@@ -6479,12 +6479,13 @@ class InProcessRuntime implements RuntimeDriver {
       try {
         const scene = this.world.currentScene;
         if (!scene || this.sceneWorkBlocked || this.bootLoading || this.streamBlockingCount > 0) { fail("Scene loading has not reached a complete final boundary."); return; }
-        const postProcessStack = scene.postProcessStack.map(entry => {
+        const postProcessStack: typeof scene.postProcessStack = [];
+        for (const entry of scene.postProcessStack) {
           const material = getPostProcessMaterialObject(scene, entry.id ?? "");
           const overrides = material ? this.materialParameters.captureOverrides(material) : null;
-          if (!overrides) throw new Error(`Post-process material ${entry.materialGuid} has no complete current authoring parameter state.`);
-          return { ...entry, parameters: overrides };
-        });
+          if (!overrides) { fail(`Post-process material ${entry.materialGuid} has no complete current authoring parameter state.`, "resource"); return; }
+          postProcessStack.push({ ...entry, parameters: overrides });
+        }
         if (postProcessStack.some(entry => !this.simulationAssets.has(entry.materialGuid))) { fail("A post-process material has no prepared authoring asset.", "resource"); return; }
         const schemas = dataTypeSchemas(this.simulationDataAssets ?? []);
         resolve(captureSimulationScene({ world: this.world, baseline: this.simulationBaseline, identity, startingScene: this.simulationStart,

@@ -574,7 +574,7 @@ interface DocumentContextValue {
   thumbnailVersions: Readonly<Record<string, number>>;
   thumbnailsEnabled: boolean;
   /** Compile requested Play graphs, or every graph for explicit project compilation. */
-  collectPlayPreviewScripts: (requiredGuids?: ReadonlySet<string>) => Promise<{
+  collectPlayPreviewScripts: (requiredGuids?: ReadonlySet<string>, sourceDocuments?: readonly OpenDocument[], sourceProject?: ProjectDocument) => Promise<{
     bundles: ScriptBundleEntry[];
     diagnostics: Diagnostic[];
   }>;
@@ -3113,11 +3113,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [projectService],
   );
 
-  const loadClassGraphDocuments = useCallback(async (requiredGuids?: ReadonlySet<string>): Promise<
+  const loadClassGraphDocuments = useCallback(async (requiredGuids?: ReadonlySet<string>, sourceDocuments?: readonly OpenDocument[]): Promise<
     Array<{ path: string; content: SerializedGraph }>
   > => {
     const paths = classAssetPaths((projectService.registry?.list() ?? []).filter((asset) => !requiredGuids || requiredGuids.has(asset.header.guid)));
-    const open = documentService.getState().openDocuments;
+    const open = sourceDocuments ? new Map(sourceDocuments.map(document => [document.id, document])) : documentService.getState().openDocuments;
     const documents: Array<{ path: string; content: SerializedGraph }> = [];
     for (const path of paths) {
       const openDoc = open.get(documentId({ kind: "graph", path }));
@@ -3138,7 +3138,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     return documents;
   }, [documentService, projectService]);
 
-  const loadProjectGraphDocuments = useCallback(async (requiredGuids?: ReadonlySet<string>): Promise<
+  const loadProjectGraphDocuments = useCallback(async (requiredGuids?: ReadonlySet<string>, sourceDocuments?: readonly OpenDocument[]): Promise<
     Array<{
       path: string;
       content: SerializedGraph;
@@ -3146,7 +3146,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       parentClassId?: string | null;
     }>
   > => {
-    const documents = await loadClassGraphDocuments(requiredGuids);
+    const documents = await loadClassGraphDocuments(requiredGuids, sourceDocuments);
     const assets = projectService.registry?.list() ?? [];
     const headers = Object.fromEntries(
       assets.map((asset) => [
@@ -3162,11 +3162,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     return collectPlayScriptDocuments(documents, headers, parentOf);
   }, [loadClassGraphDocuments, projectService]);
 
-  const loadProjectAnimGraphDocuments = useCallback(async (requiredGuids?: ReadonlySet<string>) => {
+  const loadProjectAnimGraphDocuments = useCallback(async (requiredGuids?: ReadonlySet<string>, sourceDocuments?: readonly OpenDocument[]) => {
     const assets = (projectService.registry?.list() ?? []).filter(
       (asset) => asset.header.type === "AnimationGraph" && (!requiredGuids || requiredGuids.has(asset.header.guid)),
     );
-    const open = documentService.getState().openDocuments;
+    const open = sourceDocuments ? new Map(sourceDocuments.map(document => [document.id, document])) : documentService.getState().openDocuments;
     const entries: PlayAnimGraphEntry[] = [];
     for (const asset of assets) {
       const openDoc = open.get(
@@ -3260,15 +3260,15 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [documentService, projectService],
   );
 
-  const collectPlayPreviewScripts = useCallback(async (requiredGuids?: ReadonlySet<string>): Promise<{
+  const collectPlayPreviewScripts = useCallback(async (requiredGuids?: ReadonlySet<string>, sourceDocuments?: readonly OpenDocument[], sourceProject?: ProjectDocument): Promise<{
     bundles: ScriptBundleEntry[];
     diagnostics: Diagnostic[];
   }> => {
-    const documents = await loadProjectGraphDocuments(requiredGuids);
-    const animDocuments = await loadProjectAnimGraphDocuments(requiredGuids);
+    const documents = await loadProjectGraphDocuments(requiredGuids, sourceDocuments);
+    const animDocuments = await loadProjectAnimGraphDocuments(requiredGuids, sourceDocuments);
     const parentOf = classParentLookup(projectService.registry?.list() ?? []);
     const assets = projectService.registry?.list() ?? [];
-    const openDocuments = [...documentService.getState().openDocuments.values()];
+    const openDocuments = sourceDocuments ?? [...documentService.getState().openDocuments.values()];
     const classGraphs = collectClassGraphsForPalette({
       assets,
       openDocuments,
@@ -3277,7 +3277,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     for (const doc of documents) {
       classGraphs[classIdForGraphPath(doc.path)] = doc.content;
     }
-    const typeSchemas = collectGraphTypeSchemas();
+    const typeSchemas = typeSchemasFromGraphAssets(collectGraphTypeAssets({ assets, openDocuments }));
     const sceneClassIds = collectSceneDocumentsForPalette({
       assets,
       openDocuments,
@@ -3299,14 +3299,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           ...Object.keys(classGraphs),
           ...sceneClassIds,
         ]),
-        inputAssets: inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
-        dataAssets: collectDataGraphAssets(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
+        inputAssets: inputAssetCatalog(projectService.registry?.list() ?? [], openDocuments),
+        dataAssets: collectDataGraphAssets(projectService.registry?.list() ?? [], openDocuments),
         enums: typeSchemas.enums,
         structs: typeSchemas.structs,
           dataDefinitions: typeSchemas.dataDefinitions,
         materialDomains: materialDomainsFromAssets(
           projectService.registry?.list() ?? [],
-          [...documentService.getState().openDocuments.values()],
+          openDocuments,
         ),
         parentOf,
         otherClassGraphs: classGraphs,
@@ -3315,12 +3315,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     );
     const bundles = [
       ...compileGraphDocuments(documents, {
-      inputAssets: inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
-      dataAssets: collectDataGraphAssets(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
+      inputAssets: inputAssetCatalog(projectService.registry?.list() ?? [], openDocuments),
+      dataAssets: collectDataGraphAssets(projectService.registry?.list() ?? [], openDocuments),
         enums: typeSchemas.enums,
         structs: typeSchemas.structs,
           dataDefinitions: typeSchemas.dataDefinitions,
-        tagRegistry: projectDocumentRef.current?.settings.tags,
+        tagRegistry: (sourceProject ?? projectDocumentRef.current)?.settings.tags,
         cache: requiredGuids ? undefined : graphCompileCacheRef.current,
       }),
       ...compileAnimGraphScripts(animDocuments, {
@@ -3328,13 +3328,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         inputAssets: inputAssetCatalog(assets, openDocuments),
         dataAssets: collectDataGraphAssets(assets, openDocuments),
         ...typeSchemas,
-        tagRegistry: projectDocumentRef.current?.settings.tags,
+        tagRegistry: (sourceProject ?? projectDocumentRef.current)?.settings.tags,
       }),
     ];
     if (!requiredGuids) recordPlayPreviewScripts(bundles, diagnostics);
     return { bundles, diagnostics };
   }, [
-    collectGraphTypeSchemas,
     documentService,
     loadProjectAnimGraphDocuments,
     loadProjectGraphDocuments,
