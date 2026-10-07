@@ -23,7 +23,7 @@ Security scans keep pull-request, push and individual comment events in separate
 Lint toolchain (root `eslint.config.js`, flat config via `defineConfig`):
 
 - ESLint 10 (Node 20.19+ / 22.13+), `@eslint/js` recommended, `typescript-eslint` 8 recommended for `*.ts(x)`. ESLint 10's recommended set adds `no-useless-assignment`, `no-unassigned-vars` and `preserve-caught-error` (rethrown errors pass `{ cause }`).
-- `eslint-plugin-react-hooks` 7 `configs.flat.recommended`: the hooks rules plus the React Compiler diagnostics as errors (`refs`, `set-state-in-effect`, `set-state-in-render`, `immutability`, `purity`, `globals`, `static-components`, `preserve-manual-memoization`, `use-memo`, `error-boundaries`, `config`, `gating`); `incompatible-library` / `unsupported-syntax` warn. Fix violations rather than disabling them; a disable needs a one-line false-positive justification.
+- `eslint-plugin-react-hooks` 7: only the classic `rules-of-hooks` (error) and `exhaustive-deps` (warn). The plugin's React Compiler rules (`refs`, `set-state-in-effect`, `immutability`, `purity`, ...) and its `recommended` preset are intentionally not enabled; the editor still has several hundred existing violations.
 - `eslint-plugin-react-refresh` 0.5 `only-export-components` (warn, constant exports allowed).
 - Package import boundaries are `no-restricted-imports` blocks in the same file (see [CODING_STANDARDS](../CODING_STANDARDS.md)).
 

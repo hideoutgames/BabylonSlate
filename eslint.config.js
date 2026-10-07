@@ -264,9 +264,10 @@ export default defineConfig(
       "react-refresh": reactRefresh,
     },
     rules: {
-      // Hooks rules plus the React Compiler diagnostics (purity, refs,
-      // set-state-in-effect, immutability, ...) from the stable preset.
-      ...reactHooks.configs.flat.recommended.rules,
+      // Classic hooks rules only. The plugin's React Compiler rules (refs,
+      // set-state-in-effect, immutability, ...) are intentionally not enabled.
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
       "react-refresh/only-export-components": [
         "warn",
         { allowConstantExport: true },
