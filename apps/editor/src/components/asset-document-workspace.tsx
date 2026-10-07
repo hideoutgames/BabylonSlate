@@ -177,10 +177,7 @@ function FontEditor({
         const registered = await registry.register({
           guid: fontGuid,
           family: font.family,
-          bytes: bytes.buffer.slice(
-            bytes.byteOffset,
-            bytes.byteOffset + bytes.byteLength,
-          ),
+          bytes: bytes.slice().buffer,
           weight: font.weight,
           style: font.style,
         });

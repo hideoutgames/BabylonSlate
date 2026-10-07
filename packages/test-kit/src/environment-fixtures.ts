@@ -6,7 +6,7 @@ export function buildFloatDdsCubeFixture(
     dx10?: boolean;
     color?: readonly [number, number, number, number];
   } = {},
-): Uint8Array {
+): Uint8Array<ArrayBuffer> {
   const size = options.size ?? 2;
   const levels = Math.log2(size) + 1;
   const headerBytes = options.dx10 ? 148 : 128;
