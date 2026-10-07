@@ -267,3 +267,41 @@ The global toolbar's **Scene Mode** picker is available in Scene documents: **De
 - Foliage cells borrow immutable model vertex buffers from the leased model cache, but own their geometry bindings, indices and instance matrices. Painting, deleting or reopening multiple strokes cannot overwrite another cell's transforms or release its buffers.
 - Mouse, pen and one-finger touch drag paint with a footprint preview that follows the surface; Landscape adds a fainter inner ring where full strength ends. Select **Navigate** for ordinary camera gestures. Escape, pointer cancellation, a second touch, switching tools/modes or leaving the document cancels an unfinished stroke. Landscape previews update during sculpting; foliage commits on release.
 - Material **Domain → Landscape** exposes **Landscape Coordinates**, **Landscape Height**, **Landscape Slope**, **Landscape Paint Layers**, and **Landscape Layer Blend**, alongside surface shading nodes. Coordinates use world X/Z and a tiling multiplier; height uses world Y; slope is zero on flat ground and one on vertical faces. Four normalized per-vertex weights drive layer blending. Landscape components and instanced foliage use the same render factories in editor and Play/player.
+
+### Canonical Simulation capture boundary
+
+`captureSimulationScene` is a headless prerequisite for retention. It captures
+only at an owner-acknowledged quiescent boundary whose render command revision
+matches the runtime revision. It reads the real World, reflected Class variables,
+the same component authoring defaults used by Add Component, and explicit material
+parameter state. Diagnostic snapshots and rendered/interpolated poses are not its
+input. The service returns a complete candidate or a named failure without changing
+the document. A caller still owns permissions, revision conflict checks, admitted
+history application, resource release, and the retention-resolution UI.
+
+Realization records immutable source IDs in WeakMaps keyed by actual actor and
+component objects. Capture first assigns collision-free document IDs to surviving
+objects, then encodes authorable values and references, including spawned and
+deleted objects. Existing actor names, folders, lock flags and editor metadata
+remain baseline-owned. Local transforms, runtime hierarchy, authorable properties,
+private material parameters and prefab source suppression reflect final state.
+Component schemas are shared with the editor in `component-authoring.ts`; capture
+is independent of the narrower live Inspector setter capabilities.
+
+Reflected Maps keep the existing Class default entry representation. Nested Maps,
+explicit undefined values, and object references use reserved `$sceneValue` tags
+in scene properties. `hydrateScenePropertyReferences` resolves those tags after
+all scene identities exist and before creation hooks. It stages resolution so a
+missing target cannot partially apply references. Plain values retain their
+identity when no tags need resolution. Structure/Enum schemas must come from
+prepared authoring metadata; native objects, getters, cyclic property data,
+unknown resources, and missing references cause named failures. The normal scene
+codec may add defaults but must not discard or repair a captured value.
+
+The initial capture boundary rejects a changed root scene identity, independent
+streamed Scene or SceneLayer instances (including empty instances), ambiguous
+runtime identities, Dynamic Runtime Mesh geometry, and material owners whose final
+parameters are unavailable. It never flattens instances or creates source assets.
+Caller-selected byte/node limits bound traversal; exact UTF-8 JSON size is measured
+without producing an extra full JSON string. These service capabilities do not
+establish browser qualification or advertise a functional Keep control by themselves.

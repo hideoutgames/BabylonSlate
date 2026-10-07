@@ -12,6 +12,7 @@ import type { LifecycleHooks } from "./objects";
 import type { Actor } from "./objects";
 import type { World } from "./world";
 import { hydrateClassVariableValue } from "./class-registry";
+import { recordSceneActorProvenance, recordSceneComponentProvenance } from "./scene-provenance";
 
 export type SceneActorHooks = (
   classId: string,
@@ -102,6 +103,7 @@ export function createActorFromSerialized(
     suppressedComponentSourceIds: serialized.suppressedComponentSourceIds,
   });
   attachSerializedComponents(world, actor, serialized.components);
+  recordSceneActorProvenance(actor, serialized.id);
   return actor;
 }
 
@@ -128,13 +130,17 @@ export function attachSerializedComponents(
       continue;
     }
     const properties = structuredClone(component.properties);
+    for (const variable of world.classRegistry.inheritedVariables(component.classId)) {
+      if (Object.hasOwn(properties, variable.name) && variable.container) {
+        properties[variable.name] = hydrateClassVariableValue({ ...variable, defaultValue: properties[variable.name] });
+      }
+    }
     if (component.classId === "DeformerComponent" && typeof properties.targetMeshComponentId === "string") {
       const target = components.find((entry) => entry.classId === "MeshComponent" && entry.id === properties.targetMeshComponentId)
         ?? components.find((entry) => entry.classId === "MeshComponent" && entry.sourceId === properties.targetMeshComponentId);
       if (target) properties.targetMeshComponentId = ids.get(target.id)!;
     }
-    actor.attachComponent(
-      world.createComponent({
+    const instance = world.createComponent({
         guid: ids.get(component.id),
         classId: component.classId,
         variables: properties,
@@ -150,7 +156,8 @@ export function attachSerializedComponents(
         transform: runtimeTransformFromSerialized(
           component.transform ?? identitySerializedTransform(),
         ),
-      }),
-    );
+      });
+    if (!options.freshIds) recordSceneComponentProvenance(instance, component.id);
+    actor.attachComponent(instance);
   }
 }
