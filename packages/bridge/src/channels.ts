@@ -117,6 +117,8 @@ export type ScriptBundleEntry = {
 };
 
 export type ControlMessage =
+  | ({ type: "quiesceSimulation" } & import("./simulation-capture").SimulationQuiesceRequest)
+  | ({ type: "captureSimulationState" } & import("./simulation-capture").SimulationCaptureRequest)
   | ({ type: "runtimeMaterialEditPrepared" | "runtimeMaterialEditApplied" } & import("./runtime-material-edit").RuntimeMaterialEditResponse)
   | ({ type: "diagnosticOperation" } & import("./diagnostic-operation").DiagnosticOperationRequest)
   | ({ type: "runtimeInspector" } & import("./runtime-inspector").RuntimeInspectorRequest)
@@ -128,6 +130,7 @@ export type ControlMessage =
       sessionGeneration?: number;
       sessionMode?: GameSessionMode;
       deferMaterialEdits?: boolean;
+      simulationAssetGuids?: string[];
       saveGame?: import("@babylonslate/core").SaveGameConfiguration;
       dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
       /** Initial session render cap, shared with the renderer for console readback. */
@@ -378,6 +381,9 @@ export type DebugBehaviourTree = {
 };
 
 export type CommandMessage =
+  | ({ type: "simulationQuiesced" } & SessionBoundaryResult)
+  | { type: "simulationCaptureChunk"; sessionGeneration: number; requestId: number; sequence: number; bytes: Uint8Array }
+  | { type: "simulationCaptureResult"; sessionGeneration: number; requestId: number; result: import("./simulation-capture").SimulationCaptureSummary }
   | ({ type: "prepareRuntimeMaterialEdit" } & import("./runtime-material-edit").RuntimeMaterialEditPreparation)
   | { type: "releaseRuntimeMaterialPreparation"; sessionGeneration: number; editToken: string; committed: boolean }
   | ({ type: "diagnosticOperationResult" } & import("./diagnostic-operation").DiagnosticOperationResult)
@@ -411,6 +417,7 @@ export type CommandMessage =
   | { type: "snapshotLayout"; capacity: number; generation: number }
   | {
       type: "spawn";
+      runtimeIdentity?: import("./runtime-inspector").RuntimeObjectIdentity;
       slotId: number;
       actorGuid: string;
       classId: string;
@@ -442,6 +449,7 @@ export type CommandMessage =
     }
   | {
       type: "assignMesh";
+      runtimeComponentTokens?: Array<{ componentGuid: string; componentToken: number }>;
       slotId: number;
       meshAssetGuid: string | null;
       /** SceneLayer instance id; tags the slot as HUD overlay before spawn. */

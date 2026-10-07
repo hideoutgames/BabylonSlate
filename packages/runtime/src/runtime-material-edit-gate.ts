@@ -18,13 +18,20 @@ type Pending = {
 export class RuntimeMaterialEditGate {
   private readonly pending = new Map<string, Pending>();
   private captureFailure: string | null = null;
-  constructor(private readonly host: {
+  private readonly host: {
     generation: number; inspector: RuntimeInspector; materials: RuntimeMaterialParameters;
     slot(component: ActorComponent): number | undefined;
     emit(command: CommandMessage): void;
     execute(request: RuntimeInspectorRequest, preparation: RuntimeMaterialEditPreparation): { result: RuntimeInspectorResult; emitted: boolean };
     restore(component: ActorComponent): void;
-  }) {}
+  };
+  constructor(host: {
+    generation: number; inspector: RuntimeInspector; materials: RuntimeMaterialParameters;
+    slot(component: ActorComponent): number | undefined;
+    emit(command: CommandMessage): void;
+    execute(request: RuntimeInspectorRequest, preparation: RuntimeMaterialEditPreparation): { result: RuntimeInspectorResult; emitted: boolean };
+    restore(component: ActorComponent): void;
+  }) { this.host = host; }
   get busy(): boolean { return this.pending.size > 0; }
   get ownershipFailure(): string | null { return this.captureFailure; }
 
@@ -69,7 +76,7 @@ export class RuntimeMaterialEditGate {
     if (message.type === "runtimeMaterialEditPrepared") {
       if (pending.phase !== "preparing") return;
       if (!message.success) { this.reject(message.editToken, message.reason ?? "Material preparation failed."); return; }
-      const selected = this.host.inspector.resolveTarget(pending.request.action.kind === "identities" ? null! : pending.request.action.target);
+      const selected = this.host.inspector.resolveTarget("target" in pending.request.action ? pending.request.action.target : null!);
       const current = pending.component.getVariable("materialObject");
       if (selected !== pending.component || pending.component.getVariable("materialGuid") !== pending.originalGuid || current !== pending.originalMaterial ||
         (current instanceof MaterialObject && this.host.materials.revision(current) !== pending.originalRevision)) {
@@ -100,7 +107,7 @@ export class RuntimeMaterialEditGate {
     this.pending.delete(token); clearTimeout(pending.timer);
     if (pending.phase === "applying") {
       const action = pending.request.action;
-      const selected = this.host.inspector.resolveTarget(action.kind === "identities" ? null! : action.target);
+      const selected = this.host.inspector.resolveTarget("target" in action ? action.target : null!);
       const current = pending.component.getVariable("materialObject");
       const owns = selected === pending.component && current === pending.appliedMaterial &&
         (!(current instanceof MaterialObject) || this.host.materials.revision(current) === pending.appliedRevision);

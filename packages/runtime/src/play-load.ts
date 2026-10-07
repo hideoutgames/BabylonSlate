@@ -53,6 +53,7 @@ export function runtimeOptionsFromLoadControl(
   | "animClipCatalog"
   | "deferSceneModelsReady"
   | "deferMaterialEdits"
+  | "simulationAssetGuids"
   | "deferSceneLoadingPaint"
   | "cooperativeSceneLoading"
 > {
@@ -77,6 +78,7 @@ export function runtimeOptionsFromLoadControl(
     seed: msg.seed ?? 1,
     sessionGeneration: msg.sessionGeneration,
     sessionMode: msg.sessionMode,
+    simulationAssetGuids: msg.simulationAssetGuids,
     cooperativeSceneLoading: true,
     ...(msg.frameCap !== undefined ? { frameCap: msg.frameCap } : {}),
     ...(msg.traceByteBudget !== undefined ? { traceByteBudget: msg.traceByteBudget } : {}),

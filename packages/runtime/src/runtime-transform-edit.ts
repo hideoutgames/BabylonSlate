@@ -2,10 +2,7 @@ import type { SerializedTransform, Transform } from "@babylonslate/core";
 import { Actor, ActorComponent, runtimeTransformFromSerialized, type World } from "@babylonslate/object-model";
 import { actorChainWorldTransform, actorParentGuid, composeParentChildTransform, inverseQuaternion, multiplyQuaternion, rotateVector } from "./actor-world-transform";
 
-/** Convert a gizmo's absolute world pose against current authoritative ancestor poses. */
-export function runtimeEditLocalTransform(world: World, target: Actor | ActorComponent, transform: SerializedTransform, space: "local" | "world" = "local"): Transform {
-  const requested = runtimeTransformFromSerialized(transform);
-  if (space === "local") return requested;
+function runtimeEditParentTransform(world: World, target: Actor | ActorComponent): Transform | null {
   const actor = target instanceof Actor ? target : target.owner!;
   let parent: Transform | null = null;
   if (target instanceof Actor) {
@@ -26,6 +23,21 @@ export function runtimeEditLocalTransform(world: World, target: Actor | ActorCom
     }
     for (let index = chain.length - 1; index >= 0; index--) parent = composeParentChildTransform(parent, chain[index]!.transform);
   }
+  return parent;
+}
+
+export function runtimeEditWorldTransform(world: World, target: Actor | ActorComponent): SerializedTransform {
+  const parent = runtimeEditParentTransform(world, target);
+  const pose = parent ? composeParentChildTransform(parent, target.transform) : target.transform;
+  return { position: [pose.position.x, pose.position.y, pose.position.z], rotation: [pose.rotation.x, pose.rotation.y, pose.rotation.z, pose.rotation.w],
+    scale: [pose.scale.x, pose.scale.y, pose.scale.z] };
+}
+
+/** Convert a gizmo's absolute world pose against current authoritative ancestor poses. */
+export function runtimeEditLocalTransform(world: World, target: Actor | ActorComponent, transform: SerializedTransform, space: "local" | "world" = "local"): Transform {
+  const requested = runtimeTransformFromSerialized(transform);
+  if (space === "local") return requested;
+  const parent = runtimeEditParentTransform(world, target);
   if (!parent) return requested;
   if (Object.values(parent.scale).some(value => !Number.isFinite(value) || Math.abs(value) < 1e-6)) throw new Error("The parent has a non-invertible scale.");
   const inverse = inverseQuaternion(parent.rotation);

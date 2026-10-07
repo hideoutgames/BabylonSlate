@@ -18,10 +18,12 @@ export type RuntimePropertyDescriptor = {
 };
 export type RuntimeIdentityRow = {
   identity: RuntimeObjectIdentity; classId: string; name: string;
+  renderSlotId?: number;
   kind: "actor" | "component"; parent: RuntimeObjectIdentity | null;
 };
 export type RuntimeIdentityCursor = { revision: number; actorIndex: number; componentIndex: number };
 export type RuntimeInspectorAction =
+  | { kind: "resolvePick"; actorGuid: string; slotId: number }
   | { kind: "identities"; knownRevision?: number; cursor?: RuntimeIdentityCursor }
   | { kind: "selection"; target: RuntimeObjectIdentity; offset?: number }
   | { kind: "value"; target: RuntimeObjectIdentity; property: string; offset?: number }
@@ -30,8 +32,9 @@ export type RuntimeInspectorAction =
   | { kind: "setMaterialParameter"; target: RuntimeObjectIdentity; sequence: number; materialGuid: string; parameter: string; value: MaterialParameterValue };
 export type RuntimeInspectorRequest = { sessionGeneration: number; requestId: number; action: RuntimeInspectorAction };
 export type RuntimeInspectorPayload =
+  | { kind: "identity"; row: RuntimeIdentityRow }
   | { kind: "identities"; rows: RuntimeIdentityRow[]; unchanged: boolean; nextCursor?: RuntimeIdentityCursor }
-  | { kind: "selection"; target: RuntimeObjectIdentity; classId: string; transform: SerializedTransform; transformCapability: RuntimePropertyCapability; transformReason?: string;
+  | { kind: "selection"; target: RuntimeObjectIdentity; classId: string; transform: SerializedTransform; worldTransform?: SerializedTransform; renderSlotId?: number; materialGuid?: string | null; transformCapability: RuntimePropertyCapability; transformReason?: string;
       properties: RuntimePropertyDescriptor[]; nextOffset?: number }
   | { kind: "value"; property: string; value: RuntimeInspectorValue; nextOffset?: number }
   | { kind: "mutation"; target: RuntimeObjectIdentity; sequence: number; effectiveValue: RuntimeInspectorValue };

@@ -1,3 +1,4 @@
+import { simulationCaptureChunks } from "./simulation-capture-transport";
 import { createSaveStorageClient, normalizeWaterDefinition } from "@babylonslate/core";
 /**
  * Game worker entry. Hosts create a Worker from this module URL and post
@@ -91,6 +92,39 @@ const pauseGate = createPlayPauseGate({
 
 function handleControl(msg: ControlMessage): void {
   switch (msg.type) {
+    case "quiesceSimulation": {
+      const rt = runtime;
+      if (!rt) {
+        onCommand({ type: "simulationQuiesced", sessionGeneration: msg.sessionGeneration, requestId: msg.requestId,
+          success: false, reason: "Runtime is unavailable.", paused: false, pauseReasons: [], tickIndex: 0,
+          sceneAssetGuid: "", sceneLoadId: 0, commandRevision: 0 }); return;
+      }
+      void rt.quiesceSimulation(msg).then(result => onCommand({ type: "simulationQuiesced", ...result }));
+      return;
+    }
+    case "captureSimulationState": {
+      const rt = runtime;
+      const generation = bootGeneration;
+      if (!rt) {
+        onCommand({ type: "simulationCaptureResult", sessionGeneration: msg.sessionGeneration, requestId: msg.requestId,
+          result: { ok: false, code: "boundary", path: "scene", reason: "Runtime is unavailable.", identity: {
+            generation: msg.sessionGeneration, sceneAssetGuid: "", sceneInstanceId: "", sceneLoadId: 0, tickIndex: 0, commandRevision: 0 } } }); return;
+      }
+      void rt.captureSimulationState(msg).then(async result => {
+        if (runtime !== rt || bootGeneration !== generation) return;
+        if (!result.ok) { onCommand({ type: "simulationCaptureResult", sessionGeneration: msg.sessionGeneration, requestId: msg.requestId, result }); return; }
+        let sequence = 0;
+        for (const bytes of simulationCaptureChunks(result.scene)) {
+          if (runtime !== rt || bootGeneration !== generation) return;
+          const chunk: CommandMessage = { type: "simulationCaptureChunk", sessionGeneration: msg.sessionGeneration, requestId: msg.requestId, sequence: sequence++, bytes };
+          postMessage({ channel: "command", payload: chunk }, [bytes.buffer as ArrayBuffer]);
+          await new Promise(resolve => setTimeout(resolve, 0));
+        }
+        if (runtime === rt && bootGeneration === generation) onCommand({ type: "simulationCaptureResult", sessionGeneration: msg.sessionGeneration, requestId: msg.requestId,
+          result: { ok: true, identity: result.identity, byteSize: result.byteSize, chunkCount: sequence } });
+      });
+      return;
+    }
     case "runtimeMaterialEditPrepared":
     case "runtimeMaterialEditApplied":
       runtime?.applyRuntimeMaterialEditResult(msg);

@@ -17,10 +17,14 @@ export class RuntimeDiagnosticRecorder {
   private stopped = false;
   private lastRequestId = 0;
   private pending = 0;
-  constructor(private readonly host: {
+  private readonly host: {
     generation: number; mode: GameSessionMode; enabled: boolean;
     traceActive(): boolean; now(): number; emit(command: CommandMessage): void;
-  }) {}
+  };
+  constructor(host: {
+    generation: number; mode: GameSessionMode; enabled: boolean;
+    traceActive(): boolean; now(): number; emit(command: CommandMessage): void;
+  }) { this.host = host; }
   get recording(): boolean { return this.active?.kind === "profile"; }
   get busy(): boolean { return this.active !== null; }
   request(request: DiagnosticOperationRequest): Promise<DiagnosticOperationResult> {

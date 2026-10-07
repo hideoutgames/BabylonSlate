@@ -1,9 +1,10 @@
+import { captureSimulationScene, type SimulationSceneCaptureResult, type SimulationCaptureIdentity } from "./simulation-scene-capture";
 import { RuntimeMaterialEditGate } from "./runtime-material-edit-gate";
 import { runtimeEditLocalTransform } from "./runtime-transform-edit";
 import { RuntimeDiagnosticRecorder } from "./runtime-diagnostic-recorder";
 import { RuntimeInspector } from "./runtime-inspector";
 import { SceneLayerActorSwitchers } from "./scene-layer-actor-switcher";
-import { RuntimeDataCatalog } from "./data-catalog";
+import { RuntimeDataCatalog, dataTypeSchemas } from "./data-catalog";
 import { overlayAnchorBindings } from "./overlay-anchor-layout";
 import { SaveGameError, SaveGameService, type SaveGameServiceOptions } from "@babylonslate/core";
 import { SaveGameWorld } from "./save-game-world";
@@ -38,6 +39,8 @@ import {
   type RuntimeInspectorRequest,
   type RuntimeInspectorResult,
   type RuntimeMaterialEditPreparation,
+  type SimulationQuiesceRequest,
+  type SimulationCaptureRequest,
   type DiagnosticOperationRequest,
   type DiagnosticOperationResult,
 } from "@babylonslate/bridge";
@@ -69,6 +72,7 @@ import {
   isSceneLayerExclusiveComponent,
   sceneAssetClassId,
   hydrateClassVariableValue,
+  hydrateScenePropertyReferences,
   type ClassKind,
   type DebugInspectSnapshot,
   type GameSubsystemHooks,
@@ -291,6 +295,7 @@ export interface RuntimeDriverOptions {
    */
   deferSceneModelsReady?: boolean;
   deferMaterialEdits?: boolean;
+  simulationAssetGuids?: string[];
   /** Wait for the host Loading UI to paint before retiring or realizing a Scene. */
   deferSceneLoadingPaint?: boolean;
   /** Real Play/player yield actor work; immediate harnesses keep the default. */
@@ -309,6 +314,8 @@ export interface RuntimeDriver {
   requestSessionBoundary(request: SessionBoundaryRequest): Promise<SessionBoundaryResult>;
   requestRuntimeInspector(request: RuntimeInspectorRequest): Promise<RuntimeInspectorResult>;
   requestDiagnosticOperation(request: DiagnosticOperationRequest): Promise<DiagnosticOperationResult>;
+  quiesceSimulation(request: SimulationQuiesceRequest): Promise<SessionBoundaryResult>;
+  captureSimulationState(request: SimulationCaptureRequest): Promise<SimulationSceneCaptureResult>;
   applyRuntimeMaterialEditResult(message: Extract<ControlMessage, { type: "runtimeMaterialEditPrepared" | "runtimeMaterialEditApplied" }>): void;
   tick(): void;
   /** Fixed-step catch-up from wall/accumulated time; capped. */
@@ -528,6 +535,12 @@ class RuntimeContinuationCancelled extends Error {
 }
 
 class InProcessRuntime implements RuntimeDriver {
+  private readonly simulationBaseline: SerializedScene | null;
+  private readonly simulationAssets: ReadonlySet<string>;
+  private readonly simulationDataAssets: RuntimeDriverOptions["dataAssets"];
+  private simulationStart: Pick<SimulationCaptureIdentity, "sceneAssetGuid" | "sceneInstanceId" | "sceneLoadId"> | null = null;
+  private simulationQuiescent = false;
+  private lastCaptureRequestId = 0;
   private readonly sessionGeneration: number;
   private readonly sessionMode: GameSessionMode;
   private commandRevision = 0;
@@ -772,6 +785,9 @@ class InProcessRuntime implements RuntimeDriver {
   get snapshotGeneration(): number { return this._snapshotGeneration; }
 
   constructor(options: RuntimeDriverOptions) {
+    this.simulationBaseline = options.sessionMode === "simulate" ? options.playScene ?? null : null;
+    this.simulationAssets = new Set(options.simulationAssetGuids ?? [...Object.keys(options.materialParameterCatalog ?? {}), ...(options.materialTextureAssetGuids ?? []), ...(options.audioAssetGuids ?? [])]);
+    this.simulationDataAssets = options.sessionMode === "simulate" ? options.dataAssets : undefined;
     this.sessionGeneration = options.sessionGeneration ?? 0;
     this.sessionMode = options.sessionMode ?? "play";
     this.trace = new TraceRecorder({ byteBudget: options.traceByteBudget });
@@ -1640,6 +1656,7 @@ class InProcessRuntime implements RuntimeDriver {
       }
       yield;
     }
+    hydrateScenePropertyReferences([...stream.actors]);
     let realized = 0;
     for (const actor of stream.actors) {
       checkpoint();
@@ -2047,6 +2064,7 @@ class InProcessRuntime implements RuntimeDriver {
       }
       yield;
     }
+    hydrateScenePropertyReferences(actors);
     for (const actor of actors) {
       checkpoint();
       this.scriptHost.bindInterfaceHandlers(actor);
@@ -3218,6 +3236,8 @@ class InProcessRuntime implements RuntimeDriver {
       this.setWorldGravity(gravity);
       work.sceneInstance = this.world.createScene({ assetGuid: guid, sceneName: name,
         postProcessStack: scene.settings.postProcessStack, variables: { gravity } });
+      if (this.sessionMode === "simulate" && !this.simulationStart) this.simulationStart = {
+        sceneAssetGuid: guid, sceneInstanceId: work.sceneInstance.guid, sceneLoadId: loadId };
       checkpoint();
       this.emit({ type: "activeScene", sceneAssetGuid: guid, sceneLoadId: loadId });
       checkpoint();
@@ -3227,6 +3247,7 @@ class InProcessRuntime implements RuntimeDriver {
         if (actor) work.actors.push(actor);
         yield;
       }
+      hydrateScenePropertyReferences(work.actors);
       let realized = 0;
       for (const actor of work.actors) {
         checkpoint();
@@ -6008,6 +6029,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   private setPauseReason(reason: SessionPauseReason, paused: boolean): void {
     if (this.stopped) return;
+    if (this.simulationQuiescent && !paused) return;
     if (this.processingTick) { this.pendingPauseChanges.set(reason, paused); return; }
     const wasPaused = this.paused;
     if (paused) this.pauseReasons.add(reason); else this.pauseReasons.delete(reason);
@@ -6052,16 +6074,78 @@ class InProcessRuntime implements RuntimeDriver {
     return this.diagnosticRecorder.request(request);
   }
 
+  quiesceSimulation(request: SimulationQuiesceRequest): Promise<SessionBoundaryResult> {
+    return new Promise(resolve => queueMicrotask(() => {
+      const boundaryRequest: SessionBoundaryRequest = { ...request, action: { kind: "resetInput" } };
+      const invalid = request.sessionGeneration !== this.sessionGeneration ? "Stale session generation." :
+        this.sessionMode !== "simulate" ? "Final scene capture is available only during Simulation Play." :
+        this.stopped ? "The game session has stopped." :
+        !Number.isSafeInteger(request.requestId) || request.requestId <= this.lastCaptureRequestId ? "Invalid or superseded capture request ID." : null;
+      if (invalid) { resolve(this.boundaryResult(boundaryRequest, invalid)); return; }
+      this.lastCaptureRequestId = request.requestId;
+      this.setPauseReason("loading", true);
+      this.materialEditGate?.cancel("Simulation is stopping; the pending material edit was cancelled.");
+      this.simulationQuiescent = true;
+      this.resetInputState();
+      if (this.inspectorRequests.length) this.flushInspectorRequests();
+      this.flushDeferredSnapshotWrite();
+      resolve(this.boundaryResult(boundaryRequest));
+    }));
+  }
+
+  captureSimulationState(request: SimulationCaptureRequest): Promise<SimulationSceneCaptureResult> {
+    return new Promise(resolve => queueMicrotask(() => {
+      const identity: SimulationCaptureIdentity = { generation: this.sessionGeneration, sceneAssetGuid: this.playSceneGuid,
+        sceneInstanceId: this.world.currentScene?.guid ?? "", sceneLoadId: this.sceneLoadId,
+        tickIndex: this.world.clock.tickIndex, commandRevision: this.commandRevision };
+      const fail = (reason: string, code: "boundary" | "ownership" | "budget" | "resource" = "boundary") => resolve({ ok: false, code, path: "scene", reason, identity });
+      if (request.sessionGeneration !== this.sessionGeneration || !Number.isSafeInteger(request.requestId) || request.requestId <= this.lastCaptureRequestId) { fail("Stale or superseded capture request."); return; }
+      this.lastCaptureRequestId = request.requestId;
+      if (this.stopped || !this.simulationQuiescent || !this.simulationBaseline || !this.simulationStart || this.sessionMode !== "simulate") { fail("A live Simulation must acknowledge its final quiescent boundary before capture."); return; }
+      if (this.materialEditGate?.busy || this.materialEditGate?.ownershipFailure) { fail(this.materialEditGate.ownershipFailure ?? "A material edit is still pending.", "ownership"); return; }
+      if (request.maxBytes !== undefined && (!Number.isSafeInteger(request.maxBytes) || request.maxBytes < 1 || request.maxBytes > 64 * 1024 * 1024)) { fail("Invalid final scene capture budget.", "budget"); return; }
+      try {
+      const scene = this.world.currentScene;
+      if (!scene || this.sceneWorkBlocked || this.bootLoading || this.streamBlockingCount > 0) { fail("Scene loading has not reached a complete final boundary."); return; }
+      const postProcessStack = scene.postProcessStack.map(entry => {
+        const material = getPostProcessMaterialObject(scene, entry.id ?? "");
+        const overrides = material ? this.materialParameters.captureOverrides(material) : null;
+        return overrides ? { ...entry, parameters: overrides } : entry;
+      });
+      if (postProcessStack.some(entry => !this.simulationAssets.has(entry.materialGuid))) { fail("A post-process material has no prepared authoring asset.", "resource"); return; }
+      const schemas = dataTypeSchemas(this.simulationDataAssets ?? []);
+      resolve(captureSimulationScene({ world: this.world, baseline: this.simulationBaseline, identity, startingScene: this.simulationStart,
+        quiescent: true, renderRevision: request.renderRevision, maxBytes: request.maxBytes,
+        sceneSettings: { ...this.simulationBaseline.settings, gravity: [this.gravity[0], this.gravity[1], this.gravity[2]], postProcessStack },
+        ownership: actor => actor.sceneLayerId ? "layer" : this.actorStream.has(actor) ? "stream" : "root",
+        independentInstances: [...[...this.sceneStreams.values()].map(stream => ({ kind: "stream" as const, id: stream.actor.guid })),
+          ...this.world.getSceneLayers().map(layer => ({ kind: "layer" as const, id: layer.guid }))],
+        materialOverrides: component => {
+          const material = component.getVariable("materialObject");
+          return material instanceof MaterialObject ? this.materialParameters.captureOverrides(material) : null;
+        },
+        prefabComponents: classId => this.world.classRegistry.ancestry(classId).flatMap(ancestor => this.scriptHost.scriptsFor(ancestor))
+          .find(script => script.components !== undefined)?.components ?? [],
+        assetExists: guid => this.simulationAssets.has(guid),
+        structFields: guid => schemas.structs[guid]?.fields.map(field => ({ ...field, type: field.typeId })) ?? null,
+        enumMembers: guid => schemas.enums[guid]?.members.map(member => member.name) ?? null,
+      }));
+      } catch (error) { fail(error instanceof Error ? error.message : "Final scene capture failed."); }
+    }));
+  }
+
   private inspectorActorReady(actor: Actor): boolean {
-    if (this.stopped || this.saveBoundaryActive || actor.destroyed || actor.world !== this.world || this.world.findActorInstances(actor.guid).length !== 1 || this.streamBlockingCount > 0 || !this.streamActorReady(actor)) return false;
+    if (this.simulationQuiescent || this.stopped || this.saveBoundaryActive || actor.destroyed || actor.world !== this.world || this.world.findActorInstances(actor.guid).length !== 1 || this.streamBlockingCount > 0 || !this.streamActorReady(actor)) return false;
     return actor.sceneLayerId ? this.layerLoads.get(actor.sceneLayerId)?.ready === true : !this.sceneWorkBlocked && !this.bootLoading;
   }
 
   private getRuntimeInspector(): RuntimeInspector {
     return this.runtimeInspector ??= new RuntimeInspector({
       world: this.world, materials: this.materialParameters, sessionGeneration: this.sessionGeneration,
-      canWrite: () => this.sessionMode === "simulate", stopped: () => this.stopped,
+      canWrite: () => this.sessionMode === "simulate" && !this.simulationQuiescent, stopped: () => this.stopped,
       ready: actor => this.inspectorActorReady(actor),
+      renderSlot: actor => this.slotByActor.get(actor),
+      resolvePick: (guid, slot) => { const actor = this.slotOwners.get(slot); return actor && !actor.destroyed && actor.world === this.world && actor.guid === guid ? actor : null; },
       sceneIdentity: actor => {
         const stream = this.actorStream.get(actor);
         if (stream) return `stream:${stream.actor.guid}:${stream.loadId}`;
@@ -6648,6 +6732,12 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private emit(command: CommandMessage): void {
+    if (this.sessionMode === "simulate" && (command.type === "spawn" || command.type === "assignMesh")) {
+      const actor = this.slotOwners.get(command.slotId);
+      if (actor) command = command.type === "spawn" ? { ...command, runtimeIdentity: this.getRuntimeInspector().identity(actor) } :
+        { ...command, runtimeComponentTokens: actor.components.filter(component => !component.destroyed).map(component => ({
+          componentGuid: component.guid, componentToken: this.getRuntimeInspector().identity(component).componentToken! })) };
+    }
     const emission = this.materialEditEmission;
     if (emission && (command.type === "assignMaterial" || command.type === "setMaterialParameter") &&
       command.slotId === emission.preparation.slotId && command.componentId === emission.preparation.componentId &&

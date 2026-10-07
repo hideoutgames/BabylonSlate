@@ -57,3 +57,5 @@ export type { RuntimeObjectIdentity, RuntimeInspectorValue, RuntimePropertyCapab
 export type { DiagnosticOperation, DiagnosticOperationRequest, DiagnosticOperationResult, PerformanceTickChunk } from "./diagnostic-operation";
 
 export type { RuntimeMaterialEditPreparation, RuntimeMaterialEditResponse } from "./runtime-material-edit";
+
+export type { SimulationQuiesceRequest, SimulationCaptureRequest, SimulationCaptureSummary } from "./simulation-capture";

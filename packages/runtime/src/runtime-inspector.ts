@@ -1,3 +1,4 @@
+import { runtimeEditWorldTransform } from "./runtime-transform-edit";
 import type { SerializedTransform } from "@babylonslate/core";
 import type {
   RuntimeIdentityCursor, RuntimeIdentityRow, RuntimeInspectorAction, RuntimeInspectorPayload,
@@ -26,6 +27,8 @@ export interface RuntimeInspectorHost {
   stopped(): boolean;
   sceneIdentity(actor: Actor): string;
   ready(actor: Actor): boolean;
+  renderSlot(actor: Actor): number | undefined;
+  resolvePick(actorGuid: string, slotId: number): Actor | null;
   boundary(): Boundary;
   applyProperty(target: Target, key: string, value: unknown): void;
   applyTransform(target: Target, transform: SerializedTransform, space?: "local" | "world"): void;
@@ -38,7 +41,8 @@ export class RuntimeInspector {
   private nextToken = 0;
   /** Weak ownership: editing a destroyed object never retains it through a session. */
   private readonly sequences = new WeakMap<Target, Map<string, number>>();
-  constructor(private readonly host: RuntimeInspectorHost) {}
+  private readonly host: RuntimeInspectorHost;
+  constructor(host: RuntimeInspectorHost) { this.host = host; }
 
   result(request: RuntimeInspectorRequest, reason?: string): RuntimeInspectorResult {
     return { sessionGeneration: request.sessionGeneration, requestId: request.requestId, success: !reason,
@@ -52,7 +56,7 @@ export class RuntimeInspector {
     if (this.host.stopped()) return "The game session has stopped.";
     try { boundedInput(request); } catch (error) { return message(error); }
     const action = request.action;
-    if (!action || !["identities", "selection", "value", "setProperty", "setTransform", "setMaterialParameter"].includes(action.kind)) return "Unsupported Inspector operation.";
+    if (!action || !["resolvePick", "identities", "selection", "value", "setProperty", "setTransform", "setMaterialParameter"].includes(action.kind)) return "Unsupported Inspector operation.";
     if (isMutation(action) && !this.host.canWrite()) return "Live editing is available only during Simulation Play.";
     return null;
   }
@@ -65,6 +69,13 @@ export class RuntimeInspector {
       const budget = { remaining: MAX_VALUE_BYTES, nodes: 1024, truncated: false };
       let payload: RuntimeInspectorPayload;
       if (action.kind === "identities") payload = this.identities(action);
+      else if (action.kind === "resolvePick") {
+        if (typeof action.actorGuid !== "string" || !Number.isSafeInteger(action.slotId) || action.slotId < 0) throw new Error("Invalid rendered selection.");
+        const actor = this.host.resolvePick(action.actorGuid, action.slotId);
+        if (!actor) throw new Error("The rendered actor was destroyed or replaced.");
+        payload = { kind: "identity", row: { kind: "actor", identity: this.identity(actor), classId: actor.classId,
+          name: String(actor.getVariable("name") ?? actor.classId).slice(0, 512), parent: null, renderSlotId: action.slotId } };
+      }
       else {
         const target = this.resolveTarget(action.target);
         if (!target) throw new Error("The selected object was destroyed, replaced, or belongs to another scene instance.");
@@ -113,14 +124,14 @@ export class RuntimeInspector {
         const parentGuid = actor.getVariable("parentId");
         const parent = typeof parentGuid === "string" ? this.host.world.findActorInstances(parentGuid).find(candidate =>
           !candidate.destroyed && this.host.sceneIdentity(candidate) === this.host.sceneIdentity(actor)) : undefined;
-        const row: RuntimeIdentityRow = { kind: "actor", identity: this.identity(actor), classId: actor.classId.slice(0, 512),
+        const row: RuntimeIdentityRow = { kind: "actor", identity: this.identity(actor), renderSlotId: this.host.renderSlot(actor), classId: actor.classId.slice(0, 512),
           name: String(actor.getVariable("name") ?? actor.classId).slice(0, 512), parent: parent ? this.identity(parent) : null };
         rows.push(row); bytes += JSON.stringify(row).length * 3; componentIndex = 0;
       } else if (componentIndex < actor.components.length) {
         const component = actor.components[componentIndex++]!;
         if (component.destroyed || component.owner !== actor) continue;
         const parent = component.parentId ? actor.components.find(candidate => candidate.guid === component.parentId && !candidate.destroyed) : undefined;
-        const row: RuntimeIdentityRow = { kind: "component", identity: this.identity(component), classId: component.classId.slice(0, 512),
+        const row: RuntimeIdentityRow = { kind: "component", identity: this.identity(component), renderSlotId: this.host.renderSlot(actor), classId: component.classId.slice(0, 512),
           name: component.classId.slice(0, 512), parent: this.identity(parent ?? actor) };
         rows.push(row); bytes += JSON.stringify(row).length * 3;
       } else { actorIndex++; componentIndex = -1; }
@@ -182,6 +193,8 @@ export class RuntimeInspector {
     }
     const transformReason = this.transformRestriction(target);
     return { kind: "selection", target: identity, classId: target.classId, transform: serializedTransform(target),
+      worldTransform: runtimeEditWorldTransform(this.host.world, target), renderSlotId: this.host.renderSlot(target instanceof Actor ? target : target.owner!),
+      ...(target instanceof ActorComponent ? { materialGuid: typeof target.getVariable("materialGuid") === "string" ? target.getVariable("materialGuid") as string : null } : {}),
       transformCapability: transformReason ? "restart" : "live", ...(transformReason ? { transformReason } : {}), properties,
       ...(index < descriptors.length ? { nextOffset: index } : {}) };
   }

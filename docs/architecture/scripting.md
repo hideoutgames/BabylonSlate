@@ -807,3 +807,19 @@ Stop release only that preparation. A failed application restores the previous
 runtime material values when the same object and material revision still own them.
 If gameplay has superseded that owner, or application confirmation is lost, final
 scene capture reports an ownership failure instead of retaining an unconfirmed value.
+
+Final retention uses two separate runtime calls. `quiesceSimulation` acknowledges a
+completed tick, holds the loading pause reason, rejects new edits, resolves pending
+material work explicitly and keeps the world intact. `captureSimulationState` requires
+that boundary plus the renderer's acknowledged command revision. The initial prepared
+Scene is the immutable baseline. Canonical capture uses live provenance, typed schemas,
+material state and root ownership; independent streams/layers, scene transitions,
+unavailable authored assets and uncertain renderer ownership fail by name. Failures
+leave the runtime quiescent for Retry or ordinary discard/Stop; Resume cannot release
+that final hold. The discard path never calls the final serializer.
+
+Worker captures send bounded UTF-8 chunks after byte/node admission, with session,
+request and contiguous sequence identities. The transport escapes strings in small
+pieces and does not build a second complete scene JSON string. Stop/replacement cancels
+remaining delivery. Scene loading hydrates retained references in two passes before
+creation hooks, so captured references resolve to the newly loaded runtime objects.
