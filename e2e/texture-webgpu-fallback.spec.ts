@@ -36,7 +36,7 @@ import { openMinimalTestProject } from "./minimal-project";
 import { openAssetFromBrowser, openMainScene } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
-import { compressedGpuTextures, expectPreviewDraws, offBlockGrid, previewDraw, recordCompressedGpuTextures, watchGpuFailures, type CompressedTexture } from "./webgpu-texture-proof";
+import { compressedGpuTextures, expectPreviewDraws, offBlockGrid, previewDraw, recordCompressedGpuTextures, textureAlignment, watchGpuFailures, type CompressedTexture } from "./webgpu-texture-proof";
 
 // Explicit software adapter admission for this functional proof, not GPU qualification.
 test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
