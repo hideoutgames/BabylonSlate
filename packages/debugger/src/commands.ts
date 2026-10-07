@@ -361,8 +361,7 @@ export function builtinCommands(): RegisteredCommand[] {
       description: "Start the debug snapshot recorder",
       parameters: [],
       run(_args, host) {
-        host.startSnapshot?.();
-        return ok("snapshot recording");
+        return host.startSnapshot?.() ?? ok("snapshot recording");
       },
     },
     {

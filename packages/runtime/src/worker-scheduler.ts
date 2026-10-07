@@ -11,6 +11,7 @@ export interface WorkerSchedulerHost {
 export interface WorkerScheduler {
   start(): void;
   stop(): void;
+  resetClock(): void;
 }
 
 /** Schedules a worker loop using its best available monotonic frame clock. */
@@ -42,6 +43,7 @@ export function createWorkerScheduler(
   };
 
   return {
+    resetClock() { lastTick = null; },
     start() {
       if (running) return;
       running = true;

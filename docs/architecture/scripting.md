@@ -4,6 +4,23 @@ Shared surface for graph IR, pin types, validation, and JS codegen (engineplan Â
 
 P4 already owns stackâ†’node mapping (`AnchorEntry`, `loadCompiledModule`, Preview session report). P5 fills the compiler that emits those anchors and the editor that navigates to them. ExecuteJavaScript hoist lines carry `bodyLine` so a runtime throw inside the user body maps to the CodeMirror line; tapping a session-report row opens the owning Class (or BehaviourTree) asset if needed. `Log` at Error severity is a session-report row (`runtime.log`), not only Output Log.
 
+## Runtime pause boundaries
+
+Runtime pause holds compose by reason (`user`, `lifecycle`, `loading`); Resume
+clears only its own hold. `sessionBoundary` requests carry the launch generation
+and an increasing request ID. Their correlated replies follow the completed
+synchronous tick and command publication, reporting tick, scene/load identity,
+effective holds and command revision. The bounded queue also accepts `resetInput`
+without a game tick; input binding overrides survive reset. Resume discards the
+paused wall-clock interval. Boot completion does not release an existing hold.
+
+Engine delays, tween completion, ready-scene lifecycle, audio completion and
+scalability callbacks wait for game-owner admission while paused. Stop cancels
+waiting engine continuations. Asset I/O and readiness may finish during a pause.
+Custom JavaScript timers, promises and external effects remain cooperative and
+are not a suspended-process transaction. Simulation sessions refuse snapshot
+recording at the recorder command boundary; use Play or Preview Build.
+
 ## Render target capture
 
 The rendering nodes expose **Get Render Target Mode** from a RenderTarget asset reference and **Get Texture Render Target** from a RenderTargetTexture reference. The mode output is the engine **Render Target Mode** enum, usable with enum comparison and selection nodes.

@@ -27,6 +27,10 @@ import {
   type ControlMessage,
   type DebugBehaviourTree,
   type DebugNavAgent,
+  type GameSessionMode,
+  type SessionPauseReason,
+  type SessionBoundaryRequest,
+  type SessionBoundaryResult,
 } from "@babylonslate/bridge";
 import {
   ClassRegistry,
@@ -199,6 +203,8 @@ import {
 } from "@babylonslate/navigation";
 
 export interface RuntimeDriverOptions {
+  sessionGeneration?: number;
+  sessionMode?: GameSessionMode;
   /** JSON data and shared Structures snapshotted at session startup. */
   dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
   renderSettings?: Partial<RenderProjectSettings>;
@@ -288,8 +294,9 @@ export interface RuntimeDriver {
   readonly inputBindings: InputBindingControls;
   start(): void;
   stop(): void;
-  pause(): void;
-  resume(): void;
+  pause(reason?: SessionPauseReason): void;
+  resume(reason?: SessionPauseReason): void;
+  requestSessionBoundary(request: SessionBoundaryRequest): Promise<SessionBoundaryResult>;
   tick(): void;
   /** Fixed-step catch-up from wall/accumulated time; capped. */
   advance(elapsedSeconds: number): void;
@@ -503,7 +510,20 @@ type GameLifecycleHooks = {
   onSceneExit: (self: BObject, sceneName: string) => void;
 };
 
+class RuntimeContinuationCancelled extends Error {
+  constructor() { super("Scene realization was cancelled."); this.name = "AbortError"; }
+}
+
 class InProcessRuntime implements RuntimeDriver {
+  private readonly sessionGeneration: number;
+  private readonly sessionMode: GameSessionMode;
+  private commandRevision = 0;
+  private lastBoundaryRequestId = 0;
+  private readonly boundaryRequests: Array<{ request: SessionBoundaryRequest; resolve(result: SessionBoundaryResult): void }> = [];
+  private boundaryScheduled = false;
+  private readonly pauseReasons = new Set<SessionPauseReason>();
+  private readonly pendingPauseChanges = new Map<SessionPauseReason, boolean>();
+  private resetElapsed = false;
   private saveGameService?: SaveGameService;
   private saveGameWorld?: SaveGameWorld;
   private saveBoundaryActive = false;
@@ -729,6 +749,8 @@ class InProcessRuntime implements RuntimeDriver {
   get snapshotGeneration(): number { return this._snapshotGeneration; }
 
   constructor(options: RuntimeDriverOptions) {
+    this.sessionGeneration = options.sessionGeneration ?? 0;
+    this.sessionMode = options.sessionMode ?? "play";
     this.trace = new TraceRecorder({ byteBudget: options.traceByteBudget });
     this.materialParameters = new RuntimeMaterialParameters(options.materialParameterCatalog, options.materialTextureAssetGuids);
     this.validateLegacyMeshParameters = options.materialParameterCatalog !== undefined;
@@ -882,7 +904,7 @@ class InProcessRuntime implements RuntimeDriver {
         z: this.overlayGravity[2],
       }),
       {
-        actorFilter: (actor) => actor.sceneLayerId != null && this.canTickActor(actor),
+        actorFilter: (actor) => actor.sceneLayerId != null && this.canTickActor(actor, true),
         deferUnsupportedConstraints: !this.preferSoftwarePhysics,
       },
     );
@@ -1251,16 +1273,21 @@ class InProcessRuntime implements RuntimeDriver {
         this.setWorldGravity(gravity);
       },
       executeConsoleCommand: (command) => this.executeConsoleCommand(command),
-      tween: (request) => this.tweens.start(request),
+      tween: (request) => this.tweens.start(request).then(async completed => {
+        if (!completed) return false;
+        await this.waitForSimulation(request.owner ?? null);
+        return true;
+      }),
       isTweenSessionActive: () => !this.stopped,
       delay: (seconds, owner) =>
         new Promise<void>((resolve) => {
+          if (this.stopped) { resolve(); return; }
           this.delayWaiters.push({
             remaining: Math.max(0, Number(seconds) || 0),
             resolve,
             owner,
           });
-        }),
+        }).then(() => this.waitForSimulation(owner ?? null)),
       reportError: (error) => {
         this.reportError(error);
       },
@@ -1572,11 +1599,12 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private async waitForSimulation(owner: BObject | null): Promise<void> {
-    while ((this.streamBlockingCount > 0 || this.paused) && !this.stopped && !owner?.destroyed)
+    while ((this.streamBlockingCount > 0 || this.paused || this.boundaryRequests.some(
+      ({ request }) => request.action.kind === "pause" && request.action.paused)) && !this.stopped && !owner?.destroyed)
       await new Promise<void>((resolve) => this.simulationWaiters.add(resolve));
     const stream = this.streamForOwner(owner);
     if (this.stopped || owner?.destroyed || !this.sceneStreamReady(stream))
-      throw sceneRealizationCancelled();
+      throw new RuntimeContinuationCancelled();
   }
 
   loadSceneStream(target: unknown, blocking = false): Promise<void> {
@@ -1859,7 +1887,7 @@ class InProcessRuntime implements RuntimeDriver {
       actorFilter: (actor) => actor.sceneLayerId == null && this.streamActorReady(actor),
     });
     const overlayPhysicsSync = new PhysicsWorldSync(overlayBackend, {
-      actorFilter: (actor) => actor.sceneLayerId != null && this.canTickActor(actor),
+      actorFilter: (actor) => actor.sceneLayerId != null && this.canTickActor(actor, true),
     });
     try {
       this.bindPhysicsContent(physicsSync);
@@ -2301,7 +2329,7 @@ class InProcessRuntime implements RuntimeDriver {
     const voiceId = String(message.voiceId ?? "").trim();
     if (!voiceId) return;
     for (const actor of this.world.getActors()) {
-      if (actor.destroyed || !this.canTickActor(actor)) continue;
+      if (actor.destroyed) continue;
       const component = actor.components.find(
         (entry) =>
           !entry.destroyed &&
@@ -2309,13 +2337,13 @@ class InProcessRuntime implements RuntimeDriver {
           (entry.guid === voiceId || entry.sourceId === voiceId),
       );
       if (!component) continue;
-      this.scriptHost.invokeEvent(
+      this.runOwnerAction(component, () => this.scriptHost.invokeEvent(
         actor.classId,
         "onAudioFinished",
         actor,
         {},
         component.guid,
-      );
+      ));
       return;
     }
   }
@@ -2342,8 +2370,8 @@ class InProcessRuntime implements RuntimeDriver {
     const snapshot = this.scalability.snapshot();
     // GameSubsystems share the Game Instance's native events, Scalability Changed included.
     const owners = [this.world.gameInstance, ...this.world.getGameSubsystems(), this.world.currentScene, ...this.world.getSceneLayers(), ...this.world.getActors().flatMap((actor) => [actor, ...actor.components])];
-    for (const owner of owners) if (owner && this.canRunOwner(owner)) {
-      this.scriptHost.invokeEvent(owner.classId, "onScalabilityChanged", owner, { settings: snapshot });
+    for (const owner of owners) if (owner && !owner.destroyed) {
+      this.runOwnerAction(owner, () => this.scriptHost.invokeEvent(owner.classId, "onScalabilityChanged", owner, { settings: snapshot }));
     }
   }
 
@@ -2677,7 +2705,7 @@ class InProcessRuntime implements RuntimeDriver {
   };
 
   private canTickScene(): boolean {
-    return !this.saveBoundaryActive && !this.sceneWorkBlocked && !this.bootLoading && !this.stopped && this.streamBlockingCount === 0;
+    return !this.paused && !this.saveBoundaryActive && !this.sceneWorkBlocked && !this.bootLoading && !this.stopped && this.streamBlockingCount === 0;
   }
 
   private hasReadyLayers(): boolean {
@@ -2686,9 +2714,8 @@ class InProcessRuntime implements RuntimeDriver {
     return false;
   }
 
-  private canTickActor(actor: Actor): boolean {
-    if (this.stopped || actor.destroyed || this.streamBlockingCount > 0 || !this.streamActorReady(actor) ||
-      (this.paused && this.actorStream.has(actor))) return false;
+  private canTickActor(actor: Actor, ignorePause = false): boolean {
+    if ((!ignorePause && this.paused) || this.stopped || actor.destroyed || this.streamBlockingCount > 0 || !this.streamActorReady(actor)) return false;
     if (!actor.sceneLayerId) return this.canTickScene();
     return this.layerLoads.get(actor.sceneLayerId)?.ready === true;
   }
@@ -2721,6 +2748,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private canRunOwner(owner: BObject): boolean {
+    if (this.paused && !this.stopped) return false;
     if (this.saveBoundaryActive) return false;
     if (owner instanceof GameSubsystem) return this.canRunGameSubsystem(owner);
     // Callable from creation until its On End returns, even while its Scene
@@ -4672,14 +4700,14 @@ class InProcessRuntime implements RuntimeDriver {
       },
       pause: () => {
         this.pause();
-        this.emit({ type: "sessionPaused", paused: true });
+        this.emit({ type: "sessionPaused", paused: this.paused });
       },
       resume: () => {
         this.resume();
-        this.emit({ type: "sessionPaused", paused: false });
+        this.emit({ type: "sessionPaused", paused: this.paused });
       },
       step: () => {
-        const wasPaused = this.paused;
+        const wasPaused = this.pauseReasons.has("user");
         this.resume();
         this.tick();
         if (wasPaused) this.pause();
@@ -4694,6 +4722,7 @@ class InProcessRuntime implements RuntimeDriver {
           .map((entry) => entry.message)
           .join("\n"),
       startSnapshot: () => {
+        if (this.sessionMode === "simulate") return { success: false, output: "Use Play or Preview Build to record diagnostics." };
         this.trace.start({ seed: this.seed, dt: this.dt });
         this.lastTrace = null;
       },
@@ -5264,6 +5293,13 @@ class InProcessRuntime implements RuntimeDriver {
           ? { componentId: component.guid }
           : {}),
       });
+      const material = component.getVariable("materialObject");
+      if (component.materialInstance?.materialGuid === guid && material instanceof MaterialObject) {
+        for (const [parameterName, parameter] of Object.entries(this.materialParameters.captureOverrides(material) ?? {})) {
+          this.emit({ type: "setMaterialParameter", slotId, componentId: component.guid,
+            materialAssetGuid: material.materialAssetGuid, parameterName, parameter });
+        }
+      }
     }
   }
 
@@ -5557,12 +5593,12 @@ class InProcessRuntime implements RuntimeDriver {
    */
   private gameLifecycleHooks(classId: string): GameLifecycleHooks {
     const sceneEvent = (event: string) => (self: BObject, sceneName: string) => {
-      this.guardScript(() => this.scriptHost.invokeEvent(classId, event, self, { sceneName }));
+      this.runOwnerAction(self, () => this.guardScript(() => this.scriptHost.invokeEvent(classId, event, self, { sceneName })));
     };
     return {
       onCreation: (self) => {
         const hooks = this.scriptHost.hooksFor(classId);
-        this.guardScript(() => hooks?.onCreation?.(self));
+        this.runOwnerCreation(self, () => hooks?.onCreation?.(self));
       },
       onTick: (self, ctx) => {
         const hooks = this.scriptHost.hooksFor(classId);
@@ -5581,7 +5617,7 @@ class InProcessRuntime implements RuntimeDriver {
           if (this.stopped) {
             this.scriptHost.invokeGameShutdownEvent(classId, "onSceneExit", self, { sceneName });
           } else {
-            this.scriptHost.invokeEvent(classId, "onSceneExit", self, { sceneName });
+            this.runOwnerAction(self, () => this.scriptHost.invokeEvent(classId, "onSceneExit", self, { sceneName }));
           }
         });
       },
@@ -5747,7 +5783,10 @@ class InProcessRuntime implements RuntimeDriver {
     this.pendingSceneFinish = null;
     this.flushOwnerActions();
     // Authored creation may immediately replace this Scene or stop Play.
-    if (!this.stopped && this.sceneLoadId === pending.sceneLoadId) this.world.finishSceneLoad(pending.name);
+    const owner = this.world.currentScene;
+    if (!this.stopped && owner && this.sceneLoadId === pending.sceneLoadId) this.runOwnerAction(owner, () => {
+      if (this.world.currentScene === owner && this.sceneLoadId === pending.sceneLoadId) this.world.finishSceneLoad(pending.name);
+    });
   }
 
   notifySceneModelsReady(sceneAssetGuid: string, sceneLoadId: number): void {
@@ -5846,8 +5885,8 @@ class InProcessRuntime implements RuntimeDriver {
             ...this.world.getGameSubsystems(), ...this.world.getSceneSubsystems(),
             ...this.world.getActors().flatMap((actor) => [actor, ...actor.components])];
           for (const owner of owners) {
-            if (owner && !owner.destroyed) this.guardScript(() =>
-              this.scriptHost.invokeEvent(owner.classId, "onGameLoaded", owner, { ...info }));
+            if (owner && !owner.destroyed) this.runOwnerAction(owner, () => this.guardScript(() =>
+              this.scriptHost.invokeEvent(owner.classId, "onGameLoaded", owner, { ...info })));
           }
         };
       },
@@ -5870,13 +5909,14 @@ class InProcessRuntime implements RuntimeDriver {
   start(): void {
     if (this.stopped) return;
     this.running = true;
-    this.paused = false;
     this.world.start();
   }
 
   stop(): void {
     if (this.stopped) return;
     this.stopped = true;
+    this.flushBoundaryRequests();
+    this.pendingPauseChanges.clear();
     this.tweens.stop();
     this.focusNavigation.clearFocus();
     this.overlayLayout.clear();
@@ -5886,6 +5926,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.running = false;
     for (const resume of this.simulationWaiters) resume();
     this.simulationWaiters.clear();
+    for (const waiter of this.delayWaiters.splice(0)) waiter.resolve();
     for (const stream of [...this.sceneStreams.values()]) this.retireSceneStream(stream);
     for (const work of [...this.independentLayerWork.values()]) {
       work.controller.abort(sceneRealizationCancelled());
@@ -5926,13 +5967,24 @@ class InProcessRuntime implements RuntimeDriver {
     if (this.behaviourTreeDebug) this.emit({ type: "behaviourTreeSnapshot", trees: [] });
   }
 
-  pause(): void {
-    this.paused = true;
+  pause(reason: SessionPauseReason = "user"): void {
+    this.setPauseReason(reason, true);
   }
 
-  resume(): void {
+  resume(reason: SessionPauseReason = "user"): void {
+    this.setPauseReason(reason, false);
+  }
+
+  private setPauseReason(reason: SessionPauseReason, paused: boolean): void {
     if (this.stopped) return;
-    this.paused = false;
+    if (this.processingTick) { this.pendingPauseChanges.set(reason, paused); return; }
+    const wasPaused = this.paused;
+    if (paused) this.pauseReasons.add(reason); else this.pauseReasons.delete(reason);
+    this.paused = this.pauseReasons.size > 0;
+    if (this.paused === wasPaused) return;
+    this.accumulator = 0;
+    if (this.paused) { this.resetInputState(); return; }
+    this.resetElapsed = true;
     this.flushOwnerActions();
     if (this.streamBlockingCount === 0) {
       const waiters = [...this.simulationWaiters];
@@ -5941,7 +5993,58 @@ class InProcessRuntime implements RuntimeDriver {
     }
   }
 
+  requestSessionBoundary(request: SessionBoundaryRequest): Promise<SessionBoundaryResult> {
+    const invalid = request.sessionGeneration !== this.sessionGeneration ? "Stale session generation." :
+      !Number.isSafeInteger(request.requestId) || request.requestId <= this.lastBoundaryRequestId ? "Invalid or superseded request ID." :
+      request.action?.kind !== "resetInput" && (request.action?.kind !== "pause" ||
+        !["user", "lifecycle", "loading"].includes(request.action.reason) || typeof request.action.paused !== "boolean") ? "Unsupported session boundary operation." :
+      this.stopped ? "The game session has stopped." :
+      this.boundaryRequests.length >= 64 ? "Session boundary queue is full." : null;
+    if (invalid) return Promise.resolve(this.boundaryResult(request, invalid));
+    this.lastBoundaryRequestId = request.requestId;
+    // A microtask runs after the complete synchronous tick and its deferred
+    // snapshot publication, including reentrant host requests from onCommand.
+    const result = new Promise<SessionBoundaryResult>(resolve => {
+      this.boundaryRequests.push({ request: { ...request, action: { ...request.action } }, resolve });
+    });
+    if (!this.boundaryScheduled) {
+      this.boundaryScheduled = true;
+      queueMicrotask(() => this.flushBoundaryRequests());
+    }
+    return result;
+  }
+
+  private boundaryResult(request: SessionBoundaryRequest, reason?: string): SessionBoundaryResult {
+    const pauseReasons = new Set(this.pauseReasons);
+    if (this.streamBlockingCount > 0) pauseReasons.add("loading");
+    return { sessionGeneration: request.sessionGeneration, requestId: request.requestId, success: !reason,
+      ...(reason ? { reason } : {}), paused: pauseReasons.size > 0, pauseReasons: [...pauseReasons],
+      tickIndex: this.world.clock.tickIndex, sceneAssetGuid: this.playSceneGuid,
+      sceneLoadId: this.sceneLoadId, commandRevision: this.commandRevision };
+  }
+
+  private flushBoundaryRequests(): void {
+    this.boundaryScheduled = false;
+    for (const { request, resolve } of this.boundaryRequests.splice(0)) {
+      if (this.stopped) { resolve(this.boundaryResult(request, "The game session has stopped.")); continue; }
+      try {
+        if (request.action.kind === "pause") this.setPauseReason(request.action.reason, request.action.paused);
+        else this.resetInputState();
+        resolve(this.boundaryResult(request));
+      } catch (error) {
+        resolve(this.boundaryResult(request, error instanceof Error ? error.message : "Session boundary operation failed."));
+      }
+    }
+  }
+
+  private resetInputState(): void {
+    this.input.drain();
+    this.resolvedInput = this.resolver.reset();
+    this.connectionBox.current = this.resolvedInput.gamepadConnections;
+  }
+
   pushInput(events: readonly RawInputEvent[]): void {
+    if (this.stopped || this.paused) return;
     for (const event of events) {
       this.input.push(event);
     }
@@ -5964,6 +6067,10 @@ class InProcessRuntime implements RuntimeDriver {
       this.runTick();
     } finally {
       this.processingTick = false;
+      if (this.pendingPauseChanges.size) {
+        for (const [reason, paused] of this.pendingPauseChanges) this.setPauseReason(reason, paused);
+        this.pendingPauseChanges.clear();
+      }
     }
   }
 
@@ -6115,7 +6222,8 @@ class InProcessRuntime implements RuntimeDriver {
 
   advance(elapsedSeconds: number): void {
     if (!this.running || this.paused || this.streamBlockingCount > 0) return;
-    this.accumulator += elapsedSeconds;
+    if (this.resetElapsed) { this.resetElapsed = false; elapsedSeconds = 0; }
+    this.accumulator += Number.isFinite(elapsedSeconds) ? Math.max(0, elapsedSeconds) : 0;
     let steps = 0;
     // Hosts copy the snapshot once after advance(), so catch-up ticks keep their
     // overlay layout and removal pass but compose and write only the burst's
@@ -6123,9 +6231,9 @@ class InProcessRuntime implements RuntimeDriver {
     const outermost = !this.deferSnapshotWrites;
     this.deferSnapshotWrites = true;
     try {
-      while (this.accumulator >= this.dt && steps < this.maxCatchUp) {
+      while (!this.paused && !this.stopped && this.accumulator >= this.dt && steps < this.maxCatchUp) {
         this.tick();
-        this.accumulator -= this.dt;
+        this.accumulator = Math.max(0, this.accumulator - this.dt);
         steps += 1;
       }
     } finally {
@@ -6169,6 +6277,7 @@ class InProcessRuntime implements RuntimeDriver {
     frameId = this.frameId,
     hint?: { btNodeId?: string; assetGuid?: string },
   ): RuntimeDiagnostic | null {
+    if (error instanceof RuntimeContinuationCancelled) return null;
     const err = error instanceof Error ? error : new Error(String(error));
     const stack = err.stack ?? "";
     const anchor = mapStackToAnchor(stack, this.anchors);
@@ -6365,6 +6474,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private emit(command: CommandMessage): void {
+    this.commandRevision++;
     // Every log line and Print String reaches the ring that `dumplog` and the
     // session report read, not only the ones routed through reportLog.
     if (command.type === "log") {

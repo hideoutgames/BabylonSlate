@@ -6,6 +6,27 @@ import type { ProjectInputSettings, SerializedComponent, SerializedScene, Serial
 /** Serializable runtime override of one named Material Graph parameter. */
 export type { MaterialParameterValue } from "@babylonslate/core";
 
+export type GameSessionMode = "play" | "simulate" | "preview";
+export type SessionPauseReason = "user" | "lifecycle" | "loading";
+export type SessionBoundaryRequest = {
+  sessionGeneration: number;
+  /** Strictly increasing within this session; acknowledgments never use FIFO correlation. */
+  requestId: number;
+  action: { kind: "pause"; reason: SessionPauseReason; paused: boolean } | { kind: "resetInput" };
+};
+export type SessionBoundaryResult = {
+  sessionGeneration: number;
+  requestId: number;
+  success: boolean;
+  reason?: string;
+  paused: boolean;
+  pauseReasons: SessionPauseReason[];
+  tickIndex: number;
+  sceneAssetGuid: string;
+  sceneLoadId: number;
+  commandRevision: number;
+};
+
 export interface PlayLightProperties {
   color: [number, number, number];
   intensity: number;
@@ -95,10 +116,13 @@ export type ScriptBundleEntry = {
 };
 
 export type ControlMessage =
+  | ({ type: "sessionBoundary" } & SessionBoundaryRequest)
   | { type: "saveStorageResponse"; response: import("@babylonslate/core").SaveStorageResponse }
   | { type: "ragdollPoseCaptured"; slotId: number; requestId: string; bones?: import("@babylonslate/core").RagdollBonePose[]; error?: string }
   | {
       type: "load";
+      sessionGeneration?: number;
+      sessionMode?: GameSessionMode;
       saveGame?: import("@babylonslate/core").SaveGameConfiguration;
       dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
       /** Initial session render cap, shared with the renderer for console readback. */
@@ -349,6 +373,7 @@ export type DebugBehaviourTree = {
 };
 
 export type CommandMessage =
+  | ({ type: "sessionBoundaryResult" } & SessionBoundaryResult)
   | { type: "saveStorageRequest"; request: import("@babylonslate/core").SaveStorageRequest }
   | { type: "setUIControl2D"; slotId: number; componentId: string; uiControl: { classId: string; properties: import("@babylonslate/core").UIControl2DProperties }; focused?: boolean; beginEditing?: boolean }
   | { type: "setPainter2D"; slotId: number; componentId: string; painter: import("@babylonslate/core").Painter2DProperties }

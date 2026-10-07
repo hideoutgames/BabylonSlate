@@ -19,6 +19,8 @@ export function runtimeOptionsFromLoadControl(
 ): Pick<
   RuntimeDriverOptions,
   | "seed"
+  | "sessionGeneration"
+  | "sessionMode"
   | "frameCap"
   | "traceByteBudget"
   | "renderSettings"
@@ -72,6 +74,8 @@ export function runtimeOptionsFromLoadControl(
   }
   return {
     seed: msg.seed ?? 1,
+    sessionGeneration: msg.sessionGeneration,
+    sessionMode: msg.sessionMode,
     cooperativeSceneLoading: true,
     ...(msg.frameCap !== undefined ? { frameCap: msg.frameCap } : {}),
     ...(msg.traceByteBudget !== undefined ? { traceByteBudget: msg.traceByteBudget } : {}),

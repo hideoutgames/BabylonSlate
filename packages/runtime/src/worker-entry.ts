@@ -87,6 +87,20 @@ const pauseGate = createPlayPauseGate({
 
 function handleControl(msg: ControlMessage): void {
   switch (msg.type) {
+    case "sessionBoundary": {
+      const rt = runtime;
+      if (!rt) {
+        onCommand({ type: "sessionBoundaryResult", sessionGeneration: msg.sessionGeneration, requestId: msg.requestId,
+          success: false, reason: "Runtime is unavailable.", paused: false, pauseReasons: [], tickIndex: 0,
+          sceneAssetGuid: "", sceneLoadId: 0, commandRevision: 0 });
+        return;
+      }
+      void rt.requestSessionBoundary(msg).then(result => {
+        if (runtime === rt && result.success && !result.paused && msg.action.kind === "pause") scheduler.resetClock();
+        onCommand({ type: "sessionBoundaryResult", ...result });
+      });
+      return;
+    }
     case "saveStorageResponse":
       saveStorage.receive(msg.response);
       return;
