@@ -2849,7 +2849,7 @@ function initializeEngine(
       try { canvas.releasePointerCapture?.(pointerId); } catch { /* Capture may already have ended. */ }
     }
   };
-  const onCanvasBlur = resetJoysticks;
+  const onCanvasBlur = (event: FocusEvent) => { if (!uiControls.ownsElement(event.relatedTarget)) resetJoysticks(); };
   const onControlKeyDown = (event: KeyboardEvent) => {
     const key = event.code || event.key;
     if (!acceptsGameInput() || (event.repeat && !activeControlKeys.has(key))) return;

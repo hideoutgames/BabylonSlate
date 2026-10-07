@@ -687,8 +687,10 @@ export function startPlaySession(options: {
   });
   const suppressGameInput = () => {
     const suppressed = editorInputSuppressed || inputTransitionPending || gameInputMode === "edit" || acknowledgedPaused || requestedPauses.size > 0;
-    input?.setSuppressed(suppressed);
-    if (options.mode === "simulate" || editorInputRoutingEnabled) handle.setGameInputEnabled(!suppressed);
+    const routed = options.mode === "simulate" || editorInputRoutingEnabled;
+    // Ordinary Play keeps shared routing until something actually takes input away.
+    if (routed || suppressed) input?.setSuppressed(suppressed);
+    if (routed) handle.setGameInputEnabled(!suppressed);
     return suppressed;
   };
   let pendingPauseBoundary: Promise<import("@babylonslate/bridge").SessionBoundaryResult> | null = null;
