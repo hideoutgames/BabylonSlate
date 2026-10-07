@@ -40,7 +40,7 @@ export function DataTreeEntryField({ value, onChange, entries, includeRoot = fal
     <Button id={controlId} type="button" role="combobox" aria-label={label} aria-expanded={open && !disabled}
       variant="outline" size="sm" disabled={disabled} data-testid={testId} title={text}
       className="min-w-24 max-w-full justify-start" onClick={() => { if (!disabled) setOpen(true); }}>
-      <FolderTreeIcon className="size-3.5" /><span className="min-w-0 flex-1 truncate">{text}</span><ChevronDownIcon className="size-3.5" />
+      <FolderTreeIcon className="size-3.5" /><span className="min-w-0 flex-1 truncate text-left">{text}</span><ChevronDownIcon className="size-3.5" />
     </Button>
     <DataTreeEntryPicker open={open && !disabled} onOpenChange={setOpen} entries={entries} includeRoot={includeRoot}
       onPick={(path) => { if (!disabled) onChange(path); }} testId={testId ? `${testId}-picker` : undefined} />

@@ -2,8 +2,9 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "re
 import type { IDockviewPanelProps } from "dockview-react";
 import { buildDataTreeIndex, type DataTreeEntry } from "@babylonslate/core";
 import { createDataEntryForDefinition, reconcileDataEntry, type StructField } from "@babylonslate/scripting";
-import { AssetPicker, ContextMenuOverlay, NamePromptDialog, NestedMenu, NumberField, PanelFrame, SearchInput, SearchDropdown, TreeView, WindowedList, humanizePropertyLabel, isCoarsePointerEnvironment, useContextMenu, type NestedMenuItem, type TreeViewNode } from "@babylonslate/editor-kit";
-import { BetweenHorizontalStartIcon, DatabaseIcon, MoreHorizontalIcon } from "lucide-react";
+import { normalizeTag, type TagContainer } from "@babylonslate/core";
+import { AssetPicker, ContextMenuOverlay, NamePromptDialog, NestedMenu, NumberField, PanelFrame, PropertySectionTitle, SearchInput, SearchDropdown, TagPicker, TreeView, TypeVisualIcon, WindowedList, humanizePropertyLabel, isCoarsePointerEnvironment, resolveTypeVisual, tagDisplayName, useContextMenu, useTags, type NestedMenuItem, type TreeViewNode } from "@babylonslate/editor-kit";
+import { ArrowUpIcon, BetweenHorizontalStartIcon, ChevronDownIcon, DatabaseIcon, ListPlusIcon, MoreHorizontalIcon, PlusIcon } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
 import { Input } from "@babylonslate/ui/components/input";
 import { Checkbox } from "@babylonslate/ui/components/checkbox";
@@ -15,8 +16,22 @@ import { useDataAssetEditing } from "../context/data-asset-editing-context";
 import { DataValueEditor } from "../components/data-value-editor";
 import { DataTreeEntryField, DataTreeEntryPicker } from "../components/data-tree-entry-picker";
 import { DiagnosticResultRow } from "../components/diagnostic-result-row";
+import { IconActionButton } from "../components/icon-action-button";
 
 const TOUCH_ACTION = "pointer-coarse:min-h-11";
+const TOUCH_ICON_ACTION = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
+const DEFINITION_VISUAL = resolveTypeVisual({ assetType: "DataDefinition" });
+const GRID_CONTROL = "h-6 min-h-6 w-full rounded-sm border-transparent bg-transparent px-1 text-xs shadow-none hover:border-input focus-visible:border-ring focus-visible:bg-control focus-visible:ring-1 dark:bg-transparent pointer-coarse:h-11";
+
+function DefinitionButton({ label, name, assigned, disabled, onClick, testId }: {
+  label: string; name: string; assigned: boolean; disabled: boolean; onClick: () => void; testId?: string;
+}) {
+  return <Button variant="outline" size="sm" className={cn("min-w-0 flex-1 justify-start", TOUCH_ACTION)} aria-label={label} title={name} data-testid={testId} disabled={disabled} onClick={onClick}>
+    <TypeVisualIcon visual={DEFINITION_VISUAL} className={assigned ? undefined : "opacity-50"} />
+    <span className={cn("min-w-0 flex-1 truncate text-left", !assigned && "text-muted-foreground")}>{name}</span>
+    <ChevronDownIcon data-icon="inline-end" />
+  </Button>;
+}
 type TreeState = ReturnType<typeof useDataAssetEditing>;
 type Migration = ReturnType<typeof reconcileDataEntry> | null | undefined;
 function migrationBlocked(migration: Migration): boolean {
@@ -95,11 +110,24 @@ function DataEntryCell({ field, value, label, editable, enums, onChange, preview
   field: StructField; value: unknown; label: string; editable: boolean;
   enums: Record<string, string[]>; onChange: (value: unknown) => void; preview: string;
 }) {
-  const control = "h-6 min-h-6 w-full rounded-sm px-1 text-xs pointer-coarse:h-11";
-  if (!editable || field.container === "array" || field.container === "map") return <span title={preview} className="block truncate">{preview}</span>;
-  if (field.typeId === "float" || field.typeId === "int") return <NumberField aria-label={label} className={control} value={typeof value === "number" ? value : 0} onChange={(next) => onChange(field.typeId === "int" ? Math.trunc(next) : next)} />;
-  if (field.typeId === "bool") return <Checkbox aria-label={label} checked={value === true} onCheckedChange={(checked) => onChange(checked === true)} />;
-  if (field.typeId === "string") return <Input key={String(value)} aria-label={label} className={control} defaultValue={typeof value === "string" ? value : ""} onBlur={(event) => {
+  const { entries: tags } = useTags();
+  const collection = field.container === "array" || field.container === "map";
+  const tagContainer = field.typeId === "struct" && field.typeClassId === "engine:TagContainer";
+  const tagValue: TagContainer = value && typeof value === "object" && Array.isArray((value as TagContainer).Tags) ? value as TagContainer : { Tags: [] };
+  if (!collection && field.typeId === "tag") {
+    const tag = normalizeTag(Number(value ?? 0));
+    if (!editable) return <span title={tagDisplayName(tags, tag)} className="block truncate px-1">{tagDisplayName(tags, tag)}</span>;
+    return <TagPicker mode="single" value={tag} onChange={onChange} aria-label={label} className={cn(GRID_CONTROL, "justify-start gap-1 font-normal")} />;
+  }
+  if (!collection && tagContainer) {
+    const names = tagValue.Tags.map((tag) => tagDisplayName(tags, tag)).join(", ") || "No Tags";
+    if (!editable) return <span title={names} className="block truncate px-1">{names}</span>;
+    return <TagPicker mode="multiple" value={tagValue} onChange={onChange} aria-label={label} className={cn(GRID_CONTROL, "justify-start gap-1 font-normal")} />;
+  }
+  if (!editable || collection) return <span title={preview} className="block truncate px-1 text-muted-foreground">{preview}</span>;
+  if (field.typeId === "float" || field.typeId === "int") return <NumberField aria-label={label} className={cn(GRID_CONTROL, "tabular-nums")} value={typeof value === "number" ? value : 0} onChange={(next) => onChange(field.typeId === "int" ? Math.trunc(next) : next)} />;
+  if (field.typeId === "bool") return <span className="flex px-1"><Checkbox aria-label={label} checked={value === true} onCheckedChange={(checked) => onChange(checked === true)} /></span>;
+  if (field.typeId === "string") return <Input key={String(value)} aria-label={label} className={GRID_CONTROL} defaultValue={typeof value === "string" ? value : ""} onBlur={(event) => {
     if (event.target.value !== value) onChange(event.target.value);
   }} onKeyDown={(event) => {
     if (event.nativeEvent.isComposing) return;
@@ -107,9 +135,9 @@ function DataEntryCell({ field, value, label, editable, enums, onChange, preview
     if (event.key === "Enter") event.currentTarget.blur();
   }} />;
   if (field.typeId === "enum") return <SearchDropdown title={label} items={(enums[field.typeClassId ?? ""] ?? []).map((name) => ({ id: name, label: humanizePropertyLabel(name) }))} onSelect={onChange}>
-    <Button size="xs" variant="ghost" aria-label={label} className="w-full justify-start truncate pointer-coarse:h-11">{humanizePropertyLabel(String(value ?? "Choose"))}</Button>
+    <Button size="xs" variant="ghost" aria-label={label} className="w-full justify-start gap-1 px-1 font-normal pointer-coarse:h-11"><span className="min-w-0 flex-1 truncate text-left">{humanizePropertyLabel(String(value ?? "Choose"))}</span><ChevronDownIcon className="size-3 text-muted-foreground" /></Button>
   </SearchDropdown>;
-  return <span title={preview} className="block truncate">{preview}</span>;
+  return <span title={preview} className="block truncate px-1 text-muted-foreground">{preview}</span>;
 }
 
 function useTreeActions(state: TreeState) {
@@ -201,13 +229,16 @@ export function DataTreeHierarchyPanel(_props: IDockviewPanelProps) {
   if (!tree) return <PanelFrame><DataEmpty title="Data Tree Unavailable">Reopen the asset to reload its data.</DataEmpty></PanelFrame>;
   const definition = tree.defaultDefinitionGuid ? state.definitions.get(tree.defaultDefinitionGuid) : null;
   return <PanelFrame data-testid="data-tree-hierarchy-panel">
-    <div className="sticky top-0 z-10 flex flex-col gap-1 border-b border-border bg-panel-header p-2">
-      <div className="flex items-center gap-1"><span className="shrink-0 text-xs text-muted-foreground">Default</span><Button variant="outline" size="sm" className={cn("min-w-0 flex-1 justify-start truncate", TOUCH_ACTION)} aria-label="Tree Default Definition" data-testid="data-tree-default-definition" disabled={readOnly || actions.busy} onClick={() => setDefinitionPicker(true)}>{definition?.name ?? (tree.defaultDefinitionGuid ? "Missing Definition" : "No Definition")}</Button></div>
-      <div className="flex items-center gap-1"><Button variant="outline" size="sm" className={TOUCH_ACTION} disabled={readOnly || actions.busy} onClick={() => void actions.run(() => state.addEntry(null))}>Add Root</Button><Button variant="ghost" size="sm" className={TOUCH_ACTION} disabled={readOnly || actions.busy || !selectedEntryId} onClick={() => { if (selectedEntryId) void actions.run(() => state.addEntry(selectedEntryId)); }}>Add Child</Button></div>
-      <SearchInput value={query} onChange={setQuery} placeholder="Search Tree" aria-label="Search Tree" className="h-7 min-h-7 pointer-coarse:min-h-11" />
+    <div className="sticky top-0 z-10 flex flex-col gap-1.5 border-b border-border bg-panel-header p-2">
+      <div className="flex items-center gap-2"><span className="shrink-0 text-xs text-muted-foreground">Default Definition</span><DefinitionButton label="Tree Default Definition" testId="data-tree-default-definition" assigned={Boolean(definition)} name={definition?.name ?? (tree.defaultDefinitionGuid ? "Missing Definition" : "None")} disabled={readOnly || actions.busy} onClick={() => setDefinitionPicker(true)} /></div>
+      <div className="flex items-center gap-1">
+        <SearchInput value={query} onChange={setQuery} placeholder="Search Tree" aria-label="Search Tree" className="h-7 min-h-7 min-w-0 flex-1 pointer-coarse:min-h-11" />
+        <IconActionButton label="Add Root" variant="ghost" className={TOUCH_ICON_ACTION} disabled={readOnly || actions.busy} onClick={() => void actions.run(() => state.addEntry(null))}><PlusIcon /></IconActionButton>
+        <IconActionButton label="Add Child" variant="ghost" className={TOUCH_ICON_ACTION} disabled={readOnly || actions.busy || !selectedEntryId} onClick={() => { if (selectedEntryId) void actions.run(() => state.addEntry(selectedEntryId)); }}><ListPlusIcon /></IconActionButton>
+      </div>
     </div>
     <OperationError message={actions.error} />
-    <Button variant="ghost" size="sm" className={cn("w-full justify-start rounded-none px-2 text-xs", TOUCH_ACTION, !state.browseBranchId && !selectedEntryId && "bg-accent")} onClick={() => state.browse(null)}><DatabaseIcon className="size-3.5" />Tree Root<span className="ml-auto tabular-nums text-muted-foreground">{tree.entries.length}</span></Button>
+    <div className="px-1 pt-1"><Button variant="ghost" size="sm" className={cn("h-7 w-full justify-start gap-1 rounded-sm px-1 text-[13px] font-normal", TOUCH_ACTION, !state.browseBranchId && !selectedEntryId ? "bg-accent font-medium" : "hover:bg-accent/50")} onClick={() => state.browse(null)}><span className="flex size-5 items-center justify-center text-muted-foreground"><DatabaseIcon className="size-3.5" /></span>Tree Root<span className="ml-auto pr-1 text-xs tabular-nums text-muted-foreground">{tree.entries.length}</span></Button></div>
     {!index ? <DataEmpty title="Invalid Hierarchy">Resolve the issues in Validation before editing this tree. Stored entries are preserved.</DataEmpty> : <TreeView nodes={nodes} selectedId={selectedEntryId} data-testid="data-tree-hierarchy" aria-label="Data Tree" rowHeight={isCoarsePointerEnvironment() ? 44 : 28} emptyLabel={tree.entries.length ? "No Matching Entries" : "No Entries"} onSelect={(id) => state.selectEntry(id)} onToggleExpanded={(id) => state.setCollapsedIds((previous) => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next; })} onActivate={(id) => state.browse(id)} onReparent={readOnly ? undefined : (id, targetId, placement) => void actions.run(() => state.moveEntry(id, targetId, placement))} onContextMenu={(id, x, y) => { state.selectEntry(id, false); context.openMenuAt(x, y, actions.menuItems(id)); }} />}
     <AssetPicker open={definitionPicker} onOpenChange={setDefinitionPicker} title="Choose Tree Default Definition" allowedTypes={["DataDefinition"]} assets={catalog.types.dataDefinitions.map((entry) => ({ ...entry, type: "DataDefinition" }))} allowNone onPick={(guid) => { setDefinitionPicker(false); void actions.run(() => state.setDefaultDefinition(guid)); }} />
     <ContextMenuOverlay menu={context.menu} onClose={context.closeMenu} />
@@ -302,12 +333,12 @@ export function DataTreeEntriesPanel(_props: IDockviewPanelProps) {
   const entryOptions = pickerEntries(state.index);
   const branchPath = browseBranchId ? index?.pathById.get(browseBranchId) ?? "" : "";
   return <PanelFrame data-testid="data-tree-entries-panel">
-    <div ref={headerRef} className="sticky top-0 z-20 flex flex-col gap-1 border-b border-border bg-panel-header px-2 py-1">
-      <div className="flex items-center gap-1"><Button variant="ghost" size="sm" className={TOUCH_ACTION} disabled={!browseBranchId} onClick={() => state.browse(index?.byId.get(browseBranchId ?? "")?.parentId ?? null)}>Parent</Button><div className="min-w-0 flex-1"><DataTreeEntryField value={branchPath} onChange={(path) => state.browse(path ? index?.idByPath.get(path) ?? null : null)} entries={entryOptions} includeRoot hideLabel label="Browse Branch" testId="data-tree-browse-branch" /></div><span className="shrink-0 text-xs tabular-nums text-muted-foreground">{filtered.length === entries.length ? filtered.length : `${filtered.length} / ${entries.length}`} Entries</span></div>
+    <div ref={headerRef} className="sticky top-0 z-20 flex flex-col gap-1.5 border-b border-border bg-panel-header p-2">
+      <div className="flex items-center gap-1"><IconActionButton label="Parent" variant="ghost" className={TOUCH_ICON_ACTION} disabled={!browseBranchId} onClick={() => state.browse(index?.byId.get(browseBranchId ?? "")?.parentId ?? null)}><ArrowUpIcon /></IconActionButton><div className="min-w-0 flex-1"><DataTreeEntryField value={branchPath} onChange={(path) => state.browse(path ? index?.idByPath.get(path) ?? null : null)} entries={entryOptions} includeRoot hideLabel label="Browse Branch" testId="data-tree-browse-branch" /></div><span className="shrink-0 pl-1 text-xs tabular-nums text-muted-foreground">{filtered.length === entries.length ? filtered.length : `${filtered.length} / ${entries.length}`} {entries.length === 1 ? "Entry" : "Entries"}</span></div>
       <div className="flex flex-wrap items-center gap-1">
-        <Button variant="outline" size="sm" className={TOUCH_ACTION} disabled={readOnly || actions.busy} onClick={() => void actions.run(async () => { await state.addEntry(browseBranchId); setQuery(""); setFilter("all"); setDefinitionFilter("auto"); })}>New Entry</Button>
-        <NestedMenu size="chrome" trigger={<Button variant="ghost" size="sm" className={TOUCH_ACTION} disabled={!selected}>Entry</Button>} items={selected ? actions.menuItems(selected.id) : []} />
-        <NestedMenu size="chrome" trigger={<Button variant="ghost" size="sm" className={TOUCH_ACTION}>View</Button>} items={[
+        <Button variant="outline" size="sm" className={TOUCH_ACTION} disabled={readOnly || actions.busy} onClick={() => void actions.run(async () => { await state.addEntry(browseBranchId); setQuery(""); setFilter("all"); setDefinitionFilter("auto"); })}><PlusIcon data-icon="inline-start" />New Entry</Button>
+        <NestedMenu size="chrome" trigger={<Button variant="ghost" size="sm" className={TOUCH_ACTION} disabled={!selected}>Entry<ChevronDownIcon data-icon="inline-end" /></Button>} items={selected ? actions.menuItems(selected.id) : []} />
+        <NestedMenu size="chrome" trigger={<Button variant="ghost" size="sm" className={TOUCH_ACTION}>View<ChevronDownIcon data-icon="inline-end" /></Button>} items={[
           { type: "checkbox", id: "descendants", label: "Include Descendants", checked: descendants, onCheckedChange: setDescendants },
           { type: "submenu", id: "filter", label: "Filter", items: [{ type: "radio-group", id: "filter-choice", value: filter, onValueChange: setFilter, items: [{ id: "all", value: "all", label: "All Entries" }, { id: "error", value: "error", label: "Errors" }, { id: "warning", value: "warning", label: "Warnings" }] }] },
           { type: "submenu", id: "columns", label: "Columns", disabled: !definition, items: (definition?.fields ?? []).map((field) => ({ type: "checkbox", id: field.id ?? field.name, label: humanizePropertyLabel(field.name), checked: !hiddenColumns.has(field.id ?? field.name), closeOnClick: false, onCheckedChange: (checked) => setHiddenColumns((previous) => { const next = new Set(previous); if (checked) next.delete(field.id ?? field.name); else next.add(field.id ?? field.name); return next; }) })) },
@@ -320,7 +351,7 @@ export function DataTreeEntriesPanel(_props: IDockviewPanelProps) {
             await navigator.clipboard.writeText(visibleFields.map((field) => tsvCell(values[field.name])).join("\t"));
           }) },
         ]} />
-        <SearchDropdown title="Filter Definition" items={[{ id: "auto", label: "All Definitions" }, ...definitionGuids.map((entry) => ({ id: entry ?? "none", label: entry ? state.definitions.get(entry)?.name ?? "Missing Definition" : "No Definition" }))]} onSelect={setDefinitionFilter}><Button size="sm" variant="ghost" className={cn("max-w-40 truncate", TOUCH_ACTION)} aria-label="Filter Definition">{definitionFilter === "auto" ? definition?.name ?? "All Definitions" : definition?.name ?? "No Definition"}</Button></SearchDropdown>
+        <SearchDropdown title="Filter Definition" items={[{ id: "auto", label: "All Definitions" }, ...definitionGuids.map((entry) => ({ id: entry ?? "none", label: entry ? state.definitions.get(entry)?.name ?? "Missing Definition" : "No Definition" }))]} onSelect={setDefinitionFilter}><Button size="sm" variant="ghost" className={cn("max-w-48", TOUCH_ACTION)} aria-label="Filter Definition"><TypeVisualIcon visual={DEFINITION_VISUAL} /><span className="min-w-0 truncate">{definitionFilter === "auto" ? definition?.name ?? "All Definitions" : definition?.name ?? "No Definition"}</span><ChevronDownIcon data-icon="inline-end" /></Button></SearchDropdown>
         <SearchInput value={query} onChange={setQuery} placeholder="Search Entries" aria-label="Search Entries" className="ml-auto h-7 min-h-7 min-w-32 flex-1 pointer-coarse:min-h-11" />
       </div>
     </div>
@@ -352,14 +383,14 @@ export function DataTreeEntriesPanel(_props: IDockviewPanelProps) {
         const status = needsApply ? "Definition Changed" : errors ? `${errors} Error${errors === 1 ? "" : "s"}` : warnings ? `${warnings} Warning${warnings === 1 ? "" : "s"}` : "";
         const values = migrationBlocked(migration) ? entry.values : migration?.entry.values ?? entry.values;
         const effective = index.effectiveDefinitionById.get(entry.id);
-        return <div id={`${gridId}-${entry.id}`} role="row" aria-rowindex={entryIndex + 2} aria-selected={selectedEntryId === entry.id} data-testid={`data-tree-entry-${entry.id}`} className={cn("grid h-full cursor-default items-center border-b border-border/50 text-xs hover:bg-accent/50", selectedEntryId === entry.id && "bg-accent")} style={{ gridTemplateColumns: gridColumns }} onClick={() => state.selectEntry(entry.id, false)} onDoubleClick={() => state.browse(entry.id)}>
-          <span role="gridcell" className="truncate px-2" title={index.pathById.get(entry.id)}>{descendants ? index.pathById.get(entry.id) : entry.name}</span>
+        return <div id={`${gridId}-${entry.id}`} role="row" aria-rowindex={entryIndex + 2} aria-selected={selectedEntryId === entry.id} data-testid={`data-tree-entry-${entry.id}`} className={cn("grid h-full cursor-default items-center border-b border-border/40 text-xs", selectedEntryId === entry.id ? "bg-accent" : "hover:bg-accent/40")} style={{ gridTemplateColumns: gridColumns }} onClick={() => state.selectEntry(entry.id, false)} onDoubleClick={() => state.browse(entry.id)}>
+          <span role="gridcell" className="truncate px-2 font-medium" title={index.pathById.get(entry.id)}>{descendants ? index.pathById.get(entry.id) : entry.name}</span>
           {definition ? visibleFields.map((field, columnIndex) => <div key={field.id ?? field.name} role="gridcell" className="min-w-0 px-1" onDoubleClick={(event) => event.stopPropagation()} onPaste={(event) => {
             const text = event.clipboardData.getData("text/plain");
             if (!/[\t\r\n]/.test(text)) return;
             event.preventDefault(); pasteCells(entryIndex, columnIndex, text);
           }}><DataEntryCell field={field} value={values[field.name]} label={`${entry.name} ${humanizePropertyLabel(field.name)}`} editable={!readOnly && !needsApply && !migrationBlocked(migration)} enums={catalog.enumMembers} onChange={(value) => editCell(entry.id, field, value)} preview={previewValue(values[field.name], (assetGuid) => catalog.byGuid.get(assetGuid)?.header.name)} /></div>) : <><span role="gridcell" className="truncate px-2 text-muted-foreground">{effective ? state.definitions.get(effective)?.name ?? "Missing Definition" : "None"}</span><span role="gridcell" className="px-2 tabular-nums text-muted-foreground">{index.childrenByParentId.get(entry.id)?.length ?? 0}</span></>}
-          <span role="gridcell" className={cn("truncate px-2", errors ? "text-destructive" : "text-muted-foreground")}>{status}</span>
+          <span role="gridcell" className={cn("truncate px-2", errors ? "text-destructive" : needsApply || warnings ? "text-(--warning)" : "text-muted-foreground")}>{status}</span>
         </div>;
       }}</WindowedList>
     </div>}
@@ -403,16 +434,33 @@ export function DataTreeValuesPanel(_props: IDockviewPanelProps) {
     field?.scrollIntoView?.({ block: "nearest" }); control?.focus();
   }, [focusRequest, selectedEntryId]);
   if (!entry) return <PanelFrame data-testid="data-tree-values-panel"><DataEmpty title={index ? "Select An Entry" : "Invalid Hierarchy"}>{index ? "Select an entry to edit its owned values and Definition." : "Resolve the issues in Validation before editing this tree."}</DataEmpty></PanelFrame>;
+  const entryPath = index?.pathById.get(entry.id) ?? entry.name;
+  const fieldCount = definition && !recursive ? definition.fields.length : 0;
   return <PanelFrame data-testid="data-tree-values-panel">
-    <div className="flex flex-col gap-2 p-2" ref={fieldsRef}>
-      <div className="flex items-center gap-1"><p className="min-w-0 flex-1 truncate text-xs font-medium" title={index?.pathById.get(entry.id)}>{index?.pathById.get(entry.id)}</p><NestedMenu size="chrome" items={actions.menuItems(entry.id)} trigger={<Button variant="ghost" size="icon-xs" className={TOUCH_ACTION} aria-label="Selected Entry Menu"><MoreHorizontalIcon className="size-3.5" /></Button>} /></div>
-      <div className="flex flex-wrap items-center gap-1"><span className="text-xs text-muted-foreground">Definition</span><Button variant="outline" size="sm" className={cn("min-w-0 flex-1 justify-start truncate", TOUCH_ACTION)} aria-label="Entry Definition" disabled={readOnly || actions.busy} onClick={() => setDefinitionPicker(true)}>{definition?.name ?? (effective ? "Missing Definition" : "None")}</Button>{entry.definitionGuid !== undefined ? <Button variant="ghost" size="sm" className={TOUCH_ACTION} disabled={readOnly || actions.busy} onClick={() => void actions.run(() => state.setEntryDefinition(entry.id, undefined))}>Use Parent Definition</Button> : null}</div>
-      <p className="text-xs text-muted-foreground">{definitionSource(state, entry)}</p>
-      <OperationError message={actions.error} />
-      {changed ? <Alert><AlertTitle>Definition Changed</AlertTitle><AlertDescription>{requiresApply(migration) ? "Review the field changes before editing this entry." : "Edit or reset changed values to match the Definition."}<Button size="sm" variant="outline" className={TOUCH_ACTION} disabled={readOnly} onClick={() => setReview(true)}>Review Changes</Button></AlertDescription></Alert> : null}
-      {recursive ? <Alert variant="destructive"><AlertTitle>Recursive Definition</AlertTitle><AlertDescription>Remove the circular record reference before editing these values.</AlertDescription></Alert> : null}
+    <div className="flex flex-col" ref={fieldsRef}>
+      <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-border bg-panel-header px-2 py-1.5">
+        <BetweenHorizontalStartIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-[13px] font-medium" title={entry.name}>{entry.name}</span>
+          {entryPath !== entry.name ? <span className="truncate text-xs text-muted-foreground" title={entryPath}>{entryPath}</span> : null}
+        </div>
+        <NestedMenu size="chrome" items={actions.menuItems(entry.id)} trigger={<Button variant="ghost" size="icon-xs" className={TOUCH_ICON_ACTION} aria-label="Selected Entry Menu"><MoreHorizontalIcon className="size-3.5" /></Button>} />
+      </div>
+      <PropertySectionTitle>Definition</PropertySectionTitle>
+      <div className="flex flex-col gap-1 px-2 py-1.5">
+        <div className="flex items-center gap-1">
+          <DefinitionButton label="Entry Definition" assigned={Boolean(definition)} name={definition?.name ?? (effective ? "Missing Definition" : "None")} disabled={readOnly || actions.busy} onClick={() => setDefinitionPicker(true)} />
+          {entry.definitionGuid !== undefined ? <Button variant="ghost" size="sm" className={TOUCH_ACTION} disabled={readOnly || actions.busy} onClick={() => void actions.run(() => state.setEntryDefinition(entry.id, undefined))}>Use Parent Definition</Button> : null}
+        </div>
+        <p className="text-xs text-muted-foreground">{definitionSource(state, entry)}</p>
+      </div>
+      {actions.error || changed || recursive ? <div className="flex flex-col gap-2 px-2 pb-2">
+        <OperationError message={actions.error} />
+        {changed ? <Alert><AlertTitle>Definition Changed</AlertTitle><AlertDescription>{requiresApply(migration) ? "Review the field changes before editing this entry." : "Edit or reset changed values to match the Definition."}<Button size="sm" variant="outline" className={TOUCH_ACTION} disabled={readOnly} onClick={() => setReview(true)}>Review Changes</Button></AlertDescription></Alert> : null}
+        {recursive ? <Alert variant="destructive"><AlertTitle>Recursive Definition</AlertTitle><AlertDescription>Remove the circular record reference before editing these values.</AlertDescription></Alert> : null}
+      </div> : null}
+      <PropertySectionTitle aside={issues.length ? <span className="font-normal text-destructive">{issues.length} {issues.length === 1 ? "Issue" : "Issues"}</span> : fieldCount ? <span className="font-normal tabular-nums text-muted-foreground">{fieldCount}</span> : null}>Values</PropertySectionTitle>
       {!definition ? <DataEmpty title={effective ? "Definition Missing" : "Untyped Entry"}>{effective ? "Restore or choose a Data Definition to edit these values. Stored values are preserved." : "Choose a Definition to edit typed values. This entry can still contain children; stored values are preserved."}</DataEmpty> : (recursive ? [] : definition.fields).map((field) => <DataValueEditor key={`${entry.id}:${field.id ?? field.name}`} field={field} value={(migrationBlocked(migration) ? entry.values : migration?.entry.values ?? entry.values)[field.name]} defaultValue={defaults[field.name]} onChange={(value) => void actions.run(() => state.updateValues([{ entryId: entry.id, values: { [field.name]: value }, expectedDefinitionGuid: definition.guid }], { mergeKey: `data:${entry.id}:${field.id ?? field.name}` }))} label={humanizePropertyLabel(field.name)} path={field.name} disabled={!editable} catalog={catalog} issues={issues} />)}
-      {issues.length ? <p className="text-xs text-muted-foreground">{issues.length} {issues.length === 1 ? "issue" : "issues"} in Validation.</p> : null}
     </div>
     <AssetPicker open={definitionPicker} onOpenChange={setDefinitionPicker} title="Override Entry Definition" allowedTypes={["DataDefinition"]} assets={catalog.types.dataDefinitions.map((item) => ({ ...item, type: "DataDefinition" }))} allowNone onPick={(guid) => { setDefinitionPicker(false); void actions.run(() => state.setEntryDefinition(entry.id, guid)); }} />
     <AlertDialog open={review} onOpenChange={setReview}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Update Entry Fields</AlertDialogTitle><AlertDialogDescription>Apply the current Data Definition to this entry. Removed fields remain stored for recovery. Values belong to this entry; changing them does not change its children. Undo restores the previous values.</AlertDialogDescription></AlertDialogHeader>
