@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   cleanup,
   fireEvent,
@@ -60,6 +60,9 @@ afterEach(() => {
 });
 
 describe("Homepage account", () => {
+  // The lazy Clerk chunk pulls in app settings; a cold transform can outlast findBy's timeout.
+  beforeAll(async () => { await import("./homepage-account-clerk"); }, 30_000);
+
   it("keeps the subscription preview available when configured authentication fails", async () => {
     vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "pk_test_example");
     clerk.failed = true;
