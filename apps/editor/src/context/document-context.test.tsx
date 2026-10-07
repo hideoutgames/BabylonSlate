@@ -547,6 +547,7 @@ describe("DocumentProvider closed document history", () => {
 
   it("reports failed automatic saves and saves retained edits on the next attempt", async () => {
     const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
     await act(() => actions.saveAll());
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const save = vi.spyOn(ProjectService.prototype, "saveProject").mockRejectedValueOnce(new Error("Storage unavailable"));
