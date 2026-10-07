@@ -50,6 +50,23 @@ it("hands input to the result surface without changing session camera ownership"
   const store = new DiagnosticResultsStore();
   const setSurfaceOpen = vi.fn(async () => {});
   store.bindSession(ports({ setSurfaceOpen }));
-  store.open(); store.close();
+  store.open(); await Promise.resolve(); store.close();
   expect(setSurfaceOpen.mock.calls).toEqual([[true], [false]]);
+});
+it("does not re-suppress input when the dialog closes during a game-input release", async () => {
+  const store = new DiagnosticResultsStore();
+  let release!: () => void;
+  const setSurfaceOpen = vi.fn(async () => {});
+  store.bindSession(ports({ releaseInput: () => new Promise<void>(resolve => { release = resolve; }), setSurfaceOpen }));
+  store.open(); store.close(); release();
+  await Promise.resolve();
+  expect(setSurfaceOpen.mock.calls).toEqual([[false]]);
+});
+it("preserves recording controls when input suppression reports an error", async () => {
+  const store = new DiagnosticResultsStore();
+  store.bindSession(ports({ setSurfaceOpen: async () => { throw new Error("Input boundary failed."); } }));
+  await store.startProfile(options);
+  store.open();
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  expect(store.getSnapshot()).toMatchObject({ active: "profile", busy: false, error: "Input boundary failed." });
 });

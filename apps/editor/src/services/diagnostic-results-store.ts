@@ -23,18 +23,18 @@ export class DiagnosticResultsStore {
   private state: DiagnosticResultsSnapshot = { open: false, view: "summary", mode: null, active: null, busy: false, error: null, result: null };
   private readonly listeners = new Set<() => void>();
   private session: { ports: DiagnosticSessionPorts; token: object } | null = null;
+  private surfaceRevision = 0;
   readonly getSnapshot = () => this.state;
   readonly subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   open(view: DiagnosticView = "summary"): void {
     this.update({ open: true, view });
     const session = this.session;
-    if (session) void Promise.resolve(session.ports.releaseInput?.()).catch(error => this.fail(session, error));
-    if (session) void Promise.resolve(session.ports.setSurfaceOpen?.(true)).catch(error => this.fail(session, error));
+    if (session) this.updateInputSurface(session, true);
   }
   close(): void {
     this.update({ open: false });
     const session = this.session;
-    if (session) void Promise.resolve(session.ports.setSurfaceOpen?.(false)).catch(error => this.fail(session, error));
+    if (session) this.updateInputSurface(session, false);
   }
   selectView(view: DiagnosticView): void { this.update({ view }); }
   importResult(result: DiagnosticResult): void {
@@ -45,7 +45,7 @@ export class DiagnosticResultsStore {
     const session = { ports, token: {} };
     this.session = session;
     this.update({ mode: ports.mode, active: null, busy: false, error: null });
-    if (this.state.open) void Promise.resolve(ports.setSurfaceOpen?.(true)).catch(error => this.fail(session, error));
+    if (this.state.open) this.updateInputSurface(session, true);
     return {
       publishProfile: (profile: PerformanceProfile) => {
         if (this.session !== session) return;
@@ -103,6 +103,19 @@ export class DiagnosticResultsStore {
     }
     if (this.state.active || this.state.busy) { this.update({ error: "Finish the current diagnostic operation first." }); return null; }
     return this.session;
+  }
+  private updateInputSurface(session: NonNullable<DiagnosticResultsStore["session"]>, open: boolean) {
+    const revision = ++this.surfaceRevision;
+    void (async () => {
+      // Returning from a game gesture must complete before handing input to the
+      // dialog. A close or replacement during that boundary supersedes this open.
+      if (open) await session.ports.releaseInput?.();
+      if (this.session !== session || revision !== this.surfaceRevision) return;
+      await session.ports.setSurfaceOpen?.(open);
+    })().catch(error => {
+      if (this.session === session && revision === this.surfaceRevision)
+        this.update({ error: error instanceof Error ? error.message : String(error) });
+    });
   }
   private fail(session: NonNullable<DiagnosticResultsStore["session"]>, error: unknown) {
     if (this.session === session) this.update({ active: null, busy: false, error: error instanceof Error ? error.message : String(error) });
