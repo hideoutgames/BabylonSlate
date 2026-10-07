@@ -40,7 +40,7 @@ function liveTexture(
 }
 
 /**
- * Babylon 9.20 marks render-target InternalTextures ready without checking GL
+ * Babylon 9.29 marks render-target InternalTextures ready without checking GL
  * allocation errors or framebuffer completeness. Run this only around a new
  * generator allocation, never during normal frame readiness checks.
  */

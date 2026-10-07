@@ -44,7 +44,7 @@ function fixture() {
     textureHalfFloatRender: true,
     textureHalfFloatLinearFiltering: true,
   });
-  // Babylon 9.20 NullEngine creates cube InternalTextures but leaves them
+  // Babylon 9.29 NullEngine creates cube InternalTextures but leaves them
   // unattached to the wrapper. Complete that headless GPU boundary so the real
   // generator can expose dimensions and dispose its allocation like WebGL does.
   const createCubeTarget = engine.createRenderTargetCubeTexture.bind(engine);
@@ -277,6 +277,32 @@ describe("shared shadow lifecycle", () => {
     controller.register(light, false);
     controller.sync();
     expect(controller.generator(light)).toBeNull();
+  });
+  it("registers meshes created in the same task as the frame, before Babylon's deferred notification", async () => {
+    const { scene, controller } = fixture();
+    const light = new DirectionalLight("sun", new Vector3(0, -1, 1), scene);
+    controller.register(light, true);
+    const replaced = MeshBuilder.CreateBox("replaced", {}, scene);
+    controller.sync();
+    // A replacement keeps scene.meshes the same length; both frames run synchronously.
+    replaced.dispose();
+    const mesh = MeshBuilder.CreateBox("spawned", {}, scene);
+    controller.sync();
+    const casters = () =>
+      (controller.generator(light)?.getShadowMap()?.renderList ?? []).map((caster) => caster.name);
+    expect(casters()).toEqual(["spawned"]);
+    expect(mesh.receiveShadows).toBe(true);
+    const sibling = MeshBuilder.CreateBox("sibling", {}, scene);
+    controller.sync();
+    expect(casters()).toEqual(["spawned", "sibling"]);
+    // The late notification must not duplicate or reorder an existing caster.
+    await new Promise<void>((resolve) =>
+      scene.onNewMeshAddedObservable.add((added) => {
+        if (added === sibling) resolve();
+      }),
+    );
+    controller.sync();
+    expect(casters()).toEqual(["spawned", "sibling"]);
   });
   it("adapts Low to admitted map dimensions and updates projection and allocation in the current draw", () => {
     const { scene, controller } = fixture();

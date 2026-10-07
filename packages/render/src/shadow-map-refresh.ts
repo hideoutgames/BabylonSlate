@@ -146,7 +146,7 @@ export class ShadowMapRefresh {
       // Automatic LOD levels are immutable index buffers that mirror this
       // mesh's material. Only maps that can see this caster track its level.
       const autoLod = isAutoLodMaster(mesh);
-      // Babylon 9.20 has no public index-mutability getter. updateIndices skips
+      // Babylon 9.29 has no public index-mutability getter. updateIndices skips
       // onGeometryUpdated for an existing dynamic buffer, including GPU-only
       // updates, so only the known immutable state is eligible for caching.
       const trackedDynamic = mesh instanceof Mesh && hasRevisionTrackedDynamicMesh(mesh);

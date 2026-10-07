@@ -12,7 +12,7 @@ export function submitPresentedFrame(engine: AbstractEngine, draw: () => void): 
   cancel: () => void;
 } {
   const controller = new AbortController();
-  // Pinned Babylon 9.20 owning-device boundary. NullEngine has neither device.
+  // Pinned Babylon 9.29 owning-device boundary. NullEngine has neither device.
   const device = (engine as AbstractEngine & { _device?: SubmissionDevice })._device;
   const gl = (engine as AbstractEngine & { _gl?: WebGL2RenderingContext })._gl;
   if (!engine.isWebGPU && !gl) {

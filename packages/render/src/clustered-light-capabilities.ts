@@ -28,7 +28,7 @@ function requireNoErrors(gl: WebGL2RenderingContext, phase: string): void {
 }
 
 /**
- * Cold-path WebGL2 probe for Babylon 9.20's R32F additive bit mask. Extension
+ * Cold-path WebGL2 probe for Babylon 9.29's R32F additive bit mask. Extension
  * flags alone do not establish the renderability, blending or integer precision
  * that the container requires. Restoring actual GL state leaves Engine caches
  * untouched, including when another Scene owns the current framebuffer.
@@ -101,7 +101,7 @@ export function clusteredLightCapabilities(
  * WebGPU masks are exact u32 atomics in a storage buffer, so admission is a
  * device-limits check instead of the WebGL2 float-blend probe. The storage
  * buffer spans 64x64 tiles x 4 bytes per u32 word for every admitted batch
- * (Babylon 9.20's worst case is the full 32-batch budget).
+ * (Babylon 9.29's worst case is the full 32-batch budget).
  */
 function webgpuCapabilities(engine: AbstractEngine): ClusteredLightCapabilities {
   try {
@@ -126,7 +126,7 @@ function webgpuCapabilities(engine: AbstractEngine): ClusteredLightCapabilities 
     return {
       supported: true,
       backend: "webgpu",
-      // Pinned to Babylon 9.20: ClusteredLightContainer._GetEngineBatchSize
+      // Pinned to Babylon 9.29: ClusteredLightContainer._GetEngineBatchSize
       // returns 32 for WebGPU (u32 atomic words, one light per bit).
       batchSize: 32,
       maxTextureSize: engine.getCaps().maxTextureSize,
