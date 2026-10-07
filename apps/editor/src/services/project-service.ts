@@ -314,6 +314,8 @@ function parentDir(path: string): string {
 type OwnedFolder = { handle: ProjectFolderHandle; createdHere: boolean };
 
 const PROJECT_CREATION_MARKER = ".babylonslate-creating";
+/** Entries that do not make a folder "non-empty": our own marker and OS file-browser metadata. */
+const IGNORED_PROJECT_FOLDER_ENTRIES = new Set([PROJECT_CREATION_MARKER, ".DS_Store", "Thumbs.db", "desktop.ini"]);
 
 export class ProjectService {
   private readonly writeAdmission = new ProjectWriteAdmission();
@@ -1059,7 +1061,7 @@ export class ProjectService {
       // Existing browser projects remain untouched, even when display names match.
       for (;;) {
         await this.storage.openDocumentsProject(name);
-        if (!(await this.storage.exists(PROJECT_FILE))) break;
+        if (await this.projectFolderIsEmpty()) break;
         name = `${base} ${suffix++}`;
       }
       return this.createFromTemplate({ templateFiles: files, name });
@@ -1083,12 +1085,14 @@ export class ProjectService {
       if (await this.storage.exists(PROJECT_FILE)) {
         return this.loadCurrentProject();
       }
+      await this.assertEmptyProjectFolder();
       return this.scaffoldNewProject(projectName, options.kind, options);
     }
     const owned = await this.openOwnedDocumentsProject(projectName);
     if (await this.storage.exists(PROJECT_FILE) && !owned.createdHere) {
       throw new Error("Name already exists.");
     }
+    await this.assertEmptyProjectFolder();
     return this.scaffoldOwnedProject(owned, () =>
       this.scaffoldNewProject(projectName, options?.kind, options),
     );
@@ -1110,6 +1114,7 @@ export class ProjectService {
     if (await this.storage.exists(PROJECT_FILE) && !owned?.createdHere) {
       throw new Error("A project already exists in this folder.");
     }
+    await this.assertEmptyProjectFolder();
     const guid = newGuid();
     return this.scaffoldOwnedProject(
       owned,
@@ -1142,6 +1147,19 @@ export class ProjectService {
         return this.loadCurrentProject();
       },
     );
+  }
+
+  /** True when the current folder holds nothing a scaffold could overwrite. */
+  private async projectFolderIsEmpty(): Promise<boolean> {
+    const entries = await this.storage.readdir(".");
+    return entries.every((entry) => IGNORED_PROJECT_FOLDER_ENTRIES.has(entry.name));
+  }
+
+  /** New projects are scaffolded only into an empty folder, never over existing files. */
+  private async assertEmptyProjectFolder(): Promise<void> {
+    if (!(await this.projectFolderIsEmpty())) {
+      throw new Error("This folder already contains files but no project.json. Choose an empty folder or open an existing project.");
+    }
   }
 
   /** Opens the Documents-tier folder for `name`, recording whether this call created it. */
@@ -1311,8 +1329,12 @@ export class ProjectService {
     this.sceneAudioReverb.clear();
     this.sessionEncodes.clear();
 
+    // exists() rejects for anything but a missing manifest, so an unreadable
+    // project never reaches the scaffold; a missing one is scaffolded only
+    // into an empty folder.
     const hasProject = await this.storage.exists(PROJECT_FILE);
     if (!hasProject) {
+      await this.assertEmptyProjectFolder();
       return this.scaffoldNewProject(folder.name);
     }
 

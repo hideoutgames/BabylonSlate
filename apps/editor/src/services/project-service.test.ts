@@ -609,20 +609,53 @@ describe("project round-trip", () => {
     await expect(service.createEmptyProject("Interrupted")).rejects.toThrow(/already exists/);
   });
 
-  it("keeps a pre-existing folder that lacks project.json when scaffolding fails", async () => {
+  it("refuses to create a named project over a pre-existing folder's files", async () => {
     localStorage.clear();
     const storage = new OpfsStorageAdapter();
     const service = new ProjectService(storage);
     await storage.openDocumentsProject("Kept");
     await storage.writeText("notes.txt", "x");
     await storage.releaseFolder();
-    vi.mocked(loadKenneyMannequinGlb).mockRejectedValueOnce(
-      new Error("Invalid bundled Mannequin GLB"),
-    );
-    await expect(service.createEmptyProject("Kept")).rejects.toThrow();
+    await expect(service.createEmptyProject("Kept")).rejects.toThrow(/already contains files/);
     expect((await storage.listProjects()).map((p) => p.name)).toContain("Kept");
     await storage.openDocumentsProject("Kept");
-    expect(await storage.exists("notes.txt")).toBe(true);
+    expect(await storage.readText("notes.txt")).toBe("x");
+    expect(await storage.exists(PROJECT_FILE)).toBe(false);
+  });
+
+  it("never scaffolds over a folder that has content but no project.json", async () => {
+    const storage = new MemoryStorageAdapter("external");
+    await storage.pickProjectFolder();
+    await storage.writeBinary(MAIN_SCENE_FILE, new Uint8Array([7, 7, 7]));
+    const service = new ProjectService(storage);
+    const template = [{ path: PROJECT_FILE, data: new TextEncoder().encode('{"guid":"template"}') }];
+    await expect(service.loadCurrentProject()).rejects.toThrow(/already contains files/);
+    await expect(service.createEmptyProject("Picked", { pickFolder: true })).rejects.toThrow(/already contains files/);
+    await expect(service.createFromTemplate({ name: "Picked", pickFolder: true, templateFiles: template }))
+      .rejects.toThrow(/already contains files/);
+    expect(await storage.readBinary(MAIN_SCENE_FILE)).toEqual(new Uint8Array([7, 7, 7]));
+    expect(await storage.exists(PROJECT_FILE)).toBe(false);
+  });
+
+  it("propagates an unreadable project.json instead of scaffolding over the project", async () => {
+    localStorage.clear();
+    const storage = new OpfsStorageAdapter();
+    await new ProjectService(storage).createEmptyProject("Unreadable", { kind: "blank" });
+    const scene = await storage.readBinary(MAIN_SCENE_FILE);
+    const manifest = await storage.readText(PROJECT_FILE);
+    const root = await navigator.storage.getDirectory();
+    const meta = JSON.parse(localStorage.getItem("babylonslate:opfs-meta")!);
+    const directory = await root.getDirectoryHandle(meta.projects[0].directory);
+    const getFileHandle = directory.getFileHandle.bind(directory);
+    const failure = new DOMException("Handle state changed", "InvalidStateError");
+    const spy = vi.spyOn(directory, "getFileHandle").mockImplementation(async (name, options) => {
+      if (name === PROJECT_FILE && !options?.create) throw failure;
+      return getFileHandle(name, options);
+    });
+    await expect(new ProjectService(storage).loadCurrentProject()).rejects.toThrow("Handle state changed");
+    spy.mockRestore();
+    expect(await storage.readBinary(MAIN_SCENE_FILE)).toEqual(scene);
+    expect(await storage.readText(PROJECT_FILE)).toBe(manifest);
   });
 
   it("does not delete another operation's folder when the current folder changed mid-scaffold", async () => {
