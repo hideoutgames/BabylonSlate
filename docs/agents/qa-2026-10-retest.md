@@ -51,9 +51,9 @@ Investigation starts at `94f3692a2` (7 October). The supplied Run-1 retest and n
 | Stats checked but HUD hidden | The menu controls availability of the overlay button; HUD starts collapsed by design. Labels now say Stats Button, Console Button and Inspector Button. |
 | Folder menu lacks Rename | Rename already existed; correcting accidental context multi-selection restores its availability. |
 | Material seed nodes overlap | Increase spacing between initial Color and Output nodes, including PostProcess seeds. |
-| Emissive clipped / Escape discards color | Current picker uses a viewport-bounded portal with scrolling and fixed actions. Browser reproduction checks a short viewport. Escape intentionally cancels its uncommitted draft; Done applies it. |
+| Emissive clipped / Escape discards color | Current picker uses a viewport-bounded portal with scrolling and fixed actions. The 1100×420 browser check passes; clipping was not reproduced. Escape intentionally cancels its uncommitted draft; Done applies it. |
 | PNG thumbnails dark/solid | Encode thumbnails as PNG to retain alpha; use the transparency background and lazily repair old JPEG texture thumbnails when source pixels are available. |
 
 ## Verification boundaries
 
-Focused unit, editor interaction, runtime and browser checks are recorded with delivery. Selected checks protect persistence/rename rollback, invalid input and cancellation, scene history/recovery/clipboard, compilation/runtime diagnostics, fog compilation and loading failures. Required PR CI remains the merge gate. No hardware GPU is exposed in this environment; PBR appearance and platform-specific GPU qualification remain unverified.
+Focused unit, editor interaction, runtime and browser checks are recorded with delivery. Selected checks protect persistence/rename rollback, invalid input and cancellation, scene history/recovery/clipboard, compilation/runtime diagnostics, fog compilation and loading failures. Eight desktop Chromium checks passed at `077823eb2`: rename/move cold reopening, two recovery cases, two numeric persistence cases, fog pixels in editor/Play, and short-viewport Emissive popup reachability. Required PR CI remains the merge gate. No hardware GPU is exposed in this environment; PBR appearance and platform-specific GPU qualification remain unverified.
