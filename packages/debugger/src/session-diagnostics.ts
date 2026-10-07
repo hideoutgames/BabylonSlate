@@ -21,6 +21,7 @@ type Operation = {
   admission: Promise<DiagnosticOperationResult>; stopping?: Promise<PerformanceProfile | null>;
   recorder?: PerformanceRecorder; releaseFrames?: () => void;
   timer?: ReturnType<typeof setTimeout>; deadline?: number; sequence: number;
+  droppedRecords: number;
 };
 
 /** One owner for explicit profile/frame requests. Runtime admission additionally
@@ -71,7 +72,7 @@ export class SessionDiagnostics<FrameReport> {
   }
 
   /** Reliable ordered chunks; gaps fail the capture rather than inventing ticks. */
-  receiveTicks(message: { recordingId: string; sequence: number; rows: Float64Array }): boolean {
+  receiveTicks(message: { recordingId: string; sequence: number; rows: Float64Array; droppedRecords?: number }): boolean {
     const state = this.operation;
     if (!state || state.kind !== "profile" || state.id !== message.recordingId || !state.recorder) return false;
     if (!Number.isSafeInteger(message.sequence) || message.sequence !== state.sequence ||
@@ -80,6 +81,8 @@ export class SessionDiagnostics<FrameReport> {
       return false;
     }
     state.sequence++;
+    if (Number.isSafeInteger(message.droppedRecords) && message.droppedRecords! >= 0)
+      state.droppedRecords = Math.max(state.droppedRecords, message.droppedRecords!);
     try {
       for (let index = 0; index < message.rows.length; index += 6) state.recorder.recordTick({
         tickId: message.rows[index]!, elapsedMs: message.rows[index + 1]!,
@@ -88,6 +91,11 @@ export class SessionDiagnostics<FrameReport> {
       }, { drain: true });
       return true;
     } catch { void this.finish(state, "error"); return false; }
+  }
+
+  runtimeStopped(message: { recordingId: string; reason: PerformanceStopReason }): void {
+    const state = this.operation;
+    if (state?.id === message.recordingId) void this.finish(state, message.reason);
   }
 
   async captureFrame(): Promise<FrameReport> {
@@ -113,7 +121,7 @@ export class SessionDiagnostics<FrameReport> {
   }
   private reserve(kind: Operation["kind"], sessionId: string, options: { durationMs?: number; byteBudget?: number }): Operation {
     const id = `${sessionId}:${++this.sequence}`;
-    const state: Operation = { kind, id, abort: new AbortController(), sequence: 0,
+    const state: Operation = { kind, id, abort: new AbortController(), sequence: 0, droppedRecords: 0,
       admission: Promise.resolve({ success: false }) };
     this.operation = state;
     state.admission = this.request({ kind, action: "start", recordingId: id, ...options });
@@ -132,6 +140,7 @@ export class SessionDiagnostics<FrameReport> {
       const profile = state.recorder?.stop(released.success ? reason : "error", stoppedAt) ?? null;
       if (this.operation === state) this.operation = undefined;
       if (profile) {
+        profile.droppedRecords += state.droppedRecords;
         this.retained = profile;
         this.ports.onProfile?.(profile);
       }

@@ -49,3 +49,4 @@ export {
 } from "./trace-recorder";
 export * from "./performance-recorder";
 export * from "./session-diagnostics";
+export * from "./diagnostic-operation-client";
