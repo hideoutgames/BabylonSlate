@@ -6,10 +6,8 @@ import { Actor, ActorComponent } from "./objects";
  */
 export function hydrateScenePropertyReferences(actors: readonly Actor[]): void {
   const byId = new Map<string, Actor>();
-  for (const actor of actors) {
-    if (byId.has(actor.guid)) throw new Error(`Duplicate scene actor identity: ${actor.guid}`);
-    byId.set(actor.guid, actor);
-  }
+  // A duplicated guid resolves to its first-spawned actor, as runtime lookups do.
+  for (const actor of actors) if (!byId.has(actor.guid)) byId.set(actor.guid, actor);
   const decode = (value: unknown, depth = 0): unknown => {
     if (depth > 128) throw new Error("Scene property nesting exceeds the supported limit.");
     if (value instanceof Actor || value instanceof ActorComponent || value === null || typeof value !== "object") return value;

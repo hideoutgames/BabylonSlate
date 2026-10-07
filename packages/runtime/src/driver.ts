@@ -1356,7 +1356,7 @@ class InProcessRuntime implements RuntimeDriver {
           throw sceneRealizationCancelled();
         }
         try {
-          await this.waitForSimulation(owner ?? null);
+          { const pending = this.continueSimulation(owner ?? null); if (pending) await pending; }
           if (preload && !preload.success) throw new Error(`Cannot spawn ${id} requested by ${owner?.guid ?? "session"}: ${preload.errorMessage}`);
           const actor = this.spawnScriptedActor({ classId: id, transform: coerceTransform(transform), streamOwner: owner });
           if (preload) {
@@ -1397,8 +1397,12 @@ class InProcessRuntime implements RuntimeDriver {
       preloadAssets: (assets, owner, options) => this.preloadForGameplay(assets, owner, options),
       prepareAssets: this.demandAssetCatalog ? async (assets, owner) => {
         try { await this.assetPreloads.prepare(assets, owner?.guid ?? this.world.currentScene?.guid ?? "session"); }
-        catch (error) { await this.waitForSimulation(owner ?? null); throw error; }
-        await this.waitForSimulation(owner ?? null);
+        catch (error) {
+          const pending = this.continueSimulation(owner ?? null);
+          if (pending) await pending;
+          throw error;
+        }
+        { const pending = this.continueSimulation(owner ?? null); if (pending) await pending; }
       } : undefined,
       releasePreload: (preloadId) => this.assetPreloads.release(preloadId),
       getAssetLoadState: (assetGuid) => this.assetPreloads.getState(assetGuid),
@@ -1406,7 +1410,7 @@ class InProcessRuntime implements RuntimeDriver {
       getSceneLoadProgress: (target) => this.getSceneLoadProgress(target),
       getSceneState: (target) => this.getSceneState(target),
       resolveInstanceId: (owner, id) => this.streamForOwner(owner)?.idMap.get(id) ?? id,
-      waitForSimulation: (owner) => this.waitForSimulation(owner),
+      waitForSimulation: (owner) => this.continueSimulation(owner) ?? Promise.resolve(),
       getProjectName: () => projectName,
       getProjectVersion: () => projectVersion,
       setWorldGravity: (gravity) => {
@@ -1416,7 +1420,7 @@ class InProcessRuntime implements RuntimeDriver {
       executeConsoleCommandAsync: (command) => this.executeConsoleCommandAsync(command),
       tween: (request) => this.tweens.start(request).then(async completed => {
         if (!completed) return false;
-        await this.waitForSimulation(request.owner ?? null);
+        { const pending = this.continueSimulation(request.owner ?? null); if (pending) await pending; }
         return true;
       }),
       isTweenSessionActive: () => !this.stopped,
@@ -1428,7 +1432,8 @@ class InProcessRuntime implements RuntimeDriver {
             resolve,
             owner,
           });
-        }).then(() => this.waitForSimulation(owner ?? null)),
+          // A boundary requested after the timer fired still holds the continuation.
+        }).then(() => this.continueSimulation(owner ?? null)),
       reportError: (error) => {
         this.reportError(error);
       },
@@ -1668,12 +1673,27 @@ class InProcessRuntime implements RuntimeDriver {
     });
   }
 
+  private simulationBlocked(owner: BObject | null): boolean {
+    return (this.streamBlockingCount > 0 || this.paused || this.boundaryRequests.some(
+      ({ request }) => request.action.kind === "pause" && request.action.paused) ||
+      [...this.pendingPauseChanges.values()].some(Boolean)) && !this.stopped && !owner?.destroyed;
+  }
+
   private async waitForSimulation(owner: BObject | null): Promise<void> {
-    while ((this.streamBlockingCount > 0 || this.paused || this.boundaryRequests.some(
-      ({ request }) => request.action.kind === "pause" && request.action.paused)) && !this.stopped && !owner?.destroyed)
+    while (this.simulationBlocked(owner))
       await new Promise<void>((resolve) => this.simulationWaiters.add(resolve));
-    const stream = this.streamForOwner(owner);
-    if (this.stopped || owner?.destroyed || !this.sceneStreamReady(stream))
+    this.assertContinuable(owner);
+  }
+
+  /** Like waitForSimulation, but an unblocked continuation resumes without extra microtask hops. */
+  private continueSimulation(owner: BObject | null): Promise<void> | undefined {
+    if (this.simulationBlocked(owner)) return this.waitForSimulation(owner);
+    this.assertContinuable(owner);
+    return undefined;
+  }
+
+  private assertContinuable(owner: BObject | null): void {
+    if (this.stopped || owner?.destroyed || !this.sceneStreamReady(this.streamForOwner(owner)))
       throw new RuntimeContinuationCancelled();
   }
 
@@ -1696,7 +1716,7 @@ class InProcessRuntime implements RuntimeDriver {
     let result: RuntimeAssetPreloadResult | undefined;
     try {
       result = await this.assetPreloads.acquire(assets, owner?.guid ?? this.world.currentScene?.guid ?? "session", { ...options, onProgress });
-      await this.waitForSimulation(owner);
+      { const pending = this.continueSimulation(owner); if (pending) await pending; }
       return result;
     } catch (error) {
       if (result?.preloadId) this.assetPreloads.release(result.preloadId);
@@ -2067,7 +2087,7 @@ class InProcessRuntime implements RuntimeDriver {
       ? await this.assetPreloads.acquire([assetGuid], owner?.guid ?? this.world.currentScene?.guid ?? "session") : null;
     let layer: SceneLayer | null = null;
     try {
-      await this.waitForSimulation(owner);
+      { const pending = this.continueSimulation(owner); if (pending) await pending; }
       if (preload && !preload.success) throw new Error(`Cannot create SceneLayer ${assetGuid}: ${preload.errorMessage}`);
       if (this.stopped || owner?.destroyed) throw sceneRealizationCancelled();
       layer = this.createSceneLayer(assetGuid, zOrder);
@@ -2086,7 +2106,7 @@ class InProcessRuntime implements RuntimeDriver {
           });
         });
       }
-      await this.waitForSimulation(owner);
+      { const pending = this.continueSimulation(owner); if (pending) await pending; }
       return layer;
     } catch (error) {
       if (layer) this.removeSceneLayer(layer.guid);
