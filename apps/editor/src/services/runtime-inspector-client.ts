@@ -172,6 +172,7 @@ function identityKey(target: RuntimeObjectIdentity): string {
 }
 function actionLane(action: RuntimeInspectorAction): string {
   if (action.kind === "identities") return "identities";
+  if (action.kind === "resolvePick") return `pick:${action.slotId}:${action.actorGuid}`;
   const target = identityKey(action.target);
   if (action.kind === "setProperty") return `${target}:property:${action.property}`;
   if (action.kind === "setTransform") return `${target}:transform`;
@@ -179,9 +180,14 @@ function actionLane(action: RuntimeInspectorAction): string {
   return `${target}:read:${action.kind}:${action.kind === "value" ? action.property : ""}`;
 }
 function validateAction(action: RuntimeInspectorAction): void {
-  if (!action || !["identities", "selection", "value", "setProperty", "setTransform", "setMaterialParameter"].includes(action.kind))
+  if (!action || !["identities", "resolvePick", "selection", "value", "setProperty", "setTransform", "setMaterialParameter"].includes(action.kind))
     throw error("invalid", "Unsupported runtime Inspector request.");
   if (action.kind === "identities") return;
+  if (action.kind === "resolvePick") {
+    if (typeof action.actorGuid !== "string" || !Number.isSafeInteger(action.slotId) || action.slotId < 0)
+      throw error("invalid", "The runtime pick identity is invalid.");
+    return;
+  }
   const target = action.target;
   if (!target || typeof target.actorGuid !== "string" || typeof target.sceneInstanceId !== "string" ||
     !Number.isSafeInteger(target.actorToken) || target.actorToken < 1 ||
@@ -197,6 +203,11 @@ function validateResult(request: RuntimeInspectorRequest, result: RuntimeInspect
   if (!result.success) return;
   const action = request.action, payload = result.payload;
   if (!payload) throw error("invalid", "The runtime Inspector acknowledgment has no value.");
+  if (action.kind === "resolvePick") {
+    if (payload.kind !== "identity" || payload.row.identity.actorGuid !== action.actorGuid || payload.row.renderSlotId !== action.slotId)
+      throw error("invalid", "The runtime pick no longer matches the requested actor.");
+    return;
+  }
   if (isWrite(action)) {
     if (payload.kind !== "mutation" || payload.sequence !== action.sequence || identityKey(payload.target) !== identityKey(action.target))
       throw error("invalid", "The runtime acknowledged a different object or edit sequence.");
