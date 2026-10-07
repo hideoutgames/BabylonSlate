@@ -1,6 +1,6 @@
 import type { ActorComponent } from "@babylonslate/object-model";
 import { prepareColliderShape, type ColliderShape, type Vec3 } from "@babylonslate/physics";
-import type { DynamicRuntimeMeshGeometry, Transform } from "@babylonslate/core";
+import { collisionIndexArray, type DynamicRuntimeMeshGeometry, type Transform } from "@babylonslate/core";
 import { dynamicRuntimeGeometry } from "./dynamic-runtime-mesh";
 import { sameDescriptor, transformDescriptor } from "./physics-preparation";
 
@@ -41,24 +41,30 @@ export class DynamicMeshCollisionCache {
     const previous = this.states.get(geometry);
     if (previous && sameDescriptor(previous.descriptor, descriptor)) return previous.shape;
     const chain = componentChain(component);
-    const vertices: Vec3[] = new Array(geometry.positions.length / 3);
-    for (let i = 0; i < vertices.length; i++) {
-      const point = { x: geometry.positions[i * 3]!, y: geometry.positions[i * 3 + 1]!, z: geometry.positions[i * 3 + 2]! };
+    const vertexCount = geometry.positions.length / 3;
+    const positions = new Float32Array(vertexCount * 3);
+    const point = { x: 0, y: 0, z: 0 };
+    for (let i = 0; i < vertexCount; i++) {
+      point.x = geometry.positions[i * 3]!; point.y = geometry.positions[i * 3 + 1]!; point.z = geometry.positions[i * 3 + 2]!;
       for (const entry of chain) transformPoint(point, entry.transform);
-      point.x *= actorScale.x; point.y *= actorScale.y; point.z *= actorScale.z;
-      vertices[i] = point;
+      positions[i * 3] = point.x * actorScale.x;
+      positions[i * 3 + 1] = point.y * actorScale.y;
+      positions[i * 3 + 2] = point.z * actorScale.z;
     }
     // Collapsed triangles have no collision surface. Excluding them keeps a legal
     // render deformation from rejecting the entire native collider transaction.
-    const indices: number[] = [];
+    const kept: number[] = [];
+    const p = positions;
     for (let i = 0; i < geometry.indices.length; i += 3) {
       const ai = geometry.indices[i]!, bi = geometry.indices[i + 1]!, ci = geometry.indices[i + 2]!;
-      const a = vertices[ai]!, b = vertices[bi]!, c = vertices[ci]!;
-      const ax = b.x - a.x, ay = b.y - a.y, az = b.z - a.z;
-      const bx = c.x - a.x, by = c.y - a.y, bz = c.z - a.z;
-      if (Math.hypot(ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx) >= 1e-12) indices.push(ai, bi, ci);
+      const a = ai * 3, b = bi * 3, c = ci * 3;
+      const ax = p[b]! - p[a]!, ay = p[b + 1]! - p[a + 1]!, az = p[b + 2]! - p[a + 2]!;
+      const bx = p[c]! - p[a]!, by = p[c + 1]! - p[a + 1]!, bz = p[c + 2]! - p[a + 2]!;
+      if (Math.hypot(ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx) >= 1e-12) kept.push(ai, bi, ci);
     }
-    const shape = indices.length ? prepareColliderShape({ kind: "mesh", vertices, indices }) : null;
+    const shape = kept.length
+      ? prepareColliderShape({ kind: "mesh", positions, indices: collisionIndexArray(kept, vertexCount) })
+      : null;
     this.states.set(geometry, { descriptor, shape });
     return shape;
   }

@@ -41,12 +41,15 @@ export class AddActorCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.addActor";
   readonly actor: SerializedActor;
   readonly index: number;
-  readonly byteSize: number;
+  #byteSize?: number;
+  /** Retained snapshot cost, measured on first read and memoised. */
+  get byteSize(): number {
+    return (this.#byteSize ??= byteSizeOf(this.actor));
+  }
 
   constructor(actor: SerializedActor, index = -1) {
     this.actor = actor;
     this.index = index;
-    this.byteSize = byteSizeOf(actor);
   }
 
   apply(doc: SerializedScene): SerializedScene {
@@ -77,12 +80,15 @@ export class RemoveActorCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.removeActor";
   readonly actor: SerializedActor;
   readonly index: number;
-  readonly byteSize: number;
+  #byteSize?: number;
+  /** Retained snapshot cost, measured on first read and memoised. */
+  get byteSize(): number {
+    return (this.#byteSize ??= byteSizeOf(this.actor));
+  }
 
   constructor(actor: SerializedActor, index = -1) {
     this.actor = actor;
     this.index = index;
-    this.byteSize = byteSizeOf(actor);
   }
 
   apply(doc: SerializedScene): SerializedScene {
@@ -300,7 +306,11 @@ export class AddComponentCommand implements EditCommand<SerializedScene> {
   readonly actorId: string;
   readonly component: SerializedComponent;
   readonly index: number;
-  readonly byteSize: number;
+  #byteSize?: number;
+  /** Retained snapshot cost, measured on first read and memoised. */
+  get byteSize(): number {
+    return (this.#byteSize ??= byteSizeOf(this.component));
+  }
 
   constructor(
     actorId: string,
@@ -310,7 +320,6 @@ export class AddComponentCommand implements EditCommand<SerializedScene> {
     this.actorId = actorId;
     this.component = component;
     this.index = index;
-    this.byteSize = byteSizeOf(component);
   }
 
   apply(doc: SerializedScene): SerializedScene {
@@ -338,13 +347,16 @@ export class RemoveComponentCommand implements EditCommand<SerializedScene> {
   readonly actorId: string;
   readonly component: SerializedComponent;
   readonly index: number;
-  readonly byteSize: number;
+  #byteSize?: number;
+  /** Retained snapshot cost, measured on first read and memoised. */
+  get byteSize(): number {
+    return (this.#byteSize ??= byteSizeOf(this.component));
+  }
 
   constructor(actorId: string, component: SerializedComponent, index = -1) {
     this.actorId = actorId;
     this.component = component;
     this.index = index;
-    this.byteSize = byteSizeOf(component);
   }
 
   apply(doc: SerializedScene): SerializedScene {
@@ -649,12 +661,15 @@ export class AddFolderCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.addFolder";
   readonly folder: SerializedOutlinerFolder;
   readonly index: number;
-  readonly byteSize: number;
+  #byteSize?: number;
+  /** Retained snapshot cost, measured on first read and memoised. */
+  get byteSize(): number {
+    return (this.#byteSize ??= byteSizeOf(this.folder));
+  }
 
   constructor(folder: SerializedOutlinerFolder, index = -1) {
     this.folder = folder;
     this.index = index;
-    this.byteSize = byteSizeOf(folder);
   }
 
   apply(doc: SerializedScene): SerializedScene {
@@ -683,12 +698,15 @@ export class RemoveFolderCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.removeFolder";
   readonly folder: SerializedOutlinerFolder;
   readonly index: number;
-  readonly byteSize: number;
+  #byteSize?: number;
+  /** Retained snapshot cost, measured on first read and memoised. */
+  get byteSize(): number {
+    return (this.#byteSize ??= byteSizeOf(this.folder));
+  }
 
   constructor(folder: SerializedOutlinerFolder, index = -1) {
     this.folder = folder;
     this.index = index;
-    this.byteSize = byteSizeOf(folder);
   }
 
   apply(doc: SerializedScene): SerializedScene {

@@ -9,6 +9,7 @@ import {
   zipExport,
 } from "../packages/exporter/src/index.ts";
 import { serveExportFiles } from "./export-static-server";
+import { WEBKIT_SMOKE_TAG } from "./ipad-tag";
 import {
   EXPECTED_PREVIEW_ACTOR_POSITIONS,
   previewPlacementScene,
@@ -61,7 +62,7 @@ async function packTinyGame(playerBaseURL: string) {
 }
 
 test.describe("P14 export smoke", () => {
-  test("unzip-serve-boot-tick on range and range-blind servers", async ({
+  test("unzip-serve-boot-tick on range and range-blind servers", { tag: WEBKIT_SMOKE_TAG }, async ({
     page,
     baseURL,
   }) => {

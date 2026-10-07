@@ -1265,10 +1265,12 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         try {
           mesh.isVisible = false;
           const data = new VertexData();
-          const points =
-            shape.kind === "convex" ? shape.points : shape.vertices;
-          data.positions = points.flatMap((p) => [p.x, p.y, p.z]);
-          data.indices = shape.kind === "mesh" ? [...shape.indices] : [];
+          // Packed mesh geometry passes through; Havok copies it into native memory.
+          data.positions =
+            shape.kind === "convex"
+              ? shape.points.flatMap((p) => [p.x, p.y, p.z])
+              : shape.positions;
+          data.indices = shape.kind === "mesh" ? shape.indices : [];
           data.applyToMesh(mesh);
           return shape.kind === "convex"
             ? new PhysicsShapeConvexHull(mesh, this.scene)

@@ -6,6 +6,7 @@ export type DockviewDocumentKind =
   | "scene"
   | "scene-layer"
   | "graph"
+  | "prefab"
   | "enum"
   | "structure"
   | "data-definition"
@@ -46,6 +47,7 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "scene",
   "scene-layer",
   "graph",
+  "prefab",
   "enum",
   "structure",
   "data-definition",
@@ -89,6 +91,8 @@ export function isDockviewDocumentKind(
 }
 
 export const CLASS_PANEL_TITLE = "Class";
+/** Primary Class graph tab; function graphs open as tabs beside it. */
+export const EVENT_GRAPH_TITLE = "Event Graph";
 /** About half the left stack so Class is not a 180px stub under Components. */
 export const CLASS_PANEL_INITIAL_HEIGHT = 400;
 /** About 25% of a typical editor so the Material graph keeps ~75% width. */
@@ -110,6 +114,7 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   scene: "viewport",
   "scene-layer": "viewport",
   graph: "graph",
+  prefab: "prefab-viewport",
   enum: "enum-members",
   structure: "structure-members",
   "data-definition": "data-definition-fields",
@@ -292,7 +297,7 @@ const SCENE_WINDOWS: DockWindowDefinition[] = [
 ];
 
 const GRAPH_WINDOWS: DockWindowDefinition[] = [
-  { id: "graph", component: "graph", title: "Graph" },
+  { id: "graph", component: "graph", title: EVENT_GRAPH_TITLE },
   {
     id: "prefab-viewport",
     component: "prefab-viewport",
@@ -344,8 +349,33 @@ const GRAPH_WINDOWS: DockWindowDefinition[] = [
   },
 ];
 
+/** Logic-free Prefab documents: no Graph, Class members or Compiler Results. */
+const PREFAB_WINDOWS: DockWindowDefinition[] = [
+  { id: "prefab-viewport", component: "prefab-viewport", title: "Prefab" },
+  {
+    id: "actor-prefab",
+    component: "actor-prefab",
+    title: "Components",
+    defaultPosition: {
+      referencePanelId: "prefab-viewport",
+      direction: "left",
+      initialWidth: 260,
+    },
+  },
+  {
+    id: "inspector",
+    component: "inspector",
+    title: "Inspector",
+    defaultPosition: {
+      referencePanelId: "prefab-viewport",
+      direction: "right",
+      initialWidth: 280,
+    },
+  },
+];
+
 const OBJECT_GRAPH_WINDOWS: DockWindowDefinition[] = [
-  { id: "graph", component: "graph", title: "Graph" },
+  { id: "graph", component: "graph", title: EVENT_GRAPH_TITLE },
   {
     id: "my-class",
     component: "my-class",
@@ -967,6 +997,7 @@ export function listDockWindows(
     if (kind === "scene" && options?.sceneMode === "foliage") return withOptionalLocks(kind, FOLIAGE_WINDOWS, options);
     return withOptionalLocks(kind, SCENE_WINDOWS, options);
   }
+  if (kind === "prefab") return withOptionalLocks(kind, PREFAB_WINDOWS, options);
   if (kind === "save-game") return withOptionalLocks(kind, SAVE_GAME_WINDOWS, options);
   if (kind === "input-action" || kind === "input-axis") return withOptionalLocks(kind, INPUT_WINDOWS, options);
   if (kind === "enum") return withOptionalLocks(kind, ENUM_WINDOWS, options);

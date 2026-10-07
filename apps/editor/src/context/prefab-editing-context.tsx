@@ -14,6 +14,7 @@ import {
   setSceneStreamingTarget,
   type SerializedComponent,
   type SerializedGraph,
+  type SerializedPrefab,
   type SerializedTransform,
 } from "@babylonslate/core";
 import type { TreeDropPlacement } from "@babylonslate/editor-kit";
@@ -176,6 +177,7 @@ export function PrefabEditingProvider({
     openDocuments,
     getOpenDocuments,
     applyGraphChange,
+    applyAssetDocumentChange,
     assetRegistry,
     registryEpoch,
   } = useDocuments();
@@ -198,6 +200,11 @@ export function PrefabEditingProvider({
   const graph =
     doc?.ref.kind === "graph" && doc.content
       ? (doc.content as SerializedGraph)
+      : null;
+  // Prefab assets carry components only: no parent class, graph or members.
+  const prefab =
+    doc?.ref.kind === "prefab" && doc.content
+      ? (doc.content as SerializedPrefab)
       : null;
   const classId = graph && doc ? classIdForGraphPath(doc.ref.path) : null;
   const assets = graph ? (assetRegistry?.list() ?? NO_ASSETS) : NO_ASSETS;
@@ -245,6 +252,7 @@ export function PrefabEditingProvider({
   );
 
   const components = useMemo(() => {
+    if (prefab) return mergePrefabComponents(NO_ANCESTORS, prefab.components);
     // When local is still the default singleton and parents contribute, prefer merge.
     const local =
       graph && Array.isArray(graph.components)
@@ -253,14 +261,19 @@ export function PrefabEditingProvider({
           ? []
           : localComponents;
     return mergePrefabComponents(ancestors, local);
-  }, [ancestors, graph, localComponents]);
+  }, [ancestors, graph, localComponents, prefab]);
 
   const persistLocal = useCallback(
     (nextLocal: SerializedComponent[]) => {
+      if (prefab) {
+        const next: SerializedPrefab = { ...prefab, components: nextLocal };
+        void applyAssetDocumentChange(documentId, next as unknown as Record<string, unknown>);
+        return;
+      }
       if (!graph) return;
       void applyGraphChange(documentId, { ...graph, components: nextLocal });
     },
-    [applyGraphChange, documentId, graph],
+    [applyAssetDocumentChange, applyGraphChange, documentId, graph, prefab],
   );
 
   const upsertLocalFromViews = useCallback(

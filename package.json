@@ -17,6 +17,7 @@
     "test:coverage": "node scripts/run-tests.mjs coverage",
     "test:watch": "node scripts/run-tests.mjs watch",
     "test:e2e": "node scripts/run-tests.mjs e2e",
+    "test:e2e:webkit": "node scripts/run-tests.mjs e2e --config playwright.webkit.config.ts",
     "verify": "node scripts/run-tests.mjs verify",
     "test:tooling": "node scripts/run-tests.mjs tooling",
     "test:resources": "node scripts/test-resources.mjs",

@@ -35,6 +35,7 @@ import {
 import { ContentBrowserWorkspace } from "./content-browser-workspace";
 import { AssetDocumentWorkspace } from "./asset-document-workspace";
 import { DocumentLockBanner } from "./document-lock-banner";
+import { UndoHistoryNotice } from "./undo-history-notice";
 import { WorkspaceErrorBoundary } from "./workspace-error-boundary";
 import { DockviewShell } from "../shell/dockview-shell";
 import {
@@ -124,11 +125,13 @@ function RegisteredDockviewShell({
 }
 
 function DocumentShell({
+  id,
   path,
   testId,
   active,
   children,
 }: {
+  id: string;
   path: string;
   testId: string;
   active: boolean;
@@ -143,7 +146,10 @@ function DocumentShell({
     >
       <DocumentLockBanner path={path} sourceControl={sourceControl} authoringReason={authoringLock.readOnly ? authoringLock.reason : null} />
       <EditorReadOnlyContext.Provider value={authoringLock.readOnly}>
-        <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          {children}
+          <UndoHistoryNotice documentId={id} />
+        </div>
       </EditorReadOnlyContext.Provider>
     </div>
   );
@@ -311,6 +317,7 @@ export function DocumentWorkspace() {
           return (
             <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentShell
+                id={id}
                 path={doc.ref.path}
                 testId={`document-workspace-${doc.ref.kind}`}
                 active={active}
@@ -332,7 +339,7 @@ export function DocumentWorkspace() {
             <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
                 <DataDefinitionEditingProvider>
-                  <DocumentShell path={doc.ref.path} testId="document-workspace-data-definition" active={active}>
+                  <DocumentShell id={id} path={doc.ref.path} testId="document-workspace-data-definition" active={active}>
                     <RegisteredDockviewShell id={id} documentKind={doc.ref.kind} initialLayout={doc.layout} />
                   </DocumentShell>
                 </DataDefinitionEditingProvider>
@@ -347,7 +354,7 @@ export function DocumentWorkspace() {
             <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
                 <DataAssetEditingProvider>
-                  <DocumentShell path={doc.ref.path} testId={`document-workspace-${doc.ref.kind}`} active={active}>
+                  <DocumentShell id={id} path={doc.ref.path} testId={`document-workspace-${doc.ref.kind}`} active={active}>
                     <RegisteredDockviewShell id={id} documentKind={doc.ref.kind} initialLayout={doc.layout} />
                   </DocumentShell>
                 </DataAssetEditingProvider>
@@ -367,6 +374,7 @@ export function DocumentWorkspace() {
               <DocumentWorkspaceProvider documentId={id}>
                 <MaterialEditingProvider documentId={id} active={active}>
                   <DocumentShell
+                    id={id}
                     path={doc.ref.path}
                     testId={`document-workspace-${doc.ref.kind}`}
                     active={active}
@@ -390,6 +398,7 @@ export function DocumentWorkspace() {
               <DocumentWorkspaceProvider documentId={id}>
                 <ParticleGraphEditingProvider documentId={id}>
                   <DocumentShell
+                    id={id}
                     path={doc.ref.path}
                     testId="document-workspace-particle-graph"
                     active={active}
@@ -415,6 +424,7 @@ export function DocumentWorkspace() {
                   <PrefabEditingProvider initialSelectedId={null}>
                   <GraphEditingProvider>
                     <DocumentShell
+                      id={id}
                       path={doc.ref.path}
                       testId="document-workspace-anim-graph"
                       active={active}
@@ -436,6 +446,7 @@ export function DocumentWorkspace() {
               <DocumentWorkspaceProvider documentId={id}>
                 <BehaviourTreeEditingProvider>
                   <DocumentShell
+                    id={id}
                     path={doc.ref.path}
                     testId="document-workspace-behaviour-tree"
                     active={active}
@@ -459,6 +470,7 @@ export function DocumentWorkspace() {
               <DocumentWorkspaceProvider documentId={id}>
                 <SpriteAnimationEditingProvider>
                   <DocumentShell
+                    id={id}
                     path={doc.ref.path}
                     testId="document-workspace-sprite-animation"
                     active={active}
@@ -482,6 +494,7 @@ export function DocumentWorkspace() {
               <DocumentWorkspaceProvider documentId={id}>
                 <TilesetEditingProvider>
                   <DocumentShell
+                    id={id}
                     path={doc.ref.path}
                     testId="document-workspace-tileset"
                     active={active}
@@ -505,6 +518,7 @@ export function DocumentWorkspace() {
               <DocumentWorkspaceProvider documentId={id}>
                 <TilemapEditingProvider>
                   <DocumentShell
+                    id={id}
                     path={doc.ref.path}
                     testId="document-workspace-tilemap"
                     active={active}
@@ -528,6 +542,7 @@ export function DocumentWorkspace() {
               <DocumentWorkspaceProvider documentId={id}>
                 <TracePlaybackProvider documentId={id}>
                   <DocumentShell
+                    id={id}
                     path={doc.ref.path}
                     testId="document-workspace-trace"
                     active={active}
@@ -551,6 +566,7 @@ export function DocumentWorkspace() {
               <DocumentWorkspaceProvider documentId={id}>
                 <ModelColliderSessionProvider>
                   <DocumentShell
+                    id={id}
                     path={doc.ref.path}
                     testId="document-workspace-model"
                     active={active}
@@ -573,7 +589,7 @@ export function DocumentWorkspace() {
             <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
                 <InputAssetEditingProvider>
-                  <DocumentShell path={doc.ref.path} testId={`document-workspace-${doc.ref.kind}`} active={active}>
+                  <DocumentShell id={id} path={doc.ref.path} testId={`document-workspace-${doc.ref.kind}`} active={active}>
                     <RegisteredDockviewShell id={id} documentKind={doc.ref.kind} initialLayout={doc.layout} />
                   </DocumentShell>
                 </InputAssetEditingProvider>
@@ -588,7 +604,7 @@ export function DocumentWorkspace() {
             <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
                 <SaveGameEditingProvider>
-                  <DocumentShell path={doc.ref.path} testId="document-workspace-save-game" active={active}>
+                  <DocumentShell id={id} path={doc.ref.path} testId="document-workspace-save-game" active={active}>
                     <RegisteredDockviewShell id={id} documentKind="save-game" initialLayout={doc.layout} />
                   </DocumentShell>
                 </SaveGameEditingProvider>
@@ -619,6 +635,7 @@ export function DocumentWorkspace() {
             <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
                 <DocumentShell
+                  id={id}
                   path={doc.ref.path}
                   testId={`document-workspace-${doc.ref.kind}`}
                   active={active}
@@ -641,6 +658,7 @@ export function DocumentWorkspace() {
               <DocumentWorkspaceProvider documentId={id}>
                 <TypeAssetEditingProvider>
                   <DocumentShell
+                    id={id}
                     path={doc.ref.path}
                     testId={`document-workspace-${doc.ref.kind}`}
                     active={active}
@@ -709,6 +727,7 @@ export function DocumentWorkspace() {
                 <PendingSceneSearchFocus scenePath={doc.ref.path} />
               ) : null}
               <DocumentShell
+                id={id}
                 path={doc.ref.path}
                 testId={`document-workspace-${doc.ref.kind}`}
                 active={active}
@@ -716,8 +735,8 @@ export function DocumentWorkspace() {
                 {doc.ref.kind === "scene" ? <SceneDocumentDocks id={id} layout={doc.layout} /> : <RegisteredDockviewShell
                   id={id}
                   documentKind={
-                    doc.ref.kind === "scene-layer"
-                      ? "scene-layer"
+                    doc.ref.kind === "scene-layer" || doc.ref.kind === "prefab"
+                      ? doc.ref.kind
                       : "graph"
                   }
                   initialLayout={doc.layout}

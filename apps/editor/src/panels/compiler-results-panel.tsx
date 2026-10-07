@@ -18,6 +18,7 @@ import { useOptionalDocumentWorkspace } from "../context/document-workspace-cont
 import { useOptionalSceneEditing } from "../context/scene-editing-context";
 import { documentIdToRevealForDiagnostic } from "../services/diagnostic-navigation";
 import { physicsPairingDiagnostics } from "../lib/physics-pairing-diagnostics";
+import { actorTransformDiagnostics } from "../lib/actor-transform-diagnostics";
 import { MessageDetails } from "../components/message-details";
 import { DiagnosticResultRow } from "../components/diagnostic-result-row";
 
@@ -58,12 +59,12 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
     const doc = openDocuments.find((entry) => entry.id === documentId);
     if (doc?.ref.kind !== "scene") return;
     const scene = doc.content as SerializedScene | null;
-    setDiagnostics(
-      physicsPairingDiagnostics(scene?.actors ?? [], {
-        assetGuid: doc.ref.path,
-        graphId: documentId,
-      }),
-    );
+    const actors = scene?.actors ?? [];
+    const options = { assetGuid: doc.ref.path, graphId: documentId };
+    setDiagnostics([
+      ...physicsPairingDiagnostics(actors, options),
+      ...actorTransformDiagnostics(actors, options),
+    ]);
   }, [activeDocumentId, documentId, openDocuments, setDiagnostics]);
 
   const rows = useMemo(() => flattenCompilerRows(diagnostics), [diagnostics]);

@@ -57,14 +57,14 @@ function fixture(count: number, suppliedBackend?: physics.PhysicsBackend) {
 function triangles(count: number) {
   // Numeric collision fixture: disconnected nondegenerate triangles vary geometry
   // size without introducing a pathological native solver workload.
-  const vertices: Array<{ x: number; y: number; z: number }> = [];
-  const indices: number[] = [];
+  const positions = new Float32Array(count * 9);
+  const indices = new Uint16Array(count * 3);
   for (let i = 0; i < count; i++) {
     const z = i / count;
-    vertices.push({ x: 0, y: 0, z }, { x: 1, y: 0, z }, { x: 0, y: 1, z });
-    indices.push(i * 3, i * 3 + 1, i * 3 + 2);
+    positions.set([0, 0, z, 1, 0, z, 0, 1, z], i * 9);
+    indices.set([i * 3, i * 3 + 1, i * 3 + 2], i * 3);
   }
-  return { vertices, indices };
+  return { positions, indices };
 }
 
 function install(

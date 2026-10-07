@@ -270,6 +270,37 @@ describe("snapshot publishing", () => {
     }
   });
 
+  it("publishes the editor's hierarchy matrices and warns once per sheared actor", async () => {
+    // Parent scale (2, 1, 1): a quarter turn about Z permutes it; a 45 degree
+    // turn shears, while the grandchild at local (1, 0, 0) keeps its exact place.
+    const { runtime, commands, slots } = await launch(scene([
+      createActor("parent", "Parent", pose([0, 0, 0], [0, 0, 0, 1], [2, 1, 1])),
+      createActor("quarter", "Quarter", { parentId: "parent", ...pose([0, 0, 0], [0, 0, Math.SQRT1_2, Math.SQRT1_2]) }),
+      createActor("oblique", "Oblique", { parentId: "parent", ...pose([0, 0, 0], [0, 0, Math.sin(Math.PI / 8), Math.cos(Math.PI / 8)]) }),
+      createActor("tip", "Tip", { parentId: "oblique", ...pose([1, 0, 0]) }),
+    ]));
+    try {
+      runtime.tick();
+      runtime.tick();
+      const frame = published(runtime);
+      const quarter = slotPose(frame, slots.get("quarter"))!;
+      expect(quarter.scale.x).toBeCloseTo(1, 6);
+      expect(quarter.scale.y).toBeCloseTo(2, 6);
+      expect(quarter.scale.z).toBeCloseTo(1, 6);
+      const tip = slotPose(frame, slots.get("tip"))!;
+      expect(tip.position.x).toBeCloseTo(1.414214, 5);
+      expect(tip.position.y).toBeCloseTo(0.707107, 5);
+      expect(tip.position.z).toBeCloseTo(0, 6);
+      const warnings = commands.flatMap((command) =>
+        command.type === "log" && command.severity === "warning" ? [command.message] : []);
+      expect(warnings).toHaveLength(2);
+      expect(warnings[0]).toMatch(/^Oblique \(oblique\) has a sheared world transform/);
+      expect(warnings[1]).toMatch(/^Tip \(tip\) has a sheared world transform/);
+    } finally {
+      runtime.stop();
+    }
+  });
+
   it("publishes a burst's final tick after despawning actors removed in earlier ticks", async () => {
     const { runtime, commands, slots, despawnTicks } = await launch(scene([
       createActor("doomed", "Doomed", { classId: "Doomed" }),

@@ -36,7 +36,7 @@ test("ordinary build and verification commands do not perform distribution", asy
   }
   const desktop = JSON.parse(await readFile("apps/desktop/package.json", "utf8"));
   assert.equal(desktop.scripts.build, undefined);
-  for (const path of ["verify.yml", "preview.yml", "security.yml"]) {
+  for (const path of ["verify.yml", "preview.yml", "security.yml", "webkit-smoke.yml"]) {
     assert.doesNotMatch(await readFile(`.github/workflows/${path}`, "utf8"), /scripts\/distribution|distribute\.yml|ios:archive|package:(?:windows|macos|linux)|android:release|publish-release/);
   }
 });

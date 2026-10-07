@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { WEBKIT_SMOKE_TAG } from "./ipad-tag";
 import { createContentBrowserAsset, openMainScene, openTestProject } from "./open-test-project";
 import { clickPlayAndWaitForOverlay, waitForPlayOverlay } from "./play";
 import { previewPhysicsScene } from "./preview-scene-fixture";
@@ -16,7 +17,7 @@ test.describe("P4 Play overlay and session report", () => {
     await page.getByTestId("play-overlay-close").click();
   });
 
-  test("Play opens overlay; fixture throw shows report and focuses node", async ({
+  test("Play opens overlay; fixture throw shows report and focuses node", { tag: WEBKIT_SMOKE_TAG }, async ({
     page,
   }) => {
     await openTestProject(page, "/?test=1&previewThrow=1");

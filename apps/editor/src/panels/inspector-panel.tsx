@@ -168,6 +168,7 @@ function memberPinRows(
       id: `${memberId}-${direction}-${index}`,
       name: pin.name,
       type: pin.typeId,
+      ...(pin.container ? { container: pin.container } : {}),
       ...(pin.typeClassId ? { typeClassId: pin.typeClassId } : {}),
     }));
 }
@@ -182,6 +183,7 @@ function memberPinsFromRows(
       typeId: String(row.type),
       direction,
     };
+    if (row.container && row.container !== "single") pin.container = row.container;
     if (row.typeClassId?.trim()) pin.typeClassId = row.typeClassId.trim();
     return pin;
   };
@@ -1381,7 +1383,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
     return (
       <PanelFrame data-testid="inspector-panel">
         <PrefabComponentDetails
-          actorClassId={doc?.ref.path ? classIdForGraphPath(doc.ref.path) : "Actor"}
+          actorClassId={doc?.ref.kind === "graph" && doc.ref.path ? classIdForGraphPath(doc.ref.path) : "Actor"}
           component={selectedPrefabComponent}
           components={prefabComponents}
           sceneLayerClasses={bobjectClassEntries.filter(entry => walkAncestry(entry.id, parentOf).includes("SceneLayerActor"))}
@@ -1426,6 +1428,23 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
           enumMembers={enumMembers}
           onChange={persistGraph}
         />
+      </PanelFrame>
+    );
+  }
+
+  if (prefabSelectedId === PREFAB_ROOT_ID && doc?.ref.kind === "prefab") {
+    return (
+      <PanelFrame data-testid="inspector-panel">
+        <div
+          className="flex flex-col gap-2 p-3"
+          data-testid="inspector-prefab-asset-root"
+        >
+          <p className="text-sm font-semibold text-foreground">Prefab Root</p>
+          <p className="text-xs text-muted-foreground">
+            Prefabs have no graph, events, variables, functions or Tick. Placed
+            instances copy these components and add no per-frame logic.
+          </p>
+        </div>
       </PanelFrame>
     );
   }

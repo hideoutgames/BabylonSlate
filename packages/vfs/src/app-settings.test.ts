@@ -41,6 +41,7 @@ describe("app settings", () => {
     }));
     const settings = await new WebAppSettingsStore().load();
     expect(settings.traceByteBudget).toBe(134_217_728);
+    expect(settings.undoByteBudget).toBe(16_777_216);
     expect(settings.undoHistoryLength).toBe(75);
     expect(settings.debuggerDefaults.overlayConsole).toBe(false);
   });
@@ -158,13 +159,16 @@ describe("app settings", () => {
     );
   });
 
-  it("bounds undo history length and the viewport frame cap", () => {
-    const high = engineSettingsSchema.parse({ undoHistoryLength: 1e9, viewportFrameCap: 1000 });
+  it("bounds undo history length, the Undo memory limit and the viewport frame cap", () => {
+    const high = engineSettingsSchema.parse({ undoHistoryLength: 1e9, undoByteBudget: 1e12, viewportFrameCap: 1000 });
     expect(high.undoHistoryLength).toBe(1000);
+    expect(high.undoByteBudget).toBe(1_073_741_824);
     expect(high.viewportFrameCap).toBe(240);
-    const low = engineSettingsSchema.parse({ undoHistoryLength: 2.6, viewportFrameCap: 0 });
+    const low = engineSettingsSchema.parse({ undoHistoryLength: 2.6, undoByteBudget: 0, viewportFrameCap: 0 });
     expect(low.undoHistoryLength).toBe(3);
+    expect(low.undoByteBudget).toBe(1_048_576);
     expect(low.viewportFrameCap).toBe(10);
+    expect(engineSettingsSchema.safeParse({ undoByteBudget: "16" }).success).toBe(false);
   });
 
   it("keeps keybind overrides and drops a malformed map without losing other settings", () => {

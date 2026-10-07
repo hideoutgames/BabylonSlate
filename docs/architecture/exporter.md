@@ -75,7 +75,7 @@ assets/data-0.bin   # independently addressable asset or sidecar
 assets/data-1.bin
 coi-serviceworker.js
 havok/HavokPhysics.wasm   # 3d world
-assets/rapier.es-*.js     # 2d world or SceneLayer overlays
+assets/rapier-*.js        # 2d world or SceneLayer overlays
 ktx2/…              # transcoder files the player needs
 draco/…             # glTF Draco decoder (KHR_draco_mesh_compression)
 meshopt/…           # glTF meshopt decoder (EXT_meshopt_compression)

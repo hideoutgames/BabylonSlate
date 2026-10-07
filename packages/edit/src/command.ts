@@ -9,7 +9,17 @@ export interface EditCommand<TDoc = unknown> {
   /** Pure document replacement: never mutate the input or external state. */
   apply(doc: TDoc): TDoc;
   invert(): EditCommand<TDoc>;
-  /** Snapshot cost in bytes; required in both directions for history admission. */
+  /**
+   * Fold the next command of the same gesture into one command running from
+   * this command's start to `next`'s end, so a merged Undo entry retains only
+   * the first `from` and the last `to`. Undefined keeps the default merge
+   * (first inverse plus latest forward command).
+   */
+  coalesce?(next: EditCommand<TDoc>): EditCommand<TDoc> | undefined;
+  /**
+   * Snapshot cost in bytes; required in both directions for history
+   * admission. Commands measure it lazily: only Undo history reads it.
+   */
   readonly byteSize?: number;
 }
 

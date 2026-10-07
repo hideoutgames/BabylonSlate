@@ -4,6 +4,7 @@ import { GlslCodePreview } from "../components/glsl-code-preview";
 import {
   GraphEditor,
   GRAPH_DEFAULT_ZOOM,
+  type GraphCanvasDropApi,
   type PaletteNode,
 } from "@babylonslate/graph-ui";
 import { formatEventMemberName, NamePromptDialog, PanelFrame } from "@babylonslate/editor-kit";
@@ -50,12 +51,24 @@ import {
   collectImplementedInterfaceContexts,
   collectParentFunctionSignatures,
 } from "../lib/overridable-functions";
+import {
+  EVENT_GRAPH_PANEL_ID,
+  type FunctionGraphPanelParams,
+} from "../shell/function-graph-panels";
+import { EVENT_GRAPH_TITLE } from "../shell/window-catalog";
 
 const registry = defaultNodeRegistry;
 const VALIDATION_DEBOUNCE_MS = 250;
 
-export function GraphPanel(_props: IDockviewPanelProps) {
-  void _props;
+/**
+ * The Class Event Graph (`graph` panel), or one function graph when DockView
+ * passes `functionId` params (`function-graph` panels).
+ */
+export function GraphPanel(
+  props: IDockviewPanelProps<Partial<FunctionGraphPanelParams>>,
+) {
+  const functionId = props.params?.functionId ?? null;
+  const panelApi = props.api as IDockviewPanelProps["api"] | undefined;
   const { documentId } = useDocumentWorkspace();
   const {
     openDocuments,
@@ -69,10 +82,15 @@ export function GraphPanel(_props: IDockviewPanelProps) {
   const { focusedNodeId } = usePlay();
   const {
     setSelectedNodeIds,
-    activeFunctionId,
+    activeFunctionId: focusedFunctionId,
     setActiveFunctionId,
+    releaseActiveFunctionId,
     setCanvasDropApi,
   } = useGraphEditing();
+  // Several graph tabs can be mounted at once; the last focused one owns the
+  // shared Class, Inspector, drop target, and diagnostics state.
+  const focused = focusedFunctionId === functionId;
+  const activeFunctionId = functionId;
   const { diagnostics, setDiagnostics, focusDiagnostic, setFocusDiagnostic } =
     useValidation();
   const { settings: appSettings } = useAppSettings();
@@ -194,15 +212,59 @@ export function GraphPanel(_props: IDockviewPanelProps) {
   const assetGuid = doc?.ref.path ?? documentId;
 
   useEffect(() => {
-    if (activeFunctionId && !graphContent?.functionGraphs?.[activeFunctionId]) {
-      setActiveFunctionId(null);
+    if (!panelApi) return;
+    const claim = () => setActiveFunctionId(functionId);
+    if (panelApi.isActive || panelApi.isVisible) claim();
+    const subscriptions = [
+      panelApi.onDidActiveChange((event) => {
+        if (event.isActive) claim();
+      }),
+      panelApi.onDidVisibilityChange((event) => {
+        if (event.isVisible) claim();
+      }),
+    ];
+    return () => {
+      for (const subscription of subscriptions) subscription.dispose();
+      if (functionId) releaseActiveFunctionId(functionId);
+    };
+  }, [functionId, panelApi, releaseActiveFunctionId, setActiveFunctionId]);
+
+  const functionMember = functionId
+    ? graphContent?.members?.find((member) => member.id === functionId)
+    : undefined;
+  const functionMissing =
+    functionId !== null &&
+    graphContent !== null &&
+    graphContent !== undefined &&
+    !graphContent.functionGraphs?.[functionId];
+  useEffect(() => {
+    if (!panelApi) return;
+    // A deleted function closes its tab; a rename retitles it. Layouts saved
+    // before function tabs existed still carry the old "Graph" title.
+    if (functionMissing) {
+      panelApi.close();
+      return;
     }
-  }, [activeFunctionId, graphContent, setActiveFunctionId]);
+    const title = functionId
+      ? functionMember?.name
+      : panelApi.id === EVENT_GRAPH_PANEL_ID
+        ? EVENT_GRAPH_TITLE
+        : undefined;
+    if (title && panelApi.title !== title) panelApi.setTitle(title);
+  }, [functionId, functionMember?.name, functionMissing, panelApi]);
+
+  const [canvasApi, setCanvasApi] = useState<GraphCanvasDropApi | null>(null);
+  useEffect(() => {
+    if (!focused) return;
+    setCanvasDropApi(canvasApi);
+    return () => setCanvasDropApi(null);
+  }, [canvasApi, focused, setCanvasDropApi]);
 
   // Edit-time validation is debounced so typing in a node does not re-run the
   // whole pass on every keystroke; save and pre-Preview sweeps are immediate.
   useEffect(() => {
     if (
+      !focused ||
       !shouldPublishGraphDiagnostics({
         documentId,
         activeDocumentId,
@@ -278,6 +340,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     dataAssets,
     typeSchemas,
     animEditorMode,
+    focused,
     materialDomains,
     subsystemClasses,
   ]);
@@ -397,7 +460,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
             onPaletteOpenChange={setPaletteOpen}
             pinCompatibility={pinCompatibility}
             pinTypeNames={pinTypeNames}
-            onCanvasApi={setCanvasDropApi}
+            onCanvasApi={setCanvasApi}
             onNavigateRequest={onNavigateRequest}
             onSelectionChange={setSelectedNodeIds}
             contextMenuItemsForNode={contextMenuItemsForNode}

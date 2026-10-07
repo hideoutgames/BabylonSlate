@@ -1,3 +1,4 @@
+import type { CollisionTriangleMesh } from "@babylonslate/core";
 import { newAssetGuid } from "./guid";
 import { convexHull3d, type HullVec3 } from "./convex-hull";
 import { extractGltfPositions } from "./glb-geometry";
@@ -290,7 +291,7 @@ export type SimpleColliderPhysicsShape =
   | { kind: "capsule"; radius: number; halfHeight: number }
   | { kind: "cylinder"; radius: number; height: number }
   | { kind: "convex"; points: HullVec3[] }
-  | { kind: "mesh"; vertices: HullVec3[]; indices: number[] };
+  | ({ kind: "mesh" } & CollisionTriangleMesh);
 
 export function simpleColliderToPhysicsShape(
   collider: ModelSimpleCollider,

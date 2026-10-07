@@ -283,6 +283,7 @@ export const FEATURED_PLACE_ACTOR_IDS: readonly string[] = [
 
 export const PLACEABLE_PROJECT_TYPES = new Set([
   "Class",
+  "Prefab",
   "Model",
   "Audio",
   "ParticleSystem",
@@ -676,6 +677,15 @@ export function spawnPlacedActor(
           kind.components ?? defaultPrefabComponents(),
           id,
         ),
+      }));
+    }
+    if (kind.assetType === "Prefab") {
+      // Logic-free: a plain Actor with baked components. The GUID only links
+      // the instance back to its Prefab for editor sync.
+      return finish(createActor(id, kind.name, {
+        prefabGuid: kind.guid,
+        transform,
+        components: instantiatePrefabComponents(kind.components ?? [], id),
       }));
     }
     if (kind.assetType === "Audio") {
