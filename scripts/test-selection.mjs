@@ -19,6 +19,10 @@ const RELATED_TESTS = new Map([
     ".github/workflows/security.yml",
     ["scripts/distribution/workflow.test.mjs"],
   ],
+  [
+    ".github/workflows/webkit-smoke.yml",
+    ["scripts/distribution/workflow.test.mjs"],
+  ],
   ["scripts/test-selection.mjs", ["scripts/preflight-selection.test.mjs"]],
   ["scripts/browser-session.mjs", ["scripts/test-build.test.mjs"]],
   ["scripts/build-test-artifact.mjs", ["scripts/test-build.test.mjs"]],
@@ -100,6 +104,7 @@ export function selectChecks(files, workspace, availableTests = []) {
     }
     if (
       file === "playwright.config.ts" ||
+      file === "playwright.webkit.config.ts" ||
       file === "playwright.config.test.ts"
     ) {
       addTest("playwright.config.test.ts");

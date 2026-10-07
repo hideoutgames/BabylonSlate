@@ -1,10 +1,11 @@
 import { expect, test } from "@playwright/test";
 import { closeProjectViaSettings } from "./close-project";
+import { WEBKIT_SMOKE_TAG } from "./ipad-tag";
 import { openListedTestProject, openTestProject } from "./open-test-project";
 import { saveAllIfEnabled } from "./save-all";
 
 test.describe("BabylonSlate editor smoke", () => {
-  test("loads shell, opens project, and shows viewport canvas", async ({
+  test("loads shell, opens project, and shows viewport canvas", { tag: WEBKIT_SMOKE_TAG }, async ({
     page,
   }) => {
     await openTestProject(page);
