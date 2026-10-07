@@ -17,10 +17,9 @@ import type { FocusNavigationSettings } from "@babylonslate/core";
 import { CableWorldSync } from "./cable-sync";
 import { DynamicRuntimeMeshSync } from "./dynamic-runtime-mesh";
 import { MovementWorldSync } from "./movement";
-import { captureComponent, captureLocalTransform, captureProperties } from "./render-targets";
+import { captureComponent } from "./render-targets";
 import { createDefaultRenderTargetCaptureProperties, normalizeRenderTargetPayload, normalizeRenderTargetTexturePayload, type RenderTargetPayload, type RenderTargetTexturePayload } from "@babylonslate/core";
-import { normalizeWaterDefinition, normalizeWaterBody, normalizeWaterRemoval, waterKindForClass, type WaterDefinition } from "@babylonslate/core";
-import { areaRectLightBindings, fogVolumeBindings, outlineBindings, deformerBindings, DEFORMER_PROPERTY_KEYS } from "@babylonslate/core";
+import { normalizeWaterDefinition, type WaterDefinition } from "@babylonslate/core";
 import { ScalabilitySession, type ScalabilityRequest, type ScalabilityResult, type ScalabilitySnapshot, type ScalabilityAcknowledgement, type RenderPath, type RenderProjectSettings } from "@babylonslate/core";
 import type { CollisionTriangleMesh, InputAssetDefinition } from "@babylonslate/core";
 import { inputMappingsFromAssets } from "@babylonslate/input";
@@ -90,15 +89,6 @@ import {
   DEFAULT_PLAY_FRAME_CAP,
   isSceneLayerDeniedComponent,
   parseSceneLayerAnchor,
-  parseSceneLayerHitTest,
-  parseOverlayPanelProperties,
-  overlayPanelDestFromScale,
-  parseSkyboxFaces,
-  parseSkyboxSize,
-  parseSpringArmProperties,
-  SPRING_ARM_COMPONENT_CLASS_ID,
-  parseText2DProperties,
-  parseText3DProperties,
   normalizeSceneLayer,
   newGuid,
   sceneLayerRelativeAnchorWorldPosition,
@@ -165,7 +155,6 @@ import {
   type RuntimeDiagnostic,
 } from "./diagnostics";
 import { mapStackToAnchor, type AnchorEntry } from "./stack-map";
-import { parseJoystick2DProperties } from "@babylonslate/core";
 import { Painter2DRuntime } from "./painter2d-runtime";
 import { UIControls2DRuntime } from "./ui-controls2d-runtime";
 import { isUIControl2DClass, isInteractiveUIControl2DClass } from "@babylonslate/core";
@@ -192,7 +181,7 @@ import type { ModelPayload, SpriteAnimationPayload, SpritePayload, TilemapPayloa
 import { initNavigation, type NavObstacleKind, type NavPoint } from "@babylonslate/navigation";
 import { RuntimeSubsystems } from "./runtime-subsystems";
 import { RenderSlots } from "./render-slots";
-import { RenderCommandState } from "./render-command-state";
+import { RenderCommandEmitter, liveOverlayButtons } from "./render-command-emitter";
 import { RuntimeNavigation } from "./runtime-navigation";
 import { AnimGraphRuntime } from "./anim-graph-runtime";
 import { BehaviourTreeRuntime } from "./behaviour-tree-runtime";
@@ -619,8 +608,6 @@ class InProcessRuntime implements RuntimeDriver {
   private processingTick = false;
   private flushingConsoleActors = false;
   private frameId = 0;
-  private readonly renderCommands = new RenderCommandState();
-  private deformerRevision = 0;
   private readonly removingActors = new WeakSet<Actor>();
   /** Actors whose sheared world pose has been reported to the Output Log. */
   private readonly shearedActors = new WeakSet<Actor>();
@@ -645,7 +632,6 @@ class InProcessRuntime implements RuntimeDriver {
     scale: { x: 1, y: 1, z: 1 },
     flags: 0,
   };
-  private readonly componentsWithMaterialAssignment = new WeakSet<ActorComponent>();
   private _snapshotGeneration = 0;
   private _lastScriptMs = 0;
   private _lastPhysicsMs = 0;
@@ -774,6 +760,19 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly renderSlots = new RenderSlots(this.subsystems, {
     ensureCapacity: (required) => this.ensureSnapshotCapacity(required),
     findActor: (guid) => this.world.findActor(guid),
+  });
+  private readonly renderEmitter = new RenderCommandEmitter({
+    world: () => this.world,
+    isStreamActor: (actor) => this.actorStream.has(actor),
+    playScene: () => this.playScene,
+    slot: (actor) => this.actorSlot(actor),
+    cables: () => this.cables,
+    dynamicMeshes: () => this.dynamicMeshes,
+    uiControls: () => this.uiControls,
+    painters: () => this.painters,
+    textAppear: () => this.textAppear,
+    materialParameters: () => this.materialParameters,
+    emit: (command) => this.emit(command),
   });
   private readonly delays = new LatentDelays({ canRun: (owner) => this.canRunOwnerActions(owner) });
   private readonly navigation = new RuntimeNavigation({
@@ -1564,7 +1563,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.subsystems.register(this.animGraphs);
     this.subsystems.register(this.behaviourTrees);
     this.subsystems.register(this.textAppear);
-    this.subsystems.register(this.renderCommands);
+    this.subsystems.register(this.renderEmitter);
     this.subsystems.register({
       releaseSlot: (slotId) => {
         if (this.possessedCameraSlotId !== slotId) return;
@@ -2260,7 +2259,7 @@ class InProcessRuntime implements RuntimeDriver {
       checkpoint();
       const slotId = this.actorSlot(actor);
       if (slotId === undefined) continue;
-      this.emitMeshAssignment(actor, slotId);
+      this.renderEmitter.emitMeshAssignment(actor, slotId);
       checkpoint();
       this.emitAudioComponents(actor);
       checkpoint();
@@ -2920,29 +2919,29 @@ class InProcessRuntime implements RuntimeDriver {
     const slotId = this.renderSlots.recordedSlot(owner);
     if (component.classId === "DeformerComponent") {
       if (slotId !== undefined) {
-        if (this.processingTick) this.renderCommands.dirtyDeformerActors.add(owner);
-        else this.emitActorDeformers(owner, slotId);
+        if (this.processingTick) this.renderEmitter.queueDeformers(owner);
+        else this.renderEmitter.emitActorDeformers(owner, slotId);
       }
       return;
     }
     if (component.classId === "MeshComponent" && propertyName === "materialGuid") {
       // A staged material belongs to this existing native mesh. Re-emitting the
       // mesh assignment here would replace that owner between prepare/commit.
-      if (slotId !== undefined) this.emitMaterialAssignments([component], slotId, true);
+      if (slotId !== undefined) this.renderEmitter.emitMaterialAssignments([component], slotId, true);
       return;
     }
     if (component.classId === "DynamicRuntimeMeshComponent" &&
       (propertyName === "materialGuid" || propertyName === "enableCollision" || propertyName === "layer" || propertyName === "mask")) {
-      if (propertyName === "materialGuid" && slotId !== undefined) this.emitMaterialAssignments([component], slotId, true);
+      if (propertyName === "materialGuid" && slotId !== undefined) this.renderEmitter.emitMaterialAssignments([component], slotId, true);
       // Geometry collision changes are coalesced by the next physics step.
       return;
     }
     if (slotId !== undefined) {
-      if (component.classId === "RenderTargetCaptureComponent") this.emitRenderTargetCapture(owner, slotId);
-      else if (component.classId === "OutlineComponent") this.emitActorOutlines(owner, slotId);
-      else if (component.classId === "FogVolumeComponent") this.emitActorFogVolumes(owner, slotId);
-      else if (propertyName === "transform") this.emitComponentTransforms(owner, slotId);
-      else if (component.classId !== "PhysicsConstraintComponent" && component.classId !== "RagdollComponent" && component.classId !== "MovementComponent") this.emitMeshAssignment(owner, slotId);
+      if (component.classId === "RenderTargetCaptureComponent") this.renderEmitter.emitRenderTargetCapture(owner, slotId);
+      else if (component.classId === "OutlineComponent") this.renderEmitter.emitActorOutlines(owner, slotId);
+      else if (component.classId === "FogVolumeComponent") this.renderEmitter.emitActorFogVolumes(owner, slotId);
+      else if (propertyName === "transform") this.renderEmitter.emitComponentTransforms(owner, slotId);
+      else if (component.classId !== "PhysicsConstraintComponent" && component.classId !== "RagdollComponent" && component.classId !== "MovementComponent") this.renderEmitter.emitMeshAssignment(owner, slotId);
     }
     if (component.classId === "ParticleComponent") {
       this.emitParticleComponents(owner);
@@ -3003,8 +3002,7 @@ class InProcessRuntime implements RuntimeDriver {
       if (!owner || owner.destroyed || component.destroyed || component.getVariable("materialObject") !== material) return false;
       const slotId = this.renderSlots.recordedSlot(owner);
       if (slotId === undefined) return false;
-      const skipButtonMesh = overlayButtonHasSiblingVisual(owner) || overlayButtonHasParentVisual(owner, this.world);
-      if (!owner.components.some((entry) => entry === component && isPlayRenderable(entry, skipButtonMesh))) return false;
+      if (!this.renderEmitter.rendersComponent(owner, component)) return false;
       this.emit({ type: "setMaterialParameter", slotId, componentId: component.guid,
         materialAssetGuid: material.materialAssetGuid, parameterName, parameter });
     }
@@ -4075,296 +4073,6 @@ class InProcessRuntime implements RuntimeDriver {
     };
   }
 
-  private emitActorOutlines(actor: Actor, slotId: number): void {
-    const components = actor.components.filter((component) => !component.destroyed && component.classId === "OutlineComponent");
-    if (components.length || this.renderCommands.outlineSlots.has(slotId)) {
-      const outlines = outlineBindings(actor.guid, components.map((component) => ({
-        id: component.guid, classId: component.classId,
-        properties: Object.fromEntries(["enabled", "color", "width", "throughMeshes"].map((key) =>
-          [key, key === "color" && component.getVariable(key) != null ? rgbTuple(component.getVariable(key)) : component.getVariable(key)])),
-      })));
-      this.emit({ type: "setActorOutlines", slotId, actorId: actor.guid, outlines });
-      if (outlines.length) this.renderCommands.outlineSlots.add(slotId); else this.renderCommands.outlineSlots.delete(slotId);
-    }
-  }
-
-  private emitActorDeformers(actor: Actor, slotId: number): void {
-    this.renderCommands.dirtyDeformerActors.delete(actor);
-    const components = actor.components.filter((component) => !component.destroyed &&
-      (component.classId === "DeformerComponent" || component.classId === "MeshComponent"));
-    if (!components.some((component) => component.classId === "DeformerComponent") && !this.renderCommands.deformerSnapshots.has(slotId)) return;
-    const deformers = actor.sceneLayerId ? [] : deformerBindings(actor.guid, components.map((component) => ({
-      id: component.guid, classId: component.classId, ...(component.sourceId ? { sourceId: component.sourceId } : {}),
-      properties: component.classId === "DeformerComponent"
-        ? Object.fromEntries(DEFORMER_PROPERTY_KEYS.map((key) => [key, component.getVariable(key)])) : {},
-    })));
-    const snapshot = JSON.stringify(deformers);
-    if (snapshot === this.renderCommands.deformerSnapshots.get(slotId) || (!deformers.length && !this.renderCommands.deformerSnapshots.has(slotId))) return;
-    this.renderCommands.deformerSnapshots.set(slotId, snapshot);
-    this.emit({ type: "setActorDeformers", slotId, actorId: actor.guid, revision: ++this.deformerRevision, deformers });
-  }
-
-  private flushDeformers(): void {
-    for (const actor of this.renderCommands.dirtyDeformerActors) {
-      const slotId = this.actorSlot(actor);
-      if (!actor.destroyed && slotId !== undefined) this.emitActorDeformers(actor, slotId);
-    }
-    this.renderCommands.dirtyDeformerActors.clear();
-  }
-
-  private emitActorFogVolumes(actor: Actor, slotId: number): void {
-    const hasVolume = !actor.sceneLayerId && actor.components.some((component) =>
-      !component.destroyed && component.classId === "FogVolumeComponent");
-    if (!hasVolume && !this.renderCommands.fogVolumeSlots.has(slotId)) return;
-    const volumes = hasVolume ? fogVolumeBindings(actor.components.filter((component) => !component.destroyed).map((component) => {
-      const { position, rotation, scale } = component.transform;
-      const size = component.getVariable("size");
-      return {
-        id: component.guid, classId: component.classId, parentId: component.parentId,
-        properties: component.classId === "FogVolumeComponent" ? {
-          enabled: component.getVariable("enabled"), shape: component.getVariable("shape"),
-          size: size == null ? undefined : rgbTuple(size), density: component.getVariable("density"),
-          edgeFalloff: component.getVariable("edgeFalloff"),
-        } : {},
-        transform: { position: [position.x, position.y, position.z] as [number, number, number],
-          rotation: [rotation.x, rotation.y, rotation.z, rotation.w] as [number, number, number, number],
-          scale: [scale.x, scale.y, scale.z] as [number, number, number] },
-      };
-    })) : [];
-    this.emit({ type: "setFogVolumes", slotId, actorId: actor.guid, volumes });
-    if (volumes.length) this.renderCommands.fogVolumeSlots.add(slotId); else this.renderCommands.fogVolumeSlots.delete(slotId);
-  }
-
-  private cameraAssignPayload(
-    actor: Actor,
-    camera: ActorComponent,
-  ): NonNullable<Extract<CommandMessage, { type: "assignMesh" }>["camera"]> {
-    const projection = camera.getVariable("projectionMode");
-    const settings = this.playScene?.settings;
-    return {
-      projectionMode:
-        projection === "orthographic" ? "orthographic" : "perspective",
-      fieldOfView: Number(camera.getVariable("fieldOfView") ?? 60),
-      orthographicSize: Number(camera.getVariable("orthographicSize") ?? 5),
-      nearClip: Number(camera.getVariable("nearClip") ?? 0.1),
-      farClip: Number(camera.getVariable("farClip") ?? 1000),
-      isDefault:
-        settings?.mainCameraActorId === actor.guid &&
-        settings.mainCameraComponentId === camera.guid,
-    };
-  }
-
-  private emitRenderTargetCapture(actor: Actor, slotId: number): void {
-    const component = captureComponent(actor);
-    if (!component && !this.renderCommands.captureSlots.has(slotId)) return;
-    this.emit({
-      type: "configureRenderTargetCapture", actorGuid: actor.guid, slotId,
-      settings: component ? captureProperties(component) : null,
-      ...(component ? { transform: captureLocalTransform(component) } : {}),
-    });
-    if (component) this.renderCommands.captureSlots.add(slotId); else this.renderCommands.captureSlots.delete(slotId);
-  }
-
-  private emitComponentTransforms(actor: Actor, slotId: number): void {
-    const renderables = playRenderablesOf(actor.components,
-      overlayButtonHasSiblingVisual(actor) || overlayButtonHasParentVisual(actor, this.world));
-    const ids = new Set(renderables.map(component => component.guid));
-    const components = new Map(actor.components.map(component => [component.guid, component]));
-    this.emit({ type: "setComponentTransforms", slotId, parts: renderables.map(component => ({
-      componentId: component.guid, parentId: nearestVisualParentId(component, components, ids),
-      transform: { position: { ...component.transform.position }, rotation: { ...component.transform.rotation }, scale: { ...component.transform.scale } },
-      parentTransforms: dynamicMeshParentTransforms(component, components, ids),
-    })) });
-  }
-
-  private emitMeshAssignment(actor: Actor, slotId: number): void {
-    if (this.world.classRegistry.isA(actor.classId, "SceneStreamingActor")) return;
-    this.emitRenderTargetCapture(actor, slotId);
-    this.emitActorOutlines(actor, slotId);
-    this.emitActorDeformers(actor, slotId);
-    this.emitActorFogVolumes(actor, slotId);
-    const hasAreaLight = actor.components.some((component) => component.classId === "AreaRectLightComponent" && !component.destroyed);
-    if (hasAreaLight || this.renderCommands.areaLightSlots.has(slotId)) {
-    const lights = hasAreaLight ? areaRectLightBindings(actor.components.filter((component) => !component.destroyed).map((component) => {
-      const { position, rotation, scale } = component.transform;
-      return {
-        id: component.guid, classId: component.classId, parentId: component.parentId,
-        properties: component.classId === "AreaRectLightComponent" ? Object.fromEntries(["enabled", "width", "height", "color", "intensity", "textureGuid"].map((key) => [key, key === "color" ? rgbTuple(component.getVariable(key)) : component.getVariable(key)])) : {},
-        transform: { position: [position.x, position.y, position.z] as [number, number, number], rotation: [rotation.x, rotation.y, rotation.z, rotation.w] as [number, number, number, number], scale: [scale.x, scale.y, scale.z] as [number, number, number] },
-      };
-    })) : [];
-    // A separate component command also handles actors with meshes, multiple
-    // emitters and asynchronous model loading. It uses the same view owner.
-    this.emit({ type: "setAreaLights", slotId, lights });
-    if (lights.length) this.renderCommands.areaLightSlots.add(slotId); else this.renderCommands.areaLightSlots.delete(slotId);
-    }
-    const skipButtonMesh =
-      overlayButtonHasSiblingVisual(actor) ||
-      overlayButtonHasParentVisual(actor, this.world);
-    const renderables = playRenderablesOf(this.actorStream.has(actor)
-      ? actor.components.filter((component) => component.classId !== "SkyboxComponent")
-      : actor.components, skipButtonMesh);
-    if (renderables.length > 0) {
-      const primary = renderables[0]!;
-      const meshKind = playMeshKindOf(primary);
-      const panelComp = renderables.find(
-        (component) => component.classId === "2DPanelComponent",
-      );
-      const overlayPanel = panelComp
-        ? {
-            ...parseOverlayPanelProperties(overlayPanelVariables(panelComp)),
-            ...overlayPanelDestFromScale(
-              actor.transform.scale.x,
-              actor.transform.scale.y,
-            ),
-          }
-        : null;
-      const componentAssetGuid =
-        primary.assetGuid ?? primary.getVariable("assetGuid");
-      const assetGuid =
-        overlayPanel
-          ? overlayPanel.source === "material"
-            ? overlayPanel.materialGuid
-            : overlayPanel.textureGuid
-          : primary.classId === "MeshComponent"
-            ? componentAssetGuid
-            : (componentAssetGuid ??
-              primary.getVariable("textureGuid") ??
-              primary.getVariable("materialGuid"));
-      const renderableIds = new Set(renderables.map((component) => component.guid));
-      const componentsByGuid = new Map(
-        actor.components.map((component) => [component.guid, component]),
-      );
-      const parts = playPartsNeeded(renderables) ||
-        renderables.some((component) => component.classId === SPRING_ARM_COMPONENT_CLASS_ID)
-        ? renderables.map((component) => ({
-            ...playMeshPartOf(
-              component,
-              nearestVisualParentId(
-                component,
-                componentsByGuid,
-                renderableIds,
-              ),
-            ),
-            ...(supportsOverlayVisualStyle(component.classId) ? { overlayStyle: parseOverlayVisualStyle(Object.fromEntries(component.variables)) } : {}),
-            ...(component.classId === "CableComponent" ? { cable: this.cables.assign(component) } : {}),
-            ...(component.classId === "2DJoystickComponent" ? { joystick: parseJoystick2DProperties(Object.fromEntries(component.variables)) } : {}),
-            ...(isUIControl2DClass(component.classId) ? { uiControl: { classId: component.classId, properties: this.uiControls.payload(component) } } : {}),
-            ...(component.classId === "2DPainterComponent" ? { painter: this.painters.payload(component) } : {}),
-            ...(component.classId === "2DRichTextComponent" ? { text2d: text2dAssignPayload(component, this.textAppear.progress(component)) } : {}),
-            ...(component.classId === "DynamicRuntimeMeshComponent" ? { dynamicMesh: this.dynamicMeshes.assign(component) } : {}),
-            ...(component.classId === "LightComponent" || component.classId === "HemisphericFillLightComponent" ? { light: lightAssignPayload(component) } : {}),
-            ...(component.classId === "CameraComponent" ? { camera: this.cameraAssignPayload(actor, component) } : {}),
-            parentTransforms: dynamicMeshParentTransforms(component, componentsByGuid, renderableIds),
-          }))
-        : undefined;
-      const skyboxComp = renderables.find(
-        (component) => component.classId === "SkyboxComponent",
-      );
-      const text3dComp = renderables.find(
-        (component) => component.classId === "Text3DComponent",
-      );
-      const text2dComp = renderables.find(
-        (component) =>
-          component.classId === "2DTextComponent" ||
-          component.classId === "2DRichTextComponent",
-      );
-      const cameras = renderables.filter(component => component.classId === "CameraComponent");
-      const camera = cameras.find(component => this.cameraAssignPayload(actor, component).isDefault) ?? cameras[0];
-      const light = renderables.find(component => component.classId === "LightComponent" || component.classId === "HemisphericFillLightComponent");
-      this.emit({
-        type: "assignMesh",
-        slotId,
-        meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
-        meshKind,
-        actorGuid: actor.guid,
-        ...(!parts
-          ? { primaryComponentId: primary.guid }
-          : {}),
-        ...(supportsOverlayVisualStyle(primary.classId) ? { overlayStyle: parseOverlayVisualStyle(Object.fromEntries(primary.variables)) } : {}),
-        ...(meshKind === "sprite" || meshKind === "tilemap"
-          ? playSortingOf(primary)
-          : {}),
-        ...(actor.sceneLayerId
-          ? {
-              sceneLayerId: actor.sceneLayerId,
-              ...overlayMeshInteraction(actor, this.world),
-            }
-          : {}),
-        ...(skyboxComp
-          ? {
-              skybox: {
-                size: parseSkyboxSize(skyboxComp.getVariable("size")),
-                faces: parseSkyboxFaces(skyboxComp.getVariable("faces")),
-              },
-            }
-          : {}),
-        ...(text3dComp
-          ? {
-              text3d: text3dAssignPayload(text3dComp),
-            }
-          : {}),
-        ...(text2dComp ? { text2d: text2dAssignPayload(text2dComp,
-          text2dComp.classId === "2DRichTextComponent" ? this.textAppear.progress(text2dComp) : 1) } : {}),
-        ...(camera ? { camera: this.cameraAssignPayload(actor, camera) } : {}),
-        ...(light ? { light: lightAssignPayload(light) } : {}),
-        ...(overlayPanel ? { overlayPanel } : {}),
-        ...(parts ? { parts } : {}),
-      });
-      this.emitMaterialAssignments(renderables, slotId, Boolean(parts));
-      return;
-    }
-    const capture = captureComponent(actor);
-    if (capture) {
-      this.emit({ type: "assignMesh", slotId, actorGuid: actor.guid, meshAssetGuid: null, meshKind: "renderTargetCapture", parts: [playMeshPartOf(capture)] });
-      return;
-    }
-    const audio = actor.components.find(
-      (component) =>
-        component.classId === "AudioComponent" && !component.destroyed,
-    );
-    if (audio) {
-      this.emit({
-        type: "assignMesh",
-        slotId,
-        meshAssetGuid: null,
-        meshKind: "audio",
-        parts: [playMeshPartOf(audio)],
-      });
-      return;
-    }
-    const particle = actor.components.find(
-      (component) =>
-        component.classId === "ParticleComponent" && !component.destroyed,
-    );
-    if (particle) {
-      this.emit({
-        type: "assignMesh",
-        slotId,
-        meshAssetGuid: null,
-        meshKind: "particle",
-        parts: [playMeshPartOf(particle)],
-      });
-      return;
-    }
-    const rigid = actor.components.find(
-      (component) =>
-        component.classId === "RigidBodyComponent" && !component.destroyed,
-    );
-    if (rigid) {
-      this.emit({
-        type: "assignMesh",
-        slotId,
-        meshAssetGuid: null,
-        meshKind: "rigidbody",
-        parts: [playMeshPartOf(rigid)],
-      });
-    } else if (this.renderCommands.fogVolumeSlots.has(slotId)) {
-      this.emit({ type: "assignMesh", slotId, meshAssetGuid: null, meshKind: null });
-    }
-  }
-
-
   private applyActorDefaults(actor: Actor): void {
     for (const component of actor.components) {
       this.scriptHost.bindInterfaceHandlers(component);
@@ -4500,7 +4208,7 @@ class InProcessRuntime implements RuntimeDriver {
     }
     const slotId = this.assignSlot(actor);
     checkpoint();
-    this.emitMeshAssignment(actor, slotId);
+    this.renderEmitter.emitMeshAssignment(actor, slotId);
     checkpoint();
     this.emitAudioComponents(actor);
     checkpoint();
@@ -4600,41 +4308,6 @@ class InProcessRuntime implements RuntimeDriver {
         componentId: component.guid,
         particleSystemGuid: null,
       });
-    }
-  }
-
-  private emitMaterialAssignments(
-    renderables: readonly ActorComponent[],
-    slotId: number,
-    multipart: boolean,
-  ): void {
-    for (const component of renderables) {
-      if (component.classId === "2DTextComponent" || component.classId === "2DRichTextComponent") continue;
-      const value = component.getVariable("materialGuid");
-      const guid = typeof value === "string" && value.trim() ? value : null;
-      if (guid) this.componentsWithMaterialAssignment.add(component);
-      else if (
-        !this.componentsWithMaterialAssignment.delete(component) &&
-        component.getVariable("materialSource") !== "override"
-      ) {
-        // Untouched model components retain their authored material slots.
-        continue;
-      }
-      this.emit({
-        type: "assignMaterial",
-        slotId,
-        materialAssetGuid: guid,
-        ...(multipart || component.classId === "MeshComponent"
-          ? { componentId: component.guid }
-          : {}),
-      });
-      const material = component.getVariable("materialObject");
-      if (component.materialInstance?.materialGuid === guid && material instanceof MaterialObject) {
-        for (const [parameterName, parameter] of Object.entries(this.materialParameters.captureOverrides(material) ?? {})) {
-          this.emit({ type: "setMaterialParameter", slotId, componentId: component.guid,
-            materialAssetGuid: material.materialAssetGuid, parameterName, parameter });
-        }
-      }
     }
   }
 
@@ -4764,7 +4437,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (!actor) return;
     const slotId = this.actorSlot(actor);
     if (slotId === undefined) return;
-    this.emitMeshAssignment(actor, slotId);
+    this.renderEmitter.emitMeshAssignment(actor, slotId);
   }
 
   private guardScript(run: () => void): void {
@@ -5490,7 +5163,7 @@ class InProcessRuntime implements RuntimeDriver {
         try { apply(); } catch (error) { target.transform = prior; apply(); throw error; }
         if (target instanceof ActorComponent) {
           const slotId = this.renderSlots.recordedSlot(actor);
-          if (slotId !== undefined) this.emitComponentTransforms(actor, slotId);
+          if (slotId !== undefined) this.renderEmitter.emitComponentTransforms(actor, slotId);
         }
         this.publishInspectorSnapshot(actor);
       },
@@ -5520,7 +5193,7 @@ class InProcessRuntime implements RuntimeDriver {
       restore: component => {
         const actor = component.owner; const slot = actor ? this.renderSlots.recordedSlot(actor) : undefined;
         if (slot === undefined) throw new Error("Material owner is unavailable.");
-        this.emitMaterialAssignments([component], slot, true);
+        this.renderEmitter.emitMaterialAssignments([component], slot, true);
         const material = component.getVariable("materialObject");
         if (material instanceof MaterialObject) for (const [name, value] of Object.entries(this.materialParameters.describe(material) ?? {}))
           this.setMaterialParameter(material, name, value, true);
@@ -5718,7 +5391,7 @@ class InProcessRuntime implements RuntimeDriver {
 
     this.flushPainters();
     this.flushTextAppear();
-    this.flushDeformers();
+    this.renderEmitter.flushDeformers();
     const completedFrameId = this.frameId;
     this.frameId += 1;
     if (this.canTickScene() || this.hasReadyLayers()) {
@@ -6066,67 +5739,6 @@ class InProcessRuntime implements RuntimeDriver {
   }
 }
 
-const OVERLAY_BUTTON_VISUAL_CLASS_IDS = new Set([
-  "2DPainterComponent",
-  "2DJoystickComponent",
-  "2DTextureComponent",
-  "2DMaterialComponent",
-  "2DPanelComponent",
-  "2DTextComponent",
-  "2DRichTextComponent",
-  "SpriteComponent",
-  "MeshComponent",
-]);
-
-function overlayButtonHasSiblingVisual(actor: Actor): boolean {
-  return overlayActorHasVisual(actor);
-}
-
-function overlayActorHasVisual(actor: Actor): boolean {
-  return actor.components.some(
-    (component) =>
-      !component.destroyed && (OVERLAY_BUTTON_VISUAL_CLASS_IDS.has(component.classId) || isUIControl2DClass(component.classId)),
-  );
-}
-
-function overlayButtonHasParentVisual(actor: Actor, world: World): boolean {
-  const parentId = actorParentGuid(actor);
-  if (!parentId) return false;
-  const parent = world.findActor(parentId);
-  return parent ? overlayActorHasVisual(parent) : false;
-}
-
-function liveOverlayButtons(actor: Actor): ActorComponent[] {
-  return actor.components.filter(
-    (component) =>
-      component.classId === "2DButtonComponent" && !component.destroyed,
-  );
-}
-
-function overlayMeshInteraction(
-  actor: Actor,
-  world: World,
-): {
-  hitTest: "ignore" | "block" | "passThrough";
-  hasButton: boolean;
-  buttonComponentId?: string;
-} {
-  const buttons = liveOverlayButtons(actor);
-  // Own buttons take precedence. Share one child scan across all metadata.
-  if (buttons.length === 0) {
-    for (const child of world.getActors()) {
-      if (actorParentGuid(child) === actor.guid) {
-        buttons.push(...liveOverlayButtons(child));
-      }
-    }
-  }
-  return {
-    hitTest: overlayHitTestOf(actor, buttons[0]),
-    hasButton: buttons.length > 0,
-    ...(buttons.length === 1 ? { buttonComponentId: buttons[0]!.guid } : {}),
-  };
-}
-
 function findOverlayButton(
   buttons: readonly ActorComponent[],
   requested: string,
@@ -6172,367 +5784,6 @@ function resolveOverlayPointerButton(
     owner,
     button: buttons.length === 1 ? buttons[0] : undefined,
   };
-}
-
-function overlayPanelVariables(component: ActorComponent): Record<string, unknown> {
-  return {
-    source: component.getVariable("source"),
-    textureGuid: component.getVariable("textureGuid"),
-    materialGuid: component.getVariable("materialGuid"),
-    marginLeft: component.getVariable("marginLeft"),
-    marginRight: component.getVariable("marginRight"),
-    marginTop: component.getVariable("marginTop"),
-    marginBottom: component.getVariable("marginBottom"),
-    hitTest: component.getVariable("hitTest"),
-  };
-}
-
-function isPlayRenderable(
-  component: ActorComponent,
-  skipButtonMesh: boolean,
-): boolean {
-  if (component.destroyed || component.getVariable("editorOnly") === true) return false;
-  if (isUIControl2DClass(component.classId)) return !!component.owner?.sceneLayerId;
-  if (isOverlayLayoutClass(component.classId)) return true;
-  if (component.classId === "LightComponent" || component.classId === "HemisphericFillLightComponent" || component.classId === "CameraComponent" || component.classId === SPRING_ARM_COMPONENT_CLASS_ID) return true;
-  if (waterKindForClass(component.classId) || component.classId === "WaterRemovalVolumeComponent") return true;
-  if (component.classId === "2DButtonComponent") return !skipButtonMesh;
-  if (
-    component.classId === "LandscapeComponent" ||
-    component.classId === "FoliageComponent" ||
-    component.classId === "CableComponent" ||
-    component.classId === "DynamicRuntimeMeshComponent" ||
-    component.classId === "MeshComponent" ||
-    component.classId === "SpriteComponent" ||
-    component.classId === "TilemapComponent" ||
-    component.classId === "SkyboxComponent" ||
-    component.classId === "Text3DComponent" ||
-    component.classId === "2DJoystickComponent" ||
-    component.classId === "2DTextureComponent" ||
-    component.classId === "2DMaterialComponent" ||
-    component.classId === "2DPanelComponent" ||
-    component.classId === "2DPainterComponent" ||
-    component.classId === "2DTextComponent" ||
-    component.classId === "2DRichTextComponent"
-  ) {
-    return true;
-  }
-  return (
-    component.classId === "ColliderComponent" &&
-    component.getVariable("renderInGame") === true
-  );
-}
-
-/** Components that contribute visuals, illumination or camera poses to Play. */
-function playRenderablesOf(
-  components: readonly ActorComponent[],
-  skipButtonMesh: boolean,
-): ActorComponent[] {
-  return components.filter(component => isPlayRenderable(component, skipButtonMesh));
-}
-
-function overlayHitTestOf(
-  actor: Actor,
-  button: ActorComponent | undefined,
-): "ignore" | "block" | "passThrough" {
-  if (button) {
-    return parseSceneLayerHitTest(button.getVariable("hitTest"), "block");
-  }
-  if (actor.components.some(component => component.classId === "2DJoystickComponent" && !component.destroyed && component.getVariable("enabled") !== false)) return "block";
-  if (actor.components.some(component => isInteractiveUIControl2DClass(component.classId) && !component.destroyed && component.getVariable("enabled") !== false)) return "block";
-  const visual = actor.components.find(
-    (component) =>
-      (component.classId === "2DTextureComponent" ||
-        component.classId === "2DMaterialComponent" ||
-        component.classId === "2DPanelComponent" ||
-        component.classId === "2DPainterComponent" ||
-        component.classId === "2DTextComponent" ||
-        component.classId === "2DRichTextComponent") &&
-      !component.destroyed,
-  );
-  if (visual) {
-    return parseSceneLayerHitTest(visual.getVariable("hitTest"), "ignore");
-  }
-  return "ignore";
-}
-
-function playSortingOf(component: ActorComponent): {
-  sortingLayer: string;
-  orderInLayer: number;
-} {
-  const layer = component.getVariable("sortingLayer");
-  const order = component.getVariable("orderInLayer");
-  return {
-    sortingLayer:
-      typeof layer === "string" && layer.trim() !== "" ? layer : "Default",
-    orderInLayer:
-      typeof order === "number" && Number.isFinite(order) ? Math.round(order) : 0,
-  };
-}
-
-function playMeshKindOf(component: ActorComponent): string | null {
-  if (isUIControl2DClass(component.classId)) return "2dcontrol";
-  if (isOverlayLayoutClass(component.classId)) return "2dlayout";
-  if (component.classId === "CableComponent") return "cable";
-  if (component.classId === "DynamicRuntimeMeshComponent") return "dynamicRuntimeMesh";
-  if (waterKindForClass(component.classId)) return "water";
-  if (component.classId === "WaterRemovalVolumeComponent") return "waterRemoval";
-  if (component.classId === "LandscapeComponent") return "landscape";
-  if (component.classId === "FoliageComponent") return "foliage";
-  if (component.classId === "SpriteComponent") return "sprite";
-  if (component.classId === "TilemapComponent") return "tilemap";
-  if (component.classId === "SkyboxComponent") return "skybox";
-  if (component.classId === "Text3DComponent") return "text3d";
-  if (component.classId === "2DTextComponent") return "2dtext";
-  if (component.classId === "2DRichTextComponent") return "2drichtext";
-  if (component.classId === "2DJoystickComponent") return "2djoystick";
-  if (component.classId === "2DTextureComponent") return "2dtexture";
-  if (component.classId === "2DMaterialComponent") return "2dmaterial";
-  if (component.classId === "2DPanelComponent") return "2dpanel";
-  if (component.classId === "2DPainterComponent") return "2dpainter";
-  if (component.classId === "2DButtonComponent") return "2dbutton";
-  if (component.classId === "ColliderComponent") {
-    const shape = component.getVariable("shape");
-    return `collider:${JSON.stringify(shape ?? {})}`;
-  }
-  if (component.classId === "HemisphericFillLightComponent") {
-    return "light:hemispheric";
-  }
-  if (component.classId === "LightComponent") {
-    const kind = component.getVariable("lightKind");
-    return `light:${typeof kind === "string" ? kind : "point"}`;
-  }
-  if (component.classId === "CameraComponent") return "camera";
-  if (component.classId === "RenderTargetCaptureComponent") return "renderTargetCapture";
-  if (component.classId === SPRING_ARM_COMPONENT_CLASS_ID) return "springarm";
-  if (component.classId === "AudioComponent") return "audio";
-  if (component.classId === "ParticleComponent") return "particle";
-  if (component.classId === "RigidBodyComponent") return "rigidbody";
-  const meshKind = component.getVariable("meshKind");
-  return typeof meshKind === "string" ? meshKind : null;
-}
-
-function isIdentityComponentTransform(component: ActorComponent): boolean {
-  const { position, rotation, scale } = component.transform;
-  return (
-    position.x === 0 &&
-    position.y === 0 &&
-    position.z === 0 &&
-    rotation.x === 0 &&
-    rotation.y === 0 &&
-    rotation.z === 0 &&
-    rotation.w === 1 &&
-    scale.x === 1 &&
-    scale.y === 1 &&
-    scale.z === 1
-  );
-}
-
-function playPartsNeeded(components: readonly ActorComponent[]): boolean {
-  return (
-    components.some((component) => isUIControl2DClass(component.classId)) ||
-    components.some((component) => isOverlayLayoutClass(component.classId) || component.classId === "LightComponent" || component.classId === "HemisphericFillLightComponent" || component.classId === "CameraComponent") ||
-    components.some((component) => component.classId === "2DJoystickComponent") ||
-    components.some((component) => component.classId === "2DPainterComponent") ||
-    components.some((component) => component.classId === "CableComponent") ||
-    components.some((component) => component.classId === "DynamicRuntimeMeshComponent") ||
-    components.some((component) => waterKindForClass(component.classId) !== null || component.classId === "WaterRemovalVolumeComponent") ||
-    components.length > 1 ||
-    components.some((component) => component.classId === "LandscapeComponent" || component.classId === "FoliageComponent") ||
-    components.some((component) => !isIdentityComponentTransform(component))
-  );
-}
-
-function text3dAssignPayload(
-  component: ActorComponent,
-): NonNullable<Extract<CommandMessage, { type: "assignMesh" }>["text3d"]> {
-  return parseText3DProperties({
-    text: component.getVariable("text"),
-    size: component.getVariable("size"),
-    depth: component.getVariable("depth"),
-    color: component.getVariable("color"),
-    fontAssetGuid: component.getVariable("fontAssetGuid"),
-    alignment: component.getVariable("alignment"),
-  });
-}
-
-function text2dAssignPayload(
-  component: ActorComponent,
-  appearProgress = 1,
-): NonNullable<Extract<CommandMessage, { type: "assignMesh" }>["text2d"]> {
-  const parsed = parseText2DProperties(
-    {
-      text: component.getVariable("text"),
-      materialGuid: component.getVariable("materialGuid"),
-      materialUv: component.getVariable("materialUv"),
-      fontAssetGuid:
-        component.getVariable("fontAssetGuid") ?? component.assetGuid,
-      size: component.getVariable("size"),
-      color: component.getVariable("color"),
-      renderer: component.getVariable("renderer"),
-      outline: component.getVariable("outline"),
-      outlineColor: component.getVariable("outlineColor"),
-      alignment: component.getVariable("alignment"),
-      verticalAlignment: component.getVariable("verticalAlignment"),
-      bold: component.getVariable("bold"),
-      italic: component.getVariable("italic"),
-      underline: component.getVariable("underline"),
-      wrapWidth: component.getVariable("wrapWidth"),
-      wrapHeight: component.getVariable("wrapHeight"),
-      appearModes: component.getVariable("appearModes"),
-      appearTransition: component.getVariable("appearTransition"),
-      appearInterval: component.getVariable("appearInterval"),
-      appearDuration: component.getVariable("appearDuration"),
-      appearStart: component.getVariable("appearStart"),
-    },
-    { rich: component.classId === "2DRichTextComponent" },
-  );
-  return {
-    text: parsed.text,
-    materialGuid: parsed.materialGuid,
-    materialUv: parsed.materialUv,
-    fontAssetGuid: parsed.fontAssetGuid,
-    size: parsed.size,
-    color: parsed.color,
-    renderer: parsed.renderer,
-    outline: parsed.outline,
-    outlineColor: parsed.outlineColor,
-    alignment: parsed.alignment,
-    verticalAlignment: parsed.verticalAlignment,
-    bold: parsed.bold,
-    italic: parsed.italic,
-    underline: parsed.underline,
-    wrapWidth: parsed.wrapWidth,
-    wrapHeight: parsed.wrapHeight,
-    appearModes: parsed.appearModes,
-    appearTransition: parsed.appearTransition,
-    appearInterval: parsed.appearInterval,
-    appearDuration: parsed.appearDuration,
-    appearStart: parsed.appearStart,
-    appearProgress,
-  };
-}
-
-function lightAssignPayload(component: ActorComponent): NonNullable<Extract<CommandMessage, { type: "assignMesh" }>["light"]> {
-  const fill = component.classId === "HemisphericFillLightComponent";
-  const ground = component.getVariable("groundColor");
-  return {
-    color: rgbTuple(component.getVariable("color")),
-    intensity: Number(component.getVariable("intensity") ?? (fill ? 0.9 : 1)),
-    enabled: component.getVariable("enabled") !== false,
-    ...(fill ? { groundColor: ground == null ? [0, 0, 0] as [number, number, number] : rgbTuple(ground) } : {
-      range: Number(component.getVariable("range") ?? 10),
-      innerAngle: Number(component.getVariable("innerAngle") ?? 30),
-      outerAngle: Number(component.getVariable("outerAngle") ?? 45),
-      castShadows: component.getVariable("castShadows") === true,
-      shadowPriority: Number(component.getVariable("shadowPriority") ?? 0),
-    }),
-  };
-}
-
-function playMeshPartOf(
-  component: ActorComponent,
-  parentId = component.parentId,
-): NonNullable<Extract<CommandMessage, { type: "assignMesh" }>["parts"]>[number] {
-  const assetGuid = component.assetGuid ?? component.getVariable("assetGuid");
-  const { position, rotation, scale } = component.transform;
-  return {
-    componentId: component.guid,
-    ...(component.classId === "LandscapeComponent" ? { landscape: parseLandscapeProperties(Object.fromEntries(
-      ["width", "depth", "subdivisions", "heights", "weights", "materialGuid", "collisionsEnabled"].map((key) => [key, component.getVariable(key)]),
-    )) } : {}),
-    ...(component.classId === "FoliageComponent" ? { foliage: parseFoliageProperties({ groupId: component.getVariable("groupId"), batches: component.getVariable("batches") }) } : {}),
-    castShadows: component.getVariable("castShadows") !== false,
-    receiveShadows: component.getVariable("receiveShadows") !== false,
-    meshKind: playMeshKindOf(component),
-    meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
-    parentId,
-    position: [position.x, position.y, position.z],
-    rotation: [rotation.x, rotation.y, rotation.z, rotation.w],
-    scale: [scale.x, scale.y, scale.z],
-    ...(waterKindForClass(component.classId) ? { water: normalizeWaterBody(Object.fromEntries(component.variables), waterKindForClass(component.classId)!) } : {}),
-    ...(component.classId === "WaterRemovalVolumeComponent" ? { waterRemoval: normalizeWaterRemoval(Object.fromEntries(component.variables)) } : {}),
-    ...(component.classId === "Text3DComponent"
-      ? {
-          text3d: text3dAssignPayload(component),
-        }
-      : {}),
-    ...(component.classId === "2DTextComponent" ||
-    component.classId === "2DRichTextComponent"
-      ? { text2d: text2dAssignPayload(component) }
-      : {}),
-    ...(component.classId === "SpriteComponent" ||
-    component.classId === "TilemapComponent"
-      ? playSortingOf(component)
-      : {}),
-    ...(component.classId === SPRING_ARM_COMPONENT_CLASS_ID
-      ? { springArm: springArmAssignPayload(component) }
-      : {}),
-  };
-}
-
-function springArmAssignPayload(
-  component: ActorComponent,
-): ReturnType<typeof parseSpringArmProperties> {
-  return parseSpringArmProperties({
-    armLength: component.getVariable("armLength"),
-    enableLocationLag: component.getVariable("enableLocationLag"),
-    locationLagSpeed: component.getVariable("locationLagSpeed"),
-    maxLocationLagDistance: component.getVariable("maxLocationLagDistance"),
-    enableRotationLag: component.getVariable("enableRotationLag"),
-    rotationLagSpeed: component.getVariable("rotationLagSpeed"),
-    drawDebugLag: component.getVariable("drawDebugLag"),
-  });
-}
-
-function dynamicMeshParentTransforms(component: ActorComponent, components: ReadonlyMap<string, ActorComponent>, renderableIds: ReadonlySet<string>): Transform[] {
-  const transforms: Transform[] = [];
-  const visited = new Set<string>([component.guid]);
-  let parentId = component.parentId;
-  while (parentId && !visited.has(parentId) && !renderableIds.has(parentId)) {
-    visited.add(parentId);
-    const parent = components.get(parentId);
-    if (!parent || parent.destroyed) break;
-    transforms.push({ position: { ...parent.transform.position }, rotation: { ...parent.transform.rotation }, scale: { ...parent.transform.scale } });
-    parentId = parent.parentId;
-  }
-  return transforms;
-}
-
-function nearestVisualParentId(
-  component: ActorComponent,
-  componentsByGuid: ReadonlyMap<string, ActorComponent>,
-  renderableIds: ReadonlySet<string>,
-): string | null {
-  const visited = new Set<string>();
-  let parentId = component.parentId;
-  while (parentId && !visited.has(parentId)) {
-    if (renderableIds.has(parentId)) return parentId;
-    visited.add(parentId);
-    parentId = componentsByGuid.get(parentId)?.parentId ?? null;
-  }
-  return null;
-}
-
-function rgbTuple(value: unknown): [number, number, number] {
-  if (Array.isArray(value) && value.length >= 3) {
-    return [
-      Number(value[0]) || 0,
-      Number(value[1]) || 0,
-      Number(value[2]) || 0,
-    ];
-  }
-  if (value && typeof value === "object") {
-    const row = value as { x?: unknown; y?: unknown; z?: unknown };
-    if (typeof row.x === "number") {
-      return [
-        row.x,
-        typeof row.y === "number" ? row.y : 0,
-        typeof row.z === "number" ? row.z : 0,
-      ];
-    }
-  }
-  return [1, 1, 1];
 }
 
 function coerceTransform(value: unknown): Transform | undefined {
@@ -6647,4 +5898,3 @@ function parentFirstScriptOrder(
   scripts.forEach((_, index) => visit(index));
   return ordered;
 }
-import { parseLandscapeProperties, parseFoliageProperties } from "@babylonslate/core";

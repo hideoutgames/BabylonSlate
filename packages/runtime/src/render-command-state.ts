@@ -2,9 +2,9 @@ import type { Actor } from "@babylonslate/object-model";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 
 /**
- * What the driver last sent for each render slot's component commands, so a
- * later sync can send only a change or the clearing command. A released slot
- * forgets it: the renderer drops its view with the despawn.
+ * What `RenderCommandEmitter` last sent for each render slot's component
+ * commands, so a later sync can send only a change or the clearing command. A
+ * released slot forgets it: the renderer drops its view with the despawn.
  */
 export class RenderCommandState implements RuntimeSubsystem {
   /** Slots whose last `setAreaLights` sent lights. */
