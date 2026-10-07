@@ -75,7 +75,13 @@ import {
   parseAnimGraphDocument,
   patchTransition,
 } from "@babylonslate/anim-graph";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useProjectState,
+  useRegistryState,
+  useActiveDocumentState,
+  useOpenDocument,
+} from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useValidation } from "../context/validation-context";
 import { usePlay } from "../context/play-context";
@@ -153,6 +159,9 @@ import {
 } from "../lib/use-open-documents-of-kinds";
 
 const CLASS_KINDS = ["graph"] as const;
+const MODEL_KINDS = ["model"] as const;
+const SCENE_KINDS = ["scene"] as const;
+const WORLD_KINDS = ["scene", "scene-layer"] as const;
 const INTERFACE_KINDS = ["script-interface"] as const;
 const TYPE_KINDS = ["structure", "enum", "data-definition"] as const;
 const DATA_KINDS = ["data-tree"] as const;
@@ -890,8 +899,12 @@ function PrefabComponentDetails({
   onUpdate: (property: string, value: unknown) => void;
   onUpdateTransform: (transform: SerializedTransform) => void;
 }) {
-  const { assetRegistry, openDocuments, registryEpoch } = useDocuments();
-  const classGraphs = collectClassGraphsForPalette({ assets: assetRegistry?.list() ?? [], openDocuments, classIdForPath: classIdForGraphPath });
+  const { assetRegistry, registryEpoch } = useRegistryState();
+  // Open Class, Model and Scene tabs override saved content in these rows.
+  const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
+  const modelDocuments = useOpenDocumentsOfKinds(MODEL_KINDS);
+  const sceneDocuments = useOpenDocumentsOfKinds(SCENE_KINDS);
+  const classGraphs = collectClassGraphsForPalette({ assets: assetRegistry?.list() ?? [], openDocuments: classDocuments, classIdForPath: classIdForGraphPath });
   const [assetPick, setAssetPick] = useState<AssetPickRequest | null>(null);
   // An open Material tab's unsaved domain wins over its saved header.
   const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
@@ -941,7 +954,7 @@ function PrefabComponentDetails({
             assetLabel,
             assetType,
             modelMaterialSlots: (guid) => normalizeModelPayload(
-              openDocuments.find((doc) => doc.ref.kind === "model" && doc.ref.path === assetRegistry?.getByGuid?.(guid)?.path)?.content
+              modelDocuments.find((doc) => doc.ref.path === assetRegistry?.getByGuid?.(guid)?.path)?.content
                 ?? assetRegistry?.getByGuid?.(guid)?.header.payload ?? {},
             ).materialSlots,
             fontHasFacetype,
@@ -971,7 +984,7 @@ function PrefabComponentDetails({
         ) : null}
         {component.classId === "RenderTargetCaptureComponent" && component.properties.captureOnlyActors === true ? (
           <RenderTargetCaptureActorsField
-            actors={(openDocuments.find((doc) => doc.ref.kind === "scene")?.content as SerializedScene | undefined)?.actors ?? []}
+            actors={(sceneDocuments[0]?.content as SerializedScene | undefined)?.actors ?? []}
             actorIds={normalizeRenderTargetCaptureProperties(component.properties).actorIds}
             onChange={(actorIds) => onUpdate("actorIds", actorIds)} />
         ) : null}
@@ -1052,16 +1065,15 @@ export function InspectorPanel(props: IDockviewPanelProps) {
 function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const {
-    openDocuments,
-    applyGraphChange,
-    applyAssetDocumentChange,
-    reparentClassDocument,
-    projectDocument,
-    assetRegistry,
-    registryEpoch,
-    animEditorMode,
-  } = useDocuments();
+  const { applyGraphChange, applyAssetDocumentChange, reparentClassDocument } =
+    useDocumentActions();
+  const { projectDocument } = useProjectState();
+  const { assetRegistry, registryEpoch } = useRegistryState();
+  const { animEditorMode } = useActiveDocumentState();
+  // The open world Scene or Scene Layer sets the physics world; open Material
+  // tabs' unsaved domains filter the post-process picker.
+  const worldDocuments = useOpenDocumentsOfKinds(WORLD_KINDS);
+  const pickerMaterialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
   const { focusDiagnostic } = useValidation();
   const { entries: tags } = useTags();
   const { focusedNodeId } = usePlay();
@@ -1090,7 +1102,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
     allowedTypes: string[];
   } | null>(null);
 
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const doc = useOpenDocument(documentId);
   const docPath = doc?.ref.path;
   const indexed = useMemo(() => {
     void registryEpoch;
@@ -1304,7 +1316,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
   const collisionLayers =
     projectDocument?.settings.physics?.collisionLayers ??
     DEFAULT_COLLISION_LAYERS;
-  const physicsWorld = physicsWorldFromOpenDocuments(openDocuments);
+  const physicsWorld = physicsWorldFromOpenDocuments(worldDocuments);
   const assetLabel = (guid: string | null | undefined) => {
     if (!guid) return undefined;
     return (
@@ -2027,7 +2039,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
             ? filterInspectorPinPickerAssets(
                 pickerAssets,
                 assetRegistry?.list() ?? [],
-                openDocuments,
+                pickerMaterialDocuments,
                 { nodeType: selectedNode.type },
               )
             : []

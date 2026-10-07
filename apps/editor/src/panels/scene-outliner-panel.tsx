@@ -63,7 +63,12 @@ import {
   PlusIcon,
 } from "lucide-react";
 import { GraphDropHint, type GraphDropHintState } from "@babylonslate/graph-ui";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useRegistryState,
+  useEditorShellState,
+  useOpenDocument,
+} from "../context/document-context";
 import { useEditorSessionState } from "../context/editor-session-state-context";
 import { copySceneActors, pasteSceneActors } from "../lib/scene-actor-clipboard";
 import { useKeybindCommand, useKeybindings } from "../context/keybind-context";
@@ -301,16 +306,14 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
   const actionSize = phone ? "touch-icon" : "icon-sm";
   const { documentId } = useDocumentWorkspace();
   const {
-    openDocuments,
     getOpenDocuments,
     applySceneChange,
-    assetRegistry,
-    registryEpoch,
     loadGraphDocument,
     openDocument,
     loadAssetThumbnail,
-    thumbnailVersions,
-  } = useDocuments();
+  } = useDocumentActions();
+  const { assetRegistry, registryEpoch } = useRegistryState();
+  const { thumbnailVersions } = useEditorShellState();
   const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
   const prefabDocuments = useOpenDocumentsOfKinds(PREFAB_KINDS);
   const {
@@ -338,7 +341,7 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
     () => new Map(),
   );
 
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const doc = useOpenDocument(documentId);
   const scene = isSceneWorkspaceKind(doc?.ref.kind)
     ? (doc.content as SerializedScene)
     : null;

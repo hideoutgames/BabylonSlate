@@ -41,7 +41,11 @@ import {
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
 import { BoxIcon, ImageIcon } from "lucide-react";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useOpenDocument,
+  useRegistryState,
+} from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import {
   readTextureImageBytes,
@@ -71,7 +75,8 @@ function texturePathForGuid(
 }
 
 function useSkyboxCreatorDecodedSource(sourceTextureGuid: string | null) {
-  const { assetRegistry, readAssetChunk } = useDocuments();
+  const { readAssetChunk } = useDocumentActions();
+  const { assetRegistry } = useRegistryState();
   const texturePath = texturePathForGuid(
     (assetRegistry?.list() ?? []) as IndexedAsset[],
     sourceTextureGuid,
@@ -247,11 +252,8 @@ function useSkyboxCreatorCreate(
 ) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const {
-    assetRegistry,
-    readAssetChunk,
-    refreshAssetRegistry,
-  } = useDocuments();
+  const { readAssetChunk, refreshAssetRegistry } = useDocumentActions();
+  const { assetRegistry } = useRegistryState();
 
   const create = async () => {
     const helper = normalizeSkyboxCreatorPayload(payload);
@@ -324,8 +326,8 @@ function useSkyboxCreatorCreate(
 export function SkyboxCreatorPreviewPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange } = useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const doc = useOpenDocument(documentId);
   const payload = asRecord(doc?.content);
   const helperPath = doc?.ref.path ?? "";
   const { error, busy, create } = useSkyboxCreatorCreate(
@@ -355,8 +357,7 @@ export function SkyboxCreatorPreviewPanel(_props: IDockviewPanelProps) {
 export function SkyboxCreatorCubemapPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments } = useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const doc = useOpenDocument(documentId);
   const payload = asRecord(doc?.content);
   return (
     <PanelFrame data-testid="skybox-creator-cubemap-panel">
@@ -368,8 +369,8 @@ export function SkyboxCreatorCubemapPanel(_props: IDockviewPanelProps) {
 export function SkyboxCreatorDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange } = useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const doc = useOpenDocument(documentId);
   const payload = asRecord(doc?.content);
   const helperPath = doc?.ref.path ?? "";
   return (
@@ -409,7 +410,7 @@ export function SkyboxCreatorPreview({
 }) {
   const helper = normalizeSkyboxCreatorPayload(payload);
   const { decoded, url } = useSkyboxCreatorDecodedSource(helper.sourceTextureGuid);
-  const { assetRegistry } = useDocuments();
+  const { assetRegistry } = useRegistryState();
   const [pickerOpen, setPickerOpen] = useState(false);
   const created = createdFaceCount(helper);
   const hostRef = useRef<HTMLDivElement>(null);
@@ -652,7 +653,7 @@ export function SkyboxCreatorEditor({
 }) {
   const helper = normalizeSkyboxCreatorPayload(payload);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const { assetRegistry } = useDocuments();
+  const { assetRegistry } = useRegistryState();
   const assets = (assetRegistry?.list() ?? []) as IndexedAsset[];
   const { error, busy, create } = useSkyboxCreatorCreate(
     payload,

@@ -7,7 +7,17 @@ import { SceneToolsProvider } from "../context/scene-tools-context";
 import { CONTENT_BROWSER_ID, isAssetDocumentKind, isSceneWorkspaceKind, type SerializedScene } from "@babylonslate/core";
 import type { DockviewApi } from "dockview-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo } from "react";
-import { useDocumentActions, useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useActiveDocumentId,
+  useActiveDocumentState,
+  useOpenDocument,
+  useOpenDocumentTabs,
+  useProjectState,
+  useRegistryState,
+  useSourceControl,
+  useTabOrder,
+} from "../context/document-context";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { useProjectSearch } from "../context/project-search-context";
 import {
@@ -92,7 +102,7 @@ function RegisteredDockviewShell({
   sceneMode?: SceneMode;
   surface?: import("../shell/dockview-surface").DockviewSurface;
 }) {
-  const { sourceControl } = useDocuments();
+  const { sourceControl } = useSourceControl();
   const { registerDockviewApi, unregisterDockviewApi, captureLayoutForId } =
     useDocumentActions();
   const onReady = useCallback(
@@ -137,7 +147,7 @@ function DocumentShell({
   active: boolean;
   children: React.ReactNode;
 }) {
-  const { sourceControl } = useDocuments();
+  const { sourceControl } = useSourceControl();
   const authoringLock = useAuthoringLock();
   return (
     <div
@@ -174,7 +184,8 @@ export function AnimDocumentDocks({
   id: string;
   layout: Record<string, unknown> | null;
 }) {
-  const { animEditorMode, setAnimEditorMode, activeDocumentId } = useDocuments();
+  const { setAnimEditorMode } = useDocumentActions();
+  const { animEditorMode, activeDocumentId } = useActiveDocumentState();
   const parsed = parseAnimDocumentLayout(layout);
   const mode = activeDocumentId === id ? animEditorMode : parsed.animEditorMode;
 
@@ -234,16 +245,56 @@ export function AnimDocumentDocks({
   );
 }
 
+/**
+ * Scene editing state seeded from the Scene content. It subscribes to its own
+ * document, so a Scene edit (or Undo) of these settings reaches the provider
+ * without re-rendering the workspace's other tabs.
+ */
+function SceneWorkspaceEditing({
+  documentId,
+  overlayWorkspace,
+  children,
+}: {
+  documentId: string;
+  overlayWorkspace: boolean;
+  children: React.ReactNode;
+}) {
+  const doc = useOpenDocument(documentId);
+  const sceneContent =
+    doc && isSceneWorkspaceKind(doc.ref.kind)
+      ? (doc.content as SerializedScene | null)
+      : null;
+  return (
+    <SceneEditingProvider
+      documentId={documentId}
+      initialViewportMode={
+        overlayWorkspace ? "2d" : (sceneContent?.viewportMode ?? "3d")
+      }
+      initialViewportShadingMode={overlayWorkspace ? "unlit" : "pbr"}
+      documentViewportMode={
+        overlayWorkspace ? "2d" : sceneContent?.viewportMode
+      }
+      documentSnapEnabled={sceneContent?.settings?.grid?.snapEnabled}
+      documentJoystickEnabled={
+        sceneContent?.settings?.editorJoystickEnabled
+      }
+      documentGridVisible={sceneContent?.settings?.grid?.showGrid}
+      documentNavmeshVisible={sceneContent?.settings?.showNavmesh}
+    >
+      {children}
+    </SceneEditingProvider>
+  );
+}
+
 export function DocumentWorkspace() {
   const simulationDocumentId = useOptionalPlay()?.simulationDocumentId ?? null;
-  const {
-    tabOrder,
-    activeDocumentId,
-    openDocuments,
-    projectDocument,
-    assetRegistry,
-    registryEpoch,
-  } = useDocuments();
+  // Tab-level state only: a content edit re-renders the Scene editing state
+  // that reads it (SceneWorkspaceEditing) and the panels, not every tab.
+  const tabOrder = useTabOrder();
+  const activeDocumentId = useActiveDocumentId();
+  const openDocuments = useOpenDocumentTabs();
+  const { projectDocument } = useProjectState();
+  const { assetRegistry, registryEpoch } = useRegistryState();
 
   const projectKey = projectDocument?.metadata.name ?? null;
   // Class ancestry for every mounted tab, kept until the registry changes.
@@ -677,10 +728,6 @@ export function DocumentWorkspace() {
 
         if (!shouldMount) return null;
 
-        const sceneContent =
-          isSceneWorkspaceKind(doc.ref.kind)
-            ? (doc.content as SerializedScene | null)
-            : null;
         const parentOf = classParents();
         const indexed = assetRegistry?.getByPath(doc.ref.path);
         const actorPrefab =
@@ -703,21 +750,9 @@ export function DocumentWorkspace() {
         return (
           <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
             <DocumentWorkspaceProvider documentId={id}>
-              <SceneEditingProvider
+              <SceneWorkspaceEditing
                 documentId={id}
-                initialViewportMode={
-                  overlayWorkspace ? "2d" : (sceneContent?.viewportMode ?? "3d")
-                }
-                initialViewportShadingMode={overlayWorkspace ? "unlit" : "pbr"}
-                documentViewportMode={
-                  overlayWorkspace ? "2d" : sceneContent?.viewportMode
-                }
-                documentSnapEnabled={sceneContent?.settings?.grid?.snapEnabled}
-                documentJoystickEnabled={
-                  sceneContent?.settings?.editorJoystickEnabled
-                }
-                documentGridVisible={sceneContent?.settings?.grid?.showGrid}
-                documentNavmeshVisible={sceneContent?.settings?.showNavmesh}
+                overlayWorkspace={overlayWorkspace}
               >
               <SceneToolsProvider>
               <NavBakeProvider>
@@ -747,7 +782,7 @@ export function DocumentWorkspace() {
               </PrefabEditingProvider>
               </NavBakeProvider>
               </SceneToolsProvider>
-            </SceneEditingProvider>
+            </SceneWorkspaceEditing>
             </DocumentWorkspaceProvider>
           </WorkspaceErrorBoundary>
         );

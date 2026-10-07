@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useDocuments } from "../context/document-context";
+import { useRegistryState } from "../context/document-context";
 import { useOpenDocumentsOfKinds } from "./use-open-documents-of-kinds";
 import { collectGraphTypeAssets, typeSchemasFromGraphAssets } from "./logic-graph-document";
 import { subclassClassEntries } from "./component-property-rows";
@@ -8,7 +8,7 @@ const TYPE_KINDS = ["data-definition", "structure", "enum"] as const;
 
 /** Live schema and picker indexes shared by Data Definition and Data Tree editors. */
 export function useDataCatalog() {
-  const { assetRegistry, registryEpoch } = useDocuments();
+  const { assetRegistry, registryEpoch } = useRegistryState();
   const typeDocuments = useOpenDocumentsOfKinds(TYPE_KINDS);
   const assets = useMemo(() => {
     void registryEpoch;

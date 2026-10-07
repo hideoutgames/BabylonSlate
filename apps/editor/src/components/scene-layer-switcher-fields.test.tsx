@@ -12,7 +12,9 @@ const documents = vi.hoisted(() => {
   ];
   return { assetRegistry: { list: () => assets }, registryEpoch: 0, openDocuments: [], loadGraphDocument: vi.fn(async (path: string): Promise<SerializedGraph> => ({ nodes: [], edges: [], members: path.endsWith("Base.class.babasset") ? [{ id: "title", kind: "variable", name: "Title", typeId: "string", defaultValue: "Inherited Title" }] : [] })) };
 });
-vi.mock("../context/document-context", () => ({ useDocuments: () => documents }));
+vi.mock("../context/document-context", async () =>
+  (await import("../testing/document-context-mock")).documentContextMock(() => documents),
+);
 afterEach(cleanup);
 
 describe("SceneLayerSwitcherFields", () => {

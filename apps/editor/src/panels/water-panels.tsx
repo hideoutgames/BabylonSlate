@@ -8,7 +8,12 @@ import {
   MaterialLibrary, installTextureBytes, acquireMaterialTexture, resourceCacheForEngine, type RenderShadingSettings,
 } from "@babylonslate/render";
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useProjectState,
+  useRegistryState,
+  useOpenDocument,
+} from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useOptionalPlay } from "../context/play-context";
 import { isMaterialAssetType } from "../lib/content-browser-helpers";
@@ -62,9 +67,10 @@ const descriptions: Partial<Record<NumberKey, string>> = {
 export function WaterDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange, assetRegistry, registryEpoch } = useDocuments();
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const { assetRegistry, registryEpoch } = useRegistryState();
   const [picking, setPicking] = useState(false);
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const doc = useOpenDocument(documentId);
   const water = normalizeWaterDefinition(doc?.content);
   const defaults = createDefaultWaterDefinition(water.style);
   /** `field` names the per-field merge key: one scrub or color drag is one undo step. */
@@ -116,7 +122,9 @@ const PREVIEW_BODY = { width: 24, length: 24, waveScale: 1, depth: 5 };
 export function WaterPreviewPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, assetRegistry, registryEpoch, collectPlayMaterialLibrary, collectPlayTextureBytes, projectDocument } = useDocuments();
+  const { collectPlayMaterialLibrary, collectPlayTextureBytes } = useDocumentActions();
+  const { assetRegistry, registryEpoch } = useRegistryState();
+  const { projectDocument } = useProjectState();
   const play = useOptionalPlay();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneRef = useRef<Scene | null>(null);
@@ -124,7 +132,7 @@ export function WaterPreviewPanel(_props: IDockviewPanelProps) {
   const [engine, setEngine] = useState<AbstractEngine | null>(null);
   // The Play context changes identity on every document edit; only its shared engine matters here.
   useEffect(() => { setEngine(play?.ensureSharedEngine() ?? null); }, [play]);
-  const definition = normalizeWaterDefinition(openDocuments.find((entry) => entry.id === documentId)?.content);
+  const definition = normalizeWaterDefinition(useOpenDocument(documentId)?.content);
   const definitionKey = JSON.stringify(definition);
   /** The latest definition, for a mesh whose Custom Material finishes loading after later edits. */
   const definitionRef = useRef(definition);

@@ -32,7 +32,11 @@ import {
   spriteAnimationPlayhead,
   type SpriteAnimationPayload,
 } from "@babylonslate/assets";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useOpenDocument,
+  useRegistryState,
+} from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { SpriteCollisionOverlay } from "./sprite-collision-overlay";
 import { objectContainRect } from "../lib/object-contain";
@@ -91,8 +95,8 @@ function asPayload(payload: Record<string, unknown>): SpriteAnimationPayload {
 export function SpriteAnimationPreviewPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange } = useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const doc = useOpenDocument(documentId);
   const payload = (doc?.content ?? {}) as Record<string, unknown>;
   return (
     <PanelFrame data-testid="sprite-animation-preview-panel">
@@ -109,8 +113,8 @@ export function SpriteAnimationPreviewPanel(_props: IDockviewPanelProps) {
 export function SpriteAnimationDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange } = useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const doc = useOpenDocument(documentId);
   const payload = (doc?.content ?? {}) as Record<string, unknown>;
   return (
     <PanelFrame data-testid="sprite-animation-details-panel">
@@ -415,7 +419,8 @@ export function SpriteAnimationDetails({
   const { selectedFrameIndex, setSelectedFrameIndex } =
     useSpriteAnimationSelection(animation.frames.length);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const { assetRegistry, readAssetChunk } = useDocuments();
+  const { readAssetChunk } = useDocumentActions();
+  const { assetRegistry } = useRegistryState();
   const assets = (assetRegistry?.list() ?? []).map((asset) => ({
     guid: asset.header.guid,
     name: asset.header.name,

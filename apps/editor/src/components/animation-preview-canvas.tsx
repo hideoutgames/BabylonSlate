@@ -16,7 +16,7 @@ import {
   type MaterialPreviewScene,
 } from "@babylonslate/render";
 import { useOptionalPlay } from "../context/play-context";
-import { useDocuments } from "../context/document-context";
+import { useProjectState } from "../context/document-context";
 
 export function AnimationPreviewCanvas({
   sourceBytes,
@@ -33,7 +33,7 @@ export function AnimationPreviewCanvas({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const play = useOptionalPlay();
-  const { projectDocument } = useDocuments();
+  const { projectDocument } = useProjectState();
   const [engine, setEngine] = useState<AbstractEngine | null>(null);
   const [previewGeneration, setPreviewGeneration] = useState(0);
   const [clipPlaying, setClipPlaying] = useState(false);

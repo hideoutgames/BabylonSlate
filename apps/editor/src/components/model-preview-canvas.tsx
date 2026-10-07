@@ -47,7 +47,11 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@babylonslate/ui/components/toggle-group";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useProjectState,
+  useRegistryState,
+} from "../context/document-context";
 import { useOptionalPlay } from "../context/play-context";
 import { useModelColliderSession } from "../context/model-collider-session";
 import { savedMaterialLibraryKey } from "../lib/material-asset-revision";
@@ -87,7 +91,9 @@ export function ModelPreviewCanvas({
     gizmoTool,
     setGizmoTool,
   } = useModelColliderSession();
-  const { collectPlayMaterialLibrary, collectPlayTextureBytes, projectDocument, assetRegistry } = useDocuments();
+  const { collectPlayMaterialLibrary, collectPlayTextureBytes } = useDocumentActions();
+  const { projectDocument } = useProjectState();
+  const { assetRegistry } = useRegistryState();
   const { editorTextureLodEnabled, editorTextureLodQuality } =
     useEditorViewportPrefs();
   const [engine, setEngine] = useState<AbstractEngine | null>(null);

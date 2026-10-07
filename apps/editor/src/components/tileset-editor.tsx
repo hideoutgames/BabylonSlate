@@ -36,7 +36,11 @@ import {
   type TilesetPayload,
   type TilesetTile,
 } from "@babylonslate/assets";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useOpenDocument,
+  useRegistryState,
+} from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { TexturePreviewStatus, useTexturePreview } from "./texture-preview-status";
 import { useOptionalTilesetEditing } from "../context/tileset-editing-context";
@@ -46,8 +50,8 @@ const TOOL_ITEM = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
 export function TilesetPreviewPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange } = useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const doc = useOpenDocument(documentId);
   const payload = (doc?.content ?? {}) as Record<string, unknown>;
   return (
     <PanelFrame data-testid="tileset-preview-panel">
@@ -64,8 +68,8 @@ export function TilesetPreviewPanel(_props: IDockviewPanelProps) {
 export function TilesetDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange } = useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const doc = useOpenDocument(documentId);
   const payload = (doc?.content ?? {}) as Record<string, unknown>;
   return (
     <PanelFrame data-testid="tileset-details-panel">
@@ -562,7 +566,7 @@ function parseChainPoints(value: string): Array<{ x: number; y: number }> {
 }
 
 function useAssetOptions() {
-  const { assetRegistry } = useDocuments();
+  const { assetRegistry } = useRegistryState();
   return (assetRegistry?.list() ?? []).map((asset) => ({
     guid: asset.header.guid,
     name: asset.header.name,

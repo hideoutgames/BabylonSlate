@@ -23,7 +23,8 @@ import {
   typeClassIdFromPinType,
   typeIdFromPinType,
 } from "@babylonslate/scripting";
-import { useDocuments } from "../context/document-context";
+import { useRegistryState } from "../context/document-context";
+import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import {
   collectEnumMemberNames,
   variableAssetPickerAllowedTypes,
@@ -47,6 +48,9 @@ function uniqueKeyName(keys: readonly BlackboardKey[]): string {
   return `key${index}`;
 }
 
+/** Open Structure, Enum and Data Definition tabs override their saved types. */
+const TYPE_KINDS = ["structure", "enum", "data-definition"] as const;
+
 export function BlackboardEditor({
   payload,
   onChange,
@@ -55,7 +59,8 @@ export function BlackboardEditor({
   /** `mergeKey` groups one scrub's edits into one undo entry. */
   onChange: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
-  const { openDocuments, assetRegistry } = useDocuments();
+  const { assetRegistry } = useRegistryState();
+  const openDocuments = useOpenDocumentsOfKinds(TYPE_KINDS);
   const doc = useMemo(() => asBoard(payload), [payload]);
   const [selected, setSelected] = useState(0);
   const [typeAssetPickerOpen, setTypeAssetPickerOpen] = useState(false);

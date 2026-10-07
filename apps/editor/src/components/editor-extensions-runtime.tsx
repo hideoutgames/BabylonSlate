@@ -1,9 +1,15 @@
 import { useEffect } from "react";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useProjectState,
+  useRegistryState,
+} from "../context/document-context";
 
 /** Mirrors editor utility startup while keeping code modules out of Play. */
 export function EditorExtensionsRuntime() {
-  const { extensionService, projectDocument, getOpenDocuments, projectGuid } = useDocuments();
+  const { getOpenDocuments } = useDocumentActions();
+  const { projectDocument } = useProjectState();
+  const { extensionService, projectGuid } = useRegistryState();
   const overrides = JSON.stringify(projectDocument?.settings.extensionOverrides ?? {});
   useEffect(() => {
     if (!extensionService) return;

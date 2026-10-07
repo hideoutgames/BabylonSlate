@@ -7,7 +7,10 @@ import { DocumentWorkspaceProvider } from "../context/document-workspace-context
 import { SimulationInspectionStore } from "../services/simulation-inspection-store";
 import { SimulationInspector } from "./simulation-inspector";
 
-vi.mock("../context/document-context", () => ({ useDocuments: () => ({ activeDocumentId: "scene", registryEpoch: 0, assetRegistry: null }) }));
+vi.mock("../context/document-context", () => ({
+  useActiveDocumentId: () => "scene",
+  useRegistryState: () => ({ registryEpoch: 0, assetRegistry: null }),
+}));
 vi.mock("../context/scene-editing-context", () => ({ useOptionalSceneEditing: () => ({ viewportMode: "3d" }) }));
 const target: RuntimeObjectIdentity = { sceneInstanceId: "root", actorGuid: "actor", actorToken: 1 };
 const reply = (payload: RuntimeInspectorResult["payload"], commandRevision = 0): RuntimeInspectorResult => ({

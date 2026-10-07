@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { SaveGameService, createDefaultSaveGameDefinition, validateSaveGameDefinition, type SaveGameInfo, type SaveGameResult, type SaveGameValue } from "@babylonslate/core";
+import { SaveGameService, createDefaultSaveGameDefinition, documentId, validateSaveGameDefinition, type SaveGameInfo, type SaveGameResult, type SaveGameValue } from "@babylonslate/core";
 import { createSaveGameStorage, pickImportFiles } from "@babylonslate/vfs";
 import { AssetPicker, AssetPickerControl } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
@@ -10,7 +10,12 @@ import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@babylonslate/ui/components/empty";
 import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@babylonslate/ui/components/field";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@babylonslate/ui/components/alert-dialog";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useProjectState,
+  useRegistryState,
+  useOpenDocument,
+} from "../context/document-context";
 
 function resultValue<T>(result: SaveGameResult<T>): T {
   if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`);
@@ -35,10 +40,14 @@ function downloadSave(text: string, slot: string) {
 }
 
 export function ProjectSaveGamesSettings() {
-  const { projectDocument, projectGuid, updateProjectSettings, assetRegistry, registryEpoch, loadAssetDocument, openDocuments } = useDocuments();
+  const { updateProjectSettings, loadAssetDocument } = useDocumentActions();
+  const { projectDocument } = useProjectState();
+  const { projectGuid, assetRegistry, registryEpoch } = useRegistryState();
   const settings = projectDocument?.settings.saveGame;
   const definitionAsset = settings?.definitionGuid ? assetRegistry?.getByGuid(settings.definitionGuid) : undefined;
-  const openDefinition = openDocuments.find((entry) => entry.ref.kind === "save-game" && entry.ref.path === definitionAsset?.path)?.content;
+  const openDefinition = useOpenDocument(
+    definitionAsset ? documentId({ kind: "save-game", path: definitionAsset.path }) : null,
+  )?.content;
   const [pickerOpen, setPickerOpen] = useState(false);
   const [service, setService] = useState<SaveGameService | null>(null);
   const [saves, setSaves] = useState<SaveGameInfo[]>([]);

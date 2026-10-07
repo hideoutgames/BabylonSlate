@@ -2,11 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import { AssetPicker, ClassPicker, DisclosureSection, EntryListEditor, PropertyGrid, classRowIdentity, humanizePropertyLabel, walkAncestry, type ClassPickerEntry, type PropertyRow } from "@babylonslate/editor-kit";
 import { parseMapDefaultEntries, type GraphClassMember, type SerializedGraph } from "@babylonslate/core";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@babylonslate/ui/components/field";
-import { useDocuments } from "../context/document-context";
+import { useDocumentActions, useRegistryState } from "../context/document-context";
+import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { subclassClassEntries } from "../lib/component-property-rows";
 import { classIdFromClassAsset, classParentLookup } from "../lib/content-browser-helpers";
 import { collectEnumMemberNames, variableDefaultPropertyRows } from "../lib/graph-inspector";
 import { collectGraphTypeAssets, typeSchemasFromGraphAssets } from "../lib/logic-graph-document";
+
+/** Open type tabs override saved Structures, Enums and Data Definitions. */
+const TYPE_KINDS = ["structure", "enum", "data-definition"] as const;
+const CLASS_KINDS = ["graph"] as const;
 
 type SwitcherEntry = { classId: string; defaults: Record<string, unknown> };
 function entriesFrom(value: unknown): SwitcherEntry[] {
@@ -15,7 +20,10 @@ function entriesFrom(value: unknown): SwitcherEntry[] {
 
 /** Shared actor and prefab switcher authoring with inherited Class variable defaults. */
 export function SceneLayerSwitcherFields({ properties: authoredProperties, classId, onChange }: { properties: Record<string, unknown>; classId?: string; onChange: (properties: Record<string, unknown>) => void }) {
-  const { assetRegistry, registryEpoch, openDocuments, loadGraphDocument } = useDocuments();
+  const { loadGraphDocument } = useDocumentActions();
+  const { assetRegistry, registryEpoch } = useRegistryState();
+  const typeDocuments = useOpenDocumentsOfKinds(TYPE_KINDS);
+  const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
   const [picking, setPicking] = useState<number | null>(null);
   const assets = useMemo(() => { void registryEpoch; return assetRegistry?.list() ?? []; }, [assetRegistry, registryEpoch]);
   const classes = useMemo(() => subclassClassEntries("SceneLayerActor", assets), [assets]);
@@ -25,18 +33,18 @@ export function SceneLayerSwitcherFields({ properties: authoredProperties, class
   const properties = Object.assign({}, ...walkAncestry(classId ?? "SceneLayerActorSwitcher", parentOf).reverse().map(id => graphs[id]?.actorDefaults?.properties ?? {}), authoredProperties);
   const entries = entriesFrom(properties.sceneLayerActors);
   const entryClassIds = [...entries.map(entry => entry.classId), ...(classId ? [classId] : [])].join("\n");
-  const schemas = useMemo(() => typeSchemasFromGraphAssets(collectGraphTypeAssets({ assets, openDocuments })), [assets, openDocuments]);
-  const enumMembers = useMemo(() => collectEnumMemberNames(openDocuments, assets), [assets, openDocuments]);
+  const schemas = useMemo(() => typeSchemasFromGraphAssets(collectGraphTypeAssets({ assets, openDocuments: typeDocuments })), [assets, typeDocuments]);
+  const enumMembers = useMemo(() => collectEnumMemberNames(typeDocuments, assets), [assets, typeDocuments]);
   useEffect(() => {
     let active = true;
     setError(null);
     const ids = new Set(entryClassIds.split("\n").flatMap(id => walkAncestry(id, parentOf)));
     void Promise.all(assets.filter(asset => asset.header.type === "Class" && ids.has(classIdFromClassAsset(asset))).map(async asset => {
-      const open = openDocuments.find(doc => doc.ref.path === asset.path && doc.ref.kind === "graph");
+      const open = classDocuments.find(doc => doc.ref.path === asset.path);
       return [classIdFromClassAsset(asset), open ? open.content as SerializedGraph : await loadGraphDocument(asset.path)] as const;
     })).then(results => { if (active) setGraphs(Object.fromEntries(results.filter((entry): entry is readonly [string, SerializedGraph] => entry[1] !== null))); }).catch(reason => { if (active) setError(reason instanceof Error ? reason.message : "Unable to load Class defaults."); });
     return () => { active = false; };
-  }, [assets, entryClassIds, loadGraphDocument, openDocuments, parentOf]);
+  }, [assets, classDocuments, entryClassIds, loadGraphDocument, parentOf]);
   const changeEntries = (sceneLayerActors: SwitcherEntry[]) => onChange({ ...properties, sceneLayerActors });
   return <Field className="p-2" data-testid="scene-layer-switcher-fields">
     <FieldLabel>Scene Layer Actors</FieldLabel>

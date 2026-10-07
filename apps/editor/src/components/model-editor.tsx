@@ -33,7 +33,11 @@ import {
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
 import { Button } from "@babylonslate/ui/components/button";
-import { useDocumentActions, useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useOpenDocument,
+  useRegistryState,
+} from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useModelColliderSession } from "../context/model-collider-session";
 import { ModelPreviewCanvas } from "./model-preview-canvas";
@@ -66,8 +70,8 @@ function useModelSourceBytes(path: string | undefined): Uint8Array | null {
 export function ModelPreviewPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange } = useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const doc = useOpenDocument(documentId);
   const sourceBytes = useModelSourceBytes(doc?.ref.path);
   return (
     <PanelFrame data-testid="model-preview-panel">
@@ -85,8 +89,8 @@ export function ModelPreviewPanel(_props: IDockviewPanelProps) {
 export function ModelCollidersPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange } = useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const doc = useOpenDocument(documentId);
   const sourceBytes = useModelSourceBytes(doc?.ref.path);
   return (
     <PanelFrame data-testid="model-colliders-panel">
@@ -104,8 +108,8 @@ export function ModelCollidersPanel(_props: IDockviewPanelProps) {
 export function ModelDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange } = useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const doc = useOpenDocument(documentId);
   return (
     <PanelFrame data-testid="model-details-panel">
       <ModelEditor
@@ -163,7 +167,7 @@ export function ModelEditor({
 }) {
   const model = normalizeModelPayload(payload);
   const [pickIndex, setPickIndex] = useState<number | null>(null);
-  const { assetRegistry } = useDocuments();
+  const { assetRegistry } = useRegistryState();
   const assets = (assetRegistry?.list() ?? []).map((asset) => ({
     guid: asset.header.guid,
     name: asset.header.name,

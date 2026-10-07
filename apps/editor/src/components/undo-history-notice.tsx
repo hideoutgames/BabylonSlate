@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
 import { Button } from "@babylonslate/ui/components/button";
-import { useDocuments } from "../context/document-context";
+import { useDocumentActions, useEditorShellState } from "../context/document-context";
 
 /** Long enough to read; the notice never blocks editing meanwhile. */
 const NOTICE_DURATION_MS = 8000;
@@ -11,7 +11,8 @@ const NOTICE_DURATION_MS = 8000;
  * was larger than the Undo memory limit, so it cleared the Undo history.
  */
 export function UndoHistoryNotice({ documentId }: { documentId: string }) {
-  const { undoHistoryNotice, dismissUndoHistoryNotice } = useDocuments();
+  const { dismissUndoHistoryNotice } = useDocumentActions();
+  const { undoHistoryNotice } = useEditorShellState();
   const sequence = undoHistoryNotice?.documentId === documentId
     ? undoHistoryNotice.sequence
     : null;

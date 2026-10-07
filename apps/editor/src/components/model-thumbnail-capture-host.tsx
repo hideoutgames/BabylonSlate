@@ -4,7 +4,12 @@ import {
   normalizeModelPayload,
 } from "@babylonslate/assets";
 import { captureAssetThumbnailPng, captureModelThumbnailPng } from "@babylonslate/render";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useEditorShellState,
+  useProjectState,
+  useRegistryState,
+} from "../context/document-context";
 import { useOptionalPlay } from "../context/play-context";
 import {
   subscribeModelThumbnailJobs,
@@ -21,15 +26,10 @@ import { collectGpuTextureBytes } from "../lib/collect-gpu-texture-bytes";
  */
 export function ModelThumbnailCaptureHost() {
   const play = useOptionalPlay();
-  const {
-    assetRegistry,
-    projectGuid,
-    projectDocument,
-    thumbnailsEnabled,
-    readAssetChunk,
-    createAssetLoadScope,
-    writeAssetThumbnail,
-  } = useDocuments();
+  const { readAssetChunk, createAssetLoadScope, writeAssetThumbnail } = useDocumentActions();
+  const { projectDocument } = useProjectState();
+  const { assetRegistry, projectGuid } = useRegistryState();
+  const { thumbnailsEnabled } = useEditorShellState();
   const tail = useRef(Promise.resolve());
   const latest = useRef({ assetRegistry, play, readAssetChunk, createAssetLoadScope, writeAssetThumbnail, projectDocument });
   latest.current = { assetRegistry, play, readAssetChunk, createAssetLoadScope, writeAssetThumbnail, projectDocument };

@@ -33,7 +33,11 @@ import {
   SquareDashedMousePointerIcon,
 } from "lucide-react";
 import { useRef, useState } from "react";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useProjectState,
+  useOpenDocument,
+} from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
 import { GridSizeDialog } from "./grid-size-dialog";
@@ -82,7 +86,9 @@ export function ViewportToolbar({
   dropDisabled?: boolean;
 }) {
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applySceneChange, projectDocument } = useDocuments();
+  const { applySceneChange } = useDocumentActions();
+  const { projectDocument } = useProjectState();
+  const doc = useOpenDocument(documentId);
   const { flySpeed, gridSize, snapTranslate, snapRotateDeg, snapScale } =
     useEditorViewportPrefs();
   const [numberPrompt, setNumberPrompt] = useState<null | "grid" | "camera">(
@@ -129,7 +135,6 @@ export function ViewportToolbar({
   useKeybindCommand("viewport.rotate", () => setGizmoTool("rotate"), gizmoKeys);
   useKeybindCommand("viewport.scale", () => setGizmoTool("scale"), gizmoKeys);
 
-  const doc = openDocuments.find((entry) => entry.id === documentId);
   const scene = isSceneWorkspaceKind(doc?.ref.kind)
     ? (doc.content as SerializedScene)
     : null;

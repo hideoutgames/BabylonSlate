@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import type { SaveGameDefinition } from "@babylonslate/core";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useProjectState,
+  useRegistryState,
+} from "../context/document-context";
 import {
   classParentLookup,
   materialDomainsFromAssets,
@@ -41,7 +45,9 @@ const SAVE_GAME_KINDS = ["save-game"] as const;
  * while Scene, Material or other edits leave the class catalogs alone.
  */
 export function useGraphPanelCatalogs() {
-  const { assetRegistry, registryEpoch, projectDocument, loadAssetDocument } = useDocuments();
+  const { loadAssetDocument } = useDocumentActions();
+  const { projectDocument } = useProjectState();
+  const { assetRegistry, registryEpoch } = useRegistryState();
   const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
   const sceneDocumentsOpen = useOpenDocumentsOfKinds(SCENE_KINDS);
   const interfaceDocuments = useOpenDocumentsOfKinds(INTERFACE_KINDS);

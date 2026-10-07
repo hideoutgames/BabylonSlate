@@ -19,10 +19,19 @@ interface DocumentKey {
   readonly background: boolean;
 }
 
-function sameKey(key: DocumentKey, doc: OpenDocument): boolean {
+/**
+ * Edits replace `ref` with an equal copy (the label is rebuilt from the
+ * content name), so a ref counts as changed only when one of its values does.
+ */
+export function sameDocumentRef(a: DocumentRef, b: DocumentRef): boolean {
+  return a === b || (a.kind === b.kind && a.path === b.path && a.label === b.label);
+}
+
+/** Everything but the content: what a tab strip or tab list shows. */
+function sameTab(key: DocumentKey, doc: OpenDocument): boolean {
   return (
-    key.content === doc.content &&
-    key.ref === doc.ref &&
+    key.document === doc &&
+    sameDocumentRef(key.ref, doc.ref) &&
     key.layout === doc.layout &&
     key.dirty === doc.dirty &&
     key.background === (doc.background === true)
@@ -76,28 +85,20 @@ export class DocumentSubscriptions {
 
   /**
    * Open documents in tab order. The same array until one opens, closes,
-   * moves, or changes its label, dirty state or background flag; content and
-   * layout edits keep it.
+   * moves, or changes its label, layout, dirty state or background flag;
+   * content edits keep it.
    */
   readonly tabsSnapshot = (): OpenDocument[] => {
     const next = this.service.getOpenDocumentsOrdered();
     const previous = this.tabs;
     const unchanged =
       next.length === previous.list.length &&
-      next.every((doc, index) => {
-        const key = previous.keys[index];
-        return (
-          doc === previous.list[index] &&
-          key.ref === doc.ref &&
-          key.dirty === doc.dirty &&
-          key.background === (doc.background === true)
-        );
-      });
+      next.every((doc, index) => sameTab(previous.keys[index], doc));
     if (!unchanged) this.tabs = { list: next, keys: next.map((doc) => this.keyFor(doc)) };
     return this.tabs.list;
   };
 
-  /** Replaced when the document's content, ref, layout or dirty state changes. */
+  /** Replaced when the document's content, label, layout or dirty state changes. */
   documentKey(id: string): DocumentKey | undefined {
     const doc = this.service.getDocument(id);
     return doc ? this.keyFor(doc) : undefined;
@@ -113,7 +114,7 @@ export class DocumentSubscriptions {
 
   private keyFor(doc: OpenDocument): DocumentKey {
     const previous = this.keys.get(doc);
-    if (previous && sameKey(previous, doc)) return previous;
+    if (previous && previous.content === doc.content && sameTab(previous, doc)) return previous;
     const key: DocumentKey = {
       document: doc,
       content: doc.content,

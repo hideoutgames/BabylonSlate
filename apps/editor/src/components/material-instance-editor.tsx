@@ -14,7 +14,11 @@ import {
   parseMaterialDomain,
   type MaterialInstanceDocument,
 } from "@babylonslate/shader-graph";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useOpenDocument,
+  useRegistryState,
+} from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useMaterialEditing } from "../context/material-editing-context";
 import { isMaterialSamplerTextureAsset } from "../lib/content-browser-helpers";
@@ -27,8 +31,8 @@ import { MaterialPreviewSurface } from "./material-editor";
 
 function useMaterialInstanceDocument() {
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange } = useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const doc = useOpenDocument(documentId);
   const document = useMemo(
     () => normalizeMaterialInstanceDocument(doc?.content ?? {}),
     [doc?.content],
@@ -61,7 +65,7 @@ export function MaterialInstancePreviewPanel(_props: IDockviewPanelProps) {
 export function MaterialInstanceDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { document, commit, path } = useMaterialInstanceDocument();
-  const { assetRegistry } = useDocuments();
+  const { assetRegistry } = useRegistryState();
   const { instance } = useMaterialEditing();
   const [pickParent, setPickParent] = useState(false);
   const [pickTexture, setPickTexture] = useState<string | null>(null);

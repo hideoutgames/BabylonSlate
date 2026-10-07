@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { PanelFrame } from "@babylonslate/editor-kit";
 import { GraphEditor } from "@babylonslate/graph-ui";
-import { useDocuments } from "../context/document-context";
+import { useOpenDocument } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useTypeAssetEditing } from "../context/type-asset-editing-context";
 import { interfacePreviewGraph } from "../lib/interface-preview";
@@ -16,13 +16,13 @@ import {
 export function InterfacePreviewPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments } = useDocuments();
+
   const { selectedMemberId, setSelectedPinId } = useTypeAssetEditing();
   const { sessionViewport, onSessionViewportChange } = useGraphSessionViewport(
     documentId,
     selectedMemberId ?? "preview",
   );
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const doc = useOpenDocument(documentId);
   const previewGraph = useMemo(() => {
     const index = parseMemberIndex(selectedMemberId);
     if (index === null) return null;

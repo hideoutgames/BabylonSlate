@@ -6,7 +6,7 @@ import {
   type MaterialSource,
 } from "@babylonslate/shader-graph";
 import { isLegacyMaterialAssetType } from "@babylonslate/core";
-import { useDocuments } from "./document-context";
+import { useDocumentActions, useRegistryState } from "./document-context";
 import {
   MATERIAL_DOCUMENT_KINDS,
   useOpenDocumentsOfKinds,
@@ -23,7 +23,8 @@ export function useMaterialInstanceSources(
   selfDocumentId: string,
   parentGuid: string | null,
 ): ReadonlyMap<string, MaterialSource> | null {
-  const { assetRegistry, registryEpoch, readAssetChunk } = useDocuments();
+  const { readAssetChunk } = useDocumentActions();
+  const { assetRegistry, registryEpoch } = useRegistryState();
   const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
   // Only other open material tabs matter; the instance's own edits must not reload the chain.
   const openRef = useRef<ReadonlyArray<readonly [string, unknown]>>([]);

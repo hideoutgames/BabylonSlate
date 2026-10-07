@@ -20,7 +20,12 @@ import {
 } from "@babylonslate/assets";
 import { Button } from "@babylonslate/ui/components/button";
 import { Field, FieldLabel } from "@babylonslate/ui/components/field";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useOpenDocument,
+  useRegistryState,
+} from "../context/document-context";
+import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import {
   creatableAssetTypeLabel,
@@ -44,8 +49,8 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function useSystemDocument() {
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange } = useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const doc = useOpenDocument(documentId);
   const onChange = (next: Record<string, unknown>) => {
     void applyAssetDocumentChange(documentId, next);
   };
@@ -83,13 +88,17 @@ const idleControls = {
  * Loads each slot's Basic emitter or Particle Graph (open tab first, then its
  * document) and previews them together.
  */
+const EMITTER_KINDS = ["particle-emitter"] as const;
+
 export function ParticleSystemPreview({
   payload,
 }: {
   payload: Record<string, unknown>;
 }) {
   const system = normalizeParticleSystemPayload(payload);
-  const { assetRegistry, openDocuments, loadAssetDocument } = useDocuments();
+  const { loadAssetDocument } = useDocumentActions();
+  const { assetRegistry } = useRegistryState();
+  const emitterDocuments = useOpenDocumentsOfKinds(EMITTER_KINDS);
   const assets = assetRegistry?.list() ?? [];
   const [emitters, setEmitters] = useState<Map<string, ParticleLibraryEmitter> | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -98,7 +107,7 @@ export function ParticleSystemPreview({
   const openPayloads = new Map<string, unknown>();
   for (const asset of assets) {
     if (!isParticleEmitterAssetType(asset.header.type)) continue;
-    const doc = openDocuments?.find((entry) => entry.ref.path === asset.path);
+    const doc = emitterDocuments.find((entry) => entry.ref.path === asset.path);
     if (doc?.content) openPayloads.set(asset.header.guid, doc.content);
   }
   const openKey = JSON.stringify([...openPayloads.entries()]);
@@ -186,7 +195,7 @@ export function ParticleSystemEditor({
 }) {
   const system = normalizeParticleSystemPayload(payload);
   const [pick, setPick] = useState<number | "new" | null>(null);
-  const { assetRegistry } = useDocuments();
+  const { assetRegistry } = useRegistryState();
   const assets = assetRegistry?.list() ?? [];
   const emitterAssets = assets
     .filter((asset) => isParticleEmitterAssetType(asset.header.type))

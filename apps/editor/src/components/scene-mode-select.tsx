@@ -1,11 +1,12 @@
 import {
   Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue,
 } from "@babylonslate/ui/components/select";
-import { useDocuments } from "../context/document-context";
+import { useActiveDocumentState, useDocumentActions } from "../context/document-context";
 import { SCENE_MODES, SCENE_MODE_LABELS, normalizeSceneMode } from "../shell/scene-document-layout";
 
 export function SceneModeSelect({ disabled = false }: { disabled?: boolean }) {
-  const { sceneMode, setSceneMode, activeDocumentId } = useDocuments();
+  const { setSceneMode } = useDocumentActions();
+  const { sceneMode, activeDocumentId } = useActiveDocumentState();
   return (
     <Select
       value={sceneMode}

@@ -3,7 +3,12 @@ import { createContext, useContext, useMemo, useState, type ReactNode } from "re
 import { normalizeDataDefinitionAsset, type DataDefinitionField } from "@babylonslate/core";
 import { reconcileDataDefinitionDefault, structInstanceDefaultWithSchema, validateDataDefinition } from "@babylonslate/scripting";
 import type { PinListRow } from "@babylonslate/editor-kit";
-import { useDocuments } from "./document-context";
+import {
+  useDocumentActions,
+  useRegistryState,
+  useSourceControl,
+  useOpenDocument,
+} from "./document-context";
 import { useDocumentWorkspace } from "./document-workspace-context";
 import { useDataCatalog } from "../lib/use-data-catalog";
 
@@ -11,12 +16,14 @@ export const DATA_DEFINITION_FIELD_TYPES = ["bool", "int", "float", "string", "t
 
 function useDataDefinitionState() {
   const { documentId } = useDocumentWorkspace();
-  const documents = useDocuments();
+  const documents = useDocumentActions();
+  const { assetRegistry } = useRegistryState();
+  const { sourceControl } = useSourceControl();
   const catalog = useDataCatalog();
-  const doc = documents.openDocuments.find(entry => entry.id === documentId);
+  const doc = useOpenDocument(documentId);
   const definition = useMemo(() => normalizeDataDefinitionAsset(doc?.content ?? {}), [doc?.content]);
   const asset = catalog.assets.find(entry => entry.path === doc?.ref.path);
-  const readOnly = Boolean(asset && documents.assetRegistry?.getRoot(asset.rootId)?.readOnly) || Boolean(doc && documents.sourceControl.isDocumentReadOnly(doc.ref.path));
+  const readOnly = Boolean(asset && assetRegistry?.getRoot(asset.rootId)?.readOnly) || Boolean(doc && sourceControl.isDocumentReadOnly(doc.ref.path));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const selected = definition.fields.find(field => field.id === selectedId) ?? definition.fields[0];

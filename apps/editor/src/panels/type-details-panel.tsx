@@ -12,7 +12,12 @@ import {
 } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
 import { defaultValueForMember, keepsTypeClassId } from "@babylonslate/scripting";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useRegistryState,
+  useOpenDocument,
+} from "../context/document-context";
+import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useTypeAssetEditing } from "../context/type-asset-editing-context";
 import { patchEnumMember, patchStructureField } from "../lib/asset-settings";
@@ -32,20 +37,25 @@ import {
   parseMemberIndex,
 } from "../lib/type-asset-payload";
 
+/** Open Structure, Enum and Data Definition tabs override their saved types. */
+const TYPE_KINDS = ["structure", "enum", "data-definition"] as const;
+
 export function TypeDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange, assetRegistry } = useDocuments();
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const { assetRegistry } = useRegistryState();
+  const typeDocuments = useOpenDocumentsOfKinds(TYPE_KINDS);
   const { selectedMemberId } = useTypeAssetEditing();
   const [typeAssetPickerOpen, setTypeAssetPickerOpen] = useState(false);
   const [defaultAssetPickerOpen, setDefaultAssetPickerOpen] = useState(false);
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const doc = useOpenDocument(documentId);
   const payload = (doc?.content ?? {}) as Record<string, unknown>;
   const kind = doc?.ref.kind;
   const selectedIndex = parseMemberIndex(selectedMemberId);
   const typeCatalog = collectGraphTypeAssets({
     assets: assetRegistry?.list() ?? [],
-    openDocuments,
+    openDocuments: typeDocuments,
   });
   const typeSchemas = typeSchemasFromGraphAssets(typeCatalog);
   const typeAssets = typeAssetPickerEntries(typeCatalog);
@@ -56,7 +66,7 @@ export function TypeDetailsPanel(_props: IDockviewPanelProps) {
     path: asset.path,
   }));
   const enumMembers = collectEnumMemberNames(
-    openDocuments,
+    typeDocuments,
     assetRegistry?.list() ?? [],
   );
 

@@ -4,7 +4,11 @@ import {
   type AssetCreateApi,
 } from "@babylonslate/editor-kit";
 import type { MaterialDomain } from "@babylonslate/shader-graph";
-import { useDocuments } from "./document-context";
+import {
+  useActiveDocumentId,
+  useDocumentActions,
+  useRegistryState,
+} from "./document-context";
 import {
   classIdFromClassAsset,
   creatableAssetTypeLabel,
@@ -25,12 +29,14 @@ export function AssetCreateDocumentsProvider({
 }: {
   children: ReactNode;
 }) {
-  const { assetRegistry, noteAssetsCreated, openDocuments, activeDocumentId } =
-    useDocuments();
-  // Read at create time so document edits do not re-render every picker.
-  const latest = useRef({ noteAssetsCreated, openDocuments, activeDocumentId });
+  const { noteAssetsCreated, getOpenDocuments } = useDocumentActions();
+  const { assetRegistry } = useRegistryState();
+  const activeDocumentId = useActiveDocumentId();
+  // Read at create time so tab switches do not re-render every picker; open
+  // documents come from the live getter.
+  const latest = useRef({ noteAssetsCreated, getOpenDocuments, activeDocumentId });
   useLayoutEffect(() => {
-    latest.current = { noteAssetsCreated, openDocuments, activeDocumentId };
+    latest.current = { noteAssetsCreated, getOpenDocuments, activeDocumentId };
   });
 
   const value = useMemo<AssetCreateApi>(() => {
@@ -46,7 +52,8 @@ export function AssetCreateDocumentsProvider({
       if (!isPickerCreatableAssetType(request.type)) {
         throw new Error(`${request.type} assets cannot be created here.`);
       }
-      const { openDocuments: docs, activeDocumentId: activeId } = latest.current;
+      const { activeDocumentId: activeId } = latest.current;
+      const docs = latest.current.getOpenDocuments();
       const created = await createPickerAsset({
         registry: assetRegistry,
         ownerPath:

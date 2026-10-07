@@ -18,7 +18,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { DocumentSubscriptions } from "./document-subscriptions";
+import { DocumentSubscriptions, sameDocumentRef } from "./document-subscriptions";
 import { flushSync } from "react-dom";
 import { SceneLoadingDialog } from "../components/scene-loading-dialog";
 import { waitForSceneLoadingPaint } from "../lib/scene-viewport-load";
@@ -3954,7 +3954,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const previous = stableDirtyRef.current;
     if (
       previous.list.length === dirtyDocuments.length &&
-      dirtyDocuments.every((doc, index) => doc === previous.list[index] && doc.ref === previous.refs[index])
+      dirtyDocuments.every((doc, index) => doc === previous.list[index] && sameDocumentRef(doc.ref, previous.refs[index]))
     ) {
       return previous.list;
     }
@@ -4265,7 +4265,7 @@ export function useTabOrder(): readonly string[] {
 /**
  * Open documents in tab order, for tab strips and lists of open documents.
  * Re-renders when a document opens, closes, moves or changes its label,
- * dirty state or background flag; content and layout edits do not. Read
+ * layout, dirty state or background flag; content edits do not. Read
  * content through `useOpenDocument`.
  */
 export function useOpenDocumentTabs(): OpenDocument[] {

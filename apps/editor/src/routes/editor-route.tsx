@@ -23,7 +23,9 @@ import { DocumentWorkspace } from "../components/document-workspace";
 import { ExternalChangeDialogs } from "../components/external-change-dialogs";
 import {
   useDocumentActions,
-  useDocuments,
+  useActiveDocumentId,
+  useEditorShellState,
+  useSaveState,
 } from "../context/document-context";
 import { AssetOpenDocumentsProvider } from "../context/asset-open-provider";
 import { AssetCreateDocumentsProvider } from "../context/asset-create-provider";
@@ -150,7 +152,8 @@ function MigrationPrompt({
 }
 
 function RecoveryBanner() {
-  const { recoveryAvailable, keepRecovery, dismissRecovery } = useDocuments();
+  const { keepRecovery, dismissRecovery } = useDocumentActions();
+  const { recoveryAvailable } = useEditorShellState();
   if (!recoveryAvailable) return null;
   return (
     <Alert
@@ -187,12 +190,8 @@ function RecoveryBanner() {
  * re-render on every edit. Request handlers read open documents when they run.
  */
 function EditorChromeAndPrompts() {
-  const {
-    dirtyDocuments,
-    migrationPending,
-    pendingExclusiveScene,
-    externalChangePrompt,
-  } = useDocuments();
+  const { dirtyDocuments } = useSaveState();
+  const { migrationPending, pendingExclusiveScene, externalChangePrompt } = useEditorShellState();
   const {
     closeProject,
     forceCloseProject,
@@ -386,7 +385,7 @@ function EditorChromeAndPrompts() {
 
 /** Browser leave protection and the dirty count while anything is unsaved. */
 function UnsavedChangesGuard() {
-  const { dirtyDocuments, projectDirty } = useDocuments();
+  const { dirtyDocuments, projectDirty } = useSaveState();
   const unsaved = dirtyDocuments.length + Number(Boolean(projectDirty));
 
   useEffect(() => {
@@ -430,7 +429,7 @@ function PlayAwareKeybinds({ children }: { children: ReactNode }) {
 }
 
 function DocumentValidationProvider({ children }: { children: ReactNode }) {
-  const { activeDocumentId } = useDocuments();
+  const activeDocumentId = useActiveDocumentId();
   return <ValidationProvider scopeKey={activeDocumentId ?? undefined}>{children}</ValidationProvider>;
 }
 

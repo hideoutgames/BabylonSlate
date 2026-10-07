@@ -8,12 +8,13 @@ import {
   FieldLegend,
   FieldSet,
 } from "@babylonslate/ui/components/field";
-import { useDocuments } from "../context/document-context";
+import { useDocumentActions, useEditorShellState } from "../context/document-context";
 import { importTemplateArchive } from "../services/template-service";
 
 /** The launcher and Engine Settings edit the same installed template library. */
 export function TemplateLibrarySettings() {
-  const { templates, refreshTemplates } = useDocuments();
+  const { refreshTemplates } = useDocumentActions();
+  const { templates } = useEditorShellState();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const importTemplate = async () => {

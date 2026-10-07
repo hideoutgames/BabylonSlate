@@ -9,7 +9,7 @@
 import type { IDockviewPanelProps } from "dockview-react";
 import type { TracePayload } from "@babylonslate/debugger";
 import { PanelFrame } from "@babylonslate/editor-kit";
-import { useDocuments } from "../context/document-context";
+import { useOpenDocument } from "../context/document-context";
 import { asTracePayload, validTraceIndex } from "../lib/trace-view";
 import { TraceTimelineView } from "./trace-timeline-view";
 import {
@@ -92,10 +92,7 @@ export function TracePlaybackProvider({
   documentId: string;
   children: ReactNode;
 }) {
-  const { openDocuments } = useDocuments();
-  const content = openDocuments.find(
-    (entry) => entry.id === documentId,
-  )?.content;
+  const content = useOpenDocument(documentId)?.content;
   const payload = useMemo(() => asTracePayload(content), [content]);
   return (
     <TraceSession key={documentId} payload={payload}>

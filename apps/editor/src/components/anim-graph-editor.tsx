@@ -53,7 +53,12 @@ import {
   animGraphNodeTypes,
 } from "@babylonslate/graph-ui";
 import type { Diagnostic } from "@babylonslate/scripting";
-import { useDocuments } from "../context/document-context";
+import {
+  useActiveDocumentState,
+  useDocumentActions,
+  useOpenDocument,
+  useRegistryState,
+} from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useAnimGraphEditing } from "../context/anim-graph-editing-context";
 import { useAppSettings } from "../context/app-settings-context";
@@ -224,8 +229,9 @@ function transitionLabel(doc: AnimGraphDocument, transition: AnimTransition): st
 
 function useAnimGraphDocument() {
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange, assetRegistry } = useDocuments();
-  const entry = openDocuments.find((item) => item.id === documentId);
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const { assetRegistry } = useRegistryState();
+  const entry = useOpenDocument(documentId);
   const listed = assetRegistry?.list() ?? [];
   const catalogKey = listed
     .map(
@@ -435,7 +441,7 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
     closeTransitionRule,
   } = useAnimGraphEditing();
   const { setSelectedNodeIds } = useGraphEditing();
-  const { activeDocumentId, animEditorMode } = useDocuments();
+  const { activeDocumentId, animEditorMode } = useActiveDocumentState();
   const typeCatalog = useDataCatalog();
   const sheetDocuments = useOpenDocumentsOfKinds(DATA_TREE_KINDS);
   const dataAssets = useMemo(() => collectDataGraphAssets(typeCatalog.assets, sheetDocuments), [typeCatalog.assets, sheetDocuments]);

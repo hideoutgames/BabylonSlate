@@ -14,7 +14,7 @@ import {
   documentId,
   labelFromPath,
 } from "@babylonslate/core";
-import { useDocuments } from "./document-context";
+import { useDocumentActions, useRegistryState } from "./document-context";
 import { useValidation } from "./validation-context";
 import {
   documentOpenForTarget,
@@ -40,13 +40,8 @@ const ProjectSearchContext = createContext<ProjectSearchContextValue | null>(
 );
 
 export function ProjectSearchProvider({ children }: { children: ReactNode }) {
-  const {
-    searchIndex,
-    assetRegistry,
-    openDocument,
-    setActiveDocument,
-    getOpenDocuments,
-  } = useDocuments();
+  const { openDocument, setActiveDocument, getOpenDocuments } = useDocumentActions();
+  const { searchIndex, assetRegistry } = useRegistryState();
   const { setFocusDiagnostic } = useValidation();
   const [pendingTarget, setPendingTarget] = useState<SearchOpenTarget | null>(
     null,

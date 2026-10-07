@@ -19,7 +19,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   projectGuid: "project",
   projectDocument: { settings: { saveGame: { definitionGuid: harness.definitionGuid, defaultProfile: "default", defaultSlot: "default", wipeOnPlay: false } } },
   assetRegistry: { getByGuid: () => ({ path: "Progress.savegame.babasset", header: { guid: "progress", name: "Progress", type: "SaveGame" } }), list: () => [] },
-  openDocuments: [{ id: "progress", ref: { kind: "save-game", path: "Progress.savegame.babasset" }, content: harness.definition }],
+  openDocuments: [{ id: "save-game:Progress.savegame.babasset", ref: { kind: "save-game", path: "Progress.savegame.babasset" }, content: harness.definition }],
   updateProjectSettings: harness.settings,
 })));
 let preview: SaveGameService;

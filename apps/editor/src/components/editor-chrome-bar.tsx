@@ -68,7 +68,15 @@ import { cn } from "@babylonslate/ui/lib/utils";
 import { usePhoneLayout } from "../shell/use-platform-layout";
 import { BrandIcon } from "./brand-icon";
 import { DocumentSwitcher } from "./document-switcher";
-import { useDocuments } from "../context/document-context";
+import {
+  useActiveDocumentState,
+  useCompileState,
+  useDocumentActions,
+  useOpenDocumentTabs,
+  useProjectState,
+  useRegistryState,
+  useSaveState,
+} from "../context/document-context";
 import { usePlay } from "../context/play-context";
 import { useValidation } from "../context/validation-context";
 import type { OpenDocument } from "../services/document-service";
@@ -247,27 +255,30 @@ export function EditorChromeBar({
   onCloseAllDocuments?: () => void;
 }) {
   const {
-    projectName,
-    openDocuments,
-    activeDocumentId,
     setActiveDocument,
     closeDocument,
     reorderClosableTabs,
     saveAll,
-    dirtyDocuments,
-    projectDirty,
     undoActiveDocument,
     redoActiveDocument,
+    toggleLayoutFocus,
+    collectPlayPreviewScripts,
+    activateDockPanel,
+    getOpenDocuments,
+  } = useDocumentActions();
+  // Tabs re-render for opens, closes, moves, labels and dirty flags, not for
+  // each content edit.
+  const openDocuments = useOpenDocumentTabs();
+  const { projectName } = useProjectState();
+  const {
+    activeDocumentId,
     canUndoActiveDocument,
     canRedoActiveDocument,
     isLayoutFocused,
-    toggleLayoutFocus,
-    collectPlayPreviewScripts,
-    graphsNeedCompile,
-    activateDockPanel,
-    assetRegistry,
-    registryEpoch,
-  } = useDocuments();
+  } = useActiveDocumentState();
+  const { dirtyDocuments, projectDirty } = useSaveState();
+  const { graphsNeedCompile } = useCompileState();
+  const { assetRegistry, registryEpoch } = useRegistryState();
   const { control: materialRenderControl } = useMaterialRenderControl();
 
   const {
@@ -703,7 +714,7 @@ export function EditorChromeBar({
                   const result = await collectPlayPreviewScripts();
                   const diagnostics = [
                     ...result.diagnostics,
-                    ...openDocuments
+                    ...getOpenDocuments()
                       .filter((doc) => doc.ref.kind === "graph" && doc.content)
                       .flatMap((doc) =>
                         physicsPairingDiagnostics(
