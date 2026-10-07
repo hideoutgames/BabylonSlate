@@ -365,12 +365,8 @@ function ContentBrowserWorkspaceBody({
   } | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [operationError, setOperationError] = useState<string | null>(null);
-  const [nameDialog, setNameDialog] = useState<
-    | { kind: "rename"; guid: string; value: string }
-    | { kind: "folder"; value: string }
-    | { kind: "rename-folder"; path: string; value: string }
-    | null
-  >(null);
+  const [nameDialog, setNameDialog] = useState<NameEntry | null>(null);
+  const [treeRenamingId, setTreeRenamingId] = useState<string | null>(null);
   const [moveTarget, setMoveTarget] = useState<MoveTarget | null>(null);
   const [referenceGuid, setReferenceGuid] = useState<string | null>(null);
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>(
@@ -792,9 +788,14 @@ function ContentBrowserWorkspaceBody({
       browserRows.map((row) => {
         const FolderGlyph = pluginRootIcons.get(row.id) ?? FolderIcon;
         const asset = row.guid ? assetsByGuid.get(row.guid) : undefined;
+        const renamable =
+          !isFolderTreeRoot(row.path, rootPrefixes) &&
+          !contentBrowserFolderOps(row.path, browserRoots).readOnly;
         return {
           id: row.id,
           label: row.label,
+          renamable,
+          ...(asset ? { renameValue: stripAssetFileSuffix(asset.path.split("/").at(-1) ?? asset.header.name) } : {}),
           depth: row.depth,
           hasChildren: row.hasChildren,
           expanded: row.expanded,
@@ -806,7 +807,7 @@ function ContentBrowserWorkspaceBody({
             ) : undefined,
         };
       }),
-    [assetsByGuid, browserRows, pluginRootIcons, typeVisualFor],
+    [assetsByGuid, browserRoots, browserRows, pluginRootIcons, rootPrefixes, typeVisualFor],
   );
 
   const selectionCount = selectedGuids.size + selectedFolderPaths.size;
@@ -829,35 +830,28 @@ function ContentBrowserWorkspaceBody({
     newAssetType,
     newAssetName,
   );
-  const nameDialogTaken =
-    nameDialog?.kind === "folder"
-      ? isFolderNameTaken(
-          existingFolderPaths,
-          selectedFolderPath,
-          nameDialog.value,
-        )
-      : nameDialog?.kind === "rename-folder"
-        ? (() => {
-            const parent = parentFolderPath(nameDialog.path);
-            const next = joinAssetFolderPath(parent, nameDialog.value.trim());
-            if (next === nameDialog.path) return false;
-            return isFolderNameTaken(
-              existingFolderPaths,
-              parent,
-              nameDialog.value,
-            );
-          })()
-      : nameDialog?.kind === "rename" && assetRegistry
-        ? isRenameNameTaken(
-            existingAssetPaths,
-            assetRegistry.getByGuid(nameDialog.guid)?.path ?? "",
-            nameDialog.value,
-          )
-        : false;
-  const nameDialogError = nameDialog
-    ? contentEntryNameError(nameDialog.value) ??
-      (nameDialogTaken ? "That name is already used in this folder." : null)
-    : null;
+  const nameEntryError = (entry: NameEntry): string | null => {
+    const taken =
+      entry.kind === "folder"
+        ? isFolderNameTaken(existingFolderPaths, selectedFolderPath, entry.value)
+        : entry.kind === "rename-folder"
+          ? (() => {
+              const parent = parentFolderPath(entry.path);
+              const next = joinAssetFolderPath(parent, entry.value.trim());
+              if (next === entry.path) return false;
+              return isFolderNameTaken(existingFolderPaths, parent, entry.value);
+            })()
+          : assetRegistry
+            ? isRenameNameTaken(
+                existingAssetPaths,
+                assetRegistry.getByGuid(entry.guid)?.path ?? "",
+                entry.value,
+              )
+            : false;
+    return contentEntryNameError(entry.value) ??
+      (taken ? "That name is already used in this folder." : null);
+  };
+  const nameDialogError = nameDialog ? nameEntryError(nameDialog) : null;
 
   const loadedThumbnailVersionsRef = useRef<Readonly<Record<string, number>>>({});
 
@@ -1693,8 +1687,8 @@ function ContentBrowserWorkspaceBody({
     [assetRegistry, play, refreshAssetRegistry, selectedRoot, setImportErrors],
   );
 
-  const confirmNameDialog = useCallback(async () => {
-    if (!assetRegistry || !nameDialog || busy || nameDialogError) return;
+  const submitNameEntry = useCallback(async (nameDialog: NameEntry) => {
+    if (!assetRegistry || busy) return;
     setOperationError(null);
     setBusy(true);
     try {
@@ -1767,9 +1761,7 @@ function ContentBrowserWorkspaceBody({
     }
   }, [
     assetRegistry,
-    nameDialog,
     busy,
-    nameDialogError,
     renameAsset,
     allAssets,
     refreshAssetRegistry,
@@ -1781,6 +1773,28 @@ function ContentBrowserWorkspaceBody({
     sourceControl,
     transferFolderLocks,
   ]);
+
+  const confirmNameDialog = () => {
+    if (!nameDialog || nameDialogError) return Promise.resolve();
+    return submitNameEntry(nameDialog);
+  };
+
+  /** Inline tree renames commit directly; an invalid name reopens in the dialog with its error. */
+  const finishTreeRename = (id: string, name: string | null) => {
+    setTreeRenamingId(null);
+    if (name === null || !assetRegistry) return;
+    const row = browserRows.find((item) => item.id === id);
+    if (!row) return;
+    const entry: NameEntry | null =
+      row.kind === "folder"
+        ? { kind: "rename-folder", path: row.path, value: name }
+        : row.guid
+          ? { kind: "rename", guid: row.guid, value: name }
+          : null;
+    if (!entry) return;
+    if (nameEntryError(entry)) setNameDialog(entry);
+    else void submitNameEntry(entry);
+  };
 
   const applyRegistryMoves = useCallback(
     async (moves: ContentBrowserDropMove[], onMoved?: (move: ContentBrowserDropMove) => void) => {
@@ -2216,16 +2230,6 @@ function ContentBrowserWorkspaceBody({
     ],
   );
 
-  const handleTreeActivate = useCallback(
-    (id: string) => {
-      const row = browserRows.find((item) => item.id === id);
-      if (!row?.guid) return;
-      const asset = allAssets.find((item) => item.header.guid === row.guid);
-      if (asset) void openOrFocusDocument(asset);
-    },
-    [allAssets, browserRows, openOrFocusDocument],
-  );
-
   const handleTreeReparent = useCallback(
     (
       dragId: string,
@@ -2381,6 +2385,15 @@ function ContentBrowserWorkspaceBody({
       selectedAssetToOpen &&
         documentKindForAssetType(selectedAssetToOpen.header.type),
     );
+  const openSelection = () => {
+    if (selectedFolderToOpen) {
+      setSelectedFolderPath(selectedFolderToOpen);
+      setSelectedGuids(new Set());
+      setSelectedFolderPaths(new Set());
+      return;
+    }
+    if (selectedAssetToOpen) void openOrFocusDocument(selectedAssetToOpen);
+  };
 
   const folderNavigation = (
     <>
@@ -2431,7 +2444,9 @@ function ContentBrowserWorkspaceBody({
             });
           }}
           onReparent={handleTreeReparent}
-          onActivate={handleTreeActivate}
+          renamingId={treeRenamingId}
+          onRenameRequest={setTreeRenamingId}
+          onRenameDone={finishTreeRename}
           emptyLabel="No Folders"
           data-testid="content-browser-folder-tree"
         />
@@ -2656,6 +2671,7 @@ function ContentBrowserWorkspaceBody({
           <ContentBrowserSelectionActions
             selectionCount={selectionCount}
             busy={busy}
+            onOpen={canOpenSelection ? openSelection : undefined}
             onDeselectAll={() => {
               setSelectedGuids(new Set());
               setSelectedFolderPaths(new Set());
@@ -2821,17 +2837,7 @@ function ContentBrowserWorkspaceBody({
               size="touch"
               aria-label="Open Selected Item"
               disabled={busy}
-              onClick={() => {
-                if (selectedFolderToOpen) {
-                  setSelectedFolderPath(selectedFolderToOpen);
-                  setSelectedGuids(new Set());
-                  setSelectedFolderPaths(new Set());
-                  return;
-                }
-                if (selectedAssetToOpen) {
-                  void openOrFocusDocument(selectedAssetToOpen);
-                }
-              }}
+              onClick={openSelection}
             >
               <ArrowUpRightIcon data-icon="inline-start" />
               Open
@@ -3387,6 +3393,11 @@ const MemoContentBrowserWorkspaceBody = memo(
   ContentBrowserWorkspaceBody,
   (previous, next) => previous.hidden && next.hidden,
 );
+
+type NameEntry =
+  | { kind: "rename"; guid: string; value: string }
+  | { kind: "folder"; value: string }
+  | { kind: "rename-folder"; path: string; value: string };
 
 export function ContentBrowserWorkspace({
   hidden = false,

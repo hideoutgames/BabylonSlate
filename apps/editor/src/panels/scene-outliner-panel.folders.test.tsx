@@ -138,6 +138,24 @@ describe("Scene Outliner folders", () => {
     expect(lastScene().folders[0]!.name).toBe("Lighting");
   });
 
+  it("renames an actor inline from a label double-click without its duplicate-name suffix", () => {
+    renderOutliner({
+      ...createDefaultScene(),
+      folders: [],
+      actors: [createActor("lamp-1", "Lamp"), createActor("lamp-2", "Lamp")],
+    });
+    const label = screen.getByText("Lamp (lamp-1)");
+    for (let click = 0; click < 2; click++) {
+      dispatchPointerEvent(label, "pointerdown", { clientX: 0, clientY: 0 });
+      dispatchPointerEvent(label, "pointerup", { clientX: 0, clientY: 0 });
+    }
+    const input = screen.getByRole("textbox", { name: "Rename Lamp (lamp-1)" }) as HTMLInputElement;
+    expect(input.value).toBe("Lamp");
+    fireEvent.change(input, { target: { value: "Desk Lamp" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(lastScene().actors.map((actor) => actor.name)).toEqual(["Desk Lamp", "Lamp"]);
+  });
+
   it("promotes actors instead of deleting them when a folder is removed", () => {
     renderOutliner({
       ...createDefaultScene(),

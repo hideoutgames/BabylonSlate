@@ -111,6 +111,28 @@ describe("syncActorComponentsFromPrefab", () => {
     expect(synced[0]?.properties.materialGuid).toBe("mat-2");
   });
 
+  it("follows prefab component renames until the instance renames its own row", () => {
+    const prefab = { ...createMeshComponent("prefab-mesh", "box"), name: "Body" };
+    const previous = createDefaultScene();
+    previous.actors = [createActor("hero", "Hero", {
+      classId: "Hero", components: instantiatePrefabComponents([prefab], "hero"),
+    })];
+    expect(previous.actors[0]!.components[0]!.name).toBe("Body");
+    const renamedPrefab = { ...prefab, name: "Torso" };
+    expect(syncActorComponentsFromPrefab(previous.actors[0]!, [renamedPrefab])[0]!.name).toBe("Torso");
+
+    const renamed = structuredClone(previous);
+    renamed.actors[0]!.components[0]!.name = "Hero Body";
+    const stamped = stampUserComponentOverrides(previous, renamed, { Hero: [prefab] });
+    expect(stamped.actors[0]!.components[0]!.overrideKeys).toContain("name");
+    expect(syncActorComponentsFromPrefab(stamped.actors[0]!, [renamedPrefab])[0]!.name).toBe("Hero Body");
+
+    const reset = structuredClone(stamped);
+    reset.actors[0]!.components[0]!.name = "Body";
+    const cleared = stampUserComponentOverrides(stamped, reset, { Hero: [prefab] });
+    expect(cleared.actors[0]!.components[0]!.overrideKeys ?? []).not.toContain("name");
+  });
+
   it("adds new prefab components and keeps instance-only extras", () => {
     const prefab = [
       createMeshComponent("prefab-mesh", "box"),

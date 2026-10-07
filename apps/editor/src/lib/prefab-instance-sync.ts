@@ -13,6 +13,20 @@ import { mergePrefabComponents } from "./prefab-preview";
 export const PREFAB_TRANSFORM_OVERRIDE = "transform";
 export const PREFAB_PARENT_OVERRIDE = "parentId";
 export const PREFAB_MATERIAL_INSTANCE_OVERRIDE = "materialInstance";
+export const PREFAB_NAME_OVERRIDE = "name";
+
+/** Override keys that name component fields rather than `properties` entries. */
+function isFieldOverride(key: string): boolean {
+  return key === PREFAB_TRANSFORM_OVERRIDE || key === PREFAB_PARENT_OVERRIDE ||
+    key === PREFAB_MATERIAL_INSTANCE_OVERRIDE || key === PREFAB_NAME_OVERRIDE;
+}
+
+function withName(component: SerializedComponent, name: string | undefined): SerializedComponent {
+  const next = { ...component };
+  if (name === undefined) delete next.name;
+  else next.name = name;
+  return next;
+}
 
 /**
  * Template map key for a Prefab asset. Class ids are identifiers, so the colon
@@ -134,6 +148,7 @@ function differingOverrideKeys(
     keys.add(PREFAB_TRANSFORM_OVERRIDE);
   }
   if (!jsonEqual(instance.materialInstance, prefab.materialInstance)) keys.add(PREFAB_MATERIAL_INSTANCE_OVERRIDE);
+  if (instance.name !== prefab.name) keys.add(PREFAB_NAME_OVERRIDE);
   expandMeshMaterialOverrides(keys, instance);
   if (instance.classId === "MeshComponent" && jsonEqual(meshMaterialSelection(instance), meshMaterialSelection(prefab))) {
     for (const key of MESH_MATERIAL_KEYS) keys.delete(key);
@@ -164,6 +179,7 @@ function instantiateFromPrefab(
   return {
     id: nextInstanceComponentId(actorId, prefab.classId, usedIds),
     classId: prefab.classId,
+    ...(prefab.name ? { name: prefab.name } : {}),
     properties: { ...prefab.properties },
     parentId: null,
     sourceId: prefab.id,
@@ -242,9 +258,7 @@ export function syncActorComponentsFromPrefab(
     expandMeshMaterialOverrides(keys, existing);
     const properties = { ...prefab.properties };
     for (const key of keys) {
-      if (key === PREFAB_TRANSFORM_OVERRIDE || key === PREFAB_PARENT_OVERRIDE || key === PREFAB_MATERIAL_INSTANCE_OVERRIDE) {
-        continue;
-      }
+      if (isFieldOverride(key)) continue;
       if (key in existing.properties) {
         properties[key] = existing.properties[key];
       } else {
@@ -252,7 +266,7 @@ export function syncActorComponentsFromPrefab(
       }
     }
     const syncedComponent: SerializedComponent = {
-      ...existing,
+      ...withName(existing, keys.has(PREFAB_NAME_OVERRIDE) ? existing.name : prefab.name),
       classId: prefab.classId,
       properties,
       sourceId: prefab.id,
@@ -406,6 +420,10 @@ function pruneMatchingPrefabOverrides(
       if (jsonEqual(component.materialInstance, prefab.materialInstance)) keys.delete(key);
       continue;
     }
+    if (key === PREFAB_NAME_OVERRIDE) {
+      if (component.name === prefab.name) keys.delete(key);
+      continue;
+    }
     if (jsonEqual(component.properties[key], prefab.properties[key])) {
       keys.delete(key);
     }
@@ -465,6 +483,7 @@ export function stampUserComponentOverrides(
           keys.add(PREFAB_PARENT_OVERRIDE);
         }
         if (!jsonEqual(before.materialInstance, component.materialInstance)) keys.add(PREFAB_MATERIAL_INSTANCE_OVERRIDE);
+        if (before.name !== component.name) keys.add(PREFAB_NAME_OVERRIDE);
         expandMeshMaterialOverrides(keys, component);
         const next = pruneMatchingPrefabOverrides(
           {

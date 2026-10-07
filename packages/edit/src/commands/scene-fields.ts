@@ -124,6 +124,40 @@ export class SetComponentClassCommand implements EditCommand<SerializedScene> {
   }
 }
 
+/** Sets or clears a component's editor display name. */
+export class SetComponentNameCommand implements EditCommand<SerializedScene> {
+  readonly type = "scene.setComponentName";
+  #byteSize?: number;
+  /** Retained snapshot cost, measured on first read and memoised. */
+  get byteSize(): number {
+    return (this.#byteSize ??= snapshotBytes({ from: this.from, to: this.to }));
+  }
+  readonly actorId: string;
+  readonly componentId: string;
+  readonly from: string | undefined;
+  readonly to: string | undefined;
+
+  constructor(actorId: string, componentId: string, from: string | undefined, to: string | undefined) {
+    this.actorId = actorId;
+    this.componentId = componentId;
+    this.from = from;
+    this.to = to;
+  }
+
+  apply(doc: SerializedScene): SerializedScene {
+    return updateComponent(doc, this.actorId, this.componentId, (component) => {
+      const next = { ...component };
+      if (this.to === undefined) delete next.name;
+      else next.name = this.to;
+      return next;
+    });
+  }
+
+  invert(): SetComponentNameCommand {
+    return new SetComponentNameCommand(this.actorId, this.componentId, this.to, this.from);
+  }
+}
+
 /**
  * Adds or removes a component's local transform. `SetComponentTransformCommand`
  * edits one that exists on both sides. A 2D anchor never gains a transform.
@@ -240,6 +274,11 @@ export function createSetActorClassCommandFromJson(payload: Record<string, unkno
 
 export function createSetComponentClassCommandFromJson(payload: Record<string, unknown>): SetComponentClassCommand {
   return new SetComponentClassCommand(String(payload.actorId), String(payload.componentId), String(payload.from), String(payload.to));
+}
+
+export function createSetComponentNameCommandFromJson(payload: Record<string, unknown>): SetComponentNameCommand {
+  return new SetComponentNameCommand(String(payload.actorId), String(payload.componentId),
+    typeof payload.from === "string" ? payload.from : undefined, typeof payload.to === "string" ? payload.to : undefined);
 }
 
 export function createSetComponentTransformPresenceCommandFromJson(

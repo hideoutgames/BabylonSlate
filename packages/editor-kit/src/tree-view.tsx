@@ -82,6 +82,10 @@ export interface TreeViewNode {
   muted?: boolean;
   /** Double-click / double-tap on the label (or F2) requests an inline rename. */
   renamable?: boolean;
+  /** Text the rename input edits when it differs from `label` (for example without a folder path). */
+  renameValue?: string;
+  /** Read-only text kept beside the rename input, such as a bracketed asset name. */
+  renameSuffix?: string;
 }
 
 export interface TreeViewProps {
@@ -869,16 +873,21 @@ export function TreeView({
                   </span>
                 ) : null}
                 {renamingId === node.id && onRenameDone ? (
-                  <InlineRenameInput
-                    value={node.label}
-                    aria-label={`Rename ${node.label}`}
-                    data-testid={`tree-rename-${node.id}`}
-                    className="relative"
-                    onDone={(name, reason) => {
-                      onRenameDone(node.id, name);
-                      if (reason !== "blur") containerRef.current?.focus({ preventScroll: true });
-                    }}
-                  />
+                  <>
+                    <InlineRenameInput
+                      value={node.renameValue ?? node.label}
+                      aria-label={`Rename ${node.label}`}
+                      data-testid={`tree-rename-${node.id}`}
+                      className="relative"
+                      onDone={(name, reason) => {
+                        onRenameDone(node.id, name);
+                        if (reason !== "blur") containerRef.current?.focus({ preventScroll: true });
+                      }}
+                    />
+                    {node.renameSuffix ? (
+                      <span className="relative shrink-0 text-muted-foreground">{node.renameSuffix}</span>
+                    ) : null}
+                  </>
                 ) : (
                   <span
                     id={`${rowId(node.id)}-label`}

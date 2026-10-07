@@ -820,6 +820,19 @@ describe("TreeView", () => {
     expect(onRenameDone).toHaveBeenCalledWith("child", "Renamed");
   });
 
+  it("edits only the rename value and keeps the bracketed suffix outside the input", () => {
+    const onRenameDone = vi.fn();
+    const rows = [{ id: "mesh", label: "Mesh (mannequin)", depth: 0, hasChildren: false, expanded: false, renamable: true, renameValue: "Mesh", renameSuffix: "(mannequin)" }];
+    render(<TreeView nodes={rows} renamingId="mesh" onRenameDone={onRenameDone} />);
+    const input = screen.getByRole("textbox", { name: "Rename Mesh (mannequin)" }) as HTMLInputElement;
+    expect(input.value).toBe("Mesh");
+    expect([input.selectionStart, input.selectionEnd]).toEqual([0, "Mesh".length]);
+    expect(screen.getByText("(mannequin)")).toBeTruthy();
+    fireEvent.change(input, { target: { value: "MyCustomNamedComponent" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onRenameDone).toHaveBeenCalledWith("mesh", "MyCustomNamedComponent");
+  });
+
   it("renders an empty label with no nodes", () => {
     render(<TreeView nodes={[]} emptyLabel="No actors" data-testid="tree" />);
     expect(screen.getByText("No actors")).toBeTruthy();

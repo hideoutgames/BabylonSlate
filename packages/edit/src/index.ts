@@ -66,6 +66,7 @@ export {
   SetActorClassCommand,
   SetActorPropertiesCommand,
   SetComponentClassCommand,
+  SetComponentNameCommand,
   SetComponentTransformPresenceCommand,
   SetSceneOverlayEditorCommand,
 } from "./commands/scene-fields";

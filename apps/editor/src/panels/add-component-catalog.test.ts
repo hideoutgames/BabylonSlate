@@ -9,6 +9,7 @@ import {
   defaultPropertiesFor,
   physicsWorldFromOpenDocuments,
   prefabComponentLabel,
+  renamedComponentName,
   projectAddComponentItems,
 } from "./add-component-catalog";
 
@@ -403,6 +404,22 @@ describe("prefabComponentLabel", () => {
         (guid) => (guid === "hero" ? "Hero" : undefined),
       ),
     ).toBe("Mesh (Hero)");
+  });
+
+  it("keeps the asset detail after a custom name", () => {
+    expect(
+      prefabComponentLabel(
+        { classId: "MeshComponent", name: "MyCustomNamedComponent", properties: { assetGuid: "hero" } },
+        (guid) => (guid === "hero" ? "mannequin" : undefined),
+      ),
+    ).toBe("MyCustomNamedComponent (mannequin)");
+  });
+});
+
+describe("renamedComponentName", () => {
+  it("stores a custom name and clears one that matches the class label", () => {
+    expect(renamedComponentName("MeshComponent", " Body ")).toBe("Body");
+    expect(renamedComponentName("MeshComponent", "Mesh")).toBeUndefined();
   });
 });
 

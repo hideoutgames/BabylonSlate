@@ -309,20 +309,50 @@ export function projectAddComponentItems(
   return items;
 }
 
+/** Class label a component shows until it is renamed. */
+export function componentTypeLabel(classId: string): string {
+  return (
+    ADDABLE_COMPONENT_CLASSES.find((entry) => entry.id === classId)?.label ??
+    humanizePropertyLabel(classId.replace(/([a-z0-9])([A-Z])/g, "$1 $2"))
+  );
+}
+
+/**
+ * Renamable name plus the bracketed asset detail, e.g. `Mesh` and `(mannequin)`.
+ * The detail follows the component's asset and is never part of the name.
+ */
+export function prefabComponentLabelParts(
+  component: {
+    classId: string;
+    name?: string;
+    properties?: Record<string, unknown>;
+  },
+  assetLabel?: (guid: string) => string | undefined,
+): { name: string; detail?: string } {
+  const guid = componentGuid(component.properties);
+  const asset = guid ? assetLabel?.(guid) : undefined;
+  return {
+    name: component.name || componentTypeLabel(component.classId),
+    ...(asset ? { detail: `(${asset})` } : {}),
+  };
+}
+
 export function prefabComponentLabel(
   component: {
     classId: string;
+    name?: string;
     properties?: Record<string, unknown>;
   },
   assetLabel?: (guid: string) => string | undefined,
 ): string {
-  const typeLabel =
-    ADDABLE_COMPONENT_CLASSES.find((entry) => entry.id === component.classId)
-      ?.label ??
-    humanizePropertyLabel(component.classId.replace(/([a-z0-9])([A-Z])/g, "$1 $2"));
-  const guid = componentGuid(component.properties);
-  const name = guid ? assetLabel?.(guid) : undefined;
-  return name ? `${typeLabel} (${name})` : typeLabel;
+  const { name, detail } = prefabComponentLabelParts(component, assetLabel);
+  return detail ? `${name} ${detail}` : name;
+}
+
+/** Stored name for a typed rename; the class label clears it back to the default. */
+export function renamedComponentName(classId: string, typed: string): string | undefined {
+  const name = typed.trim();
+  return name && name !== componentTypeLabel(classId) ? name : undefined;
 }
 
 function componentGuid(
