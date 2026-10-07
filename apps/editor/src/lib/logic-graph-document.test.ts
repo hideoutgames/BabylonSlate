@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { SerializedGraph } from "@babylonslate/core";
+import { classHeaderMeta, type SerializedGraph } from "@babylonslate/core";
 import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
 import { DocumentEditStack, SetAssetDocumentCommand } from "@babylonslate/edit";
 import {
@@ -189,6 +189,23 @@ describe("collectFunctionLibrariesForPalette", () => {
 });
 
 describe("collectClassGraphsForPalette", () => {
+  it("keeps member categories through a closed Class header", () => {
+    const header = classHeaderMeta({
+      members: [
+        { id: "fn-1", kind: "function", name: "Alert", category: " Combat | AI " },
+        { id: "var-1", kind: "variable", name: "Health", typeId: "float", category: "Stats" },
+        { id: "var-2", kind: "variable", name: "Speed", typeId: "float" },
+      ],
+    });
+    expect(
+      classGraphFromHeaderPayload(header as unknown as Record<string, unknown>).members,
+    ).toEqual([
+      { id: "fn-1", kind: "function", name: "Alert", pins: [], category: "Combat|AI" },
+      { id: "var-1", kind: "variable", name: "Health", typeId: "float", category: "Stats" },
+      { id: "var-2", kind: "variable", name: "Speed", typeId: "float" },
+    ]);
+  });
+
   it("rebuilds members from a closed Class header and prefers open documents", () => {
     expect(
       classGraphFromHeaderPayload({

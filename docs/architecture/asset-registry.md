@@ -13,6 +13,16 @@ Saving or renaming an indexed asset preserves inbound GUID references while rebu
 
 Folder moves and deletions wait for pending asset writes and creations before enumerating the tree. Writes submitted during relocation wait until it finishes; GUID-based saves resolve their current path after admission. This includes newly created assets that were not indexed when the move was requested.
 
+**Destination path reservations.** Every operation that writes a new path (`createAsset` and imports, `duplicateAsset` / `copyAsset` / folder copies, `moveAsset`, `renameAsset`, `createFolder`) claims it synchronously with its index check, before its first await, and holds it until the write settles.
+
+- Keys are case-folded, matching how `moveStorageFile` treats spellings that alias on case-insensitive volumes.
+- A path that is reserved or indexed rejects the second writer with the usual `Asset already exists` / `Target path already exists` / `Folder already exists` error. Overlapping writers can no longer both succeed and orphan the first GUID.
+- Duplicate skips names another write holds and files already on disk (including unindexed ones), so overlapping Duplicates of one asset get distinct `stem_N` names.
+- Indexing a newly created or duplicated file refuses to evict a different GUID at that path; rescans and `reindexPath` still replace entries.
+- The Content Browser marks Duplicate and **Create Material Instance** busy while they run, so a repeated press or Mod+D waits; failures appear in the operation alert.
+
+`unmountRoot` also forgets that root's folders unless another mounted root covers them, so a remount (every plugin sync) shows only folders still on disk.
+
 Asset renames preserve Unicode display names and the complete asset suffix (including `.class.babasset` and `.scene.babasset`). Invalid path names are rejected. Class renames update saved and open instances, child-Class parents, typed Class references and project settings; an unwritable referrer blocks the operation. Referrer write failures restore the original bytes and Class path. Open referrers retain unsaved edits; their old undo commands are discarded so undo cannot restore a missing Class name.
 
 Saved layouts include each tab's asset GUID, allowing tabs, dock layouts and panel placements to follow renames or folder moves on reopen. Legacy layout entries with missing paths are skipped so a stale tab cannot prevent opening the project; other read failures remain visible.
@@ -44,7 +54,7 @@ interface ContentRoot {
 
 | API | Role |
 | --- | --- |
-| `mountRoot` / `unmountRoot` | Add or remove a content root and (re)scan headers |
+| `mountRoot` / `unmountRoot` | Add or remove a content root and (re)scan headers; unmount drops the root's folders |
 | `reindexPath` | Re-read one `.babasset` header after an in-place save |
 | `getByGuid` / `list` / `folderTree` | Index queries (folder tree includes marker-backed empty folders) |
 | `createFolder` / `moveFolder` | Empty folders (`.babylonslate-folder`) and folder moves |
@@ -217,6 +227,7 @@ Show References opens a large, viewport-bounded read-only graph dialog. It selec
 
 - Second synthetic root mounts and resolves across roots.
 - Generation (`registry.test.ts`): create, reindex, compression state, rename, move, folder create/move/delete, placeholder, delete and root mount/unmount each advance it, reads never do, and a registry that replaces another on the same clock keeps rising, including for a late write to the old one; `ProjectService.registryGeneration` keeps rising across a remount, a close and a reopen (`project-service.test.ts`). The Material preview keeps its Texture bytes across edits and reloads them when `registryEpoch` advances (`material-editing-context.test.tsx`, which sets the epoch through a mocked `useDocuments`). No unit test covers `DocumentProvider` leaving the epoch unchanged across edits ([testing](testing.md#environment-limits-to-know)).
+- Path reservations (`registry.test.ts`, held writes): overlapping creates at one path, overlapping Duplicates past an unindexed file, and a rename onto a path a create is writing; a plugin folder deleted from storage disappears after `mountEnabledPlugins` remounts (`plugin-host.test.ts`); a running Duplicate blocks other actions and reports failure (`content-browser-workspace.grid.test.tsx`).
 - Hundreds of assets open with near-zero `accountedPayloadBytes`.
 - Importer unit tests + guid-remap cases + GLB browse parse (`rigKind` skin / hierarchy / none; omitted `bufferView.byteOffset` still copies BIN pixels; two independent animated meshes stay `none`; hierarchy `boneNames` omit unrelated roots; clip `durationMs`; unique dependent names on Kenney Mannequin). Static import (`skeletonGuid == null`) stamps one generated convex hull; a Skeleton leaves `simpleColliders` empty. Sidecar GLB batches (`groupGltfImportSidecars` / `embedGltfImportBatch`) consume a shared atlas PNG; a missing `.gltf` BIN keeps the original file for a per-file import alert (does not throw the batch or stick Import busy). `importModel` / `ingestGltfForImport` still throw on a lone `.gltf` with no `.bin`. Import rejects `.fbx` / `.stl` / invalid `.glb`; `importByExtension("mesh.obj")` throws; editor `convertObjToGlb` of a triangle OBJ yields GLB magic then a Model with no Skeleton/Animation. Picker `accept` includes `.obj` plus sidecar `.bin` / `.mtl` and excludes `.fbx` / `.stl`. Packed babasset `source` views load through `packedGltfBytes` (`LoadAssetContainerAsync`).
 - Encode queue states; loader KTX2 vs source; transcoder unavailable / export-omitted smoke; A16 Basis encode CI smoke. Source-first transferable `SourceEncodeRequest` vs RGBA fallback (`packages/assets/src/worker-encode.test.ts`), `encodeError` persistence, and thumbnail MIME passthrough. An `encode_failed` Texture keeps `selectTextureChunk` on `kind: "source"` (`packages/assets/src/texture-compression.test.ts`).

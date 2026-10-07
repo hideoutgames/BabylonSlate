@@ -3,7 +3,7 @@ import { useSimulationInspectionStore } from "../context/simulation-inspection-c
 import { GraphDataLiteralDefaults } from "../components/graph-data-literal-editor";
 import { saveGameVariableNames } from "../lib/save-game-property-rows";
 import { SceneLayerSwitcherFields } from "../components/scene-layer-switcher-fields";
-import { parseUIControl2DProperties } from "@babylonslate/core";
+import { normalizeClassMemberCategory, parseUIControl2DProperties } from "@babylonslate/core";
 import { useMemo, useState } from "react";
 import { normalizeModelPayload } from "@babylonslate/assets";
 import { MODEL_MATERIALS_PICKER_ENTRY } from "../lib/mesh-material-properties";
@@ -282,6 +282,17 @@ function ClassMemberDetails({
   const commit = (patch: Partial<GraphClassMember>) => {
     onChange(patchClassMember(graph, member.id, patch));
   };
+  const categoryRow = {
+    id: "category",
+    kind: "text" as const,
+    label: "Category",
+    value: member.category ?? "",
+    onChange: () => {},
+    onCommit: (category: string) => {
+      if ((normalizeClassMemberCategory(category) ?? "") === (member.category ?? "")) return;
+      commit({ category });
+    },
+  };
 
   if (member.kind === "variable") {
     const typeId = member.typeId ?? "float";
@@ -377,6 +388,7 @@ function ClassMemberDetails({
               value: member.name,
               onChange: (name) => commit({ name }),
             },
+            categoryRow,
           ]}
         />
         <VariableTypeFields
@@ -742,6 +754,7 @@ function ClassMemberDetails({
                       commit({ overridable: overridable ? true : undefined }),
                   },
                 ]),
+            categoryRow,
           ]}
         />
         <PinListEditor
@@ -1368,7 +1381,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
     return (
       <PanelFrame data-testid="inspector-panel">
         <PrefabComponentDetails
-          actorClassId={doc?.ref.path ? classIdForGraphPath(doc.ref.path) : "Actor"}
+          actorClassId={doc?.ref.kind === "graph" && doc.ref.path ? classIdForGraphPath(doc.ref.path) : "Actor"}
           component={selectedPrefabComponent}
           components={prefabComponents}
           sceneLayerClasses={bobjectClassEntries.filter(entry => walkAncestry(entry.id, parentOf).includes("SceneLayerActor"))}
@@ -1413,6 +1426,23 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
           enumMembers={enumMembers}
           onChange={persistGraph}
         />
+      </PanelFrame>
+    );
+  }
+
+  if (prefabSelectedId === PREFAB_ROOT_ID && doc?.ref.kind === "prefab") {
+    return (
+      <PanelFrame data-testid="inspector-panel">
+        <div
+          className="flex flex-col gap-2 p-3"
+          data-testid="inspector-prefab-asset-root"
+        >
+          <p className="text-sm font-semibold text-foreground">Prefab Root</p>
+          <p className="text-xs text-muted-foreground">
+            Prefabs have no graph, events, variables, functions or Tick. Placed
+            instances copy these components and add no per-frame logic.
+          </p>
+        </div>
       </PanelFrame>
     );
   }

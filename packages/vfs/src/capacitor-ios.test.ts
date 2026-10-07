@@ -120,12 +120,16 @@ describe("Capacitor 8 iOS host", () => {
     }
   });
 
-  it("enforces the Capacitor 8 deployment and universal iPhone/iPad project settings", () => {
+  it("enforces the iOS 17 deployment floor and universal iPhone/iPad project settings", () => {
     const deploymentTargets = [
       ...pbxproj.matchAll(/IPHONEOS_DEPLOYMENT_TARGET = ([0-9.]+);/g),
     ].map((match) => Number(match[1]));
     expect(deploymentTargets.length).toBeGreaterThan(0);
-    expect(deploymentTargets.every((target) => target >= 15)).toBe(true);
+    expect(deploymentTargets.every((target) => target >= 17)).toBe(true);
+    const podPlatform = Number(
+      podfile.match(/^platform :ios, '([0-9.]+)'/m)?.[1],
+    );
+    expect(podPlatform).toBeGreaterThanOrEqual(17);
 
     const deviceFamilies = [
       ...pbxproj.matchAll(/TARGETED_DEVICE_FAMILY = "([^"]+)";/g),

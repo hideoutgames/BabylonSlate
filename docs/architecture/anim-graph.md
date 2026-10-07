@@ -6,7 +6,7 @@ Worker-side state machine plus per-instance Animation Object graphs that drive c
 
 ## Document (schema v2)
 
-`ANIM_GRAPH_SCHEMA_VERSION = 2`. Parse migrates v1 (`parameters` → bool variables; `condition` / `hasExitTime` → Exit State wiring).
+`ANIM_GRAPH_SCHEMA_VERSION = 2`. Parse migrates v1 (`parameters` → bool variables; `condition` / `hasExitTime` → Exit State wiring). `hasExitTime` migrates to an **Exit Time Reached** node (`anim.state.exitTimeReached`, `exitTime` pin). Parse also upgrades the earlier generated `Normalised Time ≥ exitTime` pair (`normalised-time-N` → `exit-time-N`, `b === exitTime`, row still `hasExitTime`) to that node; edited comparisons are left alone.
 
 | Field | Role |
 | --- | --- |
@@ -21,9 +21,17 @@ Helpers: `createDefaultAnimGraph`, `createDefaultAnimationObjectGraph`, `createD
 
 Pure function: `(graph, dt, previous, inputs) → AnimEvalState`. Deterministic; golden-tested. Validator uses the same diagnostic model as [scripting.md](scripting.md) (`code`, `message`, `nodeId`, severity).
 
-Each tick produces `stateId`, `normalisedTime` in `[0, 1]`, `blendWeights`, `facts` (elapsed / duration / remaining / looping / loop count / one-tick `justLooped` / `justFinished`), and weighted `layers[]` (`clipAssetGuid`, `clipName`, `clipKind`, `normalisedTime`, `weight`). `blendSeconds` crossfades two layers.
+Each tick produces `stateId`, `normalisedTime` in `[0, 1]`, `blendWeights`, `facts` (elapsed / duration / remaining / looping / loop count / one-tick `justLooped` / `justFinished` / unwrapped `totalNormalisedTime` and `previousTotalNormalisedTime`), and weighted `layers[]` (`clipAssetGuid`, `clipName`, `clipKind`, `normalisedTime`, `weight`). `blendSeconds` crossfades two layers; the selected transition's `blendSeconds` is stored on `AnimEvalState` when the blend starts, so a duplicate `(from, to)` row cannot change its length mid-blend.
 
 Transition fire: **Exit State** (leave source) **and** **Enter State** (enter target) must both be true. Disconnected sinks default **true**. `decideTransition(transition, facts)` sees **post-advance** facts. `undefined` falls through to `transitionRules`, then legacy `condition` / `hasExitTime`. A v2 transition with no compiled decision and no legacy condition still always passes.
+
+**Exit time** (`animExitTimeReached(facts, exitTime)`; legacy `hasExitTime` fallback and the **Exit Time Reached** rule node share it) fires on crossing, Unity-style. Facts are post-wrap, so plain `normalisedTime` never reaches 1 on a looping state and can skip a threshold near the end:
+
+- Looping, `exitTime ≤ 1`: true on the tick the clip passes `exitTime`, `exitTime + 1`, … (each loop). `1` fires at every loop completion; `0` on entering the state and at every wrap. A condition that opens after the crossing waits for the next loop.
+- Looping, `exitTime > 1`: true once, when the unwrapped time passes it.
+- Non-looping: unchanged level test `normalisedTime ≥ exitTime` (clamped at 1).
+
+**Normalised Time** keeps its post-wrap meaning; use Exit Time Reached for end-of-loop thresholds. Rule scripts reach the helper via `ctx.animExitTimeReached(exitTime)`, bound to the facts the host passes (`invokeAnimRule` from `decideTransition`).
 
 ## Runtime
 
@@ -93,6 +101,6 @@ Selecting an Animation Object node shows its unconnected input defaults in Inspe
 
 Palette additions and pasted states receive unique names. Authored state names must be non-empty and unique after trimming and ignoring case; duplicate/empty names produce node-linked Compiler Results errors.
 
-State Machine publishes `validateAnimGraph` (plus nested `validateSerializedGraph` when a rule is open) only while `animEditorMode === "stateMachine"`. GraphPanel publishes Animation Object diagnostics only while `animEditorMode === "animationObject"`. `anim.skeletonMismatch` is an error on the clip when the picked Animation’s skeleton is not the Model’s.
+State Machine publishes `validateAnimGraph` (plus nested `validateSerializedGraph` when a rule is open) only while `animEditorMode === "stateMachine"`. GraphPanel publishes Animation Object diagnostics only while `animEditorMode === "animationObject"`. `anim.skeletonMismatch` is an error on the clip when the picked Animation’s skeleton is not the Model’s. `anim.duplicateTransition` warns (on the source state) when a document has more than one row for the same directed `(from, to)` pair: the canvas shows only the first, and priority decides which one runs.
 
 Shared selection lives in `AnimGraphEditingProvider`. Focus defaults to the active mode’s Graph panel.

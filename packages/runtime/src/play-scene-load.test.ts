@@ -430,9 +430,11 @@ describe("p7-play-scene-load", () => {
     expect(child.rotation.y).toBeCloseTo(0.5);
     expect(child.rotation.z).toBeCloseTo(0.5);
     expect(child.rotation.w).toBeCloseTo(0.5);
+    // As in the editor, the child's quarter turn about X lays its Y axis along
+    // the parent's Z (scale 4) and its Z axis along the parent's Y (scale 3).
     expect(child.scale.x).toBeCloseTo(1);
-    expect(child.scale.y).toBeCloseTo(6);
-    expect(child.scale.z).toBeCloseTo(4);
+    expect(child.scale.y).toBeCloseTo(8);
+    expect(child.scale.z).toBeCloseTo(3);
     runtime.stop();
   });
 

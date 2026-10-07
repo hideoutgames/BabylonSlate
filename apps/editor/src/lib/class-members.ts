@@ -1,5 +1,6 @@
 import {
   isFunctionLibraryClass,
+  normalizeClassMemberCategory,
   type GraphClassMember,
   type GraphClassMemberKind,
   type GraphClassMemberPin,
@@ -1618,6 +1619,11 @@ export function patchClassMember(
     const next = { ...member, ...patch };
     if ("overridable" in patch && patch.overridable !== true) {
       delete next.overridable;
+    }
+    if ("category" in patch) {
+      const category = normalizeClassMemberCategory(patch.category);
+      if (category) next.category = category;
+      else delete next.category;
     }
     return next;
   });
