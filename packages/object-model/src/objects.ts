@@ -168,6 +168,8 @@ export class Actor extends BObject {
   generateHitEvents = true;
   /** When false, skip script begin/end overlap for this actor. */
   generateOverlapEvents = true;
+  /** When false, World skips this actor's Event Tick (`onTick`). Components still tick. */
+  tickEnabled = true;
   /** Owning overlay instance; null for world-scene actors. */
   sceneLayerId: Guid | null = null;
   readonly suppressedComponentSourceIds: readonly string[];

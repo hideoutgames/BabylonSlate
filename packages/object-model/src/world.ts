@@ -675,7 +675,7 @@ export class World {
       for (let i = 0; i < iteration.length; i++) {
         if (!this.canTickScene()) break;
         const actor = iteration.list[i]!;
-        if (!actor.destroyed && this.canTickActor(actor)) actor.callOnTick(ctx);
+        if (actor.tickEnabled && !actor.destroyed && this.canTickActor(actor)) actor.callOnTick(ctx);
       }
     } finally {
       this.endActorIteration();

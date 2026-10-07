@@ -386,12 +386,54 @@ export interface SerializedGraph {
       edges: SerializedGraph["edges"];
     }
   >;
-  /** Prefab Root collision flags copied onto spawned / scene-realized actors. */
-  actorDefaults?: {
-    /** Authored built-in actor properties applied before per-instance overrides. */
-    properties?: Record<string, unknown>;
-    generateHitEvents?: boolean;
-    generateOverlapEvents?: boolean;
+  /** Prefab Root Actor Defaults copied onto spawned / scene-realized actors. */
+  actorDefaults?: ActorDefaults;
+}
+
+/** Event Tick Actor Default; omitted means `"inherit"`. */
+export type ActorEventTickMode = "inherit" | "enabled" | "disabled";
+
+/** Prefab Root Actor Defaults authored on a Class. Omitted flags inherit from the parent Class. */
+export type ActorDefaults = {
+  /** Authored built-in actor properties applied before per-instance overrides. */
+  properties?: Record<string, unknown>;
+  generateHitEvents?: boolean;
+  generateOverlapEvents?: boolean;
+  eventTick?: ActorEventTickMode;
+};
+
+export type ResolvedActorDefaults = {
+  generateHitEvents: boolean;
+  generateOverlapEvents: boolean;
+  eventTick: boolean;
+};
+
+/**
+ * Resolve Actor Defaults along a Class chain ordered nearest first. The
+ * nearest explicit value wins; engine base classes leave every flag enabled.
+ */
+export function resolveActorDefaults(
+  chain: Iterable<ActorDefaults | undefined>,
+): ResolvedActorDefaults {
+  let generateHitEvents: boolean | undefined;
+  let generateOverlapEvents: boolean | undefined;
+  let eventTick: boolean | undefined;
+  for (const defaults of chain) {
+    if (!defaults) continue;
+    if (generateHitEvents === undefined && typeof defaults.generateHitEvents === "boolean") {
+      generateHitEvents = defaults.generateHitEvents;
+    }
+    if (generateOverlapEvents === undefined && typeof defaults.generateOverlapEvents === "boolean") {
+      generateOverlapEvents = defaults.generateOverlapEvents;
+    }
+    if (eventTick === undefined && (defaults.eventTick === "enabled" || defaults.eventTick === "disabled")) {
+      eventTick = defaults.eventTick === "enabled";
+    }
+  }
+  return {
+    generateHitEvents: generateHitEvents ?? true,
+    generateOverlapEvents: generateOverlapEvents ?? true,
+    eventTick: eventTick ?? true,
   };
 }
 
