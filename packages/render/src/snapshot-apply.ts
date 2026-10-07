@@ -586,29 +586,22 @@ function applyPartTransform(mesh: Mesh, part: AssignMeshPart): void {
 
 export const PLAY_FREE_CAM_NAME = "playFreeCam";
 
+/** Resolve the game listener/camera independently of a viewport-owned free camera. */
+export function resolvePlayGameCamera(scene: Scene, binding: SnapshotSceneBinding): Camera | null {
+  const possessed = binding.possessedCameraSlotId !== null ? binding.cameras.get(binding.possessedCameraSlotId) : undefined;
+  if (possessed && !possessed.isDisposed()) return possessed;
+  const named = binding.defaultCameraSlotId !== null ? binding.cameras.get(binding.defaultCameraSlotId) : undefined;
+  if (named && !named.isDisposed()) return named;
+  return scene.getCameraByName("camera");
+}
+
 export function refreshPlayActiveCamera(
   scene: Scene,
   binding: SnapshotSceneBinding,
 ): void {
   if (scene.activeCamera?.name === PLAY_FREE_CAM_NAME) return;
-  const possessed =
-    binding.possessedCameraSlotId !== null
-      ? binding.cameras.get(binding.possessedCameraSlotId)
-      : undefined;
-  if (possessed) {
-    scene.activeCamera = possessed;
-    return;
-  }
-  const named =
-    binding.defaultCameraSlotId !== null
-      ? binding.cameras.get(binding.defaultCameraSlotId)
-      : undefined;
-  if (named) {
-    scene.activeCamera = named;
-    return;
-  }
-  const playDefault = scene.getCameraByName("camera");
-  if (playDefault) scene.activeCamera = playDefault;
+  const camera = resolvePlayGameCamera(scene, binding);
+  if (camera) scene.activeCamera = camera;
 }
 
 function applyPlayShadows(scene: Scene): void {

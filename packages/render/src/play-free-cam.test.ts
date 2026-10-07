@@ -197,6 +197,39 @@ describe("attachPlayFreeCamInput", () => {
     engine.dispose();
   });
 
+  it("requires fresh keys and pointer gestures after input ownership resets", () => {
+    const { engine, scene } = createTestEngine();
+    setupDefaultViewport(scene);
+    const freeCam = createPlayFreeCamController(scene, { binding: createSnapshotSceneBinding() });
+    freeCam.setEnabled(true);
+    const canvas = new FakeCanvas();
+    const keys = new FakeTarget();
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextFrame = 0;
+    const input = attachPlayFreeCamInput(canvas as unknown as HTMLCanvasElement, freeCam, {
+      keyTarget: keys as unknown as EventTarget,
+      requestFrame: callback => { frames.set(++nextFrame, callback); return nextFrame; },
+      cancelFrame: id => { frames.delete(id); },
+    });
+    keys.emit("keydown", { code: "KeyW", repeat: false });
+    canvas.emit("pointerdown", { pointerId: 1, clientX: 100, clientY: 100 });
+    input.reset();
+    const camera = scene.activeCamera as UniversalCamera;
+    const position = camera.position.clone(), rotation = camera.rotationQuaternion!.clone();
+    keys.emit("keydown", { code: "KeyW", repeat: true });
+    canvas.emit("pointermove", { pointerId: 1, clientX: 180, clientY: 140 });
+    expect(frames.size).toBe(0);
+    expect(camera.position.equals(position)).toBe(true);
+    expect(camera.rotationQuaternion!.equals(rotation)).toBe(true);
+    keys.emit("keyup", { code: "KeyW" });
+    keys.emit("keydown", { code: "KeyW", repeat: false });
+    expect(frames.size).toBe(1);
+    canvas.emit("pointerdown", { pointerId: 2, clientX: 100, clientY: 100 });
+    canvas.emit("pointermove", { pointerId: 2, clientX: 180, clientY: 140 });
+    expect(camera.rotationQuaternion!.equals(rotation)).toBe(false);
+    input.dispose(); freeCam.dispose(); engine.dispose();
+  });
+
   it("looks right on pointer drag right and up on pointer drag up", () => {
     const { engine, scene } = createTestEngine();
     setupDefaultViewport(scene);

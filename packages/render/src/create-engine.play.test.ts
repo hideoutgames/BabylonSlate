@@ -3441,6 +3441,22 @@ describe("Play createEngine view", () => {
     expect(backend.listener.y).toBeCloseTo(4, 5);
     expect(backend.listener.z).toBeCloseTo(-6, 5);
     expect(fallback?.globalPosition.x ?? 0).not.toBeCloseTo(10, 0);
+    handle.setSimulationEditMode(true);
+    handle.steerPlayFreeCam(5, 2);
+    const editingCamera = handle.scene.activeCamera;
+    expect(editingCamera?.name).toBe("playFreeCam");
+    // Gameplay may possess another camera while Edit keeps the viewport camera.
+    handle.applyCommand({ type: "possessCamera", slotId: 1 });
+    expect(handle.scene.activeCamera).toBe(editingCamera);
+    writeSnapshotHeader(buf, { frameId: 2, tickIndex: 2, actorCount: 1, scriptMs: 0, physicsMs: 0 });
+    handle.pushSnapshot(buf);
+    runRenderLoop.mock.calls[0]?.[0]?.();
+    expect(backend.listener.x).toBeCloseTo(10, 5);
+    expect(backend.listener.y).toBeCloseTo(4, 5);
+    expect(backend.listener.z).toBeCloseTo(-6, 5);
+    expect(editingCamera?.globalPosition.equalsWithEpsilon(new Vector3(10, 4, -6))).toBe(false);
+    handle.setSimulationEditMode(false);
+    expect(handle.scene.activeCamera?.name).toBe("authoredCamera:1");
     handle.dispose();
   });
 
@@ -4261,6 +4277,49 @@ describe("Play createEngine view", () => {
     canvas.emit("touchstart", {});
     canvas.emit("touchmove", {});
     expect(canvas.prevented).toBe(beforeTouch + 2);
+  });
+
+  it("cancels held SceneLayer input on Edit and requires a fresh game gesture after return", () => {
+    const engine = sharedEngine();
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(256);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(256);
+    const renderLoop = vi.spyOn(engine, "runRenderLoop");
+    const canvas = new FakeCanvas();
+    const events: string[] = [], scrolls: unknown[] = [];
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true,
+      onSceneLayerPointer: event => events.push(event.event), onSceneLayerScroll: event => scrolls.push(event) });
+    handles.push(handle);
+    spawnOverlayButton(handle, () => renderLoop.mock.calls[0]?.[0]?.(), "hud", { width: 9, height: 9 });
+    handle.applyCommand({ type: "sceneLayerLayout", layerId: "hud", entries: [{ actorId: "scroll", componentId: "viewport", slotId: 2,
+      rect: { x: 0, y: 0, width: 9, height: 9 }, clip: null, scrollAncestors: [], scroll: { x: 0, y: 0, maxX: 0, maxY: 20,
+        axis: "vertical", viewport: { x: 0, y: 0, width: 9, height: 9 }, scaleX: 1, scaleY: 1 } }] });
+    canvas.emit("pointerdown", pointerAt(128, 128));
+    expect(events).toContain("onPressStart");
+    handle.setSimulationEditMode(true);
+    expect(events).toContain("onPressEnd");
+    expect(events).toContain("onMouseLeave");
+    expect(events).not.toContain("onClick");
+    expect(handle.isFreeCamEnabled()).toBe(true);
+    const count = events.length;
+    canvas.emit("pointermove", pointerAt(128, 100));
+    canvas.emit("pointerup", pointerAt(128, 128));
+    canvas.emit("wheel", { clientX: 128, clientY: 128, deltaX: 0, deltaY: 32, deltaMode: 0 });
+    expect(events).toHaveLength(count);
+    expect(scrolls).toEqual([]);
+    canvas.emit("pointerdown", pointerAt(128, 128, { pointerId: 2 }));
+    handle.setSimulationEditMode(false);
+    canvas.emit("pointerup", pointerAt(128, 128, { pointerId: 2 }));
+    expect(events).not.toContain("onClick");
+    handle.setGameInputEnabled(false);
+    handle.setSimulationEditMode(true);
+    handle.setSimulationEditMode(false);
+    canvas.emit("pointerdown", pointerAt(128, 128, { pointerId: 3 }));
+    canvas.emit("pointerup", pointerAt(128, 128, { pointerId: 3 }));
+    expect(events).not.toContain("onClick");
+    handle.setGameInputEnabled(true);
+    canvas.emit("pointerdown", pointerAt(128, 128, { pointerId: 4 }));
+    canvas.emit("pointerup", pointerAt(128, 128, { pointerId: 4 }));
+    expect(events.filter(event => event === "onClick")).toHaveLength(1);
   });
 
   it("scrolls nested overlay content with wheel and cancels button activation after touch dragging", () => {

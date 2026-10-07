@@ -196,6 +196,7 @@ import {
   disposeSnapshotBinding,
   disposeWorldOverlayLeftovers,
   refreshPlayActiveCamera,
+  resolvePlayGameCamera,
   retirePlaySlot,
   retirePlayWorldSlots,
   migratePlaySlotVisual,
@@ -283,6 +284,10 @@ export interface EngineHandle {
   setPaused: (paused: boolean) => void;
   /** Freeze render-owned game time independently of presentation/input pause reasons. */
   setGameTimePaused: (paused: boolean) => void;
+  /** SceneLayer input gate, independent of Simulation Edit and pause ownership. */
+  setGameInputEnabled: (enabled: boolean) => void;
+  /** Use the existing debug camera while preserving the possessed game camera/listener. */
+  setSimulationEditMode: (enabled: boolean) => void;
   /** Request one supported render-only frame; unsupported owners retain the last image. */
   requestPausedRedraw: () => { accepted: boolean; reason?: string };
   /** Streaming owns a separate pause, so releasing it cannot resume manual Pause. */
@@ -1103,6 +1108,9 @@ function initializeEngine(
   });
   const interpolator = new SnapshotInterpolator(options.maxActors ?? 256);
   const binding: SnapshotSceneBinding = createSnapshotSceneBinding();
+  let gameInputEnabled = true;
+  let simulationEditMode = false;
+  const acceptsGameInput = () => !disposed && gameInputEnabled && !simulationEditMode && !binding.paused;
   if (options.playMode) streamAdmission = createSceneStreamAdmission(scene, binding);
   onRollback(() => streamAdmission?.clear());
   onRollback(() => disposeSnapshotBinding(binding));
@@ -1152,6 +1160,10 @@ function initializeEngine(
     ? createPlayFreeCamController(scene, {
         binding,
         mode: options.viewportMode ?? "3d",
+        onChanged: () => {
+          if (gameTimePaused) scheduler.requestPausedFrame();
+          else scheduler.invalidate("camera");
+        },
       })
     : null;
   onRollback(() => playFreeCam?.dispose());
@@ -1463,7 +1475,7 @@ function initializeEngine(
     canvasY: number,
     pointerId?: number,
   ): boolean => {
-    if (!sceneLayerCompositor) return false;
+    if (!sceneLayerCompositor || !acceptsGameInput()) return false;
     const mapped = mapCanvasPointer(scene, canvasX, canvasY, pointerCanvas());
     const canvasSize = pointerCanvas();
     const walked = walkOverlayPointerHits(
@@ -1740,6 +1752,7 @@ function initializeEngine(
       retirePlayWorldSlots(binding);
       worldPlaySlots.clear();
       refreshPlayActiveCamera(scene, binding);
+      if (simulationEditMode) playFreeCam?.setEnabled(true);
       playViz?.applyCommand({ type: "setShowNav", enabled: false });
       // Play visuals come from assignMesh. Document illumination would plant a
       // second set of lights (`authoredLight:<actorId>`) on changescene.
@@ -2272,7 +2285,7 @@ function initializeEngine(
         applyBoneAttachmentAudioPoses(binding, audioPoses);
         audioService.syncSnapshot(audioPoses);
       }
-      const camera = scene.activeCamera;
+      const camera = simulationEditMode ? resolvePlayGameCamera(scene, binding) : scene.activeCamera;
       if (camera && !gameTimePaused) {
         const pos = camera.globalPosition ?? camera.position;
         const rot = camera.absoluteRotation;
@@ -2590,7 +2603,10 @@ function initializeEngine(
     return undefined;
   };
   let scrollDrag: { pointerId: number; startX: number; startY: number; x: number; y: number; active: boolean; target: NonNullable<ReturnType<typeof scrollTargetAt>> } | null = null;
+  const activeGamePointers = new Set<number>();
+  const activeControlKeys = new Set<string>();
   const onOverlayWheel = (event: WheelEvent) => {
+    if (!acceptsGameInput()) return;
     const rect = canvas.getBoundingClientRect();
     const hit = scrollTargetAt(event.clientX - rect.left, event.clientY - rect.top);
     if (!hit) return;
@@ -2599,6 +2615,8 @@ function initializeEngine(
     options.onSceneLayerScroll?.({ layerId: hit.layer.layerId, actorId: hit.target.actorId, componentId: hit.target.componentId!, deltaX: (event.shiftKey || hit.target.scroll?.axis === "horizontal" ? event.deltaY : event.deltaX) * factor * hit.scaleX, deltaY: event.shiftKey ? 0 : event.deltaY * factor * hit.scaleY });
   };
   const onPointerDown = (event: PointerEvent) => {
+    if (!acceptsGameInput()) return;
+    activeGamePointers.add(event.pointerId);
     event.preventDefault();
     canvas.focus({ preventScroll: true });
     canvas.setPointerCapture?.(event.pointerId);
@@ -2620,6 +2638,7 @@ function initializeEngine(
     }
   };
   const onPointerMove = (event: PointerEvent) => {
+    if (!acceptsGameInput() || ((event.pointerType === "touch" || event.buttons > 0) && !activeGamePointers.has(event.pointerId))) return;
     const { x, y } = overlayPointerCanvasCoords(event);
     if (joysticks.move(event.pointerId, x, y)) return;
     if (scrollDrag?.pointerId === event.pointerId) {
@@ -2641,6 +2660,7 @@ function initializeEngine(
     dispatchOverlayPointer("move", x, y);
   };
   const onPointerUp = (event: PointerEvent) => {
+    if (!activeGamePointers.delete(event.pointerId) || !acceptsGameInput()) return;
     const point = overlayPointerCanvasCoords(event);
     const wasScrolling = scrollDrag?.pointerId === event.pointerId && scrollDrag.active;
     if (scrollDrag?.pointerId === event.pointerId) scrollDrag = null;
@@ -2651,19 +2671,45 @@ function initializeEngine(
     dispatchOverlayPointer("up", x, y);
   };
   const onPointerCancel = (event: PointerEvent) => {
+    if (!activeGamePointers.delete(event.pointerId) || !acceptsGameInput()) return;
     if (scrollDrag?.pointerId === event.pointerId) scrollDrag = null;
     if (uiControls.release(event.pointerId, true) || joysticks.release(event.pointerId)) return;
     const { x, y } = overlayPointerCanvasCoords(event);
     playCursor?.notePointer(event.pointerType ?? "mouse", x, y);
     dispatchOverlayPointer("cancel", x, y);
   };
-  const resetJoysticks = () => { scrollDrag = null; joysticks.reset(); uiControls.reset(); };
-  const onCanvasBlur = () => { joysticks.reset(); };
-  const onControlKeyDown = (event: KeyboardEvent) => { if (!binding.paused) uiControls.keyDown(event); };
+  const resetJoysticks = () => {
+    scrollDrag = null;
+    joysticks.reset();
+    uiControls.reset();
+    for (const event of [...applyOverlayPointer(overlayPointerState, "cancel", []), ...applyOverlayPointer(overlayPointerState, "move", [])])
+      options.onSceneLayerPointer?.(event);
+    const captured = [...activeGamePointers];
+    activeGamePointers.clear();
+    activeControlKeys.clear();
+    const document = canvas.ownerDocument;
+    if (document?.pointerLockElement === canvas) document.exitPointerLock?.();
+    for (const pointerId of captured) {
+      try { canvas.releasePointerCapture?.(pointerId); } catch { /* Capture may already have ended. */ }
+    }
+  };
+  const onCanvasBlur = resetJoysticks;
+  const onControlKeyDown = (event: KeyboardEvent) => {
+    const key = event.code || event.key;
+    if (!acceptsGameInput() || (event.repeat && !activeControlKeys.has(key))) return;
+    activeControlKeys.add(key);
+    uiControls.keyDown(event);
+  };
+  const onControlKeyUp = (event: KeyboardEvent) => { activeControlKeys.delete(event.code || event.key); };
   const onJoystickVisibility = () => { if (typeof document !== "undefined" && document.hidden) resetJoysticks(); };
-  const onJoystickLostCapture = (event: PointerEvent) => { if (scrollDrag?.pointerId === event.pointerId) scrollDrag = null; joysticks.release(event.pointerId); uiControls.release(event.pointerId, true); };
+  const onJoystickLostCapture = (event: PointerEvent) => {
+    if (!activeGamePointers.delete(event.pointerId)) return;
+    if (scrollDrag?.pointerId === event.pointerId) scrollDrag = null;
+    joysticks.release(event.pointerId); uiControls.release(event.pointerId, true);
+    for (const result of applyOverlayPointer(overlayPointerState, "cancel", [])) options.onSceneLayerPointer?.(result);
+  };
   const onOverlayTouch = (event: TouchEvent) => {
-    event.preventDefault();
+    if (acceptsGameInput()) event.preventDefault();
   };
   if (!options.editor) {
     onRollback(() => {
@@ -2677,6 +2723,7 @@ function initializeEngine(
       canvas.removeEventListener("lostpointercapture", onJoystickLostCapture);
       canvas.removeEventListener("blur", onCanvasBlur);
       canvas.removeEventListener("keydown", onControlKeyDown);
+      canvas.removeEventListener("keyup", onControlKeyUp);
       if (typeof window !== "undefined") window.removeEventListener("blur", resetJoysticks);
       if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onJoystickVisibility);
     });
@@ -2691,6 +2738,7 @@ function initializeEngine(
       canvas.addEventListener("lostpointercapture", onJoystickLostCapture);
       canvas.addEventListener("blur", onCanvasBlur);
       canvas.addEventListener("keydown", onControlKeyDown);
+      canvas.addEventListener("keyup", onControlKeyUp);
       if (canvas.tabIndex < 0) canvas.tabIndex = 0;
       if (typeof window !== "undefined") window.addEventListener("blur", resetJoysticks);
       if (typeof document !== "undefined") document.addEventListener("visibilitychange", onJoystickVisibility);
@@ -2719,7 +2767,7 @@ function initializeEngine(
     setSceneGameTimePaused(scene, gameTimePaused);
     for (const layer of sceneLayerCompositor?.layers() ?? []) setSceneGameTimePaused(layer.scene, gameTimePaused);
     binding.paused = paused;
-    if (paused) { scrollDrag = null; joysticks.reset(); uiControls.reset(); }
+    if (paused) resetJoysticks();
     scheduler.setPaused(paused);
     audioService?.setPaused(paused);
     particleService?.setPaused(paused);
@@ -2734,6 +2782,7 @@ function initializeEngine(
     editor,
     dispose: () => {
       if (disposed) return;
+      resetJoysticks();
       disposed = true;
       streamAdmission?.clear();
       runtimeScalability?.dispose();
@@ -2795,8 +2844,14 @@ function initializeEngine(
       canvas.removeEventListener("touchstart", onOverlayTouch);
       canvas.removeEventListener("touchmove", onOverlayTouch);
       canvas.removeEventListener("wheel", onOverlayWheel);
+      canvas.removeEventListener("lostpointercapture", onJoystickLostCapture);
+      canvas.removeEventListener("blur", onCanvasBlur);
+      canvas.removeEventListener("keydown", onControlKeyDown);
+      canvas.removeEventListener("keyup", onControlKeyUp);
+      if (typeof window !== "undefined") window.removeEventListener("blur", resetJoysticks);
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", onVisibility);
+        document.removeEventListener("visibilitychange", onJoystickVisibility);
       }
       // Document FontFaces are host state; sibling views keep their own faces.
       fontRegistry.dispose();
@@ -2873,7 +2928,8 @@ function initializeEngine(
         scheduler.invalidate("snapshot");
         return;
       }
-      applyPlayFreeCamCommand(playFreeCam, command);
+      if (!simulationEditMode || (command.type !== "possessCamera" && command.type !== "setFreeCam"))
+        applyPlayFreeCamCommand(playFreeCam, command);
       playViz?.applyCommand(command);
       playDebugDraw?.applyCommand(command);
       if (command.type === "setPainter2D") {
@@ -2887,7 +2943,7 @@ function initializeEngine(
         applyUIControl2DCommand(binding, command);
         if (command.focused !== undefined) {
           const mesh = meshForPlayComponent(binding, command.slotId, command.componentId);
-          if (mesh) uiControls.syncFocus(mesh, command.focused, command.beginEditing);
+          if (mesh && acceptsGameInput()) uiControls.syncFocus(mesh, command.focused, command.beginEditing);
         }
         scheduler.invalidate("asset");
       }
@@ -3245,6 +3301,23 @@ function initializeEngine(
       if (disposed) return;
       gameTimePaused = paused;
       applyPause();
+    },
+    setGameInputEnabled: (enabled: boolean) => {
+      if (disposed || gameInputEnabled === enabled) return;
+      resetJoysticks();
+      gameInputEnabled = enabled;
+    },
+    setSimulationEditMode: (enabled: boolean) => {
+      if (disposed || !playFreeCam || simulationEditMode === enabled) return;
+      resetJoysticks();
+      playFreeCamInput?.reset();
+      simulationEditMode = enabled;
+      const previous = scene.activeCamera;
+      playFreeCam.setEnabled(enabled);
+      appliedSnapshotIdentity = null;
+      rebuildIfActiveCameraChanged(previous);
+      if (gameTimePaused) scheduler.requestPausedFrame();
+      else scheduler.invalidate("camera");
     },
     requestPausedRedraw: () => {
       if (disposed) return { accepted: false, reason: "The view has been disposed." };

@@ -54,6 +54,7 @@ export function createPlayFreeCamController(
   options: {
     binding: SnapshotSceneBinding;
     mode?: ViewportMode;
+    onChanged?: () => void;
   },
 ): PlayFreeCamController {
   const mode = options.mode ?? "3d";
@@ -102,6 +103,7 @@ export function createPlayFreeCamController(
       if (mode === "2d") {
         camera.position.x += right;
         camera.position.y += forward;
+        options.onChanged?.();
         return;
       }
       camera.computeWorldMatrix();
@@ -110,6 +112,7 @@ export function createPlayFreeCamController(
       camera.position.addInPlace(lookDir.scale(forward));
       camera.position.addInPlace(rightDir.scale(right));
       camera.computeWorldMatrix();
+      options.onChanged?.();
     },
     look(deltaYaw, deltaPitch) {
       if (!camera || mode === "2d") return;
@@ -123,6 +126,7 @@ export function createPlayFreeCamController(
         .multiply(pitch);
       camera.rotation.set(0, 0, 0);
       camera.computeWorldMatrix();
+      options.onChanged?.();
     },
     zoom(factor) {
       if (!camera || mode !== "2d" || factor <= 0) return;
@@ -134,6 +138,7 @@ export function createPlayFreeCamController(
       camera.orthoBottom = -next;
       camera.orthoLeft = -next * aspect;
       camera.orthoRight = next * aspect;
+      options.onChanged?.();
     },
     dispose() {
       detach();
@@ -164,6 +169,7 @@ export function disablePlayFreeCam(
 }
 
 export type PlayFreeCamInputHandle = {
+  reset: () => void;
   dispose: () => void;
 };
 
@@ -234,6 +240,8 @@ export function attachPlayFreeCamInput(
 
   const onPointerDown = (event: PointerEvent) => {
     if (!enabled()) return;
+    event.preventDefault();
+    canvas.focus?.({ preventScroll: true });
     pointers.set(event.pointerId, toCanvas(event));
     canvas.setPointerCapture?.(event.pointerId);
     lastSpread = pointerSpread();
@@ -243,6 +251,7 @@ export function attachPlayFreeCamInput(
     if (!enabled()) return;
     const previous = pointers.get(event.pointerId);
     if (!previous) return;
+    event.preventDefault();
     const point = toCanvas(event);
     const dx = point.x - previous.x;
     const dy = point.y - previous.y;
@@ -270,19 +279,36 @@ export function attachPlayFreeCamInput(
     lastSpread = pointerSpread();
   };
 
+  const reset = () => {
+    flyKeys?.reset();
+    const captured = [...pointers.keys()];
+    pointers.clear();
+    lastSpread = 0;
+    for (const pointerId of captured) {
+      try { canvas.releasePointerCapture?.(pointerId); } catch { /* Capture may already have ended. */ }
+    }
+  };
+
   canvas.addEventListener("pointerdown", onPointerDown);
   canvas.addEventListener("pointermove", onPointerMove);
   canvas.addEventListener("pointerup", endPointer);
   canvas.addEventListener("pointercancel", endPointer);
+  canvas.addEventListener("lostpointercapture", endPointer);
+  canvas.addEventListener("blur", reset);
+  keyTarget?.addEventListener("blur", reset);
 
   return {
+    reset,
     dispose: () => {
+      reset();
       flyKeys?.dispose();
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", endPointer);
       canvas.removeEventListener("pointercancel", endPointer);
-      pointers.clear();
+      canvas.removeEventListener("lostpointercapture", endPointer);
+      canvas.removeEventListener("blur", reset);
+      keyTarget?.removeEventListener("blur", reset);
     },
   };
 }

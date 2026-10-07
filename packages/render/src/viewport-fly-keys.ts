@@ -54,6 +54,8 @@ export interface ViewportFlyKeyOptions {
 }
 
 export interface ViewportFlyKeyHandle {
+  /** Drop held keys on input ownership changes; repeats cannot reactivate them. */
+  reset: () => void;
   dispose: () => void;
 }
 
@@ -174,7 +176,7 @@ export function attachViewportFlyKeys(
     // Ctrl/Cmd/Alt+A/S/D/W are shortcuts, not movement.
     if (keyboard.ctrlKey || keyboard.metaKey || keyboard.altKey) return;
     if (isEditableTarget(keyboard.target)) return;
-    if (!enabled()) return;
+    if (!enabled() || (keyboard.repeat && !keys.has(keyboard.code))) return;
     keys.add(keyboard.code);
     ensureLoop();
   };
@@ -201,6 +203,7 @@ export function attachViewportFlyKeys(
   target.addEventListener("blur", onBlur);
 
   return {
+    reset: onBlur,
     dispose: () => {
       target.removeEventListener("keydown", onKeyDown);
       target.removeEventListener("keyup", onKeyUp);
