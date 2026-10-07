@@ -131,11 +131,12 @@ describe("runtime Inspector client", () => {
 
   it("invalidates destroyed objects and stops without dispatching their queued edits", async () => {
     const { client, sent } = fixture();
-    const requests = Promise.allSettled([client.request(edit(1)), client.request(edit(2)), client.request({ kind: "selection", target })]);
-    expect(sent).toHaveLength(2);
+    const requests = Promise.allSettled([client.request(edit(1)), client.request(edit(2)), client.request({ kind: "selection", target }),
+      client.request({ kind: "resolvePick", actorGuid: target.actorGuid, slotId: 3 })]);
+    expect(sent).toHaveLength(3);
     client.invalidateActor(target.actorGuid);
     expect((await requests).every(result => result.status === "rejected" && result.reason.code === "invalidated")).toBe(true);
-    expect(sent).toHaveLength(2);
+    expect(sent).toHaveLength(3);
     client.receive(reply(sent[0]!));
     const reused = client.request(edit(3, { ...target, actorToken: 8 }));
     const stopped = expect(reused).rejects.toMatchObject({ code: "stopped" });

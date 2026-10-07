@@ -93,7 +93,8 @@ export class RuntimeInspectorClient {
 
   /** Structural events invalidate exact live requests; future identities may reuse a GUID. */
   invalidateActor(actorGuid: string): void {
-    this.invalidate(entry => "target" in entry.request.action && entry.request.action.target.actorGuid === actorGuid,
+    this.invalidate(entry => entry.request.action.kind === "resolvePick" ? entry.request.action.actorGuid === actorGuid :
+      "target" in entry.request.action && entry.request.action.target.actorGuid === actorGuid,
       "The runtime actor was destroyed.");
   }
 
