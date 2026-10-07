@@ -10,7 +10,7 @@ function reply(request: RuntimeInspectorRequest): RuntimeInspectorResult {
   return { sessionGeneration: request.sessionGeneration, requestId: request.requestId, success: true,
     tickIndex: 40, frameId: 80, commandRevision: 3, structuralRevision: 1,
     payload: action.kind === "identities" ? { kind: "identities", rows: [], unchanged: false }
-      : action.kind === "selection" ? { kind: "selection", target: action.target, classId: "Actor", properties: [],
+      : action.kind === "selection" ? { kind: "selection", target: action.target, classId: "Actor", properties: [], transformCapability: "live",
         transform: identitySerializedTransform() }
       : action.kind === "value" ? { kind: "value", property: action.property, value: 5 }
       : { kind: "mutation", target: action.target, sequence: action.sequence, effectiveValue: action.kind === "setProperty" ? action.value : null },

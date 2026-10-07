@@ -212,6 +212,7 @@ export function playLoadControl(options: {
     type: "load",
     sessionMode: options.sessionMode,
     sessionGeneration: options.sessionGeneration,
+    deferMaterialEdits: options.sessionMode === "simulate",
     saveGame: options.saveGame,
     frameCap: options.frameCap,
     traceByteBudget: options.traceByteBudget,

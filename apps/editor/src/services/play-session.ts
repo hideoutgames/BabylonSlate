@@ -74,6 +74,7 @@ import {
 import { attachInputCapture, type InputCaptureHandle } from "./input-capture";
 import { createSessionBoundaryClient } from "./session-boundary-client";
 import { RuntimeInspectorClient, type RuntimeInspectionAction, type RuntimeInspectionWriteOptions } from "./runtime-inspector-client";
+import { RuntimeMaterialEditHost } from "./runtime-material-edit-host";
 import { getBuildIdentity } from "../lib/build-identity";
 import { observedMoveXFromEvents } from "../lib/play-input-observe";
 import { createGameWorkerHost, type GameWorkerHost } from "./game-worker-host";
@@ -921,7 +922,19 @@ export function startPlaySession(options: {
     : undefined;
   const saveStorage = simulationSaveStorage ?? createSaveGameStorage();
   const saveServer = createSaveStorageServer(saveStorage, (response) => worker?.postControl({ type: "saveStorageResponse", response }));
+  const materialEditHost = new RuntimeMaterialEditHost({
+    sessionGeneration: options.sessionGeneration ?? 0,
+    mode: options.mode ?? "play",
+    prepare: request => handle.prepareRuntimeMaterialEdit(request),
+    commit: command => handle.commitRuntimeMaterialEdit(command),
+    release: token => handle.releaseRuntimeMaterialPreparation(token),
+    respond: response => {
+      if (worker) worker.postControl(response);
+      else runtime?.applyRuntimeMaterialEditResult(response);
+    },
+  });
   const onCommand = (command: CommandMessage) => {
+    if (materialEditHost.receive(command)) return;
     if (command.type === "diagnosticOperationResult") { diagnosticClient.receive(command); return; }
     if (command.type === "performanceTicks") {
       if (command.sessionGeneration === (options.sessionGeneration ?? 0)) performanceDiagnostics?.receiveTicks(command);
@@ -939,7 +952,7 @@ export function startPlaySession(options: {
     }
     if (command.type === "saveStorageRequest") { saveServer.receive(command.request); return; }
     noteCommand();
-    if (command.type === "activeScene") inspectorClient.invalidateScene();
+    if (command.type === "activeScene") { inspectorClient.invalidateScene(); materialEditHost.invalidate(); }
     if (command.type === "despawn") inspectorClient.invalidateActor(command.actorGuid);
     if (command.type === "sceneStreamBlocking") handle.setSceneStreamingPaused(command.blocking);
     if (command.type === "snapshotLayout" && runtime)
@@ -1412,6 +1425,7 @@ export function startPlaySession(options: {
       stopped = true;
       boundaryClient.dispose();
       inspectorClient.dispose();
+      materialEditHost.dispose();
       simulationSaveStorage?.dispose();
       releaseConsoleCapture();
       window.removeEventListener("error", onWindowError);

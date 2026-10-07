@@ -8,8 +8,10 @@ export type RuntimeInspectionWriteOptions = { continuous?: boolean; final?: bool
 export type RuntimeInspectorRequestErrorCode = "stopped" | "superseded" | "budget" | "invalid" | "invalidated" | "timeout" | "transport";
 
 export class RuntimeInspectorRequestError extends Error {
-  constructor(readonly code: RuntimeInspectorRequestErrorCode, message: string) {
+  readonly code: RuntimeInspectorRequestErrorCode;
+  constructor(code: RuntimeInspectorRequestErrorCode, message: string) {
     super(message);
+    this.code = code;
     this.name = "RuntimeInspectorRequestError";
   }
 }
@@ -22,6 +24,11 @@ type Entry = {
 
 /** Bounded typed transport. It never evaluates paths or retains a world snapshot. */
 export class RuntimeInspectorClient {
+  private readonly options: {
+    sessionGeneration: number;
+    send: (request: RuntimeInspectorRequest) => void | Promise<void>;
+    maxRequests?: number; maxBytes?: number; timeoutMs?: number;
+  };
   private nextId = 0;
   private nextWireId = 0;
   private closed = false;
@@ -30,11 +37,11 @@ export class RuntimeInspectorClient {
   private readonly sent = new Map<number, Entry>();
   private readonly lanes = new Map<string, Entry[]>();
 
-  constructor(private readonly options: {
+  constructor(options: {
     sessionGeneration: number;
     send: (request: RuntimeInspectorRequest) => void | Promise<void>;
     maxRequests?: number; maxBytes?: number; timeoutMs?: number;
-  }) {}
+  }) { this.options = options; }
 
   request(action: RuntimeInspectionAction, options: RuntimeInspectionWriteOptions = {}): Promise<RuntimeInspectorResult> {
     if (this.closed) return Promise.reject(error("stopped", "The game session has stopped."));
