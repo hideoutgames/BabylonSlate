@@ -50,7 +50,11 @@ import {
   basicParticleStageRole,
   type BasicParticleStage,
 } from "@babylonslate/ui/lib/data-types";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useOpenDocument,
+  useRegistryState,
+} from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useEditorSessionState } from "../context/editor-session-state-context";
 import {
@@ -117,8 +121,8 @@ function withValueAt(
 
 function useEmitterDocument() {
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange } = useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const doc = useOpenDocument(documentId);
   const onChange = (next: Record<string, unknown>, mergeKey?: string) => {
     void applyAssetDocumentChange(documentId, next, mergeKey);
   };
@@ -691,7 +695,7 @@ export function ParticleEmitterEditor({
   documentKey?: string;
 }) {
   const emitter = normalizeParticleEmitterPayload(payload);
-  const { assetRegistry } = useDocuments();
+  const { assetRegistry } = useRegistryState();
   const assets = (assetRegistry?.list() ?? []) as RegistryAsset[];
   const [picking, setPicking] = useState(false);
   const cards = useModuleOpenState(documentKey);

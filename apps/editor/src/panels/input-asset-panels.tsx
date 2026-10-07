@@ -21,7 +21,11 @@ import {
   EmptyTitle,
   EmptyDescription,
 } from "@babylonslate/ui/components/empty";
-import { useDocuments } from "../context/document-context";
+import {
+  useActiveDocumentId,
+  useDocumentActions,
+  useOpenDocument,
+} from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useInputAssetEditing } from "../context/input-asset-editing-context";
 import { IconActionButton } from "../components/icon-action-button";
@@ -36,9 +40,9 @@ const DEVICES: Array<{ id: InputDevice; label: string }> = [
 
 function useInputDocument() {
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange, activeDocumentId } =
-    useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const activeDocumentId = useActiveDocumentId();
+  const doc = useOpenDocument(documentId);
   const isAxis = doc?.ref.kind === "input-axis";
   const asset = normalizeInputAssetPayload(
     isAxis ? "InputAxis" : "InputAction",

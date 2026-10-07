@@ -3,8 +3,13 @@ import { AppWindowIcon, ChevronDownIcon } from "lucide-react";
 import { NestedMenu, type NestedMenuItem } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
 import {
-  useDocuments,
+  useActiveDocumentState,
   useDockWindowTick,
+  useDocumentActions,
+  useOpenDocumentTabs,
+  useProjectState,
+  useRegistryState,
+  useSourceControl,
 } from "../context/document-context";
 import {
   isDockviewDocumentKind,
@@ -16,19 +21,14 @@ import {
 } from "../lib/content-browser-helpers";
 
 export function WindowsMenu() {
-  const {
-    projectName,
-    openDocuments,
-    activeDocumentId,
-    toggleDockWindow,
-    isDockWindowOpen,
-    getOpenDockWindowCount,
-    assetRegistry,
-    registryEpoch,
-    sourceControl,
-    animEditorMode,
-    sceneMode,
-  } = useDocuments();
+  const { toggleDockWindow, isDockWindowOpen, getOpenDockWindowCount } =
+    useDocumentActions();
+  const { projectName } = useProjectState();
+  const openDocuments = useOpenDocumentTabs();
+  const { activeDocumentId, animEditorMode, sceneMode } = useActiveDocumentState();
+  const { assetRegistry, registryEpoch } = useRegistryState();
+  const { sourceControl } = useSourceControl();
+  // Dock windows opening or closing: `isDockWindowOpen` and the count change.
   useDockWindowTick();
   const [menuOpen, setMenuOpen] = useState(false);
 

@@ -1,6 +1,6 @@
 import { useCallback, useMemo, type ReactNode } from "react";
 import { AssetOpenProvider } from "@babylonslate/editor-kit";
-import { useDocuments } from "./document-context";
+import { useDocumentActions, useRegistryState, useTabOrder } from "./document-context";
 import {
   canOpenAssetDocument,
   openOrFocusAssetDocument,
@@ -12,8 +12,9 @@ export function AssetOpenDocumentsProvider({
 }: {
   children: ReactNode;
 }) {
-  const { assetRegistry, tabOrder, setActiveDocument, openDocument } =
-    useDocuments();
+  const { setActiveDocument, openDocument } = useDocumentActions();
+  const { assetRegistry } = useRegistryState();
+  const tabOrder = useTabOrder();
 
   const getByGuid = useCallback(
     (guid: string) => assetRegistry?.getByGuid(guid),

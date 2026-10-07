@@ -21,7 +21,11 @@ import {
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
 import { Toggle } from "@babylonslate/ui/components/toggle";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useOpenDocument,
+  useRegistryState,
+} from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { AnimationPreviewCanvas } from "./animation-preview-canvas";
 
@@ -32,7 +36,8 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 function useAssetSourceBytes(guid: string | null): Uint8Array | null {
-  const { assetRegistry, readAssetChunk } = useDocuments();
+  const { readAssetChunk } = useDocumentActions();
+  const { assetRegistry } = useRegistryState();
   const [bytes, setBytes] = useState<Uint8Array | null>(null);
   const path = guid
     ? assetRegistry?.list().find((asset) => asset.header.guid === guid)?.path
@@ -56,8 +61,8 @@ function useAssetSourceBytes(guid: string | null): Uint8Array | null {
 export function AnimationPreviewPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, assetRegistry } = useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const { assetRegistry } = useRegistryState();
+  const doc = useOpenDocument(documentId);
   const animation = normalizeAnimationPayload(asRecord(doc?.content));
   const sourceBytes = useAssetSourceBytes(animation.modelGuid);
   const sourceAnim = animation.sourceAnimationGuid
@@ -96,8 +101,7 @@ export function AnimationPreviewPanel(_props: IDockviewPanelProps) {
 export function AnimationDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments } = useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const doc = useOpenDocument(documentId);
   return (
     <PanelFrame data-testid="animation-details-panel">
       <AnimationEditor payload={asRecord(doc?.content)} />
@@ -172,7 +176,7 @@ export function AnimationEditor({
   payload: Record<string, unknown>;
 }) {
   const animation = normalizeAnimationPayload(payload);
-  const { assetRegistry } = useDocuments();
+  const { assetRegistry } = useRegistryState();
   const assets = assetRegistry?.list() ?? [];
   const model = assets.find((asset) => asset.header.guid === animation.modelGuid);
   const skeleton = animation.skeletonGuid

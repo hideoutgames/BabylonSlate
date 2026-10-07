@@ -19,7 +19,11 @@ import {
 } from "@babylonslate/core";
 import type { TreeDropPlacement } from "@babylonslate/editor-kit";
 import { patchInspectorComponentProperty } from "../lib/mesh-material-properties";
-import { useDocuments } from "./document-context";
+import {
+  useDocumentActions,
+  useRegistryState,
+  useOpenDocument,
+} from "./document-context";
 import { useDocumentWorkspace } from "./document-workspace-context";
 import { useOptionalSceneEditing } from "./scene-editing-context";
 import {
@@ -173,14 +177,9 @@ export function PrefabEditingProvider({
   initialSelectedIds?: readonly string[];
 }) {
   const { documentId } = useDocumentWorkspace();
-  const {
-    openDocuments,
-    getOpenDocuments,
-    applyGraphChange,
-    applyAssetDocumentChange,
-    assetRegistry,
-    registryEpoch,
-  } = useDocuments();
+  const { getOpenDocuments, applyGraphChange, applyAssetDocumentChange } =
+    useDocumentActions();
+  const { assetRegistry, registryEpoch } = useRegistryState();
   const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
   const viewportMode = useOptionalSceneEditing()?.viewportMode ?? "3d";
   const [selectedIds, setSelectedIds] = useState<string[]>(() => {
@@ -194,7 +193,7 @@ export function PrefabEditingProvider({
     setSelectedIds(id ? [id] : []);
   }, []);
 
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const doc = useOpenDocument(documentId);
   // Only Class documents have prefab components; Scene and Scene Layer
   // workspaces skip the registry walk entirely.
   const graph =

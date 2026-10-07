@@ -1,13 +1,19 @@
 import { useCallback, useLayoutEffect, useRef, type ReactNode } from "react";
 import { createTag, normalizeTagRegistry } from "@babylonslate/core";
 import { TagProvider } from "@babylonslate/editor-kit";
-import { useDocuments } from "./document-context";
+import {
+  useDocumentActions,
+  useProjectState,
+  useRegistryState,
+} from "./document-context";
 
 const EMPTY_TAGS = normalizeTagRegistry(undefined);
 
 /** Keeps every Tag picker on the active project's saved registry. */
 export function TagDocumentsProvider({ children }: { children: ReactNode }) {
-  const { projectDocument, projectGuid, updateProjectSettings } = useDocuments();
+  const { updateProjectSettings } = useDocumentActions();
+  const { projectDocument } = useProjectState();
+  const { projectGuid } = useRegistryState();
   const registry = projectDocument?.settings.tags ?? EMPTY_TAGS;
   const latest = useRef({ registry, projectGuid, hasProject: Boolean(projectDocument) });
   useLayoutEffect(() => {

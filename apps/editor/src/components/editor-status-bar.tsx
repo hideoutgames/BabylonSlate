@@ -1,5 +1,9 @@
 import { CircleAlertIcon } from "lucide-react";
-import { useDocuments } from "../context/document-context";
+import {
+  useActiveDocumentId,
+  useOpenDocumentTabs,
+  useSaveState,
+} from "../context/document-context";
 import { useValidation } from "../context/validation-context";
 import { getBuildLabel } from "../lib/build-identity";
 import { usePhoneLayout } from "../shell/use-platform-layout";
@@ -11,12 +15,13 @@ function saveStateLabel(unsaved: number, projectDirty: boolean): string {
 }
 
 export function EditorStatusBar() {
-  const { openDocuments, activeDocumentId, dirtyDocuments, projectDirty, autoSaveStatus } =
-    useDocuments();
+  const activeDocumentId = useActiveDocumentId();
+  // The label only: tab-level changes, not each content edit.
+  const active = useOpenDocumentTabs().find((doc) => doc.id === activeDocumentId);
+  const { dirtyDocuments, projectDirty, autoSaveStatus } = useSaveState();
   const { errorCount } = useValidation();
   const phone = usePhoneLayout();
   if (phone) return null;
-  const active = openDocuments.find((doc) => doc.id === activeDocumentId);
   const dirty = dirtyDocuments.length > 0 || projectDirty;
   return (
     <footer className="editor-statusbar" data-testid="editor-status-bar">

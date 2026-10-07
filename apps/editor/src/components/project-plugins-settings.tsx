@@ -28,7 +28,11 @@ import {
   AlertDialogTitle,
 } from "@babylonslate/ui/components/alert-dialog";
 import { documentKindForAssetType } from "@babylonslate/core";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useProjectState,
+  useRegistryState,
+} from "../context/document-context";
 import {
   inboundRefsFromOtherRoots,
   isBabpluginFile,
@@ -49,10 +53,6 @@ function maturityLabels(plugin: PluginDescriptor) {
 
 export function ProjectPluginsSettings() {
   const {
-    projectDocument,
-    pluginDescriptors,
-    pluginDiagnostics,
-    assetRegistry,
     updateProjectSettings,
     applyPluginOverrides,
     createProjectPlugin,
@@ -60,9 +60,15 @@ export function ProjectPluginsSettings() {
     exportPlugin,
     importPlugin,
     openDocument,
-    showPluginContent,
     setShowPluginContent,
-  } = useDocuments();
+  } = useDocumentActions();
+  const { projectDocument } = useProjectState();
+  const {
+    pluginDescriptors,
+    pluginDiagnostics,
+    assetRegistry,
+    showPluginContent,
+  } = useRegistryState();
   const [newOpen, setNewOpen] = useState(false);
   const [exportTarget, setExportTarget] = useState<PluginDescriptor | null>(null);
   const [confirmEnable, setConfirmEnable] = useState<PluginDescriptor | null>(

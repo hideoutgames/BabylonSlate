@@ -7,10 +7,11 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
-import { useDocuments } from "../context/document-context";
+import { useDocumentActions, useRegistryState } from "../context/document-context";
 
 export function useTexturePreview(textureGuid: string | null | undefined) {
-  const { assetRegistry, readAssetChunk } = useDocuments();
+  const { readAssetChunk } = useDocumentActions();
+  const { assetRegistry } = useRegistryState();
   const asset = textureGuid ? assetRegistry?.getByGuid(textureGuid) : undefined;
   const path = asset?.path;
   const revision =

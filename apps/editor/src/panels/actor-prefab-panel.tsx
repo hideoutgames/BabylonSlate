@@ -29,7 +29,8 @@ import {
   physicsWorldFromOpenDocuments,
   projectAddComponentItems,
 } from "./add-component-catalog";
-import { useDocuments } from "../context/document-context";
+import { useRegistryState, useOpenDocument } from "../context/document-context";
+import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import {
   classIdFromClassAsset,
@@ -93,6 +94,8 @@ export function flattenPrefabComponents(
  * Actor component tree for Class and Prefab documents. The 3D preview lives in
  * the sibling Prefab viewport tab. Edits write the document's `components`.
  */
+const WORLD_KINDS = ["scene", "scene-layer"] as const;
+
 export function ActorPrefabPanel(_props: IDockviewPanelProps) {
   void _props;
   const {
@@ -104,24 +107,26 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
     removeSelected,
     reparentComponent,
   } = usePrefabEditing();
-  const { assetRegistry, openDocuments } = useDocuments();
+  const { assetRegistry } = useRegistryState();
   const { documentId } = useDocumentWorkspace();
+  const doc = useOpenDocument(documentId);
+  // The open world Scene or Scene Layer sets the Add Component physics world.
+  const worldDocuments = useOpenDocumentsOfKinds(WORLD_KINDS);
   const { setSelectedMemberId, setSelectedNodeIds } = useGraphEditing();
   const { frameActor } = useSceneEditing();
   const [addAnchor, setAddAnchor] = useState<{ x: number; y: number } | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const listedAssets = assetRegistry?.list() ?? [];
-  const isPrefabAsset =
-    openDocuments.find((entry) => entry.id === documentId)?.ref.kind === "prefab";
+  const isPrefabAsset = doc?.ref.kind === "prefab";
+  const docPath = doc?.ref.path;
   const overlay = useMemo(() => {
-    const doc = openDocuments.find((entry) => entry.id === documentId);
-    const indexed = listedAssets.find((asset) => asset.path === doc?.ref.path);
+    const indexed = listedAssets.find((asset) => asset.path === docPath);
     if (!indexed) return false;
     return walkAncestry(
       classIdFromClassAsset(indexed),
       classParentLookup(listedAssets),
     ).includes("SceneLayerActor");
-  }, [documentId, listedAssets, openDocuments]);
+  }, [docPath, listedAssets]);
 
   const nodes = useMemo(
     () =>
@@ -216,7 +221,7 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
         onSelect={addComponent}
         projectItems={projectItems}
         overlay={overlay}
-        physicsWorld={physicsWorldFromOpenDocuments(openDocuments)}
+        physicsWorld={physicsWorldFromOpenDocuments(worldDocuments)}
         data-testid="prefab-add-component-catalog"
       />
     </PanelFrame>

@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createEmptyProject } from "@babylonslate/core";
@@ -18,20 +17,24 @@ vi.mock("@babylonslate/vfs", async (importOriginal) => ({
   ...await importOriginal<typeof import("@babylonslate/vfs")>(),
   pickImportFiles: harness.pick,
 }));
-vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => {
-  const [project, setProject] = useState(() => {
+vi.mock("../context/document-context", async () => {
+  const { documentContextMock, sharedMockState } = await import("../testing/document-context-mock");
+  const projectState = sharedMockState(() => {
     const empty = createEmptyProject("Extensions");
     return { ...empty, settings: { ...empty.settings, extensionOverrides: harness.overrides } };
   });
-  return {
-    extensionService: harness.service,
-    projectDocument: project,
-    updateProjectSettings: (patch: { extensionOverrides: ExtensionOverrides }) => {
-      harness.overrides = patch.extensionOverrides;
-      setProject((previous) => ({ ...previous, settings: { ...previous.settings, ...patch } }));
-    },
-  };
-}));
+  return documentContextMock(() => {
+    const [project, setProject] = projectState.use();
+    return {
+      extensionService: harness.service,
+      projectDocument: project,
+      updateProjectSettings: (patch: { extensionOverrides: ExtensionOverrides }) => {
+        harness.overrides = patch.extensionOverrides;
+        setProject((previous) => ({ ...previous, settings: { ...previous.settings, ...patch } }));
+      },
+    };
+  });
+});
 
 const source = `export function activate(api) {
   api.registerCommand({ id: "write", title: "Write Code", fields: [

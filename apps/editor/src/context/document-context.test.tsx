@@ -36,9 +36,15 @@ import {
 } from "../testing/real-document-provider";
 import {
   DocumentProvider,
+  useActiveDocumentId,
   useAppRoute,
   useDocumentActions,
+  useDocumentDirty,
   useDocuments,
+  useOpenDocument,
+  useOpenDocumentTabs,
+  useRegistryState,
+  useSaveState,
   type AppRoute,
   type DocumentActions,
 } from "./document-context";
@@ -1011,4 +1017,101 @@ describe("DocumentProvider closed document history", () => {
     }
   });
 
+});
+
+describe("DocumentProvider narrow subscriptions", () => {
+  /** Counts each render of a subscriber and keeps the value it rendered with. */
+  function counter<T>(useValue: () => T) {
+    const probe = { renders: 0, value: undefined as T | undefined };
+    function Subscriber() {
+      probe.value = useValue();
+      probe.renders += 1;
+      return null;
+    }
+    return { probe, Subscriber };
+  }
+
+  it("re-renders a document's subscribers for that document only, and action-only consumers never", async () => {
+    const classId = documentId({ kind: "graph", path: MAIN_CLASS_FILE });
+    const sceneContent = counter(() => useOpenDocument(MAIN_SCENE_ID)?.content);
+    const sceneDirty = counter(() => useDocumentDirty(MAIN_SCENE_ID));
+    const classContent = counter(() => useOpenDocument(classId)?.content);
+    const classDirty = counter(() => useDocumentDirty(classId));
+    const active = counter(() => useActiveDocumentId());
+    const actionsOnly = counter(() => useDocumentActions());
+    const registry = counter(() => useRegistryState());
+    const actions = await openProject(
+      <>
+        <sceneContent.Subscriber />
+        <sceneDirty.Subscriber />
+        <classContent.Subscriber />
+        <classDirty.Subscriber />
+        <active.Subscriber />
+        <actionsOnly.Subscriber />
+        <registry.Subscriber />
+      </>,
+    );
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.openDocument({ kind: "graph", path: MAIN_CLASS_FILE, label: "Main" }));
+    const renders = () => ({
+      sceneContent: sceneContent.probe.renders,
+      sceneDirty: sceneDirty.probe.renders,
+      classContent: classContent.probe.renders,
+      classDirty: classDirty.probe.renders,
+      active: active.probe.renders,
+      actionsOnly: actionsOnly.probe.renders,
+      registry: registry.probe.renders,
+    });
+    const opened = renders();
+    const registryState = registry.probe.value;
+
+    // The first edit of Main dirties it; the second keeps it dirty.
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 1)));
+    expect(sceneContent.probe.value).toBe(openScene(MAIN_SCENE_ID));
+    expect(sceneDirty.probe.value).toBe(true);
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 1)));
+    expect(sceneContent.probe.value).toBe(openScene(MAIN_SCENE_ID));
+    expect(renders()).toEqual({
+      ...opened,
+      sceneContent: opened.sceneContent + 2,
+      sceneDirty: opened.sceneDirty + 1,
+    });
+    expect(registry.probe.value).toBe(registryState);
+
+    // A tab switch reaches the active tab's readers only.
+    const edited = renders();
+    act(() => actions.setActiveDocument(MAIN_SCENE_ID));
+    expect(active.probe.value).toBe(MAIN_SCENE_ID);
+    expect(renders()).toEqual({ ...edited, active: edited.active + 1 });
+  });
+
+  it("keeps tab and dirty lists through further edits of a dirty document", async () => {
+    const tabs = counter(() => useOpenDocumentTabs());
+    const save = counter(() => useSaveState());
+    const actions = await openProject(
+      <>
+        <tabs.Subscriber />
+        <save.Subscriber />
+      </>,
+    );
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 1)));
+    expect(tabs.probe.value?.find((doc) => doc.id === MAIN_SCENE_ID)?.dirty).toBe(true);
+    expect(save.probe.value?.dirtyDocuments.map((doc) => doc.id)).toEqual([MAIN_SCENE_ID]);
+    const dirtyTabs = tabs.probe.value;
+    const dirtySave = save.probe.value;
+    const rendered = { tabs: tabs.probe.renders, save: save.probe.renders };
+
+    // Each edit replaces the Scene's ref with an equal copy: nothing a tab shows changes.
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 1)));
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 1)));
+    expect(tabs.probe.value).toBe(dirtyTabs);
+    expect(save.probe.value).toBe(dirtySave);
+    expect({ tabs: tabs.probe.renders, save: save.probe.renders }).toEqual(rendered);
+
+    // Saving clears the dirty flag, and both lists show it.
+    await act(() => actions.saveAll());
+    expect(tabs.probe.value?.find((doc) => doc.id === MAIN_SCENE_ID)?.dirty).toBe(false);
+    expect(save.probe.value?.dirtyDocuments).toEqual([]);
+  });
 });

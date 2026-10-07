@@ -68,7 +68,12 @@ import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { commitBehaviourTreeGraphChange } from "../lib/behaviour-tree-graph-commit";
 import { classParentLookup } from "../lib/content-browser-helpers";
 import { pinDefaultPropertyRows } from "../lib/graph-inspector";
-import { useDocuments } from "../context/document-context";
+import { documentId } from "@babylonslate/core";
+import {
+  useDocumentActions,
+  useOpenDocument,
+  useRegistryState,
+} from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useBehaviourTreeEditing } from "../context/behaviour-tree-editing-context";
 import { useLiveBtState, usePlay } from "../context/play-context";
@@ -123,16 +128,11 @@ function btFieldMergeKey(
 
 function useBehaviourTreeDocument() {
   const { documentId: workspaceDocumentId } = useDocumentWorkspace();
-  const {
-    assetRegistry,
-    openDocument,
-    openDocuments,
-    applyAssetDocumentChange,
-    loadAssetDocument,
-  } = useDocuments();
+  const { openDocument, applyAssetDocumentChange, loadAssetDocument } = useDocumentActions();
+  const { assetRegistry } = useRegistryState();
   const play = usePlay();
   const liveBtState = useLiveBtState();
-  const entry = openDocuments.find((item) => item.id === workspaceDocumentId);
+  const entry = useOpenDocument(workspaceDocumentId);
   const doc = useMemo(
     () => asTree((entry?.content ?? {}) as Record<string, unknown>),
     [entry?.content],
@@ -237,12 +237,9 @@ function useBehaviourTreeDocument() {
     ? assetRegistry?.getByGuid(doc.blackboardGuid)
     : undefined;
   const blackboardPath = blackboardAsset?.path;
-  const linkedBlackboardContent = blackboardPath
-    ? openDocuments.find(
-        (item) =>
-          item.ref.kind === "blackboard" && item.ref.path === blackboardPath,
-      )?.content
-    : undefined;
+  const linkedBlackboardContent = useOpenDocument(
+    blackboardPath ? documentId({ kind: "blackboard", path: blackboardPath }) : null,
+  )?.content;
   const [loadedBlackboard, setLoadedBlackboard] = useState<BlackboardDocument | null>(
     null,
   );
@@ -311,7 +308,6 @@ function useBehaviourTreeDocument() {
     diagnostics,
     openClass,
     openDocument,
-    openDocuments,
     applyAssetDocumentChange,
     documentId: workspaceDocumentId,
   };

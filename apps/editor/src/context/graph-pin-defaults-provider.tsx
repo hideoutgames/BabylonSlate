@@ -8,7 +8,7 @@ import {
   PinDefaultEditorContext, type PinDefaultEditorRenderer, type PinDefaultEditorRequest,
 } from "@babylonslate/graph-ui";
 import { pinDefaultPropertyKey, type PinType } from "@babylonslate/scripting";
-import { useDocuments } from "./document-context";
+import { useRegistryState } from "./document-context";
 import { subclassClassEntries } from "../lib/component-property-rows";
 import { classParentLookup, filterInspectorPinPickerAssets } from "../lib/content-browser-helpers";
 import { assetPickerAllowedTypes, collectEnumMemberNames, dataNodePathOptions, pinDefaultPropertyRows } from "../lib/graph-inspector";
@@ -127,7 +127,7 @@ function ProjectPinEditor({ request }: { request: PinDefaultEditorRequest }) {
 
 /** One catalog snapshot serves every graph canvas in the open project. */
 export function GraphPinDefaultsProvider({ children }: { children: ReactNode }) {
-  const { assetRegistry, registryEpoch } = useDocuments();
+  const { assetRegistry, registryEpoch } = useRegistryState();
   const enumDocuments = useOpenDocumentsOfKinds(ENUM_KINDS);
   const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
   const treeDocuments = useOpenDocumentsOfKinds(DATA_TREE_KINDS);

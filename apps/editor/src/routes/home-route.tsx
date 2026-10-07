@@ -1,14 +1,9 @@
 import { Homepage } from "../components/homepage";
 import { HomepageMobileAccountGate } from "../components/homepage-mobile-account-gate";
-import { useDocuments } from "../context/document-context";
+import { useDocumentActions, useEditorShellState } from "../context/document-context";
 
 export default function HomeRoute() {
   const {
-    listedProjects,
-    needsReconnect,
-    recoveryAvailable,
-    templates,
-    homepageReady,
     refreshTemplates,
     createEmptyProject,
     createFromTemplate,
@@ -19,7 +14,14 @@ export default function HomeRoute() {
     reconnectProject,
     keepRecovery,
     dismissRecovery,
-  } = useDocuments();
+  } = useDocumentActions();
+  const {
+    listedProjects,
+    needsReconnect,
+    recoveryAvailable,
+    templates,
+    homepageReady,
+  } = useEditorShellState();
   return (
     <HomepageMobileAccountGate>
       <Homepage

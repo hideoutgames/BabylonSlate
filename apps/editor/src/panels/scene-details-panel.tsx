@@ -89,7 +89,12 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@babylonslate/ui/components/field";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useProjectState,
+  useRegistryState,
+  useOpenDocument,
+} from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import {
   useSceneEditing,
@@ -145,6 +150,7 @@ import {
 
 const CLASS_KINDS = ["graph"] as const;
 const PREFAB_KINDS = ["prefab"] as const;
+const MODEL_KINDS = ["model"] as const;
 
 function PostProcessEntryId({ id, index }: { id: string; index: number }) {
   return (
@@ -191,8 +197,11 @@ export function SceneDetailsPanel(props: IDockviewPanelProps) {
 function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applySceneChange, projectDocument, assetRegistry, registryEpoch } =
-    useDocuments();
+  const { applySceneChange } = useDocumentActions();
+  const { projectDocument } = useProjectState();
+  const { assetRegistry, registryEpoch } = useRegistryState();
+  // Open Model tabs' unsaved material slots win over saved headers.
+  const modelDocuments = useOpenDocumentsOfKinds(MODEL_KINDS);
   const { selectedActorIds, setSelectedActorIds, shapeEditTarget, setShapeEditTarget } = useSceneEditing();
   const navBake = useOptionalNavBake();
   const [propertyQuery, setPropertyQuery] = useState("");
@@ -375,7 +384,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
     );
   };
 
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const doc = useOpenDocument(documentId);
   const scene = isSceneWorkspaceKind(doc?.ref.kind)
     ? (doc.content as SerializedScene)
     : null;
@@ -1211,7 +1220,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
             assetLabel,
             assetType,
             modelMaterialSlots: (guid) => normalizeModelPayload(
-              openDocuments.find((doc) => doc.ref.kind === "model" && doc.ref.path === assetRegistry?.getByGuid?.(guid)?.path)?.content
+              modelDocuments.find((doc) => doc.ref.path === assetRegistry?.getByGuid?.(guid)?.path)?.content
                 ?? assetRegistry?.getByGuid?.(guid)?.header.payload ?? {},
             ).materialSlots,
             fontHasFacetype,

@@ -36,7 +36,12 @@ import {
   normalizeFontPayload,
 } from "@babylonslate/assets";
 import { BlackboardEditor } from "./blackboard-editor";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useOpenDocument,
+  useProjectState,
+  useRegistryState,
+} from "../context/document-context";
 import { FontRegistry } from "@babylonslate/render";
 import { familyFromAssetPayload, fontEditorStack } from "../lib/font-preview";
 import { pickImportFiles } from "@babylonslate/vfs";
@@ -48,8 +53,9 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 export function AssetDocumentWorkspace({ documentId }: { documentId: string }) {
-  const { openDocuments, applyAssetDocumentChange, assetRegistry } = useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const { assetRegistry } = useRegistryState();
+  const doc = useOpenDocument(documentId);
   if (!doc) return null;
   const payload = asRecord(doc.content);
   const commit = (next: Record<string, unknown>, mergeKey?: string) => {
@@ -96,7 +102,9 @@ function FontEditor({
   payload: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
 }) {
-  const { projectDocument, assetRegistry, readAssetChunk } = useDocuments();
+  const { readAssetChunk } = useDocumentActions();
+  const { projectDocument } = useProjectState();
+  const { assetRegistry } = useRegistryState();
   const font = normalizeFontPayload(payload, "Custom Font");
   const [sample, setSample] = useState("The quick brown fox");
   const [fontsReady, setFontsReady] = useState(false);

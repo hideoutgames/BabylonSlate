@@ -13,7 +13,11 @@ import {
   parseSpritePivot,
   type SpritePayload,
 } from "@babylonslate/assets";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useOpenDocument,
+  useRegistryState,
+} from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { SpriteCollisionOverlay } from "./sprite-collision-overlay";
 import { TexturePreviewStatus, useTexturePreview } from "./texture-preview-status";
@@ -21,8 +25,8 @@ import { TexturePreviewStatus, useTexturePreview } from "./texture-preview-statu
 export function SpritePreviewPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange } = useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const doc = useOpenDocument(documentId);
   const payload = (doc?.content ?? {}) as Record<string, unknown>;
   return (
     <PanelFrame data-testid="sprite-preview-panel">
@@ -39,8 +43,8 @@ export function SpritePreviewPanel(_props: IDockviewPanelProps) {
 export function SpriteDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange } = useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const doc = useOpenDocument(documentId);
   const payload = (doc?.content ?? {}) as Record<string, unknown>;
   return (
     <PanelFrame data-testid="sprite-details-panel">
@@ -148,7 +152,7 @@ export function SpriteEditor({
   /** Continuous field edit: one scrub on `field` is one undo step. */
   const edit = (next: SpritePayload, field: string) =>
     onChange(next as unknown as Record<string, unknown>, `sprite:${field}`);
-  const { assetRegistry } = useDocuments();
+  const { assetRegistry } = useRegistryState();
   const assets = (assetRegistry?.list() ?? []).map((asset) => ({
     guid: asset.header.guid,
     name: asset.header.name,

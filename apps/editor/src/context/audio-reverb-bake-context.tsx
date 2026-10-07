@@ -3,7 +3,11 @@ import {
   bakeAudioReverb,
   type AudioReverbGeometry,
 } from "@babylonslate/assets";
-import { useDocuments } from "./document-context";
+import {
+  useDocumentActions,
+  useProjectState,
+  useRegistryState,
+} from "./document-context";
 import { playSceneLibraryPaths } from "../lib/plugin-ui";
 import {
   collectAudioReverbFlushScenes,
@@ -37,13 +41,9 @@ function createBakeFn(workerRef: {
 }
 
 export function AudioReverbBakeProvider({ children }: { children: ReactNode }) {
-  const {
-    writeSceneAudioReverbChunk,
-    withSceneWrite,
-    loadAssetDocument,
-    projectDocument,
-    assetRegistry,
-  } = useDocuments();
+  const { writeSceneAudioReverbChunk, withSceneWrite, loadAssetDocument } = useDocumentActions();
+  const { projectDocument } = useProjectState();
+  const { assetRegistry } = useRegistryState();
   // Only Scene edits can change static audio geometry.
   const sceneDocuments = useOpenDocumentsOfKinds(SCENE_KINDS);
   const controllerRef = useRef<AudioReverbBakeController | null>(null);

@@ -14,7 +14,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@babylonslate/ui/components/alert-dialog";
-import { useDocuments } from "../context/document-context";
+import { useSourceControl } from "../context/document-context";
 import {
   formatLockAge,
   type SourceControlService,
@@ -186,6 +186,6 @@ export function LocksPanelContents({
 
 export function LocksPanel(_props: IDockviewPanelProps) {
   void _props;
-  const { sourceControl } = useDocuments();
+  const { sourceControl } = useSourceControl();
   return <LocksPanelContents sourceControl={sourceControl} />;
 }

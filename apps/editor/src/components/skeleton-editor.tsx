@@ -21,7 +21,11 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useOpenDocument,
+  useRegistryState,
+} from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { SkeletonPreviewCanvas } from "./skeleton-preview-canvas";
 
@@ -32,7 +36,8 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 function useOwningModelBytes(modelGuid: string): Uint8Array | null {
-  const { assetRegistry, readAssetChunk } = useDocuments();
+  const { readAssetChunk } = useDocumentActions();
+  const { assetRegistry } = useRegistryState();
   const [bytes, setBytes] = useState<Uint8Array | null>(null);
   const path = assetRegistry
     ?.list()
@@ -56,8 +61,7 @@ function useOwningModelBytes(modelGuid: string): Uint8Array | null {
 export function SkeletonPreviewPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments } = useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const doc = useOpenDocument(documentId);
   const skeleton = normalizeSkeletonPayload(asRecord(doc?.content));
   const sourceBytes = useOwningModelBytes(skeleton.modelGuid);
   return (
@@ -70,8 +74,7 @@ export function SkeletonPreviewPanel(_props: IDockviewPanelProps) {
 export function SkeletonDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments } = useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const doc = useOpenDocument(documentId);
   return (
     <PanelFrame data-testid="skeleton-details-panel">
       <SkeletonEditor payload={asRecord(doc?.content)} />
@@ -109,7 +112,7 @@ export function SkeletonPreview({
 
 export function SkeletonEditor({ payload }: { payload: Record<string, unknown> }) {
   const skeleton = normalizeSkeletonPayload(payload);
-  const { assetRegistry } = useDocuments();
+  const { assetRegistry } = useRegistryState();
   const assets = assetRegistry?.list() ?? [];
   const model = assets.find((asset) => asset.header.guid === skeleton.modelGuid);
   const rows: PropertyRow[] = [

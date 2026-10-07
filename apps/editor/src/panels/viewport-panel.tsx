@@ -26,7 +26,13 @@ import {
 } from "@babylonslate/render";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
 import { type SerializedScene, areaEmissionTextureGuids, renderEffectsAssetGuids, isSceneWorkspaceKind, requestEditorDrop, engineCommandBus } from "@babylonslate/core";
-import { useDocuments } from "../context/document-context";
+import {
+  useActiveDocumentId,
+  useDocumentActions,
+  useProjectState,
+  useRegistryState,
+  useOpenDocument,
+} from "../context/document-context";
 import { useKeybindChord, useKeybindCommand } from "../context/keybind-context";
 import { subscribeAppSettings } from "../context/app-settings-context";
 import {
@@ -100,10 +106,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const dragStartSceneRef = useRef<SerializedScene | null>(null);
   const { documentId } = useDocumentWorkspace();
   const {
-    openDocuments,
-    activeDocumentId,
     applySceneChange,
-    projectDocument,
     collectPlaySpritePayloads,
     collectPlayWaterContent,
     collectPlayRenderTargets,
@@ -119,9 +122,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     collectPlayModelPayloads,
     collectPlayMaterialLibrary,
     readAssetChunk,
-    assetRegistry,
-    registryEpoch,
-  } = useDocuments();
+  } = useDocumentActions();
+  const { projectDocument } = useProjectState();
+  const { assetRegistry, registryEpoch } = useRegistryState();
+  const activeDocumentId = useActiveDocumentId();
   const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
   const {
     selectedActorIds,
@@ -261,7 +265,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     ],
   });
 
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const doc = useOpenDocument(documentId);
   const sceneMode = doc?.ref.kind === "scene" ? parseSceneDocumentLayout(doc.layout).sceneMode : "design";
   const sceneTools = useSceneTools();
   const overlayTransformBox = doc?.ref.kind === "scene-layer";

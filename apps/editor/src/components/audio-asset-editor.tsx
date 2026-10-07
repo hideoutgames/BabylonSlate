@@ -19,7 +19,11 @@ import {
 } from "@babylonslate/assets";
 import { Button } from "@babylonslate/ui/components/button";
 import { FieldDescription } from "@babylonslate/ui/components/field";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useOpenDocument,
+  useRegistryState,
+} from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import {
   AUDIO_MIXER_EMPTY_CHANNELS_COPY,
@@ -82,9 +86,9 @@ export function AttenuationFalloffPlot({
 export function AudioMixerDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange, assetRegistry } =
-    useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const { assetRegistry } = useRegistryState();
+  const doc = useOpenDocument(documentId);
   const mixer = normalizeAudioMixerPayload(asRecord(doc?.content));
   const [pickTarget, setPickTarget] = useState<MixerChannelPickTarget | null>(
     null,
@@ -195,9 +199,9 @@ export function AudioMixerDetailsPanel(_props: IDockviewPanelProps) {
 export function AudioChannelDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange, assetRegistry } =
-    useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const { assetRegistry } = useRegistryState();
+  const doc = useOpenDocument(documentId);
   const channel = normalizeAudioChannelPayload(asRecord(doc?.content));
   const [pickParent, setPickParent] = useState(false);
   const channels = assetRegistry?.list() ?? [];
@@ -272,8 +276,8 @@ export function AudioChannelDetailsPanel(_props: IDockviewPanelProps) {
 export function SoundAttenuationDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange } = useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const doc = useOpenDocument(documentId);
   const attenuation = normalizeSoundAttenuationPayload(asRecord(doc?.content));
   const commit = (next: SoundAttenuationPayload, field?: string) => {
     void applyAssetDocumentChange(

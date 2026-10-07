@@ -7,7 +7,7 @@ import {
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
 import { PlusIcon, Trash2Icon } from "lucide-react";
-import { useDocuments } from "../context/document-context";
+import { useDocumentActions, useOpenDocument } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useTypeAssetEditing } from "../context/type-asset-editing-context";
 import { IconActionButton } from "../components/icon-action-button";
@@ -24,9 +24,9 @@ import {
 export function InterfaceMethodsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange } = useDocuments();
+  const { applyAssetDocumentChange } = useDocumentActions();
   const { selectedMemberId, setSelectedMemberId } = useTypeAssetEditing();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const doc = useOpenDocument(documentId);
   const asset = asScriptInterfaceAsset(
     (doc?.content ?? {}) as Record<string, unknown>,
   );
