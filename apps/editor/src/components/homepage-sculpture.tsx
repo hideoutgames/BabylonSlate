@@ -11,7 +11,7 @@ import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
 import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial";
 import { HDRFiltering } from "@babylonjs/core/Materials/Textures/Filtering/hdrFiltering";
-import type { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
 import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
 import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { SphericalPolynomial } from "@babylonjs/core/Maths/sphericalPolynomial";
@@ -58,7 +58,7 @@ const linear = (hex: string) => Color3.FromHexString(hex).toLinearSpace();
  */
 function createRoomProbe(scene: Scene) {
   const probe = new ReflectionProbe("launcher-room", 128, scene, true, true, true);
-  probe.refreshRate = Constants.REFRESHRATE_RENDER_ONCE;
+  probe.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
   /* Blocks Babylon's lazy readback of the not-yet-rendered probe; `bakeEnvironment` fills it. */
   probe.cubeTexture.sphericalPolynomial = new SphericalPolynomial();
   const at = (x: number, y: number, z: number) => authored(x, y - 3.5, z);
