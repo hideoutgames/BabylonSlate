@@ -188,6 +188,7 @@ export const ENGINE_SETTING_FIELDS = fields([
   ["appearance", "Pointer Target Scale", "setting-pointer-scale"],
   ["undo", "Undo History Length", "setting-undo-length"],
   ["debugger", "Trace Memory Budget (MiB)", "setting-trace-budget-mib"],
+  ["debugger", "Keep Simulation Changes", "setting-keep-simulation-changes"],
   ["debugger", "Pause On Play", "setting-pause-on-play"],
   ["debugger", "Recording Duration (Seconds)", "setting-profile-duration"],
   ["debugger", "Profile Retained Data Budget (MiB)", "setting-profile-budget-mib"],

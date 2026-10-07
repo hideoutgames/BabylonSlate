@@ -186,7 +186,8 @@ project command owners independently enforce the authoring lock. Runtime
 Inspector adapters may opt out of this inherited UI policy only for validated
 session mutations; they never unlock the authored document.
 Engine Settings → Debugger reuses Field, Switch, NumberField and
-DisclosureSection for the shared Pause On Play preference and explicit
+DisclosureSection for the next-session Keep Simulation Changes preference,
+the shared Pause On Play preference and explicit
 Performance recording duration, GPU request preference and advanced retained
 data budget. Settings search opens Advanced when targeting its budget field.
 These local preferences never arm collection or alter the independent Trace budget.

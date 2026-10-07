@@ -17,6 +17,17 @@ export function DebuggerSettingsFields({ settings, onChange, focusTargetId }: {
   const update = (patch: Partial<typeof defaults>) => void onChange({ debuggerDefaults: { ...defaults, ...patch } });
   return <>
     <FieldSet>
+      <FieldLegend>Simulation</FieldLegend>
+      <Field orientation="horizontal" className="settings-field">
+        <FieldContent>
+          <FieldLabel htmlFor="setting-keep-simulation-changes">Keep Simulation Changes</FieldLabel>
+          <FieldDescription>Applies to the next Simulation session. Off discards gameplay and live edits. On retains the complete final persistable scene as one Apply Simulation Changes Undo step. Unsupported scene instances, scene transitions or resources must be discarded; partial changes are never applied.</FieldDescription>
+        </FieldContent>
+        <Switch id="setting-keep-simulation-changes" checked={defaults.keepSimulationChanges}
+          onCheckedChange={(keepSimulationChanges) => update({ keepSimulationChanges })} />
+      </Field>
+    </FieldSet>
+    <FieldSet>
       <FieldLegend>Session</FieldLegend>
       <Field orientation="horizontal" className="settings-field">
         <FieldContent>
