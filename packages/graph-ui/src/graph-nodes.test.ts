@@ -106,4 +106,14 @@ describe("zipPinRows", () => {
       [undefined, "then1"],
     ]);
   });
+
+  it("keeps function signature order when exec is moved below a data pin", () => {
+    const rows = zipPinRows([message, execIn, deltaSeconds, execOut], {
+      declaredOrder: true,
+    });
+    expect(rows.map((row) => [row.in?.id, row.out?.id])).toEqual([
+      ["message", "deltaSeconds"],
+      ["execIn", "execOut"],
+    ]);
+  });
 });
