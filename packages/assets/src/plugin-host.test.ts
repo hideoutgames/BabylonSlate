@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { encodeAssetDocument } from "./asset-document";
 import { encodeBabasset } from "./babasset";
@@ -80,6 +80,23 @@ describe("resolvePluginEnabled", () => {
 });
 
 describe("discoverProjectPlugins", () => {
+  it("reads settings without loading unrelated chunks in the settings asset", async () => {
+    const storage = await projectStorage();
+    const settings = createDefaultPluginSettings({ pluginGuid: "plug-1", displayName: "Pack" });
+    await storage.mkdir("plugins/Pack", true);
+    await storage.writeBinary("plugins/Pack/Pack.plugin.babasset", await encodeAssetDocument({
+      guid: "plug-1", type: "PluginSettings", name: "Pack", version: 1,
+      payload: settings as unknown as Record<string, unknown>,
+    }, {
+      extraChunks: [{ id: "unused-source", kind: "source", mime: "application/octet-stream", data: new Uint8Array(1024 * 1024) }],
+    }));
+    const before = storage.getReadMetrics().actualBytesRead;
+    const fullReads = vi.spyOn(storage, "readBinary");
+    expect((await discoverProjectPlugins(storage))[0]?.settings.displayName).toBe("Pack");
+    expect(fullReads).not.toHaveBeenCalled();
+    expect(storage.getReadMetrics().actualBytesRead - before).toBeLessThan(8192);
+  });
+
   it("finds PluginSettings at the plugin folder root", async () => {
     const storage = await projectStorage();
     const settings = createDefaultPluginSettings({

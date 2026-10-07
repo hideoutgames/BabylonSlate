@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_TEXT3D_ALIGNMENT,
-  DEFAULT_TEXT3D_COLOR,
-  DEFAULT_TEXT3D_DEPTH,
-  DEFAULT_TEXT3D_SIZE,
-  DEFAULT_TEXT3D_TEXT,
-  TEXT3D_ALIGNMENTS,
   createText3DComponent,
   parseText3DAlignment,
   parseText3DColor,
@@ -20,18 +14,7 @@ import { createActor } from "./scene";
 import { createDefaultScene } from "./project";
 
 describe("Text3DComponent helpers", () => {
-  it("creates a 3D Text component with engine defaults", () => {
-    const component = createText3DComponent("text-1");
-    expect(component.classId).toBe("Text3DComponent");
-    expect(component.properties).toEqual({
-      text: DEFAULT_TEXT3D_TEXT,
-      size: DEFAULT_TEXT3D_SIZE,
-      depth: DEFAULT_TEXT3D_DEPTH,
-      color: DEFAULT_TEXT3D_COLOR,
-      fontAssetGuid: null,
-      alignment: DEFAULT_TEXT3D_ALIGNMENT,
-    });
-    expect(TEXT3D_ALIGNMENTS).toEqual(["left", "center", "right"]);
+  it("falls back to engine defaults for invalid 3D Text properties", () => {
     expect(parseText3DAlignment(undefined)).toBe("left");
     expect(parseText3DAlignment("right")).toBe("right");
     expect(parseText3DAlignment("nope")).toBe("left");

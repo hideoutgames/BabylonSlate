@@ -1867,14 +1867,21 @@ describe("createPlayMesh", () => {
     expect(mesh?.alphaIndex).toBe(expected.sortKey);
   });
 
-  it("does not create overlay-tagged snapshot meshes in the world scene", () => {
+  it.each([
+    { meshKind: "2dtexture", via: "isOverlaySlot" },
+    { meshKind: "2dtexture", via: "overlay flag" },
+    { meshKind: "sprite", via: "overlay flag" },
+    { meshKind: "box", via: "overlay flag" },
+  ] as const)("does not create $meshKind snapshot meshes in the world scene when tagged by $via", ({ meshKind, via }) => {
     const handle = createTestEngine();
     handles.push(handle);
     const { scene } = handle;
     const binding = createSnapshotSceneBinding();
-    binding.meshKinds.set(4, "2dtexture");
-    binding.isOverlaySlot = () => true;
-    binding.sceneForSlot = () => null;
+    binding.meshKinds.set(4, meshKind);
+    if (via === "isOverlaySlot") {
+      binding.isOverlaySlot = () => true;
+      binding.sceneForSlot = () => null;
+    }
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
@@ -1886,64 +1893,13 @@ describe("createPlayMesh", () => {
           position: { x: 0, y: 0, z: 0 },
           rotation: { x: 0, y: 0, z: 0, w: 1 },
           scale: { x: 1, y: 1, z: 1 },
-          flags: 1,
+          flags: via === "isOverlaySlot" ? 1 : SNAPSHOT_FLAG_VISIBLE | SNAPSHOT_FLAG_OVERLAY,
         },
       ],
     });
     expect(binding.meshes.get(4)).toBeUndefined();
     expect(scene.getMeshByName("actor-4")).toBeNull();
   });
-
-  it("does not create overlay-flagged snapshot meshes in the world scene", () => {
-    const handle = createTestEngine();
-    handles.push(handle);
-    const { scene } = handle;
-    const binding = createSnapshotSceneBinding();
-    binding.meshKinds.set(4, "2dtexture");
-    applySnapshotToScene(scene, binding, {
-      frameId: 1,
-      tickIndex: 1,
-      alpha: 1,
-      actorCount: 1,
-      actors: [
-        {
-          slotId: 4,
-          position: { x: 0, y: 0, z: 0 },
-          rotation: { x: 0, y: 0, z: 0, w: 1 },
-          scale: { x: 1, y: 1, z: 1 },
-          flags: SNAPSHOT_FLAG_VISIBLE | SNAPSHOT_FLAG_OVERLAY,
-        },
-      ],
-    });
-    expect(binding.meshes.get(4)).toBeUndefined();
-    expect(scene.getMeshByName("actor-4")).toBeNull();
-  });
-
-  it("does not create overlay-flagged sprite snapshot meshes in the world scene", () => {
-    const handle = createTestEngine();
-    handles.push(handle);
-    const { scene } = handle;
-    const binding = createSnapshotSceneBinding();
-    binding.meshKinds.set(4, "sprite");
-    applySnapshotToScene(scene, binding, {
-      frameId: 1,
-      tickIndex: 1,
-      alpha: 1,
-      actorCount: 1,
-      actors: [
-        {
-          slotId: 4,
-          position: { x: 0, y: 0, z: 0 },
-          rotation: { x: 0, y: 0, z: 0, w: 1 },
-          scale: { x: 1, y: 1, z: 1 },
-          flags: SNAPSHOT_FLAG_VISIBLE | SNAPSHOT_FLAG_OVERLAY,
-        },
-      ],
-    });
-    expect(binding.meshes.get(4)).toBeUndefined();
-    expect(scene.getMeshByName("actor-4")).toBeNull();
-  });
-
   it("creates overlay-flagged snapshot meshes on the overlay scene and migrates world leftovers", () => {
     const handle = createTestEngine();
     handles.push(handle);
@@ -1978,31 +1934,6 @@ describe("createPlayMesh", () => {
     expect(scene.getMeshByName("actor-4")).toBeNull();
     expect(binding.meshes.get(4)?.position.x).toBeCloseTo(2);
     overlay.dispose();
-  });
-
-  it("does not create overlay-flagged box snapshot meshes in the world scene", () => {
-    const handle = createTestEngine();
-    handles.push(handle);
-    const { scene } = handle;
-    const binding = createSnapshotSceneBinding();
-    binding.meshKinds.set(4, "box");
-    applySnapshotToScene(scene, binding, {
-      frameId: 1,
-      tickIndex: 1,
-      alpha: 1,
-      actorCount: 1,
-      actors: [
-        {
-          slotId: 4,
-          position: { x: 0, y: 0, z: 0 },
-          rotation: { x: 0, y: 0, z: 0, w: 1 },
-          scale: { x: 1, y: 1, z: 1 },
-          flags: SNAPSHOT_FLAG_VISIBLE | SNAPSHOT_FLAG_OVERLAY,
-        },
-      ],
-    });
-    expect(binding.meshes.get(4)).toBeUndefined();
-    expect(scene.getMeshByName("actor-4")).toBeNull();
   });
 
   it("disposes leftover world actor meshes that are not in the snapshot binding", () => {

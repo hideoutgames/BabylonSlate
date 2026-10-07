@@ -31,7 +31,7 @@ describe("play console visualization", () => {
     engine.dispose();
   });
 
-  it("draws box, sphere, circle, and polyline collider primitives", () => {
+  it("draws box, sphere, circle, polyline, capsule, and convex hull collider primitives", () => {
     const { engine, scene } = createTestEngine();
     const overlay = createPlayCollisionOverlay(scene);
     overlay.sync([
@@ -66,24 +66,6 @@ describe("play console visualization", () => {
           { x: 1, y: 0, z: 0 },
         ],
       },
-    ]);
-    const box = scene.getMeshByName("playConsoleViz:box");
-    expect(box).not.toBeNull();
-    expect(box?.renderingGroupId).toBe(1);
-    expect(box?.rotationQuaternion?.y).toBeCloseTo(1);
-    expect(scene.getMeshByName("playConsoleViz:sphere")?.renderingGroupId).toBe(1);
-    expect(scene.getMeshByName("playConsoleViz:circle")).not.toBeNull();
-    expect(scene.getMeshByName("playConsoleViz:line")).not.toBeNull();
-    overlay.sync([]);
-    expect(scene.getMeshByName("playConsoleViz:box")).toBeNull();
-    overlay.dispose();
-    engine.dispose();
-  });
-
-  it("draws capsule collider primitives", () => {
-    const { engine, scene } = createTestEngine();
-    const overlay = createPlayCollisionOverlay(scene);
-    overlay.sync([
       {
         id: "capsule",
         shape: "capsule",
@@ -92,10 +74,34 @@ describe("play console visualization", () => {
         radius: 0.5,
         halfHeight: 1,
       },
+      {
+        id: "hull",
+        shape: "convex",
+        position: { x: 1, y: 2, z: 3 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        points: [
+          { x: 0, y: 0, z: 0 },
+          { x: 1, y: 0, z: 0 },
+          { x: 0, y: 1, z: 0 },
+          { x: 0, y: 0, z: 1 },
+        ],
+      },
     ]);
+    const box = scene.getMeshByName("playConsoleViz:box");
+    expect(box).not.toBeNull();
+    expect(box?.renderingGroupId).toBe(1);
+    expect(box?.rotationQuaternion?.y).toBeCloseTo(1);
+    expect(scene.getMeshByName("playConsoleViz:sphere")?.renderingGroupId).toBe(1);
+    expect(scene.getMeshByName("playConsoleViz:circle")).not.toBeNull();
+    expect(scene.getMeshByName("playConsoleViz:line")).not.toBeNull();
     expect(scene.getMeshByName("playConsoleViz:capsule")).not.toBeNull();
+    const hull = scene.getMeshByName("playConsoleViz:hull");
+    expect(hull?.renderingGroupId).toBe(1);
+    expect(hull?.position.x).toBeCloseTo(1);
     overlay.sync([]);
-    expect(scene.getMeshByName("playConsoleViz:capsule")).toBeNull();
+    for (const id of ["box", "capsule", "hull"]) {
+      expect(scene.getMeshByName(`playConsoleViz:${id}`)).toBeNull();
+    }
     overlay.dispose();
     engine.dispose();
   });
@@ -184,33 +190,6 @@ describe("play console visualization", () => {
     expect(scene.getMeshByName("playConsoleViz:nav:guard:path")).toBeNull();
     viz.dispose();
     expect(scene.materials.filter((material) => material.name.startsWith("playConsoleViz:"))).toHaveLength(0);
-    engine.dispose();
-  });
-
-  it("draws convex hull collider primitives", () => {
-    const { engine, scene } = createTestEngine();
-    const overlay = createPlayCollisionOverlay(scene);
-    overlay.sync([
-      {
-        id: "hull",
-        shape: "convex",
-        position: { x: 1, y: 2, z: 3 },
-        rotation: { x: 0, y: 0, z: 0, w: 1 },
-        points: [
-          { x: 0, y: 0, z: 0 },
-          { x: 1, y: 0, z: 0 },
-          { x: 0, y: 1, z: 0 },
-          { x: 0, y: 0, z: 1 },
-        ],
-      },
-    ]);
-    const hull = scene.getMeshByName("playConsoleViz:hull");
-    expect(hull).not.toBeNull();
-    expect(hull?.renderingGroupId).toBe(1);
-    expect(hull?.position.x).toBeCloseTo(1);
-    overlay.sync([]);
-    expect(scene.getMeshByName("playConsoleViz:hull")).toBeNull();
-    overlay.dispose();
     engine.dispose();
   });
 

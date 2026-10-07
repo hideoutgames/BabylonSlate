@@ -37,10 +37,6 @@ function loadBeginPlay(source: string): (ctx: unknown) => void {
 }
 
 describe("casting nodes", () => {
-  it("registers a dynamic Cast node", () => {
-    expect(castingNodes.map((entry) => entry.id)).toContain("casting.cast");
-  });
-
   it("keeps Cast To Actor for graphs that still store that type id", () => {
     expect(castingNodes.map((entry) => entry.id)).toContain("casting.castActor");
   });

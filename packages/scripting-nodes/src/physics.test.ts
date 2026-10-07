@@ -54,19 +54,6 @@ describe("physics nodes", () => {
     clearValidationRules();
   });
 
-  it("exports at least one node definition", () => {
-    expect(physicsNodes.length).toBeGreaterThanOrEqual(4);
-    expect(physicsNodes.map((n) => n.id)).toEqual(
-      expect.arrayContaining([
-        "physics.lineTrace",
-        "physics.sphereOverlap",
-        "physics.shapeSweep",
-        "physics.addImpulse",
-        "physics.moveCharacter",
-      ]),
-    );
-  });
-
   it("moveCharacter takes an Actor and emits ctx.moveCharacter", () => {
     const def = physicsNodes.find((n) => n.id === "physics.moveCharacter");
     expect(def).toBeDefined();

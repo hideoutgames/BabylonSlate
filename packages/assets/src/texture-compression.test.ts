@@ -352,9 +352,8 @@ async function mountSingleTexture(
   registry.setEncodePipeline(queue);
   await registry.mountRoot(projectContentRoot());
   const readChunk = async (chunkId: string) => {
-    const file = await storage.readBinary(path);
     const entry = registry.getByGuid(`${name}-tex`)!.header.chunks.find((chunk) => chunk.id === chunkId);
-    return entry ? registry.payloadLoader.loadChunk(file, entry) : null;
+    return entry ? registry.readChunk(`${name}-tex`, entry.id) : null;
   };
   return { registry, settings, readChunk, guid: `${name}-tex` };
 }
@@ -643,11 +642,10 @@ describe("registry encode pipeline", () => {
     ).toBe(true);
     const selected = selectTextureChunk(updated.header);
     expect(selected.kind).toBe("source");
-    const fileBytes = await storage.readBinary("assets/keep.babasset");
     const pixels = updated.header.chunks.find(
       (chunk) => chunk.kind === "pixels",
     )!;
-    const loaded = await registry.payloadLoader.loadChunk(fileBytes, pixels);
+    const loaded = await registry.readChunk(updated.header.guid, pixels.id);
     expect(loaded).toEqual(new Uint8Array([9, 8, 7, 6]));
   });
 

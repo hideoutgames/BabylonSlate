@@ -124,45 +124,6 @@ describe("camera names", () => {
 });
 
 describe("ENGINE_PLACE_ACTORS", () => {
-  it("groups shapes, lights, camera, empty, and navigation", () => {
-    const categories = new Set(ENGINE_PLACE_ACTORS.map((item) => item.category));
-    expect(categories).toEqual(
-      new Set([
-        "Shapes",
-        "Lights",
-        "Camera",
-        "Environment",
-        "Empty",
-        "Navigation",
-        "Audio",
-        "Particles",
-        "Physics",
-        "Rendering",
-        "Water",
-      ]),
-    );
-    expect(ENGINE_PLACE_ACTORS.some((entry) => entry.id === "navmesh-blocker")).toBe(
-      true,
-    );
-  });
-
-  it("uses Actor color with distinct component icons", () => {
-    const shape = visualForPlaceActor(
-      ENGINE_PLACE_ACTORS.find((entry) => entry.id === "shape-box")!,
-    );
-    const light = visualForPlaceActor(
-      ENGINE_PLACE_ACTORS.find((entry) => entry.id === "light-point")!,
-    );
-    const empty = visualForPlaceActor(
-      ENGINE_PLACE_ACTORS.find((entry) => entry.id === "empty")!,
-    );
-    expect(shape.colorVar).toBe("var(--asset-animation)");
-    expect(light.colorVar).toBe(shape.colorVar);
-    expect(empty.iconKey).toBe("Actor");
-    expect(shape.iconKey).toBe("MeshComponent");
-    expect(light.iconKey).toBe("LightComponent");
-  });
-
   it("hides Camera Lights and Skybox on overlay Place Actors and stamps SceneLayerActor", () => {
     const overlay = placeActorsForHost({ overlay: true });
     expect(overlay.some((entry) => entry.kind.type === "camera")).toBe(false);

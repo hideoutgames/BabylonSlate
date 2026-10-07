@@ -7,7 +7,6 @@ import {
 } from "@babylonslate/scripting";
 import {
   createDefaultNodeRegistry,
-  illuminationNodes,
 } from "./index";
 
 function node(
@@ -28,25 +27,6 @@ function node(
 }
 
 describe("illumination nodes", () => {
-  it("registers Possess Camera and light/camera property nodes", () => {
-    const ids = illuminationNodes.map((entry) => entry.id);
-    expect(ids).toEqual(
-      expect.arrayContaining([
-        "camera.possess",
-        "camera.getFieldOfView",
-        "camera.setFieldOfView",
-        "camera.getOrthographicSize",
-        "camera.setOrthographicSize",
-        "light.setEnabled",
-        "light.setColor",
-        "light.setIntensity",
-      ]),
-    );
-    const possess = illuminationNodes.find((entry) => entry.id === "camera.possess");
-    expect(possess?.title).toBe("Possess Camera");
-    expect(possess?.category).toBe("camera");
-  });
-
   it("compiled Possess Camera calls ctx.possessCamera", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {

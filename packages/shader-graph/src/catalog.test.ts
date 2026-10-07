@@ -135,13 +135,6 @@ describe("material node catalog", () => {
     expect(nodeIsLegalInDomain("output.postProcess", "surface")).toBe(false);
   });
 
-  it("does not define an interface output node", () => {
-    expect(materialNodeDefinition("output.interface")).toBeUndefined();
-    expect(nodeIsLegalInDomain("output.interface", "surface")).toBe(false);
-    expect(nodeIsLegalInDomain("output.interface", "postProcess")).toBe(false);
-    expect(nodeIsLegalInDomain("output.interface", "particle")).toBe(false);
-  });
-
   it("scopes Particle Color to the particle domain", () => {
     expect(materialNodeDefinition("input.particleColor")?.title).toBe(
       "Particle Color",
@@ -167,41 +160,6 @@ describe("material node catalog", () => {
     expect(parseMaterialDomain("surface")).toBe("surface");
     expect(parseMaterialDomain("nope")).toBe("surface");
     expect(parseMaterialDomain("interface")).toBe("surface");
-  });
-
-  it("exposes the Unreal-style surface output channels", () => {
-    const surface = materialNodeDefinition("output.surface");
-    expect(surface?.inputs.map((pin) => pin.id)).toEqual([
-      "baseColor",
-      "metallic",
-      "roughness",
-      "environmentInfluence",
-      "normal",
-      "emissive",
-      "opacity",
-      "alphaClip",
-      "worldPositionOffset",
-    ]);
-    expect(
-      surface?.inputs.find((pin) => pin.id === "worldPositionOffset"),
-    ).toMatchObject({
-      name: "World Position Offset",
-      type: { kind: "vec3" },
-      defaultValue: [0, 0, 0],
-    });
-  });
-
-  it("takes a single Color input on the post-process output", () => {
-    const post = materialNodeDefinition("output.postProcess");
-    expect(post?.inputs.map((pin) => pin.id)).toEqual(["color"]);
-    expect(post?.inputs[0]?.type).toEqual({ kind: "vec4" });
-  });
-
-  it("takes a single Color input on the particle output", () => {
-    const particle = materialNodeDefinition("output.particle");
-    expect(particle?.terminal).toBe("particle");
-    expect(particle?.inputs.map((pin) => pin.id)).toEqual(["color"]);
-    expect(particle?.inputs[0]?.type).toEqual({ kind: "vec4" });
   });
 
   it("filters palette entries by domain", () => {

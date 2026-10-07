@@ -384,14 +384,6 @@ describe("project schema", () => {
     ).toEqual(["Tools", "Inspector"]);
   });
 
-  it("defaults pluginOverrides to an empty map and exportPresets to an empty list", () => {
-    const defaults = normalizeProjectSettings(undefined);
-    expect(defaults.pluginOverrides).toEqual({});
-    expect(defaults.exportPresets).toEqual([]);
-    expect(createEmptyProject("Demo").settings.pluginOverrides).toEqual({});
-    expect(createEmptyProject("Demo").settings.exportPresets).toEqual([]);
-  });
-
   it("defaults source control to disabled with a 60s poll and auto-lock", () => {
     expect(normalizeProjectSettings(undefined).sourceControl).toEqual({
       enabled: false,

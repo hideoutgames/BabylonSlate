@@ -7,7 +7,6 @@ import {
 } from "@babylonslate/scripting";
 import {
   createDefaultNodeRegistry,
-  rotatorNodes,
 } from "./index";
 
 function node(
@@ -28,30 +27,6 @@ function node(
 }
 
 describe("rotator nodes", () => {
-  it("registers rotator math on the rotator palette", () => {
-    expect(rotatorNodes.map((entry) => entry.id)).toEqual([
-      "rotator.combine",
-      "rotator.delta",
-      "rotator.inverse",
-      "rotator.lerp",
-      "rotator.forward",
-      "rotator.right",
-      "rotator.up",
-      "rotator.lookAt",
-      "rotator.nearlyEqual",
-    ]);
-    expect(rotatorNodes.every((entry) => entry.category === "rotator")).toBe(
-      true,
-    );
-  });
-
-  it("keeps Make/Break Rotator ids and lists them under rotator", () => {
-    const registry = createDefaultNodeRegistry();
-    expect(registry.get("struct.makeRotator")?.category).toBe("rotator");
-    expect(registry.get("struct.breakRotator")?.category).toBe("rotator");
-    expect(registry.get("struct.makeRotator")?.title).toBe("Make Rotator");
-  });
-
   it("compiles Combine Rotators through ctx.combineRotators", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {

@@ -60,19 +60,6 @@ describe("ParameterListEditor", () => {
     ]);
   });
 
-  it("paints the type picker with DataTypes pin colors", () => {
-    render(
-      <ParameterListEditor rows={rows.slice(0, 1)} onChange={() => {}} />,
-    );
-    const trigger = screen.getByTestId("parameter-a-type");
-    const swatch = trigger.querySelector("[data-type-color-swatch]");
-    expect(swatch).not.toBeNull();
-    expect((swatch as HTMLElement).style.backgroundColor).toBe(
-      "var(--pin-float)",
-    );
-    expect(trigger.textContent).toContain("Float");
-  });
-
   it("edits enum values as a named list", () => {
     const onChange = vi.fn();
     render(

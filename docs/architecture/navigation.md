@@ -4,7 +4,7 @@ Shared surface for navmesh bake and worker queries (engineplan §14.2). Implemen
 
 Play hosts supply `sceneNavmeshBytes` on the load control/runtime options, keyed by canonical scene asset guid. Change Scene selects the target mesh before actor Begin Play, resets departing obstacles/costs, and clears navigation for an unbaked target. The legacy `loadNavMesh` control records bytes for its current scene. Runtime Stop disposes its navigation session, including in-process Play.
 
-Tile-cache obstacles, 2D bake input, scripting nodes, and crowd `MoveTo` are in (`p11-nav-blockers-2d`). **P19** (`p19-nav-leftovers`) wires Auto Bake On Save, bake-bounds collect, and cost volumes (Detour poly area + query-filter costs). Unwalkable tile-cache carve is unchanged. §18: `packages/runtime/src/p11-acceptance.test.ts` (including a dynamic box that **closes** an open route after MoveTo is running) plus `e2e/p11-ai.spec.ts` (including Auto Bake On Save).
+Tile-cache obstacles, 2D bake input, scripting nodes, and crowd `MoveTo` are in (`p11-nav-blockers-2d`). **P19** (`p19-nav-leftovers`) wires Auto Bake On Save, bake-bounds collect, and cost volumes (Detour poly area + query-filter costs). Unwalkable tile-cache carve is unchanged. §18: `packages/runtime/src/p11-acceptance.test.ts` (including a dynamic box that **closes** an open route after MoveTo is running) plus `e2e/p11-ai.spec.ts` (3D bake, then Play).
 
 ## Package
 
@@ -89,6 +89,6 @@ The baked-mesh debug importer accepts both solo navmeshes and `BSNT` tile-cache 
 - Geometry collect runs on the painted modal frame and retries a few extra frames if the first collect is empty (Viewport meshes can lag the Save click). It is not chunked across frames; the blocking modal still covers that stall.
 - Cost volumes mark overlapping Recast polygons (`queryPolygons` AABB → `setPolyArea`). Large simplified polys can extend the expensive region past the authored box. Unwalkable obstacles still carve; cost does not call `addObstacle`.
 - Tiled generate without `supportDynamicObstacles` still uses solo unless the dynamic-obstacles toggle is on.
-- §18 editor e2e does not Play-patrol in the viewport; 2D/3D patrol and obstacle close are the headless harness. Auto Bake On Save is covered in `e2e/p11-ai.spec.ts`.
+- §18 editor e2e does not Play-patrol in the viewport; 2D/3D patrol and obstacle close are the headless harness. Auto Bake On Save is unit-tested in `apps/editor/src/lib/nav-bake-save.test.ts`.
 
 See [behaviour-tree.md](behaviour-tree.md). Spec: [engineplan.md](../engineplan.md) §14.2.

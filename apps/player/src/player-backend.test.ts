@@ -28,7 +28,7 @@ async function game(custom = false) {
     renderSettings: { ...DEFAULT_RENDER_PROJECT_SETTINGS, gpuBackend: "webgpu" },
     scripts: [],
     assets: [
-      { guid: "scene", type: "Scene", sceneGuid: "scene", bytes: encode(createDefaultScene()) },
+      { guid: "scene", type: "Scene", sceneGuid: "scene", requiredDependencies: ["material"], bytes: encode(createDefaultScene()) },
       { guid: "material", type: "Material", sceneGuid: "scene", bytes: encode(material) },
     ],
   });

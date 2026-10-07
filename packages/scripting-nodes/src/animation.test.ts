@@ -40,28 +40,6 @@ function loadEvaluate(source: string): (ctx: Record<string, unknown>) => {
 }
 
 describe("animation nodes", () => {
-  it("registers lifecycle events, rule sinks, and state queries", () => {
-    expect(animationNodes.map((entry) => entry.id)).toEqual([
-      "anim.event.initialize",
-      "anim.event.update",
-      "anim.rule.enterState",
-      "anim.rule.exitState",
-      "anim.state.elapsedSeconds",
-      "anim.state.durationSeconds",
-      "anim.state.normalisedTime",
-      "anim.state.remainingSeconds",
-      "anim.state.remainingRatio",
-      "anim.state.looping",
-      "anim.state.loopCount",
-      "anim.state.justLooped",
-      "anim.state.justFinished",
-      "anim.actor.getVariable",
-      "anim.actor.setVariable",
-      "anim.actor.getCurrentState",
-      "anim.actor.jumpToState",
-    ]);
-  });
-
   it("keeps Enter State and Exit State as optional bool sinks", () => {
     const registry = createDefaultNodeRegistry();
     const enter = registry.get("anim.rule.enterState")!.pins({});

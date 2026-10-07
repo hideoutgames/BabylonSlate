@@ -190,8 +190,6 @@ Preview Build and the exported player own no loading screen: `Event On Scene Sta
 
 Layer post-process targets retain alpha so transparent pixels preserve the world and lower layers when composited. Play pass diagnostics count ready, enabled graph tasks as well as the native fallback passes.
 
-The test-build-only scenePostProcessHostProof fixture exercises the registered Play view and actual layer hosts: an HTTP-held numeric texture keeps a replacement pending while the prior processed image and a separate live layer compose over world rendering. It also checks first-frame acknowledgement, resize and shared-Engine retirement on both backends.
-
 ## 2D Painter
 
 `2DPainterComponent` is an overlay-only procedural drawing surface. Add Component and Place Actors expose **2D Painter**. Its centered Width/Height, coordinates, radii and Stroke Width use SceneLayer units; positive Y points up. Pixels Per Unit controls raster quality, bounded to 4096 pixels per side and four million pixels. The editor, Play and exported player use the same transparent, unlit canvas-backed plane. Hit Test uses its rectangular bounds.

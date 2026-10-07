@@ -143,7 +143,7 @@ async function verifyCrossTabRecovery(page: Page, url: string, projectId: string
     .toMatchObject({ sequence: 4, visits: previous.visits + 1, checksumValid: true });
 }
 
-for (const mode of ["packed", "loose"] as const) {
+for (const mode of ["packed"] as ("packed" | "loose")[]) {
   test(`${mode} exported game restores OPFS progress after a cold page reload`, async ({ page, baseURL }, info) => {
     test.setTimeout(mode === "packed" ? 240_000 : 120_000);
     const scene = createDefaultScene("2d");

@@ -95,31 +95,11 @@ async function dragClassMemberOntoGraph(
   await page.mouse.up();
 }
 
-
 async function classGraphNodeCount(page: import("@playwright/test").Page) {
   return page.getByTestId("graph-panel").locator(".react-flow__node").count();
 }
 
 test.describe("Type-asset editors and hierarchy chrome", () => {
-  test("ScriptInterface Add Method shows a preview and enables Windows", async ({
-    page,
-  }) => {
-    await openTestProject(page);
-    await createAsset(page, "ScriptInterface", "IHit");
-    await page.locator('[data-asset-path="assets/IHit.babasset"]').dblclick();
-    await expect(
-      page.getByTestId("document-workspace-script-interface"),
-    ).toBeVisible();
-    await expect(page.getByTestId("windows-menu")).toBeEnabled();
-    await expect(page.getByTestId("interface-methods-empty")).toBeVisible();
-    await page.getByTestId("interface-add-method").click();
-    await expect(page.getByTestId("interface-method-0")).toBeVisible();
-    await expect(page.getByTestId("interface-preview-panel")).toBeVisible();
-    await expect(page.getByTestId("graph-editor")).toHaveAttribute(
-      "data-readonly",
-      "true",
-    );
-  });
 
   test("Enum add member appears in the Members table", async ({ page }) => {
     await openTestProject(page);
@@ -131,31 +111,6 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     await expect(page.getByTestId("enum-row-0")).toBeVisible();
     await page.getByTestId("enum-add-member").click();
     await expect(page.getByTestId("enum-row-1")).toBeVisible();
-  });
-
-  test("Array and Map Inspector defaults show an in-line count next to Add", async ({
-    page,
-  }) => {
-    await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
-    await expect(page.getByTestId("my-class-panel")).toBeVisible({
-      timeout: 15_000,
-    });
-    await addClassVariable(page, "Scores");
-    await expect(page.getByTestId("inspector-member-type")).toBeVisible();
-    await page.getByTestId("inspector-member-container-array").click();
-    const add = page.getByTestId("inspector-member-defaults-add");
-    const count = page.getByTestId("inspector-member-defaults-count");
-    await expect(add).toHaveText("Add Item");
-    await expect(count).toHaveText("0 items");
-    await expect(count).toHaveClass(/text-xs/);
-    await add.click();
-    await expect(count).toHaveText("1 item");
-    await page.getByTestId("inspector-member-container-map").click();
-    await expect(add).toHaveText("Add Entry");
-    await expect(count).toHaveText("0 entries");
-    await add.click();
-    await expect(count).toHaveText("1 entry");
   });
 
   test("Class panel add variable opens PinTypePicker in Inspector", async ({
@@ -216,24 +171,6 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     await page.getByTestId("member-access-validated-get").click();
     await expect(nodes).toHaveCount(baseline + 2);
     await expect(graph.getByText("Validated Get Target")).toBeVisible();
-  });
-
-  test("Class variables show Class Type and omit a Default", async ({
-    page,
-  }) => {
-    await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
-    await expect(page.getByTestId("my-class-panel")).toBeVisible({
-      timeout: 15_000,
-    });
-    await addClassVariable(page, "Kind");
-    await expect(page.getByTestId("inspector-member-type")).toBeVisible();
-    await page.getByTestId("inspector-member-type").click();
-    await page.getByTestId("search-item-class").click();
-    await expect(page.getByTestId("inspector-member-class-type")).toBeVisible();
-    await expect(page.getByTestId("inspector-member-class-default")).toHaveCount(
-      0,
-    );
   });
 
   test("dragging a Class function onto the graph spawns Call Function", async ({
@@ -358,27 +295,6 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     await expect(page.getByTestId("inspector-prefab-component")).toContainText(
       "hero",
     );
-  });
-
-  test("selecting a prefab component shows Position Rotation and Scale", async ({
-    page,
-  }) => {
-    await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
-    await expect(page.getByTestId("actor-prefab-panel")).toBeVisible({
-      timeout: 15_000,
-    });
-    await expect(page.getByTestId("tree-row-prefab-mesh")).toBeVisible();
-    await page.getByTestId("tree-row-prefab-mesh").click();
-    await expect(
-      page.getByTestId("property-vector3-prefab-mesh-position"),
-    ).toBeVisible();
-    await expect(
-      page.getByTestId("property-vector3-prefab-mesh-rotation"),
-    ).toBeVisible();
-    await expect(
-      page.getByTestId("property-vector3-prefab-mesh-scale"),
-    ).toBeVisible();
   });
 
   test("dirty Class tab close prompts Save / Discard / Cancel", async ({

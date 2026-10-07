@@ -1,4 +1,5 @@
 import { prepareSaveGameConfiguration } from "../services/save-game-configuration";
+import { acquirePlayAssetSources, emptyPlaySourceControls, mergePreparedPlaySources, requiredProjectAssets, type PlayAssetSourceHost } from "../services/play-asset-sources";
 import { createSaveGameStorage } from "@babylonslate/vfs";
 import {
   createContext,
@@ -13,6 +14,7 @@ import {
   type ReactNode,
 } from "react";
 import type { AbstractEngine } from "@babylonjs/core";
+import type { SceneSourceAssets } from "@babylonslate/render";
 import { shouldPackKtx2ForPreviewBuild, webGpuMaterialCompatibilityReason } from "@babylonslate/render";
 import {
   DEFAULT_INFINITE_LOOP_DETECTION,
@@ -22,7 +24,6 @@ import {
   engineCommandBus,
   isErr,
   normalizeRenderingPipeline,
-  renderEffectsAssetGuids,
   resolveGameInstanceClass,
 } from "@babylonslate/core";
 import type { SessionReportEntry } from "@babylonslate/runtime";
@@ -30,6 +31,7 @@ import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import type { Diagnostic } from "@babylonslate/scripting";
 import { emptyPlayAudioLibrary, type PlayAudioLibrary, type PlayAudioSourceLoader } from "../lib/play-audio";
 import { appendOutputLogLine } from "../lib/output-log-ring";
+import { classIdFromClassAsset } from "../lib/content-browser-helpers";
 import { PlayPrepareDialog } from "../components/play-prepare-dialog";
 import { PlayUnsavedDialog, type PlayUnsavedChoice } from "../components/play-unsaved-dialog";
 import { PlayBlockedDialog } from "../components/play-blocked-dialog";
@@ -54,6 +56,7 @@ import {
   PREVIEW_STOP_MESSAGE,
   PREVIEW_READY_MESSAGE,
   createPreviewSaveStorageHost,
+  createPreviewAssetServer,
 } from "@babylonslate/exporter";
 import type {
   MaterialDocument,
@@ -94,19 +97,7 @@ import type {
   PlayBlackboardEntry,
 } from "../lib/play-content";
 import {
-  readPlaySceneBakes,
-  modelSlotMaterialGuidsFromPayloads,
-  overlayTextureGuidsFromScenes,
-  playPrefabDependencyScene,
-  skyboxFaceGuidsFromScene,
-  environmentTextureGuidsFromScenes,
-  postProcessTextureGuidsFromScenes,
-} from "../lib/play-content";
-import { fontMsdfMapsFromPairs } from "../lib/play-fonts";
-import {
   emptyParticleLibrary,
-  hydrateSpriteAnimationPixelSizes,
-  particleLibraryMaterialGuids,
   type ParticleLibrary,
   type SpriteAnimationPayload,
   type SpritePayload,
@@ -121,10 +112,10 @@ import {
   EditorSchedulerRegistry,
   type EditorLoopHandle,
 } from "../lib/editor-scheduler-registry";
-import { planPlayPreviewPrepare, playBundlesNeedCollect } from "../services/play-preview-prepare";
+import { planPlayPreviewPrepare } from "../services/play-preview-prepare";
 import { projectHasBlockingErrors } from "../services/graph-validation";
 import type { PlayPreparePhase } from "../components/play-prepare-dialog";
-import { animClipCatalogFromAssets, modelClipAnimationGuidsFromAssets, retargetAnimationLoadsFromAssets } from "../lib/anim-clip-catalog";
+import { animClipCatalogFromAssets } from "../lib/anim-clip-catalog";
 import { useAppSettings } from "./app-settings-context";
 import {
   isUsableEngine,
@@ -292,6 +283,93 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const [previewCanCancel, setPreviewCanCancel] = useState(true);
   const previewIframeRef = useRef<HTMLIFrameElement | null>(null);
   const previewSaveHostRef = useRef<ReturnType<typeof createPreviewSaveStorageHost> | null>(null);
+  const previewAssetHostRef = useRef<ReturnType<typeof createPreviewAssetServer> | null>(null);
+  const playSourceHostRef = useRef<PlayAssetSourceHost | null>(null);
+  const playSourceLifetimeRef = useRef<AbortController | null>(null);
+  const playSourceSetsRef = useRef(new Set<Awaited<ReturnType<typeof acquirePlayAssetSources>>>());
+  const initialPlaySourceRef = useRef<Awaited<ReturnType<typeof acquirePlayAssetSources>> | null>(null);
+  const [sessionSources, setSessionSources] = useState<SceneSourceAssets>();
+  const acquireAssetSources = useCallback(async (
+    guids: readonly string[],
+    options: { consumer: string; signal: AbortSignal; onProgress?: (progress: number) => void; fontModes?: import("@babylonslate/render").CommandFontModes },
+  ) => {
+    const host = playSourceHostRef.current;
+    const lifetime = playSourceLifetimeRef.current;
+    if (!host || !lifetime) throw new Error("The Play asset session is closed.");
+    const prepared = await acquirePlayAssetSources(host, guids, {
+      ...options, signal: AbortSignal.any([options.signal, lifetime.signal]),
+      onProgress: ({ completed, total }) => options.onProgress?.(total ? completed / total : 1),
+    });
+    if (playSourceHostRef.current !== host) { prepared.release(); throw new Error("The project changed during asset preparation."); }
+    playSourceSetsRef.current.add(prepared);
+    return {
+      ...prepared,
+      controls: mergePreparedPlaySources(playSourceSetsRef.current)?.controls ?? emptyPlaySourceControls(),
+      getControls: () => mergePreparedPlaySources(playSourceSetsRef.current)?.controls ?? emptyPlaySourceControls(),
+      release: () => { playSourceSetsRef.current.delete(prepared); prepared.release(); },
+      controlsAfterRelease: () => mergePreparedPlaySources(playSourceSetsRef.current)?.controls ?? emptyPlaySourceControls(),
+    };
+  }, []);
+  const acquireSceneSources = useCallback(async (guid: string, options: { consumer: string; signal: AbortSignal }) => {
+    const prepared = await acquireAssetSources([guid], options);
+    const scene = prepared.game.scenes.get(guid);
+    if (!scene) { prepared.release(); throw new Error(`Scene ${guid} could not be prepared.`); }
+    return { ...prepared, scene };
+  }, [acquireAssetSources]);
+  const releaseInitialSources = useCallback(() => {
+    const prepared = initialPlaySourceRef.current;
+    if (prepared) {
+      playSourceSetsRef.current.delete(prepared);
+      prepared.release();
+      initialPlaySourceRef.current = null;
+    }
+    setSessionPlayScene(null);
+    setPlaySceneLibrary([]);
+    setPlaySceneLayers([]);
+    setPlayAnimGraphs([]);
+    setPlayBehaviourTrees([]);
+    setPlayBlackboards([]);
+    setPlayDataAssets([]);
+    setPlaySpritePayloads(new Map());
+    setPlaySpriteAnimationPayloads(new Map());
+    setPlayTilemaps(new Map());
+    setPlayTilesets(new Map());
+    setPlayModelBytes(new Map());
+    setPlayModelPayloads(new Map());
+    setPlayModelClipAnimationGuids(new Map());
+    setPlayRetargetAnimationLoads(new Map());
+    setPlayTextureBytes(new Map());
+    setPlayTexturePixelSizes(new Map());
+    setPlayAreaEmissions(new Map());
+    setPlayFontFacetypeBytes(new Map());
+    setPlayFontMsdfJson(new Map());
+    setPlayFontMsdfPng(new Map());
+    setPlayFontFaceEntries([]);
+    setPlayFontCssStackByGuid(new Map());
+    setPlayMaterialDocuments(new Map());
+    setPlayMaterialFunctions(new Map());
+    setPlayRenderTargets({ renderTargets: new Map(), renderTargetTextures: new Map() });
+    setPlayWaters(new Map());
+    setPlayAudioLibrary(emptyPlayAudioLibrary());
+    setPlayParticleLibrary(emptyParticleLibrary());
+    setPlaySceneNavmeshBytes(new Map());
+    setPlayAudioReverbByScene(new Map());
+    setPlayNavmeshBytes(null);
+    setPlayAudioReverbBytes(null);
+  }, []);
+  const releasePlaySources = useCallback(() => {
+    playSourceLifetimeRef.current?.abort();
+    playSourceLifetimeRef.current = null;
+    playSourceHostRef.current = null;
+    releaseInitialSources();
+    for (const sources of playSourceSetsRef.current) sources.release();
+    playSourceSetsRef.current.clear();
+    setSessionSources(undefined);
+    setPlayInputAssets([]);
+    setPlayAudioSourceLoader(undefined);
+    setScripts([]);
+    pendingScriptsRef.current = null;
+  }, [releaseInitialSources]);
   const previewFilesRef = useRef<Map<string, Uint8Array> | null>(null);
   const previewTraceByteBudgetRef = useRef<number | undefined>(undefined);
   const previewRequestRef = useRef(0);
@@ -395,7 +473,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const {
     activeDocumentId,
     assetRegistry,
-    collectPlayMaterialLibrary,
     migrationPending,
     onSessionDiagnostic,
     openDocument,
@@ -581,6 +658,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (projectDocument) return;
+    releasePlaySources();
     setScripts([]);
     setPlaying(false);
     setSessionPlayScene(null);
@@ -590,22 +668,19 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     setPlayAwaitingMigration(false);
     pendingScriptsRef.current = null;
     pendingPlayOptionsRef.current = undefined;
-  }, [projectDocument]);
+  }, [projectDocument, releasePlaySources]);
+
+  useEffect(() => () => releasePlaySources(), [projectGuid, releasePlaySources]);
 
   const renderingRequest = useMemo(() => projectOpen && projectGuid ? {
     projectGuid,
     backend: requestedBackend,
     async prepare(signal: AbortSignal) {
       await waitForSceneLoadingPaint(signal);
-      if (requestedBackend !== "webgpu") return undefined;
-      const materialGuids = (assetRegistry?.list() ?? [])
-        .filter((asset) => asset.header.type === "Material")
-        .map((asset) => asset.header.guid);
-      const library = await collectPlayMaterialLibrary(null, [], materialGuids);
       signal.throwIfAborted();
-      return webGpuMaterialCompatibilityReason(library.documents, library.functions);
+      return undefined;
     },
-  } : null, [projectOpen, projectGuid, requestedBackend, assetRegistry, collectPlayMaterialLibrary]);
+  } : null, [projectOpen, projectGuid, requestedBackend]);
 
   useEffect(() => {
     // A running simulation keeps its Engine. Apply the authored change after Stop.
@@ -642,6 +717,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     (options?: PlayOptions & { scripts?: ScriptBundleEntry[] }) => {
       if (!ensureEngine()) {
         appendLog("Play failed: could not create Engine.");
+        releasePlaySources();
         return;
       }
       setEncodeQueuePauseReason("play", true);
@@ -651,11 +727,13 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       }
       setPlaying(true);
     },
-    [appendLog, ensureEngine],
+    [appendLog, ensureEngine, releasePlaySources],
   );
 
   const closePreview = useCallback(() => {
     previewClosingRef.current = true;
+    previewAssetHostRef.current?.dispose();
+    previewAssetHostRef.current = null;
     previewSaveHostRef.current?.dispose();
     previewSaveHostRef.current = null;
     const frame = previewIframeRef.current;
@@ -691,8 +769,14 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       return;
     }
     try {
+      previewAssetHostRef.current?.dispose();
+      previewAssetHostRef.current = createPreviewAssetServer({
+        files: handoff.files,
+        send: (message, transfer) => frame.postMessage(message, previewOriginRef.current, transfer),
+      });
       frame.postMessage(previewPackFromFiles(handoff.files, {
         traceByteBudget: previewTraceByteBudgetRef.current,
+        onDemand: true,
       }), previewOriginRef.current);
     } catch (error) {
       setPreviewError(
@@ -710,6 +794,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         previewIframeRef.current?.contentWindow,
         previewOriginRef.current,
       )) return;
+      if (previewAssetHostRef.current?.receive(event.data)) return;
       previewSaveHostRef.current?.receive(event);
       if (event.data?.type === PREVIEW_READY_MESSAGE) {
         lifecycle.sync();
@@ -746,6 +831,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     });
     window.addEventListener("message", onMessage);
     return () => {
+      previewAssetHostRef.current?.dispose();
+      previewAssetHostRef.current = null;
       previewSaveHostRef.current?.dispose();
       previewSaveHostRef.current = null;
       lifecycle.dispose();
@@ -895,45 +982,9 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       // Read at call time (see playRequestInputsRef); shadows the render values.
       const {
         documents: {
-          activeDocumentId,
-          assetRegistry,
-          collectPlayAnimGraphs,
-          collectPlayAreaEmissions,
-          collectPlayAudio,
-          collectPlayBehaviourTrees,
-          collectPlayBlackboards,
-          collectPlayFontCssStacks,
-          collectPlayFontFaceEntries,
-          collectPlayFontFacetypeBytes,
-          collectPlayFontMsdfPair,
-          collectPlayInputAssets,
-          collectPlayMaterialLibrary,
-          collectPlayModelBytes,
-          collectPlayModelPayloads,
-          collectPlayParticles,
-          collectPlayPreviewScripts,
-          collectPlayRenderTargets,
-          collectPlayDataAssets,
-          collectPlaySceneLayers,
-          collectPlaySceneLibrary,
-          collectPlaySpriteAnimationPayloads,
-          collectPlaySpritePayloads,
-          collectPlayTextureBytes,
-          collectPlayTexturePixelSizes,
-          collectPlayTilemapContent,
-          collectPlayWaterContent,
-          currentGraphSignature,
-          dirtyDocuments,
-          graphsNeedCompile,
-          migrationPending,
-          openDocuments,
-          playLoadedSignature,
-          playPreviewBundles,
-          playPreviewDiagnostics,
-          projectDirty,
-          projectDocument,
-          readAssetChunk,
-          saveAll,
+          activeDocumentId, assetRegistry, collectPlayInputAssets, collectPlayPreviewScripts,
+          dirtyDocuments, graphsNeedCompile, migrationPending, openDocuments,
+          projectDirty, projectDocument, saveAll,
         },
         hasStartupScene,
         openPlaySceneGuid,
@@ -996,367 +1047,96 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           });
         }
 
-        const shouldCompile = playBundlesNeedCollect({
-          playLoadedSignature,
-          currentGraphSignature,
-          scriptsLength: playPreviewBundles.length,
-        });
-        let nextScripts = playPreviewBundles;
-        let nextDiagnostics = playPreviewDiagnostics;
-        if (shouldCompile) {
-          const result = await collectPlayPreviewScripts();
-          nextScripts = result.bundles;
-          nextDiagnostics = result.diagnostics;
-        }
-        setScripts(nextScripts);
-        setDiagnostics(nextDiagnostics);
-        // Snapshot saved and open data once for both worker and in-process Play.
-        setPlayDataAssets(await collectPlayDataAssets());
-        let playLibrary: Array<{
-          guid: string;
-          scene: import("@babylonslate/core").SerializedScene;
-        }> = [];
-        try {
-          playLibrary = await collectPlaySceneLibrary();
-          setPlaySceneLibrary(playLibrary);
-        } catch (error) {
-          appendLog(
-            `Scene library failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          setPlaySceneLibrary([]);
-        }
+        if (!assetRegistry || !projectDocument) throw new Error("No project catalog is available.");
         const effectiveGuid = resolvePreviewStartupGuid({
           playFromScene,
           openSceneGuid: openPlaySceneGuid,
-          startupSceneGuid: projectDocument?.settings.startupSceneGuid ?? null,
+          startupSceneGuid: projectDocument.settings.startupSceneGuid ?? null,
         });
-        const fromLibrary = effectiveGuid
-          ? playLibrary.find((entry) => entry.guid === effectiveGuid)
-          : undefined;
-        const resolvedScene = resolvePlayScene({
-          documents: openDocuments,
-          activeDocumentId,
-          playFromScene,
-          fallback: fromLibrary
-            ? {
-                sceneAssetGuid: fromLibrary.guid,
-                scene: fromLibrary.scene,
-                path: assetRegistry?.getByGuid(fromLibrary.guid)?.path,
-              }
-            : null,
-        });
-        setSessionPlayScene(resolvedScene);
-        if (!resolvedScene) {
-          setStartupAlertOpen(true);
-          return;
+        if (!effectiveGuid) { setStartupAlertOpen(true); return; }
+        releasePlaySources();
+        const lifetime = new AbortController();
+        playSourceLifetimeRef.current = lifetime;
+        const sourceHost: PlayAssetSourceHost = {
+          registry: assetRegistry,
+          project: projectDocument,
+          createScope: playRequestInputsRef.current.documents.createAssetLoadScope,
+          compile: collectPlayPreviewScripts,
+        };
+        playSourceHostRef.current = sourceHost;
+        const projectAssets = requiredProjectAssets(assetRegistry, projectDocument);
+        if (projectAssets.length) {
+          const persistent = await acquirePlayAssetSources(sourceHost, projectAssets,
+            { consumer: "Play Project Systems", signal: lifetime.signal });
+          playSourceSetsRef.current.add(persistent);
+          setSessionSources(persistent.sources);
         }
-        const prefabScene = playPrefabDependencyScene(nextScripts, [resolvedScene.scene, ...playLibrary.map(entry => entry.scene)], guid => assetRegistry?.getByGuid(guid)?.header.type);
-        const prefabScenes = prefabScene ? [prefabScene] : [];
-        let overlayScenes: import("@babylonslate/core").SerializedScene[] = [];
-        let overlayGraphMaterials: string[] = [];
-        try {
-          const collected = await collectPlaySceneLayers([
-            resolvedScene.scene,
-            ...playLibrary.map((entry) => entry.scene),
-            ...prefabScenes,
-          ]);
-          setPlaySceneLayers(collected.layers);
-          overlayScenes = collected.overlayScenes;
-          overlayGraphMaterials = collected.graphMaterialGuids;
-        } catch (error) {
-          appendLog(
-            `SceneLayer library failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          setPlaySceneLayers([]);
-        }
-        const overlayDependencies = playPrefabDependencyScene(nextScripts, overlayScenes, guid => assetRegistry?.getByGuid(guid)?.header.type);
-        const resourceScenes = [...overlayScenes, ...prefabScenes, ...(overlayDependencies ? [overlayDependencies] : [])];
-        const skyboxTextureGuids = [resolvedScene.scene, ...resourceScenes]
-          .flatMap(skyboxFaceGuidsFromScene);
-        // Project effect textures (the grading LUT) load with scene environment cubes.
-        const environmentTextureGuids = [...new Set([
-          ...environmentTextureGuidsFromScenes([
-            resolvedScene.scene, ...playLibrary.map((entry) => entry.scene), ...resourceScenes,
-          ]),
-          ...renderEffectsAssetGuids(projectDocument?.settings.render.effects),
-        ])];
-        const postProcessTextureGuids = postProcessTextureGuidsFromScenes([
-          resolvedScene.scene, ...playLibrary.map((entry) => entry.scene), ...resourceScenes,
-        ]);
-        let playGraphs: typeof playAnimGraphs = [];
-        try {
-          playGraphs = await collectPlayAnimGraphs(
-            resolvedScene?.scene,
-            resourceScenes,
-          );
-          setPlayAnimGraphs(playGraphs);
-        } catch (error) {
-          appendLog(
-            `AnimationGraph load failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          setPlayAnimGraphs([]);
-        }
-        let playTrees: typeof playBehaviourTrees = [];
-        try {
-          playTrees = await collectPlayBehaviourTrees(
-            resolvedScene?.scene,
-            resourceScenes,
-          );
-          setPlayBehaviourTrees(playTrees);
-        } catch (error) {
-          appendLog(
-            `BehaviourTree load failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          setPlayBehaviourTrees([]);
-        }
-        try {
-          setPlayBlackboards(
-            await collectPlayBlackboards(resolvedScene?.scene, resourceScenes),
-          );
-        } catch (error) {
-          appendLog(
-            `Blackboard load failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          setPlayBlackboards([]);
-        }
-        let sprites = new Map<string, SpritePayload>();
-        let spriteAnimations = new Map<string, SpriteAnimationPayload>();
-        let tilesets = new Map<string, TilesetPayload>();
-        let textureBytes = new Map<string, Uint8Array>();
-        let texturePixelSizes = new Map<string, { width: number; height: number }>();
-        try {
-          sprites = await collectPlaySpritePayloads(
-            resolvedScene?.scene,
-            playGraphs,
-            resourceScenes,
-          );
-          setPlaySpritePayloads(sprites);
-        } catch (error) {
-          appendLog(
-            `Sprite payload load failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          setPlaySpritePayloads(new Map());
-        }
-        try {
-          spriteAnimations = await collectPlaySpriteAnimationPayloads(
-            playGraphs,
-            playTrees,
-          );
-          setPlaySpriteAnimationPayloads(spriteAnimations);
-        } catch (error) {
-          appendLog(
-            `Sprite Animation load failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          setPlaySpriteAnimationPayloads(new Map());
-        }
-        try {
-          const tileContent = await collectPlayTilemapContent(
-            resolvedScene?.scene,
-            resourceScenes,
-          );
-          setPlayTilemaps(tileContent.tilemaps);
-          setPlayTilesets(tileContent.tilesets);
-          tilesets = tileContent.tilesets;
-        } catch (error) {
-          appendLog(
-            `Tilemap load failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          setPlayTilemaps(new Map());
-          setPlayTilesets(new Map());
-        }
-        let modelPayloads = new Map<string, ModelPayload>();
-        try {
-          setPlayModelBytes(
-            await collectPlayModelBytes(resolvedScene?.scene, resourceScenes),
-          );
-          modelPayloads = await collectPlayModelPayloads(
-            resolvedScene?.scene,
-            resourceScenes,
-          );
-          setPlayModelPayloads(modelPayloads);
-          setPlayModelClipAnimationGuids(
-            modelClipAnimationGuidsFromAssets(assetRegistry?.list() ?? []),
-          );
-          setPlayRetargetAnimationLoads(
-            retargetAnimationLoadsFromAssets(assetRegistry?.list() ?? []),
-          );
-        } catch (error) {
-          appendLog(
-            `Model load failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          setPlayModelBytes(new Map());
-          setPlayModelPayloads(new Map());
-          setPlayModelClipAnimationGuids(new Map());
-          setPlayRetargetAnimationLoads(new Map());
-        }
-
-        try {
-          setPlayRenderTargets(await collectPlayRenderTargets());
-          const waters = await collectPlayWaterContent();
-          setPlayWaters(waters);
-          const particles = await collectPlayParticles();
-          setPlayParticleLibrary(particles);
-          const materials = await collectPlayMaterialLibrary(
-            resolvedScene?.scene,
-            [
-              ...playLibrary.map((entry) => entry.scene),
-              ...resourceScenes,
-            ],
-            [
-              ...[...waters.values()].flatMap((water) => water.materialGuid ? [water.materialGuid] : []),
-              ...particleLibraryMaterialGuids(particles),
-              ...modelSlotMaterialGuidsFromPayloads(modelPayloads),
-              ...overlayGraphMaterials,
-            ],
-          );
-          setPlayMaterialDocuments(materials.documents);
-          setPlayMaterialFunctions(materials.functions);
-          textureBytes = await collectPlayTextureBytes(
-            sprites,
-            tilesets,
-            [
-              ...materials.textureGuids,
-              ...skyboxTextureGuids,
-              ...environmentTextureGuids,
-              ...overlayTextureGuidsFromScenes(resourceScenes),
-              ...postProcessTextureGuids,
-            ],
-            spriteAnimations,
-            true,
-          );
-          texturePixelSizes = collectPlayTexturePixelSizes(
-            sprites,
-            tilesets,
-            [
-              ...materials.textureGuids,
-              ...skyboxTextureGuids,
-              ...environmentTextureGuids,
-              ...overlayTextureGuidsFromScenes(resourceScenes),
-              ...postProcessTextureGuids,
-            ],
-            spriteAnimations,
-          );
-          setPlayTextureBytes(textureBytes);
-          setPlayTexturePixelSizes(texturePixelSizes);
-        } catch (error) {
-          appendLog(
-            `Material load failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          setPlayWaters(new Map());
-          setPlayRenderTargets({ renderTargets: new Map(), renderTargetTextures: new Map() });
-          setPlayMaterialDocuments(new Map());
-          setPlayMaterialFunctions(new Map());
-          setPlayParticleLibrary(emptyParticleLibrary());
-          try {
-            textureBytes = await collectPlayTextureBytes(
-              sprites,
-              tilesets,
-              [
-                ...skyboxTextureGuids,
-                ...environmentTextureGuids,
-                ...overlayTextureGuidsFromScenes(resourceScenes),
-                ...postProcessTextureGuids,
-              ],
-              spriteAnimations,
-              true,
-            );
-            texturePixelSizes = collectPlayTexturePixelSizes(
-              sprites,
-              tilesets,
-              [
-                ...skyboxTextureGuids,
-                ...environmentTextureGuids,
-                ...overlayTextureGuidsFromScenes(resourceScenes),
-                ...postProcessTextureGuids,
-              ],
-              spriteAnimations,
-            );
-            setPlayTextureBytes(textureBytes);
-            setPlayTexturePixelSizes(texturePixelSizes);
-          } catch (textureError) {
-            appendLog(
-              `Texture load failed: ${textureError instanceof Error ? textureError.message : String(textureError)}`,
-            );
-            setPlayTextureBytes(new Map());
-            setPlayTexturePixelSizes(new Map());
+        const prepared = await acquirePlayAssetSources(sourceHost,
+          [effectiveGuid, ...projectAssets],
+          { consumer: `Play Scene ${effectiveGuid}`, signal: lifetime.signal, allowCompileErrors: true });
+        if (playSourceHostRef.current !== sourceHost) { prepared.release(); throw new DOMException("Project changed during Play preparation", "AbortError"); }
+        playSourceSetsRef.current.add(prepared);
+        initialPlaySourceRef.current = prepared;
+        const { game, content, sources } = prepared;
+        if (requestedBackend === "webgpu") {
+          const reason = webGpuMaterialCompatibilityReason(content.materialDocuments, content.materialFunctions);
+          if (reason) {
+            await projectEngine.sync({ projectGuid: playRequestInputsRef.current.documents.projectGuid!, backend: requestedBackend,
+              prepare: async (signal) => { signal.throwIfAborted(); return reason; },
+            }, true);
+            lifetime.signal.throwIfAborted();
+            registerSharedEngine(projectEngine.getSnapshot().session?.engine ?? null);
           }
         }
-        spriteAnimations = hydrateSpriteAnimationPixelSizes(
-          spriteAnimations,
-          textureBytes,
-        );
-        setPlaySpriteAnimationPayloads(spriteAnimations);
-
-        const fontScenes = [
-            resolvedScene?.scene,
-            ...playLibrary.map((entry) => entry.scene),
-            ...resourceScenes,
-          ];
-        try {
-          // Do not let a failed new session reuse the previous session's data.
-          setPlayAreaEmissions(new Map());
-          setPlayAreaEmissions(await collectPlayAreaEmissions(fontScenes, true));
-        } catch (error) {
-          appendLog(`Area-light emission load failed: ${error instanceof Error ? error.message : String(error)}`);
-          setPrepareState(null);
-          return;
-        }
-        try {
-          setPlayFontFacetypeBytes(
-            await collectPlayFontFacetypeBytes(
-              resolvedScene?.scene,
-              [
-                ...playLibrary.map((entry) => entry.scene),
-                ...resourceScenes,
-              ],
-            ),
-          );
-          const msdf = fontMsdfMapsFromPairs(
-            await collectPlayFontMsdfPair(resolvedScene?.scene, fontScenes.slice(1)),
-          );
-          setPlayFontMsdfJson(msdf.json);
-          setPlayFontMsdfPng(msdf.png);
-          setPlayFontFaceEntries(await collectPlayFontFaceEntries());
-          const fontCss = collectPlayFontCssStacks();
-          setPlayFontCssStack(fontCss.fontCssStack);
-          setPlayFontCssStackByGuid(fontCss.fontCssStackByGuid);
-        } catch (error) {
-          appendLog(
-            `3D Text font load failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          setPlayFontFacetypeBytes(new Map());
-          setPlayFontMsdfJson(new Map());
-          setPlayFontMsdfPng(new Map());
-          setPlayFontFaceEntries([]);
-          setPlayFontCssStack("sans-serif");
-          setPlayFontCssStackByGuid(new Map());
-        }
-
-        setPlayInputAssets(await collectPlayInputAssets());
-        try {
-          const audio = await collectPlayAudio();
-          setPlayAudioSourceLoader(() => audio.loadSourceBytes);
-          setPlayAudioLibrary(audio.library);
-        } catch (error) {
-          appendLog(
-            `Audio load failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          setPlayAudioSourceLoader(undefined);
-          setPlayAudioLibrary(emptyPlayAudioLibrary());
-        }
-        const bakedSceneGuid = canonicalPlaySceneGuid(resolvedScene, (path) =>
-          assetRegistry?.list().find((asset) => asset.path === path)?.header.guid ?? null);
-        const sceneBakes = await readPlaySceneBakes([
-          ...playLibrary.map(({ guid }) => ({ guid, path: assetRegistry?.getByGuid(guid)?.path })),
-          { guid: bakedSceneGuid, path: resolvedScene.path },
-        ], readAssetChunk, (guid, chunkId, error) => {
-          appendLog(`${chunkId} load failed for ${guid}: ${error instanceof Error ? error.message : String(error)}`);
+        const scene = game.scenes.get(effectiveGuid);
+        if (!scene) throw new Error(`Scene ${effectiveGuid} did not produce a document.`);
+        const resolvedScene = { sceneAssetGuid: effectiveGuid, scene, path: assetRegistry.getByGuid(effectiveGuid)?.path };
+        setSessionPlayScene(resolvedScene);
+        setPlaySceneLibrary([...game.scenes].map(([guid, scene]) => ({ guid, scene })));
+        setPlaySceneLayers([...game.sceneLayers].map(([guid, layer]) => ({ guid, layer })));
+        const nextScripts = game.scripts;
+        const nextDiagnostics: Diagnostic[] = [...prepared.diagnostics];
+        setScripts(nextScripts);
+        setDiagnostics(nextDiagnostics);
+        setPlayDataAssets(content.dataAssets);
+        setPlayAnimGraphs(content.animGraphs);
+        setPlayBehaviourTrees(content.behaviourTrees);
+        setPlayBlackboards(content.blackboards);
+        setPlaySpritePayloads(content.spritePayloads);
+        setPlaySpriteAnimationPayloads(content.spriteAnimationPayloads);
+        setPlayTilemaps(content.tilemapPayloads);
+        setPlayTilesets(content.tilesetPayloads);
+        setPlayModelBytes(game.modelBytes);
+        setPlayModelPayloads(content.modelPayloads);
+        setPlayModelClipAnimationGuids(content.modelClipAnimationGuids);
+        setPlayRetargetAnimationLoads(content.retargetAnimationLoads);
+        setPlayRenderTargets({ renderTargets: content.renderTargets, renderTargetTextures: content.renderTargetTextures });
+        setPlayWaters(content.waterPayloads);
+        setPlayParticleLibrary(content.particleLibrary);
+        setPlayMaterialDocuments(content.materialDocuments);
+        setPlayMaterialFunctions(content.materialFunctions);
+        setPlayTextureBytes(game.textureBytes);
+        setPlayTexturePixelSizes(content.texturePixelSizes);
+        setPlayAreaEmissions(game.areaEmissions);
+        setPlayFontFacetypeBytes(game.fontFacetypeBytes);
+        setPlayFontMsdfJson(game.fontMsdfJson);
+        setPlayFontMsdfPng(game.fontMsdfPng);
+        setPlayFontFaceEntries([...(sources.fonts ?? [])]);
+        setPlayFontCssStack(sources.assets?.fontCssStack ?? "sans-serif");
+        setPlayFontCssStackByGuid(new Map(sources.assets?.fontCssStackByGuid ?? []));
+        setPlayInputAssets(await collectPlayInputAssets(prepared.required));
+        setPlayAudioLibrary(content.audioLibrary);
+        setPlayAudioSourceLoader(() => async ({ assetGuid, chunkId }: Parameters<PlayAudioSourceLoader>[0]) => {
+          for (const entry of playSourceSetsRef.current) {
+            const bytes = entry.audioChunks.get(assetGuid)?.get(chunkId);
+            if (bytes) return bytes;
+          }
+          throw new Error(`Audio ${assetGuid} (${chunkId}) is not prepared for an active consumer.`);
         });
-        setPlaySceneNavmeshBytes(sceneBakes.navmeshes);
-        setPlayAudioReverbByScene(sceneBakes.audioReverbs);
-        setPlayNavmeshBytes(sceneBakes.navmeshes.get(bakedSceneGuid) ?? null);
-        setPlayAudioReverbBytes(sceneBakes.audioReverbs.get(bakedSceneGuid) ?? null);
-
+        setPlaySceneNavmeshBytes(game.navmeshBytes);
+        setPlayAudioReverbByScene(game.audioReverbBytes);
+        setPlayNavmeshBytes(game.navmeshBytes.get(effectiveGuid) ?? null);
+        setPlayAudioReverbBytes(game.audioReverbBytes.get(effectiveGuid) ?? null);
         setPlaySaveGame(await prepareSaveGameConfiguration({
           projectId: playRequestInputsRef.current.documents.projectGuid,
           settings: projectDocument?.settings.saveGame,
@@ -1378,14 +1158,12 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
 
         launchPlay({ injectFixtureThrow: inject, scripts: nextScripts });
       } catch (error) {
+        releasePlaySources();
         appendLog(
-          `Script compile failed: ${error instanceof Error ? error.message : String(error)}`,
+          `Play preparation failed: ${error instanceof Error ? error.message : String(error)}`,
         );
         setPrepareState(null);
         setScripts([]);
-        if (inject) {
-          launchPlay({ injectFixtureThrow: true, scripts: [] });
-        }
       } finally {
         preparingRef.current = false;
         setPreparing(false);
@@ -1398,6 +1176,10 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       playing,
       previewBuild,
       requestPreviewBuild,
+      releasePlaySources,
+      requestedBackend,
+      projectEngine,
+      registerSharedEngine,
       setDiagnostics,
     ],
   );
@@ -1423,6 +1205,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
 
   const handleClose = useCallback(
     (result: PlaySessionResult) => {
+      releasePlaySources();
       setPlaying(false);
       setSessionPlayScene(null);
       setEncodeQueuePauseReason("play", false);
@@ -1450,7 +1233,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         void openRecordedTrace(result.lastTrace);
       }
     },
-    [appendLog, openRecordedTrace, reportBtState],
+    [appendLog, openRecordedTrace, reportBtState, releasePlaySources],
   );
 
   const value = useMemo<PlayContextValue>(
@@ -1585,7 +1368,10 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         <PlayBlockedDialog
           open={playBlockedOpen}
           diagnostics={blockedDiagnostics}
-          onOpenChange={setPlayBlockedOpen}
+          onOpenChange={(open) => {
+            setPlayBlockedOpen(open);
+            if (!open && pendingScriptsRef.current) releasePlaySources();
+          }}
           onNavigate={(d) => {
             setFocusDiagnostic(d);
             const revealId = documentIdToRevealForDiagnostic(
@@ -1593,13 +1379,16 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
               openDocuments.map((doc) => doc.id),
             );
             if (revealId) setActiveDocument(revealId);
+            releasePlaySources();
             setPlayBlockedOpen(false);
           }}
           onPlayAnyway={() => {
+            const preparedScripts = pendingScriptsRef.current ?? scripts;
+            pendingScriptsRef.current = null;
             setPlayBlockedOpen(false);
             launchPlay({
               injectFixtureThrow: pendingPlayOptionsRef.current?.injectFixtureThrow,
-              scripts: pendingScriptsRef.current ?? scripts,
+              scripts: preparedScripts,
             });
           }}
         />
@@ -1618,6 +1407,19 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
               playScene?.scene,
             )}
             scenes={playSceneLibrary}
+            sceneCatalog={(assetRegistry?.list() ?? []).filter((asset) => asset.header.type === "Scene").map((asset) => ({ guid: asset.header.guid, name: asset.header.name }))}
+            classAssetGuids={Object.fromEntries((assetRegistry?.list() ?? []).filter((asset) => asset.header.type === "Class").map((asset) => [classIdFromClassAsset(asset), asset.header.guid]))}
+            consoleCommands={(assetRegistry?.list() ?? []).flatMap(asset => asset.header.consoleCommand ? [{
+              ...asset.header.consoleCommand, classId: classIdFromClassAsset(asset), assetGuid: asset.header.guid,
+              name: asset.header.consoleCommand.name || classIdFromClassAsset(asset).toLowerCase(),
+            }] : [])}
+            audioAssetGuids={(assetRegistry?.list() ?? []).filter((asset) => asset.header.type === "Audio").map((asset) => asset.header.guid)}
+            getAssetLoadState={documents.getAssetLoadState}
+            getSourceControls={() => mergePreparedPlaySources(playSourceSetsRef.current)?.controls ?? emptyPlaySourceControls()}
+            acquireSceneSources={acquireSceneSources}
+            acquireAssetSources={acquireAssetSources}
+            releaseInitialSources={releaseInitialSources}
+            sessionSources={sessionSources}
             sceneLayers={playSceneLayers}
             animGraphs={playAnimGraphs}
             behaviourTrees={playBehaviourTrees}

@@ -74,8 +74,11 @@ describe("Play multipart model publication", () => {
       if (retained) { expect(retained.release).toHaveBeenCalledOnce(); expect(f.scene.materials).not.toContain(retained.material); }
       expect(winner.getChildMeshes().filter((mesh) => mesh.getTotalVertices() === 3)).toHaveLength(2);
       expect(f.binding.slotAnimationGroups!.get(1)!.map((group) => group.name).sort()).toEqual(["first", "second"]);
+      expect(f.binding.slotAnimLoads?.size).toBe(1);
+      await expect(f.binding.slotAnimLoads!.get(1)).resolves.toBeUndefined();
       retirePlaySlot(f.binding, 1);
       expect(f.binding.slotAnimationGroups?.get(1)).toBeUndefined();
+      expect(f.binding.slotAnimLoads?.size).toBe(0);
     } finally { disposeSnapshotBinding(f.binding); f.scene.dispose(); }
   });
 
@@ -212,12 +215,15 @@ describe("Play multipart model publication", () => {
       expect(f.binding.meshes.get(1)).toBe(winner);
       expect(f.binding.slotAnimationGroups!.get(1)).toBe(winningGroups);
       expect(winningGroups.map((group) => group.name).sort()).toEqual(["next-first", "next-second"]);
+      expect(f.binding.slotAnimLoads?.size).toBe(1);
+      await expect(f.binding.slotAnimLoads!.get(1)).resolves.toBeUndefined();
       applyAssignMesh(f.scene, f.binding, parts());
       const pending = f.binding.slotAnimLoads!.get(1)!;
       retirePlaySlot(f.binding, 1);
       await pending;
       expect(f.binding.meshes.has(1)).toBe(false);
       expect(f.binding.slotAnimationGroups?.has(1)).toBe(false);
+      expect(f.binding.slotAnimLoads?.size).toBe(0);
       expect(f.scene.meshes).toHaveLength(0);
     } finally { disposeSnapshotBinding(f.binding); f.scene.dispose(); }
   });

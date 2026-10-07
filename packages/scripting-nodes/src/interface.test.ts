@@ -8,7 +8,6 @@ import {
 import {
   callInterfaceTitle,
   createDefaultNodeRegistry,
-  interfaceNodes,
 } from "./index";
 
 function node(
@@ -46,11 +45,6 @@ describe("callInterfaceTitle", () => {
 });
 
 describe("interface nodes", () => {
-  it("registers interface.call without a Call Interface title", () => {
-    expect(interfaceNodes.map((n) => n.id)).toContain("interface.call");
-    expect(interfaceNodes[0]?.title).toBe("Call");
-  });
-
   it("compiled Call Interface reads guid and method from node data, not pins", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {

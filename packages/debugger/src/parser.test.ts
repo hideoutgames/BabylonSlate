@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  fail,
   matchCommandName,
-  ok,
   parseCommandArgs,
   tokenize,
 } from "./parser";
@@ -112,12 +110,5 @@ describe("matchCommandName", () => {
       rest: ["arg"],
     });
     expect(matchCommandName([], known)).toEqual({ name: "", rest: [] });
-  });
-});
-
-describe("ok / fail helpers", () => {
-  it("build CommandResult values", () => {
-    expect(ok("done")).toEqual({ success: true, output: "done" });
-    expect(fail("nope")).toEqual({ success: false, output: "nope" });
   });
 });

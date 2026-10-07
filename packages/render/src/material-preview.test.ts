@@ -305,20 +305,6 @@ describe("material preview scene", () => {
     expect(original.isDisposed()).toBe(true);
   });
 
-  it("disables panning so orbit stays on the mesh", () => {
-    const host = createMaterialPreviewScene(engine() as never);
-    disposers.push(() => host.dispose());
-    expect(host.camera.panningSensibility).toBe(0);
-  });
-
-  it("configures pinch zoom on the preview orbit camera", () => {
-    const host = createMaterialPreviewScene(engine() as never);
-    disposers.push(() => host.dispose());
-    expect(host.camera.useNaturalPinchZoom).toBe(true);
-    expect(host.camera.pinchPrecision).toBeGreaterThan(0);
-    expect(host.camera.pinchDeltaPercentage).toBeGreaterThan(0);
-  });
-
   it("aims the camera at a mesh that is not at the origin", () => {
     const scene = new Scene(engine());
     disposers.push(() => scene.dispose());

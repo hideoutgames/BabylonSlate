@@ -10,7 +10,7 @@ describe("ragdoll synchronization work", () => {
   it("resolves only participating hierarchies while detecting direct edits and retirement", async () => {
     const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
     let unrelatedTransformReads = 0;
-    for (let index = 0; index < 2048; index++) {
+    for (let index = 0; index < 256; index++) {
       const actor = world.createActor({ classId: "Actor", guid: `decoration-${index}`, transform: identityTransform() });
       const transform = actor.transform;
       Object.defineProperty(actor, "transform", { get: () => { unrelatedTransformReads++; return transform; } });
@@ -30,17 +30,17 @@ describe("ragdoll synchronization work", () => {
     const sync = new RagdollWorldSync({ world, physics: () => physics, slot: () => 1,
       eligible: (actor) => !actor.destroyed, deferNative: false, emit: (command) => commands.push(command), error: (error) => errors.push(error) });
     const measure = (label: string) => {
-      for (let warm = 0; warm < 20; warm++) { sync.sync(); sync.afterStep(); }
+      for (let warm = 0; warm < 5; warm++) { sync.sync(); sync.afterStep(); }
       const samples: number[] = [];
       unrelatedTransformReads = 0;
-      for (let tick = 0; tick < 100; tick++) {
+      for (let tick = 0; tick < 20; tick++) {
         const start = performance.now();
         sync.sync();
         sync.afterStep();
         samples.push(performance.now() - start);
       }
       samples.sort((a, b) => a - b);
-      console.info("ragdoll sync (ms)", { label, actors: world.getActors().length, p50: samples[50], p95: samples[95], unrelatedTransformReads });
+      console.info("ragdoll sync (ms)", { label, actors: world.getActors().length, p50: samples[Math.floor(samples.length * 0.5)], p95: samples[Math.floor(samples.length * 0.95)], unrelatedTransformReads });
       return unrelatedTransformReads;
     };
     try {

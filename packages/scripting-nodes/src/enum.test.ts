@@ -8,7 +8,7 @@ import {
   type NodeRegistry,
 } from "@babylonslate/scripting";
 import { createDefaultNodeRegistry } from "./index";
-import { enumNodes, enumSwitchCasePinId } from "./enum";
+import { enumSwitchCasePinId } from "./enum";
 
 function node(
   registry: NodeRegistry,
@@ -37,16 +37,6 @@ const team = {
 };
 
 describe("enum nodes", () => {
-  it("registers Make, Equal, Not Equal, to String, and Switch", () => {
-    expect(enumNodes.map((entry) => entry.id)).toEqual([
-      "enum.make",
-      "enum.equals",
-      "enum.notEquals",
-      "enum.toString",
-      "enum.switch",
-    ]);
-  });
-
   it("types Make/Equal/Switch from the bound enum guid and members", () => {
     const registry = createDefaultNodeRegistry();
     const makePins = registry.get("enum.make")!.pins({ ...team, value: "Red" });

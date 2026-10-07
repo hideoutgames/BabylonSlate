@@ -56,10 +56,10 @@ pnpm docs:dev       # VitePress docs site from docs/
 pnpm verify:local   # path-aware local PR preflight
 pnpm verify         # explicit full local diagnostic, including Playwright
 pnpm test <files>   # focused unit tests; omit files to run all
-pnpm test:e2e       # Playwright integration tests (all run in CI)
+pnpm test:e2e       # Playwright integration tests (run in CI; perf routes use playwright.perf.config.ts)
 ```
 
-GitHub Verify remains the exhaustive merge gate: full workspace typechecking, tooling and distribution contracts, coverage, and all seven browser partitions. See [testing architecture](docs/architecture/testing.md) for local selection details.
+GitHub Verify remains the exhaustive merge gate: full workspace typechecking, tooling and distribution contracts, coverage, and all four browser partitions. See [testing architecture](docs/architecture/testing.md) for local selection details.
 
 ## Testing on iPad (no Mac)
 

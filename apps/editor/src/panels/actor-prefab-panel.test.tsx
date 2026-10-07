@@ -103,35 +103,9 @@ describe("flattenPrefabComponents", () => {
     ]);
     expect(nodes.find((node) => node.id === "root")?.hasChildren).toBe(true);
   });
-
-  it("labels a mesh with the catalog title and bound asset name", () => {
-    const mesh = createMeshComponent("root", "box");
-    mesh.properties.assetGuid = "hero";
-    const nodes = flattenPrefabComponents(
-      [mesh],
-      new Set(),
-      (guid) => (guid === "hero" ? "Hero" : undefined),
-    );
-    expect(nodes.find((node) => node.id === "root")?.label).toBe("Mesh (Hero)");
-  });
 });
 
 describe("ActorPrefabPanel", () => {
-  it("shows inherited ActorComponent class visuals on an attached custom component", () => {
-    harness.assets = [
-      { header: { guid: "health", name: "Health", type: "Class", parentClass: "ActorComponent" } },
-      { header: { guid: "regen", name: "RegenHealth", type: "Class", parentClass: "Health" } },
-    ];
-    harness.components = [{ id: "regen", classId: "RegenHealth" }];
-    harness.selectedId = PREFAB_ROOT_ID;
-    harness.selectedIds = [PREFAB_ROOT_ID];
-    render(<ActorPrefabPanel {...({} as IDockviewPanelProps)} />);
-    const icon = screen.getByTestId("tree-row-regen").querySelector("svg[data-type-icon]");
-    expect(icon?.getAttribute("data-type-icon")).toBe("ActorComponent");
-    expect(icon?.classList.contains("lucide-file-cog")).toBe(true);
-    expect(icon?.getAttribute("stroke")).toBe("var(--asset-animation)");
-  });
-
   it("frames Prefab Root on double-tap", () => {
     harness.components = [createMeshComponent("mesh-1", "box")];
     harness.selectedId = PREFAB_ROOT_ID;

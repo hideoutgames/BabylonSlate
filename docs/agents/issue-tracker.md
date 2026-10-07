@@ -563,7 +563,7 @@ Authoring-surface residual. Do **not** uncheck `p11-bt-editor` or `p-bt-editor-a
 | --- | --- | --- | --- |
 | Optional `editorPositions` + stable X sibling reorder + Auto Arrange | `p-bt-editor-ux` | `behaviour-tree` | `p-bt-editor-authoring` |
 | GraphEditor `connectEndMode="add-node"` + TreeNode chrome | same | `graph-ui` | connect policies |
-| Blackboard / Compiler Results docks, free drag, one-undo moves | same | `apps/editor`, `e2e/bt-editor.spec.ts` | GraphEditor policies |
+| Blackboard / Compiler Results docks, free drag, one-undo moves | same | `apps/editor`, `e2e/bt-editor.spec.ts` (free drag and undo only) | GraphEditor policies |
 
 Out of scope: changing `children[]` semantics at runtime; 96px cancel / wire-break on script, material, or anim graphs; large-graph virtualisation (**P18** `p18-graph-virtualize`); reopening P11; RotateToFace / PlayAnimation hosts (**P19**); PlaySound (**P16 Audio**).
 

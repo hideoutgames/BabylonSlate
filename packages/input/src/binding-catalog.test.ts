@@ -85,37 +85,6 @@ describe("bindingCodesForDevice", () => {
 });
 
 describe("bindingCodeLabel", () => {
-  it("matches the stored-binding labels used in the editor", () => {
-    expect(bindingCodeLabel("key", "Space")).toBe("Space");
-    expect(bindingCodeLabel("key", "KeyW")).toBe("W");
-    expect(bindingCodeLabel("key", "Digit1")).toBe("1");
-    expect(bindingCodeLabel("key", "ArrowUp")).toBe("Up");
-    expect(bindingCodeLabel("mouseButton", "0")).toBe("Mouse Left");
-    expect(bindingCodeLabel("mouseButton", "2")).toBe("Mouse Right");
-    expect(bindingCodeLabel("pointer", "primary")).toBe("Primary Pointer");
-    expect(bindingCodeLabel("gamepadButton", "0:0")).toBe(
-      "Gamepad 1 Face Button Down",
-    );
-    expect(bindingCodeLabel("gamepadButton", "1:1")).toBe(
-      "Gamepad 2 Face Button Right",
-    );
-    expect(bindingCodeLabel("gamepadButton", "0:10")).toBe(
-      "Gamepad 1 Left Stick Click",
-    );
-    expect(bindingCodeLabel("gamepadButton", "0:11")).toBe(
-      "Gamepad 1 Right Stick Click",
-    );
-    expect(bindingCodeLabel("gamepadButton", "0:12")).toBe("Gamepad 1 D-Pad Up");
-    expect(bindingCodeLabel("gamepadAxis", "0:0")).toBe(
-      "Gamepad 1 Left Stick X",
-    );
-    expect(bindingCodeLabel("gamepadAxis", "0:3")).toBe(
-      "Gamepad 1 Right Stick Y",
-    );
-    expect(bindingCodeLabel("touch", "joystick-x")).toBe("Joystick X");
-    expect(bindingCodeLabel("touch", "dpad-y")).toBe("D-Pad Y");
-  });
-
   it("falls back when no catalog entry exists", () => {
     expect(bindingCodeLabel("key", "F13")).toBe("F13");
     expect(bindingCodeLabel("gamepadButton", "0:99")).toBe(

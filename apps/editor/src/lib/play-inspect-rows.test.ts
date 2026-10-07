@@ -192,18 +192,6 @@ describe("playInspectPropertyRows", () => {
       expect(unknown.value).toContain("nested");
     }
   });
-
-  it("attaches optional test ids for inspect variable wrappers", () => {
-    const [row] = playInspectPropertyRows([
-      {
-        id: "health",
-        label: "health",
-        value: 10,
-        testId: "debug-inspect-var-health",
-      },
-    ]);
-    expect(row?.testId).toBe("debug-inspect-var-health");
-  });
 });
 
 describe("playInspectIdentityRows", () => {

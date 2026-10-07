@@ -37,6 +37,8 @@ contextBridge.exposeInMainWorld("babylonslate", {
     listProjects: () => ipcRenderer.invoke("project:list"),
     releaseFolder: () => ipcRenderer.invoke("project:release"),
     readBinary: (path: string) => ipcRenderer.invoke("project:readBinary", path),
+    readBinaryRange: (path: string, offset: number, length: number, revision?: string) =>
+      ipcRenderer.invoke("project:readBinaryRange", path, offset, length, revision),
     writeBinary: (path: string, data: ArrayBuffer) =>
       ipcRenderer.invoke("project:writeBinary", path, data),
     exists: (path: string) => ipcRenderer.invoke("project:exists", path),

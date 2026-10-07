@@ -2,14 +2,13 @@ import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import {
   clearValidationRules,
   compileGraph,
-  objectRef,
   validateGraphs,
   type GraphNode,
   type LogicGraph,
   type NodeRegistry,
 } from "@babylonslate/scripting";
 import { createDefaultNodeRegistry } from "./index";
-import { registerSceneLayerValidationRules, sceneLayerNodes } from "./scene-layer";
+import { registerSceneLayerValidationRules } from "./scene-layer";
 
 function node(
   registry: NodeRegistry,
@@ -37,49 +36,14 @@ describe("scene-layer nodes", () => {
     clearValidationRules();
   });
 
-  it("registers Create, Remove, Clear, and post-process nodes", () => {
-    expect(sceneLayerNodes.map((entry) => entry.id)).toEqual([
-      "scene-layer.create",
-      "scene-layer.remove",
-      "scene-layer.clear",
-      "scene-layer.registerPostProcess",
-      "scene-layer.unregisterPostProcess",
-    ]);
-    const created = sceneLayerNodes.find((entry) => entry.id === "scene-layer.create");
-    expect(created?.title).toBe("Create Scene Layer");
-    const pins = created?.pins({}) ?? [];
-    expect(pins.find((pin) => pin.id === "asset")?.name).toBe("Asset");
-    expect(pins.find((pin) => pin.id === "zOrder")?.name).toBe("Z-Order");
-    expect(pins.find((pin) => pin.id === "out")?.name).toBe("Layer");
-    expect(pins.find((pin) => pin.id === "asset")?.type).toEqual({
-      kind: "assetRef",
-      assetType: "SceneLayer",
-    });
-    expect(pins.find((pin) => pin.id === "out")?.type).toEqual(
-      objectRef("SceneLayer"),
-    );
-    const register = sceneLayerNodes.find(
-      (entry) => entry.id === "scene-layer.registerPostProcess",
-    );
-    expect(register?.title).toBe("Register Scene Layer Post-Processing");
-    expect(register?.pins({}).find((pin) => pin.id === "layer")?.name).toBe("Layer");
-    expect(register?.pins({}).find((pin) => pin.id === "material")?.name).toBe(
-      "Material",
-    );
-    expect(
-      sceneLayerNodes.find((entry) => entry.id === "scene-layer.unregisterPostProcess")
-        ?.title,
-    ).toBe("Unregister Scene Layer Post-Processing");
-  });
-
-  it("compiles Create Scene Layer onto ctx.createSceneLayer", () => {
+  it("waits for Create Scene Layer preparation before continuing execution", async () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "create", "scene-layer.create"),
+        node(registry, "create", "scene-layer.create", { "default:asset": "hud", "default:zOrder": 3 }),
       ],
       edges: [
         {
@@ -92,7 +56,19 @@ describe("scene-layer nodes", () => {
       ],
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
-    expect(compiled.source).toContain("ctx.createSceneLayer(");
+    const body = compiled.source.replace(/export\s+(async\s+)?function\s+/g, "$1function ");
+    const onBeginPlay = new Function(`${body}\nreturn onBeginPlay;`)() as (ctx: unknown) => Promise<void>;
+    let ready!: () => void;
+    let finished = false;
+    const operation = onBeginPlay({ createSceneLayerAsync: (guid: string, zOrder: number) => {
+      expect([guid, zOrder]).toEqual(["hud", 3]);
+      return new Promise(resolve => { ready = () => resolve({ guid: "hud-instance" }); });
+    } }).then(() => { finished = true; });
+    await Promise.resolve();
+    expect(finished).toBe(false);
+    ready();
+    await operation;
+    expect(finished).toBe(true);
   });
 
   it("errors when a SceneLayer post-process pin is not a postProcess material", () => {

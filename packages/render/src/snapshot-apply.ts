@@ -1117,6 +1117,14 @@ export function applyAssignMesh(
       if (refreshes.get(command.slotId) === restart) refreshes.delete(command.slotId);
       if (pending.get(command.slotId) === staged) pending.delete(command.slotId);
       if (!adopted) staged.dispose();
+    }).then(() => {
+      // Retiring the predecessor clears its slot load. Keep successful model
+      // readiness observable without retaining the preparation's closures.
+      // A newer assignment or retirement must remain authoritative.
+      if (stagesModels && adopted && binding.meshes.get(command.slotId) === staged &&
+        !binding.slotAnimLoads?.has(command.slotId)) {
+        (binding.slotAnimLoads ??= new Map()).set(command.slotId, Promise.resolve());
+      }
     });
     if (stagesModels) (binding.slotAnimLoads ??= new Map()).set(command.slotId, load);
     void load.catch((error: unknown) => console.warn(`[render] Visual publication failed: ${String(error)}`));

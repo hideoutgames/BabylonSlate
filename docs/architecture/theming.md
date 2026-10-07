@@ -12,7 +12,7 @@ Tailwind v4 detects sources relative to the CSS entry, which here lives in `pack
 
 Chrome uses **Soft Graphite**: warm stone light surfaces and soft charcoal dark surfaces with ink `--primary`. Geist remains the UI font. Pin, node, success, and axis tokens stay chromatic so graph and gizmo meaning is independent of chrome. Edit `:root` and `.dark` in `globals.css` directly; do not import a preset over those editor-function tokens.
 
-`apps/editor/src/shell/design-tokens.test.ts` checks actual palette contrast for main/secondary text and focus indicators, ink `--primary`, semantic type/axis colors, `--pin-particle` separation from the other pins, and Dockview boundaries. Screenshots and interaction review remain necessary to validate composed surfaces, transparency, clipping, and density.
+No automated test checks palette contrast. Screenshots and interaction review validate contrast, composed surfaces, transparency, clipping, and density.
 
 ## Safe-area insets
 

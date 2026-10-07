@@ -51,10 +51,13 @@ import { isTilemapChunkMesh } from "./tilemap-mesh";
 import { BitmapAllocationLimitError } from "./text2d-bitmap";
 import { refreshText2DMaterials, text2DBitmapBytes } from "./text2d-mesh";
 import { pruneEditorCables } from "./cable-mesh";
+import type { NativePreparationPriority } from "./native-preparation";
 
 export type EditorSceneSyncOptions = {
   /** FrameGraph owns its camera-specific active queue; world matrices still freeze. */
   freezeActiveMeshes?: boolean;
+  /** Preview maintenance yields native model preparation to active gameplay. */
+  preparationPriority?: NativePreparationPriority;
   resolveMaterial?: (
     guid: string,
     options?: { scene?: Scene; unlit?: boolean },
@@ -90,6 +93,7 @@ export class EditorSceneSync {
   ) => Material | null;
   private readonly onAfterApply?: () => void;
   private readonly freezeActiveMeshes: boolean;
+  private readonly preparationPriority?: NativePreparationPriority;
   private readonly constructionMaterials = new WeakMap<Mesh, Material | null>();
   private sortingLayers: string[] = [...DEFAULT_SORTING_LAYERS];
   private assets: MeshAssetContext | undefined;
@@ -119,6 +123,7 @@ export class EditorSceneSync {
     this.resolveMaterial = options?.resolveMaterial;
     this.onAfterApply = options?.onAfterApply;
     this.freezeActiveMeshes = options?.freezeActiveMeshes !== false;
+    this.preparationPriority = options?.preparationPriority;
   }
 
   /** Ordered sorting layers from project settings, back to front. */
@@ -786,6 +791,7 @@ export class EditorSceneSync {
         this.applyModelSlots(actor, prepared);
         this.bindActorMeshMaterials(actor, prepared);
       },
+      this.preparationPriority,
     );
   }
 

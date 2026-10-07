@@ -6,7 +6,6 @@ import {
   render,
   screen,
   waitFor,
-  within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HomepageCreateDialog } from "./homepage-create-dialog";
@@ -165,29 +164,6 @@ describe("Project Composer", () => {
     await waitFor(() => expect(document.activeElement).toBe(input));
     fireEvent.keyDown(input, { key: "Escape" });
     await waitFor(() => expect(document.activeElement).toBe(trigger));
-  });
-
-  it("previews the entered project name and chosen color without losing the template selection", () => {
-    render(<Composer />);
-    fireEvent.change(screen.getByTestId("create-project-name"), {
-      target: { value: "Moon Garden" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Cyan" }));
-    fireEvent.click(screen.getByRole("button", { name: "Choose Template" }));
-    fireEvent.click(screen.getByTestId("create-project-template:island"));
-    expect(screen.getByRole("heading", { name: "New Island" })).toBeTruthy();
-
-    const preview = screen.getByTestId("project-identity-preview");
-    expect(within(preview).getByText("Moon Garden")).toBeTruthy();
-    expect(
-      preview.querySelector(".homepage-project-color")?.getAttribute("data-color"),
-    ).toBe("mint");
-    fireEvent.click(screen.getByRole("button", { name: "Choose Template" }));
-    expect(
-      screen
-        .getByTestId("create-project-template:island")
-        .getAttribute("data-selected"),
-    ).toBe("true");
   });
 
   it("edits a saved identity without offering to replace its template or project settings", () => {

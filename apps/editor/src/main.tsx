@@ -15,10 +15,6 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   void import("./testing/lattice-deformer-cost").then(({ runLatticeDeformerCost }) => Object.assign(window, { __latticeDeformerCost: runLatticeDeformerCost }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("latticeDeformerProof")) {
   void import("./testing/lattice-deformer-proof").then(({ runLatticeDeformerProof }) => Object.assign(window, { __latticeDeformerProof: runLatticeDeformerProof }));
-} else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("overlayLayoutProof")) {
-  void import("./testing/overlay-layout-proof").then(({ runOverlayLayoutProof }) => Object.assign(window, { __overlayLayoutProof: runOverlayLayoutProof }));
-} else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("textMaterialProof")) {
-  void import("./testing/text-material-proof").then(({ runTextMaterialProof }) => Object.assign(window, { __textMaterialProof: runTextMaterialProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("renderTargetProof")) {
   void import("./testing/render-target-proof").then(({ runRenderTargetProof }) => Object.assign(window, { __renderTargetProof: runRenderTargetProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("spatialEffectsProof")) {
@@ -27,58 +23,6 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   void import("./testing/color-grading-proof").then(({ runColorGradingProof }) => Object.assign(window, { __colorGradingProof: runColorGradingProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("temporalAntiAliasingProof")) {
   void import("./testing/temporal-anti-aliasing-proof").then(({ runTemporalAntiAliasingProof }) => Object.assign(window, { __temporalAntiAliasingProof: runTemporalAntiAliasingProof }));
-} else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("visualGenerationProof")) {
-  void import("./testing/visual-generation-proof").then(({ runVisualGenerationProof }) => Object.assign(window, { __visualGenerationProof: runVisualGenerationProof }));
-} else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("textureLeaseProof")) {
-  void import("./testing/texture-lease-proof").then(({ runTextureLeaseProof }) => Object.assign(window, { __textureLeaseProof: runTextureLeaseProof }));
-} else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("waterPlanarReflectionProof")) {
-  void import("./testing/water-planar-reflection-proof").then(({ runWaterPlanarReflectionProof }) => Object.assign(window, { __babylonslateWaterPlanarReflectionProof: runWaterPlanarReflectionProof }));
-} else if (
-  import.meta.env.VITE_TEST_MODE === "true" &&
-  new URLSearchParams(location.search).has("particleLifecycleProof")
-) {
-  void import("./testing/particle-lifecycle-proof").then(({ runParticleLifecycleProof }) => {
-    Object.assign(window, { __babylonslateParticleLifecycleProof: runParticleLifecycleProof });
-  });
-} else if (
-  import.meta.env.VITE_TEST_MODE === "true" &&
-  new URLSearchParams(location.search).has("shadowSelfShadowingProof")
-) {
-  void import("./testing/shadow-self-shadowing-proof").then(({ runShadowSelfShadowingProof, runNativeShadowProof, runAuthoredShadowProof }) => {
-    Object.assign(window, {
-      __babylonslateShadowSelfShadowingProof: runShadowSelfShadowingProof,
-      __babylonslateShadowNativeProof: runNativeShadowProof,
-      __babylonslateAuthoredShadowProof: runAuthoredShadowProof,
-    });
-  });
-} else if (
-  import.meta.env.VITE_TEST_MODE === "true" &&
-  new URLSearchParams(location.search).has("scenePostProcessHostProof")
-) {
-  void import("./testing/scene-post-process-host-proof").then(({ createScenePostProcessHostProof }) => {
-    Object.assign(window, { __babylonslateScenePostProcessHostProof: createScenePostProcessHostProof });
-  });
-} else if (
-  import.meta.env.VITE_TEST_MODE === "true" &&
-  new URLSearchParams(location.search).has("scenePostProcessCoordinatorProof")
-) {
-  void import("./testing/scene-post-process-coordinator-proof").then(({ runScenePostProcessCoordinatorProof }) => {
-    Object.assign(window, { __babylonslateScenePostProcessCoordinatorProof: runScenePostProcessCoordinatorProof });
-  });
-} else if (
-  import.meta.env.VITE_TEST_MODE === "true" &&
-  new URLSearchParams(location.search).has("postProcessLifetimeProof")
-) {
-  void import("./testing/framegraph-post-process-lifetime-proof").then(({ runPostProcessLifetimeProof }) => {
-    Object.assign(window, { __babylonslatePostProcessLifetimeProof: runPostProcessLifetimeProof });
-  });
-} else if (
-  import.meta.env.VITE_TEST_MODE === "true" &&
-  new URLSearchParams(location.search).has("framegraphGeometryProof")
-) {
-  void import("./testing/framegraph-geometry-proof").then(({ runFrameGraphGeometryProof }) => {
-    Object.assign(window, { __babylonslateFrameGraphGeometryProof: runFrameGraphGeometryProof });
-  });
 } else if (
   import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("clusteredLightProof")
@@ -92,56 +36,10 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   );
 } else if (
   import.meta.env.VITE_TEST_MODE === "true" &&
-  new URLSearchParams(location.search).has("framegraphShadowProof")
-) {
-  void import("./testing/framegraph-shadow-proof").then(
-    ({ runFrameGraphShadowProof }) => {
-      Object.assign(window, {
-        __babylonslateFrameGraphShadowProof: runFrameGraphShadowProof,
-      });
-    },
-  );
-} else if (
-  import.meta.env.VITE_TEST_MODE === "true" &&
-  new URLSearchParams(location.search).has("sharedOutlineCostProof")
-) {
-  void import("./testing/shared-outline-cost-proof").then(({ runSharedOutlineCostProof }) => {
-    Object.assign(window, { __babylonslateSharedOutlineCostProof: runSharedOutlineCostProof });
-  });
-} else if (
-  import.meta.env.VITE_TEST_MODE === "true" &&
-  new URLSearchParams(location.search).has("sharedOutlineGeometryProof")
-) {
-  void import("./testing/shared-outline-geometry-proof").then(({ runSharedOutlineGeometryProof }) => {
-    Object.assign(window, { __babylonslateSharedOutlineGeometryProof: runSharedOutlineGeometryProof });
-  });
-} else if (
-  import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("sharedOutlineProof")
 ) {
   void import("./testing/shared-outline-proof").then(({ runSharedOutlineProof }) => {
     Object.assign(window, { __babylonslateSharedOutlineProof: runSharedOutlineProof });
-  });
-} else if (
-  import.meta.env.VITE_TEST_MODE === "true" &&
-  new URLSearchParams(location.search).has("nativeOutlineProof")
-) {
-  void import("./testing/native-outline-proof").then(({ runNativeOutlineProof }) => {
-    Object.assign(window, { __babylonslateNativeOutlineProof: runNativeOutlineProof });
-  });
-} else if (
-  import.meta.env.VITE_TEST_MODE === "true" &&
-  new URLSearchParams(location.search).has("areaRectLightProof")
-) {
-  void import("./testing/area-rect-light-proof").then(({ runAreaRectLightProof }) => {
-    Object.assign(window, { __babylonslateAreaRectLightProof: runAreaRectLightProof });
-  });
-} else if (
-  import.meta.env.VITE_TEST_MODE === "true" &&
-  new URLSearchParams(location.search).has("cameraPreviewLightMotionProof")
-) {
-  void import("./testing/camera-preview-light-motion-proof").then(({ runCameraPreviewLightMotionProof }) => {
-    Object.assign(window, { __babylonslateCameraPreviewLightMotionProof: runCameraPreviewLightMotionProof });
   });
 } else if (
   import.meta.env.VITE_TEST_MODE === "true" &&
@@ -156,69 +54,11 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   );
 } else if (
   import.meta.env.VITE_TEST_MODE === "true" &&
-  new URLSearchParams(location.search).has("framegraphProof")
-) {
-  void import("./testing/framegraph-post-process-proof").then(
-    ({ runFrameGraphPostProcessProof }) => {
-      Object.assign(window, {
-        __babylonslateFrameGraphProof: runFrameGraphPostProcessProof,
-      });
-    },
-  );
-} else if (
-  import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("webgpuProof")
 ) {
   void import("./testing/webgpu-proof").then(({ runWebGpuProof }) => {
     Object.assign(window, { __babylonslateWebGpuProof: runWebGpuProof });
   });
-} else if (
-  import.meta.env.VITE_TEST_MODE === "true" &&
-  new URLSearchParams(location.search).has("waterRenderingProof")
-) {
-  void import("./testing/water-rendering-proof").then(({ runWaterRenderingProof, runWaterTierProof, runWaterObjectProof, runWaterFftDetailProof }) => {
-    Object.assign(window, {
-      __babylonslateWaterRenderingProof: runWaterRenderingProof, __babylonslateWaterTierProof: runWaterTierProof,
-      __babylonslateWaterObjectProof: runWaterObjectProof, __babylonslateWaterFftDetailProof: runWaterFftDetailProof,
-    });
-  });
-} else if (
-  import.meta.env.VITE_TEST_MODE === "true" &&
-  new URLSearchParams(location.search).has("waterSceneCopyProof")
-) {
-  void import("./testing/water-scene-copy-proof").then(({ runWaterSceneCopyProof }) => {
-    Object.assign(window, { __babylonslateWaterSceneCopyProof: runWaterSceneCopyProof });
-  });
-} else if (
-  import.meta.env.VITE_TEST_MODE === "true" &&
-  new URLSearchParams(location.search).has("waterFftProof")
-) {
-  void import("./testing/water-fft-proof").then(({ runWaterFftProof }) => {
-    Object.assign(window, { __babylonslateWaterFftProof: runWaterFftProof });
-  });
-} else if (
-  import.meta.env.VITE_TEST_MODE === "true" &&
-  new URLSearchParams(location.search).has("celRenderModeProof")
-) {
-  void import("./testing/cel-render-mode-proof").then(
-    ({ runCelRenderModeProof }) => {
-      Object.assign(window, {
-        __babylonslateCelRenderModeProof: runCelRenderModeProof,
-      });
-    },
-  );
-} else if (
-  import.meta.env.VITE_TEST_MODE === "true" &&
-  new URLSearchParams(location.search).has("environmentWebgpuProof")
-) {
-  void import("./lib/environment-lighting-proof").then(
-    ({ runEnvironmentIrradianceWebGpuProof }) => {
-      Object.assign(window, {
-        __babylonslateEnvironmentWebGpuProof:
-          runEnvironmentIrradianceWebGpuProof,
-      });
-    },
-  );
 } else {
   createRoot(document.getElementById("root")!).render(
     <StrictMode>

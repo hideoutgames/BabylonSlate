@@ -836,6 +836,7 @@ describe("script host runs compiled graphs", () => {
       toScript(callerGraph, registry, "Caller", "caller-asset"),
     ]);
     runtime.spawnScriptedActor({ classId: "Caller" });
+    await vi.waitFor(() => expect(commands.filter((command) => command.type === "log")).toHaveLength(1));
     const logs = commands.filter((c) => c.type === "log");
     expect(logs).toHaveLength(1);
     expect(String((logs[0] as { message: string }).message)).toContain("5");
@@ -963,6 +964,7 @@ describe("script host runs compiled graphs", () => {
       toScript(callerGraph, registry, "Caller", "caller-asset"),
     ]);
     runtime.spawnScriptedActor({ classId: "Caller" });
+    await vi.waitFor(() => expect(commands.filter((command) => command.type === "log")).toHaveLength(1));
     const logs = commands.filter((c) => c.type === "log");
     expect(logs).toHaveLength(1);
     expect(String((logs[0] as { message: string }).message)).toContain("alert");
@@ -1556,7 +1558,7 @@ describe("script host runs compiled graphs", () => {
     runtime.stop();
   });
 
-  it("spawns independent prefab components before Begin Play once per Tick invocation", async () => {
+  it("spawns independent prefab components before Begin Play on successive completed Tick invocations", async () => {
     const registry = createDefaultNodeRegistry();
     const childGraph: LogicGraph = {
       id: "child",
@@ -1583,6 +1585,7 @@ describe("script host runs compiled graphs", () => {
       nodes: [
         node(registry, "tick", "flow.event.tick"),
         node(registry, "spawn", "actor.spawn", { classId: "Child" }),
+        node(registry, "completed", "debug.log", { "default:message": "spawn completed" }),
         node(registry, "pose", "struct.makeTransform", {
           "default:location": { x: 10, y: 20, z: 30 },
           "default:scale": { x: 1, y: 1, z: 1 },
@@ -1590,6 +1593,7 @@ describe("script host runs compiled graphs", () => {
       ],
       edges: [
         edge("tick-spawn", "tick", "execOut", "spawn", "execIn"),
+        edge("spawn-completed", "spawn", "execOut", "completed", "execIn"),
         edge("pose-spawn", "pose", "out", "spawn", "transform"),
       ],
     };
@@ -1607,7 +1611,10 @@ describe("script host runs compiled graphs", () => {
         },
       ],
     };
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false });
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false,
+      onCommand: command => commands.push(command),
+    });
     try {
       await runtime.loadScripts([
         childScript,
@@ -1615,7 +1622,14 @@ describe("script host runs compiled graphs", () => {
       ]);
       runtime.spawnScriptedActor({ classId: "Spawner" });
       runtime.start();
-      for (let i = 0; i < 3; i++) runtime.tick();
+      for (let i = 0; i < 3; i++) {
+        runtime.tick();
+        // The visual spawn is latent even with warm sources. Wait for its
+        // continuation before admitting another invocation of the Tick graph.
+        await vi.waitFor(() => expect(commands.filter(command =>
+          command.type === "log" && command.message === "spawn completed",
+        )).toHaveLength(i + 1));
+      }
       const children = runtime
         .getWorld()
         .getActors()
@@ -2571,6 +2585,7 @@ describe("script host runs compiled graphs", () => {
       toScript(caller, registry, "Caller", "caller-asset"),
     ]);
     runtime.spawnScriptedActor({ classId: "Caller" });
+    await vi.waitFor(() => expect(commands.filter((command) => command.type === "log")).toHaveLength(1));
     const logs = commands.filter((c) => c.type === "log");
     expect(String((logs[0] as { message: string }).message)).toContain("11");
     runtime.stop();

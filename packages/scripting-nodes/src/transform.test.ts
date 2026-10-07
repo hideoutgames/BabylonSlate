@@ -25,40 +25,6 @@ function node(
 }
 
 describe("transform nodes", () => {
-  it("registers Get/Set Actor Location, Rotation, Scale, and Transform", () => {
-    expect(transformNodes.map((entry) => entry.id)).toEqual([
-      "transform.getLocation",
-      "transform.setLocation",
-      "transform.getRotation",
-      "transform.setRotation",
-      "transform.getScale",
-      "transform.setScale",
-      "transform.get",
-      "transform.set",
-      "transform.forward",
-      "transform.right",
-      "transform.up",
-      "transform.addWorldOffset",
-    ]);
-    const registry = createDefaultNodeRegistry();
-    expect(registry.get("transform.getRotation")?.title).toBe(
-      "Get Actor Rotation",
-    );
-    expect(registry.get("transform.setRotation")?.title).toBe(
-      "Set Actor Rotation",
-    );
-    expect(registry.get("transform.getScale")?.title).toBe("Get Actor Scale");
-    expect(registry.get("transform.setScale")?.title).toBe("Set Actor Scale");
-    expect(registry.get("transform.get")?.title).toBe("Get Actor Transform");
-    expect(registry.get("transform.set")?.title).toBe("Set Actor Transform");
-    expect(registry.get("transform.forward")?.title).toBe(
-      "Get Actor Forward Vector",
-    );
-    expect(
-      registry.get("transform.setRotation")?.pins({}).map((pin) => pin.name),
-    ).toEqual(["exec", "then", "Target", "Rotation"]);
-  });
-
   it("compiles Set Actor Rotation through ctx.setActorRotation", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {

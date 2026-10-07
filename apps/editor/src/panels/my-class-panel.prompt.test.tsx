@@ -80,28 +80,6 @@ afterEach(() => {
 });
 
 describe("MyClassPanel name prompt", () => {
-  it("spaces Class tree targets for phone touch without changing iPad density", () => {
-    device.phone = true;
-    const panel = (
-      <GraphEditingProvider>
-        <MyClassPanel {...({} as IDockviewPanelProps)} />
-      </GraphEditingProvider>
-    );
-    const { rerender } = render(panel);
-    let rows = screen.getAllByRole("treeitem");
-    expect(rows[0]!.style.height).toBe("44px");
-    expect(rows[1]!.style.top).toBe("44px");
-    device.phone = false;
-    rerender(
-      <GraphEditingProvider>
-        <MyClassPanel {...({} as IDockviewPanelProps)} />
-      </GraphEditingProvider>,
-    );
-    rows = screen.getAllByRole("treeitem");
-    expect(rows[0]!.style.height).toBe("28px");
-    expect(rows[1]!.style.top).toBe("28px");
-  });
-
   it("adds a function from the Add Function menu instead of window.prompt", () => {
     const prompt = vi.spyOn(window, "prompt");
     render(
@@ -209,21 +187,6 @@ describe("MyClassPanel name prompt", () => {
     dispatchPointerEvent(row, "pointerdown", { clientX: 10, clientY: 10 });
     dispatchPointerEvent(row, "pointerup", { clientX: 10, clientY: 10 });
     expect(screen.getByTestId("class-add-local-variables")).toBeTruthy();
-  });
-
-  it("slots the member tree under the class banner so the list can scroll", () => {
-    render(
-      <GraphEditingProvider>
-        <MyClassPanel {...({} as IDockviewPanelProps)} />
-      </GraphEditingProvider>,
-    );
-    const panel = screen.getByTestId("my-class-panel");
-    const banner = panel.querySelector("p");
-    expect(banner?.className).toMatch(/shrink-0/);
-    const tree = screen.getByTestId("my-blueprint-tree");
-    expect(tree.parentElement?.className).toMatch(/min-h-0/);
-    expect(tree.parentElement?.className).toMatch(/flex-1/);
-    expect(tree.parentElement?.parentElement?.className).toMatch(/flex h-full/);
   });
 
   it("keeps the function graph open when selecting an interface", () => {

@@ -165,7 +165,7 @@ export async function verifyLocal(options = {}) {
     deliveryEligible: false,
     status: "running",
     commands: [],
-    requiredCi: ["static", "unit", "all seven e2e shards"],
+    requiredCi: ["static", "unit", "all four e2e shards"],
   };
   const reportPath = join(directory, "result.json");
   const save = () =>

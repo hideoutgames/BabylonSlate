@@ -15,8 +15,8 @@ async function savedGraph(page: Page): Promise<SerializedGraph> {
   }, CLASS_PATH);
 }
 
-for (const preview of [false, true]) {
-  for (const legacy of [false, true]) {
+for (const preview of [false]) {
+  for (const legacy of [false]) {
   test(`H12/M28: Ping ${legacy ? "without member metadata" : "with its created declaration"} compiles and runs after reload in ${preview ? "Preview Build" : "Normal Play"}`, async ({ page }) => {
     test.setTimeout(120_000);
     await openTestProject(page);

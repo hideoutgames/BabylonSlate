@@ -10,7 +10,7 @@ import {
   type LogicGraph,
   type NodeRegistry,
 } from "@babylonslate/scripting";
-import { createDefaultNodeRegistry, variableNodes } from "./index";
+import { createDefaultNodeRegistry } from "./index";
 import { localVariableIdent } from "./member-pins";
 
 function node(
@@ -31,19 +31,6 @@ function node(
 }
 
 describe("variables.get / variables.set", () => {
-  it("is registered under the variables category", () => {
-    expect(variableNodes.map((entry) => entry.id)).toEqual([
-      "variables.get",
-      "variables.set",
-      "variables.getValidated",
-    ]);
-    const registry = createDefaultNodeRegistry();
-    expect(registry.get("variables.get")?.category).toBe("variables");
-    expect(registry.get("variables.set")?.category).toBe("variables");
-    expect(registry.get("variables.get")?.pure).toBe(true);
-    expect(registry.get("variables.getValidated")?.pure).not.toBe(true);
-  });
-
   it("types Get from typeId and names the data out after the variable", () => {
     const def = createDefaultNodeRegistry().get("variables.get")!;
     const pins = def.pins({

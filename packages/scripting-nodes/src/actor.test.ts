@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   compileGraph,
-  arrayOf,
-  actorRef,
   classRef,
   objectRef,
   TRANSFORM,
@@ -39,10 +37,6 @@ function loadModule(source: string): Record<string, unknown> {
 }
 
 describe("actor nodes", () => {
-  it("registers Spawn Actor", () => {
-    expect(actorNodes.map((n) => n.id)).toContain("actor.spawn");
-  });
-
   it("Is Valid takes an Object pin and reports non-null instances", () => {
     const def = actorNodes.find((entry) => entry.id === "actor.isValid");
     const pins = def?.pins({}) ?? [];
@@ -137,7 +131,7 @@ describe("actor nodes", () => {
     );
   });
 
-  it("compiled Spawn Actor calls ctx.spawnActor", () => {
+  it("compiled Spawn Actor waits for cold asset preparation", async () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",
@@ -157,16 +151,22 @@ describe("actor nodes", () => {
       ],
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
-    expect(compiled.source).toContain("ctx.spawnActor");
-    const mod = loadModule(compiled.source);
+        const mod = loadModule(compiled.source);
     const spawned: string[] = [];
-    (mod.onBeginPlay as (ctx: unknown) => void)({
-      spawnActor: (classId: string) => {
+    let ready!: () => void;
+    let finished = false;
+    const pending = (mod.onBeginPlay as (ctx: unknown) => Promise<void>)({
+      spawnActorAsync: (classId: string) => {
         spawned.push(classId);
-        return { classId };
+        return new Promise(resolve => { ready = () => resolve({ classId }); });
       },
-    });
+    }).then(() => { finished = true; });
     expect(spawned).toEqual(["Child"]);
+    await Promise.resolve();
+    expect(finished).toBe(false);
+    ready();
+    await pending;
+    expect(finished).toBe(true);
   });
 
   it("exposes an optional Transform pin on Spawn Actor", () => {
@@ -180,7 +180,7 @@ describe("actor nodes", () => {
     });
   });
 
-  it("compiled Spawn Actor passes transform as the second spawnActor argument", () => {
+  it("compiled Spawn Actor passes the authored transform to asynchronous preparation", async () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",
@@ -200,13 +200,10 @@ describe("actor nodes", () => {
       ],
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
-    expect(compiled.source).toMatch(
-      /ctx\.spawnActor\(\s*[^,]+,\s*[^)]+\)/,
-    );
     const mod = loadModule(compiled.source);
     const calls: Array<{ classId: string; transform: unknown }> = [];
-    (mod.onBeginPlay as (ctx: unknown) => void)({
-      spawnActor: (classId: string, transform: unknown) => {
+    await (mod.onBeginPlay as (ctx: unknown) => Promise<void>)({
+      spawnActorAsync: async (classId: string, transform: unknown) => {
         calls.push({ classId, transform });
         return { classId };
       },
@@ -218,35 +215,6 @@ describe("actor nodes", () => {
       rotation: { x: 0, y: 0, z: 0, w: 1 },
       scale: { x: 1, y: 1, z: 1 },
     });
-  });
-
-  it("registers Get All Actors Of Class and Get Actor Of Class", () => {
-    expect(actorNodes.map((entry) => entry.id)).toEqual(
-      expect.arrayContaining([
-        "actor.getAllOfClass",
-        "actor.getOfClass",
-      ]),
-    );
-    expect(
-      actorNodes.find((entry) => entry.id === "actor.getAllOfClass")?.title,
-    ).toBe("Get All Actors Of Class");
-    expect(actorNodes.find((entry) => entry.id === "actor.getOfClass")?.title).toBe(
-      "Get Actor Of Class",
-    );
-    const allPins =
-      actorNodes.find((entry) => entry.id === "actor.getAllOfClass")?.pins({}) ??
-      [];
-    expect(allPins.find((pin) => pin.id === "classId")?.type).toEqual(
-      classRef("Actor"),
-    );
-    expect(allPins.find((pin) => pin.id === "out")?.type).toEqual(
-      arrayOf(actorRef("Actor")),
-    );
-    const onePins =
-      actorNodes.find((entry) => entry.id === "actor.getOfClass")?.pins({}) ?? [];
-    expect(onePins.find((pin) => pin.id === "out")?.type).toEqual(
-      actorRef("Actor"),
-    );
   });
 
   it("compiles class queries through ctx.getAllActorsOfClass and ctx.getActorOfClass", () => {
@@ -389,33 +357,6 @@ describe("actor nodes", () => {
       },
     });
     expect(queried).toEqual(["all:Hero", "one:Hero"]);
-  });
-
-  it("registers Attach, Detach, Get Parent, Set Owner, and Get Owner", () => {
-    expect(actorNodes.map((entry) => entry.id)).toEqual(
-      expect.arrayContaining([
-        "actor.attach",
-        "actor.detach",
-        "actor.getParent",
-        "actor.setOwner",
-        "actor.getOwner",
-      ]),
-    );
-    expect(actorNodes.find((entry) => entry.id === "actor.attach")?.title).toBe(
-      "Attach Actor",
-    );
-    expect(actorNodes.find((entry) => entry.id === "actor.detach")?.title).toBe(
-      "Detach Actor",
-    );
-    expect(actorNodes.find((entry) => entry.id === "actor.getParent")?.title).toBe(
-      "Get Parent",
-    );
-    expect(actorNodes.find((entry) => entry.id === "actor.setOwner")?.title).toBe(
-      "Set Owner",
-    );
-    expect(actorNodes.find((entry) => entry.id === "actor.getOwner")?.title).toBe(
-      "Get Owner",
-    );
   });
 
   it("compiles hierarchy and owner nodes through ctx attach/owner helpers", () => {

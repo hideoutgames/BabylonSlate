@@ -3,6 +3,7 @@ import type {
   ProjectInputSettings,
   SerializedGraph,
   SerializedScene,
+  ConsoleCommandMetadata,
 } from "@babylonslate/core";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 
@@ -16,6 +17,12 @@ export type ExportIndexedAsset = {
   path?: string;
   parentClass?: string | null;
   dependencies: string[];
+  requiredDependencies?: string[];
+  requiredVariableNames?: string[];
+  classReferences?: string[];
+  requiredClassReferences?: string[];
+  consoleCommand?: ConsoleCommandMetadata;
+  dependencyMetadataVersion?: number;
   rootId: string;
 };
 
@@ -45,6 +52,20 @@ export type ExportReachability = {
 export type ExportAssetBytes = {
   guid: string;
   type: string;
+  classId?: string;
+  ownerGuid?: string;
+  parentClass?: string | null;
+  /** Complete references retained for export and explicit dynamic lookup. */
+  dependencies?: readonly string[];
+  /** Dependencies needed whenever this asset is acquired. */
+  requiredDependencies?: readonly string[];
+  requiredVariableNames?: readonly string[];
+  classReferences?: readonly string[];
+  requiredClassReferences?: readonly string[];
+  consoleCommand?: ConsoleCommandMetadata;
+  dependencyMetadataVersion?: number;
+  /** A required project system independent of the initial scene. */
+  startupRequired?: boolean;
   /** Scene guid this asset was reached through; boot assets use the startup scene. */
   sceneGuid: string;
   bytes: Uint8Array;
@@ -59,7 +80,16 @@ export type ExportAssetBytes = {
 export type GameAssetIndexEntry = {
   guid: string;
   type: string;
+  classId?: string;
+  ownerGuid?: string;
+  parentClass?: string | null;
   encoding: "json" | "bytes";
+  byteLength?: number;
+  revision?: string;
+  dependencies?: string[];
+  requiredDependencies?: string[];
+  startupRequired?: boolean;
+  consoleCommand?: ConsoleCommandMetadata;
   pack?: string;
   path?: string;
   name?: string;
@@ -69,6 +99,8 @@ export type GameAssetIndexEntry = {
 };
 
 export type GameManifest = {
+  /** Version 1 uses independent files and required-edge loading. */
+  assetCatalogVersion?: 1;
   saveGame?: import("@babylonslate/core").SaveGameConfiguration;
   /** Authored build identity; absent in legacy builds. */
   project?: { name: string; version: string };
@@ -78,6 +110,7 @@ export type GameManifest = {
   startupSceneGuid: string;
   gameInstanceClass?: string;
   audioMixerGuid?: string;
+  defaultFontGuid?: string;
   occlusionEnabled?: boolean;
   reverbWetScale?: number;
   reverbDecayScale?: number;
@@ -103,6 +136,7 @@ export type GameManifest = {
 };
 
 export type ExportGameOptions = {
+  defaultFontGuid?: string | null;
   saveGame?: import("@babylonslate/core").SaveGameConfiguration;
   project?: { name: string; version: string };
   inputAssets?: import("@babylonslate/core").InputAssetDefinition[];

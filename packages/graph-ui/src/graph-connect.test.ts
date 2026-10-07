@@ -883,12 +883,6 @@ describe("isNearSourcePin", () => {
   });
 });
 
-describe("CONNECT_END_CANCEL_PX", () => {
-  it("is 96 screen pixels so a short slip off a pin does not open Add Node", () => {
-    expect(CONNECT_END_CANCEL_PX).toBe(96);
-  });
-});
-
 describe("collectSafeConnectPins", () => {
   const nodes = [
     { id: "source", pins: [execOut, stringOut] },

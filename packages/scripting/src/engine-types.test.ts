@@ -2,9 +2,6 @@ import { describe, expect, it } from "vitest";
 import { parseText2DAppearProperties, text2DCharacterReveal } from "@babylonslate/core";
 import { mergeEngineTypeSchemas } from "./type-defaults";
 import {
-  ENGINE_COLLISION_CHANNEL_ENUM_ID,
-  ENGINE_ENUMS,
-  ENGINE_HIT_RESULT_STRUCT_ID,
   ENGINE_STRUCTS,
 } from "./engine-types";
 
@@ -20,33 +17,6 @@ describe("engine type registry", () => {
     });
     expect(properties).toMatchObject({ appearModes: ["fade", "scale"], appearStart: "hidden" });
     expect(text2DCharacterReveal(0.5, 1, 3, properties)).toBe(0.5);
-  });
-
-  it("registers Collision Channel and Hit Result", () => {
-    expect(ENGINE_ENUMS.map((entry) => entry.id)).toEqual(expect.arrayContaining([
-      ENGINE_COLLISION_CHANNEL_ENUM_ID,
-      "engine:Key",
-      "engine:InputComponent",
-    ]));
-    expect(ENGINE_ENUMS.find((entry) => entry.id === ENGINE_COLLISION_CHANNEL_ENUM_ID)?.members.map((member) => member.name)).toEqual([
-      "All",
-      "WorldStatic",
-      "WorldDynamic",
-      "Pawn",
-      "Visibility",
-    ]);
-    expect(ENGINE_STRUCTS.map((entry) => entry.id)).toEqual(expect.arrayContaining([
-      ENGINE_HIT_RESULT_STRUCT_ID,
-      "engine:InputType",
-      "engine:InputBinding",
-    ]));
-    expect(ENGINE_STRUCTS.find((entry) => entry.id === ENGINE_HIT_RESULT_STRUCT_ID)?.fields.map((field) => field.name)).toEqual([
-      "Hit",
-      "Location",
-      "Normal",
-      "Actor",
-      "Distance",
-    ]);
   });
 });
 

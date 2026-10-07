@@ -7,7 +7,7 @@ import { acceptUnsavedPlayPrompts } from "./unsaved-play";
  * and Play asset collection (including materials) finish. iPad landscape under
  * a full suite can stay on Compiling for tens of seconds.
  */
-export const PLAY_OVERLAY_TIMEOUT_MS = 60_000;
+const PLAY_OVERLAY_TIMEOUT_MS = 60_000;
 export const PREVIEW_BUILD_TIMEOUT_MS = 60_000;
 
 export async function waitForPlayOverlay(page: Page): Promise<void> {

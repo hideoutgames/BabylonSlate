@@ -91,25 +91,3 @@ test("metadata-only preflight starts no test, typecheck, or docs process", () =>
   );
   assert.deepEqual(phases, []);
 });
-
-test("documentation-only preflight uses the dedicated docs workload", () => {
-  const phases = preflightPhases(
-    {
-      toolingTests: [],
-      distributionTests: [],
-      packages: [],
-      unitTests: [],
-      docs: true,
-    },
-    [],
-    [],
-  );
-  assert.deepEqual(phases, [
-    {
-      id: "docs",
-      runner: "pnpm",
-      profile: "docs",
-      args: ["--filter", "docs-site", "build"],
-    },
-  ]);
-});

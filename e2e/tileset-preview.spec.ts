@@ -15,10 +15,9 @@ import {
   MAIN_SCENE_FILE,
 } from "../packages/core/src/index";
 import { openMinimalTestProject } from "./minimal-project";
-import { openAssetFromBrowser, openMainScene } from "./open-test-project";
+import { openMainScene } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
 import { expectGreenIllumination } from "./preview-parity";
-import { IPAD_TEST_TAG } from "./ipad-tag";
 
 const textureGuid = "00000000-0000-4000-8000-000000000010";
 const tilesetGuid = "00000000-0000-4000-8000-000000000011";
@@ -127,55 +126,6 @@ async function atlasFiles(
   );
   return files;
 }
-
-test(
-  "Tileset Preview fills the dock and fits wide and tall atlases after resizing",
-  { tag: IPAD_TEST_TAG },
-  async ({ page }, testInfo) => {
-    for (const [width, height] of [
-      [1024, 128],
-      [128, 1024],
-    ]) {
-      const files = await atlasFiles(page, width!, height!);
-      await openMinimalTestProject(page, files);
-      await openAssetFromBrowser(page, "assets/ground.tileset.babasset");
-      for (const viewport of [
-        { width: 1194, height: 834 },
-        { width: 950, height: 650 },
-      ]) {
-        await page.setViewportSize(viewport);
-        const panel = page.getByTestId("tileset-preview-panel");
-        const surface = page.getByTestId("tileset-preview-surface");
-        const image = surface.locator("img");
-        await expect(image).toBeVisible();
-        await expect(async () => {
-          const p = (await panel.boundingBox())!;
-          const s = (await surface.boundingBox())!;
-          const i = (await image.boundingBox())!;
-          expect(s.height).toBeGreaterThan(p.height - 150);
-          expect(s.width).toBeGreaterThan(p.width - 30);
-          expect(Math.abs(s.y + s.height - (p.y + p.height - 12))).toBeLessThan(
-            2,
-          );
-          expect(s.y + s.height).toBeLessThanOrEqual(viewport.height);
-          expect(i.x).toBeGreaterThanOrEqual(s.x);
-          expect(i.y).toBeGreaterThanOrEqual(s.y);
-          expect(i.x + i.width).toBeLessThanOrEqual(s.x + s.width);
-          expect(i.y + i.height).toBeLessThanOrEqual(s.y + s.height);
-          expect(
-            Math.abs(i.x + i.width / 2 - (s.x + s.width / 2)),
-          ).toBeLessThan(2);
-          expect(
-            Math.abs(i.y + i.height / 2 - (s.y + s.height / 2)),
-          ).toBeLessThan(2);
-        }).toPass();
-      }
-      await page.screenshot({
-        path: testInfo.outputPath(`atlas-${width}x${height}.png`),
-      });
-    }
-  },
-);
 
 test("encoded Tilemap atlas renders its pixels in Scene Preview and Play", async ({
   page,

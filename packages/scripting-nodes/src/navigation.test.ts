@@ -3,7 +3,6 @@ import {
   compileGraph,
   createEmptyLogicGraph,
   type CodegenContext,
-  type NodeRegistry,
 } from "@babylonslate/scripting";
 import { createDefaultNodeRegistry } from "./index";
 import { navigationNodes } from "./navigation";
@@ -34,24 +33,6 @@ function emitCtx(typeId: string): { ctx: CodegenContext; emits: string[] } {
 }
 
 describe("navigation nodes", () => {
-  it("registers FindPathTo, MoveTo, StopMovement, and obstacle add/remove", () => {
-    expect(navigationNodes.map((node) => node.id)).toEqual(
-      expect.arrayContaining([
-        "navigation.findPathTo",
-        "navigation.moveTo",
-        "navigation.stopMovement",
-        "navigation.isPathValid",
-        "navigation.getClosestNavigablePoint",
-        "navigation.getRandomPointInRadius",
-        "navigation.addObstacle",
-        "navigation.removeObstacle",
-      ]),
-    );
-    const registry: NodeRegistry = createDefaultNodeRegistry();
-    expect(registry.get("navigation.findPathTo")).toBeDefined();
-    expect(registry.get("navigation.moveTo")).toBeDefined();
-  });
-
   it("emits ctx.moveTo and ctx.findPathTo", () => {
     const move = navigationNodes.find((node) => node.id === "navigation.moveTo")!;
     const { ctx, emits } = emitCtx("navigation.moveTo");

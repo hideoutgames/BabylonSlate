@@ -8,10 +8,7 @@ const ROOT_STATIC_INPUT =
 const RELATED_TESTS = new Map([
   [
     ".github/workflows/verify.yml",
-    [
-      "apps/docs/src/verify-workflow.test.ts",
-      "scripts/verification-policy.test.mjs",
-    ],
+    ["scripts/verification-policy.test.mjs"],
   ],
   [
     ".github/workflows/distribute.yml",

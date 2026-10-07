@@ -30,6 +30,11 @@ test.describe("BabylonSlate editor smoke", () => {
       page.getByTestId("document-workspace-content-browser"),
     ).toBeVisible();
     await expect(page.getByTestId("content-browser-workspace")).toBeVisible();
+    // Bundle-only: a module-scope alias of the project root id was evaluated
+    // before its chunk initialized, so the root crumb fell back to "assets".
+    const location = page.getByRole("navigation", { name: "Folder Location" });
+    await expect(location).toContainText("Content");
+    await expect(location).not.toContainText("assets");
     await expect(
       page.locator('[data-asset-path="assets/main.scene.babasset"]'),
     ).toBeVisible();

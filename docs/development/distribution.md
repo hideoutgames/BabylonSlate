@@ -111,7 +111,7 @@ These entitlements apply to the native host. The editor's JavaScript, WebAssembl
 
 ## Maintainer setup
 
-1. Protect `main` with required checks. Distribution requires the latest successful Verify run for the exact selected commit, including static, unit and all seven browser shards, plus configured branch/ruleset checks. A passing ancestor or skipped draft run does not qualify.
+1. Protect `main` with required checks. Distribution requires the latest successful Verify run for the exact selected commit, including static, unit and all four browser shards, plus configured branch/ruleset checks. A passing ancestor or skipped draft run does not qualify.
 2. Create `testflight`, `github-release`, `macos-signing` and `android-signing` environments. For each, select **Selected branches and tags**, add a branch rule for exactly `main`, and allow no tags or other branches. Do not use **Protected branches only**, which can allow all branches when protection is absent.
 3. Create the App Store Connect app record for `no.hideout.babylonslate`. Create **Test Builds** and **Release Candidates** under that app. Disable public links and automatic access to every build in all groups; use explicit membership. Existing App Store Connect users may test internally; other testers receive private invitations. External testing can require Beta App Review and builds expire after 90 days.
 4. Provision the following values directly in GitHub's `testflight` environment settings. Never provide credentials in chat, issues, workflow inputs or commits.

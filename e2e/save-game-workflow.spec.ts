@@ -1,5 +1,4 @@
 import { expect, test, type Page } from "@playwright/test";
-import { IPAD_TEST_TAG } from "./ipad-tag";
 import { openMinimalTestProject } from "./minimal-project";
 import { openAssetFromBrowser, openTestProject } from "./open-test-project";
 import { saveAllIfEnabled } from "./save-all";
@@ -14,7 +13,7 @@ async function openSaveSettings(page: Page) {
 }
 
 /** Real controls and persisted assets; no editor state injection. */
-test("Save Game authoring preserves field identity and project defaults through reload", { tag: IPAD_TEST_TAG }, async ({ page }, testInfo) => {
+test("Save Game authoring preserves field identity and project defaults through reload", async ({ page }, testInfo) => {
   await openMinimalTestProject(page);
   await page.getByTestId("content-browser-new-asset").click();
   await page.getByTestId("new-asset-type-search").fill("Save Game");

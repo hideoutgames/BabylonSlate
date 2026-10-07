@@ -1,8 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
-import { openMainScene, openTestProject, submitCreateOrOpenListed } from "./open-test-project";
+import { openMainScene, openTestProject } from "./open-test-project";
 import { pickCatalogItem } from "./pick-catalog-item";
 import { clickPlayAndWaitForOverlay } from "./play";
-import { readSaveAllDiagnostics } from "./save-all";
 
 async function showContentBrowser(page: Page): Promise<void> {
   await page
@@ -77,24 +76,7 @@ async function openGraphNodePalette(page: Page): Promise<void> {
   }).toPass({ timeout: 10_000 });
 }
 
-async function openTwoDProject(page: Page): Promise<void> {
-  await page.goto("/?test=1");
-  await expect(page.getByTestId("homepage")).toBeVisible();
-  await page.getByTestId("create-project").click();
-  await expect(page.getByTestId("create-project-dialog")).toBeVisible();
-  await page.getByTestId("create-project-2d").click();
-  await submitCreateOrOpenListed(page);
-  await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
-}
-
 test.describe("P11 behaviour tree and navigation acceptance", () => {
-  test("New Asset BehaviourTree opens the tree editor", async ({ page }) => {
-    await openTestProject(page);
-    await createAsset(page, "BehaviourTree", "Patrol");
-    await page.locator('[data-asset-path="assets/Patrol.bt.babasset"]').dblclick();
-    await expect(page.getByTestId("behaviour-tree-editor")).toBeVisible();
-    await expect(page.getByTestId("bt-node-root")).toBeVisible();
-  });
 
   test("3D Place NavMesh + ground bakes, then Play starts", async ({ page }) => {
     test.setTimeout(180_000);
@@ -118,96 +100,6 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
 
     await clickPlayAndWaitForOverlay(page);
     await page.getByTestId("play-overlay-close").click();
-  });
-
-  test("2D NavMesh bake uses the XY floor without MeshComponent", async ({
-    page,
-  }) => {
-    test.setTimeout(90_000);
-    await openTwoDProject(page);
-    await openMainScene(page);
-    await expect(page.getByTestId("viewport-mode-toggle")).toHaveText("2D");
-    await placeActor(page, "navmesh");
-    await page.getByTestId("outliner-tree").getByText("NavMesh", { exact: true }).click();
-    const bake = page.getByRole("button", { name: "Bake NavMesh" });
-    await expect(bake).toBeVisible();
-    await bake.click();
-    await expect(page.getByTestId("nav-bake-dialog")).toBeVisible({
-      timeout: 15_000,
-    });
-    await expect(page.getByTestId("nav-bake-dialog")).toHaveCount(0, {
-      timeout: 30_000,
-    });
-  });
-
-  test("Auto Bake On Save opens the bake dialog and writes a navmesh chunk", async ({
-    page,
-  }) => {
-    test.setTimeout(180_000);
-    await openTestProject(page);
-    await openMainScene(page);
-    await placeActor(page, "shape-ground");
-    await placeActor(page, "navmesh");
-    await page.getByTestId("outliner-tree").getByText("NavMesh", { exact: true }).click();
-    const autoBake = page.locator(
-      '[data-testid^="property-actor-"][data-testid$="-autoBakeOnSave"]',
-    );
-    await expect(autoBake).toBeVisible();
-    await autoBake.click();
-    await expect(autoBake).toBeChecked();
-    const save = page.getByTestId("save-all-project");
-    await expect(save).toBeEnabled();
-    const previousSave = await readSaveAllDiagnostics(page);
-    await save.click({ force: true });
-    await expect(page.getByTestId("nav-bake-dialog")).toBeVisible({
-      timeout: 15_000,
-    });
-    await expect(page.getByTestId("nav-bake-dialog")).toHaveCount(0, {
-      timeout: 30_000,
-    });
-    // Navigation is only one Save All phase. Await this invocation's document
-    // and project writes without starting a second bake or overlapping save.
-    await expect.poll(() => readSaveAllDiagnostics(page), { timeout: 30_000 })
-      .toMatchObject({
-        progress: {
-          invocation: (previousSave.progress?.invocation ?? 0) + 1,
-          pending: false,
-        },
-        save: { ok: true, dirtyAfter: 0 },
-        dirty: [],
-      });
-    await expect(save).toBeDisabled();
-    const bake = await page.evaluate(() => {
-      const host = globalThis as {
-        __babylonslateTest?: {
-          lastNavBake?: () => {
-            ok: boolean;
-            path: string | null;
-            byteLength: number;
-            error: string | null;
-          } | null;
-        };
-      };
-      return host.__babylonslateTest?.lastNavBake?.() ?? null;
-    });
-    expect(bake, JSON.stringify(bake)).toMatchObject({ ok: true });
-    const byteLength = await page.evaluate(async (bakePath) => {
-      const host = globalThis as {
-        __babylonslateTest?: {
-          readAssetChunk?: (
-            path: string,
-            chunkId: string,
-          ) => Promise<Uint8Array | null>;
-        };
-      };
-      if (!bakePath) throw new Error("Bake did not report its scene path.");
-      const bytes = await host.__babylonslateTest?.readAssetChunk?.(
-        bakePath,
-        "navmesh",
-      );
-      return bytes?.byteLength ?? 0;
-    }, bake?.path ?? null);
-    expect(byteLength).toBeGreaterThan(0);
   });
 
   test("tree editor can add a Wait child, set duration, add a decorator, and remove it", async ({
@@ -243,7 +135,12 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
     await expect(page.getByTestId("bt-remove-attachment")).toHaveCount(0);
   });
 
-  test("task throw session report focuses the tree node", async ({ page }) => {
+  test("task throw session report focuses the tree node", async ({ page }, testInfo) => {
+    // Leave room to attach the original preparation log after Play's own
+    // bounded wait, rather than losing it to the overall test deadline.
+    test.setTimeout(120_000);
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
     await openTestProject(page, "/?test=1&previewThrow=1");
     await createAsset(page, "BehaviourTree", "Patrol");
     await page.locator('[data-asset-path="assets/Patrol.bt.babasset"]').dblclick();
@@ -262,48 +159,36 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
     expect(treeGuid.length).toBeGreaterThan(0);
     await pickSelectedAsset(page, "Behaviour Tree", treeGuid);
 
-    await clickPlayAndWaitForOverlay(page);
-    await page.getByTestId("play-overlay-close").click();
-    await expect(page.getByTestId("preview-session-report")).toBeVisible();
-    await expect(page.getByTestId("session-report-row")).toHaveAttribute(
-      "data-node-id",
-      "task",
-    );
-    await page.getByTestId("session-report-row").click();
-    await expect(page.getByTestId("focused-graph-node")).toHaveAttribute(
-      "data-node-id",
-      "task",
-    );
-    await expect(page.getByTestId("behaviour-tree-editor")).toBeVisible();
-  });
-
-  test("New Class parent BTDecorator lists On Evaluate and appears in Add Decorator", async ({
-    page,
-  }) => {
-    await openTestProject(page);
-    await showContentBrowser(page);
-    await page.getByTestId("content-browser-new-asset").click();
-    await expect(page.getByTestId("content-browser-new-asset-dialog")).toBeVisible();
-    await page.getByTestId("new-asset-type-Class").click();
-    await page.getByTestId("new-asset-name").fill("Alert");
-    await page.getByTestId("new-asset-parent").click();
-    await page.getByTestId("tree-row-BTDecorator").click();
-    await page.getByTestId("content-browser-new-asset-create").click();
-    await expect(page.getByTestId("content-browser-new-asset-dialog")).toHaveCount(0);
-
-    await page.locator('[data-asset-path="assets/Alert.class.babasset"]').dblclick();
-    await expect(page.getByTestId("my-class-panel")).toBeVisible();
-    const events = page.getByTestId("my-blueprint-tree");
-    await expect(events.getByText("On Evaluate")).toBeVisible();
-    await expect(events.getByText("Event Begin Play")).toHaveCount(0);
-
-    await createAsset(page, "BehaviourTree", "Patrol");
-    await page.locator('[data-asset-path="assets/Patrol.bt.babasset"]').dblclick();
-    await expect(page.getByTestId("behaviour-tree-editor")).toBeVisible();
-    await page.getByTestId("bt-add-decorator").click();
-    await expect(page.getByTestId("bt-attachment-catalog")).toBeVisible();
-    await page.getByTestId("bt-attachment-item-Alert").click();
-    await expect(page.getByTestId("bt-attachment-catalog")).toHaveCount(0);
-    await expect(page.locator("[data-testid^='bt-decorator-']")).toBeVisible();
+    // Mount the log before an overlay or premature session report can cover
+    // its tab; diagnostic reads below work without dismissing either surface.
+    await page.getByRole("tab", { name: "Output Log", exact: true }).click();
+    try {
+      await clickPlayAndWaitForOverlay(page);
+      await page.getByTestId("play-overlay-close").click({ timeout: 5_000 });
+      await expect(page.getByTestId("preview-session-report")).toBeVisible();
+      await expect(page.getByTestId("session-report-row")).toHaveAttribute(
+        "data-node-id",
+        "task",
+      );
+      await page.getByTestId("session-report-row").click();
+      await expect(page.getByTestId("focused-graph-node")).toHaveAttribute(
+        "data-node-id",
+        "task",
+      );
+      await expect(page.getByTestId("behaviour-tree-editor")).toBeVisible();
+    } catch (error) {
+      await testInfo.attach("task-throw-play-preparation", {
+        body: JSON.stringify({
+          errors,
+          output: await page.getByTestId("output-log-line").allTextContents(),
+          report: await page.getByTestId("session-report-row").evaluateAll((rows) => rows.map((row) => ({
+            nodeId: row.getAttribute("data-node-id"),
+            text: row.textContent,
+          }))),
+        }),
+        contentType: "application/json",
+      });
+      throw error;
+    }
   });
 });

@@ -27,9 +27,18 @@ describe("memory storage adapter", () => {
     expect(listed.some((p) => p.name === "A.babproject")).toBe(true);
   });
 
-  it("defaults pickProjectFolder to MyGame", async () => {
+  it("keeps returned ranges independent and invalidates equal-sized writes", async () => {
     const storage = new MemoryStorageAdapter();
-    expect((await storage.pickProjectFolder()).name).toBe("MyGame");
+    await storage.openDocumentsProject("Ranges");
+    await storage.writeBinary("asset", new Uint8Array([1, 2, 3, 4]));
+    const selected = await storage.readBinaryRange("asset", 1, 2);
+    expect(selected.bytes).toEqual(new Uint8Array([2, 3]));
+    selected.bytes.fill(0);
+    expect((await storage.readBinaryRange("asset", 1, 2, selected.revision)).bytes).toEqual(new Uint8Array([2, 3]));
+    await storage.writeBinary("asset", new Uint8Array([5, 6, 7, 8]));
+    await expect(storage.readBinaryRange("asset", 1, 2, selected.revision)).rejects.toThrow(/revision/i);
+    await expect(storage.readBinaryRange("asset", Number.MAX_SAFE_INTEGER, 1)).rejects.toThrow(/range/i);
+    expect(storage.getReadMetrics()).toMatchObject({ actualBytesRead: 4, fullReads: 0 });
   });
 
   it("releases the current folder", async () => {

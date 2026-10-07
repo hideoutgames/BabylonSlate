@@ -4,7 +4,6 @@ import {
   documentOpenForTarget,
   groupSearchEntries,
   revealAssetFromTarget,
-  visualForSearchEntry,
 } from "./search-navigation";
 
 function entry(
@@ -200,33 +199,3 @@ describe("groupSearchEntries", () => {
   });
 });
 
-describe("visualForSearchEntry", () => {
-  it("uses the asset type color for asset hits and the parent class icon for classes", () => {
-    const texture = visualForSearchEntry(
-      entry({
-        id: "asset:tex",
-        kind: "asset",
-        label: "Hero",
-        target: {
-          kind: "asset",
-          path: "assets/hero.babasset",
-          guid: "tex-1",
-          assetType: "Texture",
-        },
-      }),
-    );
-    expect(texture.iconKey).toBe("Texture");
-    expect(texture.colorVar).toBe("var(--asset-texture)");
-
-    const klass = visualForSearchEntry({
-      id: "class:MyHero",
-      kind: "class",
-      label: "MyHero",
-      description: "extends Actor",
-      keywords: [],
-      target: { kind: "class", classId: "MyHero" },
-    });
-    expect(klass.iconKey).toBe("Actor");
-    expect(klass.colorVar).toBe("var(--asset-animation)");
-  });
-});

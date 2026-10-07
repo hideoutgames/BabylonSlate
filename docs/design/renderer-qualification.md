@@ -1,5 +1,7 @@
 # Renderer qualification
 
+Most sections are dated evidence records. Browser specs and test-build `?…Proof` routes they cite may since have been removed; the [coverage matrix](#coverage-matrix) lists current browser coverage.
+
 ## Editor viewport frame retention and transform edits
 
 The viewport now holds its previous visible image when an admitted draw becomes
@@ -763,10 +765,8 @@ phase, completed samples and failure diagnostics in a DOM progress record so
 the failure can be reproduced without losing its location. This remains a FAIL,
 not desktop performance qualification.
 
-The local `perf-gpu` project also admits the explicit shared-outline cost file.
-Its full Chromium/D3D11 launch options are preserved locally; CI still selects
-software WebGPU. Reproduce with `BL_TEST_PROFILE=shared` and
-`pnpm --silent agent:wait local --script test:e2e -- e2e/shared-outline-cost.spec.ts --config playwright.perf.config.ts --project perf-gpu`.
+The local `perf-gpu` project also admitted the explicit shared-outline cost file
+(since removed), using full Chromium/D3D11 launch options.
 The first T3 failure does not certify this separate host. After selection cleanup,
 `afff8b31` passed the shared-host and overlay-transform files (35 tests), six-file
 lint, the render-package typecheck and the admitted editor/player build.
@@ -811,9 +811,9 @@ holds native shader readiness pending across pruning, then releases the program
 with its instance. The temporary task probe and ineffective composition LOD
 experiment were removed before verifying the ownership repair.
 The focused instance-program lifetime regression passed at `b2d84a51`.
-For native survivor/geometry qualification, set `BL_RENDER_NATIVE_GPU=1` and
-select the explicit `shared-outline.spec.ts` and `shared-outline-geometry.spec.ts`
-files with the local `perf-gpu` configuration. Default runs and CI retain their
+For native survivor qualification, set `BL_RENDER_NATIVE_GPU=1` and select
+`shared-outline.spec.ts` with the local `perf-gpu` configuration (the geometry
+spec has been removed). Default runs and CI retain their
 software adapter configuration; native results must still record effective APIs.
 At `cf363d82`, all six native GPU assertions passed (cost/lifecycle, geometry,
 ownership on both APIs), but the admitted command failed report validation:
@@ -988,7 +988,7 @@ That attempt and the following blocked invocation are not passes.
 
 ## Production outline qualification gate
 
-The focused `e2e/shared-outline-cost.spec.ts` fixture records a fixed 640×360
+The former `e2e/shared-outline-cost.spec.ts` fixture (removed) recorded a fixed 640×360
 output at scale 1, 12/192 shared-source actors, each consumer separately and all
 consumers together, then repeated membership/resize retirement. It uses the
 available local adapter without forcing software and records its actual identity;
@@ -1208,7 +1208,7 @@ This satisfies the initial regular-mesh/instance vertical-slice gate only.
 Generalized submaterial/animation/alpha coverage, authored products, runtime
 and export integration, hands-on routes and measured desktop cost remain open.
 
-`e2e/native-outline-qualification.spec.ts` runs the stock `FrameGraphSelectionOutlineLayerTask` with disjoint CEL/component instances sharing one source and a third selection consumer. It captures the native output before and after clearing the component consumer, plus the surviving selection-buffer state. The fixture deliberately isolates ownership with depth occlusion disabled; it does **not** qualify global CEL visibility. A passing harness means the evidence was captured and the pinned limitation reproduced, **not** that outlines satisfy release acceptance. Run just this file with the shared browser runner; the JSON attachment lists blockers and actual API, mask type, dimensions and browser. Screenshots come from the actual presented canvas.
+The former `e2e/native-outline-qualification.spec.ts` (removed) ran the stock `FrameGraphSelectionOutlineLayerTask` with disjoint CEL/component instances sharing one source and a third selection consumer. It captures the native output before and after clearing the component consumer, plus the surviving selection-buffer state. The fixture deliberately isolates ownership with depth occlusion disabled; it does **not** qualify global CEL visibility. A passing harness means the evidence was captured and the pinned limitation reproduced, **not** that outlines satisfy release acceptance.
 
 Physical iPad A16 testing is **deferred by the user for this delivery (21 September 2026)**. No physical-device baseline, equal-quality before/after timings, sustained thermal behavior or device mask-format qualification has been measured. Desktop WebGL/WebGPU captures are functional evidence only. Do not enable a costly default based on these runs or substitute an alternate outline renderer without the requested product approval.
 
@@ -1287,7 +1287,7 @@ At `ea3c9667`, the targeted `visual-lifecycle.test.ts` and `text2d-bitmap.test.t
 
 At `e36439b1`, the same two explicit files passed all 18 cases. Added cases cover 200 source-generation replacements with native resource/observer counts, failed preparation/retry, late rejection after newer success, retained text after allocation rejection, and changing canvas measurements. The native patch removes retired AssetContainer scene observers; this head's patch identity is `b3f3611b5c6f5cd75f3e70a5df4809d1378275c980a582d7e7e1951ed9731b10` (before integration of the physics patch). The later shared-texture-animation fixture and rich-text markup extension have not yet run.
 
-`e2e/visual-generations.spec.ts` is a test-build-only WebGL2/WebGPU pixel and lifetime fixture with 100 model and rich-text replacements, MSDF plus bitmap fallback, borrowed material survival and rejected-text preservation. Its browser run, affected-consumer checks and scoped static checks are still pending. Its timing samples include the fixture's preparation and draw work; they are not isolated GPU or A16 measurements.
+The planned `e2e/visual-generations.spec.ts` browser fixture was removed before it ran; visual generations have unit coverage only.
 
 ## Engine follow-up: deferred local verification
 
@@ -1431,42 +1431,42 @@ No tests, static checks, build, dependency installation or browser runs were per
 
 | Backend | Coverage |
 | --- | --- |
-| WebGL2 | Default for the whole suite; explicit packed/proof runs in `color-pipeline.spec.ts`, `framegraph-forward.spec.ts`, `framegraph-post-process.spec.ts`, `framegraph-post-process-lifetime.spec.ts`, `player-backend.spec.ts`, `webgpu-backend.spec.ts` (transitions include WebGL2 legs) |
-| WebGPU | `color-pipeline.spec.ts`, `framegraph-forward.spec.ts`, `framegraph-post-process.spec.ts`, `framegraph-post-process-lifetime.spec.ts`, `framegraph-shadows.spec.ts`, `scene-post-process-coordinator.spec.ts`, `player-backend.spec.ts`, `webgpu-backend.spec.ts`, `webgpu-previews.spec.ts`, `environment-lighting-webgpu.spec.ts` — all through software WebGPU on CI |
+| WebGL2 | Default for the whole suite. Feature smokes (`framegraph-forward`, `clustered-lights`, `shared-outline`, `color-grading`, `temporal-anti-aliasing`, `spatial-effects`, `render-targets`, `lattice-deformer`, `water`, `scalability-play`, `basic-3d-mannequin-shadows`) run on WebGL2 only |
+| WebGPU | `webgpu-backend.spec.ts`, `webgpu-previews.spec.ts`, `texture-webgpu-fallback.spec.ts`, `player-backend.spec.ts` (packed WebGPU player) — all through software WebGPU on CI |
 
 ### Render path
 
 | Path | Coverage |
 | --- | --- |
-| `forward` | `framegraph-forward.spec.ts` (opt-in graph preserves surface pixels and ownership, both backends); `clustered-path-selection.spec.ts` (explicit forward request) |
-| `clusteredForward` | `clustered-lights.spec.ts` (native and graph PBR/CEL pixels, WebGL2); `clustered-lights-webgpu.spec.ts` (same parity under WebGPU storage-buffer masks); `clustered-path-selection.spec.ts` (editor selection, Play, packed player Auto→clustered) |
-| `auto` | `clustered-path-selection.spec.ts` (auto resolves `clusteredForward` in editor, Play and packed player; session `renderpath` request is global and non-persistent); `render-path-settings.spec.ts` (project-wide pipeline settings retained through reopen) |
+| `forward` | `framegraph-forward.spec.ts` (opt-in graph preserves surface pixels and ownership, WebGL2 backbuffer) |
+| `clusteredForward` | `clustered-lights.spec.ts` (native and graph PBR/CEL pixels, WebGL2) |
+| `auto` | Unit only (`scene-render-path.test.ts`, `render-path-session.test.ts`) |
 
 ### Style
 
 | Style | Coverage |
 | --- | --- |
 | PBR | Default everywhere |
-| CEL | `cel-render-mode.spec.ts`, `cel-hard-steps.spec.ts` (both backends), `cel-shadow-lifecycle.spec.ts`, `clustered-lights.spec.ts`, `clustered-lights-webgpu.spec.ts` (clustered CEL tie sequence under WGSL), `framegraph-forward.spec.ts` (pbr and cel captures), `webgpu-backend.spec.ts` (WebGPU CEL proof) |
+| CEL | `cel-render-mode.spec.ts` (authored colors through Play and unlit overrides), `clustered-lights.spec.ts`, `framegraph-forward.spec.ts` (pbr and cel captures), `webgpu-backend.spec.ts` (WebGPU CEL proof), `basic-3d-mannequin-shadow-hosts.spec.ts` |
 
 ### Features
 
 | Feature | Coverage |
 | --- | --- |
-| Shadows | `shadow-refresh.spec.ts`, `cel-shadow-lifecycle.spec.ts`, `framegraph-shadows.spec.ts`, `webgpu-backend.spec.ts` (WebGPU shadow proof), `rendering-baseline.spec.ts` (shadow passes/bytes) |
-| Project post-processing effects | `color-pipeline.spec.ts` (bloom/effects chain in packed WebGL2 + WebGPU player and editor viewport) |
-| Authored post-process stack | `framegraph-post-process.spec.ts`, `framegraph-post-process-lifetime.spec.ts`, `scene-post-process-coordinator.spec.ts`, `scene-post-process-host.spec.ts`, `post-process-owner-overrides.spec.ts` |
-| SceneLayers | `scene-layer-rendering.spec.ts` (viewport + Play); `runtime-owner-continuity.spec.ts` (moving global layer retained across loading, Play + Preview Build) |
-| Particles | `p17-particles.spec.ts` (Particle Material with Texture Sample, Basic emitter and System, Play billboards, teardown, missing-Material diagnostic, save/reopen); `particle-lifecycle.spec.ts` (WebGL2/WebGPU × CPU/GPU emission, ownership, blend cases, overlapping bursts, and a mixed Basic + Particle Graph System with graph build/retire cycles); `particle-graph.spec.ts` (Particle Graph authoring, CPU preview, mixed Basic + Graph System in Play, save/reopen) |
+| Shadows | `basic-3d-mannequin-shadows.spec.ts`, `basic-3d-mannequin-shadow-hosts.spec.ts`, `webgpu-backend.spec.ts` (WebGPU shadow proof); refresh and FrameGraph shadow binding are unit only (`shadow-map-refresh.test.ts`, `framegraph-managed-shadows.test.ts`) |
+| Project post-processing effects | `color-pipeline.spec.ts` (bloom in the editor viewport) |
+| Authored post-process stack | Unit only (`framegraph-post-process.test.ts`, `scene-post-process-*.test.ts`) |
+| SceneLayers | `scene-layer-rendering.spec.ts` (compiled Tweens on rendered components) |
+| Particles | `p17-particles.spec.ts` (Particle Material with Texture Sample, Basic emitter and System, Play billboards, teardown, save/reopen); `particle-graph.spec.ts` (Particle Graph authoring, CPU preview, mixed Basic + Graph System in Play) |
 
 ### Hosts
 
 | Host | Coverage |
 | --- | --- |
-| Editor viewport | `viewport-shading.spec.ts`, `cel-render-mode.spec.ts`, `rendering-baseline.spec.ts`, `color-pipeline.spec.ts` (bloom), `webgpu-backend.spec.ts`, `viewport-guides.spec.ts` |
-| Play | `p4-play.spec.ts`, `qa-animation-overlap.spec.ts`, `tilemap-rendering.spec.ts`, `qa-play-controls.spec.ts`, `play-debug-console.spec.ts`, `runtime-owner-continuity.spec.ts`, `scene-layer-rendering.spec.ts`, `clustered-path-selection.spec.ts` |
-| Preview Build | `p14-preview-build.spec.ts`, `tilemap-rendering.spec.ts`, `runtime-owner-continuity.spec.ts`, `clustered-path-selection.spec.ts` (packed player) |
-| Exported player | `p14-export.spec.ts` (unzip-serve-boot-tick), `player-backend.spec.ts` (packed `apps/player` over HTTP, both backends) |
+| Editor viewport | `viewport-shading.spec.ts`, `cel-render-mode.spec.ts`, `color-pipeline.spec.ts` (bloom), `webgpu-backend.spec.ts` |
+| Play | `p4-play.spec.ts`, `qa-animation-overlap.spec.ts`, `qa-play-controls.spec.ts`, `play-debug-console.spec.ts`, `scene-layer-rendering.spec.ts`, `runtime-scene-loading.spec.ts` |
+| Preview Build | `p14-preview-build.spec.ts` |
+| Exported player | `p14-export.spec.ts` (unzip-serve-boot-tick), `player-backend.spec.ts` (packed WebGPU `apps/player` over HTTP) |
 
 ### Recovery
 
@@ -1474,8 +1474,8 @@ No tests, static checks, build, dependency installation or browser runs were per
 | --- | --- |
 | Context loss | Unit only (`create-engine.play.test.ts`, `rgbd-texture-lifetime.test.ts` — `noteRestore`, texture release, material invalidation). **Not covered** in e2e: no spec forces a real `WEBGL_lose_context` on a live session |
 | Backend switch | `webgpu-backend.spec.ts` (WebGPU→WebGL2→WebGPU through Project Settings, one Engine, undo/redo and Play after) |
-| Backend fallback | `webgl2-fallback.spec.ts` (WebGPU requested while `requestAdapter` returns null, rejects, or `navigator.gpu` is absent → one WebGL2 Engine, presented viewport, explicit reason in Project Settings, Play afterwards, no loading-deadline failures), `player-backend.spec.ts` (packed WebGPU player without an adapter presents WebGL2 with `data-backend-fallback`) |
-| Scene reload | `runtime-scene-loading.spec.ts` (repeated transitions + Stop, Play + Preview Build), `runtime-owner-continuity.spec.ts` (`changescene` under held paint, both hosts), `rendering-transitions.spec.ts` (viewport blocking reloads) |
+| Backend fallback | `webgl2-fallback.spec.ts` (WebGPU requested while `requestAdapter` resolves null → one WebGL2 Engine, presented viewport, explicit reason in Project Settings, Play afterwards) |
+| Scene reload | `runtime-scene-loading.spec.ts` (repeated transitions + Stop in Play) |
 | WebContent termination | Not covered. Capacitor's native handler reloads the WebView to Home; the editor does not detect or report the previous exit. OS delivery on a real device is untested |
 
 ## Sustained route
@@ -1537,7 +1537,7 @@ From [perf-budget.md](perf-budget.md); read each sustained window against them �
 A window that misses the pacing budget is a measurement to explain, not a spec failure — the assertion set stays at "the route ran clean" so the run always produces evidence instead of a red build.
 # Rectangular light browser fixture
 
-`e2e/area-rect-light.spec.ts` exercises the production `SceneRenderCoordinator`
+The former `e2e/area-rect-light.spec.ts` (removed) exercised the production `SceneRenderCoordinator`
 with native PBR and authored Material Graph receivers in PBR/CEL modes. It
 requests Forward and Clustered Forward, retains actual effective-path readback,
 compares enabled/disabled and 180-degree rotation pixels, checks an unlit control,
@@ -1590,11 +1590,10 @@ and render typechecks passed at `2c788764`; changed-file lint had zero errors an
 four existing Fast Refresh warnings in Play context. This does not qualify
 Computer Use interaction, every receiver type or the full handoff.
 
-`e2e/area-light-export.spec.ts` uses the editor's real export collector, served
+The former `e2e/area-light-export.spec.ts` (removed) used the editor's real export collector, served
 packed WebGL2 and loose WebGPU players, a uniform numeric prepared texture and
-four scenes. It checks texture/uniform/disabled pixels, repeated scene disposal,
+four scenes. It checked texture/uniform/disabled pixels, repeated scene disposal,
 GPU reservation recovery, reload and absence of external resource requests.
-Its results must be recorded separately from the in-editor GPU fixture.
 
 Both standalone cases passed at `06bc0b0a`. Prepared lighting accounted for
 5,657,940 managed GPU bytes (two LTC tables and one RGBA8 emission mip chain),

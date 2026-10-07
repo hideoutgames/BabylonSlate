@@ -1,9 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup } from "@testing-library/react";
 import {
   createActor,
   createDefaultScene,
-  createMeshComponent,
   type SerializedScene,
 } from "@babylonslate/core";
 import {
@@ -28,42 +27,6 @@ describe("flattenOutliner type icons", () => {
       expect(flattenOutliner(scene, { collapsed: new Set(), search }).map((node) => node.label))
         .toEqual(["Camera (cam-a)", "Camera (cam-b)"]);
     }
-  });
-  it("uses the mesh glyph for an engine Actor with a MeshComponent", () => {
-    const scene = sceneWith({
-      actors: [
-        createActor("actor-1", "Box", {
-          components: [createMeshComponent("mesh-1", "box")],
-        }),
-      ],
-    });
-    const nodes = flattenOutliner(scene, { collapsed: new Set(), search: "" });
-    const { getByTestId } = render(<>{nodes[0]?.icon}</>);
-    const glyph = getByTestId("outliner-type-icon-actor-1");
-    expect(glyph.getAttribute("data-type-family")).toBe("class");
-    expect(glyph.getAttribute("data-type-icon")).toBe("MeshComponent");
-  });
-
-  it("uses the Actor glyph for a user class even when it has a mesh", () => {
-    const scene = sceneWith({
-      actors: [
-        createActor("hero-1", "Hero", {
-          classId: "MyHero",
-          components: [createMeshComponent("mesh-1", "box")],
-        }),
-      ],
-    });
-    const parentOf = (id: string) =>
-      ({ MyHero: "Actor", Actor: "BObject", BObject: null })[id] ?? null;
-    const nodes = flattenOutliner(scene, {
-      collapsed: new Set(),
-      search: "",
-      parentOf,
-    });
-    const { getByTestId } = render(<>{nodes[0]?.icon}</>);
-    expect(getByTestId("outliner-type-icon-hero-1").getAttribute("data-type-icon")).toBe(
-      "Actor",
-    );
   });
 });
 

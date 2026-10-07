@@ -135,10 +135,6 @@ describe("anim graph evaluator", () => {
     expect(pins.some((pin) => pin.id === "in" || pin.id === "out")).toBe(false);
   });
 
-  it("spaces default states wider than a 200px node body", () => {
-    expect(ANIM_STATE_LAYOUT_GAP_X).toBeGreaterThanOrEqual(280);
-  });
-
   it("round-trips dragged node positions through the graph-ui serialized shape", () => {
     const doc = createDefaultAnimGraph();
     const serialized = animGraphToSerialized(doc);

@@ -1328,7 +1328,10 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
-  it("changeScene emits activeScene with the canonical guid when addressed by name", async () => {
+  it.each([
+    ["name", 'changescene scene="Level 2"'],
+    ["guid", "changescene scene-2"],
+  ])("changeScene emits activeScene with the canonical guid when addressed by %s", async (_by, consoleCommand) => {
     const level2: SerializedScene = {
       name: "Level 2",
       viewportMode: "3d",
@@ -1360,7 +1363,7 @@ describe("p7-play-scene-load", () => {
     );
     await runtime.realizePlayWorld();
     runtime.start();
-    runtime.executeConsoleCommand('changescene scene="Level 2"');
+    runtime.executeConsoleCommand(consoleCommand);
     await runtime.realizePlayWorld();
     expect(
       commands.filter((command) => command.type === "activeScene"),
@@ -1368,43 +1371,6 @@ describe("p7-play-scene-load", () => {
       { type: "activeScene", sceneAssetGuid: "scene-1", sceneLoadId: 1 },
       { type: "activeScene", sceneAssetGuid: "scene-2", sceneLoadId: 2 },
     ]);
-    runtime.stop();
-  });
-
-  it("changeScene emits activeScene when addressed by guid", async () => {
-    const level2: SerializedScene = {
-      name: "Level 2",
-      viewportMode: "3d",
-      settings: createDefaultSceneSettings(),
-      folders: [],
-      actors: [createActor("other", "Other")],
-    };
-    const commands: CommandMessage[] = [];
-    const runtime = createRuntimeFromLoad(
-      {
-        type: "load",
-        sceneAssetGuid: "scene-1",
-        scene: {
-          name: "Level 1",
-          viewportMode: "3d",
-          settings: createDefaultSceneSettings(),
-          folders: [],
-          actors: [createActor("hero", "Hero")],
-        },
-        scenes: [{ guid: "scene-2", scene: level2 }],
-      },
-      (command) => commands.push(command),
-    );
-    await runtime.realizePlayWorld();
-    runtime.start();
-    runtime.executeConsoleCommand("changescene scene-2");
-    await runtime.realizePlayWorld();
-    expect(
-      commands.some(
-        (command) =>
-          command.type === "activeScene" && command.sceneAssetGuid === "scene-2",
-      ),
-    ).toBe(true);
     runtime.stop();
   });
 

@@ -11,8 +11,11 @@ import {
   type SerializedGraph,
   type SerializedScene,
 } from "@babylonslate/core";
-import { OpfsStorageAdapter } from "@babylonslate/vfs";
+import { createDerivedStorage, OpfsStorageAdapter } from "@babylonslate/vfs";
+import { appendJournalLines } from "@babylonslate/assets";
+import { commandToJournalPayload, SetActorTransformCommand } from "@babylonslate/edit";
 import { createProjectAsset } from "../lib/create-project-asset";
+import { subscribeModelThumbnailJobs } from "../lib/model-thumbnail-queue";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import type { OpenDocument } from "../services/document-service";
 import { ProjectService } from "../services/project-service";
@@ -151,6 +154,69 @@ afterEach(async () => {
 });
 
 describe("DocumentProvider actions and route", () => {
+  it("loads a restored cold document before replaying its recovery journal", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    const original = openScene(MAIN_SCENE_ID);
+    const recovered = movedScene(original, 7);
+    await act(() => actions.saveAll());
+    const guid = documents().projectGuid!;
+    const listed = documents().listedProjects.find(project => project.label === "Stable")!;
+    await act(() => actions.forceCloseProject());
+
+    // Simulate an edit persisted by crash recovery, after the last saved layout.
+    const derived = await createDerivedStorage();
+    await appendJournalLines(derived, guid, [JSON.stringify({
+      v: 1, docId: MAIN_SCENE_ID, at: new Date().toISOString(),
+      command: commandToJournalPayload(new SetActorTransformCommand(
+        original.actors[0]!.id, original.actors[0]!.transform, recovered.actors[0]!.transform,
+      )),
+    })]);
+    await act(() => actions.openListedProject(listed));
+    expect(documents().openDocuments.find(doc => doc.id === MAIN_SCENE_ID)?.content).toBeNull();
+    expect(documents().recoveryAvailable).toBe(true);
+    await act(async () => { await actions.keepRecovery(); });
+    expect(openScene(MAIN_SCENE_ID).actors[0]!.transform.position).toEqual(recovered.actors[0]!.transform.position);
+    expect(documents().dirtyDocuments.map(doc => doc.id)).toContain(MAIN_SCENE_ID);
+    expect(documents().recoveryAvailable).toBe(false);
+  });
+
+  it("keeps unrequested scene, script, and resource payloads unread during selected Play collection", async () => {
+    const actions = await openProject();
+    const registry = documents().assetRegistry!;
+    await createScene(actions, "Deferred");
+    await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "Class", name: "DeferredClass" }));
+    for (const type of ["Water", "RenderTarget", "InputAction", "Audio", "ParticleEmitter", "Font", "DataDefinition", "Model"]) {
+      await registry.createAsset("project", `Deferred-${type}.babasset`, {
+        guid: `deferred-${type}`, type, name: `Deferred ${type}`, version: 1,
+        dependencies: [], payload: {},
+        chunks: [{ id: "source", kind: "source", mime: "application/octet-stream", data: new Uint8Array(128 * 1024) }],
+      });
+    }
+    const storage = registry.storageFor("project");
+    const before = storage.getReadMetrics!().actualBytesRead;
+    const required = new Set<string>();
+    expect(await actions.collectPlaySceneLibrary(required)).toEqual([]);
+    expect(await actions.collectPlayPreviewScripts(required)).toEqual({ bundles: [], diagnostics: [] });
+    expect(await actions.collectEditorUtilityScripts()).toEqual([]);
+    expect(await actions.collectPlayDataAssets(required)).toEqual([]);
+    expect(await actions.collectPlayInputAssets(required)).toEqual([]);
+    expect(await actions.collectPlayFontFaceEntries(required)).toEqual([]);
+    expect((await actions.collectPlayWaterContent(required)).size).toBe(0);
+    const targets = await actions.collectPlayRenderTargets(required);
+    expect(targets.renderTargets.size).toBe(0);
+    expect(targets.renderTargetTextures.size).toBe(0);
+    await actions.collectPlayAudio(required);
+    await actions.collectPlayParticles(required);
+    const thumbnails = vi.fn();
+    const unsubscribe = subscribeModelThumbnailJobs(thumbnails);
+    try {
+      expect(await actions.loadAssetThumbnail("deferred-Model")).toBeNull();
+      expect(thumbnails).not.toHaveBeenCalled();
+    } finally { unsubscribe(); }
+    expect(storage.getReadMetrics!().actualBytesRead).toBe(before);
+  });
+
   it.each(["delete", "replace"] as const)("repairs nested data defaults in open documents during Class %s using live and saved schemas", async (operation) => {
     const actions = await openProject();
     const registry = documents().assetRegistry!;

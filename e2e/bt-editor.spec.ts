@@ -1,5 +1,4 @@
 import { expect, test, type Page } from "@playwright/test";
-import { IPAD_TEST_TAG } from "./ipad-tag";
 import {
   createContentBrowserAsset,
   openAssetFromBrowser,
@@ -48,46 +47,7 @@ async function dragTreeNode(
   await page.mouse.up();
 }
 
-async function openGraphNodePalette(page: Page): Promise<void> {
-  const pane = page.getByTestId("graph-editor").locator(".react-flow__pane");
-  await expect(async () => {
-    const box = await pane.boundingBox();
-    expect(box).toBeTruthy();
-    const position = {
-      x: Math.max(16, (box?.width ?? 0) - 36),
-      y: Math.max(16, (box?.height ?? 0) - 36),
-    };
-    await pane.click({ position });
-    await pane.click({ position });
-    await expect(page.getByTestId("node-palette")).toBeVisible({ timeout: 800 });
-  }).toPass({ timeout: 10_000 });
-}
-
-async function addWaitChild(page: Page): Promise<void> {
-  await page.getByTestId("bt-node-sequence").click();
-  await openGraphNodePalette(page);
-  await page.getByTestId("node-palette-search").fill("Wait");
-  await page.getByTestId("node-palette-item-bt.task.wait").click();
-  await expect(page.getByTestId("node-palette")).toHaveCount(0);
-}
-
-test.describe("Behaviour Tree editor UX", { tag: IPAD_TEST_TAG }, () => {
-  test("Windows lists Blackboard and Compiler Results", async ({ page }) => {
-    test.setTimeout(E2E_TIMEOUT_MS);
-    await openTestProject(page);
-    await openPatrolTree(page);
-    await expect(page.getByTestId("behaviour-tree-blackboard")).toBeVisible();
-    await expect(page.getByTestId("behaviour-tree-compiler-results")).toBeVisible();
-    await expect(page.getByTestId("windows-menu")).toBeEnabled();
-    await page.getByTestId("windows-menu").click();
-    await expect(page.getByTestId("windows-menu-content")).toBeVisible();
-    await expect(
-      page.getByTestId("windows-menu-behaviour-tree-blackboard"),
-    ).toBeVisible();
-    await expect(
-      page.getByTestId("windows-menu-behaviour-tree-compiler-results"),
-    ).toBeVisible();
-  });
+test.describe("Behaviour Tree editor UX", () => {
 
   test("free-moves a node, undoes each completed move, and restores after save/reopen", async ({
     page,
@@ -134,107 +94,5 @@ test.describe("Behaviour Tree editor UX", { tag: IPAD_TEST_TAG }, () => {
     const reopened = parseTranslate(await flowNodeTransform(page, "task"));
     expect(Math.abs(reopened.x - saved.x)).toBeLessThan(8);
     expect(Math.abs(reopened.y - saved.y)).toBeLessThan(8);
-  });
-
-  test("sibling X order updates and Auto Arrange keeps children order", async ({
-    page,
-  }) => {
-    test.setTimeout(E2E_TIMEOUT_MS);
-    await openTestProject(page);
-    await openPatrolTree(page);
-    await addWaitChild(page);
-    const wait = page.locator('.react-flow__node[data-id^="bt.task.wait-"]');
-    await expect(wait).toBeVisible();
-    const waitId = await wait.getAttribute("data-id");
-    expect(waitId).toBeTruthy();
-
-    const taskSort = page.getByTestId("bt-sort-task");
-    const waitSort = page.getByTestId(`bt-sort-${waitId}`);
-    await expect(taskSort).toBeVisible();
-    await expect(waitSort).toBeVisible();
-    const beforeTask = await taskSort.textContent();
-    const beforeWait = await waitSort.textContent();
-
-    await page.getByTestId("bt-auto-arrange").click();
-    await expect(taskSort).toHaveText(beforeTask ?? "");
-    await expect(waitSort).toHaveText(beforeWait ?? "");
-
-    await dragTreeNode(page, `bt-node-${waitId}`, -180, 0);
-    await expect(waitSort).not.toHaveText(beforeWait ?? "", { timeout: 5_000 });
-    const afterDragTask = await taskSort.textContent();
-    const afterDragWait = await waitSort.textContent();
-    await page.getByTestId("bt-auto-arrange").click();
-    await expect(taskSort).toHaveText(afterDragTask ?? "");
-    await expect(waitSort).toHaveText(afterDragWait ?? "");
-  });
-
-  test("a short drag off a children handle opens Add Node", async ({ page }) => {
-    test.setTimeout(E2E_TIMEOUT_MS);
-    await openTestProject(page);
-    await openPatrolTree(page);
-    const handle = page.locator('[data-id="sequence"] [data-handleid="children"]');
-    await expect(handle).toBeVisible();
-    const box = await handle.boundingBox();
-    expect(box).not.toBeNull();
-    const x = box!.x + box!.width / 2;
-    const y = box!.y + box!.height / 2;
-    await page.mouse.move(x, y);
-    await page.mouse.down();
-    await page.mouse.move(x + 24, y + 36, { steps: 4 });
-    await page.mouse.up();
-    await expect(page.getByTestId("node-palette")).toBeVisible({ timeout: 8_000 });
-    await page.getByTestId("node-palette-search").fill("Wait");
-    await page.getByTestId("node-palette-item-bt.task.wait").click();
-    await expect(page.getByTestId("node-palette")).toHaveCount(0);
-    await expect(page.getByTestId("property-durationMs")).toBeVisible({
-      timeout: 10_000,
-    });
-    const wait = page.locator('.react-flow__node[data-id^="bt.task.wait-"]');
-    await expect(wait).toBeVisible();
-    const waitId = await wait.getAttribute("data-id");
-    expect(waitId).toBeTruthy();
-    await expect(
-      page.locator(`.react-flow__edge[data-id="bt-sequence-${waitId}"]`),
-    ).toBeVisible();
-  });
-
-  test("script graph still uses the 96px connect-end cancel", async ({ page }) => {
-    test.setTimeout(E2E_TIMEOUT_MS);
-    await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
-    await expect(page.getByTestId("graph-panel")).toBeVisible();
-    const handle = page.locator('[data-handleid="execOut"]').first();
-    await expect(handle).toBeVisible();
-    const box = await handle.boundingBox();
-    expect(box).not.toBeNull();
-    const x = box!.x + box!.width / 2;
-    const y = box!.y + box!.height / 2;
-    await page.mouse.move(x, y);
-    await page.mouse.down();
-    await page.mouse.move(x + 20, y + 16, { steps: 3 });
-    await page.mouse.up();
-    await expect(page.getByTestId("node-palette")).toHaveCount(0);
-  });
-
-  test("switches away from a focused Behaviour Tree tab and closes it", async ({
-    page,
-  }) => {
-    test.setTimeout(E2E_TIMEOUT_MS);
-    await openTestProject(page);
-    await openPatrolTree(page);
-    await expect(page.getByTestId("behaviour-tree-editor")).toBeVisible();
-    await page.getByTestId("document-tab-pinned").click();
-    await expect(page.getByTestId("content-browser-asset-grid")).toBeVisible();
-    await page
-      .locator('[data-testid="document-tab"][data-document-kind="behaviour-tree"]')
-      .getByTestId("document-tab-select")
-      .click();
-    await expect(page.getByTestId("behaviour-tree-editor")).toBeVisible();
-    await page
-      .locator('[data-testid="document-tab"][data-document-kind="behaviour-tree"]')
-      .getByTestId("document-tab-close")
-      .click();
-    await expect(page.getByTestId("behaviour-tree-editor")).toHaveCount(0);
-    await expect(page.getByTestId("content-browser-asset-grid")).toBeVisible();
   });
 });

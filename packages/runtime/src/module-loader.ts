@@ -1,3 +1,8 @@
+import { parse } from "acorn";
+
+/** Function constructor wrapper (two lines), then the strict directive. */
+export const COMPILED_MODULE_LINE_OFFSET = 3;
+
 export interface CompiledModuleExports {
   run?: (...args: unknown[]) => unknown;
   onTick?: (...args: unknown[]) => unknown;
@@ -5,59 +10,37 @@ export interface CompiledModuleExports {
 }
 
 /**
- * Load a compiled game script. Prefers blob-URL dynamic import; falls back to
- * `new Function` + module-shim when blob import fails (WKWebView spike path).
+ * Generated graphs export functions. The module shim keeps their functions
+ * collectable when source ownership ends; dynamic-import module records remain
+ * rooted in the browser realm even after their Blob URL is revoked.
  */
 export async function loadCompiledModule(
   source: string,
   label: string,
 ): Promise<CompiledModuleExports> {
-  const withUrl = source.includes("sourceURL=")
-    ? source
-    : `${source}\n//# sourceURL=babylonslate:///${label}.js\n`;
+  return loadViaFunctionShim(source, label);
+}
 
-  if (typeof URL !== "undefined" && typeof Blob !== "undefined") {
-    try {
-      const blob = new Blob([withUrl], { type: "text/javascript" });
-      const url = URL.createObjectURL(blob);
-      try {
-        const mod = (await import(
-          /* @vite-ignore */ url
-        )) as CompiledModuleExports;
-        return mod;
-      } finally {
-        URL.revokeObjectURL(url);
-      }
-    } catch {
-      // fall through to Function shim
+function loadViaFunctionShim(source: string, label: string): CompiledModuleExports {
+  const program = parse(source, { ecmaVersion: "latest", sourceType: "module" });
+  const names: string[] = [];
+  const exportOffsets: number[] = [];
+  for (const statement of program.body) {
+    if (statement.type === "ExportNamedDeclaration" && statement.declaration?.type === "FunctionDeclaration") {
+      names.push(statement.declaration.id.name);
+      exportOffsets.push(statement.start);
+    } else if (statement.type === "ExportNamedDeclaration" || statement.type === "ExportDefaultDeclaration" ||
+      statement.type === "ExportAllDeclaration" || statement.type === "ImportDeclaration") {
+      throw new Error(`Script ${label}: generated modules must export function declarations.`);
     }
   }
-
-  return loadViaFunctionShim(withUrl);
-}
-
-function loadViaFunctionShim(source: string): CompiledModuleExports {
-  const names = collectExportedFunctionNames(source);
-  const body = source.replace(/export\s+(async\s+)?function\s+/g, "$1function ");
-  const exports: CompiledModuleExports = {};
-  const module = { exports };
-  const assign = names
-    .map((name) => `exports[${JSON.stringify(name)}] = ${name};`)
-    .join("\n");
-  const fn = new Function(
-    "exports",
-    "module",
-    `${body}\n${assign}\nreturn module.exports;`,
-  );
-  return fn(exports, module) as CompiledModuleExports;
-}
-
-function collectExportedFunctionNames(source: string): string[] {
-  const names: string[] = [];
-  const re = /export\s+(?:async\s+)?function\s+(\w+)/g;
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(source))) {
-    names.push(match[1]!);
-  }
-  return names;
+  // Blank just the parsed export tokens: strings, comments, templates, regexp
+  // bodies, line numbers and all declaration columns remain untouched.
+  let body = source;
+  for (const start of exportOffsets.reverse()) body = `${body.slice(0, start)}      ${body.slice(start + 6)}`;
+  const members = names.map((name) => `[${JSON.stringify(name)}]: ${name}`).join(",");
+  // A final real directive supersedes previous source labels without rewriting
+  // authored text that happens to contain a sourceURL-looking template line.
+  const fn = new Function(`"use strict";\n${body}\nreturn {${members}};\n//# sourceURL=babylonslate:///${label}.js\n`);
+  return fn() as CompiledModuleExports;
 }

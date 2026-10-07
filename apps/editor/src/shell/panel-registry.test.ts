@@ -1,77 +1,67 @@
 import { describe, expect, it } from "vitest";
 import { panelComponents } from "./panel-registry";
-import { listDockWindows } from "./window-catalog";
+import { SCENE_MODES } from "./scene-document-layout";
+import {
+  listDockWindows,
+  type DockviewDocumentKind,
+  type DockWindowOptions,
+} from "./window-catalog";
+
+// `satisfies` makes the compiler reject a kind that is added to or removed from the catalog type.
+const KINDS = Object.keys({
+  scene: true,
+  "scene-layer": true,
+  graph: true,
+  enum: true,
+  structure: true,
+  "data-definition": true,
+  "data-tree": true,
+  "script-interface": true,
+  sprite: true,
+  "sprite-animation": true,
+  tileset: true,
+  tilemap: true,
+  material: true,
+  "material-function": true,
+  "material-instance": true,
+  "plugin-settings": true,
+  "anim-graph": true,
+  "behaviour-tree": true,
+  audio: true,
+  "save-game": true,
+  "input-action": true,
+  "input-axis": true,
+  "audio-mixer": true,
+  "audio-channel": true,
+  "sound-attenuation": true,
+  "particle-emitter": true,
+  "particle-graph": true,
+  "particle-system": true,
+  water: true,
+  "render-target": true,
+  "render-target-texture": true,
+  model: true,
+  skeleton: true,
+  animation: true,
+  "skybox-creator": true,
+  trace: true,
+  texture: true,
+} satisfies Record<DockviewDocumentKind, true>) as DockviewDocumentKind[];
+
+const OPTION_VARIANTS: DockWindowOptions[] = [
+  {},
+  { actorPrefab: false },
+  { sourceControl: true },
+  { animEditorMode: "stateMachine" },
+  { animEditorMode: "animationObject" },
+  ...SCENE_MODES.map((sceneMode) => ({ sceneMode })),
+];
 
 describe("panelComponents", () => {
-  it("registers Animation Graph dock panels", () => {
-    expect(panelComponents["anim-graph-graph"]).toBeTypeOf("function");
-    expect(panelComponents["anim-graph-variables"]).toBeTypeOf("function");
-    expect(panelComponents["anim-graph-details"]).toBeTypeOf("function");
-    expect(panelComponents["anim-graph-compiler-results"]).toBeTypeOf("function");
-    expect(panelComponents["anim-object-graph"]).toBeTypeOf("function");
-    expect(panelComponents["anim-object-variables"]).toBeTypeOf("function");
-    expect(panelComponents["anim-object-inspector"]).toBeTypeOf("function");
-  });
-
-  it("registers Behaviour Tree dock panels", () => {
-    expect(panelComponents["behaviour-tree-graph"]).toBeTypeOf("function");
-    expect(panelComponents["behaviour-tree-details"]).toBeTypeOf("function");
-    expect(panelComponents["behaviour-tree-blackboard"]).toBeTypeOf("function");
-    expect(panelComponents["behaviour-tree-compiler-results"]).toBeTypeOf(
-      "function",
-    );
-  });
-
-  it("registers imported Audio Preview, Details, and Clips docks", () => {
-    expect(panelComponents["audio-preview"]).toBeTypeOf("function");
-    expect(panelComponents["audio-details"]).toBeTypeOf("function");
-    expect(panelComponents["audio-clips"]).toBeTypeOf("function");
-  });
-
-  it("registers Audio Mixer, Channel, and Attenuation details docks", () => {
-    expect(panelComponents["audio-mixer-details"]).toBeTypeOf("function");
-    expect(panelComponents["audio-channel-details"]).toBeTypeOf("function");
-    expect(panelComponents["sound-attenuation-details"]).toBeTypeOf("function");
-  });
-
-  it("registers Particle Emitter and Particle System Preview and Details docks", () => {
-    expect(panelComponents["particle-emitter-preview"]).toBeTypeOf("function");
-    expect(panelComponents["particle-emitter-details"]).toBeTypeOf("function");
-    expect(panelComponents["particle-system-preview"]).toBeTypeOf("function");
-    expect(panelComponents["particle-system-details"]).toBeTypeOf("function");
-  });
-
-  it("registers every Particle Graph dock window", () => {
-    const registered: Record<string, unknown> = panelComponents;
-    const windows = listDockWindows("particle-graph");
-    expect(windows).toHaveLength(4);
-    for (const entry of windows) {
-      expect(registered[entry.component]).toBeTypeOf("function");
-    }
-  });
-
-  it("registers Model Preview, Colliders, and Details docks", () => {
-    expect(panelComponents["model-preview"]).toBeTypeOf("function");
-    expect(panelComponents["model-colliders"]).toBeTypeOf("function");
-    expect(panelComponents["model-details"]).toBeTypeOf("function");
-  });
-
-  it("registers Skeleton and Animation Preview and Details docks", () => {
-    expect(panelComponents["skeleton-preview"]).toBeTypeOf("function");
-    expect(panelComponents["skeleton-details"]).toBeTypeOf("function");
-    expect(panelComponents["animation-preview"]).toBeTypeOf("function");
-    expect(panelComponents["animation-details"]).toBeTypeOf("function");
-  });
-
-  it("registers Skybox Creator Preview, Cubemap, and Details docks", () => {
-    expect(panelComponents["skybox-creator-preview"]).toBeTypeOf("function");
-    expect(panelComponents["skybox-creator-cubemap"]).toBeTypeOf("function");
-    expect(panelComponents["skybox-creator-details"]).toBeTypeOf("function");
-  });
-
-  it("registers Trace Timeline, Snapshot, and Log docks", () => {
-    expect(panelComponents["trace-timeline"]).toBeTypeOf("function");
-    expect(panelComponents["trace-snapshot"]).toBeTypeOf("function");
-    expect(panelComponents["trace-log"]).toBeTypeOf("function");
+  it.each(KINDS)("registers a panel for every %s dock window", (kind) => {
+    const missing = OPTION_VARIANTS.flatMap((options) =>
+      listDockWindows(kind, options).map((window) => window.component),
+    ).filter((component) => !(component in panelComponents));
+    expect(missing).toEqual([]);
   });
 });
