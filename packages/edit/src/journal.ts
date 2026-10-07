@@ -50,6 +50,14 @@ import {
 } from "./commands/asset-document";
 import { createReplaceSceneCommandFromJson } from "./commands/replace-scene";
 import { createSetActorSuppressedComponentsCommandFromJson, createSetComponentMaterialInstanceCommandFromJson } from "./commands/scene-instance";
+import {
+  createReorderFolderCommandFromJson,
+  createSetActorClassCommandFromJson,
+  createSetActorPropertiesCommandFromJson,
+  createSetComponentClassCommandFromJson,
+  createSetComponentTransformPresenceCommandFromJson,
+  createSetSceneOverlayEditorCommandFromJson,
+} from "./commands/scene-fields";
 
 export interface JournalLine {
   v: 1;
@@ -258,6 +266,7 @@ const SUPERSEDING_COMMAND_TYPES = new Set([
   "graph.moveNode",
   "graph.setNodeData",
   "scene.setActorTransform",
+  "scene.setActorProperties",
   "scene.setComponentProperty",
   "scene.setComponentTransform",
   "scene.setSceneSetting",
@@ -321,6 +330,12 @@ export function registerGraphCommandRevivers(): void {
 export function registerSceneCommandRevivers(): void {
   registerCommandReviver("scene.setActorSuppressedComponents", createSetActorSuppressedComponentsCommandFromJson);
   registerCommandReviver("scene.setComponentMaterialInstance", createSetComponentMaterialInstanceCommandFromJson);
+  registerCommandReviver("scene.setActorProperties", createSetActorPropertiesCommandFromJson);
+  registerCommandReviver("scene.setActorClass", createSetActorClassCommandFromJson);
+  registerCommandReviver("scene.setComponentClass", createSetComponentClassCommandFromJson);
+  registerCommandReviver("scene.setComponentTransformPresence", createSetComponentTransformPresenceCommandFromJson);
+  registerCommandReviver("scene.reorderFolder", createReorderFolderCommandFromJson);
+  registerCommandReviver("scene.setOverlayEditor", createSetSceneOverlayEditorCommandFromJson);
   registerCommandReviver("scene.replace", createReplaceSceneCommandFromJson);
   registerCommandReviver("scene.setComponentLinkage", createSetComponentLinkageCommandFromJson);
   registerCommandReviver("scene.addActor", createAddActorCommandFromJson);

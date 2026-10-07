@@ -76,7 +76,7 @@ import {
   commandToJournalPayload,
   DEFAULT_EDIT_BYTE_BUDGET,
   diffGraphCommands,
-  diffSceneCommands,
+  planSceneChange,
   EditSession,
   journalRepathLine,
   journalDiscardLine,
@@ -3028,19 +3028,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
               graphs,
             }),
           );
-      const commands = diffSceneCommands(previous, intended);
+      // Deltas, or one whole-scene replacement for fields no delta covers:
+      // either way the edit reaches Undo and the journal.
+      const commands = planSceneChange(previous, intended);
       if (commands.length === 0) {
-        if (scenesEqualForPrefabSync(previous, intended)) {
-          return false;
-        }
-        documentService.updateScene(id, intended);
-        await notifyDocumentEdited({
-          scheduleDebouncedSave,
-          bump,
-          journal: async () => {},
-        });
-        void afterMutatingApply(sourceControlRef.current, doc.ref.path);
-        return true;
+        return false;
       }
       const result = editSessionRef.current.applyBatch(id, previous, commands)!;
       documentService.updateScene(id, result.doc);
@@ -3049,12 +3041,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       return true;
     },
     [
-      bump,
       classGraphsForPrefabSync,
       documentService,
       notifyAppliedCommand,
       projectService,
-      scheduleDebouncedSave,
     ],
   );
 
