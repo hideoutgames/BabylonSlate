@@ -19,6 +19,7 @@ import {
   DEFAULT_LOOP_COUNT,
   DEFAULT_PLAY_FRAME_CAP,
   DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
+  documentId,
   engineCommandBus,
   isErr,
   normalizeRenderingPipeline,
@@ -1587,11 +1588,11 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           diagnostics={blockedDiagnostics}
           onOpenChange={setPlayBlockedOpen}
           onNavigate={(d) => {
-            setFocusDiagnostic(d);
             const revealId = documentIdToRevealForDiagnostic(
               d,
               openDocuments.map((doc) => doc.id),
             );
+            setFocusDiagnostic(d, revealId ?? undefined);
             if (revealId) setActiveDocument(revealId);
             setPlayBlockedOpen(false);
           }}
@@ -1714,7 +1715,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
               graphId: entry.graphId ?? "",
               nodeId: nav.focusedNodeId || undefined,
               bodyLine: nav.bodyLine ?? entry.bodyLine,
-            });
+            }, nav.document ? documentId(nav.document) : undefined);
             if (nav.document) {
               void openDocument(nav.document);
             }

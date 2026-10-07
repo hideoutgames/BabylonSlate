@@ -55,6 +55,31 @@ describe("ValidationProvider", () => {
     expect(current.errorCount).toBe(1);
   });
 
+  it("carries an explicit navigation target and body line into its destination only", () => {
+    let current!: ReturnType<typeof useValidation>;
+    function Probe() { current = useValidation(); return null; }
+    const view = render(<ValidationProvider scopeKey="scene"><Probe /></ValidationProvider>);
+    const target: Diagnostic = { ...pairingWarning("Script failure"), graphId: "class-a", nodeId: "script", bodyLine: 12 };
+    const stale = current;
+    act(() => {
+      current.setDiagnostics([pairingWarning("Scene issue")]);
+      current.setFocusDiagnostic(target, "class-a");
+    });
+    // A matching node ID in the source document must not receive this focus.
+    expect(current.focusDiagnostic).toBeNull();
+    view.rerender(<ValidationProvider scopeKey="class-a"><Probe /></ValidationProvider>);
+    expect(current.diagnostics).toEqual([]);
+    expect(current.focusDiagnostic).toEqual(target);
+    // Completing the previous document's validation cannot erase the navigation.
+    act(() => { stale.setDiagnostics([pairingWarning("Old scene issue")]); stale.setFocusDiagnostic(null); });
+    expect(current.diagnostics).toEqual([]);
+    expect(current.focusDiagnostic?.bodyLine).toBe(12);
+    view.rerender(<ValidationProvider scopeKey="material"><Probe /></ValidationProvider>);
+    expect(current.focusDiagnostic).toBeNull();
+    view.rerender(<ValidationProvider scopeKey="class-a"><Probe /></ValidationProvider>);
+    expect(current.focusDiagnostic).toBeNull();
+  });
+
   it("keeps the published diagnostics when a panel recomputes an equal list", () => {
     const validation = renderValidation();
     act(() => validation().setDiagnostics([pairingWarning("Needs a collider.")]));

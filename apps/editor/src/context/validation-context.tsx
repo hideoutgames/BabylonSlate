@@ -5,7 +5,8 @@ type ValidationContextValue = {
   diagnostics: Diagnostic[];
   setDiagnostics: (d: Diagnostic[]) => void;
   focusDiagnostic: Diagnostic | null;
-  setFocusDiagnostic: (d: Diagnostic | null) => void;
+  /** A destination preserves explicit navigation across the next document switch. */
+  setFocusDiagnostic: (d: Diagnostic | null, destinationScopeKey?: string) => void;
   errorCount: number;
 };
 
@@ -42,13 +43,16 @@ export function ValidationProvider({ children, scopeKey }: { children: ReactNode
     generation: object;
     diagnostics: Diagnostic[];
     focusDiagnostic: Diagnostic | null;
+    focusScopeKey?: string;
   }>({ scopeKey, generation: {}, diagnostics: [], focusDiagnostic: null });
   // Reset before rendering consumers so an unrelated asset never inherits the
   // previous graph's errors. Captured setters from old async passes are ignored.
   if (state.scopeKey !== scopeKey) {
-    setState({ scopeKey, generation: {}, diagnostics: [], focusDiagnostic: null });
+    const focusDiagnostic = state.focusScopeKey === scopeKey ? state.focusDiagnostic : null;
+    setState({ scopeKey, generation: {}, diagnostics: [], focusDiagnostic, focusScopeKey: scopeKey });
   }
-  const { diagnostics, focusDiagnostic, generation } = state;
+  const { diagnostics, generation } = state;
+  const focusDiagnostic = state.focusScopeKey === scopeKey ? state.focusDiagnostic : null;
   const setDiagnostics = useCallback((next: Diagnostic[]) => {
     setState((current) =>
       current.generation !== generation || sameDiagnostics(current.diagnostics, next)
@@ -56,9 +60,13 @@ export function ValidationProvider({ children, scopeKey }: { children: ReactNode
         : { ...current, diagnostics: next },
     );
   }, [generation]);
-  const setFocusDiagnostic = useCallback((next: Diagnostic | null) => {
-    setState((current) => current.generation !== generation || current.focusDiagnostic === next
-      ? current : { ...current, focusDiagnostic: next });
+  const setFocusDiagnostic = useCallback((next: Diagnostic | null, destinationScopeKey?: string) => {
+    setState((current) => {
+      if (current.generation !== generation) return current;
+      const focusScopeKey = destinationScopeKey ?? current.scopeKey;
+      if (current.focusDiagnostic === next && current.focusScopeKey === focusScopeKey) return current;
+      return { ...current, focusDiagnostic: next, focusScopeKey };
+    });
   }, [generation]);
   const value = useMemo(
     () => ({
