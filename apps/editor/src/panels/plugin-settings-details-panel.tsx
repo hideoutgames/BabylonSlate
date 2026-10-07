@@ -23,7 +23,11 @@ import {
   FieldSet,
 } from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useRegistryState,
+  useOpenDocument,
+} from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { editorUtilityObjectClassEntries } from "../lib/editor-utility-classes";
 import { PLUGIN_ICON_OPTIONS, resolvePluginIcon } from "../lib/plugin-icons";
@@ -35,14 +39,10 @@ import {
 export function PluginSettingsDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const {
-    openDocuments,
-    applyAssetDocumentChange,
-    assetRegistry,
-    pluginDescriptors,
-  } = useDocuments();
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const { assetRegistry, pluginDescriptors } = useRegistryState();
   const [utilityPick, setUtilityPick] = useState(false);
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const doc = useOpenDocument(documentId);
   const descriptor = pluginDescriptors.find(
     (plugin) => plugin.settingsPath === doc?.ref.path,
   );

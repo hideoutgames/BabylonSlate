@@ -88,8 +88,14 @@ import {
   type TilemapPayload,
   type TilesetPayload,
 } from "@babylonslate/assets";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useOpenDocument,
+  useProjectState,
+  useRegistryState,
+} from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { useOptionalTilemapEditing } from "../context/tilemap-editing-context";
 import {
   TilesetPayloadLoader,
@@ -119,8 +125,8 @@ const TOOL_ITEM = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
 export function TilemapPaintPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange } = useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const doc = useOpenDocument(documentId);
   const payload = (doc?.content ?? {}) as Record<string, unknown>;
   return (
     <PanelFrame data-testid="tilemap-paint-panel">
@@ -137,8 +143,8 @@ export function TilemapPaintPanel(_props: IDockviewPanelProps) {
 export function TilemapPalettePanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange } = useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const doc = useOpenDocument(documentId);
   const payload = (doc?.content ?? {}) as Record<string, unknown>;
   return (
     <PanelFrame data-testid="tilemap-palette-panel">
@@ -155,8 +161,8 @@ export function TilemapPalettePanel(_props: IDockviewPanelProps) {
 export function TilemapDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange } = useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const doc = useOpenDocument(documentId);
   const payload = (doc?.content ?? {}) as Record<string, unknown>;
   return (
     <PanelFrame data-testid="tilemap-details-panel">
@@ -186,7 +192,8 @@ export function TilemapDetails({
     tilemap.layers[0]?.id ?? "layer-1",
   );
   const editing = useOptionalTilemapEditing();
-  const { projectDocument, loadAssetDocument } = useDocuments();
+  const { loadAssetDocument } = useDocumentActions();
+  const { projectDocument } = useProjectState();
   const assets = useRegistryPickerAssets();
   const sortingLayers = projectDocument?.settings.twoD.sortingLayers ?? [
     "Background",
@@ -507,7 +514,7 @@ export function TilemapPalette({
   const editing = useOptionalTilemapEditing();
   const [query, setQuery] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
-  const { loadAssetDocument } = useDocuments();
+  const { loadAssetDocument } = useDocumentActions();
   const atlases = useTilesetAtlases(payloads);
   const assets = useRegistryPickerAssets();
   const needle = query.trim().toLowerCase();
@@ -696,12 +703,12 @@ export function TilemapPaint({
   const shown = strokePreview ?? tilemap;
   const viewRef = useRef({ pan, cellSize });
   viewRef.current = { pan, cellSize };
-  const { loadAssetDocument } = useDocuments();
+  const { loadAssetDocument } = useDocumentActions();
   const atlases = useTilesetAtlases(payloads);
   const layer =
     tilemap.layers.find((entry) => entry.id === layerId) ?? tilemap.layers[0];
   const assets = useRegistryPickerAssets();
-  const { projectDocument } = useDocuments();
+  const { projectDocument } = useProjectState();
   const sortingLayers = projectDocument?.settings.twoD.sortingLayers ?? DEFAULT_SORTING_LAYERS;
   const decoded = decodeTileGid(tilemap, selectedGid, payloads);
   const localTileId = decoded?.localId ?? selectedGid;
@@ -1265,7 +1272,7 @@ function selectedTileGid(
 
 /** Picker rows for every indexed asset, rebuilt when the registry changes rather than per edit. */
 function useRegistryPickerAssets() {
-  const { assetRegistry, registryEpoch } = useDocuments();
+  const { assetRegistry, registryEpoch } = useRegistryState();
   return useMemo(() => {
     void registryEpoch;
     return (assetRegistry?.list() ?? []).map((asset) => ({
@@ -1277,6 +1284,8 @@ function useRegistryPickerAssets() {
   }, [assetRegistry, registryEpoch]);
 }
 
+const TILESET_KINDS = ["tileset"] as const;
+
 /**
  * Payloads of the Tilesets `tilemap` references. A Tilemap document's panels
  * share its provider's loader; a panel rendered without one keeps its own.
@@ -1284,17 +1293,19 @@ function useRegistryPickerAssets() {
 function useLoadedTilesets(
   tilemap: TilemapPayload,
 ) {
-  const { assetRegistry, loadAssetDocument, openDocuments } = useDocuments();
+  const { loadAssetDocument } = useDocumentActions();
+  const { assetRegistry } = useRegistryState();
+  const tilesetDocuments = useOpenDocumentsOfKinds(TILESET_KINDS);
   const sharedLoader = useOptionalTilemapEditing()?.tilesetLoader;
   const [ownLoader] = useState(() => new TilesetPayloadLoader());
   const loader = sharedLoader ?? ownLoader;
   const resolved = resolveTilesetSources(
     tilemapTilesetGuids(tilemap),
     assetRegistry,
-    openDocuments,
+    tilesetDocuments,
   );
-  // Every document edit publishes a new openDocuments list. Keep the same
-  // sources, and skip the load effect, until a referenced Tileset changes.
+  // Every Tileset edit publishes a new list. Keep the same sources, and skip
+  // the load effect, until a referenced Tileset changes.
   const [sources, setSources] = useState(resolved);
   if (!sameTilesetSources(sources, resolved)) setSources(resolved);
   useEffect(() => {
@@ -1311,7 +1322,8 @@ function useLoadedTilesets(
 function useTilesetAtlases(
   payloads: ReadonlyMap<string, TilesetPayload>,
 ): ReadonlyMap<string, HTMLImageElement> {
-  const { assetRegistry, readAssetChunk } = useDocuments();
+  const { readAssetChunk } = useDocumentActions();
+  const { assetRegistry } = useRegistryState();
   const [images, setImages] = useState<ReadonlyMap<string, HTMLImageElement>>(
     new Map(),
   );

@@ -29,7 +29,13 @@ import {
   shouldCompressTexture,
   type AreaEmissionProgress,
 } from "@babylonslate/assets";
-import { useDocumentActions, useDocuments } from "../context/document-context";
+import { documentId } from "@babylonslate/core";
+import {
+  useDocumentActions,
+  useOpenDocument,
+  useRegistryState,
+  useSourceControl,
+} from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import {
   applyTextureCompressionQualityChange,
@@ -83,8 +89,9 @@ function useTextureAlignmentStale(
 
 function useTextureDocument() {
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange, assetRegistry } = useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const { assetRegistry } = useRegistryState();
+  const doc = useOpenDocument(documentId);
   const path = doc?.ref.path ?? "";
   const indexed = assetRegistry?.getByPath(path);
   return {
@@ -334,7 +341,18 @@ export function TextureDetails({
   /** `mergeKey` groups one scrub's edits into one undo entry. */
   onChange: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
-  const { retryTextureEncoding, textureAlignmentStale, textureUsageBlockedReason, prepareAreaEmission, assetRegistry, registryEpoch } = useDocuments();
+  const {
+    retryTextureEncoding,
+    textureAlignmentStale,
+    textureUsageBlockedReason,
+    prepareAreaEmission,
+  } = useDocumentActions();
+  const { assetRegistry, registryEpoch } = useRegistryState();
+  // `textureUsageBlockedReason` reads source control locks and whether this
+  // Texture's tab is open, so re-render when either changes.
+  useSourceControl();
+  const texturePath = guid ? assetRegistry?.getByGuid(guid)?.path : undefined;
+  useOpenDocument(texturePath ? documentId({ kind: "texture", path: texturePath }) : null);
   const alignmentStale = useTextureAlignmentStale(guid, payload, textureAlignmentStale, registryEpoch);
   // A re-encode rewrites the file: not while it is read-only, such as under
   // another user's lock (the tab's banner offers Edit Anyway).

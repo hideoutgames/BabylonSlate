@@ -16,7 +16,11 @@ import {
   type ParticleGraphDocument,
   type ParticleGraphValidationContext,
 } from "@babylonslate/particle-graph";
-import { useDocuments } from "./document-context";
+import {
+  useDocumentActions,
+  useRegistryState,
+  useOpenDocument,
+} from "./document-context";
 import { isMaterialAssetType, materialDomainsFromAssets } from "../lib/content-browser-helpers";
 import {
   MATERIAL_DOCUMENT_KINDS,
@@ -115,9 +119,9 @@ export function ParticleGraphEditingProvider({
   documentId: string;
   children: ReactNode;
 }) {
-  const { openDocuments, assetRegistry, registryEpoch, applyAssetDocumentChange } =
-    useDocuments();
-  const content = openDocuments.find((entry) => entry.id === documentId)?.content;
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const { assetRegistry, registryEpoch } = useRegistryState();
+  const content = useOpenDocument(documentId)?.content;
   const document = useMemo(
     () => normalizeParticleGraphDocument(content ?? {}),
     [content],

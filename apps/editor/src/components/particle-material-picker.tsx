@@ -1,6 +1,10 @@
 import { AssetPicker } from "@babylonslate/editor-kit";
-import { useDocuments } from "../context/document-context";
+import { useRegistryState } from "../context/document-context";
 import { isParticleMaterialForPicker } from "../lib/content-browser-helpers";
+import {
+  MATERIAL_DOCUMENT_KINDS,
+  useOpenDocumentsOfKinds,
+} from "../lib/use-open-documents-of-kinds";
 
 /**
  * Particle-domain Materials only; an open Material tab's domain wins over its header.
@@ -17,9 +21,10 @@ export function ParticleMaterialPicker({
   onPick: (guid: string | null) => void;
   testId: string;
 }) {
-  const { assetRegistry, openDocuments } = useDocuments();
+  const { assetRegistry } = useRegistryState();
+  const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
   const assets = (assetRegistry?.list() ?? [])
-    .filter((asset) => isParticleMaterialForPicker(asset, openDocuments ?? []))
+    .filter((asset) => isParticleMaterialForPicker(asset, materialDocuments))
     .map((asset) => ({
       guid: asset.header.guid,
       name: asset.header.name,

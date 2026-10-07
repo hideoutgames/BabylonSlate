@@ -2,14 +2,18 @@ import { useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { normalizeRenderTargetPayload, normalizeRenderTargetTexturePayload, RENDER_TARGET_MODES, RENDER_TARGET_MODE_LABELS } from "@babylonslate/core";
 import { AssetPicker, PanelFrame, PropertyGrid, assetRowIdentity, type PropertyRow } from "@babylonslate/editor-kit";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useRegistryState,
+  useOpenDocument,
+} from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 
 export function RenderTargetDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange } = useDocuments();
-  const target = normalizeRenderTargetPayload(openDocuments.find((entry) => entry.id === documentId)?.content);
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const target = normalizeRenderTargetPayload(useOpenDocument(documentId)?.content);
   /** `field` marks a continuous edit whose scrub is one undo step. */
   const commit = (patch: Record<string, unknown>, field?: string) => {
     const next = { ...normalizeRenderTargetPayload({ ...target, ...patch }) };
@@ -35,9 +39,10 @@ export function RenderTargetDetailsPanel(_props: IDockviewPanelProps) {
 export function RenderTargetTextureDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange, assetRegistry } = useDocuments();
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const { assetRegistry } = useRegistryState();
   const [picking, setPicking] = useState(false);
-  const texture = normalizeRenderTargetTexturePayload(openDocuments.find((entry) => entry.id === documentId)?.content);
+  const texture = normalizeRenderTargetTexturePayload(useOpenDocument(documentId)?.content);
   const assets = (assetRegistry?.list() ?? []).filter((entry) => entry.header.type === "RenderTarget");
   const selected = assets.find((entry) => entry.header.guid === texture.renderTargetGuid);
   const commit = (renderTargetGuid: string | null) => {

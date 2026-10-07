@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import type { NavMeshGenerateSettings } from "@babylonslate/navigation";
-import { useDocuments } from "./document-context";
+import { useDocumentActions, useProjectState } from "./document-context";
 import { useDocumentWorkspace } from "./document-workspace-context";
 import { NavBakeDialog } from "../components/nav-bake-dialog";
 import {
@@ -49,24 +49,21 @@ export type NavBakeContextValue = {
 const NavBakeContext = createContext<NavBakeContextValue | null>(null);
 
 export function NavBakeProvider({ children }: { children: ReactNode }) {
-  const {
-    openDocuments,
-    withSceneWrite,
-    collectPlayTilemapContent,
-    projectDocument,
-  } = useDocuments();
+  const { getOpenDocuments, withSceneWrite, collectPlayTilemapContent } =
+    useDocumentActions();
+  const { projectDocument } = useProjectState();
   const { documentId } = useDocumentWorkspace();
   // Latest inputs for startBake and the Save flush, so neither changes (nor
-  // re-registers) on every document edit.
+  // re-registers) on every document edit. Open documents are read when they run.
   const latestRef = useRef({
-    openDocuments,
+    getOpenDocuments,
     documentId,
     projectDocument,
     withSceneWrite,
     collectPlayTilemapContent,
   });
   latestRef.current = {
-    openDocuments,
+    getOpenDocuments,
     documentId,
     projectDocument,
     withSceneWrite,
@@ -87,12 +84,12 @@ export function NavBakeProvider({ children }: { children: ReactNode }) {
     async (properties: Record<string, unknown>, admittedWriter?: ProjectSceneWriter) => {
       const bake = async ({ writeSceneNavmeshChunk }: ProjectSceneWriter) => {
         const {
-          openDocuments,
+          getOpenDocuments,
           documentId,
           projectDocument,
           collectPlayTilemapContent,
         } = latestRef.current;
-        const doc = openDocuments.find((entry) => entry.id === documentId);
+        const doc = getOpenDocuments().find((entry) => entry.id === documentId);
         if (!doc || doc.ref.kind !== "scene" || !doc.content) {
           const message = "Open a scene before baking a navmesh.";
           recordNavBakeSaveResult({
@@ -194,8 +191,8 @@ export function NavBakeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     return registerNavBakeSaveFlush(async (writer) => {
-      const { openDocuments, documentId } = latestRef.current;
-      const doc = openDocuments.find((entry) => entry.id === documentId);
+      const { getOpenDocuments, documentId } = latestRef.current;
+      const doc = getOpenDocuments().find((entry) => entry.id === documentId);
       if (!doc || doc.ref.kind !== "scene" || !doc.content) return;
       const scene = doc.content as SerializedScene;
       for (const properties of navMeshAutoBakeProperties(scene)) {

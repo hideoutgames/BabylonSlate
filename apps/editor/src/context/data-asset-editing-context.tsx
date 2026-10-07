@@ -1,7 +1,12 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { buildDataTreeIndex, createDataTreeEntry, isDataTreeAsset, type DataTreeAsset, type DataTreeEntry, type DataTreeIndex } from "@babylonslate/core";
 import { createDataEntryForDefinition, reconcileDataEntry, validateDataDefinition, validateDataEntry, type DataValidationIssue } from "@babylonslate/scripting";
-import { useDocuments } from "./document-context";
+import {
+  useDocumentActions,
+  useRegistryState,
+  useSourceControl,
+  useOpenDocument,
+} from "./document-context";
 import { useDocumentWorkspace } from "./document-workspace-context";
 import { useDataCatalog } from "../lib/use-data-catalog";
 import { duplicateBaseName } from "../lib/scene-actor-names";
@@ -31,16 +36,18 @@ function descendantIds(index: DataTreeIndex, id: string): Set<string> {
 
 function useDataTreeState() {
   const { documentId } = useDocumentWorkspace();
-  const documents = useDocuments();
+  const documents = useDocumentActions();
+  const { assetRegistry } = useRegistryState();
+  const { sourceControl } = useSourceControl();
   const catalog = useDataCatalog();
   const { assets, byGuid, types, schemas } = catalog;
   const definitions = useMemo(() => new Map(types.dataDefinitions.map((entry) => [entry.guid, entry])), [types]);
-  const doc = documents.openDocuments.find((entry) => entry.id === documentId);
+  const doc = useOpenDocument(documentId);
   const tree = isDataTreeAsset(doc?.content) ? doc.content : null;
   const hierarchy = useMemo(() => tree ? buildDataTreeIndex(tree) : null, [tree]);
   const index = hierarchy?.index ?? null;
   const indexed = assets.find((asset) => asset.path === doc?.ref.path);
-  const assetReadOnly = Boolean(indexed && documents.assetRegistry?.getRoot(indexed.rootId)?.readOnly) || Boolean(doc && documents.sourceControl.isDocumentReadOnly(doc.ref.path));
+  const assetReadOnly = Boolean(indexed && assetRegistry?.getRoot(indexed.rootId)?.readOnly) || Boolean(doc && sourceControl.isDocumentReadOnly(doc.ref.path));
   const readOnly = assetReadOnly || !index;
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);

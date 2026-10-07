@@ -14,7 +14,7 @@ import {
   PlusIcon,
   Trash2Icon,
 } from "lucide-react";
-import { useDocuments } from "../context/document-context";
+import { useDocumentActions, useOpenDocument } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useTypeAssetEditing } from "../context/type-asset-editing-context";
 import { IconActionButton } from "../components/icon-action-button";
@@ -38,9 +38,9 @@ import {
 export function TypeMembersPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange } = useDocuments();
+  const { applyAssetDocumentChange } = useDocumentActions();
   const { selectedMemberId, setSelectedMemberId } = useTypeAssetEditing();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const doc = useOpenDocument(documentId);
   const payload = (doc?.content ?? {}) as Record<string, unknown>;
   const kind = doc?.ref.kind;
   const selectedIndex = parseMemberIndex(selectedMemberId);

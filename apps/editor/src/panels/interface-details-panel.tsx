@@ -6,7 +6,12 @@ import {
   PropertyGrid,
   type PinListRow,
 } from "@babylonslate/editor-kit";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useRegistryState,
+  useOpenDocument,
+} from "../context/document-context";
+import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useTypeAssetEditing } from "../context/type-asset-editing-context";
 import { patchScriptInterfaceMethod } from "../lib/asset-settings";
@@ -21,13 +26,18 @@ import {
   pinKey,
 } from "../lib/type-asset-payload";
 
+/** Open Structure, Enum and Data Definition tabs override their saved types. */
+const TYPE_KINDS = ["structure", "enum", "data-definition"] as const;
+
 export function InterfaceDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange, assetRegistry } = useDocuments();
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const { assetRegistry } = useRegistryState();
+  const typeDocuments = useOpenDocumentsOfKinds(TYPE_KINDS);
   const { selectedMemberId, selectedPinId, setSelectedPinId } =
     useTypeAssetEditing();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const doc = useOpenDocument(documentId);
   const asset = asScriptInterfaceAsset(
     (doc?.content ?? {}) as Record<string, unknown>,
   );
@@ -94,7 +104,7 @@ export function InterfaceDetailsPanel(_props: IDockviewPanelProps) {
           typeAssets={typeAssetPickerEntries(
             collectGraphTypeAssets({
               assets: assetRegistry?.list() ?? [],
-              openDocuments,
+              openDocuments: typeDocuments,
             }),
           )}
           onChange={(nextRows) => {

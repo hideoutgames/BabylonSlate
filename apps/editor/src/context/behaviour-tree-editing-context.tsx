@@ -11,7 +11,7 @@ import {
   createDefaultBehaviourTree,
   parseBehaviourTreeDocument,
 } from "@babylonslate/behaviour-tree";
-import { useDocuments } from "./document-context";
+import { useOpenDocument } from "./document-context";
 import { useDocumentWorkspace } from "./document-workspace-context";
 
 export type BehaviourTreeAttachmentCatalog = "decorator" | "service";
@@ -42,8 +42,7 @@ export function BehaviourTreeEditingProvider({
   children: ReactNode;
 }) {
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments } = useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const doc = useOpenDocument(documentId);
   const tree = asTree(
     (doc?.content && typeof doc.content === "object"
       ? (doc.content as Record<string, unknown>)

@@ -1,16 +1,24 @@
 import { useEffect, useState } from "react";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useProjectState,
+  useRegistryState,
+} from "../context/document-context";
 import type { PlayAudioLibrary } from "./play-audio";
+import { useOpenDocumentsOfKinds } from "./use-open-documents-of-kinds";
+
+const AUDIO_DRAFT_KINDS = ["audio", "sound-attenuation"] as const;
 
 /** Selection helpers need audio metadata only; source clips remain unloaded. */
 export function useEditorAudioDebug(enabled: boolean): PlayAudioLibrary | undefined {
-  const { collectPlayAudio, openDocuments, projectDocument, registryEpoch } = useDocuments();
+  const { collectPlayAudio } = useDocumentActions();
+  const { projectDocument } = useProjectState();
+  const { registryEpoch } = useRegistryState();
+  // Only audio drafts reload the metadata (and re-render this hook's caller);
+  // registryEpoch covers saved, imported and deleted assets.
+  const audioDocuments = useOpenDocumentsOfKinds(AUDIO_DRAFT_KINDS);
   const [library, setLibrary] = useState<PlayAudioLibrary>();
-  // Scene/gizmo changes also replace openDocuments. Only audio drafts should
-  // reload the metadata; registryEpoch covers saved, imported and deleted assets.
-  const draftKey = JSON.stringify(openDocuments
-    .filter((doc) => doc.ref.kind === "audio" || doc.ref.kind === "sound-attenuation")
-    .map((doc) => [doc.id, doc.content]));
+  const draftKey = JSON.stringify(audioDocuments.map((doc) => [doc.id, doc.content]));
   // collectPlayAudio keeps its identity and reads the project's mixer when it
   // runs, so a Project Settings mixer change must reload the metadata itself.
   const audioMixerGuid = projectDocument?.settings.audio.audioMixerGuid ?? null;

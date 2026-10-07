@@ -71,7 +71,11 @@ import {
   SquareIcon,
   type LucideIcon,
 } from "lucide-react";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useOpenDocument,
+  useRegistryState,
+} from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useMaterialEditing } from "../context/material-editing-context";
 
@@ -197,8 +201,8 @@ function useMaterialDocument(): {
   commit: (next: MaterialDocument, mergeKey?: string) => void;
 } {
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange } = useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const doc = useOpenDocument(documentId);
   const document = useMemo(
     () => normalizeMaterialDocument(doc?.content ?? {}),
     [doc?.content],
@@ -222,8 +226,8 @@ function useMaterialFunctionDocument(): {
   commit: (next: MaterialFunctionDocument, mergeKey?: string) => void;
 } {
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange } = useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const doc = useOpenDocument(documentId);
   const document = useMemo(
     () => normalizeMaterialFunctionDocument(doc?.content ?? {}),
     [doc?.content],
@@ -242,7 +246,7 @@ function useMaterialFunctionDocument(): {
 }
 
 function useTextureExists(): (guid: string) => boolean {
-  const { assetRegistry } = useDocuments();
+  const { assetRegistry } = useRegistryState();
   return useCallback(
     (guid: string) => {
       const header = assetRegistry?.getByGuid(guid)?.header;
@@ -493,7 +497,7 @@ export function MaterialPreviewSurface({
   const customPickNeedsFallbackRef = useRef(false);
   const customPickCommittedRef = useRef(false);
   const [meshPickOpen, setMeshPickOpen] = useState(false);
-  const { assetRegistry } = useDocuments();
+  const { assetRegistry } = useRegistryState();
 
   useEffect(() => {
     editing.attachPreviewCanvas(canvasRef.current);
@@ -621,8 +625,7 @@ export function MaterialPreviewSurface({
 export function MaterialDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments } = useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const doc = useOpenDocument(documentId);
   const isFunction = doc?.ref.kind === "material-function";
   return isFunction ? (
     <MaterialFunctionDetails />
@@ -779,7 +782,7 @@ function MaterialNodeDetails<T extends MaterialGraphDocument>({
   commit: (next: T, mergeKey?: string) => void;
   selectedNodeId: string | null;
 }) {
-  const { assetRegistry, registryEpoch } = useDocuments();
+  const { assetRegistry, registryEpoch } = useRegistryState();
   const editing = useMaterialEditing();
   const [pickOpen, setPickOpen] = useState(false);
   const node = document.nodes.find((entry) => entry.id === selectedNodeId);
@@ -973,7 +976,7 @@ function MaterialFunctionPicker<T extends MaterialGraphDocument>({
   document: T;
   commit: (next: T) => void;
 }) {
-  const { assetRegistry, registryEpoch } = useDocuments();
+  const { assetRegistry, registryEpoch } = useRegistryState();
   const [open, setOpen] = useState(false);
   const current = document.nodes.find((entry) => entry.id === node);
   const guid =
@@ -1168,10 +1171,9 @@ export function MaterialFunctionInterfacePanel(_props: IDockviewPanelProps) {
 export function MaterialCompilerResultsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments } = useDocuments();
   const editing = useMaterialEditing();
   const textureExists = useTextureExists();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const doc = useOpenDocument(documentId);
   const isFunction = doc?.ref.kind === "material-function";
 
   const diagnostics = useMemo(() => {

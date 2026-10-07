@@ -31,7 +31,7 @@ const GRAPH_PATH = "assets/Embers.particlegraph.babasset";
 
 const harness = vi.hoisted(() => ({
   loadAssetDocument: vi.fn(),
-  openDocuments: [] as Array<{ ref: { path: string }; content: unknown }>,
+  openDocuments: [] as Array<{ ref: { kind: string; path: string }; content: unknown }>,
   services: [] as Array<{
     setLibrary: ReturnType<typeof vi.fn>;
     updateLibrary: ReturnType<typeof vi.fn>;
@@ -98,7 +98,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
 afterEach(() => {
   cleanup();
   harness.loadAssetDocument.mockReset();
-  harness.openDocuments.length = 0;
+  harness.openDocuments = [];
   harness.services.length = 0;
 });
 
@@ -255,11 +255,12 @@ describe("ParticleSystemPreview", () => {
 
   it("keeps playing a graph's last valid build while its open tab has errors", async () => {
     const payload = { ...system, emitterGuids: ["pg-1"] };
-    harness.openDocuments.push({ ref: { path: GRAPH_PATH }, content: graph() });
+    // Each edit publishes a new list, as the provider does for a new revision.
+    harness.openDocuments = [{ ref: { kind: "particle-graph", path: GRAPH_PATH }, content: graph() }];
     const view = renderPreview(payload);
     await waitFor(() => expect(harness.services).toHaveLength(1));
 
-    harness.openDocuments[0] = { ref: { path: GRAPH_PATH }, content: brokenGraph() };
+    harness.openDocuments = [{ ref: { kind: "particle-graph", path: GRAPH_PATH }, content: brokenGraph() }];
     view.rerender(
       <ParticleSystemPreview payload={payload as unknown as Record<string, unknown>} />,
     );
@@ -275,7 +276,7 @@ describe("ParticleSystemPreview", () => {
       expect(entry?.kind === "graph" && entry.document.edges.length).toBe(graph().edges.length);
     }
 
-    harness.openDocuments[0] = { ref: { path: GRAPH_PATH }, content: graph(512) };
+    harness.openDocuments = [{ ref: { kind: "particle-graph", path: GRAPH_PATH }, content: graph(512) }];
     view.rerender(
       <ParticleSystemPreview payload={payload as unknown as Record<string, unknown>} />,
     );

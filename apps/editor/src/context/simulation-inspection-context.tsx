@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, useSyncExternalStore, t
 import type { IDockviewPanelProps } from "dockview-react";
 import { SimulationInspectionStore } from "../services/simulation-inspection-store";
 import { useDocumentWorkspace } from "./document-workspace-context";
-import { useDocuments } from "./document-context";
+import { useActiveDocumentId } from "./document-context";
 
 const SimulationInspectionContext = createContext<SimulationInspectionStore | null>(null);
 export function SimulationInspectionProvider({ children }: { children: ReactNode }) {
@@ -13,7 +13,7 @@ export function SimulationInspectionProvider({ children }: { children: ReactNode
 export function useSimulationInspectionStore(): SimulationInspectionStore | null { return useContext(SimulationInspectionContext); }
 export function useSimulationInspection(store: SimulationInspectionStore, props: IDockviewPanelProps, kind: "identities" | "selection") {
   const { documentId } = useDocumentWorkspace();
-  const { activeDocumentId } = useDocuments();
+  const activeDocumentId = useActiveDocumentId();
   const [visible, setVisible] = useState(props.api?.isVisible ?? true);
   useEffect(() => {
     if (!props.api) return;

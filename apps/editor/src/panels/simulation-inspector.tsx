@@ -4,7 +4,7 @@ import type { RuntimeInspectorValue, RuntimeObjectIdentity, RuntimePropertyDescr
 import type { MaterialParameterValue, SerializedTransform, ViewportMode } from "@babylonslate/core";
 import { AssetPicker, EditorReadOnlyContext, PanelFrame, PropertyGrid, SearchInput, type AssetPickerEntry, type PropertyRow } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
-import { useDocuments } from "../context/document-context";
+import { useRegistryState } from "../context/document-context";
 import { useOptionalSceneEditing } from "../context/scene-editing-context";
 import { useSimulationInspection } from "../context/simulation-inspection-context";
 import { runtimeIdentityKey, type SimulationInspectionStore } from "../services/simulation-inspection-store";
@@ -149,7 +149,7 @@ function RuntimePropertyField({ descriptor, target, store, materialGuid, assets 
 
 export function SimulationInspector({ store, panel }: { store: SimulationInspectionStore; panel: IDockviewPanelProps }) {
   const state = useSimulationInspection(store, panel, "selection");
-  const { assetRegistry, registryEpoch } = useDocuments();
+  const { assetRegistry, registryEpoch } = useRegistryState();
   const assets = useMemo(() => {
     void registryEpoch;
     return (assetRegistry?.list() ?? []).map(asset => ({ guid: asset.header.guid, name: asset.header.name, type: asset.header.type, path: asset.path }));

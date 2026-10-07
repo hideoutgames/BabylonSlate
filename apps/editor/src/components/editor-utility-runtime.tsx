@@ -1,7 +1,11 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { ScriptHost, type ScriptHostServices } from "@babylonslate/runtime";
 import { ClassRegistry } from "@babylonslate/object-model";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useProjectState,
+  useRegistryState,
+} from "../context/document-context";
 import { usePlayDiagnosticsActions } from "../context/play-context";
 import {
   EDITOR_UTILITY_EVENTS,
@@ -43,16 +47,12 @@ function editorHostServices(
 
 /** In-process ScriptHost for registered EditorUtilityObject classes. */
 export function EditorUtilityRuntime() {
-  const documents = useDocuments();
-  const {
-    projectDocument,
-    collectEditorUtilityScripts,
-    projectName,
-    projectGuid,
-    getOpenDocuments,
-    pluginDescriptors,
-    assetRegistry,
-  } = documents;
+  const actions = useDocumentActions();
+  const { collectEditorUtilityScripts, getOpenDocuments } = actions;
+  const { projectDocument, projectName } = useProjectState();
+  const { projectGuid, pluginDescriptors, assetRegistry } = useRegistryState();
+  // What the data reader and authoring API read: actions and the registry.
+  const documents = useMemo(() => ({ ...actions, assetRegistry }), [actions, assetRegistry]);
   const { appendLog } = usePlayDiagnosticsActions();
   // The host outlives renders: its callbacks read these at call time. Updated
   // after commit, never during render; open tabs come from the live getter.

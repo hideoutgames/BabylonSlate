@@ -80,7 +80,12 @@ import {
 } from "@babylonslate/vfs";
 import { isSourceControlHost } from "@babylonslate/source-control";
 import { LogOutIcon } from "lucide-react";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useProjectState,
+  useRegistryState,
+  useSourceControl,
+} from "../context/document-context";
 import { editorUtilityObjectClassEntries } from "../lib/editor-utility-classes";
 import { gameInstanceClassEntries } from "../lib/component-property-rows";
 import { classIdFromClassAsset } from "../lib/content-browser-helpers";
@@ -318,18 +323,17 @@ export function SettingsModal({
   const resolvedTestId =
     testId ?? (scope === "engine" ? "engine-settings-modal" : "settings-modal");
   const {
-    projectDocument: liveProjectDocument,
-    projectGuid,
     exportProject,
     exportGameArtifact,
     zipExportedGame,
     retryFailedTextureEncoding,
     updateProjectSettings: applyProjectSettings,
     updateProjectVersion,
-    assetRegistry,
-    sourceControl,
     prefillSourceControlFromGit,
-  } = useDocuments();
+  } = useDocumentActions();
+  const { projectDocument: liveProjectDocument } = useProjectState();
+  const { projectGuid, assetRegistry } = useRegistryState();
+  const { sourceControl } = useSourceControl();
   const [draft, setDraft] = useState<RenderingDraft | null>(null);
   const draftOwner = useRef<{ guid: string | null; base: RenderingDraft } | null>(null);
   const latest = useRef({ project: liveProjectDocument, projectGuid, draft, applyProjectSettings });

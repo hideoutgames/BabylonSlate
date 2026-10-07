@@ -10,7 +10,15 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { MountainIcon, PlusIcon, ScanIcon, Trash2Icon, TreesIcon } from "lucide-react";
 import { IconActionButton } from "../components/icon-action-button";
 import { LANDSCAPE_TOOL_LABELS, FOLIAGE_TOOL_LABELS } from "../lib/scene-brush-tools";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useRegistryState,
+  useOpenDocument,
+} from "../context/document-context";
+import {
+  MATERIAL_DOCUMENT_KINDS,
+  useOpenDocumentsOfKinds,
+} from "../lib/use-open-documents-of-kinds";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
 import { useSceneTools } from "../context/scene-tools-context";
@@ -23,10 +31,11 @@ const MODEL_VISUAL = resolveTypeVisual({ assetType: "Model" });
 
 function useEnvironmentScene() {
   const { documentId } = useDocumentWorkspace();
-  const documents = useDocuments();
-  const doc = documents.openDocuments.find((entry) => entry.id === documentId);
+  const { applySceneChange } = useDocumentActions();
+  const { assetRegistry } = useRegistryState();
+  const doc = useOpenDocument(documentId);
   const scene = doc?.ref.kind === "scene" ? doc.content as SerializedScene : null;
-  return { scene, documentId, ...documents, commit: (next: SerializedScene) => documents.applySceneChange(documentId, next) };
+  return { scene, documentId, assetRegistry, commit: (next: SerializedScene) => applySceneChange(documentId, next) };
 }
 
 function environmentEntries(scene: SerializedScene | null, classId: string) {
@@ -118,7 +127,8 @@ function EnvironmentOutliner({ classId }: { classId: string }) {
 
 export function LandscapeSettingsPanel(_props: IDockviewPanelProps) {
   void _props;
-  const { scene, commit, assetRegistry, openDocuments } = useEnvironmentScene();
+  const { scene, commit, assetRegistry } = useEnvironmentScene();
+  const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
   const tools = useSceneTools();
   const [materialPicker, setMaterialPicker] = useState(false);
   const selected = environmentEntries(scene, "LandscapeComponent").find((entry) => entry.id === tools.landscapeSelection);
@@ -137,7 +147,7 @@ export function LandscapeSettingsPanel(_props: IDockviewPanelProps) {
   ];
   if (tool === "flatten") brushRows.push({ id: "height", label: "Flatten Height", kind: "number", value: brush.height, onChange: (height) => tools.setLandscapeBrush({ ...brush, height }) });
   if (tool === "paint") brushRows.push({ id: "layer", label: "Paint Layer", kind: "enum", value: String(brush.layer), options: [0, 1, 2, 3].map((i) => ({ value: String(i), label: `Layer ${i + 1}` })), onChange: (layer) => tools.setLandscapeBrush({ ...brush, layer: Number(layer) }) });
-  const domains = materialDomainsFromAssets(assetRegistry?.list() ?? [], openDocuments);
+  const domains = materialDomainsFromAssets(assetRegistry?.list() ?? [], materialDocuments);
   const materials = (assetRegistry?.list() ?? []).filter((entry) => isMaterialAssetType(entry.header.type)).filter((entry) => domains[entry.header.guid] === "landscape").map((entry) => ({ guid: entry.header.guid, name: entry.header.name, path: entry.path, type: entry.header.type }));
   return <PanelFrame className="scene-environment-panel"><div className="flex min-h-0 flex-1 flex-col overflow-y-auto" data-testid="landscape-settings">
     <PropertySectionTitle aside={<ToolBadge label={LANDSCAPE_TOOL_LABELS[tool]} testId="landscape-settings-tool" />}>Brush</PropertySectionTitle>
@@ -158,7 +168,8 @@ export function LandscapeSettingsPanel(_props: IDockviewPanelProps) {
 
 export function FoliageGroupsPanel(_props: IDockviewPanelProps) {
   void _props;
-  const { scene, commit, assetRegistry, openDocuments } = useEnvironmentScene();
+  const { scene, commit, assetRegistry } = useEnvironmentScene();
+  const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
   const tools = useSceneTools();
   const [picker, setPicker] = useState<"model" | number | null>(null);
   const groups = scene?.settings.foliageGroups ?? [];
@@ -166,7 +177,7 @@ export function FoliageGroupsPanel(_props: IDockviewPanelProps) {
   const setGroups = (foliageGroups: FoliageGroup[]) => { if (scene) void commit({ ...scene, settings: { ...scene.settings, foliageGroups } }); };
   const update = (next: FoliageGroup) => setGroups(groups.map((entry) => entry.id === next.id ? next : entry));
   const assets = (assetRegistry?.list() ?? []).map((entry) => ({ guid: entry.header.guid, name: entry.header.name, path: entry.path, type: entry.header.type }));
-  const domains = materialDomainsFromAssets(assetRegistry?.list() ?? [], openDocuments);
+  const domains = materialDomainsFromAssets(assetRegistry?.list() ?? [], materialDocuments);
   const surfaceMaterials = new Set((assetRegistry?.list() ?? []).filter((entry) => isMaterialAssetType(entry.header.type)).filter((entry) => {
     const domain = domains[entry.header.guid];
     return domain === undefined || domain === "surface";

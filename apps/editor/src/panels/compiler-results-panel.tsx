@@ -13,7 +13,12 @@ import type { SerializedScene } from "@babylonslate/core";
 import type { Diagnostic } from "@babylonslate/scripting";
 import { useValidation } from "../context/validation-context";
 import { usePlay } from "../context/play-context";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useActiveDocumentId,
+  useOpenDocumentTabs,
+  useOpenDocument,
+} from "../context/document-context";
 import { useOptionalDocumentWorkspace } from "../context/document-workspace-context";
 import { useOptionalSceneEditing } from "../context/scene-editing-context";
 import { documentIdToRevealForDiagnostic } from "../services/diagnostic-navigation";
@@ -49,23 +54,29 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { diagnostics, setDiagnostics, setFocusDiagnostic } = useValidation();
   const { clearFocusedNode } = usePlay();
-  const { openDocuments, setActiveDocument, activeDocumentId } = useDocuments();
+  const { setActiveDocument } = useDocumentActions();
+  const activeDocumentId = useActiveDocumentId();
+  // Labels and ids for the result headers; content edits elsewhere skip them.
+  const openDocuments = useOpenDocumentTabs();
   const workspace = useOptionalDocumentWorkspace();
   const sceneEditing = useOptionalSceneEditing();
   const documentId = workspace?.documentId;
+  const doc = useOpenDocument(documentId);
+  const sceneKind = doc?.ref.kind === "scene";
+  const scenePath = doc?.ref.path;
+  const sceneContent = doc?.content;
 
   useEffect(() => {
     if (!documentId || documentId !== activeDocumentId) return;
-    const doc = openDocuments.find((entry) => entry.id === documentId);
-    if (doc?.ref.kind !== "scene") return;
-    const scene = doc.content as SerializedScene | null;
+    if (!sceneKind) return;
+    const scene = sceneContent as SerializedScene | null;
     const actors = scene?.actors ?? [];
-    const options = { assetGuid: doc.ref.path, graphId: documentId };
+    const options = { assetGuid: scenePath!, graphId: documentId };
     setDiagnostics([
       ...physicsPairingDiagnostics(actors, options),
       ...actorTransformDiagnostics(actors, options),
     ]);
-  }, [activeDocumentId, documentId, openDocuments, setDiagnostics]);
+  }, [activeDocumentId, documentId, sceneContent, sceneKind, scenePath, setDiagnostics]);
 
   const rows = useMemo(() => flattenCompilerRows(diagnostics), [diagnostics]);
   const [selectedDiagnostic, setSelectedDiagnostic] = useState<Diagnostic | null>(null);

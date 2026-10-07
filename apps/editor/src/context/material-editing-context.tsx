@@ -46,7 +46,12 @@ import {
   type MaterialPreviewState,
 } from "@babylonslate/shader-graph";
 import type { MaterialParameterValue } from "@babylonslate/core";
-import { useDocuments } from "./document-context";
+import {
+  useDocumentActions,
+  useProjectState,
+  useRegistryState,
+  useOpenDocument,
+} from "./document-context";
 import { usePlay } from "./play-context";
 import { useMaterialRenderControl } from "./material-render-control-context";
 import { useMaterialInstanceSources } from "./material-instance-sources";
@@ -120,11 +125,12 @@ export function MaterialEditingProvider({
   active?: boolean;
   children: ReactNode;
 }) {
-  const { openDocuments, assetRegistry, registryEpoch, projectDocument, readAssetChunk } =
-    useDocuments();
+  const { readAssetChunk } = useDocumentActions();
+  const { assetRegistry, registryEpoch } = useRegistryState();
+  const { projectDocument } = useProjectState();
   const play = usePlay();
   const { register: registerRenderControl } = useMaterialRenderControl();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const doc = useOpenDocument(documentId);
   const isFunctionDocument = doc?.ref.kind === "material-function";
   const isInstanceDocument = doc?.ref.kind === "material-instance";
 

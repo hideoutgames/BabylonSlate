@@ -9,13 +9,19 @@ import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@babylonslate/ui/components/empty";
 import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@babylonslate/ui/components/field";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@babylonslate/ui/components/alert-dialog";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useProjectState,
+  useRegistryState,
+} from "../context/document-context";
 import type { EditorExtensionCommandDescriptor } from "../lib/editor-extension-host";
 import { resolvePluginIcon } from "../lib/plugin-icons";
 import { ExtensionCommandDialog, ExtensionEditorDialog, ExtensionExportDialog } from "./project-extension-dialogs";
 
 export function ProjectExtensionsSettings() {
-  const { extensionService: service, projectDocument, updateProjectSettings } = useDocuments();
+  const { updateProjectSettings } = useDocumentActions();
+  const { projectDocument } = useProjectState();
+  const { extensionService: service } = useRegistryState();
   const snapshot = useSyncExternalStore(service.subscribe, service.getSnapshot);
   const [newOpen, setNewOpen] = useState(false);
   const [enableTarget, setEnableTarget] = useState<ExtensionDescriptor | null>(null);

@@ -10,7 +10,7 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
-import { useDocuments } from "../context/document-context";
+import { useDocumentActions, useRegistryState } from "../context/document-context";
 import { objectContainRect } from "../lib/object-contain";
 
 export function firstSampledTextureGuid(content: unknown): string | null {
@@ -98,7 +98,8 @@ export function NineSlicePreview({
   sourceWidthPx?: number;
   sourceHeightPx?: number;
 }) {
-  const { assetRegistry, readAssetChunk, loadAssetDocument } = useDocuments();
+  const { readAssetChunk, loadAssetDocument } = useDocumentActions();
+  const { assetRegistry } = useRegistryState();
   const [url, setUrl] = useState<string | null>(null);
   const [naturalSize, setNaturalSize] = useState<{
     width: number;

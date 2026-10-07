@@ -18,7 +18,12 @@ import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@babylonslate/ui/components/empty";
 import { Field, FieldDescription, FieldGroup, FieldLabel, FieldSet, FieldLegend } from "@babylonslate/ui/components/field";
 import { ToggleGroup, ToggleGroupItem } from "@babylonslate/ui/components/toggle-group";
-import { useDocuments } from "../context/document-context";
+import {
+  useRegistryState,
+  useDocumentActions,
+  useProjectState,
+  useOpenDocument,
+} from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSaveGameEditing } from "../context/save-game-editing-context";
 import { shouldApplyAssetDocumentChange } from "../lib/asset-document-change";
@@ -44,9 +49,9 @@ function initialValue(type: SaveGameField["type"]): SaveGameValue {
 
 function useSaveGameDocument() {
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange } = useDocuments();
+  const { applyAssetDocumentChange } = useDocumentActions();
   const { selectedId, select } = useSaveGameEditing();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const doc = useOpenDocument(documentId);
   const [error, setError] = useState<string | null>(null);
   let definition: SaveGameDefinition | null = null;
   let invalid: string | null = null;
@@ -83,7 +88,7 @@ function fieldNameError(definition: SaveGameDefinition, name: string, id?: strin
 function DefaultValueEditor({ field, value, onChange, label = "Default Value" }: {
   field: SaveGameField; value: SaveGameValue; onChange(value: SaveGameValue): void; label?: string;
 }) {
-  const { assetRegistry } = useDocuments();
+  const { assetRegistry } = useRegistryState();
   const [pickerOpen, setPickerOpen] = useState(false);
   const base = { id: `default-${field.id}-${label}`, label };
   let row: PropertyRow;
@@ -150,10 +155,12 @@ export function SaveGameFieldsPanel(_props: IDockviewPanelProps) {
 export function SaveGameDefinitionPanel(_props: IDockviewPanelProps) {
   void _props;
   const { definition, selectedField, select, error, commit } = useSaveGameDocument();
-  const { projectDocument, updateProjectSettings, assetRegistry, openDocuments } = useDocuments();
+  const { updateProjectSettings } = useDocumentActions();
+  const { projectDocument } = useProjectState();
+  const { assetRegistry } = useRegistryState();
   const { documentId } = useDocumentWorkspace();
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const path = openDocuments.find((entry) => entry.id === documentId)?.ref.path;
+  const path = useOpenDocument(documentId)?.ref.path;
   const guid = path ? assetRegistry?.getByPath(path)?.header.guid : undefined;
   const settings = projectDocument?.settings.saveGame;
   const isDefault = !!guid && settings?.definitionGuid === guid;

@@ -25,7 +25,7 @@ import {
   type ParticlePreviewStats,
   type ParticleServiceDiagnostic,
 } from "@babylonslate/render";
-import { useDocuments } from "../context/document-context";
+import { useDocumentActions, useRegistryState } from "../context/document-context";
 import { useOptionalPlay } from "../context/play-context";
 import { textureUploadSignature } from "../lib/texture-upload-signature";
 import {
@@ -211,8 +211,8 @@ export function ParticlePreviewCanvas({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const play = useOptionalPlay();
-  const { assetRegistry, collectPlayMaterialLibrary, collectPlayTextureBytes, registryEpoch } =
-    useDocuments();
+  const { collectPlayMaterialLibrary, collectPlayTextureBytes } = useDocumentActions();
+  const { assetRegistry, registryEpoch } = useRegistryState();
   const textureByGuid = useCallback(
     (guid: string) => assetRegistry?.getByGuid(guid),
     [assetRegistry],

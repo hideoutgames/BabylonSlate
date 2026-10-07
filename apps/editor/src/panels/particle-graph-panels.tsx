@@ -53,7 +53,7 @@ import {
 import { Empty, EmptyDescription, EmptyTitle } from "@babylonslate/ui/components/empty";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { PARTICLE_STAGE_ROLE } from "@babylonslate/ui/lib/data-types";
-import { useDocuments } from "../context/document-context";
+import { useRegistryState } from "../context/document-context";
 import {
   useParticleGraphEditing,
   type ParticleGraphBuildDiagnostic,
@@ -496,7 +496,7 @@ function ParticleGraphSettingsDetails({
   document: ParticleGraphDocument;
   onChange: Commit;
 }) {
-  const { assetRegistry } = useDocuments();
+  const { assetRegistry } = useRegistryState();
   const [picking, setPicking] = useState(false);
   const { settings, materialGuid } = document;
   const output = document.nodes.find((node) => node.type === PARTICLE_OUTPUT_NODE_TYPE);

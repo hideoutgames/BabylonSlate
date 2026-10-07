@@ -33,7 +33,11 @@ import { BabylonAudioPlaybackBackend } from "@babylonslate/render";
 import { pickImportFiles } from "@babylonslate/vfs";
 import { IconActionButton } from "./icon-action-button";
 import { AudioPreviewWaveform } from "./audio-preview-waveform";
-import { useDocumentActions, useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useOpenDocument,
+  useRegistryState,
+} from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { createAudioPreviewSession } from "../lib/audio-preview";
 import { decodeAudioWaveformPeaks } from "../lib/audio-waveform-decode";
@@ -49,9 +53,9 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function useAudioDocument() {
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange, assetRegistry } =
-    useDocuments();
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const { applyAssetDocumentChange } = useDocumentActions();
+  const { assetRegistry } = useRegistryState();
+  const doc = useOpenDocument(documentId);
   const payload = asRecord(doc?.content);
   const indexed = (assetRegistry?.list() ?? []).find(
     (asset) => asset.path === doc?.ref.path,
@@ -290,7 +294,7 @@ export function AudioDetails({
   /** `mergeKey` groups one scrub's edits into one undo entry. */
   onChange?: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
-  const { assetRegistry } = useDocuments();
+  const { assetRegistry } = useRegistryState();
   const audio = normalizeAudioPayload(payload);
   const [pick, setPick] = useState<"channel" | "atten" | null>(null);
   /** Continuous field edit: one scrub on `field` is one undo step. */

@@ -44,7 +44,11 @@ import {
 import { MemberAccessChooser } from "../components/member-access-chooser";
 import { FolderIcon, PlusIcon } from "lucide-react";
 import { GraphDropHint, type GraphDropHintState } from "@babylonslate/graph-ui";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useRegistryState,
+  useOpenDocument,
+} from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useValidation } from "../context/validation-context";
 import { useGraphEditing } from "../context/graph-editing-context";
@@ -1054,8 +1058,9 @@ export function ClassMembersView({
 export function MyClassPanel(props: MyClassPanelProps) {
   const dockApi = props.containerApi as MyClassPanelProps["containerApi"] | undefined;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyGraphChange, applyAssetDocumentChange, assetRegistry, registryEpoch, openDocument } =
-    useDocuments();
+  const { applyGraphChange, applyAssetDocumentChange, openDocument } =
+    useDocumentActions();
+  const { assetRegistry, registryEpoch } = useRegistryState();
   const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
   const interfaceDocuments = useOpenDocumentsOfKinds(INTERFACE_KINDS);
   const { setFocusDiagnostic } = useValidation();
@@ -1070,7 +1075,7 @@ export function MyClassPanel(props: MyClassPanelProps) {
   } = useGraphEditing();
   const selectedId = selectedMemberId ?? selectedNodeIds[0] ?? null;
 
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const doc = useOpenDocument(documentId);
   const graph =
     serializedGraphFromDocument(doc?.ref.kind ?? "", doc?.content) ??
     (doc ? { nodes: [], edges: [] } : null);

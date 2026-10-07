@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createEmptyProject, type PluginEnableOverride } from "@babylonslate/core";
@@ -10,28 +9,32 @@ const harness = vi.hoisted(() => ({
   overrides: {} as Record<string, PluginEnableOverride>,
 }));
 
-vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => {
-  const [project, setProject] = useState(() => ({
+vi.mock("../context/document-context", async () => {
+  const { documentContextMock, sharedMockState } = await import("../testing/document-context-mock");
+  const projectState = sharedMockState(() => ({
     ...createEmptyProject("Plugins"),
     settings: { ...createEmptyProject("Plugins").settings, pluginOverrides: harness.overrides },
   }));
-  return {
-    projectDocument: project,
-    pluginDescriptors: harness.plugins,
-    pluginDiagnostics: resolvePluginGraph(
-      harness.plugins.filter((plugin) => project.settings.pluginOverrides[plugin.pluginGuid]?.enabled ?? plugin.settings.enabledByDefault),
-      undefined,
-      project.settings.pluginOverrides,
-    ).diagnostics,
-    assetRegistry: null,
-    showPluginContent: false,
-    applyPluginOverrides: async () => {},
-    updateProjectSettings: (patch: { pluginOverrides: Record<string, PluginEnableOverride> }) => {
-      harness.overrides = patch.pluginOverrides;
-      setProject({ ...project, settings: { ...project.settings, ...patch } });
-    },
-  };
-}));
+  return documentContextMock(() => {
+    const [project, setProject] = projectState.use();
+    return {
+      projectDocument: project,
+      pluginDescriptors: harness.plugins,
+      pluginDiagnostics: resolvePluginGraph(
+        harness.plugins.filter((plugin) => project.settings.pluginOverrides[plugin.pluginGuid]?.enabled ?? plugin.settings.enabledByDefault),
+        undefined,
+        project.settings.pluginOverrides,
+      ).diagnostics,
+      assetRegistry: null,
+      showPluginContent: false,
+      applyPluginOverrides: async () => {},
+      updateProjectSettings: (patch: { pluginOverrides: Record<string, PluginEnableOverride> }) => {
+        harness.overrides = patch.pluginOverrides;
+        setProject((current) => ({ ...current, settings: { ...current.settings, ...patch } }));
+      },
+    };
+  });
+});
 
 function plugin(guid: string): PluginDescriptor {
   return {

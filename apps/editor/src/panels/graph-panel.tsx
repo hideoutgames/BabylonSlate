@@ -15,7 +15,12 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useRegistryState,
+  useActiveDocumentState,
+  useOpenDocument,
+} from "../context/document-context";
 import { GraphPinDefaultHostContext } from "../context/graph-pin-defaults-provider";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { usePlay } from "../context/play-context";
@@ -70,15 +75,9 @@ export function GraphPanel(
   const functionId = props.params?.functionId ?? null;
   const panelApi = props.api as IDockviewPanelProps["api"] | undefined;
   const { documentId } = useDocumentWorkspace();
-  const {
-    openDocuments,
-    applyGraphChange,
-    applyAssetDocumentChange,
-    assetRegistry,
-    registryEpoch,
-    activeDocumentId,
-    animEditorMode,
-  } = useDocuments();
+  const { applyGraphChange, applyAssetDocumentChange } = useDocumentActions();
+  const { assetRegistry, registryEpoch } = useRegistryState();
+  const { activeDocumentId, animEditorMode } = useActiveDocumentState();
   const { focusedNodeId } = usePlay();
   const {
     setSelectedNodeIds,
@@ -103,7 +102,7 @@ export function GraphPanel(
     activeFunctionId ?? "event",
   );
 
-  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const doc = useOpenDocument(documentId);
   const indexed = useMemo(() => {
     void registryEpoch;
     return (assetRegistry?.list() ?? []).find(

@@ -14,7 +14,12 @@ import { ViewportToolbar } from "../components/viewport-toolbar";
 import { ViewportJoystick } from "../components/viewport-joystick";
 import { usePrefabEditing } from "../context/prefab-editing-context";
 import { usePlay } from "../context/play-context";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useProjectState,
+  useRegistryState,
+  useOpenDocument,
+} from "../context/document-context";
 import {
   materialViewportTestSnapshot,
   type MaterialViewportTestSnapshot,
@@ -62,6 +67,8 @@ import { physicsWorldFromOpenDocuments } from "./add-component-catalog";
  * Full-size Prefab viewport for class documents. Sibling of Graph in the
  * center Dockview group so selecting the tab fills the workspace.
  */
+const WORLD_KINDS = ["scene", "scene-layer"] as const;
+
 export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   void _props;
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -101,11 +108,11 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     collectPlayModelBytes,
     collectPlayModelPayloads,
     collectPlayMaterialLibrary,
-    projectDocument,
-    openDocuments,
-    assetRegistry,
-    registryEpoch,
-  } = useDocuments();
+  } = useDocumentActions();
+  const { projectDocument } = useProjectState();
+  const { assetRegistry, registryEpoch } = useRegistryState();
+  // The open world Scene or Scene Layer sets the preview's physics world.
+  const worldDocuments = useOpenDocumentsOfKinds(WORLD_KINDS);
   const previewComponents = useMemo(() => sceneStreamingEditorComponents(components, (guid) => {
     void registryEpoch; // Registry headers mutate without replacing the registry.
     const asset = assetRegistry?.getByGuid?.(guid);
@@ -114,7 +121,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   const previewComponentsRef = useRef(previewComponents);
   previewComponentsRef.current = previewComponents;
   const { documentId } = useDocumentWorkspace();
-  const documentPath = openDocuments.find((entry) => entry.id === documentId)?.ref.path;
+  const documentPath = useOpenDocument(documentId)?.ref.path;
   const overlayPrefab = useMemo(() => {
     void registryEpoch; // Registry headers mutate without replacing the registry.
     const listed = assetRegistry?.list() ?? [];
@@ -128,7 +135,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
   const prefabPhysicsWorld = overlayPrefab
     ? "2d"
-    : physicsWorldFromOpenDocuments(openDocuments);
+    : physicsWorldFromOpenDocuments(worldDocuments);
   const prefabPhysicsWorldRef = useRef(prefabPhysicsWorld);
   prefabPhysicsWorldRef.current = prefabPhysicsWorld;
   const {
