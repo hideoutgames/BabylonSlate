@@ -83,8 +83,6 @@ import {
   createDefaultSceneSettings,
   DEFAULT_PLAY_FRAME_CAP,
   parseSceneLayerAnchor,
-  normalizeSceneLayer,
-  newGuid,
   sceneLayerRelativeAnchorWorldPosition,
   isSceneLayerAnchorActor,
   identityTransform,
@@ -94,7 +92,6 @@ import {
   type MaterialParameterValue,
   type RenderPathStatus,
   type Transform,
-  type SerializedActor,
   type SerializedScene,
   type SerializedSceneLayer,
   type SceneStreamingState,
@@ -193,6 +190,7 @@ import { createTimingHostBindings } from "./runtime-host-timing";
 import { indexSceneLibrary } from "./scene-library";
 import { RuntimeNavigation } from "./runtime-navigation";
 import { SceneStreams, createSceneStreamHostBindings } from "./scene-streams";
+import { SceneLayers, createSceneLayerHostBindings } from "./scene-layers";
 import { OwnerAdmission } from "./owner-admission";
 import { AnimGraphRuntime } from "./anim-graph-runtime";
 import { BehaviourTreeRuntime } from "./behaviour-tree-runtime";
@@ -527,7 +525,6 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly assetPreloads = new RuntimeAssetPreloads(command => this.emit(command));
   private readonly classAssetGuids = new Map<string, string>();
   private readonly demandAssetCatalog: boolean;
-  private readonly layerReadinessWaiters = new Map<string, { resolve: () => void; reject: (error: unknown) => void }>();
 
   notifyAssetPreloadResult(result: { preloadId: string; success: boolean; error?: string; progress?: number }): void {
     this.assetPreloads.receive(result);
@@ -665,9 +662,6 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly materialParameters: RuntimeMaterialParameters;
   private readonly validateLegacyMeshParameters: boolean;
   private sceneLoadId = 0;
-  private layerLoadId = 0;
-  private readonly layerLoads = new Map<string, { layer: SceneLayer; loadId: number; realized: boolean; presented: boolean; ready: boolean }>();
-  private readonly independentLayerWork = new Map<string, { layer: SceneLayer; loadId: number; controller: AbortController; painted: () => void }>();
   private readonly admission = new OwnerAdmission({
     world: () => this.world,
     stopped: () => this.stopped,
@@ -675,7 +669,7 @@ class InProcessRuntime implements RuntimeDriver {
     saveBoundaryActive: () => this.saveBoundaryActive,
     sceneLoading: () => this.sceneWorkBlocked || this.bootLoading,
     streams: () => this.streams,
-    layers: () => this.layerLoads,
+    layers: () => this.layers,
     releaseAssets: (ownerGuid) => this.assetPreloads.releaseOwner(ownerGuid),
     reportError: (error) => { this.reportError(error); },
   });
@@ -810,6 +804,36 @@ class InProcessRuntime implements RuntimeDriver {
         for (const resume of waiters) resume();
       }
     },
+    emit: (command) => this.emit(command),
+  });
+  private readonly layers: SceneLayers = new SceneLayers(this.admission, {
+    world: () => this.world,
+    stopped: () => this.stopped,
+    frameId: () => this.frameId,
+    bootLoading: () => this.bootLoading,
+    cooperativeLoading: () => this.cooperativeSceneLoading,
+    deferModelsReady: () => this.deferSceneModelsReady,
+    deferLoadingPaint: () => this.deferSceneLoadingPaint,
+    document: (assetGuid) => this.sceneLayerLibrary.get(assetGuid),
+    demandAssets: () => this.demandAssetCatalog,
+    assetPreloads: () => this.assetPreloads,
+    continueSimulation: (owner) => this.continueSimulation(owner),
+    setOverlayGravity: (gravity) => this.overlayPhysicsSync.getBackend().setGravity(gravity),
+    markUnsupportedInstance: (layerGuid) => this.markUnsupportedSimulationInstance("layer", layerGuid),
+    guidTaken: (id) => this.renderSlots.hasGuid(id) || this.world.findActor(id) != null,
+    createActor: (serialized, layerGuid) => createActorFromSerialized(this.world, serialized, this.sceneActorHooks, layerGuid),
+    realizeActors: (actors, checkpoint) => this.realizeSceneLayerActors(actors, checkpoint),
+    publishSnapshot: () => this.publishSnapshot(),
+    syncOverlayPhysics: () => this.overlayPhysicsSync.syncFromWorld(this.world),
+    tryCompleteSceneLoad: () => this.tryCompleteSceneLoad(),
+    forgetOverlay: (layerGuid) => {
+      this.overlayLayout.remove(layerGuid);
+      this.overlayVirtualization.remove(layerGuid);
+      this.focusNavigation.refresh();
+    },
+    removeActor: (actor) => this.removeOwnedActor(actor),
+    cancelInvalidTweens: () => this.tweens.cancelInvalid(),
+    reportError: (error) => { this.reportError(error); },
     emit: (command) => this.emit(command),
   });
   private readonly animGraphs = new AnimGraphRuntime({
@@ -1266,25 +1290,11 @@ class InProcessRuntime implements RuntimeDriver {
       changeScene: (scene) => {
         this.applyChangeScene(scene);
       },
-      createSceneLayer: (assetGuid, zOrder) =>
-        this.createSceneLayer(assetGuid, zOrder),
-      createSceneLayerAsync: (assetGuid, zOrder, owner) => this.createSceneLayerAsync(assetGuid, zOrder, owner),
-      removeSceneLayer: (layerGuid) => {
-        this.removeSceneLayer(layerGuid);
-      },
-      clearSceneLayers: () => {
-        this.clearSceneLayers();
-      },
+      ...createSceneLayerHostBindings({ layers: this.layers }),
       switchSceneLayerActor: (target, index) => this.sceneLayerSwitchers.switchTo(target, index),
       getCurrentSceneLayerActor: (target) => this.sceneLayerSwitchers.current(target),
       setFocusTarget: (target) => this.focusNavigation.setFocus(target),
       clearFocusTarget: (target) => this.focusNavigation.clearFocus(target),
-      registerSceneLayerPostProcess: (layerGuid, materialGuid) => {
-        this.registerSceneLayerPostProcess(layerGuid, materialGuid);
-      },
-      unregisterSceneLayerPostProcess: (layerGuid, materialGuid) => {
-        this.unregisterSceneLayerPostProcess(layerGuid, materialGuid);
-      },
     });
 
     // Stop order: Delays resume in phase 1, then every scene stream retires;
@@ -1293,7 +1303,8 @@ class InProcessRuntime implements RuntimeDriver {
     // the actor owns, then ragdolls, cables, dynamic meshes and animation
     // graphs; a released slot then drops its ragdoll/cable/mesh and BT state,
     // its owner's text reveal, its sent component-command state and, last,
-    // a camera possession that targeted it.
+    // a camera possession that targeted it. Scene Layers register last: phase
+    // 1 ends by cancelling independent layer creation and removing its layers.
     this.subsystems.register(this.delays);
     this.subsystems.register(this.streams);
     this.subsystems.register(this.ragdolls);
@@ -1318,6 +1329,7 @@ class InProcessRuntime implements RuntimeDriver {
         this.cameraPossessedByScript = false;
       },
     });
+    this.subsystems.register(this.layers);
 
     this.registerPlaySceneTypes();
     this.bindGameInstance();
@@ -1515,196 +1527,20 @@ class InProcessRuntime implements RuntimeDriver {
     }
   }
 
-  private async createSceneLayerAsync(assetGuid: string, zOrder: number, owner: BObject | null): Promise<SceneLayer | null> {
-    if (this.stopped || owner?.destroyed) throw sceneRealizationCancelled();
-    const preload = this.demandAssetCatalog
-      ? await this.assetPreloads.acquire([assetGuid], owner?.guid ?? this.world.currentScene?.guid ?? "session") : null;
-    let layer: SceneLayer | null = null;
-    try {
-      { const pending = this.continueSimulation(owner); if (pending) await pending; }
-      if (preload && !preload.success) throw new Error(`Cannot create SceneLayer ${assetGuid}: ${preload.errorMessage}`);
-      if (this.stopped || owner?.destroyed) throw sceneRealizationCancelled();
-      layer = this.createSceneLayer(assetGuid, zOrder);
-      if (!layer || layer.destroyed) throw new Error(`SceneLayer ${assetGuid} could not be prepared`);
-      if (preload) this.assetPreloads.transferOwner(preload.preloadId, layer.guid);
-      if (!this.layerLoads.get(layer.guid)?.ready) {
-        const layerId = layer.guid;
-        await new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(() => {
-            this.layerReadinessWaiters.delete(layerId);
-            reject(new Error(`SceneLayer ${assetGuid} did not become ready before the loading deadline`));
-          }, 30_000);
-          this.layerReadinessWaiters.set(layerId, {
-            resolve: () => { clearTimeout(timer); resolve(); },
-            reject: error => { clearTimeout(timer); reject(error); },
-          });
-        });
-      }
-      { const pending = this.continueSimulation(owner); if (pending) await pending; }
-      return layer;
-    } catch (error) {
-      if (layer) this.removeSceneLayer(layer.guid);
-      if (preload) this.assetPreloads.release(preload.preloadId);
-      throw error;
-    }
-  }
-
   createSceneLayer(
     assetGuid: string,
     zOrder = 0,
     ownerSceneGuid: string | null = null,
   ): SceneLayer | null {
-    if (this.stopped) return null;
-    if (!this.cooperativeSceneLoading) {
-      const steps = this.createSceneLayerSteps(assetGuid, zOrder, ownerSceneGuid);
-      let next = steps.next();
-      while (!next.done) next = steps.next();
-      return next.value;
-    }
-    const controller = new AbortController();
-    const created: SceneLayer[] = [];
-    let paint!: () => void;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const painted = this.deferSceneLoadingPaint ? new Promise<void>((resolve, reject) => {
-      paint = resolve;
-      timer = setTimeout(() => reject(new Error("SceneLayer Loading did not paint before the loading deadline.")), 30_000);
-    }) : Promise.resolve();
-    const fail = (error: unknown) => {
-      const layer = created[0];
-      const work = layer && this.independentLayerWork.get(layer.guid);
-      if (!layer || !work || work.controller !== controller || controller.signal.aborted || this.stopped) return;
-      this.emit({ type: "sceneLayerLoadFailed", layerId: layer.guid, layerLoadId: work.loadId,
-        message: error instanceof Error ? error.message : String(error) });
-      this.reportError(error);
-    };
-    const steps = this.createSceneLayerSteps(assetGuid, zOrder, ownerSceneGuid, undefined, {
-      signal: controller.signal,
-      created: (layer, loadId) => {
-        created.push(layer);
-        // The in-process host can acknowledge inside sceneLayerLoading emission.
-        this.independentLayerWork.set(layer.guid, { layer, loadId, controller, painted: () => paint?.() });
-      },
-      failed: fail,
-    });
-    try {
-      const first = steps.next();
-      const layer = created[0];
-      if (first.done === true || !layer) {
-        clearTimeout(timer);
-        return first.done === true ? first.value : null;
-      }
-      void (async () => {
-        try {
-          await waitForSceneWork(painted, controller.signal);
-          clearTimeout(timer);
-          const remaining = function* () { yield* steps; };
-          await runSceneRealizationWork(remaining(), controller.signal, this.cooperativeSceneLoading!);
-        } catch (error) { fail(error); }
-        finally {
-          clearTimeout(timer);
-          try { steps.return(null); }
-          finally { if (this.independentLayerWork.get(layer.guid)?.controller === controller) this.independentLayerWork.delete(layer.guid); }
-        }
-      })().catch((error: unknown) => { if (!this.stopped) this.reportError(error); });
-      return layer;
-    } catch (error) {
-      clearTimeout(timer);
-      steps.return(null);
-      throw error;
-    }
+    return this.layers.create(assetGuid, zOrder, ownerSceneGuid);
   }
 
   notifySceneLayerLoadingPainted(layerId: string, layerLoadId: number): void {
-    const work = this.independentLayerWork.get(layerId);
-    if (this.stopped || !work || work.loadId !== layerLoadId || work.controller.signal.aborted || this.world.findSceneLayer(layerId) !== work.layer) return;
-    work.painted();
+    this.layers.notifyLoadingPainted(layerId, layerLoadId);
   }
 
-  private *createSceneLayerSteps(
-    assetGuid: string,
-    zOrder = 0,
-    ownerSceneGuid: string | null = null,
-    work?: SceneRealization,
-    independent?: { signal: AbortSignal; created: (layer: SceneLayer, loadId: number) => void; failed: (error: unknown) => void },
-  ): Generator<void, SceneLayer | null, unknown> {
-    let ownedLayer: SceneLayer | null = null;
-    const checkpoint = () => {
-      if (work) this.checkRealization(work);
-      independent?.signal.throwIfAborted();
-      if (ownedLayer && this.world.findSceneLayer(ownedLayer.guid) !== ownedLayer) throw sceneRealizationCancelled();
-    };
-    checkpoint();
-    const guid = String(assetGuid ?? "").trim();
-    const raw = this.sceneLayerLibrary.get(guid);
-    if (!raw) {
-      this.emit({
-        type: "log",
-        severity: "warning",
-        category: "scene-layer",
-        message: `createSceneLayer: no SceneLayer asset loaded for ${guid}`,
-        frameId: this.frameId,
-      });
-      return null;
-    }
-    const document = normalizeSceneLayer({ ...raw, actors: [], folders: [] });
-    if (this.world.getSceneLayers().length === 0) {
-      this.overlayPhysicsSync.getBackend().setGravity({
-        x: document.settings.gravity[0],
-        y: document.settings.gravity[1],
-        z: document.settings.gravity[2],
-      });
-    }
-    const layer = this.world.createSceneLayer({
-      assetGuid: guid,
-      zOrder: Math.trunc(Number(zOrder) || 0),
-      ownerSceneGuid,
-      postProcessStack: document.settings.postProcessStack.map((entry) => ({
-        ...entry,
-      })),
-      layerBounds: document.settings.layerBounds,
-    });
-    this.markUnsupportedSimulationInstance("layer", layer.guid);
-    ownedLayer = layer;
-    work?.layers.push(layer);
-    const layerLoad = { layer, loadId: ++this.layerLoadId, realized: false, presented: false, ready: false };
-    this.layerLoads.set(layer.guid, layerLoad);
-    const actors: Actor[] = [];
-    let completed = false;
-    try {
-    independent?.created(layer, layerLoad.loadId);
-    this.emit({ type: "sceneLayerLoading", layerId: layer.guid, assetGuid: guid, layerLoadId: layerLoad.loadId });
-    checkpoint();
-    this.emit({
-      type: "sceneLayerCreate",
-      layerId: layer.guid,
-      assetGuid: guid,
-      zOrder: layer.zOrder,
-      ownerSceneGuid: layer.ownerSceneGuid,
-      postProcessStack: layer.postProcessStack.map((entry) => ({ ...entry })),
-      layerBounds: { ...layer.layerBounds },
-    });
-    checkpoint();
-    // Return the live loading identity before actor remapping or realization.
-    yield;
-    checkpoint();
-    const serializedActors = normalizeSceneLayer(raw).actors;
-    yield;
-    checkpoint();
-    const remapped = yield* remapOverlaySerializedActors(
-      serializedActors,
-      layer.guid,
-      (id) => this.renderSlots.hasGuid(id) || this.world.findActor(id) != null,
-    );
-    for (const serialized of remapped) {
-      checkpoint();
-      const actor = createActorFromSerialized(this.world, serialized, this.sceneActorHooks, layer.guid);
-      if (actor) {
-        actors.push(actor);
-        work?.actors.push(actor);
-      }
-      yield;
-    }
-    hydrateScenePropertyReferences(actors);
+  /** Spawn, anchor and assign a Scene Layer's created actors in bounded passes. */
+  private *realizeSceneLayerActors(actors: readonly Actor[], checkpoint: () => void): Generator<void, void, unknown> {
     for (const actor of actors) {
       checkpoint();
       this.scriptHost.bindInterfaceHandlers(actor);
@@ -1737,23 +1573,6 @@ class InProcessRuntime implements RuntimeDriver {
       this.audioParticles.emitParticles(actor);
       checkpoint();
       yield;
-    }
-    layerLoad.realized = true;
-    this.publishSnapshot();
-    this.emit({ type: "sceneLayerRealized", layerId: layer.guid, layerLoadId: layerLoad.loadId });
-    if (!this.deferSceneModelsReady) this.notifySceneLayerReady(layer.guid, layerLoad.loadId);
-    completed = true;
-    return layer;
-    } catch (error) {
-      independent?.failed(error);
-      throw error;
-    } finally {
-      if (!completed) {
-        // Creation and spawn are separate passes. An aborted creation pass can
-        // own Actors which never entered the World or received a render slot.
-        for (const actor of actors) if (!actor.destroyed && !actor.world) this.removeOwnedActor(actor);
-        if (this.world.findSceneLayer(layer.guid) === layer) this.removeSceneLayer(layer.guid);
-      }
     }
   }
 
@@ -1800,68 +1619,22 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   removeSceneLayer(layerGuid: string): void {
-    this.layerReadinessWaiters.get(layerGuid)?.reject(sceneRealizationCancelled());
-    this.layerReadinessWaiters.delete(layerGuid);
-    this.assetPreloads.releaseOwner(layerGuid);
-    const layer = this.world.findSceneLayer(layerGuid);
-    if (!layer) return;
-    this.layerLoads.delete(layerGuid);
-    this.overlayLayout.remove(layerGuid);
-    this.overlayVirtualization.remove(layerGuid);
-    this.focusNavigation.refresh();
-    const work = this.independentLayerWork.get(layerGuid);
-    if (work?.layer === layer) {
-      this.independentLayerWork.delete(layerGuid);
-      work.controller.abort(sceneRealizationCancelled());
-    }
-    for (const actor of [...this.world.getActors()]) {
-      if (actor.sceneLayerId !== layer.guid) continue;
-      if (this.world.findSceneLayer(layer.guid) !== layer) return;
-      this.removeOwnedActor(actor);
-    }
-    if (this.world.findSceneLayer(layer.guid) !== layer) return;
-    this.emit({ type: "sceneLayerRemove", layerId: layer.guid });
-    if (this.world.findSceneLayer(layer.guid) === layer) this.world.destroySceneLayer(layer.guid);
-    this.tweens.cancelInvalid();
+    this.layers.remove(layerGuid);
   }
 
   clearSceneLayers(): void {
-    for (const layer of [...this.world.getSceneLayers()]) {
-      this.removeSceneLayer(layer.guid);
-    }
-    this.emit({ type: "sceneLayerClear" });
+    this.layers.clearAll();
   }
 
   registerSceneLayerPostProcess(layerGuid: string, materialGuid: string): void {
-    const layer = this.world.findSceneLayer(layerGuid);
-    const guid = String(materialGuid ?? "").trim();
-    if (!layer || !guid) return;
-    layer.postProcessStack.push({ id: newGuid(), materialGuid: guid, enabled: true });
-    this.emitSceneLayerPostProcess(layer);
+    this.layers.registerPostProcess(layerGuid, materialGuid);
   }
 
   unregisterSceneLayerPostProcess(
     layerGuid: string,
     materialGuid: string,
   ): void {
-    const layer = this.world.findSceneLayer(layerGuid);
-    const guid = String(materialGuid ?? "").trim();
-    if (!layer || !guid) return;
-    const index = layer.postProcessStack.findIndex(
-      (entry) => entry.materialGuid === guid,
-    );
-    if (index < 0) {
-      this.emit({
-        type: "log",
-        severity: "error",
-        category: "scene-layer",
-        message: `SceneLayer post-process ${guid} is not registered on layer ${layer.guid}`,
-        frameId: this.frameId,
-      });
-      return;
-    }
-    layer.postProcessStack.splice(index, 1);
-    this.emitSceneLayerPostProcess(layer);
+    this.layers.unregisterPostProcess(layerGuid, materialGuid);
   }
 
   applySceneLayerResize(
@@ -2056,19 +1829,12 @@ class InProcessRuntime implements RuntimeDriver {
     actor.transform.position.y = pos.y;
   }
 
-  private emitSceneLayerPostProcess(layer: SceneLayer): void {
-    this.emit({
-      type: "sceneLayerPostProcess",
-      layerId: layer.guid,
-      postProcessStack: layer.postProcessStack.map((entry) => ({ ...entry })),
-    });
-  }
-
   private *spawnOwnedSceneLayers(work: SceneRealization): Generator<void, void, unknown> {
+    const owned = { check: () => this.checkRealization(work), layers: work.layers, actors: work.actors };
     for (const entry of work.scene?.settings.sceneLayers ?? []) {
       this.checkRealization(work);
       if (entry.enabled) {
-        yield* this.createSceneLayerSteps(entry.assetGuid, entry.zOrder, work.guid, work);
+        yield* this.layers.createSteps(entry.assetGuid, entry.zOrder, work.guid, owned);
       }
       yield;
     }
@@ -2436,7 +2202,7 @@ class InProcessRuntime implements RuntimeDriver {
       if (!material.entry.id) return false;
       const owner = material.owner;
       const target: Extract<CommandMessage, { type: "setPostProcessMaterialParameter" }>["owner"] = owner instanceof SceneLayer
-        ? { kind: "sceneLayer", layerId: owner.guid, layerLoadId: this.layerLoads.get(owner.guid)!.loadId }
+        ? { kind: "sceneLayer", layerId: owner.guid, layerLoadId: this.layers.get(owner.guid)!.loadId }
         : { kind: "scene", sceneAssetGuid: owner.assetGuid, sceneLoadId: this.sceneLoadId };
       this.emit({ type: "setPostProcessMaterialParameter", owner: target, entryId: material.entry.id,
         materialAssetGuid: material.materialAssetGuid, parameterName, parameter });
@@ -2455,17 +2221,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   notifySceneLayerReady(layerId: string, layerLoadId: number): void {
-    const load = this.layerLoads.get(layerId);
-    if (this.stopped || !load || load.loadId !== layerLoadId || !load.realized || load.ready ||
-      this.world.findSceneLayer(layerId) !== load.layer) return;
-    load.presented = true;
-    if (this.bootLoading) return;
-    load.ready = true;
-    this.layerReadinessWaiters.get(layerId)?.resolve();
-    this.layerReadinessWaiters.delete(layerId);
-    this.overlayPhysicsSync.syncFromWorld(this.world);
-    this.admission.flush();
-    this.tryCompleteSceneLoad();
+    this.layers.notifyReady(layerId, layerLoadId);
   }
 
   beginPlayLoading(): boolean {
@@ -2479,9 +2235,7 @@ class InProcessRuntime implements RuntimeDriver {
   finishPlayLoading(): void {
     if (this.stopped) throw sceneRealizationCancelled();
     this.bootLoading = false;
-    for (const load of [...this.layerLoads.values()]) {
-      if (load.presented && !load.ready) this.notifySceneLayerReady(load.layer.guid, load.loadId);
-    }
+    this.layers.readyPresented();
     const prepared = this.preparedBootScene;
     this.preparedBootScene = null;
     if (!prepared || this.realization !== prepared.work) return;
@@ -3989,10 +3743,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   private tryCompleteSceneLoad(): void {
     const pending = this.pendingSceneFinish;
-    if (this.stopped || !pending?.presented) return;
-    for (const load of this.layerLoads.values()) {
-      if (load.layer.ownerSceneGuid === pending.guid && !load.ready) return;
-    }
+    if (this.stopped || !pending?.presented || !this.layers.ownedReady(pending.guid)) return;
     this.sceneLoadingProgress = 1;
     this.sceneWorkBlocked = false;
     this.pendingSceneFinish = null;
@@ -4135,8 +3886,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (this.stopped) return;
     this.assetPreloads.dispose();
     this.consoleLifetime.abort(new Error("The runtime session has ended"));
-    for (const waiter of this.layerReadinessWaiters.values()) waiter.reject(sceneRealizationCancelled());
-    this.layerReadinessWaiters.clear();
+    this.layers.rejectWaiters();
     this.stopped = true;
     this.diagnosticRecorder?.stop();
     this.materialEditGate?.cancel("The game session has stopped.");
@@ -4155,13 +3905,6 @@ class InProcessRuntime implements RuntimeDriver {
     for (const resume of this.simulationWaiters) resume();
     this.simulationWaiters.clear();
     this.subsystems.cancelPending();
-    for (const work of [...this.independentLayerWork.values()]) {
-      work.controller.abort(sceneRealizationCancelled());
-      // Finish live ownership cleanup before Stop returns; a later rejected
-      // paint/yield continuation must not emit commands into a disposed host.
-      if (this.world.findSceneLayer(work.layer.guid) === work.layer) this.removeSceneLayer(work.layer.guid);
-    }
-    this.independentLayerWork.clear();
     const retiring = this.cancelRealization();
     this.sceneLoadId++;
     this.pendingSceneFinish = null;
@@ -4188,7 +3931,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.playScene = undefined;
     this.sceneLibrary.clear();
     this.admission.clear();
-    this.layerLoads.clear();
+    this.layers.clear();
     this.subsystems.dispose();
   }
 
@@ -4317,7 +4060,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   private inspectorActorReady(actor: Actor): boolean {
     if (this.simulationQuiescent || this.stopped || this.saveBoundaryActive || actor.destroyed || actor.world !== this.world || this.world.findActorInstances(actor.guid).length !== 1 || this.streams.blocking || !this.streams.actorReady(actor)) return false;
-    return actor.sceneLayerId ? this.layerLoads.get(actor.sceneLayerId)?.ready === true : !this.sceneWorkBlocked && !this.bootLoading;
+    return actor.sceneLayerId ? this.layers.get(actor.sceneLayerId)?.ready === true : !this.sceneWorkBlocked && !this.bootLoading;
   }
 
   private getRuntimeInspector(): RuntimeInspector {
@@ -4330,7 +4073,7 @@ class InProcessRuntime implements RuntimeDriver {
       sceneIdentity: actor => {
         const stream = this.streams.actorInstance(actor);
         if (stream) return `stream:${stream.actor.guid}:${stream.loadId}`;
-        if (actor.sceneLayerId) return `layer:${actor.sceneLayerId}:${this.layerLoads.get(actor.sceneLayerId)?.loadId ?? -1}`;
+        if (actor.sceneLayerId) return `layer:${actor.sceneLayerId}:${this.layers.get(actor.sceneLayerId)?.loadId ?? -1}`;
         return `scene:${this.playSceneGuid}:${this.sceneLoadId}:${this.world.currentScene?.guid ?? ""}`;
       },
       boundary: () => ({ tickIndex: this.world.clock.tickIndex, frameId: this.frameId,
@@ -4694,7 +4437,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   copySnapshot(out: Float32Array): boolean {
     if (this.stopped || (this.sceneWorkBlocked && !this.realization?.finished &&
-      ![...this.layerLoads.values()].some((load) => load.realized))) return false;
+      !this.layers.anyRealized())) return false;
     if (out.length < this.snapshots.floatCount) return false;
     return this.snapshots.tryRead(out);
   }
@@ -4995,44 +4738,6 @@ function nowMs(): number {
   return typeof performance !== "undefined" && performance.now
     ? performance.now()
     : Date.now();
-}
-
-function* remapOverlaySerializedActors(
-  actors: readonly SerializedActor[],
-  layerId: string,
-  isTaken: (id: string) => boolean,
-): Generator<void, SerializedActor[], unknown> {
-  const idMap = new Map<string, string>();
-  const used = new Set<string>();
-  for (const actor of actors) {
-    let id = actor.id;
-    if (isTaken(id) || used.has(id)) {
-      id = `${layerId}:${actor.id}`;
-    }
-    idMap.set(actor.id, id);
-    used.add(id);
-    yield;
-  }
-  const remapped: SerializedActor[] = [];
-  for (const actor of actors) {
-    remapped.push({
-    ...actor,
-    id: idMap.get(actor.id) ?? actor.id,
-    parentId: actor.parentId
-      ? (idMap.get(actor.parentId) ?? actor.parentId)
-      : null,
-    components: actor.components.map((component) => ({
-      ...component,
-      properties: Object.fromEntries(Object.entries(component.properties).map(([key, value]) => [
-        key,
-        ["focusUp", "focusDown", "focusLeft", "focusRight"].includes(key) && typeof value === "string"
-          ? idMap.get(value) ?? value : value,
-      ])),
-    })),
-    });
-    yield;
-  }
-  return remapped;
 }
 
 /**
