@@ -112,6 +112,7 @@ import { runSceneRealizationWork, sceneRealizationCancelled, waitForSceneWork, t
 import {
   createPhysicsBackend,
   createSoftwarePhysicsBackend,
+  parseColliderProperties,
   parseRigidBodyProperties,
   SoftwarePhysicsBackend,
   type PhysicsBackend,
@@ -5132,6 +5133,19 @@ class InProcessRuntime implements RuntimeDriver {
       }]);
     }
     this.applyActorDefaults(actor);
+    // Reject invalid draft primitives while the host still owns the Scene load.
+    // Deferring this until native physics boot left the host at Realizing Scene.
+    for (const component of actor.components) {
+      if (component.classId !== "ColliderComponent" || component.destroyed) continue;
+      const shape = component.getVariable("shape");
+      const kind = shape && typeof shape === "object" ? (shape as { kind?: unknown }).kind : undefined;
+      if (kind === "convex" || kind === "mesh" || kind === "polygon" || kind === "chain") continue;
+      try {
+        parseColliderProperties({ shape }, actor.sceneLayerId ? "2d" : this.physicsWorldKind);
+      } catch (error) {
+        throw new Error(`${actorLabel(actor)} / ${component.guid}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
     const slotId = this.assignSlot(actor);
     checkpoint();
     this.emitMeshAssignment(actor, slotId);

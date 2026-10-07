@@ -1013,9 +1013,10 @@ describe("p7-play-scene-load", () => {
         componentId: "box-mesh",
       },
     ]);
-    expect(commands.some((command) => command.type === "possessCamera")).toBe(
-      true,
-    );
+    expect(commands).toContainEqual(expect.objectContaining({
+      type: "assignMesh", meshKind: "camera", camera: expect.objectContaining({ isDefault: true }),
+    }));
+    expect(commands.some((command) => command.type === "possessCamera")).toBe(false);
     runtime.stop();
   });
 
