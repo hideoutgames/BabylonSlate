@@ -32,7 +32,9 @@ export class SessionDiagnostics<FrameReport> {
   private disposed = false;
   private retained: PerformanceProfile | null = null;
   private readonly now: () => number;
-  constructor(private readonly ports: SessionDiagnosticPorts<FrameReport>) {
+  private readonly ports: SessionDiagnosticPorts<FrameReport>;
+  constructor(ports: SessionDiagnosticPorts<FrameReport>) {
+    this.ports = ports;
     this.now = ports.now ?? (() => performance.now());
   }
   get active(): "profile" | "frame" | null { return this.operation?.kind ?? null; }
