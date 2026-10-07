@@ -47,3 +47,4 @@ export {
   type TraceStopReason,
   type TraceRecorderOptions,
 } from "./trace-recorder";
+export * from "./performance-recorder";
