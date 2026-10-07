@@ -81,6 +81,11 @@ export interface SerializedActor {
   /** Removed Class prefab rows; source IDs survive actor/component duplication. */
   suppressedComponentSourceIds?: string[];
   /**
+   * Prefab asset GUID this logic-free actor was placed from. Editor sync uses
+   * it; the runtime ignores it because the components are already baked in.
+   */
+  prefabGuid?: string;
+  /**
    * Outliner folder that lists this actor, or null for the scene root. Purely
    * organizational: `parentId` still owns transform attachment, and the runtime
    * ignores folders entirely.
@@ -305,6 +310,7 @@ export function createActor(
     ...(overrides.properties ? { properties: structuredClone(overrides.properties) } : {}),
     ...(overrides.suppressedComponentSourceIds?.length
       ? { suppressedComponentSourceIds: normalizeSuppressedComponentSourceIds(overrides.suppressedComponentSourceIds) } : {}),
+    ...(overrides.prefabGuid ? { prefabGuid: overrides.prefabGuid } : {}),
     folderId: overrides.folderId ?? null,
   };
 }
@@ -389,6 +395,20 @@ function normalizeComponent(
   };
 }
 
+/** Prefab asset payload: logic-free component templates only. */
+export interface SerializedPrefab {
+  components: SerializedComponent[];
+}
+
+export function normalizePrefab(value: unknown): SerializedPrefab {
+  const source = (value ?? {}) as Record<string, unknown>;
+  return {
+    components: Array.isArray(source.components)
+      ? source.components.map(normalizeComponent)
+      : [],
+  };
+}
+
 function normalizeActor(value: unknown, index: number): SerializedActor {
   const source = (value ?? {}) as Record<string, unknown>;
   const components = Array.isArray(source.components) ? source.components.map(normalizeComponent) : [];
@@ -405,6 +425,7 @@ function normalizeActor(value: unknown, index: number): SerializedActor {
     locked: source.locked === true,
     components,
     ...(suppressedComponentSourceIds.length ? { suppressedComponentSourceIds } : {}),
+    ...(typeof source.prefabGuid === "string" && source.prefabGuid.trim() ? { prefabGuid: source.prefabGuid.trim() } : {}),
     ...(source.properties && typeof source.properties === "object" && !Array.isArray(source.properties)
       ? { properties: structuredClone(source.properties as Record<string, unknown>) } : {}),
     folderId: asNullableString(source.folderId),

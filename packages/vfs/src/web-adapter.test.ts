@@ -4,7 +4,7 @@ import { webcrypto } from "node:crypto";
 import { createStorage } from "./create-storage";
 import { TEST_PROJECT_NAME } from "./test-mode";
 import { OpfsStorageAdapter } from "./web-adapter";
-import { SourceRevisionChangedError } from "@babylonslate/core";
+import { isStorageNotFound, SourceRevisionChangedError } from "@babylonslate/core";
 import { createMountedProjectStorage } from "./mounted-storage";
 
 vi.mock("./test-mode", async (importOriginal) => {
@@ -201,6 +201,30 @@ describe("OPFS / web storage adapter", () => {
     await storage.writeText("scenes/main.scene.json", "{}");
     expect(await storage.exists("scenes/main.scene.json")).toBe(true);
     expect(await storage.exists("scenes/other.scene.json")).toBe(false);
+  });
+
+  it("treats only a missing path as absent", async () => {
+    const storage = await openedAdapter();
+    await storage.writeText("scenes/main.scene.json", "{}");
+    expect(await storage.exists("scenes")).toBe(true);
+    expect(await storage.stat("scenes")).toMatchObject({ isDir: true });
+    // A file where a parent directory would be cannot contain the path.
+    expect(await storage.exists("scenes/main.scene.json/child")).toBe(false);
+    const missing = await storage.readBinary("missing.json").catch((error: unknown) => error);
+    expect(isStorageNotFound(missing)).toBe(true);
+    expect((missing as Error).message).toBe("File not found: missing.json");
+    const removed = await storage.remove("missing.json").catch((error: unknown) => error);
+    expect(isStorageNotFound(removed)).toBe(true);
+
+    const root = await navigator.storage.getDirectory();
+    const meta = JSON.parse(localStorage.getItem("babylonslate:opfs-meta")!);
+    const directory = await root.getDirectoryHandle(meta.projects[0].directory);
+    const failure = new DOMException("Handle state changed", "InvalidStateError");
+    vi.spyOn(directory, "getFileHandle").mockRejectedValue(failure);
+    await expect(storage.exists("project.json")).rejects.toThrow("Handle state changed");
+    const read = await storage.readBinary("project.json").catch((error: unknown) => error);
+    expect(isStorageNotFound(read)).toBe(false);
+    expect((read as Error).cause).toBe(failure);
   });
 
   it("lists direct children and flags directories", async () => {

@@ -1,5 +1,5 @@
 import { rethrowStorageReadFailure, StorageReadCounter, validateStorageRange, validateStorageRangeResult } from "./storage-range";
-import { SourceRevisionChangedError } from "@babylonslate/core";
+import { SourceRevisionChangedError, StorageNotFoundError } from "@babylonslate/core";
 import type {
   DirEntry,
   FileStat,
@@ -15,6 +15,20 @@ function toBuffer(data: Uint8Array): ArrayBuffer {
   const copy = new Uint8Array(data.byteLength);
   copy.set(data);
   return copy.buffer;
+}
+
+/**
+ * Electron rejects an invoke with only `Error invoking remote method '<channel>':
+ * <name>: <message>`, so restore the main process's not-found type by its name.
+ */
+async function remote<T>(path: string, call: () => Promise<T>): Promise<T> {
+  try {
+    return await call();
+  } catch (error) {
+    const match = /\bStorageNotFoundError: ([^]*)$/.exec(error instanceof Error ? error.message : "");
+    if (match) throw new StorageNotFoundError(path, { cause: error, message: match[1] });
+    throw error;
+  }
 }
 
 /**
@@ -71,7 +85,8 @@ export class ElectronStorageAdapter implements ProjectStorage {
   }
 
   async readBinary(path: string): Promise<Uint8Array> {
-    const bytes = new Uint8Array(await this.requireBridge().readBinary(path));
+    const bridge = this.requireBridge();
+    const bytes = new Uint8Array(await remote(path, () => bridge.readBinary(path)));
     this.reads.record("full", bytes.byteLength);
     return bytes;
   }
@@ -83,7 +98,9 @@ export class ElectronStorageAdapter implements ProjectStorage {
       if (result.error !== undefined) {
         throw result.errorCode === "source-revision-changed"
           ? new SourceRevisionChangedError(result.error)
-          : new Error(result.error);
+          : result.errorCode === "not-found"
+            ? new StorageNotFoundError(path, { message: result.error })
+            : new Error(result.error);
       }
       return validateStorageRangeResult(path, offset, length, { ...result, bytes: new Uint8Array(result.bytes) }, expectedRevision);
     } catch (error) { rethrowStorageReadFailure(error, result.actualBytesRead); }
@@ -106,7 +123,8 @@ export class ElectronStorageAdapter implements ProjectStorage {
   }
 
   async readdir(path: string): Promise<DirEntry[]> {
-    return this.requireBridge().readdir(path);
+    const bridge = this.requireBridge();
+    return remote(path, () => bridge.readdir(path));
   }
 
   async mkdir(path: string, recursive = true): Promise<void> {
@@ -114,10 +132,12 @@ export class ElectronStorageAdapter implements ProjectStorage {
   }
 
   async remove(path: string): Promise<void> {
-    await this.requireBridge().remove(path);
+    const bridge = this.requireBridge();
+    await remote(path, () => bridge.remove(path));
   }
 
   async stat(path: string): Promise<FileStat> {
-    return this.requireBridge().stat(path);
+    const bridge = this.requireBridge();
+    return remote(path, () => bridge.stat(path));
   }
 }

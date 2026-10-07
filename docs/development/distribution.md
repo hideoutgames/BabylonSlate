@@ -67,7 +67,9 @@ Every platform builds from a clean checkout with no credentials. Only signing, n
 - `.github/workflows/inspect-desktop-packaging.yml` packages and smokes unsigned Windows/macOS/Linux artifacts without secrets or uploads. Run it from a branch with `gh workflow run inspect-desktop-packaging.yml --ref <branch> -f platform=all -f channel=test`.
 - `.github/workflows/inspect-android-toolchain.yml` syncs and compiles the unsigned debug shell with Java 21/Gradle 8.14.3, then checks generated Gradle wiring. Run it with `gh workflow run inspect-android-toolchain.yml --ref <branch>`; it has no signing secrets or artifact upload.
 - `ios:sync` preserves the custom Capacitor plugins. `ios:archive` imports the manual signing assets before creating a signed Release generic-device archive, preserving the app's requested entitlements. It uses temporary credentials, normal App Store Connect export with automatic version management disabled, bundle/entitlement/privacy checks and direct Fastlane upload. The manual profile selector applies only to the App target, leaving CocoaPods frameworks without an app provisioning profile. No Apple binaries, signing logs or credentials become Actions artifacts.
-- Ruby 3.3.12, Bundler 2.5.22, CocoaPods 1.16.2 and Fastlane 2.239.0 are locked. Distribution requires Xcode 26.6 build 17F113 and iPhoneOS SDK 26.5. A different build or SDK fails before credential import and requires a toolchain review. The deployment target remains separate from the SDK requirement.
+- Ruby 3.3.12, Bundler 2.5.22, CocoaPods 1.16.2 and Fastlane 2.239.0 are locked. Distribution requires Xcode 26.6 build 17F113 and iPhoneOS SDK 26.5. A different build or SDK fails before credential import and requires a toolchain review. The iOS/iPadOS deployment target is 17.0 in the Xcode project and Podfile, separate from the SDK requirement.
+- Every workflow reads Node from the root `.node-version` (latest Node 22 LTS patch), so a distribution source commit must contain that file. All actions are pinned to full commit SHAs of their Node 24 releases with a `# vX.Y.Z` comment; update the SHA and comment together.
+- The Gradle wrapper pins `distributionSha256Sum` for `gradle-8.14.3-all.zip` (from [Gradle's release checksums](https://gradle.org/release-checksums/)); update it with the distribution URL.
 - Engine Settings → About shows the generated version/channel/build/source identity. Native builds explicitly disable `VITE_TEST_MODE`.
 - Finalization-only dispatches take the original source/version/channel and exact existing Apple build number; they never rebuild or upload. The App Store Connect record must match the BabylonSlate bundle identifier before metadata or group membership changes. Pending processing fails the job with a `processing` state so it can be retried. Awaiting Beta App Review is reported as pending, not tester availability.
 
@@ -93,7 +95,7 @@ To unblock: obtain an Apple-supported archive procedure and establish the API ke
 
 ## iOS app lifecycle
 
-The native App target uses the UIKit scene-based lifecycle, matching the Capacitor 8.5 template: `Info.plist` declares `UIApplicationSceneManifest` (single scene, `Main` storyboard, `SceneDelegate`), `SceneDelegate` owns the `CAPBridgeViewController` window and forwards URL/universal-link opens to `SceneDelegateProxy`, and `AppDelegate` returns the scene configuration. SDKs from iOS 26 onward refuse to launch apps that only implement the legacy `UIApplicationDelegate` window path; the deployment target is unchanged.
+The native App target uses the UIKit scene-based lifecycle, matching the Capacitor 8.5 template: `Info.plist` declares `UIApplicationSceneManifest` (single scene, `Main` storyboard, `SceneDelegate`), `SceneDelegate` owns the `CAPBridgeViewController` window and forwards URL/universal-link opens to `SceneDelegateProxy`, and `AppDelegate` returns the scene configuration. SDKs from iOS 26 onward refuse to launch apps that only implement the legacy `UIApplicationDelegate` window path; the lifecycle does not depend on the 17.0 deployment target.
 
 ## iOS app capabilities
 
@@ -148,6 +150,8 @@ This table is the complete current iPadOS Apple configuration: **four active sec
 The macOS job intentionally runs unsigned when `APPLE_DEVELOPER_ID_P12_BASE64` is absent. If signing is enabled, every other listed value is required and failures name only the missing variable.
 
 `android-signing` secrets are `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`. Android has no unsigned distribution mode: the release script must fail clearly when the keystore configuration is missing. GitHub Release publication uses only the built-in `GITHUB_TOKEN`; no stored PAT is needed.
+
+Set the repository **variable** (not a secret) `VITE_CLERK_PUBLISHABLE_KEY` under **Settings → Secrets and variables → Actions → Variables** to the Clerk publishable key. The Windows, macOS, Linux, Android and iPadOS jobs pass it to the editor build. It is a public key embedded in the bundle. Builds do not fail when it is unset, but they then have no Clerk sign-in: desktop stays guest-only and Android/iPadOS offer only **Use Temporary Demo Account**. See [Clerk configuration](../architecture/overview.md#clerk-configuration) for the Clerk dashboard setup.
 
 The Xcode project contains a variable reference for CI's App-target profile selector, not a profile ID. Public-hygiene checks permit that reference while rejecting literal signing identifiers; resolved configuration stays on the private runner.
 

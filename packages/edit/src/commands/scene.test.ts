@@ -4,6 +4,10 @@ import {
   createActor,
   createDefaultScene,
   createMeshComponent,
+  type MaterialInstanceOverrides,
+  type SerializedActor,
+  type SerializedComponent,
+  type SerializedOutlinerFolder,
   type SerializedScene,
   type SerializedTransform,
 } from "@babylonslate/core";
@@ -32,7 +36,9 @@ import {
   SetViewportModeCommand,
   type SceneEditCommand,
 } from "./scene";
-import { diffSceneCommands } from "./scene-diff";
+import { diffSceneCommands, planSceneChange } from "./scene-diff";
+import { EditSession } from "../session";
+import { commandToJournalPayload, reviveCommand } from "../journal";
 
 const transformArb: fc.Arbitrary<SerializedTransform> = fc.record({
   position: fc.tuple(
@@ -435,8 +441,8 @@ describe("diffSceneCommands", () => {
     expect(types).toEqual([
       "scene.renameActor",
       "scene.reparentActor",
-      "scene.setActorTransform",
       "scene.setActorFlags",
+      "scene.setActorTransform",
     ]);
   });
 
@@ -618,5 +624,133 @@ describe("diffSceneCommands", () => {
       doc = command.apply(doc);
     }
     expect(doc).toEqual(after);
+  });
+});
+
+const ACTOR_IDS = ["a1", "a2", "a3", "a4"] as const;
+const COMPONENT_IDS = ["c1", "c2", "c3"] as const;
+const FOLDER_IDS = ["f1", "f2", "f3"] as const;
+
+const jsonValueArb = fc.oneof(
+  fc.integer({ min: -3, max: 3 }),
+  fc.constantFrom("x", "y"),
+  fc.boolean(),
+  fc.constant(null),
+  fc.array(fc.record({ classId: fc.constantFrom("HudLayer", "PauseLayer"), defaults: fc.constant({}) }), { maxLength: 2 }),
+);
+const propertiesArb = fc.dictionary(fc.constantFrom("speed", "layer", "sceneLayerActors"), jsonValueArb, { maxKeys: 3 });
+
+const componentArb: fc.Arbitrary<SerializedComponent> = fc.record({
+  id: fc.constantFrom(...COMPONENT_IDS),
+  classId: fc.constantFrom("MeshComponent", "LightComponent"),
+  properties: propertiesArb,
+  parentId: fc.constantFrom(null, ...COMPONENT_IDS),
+  transform: transformArb,
+  sourceId: fc.constantFrom("p1", "p2"),
+  overrideKeys: fc.subarray(["speed", "transform"], { minLength: 1 }),
+  materialInstance: fc.record({
+    materialGuid: fc.constantFrom("m1", "m2"),
+    parameters: fc.dictionary(fc.constant("Amount"), fc.integer({ min: 0, max: 2 }).map((value) => ({ kind: "float" as const, value }))),
+  }) as fc.Arbitrary<MaterialInstanceOverrides>,
+}, { requiredKeys: ["id", "classId", "properties", "parentId"] });
+
+const actorArb: fc.Arbitrary<SerializedActor> = fc.record({
+  id: fc.constantFrom(...ACTOR_IDS),
+  name: fc.constantFrom("A", "B"),
+  classId: fc.constantFrom("Actor", "SceneLayerActorSwitcher"),
+  parentId: fc.constantFrom(null, ...ACTOR_IDS),
+  transform: transformArb,
+  visible: fc.boolean(),
+  locked: fc.boolean(),
+  components: fc.uniqueArray(componentArb, { selector: (component) => component.id, maxLength: 3 }),
+  properties: propertiesArb,
+  suppressedComponentSourceIds: fc.subarray(["p1", "p2"]),
+  folderId: fc.constantFrom(null, ...FOLDER_IDS),
+}, { requiredKeys: ["id", "name", "classId", "parentId", "transform", "visible", "locked", "components", "folderId"] });
+
+const folderArb: fc.Arbitrary<SerializedOutlinerFolder> = fc.record({
+  id: fc.constantFrom(...FOLDER_IDS),
+  name: fc.constantFrom("One", "Two"),
+  parentFolderId: fc.constantFrom(null, ...FOLDER_IDS),
+});
+
+const sceneArb: fc.Arbitrary<SerializedScene> = fc.record({
+  name: fc.constantFrom("Main", "Level"),
+  viewportMode: fc.constantFrom("3d" as const, "2d" as const),
+  fogEnabled: fc.boolean(),
+  celShading: fc.option(fc.constantFrom({}, { shadowBands: 3 }), { nil: undefined }),
+  folders: fc.uniqueArray(folderArb, { selector: (folder) => folder.id, maxLength: 3 }),
+  actors: fc.uniqueArray(actorArb, { selector: (actor) => actor.id, maxLength: 4 }),
+  overlayEditor: fc.boolean(),
+}, { requiredKeys: ["name", "viewportMode", "fogEnabled", "folders", "actors"] }).map(({ fogEnabled, celShading, ...scene }) => {
+  const settings = { ...createDefaultScene().settings, fogEnabled };
+  if (celShading) settings.celShading = celShading;
+  else delete settings.celShading;
+  return { ...scene, settings };
+});
+
+describe("diffSceneCommands round trip", () => {
+  it("reproduces every authored scene field, undoes exactly, and replays from the journal", () => {
+    fc.assert(
+      fc.property(sceneArb, sceneArb, (before, after) => {
+        const commands = diffSceneCommands(before, after);
+        const session = new EditSession();
+        const applied = session.applyBatch("scene", before, commands)?.doc ?? before;
+        expect(applied).toEqual(after);
+        expect(session.undo("scene", applied)?.doc ?? applied).toEqual(before);
+
+        let replayed = before;
+        for (const command of commands) {
+          const line = JSON.parse(JSON.stringify(commandToJournalPayload(command))) as { type: string };
+          replayed = reviveCommand(line)!.apply(replayed) as SerializedScene;
+        }
+        expect(replayed).toEqual(after);
+        // The deltas alone suffice; the whole-scene safety net stays unused.
+        expect(planSceneChange(before, after).map((command) => command.type)).not.toContain("scene.replace");
+      }),
+      { numRuns: 300 },
+    );
+  });
+});
+
+describe("planSceneChange", () => {
+  it("is empty for an equal scene, including one that differs only by undefined keys", () => {
+    const before = baseScene();
+    const after = structuredClone(before);
+    after.actors[0]!.components[0]!.properties.unset = undefined;
+    expect(planSceneChange(before, after)).toEqual([]);
+  });
+
+  it("keeps an unrepresented field undoable through one scene replacement", () => {
+    const before = baseScene();
+    const after = structuredClone(before);
+    after.name = "Renamed";
+    (after.actors[0] as SerializedActor & { tags?: string[] }).tags = ["enemy"];
+
+    const commands = planSceneChange(before, after);
+    expect(commands.map((command) => command.type)).toEqual(["scene.replace"]);
+    const session = new EditSession();
+    const applied = session.applyBatch("scene", before, commands)!.doc;
+    expect(applied).toEqual(after);
+    expect(session.undo("scene", applied)!.doc).toEqual(before);
+    const line = JSON.parse(JSON.stringify(commandToJournalPayload(commands[0]!))) as { type: string };
+    expect(reviveCommand(line)!.apply(before)).toEqual(after);
+  });
+
+  it("does not let the safety net move a 2D anchor the commands refuse to move", () => {
+    const before = baseScene();
+    before.actors.push(createActor("pin", "Pin", {
+      components: [{ id: "anchor", classId: "2DAnchorComponent", properties: {} }],
+    }));
+    const after = structuredClone(before);
+    after.actors[2]!.transform.position = [4, 5, 6];
+    expect(planSceneChange(before, after)).toEqual([]);
+
+    after.actors[2]!.name = "Renamed Pin";
+    const commands = planSceneChange(before, after);
+    expect(commands.map((command) => command.type)).not.toContain("scene.replace");
+    const applied = commands.reduce<SerializedScene>((doc, command) => command.apply(doc), before);
+    expect(applied.actors[2]!.name).toBe("Renamed Pin");
+    expect(applied.actors[2]!.transform).toEqual(before.actors[2]!.transform);
   });
 });

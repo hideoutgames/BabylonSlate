@@ -8,6 +8,7 @@ import {
   normalizeShadowOverrides,
   normalizeDataDefinitionAsset,
   normalizeDataTreeAsset,
+  normalizePrefab,
 } from "@babylonslate/core";
 import { normalizeParticleGraphDocument } from "@babylonslate/particle-graph";
 import {
@@ -231,6 +232,10 @@ export function createDefaultMigrationRegistry(): MigrationRegistry {
       ],
     });
   }
+  registry.register({
+    type: "Prefab",
+    migrations: [(payload) => asRecord(normalizePrefab(payload))],
+  });
   registry.register({
     type: "SaveGame",
     migrations: [(payload) => ({ ...validateSaveGameDefinition(payload) })],

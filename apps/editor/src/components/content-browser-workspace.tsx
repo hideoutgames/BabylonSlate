@@ -1123,6 +1123,7 @@ function ContentBrowserWorkspaceBody({
         label: "Create Material Instance",
         icon: <PaintbrushIcon />,
         onSelect: () => {
+          if (busy) return;
           void (async () => {
             const guid = menuTargetGuidsRef.current[0];
             const parent = guid ? assetRegistry?.getByGuid(guid) : undefined;
@@ -1136,6 +1137,8 @@ function ContentBrowserWorkspaceBody({
               isNewAssetNameTaken(paths, folder, "MaterialInstance", candidate));
             const fileName = newAssetFileName("MaterialInstance", name);
             if (!fileName) return;
+            setBusy(true);
+            setOperationError(null);
             try {
               const created = await assetRegistry.createAsset(
                 browse.rootId,
@@ -1146,6 +1149,8 @@ function ContentBrowserWorkspaceBody({
               await openOrFocusDocument(created);
             } catch (error) {
               setOperationError(error instanceof Error ? error.message : String(error));
+            } finally {
+              setBusy(false);
             }
           })();
         },
@@ -1156,35 +1161,46 @@ function ContentBrowserWorkspaceBody({
         icon: <CopyPlusIcon />,
         shortcut: keybinds.get("edit.duplicate")?.[0],
         onSelect: () => {
+          if (busy || !assetRegistry) return;
+          const folders = rootSelectedFolderPaths(
+            menuTargetFoldersRef.current.filter(
+              (path) => !isFolderTreeRoot(path, rootPrefixes),
+            ),
+          );
+          const guids = guidsOutsideSelectedFolders(
+            menuTargetGuidsRef.current,
+            folders,
+            (guid) => assetRegistry.getByGuid(guid)?.path,
+          );
+          const browse = contentBrowserFolderOps(
+            selectedFolderPath,
+            browserRoots,
+          );
+          if (browse.readOnly) return;
           void (async () => {
-            if (!assetRegistry) return;
-            const folders = rootSelectedFolderPaths(
-              menuTargetFoldersRef.current.filter(
-                (path) => !isFolderTreeRoot(path, rootPrefixes),
-              ),
-            );
-            const guids = guidsOutsideSelectedFolders(
-              menuTargetGuidsRef.current,
-              folders,
-              (guid) => assetRegistry.getByGuid(guid)?.path,
-            );
-            const browse = contentBrowserFolderOps(
-              selectedFolderPath,
-              browserRoots,
-            );
-            if (browse.readOnly) return;
-            for (const path of folders) {
-              const from = contentBrowserFolderOps(path, browserRoots);
-              await assetRegistry.duplicateFolder(from.rootId, from.relative);
+            setBusy(true);
+            setOperationError(null);
+            try {
+              try {
+                for (const path of folders) {
+                  const from = contentBrowserFolderOps(path, browserRoots);
+                  await assetRegistry.duplicateFolder(from.rootId, from.relative);
+                }
+                for (const guid of guids) {
+                  await assetRegistry.duplicateAsset(
+                    guid,
+                    browse.rootId,
+                    browse.relative,
+                  );
+                }
+              } finally {
+                await refreshAssetRegistry();
+              }
+            } catch (error) {
+              setOperationError(error instanceof Error ? error.message : String(error));
+            } finally {
+              setBusy(false);
             }
-            for (const guid of guids) {
-              await assetRegistry.duplicateAsset(
-                guid,
-                browse.rootId,
-                browse.relative,
-              );
-            }
-            await refreshAssetRegistry();
           })();
         },
       },
@@ -1273,6 +1289,7 @@ function ContentBrowserWorkspaceBody({
     ],
     [
       assetRegistry,
+      busy,
       projectGuid,
       projectDocument,
       thumbnailsEnabled,
