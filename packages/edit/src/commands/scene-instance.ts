@@ -4,13 +4,16 @@ import { snapshotBytes } from "../snapshot-bytes";
 
 export class SetActorSuppressedComponentsCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.setActorSuppressedComponents";
-  readonly byteSize: number;
+  #byteSize?: number;
+  /** Retained snapshot cost, measured on first read and memoised. */
+  get byteSize(): number {
+    return (this.#byteSize ??= snapshotBytes({ from: this.from, to: this.to }));
+  }
   readonly actorId: string;
   readonly from: readonly string[] | undefined;
   readonly to: readonly string[] | undefined;
   constructor(actorId: string, from: readonly string[] | undefined, to: readonly string[] | undefined) {
     this.actorId = actorId; this.from = from; this.to = to;
-    this.byteSize = snapshotBytes({ from, to });
   }
   apply(doc: SerializedScene): SerializedScene {
     return { ...doc, actors: doc.actors.map((actor) => {
@@ -28,7 +31,11 @@ export class SetActorSuppressedComponentsCommand implements EditCommand<Serializ
 
 export class SetComponentMaterialInstanceCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.setComponentMaterialInstance";
-  readonly byteSize: number;
+  #byteSize?: number;
+  /** Retained snapshot cost, measured on first read and memoised. */
+  get byteSize(): number {
+    return (this.#byteSize ??= snapshotBytes({ from: this.from, to: this.to }));
+  }
   readonly actorId: string;
   readonly componentId: string;
   readonly from: MaterialInstanceOverrides | undefined;
@@ -36,7 +43,6 @@ export class SetComponentMaterialInstanceCommand implements EditCommand<Serializ
   constructor(actorId: string, componentId: string,
     from: MaterialInstanceOverrides | undefined, to: MaterialInstanceOverrides | undefined) {
     this.actorId = actorId; this.componentId = componentId; this.from = from; this.to = to;
-    this.byteSize = snapshotBytes({ from, to });
   }
   apply(doc: SerializedScene): SerializedScene {
     return { ...doc, actors: doc.actors.map((actor) => actor.id !== this.actorId ? actor : {

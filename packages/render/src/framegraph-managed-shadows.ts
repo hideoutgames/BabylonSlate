@@ -51,7 +51,7 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
     this.depthPrePass = attachObjectRendererDepthPrePass(scene, renderer);
     renderer.render = (...renderArgs) => {
       const intermediate = scene._intermediateRendering;
-      // Babylon 9.20 marks every graph ObjectRenderer as intermediate, even
+      // Babylon 9.29 marks every graph ObjectRenderer as intermediate, even
       // its main scene pass. Mesh.ignoreCameraMaxZ must retain native main-pass
       // behavior; geometry and shadow passes keep their intermediate context.
       if (this.isMainObjectRenderer || this.mainView) scene._intermediateRendering = false;
@@ -118,7 +118,7 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
       changed.clear();
       for (const light of this._scene.lights) {
         // With no map, the material already resolves to an unshadowed variant.
-        // Native 9.20 toggles even these lights, dirtying every receiver twice
+        // Native 9.29 toggles even these lights, dirtying every receiver twice
         // per pass despite identical shader output. Preserve their authored flag.
         if (!(light.getShadowGenerator(this.camera) ?? light.getShadowGenerator())) continue;
         const enabled = !this.disableShadows && admitted.has(light);
@@ -161,7 +161,7 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
       enabled: generator.getLight().isEnabled(),
       shadowEnabled: generator.getLight().shadowEnabled,
     }));
-    // Babylon 9.20 reads only these three members in _setLightsForShadow. Its
+    // Babylon 9.29 reads only these three members in _setLightsForShadow. Its
     // official shadow task cannot adopt a generator and owns disposal. Supplying
     // this narrow read contract avoids invoking any allocating task setters.
     // All controller generators (including CSM) currently use the null camera

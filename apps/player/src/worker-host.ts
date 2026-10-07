@@ -55,8 +55,12 @@ export function createPlayerWorkerHost(): PlayerWorkerHost {
         return;
       }
       const buffer = new Float32Array(ab);
-      for (const handler of snapshotHandlers) handler(buffer);
-      post({ channel: "recycleSnapshot", payload: ab }, [ab]);
+      // The worker caps unreturned snapshots, so a throwing consumer must still return it.
+      try {
+        for (const handler of snapshotHandlers) handler(buffer);
+      } finally {
+        post({ channel: "recycleSnapshot", payload: ab }, [ab]);
+      }
     }
   };
   return {

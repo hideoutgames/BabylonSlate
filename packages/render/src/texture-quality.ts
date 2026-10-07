@@ -87,7 +87,7 @@ export class QualityTextureBlock extends TextureBlock {
   ): this | undefined {
     const start = state.compilationString.length;
     const result = super._buildBlock(state);
-    // Babylon 9.20 selects the scalar WGSL helper for Color4 outputs. Keep
+    // Babylon 9.29 selects the scalar WGSL helper for Color4 outputs. Keep
     // conversion local to this block and preserve alpha with its vec4 helper.
     if (state.shaderLanguage === 1) {
       const generated = state.compilationString.slice(start).replaceAll(

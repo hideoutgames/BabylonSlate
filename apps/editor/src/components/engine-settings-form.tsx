@@ -7,8 +7,10 @@ import { NumberField, SelectableText } from "@babylonslate/editor-kit";
 import { getBuildIdentity } from "../lib/build-identity";
 import {
   getHostPlatform,
+  MAX_UNDO_BYTE_BUDGET,
   MAX_UNDO_HISTORY_LENGTH,
   MAX_VIEWPORT_FRAME_CAP,
+  MIN_UNDO_BYTE_BUDGET,
   MIN_VIEWPORT_FRAME_CAP,
   type EngineSettings,
 } from "@babylonslate/vfs";
@@ -300,6 +302,26 @@ export function EngineSettingsForm({
             />
             <FieldDescription>
               Maximum undo steps per document.
+            </FieldDescription>
+          </Field>
+          <Field className="settings-field">
+            <FieldLabel htmlFor="setting-undo-memory-mb">
+              Undo Memory Limit (MB)
+            </FieldLabel>
+            <NumberField
+              id="setting-undo-memory-mb"
+              min={MIN_UNDO_BYTE_BUDGET / (1024 * 1024)}
+              max={MAX_UNDO_BYTE_BUDGET / (1024 * 1024)}
+              step={1}
+              className="min-h-[var(--chrome-row,28px)]"
+              data-testid="setting-undo-memory-mb"
+              value={Math.round(settings.undoByteBudget / (1024 * 1024))}
+              onChange={(megabytes) =>
+                void onChange({ undoByteBudget: Math.round(megabytes) * 1024 * 1024 })
+              }
+            />
+            <FieldDescription>
+              Memory each document's Undo history may use. An edit larger than this still applies but can't be undone.
             </FieldDescription>
           </Field>
         </FieldSet>

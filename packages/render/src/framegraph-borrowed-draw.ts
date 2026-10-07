@@ -19,7 +19,7 @@ function attempt(errors: unknown[], action: () => void): void {
 }
 
 /**
- * Draws an RTT the graph borrows but does not own. Babylon 9.20's
+ * Draws an RTT the graph borrows but does not own. Babylon 9.29's
  * renderUnmanaged lacks finally, so restore the caller's target, scene and
  * depth state even when `draw` throws; never mask the original failure.
  */

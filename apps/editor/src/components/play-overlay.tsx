@@ -22,6 +22,7 @@ import {
   type AudioProjectSettings,
   type SerializedScene,
   type SerializedSceneLayer,
+  type CollisionTriangleMesh,
 } from "@babylonslate/core";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { SelectableText } from "@babylonslate/editor-kit";
@@ -161,6 +162,10 @@ export interface PlayOverlayProps {
   fontCssStackByGuid?: ReadonlyMap<string, string>;
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   modelPayloads?: ReadonlyMap<string, ModelPayload>;
+  /** Complex Collision meshes already cooked by source preparation. */
+  complexMeshes?: ReadonlyMap<string, CollisionTriangleMesh>;
+  /** On-demand cook for a Model the content scan did not mark. */
+  cookComplexCollision?: (assetGuid: string) => Promise<CollisionTriangleMesh | null>;
   modelClipAnimationGuids?: ReadonlyMap<string, ReadonlyMap<string, string>>;
   retargetAnimationLoads?: ReadonlyMap<
     string,
@@ -268,6 +273,8 @@ export function PlayOverlay({
   fontCssStackByGuid,
   modelBytes,
   modelPayloads,
+  complexMeshes,
+  cookComplexCollision,
   modelClipAnimationGuids,
   retargetAnimationLoads,
   loadAudioSourceBytes,
@@ -498,6 +505,10 @@ export function PlayOverlay({
   modelBytesRef.current = modelBytes;
   const modelPayloadsRef = useRef(modelPayloads);
   modelPayloadsRef.current = modelPayloads;
+  const complexMeshesRef = useRef(complexMeshes);
+  complexMeshesRef.current = complexMeshes;
+  const cookComplexCollisionRef = useRef(cookComplexCollision);
+  cookComplexCollisionRef.current = cookComplexCollision;
   const modelClipAnimationGuidsRef = useRef(modelClipAnimationGuids);
   modelClipAnimationGuidsRef.current = modelClipAnimationGuids;
   const retargetAnimationLoadsRef = useRef(retargetAnimationLoads);
@@ -732,6 +743,8 @@ export function PlayOverlay({
           fontCssStackByGuid: fontCssStackByGuidRef.current,
           modelBytes: modelBytesRef.current,
           modelPayloads: modelPayloadsRef.current,
+          complexMeshes: complexMeshesRef.current,
+          cookComplexCollision: (assetGuid) => cookComplexCollisionRef.current?.(assetGuid) ?? Promise.resolve(null),
           modelClipAnimationGuids: modelClipAnimationGuidsRef.current,
           retargetAnimationLoads: retargetAnimationLoadsRef.current,
           loadAudioSourceBytes: loadAudioSourceBytesRef.current,

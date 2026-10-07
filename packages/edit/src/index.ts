@@ -3,7 +3,9 @@ export {
   DocumentEditStack,
   type ApplyResult,
   type DocumentEditStackOptions,
+  type EditApplyResult,
   type HistoryAdmissionResult,
+  type HistoryOutcome,
 } from "./stack";
 export { EditSession, DEFAULT_EDIT_BYTE_BUDGET } from "./session";
 export {

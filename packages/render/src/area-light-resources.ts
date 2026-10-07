@@ -6,7 +6,7 @@ type Lookup = { LTC1: RawTexture; LTC2: RawTexture; references: number; lease: M
 const engines = new WeakMap<AbstractEngine, Lookup>();
 const scenes = new WeakMap<Scene, { lookup: Lookup; references: number }>();
 
-/** Native 9.20 encoding: interleaved RGBA half floats for two 64 by 64 tables. */
+/** Native 9.29 encoding: interleaved RGBA half floats for two 64 by 64 tables. */
 function decodeLookup(): [Uint16Array, Uint16Array] {
   const bytes = Uint8Array.from(atob(AREA_LIGHT_LTC_BASE64), (char) => char.charCodeAt(0));
   if (bytes.byteLength !== 64 * 64 * 8 * 2) throw new Error("Invalid bundled area-light lookup data.");

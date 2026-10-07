@@ -21,7 +21,7 @@ export function setSceneGameTimePaused(scene: Scene, paused: boolean): void {
   else {
     clock.pausedMilliseconds += Math.max(0, now - clock.pausedAt!);
     clock.pausedAt = null;
-    // Babylon 9.20 Animatable uses wall time independently of Engine delta.
+    // Babylon 9.29 Animatable uses wall time independently of Engine delta.
     // Reset its existing clock so resuming never consumes the paused interval.
     if (scene._animationTimeLast) scene._animationTimeLast = now;
   }

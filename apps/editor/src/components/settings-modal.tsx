@@ -212,7 +212,7 @@ const ENGINE_CATEGORIES: Array<
   {
     id: "undo",
     label: "Undo",
-    keywords: "undo history length stack",
+    keywords: "undo history length stack memory limit budget",
   },
   {
     id: "debugger",

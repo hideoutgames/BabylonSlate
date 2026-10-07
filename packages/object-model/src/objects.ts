@@ -60,6 +60,41 @@ class ColliderVariables extends Map<string, unknown> {
   }
 }
 
+/** Variables that change actor identity/hierarchy and so the World's structural revision. */
+const isStructuralActorVariable = (name: string): boolean =>
+  name === "parentId" || name === "name";
+
+/** Every write path, including direct `variables` map writes, marks structural changes. */
+class ActorVariables extends Map<string, unknown> {
+  private readonly actor: Actor;
+
+  constructor(actor: Actor, entries: Iterable<readonly [string, unknown]>) {
+    super();
+    this.actor = actor;
+    // Initial values are construction, not a change; no World is attached yet.
+    for (const [name, value] of entries) super.set(name, value);
+  }
+
+  override set(name: string, value: unknown): this {
+    if (isStructuralActorVariable(name) && value !== this.get(name)) this.markStructureChanged();
+    return super.set(name, value);
+  }
+
+  override delete(name: string): boolean {
+    if (isStructuralActorVariable(name) && this.get(name) !== undefined) this.markStructureChanged();
+    return super.delete(name);
+  }
+
+  override clear(): void {
+    if (this.get("parentId") !== undefined || this.get("name") !== undefined) this.markStructureChanged();
+    super.clear();
+  }
+
+  private markStructureChanged(): void {
+    this.actor.world?.markStructureChanged?.();
+  }
+}
+
 function freezeCollisionValue(value: unknown, seen = new WeakSet<object>()): unknown {
   if (value && typeof value === "object" && !seen.has(value)) {
     seen.add(value);
@@ -91,11 +126,14 @@ export class BObject {
   }) {
     this.guid = options.guid ?? newGuid(options.guidFactory);
     this.classId = options.classId;
-    this.variables = this.classId === "ColliderComponent"
-      ? new ColliderVariables(Object.entries(options.variables ?? {}))
-      : new Map(Object.entries(options.variables ?? {}));
+    this.variables = this.createVariables(Object.entries(options.variables ?? {}));
     this.hooks = options.hooks ?? {};
     this.implementedInterfaces = [...(options.implementedInterfaces ?? [])];
+  }
+
+  /** Runs during construction, before subclass fields are initialized. */
+  protected createVariables(entries: Array<[string, unknown]>): Map<string, unknown> {
+    return this.classId === "ColliderComponent" ? new ColliderVariables(entries) : new Map(entries);
   }
 
   callOnCreation(): void {
@@ -162,9 +200,8 @@ export class Actor extends BObject {
     this.suppressedComponentSourceIds = Object.freeze(normalizeSuppressedComponentSourceIds(options.suppressedComponentSourceIds));
   }
 
-  override setVariable(name: string, value: unknown): void {
-    if ((name === "parentId" || name === "name") && value !== this.getVariable(name)) this.world?.markStructureChanged?.();
-    super.setVariable(name, value);
+  protected override createVariables(entries: Array<[string, unknown]>): Map<string, unknown> {
+    return new ActorVariables(this, entries);
   }
 
   attachComponent(component: ActorComponent): void {
