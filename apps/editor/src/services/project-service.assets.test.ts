@@ -141,6 +141,9 @@ describe("project documents as .babasset", () => {
     const graphId = documentId({ kind: "graph", path: MAIN_CLASS_FILE });
     await documents.initializeFromProject(service, loaded.document, { documents: {}, tabOrder: [sceneId, graphId] });
     expect(documents.getDocument(sceneId)).toBeUndefined();
+    // Restored tabs stay cold until activated; the retained one must still load.
+    expect(documents.getState().tabOrder).toContain(graphId);
+    await documents.openDocument(service, { kind: "graph", path: MAIN_CLASS_FILE, label: "Main" });
     expect(documents.getDocument(graphId)?.content).toMatchObject({ nodes: [], edges: [] });
   });
 

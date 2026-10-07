@@ -346,8 +346,8 @@ describe("DocumentProvider actions and route", () => {
     await act(() => actions.openListedProject(listed));
     expect(documents().openDocuments.find(doc => doc.id === MAIN_SCENE_ID)?.content).toBeNull();
     expect(documents().recoveryAvailable).toBe(true);
-    await act(async () => { await actions.keepRecovery(); });
-    expect(openScene(MAIN_SCENE_ID).actors[0]!.transform.position).toEqual(recovered.actors[0]!.transform.position);
+    act(() => actions.keepRecovery());
+    await waitFor(() => expect(openScene(MAIN_SCENE_ID).actors[0]!.transform.position).toEqual(recovered.actors[0]!.transform.position));
     expect(documents().dirtyDocuments.map(doc => doc.id)).toContain(MAIN_SCENE_ID);
     expect(documents().recoveryAvailable).toBe(false);
   });
@@ -733,13 +733,20 @@ describe("DocumentProvider closed document history", () => {
     await act(() => actions.saveAll());
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const save = vi.spyOn(ProjectService.prototype, "saveProject").mockRejectedValueOnce(new Error("Storage unavailable"));
+    // Fire the debounce, then let the save's own timers run until it settles.
+    const runAutoSave = async () => {
+      await act(() => vi.advanceTimersByTimeAsync(120_000));
+      for (let i = 0; i < 20 && documents().autoSaveStatus?.state === "saving"; i++) {
+        await act(() => vi.advanceTimersByTimeAsync(1_000));
+      }
+    };
     try {
       await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 2)));
-      await act(() => vi.advanceTimersByTimeAsync(120_000));
+      await runAutoSave();
       expect(documents().autoSaveStatus).toMatchObject({ state: "error", message: expect.stringContaining("Storage unavailable") });
       expect(documents().dirtyDocuments.length > 0 || documents().projectDirty).toBe(true);
       await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 2)));
-      await act(() => vi.advanceTimersByTimeAsync(120_000));
+      await runAutoSave();
       expect(documents().autoSaveStatus).toEqual({ state: "saved" });
       expect(documents().dirtyDocuments).toHaveLength(0);
       expect(documents().projectDirty).toBe(false);
