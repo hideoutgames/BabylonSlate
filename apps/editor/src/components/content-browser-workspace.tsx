@@ -41,6 +41,8 @@ import {
   resolvePluginEnabled,
   embedGltfImportBatch,
   groupMsdfImportBatch,
+  contentEntryNameError,
+  stripAssetFileSuffix,
 } from "@babylonslate/assets";
 import {
   convertObjImportBatch,
@@ -148,8 +150,6 @@ import { useValidation } from "../context/validation-context";
 import {
   ASSETS_ROOT,
   assetReferencesIncludingOpenDocuments,
-  addSelectedAssetGuid,
-  addSelectedFolderPath,
   applyContentBrowserTreeSelect,
   applyContentBrowserTileSelect,
   classIdFromClassAsset,
@@ -289,6 +289,7 @@ function ContentBrowserWorkspaceBody({
     assetRegistry,
     registryEpoch,
     refreshAssetRegistry,
+    renameAsset,
     repathDocument,
     openDocument,
     closeDocumentsForPaths,
@@ -849,6 +850,10 @@ function ContentBrowserWorkspaceBody({
             nameDialog.value,
           )
         : false;
+  const nameDialogError = nameDialog
+    ? contentEntryNameError(nameDialog.value) ??
+      (nameDialogTaken ? "That name is already used in this folder." : null)
+    : null;
 
   const loadedThumbnailVersionsRef = useRef<Readonly<Record<string, number>>>({});
 
@@ -1180,7 +1185,7 @@ function ContentBrowserWorkspaceBody({
           setNameDialog({
             kind: "rename",
             guid,
-            value: asset.header.name,
+            value: stripAssetFileSuffix(asset.path.split("/").at(-1) ?? asset.header.name),
           });
         },
       },
@@ -1257,8 +1262,10 @@ function ContentBrowserWorkspaceBody({
   });
 
   const resolveAssetName = useCallback(
-    (guid: string) =>
-      assetRegistry?.getByGuid(guid)?.header.name ?? guid,
+    (guid: string) => {
+      const asset = assetRegistry?.getByGuid(guid);
+      return asset?.header.name.trim() || asset?.path.split("/").at(-1) || guid;
+    },
     [assetRegistry],
   );
 
@@ -1633,7 +1640,7 @@ function ContentBrowserWorkspaceBody({
   );
 
   const confirmNameDialog = useCallback(async () => {
-    if (!assetRegistry || !nameDialog) return;
+    if (!assetRegistry || !nameDialog || busy || nameDialogError) return;
     setOperationError(null);
     setBusy(true);
     try {
@@ -1685,7 +1692,7 @@ function ContentBrowserWorkspaceBody({
         const before = assetRegistry.getByGuid(nameDialog.guid);
         if (!before) return;
         if (refuseTheirsAssetPaths([before.path])) return;
-        const renamed = await assetRegistry.renameAsset(
+        const renamed = await renameAsset(
           nameDialog.guid,
           nameDialog.value.trim(),
         );
@@ -1707,6 +1714,9 @@ function ContentBrowserWorkspaceBody({
   }, [
     assetRegistry,
     nameDialog,
+    busy,
+    nameDialogError,
+    renameAsset,
     allAssets,
     refreshAssetRegistry,
     refuseTheirsAssetPaths,
@@ -2006,14 +2016,16 @@ function ContentBrowserWorkspaceBody({
         (path) => !isFolderTreeRoot(path, rootPrefixes),
       );
       if (extra.guid && !guids.includes(extra.guid)) {
-        guids = [...guids, extra.guid];
-        setSelectedGuids((current) => addSelectedAssetGuid(current, extra.guid!));
+        guids = [extra.guid];
+        folders = [];
+        setSelectedGuids(new Set(guids));
+        setSelectedFolderPaths(new Set());
       }
       if (extra.folderPath && !folders.includes(extra.folderPath)) {
-        folders = [...folders, extra.folderPath];
-        setSelectedFolderPaths((current) =>
-          addSelectedFolderPath(current, extra.folderPath!),
-        );
+        guids = [];
+        folders = [extra.folderPath];
+        setSelectedGuids(new Set());
+        setSelectedFolderPaths(new Set(folders));
       }
       menuTargetGuidsRef.current = guids;
       menuTargetFoldersRef.current = folders;
@@ -3009,38 +3021,43 @@ function ContentBrowserWorkspaceBody({
             </AlertDialogTitle>
             <AlertDialogDescription>
               {nameDialog?.kind === "folder"
-                ? "Create a folder under the current selection."
+                ? `Create a folder in ${selectedFolderPath}.`
                 : nameDialog?.kind === "rename-folder"
                   ? "Rename the folder. References to its assets stay connected."
                   : "Rename the asset file. References to it stay connected."}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <Field data-invalid={nameDialogTaken || undefined}>
+          <Field data-invalid={Boolean(nameDialogError) || undefined}>
           <FieldLabel htmlFor="content-browser-name-input">Name</FieldLabel>
           <Input
             id="content-browser-name-input"
             className="min-h-[var(--touch-target,44px)]"
             data-testid="content-browser-name-input"
               aria-describedby={
-                nameDialogTaken ? "content-browser-name-error" : undefined
+                nameDialogError ? "content-browser-name-error" : undefined
               }
-            aria-invalid={nameDialogTaken || undefined}
+            aria-invalid={Boolean(nameDialogError) || undefined}
             value={nameDialog?.value ?? ""}
             onChange={(event) =>
               setNameDialog((current) =>
                 current ? { ...current, value: event.target.value } : current,
               )
             }
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+              event.preventDefault();
+              void confirmNameDialog();
+            }}
           />
           </Field>
-          {nameDialogTaken ? (
+          {nameDialogError ? (
             <p
               className="text-sm text-destructive"
               data-testid="content-browser-name-taken"
                 id="content-browser-name-error"
                 role="alert"
             >
-              That name is already used in this folder.
+              {nameDialogError}
             </p>
           ) : null}
           {operationError ? (
@@ -3052,7 +3069,7 @@ function ContentBrowserWorkspaceBody({
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              disabled={busy || nameDialogTaken || !nameDialog?.value.trim()}
+              disabled={busy || Boolean(nameDialogError)}
               data-testid="content-browser-name-confirm"
               onClick={(event) => {
                 event.preventDefault();

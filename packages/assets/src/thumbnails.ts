@@ -79,7 +79,7 @@ export class ThumbnailDecodeLru {
 
 const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47];
 
-/** Sniff PNG vs JPEG so Model thumbs keep alpha and Texture JPEGs still decode. */
+/** Sniff PNG vs JPEG so alpha thumbnails and existing JPEGs both decode. */
 export function thumbnailMime(bytes: Uint8Array): string {
   if (
     bytes.length >= 4 &&
@@ -96,6 +96,21 @@ export function thumbnailMime(bytes: Uint8Array): string {
 export function isThumbnailableAssetType(type: string): boolean {
   return type === "Texture" || type === "Model" || type === "Animation" ||
     type === "Material" || type === "Class" || type === "Graph";
+}
+
+/** Rebuild legacy JPEG thumbnails whose source may contain alpha, on demand. */
+export async function upgradeTextureThumbnail(
+  cached: Uint8Array | null,
+  sourceMime: string | undefined,
+  readSource: () => Promise<Uint8Array>,
+): Promise<Uint8Array | null> {
+  if (cached && (sourceMime === "image/jpeg" || thumbnailMime(cached) === "image/png")) return cached;
+  try {
+    return await generateThumbnailBytes(await readSource(), DEFAULT_THUMBNAIL_MAX_EDGE, sourceMime) ?? cached;
+  } catch {
+    // A missing source or unavailable decoder should retain the existing tile.
+    return cached;
+  }
 }
 
 /**
@@ -131,9 +146,12 @@ export async function generateThumbnailBytes(
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
     ctx.drawImage(bitmap, 0, 0, width, height);
+    // JPEG has no alpha. Preserve transparency for PNG, WebP, and other
+    // potentially transparent sources instead of flattening them onto black.
+    const outputMime = mime === "image/jpeg" ? "image/jpeg" : "image/png";
     const blob =
       typeof canvas.convertToBlob === "function"
-        ? await canvas.convertToBlob({ type: "image/jpeg", quality: 0.7 })
+        ? await canvas.convertToBlob({ type: outputMime, quality: 0.7 })
         : null;
     if (!blob) return null;
     return new Uint8Array(await blob.arrayBuffer());

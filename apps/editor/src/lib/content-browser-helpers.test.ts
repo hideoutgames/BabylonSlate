@@ -37,6 +37,7 @@ import {
   lastSceneClassDeleteLines,
   isFolderTreeRoot,
   isNewAssetNameTaken,
+  isRenameNameTaken,
   isValidMoveDestination,
   isValidSelectionMoveDestination,
   contentBrowserContextActions,
@@ -78,6 +79,13 @@ import {
   assetTypeThumbAccent,
 } from "./content-browser-helpers";
 import { resolveTypeVisual } from "@babylonslate/editor-kit";
+
+it("detects rename collisions with Unicode stems and compound asset suffixes", () => {
+  const paths = ["assets/Hero.class.babasset", "assets/Hero 🤖 Ünïcødé.class.babasset"];
+  expect(isRenameNameTaken(paths, paths[0]!, "Hero 🤖 Ünïcødé")).toBe(true);
+  expect(isRenameNameTaken(paths, paths[0]!, "Hero")).toBe(false);
+  expect(isRenameNameTaken(paths, paths[0]!, "Hero/Villain")).toBe(false);
+});
 
 it("admits material sampler textures without admitting environment cubes", () => {
   expect(isMaterialSamplerTextureAsset({ type: "RenderTargetTexture" })).toBe(true);

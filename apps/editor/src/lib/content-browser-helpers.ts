@@ -27,6 +27,8 @@ import {
   normalizeAnimationPayload,
   spriteAnimationTextureGuids,
   isEnvironmentTexturePayload,
+  contentEntryNameError,
+  renamedAssetPath,
 } from "@babylonslate/assets";
 import {
   classIdsFromVariableMembers,
@@ -2317,12 +2319,8 @@ export function isRenameNameTaken(
   currentPath: string,
   newName: string,
 ): boolean {
-  const safe = newName.trim().replace(/[^a-zA-Z0-9_.-]+/g, "_");
-  if (!safe) return false;
-  const dir = currentPath.includes("/")
-    ? currentPath.slice(0, currentPath.lastIndexOf("/"))
-    : "";
-  const newPath = dir ? `${dir}/${safe}.babasset` : `${safe}.babasset`;
+  if (contentEntryNameError(newName)) return false;
+  const newPath = renamedAssetPath(currentPath, newName);
   if (newPath === currentPath) return false;
   for (const existing of existingPaths) {
     if (existing === newPath) return true;
