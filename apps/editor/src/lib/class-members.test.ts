@@ -772,33 +772,43 @@ describe("addClassMember", () => {
     ]);
   });
 
-  it("syncs function signature pins onto matching Call nodes", () => {
+  it("syncs function signature pins onto matching Call nodes in every graph", () => {
     let graph = addClassMember(emptyGraph(), "function", "Jump", () => "fn-1");
+    graph = addClassMember(graph, "function", "Land", () => "fn-2");
+    const call = (id: string) => ({
+      id,
+      type: "functions.call",
+      position: { x: 200, y: 80 },
+      data: {
+        title: "Call Jump",
+        functionName: "Jump",
+        classId: "Hero",
+        implicitSelf: true,
+        __nodeType: "functions.call",
+      },
+    });
+    const land = graph.functionGraphs!["fn-2"]!;
     graph = {
       ...graph,
-      nodes: [
-        {
-          id: "call-1",
-          type: "functions.call",
-          position: { x: 200, y: 80 },
-          data: {
-            title: "Call Jump",
-            functionName: "Jump",
-            classId: "Hero",
-            implicitSelf: true,
-            __nodeType: "functions.call",
-          },
-        },
-      ],
+      nodes: [call("call-1")],
+      functionGraphs: {
+        ...graph.functionGraphs,
+        "fn-2": { ...land, nodes: [...land.nodes, call("call-2")] },
+      },
     };
     const pins = [
-      { name: "exec", typeId: "exec", direction: "in" as const },
       { name: "height", typeId: "float", direction: "in" as const },
+      { name: "exec", typeId: "exec", direction: "in" as const },
       { name: "then", typeId: "exec", direction: "out" as const },
     ];
     graph = patchClassMember(graph, "fn-1", { pins });
-    expect(graph.nodes[0]?.data.pins).toEqual(pins);
-    expect(graph.nodes[0]?.data.__pins).toBeUndefined();
+    const landCall = graph.functionGraphs?.["fn-2"]?.nodes.find(
+      (node) => node.id === "call-2",
+    );
+    for (const node of [graph.nodes[0], landCall]) {
+      expect(node?.data.pins).toEqual(pins);
+      expect(node?.data.__pins).toBeUndefined();
+    }
   });
 });
 

@@ -8,6 +8,7 @@ import {
   jsIdent,
   memberPinRows,
   objectLiteralKey,
+  type MemberPinRow,
   pinTypeForVariable,
 } from "./member-pins";
 
@@ -16,6 +17,7 @@ export const functionCallNodes: NodeDefinition[] = [
     id: "functions.call",
     title: "Call",
     category: "functions",
+    declaredPinOrder: true,
     pins: (properties) => {
       const classId =
         typeof properties.classId === "string" && properties.classId.trim()
@@ -25,41 +27,34 @@ export const functionCallNodes: NodeDefinition[] = [
         properties.implicitSelf === true
           ? []
           : [pin("target", "target", "in", objectRef(classId))];
-      const rows = memberPinRows(properties);
-      const execPins = rows.flatMap((row) => {
-        if (!row || typeof row.name !== "string" || row.name.length === 0) {
-          return [];
-        }
-        if (row.typeId !== "exec") return [];
-        const direction = row.direction === "out" ? "out" : "in";
-        return [pin(row.name, row.name, direction, EXEC)];
-      });
-      const exec =
-        execPins.length > 0
-          ? execPins
-          : [
-              pin("execIn", "exec", "in", EXEC),
-              pin("execOut", "then", "out", EXEC),
-            ];
-      const dataPins = (["in", "out"] as const).flatMap((direction) =>
-        rows.flatMap((row) => {
-          if (!row || typeof row.name !== "string" || row.name.length === 0) {
-            return [];
-          }
-          if (row.typeId === "exec") return [];
-          const rowDir = row.direction === "out" ? "out" : "in";
-          if (rowDir !== direction) return [];
-          return [
+      const rows = memberPinRows(properties).filter(
+        (row): row is MemberPinRow & { name: string } =>
+          Boolean(row) && typeof row.name === "string" && row.name.length > 0,
+      );
+      const hasExec = rows.some((row) => row.typeId === "exec");
+      // Signature order per side, so reordering in the Inspector moves pins
+      // on the Call node too. Target follows any leading exec inputs.
+      const sidePins = (direction: "in" | "out") =>
+        rows
+          .filter((row) => (row.direction === "out" ? "out" : "in") === direction)
+          .map((row) =>
             pin(
               row.name,
               row.name,
               direction,
-              pinTypeForVariable(row),
+              row.typeId === "exec" ? EXEC : pinTypeForVariable(row),
             ),
-          ];
-        }),
-      );
-      return [...exec, ...targetPin, ...dataPins];
+          );
+      const inputs = hasExec
+        ? sidePins("in")
+        : [pin("execIn", "exec", "in", EXEC), ...sidePins("in")];
+      const outputs = hasExec
+        ? sidePins("out")
+        : [pin("execOut", "then", "out", EXEC), ...sidePins("out")];
+      let targetIndex = 0;
+      while (inputs[targetIndex]?.kind === "exec") targetIndex += 1;
+      inputs.splice(targetIndex, 0, ...targetPin);
+      return [...inputs, ...outputs];
     },
     codegen: (ctx) => {
       const raw =
