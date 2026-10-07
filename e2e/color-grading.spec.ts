@@ -46,7 +46,7 @@ for (const backend of ["webgl2"] as const) {
     expect(difference(off, capture.disabled), "disabling restores color").toBeLessThan(1);
   });
 
-  test(`Scene Linear encodes authored surfaces and the clear color once on ${backend}`, async ({ page }, testInfo) => {
+  test(`Scene Linear encodes every scene color writer once on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(90_000);
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
@@ -60,36 +60,33 @@ for (const backend of ["webgl2"] as const) {
     const result = await page.evaluate((backend) => (window as unknown as {
       __displayColorProof: typeof runDisplayColorProof;
     }).__displayColorProof(backend), backend);
-    // Mean RGB of a 3×3 block: swatch centers on the middle row, clear color
-    // on a row above the swatches.
-    const sample = (pixels: number[], x: number, y: number) => [0, 1, 2].map((channel) => {
+    // Mean RGB of a 3×3 block around each named center.
+    const sample = (pixels: number[], [x, y]: [number, number]) => [0, 1, 2].map((channel) => {
       let sum = 0;
       for (let dy = -1; dy <= 1; dy++)
         for (let dx = -1; dx <= 1; dx++) sum += pixels[((y + dy) * result.width + x + dx) * 4 + channel]!;
       return Math.round(sum / 9);
     });
-    const levels = Object.fromEntries(Object.entries(result.captures).map(([mode, pixels]) => [mode, {
-      litGray: sample(pixels, 7, 16),
-      litRed: sample(pixels, 24, 16),
-      unlitGray: sample(pixels, 40, 16),
-      nativeGray: sample(pixels, 57, 16),
-      clear: sample(pixels, 32, 1),
-    }]));
+    const levels = Object.fromEntries(Object.entries(result.captures).map(([mode, pixels]) => [mode,
+      Object.fromEntries(Object.entries(result.points).map(([key, point]) => [key, sample(pixels, point)]))]));
     await testInfo.attach("display-levels", { body: JSON.stringify(levels), contentType: "application/json" });
     expect(errors).toEqual([]);
     const near = (actual: number[], expected: number[], tolerance: number) =>
       actual.every((value, channel) => Math.abs(value - expected[channel]!) <= tolerance);
     const describe = (mode: string, key: string) => `${mode} ${key}: ${JSON.stringify(levels[mode])}`;
+    // Display-space mid gray writers: the tilemap tile, sprite, MSDF and
+    // Text-domain glyphs and particle draw their display colors.
+    const writers = ["tilemap", "sprite", "msdfText", "particle", "textMaterial"] as const;
     // Display mid gray (0.5) reads 128 without any tone mapping.
     for (const mode of ["legacy", "none"])
-      for (const key of ["unlitGray", "nativeGray", "clear"] as const)
-        expect.soft(near(levels[mode]![key], [128, 128, 128], 3), describe(mode, key)).toBe(true);
+      for (const key of ["unlitGray", "nativeGray", "clear", ...writers])
+        expect.soft(near(levels[mode]![key]!, [128, 128, 128], 3), describe(mode, key)).toBe(true);
     for (const key of ["litGray", "litRed"] as const)
-      expect.soft(near(levels.none![key], levels.legacy![key], 3), describe("none", key)).toBe(true);
-    // Every tone mapping treats authored surfaces and the clear color like
-    // Babylon's own linear surface of the same color.
+      expect.soft(near(levels.none![key]!, levels.legacy![key]!, 3), describe("none", key)).toBe(true);
+    // Every tone mapping treats each writer and the clear color like Babylon's
+    // own linear surface of the same color.
     for (const mode of ["none", "standard", "aces", "neutral"])
-      for (const key of ["unlitGray", "litGray", "clear"] as const)
-        expect.soft(near(levels[mode]![key], levels[mode]!.nativeGray, 4), describe(mode, key)).toBe(true);
+      for (const key of ["unlitGray", "litGray", "clear", ...writers])
+        expect.soft(near(levels[mode]![key]!, levels[mode]!.nativeGray!, 4), describe(mode, key)).toBe(true);
   });
 }

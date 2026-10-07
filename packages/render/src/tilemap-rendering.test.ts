@@ -79,6 +79,29 @@ describe("tilemap rendering", () => {
     expect(material.transparencyMode).toBe(Material.MATERIAL_ALPHATEST);
   });
 
+  it("decodes atlas colors once for a Scene Linear display stage, still without scene image processing", async () => {
+    const { assets, actor } = content();
+    const { scene } = handle;
+    scene.imageProcessingConfiguration.toneMappingEnabled = true;
+    scene.imageProcessingConfiguration.exposure = 0.1;
+    const tile = chunk(createActorMesh(scene, actor, assets));
+    const material = tile.material as StandardMaterial;
+    const displayStages = async () => {
+      // A new frame: readiness is cached per render id.
+      scene.incrementRenderId();
+      await material.forceCompilationAsync(tile);
+      const subMesh = tile.subMeshes![0]!;
+      expect(material.isReadyForSubMesh(tile, subMesh)).toBe(true);
+      return subMesh.effect!.defines.match(/^#define (IMAGEPROCESSING(POSTPROCESS)?|EXPOSURE|TONEMAPPING [1-9])$/gm) ?? [];
+    };
+    // Legacy Display writes the atlas's display colors unchanged.
+    expect(await displayStages()).toEqual([]);
+    // Scene Linear: Standard's linear decode, so the Display Color stage
+    // encodes the tile once.
+    scene.imageProcessingConfiguration.applyByPostProcess = true;
+    expect(await displayStages()).toEqual(["#define IMAGEPROCESSINGPOSTPROCESS"]);
+  });
+
   it.each(["component", "model slot"])("preserves a nested tilemap atlas under a parent mesh %s material", (source) => {
     const { assets, actor } = content();
     const parentMesh = createMeshComponent("mesh", "box");

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Bone, Matrix, Skeleton, Material, MeshBuilder, NodeMaterial, NullEngine, Observable, PBRMetallicRoughnessBlock, ParticleBlendMultiplyBlock, Scene, ShaderMaterial, Texture, TextureBlock, ScaleBlock, FragmentOutputBlock, type InputBlock } from "@babylonjs/core";
+import { Bone, Matrix, Skeleton, Material, MeshBuilder, NodeMaterial, NullEngine, Observable, PBRMetallicRoughnessBlock, ParticleBlendMultiplyBlock, ParticleSystem, Scene, ShaderMaterial, Texture, TextureBlock, ScaleBlock, FragmentOutputBlock, type InputBlock } from "@babylonjs/core";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
@@ -200,6 +200,39 @@ describe("material compiler", () => {
     // Scene Linear: the Display Color stage encodes the frame exactly once.
     scene.imageProcessingConfiguration.applyByPostProcess = true;
     expect(await displayEncodings()).toEqual([]);
+  });
+
+  it.each(["particle", "text"] as const)("decodes %s display color only for a Scene Linear display stage", async (domain) => {
+    const scene = host();
+    scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
+    const result = compileMaterialPlan(planFor(createDefaultMaterialDocument("Display", domain)), { scene, name: "display" });
+    if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+    disposers.push(() => result.dispose());
+    expect(await result.ready).toEqual([]);
+    const mesh = MeshBuilder.CreatePlane("display-plane", {}, scene);
+    mesh.material = result.material;
+    const linearDecodes = async () => {
+      let defines: string;
+      if (domain === "particle") {
+        const system = new ParticleSystem("display-particles", 1, scene);
+        disposers.push(() => system.dispose());
+        result.material.createEffectForParticles(system);
+        defines = system.getCustomEffect()!.defines;
+      } else {
+        // A new frame: readiness is cached per render id.
+        scene.incrementRenderId();
+        await result.material.forceCompilationAsync(mesh);
+        const subMesh = mesh.subMeshes![0]!;
+        expect(result.material.isReadyForSubMesh(mesh, subMesh)).toBe(true);
+        defines = subMesh.effect!.defines;
+      }
+      return defines.match(/^#define CONVERTTOLINEAR\d*$/gm) ?? [];
+    };
+    // Legacy Display shows Particle Color and glyph span colors unchanged.
+    expect(await linearDecodes()).toEqual([]);
+    // Scene Linear: decoded once so the Display Color stage encodes them once.
+    scene.imageProcessingConfiguration.applyByPostProcess = true;
+    expect(await linearDecodes()).toHaveLength(1);
   });
 
   it("keeps screen overlays independent of world fog", async () => {

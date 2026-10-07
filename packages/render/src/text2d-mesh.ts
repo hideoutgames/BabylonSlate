@@ -286,6 +286,7 @@ uniform strokeColor: vec3f;
 uniform strokeWidth: f32;
 uniform glyphOpacity: f32;
 uniform overlayTint: vec4f;
+uniform linearOutput: f32;
 fn median(r: f32, g: f32, b: f32) -> f32 {
   return max(min(r, g), min(max(r, g), b));
 }
@@ -296,7 +297,8 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   let screenPxDistance = fwidth(sd) * 0.5;
   let fill = clamp((sd - 0.5) / max(screenPxDistance, 0.0001) + 0.5, 0.0, 1.0);
   let outline = select(fill, clamp((sd - 0.5 + uniforms.strokeWidth) / max(screenPxDistance, 0.0001) + 0.5, 0.0, 1.0), uniforms.strokeWidth > 0.0);
-  let color = mix(uniforms.strokeColor, uniforms.fillColor, fill);
+  var color = mix(uniforms.strokeColor, uniforms.fillColor, fill);
+  if (uniforms.linearOutput > 0.5) { color = pow(max(color, vec3f(0.0)), vec3f(2.2)); }
   let alpha = max(fill, outline) * uniforms.glyphOpacity;
   if (alpha < 0.01) { discard; }
   fragmentOutputs.color = vec4f(color, alpha) * uniforms.overlayTint;
@@ -320,6 +322,7 @@ uniform vec3 strokeColor;
 uniform float strokeWidth;
 uniform float glyphOpacity;
 uniform vec4 overlayTint;
+uniform float linearOutput;
 float median(float r, float g, float b) {
   return max(min(r, g), min(max(r, g), b));
 }
@@ -332,6 +335,7 @@ void main() {
     ? clamp((sd - 0.5 + strokeWidth) / max(screenPxDistance, 0.0001) + 0.5, 0.0, 1.0)
     : fill;
   vec3 color = mix(strokeColor, fillColor, fill);
+  if (linearOutput > 0.5) color = pow(max(color, vec3(0.0)), vec3(2.2));
   float alpha = max(fill, outline) * glyphOpacity;
   if (alpha < 0.01) discard;
   gl_FragColor = vec4(color, alpha) * overlayTint;
@@ -377,7 +381,7 @@ function msdfGlyphMaterial(
       {
         shaderLanguage: scene.getEngine().isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
         attributes: ["position", "uv"],
-        uniforms: ["worldViewProjection", "fillColor", "strokeColor", "strokeWidth", "glyphOpacity", "overlayTint"],
+        uniforms: ["worldViewProjection", "fillColor", "strokeColor", "strokeWidth", "glyphOpacity", "overlayTint", "linearOutput"],
         samplers: ["atlas"],
         needAlphaBlending: true,
       },
@@ -395,6 +399,9 @@ function msdfGlyphMaterial(
       material.getEffect()?.setFloat("glyphOpacity", mesh?.visibility ?? 1);
       const { opacity, tint } = overlayVisualStyle(mesh);
       material.getEffect()?.setFloat4("overlayTint", tint[0], tint[1], tint[2], tint[3] * opacity);
+      // Glyph colors are display-space. Like Standard materials, decode them
+      // for a Scene Linear display stage, which encodes the frame once.
+      material.getEffect()?.setFloat("linearOutput", scene.imageProcessingConfiguration.applyByPostProcess ? 1 : 0);
     });
     material.metadata = { ...(material.metadata ?? {}), msdf: true };
     return material;
