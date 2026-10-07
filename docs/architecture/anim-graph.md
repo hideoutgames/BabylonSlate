@@ -37,7 +37,7 @@ Transition fire: **Exit State** (leave source) **and** **Enter State** (enter ta
 
 `AnimationGraphComponent` (`graphGuid`) attaches a graph to an actor. `RuntimeDriver.registerAnimGraph` / worker `loadAnimGraphs` load documents. Play loads graphs referenced by scene `graphGuid` plus every project AnimationGraph (Compile / Play / export).
 
-Each tick `tickAnimGraphs`:
+Each tick `AnimGraphRuntime.tick` (`packages/runtime/src/anim-graph-runtime.ts`, owned by the runtime driver):
 
 1. Seed component `variableStore` from document defaults.
 2. Once per `${slotId}:{guid}`, `invokeAnimEvent(AnimGraph:{guid}, onInitializeAnimation)`.

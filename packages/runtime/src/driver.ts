@@ -35,7 +35,6 @@ import {
   type ControlMessage,
   type RuntimeSceneContent,
   type DebugBehaviourTree,
-  type DebugNavAgent,
   type GameSessionMode,
   type SessionPauseReason,
   type SessionBoundaryRequest,
@@ -135,7 +134,6 @@ import {
   createPhysicsBackend,
   createSoftwarePhysicsBackend,
   parseColliderProperties,
-  parseRigidBodyProperties,
   SoftwarePhysicsBackend,
   type PhysicsBackend,
   type PhysicsWorldKind,
@@ -176,17 +174,7 @@ import { isUIControl2DClass, isInteractiveUIControl2DClass } from "@babylonslate
 import { Text2DAppearRuntime } from "./text2d-appear-runtime";
 import { TweenRuntime } from "./tween-runtime";
 import { parseOverlayVisualStyle, supportsOverlayVisualStyle } from "@babylonslate/core";
-import {
-  animGraphScriptClassId,
-  animRuleScriptClassId,
-  clipForState,
-  defaultAnimVariableValue,
-  evaluateAnimGraph,
-  type AnimClipCatalogEntry,
-  type AnimEvalState,
-  type AnimGraphDocument,
-  type AnimGraphInputs,
-} from "@babylonslate/anim-graph";
+import type { AnimClipCatalogEntry, AnimGraphDocument } from "@babylonslate/anim-graph";
 import {
   evaluateBehaviourTree,
   builtinClassId,
@@ -199,32 +187,24 @@ import {
 import { ScriptHost, compiledScriptKey, compiledScriptSourceLabel, type CompiledScript } from "./script-host";
 import { COMPILED_MODULE_LINE_OFFSET } from "./module-loader";
 import { shouldSpawnScriptedActor } from "./play-load";
-import { actorLocalPhysicsTransform, PhysicsWorldSync } from "./physics-sync";
+import { PhysicsWorldSync } from "./physics-sync";
 import { RagdollWorldSync } from "./ragdoll-sync";
 import {
   formatDumpActors,
   formatInspectActor,
 } from "./console-inspect";
-import { actorChainWorldTransform, actorLabel, actorParentGuid, breakParentCycles, composeActorWorldTransforms, firstSpawnedActorIndex, firstSpawnedWorldTransforms, WorldTransformComposer } from "./actor-world-transform";
+import { actorChainWorldTransform, actorLabel, actorParentGuid, breakParentCycles, firstSpawnedActorIndex, WorldTransformComposer } from "./actor-world-transform";
 import { SceneLayerLayout } from "./scene-layer-layout";
 import { SceneLayerVirtualization } from "./scene-layer-virtualization";
 import { isOverlayLayoutClass, isOverlayScrollClass, overlayLayoutKey, type OverlaySafeAreaInsets } from "@babylonslate/core";
 import { composeParentChildTransform } from "./actor-world-transform";
 import { blackboardInspectTypes, blackboardTargetPosition, snapshotBlackboard } from "./bt-blackboard";
 import type { ModelPayload, SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
-import {
-  createNavigationBackend,
-  facingYawFromVelocity,
-  initNavigation,
-  parseNavAgentParams,
-  parseNavMeshBlockerProperties,
-  recastToWorld,
-  rotatedBoxWorldAabb,
-  worldToRecast,
-  type NavigationBackend,
-  type NavObstacleKind,
-  type NavPoint,
-} from "@babylonslate/navigation";
+import { initNavigation, type NavObstacleKind, type NavPoint } from "@babylonslate/navigation";
+import { RuntimeSubsystems } from "./runtime-subsystems";
+import { RuntimeNavigation, navPointFromUnknown } from "./runtime-navigation";
+import { AnimGraphRuntime } from "./anim-graph-runtime";
+import { LatentDelays } from "./latent-delays";
 
 export interface RuntimeDriverOptions {
   sessionGeneration?: number;
@@ -702,10 +682,6 @@ class InProcessRuntime implements RuntimeDriver {
   private snapshotWritePending = false;
   /** Removal-pass time already spent on the pending publish. */
   private pendingPublishMs = 0;
-  private readonly liveAnimInitKeys = new Set<string>();
-  private readonly liveAnimEvalKeys = new Set<string>();
-  private readonly navPhysicalAgents = new Set<string>();
-  private readonly navAgentActors: Actor[] = [];
   private phaseScriptMs = 0;
   private phasePhysicsMs = 0;
   private readonly scriptHost: ScriptHost;
@@ -790,9 +766,6 @@ class InProcessRuntime implements RuntimeDriver {
   private lastTrace: TracePayload | null = null;
   private readonly seed: number;
   private tickPrints: Array<{ message: string; key: string }> = [];
-  private readonly animGraphs = new Map<string, AnimGraphDocument>();
-  private readonly animEvalByComponent = new Map<string, AnimEvalState>();
-  private readonly animInitializedBySlot = new Set<string>();
   private readonly behaviourTrees = new Map<string, BehaviourTreeDocument>();
   private readonly blackboards = new Map<string, BlackboardDocument>();
   private readonly btEvalBySlot = new Map<number, BtEvalState>();
@@ -821,19 +794,38 @@ class InProcessRuntime implements RuntimeDriver {
     this.pendingComplexMeshes.add(assetGuid);
     this.emit({ type: "requestComplexCollision", assetGuid });
   };
-  private pendingAnimJumpByComponent = new Map<string, string>();
   private pixelsPerUnit = 100;
   private readonly texturePixelSizes: Readonly<Record<string, { width: number; height: number }>>;
-  private readonly delayWaiters: Array<{ remaining: number; resolve: () => void; owner?: BObject | null }> =
-    [];
-  private nav: NavigationBackend | null = null;
-  private readonly sceneNavmeshBytes = new Map<string, Uint8Array>();
-  private navSceneGuid: string | null = null;
-  private navigationInitialized = false;
-  private readonly navAgentByActor = new Map<string, string>();
-  private readonly navYawByActor = new Map<string, number>();
-  private readonly navTargetByActor = new Map<string, NavPoint>();
-  private readonly navSteeredActors = new Set<string>();
+  /**
+   * Subsystems with lifecycle hooks. Registration order (end of the
+   * constructor) is the order Stop and Scene replacement run their hooks.
+   */
+  private readonly subsystems = new RuntimeSubsystems();
+  private readonly delays = new LatentDelays({ canRun: (owner) => this.canRunOwnerActions(owner) });
+  private readonly navigation = new RuntimeNavigation({
+    world: () => this.world,
+    worldKind: () => this.physicsWorldKind,
+    physics: () => this.physicsSync,
+    streamActorReady: (actor) => this.streamActorReady(actor),
+    isStreamActor: (actor) => this.actorStream.has(actor),
+    dt: () => this.simulationDt(),
+    actorName: (actor) => this.debugActorName(actor),
+    emit: (command) => this.emit(command),
+  }, nowMs);
+  private readonly animGraphs = new AnimGraphRuntime({
+    actors: () => this.world.getActors(),
+    stopped: () => this.stopped,
+    canTick: (actor) => this.canTickActor(actor),
+    slot: (actor) => this.actorSlot(actor),
+    hasRenderSlot: (actor) => this.slotByActor.get(actor) !== undefined,
+    playAnimationOwns: (slotId) => this.btPlayAnimOwnedSlots.has(slotId),
+    dt: () => this.simulationDt(),
+    scripts: () => this.scriptHost,
+    setSpriteClip: (actor, clip) =>
+      (actor.sceneLayerId ? this.overlayPhysicsSync : this.physicsSync).setActorSpriteClip(actor, clip),
+    emit: (command) => this.emit(command),
+  });
+  /** Frame index (first-spawned actor per guid) the BT and crowd ticks share. */
   private navFrameActors: Map<string, Actor> | null = null;
   private readonly audioAssetGuids = new Set<string>();
   private readonly animClipCatalog = new Map<string, AnimClipCatalogEntry>();
@@ -841,9 +833,6 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly btVoiceByActor = new Map<string, string>();
   private lastStatsEmitMs: number | null = null;
   private readonly lastBtStateJson = new Map<number, string>();
-  private showPathfinding = false;
-  private showNavAgent = false;
-  private lastNavigationDebugMs = -Infinity;
   private behaviourTreeDebug = false;
   private lastBehaviourTreeDebugMs = -Infinity;
 
@@ -889,7 +878,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.playScene = options.playScene;
     this.acquireScene = options.acquireScene;
     this.playSceneGuid = options.playSceneGuid ?? "play-scene";
-    for (const [guid, bytes] of Object.entries(options.sceneNavmeshBytes ?? {})) this.sceneNavmeshBytes.set(guid, bytes);
+    this.navigation.replaceSceneNavMeshes(options.sceneNavmeshBytes ?? {});
     this.gameInstanceClass = options.gameInstanceClass ?? "GameInstance";
     this.deferSceneModelsReady = options.deferSceneModelsReady === true;
     this.deferSceneLoadingPaint = options.deferSceneLoadingPaint === true;
@@ -954,7 +943,7 @@ class InProcessRuntime implements RuntimeDriver {
     });
     if (options.animGraphs) {
       for (const [guid, document] of Object.entries(options.animGraphs)) {
-        this.animGraphs.set(guid, document);
+        this.animGraphs.register(guid, document);
       }
     }
     if (options.behaviourTrees) {
@@ -1316,42 +1305,7 @@ class InProcessRuntime implements RuntimeDriver {
         target.attachComponent(component);
         return component;
       },
-      animGraphControl: (target) => {
-        if (
-          !(target instanceof ActorComponent) ||
-          target.classId !== "AnimationGraphComponent" ||
-          target.destroyed
-        ) {
-          return null;
-        }
-        const owner = target.owner;
-        if (!(owner instanceof Actor) || owner.destroyed) return null;
-        const slotId = this.slotByActor.get(owner);
-        const guid = this.animGraphGuid(target);
-        const document = guid ? this.animGraphs.get(guid) : undefined;
-        const evalKey = target.guid;
-        return {
-          getVariable: (name) => target.getVariable(name),
-          setVariable: (name, value) => {
-            target.setVariable(name, value);
-          },
-          getCurrentState: () => {
-            const evalState = this.animEvalByComponent.get(evalKey);
-            const stateId = evalState?.stateId ?? document?.entryStateId;
-            if (!stateId || !document) return null;
-            const state = document.states.find((row) => row.id === stateId);
-            return { id: stateId, name: state?.name ?? stateId };
-          },
-          jumpToState: (state) => {
-            if (!document || slotId === undefined) return;
-            const match = document.states.find(
-              (row) => row.id === state || row.name === state,
-            );
-            if (!match) return;
-            this.pendingAnimJumpByComponent.set(evalKey, match.id);
-          },
-        };
-      },
+      animGraphControl: (target) => this.animGraphs.control(target),
       spawnActor: (classId, transform, owner) => {
         const id = String(classId ?? "").trim();
         if (!id) return null;
@@ -1448,11 +1402,7 @@ class InProcessRuntime implements RuntimeDriver {
       delay: (seconds, owner) =>
         new Promise<void>((resolve) => {
           if (this.stopped) { resolve(); return; }
-          this.delayWaiters.push({
-            remaining: Math.max(0, Number(seconds) || 0),
-            resolve,
-            owner,
-          });
+          this.delays.add(seconds, resolve, owner);
           // A boundary requested after the timer fired still holds the continuation.
         }).then(() => this.continueSimulation(owner ?? null)),
       reportError: (error) => {
@@ -1608,21 +1558,31 @@ class InProcessRuntime implements RuntimeDriver {
         this.stopNavAgent(actor.guid);
       },
       isPathValid: (from, to) => this.findNavPath(from, to).length > 1,
-      getClosestNavigablePoint: (point) => {
-        if (!this.nav) return null;
-        const closest = this.nav.closestPoint(this.toNav(point));
-        return closest ? this.fromNav(closest) : null;
-      },
-      getRandomPointInRadius: (center, radius) => {
-        if (!this.nav) return null;
-        const point = this.nav.randomPointInRadius(this.toNav(center), radius);
-        return point ? this.fromNav(point) : null;
-      },
+      getClosestNavigablePoint: (point) => this.navigation.closestNavigablePoint(point),
+      getRandomPointInRadius: (center, radius) => this.navigation.randomPointInRadius(center, radius),
       addObstacle: (kind, pose, size) =>
         this.addNavObstacle(kind === "cylinder" ? "cylinder" : "box", pose, size),
       removeObstacle: (id) => {
         this.removeNavObstacle(id);
       },
+    });
+
+    // Stop order: Delays resume in phase 1; physics-owning syncs release before
+    // the physics worlds, then the crowd and the remaining debug overlays.
+    this.subsystems.register(this.delays);
+    this.subsystems.register(this.ragdolls);
+    this.subsystems.register(this.cables);
+    this.subsystems.register(this.dynamicMeshes);
+    this.subsystems.register(this.movement);
+    this.subsystems.register({
+      dispose: () => {
+        this.physicsSync.dispose();
+        this.overlayPhysicsSync.dispose();
+      },
+    });
+    this.subsystems.register(this.navigation);
+    this.subsystems.register({
+      dispose: () => { if (this.behaviourTreeDebug) this.emit({ type: "behaviourTreeSnapshot", trees: [] }); },
     });
 
     this.registerPlaySceneTypes();
@@ -1889,8 +1849,8 @@ class InProcessRuntime implements RuntimeDriver {
     try {
       stream.state = "Loaded";
       this.physicsSync.syncFromWorld(this.world);
-      this.registerNavAgents();
-      this.registerNavObstacles([...stream.actors], stream.navObstacles);
+      this.navigation.registerAgents();
+      this.navigation.registerObstacles([...stream.actors], stream.navObstacles);
       stream.progress = 1;
       stream.resolve();
       for (const pending of [...this.sceneStreams.values()]) this.publishSceneStreamRealized(pending);
@@ -1953,12 +1913,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   private removeSceneStreamActor(stream: SceneStream, actor: Actor): void {
     this.removeOwnedActor(actor);
-    const agent = this.navAgentByActor.get(actor.guid);
-    if (agent) this.nav?.removeAgent(agent);
-    this.navAgentByActor.delete(actor.guid);
-    this.navTargetByActor.delete(actor.guid);
-    this.navYawByActor.delete(actor.guid);
-    this.navSteeredActors.delete(actor.guid);
+    this.navigation.removeActor(actor.guid);
     stream.actors.delete(actor);
     // Destruction hooks belong to this actor's budget, not a final subtree batch.
     // flushPending drains queues; it does not rescan the remaining world itself.
@@ -1984,7 +1939,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (this.announcedSceneStreams.delete(stream) && stream.actor instanceof SceneStreamingActor) {
       this.world.notifyStreamedSceneUnloaded(stream.actor, stream.scene);
     }
-    for (const obstacle of stream.navObstacles) this.nav?.removeObstacle(obstacle);
+    for (const obstacle of stream.navObstacles) this.navigation.removeObstacle(obstacle);
     // A graph may retain a destroyed actor reference. Its WeakMap ownership
     // must not retain the rest of the unloaded instance through this set.
     stream.actors.clear();
@@ -3013,7 +2968,7 @@ class InProcessRuntime implements RuntimeDriver {
       });
     }
     if (component.classId === "NavAgentComponent") {
-      this.updateNavAgentParams(owner);
+      this.navigation.updateAgentParams(owner);
     }
     const sync = owner.sceneLayerId
       ? this.overlayPhysicsSync
@@ -3248,11 +3203,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.pendingOwnerActions.delete(actor);
     for (const component of actor.components) {
       this.pendingOwnerActions.delete(component);
-      this.animEvalByComponent.delete(component.guid);
-      this.pendingAnimJumpByComponent.delete(component.guid);
-      for (const key of this.animInitializedBySlot) {
-        if (key.startsWith(`${component.guid}:`)) this.animInitializedBySlot.delete(key);
-      }
+      this.animGraphs.forgetComponent(component);
     }
     const slotId = this.actorSlot(actor);
     const ownsSlot = () => slotId !== undefined && this.slotOwners.get(slotId) === actor;
@@ -3321,7 +3272,7 @@ class InProcessRuntime implements RuntimeDriver {
     const retirement = this.retireSceneSteps(work);
     const nextKind = work.scene?.settings.physicsWorld ?? this.physicsWorldKind;
     const replaceNative = nextKind !== this.physicsWorldKind && !(this.physicsSync.getBackend() instanceof SoftwarePhysicsBackend);
-    const initializeNavigation = this.sceneNavmeshBytes.has(work.guid) && !this.navigationInitialized;
+    const initializeNavigation = this.navigation.needsInitialization(work.guid);
     if (this.cooperativeSceneLoading || replaceNative || initializeNavigation) {
       work.promise = Promise.resolve().then(async () => {
         await this.prepareSceneLoading(work);
@@ -3338,7 +3289,7 @@ class InProcessRuntime implements RuntimeDriver {
         }
         if (initializeNavigation) {
           await waitForSceneWork(initNavigation(), work.controller.signal);
-          this.navigationInitialized = true;
+          this.navigation.markInitialized();
         }
         this.prepareSceneBackends(work);
         await runSceneRealizationWork(steps, work.controller.signal, this.cooperativeSceneLoading ?? {});
@@ -3397,20 +3348,7 @@ class InProcessRuntime implements RuntimeDriver {
       const gravity = work.scene?.settings.gravity ?? this.gravity;
       this.installScenePhysics(work, createSoftwarePhysicsBackend(kind, { x: gravity[0], y: gravity[1], z: gravity[2] }));
     }
-    const bytes = this.sceneNavmeshBytes.get(work.guid);
-    if (bytes && (work.refreshNavigation || this.navSceneGuid !== work.guid)) {
-      const nav = createNavigationBackend();
-      try { nav.importNavMesh(bytes); } catch (error) { nav.dispose(); throw error; }
-      this.clearNavAgents();
-      this.nav?.dispose();
-      this.nav = nav;
-      this.navSceneGuid = work.guid;
-    } else if (!bytes) {
-      this.clearNavAgents();
-      this.nav?.dispose();
-      this.nav = null;
-      this.navSceneGuid = null;
-    }
+    this.navigation.prepareScene(work.guid, work.refreshNavigation);
   }
 
   private async prepareSceneLoading(work: SceneRealization): Promise<void> {
@@ -3471,7 +3409,7 @@ class InProcessRuntime implements RuntimeDriver {
     checkpoint();
     // Actor removal releases only departing animation/BT state. Retained layers
     // continue from their existing graph state while the world is replaced.
-    this.clearNavAgents();
+    this.subsystems.resetForSceneLoad();
     for (const source of departure.sources ?? []) source.release();
     departure.sources = undefined;
     work.departure = null;
@@ -3549,8 +3487,8 @@ class InProcessRuntime implements RuntimeDriver {
       this.sceneLoadingProgress = 0.5;
     }
     checkpoint();
-    this.registerNavAgents();
-    this.registerNavObstacles();
+    this.navigation.registerAgents();
+    this.navigation.registerObstacles();
     this.attemptPossessViewTarget();
     checkpoint();
     yield* this.spawnOwnedSceneLayers(work);
@@ -3686,7 +3624,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.beginSceneRealization(departure);
     if (!current()) return true;
     if (this.canTickScene()) {
-      this.emitNavigationDebug(true);
+      this.navigation.emitDebug(true);
       this.emitBehaviourTreeSnapshot(true);
     }
     return true;
@@ -3802,7 +3740,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   registerAnimGraph(guid: string, document: AnimGraphDocument): void {
-    this.animGraphs.set(guid, document);
+    this.animGraphs.register(guid, document);
   }
 
   registerBehaviourTree(guid: string, document: BehaviourTreeDocument): void {
@@ -3821,11 +3759,11 @@ class InProcessRuntime implements RuntimeDriver {
       this.simulationOwnedAssets = retained;
       this.simulationDataAssets = content.dataAssets;
     }
-    for (const map of [this.animGraphs, this.behaviourTrees, this.blackboards]) for (const guid of map.keys()) if (!retained.has(guid)) map.delete(guid);
+    this.animGraphs.retain(retained);
+    for (const map of [this.behaviourTrees, this.blackboards]) for (const guid of map.keys()) if (!retained.has(guid)) map.delete(guid);
     this.sceneLayerLibrary.clear();
     for (const entry of content.sceneLayers ?? []) this.sceneLayerLibrary.set(entry.guid, entry.layer);
-    this.sceneNavmeshBytes.clear();
-    for (const [guid, bytes] of Object.entries(content.sceneNavmeshBytes ?? {})) this.sceneNavmeshBytes.set(guid, bytes);
+    this.navigation.replaceSceneNavMeshes(content.sceneNavmeshBytes ?? {});
     this.animClipCatalog.clear();
     for (const entry of content.animClipCatalog ?? []) this.animClipCatalog.set(entry.guid, entry);
     this.audioAssetGuids.clear();
@@ -3971,551 +3909,36 @@ class InProcessRuntime implements RuntimeDriver {
   async loadNavMesh(bytes: Uint8Array): Promise<void> {
     const lifecycleId = this.lifecycleId;
     const sceneGuid = this.playSceneGuid;
-    this.sceneNavmeshBytes.set(sceneGuid, bytes);
+    this.navigation.setSceneNavMesh(sceneGuid, bytes);
     await initNavigation();
     if (this.stopped || lifecycleId !== this.lifecycleId) throw sceneRealizationCancelled();
-    this.navigationInitialized = true;
+    this.navigation.markInitialized();
     if (sceneGuid !== this.playSceneGuid) return;
-    this.nav ??= createNavigationBackend();
-    this.nav.importNavMesh(bytes);
-    this.navSceneGuid = sceneGuid;
-    this.clearNavAgents();
+    this.navigation.importNavMesh(sceneGuid, bytes);
     if (this.playWorldRealized) {
-      this.registerNavAgents();
-      this.registerNavObstacles();
+      this.navigation.registerAgents();
+      this.navigation.registerObstacles();
     }
   }
 
   setNavAgentTarget(actorGuid: string, target: NavPoint): boolean {
-    if (!this.nav) return false;
-    const actor = this.world.findActor(actorGuid);
-    if (!actor || actor.destroyed || !actor.components.some(
-      (component) => component.classId === "NavAgentComponent" && !component.destroyed,
-    )) return false;
-    const destination = this.nav.closestPoint(this.toNav(target));
-    if (!destination) return false;
-    if (!this.navAgentByActor.has(actorGuid)) {
-      this.registerNavAgent(actor);
-    }
-    const agentId = this.navAgentByActor.get(actorGuid);
-    if (!agentId && !this.isDynamicNavActor(actor)) return false;
-    if (agentId && !this.nav.setAgentTarget(agentId, destination)) return false;
-    // A falling actor may not be close enough to a polygon yet. Keep its
-    // request until physics brings it within reach of the mesh.
-    this.navTargetByActor.set(actorGuid, { ...destination });
-    this.emitNavigationDebug(true);
-    return true;
+    return this.navigation.setAgentTarget(actorGuid, target);
   }
 
   findNavPath(from: NavPoint, to: NavPoint): NavPoint[] {
-    if (!this.nav) return [];
-    return this.nav.findPath(this.toNav(from), this.toNav(to)).map((point) =>
-      this.fromNav(point),
-    );
+    return this.navigation.findPath(from, to);
   }
 
   addNavObstacle(kind: NavObstacleKind, pose: NavPoint, size: NavPoint): string {
-    if (!this.nav) return "";
-    return this.nav.addObstacle(
-      kind,
-      this.toNavObstaclePose(pose),
-      this.toNavObstacleSize(size),
-    );
+    return this.navigation.addObstacle(kind, pose, size);
   }
 
   removeNavObstacle(id: string): void {
-    this.nav?.removeObstacle(id);
+    this.navigation.removeObstacle(id);
   }
 
   stopNavAgent(actorGuid: string): void {
-    this.navTargetByActor.delete(actorGuid);
-    if (this.navSteeredActors.delete(actorGuid)) {
-      this.physicsSync.setActorLinearVelocity(actorGuid, { x: 0, z: 0 });
-    }
-    const agentId = this.navAgentByActor.get(actorGuid);
-    if (!agentId || !this.nav) return;
-    this.nav.stopAgent(agentId);
-    this.emitNavigationDebug(true);
-  }
-
-  private toNav(point: NavPoint): NavPoint {
-    return this.physicsWorldKind === "2d" ? worldToRecast(point) : point;
-  }
-
-  private fromNav(point: NavPoint): NavPoint {
-    return this.physicsWorldKind === "2d" ? recastToWorld(point) : point;
-  }
-
-  /** Recast obstacle pose: 2D XY sits on a 2-unit-tall volume centered at Y=1. */
-  private toNavObstaclePose(point: NavPoint): NavPoint {
-    if (this.physicsWorldKind !== "2d") return point;
-    const recast = worldToRecast(point);
-    return { x: recast.x, y: 1, z: recast.z };
-  }
-
-  /** Recast obstacle size: 2D (width, height) → Recast (X, up=2, Z). */
-  private toNavObstacleSize(size: NavPoint): NavPoint {
-    if (this.physicsWorldKind !== "2d") return size;
-    return {
-      x: Math.abs(size.x) || 1,
-      y: 2,
-      z: Math.abs(size.y) || 1,
-    };
-  }
-
-  private clearNavAgents(): void {
-    if (this.nav) {
-      for (const agentId of this.navAgentByActor.values()) {
-        this.nav.removeAgent(agentId);
-      }
-    }
-    this.navAgentByActor.clear();
-    this.navYawByActor.clear();
-    this.navTargetByActor.clear();
-    this.navSteeredActors.clear();
-  }
-
-  private isDynamicNavActor(actor: Actor): boolean {
-    if (this.physicsWorldKind !== "3d") return false;
-    const rigid = actor.components.find(
-      (component) => component.classId === "RigidBodyComponent" && !component.destroyed,
-    );
-    return !!rigid && parseRigidBodyProperties(Object.fromEntries(rigid.variables)).motionType === "dynamic";
-  }
-
-  /** Current pose through the actor's own chain; parents resolve first-spawned. */
-  private navActorWorldPosition(actor: Actor): NavPoint {
-    return actorChainWorldTransform(actor, (guid) => this.world.findActor(guid))?.position ?? actor.transform.position;
-  }
-
-  /**
-   * Resolve an actor through the frame index, which answers each guid with its
-   * first-spawned live actor (`World.findActor`). An indexed actor destroyed
-   * since the index was built falls back to the live World's answer.
-   */
-  private navFrameActor(index: ReadonlyMap<string, Actor>, guid: string): Actor | undefined {
-    const indexed = index.get(guid);
-    if (indexed && !indexed.destroyed && indexed.world === this.world) return indexed;
-    return this.world.findActor(guid);
-  }
-
-  /** Compose NavAgent actors and their ancestors, not the whole world. */
-  private navAgentWorldTransforms(index: ReadonlyMap<string, Actor>): Map<string, Transform> {
-    const actors = this.world.getActors();
-    const agents = this.navAgentActors;
-    agents.length = 0;
-    for (const actor of actors) {
-      for (const component of actor.components) {
-        if (component.classId === "NavAgentComponent" && !component.destroyed) {
-          agents.push(actor);
-          break;
-        }
-      }
-    }
-    try {
-      return composeActorWorldTransforms((guid) => this.navFrameActor(index, guid), agents);
-    } finally {
-      agents.length = 0;
-    }
-  }
-
-  private registerNavAgents(
-    transforms = firstSpawnedWorldTransforms(this.world.getActors()),
-  ): void {
-    if (!this.nav) return;
-    for (const actor of this.world.getActors()) {
-      this.registerNavAgent(actor, transforms);
-    }
-  }
-
-  private registerNavAgent(
-    actor: Actor,
-    transforms?: ReadonlyMap<string, Transform>,
-  ): void {
-    if (!this.nav || actor.destroyed || !this.streamActorReady(actor)) return;
-    if (this.navAgentByActor.has(actor.guid)) return;
-    // Agents are keyed by guid; only the guid's first-spawned actor owns one.
-    if (this.world.findActor(actor.guid) !== actor) return;
-    const component = actor.components.find(
-      (entry) => entry.classId === "NavAgentComponent" && !entry.destroyed,
-    );
-    if (!component) return;
-    const params = parseNavAgentParams(
-      Object.fromEntries(component.variables),
-    );
-    const world = this.toNav(transforms?.get(actor.guid)?.position ?? this.navActorWorldPosition(actor));
-    const position = this.isDynamicNavActor(actor) ? this.nav.closestPoint(world) : world;
-    if (!position) return;
-    const id = this.nav.addAgent(position, params);
-    if (!id) return;
-    this.navAgentByActor.set(actor.guid, id);
-    const target = this.navTargetByActor.get(actor.guid);
-    if (target) this.nav.setAgentTarget(id, target);
-  }
-
-  private updateNavAgentParams(actor: Actor): void {
-    const agentId = this.navAgentByActor.get(actor.guid);
-    if (!agentId || !this.nav) return;
-    const component = actor.components.find(
-      (entry) => entry.classId === "NavAgentComponent" && !entry.destroyed,
-    );
-    if (!component) return;
-    this.nav.updateAgent(
-      agentId,
-      parseNavAgentParams(Object.fromEntries(component.variables)),
-    );
-  }
-
-  private registerNavObstacles(actors: readonly Actor[] = this.world.getActors(), acquired?: string[]): void {
-    if (!this.nav) return;
-    const transforms = firstSpawnedWorldTransforms(this.world.getActors(), actors);
-    for (const actor of actors) {
-      if (actor.destroyed || !this.streamActorReady(actor)) continue;
-      const component = actor.components.find(
-        (entry) =>
-          entry.classId === "NavMeshBlockerComponent" && !entry.destroyed,
-      );
-      if (!component) continue;
-      const props = parseNavMeshBlockerProperties(
-        Object.fromEntries(component.variables),
-      );
-      const transform = transforms.get(actor.guid) ?? actor.transform;
-      const aabb = rotatedBoxWorldAabb(
-        [
-          transform.position.x,
-          transform.position.y,
-          transform.position.z,
-        ],
-        [
-          transform.rotation.x,
-          transform.rotation.y,
-          transform.rotation.z,
-          transform.rotation.w,
-        ],
-        [
-          transform.scale.x,
-          transform.scale.y,
-          transform.scale.z,
-        ],
-      );
-      const pose = this.toNavObstaclePose(aabb.center);
-      const navSize = this.toNavObstacleSize(aabb.size);
-      if (props.area === "cost") {
-        // Cost volumes mutate the parent's baked navmesh and cannot be removed.
-        // Streamed instances therefore share its existing navigation costs.
-        if (this.actorStream.has(actor)) continue;
-        this.nav.applyCostVolume({
-          id: actor.guid,
-          kind: props.kind,
-          pose,
-          size: navSize,
-          cost: props.cost,
-        });
-        continue;
-      }
-      if (!props.dynamic) continue;
-      const obstacle = this.nav.addObstacle("box", pose, navSize);
-      acquired?.push(obstacle);
-    }
-  }
-
-  private syncNavCostVolumes(): void {
-    if (!this.nav) return;
-    for (const actor of this.world.getActors()) {
-      if (actor.destroyed || this.actorStream.has(actor)) continue;
-      const component = actor.components.find(
-        (entry) =>
-          entry.classId === "NavMeshBlockerComponent" && !entry.destroyed,
-      );
-      if (!component) continue;
-      const props = parseNavMeshBlockerProperties(
-        Object.fromEntries(component.variables),
-      );
-      if (props.area !== "cost" || !props.dynamic) continue;
-      const aabb = rotatedBoxWorldAabb(
-        [
-          actor.transform.position.x,
-          actor.transform.position.y,
-          actor.transform.position.z,
-        ],
-        [
-          actor.transform.rotation.x,
-          actor.transform.rotation.y,
-          actor.transform.rotation.z,
-          actor.transform.rotation.w,
-        ],
-        [
-          actor.transform.scale.x,
-          actor.transform.scale.y,
-          actor.transform.scale.z,
-        ],
-      );
-      this.nav.applyCostVolume({
-        id: actor.guid,
-        kind: props.kind,
-        pose: this.toNavObstaclePose(aabb.center),
-        size: this.toNavObstacleSize(aabb.size),
-        cost: props.cost,
-      });
-    }
-  }
-
-  private tickCrowd(actors: ReadonlyMap<string, Actor>): void {
-    if (!this.nav) return;
-    this.syncNavCostVolumes();
-    const worldTransforms = this.navAgentWorldTransforms(actors);
-    this.registerNavAgents(worldTransforms);
-    const physicalAgents = this.navPhysicalAgents;
-    physicalAgents.clear();
-    let removed = false;
-    for (const [actorGuid, agentId] of this.navAgentByActor) {
-      const actor = this.navFrameActor(actors, actorGuid);
-      if (!actor || actor.destroyed || !this.streamActorReady(actor) || !actor.components.some((component) =>
-        component.classId === "NavAgentComponent" && !component.destroyed)) {
-        this.stopNavAgent(actorGuid);
-        this.nav.removeAgent(agentId);
-        this.navAgentByActor.delete(actorGuid);
-        this.navYawByActor.delete(actorGuid);
-        removed = true;
-        continue;
-      }
-      if (!this.isDynamicNavActor(actor)) continue;
-      const position = worldTransforms.get(actorGuid)?.position ?? actor.transform.position;
-      if (this.nav.syncAgentPosition(agentId, position)) {
-        physicalAgents.add(actorGuid);
-      } else {
-        // Physics may carry an actor away from the mesh (for example a jump).
-        // Reattach with the pending target once its physical pose is reachable.
-        this.nav.removeAgent(agentId);
-        this.navAgentByActor.delete(actorGuid);
-        removed = true;
-        if (this.navSteeredActors.delete(actorGuid)) {
-          this.physicsSync.setActorLinearVelocity(actorGuid, { x: 0, z: 0 });
-        }
-      }
-    }
-    this.nav.stepCrowd(this.simulationDt());
-    for (const [actorGuid, agentId] of this.navAgentByActor) {
-      const actor = this.navFrameActor(actors, actorGuid);
-      if (!actor || actor.destroyed) continue;
-      if (physicalAgents.has(actorGuid)) {
-        if (this.navTargetByActor.has(actorGuid)) {
-          const velocity = this.nav.agentVelocity(agentId) ?? { x: 0, y: 0, z: 0 };
-          this.physicsSync.setActorLinearVelocity(actorGuid, { x: velocity.x, z: velocity.z });
-          this.navSteeredActors.add(actorGuid);
-        }
-        continue;
-      }
-      const position = this.nav.agentPosition(agentId);
-      if (!position) continue;
-      const world = this.fromNav(position);
-      const velocity = this.nav.agentVelocity(agentId) ?? { x: 0, y: 0, z: 0 };
-      const previous = this.navYawByActor.get(actorGuid) ?? 0;
-      const yaw = facingYawFromVelocity(velocity, previous);
-      this.navYawByActor.set(actorGuid, yaw);
-      const euler =
-        this.physicsWorldKind === "2d"
-          ? ([0, 0, (yaw * 180) / Math.PI] as [number, number, number])
-          : ([0, (yaw * 180) / Math.PI, 0] as [number, number, number]);
-      const quat = eulerDegreesToQuaternion(euler);
-      const local = actorLocalPhysicsTransform({
-        position: world,
-        rotation: { x: quat[0], y: quat[1], z: quat[2], w: quat[3] },
-      }, actor, worldTransforms);
-      Object.assign(actor.transform.position, local.position);
-      Object.assign(actor.transform.rotation, local.rotation);
-    }
-    physicalAgents.clear();
-    if (removed) this.emitNavigationDebug(true);
-  }
-
-  private animGraphGuid(component: {
-    assetGuid: string | null;
-    getVariable(name: string): unknown;
-  }): string | null {
-    const graphGuid = component.getVariable("graphGuid");
-    if (typeof graphGuid === "string" && graphGuid.length > 0) return graphGuid;
-    return component.assetGuid;
-  }
-
-  private animInputsFromComponent(component: {
-    getVariable(name: string): unknown;
-  }): AnimGraphInputs {
-    const conditions: Record<string, boolean> = {};
-    const raw = component.getVariable("conditions");
-    if (raw && typeof raw === "object") {
-      for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
-        conditions[key] = value === true;
-      }
-    }
-    return { conditions };
-  }
-
-  private seedAnimVariables(
-    component: ActorComponent,
-    document: AnimGraphDocument,
-  ): void {
-    for (const variable of document.variables) {
-      if (component.getVariable(variable.name) !== undefined) continue;
-      component.setVariable(
-        variable.name,
-        variable.defaultValue !== undefined
-          ? variable.defaultValue
-          : defaultAnimVariableValue(variable.typeId),
-      );
-    }
-  }
-
-  private animVariablesFromComponent(
-    component: ActorComponent,
-    document: AnimGraphDocument,
-  ): Record<string, unknown> {
-    const variables: Record<string, unknown> = {
-      ...this.animInputsFromComponent(component).conditions,
-    };
-    for (const variable of document.variables) {
-      const value = component.getVariable(variable.name);
-      if (value !== undefined) variables[variable.name] = value;
-    }
-    return variables;
-  }
-
-  private tickAnimGraphs(): void {
-    if (this.animGraphs.size === 0) return;
-    const liveKeys = this.liveAnimInitKeys;
-    const liveEvalKeys = this.liveAnimEvalKeys;
-    liveKeys.clear();
-    liveEvalKeys.clear();
-    for (const actor of this.world.getActors()) {
-      if (this.stopped) return;
-      if (!this.canTickActor(actor)) continue;
-      const slotId = this.actorSlot(actor);
-      if (slotId === undefined) continue;
-      if (this.btPlayAnimOwnedSlots.has(slotId)) continue;
-      for (const component of actor.components) {
-        if (!this.canTickActor(actor)) break;
-        if (
-          component.classId !== "AnimationGraphComponent" ||
-          component.destroyed
-        ) {
-          continue;
-        }
-        const guid = this.animGraphGuid(component);
-        if (!guid) continue;
-        const document = this.animGraphs.get(guid);
-        if (!document) continue;
-        const evalKey = component.guid;
-        const initKey = `${evalKey}:${guid}`;
-        liveKeys.add(initKey);
-        liveEvalKeys.add(evalKey);
-        this.seedAnimVariables(component, document);
-        const jumpTo = this.pendingAnimJumpByComponent.get(evalKey);
-        if (jumpTo) {
-          this.pendingAnimJumpByComponent.delete(evalKey);
-          const jumped = document.states.find((state) => state.id === jumpTo);
-          if (jumped) {
-            this.animEvalByComponent.set(evalKey, {
-              stateId: jumped.id,
-              normalisedTime: 0,
-              blendWeights: { [jumped.id]: 1 },
-              timeMs: 0,
-              facts: {
-                elapsedSeconds: 0,
-                durationSeconds: 0,
-                normalisedTime: 0,
-                remainingSeconds: 0,
-                remainingRatio: 1,
-                looping: jumped.loop,
-                loopCount: 0,
-                justLooped: false,
-                justFinished: false,
-                totalNormalisedTime: 0,
-                previousTotalNormalisedTime: 0,
-              },
-              layers: [],
-              blendFromStateId: null,
-              blendFromTimeMs: 0,
-              blendElapsedMs: 0,
-              blendSeconds: 0,
-              loopCount: 0,
-            });
-          }
-        }
-        const extras = {
-          variableStore: component,
-          animFacts: this.animEvalByComponent.get(evalKey)?.facts,
-        };
-        const objectClassId = animGraphScriptClassId(guid);
-        if (!this.animInitializedBySlot.has(initKey)) {
-          this.scriptHost.invokeAnimEvent(
-            objectClassId,
-            "onInitializeAnimation",
-            actor,
-            0,
-            extras,
-          );
-          this.animInitializedBySlot.add(initKey);
-        }
-        this.scriptHost.invokeAnimEvent(
-          objectClassId,
-          "onUpdateAnimation",
-          actor,
-          this.simulationDt(),
-          extras,
-        );
-        const next = evaluateAnimGraph(
-          document,
-          this.animEvalByComponent.get(evalKey) ?? null,
-          this.simulationDt(),
-          {
-            variables: this.animVariablesFromComponent(component, document),
-            ...this.animInputsFromComponent(component),
-            decideTransition: (transition, facts) =>
-              this.scriptHost.invokeAnimRule(
-                animRuleScriptClassId(guid, transition.id),
-                actor,
-                { variableStore: component, animFacts: facts },
-              ),
-          },
-        );
-        this.animEvalByComponent.set(evalKey, next);
-        const clip = clipForState(document, next.stateId);
-        if (clip?.kind === "sprite" && clip.assetGuid) {
-          (actor.sceneLayerId ? this.overlayPhysicsSync : this.physicsSync).setActorSpriteClip(actor, {
-            assetGuid: clip.assetGuid,
-            clipName: clip.clipName,
-            normalisedTime: next.normalisedTime,
-          });
-        } else {
-          (actor.sceneLayerId ? this.overlayPhysicsSync : this.physicsSync).setActorSpriteClip(actor, null);
-        }
-        const currentLayer =
-          next.layers.find((layer) => layer.stateId === next.stateId) ??
-          next.layers[next.layers.length - 1];
-        this.emit({
-          type: "animState",
-          slotId,
-          stateId: next.stateId,
-          normalisedTime: next.normalisedTime,
-          blendWeights: next.blendWeights,
-          clipName: currentLayer?.clipName || clip?.clipName,
-          clipKind: currentLayer?.clipKind ?? clip?.kind,
-          clipAssetGuid: currentLayer?.clipAssetGuid || clip?.assetGuid,
-          justFinished: next.facts.justFinished,
-          justLooped: next.facts.justLooped,
-          layers: next.layers,
-        });
-      }
-    }
-    // Deleting the visited entry keeps Set/Map iteration valid, so prune in place.
-    for (const key of this.animInitializedBySlot) {
-      if (!liveKeys.has(key)) this.animInitializedBySlot.delete(key);
-    }
-    for (const evalKey of this.animEvalByComponent.keys()) {
-      if (!liveEvalKeys.has(evalKey)) this.animEvalByComponent.delete(evalKey);
-    }
-    liveKeys.clear();
-    liveEvalKeys.clear();
+    this.navigation.stopAgent(actorGuid);
   }
 
   private stringGuid(value: unknown): string | null {
@@ -4549,11 +3972,11 @@ class InProcessRuntime implements RuntimeDriver {
   ): BtResult {
     this.currentBtNodeId = node.id;
     if (builtinClassId(node.classId) === "bt.task.moveTo") {
-      return this.tickMoveTo(actor, node, memory);
+      return this.navigation.tickMoveTo(actor, node, memory, navPointFromUnknown(node.properties?.destination));
     }
     if (builtinClassId(node.classId) === "bt.task.moveToBlackboardKey") {
       const key = typeof node.properties?.key === "string" ? node.properties.key : "";
-      return this.tickMoveTo(actor, node, memory, blackboardTargetPosition(
+      return this.navigation.tickMoveTo(actor, node, memory, blackboardTargetPosition(
         blackboard[key], this.world, this.navFrameActors ?? undefined,
       ));
     }
@@ -4607,61 +4030,6 @@ class InProcessRuntime implements RuntimeDriver {
     return "running";
   }
 
-  private tickMoveTo(
-    actor: Actor,
-    node: { properties?: Record<string, unknown> },
-    memory: Record<string, unknown>,
-    dest: NavPoint | null = navPointFromUnknown(node.properties?.destination),
-  ): BtResult {
-    if (!dest) {
-      this.stopNavAgent(actor.guid);
-      return "failure";
-    }
-    const target = this.nav?.closestPoint(this.toNav(dest));
-    if (!target) {
-      this.stopNavAgent(actor.guid);
-      return "failure";
-    }
-    const previous = navPointFromUnknown(memory.__moveDestination);
-    if (memory.__moveRequested !== true || !previous ||
-      previous.x !== dest.x || previous.y !== dest.y || previous.z !== dest.z) {
-      if (!this.setNavAgentTarget(actor.guid, dest)) {
-        this.stopNavAgent(actor.guid);
-        return "failure";
-      }
-      memory.__moveRequested = true;
-      memory.__moveDestination = { ...dest };
-    }
-    const agentId = this.navAgentByActor.get(actor.guid);
-    const dynamic = this.isDynamicNavActor(actor);
-    const world = dynamic ? this.navActorWorldPosition(actor) : null;
-    const position = world
-      ? this.nav?.closestPoint(this.toNav(world))
-      : agentId ? this.nav?.agentPosition(agentId) : null;
-    if (!position) return dynamic && this.navTargetByActor.has(actor.guid) ? "running" : "failure";
-    const accept =
-      typeof node.properties?.acceptRadius === "number" &&
-      Number.isFinite(node.properties.acceptRadius)
-        ? Math.max(0, node.properties.acceptRadius)
-        : 0.75;
-    if (world) {
-      const navComponent = actor.components.find((component) =>
-        component.classId === "NavAgentComponent" && !component.destroyed);
-      const height = parseNavAgentParams(Object.fromEntries(navComponent?.variables ?? [])).height;
-      // Root pivots can be at the feet or inside the collider. The crowd is
-      // surface-based; do not report arrival for a distant airborne owner.
-      if (Math.abs(world.y - position.y) > Math.max(height, accept)) return "running";
-    }
-    const distance = Math.hypot(
-      position.x - target.x,
-      position.y - target.y,
-      position.z - target.z,
-    );
-    if (distance > accept) return "running";
-    this.stopNavAgent(actor.guid);
-    return "success";
-  }
-
   private tickRotateToFace(
     actor: Actor,
     node: { properties?: Record<string, unknown> },
@@ -4682,9 +4050,7 @@ class InProcessRuntime implements RuntimeDriver {
     actor.transform.rotation.y = quat[1];
     actor.transform.rotation.z = quat[2];
     actor.transform.rotation.w = quat[3];
-    if (this.navAgentByActor.has(actor.guid)) {
-      this.navYawByActor.set(actor.guid, yawRad);
-    }
+    this.navigation.faceYaw(actor.guid, yawRad);
     return "success";
   }
 
@@ -4995,30 +4361,6 @@ class InProcessRuntime implements RuntimeDriver {
     return typeof name === "string" && name.trim() ? name : actor.classId;
   }
 
-  private emitNavigationDebug(force = false): void {
-    if (!this.showPathfinding && !this.showNavAgent) return;
-    const now = nowMs();
-    if (!force && now - this.lastNavigationDebugMs < 200) return;
-    this.lastNavigationDebugMs = now;
-    const agents: DebugNavAgent[] = [];
-    for (const [actorGuid, agentId] of this.navAgentByActor) {
-      const actor = this.world.findActor(actorGuid);
-      if (!actor || actor.destroyed) continue;
-      const state = this.nav?.agentDebugState(agentId);
-      if (!state) continue;
-      agents.push({
-        ...state,
-        actorGuid,
-        actorName: this.debugActorName(actor),
-        position: this.fromNav(state.position),
-        velocity: this.fromNav(state.velocity),
-        target: state.target ? this.fromNav(state.target) : null,
-        path: state.path.map((point) => this.fromNav(point)),
-      });
-    }
-    this.emit({ type: "debugNavigation", agents, world: this.physicsWorldKind });
-  }
-
   private emitBehaviourTreeSnapshot(force = false): void {
     if (!this.behaviourTreeDebug) return;
     const now = nowMs();
@@ -5115,22 +4457,8 @@ class InProcessRuntime implements RuntimeDriver {
       setShowNav: (enabled) => {
         this.emit({ type: "setShowNav", enabled: Boolean(enabled) });
       },
-      setShowPathfinding: (enabled) => {
-        this.showPathfinding = enabled;
-        this.emit({ type: "setShowPathfinding", enabled });
-        this.emitNavigationDebug(true);
-        if (!this.showPathfinding && !this.showNavAgent) {
-          this.emit({ type: "debugNavigation", agents: [], world: this.physicsWorldKind });
-        }
-      },
-      setShowNavAgent: (enabled) => {
-        this.showNavAgent = enabled;
-        this.emit({ type: "setShowNavAgent", enabled });
-        this.emitNavigationDebug(true);
-        if (!this.showPathfinding && !this.showNavAgent) {
-          this.emit({ type: "debugNavigation", agents: [], world: this.physicsWorldKind });
-        }
-      },
+      setShowPathfinding: (enabled) => this.navigation.setShowPathfinding(enabled),
+      setShowNavAgent: (enabled) => this.navigation.setShowNavAgent(enabled),
       setBehaviourTreeDebug: (enabled) => {
         this.behaviourTreeDebug = enabled;
         this.emit({ type: "setBehaviourTreeDebug", enabled });
@@ -6448,7 +5776,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.running = false;
     for (const resume of this.simulationWaiters) resume();
     this.simulationWaiters.clear();
-    for (const waiter of this.delayWaiters.splice(0)) waiter.resolve();
+    this.subsystems.cancelPending();
     for (const stream of [...this.sceneStreams.values()]) this.retireSceneStream(stream);
     for (const work of [...this.independentLayerWork.values()]) {
       work.controller.abort(sceneRealizationCancelled());
@@ -6484,20 +5812,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.sceneLibrary.clear();
     this.pendingOwnerActions.clear();
     this.layerLoads.clear();
-    this.ragdolls.dispose();
-    this.cables.dispose();
-    this.dynamicMeshes.dispose();
-    this.movement.dispose();
-    this.physicsSync.dispose();
-    this.overlayPhysicsSync.dispose();
-    this.clearNavAgents();
-    this.nav?.dispose();
-    this.nav = null;
-    this.sceneNavmeshBytes.clear();
-    if (this.showPathfinding || this.showNavAgent) {
-      this.emit({ type: "debugNavigation", agents: [], world: this.physicsWorldKind });
-    }
-    if (this.behaviourTreeDebug) this.emit({ type: "behaviourTreeSnapshot", trees: [] });
+    this.subsystems.dispose();
   }
 
   pause(reason: SessionPauseReason = "user"): void {
@@ -6901,16 +6216,16 @@ class InProcessRuntime implements RuntimeDriver {
     }
     if (this.stopped) return;
     this.tweens.cancelInvalid();
-    this.advanceDelays();
-    if (this.canTickScene() || this.hasReadyLayers()) this.tickAnimGraphs();
+    this.delays.advance(this.simulationDt());
+    if (this.canTickScene() || this.hasReadyLayers()) this.animGraphs.tick();
     if (this.canTickScene() || this.hasReadyLayers()) {
       this.tilemapAnimationTimeMs += simDt * 1000;
       if (this.hasAnimatedTiles) this.emit({ type: "tilemapAnimationTime", elapsedMs: this.tilemapAnimationTimeMs });
       // Only behaviour trees and the crowd read the frame index.
-      this.navFrameActors = this.nav || this.behaviourTrees.size > 0 ? firstSpawnedActorIndex(this.world.getActors()) : null;
+      this.navFrameActors = this.navigation.active || this.behaviourTrees.size > 0 ? firstSpawnedActorIndex(this.world.getActors()) : null;
       try {
         this.tickBehaviourTrees();
-        if (this.nav && this.canTickScene()) this.tickCrowd(this.navFrameActors ?? firstSpawnedActorIndex(this.world.getActors()));
+        if (this.navigation.active && this.canTickScene()) this.navigation.tickCrowd(this.navFrameActors ?? firstSpawnedActorIndex(this.world.getActors()));
       } finally {
         this.navFrameActors = null;
       }
@@ -6929,7 +6244,7 @@ class InProcessRuntime implements RuntimeDriver {
       if (this.deferSnapshotWrites) this.deferSnapshotWrite();
       else this.publishSnapshot();
       this.emitDebugColliders();
-      this.emitNavigationDebug();
+      this.navigation.emitDebug();
       this.emitBehaviourTreeSnapshot();
     }
     const statsNow = nowMs();
@@ -7094,26 +6409,6 @@ class InProcessRuntime implements RuntimeDriver {
       severity: "error",
     });
     return diag;
-  }
-
-  private advanceDelays(): void {
-    if (this.delayWaiters.length === 0) return;
-    const remaining: typeof this.delayWaiters = [];
-    const due: Array<() => void> = [];
-    for (const waiter of this.delayWaiters) {
-      if (waiter.owner?.destroyed) continue;
-      // A SceneSubsystem's time runs with its Scene, not with its call admission.
-      if (waiter.owner && !this.canRunOwnerActions(waiter.owner)) {
-        remaining.push(waiter);
-        continue;
-      }
-      waiter.remaining -= this.simulationDt();
-      if (waiter.remaining <= 0) due.push(waiter.resolve);
-      else remaining.push(waiter);
-    }
-    this.delayWaiters.length = 0;
-    this.delayWaiters.push(...remaining);
-    for (const resolve of due) resolve();
   }
 
   private snapshotOrigin = { x: 0, y: 0, z: 0 };
@@ -7814,17 +7109,6 @@ function nowMs(): number {
   return typeof performance !== "undefined" && performance.now
     ? performance.now()
     : Date.now();
-}
-
-function navPointFromUnknown(value: unknown): NavPoint | null {
-  if (!value || typeof value !== "object") return null;
-  const row = value as { x?: unknown; y?: unknown; z?: unknown };
-  if (typeof row.x !== "number" || !Number.isFinite(row.x)) return null;
-  return {
-    x: row.x,
-    y: typeof row.y === "number" && Number.isFinite(row.y) ? row.y : 0,
-    z: typeof row.z === "number" && Number.isFinite(row.z) ? row.z : 0,
-  };
 }
 
 function* remapOverlaySerializedActors(
