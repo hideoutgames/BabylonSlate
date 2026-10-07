@@ -27,6 +27,7 @@ export class RuntimeInspectorClient {
   private readonly options: {
     sessionGeneration: number;
     send: (request: RuntimeInspectorRequest) => void | Promise<void>;
+    cancel?: (request: Pick<RuntimeInspectorRequest, "sessionGeneration" | "requestId">) => void;
     maxRequests?: number; maxBytes?: number; timeoutMs?: number;
   };
   private nextId = 0;
@@ -40,6 +41,7 @@ export class RuntimeInspectorClient {
   constructor(options: {
     sessionGeneration: number;
     send: (request: RuntimeInspectorRequest) => void | Promise<void>;
+    cancel?: (request: Pick<RuntimeInspectorRequest, "sessionGeneration" | "requestId">) => void;
     maxRequests?: number; maxBytes?: number; timeoutMs?: number;
   }) { this.options = options; }
 
@@ -142,7 +144,16 @@ export class RuntimeInspectorClient {
 
   private finish(entry: Entry, failure?: Error, result?: RuntimeInspectorResult, pump = true): void {
     if (!this.pending.delete(entry.id)) return;
-    if (entry.sent) this.sent.delete(entry.request.requestId);
+    if (entry.sent) {
+      this.sent.delete(entry.request.requestId);
+      if (failure) {
+        // Cancel deferred source preparation before it can apply an edit after
+        // this consumer has timed out, changed scenes, or stopped. A completed
+        // synchronous mutation cannot be recalled by a transport cancellation.
+        try { this.options.cancel?.({ sessionGeneration: entry.request.sessionGeneration, requestId: entry.request.requestId }); }
+        catch { /* The failed/stopped transport cannot keep this local request alive. */ }
+      }
+    }
     if (entry.timer !== undefined) clearTimeout(entry.timer);
     this.bytes -= entry.bytes;
     const queue = this.lanes.get(entry.lane);

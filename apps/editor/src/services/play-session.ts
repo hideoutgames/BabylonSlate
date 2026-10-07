@@ -663,6 +663,10 @@ export function startPlaySession(options: {
   });
   const inspectorClient = new RuntimeInspectorClient({
     sessionGeneration: options.sessionGeneration ?? 0,
+    cancel: request => {
+      if (worker) worker.postControl({ type: "cancelRuntimeInspector", ...request });
+      else runtime?.cancelRuntimeInspector(request);
+    },
     send: async request => {
       if (worker) { worker.postControl({ type: "runtimeInspector", ...request }); return; }
       if (!runtime) throw new Error("The game runtime is unavailable");
@@ -686,18 +690,25 @@ export function startPlaySession(options: {
     if (options.mode === "simulate" || editorInputRoutingEnabled) handle.setGameInputEnabled(!suppressed);
     return suppressed;
   };
-  const setPauseReason: PlaySession["setPauseReason"] = async (reason, paused) => {
+  let pendingPauseBoundary: Promise<import("@babylonslate/bridge").SessionBoundaryResult> | null = null;
+  const synchronizePauseBoundary = (action: import("@babylonslate/bridge").SessionBoundaryRequest["action"]) => {
+    const work = boundaryClient.request(action).then(result => {
+      if (result.success && result.requestId > lastBoundaryId) {
+        lastBoundaryId = result.requestId;
+        acknowledgedPaused = result.paused;
+        handle.setGameTimePaused(result.paused);
+        if (!result.paused) last = performance.now();
+        suppressGameInput();
+      }
+      return result;
+    });
+    pendingPauseBoundary = work;
+    return work;
+  };
+  const setPauseReason: PlaySession["setPauseReason"] = (reason, paused) => {
     if (paused) requestedPauses.add(reason); else requestedPauses.delete(reason);
     suppressGameInput();
-    const result = await boundaryClient.request({ kind: "pause", reason, paused });
-    if (result.success && result.requestId > lastBoundaryId) {
-      lastBoundaryId = result.requestId;
-      acknowledgedPaused = result.paused;
-      handle.setGameTimePaused(result.paused);
-      if (!result.paused) last = performance.now();
-      suppressGameInput();
-    }
-    return result;
+    return synchronizePauseBoundary({ kind: "pause", reason, paused });
   };
 
   const publishScalabilityStatus = (acknowledgement: ScalabilityAcknowledgement) => {
@@ -1356,6 +1367,11 @@ export function startPlaySession(options: {
     if (command.type === "trace") {
       recordedTrace = command.payload as unknown as TracePayload;
     }
+    if (command.type === "sessionPaused") {
+      // Console Pause/Resume already changed the runtime reason. Ask for its
+      // completed boundary without rewriting another outstanding pause hold.
+      void synchronizePauseBoundary({ kind: "resetInput" }).catch((error: unknown) => options.onLog?.(String(error), "error"));
+    }
     applyPlaySessionPausedCommand(command, options.onSessionPaused);
     applyPlayHudConsoleCommand(command, {
       onShowFps: options.onShowFps,
@@ -1660,7 +1676,20 @@ export function startPlaySession(options: {
     captureFrame: async (signal) => {
       const cancel = () => handle.cancelFrameCapture("Frame capture was cancelled.");
       signal.addEventListener("abort", cancel, { once: true });
-      try { signal.throwIfAborted(); return await handle.captureFrame(); }
+      try {
+        // A paused report is render-only only after the requested game-clock
+        // boundary has completed; a legacy caller-paused view is insufficient.
+        let pending: typeof pendingPauseBoundary;
+        do {
+          pending = pendingPauseBoundary;
+          if (pending) {
+            const result = await pending;
+            if (!result.success) throw new Error(result.reason ?? "Game pause did not reach its completed boundary.");
+          }
+          signal.throwIfAborted();
+        } while (pending !== pendingPauseBoundary);
+        return await handle.captureFrame();
+      }
       finally { signal.removeEventListener("abort", cancel); }
     },
     onProfile: (profile) => options.onProfile?.(profile),
@@ -1673,13 +1702,7 @@ export function startPlaySession(options: {
     runtimeMode,
     diagnostics: performanceDiagnostics,
     setPaused: (paused: boolean) => {
-      if (options.mode === "simulate") {
-        void setPauseReason("user", paused).catch((error: unknown) => options.onLog?.(String(error), "error"));
-        return;
-      }
-      handle.setPaused(paused);
-      pauseGate?.setPaused(paused);
-      worker?.postControl({ type: "setPaused", paused });
+      void setPauseReason("user", paused).catch((error: unknown) => options.onLog?.(String(error), "error"));
     },
     setPauseReason,
     setEditorInputSuppressed: async (suppressed) => {

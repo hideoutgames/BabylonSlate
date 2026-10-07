@@ -17,7 +17,7 @@ function reply(request: RuntimeInspectorRequest): RuntimeInspectorResult {
       : { kind: "mutation", target: action.target, sequence: action.sequence, effectiveValue: action.kind === "setProperty" ? action.value : null },
   };
 }
-function fixture(options: { maxRequests?: number; maxBytes?: number; timeoutMs?: number } = {}) {
+function fixture(options: { maxRequests?: number; maxBytes?: number; timeoutMs?: number; cancel?: (request: Pick<RuntimeInspectorRequest, "sessionGeneration" | "requestId">) => void } = {}) {
   const sent: RuntimeInspectorRequest[] = [];
   const client = new RuntimeInspectorClient({ sessionGeneration: 9, send: request => { sent.push(request); }, ...options });
   return { client, sent };
@@ -158,13 +158,16 @@ describe("runtime Inspector client", () => {
 
   it("times out a lane, ignores late replies, and frees timers on transport failure", async () => {
     vi.useFakeTimers();
-    const { client, sent } = fixture({ timeoutMs: 25 });
+    const cancel = vi.fn();
+    const { client, sent } = fixture({ timeoutMs: 25, cancel });
     const results = Promise.allSettled([client.request(edit(1)), client.request(edit(2))]);
     await vi.advanceTimersByTimeAsync(25);
     expect((await results).every(result => result.status === "rejected" && result.reason.code === "timeout")).toBe(true);
     expect(sent).toHaveLength(1);
+    expect(cancel).toHaveBeenCalledExactlyOnceWith({ sessionGeneration: 9, requestId: sent[0]!.requestId });
     client.receive(reply(sent[0]!));
     client.dispose();
+    expect(cancel).toHaveBeenCalledTimes(1);
     const broken = new RuntimeInspectorClient({ sessionGeneration: 9, send: async () => { throw new Error("Worker terminated"); } });
     await expect(broken.request({ kind: "identities" })).rejects.toMatchObject({ code: "transport" });
     expect(broken.pendingCount).toBe(0);
