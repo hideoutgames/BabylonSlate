@@ -42,7 +42,8 @@ import {
   classIdFromClassAsset,
   classParentLookup,
 } from "../lib/content-browser-helpers";
-import { walkAncestry } from "@babylonslate/editor-kit";
+import { EditorReadOnlyContext, walkAncestry } from "@babylonslate/editor-kit";
+import { useAuthoringLock } from "../lib/use-authoring-lock";
 import {
   isDockviewDocumentKind,
   type DockviewDocumentKind,
@@ -134,13 +135,16 @@ function DocumentShell({
   children: React.ReactNode;
 }) {
   const { sourceControl } = useDocuments();
+  const authoringLock = useAuthoringLock();
   return (
     <div
       className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
       data-testid={testId}
     >
-      <DocumentLockBanner path={path} sourceControl={sourceControl} />
-      <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+      <DocumentLockBanner path={path} sourceControl={sourceControl} authoringReason={authoringLock.readOnly ? authoringLock.reason : null} />
+      <EditorReadOnlyContext.Provider value={authoringLock.readOnly}>
+        <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+      </EditorReadOnlyContext.Provider>
     </div>
   );
 }

@@ -35,6 +35,15 @@ describe("DocumentLockBanner", () => {
     cleanup();
   });
 
+  it("does not offer a source-control override for a simulation authoring lock", async () => {
+    const service = await serviceWithTheirs();
+    render(<DocumentLockBanner path="assets/hero.scene.babasset" sourceControl={service}
+      authoringReason="Stop Simulation to edit authored content." />);
+    expect(screen.getByText("Read-only during Simulation Play")).toBeTruthy();
+    expect(screen.queryByTestId("document-lock-edit-anyway")).toBeNull();
+    expect(service.isDocumentReadOnly("assets/hero.scene.babasset")).toBe(true);
+  });
+
   it("shows the holder and Edit Anyway, then leaves the banner after confirm", async () => {
     const service = await serviceWithTheirs();
     const { rerender } = render(

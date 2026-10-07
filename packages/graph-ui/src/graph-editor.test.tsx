@@ -3,7 +3,7 @@ import { useStore } from "@xyflow/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultGraph } from "@babylonslate/core";
-import { DRAG_ARM_MS, TagProvider } from "@babylonslate/editor-kit";
+import { DRAG_ARM_MS, EditorReadOnlyContext, TagProvider } from "@babylonslate/editor-kit";
 import {
   GRAPH_DEFAULT_ZOOM,
   GRAPH_MIN_ZOOM,
@@ -4648,9 +4648,11 @@ it("edits a Tag pin through its hierarchy and serializes the numeric default", (
     data: expect.objectContaining({ "default:value": 8 }),
   })] }), expect.anything());
   expect(screen.getByTestId("pin-tag-tag-node-value").textContent).toContain("State");
-  rerender(<TagProvider entries={[{ id: 8, path: "State", parentId: 0 }]}>
-    <GraphEditor initialGraph={graph} onChange={onChange} readOnly />
-  </TagProvider>);
+  rerender(<EditorReadOnlyContext.Provider value={true}>
+    <TagProvider entries={[{ id: 8, path: "State", parentId: 0 }]}>
+      <GraphEditor initialGraph={graph} onChange={onChange} nodesDraggable />
+    </TagProvider>
+  </EditorReadOnlyContext.Provider>);
   expect(screen.getByTestId("pin-tag-tag-node-value").hasAttribute("disabled")).toBe(true);
 });
 

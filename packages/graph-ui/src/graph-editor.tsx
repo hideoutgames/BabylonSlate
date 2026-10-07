@@ -45,6 +45,7 @@ import {
   AssetOpenProvider,
   ContextMenuOverlay,
   useContextMenu,
+  useEditorReadOnly,
   type NestedMenuItem,
 } from "@babylonslate/editor-kit";
 import {
@@ -517,7 +518,7 @@ function GraphEditorCanvas({
   defaultZoom = GRAPH_DEFAULT_ZOOM,
   sessionViewport = null,
   onSessionViewportChange,
-  readOnly = false,
+  readOnly: readOnlyProp = false,
   readOnlyPinDefaults: readOnlyPinDefaultsProp,
   onPinSelect,
   nodeTypes: nodeTypesProp,
@@ -546,11 +547,13 @@ function GraphEditorCanvas({
   pinTypeNames,
   onCanvasApi,
 }: GraphEditorProps) {
+  const inheritedReadOnly = useEditorReadOnly();
+  const readOnly = readOnlyProp || inheritedReadOnly;
   const knownTypes = useMemo(
     () => ({ ...graphNodeTypes, ...nodeTypesProp }),
     [nodeTypesProp],
   );
-  const nodesDraggable = nodesDraggableProp ?? !readOnly;
+  const nodesDraggable = !readOnly && (nodesDraggableProp ?? true);
   const interactions = useContext(GraphInteractionSettingsContext);
   const inheritedPinEditor = useContext(PinDefaultEditorContext);
   const renderPinDefaultEditor = renderPinDefaultEditorProp ?? inheritedPinEditor;
