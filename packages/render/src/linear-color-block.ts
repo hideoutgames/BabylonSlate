@@ -17,7 +17,7 @@ export class LinearColorBlock extends NodeMaterialBlock {
   protected override _buildBlock(state: NodeMaterialBuildState): this {
     super._buildBlock(state);
     state._emitFunctionFromInclude("helperFunctions", "Scene fog color conversion");
-    state.compilationString += `${state._declareOutput(this.output)} = toLinearSpace(${this.color.associatedVariableName});\n`;
+    state.compilationString += `${state._declareOutput(this.output)} = ${state._toLinearSpace(this.color)};\n`;
     return this;
   }
 }

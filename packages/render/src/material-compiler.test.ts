@@ -131,6 +131,19 @@ function multiplyMaterial(): MaterialDocument {
 }
 
 describe("material compiler", () => {
+  it.each(["pbr", "unlit"] as const)("builds %s fog with the WGSL vector color conversion", async (shadingModel) => {
+    const scene = host();
+    vi.spyOn(scene.getEngine(), "isWebGPU", "get").mockReturnValue(true);
+    const doc = createDefaultMaterialDocument();
+    doc.shadingModel = shadingModel;
+    const result = compileMaterialPlan(planFor(doc), { scene, name: "fogged" });
+    if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+    disposers.push(() => result.dispose());
+    expect(await result.ready).toEqual([]);
+    expect(result.material.compiledShaders).toContain("= CalcFogFactor(");
+    expect(result.material.compiledShaders).toMatch(/= toLinearSpaceVec3\(uniforms\.[^)]*fogColor[^)]*\)/);
+  });
+
   it.each(["pbr", "unlit"] as const)("compiles live scene fog into %s surfaces", async (shadingModel) => {
     const scene = host();
     scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
