@@ -121,21 +121,24 @@ export class PerformanceRecorder {
     return accepted;
   }
 
-  recordTick(sample: PerformanceTickSample): boolean {
-    if (!this.advance()) return false;
+  /** drain accepts already-recorded runtime chunks while a correlated Stop is
+   * flushing. The session owner must stop new frames and enforce its deadline. */
+  recordTick(sample: PerformanceTickSample, options: { drain?: boolean } = {}): boolean {
+    if (!(options.drain ? this.recording : this.advance())) return false;
     if (!safeId(sample.tickId) || ![sample.elapsedMs, sample.scriptMs, sample.physicsMs, sample.publishMs, sample.otherMs].every(finite))
       throw new Error("Tick samples require finite non-negative timings and a valid tick identity.");
+    if (sample.elapsedMs > this.active!.durationMs) return false;
     return this.append(this.active!.ticks, PERFORMANCE_TICK_COLUMNS.map((key) => sample[key]));
   }
 
-  stop(reason: PerformanceStopReason = "requested"): PerformanceProfile | undefined {
+  stop(reason: PerformanceStopReason = "requested", stoppedAtMs = this.now()): PerformanceProfile | undefined {
     const state = this.active;
     if (!state) return this.result;
     this.active = undefined;
     const finish = (stream: BufferStream): PerformanceStream => ({ columns: stream.columns, count: stream.count,
       chunks: stream.chunks.map((chunk, index) => index === stream.chunks.length - 1 ? chunk.subarray(0, stream.tailUsed) : chunk) });
     this.result = { kind: "babylonslate-performance", version: 1, identity: state.identity,
-      requestedDurationMs: state.durationMs, durationMs: Math.max(0, this.now() - state.startedAtMs),
+      requestedDurationMs: state.durationMs, durationMs: Math.max(0, stoppedAtMs - state.startedAtMs),
       byteBudget: state.byteBudget, retainedBytes: state.retainedBytes, droppedRecords: reason === "budget" ? 1 : 0,
       stopReason: reason, frames: finish(state.frames), ticks: finish(state.ticks) };
     this.onStopped?.(this.result);

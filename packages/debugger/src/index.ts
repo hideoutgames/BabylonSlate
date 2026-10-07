@@ -48,3 +48,4 @@ export {
   type TraceRecorderOptions,
 } from "./trace-recorder";
 export * from "./performance-recorder";
+export * from "./session-diagnostics";
