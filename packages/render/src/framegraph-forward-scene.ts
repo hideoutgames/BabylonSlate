@@ -808,6 +808,9 @@ export class ForwardSceneFrameGraph {
           this.effectsGraph?.sceneColorTexture ??
           color;
         this.clear.depthTexture = this.postProcessGraph?.depthTexture ?? this.effectsGraph?.depthTexture ?? depth;
+        // The authored clear color is display-space; a Scene Linear scene
+        // color holds linear HDR that the Display Color stage encodes once.
+        this.clear.convertColorToLinearSpace = effectsPlan?.sceneLinear === true;
         this.cull = new CameraOutputCullTask(
           "Forward cull",
           this.graph,

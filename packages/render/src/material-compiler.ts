@@ -1296,8 +1296,10 @@ function createPostProcessPlumbing(
 }
 
 // ImageProcessingBlock normally expects display-space input and skips processing
-// when no effects are enabled. Our PBR sum is linear, so it still needs the
-// standard gamma conversion in that case, just like Babylon's PBR final output.
+// when no effects are enabled. Our lit and unlit surface colors are linear, so
+// they still need the standard gamma conversion in that case, just like
+// Babylon's PBR final output. Under a Scene Linear display stage
+// (IMAGEPROCESSINGPOSTPROCESS) they stay linear for that stage to encode.
 class LinearSurfaceImageProcessingBlock extends ImageProcessingBlock {
   override getClassName(): string {
     return "LinearSurfaceImageProcessingBlock";
@@ -1374,7 +1376,9 @@ function attachSurfaceShading(
   };
 
   if (plan.shadingModel === "unlit") {
-    fragment.convertToGammaSpace = true;
+    // Screen overlays draw after the Display Color stage, so they always
+    // encode for display themselves.
+    fragment.convertToGammaSpace = options.overlay === true;
     const color =
       baseColor && emissive
         ? addColor(baseColor, emissive, "unlitEmission")
@@ -1394,7 +1398,9 @@ function attachSurfaceShading(
         created.push(alpha);
       } else style.alpha.connectTo(fragment.a);
     } else {
-      if (color) applyFog(color).connectTo(fragment.rgb);
+      // Like lit surfaces, world unlit color is linear: it stays linear for a
+      // Scene Linear display stage and is encoded for display otherwise.
+      if (color) writeLinearSurfaceColor(applyFog(color), fragment, options.name, created);
       if (opacity) opacity.connectTo(fragment.a);
     }
     return fragment;
@@ -1472,14 +1478,24 @@ function attachSurfaceShading(
   }
   const lighting = addColor(lit, indirect, "totalLighting");
   const color = emissive ? addColor(lighting, emissive, "surfaceEmission") : lighting;
+  writeLinearSurfaceColor(applyFog(color), fragment, options.name, created);
+  return fragment;
+}
+
+/** Route a linear surface color through the scene's image processing. */
+function writeLinearSurfaceColor(
+  color: NodeMaterialConnectionPoint,
+  fragment: GeometrySurfaceOutputBlock,
+  name: string,
+  created: NodeMaterialBlock[],
+): void {
   const imageProcessing = new LinearSurfaceImageProcessingBlock(
-    `${options.name}_imageProcessing`,
+    `${name}_imageProcessing`,
   );
   imageProcessing.convertInputToLinearSpace = false;
   created.push(imageProcessing);
-  applyFog(color).connectTo(imageProcessing.color);
+  color.connectTo(imageProcessing.color);
   imageProcessing.rgb.connectTo(fragment.rgb);
-  return fragment;
 }
 
 /**

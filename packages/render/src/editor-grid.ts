@@ -341,11 +341,16 @@ export function createEditorGrid(
   material.disableDepthWrite = true;
   mesh.material = material;
 
+  // Grid colors are display-space. A Scene Linear view draws the grid into its
+  // linear HDR scene color and encodes it once in the Display Color stage.
+  let linear = scene.imageProcessingConfiguration.applyByPostProcess;
+  const sceneColor = (value: Color3) => (linear ? value.toLinearSpace() : value);
+
   const applyUniforms = () => {
     material.setFloat("spacing", spacing);
     material.setFloat("subdivisions", subdivisions);
-    material.setColor3("majorColor", color);
-    material.setColor3("minorColor", minorColor);
+    material.setColor3("majorColor", sceneColor(color));
+    material.setColor3("minorColor", sceneColor(minorColor));
     material.setFloat("lineWidth", GRID_LINE_WIDTH);
     material.setFloat("gridVisible", visible ? 1 : 0);
   };
@@ -400,7 +405,7 @@ export function createEditorGrid(
     if (requestedBounds) {
       boundsMesh.scaling.set(requestedBounds.width, requestedBounds.height, 1);
     }
-    boundsMaterial.setColor3("lineColor", CAMERA_BOUNDS_COLOR);
+    boundsMaterial.setColor3("lineColor", sceneColor(CAMERA_BOUNDS_COLOR));
     boundsMaterial.setFloat("lineWidth", CAMERA_BOUNDS_LINE_WIDTH);
     boundsMaterial.setFloat("boundsVisible", boundsDrawn() ? 1 : 0);
     boundsMesh.isVisible = true;
@@ -433,6 +438,11 @@ export function createEditorGrid(
   sync();
 
   const observer = scene.onBeforeRenderObservable.add(() => {
+    if (linear !== scene.imageProcessingConfiguration.applyByPostProcess) {
+      linear = !linear;
+      applyUniforms();
+      applyBounds();
+    }
     sync();
   });
 
