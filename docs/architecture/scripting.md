@@ -571,7 +571,7 @@ Rich Text's generated Get/Set nodes offer built-in Appear Mode, Appear Transitio
 
 Compiled Get/Set of catalog variables uses `ctx.getVariableFrom` / `ctx.setVariableOn` on the component instance (`propertyKey` such as `text`). Native functions codegen `ctx.callComponentFunction(target, runtime, args)` (`setText`, `playAudio`, `stopAudio`, `playParticles`, `stopParticles`, `possessCamera`, `addImpulse`, `moveTo`, `stopMovement`). Actor-level `camera.possess` / `physics.addImpulse` / `navigation.moveTo` / `particles.play` nodes stay. Component Calls are for dragging off **Get Camera** / **Get Rigid Body** / **Get Nav Agent** / **Get Particle**. Particle Play/Stop stamps `componentId`. `setVariableOn` is not store-only:
 
-- Visual / illumination / 2D text: `emitMeshAssignment` (`assignMesh` / `assignMaterial`, including sprite/tilemap `sortingLayer` / `orderInLayer`).
+- Visual / illumination / 2D text: `RenderCommandEmitter.emitMeshAssignment` (`assignMesh` / `assignMaterial`, including sprite/tilemap `sortingLayer` / `orderInLayer`).
 - `ParticleComponent`: `assignParticle` (guid + sorting).
 - `2DAnchorComponent`: recompute the layer's anchor ownership and layout (same path as frustum resize); the uppermost anchor controls each subtree. Anchor-only Outliner objects ignore Actor pose setters.
 - `AudioComponent` Volume: `{ type: "setVoiceGain"; voiceId: component.guid }` for the live voice. Loop applies on the next Play.
