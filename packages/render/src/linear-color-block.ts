@@ -1,6 +1,8 @@
 import { NodeMaterialBlock, NodeMaterialBlockTargets, NodeMaterialBlockConnectionPointTypes as Types } from "@babylonjs/core";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
+import "@babylonjs/core/Shaders/ShadersInclude/helperFunctions";
+import "@babylonjs/core/ShadersWGSL/ShadersInclude/helperFunctions";
 
 /** Scene fog is authored in display space; surface lighting is linear. */
 export class LinearColorBlock extends NodeMaterialBlock {
