@@ -35,6 +35,14 @@ import { SetAssetDocumentCommand } from "./commands/asset-document";
 import { ReplaceSceneCommand } from "./commands/replace-scene";
 import { SetActorSuppressedComponentsCommand, SetComponentMaterialInstanceCommand } from "./commands/scene-instance";
 import {
+  ReorderFolderCommand,
+  SetActorClassCommand,
+  SetActorPropertiesCommand,
+  SetComponentClassCommand,
+  SetComponentTransformPresenceCommand,
+  SetSceneOverlayEditorCommand,
+} from "./commands/scene-fields";
+import {
   commandToJournalPayload,
   parseJournalLine,
   reviveCommand,
@@ -137,6 +145,12 @@ describe("journal", () => {
       new SetActorSuppressedComponentsCommand(actorId, undefined, ["prefab-removed"]),
       new SetComponentMaterialInstanceCommand(actorId, componentId, undefined, { materialGuid: "mat", parameters: { Amount: { kind: "float", value: 0.5 } } }),
       new ReplaceSceneCommand(scene, { ...scene, name: "Replaced" }),
+      new SetActorPropertiesCommand(actorId, undefined, { sceneLayerActors: [{ classId: "Hud", defaults: {} }] }),
+      new SetActorClassCommand(actorId, "Actor", "Door"),
+      new SetComponentClassCommand(actorId, componentId, "MeshComponent", "LightComponent"),
+      new SetComponentTransformPresenceCommand(actorId, componentId, scene.actors[0]!.components[0]!.transform, undefined),
+      new ReorderFolderCommand("f1", 0, 1),
+      new SetSceneOverlayEditorCommand(undefined, true),
       new AddActorCommand(createActor("added", "Added"), 1),
       new RemoveActorCommand(scene.actors[0]!, 0),
       new SetActorTransformCommand(

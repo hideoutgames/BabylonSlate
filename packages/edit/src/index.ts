@@ -56,7 +56,15 @@ export {
   type ActorTransformEntry,
   type SceneEditCommand,
 } from "./commands/scene";
-export { diffSceneCommands } from "./commands/scene-diff";
+export { diffSceneCommands, planSceneChange } from "./commands/scene-diff";
+export {
+  ReorderFolderCommand,
+  SetActorClassCommand,
+  SetActorPropertiesCommand,
+  SetComponentClassCommand,
+  SetComponentTransformPresenceCommand,
+  SetSceneOverlayEditorCommand,
+} from "./commands/scene-fields";
 export { ReplaceSceneCommand, createReplaceSceneCommandFromJson } from "./commands/replace-scene";
 export { SetActorSuppressedComponentsCommand, SetComponentMaterialInstanceCommand } from "./commands/scene-instance";
 export {

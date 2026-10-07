@@ -267,6 +267,36 @@ describe("DocumentProvider actions and route", () => {
     expect(documents().dirtyDocuments.some(doc => doc.id === MAIN_SCENE_ID)).toBe(true);
   });
 
+  it("records a SceneLayer switcher entries edit for Undo and crash recovery", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, {
+      ...openScene(MAIN_SCENE_ID), actors: [createActor("switcher", "Switcher", { classId: "SceneLayerActorSwitcher" })],
+    }));
+    await act(() => actions.saveAll());
+    const handle = await new OpfsStorageAdapter().openDocumentsProject("Stable");
+    const properties = { sceneLayerActors: [{ classId: "HudLayer", defaults: { title: "Paused" } }] };
+    let applied = false;
+    await act(async () => {
+      const saved = openScene(MAIN_SCENE_ID);
+      applied = await actions.applySceneChange(MAIN_SCENE_ID, { ...saved, actors: saved.actors.map(actor => ({ ...actor, properties })) });
+    });
+    expect(applied).toBe(true);
+    act(() => actions.undoActiveDocument());
+    expect(openScene(MAIN_SCENE_ID).actors).toMatchObject([{ id: "switcher" }]);
+    expect(openScene(MAIN_SCENE_ID).actors[0]!.properties).toBeUndefined();
+    act(() => actions.redoActiveDocument());
+    expect(openScene(MAIN_SCENE_ID).actors[0]!.properties).toEqual(properties);
+    // Unmount without Close/Save to preserve the crash-recovery journal.
+    cleanup();
+    render(<DocumentProvider><Probe /></DocumentProvider>);
+    await waitFor(() => expect(documents().homepageReady).toBe(true));
+    const reopened = seen.actions!;
+    await act(() => reopened.openListedProject(handle));
+    act(() => reopened.keepRecovery());
+    await waitFor(() => expect(openScene(MAIN_SCENE_ID).actors[0]?.properties).toEqual(properties));
+  });
+
   it("waits for an in-flight save before renaming a Class used by that save", async () => {
     const actions = await openProject();
     const registry = documents().assetRegistry!;
