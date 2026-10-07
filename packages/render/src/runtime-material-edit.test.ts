@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from "vitest";
-import { InputBlock, MeshBuilder, NodeMaterial, NullEngine, Scene } from "@babylonjs/core";
+import { InputBlock, MeshBuilder, NodeMaterial, NullEngine, RawTexture, Scene } from "@babylonjs/core";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { MaterialLibrary, ownedMaterialPreparation } from "./material-library";
 import { applyAssignMaterial, createSnapshotSceneBinding } from "./snapshot-apply";
@@ -7,14 +7,27 @@ import { RuntimeMaterialEditOwner, type RuntimeMaterialPreparationRequest } from
 
 const disposers: (() => void)[] = [];
 afterEach(() => { while (disposers.length) disposers.pop()?.(); });
-async function fixture() {
+async function fixture(textureOptions?: ConstructorParameters<typeof MaterialLibrary>[0]) {
   const engine = new NullEngine();
   const scene = new Scene(engine);
-  const library = new MaterialLibrary();
+  const library = new MaterialLibrary(textureOptions);
   const binding = createSnapshotSceneBinding();
   const document = createDefaultMaterialDocument();
   document.nodes.push({ id: "roughness", type: "param.float", position: { x: 0, y: 0 }, properties: { name: "Roughness", value: [0.5] } });
   document.edges.push({ id: "roughness-output", sourceNodeId: "roughness", sourcePinId: "out", targetNodeId: "output", targetPinId: "roughness" });
+  if (textureOptions) {
+    document.nodes.push(
+      { id: "texture", type: "param.texture", position: { x: 0, y: 0 }, properties: { name: "Albedo", textureGuid: "working" } },
+      { id: "uv", type: "input.uv", position: { x: 0, y: 0 }, properties: {} },
+      { id: "sample", type: "texture.sample", position: { x: 0, y: 0 }, properties: {} },
+    );
+    document.edges = document.edges.filter(edge => edge.id !== "e-color-output");
+    document.edges.push(
+      { id: "texture-sample", sourceNodeId: "texture", sourcePinId: "out", targetNodeId: "sample", targetPinId: "texture" },
+      { id: "uv-sample", sourceNodeId: "uv", sourcePinId: "uv", targetNodeId: "sample", targetPinId: "uv" },
+      { id: "sample-output", sourceNodeId: "sample", sourcePinId: "rgb", targetNodeId: "output", targetPinId: "baseColor" },
+    );
+  }
   binding.resolveMaterial = (guid, options) => ["material", "replacement"].includes(guid) ? library.resolve(scene, guid, document, options) : null;
   binding.validateMaterialParameter = (_guid, name, value) => library.acceptsParameter(document, name, value);
   binding.releaseMaterialInstance = (key, guid) => library.releaseInstance(key, guid);
@@ -76,4 +89,36 @@ it("rejects recycled slots and cancellation, releasing only the pending private 
   expect(f.commit().success).toBe(false);
   expect(f.sibling.material).toBe(f.mesh.material);
   expect(f.library.materialFor(f.scene, "material", { instanceKey: `runtime-edit:${f.request.editToken}` })).toBeNull();
+});
+
+it("retains the current visual and releases a rejected or cancelled texture candidate", async () => {
+  let reject!: (reason: Error) => void;
+  const failed = new Promise<void>((_resolve, no) => { reject = no; });
+  const pending = new Promise<void>(() => {});
+  const leases = new Map<string, number>();
+  let texture: RawTexture | undefined;
+  const f = await fixture({
+    textureIdentity: guid => guid,
+    acquireTexture: (guid, scene) => {
+      texture ??= RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, scene);
+      texture.getInternalTexture()!.isReady = true;
+      leases.set(guid, (leases.get(guid) ?? 0) + 1);
+      let released = false;
+      return { key: guid, resource: texture, ready: guid === "failed" ? failed : guid === "pending" ? pending : Promise.resolve(),
+        release: () => { if (!released) { released = true; leases.set(guid, leases.get(guid)! - 1); } } };
+    },
+  });
+  const previous = f.mesh.material;
+  const request = { ...f.request, parameterName: "Albedo", parameter: { kind: "texture" as const, textureAssetGuid: "failed" } };
+  const preparation = f.owner.prepare(request);
+  const rejected = expect(preparation).rejects.toThrow("Texture admission failed");
+  reject(new Error("Texture admission failed"));
+  await rejected;
+  expect(f.mesh.material).toBe(previous);
+  expect(leases.get("failed")).toBe(0);
+  const cancelled = f.owner.prepare({ ...request, editToken: "pending", parameter: { kind: "texture", textureAssetGuid: "pending" } });
+  f.owner.cancelAll();
+  await expect(cancelled).rejects.toThrow();
+  expect(leases.get("pending")).toBe(0);
+  expect(f.mesh.material).toBe(previous);
 });
