@@ -188,4 +188,3 @@ export function defaultComponentAuthoringProperties(
       return {};
   }
 }
-

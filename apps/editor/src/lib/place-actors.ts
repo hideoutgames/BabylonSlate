@@ -1,3 +1,4 @@
+import { remapScenePropertyReferences } from "@babylonslate/core";
 import {
   createActor,
   UI_CONTROL_2D_CLASS_IDS,
@@ -784,6 +785,12 @@ export function duplicateSceneActor(
           : null,
       } } : {}),
   }, focusReferences));
+  const actorReferences = new Map([[source.id, copy.id]]);
+  const componentReferences = new Map([[source.id, componentIds]]);
+  if (copy.properties) copy.properties = remapScenePropertyReferences(copy.properties, actorReferences, componentReferences) as Record<string, unknown>;
+  copy.components = copy.components.map(component => ({ ...component,
+    properties: remapScenePropertyReferences(component.properties, actorReferences, componentReferences) as Record<string, unknown>,
+  }));
   if (options && "parentId" in options) {
     copy.parentId = options.parentId ?? null;
   }
@@ -816,7 +823,9 @@ export function duplicateSceneActors(
   const focusReferences = new Map([...actorCopies, ...[...componentCopies.values()].flatMap((ids) => [...ids])]);
   return copies.map((copy) => ({
     ...copy,
-    components: copy.components.map((component) => {
+    ...(copy.properties ? { properties: remapScenePropertyReferences(copy.properties, actorCopies, componentCopies) as Record<string, unknown> } : {}),
+    components: copy.components.map((original) => {
+      const component = { ...original, properties: remapScenePropertyReferences(original.properties, actorCopies, componentCopies) as Record<string, unknown> };
       if (isFocusTargetClass(component.classId)) return remapFocusNeighbors(component, focusReferences);
       if (component.classId === "RenderTargetCaptureComponent" && Array.isArray(component.properties.actorIds)) {
         return { ...component, properties: { ...component.properties, actorIds: component.properties.actorIds.map((id: unknown) => typeof id === "string" ? actorCopies.get(id) ?? id : id) } };

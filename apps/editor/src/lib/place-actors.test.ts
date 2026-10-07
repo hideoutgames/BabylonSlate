@@ -878,3 +878,22 @@ it("places a switcher only in SceneLayers and preserves its editable actor defau
   expect(actor.classId).toBe("SceneLayerActorSwitcher");
   expect(actor.properties).toEqual({ sceneLayerActors: [], initialIndex: 0 });
 });
+
+it("duplicates captured actor and component references by target instance while preserving resources", () => {
+  const owner = createActor("owner", "Owner", { components: [createMeshComponent("mesh", "box")], properties: {
+    self: { $sceneValue: "reference", actorId: "owner", componentId: "mesh" },
+    target: { $sceneValue: "reference", actorId: "target", componentId: "mesh" },
+    nested: { $sceneValue: "map", entries: [["actor", { $sceneValue: "reference", actorId: "target" }]] },
+    materialGuid: "owner",
+  } });
+  const target = createActor("target", "Target", { components: [createMeshComponent("mesh", "sphere")] });
+  const scene = { ...createDefaultScene(), actors: [owner, target] };
+  const alone = duplicateSceneActor(scene, owner);
+  expect(alone.properties!.self).toEqual({ $sceneValue: "reference", actorId: alone.id, componentId: alone.components[0]!.id });
+  expect(alone.properties!.target).toEqual(owner.properties!.target);
+  const [first, second] = duplicateSceneActors(scene, [owner.id, target.id]);
+  expect(first!.properties!.target).toEqual({ $sceneValue: "reference", actorId: second!.id, componentId: second!.components[0]!.id });
+  expect(first!.properties!.nested).toEqual({ $sceneValue: "map", entries: [["actor", { $sceneValue: "reference", actorId: second!.id }]] });
+  expect(first!.properties!.materialGuid).toBe("owner");
+  expect(owner.properties!.self).toEqual({ $sceneValue: "reference", actorId: "owner", componentId: "mesh" });
+});
