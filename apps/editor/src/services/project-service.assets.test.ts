@@ -111,7 +111,7 @@ describe("project documents as .babasset", () => {
     const documents = new DocumentService();
     const sceneId = await documents.openDocument(service, { kind: "scene", path: MAIN_SCENE_FILE, label: "Main" }, { panel: "viewport" });
     const classId = await documents.openDocument(service, { kind: "graph", path: MAIN_CLASS_FILE, label: "Main" }, { panel: "graph" });
-    documents.setPanelPlacement(classId, "graph", { direction: "right", width: 300 });
+    documents.setPanelPlacement(classId, "graph", { referencePanelId: "graph", direction: "right", width: 300 });
     await service.saveProject(loaded.document, documents.buildLayouts());
     const sceneGuid = service.guidForPath(MAIN_SCENE_FILE)!;
     const classGuid = service.guidForPath(MAIN_CLASS_FILE)!;
@@ -129,7 +129,7 @@ describe("project documents as .babasset", () => {
     const newClassId = documentId({ kind: "graph", path: graph.path });
     expect(reopened.getDocument(newSceneId)?.layout).toEqual({ panel: "viewport" });
     expect(reopened.getDocument(newClassId)?.layout).toEqual({ panel: "graph" });
-    expect(reopened.getPanelPlacements(newClassId).graph).toEqual({ direction: "right", width: 300 });
+    expect(reopened.getPanelPlacements(newClassId).graph).toEqual({ referencePanelId: "graph", direction: "right", width: 300 });
     expect(reopened.getDocument(sceneId)).toBeUndefined();
     expect(reopened.getDocument(classId)).toBeUndefined();
   });
@@ -164,7 +164,16 @@ describe("project documents as .babasset", () => {
     expect(reopened.document.settings.gameInstanceClass).toBe("Champion");
   });
 
-  it("restores a Class rename if saving a dependent scene fails", async () => {
+  it("rejects renaming a project Class to an engine Class before writing references", async () => {
+    const { service, storage } = await scaffolded();
+    const guid = service.guidForPath(MAIN_CLASS_FILE)!;
+    const bytes = await storage.readBinary(MAIN_CLASS_FILE);
+    await expect(service.renameAsset(guid, "Actor")).rejects.toThrow(/engine class name/);
+    expect(await storage.readBinary(MAIN_CLASS_FILE)).toEqual(bytes);
+    expect(service.registry!.getByGuid(guid)?.path).toBe(MAIN_CLASS_FILE);
+  });
+
+  it.each([false, true])("restores the Class path if a dependent scene write fails (persistent: %s)", async (persistent) => {
     const { service, storage } = await scaffolded();
     const sourcePath = "assets/Hero.class.babasset";
     await service.saveDocument("graph", sourcePath, { nodes: [], edges: [] }, { parentClass: "Actor" });
@@ -174,10 +183,10 @@ describe("project documents as .babasset", () => {
     const write = storage.writeBinary.bind(storage);
     let fail = true;
     vi.spyOn(storage, "writeBinary").mockImplementation(async (path, bytes) => {
-      if (path === MAIN_SCENE_FILE && fail) { fail = false; throw new Error("Disk full"); }
+      if (path === MAIN_SCENE_FILE && (fail || persistent)) { fail = false; throw new Error("Disk full"); }
       return write(path, bytes);
     });
-    await expect(service.renameAsset(sourceGuid, "Champion")).rejects.toThrow("Disk full");
+    await expect(service.renameAsset(sourceGuid, "Champion")).rejects.toThrow(persistent ? /could not be restored/ : "Disk full");
     expect(await storage.exists(sourcePath)).toBe(true);
     expect(await storage.exists("assets/Champion.class.babasset")).toBe(false);
     expect(await storage.readBinary(MAIN_SCENE_FILE)).toEqual(sceneBytes);

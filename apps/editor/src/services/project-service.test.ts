@@ -324,11 +324,14 @@ describe("project round-trip", () => {
     await storage.openDocumentsProject("Interrupted");
     await storage.writeText(".babylonslate-creating", "Project creation in progress\n");
     await storage.writeText(PROJECT_FILE, JSON.stringify(createEmptyProject("Interrupted")));
+    await storage.mkdir("assets", true);
+    await storage.writeText("assets/PreviousTemplate.txt", "interrupted template content");
     await storage.releaseFolder();
     const service = new ProjectService(storage);
     const result = await service.createEmptyProject("Interrupted", { kind: "blank" });
     expect(result.document.metadata.name).toBe("Interrupted");
     expect(await storage.exists(".babylonslate-creating")).toBe(false);
+    expect(await storage.exists("assets/PreviousTemplate.txt")).toBe(false);
     expect((await service.listProjects()).map((project) => project.name)).toEqual(["Interrupted"]);
     await expect(service.createEmptyProject("Interrupted")).rejects.toThrow(/already exists/);
   });

@@ -312,7 +312,7 @@ export class DocumentService {
       if (parsed.kind === "scene" && restoredId !== lastSceneId) continue;
       // Legacy layouts have only paths. A deleted or renamed tab must not make
       // the whole project inaccessible; saved GUIDs repair newer layouts.
-      if (projectService.documentExists && !(await projectService.documentExists(parsed.path))) continue;
+      if (parsed.kind !== "trace" && projectService.documentExists && !(await projectService.documentExists(parsed.path))) continue;
       try {
         await this.openDocument(
           projectService,

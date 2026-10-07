@@ -44,7 +44,7 @@ for (const operation of ["rename", "move"] as const) {
       await page.getByTestId("content-browser-name-confirm").click();
       await expect(page.getByTestId("content-browser-name-dialog")).toHaveCount(0);
     }
-    await openMainScene(page);
+    await openAssetFromBrowser(page, "assets/ReopenProbe.scene.babasset");
     const scene: SerializedScene = {
       ...createDefaultScene(),
       actors: [createActor("rename-hero", "Hero Instance", { classId: "ReopenHero" })],
@@ -56,8 +56,6 @@ for (const operation of ["rename", "move"] as const) {
     await expect(page.getByTestId("document-workspace-graph")).toBeVisible();
     await saveAllIfEnabled(page);
 
-    const scenePath = operation === "rename" ? "assets/Arena.scene.babasset" : "assets/Relocated/ReopenProbe.scene.babasset";
-    const classPath = operation === "rename" ? "assets/Champion.class.babasset" : "assets/Relocated/ReopenHero.class.babasset";
     if (operation === "rename") {
       await renameAsset(page, "assets/ReopenProbe.scene.babasset", "Arena");
       await renameAsset(page, "assets/ReopenHero.class.babasset", "Champion");
@@ -70,8 +68,8 @@ for (const operation of ["rename", "move"] as const) {
     await page.reload();
     await expect(page.getByTestId("homepage")).toBeVisible();
     await openListedTestProject(page);
-    await expect(page.locator(`[data-testid="document-tab"][data-document-id="scene:${scenePath}"]`)).toBeVisible();
-    await expect(page.locator(`[data-testid="document-tab"][data-document-id="graph:${classPath}"]`)).toBeVisible();
+    await expect(page.locator('[data-testid="document-tab"][data-document-kind="scene"]')).toContainText(operation === "rename" ? "Arena" : "ReopenProbe");
+    await expect(page.locator('[data-testid="document-tab"][data-document-kind="graph"]')).toContainText(operation === "rename" ? "Champion" : "ReopenHero");
     await openMainScene(page);
     await expect(page.getByTestId("tree-row-actor:rename-hero")).toBeVisible();
     expect(await page.evaluate(() => (

@@ -24,6 +24,11 @@ export function nextCopyName(name: string, existingNames: string[]): string {
 /** File stem without `.scene.babasset` / `.graph.babasset` / `.class.babasset` / `.babasset`. */
 export function stripAssetFileSuffix(fileName: string): string {
   return fileName
+    .replace(/\.scenelayer\.babasset$/i, "")
+    .replace(/\.matinst\.babasset$/i, "")
+    .replace(/\.bt\.babasset$/i, "")
+    .replace(/\.blackboard\.babasset$/i, "")
+    .replace(/\.water\.babasset$/i, "")
     .replace(/\.datadefinition\.babasset$/i, "")
     .replace(/\.datatree\.babasset$/i, "")
     .replace(/\.dataobject\.babasset$/i, "")
@@ -58,6 +63,11 @@ export function stripAssetFileSuffix(fileName: string): string {
 
 /** Preserve Scene/Graph/Class/P9 container suffixes when duplicating. Leftover `.eui.babasset` keeps its suffix on rename/duplicate. */
 export function assetFileSuffix(fileName: string): string {
+  if (/\.scenelayer\.babasset$/i.test(fileName)) return ".scenelayer.babasset";
+  if (/\.matinst\.babasset$/i.test(fileName)) return ".matinst.babasset";
+  if (/\.bt\.babasset$/i.test(fileName)) return ".bt.babasset";
+  if (/\.blackboard\.babasset$/i.test(fileName)) return ".blackboard.babasset";
+  if (/\.water\.babasset$/i.test(fileName)) return ".water.babasset";
   if (/\.datadefinition\.babasset$/i.test(fileName)) return ".datadefinition.babasset";
   if (/\.datatree\.babasset$/i.test(fileName)) return ".datatree.babasset";
   if (/\.dataobject\.babasset$/i.test(fileName)) return ".dataobject.babasset";

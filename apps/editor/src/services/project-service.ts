@@ -1,4 +1,5 @@
 import { createDefaultInputAssets } from "@babylonslate/core";
+import { isLockedEngineClassId } from "@babylonslate/object-model";
 import { normalizeDataDefinitionAsset, normalizeDataTreeAsset } from "@babylonslate/core";
 import { normalizeImportedProject, readProjectArchive, PROJECT_IMPORT_LIMIT } from "./project-import";
 import { getHostPlatform, pickImportFiles } from "@babylonslate/vfs";
@@ -1004,8 +1005,17 @@ export class ProjectService {
         empty = false;
       }
     }
-    const interrupted = await this.storage.exists(PROJECT_CREATION_MARKER);
-    return { handle, createdHere: interrupted || (!registered && empty) };
+    if (await this.storage.exists(PROJECT_CREATION_MARKER)) {
+      // Only fresh app-owned folders receive the marker. A retry can use a
+      // different template, so discard the interrupted scaffold's files.
+      if (this.storage.deleteProject) {
+        await this.storage.deleteProject(handle);
+        return { handle: await this.storage.openDocumentsProject(name), createdHere: true };
+      }
+      for (const entry of await this.storage.readdir(".")) await this.storage.remove(entry.name, true);
+      return { handle, createdHere: true };
+    }
+    return { handle, createdHere: !registered && empty };
   }
 
   private async scaffoldOwnedProject<T>(
@@ -1590,6 +1600,9 @@ export class ProjectService {
     const classId = classIdFromClassAsset(before);
     const nextClassId = classIdFromClassAsset({ ...before, path: nextPath });
     if (classId === nextClassId) return registry.renameAsset(guid, newName);
+    if (isLockedEngineClassId(nextClassId)) {
+      throw new Error(`"${nextClassId}" is an engine class name. Choose another Class name.`);
+    }
     if (registry.list().some((asset) => asset.header.guid !== guid &&
       (asset.header.type === "Class" || asset.header.type === "Graph") && classIdFromClassAsset(asset) === nextClassId)) {
       throw new Error("A Class with that name already exists.");
@@ -1613,13 +1626,22 @@ export class ProjectService {
       if (settings.changed) await this.storage.writeText(PROJECT_FILE, JSON.stringify({ ...project, settings: settings.value }, null, 2));
       return registry.getByGuid(guid)!;
     } catch (error) {
-      // Restore bytes, including headers, if any referrer cannot be committed.
-      for (const backup of backups) await backup.storage.writeBinary(backup.path === before.path ? renamed.path : backup.path, backup.bytes);
+      // A persistent storage failure must not prevent attempts to restore the
+      // other files. Retain both Class copies if its original cannot be restored.
+      const failures: string[] = [];
+      const restore = async (path: string, write: () => Promise<void>) => {
+        try { await write(); return true; }
+        catch { failures.push(path); return false; }
+      };
       const storage = this.storageForPath(renamed.path);
-      await storage.writeBinary(before.path, original);
-      if (renamed.path !== before.path) await storage.remove(renamed.path);
-      await this.storage.writeText(PROJECT_FILE, projectText);
-      await this.remountRegistry();
+      const sourceRestored = await restore(before.path, () => storage.writeBinary(before.path, original));
+      for (const backup of backups) {
+        if (backup.path !== before.path) await restore(backup.path, () => backup.storage.writeBinary(backup.path, backup.bytes));
+      }
+      if (sourceRestored && renamed.path !== before.path) await restore(renamed.path, () => storage.remove(renamed.path));
+      await restore(PROJECT_FILE, () => this.storage.writeText(PROJECT_FILE, projectText));
+      await restore("Asset Registry", () => this.remountRegistry().then(() => {}));
+      if (failures.length) throw new Error(`Class rename failed and some files could not be restored: ${failures.join(", ")}. ${error instanceof Error ? error.message : String(error)}`, { cause: error });
       throw error;
     }
   }

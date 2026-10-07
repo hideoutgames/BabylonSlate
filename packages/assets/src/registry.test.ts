@@ -870,6 +870,24 @@ describe("AssetRegistry", () => {
     expect(renamed.header.name).toBe("shiny");
   });
 
+  it.each([
+    ["SceneLayer", ".scenelayer.babasset"],
+    ["MaterialInstance", ".matinst.babasset"],
+    ["BehaviourTree", ".bt.babasset"],
+    ["Blackboard", ".blackboard.babasset"],
+    ["Water", ".water.babasset"],
+  ])("retains the %s editor identity when renaming and duplicating", async (type, suffix) => {
+    const storage = await createStorage();
+    await writeAsset(storage, `assets/Original${suffix}`, { guid: "original", type, name: "Original" });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const renamed = await registry.renameAsset("original", "Renamed");
+    expect(renamed.path).toBe(`assets/Renamed${suffix}`);
+    const duplicate = await registry.duplicateAsset("original", "project");
+    expect(duplicate.path).toBe(`assets/Renamed_1${suffix}`);
+    expect(duplicate.header.type).toBe(type);
+  });
+
   it("preserves Unicode names, Class suffixes, and the existing asset when a rename collides", async () => {
     const storage = await createStorage();
     await writeAsset(storage, "assets/Player.class.babasset", { guid: "player", type: "Class", name: "Player" });
