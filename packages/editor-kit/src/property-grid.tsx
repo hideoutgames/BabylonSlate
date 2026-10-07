@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import type { Tag, TagContainer } from "@babylonslate/core";
 import { TagPicker } from "./tag-picker";
 import { Button } from "@babylonslate/ui/components/button";
@@ -75,6 +75,7 @@ export type PropertyRow =
       defaultValue?: number;
       min?: number;
       max?: number;
+      validate?: (value: number) => string | undefined;
       sensitivity?: number;
       precision?: number;
       onChange: (value: number) => void;
@@ -291,6 +292,45 @@ function rowHasLabelTarget(row: PropertyRow): boolean {
   }
 }
 
+function TextRowControl({ row }: { row: Extract<PropertyRow, { kind: "text" }> }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const baselineRef = useRef(row.value);
+  const cancelledRef = useRef(false);
+  return <SelectAllInput
+    id={`property-${row.id}`}
+    className="min-h-[var(--chrome-row,28px)] px-2"
+    value={draft ?? row.value}
+    disabled={row.disabled}
+    readOnly={row.readOnly}
+    onChange={(event) => {
+      if (row.readOnly) return;
+      if (draft === null) baselineRef.current = row.value;
+      setDraft(event.target.value);
+      row.onChange(event.target.value);
+    }}
+    onKeyDown={(event) => {
+      if (row.readOnly || event.nativeEvent.isComposing || event.keyCode === 229) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        cancelledRef.current = true;
+        if (draft !== null) row.onChange(baselineRef.current);
+        setDraft(null);
+        event.currentTarget.blur();
+      } else if (event.key === "Enter") {
+        event.preventDefault();
+        event.currentTarget.blur();
+      }
+    }}
+    onBlur={(event) => {
+      if (!row.readOnly && !cancelledRef.current) row.onCommit?.(event.target.value);
+      cancelledRef.current = false;
+      setDraft(null);
+    }}
+    data-testid={`property-${row.id}`}
+  />;
+}
+
 function RowControl({ row }: { row: PropertyRow }) {
   switch (row.kind) {
     case "tag":
@@ -307,6 +347,7 @@ function RowControl({ row }: { row: PropertyRow }) {
           mixed={row.mixed}
           min={row.min}
           max={row.max}
+          validate={row.validate}
           sensitivity={row.sensitivity}
           precision={row.precision}
           disabled={row.disabled}
@@ -371,18 +412,7 @@ function RowControl({ row }: { row: PropertyRow }) {
         </FieldLabel>
       );
     case "text":
-      return (
-        <SelectAllInput
-          id={`property-${row.id}`}
-          className="min-h-[var(--chrome-row,28px)] px-2"
-          value={row.value}
-          disabled={row.disabled}
-          readOnly={row.readOnly}
-          onChange={(event) => { if (!row.readOnly) row.onChange(event.target.value); }}
-          onBlur={(event) => { if (!row.readOnly) row.onCommit?.(event.target.value); }}
-          data-testid={`property-${row.id}`}
-        />
-      );
+      return <TextRowControl row={row} />;
     case "enum":
       return (
         <Select

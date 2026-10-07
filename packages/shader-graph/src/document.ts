@@ -226,7 +226,7 @@ function defaultSurfaceGraph(): {
       {
         id: "output",
         type: "output.surface",
-        position: { x: 300, y: 0 },
+        position: { x: 400, y: 0 },
         properties: {},
       },
     ],
@@ -257,13 +257,13 @@ function defaultPostProcessGraph(): {
       {
         id: "sceneColor",
         type: "input.sceneColor",
-        position: { x: 200, y: 0 },
+        position: { x: 400, y: 0 },
         properties: {},
       },
       {
         id: "output",
         type: "output.postProcess",
-        position: { x: 420, y: 0 },
+        position: { x: 800, y: 0 },
         properties: {},
       },
     ],
@@ -301,7 +301,7 @@ function defaultParticleGraph(): {
       {
         id: "output",
         type: "output.particle",
-        position: { x: 300, y: 0 },
+        position: { x: 400, y: 0 },
         properties: {},
       },
     ],

@@ -98,8 +98,8 @@ describe("compileGraph instrumentInfiniteLoops", () => {
       registry: registry(),
       instrumentInfiniteLoops: true,
     });
-    expect(compiled.source).toContain("ctx.checkInfiniteLoop();");
-    const checkAt = compiled.source.indexOf("ctx.checkInfiniteLoop();");
+    expect(compiled.source).toContain("ctx.checkInfiniteLoop(");
+    const checkAt = compiled.source.indexOf("ctx.checkInfiniteLoop(");
     const logAt = compiled.source.indexOf("ctx.log");
     expect(checkAt).toBeGreaterThanOrEqual(0);
     expect(logAt).toBeGreaterThan(checkAt);
@@ -148,10 +148,10 @@ describe("compileGraph instrumentInfiniteLoops", () => {
       instrumentInfiniteLoops: true,
     });
     expect(instrumented.source).toContain("while (true)");
-    expect(instrumented.source).toContain("ctx.checkInfiniteLoop();");
+    expect(instrumented.source).toContain("ctx.checkInfiniteLoop(");
     const whileAt = instrumented.source.indexOf("while (true)");
     const innerCheck = instrumented.source.indexOf(
-      "ctx.checkInfiniteLoop();",
+      "ctx.checkInfiniteLoop(",
       whileAt,
     );
     expect(innerCheck).toBeGreaterThan(whileAt);

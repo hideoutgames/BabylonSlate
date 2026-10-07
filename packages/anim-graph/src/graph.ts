@@ -428,7 +428,17 @@ export function validateAnimGraph(
       severity: "error",
     });
   }
+  const stateNames = new Map<string, string>();
   for (const state of doc.states) {
+    const name = state.name.trim();
+    const key = name.toLowerCase();
+    if (!name) {
+      diagnostics.push({ code: "anim.emptyStateName", message: "State names cannot be empty", nodeId: state.id, severity: "error" });
+    } else if (stateNames.has(key)) {
+      diagnostics.push({ code: "anim.duplicateStateName", message: `State "${state.name}" duplicates "${stateNames.get(key)}". Choose a unique name.`, nodeId: state.id, severity: "error" });
+    } else {
+      stateNames.set(key, name);
+    }
     if (state.clipId && !clipIds.has(state.clipId)) {
       diagnostics.push({
         code: "anim.missingClip",

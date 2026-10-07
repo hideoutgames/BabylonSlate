@@ -3,6 +3,7 @@ import type { EditCommand } from "./command";
 import {
   JOURNAL_REPATH_TYPE,
   JOURNAL_DISCARD_TYPE,
+  JOURNAL_CHECKPOINT_TYPE,
   parseJournalLine,
   reviveCommand,
   type JournalLine,
@@ -54,6 +55,7 @@ export function resolveJournalLines(lines: string[]): JournalLine[] {
     const docId = finalIds.has(line.docId) ? finalIds.get(line.docId)! : line.docId;
     if (docId === null) continue;
     resolved.push(docId === line.docId ? line : { ...line, docId });
+    if (line.command.type === JOURNAL_CHECKPOINT_TYPE) finalIds.set(line.docId, null);
   }
   return resolved.reverse();
 }

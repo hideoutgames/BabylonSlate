@@ -428,7 +428,7 @@ describe("compiler emits runnable JavaScript", () => {
     const whileAt = instrumented.source.indexOf("while (true)");
     expect(whileAt).toBeGreaterThanOrEqual(0);
     expect(
-      instrumented.source.indexOf("ctx.checkInfiniteLoop();", whileAt),
+      instrumented.source.indexOf("ctx.checkInfiniteLoop(", whileAt),
     ).toBeGreaterThan(whileAt);
     expect(instrumented.source).toContain("function execJs_js(ctx");
     expect(instrumented.source).toMatch(/execJs_js\(ctx/);

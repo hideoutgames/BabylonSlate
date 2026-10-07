@@ -16,9 +16,9 @@ export interface AnchorEntry {
 }
 
 const V8_FRAME =
-  /^\s*at\s+(?:(.+?)\s+\()?((?:babylonslate:|blob:|file:|https?:)[^):]+):(\d+):(\d+)\)?\s*$/;
+  /^\s*at\s+(?:(.+?)\s+\()?((?:babylonslate:|blob:|file:|https?:).+?):(\d+):(\d+)\)?\s*$/;
 const WEBKIT_FRAME =
-  /^(?:(.*)@)?((?:babylonslate:|blob:|file:|https?:)[^:]+):(\d+):(\d+)\s*$/;
+  /^(?:(.*)@)?((?:babylonslate:|blob:|file:|https?:).+?):(\d+):(\d+)\s*$/;
 
 export function parseStackFrames(stack: string): StackFrame[] {
   const frames: StackFrame[] = [];

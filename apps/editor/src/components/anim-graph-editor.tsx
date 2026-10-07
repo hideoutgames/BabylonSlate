@@ -115,10 +115,10 @@ function uniqueStateId(doc: AnimGraphDocument): string {
 }
 
 function uniqueStateName(doc: AnimGraphDocument, base = "State"): string {
-  const names = new Set(doc.states.map((state) => state.name));
-  if (!names.has(base)) return base;
+  const names = new Set(doc.states.map((state) => state.name.trim().toLowerCase()));
+  if (!names.has(base.toLowerCase())) return base;
   let index = 2;
-  while (names.has(`${base} ${index}`)) index += 1;
+  while (names.has(`${base} ${index}`.toLowerCase())) index += 1;
   return `${base} ${index}`;
 }
 

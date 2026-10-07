@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   cleanup,
   fireEvent,
@@ -47,6 +47,12 @@ vi.mock("@clerk/react", () => ({
     signOut: clerk.signOut,
   }),
 }));
+
+// The Clerk account UI is lazy-loaded. Transform it once up front so a cold
+// module graph cannot outlast the default findBy timeout under worker load.
+beforeAll(async () => {
+  await import("./homepage-account-clerk");
+});
 
 afterEach(() => {
   cleanup();

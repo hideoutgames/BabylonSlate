@@ -67,3 +67,21 @@ export function authoredActorMatrices(actors: readonly SerializedActor[]): (acto
   };
   return world;
 }
+
+/** Serializable world pose for detaching an actor from its authored parents. */
+export function authoredActorWorldTransform(
+  actors: readonly SerializedActor[],
+  actor: SerializedActor,
+): SerializedTransform {
+  if (!actor.parentId) return structuredClone(actor.transform);
+  const matrix = authoredActorMatrices(actors)(actor);
+  const scale = new Vector3();
+  const rotation = new Quaternion();
+  const position = new Vector3();
+  matrix.decompose(scale, rotation, position);
+  return {
+    position: [position.x, position.y, position.z],
+    rotation: [rotation.x, rotation.y, rotation.z, rotation.w],
+    scale: [scale.x, scale.y, scale.z],
+  };
+}

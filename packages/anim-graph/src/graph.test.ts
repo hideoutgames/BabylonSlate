@@ -78,11 +78,34 @@ describe("anim graph evaluator", () => {
     );
   });
 
+  it("reports ambiguous and empty state names on the affected state", () => {
+    const doc = createDefaultAnimGraph();
+    doc.states.push({ ...doc.states[0]!, id: "duplicate", name: " idle " });
+    doc.states.push({ ...doc.states[0]!, id: "unnamed", name: "  " });
+    expect(validateAnimGraph(doc)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "anim.duplicateStateName", nodeId: "duplicate", severity: "error" }),
+      expect.objectContaining({ code: "anim.emptyStateName", nodeId: "unnamed", severity: "error" }),
+    ]));
+    doc.states[1]!.name = "Run";
+    doc.states[2]!.name = "Jump";
+    expect(validateAnimGraph(doc)).toEqual([]);
+  });
+
   it("round-trips through the graph-ui serialized shape", () => {
     const doc = createDefaultAnimGraph();
     const next = serializedToAnimGraph(animGraphToSerialized(doc), doc);
     expect(next.entryStateId).toBe(doc.entryStateId);
     expect(next.states).toHaveLength(1);
+  });
+
+  it("gives palette and pasted states unique names without renaming existing states", () => {
+    const doc = createDefaultAnimGraph();
+    const graph = animGraphToSerialized(doc);
+    graph.nodes.push({ ...graph.nodes[0]!, id: "pasted", data: { title: "idle" } },
+      { ...graph.nodes[0]!, id: "pasted-again", data: { title: "Idle" } });
+    const next = serializedToAnimGraph(graph, doc);
+    expect(next.states.map((state) => state.name)).toEqual(["Idle", "idle 2", "Idle 3"]);
+    expect(validateAnimGraph(next)).toEqual([]);
   });
 
   it("rejects a missing clip and a dangling transition", () => {

@@ -15,7 +15,7 @@ export type SyncContentBrowserThumbnailUrlsInput = {
 };
 
 /**
- * Decode Texture JPEG and Model/Animation PNG thumbs for mounted grid cells only.
+ * Decode PNG/JPEG thumbs for mounted grid cells only.
  * Blob URLs for tiles that left the window are revoked. A CSS-hidden
  * Content Browser skips decode. Recaptures retain the old image until commit;
  * unrelated cells keep their URLs. Cancelled loads release only their new URLs.
