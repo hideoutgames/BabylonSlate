@@ -1,7 +1,8 @@
 import type { SerializedScene } from "@babylonslate/core";
 import { parseNavMeshActorSettings } from "@babylonslate/navigation";
+import type { ProjectSceneWriter } from "../services/project-write-admission";
 
-const flushes = new Set<() => Promise<void>>();
+const flushes = new Set<(writer?: ProjectSceneWriter) => Promise<void>>();
 
 export type NavBakeSaveResult = {
   ok: boolean;
@@ -22,7 +23,7 @@ export function lastNavBakeSaveResult(): NavBakeSaveResult | null {
 }
 
 /** Register a mounted scene workspace bake flush. Returns unregister. */
-export function registerNavBakeSaveFlush(flush: () => Promise<void>): () => void {
+export function registerNavBakeSaveFlush(flush: (writer?: ProjectSceneWriter) => Promise<void>): () => void {
   flushes.add(flush);
   return () => {
     flushes.delete(flush);
@@ -30,10 +31,10 @@ export function registerNavBakeSaveFlush(flush: () => Promise<void>): () => void
 }
 
 /** Save awaits each mounted scene that has Auto Bake On Save. Never throws. */
-export async function flushNavBakeForSave(): Promise<void> {
+export async function flushNavBakeForSave(writer?: ProjectSceneWriter): Promise<void> {
   for (const flush of [...flushes]) {
     try {
-      await flush();
+      await flush(writer);
     } catch {
       // Bake errors stay in NavBakeDialog; Save must not hang.
     }

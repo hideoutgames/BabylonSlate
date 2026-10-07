@@ -312,6 +312,8 @@ interface DocumentContextValue {
   lockAuthoring: DocumentService["lockAuthoring"];
   getAuthoringLock: DocumentService["getAuthoringLock"];
   subscribeAuthoringLock: DocumentService["onAuthoringLockChange"];
+  lockAuthoringWrites: ProjectService["lockAuthoringWrites"];
+  withSceneWrite: ProjectService["withSceneWrite"];
   route: AppRoute;
   projectDocument: ProjectDocument | null;
   projectName: string | null;
@@ -992,6 +994,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const lockAuthoring = useCallback((reason: string) => documentService.lockAuthoring(reason), [documentService]);
   const getAuthoringLock = useCallback(() => documentService.getAuthoringLock(), [documentService]);
   const subscribeAuthoringLock = useCallback((listener: () => void) => documentService.onAuthoringLockChange(listener), [documentService]);
+  const lockAuthoringWrites = useCallback<ProjectService["lockAuthoringWrites"]>(reason => projectService.lockAuthoringWrites(reason), [projectService]);
+  const withSceneWrite = useCallback<ProjectService["withSceneWrite"]>(work => projectService.withSceneWrite(work), [projectService]);
   useEffect(() => documentService.onAuthoringLockChange(bump), [bump, documentService]);
   /** Plugins, search index or Show Plugin Content changed: advance `registryEpoch`. */
   const bumpRegistry = useCallback(() => setRegistryTick((v) => v + 1), []);
@@ -1798,159 +1802,168 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, [attachEnginePlugins, enterEditor, projectService]);
 
   const saveProject = useCallback(async (): Promise<boolean> => {
-    const progress = beginSaveAllProgress();
-    const document = projectDocumentRef.current;
-    const dirtyBefore = documentService.getDirtyDocuments().length + Number(projectSaveState.current.isDirty(document));
-    if (!document) {
-      recordSaveAllTrace({
-        ok: false,
-        reason: "no-document",
-        dirtyBefore,
-        dirtyAfter: dirtyBefore,
-      });
-      progress.finish();
+    // Keep the immutable authored document as the only save source. A session
+    // defers new saves; an already admitted Save All retains its complete lane.
+    if (projectService.authoringWriteBlockedReason) {
+      const dirty = documentService.getDirtyDocuments().length + Number(projectSaveState.current.isDirty(projectDocumentRef.current));
+      recordSaveAllTrace({ ok: false, reason: "authoring-locked", dirtyBefore: dirty, dirtyAfter: dirty });
       return false;
     }
-    if (projectService.pendingMigrations.length > 0) {
-      setMigrationPending(projectService.pendingMigrations);
-      recordSaveAllTrace({
-        ok: false,
-        reason: "migrations",
-        dirtyBefore,
-        dirtyAfter: dirtyBefore,
-      });
-      progress.finish();
-      // Caller must use approveMigrationsAndSave — never silently rewrite.
-      return false;
-    }
-    if (saveDebounceRef.current) {
-      clearTimeout(saveDebounceRef.current);
-      saveDebounceRef.current = null;
-    }
-    // Buffered journal records start writing as Save begins, so a Save that
-    // fails part-way leaves them recoverable. The clear below awaits them.
-    void journalBuffer.flush();
-    const projectSave = projectSaveState.current.capture(document);
-    try {
-      progress.phase("audio-reverb");
-      await flushAudioReverbForSave();
-      progress.phase("navigation");
-      await flushNavBakeForSave();
-      captureAllLayouts();
-      const dirtyDocs = documentService.getDirtyDocuments().map((doc) => ({ ...doc }));
-      const savedScene = dirtyDocs.some((doc) => doc.ref.kind === "scene");
-      const savedModels = dirtyDocs.filter((doc) => doc.ref.kind === "model" || doc.ref.kind === "animation");
-      progress.phase("documents");
-      for (const doc of dirtyDocs) {
-        if (
-          isAssetDocumentKind(doc.ref.kind) &&
-          doc.ref.kind !== "trace" &&
-          doc.content
-        ) {
-          await projectService.saveDocument(
-            doc.ref.kind,
-            doc.ref.path,
-            persistableDocumentContent(doc.ref.kind, doc.content) as
-              | SerializedScene
-              | SerializedSceneLayer
-              | SerializedGraph
-              | Record<string, unknown>,
-          );
-        }
-      }
-      progress.phase("compile");
-      if (document.settings.compileOnSave) {
-        const assets = projectService.registry?.list() ?? [];
-        const graphs = documentService
-          .getOpenDocumentsOrdered()
-          .filter((doc) => doc.ref.kind === "graph" && doc.content)
-          .map((doc) => {
-            const asset = assets.find((entry) => entry.path === doc.ref.path);
-            return {
-              path: doc.ref.path,
-              content: doc.content as SerializedGraph,
-              parentClassId: asset?.header.parentClass ?? null,
-            };
-          });
-        const typeSchemas = collectGraphTypeSchemas();
-        // Warm the codegen cache for open graphs only. Do not record Play
-        // bundles — Play still runs collectPlayPreviewScripts for the full set.
-        compileGraphDocuments(graphs, {
-          inputAssets: inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
-          dataAssets: collectDataGraphAssets(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
-          cache: graphCompileCacheRef.current,
-          enums: typeSchemas.enums,
-          structs: typeSchemas.structs,
-          dataDefinitions: typeSchemas.dataDefinitions,
-          tagRegistry: document.settings.tags,
+    return projectService.withBaselineSave(async writer => {
+      const progress = beginSaveAllProgress();
+      const document = projectDocumentRef.current;
+      const dirtyBefore = documentService.getDirtyDocuments().length + Number(projectSaveState.current.isDirty(document));
+      if (!document) {
+        recordSaveAllTrace({
+          ok: false,
+          reason: "no-document",
+          dirtyBefore,
+          dirtyAfter: dirtyBefore,
         });
-        setLastCompiledSignature(graphCompileSignature(
-          graphs,
-          inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
-          document.settings.tags,
-          collectDataGraphAssets(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
-          typeSchemas,
-        ));
+        progress.finish();
+        return false;
       }
-      const layouts = documentService.buildLayouts();
-      progress.phase("project");
-      await projectService.saveProject(document, layouts);
-      documentService.markAllClean(dirtyDocs);
-      setMigrationPending([]);
-      progress.phase("mtime");
-      await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
-      const guid = projectService.guid;
-      if (guid) {
-        progress.phase("journal");
-        const derived = await ensureDerived();
-        const cleared = await journalBuffer.afterFlush(guid, () =>
-          truncateJournal(derived, guid, () =>
-            documentService.getDirtyDocuments().length === 0 && projectDocumentRef.current === document,
-          ),
+      if (projectService.pendingMigrations.length > 0) {
+        setMigrationPending(projectService.pendingMigrations);
+        recordSaveAllTrace({
+          ok: false,
+          reason: "migrations",
+          dirtyBefore,
+          dirtyAfter: dirtyBefore,
+        });
+        progress.finish();
+        // Caller must use approveMigrationsAndSave — never silently rewrite.
+        return false;
+      }
+      if (saveDebounceRef.current) {
+        clearTimeout(saveDebounceRef.current);
+        saveDebounceRef.current = null;
+      }
+      // Buffered journal records start writing as Save begins, so a Save that
+      // fails part-way leaves them recoverable. The clear below awaits them.
+      void journalBuffer.flush();
+      const projectSave = projectSaveState.current.capture(document);
+      try {
+        progress.phase("audio-reverb");
+        await flushAudioReverbForSave(undefined, writer);
+        progress.phase("navigation");
+        await flushNavBakeForSave(writer);
+        captureAllLayouts();
+        const dirtyDocs = documentService.getDirtyDocuments().map((doc) => ({ ...doc }));
+        const savedScene = dirtyDocs.some((doc) => doc.ref.kind === "scene");
+        const savedModels = dirtyDocs.filter((doc) => doc.ref.kind === "model" || doc.ref.kind === "animation");
+        progress.phase("documents");
+        for (const doc of dirtyDocs) {
+          if (
+            isAssetDocumentKind(doc.ref.kind) &&
+            doc.ref.kind !== "trace" &&
+            doc.content
+          ) {
+            await writer.saveDocument(
+              doc.ref.kind,
+              doc.ref.path,
+              persistableDocumentContent(doc.ref.kind, doc.content) as
+                | SerializedScene
+                | SerializedSceneLayer
+                | SerializedGraph
+                | Record<string, unknown>,
+            );
+          }
+        }
+        progress.phase("compile");
+        if (document.settings.compileOnSave) {
+          const assets = projectService.registry?.list() ?? [];
+          const graphs = documentService
+            .getOpenDocumentsOrdered()
+            .filter((doc) => doc.ref.kind === "graph" && doc.content)
+            .map((doc) => {
+              const asset = assets.find((entry) => entry.path === doc.ref.path);
+              return {
+                path: doc.ref.path,
+                content: doc.content as SerializedGraph,
+                parentClassId: asset?.header.parentClass ?? null,
+              };
+            });
+          const typeSchemas = collectGraphTypeSchemas();
+          // Warm the codegen cache for open graphs only. Do not record Play
+          // bundles — Play still runs collectPlayPreviewScripts for the full set.
+          compileGraphDocuments(graphs, {
+            inputAssets: inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
+            dataAssets: collectDataGraphAssets(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
+            cache: graphCompileCacheRef.current,
+            enums: typeSchemas.enums,
+            structs: typeSchemas.structs,
+            dataDefinitions: typeSchemas.dataDefinitions,
+            tagRegistry: document.settings.tags,
+          });
+          setLastCompiledSignature(graphCompileSignature(
+            graphs,
+            inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
+            document.settings.tags,
+            collectDataGraphAssets(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
+            typeSchemas,
+          ));
+        }
+        const layouts = documentService.buildLayouts();
+        progress.phase("project");
+        await writer.saveProject(document, layouts);
+        documentService.markAllClean(dirtyDocs);
+        setMigrationPending([]);
+        progress.phase("mtime");
+        await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
+        const guid = projectService.guid;
+        if (guid) {
+          progress.phase("journal");
+          const derived = await ensureDerived();
+          const cleared = await journalBuffer.afterFlush(guid, () =>
+            truncateJournal(derived, guid, () =>
+              documentService.getDirtyDocuments().length === 0 && projectDocumentRef.current === document,
+            ),
+          );
+          if (cleared) setRecoveryAvailable(false);
+        }
+        progress.phase("callbacks");
+        if (savedScene) {
+          emitEditorUtilityLifecycle(EDITOR_UTILITY_EVENTS.sceneSaved);
+        }
+        enqueueModelThumbnailJobs(
+          savedModels.flatMap((doc) => {
+            const guid = projectService.guidForPath(doc.ref.path);
+            if (!guid || !doc.content) return [];
+            return [
+              {
+                guid,
+                path: doc.ref.path,
+                payload: doc.content as Record<string, unknown>,
+                type: doc.ref.kind === "animation" ? "Animation" as const : "Model" as const,
+              },
+            ];
+          }),
         );
-        if (cleared) setRecoveryAvailable(false);
+        projectSaveState.current.complete(projectSave);
+        flushSync(() => {
+          bump();
+        });
+        recordSaveAllTrace({
+          ok: true,
+          reason: "saved",
+          dirtyBefore,
+          dirtyAfter: documentService.getDirtyDocuments().length + Number(projectSaveState.current.isDirty(projectDocumentRef.current)),
+        });
+        return true;
+      } catch (error) {
+        recordSaveAllTrace({
+          ok: false,
+          reason: "error",
+          dirtyBefore,
+          dirtyAfter: documentService.getDirtyDocuments().length + Number(projectSaveState.current.isDirty(projectDocumentRef.current)),
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      } finally {
+        progress.finish();
       }
-      progress.phase("callbacks");
-      if (savedScene) {
-        emitEditorUtilityLifecycle(EDITOR_UTILITY_EVENTS.sceneSaved);
-      }
-      enqueueModelThumbnailJobs(
-        savedModels.flatMap((doc) => {
-          const guid = projectService.guidForPath(doc.ref.path);
-          if (!guid || !doc.content) return [];
-          return [
-            {
-              guid,
-              path: doc.ref.path,
-              payload: doc.content as Record<string, unknown>,
-              type: doc.ref.kind === "animation" ? "Animation" as const : "Model" as const,
-            },
-          ];
-        }),
-      );
-      projectSaveState.current.complete(projectSave);
-      flushSync(() => {
-        bump();
-      });
-      recordSaveAllTrace({
-        ok: true,
-        reason: "saved",
-        dirtyBefore,
-        dirtyAfter: documentService.getDirtyDocuments().length + Number(projectSaveState.current.isDirty(projectDocumentRef.current)),
-      });
-      return true;
-    } catch (error) {
-      recordSaveAllTrace({
-        ok: false,
-        reason: "error",
-        dirtyBefore,
-        dirtyAfter: documentService.getDirtyDocuments().length + Number(projectSaveState.current.isDirty(projectDocumentRef.current)),
-        error: error instanceof Error ? error.message : String(error),
-      });
-      throw error;
-    } finally {
-      progress.finish();
-    }
+    });
   }, [
     bump,
     captureAllLayouts,
@@ -1992,36 +2005,39 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
 
   const approveMigrationsAndSave = useCallback(async () => {
-    const projectDocument = projectDocumentRef.current;
-    if (!projectDocument) return;
-    const projectSave = projectSaveState.current.capture(projectDocument);
-    projectService.approveMigrateOnSave();
-    captureAllLayouts();
-    const dirtyDocs = documentService.getDirtyDocuments().map((doc) => ({ ...doc }));
-    for (const doc of dirtyDocs) {
-      if (
-        isAssetDocumentKind(doc.ref.kind) &&
-        doc.ref.kind !== "trace" &&
-        doc.content
-      ) {
-        await projectService.saveDocument(
-          doc.ref.kind,
-          doc.ref.path,
-          persistableDocumentContent(doc.ref.kind, doc.content) as
-            | SerializedScene
-            | SerializedSceneLayer
-            | SerializedGraph
-            | Record<string, unknown>,
-        );
+    if (projectService.authoringWriteBlockedReason) return;
+    return projectService.withBaselineSave(async writer => {
+      const projectDocument = projectDocumentRef.current;
+      if (!projectDocument) return;
+      const projectSave = projectSaveState.current.capture(projectDocument);
+      projectService.approveMigrateOnSave();
+      captureAllLayouts();
+      const dirtyDocs = documentService.getDirtyDocuments().map((doc) => ({ ...doc }));
+      for (const doc of dirtyDocs) {
+        if (
+          isAssetDocumentKind(doc.ref.kind) &&
+          doc.ref.kind !== "trace" &&
+          doc.content
+        ) {
+          await writer.saveDocument(
+            doc.ref.kind,
+            doc.ref.path,
+            persistableDocumentContent(doc.ref.kind, doc.content) as
+              | SerializedScene
+              | SerializedSceneLayer
+              | SerializedGraph
+              | Record<string, unknown>,
+          );
+        }
       }
-    }
-    const layouts = documentService.buildLayouts();
-    await projectService.saveProject(projectDocument, layouts);
-    documentService.markAllClean(dirtyDocs);
-    setMigrationPending([]);
-    await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
-    projectSaveState.current.complete(projectSave);
-    bump();
+      const layouts = documentService.buildLayouts();
+      await writer.saveProject(projectDocument, layouts);
+      documentService.markAllClean(dirtyDocs);
+      setMigrationPending([]);
+      await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
+      projectSaveState.current.complete(projectSave);
+      bump();
+    });
   }, [
     bump,
     captureAllLayouts,
@@ -4707,6 +4723,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       lockAuthoring,
       getAuthoringLock,
       subscribeAuthoringLock,
+      lockAuthoringWrites,
+      withSceneWrite,
       refreshAssetRegistry,
       noteAssetsCreated,
       setShowPluginContent,
@@ -4818,6 +4836,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       lockAuthoring,
       getAuthoringLock,
       subscribeAuthoringLock,
+      lockAuthoringWrites,
+      withSceneWrite,
       refreshAssetRegistry,
       noteAssetsCreated,
       setShowPluginContent,

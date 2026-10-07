@@ -14,6 +14,7 @@ import {
 import { OpfsStorageAdapter } from "@babylonslate/vfs";
 import { createProjectAsset } from "../lib/create-project-asset";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
+import { registerNavBakeSaveFlush } from "../lib/nav-bake-save";
 import type { OpenDocument } from "../services/document-service";
 import { ProjectService } from "../services/project-service";
 import { classIdForGraphPath } from "../services/script-compiler";
@@ -151,6 +152,41 @@ afterEach(async () => {
 });
 
 describe("DocumentProvider actions and route", () => {
+  it("finishes an admitted Save All including its bake writes before a file lock and defers later saves", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 5)));
+    const authored = openScene(MAIN_SCENE_ID);
+    let finishBake!: () => void;
+    let entered!: () => void;
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    const waiting = new Promise<void>(resolve => { finishBake = resolve; });
+    const unregister = registerNavBakeSaveFlush(async writer => {
+      entered();
+      await waiting;
+      if (!writer) throw new Error("Save did not provide its admitted writer.");
+      await writer.writeSceneNavmeshChunk(MAIN_SCENE_FILE, new Uint8Array([7, 3, 1]), authored as unknown as Record<string, unknown>);
+    });
+    let lease: ReturnType<DocumentActions["lockAuthoringWrites"]> | undefined;
+    try {
+      let saving!: Promise<boolean>;
+      act(() => { saving = actions.saveAll(); });
+      await started;
+      lease = actions.lockAuthoringWrites("Simulation is preparing");
+      expect(await actions.saveAll()).toBe(false);
+      await act(async () => { finishBake(); expect(await saving).toBe(true); });
+      expect(await lease.ready).toBe(true);
+      expect(documents().dirtyDocuments).toEqual([]);
+      const stored = await actions.loadAssetDocument("scene", MAIN_SCENE_FILE) as SerializedScene;
+      expect(stored.actors[0]!.transform.position).toEqual(authored.actors[0]!.transform.position);
+      expect(await actions.readAssetChunk(MAIN_SCENE_FILE, "navmesh")).toEqual(new Uint8Array([7, 3, 1]));
+    } finally {
+      finishBake?.();
+      unregister();
+      lease?.release();
+    }
+  });
+
   it("preserves authored content and existing Redo when authoring rejects edits and history actions", async () => {
     const actions = await openProject();
     await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));

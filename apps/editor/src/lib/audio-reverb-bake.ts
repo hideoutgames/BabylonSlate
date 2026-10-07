@@ -8,12 +8,14 @@ import {
   type AudioReverbGeometry,
 } from "@babylonslate/assets";
 import type { SerializedActor, SerializedScene } from "@babylonslate/core";
+import type { ProjectSceneWriter } from "../services/project-write-admission";
 
 export type AudioReverbBakeWrite = {
   path: string;
   bytes: Uint8Array;
   payload: Record<string, unknown>;
 };
+type AudioReverbWrite = (entry: AudioReverbBakeWrite) => Promise<void>;
 
 export type AudioReverbBakeDiagnostic = {
   code: string;
@@ -28,9 +30,10 @@ export type AudioReverbBakeSceneEntry = { path: string; scene: AudioReverbBakeSc
 
 export type AudioReverbBakeController = {
   schedule(path: string, scene: AudioReverbBakeScene): void;
-  flush(path: string, scene: AudioReverbBakeScene): Promise<void>;
+  flush(path: string, scene: AudioReverbBakeScene, write?: AudioReverbWrite): Promise<void>;
   flushAll(
     scenes: readonly AudioReverbBakeSceneEntry[],
+    write?: AudioReverbWrite,
   ): Promise<void>;
   drain(): Promise<void>;
   dispose(): void;
@@ -80,7 +83,8 @@ export function staticAudioGeometryFingerprint(
 }
 
 export function createAudioReverbBakeController(options: {
-  write: (entry: AudioReverbBakeWrite) => Promise<void>;
+  write: AudioReverbWrite;
+  withWrite?: (work: (write: AudioReverbWrite) => Promise<void>) => Promise<void>;
   bake?: (
     geometry: AudioReverbGeometry,
     signal: AbortSignal,
@@ -114,14 +118,15 @@ export function createAudioReverbBakeController(options: {
     return next;
   };
 
-  const run = (path: string, scene: AudioReverbBakeScene): Promise<void> => {
+  const run = (path: string, scene: AudioReverbBakeScene, write?: AudioReverbWrite): Promise<void> => {
     const fingerprint = staticAudioGeometryFingerprint(scene);
     const existing = inflight.get(path);
     // Save must join the background bake through chunk persistence, not start
     // another rewrite while that job's hash has yet to enter the completed cache.
     if (existing?.fingerprint === fingerprint) return existing.work;
     const gen = bump(path);
-    const work = bakePath(path, scene, gen, fingerprint);
+    const bakeWith = (writer: AudioReverbWrite) => bakePath(path, scene, gen, fingerprint, writer);
+    const work = write ? bakeWith(write) : options.withWrite ? options.withWrite(bakeWith) : bakeWith(options.write);
     const entry = { fingerprint, work };
     inflight.set(path, entry);
     return work.finally(() => {
@@ -134,6 +139,7 @@ export function createAudioReverbBakeController(options: {
     scene: AudioReverbBakeScene,
     gen: number,
     fingerprint: string,
+    write: AudioReverbWrite,
   ): Promise<void> {
     const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -148,7 +154,7 @@ export function createAudioReverbBakeController(options: {
         // fingerprint without changing triangles. Reuse the bake, but associate
         // it with this snapshot so its later Save can persist the matching chunk.
         if (cached.fingerprint !== fingerprint) {
-          await options.write({ path, bytes: cached.bytes, payload: scene });
+          await write({ path, bytes: cached.bytes, payload: scene });
           completed.set(path, { ...cached, fingerprint });
         }
         return;
@@ -162,7 +168,7 @@ export function createAudioReverbBakeController(options: {
       void timeout.catch(() => undefined);
       const bytes = await Promise.race([bake(geometry, abort.signal), timeout]);
       if (generation.get(path) !== gen) return;
-      await options.write({
+      await write({
         path,
         bytes,
         payload: scene as Record<string, unknown>,
@@ -176,7 +182,7 @@ export function createAudioReverbBakeController(options: {
           "Audio reverb bake failed; writing a marked dry fallback so Save and export can continue.",
       });
       const bytes = dryAudioReverbFallbackBytes(hash);
-      await options.write({
+      await write({
         path,
         bytes,
         payload: scene as Record<string, unknown>,
@@ -195,21 +201,22 @@ export function createAudioReverbBakeController(options: {
         path,
         setTimeout(() => {
           pending.delete(path);
-          void run(path, scene);
+          // A session may close authoring admission while this debounce waits.
+          void run(path, scene).catch(() => undefined);
         }, debounceMs),
       );
     },
-    async flush(path, scene) {
+    async flush(path, scene, write) {
       const existing = pending.get(path);
       if (existing !== undefined) {
         clearTimeout(existing);
         pending.delete(path);
       }
-      await run(path, scene);
+      await run(path, scene, write);
     },
-    async flushAll(scenes) {
+    async flushAll(scenes, write) {
       await Promise.all(
-        scenes.map((entry) => this.flush(entry.path, entry.scene)),
+        scenes.map((entry) => this.flush(entry.path, entry.scene, write)),
       );
     },
     drain() {
@@ -223,7 +230,7 @@ export function createAudioReverbBakeController(options: {
   };
 }
 
-let saveFlush: ((scenes?: readonly AudioReverbBakeSceneEntry[]) => Promise<void>) | null = null;
+let saveFlush: ((scenes?: readonly AudioReverbBakeSceneEntry[], writer?: ProjectSceneWriter) => Promise<void>) | null = null;
 
 export function registerAudioReverbSaveFlush(
   flush: typeof saveFlush,
@@ -232,9 +239,9 @@ export function registerAudioReverbSaveFlush(
 }
 
 /** Save/export await the current bake or a dry fallback. Never throws. */
-export async function flushAudioReverbForSave(scenes?: readonly AudioReverbBakeSceneEntry[]): Promise<void> {
+export async function flushAudioReverbForSave(scenes?: readonly AudioReverbBakeSceneEntry[], writer?: ProjectSceneWriter): Promise<void> {
   try {
-    await saveFlush?.(scenes);
+    await saveFlush?.(scenes, writer);
   } catch {
     // Dry fallback is written by the controller; Save must not hang or fail.
   }

@@ -94,6 +94,11 @@ function inertDocuments(current: () => DocumentsValue | undefined): DocumentsVal
     lockAuthoring: unsubscribe,
     getAuthoringLock: () => ({ readOnly: false, reason: null, revision: 0 }),
     subscribeAuthoringLock: unsubscribe,
+    lockAuthoringWrites: () => ({ ready: Promise.resolve(true), release: noop }),
+    withSceneWrite: async work => work({
+      writeSceneNavmeshChunk: (...args) => current()?.writeSceneNavmeshChunk(...args) ?? Promise.resolve(),
+      writeSceneAudioReverbChunk: (...args) => current()?.writeSceneAudioReverbChunk(...args) ?? Promise.resolve(),
+    }),
     route: "home",
     projectDocument: null,
     projectName: null,
