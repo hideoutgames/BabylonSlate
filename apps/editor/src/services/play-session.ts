@@ -72,6 +72,7 @@ import {
   type ScriptBundleEntry,
 } from "@babylonslate/bridge";
 import { attachInputCapture, type InputCaptureHandle } from "./input-capture";
+import { createSessionBoundaryClient } from "./session-boundary-client";
 import { observedMoveXFromEvents } from "../lib/play-input-observe";
 import { createGameWorkerHost, type GameWorkerHost } from "./game-worker-host";
 import { playLoadControl, type PlayPhysicsSettings } from "./play-physics";
@@ -324,6 +325,9 @@ export interface PlaySession {
   worker: GameWorkerHost | null;
   runtimeMode: "worker" | "in-process";
   setPaused: (paused: boolean) => void;
+  setPauseReason: (reason: import("@babylonslate/bridge").SessionPauseReason, paused: boolean) => Promise<import("@babylonslate/bridge").SessionBoundaryResult>;
+  setInputMode: (mode: "game" | "edit") => Promise<void>;
+  requestPausedRedraw: () => { accepted: boolean; reason?: string };
   /** Last resolved Move.x from the in-process runtime; null on the worker path. */
   lastMoveX: () => number | null;
   /** Latest snapshot actor positions for e2e collision / motion. */
@@ -587,6 +591,35 @@ export function startPlaySession(options: {
 
   let worker: GameWorkerHost | null = null;
   let runtime: RuntimeDriver | null = null;
+  let gameInputMode: "game" | "edit" = "game";
+  let inputTransition = 0;
+  let inputTransitionPending = false;
+  let acknowledgedPaused = false;
+  let lastBoundaryId = 0;
+  const requestedPauses = new Set<import("@babylonslate/bridge").SessionPauseReason>();
+  const boundaryClient = createSessionBoundaryClient(options.sessionGeneration ?? 0, (request) => {
+    if (worker) worker.postControl({ type: "sessionBoundary", ...request });
+    else if (runtime) void runtime.requestSessionBoundary(request).then((result) => boundaryClient.receive(result));
+    else throw new Error("The game runtime is unavailable");
+  });
+  const suppressGameInput = () => {
+    const suppressed = inputTransitionPending || gameInputMode === "edit" || acknowledgedPaused || requestedPauses.size > 0;
+    input?.setSuppressed(suppressed);
+    return suppressed;
+  };
+  const setPauseReason: PlaySession["setPauseReason"] = async (reason, paused) => {
+    if (paused) requestedPauses.add(reason); else requestedPauses.delete(reason);
+    suppressGameInput();
+    const result = await boundaryClient.request({ kind: "pause", reason, paused });
+    if (result.success && result.requestId > lastBoundaryId) {
+      lastBoundaryId = result.requestId;
+      acknowledgedPaused = result.paused;
+      handle.setGameTimePaused(result.paused);
+      if (!result.paused) last = performance.now();
+      suppressGameInput();
+    }
+    return result;
+  };
 
   const publishScalabilityStatus = (acknowledgement: ScalabilityAcknowledgement) => {
     if (worker) worker.postControl({ type: "scalabilityStatus", acknowledgement });
@@ -669,14 +702,17 @@ export function startPlaySession(options: {
       );
     },
     onTouchAxis: (controlId, value) => {
-      input?.ring.push({ kind: "touchAxis", controlId, value, tick: playInputStampTick(runtime?.getWorld().clock.tickIndex, lastWorkerTickIndex) });
+      if (options.mode === "simulate") input?.setTouchAxis(controlId, value);
+      else input?.ring.push({ kind: "touchAxis", controlId, value, tick: playInputStampTick(runtime?.getWorld().clock.tickIndex, lastWorkerTickIndex) });
     },
     onSceneLayerScroll: (event) => {
+      if (options.mode === "simulate" && suppressGameInput()) return;
       const control = { type: "sceneLayerScroll" as const, ...event };
       if (worker) worker.postControl(control);
       else runtime?.applySceneLayerScroll(event.layerId, event.actorId, event.componentId, event.deltaX, event.deltaY);
     },
     onSceneLayerControl: (event) => {
+      if (options.mode === "simulate" && suppressGameInput()) return;
       const control = { type: "sceneLayerControl" as const, ...event };
       if (worker) worker.postControl(control);
       else runtime?.applySceneLayerControl(control);
@@ -848,6 +884,7 @@ export function startPlaySession(options: {
   const saveStorage = simulationSaveStorage ?? createSaveGameStorage();
   const saveServer = createSaveStorageServer(saveStorage, (response) => worker?.postControl({ type: "saveStorageResponse", response }));
   const onCommand = (command: CommandMessage) => {
+    if (command.type === "sessionBoundaryResult") { boundaryClient.receive(command); return; }
     if (command.type === "saveStorageRequest") { saveServer.receive(command.request); return; }
     noteCommand();
     if (command.type === "sceneStreamBlocking") handle.setSceneStreamingPaused(command.blocking);
@@ -947,6 +984,8 @@ export function startPlaySession(options: {
       : entry;
   });
   const loadControl = playLoadControl({
+    sessionMode: options.mode ?? "play",
+    sessionGeneration: options.sessionGeneration,
     saveGame: options.saveGame,
     frameCap: resolvePlayFrameCap(options.frameCap),
     traceByteBudget: options.traceByteBudget,
@@ -1104,6 +1143,7 @@ export function startPlaySession(options: {
   input = attachInputCapture(canvas, {
     skipPointerAndKeyboard: () => handle.isFreeCamEnabled(),
   });
+  if (options.mode === "simulate") input.setSuppressed(false);
 
   const unlock = () => {
     void handle.unlockAudio();
@@ -1191,10 +1231,29 @@ export function startPlaySession(options: {
     worker,
     runtimeMode,
     setPaused: (paused: boolean) => {
+      if (options.mode === "simulate") {
+        void setPauseReason("user", paused).catch((error: unknown) => options.onLog?.(String(error), "error"));
+        return;
+      }
       handle.setPaused(paused);
       pauseGate?.setPaused(paused);
       worker?.postControl({ type: "setPaused", paused });
     },
+    setPauseReason,
+    setInputMode: async (mode) => {
+      const transition = ++inputTransition;
+      inputTransitionPending = true;
+      gameInputMode = mode;
+      input.neutralize();
+      suppressGameInput();
+      const result = await boundaryClient.request({ kind: "resetInput" });
+      if (!result.success) throw new Error(result.reason ?? "Game input could not be reset");
+      if (transition !== inputTransition) return;
+      inputTransitionPending = false;
+      suppressGameInput();
+      handle.applyCommand({ type: "setFreeCam", enabled: mode === "edit" });
+    },
+    requestPausedRedraw: () => handle.requestPausedRedraw(),
     lastMoveX: () => {
       if (runtime) {
         return runtime.getResolvedInput().axes2D.Move?.x ?? lastObservedMoveX;
@@ -1269,6 +1328,7 @@ export function startPlaySession(options: {
       sceneReadiness.dispose();
       streamReadiness.dispose();
       stopped = true;
+      boundaryClient.dispose();
       simulationSaveStorage?.dispose();
       releaseConsoleCapture();
       window.removeEventListener("error", onWindowError);

@@ -165,6 +165,8 @@ export function resolvePreviewStartupGuid(options: {
 }
 
 export function playLoadControl(options: {
+  sessionMode?: import("@babylonslate/bridge").GameSessionMode;
+  sessionGeneration?: number;
   saveGame?: import("@babylonslate/core").SaveGameConfiguration;
   frameCap?: number;
   traceByteBudget?: number;
@@ -208,6 +210,8 @@ export function playLoadControl(options: {
   });
   return {
     type: "load",
+    sessionMode: options.sessionMode,
+    sessionGeneration: options.sessionGeneration,
     saveGame: options.saveGame,
     frameCap: options.frameCap,
     traceByteBudget: options.traceByteBudget,
