@@ -953,7 +953,7 @@ export function startPlaySession(options: {
     if (command.type === "saveStorageRequest") { saveServer.receive(command.request); return; }
     noteCommand();
     if (command.type === "activeScene") { inspectorClient.invalidateScene(); materialEditHost.invalidate(); }
-    if (command.type === "despawn") inspectorClient.invalidateActor(command.actorGuid);
+    if (command.type === "despawn") { inspectorClient.invalidateActor(command.actorGuid); materialEditHost.invalidateActor(command.actorGuid); }
     if (command.type === "sceneStreamBlocking") handle.setSceneStreamingPaused(command.blocking);
     if (command.type === "snapshotLayout" && runtime)
       snapBuf = new Float32Array(snapshotFloatCount(command.capacity));

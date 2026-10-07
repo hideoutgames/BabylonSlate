@@ -67,7 +67,16 @@ export class RuntimeMaterialEditHost {
   }
 
   invalidate(reason = "The scene changed while its material was preparing."): void {
+    this.invalidateMatching(() => true, reason);
+  }
+
+  invalidateActor(actorGuid: string): void {
+    this.invalidateMatching(stage => stage.request.actorGuid === actorGuid, "The material target was destroyed.");
+  }
+
+  private invalidateMatching(matches: (stage: Stage) => boolean, reason: string): void {
     for (const stage of [...this.stages.values()]) {
+      if (!matches(stage)) continue;
       this.remove(stage);
       this.respond(stage.prepared ? "runtimeMaterialEditApplied" : "runtimeMaterialEditPrepared", stage.request, false, reason);
     }
