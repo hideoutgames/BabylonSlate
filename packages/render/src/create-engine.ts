@@ -1576,7 +1576,6 @@ function initializeEngine(
     : null;
   const editorSync = options.editor
     ? new EditorSceneSync(scene, scheduler, {
-        freezeActiveMeshes: false,
         resolveMaterial: (guid, options) => binding.resolveMaterial?.(guid, options) ?? null,
         releaseMaterialInstance: (key, guid) => binding.releaseMaterialInstance?.(key, guid),
         validateMaterialParameter: (guid, name, value) => binding.validateMaterialParameter?.(guid, name, value) ?? false,

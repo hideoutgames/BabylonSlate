@@ -23,7 +23,6 @@ import {
   autoLodDiagnostics,
   generateModelLods,
   isAutoLodMaster,
-  setAutoLodPinned,
 } from "./model-lod";
 import { followSceneRenderSettings, updateSceneRenderingSettings } from "./render-settings";
 import { participatesInShadows } from "./shadow-mesh-policy";
@@ -305,13 +304,10 @@ describe("automatic model LOD", () => {
     for (const lod of levels) expect(lod.nonUniformScaling).toBe(true);
   });
 
-  it("keeps full detail while pinned and resolves quality from a followed Scene", async () => {
+  it("resolves quality from a followed Scene", async () => {
     const { scene, instantiate } = await sphereModel();
     const { master, levels } = instantiate();
     const camera = cameraAt(scene, master, 0.02);
-    setAutoLodPinned(scene, true);
-    expect(scene.customLODSelector!(master, camera)).toBe(master);
-    setAutoLodPinned(scene, false);
     expect(scene.customLODSelector!(master, camera)).toBe(levels.at(-1));
 
     const owner = createTestEngine();

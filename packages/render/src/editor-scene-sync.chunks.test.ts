@@ -66,7 +66,7 @@ function document(count = 80): SerializedScene {
 }
 
 it("enumerates an attached sprite as its own authored visual boundary without broadening asset consumers", () => {
-  const { sync, scene } = fixture({ freezeActiveMeshes: false });
+  const { sync, scene } = fixture();
   const data = createDefaultScene();
   const actor = createActor("parent", "Parent", { components: [
     createMeshComponent("body", "box"),

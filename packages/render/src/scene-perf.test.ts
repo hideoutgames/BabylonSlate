@@ -22,21 +22,13 @@ import {
 } from "@babylonjs/core";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
 import {
-  createActor,
-  createDefaultScene,
-  createMeshComponent,
-} from "@babylonslate/core";
-import {
   applyEditorMaterialFreeze,
-  isStructuralEditorChange,
   isSceneFrameReady,
   markSceneReadinessDirty,
   materialLibraryAssetGuid,
   onSceneReadinessDirty,
   prewarmSceneMaterials,
   SCENE_SHADER_WARM_TIMEOUT_MS,
-  freezeEditorActiveMeshes,
-  unfreezeEditorActiveMeshes,
 } from "./scene-perf";
 
 it("notifies readiness-dirty listeners per scene until unsubscribed", () => {
@@ -56,98 +48,6 @@ it("notifies readiness-dirty listeners per scene until unsubscribed", () => {
   scene.dispose();
   sibling.dispose();
   engine.dispose();
-});
-
-it("freezes ready editor meshes only in their own floating-origin render frame", () => {
-  const engine = new NullEngine();
-  vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
-  vi.spyOn(engine, "getCreationOptions").mockReturnValue({ useLargeWorldRendering: true });
-  const scene = new Scene(engine);
-  scene.activeCamera = new UniversalCamera("editor", new Vector3(2000, 0, -10), scene);
-  const previous = new Scene(engine);
-  previous.activeCamera = new UniversalCamera("previous", new Vector3(0, 4, -8), previous);
-  previous.render();
-  previous.dispose();
-  const ready = vi.fn(() => false);
-  scene.addIsReadyCheck({ isReady: ready });
-  vi.spyOn(engine, "areAllEffectsReady").mockReturnValue(false);
-  try {
-    freezeEditorActiveMeshes(scene);
-    expect(scene._activeMeshesFrozen).toBe(false);
-    scene.render();
-    expect(scene._activeMeshesFrozen).toBe(false);
-    ready.mockReturnValue(true);
-    scene.render();
-    expect(scene._activeMeshesFrozen).toBe(true);
-    expect(scene.skipFrustumClipping).toBe(false);
-    expect([...scene.getSceneUniformBuffer().getData()].every(Number.isFinite)).toBe(true);
-
-    freezeEditorActiveMeshes(scene);
-    unfreezeEditorActiveMeshes(scene);
-    scene.render();
-    expect(scene._activeMeshesFrozen).toBe(false);
-  } finally {
-    scene.dispose();
-    engine.dispose();
-  }
-});
-
-describe("isStructuralEditorChange", () => {
-  const base = createDefaultScene();
-  const actor = base.actors[0]!;
-
-  it("treats the first apply as structural", () => {
-    expect(isStructuralEditorChange(null, base)).toBe(true);
-  });
-
-  it("ignores transform-only edits so idle freeze stays in place", () => {
-    const moved = {
-      ...base,
-      actors: [
-        {
-          ...actor,
-          transform: {
-            ...actor.transform,
-            position: [3, 0, 0] as [number, number, number],
-          },
-        },
-        ...base.actors.slice(1),
-      ],
-    };
-    expect(isStructuralEditorChange(base, moved)).toBe(false);
-  });
-
-  it("unfreezes when parent, visibility, or visual fingerprint changes", () => {
-    const reparented = {
-      ...base,
-      actors: [{ ...actor, parentId: "missing-parent" }, ...base.actors.slice(1)],
-    };
-    const hidden = {
-      ...base,
-      actors: [{ ...actor, visible: false }, ...base.actors.slice(1)],
-    };
-    const extra = {
-      ...base,
-      actors: [...base.actors, createActor("extra", "Extra")],
-    };
-    const swapped = {
-      ...base,
-      actors: [createActor("other", actor.name), ...base.actors.slice(1)],
-    };
-    const mesh = createMeshComponent("mesh-1", "sphere");
-    const visual = {
-      ...base,
-      actors: [
-        createActor(actor.id, actor.name, { components: [mesh] }),
-        ...base.actors.slice(1),
-      ],
-    };
-    expect(isStructuralEditorChange(base, reparented)).toBe(true);
-    expect(isStructuralEditorChange(base, hidden)).toBe(true);
-    expect(isStructuralEditorChange(base, extra)).toBe(true);
-    expect(isStructuralEditorChange(base, swapped)).toBe(true);
-    expect(isStructuralEditorChange(base, visual)).toBe(true);
-  });
 });
 
 describe("applyEditorMaterialFreeze", () => {

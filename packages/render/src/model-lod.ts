@@ -364,9 +364,6 @@ type SceneLods = {
 };
 
 const sceneLods = new WeakMap<Scene, SceneLods>();
-/** Frozen active-mesh queues keep full detail, as they did before automatic LOD. */
-const pinnedScenes = new WeakSet<Scene>();
-
 /** Render state Babylon reads from the drawn LOD mesh rather than its master. */
 function mirrorLodState(master: Mesh, lod: Mesh): void {
   if (lod.material !== master.material) lod.material = master.material;
@@ -416,7 +413,7 @@ function selectLevel(binding: LodBinding, camera: Camera, commit: boolean): numb
   const scene = binding.master.getScene();
   // SceneLayers resolve Geometry quality through the Scene they follow.
   const settings = sceneRenderingSettings(renderSettingsOwner(scene));
-  if (!settings.autoLod || pinnedScenes.has(scene)) {
+  if (!settings.autoLod) {
     if (commit) binding.current.delete(camera);
     return 0;
   }
@@ -459,12 +456,6 @@ function lodsFor(scene: Scene): SceneLods {
     sceneLods.delete(scene);
   });
   return state;
-}
-
-/** Keep full detail while a Scene's active-mesh queue is frozen (editor brush tools). */
-export function setAutoLodPinned(scene: Scene, pinned: boolean): void {
-  if (pinned) pinnedScenes.add(scene);
-  else pinnedScenes.delete(scene);
 }
 
 /** Master meshes whose levels were attached by automatic LOD. */

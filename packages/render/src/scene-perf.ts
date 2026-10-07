@@ -3,18 +3,14 @@ import {
   MultiMaterial,
   NodeMaterial,
   NodeMaterialModes,
-  NullEngine,
   type AbstractMesh,
   type Material,
   type RenderTargetTexture,
   type Scene,
   type SceneOptions,
 } from "@babylonjs/core";
-import type { SerializedScene } from "@babylonslate/core";
 import { prewarmMaterial } from "./material-compiler";
-import { setAutoLodPinned } from "./model-lod";
 import { isEngineDefaultMaterial } from "./default-material";
-import { actorVisualFingerprint } from "./scene-loader";
 import { syncSceneLighting } from "./scene-lighting";
 import { isEnvironmentLightingReady } from "./environment-lighting";
 import { withSceneReadinessState } from "./scene-readiness-signal";
@@ -34,104 +30,6 @@ export const SCENE_LOOKUP_MAPS: SceneOptions = {
 };
 
 const MATERIAL_LIBRARY_PREFIX = "material:";
-
-export function isStructuralEditorChange(
-  previous: SerializedScene | null,
-  next: SerializedScene,
-): boolean {
-  if (!previous) return true;
-  if (previous.actors.length !== next.actors.length) return true;
-  const previousById = new Map(
-    previous.actors.map((actor) => [actor.id, actor] as const),
-  );
-  for (const actor of next.actors) {
-    const was = previousById.get(actor.id);
-    if (!was) return true;
-    if (was.parentId !== actor.parentId) return true;
-    if (was.visible !== actor.visible) return true;
-    if (actorVisualFingerprint(was, undefined, previous.actors) !== actorVisualFingerprint(actor, undefined, next.actors)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-type SceneActiveMeshInternals = {
-  _frustumPlanes?: unknown;
-  _evaluateActiveMeshes: () => void;
-};
-
-function evaluateEditorActiveMeshes(scene: Scene): void {
-  if (!scene.activeCamera) return;
-  const internals = scene as unknown as SceneActiveMeshInternals;
-  if (!internals._frustumPlanes) {
-    scene.updateTransformMatrix();
-  }
-  internals._evaluateActiveMeshes();
-}
-
-const freezeSkipGenerations = new WeakMap<Scene, number>();
-const pendingFrameFreezes = new WeakMap<Scene, () => void>();
-
-function beginSkipFrustumForFreeze(scene: Scene): () => void {
-  const generation = (freezeSkipGenerations.get(scene) ?? 0) + 1;
-  freezeSkipGenerations.set(scene, generation);
-  scene.skipFrustumClipping = true;
-  return () => {
-    if (freezeSkipGenerations.get(scene) !== generation) return;
-    scene.skipFrustumClipping = false;
-  };
-}
-
-export function freezeEditorActiveMeshes(scene: Scene): void {
-  unfreezeEditorActiveMeshes(scene);
-  // A frozen queue cannot re-select levels as the camera moves; keep full detail.
-  setAutoLodPinned(scene, true);
-  const engine = scene.getEngine();
-  if (!(engine instanceof NullEngine) || engine.supportsUniformBuffers) {
-    // Babylon's executeWhenReady callback can run between scenes, including
-    // after the last floating-origin scene has been disposed. Evaluate only
-    // inside this scene's render context, once its drawable materials are ready.
-    const observer = scene.onBeforeRenderObservable.add(() => {
-      if (!scene.activeCamera || !isSceneFrameReady(scene)) return;
-      cancel();
-      const restoreSkip = beginSkipFrustumForFreeze(scene);
-      try {
-        evaluateEditorActiveMeshes(scene);
-        scene._activeMeshesFrozen = true;
-        scene._activeMeshesFrozenButKeepClipping = true;
-      } finally {
-        restoreSkip();
-      }
-    });
-    const cancel = () => {
-      scene.onBeforeRenderObservable.remove(observer);
-      pendingFrameFreezes.delete(scene);
-    };
-    pendingFrameFreezes.set(scene, cancel);
-    return;
-  }
-  // Membership must include off-frustum drawable meshes. keepFrustumCulling
-  // still skips their draw; camera motion then reveals them without an apply.
-  const restoreSkip = beginSkipFrustumForFreeze(scene);
-  scene.freezeActiveMeshes(false, restoreSkip, restoreSkip, false, true);
-  // NullEngine PrePass never goes ready, so evaluate and stamp now.
-  evaluateEditorActiveMeshes(scene);
-  scene._activeMeshesFrozen = true;
-  scene._activeMeshesFrozenButKeepClipping = true;
-  restoreSkip();
-}
-
-export function unfreezeEditorActiveMeshes(scene: Scene): void {
-  pendingFrameFreezes.get(scene)?.();
-  scene.unfreezeActiveMeshes();
-  setAutoLodPinned(scene, false);
-}
-
-/** True while an active-mesh freeze is in place or waiting for a ready frame. */
-export function hasEditorActiveMeshFreeze(scene: Scene): boolean {
-  return scene._activeMeshesFrozen || pendingFrameFreezes.has(scene);
-}
 
 export function materialLibraryAssetGuid(material: Material): string | null {
   if (!material.name.startsWith(MATERIAL_LIBRARY_PREFIX)) return null;
