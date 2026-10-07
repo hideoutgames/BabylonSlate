@@ -1,4 +1,4 @@
-import type { ProjectStorage } from "@babylonslate/core";
+import { StorageNotFoundError, type ProjectStorage } from "@babylonslate/core";
 import { newAssetGuid } from "./guid";
 
 export const STORAGE_MOVE_BACKUP_PREFIX = ".babylonslate-move-";
@@ -10,7 +10,7 @@ async function storedPath(storage: ProjectStorage, path: string): Promise<string
     const entries = await storage.readdir(parent || ".");
     const entry = entries.find((item) => item.name === segment) ??
       entries.find((item) => item.name.toLowerCase() === segment.toLowerCase());
-    if (!entry) throw new Error(`File not found: ${path}`);
+    if (!entry) throw new StorageNotFoundError(path);
     parent = parent ? `${parent}/${entry.name}` : entry.name;
   }
   return parent;

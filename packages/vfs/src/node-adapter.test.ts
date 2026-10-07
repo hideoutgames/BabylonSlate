@@ -1,8 +1,15 @@
-import { mkdtemp, rm, rename, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, rename, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { isStorageNotFound } from "@babylonslate/core";
 import { NodeStorageAdapter } from "./node-adapter";
+
+// Root ignores permission bits, so permission failures are injected at the fs boundary.
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const fs = await importOriginal<typeof import("node:fs/promises")>();
+  return { ...fs, readFile: vi.fn(fs.readFile), stat: vi.fn(fs.stat) };
+});
 
 describe("node storage adapter", () => {
   let dir: string;
@@ -38,6 +45,29 @@ describe("node storage adapter", () => {
     await expect(storage.readBinaryRange("large.babasset", bytes.length, 1)).rejects.toThrow(/range/i);
     await expect(storage.readBinaryRange("large.babasset", -1, 1)).rejects.toThrow(/range/i);
     expect(storage.getReadMetrics().actualBytesRead).toBe(3);
+  });
+
+  it("reports only a missing path as absent and keeps permission and confinement failures", async () => {
+    dir = await mkdtemp(join(tmpdir(), "babylonslate-node-"));
+    const storage = new NodeStorageAdapter(dir);
+    await storage.openDocumentsProject("Game");
+    await storage.writeText("project.json", "{}");
+    expect(await storage.exists("missing.json")).toBe(false);
+    expect(await storage.exists("project.json/child")).toBe(false);
+    for (const missing of [storage.readText("missing.json"), storage.stat("missing.json"), storage.remove("missing.json"), storage.readdir("missing")]) {
+      const error = await missing.catch((caught: unknown) => caught);
+      expect(isStorageNotFound(error)).toBe(true);
+    }
+    await expect(storage.readText("missing.json")).rejects.toThrow("File not found: missing.json");
+
+    const denied = Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
+    vi.mocked(stat).mockRejectedValueOnce(denied);
+    await expect(storage.exists("project.json")).rejects.toBe(denied);
+    vi.mocked(readFile).mockRejectedValueOnce(denied);
+    const read = await storage.readText("project.json").catch((caught: unknown) => caught);
+    expect(read).toBe(denied);
+    expect(isStorageNotFound(read)).toBe(false);
+    await expect(storage.exists("../Game-copy/project.json")).rejects.toThrow(/escapes project root/);
   });
 
   it("opens an absolute folder outside the documents base", async () => {
