@@ -86,6 +86,71 @@ describe("gizmo move snap", () => {
   });
 });
 
+describe("gizmo space", () => {
+  it("aligns move and rotate handles to the attached mesh only in local space", () => {
+    const { scene } = createHandle();
+    scene.activeCamera = new FreeCamera("cam", new Vector3(0, 0, -10), scene);
+    const mesh = MeshBuilder.CreateBox("box", { size: 1 }, scene);
+    mesh.rotation.y = Math.PI / 2;
+    mesh.computeWorldMatrix(true);
+    const host = createGizmoHost(scene, { tool: "translate" });
+    host.attachTo(mesh);
+    const handleAxis = () => {
+      host.layer.utilityLayerScene.render();
+      const root = host.positionGizmo.xGizmo._rootMesh;
+      return Vector3.TransformNormal(
+        Vector3.Right(),
+        root.computeWorldMatrix(true),
+      ).normalize();
+    };
+
+    expect(host.space).toBe("world");
+    expect(handleAxis().x).toBeCloseTo(1);
+
+    host.setSpace("local");
+    const local = handleAxis();
+    expect(local.x).toBeCloseTo(0);
+    expect(Math.abs(local.z)).toBeCloseTo(1);
+    expect(host.rotationGizmo.updateGizmoRotationToMatchAttachedMesh).toBe(true);
+
+    host.setSpace("world");
+    expect(handleAxis().x).toBeCloseTo(1);
+    host.dispose();
+  });
+
+  it("snaps local moves in steps from the drag start instead of to the world grid", () => {
+    const { scene } = createHandle();
+    scene.activeCamera = new FreeCamera("cam", new Vector3(0, 0, -10), scene);
+    const mesh = MeshBuilder.CreateBox("box", { size: 1 }, scene);
+    mesh.position.set(0.3, 0.25, 0);
+    mesh.computeWorldMatrix(true);
+    const host = createGizmoHost(scene, { tool: "translate", space: "local" });
+    host.attachTo(mesh);
+    host.setSnap({ enabled: true, translate: 1, rotateDeg: 15, scale: 0.1 });
+    const drag = host.positionGizmo.xGizmo.dragBehavior;
+    const event = (dx: number) => ({
+      delta: new Vector3(dx, 0, 0),
+      dragPlanePoint: Vector3.Zero(),
+      dragPlaneNormal: Vector3.Forward(),
+      dragDistance: dx,
+      pointerId: 1,
+      pointerInfo: null,
+    });
+
+    drag.onDragStartObservable.notifyObservers({
+      dragPlanePoint: Vector3.Zero(),
+      pointerId: 1,
+      pointerInfo: null,
+    });
+    drag.onDragObservable.notifyObservers(event(0.5));
+    expect(mesh.position.x).toBeCloseTo(0.3);
+    drag.onDragObservable.notifyObservers(event(0.6));
+    expect(mesh.position.x).toBeCloseTo(1.3);
+    expect(mesh.position.y).toBeCloseTo(0.25);
+    host.dispose();
+  });
+});
+
 describe("gizmo Prefab RTT pointer mapping", () => {
   it("clears world depth before drawing gizmos into a Prefab render target", () => {
     const { scene, engine } = createHandle();

@@ -23,6 +23,8 @@ import { isSceneWorkspaceKind } from "@babylonslate/core";
 import type { GizmoTool, ViewportShadingMode } from "@babylonslate/render";
 import {
   ArrowDownToLineIcon,
+  BoxIcon,
+  GlobeIcon,
   MagnetIcon,
   MoveIcon,
   RotateCwIcon,
@@ -93,6 +95,8 @@ export function ViewportToolbar({
   const {
     gizmoTool,
     setGizmoTool,
+    gizmoSpace,
+    setGizmoSpace,
     snapEnabled,
     setSnapEnabled,
     joystickEnabled,
@@ -365,6 +369,34 @@ export function ViewportToolbar({
             );
           })}
         </ToggleGroup>
+      ) : null}
+      {showGizmoTools ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setGizmoSpace(gizmoSpace === "world" ? "local" : "world")
+                }
+                aria-label={
+                  gizmoSpace === "world"
+                    ? "World Space; Switch To Local Space"
+                    : "Local Space; Switch To World Space"
+                }
+                data-testid={`${testIdPrefix}gizmo-space-toggle`}
+              >
+                {gizmoSpace === "world" ? <GlobeIcon /> : <BoxIcon />}
+              </Button>
+            }
+          />
+          <TooltipContent>
+            {gizmoSpace === "world" ? "World Space" : "Local Space"}. Click To
+            Switch To {gizmoSpace === "world" ? "Local" : "World"} Space.
+          </TooltipContent>
+        </Tooltip>
       ) : null}
       {showGizmoTools ? <ToolbarSeparator /> : null}
       <Tooltip>

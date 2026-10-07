@@ -133,6 +133,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   prefabPhysicsWorldRef.current = prefabPhysicsWorld;
   const {
     gizmoTool,
+    gizmoSpace,
     snapEnabled,
     viewportMode,
     joystickEnabled,
@@ -496,6 +497,10 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   useEffect(() => {
     engineRef.current?.editor?.gizmos.setTool(gizmoTool);
   }, [gizmoTool, engineEpoch]);
+
+  useEffect(() => {
+    engineRef.current?.editor?.gizmos.setSpace(gizmoSpace);
+  }, [gizmoSpace, engineEpoch]);
 
   useEffect(() => {
     engineRef.current?.editor?.gizmos.setSnap({

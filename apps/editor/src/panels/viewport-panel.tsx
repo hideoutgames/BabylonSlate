@@ -127,6 +127,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     selectActor,
     setSelectedActorIds,
     gizmoTool,
+    gizmoSpace,
     snapEnabled,
     viewportMode,
     joystickEnabled,
@@ -959,6 +960,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   useEffect(() => {
     engineRef.current?.editor?.gizmos.setTool(gizmoTool);
   }, [gizmoTool, engineEpoch]);
+
+  useEffect(() => {
+    engineRef.current?.editor?.gizmos.setSpace(gizmoSpace);
+  }, [gizmoSpace, engineEpoch]);
 
   useEffect(() => {
     const grid = scene?.settings.grid;
