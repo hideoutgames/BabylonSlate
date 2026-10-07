@@ -34,6 +34,7 @@ import {
   lastSceneClassDeleteLines,
   isFolderTreeRoot,
   isNewAssetNameTaken,
+  isRenameNameTaken,
   isValidMoveDestination,
   isValidSelectionMoveDestination,
   contentBrowserContextActions,
@@ -59,8 +60,6 @@ import {
   filterInspectorPinPickerAssets,
   classIdFromClassAsset,
   classParentLookup,
-  addSelectedAssetGuid,
-  addSelectedFolderPath,
   exclusiveSelectAsset,
   exclusiveSelectFolder,
   paintSelectTiles,
@@ -71,6 +70,13 @@ import {
   type ContentBrowserTreeRow,
 } from "./content-browser-helpers";
 import { resolveTypeVisual } from "@babylonslate/editor-kit";
+
+it("detects rename collisions with Unicode stems and compound asset suffixes", () => {
+  const paths = ["assets/Hero.class.babasset", "assets/Hero 🤖 Ünïcødé.class.babasset"];
+  expect(isRenameNameTaken(paths, paths[0]!, "Hero 🤖 Ünïcødé")).toBe(true);
+  expect(isRenameNameTaken(paths, paths[0]!, "Hero")).toBe(false);
+  expect(isRenameNameTaken(paths, paths[0]!, "Hero/Villain")).toBe(false);
+});
 
 it("admits material sampler textures without admitting environment cubes", () => {
   expect(isMaterialSamplerTextureAsset({ type: "RenderTargetTexture" })).toBe(true);
@@ -1533,23 +1539,6 @@ describe("content-browser-helpers", () => {
     expect(
       classDocumentShowsPrefab(null, parentOf, { assetType: "Graph" }),
     ).toBe(true);
-  });
-
-  it("adds a guid to the Content Browser selection without replacing others", () => {
-    const selected = addSelectedAssetGuid(new Set(["scene-1"]), "class-1");
-    expect([...selected]).toEqual(["scene-1", "class-1"]);
-  });
-
-  it("adds a folder path to the Content Browser selection without replacing others", () => {
-    const selected = addSelectedFolderPath(new Set(["assets/fx"]), "assets/textures");
-    expect([...selected]).toEqual(["assets/fx", "assets/textures"]);
-  });
-
-  it("does not drop a guid that is already selected", () => {
-    const current = new Set(["scene-1"]);
-    const selected = addSelectedAssetGuid(current, "scene-1");
-    expect([...selected]).toEqual(["scene-1"]);
-    expect(selected).not.toBe(current);
   });
 
   it("replaces the Content Browser selection with a single asset tap", () => {

@@ -20,6 +20,19 @@ import {
 
 const ORIGIN: [number, number, number] = [0, 0, 0];
 
+it("places a Sprite directly or from a project Sprite asset", () => {
+  const scene = createDefaultScene();
+  const entry = ENGINE_PLACE_ACTORS.find((item) => item.id === "sprite")!;
+  const actor = spawnPlacedActor(scene, entry, "sprite-actor", [2, 3, 0]);
+  expect(actor.transform.position).toEqual([2, 3, 0]);
+  expect(actor.components).toEqual([expect.objectContaining({ classId: "SpriteComponent" })]);
+  const [asset] = projectPlaceActors([{ header: { type: "Sprite", guid: "hero-sprite", name: "Hero" } }]);
+  expect(spawnPlacedActor(scene, asset!, "hero", ORIGIN).components[0]).toMatchObject({
+    classId: "SpriteComponent", properties: { assetGuid: "hero-sprite" },
+  });
+});
+
+
 it("leaves Scene assets to the Scene Streaming actor instead of listing them", () => {
   const scenes = [{ header: { guid: "cave", name: "Cave", type: "Scene" } }];
   expect(projectPlaceActors(scenes)).toEqual([]);

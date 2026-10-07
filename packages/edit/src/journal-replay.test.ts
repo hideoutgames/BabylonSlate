@@ -7,6 +7,7 @@ import {
   commandToJournalPayload,
   journalRepathLine,
   journalDiscardLine,
+  journalCheckpointLine,
   serializeJournalLine,
   type JournalLine,
 } from "./journal";
@@ -118,6 +119,25 @@ describe("journal replay", () => {
     expect(replayed.documents.get(id)?.nodes[0]?.position.x).toBe(7);
     expect(replayed.documents.get(other)?.nodes[0]?.position.x).toBe(5);
     expect(replayed.skipped).toEqual([]);
+  });
+
+  it("checkpoints supersede earlier edits across repaths while preserving later edits and other documents", () => {
+    const at = "2026-10-07T00:00:00Z";
+    const a = "graph:old", b = "graph:new", other = "graph:other";
+    const graph: SerializedGraph = { nodes: [{ id: "node", type: "print", position: { x: 0, y: 0 }, data: {} }], edges: [] };
+    const snapshot: SerializedGraph = { ...graph, nodes: [{ ...graph.nodes[0]!, position: { x: 20, y: 0 } }] };
+    const lines = [
+      serializeJournalLine(journalRecord(a, new MoveNodeCommand("node", { x: 0, y: 0 }, { x: 10, y: 0 }))),
+      serializeJournalLine(journalRecord(other, new MoveNodeCommand("node", { x: 0, y: 0 }, { x: 5, y: 0 }))),
+      serializeJournalLine(journalCheckpointLine(a, snapshot, at)),
+      serializeJournalLine(journalRepathLine(a, b, at)),
+      serializeJournalLine(journalRecord(b, new MoveNodeCommand("node", { x: 20, y: 0 }, { x: 25, y: 0 }))),
+    ];
+    const result = replayJournalLines(lines, new Map([[b, graph], [other, graph]]));
+    expect(result.documents.get(b)?.nodes[0]?.position.x).toBe(25);
+    expect(result.documents.get(other)?.nodes[0]?.position.x).toBe(5);
+    expect(resolveJournalLines(lines).map((line) => line.docId)).toEqual([other, b, b]);
+    expect(result.skipped).toEqual([]);
   });
 
   it("recovers batched deletion, Undo and Redo as complete graph changes", () => {

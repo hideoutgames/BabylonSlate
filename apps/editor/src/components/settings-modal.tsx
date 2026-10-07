@@ -573,6 +573,9 @@ export function SettingsModal({
       data-testid={resolvedTestId}
       footer={
         <div className="flex items-center justify-end gap-2">
+          <span className="mr-auto text-xs text-muted-foreground">
+            {scope === "engine" ? "Engine settings save automatically." : "Project settings are saved with Save All."}
+          </span>
           {scope === "project" && projectDocument && onCloseProject ? (
             <Button
               variant="outline"
@@ -705,6 +708,8 @@ export function SettingsModal({
               <NumberField
                 id="settings-autosave-interval"
                 min={1}
+                rejectOutOfRange
+                aria-describedby="settings-autosave-description"
                 className="min-h-[var(--chrome-row,28px)]"
                 value={Math.round(
                   projectDocument.settings.autoSaveIntervalMs / 1000,
@@ -716,6 +721,9 @@ export function SettingsModal({
                 }}
                 data-testid="settings-autosave-interval"
               />
+              <FieldDescription id="settings-autosave-description">
+                Enter at least 1 second. Auto-save writes pending project changes at this interval.
+              </FieldDescription>
             </Field>
             <Field>
               <FieldLabel>Editor Utility Objects</FieldLabel>

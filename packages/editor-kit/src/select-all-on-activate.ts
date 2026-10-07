@@ -26,8 +26,10 @@ type TextField = HTMLInputElement | HTMLTextAreaElement;
 export function useSelectAllOnActivate() {
   const pointerActivateRef = useRef(false);
   const pendingRef = useRef(false);
+  const activationRef = useRef(0);
 
   const onPointerDown = useCallback(() => {
+    activationRef.current += 1;
     pointerActivateRef.current = true;
   }, []);
 
@@ -40,8 +42,17 @@ export function useSelectAllOnActivate() {
   const reselectAfterCaret = useCallback((el: TextField) => {
     if (!pendingRef.current) return;
     pendingRef.current = false;
-    queueMicrotask(() => selectInputContents(el));
-    requestAnimationFrame(() => selectInputContents(el));
+    const activation = activationRef.current;
+    const value = el.value;
+    const selectIfUnchanged = () => {
+      if (
+        activationRef.current === activation &&
+        el.ownerDocument.activeElement === el &&
+        el.value === value
+      ) selectInputContents(el);
+    };
+    queueMicrotask(selectIfUnchanged);
+    requestAnimationFrame(selectIfUnchanged);
   }, []);
 
   const onPointerUp = useCallback(
@@ -59,6 +70,7 @@ export function useSelectAllOnActivate() {
   );
 
   const onBlur = useCallback(() => {
+    activationRef.current += 1;
     pendingRef.current = false;
     pointerActivateRef.current = false;
   }, []);

@@ -215,6 +215,38 @@ function validateStructural(
     );
   }
 
+  const execAdjacency = new Map(graph.nodes.map((node) => [node.id, [] as string[]]));
+  for (const edge of graph.edges) {
+    const source = findNode(graph, edge.sourceNodeId);
+    const target = findNode(graph, edge.targetNodeId);
+    if (!source || !target) continue;
+    // Warn only on unconditional synchronous paths. Branches and stateful
+    // flow controls may exit; latent actions yield to the runtime.
+    const definition = registry?.get(source.typeId);
+    if (definition?.latent || definition?.structuredFlow || source.properties.async === true ||
+      source.pins.filter((pin) => pin.kind === "exec" && pin.direction === "out").length !== 1 ||
+      source.pins.filter((pin) => pin.kind === "exec" && pin.direction === "in").length > 1) continue;
+    if (findPin(source, edge.sourcePinId)?.kind === "exec" &&
+      findPin(target, edge.targetPinId)?.kind === "exec") {
+      execAdjacency.get(source.id)!.push(target.id);
+    }
+  }
+  const execCycle = hasCycle(execAdjacency, compiled);
+  if (execCycle) {
+    out.push(diagnostic({ severity: "warning", code: "exec.cycle",
+      message: "Execution cycle may run indefinitely. Ensure it exits or yields through a latent action.",
+      assetGuid: ctx.assetGuid, graphId: graph.id, nodeId: execCycle }));
+  }
+  for (const node of graph.nodes) {
+    if (!compiled.has(node.id) || node.typeId !== "flow.whileLoop") continue;
+    const condition = node.pins.find((pin) => pin.id === "condition");
+    if (!condition || graph.edges.some((edge) => edge.targetNodeId === node.id && edge.targetPinId === condition.id)) continue;
+    if (readPinDefaultForPin(node.properties, condition) !== true) continue;
+    out.push(diagnostic({ severity: "warning", code: "flow.constant_loop",
+      message: "While Loop condition is always True. Ensure the loop body breaks or yields.",
+      assetGuid: ctx.assetGuid, graphId: graph.id, nodeId: node.id, pinId: condition.id }));
+  }
+
   const entryNodes = graph.nodes.filter((n) =>
     n.pins.some((p) => p.kind === "exec" && p.direction === "in"),
   );

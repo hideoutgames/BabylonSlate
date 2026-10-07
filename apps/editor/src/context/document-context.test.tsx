@@ -1,6 +1,7 @@
-import { act, render, waitFor } from "@testing-library/react";
+import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS,
   MAIN_CLASS_FILE,
   MAIN_SCENE_FILE,
   createActor,
@@ -11,9 +12,10 @@ import {
   type SerializedGraph,
   type SerializedScene,
 } from "@babylonslate/core";
-import { createDerivedStorage, OpfsStorageAdapter } from "@babylonslate/vfs";
-import { appendJournalLines } from "@babylonslate/assets";
-import { commandToJournalPayload, SetActorTransformCommand } from "@babylonslate/edit";
+import { MemorySecretStore, OpfsStorageAdapter, createDerivedStorage } from "@babylonslate/vfs";
+import { FakeLockProvider } from "@babylonslate/source-control";
+import { appendJournalLines, readJournalLines } from "@babylonslate/assets";
+import { SetActorTransformCommand, SetSceneNameCommand, commandToJournalPayload, serializeJournalLine } from "@babylonslate/edit";
 import { createProjectAsset } from "../lib/create-project-asset";
 import { subscribeModelThumbnailJobs } from "../lib/model-thumbnail-queue";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
@@ -155,6 +157,175 @@ afterEach(async () => {
 });
 
 describe("DocumentProvider actions and route", () => {
+  it("clears a recovered journal that returns to saved content without another Save", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.saveAll());
+    const originalName = openScene(MAIN_SCENE_ID).name;
+    const derived = await createDerivedStorage();
+    const guid = documents().projectGuid!;
+    await appendJournalLines(derived, guid, [
+      new SetSceneNameCommand(originalName, "Temporary"),
+      new SetSceneNameCommand("Temporary", originalName),
+    ].map((command) => serializeJournalLine({
+      v: 1, docId: MAIN_SCENE_ID, at: new Date().toISOString(), command: commandToJournalPayload(command),
+    })));
+    act(() => actions.keepRecovery());
+    await waitFor(async () => expect(await readJournalLines(derived, guid)).toEqual([]));
+    expect(openScene(MAIN_SCENE_ID).name).toBe(originalName);
+    expect(documents().dirtyDocuments).toEqual([]);
+  });
+
+  it("replays a recovery request after an in-flight scene read settles", async () => {
+    const actions = await openProject();
+    const target = await createScene(actions, "RecoverTarget");
+    const targetId = documentId({ kind: "scene", path: target.path });
+    await act(() => actions.saveAll());
+    await appendJournalLines(await createDerivedStorage(), documents().projectGuid!, [serializeJournalLine({
+      v: 1, docId: targetId, at: new Date().toISOString(),
+      command: commandToJournalPayload(new SetSceneNameCommand("RecoverTarget", "Recovered Scene")),
+    })]);
+    let finishRead!: () => void;
+    const heldRead = new Promise<void>((resolve) => { finishRead = resolve; });
+    const realLoad = ProjectService.prototype.loadDocument;
+    let started = false;
+    const read = vi.spyOn(ProjectService.prototype, "loadDocument").mockImplementation(async function(this: ProjectService, kind, path) {
+      if (path === target.path) {
+        started = true;
+        await heldRead;
+      }
+      return realLoad.call(this, kind, path);
+    });
+    let opening!: Promise<unknown>;
+    try {
+      act(() => { opening = actions.openDocument(sceneRef(target.path)); });
+      await waitFor(() => expect(started).toBe(true));
+      act(() => actions.keepRecovery());
+      expect(documents().openDocuments.some((doc) => doc.id === targetId)).toBe(false);
+      await act(async () => { finishRead(); await opening; });
+      await waitFor(() => expect(openScene(targetId).name).toBe("Recovered Scene"));
+      expect(documents().dirtyDocuments.some((doc) => doc.id === targetId)).toBe(true);
+    } finally {
+      finishRead();
+      read.mockRestore();
+    }
+  });
+
+  it("keeps an open scene's unsaved edits and Class binding after renaming its Class", async () => {
+    const actions = await openProject();
+    const registry = documents().assetRegistry!;
+    const asset = await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "Class", name: "Hero" }));
+    act(() => actions.noteAssetsCreated());
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    const original = openScene(MAIN_SCENE_ID);
+    const edited = { ...original, actors: [...original.actors, createActor("hero", "Unsaved Hero", { classId: "Hero" })] };
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, edited));
+    await act(() => actions.renameAsset(asset.header.guid, "Champion"));
+    expect(openScene(MAIN_SCENE_ID).actors.find(actor => actor.id === "hero")).toMatchObject({ name: "Unsaved Hero", classId: "Champion" });
+    expect(documents().dirtyDocuments.some(doc => doc.id === MAIN_SCENE_ID)).toBe(true);
+    await act(() => actions.saveAll());
+    const saved = await actions.loadAssetDocument("scene", MAIN_SCENE_FILE) as SerializedScene;
+    expect(saved.actors.find(actor => actor.id === "hero")?.classId).toBe("Champion");
+    expect(documents().assetRegistry?.getByGuid(asset.header.guid)?.path).toBe("assets/Champion.class.babasset");
+  });
+
+  it.each([false, true])("recovers unsaved Class instances after a rename and crash (rolled back: %s)", async (failRename) => {
+    const actions = await openProject();
+    const registry = documents().assetRegistry!;
+    const asset = await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "Class", name: "Hero" }));
+    act(() => actions.noteAssetsCreated());
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, {
+      ...openScene(MAIN_SCENE_ID), actors: [createActor("saved", "Saved Hero", { classId: "Hero" })],
+    }));
+    await act(() => actions.saveAll());
+    const handle = await new OpfsStorageAdapter().openDocumentsProject("Stable");
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, {
+      ...openScene(MAIN_SCENE_ID), actors: [...openScene(MAIN_SCENE_ID).actors, createActor("unsaved", "Unsaved Hero", { classId: "Hero" })],
+    }));
+    if (failRename) {
+      const write = OpfsStorageAdapter.prototype.writeBinary;
+      let fail = true;
+      const blocked = vi.spyOn(OpfsStorageAdapter.prototype, "writeBinary").mockImplementation(async function(this: OpfsStorageAdapter, path, bytes) {
+        if (path === MAIN_SCENE_FILE && fail) { fail = false; throw new Error("Scene write failed"); }
+        return write.call(this, path, bytes);
+      });
+      try { await act(async () => { await expect(actions.renameAsset(asset.header.guid, "Champion")).rejects.toThrow("Scene write failed"); }); }
+      finally { blocked.mockRestore(); }
+    } else await act(() => actions.renameAsset(asset.header.guid, "Champion"));
+    // Unmount without Close/Save to preserve the crash-recovery journal.
+    cleanup();
+    render(<DocumentProvider><Probe /></DocumentProvider>);
+    await waitFor(() => expect(documents().homepageReady).toBe(true));
+    const reopened = seen.actions!;
+    await act(() => reopened.openListedProject(handle));
+    act(() => reopened.keepRecovery());
+    await waitFor(() => expect(openScene(MAIN_SCENE_ID).actors.find(actor => actor.id === "unsaved")).toMatchObject({
+      name: "Unsaved Hero", classId: failRename ? "Hero" : "Champion",
+    }));
+    expect(openScene(MAIN_SCENE_ID).actors.find(actor => actor.id === "saved")?.classId).toBe(failRename ? "Hero" : "Champion");
+    expect(documents().dirtyDocuments.some(doc => doc.id === MAIN_SCENE_ID)).toBe(true);
+  });
+
+  it("waits for an in-flight save before renaming a Class used by that save", async () => {
+    const actions = await openProject();
+    const registry = documents().assetRegistry!;
+    const asset = await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "Class", name: "Hero" }));
+    act(() => actions.noteAssetsCreated());
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, {
+      ...openScene(MAIN_SCENE_ID), actors: [createActor("hero", "Hero", { classId: "Hero" })],
+    }));
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let started = false;
+    const original = ProjectService.prototype.saveDocument;
+    const save = vi.spyOn(ProjectService.prototype, "saveDocument").mockImplementation(async function(this: ProjectService, kind, path, content, options) {
+      if (path === MAIN_SCENE_FILE && !started) { started = true; await held; }
+      return original.call(this, kind, path, content, options);
+    });
+    try {
+      let saving!: Promise<boolean>;
+      act(() => { saving = actions.saveAll(); });
+      await waitFor(() => expect(started).toBe(true));
+      let renaming!: ReturnType<DocumentActions["renameAsset"]>;
+      act(() => { renaming = actions.renameAsset(asset.header.guid, "Champion"); });
+      await act(async () => { release(); await saving; await renaming; });
+      const saved = await actions.loadAssetDocument("scene", MAIN_SCENE_FILE) as SerializedScene;
+      expect(saved.actors.find(actor => actor.id === "hero")?.classId).toBe("Champion");
+      expect(openScene(MAIN_SCENE_ID).actors.find(actor => actor.id === "hero")?.classId).toBe("Champion");
+    } finally { release(); save.mockRestore(); }
+  });
+
+  it.each([false, true])("refuses Class renames when a referring scene is locked by another user (open: %s)", async (keepOpen) => {
+    const actions = await openProject();
+    const registry = documents().assetRegistry!;
+    const asset = await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "Class", name: "Hero" }));
+    act(() => actions.noteAssetsCreated());
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, {
+      ...openScene(MAIN_SCENE_ID), actors: [createActor("hero", "Hero", { classId: "Hero" })],
+    }));
+    await act(() => actions.saveAll());
+    if (!keepOpen) act(() => actions.closeDocument(MAIN_SCENE_ID));
+    const storage = new OpfsStorageAdapter();
+    await storage.openDocumentsProject("Stable");
+    const sceneBytes = await storage.readBinary(MAIN_SCENE_FILE);
+    const classBytes = await storage.readBinary(asset.path);
+    const fake = new FakeLockProvider();
+    fake.addTheirs(MAIN_SCENE_FILE, "Teammate");
+    await act(() => documents().sourceControl.configure({
+      settings: { ...DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, enabled: true }, projectGuid: documents().projectGuid,
+      platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake,
+    }));
+    await act(() => documents().sourceControl.refresh());
+    await act(async () => { await expect(actions.renameAsset(asset.header.guid, "Champion")).rejects.toThrow("Locked by Teammate"); });
+    expect(await storage.readBinary(MAIN_SCENE_FILE)).toEqual(sceneBytes);
+    expect(await storage.readBinary(asset.path)).toEqual(classBytes);
+    expect(await storage.exists("assets/Champion.class.babasset")).toBe(false);
+    expect(documents().assetRegistry!.getByGuid(asset.header.guid)?.path).toBe(asset.path);
+  });
+
   it("finishes an admitted Save All including its bake writes before a file lock and defers later saves", async () => {
     const actions = await openProject();
     await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
@@ -301,8 +472,8 @@ describe("DocumentProvider actions and route", () => {
     await act(() => actions.openListedProject(listed));
     expect(documents().openDocuments.find(doc => doc.id === MAIN_SCENE_ID)?.content).toBeNull();
     expect(documents().recoveryAvailable).toBe(true);
-    await act(async () => { await actions.keepRecovery(); });
-    expect(openScene(MAIN_SCENE_ID).actors[0]!.transform.position).toEqual(recovered.actors[0]!.transform.position);
+    act(() => actions.keepRecovery());
+    await waitFor(() => expect(openScene(MAIN_SCENE_ID).actors[0]!.transform.position).toEqual(recovered.actors[0]!.transform.position));
     expect(documents().dirtyDocuments.map(doc => doc.id)).toContain(MAIN_SCENE_ID);
     expect(documents().recoveryAvailable).toBe(false);
   });
@@ -704,4 +875,38 @@ describe("DocumentProvider closed document history", () => {
     expect(documents().canUndoActiveDocument).toBe(false);
     expect(documents().canRedoActiveDocument).toBe(false);
   });
+
+  it("reports failed automatic saves and saves retained edits on the next attempt", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.saveAll());
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const save = vi.spyOn(ProjectService.prototype, "saveProject").mockRejectedValueOnce(new Error("Storage unavailable"));
+    // Fire the debounce, then let the save's own timers and storage I/O run
+    // until it settles; a real macrotask per step lets slow I/O finish.
+    const runAutoSave = async () => {
+      await act(() => vi.advanceTimersByTimeAsync(120_000));
+      for (let i = 0; i < 1_000 && documents().autoSaveStatus?.state === "saving"; i++) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(100);
+          await new Promise((resolve) => setImmediate(resolve));
+        });
+      }
+    };
+    try {
+      await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 2)));
+      await runAutoSave();
+      expect(documents().autoSaveStatus).toMatchObject({ state: "error", message: expect.stringContaining("Storage unavailable") });
+      expect(documents().dirtyDocuments.length > 0 || documents().projectDirty).toBe(true);
+      await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 2)));
+      await runAutoSave();
+      expect(documents().autoSaveStatus).toEqual({ state: "saved" });
+      expect(documents().dirtyDocuments).toHaveLength(0);
+      expect(documents().projectDirty).toBe(false);
+    } finally {
+      save.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
 });

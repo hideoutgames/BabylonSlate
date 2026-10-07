@@ -62,7 +62,7 @@ import type {
 import { loadCompiledModule, type CompiledModuleExports } from "./module-loader";
 import type { LogSeverity } from "./log-ring";
 import { actorLabel } from "./actor-world-transform";
-import { isInfiniteLoopError } from "@babylonslate/debugger";
+import { isInfiniteLoopError, type ScriptLoopLocation } from "@babylonslate/debugger";
 import type { InputBindingControls } from "@babylonslate/input";
 import type { TweenValueType } from "@babylonslate/core";
 import type { TweenReference, TweenRequest } from "./tween-runtime";
@@ -296,7 +296,7 @@ export interface ScriptContext {
   deltaSeconds: number;
   tickIndex: number;
   formatValue(value: unknown): string;
-  checkInfiniteLoop(): void;
+  checkInfiniteLoop(location?: ScriptLoopLocation): void;
   log(severity: LogSeverity, category: string, message: string): void;
   print(
     message: string,
@@ -1293,8 +1293,13 @@ export class ScriptHost {
         else this.commandResult = { success: Boolean(success), output: String(output) };
       },
       formatValue: (value) => formatValue(value),
-      checkInfiniteLoop: () => {
-        services.checkInfiniteLoop?.();
+      checkInfiniteLoop: (location) => {
+        try {
+          services.checkInfiniteLoop?.();
+        } catch (error) {
+          if (isInfiniteLoopError(error) && location) error.scriptLocation = location;
+          throw error;
+        }
       },
       log: (severity, category, message) =>
         services.log(severity, category, message),

@@ -760,3 +760,5 @@ Particle materials preview on one stationary plane with no particle system. The 
 ## Landscape materials
 
 The **Landscape** domain uses the surface/PBR output and the usual texture, noise, normal, and math nodes. Landscape Coordinates tiles world X/Z coordinates; Landscape Height reads world Y; Landscape Slope is zero on horizontal ground and one on vertical faces. Landscape Layers exposes the four normalized weights painted by the Landscape brush, and Landscape Blend mixes two colors by a weight. Assign these materials in Landscape Settings. Unassigned landscapes use the engine's tiled-grid default material. Foliage uses surface materials from each Model's slots, with an optional surface Material override for each group entry.
+
+New Material graphs place connected seed nodes in separate columns with space for their expanded controls, including Surface, Particle, and Post Process outputs.

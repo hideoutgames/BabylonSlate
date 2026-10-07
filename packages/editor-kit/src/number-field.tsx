@@ -18,6 +18,8 @@ export interface NumberFieldProps extends Omit<
   onEnter?: (value: number) => void;
   min?: number;
   max?: number;
+  /** Reject a typed value outside the range instead of adjusting it on blur. */
+  rejectOutOfRange?: boolean;
 }
 
 function clamp(value: number, min?: number, max?: number): number {
@@ -43,6 +45,7 @@ export function NumberField({
   onChange,
   min,
   max,
+  rejectOutOfRange = false,
   onBlur,
   onKeyDown,
   onEnter,
@@ -55,6 +58,7 @@ export function NumberField({
   } | null>(null);
   const feedbackId = useId();
   const baselineRef = useRef(value);
+  const cancelledRef = useRef(false);
   const parseDraft = (raw: string) =>
     parseNumberInput(raw) ??
     evaluateNumericExpression(raw, baselineRef.current);
@@ -62,7 +66,7 @@ export function NumberField({
     const parsed = parseDraft(draft ?? String(value));
     setDraft(null);
     if (parsed === undefined) {
-      if (draft?.trim())
+      if (draft !== null)
         setFeedback({
           message:
             "Enter a number or expression. Restored the last valid value.",
@@ -71,6 +75,13 @@ export function NumberField({
       return undefined;
     }
     const next = clamp(parsed, min, max);
+    if (next !== parsed && rejectOutOfRange) {
+      setFeedback({
+        message: `Enter a value${min === undefined ? "" : ` of at least ${min}`}${max === undefined ? "" : ` no greater than ${max}`}. Restored the last valid value.`,
+        invalid: true,
+      });
+      return undefined;
+    }
     if (next !== parsed)
       setFeedback({
         message: `Adjusted to ${next} to stay within the allowed range.`,
@@ -111,18 +122,29 @@ export function NumberField({
           onChange(parsed);
         }}
         onBlur={(event) => {
-          finishDraft();
+          if (cancelledRef.current) cancelledRef.current = false;
+          else finishDraft();
           onBlur?.(event);
         }}
         onKeyDown={(event) => {
           onKeyDown?.(event);
           if (
-            event.key !== "Enter" ||
             event.defaultPrevented ||
             event.nativeEvent.isComposing ||
             event.keyCode === 229
           )
             return;
+          if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            cancelledRef.current = true;
+            if (draft !== null) onChange(baselineRef.current);
+            setDraft(null);
+            setFeedback(null);
+            event.currentTarget.blur();
+            return;
+          }
+          if (event.key !== "Enter") return;
           event.preventDefault();
           if (onEnter) {
             const next = finishDraft();

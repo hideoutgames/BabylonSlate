@@ -133,6 +133,7 @@ import type { AcquireRuntimeScene, RuntimeSceneSource } from "./scene-source";
 import {
   createPhysicsBackend,
   createSoftwarePhysicsBackend,
+  parseColliderProperties,
   parseRigidBodyProperties,
   SoftwarePhysicsBackend,
   type PhysicsBackend,
@@ -3549,6 +3550,11 @@ class InProcessRuntime implements RuntimeDriver {
    */
   private attemptPossessViewTarget(): void {
     if (this.cameraPossessedByScript) return;
+    const scene = this.playScene;
+    const defaultActor = scene?.actors.find((actor) => actor.id === scene.settings.mainCameraActorId);
+    if (defaultActor?.components.some((component) =>
+      component.id === scene?.settings.mainCameraComponentId && component.classId === "CameraComponent",
+    ) && this.slotByGuid.has(defaultActor.id)) return;
     for (const actor of this.playScene?.actors ?? []) {
       const opted = actor.components.some(
         (component) =>
@@ -5585,6 +5591,19 @@ class InProcessRuntime implements RuntimeDriver {
       }]);
     }
     this.applyActorDefaults(actor);
+    // Reject invalid draft primitives while the host still owns the Scene load.
+    // Deferring this until native physics boot left the host at Realizing Scene.
+    for (const component of actor.components) {
+      if (component.classId !== "ColliderComponent" || component.destroyed) continue;
+      const shape = component.getVariable("shape");
+      const kind = shape && typeof shape === "object" ? (shape as { kind?: unknown }).kind : undefined;
+      if (kind === "convex" || kind === "mesh" || kind === "polygon" || kind === "chain") continue;
+      try {
+        parseColliderProperties({ shape }, actor.sceneLayerId ? "2d" : this.physicsWorldKind);
+      } catch (error) {
+        throw new Error(`${actorLabel(actor)} / ${component.guid}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
     const slotId = this.assignSlot(actor);
     checkpoint();
     this.emitMeshAssignment(actor, slotId);
@@ -5858,7 +5877,11 @@ class InProcessRuntime implements RuntimeDriver {
     try {
       run();
     } catch (error) {
-      if (isInfiniteLoopError(error)) throw error;
+      if (isInfiniteLoopError(error)) {
+        // Stop must finish tearing down every owner even if On End loops.
+        if (!this.stopped) throw error;
+        return;
+      }
       this.reportError(error);
     }
   }
@@ -6331,7 +6354,11 @@ class InProcessRuntime implements RuntimeDriver {
   start(): void {
     if (this.stopped) return;
     this.running = true;
-    this.world.start();
+    try {
+      this.world.start();
+    } catch (error) {
+      if (!isInfiniteLoopError(error)) throw error;
+    }
   }
 
   stop(): void {
@@ -6743,6 +6770,10 @@ class InProcessRuntime implements RuntimeDriver {
     if (profiling) this.profileTickPublishMs = 0;
     try {
       this.runTick();
+    } catch (error) {
+      // Animation and other script phases also abort via the already-reported
+      // loop sentinel; keep it inside the runtime boundary, like Actor ticks.
+      if (!isInfiniteLoopError(error)) throw error;
     } finally {
       this.processingTick = false;
       if (profiling && this.world.clock.tickIndex > previousTick) this.diagnosticRecorder?.record(this.world.clock.tickIndex,
@@ -6961,15 +6992,16 @@ class InProcessRuntime implements RuntimeDriver {
     const err = error instanceof Error ? error : new Error(String(error));
     const stack = err.stack ?? "";
     const anchor = mapStackToAnchor(stack, this.anchors);
+    const location = isInfiniteLoopError(err) ? err.scriptLocation : undefined;
     const diag: RuntimeDiagnostic = {
       code: isInfiniteLoopError(err)
         ? INFINITE_LOOP_DIAGNOSTIC_CODE
         : "runtime.uncaught",
       message: err.message,
       severity: "error",
-      assetGuid: hint?.assetGuid ?? this.currentBtAssetGuid ?? anchor?.assetGuid,
-      graphId: anchor?.graphId,
-      nodeId: hint?.btNodeId ? undefined : anchor?.nodeId,
+      assetGuid: hint?.assetGuid ?? this.currentBtAssetGuid ?? location?.assetGuid ?? anchor?.assetGuid,
+      graphId: location?.graphId ?? anchor?.graphId,
+      nodeId: hint?.btNodeId ? undefined : location?.nodeId ?? anchor?.nodeId,
       bodyLine: anchor?.bodyLine,
       btNodeId: hint?.btNodeId ?? this.currentBtNodeId ?? anchor?.btNodeId,
       stack,

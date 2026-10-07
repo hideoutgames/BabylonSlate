@@ -1,4 +1,5 @@
 import { createDefaultInputAssets, SourceRevisionChangedError } from "@babylonslate/core";
+import { isLockedEngineClassId } from "@babylonslate/object-model";
 import { normalizeDataDefinitionAsset, normalizeDataTreeAsset } from "@babylonslate/core";
 import { normalizeImportedProject, readProjectArchive, PROJECT_IMPORT_LIMIT } from "./project-import";
 import { getHostPlatform, pickImportFiles } from "@babylonslate/vfs";
@@ -33,6 +34,7 @@ import {
   normalizeSceneLayer,
   classHeaderMeta,
   documentId,
+  parseDocumentId,
   documentKindForAssetType,
   isAssetDocumentKind,
   LAYOUT_FILE,
@@ -87,6 +89,7 @@ import {
   fallbackParentClass,
   clearDeletedAssetRefs,
   replaceClassAssetReferences,
+  renamedAssetPath,
   type ClassAssetReplacement,
   isAssetDocumentPath,
   isTracePath,
@@ -140,6 +143,7 @@ import { createAppSettingsStore, isTestModeEnabled, TEST_PROJECT_NAME } from "@b
 import { extraChunksWithNavmesh } from "@babylonslate/navigation";
 import {
   newAssetFileName,
+  classIdFromClassAsset,
   assetHeaderDependencyMetadata,
   materialHeaderMeta,
 } from "../lib/content-browser-helpers";
@@ -308,6 +312,8 @@ function parentDir(path: string): string {
 }
 
 type OwnedFolder = { handle: ProjectFolderHandle; createdHere: boolean };
+
+const PROJECT_CREATION_MARKER = ".babylonslate-creating";
 
 export class ProjectService {
   private readonly writeAdmission = new ProjectWriteAdmission();
@@ -1080,7 +1086,7 @@ export class ProjectService {
       return this.scaffoldNewProject(projectName, options.kind, options);
     }
     const owned = await this.openOwnedDocumentsProject(projectName);
-    if (await this.storage.exists(PROJECT_FILE)) {
+    if (await this.storage.exists(PROJECT_FILE) && !owned.createdHere) {
       throw new Error("Name already exists.");
     }
     return this.scaffoldOwnedProject(owned, () =>
@@ -1101,7 +1107,7 @@ export class ProjectService {
     } else {
       owned = await this.openOwnedDocumentsProject(projectName);
     }
-    if (await this.storage.exists(PROJECT_FILE)) {
+    if (await this.storage.exists(PROJECT_FILE) && !owned?.createdHere) {
       throw new Error("A project already exists in this folder.");
     }
     const guid = newGuid();
@@ -1151,6 +1157,16 @@ export class ProjectService {
         empty = false;
       }
     }
+    if (await this.storage.exists(PROJECT_CREATION_MARKER)) {
+      // Only fresh app-owned folders receive the marker. A retry can use a
+      // different template, so discard the interrupted scaffold's files.
+      if (this.storage.deleteProject) {
+        await this.storage.deleteProject(handle);
+        return { handle: await this.storage.openDocumentsProject(name), createdHere: true };
+      }
+      for (const entry of await this.storage.readdir(".")) await this.storage.remove(entry.name);
+      return { handle, createdHere: true };
+    }
     return { handle, createdHere: !registered && empty };
   }
 
@@ -1159,7 +1175,12 @@ export class ProjectService {
     scaffold: () => Promise<T>,
   ): Promise<T> {
     try {
-      return await scaffold();
+      if (owned?.createdHere) await this.storage.writeText(PROJECT_CREATION_MARKER, "Project creation in progress\n");
+      const result = await scaffold();
+      if (owned?.createdHere && this.storage.getCurrentFolder()?.id === owned.handle.id) {
+        await this.storage.remove(PROJECT_CREATION_MARKER);
+      }
+      return result;
     } catch (cause) {
       // A failed scaffold leaves a registered folder that never reaches the
       // recents list but still blocks the name via the project-file check.
@@ -1691,8 +1712,22 @@ export class ProjectService {
   ): Promise<void> {
     const registry = this.assetRegistry;
     if (!registry) throw new Error("The asset registry is unavailable.");
+    validateClassDeletionReplacements(replacements, registry.list(), deletingGuids);
+    const plans = await this.planClassReferenceReplacements(replacements, deletingGuids, onProgress);
+    for (const plan of plans) {
+      await onProgress?.(plan.path);
+      await this.saveDocument(plan.kind, plan.path, plan.content, { parentClass: plan.parentClass });
+    }
+  }
+
+  private async planClassReferenceReplacements(
+    replacements: readonly ClassAssetReplacement[],
+    deletingGuids: ReadonlySet<string>,
+    onProgress?: (path: string) => Promise<void>,
+  ) {
+    const registry = this.assetRegistry;
+    if (!registry) throw new Error("The asset registry is unavailable.");
     const assets = registry.list();
-    validateClassDeletionReplacements(replacements, assets, deletingGuids);
     const plans: Array<{
       kind: Exclude<DocumentKind, "content-browser">;
       path: string;
@@ -1719,9 +1754,75 @@ export class ProjectService {
       }
       plans.push({ kind, path: asset.path, content: walked.value, parentClass: header.value.parentClass });
     }
-    for (const plan of plans) {
-      await onProgress?.(plan.path);
-      await this.saveDocument(plan.kind, plan.path, plan.content, { parentClass: plan.parentClass });
+    return plans;
+  }
+
+  /** Rename a Class and its name-based referrers as one recoverable file operation. */
+  async renameAsset(guid: string, newName: string, options?: {
+    /** Validate locks and persist recovery before any files change. */
+    beforeWrite?: (paths: string[]) => Promise<void>;
+  }): Promise<IndexedAsset> {
+    const registry = this.assetRegistry;
+    const before = registry?.getByGuid(guid);
+    if (!registry || !before) throw new Error("The asset is unavailable.");
+    const nextPath = renamedAssetPath(before.path, newName);
+    if (nextPath !== before.path && registry.list().some((asset) => asset.path === nextPath)) {
+      throw new Error(`Target path already exists: ${nextPath}`);
+    }
+    if (before.header.type !== "Class" && before.header.type !== "Graph") {
+      await options?.beforeWrite?.([before.path, nextPath]);
+      return registry.renameAsset(guid, newName);
+    }
+    const classId = classIdFromClassAsset(before);
+    const nextClassId = classIdFromClassAsset({ ...before, path: nextPath });
+    if (classId === nextClassId) {
+      await options?.beforeWrite?.([before.path, nextPath]);
+      return registry.renameAsset(guid, newName);
+    }
+    if (isLockedEngineClassId(nextClassId)) {
+      throw new Error(`"${nextClassId}" is an engine class name. Choose another Class name.`);
+    }
+    if (registry.list().some((asset) => asset.header.guid !== guid &&
+      (asset.header.type === "Class" || asset.header.type === "Graph") && classIdFromClassAsset(asset) === nextClassId)) {
+      throw new Error("A Class with that name already exists.");
+    }
+    const replacements = [{ guid, classId, replacement: { guid, classId: nextClassId } }];
+    const plans = await this.planClassReferenceReplacements(replacements, new Set());
+    const backups = await Promise.all(plans.map(async (plan) => ({
+      path: plan.path,
+      storage: this.storageForPath(plan.path),
+      bytes: await this.storageForPath(plan.path).readBinary(plan.path),
+    })));
+    const original = await this.storageForPath(before.path).readBinary(before.path);
+    const projectText = await this.storage.readText(PROJECT_FILE);
+    const project = JSON.parse(projectText) as ProjectDocument;
+    const settings = replaceClassAssetReferences(project.settings, replacements);
+    await options?.beforeWrite?.([before.path, nextPath, ...plans.map((plan) => plan.path), ...(settings.changed ? [PROJECT_FILE] : [])]);
+    const renamed = await registry.renameAsset(guid, newName);
+    try {
+      for (const plan of plans) {
+        await this.saveDocument(plan.kind, plan.path === before.path ? renamed.path : plan.path, plan.content, { parentClass: plan.parentClass });
+      }
+      if (settings.changed) await this.storage.writeText(PROJECT_FILE, JSON.stringify({ ...project, settings: settings.value }, null, 2));
+      return registry.getByGuid(guid)!;
+    } catch (error) {
+      // A persistent storage failure must not prevent attempts to restore the
+      // other files. Retain both Class copies if its original cannot be restored.
+      const failures: string[] = [];
+      const restore = async (path: string, write: () => Promise<void>) => {
+        try { await write(); return true; }
+        catch { failures.push(path); return false; }
+      };
+      const storage = this.storageForPath(renamed.path);
+      const sourceRestored = await restore(before.path, () => storage.writeBinary(before.path, original));
+      for (const backup of backups) {
+        if (backup.path !== before.path) await restore(backup.path, () => backup.storage.writeBinary(backup.path, backup.bytes));
+      }
+      if (sourceRestored && renamed.path !== before.path) await restore(renamed.path, () => storage.remove(renamed.path));
+      await restore(PROJECT_FILE, () => this.storage.writeText(PROJECT_FILE, projectText));
+      await restore("Asset Registry", () => this.remountRegistry().then(() => {}));
+      if (failures.length) throw new Error(`Class rename failed and some files could not be restored: ${failures.join(", ")}. ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+      throw error;
     }
   }
 
@@ -2561,11 +2662,19 @@ export class ProjectService {
     await this.storage.writeText(PROJECT_FILE, JSON.stringify(payload, null, 2));
     await this.storage.writeText(
       LAYOUT_FILE,
-      JSON.stringify(layouts, null, 2),
+      JSON.stringify({ ...layouts, assetGuids: Object.fromEntries(layouts.tabOrder.flatMap((id) => {
+        const ref = parseDocumentId(id);
+        const guid = ref ? this.guidForPath(ref.path) : null;
+        return guid ? [[id, guid]] : [];
+      })) }, null, 2),
     );
     this.migrationPending = this.migrationPending.filter(
       (p) => p.path !== PROJECT_FILE,
     );
+  }
+
+  async documentExists(path: string): Promise<boolean> {
+    return this.storageForPath(path).exists(path);
   }
 
   async loadLayouts(mainSceneId: string): Promise<ProjectLayouts> {
@@ -2583,7 +2692,21 @@ export class ProjectService {
       "documents" in parsed &&
       "tabOrder" in parsed
     ) {
-      return parsed as unknown as ProjectLayouts;
+      const layouts = parsed as unknown as ProjectLayouts;
+      const identities = new Map(Object.entries(layouts.assetGuids ?? {}).flatMap(([id, guid]) => {
+        const ref = parseDocumentId(id);
+        const asset = this.assetRegistry?.getByGuid(guid);
+        return ref && asset ? [[id, documentId({ kind: ref.kind, path: asset.path })] as const] : [];
+      }));
+      const remap = (id: string) => identities.get(id) ?? id;
+      return {
+        ...layouts,
+        documents: Object.fromEntries(Object.entries(layouts.documents).map(([id, value]) => [remap(id), value])),
+        tabOrder: [...new Set(layouts.tabOrder.map(remap))],
+        activeDocumentId: layouts.activeDocumentId ? remap(layouts.activeDocumentId) : layouts.activeDocumentId,
+        ...(layouts.panelPlacements ? { panelPlacements: Object.fromEntries(Object.entries(layouts.panelPlacements).map(([id, value]) => [remap(id), value])) } : {}),
+        assetGuids: Object.fromEntries(Object.entries(layouts.assetGuids ?? {}).map(([id, value]) => [remap(id), value])),
+      };
     }
 
     return migrateLegacyLayout(parsed, mainSceneId);

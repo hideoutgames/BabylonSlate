@@ -305,7 +305,7 @@ describe("switching material domain", () => {
     // Only the dropped node's wire goes; Base Color stays wired into the same output.
     expect(surface.edges.map((edge) => edge.id)).toEqual(["e-color-output"]);
     expect(surface.nodes.filter((node) => node.type === "output.surface")).toEqual([
-      expect.objectContaining({ id: "output", position: { x: 300, y: 0 } }),
+      expect.objectContaining({ id: "output", position: { x: 400, y: 0 } }),
     ]);
   });
 

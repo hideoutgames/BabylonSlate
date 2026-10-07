@@ -30,6 +30,7 @@ Depends on nothing (no React, Babylon, Capacitor, or scripting). `@babylonslate/
 Unreal-style **per-tick** cap, editor-only. Project Settings **General**: **Infinite Loop Detection** (default on) and **Loop Count** (default 1_000_000, min 1). Play reads live settings on session start — `loopCount` is not baked into generated JS.
 
 - `createInfiniteLoopGuard({ enabled, loopCount })` increments on `check()` and throws `InfiniteLoopError` (`name: "InfiniteLoopError"`, message **Infinite loop detected**) when `count > loopCount`. `reset()` at the start of each script phase / tick. Disabled and release (`includeDebugCommands: false`) no-op.
+- Instrumented checks carry the asset, graph and node identity, so loop reports remain navigable even if a browser omits source-URL stack frames. The runtime contains the loop sentinel at startup and across tick phases; shutdown continues owner cleanup if On End loops.
 - Diagnostic code `runtime.infinite_loop`. Overlay Play and Preview Build treat that code as **session-fatal**: stop immediately (same path as Stop), then the Preview session report shows the row (navigable node / ExecuteJavaScript `bodyLine`). Ordinary `runtime.uncaught` throws do not auto-close Play.
 - There is no time-based worker watchdog. Cooperative `check()` is the recovery path; uninstrumented JS from a timer cannot be interrupted in-process.
 
@@ -102,7 +103,7 @@ Stats keeps the measured timings and **Over Budget** warning; normal ticks no lo
 
 | Group | Item | Default | Notes |
 | --- | --- | --- | --- |
-| Play Overlay | Stats, Console, Inspector | on | Hides that overlay control when off. Checkboxes stay enabled while playing, but the Play overlay is `z-50` full-screen so the toolbar Debug menu is not reachable mid-session — toggle before Play, or hide via overlay chrome. Unchecking Inspector also closes the dialog (it does not reopen when checked again). |
+| Play Overlay | Stats Button, Console Button, Inspector Button | on | Hides that overlay control when off. Checkboxes stay enabled while playing, but the Play overlay is `z-50` full-screen so the toolbar Debug menu is not reachable mid-session — toggle before Play, or hide via overlay chrome. Unchecking Inspector also closes the dialog (it does not reopen when checked again). |
 | Session | Pause On Play | off | Shared by Play and Simulation. After Play boot, `setPaused(true)` via `createPlayPauseGate` so `boot.play`'s `resume()` cannot undo it. `start()` / Begin Play may still run; the first tick after that waits for Resume / Step. Overlay boot also posts `{ type: "setPaused", paused: true }` after `{ type: "play" }`. |
 | Session | Preview Build | off | Disabled while playing or preparing |
 | Session | Play from Scene | on | Overlay Play and Preview Build seed the open scene tab; off seeds project startup. Disabled while playing or preparing. Export Game ignores this. |
@@ -305,3 +306,5 @@ render owner supplies the identity; batching is not guessed. Per-pass GPU timing
 WebGPU command capture and Spector integration remain unavailable.
 The CPU recording overhead, repeated-release counts, sustained route and real
 browser/device matrix remain qualification gates in [engineplan §9.8](../engineplan.md).
+
+Compiler diagnostics and the Play error badge reset when the active document changes. Late results from an earlier document visit cannot repopulate the current document’s errors or focus. Explicit Compiler Results, blocked Play, project search, and session-report navigation carries its node and script body line into the destination document without carrying the previous document’s error badge.

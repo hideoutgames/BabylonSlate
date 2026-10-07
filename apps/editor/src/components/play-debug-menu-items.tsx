@@ -55,7 +55,7 @@ export function PlayDebugMenuItems({
           checked={overlayStats}
           onCheckedChange={(checked) => onOverlayStatsChange(checked === true)}
         >
-          Stats
+          Stats Button
         </DropdownMenuCheckboxItem>
         <DropdownMenuCheckboxItem
           data-testid="overlay-console-toggle"
@@ -64,7 +64,7 @@ export function PlayDebugMenuItems({
             onOverlayConsoleChange(checked === true)
           }
         >
-          Console
+          Console Button
         </DropdownMenuCheckboxItem>
         <DropdownMenuCheckboxItem
           data-testid="overlay-inspector-toggle"
@@ -73,7 +73,7 @@ export function PlayDebugMenuItems({
             onOverlayInspectorChange(checked === true)
           }
         >
-          Inspector
+          Inspector Button
         </DropdownMenuCheckboxItem>
       </DropdownMenuGroup>
       <DropdownMenuGroup>

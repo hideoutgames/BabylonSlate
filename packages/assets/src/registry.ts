@@ -702,13 +702,8 @@ export class AssetRegistry {
     if (root) this.assertWritable(root);
     const storage = this.storageForAsset(asset);
     const blobs = this.blobsForAsset(asset);
-    const safe = sanitizeFileName(newName);
-    if (!safe) throw new Error("Invalid asset name");
-    const dir = asset.path.includes("/")
-      ? asset.path.slice(0, asset.path.lastIndexOf("/"))
-      : "";
-    const suffix = asset.header.type === "DataDefinition" || asset.header.type === "DataTree" ? assetFileSuffix(asset.path) : ".babasset";
-    const newPath = dir ? `${dir}/${safe}${suffix}` : `${safe}${suffix}`;
+    const safe = newName.trim();
+    const newPath = renamedAssetPath(asset.path, safe);
     if (newPath !== asset.path && this.byPath.has(newPath)) {
       throw new Error(`Target path already exists: ${newPath}`);
     }
@@ -1912,6 +1907,27 @@ function isWithinFolder(path: string, folder: string): boolean {
 
 function sanitizeFileName(name: string): string {
   return name.replace(/[^a-zA-Z0-9_.-]+/g, "_");
+}
+
+/** Validate a single visible Content Browser name without changing Unicode. */
+export function contentEntryNameError(name: string): string | null {
+  const trimmed = name.trim();
+  if (!trimmed) return "Enter a name.";
+  if (trimmed === "." || trimmed === "..") return "Choose a name other than . or ...";
+  if (/[\\/:*?"<>|]/.test(trimmed) || Array.from(trimmed).some((character) => character.charCodeAt(0) < 32)) {
+    return "Names cannot contain path separators or these characters: : * ? \" < > |.";
+  }
+  if (trimmed.endsWith(".")) return "Names cannot end with a period.";
+  return null;
+}
+
+/** Rename the display stem while retaining the asset's complete container suffix. */
+export function renamedAssetPath(currentPath: string, newName: string): string {
+  const error = contentEntryNameError(newName);
+  if (error) throw new Error(error);
+  const dir = currentPath.includes("/") ? currentPath.slice(0, currentPath.lastIndexOf("/") + 1) : "";
+  const suffix = assetFileSuffix(currentPath);
+  return `${dir}${newName.trim()}${suffix}`;
 }
 
 /** A save can land between a scan's bounded header reads; read that file again. */

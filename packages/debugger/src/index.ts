@@ -36,6 +36,7 @@ export {
   instrumentJsLoops,
   isInfiniteLoopError,
   type InfiniteLoopGuard,
+  type ScriptLoopLocation,
 } from "./infinite-loop";
 export {
   TraceRecorder,

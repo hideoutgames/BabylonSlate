@@ -48,6 +48,12 @@ vi.mock("@clerk/react", () => ({
   }),
 }));
 
+// The Clerk account UI is lazy-loaded. Transform it once up front so a cold
+// module graph cannot outlast the default findBy timeout under worker load.
+beforeAll(async () => {
+  await import("./homepage-account-clerk");
+});
+
 afterEach(() => {
   cleanup();
   clerk.provider.mockClear();
@@ -60,9 +66,6 @@ afterEach(() => {
 });
 
 describe("Homepage account", () => {
-  // The lazy Clerk chunk pulls in app settings; a cold transform can outlast findBy's timeout.
-  beforeAll(async () => { await import("./homepage-account-clerk"); }, 30_000);
-
   it("keeps the subscription preview available when configured authentication fails", async () => {
     vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "pk_test_example");
     clerk.failed = true;

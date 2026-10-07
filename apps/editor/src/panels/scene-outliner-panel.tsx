@@ -45,6 +45,8 @@ import {
 import { Toggle } from "@babylonslate/ui/components/toggle";
 import { cn } from "@babylonslate/ui/lib/utils";
 import {
+  CopyIcon,
+  ClipboardPasteIcon,
   CopyPlusIcon,
   EyeIcon,
   EyeOffIcon,
@@ -62,6 +64,8 @@ import {
 } from "lucide-react";
 import { GraphDropHint, type GraphDropHintState } from "@babylonslate/graph-ui";
 import { useDocuments } from "../context/document-context";
+import { useEditorSessionState } from "../context/editor-session-state-context";
+import { copySceneActors, pasteSceneActors } from "../lib/scene-actor-clipboard";
 import { useKeybindCommand, useKeybindings } from "../context/keybind-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import {
@@ -314,6 +318,8 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
     viewportDropApi,
   } = useSceneEditing();
   const keybinds = useKeybindings();
+  const sessionState = useEditorSessionState();
+  const [, setClipboardRevision] = useState(0);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [search, setSearch] = useState("");
   const [placeOpen, setPlaceOpen] = useState(false);
@@ -382,6 +388,20 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
     },
     [applySceneChange, documentId],
   );
+
+  const copyActors = useCallback((ids: readonly string[]) => {
+    if (!scene || ids.length === 0) return;
+    sessionState.copyActors(copySceneActors(scene, ids), overlay);
+    setClipboardRevision((revision) => revision + 1);
+  }, [scene, sessionState, overlay]);
+  const pasteActors = useCallback(async () => {
+    if (!scene) return;
+    const copies = pasteSceneActors(scene, sessionState.readCopiedActors(overlay));
+    if (copies.length === 0) return;
+    const applied = await applySceneChange(documentId, { ...scene, actors: [...scene.actors, ...copies] });
+    if (applied) setSelectedActorIds(copies.map((copy) => copy.id));
+  }, [scene, sessionState, overlay, applySceneChange, documentId, setSelectedActorIds]);
+  const canPaste = sessionState.hasCopiedActors(overlay);
 
   const selectedRowIds = useMemo(
     () => [
@@ -754,6 +774,21 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
         onSelect: () => frameActor(actorId),
       },
       {
+        id: "copy-actors",
+        label: "Copy",
+        icon: <CopyIcon />,
+        shortcut: keybinds.get("edit.copy")?.[0],
+        onSelect: () => copyActors(selectedActorIdSet.has(actorId) ? selectedActorIds : [actorId]),
+      },
+      {
+        id: "paste-actors",
+        label: "Paste",
+        icon: <ClipboardPasteIcon />,
+        shortcut: keybinds.get("edit.paste")?.[0],
+        disabled: !canPaste,
+        onSelect: () => { void pasteActors(); },
+      },
+      {
         id: "duplicate-actor",
         label: "Duplicate",
         icon: <CopyPlusIcon />,
@@ -791,6 +826,9 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
     return items;
   }, [
     actorById,
+    canPaste,
+    copyActors,
+    pasteActors,
     classAssetById,
     frameActor,
     keybinds,
@@ -835,6 +873,8 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
     searchRef.current?.select();
   }, outlinerKeys);
   useKeybindCommand("edit.newFolder", addFolder, outlinerKeys);
+  useKeybindCommand("edit.copy", () => copyActors(selectedActorIds), outlinerKeys);
+  useKeybindCommand("edit.paste", () => { void pasteActors(); }, outlinerKeys);
   useKeybindCommand("scene.placeActor", () => setPlaceOpen(true), outlinerKeys);
   useKeybindCommand(
     "edit.delete",
@@ -1025,6 +1065,16 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
             onChange={setSearch}
             data-testid="outliner-search"
           />
+          <IconActionButton
+            label="Paste Actors"
+            shortcut={keybinds.get("edit.paste")?.[0]}
+            size={actionSize}
+            onClick={() => { void pasteActors(); }}
+            disabled={!scene || !canPaste}
+            data-testid="outliner-paste-actors"
+          >
+            <ClipboardPasteIcon />
+          </IconActionButton>
           <IconActionButton
             label="New Folder"
             shortcut={keybinds.get("edit.newFolder")?.[0]}

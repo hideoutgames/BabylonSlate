@@ -407,6 +407,8 @@ export interface PanelPlacement {
 }
 
 export interface ProjectLayouts {
+  /** Asset identities let saved tabs follow renames and moves. Keys are document ids. */
+  assetGuids?: Record<string, string>;
   documents: Record<string, Record<string, unknown>>;
   tabOrder: string[];
   activeDocumentId?: string | null;

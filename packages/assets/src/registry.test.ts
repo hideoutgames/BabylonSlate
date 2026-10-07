@@ -892,6 +892,42 @@ describe("AssetRegistry", () => {
     expect(renamed.header.name).toBe("shiny");
   });
 
+  it.each([
+    ["SceneLayer", ".scenelayer.babasset"],
+    ["MaterialInstance", ".matinst.babasset"],
+    ["BehaviourTree", ".bt.babasset"],
+    ["Blackboard", ".blackboard.babasset"],
+    ["Water", ".water.babasset"],
+  ])("retains the %s editor identity when renaming and duplicating", async (type, suffix) => {
+    const storage = await createStorage();
+    await writeAsset(storage, `assets/Original${suffix}`, { guid: "original", type, name: "Original" });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const renamed = await registry.renameAsset("original", "Renamed");
+    expect(renamed.path).toBe(`assets/Renamed${suffix}`);
+    const duplicate = await registry.duplicateAsset("original", "project");
+    expect(duplicate.path).toBe(`assets/Renamed_1${suffix}`);
+    expect(duplicate.header.type).toBe(type);
+  });
+
+  it("preserves Unicode names, Class suffixes, and the existing asset when a rename collides", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/Player.class.babasset", { guid: "player", type: "Class", name: "Player" });
+    await writeAsset(storage, "assets/Other.class.babasset", { guid: "other", type: "Class", name: "Other" });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const renamed = await registry.renameAsset("player", "Hero 🤖 Ünïcødé");
+    expect(renamed.path).toBe("assets/Hero 🤖 Ünïcødé.class.babasset");
+    expect(renamed.header.name).toBe("Hero 🤖 Ünïcødé");
+    expect(await storage.exists("assets/Player.class.babasset")).toBe(false);
+    await expect(registry.renameAsset("other", "Hero 🤖 Ünïcødé")).rejects.toThrow(/already exists/);
+    await expect(registry.renameAsset("player", "../Other")).rejects.toThrow(/path separators/);
+    const fresh = new AssetRegistry(storage);
+    await fresh.mountRoot(projectContentRoot());
+    expect(fresh.getByGuid("player")?.path).toBe("assets/Hero 🤖 Ünïcødé.class.babasset");
+    expect(fresh.getByGuid("other")?.path).toBe("assets/Other.class.babasset");
+  });
+
   it("moves a folder and all assets under it", async () => {
     const storage = await createStorage();
     await writeAsset(storage, "assets/fx/spark.babasset", {

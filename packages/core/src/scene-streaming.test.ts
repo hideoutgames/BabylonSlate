@@ -1,9 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { createActor, normalizeScene } from "./scene";
-import { cloneSceneStreamingActors } from "./scene-streaming";
+import { cloneSceneStreamingActors, remapSceneStreamingReferences } from "./scene-streaming";
 import { createDefaultRenderTargetCaptureProperties } from "./render-target";
 
 describe("scene streaming instances", () => {
+  it("honors explicit cleared references without changing unmapped assets or labels", () => {
+    const ids = new Map<string, string | null>([["inside", "copied"], ["outside", null]]);
+    expect(remapSceneStreamingReferences({
+      nested: [{ guid: "inside", classId: "Actor" }, { guid: "outside", classId: "Actor" }],
+      map: new Map([["key", { kind: "objectRef", id: "outside-component" }]]),
+      targetActorId: "outside", actorIds: ["inside", "outside", "unmapped"],
+      assetGuid: "outside", label: "outside",
+    }, ids, new Map())).toEqual({
+      nested: [{ guid: "copied", classId: "Actor" }, null],
+      map: new Map([["key", { kind: "objectRef", id: "outside-component" }]]),
+      targetActorId: null, actorIds: ["copied", "unmapped"],
+      assetGuid: "outside", label: "outside",
+    });
+  });
+
   it("isolates two copies, attaches roots to their own origin, and remaps local references without changing assets", () => {
     const source = [
       createActor("door", "Door", {

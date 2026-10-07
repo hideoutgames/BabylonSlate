@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
-import { openAssetFromBrowser, openTestProject } from "./open-test-project";
+import { createActor, createDefaultScene, type SerializedScene } from "../packages/core/src/index.ts";
+import { createContentBrowserAsset, openAssetFromBrowser, openContentBrowser, openMainScene, openTestProject } from "./open-test-project";
 import { findOpfsProjectDirectory } from "./opfs-project";
 import { saveAllIfEnabled } from "./save-all";
 
@@ -75,7 +76,7 @@ async function journalCommands(page: Page) {
   }, directoryName);
 }
 
-test("H6/M4: recovery retains Undo and survives a second reload before Save", async ({ page }) => {
+test("H6/M4: recovery of an undone edit stays clean and clears its journal", async ({ page }) => {
   await openTestProject(page);
   await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
   await expect(
@@ -98,10 +99,43 @@ test("H6/M4: recovery retains Undo and survives a second reload before Save", as
   await recoverAfterReload(page);
   expect(await page.evaluate(() =>
     (globalThis as unknown as TestHost).__babylonslateTest.activeGraphNodePosition())).toEqual(before);
-  await recoverAfterReload(page);
   expect(await page.evaluate(() =>
-    (globalThis as unknown as TestHost).__babylonslateTest.activeGraphNodePosition())).toEqual(before);
-  await saveAllIfEnabled(page);
+    (globalThis as unknown as TestHost).__babylonslateTest.dirtyDocuments())).toEqual([]);
   expect(await page.evaluate(() =>
     (globalThis as unknown as TestHost).__babylonslateTest.hasRecoveryJournal())).toBe(false);
+  await page.reload();
+  await page.getByTestId("open-listed-project-TestProject").click();
+  await expect(page.getByTestId("content-browser-workspace")).toBeVisible();
+  await expect(page.getByTestId("recovery-prompt")).toHaveCount(0);
+});
+
+test("Class rename recovery keeps unsaved instances bound to the renamed Class", async ({ page }) => {
+  await openTestProject(page);
+  await createContentBrowserAsset(page, "Class", "RecoverHero");
+  await createContentBrowserAsset(page, "Scene", "RecoverScene");
+  await openAssetFromBrowser(page, "assets/RecoverScene.scene.babasset");
+  await saveAllIfEnabled(page);
+  const scene: SerializedScene = { ...createDefaultScene(), actors: [createActor("unsaved-hero", "Unsaved Hero", { classId: "RecoverHero" })] };
+  await page.evaluate(async (content) => {
+    const api = (globalThis as unknown as { __babylonslateTest: TestHost["__babylonslateTest"] & {
+      setActiveSceneContent: (scene: SerializedScene) => Promise<boolean>;
+    } }).__babylonslateTest;
+    await api.setActiveSceneContent(content);
+    api.cancelDebouncedSave();
+  }, scene);
+  await openContentBrowser(page);
+  await page.getByTestId("content-browser-search").fill("RecoverHero");
+  await page.locator('[data-asset-path="assets/RecoverHero.class.babasset"]').click({ button: "right" });
+  await page.getByTestId("context-menu-item-rename").click();
+  await page.getByTestId("content-browser-name-input").fill("RecoveredHero");
+  await page.getByTestId("content-browser-name-confirm").click();
+  await expect(page.getByTestId("content-browser-name-dialog")).toHaveCount(0);
+  await page.evaluate(() => (globalThis as unknown as TestHost).__babylonslateTest.cancelDebouncedSave());
+  await recoverAfterReload(page);
+  await openMainScene(page);
+  await expect(page.getByTestId("tree-row-actor:unsaved-hero")).toBeVisible();
+  expect(await page.evaluate(() => (globalThis as unknown as { __babylonslateTest: {
+    activeSceneContent: () => SerializedScene | null;
+  } }).__babylonslateTest.activeSceneContent()?.actors.find(actor => actor.id === "unsaved-hero")?.classId)).toBe("RecoveredHero");
+  expect(await page.evaluate(() => (globalThis as unknown as TestHost).__babylonslateTest.dirtyDocuments().map(doc => doc.kind))).toContain("scene");
 });

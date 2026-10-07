@@ -37,8 +37,8 @@ export function normalizeSceneStreamingProperties(value: unknown): SceneStreamin
  */
 export function remapSceneStreamingReferences(
   value: unknown,
-  idMap: Pick<ReadonlyMap<string, string>, "get">,
-  componentIds?: Pick<ReadonlyMap<string, string>, "get">,
+  idMap: Pick<ReadonlyMap<string, string | null>, "get">,
+  componentIds?: Pick<ReadonlyMap<string, string | null>, "get">,
 ): unknown {
   if (Array.isArray(value)) {
     return value.map((entry) => remapSceneStreamingReferences(entry, idMap, componentIds));
@@ -53,11 +53,26 @@ export function remapSceneStreamingReferences(
   const source = value as Record<string, unknown>;
   const typedReference = typeof source.classId === "string"
     || source.kind === "actorRef" || source.kind === "objectRef";
+  const referenceId = (id: string, component: boolean): string | null => {
+    const mapped = component ? componentIds?.get(id) : undefined;
+    if (mapped !== undefined) return mapped;
+    const actor = idMap.get(id);
+    return actor === undefined ? id : actor;
+  };
+  const typedComponent = source.kind !== "actorRef" && typeof source.classId === "string" && source.classId.endsWith("Component");
+  // An explicit null mapping clears a live reference as a whole. Unmapped
+  // identities remain unchanged, including project assets and external refs
+  // that scene streaming intentionally retains.
+  if (typedReference && [source.guid, source.id].some((id) =>
+    typeof id === "string" && referenceId(id, typedComponent) === null,
+  )) return null;
   return Object.fromEntries(Object.entries(source).map(([key, entry]) => {
     if (key === "actorIds" && Array.isArray(entry)) {
-      return [key, entry.map((id) => typeof id === "string"
-        ? idMap.get(id) ?? id
-        : remapSceneStreamingReferences(id, idMap, componentIds))];
+      return [key, entry.flatMap((id) => {
+        if (typeof id !== "string") return [remapSceneStreamingReferences(id, idMap, componentIds)];
+        const mapped = referenceId(id, false);
+        return mapped === null ? [] : [mapped];
+      })];
     }
     const typedIdentity = typedReference && (key === "guid" || key === "id");
     const componentIdentity = /Component(?:Id|Guid)$/.test(key)
@@ -66,7 +81,7 @@ export function remapSceneStreamingReferences(
     const liveIdentity = componentIdentity || /Actor(?:Id|Guid)$/.test(key)
       || key === "actorId" || key === "actorGuid" || typedIdentity;
     return [key, liveIdentity && typeof entry === "string"
-      ? (componentIdentity ? componentIds?.get(entry) : undefined) ?? idMap.get(entry) ?? entry
+      ? referenceId(entry, componentIdentity)
       : remapSceneStreamingReferences(entry, idMap, componentIds)];
   }));
 }

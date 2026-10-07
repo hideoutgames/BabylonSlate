@@ -62,6 +62,15 @@ describe("stack map helpers", () => {
     );
     expect(hit?.nodeId).toBe("n1");
   });
+  it.each([
+    "at run (babylonslate:///AnimGraph:asset:rule.js:8:2)",
+    "run@babylonslate:///AnimGraph:asset:rule.js:8:2",
+  ])("maps qualified script identities in browser stack frames: %s", (frame) => {
+    const anchor = { line: 8, column: 1, assetGuid: "asset", graphId: "rule", nodeId: "loop" };
+    expect(mapStackToAnchor(`InfiniteLoopError: Infinite loop detected\n${frame}`,
+      new Map([["AnimGraph:asset:rule", [anchor]]]))).toEqual(anchor);
+  });
+
 });
 
 describe("runtime driver extras", () => {
