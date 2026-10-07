@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { InputRingBuffer } from "@babylonslate/input";
+import { InputResolver, InputRingBuffer } from "@babylonslate/input";
 import { attachInputCapture } from "./input-capture";
 import { attachInputCapture as attachPlayerInputCapture } from "../../../player/src/input";
 
@@ -72,7 +72,7 @@ describe.each([
   ["Editor Play", attachInputCapture],
   ["Packaged Player", attachPlayerInputCapture],
 ] as const)("H21/M33 focus ownership: %s", (_name, attach) => {
-  const handles: ReturnType<typeof attachInputCapture>[] = [];
+  const handles: Array<{ dispose(): void }> = [];
   afterEach(() => { for (const handle of handles.splice(0)) handle.dispose(); });
 
   function fixture() {
@@ -189,5 +189,183 @@ describe.each([
     canvas.dispatchEvent(key("keydown", "KeyF"));
     expect(handle.ring.drain()).toEqual([]);
     expect(next.ring.drain()).toEqual([{ kind: "key", tick: 0, code: "KeyF", phase: "down" }]);
+  });
+});
+
+describe("exclusive game input ownership", () => {
+  const handles: ReturnType<typeof attachInputCapture>[] = [];
+  const originalGamepads = navigator.getGamepads;
+  afterEach(() => {
+    for (const handle of handles.splice(0)) handle.dispose();
+    Object.assign(navigator, { getGamepads: originalGamepads });
+  });
+
+  function fixture() {
+    const canvas = document.createElement("canvas");
+    const captured = new Set<number>();
+    canvas.setPointerCapture = id => { captured.add(id); };
+    canvas.releasePointerCapture = id => { captured.delete(id); };
+    document.body.append(canvas);
+    const handle = attachInputCapture(canvas);
+    handles.push(handle);
+    handle.setSuppressed(false);
+    const pad = { index: 0, axes: [0], buttons: [{ value: 0 }] };
+    Object.assign(navigator, { getGamepads: () => [pad] });
+    const resolver = new InputResolver({
+      actions: [
+        { name: "Keyboard", bindings: [{ device: "key", code: "KeyW" }] },
+        { name: "Pointer", bindings: [{ device: "mouseButton", code: "0" }] },
+        { name: "Pad", bindings: [{ device: "gamepadButton", code: "0:0" }] },
+      ],
+      axes: [
+        { name: "Stick", bindings: [{ device: "gamepadAxis", code: "0:0" }] },
+        { name: "Touch", bindings: [{ device: "touch", code: "move" }] },
+      ],
+    });
+    const read = () => resolver.resolve(handle.ring.drain());
+    const key = (phase: "keydown" | "keyup", repeat = false) =>
+      canvas.dispatchEvent(new KeyboardEvent(phase, { code: "KeyW", repeat, bubbles: true }));
+    const pointer = (phase: string, id = 1) => canvas.dispatchEvent(Object.assign(
+      new Event(phase, { bubbles: true, cancelable: true }),
+      { pointerId: id, offsetX: 10, offsetY: 20, button: 0, pointerType: "touch" },
+    ));
+    const hold = () => {
+      key("keydown");
+      pointer("pointerdown");
+      pad.axes[0] = 0.75;
+      pad.buttons[0]!.value = 1;
+      handle.pollGamepads();
+      handle.setTouchAxis("move", 1);
+    };
+    return { canvas, captured, handle, pad, read, key, pointer, hold };
+  }
+
+  function expectNeutral(state: ReturnType<InputResolver["resolve"]>) {
+    expect(state.actions.Keyboard.held).toBe(false);
+    expect(state.actions.Pointer.held).toBe(false);
+    expect(state.actions.Pad.held).toBe(false);
+    expect(state.axes).toEqual({ Stick: 0, Touch: 0 });
+    expect(state.cursor.pressed).toBe(false);
+  }
+
+  it("neutralizes every device and releases pointer capture across overlapping pause and blur notifications", () => {
+    const { canvas, captured, handle, read, hold } = fixture();
+    hold();
+    const active = read();
+    expect(active.actions.Keyboard.held).toBe(true);
+    expect(active.actions.Pointer.held).toBe(true);
+    expect(active.actions.Pad.held).toBe(true);
+    expect(active.axes).toEqual({ Stick: 0.75, Touch: 1 });
+    expect(captured.has(1)).toBe(true);
+    handle.setSuppressed(true);
+    canvas.dispatchEvent(new Event("blur"));
+    window.dispatchEvent(new Event("blur"));
+    expectNeutral(read());
+    expect(captured.size).toBe(0);
+  });
+
+  it("requires release and a fresh press for held keys, touch gestures, virtual sticks and gamepad controls", () => {
+    const { handle, pad, key, pointer, read, hold } = fixture();
+    hold();
+    read();
+    handle.setSuppressed(true);
+    expectNeutral(read());
+    pointer("pointerdown", 2);
+    handle.setSuppressed(false);
+    key("keydown", true);
+    pointer("pointermove");
+    pointer("pointermove", 2);
+    handle.setTouchAxis("move", 1);
+    handle.pollGamepads();
+    const held = read();
+    expectNeutral(held);
+    expect(held.pressedKeys).toEqual([]);
+    key("keyup");
+    pointer("pointerup");
+    pointer("pointerup", 2);
+    handle.setTouchAxis("move", 0);
+    pad.axes[0] = 0;
+    pad.buttons[0]!.value = 0;
+    handle.pollGamepads();
+    expectNeutral(read());
+    hold();
+    const fresh = read();
+    expect(fresh.actions.Keyboard.pressed).toBe(true);
+    expect(fresh.actions.Pointer.pressed).toBe(true);
+    expect(fresh.actions.Pad.pressed).toBe(true);
+    expect(fresh.axes).toEqual({ Stick: 0.75, Touch: 1 });
+  });
+
+  it("drops queued presses at the boundary and allows a new canvas gesture after focus returns", () => {
+    const { canvas, handle, read, hold, pointer } = fixture();
+    hold();
+    const input = document.createElement("input");
+    document.body.append(input);
+    input.focus();
+    const state = read();
+    expectNeutral(state);
+    expect(state.pressedKeys).toEqual([]);
+    handle.pollGamepads();
+    expectNeutral(read());
+    pointer("pointerup");
+    pointer("pointerdown", 2);
+    expect(document.activeElement).toBe(canvas);
+    expect(read().actions.Pointer.pressed).toBe(true);
+  });
+
+  it("neutralizes a held pad on its first explicit ownership boundary", () => {
+    const canvas = document.createElement("canvas");
+    document.body.append(canvas);
+    const handle = attachInputCapture(canvas);
+    handles.push(handle);
+    Object.assign(navigator, { getGamepads: () => [{ index: 0, axes: [0.8], buttons: [{ value: 1 }] }] });
+    const resolver = new InputResolver({ actions: [{ name: "Fire", bindings: [{ device: "gamepadButton", code: "0:0" }] }], axes: [] });
+    handle.pollGamepads();
+    expect(resolver.resolve(handle.ring.drain()).actions.Fire.held).toBe(true);
+    handle.neutralize();
+    expect(resolver.resolve(handle.ring.drain()).actions.Fire.held).toBe(false);
+    handle.pollGamepads();
+    expect(resolver.resolve(handle.ring.drain()).actions.Fire.held).toBe(false);
+  });
+
+  it("cancels lost pointer capture and blocks continuation until that contact ends", () => {
+    const { handle, pointer, read } = fixture();
+    pointer("pointerdown");
+    expect(read().actions.Pointer.held).toBe(true);
+    pointer("lostpointercapture");
+    expectNeutral(read());
+    pointer("pointermove");
+    expect(handle.ring.drain()).toEqual([]);
+    window.dispatchEvent(Object.assign(new Event("pointerup"), { pointerId: 1 }));
+    pointer("pointerdown");
+    expect(read().actions.Pointer.pressed).toBe(true);
+  });
+
+  it("releases pointer lock and leaves disposed capture inert", () => {
+    const { canvas, captured, handle, hold, read, key, pointer } = fixture();
+    let locked: Element | null = canvas;
+    const originalLock = Object.getOwnPropertyDescriptor(document, "pointerLockElement");
+    const originalExit = document.exitPointerLock;
+    Object.defineProperty(document, "pointerLockElement", { configurable: true, get: () => locked });
+    document.exitPointerLock = () => { locked = null; };
+    try {
+      hold();
+      read();
+      handle.dispose();
+      expectNeutral(read());
+      expect(locked).toBeNull();
+      expect(captured.size).toBe(0);
+      key("keydown");
+      pointer("pointerdown");
+      handle.pollGamepads();
+      handle.setTouchAxis("move", 1);
+      handle.setSuppressed(false);
+      handle.dispose();
+      expect(handle.ring.drain()).toEqual([]);
+    } finally {
+      if (originalLock) Object.defineProperty(document, "pointerLockElement", originalLock);
+      else Reflect.deleteProperty(document, "pointerLockElement");
+      document.exitPointerLock = originalExit;
+    }
   });
 });
