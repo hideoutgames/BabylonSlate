@@ -611,7 +611,7 @@ export function compileMaterialPlan(
 
   try {
     if (plan.domain === "text" && textGlyph) {
-      const fragment = new FragmentOutputBlock(`${options.name}_fragment`);
+      const fragment = new DisplayFragmentOutputBlock(`${options.name}_fragment`);
       const multiply = new MultiplyBlock(`${options.name}_textFill`);
       outputPoint("color", `${options.name}_color`, true)?.connectTo(multiply.left);
       textGlyph.color.connectTo(multiply.right);
@@ -623,7 +623,9 @@ export function compileMaterialPlan(
       created.push(fragment, multiply, style, styled);
       outputNodes.push(fragment);
     } else if (plan.domain === "postProcess" || plan.domain === "particle") {
-      const fragment = new FragmentOutputBlock(`${options.name}_fragment`);
+      const fragment = plan.domain === "particle"
+        ? new DisplayFragmentOutputBlock(`${options.name}_fragment`)
+        : new FragmentOutputBlock(`${options.name}_fragment`);
       created.push(fragment);
       const color = outputPoint("color", `${options.name}_color`, true);
       if (color && material.mode === NodeMaterialModes.Particle) {
@@ -1317,6 +1319,29 @@ class LinearSurfaceImageProcessingBlock extends ImageProcessingBlock {
 RegisterClass(
   "BABYLON.LinearSurfaceImageProcessingBlock",
   LinearSurfaceImageProcessingBlock,
+);
+
+// Particle and Text outputs write display color: Particle Color and glyph span
+// colors are display-space, and Legacy Display shows the output unchanged. Like
+// Babylon's own particle and Standard shaders, they decode to linear when a
+// Scene Linear display stage (applyByPostProcess) encodes the frame once.
+class DisplayFragmentOutputBlock extends FragmentOutputBlock {
+  override getClassName(): string {
+    return "DisplayFragmentOutputBlock";
+  }
+
+  override prepareDefines(
+    defines: NodeMaterialDefines,
+    material: NodeMaterial,
+  ): void {
+    this.convertToLinearSpace = material.imageProcessingConfiguration.applyByPostProcess;
+    super.prepareDefines(defines, material);
+  }
+}
+
+RegisterClass(
+  "BABYLON.DisplayFragmentOutputBlock",
+  DisplayFragmentOutputBlock,
 );
 
 /**

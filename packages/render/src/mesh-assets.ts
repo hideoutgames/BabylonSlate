@@ -10,6 +10,7 @@ import {
   type Texture,
   type CubeTexture,
 } from "@babylonjs/core";
+import type { IImageProcessingConfigurationDefines } from "@babylonjs/core/Materials/imageProcessingConfiguration.defines";
 import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload, ModelPayload, RetargetAnimationLoad, AreaEmissionPixels } from "@babylonslate/assets";
 import { PIXEL_ART_TEXTURE_SAMPLING, type TextureResources, type ResourceLease } from "./resource-cache";
 import { isSpriteQuad } from "./sprite-quad";
@@ -375,14 +376,38 @@ export function applyAlbedoTexture(
 
 }
 
+/**
+ * Tilemap atlases keep their exact display colors: the scene's tone mapping and
+ * exposure never apply to them. Under a Scene Linear display stage they still
+ * decode to linear, like Standard materials on the scene's configuration, so
+ * the Display Color stage encodes them once.
+ */
+class AtlasImageProcessing extends ImageProcessingConfiguration {
+  private readonly sceneConfiguration: ImageProcessingConfiguration;
+  constructor(sceneConfiguration: ImageProcessingConfiguration) {
+    super();
+    this.sceneConfiguration = sceneConfiguration;
+    this.isEnabled = false;
+    sceneConfiguration.onUpdateParameters.add(() => this._updateParameters());
+  }
+  override prepareDefines(defines: IImageProcessingConfigurationDefines, forPostProcess = false): void {
+    super.prepareDefines(defines, forPostProcess);
+    defines.IMAGEPROCESSINGPOSTPROCESS = !forPostProcess && this.sceneConfiguration.applyByPostProcess;
+  }
+}
+const atlasImageProcessing = new WeakMap<Scene, AtlasImageProcessing>();
+
 /** Bind each tilemap chunk child to the atlas stored on `metadata.tilemapTextureGuid`. */
 export function applyTilemapAlbedoTextures(
   mesh: Mesh,
   scene: Scene,
   assets?: MeshAssetContext,
 ): void {
-  const imageProcessing = new ImageProcessingConfiguration();
-  imageProcessing.isEnabled = false;
+  let imageProcessing = atlasImageProcessing.get(scene);
+  if (!imageProcessing) {
+    imageProcessing = new AtlasImageProcessing(scene.imageProcessingConfiguration);
+    atlasImageProcessing.set(scene, imageProcessing);
+  }
   for (const child of mesh.getChildMeshes()) {
     const guid = child.metadata?.tilemapTextureGuid as string | null | undefined;
     const before = child.material;
