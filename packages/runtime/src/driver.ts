@@ -30,6 +30,7 @@ import {
   SeqLockSnapshotPair,
   writeActorSlot,
   writeSnapshotHeader,
+  type ActorSlot,
   type CommandMessage,
   type ControlMessage,
   type RuntimeSceneContent,
@@ -204,7 +205,7 @@ import {
   formatDumpActors,
   formatInspectActor,
 } from "./console-inspect";
-import { actorChainWorldTransform, actorLabel, actorParentGuid, breakParentCycles, composeActorWorldTransforms, firstSpawnedActorIndex, firstSpawnedWorldTransforms } from "./actor-world-transform";
+import { actorChainWorldTransform, actorLabel, actorParentGuid, breakParentCycles, composeActorWorldTransforms, firstSpawnedActorIndex, firstSpawnedWorldTransforms, WorldTransformComposer } from "./actor-world-transform";
 import { SceneLayerLayout } from "./scene-layer-layout";
 import { SceneLayerVirtualization } from "./scene-layer-virtualization";
 import { isOverlayLayoutClass, isOverlayScrollClass, overlayLayoutKey, type OverlaySafeAreaInsets } from "@babylonslate/core";
@@ -674,6 +675,17 @@ class InProcessRuntime implements RuntimeDriver {
       "warning",
       "actor",
     );
+  };
+  /** Publish-time world poses, rewritten in place each snapshot write. */
+  private readonly snapshotPoses = new WorldTransformComposer();
+  private readonly findLiveActor = (guid: string): Actor | undefined => this.world.findActor(guid);
+  /** Reused per actor while writing a snapshot; `writeActorSlot` copies it into the buffer. */
+  private readonly snapshotSlot: ActorSlot = {
+    slotId: 0,
+    position: { x: 0, y: 0, z: 0 },
+    rotation: { x: 0, y: 0, z: 0, w: 1 },
+    scale: { x: 1, y: 1, z: 1 },
+    flags: 0,
   };
   private readonly componentsWithMaterialAssignment = new WeakSet<ActorComponent>();
   private readonly freeSlots: number[] = [];
@@ -7194,14 +7206,15 @@ class InProcessRuntime implements RuntimeDriver {
   private writeSnapshot(frameId: number, tickIndex: number, scriptMs: number, physicsMs: number): void {
     const actors = this.world.getActors();
     const buf = this.snapshots.beginWrite();
-    const findActor = (guid: string) => this.world.findActor(guid);
-    const worldTransforms = composeActorWorldTransforms(findActor, actors, this.reportShearedActor);
+    const findActor = this.findLiveActor;
+    const worldTransforms = this.snapshotPoses.compose(findActor, actors, this.reportShearedActor);
     const cameraActor = this.playCameraActor();
     const cameraPosition = cameraActor ? worldTransforms.get(cameraActor.guid)?.position : undefined;
     if (cameraPosition) {
       const next = { x: Math.floor(cameraPosition.x / 1024) * 1024, y: Math.floor(cameraPosition.y / 1024) * 1024, z: Math.floor(cameraPosition.z / 1024) * 1024 };
       if (next.x !== this.snapshotOrigin.x || next.y !== this.snapshotOrigin.y || next.z !== this.snapshotOrigin.z) { this.snapshotOrigin = next; this.snapshotOriginGeneration++; }
     }
+    const slot = this.snapshotSlot;
     let count = 0;
     for (const actor of actors) {
       // Layout-only anchors must not create fallback visuals from pose snapshots.
@@ -7214,17 +7227,14 @@ class InProcessRuntime implements RuntimeDriver {
       if (slotId === undefined) continue;
       const world = worldTransforms.get(actor.guid);
       if (!world) continue;
-      writeActorSlot(buf, count, {
-        slotId,
-        position: world.position,
-        rotation: world.rotation,
-        scale: world.scale,
-        flags:
-          (actor.getVariable("visible") === false
-            ? 0
-            : SNAPSHOT_FLAG_VISIBLE) |
-          (actor.sceneLayerId ? SNAPSHOT_FLAG_OVERLAY : 0),
-      }, this.snapshotOrigin);
+      slot.slotId = slotId;
+      slot.position = world.position;
+      slot.rotation = world.rotation;
+      slot.scale = world.scale;
+      slot.flags =
+        (actor.getVariable("visible") === false ? 0 : SNAPSHOT_FLAG_VISIBLE) |
+        (actor.sceneLayerId ? SNAPSHOT_FLAG_OVERLAY : 0);
+      writeActorSlot(buf, count, slot, this.snapshotOrigin);
       count += 1;
     }
     writeSnapshotHeader(buf, {
