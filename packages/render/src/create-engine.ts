@@ -3598,9 +3598,11 @@ function initializeEngine(
     },
     observeGpuTiming: (onSample, onError) => {
       if (disposed || contextLost) return { status: "unavailable", reason: "The game graphics context is unavailable.", release() {} };
-      const observation = observeEngineGpuTiming(engine, onSample, { onError: error => { release(); onError?.(error); } });
+      // eslint-disable-next-line prefer-const -- release may run from a synchronous onError.
+      let observation: EngineGpuTimingObservation | undefined;
+      const release = () => { gpuObservers.delete(release); observation?.release(); };
+      observation = observeEngineGpuTiming(engine, onSample, { onError: error => { release(); onError?.(error); } });
       if (observation.status === "unavailable") return observation;
-      const release = () => { gpuObservers.delete(release); observation.release(); };
       gpuObservers.add(release);
       return { ...observation, release };
     },

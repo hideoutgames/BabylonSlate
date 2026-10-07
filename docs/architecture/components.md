@@ -191,7 +191,7 @@ the shared Pause On Play preference and explicit
 Performance recording duration, GPU request preference and advanced retained
 data budget. Settings search opens Advanced when targeting its budget field.
 These local preferences never arm collection or alter the independent Trace budget.
-The Debug menu and Play chrome open one lazy Profiler / Frame Debugger surface.
+The Debug menu and Play chrome open one lazy Profiler and Frame Debugger surface.
 Its PanelFrame content uses the same PropertyGrid and read-only value controls as
 Trace, with Summary, paged Timeline and searchable executed Frame Report stages.
 It retains one recent result. Viewing results does not subscribe to the world or

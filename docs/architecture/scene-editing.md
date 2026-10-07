@@ -315,4 +315,4 @@ Caller-selected byte/node limits bound traversal; exact UTF-8 JSON size is measu
 without producing an extra full JSON string. Unsupported topology is latched when
 it occurs, even if a streamed/overlay instance is later removed. Keep never saves
 a subset or rewrites those shared source documents. Browser round-trip and resource
-qualification are tracked in [the implementation checkpoint](../engineplan.md).
+qualification are tracked in [engineplan §9.8](../engineplan.md).

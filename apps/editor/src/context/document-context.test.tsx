@@ -316,9 +316,9 @@ describe("DocumentProvider actions and route", () => {
     const withSpeed = (speed: number): SerializedGraph => ({ ...graph, members: [
       ...(graph.members ?? []), { id: "speed", kind: "variable", name: "Speed", typeId: "float", defaultValue: speed },
     ] });
-    act(() => actions.applyGraphChange(id, withSpeed(7)));
+    await act(() => actions.applyGraphChange(id, withSpeed(7)));
     const snapshot = actions.getOpenDocuments().map(document => ({ ...document }));
-    act(() => actions.applyGraphChange(id, withSpeed(19)));
+    await act(() => actions.applyGraphChange(id, withSpeed(19)));
     const guid = documents().assetRegistry!.list().find(asset => asset.path === MAIN_CLASS_FILE)!.header.guid;
     const required = new Set([guid]);
     const captured = await actions.collectPlayPreviewScripts(required, snapshot);

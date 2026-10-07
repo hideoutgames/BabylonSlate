@@ -88,12 +88,15 @@ function revisionsFollowingDocuments(): (documents: unknown) => DocumentRevision
   };
 }
 
+// useSyncExternalStore requires a stable snapshot.
+const UNLOCKED_AUTHORING = Object.freeze({ readOnly: false, reason: null, revision: 0 } as const);
+
 function inertDocuments(current: () => DocumentsValue | undefined): DocumentsValue {
   const revisionsFor = revisionsFollowingDocuments();
   return {
     lockAuthoring: unsubscribe,
     beginSimulationDocument: () => { throw new Error("No Simulation document in this fixture"); },
-    getAuthoringLock: () => ({ readOnly: false, reason: null, revision: 0 }),
+    getAuthoringLock: () => UNLOCKED_AUTHORING,
     subscribeAuthoringLock: unsubscribe,
     lockAuthoringWrites: () => ({ ready: Promise.resolve(true), release: noop }),
     registerBeforeTransition: () => noop,

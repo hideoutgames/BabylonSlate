@@ -39,7 +39,7 @@ describe("DocumentLockBanner", () => {
     const service = await serviceWithTheirs();
     render(<DocumentLockBanner path="assets/hero.scene.babasset" sourceControl={service}
       authoringReason="Stop Simulation to edit authored content." />);
-    expect(screen.getByText("Read-only during Simulation Play")).toBeTruthy();
+    expect(screen.getByText("Read-Only During Simulation Play")).toBeTruthy();
     expect(screen.queryByTestId("document-lock-edit-anyway")).toBeNull();
     expect(service.isDocumentReadOnly("assets/hero.scene.babasset")).toBe(true);
   });

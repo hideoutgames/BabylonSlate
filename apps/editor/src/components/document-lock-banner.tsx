@@ -15,7 +15,7 @@ export function DocumentLockBanner({
   authoringReason?: string | null;
 }) {
   if (authoringReason) return <Alert data-testid="document-authoring-lock-banner">
-    <AlertTitle>Read-only during Simulation Play</AlertTitle>
+    <AlertTitle>Read-Only During Simulation Play</AlertTitle>
     <AlertDescription>{authoringReason} Navigation, selection, and copying remain available.</AlertDescription>
   </Alert>;
   const banner = sourceControl.bannerFor(path);

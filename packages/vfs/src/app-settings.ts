@@ -168,7 +168,6 @@ export const engineSettingsSchema = z.object({
       overlayInspector: z.boolean().default(true),
       pauseOnPlay: z.boolean().default(false),
       keepSimulationChanges: z.boolean().default(false),
-      graphObservation: z.boolean().default(false),
       profileDurationSeconds: z.preprocess((value) => {
         if (typeof value !== "number" || !Number.isFinite(value)) return value;
         return Math.min(60, Math.max(1, Math.round(value)));
@@ -187,7 +186,6 @@ export const engineSettingsSchema = z.object({
       overlayInspector: true,
       pauseOnPlay: false,
       keepSimulationChanges: false,
-      graphObservation: false,
       profileDurationSeconds: 10,
       profileByteBudget: 16 * 1024 * 1024,
       profileGpuTiming: false,

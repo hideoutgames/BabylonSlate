@@ -44,7 +44,7 @@ export function PlayDebugMenuItems({
   return (
     <DropdownMenuContent align="center" className="w-max min-w-56 whitespace-nowrap">
       {diagnostics ? <DropdownMenuGroup>
-        <DropdownMenuItem data-testid="open-profiler" onSelect={() => diagnostics.open("summary")}>Profiler / Frame Debugger</DropdownMenuItem>
+        <DropdownMenuItem data-testid="open-profiler" onSelect={() => diagnostics.open("summary")}>Profiler and Frame Debugger</DropdownMenuItem>
         <DropdownMenuSeparator />
       </DropdownMenuGroup> : null}
       <DropdownMenuGroup>

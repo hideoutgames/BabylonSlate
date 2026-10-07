@@ -1616,6 +1616,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         {children}
         {sessionState.mode === "simulate" && !sessionState.quarantined ? (
           <SimulationSessionBar stopping={sessionState.lifecycle === "stopping"}
+            keepChanges={simulationRef.current?.keepChanges ?? false}
             onReturnToScene={() => { if (simulationDocumentId) setActiveDocument(simulationDocumentId); }}
             onStop={() => { void sessionOwner.stop(); }} />
         ) : null}

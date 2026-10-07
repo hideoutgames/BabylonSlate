@@ -20,15 +20,15 @@ function recording() {
 it("shows separate completed-frame and tick populations with honest unavailable GPU data", () => {
   render(<PerformanceSummary profile={recording()} />);
   expect(screen.getByText(/3 completed frame samples · 3 runtime tick samples/)).toBeTruthy();
-  expect(screen.getByText("Completed game-frame interval")).toBeTruthy();
-  expect(screen.getByText("Worker script phase")).toBeTruthy();
+  expect(screen.getByText("Completed Game-Frame Interval")).toBeTruthy();
+  expect(screen.getByText("Worker Script Phase")).toBeTruthy();
   expect(screen.getByText(/GPU timing: unavailable/)).toBeTruthy();
   expect(screen.getAllByText("20.000").length).toBeGreaterThan(0);
 });
 it("switches timeline populations without conflating frame and runtime clocks", () => {
   render(<PerformanceTimeline profile={recording()} />);
-  expect(screen.getByRole("columnheader", { name: "completedAtMs" })).toBeTruthy();
+  expect(screen.getByRole("columnheader", { name: "Completed At MS" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Runtime Ticks" }));
-  expect(screen.getByRole("columnheader", { name: "elapsedMs" })).toBeTruthy();
-  expect(screen.queryByText("completedAtMs")).toBeNull();
+  expect(screen.getByRole("columnheader", { name: "Elapsed MS" })).toBeTruthy();
+  expect(screen.queryByText("Completed At MS")).toBeNull();
 });

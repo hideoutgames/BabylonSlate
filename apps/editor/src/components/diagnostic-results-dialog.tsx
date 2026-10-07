@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { parsePerformanceProfile, serializePerformanceProfile, summarizePerformanceColumn, summarizePerformanceColumns, type PerformanceProfile, type PerformanceStream } from "@babylonslate/debugger";
 import type { RenderFrameReport } from "@babylonslate/render";
-import { NumberField, PanelFrame, PropertyGrid, SearchInput, SelectableText, type PropertyRow } from "@babylonslate/editor-kit";
+import { humanizePropertyLabel, NumberField, PanelFrame, PropertyGrid, SearchInput, SelectableText, type PropertyRow } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@babylonslate/ui/components/dialog";
 import { ToggleGroup, ToggleGroupItem } from "@babylonslate/ui/components/toggle-group";
@@ -13,7 +13,7 @@ import { TraceEmptyState } from "./trace-inspection-controls";
 
 const format = (value: number | null | undefined) => value == null || !Number.isFinite(value) ? "Unavailable" : value.toFixed(3);
 const textRows = (data: Record<string, unknown>): PropertyRow[] => Object.entries(data).map(([id, value]) => ({
-  kind: "text", id, label: id, value: value == null ? "Unavailable" : typeof value === "string" ? value : JSON.stringify(value), readOnly: true, onChange: () => {},
+  kind: "text", id, label: humanizePropertyLabel(id), value: value == null ? "Unavailable" : typeof value === "string" ? value : JSON.stringify(value), readOnly: true, onChange: () => {},
 }));
 function rowAt(stream: PerformanceStream, index: number): number[] {
   let offset = index * stream.columns.length;
@@ -30,17 +30,19 @@ function serializeResult(result: DiagnosticResult) {
 /** Leaf content also fits an ordinary DockView PanelFrame; no document asset or independent log. */
 export function PerformanceSummary({ profile }: { profile: PerformanceProfile }) {
   const budget = profile.identity.frameCap && profile.identity.frameCap > 0 ? 1000 / profile.identity.frameCap : 1000 / 60;
+  const gpu = profile.identity.gpuTiming === "unpaired";
   const rows = useMemo(() => [
-    ["Completed game-frame interval", summarizePerformanceColumn(profile.frames, "intervalMs", budget)],
-    ["Main preparation wall time", summarizePerformanceColumn(profile.frames, "preparationMs")],
-    ["Main submission wall time", summarizePerformanceColumn(profile.frames, "submissionMs")],
-    ["Presentation/copy wall time", summarizePerformanceColumn(profile.frames, "copyMs")],
-    ["Worker script and physics", summarizePerformanceColumns(profile.ticks, ["scriptMs", "physicsMs"], 8)],
-    ["Worker script phase", summarizePerformanceColumn(profile.ticks, "scriptMs")],
-    ["Worker physics phase", summarizePerformanceColumn(profile.ticks, "physicsMs")],
-    ["Worker snapshot publish", summarizePerformanceColumn(profile.ticks, "publishMs")],
-    ["Other measured runtime phase", summarizePerformanceColumn(profile.ticks, "otherMs")],
-  ] as const, [profile, budget]);
+    ["Completed Game-Frame Interval", summarizePerformanceColumn(profile.frames, "intervalMs", budget)],
+    ["Main Preparation Wall Time", summarizePerformanceColumn(profile.frames, "preparationMs")],
+    ["Main Submission Wall Time", summarizePerformanceColumn(profile.frames, "submissionMs")],
+    ["Presentation/Copy Wall Time", summarizePerformanceColumn(profile.frames, "copyMs")],
+    ["Worker Script and Physics", summarizePerformanceColumns(profile.ticks, ["scriptMs", "physicsMs"], 8)],
+    ["Worker Script Phase", summarizePerformanceColumn(profile.ticks, "scriptMs")],
+    ["Worker Physics Phase", summarizePerformanceColumn(profile.ticks, "physicsMs")],
+    ["Worker Snapshot Publish", summarizePerformanceColumn(profile.ticks, "publishMs")],
+    ["Other Measured Runtime Phase", summarizePerformanceColumn(profile.ticks, "otherMs")],
+    ...(gpu ? [["GPU Time (Engine Aggregate)", summarizePerformanceColumn(profile.gpu, "durationMs")] as const] : []),
+  ] as const, [profile, budget, gpu]);
   return <div className="flex flex-col gap-3 p-2">
     <p><SelectableText>{profile.frames.count} completed frame samples · {profile.ticks.count} runtime tick samples · {(profile.durationMs / 1000).toFixed(2)} s · stopped: {profile.stopReason}</SelectableText></p>
     <div className="overflow-x-auto"><table className="w-full text-left text-xs">
@@ -51,7 +53,7 @@ export function PerformanceSummary({ profile }: { profile: PerformanceProfile })
         <td className="p-2">{values.overBudgetCount ?? "No threshold"}</td></tr>)}</tbody>
     </table></div>
     <p className="text-xs text-muted-foreground">Frame threshold {budget.toFixed(2)} ms. Combined Worker script and physics threshold 8 ms per tick. Submission includes driver waits; asynchronous copy latency can overlap submission. Concurrent host and Worker durations are not summed.</p>
-    <p className="text-xs text-muted-foreground">GPU timing: {profile.identity.gpuTiming}. Heap and physical VRAM: unavailable. These captures contain timing records and no world snapshots.</p>
+    <p className="text-xs text-muted-foreground">GPU timing: {gpu ? `${profile.gpu.count} engine-aggregate query results, not aligned to frames` : profile.identity.gpuReason ?? profile.identity.gpuTiming}. Heap and physical VRAM: unavailable. These captures contain timing records and no world snapshots.</p>
     <p className="text-xs text-muted-foreground">Retained {(profile.retainedBytes / 1048576).toFixed(2)} MiB / {(profile.byteBudget / 1048576).toFixed(0)} MiB budget; {profile.droppedRecords} dropped records. Accounted buffers are not a browser heap limit.</p>
     <PropertyGrid rows={textRows(profile.identity)} readOnly />
   </div>;
@@ -60,7 +62,7 @@ export function PerformanceSummary({ profile }: { profile: PerformanceProfile })
 export function PerformanceTimeline({ profile }: { profile: PerformanceProfile }) {
   const [population, setPopulation] = useState("frames");
   const [selected, setSelected] = useState(0);
-  const stream = population === "frames" ? profile.frames : profile.ticks;
+  const stream = population === "gpu" ? profile.gpu : population === "ticks" ? profile.ticks : profile.frames;
   const index = Math.max(0, Math.min(Number.isFinite(selected) ? Math.floor(selected) : 0, Math.max(0, stream.count - 1)));
   const page = Math.floor(index / 100) * 100;
   const indices = Array.from({ length: Math.min(100, Math.max(0, stream.count - page)) }, (_, offset) => page + offset);
@@ -68,6 +70,7 @@ export function PerformanceTimeline({ profile }: { profile: PerformanceProfile }
   return <div className="flex flex-col gap-3 p-2">
     <ToggleGroup value={[population]} onValueChange={next => { if (next[0]) { setPopulation(String(next[0])); setSelected(0); } }} size="sm" variant="outline">
       <ToggleGroupItem value="frames">Completed Frames</ToggleGroupItem><ToggleGroupItem value="ticks">Runtime Ticks</ToggleGroupItem>
+      {profile.gpu.count ? <ToggleGroupItem value="gpu">GPU Queries</ToggleGroupItem> : null}
     </ToggleGroup>
     <p className="text-xs text-muted-foreground">Each stream uses its own recording-relative clock. Rows are not aligned by host/Worker timestamps. Loading samples are explicitly marked.</p>
     {stream.count ? <>
@@ -76,8 +79,8 @@ export function PerformanceTimeline({ profile }: { profile: PerformanceProfile }
       </Field>
       <div className="flex gap-2"><Button variant="outline" size="sm" disabled={!index} onClick={() => setSelected(Math.max(0, page - 100))}>Previous 100</Button>
         <Button variant="outline" size="sm" disabled={page + 100 >= stream.count} onClick={() => setSelected(page + 100)}>Next 100</Button></div>
-      <div className="max-h-64 overflow-auto"><table className="w-full text-left text-xs"><thead><tr><th>Sample</th>{stream.columns.map(column => <th className="p-2" key={column}>{column}</th>)}</tr></thead>
-        <tbody>{indices.map(row => <tr key={row} aria-selected={row === index}><td><Button variant="ghost" size="sm" onClick={() => setSelected(row)}>{row}</Button></td>
+      <div className="max-h-64 overflow-auto"><table className="w-full text-left text-xs"><thead><tr><th>Sample</th>{stream.columns.map(column => <th className="p-2" key={column}>{humanizePropertyLabel(column)}</th>)}</tr></thead>
+        <tbody>{indices.map(row => <tr key={row} aria-selected={row === index}><td><Button variant="ghost" size="sm" className="pointer-coarse:min-h-11" onClick={() => setSelected(row)}>{row}</Button></td>
           {rowAt(stream, row).map((value, column) => <td className="p-2 tabular-nums" key={column}>{Number.isFinite(value) ? Number.isInteger(value) ? value : value.toFixed(3) : "Unavailable"}</td>)}</tr>)}</tbody></table></div>
       <PropertyGrid rows={textRows(Object.fromEntries(stream.columns.map((column, offset) => [column, Number.isFinite(values[offset]) ? values[offset] : null])))} readOnly />
     </> : <TraceEmptyState title="No Samples" description="This population had no completed samples during the recording." />}

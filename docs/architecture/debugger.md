@@ -124,8 +124,7 @@ Simulation hosts the normal game runtime in the open world Scene Viewport, using
 its prepared in-memory Scene and a separate game Scene on the shared Engine.
 Class/asset previews are not Simulation targets, and Play From Scene/startup
 preferences do not select a different root. Public launch qualification is tracked
-in [the implementation checkpoint](../engineplan.md); the contracts here describe
-the integrated branch, not completed browser or device acceptance.
+in [engineplan §9.8](../engineplan.md); the contracts here are not completed browser or device acceptance.
 
 Start in **Game Input**. **Edit** releases game input and enables runtime selection,
 the existing Inspector/Outliner and transform tools; **Return To Game** restores
@@ -239,8 +238,12 @@ and population. Neither clock is subtracted from the other. Summaries report
 count, median, nearest-rank p95/p99, maximum and over-budget count with missing
 values excluded. The first completed frame has no interval. Loading flags,
 dimensions, resolution scale, frame/tick IDs and scene generations remain in
-individual rows. Profiling currently reports GPU timing as unavailable and does
-not acquire additional timer queries.
+individual rows. With **GPU Timing** on, a recording also leases Babylon's engine
+GPU frame-time query (shared with the renderer's Stats lease) and keeps a third
+`gpu` population of fresh, valid query results: delivery time, duration, query
+sequence and coalesced count, labelled `engine-aggregate`. It is not aligned to
+frames or passes. WebGPU, missing timer-query support or a lost context report
+`unavailable` with a reason; a recording without the option reports `disabled`.
 
 The packaged Preview player collects the same streams inside its own runtime.
 Its diagnostics entry is loaded only after an explicit, source/origin-checked
@@ -284,7 +287,7 @@ Engine Settings → Debugger keeps these preferences local and searchable:
 | --- | --- | --- |
 | Recording Duration | 10 seconds / 1–60 | Next explicit Play/Preview recording |
 | Profile Retained Data Budget | 16 MiB / 4–64, Advanced | Timing buffers/metadata; separate from Trace and browser heap |
-| GPU Timing | off | Request preference only; current collector reports unavailable and creates no new GPU queries |
+| GPU Timing | off | Next recording also collects engine-aggregate GPU query results where WebGL2 timer queries exist |
 | Trace Memory Budget | 128 MiB / 1–256 | Existing saved values preserved; serialized-data retention, allocated as records arrive |
 
 Capture Frame waits for the next coherent completed game presentation, with a
@@ -298,7 +301,7 @@ or backend detail is labeled unavailable; nested stage times must not be added.
 
 No target thumbnails, pixel readbacks, allocation-optimization changes, pass enable
 toggles or replay are introduced. Actor/material links appear only when their
-render owner supplies the identity; batching is not guessed. Shared Engine GPU
-per-pass timing, WebGPU command capture and Spector integration remain unavailable.
+render owner supplies the identity; batching is not guessed. Per-pass GPU timing,
+WebGPU command capture and Spector integration remain unavailable.
 The CPU recording overhead, repeated-release counts, sustained route and real
-browser/device matrix remain qualification gates in the engineplan checkpoint.
+browser/device matrix remain qualification gates in [engineplan §9.8](../engineplan.md).

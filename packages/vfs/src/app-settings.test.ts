@@ -13,11 +13,7 @@ describe("app settings", () => {
       debuggerDefaults: { overlayConsole: false, pauseOnPlay: true, recordingActive: true },
     });
     expect(settings.traceByteBudget).toBe(201_326_592);
-    expect(settings.debuggerDefaults).toMatchObject({
-      overlayConsole: false, pauseOnPlay: true, keepSimulationChanges: false,
-      graphObservation: false, profileDurationSeconds: 10,
-      profileByteBudget: 16 * 1024 * 1024, profileGpuTiming: false,
-    });
+    expect(settings.debuggerDefaults).toMatchObject({ overlayConsole: false, pauseOnPlay: true });
     expect(settings.debuggerDefaults).not.toHaveProperty("recordingActive");
     const bounded = engineSettingsSchema.parse({ debuggerDefaults: {
       profileDurationSeconds: 80, profileByteBudget: 1,

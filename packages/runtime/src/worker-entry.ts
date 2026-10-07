@@ -108,11 +108,10 @@ function handleControl(msg: ControlMessage): void {
     case "captureSimulationState": {
       const rt = runtime;
       const generation = bootGeneration;
-      if (!rt) {
-        onCommand({ type: "simulationCaptureResult", sessionGeneration: msg.sessionGeneration, requestId: msg.requestId,
-          result: { ok: false, code: "boundary", path: "scene", reason: "Runtime is unavailable.", identity: {
-            generation: msg.sessionGeneration, sceneAssetGuid: "", sceneInstanceId: "", sceneLoadId: 0, tickIndex: 0, commandRevision: 0 } } }); return;
-      }
+      const refuse = (reason: string) => onCommand({ type: "simulationCaptureResult", sessionGeneration: msg.sessionGeneration, requestId: msg.requestId,
+        result: { ok: false, code: "boundary", path: "scene", reason, identity: {
+          generation: msg.sessionGeneration, sceneAssetGuid: "", sceneInstanceId: "", sceneLoadId: 0, tickIndex: 0, commandRevision: 0 } } });
+      if (!rt) { refuse("Runtime is unavailable."); return; }
       void rt.captureSimulationState(msg).then(async result => {
         if (runtime !== rt || bootGeneration !== generation) return;
         if (!result.ok) { onCommand({ type: "simulationCaptureResult", sessionGeneration: msg.sessionGeneration, requestId: msg.requestId, result }); return; }
@@ -125,6 +124,9 @@ function handleControl(msg: ControlMessage): void {
         }
         if (runtime === rt && bootGeneration === generation) onCommand({ type: "simulationCaptureResult", sessionGeneration: msg.sessionGeneration, requestId: msg.requestId,
           result: { ok: true, identity: result.identity, byteSize: result.byteSize, chunkCount: sequence } });
+      }).catch((error: unknown) => {
+        // Report the failure now instead of leaving the host to its capture timeout.
+        if (runtime === rt && bootGeneration === generation) refuse(error instanceof Error ? error.message : String(error));
       });
       return;
     }
