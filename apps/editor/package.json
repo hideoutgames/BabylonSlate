@@ -17,7 +17,7 @@
     "android:release": "node scripts/android-release.mjs"
   },
   "dependencies": {
-    "@babylonjs/core": "9.20.0",
+    "@babylonjs/core": "9.29.0",
     "@babylonslate/anim-graph": "workspace:*",
     "@babylonslate/assets": "workspace:*",
     "@babylonslate/behaviour-tree": "workspace:*",
