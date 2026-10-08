@@ -820,6 +820,8 @@ export type CommandMessage =
       emitterActorGuid?: string | null;
       loop?: boolean;
       voiceId?: string;
+      /** Seconds of the voice already played (trace restore); omitted starts at the beginning. */
+      startOffsetSeconds?: number;
     }
   | { type: "stopSound"; voiceId: string }
   | { type: "setVoiceGain"; voiceId: string; volume: number }

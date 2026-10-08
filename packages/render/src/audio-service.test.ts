@@ -933,6 +933,22 @@ describe("AudioService", () => {
     service.dispose();
   });
 
+  it("starts a resumed voice at its played time scaled by pitch", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const service = new AudioService({ backend });
+    service.setLibrary(library({ audio: { jump: { ...createDefaultAudioPayload(), pitch: 2 } } }));
+    service.setSourceBytes("jump", new Uint8Array([1]));
+    await service.unlockAsync();
+    service.handleCommand({ type: "playSound", assetGuid: "jump", volume: 1, frameId: 1, voiceId: "resumed", startOffsetSeconds: 1.5 });
+    service.handleCommand({ type: "playSound", assetGuid: "jump", volume: 1, frameId: 1, voiceId: "fresh" });
+    await service.flush();
+    expect(backend.plays.map((play) => [play.voiceId, play.startOffsetSeconds])).toEqual([
+      ["resumed", 3],
+      ["fresh", undefined],
+    ]);
+    service.dispose();
+  });
+
   it("composes authored pitch with Doppler playbackRate", async () => {
     let now = 0;
     const backend = new FakeAudioPlaybackBackend();

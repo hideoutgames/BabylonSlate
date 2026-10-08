@@ -1,4 +1,5 @@
 import type { CommandMessage } from "@babylonslate/bridge";
+import type { TraceAnimGraphState } from "@babylonslate/debugger";
 import { Actor, ActorComponent } from "@babylonslate/object-model";
 import {
   animGraphScriptClassId,
@@ -13,7 +14,7 @@ import {
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 import type { AnimGraphControl, ScriptHost } from "./script-host";
 
-type SpriteClip = { assetGuid: string; clipName: string; normalisedTime: number };
+type SpriteClip = { assetGuid: string; clipName: string; normalisedTime: number; stateId?: string };
 
 interface AnimGraphRuntimeHost {
   actors(): readonly Actor[];
@@ -59,6 +60,44 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
       for (const key of this.initializedBySlot) {
         if (key.startsWith(`${component.guid}:`)) this.initializedBySlot.delete(key);
       }
+    }
+  }
+
+  /** Per-component evaluation, initialization and pending jumps recorded with each trace frame. */
+  traceStates(): TraceAnimGraphState[] {
+    const rows = new Map<string, TraceAnimGraphState>();
+    for (const [componentGuid, state] of this.evalByComponent) {
+      const prefix = `${componentGuid}:`;
+      const initKey = [...this.initializedBySlot].find((key) => key.startsWith(prefix));
+      if (initKey === undefined) continue;
+      rows.set(componentGuid, {
+        componentGuid,
+        graphGuid: initKey.slice(prefix.length),
+        state: structuredClone(state) as unknown as Record<string, unknown>,
+      });
+    }
+    for (const [componentGuid, stateId] of this.pendingJumpByComponent) {
+      const row = rows.get(componentGuid) ?? { componentGuid };
+      row.pendingJumpStateId = stateId;
+      rows.set(componentGuid, row);
+    }
+    return [...rows.values()];
+  }
+
+  /**
+   * Replace evaluation, initialization and pending jumps with a trace frame's,
+   * so each graph continues mid-state without re-running its initialization.
+   */
+  restoreFromTrace(rows: readonly TraceAnimGraphState[]): void {
+    this.evalByComponent.clear();
+    this.initializedBySlot.clear();
+    this.pendingJumpByComponent.clear();
+    for (const row of rows) {
+      if (row.graphGuid !== undefined && row.state) {
+        this.evalByComponent.set(row.componentGuid, structuredClone(row.state) as unknown as AnimEvalState);
+        this.initializedBySlot.add(`${row.componentGuid}:${row.graphGuid}`);
+      }
+      if (row.pendingJumpStateId) this.pendingJumpByComponent.set(row.componentGuid, row.pendingJumpStateId);
     }
   }
 
@@ -257,6 +296,7 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
             assetGuid: clip.assetGuid,
             clipName: clip.clipName,
             normalisedTime: next.normalisedTime,
+            stateId: next.stateId,
           });
         } else {
           this.host.setSpriteClip(actor, null);

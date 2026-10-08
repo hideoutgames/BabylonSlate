@@ -37,7 +37,7 @@ import type {
   Transform,
   WaterDefinition,
 } from "@babylonslate/core";
-import type { RegisteredCommand, TraceBtState, TracePayload, UserCommandDef } from "@babylonslate/debugger";
+import type { RegisteredCommand, TraceBtState, TraceFrame, TracePayload, UserCommandDef } from "@babylonslate/debugger";
 import type { InputBindingControls, InputMappings, RawInputEvent, ResolvedInputTick } from "@babylonslate/input";
 import type { NavObstacleKind, NavPoint } from "@babylonslate/navigation";
 import type { Actor, BObject, DebugInspectSnapshot, SceneLayer, World } from "@babylonslate/object-model";
@@ -274,7 +274,10 @@ export interface RuntimeDriver {
   ): void;
   listConsoleCommands(): readonly RegisteredCommand[];
   stopTrace(): TracePayload | null;
+  /** Behaviour tree evaluation and ownership only; `restoreFromTrace` resumes the whole frame. */
   restoreBtFromTrace(states: readonly TraceBtState[]): void;
+  /** Resume a frame's behaviour trees, Animation Graphs, sprite clips and voices. */
+  restoreFromTrace(frame: TraceFrame): void;
   registerAnimGraph(guid: string, document: AnimGraphDocument): void;
   registerBehaviourTree(guid: string, document: BehaviourTreeDocument): void;
   registerBlackboard(guid: string, document: BlackboardDocument): void;

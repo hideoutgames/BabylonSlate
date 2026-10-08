@@ -66,6 +66,21 @@ describe("Babylon audio backend lifecycle", () => {
     backend.dispose();
   });
 
+  it("resumes voices at their clip offset, wrapping loops and ending finished one-shots", async () => {
+    audio.createBuffer.mockImplementationOnce(async (source: ArrayBuffer) => ({ length: source.byteLength, channelCount: 1, duration: 2 }));
+    const backend = new BabylonAudioPlaybackBackend();
+    const ended: string[] = [];
+    backend.onVoiceEnded = (voiceId) => ended.push(voiceId);
+    await backend.play({ ...request, voiceId: "loop", loop: true, startOffsetSeconds: 5 });
+    await backend.play({ ...request, voiceId: "once", startOffsetSeconds: 0.5 });
+    await backend.play({ ...request, voiceId: "done", startOffsetSeconds: 3 });
+    const sounds = await Promise.all(audio.createSound.mock.results.map((result) => result.value as ReturnType<typeof audio.sound>));
+    expect(audio.createSound.mock.calls.map((call) => (call as unknown[])[0])).toEqual(["loop", "once"]);
+    expect(sounds.map((sound) => sound.play.mock.calls[0])).toEqual([[{ startOffset: 1 }], [{ startOffset: 0.5 }]]);
+    expect(ended).toEqual(["done"]);
+    backend.dispose();
+  });
+
   it("does not start a sound when Stop arrives during native sound creation", async () => {
     let finish!: (sound: ReturnType<typeof audio.sound>) => void;
     audio.createSound.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
