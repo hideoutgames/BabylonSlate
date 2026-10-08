@@ -274,9 +274,11 @@ export interface RuntimeDriver {
   ): void;
   listConsoleCommands(): readonly RegisteredCommand[];
   stopTrace(): TracePayload | null;
+  /** Time dilation (`slomo`) from the next tick, clamped to `0..8`; non-finite rates are ignored. */
+  setTimeDilation(rate: number): void;
   /** Behaviour tree evaluation and ownership only; `restoreFromTrace` resumes the whole frame. */
   restoreBtFromTrace(states: readonly TraceBtState[]): void;
-  /** Resume a frame's behaviour trees, Animation Graphs, sprite clips and voices. */
+  /** Resume a frame's time dilation, behaviour trees, Animation Graphs, sprite clips and voices. */
   restoreFromTrace(frame: TraceFrame): void;
   registerAnimGraph(guid: string, document: AnimGraphDocument): void;
   registerBehaviourTree(guid: string, document: BehaviourTreeDocument): void;

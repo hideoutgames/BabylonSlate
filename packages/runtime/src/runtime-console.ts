@@ -260,7 +260,7 @@ export class RuntimeConsole {
         if (wasPaused) host.pause();
       },
       setTimeDilation: (rate) => {
-        host.setTimeDilation(Math.min(8, Math.max(0, Number(rate))));
+        host.setTimeDilation(Number(rate));
       },
       getTimeDilation: () => host.timeDilation(),
       dumpLog: () =>

@@ -131,7 +131,7 @@ Seven core setters plus `help`. Optional args print the current value.
 | `pause` | Pause simulation (idempotent). Emit `sessionPaused`. Overlay button reads **Resume**. |
 | `resume` | Unpause (idempotent). Alias `unpause`. Overlay button reads **Pause**. Does not stop free cam. |
 | `step` | Same as overlay Step: one tick while staying paused (`resume` → `tick` → `pause`). Safe no-op if not paused (still advances one tick, then leaves running). |
-| `slomo [rate]` | Store a dilation on the driver; `tick` uses `dt * rate` (rate `0` is pause-equivalent for sim, not a substitute for `pause`). Clamp to a documented range (e.g. `0..8`). No arg → print current. Default `1`. |
+| `slomo [rate]` | Store a dilation on the driver; `tick` uses `dt * rate` (rate `0` is pause-equivalent for sim, not a substitute for `pause`). Clamp to a documented range (e.g. `0..8`). No arg → print current. Default `1`. Trace frames record the dilation each tick used; replay and `restoreFromTrace` reapply it. |
 
 Do **not** make `pause` a toggle. The overlay button toggles; the console uses explicit `pause` / `resume` so graphs and typed commands stay unambiguous.
 

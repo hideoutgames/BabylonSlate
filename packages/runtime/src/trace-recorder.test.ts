@@ -221,4 +221,97 @@ describe("runtime trace recorder", () => {
     expect(replaySnap).toBe(recordedSnap);
     replay.stop();
   });
+
+  describe("time dilation", () => {
+    const options = { seed: 5, seedDemoActors: false as const, preferSoftwarePhysics: true, dt: 1 / 60 };
+    /** A runtime whose probe moves by the tick's step and climbs while Jump is held. */
+    const probeRuntime = (onTick?: (tickIndex: number) => void) => {
+      const runtime = createInProcessRuntime(options);
+      const world = runtime.getWorld();
+      world.spawnActorNow(world.createActor({
+        classId: "Actor", guid: "probe",
+        hooks: {
+          onTick: (self: { transform: { position: { x: number; y: number } } },
+            ctx: { dt: number; tickIndex: number; isActionHeld?: (action: string) => boolean }) => {
+            self.transform.position.x += ctx.dt;
+            if (ctx.isActionHeld?.("Jump")) self.transform.position.y += ctx.dt;
+            onTick?.(ctx.tickIndex);
+          },
+        },
+      }));
+      runtime.start();
+      return runtime;
+    };
+    const snapshotText = (runtime: ReturnType<typeof probeRuntime>) =>
+      stringifyWorldSnapshot({ ...createWorldSnapshot(runtime.getWorld()), dt: options.dt });
+
+    it("replays an input stream recorded with slomo issued mid-tick frame for frame", () => {
+      let recorded: ReturnType<typeof probeRuntime> | null = null;
+      // slomo 0.5 issued during tick 3 takes effect from tick 4.
+      recorded = probeRuntime((tickIndex) => {
+        if (tickIndex === 3) expect(recorded!.executeConsoleCommand("slomo 0.5").success).toBe(true);
+      });
+      recorded.executeConsoleCommand("snapshot start");
+      for (let tick = 0; tick < 6; tick += 1) {
+        if (tick === 1) recorded.pushInput([{ kind: "key", tick, code: "Space", phase: "down" }]);
+        if (tick === 4) recorded.pushInput([{ kind: "key", tick, code: "Space", phase: "up" }]);
+        recorded.tick();
+      }
+      recorded.executeConsoleCommand("snapshot stop");
+      const payload = recorded.stopTrace()!;
+      recorded.stop();
+      expect(payload.dt).toBe(1 / 60);
+      expect(payload.frames.map((frame) => frame.timeDilation)).toEqual([1, 1, 1, 0.5, 0.5, 0.5]);
+      const last = JSON.parse(payload.frames.at(-1)!.snapshotText!) as { actors: Array<{ transform: { position: number[] } }> };
+      // Three full steps plus three half steps; Jump held for ticks 2-4.
+      expect(last.actors[0]!.transform.position[0]).toBeCloseTo(4.5 / 60, 12);
+      expect(last.actors[0]!.transform.position[1]).toBeCloseTo(2.5 / 60, 12);
+
+      const replay = probeRuntime();
+      const replayed: string[] = [];
+      replayTracePayload({
+        pushInput: (events) => replay.pushInput(events),
+        setTimeDilation: (rate) => replay.setTimeDilation(rate),
+        tick: () => { replay.tick(); replayed.push(snapshotText(replay)); },
+      }, payload);
+      expect(replayed).toEqual(payload.frames.map((frame) => frame.snapshotText));
+      replay.stop();
+    });
+
+    it("records dilation 1 on every frame of an undilated run that replays to the same snapshots", () => {
+      const recorded = probeRuntime();
+      recorded.executeConsoleCommand("snapshot start");
+      for (let tick = 0; tick < 3; tick += 1) recorded.tick();
+      recorded.executeConsoleCommand("snapshot stop");
+      const payload = recorded.stopTrace()!;
+      recorded.stop();
+      expect(payload.frames.map((frame) => frame.timeDilation)).toEqual([1, 1, 1]);
+
+      // A replay host left in slomo still replays the undilated steps.
+      const replay = probeRuntime();
+      replay.executeConsoleCommand("slomo 2");
+      const replayed: string[] = [];
+      replayTracePayload({ pushInput: (events) => replay.pushInput(events), setTimeDilation: (rate) => replay.setTimeDilation(rate),
+        tick: () => { replay.tick(); replayed.push(snapshotText(replay)); } }, payload);
+      expect(replayed).toEqual(payload.frames.map((frame) => frame.snapshotText));
+      replay.stop();
+    });
+
+    it("restores a frame's dilation so the next tick takes the recorded step", () => {
+      const recorded = probeRuntime();
+      recorded.executeConsoleCommand("slomo 0.5");
+      recorded.executeConsoleCommand("snapshot start");
+      recorded.tick();
+      recorded.executeConsoleCommand("snapshot stop");
+      const frame = recorded.stopTrace()!.frames.at(-1)!;
+      recorded.stop();
+
+      const replay = probeRuntime();
+      replay.restoreFromTrace(frame);
+      expect(replay.executeConsoleCommand("slomo").output).toBe("slomo 0.5");
+      replay.tick();
+      expect(replay.getWorld().clock.dt).toBe(0.5 / 60);
+      replay.stop();
+    });
+  });
 });

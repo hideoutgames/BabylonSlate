@@ -64,6 +64,7 @@ import {
   isInfiniteLoopError,
   INFINITE_LOOP_DIAGNOSTIC_CODE,
   DEFAULT_INFINITE_LOOP_COUNT,
+  MAX_TIME_DILATION,
   type CommandResult,
   type InfiniteLoopGuard,
   type RegisteredCommand,
@@ -883,7 +884,7 @@ class InProcessRuntime implements RuntimeDriver {
       paused: () => this.paused,
       userPaused: () => this.pauseReasons.has("user"),
       timeDilation: () => this.timeDilation,
-      setTimeDilation: (rate) => { this.timeDilation = rate; },
+      setTimeDilation: (rate) => this.setTimeDilation(rate),
       emit: (command) => this.emit(command),
     });
   }
@@ -1488,19 +1489,24 @@ class InProcessRuntime implements RuntimeDriver {
     return this.ticks.lastTrace;
   }
 
+  setTimeDilation(rate: number): void {
+    if (Number.isFinite(rate)) this.timeDilation = Math.min(MAX_TIME_DILATION, Math.max(0, rate));
+  }
+
   restoreBtFromTrace(states: readonly TraceBtState[]): void {
     this.behaviourTrees.restoreFromTrace(states);
   }
 
   /**
-   * Resume a trace frame's behaviour trees, Animation Graphs, sprite clips and
-   * voices on the live World (actors match by guid, BT rows by render slot).
-   * Order: BT evaluation and ownership, Animation Graph evaluation, then each
-   * live actor's sprite clip in World order (`animState` for a recorded clip,
+   * Resume a trace frame's time dilation, behaviour trees, Animation Graphs,
+   * sprite clips and voices on the live World (actors match by guid, BT rows by
+   * render slot). Order: dilation, BT evaluation and ownership, Animation Graph
+   * evaluation, then each live actor's sprite clip in World order (`animState` for a recorded clip,
    * collider clip cleared otherwise), then `stopSound` for live voices the
    * frame lacks and `playSound` at the recorded offset for each recorded voice.
    */
   restoreFromTrace(frame: TraceFrame): void {
+    this.setTimeDilation(frame.timeDilation ?? 1);
     this.behaviourTrees.restoreFromTrace(frame.bt ?? []);
     this.animGraphs.restoreFromTrace(frame.animGraphs ?? []);
     const recordedClips = new Map((frame.sprites ?? []).map((clip) => [clip.actorGuid, clip]));
@@ -1850,6 +1856,7 @@ class InProcessRuntime implements RuntimeDriver {
    *    `TickPipeline` records stats and the trace frame last.
    */
   private runTick(): void {
+    const timeDilation = this.timeDilation;
     const simDt = this.simulationDt();
     this.world.clock.dt = simDt;
     // Voices play in real time, so their age follows the undilated step.
@@ -1864,7 +1871,7 @@ class InProcessRuntime implements RuntimeDriver {
     const completedFrameId = this.frameId;
     this.frameId += 1;
     this.publishTick();
-    this.ticks.finishTick(completedFrameId, pending);
+    this.ticks.finishTick(completedFrameId, pending, timeDilation);
   }
 
   /** Tick phase 1: returns the raw events this tick consumed. */

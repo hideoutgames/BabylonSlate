@@ -178,8 +178,11 @@ export class TickPipeline {
 
   recordPrint(print: { message: string; key: string }): void { this.prints.push(print); }
 
-  /** After the tick's publish point: the throttled `stats` command, then the trace frame. */
-  finishTick(completedFrameId: number, pending: readonly RawInputEvent[]): void {
+  /**
+   * After the tick's publish point: the throttled `stats` command, then the
+   * trace frame. `timeDilation` is the one captured when the tick began.
+   */
+  finishTick(completedFrameId: number, pending: readonly RawInputEvent[], timeDilation: number): void {
     const statsNow = this.now();
     if (shouldEmitStatsCommand(statsNow, this.lastStatsEmitMs)) {
       this.lastStatsEmitMs = statsNow;
@@ -198,6 +201,7 @@ export class TickPipeline {
       const recordedTick = this.world.clock.tickIndex;
       this.trace.recordFrame({
         tickIndex: recordedTick,
+        timeDilation,
         scriptMs: this._lastScriptMs,
         physicsMs: this._lastPhysicsMs,
         logs: this.logs

@@ -7,7 +7,7 @@ import type {
 } from "./types";
 
 /** Upper bound the runtime applies to time dilation. */
-const MAX_TIME_DILATION = 8;
+export const MAX_TIME_DILATION = 8;
 
 const FLAG: CommandParameter = {
   name: "enabled",
