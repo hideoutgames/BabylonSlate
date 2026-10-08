@@ -1,8 +1,9 @@
 import type { CommandMessage } from "@babylonslate/bridge";
 import {
-  createDefaultSceneSettings,
   normalizeWaterDefinition,
   type CollisionTriangleMesh,
+  type SceneLayerSettings,
+  type SerializedActor,
   type SerializedScene,
   type WaterDefinition,
 } from "@babylonslate/core";
@@ -11,9 +12,11 @@ import type { Actor, World } from "@babylonslate/object-model";
 import {
   createPhysicsBackend,
   createSoftwarePhysicsBackend,
+  loadRapier2DBackendFactory,
   SoftwarePhysicsBackend,
   type PhysicsBackend,
   type PhysicsWorldKind,
+  type Vec3,
 } from "@babylonslate/physics";
 import type { RuntimeDiagnostic } from "./diagnostics";
 import { componentIdFromColliderPhysicsId } from "./physics-collider-id";
@@ -33,8 +36,8 @@ interface RuntimePhysicsWorldsHost {
   mainActorReady(actor: Actor): boolean;
   /** Scene Layer physics simulates layer actors their layer admits early. */
   overlayActorReady(actor: Actor): boolean;
-  /** Without Scene Layer documents no overlay actor can exist. */
-  hasSceneLayerDocuments(): boolean;
+  /** Some loaded Scene Layer document enables physics; otherwise no layer world can exist. */
+  hasPhysicsSceneLayers(): boolean;
   canTickActor(actor: Actor): boolean;
   scripts(): Pick<ScriptHost, "invokeEvent">;
   frameId(): number;
@@ -53,24 +56,38 @@ interface RuntimePhysicsWorldsOptions {
 }
 
 const vec3 = (value: readonly number[]) => ({ x: value[0], y: value[1], z: value[2] });
+const NO_GRAVITY: Vec3Tuple = [0, 0, 0];
+/** Explicit physics components that need their layer's Enable Physics. */
+const LAYER_PHYSICS_COMPONENTS = new Set(["RigidBodyComponent", "ColliderComponent", "BlockingVolumeComponent"]);
+
+/** A physics-enabled Scene Layer instance: its gravity, and its world once first needed. */
+interface LayerPhysicsWorld {
+  readonly gravity: Vec3Tuple;
+  sync: PhysicsWorldSync | null;
+}
 
 /**
- * The session's two physics worlds: the main Scene world (3D or 2D, replaced
- * when the native backend loads or a Scene changes its world kind) and the
- * Scene Layer 2D world. Owns backend selection and swaps, gravity, the
- * tile/sprite/model/water content both worlds collide with, complex-collision
- * mesh requests, contact dispatch to scripts and the collision debug view.
- * The driver keeps the step's place in the tick and reads `main` / `overlay`
- * lazily, since both are replaced.
+ * The session's physics worlds: the main Scene world (3D or 2D, replaced when
+ * the native backend loads or a Scene changes its world kind) and one 2D world
+ * per Scene Layer instance that enables physics, with that layer's gravity.
+ * A layer world is created on first need, steps natively only while it holds
+ * bodies and is disposed with its layer; a layer without Enable Physics has
+ * none. Owns backend selection and swaps, gravity, the tile/sprite/model/water
+ * content the worlds collide with, complex-collision mesh requests, contact
+ * dispatch to scripts and the collision debug view. The driver keeps the
+ * step's place in the tick and reads `main` lazily, since it is replaced.
  */
 export class RuntimePhysicsWorlds implements RuntimeSubsystem {
   private mainSync: PhysicsWorldSync;
-  private overlaySync: PhysicsWorldSync;
+  /** Physics-enabled layer instances in creation order (the step and dispatch order). */
+  private readonly layerWorlds = new Map<string, LayerPhysicsWorld>();
+  /** Native 2D worlds for layers, once `load` initialized Rapier. */
+  private nativeLayerBackend: ((gravity: Vec3) => PhysicsBackend) | null = null;
+  /** Layer assets already warned for physics components without Enable Physics. */
+  private readonly warnedLayerAssets = new Set<string>();
   private worldKind: PhysicsWorldKind;
   private generation = 0;
   private currentGravity: Vec3Tuple;
-  /** The Scene Layer world's gravity, from the first layer created (replaced, never mutated). */
-  private overlayGravity = [...createDefaultSceneSettings("2d").gravity] as Vec3Tuple;
   private readonly havokWasmUrl: string | undefined;
   private readonly preferSoftwarePhysics: boolean;
   private showCollision = false;
@@ -113,21 +130,11 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
         deferUnsupportedConstraints: !this.preferSoftwarePhysics,
       },
     );
-    this.overlaySync = new PhysicsWorldSync(
-      createSoftwarePhysicsBackend("2d", vec3(this.overlayGravity)),
-      {
-        actorFilter: (actor) => actor.sceneLayerId != null && this.host.overlayActorReady(actor),
-        deferUnsupportedConstraints: !this.preferSoftwarePhysics,
-      },
-    );
     this.mainSync.setMissingComplexMeshHandler(this.missingComplexMesh);
-    this.overlaySync.setMissingComplexMeshHandler(this.missingComplexMesh);
   }
 
   /** Main-Scene physics; replaced by `load`, `installScene` and `prepareScene`. */
   get main(): PhysicsWorldSync { return this.mainSync; }
-  /** Scene Layer (2D overlay) physics; replaced by `load`. */
-  get overlay(): PhysicsWorldSync { return this.overlaySync; }
   /** The main Scene's world kind. */
   get kind(): PhysicsWorldKind { return this.worldKind; }
   /** The main Scene's gravity (replaced, never mutated). */
@@ -135,20 +142,69 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
   get preferSoftware(): boolean { return this.preferSoftwarePhysics; }
   get pixelsPerUnit(): number { return this._pixelsPerUnit; }
 
-  /** The world that simulates this actor: Scene Layer actors use the overlay. */
-  forActor(actor: Actor): PhysicsWorldSync {
-    return actor.sceneLayerId ? this.overlaySync : this.mainSync;
+  /**
+   * The world that simulates this actor: its Scene Layer's own world, or null
+   * when that layer did not enable physics. Other actors use the main world.
+   */
+  forActor(actor: Actor): PhysicsWorldSync | null {
+    return actor.sceneLayerId ? this.layer(actor.sceneLayerId) : this.mainSync;
+  }
+
+  /** A Scene Layer instance's world, created on first need; null without Enable Physics. */
+  layer(layerGuid: string): PhysicsWorldSync | null {
+    const entry = this.layerWorlds.get(layerGuid);
+    if (!entry) return null;
+    return entry.sync ??= this.createLayerSync(layerGuid, entry.gravity);
   }
 
   /** Current gravity of the world that simulates this actor; Movement reads it each step. */
   gravityFor(actor: Actor): Vec3Tuple {
-    return actor.sceneLayerId ? this.overlayGravity : this.currentGravity;
+    if (!actor.sceneLayerId) return this.currentGravity;
+    return this.layerWorlds.get(actor.sceneLayerId)?.gravity ?? NO_GRAVITY;
   }
 
-  /** Stop, phase 2: release both worlds. */
+  /**
+   * A Scene Layer instance was created. With Enable Physics it gets its own
+   * world with its gravity (created on first need); without, it gets none and
+   * physics components in its actors are reported once per asset.
+   */
+  addLayer(
+    layerGuid: string,
+    assetGuid: string,
+    settings: Pick<SceneLayerSettings, "gravity" | "physicsEnabled">,
+    actors: readonly SerializedActor[],
+  ): void {
+    if (settings.physicsEnabled) {
+      this.layerWorlds.set(layerGuid, { gravity: [settings.gravity[0], settings.gravity[1], settings.gravity[2]], sync: null });
+      return;
+    }
+    if (this.warnedLayerAssets.has(assetGuid) ||
+      !actors.some((actor) => actor.components?.some((component) => LAYER_PHYSICS_COMPONENTS.has(component.classId)))) return;
+    this.warnedLayerAssets.add(assetGuid);
+    const frameId = this.host.frameId();
+    const diag: RuntimeDiagnostic = {
+      code: "physics.scene_layer_physics_disabled",
+      message: `Scene Layer ${assetGuid} has Rigid Body, Collider or Blocking Volume components, but Enable Physics is off. Its actors do not simulate or collide and fire no Hit or Overlap events; turn on Enable Physics in the Scene Layer's Details.`,
+      severity: "warning",
+      assetGuid,
+      frameId,
+      tickIndex: this.host.world().clock.tickIndex,
+    };
+    this.host.recordDiagnostic(diag);
+    this.host.emit({ type: "diagnostic", code: diag.code, message: diag.message, assetGuid, frameId, severity: "warning" });
+  }
+
+  /** A Scene Layer instance left the session: release its world. */
+  removeLayer(layerGuid: string): void {
+    this.layerWorlds.get(layerGuid)?.sync?.dispose();
+    this.layerWorlds.delete(layerGuid);
+  }
+
+  /** Stop, phase 2: release every world. */
   dispose(): void {
     this.mainSync.dispose();
-    this.overlaySync.dispose();
+    for (const entry of this.layerWorlds.values()) entry.sync?.dispose();
+    this.layerWorlds.clear();
   }
 
   /** Upgrade both software worlds to Havok/Rapier and re-sync spawned bodies. */
@@ -171,15 +227,10 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
       backend.dispose();
       throw sceneRealizationCancelled();
     }
-    let overlayBackend: PhysicsBackend;
+    let layerBackend: ((gravity: Vec3) => PhysicsBackend) | null = null;
     try {
-      overlayBackend = await createPhysicsBackend({
-        kind: "2d",
-        // Without layer documents this session cannot create overlay actors.
-        preferSoftware: !this.host.hasSceneLayerDocuments(),
-        gravity: vec3(this.overlayGravity),
-        allowSoftwareFallback: false,
-      });
+      // Only physics-enabled layers need Rapier; other sessions never load it for layers.
+      if (this.layerWorlds.size > 0 || this.host.hasPhysicsSceneLayers()) layerBackend = await loadRapier2DBackendFactory();
     } catch (error) {
       backend.dispose();
       throw error;
@@ -187,7 +238,6 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
 
     if (!current()) {
       backend.dispose();
-      overlayBackend.dispose();
       throw sceneRealizationCancelled();
     }
     backend.setGravity(vec3(this.currentGravity));
@@ -195,23 +245,30 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
     const physicsSync = new PhysicsWorldSync(backend, {
       actorFilter: (actor) => actor.sceneLayerId == null && this.host.mainActorReady(actor),
     });
-    const overlayPhysicsSync = new PhysicsWorldSync(overlayBackend, {
-      actorFilter: (actor) => actor.sceneLayerId != null && this.host.overlayActorReady(actor),
-    });
+    this.nativeLayerBackend = layerBackend;
+    // Layer worlds already created move to native worlds with their own gravity.
+    const layerSyncs: Array<[LayerPhysicsWorld, PhysicsWorldSync]> = [];
     try {
       this.bindContent(physicsSync);
       physicsSync.syncFromWorld(world);
-      this.bindContent(overlayPhysicsSync);
-      overlayPhysicsSync.syncFromWorld(world);
+      for (const [layerGuid, entry] of this.layerWorlds) {
+        if (!entry.sync) continue;
+        const sync = this.createLayerSync(layerGuid, entry.gravity);
+        layerSyncs.push([entry, sync]);
+        sync.syncFromWorld(world);
+      }
     } catch (error) {
+      this.nativeLayerBackend = null;
       physicsSync.dispose();
-      overlayPhysicsSync.dispose();
+      for (const [, sync] of layerSyncs) sync.dispose();
       throw error;
     }
     this.mainSync.dispose();
-    this.overlaySync.dispose();
     this.mainSync = physicsSync;
-    this.overlaySync = overlayPhysicsSync;
+    for (const [entry, sync] of layerSyncs) {
+      entry.sync?.dispose();
+      entry.sync = sync;
+    }
   }
 
   /** A Scene of this kind must replace the loaded native main world. */
@@ -270,12 +327,6 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
     return next;
   }
 
-  /** Scene Layer gravity; kept for `gravityFor` and for the native overlay world `load` creates. */
-  setOverlayGravity(gravity: { x: number; y: number; z: number }): void {
-    this.overlayGravity = [gravity.x, gravity.y, gravity.z];
-    this.overlaySync.getBackend().setGravity(gravity);
-  }
-
   /**
    * Main-Scene step at simulated water time `waterTime` (`WaterClock.stepTime`); movement motors run inside it.
    * Water bodies then publish that time, paired with the snapshot frame this tick publishes, so Play rendering
@@ -286,14 +337,26 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
     if (this.mainSync.water.hasBodies) this.host.emit({ type: "waterTime", seconds: waterTime, frameId: this.host.frameId() + 1 });
   }
 
-  stepOverlay(dt: number, beforeStep: (sync: PhysicsWorldSync) => unknown): void {
-    this.overlaySync.step(dt, this.host.world(), undefined, undefined, () => beforeStep(this.overlaySync));
+  /** Each Scene Layer world in creation order; a world without bodies skips its native step. */
+  stepLayers(dt: number, beforeStep: (sync: PhysicsWorldSync) => unknown): void {
+    if (this.layerWorlds.size === 0) return;
+    const world = this.host.world();
+    for (const layerGuid of this.layerWorlds.keys()) {
+      const sync = this.layer(layerGuid);
+      sync?.step(dt, world, undefined, undefined, () => beforeStep(sync));
+    }
   }
 
-  /** Bind the current content to both worlds. */
+  /** Reconcile every Scene Layer world's bodies with the World. */
+  syncLayers(): void {
+    const world = this.host.world();
+    for (const layerGuid of this.layerWorlds.keys()) this.layer(layerGuid)?.syncFromWorld(world);
+  }
+
+  /** Bind the current content to every world. */
   bindAll(): void {
     this.bindContent(this.mainSync);
-    this.bindContent(this.overlaySync);
+    for (const sync of this.layerSyncs()) this.bindContent(sync);
   }
 
   registerWaterContent(content: ReadonlyMap<string, WaterDefinition> | Readonly<Record<string, WaterDefinition>>): void {
@@ -312,11 +375,13 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
       tilesets: this.tilesets,
       pixelsPerUnit: this._pixelsPerUnit,
     });
-    this.overlaySync.setTileContent({
-      tilemaps: this.tilemaps,
-      tilesets: this.tilesets,
-      pixelsPerUnit: this._pixelsPerUnit,
-    });
+    for (const sync of this.layerSyncs()) {
+      sync.setTileContent({
+        tilemaps: this.tilemaps,
+        tilesets: this.tilesets,
+        pixelsPerUnit: this._pixelsPerUnit,
+      });
+    }
   }
 
   registerSpriteContent(options: {
@@ -342,11 +407,13 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
       spriteAnimations: this.spriteAnimations,
       pixelsPerUnit: this._pixelsPerUnit,
     });
-    this.overlaySync.setSpriteContent({
-      sprites: this.sprites,
-      spriteAnimations: this.spriteAnimations,
-      pixelsPerUnit: this._pixelsPerUnit,
-    });
+    for (const sync of this.layerSyncs()) {
+      sync.setSpriteContent({
+        sprites: this.sprites,
+        spriteAnimations: this.spriteAnimations,
+        pixelsPerUnit: this._pixelsPerUnit,
+      });
+    }
   }
 
   registerModelContent(options: {
@@ -394,10 +461,11 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
     if (meshes.size > 0) this.installComplexMeshes(this.lastProvidedComplexMeshes);
   }
 
-  /** Contacts from the main world, then the overlay, as Hit / Begin / End Overlap script events. */
+  /** Contacts from the main world, then each Scene Layer world in creation order, as Hit / Begin / End Overlap script events. */
   dispatchCollisionEvents(): void {
     this.dispatchContacts(this.mainSync);
-    this.dispatchContacts(this.overlaySync);
+    if (this.layerWorlds.size === 0) return;
+    for (const entry of this.layerWorlds.values()) if (entry.sync) this.dispatchContacts(entry.sync);
   }
 
   /** Console `showcollision`. */
@@ -418,6 +486,23 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
       type: "debugColliders",
       colliders: this.mainSync.getBackend().listDebugColliders(),
     });
+  }
+
+  /** Created layer worlds, in creation order. */
+  private *layerSyncs(): Generator<PhysicsWorldSync> {
+    for (const entry of this.layerWorlds.values()) if (entry.sync) yield entry.sync;
+  }
+
+  /** One layer instance's 2D world: native once `load` initialized Rapier, else software. */
+  private createLayerSync(layerGuid: string, gravity: Vec3Tuple): PhysicsWorldSync {
+    const backend = this.nativeLayerBackend?.(vec3(gravity)) ?? createSoftwarePhysicsBackend("2d", vec3(gravity));
+    const sync = new PhysicsWorldSync(backend, {
+      actorFilter: (actor) => actor.sceneLayerId === layerGuid && this.host.overlayActorReady(actor),
+      deferUnsupportedConstraints: !this.preferSoftwarePhysics && backend instanceof SoftwarePhysicsBackend,
+      skipEmptySteps: true,
+    });
+    this.bindContent(sync);
+    return sync;
   }
 
   private bindContent(sync: PhysicsWorldSync): void {
@@ -448,10 +533,12 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
       models: this.models,
       complexMeshes: this.complexMeshes,
     });
-    this.overlaySync.setModelContent({
-      models: this.models,
-      complexMeshes: this.complexMeshes,
-    });
+    for (const sync of this.layerSyncs()) {
+      sync.setModelContent({
+        models: this.models,
+        complexMeshes: this.complexMeshes,
+      });
+    }
   }
 
   private dispatchContacts(sync: PhysicsWorldSync): void {

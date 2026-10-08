@@ -1,4 +1,4 @@
-import type { World } from "@babylonslate/object-model";
+import type { Actor, World } from "@babylonslate/object-model";
 import type { PhysicsWorldSync } from "./physics-sync";
 import type { RagdollWorldSync } from "./ragdoll-sync";
 import type { ScriptHostServices } from "./script-host";
@@ -7,8 +7,8 @@ interface PhysicsHostDeps {
   world(): World;
   /** Main-Scene physics; replaced when the native backend loads. */
   physics(): PhysicsWorldSync;
-  /** Scene Layer (2D overlay) physics; replaced when the native backend loads. */
-  overlayPhysics(): PhysicsWorldSync;
+  /** The world that simulates an actor (its Scene Layer's own, or main); null for a layer without physics. */
+  physicsFor(actor: Actor): PhysicsWorldSync | null;
   ragdolls: Pick<RagdollWorldSync, "addImpulse" | "retireActor">;
   /** Simulated water time including the current tick (`WaterClock.time`). */
   waterTime(): number;
@@ -35,7 +35,7 @@ export function createPhysicsHostBindings(deps: PhysicsHostDeps): Pick<ScriptHos
       const target = actor;
       if (!target) return;
       if (deps.ragdolls.addImpulse(target, impulse, strength)) return;
-      deps.physics().addImpulse(
+      deps.physicsFor(target)?.addImpulse(
         target.guid,
         impulse,
         strength,
@@ -44,13 +44,11 @@ export function createPhysicsHostBindings(deps: PhysicsHostDeps): Pick<ScriptHos
     moveCharacter: (actor, translation, dt, offset) => {
       const target = actor;
       if (!target) return;
-      const sync = target.sceneLayerId ? deps.overlayPhysics() : deps.physics();
-      sync.moveCharacter(target, translation, dt, offset);
+      deps.physicsFor(target)?.moveCharacter(target, translation, dt, offset);
     },
     teleportActor: (actor, options) => {
       deps.ragdolls.retireActor(actor);
-      const sync = actor.sceneLayerId ? deps.overlayPhysics() : deps.physics();
-      sync.teleportActor(actor, deps.world(), options);
+      deps.physicsFor(actor)?.teleportActor(actor, deps.world(), options);
     },
   };
 }

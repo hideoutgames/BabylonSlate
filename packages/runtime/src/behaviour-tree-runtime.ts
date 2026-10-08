@@ -19,7 +19,7 @@ import { navPointFromUnknown, type RuntimeNavigation } from "./runtime-navigatio
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 import type { ScriptHost } from "./script-host";
 
-type SpriteClip = { assetGuid: string; clipName: string; normalisedTime: number };
+type SpriteClip = { assetGuid: string; clipName: string; normalisedTime: number; stateId?: string };
 
 // Shallow BT memory copies retain this live activation, while trace JSON omits
 // it. A resumed task writes to its current board and cannot finish a later run.
@@ -139,16 +139,24 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
   }
 
   /**
-   * Replace per-slot evaluation and Play Animation ownership with a trace
-   * frame's, so the Animation Graph skip, slot release and task end behave as
-   * in the recorded run.
+   * Replace per-slot evaluation, Play Animation ownership and Play Sound voice
+   * ownership with a trace frame's, so the Animation Graph skip, slot release,
+   * task end and abort behave as in the recorded run.
    */
   restoreFromTrace(states: readonly TraceBtState[]): void {
     this.evalBySlot.clear();
     this.lastStateJson.clear();
     this.playAnimOwnedSlots.clear();
+    this.voiceByActor.clear();
+    const actorBySlot = new Map<number, Actor>();
+    for (const actor of this.host.world().getActors()) {
+      const slotId = actor.destroyed ? undefined : this.host.slot(actor);
+      if (slotId !== undefined) actorBySlot.set(slotId, actor);
+    }
     for (const row of states) {
       if (row.playAnimationOwned === true) this.playAnimOwnedSlots.add(row.slotId);
+      const owner = actorBySlot.get(row.slotId);
+      if (row.playSoundVoiceId && owner) this.voiceByActor.set(owner.guid, row.playSoundVoiceId);
       this.evalBySlot.set(row.slotId, {
         stack: row.stack.map((frame) => ({ ...frame })),
         status: row.status as BtEvalState["status"],
@@ -167,6 +175,14 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
 
   /** Per-slot evaluation state recorded with each trace frame. */
   traceStates(): TraceBtState[] {
+    const voiceBySlot = new Map<number, string>();
+    if (this.voiceByActor.size > 0) {
+      for (const actor of this.host.world().getActors()) {
+        const voiceId = this.voiceByActor.get(actor.guid);
+        const slotId = voiceId && !actor.destroyed ? this.host.slot(actor) : undefined;
+        if (voiceId && slotId !== undefined) voiceBySlot.set(slotId, voiceId);
+      }
+    }
     return [...this.evalBySlot.entries()].map(([slotId, state]) => ({
       slotId,
       status: state.status,
@@ -181,6 +197,7 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
         ]),
       ),
       ...(this.playAnimOwnedSlots.has(slotId) ? { playAnimationOwned: true } : {}),
+      ...(voiceBySlot.has(slotId) ? { playSoundVoiceId: voiceBySlot.get(slotId) } : {}),
     }));
   }
 
@@ -358,6 +375,7 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
         assetGuid: clip.guid,
         clipName: clip.clipName,
         normalisedTime,
+        stateId: "bt.playAnimation",
       });
     } else {
       this.host.setSpriteClip(actor, null);

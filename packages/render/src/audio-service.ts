@@ -756,6 +756,9 @@ export class AudioService {
       reverbSend: resolved.environmentReverb,
       clipChunkId: clip.chunkId,
     };
+    // A resumed voice has played this long at its pitch; Doppler is not replayed.
+    const startOffset = (command.startOffsetSeconds ?? 0) * pitch;
+    if (Number.isFinite(startOffset) && startOffset > 0) request.startOffsetSeconds = startOffset;
     this.voices.set(voiceId, {
       voiceId,
       assetGuid,

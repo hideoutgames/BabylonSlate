@@ -40,9 +40,13 @@ export {
 } from "./infinite-loop";
 export {
   TraceRecorder,
+  type TraceAnimGraphState,
+  type TraceAudioState,
   type TraceBtState,
   type TraceFrame,
   type TraceInputEvent,
+  type TraceSpriteClip,
+  type TraceVoice,
   type TracePayload,
   type TraceRetention,
   type TraceStopReason,

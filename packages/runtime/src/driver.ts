@@ -68,6 +68,7 @@ import {
   type InfiniteLoopGuard,
   type RegisteredCommand,
   type TraceBtState,
+  type TraceFrame,
   type TracePayload,
   type UserCommandDef,
 } from "@babylonslate/debugger";
@@ -100,6 +101,8 @@ import { TickPipeline } from "./tick-pipeline";
 import { SnapshotPublisher } from "./snapshot-publisher";
 import { RenderCommandEmitter } from "./render-command-emitter";
 import { AudioParticleEmitter, createAudioHostBindings } from "./audio-particle-emitter";
+import { RuntimeVoices } from "./runtime-voices";
+import { SpriteClipTrace, type SpriteClipState } from "./sprite-clip-trace";
 import { createActorHostBindings, createAssetHostBindings } from "./runtime-host-actors";
 import { createComponentHostBindings } from "./runtime-host-components";
 import { createWorldInputProvider } from "./runtime-host-input";
@@ -231,6 +234,10 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly loopGuard: InfiniteLoopGuard;
 
   // Leaf services, built by field initializers: they take no other subsystem.
+  /** Voices `emit` started and has not stopped, for trace frames and restore. */
+  private readonly voices = new RuntimeVoices();
+  /** Sprite Animation clips actors show, for trace frames and restore. */
+  private readonly spriteClips = new SpriteClipTrace();
   private readonly assetPreloads = new RuntimeAssetPreloads(command => this.emit(command));
   private readonly painters = new Painter2DRuntime();
   private readonly textAppear = new Text2DAppearRuntime();
@@ -829,7 +836,7 @@ class InProcessRuntime implements RuntimeDriver {
       lifecycleId: () => this.lifecycleId,
       mainActorReady: (actor) => this.streams.actorReady(actor),
       overlayActorReady: (actor) => this.admission.canTickActor(actor, true),
-      hasSceneLayerDocuments: () => this.sceneLayerLibrary.size > 0,
+      hasPhysicsSceneLayers: () => [...this.sceneLayerLibrary.values()].some((layer) => layer.settings?.physicsEnabled === true),
       canTickActor: (actor) => this.admission.canTickActor(actor),
       scripts: () => this.scriptHost,
       frameId: () => this.frameId,
@@ -884,7 +891,7 @@ class InProcessRuntime implements RuntimeDriver {
     });
   }
 
-  /** World physics phase order: dynamic meshes, ragdolls, main and overlay steps, cables, contacts. */
+  /** World physics phase order: dynamic meshes, ragdolls, main and Scene Layer steps, cables, contacts. */
   private createWorld(options: RuntimeDriverOptions, registry: ClassRegistry): World {
     let guidSeq = 0;
     return new World({
@@ -904,7 +911,7 @@ class InProcessRuntime implements RuntimeDriver {
         this.dynamicMeshes.flush();
         this.ragdolls.sync();
         if (this.admission.canTickScene()) this.physics.stepMain(ctx.dt, this.waterClock.stepTime, (sync) => this.movement.step(ctx.dt, sync));
-        if (this.admission.hasReadyLayers()) this.physics.stepOverlay(ctx.dt, (sync) => this.movement.step(ctx.dt, sync));
+        if (this.admission.hasReadyLayers()) this.physics.stepLayers(ctx.dt, (sync) => this.movement.step(ctx.dt, sync));
         this.ragdolls.afterStep();
         if (this.admission.canTickScene()) this.cables.step(ctx.dt, this.physics.gravity, this.frameId + 1);
         this.physics.dispatchCollisionEvents();
@@ -941,7 +948,12 @@ class InProcessRuntime implements RuntimeDriver {
       settlePauseChanges: () => this.settlePauseChanges(),
       frameId: () => this.frameId,
       liveActors: () => this.renderSlots.size,
-      btTraceStates: () => this.behaviourTrees.traceStates(),
+      traceState: () => ({
+        bt: this.behaviourTrees.traceStates(),
+        audio: this.voices.traceState(),
+        sprites: this.spriteClips.traceStates(this.world.getActors()),
+        animGraphs: this.animGraphs.traceStates(),
+      }),
       reportLog: (message, severity, category) => this.reportLog(message, severity, category),
       emit: (command) => this.emit(command),
     }, {
@@ -1014,7 +1026,7 @@ class InProcessRuntime implements RuntimeDriver {
       realizeActor: (actor) => this.actors.realize(actor),
       removeActor: (actor) => this.actors.remove(actor),
       publishSnapshot: () => this.snapshots.publish(),
-      syncOverlayPhysics: () => this.physics.overlay.syncFromWorld(this.world),
+      syncOverlayPhysics: () => this.physics.syncLayers(),
       emit: (command) => this.emit(command),
     });
   }
@@ -1032,11 +1044,12 @@ class InProcessRuntime implements RuntimeDriver {
       demandAssets: () => this.demandAssetCatalog,
       assetPreloads: () => this.assetPreloads,
       continueSimulation: (owner) => this.waits.continueSimulation(owner),
-      setOverlayGravity: (gravity) => this.physics.setOverlayGravity(gravity),
+      addLayerPhysics: (layerGuid, assetGuid, settings, actors) => this.physics.addLayer(layerGuid, assetGuid, settings, actors),
+      removeLayerPhysics: (layerGuid) => this.physics.removeLayer(layerGuid),
       markUnsupportedInstance: (layerGuid) => this.simulation.markUnsupportedInstance("layer", layerGuid),
       createActor: (serialized, layerGuid) => createActorFromSerialized(this.world, serialized, this.actors.sceneActorHooks, layerGuid),
       publishSnapshot: () => this.snapshots.publish(),
-      syncOverlayPhysics: () => this.physics.overlay.syncFromWorld(this.world),
+      syncOverlayPhysics: () => this.physics.syncLayers(),
       tryCompleteSceneLoad: () => this.sceneRealizer.tryCompleteSceneLoad(),
       removeActor: (actor) => this.actors.remove(actor),
       cancelInvalidTweens: () => this.tweens.cancelInvalid(),
@@ -1099,7 +1112,7 @@ class InProcessRuntime implements RuntimeDriver {
       ...createPhysicsHostBindings({
         world: () => this.world,
         physics: () => this.physics.main,
-        overlayPhysics: () => this.physics.overlay,
+        physicsFor: (actor) => this.physics.forActor(actor),
         ragdolls: this.ragdolls,
         waterTime: () => this.waterClock.time,
         projectCursorToScene: (channel, options) => this.camera.projectCursorToScene(channel, options),
@@ -1135,7 +1148,7 @@ class InProcessRuntime implements RuntimeDriver {
         flushTextAppear: () => this.flushTextAppear(),
         refreshComponent: (component, propertyName) => this.propertyWrites.refreshComponent(component, propertyName),
       }),
-      ...createAudioHostBindings({ frameId, emit }),
+      ...createAudioHostBindings({ frameId, scriptVoiceId: () => this.voices.scriptVoiceId(), emit }),
       ...createNavigationHostBindings({ navigation: () => this.navigation }),
       ...createSceneStreamHostBindings({ streams: this.streams, world: () => this.world }),
       animGraphControl: (target) => this.animGraphs.control(target),
@@ -1247,8 +1260,8 @@ class InProcessRuntime implements RuntimeDriver {
     return this.physics.main;
   }
 
-  getOverlayPhysicsSync(): PhysicsWorldSync | null {
-    return this.physics.overlay;
+  getSceneLayerPhysicsSync(layerGuid: string): PhysicsWorldSync | null {
+    return this.physics.layer(layerGuid);
   }
 
   applyRagdollPoseCaptured(message: Extract<ControlMessage, { type: "ragdollPoseCaptured" }>): void {
@@ -1333,6 +1346,7 @@ class InProcessRuntime implements RuntimeDriver {
   ): void {
     const voiceId = String(message.voiceId ?? "").trim();
     if (!voiceId) return;
+    this.voices.ended(voiceId);
     for (const actor of this.world.getActors()) {
       if (actor.destroyed) continue;
       const component = actor.components.find(
@@ -1481,6 +1495,39 @@ class InProcessRuntime implements RuntimeDriver {
     this.behaviourTrees.restoreFromTrace(states);
   }
 
+  /**
+   * Resume a trace frame's behaviour trees, Animation Graphs, sprite clips and
+   * voices on the live World (actors match by guid, BT rows by render slot).
+   * Order: BT evaluation and ownership, Animation Graph evaluation, then each
+   * live actor's sprite clip in World order (`animState` for a recorded clip,
+   * collider clip cleared otherwise), then `stopSound` for live voices the
+   * frame lacks and `playSound` at the recorded offset for each recorded voice.
+   */
+  restoreFromTrace(frame: TraceFrame): void {
+    this.behaviourTrees.restoreFromTrace(frame.bt ?? []);
+    this.animGraphs.restoreFromTrace(frame.animGraphs ?? []);
+    const recordedClips = new Map((frame.sprites ?? []).map((clip) => [clip.actorGuid, clip]));
+    for (const actor of this.world.getActors()) {
+      if (actor.destroyed) continue;
+      const recorded = recordedClips.get(actor.guid);
+      if (!recorded) {
+        if (this.spriteClips.get(actor)) this.setActorSpriteClip(actor, null);
+        continue;
+      }
+      const { assetGuid, clipName, normalisedTime, stateId } = recorded;
+      this.setActorSpriteClip(actor, { assetGuid, clipName, normalisedTime, stateId });
+      const slotId = this.actorSlot(actor);
+      if (slotId === undefined) continue;
+      this.emit({
+        type: "animState", slotId, stateId, normalisedTime, blendWeights: { [stateId]: 1 },
+        clipName, clipKind: "sprite", clipAssetGuid: assetGuid, justFinished: false, justLooped: false,
+        layers: [{ stateId, clipAssetGuid: assetGuid, clipName, clipKind: "sprite", normalisedTime, weight: 1 }],
+      });
+    }
+    const audio = frame.audio ?? { voices: [], nextScriptVoice: 1 };
+    for (const command of this.voices.restoreCommands(audio, this.frameId)) this.emit(command);
+  }
+
   registerAnimGraph(guid: string, document: AnimGraphDocument): void {
     this.animGraphs.register(guid, document);
   }
@@ -1601,11 +1648,10 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   /** Animation graphs and BT Play Animation drive sprite clips in the actor's physics world. */
-  private setActorSpriteClip(
-    actor: Actor,
-    clip: { assetGuid: string; clipName: string; normalisedTime: number } | null,
-  ): void {
-    this.physics.forActor(actor).setActorSpriteClip(actor, clip);
+  private setActorSpriteClip(actor: Actor, clip: SpriteClipState | null): void {
+    this.spriteClips.set(actor, clip);
+    this.physics.forActor(actor)?.setActorSpriteClip(actor, clip &&
+      { assetGuid: clip.assetGuid, clipName: clip.clipName, normalisedTime: clip.normalisedTime });
   }
 
   /** The render slot this actor's own commands target (`RenderSlots.actorSlot`). */
@@ -1811,6 +1857,8 @@ class InProcessRuntime implements RuntimeDriver {
     const simDt = this.simulationDt();
     this.world.clock.dt = simDt;
     this.waterClock.advance(simDt);
+    // Voices play in real time, so their age follows the undilated step.
+    this.voices.advance(this.dt);
     const pending = this.resolveTickInput(simDt);
     this.ticks.beginPhaseTiming();
     this.tickWorld(pending, simDt);
@@ -2007,6 +2055,7 @@ class InProcessRuntime implements RuntimeDriver {
         tickIndex: this.world.clock.tickIndex,
       });
     }
+    this.voices.observe(command);
     this.onCommand?.(command);
   }
 }

@@ -1,5 +1,5 @@
 import type { PhysicsBackend } from "./backend";
-import type { PhysicsBackendOptions, PhysicsWorldKind } from "./types";
+import type { PhysicsBackendOptions, PhysicsWorldKind, Vec3 } from "./types";
 import { SoftwarePhysicsBackend } from "./software-backend";
 
 export type CreatePhysicsBackendOptions = PhysicsBackendOptions & {
@@ -63,6 +63,18 @@ export async function createPhysicsBackend(
     );
     return new SoftwarePhysicsBackend("2d", options.gravity);
   }
+}
+
+/**
+ * Loads Rapier 2D once and returns a synchronous factory of independent native
+ * 2D worlds, for callers that create worlds after loading (one per Scene Layer).
+ * Never falls back to software.
+ */
+export async function loadRapier2DBackendFactory(): Promise<(gravity: Vec3) => PhysicsBackend> {
+  const { Rapier2DPhysicsBackend } = await import("./rapier-backend");
+  const factory = await Rapier2DPhysicsBackend.createFactory();
+  loadedBackendModules.rapier = true;
+  return factory;
 }
 
 export function createSoftwarePhysicsBackend(

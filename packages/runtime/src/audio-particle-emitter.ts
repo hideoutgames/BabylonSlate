@@ -122,6 +122,8 @@ export class AudioParticleEmitter {
 
 interface AudioHostDeps {
   frameId(): number;
+  /** Names a script voice that has no id, so it can be traced, stopped and resumed. */
+  scriptVoiceId(): string;
   emit(command: CommandMessage): void;
 }
 
@@ -137,7 +139,7 @@ export function createAudioHostBindings(deps: AudioHostDeps): Pick<ScriptHostSer
         frameId: deps.frameId(),
         emitterActorGuid: options?.emitterActorGuid ?? null,
         loop: options?.loop,
-        voiceId: options?.voiceId,
+        voiceId: options?.voiceId ?? deps.scriptVoiceId(),
       });
     },
     setParticlePlaying: (actorGuid, playing, componentId) => {

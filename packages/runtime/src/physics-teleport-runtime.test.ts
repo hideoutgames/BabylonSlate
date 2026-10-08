@@ -88,9 +88,10 @@ it("publishes gameplay pose writes to real Havok before a same-event query and p
   }
 });
 
-it("routes a SceneLayer gameplay pose write to its overlay physics owner", async () => {
+it("routes a SceneLayer gameplay pose write to its layer's physics world", async () => {
   const layer = {
     ...createDefaultSceneLayer(),
+    settings: { ...createDefaultSceneLayer().settings, physicsEnabled: true },
     actors: [
       createActor("overlay-body", "Overlay Body", {
         classId: "Teleporter",
@@ -125,13 +126,13 @@ it("routes a SceneLayer gameplay pose write to its overlay physics owner", async
   });
   try {
     await runtime.loadScripts([script]);
-    runtime.createSceneLayer("overlay");
+    const sceneLayer = runtime.createSceneLayer("overlay")!;
     const world = runtime.getWorld();
     const actor = world
       .getActors()
       .find((entry) => entry.classId === "Teleporter")!;
     expect(actor.sceneLayerId).toBeTruthy();
-    const overlay = runtime.getOverlayPhysicsSync()!;
+    const overlay = runtime.getSceneLayerPhysicsSync(sceneLayer.guid)!;
     overlay.syncFromWorld(world);
     runtime.invokeScriptEvent("Teleporter", "Teleport", actor);
     expect(

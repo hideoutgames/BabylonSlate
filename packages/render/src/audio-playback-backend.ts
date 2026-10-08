@@ -30,6 +30,11 @@ export type AudioPlayRequest = {
   clipChunkId?: string;
   /** Exact decoded source generation; asset identity stays available for diagnostics. */
   cacheKey?: string;
+  /**
+   * Source position to start from, in clip seconds. A looping voice wraps it;
+   * a one-shot voice at or past the clip's end does not start and ends at once.
+   */
+  startOffsetSeconds?: number;
 };
 
 export interface AudioPlaybackBackend {

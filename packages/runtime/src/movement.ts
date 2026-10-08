@@ -18,7 +18,8 @@ type MovementState = {
 
 interface MovementHost {
   world: World;
-  physics(actor: Actor): PhysicsWorldSync;
+  /** Null for a Scene Layer without physics (Movement is world-only). */
+  physics(actor: Actor): PhysicsWorldSync | null;
   eligible(actor: Actor): boolean;
   gravity(actor: Actor): number;
   event(component: ActorComponent, name: string, args: Record<string, unknown>): void;
@@ -94,7 +95,7 @@ export class MovementWorldSync {
 
   private convert(actor: Actor, props: MovementProperties, value: unknown, yaw: number): Vec3 {
     const v = typeof value === "number" ? { x: finite(value), y: 0 } : vector(value);
-    if (this.host.physics(actor).getBackend().kind === "2d") {
+    if (this.host.physics(actor)?.getBackend().kind === "2d") {
       const magnitude = Math.abs(v.x);
       return { x: magnitude <= props.deadZone ? 0 : Math.sign(v.x) * Math.min(1, (magnitude - props.deadZone) / (1 - props.deadZone) * props.inputScale), y: 0, z: 0 };
     }
@@ -146,6 +147,7 @@ export class MovementWorldSync {
 
   private advance(actor: Actor, component: ActorComponent, state: MovementState, props: MovementProperties, dt: number): void {
     const physics = this.host.physics(actor);
+    if (!physics) return;
     const is2D = physics.getBackend().kind === "2d";
     let x = state.input.x + state.addedInput.x;
     let z = is2D ? 0 : state.input.z + state.addedInput.z;

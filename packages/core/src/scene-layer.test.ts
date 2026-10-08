@@ -13,7 +13,8 @@ import {
   sceneLayerToEditorScene,
   walkOverlayPointerHits,
 } from "./scene-layer";
-import { createActor, createDefaultSceneSettings } from "./scene";
+import { createActor, createDefaultSceneSettings, normalizeScene } from "./scene";
+import { createDefaultScene } from "./project";
 
 describe("SceneLayer schema", () => {
   it("creates an empty unlit 2D overlay document with 2D gravity and no post-process", () => {
@@ -178,6 +179,19 @@ describe("SceneLayer schema", () => {
       { id: expect.any(String), materialGuid: "pp", enabled: true },
     ]);
     expect(restored.actors).toHaveLength(1);
+  });
+
+  it("keeps physics off unless the layer enables it, and round-trips Enable Physics through a normalized editor scene", () => {
+    expect(normalizeSceneLayer({ name: "HUD" }).settings.physicsEnabled).toBe(false);
+    expect(normalizeSceneLayer({ settings: { physicsEnabled: "yes" } }).settings.physicsEnabled).toBe(false);
+    const layer = normalizeSceneLayer({ name: "Arena", settings: { physicsEnabled: true } });
+    expect(layer.settings.physicsEnabled).toBe(true);
+    const editor = normalizeScene(sceneLayerToEditorScene(layer));
+    expect(editorSceneToSceneLayer(editor).settings.physicsEnabled).toBe(true);
+    expect(editorSceneToSceneLayer({
+      ...editor, settings: { ...editor.settings, layerPhysicsEnabled: false },
+    }).settings.physicsEnabled).toBe(false);
+    expect(normalizeScene(createDefaultScene()).settings).not.toHaveProperty("layerPhysicsEnabled");
   });
 });
 

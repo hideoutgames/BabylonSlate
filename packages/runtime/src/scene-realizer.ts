@@ -55,7 +55,7 @@ interface SceneRealizerHost {
   deferModelsReady(): boolean;
   /** The host acknowledges the loading paint itself (`notifyLoadingPainted`). */
   deferLoadingPaint(): boolean;
-  physics(): Pick<RuntimePhysicsWorlds, "kind" | "gravity" | "main" | "overlay" | "replacesNative" | "acquireNative" | "installScene" | "prepareScene">;
+  physics(): Pick<RuntimePhysicsWorlds, "kind" | "gravity" | "main" | "syncLayers" | "replacesNative" | "acquireNative" | "installScene" | "prepareScene">;
   navigation(): Pick<RuntimeNavigation, "needsInitialization" | "markInitialized" | "prepareScene" | "registerAgents" | "registerObstacles">;
   layers(): Pick<SceneLayers, "createSteps" | "ownedReady">;
   scripts(): Pick<ScriptHost, "bindInterfaceHandlers">;
@@ -363,7 +363,7 @@ export class SceneRealizer implements RuntimeSubsystem {
     // SceneLayers remain in the World, retaining their bodies and motion.
     this.host.physics().main.syncFromWorld(world);
     checkpoint();
-    this.host.physics().overlay.syncFromWorld(world);
+    this.host.physics().syncLayers();
     checkpoint();
     // Actor removal releases only departing animation/BT state. Retained layers
     // continue from their existing graph state while the world is replaced.

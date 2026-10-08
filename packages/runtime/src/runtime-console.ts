@@ -55,7 +55,7 @@ interface RuntimeConsoleHost {
   requestScalability(request: ScalabilityRequest): void;
   projectRenderPath(): RenderPath;
   renderPathStatus(): RenderPathStatus | null;
-  physics(): Pick<RuntimePhysicsWorlds, "setShowCollision" | "main" | "overlay" | "emitDebugColliders">;
+  physics(): Pick<RuntimePhysicsWorlds, "setShowCollision" | "main" | "syncLayers" | "emitDebugColliders">;
   navigation(): Pick<RuntimeNavigation, "setShowPathfinding" | "setShowNavAgent">;
   behaviourTrees(): Pick<BehaviourTreeRuntime, "setDebug">;
   audioParticles(): Pick<AudioParticleEmitter, "stopAudio" | "stopParticles">;
@@ -233,7 +233,7 @@ export class RuntimeConsole {
             const world = host.world();
             world.flushPending();
             host.physics().main.syncFromWorld(world);
-            host.physics().overlay.syncFromWorld(world);
+            host.physics().syncLayers();
             host.snapshots().publish();
             host.physics().emitDebugColliders();
           } finally {

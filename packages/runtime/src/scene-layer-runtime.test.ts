@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   readActorSlot,
   readSnapshotHeader,
@@ -47,6 +47,126 @@ function worldScene(
     },
   };
 }
+
+function fallingChip(id: string, y = 0) {
+  return createActor(id, "Chip", {
+    classId: "SceneLayerActor",
+    transform: { position: [0, y, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+    components: [
+      { id: "rb", classId: "RigidBodyComponent", properties: { motionType: "dynamic", mass: 1, gravityScale: 1 } },
+      { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } } },
+    ],
+  });
+}
+
+function physicsLayer(
+  name: string,
+  gravity: [number, number, number],
+  actors: SerializedSceneLayer["actors"],
+  physicsEnabled = true,
+): SerializedSceneLayer {
+  return {
+    ...createDefaultSceneLayer(),
+    name,
+    settings: { ...createDefaultSceneLayer().settings, gravity, physicsEnabled },
+    actors,
+  };
+}
+
+function softwareLayerRuntime(sceneLayerLibrary: Record<string, SerializedSceneLayer>, onCommand?: (command: CommandMessage) => void) {
+  const runtime = createInProcessRuntime({
+    seed: 1,
+    preferSoftwarePhysics: true,
+    seedDemoActors: false,
+    playScene: worldScene("A"),
+    sceneLayerLibrary,
+    onCommand,
+  });
+  runtime.realizePlayWorld();
+  return runtime;
+}
+
+describe("Scene Layer physics worlds", () => {
+  it("simulates two layers with different gravity independently", () => {
+    const runtime = softwareLayerRuntime({
+      up: physicsLayer("Up", [0, 4, 0], [fallingChip("chip")]),
+      down: physicsLayer("Down", [0, -9.81, 0], [fallingChip("chip")]),
+    });
+    const up = runtime.createSceneLayer("up", 0);
+    const down = runtime.createSceneLayer("down", 1);
+    runtime.start();
+    for (let i = 0; i < 30; i++) runtime.tick();
+    const world = runtime.getWorld();
+    expect(world.findActor(inLayer(up, "chip"))?.transform.position.y).toBeGreaterThan(0.5);
+    expect(world.findActor(inLayer(down, "chip"))?.transform.position.y).toBeLessThan(-0.5);
+    runtime.stop();
+  });
+
+  it("never lets bodies in different layers collide", () => {
+    const floor = createActor("floor", "Floor", {
+      classId: "SceneLayerActor",
+      components: [
+        { id: "rb", classId: "RigidBodyComponent", properties: { motionType: "static", mass: 0, gravityScale: 0 } },
+        { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "box", halfExtents: { x: 5, y: 0.5, z: 0.5 } } } },
+      ],
+    });
+    const runtime = softwareLayerRuntime({
+      ground: physicsLayer("Ground", [0, -9.81, 0], [floor, fallingChip("resting", 2)]),
+      faller: physicsLayer("Faller", [0, -9.81, 0], [fallingChip("chip", 2)]),
+    });
+    const ground = runtime.createSceneLayer("ground", 0);
+    const faller = runtime.createSceneLayer("faller", 1);
+    runtime.start();
+    for (let i = 0; i < 90; i++) runtime.tick();
+    const world = runtime.getWorld();
+    // The same layer's floor stops its chip; the other layer's chip falls through.
+    expect(world.findActor(inLayer(ground, "resting"))?.transform.position.y).toBeGreaterThan(0.5);
+    expect(world.findActor(inLayer(faller, "chip"))?.transform.position.y).toBeLessThan(-2);
+    runtime.stop();
+  });
+
+  it("gives a layer without Enable Physics no world, keeps its bodies still and reports its physics components once", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = softwareLayerRuntime({ hud: physicsLayer("HUD", [0, -9.81, 0], [fallingChip("chip", 1)], false) }, (command) => commands.push(command));
+    const first = runtime.createSceneLayer("hud", 0);
+    const second = runtime.createSceneLayer("hud", 1);
+    runtime.start();
+    for (let i = 0; i < 30; i++) runtime.tick();
+    expect(runtime.getSceneLayerPhysicsSync(first!.guid)).toBeNull();
+    expect(runtime.getWorld().findActor(inLayer(first, "chip"))?.transform.position.y).toBe(1);
+    expect(runtime.getWorld().findActor(inLayer(second, "chip"))?.transform.position.y).toBe(1);
+    expect(commands.filter((command) => command.type === "diagnostic" && command.code === "physics.scene_layer_physics_disabled")).toEqual([
+      expect.objectContaining({ assetGuid: "hud", severity: "warning" }),
+    ]);
+    runtime.stop();
+  });
+
+  it("does not step a physics layer world that holds no bodies", () => {
+    const runtime = softwareLayerRuntime({ hud: physicsLayer("HUD", [0, -9.81, 0], [createActor("label", "Label", { classId: "SceneLayerActor" })]) });
+    const layer = runtime.createSceneLayer("hud", 0);
+    runtime.start();
+    runtime.tick();
+    const backend = runtime.getSceneLayerPhysicsSync(layer!.guid)!.getBackend();
+    const step = vi.spyOn(backend, "step");
+    for (let i = 0; i < 10; i++) runtime.tick();
+    expect(step).not.toHaveBeenCalled();
+    runtime.stop();
+  });
+
+  it("disposes a layer's world when the layer is removed", () => {
+    const runtime = softwareLayerRuntime({ hud: physicsLayer("HUD", [0, -9.81, 0], [fallingChip("chip")]) });
+    const layer = runtime.createSceneLayer("hud", 0);
+    runtime.start();
+    runtime.tick();
+    const backend = runtime.getSceneLayerPhysicsSync(layer!.guid)!.getBackend();
+    expect(backend.listDebugColliders()).toHaveLength(1);
+    const dispose = vi.spyOn(backend, "dispose");
+    runtime.removeSceneLayer(layer!.guid);
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(runtime.getSceneLayerPhysicsSync(layer!.guid)).toBeNull();
+    runtime.stop();
+  });
+});
 
 describe("SceneLayer runtime compositor", () => {
   it("spawns scene-owned overlays on realize and tears them down on changeScene", () => {
@@ -436,6 +556,7 @@ describe("SceneLayer runtime compositor", () => {
       settings: {
         ...createDefaultSceneLayer().settings,
         layerBounds: { width: 16, height: 9 },
+        physicsEnabled: true,
       },
       actors: [
         createActor("chip", "Chip", {
@@ -502,37 +623,30 @@ describe("SceneLayer runtime compositor", () => {
     runtime.stop();
   });
 
-  it("keeps the layer's authored gravity when the native overlay world loads", async () => {
-    const settings = createDefaultSceneLayer().settings;
-    const hud: SerializedSceneLayer = {
-      ...createDefaultSceneLayer(),
-      name: "HUD",
-      settings: { ...settings, gravity: [0, 4, 0] },
-      actors: [
-        createActor("chip", "Chip", {
-          classId: "SceneLayerActor",
-          components: [
-            { id: "rb", classId: "RigidBodyComponent", properties: { motionType: "dynamic", mass: 1, gravityScale: 1 } },
-            { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } } },
-          ],
-        }),
-      ],
-    };
-    const level = worldScene("A", [{ assetGuid: "hud", zOrder: 0, enabled: true }]);
+  it("keeps each layer's authored gravity when native layer worlds load", async () => {
+    const up = physicsLayer("Up", [0, 4, 0], [fallingChip("chip")]);
+    const down = physicsLayer("Down", [0, -9.81, 0], [fallingChip("chip")]);
+    const level = worldScene("A", [
+      { assetGuid: "up", zOrder: 0, enabled: true },
+      { assetGuid: "down", zOrder: 1, enabled: true },
+    ]);
     const runtime = createInProcessRuntime({
       seed: 1,
       seedDemoActors: false,
       playScene: level,
       playSceneGuid: "a",
       sceneLibrary: { a: level },
-      sceneLayerLibrary: { hud },
+      sceneLayerLibrary: { up, down },
     });
     try {
       await createPlayBootCoordinator().play(runtime);
       for (let i = 0; i < 30; i++) runtime.tick();
-      // Upward layer gravity lifts the chip; the default 2D gravity would drop it.
-      const chip = runtime.getWorld().findActor(inLayer(runtime.getWorld().getSceneLayers()[0], "chip"));
-      expect(chip?.transform.position.y).toBeGreaterThan(0.5);
+      const world = runtime.getWorld();
+      const [upLayer, downLayer] = world.getSceneLayers();
+      expect(runtime.getSceneLayerPhysicsSync(upLayer!.guid)?.getBackend().constructor.name).toBe("Rapier2DPhysicsBackend");
+      // Each native world keeps its own layer's gravity, not the first layer's.
+      expect(world.findActor(inLayer(upLayer, "chip"))?.transform.position.y).toBeGreaterThan(0.5);
+      expect(world.findActor(inLayer(downLayer, "chip"))?.transform.position.y).toBeLessThan(-0.5);
     } finally {
       runtime.stop();
     }
