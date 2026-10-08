@@ -53,6 +53,8 @@ Place Actors in a SceneLayer document: `SceneLayerActor` and subclasses, plus ov
 
 Overlay actors always simulate in a dedicated Rapier 2D world on the Play session, independent of the world scene’s `physicsWorld` (Havok 3D vs Rapier 2D). Overlay and world bodies do not overlap. Tilemap collision / Blocking Volume on overlay actors go to this Rapier world.
 
+- **Water and Movement:** water bodies, Water Buoyancy and Movement are world-only components, stripped from layer documents and refused by runtime Add Component, so the overlay world steps neither water nor Movement motors. Sample Water always queries the main world.
+
 ## Render
 
 Extra unlit ortho `Scene`s on the shared Engine:
