@@ -10,7 +10,7 @@ import { inActiveView } from "./active-view";
 import { updateDynamicMaterialBounds } from "./material-bounds";
 import { sceneWaterBlendDistance, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision } from "./render-settings";
 import { requestWaterFft, updateSceneWaterFft } from "./water-fft";
-import { applyWaterMaterialScalars, configureWaterMaterial, contactRange, WaterMaterialPlugin } from "./water-material";
+import { applyWaterMaterialScalars, configureWaterMaterial, contactRange, setWaterGridOffsetSource, WaterMaterialPlugin } from "./water-material";
 import { WaterContactField } from "./water-contact-field";
 import { WaterField, type WaterFieldSurface } from "./water-field";
 import { WaterReflection } from "./water-reflection";
@@ -42,6 +42,12 @@ type Surface = {
   restMin: Vector3; restMax: Vector3;
   /** Local X/Z by which the last recentre moved the grid (shifts sub-mesh bounds). */
   shift: Float64Array;
+  /**
+   * Local X/Z the vertex shader adds to the uploaded `positions` (`slateWaterGridOffset`): a Global grid on the GPU path
+   * uploads its lines relative to the snapped centre and this is the centre, so a recentre uploads no vertex data. Zero
+   * for every other surface, whose `positions` are the rest points themselves.
+   */
+  gridOffset: Float64Array;
   /** World matrix the per-vertex rest data was computed for; NaN forces a recompute. */
   placed: Float64Array;
   time: number | null; version: number;
@@ -52,7 +58,9 @@ type Surface = {
   /**
    * Rest grid (local) and its world rest points. Every other per-vertex rest input (spacing, normals, current, bank
    * distance, depth) depends only on the volume's rotation and scale; `worldBase` is the CPU path's input and goes stale
-   * on the GPU path while the volume only translates.
+   * on the GPU path while the volume only translates. `base` always holds the true local rest points (the CPU path,
+   * bounds and blend rows read it); `positions` is what is uploaded: `base`, or on a GPU Global grid `base` minus the
+   * snapped centre (`gridOffset`), which a recentre leaves unchanged (`writeRestPositions`).
    */
   base: Float32Array; worldBase: Float32Array; positions: Float32Array; normals: Float32Array;
   baseNormals: Float32Array; data: Float32Array; flow: Float32Array; spacing: Float32Array;
@@ -454,8 +462,9 @@ type LayoutChange = typeof UNCHANGED | typeof RECENTRED | typeof REBUILT;
 /**
  * Keeps the rest grid current. When Global Water's centre only moves by whole cells, the grid is the same one
  * translated (its lines are fixed offsets from the snapped centre, and every other rest input is uniform over open
- * water), so only its rest positions move: `RECENTRED`, with no per-vertex rest data, allocation or new buffers. Any
- * other input change builds a new grid: `REBUILT`.
+ * water), so only its rest positions move: `RECENTRED`, with no per-vertex rest data, allocation or new buffers (on the
+ * GPU path the shader moves the uploaded grid by `gridOffset`: no upload either). Any other input change builds a new
+ * grid: `REBUILT`.
  */
 function updateLayout(s: Surface, world: Matrix, inverse: Matrix): LayoutChange {
   const { body, water, mesh } = s;
@@ -562,7 +571,7 @@ function updateLayout(s: Surface, world: Matrix, inverse: Matrix): LayoutChange 
     for (let index = 0; index < s.spacing.length; index++) finest = Math.min(finest, s.spacing[index]!);
     s.plugin.meshSpacing = finest;
   }
-  s.positions.set(base);
+  writeRestPositions(s, 0, count);
   const indices: number[] = [], uvs: number[] = [];
   for (let row = 0; row <= rows; row++) for (let col = 0; col <= columns; col++) {
     uvs.push(col / columns, row / rows);
@@ -709,6 +718,28 @@ function placeGlobalGrid(s: Surface, cx: number, cz: number): void {
   s.restMax.x = base[base.length - 3]!; s.restMax.z = base[base.length - 1]!;
 }
 
+/** Whether the surface uploads its Global grid relative to the snapped centre, which the shader adds back (`gridOffset`). */
+const centredGrid = (s: Surface) => s.gpu && s.body.kind === "global";
+
+/**
+ * Fills `positions` for vertices [first, end) from `base`. A GPU Global grid is uploaded relative to its snapped centre
+ * (`gridOffset`), so these values depend only on the grid lines and the blend lift, never on where the grid currently
+ * is: a recentre leaves them, and the uploaded buffer, as they are. The centre is subtracted from the grid line, not
+ * from the float32 `base`, so open water's positions are exactly the lines.
+ */
+function writeRestPositions(s: Surface, first: number, end: number): void {
+  const base = s.base, out = s.positions;
+  if (!centredGrid(s)) { out.set(base.subarray(first * 3, end * 3), first * 3); return; }
+  const stride = s.layoutColumns + 1, cx = s.layoutState[L_CX]!, cz = s.layoutState[L_CZ]!, xs = s.gridX, zs = s.gridZ;
+  for (let v = first; v < end; v++) {
+    const i = v * 3, col = v % stride, row = (v - col) / stride;
+    // The blend lift's X/Z part (zero unless the volume is tilted) is the only difference from the lines.
+    out[i] = xs[col]! + (base[i]! - Math.fround(cx + xs[col]!));
+    out[i + 1] = base[i + 1]!;
+    out[i + 2] = zs[row]! + (base[i + 2]! - Math.fround(cz + zs[row]!));
+  }
+}
+
 const waveOut = createWaterWaveOutput(), slopeOut = new Float64Array(2);
 const normalMatrix = new Matrix(), toLocalNormal = new Matrix();
 const up = new Vector3(), across = new Vector3(), along = new Vector3(), boundsMin = new Vector3(), boundsMax = new Vector3(), boundsPad = new Vector3();
@@ -760,7 +791,7 @@ function updateBounds(s: Surface, world: Matrix, inverse: Matrix, recentred: boo
  * the grid and padded bounds current. Per-vertex rest data (base normals, current, bank distance, depth, spacing) depend
  * only on the grid and the volume's rotation and scale, so only a rebuilt grid or a rotated or scaled volume recomputes
  * and uploads them. On the GPU path a translated volume uploads nothing (the shader reads world positions) and a Global
- * recentre uploads only its rest positions; the CPU path re-derives its world rest points for its next animation step.
+ * recentre uploads nothing (it moves `gridOffset`; a blending grid rewrites only the rows near a neighbour); the CPU path re-derives its world rest points for its next animation step.
  */
 function placeSurface(s: Surface, time: number): void {
   if (s.plugin) s.plugin.time = time;
@@ -780,13 +811,15 @@ function placeSurface(s: Surface, time: number): void {
   const world = s.world, inverse = s.inverse;
   syncQuality(s);
   const layout = updateLayout(s, world, inverse);
+  const centred = centredGrid(s);
+  s.gridOffset[0] = centred ? s.layoutState[L_CX]! : 0; s.gridOffset[1] = centred ? s.layoutState[L_CZ]! : 0;
   const rebuilt = linear || layout === REBUILT;
   // A blending surface lifts its grid to the blended rest height before its bounds are padded. A blending Global grid
   // on the GPU path that only recentred or whose neighbours changed rewrites and uploads only the rows near a neighbour
   // (`placeGlobalBlend`): open water's own rest data are uniform everywhere else.
   const refresh = s.blend?.refresh === true;
   const globalRows = s.blend !== null && s.gpu && s.body.kind === "global" && !rebuilt && (layout === RECENTRED || refresh);
-  if (globalRows) placeGlobalBlend(s, layout === RECENTRED);
+  if (globalRows) placeGlobalBlend(s);
   else if (s.blend && (rebuilt || layout === RECENTRED || refresh)) placeBlend(s, world, inverse);
   const subMeshes = s.mesh.subMeshes ?? [];
   // A translation alone needs no new bounds: Babylon moves the local bounds with the world matrix.
@@ -798,10 +831,6 @@ function placeSurface(s: Surface, time: number): void {
     if (s.blend) s.blend.refresh = false;
     placeRestData(s);
     return;
-  }
-  if (layout === RECENTRED && s.gpu) {
-    s.positions.set(s.base);
-    s.mesh.updateVerticesData(VertexBuffer.PositionKind, s.positions, false);
   }
   if ((layout === RECENTRED || translated) && !s.gpu) {
     for (let i = 0; i < s.base.length; i += 3) {
@@ -856,7 +885,7 @@ function placeRestData(s: Surface): void {
   if (s.gpu) {
     // A static rest grid: the vertex shader adds every displacement and computes its own offsets.
     if (!s.offsetsZero) { s.offsets.fill(0); s.offsetsZero = true; s.mesh.updateVerticesData("slateWaterOffset", s.offsets); }
-    s.positions.set(s.base);
+    writeRestPositions(s, 0, s.base.length / 3);
     s.mesh.updateVerticesData(VertexBuffer.PositionKind, s.positions, false);
     s.mesh.updateVerticesData(VertexBuffer.NormalKind, s.normals);
     s.mesh.updateVerticesData("slateWaterData", s.data);
@@ -910,11 +939,11 @@ function uploadVertexRange(mesh: Mesh, kind: string, data: Float32Array, stride:
  * A blending Global grid on the GPU path after a recentre or a neighbour change: only the rows within a neighbour's
  * reach (now, or at the last write, which return to open water) plus one row either side (the rest normals' fit reads
  * them) are rewritten (`placeBlend` over their vertices, then uniform open-water rest data where no neighbour reaches)
- * and uploaded in place. A recentre still uploads every rest position (the whole grid moved); nothing else outside the
- * rows changes, so a Global grid whose neighbours are out of reach uploads only its positions, as when it blends with
- * nothing.
+ * and uploaded in place, positions included (their blend lift in y). A recentre moves the grid through `gridOffset`, so
+ * nothing outside the rows changes: a Global grid whose neighbours are out of reach uploads nothing, as when it blends
+ * with nothing.
  */
-function placeGlobalBlend(s: Surface, recentred: boolean): void {
+function placeGlobalBlend(s: Surface): void {
   const stride = s.layoutColumns + 1, count = s.base.length / 3, rows = count / stride - 1;
   globalReachRows(s, reachRows);
   const first = Math.max(0, Math.min(reachRows[0]!, s.blendRows[0]!) - 1);
@@ -923,10 +952,6 @@ function placeGlobalBlend(s: Surface, recentred: boolean): void {
   const begin = first * stride, end = (last + 1) * stride;
   if (last >= first) placeBlend(s, s.world, s.inverse, begin, end);
   else { s.restMin.y = 0; s.restMax.y = 0; }
-  if (recentred) {
-    s.positions.set(s.base);
-    s.mesh.updateVerticesData(VertexBuffer.PositionKind, s.positions, false);
-  }
   if (last < first) return;
   const world = s.world, rest = s.blendRest;
   const depth = s.body.depth * Vector3.TransformNormalFromFloatsToRef(0, 1, 0, world, point).length();
@@ -944,10 +969,8 @@ function placeGlobalBlend(s: Surface, recentred: boolean): void {
     s.normals[i] = 0; s.normals[i + 1] = 1; s.normals[i + 2] = 0;
   }
   blendNormals(s, begin, end);
-  if (!recentred) {
-    for (let i = begin * 3; i < end * 3; i++) s.positions[i] = s.base[i]!;
-    uploadVertexRange(s.mesh, VertexBuffer.PositionKind, s.positions, 3, begin, end);
-  }
+  writeRestPositions(s, begin, end);
+  uploadVertexRange(s.mesh, VertexBuffer.PositionKind, s.positions, 3, begin, end);
   uploadVertexRange(s.mesh, VertexBuffer.NormalKind, s.normals, 3, begin, end);
   uploadVertexRange(s.mesh, "slateWaterData", s.data, 4, begin, end);
   uploadVertexRange(s.mesh, "slateWaterFlow", s.flow, 3, begin, end);
@@ -1211,6 +1234,7 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
   mesh.setEnabled(body.enabled);
   mesh.metadata = { ...(mesh.metadata ?? {}), slateWater: true };
   let plugin: WaterMaterialPlugin | null = null;
+  const gridOffset = new Float64Array(2);
   if (customMaterial) mesh.material = customMaterial;
   else {
     const material = new PBRMaterial(`${name}:water`, scene);
@@ -1218,6 +1242,7 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
     plugin = new WaterMaterialPlugin(material, water, body);
     plugin.mesh = mesh;
     plugin.gpuWaves = true;
+    setWaterGridOffsetSource(mesh, gridOffset);
     // Unlit Stylized water never samples a reflection.
     if (water.style !== "stylized") {
       let reflection = reflections.get(scene);
@@ -1231,7 +1256,7 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
   const surface: Surface = {
     mesh, water, body, plugin, field: null, contacts: null, world: Matrix.Identity(), inverse: Matrix.Identity(), gpu: plugin !== null,
     layoutState: new Float64Array(LAYOUT_STATE).fill(NaN), gridX: new Float64Array(), gridZ: new Float64Array(),
-    restMin: new Vector3(), restMax: new Vector3(), shift: new Float64Array(2), placed: new Float64Array(16).fill(NaN), time: null, version: 0,
+    restMin: new Vector3(), restMax: new Vector3(), shift: new Float64Array(2), gridOffset, placed: new Float64Array(16).fill(NaN), time: null, version: 0,
     qualityRevision: NaN, density: 1, drawn: true,
     base: empty, worldBase: empty, positions: empty, normals: empty, baseNormals: empty, data: empty, flow: empty, spacing: empty,
     offsets: empty, bankGradient: empty, offsetsZero: true, boundedSubMeshes: -1, boundedFirst: null, fftDisplaced: false, boundsDirty: false,
