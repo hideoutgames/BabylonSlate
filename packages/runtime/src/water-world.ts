@@ -281,17 +281,15 @@ export class WaterWorld {
     }
   }
 
-  /** Last-wins guid lookup, as the whole-world pass; ambiguous graphs keep that pass. */
+  /** Compose the selected sources; a parent cycle falls back to the whole-world pass. */
   private composeSources(state: WaterState, actors: readonly Actor[]): Map<string, Transform> {
     const byGuid = this.byGuid;
     byGuid.clear();
     for (const actor of actors) byGuid.set(actor.guid, actor);
-    // Duplicate guids or a parent cycle make poses depend on world order.
-    if (byGuid.size === actors.length) {
-      const transforms = state.transforms;
-      transforms.clear();
-      if (!composeActorWorldTransformsInto((guid) => byGuid.get(guid), this.composed, transforms)) return transforms;
-    }
+    const transforms = state.transforms;
+    transforms.clear();
+    // A parent cycle makes poses depend on world order.
+    if (!composeActorWorldTransformsInto((guid) => byGuid.get(guid), this.composed, transforms)) return transforms;
     state.transforms = actorWorldTransforms(actors);
     return state.transforms;
   }

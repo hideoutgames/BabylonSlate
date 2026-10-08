@@ -1,4 +1,5 @@
 import {
+  assertUniqueSceneActorIds,
   isAssetDocumentKind,
   isSceneWorkspaceKind,
   parseDocumentId,
@@ -150,6 +151,13 @@ export class DocumentEditingService {
       return false;
     }
     const previous = doc.content as SerializedScene;
+    try {
+      // Actor ids become runtime guids; an edit that would repeat one is refused.
+      assertUniqueSceneActorIds(next.actors, doc.ref.label);
+    } catch (error) {
+      console.error(error);
+      return false;
+    }
     const intended = options?.prefabSync
       ? next
       : stampUserComponentOverrides(previous, next, this.prefabTemplatesForStamping());

@@ -1,5 +1,5 @@
 import type { CommandMessage } from "@babylonslate/bridge";
-import type { SerializedActor, SerializedScene } from "@babylonslate/core";
+import { assertUniqueSceneActorIds, type SerializedActor, type SerializedScene } from "@babylonslate/core";
 import { initNavigation } from "@babylonslate/navigation";
 import { hydrateScenePropertyReferences, type Actor, type Scene, type SceneLayer, type World } from "@babylonslate/object-model";
 import { isInfiniteLoopError } from "@babylonslate/debugger";
@@ -407,6 +407,8 @@ export class SceneRealizer implements RuntimeSubsystem {
     const { scene, guid, loadId } = work;
     const name = typeof scene?.name === "string" && scene.name.trim() ? scene.name : guid;
     if (scene) {
+      // Scene actor ids become live guids; a repeated id is rejected before any object exists.
+      assertUniqueSceneActorIds(scene.actors, name);
       this.sceneLoadingProgress = 0;
       world.beginSceneLoad(name);
       checkpoint();

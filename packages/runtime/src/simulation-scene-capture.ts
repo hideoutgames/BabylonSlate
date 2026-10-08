@@ -122,7 +122,6 @@ export function captureSimulationScene(input: SimulationSceneCaptureInput): Simu
       budget.add(1, actor.guid);
       if (actor.sceneLayerId || input.ownership(actor) !== "root") fail("ownership", actor.guid, "Keep requires every surviving actor to belong to the starting root scene.");
       if (!input.world.classRegistry.has(actor.classId)) fail("resource", actor.guid, `Class ${actor.classId} has no authored schema.`);
-      if (byGuid.has(actor.guid)) fail("reference", actor.guid, "Runtime actor GUID is ambiguous at the final boundary.");
       byGuid.set(actor.guid, actor);
       const source = sceneActorProvenance(actor);
       if (source && !beforeById.has(source)) fail("ownership", source, "An authored actor belongs to a different scene realization.");

@@ -114,13 +114,15 @@ describe("parent cycles in loaded data", () => {
 
       expect(world.findActor("b")!.getVariable("parentId")).toBeNull();
       expect(world.findActor("a")!.getVariable("parentId")).toBe("b");
-      expect(world.findActor("y")!.getVariable("parentId")).toBeNull();
-      expect(world.findActor("x")!.getVariable("parentId")).toBe("y");
+      const layerY = named(runtime, "Layer Y");
+      const layerX = named(runtime, "Layer X");
+      expect(layerY.getVariable("parentId")).toBeNull();
+      expect(layerX.getVariable("parentId")).toBe(layerY.guid);
       expect(runtime.getPhysicsSync()!.getBackend().sphereOverlap({ x: 1, y: 2, z: 0 }, 0.1).actorIds).toEqual(["a"]);
       const warnings = actorWarnings(commands);
       expect(warnings).toHaveLength(2);
       expect(warnings[0]).toContain("B (b)");
-      expect(warnings[1]).toContain("Layer Y (y)");
+      expect(warnings[1]).toContain("Layer Y (" + layerY.guid + ")");
     } finally {
       runtime.stop();
     }
@@ -155,16 +157,18 @@ describe("parent cycles in loaded data", () => {
       expect(runtime.getPhysicsSync()!.getBackend().sphereOverlap({ x: 11, y: 2, z: 0 }, 0.1).actorIds).toEqual([streamedA.guid]);
       expect(publishedPosition(runtime, slots.get(streamedA.guid))).toEqual({ x: 11, y: 2, z: 0 });
 
-      expect(runtime.createSceneLayer("layer")).not.toBeNull();
-      await vi.waitFor(() => expect(world.findActor("y")).toBeDefined());
-      expect(world.findActor("y")!.getVariable("parentId")).toBeNull();
-      expect(world.findActor("x")!.getVariable("parentId")).toBe("y");
+      const layer = runtime.createSceneLayer("layer");
+      expect(layer).not.toBeNull();
+      // Scene Layer actor guids are scoped to their layer instance.
+      await vi.waitFor(() => expect(world.findActor(layer!.guid + ":y")).toBeDefined());
+      expect(world.findActor(layer!.guid + ":y")!.getVariable("parentId")).toBeNull();
+      expect(world.findActor(layer!.guid + ":x")!.getVariable("parentId")).toBe(layer!.guid + ":y");
       runtime.tick();
 
       const warnings = actorWarnings(commands);
       expect(warnings).toHaveLength(2);
       expect(warnings[0]).toContain(`Streamed B (${streamedB.guid})`);
-      expect(warnings[1]).toContain("Layer Y (y)");
+      expect(warnings[1]).toContain("Layer Y (" + layer!.guid + ":y)");
     } finally {
       runtime.stop();
     }

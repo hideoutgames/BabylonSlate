@@ -108,7 +108,7 @@ describe("2D Painter retained drawing", () => {
         entryPoints: [{ name: "onTick", event: "onTick", isAsync: false }],
         source: 'export function onTick(ctx) { const ink = ctx.getComponentById(ctx.self, "ink"); ctx.callComponentFunction(ink, "painterDrawCircle", {center: {x:1,y:2}, radius: 0.5}); ctx.callComponentFunction(ink, "painterDrawLine", {start: {x:0,y:0}, end: {x:1,y:1}}); }',
       }]);
-      runtime.realizePlayWorld(); runtime.createSceneLayer("canvas"); runtime.start();
+      runtime.realizePlayWorld(); const canvas = runtime.createSceneLayer("canvas")!; runtime.start();
       const assignmentCount = commands.filter((command) => command.type === "assignMesh").length;
       runtime.tick(); runtime.tick();
       const updates = commands.filter((command) => command.type === "setPainter2D");
@@ -119,7 +119,7 @@ describe("2D Painter retained drawing", () => {
         { kind: "draw", fill: false, path: [{ kind: "move", point: [0, 0] }, { kind: "line", point: [1, 1] }] },
       ] } });
       expect(commands.filter((command) => command.type === "assignMesh")).toHaveLength(assignmentCount);
-      expect(commands.find((command) => command.type === "assignMesh" && command.actorGuid === "canvas")).toMatchObject({ meshKind: "2dpainter", parts: [{ componentId: "ink", painter: { width: 10, height: 10 } }] });
+      expect(commands.find((command) => command.type === "assignMesh" && command.actorGuid === `${canvas.guid}:canvas`)).toMatchObject({ meshKind: "2dpainter", parts: [{ componentId: "ink", painter: { width: 10, height: 10 } }] });
     } finally { runtime.stop(); }
   });
 });

@@ -93,8 +93,8 @@ describe("2D rich text appearance runtime", () => {
             ctx.setVariable("revealed", ctx.getVariableFrom(c, "isRevealed"));
           }`,
       }]);
-      runtime.realizePlayWorld(); runtime.createSceneLayer("labels"); runtime.start();
-      const actor = runtime.getWorld().findActor("label")!;
+      runtime.realizePlayWorld(); const layer = runtime.createSceneLayer("labels")!; runtime.start();
+      const actor = runtime.getWorld().findActor(`${layer.guid}:label`)!;
       const assignments = () => commands.filter((command) => command.type === "assignMesh");
       const initialAssignments = assignments().length;
       runtime.invokeScriptEvent("LabelActor", "Play", actor);

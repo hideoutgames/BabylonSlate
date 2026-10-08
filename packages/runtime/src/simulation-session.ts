@@ -89,11 +89,11 @@ export class SimulationSession {
     return this.host.sessionMode() === "simulate" && !this._quiescent;
   }
 
-  /** The actor's single live instance and its owning Scene, stream or SceneLayer accept a live edit now. */
+  /** The live actor and its owning Scene, stream or SceneLayer accept a live edit now. */
   canEditActor(actor: Actor): boolean {
     const world = this.host.world();
     const streams = this.host.streams();
-    if (this._quiescent || this.host.stopped() || this.host.boundaries().saveBoundaryActive || actor.destroyed || actor.world !== world || world.findActorInstances(actor.guid).length !== 1 || streams.blocking || !streams.actorReady(actor)) return false;
+    if (this._quiescent || this.host.stopped() || this.host.boundaries().saveBoundaryActive || actor.destroyed || actor.world !== world || streams.blocking || !streams.actorReady(actor)) return false;
     return actor.sceneLayerId ? this.host.layers().get(actor.sceneLayerId)?.ready === true : !this.host.sceneRealizer().blocked && !this.host.bootLoading();
   }
 

@@ -39,8 +39,9 @@ describe("runtime departing Scene loading", () => {
       const layerLoading = commands.find((command) => command.type === "sceneLayerLoading" && command.layerId === globalLayer.guid);
       if (layerLoading?.type !== "sceneLayerLoading") throw new Error("Missing layer loading identity");
       runtime.notifySceneLayerLoadingPainted(globalLayer.guid, layerLoading.layerLoadId);
-      await vi.waitFor(() => expect(world.findActor("global")).toBeDefined());
-      const globalActor = world.findActor("global")!;
+      const globalGuid = globalLayer.guid + ":global";
+      await vi.waitFor(() => expect(world.findActor(globalGuid)).toBeDefined());
+      const globalActor = world.findActor(globalGuid)!;
       const previous = [...world.getActors()].filter((actor) => !actor.sceneLayerId);
       const exit = vi.spyOn(world, "exitActiveScene");
       const actorTick = vi.spyOn(previous[0]!, "callOnTick");
@@ -70,7 +71,7 @@ describe("runtime departing Scene loading", () => {
       const activation = commands.findIndex((command) => command.type === "activeScene");
       expect(commands.filter((command) => command.type === "despawn")).toHaveLength(80);
       expect(commands.slice(activation).some((command) => command.type === "despawn")).toBe(false);
-      expect(world.findActor("global")).toBe(globalActor);
+      expect(world.findActor(globalGuid)).toBe(globalActor);
       expect(world.findSceneLayer(globalLayer.guid)).toBe(globalLayer);
     } finally { chunks.open(); runtime.stop(); }
   });

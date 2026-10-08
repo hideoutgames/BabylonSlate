@@ -72,6 +72,21 @@ export interface WorldOptions {
   canTickSceneSubsystem?: (subsystem: SceneSubsystem) => boolean;
 }
 
+/** Spawning an actor whose guid a live (or queued) actor already holds. */
+export class DuplicateActorGuidError extends Error {
+  readonly guid: Guid;
+
+  constructor(actor: Actor, existing: Actor | null) {
+    const holder = existing
+      ? `live ${existing.classId} actor${existing.sceneLayerId ? ` in SceneLayer ${existing.sceneLayerId}` : ""}`
+      : "queued actor";
+    super(`Cannot spawn ${actor.classId} actor "${actor.guid}": a ${holder} already uses this guid. ` +
+      "Actor guids must be unique; destroy the previous actor before spawning its replacement.");
+    this.name = "DuplicateActorGuidError";
+    this.guid = actor.guid;
+  }
+}
+
 /** An in-progress actor/component phase's view of the actor list. */
 type ActorIteration = { list: readonly Actor[]; length: number };
 
@@ -107,8 +122,10 @@ export class World {
   private announcedToSceneSubsystems = new WeakSet<Actor | SceneLayer>();
   /** Actors in spawn order — never iterate a Map for tick/snapshot. */
   private readonly actors: Actor[] = [];
-  /** Preserve first-spawned lookup while replacement actors share a guid. */
-  private readonly actorsByGuid = new Map<Guid, Actor[]>();
+  /** Live actors by guid, including ones queued for destruction. Guids are unique. */
+  private readonly actorsByGuid = new Map<Guid, Actor>();
+  /** Guids reserved by queued spawns until each commits or is cancelled. */
+  private readonly pendingSpawnGuids = new Set<Guid>();
   private readonly sceneLayers: SceneLayer[] = [];
   /** Earliest `actors` position whose spawnIndex a removal shifted and has not yet reassigned. */
   private staleSpawnIndexFrom = Number.POSITIVE_INFINITY;
@@ -337,27 +354,52 @@ export class World {
     }
   }
 
-  /** Queue actor for spawn; applied after the current phase / at end of tick. */
+  /**
+   * Queue actor for spawn; applied after the current phase / at end of tick.
+   * Throws `DuplicateActorGuidError` when its guid is live or already queued.
+   */
   spawnActor(actor: Actor): Actor {
-    this.pendingSpawn.push(actor);
+    this.queueSpawn(actor);
     return actor;
   }
 
   /** Immediately spawn if not mid-tick; otherwise queues like `spawnActor`. */
   spawnActorNow(actor: Actor): Actor {
     if (this.ticking) {
-      this.pendingSpawn.push(actor);
+      this.queueSpawn(actor);
       return actor;
     }
+    this.assertGuidAvailable(actor);
     this.commitSpawn(actor);
     return actor;
+  }
+
+  /**
+   * Two live actors never share a guid. An actor queued for destruction stays
+   * live until that destruction commits and a queued spawn reserves its guid,
+   * so a replacement spawns only after its predecessor's destruction commits.
+   */
+  private assertGuidAvailable(actor: Actor): void {
+    const live = this.actorsByGuid.get(actor.guid);
+    if (live) throw new DuplicateActorGuidError(actor, live);
+    if (this.pendingSpawnGuids.has(actor.guid)) throw new DuplicateActorGuidError(actor, null);
+  }
+
+  private queueSpawn(actor: Actor): void {
+    this.assertGuidAvailable(actor);
+    this.pendingSpawnGuids.add(actor.guid);
+    this.pendingSpawn.push(actor);
   }
 
   destroyActor(guid: Guid): void {
     this.pendingDestroy.push(guid);
   }
 
-  /** Cancel owned preparation without deleting a later Actor with the same guid. */
+  /**
+   * Destroy this actor object, or cancel its unspawned preparation. Unlike
+   * `destroyActor(guid)`, a stale cleanup never reaches a successor that
+   * reuses the guid after this actor left.
+   */
   destroyActorInstance(actor: Actor): void {
     if (actor.world === this) {
       this.pendingDestroy.push(actor);
@@ -365,7 +407,10 @@ export class World {
     }
     if (actor.world || actor.destroyed) return;
     const pending = this.pendingSpawn.indexOf(actor, this.spawnCursor);
-    if (pending >= 0) this.pendingSpawn.splice(pending, 1);
+    if (pending >= 0) {
+      this.pendingSpawn.splice(pending, 1);
+      this.pendingSpawnGuids.delete(actor.guid);
+    }
     // An unspawned actor never received creation hooks and has no live world.
     for (const component of actor.components) {
       component.destroyed = true;
@@ -503,12 +548,9 @@ export class World {
     scene.callOnDestroyed();
   }
 
-  findActorInstances(guid: Guid): readonly Actor[] {
-    return this.actorsByGuid.get(guid) ?? [];
-  }
-
+  /** The live actor with this guid, including one queued for destruction. */
   findActor(guid: Guid): Actor | undefined {
-    return this.actorsByGuid.get(guid)?.[0];
+    return this.actorsByGuid.get(guid);
   }
 
   private commitSpawn(actor: Actor): void {
@@ -517,9 +559,7 @@ export class World {
     actor.spawnIndex = this.actors.length;
     this.actors.push(actor);
     this.markStructureChanged();
-    const sameGuid = this.actorsByGuid.get(actor.guid);
-    if (sameGuid) sameGuid.push(actor);
-    else this.actorsByGuid.set(actor.guid, [actor]);
+    this.actorsByGuid.set(actor.guid, actor);
     this.announceSceneActor(actor);
     actor.callOnCreation();
     for (const component of actor.components) component.callOnCreation();
@@ -536,7 +576,9 @@ export class World {
       this.destroyCursor < this.pendingDestroy.length
     ) {
       while (this.spawnCursor < this.pendingSpawn.length) {
-        this.commitSpawn(this.pendingSpawn[this.spawnCursor++]!);
+        const actor = this.pendingSpawn[this.spawnCursor++]!;
+        this.pendingSpawnGuids.delete(actor.guid);
+        this.commitSpawn(actor);
       }
       this.pendingSpawn.length = 0;
       this.spawnCursor = 0;
@@ -563,9 +605,7 @@ export class World {
     this.actors.splice(index, 1);
     this.staleSpawnIndexFrom = Math.min(this.staleSpawnIndexFrom, index);
     this.markStructureChanged();
-    const sameGuid = this.actorsByGuid.get(actor.guid)!;
-    sameGuid.splice(sameGuid.indexOf(actor), 1);
-    if (sameGuid.length === 0) this.actorsByGuid.delete(actor.guid);
+    this.actorsByGuid.delete(actor.guid);
     // Unlinked but intact, before its own teardown; announced actors only.
     if (this.announcedToSceneSubsystems.delete(actor)) {
       for (const subsystem of this.liveSceneSubsystems()) {

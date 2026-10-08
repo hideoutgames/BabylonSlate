@@ -127,7 +127,7 @@ const PARTICIPANT_CLASSES = new Set([
 
 /**
  * Physics hierarchy semantics shared by the per-tick pass and call-time chains:
- * `lookup` answers a parent guid with its first live match (as both
+ * `lookup` answers a parent guid with its live actor (as both
  * `World.findActor` and the per-tick index do), a destroyed parent ends the
  * chain, a parent cycle throws, and every parented link is checked against the
  * shear-free, nonzero-scale TRS boundary.
@@ -217,7 +217,6 @@ export function physicsWorldTransforms(
   for (const actor of actors) {
     if (
       !actor.destroyed &&
-      byGuid.get(actor.guid) === actor &&
       eligible(actor) &&
       actor.components.some(
         (component) =>

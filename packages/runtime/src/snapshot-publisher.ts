@@ -39,7 +39,7 @@ interface SnapshotPublisherHost {
  * The Actor pose snapshot: seq-locked double buffer, capacity growth
  * (`snapshotLayout`), the floating origin, and publishing. A publish lays out
  * overlays and runs the removal pass, then composes world poses and writes
- * every live first-spawned actor's slot. `advance()` catch-up ticks keep their
+ * every live actor's slot. `advance()` catch-up ticks keep their
  * per-tick layout and removals but write only the burst's final frame.
  */
 export class SnapshotPublisher {
@@ -205,11 +205,11 @@ export class SnapshotPublisher {
   private retireRemovedActors(): void {
     this.host.retireDetachedStreams();
     let removedActors = false;
-    for (const [actorGuid, slotId] of this.slots.guidEntries()) {
-      // The World's guid index answers "any live actor has this guid".
-      if (this.world.findActor(actorGuid)) continue;
-      this.host.emit({ type: "despawn", slotId, actorGuid });
-      this.slots.release(actorGuid, slotId);
+    for (const [slotId, owner] of this.slots.entries()) {
+      // The World's guid index answers whether this slot's own actor is still live.
+      if (this.world.findActor(owner.guid) === owner) continue;
+      this.host.emit({ type: "despawn", slotId, actorGuid: owner.guid });
+      this.slots.release(slotId);
       removedActors = true;
     }
     if (removedActors) this.host.removedActors();
@@ -231,10 +231,6 @@ export class SnapshotPublisher {
     for (const actor of actors) {
       // Layout-only anchors must not create fallback visuals from pose snapshots.
       if (isSceneLayerAnchorActor(actor)) continue;
-      // Only a guid's first-spawned live actor (the one parents, physics and
-      // the crowd resolve) writes its own slot; later duplicates' slots get no
-      // entry, although the guid maps to the latest-assigned one.
-      if (findActor(actor.guid) !== actor) continue;
       const slotId = this.slots.recordedSlot(actor);
       if (slotId === undefined) continue;
       const pose = worldTransforms.get(actor.guid);

@@ -4,7 +4,7 @@ import { ClassRegistry, World, type Actor } from "@babylonslate/object-model";
 import { HavokPhysicsBackend, createSoftwarePhysicsBackend } from "@babylonslate/physics";
 import { PhysicsWorldSync } from "./physics-sync";
 import { PhysicsConstraintSync } from "./physics-constraint-sync";
-import { firstSpawnedWorldTransforms } from "./actor-world-transform";
+import { actorWorldTransforms } from "./actor-world-transform";
 
 function worldFixture() {
   return new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
@@ -54,7 +54,7 @@ describe("authored physics constraints", () => {
     try {
       sync.syncFromWorld(world);
       const actors = world.getActors();
-      const transforms = firstSpawnedWorldTransforms(actors);
+      const transforms = actorWorldTransforms(actors);
       const options = { actors, actorById: new Map(actors.map((actor) => [actor.guid, actor])),
         worldScale: (actor: Actor) => transforms.get(actor.guid)!.scale,
         bodies: new Map(actors.map((actor) => [actor.guid, `body:${actor.guid}`])),

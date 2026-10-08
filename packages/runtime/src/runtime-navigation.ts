@@ -15,7 +15,7 @@ import {
   type NavObstacleKind,
   type NavPoint,
 } from "@babylonslate/navigation";
-import { actorChainWorldTransform, composeActorWorldTransforms, firstSpawnedWorldTransforms } from "./actor-world-transform";
+import { actorChainWorldTransform, composeActorWorldTransforms, actorWorldTransforms } from "./actor-world-transform";
 import { actorLocalPhysicsTransform, type PhysicsWorldSync } from "./physics-sync";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 
@@ -198,6 +198,24 @@ export class RuntimeNavigation implements RuntimeSubsystem {
     this.emitDebug(true);
   }
 
+  /**
+   * A departing actor's agent and requests leave with it, so an actor that
+   * later reuses its guid (a reloaded Scene or Save Game actor) starts fresh.
+   */
+  retireActor(actor: Actor): void {
+    this.forgetDeparted(actor);
+  }
+
+  /** A script-destroyed actor's slot returns after the World removed it. */
+  releaseSlot(_slotId: number, owner: Actor | undefined): void {
+    if (owner) this.forgetDeparted(owner);
+  }
+
+  private forgetDeparted(actor: Actor): void {
+    const live = this.host.world().findActor(actor.guid);
+    if (!live || live === actor) this.removeActor(actor.guid);
+  }
+
   /** A streamed actor left its instance: drop its agent and pending request. */
   removeActor(actorGuid: string): void {
     const agent = this.navAgentByActor.get(actorGuid);
@@ -260,16 +278,16 @@ export class RuntimeNavigation implements RuntimeSubsystem {
     return !!rigid && parseRigidBodyProperties(Object.fromEntries(rigid.variables)).motionType === "dynamic";
   }
 
-  /** Current pose through the actor's own chain; parents resolve first-spawned. */
+  /** Current pose through the actor's own chain of live parents. */
   private navActorWorldPosition(actor: Actor): NavPoint {
     const world = this.host.world();
     return actorChainWorldTransform(actor, (guid) => world.findActor(guid))?.position ?? actor.transform.position;
   }
 
   /**
-   * Resolve an actor through the frame index, which answers each guid with its
-   * first-spawned live actor (`World.findActor`). An indexed actor destroyed
-   * since the index was built falls back to the live World's answer.
+   * Resolve an actor through the frame index of live actors by guid. An
+   * indexed actor destroyed since the index was built falls back to the live
+   * World's answer (`World.findActor`).
    */
   private navFrameActor(index: ReadonlyMap<string, Actor>, guid: string): Actor | undefined {
     const world = this.host.world();
@@ -299,7 +317,7 @@ export class RuntimeNavigation implements RuntimeSubsystem {
   }
 
   registerAgents(
-    transforms = firstSpawnedWorldTransforms(this.host.world().getActors()),
+    transforms = actorWorldTransforms(this.host.world().getActors()),
   ): void {
     if (!this.nav) return;
     for (const actor of this.host.world().getActors()) {
@@ -313,7 +331,7 @@ export class RuntimeNavigation implements RuntimeSubsystem {
   ): void {
     if (!this.nav || actor.destroyed || !this.host.streamActorReady(actor)) return;
     if (this.navAgentByActor.has(actor.guid)) return;
-    // Agents are keyed by guid; only the guid's first-spawned actor owns one.
+    // Agents are keyed by guid and belong to the live actor holding it.
     if (this.host.world().findActor(actor.guid) !== actor) return;
     const component = actor.components.find(
       (entry) => entry.classId === "NavAgentComponent" && !entry.destroyed,
@@ -347,7 +365,7 @@ export class RuntimeNavigation implements RuntimeSubsystem {
 
   registerObstacles(actors: readonly Actor[] = this.host.world().getActors(), acquired?: string[]): void {
     if (!this.nav) return;
-    const transforms = firstSpawnedWorldTransforms(this.host.world().getActors(), actors);
+    const transforms = actorWorldTransforms(this.host.world().getActors(), actors);
     for (const actor of actors) {
       if (actor.destroyed || !this.host.streamActorReady(actor)) continue;
       const component = actor.components.find(

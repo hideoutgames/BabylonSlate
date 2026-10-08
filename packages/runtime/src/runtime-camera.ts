@@ -16,7 +16,7 @@ interface RuntimeCameraHost {
   frameId(): number;
   /** The render slot this actor's own commands target. */
   slot(actor: Actor): number | undefined;
-  /** The slot of a guid's first-spawned live actor. */
+  /** The slot of the live actor with this guid. */
   guidSlot(guid: string): number | undefined;
   streams(): Pick<SceneStreams, "isStreamActor">;
   /** The cursor of the most recent resolved input tick. */

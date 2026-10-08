@@ -370,7 +370,7 @@ export class PhysicsWorldSync {
     const sources = this.passSources;
     sources.clear();
     for (const actor of this.actors) {
-      if (actor.destroyed || this.actorById.get(actor.guid) !== actor) continue;
+      if (actor.destroyed) continue;
       if (!this.actorFilter(actor) || this.suppressedActors.has(actor)) continue;
       const source = this.classifyActor(actor);
       if (source !== false) sources.set(actor, source);
@@ -881,9 +881,7 @@ export class PhysicsWorldSync {
 
   private indexActors(): void {
     this.actorById.clear();
-    for (const actor of this.actors)
-      if (!this.actorById.has(actor.guid))
-        this.actorById.set(actor.guid, actor);
+    for (const actor of this.actors) this.actorById.set(actor.guid, actor);
   }
 
   private retireActor(actorId: string): void {

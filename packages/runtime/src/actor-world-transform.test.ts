@@ -13,7 +13,7 @@ import {
   actorWorldTransform,
   composeActorWorldTransforms,
   composeParentChildTransform,
-  firstSpawnedActorIndex,
+  actorGuidIndex,
   multiplyQuaternion,
   relativeTransform,
   WorldTransformComposer,
@@ -111,7 +111,7 @@ describe("actor world transforms match the authored matrices", () => {
       { parent: -1, transform: transform([0, 0, 0], { x: 0, y: 0, z: 0, w: 1 }, [2, 1, 1]) },
       { parent: 0, transform: transform([0, 0, 0], { x: 0, y: 0, z: S, w: S }, [1, 1, 1]) },
     ]);
-    const index = firstSpawnedActorIndex(actors);
+    const index = actorGuidIndex(actors);
     const world = composeActorWorldTransforms((guid) => index.get(guid), [actors[1]!]).get("actor-1")!;
     expect(world.rotation).toEqual({ x: 0, y: 0, z: S, w: S });
     expect(world.scale.x).toBeCloseTo(1, 12);
@@ -129,7 +129,7 @@ describe("actor world transforms match the authored matrices", () => {
       { parent: 1, transform: transform([1, 0, 0], { x: 0, y: 0, z: 0, w: 1 }, [1, 1, 1]) },
     ]);
     const sheared: string[] = [];
-    const index = firstSpawnedActorIndex(actors);
+    const index = actorGuidIndex(actors);
     const worlds = composeActorWorldTransforms((guid) => index.get(guid), actors, (actor) => sheared.push(actor.guid));
     const grandchild = worlds.get("actor-2")!.position;
     expect(grandchild.x).toBeCloseTo(1.414214, 6);
@@ -146,7 +146,7 @@ describe("actor world transforms match the authored matrices", () => {
       fc.property(hierarchy(axisAlignedRotation), (nodes) => {
         const actors = spawnHierarchy(nodes);
         const expected = authoredWorlds(nodes);
-        const index = firstSpawnedActorIndex(actors);
+        const index = actorGuidIndex(actors);
         const sheared: Actor[] = [];
         const worlds = composeActorWorldTransforms((guid) => index.get(guid), actors, (actor) => sheared.push(actor));
         expect(sheared).toEqual([]);
@@ -164,7 +164,7 @@ describe("actor world transforms match the authored matrices", () => {
       fc.property(hierarchy(anyRotation), (nodes) => {
         const actors = spawnHierarchy(nodes);
         const expected = authoredWorlds(nodes);
-        const index = firstSpawnedActorIndex(actors);
+        const index = actorGuidIndex(actors);
         const worlds = composeActorWorldTransforms((guid) => index.get(guid), actors);
         // A basis within AFFINE_SHEAR_TOLERANCE of orthogonal counts as shear-free
         // and continues through its decomposed pose, so descendants may drift by
