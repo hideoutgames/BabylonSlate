@@ -47,7 +47,7 @@ interface ActorRealizationHost {
   textAppear(): Pick<Text2DAppearRuntime, "remove">;
   subsystems(): Pick<RuntimeSubsystems, "retireActor">;
   cancelInvalidTweens(): void;
-  /** The tick's first-spawned actor index while behaviour trees and the crowd run, else null. */
+  /** The tick's live actor index by guid while behaviour trees and the crowd run, else null. */
   frameActors(): Map<string, Actor> | null;
   reportLog(message: string, severity: LogSeverity, category: string): void;
   emit(command: CommandMessage): void;
@@ -231,8 +231,7 @@ export class ActorRealization {
     checkpoint();
     this.admission.flushSpawned(actor);
     checkpoint();
-    // The frame index answers first-spawned: a new actor enters only when no
-    // earlier live actor already holds its guid.
+    // A spawn queued mid-tick joins the frame index once it commits, next frame.
     if (world.findActor(actor.guid) === actor) this.host.frameActors()?.set(actor.guid, actor);
   }
 
@@ -265,7 +264,7 @@ export class ActorRealization {
       if (ownsSlot()) this.host.audioParticles().stopParticles(actor);
       if (ownsSlot()) this.host.emit({ type: "despawn", slotId: slotId!, actorGuid: actor.guid });
     } finally {
-      if (ownsSlot()) slots.release(actor.guid, slotId!);
+      if (ownsSlot()) slots.release(slotId!);
       this.host.overlay().forgetActor(actor);
       this.host.world().destroyActorInstance(actor);
       this.host.cancelInvalidTweens();

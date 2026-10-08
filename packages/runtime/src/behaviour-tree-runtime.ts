@@ -28,7 +28,7 @@ type BtTaskActivation = { active: boolean; blackboard: BlackboardValues; result?
 
 interface BehaviourTreeRuntimeHost {
   world(): World;
-  /** Frame index (first-spawned actor per guid) shared with the crowd tick. */
+  /** Frame index (live actor per guid) shared with the crowd tick. */
   frameActors(): ReadonlyMap<string, Actor> | undefined;
   stopped(): boolean;
   canTick(actor: Actor): boolean;

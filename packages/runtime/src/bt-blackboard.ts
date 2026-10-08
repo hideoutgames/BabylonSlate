@@ -8,7 +8,7 @@ import {
   type World,
 } from "@babylonslate/object-model";
 import type { NavPoint } from "@babylonslate/navigation";
-import { actorWorldTransform, composeParentChildTransform, firstSpawnedActorIndex } from "./actor-world-transform";
+import { actorWorldTransform, composeParentChildTransform, actorGuidIndex } from "./actor-world-transform";
 
 /** Keep live objects inside the evaluator; only transport/trace copies use references. */
 export function snapshotBlackboard(values: BlackboardValues): BlackboardValues {
@@ -43,13 +43,12 @@ export function blackboardInspectTypes(document?: BlackboardDocument): Record<st
 
 /**
  * World position of a blackboard Vector or spatial reference. `actorsByGuid`
- * answers each guid with its first-spawned live actor (the frame index or
- * `firstSpawnedActorIndex`); a later same-guid duplicate is not a target.
+ * answers each guid with its live actor (the frame index or `actorGuidIndex`).
  */
 export function blackboardTargetPosition(
   value: unknown,
   world: World,
-  actorsByGuid: ReadonlyMap<string, Actor> = firstSpawnedActorIndex(world.getActors()),
+  actorsByGuid: ReadonlyMap<string, Actor> = actorGuidIndex(world.getActors()),
 ): NavPoint | null {
   if (!value || typeof value !== "object") return null;
   if (value instanceof BObject && value.destroyed) return null;
