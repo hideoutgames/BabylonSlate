@@ -826,6 +826,134 @@ describe("Water rendering", () => {
       expect(current.every((value, i) => Math.abs(value - fresh[i]!) < 1e-5)).toBe(true);
     } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
   });
+  describe("budgeted blend refresh", () => {
+    const KINDS = [VertexBuffer.PositionKind, VertexBuffer.NormalKind, "slateWaterData", "slateWaterFlow", "slateWaterBaseNormal", "slateWaterBlend"];
+    const attributes = (mesh: Mesh) => KINDS.map((kind) => Array.from(mesh.getVerticesData(kind)!));
+    const near = (actual: number[][], expected: number[][]) =>
+      actual.every((values, k) => values.length === expected[k]!.length && values.every((value, i) => Math.abs(value - expected[k]![i]!) < 1e-5));
+    const lakeBody = () => normalizeWaterBody({ width: 30, length: 30, resolution: 24 });
+    /** Both lakes' attributes after a synchronous first pass with the second lake at `pose`. */
+    const fresh = (pose: Vector3, rotationX = 0) => {
+      const engine = new NullEngine(), scene = new Scene(engine);
+      new FreeCamera("camera", new Vector3(0, 30, -40), scene);
+      try {
+        const a = createWaterMesh(scene, "a", lakeBody()), b = createWaterMesh(scene, "b", lakeBody());
+        b.position.copyFrom(pose); b.rotation.x = rotationX;
+        updateSceneWater(scene);
+        return [attributes(a), attributes(b)];
+      } finally { scene.dispose(); engine.dispose(); }
+    };
+    /** Every call advances the clock, so each chunk of the refresh has a measurable cost and the frame budget is reached. */
+    const setup = () => {
+      const engine = new NullEngine(), scene = new Scene(engine);
+      new FreeCamera("camera", new Vector3(0, 30, -40), scene);
+      const clock = { now: 1000 };
+      vi.spyOn(performance, "now").mockImplementation(() => (clock.now += 0.5));
+      const a = createWaterMesh(scene, "a", lakeBody()), b = createWaterMesh(scene, "b", lakeBody());
+      b.position.set(20, 0.1, 0);
+      updateSceneWater(scene);
+      const blendUploads = vi.spyOn(a, "updateVerticesData");
+      const frame = () => { clock.now += 4; updateSceneWater(scene); };
+      const landed = () => blendUploads.mock.calls.filter(([kind]) => kind === "slateWaterBlend").length;
+      return { engine, scene, a, b, clock, frame, landed };
+    };
+
+    it("keeps a moved body's previous blend data while its refresh runs over frames, then swaps in the data of the new pose", () => {
+      const { engine, scene, a, b, clock, frame, landed } = setup();
+      try {
+        const before = attributes(a);
+        clock.now += WATER_BLEND_REFRESH_MS + 100;
+        b.position.x -= 3;
+        let frames = 0;
+        while (landed() === 0 && frames < 40) {
+          frame(); frames++;
+          // Nothing of the new data is visible (nor uploaded) until all of it is there.
+          if (landed() === 0) expect(attributes(a)).toEqual(before);
+        }
+        expect(frames).toBeGreaterThan(1);
+        expect(frames).toBeLessThan(40);
+        expect(landed()).toBe(1);
+        const [expectedA, expectedB] = fresh(b.position);
+        // The neighbour keeps its grid, so the swapped-in data are exactly a fresh build's.
+        expect(attributes(a)).toEqual(expectedA);
+        for (let i = 0; i < 20; i++) frame();
+        expect(near(attributes(b), expectedB!)).toBe(true);
+        expect(landed()).toBe(1);
+      } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
+    });
+
+    it("lands the latest pose when the body moves again before a refresh is complete", () => {
+      const { engine, scene, a, b, clock, frame, landed } = setup();
+      try {
+        clock.now += WATER_BLEND_REFRESH_MS + 100;
+        b.position.x -= 3;
+        frame();
+        expect(landed()).toBe(0);
+        b.position.x -= 2; b.position.z += 1;
+        for (let i = 0; i < 6; i++) frame();
+        // The running refresh finishes, then a second one catches up with the final pose.
+        clock.now += WATER_BLEND_REFRESH_MS + 100;
+        for (let i = 0; i < 40; i++) frame();
+        expect(landed()).toBe(2);
+        const [expectedA, expectedB] = fresh(b.position);
+        expect(attributes(a)).toEqual(expectedA);
+        expect(near(attributes(b), expectedB!)).toBe(true);
+      } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
+    });
+
+    it("still builds the first blend and a rotated body's blend within one frame", () => {
+      const { engine, scene, a, b, clock, frame } = setup();
+      try {
+        // The first blend of both lakes happened in the first frame of `setup`.
+        expect(Math.max(...a.getVerticesData("slateWaterBlend")!)).toBeGreaterThan(0);
+        expect(a.getVerticesData("slateWaterBlend")!.some((value, i) => i % 4 === 2 && value < 0)).toBe(true);
+        clock.now += WATER_BLEND_REFRESH_MS + 100;
+        b.rotation.x = 0.1;
+        frame();
+        expect(near(attributes(b), fresh(b.position, 0.1)[1]!)).toBe(true);
+      } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
+    });
+
+    it("refreshes a Global grid's rows near a moved lake over frames and lands what a fresh build computes", () => {
+      const engine = new NullEngine(), scene = new Scene(engine);
+      new FreeCamera("camera", new Vector3(0, 10, -30), scene);
+      const clock = { now: 1000 };
+      vi.spyOn(performance, "now").mockImplementation(() => (clock.now += 0.5));
+      const build = (lakeX: number) => {
+        const s = lakeX === 20 ? scene : new Scene(new NullEngine());
+        if (s !== scene) new FreeCamera("camera", new Vector3(0, 10, -30), s);
+        const sea = createWaterMesh(s, "sea", normalizeWaterBody({ resolution: 96 }, "global"));
+        const lake = createWaterMesh(s, "lake", normalizeWaterBody({ width: 20, length: 20, resolution: 16 }));
+        lake.position.set(lakeX, 0.2, 0);
+        return { s, sea, lake };
+      };
+      let other: Scene | null = null;
+      try {
+        const { sea, lake } = build(20);
+        updateSceneWater(scene);
+        const uploads = vi.spyOn(engine, "updateDynamicVertexBuffer");
+        const rows = () => uploads.mock.calls.filter(([, , offset]) => offset !== undefined);
+        const before = attributes(sea);
+        clock.now += WATER_BLEND_REFRESH_MS + 100;
+        lake.position.x = 12;
+        let frames = 0;
+        while (rows().length === 0 && frames < 60) {
+          clock.now += 4; updateSceneWater(scene); frames++;
+          if (rows().length === 0) expect(attributes(sea)).toEqual(before);
+        }
+        expect(frames).toBeGreaterThan(1);
+        expect(frames).toBeLessThan(60);
+        const partial = rows();
+        expect(partial.length).toBe(6);
+        for (const [, data] of partial) expect((data as Float32Array).length).toBeLessThan(sea.getTotalVertices());
+        const fresh = build(12);
+        other = fresh.s;
+        updateSceneWater(other);
+        // Open water's rows hold the same values either way (up to the sign of zero in its unit normals).
+        expect(near(attributes(sea), attributes(fresh.sea))).toBe(true);
+      } finally { other?.dispose(); other?.getEngine().dispose(); scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
+    });
+  });
   it("discovers blending neighbours only when a body, the distance or the set of surfaces changes", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     new FreeCamera("camera", new Vector3(0, 30, -40), scene);
