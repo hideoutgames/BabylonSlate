@@ -150,6 +150,7 @@ export class SaveGameWorld {
         if (!entry.spawned || entry.captured || this.tracked.has(persistentId) || reserved.has(persistentId)) {
           throw new SaveGameError("incompatible", "Set a unique spawned actor identity before its first save.");
         }
+        this.assertIdentityFree(persistentId, actor);
         this.tracked.delete(previousId);
         this.identity.set(actor, persistentId);
         entry.id = persistentId;
@@ -162,10 +163,19 @@ export class SaveGameWorld {
     if (!id || reserved.has(id)) throw new SaveGameError("incompatible", "Invalid persistent actor identity.");
     const previous = this.tracked.get(id);
     if (previous && previous.actor !== actor && !previous.actor.destroyed) throw new SaveGameError("incompatible", `Duplicate persistent actor identity: ${id}`);
+    this.assertIdentityFree(id, actor);
     this.identity.set(actor, id);
     const entry: TrackedActor = { actor, id, spawned, selection: selected, initial: null!, captured: false };
     this.tracked.set(id, entry);
     entry.initial = this.captureActor(entry);
+  }
+
+  /** A recreated actor takes its persistent identity as its guid, so no other live actor may hold it. */
+  private assertIdentityFree(id: string, actor: Actor | null): void {
+    const holder = this.host.world.findActor(id);
+    if (holder && holder !== actor) {
+      throw new SaveGameError("incompatible", `Persistent actor identity ${id} is already the id of another live actor; choose a unique identity.`);
+    }
   }
 
   private encode(value: unknown, seen = new Set<object>()): SaveGameValue {
@@ -347,6 +357,8 @@ export class SaveGameWorld {
       let actor = targets.get(saved.id);
       if (actor && (actor.classId !== classId || !this.host.eligible(actor))) throw new SaveGameError("incompatible", `Actor definition changed: ${saved.id}`);
       if (!actor) {
+        // The recreated actor's guid is its saved id; it never joins a live actor holding it.
+        this.assertIdentityFree(saved.id, null);
         actor = this.host.prepare(saved.id, classId, saved.spawned) ?? undefined;
         if (!actor) throw new SaveGameError("incompatible", `Actor definition is unavailable: ${saved.classId}`);
         prepared.set(saved.id, actor);

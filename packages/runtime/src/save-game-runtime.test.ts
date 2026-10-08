@@ -158,6 +158,17 @@ describe("runtime Save Game", () => {
     } finally { next.runtime.stop(); }
   });
 
+  it("refuses a spawned actor identity that a live actor already uses as its id", async () => {
+    const { runtime } = await boot(new MemoryStorage(), { referenceTarget: true });
+    try {
+      const companion = runtime.spawnScriptedActor({ classId: "Hero" })!;
+      // Loading would recreate the companion with this id as its guid, beside the live actor.
+      expect(() => runtime.registerSaveActor(companion, "reference-only")).toThrow(
+        expect.objectContaining({ code: "incompatible", message: expect.stringContaining("reference-only") }));
+      runtime.registerSaveActor(companion, "companion");
+    } finally { runtime.stop(); }
+  });
+
   it("captures a Tick request after the full simulation tick and leaves paused sessions paused", async () => {
     const ticking: CompiledScript = {
       ...heroScript, assetGuid: "tick-asset", classId: "TickSaver",
