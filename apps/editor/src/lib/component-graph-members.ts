@@ -5,6 +5,9 @@ import {
   type PrefabComponentView,
 } from "./prefab-preview";
 
+/** Class tree category for the automatic component object-ref variables. */
+export const COMPONENT_GRAPH_MEMBER_CATEGORY = "Components";
+
 export type ComponentGraphMember = GraphClassMember & {
   componentId: string;
   inheritedFrom?: string;
@@ -41,6 +44,7 @@ export function componentGraphMembers(options: {
       typeId: "object",
       typeClassId: component.classId,
       componentId: component.id,
+      category: COMPONENT_GRAPH_MEMBER_CATEGORY,
     };
     if (component.inheritedFrom) member.inheritedFrom = component.inheritedFrom;
     return member;

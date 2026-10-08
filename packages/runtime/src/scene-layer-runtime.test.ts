@@ -17,6 +17,7 @@ import {
   type SerializedSceneLayer,
 } from "@babylonslate/core";
 import { createInProcessRuntime } from "./driver";
+import { createPlayBootCoordinator } from "./play-boot";
 
 /** Scene Layer actor guids are scoped to their layer instance. */
 const inLayer = (layer: { guid: string } | null | undefined, id: string) => `${layer?.guid}:${id}`;
@@ -499,6 +500,41 @@ describe("SceneLayer runtime compositor", () => {
     for (let i = 0; i < 90; i++) runtime.tick();
     expect(world.findActor(inLayer(layer, "chip"))?.transform.position.y).toBeLessThan(3);
     runtime.stop();
+  });
+
+  it("keeps the layer's authored gravity when the native overlay world loads", async () => {
+    const settings = createDefaultSceneLayer().settings;
+    const hud: SerializedSceneLayer = {
+      ...createDefaultSceneLayer(),
+      name: "HUD",
+      settings: { ...settings, gravity: [0, 4, 0] },
+      actors: [
+        createActor("chip", "Chip", {
+          classId: "SceneLayerActor",
+          components: [
+            { id: "rb", classId: "RigidBodyComponent", properties: { motionType: "dynamic", mass: 1, gravityScale: 1 } },
+            { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } } },
+          ],
+        }),
+      ],
+    };
+    const level = worldScene("A", [{ assetGuid: "hud", zOrder: 0, enabled: true }]);
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      playScene: level,
+      playSceneGuid: "a",
+      sceneLibrary: { a: level },
+      sceneLayerLibrary: { hud },
+    });
+    try {
+      await createPlayBootCoordinator().play(runtime);
+      for (let i = 0; i < 30; i++) runtime.tick();
+      // Upward layer gravity lifts the chip; the default 2D gravity would drop it.
+      expect(runtime.getWorld().findActor("chip")?.transform.position.y).toBeGreaterThan(0.5);
+    } finally {
+      runtime.stop();
+    }
   });
 
   it("leaves a root 2DAnchor inert on spawn and resize", () => {
