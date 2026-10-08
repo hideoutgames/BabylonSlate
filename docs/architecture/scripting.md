@@ -14,6 +14,9 @@ effective holds and command revision. The bounded queue also accepts `resetInput
 without a game tick; input binding overrides survive reset. Resume discards the
 paused wall-clock interval. Boot completion does not release an existing hold.
 
+Engine delays count simulation time: each tick subtracts the step captured when
+the tick began (`dt` times time dilation), so a `slomo` or script dilation change
+made during a tick applies to Delays from the next tick, as it does for tweens.
 Engine delays, tween completion, ready-scene lifecycle, audio completion and
 scalability callbacks wait for game-owner admission while paused. Stop cancels
 waiting engine continuations. Asset I/O and readiness may finish during a pause.

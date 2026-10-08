@@ -481,6 +481,32 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     runtime.stop();
   });
 
+  it("counts Delays with the tick's step when slomo changes mid-tick", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, dt: 0.5, seedDemoActors: false, preferSoftwarePhysics: true,
+      onCommand: (command) => commands.push(command) });
+    const resumed = () => commands.some((command) => command.type === "log" && command.message === "resumed");
+    const flush = async () => { for (let index = 0; index < 8; index++) await Promise.resolve(); };
+    try {
+      await runtime.loadScripts([{ classId: "Waiter", parentClassId: "Actor", assetGuid: "waiter", anchors: [],
+        source: 'export async function begin(ctx) { await ctx.delay(1); ctx.log("log", "test", "resumed"); }',
+        entryPoints: [{ name: "begin", event: "onBeginPlay", isAsync: true }] }]);
+      runtime.start();
+      expect(runtime.spawnScriptedActor({ classId: "Waiter" })).not.toBeNull();
+      const world = runtime.getWorld();
+      let changed = false;
+      world.spawnActorNow(world.createActor({ guid: "slomo", classId: "Actor", hooks: { onTick: () => {
+        if (!changed) changed = runtime.executeConsoleCommand("slomo 4").success;
+      } } }));
+      // The 1 s Delay counts this tick's 0.5 s step, not the 2 s step slomo 4 sets for the next tick.
+      runtime.tick(); await flush();
+      expect(changed).toBe(true);
+      expect(resumed()).toBe(false);
+      runtime.tick(); await flush();
+      expect(resumed()).toBe(true);
+    } finally { runtime.stop(); }
+  });
+
   it("emits setFreeCam without pausing the simulation", () => {
     const commands: CommandMessage[] = [];
     const dts: number[] = [];

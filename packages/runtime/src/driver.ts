@@ -1867,7 +1867,8 @@ class InProcessRuntime implements RuntimeDriver {
   /** Tick phase 3. */
   private tickSceneSystems(simDt: number): void {
     this.tweens.cancelInvalid();
-    this.delays.advance(this.simulationDt());
+    // The tick's captured step: a mid-tick time dilation change applies next tick.
+    this.delays.advance(simDt);
     if (this.admission.canTickScene() || this.admission.hasReadyLayers()) this.animGraphs.tick();
     if (this.admission.canTickScene() || this.admission.hasReadyLayers()) {
       this.tilemapAnimationTimeMs += simDt * 1000;
