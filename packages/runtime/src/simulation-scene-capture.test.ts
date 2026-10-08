@@ -141,14 +141,12 @@ describe("complete simulation scene capture", () => {
     expect(captureSimulationScene(input)).toMatchObject({ ok: false, code: "resource" });
   });
 
-  it("bounds serialized bytes and node work, and rejects duplicate runtime identities", () => {
-    const { input, actors, world } = fixture();
+  it("bounds serialized bytes and node work", () => {
+    const { input, actors } = fixture();
     const result = complete(captureSimulationScene(input));
     expect(captureSimulationScene({ ...input, maxBytes: result.byteSize - 1 })).toMatchObject({ ok: false, code: "budget" });
     expect(captureSimulationScene({ ...input, maxNodes: 3 })).toMatchObject({ ok: false, code: "budget" });
     actors[0]!.setVariable("Note", "界".repeat(2048));
     expect(captureSimulationScene({ ...input, maxBytes: 4096 })).toMatchObject({ ok: false, code: "budget" });
-    world.spawnActorNow(world.createActor({ guid: "hero", classId: "Actor" }));
-    expect(captureSimulationScene(input)).toMatchObject({ ok: false, code: "reference", reason: expect.stringContaining("ambiguous") });
   });
 });

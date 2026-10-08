@@ -87,7 +87,7 @@ export {
   type SubsystemBaseClassId,
   type SubsystemClassHierarchy,
 } from "./subsystems";
-export { World, type WorldOptions, type WorldInputProvider } from "./world";
+export { DuplicateActorGuidError, World, type WorldOptions, type WorldInputProvider } from "./world";
 export {
   attachSerializedComponents,
   runtimeTransformFromSerialized,

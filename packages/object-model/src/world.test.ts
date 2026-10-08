@@ -9,7 +9,7 @@ import {
   type Subsystem,
 } from "./objects";
 import { TICK_PHASES } from "./tick";
-import { World } from "./world";
+import { DuplicateActorGuidError, World } from "./world";
 import { createWorldSnapshot, stringifyWorldSnapshot } from "./snapshot";
 
 function createTestWorld(seed = 1) {
@@ -131,9 +131,12 @@ describe("World tick", () => {
     const old = world.createActor({ classId: "Actor", guid: "same" });
     world.spawnActorNow(old);
     world.destroyActorInstance(old);
-    world.destroyActorInstance(old);
+    world.flushPending();
     const replacement = world.createActor({ classId: "Actor", guid: "same" });
     world.spawnActor(replacement);
+    world.flushPending();
+    // A stale cleanup of the predecessor never reaches its successor.
+    world.destroyActorInstance(old);
     world.flushPending();
     expect(old.destroyed).toBe(true);
     expect(world.getActors()).toEqual([replacement]);
@@ -183,27 +186,37 @@ describe("World tick", () => {
     ]);
   });
 
-  it("resolves duplicate guids in spawn order after instance and guid destruction", () => {
+  it("refuses to spawn an actor whose guid a live actor holds, until its destruction commits", () => {
     const world = createTestWorld();
+    const events: string[] = [];
     const first = world.createActor({ classId: "Actor", guid: "shared" });
-    const middle = world.createActor({ classId: "Actor", guid: "shared" });
-    const last = world.createActor({ classId: "Actor", guid: "shared" });
-    for (const actor of [first, middle, last]) world.spawnActorNow(actor);
-    expect(world.findActor("shared")).toBe(first);
-    world.destroyActorInstance(middle);
-    world.flushPending();
-    expect(world.findActor("shared")).toBe(first);
-    expect(first.destroyed).toBe(false);
+    world.spawnActorNow(first);
+    const second = world.createActor({ classId: "Enemy", guid: "shared", hooks: { onCreation: () => { events.push("created"); } } });
+    expect(() => world.spawnActorNow(second)).toThrow(DuplicateActorGuidError);
+    expect(() => world.spawnActor(second)).toThrow('Cannot spawn Enemy actor "shared": a live Actor actor already uses this guid.');
+    // A queued destruction keeps the predecessor live until it commits.
     world.destroyActor("shared");
+    expect(() => world.spawnActorNow(second)).toThrow(DuplicateActorGuidError);
     world.flushPending();
-    expect(first.destroyed).toBe(true);
-    expect(world.findActor("shared")).toBe(last);
-    expect(world.getActors()).toEqual([last]);
-    expect(last.spawnIndex).toBe(0);
-    world.destroyActor("shared");
+    expect(events).toEqual([]);
+    world.spawnActorNow(second);
+    expect(events).toEqual(["created"]);
+    expect(world.getActors()).toEqual([second]);
+    expect(world.findActor("shared")).toBe(second);
+  });
+
+  it("reserves a queued spawn's guid until the spawn commits or is cancelled", () => {
+    const world = createTestWorld();
+    const queued = world.createActor({ classId: "Actor", guid: "queued" });
+    world.spawnActor(queued);
+    const rival = world.createActor({ classId: "Actor", guid: "queued" });
+    expect(() => world.spawnActorNow(rival)).toThrow(DuplicateActorGuidError);
+    expect(() => world.spawnActor(rival)).toThrow(DuplicateActorGuidError);
+    world.destroyActorInstance(queued);
+    world.spawnActor(rival);
     world.flushPending();
-    expect(last.destroyed).toBe(true);
-    expect(world.findActor("shared")).toBeUndefined();
+    expect(world.getActors()).toEqual([rival]);
+    expect(queued.destroyed).toBe(true);
   });
 
   it("keeps a ready SceneLayer ticking when Game Instance starts loading the world scene", () => {
