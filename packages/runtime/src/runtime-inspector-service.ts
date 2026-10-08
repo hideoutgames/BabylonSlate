@@ -49,7 +49,7 @@ interface RuntimeInspectorServiceHost {
   physics(): Pick<RuntimePhysicsWorlds, "forActor">;
   ragdolls(): Pick<RagdollWorldSync, "retireActor">;
   assetPreloads(): Pick<RuntimeAssetPreloads, "acquire" | "release">;
-  /** Refresh a component after a property write, as the driver does for any write. */
+  /** Refresh a component after a property write, as `RuntimePropertyWrites` does for any write. */
   refreshComponent(component: ActorComponent, propertyName: string): void;
   /** Write a mesh material parameter on the Inspector path: live edit eligibility instead of owner admission. */
   setMaterialParameter(material: MaterialObject, name: string, value: MaterialParameterValue): boolean;
@@ -63,9 +63,9 @@ interface RuntimeInspectorServiceHost {
  * `RuntimeInspector` evaluator with the property, transform and material
  * appliers it calls, the deferred material edit gate with its prepared-edit
  * token, Simulate-mode runtime identities on `spawn` / `assignMesh`, and the
- * snapshot an edit publishes. The driver keeps the shared material parameter
- * write path and calls `stop()` explicitly in Stop. It is not a registered
- * subsystem.
+ * snapshot an edit publishes. `RuntimePropertyWrites` owns the shared
+ * component refresh and material parameter write path; the driver calls
+ * `stop()` explicitly in Stop. It is not a registered subsystem.
  */
 export class RuntimeInspectorService {
   private readonly deferMaterialEdits: boolean;
