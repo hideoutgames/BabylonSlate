@@ -1954,6 +1954,14 @@ The four support forces are solved together against native collider inertia, inc
 
 Surface queries and buoyancy use the same analytic waves and simulation clock as rendering. Overlapping surfaces select the highest water surface, or the explicitly selected water actor. Disabled water does not participate in queries or buoyancy. Puddle depth limits its buoyant volume.
 
+Water time (Play and the exported player):
+
+- One simulated water clock (`WaterClock`, owned by the runtime driver) advances by each tick's captured step (`dt` × time dilation) together with the World clock, so `slomo` and script time dilation slow waves, drift, buoyancy, Sample Water Surface and the rendered water alike; pause and `slomo 0` freeze them, and `step` advances one step.
+- The physics step (and buoyancy) evaluates the water at the time before its own step (`stepTime`); script queries sample the time including the current tick (`time`). A run of equal steps is computed as `start + ticks × step`, so an undilated session matches the former `tickIndex × dt` clock exactly; under dilation a rate change no longer rescales the whole history (time used to jump).
+- `stepMain` sends `waterTime { seconds, frameId }`: the step's water time with the snapshot frame that tick publishes. The renderer keeps the last 8 frames' times (`setSceneWaterTime(scene, seconds, frameId)`); snapshot apply pairs the water with the sampled frames (`sampleSceneWaterFrame`), and the water draws the time interpolated between the previous and next frame at the pose alpha. At a published frame the rendered water is the water physics evaluated; a frame whose time has not arrived yet keeps the newest earlier one.
+- The clock is not saved or traced: Save Game restores selected actor state into the running session (like the World tick index, the clock keeps running), and trace replay re-runs ticks from the start, which reproduces the clock when the dilation is the same (dilation changes are not recorded in traces).
+- The editor viewport and asset previews have no simulation: their water follows real time (`setSceneWaterTime` without a frame, or the engine frame delta) and holds while game time is paused.
+
 Water velocity from a query (and so buoyancy) has two parts:
 
 - X/Z: the current plus the waves' horizontal orbital (particle) velocity and a small mean-drift term (`waterSurfaceDrift`, faded with the offset near banks). That term cancels the backward average a fixed point under Gerstner waves would otherwise see, so a stationary support feels no net push. Buoyancy drag pulls each support toward this velocity, so floating objects sway with the swell.
@@ -2221,7 +2229,7 @@ Only two dedicated graph nodes are added:
 | NodeGraph | Sample Water Surface | Queries a world position and optional Water Actor. Returns Found, world surface height, signed immersion depth, surface normal, water velocity (current plus orbital X/Z motion and the surface's height rate in Y, as above), bank distance and the live Water Actor. Outside water returns Found false. Global Water Volume bank distance is infinite. |
 | MaterialGraph | Water Surface | Reads world-unit vertical wave displacement (the vertex already includes any Gerstner horizontal offset), bank distance, scaled water depth, simulation time and world current from the rendered mesh, which a Custom Material keeps CPU-displaced. Ordinary meshes return zero. Global shading clamps bank distance to 10,000 metres. |
 
-A Water asset's **Custom Material** accepts a Surface MaterialGraph; it replaces built-in shading while retaining geometry waves and buoyancy. Use Water Surface to blend foam by bank distance or animate effects with the water clock. Additional graph position offsets affect rendering only. Existing component variable Get/Set nodes expose water assignment, dimensions, current, waves, enabled state and buoyancy tuning. Water content is loaded before scene realization in Play and the player; simulation time travels through the worker bridge and freezes with Play pause.
+A Water asset's **Custom Material** accepts a Surface MaterialGraph; it replaces built-in shading while retaining geometry waves and buoyancy. Use Water Surface to blend foam by bank distance or animate effects with the water clock. Additional graph position offsets affect rendering only. Existing component variable Get/Set nodes expose water assignment, dimensions, current, waves, enabled state and buoyancy tuning. Water content is loaded before scene realization in Play and the player; simulated (dilated) water time travels through the worker bridge paired with snapshot frames and freezes with Play pause (see Water time above).
 
 ## Lattice Deformer
 

@@ -79,11 +79,75 @@ const surfaceByMesh = new WeakMap<AbstractMesh, Surface>();
  * enabled state (an authored Enabled off, or a deactivated actor) is followed by `syncCopyIntent`.
  */
 const copyIntents = new WeakMap<Scene, { refracting: number; reflecting: number }>();
-const clocks = new WeakMap<Scene, { time: number; runtime: boolean }>();
+/**
+ * A scene's water clock. Without runtime times (editor viewport, asset previews) it follows real time and stops
+ * while game time is paused. Play keeps the simulated water time the worker's physics step evaluated for each
+ * snapshot frame (a short history) and draws the time interpolated between the two frames of the applied snapshot
+ * sample, exactly as actor poses are: at a published frame the rendered water is the water physics saw.
+ */
+type SceneWaterClock = {
+  time: number;
+  runtime: boolean;
+  /** Snapshot frame ids with runtime water times (ascending, newest last). */
+  frames: number[];
+  times: number[];
+  /** The applied snapshot sample (`sampleSceneWaterFrame`). */
+  frameId: number;
+  previousFrameId: number;
+  alpha: number;
+};
+/** Runtime water times retained per scene; a render delayed by more frames draws the oldest retained time. */
+const WATER_FRAME_HISTORY = 8;
+const clocks = new WeakMap<Scene, SceneWaterClock>();
 const reflections = new WeakMap<Scene, WaterReflection>();
 
-export function setSceneWaterTime(scene: Scene, seconds: number): void {
-  if (Number.isFinite(seconds)) clocks.set(scene, { time: seconds, runtime: true });
+function sceneClock(scene: Scene): SceneWaterClock {
+  let clock = clocks.get(scene);
+  if (!clock) {
+    clock = { time: 0, runtime: false, frames: [], times: [], frameId: NaN, previousFrameId: NaN, alpha: 1 };
+    clocks.set(scene, clock);
+  }
+  return clock;
+}
+
+/**
+ * Sets the scene's water time; from then on it advances only through this call. With `frameId` (Play) the time is
+ * the one the worker's physics step evaluated for that snapshot frame, kept for `sampleSceneWaterFrame`; a frame id
+ * at or before the newest one starts the history again (a new session).
+ */
+export function setSceneWaterTime(scene: Scene, seconds: number, frameId?: number): void {
+  if (!Number.isFinite(seconds)) return;
+  const clock = sceneClock(scene);
+  clock.time = seconds;
+  clock.runtime = true;
+  const { frames, times } = clock;
+  const paired = frameId !== undefined && Number.isFinite(frameId);
+  if (!paired || (frames.length && frameId <= frames[frames.length - 1]!)) frames.length = times.length = 0;
+  if (!paired) return;
+  frames.push(frameId); times.push(seconds);
+  if (frames.length > WATER_FRAME_HISTORY) { frames.shift(); times.shift(); }
+}
+
+/** Pairs the water with the applied actor snapshot sample: its frame, previous frame and interpolation alpha. */
+export function sampleSceneWaterFrame(scene: Scene, frameId: number, previousFrameId: number, alpha: number): void {
+  const clock = sceneClock(scene);
+  clock.frameId = frameId; clock.previousFrameId = previousFrameId; clock.alpha = alpha;
+}
+
+/** The newest runtime time sent for `frameId` or an earlier frame; the oldest retained one for an older frame. */
+function frameWaterTime(clock: SceneWaterClock, frameId: number): number {
+  for (let i = clock.frames.length - 1; i >= 0; i--) if (clock.frames[i]! <= frameId) return clock.times[i]!;
+  return clock.times[0]!;
+}
+
+/** The time the scene's water draws at now. */
+function sceneWaterTime(scene: Scene): number {
+  const clock = clocks.get(scene);
+  if (!clock) return 0;
+  if (!clock.runtime || !clock.frames.length || !Number.isFinite(clock.frameId)) return clock.time;
+  const next = frameWaterTime(clock, clock.frameId);
+  const previous = Number.isFinite(clock.previousFrameId) ? frameWaterTime(clock, clock.previousFrameId) : next;
+  return previous + (next - previous) * Math.max(0, Math.min(1, clock.alpha));
 }
 
 /**
@@ -93,9 +157,9 @@ export function setSceneWaterTime(scene: Scene, seconds: number): void {
  * request until they are; the FFT simulations then update once for the whole scene.
  */
 export function updateSceneWater(scene: Scene): void {
-  const clock = clocks.get(scene) ?? { time: 0, runtime: false };
+  const clock = sceneClock(scene);
   if (!clock.runtime && !isSceneGameTimePaused(scene)) clock.time += Math.min(0.1, scene.getEngine().getDeltaTime() / 1000 || 0);
-  clocks.set(scene, clock);
+  const time = sceneWaterTime(scene);
   reflections.get(scene)?.sync();
   const entries = surfaces.get(scene);
   if (!entries) return;
@@ -103,11 +167,11 @@ export function updateSceneWater(scene: Scene): void {
   for (const surface of entries) {
     syncCopyIntent(scene, surface);
     if (!surface.mesh.isEnabled()) continue;
-    placeSurface(surface, clock.time);
+    placeSurface(surface, time);
     const active = surface.drawn || inActiveView(scene, surface.mesh);
     surface.drawn = false;
     if (!active) continue;
-    animateSurface(surface, clock.time);
+    animateSurface(surface, time);
     // Waves never rebake either field: the shader reads contacts at each fragment's rendered height.
     surface.field?.update();
     surface.contacts?.update(now);
@@ -115,7 +179,7 @@ export function updateSceneWater(scene: Scene): void {
     // simulations run once below, after every request.
     if (surface.plugin) requestWaterFft(scene, surface.mesh, surface.water, surface.mesh.isVisible && surface.mesh.visibility > 0);
   }
-  updateSceneWaterFft(scene, clock.time);
+  updateSceneWaterFft(scene, time);
 }
 
 /** Dense cells of an axis with `count` cells: the middle half. */
@@ -616,7 +680,7 @@ export function updateWaterMeshBody(mesh: Mesh, input: unknown): boolean {
   surface.version++; surface.placed.fill(NaN);
   mesh.setEnabled(surface.body.enabled);
   syncCopyIntent(mesh.getScene(), surface);
-  refreshSurface(surface, clocks.get(mesh.getScene())?.time ?? 0);
+  refreshSurface(surface, sceneWaterTime(mesh.getScene()));
   surface.field?.update(true);
   surface.contacts?.update(performance.now(), true);
   return true;
@@ -641,7 +705,7 @@ export function setWaterGpuWaves(mesh: Mesh, enabled: boolean): boolean {
   }
   // The vertex data layout changes with the path: rewrite every static attribute.
   surface.placed.fill(NaN);
-  refreshSurface(surface, clocks.get(mesh.getScene())?.time ?? 0);
+  refreshSurface(surface, sceneWaterTime(mesh.getScene()));
   return true;
 }
 
@@ -674,7 +738,7 @@ export function updateWaterMeshDefinition(mesh: Mesh, input: unknown): boolean {
   surface.boundsDirty = true;
   // A paused clock repeats the cached time, which would otherwise skip the CPU resample.
   surface.time = null;
-  refreshSurface(surface, clocks.get(scene)?.time ?? 0);
+  refreshSurface(surface, sceneWaterTime(scene));
   // The terrain field's change key omits the contact range its margin uses; the contact field notices range and
   // wave-envelope changes itself.
   surface.field?.update(contactRange(water) !== range);
@@ -731,7 +795,7 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
     if (surface.copyCounted) countCopyIntent(scene, water, -1);
     surface.copyCounted = false;
   });
-  refreshSurface(surface, clocks.get(scene)?.time ?? 0);
+  refreshSurface(surface, sceneWaterTime(scene));
   if (plugin) {
     const fieldSurface: WaterFieldSurface = {
       mesh, unbounded: body.kind === "global",

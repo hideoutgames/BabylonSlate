@@ -12,6 +12,8 @@ import {
   type AudioMixerPayload,
   type SoundAttenuationPayload,
 } from "@babylonslate/assets";
+import { createActor, createDefaultSceneSettings } from "@babylonslate/core";
+import { createInProcessRuntime } from "@babylonslate/test-kit";
 import { AudioBufferCache } from "./audio-buffer-cache";
 import { FakeAudioPlaybackBackend } from "./audio-playback-backend";
 import { AudioService } from "./audio-service";
@@ -1826,5 +1828,57 @@ describe("AudioService lifecycle events", () => {
     expect(resumeContext).not.toHaveBeenCalled();
 
     service.dispose();
+  });
+});
+
+describe("AudioService with runtime Audio component commands", () => {
+  it("stops the voice an Audio component's script Play started when its Stop runs", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const diagnostics: Array<{ code: string }> = [];
+    const service = new AudioService({ backend, onDiagnostic: (entry) => diagnostics.push(entry) });
+    service.setLibrary(library({ audio: { jump: createDefaultAudioPayload() } }));
+    service.setSourceBytes("jump", new Uint8Array([1, 2, 3]));
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      playScene: {
+        name: "Audio",
+        viewportMode: "3d",
+        settings: createDefaultSceneSettings(),
+        folders: [],
+        actors: [createActor("speaker", "Speaker", {
+          classId: "Speaker",
+          components: [{ id: "audio-1", classId: "AudioComponent", properties: { audioAssetGuid: "jump", playOnStart: false, loop: true } }],
+        })],
+      },
+      onCommand: (command) => service.handleCommand(command),
+    });
+    try {
+      await service.unlockAsync();
+      await runtime.loadScripts([{
+        assetGuid: "speaker-script", classId: "Speaker", parentClassId: "Actor", anchors: [],
+        entryPoints: ["Play", "Stop"].map((name) => ({ name, event: name, isAsync: false })),
+        source: `
+          export function Play(ctx) { ctx.callComponentFunction(ctx.getComponentById(ctx.self, "audio-1"), "playAudio", {}); }
+          export function Stop(ctx) { ctx.callComponentFunction(ctx.getComponentById(ctx.self, "audio-1"), "stopAudio", {}); }`,
+      }]);
+      runtime.realizePlayWorld();
+      runtime.start();
+      const speaker = runtime.getWorld().findActor("speaker")!;
+      runtime.invokeScriptEvent("Speaker", "Play", speaker);
+      runtime.tick();
+      await service.flush();
+      expect(service.stats().voices).toBe(1);
+      runtime.invokeScriptEvent("Speaker", "Stop", speaker);
+      runtime.tick();
+      await service.flush();
+      expect(backend.stopped).toEqual(["audio-1"]);
+      expect(service.stats().voices).toBe(0);
+      expect(diagnostics).toEqual([]);
+    } finally {
+      runtime.stop();
+      service.dispose();
+    }
   });
 });
