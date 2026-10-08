@@ -62,7 +62,6 @@ import {
   type SceneActorHooks,
 } from "@babylonslate/object-model";
 import {
-  DEFAULT_PLAY_FRAME_CAP,
   deprojectCursorRay,
   type MaterialParameterCatalog,
   type MaterialParameterValue,
@@ -87,19 +86,11 @@ import { sceneRealizationCancelled, type CooperativeSceneLoadingOptions } from "
 import type { AcquireRuntimeScene } from "./scene-source";
 import { parseColliderProperties, type PhysicsWorldKind } from "@babylonslate/physics";
 import {
-  createCommandRegistry,
-  createUserCommand,
-  tokenize,
-  matchCommandName,
-  parseCommandArgs,
-  isReservedConsoleCommandName,
   createInfiniteLoopGuard,
   isInfiniteLoopError,
   INFINITE_LOOP_DIAGNOSTIC_CODE,
   DEFAULT_INFINITE_LOOP_COUNT,
-  type CommandRegistry,
   type CommandResult,
-  type ConsoleCommandHost,
   type InfiniteLoopGuard,
   type RegisteredCommand,
   type TraceBtState,
@@ -126,10 +117,7 @@ import { shouldSpawnScriptedActor } from "./play-load";
 import type { PhysicsWorldSync } from "./physics-sync";
 import { RuntimePhysicsWorlds } from "./runtime-physics-worlds";
 import { RagdollWorldSync } from "./ragdoll-sync";
-import {
-  formatDumpActors,
-  formatInspectActor,
-} from "./console-inspect";
+import { RuntimeConsole } from "./runtime-console";
 import { actorChainWorldTransform, actorLabel, breakParentCycles, firstSpawnedActorIndex } from "./actor-world-transform";
 import type { OverlaySafeAreaInsets } from "@babylonslate/core";
 import type { ModelPayload, SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
@@ -498,10 +486,8 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly scalability: ScalabilitySession;
   private lastRenderPathStatus: RenderPathStatus | null = null;
   private readonly scalabilityProjectRenderPath: RenderPath;
-  private volume = 1;
   private timeDilation = 1;
   private running = false;
-  private flushingConsoleActors = false;
   private frameId = 0;
   private readonly removingActors = new WeakSet<Actor>();
   private readonly scriptHost: ScriptHost;
@@ -557,9 +543,7 @@ class InProcessRuntime implements RuntimeDriver {
   /** A script `Possess Camera` outranks the authored per-camera option. */
   private cameraPossessedByScript = false;
   private possessedCameraSlotId: number | null = null;
-  private readonly commands: CommandRegistry;
-  private readonly commandClasses = new Map<string, { classId: string; assetGuid: string }>();
-  private readonly consoleLifetime = new AbortController();
+  private readonly console: RuntimeConsole;
   private readonly loopGuard: InfiniteLoopGuard;
   private readonly seed: number;
   private tilemapAnimationTimeMs = 0;
@@ -865,8 +849,40 @@ class InProcessRuntime implements RuntimeDriver {
       playSceneGuid: this.playSceneGuid,
       acquired: Boolean(this.acquireScene),
     }, { scenes: this.sceneLibrary, sceneGuids: this.sceneGuidByKey, sceneLayers: this.sceneLayerLibrary });
-    this.commands = createCommandRegistry({
+    this.console = new RuntimeConsole({
       includeDebug: options.includeDebugCommands ?? true,
+      demandAssetCatalog: this.demandAssetCatalog,
+    }, {
+      world: () => this.world,
+      stopped: () => this.stopped,
+      sessionMode: () => this.sessionMode,
+      classAssetGuid: (classId) => this.classAssetGuids.get(classId),
+      scriptHost: () => this.scriptHost,
+      assetPreloads: () => this.assetPreloads,
+      sceneRealizer: () => this.sceneRealizer,
+      scalability: () => this.scalability,
+      requestScalability: (request) => { this.requestScalability(request); },
+      projectRenderPath: () => this.scalabilityProjectRenderPath,
+      renderPathStatus: () => this.lastRenderPathStatus,
+      physics: () => this.physics,
+      navigation: () => this.navigation,
+      behaviourTrees: () => this.behaviourTrees,
+      audioParticles: () => this.audioParticles,
+      ticks: () => this.ticks,
+      snapshots: () => this.snapshots,
+      logs: () => this.logs,
+      inspectWorld: () => this.inspectWorld(),
+      actorSlot: (actor) => this.actorSlot(actor),
+      possessCamera: (actor) => this.possessCamera(actor),
+      stop: () => this.stop(),
+      pause: () => this.pause(),
+      resume: () => this.resume(),
+      tick: () => this.tick(),
+      paused: () => this.paused,
+      userPaused: () => this.pauseReasons.has("user"),
+      timeDilation: () => this.timeDilation,
+      setTimeDilation: (rate) => { this.timeDilation = rate; },
+      emit: (command) => this.emit(command),
     });
     for (const command of options.consoleCommands ?? []) {
       this.classAssetGuids.set(command.classId, command.assetGuid);
@@ -1227,8 +1243,8 @@ class InProcessRuntime implements RuntimeDriver {
       setWorldGravity: (gravity) => {
         this.setWorldGravity(gravity);
       },
-      executeConsoleCommand: (command) => this.executeConsoleCommand(command),
-      executeConsoleCommandAsync: (command) => this.executeConsoleCommandAsync(command),
+      executeConsoleCommand: (command) => this.console.execute(command),
+      executeConsoleCommandAsync: (command) => this.console.executeAsync(command),
       reportError: (error) => {
         this.reportError(error);
       },
@@ -1896,37 +1912,11 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   executeConsoleCommand(command: string): { success: boolean; output: string } {
-    const { name } = matchCommandName(tokenize(command.trim()), new Set(this.commands.list().map(entry => entry.name.toLowerCase())));
-    const user = this.commandClasses.get(name);
-    if (this.demandAssetCatalog && user && this.assetPreloads.getState(user.assetGuid) !== "ready") {
-      return { success: false, output: `Command ${name} is not prepared; use executeConsoleCommandAsync` };
-    }
-    return this.commands.execute(command, this.consoleHost());
+    return this.console.execute(command);
   }
 
-  async executeConsoleCommandAsync(command: string): Promise<CommandResult> {
-    if (this.stopped) return { success: false, output: "The runtime session has ended" };
-    const { name, rest } = matchCommandName(tokenize(command.trim()), new Set(this.commands.list().map(entry => entry.name.toLowerCase())));
-    const user = this.commandClasses.get(name);
-    if (!user) return this.executeConsoleCommand(command);
-    const definition = this.commands.get(name);
-    if (!definition) return { success: false, output: `Unknown command: ${name}` };
-    const parsed = parseCommandArgs(rest, definition.parameters);
-    if (!parsed.ok) return { success: false, output: parsed.output };
-    let preloadId = "";
-    try {
-      if (this.demandAssetCatalog) {
-        const result = await this.assetPreloads.acquire([user.assetGuid], `Console Command ${name}`);
-        if (!result.success) return { success: false, output: `Command ${name} (${user.assetGuid}): ${result.errorMessage}` };
-        preloadId = result.preloadId;
-      }
-      this.consoleLifetime.signal.throwIfAborted();
-      return await this.scriptHost.invokeCommandAsync(user.classId, parsed.args, this.consoleLifetime.signal);
-    } catch (error) {
-      return { success: false, output: `Command ${name}: ${error instanceof Error ? error.message : String(error)}` };
-    } finally {
-      if (preloadId) this.assetPreloads.release(preloadId);
-    }
+  executeConsoleCommandAsync(command: string): Promise<CommandResult> {
+    return this.console.executeAsync(command);
   }
 
   inspectWorld(): DebugInspectSnapshot {
@@ -1943,23 +1933,17 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   registerUserCommand(def: UserCommandDef): void {
-    this.commands.register(createUserCommand(def));
+    this.console.register(def);
   }
 
   bindUserCommand(
     def: Omit<UserCommandDef, "run"> & { classId: string },
   ): void {
-    if (isReservedConsoleCommandName(def.name.toLowerCase())) return;
-    const guid = this.classAssetGuids.get(def.classId);
-    if (guid) this.commandClasses.set(def.name.toLowerCase(), { classId: def.classId, assetGuid: guid });
-    this.registerUserCommand({
-      ...def,
-      run: (args) => this.scriptHost.invokeCommand(def.classId, args),
-    });
+    this.console.bind(def);
   }
 
   listConsoleCommands(): readonly RegisteredCommand[] {
-    return this.commands.list();
+    return this.console.list();
   }
 
   stopTrace(): TracePayload | null {
@@ -2095,140 +2079,6 @@ class InProcessRuntime implements RuntimeDriver {
     clip: { assetGuid: string; clipName: string; normalisedTime: number } | null,
   ): void {
     this.physics.forActor(actor).setActorSpriteClip(actor, clip);
-  }
-
-  private consoleHost(): ConsoleCommandHost {
-    return {
-      changeScene: (scene) => this.sceneRealizer.change(scene),
-      quality: (group, choice, value) => this.scalability.executeQuality(group, choice, value),
-      setRenderPath: (path) => {
-        this.requestScalability({ kind: "patch", render: { renderPath: path ?? this.scalabilityProjectRenderPath } });
-      },
-      getRenderPath: () => this.lastRenderPathStatus,
-      setLightsDebug: (enabled) => this.emit({ type: "setLightsDebug", enabled }),
-      setFrameCap: (fps) => {
-        this.requestScalability({ kind: "patch", frameCap: fps > 0 ? fps : DEFAULT_PLAY_FRAME_CAP });
-      },
-      getFrameCap: () => this.scalability.requested.frameCap,
-      setVolume: (volume) => {
-        this.volume = Number(volume);
-        this.emit({ type: "setGlobalVolume", volume: this.volume });
-      },
-      getVolume: () => this.volume,
-      quit: () => {
-        this.stop();
-      },
-      setShowFps: (enabled) => {
-        this.emit({ type: "setShowFps", enabled: Boolean(enabled) });
-      },
-      setStat: (name, enabled) => {
-        if (enabled) this.emit({ type: "setShowFps", enabled: true });
-        this.emit({ type: "setStat", name, enabled: Boolean(enabled) });
-      },
-      setShowCollision: (enabled) => this.physics.setShowCollision(enabled),
-      setShowBounds: (enabled) => {
-        this.emit({ type: "setShowBounds", enabled: Boolean(enabled) });
-      },
-      setWireframe: (enabled) => {
-        this.emit({ type: "setWireframe", enabled: Boolean(enabled) });
-      },
-      setShowNav: (enabled) => {
-        this.emit({ type: "setShowNav", enabled: Boolean(enabled) });
-      },
-      setShowPathfinding: (enabled) => this.navigation.setShowPathfinding(enabled),
-      setShowNavAgent: (enabled) => this.navigation.setShowNavAgent(enabled),
-      setBehaviourTreeDebug: (enabled) => this.behaviourTrees.setDebug(enabled),
-      setShowAudioDebug: (enabled) => {
-        this.emit({ type: "setShowAudioDebug", enabled: Boolean(enabled) });
-      },
-      dumpActors: () => formatDumpActors(this.inspectWorld()),
-      inspectActor: (query) =>
-        formatInspectActor(this.inspectWorld(), query, null),
-      possessActorCamera: (query) => {
-        const target = this.resolveConsoleActor(query);
-        if (!(target instanceof Actor)) return target;
-        if (!target.components.some((component) =>
-          component.classId === "CameraComponent" && !component.destroyed,
-        ) || this.actorSlot(target) === undefined) {
-          return { success: false, output: `actor '${query}' has no live camera` };
-        }
-        this.emit({ type: "setFreeCam", enabled: false });
-        this.possessCamera(target);
-        return { success: true, output: `possessed ${target.guid}` };
-      },
-      destroyActor: (query) => {
-        const target = this.resolveConsoleActor(query);
-        if (!(target instanceof Actor)) return target;
-        this.audioParticles.stopAudio(target);
-        this.audioParticles.stopParticles(target);
-        this.world.destroyActor(target.guid);
-        if (!this.ticks.processing && !this.flushingConsoleActors) {
-          this.flushingConsoleActors = true;
-          try {
-            this.world.flushPending();
-            this.physics.main.syncFromWorld(this.world);
-            this.physics.overlay.syncFromWorld(this.world);
-            this.snapshots.publish();
-            this.physics.emitDebugColliders();
-          } finally {
-            this.flushingConsoleActors = false;
-          }
-        }
-        return { success: true, output: `destroyed ${target.guid}` };
-      },
-      setFreeCam: (enabled) => {
-        this.emit({ type: "setFreeCam", enabled: Boolean(enabled) });
-      },
-      pause: () => {
-        this.pause();
-        this.emit({ type: "sessionPaused", paused: this.paused });
-      },
-      resume: () => {
-        this.resume();
-        this.emit({ type: "sessionPaused", paused: this.paused });
-      },
-      step: () => {
-        const wasPaused = this.pauseReasons.has("user");
-        this.resume();
-        this.tick();
-        if (wasPaused) this.pause();
-      },
-      setTimeDilation: (rate) => {
-        this.timeDilation = Math.min(8, Math.max(0, Number(rate)));
-      },
-      getTimeDilation: () => this.timeDilation,
-      dumpLog: () =>
-        this.logs
-          .entries()
-          .map((entry) => entry.message)
-          .join("\n"),
-      startSnapshot: () => {
-        if (this.sessionMode === "simulate") return { success: false, output: "Use Play or Preview Build to record diagnostics." };
-        return this.ticks.startTrace();
-      },
-      stopSnapshot: () => {
-        this.ticks.finalizeTrace();
-      },
-    };
-  }
-
-  private resolveConsoleActor(query: string): Actor | CommandResult {
-    const key = query.trim();
-    if (!key) return { success: false, output: "an actor GUID or unique exact name is required" };
-    const actors = this.world.getActors().filter((actor) => !actor.destroyed);
-    const byGuid = actors.find((actor) => actor.guid === key);
-    if (byGuid) return byGuid;
-    const matches = actors.filter((actor) => {
-      const name = actor.getVariable("name");
-      return (typeof name === "string" && name.length > 0 ? name : actor.classId) === key;
-    });
-    if (matches.length === 1) return matches[0]!;
-    return {
-      success: false,
-      output: matches.length > 1
-        ? `actor name '${key}' is ambiguous; use its GUID`
-        : `no live actor matches '${key}'`,
-    };
   }
 
   private applyActorDefaults(actor: Actor): void {
@@ -2693,7 +2543,7 @@ class InProcessRuntime implements RuntimeDriver {
   stop(): void {
     if (this.stopped) return;
     this.assetPreloads.dispose();
-    this.consoleLifetime.abort(new Error("The runtime session has ended"));
+    this.console.stop();
     this.layers.rejectWaiters();
     this.stopped = true;
     this.ticks.stopDiagnostics();
