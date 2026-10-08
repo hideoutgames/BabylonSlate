@@ -488,23 +488,27 @@ class BlendStencil {
     return true;
   }
 
-  /** Rest-space gradient of the gain by central differences: x to out[0], z to out[1]. */
-  gainGradient(out: Float64Array): void {
-    const h2 = 2 * BLEND_DERIVATIVE_STEP;
-    out[0] = (this.gain[1]! - this.gain[2]!) / h2;
-    out[1] = (this.gain[3]! - this.gain[4]!) / h2;
-  }
-
   /**
-   * Central difference of the rest height and swell scale along X (`axis` 0) or Z (1), into `out[at]`, `out[at + 1]`.
-   * A neighbour without water gives way to the centre, with the span shortened to match.
+   * Central difference of the gain along X (`axis` 0) or Z (1). A neighbour without water gives way to the centre, with
+   * the span shortened to match, so the edge of a body's reach never reads as a cliff.
    */
-  slope(axis: 0 | 1, out: Float64Array, at: number): void {
+  private difference(values: Float64Array, axis: 0 | 1): number {
     const hi = axis === 0 ? 1 : 3, lo = hi + 1, h = BLEND_DERIVATIVE_STEP;
     const high = this.found[hi] ? hi : 0, low = this.found[lo] ? lo : 0;
     const span = (this.found[hi] ? h : 0) + (this.found[lo] ? h : 0);
-    out[at] = span > 0 ? (this.rest[high]! - this.rest[low]!) / span : 0;
-    out[at + 1] = span > 0 ? (this.scale[high]! - this.scale[low]!) / span : 0;
+    return span > 0 ? (values[high]! - values[low]!) / span : 0;
+  }
+
+  /** Rest-space gradient of the gain: x to out[0], z to out[1]. */
+  gainGradient(out: Float64Array): void {
+    out[0] = this.difference(this.gain, 0);
+    out[1] = this.difference(this.gain, 1);
+  }
+
+  /** Slopes of the rest height and swell scale along X (`axis` 0) or Z (1), into `out[at]`, `out[at + 1]`. */
+  slope(axis: 0 | 1, out: Float64Array, at: number): void {
+    out[at] = this.difference(this.rest, axis);
+    out[at + 1] = this.difference(this.scale, axis);
   }
 }
 

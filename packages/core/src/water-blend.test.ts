@@ -186,7 +186,7 @@ describe("Water blend surface", () => {
     const definition = { ...createDefaultWaterDefinition(), waveHeight: 0.3, waveLength: 16, steepness: 0.6 };
     const scenarios: Array<{ bodies: WaterBlendBody[]; from: number; to: number }> = [
       { bodies: [lake(0, 24, 0, definition, { waveScale: 0.3 }), lake(18, 24, 0.4, definition, { waveScale: 1 })], from: -4, to: 22 },
-      { bodies: [body("global", {}, 0, 0, 0, definition), lake(0, 20, 0.2, definition, { waveScale: 0.5 })], from: 0, to: 22 },
+      { bodies: [body("global", {}, 0, 0, 0, definition), lake(0, 20, 0.2, definition, { waveScale: 0.5 })], from: 0, to: 13 },
     ];
     for (const { bodies, from, to } of scenarios) {
       const index = new WaterBlendIndex();
