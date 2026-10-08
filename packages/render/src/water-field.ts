@@ -29,30 +29,62 @@ const INF = 1e20;
  * Squared Euclidean distance transform (Felzenszwalb-Huttenlocher), in cell units, in place.
  * Seeds may carry a non-zero squared offset, e.g. a vertical gap, which the transform preserves.
  */
-export function distanceTransform<T extends Float32Array | Float64Array>(grid: T, width: number, height: number): T {
+export function distanceTransform<T extends Float32Array | Float64Array>(grid: T, width: number, height: number, region?: DistanceRegion): T {
   const size = Math.max(width, height);
-  const f = new Float64Array(size), d = new Float64Array(size), v = new Int32Array(size), z = new Float64Array(size + 1);
-  const pass = (n: number, get: (i: number) => number, set: (i: number, value: number) => void) => {
-    for (let i = 0; i < n; i++) f[i] = get(i);
-    let k = 0; v[0] = 0; z[0] = -INF; z[1] = INF;
-    for (let q = 1; q < n; q++) {
-      let s = ((f[q]! + q * q) - (f[v[k]!]! + v[k]! * v[k]!)) / (2 * q - 2 * v[k]!);
-      while (s <= z[k]!) { k--; s = ((f[q]! + q * q) - (f[v[k]!]! + v[k]! * v[k]!)) / (2 * q - 2 * v[k]!); }
-      k++; v[k] = q; z[k] = s; z[k + 1] = INF;
-    }
-    k = 0;
-    for (let q = 0; q < n; q++) {
-      while (z[k + 1]! < q) k++;
-      d[q] = (q - v[k]!) * (q - v[k]!) + f[v[k]!]!;
-    }
-    for (let i = 0; i < n; i++) set(i, d[i]!);
-  };
-  for (let x = 0; x < width; x++) pass(height, (i) => grid[i * width + x]!, (i, value) => { grid[i * width + x] = value; });
-  for (let y = 0; y < height; y++) pass(width, (i) => grid[y * width + i]!, (i, value) => { grid[y * width + i] = value; });
+  if (edtF.length < size) { edtF = new Float64Array(size); edtD = new Float64Array(size); edtV = new Int32Array(size); edtZ = new Float64Array(size + 1); }
+  const f = edtF, d = edtD;
+  // Only `region`'s cells are wanted: columns keep the rows inside it, then only its rows run, for its columns.
+  const x0 = region?.x0 ?? 0, z0 = region?.z0 ?? 0, x1 = region?.x1 ?? width, z1 = region?.z1 ?? height, cap = region?.cap ?? Infinity;
+  // Columns, then rows. A line without any seed (every value at or beyond INF) stays as it is: it would come out as
+  // INF plus a squared offset far below INF's precision, which callers clamp to their range anyway. With a `cap`, a
+  // row whose every column distance is beyond it ends beyond it too, and is left as it is for the same reason.
+  for (let x = 0; x < width; x++) {
+    let seeded = false;
+    for (let i = 0, j = x; i < height; i++, j += width) { const value = grid[j]!; f[i] = value; if (value < INF) seeded = true; }
+    if (!seeded) continue;
+    lowerEnvelope(height, z0, z1);
+    for (let i = z0, j = z0 * width + x; i < z1; i++, j += width) grid[j] = d[i]!;
+  }
+  for (let y = z0; y < z1; y++) {
+    const row = y * width;
+    let near = false;
+    for (let i = 0; i < width; i++) { const value = grid[row + i]!; f[i] = value; if (value <= cap) near = true; }
+    if (!near) continue;
+    lowerEnvelope(width, x0, x1);
+    for (let i = x0; i < x1; i++) grid[row + i] = d[i]!;
+  }
   return grid;
 }
 
-const encode = (value: number, [min, max]: readonly [number, number]) =>
+/**
+ * The cells of a `distanceTransform` a caller reads ([x0, x1) × [z0, z1)); others are left unfinished. `cap` (squared
+ * cells) is the largest distance the caller tells apart: anything beyond it may be left at any value beyond it.
+ */
+export type DistanceRegion = { x0: number; z0: number; x1: number; z1: number; cap?: number };
+
+/** Scratch lines of `distanceTransform`, grown on demand and shared (allocation-free once grown). */
+let edtF = new Float64Array(0), edtD = new Float64Array(0), edtV = new Int32Array(0), edtZ = new Float64Array(1);
+
+/**
+ * One line of the transform: the lower envelope of parabolas rooted at `edtF`'s first `n` values, evaluated into
+ * `edtD` for positions [from, to).
+ */
+function lowerEnvelope(n: number, from: number, to: number): void {
+  const f = edtF, d = edtD, v = edtV, z = edtZ;
+  let k = 0; v[0] = 0; z[0] = -INF; z[1] = INF;
+  for (let q = 1; q < n; q++) {
+    let s = ((f[q]! + q * q) - (f[v[k]!]! + v[k]! * v[k]!)) / (2 * q - 2 * v[k]!);
+    while (s <= z[k]!) { k--; s = ((f[q]! + q * q) - (f[v[k]!]! + v[k]! * v[k]!)) / (2 * q - 2 * v[k]!); }
+    k++; v[k] = q; z[k] = s; z[k + 1] = INF;
+  }
+  k = 0;
+  for (let q = from; q < to; q++) {
+    while (z[k + 1]! < q) k++;
+    d[q] = (q - v[k]!) * (q - v[k]!) + f[v[k]!]!;
+  }
+}
+
+const encode = (value: number, range: ArrayLike<number>, min = range[0]!, max = range[1]!) =>
   Math.round(Math.max(0, Math.min(1, (value - min) / (max - min))) * 255);
 
 function toTransform(matrix: Matrix): Transform {
@@ -105,6 +137,11 @@ export class WaterField {
   private key = new Float64Array(64).fill(NaN);
   private keyLength = -1;
   private keyChanged = false;
+  /** Inputs changed since the last fill, which waits for `WATER_FIELD_MOVE_MS` to pass. */
+  private pending = false;
+  /** The texture was given back (`releaseTexture`) and waits for `restore`. */
+  private released = false;
+  private lastFill = -Infinity;
   private readonly terrainOwner = new WeakMap<object, number>();
   private terrainIds = 0;
 
@@ -116,15 +153,24 @@ export class WaterField {
     this.surface = surface;
   }
 
-  /** Preserve terrain depth across the full wave envelope, including unusually high waves. */
-  get depthRange(): readonly [number, number] {
-    return [Math.min(WATER_FIELD_DEPTH_RANGE[0], -this.surface.amplitude - 1), Math.max(WATER_FIELD_DEPTH_RANGE[1], this.surface.amplitude + 1)];
+  /**
+   * Preserve terrain depth across the full wave envelope, including unusually high waves. The same array every call
+   * (read per draw), refreshed from the current amplitude.
+   */
+  get depthRange(): Readonly<Float64Array> {
+    const out = this.depthRangeOut, amplitude = this.surface.amplitude;
+    out[0] = Math.min(WATER_FIELD_DEPTH_RANGE[0], -amplitude - 1); out[1] = Math.max(WATER_FIELD_DEPTH_RANGE[1], amplitude + 1);
+    return out;
   }
 
-  /** One cell in texture coordinates (u, v). */
-  get texelSize(): readonly [number, number] {
-    return [1 / Math.max(1, this.width), 1 / Math.max(1, this.height)];
+  /** One cell in texture coordinates (u, v): the same array every call, refreshed from the current size. */
+  get texelSize(): Readonly<Float64Array> {
+    const out = this.texelOut;
+    out[0] = 1 / Math.max(1, this.width); out[1] = 1 / Math.max(1, this.height);
+    return out;
   }
+  private readonly depthRangeOut = new Float64Array(2);
+  private readonly texelOut = new Float64Array(2);
 
   /** Floor of the fine depth channel: below the lowest trough, so clamped cells still read as dry land. */
   get fineDepthMin(): number {
@@ -141,22 +187,50 @@ export class WaterField {
 
   /**
    * Refresh when terrain or the surface changes. Returns true when the texture changed. Called every frame for every
-   * visible water surface, so an unchanged frame compares numbers only: no scene scan, strings or allocation.
+   * visible water surface, so an unchanged frame compares numbers only: no scene scan, strings or allocation. While
+   * its inputs keep changing (a dragged, animated or tide-driven body, a landscape being sculpted) it refills at most
+   * every `WATER_FIELD_MOVE_MS`, keeping the previous texture in between; the last change always lands once the
+   * interval passes. A first fill and a forced one never wait.
    */
   update(force = false): boolean {
-    if (!this.inputsChanged() && !force) return false;
+    if (this.inputsChanged()) this.pending = true;
+    if (!force && (!this.pending || this.released)) return false;
+    const now = performance.now();
+    if (!force && this.texture && now - this.lastFill < WATER_FIELD_MOVE_MS) return false;
+    this.pending = false; this.lastFill = now;
     const landscapes = this.landscapes();
     const rect = this.measure(landscapes);
     if (!rect) { const had = this.texture !== null; this.release(); return had; }
     const resized = !this.rect || rect.minX !== this.rect.minX || rect.minZ !== this.rect.minZ || rect.maxX !== this.rect.maxX || rect.maxZ !== this.rect.maxZ;
     if (resized) this.allocate(rect);
     this.fillTerrain(landscapes);
+    this.upload();
+    return true;
+  }
+
+  /**
+   * Gives back the GPU texture of a surface that stays disabled, keeping the filled data and what it was filled from,
+   * so `restore` can upload it again without refilling when nothing changed meanwhile.
+   */
+  releaseTexture(): void {
+    this.texture?.dispose(); this.texture = null; this.released = true;
+  }
+
+  /** The texture again after `releaseTexture`: re-uploaded when its inputs are unchanged, refilled otherwise. */
+  restore(): boolean {
+    this.released = false;
+    if (this.inputsChanged()) this.pending = true;
+    if (this.pending || !this.data) return this.update(true);
+    if (!this.texture) this.upload();
+    return true;
+  }
+
+  private upload(): void {
     if (!this.texture) {
       this.texture = RawTexture.CreateRGBATexture(this.data!, this.width, this.height, this.scene, false, false, Texture.BILINEAR_SAMPLINGMODE, Constants.TEXTURETYPE_UNSIGNED_BYTE);
       this.texture.name = `${this.surface.mesh.name}:water-field`;
       this.texture.wrapU = this.texture.wrapV = Texture.CLAMP_ADDRESSMODE;
     } else this.texture.update(this.data!);
-    return true;
   }
 
   dispose(): void { this.release(); }
@@ -257,20 +331,35 @@ export class WaterField {
     this.bounds[2] = 1 / (rect.maxX - rect.minX); this.bounds[3] = 1 / (rect.maxZ - rect.minZ);
   }
 
-  private cellCenter(x: number, z: number): [number, number] {
-    const r = this.rect!;
-    return [r.minX + (x + 0.5) / this.width * (r.maxX - r.minX), r.minZ + (z + 0.5) / this.height * (r.maxZ - r.minZ)];
-  }
-
   private fillTerrain(landscapes: Array<{ root: Mesh; data: LandscapeProperties }>): void {
     const { width, height } = this, data = this.data!, count = width * height;
     const depthRange = this.depthRange, fineMin = this.fineDepthMin;
     const fineRange = [fineMin, fineMin + this.fineDepthSpan] as const;
     const transforms = landscapes.map(({ root, data }) => ({ data, transform: toTransform(root.computeWorldMatrix(true)) }));
     const depth = new Float64Array(count), known = new Uint8Array(count);
+    // The water's rest height is exact every `LEVEL_STRIDE` cells and interpolated between where all four samples
+    // around a cell hold water (a blending body's rest height runs the blend kernel, smooth over metres); cells near
+    // the water's own edge, where only some samples have water, evaluate it exactly, and cells with no sample holding
+    // water around them have none.
+    const r = this.rect!, sizeX = r.maxX - r.minX, sizeZ = r.maxZ - r.minZ, stride = LEVEL_STRIDE;
+    const cw = Math.ceil((width - 1) / stride) + 1, ch = Math.ceil((height - 1) / stride) + 1, levels = new Float64Array(cw * ch);
+    for (let j = 0; j < ch; j++) for (let i = 0; i < cw; i++) {
+      const x = Math.min(i * stride, width - 1), z = Math.min(j * stride, height - 1);
+      levels[j * cw + i] = this.surface.surfaceY(r.minX + (x + 0.5) / width * sizeX, r.minZ + (z + 0.5) / height * sizeZ) ?? Number.NaN;
+    }
     for (let z = 0; z < height; z++) for (let x = 0; x < width; x++) {
-      const [wx, wz] = this.cellCenter(x, z), i = z * width + x;
-      const level = this.surface.surfaceY(wx, wz);
+      const wx = r.minX + (x + 0.5) / width * sizeX, wz = r.minZ + (z + 0.5) / height * sizeZ, i = z * width + x;
+      const i0 = Math.floor(x / stride), j0 = Math.floor(z / stride), i1 = Math.min(i0 + 1, cw - 1), j1 = Math.min(j0 + 1, ch - 1);
+      const x0 = Math.min(i0 * stride, width - 1), x1 = Math.min(i1 * stride, width - 1), z0 = Math.min(j0 * stride, height - 1), z1 = Math.min(j1 * stride, height - 1);
+      const a = levels[j0 * cw + i0]!, b = levels[j0 * cw + i1]!, c = levels[j1 * cw + i0]!, d = levels[j1 * cw + i1]!;
+      let level: number | null;
+      const missing = (Number.isNaN(a) ? 1 : 0) + (Number.isNaN(b) ? 1 : 0) + (Number.isNaN(c) ? 1 : 0) + (Number.isNaN(d) ? 1 : 0);
+      if (missing === 4) level = null;
+      else if (missing > 0) level = this.surface.surfaceY(wx, wz);
+      else {
+        const fx = x1 > x0 ? (x - x0) / (x1 - x0) : 0, fz = z1 > z0 ? (z - z0) / (z1 - z0) : 0;
+        level = (a + (b - a) * fx) * (1 - fz) + (c + (d - c) * fx) * fz;
+      }
       let ground = -Infinity;
       for (const entry of transforms) {
         const h = landscapeWorldHeightAt(entry.data, entry.transform, wx, wz);
@@ -311,6 +400,14 @@ export class WaterField {
  * estimate gradually instead of in a visible step. Unbounded water's field extends this far past the terrain.
  */
 export const WATER_FIELD_EDGE_RAMP = 16;
+/**
+ * Milliseconds between refills while a field's inputs keep changing. Refilling a blending body's field runs the blend
+ * kernel at every cell (a lake dragged beside Global Water cost about 30 ms a frame on the CPU); a moving body's
+ * terrain and shoreline lag its pose by this much at most.
+ */
+export const WATER_FIELD_MOVE_MS = 150;
+/** Cells between exact samples of the water's rest height while filling a field (`fillTerrain`). */
+const LEVEL_STRIDE = 4;
 /**
  * Alpha above which the shader treats a field sample as real terrain: only there does the terrain remove water and
  * set the shoreline from depth over slope. Extended cells start below it (`WATER_FIELD_EXTENDED_ALPHA`), so bilinear

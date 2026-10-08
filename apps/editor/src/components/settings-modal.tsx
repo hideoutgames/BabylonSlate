@@ -6,7 +6,7 @@ import { renderingDraft, mergeRenderingDraft, type RenderingDraft } from "../lib
 import { ShadowSettingsFields } from "./shadow-settings-fields";
 import { EnvironmentLightingFields } from "./environment-lighting-fields";
 import { RenderEffectsFields } from "./render-effects-fields";
-import { normalizeShadowSettings } from "@babylonslate/core";
+import { MAX_WATER_BLEND_DISTANCE, normalizeShadowSettings, normalizeWaterBlendDistance } from "@babylonslate/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CelShadingFields } from "./cel-shading-fields";
 import {
@@ -1333,6 +1333,28 @@ export function SettingsModal({
               </FieldContent>
             </Field>
             </FieldGroup>
+            </DisclosureSection>
+            <DisclosureSection title="Water" {...renderingSection("water")}>
+              <Field className="settings-field">
+                <FieldLabel htmlFor="setting-water-blend-distance">Water Blend Distance</FieldLabel>
+                <NumberField
+                  id="setting-water-blend-distance"
+                  min={0}
+                  max={MAX_WATER_BLEND_DISTANCE}
+                  step={0.5}
+                  className="min-h-[var(--chrome-row,28px)]"
+                  value={normalizeWaterBlendDistance(projectDocument.settings.render.water?.blendDistance)}
+                  onChange={(blendDistance) =>
+                    updateProjectSettings({
+                      render: { ...projectDocument.settings.render, water: { ...projectDocument.settings.render.water, blendDistance: normalizeWaterBlendDistance(blendDistance) } },
+                    })
+                  }
+                  data-testid="setting-water-blend-distance"
+                />
+                <FieldDescription>
+                  Metres within which water bodies merge into one surface, in rendering and water queries. 0 turns it off.
+                </FieldDescription>
+              </Field>
             </DisclosureSection>
             <DisclosureSection title="Play Preview" {...renderingSection("playPreview")}>
             <FieldGroup className="gap-2">

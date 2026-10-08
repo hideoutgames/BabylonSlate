@@ -106,6 +106,8 @@ function seenAt(eye: Vector3, object: Vector3, planeY: number): Vector3 {
 
 it("reflects the flat Object Reflections body covering most of the view, whatever the scene order", () => {
   const { scene, frame } = host();
+  // Overlapping bodies at different rest heights: blending them would make none flat, so it stays off here.
+  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch("ultra")), water: { blendDistance: 0 } });
   // Ineligible bodies, each covering more of the view than the winner.
   const river = createWaterMesh(scene, "river", normalizeWaterBody({ width: 30 }, "river"));
   const tilted = lake(scene, "tilted", 60, new Vector3(0, -0.5, 0));

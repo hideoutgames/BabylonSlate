@@ -1,8 +1,9 @@
 import {
-  createDefaultWaterDefinition, emptyWaterSample, normalizeWaterBody,
+  createDefaultWaterDefinition, DEFAULT_WATER_BLEND_DISTANCE, emptyWaterSample, normalizeWaterBlendDistance, normalizeWaterBody,
   normalizeWaterBuoyancy, normalizeWaterDefinition, normalizeWaterRemoval, parseLandscapeProperties, quatRotateVector,
-  sampleWaterSurface, waterCutAt, waterKindForClass, waterSurfaceDrift,
-  type LandscapeProperties, type Transform, type Vec3, type WaterBodyProperties, type WaterCutters, type WaterDefinition, type WaterSample,
+  sampleWaterBlend, sampleWaterSurface, WaterBlendIndex, waterCutAt, waterKindForClass, waterSurfaceDrift,
+  type LandscapeProperties, type Transform, type Vec3, type WaterBlendQueryInfo, type WaterBodyProperties, type WaterCutters,
+  type WaterDefinition, type WaterSample,
 } from "@babylonslate/core";
 import type { Actor, ActorComponent } from "@babylonslate/object-model";
 import type { PhysicsBackend } from "@babylonslate/physics";
@@ -85,20 +86,38 @@ class WaterState {
   readonly cutters: WaterCutters = { removals: this.removals, landscapes: this.landscapes };
   transforms = new Map<string, Transform>();
   time = 0;
+  /**
+   * Which bodies blend with which (`WaterBlendIndex`): `evaluate` hands it this state's bodies every time, and it
+   * rebuilds only when a body, its pose or the Water Blend Distance changed.
+   */
+  readonly blend = new WaterBlendIndex();
   /** The body that produced the last `sample` result (null when nothing was found). */
   sampled: WaterBody | null = null;
+  /** The blended offset scale of that result (1 off any blend), which scales its drift correction. */
+  readonly sampledInfo: WaterBlendQueryInfo = { offsetScale: 1, fade: 1 };
+  private readonly info: WaterBlendQueryInfo = { offsetScale: 1, fade: 1 };
 
+  /**
+   * The highest surface over `position`. Blending bodies answer with the blended surface, and only the body owning the
+   * point does, so a seam has one surface; a query filtered to one water actor reads that actor's blended surface.
+   */
   sample(position: Vec3, actorId: string | null): WaterWorldSample {
     let result: WaterWorldSample = { ...emptyWaterSample(), actorId: null, density: 0, waterDepth: 0 };
     this.sampled = null;
-    for (const water of this.bodies) {
+    this.sampledInfo.offsetScale = 1; this.sampledInfo.fade = 1;
+    for (let index = 0; index < this.bodies.length; index++) {
+      const water = this.bodies[index]!;
       if (actorId && water.actorId !== actorId) continue;
-      const sample = sampleWaterSurface(water.definition, water.body, position, this.time, water.transform);
+      this.info.offsetScale = 1;
+      const sample = this.blend.neighbours(index).length
+        ? sampleWaterBlend(this.blend, index, position, this.time, !actorId, this.info)
+        : sampleWaterSurface(water.definition, water.body, position, this.time, water.transform);
       // Removal volumes and terrain above the surface take the water away, for queries and buoyancy alike.
       if (sample.found && waterCutAt(this.cutters, { x: position.x, y: sample.height, z: position.z })) continue;
       if (sample.found && (!result.found || sample.height > result.height)) {
         result = { ...sample, actorId: water.actorId, density: water.definition.density, waterDepth: water.body.depth * Math.abs(water.transform.scale.y) };
         this.sampled = water;
+        this.sampledInfo.offsetScale = this.info.offsetScale;
       }
     }
     return result;
@@ -179,7 +198,17 @@ export class WaterWorld {
   private readonly coupledDrift = { x: 0, z: 0 };
   /** Per buoyancy component: each support's recent peak submersion, which weights its horizontal drag. */
   private readonly wetness = new WeakMap<ActorComponent, Float64Array>();
+  /** Water Blend Distance (project setting): bodies this close blend, for the step and script queries alike. */
+  private blendDistance = DEFAULT_WATER_BLEND_DISTANCE;
   get hasBodies(): boolean { return this.stepState.bodies.length > 0; }
+
+  /** Sets the Water Blend Distance (metres; 0 turns blending off). The next evaluation rediscovers neighbours. */
+  setBlendDistance(distance: number): void {
+    const next = normalizeWaterBlendDistance(distance);
+    if (next === this.blendDistance) return;
+    this.blendDistance = next;
+    this.queriedActors = null;
+  }
 
   setContent(content: ReadonlyMap<string, WaterDefinition> | Readonly<Record<string, WaterDefinition>>): void {
     const entries = content instanceof Map ? content.entries() : Object.entries(content);
@@ -208,11 +237,13 @@ export class WaterWorld {
    * the same world and time.
    */
   query(actors: readonly Actor[], time: number, position: Vec3, actorId: string | null = null): WaterWorldSample {
+    // While bodies blend, a filtered query still needs the actor's neighbours: evaluate every surface and filter when sampling.
+    const filter = this.blendDistance > 0 ? null : actorId;
     const reusable = this.queriedActors === actors && this.queriedTime === time
-      && (this.queriedActorId === null || this.queriedActorId === actorId) && this.queryInputs.unchanged(actors.length);
+      && (this.queriedActorId === null || this.queriedActorId === filter) && this.queryInputs.unchanged(actors.length);
     if (!reusable) {
-      this.evaluate(this.queryState, actors, time, false, actorId, this.queryInputs);
-      this.queriedActors = actors; this.queriedTime = time; this.queriedActorId = actorId;
+      this.evaluate(this.queryState, actors, time, false, filter, this.queryInputs);
+      this.queriedActors = actors; this.queriedTime = time; this.queriedActorId = filter;
     }
     return this.queryState.sample(position, actorId);
   }
@@ -281,6 +312,8 @@ export class WaterWorld {
     } else {
       state.transforms.clear();
     }
+    // A comparison per evaluation; neighbours are rediscovered only when a body, its pose or the distance changed.
+    state.blend.update(bodies, this.blendDistance);
     sourceActors.length = sourceComponents.length = sourceBodies.length = composed.length = 0;
     this.byGuid.clear();
   }
@@ -343,7 +376,7 @@ export class WaterWorld {
       point: Vec3; r: Vec3; sample: WaterWorldSample; drag: number; stiffness: number; maximumLift: number;
       response: { linear: Vec3; angular: Vec3 };
     }> = [];
-    const wetted: Array<{ point: Vec3; sample: WaterWorldSample; water: WaterBody; submerged: number; index: number }> = [];
+    const wetted: Array<{ point: Vec3; sample: WaterWorldSample; water: WaterBody; submerged: number; index: number; offsetScale: number }> = [];
     let wetness = this.wetness.get(component);
     const fresh = !wetness;
     wetness ??= new Float64Array(4);
@@ -364,15 +397,17 @@ export class WaterWorld {
       // wave periods: the instantaneous value would correlate with the orbital velocity and push hulls along the waves.
       const previous = wetness[index]!;
       wetness[index] = fresh ? submerged : Math.max(submerged, previous + (submerged - previous) * Math.min(1, dt / WATER_DRAG_WETNESS_SECONDS));
-      if (submerged > 0) wetted.push({ point, sample, water: this.stepState.sampled!, submerged, index });
+      if (submerged > 0) wetted.push({ point, sample, water: this.stepState.sampled!, submerged, index, offsetScale: this.stepState.sampledInfo.offsetScale });
     }
     // The hull relaxes toward the water's horizontal velocity at this rate (1/s): each wetted support pulls with
     // min(1, drag·dt)·wetness / 4 of the body's momentum per step.
     const coupling = wetted.reduce((sum, entry) => sum + wetness[entry.index]!, 0) * Math.min(1, props.drag * dt) / (4 * dt);
-    for (const { point, sample, water, submerged, index } of wetted) {
-      const fixed = waterSurfaceDrift(water.definition, water.body, sample.edgeDistance, this.fixedDrift, 0, point.x, point.z);
-      const coupled = waterSurfaceDrift(water.definition, water.body, sample.edgeDistance, this.coupledDrift, coupling, point.x, point.z);
-      sample.velocity.x += coupled.x - fixed.x; sample.velocity.z += coupled.z - fixed.z;
+    for (const { point, sample, water, submerged, index, offsetScale } of wetted) {
+      const fixed = waterSurfaceDrift(water.definition, water.body, sample.edgeDistance, this.fixedDrift, 0, point.x, point.z, this.stepState.time);
+      const coupled = waterSurfaceDrift(water.definition, water.body, sample.edgeDistance, this.coupledDrift, coupling, point.x, point.z, this.stepState.time);
+      // On a blend the drift scales with the blended Gerstner offset squared, as the query's own correction does.
+      const blended = offsetScale * offsetScale;
+      sample.velocity.x += (coupled.x - fixed.x) * blended; sample.velocity.z += (coupled.z - fixed.z) * blended;
       const volume = props.volume > 0 ? props.volume * Math.abs(transform.scale.x * transform.scale.y * transform.scale.z) : 2 * mass / sample.density;
       const response = backend.getBodyImpulseResponse?.(bodyId, { x: 0, y: 1, z: 0 }, point);
       const center = response?.centerOfMass ?? pose.position;

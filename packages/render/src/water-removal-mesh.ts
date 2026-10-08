@@ -19,6 +19,11 @@ export function waterRemovalShapeVector(volume: WaterRemovalProperties): [number
   return [code, volume.width / 2, volume.height / 2, volume.length / 2];
 }
 
+/** Whether the scene holds any removal volume (enabled or not): water binds without a removal pass otherwise. O(1). */
+export function sceneHasWaterRemovals(scene: Scene): boolean {
+  return (removals.get(scene)?.size ?? 0) > 0;
+}
+
 /** Enabled removal volumes in a scene, with their live world matrices. */
 export function sceneWaterRemovals(scene: Scene): Array<{ mesh: Mesh; volume: WaterRemovalProperties }> {
   const result: Array<{ mesh: Mesh; volume: WaterRemovalProperties }> = [];

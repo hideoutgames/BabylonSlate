@@ -4,10 +4,11 @@ import {
 } from "@babylonjs/core";
 import {
   WATER_WAVE_MAX_COMPONENTS, createDefaultWaterDefinition, createWaterWaveOutput, evaluateWaterWaves, normalizeRenderingQuality, normalizeWaterBody,
-  normalizeWaterDefinition, qualityPresetPatch, waterWaveSet, type QualityLevel, type WaterDefinition,
+  normalizeWaterDefinition, qualityPresetPatch, waterWaveSet, waterWaveSurge, type QualityLevel, type WaterDefinition,
 } from "@babylonslate/core";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { waterFftDiagnostics, waterFftForSurface } from "./water-fft";
+import { WATER_FFT_CASCADE_TURNS } from "./water-fft-spectrum";
 import { WATER_FFT_SAMPLER, WaterMaterialPlugin } from "./water-material";
 import { createWaterMesh, setSceneWaterTime, updateSceneWater, updateWaterMeshDefinition } from "./water-mesh";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
@@ -391,6 +392,118 @@ describe("Water material binding", () => {
     } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
   });
 
+  it("counts the steepest swell slot's wrapped periods, so Toon's crest indices never jump as its phase uniform wraps", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    try {
+      const definition = createDefaultWaterDefinition("stylized", "toon");
+      const plugin = new WaterMaterialPlugin(new PBRMaterial("water", scene), definition, normalizeWaterBody({}, "global")), output = uniforms();
+      plugin.mesh = MeshBuilder.CreateGround("surface", { width: 2, height: 2 }, scene);
+      vi.spyOn(scene, "floatingOriginMode", "get").mockReturnValue(true);
+      vi.spyOn(scene, "floatingOriginOffset", "get").mockReturnValue(new Vector3(81234.5, 0, -40321.25));
+      // The crest index the shader adds to a local floor(phase / 2π): the reduced phase plus the counted periods.
+      const unwrapped = (time: number) => {
+        plugin.time = time;
+        plugin.hardBindForSubMesh(output.buffer, scene);
+        const phase = output.vectors.get("slateWaterSwellAmp0")![1]!, count = output.vectors.get("slateWaterLight")![3]!;
+        expect(Number.isInteger(count)).toBe(true);
+        return { phase, value: phase + 2 * Math.PI * count, omega: output.vectors.get("slateWaterSwellDir0")![3]! };
+      };
+      let previous = unwrapped(98765.4), wraps = 0;
+      const step = 0.05, span = 4096 * 2 * Math.PI, set = waterWaveSet(definition);
+      // The slot's phase also carries its component's surge (`waterWaveSurge`).
+      const lead = Array.from(set.omega).findIndex((omega) => Math.abs(omega - previous.omega) < 1e-4);
+      const surge = (time: number) => waterWaveSurge(set, time)[lead]!;
+      for (let i = 1; i <= 120; i++) {
+        const time = 98765.4 + i * step, next = unwrapped(time);
+        if (next.phase > previous.phase) wraps++;
+        // Continuous through every wrap of the uniform (the count itself repeats only every 4096 crests).
+        const change = ((next.value - previous.value) % span + span * 1.5) % span - span / 2;
+        expect(change).toBeCloseTo(-next.omega * step + surge(time) - surge(time - step), 3);
+        previous = next;
+      }
+      // Six seconds cross several of the slot's periods: the uniform phase wrapped each time, and the count carried it.
+      expect(wraps).toBeGreaterThanOrEqual(2);
+    } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
+  });
+
+  it("runs the shore swash on the steepest slot's clock with a cycle count, so each wave keeps its reach as the clock wraps", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    try {
+      const definition = createDefaultWaterDefinition("stylized", "toon");
+      const plugin = new WaterMaterialPlugin(new PBRMaterial("water", scene), definition, normalizeWaterBody({}, "global")), output = uniforms();
+      plugin.mesh = MeshBuilder.CreateGround("surface", { width: 2, height: 2 }, scene);
+      vi.spyOn(scene, "floatingOriginMode", "get").mockReturnValue(true);
+      vi.spyOn(scene, "floatingOriginOffset", "get").mockReturnValue(new Vector3(81234.5, 0, -40321.25));
+      const bind = (time: number) => {
+        plugin.time = time;
+        plugin.hardBindForSubMesh(output.buffer, scene);
+        const [phase, count, kappa, excursion] = output.vectors.get("slateWaterSwash")!;
+        const [dx, dz, k, omega] = output.vectors.get("slateWaterSwellDir0")!;
+        return { phase: phase!, count: count!, kappa: kappa!, excursion: excursion!, dx: dx!, dz: dz!, k: k!, omega: omega! };
+      };
+      const TAU = 2 * Math.PI, span = 4096 * TAU, start = 98765.4, step = 0.05, set = waterWaveSet(definition);
+      let previous = bind(start), wraps = 0;
+      // The swash follows the slot's surge (`waterWaveSurge`) at its own half rate.
+      const lead = Array.from(set.omega).findIndex((omega) => Math.abs(omega - previous.omega) < 1e-4);
+      const surge = (time: number) => waterWaveSurge(set, time)[lead]!;
+      for (let i = 1; i <= 120; i++) {
+        const time = start + i * step, next = bind(time);
+        expect(Number.isInteger(next.count)).toBe(true);
+        expect(next.phase).toBeGreaterThanOrEqual(0); expect(next.phase).toBeLessThan(TAU);
+        if (next.phase < previous.phase) wraps++;
+        // The shader's cycle index is floor(phase / 2π) + count: continuous through every wrap, advancing at half the
+        // slot's ω (one swash per two waves).
+        const change = ((next.phase + TAU * next.count - previous.phase - TAU * previous.count) % span + span * 1.5) % span - span / 2;
+        expect(change).toBeCloseTo((next.omega * step - surge(time) + surge(time - step)) * 0.5, 3);
+        previous = next;
+      }
+      expect(wraps).toBeGreaterThanOrEqual(1);
+      // Bores travel shoreward on every side of an island: κ outruns the half of the slot's phase that shifts the cycle
+      // along a shore. A larger sea runs further up the beach.
+      expect(previous.kappa).toBeGreaterThan(0.5 * 0.5 * previous.k);
+      expect(previous.excursion).toBeGreaterThan(0);
+      definition.waveHeight *= 3;
+      expect(bind(start).excursion).toBeGreaterThan(previous.excursion);
+      // Flat water has no swash: the shader skips the shore code.
+      definition.waveHeight = 0;
+      expect(bind(start).excursion).toBe(0);
+    } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
+  });
+
+  it("runs the chop envelopes on two continuous clocks that never come back into step together", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    try {
+      const plugin = new WaterMaterialPlugin(new PBRMaterial("water", scene), createDefaultWaterDefinition("stylized"), normalizeWaterBody({}, "global"));
+      const output = uniforms();
+      plugin.mesh = MeshBuilder.CreateGround("surface", { width: 2, height: 2 }, scene);
+      const clocks = (time: number) => {
+        plugin.time = time;
+        plugin.hardBindForSubMesh(output.buffer, scene);
+        const [, , a, b] = output.vectors.get("slateWaterChopShift")!;
+        return [a!, b!];
+      };
+      const TAU = 2 * Math.PI, apart = (x: number) => Math.abs(Math.atan2(Math.sin(x), Math.cos(x)));
+      const step = 1 / 12, start = 3600, first = clocks(start);
+      // Reduced phases that advance smoothly through every wrap (an envelope's phase is a whole combination of them).
+      let previous = first;
+      const rates = [0, 0];
+      for (let i = 1; i <= 12 * 60; i++) {
+        const next = clocks(start + i * step);
+        for (const c of [0, 1]) {
+          expect(next[c]!).toBeGreaterThanOrEqual(0); expect(next[c]!).toBeLessThan(TAU);
+          const advance = ((next[c]! - previous[c]! + TAU) % TAU) / step;
+          if (i > 1) expect(advance).toBeCloseTo(rates[c]!, 6);
+          rates[c] = advance;
+        }
+        // For a minute the two clocks never return to their start together: the nearest joint return still leaves one
+        // of them about a tenth of a radian or more off (one shared clock returned exactly every 6 s).
+        if (i * step >= 2) expect(Math.max(apart(next[0]! - first[0]!), apart(next[1]! - first[1]!))).toBeGreaterThan(0.15);
+        previous = next;
+      }
+      expect(rates[1]! / rates[0]!).toBeCloseTo(Math.SQRT2, 6);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+
   it("compiles the FFT detail band's preset cascades only where device-effective FFT Ocean Detail and Detail Waves run, and runs no band for other water", async () => {
     const host = (floats = true) => {
       const engine = new NullEngine();
@@ -507,7 +620,8 @@ describe("Water material binding", () => {
       expect(fft.get("slateWaterFft")![1]).toBeCloseTo(0.7, 6);
       expect(textures.at(-1)).toBe("Water FFT Detail");
       // Under large-world rendering, eye-relative rest points sample the texel of their world position (texel (i, j)
-      // holds world (i, j) · L / N, sampled at its centre), whatever the floating origin.
+      // holds (i, j) · L / N in the cascade's turned frame p = R(−θ)·(X, Z), sampled at its centre), whatever the
+      // floating origin; the shader turns the eye-relative point by the same R(−θ).
       const band = waterFftForSurface(scene, plugin.water)!, size = 128;
       const origin = new Vector3(81234.5, 3, -40321.25);
       vi.spyOn(scene, "floatingOriginMode", "get").mockReturnValue(true);
@@ -518,8 +632,11 @@ describe("Water material binding", () => {
       const rest = { x: 3.25, z: -1.5 };
       for (let c = 0; c < band.cascades; c++) {
         const [scale, offsetU, offsetV] = output.vectors.get(`slateWaterFftCascade${c}`)!, patch = band.patchSizes[c]!;
-        expect(fract(rest.x * scale! + offsetU! - ((origin.x + rest.x) / patch + 0.5 / size) + 0.5) - 0.5).toBeCloseTo(0, 4);
-        expect(fract(rest.z * scale! + offsetV! - ((origin.z + rest.z) / patch + 0.5 / size) + 0.5) - 0.5).toBeCloseTo(0, 4);
+        const cos = Math.cos(WATER_FFT_CASCADE_TURNS[c]!), sin = Math.sin(WATER_FFT_CASCADE_TURNS[c]!);
+        const turned = (x: number, z: number) => ({ u: cos * x + sin * z, v: cos * z - sin * x });
+        const local = turned(rest.x, rest.z), world = turned(origin.x + rest.x, origin.z + rest.z);
+        expect(fract(local.u * scale! + offsetU! - (world.u / patch + 0.5 / size) + 0.5) - 0.5).toBeCloseTo(0, 4);
+        expect(fract(local.v * scale! + offsetV! - (world.v / patch + 0.5 / size) + 0.5) - 0.5).toBeCloseTo(0, 4);
       }
       // The last cascade fades by its Nyquist wavenumber, π · N / L.
       const last = band.cascades - 1;

@@ -851,6 +851,7 @@ class InProcessRuntime implements RuntimeDriver {
       pixelsPerUnit: options.pixelsPerUnit,
       tilemaps,
       tilesets,
+      waterBlendDistance: options.renderSettings?.water?.blendDistance,
     });
   }
 

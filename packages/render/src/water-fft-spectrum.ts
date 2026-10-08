@@ -3,8 +3,9 @@
  * CPU mirror of every GPU pass (time evolution and Stockham butterflies) used as the reference the browser proof and
  * unit tests compare against. `water-fft.ts` uploads the spectrum and runs the same passes on the GPU.
  *
- * Conventions shared with the analytic kernel (`evaluateWaterWaves`): world X is texel x, world Z is texel y, and a
- * mode with wavevector k travels along +k with phase k·x − ωt, ω = √(g|k|) · Wave Speed. Each mode's Gerstner offset
+ * Conventions shared with the analytic kernel (`evaluateWaterWaves`): texel x and y are cascade c's turned frame
+ * p = R(−turn_c)·(X, Z) (`WATER_FFT_CASCADE_TURNS`; cascade 0 is the world frame), and a mode with wavevector k travels
+ * along +k with phase k·p − ωt, ω = √(g|k|) · Wave Speed. Each mode's Gerstner offset
  * is D = i·k̂·h̃ (water gathers under crests, as `D = q·a·d·cos p` does for the analytic swell with q = 1).
  *
  * Unit spectrum: the stored h0 is the band at peak wavenumber 1 and density scale 1. In grid bins the band does not
@@ -44,6 +45,14 @@ export function waterFftCascadeRatio(cascades: number): number {
   if (cascades <= 2) return WATER_FFT_CASCADE_RATIO;
   return cascades === 3 ? 1 + Math.SQRT2 : WATER_FFT_CASCADE_RATIO ** (1 / (cascades - 1));
 }
+/**
+ * Each cascade's texture frame is turned this far (radians, from world X toward world Z) from the world's: cascade c
+ * holds the band in coordinates p = R(−turn)·x, its spectrum drawn about Wave Direction − turn, so the waves still run
+ * along Wave Direction once a consumer turns its outputs back. The turns are 0°, 31° and 59°, none near another or
+ * near 90° (a square patch is the same turned by a quarter), so the cascades' periodic patches tile along different
+ * axes and never line up into one rectangular repeat across the sea.
+ */
+export const WATER_FFT_CASCADE_TURNS = [0, 0.5411, 1.0297] as const;
 /** Narrowest heading spread (Wave Spread units) of the detail band: short waves are never all parallel. */
 export const WATER_FFT_MIN_SPREAD = 0.3;
 /**
@@ -231,7 +240,7 @@ class SpectrumBuild implements WaterFftSpectrumBuild {
           factor = radial[n2] = waterOceanSpectrumDensity(this.unit, k) / k * binK * binK;
           multiple[n2] = Math.round(Math.sqrt(GRAVITY * k) / omega0);
         }
-        p = factor * directional(Math.atan2(ny, nx), layout.heading, layout.spread);
+        p = factor * directional(Math.atan2(ny, nx), layout.heading - WATER_FFT_CASCADE_TURNS[this.cascade]!, layout.spread);
         // Every in-band mode carries its frequency, even upwind ones with no energy of their own: the evolution pass
         // reads it for conj(h0(−k)), the downwind wave this texel also represents.
         data[(y * width + this.cascade * size + x) * 4 + 2] = multiple[n2]!;

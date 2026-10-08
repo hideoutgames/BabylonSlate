@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { Actor, ActorComponent } from "@babylonslate/object-model";
-import { createDefaultWaterDefinition } from "@babylonslate/core";
+import { createActor, createDefaultSceneSettings, createDefaultWaterDefinition, type SerializedActor } from "@babylonslate/core";
 import { compileGraph, type LogicGraph } from "@babylonslate/scripting";
 import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+import { createInProcessRuntime } from "./driver";
 import { ScriptHost } from "./script-host";
 import { WaterWorld } from "./water-world";
 
@@ -44,6 +45,38 @@ describe("Water graph queries", () => {
     water.update([], 1);
     expect(ctx.sampleWater({ x: 0, y: 1, z: 0 }).found).toBe(false);
   });
+  it("answers with one continuous surface where a river runs into a lake, and steps without Water Blend Distance", () => {
+    const lake = new Actor({ guid: "lake", classId: "Actor" });
+    lake.attachComponent(new ActorComponent({ classId: "WaterLakeComponent", variables: { assetGuid: "water", width: 40, length: 40, waveScale: 0.4 } }));
+    // The river's water stands 0.4 m above the lake's where it ends 10 m inside it.
+    const river = new Actor({ guid: "river", classId: "Actor" });
+    river.transform.position.y = 0.4;
+    river.attachComponent(new ActorComponent({ classId: "WaterRiverComponent", variables: {
+      assetGuid: "water", width: 8, flowSpeed: 1.5, waveScale: 0.15, points: [[0, 0, -60], [0, 0, -10]],
+    } }));
+    const water = new WaterWorld();
+    water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0.3, waveLength: 16 } });
+    const profile = (time: number) => {
+      const owners: string[] = [];
+      let previous: number | null = null, steepest = 0;
+      for (let z = -40; z <= 10; z += 0.1) {
+        const sample = water.query([lake, river], time, { x: 0.7, y: -2, z });
+        expect(sample.found).toBe(true);
+        if (owners.at(-1) !== sample.actorId) owners.push(sample.actorId!);
+        if (previous !== null) steepest = Math.max(steepest, Math.abs(sample.height - previous) / 0.1);
+        previous = sample.height;
+      }
+      return { owners, steepest };
+    };
+    for (const time of [0.5, 3.25]) {
+      const { owners, steepest } = profile(time);
+      expect(owners).toEqual(["river", "lake"]);
+      expect(steepest).toBeLessThan(0.6);
+    }
+    // Blending off: the river's surface ends 0.4 m above the lake's.
+    water.setBlendDistance(0);
+    expect(profile(0.5).steepest).toBeGreaterThan(3);
+  });
   it("removes water inside live removal volumes and under terrain that rises above Global Water Volume", () => {
     const ocean = new Actor({ guid: "ocean", classId: "Actor" });
     ocean.attachComponent(new ActorComponent({ classId: "GlobalWaterVolumeComponent", variables: {} }));
@@ -72,4 +105,40 @@ describe("Water graph queries", () => {
     water.update([ocean, island, boat], 0);
     expect(water.sample({ x: -60, y: -0.5, z: 0 }).found).toBe(true);
   });
+});
+
+describe("Project Water Blend Distance in Play", () => {
+  // A lake at rest height 0 and a river whose water stands 0.4 m above it, ending 10 m inside the lake; no waves.
+  const actors = (): SerializedActor[] => [
+    createActor("lake", "Lake", { components: [{ id: "lake-surface", classId: "WaterLakeComponent", properties: { assetGuid: "water", width: 40, length: 40 } }] }),
+    createActor("river", "River", {
+      transform: { position: [0, 0.4, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+      components: [{ id: "river-surface", classId: "WaterRiverComponent", properties: { assetGuid: "water", width: 8, points: [[0, 0, -60], [0, 0, -10]] } }],
+    }),
+  ];
+  it.each([{ blendDistance: undefined, blends: true }, { blendDistance: 0, blends: false }])(
+    "applies Water Blend Distance $blendDistance to the physics world's water, before and after the native backend loads",
+    async ({ blendDistance, blends }) => {
+      const runtime = createInProcessRuntime({
+        seed: 1, dt: 1 / 60, seedDemoActors: false, physicsWorld: "3d",
+        renderSettings: blendDistance === undefined ? {} : { water: { blendDistance } },
+        waters: { water: { ...createDefaultWaterDefinition(), waveHeight: 0 } },
+        playScene: { name: "Water", viewportMode: "3d", settings: createDefaultSceneSettings(), folders: [], actors: actors() },
+      });
+      // A metre past the river's rounded end (its half width beyond the last point), inside the lake: the blended surface
+      // still ramps down from the river's height there; unblended, the lake's own surface is all there is.
+      const heightPastRiverEnd = () => { runtime.tick(); return runtime.getPhysicsSync()!.water.sample({ x: 0, y: -2, z: -5 }).height; };
+      try {
+        runtime.realizePlayWorld();
+        runtime.start();
+        const software = heightPastRiverEnd();
+        await runtime.loadPhysics();
+        const native = heightPastRiverEnd();
+        for (const height of [software, native]) {
+          if (blends) expect(height).toBeGreaterThan(0.05);
+          else expect(height).toBeCloseTo(0, 6);
+        }
+      } finally { runtime.stop(); }
+    },
+  );
 });

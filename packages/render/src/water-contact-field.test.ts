@@ -67,6 +67,53 @@ describe("Water contact field", () => {
     expect(Math.abs(contactAt(contacts, 6.55, 0, 0))).toBeLessThan(0.15);
   });
 
+  it("spreads many surfaces' moving-object rebuilds over frames, the longest waiters first, and none waits past a tenth of a second", () => {
+    setup();
+    const box = MeshBuilder.CreateBox("float", { width: 1, height: 1, depth: 1 }, scene);
+    const fields = Array.from({ length: 6 }, () => new WaterContactField(scene, flatSurface(scene, 0.3)));
+    for (const field of fields) expect(field.update(0)).toBe(true);
+    // Each rebuild takes a millisecond of the frame's budget.
+    let clock = 0, frameId = scene.getFrameId() + 1;
+    vi.spyOn(performance, "now").mockImplementation(() => clock++);
+    vi.spyOn(scene, "getFrameId").mockImplementation(() => frameId);
+    box.position.x = 0.4; frame();
+    const first = fields.map((field) => field.update(50));
+    const waiting = first.filter((rebuilt) => !rebuilt).length;
+    expect(waiting).toBeGreaterThan(0);
+    expect(waiting).toBeLessThan(fields.length);
+    // Within the same frame, before they are overdue, they keep waiting...
+    expect(fields.filter((field, i) => !first[i] && field.update(60)).length).toBe(0);
+    // ...and the next frame the surfaces skipped longest rebuild first, whatever that frame has spent, so the surfaces
+    // visited first never starve the others.
+    frameId++;
+    expect(fields.filter((field, i) => !first[i] && field.update(70)).length).toBe(waiting);
+    expect(Math.abs(contactAt(fields[5]!, 0.9, 0, 0))).toBeLessThan(0.1);
+    // A surface overdue in time rebuilds within the frame even after the budget is spent.
+    box.position.x = 0.8; frame(); frameId++;
+    const again = fields.map((field) => field.update(120));
+    expect(again.filter(Boolean).length).toBeLessThan(fields.length);
+    expect(fields.filter((field, i) => !again[i] && field.update(225)).length).toBe(again.filter((rebuilt) => !rebuilt).length);
+    for (const field of fields) field.dispose();
+  });
+
+  it("rounds the crease where two objects' distances meet, but keeps each waterline exact", () => {
+    setup();
+    for (const x of [-2, 2]) MeshBuilder.CreateBox(`post ${x}`, { width: 1, height: 4, depth: 1 }, scene).position.set(x, 0, 0);
+    frame();
+    const field = new WaterContactField(scene, flatSurface(scene, 0.3));
+    field.update(0);
+    // Midway between the posts both are 1.5 m away: a hard minimum peaks there in a crease that every contour drawn
+    // from it kinks along. Rounded like a smooth minimum, the peak sits lower and still falls off to either side.
+    const mid = contactAt(field, 0, 0, 0), beside = contactAt(field, 0.3, 0, 0);
+    expect(mid).toBeLessThan(1.45);
+    expect(mid).toBeGreaterThan(1.2);
+    expect(beside).toBeLessThan(mid);
+    // Each hull's waterline keeps its place.
+    expect(Math.abs(contactAt(field, 1.52, 0, 0))).toBeLessThan(0.1);
+    expect(Math.abs(contactAt(field, -1.52, 0, 0))).toBeLessThan(0.1);
+    field.dispose();
+  });
+
   it("stores each layer's own cross-section, so a sloped object's waterline moves with the wave height", () => {
     setup();
     // Radius 2 at y = -2 narrowing to a point at y = 2: radius 1 - y / 2.
@@ -87,6 +134,44 @@ describe("Water contact field", () => {
     expect(Math.abs(contactAt(field, 0, 0.5, 1))).toBeLessThan(0.08);
     // Far from the cone nothing is recorded.
     expect(contactAt(field, 8, 8, 0)).toBeCloseTo(2, 1);
+    field.dispose();
+  });
+
+  it("gives a raft thinner than the layer spacing a waterline wherever the water meets it", () => {
+    setup();
+    // Layers at -0.7, -0.23, 0.23 and 0.7 m: the 0.3 m raft floats between the middle two without crossing either.
+    const raft = MeshBuilder.CreateBox("raft", { width: 1.4, height: 0.3, depth: 1 }, scene);
+    raft.position.set(0, -0.075, 0);
+    frame();
+    const field = new WaterContactField(scene, flatSurface(scene, 0.7));
+    field.update(0);
+    // Its hull is the waterline at the water heights it spans (and the layers either side), its deck is inside.
+    for (const height of [-0.2, 0, 0.05]) {
+      expect(Math.abs(contactAt(field, 0.72, 0, height))).toBeLessThan(0.1);
+      expect(contactAt(field, 0, 0, height)).toBeLessThan(0);
+    }
+    // A crest well above it no longer meets it.
+    expect(contactAt(field, 0.72, 0, 0.7)).toBeGreaterThan(0.25);
+    field.dispose();
+  });
+
+  it("re-cuts objects for a surface moving every frame at most every 150 ms, landing its last pose", () => {
+    setup();
+    MeshBuilder.CreateBox("post", { width: 1, height: 4, depth: 1 }, scene);
+    frame();
+    const surface = flatSurface(scene, 0.3), field = new WaterContactField(scene, surface);
+    expect(field.update(0)).toBe(true);
+    // A tide raising the water 2 cm a frame for a quarter of a second at 60 frames per second.
+    let rebuilds = 0, now = 0;
+    for (let i = 0; i < 15; i++) {
+      now += 1000 / 60; surface.mesh.position.y += 0.02; surface.mesh.computeWorldMatrix(true);
+      if (field.update(now)) rebuilds++;
+    }
+    expect(rebuilds).toBe(1);
+    // Once it stops, the last pose lands within the interval.
+    now += 150;
+    expect(field.update(now)).toBe(true);
+    expect(field.update(now + 150)).toBe(false);
     field.dispose();
   });
 
@@ -186,10 +271,11 @@ describe("Water contact field", () => {
     contacts.update(1000, true);
     // Mid-river the water crosses the log's sides...
     expect(Math.abs(contactAt(contacts, 0.55, 0, 0))).toBeLessThan(0.15);
-    // ...upstream its end lies fully under the raised water, and downstream it stands clear above it: only its
-    // top (or bottom) face, a few centimetres from the water a metre or more away, counts as near.
-    expect(contactAt(contacts, 0.55, -7, 0)).toBeGreaterThan(1);
-    expect(contactAt(contacts, 0.55, 7, 0)).toBeGreaterThan(1);
+    // ...upstream its end lies fully under the raised water, and downstream it stands clear above it: its top (or
+    // bottom) face, a quarter of a metre from the water there (more than a layer spacing of the wave envelope), and its
+    // waterline a metre and a half away do not count as near.
+    expect(contactAt(contacts, 0.55, -7.5, 0)).toBeGreaterThan(1);
+    expect(contactAt(contacts, 0.55, 7.5, 0)).toBeGreaterThan(1);
     // The sloping water crosses its horizontal top: the layer a third of the envelope below rest meets it near z = -5.4.
     expect(Math.abs(layers(contacts, 0, -5.4)[1]!)).toBeLessThan(0.15);
     log.dispose();

@@ -5,6 +5,7 @@ import { normalizeCelShadingSettings, type CelShadingSettings, type RenderMode }
 import { normalizeShadowSettings, type ShadowSettings } from "./shadows";
 import { normalizeEnvironmentLightingSettings, type EnvironmentLightingSettings } from "./environment-lighting";
 import { normalizeRenderEffectsSettings, type RenderEffectsSettings } from "./render-effects";
+import { normalizeWaterProjectSettings, type WaterProjectSettings } from "./water-settings";
 import type { ProjectAppearance } from "./project-appearance";
 import { normalizeTagRegistry, type TagRegistry } from "./tags";
 import { normalizeFocusNavigationSettings, type FocusNavigationSettings } from "./scene-layer-focus";
@@ -128,6 +129,11 @@ export interface RenderProjectSettings {
    */
   effects?: RenderEffectsSettings;
   /**
+   * Water Blend Distance and other project water settings. Quality-independent: rendering and worker water queries
+   * read the same value. Missing on older projects (normalizes to the default distance).
+   */
+  water?: WaterProjectSettings;
+  /**
    * When false or missing, Play fills the overlay / Follow System path.
    * New projects default this on.
    */
@@ -155,6 +161,7 @@ export const DEFAULT_RENDER_PROJECT_SETTINGS: RenderProjectSettings = {
   environmentLighting: normalizeEnvironmentLightingSettings(undefined),
   cel: normalizeCelShadingSettings(undefined),
   effects: normalizeRenderEffectsSettings(undefined),
+  water: normalizeWaterProjectSettings(undefined),
   customResolution: false,
   width: DEFAULT_RENDER_WIDTH,
   height: DEFAULT_RENDER_HEIGHT,
@@ -170,6 +177,7 @@ export const NEW_PROJECT_RENDER_SETTINGS: RenderProjectSettings = {
   environmentLighting: normalizeEnvironmentLightingSettings(undefined),
   cel: normalizeCelShadingSettings(undefined),
   effects: normalizeRenderEffectsSettings(undefined),
+  water: normalizeWaterProjectSettings(undefined),
   customResolution: true,
   width: DEFAULT_RENDER_WIDTH,
   height: DEFAULT_RENDER_HEIGHT,
@@ -613,6 +621,7 @@ export function normalizeRenderProjectSettings(input: unknown): RenderProjectSet
     cel: normalizeCelShadingSettings(value?.cel),
     environmentLighting: normalizeEnvironmentLightingSettings(value?.environmentLighting),
     effects: normalizeRenderEffectsSettings(value?.effects),
+    water: normalizeWaterProjectSettings(value?.water),
     shadows: normalizeShadowSettings(value?.shadows),
     quality: normalizeRenderingQuality(value?.quality),
     customResolution: value?.customResolution === true,

@@ -246,24 +246,36 @@ export const emptyWaterSample = (): WaterSample => ({
  * Classic swell: [heading turn, relative frequency, relative amplitude, phase]; `waterWaveSet` builds the Classic
  * model from this table. Eight components with their energy spread over the band like a sea spectrum (none carries more
  * than a third of it, so no single wave train prints parallel rows) and headings fanned to both sides of Wave
- * Direction, at incommensurate frequencies. Σ a² is that of the original five-component table (0.3591), so the sea's
- * significant height is unchanged.
+ * Direction; the three longest cross at up to 0.77 × Wave Spread × 2 radians, so where distance filters out the shorter
+ * ones the far sea still reads as short, crossing crests rather than long parallel rows. Their frequencies are spread so that the deep-water angular frequencies (∝ √frequency) never come back
+ * into step: the slope-weighted autocorrelation Σ (k·a)²·cos(ω·τ) stays under 0.24 from the first zero crossing to
+ * five peak periods (the old table's components re-aligned to 0.33 one period later, a visible ~2 s beat on short
+ * Wave Lengths). Σ a² is that of the original five-component table (0.3591), so the sea's significant height is
+ * unchanged.
  */
 export const waterWaveComponents = [
-  [0.36, 0.753, 0.198, 2.87], [-0.11, 0.899, 0.3349, 3.65], [0.12, 1.157, 0.3355, 1.55], [-0.26, 1.422, 0.2247, 0.61],
-  [-0.46, 1.857, 0.1436, 5.68], [0.6, 2.336, 0.1061, 2.56], [0.9, 2.936, 0.0876, 4.53], [-0.87, 3.67, 0.0717, 4.15],
+  [0.5, 0.778, 0.198, 2.87], [-0.27, 0.894, 0.3349, 3.65], [0.2, 1.149, 0.3355, 1.55], [-0.26, 1.609, 0.2247, 0.61],
+  [-0.46, 1.99, 0.1436, 5.68], [0.6, 2.558, 0.1061, 2.56], [0.9, 3.166, 0.0876, 4.53], [-0.87, 3.612, 0.0717, 4.15],
 ] as const;
 
 /**
  * The swell's shared domain warp, both models: [heading turn from Wave Direction (radians), wavenumber relative to the
- * peak (2π / Wave Length), amplitude relative to Wave Length, phase]. Every component is evaluated at the warped rest
- * point u = x0 + W(x0), W = Σ A·K̂·cos(K·x0 + φ) = ∇φ (a gradient field, so ∂W/∂x0 is symmetric), so a finite set of
- * plane waves never repeats as a regular lattice: crests curve over about eight wavelengths and the local wavelength
- * and heading drift by up to `WaterWaveSet.warpStretch`. Static in the world and independent of quality, so physics
- * and every renderer evaluate the same surface.
+ * peak (2π / Wave Length), amplitude relative to Wave Length, phase, drift rate relative to the peak's angular frequency
+ * √(g · 2π / Wave Length) · Wave Speed]. Every component is evaluated at the warped rest point u = x0 + W(x0, t),
+ * W = Σ A·K̂·cos(K·x0 + φ − ν·t) = ∇φ (a gradient field, so ∂W/∂x0 is symmetric), so a finite set of plane waves never
+ * repeats as a regular lattice: crests curve over about eight wavelengths and the local wavelength and heading drift by
+ * up to `WaterWaveSet.warpStretch`. The warp travels slowly (each term once every 16 to 37 peak periods, its
+ * displacement changing at a few percent of the crests' speed, so nothing swims), which keeps the components' relative
+ * phases from ever returning: a fixed view never sees the same sea again, where a static warp let it recur every
+ * 20 to 50 s. The rates satisfy 3ν₀ − 2ν₁ + ν₂ = 0, so the FFT band's tile blend (that combination of the terms'
+ * phases) stays fixed in the world. Amplitudes of 0.26 Wave Lengths (rather than 0.2) bend crest rows enough that the
+ * strongest off-axis autocorrelation of the swell's slope beyond a wavelength falls by about a third (0.28 to 0.2 on a
+ * 22 m swell, 0.35 to 0.27 on a short calm one) and its sharpest spectral peak by about four times, so crest rows no
+ * longer run parallel across a view; the Gerstner bound (`jacobianSlope`) takes the larger stretch into account.
+ * Independent of quality, so physics and every renderer evaluate the same surface.
  */
 export const waterSwellWarp = [
-  [0.4, 0.125, 0.2, 0.7], [2.5, 0.104, 0.2, 2.9], [4.4, 0.149, 0.2, 5.1],
+  [0.4, 0.125, 0.26, 0.7, 0.027], [2.5, 0.104, 0.26, 2.9, 0.061], [4.4, 0.149, 0.26, 5.1, 0.041],
 ] as const;
 /** Terms of `waterSwellWarp`. */
 export const WATER_SWELL_WARP_TERMS = waterSwellWarp.length;
@@ -274,15 +286,36 @@ export const WATER_SWELL_WARP_TERMS = waterSwellWarp.length;
  * g = (1 + m·cos(κ·ê·u − Ω·t + ψ)) / √(1 + m²/2), κ = ratio · k, which travels at the component's deep-water group velocity
  * (Ω = κ·(ê·d)·ω / 2k, half the crest speed along the component's heading): crests run through each group, growing and
  * fading as they pass, so the sea comes in sets with calmer water between them and the same crest never returns to the
- * same place after a period. Groups are about seven of their component's wavelengths long, turned off its heading so
- * crests also vary along their length; the √ keeps each component's mean energy (the sea's significant height). Only
- * the height carries the envelope: the Gerstner horizontal offset stays unmodulated, so the Jacobian bound (and with it
- * Steepness's crest sharpness) is unchanged. Evaluated at the warped rest point like the components themselves.
+ * same place after a period. Groups are 9 to 17 of their component's wavelengths long and turned well off its heading
+ * (0.7 to 1.2 radians), and deep (m 0.65 to 0.85), so across a wide view each component swells and nearly vanishes in
+ * its own patches: different headings lead in different places, and far water never reads as one even texture of
+ * parallel rows. The √ keeps each component's mean energy (the sea's significant height). Only the height carries the
+ * envelope: the Gerstner horizontal offset stays unmodulated, so the Jacobian bound (and with it Steepness's crest
+ * sharpness) is unchanged. Evaluated at the warped rest point like the components themselves.
  */
 export const waterWaveGroups = [
-  [0.13, 0.55, 0.9, 0.4], [0.155, -0.45, 4.1, 0.5], [0.12, 0.6, 2.3, 0.5], [0.145, -0.5, 5.6, 0.45],
-  [0.165, 0.4, 1.4, 0.4], [0.135, -0.6, 3.3, 0.35], [0.15, 0.5, 0.2, 0.35], [0.125, -0.4, 4.8, 0.3],
+  [0.07, 0.9, 0.9, 0.8], [0.09, -0.8, 4.1, 0.85], [0.06, 1.1, 2.3, 0.85], [0.08, -1.0, 5.6, 0.8],
+  [0.1, 0.7, 1.4, 0.75], [0.075, -1.2, 3.3, 0.7], [0.11, 0.8, 0.2, 0.7], [0.085, -0.9, 4.8, 0.65],
 ] as const;
+
+/**
+ * Swell surges, both models, per component slot: [rate A, rate B (relative to the component's angular frequency), phase
+ * A, phase B]. Each component's phase gains s(t) = β·(sin(Ωa·t + ψa) + sin(Ωb·t + ψb)), the same everywhere at one
+ * time, with β = `WATER_SURGE_DEPTH` × min(1, relative wavenumber / 2): its crests surge ahead and linger by up to a
+ * quarter of their speed (the long components carrying the drift by less), on two slow tones in irrational ratios to
+ * each other and to every other component's. A fixed set of plane waves otherwise brought a
+ * still view back in step every few seconds (frame autocorrelations of 0.3 to 0.4 two to ten seconds apart, the
+ * shortest swell component one dominant line in a calm view's temporal spectrum); surged, the components keep drifting
+ * out of step and each spreads into a comb of sidebands. Being uniform in space, a surge changes no wavevector, so
+ * slopes, the Jacobian and its Gerstner bound are untouched: only the phase and the time derivatives (the velocity
+ * the orbital motion and buoyancy read) take it. Free on the GPU, whose phases arrive reduced on the CPU.
+ */
+export const waterWaveSurges = [
+  [0.131, 0.083, 0.4, 2.9], [0.097, 0.142, 1.7, 5.2], [0.118, 0.071, 3.3, 0.8], [0.089, 0.137, 4.6, 2.2],
+  [0.124, 0.077, 5.9, 3.7], [0.103, 0.149, 1.1, 4.4], [0.141, 0.092, 2.5, 6.0], [0.079, 0.127, 3.9, 1.4],
+] as const;
+/** Depth β (radians) of each surge tone (`waterWaveSurges`). */
+export const WATER_SURGE_DEPTH = 1.1;
 
 /** Mean and half-range of `exp(sin p - 1)`, used to centre the sharp-crest profile. */
 export const WATER_CREST_MEAN = 0.465760;
@@ -361,12 +394,22 @@ export interface WaterWaveSet {
   readonly groupOmega: Float64Array;
   readonly groupPhase: Float64Array;
   readonly groupDepth: Float64Array;
-  /** `waterSwellWarp` in world units: each term's unit heading, wavenumber (rad/m), amplitude (m) and phase. */
+  /**
+   * Per component, its two surge tones (`waterWaveSurge`), interleaved: angular frequencies (rad/s, including Wave
+   * Speed) and phases.
+   */
+  readonly surgeOmega: Float64Array;
+  readonly surgePhase: Float64Array;
+  /**
+   * `waterSwellWarp` in world units: each term's unit heading, wavenumber (rad/m), amplitude (m), phase and drift rate
+   * ν (rad/s, including Wave Speed).
+   */
   readonly warpDirX: Float64Array;
   readonly warpDirZ: Float64Array;
   readonly warpK: Float64Array;
   readonly warpAmplitude: Float64Array;
   readonly warpPhase: Float64Array;
+  readonly warpOmega: Float64Array;
   /**
    * 1 + the largest eigenvalue ∂W/∂x0 can reach anywhere (its terms' signs taken independently): no warped wavevector is
    * longer than this many times its own.
@@ -469,9 +512,10 @@ function buildWaveSet(water: WaterDefinition): WaterWaveSet {
     amplitude: new Float64Array(count), phase: new Float64Array(count), frequency: new Float64Array(count),
     groupX: new Float64Array(count), groupZ: new Float64Array(count), groupOmega: new Float64Array(count),
     groupPhase: new Float64Array(count), groupDepth: new Float64Array(count), heightSum: 0,
+    surgeOmega: new Float64Array(count * 2), surgePhase: new Float64Array(count * 2),
     warpDirX: new Float64Array(WATER_SWELL_WARP_TERMS), warpDirZ: new Float64Array(WATER_SWELL_WARP_TERMS),
     warpK: new Float64Array(WATER_SWELL_WARP_TERMS), warpAmplitude: new Float64Array(WATER_SWELL_WARP_TERMS),
-    warpPhase: new Float64Array(WATER_SWELL_WARP_TERMS), warpStretch: 1, jacobianSlope: 0,
+    warpPhase: new Float64Array(WATER_SWELL_WARP_TERMS), warpOmega: new Float64Array(WATER_SWELL_WARP_TERMS), warpStretch: 1, jacobianSlope: 0,
     waveHeight: water.waveHeight, waveLength: water.waveLength, waveSpeed: water.waveSpeed, waveDirection: water.waveDirection,
     waveSpread: water.waveSpread, choppiness: water.choppiness, steepness: water.steepness, peakSharpness: water.peakSharpness,
     waveSeed: water.waveSeed, detailWaves: water.detailWaves,
@@ -529,15 +573,20 @@ function buildWaveSet(water: WaterDefinition): WaterWaveSet {
     // Deep-water group velocity ω / 2k along the heading, seen along the envelope's own wavevector.
     set.groupOmega[i] = envelope * Math.cos(turn) * set.omega[i]! / (2 * set.k[i]!);
     set.groupPhase[i] = groupPhase; set.groupDepth[i] = depth;
+    const [rateA, rateB, surgeA, surgeB] = waterWaveSurges[i]!;
+    set.surgeOmega[i * 2] = rateA * set.omega[i]!; set.surgeOmega[i * 2 + 1] = rateB * set.omega[i]!;
+    set.surgePhase[i * 2] = surgeA; set.surgePhase[i * 2 + 1] = surgeB;
     const amplitude = water.waveHeight * set.amplitude[i]!;
     set.amplitudeSum += amplitude; set.slopeSum += set.k[i]! * amplitude;
     set.heightSum += amplitude * (1 + depth) / Math.sqrt(1 + 0.5 * depth * depth);
     const drift = set.k[i]! * amplitude * amplitude * set.omega[i]! / 2;
     set.driftX += drift * set.dirX[i]!; set.driftZ += drift * set.dirZ[i]!;
   }
-  waterSwellWarp.forEach(([turn, frequency, amplitude, phase], t) => {
+  const peakOmega = Math.sqrt(9.81 * set.peakK) * water.waveSpeed;
+  waterSwellWarp.forEach(([turn, frequency, amplitude, phase, rate], t) => {
     set.warpDirX[t] = Math.cos(angle + turn); set.warpDirZ[t] = Math.sin(angle + turn);
     set.warpK[t] = set.peakK * frequency; set.warpAmplitude[t] = water.waveLength * amplitude; set.warpPhase[t] = phase;
+    set.warpOmega[t] = rate * peakOmega;
   });
   set.warpStretch = 1 + warpEigenBound(set);
   set.jacobianSlope = set.slopeSum;
@@ -572,18 +621,19 @@ function warpEigenBound(set: WaterWaveSet): number {
 }
 
 /**
- * The swell's warp (`waterSwellWarp`) at rest point (x0, z0), allocation-free: writes W (`out` 0-1) and the symmetric
- * ∂W/∂x0 (`out` 2-4: xx, xz, zz).
+ * The swell's warp (`waterSwellWarp`) at rest point (x0, z0) and simulation time `time`, allocation-free: writes W
+ * (`out` 0-1), the symmetric ∂W/∂x0 (`out` 2-4: xx, xz, zz) and ∂W/∂t (`out` 5-6).
  */
-export function evaluateWaterSwellWarp(set: WaterWaveSet, x0: number, z0: number, out: Float64Array): void {
-  let wx = 0, wz = 0, xx = 0, xz = 0, zz = 0;
+export function evaluateWaterSwellWarp(set: WaterWaveSet, x0: number, z0: number, out: Float64Array, time = 0): void {
+  let wx = 0, wz = 0, xx = 0, xz = 0, zz = 0, tx = 0, tz = 0;
   for (let t = 0; t < WATER_SWELL_WARP_TERMS; t++) {
-    const x = set.warpDirX[t]!, z = set.warpDirZ[t]!, k = set.warpK[t]!, a = set.warpAmplitude[t]!;
-    const p = k * (x * x0 + z * z0) + set.warpPhase[t]!, cos = Math.cos(p), sin = a * k * Math.sin(p);
+    const x = set.warpDirX[t]!, z = set.warpDirZ[t]!, k = set.warpK[t]!, a = set.warpAmplitude[t]!, omega = set.warpOmega[t]!;
+    const p = k * (x * x0 + z * z0) + set.warpPhase[t]! - omega * time, cos = Math.cos(p), sine = Math.sin(p), sin = a * k * sine;
     wx += a * x * cos; wz += a * z * cos;
     xx -= sin * x * x; xz -= sin * x * z; zz -= sin * z * z;
+    tx += a * omega * sine * x; tz += a * omega * sine * z;
   }
-  out[0] = wx; out[1] = wz; out[2] = xx; out[3] = xz; out[4] = zz;
+  out[0] = wx; out[1] = wz; out[2] = xx; out[3] = xz; out[4] = zz; out[5] = tx; out[6] = tz;
 }
 
 const waveSets = new WeakMap<WaterDefinition, WaterWaveSet>();
@@ -594,13 +644,27 @@ const sameWaves = (set: WaterWaveSet, w: WaterDefinition) => set.model === (w.wa
   && Object.is(set.waveSeed, w.waveSeed) && Object.is(set.detailWaves, w.detailWaves);
 
 /**
- * The definition's analytic components, built once per definition object and rebuilt only when a wave field
+ * Recently built wave sets, newest last: definitions with the same wave fields (every body of one asset, which each
+ * hold their own copy) share one immutable set, so caches keyed on the set (shader constants, FFT layouts, slope
+ * orders) are shared too. Bounded; an evicted set stays valid for the definitions that still hold it.
+ */
+const internedWaveSets: WaterWaveSet[] = [];
+const INTERNED_WAVE_SETS = 32;
+
+/**
+ * The definition's analytic components, built once per distinct set of wave fields and rebuilt only when a wave field
  * changes. Never keyed on Wave Scale, which scripts and editor handles change live.
  */
 export function waterWaveSet(water: WaterDefinition): WaterWaveSet {
   const cached = waveSets.get(water);
   if (cached && sameWaves(cached, water)) return cached;
-  const set = buildWaveSet(water);
+  let set: WaterWaveSet | undefined;
+  for (let i = internedWaveSets.length - 1; i >= 0; i--) if (sameWaves(internedWaveSets[i]!, water)) { set = internedWaveSets[i]!; break; }
+  if (!set) {
+    set = buildWaveSet(water);
+    internedWaveSets.push(set);
+    if (internedWaveSets.length > INTERNED_WAVE_SETS) internedWaveSets.shift();
+  }
   waveSets.set(water, set);
   return set;
 }
@@ -618,7 +682,29 @@ export function waterWaveQ(set: WaterWaveSet, scale = 1): number {
   return set.steepness * Math.min(WATER_STEEPNESS_CAP, (1 - WATER_JACOBIAN_FLOOR) / Math.max(set.jacobianSlope * Math.abs(scale), 1e-9));
 }
 
-const warpScratch = new Float64Array(5);
+const warpScratch = new Float64Array(7);
+
+const surges = new WeakMap<WaterWaveSet, { time: number; values: Float64Array }>();
+/**
+ * Every component's surge (`waterWaveSurges`) at simulation time `time`: slot i holds the phase it adds and slot
+ * `count + i` its rate ∂s/∂t (rad/s; the component's phase advances at −ω + that). Cached per set for the last time
+ * asked, so a tick's many evaluations compute it once; the array is reused, so callers copy what they keep.
+ */
+export function waterWaveSurge(set: WaterWaveSet, time: number): Float64Array {
+  let entry = surges.get(set);
+  if (!entry) { entry = { time: Number.NaN, values: new Float64Array(set.count * 2) }; surges.set(set, entry); }
+  if (entry.time !== time) {
+    entry.time = time;
+    const values = entry.values, omega = set.surgeOmega, phase = set.surgePhase;
+    for (let i = 0; i < set.count; i++) {
+      const a = omega[i * 2]! * time + phase[i * 2]!, b = omega[i * 2 + 1]! * time + phase[i * 2 + 1]!;
+      const depth = WATER_SURGE_DEPTH * Math.min(1, set.frequency[i]! / 2);
+      values[i] = depth * (Math.sin(a) + Math.sin(b));
+      values[set.count + i] = depth * (omega[i * 2]! * Math.cos(a) + omega[i * 2 + 1]! * Math.cos(b));
+    }
+  }
+  return entry.values;
+}
 
 /**
  * Forward Gerstner evaluation at the rest point (x0, z0), allocation-free: writes height H, horizontal offset D,
@@ -637,15 +723,17 @@ export function evaluateWaterWaves(
 ): void {
   const q = waterWaveQ(set, scale), chop = set.choppiness, waveHeight = set.waveHeight, waveLength = set.waveLength;
   const warp = warpScratch;
-  evaluateWaterSwellWarp(set, x0, z0, warp);
+  evaluateWaterSwellWarp(set, x0, z0, warp, time);
   const ux = x0 + warp[0]!, uz = z0 + warp[1]!, mxx = 1 + warp[2]!, mxz = warp[3]!, mzz = 1 + warp[4]!;
   const reach = spacing * set.warpStretch * 4 / waveLength;
   let height = 0, dx = 0, dz = 0, hx = 0, hz = 0, sxx = 0, sxz = 0, szz = 0, rate = 0, dxt = 0, dzt = 0;
-  for (let i = 0; i < set.count; i++) {
-    const k = set.k[i]!, ax = set.dirX[i]!, az = set.dirZ[i]!, omega = set.omega[i]!;
+  const surge = waterWaveSurge(set, time), count = set.count;
+  for (let i = 0; i < count; i++) {
+    // The surge (`waterWaveSurges`) shifts the phase and the rate it advances at alike everywhere.
+    const k = set.k[i]!, ax = set.dirX[i]!, az = set.dirZ[i]!, omega = set.omega[i]! - surge[count + i]!;
     const filter = clamp(2 - reach * set.frequency[i]!, 0, 1);
     const a = waveHeight * scale * set.amplitude[i]! * filter * filter * (3 - 2 * filter);
-    const p = k * (ax * ux + az * uz) - omega * time + set.phase[i]!;
+    const p = k * (ax * ux + az * uz) - set.omega[i]! * time + surge[i]! + set.phase[i]!;
     const sin = Math.sin(p), cos = Math.cos(p), crest = Math.exp(sin - 1);
     const value = sin + ((crest - WATER_CREST_MEAN) / WATER_CREST_RANGE - sin) * chop;
     const slope = cos + (crest * cos / WATER_CREST_RANGE - cos) * chop;
@@ -665,6 +753,11 @@ export function evaluateWaterWaves(
       dxt += dw * ax; dzt += dw * az;
     }
   }
+  // The travelling warp moves the evaluation point u at ∂W/∂t: the height rate gains ∇ᵤH·∂W/∂t and the offset rate
+  // −S·∂W/∂t (∂p/∂t gains k·d·∂W/∂t).
+  const wtx = warp[5]!, wtz = warp[6]!;
+  rate += hx * wtx + hz * wtz;
+  dxt -= sxx * wtx + sxz * wtz; dzt -= sxz * wtx + szz * wtz;
   out[0] = height; out[1] = gain * dx; out[2] = gain * dz;
   out[3] = mxx * hx + mxz * hz; out[4] = mxz * hx + mzz * hz;
   // J = I + gain·∇₀D + D ⊗ ∇₀gain, with ∇₀D = −S·M, S = Σ q·a·k·sin p·d ⊗ d.
@@ -763,11 +856,11 @@ export function evaluateWaterVertex(
  * as Sample Water Surface) cancels it fully; buoyancy passes its drag rate. Either way the waves rock objects without
  * a net push, and only the current carries them. Zero at Steepness 0.
  * The warp (`waterSwellWarp`) stretches each component's local wavenumber along its heading by dᵀ·M·d (M = I + ∂W/∂x0)
- * and the mean scales with it: given the world X/Z (`x`, `z`) the term is that point's, so a support anywhere sees no
- * net push; without them it is the warp's spatial mean (M = I).
+ * and the mean scales with it: given the world X/Z (`x`, `z`) the term is that point's at simulation time `time` (the
+ * warp travels slowly), so a support anywhere sees no net push; without them it is the warp's spatial mean (M = I).
  */
 export function waterWaveDrift(
-  set: WaterWaveSet, scale: number, out: { x: number; z: number }, couplingRate = 0, x = Number.NaN, z = Number.NaN,
+  set: WaterWaveSet, scale: number, out: { x: number; z: number }, couplingRate = 0, x = Number.NaN, z = Number.NaN, time = 0,
 ): { x: number; z: number } {
   const factor = (waterWaveQ(set, scale) * scale) ** 2;
   const local = Number.isFinite(x) && Number.isFinite(z);
@@ -775,12 +868,14 @@ export function waterWaveDrift(
   const rate = couplingRate * couplingRate;
   let mxx = 1, mxz = 0, mzz = 1;
   if (local) {
-    evaluateWaterSwellWarp(set, x, z, warpScratch);
+    evaluateWaterSwellWarp(set, x, z, warpScratch, time);
     mxx += warpScratch[2]!; mxz = warpScratch[3]!; mzz += warpScratch[4]!;
   }
+  // Each component at its surged angular frequency (`waterWaveSurge`) at that time.
   let sumX = 0, sumZ = 0;
+  const surge = waterWaveSurge(set, time);
   for (let i = 0; i < set.count; i++) {
-    const omega = set.omega[i]!, amplitude = set.waveHeight * set.amplitude[i]!, ax = set.dirX[i]!, az = set.dirZ[i]!;
+    const omega = set.omega[i]! - surge[set.count + i]!, amplitude = set.waveHeight * set.amplitude[i]!, ax = set.dirX[i]!, az = set.dirZ[i]!;
     const stretch = ax * ax * mxx + 2 * ax * az * mxz + az * az * mzz;
     const drift = set.k[i]! * amplitude * amplitude * omega / 2 * stretch * (omega * omega / (omega * omega + rate));
     sumX += drift * ax; sumZ += drift * az;
@@ -796,16 +891,16 @@ export const WATER_WAVE_SHADER_STRIDE = 12;
  * Per-component GPU constants for one surface, relative to a world origin (the floating origin, so shaders evaluate
  * small eye-relative coordinates) at the current simulation time. For component i, `out[i·12 …]` holds
  * (dir.x, dir.z, k, ω), (amplitude · scale, phase, q · amplitude · scale, frequency · warpStretch · 4 / Wave Length) and
- * its wave group (κê.x, κê.z, group phase, depth m). Both phases, `(k·dir·origin − ω·time + φ) mod 2π` and
- * `(κê·origin − Ω·time + ψ) mod 2π`, are reduced in float64, so a shader evaluates `p = k·dot(dir, u − origin) + phase`
+ * its wave group (κê.x, κê.z, group phase, depth m). Both phases, `(k·dir·origin − ω·time + s(t) + φ) mod 2π` (s the
+ * surge, `waterWaveSurge`) and `(κê·origin − Ω·time + ψ) mod 2π`, are reduced in float64, so a shader evaluates `p = k·dot(dir, u − origin) + phase`
  * and the group's `dot(κê, u − origin) + group phase` at the warped rest point u (`waterSwellWarpShaderConstants`) with
  * no large-argument trigonometry on mobile GPUs. Returns the count.
  */
 export function waterWaveShaderConstants(set: WaterWaveSet, scale: number, originX: number, originZ: number, time: number, out: Float32Array | Float64Array): number {
-  const q = waterWaveQ(set, scale);
+  const q = waterWaveQ(set, scale), surge = waterWaveSurge(set, time);
   for (let i = 0; i < set.count; i++) {
     const k = set.k[i]!, ax = set.dirX[i]!, az = set.dirZ[i]!, omega = set.omega[i]!, a = set.waveHeight * scale * set.amplitude[i]!;
-    const phase = (k * (ax * originX + az * originZ) - omega * time + set.phase[i]!) % TAU, o = i * WATER_WAVE_SHADER_STRIDE;
+    const phase = (k * (ax * originX + az * originZ) - omega * time + surge[i]! + set.phase[i]!) % TAU, o = i * WATER_WAVE_SHADER_STRIDE;
     const gx = set.groupX[i]!, gz = set.groupZ[i]!, group = (gx * originX + gz * originZ - set.groupOmega[i]! * time + set.groupPhase[i]!) % TAU;
     out[o] = ax; out[o + 1] = az; out[o + 2] = k; out[o + 3] = omega;
     out[o + 4] = a; out[o + 5] = phase < 0 ? phase + TAU : phase; out[o + 6] = q * a;
@@ -819,14 +914,14 @@ export function waterWaveShaderConstants(set: WaterWaveSet, scale: number, origi
 export const WATER_SWELL_WARP_STRIDE = 4;
 
 /**
- * The swell warp's GPU constants relative to a world origin, as `waterWaveShaderConstants`: per term,
- * (K.x, K.z, A / |K|, phase) with the phase `(K·origin + φ) mod 2π` reduced in float64, so a shader evaluates
- * W = Σ K·(A/|K|)·cos(dot(K, xz − origin) + phase) and ∂W/∂x0 = −Σ K ⊗ K·(A/|K|)·sin(…) at eye-relative points.
+ * The swell warp's GPU constants relative to a world origin at simulation time `time`, as `waterWaveShaderConstants`:
+ * per term, (K.x, K.z, A / |K|, phase) with the phase `(K·origin + φ − ν·time) mod 2π` reduced in float64, so a shader
+ * evaluates W = Σ K·(A/|K|)·cos(dot(K, xz − origin) + phase) and ∂W/∂x0 = −Σ K ⊗ K·(A/|K|)·sin(…) at eye-relative points.
  */
-export function waterSwellWarpShaderConstants(set: WaterWaveSet, originX: number, originZ: number, out: Float32Array | Float64Array): void {
+export function waterSwellWarpShaderConstants(set: WaterWaveSet, originX: number, originZ: number, out: Float32Array | Float64Array, time = 0): void {
   for (let t = 0; t < WATER_SWELL_WARP_TERMS; t++) {
     const k = set.warpK[t]!, x = set.warpDirX[t]!, z = set.warpDirZ[t]!, o = t * WATER_SWELL_WARP_STRIDE;
-    const phase = (k * (x * originX + z * originZ) + set.warpPhase[t]!) % TAU;
+    const phase = (k * (x * originX + z * originZ) + set.warpPhase[t]! - set.warpOmega[t]! * time) % TAU;
     out[o] = k * x; out[o + 1] = k * z; out[o + 2] = set.warpAmplitude[t]! / k; out[o + 3] = phase < 0 ? phase + TAU : phase;
   }
 }
@@ -941,19 +1036,26 @@ export function waterRiverCentreline(body: WaterBodyProperties): WaterRiverSampl
   return line;
 }
 
-type WaterFootprint = ReturnType<typeof waterFootprint>;
+export type WaterFootprint = ReturnType<typeof waterFootprint>;
 
 /**
  * The volume's rest base under world (x, z) along world vertical, starting from height y: Newton iteration preserves
- * actor/component pitch, roll and signed scales. `ray` is world up in scaled local coordinates. Null when the base is
- * vertical there or the iteration fails.
+ * actor/component pitch, roll and signed scales. `inverse` is the inverse of the volume's rotation and `ray` world up in
+ * scaled local coordinates. `distance` is world metres from y up to the base (its world rest height is y + distance).
+ * Null when the base is vertical there or the iteration fails. Points outside the footprint still find the base's
+ * plane (rivers: their nearest reach), with a negative `footprint.edge`.
  */
-function restBase(
+export function waterRestBase(
   body: WaterBodyProperties, transform: Transform, inverse: QuatObject, ray: Vec3, x: number, y: number, z: number,
 ): { distance: number; footprint: WaterFootprint } | null {
   const { x: sx, y: sy, z: sz } = transform.scale;
   const local = quatRotateVector(inverse, { x: x - transform.position.x, y: y - transform.position.y, z: z - transform.position.z });
   const origin = { x: local.x / sx, y: local.y / sy, z: local.z / sz };
+  // A level volume's base lies straight below: one footprint, solved exactly.
+  if (Math.abs(ray.x) < 1e-12 && Math.abs(ray.z) < 1e-12) {
+    const footprint = waterFootprint(body, origin.x, origin.z), distance = (footprint.height - origin.y) / ray.y;
+    return Number.isFinite(distance) ? { distance, footprint } : null;
+  }
   let distance = -origin.y / ray.y;
   for (let i = 0; i < 12; i++) {
     const footprint = waterFootprint(body, origin.x + ray.x * distance, origin.z + ray.z * distance);
@@ -969,10 +1071,10 @@ function restBase(
 }
 
 /**
- * World-metre bank distance of a local footprint (as the mesh and `edgeDistance` measure it) and, in `gradient`, the
- * world X/Z direction in which it grows (inward).
+ * World-metre bank distance of a local footprint (as the mesh and `edgeDistance` measure it; negative outside) and, in
+ * `gradient`, the world X/Z direction in which it grows (inward).
  */
-function bankDistance(footprint: WaterFootprint, transform: Transform, gradient: Float64Array): number {
+export function waterBankDistance(footprint: WaterFootprint, transform: Transform, gradient: Float64Array): number {
   const { x: sx, z: sz } = transform.scale;
   const outward = quatRotateVector(transform.rotation, { x: footprint.edgeX / sx, y: 0, z: footprint.edgeZ / sz });
   const length = Math.hypot(outward.x, outward.y, outward.z) || 1;
@@ -991,10 +1093,10 @@ class BankGain implements WaterWaveGain {
   private readonly gradient = new Float64Array(2);
   private readonly gain = new Float64Array(2);
   sample(x0: number, z0: number, out: Float64Array): void {
-    const hit = this.body ? restBase(this.body, this.transform, this.inverse, this.ray, x0, this.y, z0) : null;
+    const hit = this.body ? waterRestBase(this.body, this.transform, this.inverse, this.ray, x0, this.y, z0) : null;
     // Off the base there is no horizontal motion (the fade is zero at and beyond every bank).
     if (!hit) { out[0] = 0; out[1] = 0; out[2] = 0; return; }
-    waterBankGain(bankDistance(hit.footprint, this.transform, this.gradient), this.fadeLength, this.gain);
+    waterBankGain(waterBankDistance(hit.footprint, this.transform, this.gradient), this.fadeLength, this.gain);
     out[0] = this.gain[0]!; out[1] = this.gain[1]! * this.gradient[0]!; out[2] = this.gain[1]! * this.gradient[1]!;
   }
 }
@@ -1004,16 +1106,16 @@ const gainScratchOut = new Float64Array(2), slopeScratch = new Float64Array(2), 
 
 /**
  * The mean-drift term (m/s) `sampleWaterSurface` adds to X/Z water velocity at a sample `edgeDistance` metres inside
- * a body (`waterWaveDrift`, faded with the horizontal offset near finite banks), at world X/Z (`x`, `z`) when given.
- * Buoyancy swaps the fixed-point term (`couplingRate` 0) for its supports' coupling rate, so hulls with any drag rock
- * in place instead of drifting.
+ * a body (`waterWaveDrift`, faded with the horizontal offset near finite banks), at world X/Z (`x`, `z`) and simulation
+ * time `time` when given. Buoyancy swaps the fixed-point term (`couplingRate` 0) for its supports' coupling rate, so
+ * hulls with any drag rock in place instead of drifting.
  */
 export function waterSurfaceDrift(
   water: WaterDefinition, body: WaterBodyProperties, edgeDistance: number, out: { x: number; z: number }, couplingRate = 0,
-  x = Number.NaN, z = Number.NaN,
+  x = Number.NaN, z = Number.NaN, time = 0,
 ): { x: number; z: number } {
   const set = waterWaveSet(water);
-  waterWaveDrift(set, body.waveScale, out, couplingRate, x, z);
+  waterWaveDrift(set, body.waveScale, out, couplingRate, x, z, time);
   if (body.kind !== "global") {
     waterBankGain(edgeDistance, waterBankFadeLength(water, body.waveScale), gainScratchOut);
     const fade = gainScratchOut[0]! * gainScratchOut[0]!;
@@ -1044,20 +1146,20 @@ export function sampleWaterSurface(
   const ray = { x: up.x / sx, y: up.y / sy, z: up.z / sz };
   if (Math.abs(ray.y) < 1e-6) return emptyWaterSample();
   const set = waterWaveSet(water), scale = body.waveScale, wave = surfaceScratch, gerstner = waterWaveQ(set, scale) > 0;
-  let hit = restBase(body, transform, inverse, ray, position.x, position.y, position.z);
+  let hit = waterRestBase(body, transform, inverse, ray, position.x, position.y, position.z);
   if (!hit?.footprint.inside) return emptyWaterSample();
   if (gerstner) {
     const fadeLength = body.kind === "global" ? 0 : waterBankFadeLength(water, scale);
     let gain: WaterWaveGain | undefined;
     // A rest point within the fade band lies at most one horizontal envelope from the query; further inside, the
     // rest point is unfaded and the plain inversion is exact.
-    if (fadeLength > 0 && bankDistance(hit.footprint, transform, bankScratch) < fadeLength + waterHorizontalEnvelope(water, scale)) {
+    if (fadeLength > 0 && waterBankDistance(hit.footprint, transform, bankScratch) < fadeLength + waterHorizontalEnvelope(water, scale)) {
       Object.assign(bankGain, { body, transform, inverse, ray, y: position.y, fadeLength });
       gain = bankGain;
     }
     invertWaterWaves(set, position.x, position.z, time, 0, wave, scale, gain);
     bankGain.body = null;
-    hit = restBase(body, transform, inverse, ray, wave[11]!, position.y, wave[12]!);
+    hit = waterRestBase(body, transform, inverse, ray, wave[11]!, position.y, wave[12]!);
     if (!hit?.footprint.inside) return emptyWaterSample();
   } else {
     invertWaterWaves(set, position.x, position.z, time, 0, wave, scale);
@@ -1086,7 +1188,7 @@ export function sampleWaterSurface(
     waterEulerianGradient(wave, wave[3]! - normal.x / normal.y, wave[4]! - normal.z / normal.y, slopeScratch);
     const ex = slopeScratch[0]!, ez = slopeScratch[1]!;
     normal.x = -ex; normal.z = -ez;
-    const drift = waterSurfaceDrift(water, body, edgeDistance, driftScratch, 0, position.x, position.z);
+    const drift = waterSurfaceDrift(water, body, edgeDistance, driftScratch, 0, position.x, position.z, time);
     velocity.x += wave[9]! + drift.x; velocity.z += wave[10]! + drift.z;
     velocity.y += wave[8]! - (ex * wave[9]! + ez * wave[10]!);
   } else {
