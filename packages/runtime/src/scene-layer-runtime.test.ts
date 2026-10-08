@@ -531,7 +531,8 @@ describe("SceneLayer runtime compositor", () => {
       await createPlayBootCoordinator().play(runtime);
       for (let i = 0; i < 30; i++) runtime.tick();
       // Upward layer gravity lifts the chip; the default 2D gravity would drop it.
-      expect(runtime.getWorld().findActor("chip")?.transform.position.y).toBeGreaterThan(0.5);
+      const chip = runtime.getWorld().findActor(inLayer(runtime.getWorld().getSceneLayers()[0], "chip"));
+      expect(chip?.transform.position.y).toBeGreaterThan(0.5);
     } finally {
       runtime.stop();
     }
