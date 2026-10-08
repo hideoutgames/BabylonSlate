@@ -402,34 +402,78 @@ function hasAnimatedTiles(tilemaps: ReadonlyMap<string, TilemapPayload>, tileset
   );
 }
 
+/** The session class registry; `Enemy` is the class of the empty-Preview demo actor. */
+function createClassRegistry(): ClassRegistry {
+  const registry = new ClassRegistry();
+  registry.register({
+    id: "Enemy",
+    parentClassId: "Actor",
+    kind: "actor",
+    variables: [{ name: "speed", type: "float", defaultValue: 1 }],
+    implementedInterfaces: [],
+  });
+  return registry;
+}
+
 class RuntimeContinuationCancelled extends Error {
   constructor() { super("Scene realization was cancelled."); this.name = "AbortError"; }
 }
 
+/**
+ * The in-process runtime driver: it builds the session's subsystems, owns the
+ * session state they read (stop, pause, boot loading, frame id, the Play Scene
+ * and its library, input, camera possession), runs the fixed-step tick phases
+ * and Stop, and routes every command through `emit()`. Subsystems receive host
+ * callbacks at construction and read replaceable driver fields lazily.
+ */
 class InProcessRuntime implements RuntimeDriver {
-  private readonly simulation: SimulationSession;
+  // Session configuration, fixed at construction.
   private readonly sessionGeneration: number;
   private readonly sessionMode: GameSessionMode;
-  private commandRevision = 0;
-  private readonly diagnosticsEnabled: boolean;
-  private readonly inspector: RuntimeInspectorService;
+  private readonly demandAssetCatalog: boolean;
+  private readonly onCommand?: (command: CommandMessage) => void;
+  private readonly dt: number;
+  private readonly seed: number;
+  private readonly scalabilityProjectRenderPath: RenderPath;
+  private readonly validateLegacyMeshParameters: boolean;
+  private readonly acquireScene?: AcquireRuntimeScene;
+  private readonly deferSceneModelsReady: boolean;
+  private readonly deferSceneLoadingPaint: boolean;
+  private readonly cooperativeSceneLoading: CooperativeSceneLoadingOptions | null;
+
+  // Session state the subsystems read through host callbacks.
+  private running = false;
+  private stopped = false;
+  private bootLoading = false;
+  private paused = false;
   private readonly pauseReasons = new Set<SessionPauseReason>();
   private readonly pendingPauseChanges = new Map<SessionPauseReason, boolean>();
-  private readonly assetPreloads = new RuntimeAssetPreloads(command => this.emit(command));
-  private readonly demandAssetCatalog: boolean;
+  private readonly simulationWaiters = new Set<() => void>();
+  private frameId = 0;
+  private commandRevision = 0;
+  private lifecycleId = 0;
+  private timeDilation = 1;
+  private lastRenderPathStatus: RenderPathStatus | null = null;
+  private tilemapAnimationTimeMs = 0;
+  private hasAnimatedTiles = false;
+  /** A script `Possess Camera` outranks the authored per-camera option. */
+  private cameraPossessedByScript = false;
+  private possessedCameraSlotId: number | null = null;
+  /** Frame index (first-spawned actor per guid) the BT and crowd ticks share. */
+  private navFrameActors: Map<string, Actor> | null = null;
 
-  notifyAssetPreloadResult(result: { preloadId: string; success: boolean; error?: string; progress?: number }): void {
-    this.assetPreloads.receive(result);
-  }
+  // Scene documents and render target sources.
+  private playScene: SerializedScene | undefined;
+  private playSceneGuid: string;
+  private readonly sceneLibrary = new Map<string, SerializedScene>();
+  private readonly sceneGuidByKey = new Map<string, string>();
+  private readonly sceneLayerLibrary = new Map<string, SerializedSceneLayer>();
+  private readonly sourceRenderTargets = new Map<string, RenderTargetPayload>();
+  private readonly sourceRenderTargetTextures = new Map<string, RenderTargetTexturePayload>();
 
-  setAssetLoadStates(states: readonly { guid: string; state: RuntimeAssetLoadState }[]): void {
-    this.assetPreloads.setStates(states);
-  }
-  private readonly world: World;
-  private readonly snapshots: SnapshotPublisher;
+  // Input.
   private readonly input = new InputRingBuffer(512);
   private readonly resolver: InputResolver;
-  private readonly overlay: SceneLayerOverlay;
   private resolvedInput: ResolvedInputTick = {
     inputs: {},
     actions: {},
@@ -443,268 +487,57 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly connectionBox: {
     current: ResolvedInputTick["gamepadConnections"];
   } = { current: [] };
+
+  // Logs and diagnostics.
   private readonly logs = new LogRingBuffer(512);
   private readonly diagnostics = new SessionDiagnosticAggregator();
   private readonly anchors = new Map<string, readonly AnchorEntry[]>();
+  private readonly loopGuard: InfiniteLoopGuard;
+
+  // Leaf services, built by field initializers: they take no other subsystem.
+  private readonly assetPreloads = new RuntimeAssetPreloads(command => this.emit(command));
   private readonly painters = new Painter2DRuntime();
-  private readonly uiControls: UIControls2DRuntime;
   private readonly textAppear = new Text2DAppearRuntime();
   private readonly tweens = new TweenRuntime((owner) => !this.stopped && !this.paused && !this.streams.blocking &&
     (!owner || this.admission.canRunActions(owner)));
-  private readonly onCommand?: (command: CommandMessage) => void;
-  private readonly dt: number;
-  private readonly physics: RuntimePhysicsWorlds;
-  private paused = false;
-  private readonly simulationWaiters = new Set<() => void>();
-  private readonly scalability: ScalabilitySession;
-  private lastRenderPathStatus: RenderPathStatus | null = null;
-  private readonly scalabilityProjectRenderPath: RenderPath;
-  private timeDilation = 1;
-  private running = false;
-  private frameId = 0;
-  private readonly scriptHost: ScriptHost;
-  private readonly scriptRuntime: ScriptRuntime;
-  private readonly dataCatalog: RuntimeDataCatalog;
-  private readonly sourceRenderTargets = new Map<string, RenderTargetPayload>();
-  private readonly sourceRenderTargetTextures = new Map<string, RenderTargetTexturePayload>();
-  private readonly ragdolls: RagdollWorldSync;
-  private readonly cables: CableWorldSync;
-  private readonly dynamicMeshes: DynamicRuntimeMeshSync;
-  private readonly movement: MovementWorldSync;
-  private playScene: SerializedScene | undefined;
-  private playSceneGuid: string;
-  private readonly sceneLibrary = new Map<string, SerializedScene>();
-  private readonly acquireScene?: AcquireRuntimeScene;
-  private readonly sceneGuidByKey = new Map<string, string>();
-  private readonly sceneLayerLibrary = new Map<string, SerializedSceneLayer>();
-  private readonly deferSceneModelsReady: boolean;
-  private readonly deferSceneLoadingPaint: boolean;
-  private readonly materialParameters: RuntimeMaterialParameters;
-  private readonly validateLegacyMeshParameters: boolean;
-  private readonly admission = new OwnerAdmission({
-    world: () => this.world,
-    stopped: () => this.stopped,
-    paused: () => this.paused,
-    saveBoundaryActive: () => this.boundaries.saveBoundaryActive,
-    sceneLoading: () => this.sceneRealizer.blocked || this.bootLoading,
-    streams: () => this.streams,
-    layers: () => this.layers,
-    releaseAssets: (ownerGuid) => this.assetPreloads.releaseOwner(ownerGuid),
-    reportError: (error) => { this.reportError(error); },
-  });
-  private readonly cooperativeSceneLoading: CooperativeSceneLoadingOptions | null;
-  private bootLoading = false;
-  private stopped = false;
-  private lifecycleId = 0;
-  /** A script `Possess Camera` outranks the authored per-camera option. */
-  private cameraPossessedByScript = false;
-  private possessedCameraSlotId: number | null = null;
-  private readonly console: RuntimeConsole;
-  private readonly loopGuard: InfiniteLoopGuard;
-  private readonly seed: number;
-  private tilemapAnimationTimeMs = 0;
-  private hasAnimatedTiles = false;
-  private readonly texturePixelSizes: Readonly<Record<string, { width: number; height: number }>>;
   /**
-   * Subsystems with lifecycle hooks. Registration order (end of the
-   * constructor) is the order Stop and Scene replacement run their hooks.
+   * Subsystems with lifecycle hooks. Registration order (`registerSubsystems`)
+   * is the order Stop, Scene replacement and actor removal run their hooks.
    */
   private readonly subsystems = new RuntimeSubsystems();
-  private readonly renderSlots = new RenderSlots(this.subsystems, {
-    ensureCapacity: (required) => this.snapshots.ensureCapacity(required),
-    findActor: (guid) => this.world.findActor(guid),
-  });
-  private readonly renderEmitter = new RenderCommandEmitter({
-    world: () => this.world,
-    isStreamActor: (actor) => this.streams.isStreamActor(actor),
-    playScene: () => this.playScene,
-    slot: (actor) => this.actorSlot(actor),
-    cables: () => this.cables,
-    dynamicMeshes: () => this.dynamicMeshes,
-    uiControls: () => this.uiControls,
-    painters: () => this.painters,
-    textAppear: () => this.textAppear,
-    materialParameters: () => this.materialParameters,
-    emit: (command) => this.emit(command),
-  });
-  private readonly audioParticles = new AudioParticleEmitter(this.admission, {
-    slot: (actor) => this.actorSlot(actor),
-    frameId: () => this.frameId,
-    emit: (command) => this.emit(command),
-  });
-  private readonly delays = new LatentDelays(this.admission);
-  private readonly navigation = new RuntimeNavigation({
-    world: () => this.world,
-    worldKind: () => this.physics.kind,
-    physics: () => this.physics.main,
-    streamActorReady: (actor) => this.streams.actorReady(actor),
-    isStreamActor: (actor) => this.streams.isStreamActor(actor),
-    dt: () => this.simulationDt(),
-    actorName: (actor) => this.debugActorName(actor),
-    emit: (command) => this.emit(command),
-  }, nowMs);
-  private readonly streams: SceneStreams = new SceneStreams(this.admission, {
-    world: () => this.world,
-    stopped: () => this.stopped,
-    physicsWorldKind: () => this.physics.kind,
-    sceneDocument: (key) => this.sceneLibrary.get(key),
-    sceneGuid: (key) => this.sceneGuidByKey.get(key) ?? key,
-    acquireScene: () => this.acquireScene,
-    cooperativeLoading: () => this.cooperativeSceneLoading ?? {},
-    deferModelsReady: () => this.deferSceneModelsReady,
-    scripts: () => this.scriptHost,
-    createActor: (serialized) => createActorFromSerialized(this.world, serialized, this.actors.sceneActorHooks),
-    realizeActor: (actor, checkpoint) => this.actors.realize(actor, checkpoint),
-    breakParentCycles: (actors, detach) => this.actors.breakLoadedParentCycles(actors, detach),
-    publishSnapshot: () => this.snapshots.publish(),
-    slot: (actor) => this.actorSlot(actor),
-    syncPhysics: () => this.physics.main.syncFromWorld(this.world),
-    navigation: () => this.navigation,
-    removeActor: (actor) => this.actors.remove(actor),
-    cancelInvalidTweens: () => this.tweens.cancelInvalid(),
-    releaseAssets: (ownerGuid) => this.assetPreloads.releaseOwner(ownerGuid),
-    markUnsupportedInstance: (sceneGuid) => this.simulation.markUnsupportedInstance("stream", sceneGuid),
-    blockSettled: () => {
-      this.ticks.resetAccumulator();
-      this.admission.flush();
-      if (!this.streams.blocking) {
-        const waiters = [...this.simulationWaiters];
-        this.simulationWaiters.clear();
-        for (const resume of waiters) resume();
-      }
-    },
-    emit: (command) => this.emit(command),
-  });
-  private readonly sceneRealizer: SceneRealizer = new SceneRealizer(this.admission, {
-    world: () => this.world,
-    stopped: () => this.stopped,
-    frameId: () => this.frameId,
-    playScene: () => this.playScene,
-    playSceneGuid: () => this.playSceneGuid,
-    enterScene: (scene, guid) => {
-      this.playScene = scene;
-      this.scalability.setScene(scene.settings);
-      this.playSceneGuid = guid;
-      // The new scene owns its own camera choice.
-      this.cameraPossessedByScript = false;
-      this.possessedCameraSlotId = null;
-    },
-    sceneLibrary: () => this.sceneLibrary,
-    sceneGuid: (key) => this.sceneGuidByKey.get(key) ?? key,
-    acquireScene: () => this.acquireScene,
-    cooperativeLoading: () => this.cooperativeSceneLoading,
-    bootLoading: () => this.bootLoading,
-    deferModelsReady: () => this.deferSceneModelsReady,
-    deferLoadingPaint: () => this.deferSceneLoadingPaint,
-    physics: () => this.physics,
-    navigation: () => this.navigation,
-    layers: () => this.layers,
-    scripts: () => this.scriptHost,
-    startWorld: () => {
-      this.tilemapAnimationTimeMs = 0;
-      if (this.hasAnimatedTiles) this.emit({ type: "tilemapAnimationTime", elapsedMs: 0 });
-      this.loopGuard.reset();
-      this.world.start();
-    },
-    setWorldGravity: (gravity) => this.setWorldGravity(gravity),
-    recordSimulationStart: (start) => this.simulation.recordStart(start),
-    markSceneTransition: () => this.simulation.markSceneTransition(),
-    createActor: (serialized) => createActorFromSerialized(this.world, serialized, this.actors.sceneActorHooks),
-    realizeActor: (actor, checkpoint) => this.actors.realize(actor, checkpoint),
-    breakParentCycles: (actors) => this.actors.breakLoadedParentCycles(actors),
-    possessViewTarget: () => this.attemptPossessViewTarget(),
-    publishSnapshot: () => this.snapshots.publish(),
-    removeActor: (actor) => this.actors.remove(actor),
-    removeSceneLayer: (layerGuid) => this.removeSceneLayer(layerGuid),
-    releaseAssets: (ownerGuid) => this.assetPreloads.releaseOwner(ownerGuid),
-    resetForSceneLoad: () => this.subsystems.resetForSceneLoad(),
-    duringSceneTeardown: (teardown) => this.scriptRuntime.duringSceneTeardown(teardown),
-    retireStreams: () => this.streams.retireAll(),
-    emitSceneDebug: () => {
-      this.navigation.emitDebug(true);
-      this.behaviourTrees.emitSnapshot(true);
-    },
-    reportError: (error) => { this.reportError(error); },
-    emit: (command) => this.emit(command),
-  });
-  private readonly layers: SceneLayers;
-  private readonly boundaries: SessionBoundaries = new SessionBoundaries(this.admission, {
-    world: () => this.world,
-    sessionGeneration: () => this.sessionGeneration,
-    stopped: () => this.stopped,
-    playScene: () => this.playScene,
-    playSceneGuid: () => this.playSceneGuid,
-    sceneLibrary: () => this.sceneLibrary,
-    scripts: () => this.scriptHost,
-    streams: () => this.streams,
-    sceneRealizer: () => this.sceneRealizer,
-    physics: () => this.physics,
-    actorHooks: () => this.actors.sceneActorHooks,
-    canSpawnActorClass: (classId) => this.scriptRuntime.canSpawnActorClass(classId),
-    realizeActor: (actor) => this.actors.realize(actor),
-    removeActor: (actor) => this.actors.remove(actor),
-    publishSnapshot: () => this.snapshots.publish(),
-    takeDeferredOverlayLayout: () => this.overlay.takeDeferredLayout(),
-    pauseReasons: () => this.pauseReasons,
-    setPauseReason: (reason, paused) => this.setPauseReason(reason, paused),
-    resetInputState: () => this.resetInputState(),
-    commandRevision: () => this.commandRevision,
-    reportError: (error) => { this.reportError(error); },
-  });
-  private readonly animGraphs = new AnimGraphRuntime({
-    actors: () => this.world.getActors(),
-    stopped: () => this.stopped,
-    canTick: (actor) => this.admission.canTickActor(actor),
-    slot: (actor) => this.actorSlot(actor),
-    hasRenderSlot: (actor) => this.renderSlots.recordedSlot(actor) !== undefined,
-    playAnimationOwns: (slotId) => this.behaviourTrees.playAnimationOwns(slotId),
-    dt: () => this.simulationDt(),
-    scripts: () => this.scriptHost,
-    setSpriteClip: (actor, clip) => this.setActorSpriteClip(actor, clip),
-    emit: (command) => this.emit(command),
-  });
-  private readonly behaviourTrees = new BehaviourTreeRuntime({
-    world: () => this.world,
-    frameActors: () => this.navFrameActors ?? undefined,
-    stopped: () => this.stopped,
-    canTick: (actor) => this.admission.canTickActor(actor),
-    slot: (actor) => this.actorSlot(actor),
-    navigation: () => this.navigation,
-    worldKind: () => this.physics.kind,
-    seed: () => this.seed,
-    dt: () => this.simulationDt(),
-    frameId: () => this.frameId,
-    tickIndex: () => this.world.clock.tickIndex,
-    scripts: () => this.scriptHost,
-    setSpriteClip: (actor, clip) => this.setActorSpriteClip(actor, clip),
-    actorName: (actor) => this.debugActorName(actor),
-    recordDiagnostic: (diagnostic) => this.diagnostics.push(diagnostic),
-    emit: (command) => this.emit(command),
-  }, nowMs);
-  private readonly actors: ActorRealization = new ActorRealization(this.admission, {
-    world: () => this.world,
-    stopped: () => this.stopped,
-    scripts: () => this.scriptHost,
-    scriptRuntime: () => this.scriptRuntime,
-    streams: () => this.streams,
-    boundaries: () => this.boundaries,
-    physicsKind: () => this.physics.kind,
-    renderSlots: () => this.renderSlots,
-    renderEmitter: () => this.renderEmitter,
-    audioParticles: () => this.audioParticles,
-    overlay: () => this.overlay,
-    movement: () => this.movement,
-    dynamicMeshes: () => this.dynamicMeshes,
-    textAppear: () => this.textAppear,
-    subsystems: () => this.subsystems,
-    cancelInvalidTweens: () => this.tweens.cancelInvalid(),
-    frameActors: () => this.navFrameActors,
-    reportLog: (message, severity, category) => this.reportLog(message, severity, category),
-    emit: (command) => this.emit(command),
-  });
-  /** Frame index (first-spawned actor per guid) the BT and crowd ticks share. */
-  private navFrameActors: Map<string, Actor> | null = null;
+
+  // Subsystems, built by the constructor in its phase order.
+  private readonly admission: OwnerAdmission;
+  private readonly renderSlots: RenderSlots;
+  private readonly renderEmitter: RenderCommandEmitter;
+  private readonly audioParticles: AudioParticleEmitter;
+  private readonly delays: LatentDelays;
+  private readonly navigation: RuntimeNavigation;
+  private readonly streams: SceneStreams;
+  private readonly sceneRealizer: SceneRealizer;
+  private readonly boundaries: SessionBoundaries;
+  private readonly animGraphs: AnimGraphRuntime;
+  private readonly behaviourTrees: BehaviourTreeRuntime;
+  private readonly actors: ActorRealization;
+  private readonly simulation: SimulationSession;
+  private readonly scriptRuntime: ScriptRuntime;
+  private readonly inspector: RuntimeInspectorService;
+  private readonly materialParameters: RuntimeMaterialParameters;
+  private readonly scalability: ScalabilitySession;
+  private readonly physics: RuntimePhysicsWorlds;
+  private readonly console: RuntimeConsole;
+  private readonly world: World;
+  private readonly snapshots: SnapshotPublisher;
   private readonly ticks: TickPipeline;
+  private readonly dynamicMeshes: DynamicRuntimeMeshSync;
+  private readonly movement: MovementWorldSync;
+  private readonly cables: CableWorldSync;
+  private readonly ragdolls: RagdollWorldSync;
+  private readonly uiControls: UIControls2DRuntime;
+  private readonly overlay: SceneLayerOverlay;
+  private readonly layers: SceneLayers;
+  private readonly dataCatalog: RuntimeDataCatalog;
+  private readonly scriptHost: ScriptHost;
 
   get lastScriptMs(): number {
     return this.ticks.lastScriptMs;
@@ -716,8 +549,403 @@ class InProcessRuntime implements RuntimeDriver {
   get snapshotCapacity(): number { return this.snapshots.capacity; }
   get snapshotGeneration(): number { return this.snapshots.generation; }
 
+  /**
+   * Builds the session in phases. Subsystem constructors build only their own
+   * state and call no host callback; host callbacks read driver fields when
+   * called, so a callback may name a subsystem built later. Order matters where
+   * a constructor takes another subsystem directly or a construction-time call
+   * reads one:
+   *
+   * 1. Core subsystems: `OwnerAdmission` first, because Delays, audio/particle
+   *    playback, scene streams, the Scene realizer, Session boundaries and actor
+   *    realization take it directly; `RenderSlots` takes `RuntimeSubsystems`.
+   * 2. Session identity: `SimulationSession` snapshots the Simulate baseline,
+   *    then `ScriptRuntime`, whose Class asset guid map the console's startup
+   *    command bindings (phase 4) and the ScriptHost actor bindings (phase 7)
+   *    read, then `RuntimeInspectorService`, which `emit()` asks to annotate
+   *    every command, so it exists before anything can emit.
+   * 3. Render and physics settings, physics worlds and the Scene library.
+   * 4. Console (with startup user commands), loop guard, startup animation
+   *    graph, behaviour tree and Blackboard documents, input resolver and
+   *    physics content.
+   * 5. The World, then what takes it directly: snapshots, the tick pipeline,
+   *    component runtimes, the Scene Layer overlay and Scene Layers.
+   * 6. The World input provider.
+   * 7. ScriptHost last: its services take most subsystems directly.
+   * 8. `RuntimeSubsystems` registration, in Stop order.
+   * 9. Startup: Scene asset Classes, the Game Instance and, for an empty
+   *    Preview, the demo actors (their `spawn` commands are emitted here).
+   */
   constructor(options: RuntimeDriverOptions) {
-    this.simulation = new SimulationSession({
+    // 1. Core subsystems.
+    this.admission = this.createAdmission();
+    this.renderSlots = new RenderSlots(this.subsystems, {
+      ensureCapacity: (required) => this.snapshots.ensureCapacity(required),
+      findActor: (guid) => this.world.findActor(guid),
+    });
+    this.renderEmitter = this.createRenderEmitter();
+    this.audioParticles = new AudioParticleEmitter(this.admission, {
+      slot: (actor) => this.actorSlot(actor),
+      frameId: () => this.frameId,
+      emit: (command) => this.emit(command),
+    });
+    this.delays = new LatentDelays(this.admission);
+    this.navigation = this.createNavigation();
+    this.streams = this.createStreams();
+    this.sceneRealizer = this.createSceneRealizer();
+    this.boundaries = this.createBoundaries();
+    this.animGraphs = this.createAnimGraphs();
+    this.behaviourTrees = this.createBehaviourTrees();
+    this.actors = this.createActorRealization();
+
+    // 2. Session identity, scripts and the inspector.
+    this.simulation = this.createSimulation(options);
+    this.sessionGeneration = options.sessionGeneration ?? 0;
+    this.sessionMode = options.sessionMode ?? "play";
+    this.demandAssetCatalog = options.classAssetGuids !== undefined;
+    this.scriptRuntime = this.createScriptRuntime(options);
+    this.inspector = this.createInspector(options);
+
+    // 3. Render and physics settings, physics worlds and the Scene library.
+    this.materialParameters = new RuntimeMaterialParameters(options.materialParameterCatalog, options.materialTextureAssetGuids);
+    this.validateLegacyMeshParameters = options.materialParameterCatalog !== undefined;
+    this.scalabilityProjectRenderPath = options.renderSettings?.renderPath ?? "forward";
+    this.scalability = new ScalabilitySession(options.renderSettings, options.frameCap, options.playScene?.settings,
+      (transaction) => this.emit({ type: "setScalability", transaction }));
+    this.dt = options.dt ?? 1 / 60;
+    this.seed = options.seed;
+    this.onCommand = options.onCommand;
+    const tilemaps = new Map(Object.entries(options.tilemaps ?? {}));
+    const tilesets = new Map(Object.entries(options.tilesets ?? {}));
+    this.physics = this.createPhysics(options, tilemaps, tilesets);
+    this.playScene = options.playScene;
+    this.acquireScene = options.acquireScene;
+    this.playSceneGuid = options.playSceneGuid ?? "play-scene";
+    this.navigation.replaceSceneNavMeshes(options.sceneNavmeshBytes ?? {});
+    this.deferSceneModelsReady = options.deferSceneModelsReady === true;
+    this.deferSceneLoadingPaint = options.deferSceneLoadingPaint === true;
+    this.cooperativeSceneLoading = options.cooperativeSceneLoading
+      ? (options.cooperativeSceneLoading === true ? {} : options.cooperativeSceneLoading)
+      : null;
+    indexSceneLibrary({
+      sceneLibrary: options.sceneLibrary,
+      sceneGuidByKey: options.sceneGuidByKey,
+      sceneLayerLibrary: options.sceneLayerLibrary,
+      playScene: options.playScene,
+      playSceneGuid: this.playSceneGuid,
+      acquired: Boolean(this.acquireScene),
+    }, { scenes: this.sceneLibrary, sceneGuids: this.sceneGuidByKey, sceneLayers: this.sceneLayerLibrary });
+
+    // 4. Console, loop guard, startup documents, input and physics content.
+    this.console = this.createConsole(options);
+    for (const command of options.consoleCommands ?? []) {
+      this.scriptRuntime.setClassAssetGuid(command.classId, command.assetGuid);
+      this.bindUserCommand({ ...command, name: command.name || command.classId.toLowerCase() });
+    }
+    this.loopGuard = createInfiniteLoopGuard({
+      enabled:
+        (options.includeDebugCommands ?? true) &&
+        options.infiniteLoopDetection !== false,
+      loopCount: options.loopCount ?? DEFAULT_INFINITE_LOOP_COUNT,
+    });
+    for (const [guid, document] of Object.entries(options.animGraphs ?? {})) this.animGraphs.register(guid, document);
+    for (const [guid, document] of Object.entries(options.behaviourTrees ?? {})) this.behaviourTrees.register(guid, document);
+    for (const [guid, document] of Object.entries(options.blackboards ?? {})) this.behaviourTrees.registerBlackboard(guid, document);
+    this.hasAnimatedTiles = hasAnimatedTiles(tilemaps, tilesets);
+    this.behaviourTrees.replaceAudioAssets((options.audioAssetGuids ?? []).filter((guid) => guid));
+    this.behaviourTrees.replaceAnimClipCatalog((options.animClipCatalog ?? []).filter((entry) => entry.guid));
+    const registry = createClassRegistry();
+    this.resolver = new InputResolver(normalizeInputMappings(
+      options.inputAssets !== undefined ? inputMappingsFromAssets(options.inputAssets) : options.inputMappings ?? createDefaultInputMappings(),
+    ));
+    if (options.tilemaps || options.tilesets) this.physics.bindAll();
+    if (options.sprites || options.spriteAnimations) {
+      this.registerSpriteContent({
+        sprites: options.sprites ?? {},
+        spriteAnimations: options.spriteAnimations ?? {},
+        pixelsPerUnit: options.pixelsPerUnit,
+      });
+    }
+    if (options.waters) this.registerWaterContent(options.waters);
+    if (options.models) {
+      this.registerModelContent({
+        models: options.models,
+        complexMeshes: options.complexMeshes,
+      });
+    }
+
+    // 5. The World and the subsystems that take it directly.
+    this.world = this.createWorld(options, registry);
+    this.snapshots = this.createSnapshots(options);
+    this.ticks = this.createTickPipeline(options);
+    this.dynamicMeshes = new DynamicRuntimeMeshSync({
+      eligible: (actor) => !actor.sceneLayerId && this.admission.canRun(actor),
+      slot: (actor) => this.actorSlot(actor),
+      emit: (command) => this.emit(command),
+    });
+    this.movement = this.createMovement();
+    this.cables = new CableWorldSync({
+      world: this.world,
+      physics: () => this.physics.main.getBackend(),
+      eligible: (actor) => this.admission.canTickActor(actor),
+      slot: (actor) => this.actorSlot(actor),
+      emit: (command) => this.emit(command),
+    });
+    this.ragdolls = new RagdollWorldSync({
+      world: this.world,
+      physics: () => this.physics.main,
+      slot: (actor) => this.actorSlot(actor),
+      eligible: (actor) => this.admission.canTickActor(actor),
+      deferNative: !this.physics.preferSoftware,
+      emit: (command) => this.emit(command),
+      error: (error) => { this.reportError(error); },
+    });
+    this.uiControls = this.createUIControls();
+    this.overlay = this.createOverlay(options);
+    this.layers = this.createLayers();
+
+    // 6. World input.
+    this.world.setInputProvider(createWorldInputProvider({
+      resolved: () => this.resolvedInput,
+      connections: this.connectionBox,
+      frameId: () => this.frameId,
+      emit: (command) => this.emit(command),
+    }));
+
+    // 7. Script data and the ScriptHost.
+    this.dataCatalog = new RuntimeDataCatalog(options.dataAssets);
+    for (const [guid, value] of Object.entries(options.renderTargets ?? {})) this.sourceRenderTargets.set(guid, value);
+    for (const [guid, value] of Object.entries(options.renderTargetTextures ?? {})) this.sourceRenderTargetTextures.set(guid, value);
+    this.scriptHost = this.createScriptHost(options, registry);
+
+    // 8. Lifecycle hooks, in Stop order.
+    this.registerSubsystems();
+
+    // 9. Startup objects.
+    registerSceneAssetClasses(this.world.classRegistry, this.playSceneGuid, this.sceneGuidByKey.values());
+    this.scriptRuntime.bindGameInstance();
+    if (options.seedDemoActors !== false && !options.playScene) {
+      this.actors.seedDemoActors();
+    }
+  }
+
+  private createAdmission(): OwnerAdmission {
+    return new OwnerAdmission({
+      world: () => this.world,
+      stopped: () => this.stopped,
+      paused: () => this.paused,
+      saveBoundaryActive: () => this.boundaries.saveBoundaryActive,
+      sceneLoading: () => this.sceneRealizer.blocked || this.bootLoading,
+      streams: () => this.streams,
+      layers: () => this.layers,
+      releaseAssets: (ownerGuid) => this.assetPreloads.releaseOwner(ownerGuid),
+      reportError: (error) => { this.reportError(error); },
+    });
+  }
+
+  private createRenderEmitter(): RenderCommandEmitter {
+    return new RenderCommandEmitter({
+      world: () => this.world,
+      isStreamActor: (actor) => this.streams.isStreamActor(actor),
+      playScene: () => this.playScene,
+      slot: (actor) => this.actorSlot(actor),
+      cables: () => this.cables,
+      dynamicMeshes: () => this.dynamicMeshes,
+      uiControls: () => this.uiControls,
+      painters: () => this.painters,
+      textAppear: () => this.textAppear,
+      materialParameters: () => this.materialParameters,
+      emit: (command) => this.emit(command),
+    });
+  }
+
+  private createNavigation(): RuntimeNavigation {
+    return new RuntimeNavigation({
+      world: () => this.world,
+      worldKind: () => this.physics.kind,
+      physics: () => this.physics.main,
+      streamActorReady: (actor) => this.streams.actorReady(actor),
+      isStreamActor: (actor) => this.streams.isStreamActor(actor),
+      dt: () => this.simulationDt(),
+      actorName: (actor) => this.debugActorName(actor),
+      emit: (command) => this.emit(command),
+    }, nowMs);
+  }
+
+  private createStreams(): SceneStreams {
+    return new SceneStreams(this.admission, {
+      world: () => this.world,
+      stopped: () => this.stopped,
+      physicsWorldKind: () => this.physics.kind,
+      sceneDocument: (key) => this.sceneLibrary.get(key),
+      sceneGuid: (key) => this.sceneGuidByKey.get(key) ?? key,
+      acquireScene: () => this.acquireScene,
+      cooperativeLoading: () => this.cooperativeSceneLoading ?? {},
+      deferModelsReady: () => this.deferSceneModelsReady,
+      scripts: () => this.scriptHost,
+      createActor: (serialized) => createActorFromSerialized(this.world, serialized, this.actors.sceneActorHooks),
+      realizeActor: (actor, checkpoint) => this.actors.realize(actor, checkpoint),
+      breakParentCycles: (actors, detach) => this.actors.breakLoadedParentCycles(actors, detach),
+      publishSnapshot: () => this.snapshots.publish(),
+      slot: (actor) => this.actorSlot(actor),
+      syncPhysics: () => this.physics.main.syncFromWorld(this.world),
+      navigation: () => this.navigation,
+      removeActor: (actor) => this.actors.remove(actor),
+      cancelInvalidTweens: () => this.tweens.cancelInvalid(),
+      releaseAssets: (ownerGuid) => this.assetPreloads.releaseOwner(ownerGuid),
+      markUnsupportedInstance: (sceneGuid) => this.simulation.markUnsupportedInstance("stream", sceneGuid),
+      blockSettled: () => {
+        this.ticks.resetAccumulator();
+        this.admission.flush();
+        this.resumeSimulationWaiters();
+      },
+      emit: (command) => this.emit(command),
+    });
+  }
+
+  private createSceneRealizer(): SceneRealizer {
+    return new SceneRealizer(this.admission, {
+      world: () => this.world,
+      stopped: () => this.stopped,
+      frameId: () => this.frameId,
+      playScene: () => this.playScene,
+      playSceneGuid: () => this.playSceneGuid,
+      enterScene: (scene, guid) => {
+        this.playScene = scene;
+        this.scalability.setScene(scene.settings);
+        this.playSceneGuid = guid;
+        // The new scene owns its own camera choice.
+        this.cameraPossessedByScript = false;
+        this.possessedCameraSlotId = null;
+      },
+      sceneLibrary: () => this.sceneLibrary,
+      sceneGuid: (key) => this.sceneGuidByKey.get(key) ?? key,
+      acquireScene: () => this.acquireScene,
+      cooperativeLoading: () => this.cooperativeSceneLoading,
+      bootLoading: () => this.bootLoading,
+      deferModelsReady: () => this.deferSceneModelsReady,
+      deferLoadingPaint: () => this.deferSceneLoadingPaint,
+      physics: () => this.physics,
+      navigation: () => this.navigation,
+      layers: () => this.layers,
+      scripts: () => this.scriptHost,
+      startWorld: () => {
+        this.tilemapAnimationTimeMs = 0;
+        if (this.hasAnimatedTiles) this.emit({ type: "tilemapAnimationTime", elapsedMs: 0 });
+        this.loopGuard.reset();
+        this.world.start();
+      },
+      setWorldGravity: (gravity) => this.setWorldGravity(gravity),
+      recordSimulationStart: (start) => this.simulation.recordStart(start),
+      markSceneTransition: () => this.simulation.markSceneTransition(),
+      createActor: (serialized) => createActorFromSerialized(this.world, serialized, this.actors.sceneActorHooks),
+      realizeActor: (actor, checkpoint) => this.actors.realize(actor, checkpoint),
+      breakParentCycles: (actors) => this.actors.breakLoadedParentCycles(actors),
+      possessViewTarget: () => this.attemptPossessViewTarget(),
+      publishSnapshot: () => this.snapshots.publish(),
+      removeActor: (actor) => this.actors.remove(actor),
+      removeSceneLayer: (layerGuid) => this.removeSceneLayer(layerGuid),
+      releaseAssets: (ownerGuid) => this.assetPreloads.releaseOwner(ownerGuid),
+      resetForSceneLoad: () => this.subsystems.resetForSceneLoad(),
+      duringSceneTeardown: (teardown) => this.scriptRuntime.duringSceneTeardown(teardown),
+      retireStreams: () => this.streams.retireAll(),
+      emitSceneDebug: () => {
+        this.navigation.emitDebug(true);
+        this.behaviourTrees.emitSnapshot(true);
+      },
+      reportError: (error) => { this.reportError(error); },
+      emit: (command) => this.emit(command),
+    });
+  }
+
+  private createBoundaries(): SessionBoundaries {
+    return new SessionBoundaries(this.admission, {
+      world: () => this.world,
+      sessionGeneration: () => this.sessionGeneration,
+      stopped: () => this.stopped,
+      playScene: () => this.playScene,
+      playSceneGuid: () => this.playSceneGuid,
+      sceneLibrary: () => this.sceneLibrary,
+      scripts: () => this.scriptHost,
+      streams: () => this.streams,
+      sceneRealizer: () => this.sceneRealizer,
+      physics: () => this.physics,
+      actorHooks: () => this.actors.sceneActorHooks,
+      canSpawnActorClass: (classId) => this.scriptRuntime.canSpawnActorClass(classId),
+      realizeActor: (actor) => this.actors.realize(actor),
+      removeActor: (actor) => this.actors.remove(actor),
+      publishSnapshot: () => this.snapshots.publish(),
+      takeDeferredOverlayLayout: () => this.overlay.takeDeferredLayout(),
+      pauseReasons: () => this.pauseReasons,
+      setPauseReason: (reason, paused) => this.setPauseReason(reason, paused),
+      resetInputState: () => this.resetInputState(),
+      commandRevision: () => this.commandRevision,
+      reportError: (error) => { this.reportError(error); },
+    });
+  }
+
+  private createAnimGraphs(): AnimGraphRuntime {
+    return new AnimGraphRuntime({
+      actors: () => this.world.getActors(),
+      stopped: () => this.stopped,
+      canTick: (actor) => this.admission.canTickActor(actor),
+      slot: (actor) => this.actorSlot(actor),
+      hasRenderSlot: (actor) => this.renderSlots.recordedSlot(actor) !== undefined,
+      playAnimationOwns: (slotId) => this.behaviourTrees.playAnimationOwns(slotId),
+      dt: () => this.simulationDt(),
+      scripts: () => this.scriptHost,
+      setSpriteClip: (actor, clip) => this.setActorSpriteClip(actor, clip),
+      emit: (command) => this.emit(command),
+    });
+  }
+
+  private createBehaviourTrees(): BehaviourTreeRuntime {
+    return new BehaviourTreeRuntime({
+      world: () => this.world,
+      frameActors: () => this.navFrameActors ?? undefined,
+      stopped: () => this.stopped,
+      canTick: (actor) => this.admission.canTickActor(actor),
+      slot: (actor) => this.actorSlot(actor),
+      navigation: () => this.navigation,
+      worldKind: () => this.physics.kind,
+      seed: () => this.seed,
+      dt: () => this.simulationDt(),
+      frameId: () => this.frameId,
+      tickIndex: () => this.world.clock.tickIndex,
+      scripts: () => this.scriptHost,
+      setSpriteClip: (actor, clip) => this.setActorSpriteClip(actor, clip),
+      actorName: (actor) => this.debugActorName(actor),
+      recordDiagnostic: (diagnostic) => this.diagnostics.push(diagnostic),
+      emit: (command) => this.emit(command),
+    }, nowMs);
+  }
+
+  private createActorRealization(): ActorRealization {
+    return new ActorRealization(this.admission, {
+      world: () => this.world,
+      stopped: () => this.stopped,
+      scripts: () => this.scriptHost,
+      scriptRuntime: () => this.scriptRuntime,
+      streams: () => this.streams,
+      boundaries: () => this.boundaries,
+      physicsKind: () => this.physics.kind,
+      renderSlots: () => this.renderSlots,
+      renderEmitter: () => this.renderEmitter,
+      audioParticles: () => this.audioParticles,
+      overlay: () => this.overlay,
+      movement: () => this.movement,
+      dynamicMeshes: () => this.dynamicMeshes,
+      textAppear: () => this.textAppear,
+      subsystems: () => this.subsystems,
+      cancelInvalidTweens: () => this.tweens.cancelInvalid(),
+      frameActors: () => this.navFrameActors,
+      reportLog: (message, severity, category) => this.reportLog(message, severity, category),
+      emit: (command) => this.emit(command),
+    });
+  }
+
+  private createSimulation(options: RuntimeDriverOptions): SimulationSession {
+    return new SimulationSession({
       baseline: options.sessionMode === "simulate" ? options.playScene ?? null : null,
       assetGuids: options.simulationAssetGuids ?? [...Object.keys(options.materialParameterCatalog ?? {}), ...(options.materialTextureAssetGuids ?? []), ...(options.audioAssetGuids ?? [])],
       dataAssets: options.sessionMode === "simulate" ? options.dataAssets : undefined,
@@ -743,12 +971,10 @@ class InProcessRuntime implements RuntimeDriver {
       flushDeferredSnapshot: () => this.snapshots.flushDeferred(),
       emit: (command) => this.emit(command),
     });
-    this.sessionGeneration = options.sessionGeneration ?? 0;
-    this.sessionMode = options.sessionMode ?? "play";
-    const projectName = options.project?.name ?? "";
-    const projectVersion = options.project?.version ?? "";
-    this.demandAssetCatalog = options.classAssetGuids !== undefined;
-    this.scriptRuntime = new ScriptRuntime(this.admission, {
+  }
+
+  private createScriptRuntime(options: RuntimeDriverOptions): ScriptRuntime {
+    return new ScriptRuntime(this.admission, {
       gameInstanceClass: options.gameInstanceClass ?? "GameInstance",
       classAssetGuids: options.classAssetGuids ?? {},
     }, {
@@ -761,8 +987,10 @@ class InProcessRuntime implements RuntimeDriver {
       bindUserCommand: (def) => this.bindUserCommand(def),
       reportLog: (message, severity, category) => this.reportLog(message, severity, category),
     });
-    this.diagnosticsEnabled = options.includeDebugCommands ?? true;
-    this.inspector = new RuntimeInspectorService({
+  }
+
+  private createInspector(options: RuntimeDriverOptions): RuntimeInspectorService {
+    return new RuntimeInspectorService({
       deferMaterialEdits: options.deferMaterialEdits === true,
       demandAssetCatalog: this.demandAssetCatalog,
     }, {
@@ -789,17 +1017,14 @@ class InProcessRuntime implements RuntimeDriver {
       publishSnapshot: () => this.snapshots.publish(),
       emit: (command) => this.emit(command),
     });
-    this.materialParameters = new RuntimeMaterialParameters(options.materialParameterCatalog, options.materialTextureAssetGuids);
-    this.validateLegacyMeshParameters = options.materialParameterCatalog !== undefined;
-    this.scalabilityProjectRenderPath = options.renderSettings?.renderPath ?? "forward";
-    this.scalability = new ScalabilitySession(options.renderSettings, options.frameCap, options.playScene?.settings,
-      (transaction) => this.emit({ type: "setScalability", transaction }));
-    this.dt = options.dt ?? 1 / 60;
-    this.seed = options.seed;
-    this.onCommand = options.onCommand;
-    const tilemaps = new Map(Object.entries(options.tilemaps ?? {}));
-    const tilesets = new Map(Object.entries(options.tilesets ?? {}));
-    this.physics = new RuntimePhysicsWorlds({
+  }
+
+  private createPhysics(
+    options: RuntimeDriverOptions,
+    tilemaps: Map<string, TilemapPayload>,
+    tilesets: Map<string, TilesetPayload>,
+  ): RuntimePhysicsWorlds {
+    return new RuntimePhysicsWorlds({
       world: () => this.world,
       stopped: () => this.stopped,
       lifecycleId: () => this.lifecycleId,
@@ -820,24 +1045,10 @@ class InProcessRuntime implements RuntimeDriver {
       tilemaps,
       tilesets,
     });
-    this.playScene = options.playScene;
-    this.acquireScene = options.acquireScene;
-    this.playSceneGuid = options.playSceneGuid ?? "play-scene";
-    this.navigation.replaceSceneNavMeshes(options.sceneNavmeshBytes ?? {});
-    this.deferSceneModelsReady = options.deferSceneModelsReady === true;
-    this.deferSceneLoadingPaint = options.deferSceneLoadingPaint === true;
-    this.cooperativeSceneLoading = options.cooperativeSceneLoading
-      ? (options.cooperativeSceneLoading === true ? {} : options.cooperativeSceneLoading)
-      : null;
-    indexSceneLibrary({
-      sceneLibrary: options.sceneLibrary,
-      sceneGuidByKey: options.sceneGuidByKey,
-      sceneLayerLibrary: options.sceneLayerLibrary,
-      playScene: options.playScene,
-      playSceneGuid: this.playSceneGuid,
-      acquired: Boolean(this.acquireScene),
-    }, { scenes: this.sceneLibrary, sceneGuids: this.sceneGuidByKey, sceneLayers: this.sceneLayerLibrary });
-    this.console = new RuntimeConsole({
+  }
+
+  private createConsole(options: RuntimeDriverOptions): RuntimeConsole {
+    return new RuntimeConsole({
       includeDebug: options.includeDebugCommands ?? true,
       demandAssetCatalog: this.demandAssetCatalog,
     }, {
@@ -872,68 +1083,12 @@ class InProcessRuntime implements RuntimeDriver {
       setTimeDilation: (rate) => { this.timeDilation = rate; },
       emit: (command) => this.emit(command),
     });
-    for (const command of options.consoleCommands ?? []) {
-      this.scriptRuntime.setClassAssetGuid(command.classId, command.assetGuid);
-      this.bindUserCommand({ ...command, name: command.name || command.classId.toLowerCase() });
-    }
-    this.loopGuard = createInfiniteLoopGuard({
-      enabled:
-        (options.includeDebugCommands ?? true) &&
-        options.infiniteLoopDetection !== false,
-      loopCount: options.loopCount ?? DEFAULT_INFINITE_LOOP_COUNT,
-    });
-    if (options.animGraphs) {
-      for (const [guid, document] of Object.entries(options.animGraphs)) {
-        this.animGraphs.register(guid, document);
-      }
-    }
-    if (options.behaviourTrees) {
-      for (const [guid, document] of Object.entries(options.behaviourTrees)) {
-        this.behaviourTrees.register(guid, document);
-      }
-    }
-    if (options.blackboards) {
-      for (const [guid, document] of Object.entries(options.blackboards)) {
-        this.behaviourTrees.registerBlackboard(guid, document);
-      }
-    }
-    this.texturePixelSizes = options.texturePixelSizes ?? {};
-    this.hasAnimatedTiles = hasAnimatedTiles(tilemaps, tilesets);
-    this.behaviourTrees.replaceAudioAssets((options.audioAssetGuids ?? []).filter((guid) => guid));
-    this.behaviourTrees.replaceAnimClipCatalog((options.animClipCatalog ?? []).filter((entry) => entry.guid));
+  }
 
-    const registry = new ClassRegistry();
-    registry.register({
-      id: "Enemy",
-      parentClassId: "Actor",
-      kind: "actor",
-      variables: [{ name: "speed", type: "float", defaultValue: 1 }],
-      implementedInterfaces: [],
-    });
-
-    const mappings = normalizeInputMappings(
-      options.inputAssets !== undefined ? inputMappingsFromAssets(options.inputAssets) : options.inputMappings ?? createDefaultInputMappings(),
-    );
-    this.resolver = new InputResolver(mappings);
-
-    if (options.tilemaps || options.tilesets) this.physics.bindAll();
-    if (options.sprites || options.spriteAnimations) {
-      this.registerSpriteContent({
-        sprites: options.sprites ?? {},
-        spriteAnimations: options.spriteAnimations ?? {},
-        pixelsPerUnit: options.pixelsPerUnit,
-      });
-    }
-    if (options.waters) this.registerWaterContent(options.waters);
-    if (options.models) {
-      this.registerModelContent({
-        models: options.models,
-        complexMeshes: options.complexMeshes,
-      });
-    }
-
+  /** World physics phase order: dynamic meshes, ragdolls, main and overlay steps, cables, contacts. */
+  private createWorld(options: RuntimeDriverOptions, registry: ClassRegistry): World {
     let guidSeq = 0;
-    this.world = new World({
+    return new World({
       seed: options.seed,
       dt: this.dt,
       classRegistry: registry,
@@ -956,7 +1111,10 @@ class InProcessRuntime implements RuntimeDriver {
         this.physics.dispatchCollisionEvents();
       },
     });
-    this.snapshots = new SnapshotPublisher(options.maxActors ?? 256, this.world, this.renderSlots, {
+  }
+
+  private createSnapshots(options: RuntimeDriverOptions): SnapshotPublisher {
+    return new SnapshotPublisher(options.maxActors ?? 256, this.world, this.renderSlots, {
       stopped: () => this.stopped,
       frameId: () => this.frameId,
       lastScriptMs: () => this.ticks.lastScriptMs,
@@ -972,7 +1130,10 @@ class InProcessRuntime implements RuntimeDriver {
       reportError: (error) => { this.reportError(error); },
       emit: (command) => this.emit(command),
     }, nowMs);
-    this.ticks = new TickPipeline(this.world, this.snapshots, this.logs, {
+  }
+
+  private createTickPipeline(options: RuntimeDriverOptions): TickPipeline {
+    return new TickPipeline(this.world, this.snapshots, this.logs, {
       canTick: () => this.running && !this.paused && !this.boundaries.saveBoundaryActive && !this.streams.blocking,
       canAdvance: () => this.running && !this.paused && !this.streams.blocking,
       paused: () => this.paused,
@@ -989,15 +1150,13 @@ class InProcessRuntime implements RuntimeDriver {
       seed: this.seed,
       generation: this.sessionGeneration,
       mode: this.sessionMode,
-      diagnosticsEnabled: this.diagnosticsEnabled,
+      diagnosticsEnabled: options.includeDebugCommands ?? true,
       traceByteBudget: options.traceByteBudget,
     }, nowMs);
-    this.dynamicMeshes = new DynamicRuntimeMeshSync({
-      eligible: (actor) => !actor.sceneLayerId && this.admission.canRun(actor),
-      slot: (actor) => this.actorSlot(actor),
-      emit: (command) => this.emit(command),
-    });
-    this.movement = new MovementWorldSync({
+  }
+
+  private createMovement(): MovementWorldSync {
+    return new MovementWorldSync({
       world: this.world,
       physics: (actor) => this.physics.forActor(actor),
       eligible: (actor) => this.admission.canTickActor(actor),
@@ -1009,23 +1168,10 @@ class InProcessRuntime implements RuntimeDriver {
         if (actor) this.admission.guard(() => this.scriptHost.invokeEvent(actor.classId, event, actor, args, component.guid));
       },
     });
-    this.cables = new CableWorldSync({
-      world: this.world,
-      physics: () => this.physics.main.getBackend(),
-      eligible: (actor) => this.admission.canTickActor(actor),
-      slot: (actor) => this.actorSlot(actor),
-      emit: (command) => this.emit(command),
-    });
-    this.ragdolls = new RagdollWorldSync({
-      world: this.world,
-      physics: () => this.physics.main,
-      slot: (actor) => this.actorSlot(actor),
-      eligible: (actor) => this.admission.canTickActor(actor),
-      deferNative: !this.physics.preferSoftware,
-      emit: (command) => this.emit(command),
-      error: (error) => { this.reportError(error); },
-    });
-    this.uiControls = new UIControls2DRuntime({
+  }
+
+  private createUIControls(): UIControls2DRuntime {
+    return new UIControls2DRuntime({
       actors: () => this.world.getActors(),
       canRun: (actor) => !this.stopped && this.admission.canTickActor(actor),
       update: (component, properties) => {
@@ -1040,14 +1186,17 @@ class InProcessRuntime implements RuntimeDriver {
         }
       },
     });
-    this.overlay = new SceneLayerOverlay({
+  }
+
+  private createOverlay(options: RuntimeDriverOptions): SceneLayerOverlay {
+    return new SceneLayerOverlay({
       world: this.world,
       focusNavigation: options.focusNavigation,
       admission: this.admission,
       uiControls: this.uiControls,
       render: this.renderEmitter,
       audioParticles: this.audioParticles,
-      texturePixelSizes: this.texturePixelSizes,
+      texturePixelSizes: options.texturePixelSizes ?? {},
     }, {
       stopped: () => this.stopped,
       saveBoundaryActive: () => this.boundaries.saveBoundaryActive,
@@ -1069,7 +1218,10 @@ class InProcessRuntime implements RuntimeDriver {
       syncOverlayPhysics: () => this.physics.overlay.syncFromWorld(this.world),
       emit: (command) => this.emit(command),
     });
-    this.layers = new SceneLayers(this.admission, this.overlay, {
+  }
+
+  private createLayers(): SceneLayers {
+    return new SceneLayers(this.admission, this.overlay, {
       world: () => this.world,
       stopped: () => this.stopped,
       frameId: () => this.frameId,
@@ -1093,22 +1245,17 @@ class InProcessRuntime implements RuntimeDriver {
       reportError: (error) => { this.reportError(error); },
       emit: (command) => this.emit(command),
     });
-    this.world.setInputProvider(createWorldInputProvider({
-      resolved: () => this.resolvedInput,
-      connections: this.connectionBox,
-      frameId: () => this.frameId,
-      emit: (command) => this.emit(command),
-    }));
+  }
 
-    this.dataCatalog = new RuntimeDataCatalog(options.dataAssets);
-    for (const [guid, value] of Object.entries(options.renderTargets ?? {})) this.sourceRenderTargets.set(guid, value);
-    for (const [guid, value] of Object.entries(options.renderTargetTextures ?? {})) this.sourceRenderTargetTextures.set(guid, value);
+  private createScriptHost(options: RuntimeDriverOptions, registry: ClassRegistry): ScriptHost {
+    const projectName = options.project?.name ?? "";
+    const projectVersion = options.project?.version ?? "";
     const emit = (command: CommandMessage): void => this.emit(command);
     const frameId = (): number => this.frameId;
     const slot = (actor: Actor): number | undefined => this.actorSlot(actor);
     const canRun = (owner: BObject): boolean => this.admission.canRun(owner);
     const continueSimulation = (owner: BObject | null): Promise<void> | undefined => this.continueSimulation(owner);
-    this.scriptHost = new ScriptHost({
+    return new ScriptHost({
       data: this.dataCatalog,
       seed: options.seed,
       canRunOwner: (owner) => this.admission.canRun(owner),
@@ -1222,17 +1369,21 @@ class InProcessRuntime implements RuntimeDriver {
       ...createSceneLayerHostBindings({ layers: this.layers }),
       ...createSceneLayerOverlayHostBindings({ overlay: this.overlay }),
     });
+  }
 
-    // Stop order: Delays resume in phase 1, then every scene stream retires;
-    // physics-owning syncs release before the physics worlds, then the crowd
-    // and the remaining debug overlays. Actor removal first retires a stream
-    // the actor owns, then ragdolls, cables, dynamic meshes and animation
-    // graphs; a released slot then drops its ragdoll/cable/mesh and BT state,
-    // its owner's text reveal, its sent component-command state and, last,
-    // a camera possession that targeted it. Scene Layers register next to
-    // last: phase 1 cancels independent layer creation and removes its layers,
-    // then the Scene realizer cancels the main Scene's realization and cleans
-    // up what it acquired.
+  /**
+   * Stop order: Delays resume in phase 1, then every scene stream retires;
+   * physics-owning syncs release before the physics worlds, then the crowd
+   * and the remaining debug overlays. Actor removal first retires a stream
+   * the actor owns, then ragdolls, cables, dynamic meshes and animation
+   * graphs; a released slot then drops its ragdoll/cable/mesh and BT state,
+   * its owner's text reveal, its sent component-command state and, last,
+   * a camera possession that targeted it. Scene Layers register next to
+   * last: phase 1 cancels independent layer creation and removes its layers,
+   * then the Scene realizer cancels the main Scene's realization and cleans
+   * up what it acquired.
+   */
+  private registerSubsystems(): void {
     this.subsystems.register(this.delays);
     this.subsystems.register(this.streams);
     this.subsystems.register(this.ragdolls);
@@ -1254,13 +1405,14 @@ class InProcessRuntime implements RuntimeDriver {
     });
     this.subsystems.register(this.layers);
     this.subsystems.register(this.sceneRealizer);
+  }
 
-    registerSceneAssetClasses(this.world.classRegistry, this.playSceneGuid, this.sceneGuidByKey.values());
-    this.scriptRuntime.bindGameInstance();
+  notifyAssetPreloadResult(result: { preloadId: string; success: boolean; error?: string; progress?: number }): void {
+    this.assetPreloads.receive(result);
+  }
 
-    if (options.seedDemoActors !== false && !options.playScene) {
-      this.actors.seedDemoActors();
-    }
+  setAssetLoadStates(states: readonly { guid: string; state: RuntimeAssetLoadState }[]): void {
+    this.assetPreloads.setStates(states);
   }
 
   getTargetSceneName(target: unknown): string {
@@ -1985,11 +2137,29 @@ class InProcessRuntime implements RuntimeDriver {
     }
   }
 
+  /**
+   * Ends the session once, in phases:
+   * 1. While the session still reads as running: dispose asset preloads, end
+   *    the console lifetime and reject Scene Layer readiness waiters.
+   * 2. Mark stopped, then end diagnostics, the inspector queue, the boundary
+   *    queue, pending pause changes, tweens and the overlay.
+   * 3. Cancel: invalidate in-flight async loads (lifecycle id), cancel a Scene
+   *    change, stop running, resume simulation waiters, then every registered
+   *    subsystem's `cancelPending` (the Scene realizer last).
+   * 4. Finalize the trace.
+   * 5. Destroy live components, then end the World.
+   * 6. Dispose scripts, unregister script Classes, drop anchors, release Scene
+   *    sources and forget the Play Scene and library.
+   * 7. Clear owner queues and the Scene Layer table, then every registered
+   *    subsystem's `dispose`.
+   */
   stop(): void {
     if (this.stopped) return;
+    // 1.
     this.assetPreloads.dispose();
     this.console.stop();
     this.layers.rejectWaiters();
+    // 2.
     this.stopped = true;
     this.ticks.stopDiagnostics();
     this.inspector.stop();
@@ -1997,14 +2167,16 @@ class InProcessRuntime implements RuntimeDriver {
     this.pendingPauseChanges.clear();
     this.tweens.stop();
     this.overlay.clear();
+    // 3.
     this.lifecycleId++;
     this.sceneRealizer.cancelSceneChange();
     this.running = false;
     for (const resume of this.simulationWaiters) resume();
     this.simulationWaiters.clear();
-    // The Scene realizer registers last: its realization cancels after every other subsystem's work.
     this.subsystems.cancelPending();
+    // 4.
     this.ticks.finalizeTrace("session-ended");
+    // 5.
     for (const actor of this.world.getActors()) {
       for (const component of [...actor.components]) {
         if (!component.destroyed) {
@@ -2015,12 +2187,14 @@ class InProcessRuntime implements RuntimeDriver {
       }
     }
     this.world.end();
+    // 6.
     this.scriptHost.dispose();
     this.scriptRuntime.unregisterClasses();
     this.anchors.clear();
     this.sceneRealizer.releaseSceneSources();
     this.playScene = undefined;
     this.sceneLibrary.clear();
+    // 7.
     this.admission.clear();
     this.layers.clear();
     this.subsystems.dispose();
@@ -2046,11 +2220,15 @@ class InProcessRuntime implements RuntimeDriver {
     if (this.paused) { this.resetInputState(); return; }
     this.ticks.discardNextElapsed();
     this.admission.flush();
-    if (!this.streams.blocking) {
-      const waiters = [...this.simulationWaiters];
-      this.simulationWaiters.clear();
-      for (const resume of waiters) resume();
-    }
+    this.resumeSimulationWaiters();
+  }
+
+  /** Resume continuations waiting on the simulation, unless a blocking scene stream still holds it. */
+  private resumeSimulationWaiters(): void {
+    if (this.streams.blocking) return;
+    const waiters = [...this.simulationWaiters];
+    this.simulationWaiters.clear();
+    for (const resume of waiters) resume();
   }
 
   requestSessionBoundary(request: SessionBoundaryRequest): Promise<SessionBoundaryResult> {
@@ -2115,10 +2293,37 @@ class InProcessRuntime implements RuntimeDriver {
     }
   }
 
-  /** The tick's phases in order; `TickPipeline` owns the gate, timing, stats and trace around them. */
+  /**
+   * One fixed step; `TickPipeline` owns the gate, timing, stats and trace
+   * around it. Phases, in order:
+   * 1. Input: drain and resolve queued input, reset prints, log gamepad changes.
+   * 2. World (timed): tweens, text reveal, painters, Scene Layer focus, the
+   *    World tick (actors, then physics through `onPhysics`), deferred owner
+   *    work and streamed Scenes. The tick ends here when it stopped the session.
+   * 3. Scene systems (timed): tween cleanup, Delays, animation graphs, tile
+   *    animation time, behaviour trees and the crowd.
+   * 4. Component commands changed during the tick: painters, text reveal, deformers.
+   * 5. Publish: advance the frame id, then the pose snapshot and debug views;
+   *    `TickPipeline` records stats and the trace frame last.
+   */
   private runTick(): void {
     const simDt = this.simulationDt();
     this.world.clock.dt = simDt;
+    const pending = this.resolveTickInput(simDt);
+    this.ticks.beginPhaseTiming();
+    this.tickWorld(pending, simDt);
+    if (this.stopped) return;
+    this.tickSceneSystems(simDt);
+    this.ticks.closePhaseTiming();
+    this.flushComponentCommands();
+    const completedFrameId = this.frameId;
+    this.frameId += 1;
+    this.publishTick();
+    this.ticks.finishTick(completedFrameId, pending);
+  }
+
+  /** Tick phase 1: returns the raw events this tick consumed. */
+  private resolveTickInput(simDt: number): RawInputEvent[] {
     // Consume every event queued since the last tick. Gating on event.tick
     // dropped Play worker input: the host stamped with a wall-clock index
     // (performance.now()/16.67) while World.clock.tickIndex stayed small,
@@ -2139,9 +2344,11 @@ class InProcessRuntime implements RuntimeDriver {
         frameId: this.frameId,
       });
     }
+    return pending;
+  }
 
-    this.ticks.beginPhaseTiming();
-
+  /** Tick phase 2. An infinite-loop abort ends the phase early. */
+  private tickWorld(pending: readonly RawInputEvent[], simDt: number): void {
     this.loopGuard.reset();
     this.tweens.advance(simDt);
     this.textAppear.advance(this.world.getActors(), simDt, (actor) => this.admission.canTickActor(actor));
@@ -2156,7 +2363,10 @@ class InProcessRuntime implements RuntimeDriver {
     } catch (error) {
       if (!isInfiniteLoopError(error)) throw error;
     }
-    if (this.stopped) return;
+  }
+
+  /** Tick phase 3. */
+  private tickSceneSystems(simDt: number): void {
     this.tweens.cancelInvalid();
     this.delays.advance(this.simulationDt());
     if (this.admission.canTickScene() || this.admission.hasReadyLayers()) this.animGraphs.tick();
@@ -2172,20 +2382,23 @@ class InProcessRuntime implements RuntimeDriver {
         this.navFrameActors = null;
       }
     }
-    this.ticks.closePhaseTiming();
+  }
 
+  /** Tick phase 4. */
+  private flushComponentCommands(): void {
     this.flushPainters();
     this.flushTextAppear();
     this.renderEmitter.flushDeformers();
-    const completedFrameId = this.frameId;
-    this.frameId += 1;
+  }
+
+  /** Tick phase 5, after the frame id advanced. */
+  private publishTick(): void {
     if (this.admission.canTickScene() || this.admission.hasReadyLayers()) {
       this.snapshots.publishTick();
       this.physics.emitDebugColliders();
       this.navigation.emitDebug();
       this.behaviourTrees.emitSnapshot();
     }
-    this.ticks.finishTick(completedFrameId, pending);
   }
 
   advance(elapsedSeconds: number): void {
