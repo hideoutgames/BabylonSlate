@@ -808,6 +808,19 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
       },
     ];
 
+    const layerPhysicsRow: PropertyRow = {
+      kind: "boolean",
+      id: "scene-layer-physics",
+      label: "Enable Physics",
+      description: "Each instance simulates Rigid Bodies and Colliders in its own 2D world with this Gravity. Off: no physics world; bodies stay where scripts place them and collision events do not fire.",
+      value: scene.settings.layerPhysicsEnabled === true,
+      defaultValue: false,
+      onChange: (layerPhysicsEnabled) =>
+        mutate({
+          ...scene,
+          settings: { ...scene.settings, layerPhysicsEnabled },
+        }),
+    };
     const overlaySettingsRows = settingsRows
       .filter(
         (row) =>
@@ -817,14 +830,15 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
           row.id === "scene-camera-bounds-width" ||
           row.id === "scene-camera-bounds-height",
       )
-      .map((row) => {
+      .flatMap((row) => {
+        if (row.id === "scene-gravity") return [layerPhysicsRow, row];
         if (row.id === "scene-camera-bounds-width") {
-          return { ...row, label: "Layer Width" };
+          return [{ ...row, label: "Layer Width" }];
         }
         if (row.id === "scene-camera-bounds-height") {
-          return { ...row, label: "Layer Height" };
+          return [{ ...row, label: "Layer Height" }];
         }
-        return row;
+        return [row];
       });
 
     const visibleSettingsRows = filterRows(

@@ -6,6 +6,7 @@ import type { SerializedComponent, SerializedScene, ShadowSettings, RenderPath }
 import {
   createActor,
   createDefaultScene,
+  createDefaultSceneLayer,
   createMeshComponent,
   createRichText2DComponent,
   createText2DComponent,
@@ -16,9 +17,11 @@ import {
   normalizeScene,
   normalizeShadowSettings,
   quaternionToEulerDegrees,
+  sceneLayerToEditorScene,
 } from "@babylonslate/core";
 import { AssetCreateProvider } from "@babylonslate/editor-kit";
 import { SceneDetailsPanel } from "./scene-details-panel";
+import { persistableDocumentContent } from "../lib/scene-layer-document";
 import { diffSceneCommands, EditSession } from "@babylonslate/edit";
 import type { SceneShapeEditTarget } from "../context/scene-editing-context";
 
@@ -1128,6 +1131,20 @@ describe("SceneDetailsPanel authoring", () => {
     ).toBeTruthy();
     expect(screen.getByText("Layer Width")).toBeTruthy();
     expect(screen.getByText("Layer Height")).toBeTruthy();
+  });
+
+  it("toggles Scene Layer Enable Physics into the saved SceneLayer document", () => {
+    harness.documentKind = "scene-layer";
+    harness.documentId = "scene-layer:assets/Hud.scenelayer.babasset";
+    harness.scene = sceneLayerToEditorScene(createDefaultSceneLayer());
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    const toggle = screen.getByRole("checkbox", { name: "Enable Physics" });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(toggle);
+    const edited = harness.applySceneChange.mock.calls.at(-1)![1];
+    expect(persistableDocumentContent("scene-layer", edited)).toMatchObject({
+      settings: { physicsEnabled: true },
+    });
   });
 
   it("hosts a 9-slice still-frame overlay for 2D Panel", () => {
