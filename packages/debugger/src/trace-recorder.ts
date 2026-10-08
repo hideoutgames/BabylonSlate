@@ -26,6 +26,8 @@ export type TraceBtState = {
   blackboard: Record<string, unknown>;
   stack: Array<{ nodeId: string; childIndex: number; opened: boolean }>;
   nodeMemory?: Record<string, Record<string, unknown>>;
+  /** A Play Animation task owns the slot's animation state; omitted when false. */
+  playAnimationOwned?: boolean;
 };
 
 export type TraceFrame = {

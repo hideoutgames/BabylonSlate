@@ -584,6 +584,83 @@ describe("P19 behaviour tree task hosts", () => {
     ]);
     runtime.stop();
   });
+
+  function graphAndPlayAnimationRuntime(commands: CommandMessage[]) {
+    const scene = hostScene();
+    scene.actors[0]!.components.push({
+      id: "anim-1",
+      classId: "AnimationGraphComponent",
+      properties: { graphGuid: "graph-1" },
+    });
+    return createInProcessRuntime({
+      seed: 1,
+      maxActors: 4,
+      seedDemoActors: false,
+      dt: 0.1,
+      playScene: scene,
+      behaviourTrees: {
+        "tree-1": leafTree("anim", "bt.task.playAnimation", {
+          clipKind: "animation",
+          clipAssetGuid: "walk-1",
+        }),
+      },
+      animGraphs: { "graph-1": createDefaultAnimGraph("Hero") },
+      animClipCatalog: [
+        { guid: "walk-1", type: "Animation", name: "Walk", clipName: "Walk", durationMs: 2000 },
+      ],
+      onCommand: (command) => commands.push(command),
+    });
+  }
+
+  it("Play Animation keeps its slot after a trace restore, as in the uninterrupted run", () => {
+    const recordedCommands: CommandMessage[] = [];
+    const recorded = graphAndPlayAnimationRuntime(recordedCommands);
+    recorded.start();
+    recorded.realizePlayWorld();
+    recorded.executeConsoleCommand("snapshot start");
+    recorded.tick();
+    recordedCommands.length = 0;
+    recorded.tick();
+    recorded.executeConsoleCommand("snapshot stop");
+    const uninterrupted = recordedCommands.filter((command) => command.type === "animState");
+    expect(uninterrupted).toEqual([expect.objectContaining({ stateId: "bt.playAnimation" })]);
+    const frame = recorded.stopTrace()!.frames[0]!;
+    recorded.stop();
+
+    const replayCommands: CommandMessage[] = [];
+    const replay = graphAndPlayAnimationRuntime(replayCommands);
+    replay.start();
+    replay.realizePlayWorld();
+    replay.restoreBtFromTrace(frame.bt!);
+    replayCommands.length = 0;
+    replay.tick();
+    expect(replayCommands.filter((command) => command.type === "animState")).toEqual(uninterrupted);
+    replay.stop();
+  });
+
+  it("trace restore drops Play Animation ownership the restored state does not hold", () => {
+    const freshCommands: CommandMessage[] = [];
+    const fresh = graphAndPlayAnimationRuntime(freshCommands);
+    fresh.start();
+    fresh.realizePlayWorld();
+    fresh.tick();
+    const stateIds = (commands: CommandMessage[]) =>
+      commands.flatMap((command) => (command.type === "animState" ? [command.stateId] : []));
+    const firstTick = stateIds(freshCommands);
+    expect(firstTick).toHaveLength(2);
+    fresh.stop();
+
+    const commands: CommandMessage[] = [];
+    const runtime = graphAndPlayAnimationRuntime(commands);
+    runtime.start();
+    runtime.realizePlayWorld();
+    runtime.tick();
+    runtime.restoreBtFromTrace([]);
+    commands.length = 0;
+    runtime.tick();
+    expect(stateIds(commands)).toEqual(firstTick);
+    runtime.stop();
+  });
 });
 
 describe("P19 Rotate To Face crowd yaw", () => {
