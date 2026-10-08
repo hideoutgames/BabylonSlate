@@ -4,7 +4,7 @@ import {
   type AssetRegistry,
   type IndexedAsset,
 } from "@babylonslate/assets";
-import type { DataDefinitionAsset, DataTreeAsset, SerializedGraph, WaterStyle } from "@babylonslate/core";
+import type { DataDefinitionAsset, DataTreeAsset, SerializedGraph, WaterStyle, WaterStylizedLook } from "@babylonslate/core";
 import { validateDataDefinition, validateDataTree, type TypeSchemas } from "@babylonslate/scripting";
 import { engineParentOf, walkAncestry } from "@babylonslate/editor-kit";
 import {
@@ -40,6 +40,7 @@ export async function createProjectAsset(options: {
   name: string;
   parentClass?: string | null;
   waterStyle?: WaterStyle;
+  waterStylizedLook?: WaterStylizedLook;
   materialDomain?: MaterialDomain;
   /** Use the live Definition catalog so unsaved field edits supply defaults. */
   defaultDefinitionGuid?: string | null;
@@ -87,6 +88,7 @@ export async function createProjectAsset(options: {
     parentOf: options.classParentOf,
     parentGraphs: type === "Class" ? options.parentGraphs : undefined,
     waterStyle: options.waterStyle,
+    waterStylizedLook: options.waterStylizedLook,
     materialDomain: options.materialDomain,
     defaultDefinitionGuid,
     dataDefinition,

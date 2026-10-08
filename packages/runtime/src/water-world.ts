@@ -350,8 +350,8 @@ export class WaterWorld {
     // min(1, drag·dt)·wetness / 4 of the body's momentum per step.
     const coupling = wetted.reduce((sum, entry) => sum + wetness[entry.index]!, 0) * Math.min(1, props.drag * dt) / (4 * dt);
     for (const { point, sample, water, submerged, index } of wetted) {
-      const fixed = waterSurfaceDrift(water.definition, water.body, sample.edgeDistance, this.fixedDrift);
-      const coupled = waterSurfaceDrift(water.definition, water.body, sample.edgeDistance, this.coupledDrift, coupling);
+      const fixed = waterSurfaceDrift(water.definition, water.body, sample.edgeDistance, this.fixedDrift, 0, point.x, point.z);
+      const coupled = waterSurfaceDrift(water.definition, water.body, sample.edgeDistance, this.coupledDrift, coupling, point.x, point.z);
       sample.velocity.x += coupled.x - fixed.x; sample.velocity.z += coupled.z - fixed.z;
       const volume = props.volume > 0 ? props.volume * Math.abs(transform.scale.x * transform.scale.y * transform.scale.z) : 2 * mass / sample.density;
       const response = backend.getBodyImpulseResponse?.(bodyId, { x: 0, y: 1, z: 0 }, point);

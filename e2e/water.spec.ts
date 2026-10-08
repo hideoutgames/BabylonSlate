@@ -49,15 +49,17 @@ for (const backend of ["webgl2"] as ("webgl2" | "webgpu")[]) {
       { id: "surface", sourceNodeId: "color", sourcePinId: "xyz", targetNodeId: "output", targetPinId: "emissive" },
     ];
     files.set("assets/WaterEffect.material.babasset", await encodeAssetDocument({ guid: materialGuid, type: "Material", name: "Water Effect", version: MATERIAL_PAYLOAD_VERSION, payload: material as unknown as Record<string, unknown> }));
-    for (const [index, style] of ["realistic", "stylized", "custom"].entries()) {
+    // Stylized compiles one look per material: Painted (the default) and Toon (`SLATE_WATER_TOON`) are separate shaders.
+    for (const [index, style] of ["realistic", "stylized", "toon", "custom"].entries()) {
+      const definition = style === "toon" ? createDefaultWaterDefinition("stylized", "toon") : createDefaultWaterDefinition(style === "stylized" ? "stylized" : "realistic");
       files.set(`assets/${style}.water.babasset`, await encodeAssetDocument({
         guid: `00000000-0000-4000-8000-00000000001${index}`, type: "Water", name: style, version: 1,
-        payload: { ...createDefaultWaterDefinition(style === "stylized" ? "stylized" : "realistic"), ...(style === "custom" ? { materialGuid } : {}) },
+        payload: { ...definition, ...(style === "custom" ? { materialGuid } : {}) },
       }, { dependencies: style === "custom" ? [materialGuid] : [] }));
     }
     await openMinimalTestProject(page, files);
     await openMainScene(page);
-    for (const style of ["realistic", "stylized", "custom"]) {
+    for (const style of ["realistic", "stylized", "toon", "custom"]) {
       await openAssetFromBrowser(page, `assets/${style}.water.babasset`);
       const canvas = page.getByTestId("water-preview-canvas").filter({ visible: true });
       await expect(canvas).toBeVisible({ timeout: 30_000 });

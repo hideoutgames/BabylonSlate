@@ -49,9 +49,9 @@ afterEach(() => {
   cleanup();
 });
 
-function renderWithHistory() {
+function renderWithHistory(definition: unknown = createDefaultWaterDefinition("realistic")) {
   const stack = new DocumentEditStack<Record<string, unknown>>({ maxEntries: 50, maxBytes: 10_000_000 });
-  const initial = normalizeWaterDefinition(createDefaultWaterDefinition("realistic")) as unknown as Record<string, unknown>;
+  const initial = normalizeWaterDefinition(definition) as unknown as Record<string, unknown>;
   harness.content = initial;
   let rerender = () => {};
   harness.apply = (next, mergeKey) => {
@@ -111,6 +111,19 @@ describe("WaterDetailsPanel", () => {
     expect(seed().disabled).toBe(false);
     fireEvent.click(screen.getByTestId("property-water-objectReflections"));
     expect(history.read()).toMatchObject({ waveModel: "ocean", objectReflections: false });
+  });
+
+  it("offers Stylized Look only for Stylized water and keeps colors and waves when it switches", async () => {
+    renderWithHistory();
+    expect(screen.queryByTestId("property-water-stylizedLook")).toBeNull();
+    cleanup();
+    const history = renderWithHistory({ ...createDefaultWaterDefinition("stylized"), shallowColor: [0.3, 0.4, 0.5], waveHeight: 2 });
+    fireEvent.click(screen.getByTestId("property-water-stylizedLook"));
+    const toon = await screen.findByRole("option", { name: "Toon" });
+    fireEvent.pointerDown(toon);
+    fireEvent.click(toon);
+    await waitFor(() => expect(history.read().stylizedLook).toBe("toon"));
+    expect(history.read()).toMatchObject({ style: "stylized", shallowColor: [0.3, 0.4, 0.5], waveHeight: 2 });
   });
 
   it("records a color picker drag as one undo step", () => {

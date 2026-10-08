@@ -50,6 +50,15 @@ describe("ContentBrowserNewAssetDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
     expect(onCreate).toHaveBeenCalledOnce();
   });
+  it("offers the Painted or Toon look only for Stylized Water", () => {
+    const onWaterStylizedLookChange = vi.fn();
+    renderDialog({ type: "Water", name: "Lagoon", waterStyle: "realistic", onWaterStylizedLookChange });
+    expect(screen.queryByRole("button", { name: "Toon" })).toBeNull();
+    cleanup();
+    renderDialog({ type: "Water", name: "Lagoon", waterStyle: "stylized", onWaterStylizedLookChange });
+    fireEvent.click(screen.getByRole("button", { name: "Toon" }));
+    expect(onWaterStylizedLookChange).toHaveBeenCalledWith("toon");
+  });
   afterEach(() => {
     cleanup();
     layout.phone = false;

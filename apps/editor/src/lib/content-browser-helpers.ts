@@ -1,4 +1,4 @@
-import { createDefaultWaterDefinition, normalizeWaterDefinition, createDefaultRenderTargetPayload, createDefaultRenderTargetTexturePayload, normalizeRenderTargetTexturePayload, createDefaultRenderTargetCaptureProperties, renderTargetAssetGuidsFromGraph, type WaterStyle } from "@babylonslate/core";
+import { createDefaultWaterDefinition, normalizeWaterDefinition, createDefaultRenderTargetPayload, createDefaultRenderTargetTexturePayload, normalizeRenderTargetTexturePayload, createDefaultRenderTargetCaptureProperties, renderTargetAssetGuidsFromGraph, type WaterStyle, type WaterStylizedLook } from "@babylonslate/core";
 import { createDataDefinitionAsset, createDataTreeAsset, type DataDefinitionAsset, type DataTreeAsset } from "@babylonslate/core";
 import type { ImportResult, IndexedAsset } from "@babylonslate/assets";
 import {
@@ -1529,6 +1529,8 @@ export function defaultParentClassForType(
 
 export function buildNewAssetResult(options: {
   waterStyle?: WaterStyle;
+  /** Stylized Water's look; its defaults seed the new asset. Realistic ignores it. */
+  waterStylizedLook?: WaterStylizedLook;
   type: CreatableAssetType;
   name: string;
   guid: string;
@@ -1552,7 +1554,7 @@ export function buildNewAssetResult(options: {
   }
   if (type === "RenderTarget") return documentAsset(type, name, guid, { ...createDefaultRenderTargetPayload() });
   if (type === "RenderTargetTexture") return documentAsset(type, name, guid, { ...createDefaultRenderTargetTexturePayload() });
-  if (type === "Water") return documentAsset(type, name, guid, createDefaultWaterDefinition(options.waterStyle) as unknown as Record<string, unknown>);
+  if (type === "Water") return documentAsset(type, name, guid, createDefaultWaterDefinition(options.waterStyle, options.waterStylizedLook) as unknown as Record<string, unknown>);
   if (type === "Prefab") {
     const result = documentAsset(type, name, guid, { components: defaultPrefabComponents() });
     result.dependencies = assetHeaderDependencies(type, result.payload);
