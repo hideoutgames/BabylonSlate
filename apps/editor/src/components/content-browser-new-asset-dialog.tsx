@@ -365,7 +365,7 @@ export function ContentBrowserNewAssetDialog({
                       </ToggleGroup>
                     </Field>
                     {waterStyle === "stylized" ? (
-                      <Field><FieldLabel>Look</FieldLabel>
+                      <Field><FieldLabel>Stylized Look</FieldLabel>
                         <ToggleGroup value={[waterStylizedLook]} onValueChange={(values) => { const value = values[0]; if (value === "painted" || value === "toon") onWaterStylizedLookChange?.(value); }} variant="outline" size="sm" aria-label="Stylized Look">
                           <ToggleGroupItem value="painted">Painted</ToggleGroupItem>
                           <ToggleGroupItem value="toon">Toon</ToggleGroupItem>

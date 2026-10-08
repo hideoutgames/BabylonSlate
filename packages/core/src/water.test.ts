@@ -434,9 +434,13 @@ describe("Water surfaces", () => {
           }
           return (x * along.x + z * along.z) / seconds;
         };
-        // The fixed-point term alone carries well-coupled supports downwind; the coupled term leaves them in place.
-        if (rate >= 8) expect(travel(false)).toBeGreaterThan(0.05);
-        expect(Math.abs(travel(true))).toBeLessThan(0.015);
+        // The fixed-point term alone carries well-coupled supports downwind at most of the mean drift; the coupled term
+        // leaves them in place. Both are measured against the sea's own drift, so the check is as strict for a calm
+        // default sea (a few cm/s) as for a storm.
+        const drift = waterSurfaceDrift(water, body, Infinity, { x: 0, z: 0 }), downwind = drift.x * along.x + drift.z * along.z;
+        expect(downwind).toBeGreaterThan(0.02);
+        if (rate >= 8) expect(travel(false)).toBeGreaterThan(0.75 * downwind);
+        expect(Math.abs(travel(true))).toBeLessThan(0.05 * downwind);
       }
     }
     expect(waterSurfaceDrift({ ...storm, steepness: 0 }, body, Infinity, fixed, 4)).toEqual({ x: 0, z: 0 });

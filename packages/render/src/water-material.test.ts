@@ -371,8 +371,11 @@ describe("Water material binding", () => {
       let height = 0, offsetX = 0, offsetZ = 0;
       for (let i = 0; i < WATER_WAVE_MAX_COMPONENTS; i++) {
         const [dx, dz, k] = output.vectors.get(`slateWaterSwellDir${i}`)!, [amplitude, phase, gerstner] = output.vectors.get(`slateWaterSwellAmp${i}`)!;
+        // The height rides the component's wave group, (1 + m·cos(κê·u + ψ)) / √(1 + m²/2); the offset carries none.
+        const [gx, gz, groupPhase, depth] = output.vectors.get(`slateWaterSwellGroup${i}`)!;
+        const group = (1 + depth! * Math.cos(gx! * warped.x + gz! * warped.z + groupPhase!)) / Math.sqrt(1 + 0.5 * depth! * depth!);
         const p = k! * (dx! * warped.x + dz! * warped.z) + phase!;
-        height += amplitude! * Math.sin(p); offsetX += gerstner! * dx! * Math.cos(p); offsetZ += gerstner! * dz! * Math.cos(p);
+        height += amplitude! * group * Math.sin(p); offsetX += gerstner! * dx! * Math.cos(p); offsetZ += gerstner! * dz! * Math.cos(p);
       }
       // Float32 uniforms keep the phases small, so the shader's swell matches the float64 kernel closely.
       expect(height).toBeCloseTo(kernel[0]!, 4);

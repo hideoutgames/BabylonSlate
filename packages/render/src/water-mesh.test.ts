@@ -243,9 +243,11 @@ describe("Water rendering", () => {
   });
   it("resamples CPU-displaced waves for an edited definition while the water clock is paused", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
-    const water = createDefaultWaterDefinition(), body = normalizeWaterBody({ width: 10, length: 10, waveScale: 1, resolution: 8 });
+    // Half-metre cells resolve every swell component (the mesh filter fades none), so vertices sit on the queried surface.
+    const water = createDefaultWaterDefinition(), body = normalizeWaterBody({ width: 10, length: 10, waveScale: 1, resolution: 128 });
     try {
-      setSceneWaterTime(scene, 2);
+      // Paused where the centre stands well off its rest height (between wave groups it can sit near rest).
+      setSceneWaterTime(scene, 1.5);
       const mesh = createWaterMesh(scene, "lake", body, water);
       // Custom Material water (and this parity switch) displaces its vertices on the CPU.
       setWaterGpuWaves(mesh, false);
@@ -257,7 +259,7 @@ describe("Water rendering", () => {
       // The next frame repeats the paused time. Gerstner waves carry the vertex sideways: the query at its X/Z agrees.
       updateSceneWater(scene);
       const after = vertex();
-      expect(after.y).toBeCloseTo(sampleWaterSurface(edited, body, { x: after.x, y: 0, z: after.z }, 2).height, 4);
+      expect(after.y).toBeCloseTo(sampleWaterSurface(edited, body, { x: after.x, y: 0, z: after.z }, 1.5).height, 4);
       expect(Math.abs(after.y - before)).toBeGreaterThan(0.05);
     } finally { scene.dispose(); engine.dispose(); }
   });
@@ -321,6 +323,9 @@ describe("Water rendering", () => {
       // A 40 m landscape floor centred on the origin, 4 m under the water.
       createLandscapeMesh(scene, "land", { width: 40, depth: 40, subdivisions: 4, heights: Array.from({ length: 25 }, () => -4) });
       setSceneWaterTime(scene, 1.5);
+      // High's Mesh Density 1 resolves every swell component (the mesh filter fades none; Medium's cells fade the
+      // shortest a little), so displaced vertices below sit exactly on the queried surface.
+      setQuality(scene, "high");
       const water = createDefaultWaterDefinition(), body = normalizeWaterBody({}, "global");
       const ocean = createWaterMesh(scene, "ocean", body, water);
       updateSceneWater(scene);
@@ -330,8 +335,8 @@ describe("Water rendering", () => {
       // at most 8 m) and the depth ramp past the terrain, and a metre.
       const before = fieldMinX();
       expect(before).toBeLessThanOrEqual(-20 - (WATER_FIELD_EDGE_RAMP + 1));
-      // Default Global Water cells are 0.5 m at Mesh Density 1; the default Medium tier scales them.
-      const cell = 0.5 / RENDER_QUALITY_PROFILES.medium.water.meshDensity;
+      // Default Global Water cells are 0.5 m at Mesh Density 1; the quality tier's Mesh Density scales them.
+      const cell = 0.5 / RENDER_QUALITY_PROFILES.high.water.meshDensity;
       expect(gapAtOrigin()).toBeCloseTo(cell, 4);
       const edited = { ...water, waveLength: 24, contactFoamWidth: 2.5 };
       expect(updateWaterMeshDefinition(ocean, edited)).toBe(true);
@@ -400,7 +405,8 @@ describe("Water rendering", () => {
   });
   it("animates built-in water on the GPU from the clock alone, keeps the CPU path for parity, and releases owned resources", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
-    const water = createDefaultWaterDefinition("stylized"), body = normalizeWaterBody({ width: 10, length: 10, waveScale: 1, resolution: 8 });
+    // Half-metre cells resolve every swell component (the mesh filter fades none), so vertices sit on the queried surface.
+    const water = createDefaultWaterDefinition("stylized"), body = normalizeWaterBody({ width: 10, length: 10, waveScale: 1, resolution: 128 });
     try {
       const mesh = createWaterMesh(scene, "lake", body, water);
       const material = mesh.material, plugin = pluginOf(mesh);

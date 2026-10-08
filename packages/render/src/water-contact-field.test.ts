@@ -176,8 +176,10 @@ describe("Water contact field", () => {
 
   it("cuts an object on a sloped river at the rest height beneath each part of it", () => {
     setup();
-    // A river falling 2 m over 20 m along Z (rest height -z / 10) and a 16 m log along it, 1 m tall around y = 0.
-    const river = createWaterMesh(scene, "river", normalizeWaterBody({ points: [[0, 1, -10], [0, -1, 10]], width: 6 }, "river"), createDefaultWaterDefinition());
+    // A river falling 2 m over 20 m along Z (rest height -z / 10) and a 16 m log along it, 1 m tall around y = 0. Its
+    // waves' envelope is about half a metre (contact layers about ±0.19 m around rest), so the log's ends sit clear of them.
+    const water = { ...createDefaultWaterDefinition(), waveHeight: 0.21 };
+    const river = createWaterMesh(scene, "river", normalizeWaterBody({ points: [[0, 1, -10], [0, -1, 10]], width: 6 }, "river"), water);
     const log = MeshBuilder.CreateBox("log", { width: 1, height: 1, depth: 16 }, scene);
     frame();
     const contacts = contactsOf(river);

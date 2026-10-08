@@ -76,10 +76,11 @@ describe("Water buoyancy with native collision response", () => {
     boat.attachComponent(world.createComponent({ classId: "WaterBuoyancyComponent", variables: { drag: 8 } }));
     world.spawnActorNow(boat);
     const heights: number[] = [], sway: number[] = [];
-    // Default waves head 25° from +X.
+    // Default waves head 25° from +X. The sea comes in sets (wave groups), so watch six seconds after settling: long
+    // enough that a lull between sets cannot stand in for the whole sea.
     const along = { x: Math.cos(25 * Math.PI / 180), z: Math.sin(25 * Math.PI / 180) };
     try {
-      for (let i = 0; i < 360; i++) {
+      for (let i = 0; i < 540; i++) {
         sync.step(1 / 60, world, i / 60);
         if (i <= 180) continue;
         heights.push(boat.transform.position.y);
