@@ -289,7 +289,7 @@ describe("additive scene streaming", () => {
       await runtime.unloadSceneStream(left);
       expect(waiting.destroyed).toBe(true);
       acknowledge(runtime, sibling);
-      await vi.waitFor(() => expect(runtime.getDiagnostics().entries().some((entry) => entry.message.includes("cancelled"))).toBe(true));
+      await vi.waitFor(() => expect(runtime.getDiagnostics().entries().some((entry) => entry.message.includes("owner was destroyed"))).toBe(true));
       expect(waiting.getVariable("continued")).toBeUndefined();
       expect(world.getActors().some((actor) => actor.classId === "Spawned")).toBe(false);
     } finally { runtime.stop(); }
