@@ -1,7 +1,7 @@
 import type { Transform, Vec3 } from "./math-rng";
 import { inverseQuat, quatRotateVector, type QuatObject } from "./euler";
 import {
-  createWaterWaveOutput, emptyWaterSample, evaluateWaterWaves, invertWaterWaves, sampleWaterSurface, waterBankDistance, waterBankFadeLength, waterBankGain,
+  createWaterWaveOutput, emptyWaterSample, invertWaterWaves, sampleWaterSurface, waterBankDistance, waterBankFadeLength, waterBankGain,
   waterEulerianGradient, waterHorizontalEnvelope, waterRestBase, waterRiverCentreline, waterWaveDrift, waterWaveQ, waterWaveSet,
   type WaterBodyProperties, type WaterDefinition, type WaterKind, type WaterSample, type WaterWaveGain,
 } from "./water";
