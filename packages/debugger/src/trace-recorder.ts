@@ -75,6 +75,11 @@ export type TraceAnimGraphState = {
 
 export type TraceFrame = {
   tickIndex: number;
+  /**
+   * Time dilation this tick's step used (step = undilated `dt` × dilation).
+   * A change made during a tick appears on the next frame. Absent reads as 1.
+   */
+  timeDilation?: number;
   scriptMs: number;
   physicsMs: number;
   logs: TraceLogEvent[];
