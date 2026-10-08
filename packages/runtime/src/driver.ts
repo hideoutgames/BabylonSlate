@@ -1,8 +1,6 @@
 import type { SimulationSceneCaptureResult } from "./simulation-scene-capture";
 import { SimulationSession } from "./simulation-session";
-import { RuntimeMaterialEditGate } from "./runtime-material-edit-gate";
-import { runtimeEditLocalTransform } from "./runtime-transform-edit";
-import { RuntimeInspector } from "./runtime-inspector";
+import { RuntimeInspectorService } from "./runtime-inspector-service";
 import { RuntimeDataCatalog } from "./data-catalog";
 import { resolveActorDefaults, type SaveGameService } from "@babylonslate/core";
 import { SessionBoundaries, type RuntimeSaveGameOptions } from "./session-boundaries";
@@ -30,7 +28,6 @@ import {
   type SessionBoundaryResult,
   type RuntimeInspectorRequest,
   type RuntimeInspectorResult,
-  type RuntimeMaterialEditPreparation,
   type SimulationQuiesceRequest,
   type SimulationCaptureRequest,
   type DiagnosticOperationRequest,
@@ -453,13 +450,7 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly sessionMode: GameSessionMode;
   private commandRevision = 0;
   private readonly diagnosticsEnabled: boolean;
-  private readonly deferMaterialEdits: boolean;
-  private materialEditGate: RuntimeMaterialEditGate | null = null;
-  private materialEditEmission: { preparation: RuntimeMaterialEditPreparation; emitted: boolean } | null = null;
-  private runtimeInspector: RuntimeInspector | null = null;
-  private inspectorScheduled = false;
-  private lastInspectorRequestId = 0;
-  private readonly inspectorRequests: Array<{ request: RuntimeInspectorRequest; resolve(result: RuntimeInspectorResult): void }> = [];
+  private readonly inspector: RuntimeInspectorService;
   private readonly pauseReasons = new Set<SessionPauseReason>();
   private readonly pendingPauseChanges = new Map<SessionPauseReason, boolean>();
   private readonly assetPreloads = new RuntimeAssetPreloads(command => this.emit(command));
@@ -781,13 +772,13 @@ class InProcessRuntime implements RuntimeDriver {
       sceneRealizer: () => this.sceneRealizer,
       streams: () => this.streams,
       layers: () => this.layers,
-      materialEditGate: () => this.materialEditGate,
+      materialEditGate: () => this.inspector.materialEditGate,
       materialParameters: () => this.materialParameters,
       physics: () => this.physics,
       scripts: () => this.scriptHost,
       setPauseReason: (reason, paused) => this.setPauseReason(reason, paused),
       resetInputState: () => this.resetInputState(),
-      flushInspectorRequests: () => { if (this.inspectorRequests.length) this.flushInspectorRequests(); },
+      flushInspectorRequests: () => this.inspector.flushQueued(),
       flushDeferredSnapshot: () => this.snapshots.flushDeferred(),
       emit: (command) => this.emit(command),
     });
@@ -798,7 +789,33 @@ class InProcessRuntime implements RuntimeDriver {
     this.demandAssetCatalog = options.classAssetGuids !== undefined;
     for (const [classId, guid] of Object.entries(options.classAssetGuids ?? {})) this.classAssetGuids.set(classId, guid);
     this.diagnosticsEnabled = options.includeDebugCommands ?? true;
-    this.deferMaterialEdits = options.deferMaterialEdits === true;
+    this.inspector = new RuntimeInspectorService({
+      deferMaterialEdits: options.deferMaterialEdits === true,
+      demandAssetCatalog: this.demandAssetCatalog,
+    }, {
+      world: () => this.world,
+      sessionGeneration: () => this.sessionGeneration,
+      sessionMode: () => this.sessionMode,
+      stopped: () => this.stopped,
+      frameId: () => this.frameId,
+      advanceFrameId: () => ++this.frameId,
+      commandRevision: () => this.commandRevision,
+      playSceneGuid: () => this.playSceneGuid,
+      simulation: () => this.simulation,
+      materialParameters: () => this.materialParameters,
+      renderSlots: () => this.renderSlots,
+      renderEmitter: () => this.renderEmitter,
+      streams: () => this.streams,
+      layers: () => this.layers,
+      sceneRealizer: () => this.sceneRealizer,
+      physics: () => this.physics,
+      ragdolls: () => this.ragdolls,
+      assetPreloads: () => this.assetPreloads,
+      refreshComponent: (component, propertyName) => this.refreshRuntimeComponent(component, propertyName),
+      setMaterialParameter: (material, name, value) => this.setMaterialParameter(material, name, value, true),
+      publishSnapshot: () => this.snapshots.publish(),
+      emit: (command) => this.emit(command),
+    });
     this.materialParameters = new RuntimeMaterialParameters(options.materialParameterCatalog, options.materialTextureAssetGuids);
     this.validateLegacyMeshParameters = options.materialParameterCatalog !== undefined;
     this.scalabilityProjectRenderPath = options.renderSettings?.renderPath ?? "forward";
@@ -2680,8 +2697,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.layers.rejectWaiters();
     this.stopped = true;
     this.ticks.stopDiagnostics();
-    this.materialEditGate?.cancel("The game session has stopped.");
-    if (this.inspectorRequests.length) this.flushInspectorRequests();
+    this.inspector.stop();
     this.boundaries.flush();
     this.pendingPauseChanges.clear();
     this.tweens.stop();
@@ -2761,154 +2777,16 @@ class InProcessRuntime implements RuntimeDriver {
     return this.simulation.capture(request);
   }
 
-  private getRuntimeInspector(): RuntimeInspector {
-    return this.runtimeInspector ??= new RuntimeInspector({
-      world: this.world, materials: this.materialParameters, sessionGeneration: this.sessionGeneration,
-      canWrite: () => this.simulation.canWrite(), stopped: () => this.stopped,
-      ready: actor => this.simulation.canEditActor(actor),
-      renderSlot: actor => this.renderSlots.recordedSlot(actor),
-      resolvePick: (guid, slot) => { const actor = this.renderSlots.owner(slot); return actor && !actor.destroyed && actor.world === this.world && actor.guid === guid ? actor : null; },
-      sceneIdentity: actor => {
-        const stream = this.streams.actorInstance(actor);
-        if (stream) return `stream:${stream.actor.guid}:${stream.loadId}`;
-        if (actor.sceneLayerId) return `layer:${actor.sceneLayerId}:${this.layers.get(actor.sceneLayerId)?.loadId ?? -1}`;
-        return `scene:${this.playSceneGuid}:${this.sceneRealizer.loadId}:${this.world.currentScene?.guid ?? ""}`;
-      },
-      boundary: () => ({ tickIndex: this.world.clock.tickIndex, frameId: this.frameId,
-        commandRevision: this.commandRevision, structuralRevision: this.world.structuralRevision }),
-      applyProperty: (target, key, value) => {
-        const materialAssignment = target instanceof ActorComponent && key === "materialGuid";
-        const priorSourcePresent = materialAssignment && target.variables.has("materialSource");
-        const priorSource = materialAssignment ? target.getVariable("materialSource") : undefined;
-        const prior = target instanceof Actor && key === "generateHitEvents" ? target.generateHitEvents :
-          target instanceof Actor && key === "generateOverlapEvents" ? target.generateOverlapEvents : target.getVariable(key);
-        const apply = (next: unknown) => {
-          if (target instanceof Actor && key === "generateHitEvents") target.generateHitEvents = next as boolean;
-          else if (target instanceof Actor && key === "generateOverlapEvents") target.generateOverlapEvents = next as boolean;
-          else target.setVariable(key, next);
-          if (target instanceof ActorComponent) this.refreshRuntimeComponent(target, key);
-        };
-        // An explicit None is a real override too, including an untouched model slot.
-        if (materialAssignment) target.setVariable("materialSource", "override");
-        try { apply(value); } catch (error) {
-          if (materialAssignment) {
-            if (priorSourcePresent) target.setVariable("materialSource", priorSource);
-            else target.variables.delete("materialSource");
-          }
-          apply(prior); throw error;
-        }
-        if (target instanceof Actor && key === "visible") this.publishInspectorSnapshot(target);
-      },
-      applyTransform: (target, transform, space) => {
-        const prior = target.transform;
-        const actor = target instanceof Actor ? target : target.owner!;
-        const affected = [actor];
-        if (target instanceof Actor) {
-          const ids = new Set([actor.guid]);
-          let changed = true;
-          while (changed) {
-            changed = false;
-            for (const candidate of this.world.getActors()) {
-              if (candidate.destroyed || candidate.sceneLayerId !== actor.sceneLayerId || ids.has(candidate.guid) || !ids.has(String(candidate.getVariable("parentId") ?? ""))) continue;
-              affected.push(candidate); ids.add(candidate.guid); changed = true;
-            }
-          }
-        }
-        if (affected.some(entry => entry.components.some(component => !component.destroyed && component.classId === "RagdollComponent")))
-          throw new Error("This transform moves an articulated body; preserving its live state requires a new session.");
-        const apply = () => {
-          for (const affectedActor of affected) {
-            this.ragdolls.retireActor(affectedActor);
-            this.physics.forActor(affectedActor).teleportActor(affectedActor, this.world);
-          }
-        };
-        target.transform = runtimeEditLocalTransform(this.world, target, transform, space);
-        try { apply(); } catch (error) { target.transform = prior; apply(); throw error; }
-        if (target instanceof ActorComponent) {
-          const slotId = this.renderSlots.recordedSlot(actor);
-          if (slotId !== undefined) this.renderEmitter.emitComponentTransforms(actor, slotId);
-        }
-        this.publishInspectorSnapshot(actor);
-      },
-      applyMaterial: (component, name, value) => {
-        const material = component.getVariable("materialObject");
-        return material instanceof MaterialObject && this.setMaterialParameter(material, name, value, true);
-      },
-    });
-  }
-
-  private getMaterialEditGate(): RuntimeMaterialEditGate {
-    return this.materialEditGate ??= new RuntimeMaterialEditGate({ generation: this.sessionGeneration,
-      inspector: this.getRuntimeInspector(), materials: this.materialParameters,
-      slot: component => component.owner ? this.renderSlots.recordedSlot(component.owner) : undefined,
-      acquireSource: this.demandAssetCatalog ? async (component, guids, signal) => {
-        const result = await this.assetPreloads.acquire(guids, component.guid, {}, signal);
-        if (!result.success) throw new Error(result.errorMessage || "Material source preparation failed.");
-        return result.preloadId;
-      } : undefined,
-      releaseSource: id => this.assetPreloads.release(id),
-      emit: command => this.emit(command),
-      execute: (request, preparation) => {
-        const emission = { preparation, emitted: false }; this.materialEditEmission = emission;
-        try { return { result: this.getRuntimeInspector().execute(request), emitted: emission.emitted }; }
-        finally { this.materialEditEmission = null; }
-      },
-      restore: component => {
-        const actor = component.owner; const slot = actor ? this.renderSlots.recordedSlot(actor) : undefined;
-        if (slot === undefined) throw new Error("Material owner is unavailable.");
-        this.renderEmitter.emitMaterialAssignments([component], slot, true);
-        const material = component.getVariable("materialObject");
-        if (material instanceof MaterialObject) for (const [name, value] of Object.entries(this.materialParameters.describe(material) ?? {}))
-          this.setMaterialParameter(material, name, value, true);
-      },
-    });
-  }
-
   applyRuntimeMaterialEditResult(message: Extract<ControlMessage, { type: "runtimeMaterialEditPrepared" | "runtimeMaterialEditApplied" }>): void {
-    if (!this.materialEditGate || this.stopped) return;
-    queueMicrotask(() => { if (!this.stopped) this.materialEditGate?.receive(message); });
-  }
-
-  private publishInspectorSnapshot(actor: Actor): void {
-    // Presentation identity advances, while tick index, delays and physics do not.
-    this.frameId++;
-    const slotId = this.renderSlots.recordedSlot(actor);
-    if (slotId !== undefined) this.emit({ type: "resetActorInterpolation", actorGuid: actor.guid, slotId, frameId: this.frameId });
-    this.snapshots.publish();
+    this.inspector.applyMaterialEditResult(message);
   }
 
   requestRuntimeInspector(request: RuntimeInspectorRequest): Promise<RuntimeInspectorResult> {
-    const inspector = this.getRuntimeInspector();
-    const invalid = inspector.validateRequest(request) ??
-      (request.requestId <= this.lastInspectorRequestId ? "Invalid or superseded Inspector request ID." :
-        this.inspectorRequests.length >= 32 ? "Runtime Inspector request queue is full." : null);
-    if (invalid) return Promise.resolve(inspector.result(request, invalid));
-    this.lastInspectorRequestId = request.requestId;
-    const result = new Promise<RuntimeInspectorResult>(resolve => this.inspectorRequests.push({ request: structuredClone(request), resolve }));
-    if (!this.inspectorScheduled) {
-      this.inspectorScheduled = true;
-      queueMicrotask(() => this.flushInspectorRequests());
-    }
-    return result;
+    return this.inspector.request(request);
   }
 
   cancelRuntimeInspector(request: { sessionGeneration: number; requestId: number }): void {
-    if (request.sessionGeneration !== this.sessionGeneration || !Number.isSafeInteger(request.requestId)) return;
-    const index = this.inspectorRequests.findIndex(entry => entry.request.requestId === request.requestId);
-    if (index !== -1) {
-      const [entry] = this.inspectorRequests.splice(index, 1);
-      entry!.resolve(this.getRuntimeInspector().result(entry!.request, "Inspector request cancelled."));
-    }
-    this.materialEditGate?.cancelRequest(request.requestId);
-  }
-
-  private flushInspectorRequests(): void {
-    this.inspectorScheduled = false;
-    const inspector = this.getRuntimeInspector();
-    for (const { request, resolve } of this.inspectorRequests.splice(0)) {
-      if (this.deferMaterialEdits && !this.stopped && this.getMaterialEditGate().stage(request, resolve)) continue;
-      resolve(inspector.execute(request));
-    }
+    this.inspector.cancel(request);
   }
 
   private resetInputState(): void {
@@ -3098,20 +2976,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private emit(command: CommandMessage): void {
-    if (this.sessionMode === "simulate" && (command.type === "spawn" || command.type === "assignMesh")) {
-      const actor = this.renderSlots.owner(command.slotId);
-      if (actor) command = command.type === "spawn" ? { ...command, runtimeIdentity: this.getRuntimeInspector().identity(actor) } :
-        { ...command, runtimeComponentTokens: actor.components.filter(component => !component.destroyed).map(component => ({
-          componentGuid: component.guid, componentToken: this.getRuntimeInspector().identity(component).componentToken! })) };
-    }
-    const emission = this.materialEditEmission;
-    if (emission && (command.type === "assignMaterial" || command.type === "setMaterialParameter") &&
-      command.slotId === emission.preparation.slotId && command.componentId === emission.preparation.componentId &&
-      command.materialAssetGuid === emission.preparation.materialGuid &&
-      (emission.preparation.parameterName === undefined ? command.type === "assignMaterial" :
-        command.type === "setMaterialParameter" && command.parameterName === emission.preparation.parameterName)) {
-      command = { ...command, preparedEditToken: emission.preparation.editToken }; emission.emitted = true;
-    }
+    command = this.inspector.annotate(command);
 
     this.commandRevision++;
     // Every log line and Print String reaches the ring that `dumplog` and the
