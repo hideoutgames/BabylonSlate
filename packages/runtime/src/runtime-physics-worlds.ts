@@ -69,7 +69,8 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
   private worldKind: PhysicsWorldKind;
   private generation = 0;
   private currentGravity: Vec3Tuple;
-  private readonly overlayGravity = [...createDefaultSceneSettings("2d").gravity] as Vec3Tuple;
+  /** The Scene Layer world's gravity, from the first layer created (replaced, never mutated). */
+  private overlayGravity = [...createDefaultSceneSettings("2d").gravity] as Vec3Tuple;
   private readonly havokWasmUrl: string | undefined;
   private readonly preferSoftwarePhysics: boolean;
   private showCollision = false;
@@ -139,6 +140,7 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
     return actor.sceneLayerId ? this.overlaySync : this.mainSync;
   }
 
+  /** Current gravity of the world that simulates this actor; Movement reads it each step. */
   gravityFor(actor: Actor): Vec3Tuple {
     return actor.sceneLayerId ? this.overlayGravity : this.currentGravity;
   }
@@ -268,7 +270,9 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
     return next;
   }
 
+  /** Scene Layer gravity; kept for `gravityFor` and for the native overlay world `load` creates. */
   setOverlayGravity(gravity: { x: number; y: number; z: number }): void {
+    this.overlayGravity = [gravity.x, gravity.y, gravity.z];
     this.overlaySync.getBackend().setGravity(gravity);
   }
 
