@@ -51,8 +51,8 @@ interface SessionBoundariesHost {
  * callbacks, and the deferred On Game Loaded notifications), Save Game actor
  * registration with the spawned-actor set, and the host's session boundary
  * requests (validation, the microtask-flushed queue, pause and input reset,
- * and the result identity). The driver keeps pause state and Simulation
- * quiesce and capture, which read the boundary result through this module.
+ * and the result identity). The driver keeps pause state; Simulation
+ * quiesce (`SimulationSession`) reads the boundary result through this module.
  */
 export class SessionBoundaries {
   private service?: SaveGameService;
