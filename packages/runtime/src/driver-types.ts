@@ -222,7 +222,8 @@ export interface RuntimeDriver {
   /** Upgrade from software to Havok/Rapier when available. */
   loadPhysics(): Promise<void>;
   getPhysicsSync(): PhysicsWorldSync | null;
-  getOverlayPhysicsSync(): PhysicsWorldSync | null;
+  /** A Scene Layer instance's own physics world; null when the layer did not enable physics. */
+  getSceneLayerPhysicsSync(layerGuid: string): PhysicsWorldSync | null;
   createSceneLayer(
     assetGuid: string,
     zOrder?: number,

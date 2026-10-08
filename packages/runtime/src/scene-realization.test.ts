@@ -141,6 +141,7 @@ describe("cooperative runtime scene realization", () => {
     scene.actors[0]!.components.push({ id: "body", classId: "RigidBodyComponent", properties: { motionType: "dynamic", mass: 1, gravityScale: 0 } });
     const globalDocument = createDefaultSceneLayer();
     globalDocument.settings.gravity = [0, 0, 0];
+    globalDocument.settings.physicsEnabled = true;
     globalDocument.actors = [createActor("global", "Global", { classId: "SceneLayerActor", components: [
       { id: "global-body", classId: "RigidBodyComponent", properties: { motionType: "dynamic", mass: 1, gravityScale: 0 } },
     ] })];
@@ -153,7 +154,7 @@ describe("cooperative runtime scene realization", () => {
       runtime.start();
       runtime.tick();
       runtime.getPhysicsSync()!.setActorLinearVelocity("actor-0", { x: 60 });
-      runtime.getOverlayPhysicsSync()!.setActorLinearVelocity(globalGuid, { x: 6 });
+      runtime.getSceneLayerPhysicsSync(globalLayer.guid)!.setActorLinearVelocity(globalGuid, { x: 6 });
       runtime.tick();
       const previous = runtime.getWorld().findActor("actor-0")!;
       expect(previous.transform.position.x).toBeCloseTo(3);

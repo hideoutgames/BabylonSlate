@@ -23,6 +23,7 @@ function documents() {
   scene.settings.sceneLayers = [{ assetGuid: "overlay", enabled: true, zOrder: 1 }];
   const layer = createDefaultSceneLayer();
   layer.settings.gravity = [0, 0, 0];
+  layer.settings.physicsEnabled = true;
   layer.actors = [createActor("layer-actor", "Overlay", { classId: "LayerActor",
     components: [createMeshComponent("layer-mesh", "box"),
       { id: "layer-component", classId: "OwnedComponent", properties: {} },
@@ -78,7 +79,7 @@ describe("scene owner readiness", () => {
       runtime.notifySceneModelsReady("world", 1);
       expect(actor.getVariable("began")).toBeUndefined();
       expect(finished).toEqual([]);
-      runtime.getOverlayPhysicsSync()!.setActorLinearVelocity(globalActor.guid, { x: 6 });
+      runtime.getSceneLayerPhysicsSync(globalLayer.guid)!.setActorLinearVelocity(globalActor.guid, { x: 6 });
       const before = globalActor.transform.position.x;
       runtime.tick();
       runtime.tick();

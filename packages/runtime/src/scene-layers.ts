@@ -53,8 +53,15 @@ interface SceneLayersHost {
   demandAssets(): boolean;
   assetPreloads(): Pick<RuntimeAssetPreloads, "acquire" | "transferOwner" | "release" | "releaseOwner">;
   continueSimulation(owner: BObject | null): Promise<void> | undefined;
-  /** The first live layer sets the overlay physics world's gravity. */
-  setOverlayGravity(gravity: { x: number; y: number; z: number }): void;
+  /** A layer instance with Enable Physics gets its own physics world with its gravity. */
+  addLayerPhysics(
+    layerGuid: string,
+    assetGuid: string,
+    settings: Pick<SerializedSceneLayer["settings"], "gravity" | "physicsEnabled">,
+    actors: readonly SerializedActor[],
+  ): void;
+  /** A removed layer instance releases its physics world. */
+  removeLayerPhysics(layerGuid: string): void;
   /** Simulation Keep cannot retain this independent layer instance. */
   markUnsupportedInstance(layerGuid: string): void;
   createActor(serialized: SerializedActor, layerGuid: string): Actor | null;
@@ -282,6 +289,7 @@ export class SceneLayers implements RuntimeSubsystem {
     const layer = world.findSceneLayer(layerGuid);
     if (!layer) return;
     this.loads.delete(layerGuid);
+    this.host.removeLayerPhysics(layerGuid);
     this.overlay.forget(layerGuid);
     const work = this.independentWork.get(layerGuid);
     if (work?.layer === layer) {
@@ -371,13 +379,6 @@ export class SceneLayers implements RuntimeSubsystem {
       return null;
     }
     const document = normalizeSceneLayer({ ...raw, actors: [], folders: [] });
-    if (world.getSceneLayers().length === 0) {
-      this.host.setOverlayGravity({
-        x: document.settings.gravity[0],
-        y: document.settings.gravity[1],
-        z: document.settings.gravity[2],
-      });
-    }
     const layer = world.createSceneLayer({
       assetGuid: guid,
       zOrder: Math.trunc(Number(zOrder) || 0),
@@ -388,6 +389,7 @@ export class SceneLayers implements RuntimeSubsystem {
       layerBounds: document.settings.layerBounds,
     });
     this.host.markUnsupportedInstance(layer.guid);
+    this.host.addLayerPhysics(layer.guid, guid, document.settings, Array.isArray(raw.actors) ? raw.actors : []);
     ownedLayer = layer;
     work?.layers.push(layer);
     const layerLoad: SceneLayerLoad = { layer, loadId: ++this.loadId, realized: false, presented: false, ready: false };
