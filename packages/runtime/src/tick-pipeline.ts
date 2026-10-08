@@ -4,7 +4,7 @@ import {
   isInfiniteLoopError,
   shouldEmitStatsCommand,
   type CommandResult,
-  type TraceBtState,
+  type TraceFrame,
   type TracePayload,
 } from "@babylonslate/debugger";
 import type { RawInputEvent } from "@babylonslate/input";
@@ -30,7 +30,8 @@ interface TickPipelineHost {
   /** The frame id after the completed tick's increment. */
   frameId(): number;
   liveActors(): number;
-  btTraceStates(): TraceBtState[];
+  /** Behaviour tree, voice, sprite clip and Animation Graph state that `restoreFromTrace` resumes. */
+  traceState(): Required<Pick<TraceFrame, "bt" | "audio" | "sprites" | "animGraphs">>;
   reportLog(message: string, severity: LogSeverity, category: string): void;
   emit(command: CommandMessage): void;
 }
@@ -223,7 +224,7 @@ export class TickPipeline {
           }
           return { type: event.kind, tick: event.tick };
         }),
-        bt: this.host.btTraceStates(),
+        ...this.host.traceState(),
       });
       if (!this.trace.isRecording) this.finalizeTrace();
     }

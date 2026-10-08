@@ -28,6 +28,49 @@ export type TraceBtState = {
   nodeMemory?: Record<string, Record<string, unknown>>;
   /** A Play Animation task owns the slot's animation state; omitted when false. */
   playAnimationOwned?: boolean;
+  /** The Play Sound voice the slot's actor owns (stopped on abort or slot release); omitted when none. */
+  playSoundVoiceId?: string;
+};
+
+/** A voice the runtime started and has neither stopped nor seen end by the frame. */
+export type TraceVoice = {
+  /** AudioComponent guid, `bt:<actor>:<node>` for Play Sound tasks, or `script:<n>` for script Play Sound. */
+  voiceId: string;
+  assetGuid: string;
+  /** Play-call volume, including later `setVoiceGain` changes. */
+  volume: number;
+  /** Omitted when the Audio asset's own Loop flag decides. */
+  loop?: boolean;
+  /** Spatial emitter; omitted for non-spatial voices. */
+  emitterActorGuid?: string;
+  /** Undilated fixed-step seconds since the voice started. */
+  elapsedSeconds: number;
+};
+
+export type TraceAudioState = {
+  /** Live voices in start order. */
+  voices: TraceVoice[];
+  /** Sequence number of the next script Play Sound voice id. */
+  nextScriptVoice: number;
+};
+
+/** The Sprite Animation clip an actor shows (Animation Graph or Play Animation). */
+export type TraceSpriteClip = {
+  actorGuid: string;
+  stateId: string;
+  assetGuid: string;
+  clipName: string;
+  normalisedTime: number;
+};
+
+/** One AnimationGraphComponent's evaluation, so its graph continues mid-state. */
+export type TraceAnimGraphState = {
+  componentGuid: string;
+  /** Present with `state` when the graph was initialized and evaluated for this component. */
+  graphGuid?: string;
+  state?: Record<string, unknown>;
+  /** A script Jump To State not applied yet. */
+  pendingJumpStateId?: string;
 };
 
 export type TraceFrame = {
@@ -39,6 +82,9 @@ export type TraceFrame = {
   snapshotText?: string;
   inputEvents?: TraceInputEvent[];
   bt?: TraceBtState[];
+  audio?: TraceAudioState;
+  sprites?: TraceSpriteClip[];
+  animGraphs?: TraceAnimGraphState[];
 };
 
 export type TraceStopReason = "requested" | "session-ended" | "oversized-frame";

@@ -703,6 +703,109 @@ describe("P19 behaviour tree task hosts", () => {
   });
 });
 
+describe("trace restore of Play Sound voices", () => {
+  function task(id: string, classId: string, properties: Record<string, unknown>) {
+    return { id, kind: "task" as const, classId, children: [], decorators: [], services: [], properties };
+  }
+
+  function soundRuntime(children: string[], timeLimitMs: number | null, commands: CommandMessage[]) {
+    const tree: BehaviourTreeDocument = {
+      name: "Host",
+      rootId: "root",
+      blackboardGuid: null,
+      nodes: [
+        {
+          id: "root",
+          kind: "sequence",
+          classId: "bt.composite.sequence",
+          children,
+          decorators: timeLimitMs === null ? [] : [{
+            id: "limit", classId: "bt.decorator.timeLimit", abortMode: "none", observedKeys: [],
+            properties: { durationMs: timeLimitMs },
+          }],
+          services: [],
+          properties: {},
+        },
+        task("sound", "bt.task.playSound", { audioAssetGuid: "audio-1", volume: 0.4 }),
+        task("wait", "bt.task.wait", { durationMs: 2000 }),
+        task("delay", "bt.task.wait", { durationMs: 200 }),
+      ],
+    };
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 4,
+      seedDemoActors: false,
+      dt: 0.1,
+      playScene: hostScene(),
+      behaviourTrees: { "tree-1": tree },
+      audioAssetGuids: ["audio-1"],
+      onCommand: (command) => commands.push(command),
+    });
+    runtime.start();
+    runtime.realizePlayWorld();
+    return runtime;
+  }
+
+  const audioCommands = (commands: CommandMessage[]) => commands.flatMap((command) =>
+    command.type === "playSound" || command.type === "stopSound"
+      ? [command.type === "playSound"
+          ? { type: command.type, voiceId: command.voiceId, offset: command.startOffsetSeconds }
+          : { type: command.type, voiceId: command.voiceId }]
+      : []);
+
+  it("resumes a voice mid-sound at its recorded offset, and a later abort stops it", () => {
+    const recordedCommands: CommandMessage[] = [];
+    const recorded = soundRuntime(["sound", "wait"], 350, recordedCommands);
+    recorded.executeConsoleCommand("snapshot start");
+    for (let i = 0; i < 3; i += 1) recorded.tick();
+    recorded.executeConsoleCommand("snapshot stop");
+    recordedCommands.length = 0;
+    recorded.tick();
+    expect(audioCommands(recordedCommands)).toEqual([{ type: "stopSound", voiceId: "bt:guard:sound" }]);
+    const frame = recorded.stopTrace()!.frames.at(-1)!;
+    recorded.stop();
+
+    const commands: CommandMessage[] = [];
+    const replay = soundRuntime(["sound", "wait"], 350, commands);
+    commands.length = 0;
+    replay.restoreFromTrace(frame);
+    expect(commands.filter((command) => command.type === "playSound" || command.type === "stopSound")).toEqual([
+      expect.objectContaining({
+        type: "playSound", assetGuid: "audio-1", volume: 0.4, voiceId: "bt:guard:sound",
+        emitterActorGuid: "guard", startOffsetSeconds: expect.closeTo(0.2, 9),
+      }),
+    ]);
+    commands.length = 0;
+    replay.tick();
+    expect(audioCommands(commands)).toEqual([{ type: "stopSound", voiceId: "bt:guard:sound" }]);
+    replay.stop();
+  });
+
+  it("stops a live voice the restored frame was not playing, then replays the recorded run", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = soundRuntime(["delay", "sound", "wait"], null, commands);
+    runtime.executeConsoleCommand("snapshot start");
+    runtime.tick();
+    commands.length = 0;
+    runtime.tick();
+    runtime.tick();
+    runtime.executeConsoleCommand("snapshot stop");
+    const uninterrupted = audioCommands(commands);
+    expect(uninterrupted).toEqual([{ type: "playSound", voiceId: "bt:guard:sound", offset: undefined }]);
+    const frames = runtime.stopTrace()!.frames;
+    expect(frames[0]!.audio?.voices).toEqual([]);
+
+    commands.length = 0;
+    runtime.restoreFromTrace(frames[0]!);
+    expect(audioCommands(commands)).toEqual([{ type: "stopSound", voiceId: "bt:guard:sound" }]);
+    commands.length = 0;
+    runtime.tick();
+    runtime.tick();
+    expect(audioCommands(commands)).toEqual(uninterrupted);
+    runtime.stop();
+  });
+});
+
 describe("P19 Rotate To Face crowd yaw", () => {
   beforeAll(async () => {
     await initNavigation();
