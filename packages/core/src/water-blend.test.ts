@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { identityTransform } from "./math-rng";
-import { createDefaultWaterDefinition, normalizeWaterBody, sampleWaterSurface, type WaterBodyProperties, type WaterDefinition, type WaterKind } from "./water";
+import {
+  createDefaultWaterDefinition, createWaterWaveOutput, invertWaterWaves, normalizeWaterBody, sampleWaterSurface, waterBankGain, waterWaveSet,
+  type WaterBodyProperties, type WaterDefinition, type WaterKind,
+} from "./water";
 import { createWaterBlendSample, evaluateWaterBlend, sampleWaterBlend, WaterBlendIndex, type WaterBlendBody } from "./water-blend";
 import { DEFAULT_WATER_BLEND_DISTANCE, normalizeWaterBlendDistance } from "./water-settings";
 import { normalizeRenderProjectSettings } from "./project";
@@ -30,6 +33,31 @@ describe("Water Blend Distance setting", () => {
     expect(normalizeRenderProjectSettings({ water: { blendDistance: 2.5 } }).water).toEqual({ blendDistance: 2.5 });
   });
 });
+
+/**
+ * The blended surface height the way queries once found it: the inversion's Gerstner gain read from the blend kernel at
+ * every iterate (with central-difference gradients), then the kernel once at the converged rest point. Null where the
+ * body has no water.
+ */
+function perStepBlendHeight(index: WaterBlendIndex, self: number, position: { x: number; y: number; z: number }, time: number): number | null {
+  const me = index.bodies[self]!, set = waterWaveSet(me.definition), scale = me.referenceScale;
+  const sample = createWaterBlendSample(), fade = new Float64Array(2), wave = createWaterWaveOutput();
+  const gainAt = (x: number, z: number) => {
+    if (!evaluateWaterBlend(index, self, x, position.y, z, sample)) return 0;
+    waterBankGain(sample.union, me.fadeLength * sample.offsetScale, fade);
+    return fade[0]! * sample.offsetScale;
+  };
+  const h = 0.05;
+  invertWaterWaves(set, position.x, position.z, time, 0, wave, scale, {
+    sample(x, z, out) {
+      out[0] = gainAt(x, z);
+      out[1] = (gainAt(x + h, z) - gainAt(x - h, z)) / (2 * h);
+      out[2] = (gainAt(x, z + h) - gainAt(x, z - h)) / (2 * h);
+    },
+  });
+  if (!evaluateWaterBlend(index, self, wave[11]!, position.y, wave[12]!, sample) || sample.union < 0) return null;
+  return sample.restHeight + sample.heightScale * wave[0]!;
+}
 
 describe("Water blend index", () => {
   it("pairs bodies within the distance at compatible heights and rebuilds only when an input changes", () => {
@@ -151,6 +179,35 @@ describe("Water blend surface", () => {
       }
       // The waves' own slopes stay under 1; a step between surfaces would read as a slope of metres per decimetre.
       expect(steepest).toBeLessThan(1);
+    }
+  });
+
+  it("agrees with the per-step inversion to well under a millimetre across seams of differing rest height and swell", () => {
+    const definition = { ...createDefaultWaterDefinition(), waveHeight: 0.3, waveLength: 16, steepness: 0.6 };
+    const scenarios: Array<{ bodies: WaterBlendBody[]; from: number; to: number }> = [
+      { bodies: [lake(0, 24, 0, definition, { waveScale: 0.3 }), lake(18, 24, 0.4, definition, { waveScale: 1 })], from: -4, to: 22 },
+      { bodies: [body("global", {}, 0, 0, 0, definition), lake(0, 20, 0.2, definition, { waveScale: 0.5 })], from: 0, to: 22 },
+    ];
+    for (const { bodies, from, to } of scenarios) {
+      const index = new WaterBlendIndex();
+      index.update(bodies, 8);
+      let compared = 0, worst = 0;
+      for (const time of [0.3, 2.1, 5.7]) {
+        for (let x = from; x <= to; x += 0.05) {
+          // The world still finds exactly one surface (the owner), however early the others give up.
+          expect(worldSample(index, x, 1.3, time).count).toBe(1);
+          for (let self = 0; self < bodies.length; self++) {
+            const position = { x, y: -1, z: 1.3 };
+            const fast = sampleWaterBlend(index, self, position, time, false), reference = perStepBlendHeight(index, self, position, time);
+            expect(fast.found).toBe(reference !== null);
+            if (reference === null) continue;
+            worst = Math.max(worst, Math.abs(fast.height - reference));
+            compared++;
+          }
+        }
+      }
+      expect(compared).toBeGreaterThan(1000);
+      expect(worst).toBeLessThan(1e-4);
     }
   });
 

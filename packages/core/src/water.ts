@@ -786,16 +786,19 @@ function evaluateWithGain(
  * `WATER_WAVE_NEWTON_STEPS` Newton steps until it lands within `WATER_WAVE_INVERT_TOLERANCE` (det J ≥
  * WATER_JACOBIAN_FLOOR without a bank fade, so each step is well defined). Leaves the evaluation at that rest point in
  * `out` 0-10 and 13 and the rest point in `out` 11-12. With q = 0 the rest point is (x, z). `gain` is a finite body's
- * bank fade, sampled at every iterate exactly as the mesh applies it.
+ * bank fade, sampled at every iterate exactly as the mesh applies it. `start` (with q > 0) replaces the Picard start, for
+ * a caller that already has a nearby rest point.
  */
 export function invertWaterWaves(
   set: WaterWaveSet, x: number, z: number, time: number, spacing: number, out: Float64Array, scale = 1, gain?: WaterWaveGain,
+  start?: { x: number; z: number },
 ): void {
   let x0 = x, z0 = z;
-  evaluateWithGain(set, x0, z0, time, spacing, out, scale, gain);
-  if (waterWaveQ(set, scale) > 0) {
+  const gerstner = waterWaveQ(set, scale) > 0;
+  if (!(start && gerstner)) evaluateWithGain(set, x0, z0, time, spacing, out, scale, gain);
+  if (gerstner) {
     const tolerance = WATER_WAVE_INVERT_TOLERANCE * WATER_WAVE_INVERT_TOLERANCE;
-    x0 = x - out[1]!; z0 = z - out[2]!;
+    if (start) { x0 = start.x; z0 = start.z; } else { x0 = x - out[1]!; z0 = z - out[2]!; }
     let solved = false;
     for (let step = 0; step < WATER_WAVE_NEWTON_STEPS; step++) {
       evaluateWithGain(set, x0, z0, time, spacing, out, scale, gain);
