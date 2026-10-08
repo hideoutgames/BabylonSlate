@@ -10,7 +10,7 @@ The organising idea does not change: **the command system is always present; onl
 | --- | --- |
 | `@babylonslate/debugger` | Parser, registry, builtin catalog, `createUserCommand`, autocomplete. No React, Babylon, or runtime. |
 | `ConsoleCommandHost` | Callbacks the registry invokes. `RuntimeConsole` (`packages/runtime/src/runtime-console.ts`) implements it against the driver's subsystems. |
-| `RuntimeDriver.executeConsoleCommand` | Play, Preview, `ExecuteConsoleCommand`, and worker `{ type: "console" }` all go through this; it delegates to `RuntimeConsole`. |
+| `RuntimeDriver.executeConsoleCommand` | Play, Preview, `ExecuteConsoleCommand`, and worker `{ type: "console" }` all go through this (or `executeConsoleCommandAsync`); it delegates to `RuntimeConsole`. After Stop both refuse every command with `{ success: false, output: "The runtime session has ended" }` and change nothing. |
 | Overlay `DebugConsole` | Flat bottom-edge Sheet shared by Play and Preview Build; simulation keeps ticking. Completions from `playConsoleCommands` (builtins + compiled `script.command`). Live logs, prints, warnings, errors, and command results share the transcript. |
 | `BDebugCommand` | User class → `Event On Command Run` → compiled as **core** via `loadScripts` / `bindUserCommand`. Ships even when `includeDebug: false`. |
 
@@ -42,7 +42,7 @@ Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `sna
 | `pause` | yes | **yes** | Idempotent. Emits `{ type: "sessionPaused"; paused: true }`. Overlay button reads Resume. |
 | `resume` / `unpause` | yes | **yes** | Idempotent. Emits `sessionPaused: false`. Does not stop free cam. |
 | `step` | yes | **yes** | Overlay Step: `resume()` → `tick()` → `pause()` if it was paused. |
-| `slomo` | yes | **yes** | Rejects negative rates and rates above `8`; `0` stays a deliberate freeze (`slomo 1` resumes). `RuntimeDriver.timeDilation` still clamps `0..8`. `tick` uses `dt * rate` for script, physics, nav, BT. Trace header and frame snapshots store undilated `dt`. No arg → print current. |
+| `slomo` | yes | **yes** | Rejects negative rates and rates above `8`; `0` stays a deliberate freeze (`slomo 1` resumes). `RuntimeDriver.timeDilation` still clamps `0..8`. `tick` uses `dt * rate` for script, physics, nav, BT. Tweens and script Delays count the step captured when the tick began, so a rate set during a tick (console or script) reaches them from the next tick. Trace header and frame snapshots store undilated `dt`. No arg → print current. |
 | `freecam` | yes | **yes** | `{ type: "setFreeCam" }`. Detached fly/pan camera; simulation keeps ticking. Pointer/WASD stolen; 2D pinch zooms ortho; gamepad still forwards (`help freecam` documents that split). Overlay Play shows a touch fly stick while on. Off / `changescene` / `possessCamera` restore. FPS look (drag right looks right). |
 | `lightsdebug on/off` | yes | **yes** | Independent default-off light diagnostics; detailed rows are collected only while enabled. |
 | `showfps` | yes | **yes** | Opens/collapses Stats HUD (`setShowFps`). Flag default is **on**. |

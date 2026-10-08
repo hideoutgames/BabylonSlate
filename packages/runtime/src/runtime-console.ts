@@ -32,6 +32,9 @@ import type { ScriptHost } from "./script-host";
 import type { SnapshotPublisher } from "./snapshot-publisher";
 import type { TickPipeline } from "./tick-pipeline";
 
+/** The refusal both execution paths return once the session stopped. */
+const SESSION_ENDED = "The runtime session has ended";
+
 interface RuntimeConsoleOptions {
   /** When false, debug-tier commands are stripped. */
   includeDebug: boolean;
@@ -99,7 +102,9 @@ export class RuntimeConsole {
     this.host = host;
   }
 
+  /** Runs a command now; after Stop it refuses, like `executeAsync`. */
   execute(command: string): { success: boolean; output: string } {
+    if (this.host.stopped()) return { success: false, output: SESSION_ENDED };
     const { name } = matchCommandName(tokenize(command.trim()), new Set(this.commands.list().map(entry => entry.name.toLowerCase())));
     const user = this.commandClasses.get(name);
     if (this.demandAssetCatalog && user && this.host.assetPreloads().getState(user.assetGuid) !== "ready") {
@@ -109,7 +114,7 @@ export class RuntimeConsole {
   }
 
   async executeAsync(command: string): Promise<CommandResult> {
-    if (this.host.stopped()) return { success: false, output: "The runtime session has ended" };
+    if (this.host.stopped()) return { success: false, output: SESSION_ENDED };
     const { name, rest } = matchCommandName(tokenize(command.trim()), new Set(this.commands.list().map(entry => entry.name.toLowerCase())));
     const user = this.commandClasses.get(name);
     if (!user) return this.execute(command);
@@ -153,7 +158,7 @@ export class RuntimeConsole {
 
   /** Stop: end the session lifetime, cancelling pending user command preparation. */
   stop(): void {
-    this.lifetime.abort(new Error("The runtime session has ended"));
+    this.lifetime.abort(new Error(SESSION_ENDED));
   }
 
   private commandHost(): ConsoleCommandHost {

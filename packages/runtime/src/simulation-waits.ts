@@ -5,9 +5,18 @@ import type { OwnerAdmission } from "./owner-admission";
 import type { SceneStreams } from "./scene-streams";
 import type { SessionBoundaries } from "./session-boundaries";
 
+/** Why a latent continuation cannot resume. */
+type RuntimeContinuationCancelReason = "sessionStopped" | "ownerDestroyed" | "streamNotLoaded";
+
+const CONTINUATION_CANCELLED: Record<RuntimeContinuationCancelReason, string> = {
+  sessionStopped: "Script continuation cancelled: the runtime session ended.",
+  ownerDestroyed: "Script continuation cancelled: its owner was destroyed.",
+  streamNotLoaded: "Script continuation cancelled: its owner's streamed Scene is not loaded.",
+};
+
 /** A latent continuation whose session stopped, or whose owner went away, while it waited. */
 export class RuntimeContinuationCancelled extends Error {
-  constructor() { super("Scene realization was cancelled."); this.name = "AbortError"; }
+  constructor(reason: RuntimeContinuationCancelReason) { super(CONTINUATION_CANCELLED[reason]); this.name = "AbortError"; }
 }
 
 interface SimulationWaitsHost {
@@ -61,8 +70,9 @@ export class SimulationWaits {
   }
 
   private assertContinuable(owner: BObject | null): void {
-    if (this.host.stopped() || owner?.destroyed || !this.host.streams().ownerReady(owner))
-      throw new RuntimeContinuationCancelled();
+    if (this.host.stopped()) throw new RuntimeContinuationCancelled("sessionStopped");
+    if (owner?.destroyed) throw new RuntimeContinuationCancelled("ownerDestroyed");
+    if (!this.host.streams().ownerReady(owner)) throw new RuntimeContinuationCancelled("streamNotLoaded");
   }
 
   /** Resume continuations waiting on the simulation, unless a blocking scene stream still holds it. */

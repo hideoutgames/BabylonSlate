@@ -118,6 +118,29 @@ describe("runtime session boundaries", () => {
     } finally { runtime.stop(); }
   });
 
+  it("reports a held continuation whose owner was destroyed during Pause as an owner cancellation", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = makeRuntime({ playScene: { ...createDefaultScene(), actors: [createActor("actor", "Actor", { classId: "Delayed" })] },
+      onCommand: command => commands.push(command) });
+    await runtime.loadScripts([{ classId: "Delayed", parentClassId: "Actor", assetGuid: "delayed", anchors: [],
+      source: 'export async function begin(ctx) { await ctx.delay(0.01); ctx.log("log", "test", "continued"); }',
+      entryPoints: [{ name: "begin", event: "onBeginPlay", isAsync: true }] }]);
+    try {
+      runtime.realizePlayWorld(); runtime.start(); runtime.tick();
+      // The Delay completed in that tick; Pause holds its continuation.
+      runtime.pause();
+      await flush();
+      expect(runtime.executeConsoleCommand('destroyactor "actor"').success).toBe(true);
+      runtime.resume();
+      await flush();
+      const diagnostics = commands.flatMap(command => command.type === "diagnostic" ? [command.message] : []);
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0]).toMatch(/owner was destroyed/);
+      expect(diagnostics[0]).not.toMatch(/Scene realization/);
+      expect(commands.some(command => command.type === "log" && command.message === "continued")).toBe(false);
+    } finally { runtime.stop(); }
+  });
+
   it.each(["resume", "stop"] as const)("gates on-demand preload progress and completion until %s", async finish => {
     const commands: CommandMessage[] = [];
     const runtime = makeRuntime({ classAssetGuids: { Loading: "loading-class" },
