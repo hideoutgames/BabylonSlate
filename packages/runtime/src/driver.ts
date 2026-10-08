@@ -1022,7 +1022,6 @@ class InProcessRuntime implements RuntimeDriver {
       continueSimulation: (owner) => this.waits.continueSimulation(owner),
       setOverlayGravity: (gravity) => this.physics.setOverlayGravity(gravity),
       markUnsupportedInstance: (layerGuid) => this.simulation.markUnsupportedInstance("layer", layerGuid),
-      guidTaken: (id) => this.renderSlots.hasGuid(id) || this.world.findActor(id) != null,
       createActor: (serialized, layerGuid) => createActorFromSerialized(this.world, serialized, this.actors.sceneActorHooks, layerGuid),
       publishSnapshot: () => this.snapshots.publish(),
       syncOverlayPhysics: () => this.physics.overlay.syncFromWorld(this.world),

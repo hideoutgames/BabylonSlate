@@ -1,5 +1,5 @@
 import type { CommandMessage } from "@babylonslate/bridge";
-import { newGuid, normalizeSceneLayer, type SerializedActor, type SerializedSceneLayer } from "@babylonslate/core";
+import { newGuid, normalizeSceneLayer, remapSceneStreamingReferences, type SerializedActor, type SerializedSceneLayer } from "@babylonslate/core";
 import { hydrateScenePropertyReferences, type Actor, type BObject, type SceneLayer, type World } from "@babylonslate/object-model";
 import type { RuntimeAssetPreloads } from "./asset-preloads";
 import type { OwnerAdmission } from "./owner-admission";
@@ -57,8 +57,6 @@ interface SceneLayersHost {
   setOverlayGravity(gravity: { x: number; y: number; z: number }): void;
   /** Simulation Keep cannot retain this independent layer instance. */
   markUnsupportedInstance(layerGuid: string): void;
-  /** An actor id already names a render slot or World actor. */
-  guidTaken(id: string): boolean;
   createActor(serialized: SerializedActor, layerGuid: string): Actor | null;
   publishSnapshot(): void;
   syncOverlayPhysics(): void;
@@ -416,7 +414,7 @@ export class SceneLayers implements RuntimeSubsystem {
       const serializedActors = normalizeSceneLayer(raw).actors;
       yield;
       checkpoint();
-      const remapped = yield* remapLayerActors(serializedActors, layer.guid, (id) => this.host.guidTaken(id));
+      const remapped = yield* remapLayerActors(serializedActors, layer.guid);
       for (const serialized of remapped) {
         checkpoint();
         const actor = this.host.createActor(serialized, layer.guid);
@@ -448,38 +446,37 @@ export class SceneLayers implements RuntimeSubsystem {
   }
 }
 
-/** Layer actor ids that collide with live ids gain a layer prefix; references follow. */
+/** Component ids stay authored; only actor identities are scoped to the layer instance. */
+const authoredComponentIds = { get: (id: string) => id };
+
+/**
+ * Every layer actor id is scoped to its layer instance (`<layer guid>:<id>`),
+ * as streamed Scene ids are scoped to their stream, so no live actor (another
+ * instance of the same layer, the main Scene a global layer outlives, or a
+ * Save Game actor) can share its guid. Parent, focus and actor references follow.
+ */
 function* remapLayerActors(
   actors: readonly SerializedActor[],
   layerId: string,
-  isTaken: (id: string) => boolean,
 ): Generator<void, SerializedActor[], unknown> {
-  const idMap = new Map<string, string>();
-  const used = new Set<string>();
-  for (const actor of actors) {
-    let id = actor.id;
-    if (isTaken(id) || used.has(id)) {
-      id = `${layerId}:${actor.id}`;
-    }
-    idMap.set(actor.id, id);
-    used.add(id);
-    yield;
-  }
+  const idMap = new Map(actors.map((actor) => [actor.id, `${layerId}:${actor.id}`]));
   const remapped: SerializedActor[] = [];
   for (const actor of actors) {
     remapped.push({
       ...actor,
-      id: idMap.get(actor.id) ?? actor.id,
+      id: idMap.get(actor.id)!,
       parentId: actor.parentId
         ? (idMap.get(actor.parentId) ?? actor.parentId)
         : null,
+      ...(actor.properties ? { properties: remapSceneStreamingReferences(actor.properties, idMap, authoredComponentIds) as Record<string, unknown> } : {}),
       components: actor.components.map((component) => ({
         ...component,
-        properties: Object.fromEntries(Object.entries(component.properties).map(([key, value]) => [
-          key,
-          ["focusUp", "focusDown", "focusLeft", "focusRight"].includes(key) && typeof value === "string"
-            ? idMap.get(value) ?? value : value,
-        ])),
+        properties: Object.fromEntries(Object.entries(remapSceneStreamingReferences(component.properties, idMap, authoredComponentIds) as Record<string, unknown>)
+          .map(([key, value]) => [
+            key,
+            ["focusUp", "focusDown", "focusLeft", "focusRight"].includes(key) && typeof value === "string"
+              ? idMap.get(value) ?? value : value,
+          ])),
       })),
     });
     yield;

@@ -1673,9 +1673,11 @@ describe("p7-play-scene-load", () => {
       (command) => commands.push(command),
     );
     await runtime.realizePlayWorld();
+    // Scene Layer actor guids are scoped to their layer instance.
+    const layer = runtime.getWorld().getSceneLayers()[0]!;
     expect(
       commands.find(
-        (command) => command.type === "assignMesh" && command.actorGuid === "label",
+        (command) => command.type === "assignMesh" && command.actorGuid === `${layer.guid}:label`,
       ),
     ).toMatchObject({
       type: "assignMesh",

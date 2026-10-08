@@ -51,7 +51,7 @@ describe("SceneLayer actor switcher", () => {
       runtime.realizePlayWorld();
       const liveLayer = runtime.createSceneLayer("menu")!;
       runtime.start();
-      const switcher = runtime.getWorld().findActor("switcher") as SceneLayerActorSwitcher;
+      const switcher = runtime.getWorld().findActor(`${liveLayer.guid}:switcher`) as SceneLayerActorSwitcher;
       const first = switcher.currentActor!;
       expect(first).toBeInstanceOf(Actor);
       expect(switcher.getVariable("classes")).toEqual(["Panel", "Panel", "Actor"]);

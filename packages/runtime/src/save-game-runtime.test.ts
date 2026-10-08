@@ -72,11 +72,11 @@ describe("runtime Save Game", () => {
         },
       ]);
       await runtime.realizePlayWorld();
-      runtime.createSceneLayer("menu");
+      const menu = runtime.createSceneLayer("menu")!;
       runtime.start();
       service.getSaveData().coins = 7;
       expect((await service.saveGame()).ok).toBe(true);
-      const list = runtime.getWorld().findActor("menu")!.components.find((component) => component.guid === "list")!;
+      const list = runtime.getWorld().findActor(`${menu.guid}:menu`)!.components.find((component) => component.guid === "list")!;
       list.setVariable("itemCount", 1);
       service.getSaveData().coins = 99;
       expect((await service.loadGame()).ok).toBe(true);

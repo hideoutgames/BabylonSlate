@@ -30,7 +30,7 @@ describe("SceneLayer layout runtime", () => {
       const attached = world.createActor({ classId: "SceneLayerActor", sceneLayerId: liveLayer.guid, variables: { parentId: cell.guid } });
       const component = world.createComponent({ classId: "2DMaterialComponent" });
       attached.attachComponent(component); world.spawnActorNow(attached);
-      runtime.applySceneLayerScroll(liveLayer.guid, "menu", "list", 0, 1);
+      runtime.applySceneLayerScroll(liveLayer.guid, liveLayer.guid + ":menu", "list", 0, 1);
       world.flushPending();
       expect(row.destroyed).toBe(true);
       expect(cell.destroyed).toBe(true);
@@ -58,7 +58,7 @@ describe("SceneLayer layout runtime", () => {
       expect(rows().map(actor => actor.getVariable("itemIndex"))).toEqual([0, 1, 2, 3]);
       expect(commands.filter(command => command.type === "assignMesh" && command.sceneLayerId === liveLayer.guid && rows().some(row => row.guid === command.actorGuid))).toHaveLength(4);
       const retired = rows()[0]!, survivor = rows()[2]!;
-      runtime.applySceneLayerScroll(liveLayer.guid, "menu", "list", 0, 2);
+      runtime.applySceneLayerScroll(liveLayer.guid, liveLayer.guid + ":menu", "list", 0, 2);
       runtime.tick();
       expect(rows().map(actor => actor.getVariable("itemIndex"))).toEqual([1, 2, 3, 4, 5]);
       expect(rows()).toContain(survivor);
@@ -112,10 +112,11 @@ describe("SceneLayer layout runtime", () => {
       runtime.realizePlayWorld();
       const liveLayer = runtime.createSceneLayer("menu")!;
       runtime.start(); runtime.tick();
-      const menu = runtime.getWorld().findActor("menu")!;
+      // Scene Layer actor guids are scoped to their layer instance.
+      const menu = runtime.getWorld().findActor(liveLayer.guid + ":menu")!;
       const column = menu.components.find(c => c.guid === "column")!;
       expect(column.transform.position.y).toBe(-1.5);
-      runtime.applySceneLayerScroll(liveLayer.guid, "menu", "viewport", 0, 99);
+      runtime.applySceneLayerScroll(liveLayer.guid, menu.guid, "viewport", 0, 99);
       expect(column.transform.position.y).toBe(1.5);
       for (let i = 0; i < 3; i++) runtime.tick();
       expect(column.transform.position.y).toBe(1.5);
@@ -123,7 +124,7 @@ describe("SceneLayer layout runtime", () => {
       const layouts = commands.filter((c): c is Extract<CommandMessage, { type: "sceneLayerLayout" }> => c.type === "sceneLayerLayout");
       expect(layouts.at(-1)?.entries.find(e => e.componentId === "b")?.clip).toEqual({ x: 0, y: 0, width: 4, height: 4 });
       runtime.removeSceneLayer(liveLayer.guid);
-      expect(runtime.getWorld().findActor("menu")).toBeUndefined();
+      expect(runtime.getWorld().findActor(menu.guid)).toBeUndefined();
     } finally { runtime.stop(); }
   });
 });

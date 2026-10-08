@@ -394,15 +394,17 @@ describe("snapshot publishing", () => {
     });
     const deferred = await launch(playScene());
     const perTick = await launch(playScene());
+    // Scene Layer actor guids are scoped to their layer instance.
+    const second = deferred.runtime.getWorld().getSceneLayers()[0]!.guid + ":second";
     try {
-      const before = slotPose(published(deferred.runtime), deferred.slots.get("second"));
+      const before = slotPose(published(deferred.runtime), deferred.slots.get(second));
       expect(before).toBeDefined();
       burst(deferred.runtime);
       for (let tick = 0; tick < 4; tick += 1) perTick.runtime.tick();
       // The row moved itself in the third tick (ctx.tickIndex 2); the box puts it back.
       const frame = published(deferred.runtime);
       expect(frame.header.tickIndex).toBe(2);
-      expect(slotPose(frame, deferred.slots.get("second"))).toEqual(before);
+      expect(slotPose(frame, deferred.slots.get(second))).toEqual(before);
       expect(comparable(deferred.runtime)).toEqual(comparable(perTick.runtime));
     } finally {
       deferred.runtime.stop();

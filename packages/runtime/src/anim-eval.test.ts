@@ -191,7 +191,9 @@ describe("runtime AnimationGraph evaluation", () => {
       });
       runtime.start();
       runtime.realizePlayWorld();
-      if (owner === "SceneLayer") runtime.createSceneLayer("overlay");
+      const layer = owner === "SceneLayer" ? runtime.createSceneLayer("overlay") : null;
+      // Scene Layer actor guids are scoped to their layer instance.
+      const hero = layer ? layer.guid + ":hero" : "hero";
       runtime.tick();
       runtime.tick();
 
@@ -203,7 +205,7 @@ describe("runtime AnimationGraph evaluation", () => {
       expect(backend).toBeTruthy();
       expect(
         backend!.sphereOverlap({ x: 0.25, y: 0, z: 0 }, 0.05).actorIds,
-      ).toContain("hero");
+      ).toContain(hero);
       expect(
         backend!.sphereOverlap({ x: -0.4, y: 0, z: 0 }, 0.05).actorIds,
       ).toEqual([]);
@@ -211,7 +213,7 @@ describe("runtime AnimationGraph evaluation", () => {
       const component = runtime
         .getWorld()
         .getActors()
-        .find((actor) => actor.guid === "hero")
+        .find((actor) => actor.guid === hero)
         ?.components.find(
           (entry) => entry.classId === "AnimationGraphComponent",
         );
@@ -221,7 +223,7 @@ describe("runtime AnimationGraph evaluation", () => {
 
       expect(
         backend!.sphereOverlap({ x: -0.4, y: 0, z: 0 }, 0.05).actorIds,
-      ).toContain("hero");
+      ).toContain(hero);
       runtime.stop();
     },
   );
