@@ -29,12 +29,8 @@ export class RuntimeVoices {
   observe(command: CommandMessage): void {
     if (command.type === "playSound") {
       const voiceId = command.voiceId?.trim();
-      if (!voiceId) return;
-      // Component Stop sends a Play Sound without an asset for its voice.
-      if (!command.assetGuid) {
-        this.live.delete(voiceId);
-        return;
-      }
+      // A Play Sound with no asset (an unset Play Sound pin) starts no voice.
+      if (!voiceId || !command.assetGuid) return;
       // A replayed voice id restarts and moves to the end of the start order.
       this.live.delete(voiceId);
       this.live.set(voiceId, {

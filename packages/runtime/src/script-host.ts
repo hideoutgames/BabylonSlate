@@ -229,6 +229,7 @@ export interface ScriptHostServices {
       voiceId?: string;
     },
   ): void;
+  stopSound?(voiceId: string): void;
   setParticlePlaying?(
     actorGuid: string,
     playing: boolean,
@@ -2310,7 +2311,7 @@ export class ScriptHost {
       return {};
     }
     if (name === "stopAudio") {
-      this.services.playSound?.("", 0, { voiceId: component.guid });
+      this.services.stopSound?.(component.guid);
       return {};
     }
     if (name === "playParticles" && component.owner) {

@@ -129,7 +129,7 @@ interface AudioHostDeps {
 
 /** Script audio and particle calls: sounds, particle playback and mixer volumes. */
 export function createAudioHostBindings(deps: AudioHostDeps): Pick<ScriptHostServices,
-  "playSound" | "setParticlePlaying" | "setChannelVolume" | "setGlobalVolume"> {
+  "playSound" | "stopSound" | "setParticlePlaying" | "setChannelVolume" | "setGlobalVolume"> {
   return {
     playSound: (asset, volume, options) => {
       deps.emit({
@@ -141,6 +141,9 @@ export function createAudioHostBindings(deps: AudioHostDeps): Pick<ScriptHostSer
         loop: options?.loop,
         voiceId: options?.voiceId ?? deps.scriptVoiceId(),
       });
+    },
+    stopSound: (voiceId) => {
+      deps.emit({ type: "stopSound", voiceId });
     },
     setParticlePlaying: (actorGuid, playing, componentId) => {
       deps.emit({
