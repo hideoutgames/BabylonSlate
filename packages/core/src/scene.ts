@@ -184,6 +184,11 @@ export interface SceneSettings {
    * unloads. Missing keys normalize to [].
    */
   sceneLayers: SceneLayerSpawnEntry[];
+  /**
+   * SceneLayer tabs only: the hosted layer's `physicsEnabled`. World Scenes
+   * always simulate physics and omit it.
+   */
+  layerPhysicsEnabled?: boolean;
 }
 
 /** One entry of the scene's ordered post-process chain. */
@@ -636,6 +641,7 @@ export function normalizeSceneSettings(
     postProcessStack: normalizeScenePostProcessStack(source.postProcessStack),
     sceneLayers: normalizeSceneLayerSpawnList(source.sceneLayers),
     ...(source.foliageGroups !== undefined ? { foliageGroups: normalizeFoliageGroups(source.foliageGroups) } : {}),
+    ...(source.layerPhysicsEnabled !== undefined ? { layerPhysicsEnabled: source.layerPhysicsEnabled === true } : {}),
   };
 }
 
