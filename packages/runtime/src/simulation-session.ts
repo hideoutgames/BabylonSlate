@@ -59,7 +59,7 @@ interface SimulationSessionHost {
  * the prepared asset and data scopes retention validates against, independent
  * stream or SceneLayer instances Keep cannot retain, the final quiescent
  * boundary and the capture request ids. It also owns the Simulate-mode write
- * gate and per-actor live edit eligibility the runtime Inspector uses. The
+ * gate and per-actor live edit eligibility `RuntimeInspectorService` uses. The
  * driver keeps pause state; quiescence blocks a later resume through it.
  */
 export class SimulationSession {

@@ -35,7 +35,7 @@ export interface RuntimeInspectorHost {
   applyMaterial(component: ActorComponent, name: string, value: import("@babylonslate/core").MaterialParameterValue): boolean;
 }
 
-/** No subscriptions or hot-path collection. The driver invokes requests at a completed tick boundary. */
+/** No subscriptions or hot-path collection. `RuntimeInspectorService` invokes requests at a completed tick boundary. */
 export class RuntimeInspector {
   private readonly tokens = new WeakMap<BObject, number>();
   private nextToken = 0;
