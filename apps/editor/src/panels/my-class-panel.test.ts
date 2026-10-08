@@ -528,6 +528,7 @@ describe("My Class members", () => {
         nodes: [],
         edges: [],
         components: [createText3DComponent("text-1")],
+        members: [{ id: "var-1", kind: "variable", name: "Health", typeId: "float" }],
       },
       {
         classId: "Hero",
@@ -565,5 +566,16 @@ describe("My Class members", () => {
         }),
       ]),
     );
+    const rows = blueprintTreeNodes(members, new Set());
+    const variableRows = rows.slice(
+      rows.findIndex((row) => row.id === "section-variables") + 1,
+      rows.findIndex((row) => row.id === "section-events"),
+    );
+    expect(variableRows.map((row) => [row.label, row.depth])).toEqual([
+      ["Components", 1],
+      ["Mesh", 2],
+      ["3D Text", 2],
+      ["Health", 1],
+    ]);
   });
 });
