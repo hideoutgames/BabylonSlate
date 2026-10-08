@@ -609,4 +609,35 @@ describe("runtime AnimationGraph scripts", () => {
     });
     runtime.stop();
   });
+
+  it("advances the graph by the tick's step when slomo changes mid-tick", () => {
+    const commands: CommandMessage[] = [];
+    // The default Idle clip loops over 1 s.
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      dt: 0.1,
+      maxActors: 4,
+      seedDemoActors: false,
+      playScene: animScene(),
+      animGraphs: { "graph-1": createDefaultAnimGraph() },
+      onCommand: (command) => commands.push(command),
+    });
+    try {
+      runtime.start();
+      runtime.realizePlayWorld();
+      const world = runtime.getWorld();
+      let changed = false;
+      world.spawnActorNow(world.createActor({ guid: "slomo", classId: "Actor", hooks: { onTick: () => {
+        if (!changed) changed = runtime.executeConsoleCommand("slomo 2").success;
+      } } }));
+      // Tick 1 keeps its 0.1 s step; the 0.2 s step slomo 2 sets starts with tick 2.
+      runtime.tick();
+      expect(changed).toBe(true);
+      expect(lastAnimState(commands)?.normalisedTime).toBeCloseTo(0.1);
+      runtime.tick();
+      expect(lastAnimState(commands)?.normalisedTime).toBeCloseTo(0.3);
+    } finally {
+      runtime.stop();
+    }
+  });
 });
