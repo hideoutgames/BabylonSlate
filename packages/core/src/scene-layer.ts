@@ -43,6 +43,12 @@ export interface SceneLayerSettings {
   postProcessStack: ScenePostProcessEntry[];
   /** Orange editor outline / 2DAnchor design canvas. Default 32×18. */
   layerBounds: SceneCameraBounds2D;
+  /**
+   * Each instance simulates in its own 2D physics world with `gravity`. Off
+   * (the default): the layer gets no physics world, so its bodies neither move
+   * nor collide and fire no collision events.
+   */
+  physicsEnabled: boolean;
 }
 
 export interface SerializedSceneLayer {
@@ -70,6 +76,7 @@ export function createDefaultSceneLayerSettings(): SceneLayerSettings {
     fixedTimestepMs: defaults.fixedTimestepMs,
     postProcessStack: [],
     layerBounds: { ...SCENE_LAYER_DEFAULT_LAYER_BOUNDS },
+    physicsEnabled: false,
   };
 }
 
@@ -124,6 +131,7 @@ export function normalizeSceneLayer(value: unknown): SerializedSceneLayer {
         sourceSettings.postProcessStack ?? scene.settings.postProcessStack,
       ),
       layerBounds,
+      physicsEnabled: sourceSettings.physicsEnabled === true,
     },
     actors: scene.actors.map(stripDeniedComponents),
     folders: scene.folders,
@@ -362,6 +370,7 @@ export function editorSceneToSceneLayer(
       fixedTimestepMs: scene.settings.fixedTimestepMs,
       postProcessStack: scene.settings.postProcessStack,
       layerBounds: scene.settings.cameraBounds2D,
+      physicsEnabled: scene.settings.layerPhysicsEnabled === true,
     },
     actors: scene.actors,
     folders: scene.folders,
@@ -384,6 +393,7 @@ export function sceneLayerToEditorScene(
       fixedTimestepMs: layer.settings.fixedTimestepMs,
       postProcessStack: layer.settings.postProcessStack,
       cameraBounds2D: { ...layer.settings.layerBounds },
+      layerPhysicsEnabled: layer.settings.physicsEnabled,
     },
     actors: layer.actors,
     folders: layer.folders,

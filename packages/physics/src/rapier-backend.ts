@@ -246,10 +246,15 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
   static async create(
     options: PhysicsBackendOptions,
   ): Promise<Rapier2DPhysicsBackend> {
+    return (await Rapier2DPhysicsBackend.createFactory())(options.gravity);
+  }
+
+  /** Initialize Rapier once; the factory then creates independent worlds synchronously. */
+  static async createFactory(): Promise<(gravity: Vec3) => Rapier2DPhysicsBackend> {
     const mod = await import("@dimforge/rapier2d-deterministic-compat");
     const RAPIER = (mod.default ?? mod) as unknown as RapierApi;
     await RAPIER.init();
-    return new Rapier2DPhysicsBackend(RAPIER, options.gravity);
+    return (gravity) => new Rapier2DPhysicsBackend(RAPIER, gravity);
   }
 
   dispose(): void {

@@ -135,6 +135,7 @@ export class RuntimePropertyWrites {
       this.host.navigation().updateAgentParams(owner);
     }
     const sync = this.host.physics().forActor(owner);
+    if (!sync) return;
     if (component.classId === "RagdollComponent" || component.classId === "MeshComponent") {
       // Ragdoll and mesh-collision edits can create or retire the owner's
       // body; reconcile that one actor from its own chain.
