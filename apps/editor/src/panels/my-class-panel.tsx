@@ -331,6 +331,7 @@ export function membersForGraph(
     typeId: member.typeId,
     typeClassId: member.typeClassId,
     componentId: member.componentId,
+    ...(member.category ? { category: member.category } : {}),
     ...(member.inheritedFrom
       ? { inherited: true, inheritedFrom: member.inheritedFrom }
       : {}),
