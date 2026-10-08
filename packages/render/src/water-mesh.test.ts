@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ArcRotateCamera, CubeTexture, FreeCamera, type Mesh, MeshBuilder, NullEngine, PBRMaterial, Quaternion, Scene, SphericalPolynomial, Texture, type UniformBuffer, Vector3, VertexBuffer } from "@babylonjs/core";
+import { ArcRotateCamera, CubeTexture, FreeCamera, type Mesh, MeshBuilder, NullEngine, PBRMaterial, Quaternion, Ray, Scene, SphericalPolynomial, Texture, type UniformBuffer, Vector3, VertexBuffer } from "@babylonjs/core";
 import {
   createDefaultWaterDefinition, createWaterBlendSample, createWaterWaveOutput, DEFAULT_WATER_BLEND_DISTANCE, evaluateWaterBlend, evaluateWaterVertex,
   normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch, WaterBlendIndex,
@@ -35,6 +35,7 @@ function centreVertex(mesh: Mesh): number {
 function gpuVertex(mesh: Mesh, water: WaterDefinition, body: WaterBodyProperties, index: number, time: number): Vector3 {
   const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!, data = mesh.getVerticesData("slateWaterData")!;
   const rest = Vector3.TransformCoordinates(Vector3.FromArray(positions, index * 3), mesh.computeWorldMatrix(true));
+  if (body.kind === "global") rest.addInPlace(gridOffset(mesh));
   const out = createWaterWaveOutput(), fade = body.kind === "global" ? 0 : waterBankFadeLength(water, body.waveScale);
   evaluateWaterVertex(waterWaveSet(water), rest.x, rest.z, time, data[index * 4]!, body.waveScale, data[index * 4 + 1]!, fade, 0, 0, out);
   return new Vector3(rest.x + out[1]!, rest.y + out[0]!, rest.z + out[2]!);
@@ -54,6 +55,12 @@ const setQuality = (scene: Scene, level: QualityLevel, blendDistance?: number) =
 /** Tests of one body's own layout place several bodies in one scene: they keep blending off. */
 const noBlending = (scene: Scene) => updateSceneRenderingSettings(scene, { water: { blendDistance: 0 } });
 
+/**
+ * World translation the vertex shader adds to the uploaded positions (`slateWaterGridOffset`): a Global grid is uploaded
+ * relative to its snapped centre, so its rest points are the positions plus this (the tests' Global meshes are untransformed).
+ */
+const gridOffset = (mesh: Mesh) => Vector3.FromArray(bindWater(mesh).get("slateWaterGridOffset")!);
+
 /** Bind the built-in surface's shader inputs through its real material plugin; record the uploaded vectors. */
 function bindWater(mesh: Mesh): Map<string, number[]> {
   const vectors = new Map<string, number[]>();
@@ -65,7 +72,8 @@ function bindWater(mesh: Mesh): Map<string, number[]> {
 /** X coordinates of the first grid row, in order. */
 function rowXs(mesh: Mesh): number[] {
   const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!, xs: number[] = [];
-  for (let i = 0; i < positions.length && (i === 0 || positions[i]! > positions[i - 3]!); i += 3) xs.push(positions[i]!);
+  const offset = gridOffset(mesh).x;
+  for (let i = 0; i < positions.length && (i === 0 || positions[i]! > positions[i - 3]!); i += 3) xs.push(positions[i]! + offset);
   return xs;
 }
 
@@ -390,10 +398,10 @@ describe("Water rendering", () => {
       expect(gapAtOrigin()).toBeCloseTo(2 * cell, 4);
       // Each new rest vertex sits at its own world X/Z with the new cell size as its wave filter and the body's depth
       // and open-water edge, so the vertex shader displaces it onto the queried surface.
-      const positions = ocean.getVerticesData(VertexBuffer.PositionKind)!, data = ocean.getVerticesData("slateWaterData")!;
+      const positions = ocean.getVerticesData(VertexBuffer.PositionKind)!, data = ocean.getVerticesData("slateWaterData")!, offset = gridOffset(ocean);
       let checked = 0;
       for (let i = 0; i < positions.length; i += 3) {
-        const x = positions[i]!, z = positions[i + 2]!;
+        const x = positions[i]! + offset.x, z = positions[i + 2]! + offset.z;
         if (Math.abs(x) > 8 || Math.abs(z) > 8) continue;
         const vertex = i / 3, rendered = gpuVertex(ocean, edited, body, vertex, 1.5);
         expect(rendered.y).toBeCloseTo(meshSurface(edited, body, rendered.x, rendered.z, 1.5, data[vertex * 4]!), 4);
@@ -531,7 +539,7 @@ describe("Water rendering", () => {
       expect(sizes.every((size) => size.sea === WATER_FINITE_CELL_BUDGET)).toBe(true);
     } finally { scene.dispose(); engine.dispose(); }
   });
-  it("recentres Global Water as the camera moves by uploading only its rest positions into the same buffers", () => {
+  it("recentres Global Water as the camera moves by moving a grid offset in the shader and uploading no vertex data", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     const camera = new FreeCamera("camera", new Vector3(0, 4, 0), scene);
     try {
@@ -539,25 +547,27 @@ describe("Water rendering", () => {
       updateSceneWater(scene);
       const kinds = [VertexBuffer.PositionKind, VertexBuffer.NormalKind, "slateWaterData", "slateWaterFlow", "slateWaterBaseNormal", "slateWaterOffset"];
       const buffers = kinds.map((kind) => global.getVertexBuffer(kind)!.getBuffer());
-      const count = global.getTotalVertices(), before = Array.from(global.getVerticesData(VertexBuffer.PositionKind)!);
+      const count = global.getTotalVertices(), before = Array.from(global.getVerticesData(VertexBuffer.PositionKind)!), offsetBefore = gridOffset(global);
       const created = [vi.spyOn(engine, "createVertexBuffer"), vi.spyOn(engine, "createDynamicVertexBuffer"), vi.spyOn(engine, "createIndexBuffer")];
-      const uploads = vi.spyOn(global, "updateVerticesData");
+      const uploads = [vi.spyOn(global, "updateVerticesData"), vi.spyOn(engine, "updateDynamicVertexBuffer")];
       camera.position.x += 7.3; camera.position.z -= 2.1; updateSceneWater(scene);
-      // The dense cells follow the eye without new GPU buffers or rest data: only the positions of the same grid move.
-      for (const spy of created) expect(spy).not.toHaveBeenCalled();
-      expect(uploads.mock.calls.map(([kind]) => kind)).toEqual([VertexBuffer.PositionKind]);
+      // The dense cells follow the eye with no new GPU buffers and no upload at all: the same grid is moved by the shader.
+      for (const spy of [...created, ...uploads]) expect(spy).not.toHaveBeenCalled();
       kinds.forEach((kind, i) => expect(global.getVertexBuffer(kind)!.getBuffer()).toBe(buffers[i]));
       expect(global.getTotalVertices()).toBe(count);
-      const after = global.getVerticesData(VertexBuffer.PositionKind)!;
-      expect(Array.from(after)).not.toEqual(before);
-      const xs: number[] = [];
-      for (let i = 0; i < after.length && (i === 0 || after[i]! > after[i - 3]!); i += 3) xs.push(after[i]!);
-      const k = xs.findIndex((value) => value > camera.position.x);
-      expect(xs[k]! - xs[k - 1]!).toBeLessThanOrEqual(0.5 / RENDER_QUALITY_PROFILES.medium.water.meshDensity + 1e-4);
-      // The recentred grid draws exactly what a grid built at this camera position draws: the same vertices, the same
-      // static shader inputs (to float32 precision of the kilometre-wide outer cells) and the same culling bounds.
-      uploads.mockRestore();
+      expect(Array.from(global.getVerticesData(VertexBuffer.PositionKind)!)).toEqual(before);
+      // The offset moved by whole dense cells to the one nearest the camera's move.
+      const offset = gridOffset(global).subtract(offsetBefore), cell = 0.5 / RENDER_QUALITY_PROFILES.medium.water.meshDensity;
+      expect([offset.x, offset.z]).toEqual([expect.closeTo(Math.round(7.3 / cell) * cell, 4), expect.closeTo(Math.round(-2.1 / cell) * cell, 4)]);
+      const xs = rowXs(global), k = xs.findIndex((value) => value > camera.position.x);
+      expect(xs[k]! - xs[k - 1]!).toBeLessThanOrEqual(cell + 1e-4);
+      // The recentred grid draws exactly what a grid built at this camera position draws: the same rest points (the
+      // uploaded lines plus the offset), the same static shader inputs (to float32 precision of the kilometre-wide outer
+      // cells) and the same culling bounds.
+      for (const spy of uploads) spy.mockRestore();
       const fresh = createWaterMesh(scene, "fresh", normalizeWaterBody({}, "global"));
+      const freshOffset = gridOffset(fresh);
+      expect([offset.x + offsetBefore.x, offset.z + offsetBefore.z]).toEqual([expect.closeTo(freshOffset.x, 4), expect.closeTo(freshOffset.z, 4)]);
       for (const kind of kinds) {
         const a = global.getVerticesData(kind)!, b = fresh.getVerticesData(kind)!;
         expect(a.length).toBe(b.length);
@@ -572,6 +582,46 @@ describe("Water rendering", () => {
       camera.maxZ = 4000; updateSceneWater(scene);
       expect(created[1]).toHaveBeenCalled();
     } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
+  });
+  it("picks a recentred Global grid where its water is, as a grid built there is picked", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    const camera = new FreeCamera("camera", new Vector3(0, 4, 0), scene);
+    camera.maxZ = 100;
+    noBlending(scene);
+    try {
+      const global = createWaterMesh(scene, "global", normalizeWaterBody({}, "global"));
+      // A turned, scaled and lifted volume moves its offset through its own matrix.
+      const turn = (mesh: Mesh) => { mesh.position.set(10, 1, -5); mesh.rotation.y = Math.PI / 3; mesh.scaling.set(2, 1, 2); return mesh; };
+      const turned = turn(createWaterMesh(scene, "turned", normalizeWaterBody({}, "global")));
+      updateSceneWater(scene);
+      // The camera moves hundreds of cells: the uploaded lines stay where they were, and the shader offset follows the camera.
+      camera.position.set(400, 4, 0); updateSceneWater(scene);
+      const cell = 0.5 / RENDER_QUALITY_PROFILES.medium.water.meshDensity;
+      expect(Math.abs(gridOffset(global).x - 400)).toBeLessThanOrEqual(cell);
+      const fresh = createWaterMesh(scene, "fresh", normalizeWaterBody({}, "global"));
+      const freshTurned = turn(createWaterMesh(scene, "freshTurned", normalizeWaterBody({}, "global")));
+      updateSceneWater(scene);
+      for (const [x, z] of [[440.3, -17.7], [300, 120]] as const) {
+        const hit = scene.pickWithRay(new Ray(new Vector3(x, 20, z), Vector3.Down()), (candidate) => candidate === turned)!;
+        const expected = scene.pickWithRay(new Ray(new Vector3(x, 20, z), Vector3.Down()), (candidate) => candidate === freshTurned)!;
+        expect(hit.hit, `turned ${x}, ${z}`).toBe(true);
+        expect(hit.pickedPoint!.asArray()).toEqual([expect.closeTo(x, 3), expect.closeTo(1, 3), expect.closeTo(z, 3)]);
+        expect(hit.pickedPoint!.asArray()).toEqual(expected.pickedPoint!.asArray().map((value) => expect.closeTo(value, 3)));
+      }
+      const down = (x: number, z: number, mesh: Mesh) => scene.pickWithRay(new Ray(new Vector3(x, 20, z), Vector3.Down()), (candidate) => candidate === mesh)!;
+      // Far from the mesh origin and from the grid's centre alike: the rest plane under the ray, as a fresh grid gives it.
+      for (const [x, z] of [[440.3, -17.7], [400, 0], [150, 200]] as const) {
+        const hit = down(x, z, global), expected = down(x, z, fresh);
+        expect(hit.hit, `${x}, ${z}`).toBe(true);
+        expect(hit.pickedMesh).toBe(global);
+        expect(hit.pickedPoint!.asArray()).toEqual([expect.closeTo(x, 3), expect.closeTo(0, 3), expect.closeTo(z, 3)]);
+        expect(hit.pickedPoint!.asArray()).toEqual(expected.pickedPoint!.asArray().map((value) => expect.closeTo(value, 3)));
+        expect(hit.distance).toBeCloseTo(20, 3);
+      }
+      // The grid spans 256 m around the camera: the origin is past it, though the uploaded lines still cover it.
+      expect(down(0, 0, global).hit).toBe(false);
+      expect(down(0, 0, fresh).hit).toBe(false);
+    } finally { scene.dispose(); engine.dispose(); }
   });
   it("pauses CPU vertex work for surfaces out of view and resumes it in the frame they come back", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
@@ -710,10 +760,10 @@ describe("Water rendering", () => {
         position: { x: mesh.position.x, y: mesh.position.y, z: mesh.position.z }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 },
       } })), DEFAULT_WATER_BLEND_DISTANCE);
       const check = () => {
-        const positions = sea.getVerticesData(VertexBuffer.PositionKind)!, blend = sea.getVerticesData("slateWaterBlend")!;
+        const positions = sea.getVerticesData(VertexBuffer.PositionKind)!, blend = sea.getVerticesData("slateWaterBlend")!, offset = gridOffset(sea);
         let inside = 0;
         for (let v = 0; v < positions.length / 3; v++) {
-          const x = positions[v * 3]!, y = positions[v * 3 + 1]!, z = positions[v * 3 + 2]!;
+          const x = positions[v * 3]! + offset.x, y = positions[v * 3 + 1]!, z = positions[v * 3 + 2]! + offset.z;
           expect(evaluateWaterBlend(index, 0, x, 0, z, sample)).toBe(true);
           expect(y).toBeCloseTo(sample.restHeight, 4);
           // The margin is stored in metres (`blendNormals`): the same owner, the same sign.
@@ -741,10 +791,11 @@ describe("Water rendering", () => {
       const meshUploads = vi.spyOn(sea, "updateVerticesData"), rangeUploads = vi.spyOn(engine, "updateDynamicVertexBuffer");
       camera.position.x += 7.3; camera.position.z += 3.1;
       updateSceneWater(scene);
-      // The moved grid uploads its rest positions whole; every other attribute only over the rows near the lake.
-      expect(meshUploads.mock.calls.map(([kind]) => kind)).toEqual([VertexBuffer.PositionKind]);
+      // The moved grid is the shader's offset: nothing is uploaded whole, and every attribute (the lifted positions
+      // included) only over the rows near the lake.
+      expect(meshUploads).not.toHaveBeenCalled();
       const partial = rangeUploads.mock.calls.filter(([, , offset]) => offset !== undefined);
-      expect(partial.length).toBe(5);
+      expect(partial.length).toBe(6);
       for (const [, data] of partial) expect((data as Float32Array).length).toBeLessThan(count);
     } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
   });
@@ -774,6 +825,134 @@ describe("Water rendering", () => {
       const fresh = a.getVerticesData("slateWaterBlend")!;
       expect(current.every((value, i) => Math.abs(value - fresh[i]!) < 1e-5)).toBe(true);
     } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
+  });
+  describe("budgeted blend refresh", () => {
+    const KINDS = [VertexBuffer.PositionKind, VertexBuffer.NormalKind, "slateWaterData", "slateWaterFlow", "slateWaterBaseNormal", "slateWaterBlend"];
+    const attributes = (mesh: Mesh) => KINDS.map((kind) => Array.from(mesh.getVerticesData(kind)!));
+    const near = (actual: number[][], expected: number[][]) =>
+      actual.every((values, k) => values.length === expected[k]!.length && values.every((value, i) => Math.abs(value - expected[k]![i]!) < 1e-5));
+    const lakeBody = () => normalizeWaterBody({ width: 30, length: 30, resolution: 24 });
+    /** Both lakes' attributes after a synchronous first pass with the second lake at `pose`. */
+    const fresh = (pose: Vector3, rotationX = 0) => {
+      const engine = new NullEngine(), scene = new Scene(engine);
+      new FreeCamera("camera", new Vector3(0, 30, -40), scene);
+      try {
+        const a = createWaterMesh(scene, "a", lakeBody()), b = createWaterMesh(scene, "b", lakeBody());
+        b.position.copyFrom(pose); b.rotation.x = rotationX;
+        updateSceneWater(scene);
+        return [attributes(a), attributes(b)];
+      } finally { scene.dispose(); engine.dispose(); }
+    };
+    /** Every call advances the clock, so each chunk of the refresh has a measurable cost and the frame budget is reached. */
+    const setup = () => {
+      const engine = new NullEngine(), scene = new Scene(engine);
+      new FreeCamera("camera", new Vector3(0, 30, -40), scene);
+      const clock = { now: 1000 };
+      vi.spyOn(performance, "now").mockImplementation(() => (clock.now += 0.5));
+      const a = createWaterMesh(scene, "a", lakeBody()), b = createWaterMesh(scene, "b", lakeBody());
+      b.position.set(20, 0.1, 0);
+      updateSceneWater(scene);
+      const blendUploads = vi.spyOn(a, "updateVerticesData");
+      const frame = () => { clock.now += 4; updateSceneWater(scene); };
+      const landed = () => blendUploads.mock.calls.filter(([kind]) => kind === "slateWaterBlend").length;
+      return { engine, scene, a, b, clock, frame, landed };
+    };
+
+    it("keeps a moved body's previous blend data while its refresh runs over frames, then swaps in the data of the new pose", () => {
+      const { engine, scene, a, b, clock, frame, landed } = setup();
+      try {
+        const before = attributes(a);
+        clock.now += WATER_BLEND_REFRESH_MS + 100;
+        b.position.x -= 3;
+        let frames = 0;
+        while (landed() === 0 && frames < 40) {
+          frame(); frames++;
+          // Nothing of the new data is visible (nor uploaded) until all of it is there.
+          if (landed() === 0) expect(attributes(a)).toEqual(before);
+        }
+        expect(frames).toBeGreaterThan(1);
+        expect(frames).toBeLessThan(40);
+        expect(landed()).toBe(1);
+        const [expectedA, expectedB] = fresh(b.position);
+        // The neighbour keeps its grid, so the swapped-in data are exactly a fresh build's.
+        expect(attributes(a)).toEqual(expectedA);
+        for (let i = 0; i < 20; i++) frame();
+        expect(near(attributes(b), expectedB!)).toBe(true);
+        expect(landed()).toBe(1);
+      } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
+    });
+
+    it("lands the latest pose when the body moves again before a refresh is complete", () => {
+      const { engine, scene, a, b, clock, frame, landed } = setup();
+      try {
+        clock.now += WATER_BLEND_REFRESH_MS + 100;
+        b.position.x -= 3;
+        frame();
+        expect(landed()).toBe(0);
+        b.position.x -= 2; b.position.z += 1;
+        for (let i = 0; i < 6; i++) frame();
+        // The running refresh finishes, then a second one catches up with the final pose.
+        clock.now += WATER_BLEND_REFRESH_MS + 100;
+        for (let i = 0; i < 40; i++) frame();
+        expect(landed()).toBe(2);
+        const [expectedA, expectedB] = fresh(b.position);
+        expect(attributes(a)).toEqual(expectedA);
+        expect(near(attributes(b), expectedB!)).toBe(true);
+      } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
+    });
+
+    it("still builds the first blend and a rotated body's blend within one frame", () => {
+      const { engine, scene, a, b, clock, frame } = setup();
+      try {
+        // The first blend of both lakes happened in the first frame of `setup`.
+        expect(Math.max(...a.getVerticesData("slateWaterBlend")!)).toBeGreaterThan(0);
+        expect(a.getVerticesData("slateWaterBlend")!.some((value, i) => i % 4 === 2 && value < 0)).toBe(true);
+        clock.now += WATER_BLEND_REFRESH_MS + 100;
+        b.rotation.x = 0.1;
+        frame();
+        expect(near(attributes(b), fresh(b.position, 0.1)[1]!)).toBe(true);
+      } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
+    });
+
+    it("refreshes a Global grid's rows near a moved lake over frames and lands what a fresh build computes", () => {
+      const engine = new NullEngine(), scene = new Scene(engine);
+      new FreeCamera("camera", new Vector3(0, 10, -30), scene);
+      const clock = { now: 1000 };
+      vi.spyOn(performance, "now").mockImplementation(() => (clock.now += 0.5));
+      const build = (lakeX: number) => {
+        const s = lakeX === 20 ? scene : new Scene(new NullEngine());
+        if (s !== scene) new FreeCamera("camera", new Vector3(0, 10, -30), s);
+        const sea = createWaterMesh(s, "sea", normalizeWaterBody({ resolution: 96 }, "global"));
+        const lake = createWaterMesh(s, "lake", normalizeWaterBody({ width: 20, length: 20, resolution: 16 }));
+        lake.position.set(lakeX, 0.2, 0);
+        return { s, sea, lake };
+      };
+      let other: Scene | null = null;
+      try {
+        const { sea, lake } = build(20);
+        updateSceneWater(scene);
+        const uploads = vi.spyOn(engine, "updateDynamicVertexBuffer");
+        const rows = () => uploads.mock.calls.filter(([, , offset]) => offset !== undefined);
+        const before = attributes(sea);
+        clock.now += WATER_BLEND_REFRESH_MS + 100;
+        lake.position.x = 12;
+        let frames = 0;
+        while (rows().length === 0 && frames < 60) {
+          clock.now += 4; updateSceneWater(scene); frames++;
+          if (rows().length === 0) expect(attributes(sea)).toEqual(before);
+        }
+        expect(frames).toBeGreaterThan(1);
+        expect(frames).toBeLessThan(60);
+        const partial = rows();
+        expect(partial.length).toBe(6);
+        for (const [, data] of partial) expect((data as Float32Array).length).toBeLessThan(sea.getTotalVertices());
+        const fresh = build(12);
+        other = fresh.s;
+        updateSceneWater(other);
+        // Open water's rows hold the same values either way (up to the sign of zero in its unit normals).
+        expect(near(attributes(sea), attributes(fresh.sea))).toBe(true);
+      } finally { other?.dispose(); other?.getEngine().dispose(); scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
+    });
   });
   it("discovers blending neighbours only when a body, the distance or the set of surfaces changes", () => {
     const engine = new NullEngine(), scene = new Scene(engine);

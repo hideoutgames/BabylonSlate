@@ -3269,7 +3269,9 @@ if (swCut < 0.0 || swBlendKeep < 0.0 || (swField.a * swFieldOn > ${f(WATER_FIELD
  * `worldPos` needs no large-argument trigonometry. Writes the displaced world position (the clip position, fog,
  * shadows and clip planes follow it) and leaves the height and offset for the varyings in `swvH` / `swvD`, so the
  * fragment finds its rest point and contacts see the rendered height. With `SLATE_WATER_FFT_VERTEX`, the FFT detail
- * band (`fftVertexSource`) adds its displacement before the bank fade.
+ * band (`fftVertexSource`) adds its displacement before the bank fade. `slateWaterGridOffset` (xyz) is the world-space
+ * translation of the rest grid since its positions were uploaded (Global Water's recentre, `waterGridOffset`): it is
+ * added before the rest point is taken, so the swell, bank terms and `vPositionW` all see the translated grid.
  * GLSL-shaped: `A.` attributes, `U.` uniforms, `S.` the view matrix's owner and `O.` outputs are bound per language,
  * then `toWgsl` translates it. Other passes that draw built-in water with their own vertex shader (the shared outline
  * mask) include the same displacement through `waterOutlineVertexSource`, without the material's `vPositionW` output.
@@ -3297,6 +3299,7 @@ vec3 swvWarpM = vec3(1.0 + swvWarpG.x, swvWarpG.y, 1.0 + swvWarpG.z);`, 1, FFT_V
 #ifdef ${WATER_GPU_WAVES_DEFINE}
 float swvSpacing = A.slateWaterData.x;
 float swvChop = U.slateWaterShape.x;
+worldPos = vec4(worldPos.xyz + U.slateWaterGridOffset.xyz, worldPos.w);
 vec2 swvRest = worldPos.xz;
 float swvH = 0.0;
 vec2 swvD = vec2(0.0);${ifFft(`
@@ -3364,7 +3367,7 @@ export function waterVertexSource(language: ShaderLanguage): { definitions: stri
  * on another pass's effect, with `WATER_FFT_SAMPLER`).
  */
 export const WATER_VERTEX_WAVE_UNIFORMS: readonly string[] = [
-  "slateWaterShape", "slateWaterSwellInfo", ...SWELL_DIRECTION, ...SWELL_AMPLITUDE, ...SWELL_GROUP, ...SWELL_WARP, "slateWaterFft", ...FFT_CASCADE_UNIFORMS,
+  "slateWaterShape", "slateWaterSwellInfo", "slateWaterGridOffset", ...SWELL_DIRECTION, ...SWELL_AMPLITUDE, ...SWELL_GROUP, ...SWELL_WARP, "slateWaterFft", ...FFT_CASCADE_UNIFORMS,
 ];
 /** `vertexWaveDefines` per cascades the vertex samples (0-3): built once. */
 const VERTEX_WAVE_DEFINES: ReadonlyArray<readonly string[]> = Array.from({ length: WATER_FFT_CASCADES_MAX + 1 }, (_, cascades) => [
@@ -3395,6 +3398,31 @@ export function waterOutlineVertexSource(language: ShaderLanguage): { declaratio
 export function gpuWaterWaves(material: Material | null | undefined, mesh: AbstractMesh): WaterMaterialPlugin | null {
   const plugin = material?.pluginManager?.getPlugin<WaterMaterialPlugin>("SlateWater");
   return plugin instanceof WaterMaterialPlugin && plugin.gpuWaves && mesh.isVerticesDataPresent("slateWaterData") ? plugin : null;
+}
+
+const gridOffsets = new WeakMap<AbstractMesh, Float64Array>();
+const gridWorld = new Float64Array(3);
+
+/**
+ * Registers `offset` (local X, Z; read live) as the translation of `mesh`'s uploaded rest positions: Global Water
+ * recentres by moving this instead of re-uploading its grid. It is per mesh, not per material, and `slateWaterGridOffset`
+ * carries it to the vertex shaders of the material and of other passes (`bindVertexWaves`).
+ */
+export function setWaterGridOffsetSource(mesh: AbstractMesh, offset: Float64Array): void {
+  gridOffsets.set(mesh, offset);
+}
+
+/**
+ * The mesh's registered grid offset as a world-space vector (into a shared scratch): the linear part of its current
+ * world matrix applied to (x, 0, z). Taking it at bind time keeps it right under any rotation, scale or tilt, and a
+ * floating origin (which only changes the matrix's translation) never reaches it.
+ */
+export function waterGridOffset(mesh: AbstractMesh | null | undefined): Float64Array {
+  const offset = mesh ? gridOffsets.get(mesh) : undefined;
+  if (!offset || (offset[0] === 0 && offset[1] === 0)) return gridWorld.fill(0);
+  const m = mesh!.getWorldMatrix().m, x = offset[0]!, z = offset[1]!;
+  gridWorld[0] = x * m[0]! + z * m[8]!; gridWorld[1] = x * m[1]! + z * m[9]!; gridWorld[2] = x * m[2]! + z * m[10]!;
+  return gridWorld;
 }
 
 /** Translate the restricted GLSL-shaped source above. Only the constructs it uses are supported. */
@@ -4127,7 +4155,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     const vectors = [
       "slateWaterShallow", "slateWaterDeep", "slateWaterFoam", "slateWaterMotion", "slateWaterLook", "slateWaterWaves", "slateWaterSun", "slateWaterSunColor",
       "slateWaterLight", "slateWaterShape", "slateWaterFieldBounds", "slateWaterFieldInfo", "slateWaterFieldStep", "slateWaterContactBounds", "slateWaterContactInfo",
-      "slateWaterOrigin", "slateWaterSwellInfo", "slateWaterSea", "slateWaterRipple", "slateWaterTerms", "slateWaterChopShift", "slateWaterSwash",
+      "slateWaterOrigin", "slateWaterGridOffset", "slateWaterSwellInfo", "slateWaterSea", "slateWaterRipple", "slateWaterTerms", "slateWaterChopShift", "slateWaterSwash",
       // Realistic: the analytic sky's zenith and horizon (scene background and fog colours), the per-channel
       // absorption from Shallow Color (w: Low's single coefficient), the uniform-only sun terms and the light through
       // thin crests (Subsurface).
@@ -4245,6 +4273,9 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   override hardBindForSubMesh(buffer: UniformBuffer, scene: Scene, _engine?: AbstractEngine, subMesh?: SubMesh): void {
     this.bindObjectFeatures(buffer, scene, subMesh);
     this.bindFft(buffer, scene, subMesh);
+    // Per mesh, every draw: surfaces that share this material recentre independently, so it is not a frame constant.
+    const grid = waterGridOffset(subMesh?.getRenderingMesh() ?? this.mesh);
+    buffer.updateFloat4("slateWaterGridOffset", grid[0]!, grid[1]!, grid[2]!, 0);
     const data = sceneWaterBindingData(scene);
     // Packed without allocation (the swell kernel shared between bodies and draws), then uploaded.
     const values = this.frameConstants(scene, data), count = this._blend ? FRAME_UNIFORMS.length : FRAME_BLEND_START;
@@ -4475,9 +4506,12 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   }
   /**
    * Sets `WATER_VERTEX_WAVE_UNIFORMS` and the band's sampler on another pass's effect for this frame, as
-   * `hardBindForSubMesh` and `bindForSubMesh` do (the band's footprint follows that pass's projection and target).
+   * `hardBindForSubMesh` and `bindForSubMesh` do (the band's footprint follows that pass's projection and target), and
+   * the drawn `mesh`'s grid offset.
    */
-  bindVertexWaves(effect: Effect, scene: Scene): void {
+  bindVertexWaves(effect: Effect, scene: Scene, mesh: AbstractMesh): void {
+    const grid = waterGridOffset(mesh);
+    effect.setFloat4("slateWaterGridOffset", grid[0]!, grid[1]!, grid[2]!, 0);
     const swell = this.swellConstants(scene), warp = this.warp;
     for (let i = 0; i < WATER_WAVE_MAX_COMPONENTS; i++) {
       const o = i * WATER_WAVE_SHADER_STRIDE;

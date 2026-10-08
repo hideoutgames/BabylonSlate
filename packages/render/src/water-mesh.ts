@@ -1,5 +1,8 @@
 import { isSceneGameTimePaused } from "./scene-game-time";
-import { ArcRotateCamera, Matrix, Mesh, PBRMaterial, Quaternion, Vector3, VertexBuffer, VertexData, type AbstractMesh, type Camera, type Material, type Scene, type SubMesh } from "@babylonjs/core";
+import {
+  ArcRotateCamera, Matrix, Mesh, PBRMaterial, Quaternion, Ray, Vector3, VertexBuffer, VertexData,
+  type AbstractMesh, type Camera, type Material, type PickingInfo, type Scene, type SubMesh, type TrianglePickingPredicate,
+} from "@babylonjs/core";
 import {
   createDefaultWaterDefinition, createWaterBlendSample, createWaterWaveOutput, evaluateWaterBlend, evaluateWaterVertex, MAX_WATER_BLEND_DISTANCE, normalizeWaterBody,
   normalizeWaterDefinition, waterBankFadeLength, WaterBlendIndex, waterEulerianGradient, waterFootprint, waterHorizontalEnvelope,
@@ -10,7 +13,7 @@ import { inActiveView } from "./active-view";
 import { updateDynamicMaterialBounds } from "./material-bounds";
 import { sceneWaterBlendDistance, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision } from "./render-settings";
 import { requestWaterFft, updateSceneWaterFft } from "./water-fft";
-import { applyWaterMaterialScalars, configureWaterMaterial, contactRange, WaterMaterialPlugin } from "./water-material";
+import { applyWaterMaterialScalars, configureWaterMaterial, contactRange, setWaterGridOffsetSource, waterGridOffset, WaterMaterialPlugin } from "./water-material";
 import { WaterContactField } from "./water-contact-field";
 import { WaterField, type WaterFieldSurface } from "./water-field";
 import { WaterReflection } from "./water-reflection";
@@ -42,6 +45,12 @@ type Surface = {
   restMin: Vector3; restMax: Vector3;
   /** Local X/Z by which the last recentre moved the grid (shifts sub-mesh bounds). */
   shift: Float64Array;
+  /**
+   * Local X/Z the vertex shader adds to the uploaded `positions` (`slateWaterGridOffset`): a Global grid on the GPU path
+   * uploads its lines relative to the snapped centre and this is the centre, so a recentre uploads no vertex data. Zero
+   * for every other surface, whose `positions` are the rest points themselves.
+   */
+  gridOffset: Float64Array;
   /** World matrix the per-vertex rest data was computed for; NaN forces a recompute. */
   placed: Float64Array;
   time: number | null; version: number;
@@ -52,7 +61,9 @@ type Surface = {
   /**
    * Rest grid (local) and its world rest points. Every other per-vertex rest input (spacing, normals, current, bank
    * distance, depth) depends only on the volume's rotation and scale; `worldBase` is the CPU path's input and goes stale
-   * on the GPU path while the volume only translates.
+   * on the GPU path while the volume only translates. `base` always holds the true local rest points (the CPU path,
+   * bounds and blend rows read it); `positions` is what is uploaded: `base`, or on a GPU Global grid `base` minus the
+   * snapped centre (`gridOffset`), which a recentre leaves unchanged (`writeRestPositions`).
    */
   base: Float32Array; worldBase: Float32Array; positions: Float32Array; normals: Float32Array;
   baseNormals: Float32Array; data: Float32Array; flow: Float32Array; spacing: Float32Array;
@@ -97,6 +108,46 @@ type Surface = {
    * neighbour's reach; empty (first > last) when none. Rows outside it hold open water's uniform rest data.
    */
   blendRows: Int32Array;
+  /** The budgeted blend refresh (`BlendRebuild`), created with the first one and kept while the surface blends. */
+  stage: BlendRebuild | null;
+};
+/** Per-vertex arrays (and rest extents) of a blend write: the surface's own, or a budgeted rebuild's staging copies. */
+type RestBuffers = Pick<Surface, "base" | "worldBase" | "normals" | "baseNormals" | "data" | "flow" | "bankGradient" | "blendData" | "blendRest" | "restMin" | "restMax">;
+type RestArray = "base" | "worldBase" | "normals" | "baseNormals" | "data" | "flow" | "bankGradient" | "blendData" | "blendRest";
+/** `RestBuffers`' arrays with their floats per vertex. */
+const REST_ARRAYS: ReadonlyArray<readonly [RestArray, number]> = [
+  ["base", 3], ["worldBase", 3], ["normals", 3], ["baseNormals", 3], ["data", 4], ["flow", 3], ["bankGradient", 2], ["blendData", 4], ["blendRest", 6],
+];
+type StageBuffers = RestBuffers & { metres: Float32Array };
+/**
+ * What `blendRange` reads and accumulates: the neighbour index it evaluates (the scene's, or a rebuild's frozen copy), the
+ * body's world matrix, the neighbours' world bounds, and per write the extremes a finished write applies to the surface.
+ */
+type BlendInputs = {
+  index: WaterBlendIndex; distance: number; self: number; world: Matrix; inverse: Matrix;
+  near: Float64Array[]; lift: Vector3;
+  ranged: boolean; varies: boolean; highest: number; partners: Map<number, number>;
+};
+const KERNEL = 0, FIT = 1, LANDED = 2;
+/**
+ * A moved blending body's periodic blend refresh, spread over frames (`advanceBlendRebuild`). It evaluates a frozen copy
+ * of the neighbour index and the world matrix of the frame it began in, into staging copies of the per-vertex arrays: the
+ * surface keeps drawing its previous blend data until every vertex has its new data, which then replaces it at once.
+ * Vertices [first, end) are written (all of them, or a Global grid's rows near a neighbour: `rows`), in two passes of
+ * `BLEND_CHUNK` vertices: blend and rest data (`KERNEL`), then the rest normals' fit, which reads neighbours (`FIT`).
+ */
+type BlendRebuild = {
+  active: boolean;
+  /** Began this frame: the staging copies are seeded at the first advance, from the surface as it is then. */
+  pending: boolean;
+  /** `SurfaceBlend.key` this rebuild lands, and when it began (performance.now). */
+  key: number[]; started: number;
+  index: WaterBlendIndex; inputs: BlendInputs; self: number; distance: number;
+  world: Matrix; inverse: Matrix;
+  buffers: StageBuffers;
+  phase: number; cursor: number; first: number; end: number;
+  /** A GPU Global grid: only the rows near a neighbour are written, `reach` being the rows within a neighbour's reach. */
+  rows: boolean; reach: Int32Array;
 };
 type SurfaceBlend = {
   /** This surface's body in the scene's `WaterBlendIndex`. */
@@ -114,21 +165,32 @@ type SurfaceBlend = {
   restVaries: boolean;
   /** The largest swell height scale over the grid (a calmer body takes a rougher neighbour's waves near the seam). */
   heightScale: number;
-  /** New blend data for the same grid (a neighbour moved or changed): the next placement rewrites rest data only. */
-  refresh: boolean;
 };
 /**
  * One scene's blending: its index of enabled surfaces and the distance it was built for. `waiting` is set while a
  * moved surface's neighbours keep their previous blend data (`WATER_BLEND_REFRESH_MS`).
  */
-type SceneBlend = { index: WaterBlendIndex; distance: number; dirty: boolean; waiting: boolean; members: Surface[] };
+type SceneBlend = { index: WaterBlendIndex; distance: number; dirty: boolean; waiting: boolean; members: Surface[]; spent: number };
 
 /**
- * While blending surfaces move (a dragged, animated or tide-driven body), each surface rebuilds its blend data at most
+ * While blending surfaces move (a dragged, animated or tide-driven body), each surface starts a new blend refresh at most
  * this often (milliseconds), keeping the previous data in between; the last move always lands once the interval
  * passes. A grid that must be rebuilt (a new grid extension, a rotation out of level) never waits.
  */
 export const WATER_BLEND_REFRESH_MS = 200;
+/**
+ * Milliseconds of blend refresh work all of a scene's surfaces do in one frame. A refresh runs in chunks of
+ * `BLEND_CHUNK` vertices: each rebuilding surface advances at least one chunk a frame, and more while this is unspent. A
+ * refresh too big for that to land within `WATER_BLEND_DEADLINE_MS` also advances an even share of its chunks per frame
+ * (so a large grid costs a few milliseconds a frame for a few frames, not one frame's worth of rewrite), and one still
+ * unfinished at the deadline (or after two frames when frames are slower than half of it) ignores the budget and finishes
+ * in its frame, so a refresh always lands.
+ */
+export const WATER_BLEND_FRAME_BUDGET_MS = 2;
+export const WATER_BLEND_DEADLINE_MS = 100;
+const BLEND_CHUNK = 32;
+/** At least a hair per chunk, so a clock that does not advance within a frame still spreads the work. */
+const BLEND_CHUNK_MIN_MS = 0.05;
 const blendKey: number[] = [];
 const sceneBlends = new WeakMap<Scene, SceneBlend>();
 let surfaceIds = 0;
@@ -231,6 +293,8 @@ export function updateSceneWater(scene: Scene): void {
   if (!entries) return;
   syncSceneBlend(scene, entries);
   const now = performance.now();
+  const blendState = sceneBlends.get(scene);
+  if (blendState) blendState.spent = 0;
   let restored = 0;
   for (const surface of entries) {
     syncCopyIntent(scene, surface);
@@ -244,7 +308,7 @@ export function updateSceneWater(scene: Scene): void {
       continue;
     }
     surface.disabledSince = -1;
-    placeSurface(surface, time);
+    placeSurface(surface, time, now);
     // Re-enabled water restores its textures after its placement, a few surfaces per frame (streaming in a section that
     // enables many bodies spreads the work); the rest draw without them until their turn.
     if (surface.released && restored < WATER_RESTORES_PER_FRAME) {
@@ -272,14 +336,15 @@ const blendPosition = new Vector3(), blendScaling = new Vector3(), blendRotation
  * nothing pays nothing: with the distance at 0 or a single surface and no blend in place, this returns at once; while
  * surfaces blend, a frame without changes costs one comparison of each surface's world matrix. A changed distance, a
  * moved, enabled, created, disposed or edited surface rebuilds the index; only surfaces whose own placement or
- * neighbours changed get new blend data (a rebuilt rest grid at their placement this frame).
+ * neighbours changed get new blend data: a rebuilt rest grid at their placement this frame, or, for a level surface
+ * with an unchanged grid extension, a budgeted refresh (`BlendRebuild`) that keeps the previous data until it lands.
  */
 function syncSceneBlend(scene: Scene, entries: Set<Surface>): void {
   const distance = sceneWaterBlendDistance(scene);
   let state = sceneBlends.get(scene);
   if (!state) {
     if (distance === 0 || entries.size < 2) return;
-    state = { index: new WaterBlendIndex(), distance: -1, dirty: true, waiting: false, members: [] };
+    state = { index: new WaterBlendIndex(), distance: -1, dirty: true, waiting: false, members: [], spent: 0 };
     sceneBlends.set(scene, state);
   }
   let dirty = state.dirty || state.distance !== distance || state.waiting;
@@ -319,6 +384,7 @@ function syncSceneBlend(scene: Scene, entries: Set<Surface>): void {
     const self = members.indexOf(s), neighbours = self < 0 ? [] : index.neighbours(self);
     if (!neighbours.length) {
       if (s.blend) { s.blend = null; s.version++; if (s.plugin) { s.plugin.blend = false; s.plugin.partner = null; } }
+      s.stage = null;
       continue;
     }
     let finite = false;
@@ -328,19 +394,47 @@ function syncSceneBlend(scene: Scene, entries: Set<Surface>): void {
     key.length = 0;
     key.push(distance, reach, s.blendStamp, s.blendRevision);
     for (const j of neighbours) key.push(members[j]!.uid, members[j]!.blendStamp, members[j]!.blendRevision);
-    const previous = s.blend;
-    if (previous && previous.key.length === key.length && previous.key.every((value, i) => value === key[i])) { previous.self = self; continue; }
-    // A level surface whose grid extension is unchanged keeps its grid and rewrites only its rest data; anything else
-    // builds a new grid.
+    const previous = s.blend, stage = s.stage;
+    if (previous && sameKey(previous.key, key)) {
+      // Back at the pose its data is for: a refresh still running for another one is moot.
+      if (stage) stage.active = false;
+      previous.self = self;
+      continue;
+    }
+    // A level surface whose grid extension is unchanged keeps its grid and refreshes only its rest data, spread over
+    // frames (`advanceBlendRebuild`); anything else builds a new grid at once.
     const level = Math.abs(s.blendMatrix[1]!) < 1e-9 && Math.abs(s.blendMatrix[9]!) < 1e-9;
-    const refresh = previous !== null && previous.reach === reach && level;
-    // Moving neighbours: keep the previous blend data until the refresh interval passes.
-    if (refresh && now - previous.built < WATER_BLEND_REFRESH_MS) { previous.self = self; state.waiting = true; continue; }
-    s.blend = { self, reach, key: key.slice(), built: now, restVaries: false, heightScale: 1, refresh };
-    if (refresh) s.boundsDirty = true;
-    else s.version++;
+    if (previous && previous.reach === reach && level) {
+      previous.self = self;
+      // A refresh already running finishes on the pose it began with (its frozen index keeps it consistent); a
+      // newer pose is picked up by the one that follows it.
+      if (stage?.active) { state.waiting = true; continue; }
+      // Moving neighbours: keep the previous blend data until the refresh interval passes.
+      if (now - previous.built < WATER_BLEND_REFRESH_MS) { state.waiting = true; continue; }
+      beginBlendRebuild(s, previous, key, index, bodies, now);
+      continue;
+    }
+    if (stage) stage.active = false;
+    s.blend = { self, reach, key: key.slice(), built: now, restVaries: false, heightScale: 1 };
+    s.version++;
     if (s.plugin) s.plugin.blend = true;
   }
+}
+
+const sameKey = (a: readonly number[], b: readonly number[]) => a.length === b.length && a.every((value, i) => value === b[i]);
+
+/**
+ * Starts `s`'s blend refresh for `key`: its own copy of the neighbour index (updated to this frame's bodies, so the
+ * budgeted chunks that follow see one consistent pose however the bodies move meanwhile). The first advance seeds the
+ * staging buffers; the surface's blend data stay as they are until the refresh lands.
+ */
+function beginBlendRebuild(s: Surface, blend: SurfaceBlend, key: readonly number[], live: WaterBlendIndex, bodies: readonly WaterBlendBody[], now: number): void {
+  const stage = s.stage ??= createBlendRebuild();
+  stage.index.update(bodies, live.distance);
+  stage.distance = live.distance; stage.self = blend.self; stage.started = now; blend.built = now;
+  stage.key.length = 0;
+  for (const value of key) stage.key.push(value);
+  stage.active = true; stage.pending = true;
 }
 
 /** Dense cells of an axis with `count` cells: the middle half. */
@@ -454,8 +548,9 @@ type LayoutChange = typeof UNCHANGED | typeof RECENTRED | typeof REBUILT;
 /**
  * Keeps the rest grid current. When Global Water's centre only moves by whole cells, the grid is the same one
  * translated (its lines are fixed offsets from the snapped centre, and every other rest input is uniform over open
- * water), so only its rest positions move: `RECENTRED`, with no per-vertex rest data, allocation or new buffers. Any
- * other input change builds a new grid: `REBUILT`.
+ * water), so only its rest positions move: `RECENTRED`, with no per-vertex rest data, allocation or new buffers (on the
+ * GPU path the shader moves the uploaded grid by `gridOffset`: no upload either). Any other input change builds a new
+ * grid: `REBUILT`.
  */
 function updateLayout(s: Surface, world: Matrix, inverse: Matrix): LayoutChange {
   const { body, water, mesh } = s;
@@ -562,7 +657,7 @@ function updateLayout(s: Surface, world: Matrix, inverse: Matrix): LayoutChange 
     for (let index = 0; index < s.spacing.length; index++) finest = Math.min(finest, s.spacing[index]!);
     s.plugin.meshSpacing = finest;
   }
-  s.positions.set(base);
+  writeRestPositions(s, 0, count);
   const indices: number[] = [], uvs: number[] = [];
   for (let row = 0; row <= rows; row++) for (let col = 0; col <= columns; col++) {
     uvs.push(col / columns, row / rows);
@@ -609,8 +704,26 @@ function riverExtension(s: Surface, world: Matrix, reach: number): (index: numbe
   return (i) => widths[i] ?? 0;
 }
 
-const blendSample = createWaterBlendSample(), blendPoint = new Vector3(), blendLift = new Vector3();
-const blendPartners = new Map<number, number>();
+const blendSample = createWaterBlendSample(), blendPoint = new Vector3();
+
+const createBlendInputs = (): BlendInputs => ({
+  index: null as unknown as WaterBlendIndex, distance: 0, self: 0, world: Matrix.Identity(), inverse: Matrix.Identity(),
+  near: [], lift: new Vector3(), ranged: false, varies: false, highest: 1, partners: new Map(),
+});
+
+/** Points `inputs` at a neighbour index, the body `self` in it and the world matrix the body is evaluated at. */
+function blendInputs(inputs: BlendInputs, index: WaterBlendIndex, distance: number, self: number, world: Matrix, inverse: Matrix): BlendInputs {
+  inputs.index = index; inputs.distance = distance; inputs.self = self; inputs.world = world; inputs.inverse = inverse;
+  inputs.near.length = 0;
+  for (const j of index.neighbours(self)) inputs.near.push(index.bodies[j]!.bounds);
+  return inputs;
+}
+
+/** The scene's own index and the surface's own placement: what a write that happens at once evaluates. */
+const liveInputs = createBlendInputs();
+function liveBlendInputs(state: SceneBlend, self: number, world: Matrix, inverse: Matrix): BlendInputs {
+  return blendInputs(liveInputs, state.index, state.distance, self, world, inverse);
+}
 
 /** Whether world X/Z lies within `reach` of any of `bounds` (min X, max X, ..., min Z, max Z). */
 function inBlendReach(bounds: readonly Float64Array[], reach: number, x: number, z: number): boolean {
@@ -619,15 +732,6 @@ function inBlendReach(bounds: readonly Float64Array[], reach: number, x: number,
     if (x >= b[0]! - reach && x <= b[1]! + reach && z >= b[4]! - reach && z <= b[5]! + reach) return true;
   }
   return false;
-}
-
-/** World bounds of a blending surface's neighbours, in neighbour order (reused scratch). */
-const neighbourBounds: Float64Array[] = [];
-function blendNeighbourBounds(state: SceneBlend, self: number): Float64Array[] {
-  const list = state.index.neighbours(self);
-  neighbourBounds.length = 0;
-  for (const j of list) neighbourBounds.push(state.index.bodies[j]!.bounds);
-  return neighbourBounds;
 }
 
 /**
@@ -642,17 +746,27 @@ function blendNeighbourBounds(state: SceneBlend, self: number): Float64Array[] {
 function placeBlend(s: Surface, world: Matrix, inverse: Matrix, first = 0, end = s.base.length / 3): void {
   const state = sceneBlends.get(s.mesh.getScene()), blend = s.blend;
   if (!state || !blend) return;
-  const base = s.base, data = s.blendData, rest = s.blendRest, sample = blendSample;
-  const partners = blendPartners;
-  partners.clear();
-  let varies = false;
-  Vector3.TransformNormalFromFloatsToRef(0, 1, 0, inverse, blendLift);
-  const ranged = first > 0 || end < base.length / 3;
-  // A range leaves open water's plane (local y = 0) everywhere else.
-  if (ranged) { s.restMin.y = 0; s.restMax.y = 0; }
-  else { s.restMin.setAll(Infinity); s.restMax.setAll(-Infinity); }
+  const inputs = liveBlendInputs(state, blend.self, world, inverse);
+  beginBlend(inputs, s, first > 0 || end < s.base.length / 3);
+  blendRange(inputs, s, s, first, end);
+  finishBlend(s, inputs);
+}
+
+/** Starts a write of `b`: a range leaves open water's plane (local y = 0) everywhere else. */
+function beginBlend(inputs: BlendInputs, b: RestBuffers, ranged: boolean): void {
+  inputs.ranged = ranged; inputs.varies = false; inputs.highest = 1;
+  inputs.partners.clear();
+  Vector3.TransformNormalFromFloatsToRef(0, 1, 0, inputs.inverse, inputs.lift);
+  if (ranged) { b.restMin.y = 0; b.restMax.y = 0; }
+  else { b.restMin.setAll(Infinity); b.restMax.setAll(-Infinity); }
+}
+
+/** The kernel over vertices [first, end) of `b`, which may be called again for further ranges of one write. */
+function blendRange(inputs: BlendInputs, s: Surface, b: RestBuffers, first: number, end: number): void {
+  const base = b.base, data = b.blendData, rest = b.blendRest, sample = blendSample, partners = inputs.partners, lift = inputs.lift;
+  const world = inputs.world, index = inputs.index, self = inputs.self, near = inputs.near, ranged = inputs.ranged;
   // Vertices beyond every neighbour's reach keep the body's own rest data (most of a Global grid): no kernel call.
-  const reach = state.distance / 2, near = blendNeighbourBounds(state, blend.self);
+  const reach = inputs.distance / 2;
   const open = s.body.kind === "global";
   for (let v = first; v < end; v++) {
     const i = v * 3, d = v * 4, r = v * 6;
@@ -663,10 +777,10 @@ function placeBlend(s: Surface, world: Matrix, inverse: Matrix, first = 0, end =
       // NaN marks the body's own rest data for `placeRestData`.
       data[d] = 1; data[d + 1] = 1; data[d + 2] = 1; data[d + 3] = 0;
       rest[r] = NaN; rest[r + 5] = blendPoint.y;
-    } else if (evaluateWaterBlend(state.index, blend.self, blendPoint.x, blendPoint.y, blendPoint.z, sample)) {
-      const lift = sample.restHeight - sample.ownRestHeight;
-      if (Math.abs(lift) > 1e-4) varies = true;
-      base[i] = base[i]! + blendLift.x * lift; base[i + 1] = base[i + 1]! + blendLift.y * lift; base[i + 2] = base[i + 2]! + blendLift.z * lift;
+    } else if (evaluateWaterBlend(index, self, blendPoint.x, blendPoint.y, blendPoint.z, sample)) {
+      const blendLift = sample.restHeight - sample.ownRestHeight;
+      if (Math.abs(blendLift) > 1e-4) inputs.varies = true;
+      base[i] = base[i]! + lift.x * blendLift; base[i + 1] = base[i + 1]! + lift.y * blendLift; base[i + 2] = base[i + 2]! + lift.z * blendLift;
       data[d] = sample.heightScale; data[d + 1] = sample.offsetScale; data[d + 2] = sample.margin; data[d + 3] = sample.foreign;
       rest[r] = Math.max(-1e4, Math.min(1e4, sample.union)); rest[r + 1] = sample.depth;
       rest[r + 2] = sample.flowX; rest[r + 3] = sample.flowY; rest[r + 4] = sample.flowZ; rest[r + 5] = sample.restHeight;
@@ -676,20 +790,25 @@ function placeBlend(s: Surface, world: Matrix, inverse: Matrix, first = 0, end =
       data[d] = 0; data[d + 1] = 0; data[d + 2] = -1; data[d + 3] = 0;
       rest[r] = -1; rest[r + 1] = 0; rest[r + 2] = rest[r + 3] = rest[r + 4] = 0; rest[r + 5] = blendPoint.y;
     }
+    if (data[d]! > inputs.highest) inputs.highest = data[d]!;
     if (ranged) {
-      s.restMin.y = Math.min(s.restMin.y, base[i + 1]!); s.restMax.y = Math.max(s.restMax.y, base[i + 1]!);
+      b.restMin.y = Math.min(b.restMin.y, base[i + 1]!); b.restMax.y = Math.max(b.restMax.y, base[i + 1]!);
     } else {
-      s.restMin.minimizeInPlaceFromFloats(base[i]!, base[i + 1]!, base[i + 2]!);
-      s.restMax.maximizeInPlaceFromFloats(base[i]!, base[i + 1]!, base[i + 2]!);
+      b.restMin.minimizeInPlaceFromFloats(base[i]!, base[i + 1]!, base[i + 2]!);
+      b.restMax.maximizeInPlaceFromFloats(base[i]!, base[i + 1]!, base[i + 2]!);
     }
   }
-  blend.restVaries = varies;
-  let highest = 1;
-  for (let d = first * 4; d < end * 4; d += 4) highest = Math.max(highest, data[d]!);
-  blend.heightScale = highest;
+}
+
+/** Applies a finished write's results (`blendRange`'s accumulations) to the surface. */
+function finishBlend(s: Surface, inputs: BlendInputs): void {
+  const blend = s.blend;
+  if (!blend) return;
+  blend.restVaries = inputs.varies;
+  blend.heightScale = inputs.highest;
   let partner = -1, most = 0;
-  for (const [index, weight] of partners) if (weight > most) { most = weight; partner = index; }
-  if (s.plugin) s.plugin.partner = partner >= 0 ? state.index.bodies[partner]!.definition : null;
+  for (const [index, weight] of inputs.partners) if (weight > most) { most = weight; partner = index; }
+  if (s.plugin) s.plugin.partner = partner >= 0 ? inputs.index.bodies[partner]!.definition : null;
 }
 
 /**
@@ -707,6 +826,28 @@ function placeGlobalGrid(s: Surface, cx: number, cz: number): void {
   }
   s.restMin.x = base[0]!; s.restMin.z = base[2]!;
   s.restMax.x = base[base.length - 3]!; s.restMax.z = base[base.length - 1]!;
+}
+
+/** Whether the surface uploads its Global grid relative to the snapped centre, which the shader adds back (`gridOffset`). */
+const centredGrid = (s: Surface) => s.gpu && s.body.kind === "global";
+
+/**
+ * Fills `positions` for vertices [first, end) from `base`. A GPU Global grid is uploaded relative to its snapped centre
+ * (`gridOffset`), so these values depend only on the grid lines and the blend lift, never on where the grid currently
+ * is: a recentre leaves them, and the uploaded buffer, as they are. The centre is subtracted from the grid line, not
+ * from the float32 `base`, so open water's positions are exactly the lines.
+ */
+function writeRestPositions(s: Surface, first: number, end: number): void {
+  const base = s.base, out = s.positions;
+  if (!centredGrid(s)) { out.set(base.subarray(first * 3, end * 3), first * 3); return; }
+  const stride = s.layoutColumns + 1, cx = s.layoutState[L_CX]!, cz = s.layoutState[L_CZ]!, xs = s.gridX, zs = s.gridZ;
+  for (let v = first; v < end; v++) {
+    const i = v * 3, col = v % stride, row = (v - col) / stride;
+    // The blend lift's X/Z part (zero unless the volume is tilted) is the only difference from the lines.
+    out[i] = xs[col]! + (base[i]! - Math.fround(cx + xs[col]!));
+    out[i + 1] = base[i + 1]!;
+    out[i + 2] = zs[row]! + (base[i + 2]! - Math.fround(cz + zs[row]!));
+  }
 }
 
 const waveOut = createWaterWaveOutput(), slopeOut = new Float64Array(2);
@@ -760,9 +901,11 @@ function updateBounds(s: Surface, world: Matrix, inverse: Matrix, recentred: boo
  * the grid and padded bounds current. Per-vertex rest data (base normals, current, bank distance, depth, spacing) depend
  * only on the grid and the volume's rotation and scale, so only a rebuilt grid or a rotated or scaled volume recomputes
  * and uploads them. On the GPU path a translated volume uploads nothing (the shader reads world positions) and a Global
- * recentre uploads only its rest positions; the CPU path re-derives its world rest points for its next animation step.
+ * recentre uploads nothing (it moves `gridOffset`; a blending grid rewrites only the rows near a neighbour); the CPU path re-derives its world rest points for its next animation step.
+ * A blending body's refresh for moved neighbours is not placed here at once: `advanceBlendRebuild` spreads it over
+ * frames and swaps it in when it is complete.
  */
-function placeSurface(s: Surface, time: number): void {
+function placeSurface(s: Surface, time: number, now: number): void {
   if (s.plugin) s.plugin.time = time;
   const placed = s.placed, m = s.mesh.computeWorldMatrix(!s.mesh.isSynchronized()).m;
   let linear = false, translated = false;
@@ -780,29 +923,30 @@ function placeSurface(s: Surface, time: number): void {
   const world = s.world, inverse = s.inverse;
   syncQuality(s);
   const layout = updateLayout(s, world, inverse);
+  const centred = centredGrid(s);
+  s.gridOffset[0] = centred ? s.layoutState[L_CX]! : 0; s.gridOffset[1] = centred ? s.layoutState[L_CZ]! : 0;
   const rebuilt = linear || layout === REBUILT;
+  // A new grid or a moved Global grid writes its blend data at once, from the neighbours as they are now: a refresh
+  // begun for the grid it replaces is dropped.
+  if (s.stage?.active && (rebuilt || layout === RECENTRED)) s.stage.active = false;
   // A blending surface lifts its grid to the blended rest height before its bounds are padded. A blending Global grid
-  // on the GPU path that only recentred or whose neighbours changed rewrites and uploads only the rows near a neighbour
-  // (`placeGlobalBlend`): open water's own rest data are uniform everywhere else.
-  const refresh = s.blend?.refresh === true;
-  const globalRows = s.blend !== null && s.gpu && s.body.kind === "global" && !rebuilt && (layout === RECENTRED || refresh);
-  if (globalRows) placeGlobalBlend(s, layout === RECENTRED);
-  else if (s.blend && (rebuilt || layout === RECENTRED || refresh)) placeBlend(s, world, inverse);
+  // on the GPU path that only recentred rewrites and uploads only the rows near a neighbour (`placeGlobalBlend`): open
+  // water's own rest data are uniform everywhere else.
+  const globalRows = s.blend !== null && s.gpu && s.body.kind === "global" && !rebuilt && layout === RECENTRED;
+  if (globalRows) placeGlobalBlend(s);
+  else if (s.blend && (rebuilt || layout === RECENTRED)) placeBlend(s, world, inverse);
+  const landed = s.stage?.active === true && advanceBlendRebuild(s, now);
   const subMeshes = s.mesh.subMeshes ?? [];
   // A translation alone needs no new bounds: Babylon moves the local bounds with the world matrix.
   if (rebuilt || layout === RECENTRED || s.boundsDirty || subMeshes.length !== s.boundedSubMeshes || (subMeshes[0] ?? null) !== s.boundedFirst) {
     updateBounds(s, world, inverse, !rebuilt && !s.boundsDirty && layout === RECENTRED);
   }
-  if (globalRows) { s.blend!.refresh = false; return; }
-  if (rebuilt || (layout === RECENTRED && s.blend) || refresh) {
-    if (s.blend) s.blend.refresh = false;
+  if (globalRows) return;
+  if (rebuilt || (layout === RECENTRED && s.blend)) {
     placeRestData(s);
     return;
   }
-  if (layout === RECENTRED && s.gpu) {
-    s.positions.set(s.base);
-    s.mesh.updateVerticesData(VertexBuffer.PositionKind, s.positions, false);
-  }
+  if (landed) return;
   if ((layout === RECENTRED || translated) && !s.gpu) {
     for (let i = 0; i < s.base.length; i += 3) {
       Vector3.TransformCoordinatesFromFloatsToRef(s.base[i]!, s.base[i + 1]!, s.base[i + 2]!, world, point).toArray(s.worldBase, i);
@@ -811,52 +955,68 @@ function placeSurface(s: Surface, time: number): void {
   }
 }
 
-/** Recomputes and uploads every per-vertex rest input of the current grid and placement. */
-function placeRestData(s: Surface): void {
-  const world = s.world, inverse = s.inverse;
+/**
+ * Per-vertex rest inputs of vertices [first, end) of `b` for the volume's `world` and `inverse`: world rest point,
+ * footprint-derived normals, bank distance and gradient, flow and the GPU path's static vertex data. `blended` takes the
+ * blend's union bank distance, depth and current (`blendRest`) wherever a neighbour reaches.
+ */
+function restDataRange(s: Surface, b: RestBuffers, world: Matrix, inverse: Matrix, blended: boolean, first: number, end: number): void {
   inverse.transposeToRef(normalMatrix);
   const depth = s.body.depth * Vector3.TransformNormalFromFloatsToRef(0, 1, 0, world, point).length();
-  const blended = s.blend !== null && s.blendRest.length === s.base.length * 2;
-  for (let i = 0; i < s.base.length; i += 3) {
-    const x = s.base[i]!, y = s.base[i + 1]!, z = s.base[i + 2]!;
-    const d = i / 3 * 4, v = i / 3 * 2;
-    Vector3.TransformCoordinatesFromFloatsToRef(x, y, z, world, point).toArray(s.worldBase, i);
+  for (let n = first; n < end; n++) {
+    const i = n * 3, x = b.base[i]!, y = b.base[i + 1]!, z = b.base[i + 2]!;
+    const d = n * 4, v = n * 2;
+    Vector3.TransformCoordinatesFromFloatsToRef(x, y, z, world, point).toArray(b.worldBase, i);
     const footprint = waterFootprint(s.body, x, z);
     baseNormal.set(-footprint.slopeX, 1, -footprint.slopeZ);
     // The GPU path's vertex normal is the rest normal: the fragment shader derives its own from the swell.
-    if (s.gpu) localNormal.copyFrom(baseNormal).normalize().toArray(s.normals, i);
+    if (s.gpu) localNormal.copyFrom(baseNormal).normalize().toArray(b.normals, i);
     Vector3.TransformNormalToRef(baseNormal, normalMatrix, baseNormal);
     baseNormal.scaleInPlace(baseNormal.y < 0 ? -1 : 1).normalize();
-    baseNormal.toArray(s.baseNormals, i);
+    baseNormal.toArray(b.baseNormals, i);
     edge.set(footprint.edgeX, 0, footprint.edgeZ); Vector3.TransformNormalToRef(edge, normalMatrix, edge);
     const outward = edge.length() || 1;
-    s.bankGradient[v] = -edge.x / outward; s.bankGradient[v + 1] = -edge.z / outward;
+    b.bankGradient[v] = -edge.x / outward; b.bankGradient[v + 1] = -edge.z / outward;
     flowVector.set(footprint.flowX, footprint.flowY, footprint.flowZ); Vector3.TransformNormalToRef(flowVector, world, flowVector);
-    flowVector.scaleInPlace(s.body.flowSpeed / Math.max(1e-6, Math.hypot(flowVector.x, flowVector.z))).toArray(s.flow, i);
-    s.data[d + 1] = Math.min(10000, Math.max(0, footprint.edge / outward));
-    s.data[d + 2] = depth;
-    const r = i / 3 * 6;
+    flowVector.scaleInPlace(s.body.flowSpeed / Math.max(1e-6, Math.hypot(flowVector.x, flowVector.z))).toArray(b.flow, i);
+    b.data[d + 1] = Math.min(10000, Math.max(0, footprint.edge / outward));
+    b.data[d + 2] = depth;
+    const r = n * 6;
     // A blending grid keeps its own bank distance signed: an extended grid discards past it.
-    if (blended) s.data[d + 1] = Math.min(10000, Math.max(-10000, footprint.edge / outward));
-    if (blended && !Number.isNaN(s.blendRest[r]!)) {
+    if (blended) b.data[d + 1] = Math.min(10000, Math.max(-10000, footprint.edge / outward));
+    if (blended && !Number.isNaN(b.blendRest[r]!)) {
       // Blending: the union shoreline (negative outside it, where the fragment discards), blended depth and current.
-      s.data[d + 1] = s.blendRest[r]!; s.data[d + 2] = s.blendRest[r + 1]!;
-      s.flow[i] = s.blendRest[r + 2]!; s.flow[i + 1] = s.blendRest[r + 3]!; s.flow[i + 2] = s.blendRest[r + 4]!;
+      b.data[d + 1] = b.blendRest[r]!; b.data[d + 2] = b.blendRest[r + 1]!;
+      b.flow[i] = b.blendRest[r + 2]!; b.flow[i + 1] = b.blendRest[r + 3]!; b.flow[i + 2] = b.blendRest[r + 4]!;
     }
     // The GPU path's static vertex inputs: the spacing filter replaces the CPU height; time is a uniform.
-    if (s.gpu) { s.data[d] = s.spacing[i / 3]!; s.data[d + 3] = 0; }
+    if (s.gpu) { b.data[d] = s.spacing[n]!; b.data[d + 3] = 0; }
   }
+}
+
+/** Recomputes and uploads every per-vertex rest input of the current grid and placement. */
+function placeRestData(s: Surface): void {
+  const blended = s.blend !== null && s.blendRest.length === s.base.length * 2;
+  restDataRange(s, s, s.world, s.inverse, blended, 0, s.base.length / 3);
   if (blended) {
     blendNormals(s, 0, s.base.length / 3);
-    if (s.body.kind === "global") globalReachRows(s, s.blendRows);
+    if (s.body.kind === "global") {
+      const state = sceneBlends.get(s.mesh.getScene());
+      if (state) globalReachRows(s, liveBlendInputs(state, s.blend!.self, s.world, s.inverse), s.blendRows);
+    }
   }
+  uploadRestData(s, blended);
+}
+
+/** Uploads the whole grid's rest inputs after `placeRestData` or a landed blend refresh wrote them. */
+function uploadRestData(s: Surface, blended: boolean): void {
   s.mesh.updateVerticesData("slateWaterFlow", s.flow);
   s.mesh.updateVerticesData("slateWaterBaseNormal", s.baseNormals);
   if (blended) s.mesh.updateVerticesData("slateWaterBlend", s.blendData);
   if (s.gpu) {
     // A static rest grid: the vertex shader adds every displacement and computes its own offsets.
     if (!s.offsetsZero) { s.offsets.fill(0); s.offsetsZero = true; s.mesh.updateVerticesData("slateWaterOffset", s.offsets); }
-    s.positions.set(s.base);
+    writeRestPositions(s, 0, s.base.length / 3);
     s.mesh.updateVerticesData(VertexBuffer.PositionKind, s.positions, false);
     s.mesh.updateVerticesData(VertexBuffer.NormalKind, s.normals);
     s.mesh.updateVerticesData("slateWaterData", s.data);
@@ -865,18 +1025,16 @@ function placeRestData(s: Surface): void {
   s.time = null;
 }
 
-const globalFlow = new Vector3(), globalNormal = new Vector3(), rowStart = new Vector3(), rowEnd = new Vector3(), reachRows = new Int32Array(2);
+const globalFlow = new Vector3(), globalNormal = new Vector3(), rowStart = new Vector3(), rowEnd = new Vector3(), reachRows = new Int32Array(2), writeRows = new Int32Array(2);
 
 /**
  * The first and last rows (inclusive) of a blending Global grid that come within a neighbour's reach, into `out`
  * (first > last when none). Each row is a straight line in world space, so its end points bound it.
  */
-function globalReachRows(s: Surface, out: Int32Array): void {
-  const state = sceneBlends.get(s.mesh.getScene()), blend = s.blend;
+function globalReachRows(s: Surface, inputs: BlendInputs, out: Int32Array): void {
   out[0] = 1; out[1] = 0;
-  if (!state || !blend) return;
-  const base = s.base, stride = s.layoutColumns + 1, rows = base.length / 3 / stride - 1, world = s.world;
-  const reach = state.distance / 2, near = blendNeighbourBounds(state, blend.self);
+  const base = s.base, stride = s.layoutColumns + 1, rows = base.length / 3 / stride - 1, world = inputs.world;
+  const reach = inputs.distance / 2, near = inputs.near;
   let first = rows + 1, last = -1;
   for (let row = 0; row <= rows; row++) {
     const a = row * stride * 3, b = (row * stride + stride - 1) * 3;
@@ -896,6 +1054,16 @@ function globalReachRows(s: Surface, out: Int32Array): void {
   out[0] = first; out[1] = last;
 }
 
+/**
+ * The grid rows a Global blend write covers into `out`: those within a neighbour's reach (`reach`, now) or at the last
+ * write (which return to open water), plus one row either side (the rest normals' fit reads them). first > last when empty.
+ */
+function globalWriteRows(s: Surface, reach: Int32Array, out: Int32Array): void {
+  const stride = s.layoutColumns + 1, rows = s.base.length / 3 / stride - 1;
+  out[0] = Math.max(0, Math.min(reach[0]!, s.blendRows[0]!) - 1);
+  out[1] = Math.min(rows, Math.max(reach[1]!, s.blendRows[1]!) + 1);
+}
+
 /** Uploads vertices [first, end) of one attribute in place (`data` is the buffer's own CPU array), else all of it. */
 function uploadVertexRange(mesh: Mesh, kind: string, data: Float32Array, stride: number, first: number, end: number): void {
   const vertexBuffer = mesh.getVertexBuffer(kind), buffer = vertexBuffer?.getBuffer();
@@ -907,52 +1075,191 @@ function uploadVertexRange(mesh: Mesh, kind: string, data: Float32Array, stride:
 }
 
 /**
- * A blending Global grid on the GPU path after a recentre or a neighbour change: only the rows within a neighbour's
- * reach (now, or at the last write, which return to open water) plus one row either side (the rest normals' fit reads
- * them) are rewritten (`placeBlend` over their vertices, then uniform open-water rest data where no neighbour reaches)
- * and uploaded in place. A recentre still uploads every rest position (the whole grid moved); nothing else outside the
- * rows changes, so a Global grid whose neighbours are out of reach uploads only its positions, as when it blends with
- * nothing.
+ * Open-water rest data for the vertices [first, end) of a blending Global grid in `b` (`blendRest` marks them with NaN,
+ * or holds the blended union bank distance, depth and current): the fill `placeRestData` does for every vertex, and
+ * unit normals for `blendNormals` to fit over.
  */
-function placeGlobalBlend(s: Surface, recentred: boolean): void {
-  const stride = s.layoutColumns + 1, count = s.base.length / 3, rows = count / stride - 1;
-  globalReachRows(s, reachRows);
-  const first = Math.max(0, Math.min(reachRows[0]!, s.blendRows[0]!) - 1);
-  const last = Math.min(rows, Math.max(reachRows[1]!, s.blendRows[1]!) + 1);
-  s.blendRows[0] = reachRows[0]!; s.blendRows[1] = reachRows[1]!;
-  const begin = first * stride, end = (last + 1) * stride;
-  if (last >= first) placeBlend(s, s.world, s.inverse, begin, end);
-  else { s.restMin.y = 0; s.restMax.y = 0; }
-  if (recentred) {
-    s.positions.set(s.base);
-    s.mesh.updateVerticesData(VertexBuffer.PositionKind, s.positions, false);
-  }
-  if (last < first) return;
-  const world = s.world, rest = s.blendRest;
+function globalRestRange(s: Surface, b: RestBuffers, world: Matrix, inverse: Matrix, first: number, end: number): void {
+  const rest = b.blendRest;
   const depth = s.body.depth * Vector3.TransformNormalFromFloatsToRef(0, 1, 0, world, point).length();
   globalFlow.set(Math.cos(s.body.flowDirection * Math.PI / 180), 0, Math.sin(s.body.flowDirection * Math.PI / 180));
   Vector3.TransformNormalToRef(globalFlow, world, globalFlow);
   globalFlow.scaleInPlace(s.body.flowSpeed / Math.max(1e-6, Math.hypot(globalFlow.x, globalFlow.z)));
-  s.inverse.transposeToRef(normalMatrix);
+  inverse.transposeToRef(normalMatrix);
   Vector3.TransformNormalFromFloatsToRef(0, 1, 0, normalMatrix, globalNormal);
   globalNormal.scaleInPlace(globalNormal.y < 0 ? -1 : 1).normalize();
-  for (let v = begin; v < end; v++) {
+  for (let v = first; v < end; v++) {
     const i = v * 3, d = v * 4, r = v * 6, own = Number.isNaN(rest[r]!);
-    s.data[d + 1] = own ? 10000 : rest[r]!; s.data[d + 2] = own ? depth : rest[r + 1]!;
-    s.flow[i] = own ? globalFlow.x : rest[r + 2]!; s.flow[i + 1] = own ? globalFlow.y : rest[r + 3]!; s.flow[i + 2] = own ? globalFlow.z : rest[r + 4]!;
-    globalNormal.toArray(s.baseNormals, i);
-    s.normals[i] = 0; s.normals[i + 1] = 1; s.normals[i + 2] = 0;
+    b.data[d + 1] = own ? 10000 : rest[r]!; b.data[d + 2] = own ? depth : rest[r + 1]!;
+    b.flow[i] = own ? globalFlow.x : rest[r + 2]!; b.flow[i + 1] = own ? globalFlow.y : rest[r + 3]!; b.flow[i + 2] = own ? globalFlow.z : rest[r + 4]!;
+    globalNormal.toArray(b.baseNormals, i);
+    b.normals[i] = 0; b.normals[i + 1] = 1; b.normals[i + 2] = 0;
   }
-  blendNormals(s, begin, end);
-  if (!recentred) {
-    for (let i = begin * 3; i < end * 3; i++) s.positions[i] = s.base[i]!;
-    uploadVertexRange(s.mesh, VertexBuffer.PositionKind, s.positions, 3, begin, end);
-  }
+}
+
+/** Uploads vertices [first, end) of a Global grid's positions and every blend-written attribute in place. */
+function uploadGlobalRows(s: Surface, begin: number, end: number): void {
+  writeRestPositions(s, begin, end);
+  uploadVertexRange(s.mesh, VertexBuffer.PositionKind, s.positions, 3, begin, end);
   uploadVertexRange(s.mesh, VertexBuffer.NormalKind, s.normals, 3, begin, end);
   uploadVertexRange(s.mesh, "slateWaterData", s.data, 4, begin, end);
   uploadVertexRange(s.mesh, "slateWaterFlow", s.flow, 3, begin, end);
   uploadVertexRange(s.mesh, "slateWaterBaseNormal", s.baseNormals, 3, begin, end);
   uploadVertexRange(s.mesh, "slateWaterBlend", s.blendData, 4, begin, end);
+}
+
+/**
+ * A blending Global grid on the GPU path after a recentre: only the rows within a neighbour's
+ * reach (now, or at the last write, which return to open water) plus one row either side (the rest normals' fit reads
+ * them) are rewritten (`placeBlend` over their vertices, then uniform open-water rest data where no neighbour reaches)
+ * and uploaded in place, positions included (their blend lift in y). A recentre moves the grid through `gridOffset`, so
+ * nothing outside the rows changes: a Global grid whose neighbours are out of reach uploads nothing, as when it blends
+ * with nothing.
+ */
+function placeGlobalBlend(s: Surface): void {
+  const state = sceneBlends.get(s.mesh.getScene()), blend = s.blend;
+  if (!state || !blend) return;
+  const stride = s.layoutColumns + 1;
+  globalReachRows(s, liveBlendInputs(state, blend.self, s.world, s.inverse), reachRows);
+  globalWriteRows(s, reachRows, writeRows);
+  const first = writeRows[0]!, last = writeRows[1]!;
+  s.blendRows[0] = reachRows[0]!; s.blendRows[1] = reachRows[1]!;
+  const begin = first * stride, end = (last + 1) * stride;
+  if (last >= first) placeBlend(s, s.world, s.inverse, begin, end);
+  else { s.restMin.y = 0; s.restMax.y = 0; }
+  if (last < first) return;
+  globalRestRange(s, s, s.world, s.inverse, begin, end);
+  blendNormals(s, begin, end);
+  uploadGlobalRows(s, begin, end);
+}
+
+function createBlendRebuild(): BlendRebuild {
+  const world = Matrix.Identity(), inverse = Matrix.Identity();
+  return {
+    active: false, pending: false, key: [], started: 0, index: new WaterBlendIndex(), inputs: createBlendInputs(), self: 0, distance: 0,
+    world, inverse, buffers: createStageBuffers(0), phase: LANDED, cursor: 0, first: 0, end: 0, rows: false, reach: new Int32Array(2),
+  };
+}
+
+function createStageBuffers(count: number): StageBuffers {
+  return {
+    base: new Float32Array(count * 3), worldBase: new Float32Array(count * 3), normals: new Float32Array(count * 3),
+    baseNormals: new Float32Array(count * 3), data: new Float32Array(count * 4), flow: new Float32Array(count * 3),
+    bankGradient: new Float32Array(count * 2), blendData: new Float32Array(count * 4), blendRest: new Float32Array(count * 6),
+    restMin: new Vector3(), restMax: new Vector3(), metres: new Float32Array(count),
+  };
+}
+
+/** Copies vertices [first, end) of every per-vertex array. */
+function copyRestRange(from: RestBuffers, to: RestBuffers, first: number, end: number): void {
+  for (const [key, stride] of REST_ARRAYS) to[key].set(from[key].subarray(first * stride, end * stride), first * stride);
+}
+
+/**
+ * Prepares a refresh that began this frame: the surface's own world matrix and, over the vertices it will write (and one
+ * row beyond on a Global grid, which the fit may read), a copy of its current arrays, so that anything the write leaves
+ * alone stays as it is. The kernel's extremes start from the surface's.
+ */
+function seedBlendRebuild(s: Surface, r: BlendRebuild): void {
+  r.pending = false;
+  const count = s.base.length / 3, stride = s.layoutColumns + 1, inputs = r.inputs;
+  if (r.buffers.base.length !== count * 3) r.buffers = createStageBuffers(count);
+  r.world.copyFrom(s.world); r.inverse.copyFrom(s.inverse);
+  blendInputs(inputs, r.index, r.distance, r.self, r.world, r.inverse);
+  r.rows = centredGrid(s);
+  let first = 0, end = count, from = 0, to = count;
+  if (r.rows) {
+    globalReachRows(s, inputs, r.reach);
+    globalWriteRows(s, r.reach, writeRows);
+    first = writeRows[0]! * stride; end = (writeRows[1]! + 1) * stride;
+    from = Math.max(0, first - stride); to = Math.min(count, end + stride);
+  }
+  const b = r.buffers;
+  copyRestRange(s, b, from, to);
+  b.restMin.copyFrom(s.restMin); b.restMax.copyFrom(s.restMax);
+  r.first = first; r.end = Math.max(first, end); r.cursor = first;
+  if (r.end > r.first) { beginBlend(inputs, b, first > 0 || end < count); r.phase = KERNEL; }
+  else r.phase = LANDED;
+}
+
+/** One chunk of a refresh: the kernel and rest data of up to `BLEND_CHUNK` vertices, then (after all) the normals' fit. */
+function stepBlendRebuild(s: Surface, r: BlendRebuild): void {
+  const b = r.buffers, end = Math.min(r.cursor + BLEND_CHUNK, r.end);
+  if (r.phase === KERNEL) {
+    blendRange(r.inputs, s, b, r.cursor, end);
+    if (r.rows) globalRestRange(s, b, r.world, r.inverse, r.cursor, end);
+    else restDataRange(s, b, r.world, r.inverse, true, r.cursor, end);
+    r.cursor = end;
+    if (end >= r.end) { r.phase = FIT; r.cursor = r.first; }
+  } else {
+    blendFit(s, b, r.world, b.metres, r.cursor, end);
+    r.cursor = end;
+    if (end >= r.end) r.phase = LANDED;
+  }
+}
+
+const blendChunks = (vertices: number) => Math.ceil(vertices / BLEND_CHUNK);
+/** Chunks a refresh has left: its remaining kernel chunks and every fit chunk. */
+const blendChunksLeft = (r: BlendRebuild) =>
+  r.phase === LANDED ? 0 : r.phase === KERNEL ? blendChunks(r.end - r.cursor) + blendChunks(r.end - r.first) : blendChunks(r.end - r.cursor);
+
+/**
+ * Advances `s`'s blend refresh by the frame's share of `WATER_BLEND_FRAME_BUDGET_MS`, but by at least the chunks that
+ * would land it before `WATER_BLEND_DEADLINE_MS` if every frame did as many (and at least one), and lands it when every
+ * vertex is written: returns whether it did. An overdue refresh (slow frames) finishes in this frame regardless.
+ */
+function advanceBlendRebuild(s: Surface, now: number): boolean {
+  const r = s.stage!, scene = s.mesh.getScene(), state = sceneBlends.get(scene);
+  if (!state || !s.blend) { r.active = false; return false; }
+  if (r.pending) {
+    const start = performance.now();
+    seedBlendRebuild(s, r);
+    state.spent += Math.max(performance.now() - start, BLEND_CHUNK_MIN_MS);
+  }
+  const frame = scene.getEngine().getDeltaTime(), window = Math.max(WATER_BLEND_DEADLINE_MS, 2 * frame), elapsed = now - r.started;
+  // A refresh too big for the budget within the window takes an even share of its chunks per frame instead, so it
+  // lands before the deadline rather than at it.
+  const share = Math.ceil(blendChunksLeft(r) / Math.max(1, Math.floor((window - elapsed) / Math.max(frame, 1))));
+  const overdue = elapsed >= window;
+  let ran = 0;
+  while (r.phase !== LANDED) {
+    if (ran >= share && !overdue && state.spent >= WATER_BLEND_FRAME_BUDGET_MS) return false;
+    const start = performance.now();
+    stepBlendRebuild(s, r);
+    state.spent += Math.max(performance.now() - start, BLEND_CHUNK_MIN_MS);
+    ran++;
+  }
+  landBlendRebuild(s, r, state);
+  return true;
+}
+
+/**
+ * Swaps a finished refresh in: the staged arrays replace the surface's over the vertices written, the results of the
+ * write apply, and the new data upload once (the same uploads as the write at once, `placeRestData` or `placeGlobalBlend`).
+ */
+function landBlendRebuild(s: Surface, r: BlendRebuild, state: SceneBlend): void {
+  r.active = false; state.waiting = true;
+  const blend = s.blend!, b = r.buffers;
+  blend.key.length = 0;
+  for (const value of r.key) blend.key.push(value);
+  s.boundsDirty = true;
+  if (r.rows) {
+    s.blendRows[0] = r.reach[0]!; s.blendRows[1] = r.reach[1]!;
+    if (r.end <= r.first) { s.restMin.y = 0; s.restMax.y = 0; return; }
+  }
+  finishBlend(s, r.inputs);
+  for (let v = r.first; v < r.end; v++) b.blendData[v * 4 + 2] = b.metres[v]!;
+  copyRestRange(b, s, r.first, r.end);
+  s.restMin.copyFrom(b.restMin); s.restMax.copyFrom(b.restMax);
+  if (r.rows) { uploadGlobalRows(s, r.first, r.end); return; }
+  // The CPU path displaces from the world rest points of the pose it is at now.
+  if (!s.gpu) {
+    for (let i = 0; i < s.base.length; i += 3) {
+      Vector3.TransformCoordinatesFromFloatsToRef(s.base[i]!, s.base[i + 1]!, s.base[i + 2]!, s.world, point).toArray(s.worldBase, i);
+    }
+  }
+  if (s.body.kind === "global") globalReachRows(s, r.inputs, s.blendRows);
+  uploadRestData(s, true);
 }
 
 let marginScratch = new Float32Array(0);
@@ -966,11 +1273,20 @@ let marginScratch = new Float32Array(0);
  * differences between neighbours this fit reads are unchanged.)
  */
 function blendNormals(s: Surface, first: number, end: number): void {
-  const columns = s.layoutColumns, rest = s.blendRest, world = s.worldBase, count = s.base.length / 3, data = s.blendData;
-  const rows = count / (columns + 1) - 1;
+  const count = s.base.length / 3;
   if (marginScratch.length < count) marginScratch = new Float32Array(count);
-  const metres = marginScratch;
-  s.world.transposeToRef(toLocalNormal);
+  blendFit(s, s, s.world, marginScratch, first, end);
+  for (let v = first; v < end; v++) s.blendData[v * 4 + 2] = marginScratch[v]!;
+}
+
+/**
+ * `blendNormals`' fit for vertices [first, end) of `b`, leaving the margins in `metres` (the caller applies them to
+ * `blendData` once every vertex has been fitted: neighbouring vertices read the margins as the kernel left them).
+ */
+function blendFit(s: Surface, b: RestBuffers, volume: Matrix, metres: Float32Array, first: number, end: number): void {
+  const columns = s.layoutColumns, rest = b.blendRest, world = b.worldBase, data = b.blendData;
+  const rows = b.base.length / 3 / (columns + 1) - 1;
+  volume.transposeToRef(toLocalNormal);
   for (let v = first; v < end; v++) {
     const margin = data[v * 4 + 2]!;
     // Vertices on the body's own rest data keep its own normals and own the point outright.
@@ -989,10 +1305,9 @@ function blendNormals(s: Surface, first: number, end: number): void {
     const slope = solve ? Math.hypot((zz * xm - xz * zm) / det, (xx * zm - xz * xm) / det) : 0;
     // A flat margin (deep inside one body) is far from the seam: the floor keeps it large and its sign intact.
     metres[v] = Math.max(-MAX_WATER_BLEND_DISTANCE, Math.min(MAX_WATER_BLEND_DISTANCE, margin / Math.max(slope, 0.02)));
-    baseNormal.set(-gx, 1, -gz).normalize().toArray(s.baseNormals, v * 3);
-    if (s.gpu) { Vector3.TransformNormalToRef(baseNormal, toLocalNormal, localNormal); localNormal.normalize().toArray(s.normals, v * 3); }
+    baseNormal.set(-gx, 1, -gz).normalize().toArray(b.baseNormals, v * 3);
+    if (s.gpu) { Vector3.TransformNormalToRef(baseNormal, toLocalNormal, localNormal); localNormal.normalize().toArray(b.normals, v * 3); }
   }
-  for (let v = first; v < end; v++) data[v * 4 + 2] = metres[v]!;
 }
 
 /** CPU path only: displaces the rest grid with `evaluateWaterVertex` at the simulation time and uploads it. */
@@ -1039,7 +1354,7 @@ function animateSurface(s: Surface, time: number): void {
 
 /** A full update outside the frame loop: creation, handle edits and path switches. */
 function refreshSurface(s: Surface, time: number): void {
-  placeSurface(s, time);
+  placeSurface(s, time, performance.now());
   animateSurface(s, time);
 }
 
@@ -1204,6 +1519,31 @@ function markBlendDirty(s: Surface): void {
   if (state) state.dirty = true;
 }
 
+/**
+ * Babylon's CPU picks (`scene.pick`, `pickWithRay`, `Ray.intersectsMesh`) test the uploaded vertex buffer, which a GPU
+ * Global grid keeps relative to its snapped centre (`Surface.gridOffset`). With a non-zero offset the bounds (already the
+ * true local extents) are tested with the ray as given, then the triangles with the ray moved back by the local offset, and
+ * the hit point is moved forward by its world-space form. A translation leaves the hit distance unchanged.
+ */
+function intersectGridOffset(
+  mesh: Mesh, offset: Float64Array, ray: Ray, fastCheck?: boolean, trianglePredicate?: TrianglePickingPredicate, onlyBoundingInfo?: boolean,
+  worldToUse?: Matrix, skipBoundingInfo?: boolean,
+): PickingInfo {
+  const intersects = Mesh.prototype.intersects;
+  if ((offset[0] === 0 && offset[1] === 0) || onlyBoundingInfo) return intersects.call(mesh, ray, fastCheck, trianglePredicate, onlyBoundingInfo, worldToUse, skipBoundingInfo);
+  if (!skipBoundingInfo) {
+    const bounds = intersects.call(mesh, ray, fastCheck, trianglePredicate, true, worldToUse);
+    if (!bounds.hit) return bounds;
+  }
+  const moved = new Ray(new Vector3(ray.origin.x - offset[0]!, ray.origin.y, ray.origin.z - offset[1]!), ray.direction, ray.length);
+  const hit = intersects.call(mesh, moved, fastCheck, trianglePredicate, false, worldToUse, true);
+  if (hit.hit && hit.pickedPoint) {
+    const world = waterGridOffset(mesh);
+    hit.pickedPoint.addInPlaceFromFloats(world[0]!, world[1]!, world[2]!);
+  }
+  return hit;
+}
+
 /** Finite volumes keep fixed bounds; only Global Water Volume follows the camera. */
 export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProperties, definition?: WaterDefinition, customMaterial?: Material | null): Mesh {
   const body = normalizeWaterBody(input, input.kind), water = normalizeWaterDefinition(definition ?? createDefaultWaterDefinition());
@@ -1211,6 +1551,7 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
   mesh.setEnabled(body.enabled);
   mesh.metadata = { ...(mesh.metadata ?? {}), slateWater: true };
   let plugin: WaterMaterialPlugin | null = null;
+  const gridOffset = new Float64Array(2);
   if (customMaterial) mesh.material = customMaterial;
   else {
     const material = new PBRMaterial(`${name}:water`, scene);
@@ -1218,6 +1559,9 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
     plugin = new WaterMaterialPlugin(material, water, body);
     plugin.mesh = mesh;
     plugin.gpuWaves = true;
+    setWaterGridOffsetSource(mesh, gridOffset);
+    mesh.intersects = (ray, fastCheck, trianglePredicate, onlyBoundingInfo, worldToUse, skipBoundingInfo) =>
+      intersectGridOffset(mesh, gridOffset, ray, fastCheck, trianglePredicate, onlyBoundingInfo, worldToUse, skipBoundingInfo);
     // Unlit Stylized water never samples a reflection.
     if (water.style !== "stylized") {
       let reflection = reflections.get(scene);
@@ -1231,12 +1575,12 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
   const surface: Surface = {
     mesh, water, body, plugin, field: null, contacts: null, world: Matrix.Identity(), inverse: Matrix.Identity(), gpu: plugin !== null,
     layoutState: new Float64Array(LAYOUT_STATE).fill(NaN), gridX: new Float64Array(), gridZ: new Float64Array(),
-    restMin: new Vector3(), restMax: new Vector3(), shift: new Float64Array(2), placed: new Float64Array(16).fill(NaN), time: null, version: 0,
+    restMin: new Vector3(), restMax: new Vector3(), shift: new Float64Array(2), gridOffset, placed: new Float64Array(16).fill(NaN), time: null, version: 0,
     qualityRevision: NaN, density: 1, drawn: true,
     base: empty, worldBase: empty, positions: empty, normals: empty, baseNormals: empty, data: empty, flow: empty, spacing: empty,
     offsets: empty, bankGradient: empty, offsetsZero: true, boundedSubMeshes: -1, boundedFirst: null, fftDisplaced: false, boundsDirty: false,
     copyCounted: false, uid: ++surfaceIds, blend: null, blendData: empty, blendRest: empty, blendRevision: 0,
-    blendMatrix: new Float64Array(16).fill(NaN), blendEnabled: false, blendStamp: 0, blendRows: Int32Array.of(1, 0), layoutColumns: 0, disabledSince: -1, released: false,
+    blendMatrix: new Float64Array(16).fill(NaN), blendEnabled: false, blendStamp: 0, blendRows: Int32Array.of(1, 0), stage: null, layoutColumns: 0, disabledSince: -1, released: false,
   };
   let entries = surfaces.get(scene);
   if (!entries) {

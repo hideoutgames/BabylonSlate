@@ -1,16 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  DirectionalLight, FreeCamera, HemisphericLight, Matrix, MeshBuilder, NullEngine, PBRMaterial, PointLight, Scene, Texture, TransformNode, Vector3, type UniformBuffer,
+  DirectionalLight, FreeCamera, HemisphericLight, Matrix, MeshBuilder, NullEngine, PBRMaterial, PointLight, Scene, Texture, TransformNode, Vector3,
+  type Mesh, type UniformBuffer,
 } from "@babylonjs/core";
 import {
-  WATER_WAVE_MAX_COMPONENTS, createDefaultWaterDefinition, createWaterWaveOutput, evaluateWaterWaves, normalizeRenderingQuality, normalizeWaterBody,
+  WATER_WAVE_MAX_COMPONENTS, RENDER_QUALITY_PROFILES, createDefaultWaterDefinition, createWaterWaveOutput, evaluateWaterWaves, normalizeRenderingQuality, normalizeWaterBody,
   normalizeWaterDefinition, qualityPresetPatch, waterWaveSet, waterWaveSurge, type QualityLevel, type WaterDefinition,
 } from "@babylonslate/core";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { waterFftDiagnostics, waterFftForSurface } from "./water-fft";
 import { WATER_FFT_CASCADE_TURNS } from "./water-fft-spectrum";
 import { WATER_FFT_SAMPLER, WaterMaterialPlugin } from "./water-material";
-import { createWaterMesh, setSceneWaterTime, updateSceneWater, updateWaterMeshDefinition } from "./water-mesh";
+import { createWaterMesh, setSceneWaterTime, setWaterGpuWaves, updateSceneWater, updateWaterMeshDefinition } from "./water-mesh";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
 
 /** Capture the shader upload boundary while using real scene objects and binding logic. */
@@ -642,6 +643,44 @@ describe("Water material binding", () => {
       const last = band.cascades - 1;
       expect(output.vectors.get(`slateWaterFftCascade${last}`)![3]).toBeCloseTo(Math.PI * size / band.patchSizes[last]!, 3);
     } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
+  });
+
+  it("binds Global Water's grid offset per surface for the material and the outline mask's vertex pass, and zero off the GPU path", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    try {
+      new FreeCamera("camera", new Vector3(40, 6, -25), scene);
+      updateSceneRenderingSettings(scene, { water: { blendDistance: 0 } });
+      const a = createWaterMesh(scene, "a", normalizeWaterBody({}, "global")), b = createWaterMesh(scene, "b", normalizeWaterBody({}, "global"));
+      const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 20, length: 20 }));
+      // A turned, scaled and displaced volume: its offset is the grid centre in its own space, bound in world space.
+      b.position.set(100, 0, -30); b.rotation.y = Math.PI / 2; b.scaling.set(2, 1, 2);
+      updateSceneWater(scene);
+      const pluginOf = (mesh: Mesh) => (mesh.material as PBRMaterial).pluginManager!.getPlugin<WaterMaterialPlugin>("SlateWater")!;
+      const bound = (plugin: WaterMaterialPlugin, mesh: Mesh) => {
+        const output = uniforms();
+        plugin.hardBindForSubMesh(output.buffer, scene, engine, mesh.subMeshes[0]!);
+        return output.vectors.get("slateWaterGridOffset")!;
+      };
+      // The snapped centre is the camera within one cell, so each surface's world offset is the camera relative to it.
+      const cell = 0.5 / RENDER_QUALITY_PROFILES.medium.water.meshDensity;
+      const offsetA = bound(pluginOf(a), a), offsetB = bound(pluginOf(b), b);
+      for (const [i, expected] of [40, 0, -25].entries()) expect(Math.abs(offsetA[i]! - expected)).toBeLessThanOrEqual(cell);
+      for (const [i, expected] of [-60, 0, 5].entries()) expect(Math.abs(offsetB[i]! - expected)).toBeLessThanOrEqual(cell);
+      // A surface sharing the material is still read for its own mesh: the draw's sub-mesh decides.
+      expect(bound(pluginOf(a), b)).toEqual(offsetB);
+      expect(bound(pluginOf(b), a)).toEqual(offsetA);
+      // The outline mask's program takes the same value from the drawn mesh.
+      const effect = new Map<string, number[]>();
+      const pass = { setFloat4: (name: string, ...values: number[]) => effect.set(name, values), setTexture: () => {} } as unknown as Parameters<WaterMaterialPlugin["bindVertexWaves"]>[0];
+      pluginOf(a).bindVertexWaves(pass, scene, b);
+      expect(effect.get("slateWaterGridOffset")).toEqual(offsetB);
+      // Finite water, and Global Water drawn from displaced CPU vertices, carry their rest points as they are.
+      expect(bound(pluginOf(lake), lake)).toEqual([0, 0, 0, 0]);
+      setWaterGpuWaves(a, false); updateSceneWater(scene);
+      expect(bound(pluginOf(a), a)).toEqual([0, 0, 0, 0]);
+      setWaterGpuWaves(a, true); updateSceneWater(scene);
+      expect(bound(pluginOf(a), a)).toEqual(offsetA);
+    } finally { scene.dispose(); engine.dispose(); }
   });
 
   it("keeps scene snapshots separate and preserves insertion order for equally near removals", () => {
