@@ -38,17 +38,12 @@ import {
   createActorFromSerialized,
   createDebugInspectSnapshot,
   Actor,
-  ActorComponent,
   BObject,
-  MaterialObject,
-  PostProcessMaterialObject,
-  type MaterialInstanceObject,
   SceneLayer,
   type DebugInspectSnapshot,
 } from "@babylonslate/object-model";
 import {
   type MaterialParameterCatalog,
-  type MaterialParameterValue,
   type RenderPathStatus,
   type Transform,
   type SerializedScene,
@@ -89,10 +84,8 @@ import {
 import { mapStackToAnchor, type AnchorEntry } from "./stack-map";
 import { Painter2DRuntime } from "./painter2d-runtime";
 import { UIControls2DRuntime } from "./ui-controls2d-runtime";
-import { isUIControl2DClass } from "@babylonslate/core";
 import { Text2DAppearRuntime } from "./text2d-appear-runtime";
 import { TweenRuntime } from "./tween-runtime";
-import { parseOverlayVisualStyle, supportsOverlayVisualStyle } from "@babylonslate/core";
 import type { AnimClipCatalogEntry, AnimGraphDocument } from "@babylonslate/anim-graph";
 import type { BehaviourTreeDocument, BlackboardDocument } from "@babylonslate/behaviour-tree";
 import { ScriptHost, type CompiledScript } from "./script-host";
@@ -135,6 +128,7 @@ import { AnimGraphRuntime } from "./anim-graph-runtime";
 import { BehaviourTreeRuntime } from "./behaviour-tree-runtime";
 import { LatentDelays } from "./latent-delays";
 import { RuntimeCamera } from "./runtime-camera";
+import { RuntimePropertyWrites } from "./runtime-property-writes";
 
 export interface RuntimeDriverOptions {
   sessionGeneration?: number;
@@ -434,7 +428,6 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly dt: number;
   private readonly seed: number;
   private readonly scalabilityProjectRenderPath: RenderPath;
-  private readonly validateLegacyMeshParameters: boolean;
   private readonly acquireScene?: AcquireRuntimeScene;
   private readonly deferSceneModelsReady: boolean;
   private readonly deferSceneLoadingPaint: boolean;
@@ -520,6 +513,7 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly scriptRuntime: ScriptRuntime;
   private readonly inspector: RuntimeInspectorService;
   private readonly materialParameters: RuntimeMaterialParameters;
+  private readonly propertyWrites: RuntimePropertyWrites;
   private readonly scalability: ScalabilitySession;
   private readonly physics: RuntimePhysicsWorlds;
   private readonly console: RuntimeConsole;
@@ -562,7 +556,9 @@ class InProcessRuntime implements RuntimeDriver {
    *    command bindings (phase 4) and the ScriptHost actor bindings (phase 7)
    *    read, then `RuntimeInspectorService`, which `emit()` asks to annotate
    *    every command, so it exists before anything can emit.
-   * 3. Render and physics settings, physics worlds and the Scene library.
+   * 3. Render and physics settings (material parameters, then the property
+   *    write path, which takes `OwnerAdmission` directly), physics worlds and
+   *    the Scene library.
    * 4. Console (with startup user commands), loop guard, startup animation
    *    graph, behaviour tree and Blackboard documents, input resolver and
    *    physics content.
@@ -607,7 +603,7 @@ class InProcessRuntime implements RuntimeDriver {
 
     // 3. Render and physics settings, physics worlds and the Scene library.
     this.materialParameters = new RuntimeMaterialParameters(options.materialParameterCatalog, options.materialTextureAssetGuids);
-    this.validateLegacyMeshParameters = options.materialParameterCatalog !== undefined;
+    this.propertyWrites = this.createPropertyWrites(options);
     this.scalabilityProjectRenderPath = options.renderSettings?.renderPath ?? "forward";
     this.scalability = new ScalabilitySession(options.renderSettings, options.frameCap, options.playScene?.settings,
       (transaction) => this.emit({ type: "setScalability", transaction }));
@@ -1024,9 +1020,32 @@ class InProcessRuntime implements RuntimeDriver {
       physics: () => this.physics,
       ragdolls: () => this.ragdolls,
       assetPreloads: () => this.assetPreloads,
-      refreshComponent: (component, propertyName) => this.refreshRuntimeComponent(component, propertyName),
-      setMaterialParameter: (material, name, value) => this.setMaterialParameter(material, name, value, true),
+      refreshComponent: (component, propertyName) => this.propertyWrites.refreshComponent(component, propertyName),
+      setMaterialParameter: (material, name, value) => this.propertyWrites.setMaterialParameter(material, name, value, true),
       publishSnapshot: () => this.snapshots.publish(),
+      emit: (command) => this.emit(command),
+    });
+  }
+
+  private createPropertyWrites(options: RuntimeDriverOptions): RuntimePropertyWrites {
+    return new RuntimePropertyWrites(this.admission, {
+      validateLegacyMeshParameters: options.materialParameterCatalog !== undefined,
+    }, {
+      world: () => this.world,
+      simulation: () => this.simulation,
+      materialParameters: () => this.materialParameters,
+      renderSlots: () => this.renderSlots,
+      renderEmitter: () => this.renderEmitter,
+      uiControls: () => this.uiControls,
+      overlay: () => this.overlay,
+      textAppear: () => this.textAppear,
+      ticks: () => this.ticks,
+      audioParticles: () => this.audioParticles,
+      navigation: () => this.navigation,
+      physics: () => this.physics,
+      ragdolls: () => this.ragdolls,
+      layers: () => this.layers,
+      sceneRealizer: () => this.sceneRealizer,
       emit: (command) => this.emit(command),
     });
   }
@@ -1325,7 +1344,7 @@ class InProcessRuntime implements RuntimeDriver {
       ...createMaterialHostBindings({
         canRun,
         materialParameters: this.materialParameters,
-        setMaterialParameter: (material, name, parameter) => this.setMaterialParameter(material, name, parameter),
+        setMaterialParameter: (material, name, parameter) => this.propertyWrites.setMaterialParameter(material, name, parameter),
       }),
       ...createIlluminationHostBindings({
         slot,
@@ -1347,7 +1366,7 @@ class InProcessRuntime implements RuntimeDriver {
         processingTick: () => this.ticks.processing,
         flushPainters: () => this.flushPainters(),
         flushTextAppear: () => this.flushTextAppear(),
-        refreshComponent: (component, propertyName) => this.refreshRuntimeComponent(component, propertyName),
+        refreshComponent: (component, propertyName) => this.propertyWrites.refreshComponent(component, propertyName),
       }),
       ...createAudioHostBindings({ frameId, emit }),
       ...createNavigationHostBindings({ navigation: () => this.navigation }),
@@ -1668,96 +1687,6 @@ class InProcessRuntime implements RuntimeDriver {
 
   spawnScriptedActor(options: ScriptedActorSpawn): Actor | null {
     return this.actors.spawnScripted(options);
-  }
-
-  private refreshRuntimeComponent(component: ActorComponent, propertyName?: string): void {
-    const owner = component.owner;
-    if (!owner || owner.destroyed) return;
-    if (isUIControl2DClass(component.classId)) {
-      this.uiControls.refresh(component);
-      if (owner.sceneLayerId) this.overlay.applyLayouts();
-      return;
-    }
-    if ((propertyName === "opacity" || propertyName === "tint") && supportsOverlayVisualStyle(component.classId)) {
-      const slotId = this.renderSlots.recordedSlot(owner);
-      if (slotId !== undefined) this.emit({ type: "setOverlayVisualStyle", slotId, componentId: component.guid,
-        style: parseOverlayVisualStyle(Object.fromEntries(component.variables)) });
-      return;
-    }
-    if (component.classId === "2DRichTextComponent") this.textAppear.refresh(component);
-    if (this.overlay.refreshComponent(owner, component, propertyName)) return;
-    // Steering/tuning is consumed by the next motor tick; only dimensions
-    // need immediate collider/query refresh after a property write.
-    if (component.classId === "MovementComponent" && propertyName && propertyName !== "radius" && propertyName !== "height") return;
-    const slotId = this.renderSlots.recordedSlot(owner);
-    if (component.classId === "DeformerComponent") {
-      if (slotId !== undefined) {
-        if (this.ticks.processing) this.renderEmitter.queueDeformers(owner);
-        else this.renderEmitter.emitActorDeformers(owner, slotId);
-      }
-      return;
-    }
-    if (component.classId === "MeshComponent" && propertyName === "materialGuid") {
-      // A staged material belongs to this existing native mesh. Re-emitting the
-      // mesh assignment here would replace that owner between prepare/commit.
-      if (slotId !== undefined) this.renderEmitter.emitMaterialAssignments([component], slotId, true);
-      return;
-    }
-    if (component.classId === "DynamicRuntimeMeshComponent" &&
-      (propertyName === "materialGuid" || propertyName === "enableCollision" || propertyName === "layer" || propertyName === "mask")) {
-      if (propertyName === "materialGuid" && slotId !== undefined) this.renderEmitter.emitMaterialAssignments([component], slotId, true);
-      // Geometry collision changes are coalesced by the next physics step.
-      return;
-    }
-    if (slotId !== undefined) {
-      if (component.classId === "RenderTargetCaptureComponent") this.renderEmitter.emitRenderTargetCapture(owner, slotId);
-      else if (component.classId === "OutlineComponent") this.renderEmitter.emitActorOutlines(owner, slotId);
-      else if (component.classId === "FogVolumeComponent") this.renderEmitter.emitActorFogVolumes(owner, slotId);
-      else if (propertyName === "transform") this.renderEmitter.emitComponentTransforms(owner, slotId);
-      else if (component.classId !== "PhysicsConstraintComponent" && component.classId !== "RagdollComponent" && component.classId !== "MovementComponent") this.renderEmitter.emitMeshAssignment(owner, slotId);
-    }
-    if (component.classId === "ParticleComponent") {
-      this.audioParticles.emitParticles(owner);
-    }
-    if (component.classId === "AudioComponent") {
-      this.audioParticles.emitVoiceGain(component);
-    }
-    if (component.classId === "NavAgentComponent") {
-      this.navigation.updateAgentParams(owner);
-    }
-    const sync = this.physics.forActor(owner);
-    if (component.classId === "RagdollComponent" || component.classId === "MeshComponent") {
-      // Ragdoll and mesh-collision edits can create or retire the owner's
-      // body; reconcile that one actor from its own chain.
-      this.ragdolls.sync();
-      sync.syncActor(owner, this.world);
-    } else sync.applyComponent(component);
-  }
-
-  private setMaterialParameter(material: MaterialInstanceObject, parameterName: string, parameter: MaterialParameterValue, inspector = false): boolean {
-    if (inspector ? !(material instanceof MaterialObject) || !material.component.owner || !this.simulation.canEditActor(material.component.owner) : !this.admission.canRun(material)) return false;
-    const validated = this.materialParameters.accepts(material, parameterName, parameter);
-    if (!validated && (material instanceof PostProcessMaterialObject || this.validateLegacyMeshParameters)) return false;
-    if (material instanceof PostProcessMaterialObject) {
-      if (!material.entry.id) return false;
-      const owner = material.owner;
-      const target: Extract<CommandMessage, { type: "setPostProcessMaterialParameter" }>["owner"] = owner instanceof SceneLayer
-        ? { kind: "sceneLayer", layerId: owner.guid, layerLoadId: this.layers.get(owner.guid)!.loadId }
-        : { kind: "scene", sceneAssetGuid: owner.assetGuid, sceneLoadId: this.sceneRealizer.loadId };
-      this.emit({ type: "setPostProcessMaterialParameter", owner: target, entryId: material.entry.id,
-        materialAssetGuid: material.materialAssetGuid, parameterName, parameter });
-    } else {
-      const component = material.component;
-      const owner = component.owner;
-      if (!owner || owner.destroyed || component.destroyed || component.getVariable("materialObject") !== material) return false;
-      const slotId = this.renderSlots.recordedSlot(owner);
-      if (slotId === undefined) return false;
-      if (!this.renderEmitter.rendersComponent(owner, component)) return false;
-      this.emit({ type: "setMaterialParameter", slotId, componentId: component.guid,
-        materialAssetGuid: material.materialAssetGuid, parameterName, parameter });
-    }
-    if (validated) this.materialParameters.set(material, parameterName, parameter);
-    return true;
   }
 
   notifySceneLayerReady(layerId: string, layerLoadId: number): void {
