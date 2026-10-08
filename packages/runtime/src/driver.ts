@@ -2138,28 +2138,29 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   /**
-   * Ends the session once, in phases:
-   * 1. While the session still reads as running: dispose asset preloads, end
-   *    the console lifetime and reject Scene Layer readiness waiters.
-   * 2. Mark stopped, then end diagnostics, the inspector queue, the boundary
-   *    queue, pending pause changes, tweens and the overlay.
-   * 3. Cancel: invalidate in-flight async loads (lifecycle id), cancel a Scene
-   *    change, stop running, resume simulation waiters, then every registered
-   *    subsystem's `cancelPending` (the Scene realizer last).
-   * 4. Finalize the trace.
-   * 5. Destroy live components, then end the World.
-   * 6. Dispose scripts, unregister script Classes, drop anchors, release Scene
-   *    sources and forget the Play Scene and library.
-   * 7. Clear owner queues and the Scene Layer table, then every registered
-   *    subsystem's `dispose`.
+   * Ends the session once, in order:
+   * - Still running: dispose asset preloads, end the console lifetime and
+   *   reject Scene Layer readiness waiters.
+   * - Mark stopped, then end diagnostics, the inspector queue, the boundary
+   *   queue, pending pause changes, tweens and the overlay.
+   * - Cancel: invalidate in-flight async loads (lifecycle id), cancel a Scene
+   *   change, stop running, resume simulation waiters, then every registered
+   *   subsystem's `cancelPending` (`RuntimeSubsystem` Stop phase 1; the Scene
+   *   realizer last).
+   * - Finalize the trace.
+   * - End the World: destroy live components, then `World.end`.
+   * - Release scripts: dispose ScriptHost, unregister script Classes, drop
+   *   anchors, release Scene sources and forget the Play Scene and library.
+   * - Dispose: clear owner queues and the Scene Layer table, then every
+   *   registered subsystem's `dispose` (`RuntimeSubsystem` Stop phase 2).
    */
   stop(): void {
     if (this.stopped) return;
-    // 1.
+    // Still running.
     this.assetPreloads.dispose();
     this.console.stop();
     this.layers.rejectWaiters();
-    // 2.
+    // Mark stopped.
     this.stopped = true;
     this.ticks.stopDiagnostics();
     this.inspector.stop();
@@ -2167,16 +2168,16 @@ class InProcessRuntime implements RuntimeDriver {
     this.pendingPauseChanges.clear();
     this.tweens.stop();
     this.overlay.clear();
-    // 3.
+    // Cancel.
     this.lifecycleId++;
     this.sceneRealizer.cancelSceneChange();
     this.running = false;
     for (const resume of this.simulationWaiters) resume();
     this.simulationWaiters.clear();
     this.subsystems.cancelPending();
-    // 4.
+    // Finalize the trace.
     this.ticks.finalizeTrace("session-ended");
-    // 5.
+    // End the World.
     for (const actor of this.world.getActors()) {
       for (const component of [...actor.components]) {
         if (!component.destroyed) {
@@ -2187,14 +2188,14 @@ class InProcessRuntime implements RuntimeDriver {
       }
     }
     this.world.end();
-    // 6.
+    // Release scripts.
     this.scriptHost.dispose();
     this.scriptRuntime.unregisterClasses();
     this.anchors.clear();
     this.sceneRealizer.releaseSceneSources();
     this.playScene = undefined;
     this.sceneLibrary.clear();
-    // 7.
+    // Dispose.
     this.admission.clear();
     this.layers.clear();
     this.subsystems.dispose();
