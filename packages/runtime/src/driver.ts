@@ -6,7 +6,7 @@ import type { SaveGameService } from "@babylonslate/core";
 import { SessionBoundaries, type RuntimeSaveGameOptions } from "./session-boundaries";
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
 import { RuntimeAssetPreloads } from "./asset-preloads";
-import type { RuntimeAssetLoadState, RuntimeAssetPreloadOptions, RuntimeAssetPreloadResult } from "@babylonslate/core";
+import type { RuntimeAssetLoadState } from "@babylonslate/core";
 import { SceneLayerOverlay, createSceneLayerOverlayHostBindings } from "./scene-layer-overlay";
 import type { FocusNavigationSettings } from "@babylonslate/core";
 import { CableWorldSync } from "./cable-sync";
@@ -129,6 +129,7 @@ import { BehaviourTreeRuntime } from "./behaviour-tree-runtime";
 import { LatentDelays } from "./latent-delays";
 import { RuntimeCamera } from "./runtime-camera";
 import { RuntimePropertyWrites } from "./runtime-property-writes";
+import { RuntimeContinuationCancelled, SimulationWaits } from "./simulation-waits";
 
 export interface RuntimeDriverOptions {
   sessionGeneration?: number;
@@ -408,10 +409,6 @@ function createClassRegistry(): ClassRegistry {
   return registry;
 }
 
-class RuntimeContinuationCancelled extends Error {
-  constructor() { super("Scene realization was cancelled."); this.name = "AbortError"; }
-}
-
 /**
  * The in-process runtime driver: it builds the session's subsystems, owns the
  * session state they read (stop, pause, boot loading, frame id, the Play Scene
@@ -440,7 +437,6 @@ class InProcessRuntime implements RuntimeDriver {
   private paused = false;
   private readonly pauseReasons = new Set<SessionPauseReason>();
   private readonly pendingPauseChanges = new Map<SessionPauseReason, boolean>();
-  private readonly simulationWaiters = new Set<() => void>();
   private frameId = 0;
   private commandRevision = 0;
   private lifecycleId = 0;
@@ -509,6 +505,7 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly behaviourTrees: BehaviourTreeRuntime;
   private readonly actors: ActorRealization;
   private readonly camera: RuntimeCamera;
+  private readonly waits: SimulationWaits;
   private readonly simulation: SimulationSession;
   private readonly scriptRuntime: ScriptRuntime;
   private readonly inspector: RuntimeInspectorService;
@@ -548,9 +545,9 @@ class InProcessRuntime implements RuntimeDriver {
    * reads one:
    *
    * 1. Core subsystems: `OwnerAdmission` first, because Delays, audio/particle
-   *    playback, scene streams, the Scene realizer, Session boundaries and actor
-   *    realization take it directly; `RenderSlots` takes `RuntimeSubsystems`.
-   *    `RuntimeCamera` takes no subsystem directly.
+   *    playback, scene streams, the Scene realizer, Session boundaries, actor
+   *    realization and simulation waits take it directly; `RenderSlots` takes
+   *    `RuntimeSubsystems`. `RuntimeCamera` takes no subsystem directly.
    * 2. Session identity: `SimulationSession` snapshots the Simulate baseline,
    *    then `ScriptRuntime`, whose Class asset guid map the console's startup
    *    command bindings (phase 4) and the ScriptHost actor bindings (phase 7)
@@ -592,6 +589,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.behaviourTrees = this.createBehaviourTrees();
     this.actors = this.createActorRealization();
     this.camera = this.createCamera();
+    this.waits = this.createWaits();
 
     // 2. Session identity, scripts and the inspector.
     this.simulation = this.createSimulation(options);
@@ -792,7 +790,7 @@ class InProcessRuntime implements RuntimeDriver {
       blockSettled: () => {
         this.ticks.resetAccumulator();
         this.admission.flush();
-        this.resumeSimulationWaiters();
+        this.waits.resumeWaiters();
       },
       emit: (command) => this.emit(command),
     });
@@ -949,6 +947,18 @@ class InProcessRuntime implements RuntimeDriver {
       overlay: () => this.overlay,
       physics: () => this.physics,
       emit: (command) => this.emit(command),
+    });
+  }
+
+  private createWaits(): SimulationWaits {
+    return new SimulationWaits(this.admission, {
+      world: () => this.world,
+      stopped: () => this.stopped,
+      paused: () => this.paused,
+      pauseChangePending: () => [...this.pendingPauseChanges.values()].some(Boolean),
+      streams: () => this.streams,
+      boundaries: () => this.boundaries,
+      assetPreloads: () => this.assetPreloads,
     });
   }
 
@@ -1263,7 +1273,7 @@ class InProcessRuntime implements RuntimeDriver {
       document: (assetGuid) => this.sceneLayerLibrary.get(assetGuid),
       demandAssets: () => this.demandAssetCatalog,
       assetPreloads: () => this.assetPreloads,
-      continueSimulation: (owner) => this.continueSimulation(owner),
+      continueSimulation: (owner) => this.waits.continueSimulation(owner),
       setOverlayGravity: (gravity) => this.physics.setOverlayGravity(gravity),
       markUnsupportedInstance: (layerGuid) => this.simulation.markUnsupportedInstance("layer", layerGuid),
       guidTaken: (id) => this.renderSlots.hasGuid(id) || this.world.findActor(id) != null,
@@ -1285,7 +1295,7 @@ class InProcessRuntime implements RuntimeDriver {
     const frameId = (): number => this.frameId;
     const slot = (actor: Actor): number | undefined => this.actorSlot(actor);
     const canRun = (owner: BObject): boolean => this.admission.canRun(owner);
-    const continueSimulation = (owner: BObject | null): Promise<void> | undefined => this.continueSimulation(owner);
+    const continueSimulation = (owner: BObject | null): Promise<void> | undefined => this.waits.continueSimulation(owner);
     return new ScriptHost({
       data: this.dataCatalog,
       seed: options.seed,
@@ -1382,8 +1392,8 @@ class InProcessRuntime implements RuntimeDriver {
         if (!Number.isFinite(value)) return 0;
         return Math.min(1, Math.max(0, value));
       },
-      preloadAssets: (assets, owner, options) => this.preloadForGameplay(assets, owner, options),
-      waitForSimulation: (owner) => this.continueSimulation(owner) ?? Promise.resolve(),
+      preloadAssets: (assets, owner, options) => this.waits.preloadForGameplay(assets, owner, options),
+      waitForSimulation: (owner) => this.waits.continueSimulation(owner) ?? Promise.resolve(),
       getProjectName: () => projectName,
       getProjectVersion: () => projectVersion,
       setWorldGravity: (gravity) => {
@@ -1450,56 +1460,6 @@ class InProcessRuntime implements RuntimeDriver {
 
   getSceneLoadProgress(target: unknown): number {
     return this.streams.progress(target);
-  }
-
-  private simulationBlocked(owner: BObject | null): boolean {
-    return (this.streams.blocking || this.paused || this.boundaries.pausePending ||
-      [...this.pendingPauseChanges.values()].some(Boolean)) && !this.stopped && !owner?.destroyed;
-  }
-
-  private async waitForSimulation(owner: BObject | null): Promise<void> {
-    while (this.simulationBlocked(owner))
-      await new Promise<void>((resolve) => this.simulationWaiters.add(resolve));
-    this.assertContinuable(owner);
-  }
-
-  /** Like waitForSimulation, but an unblocked continuation resumes without extra microtask hops. */
-  private continueSimulation(owner: BObject | null): Promise<void> | undefined {
-    if (this.simulationBlocked(owner)) return this.waitForSimulation(owner);
-    this.assertContinuable(owner);
-    return undefined;
-  }
-
-  private assertContinuable(owner: BObject | null): void {
-    if (this.stopped || owner?.destroyed || !this.streams.ownerReady(owner))
-      throw new RuntimeContinuationCancelled();
-  }
-
-  private async preloadForGameplay(assets: readonly string[], owner: BObject | null, options: RuntimeAssetPreloadOptions = {}): Promise<RuntimeAssetPreloadResult> {
-    const callbackOwner = owner ?? this.world.gameInstance;
-    let queued = false, active = true, latest = 0;
-    const onProgress = options.onProgress ? (value: number) => {
-      latest = value;
-      if (queued || !active) return;
-      queued = true;
-      // Only the latest progress value waits during Pause; no callback flood or
-      // gameplay continuation is delivered by an I/O completion while frozen.
-      const deliver = () => {
-        queued = false;
-        if (active) this.admission.guard(() => options.onProgress!(latest));
-      };
-      if (callbackOwner) this.admission.run(callbackOwner, deliver);
-      else deliver();
-    } : undefined;
-    let result: RuntimeAssetPreloadResult | undefined;
-    try {
-      result = await this.assetPreloads.acquire(assets, owner?.guid ?? this.world.currentScene?.guid ?? "session", { ...options, onProgress });
-      { const pending = this.continueSimulation(owner); if (pending) await pending; }
-      return result;
-    } catch (error) {
-      if (result?.preloadId) this.assetPreloads.release(result.preloadId);
-      throw error;
-    } finally { active = false; }
   }
 
   loadSceneStream(target: unknown, blocking = false): Promise<void> {
@@ -1931,7 +1891,7 @@ class InProcessRuntime implements RuntimeDriver {
    * - Mark stopped, then end diagnostics, the inspector queue, the boundary
    *   queue, pending pause changes, tweens and the overlay.
    * - Cancel: invalidate in-flight async loads (lifecycle id), cancel a Scene
-   *   change, stop running, resume simulation waiters, then every registered
+   *   change, stop running, release `SimulationWaits` waiters, then every registered
    *   subsystem's `cancelPending` (`RuntimeSubsystem` Stop phase 1; the Scene
    *   realizer last).
    * - Finalize the trace.
@@ -1959,8 +1919,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.lifecycleId++;
     this.sceneRealizer.cancelSceneChange();
     this.running = false;
-    for (const resume of this.simulationWaiters) resume();
-    this.simulationWaiters.clear();
+    this.waits.releaseAll();
     this.subsystems.cancelPending();
     // Finalize the trace.
     this.ticks.finalizeTrace("session-ended");
@@ -2008,15 +1967,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (this.paused) { this.resetInputState(); return; }
     this.ticks.discardNextElapsed();
     this.admission.flush();
-    this.resumeSimulationWaiters();
-  }
-
-  /** Resume continuations waiting on the simulation, unless a blocking scene stream still holds it. */
-  private resumeSimulationWaiters(): void {
-    if (this.streams.blocking) return;
-    const waiters = [...this.simulationWaiters];
-    this.simulationWaiters.clear();
-    for (const resume of waiters) resume();
+    this.waits.resumeWaiters();
   }
 
   requestSessionBoundary(request: SessionBoundaryRequest): Promise<SessionBoundaryResult> {
