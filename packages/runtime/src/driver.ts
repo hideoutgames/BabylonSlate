@@ -15,7 +15,7 @@ import { DynamicRuntimeMeshSync } from "./dynamic-runtime-mesh";
 import { MovementWorldSync } from "./movement";
 import { captureComponent } from "./render-targets";
 import { createDefaultRenderTargetCaptureProperties, type RenderTargetPayload, type RenderTargetTexturePayload } from "@babylonslate/core";
-import { normalizeWaterDefinition, type WaterDefinition } from "@babylonslate/core";
+import type { WaterDefinition } from "@babylonslate/core";
 import { ScalabilitySession, type ScalabilityRequest, type ScalabilityResult, type ScalabilitySnapshot, type ScalabilityAcknowledgement, type RenderPath, type RenderProjectSettings } from "@babylonslate/core";
 import type { CollisionTriangleMesh, InputAssetDefinition } from "@babylonslate/core";
 import { inputMappingsFromAssets } from "@babylonslate/input";
@@ -67,7 +67,6 @@ import {
   type SceneActorHooks,
 } from "@babylonslate/object-model";
 import {
-  createDefaultSceneSettings,
   DEFAULT_PLAY_FRAME_CAP,
   deprojectCursorRay,
   type MaterialParameterCatalog,
@@ -91,14 +90,7 @@ import {
 } from "@babylonslate/input";
 import { runSceneRealizationWork, sceneRealizationCancelled, waitForSceneWork, type CooperativeSceneLoadingOptions } from "./scene-realization-work";
 import type { AcquireRuntimeScene, RuntimeSceneSource } from "./scene-source";
-import {
-  createPhysicsBackend,
-  createSoftwarePhysicsBackend,
-  parseColliderProperties,
-  SoftwarePhysicsBackend,
-  type PhysicsBackend,
-  type PhysicsWorldKind,
-} from "@babylonslate/physics";
+import { parseColliderProperties, type PhysicsWorldKind } from "@babylonslate/physics";
 import {
   createCommandRegistry,
   createUserCommand,
@@ -120,7 +112,6 @@ import {
   type UserCommandDef,
 } from "@babylonslate/debugger";
 import { LogRingBuffer, type LogSeverity } from "./log-ring";
-import { componentIdFromColliderPhysicsId } from "./physics-collider-id";
 import {
   SessionDiagnosticAggregator,
   type RuntimeDiagnostic,
@@ -137,7 +128,8 @@ import type { BehaviourTreeDocument, BlackboardDocument } from "@babylonslate/be
 import { ScriptHost, compiledScriptKey, compiledScriptSourceLabel, type CompiledScript } from "./script-host";
 import { COMPILED_MODULE_LINE_OFFSET } from "./module-loader";
 import { shouldSpawnScriptedActor } from "./play-load";
-import { PhysicsWorldSync } from "./physics-sync";
+import type { PhysicsWorldSync } from "./physics-sync";
+import { RuntimePhysicsWorlds } from "./runtime-physics-worlds";
 import { RagdollWorldSync } from "./ragdoll-sync";
 import {
   formatDumpActors,
@@ -469,6 +461,13 @@ type GameLifecycleHooks = {
   onSceneExit: (self: BObject, sceneName: string) => void;
 };
 
+/** Tile animation time is sent only while a tilemap could show an animated tile. */
+function hasAnimatedTiles(tilemaps: ReadonlyMap<string, TilemapPayload>, tilesets: ReadonlyMap<string, TilesetPayload>): boolean {
+  return tilemaps.size > 0 && [...tilesets.values()].some(
+    (tileset) => tileset.tiles.some((tile) => tile.animation.length > 0),
+  );
+}
+
 class RuntimeContinuationCancelled extends Error {
   constructor() { super("Scene realization was cancelled."); this.name = "AbortError"; }
 }
@@ -543,11 +542,7 @@ class InProcessRuntime implements RuntimeDriver {
     (!owner || this.admission.canRunActions(owner)));
   private readonly onCommand?: (command: CommandMessage) => void;
   private readonly dt: number;
-  private physicsWorldKind: PhysicsWorldKind;
-  private physicsGeneration = 0;
-  private gravity: [number, number, number];
-  private readonly havokWasmUrl: string | undefined;
-  private readonly preferSoftwarePhysics: boolean;
+  private readonly physics: RuntimePhysicsWorlds;
   private paused = false;
   private readonly simulationWaiters = new Set<() => void>();
   private readonly scalability: ScalabilitySession;
@@ -555,7 +550,6 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly scalabilityProjectRenderPath: RenderPath;
   private volume = 1;
   private timeDilation = 1;
-  private showCollision = false;
   private running = false;
   private flushingConsoleActors = false;
   private frameId = 0;
@@ -566,13 +560,10 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly dataCatalog: RuntimeDataCatalog;
   private readonly sourceRenderTargets = new Map<string, RenderTargetPayload>();
   private readonly sourceRenderTargetTextures = new Map<string, RenderTargetTexturePayload>();
-  private physicsSync: PhysicsWorldSync;
-  private overlayPhysicsSync: PhysicsWorldSync;
   private readonly ragdolls: RagdollWorldSync;
   private readonly cables: CableWorldSync;
   private readonly dynamicMeshes: DynamicRuntimeMeshSync;
   private readonly movement: MovementWorldSync;
-  private readonly overlayGravity: [number, number, number];
   private playScene: SerializedScene | undefined;
   private playSceneGuid: string;
   private readonly gameInstanceClass: string;
@@ -636,29 +627,8 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly consoleLifetime = new AbortController();
   private readonly loopGuard: InfiniteLoopGuard;
   private readonly seed: number;
-  private tilemaps = new Map<string, TilemapPayload>();
-  private waters = new Map<string, WaterDefinition>();
-  private tilesets = new Map<string, TilesetPayload>();
   private tilemapAnimationTimeMs = 0;
   private hasAnimatedTiles = false;
-  private sprites = new Map<string, SpritePayload>();
-  private spriteAnimations = new Map<string, SpriteAnimationPayload>();
-  private models = new Map<string, ModelPayload>();
-  /** Installed union: on-demand answers overlaid by the latest `loadModels` meshes. */
-  private complexMeshes = new Map<string, CollisionTriangleMesh>();
-  private lastProvidedComplexMeshes: ReadonlyMap<string, CollisionTriangleMesh> = new Map();
-  private demandComplexMeshes = new Map<string, CollisionTriangleMesh>();
-  private pendingComplexMeshes = new Set<string>();
-  private unavailableComplexMeshes = new Set<string>();
-  private warnedComplexMeshes = new Set<string>();
-  /** Physics found a Complex Collision Model without a mesh: ask the host once to cook it. */
-  private readonly missingComplexMesh = (assetGuid: string): void => {
-    if (this.complexMeshes.has(assetGuid) || this.pendingComplexMeshes.has(assetGuid) ||
-      this.unavailableComplexMeshes.has(assetGuid)) return;
-    this.pendingComplexMeshes.add(assetGuid);
-    this.emit({ type: "requestComplexCollision", assetGuid });
-  };
-  private pixelsPerUnit = 100;
   private readonly texturePixelSizes: Readonly<Record<string, { width: number; height: number }>>;
   /**
    * Subsystems with lifecycle hooks. Registration order (end of the
@@ -690,8 +660,8 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly delays = new LatentDelays(this.admission);
   private readonly navigation = new RuntimeNavigation({
     world: () => this.world,
-    worldKind: () => this.physicsWorldKind,
-    physics: () => this.physicsSync,
+    worldKind: () => this.physics.kind,
+    physics: () => this.physics.main,
     streamActorReady: (actor) => this.streams.actorReady(actor),
     isStreamActor: (actor) => this.streams.isStreamActor(actor),
     dt: () => this.simulationDt(),
@@ -701,7 +671,7 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly streams: SceneStreams = new SceneStreams(this.admission, {
     world: () => this.world,
     stopped: () => this.stopped,
-    physicsWorldKind: () => this.physicsWorldKind,
+    physicsWorldKind: () => this.physics.kind,
     sceneDocument: (key) => this.sceneLibrary.get(key),
     sceneGuid: (key) => this.sceneGuidByKey.get(key) ?? key,
     acquireScene: () => this.acquireScene,
@@ -713,7 +683,7 @@ class InProcessRuntime implements RuntimeDriver {
     breakParentCycles: (actors, detach) => this.breakLoadedParentCycles(actors, detach),
     publishSnapshot: () => this.snapshots.publish(),
     slot: (actor) => this.actorSlot(actor),
-    syncPhysics: () => this.physicsSync.syncFromWorld(this.world),
+    syncPhysics: () => this.physics.main.syncFromWorld(this.world),
     navigation: () => this.navigation,
     removeActor: (actor) => this.removeOwnedActor(actor),
     cancelInvalidTweens: () => this.tweens.cancelInvalid(),
@@ -750,7 +720,7 @@ class InProcessRuntime implements RuntimeDriver {
     canTick: (actor) => this.admission.canTickActor(actor),
     slot: (actor) => this.actorSlot(actor),
     navigation: () => this.navigation,
-    worldKind: () => this.physicsWorldKind,
+    worldKind: () => this.physics.kind,
     seed: () => this.seed,
     dt: () => this.simulationDt(),
     frameId: () => this.frameId,
@@ -796,13 +766,29 @@ class InProcessRuntime implements RuntimeDriver {
     this.dt = options.dt ?? 1 / 60;
     this.seed = options.seed;
     this.onCommand = options.onCommand;
-    this.physicsWorldKind =
-      options.physicsWorld ??
-      options.playScene?.settings.physicsWorld ??
-      "3d";
-    this.gravity = options.gravity ?? [0, -9.81, 0];
-    this.havokWasmUrl = options.havokWasmUrl;
-    this.preferSoftwarePhysics = options.preferSoftwarePhysics ?? false;
+    const tilemaps = new Map(Object.entries(options.tilemaps ?? {}));
+    const tilesets = new Map(Object.entries(options.tilesets ?? {}));
+    this.physics = new RuntimePhysicsWorlds({
+      world: () => this.world,
+      stopped: () => this.stopped,
+      lifecycleId: () => this.lifecycleId,
+      mainActorReady: (actor) => this.streams.actorReady(actor),
+      overlayActorReady: (actor) => this.admission.canTickActor(actor, true),
+      hasSceneLayerDocuments: () => this.sceneLayerLibrary.size > 0,
+      canTickActor: (actor) => this.admission.canTickActor(actor),
+      scripts: () => this.scriptHost,
+      frameId: () => this.frameId,
+      recordDiagnostic: (diagnostic) => this.diagnostics.push(diagnostic),
+      emit: (command) => this.emit(command),
+    }, {
+      kind: options.physicsWorld ?? options.playScene?.settings.physicsWorld ?? "3d",
+      gravity: options.gravity ?? [0, -9.81, 0],
+      havokWasmUrl: options.havokWasmUrl,
+      preferSoftware: options.preferSoftwarePhysics ?? false,
+      pixelsPerUnit: options.pixelsPerUnit,
+      tilemaps,
+      tilesets,
+    });
     this.playScene = options.playScene;
     this.acquireScene = options.acquireScene;
     this.playSceneGuid = options.playSceneGuid ?? "play-scene";
@@ -850,16 +836,7 @@ class InProcessRuntime implements RuntimeDriver {
       }
     }
     this.texturePixelSizes = options.texturePixelSizes ?? {};
-    if (options.pixelsPerUnit && options.pixelsPerUnit > 0) {
-      this.pixelsPerUnit = options.pixelsPerUnit;
-    }
-    if (options.tilemaps) {
-      this.tilemaps = new Map(Object.entries(options.tilemaps));
-    }
-    if (options.tilesets) {
-      this.tilesets = new Map(Object.entries(options.tilesets));
-    }
-    this.refreshTilemapAnimationContent();
+    this.hasAnimatedTiles = hasAnimatedTiles(tilemaps, tilesets);
     this.behaviourTrees.replaceAudioAssets((options.audioAssetGuids ?? []).filter((guid) => guid));
     this.behaviourTrees.replaceAnimClipCatalog((options.animClipCatalog ?? []).filter((entry) => entry.guid));
 
@@ -877,39 +854,7 @@ class InProcessRuntime implements RuntimeDriver {
     );
     this.resolver = new InputResolver(mappings);
 
-    this.overlayGravity = [...createDefaultSceneSettings("2d").gravity] as [
-      number,
-      number,
-      number,
-    ];
-    this.physicsSync = new PhysicsWorldSync(
-      createSoftwarePhysicsBackend(this.physicsWorldKind, {
-        x: this.gravity[0],
-        y: this.gravity[1],
-        z: this.gravity[2],
-      }),
-      {
-        actorFilter: (actor) => actor.sceneLayerId == null && this.streams.actorReady(actor),
-        deferUnsupportedConstraints: !this.preferSoftwarePhysics,
-      },
-    );
-    this.overlayPhysicsSync = new PhysicsWorldSync(
-      createSoftwarePhysicsBackend("2d", {
-        x: this.overlayGravity[0],
-        y: this.overlayGravity[1],
-        z: this.overlayGravity[2],
-      }),
-      {
-        actorFilter: (actor) => actor.sceneLayerId != null && this.admission.canTickActor(actor, true),
-        deferUnsupportedConstraints: !this.preferSoftwarePhysics,
-      },
-    );
-    this.physicsSync.setMissingComplexMeshHandler(this.missingComplexMesh);
-    this.overlayPhysicsSync.setMissingComplexMeshHandler(this.missingComplexMesh);
-    if (options.tilemaps || options.tilesets) {
-      this.bindPhysicsContent(this.physicsSync);
-      this.bindPhysicsContent(this.overlayPhysicsSync);
-    }
+    if (options.tilemaps || options.tilesets) this.physics.bindAll();
     if (options.sprites || options.spriteAnimations) {
       this.registerSpriteContent({
         sprites: options.sprites ?? {},
@@ -962,15 +907,11 @@ class InProcessRuntime implements RuntimeDriver {
       onPhysics: (ctx) => {
         this.dynamicMeshes.flush();
         this.ragdolls.sync();
-        if (this.admission.canTickScene()) {
-          const time = ctx.tickIndex * ctx.dt;
-          this.physicsSync.step(ctx.dt, this.world, time, -this.gravity[1], () => this.movement.step(ctx.dt, this.physicsSync));
-          if (this.physicsSync.water.hasBodies) this.emit({ type: "waterTime", seconds: time });
-        }
-        if (this.admission.hasReadyLayers()) this.overlayPhysicsSync.step(ctx.dt, this.world, undefined, undefined, () => this.movement.step(ctx.dt, this.overlayPhysicsSync));
+        if (this.admission.canTickScene()) this.physics.stepMain(ctx.dt, ctx.tickIndex, (sync) => this.movement.step(ctx.dt, sync));
+        if (this.admission.hasReadyLayers()) this.physics.stepOverlay(ctx.dt, (sync) => this.movement.step(ctx.dt, sync));
         this.ragdolls.afterStep();
-        if (this.admission.canTickScene()) this.cables.step(ctx.dt, this.gravity, this.frameId + 1);
-        this.dispatchCollisionEvents();
+        if (this.admission.canTickScene()) this.cables.step(ctx.dt, this.physics.gravity, this.frameId + 1);
+        this.physics.dispatchCollisionEvents();
       },
     });
     this.snapshots = new SnapshotPublisher(options.maxActors ?? 256, this.world, this.renderSlots, {
@@ -1016,9 +957,9 @@ class InProcessRuntime implements RuntimeDriver {
     });
     this.movement = new MovementWorldSync({
       world: this.world,
-      physics: (actor) => actor.sceneLayerId ? this.overlayPhysicsSync : this.physicsSync,
+      physics: (actor) => this.physics.forActor(actor),
       eligible: (actor) => this.admission.canTickActor(actor),
-      gravity: (actor) => -(actor.sceneLayerId ? this.overlayGravity[1] : this.gravity[1]),
+      gravity: (actor) => -this.physics.gravityFor(actor)[1],
       warn: (component) => this.emit({ type: "log", severity: "warning", category: "Movement",
         message: `Movement on ${component.owner?.guid ?? "actor"} could not create its motor. Use one Movement component without Rigid Body, Nav Agent, Ragdoll or Water Buoyancy components.`, frameId: this.frameId }),
       event: (component, event, args) => {
@@ -1028,17 +969,17 @@ class InProcessRuntime implements RuntimeDriver {
     });
     this.cables = new CableWorldSync({
       world: this.world,
-      physics: () => this.physicsSync.getBackend(),
+      physics: () => this.physics.main.getBackend(),
       eligible: (actor) => this.admission.canTickActor(actor),
       slot: (actor) => this.actorSlot(actor),
       emit: (command) => this.emit(command),
     });
     this.ragdolls = new RagdollWorldSync({
       world: this.world,
-      physics: () => this.physicsSync,
+      physics: () => this.physics.main,
       slot: (actor) => this.actorSlot(actor),
       eligible: (actor) => this.admission.canTickActor(actor),
-      deferNative: !this.preferSoftwarePhysics,
+      deferNative: !this.physics.preferSoftware,
       emit: (command) => this.emit(command),
       error: (error) => { this.reportError(error); },
     });
@@ -1069,7 +1010,7 @@ class InProcessRuntime implements RuntimeDriver {
       stopped: () => this.stopped,
       saveBoundaryActive: () => this.saveBoundaryActive,
       removing: (actor) => this.removingActors.has(actor),
-      pixelsPerUnit: () => this.pixelsPerUnit,
+      pixelsPerUnit: () => this.physics.pixelsPerUnit,
       scripts: () => this.scriptHost,
       slot: (actor) => this.actorSlot(actor),
       guidSlot: (guid) => this.guidSlot(guid),
@@ -1083,7 +1024,7 @@ class InProcessRuntime implements RuntimeDriver {
       realizeActor: (actor) => this.realizeActor(actor),
       removeActor: (actor) => this.removeOwnedActor(actor),
       publishSnapshot: () => this.snapshots.publish(),
-      syncOverlayPhysics: () => this.overlayPhysicsSync.syncFromWorld(this.world),
+      syncOverlayPhysics: () => this.physics.overlay.syncFromWorld(this.world),
       emit: (command) => this.emit(command),
     });
     this.layers = new SceneLayers(this.admission, this.overlay, {
@@ -1098,12 +1039,12 @@ class InProcessRuntime implements RuntimeDriver {
       demandAssets: () => this.demandAssetCatalog,
       assetPreloads: () => this.assetPreloads,
       continueSimulation: (owner) => this.continueSimulation(owner),
-      setOverlayGravity: (gravity) => this.overlayPhysicsSync.getBackend().setGravity(gravity),
+      setOverlayGravity: (gravity) => this.physics.setOverlayGravity(gravity),
       markUnsupportedInstance: (layerGuid) => this.markUnsupportedSimulationInstance("layer", layerGuid),
       guidTaken: (id) => this.renderSlots.hasGuid(id) || this.world.findActor(id) != null,
       createActor: (serialized, layerGuid) => createActorFromSerialized(this.world, serialized, this.sceneActorHooks, layerGuid),
       publishSnapshot: () => this.snapshots.publish(),
-      syncOverlayPhysics: () => this.overlayPhysicsSync.syncFromWorld(this.world),
+      syncOverlayPhysics: () => this.physics.overlay.syncFromWorld(this.world),
       tryCompleteSceneLoad: () => this.tryCompleteSceneLoad(),
       removeActor: (actor) => this.removeOwnedActor(actor),
       cancelInvalidTweens: () => this.tweens.cancelInvalid(),
@@ -1170,8 +1111,8 @@ class InProcessRuntime implements RuntimeDriver {
       }),
       ...createPhysicsHostBindings({
         world: () => this.world,
-        physics: () => this.physicsSync,
-        overlayPhysics: () => this.overlayPhysicsSync,
+        physics: () => this.physics.main,
+        overlayPhysics: () => this.physics.overlay,
         ragdolls: this.ragdolls,
         dt: this.dt,
         projectCursorToScene: (channel, options) => this.projectCursorToScene(channel, options),
@@ -1254,12 +1195,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.subsystems.register(this.cables);
     this.subsystems.register(this.dynamicMeshes);
     this.subsystems.register(this.movement);
-    this.subsystems.register({
-      dispose: () => {
-        this.physicsSync.dispose();
-        this.overlayPhysicsSync.dispose();
-      },
-    });
+    this.subsystems.register(this.physics);
     this.subsystems.register(this.navigation);
     this.subsystems.register(this.animGraphs);
     this.subsystems.register(this.behaviourTrees);
@@ -1365,101 +1301,26 @@ class InProcessRuntime implements RuntimeDriver {
     return this.streams.unload(target, blocking);
   }
 
-  async loadPhysics(): Promise<void> {
-    if (this.stopped) throw sceneRealizationCancelled();
-    const lifecycleId = this.lifecycleId;
-    const generation = this.physicsGeneration;
-    const current = () => !this.stopped && lifecycleId === this.lifecycleId && generation === this.physicsGeneration;
-    if (this.preferSoftwarePhysics) return;
-    if (!(this.physicsSync.getBackend() instanceof SoftwarePhysicsBackend)) {
-      return;
-    }
-    const backend = await createPhysicsBackend({
-      kind: this.physicsWorldKind,
-      gravity: {
-        x: this.gravity[0],
-        y: this.gravity[1],
-        z: this.gravity[2],
-      },
-      havokWasmUrl: this.havokWasmUrl,
-      allowSoftwareFallback: false,
-    });
-    if (!current()) {
-      backend.dispose();
-      throw sceneRealizationCancelled();
-    }
-    let overlayBackend: PhysicsBackend;
-    try {
-      overlayBackend = await createPhysicsBackend({
-        kind: "2d",
-        // Without layer documents this session cannot create overlay actors.
-        preferSoftware: this.sceneLayerLibrary.size === 0,
-        gravity: {
-          x: this.overlayGravity[0],
-          y: this.overlayGravity[1],
-          z: this.overlayGravity[2],
-        },
-        allowSoftwareFallback: false,
-      });
-    } catch (error) {
-      backend.dispose();
-      throw error;
-    }
-
-    if (!current()) {
-      backend.dispose();
-      overlayBackend.dispose();
-      throw sceneRealizationCancelled();
-    }
-    backend.setGravity({ x: this.gravity[0], y: this.gravity[1], z: this.gravity[2] });
-    const physicsSync = new PhysicsWorldSync(backend, {
-      actorFilter: (actor) => actor.sceneLayerId == null && this.streams.actorReady(actor),
-    });
-    const overlayPhysicsSync = new PhysicsWorldSync(overlayBackend, {
-      actorFilter: (actor) => actor.sceneLayerId != null && this.admission.canTickActor(actor, true),
-    });
-    try {
-      this.bindPhysicsContent(physicsSync);
-      physicsSync.syncFromWorld(this.world);
-      this.bindPhysicsContent(overlayPhysicsSync);
-      overlayPhysicsSync.syncFromWorld(this.world);
-    } catch (error) {
-      physicsSync.dispose();
-      overlayPhysicsSync.dispose();
-      throw error;
-    }
-    this.physicsSync.dispose();
-    this.overlayPhysicsSync.dispose();
-    this.physicsSync = physicsSync;
-    this.overlayPhysicsSync = overlayPhysicsSync;
+  loadPhysics(): Promise<void> {
+    return this.physics.load();
   }
 
   getPhysicsSync(): PhysicsWorldSync | null {
-    return this.physicsSync;
+    return this.physics.main;
   }
 
   getOverlayPhysicsSync(): PhysicsWorldSync | null {
-    return this.overlayPhysicsSync;
+    return this.physics.overlay;
   }
 
   applyRagdollPoseCaptured(message: Extract<ControlMessage, { type: "ragdollPoseCaptured" }>): void {
     if (this.stopped) return;
     this.ragdolls.accept(message);
-    this.physicsSync.syncFromWorld(this.world);
+    this.physics.main.syncFromWorld(this.world);
   }
 
   private setWorldGravity(gravity: { x: number; y: number; z: number }): void {
-    const next: [number, number, number] = [
-      Number.isFinite(gravity.x) ? gravity.x : 0,
-      Number.isFinite(gravity.y) ? gravity.y : 0,
-      Number.isFinite(gravity.z) ? gravity.z : 0,
-    ];
-    this.gravity = next;
-    this.physicsSync.getBackend().setGravity({
-      x: next[0],
-      y: next[1],
-      z: next[2],
-    });
+    const next = this.physics.setGravity(gravity);
     if (this.playScene) {
       // Prepared authoring content is also the immutable Simulation baseline.
       this.playScene = { ...this.playScene, settings: { ...this.playScene.settings, gravity: next } };
@@ -1604,25 +1465,6 @@ class InProcessRuntime implements RuntimeDriver {
       }
       yield;
     }
-  }
-
-  private bindPhysicsContent(sync: PhysicsWorldSync): void {
-    sync.water.setContent(this.waters);
-    sync.setTileContent({
-      tilemaps: this.tilemaps,
-      tilesets: this.tilesets,
-      pixelsPerUnit: this.pixelsPerUnit,
-    });
-    sync.setSpriteContent({
-      sprites: this.sprites,
-      spriteAnimations: this.spriteAnimations,
-      pixelsPerUnit: this.pixelsPerUnit,
-    });
-    sync.setModelContent({
-      models: this.models,
-      complexMeshes: this.complexMeshes,
-    });
-    sync.setMissingComplexMeshHandler(this.missingComplexMesh);
   }
 
   async loadScripts(scripts: readonly CompiledScript[]): Promise<void> {
@@ -1890,9 +1732,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (component.classId === "NavAgentComponent") {
       this.navigation.updateAgentParams(owner);
     }
-    const sync = owner.sceneLayerId
-      ? this.overlayPhysicsSync
-      : this.physicsSync;
+    const sync = this.physics.forActor(owner);
     if (component.classId === "RagdollComponent" || component.classId === "MeshComponent") {
       // Ragdoll and mesh-collision edits can create or retire the owner's
       // body; reconcile that one actor from its own chain.
@@ -2046,22 +1886,21 @@ class InProcessRuntime implements RuntimeDriver {
     this.sceneLoadingProgress = 0;
     const steps = this.realizeSceneSteps(work);
     const retirement = this.retireSceneSteps(work);
-    const nextKind = work.scene?.settings.physicsWorld ?? this.physicsWorldKind;
-    const replaceNative = nextKind !== this.physicsWorldKind && !(this.physicsSync.getBackend() instanceof SoftwarePhysicsBackend);
+    const nextKind = work.scene?.settings.physicsWorld ?? this.physics.kind;
+    const replaceNative = this.physics.replacesNative(nextKind);
     const initializeNavigation = this.navigation.needsInitialization(work.guid);
     if (this.cooperativeSceneLoading || replaceNative || initializeNavigation) {
       work.promise = Promise.resolve().then(async () => {
         await this.prepareSceneLoading(work);
         await runSceneRealizationWork(retirement, work.controller.signal, this.cooperativeSceneLoading ?? {});
-        if (nextKind !== this.physicsWorldKind && !(this.physicsSync.getBackend() instanceof SoftwarePhysicsBackend)) {
-          const gravity = work.scene?.settings.gravity ?? this.gravity;
-          const acquisition = createPhysicsBackend({ kind: nextKind, gravity: { x: gravity[0], y: gravity[1], z: gravity[2] },
-            havokWasmUrl: this.havokWasmUrl, allowSoftwareFallback: false }).then((backend) => {
+        if (this.physics.replacesNative(nextKind)) {
+          const gravity = work.scene?.settings.gravity ?? this.physics.gravity;
+          const acquisition = this.physics.acquireNative(nextKind, gravity).then((backend) => {
             try { this.checkRealization(work); } catch (error) { backend.dispose(); throw error; }
             return backend;
           });
           const backend = await waitForSceneWork(acquisition, work.controller.signal);
-          this.installScenePhysics(work, backend);
+          this.physics.installScene(backend, () => this.checkRealization(work));
         }
         if (initializeNavigation) {
           await waitForSceneWork(initNavigation(), work.controller.signal);
@@ -2097,33 +1936,9 @@ class InProcessRuntime implements RuntimeDriver {
     }
   }
 
-  private installScenePhysics(work: SceneRealization, backend: PhysicsBackend): void {
-    let sync: PhysicsWorldSync | undefined;
-    try {
-      this.checkRealization(work);
-      sync = new PhysicsWorldSync(backend, {
-        actorFilter: (actor) => actor.sceneLayerId == null && this.streams.actorReady(actor),
-        deferUnsupportedConstraints: !this.preferSoftwarePhysics && backend instanceof SoftwarePhysicsBackend,
-      });
-      this.bindPhysicsContent(sync);
-      sync.syncFromWorld(this.world);
-    } catch (error) {
-      if (sync) sync.dispose(); else backend.dispose();
-      throw error;
-    }
-    this.physicsSync.dispose();
-    this.physicsSync = sync;
-    this.physicsWorldKind = backend.kind;
-    this.physicsGeneration++;
-  }
-
   private prepareSceneBackends(work: SceneRealization): void {
     this.checkRealization(work);
-    const kind = work.scene?.settings.physicsWorld ?? this.physicsWorldKind;
-    if (kind !== this.physicsWorldKind) {
-      const gravity = work.scene?.settings.gravity ?? this.gravity;
-      this.installScenePhysics(work, createSoftwarePhysicsBackend(kind, { x: gravity[0], y: gravity[1], z: gravity[2] }));
-    }
+    this.physics.prepareScene(work.scene?.settings, () => this.checkRealization(work));
     this.navigation.prepareScene(work.guid, work.refreshNavigation);
   }
 
@@ -2179,9 +1994,9 @@ class InProcessRuntime implements RuntimeDriver {
     }
     // Prune native bodies before new objects can reuse a departing guid. Global
     // SceneLayers remain in the World, retaining their bodies and motion.
-    this.physicsSync.syncFromWorld(this.world);
+    this.physics.main.syncFromWorld(this.world);
     checkpoint();
-    this.overlayPhysicsSync.syncFromWorld(this.world);
+    this.physics.overlay.syncFromWorld(this.world);
     checkpoint();
     // Actor removal releases only departing animation/BT state. Retained layers
     // continue from their existing graph state while the world is replaced.
@@ -2231,9 +2046,9 @@ class InProcessRuntime implements RuntimeDriver {
       checkpoint();
       const authoredGravity = scene.settings?.gravity;
       const gravity = {
-        x: Number(authoredGravity?.[0] ?? this.gravity[0]),
-        y: Number(authoredGravity?.[1] ?? this.gravity[1]),
-        z: Number(authoredGravity?.[2] ?? this.gravity[2]),
+        x: Number(authoredGravity?.[0] ?? this.physics.gravity[0]),
+        y: Number(authoredGravity?.[1] ?? this.physics.gravity[1]),
+        z: Number(authoredGravity?.[2] ?? this.physics.gravity[2]),
       };
       this.setWorldGravity(gravity);
       work.sceneInstance = this.world.createScene({ assetGuid: guid, sceneName: name,
@@ -2517,14 +2332,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   registerWaterContent(content: ReadonlyMap<string, WaterDefinition> | Readonly<Record<string, WaterDefinition>>): void {
-    this.waters = new Map(Array.from(content instanceof Map ? content.entries() : Object.entries(content), ([guid, value]) => [guid, normalizeWaterDefinition(value)]));
-    this.physicsSync.water.setContent(this.waters);
-  }
-
-  private refreshTilemapAnimationContent(): void {
-    this.hasAnimatedTiles = this.tilemaps.size > 0 && [...this.tilesets.values()].some(
-      (tileset) => tileset.tiles.some((tile) => tile.animation.length > 0),
-    );
+    this.physics.registerWaterContent(content);
   }
 
   registerTileContent(options: {
@@ -2532,29 +2340,17 @@ class InProcessRuntime implements RuntimeDriver {
     tilesets: Readonly<Record<string, TilesetPayload>> | ReadonlyMap<string, TilesetPayload>;
     pixelsPerUnit?: number;
   }): void {
-    this.tilemaps =
+    const tilemaps =
       options.tilemaps instanceof Map
         ? new Map(options.tilemaps)
         : new Map(Object.entries(options.tilemaps));
-    this.tilesets =
+    const tilesets =
       options.tilesets instanceof Map
         ? new Map(options.tilesets)
         : new Map(Object.entries(options.tilesets));
-    this.refreshTilemapAnimationContent();
+    this.hasAnimatedTiles = hasAnimatedTiles(tilemaps, tilesets);
     if (this.hasAnimatedTiles) this.emit({ type: "tilemapAnimationTime", elapsedMs: this.tilemapAnimationTimeMs });
-    if (options.pixelsPerUnit && options.pixelsPerUnit > 0) {
-      this.pixelsPerUnit = options.pixelsPerUnit;
-    }
-    this.physicsSync.setTileContent({
-      tilemaps: this.tilemaps,
-      tilesets: this.tilesets,
-      pixelsPerUnit: this.pixelsPerUnit,
-    });
-    this.overlayPhysicsSync.setTileContent({
-      tilemaps: this.tilemaps,
-      tilesets: this.tilesets,
-      pixelsPerUnit: this.pixelsPerUnit,
-    });
+    this.physics.registerTileContent(tilemaps, tilesets, options.pixelsPerUnit);
   }
 
   registerSpriteContent(options: {
@@ -2564,27 +2360,7 @@ class InProcessRuntime implements RuntimeDriver {
       | ReadonlyMap<string, SpriteAnimationPayload>;
     pixelsPerUnit?: number;
   }): void {
-    this.sprites =
-      options.sprites instanceof Map
-        ? new Map(options.sprites)
-        : new Map(Object.entries(options.sprites));
-    this.spriteAnimations =
-      options.spriteAnimations instanceof Map
-        ? new Map(options.spriteAnimations)
-        : new Map(Object.entries(options.spriteAnimations));
-    if (options.pixelsPerUnit && options.pixelsPerUnit > 0) {
-      this.pixelsPerUnit = options.pixelsPerUnit;
-    }
-    this.physicsSync.setSpriteContent({
-      sprites: this.sprites,
-      spriteAnimations: this.spriteAnimations,
-      pixelsPerUnit: this.pixelsPerUnit,
-    });
-    this.overlayPhysicsSync.setSpriteContent({
-      sprites: this.sprites,
-      spriteAnimations: this.spriteAnimations,
-      pixelsPerUnit: this.pixelsPerUnit,
-    });
+    this.physics.registerSpriteContent(options);
   }
 
   registerModelContent(options: {
@@ -2593,57 +2369,11 @@ class InProcessRuntime implements RuntimeDriver {
       | Readonly<Record<string, CollisionTriangleMesh>>
       | ReadonlyMap<string, CollisionTriangleMesh>;
   }): void {
-    this.models =
-      options.models instanceof Map
-        ? new Map(options.models)
-        : new Map(Object.entries(options.models));
-    const provided = options.complexMeshes
-      ? options.complexMeshes instanceof Map
-        ? options.complexMeshes
-        : new Map(Object.entries(options.complexMeshes))
-      : new Map<string, CollisionTriangleMesh>();
-    // A new source union may now hold a Model the host could not cook before.
-    this.unavailableComplexMeshes.clear();
-    this.installComplexMeshes(provided);
+    this.physics.registerModelContent(options);
   }
 
   registerComplexCollisionMeshes(meshes: ReadonlyMap<string, CollisionTriangleMesh>, unavailable: readonly string[] = []): void {
-    for (const [guid, mesh] of meshes) {
-      this.pendingComplexMeshes.delete(guid);
-      this.demandComplexMeshes.set(guid, mesh);
-    }
-    for (const guid of unavailable) {
-      this.pendingComplexMeshes.delete(guid);
-      this.unavailableComplexMeshes.add(guid);
-      if (this.warnedComplexMeshes.has(guid)) continue;
-      this.warnedComplexMeshes.add(guid);
-      const diag: RuntimeDiagnostic = {
-        code: "physics.complex_collision_unavailable",
-        message: `Model ${guid} uses Use Complex Collision, but its collision mesh could not be cooked (source not loaded, or no triangles). The Mesh has no collider; preload the Model or use Use Simple Collision.`,
-        severity: "warning",
-        assetGuid: guid,
-        frameId: this.frameId,
-        tickIndex: this.world.clock.tickIndex,
-      };
-      this.diagnostics.push(diag);
-      this.emit({ type: "diagnostic", code: diag.code, message: diag.message, assetGuid: guid, frameId: this.frameId, severity: "warning" });
-    }
-    if (meshes.size > 0) this.installComplexMeshes(this.lastProvidedComplexMeshes);
-  }
-
-  /** `loadModels` meshes win; on-demand answers fill the rest for the whole session. */
-  private installComplexMeshes(provided: ReadonlyMap<string, CollisionTriangleMesh>): void {
-    // Own the index: an in-process host may clear its map when it releases sources.
-    this.lastProvidedComplexMeshes = new Map(provided);
-    this.complexMeshes = new Map([...this.demandComplexMeshes, ...provided]);
-    this.physicsSync.setModelContent({
-      models: this.models,
-      complexMeshes: this.complexMeshes,
-    });
-    this.overlayPhysicsSync.setModelContent({
-      models: this.models,
-      complexMeshes: this.complexMeshes,
-    });
+    this.physics.registerComplexCollisionMeshes(meshes, unavailable);
   }
 
   async loadNavMesh(bytes: Uint8Array): Promise<void> {
@@ -2695,15 +2425,7 @@ class InProcessRuntime implements RuntimeDriver {
     actor: Actor,
     clip: { assetGuid: string; clipName: string; normalisedTime: number } | null,
   ): void {
-    (actor.sceneLayerId ? this.overlayPhysicsSync : this.physicsSync).setActorSpriteClip(actor, clip);
-  }
-
-  private emitDebugColliders(): void {
-    if (!this.showCollision) return;
-    this.emit({
-      type: "debugColliders",
-      colliders: this.physicsSync.getBackend().listDebugColliders(),
-    });
+    this.physics.forActor(actor).setActorSpriteClip(actor, clip);
   }
 
   private consoleHost(): ConsoleCommandHost {
@@ -2734,15 +2456,7 @@ class InProcessRuntime implements RuntimeDriver {
         if (enabled) this.emit({ type: "setShowFps", enabled: true });
         this.emit({ type: "setStat", name, enabled: Boolean(enabled) });
       },
-      setShowCollision: (enabled) => {
-        this.showCollision = Boolean(enabled);
-        this.emit({
-          type: "setShowCollision",
-          enabled: this.showCollision,
-        });
-        if (this.showCollision) this.emitDebugColliders();
-        else this.emit({ type: "debugColliders", colliders: [] });
-      },
+      setShowCollision: (enabled) => this.physics.setShowCollision(enabled),
       setShowBounds: (enabled) => {
         this.emit({ type: "setShowBounds", enabled: Boolean(enabled) });
       },
@@ -2783,10 +2497,10 @@ class InProcessRuntime implements RuntimeDriver {
           this.flushingConsoleActors = true;
           try {
             this.world.flushPending();
-            this.physicsSync.syncFromWorld(this.world);
-            this.overlayPhysicsSync.syncFromWorld(this.world);
+            this.physics.main.syncFromWorld(this.world);
+            this.physics.overlay.syncFromWorld(this.world);
             this.snapshots.publish();
-            this.emitDebugColliders();
+            this.physics.emitDebugColliders();
           } finally {
             this.flushingConsoleActors = false;
           }
@@ -2861,87 +2575,6 @@ class InProcessRuntime implements RuntimeDriver {
     actor.tickEnabled = resolved.eventTick;
   }
 
-  private dispatchCollisionEvents(): void {
-    this.dispatchPhysicsContacts(this.physicsSync);
-    this.dispatchPhysicsContacts(this.overlayPhysicsSync);
-  }
-
-  private dispatchPhysicsContacts(sync: PhysicsWorldSync): void {
-    const events = sync.getBackend().pollContacts();
-    for (const event of events) {
-      const actorA = this.world.findActor(event.actorAId);
-      const actorB = this.world.findActor(event.actorBId);
-      if (!actorA || !actorB || actorA.destroyed || actorB.destroyed) continue;
-      if (!this.admission.canTickActor(actorA) || !this.admission.canTickActor(actorB)) continue;
-      if (event.kind === "hit") {
-        this.dispatchHit(
-          actorA,
-          actorB,
-          event.location,
-          event.normal,
-          event.colliderAId,
-        );
-        this.dispatchHit(actorB, actorA, event.location, {
-          x: -event.normal.x,
-          y: -event.normal.y,
-          z: -event.normal.z,
-        }, event.colliderBId);
-      } else if (event.kind === "overlapBegin") {
-        this.dispatchOverlap(actorA, actorB, "onBeginOverlap", event.colliderAId);
-        this.dispatchOverlap(actorB, actorA, "onBeginOverlap", event.colliderBId);
-      } else if (event.kind === "overlapEnd") {
-        this.dispatchOverlap(actorA, actorB, "onEndOverlap", event.colliderAId);
-        this.dispatchOverlap(actorB, actorA, "onEndOverlap", event.colliderBId);
-      }
-    }
-  }
-
-  private dispatchHit(
-    self: Actor,
-    other: Actor,
-    location: { x: number; y: number; z: number },
-    normal: { x: number; y: number; z: number },
-    colliderId?: string,
-  ): void {
-    if (!self.generateHitEvents) return;
-    this.scriptHost.invokeEvent(
-      self.classId,
-      "onHit",
-      self,
-      {
-        hitResult: {
-          Hit: true,
-          Location: location,
-          Normal: normal,
-          Actor: other,
-          Distance: 0,
-        },
-        otherActor: other,
-        location: location,
-        normal: normal,
-      },
-      componentIdFromColliderPhysicsId(colliderId),
-    );
-  }
-
-  private dispatchOverlap(
-    self: Actor,
-    other: Actor,
-    event: "onBeginOverlap" | "onEndOverlap",
-    colliderId?: string,
-  ): void {
-    if (!self.generateOverlapEvents) return;
-    this.scriptHost.invokeEvent(
-      self.classId,
-      event,
-      self,
-      {
-        instigator: other,
-      },
-      componentIdFromColliderPhysicsId(colliderId),
-    );
-  }
-
   /**
    * Loaded data can hold parent cycles that script writes would refuse. Once a
    * scene, streamed scene or SceneLayer batch has spawned (before readiness,
@@ -2976,7 +2609,7 @@ class InProcessRuntime implements RuntimeDriver {
       const kind = shape && typeof shape === "object" ? (shape as { kind?: unknown }).kind : undefined;
       if (kind === "convex" || kind === "mesh" || kind === "polygon" || kind === "chain") continue;
       try {
-        parseColliderProperties({ shape }, actor.sceneLayerId ? "2d" : this.physicsWorldKind);
+        parseColliderProperties({ shape }, actor.sceneLayerId ? "2d" : this.physics.kind);
       } catch (error) {
         throw new Error(`${actorLabel(actor)} / ${component.guid}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
       }
@@ -3081,7 +2714,7 @@ class InProcessRuntime implements RuntimeDriver {
     // pose writes and component refreshes. Actors spawned, destroyed or
     // reparented earlier this tick reach the ray after the next step, so a
     // script aiming every tick does not pay a whole-world pass per call.
-    const hit = this.physicsSync.lineTrace(ray.origin, ray.end, { channel });
+    const hit = this.physics.main.lineTrace(ray.origin, ray.end, { channel });
     const drawDebug = options?.drawDebug !== false;
     if (drawDebug) {
       const duration =
@@ -3435,8 +3068,8 @@ class InProcessRuntime implements RuntimeDriver {
       realize: (actor) => this.realizeActor(actor),
       remove: (actor) => this.removeOwnedActor(actor),
       synchronize: (actors) => {
-        this.physicsSync.syncFromWorld(this.world);
-        for (const actor of actors) this.physicsSync.teleportActor(actor, this.world);
+        this.physics.main.syncFromWorld(this.world);
+        for (const actor of actors) this.physics.main.teleportActor(actor, this.world);
         this.snapshots.publish();
       },
       reportError: (error) => { this.reportError(error); },
@@ -3674,7 +3307,7 @@ class InProcessRuntime implements RuntimeDriver {
         const schemas = dataTypeSchemas(this.simulationDataAssets ?? []);
         resolve(captureSimulationScene({ world: this.world, baseline: this.simulationBaseline, identity, startingScene: this.simulationStart,
           quiescent: true, renderRevision: request.renderRevision, maxBytes: request.maxBytes,
-          sceneSettings: { ...this.simulationBaseline.settings, gravity: [this.gravity[0], this.gravity[1], this.gravity[2]], postProcessStack },
+          sceneSettings: { ...this.simulationBaseline.settings, gravity: [this.physics.gravity[0], this.physics.gravity[1], this.physics.gravity[2]], postProcessStack },
           ownership: actor => actor.sceneLayerId ? "layer" : this.streams.isStreamActor(actor) ? "stream" : "root",
           independentInstances: this.simulationUnsupportedInstance ? [this.simulationUnsupportedInstance] : [],
           materialOverrides: component => {
@@ -3754,8 +3387,7 @@ class InProcessRuntime implements RuntimeDriver {
         const apply = () => {
           for (const affectedActor of affected) {
             this.ragdolls.retireActor(affectedActor);
-            const sync = affectedActor.sceneLayerId ? this.overlayPhysicsSync : this.physicsSync;
-            sync.teleportActor(affectedActor, this.world);
+            this.physics.forActor(affectedActor).teleportActor(affectedActor, this.world);
           }
         };
         target.transform = runtimeEditLocalTransform(this.world, target, transform, space);
@@ -3970,7 +3602,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.frameId += 1;
     if (this.admission.canTickScene() || this.admission.hasReadyLayers()) {
       this.snapshots.publishTick();
-      this.emitDebugColliders();
+      this.physics.emitDebugColliders();
       this.navigation.emitDebug();
       this.behaviourTrees.emitSnapshot();
     }
