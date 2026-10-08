@@ -70,7 +70,8 @@ Worker → main (ordered). Main thread resolves Audio / Mixer / Channel / Attenu
 
 ```ts
 | { type: "playSound"; assetGuid: string; volume: number; frameId: number;
-    emitterActorGuid?: string | null; loop?: boolean; voiceId?: string }
+    emitterActorGuid?: string | null; loop?: boolean; voiceId?: string;
+    startOffsetSeconds?: number }
 | { type: "stopSound"; voiceId: string }
 | { type: "setVoiceGain"; voiceId: string; volume: number }
 | { type: "setChannelVolume"; channelGuid: string; volume: number }
@@ -79,7 +80,9 @@ Worker → main (ordered). Main thread resolves Audio / Mixer / Channel / Attenu
 
 Main → worker when a **non-looping** voice ends: `{ type: "audioVoiceEnded"; voiceId: string }`. Overlay Play and the packaged player post that control from `AudioService.onVoiceEnded` (the service already skips `voice.loop`). `RuntimeDriver.applyAudioVoiceEnded` matches `voiceId` to an `AudioComponent` guid/`sourceId` and `invokeEvent(..., "onAudioFinished", actor, {}, component.guid)`. Catalog: **Event On Audio Finished** (`flow.event.audioFinished`). There is no per-voice Pause (AudioV2 `setPaused` is overlay-global).
 
-`AudioComponent` properties: `audioAssetGuid`, `playOnStart`, `loop`, `volume` (`playCallVolume`). Play-on-start emits **once** (`voiceId` = component guid, `emitterActorGuid` = owning actor). Native `loop: true` is **one** Babylon voice — do not retrigger every tick. Graph **Play** / **Stop** on the component pin use that same `voiceId`. Graph **Set Volume** emits `setVoiceGain` for the live voice (`AudioService.setVoiceGain` updates `playCallVolume` and refreshes backend gain). Graph **Play Sound** uses `self` as emitter and does not send `loop` (the Audio asset’s Loop flag applies). Missing Actor + attenuation → non-spatial + one diagnostic. Overlay Play does not log every `playSound` into the chrome log (retriggers must not paint the DOM).
+`startOffsetSeconds` (trace restore only; see [debugger.md](debugger.md#trace-recorder)) is how long the voice already played. `AudioService` multiplies it by the voice's pitch into the backend request's clip position (Doppler is not replayed). The AudioV2 backend starts there (`play({ startOffset })`), wraps it by the clip duration for looping voices, and does not start a one-shot whose offset is at or past its end — it reports that voice ended instead, so the worker forgets it. Commands queued before unlock keep their original offset.
+
+`AudioComponent` properties: `audioAssetGuid`, `playOnStart`, `loop`, `volume` (`playCallVolume`). Play-on-start emits **once** (`voiceId` = component guid, `emitterActorGuid` = owning actor). Native `loop: true` is **one** Babylon voice — do not retrigger every tick. Graph **Play** / **Stop** on the component pin use that same `voiceId`. Graph **Set Volume** emits `setVoiceGain` for the live voice (`AudioService.setVoiceGain` updates `playCallVolume` and refreshes backend gain). Graph **Play Sound** uses `self` as emitter and does not send `loop` (the Audio asset’s Loop flag applies); the runtime names its voice `script:<n>` (a per-session sequence) so traces can record and resume it. Missing Actor + attenuation → non-spatial + one diagnostic. Overlay Play does not log every `playSound` into the chrome log (retriggers must not paint the DOM).
 
 ## Unlock and cache
 
