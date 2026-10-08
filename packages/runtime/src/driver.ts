@@ -47,7 +47,6 @@ import {
   type DebugInspectSnapshot,
 } from "@babylonslate/object-model";
 import {
-  deprojectCursorRay,
   type MaterialParameterCatalog,
   type MaterialParameterValue,
   type RenderPathStatus,
@@ -102,7 +101,7 @@ import type { PhysicsWorldSync } from "./physics-sync";
 import { RuntimePhysicsWorlds } from "./runtime-physics-worlds";
 import { RagdollWorldSync } from "./ragdoll-sync";
 import { RuntimeConsole } from "./runtime-console";
-import { actorChainWorldTransform, firstSpawnedActorIndex } from "./actor-world-transform";
+import { firstSpawnedActorIndex } from "./actor-world-transform";
 import { ActorRealization, type ScriptedActorSpawn } from "./actor-realization";
 import type { OverlaySafeAreaInsets } from "@babylonslate/core";
 import type { ModelPayload, SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
@@ -120,7 +119,6 @@ import { createNavigationHostBindings } from "./runtime-host-navigation";
 import { createOutputHostBindings } from "./runtime-host-output";
 import { createPhysicsHostBindings } from "./runtime-host-physics";
 import {
-  actorFromIlluminationTarget,
   createIlluminationHostBindings,
   createMaterialHostBindings,
   createRenderTargetHostBindings,
@@ -136,6 +134,7 @@ import { OwnerAdmission } from "./owner-admission";
 import { AnimGraphRuntime } from "./anim-graph-runtime";
 import { BehaviourTreeRuntime } from "./behaviour-tree-runtime";
 import { LatentDelays } from "./latent-delays";
+import { RuntimeCamera } from "./runtime-camera";
 
 export interface RuntimeDriverOptions {
   sessionGeneration?: number;
@@ -422,7 +421,7 @@ class RuntimeContinuationCancelled extends Error {
 /**
  * The in-process runtime driver: it builds the session's subsystems, owns the
  * session state they read (stop, pause, boot loading, frame id, the Play Scene
- * and its library, input, camera possession), runs the fixed-step tick phases
+ * and its library, input), runs the fixed-step tick phases
  * and Stop, and routes every command through `emit()`. Subsystems receive host
  * callbacks at construction and read replaceable driver fields lazily.
  */
@@ -456,9 +455,6 @@ class InProcessRuntime implements RuntimeDriver {
   private lastRenderPathStatus: RenderPathStatus | null = null;
   private tilemapAnimationTimeMs = 0;
   private hasAnimatedTiles = false;
-  /** A script `Possess Camera` outranks the authored per-camera option. */
-  private cameraPossessedByScript = false;
-  private possessedCameraSlotId: number | null = null;
   /** Frame index (first-spawned actor per guid) the BT and crowd ticks share. */
   private navFrameActors: Map<string, Actor> | null = null;
 
@@ -519,6 +515,7 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly animGraphs: AnimGraphRuntime;
   private readonly behaviourTrees: BehaviourTreeRuntime;
   private readonly actors: ActorRealization;
+  private readonly camera: RuntimeCamera;
   private readonly simulation: SimulationSession;
   private readonly scriptRuntime: ScriptRuntime;
   private readonly inspector: RuntimeInspectorService;
@@ -559,6 +556,7 @@ class InProcessRuntime implements RuntimeDriver {
    * 1. Core subsystems: `OwnerAdmission` first, because Delays, audio/particle
    *    playback, scene streams, the Scene realizer, Session boundaries and actor
    *    realization take it directly; `RenderSlots` takes `RuntimeSubsystems`.
+   *    `RuntimeCamera` takes no subsystem directly.
    * 2. Session identity: `SimulationSession` snapshots the Simulate baseline,
    *    then `ScriptRuntime`, whose Class asset guid map the console's startup
    *    command bindings (phase 4) and the ScriptHost actor bindings (phase 7)
@@ -597,6 +595,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.animGraphs = this.createAnimGraphs();
     this.behaviourTrees = this.createBehaviourTrees();
     this.actors = this.createActorRealization();
+    this.camera = this.createCamera();
 
     // 2. Session identity, scripts and the inspector.
     this.simulation = this.createSimulation(options);
@@ -814,9 +813,7 @@ class InProcessRuntime implements RuntimeDriver {
         this.playScene = scene;
         this.scalability.setScene(scene.settings);
         this.playSceneGuid = guid;
-        // The new scene owns its own camera choice.
-        this.cameraPossessedByScript = false;
-        this.possessedCameraSlotId = null;
+        this.camera.resetPossession();
       },
       sceneLibrary: () => this.sceneLibrary,
       sceneGuid: (key) => this.sceneGuidByKey.get(key) ?? key,
@@ -841,7 +838,7 @@ class InProcessRuntime implements RuntimeDriver {
       createActor: (serialized) => createActorFromSerialized(this.world, serialized, this.actors.sceneActorHooks),
       realizeActor: (actor, checkpoint) => this.actors.realize(actor, checkpoint),
       breakParentCycles: (actors) => this.actors.breakLoadedParentCycles(actors),
-      possessViewTarget: () => this.attemptPossessViewTarget(),
+      possessViewTarget: () => this.camera.possessViewTarget(),
       publishSnapshot: () => this.snapshots.publish(),
       removeActor: (actor) => this.actors.remove(actor),
       removeSceneLayer: (layerGuid) => this.removeSceneLayer(layerGuid),
@@ -940,6 +937,21 @@ class InProcessRuntime implements RuntimeDriver {
       cancelInvalidTweens: () => this.tweens.cancelInvalid(),
       frameActors: () => this.navFrameActors,
       reportLog: (message, severity, category) => this.reportLog(message, severity, category),
+      emit: (command) => this.emit(command),
+    });
+  }
+
+  private createCamera(): RuntimeCamera {
+    return new RuntimeCamera({
+      world: () => this.world,
+      playScene: () => this.playScene,
+      frameId: () => this.frameId,
+      slot: (actor) => this.actorSlot(actor),
+      guidSlot: (guid) => this.guidSlot(guid),
+      streams: () => this.streams,
+      cursor: () => this.resolvedInput.cursor,
+      overlay: () => this.overlay,
+      physics: () => this.physics,
       emit: (command) => this.emit(command),
     });
   }
@@ -1072,7 +1084,7 @@ class InProcessRuntime implements RuntimeDriver {
       logs: () => this.logs,
       inspectWorld: () => this.inspectWorld(),
       actorSlot: (actor) => this.actorSlot(actor),
-      possessCamera: (actor) => this.possessCamera(actor),
+      possessCamera: (actor) => this.camera.possess(actor),
       stop: () => this.stop(),
       pause: () => this.pause(),
       resume: () => this.resume(),
@@ -1120,7 +1132,7 @@ class InProcessRuntime implements RuntimeDriver {
       lastScriptMs: () => this.ticks.lastScriptMs,
       lastPhysicsMs: () => this.ticks.lastPhysicsMs,
       canPublish: () => this.admission.canTickScene() || this.admission.hasReadyLayers(),
-      cameraActor: () => this.playCameraActor(),
+      cameraActor: () => this.camera.cameraActor(),
       applyOverlayLayouts: () => this.overlay.applyLayouts(),
       retireDetachedStreams: () => this.streams.retireDetached(),
       removedActors: () => this.behaviourTrees.emitSnapshot(true),
@@ -1304,7 +1316,7 @@ class InProcessRuntime implements RuntimeDriver {
         overlayPhysics: () => this.physics.overlay,
         ragdolls: this.ragdolls,
         dt: this.dt,
-        projectCursorToScene: (channel, options) => this.projectCursorToScene(channel, options),
+        projectCursorToScene: (channel, options) => this.camera.projectCursorToScene(channel, options),
       }),
       ...createScalabilityHostBindings({
         getScalability: () => this.getScalability(),
@@ -1318,7 +1330,7 @@ class InProcessRuntime implements RuntimeDriver {
       ...createIlluminationHostBindings({
         slot,
         emitMeshAssignment: (actor, slotId) => this.renderEmitter.emitMeshAssignment(actor, slotId),
-        possessCamera: (target) => this.possessCamera(target),
+        possessCamera: (target) => this.camera.possess(target),
       }),
       ...createRenderTargetHostBindings({
         renderTargets: this.sourceRenderTargets,
@@ -1378,7 +1390,7 @@ class InProcessRuntime implements RuntimeDriver {
    * the actor owns, then ragdolls, cables, dynamic meshes and animation
    * graphs; a released slot then drops its ragdoll/cable/mesh and BT state,
    * its owner's text reveal, its sent component-command state and, last,
-   * a camera possession that targeted it. Scene Layers register next to
+   * a `RuntimeCamera` possession that targeted it. Scene Layers register next to
    * last: phase 1 cancels independent layer creation and removes its layers,
    * then the Scene realizer cancels the main Scene's realization and cleans
    * up what it acquired.
@@ -1396,13 +1408,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.subsystems.register(this.behaviourTrees);
     this.subsystems.register(this.textAppear);
     this.subsystems.register(this.renderEmitter);
-    this.subsystems.register({
-      releaseSlot: (slotId) => {
-        if (this.possessedCameraSlotId !== slotId) return;
-        this.possessedCameraSlotId = null;
-        this.cameraPossessedByScript = false;
-      },
-    });
+    this.subsystems.register(this.camera);
     this.subsystems.register(this.layers);
     this.subsystems.register(this.sceneRealizer);
   }
@@ -1781,33 +1787,6 @@ class InProcessRuntime implements RuntimeDriver {
     this.sceneRealizer.notifyLoadingPainted(sceneAssetGuid, sceneLoadId);
   }
 
-  /**
-   * Opt-in per camera (`attemptPossessViewTarget`). Runs after every actor has
-   * spawned so the slot exists, and yields to a Begin Play `Possess Camera`
-   * because an explicit script choice outranks the authored default.
-   */
-  private attemptPossessViewTarget(): void {
-    if (this.cameraPossessedByScript) return;
-    const scene = this.playScene;
-    const defaultActor = scene?.actors.find((actor) => actor.id === scene.settings.mainCameraActorId);
-    if (defaultActor?.components.some((component) =>
-      component.id === scene?.settings.mainCameraComponentId && component.classId === "CameraComponent",
-    ) && this.guidSlot(defaultActor.id) !== undefined) return;
-    for (const actor of this.playScene?.actors ?? []) {
-      const opted = actor.components.some(
-        (component) =>
-          component.classId === "CameraComponent" &&
-          component.properties.attemptPossessViewTarget === true,
-      );
-      if (!opted) continue;
-      const slotId = this.guidSlot(actor.id);
-      if (slotId === undefined) continue;
-      this.emit({ type: "possessCamera", slotId });
-      this.possessedCameraSlotId = slotId;
-      return;
-    }
-  }
-
   changeSceneAsync(sceneKey: string): Promise<void> {
     return this.sceneRealizer.changeAsync(sceneKey);
   }
@@ -1980,127 +1959,6 @@ class InProcessRuntime implements RuntimeDriver {
     clip: { assetGuid: string; clipName: string; normalisedTime: number } | null,
   ): void {
     this.physics.forActor(actor).setActorSpriteClip(actor, clip);
-  }
-
-  private possessCamera(target: unknown): void {
-    const actor = actorFromIlluminationTarget(target);
-    if (!actor) return;
-    const slotId = this.actorSlot(actor);
-    if (slotId === undefined) return;
-    this.cameraPossessedByScript = true;
-    this.possessedCameraSlotId = slotId;
-    this.emit({ type: "possessCamera", slotId });
-  }
-
-  private playCameraActor(): Actor | null {
-    if (this.possessedCameraSlotId != null) {
-      for (const actor of this.world.getActors()) {
-        if (actor.destroyed) continue;
-        if (this.actorSlot(actor) === this.possessedCameraSlotId) {
-          return actor;
-        }
-      }
-    }
-    const mainId = this.playScene?.settings.mainCameraActorId;
-    if (mainId) {
-      const actor = this.world.findActor(mainId);
-      if (actor && !actor.destroyed) return actor;
-    }
-    for (const actor of this.world.getActors()) {
-      if (actor.destroyed || actor.sceneLayerId || this.streams.isStreamActor(actor)) continue;
-      if (
-        actor.components.some(
-          (component) =>
-            component.classId === "CameraComponent" && !component.destroyed,
-        )
-      ) {
-        return actor;
-      }
-    }
-    return null;
-  }
-
-  private projectCursorToScene(
-    channel?: string,
-    options?: { drawDebug?: boolean; duration?: number },
-  ) {
-    const miss = {
-      hit: false,
-      location: null,
-      normal: null,
-      distance: 0,
-      actorId: null,
-      bodyId: null,
-      worldOrigin: { x: 0, y: 0, z: 0 },
-      worldDirection: { x: 0, y: 0, z: 1 },
-    };
-    const camera = this.playCameraActor();
-    const component = camera?.components.find(
-      (entry) => entry.classId === "CameraComponent" && !entry.destroyed,
-    );
-    if (!camera || !component) return miss;
-    const projection = component.getVariable("projectionMode");
-    // Cast from the camera's world pose at call time; a parented camera's
-    // local transform is relative to its parent.
-    const pose = actorChainWorldTransform(camera, (guid) => this.world.findActor(guid)) ?? camera.transform;
-    const ray = deprojectCursorRay(
-      this.resolvedInput.cursor,
-      this.overlay.canvasSize(),
-      {
-        position: pose.position,
-        rotation: pose.rotation,
-        lens: {
-          projectionMode:
-            projection === "orthographic" ? "orthographic" : "perspective",
-          fieldOfView: Number(component.getVariable("fieldOfView") ?? 60),
-          orthographicSize: Number(
-            component.getVariable("orthographicSize") ?? 5,
-          ),
-          nearClip: Number(component.getVariable("nearClip") ?? 0.1),
-          farClip: Number(component.getVariable("farClip") ?? 1000),
-        },
-      },
-    );
-    // Same freshness as Line Trace: bodies as of the last step plus call-time
-    // pose writes and component refreshes. Actors spawned, destroyed or
-    // reparented earlier this tick reach the ray after the next step, so a
-    // script aiming every tick does not pay a whole-world pass per call.
-    const hit = this.physics.main.lineTrace(ray.origin, ray.end, { channel });
-    const drawDebug = options?.drawDebug !== false;
-    if (drawDebug) {
-      const duration =
-        typeof options?.duration === "number" && Number.isFinite(options.duration)
-          ? options.duration
-          : 0;
-      const end =
-        hit.hit === true && hit.location ? hit.location : ray.end;
-      this.emit({
-        type: "debugDraw",
-        kind: "line",
-        start: ray.origin,
-        end,
-        thickness: 1,
-        color: { x: 1, y: 0, z: 0, w: 1 },
-        duration,
-        frameId: this.frameId,
-      });
-      if (hit.hit === true && hit.location) {
-        this.emit({
-          type: "debugDraw",
-          kind: "square",
-          center: hit.location,
-          size: 0.16,
-          color: { x: 0, y: 1, z: 0, w: 1 },
-          duration,
-          frameId: this.frameId,
-        });
-      }
-    }
-    return {
-      ...hit,
-      worldOrigin: ray.origin,
-      worldDirection: ray.direction,
-    };
   }
 
   /** The render slot this actor's own commands target (`RenderSlots.actorSlot`). */

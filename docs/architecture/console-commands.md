@@ -146,7 +146,7 @@ Constraints:
 - Does **not** call `pause`. Overlay Pause stays independent (free-cam a running fight, or a paused tableau).
 - Worker emits `{ type: "setFreeCam"; enabled }`. Main thread owns the camera: 3D fly (`UniversalCamera` with look + WASD/stick), 2D pan/pinch on an ortho camera. Game cameras stay detached and keep receiving snapshot TRS; they are just not `scene.activeCamera`.
 - While enabled, Play canvas look/move (pointer, touch, WASD) drive the debug camera and are **not** forwarded into the input ring. Gamepad can keep feeding the worker so a pad-controlled pawn still moves while the operator flies. Overlay Play mounts the editor fly stick (`ViewportJoystick`) while free cam is on. Document that split in the command help string.
-- Re-possess / `changescene` turns free cam off (new scene owns the camera, same as today’s `cameraPossessedByScript` reset).
+- Re-possess / `changescene` turns free cam off (new scene owns the camera, same as the runtime's `RuntimeCamera.resetPossession`).
 - Touch-first: one-finger look (3D) or pan (2D), pinch zoom, on-screen fly stick in overlay Play. 44px is not required on the canvas itself (existing Play canvas rules). Drag right looks right; drag up looks up.
 
 This is the missing “spectate without pausing” tool. It is not a Possess Camera graph node and must not write actor transforms.
