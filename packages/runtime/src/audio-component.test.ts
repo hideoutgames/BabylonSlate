@@ -142,3 +142,55 @@ describe("AudioComponent play-on-start", () => {
     runtime.stop();
   });
 });
+
+describe("AudioComponent script Stop", () => {
+  it("stops the component voice and drops it from the trace record", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      playScene: {
+        name: "Audio",
+        viewportMode: "3d",
+        settings: createDefaultSceneSettings(),
+        folders: [],
+        actors: [
+          createActor("speaker", "Speaker", {
+            classId: "Speaker",
+            components: [{
+              id: "audio-1",
+              classId: "AudioComponent",
+              properties: { audioAssetGuid: "jump", playOnStart: false, loop: true, volume: 0.5 },
+            }],
+          }),
+        ],
+      },
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([{
+      assetGuid: "speaker-script", classId: "Speaker", parentClassId: "Actor", anchors: [],
+      entryPoints: ["Play", "Stop"].map((name) => ({ name, event: name, isAsync: false })),
+      source: `
+        export function Play(ctx) { ctx.callComponentFunction(ctx.getComponentById(ctx.self, "audio-1"), "playAudio", {}); }
+        export function Stop(ctx) { ctx.callComponentFunction(ctx.getComponentById(ctx.self, "audio-1"), "stopAudio", {}); }`,
+    }]);
+    runtime.realizePlayWorld();
+    runtime.start();
+    const speaker = runtime.getWorld().findActor("speaker")!;
+    const audioCommands = () => commands.filter((command) => command.type === "playSound" || command.type === "stopSound");
+    runtime.executeConsoleCommand("snapshot start");
+    runtime.invokeScriptEvent("Speaker", "Play", speaker);
+    runtime.tick();
+    expect(audioCommands()).toEqual([expect.objectContaining({ type: "playSound", assetGuid: "jump", voiceId: "audio-1" })]);
+    commands.length = 0;
+    runtime.invokeScriptEvent("Speaker", "Stop", speaker);
+    runtime.tick();
+    runtime.executeConsoleCommand("snapshot stop");
+    expect(audioCommands()).toEqual([{ type: "stopSound", voiceId: "audio-1" }]);
+    const frames = runtime.stopTrace()!.frames;
+    expect(frames[0]!.audio?.voices.map((voice) => voice.voiceId)).toEqual(["audio-1"]);
+    expect(frames.at(-1)!.audio?.voices).toEqual([]);
+    runtime.stop();
+  });
+});
