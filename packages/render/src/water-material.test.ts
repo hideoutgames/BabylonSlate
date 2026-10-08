@@ -694,8 +694,8 @@ describe("Water material binding", () => {
         // The swell, bank terms and varyings all follow the rest point, so the offset must precede it.
         for (const source of [outline.displacement, waterVertexSource(language).worldPosition]) {
           const offset = source.indexOf(`${prefix}slateWaterGridOffset`);
-          expect(offset, language).toBeGreaterThan(-1);
-          expect(offset, language).toBeLessThan(source.indexOf("swvRest"));
+          expect(offset, `language ${language}`).toBeGreaterThan(-1);
+          expect(offset, `language ${language}`).toBeLessThan(source.indexOf("swvRest"));
         }
       }
     } finally { scene.dispose(); engine.dispose(); }
