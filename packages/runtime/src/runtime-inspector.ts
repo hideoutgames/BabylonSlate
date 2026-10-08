@@ -102,9 +102,10 @@ export class RuntimeInspector {
   }
   resolveTarget(identity: RuntimeObjectIdentity): Target | null {
     if (!identity || typeof identity.actorGuid !== "string" || !Number.isSafeInteger(identity.actorToken) || typeof identity.sceneInstanceId !== "string") return null;
-    const actor = this.host.world.findActorInstances(identity.actorGuid).find(candidate => !candidate.destroyed &&
-      candidate.world === this.host.world && this.tokens.get(candidate) === identity.actorToken && this.host.sceneIdentity(candidate) === identity.sceneInstanceId);
-    if (!actor) return null;
+    // The token names the actor object, so a successor reusing the guid is never the target.
+    const actor = this.host.world.findActor(identity.actorGuid);
+    if (!actor || actor.destroyed || actor.world !== this.host.world || this.tokens.get(actor) !== identity.actorToken ||
+      this.host.sceneIdentity(actor) !== identity.sceneInstanceId) return null;
     if (identity.componentGuid === undefined) return identity.componentToken === undefined ? actor : null;
     return actor.components.find(component => !component.destroyed && component.owner === actor && component.guid === identity.componentGuid &&
       this.tokens.get(component) === identity.componentToken) ?? null;
@@ -122,8 +123,8 @@ export class RuntimeInspector {
       if (actor.destroyed) { actorIndex++; componentIndex = -1; continue; }
       if (componentIndex === -1) {
         const parentGuid = actor.getVariable("parentId");
-        const parent = typeof parentGuid === "string" ? this.host.world.findActorInstances(parentGuid).find(candidate =>
-          !candidate.destroyed && this.host.sceneIdentity(candidate) === this.host.sceneIdentity(actor)) : undefined;
+        const candidate = typeof parentGuid === "string" ? this.host.world.findActor(parentGuid) : undefined;
+        const parent = candidate && !candidate.destroyed && this.host.sceneIdentity(candidate) === this.host.sceneIdentity(actor) ? candidate : undefined;
         const row: RuntimeIdentityRow = { kind: "actor", identity: this.identity(actor), renderSlotId: this.host.renderSlot(actor), classId: actor.classId.slice(0, 512),
           name: String(actor.getVariable("name") ?? actor.classId).slice(0, 512), parent: parent ? this.identity(parent) : null };
         rows.push(row); bytes += JSON.stringify(row).length * 3; componentIndex = 0;

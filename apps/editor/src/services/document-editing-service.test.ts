@@ -90,6 +90,21 @@ describe("DocumentEditingService", () => {
     expect(documents.getDocument(SCENE_ID)!.content).toEqual(after);
   });
 
+  it("refuses a scene edit that would repeat an actor id", async () => {
+    const { documents, editing, open, journaled } = createEditing();
+    await open(SCENE_REF, createDefaultScene("2d"));
+    const before = documents.getDocument(SCENE_ID)!.content as SerializedScene;
+    const copy = { ...structuredClone(before.actors[0]!), name: "Copy" };
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(await editing.applySceneChange(SCENE_ID, { ...before, actors: [...before.actors, copy] })).toBe(false);
+      expect(error).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining(`duplicate actor id "${copy.id}"`) }));
+    } finally { error.mockRestore(); }
+    expect(documents.getDocument(SCENE_ID)!.content).toBe(before);
+    expect(documents.getDocument(SCENE_ID)!.dirty).toBe(false);
+    expect(await journaled()).toEqual([]);
+  });
+
   it("applies asset edits over the Undo memory limit, clears history and reports it once per gesture", async () => {
     const { documents, editSession, editing, historyCleared, open } = createEditing({ maxBytes: 1_000 });
     const ref: DocumentRef = { kind: "material", path: "assets/Rock.material.babasset", label: "Rock" };

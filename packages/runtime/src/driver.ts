@@ -89,7 +89,7 @@ import type { PhysicsWorldSync } from "./physics-sync";
 import { RuntimePhysicsWorlds } from "./runtime-physics-worlds";
 import { RagdollWorldSync } from "./ragdoll-sync";
 import { RuntimeConsole } from "./runtime-console";
-import { firstSpawnedActorIndex } from "./actor-world-transform";
+import { actorGuidIndex } from "./actor-world-transform";
 import { ActorRealization, type ScriptedActorSpawn } from "./actor-realization";
 import type { OverlaySafeAreaInsets } from "@babylonslate/core";
 import type { ModelPayload, SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
@@ -192,7 +192,7 @@ class InProcessRuntime implements RuntimeDriver {
   private lastRenderPathStatus: RenderPathStatus | null = null;
   private tilemapAnimationTimeMs = 0;
   private hasAnimatedTiles = false;
-  /** Frame index (first-spawned actor per guid) the BT and crowd ticks share. */
+  /** Frame index (live actor per guid) the BT and crowd ticks share. */
   private navFrameActors: Map<string, Actor> | null = null;
 
   // Scene documents and render target sources.
@@ -940,7 +940,7 @@ class InProcessRuntime implements RuntimeDriver {
       runTick: () => this.runTick(),
       settlePauseChanges: () => this.settlePauseChanges(),
       frameId: () => this.frameId,
-      liveActors: () => this.renderSlots.guidCount,
+      liveActors: () => this.renderSlots.size,
       btTraceStates: () => this.behaviourTrees.traceStates(),
       reportLog: (message, severity, category) => this.reportLog(message, severity, category),
       emit: (command) => this.emit(command),
@@ -1034,7 +1034,6 @@ class InProcessRuntime implements RuntimeDriver {
       continueSimulation: (owner) => this.waits.continueSimulation(owner),
       setOverlayGravity: (gravity) => this.physics.setOverlayGravity(gravity),
       markUnsupportedInstance: (layerGuid) => this.simulation.markUnsupportedInstance("layer", layerGuid),
-      guidTaken: (id) => this.renderSlots.hasGuid(id) || this.world.findActor(id) != null,
       createActor: (serialized, layerGuid) => createActorFromSerialized(this.world, serialized, this.actors.sceneActorHooks, layerGuid),
       publishSnapshot: () => this.snapshots.publish(),
       syncOverlayPhysics: () => this.physics.overlay.syncFromWorld(this.world),
@@ -1614,7 +1613,7 @@ class InProcessRuntime implements RuntimeDriver {
     return this.renderSlots.actorSlot(actor);
   }
 
-  /** The slot of a guid's first-spawned live actor, the one guid lookups resolve. */
+  /** The slot of the live actor with this guid. */
   private guidSlot(guid: string): number | undefined {
     return this.renderSlots.guidSlot(guid);
   }
@@ -1874,10 +1873,10 @@ class InProcessRuntime implements RuntimeDriver {
       this.tilemapAnimationTimeMs += simDt * 1000;
       if (this.hasAnimatedTiles) this.emit({ type: "tilemapAnimationTime", elapsedMs: this.tilemapAnimationTimeMs });
       // Only behaviour trees and the crowd read the frame index.
-      this.navFrameActors = this.navigation.active || this.behaviourTrees.hasTrees ? firstSpawnedActorIndex(this.world.getActors()) : null;
+      this.navFrameActors = this.navigation.active || this.behaviourTrees.hasTrees ? actorGuidIndex(this.world.getActors()) : null;
       try {
         this.behaviourTrees.tick();
-        if (this.navigation.active && this.admission.canTickScene()) this.navigation.tickCrowd(this.navFrameActors ?? firstSpawnedActorIndex(this.world.getActors()));
+        if (this.navigation.active && this.admission.canTickScene()) this.navigation.tickCrowd(this.navFrameActors ?? actorGuidIndex(this.world.getActors()));
       } finally {
         this.navFrameActors = null;
       }

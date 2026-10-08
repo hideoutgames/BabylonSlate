@@ -55,7 +55,7 @@ interface SceneLayerOverlayHost {
   pixelsPerUnit(): number;
   scripts(): ScriptHost;
   slot(actor: Actor): number | undefined;
-  /** The slot of a guid's first-spawned live actor. */
+  /** The slot of the live actor with this guid. */
   guidSlot(guid: string): number | undefined;
   actorHooks: SceneActorHooks;
   /** Bind interface handlers, apply class defaults and assign a render slot (emitting its spawn). */

@@ -58,55 +58,33 @@ export function actorChainWorldTransform(
 }
 
 /**
- * Guid index over `actors` in spawn order where each guid answers its
- * first-spawned live actor, as `World.findActor` and physics do. Later actors
- * that share a guid (legacy saves, replacements) are never answered.
+ * Guid index over the live actors in `actors`. The World never holds two live
+ * actors with one guid, so each guid answers exactly the actor `World.findActor` does.
  */
-export function firstSpawnedActorIndex(actors: Iterable<Actor>): Map<string, Actor> {
+export function actorGuidIndex(actors: Iterable<Actor>): Map<string, Actor> {
   const index = new Map<string, Actor>();
   for (const actor of actors) {
-    if (!actor.destroyed && !index.has(actor.guid)) index.set(actor.guid, actor);
+    if (!actor.destroyed) index.set(actor.guid, actor);
   }
   return index;
 }
 
 /**
- * Compose selected actors and their ancestors with first-spawned parents;
- * default to the whole world. Poses are keyed by guid, and each entry is the
- * guid's first-spawned actor (see `composeActorWorldTransforms`).
- */
-export function firstSpawnedWorldTransforms(
-  actors: readonly Actor[],
-  selected: Iterable<Actor> = actors,
-): Map<string, Transform> {
-  const index = firstSpawnedActorIndex(actors);
-  return composeActorWorldTransforms((guid) => index.get(guid), selected);
-}
-
-/**
- * Legacy composition through a last-wins guid index (a later actor replaces an
- * earlier one with the same guid). Only the water pass still uses it; its
- * owner keeps that contract. Every other runtime pass resolves first-spawned
- * parents through `firstSpawnedWorldTransforms` or `composeActorWorldTransforms`.
+ * Compose selected actors and their ancestors through a guid index of
+ * `actors`; default to the whole world, in world order. Poses are keyed by guid.
  */
 export function actorWorldTransforms(
   actors: readonly Actor[],
   selected: Iterable<Actor> = actors,
 ): Map<string, Transform> {
-  const byGuid = new Map<string, Actor>();
-  for (const actor of actors) byGuid.set(actor.guid, actor);
-  const resolved = new Map<string, Transform>();
-  composeInto((guid) => byGuid.get(guid), selected, new MapPoseStore(resolved), new Set(), false);
-  return resolved;
+  const index = actorGuidIndex(actors);
+  return composeActorWorldTransforms((guid) => index.get(guid), selected);
 }
 
 /**
- * Compose selected actors and their ancestors through a caller-owned lookup
- * that answers a guid with its first-spawned live actor (`World.findActor`, or
- * a frame's `firstSpawnedActorIndex`), so a frame that already indexes actors
- * need not rebuild one. Poses are keyed by guid and describe the actor the
- * lookup answers: a selected later duplicate resolves as its guid's
- * first-spawned actor, so the result never depends on selection order.
+ * Compose selected actors and their ancestors through a caller-owned guid
+ * lookup (`World.findActor`, or a frame's `actorGuidIndex`), so a frame that
+ * already indexes actors need not rebuild one. Poses are keyed by guid.
  * `onShear` hears each resolved actor whose world matrix is sheared, so its
  * pose only approximates that matrix (see `composeParentChildTransform`).
  * Returns fresh poses; a caller that composes every frame reuses a
@@ -118,7 +96,7 @@ export function composeActorWorldTransforms(
   onShear?: (actor: Actor) => void,
 ): Map<string, Transform> {
   const resolved = new Map<string, Transform>();
-  composeInto(lookup, selected, new MapPoseStore(resolved), new Set(), true, onShear);
+  composeInto(lookup, selected, new MapPoseStore(resolved), new Set(), onShear);
   return resolved;
 }
 
@@ -133,7 +111,7 @@ export function composeActorWorldTransformsInto(
   selected: Iterable<Actor>,
   resolved: Map<string, Transform>,
 ): boolean {
-  return composeInto(lookup, selected, new MapPoseStore(resolved), new Set(), false);
+  return composeInto(lookup, selected, new MapPoseStore(resolved), new Set());
 }
 
 /**
@@ -156,7 +134,7 @@ export class WorldTransformComposer {
   ): ActorTransformMap {
     this.store.begin();
     this.resolving.clear();
-    composeInto(lookup, selected, this.store, this.resolving, true, onShear);
+    composeInto(lookup, selected, this.store, this.resolving, onShear);
     return this.store.end();
   }
 }
@@ -269,7 +247,6 @@ function composeInto(
   selected: Iterable<Actor>,
   store: PoseStore,
   resolving: Set<string>,
-  canonical: boolean,
   onShear?: (actor: Actor) => void,
 ): boolean {
   let cyclic = false;
@@ -289,7 +266,6 @@ function composeInto(
     let world: Transform;
     if (parent && !resolving.has(parent.guid)) {
       const parentWorld = resolve(parent);
-      // A parent sharing this guid is a cycle, so its pose is never this target.
       world = store.target(actor.guid);
       // Sheared actors' descendants compose through their exact world matrices.
       const shear = composeWorldPoseInto(parentWorld, store.shear(parent.guid), actor.transform, world);
@@ -305,7 +281,7 @@ function composeInto(
     return world;
   };
 
-  for (const actor of selected) resolve(canonical ? (lookup(actor.guid) ?? actor) : actor);
+  for (const actor of selected) resolve(actor);
   return cyclic;
 }
 
@@ -323,8 +299,8 @@ export interface BrokenParentLink {
 
 /**
  * Break parent cycles that a spawned batch closed among live actors. Parents
- * resolve through `findActor` (the first-spawned live actor), then through
- * batch actors still queued for spawn: a load inside a World tick only queues
+ * resolve through `findActor`, then through batch actors still queued for
+ * spawn: a load inside a World tick only queues
  * its actors, which commit after every live actor, in batch order. Applying
  * parent links in spawn order, the link that closes a cycle is the one of the
  * cycle's last-spawned member, so that actor's `parentId` is cleared, as a
@@ -344,7 +320,7 @@ export function breakParentCycles(
   for (const actor of actors) {
     if (actor.destroyed || actor.world) continue;
     queuedOrder.set(actor, queuedOrder.size);
-    if (!queuedByGuid.has(actor.guid)) queuedByGuid.set(actor.guid, actor);
+    queuedByGuid.set(actor.guid, actor);
   }
   const resolve = (guid: string) => findActor(guid) ?? queuedByGuid.get(guid);
   const spawnsAfter = (actor: Actor, other: Actor) => {

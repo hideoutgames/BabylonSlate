@@ -72,11 +72,11 @@ describe("runtime Save Game", () => {
         },
       ]);
       await runtime.realizePlayWorld();
-      runtime.createSceneLayer("menu");
+      const menu = runtime.createSceneLayer("menu")!;
       runtime.start();
       service.getSaveData().coins = 7;
       expect((await service.saveGame()).ok).toBe(true);
-      const list = runtime.getWorld().findActor("menu")!.components.find((component) => component.guid === "list")!;
+      const list = runtime.getWorld().findActor(`${menu.guid}:menu`)!.components.find((component) => component.guid === "list")!;
       list.setVariable("itemCount", 1);
       service.getSaveData().coins = 99;
       expect((await service.loadGame()).ok).toBe(true);
@@ -156,6 +156,17 @@ describe("runtime Save Game", () => {
       expect(restored.getVariable("loadedHealth")).toBe(18);
       expect(extra.destroyed).toBe(true);
     } finally { next.runtime.stop(); }
+  });
+
+  it("refuses a spawned actor identity that a live actor already uses as its id", async () => {
+    const { runtime } = await boot(new MemoryStorage(), { referenceTarget: true });
+    try {
+      const companion = runtime.spawnScriptedActor({ classId: "Hero" })!;
+      // Loading would recreate the companion with this id as its guid, beside the live actor.
+      expect(() => runtime.registerSaveActor(companion, "reference-only")).toThrow(
+        expect.objectContaining({ code: "incompatible", message: expect.stringContaining("reference-only") }));
+      runtime.registerSaveActor(companion, "companion");
+    } finally { runtime.stop(); }
   });
 
   it("captures a Tick request after the full simulation tick and leaves paused sessions paused", async () => {

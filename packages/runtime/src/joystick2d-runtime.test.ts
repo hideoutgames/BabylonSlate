@@ -16,7 +16,7 @@ it("realizes a joystick with its component transform, independent materials, and
   try {
     runtime.realizePlayWorld();
     const layer = runtime.createSceneLayer("hud", 0);
-    const assignment = commands.find(command => command.type === "assignMesh" && command.actorGuid === "controls");
+    const assignment = commands.find(command => command.type === "assignMesh" && command.actorGuid === `${layer?.guid}:controls`);
     expect(assignment).toMatchObject({ type: "assignMesh", sceneLayerId: layer?.guid, hitTest: "block", parts: [{
       componentId: "stick", meshKind: "2djoystick", position: [2, -3, 0], scale: [2, 2, 1],
       joystick: { backgroundMaterialGuid: "base", joystickMaterialGuid: "thumb", radius: 3, horizontalControl: "dpad-x", verticalControl: "joystick-y" },

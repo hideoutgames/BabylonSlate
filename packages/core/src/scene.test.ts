@@ -14,6 +14,7 @@ import {
   wouldCreateFolderCycle,
   type SerializedScene,
 } from "./scene";
+import { normalizeSceneLayer } from "./scene-layer";
 
 function foldersScene(): SerializedScene {
   return {
@@ -192,34 +193,19 @@ describe("scene schema", () => {
     expect(scene.actors[0]?.components[0]?.overrideKeys).toBeUndefined();
   });
 
-  it("gives duplicated actor ids a unique id so both actors stay addressable", () => {
-    const scene = normalizeScene({
-      actors: [
-        { id: "dupe", name: "First" },
-        { id: "dupe", name: "Second" },
-        { id: "dupe", name: "Third" },
-      ],
-    });
-    const ids = scene.actors.map((actor) => actor.id);
-    expect(new Set(ids).size).toBe(3);
-    expect(ids[0]).toBe("dupe");
-    expect(scene.actors.map((actor) => actor.name)).toEqual([
-      "First",
-      "Second",
-      "Third",
-    ]);
-  });
-
-  it("keeps parent links pointing at the first actor that owned a duplicated id", () => {
-    const scene = normalizeScene({
+  it("rejects a document with duplicate actor ids instead of repairing it", () => {
+    expect(() => normalizeScene({
+      name: "Level",
       actors: [
         { id: "root", name: "Root" },
-        { id: "root", name: "Impostor" },
         { id: "child", name: "Child", parentId: "root" },
+        { id: "root", name: "Impostor" },
       ],
-    });
-    expect(scene.actors[1]!.id).not.toBe("root");
-    expect(scene.actors[2]!.parentId).toBe("root");
+    })).toThrow('"Level" contains duplicate actor id "root" (actors "Root" and "Impostor")');
+    expect(() => normalizeSceneLayer({
+      name: "HUD",
+      actors: [{ id: "button", name: "Play" }, { id: "button", name: "Quit" }],
+    })).toThrow('"HUD" contains duplicate actor id "button"');
   });
 
   it("normalizes a scene without folders to an empty folder list", () => {

@@ -188,7 +188,7 @@ describe("SceneLayer control runtime integration", () => {
         ],
       }]);
       runtime.realizePlayWorld(); const liveLayer = runtime.createSceneLayer("controls")!; runtime.start();
-      const actor = runtime.getWorld().findActor("controls")!;
+      const actor = runtime.getWorld().findActor(`${liveLayer.guid}:controls`)!;
       const assignment = commands.find((command) => command.type === "assignMesh" && command.actorGuid === actor.guid);
       expect(assignment).toMatchObject({ type: "assignMesh", sceneLayerId: liveLayer.guid, hitTest: "block", parts: [
         { componentId: "slider", meshKind: "2dcontrol", uiControl: { classId: "2DSliderComponent", properties: { thumbMaterialGuid: "thumb" } } },

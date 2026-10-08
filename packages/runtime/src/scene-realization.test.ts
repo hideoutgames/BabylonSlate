@@ -98,7 +98,7 @@ describe("cooperative runtime scene realization", () => {
       expect(commands.at(-1)?.type).toBe("sceneRealized");
       const owned = runtime.getWorld().getSceneLayers()[0]!;
       const child = runtime.getWorld().getActors().find((actor) => actor.guid === `${owned.guid}:actor-0`)!;
-      expect(child.getVariable("parentId")).toBe("actor-39");
+      expect(child.getVariable("parentId")).toBe(owned.guid + ":actor-39");
       const second = runtime.createSceneLayer("layer");
       expect(second).not.toBeNull();
       await vi.waitFor(() => expect(runtime.getWorld().getActors().filter((actor) => actor.sceneLayerId === second!.guid)).toHaveLength(40));
@@ -148,15 +148,16 @@ describe("cooperative runtime scene realization", () => {
     try {
       await runtime.realizePlayWorld();
       const globalLayer = runtime.createSceneLayer("global")!;
-      await vi.waitFor(() => expect(runtime.getWorld().findActor("global")).toBeDefined());
+      const globalGuid = globalLayer.guid + ":global";
+      await vi.waitFor(() => expect(runtime.getWorld().findActor(globalGuid)).toBeDefined());
       runtime.start();
       runtime.tick();
       runtime.getPhysicsSync()!.setActorLinearVelocity("actor-0", { x: 60 });
-      runtime.getOverlayPhysicsSync()!.setActorLinearVelocity("global", { x: 6 });
+      runtime.getOverlayPhysicsSync()!.setActorLinearVelocity(globalGuid, { x: 6 });
       runtime.tick();
       const previous = runtime.getWorld().findActor("actor-0")!;
       expect(previous.transform.position.x).toBeCloseTo(3);
-      const globalActor = runtime.getWorld().findActor("global")!;
+      const globalActor = runtime.getWorld().findActor(globalGuid)!;
       const globalBefore = globalActor.transform.position.x;
       runtime.executeConsoleCommand("changescene same");
       await runtime.realizePlayWorld();
@@ -165,7 +166,7 @@ describe("cooperative runtime scene realization", () => {
       expect(replacement).not.toBe(previous);
       expect(replacement.transform.position.x).toBeCloseTo(2);
       expect(runtime.getWorld().findSceneLayer(globalLayer.guid)).toBe(globalLayer);
-      expect(runtime.getWorld().findActor("global")).toBe(globalActor);
+      expect(runtime.getWorld().findActor(globalGuid)).toBe(globalActor);
       expect(globalActor.transform.position.x).toBeCloseTo(globalBefore + 0.1);
     } finally { runtime.stop(); }
   });

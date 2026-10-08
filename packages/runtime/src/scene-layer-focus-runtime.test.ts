@@ -27,7 +27,7 @@ describe("SceneLayer focus runtime integration", () => {
     layer.actors[4]!.transform.position[0] = 3;
     const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, playScene: createDefaultScene(), sceneLayerLibrary: { menu: layer }, onCommand: () => {} });
     try {
-      runtime.realizePlayWorld(); runtime.createSceneLayer("menu"); runtime.start(); runtime.tick();
+      runtime.realizePlayWorld(); const menu = runtime.createSceneLayer("menu")!; runtime.start(); runtime.tick();
       const navigate = () => { runtime.pushInput([
         { kind: "key", tick: 0, code: "ArrowRight", phase: "down" },
         { kind: "key", tick: 0, code: "ArrowRight", phase: "up" },
@@ -35,7 +35,7 @@ describe("SceneLayer focus runtime integration", () => {
       const focused = () => runtime.getWorld().getActors().flatMap(actor => actor.components).find(component => component.getVariable("focused") === true)?.guid;
       navigate(); expect(focused()).toBe("middle-focus");
       navigate(); expect(focused()).toBe("offset-focus");
-      expect(runtime.getWorld().findActor("offset")!.components.find(component => component.guid === "offset-visual")!.transform.position.x).toBe(10);
+      expect(runtime.getWorld().findActor(menu.guid + ":offset")!.components.find(component => component.guid === "offset-visual")!.transform.position.x).toBe(10);
     } finally { runtime.stop(); }
   });
 

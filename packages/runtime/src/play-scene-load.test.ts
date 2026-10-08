@@ -532,17 +532,18 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
-  it("possesses the first of two same-guid camera actors in its own slot", async () => {
+  it("rejects a Scene that repeats an actor id before spawning any of its actors", async () => {
     const commands: CommandMessage[] = [];
     const scene = cameraPossessScene(true);
     scene.actors.push(createActor("cam", "Camera Copy"));
     const runtime = createRuntimeFromLoad({ type: "load", sceneAssetGuid: "cameras", scene },
       (command) => commands.push(command));
     try {
-      await runtime.realizePlayWorld();
-      const [own, copy] = commands.flatMap((command) => command.type === "spawn" && command.actorGuid === "cam" ? [command.slotId] : []);
-      expect(copy).toBeDefined();
-      expect(commands.flatMap((command) => command.type === "possessCamera" ? [command.slotId] : [])).toEqual([own]);
+      await expect(Promise.resolve().then(() => runtime.realizePlayWorld()))
+        .rejects.toThrow('"Possess" contains duplicate actor id "cam" (actors "Camera" and "Camera Copy")');
+      expect(runtime.getWorld().findActor("cam")).toBeUndefined();
+      expect(commands.some((command) => command.type === "spawn" && command.actorGuid === "cam")).toBe(false);
+      expect(commands.some((command) => command.type === "possessCamera" || command.type === "sceneRealized")).toBe(false);
     } finally { runtime.stop(); }
   });
 
@@ -1673,9 +1674,11 @@ describe("p7-play-scene-load", () => {
       (command) => commands.push(command),
     );
     await runtime.realizePlayWorld();
+    // Scene Layer actor guids are scoped to their layer instance.
+    const layer = runtime.getWorld().getSceneLayers()[0]!;
     expect(
       commands.find(
-        (command) => command.type === "assignMesh" && command.actorGuid === "label",
+        (command) => command.type === "assignMesh" && command.actorGuid === `${layer.guid}:label`,
       ),
     ).toMatchObject({
       type: "assignMesh",

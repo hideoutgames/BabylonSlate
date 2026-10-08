@@ -19,6 +19,9 @@ import {
 import { createInProcessRuntime } from "./driver";
 import { createPlayBootCoordinator } from "./play-boot";
 
+/** Scene Layer actor guids are scoped to their layer instance. */
+const inLayer = (layer: { guid: string } | null | undefined, id: string) => `${layer?.guid}:${id}`;
+
 function overlayLayer(): SerializedSceneLayer {
   return {
     ...createDefaultSceneLayer(),
@@ -67,8 +70,9 @@ describe("SceneLayer runtime compositor", () => {
     expect(world.getSceneLayers()).toHaveLength(1);
     expect(world.getSceneLayers()[0]?.ownerSceneGuid).toBe("a");
     expect(world.getSceneLayers()[0]?.zOrder).toBe(2);
+    const banner = inLayer(world.getSceneLayers()[0], "banner");
     expect(
-      world.getActors().some((actor) => actor.guid === "banner"),
+      world.getActors().some((actor) => actor.guid === banner),
     ).toBe(true);
     expect(
       commands.some(
@@ -79,7 +83,7 @@ describe("SceneLayer runtime compositor", () => {
 
     runtime.executeConsoleCommand("changescene b");
     expect(world.getSceneLayers()).toHaveLength(0);
-    expect(world.getActors().some((actor) => actor.guid === "banner")).toBe(
+    expect(world.getActors().some((actor) => actor.guid === banner)).toBe(
       false,
     );
     expect(world.getActors().some((actor) => actor.guid === "B-hero")).toBe(
@@ -122,13 +126,13 @@ describe("SceneLayer runtime compositor", () => {
     const layer = runtime.getWorld().getSceneLayers()[0];
     expect(layer?.ownerSceneGuid).toBe("a");
     expect(
-      runtime.getWorld().getActors().some((actor) => actor.guid === "banner"),
+      runtime.getWorld().getActors().some((actor) => actor.guid === inLayer(layer, "banner")),
     ).toBe(true);
     expect(
       commands.some(
         (command) =>
           command.type === "spawn" &&
-          command.actorGuid === "banner" &&
+          command.actorGuid === inLayer(layer, "banner") &&
           command.sceneLayerId === layer?.guid,
       ),
     ).toBe(true);
@@ -136,7 +140,7 @@ describe("SceneLayer runtime compositor", () => {
       commands.some(
         (command) =>
           command.type === "assignMesh" &&
-          command.actorGuid === "banner" &&
+          command.actorGuid === inLayer(layer, "banner") &&
           command.meshKind === "sprite" &&
           command.sceneLayerId === layer?.guid,
       ),
@@ -190,18 +194,19 @@ describe("SceneLayer runtime compositor", () => {
       onCommand: (command) => commands.push(command),
     });
     runtime.realizePlayWorld();
-    runtime.createSceneLayer("hud", 0);
+    const layer = runtime.createSceneLayer("hud", 0);
     const created = commands.find((command) => command.type === "sceneLayerCreate");
     expect(created).toMatchObject({
       type: "sceneLayerCreate",
       assetGuid: "hud",
       layerBounds: { width: 32, height: 18 },
     });
-    expect(runtime.getWorld().findActor("badge")?.transform.position.x).toBe(-16);
-    expect(runtime.getWorld().findActor("badge")?.transform.position.y).toBe(9);
+    const badge = () => runtime.getWorld().findActor(inLayer(layer, "badge"));
+    expect(badge()?.transform.position.x).toBe(-16);
+    expect(badge()?.transform.position.y).toBe(9);
     runtime.applySceneLayerResize(16, 9);
-    expect(runtime.getWorld().findActor("badge")?.transform.position.x).toBe(-16);
-    expect(runtime.getWorld().findActor("badge")?.transform.position.y).toBe(9);
+    expect(badge()?.transform.position.x).toBe(-16);
+    expect(badge()?.transform.position.y).toBe(9);
   });
 
   it("keeps graph-created overlays across scene travel until remove or clear", () => {
@@ -223,7 +228,7 @@ describe("SceneLayer runtime compositor", () => {
     runtime.executeConsoleCommand("changescene b");
     expect(runtime.getWorld().getSceneLayers()).toHaveLength(1);
     expect(
-      runtime.getWorld().getActors().some((actor) => actor.guid === "banner"),
+      runtime.getWorld().getActors().some((actor) => actor.guid === inLayer(created, "banner")),
     ).toBe(true);
 
     runtime.removeSceneLayer(created!.guid);
@@ -233,6 +238,62 @@ describe("SceneLayer runtime compositor", () => {
     runtime.createSceneLayer("hud", 1);
     runtime.clearSceneLayers();
     expect(runtime.getWorld().getSceneLayers()).toHaveLength(0);
+  });
+
+  it("never shares a guid between a global layer's actor and a later Scene actor with the same authored id", () => {
+    const hud: SerializedSceneLayer = {
+      ...overlayLayer(),
+      actors: [createActor("B-hero", "Badge", { classId: "SceneLayerActor" })],
+    };
+    const levelA = worldScene("A");
+    const levelB = worldScene("B");
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      preferSoftwarePhysics: true,
+      seedDemoActors: false,
+      playScene: levelA,
+      playSceneGuid: "a",
+      sceneLibrary: { a: levelA, b: levelB },
+      sceneLayerLibrary: { hud },
+    });
+    try {
+      runtime.realizePlayWorld();
+      const layer = runtime.createSceneLayer("hud", 0)!;
+      runtime.executeConsoleCommand("changescene b");
+      const world = runtime.getWorld();
+      const hero = world.findActor("B-hero");
+      expect(hero?.sceneLayerId).toBeNull();
+      expect(world.findActor(inLayer(layer, "B-hero"))?.sceneLayerId).toBe(layer.guid);
+      expect(world.getActors().filter((actor) => actor.guid === "B-hero")).toEqual([hero]);
+    } finally { runtime.stop(); }
+  });
+
+  it("resolves actor references to the same layer instance's actors", () => {
+    const hud: SerializedSceneLayer = {
+      ...overlayLayer(),
+      actors: [
+        createActor("target", "Target", { classId: "SceneLayerActor" }),
+        createActor("pointer", "Pointer", {
+          classId: "SceneLayerActor",
+          properties: { target: { $sceneValue: "reference", actorId: "target" } },
+        }),
+      ],
+    };
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      preferSoftwarePhysics: true,
+      seedDemoActors: false,
+      playScene: worldScene("A"),
+      sceneLayerLibrary: { hud },
+    });
+    try {
+      runtime.realizePlayWorld();
+      const world = runtime.getWorld();
+      for (const layer of [runtime.createSceneLayer("hud", 0)!, runtime.createSceneLayer("hud", 1)!]) {
+        expect(world.findActor(inLayer(layer, "pointer"))?.getVariable("target"))
+          .toBe(world.findActor(inLayer(layer, "target")));
+      }
+    } finally { runtime.stop(); }
   });
 
   it("logs an error when unregistering a missing SceneLayer post-process without throwing", () => {
@@ -301,7 +362,7 @@ describe("SceneLayer runtime compositor", () => {
       commands.some(
         (command) =>
           command.type === "spawn" &&
-          command.actorGuid === "banner" &&
+          command.actorGuid === inLayer(layer, "banner") &&
           command.sceneLayerId === layer.guid,
       ),
     ).toBe(true);
@@ -309,7 +370,7 @@ describe("SceneLayer runtime compositor", () => {
       commands.some(
         (command) =>
           command.type === "assignMesh" &&
-          command.actorGuid === "banner" &&
+          command.actorGuid === inLayer(layer, "banner") &&
           command.sceneLayerId === layer.guid,
       ),
     ).toBe(true);
@@ -358,7 +419,8 @@ describe("SceneLayer runtime compositor", () => {
     const first = runtime.createSceneLayer("hud", 0)!;
     const second = runtime.createSceneLayer("hud", 1)!;
     expect(first.guid).not.toBe(second.guid);
-    expect(runtime.getWorld().findActor("banner")?.sceneLayerId).toBe(first.guid);
+    expect(runtime.getWorld().findActor(inLayer(first, "banner"))?.sceneLayerId).toBe(first.guid);
+    expect(runtime.getWorld().findActor(inLayer(second, "banner"))?.sceneLayerId).toBe(second.guid);
     expect(
       runtime
         .getWorld()
@@ -433,10 +495,10 @@ describe("SceneLayer runtime compositor", () => {
       }),
     );
     world.spawnActorNow(shelf);
-    runtime.createSceneLayer("hud", 0);
+    const layer = runtime.createSceneLayer("hud", 0);
     runtime.start();
     for (let i = 0; i < 90; i++) runtime.tick();
-    expect(world.findActor("chip")?.transform.position.y).toBeLessThan(3);
+    expect(world.findActor(inLayer(layer, "chip"))?.transform.position.y).toBeLessThan(3);
     runtime.stop();
   });
 
@@ -469,7 +531,8 @@ describe("SceneLayer runtime compositor", () => {
       await createPlayBootCoordinator().play(runtime);
       for (let i = 0; i < 30; i++) runtime.tick();
       // Upward layer gravity lifts the chip; the default 2D gravity would drop it.
-      expect(runtime.getWorld().findActor("chip")?.transform.position.y).toBeGreaterThan(0.5);
+      const chip = runtime.getWorld().findActor(inLayer(runtime.getWorld().getSceneLayers()[0], "chip"));
+      expect(chip?.transform.position.y).toBeGreaterThan(0.5);
     } finally {
       runtime.stop();
     }
@@ -503,8 +566,9 @@ describe("SceneLayer runtime compositor", () => {
       sceneLayerLibrary: { hud },
     });
     runtime.realizePlayWorld();
-    runtime.createSceneLayer("hud", 0);
-    const actor = runtime.getWorld().findActor("badge");
+    const layer = runtime.createSceneLayer("hud", 0);
+    const actor = runtime.getWorld().findActor(inLayer(layer, "badge"));
+    expect(actor).toBeDefined();
     expect(actor?.transform.position).toEqual({ x: 0, y: 0, z: 0 });
     runtime.applySceneLayerResize(32, 18);
     expect(actor?.transform.position).toEqual({ x: 0, y: 0, z: 0 });
@@ -545,12 +609,13 @@ describe("SceneLayer runtime compositor", () => {
       sceneLayerLibrary: { hud },
     });
     runtime.realizePlayWorld();
-    runtime.createSceneLayer("hud", 0);
-    expect(runtime.getWorld().findActor("badge")?.transform.position.x).toBe(8);
-    expect(runtime.getWorld().findActor("badge")?.transform.position.y).toBe(-4.5);
+    const layer = runtime.createSceneLayer("hud", 0);
+    const badge = () => runtime.getWorld().findActor(inLayer(layer, "badge"));
+    expect(badge()?.transform.position.x).toBe(8);
+    expect(badge()?.transform.position.y).toBe(-4.5);
     runtime.applySceneLayerResize(32, 18);
-    expect(runtime.getWorld().findActor("badge")?.transform.position.x).toBe(8);
-    expect(runtime.getWorld().findActor("badge")?.transform.position.y).toBe(-4.5);
+    expect(badge()?.transform.position.x).toBe(8);
+    expect(badge()?.transform.position.y).toBe(-4.5);
   });
 
   it("pins a parent actor when a child 2DAnchor is nested under it", () => {
@@ -597,15 +662,16 @@ describe("SceneLayer runtime compositor", () => {
       sceneLayerLibrary: { hud },
     });
     runtime.realizePlayWorld();
-    runtime.createSceneLayer("hud", 0);
+    const layer = runtime.createSceneLayer("hud", 0);
+    const actor = (id: string) => runtime.getWorld().findActor(inLayer(layer, id));
     runtime.applySceneLayerResize(32, 18);
-    expect(runtime.getWorld().findActor("banner")?.transform.position.x).toBe(9);
-    expect(runtime.getWorld().findActor("banner")?.transform.position.y).toBe(-4);
+    expect(actor("banner")?.transform.position.x).toBe(9);
+    expect(actor("banner")?.transform.position.y).toBe(-4);
     runtime.applySceneLayerResize(16, 9);
-    expect(runtime.getWorld().findActor("banner")?.transform.position.x).toBe(9);
-    expect(runtime.getWorld().findActor("banner")?.transform.position.y).toBe(-4);
-    expect(runtime.getWorld().findActor("pin")?.transform.position.x).toBe(0);
-    expect(runtime.getWorld().findActor("pin")?.transform.position.y).toBe(0);
+    expect(actor("banner")?.transform.position.x).toBe(9);
+    expect(actor("banner")?.transform.position.y).toBe(-4);
+    expect(actor("pin")?.transform.position.x).toBe(0);
+    expect(actor("pin")?.transform.position.y).toBe(0);
   });
 
   it("keeps a child 2DAnchor helper at local origin when the parent already has 2DAnchor", () => {
@@ -662,12 +728,13 @@ describe("SceneLayer runtime compositor", () => {
       sceneLayerLibrary: { hud },
     });
     runtime.realizePlayWorld();
-    runtime.createSceneLayer("hud", 0);
+    const layer = runtime.createSceneLayer("hud", 0);
+    const actor = (id: string) => runtime.getWorld().findActor(inLayer(layer, id));
     runtime.applySceneLayerResize(32, 18);
-    expect(runtime.getWorld().findActor("banner")?.transform.position.x).toBe(8);
-    expect(runtime.getWorld().findActor("banner")?.transform.position.y).toBe(-4.5);
-    expect(runtime.getWorld().findActor("pin")?.transform.position.x).toBe(0);
-    expect(runtime.getWorld().findActor("pin")?.transform.position.y).toBe(0);
+    expect(actor("banner")?.transform.position.x).toBe(8);
+    expect(actor("banner")?.transform.position.y).toBe(-4.5);
+    expect(actor("pin")?.transform.position.x).toBe(0);
+    expect(actor("pin")?.transform.position.y).toBe(0);
   });
 
   it.each([false, true])("inherits the upper anchor once through a transformed hierarchy (reversed actors: %s)", (reverse) => {
@@ -692,7 +759,8 @@ describe("SceneLayer runtime compositor", () => {
     });
     try {
       runtime.realizePlayWorld();
-      runtime.createSceneLayer("hud", 0);
+      const layer = runtime.createSceneLayer("hud", 0);
+      const guid = (id: string) => inLayer(layer, id);
       runtime.start();
       for (let pass = 0; pass < 2; pass++) {
         runtime.applySceneLayerResize(32, 18);
@@ -700,19 +768,19 @@ describe("SceneLayer runtime compositor", () => {
         const snapshot = new Float32Array(snapshotFloatCount(16));
         expect(runtime.copySnapshot(snapshot)).toBe(true);
         const slots = Array.from({ length: readSnapshotHeader(snapshot).actorCount }, (_, index) => readActorSlot(snapshot, index));
-        const anchorSlots = commands.flatMap((command) => command.type === "spawn" && ["upper", "lower", "nested"].includes(command.actorGuid)
+        const anchorSlots = commands.flatMap((command) => command.type === "spawn" && ["upper", "lower", "nested"].map(guid).includes(command.actorGuid)
           ? [command.slotId] : []);
         expect(slots.some((slot) => anchorSlots.includes(slot.slotId))).toBe(false);
         for (const [id, x, y] of [["a", 11, 22], ["b", -1, 26], ["c", -4, 28]] as const) {
-          const spawn = commands.find((command) => command.type === "spawn" && command.actorGuid === id);
+          const spawn = commands.find((command) => command.type === "spawn" && command.actorGuid === guid(id));
           if (spawn?.type !== "spawn") throw new Error(`Missing spawn for ${id}`);
           const pose = slots.find((slot) => slot.slotId === spawn.slotId)!.position;
           expect(pose.x).toBeCloseTo(x);
           expect(pose.y).toBeCloseTo(y);
         }
       }
-      expect(runtime.getWorld().findActor("b")?.transform.position).toEqual({ x: 2, y: 4, z: 0 });
-      expect(commands.some((command) => command.type === "assignMesh" && ["upper", "lower"].includes(command.actorGuid ?? ""))).toBe(false);
+      expect(runtime.getWorld().findActor(guid("b"))?.transform.position).toEqual({ x: 2, y: 4, z: 0 });
+      expect(commands.some((command) => command.type === "assignMesh" && ["upper", "lower"].map(guid).includes(command.actorGuid ?? ""))).toBe(false);
     } finally { runtime.stop(); }
   });
 
@@ -730,10 +798,10 @@ describe("SceneLayer runtime compositor", () => {
     });
     try {
       runtime.realizePlayWorld();
-      runtime.createSceneLayer("hud", 0);
-      const lower = runtime.getWorld().findActor("lower")!;
+      const layer = runtime.createSceneLayer("hud", 0);
+      const lower = runtime.getWorld().findActor(inLayer(layer, "lower"))!;
       expect(lower.transform.position.x).toBe(22);
-      lower.setVariable("parentId", "upper");
+      lower.setVariable("parentId", inLayer(layer, "upper"));
       runtime.applySceneLayerResize(32, 18);
       expect(lower.transform.position.x).toBe(2);
       lower.setVariable("parentId", null);
@@ -775,11 +843,11 @@ describe("SceneLayer runtime compositor", () => {
       },
     ]);
     runtime.realizePlayWorld();
-    runtime.createSceneLayer("hud", 0);
+    const layer = runtime.createSceneLayer("hud", 0);
     runtime.applySceneLayerPointer({
       type: "sceneLayerPointer",
       layerId: "any",
-      actorGuid: "banner",
+      actorGuid: inLayer(layer, "banner"),
       event: "onClick",
     });
     expect(
@@ -787,7 +855,7 @@ describe("SceneLayer runtime compositor", () => {
         (command) =>
           command.type === "log" &&
           command.category === "Click" &&
-          command.message === "banner",
+          command.message === inLayer(layer, "banner"),
       ),
     ).toBe(true);
     const before = commands.length;
@@ -844,11 +912,11 @@ describe("SceneLayer runtime compositor", () => {
       },
     ]);
     runtime.realizePlayWorld();
-    runtime.createSceneLayer("hud", 0);
+    const layer = runtime.createSceneLayer("hud", 0);
     runtime.applySceneLayerPointer({
       type: "sceneLayerPointer",
       layerId: "any",
-      actorGuid: "banner",
+      actorGuid: inLayer(layer, "banner"),
       event: "onClick",
       componentId: "btn-1",
     });
@@ -946,12 +1014,12 @@ describe("SceneLayer runtime compositor", () => {
       onCommand: (command) => commands.push(command),
     });
     runtime.realizePlayWorld();
-    runtime.createSceneLayer("hud", 0);
+    const layer = runtime.createSceneLayer("hud", 0);
     const assignSolo = commands.find(
-      (command) => command.type === "assignMesh" && command.actorGuid === "solo",
+      (command) => command.type === "assignMesh" && command.actorGuid === inLayer(layer, "solo"),
     );
     const assignPair = commands.find(
-      (command) => command.type === "assignMesh" && command.actorGuid === "pair",
+      (command) => command.type === "assignMesh" && command.actorGuid === inLayer(layer, "pair"),
     );
     expect(assignSolo).toMatchObject({
       type: "assignMesh",
@@ -1010,9 +1078,9 @@ describe("SceneLayer runtime compositor", () => {
       onCommand: (command) => commands.push(command),
     });
     runtime.realizePlayWorld();
-    runtime.createSceneLayer("hud", 0);
+    const layer = runtime.createSceneLayer("hud", 0);
     const assign = commands.find(
-      (command) => command.type === "assignMesh" && command.actorGuid === "caption",
+      (command) => command.type === "assignMesh" && command.actorGuid === inLayer(layer, "caption"),
     );
     expect(assign).toMatchObject({
       type: "assignMesh",
@@ -1084,12 +1152,12 @@ describe("SceneLayer runtime compositor", () => {
       },
     ]);
     runtime.realizePlayWorld();
-    runtime.createSceneLayer("hud", 0);
+    const layer = runtime.createSceneLayer("hud", 0);
     const assignBanner = commands.find(
-      (command) => command.type === "assignMesh" && command.actorGuid === "banner",
+      (command) => command.type === "assignMesh" && command.actorGuid === inLayer(layer, "banner"),
     );
     const assignPin = commands.find(
-      (command) => command.type === "assignMesh" && command.actorGuid === "pin",
+      (command) => command.type === "assignMesh" && command.actorGuid === inLayer(layer, "pin"),
     );
     expect(assignBanner).toMatchObject({
       type: "assignMesh",
@@ -1102,7 +1170,7 @@ describe("SceneLayer runtime compositor", () => {
     runtime.applySceneLayerPointer({
       type: "sceneLayerPointer",
       layerId: "any",
-      actorGuid: "banner",
+      actorGuid: inLayer(layer, "banner"),
       event: "onClick",
     });
     expect(
@@ -1110,7 +1178,7 @@ describe("SceneLayer runtime compositor", () => {
         (command) =>
           command.type === "log" &&
           command.category === "Click" &&
-          command.message === "pin",
+          command.message === inLayer(layer, "pin"),
       ),
     ).toBe(true);
   });
@@ -1168,11 +1236,11 @@ describe("SceneLayer runtime compositor", () => {
         entryPoints: [{ name: "Refresh", event: "Refresh", isAsync: false }],
       }]);
       runtime.realizePlayWorld();
-      runtime.createSceneLayer("hud", 0);
+      const layer = runtime.createSceneLayer("hud", 0);
       const world = runtime.getWorld();
-      const banner = world.findActor("banner")!;
+      const banner = world.findActor(inLayer(layer, "banner"))!;
       const assignment = () => commands.filter(
-        (command) => command.type === "assignMesh" && command.actorGuid === "banner",
+        (command) => command.type === "assignMesh" && command.actorGuid === banner.guid,
       ).at(-1);
       expect(assignment()).toMatchObject({ hasButton: true, hitTest: "block" });
       expect(assignment()).not.toHaveProperty("buttonComponentId");
@@ -1183,7 +1251,7 @@ describe("SceneLayer runtime compositor", () => {
         ["child-a", "child-button-a", true, "block", "child-button-b"],
         ["child-b", "child-button-b", false, "passThrough", undefined],
       ] as const) {
-        world.findActor(actorId)!.components.find((component) => component.guid === componentId)!.destroyed = true;
+        world.findActor(inLayer(layer, actorId))!.components.find((component) => component.guid === componentId)!.destroyed = true;
         commands.length = 0;
         runtime.invokeScriptEvent("SceneLayerActor", "Refresh", banner);
         const next = assignment();
@@ -1233,10 +1301,10 @@ describe("SceneLayer runtime compositor", () => {
       onCommand: (command) => commands.push(command),
     });
     runtime.realizePlayWorld();
-    runtime.createSceneLayer("hud", 0);
+    const layer = runtime.createSceneLayer("hud", 0);
     expect(
       commands.find(
-        (command) => command.type === "assignMesh" && command.actorGuid === "frame",
+        (command) => command.type === "assignMesh" && command.actorGuid === inLayer(layer, "frame"),
       ),
     ).toMatchObject({
       type: "assignMesh",

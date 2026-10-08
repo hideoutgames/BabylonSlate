@@ -502,26 +502,22 @@ function asNullableString(value: unknown): string | null {
 }
 
 /**
- * Later actors that reuse an id are renamed, keeping the first owner addressable.
- * A repeated id otherwise collapses the pair into one editor mesh and one Play
- * slot, so the duplicate silently disappears from the viewport.
+ * Actor ids are the runtime guids of a document's actors, and two live actors
+ * never share a guid. A document that repeats one is rejected, never repaired.
  */
-function withUniqueActorIds(actors: SerializedActor[]): SerializedActor[] {
-  const taken = new Set<string>();
-  return actors.map((actor) => {
-    if (!taken.has(actor.id)) {
-      taken.add(actor.id);
-      return actor;
+export function assertUniqueSceneActorIds(
+  actors: readonly Pick<SerializedActor, "id" | "name">[],
+  documentName: string,
+): void {
+  const names = new Map<string, string>();
+  for (const actor of actors) {
+    const first = names.get(actor.id);
+    if (first !== undefined) {
+      throw new Error(`"${documentName}" contains duplicate actor id "${actor.id}" (actors "${first}" and "${actor.name}"). ` +
+        "Actor ids must be unique; give one of these actors a new id in the document file.");
     }
-    let suffix = 2;
-    let candidate = `${actor.id}-${suffix}`;
-    while (taken.has(candidate)) {
-      suffix += 1;
-      candidate = `${actor.id}-${suffix}`;
-    }
-    taken.add(candidate);
-    return { ...actor, id: candidate };
-  });
+    names.set(actor.id, actor.name);
+  }
 }
 
 function normalizeMainCamera(
@@ -700,9 +696,9 @@ export function normalizeScene(value: unknown): SerializedScene {
   const viewportMode: ViewportMode =
     source.viewportMode === "2d" ? "2d" : "3d";
   const folders = normalizeFolders(source.folders);
-  const actors = Array.isArray(source.actors)
-    ? withUniqueActorIds(source.actors.map(normalizeActor))
-    : [];
+  const name = typeof source.name === "string" ? source.name : "Untitled";
+  const actors = Array.isArray(source.actors) ? source.actors.map(normalizeActor) : [];
+  assertUniqueSceneActorIds(actors, name);
   const settings = normalizeSceneSettings(source.settings, viewportMode);
   const rawSettings =
     source.settings && typeof source.settings === "object"
@@ -718,7 +714,7 @@ export function normalizeScene(value: unknown): SerializedScene {
       ),
     );
   return {
-    name: typeof source.name === "string" ? source.name : "Untitled",
+    name,
     viewportMode,
     settings: leftoverNavDebug ? { ...settings, showNavmesh: true } : settings,
     actors: withResolvedFolderIds(actors, folders),

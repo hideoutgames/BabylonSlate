@@ -523,12 +523,13 @@ describe("component script API", () => {
       ),
     ]);
     runtime.realizePlayWorld();
-    runtime.createSceneLayer("hud", 0);
-    const actor = runtime.getWorld().findActor("visual");
+    const layer = runtime.createSceneLayer("hud", 0)!;
+    // Scene Layer actor guids are scoped to their layer instance.
+    const actor = runtime.getWorld().findActor(`${layer.guid}:visual`);
     // A store-only write would leave the parent's x at -6.
     expect(actor?.transform.position.x).toBe(-4);
     expect(actor?.transform.position.y).toBe(3.5);
-    expect(runtime.getWorld().findActor("badge")?.transform).toEqual({
+    expect(runtime.getWorld().findActor(`${layer.guid}:badge`)?.transform).toEqual({
       position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 },
     });
     runtime.stop();
