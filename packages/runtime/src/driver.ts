@@ -3,8 +3,8 @@ import { RuntimeMaterialEditGate } from "./runtime-material-edit-gate";
 import { runtimeEditLocalTransform } from "./runtime-transform-edit";
 import { RuntimeInspector } from "./runtime-inspector";
 import { RuntimeDataCatalog, dataTypeSchemas } from "./data-catalog";
-import { SaveGameError, SaveGameService, resolveActorDefaults, type SaveGameServiceOptions } from "@babylonslate/core";
-import { SaveGameWorld } from "./save-game-world";
+import { resolveActorDefaults, type SaveGameService } from "@babylonslate/core";
+import { SessionBoundaries, type RuntimeSaveGameOptions } from "./session-boundaries";
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
 import { RuntimeAssetPreloads } from "./asset-preloads";
 import type { RuntimeAssetLoadState, RuntimeAssetPreloadOptions, RuntimeAssetPreloadResult } from "@babylonslate/core";
@@ -417,8 +417,7 @@ export interface RuntimeDriver {
   readonly lastPhysicsMs: number;
 }
 
-export type RuntimeSaveGameOptions = Omit<SaveGameServiceOptions,
-  "atBoundary" | "captureState" | "stageState" | "applyState" | "resetState" | "onGameLoaded">;
+export type { RuntimeSaveGameOptions } from "./session-boundaries";
 
 export function createInProcessRuntime(
   options: RuntimeDriverOptions,
@@ -461,7 +460,6 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly sessionGeneration: number;
   private readonly sessionMode: GameSessionMode;
   private commandRevision = 0;
-  private lastBoundaryRequestId = 0;
   private readonly diagnosticsEnabled: boolean;
   private readonly deferMaterialEdits: boolean;
   private materialEditGate: RuntimeMaterialEditGate | null = null;
@@ -470,8 +468,6 @@ class InProcessRuntime implements RuntimeDriver {
   private inspectorScheduled = false;
   private lastInspectorRequestId = 0;
   private readonly inspectorRequests: Array<{ request: RuntimeInspectorRequest; resolve(result: RuntimeInspectorResult): void }> = [];
-  private readonly boundaryRequests: Array<{ request: SessionBoundaryRequest; resolve(result: SessionBoundaryResult): void }> = [];
-  private boundaryScheduled = false;
   private readonly pauseReasons = new Set<SessionPauseReason>();
   private readonly pendingPauseChanges = new Map<SessionPauseReason, boolean>();
   private readonly assetPreloads = new RuntimeAssetPreloads(command => this.emit(command));
@@ -485,11 +481,6 @@ class InProcessRuntime implements RuntimeDriver {
   setAssetLoadStates(states: readonly { guid: string; state: RuntimeAssetLoadState }[]): void {
     this.assetPreloads.setStates(states);
   }
-  private saveGameService?: SaveGameService;
-  private saveGameWorld?: SaveGameWorld;
-  private saveBoundaryActive = false;
-  private readonly savedActors = new WeakSet<Actor>();
-  private pendingGameLoaded: (() => void) | null = null;
   private readonly world: World;
   private readonly snapshots: SnapshotPublisher;
   private readonly input = new InputRingBuffer(512);
@@ -555,7 +546,7 @@ class InProcessRuntime implements RuntimeDriver {
     world: () => this.world,
     stopped: () => this.stopped,
     paused: () => this.paused,
-    saveBoundaryActive: () => this.saveBoundaryActive,
+    saveBoundaryActive: () => this.boundaries.saveBoundaryActive,
     sceneLoading: () => this.sceneRealizer.blocked || this.bootLoading,
     streams: () => this.streams,
     layers: () => this.layers,
@@ -719,6 +710,29 @@ class InProcessRuntime implements RuntimeDriver {
     emit: (command) => this.emit(command),
   });
   private readonly layers: SceneLayers;
+  private readonly boundaries: SessionBoundaries = new SessionBoundaries(this.admission, {
+    world: () => this.world,
+    sessionGeneration: () => this.sessionGeneration,
+    stopped: () => this.stopped,
+    playScene: () => this.playScene,
+    playSceneGuid: () => this.playSceneGuid,
+    sceneLibrary: () => this.sceneLibrary,
+    scripts: () => this.scriptHost,
+    streams: () => this.streams,
+    sceneRealizer: () => this.sceneRealizer,
+    physics: () => this.physics,
+    actorHooks: () => this.sceneActorHooks,
+    canSpawnActorClass: (classId) => this.canSpawnActorClass(classId),
+    realizeActor: (actor) => this.realizeActor(actor),
+    removeActor: (actor) => this.removeOwnedActor(actor),
+    publishSnapshot: () => this.snapshots.publish(),
+    takeDeferredOverlayLayout: () => this.overlay.takeDeferredLayout(),
+    pauseReasons: () => this.pauseReasons,
+    setPauseReason: (reason, paused) => this.setPauseReason(reason, paused),
+    resetInputState: () => this.resetInputState(),
+    commandRevision: () => this.commandRevision,
+    reportError: (error) => { this.reportError(error); },
+  });
   private readonly animGraphs = new AnimGraphRuntime({
     actors: () => this.world.getActors(),
     stopped: () => this.stopped,
@@ -949,7 +963,7 @@ class InProcessRuntime implements RuntimeDriver {
       emit: (command) => this.emit(command),
     }, nowMs);
     this.ticks = new TickPipeline(this.world, this.snapshots, this.logs, {
-      canTick: () => this.running && !this.paused && !this.saveBoundaryActive && !this.streams.blocking,
+      canTick: () => this.running && !this.paused && !this.boundaries.saveBoundaryActive && !this.streams.blocking,
       canAdvance: () => this.running && !this.paused && !this.streams.blocking,
       paused: () => this.paused,
       stopped: () => this.stopped,
@@ -1026,7 +1040,7 @@ class InProcessRuntime implements RuntimeDriver {
       texturePixelSizes: this.texturePixelSizes,
     }, {
       stopped: () => this.stopped,
-      saveBoundaryActive: () => this.saveBoundaryActive,
+      saveBoundaryActive: () => this.boundaries.saveBoundaryActive,
       removing: (actor) => this.removingActors.has(actor),
       pixelsPerUnit: () => this.physics.pixelsPerUnit,
       scripts: () => this.scriptHost,
@@ -1171,8 +1185,8 @@ class InProcessRuntime implements RuntimeDriver {
       ...createSceneStreamHostBindings({ streams: this.streams, world: () => this.world }),
       animGraphControl: (target) => this.animGraphs.control(target),
       registerSaveActor: (actor, persistentId) => this.registerSaveActor(actor, persistentId),
-      getSaveActorId: (actor) => this.saveGameWorld?.persistentId(actor) ?? actor.guid,
-      resolveSaveActor: (id) => this.saveGameWorld?.findActor(id) ?? this.world.findActor(id),
+      getSaveActorId: (actor) => this.boundaries.saveActorId(actor),
+      resolveSaveActor: (id) => this.boundaries.findSaveActor(id) ?? this.world.findActor(id),
       getSubsystem: (classId) => this.findSubsystem(classId),
       getGameInstance: () => this.world.gameInstance,
       getSceneLoadingProgress: () => {
@@ -1252,8 +1266,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private simulationBlocked(owner: BObject | null): boolean {
-    return (this.streams.blocking || this.paused || this.boundaryRequests.some(
-      ({ request }) => request.action.kind === "pause" && request.action.paused) ||
+    return (this.streams.blocking || this.paused || this.boundaries.pausePending ||
       [...this.pendingPauseChanges.values()].some(Boolean)) && !this.stopped && !owner?.destroyed;
   }
 
@@ -1663,7 +1676,7 @@ class InProcessRuntime implements RuntimeDriver {
     const components = this.scriptHost.scriptsFor(options.classId)
       .find((script) => script.components !== undefined)?.components;
     if (components) attachSerializedComponents(this.world, actor, components, { freshIds: true });
-    this.savedActors.add(actor);
+    this.boundaries.markSpawned(actor);
     try {
       this.realizeActor(actor);
     } catch (error) {
@@ -2229,7 +2242,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   private realizeActor(actor: Actor, checkpoint: () => void = () => {}): void {
     checkpoint();
-    if (!this.saveBoundaryActive) this.saveGameWorld?.register(actor, this.savedActors.has(actor));
+    this.boundaries.trackRealized(actor);
     if (this.world.classRegistry.isA(actor.classId, "RenderTargetCapture") && !captureComponent(actor) && !actor.sceneLayerId) {
       attachSerializedComponents(this.world, actor, [{
         id: `${actor.guid}:capture`, classId: "RenderTargetCaptureComponent", properties: createDefaultRenderTargetCaptureProperties(),
@@ -2637,110 +2650,13 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   configureSaveGame(options: RuntimeSaveGameOptions): SaveGameService {
-    if (this.saveGameService) throw new SaveGameError("invalid", "Save Game is already configured for this session.");
-    const state = new SaveGameWorld({
-      world: this.world,
-      sceneId: () => this.world.currentScene?.assetGuid ?? this.playSceneGuid,
-      eligible: (actor) => !actor.sceneLayerId && !this.streams.isStreamActor(actor),
-      isSpawned: (actor) => this.savedActors.has(actor),
-      classAssetGuid: (classId) => this.scriptHost.scriptsFor(classId)[0]?.assetGuid,
-      resolveClass: (classId, assetGuid) => {
-        if (!assetGuid) return this.scriptHost.scriptsFor(classId).length === 0 && this.world.classRegistry.get(classId) ? classId : null;
-        const candidates = this.scriptHost.classIds().filter((id) => this.scriptHost.scriptsFor(id).some((script) => script.assetGuid === assetGuid));
-        return candidates.length === 1 ? candidates[0]! : null;
-      },
-      prepare: (id, classId, spawned) => {
-        if (!spawned) {
-          const scene = this.playScene ?? this.sceneLibrary.get(this.world.currentScene?.assetGuid ?? this.playSceneGuid);
-          const row = scene?.actors.find((actor) => actor.id === id && actor.classId === classId);
-          const actor = row ? createActorFromSerialized(this.world, row, this.sceneActorHooks) : null;
-          if (actor) this.scriptHost.bindInterfaceHandlers(actor);
-          return actor;
-        }
-        if (!this.canSpawnActorClass(classId) || !this.scriptHost.hooksFor(classId)) return null;
-        const actor = this.world.createActor({ guid: id, classId, hooks: this.sceneActorHooks(classId) });
-        this.scriptHost.bindInterfaceHandlers(actor);
-        const components = this.scriptHost.scriptsFor(classId).find((script) => script.components !== undefined)?.components;
-        if (components) attachSerializedComponents(this.world, actor, components, { freshIds: true });
-        this.savedActors.add(actor);
-        return actor;
-      },
-      realize: (actor) => this.realizeActor(actor),
-      remove: (actor) => this.removeOwnedActor(actor),
-      synchronize: (actors) => {
-        this.physics.main.syncFromWorld(this.world);
-        for (const actor of actors) this.physics.main.teleportActor(actor, this.world);
-        this.snapshots.publish();
-      },
-      reportError: (error) => { this.reportError(error); },
-    });
-    this.saveGameWorld = state;
-    for (const actor of this.world.getActors()) state.register(actor, this.savedActors.has(actor));
-    const service = new SaveGameService({
-      ...options,
-      atBoundary: async (operation) => {
-        // Promise scheduling enters after the entire synchronous tick, including
-        // World's deferred spawn/destroy flush, even when called by a Tick graph.
-        await Promise.resolve();
-        if (this.stopped) throw new SaveGameError("unavailable", "The game session has stopped.");
-        if (this.sceneRealizer.blocked || this.streams.blocking || this.sceneRealizer.realizing) {
-          throw new SaveGameError("unavailable", "Wait for scene loading to finish before saving or loading.");
-        }
-        this.saveBoundaryActive = true;
-        try { return await operation(); }
-        finally {
-          this.saveBoundaryActive = false;
-          const loaded = this.pendingGameLoaded;
-          this.pendingGameLoaded = null;
-          const publishOverlays = this.overlay.takeDeferredLayout();
-          if (!this.stopped) {
-            // User callbacks run after commit. They cannot turn an applied
-            // checkpoint into an apparent load failure.
-            for (const notify of [publishOverlays ? () => this.snapshots.publish() : null, loaded, () => this.admission.flush()]) {
-              try { notify?.(); }
-              catch (error) {
-                try { this.reportError(error); } catch { /* The host may be disconnected. */ }
-              }
-            }
-          }
-        }
-      },
-      captureState: (data) => {
-        state.validateDataReferences(data, options.definition);
-        return state.capture();
-      },
-      stageState: (saved, data) => {
-        const staged = state.stage(saved);
-        state.validateDataReferences(data, options.definition, staged);
-        return staged;
-      },
-      applyState: (staged) => state.apply(staged),
-      resetState: () => state.reset(),
-      onGameLoaded: (info) => {
-        this.pendingGameLoaded = () => {
-          const owners: Array<BObject | null> = [this.world.gameInstance, this.world.currentScene,
-            ...this.world.getGameSubsystems(), ...this.world.getSceneSubsystems(),
-            ...this.world.getActors().flatMap((actor) => [actor, ...actor.components])];
-          for (const owner of owners) {
-            if (owner && !owner.destroyed) this.admission.run(owner, () => this.admission.guard(() =>
-              this.scriptHost.invokeEvent(owner.classId, "onGameLoaded", owner, { ...info })));
-          }
-        };
-      },
-    });
-    this.saveGameService = service;
-    this.scriptHost.setSaveGameService(service);
-    return service;
+    return this.boundaries.configureSaveGame(options);
   }
 
-  getSaveGameService(): SaveGameService | undefined { return this.saveGameService; }
+  getSaveGameService(): SaveGameService | undefined { return this.boundaries.saveGameService; }
 
   registerSaveActor(actor: BObject, persistentId?: string): void {
-    if (!this.saveGameWorld) throw new SaveGameError("unavailable", "Select a default Save Game definition in Project Settings.");
-    if (!(actor instanceof Actor) || actor.world !== this.world || actor.destroyed) {
-      throw new SaveGameError("invalid", "Register a live actor from this game session.");
-    }
-    this.saveGameWorld.register(actor, this.savedActors.has(actor), persistentId);
+    this.boundaries.registerSaveActor(actor, persistentId);
   }
 
   start(): void {
@@ -2762,7 +2678,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.ticks.stopDiagnostics();
     this.materialEditGate?.cancel("The game session has stopped.");
     if (this.inspectorRequests.length) this.flushInspectorRequests();
-    this.flushBoundaryRequests();
+    this.boundaries.flush();
     this.pendingPauseChanges.clear();
     this.tweens.stop();
     this.overlay.clear();
@@ -2826,24 +2742,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   requestSessionBoundary(request: SessionBoundaryRequest): Promise<SessionBoundaryResult> {
-    const invalid = request.sessionGeneration !== this.sessionGeneration ? "Stale session generation." :
-      !Number.isSafeInteger(request.requestId) || request.requestId <= this.lastBoundaryRequestId ? "Invalid or superseded request ID." :
-      request.action?.kind !== "resetInput" && (request.action?.kind !== "pause" ||
-        !["user", "lifecycle", "loading"].includes(request.action.reason) || typeof request.action.paused !== "boolean") ? "Unsupported session boundary operation." :
-      this.stopped ? "The game session has stopped." :
-      this.boundaryRequests.length >= 64 ? "Session boundary queue is full." : null;
-    if (invalid) return Promise.resolve(this.boundaryResult(request, invalid));
-    this.lastBoundaryRequestId = request.requestId;
-    // A microtask runs after the complete synchronous tick and its deferred
-    // snapshot publication, including reentrant host requests from onCommand.
-    const result = new Promise<SessionBoundaryResult>(resolve => {
-      this.boundaryRequests.push({ request: { ...request, action: { ...request.action } }, resolve });
-    });
-    if (!this.boundaryScheduled) {
-      this.boundaryScheduled = true;
-      queueMicrotask(() => this.flushBoundaryRequests());
-    }
-    return result;
+    return this.boundaries.requestSessionBoundary(request);
   }
 
   requestDiagnosticOperation(request: DiagnosticOperationRequest): Promise<DiagnosticOperationResult> {
@@ -2864,7 +2763,7 @@ class InProcessRuntime implements RuntimeDriver {
         this.sessionMode !== "simulate" ? "Final scene capture is available only during Simulation Play." :
         this.stopped ? "The game session has stopped." :
         !Number.isSafeInteger(request.requestId) || request.requestId <= this.lastCaptureRequestId ? "Invalid or superseded capture request ID." : null;
-      if (invalid) { resolve(this.boundaryResult(boundaryRequest, invalid)); return; }
+      if (invalid) { resolve(this.boundaries.result(boundaryRequest, invalid)); return; }
       this.lastCaptureRequestId = request.requestId;
       this.setPauseReason("loading", true);
       this.materialEditGate?.cancel("Simulation is stopping; the pending material edit was cancelled.");
@@ -2872,7 +2771,7 @@ class InProcessRuntime implements RuntimeDriver {
       this.resetInputState();
       if (this.inspectorRequests.length) this.flushInspectorRequests();
       this.snapshots.flushDeferred();
-      resolve(this.boundaryResult(boundaryRequest));
+      resolve(this.boundaries.result(boundaryRequest));
     }));
   }
 
@@ -2919,7 +2818,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private inspectorActorReady(actor: Actor): boolean {
-    if (this.simulationQuiescent || this.stopped || this.saveBoundaryActive || actor.destroyed || actor.world !== this.world || this.world.findActorInstances(actor.guid).length !== 1 || this.streams.blocking || !this.streams.actorReady(actor)) return false;
+    if (this.simulationQuiescent || this.stopped || this.boundaries.saveBoundaryActive || actor.destroyed || actor.world !== this.world || this.world.findActorInstances(actor.guid).length !== 1 || this.streams.blocking || !this.streams.actorReady(actor)) return false;
     return actor.sceneLayerId ? this.layers.get(actor.sceneLayerId)?.ready === true : !this.sceneRealizer.blocked && !this.bootLoading;
   }
 
@@ -3070,29 +2969,6 @@ class InProcessRuntime implements RuntimeDriver {
     for (const { request, resolve } of this.inspectorRequests.splice(0)) {
       if (this.deferMaterialEdits && !this.stopped && this.getMaterialEditGate().stage(request, resolve)) continue;
       resolve(inspector.execute(request));
-    }
-  }
-
-  private boundaryResult(request: SessionBoundaryRequest, reason?: string): SessionBoundaryResult {
-    const pauseReasons = new Set(this.pauseReasons);
-    if (this.streams.blocking) pauseReasons.add("loading");
-    return { sessionGeneration: request.sessionGeneration, requestId: request.requestId, success: !reason,
-      ...(reason ? { reason } : {}), paused: pauseReasons.size > 0, pauseReasons: [...pauseReasons],
-      tickIndex: this.world.clock.tickIndex, sceneAssetGuid: this.playSceneGuid,
-      sceneLoadId: this.sceneRealizer.loadId, commandRevision: this.commandRevision };
-  }
-
-  private flushBoundaryRequests(): void {
-    this.boundaryScheduled = false;
-    for (const { request, resolve } of this.boundaryRequests.splice(0)) {
-      if (this.stopped) { resolve(this.boundaryResult(request, "The game session has stopped.")); continue; }
-      try {
-        if (request.action.kind === "pause") this.setPauseReason(request.action.reason, request.action.paused);
-        else this.resetInputState();
-        resolve(this.boundaryResult(request));
-      } catch (error) {
-        resolve(this.boundaryResult(request, error instanceof Error ? error.message : "Session boundary operation failed."));
-      }
     }
   }
 
