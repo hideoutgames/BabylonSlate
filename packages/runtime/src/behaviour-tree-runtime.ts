@@ -39,7 +39,6 @@ interface BehaviourTreeRuntimeHost {
   /** The main Scene's physics world kind; 2D faces in XY. */
   worldKind(): PhysicsWorldKind;
   seed(): number;
-  dt(): number;
   frameId(): number;
   tickIndex(): number;
   scripts(): Pick<ScriptHost, "hasClass" | "invokeBtEvent">;
@@ -442,6 +441,7 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     node: { id: string; classId: string },
     blackboard: BlackboardValues,
     memory: Record<string, unknown>,
+    dtSeconds: number,
   ): void {
     const liveMemory = memory as Record<string | symbol, unknown>;
     const activation = liveMemory[BT_TASK_ACTIVATION] as BtTaskActivation | undefined;
@@ -463,7 +463,7 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     } else if (this.voiceByActor.has(actor.guid)) {
       this.stopPlaySound(actor.guid);
     }
-    this.host.scripts().invokeBtEvent(node.classId, "onAbort", actor, this.host.dt(), {
+    this.host.scripts().invokeBtEvent(node.classId, "onAbort", actor, dtSeconds, {
       btFinish: () => undefined,
       btEvaluate: () => undefined,
       getBlackboard: (key) => blackboard[key],
@@ -477,11 +477,12 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     actor: Actor,
     classId: string,
     blackboard: BlackboardValues,
+    dtSeconds: number,
   ): boolean {
     const scripts = this.host.scripts();
     if (!scripts.hasClass(classId)) return true;
     let result = true;
-    scripts.invokeBtEvent(classId, "onEvaluate", actor, this.host.dt(), {
+    scripts.invokeBtEvent(classId, "onEvaluate", actor, dtSeconds, {
       btFinish: () => undefined,
       btEvaluate: (value) => {
         result = Boolean(value);
@@ -515,7 +516,8 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     });
   }
 
-  tick(): void {
+  /** One tick; `dtSeconds` is the tick's captured step, fixed for the whole tick. */
+  tick(dtSeconds: number): void {
     for (const actor of this.host.world().getActors()) {
       if (this.host.stopped()) return;
       if (!this.host.canTick(actor)) continue;
@@ -542,18 +544,18 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
       const blackboard: BlackboardValues = previous
         ? { ...previous.blackboard }
         : this.blackboardDefaults(blackboardGuid);
-      const next = evaluateBehaviourTree(document, previous, this.host.dt(), {
+      const next = evaluateBehaviourTree(document, previous, dtSeconds, {
         seed: this.host.seed(),
         blackboard,
         host: {
           tick: (node, board, dtSeconds, memory) =>
             this.tickTask(actor, node, board, dtSeconds, memory),
           abort: (node, board, memory) =>
-            this.abortTask(actor, node, board, memory),
+            this.abortTask(actor, node, board, memory, dtSeconds),
         },
         decoratorHost: {
           evaluate: (decorator, _node, board) =>
-            this.evaluateDecorator(actor, decorator.classId, board),
+            this.evaluateDecorator(actor, decorator.classId, board, dtSeconds),
         },
         serviceHost: {
           tick: (service, _node, board, dtSeconds) => {

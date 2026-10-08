@@ -171,6 +171,46 @@ describe("P19 behaviour tree task hosts", () => {
     runtime.stop();
   });
 
+  it("Play Animation counts the tick's step when slomo changes mid-tick", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 4,
+      seedDemoActors: false,
+      dt: 0.1,
+      playScene: hostScene(),
+      behaviourTrees: {
+        "tree-1": leafTree("anim", "bt.task.playAnimation", {
+          clipKind: "animation",
+          clipAssetGuid: "walk-1",
+        }),
+      },
+      animClipCatalog: [
+        { guid: "walk-1", type: "Animation", name: "Walk", clipName: "Walk", durationMs: 1000 },
+      ],
+      onCommand: (command) => commands.push(command),
+    });
+    const normalisedTime = () =>
+      commands.filter((command) => command.type === "animState").at(-1)?.normalisedTime;
+    try {
+      runtime.start();
+      runtime.realizePlayWorld();
+      const world = runtime.getWorld();
+      let changed = false;
+      world.spawnActorNow(world.createActor({ guid: "slomo", classId: "Actor", hooks: { onTick: () => {
+        if (!changed) changed = runtime.executeConsoleCommand("slomo 2").success;
+      } } }));
+      // Tick 1 keeps its 0.1 s step; the 0.2 s step slomo 2 sets starts with tick 2.
+      runtime.tick();
+      expect(changed).toBe(true);
+      expect(normalisedTime()).toBeCloseTo(0.1);
+      runtime.tick();
+      expect(normalisedTime()).toBeCloseTo(0.3);
+    } finally {
+      runtime.stop();
+    }
+  });
+
   it.each([
     ["the clip guid is missing from the catalog", []],
     [

@@ -233,6 +233,37 @@ describe("runtime navmesh import and crowd", () => {
     }
   });
 
+  it("steps the crowd by the tick's step when slomo changes mid-tick", async () => {
+    // slomo 2 during tick 1 must walk the agent exactly as slomo 2 issued after tick 1.
+    const walk = async (midTick: boolean) => {
+      const runtime = createInProcessRuntime({ seed: 1, dt: 0.1, seedDemoActors: false, playScene: patrolScene() });
+      try {
+        await runtime.loadNavMesh(bytes);
+        runtime.start();
+        runtime.realizePlayWorld();
+        const world = runtime.getWorld();
+        let changed = !midTick;
+        world.spawnActorNow(world.createActor({ guid: "slomo", classId: "Actor", hooks: { onTick: () => {
+          if (!changed) changed = runtime.executeConsoleCommand("slomo 2").success;
+        } } }));
+        expect(runtime.setNavAgentTarget("agent", { x: 4, y: 0, z: 4 })).toBe(true);
+        const xs: number[] = [];
+        for (let tick = 0; tick < 3; tick += 1) {
+          runtime.tick();
+          if (!midTick && tick === 0) runtime.executeConsoleCommand("slomo 2");
+          xs.push(world.findActor("agent")!.transform.position.x);
+        }
+        expect(runtime.executeConsoleCommand("slomo").output).toBe("slomo 2");
+        return xs;
+      } finally {
+        runtime.stop();
+      }
+    };
+    const afterTick = await walk(false);
+    expect(afterTick[0]).toBeGreaterThan(-4);
+    expect(await walk(true)).toEqual(afterTick);
+  });
+
   it("streams active navigation only while requested and clears removed agents", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({

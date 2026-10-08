@@ -28,7 +28,6 @@ interface RuntimeNavigationHost {
   streamActorReady(actor: Actor): boolean;
   /** The actor belongs to a streamed Scene instance. */
   isStreamActor(actor: Actor): boolean;
-  dt(): number;
   actorName(actor: Actor): string;
   emit(command: CommandMessage): void;
 }
@@ -458,7 +457,8 @@ export class RuntimeNavigation implements RuntimeSubsystem {
     }
   }
 
-  tickCrowd(actors: ReadonlyMap<string, Actor>): void {
+  /** One crowd step; `dtSeconds` is the tick's captured step. */
+  tickCrowd(actors: ReadonlyMap<string, Actor>, dtSeconds: number): void {
     if (!this.nav) return;
     this.syncNavCostVolumes();
     const worldTransforms = this.navAgentWorldTransforms(actors);
@@ -492,7 +492,7 @@ export class RuntimeNavigation implements RuntimeSubsystem {
         }
       }
     }
-    this.nav.stepCrowd(this.host.dt());
+    this.nav.stepCrowd(dtSeconds);
     for (const [actorGuid, agentId] of this.navAgentByActor) {
       const actor = this.navFrameActor(actors, actorGuid);
       if (!actor || actor.destroyed) continue;
