@@ -4,6 +4,7 @@ import { createContentBrowserAsset, openMainScene, openTestProject } from "./ope
 import { clickPlayAndWaitForOverlay, waitForPlayOverlay } from "./play";
 import { previewPhysicsScene } from "./preview-scene-fixture";
 import { expectSpheresRollDownhill, setPreviewScene } from "./preview-parity";
+import { unsavedPlayDialog } from "./unsaved-play";
 
 test.describe("P4 Play overlay and session report", () => {
 
@@ -141,10 +142,29 @@ test.describe("P4 Play overlay and session report", () => {
     expect(nudged).toBe(true);
 
     await expect(page.getByTestId("save-all-project")).toBeEnabled();
+    // Answer the prompt here: the shared handler waits for the prompt's exit
+    // animation, and a fast save and compile can close the prepare dialog
+    // before a poll sees it, so record its phases as they render instead.
+    await page.removeLocatorHandler(unsavedPlayDialog(page));
     await page.getByTestId("play-preview").click();
-    await expect(page.getByTestId("play-prepare-dialog")).toBeVisible();
+    await expect(unsavedPlayDialog(page)).toBeVisible();
+    await page.evaluate(() => {
+      const phases: string[] = [];
+      (globalThis as unknown as { preparePhases: string[] }).preparePhases = phases;
+      new MutationObserver(() => {
+        const dialog = document.querySelector('[data-testid="play-prepare-dialog"]');
+        const phase = dialog && !dialog.closest("[data-closed]")
+          ? dialog.querySelector('[data-testid="play-prepare-phase"]')?.textContent ?? ""
+          : "";
+        if (phase && phases.at(-1) !== phase) phases.push(phase);
+      }).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true });
+    });
+    await page.getByTestId("play-unsaved-save").click();
     await waitForPlayOverlay(page);
     await expect(page.getByTestId("play-prepare-dialog")).toHaveCount(0);
+    expect(
+      await page.evaluate(() => (globalThis as unknown as { preparePhases: string[] }).preparePhases),
+    ).toEqual([expect.stringMatching(/^Saving \d+ Documents?$/), "Compiling Graphs"]);
 
     await page.getByTestId("play-overlay-close").click();
     await expect(page.getByTestId("save-all-project")).toBeDisabled();
