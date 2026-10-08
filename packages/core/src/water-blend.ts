@@ -63,14 +63,14 @@ export interface PreparedWaterBlendBody {
    * body can still take a neighbour's waves (`heightScale` and `offsetScale` are relative to it).
    */
   readonly referenceScale: number;
-  /** Wave Scale and the Gerstner factor times it, q(s)??s: what blending averages across bodies with the same swell. */
+  /** Wave Scale and the Gerstner factor times it, q(s)·s: what blending averages across bodies with the same swell. */
   readonly scale: number;
   readonly offsetAmount: number;
-  /** q??s at `referenceScale`; 0 without Gerstner. */
+  /** q·s at `referenceScale`; 0 without Gerstner. */
   readonly referenceOffset: number;
   /** Bank fade length at `referenceScale` (0 for Global Water Volume, which has no banks). */
   readonly fadeLength: number;
-  /** World Depth (Depth ?? |scale.y|). */
+  /** World Depth (Depth × |scale.y|). */
   readonly depth: number;
 }
 
@@ -327,12 +327,12 @@ function addParticipant(
  * The blended water surface at world X/Z (`x`, `z`; `y` starts the rest-base search of tilted volumes) as body `index`
  * evaluates it. Every body within the Blend Distance R of the point (and within the vertical tolerance V of this body's
  * rest height) takes part:
- * - Coverage ?? = smoothstep(???R/2, R/2, bank distance) ?? the vertical fade (1 ??? 0 between V and 2V), so a body reaches R/2
+ * - Coverage φ = smoothstep(−R/2, R/2, bank distance) × the vertical fade (1 → 0 between V and 2V), so a body reaches R/2
  *   beyond its footprint and blends over R across its edge.
- * - Shares: ?? times (1 ??? ??) of every participant of a higher class (`waterBlendClass`), normalised to sum to 1.
+ * - Shares: φ times (1 − φ) of every participant of a higher class (`waterBlendClass`), normalised to sum to 1.
  * - The union shoreline is the smooth maximum (radius 2R, in ascending body order) of the bank distances; a body leaving
  *   the blend (vertically, or over the outer half of its reach) fades out of it, so the shoreline never steps.
- * - Rest height, current and Depth average by share. The swell averages Wave Scale and q??s over the participants with
+ * - Rest height, current and Depth average by share. The swell averages Wave Scale and q·s over the participants with
  *   the same swell; where other swells hold a share, both sides calm toward the seam (smoothstep(0.5, 1, same share)),
  *   so differing assets meet flat and continuous.
  * Writes `out` and returns `out.found`. Allocation-free apart from the shared rest-base helpers.
