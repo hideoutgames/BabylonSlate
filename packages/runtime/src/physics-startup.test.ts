@@ -75,21 +75,21 @@ describe("Play physics startup", () => {
     runtime.stop();
   });
 
-  it("releases a newly loaded world backend if overlay physics cannot load", async () => {
+  it("releases a newly loaded world backend if Scene Layer physics cannot load", async () => {
     const havok = await HavokPhysicsBackend.create({
       kind: "3d",
       gravity: { x: 0, y: -9.81, z: 0 },
     });
     const dispose = vi.spyOn(havok, "dispose");
     vi.spyOn(HavokPhysicsBackend, "create").mockResolvedValue(havok);
-    vi.spyOn(Rapier2DPhysicsBackend, "create").mockRejectedValue(
+    vi.spyOn(Rapier2DPhysicsBackend, "createFactory").mockRejectedValue(
       new Error("Overlay physics unavailable"),
     );
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const runtime = createInProcessRuntime({
       seed: 1,
       seedDemoActors: false,
-      sceneLayerLibrary: { overlay: createDefaultSceneLayer() },
+      sceneLayerLibrary: { overlay: { ...createDefaultSceneLayer(), settings: { ...createDefaultSceneLayer().settings, physicsEnabled: true } } },
     });
     const initialBackend = runtime.getPhysicsSync()!.getBackend();
     try {
@@ -133,8 +133,8 @@ describe("Play physics startup", () => {
     const worldDispose = vi.spyOn(havok, "dispose");
     const overlayDispose = vi.spyOn(rapier, "dispose");
     vi.spyOn(HavokPhysicsBackend, "create").mockResolvedValue(havok);
-    vi.spyOn(Rapier2DPhysicsBackend, "create").mockResolvedValue(rapier);
-    vi.spyOn(havok, "createBody").mockImplementation(() => {
+    vi.spyOn(Rapier2DPhysicsBackend, "createFactory").mockResolvedValue(() => rapier);
+    vi.spyOn(rapier, "createBody").mockImplementation(() => {
       throw new Error("Body creation failed");
     });
     const scene = createDefaultScene();
@@ -152,11 +152,15 @@ describe("Play physics startup", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       playScene: scene,
-      sceneLayerLibrary: { overlay: createDefaultSceneLayer() },
+      sceneLayerLibrary: { overlay: { ...{ ...createDefaultSceneLayer(), settings: { ...createDefaultSceneLayer().settings, physicsEnabled: true } }, actors: [createActor("chip", "Chip", {
+        classId: "SceneLayerActor",
+        components: [{ id: "rb", classId: "RigidBodyComponent", properties: { motionType: "dynamic", mass: 1, gravityScale: 1 } }],
+      })] } },
     });
     runtime.realizePlayWorld();
+    const layer = runtime.createSceneLayer("overlay", 0)!;
     const initialWorld = runtime.getPhysicsSync()!.getBackend();
-    const initialOverlay = runtime.getOverlayPhysicsSync()!.getBackend();
+    const initialOverlay = runtime.getSceneLayerPhysicsSync(layer.guid)!.getBackend();
     try {
       await expect(runtime.loadPhysics()).rejects.toThrow(
         "Body creation failed",
@@ -164,7 +168,7 @@ describe("Play physics startup", () => {
       expect(worldDispose).toHaveBeenCalledOnce();
       expect(overlayDispose).toHaveBeenCalledOnce();
       expect(runtime.getPhysicsSync()!.getBackend()).toBe(initialWorld);
-      expect(runtime.getOverlayPhysicsSync()!.getBackend()).toBe(
+      expect(runtime.getSceneLayerPhysicsSync(layer.guid)!.getBackend()).toBe(
         initialOverlay,
       );
     } finally {

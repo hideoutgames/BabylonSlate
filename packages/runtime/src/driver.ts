@@ -826,7 +826,7 @@ class InProcessRuntime implements RuntimeDriver {
       lifecycleId: () => this.lifecycleId,
       mainActorReady: (actor) => this.streams.actorReady(actor),
       overlayActorReady: (actor) => this.admission.canTickActor(actor, true),
-      hasSceneLayerDocuments: () => this.sceneLayerLibrary.size > 0,
+      hasPhysicsSceneLayers: () => [...this.sceneLayerLibrary.values()].some((layer) => layer.settings?.physicsEnabled === true),
       canTickActor: (actor) => this.admission.canTickActor(actor),
       scripts: () => this.scriptHost,
       frameId: () => this.frameId,
@@ -881,7 +881,7 @@ class InProcessRuntime implements RuntimeDriver {
     });
   }
 
-  /** World physics phase order: dynamic meshes, ragdolls, main and overlay steps, cables, contacts. */
+  /** World physics phase order: dynamic meshes, ragdolls, main and Scene Layer steps, cables, contacts. */
   private createWorld(options: RuntimeDriverOptions, registry: ClassRegistry): World {
     let guidSeq = 0;
     return new World({
@@ -901,7 +901,7 @@ class InProcessRuntime implements RuntimeDriver {
         this.dynamicMeshes.flush();
         this.ragdolls.sync();
         if (this.admission.canTickScene()) this.physics.stepMain(ctx.dt, ctx.tickIndex, (sync) => this.movement.step(ctx.dt, sync));
-        if (this.admission.hasReadyLayers()) this.physics.stepOverlay(ctx.dt, (sync) => this.movement.step(ctx.dt, sync));
+        if (this.admission.hasReadyLayers()) this.physics.stepLayers(ctx.dt, (sync) => this.movement.step(ctx.dt, sync));
         this.ragdolls.afterStep();
         if (this.admission.canTickScene()) this.cables.step(ctx.dt, this.physics.gravity, this.frameId + 1);
         this.physics.dispatchCollisionEvents();
@@ -1011,7 +1011,7 @@ class InProcessRuntime implements RuntimeDriver {
       realizeActor: (actor) => this.actors.realize(actor),
       removeActor: (actor) => this.actors.remove(actor),
       publishSnapshot: () => this.snapshots.publish(),
-      syncOverlayPhysics: () => this.physics.overlay.syncFromWorld(this.world),
+      syncOverlayPhysics: () => this.physics.syncLayers(),
       emit: (command) => this.emit(command),
     });
   }
@@ -1029,11 +1029,12 @@ class InProcessRuntime implements RuntimeDriver {
       demandAssets: () => this.demandAssetCatalog,
       assetPreloads: () => this.assetPreloads,
       continueSimulation: (owner) => this.waits.continueSimulation(owner),
-      setOverlayGravity: (gravity) => this.physics.setOverlayGravity(gravity),
+      addLayerPhysics: (layerGuid, assetGuid, settings, actors) => this.physics.addLayer(layerGuid, assetGuid, settings, actors),
+      removeLayerPhysics: (layerGuid) => this.physics.removeLayer(layerGuid),
       markUnsupportedInstance: (layerGuid) => this.simulation.markUnsupportedInstance("layer", layerGuid),
       createActor: (serialized, layerGuid) => createActorFromSerialized(this.world, serialized, this.actors.sceneActorHooks, layerGuid),
       publishSnapshot: () => this.snapshots.publish(),
-      syncOverlayPhysics: () => this.physics.overlay.syncFromWorld(this.world),
+      syncOverlayPhysics: () => this.physics.syncLayers(),
       tryCompleteSceneLoad: () => this.sceneRealizer.tryCompleteSceneLoad(),
       removeActor: (actor) => this.actors.remove(actor),
       cancelInvalidTweens: () => this.tweens.cancelInvalid(),
@@ -1096,7 +1097,7 @@ class InProcessRuntime implements RuntimeDriver {
       ...createPhysicsHostBindings({
         world: () => this.world,
         physics: () => this.physics.main,
-        overlayPhysics: () => this.physics.overlay,
+        physicsFor: (actor) => this.physics.forActor(actor),
         ragdolls: this.ragdolls,
         dt: this.dt,
         projectCursorToScene: (channel, options) => this.camera.projectCursorToScene(channel, options),
@@ -1244,8 +1245,8 @@ class InProcessRuntime implements RuntimeDriver {
     return this.physics.main;
   }
 
-  getOverlayPhysicsSync(): PhysicsWorldSync | null {
-    return this.physics.overlay;
+  getSceneLayerPhysicsSync(layerGuid: string): PhysicsWorldSync | null {
+    return this.physics.layer(layerGuid);
   }
 
   applyRagdollPoseCaptured(message: Extract<ControlMessage, { type: "ragdollPoseCaptured" }>): void {
@@ -1602,7 +1603,7 @@ class InProcessRuntime implements RuntimeDriver {
     actor: Actor,
     clip: { assetGuid: string; clipName: string; normalisedTime: number } | null,
   ): void {
-    this.physics.forActor(actor).setActorSpriteClip(actor, clip);
+    this.physics.forActor(actor)?.setActorSpriteClip(actor, clip);
   }
 
   /** The render slot this actor's own commands target (`RenderSlots.actorSlot`). */

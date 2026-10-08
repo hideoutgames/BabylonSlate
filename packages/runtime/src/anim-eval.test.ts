@@ -181,7 +181,11 @@ describe("runtime AnimationGraph evaluation", () => {
         sceneLayerLibrary:
           owner === "SceneLayer"
             ? {
-                overlay: { ...createDefaultSceneLayer(), actors: scene.actors },
+                overlay: {
+                  ...createDefaultSceneLayer(),
+                  settings: { ...createDefaultSceneLayer().settings, physicsEnabled: true },
+                  actors: scene.actors,
+                },
               }
             : {},
         animGraphs: { "graph-1": graph },
@@ -199,7 +203,7 @@ describe("runtime AnimationGraph evaluation", () => {
 
       const backend = (
         owner === "SceneLayer"
-          ? runtime.getOverlayPhysicsSync()
+          ? runtime.getSceneLayerPhysicsSync(layer!.guid)
           : runtime.getPhysicsSync()
       )?.getBackend();
       expect(backend).toBeTruthy();

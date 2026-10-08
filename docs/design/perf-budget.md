@@ -37,7 +37,9 @@ Bytes per texel (unit-tested): RGBA8 = 4, ASTC 4×4 = 1, plus ~⅓ for mipmaps.
 
 ## Runtime physics and water composition
 
-Per fixed tick, inside the ~3 ms physics share of the combined game-tick budget. Main and SceneLayer overlay physics follow the same rules ([physics](../architecture/physics.md#per-tick-transform-work)):
+Per fixed tick, inside the ~3 ms physics share of the combined game-tick budget. Main and SceneLayer physics worlds follow the same rules ([physics](../architecture/physics.md#per-tick-transform-work)):
+
+- Scene Layer worlds: none for a layer without Enable Physics; a physics-enabled layer world is created on first need, skips its native step and readback while it holds no bodies, and is disposed with its layer. Each world's membership pass still scans the World's actor list once (cheap filter rejection for other layers). `scene-layer-runtime.test.ts` guards zero native steps for an enabled layer without bodies. Observed on a shared Linux dev host (Node, Rapier, not a device baseline): native world creation plus disposal ≈ 50–65 µs; 40 dynamic layer bodies tick at ≈ 2.7–2.9 ms in one world vs ≈ 3.2–3.5 ms split across four or eight worlds, within run-to-run noise of ~0.3 ms; four empty enabled layers add ≈ 10 µs per tick.
 
 - One pre-step world-pose composition of physics participants and their ancestors; it is the tick's cycle/shear validation boundary. No other per-tick physics or water pass composes the whole world, except the water and readback fallbacks below (snapshot publishing composes once per published frame; see the worker rule below).
 - Body membership scans each eligible actor's components once; only statics with a dynamic or kinematic ancestor scan again to decide hosting. Unchanged collider, rigid-body, mesh-source and static-pose descriptors are compared in scratch and copied only on change.

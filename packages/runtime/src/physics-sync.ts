@@ -66,6 +66,7 @@ export class PhysicsWorldSync {
   readonly water = new WaterWorld();
   private readonly backend: PhysicsBackend;
   private readonly actorFilter: (actor: Actor) => boolean;
+  private readonly skipEmptySteps: boolean;
   private readonly constraints: PhysicsConstraintSync;
   private readonly suppressedActors = new WeakSet<Actor>();
   private readonly bodyByActor = new Map<string, string>();
@@ -185,9 +186,15 @@ export class PhysicsWorldSync {
       actorFilter?: (actor: Actor) => boolean;
       /** Runtime boot only: authored constraints wait for the native replacement. */
       deferUnsupportedConstraints?: boolean;
+      /**
+       * Skip the native step and readback while the world holds no actor body.
+       * Only for worlds whose backend has no other users (Scene Layer worlds).
+       */
+      skipEmptySteps?: boolean;
     },
   ) {
     this.backend = backend;
+    this.skipEmptySteps = options?.skipEmptySteps ?? false;
     this.actorFilter = options?.actorFilter ?? (() => true);
     this.constraints = new PhysicsConstraintSync(backend, options?.deferUnsupportedConstraints);
   }
@@ -912,6 +919,7 @@ export class PhysicsWorldSync {
   step(dt: number, world: World, time = world.clock.tickIndex * dt, gravity = 9.81, beforeStep?: () => unknown): void {
     this.syncFromWorld(world);
     const recompose = beforeStep !== undefined && beforeStep() !== false;
+    if (this.skipEmptySteps && this.bodyByActor.size === 0 && this.characterByActor.size === 0) return;
     if (this.backend.kind === "3d") {
       this.water.update(this.actors, time);
       if (this.water.hasBodies) for (const [actorId, bodyId] of this.bodyByActor) {

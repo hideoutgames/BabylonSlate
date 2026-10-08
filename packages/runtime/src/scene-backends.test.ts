@@ -67,11 +67,14 @@ describe("scene backend ownership", () => {
         ? { kind: "box2d", halfExtents: { x: 1, y: 1 } } : { kind: "box", halfExtents: { x: 1, y: 1, z: 1 } } } },
     ] })];
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: software,
-      playScene: a, playSceneGuid: "a", sceneLibrary: { a, b }, sceneLayerLibrary: { overlay: createDefaultSceneLayer() } });
+      playScene: a, playSceneGuid: "a", sceneLibrary: { a, b },
+      sceneLayerLibrary: { overlay: { ...createDefaultSceneLayer(), settings: { ...createDefaultSceneLayer().settings, physicsEnabled: true } } } });
     try {
       if (!software) await runtime.loadPhysics();
       await runtime.realizePlayWorld();
-      const overlay = runtime.getOverlayPhysicsSync();
+      const layer = runtime.createSceneLayer("overlay")!;
+      const overlay = runtime.getSceneLayerPhysicsSync(layer.guid);
+      expect(overlay).not.toBeNull();
       for (const [name, kind] of [["Planar", "2d"], ["Spatial", "3d"]] as const) {
         const oldBackend = runtime.getPhysicsSync()!.getBackend();
         const disposed = vi.spyOn(oldBackend, "dispose");
@@ -80,7 +83,7 @@ describe("scene backend ownership", () => {
         const sync = runtime.getPhysicsSync()!;
         expect(sync.getBackend().kind).toBe(kind);
         expect(disposed).toHaveBeenCalledOnce();
-        expect(runtime.getOverlayPhysicsSync()).toBe(overlay);
+        expect(runtime.getSceneLayerPhysicsSync(layer.guid)).toBe(overlay);
         sync.syncFromWorld(runtime.getWorld());
         expect(sync.lineTrace({ x: -3, y: 0, z: 0 }, { x: 3, y: 0, z: 0 }).actorId).toBe("box");
       }

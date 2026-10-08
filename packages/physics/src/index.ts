@@ -40,6 +40,7 @@ export {
   createPhysicsBackend,
   createSoftwarePhysicsBackend,
   loadedBackendModules,
+  loadRapier2DBackendFactory,
   resetLoadedBackendModules,
   type CreatePhysicsBackendOptions,
 } from "./create-backend";

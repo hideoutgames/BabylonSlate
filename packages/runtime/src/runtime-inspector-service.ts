@@ -218,7 +218,7 @@ export class RuntimeInspectorService {
         const apply = () => {
           for (const affectedActor of affected) {
             this.host.ragdolls().retireActor(affectedActor);
-            this.host.physics().forActor(affectedActor).teleportActor(affectedActor, world);
+            this.host.physics().forActor(affectedActor)?.teleportActor(affectedActor, world);
           }
         };
         target.transform = runtimeEditLocalTransform(world, target, transform, space);

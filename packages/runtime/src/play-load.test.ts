@@ -247,7 +247,31 @@ describe("createRuntimeFromLoad", () => {
     resetLoadedBackendModules();
   });
 
-  it("loads Havok and separate Rapier overlay physics when SceneLayers are available", async () => {
+  it("loads Havok and a separate Rapier world for a SceneLayer that enables physics", async () => {
+    resetLoadedBackendModules();
+    const runtime = createRuntimeFromLoad(
+      {
+        type: "load",
+        sceneAssetGuid: "play-scene",
+        physicsWorld: "3d",
+        sceneLayers: [{ guid: "overlay", layer: { ...createDefaultSceneLayer(), settings: { ...createDefaultSceneLayer().settings, physicsEnabled: true } } }],
+      },
+      () => {},
+    );
+    await runtime.loadPhysics();
+    const layer = runtime.createSceneLayer("overlay", 0)!;
+    expect(runtime.getPhysicsSync()!.getBackend().constructor.name).toBe(
+      "HavokPhysicsBackend",
+    );
+    expect(runtime.getSceneLayerPhysicsSync(layer.guid)!.getBackend().constructor.name).toBe(
+      "Rapier2DPhysicsBackend",
+    );
+    expect(loadedBackendModules.havok).toBe(true);
+    expect(loadedBackendModules.rapier).toBe(true);
+    runtime.stop();
+  });
+
+  it("does not load Rapier for SceneLayers without physics in a 3d session", async () => {
     resetLoadedBackendModules();
     const runtime = createRuntimeFromLoad(
       {
@@ -259,14 +283,10 @@ describe("createRuntimeFromLoad", () => {
       () => {},
     );
     await runtime.loadPhysics();
-    expect(runtime.getPhysicsSync()!.getBackend().constructor.name).toBe(
-      "HavokPhysicsBackend",
-    );
-    expect(runtime.getOverlayPhysicsSync()!.getBackend().constructor.name).toBe(
-      "Rapier2DPhysicsBackend",
-    );
+    const layer = runtime.createSceneLayer("overlay", 0)!;
+    expect(runtime.getSceneLayerPhysicsSync(layer.guid)).toBeNull();
     expect(loadedBackendModules.havok).toBe(true);
-    expect(loadedBackendModules.rapier).toBe(true);
+    expect(loadedBackendModules.rapier).toBe(false);
     runtime.stop();
   });
 
