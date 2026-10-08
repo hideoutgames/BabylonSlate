@@ -14,6 +14,9 @@ effective holds and command revision. The bounded queue also accepts `resetInput
 without a game tick; input binding overrides survive reset. Resume discards the
 paused wall-clock interval. Boot completion does not release an existing hold.
 
+Engine delays count simulation time: each tick subtracts the step captured when
+the tick began (`dt` times time dilation), so a `slomo` or script dilation change
+made during a tick applies to Delays from the next tick, as it does for tweens.
 Engine delays, tween completion, ready-scene lifecycle, audio completion and
 scalability callbacks wait for game-owner admission while paused. Stop cancels
 waiting engine continuations. Asset I/O and readiness may finish during a pause.
@@ -453,7 +456,7 @@ Class variable connections retain their declared ancestry when the graph editor 
 
 **Set Material Instance** and **Set Material Texture Parameter** await `ctx.setMeshMaterialAsync` and `ctx.setMaterialTextureParameterAsync`. They keep the previous value while the replacement prepares, and failed or superseded requests cannot overwrite a newer value. Their synchronous scripting counterparts accept prepared assets. Repeated automatic requests share ownership for their consuming object; the scope releases when that owner is destroyed. Multi-asset preparation fails as a unit and releases partial acquisition.
 
-Console command names and parameters are registered from the Class catalog without reading command graphs. The console host and **Execute Console Command** node await `executeConsoleCommandAsync` to prepare the selected Class and its required dependencies. Invocation ownership lasts through asynchronous command completion; stopping the session cancels pending preparation. `executeConsoleCommand` remains available for prepared commands and built-in operations.
+Console command names and parameters are registered from the Class catalog without reading command graphs. The console host and **Execute Console Command** node await `executeConsoleCommandAsync` to prepare the selected Class and its required dependencies. Invocation ownership lasts through asynchronous command completion; stopping the session cancels pending preparation. `executeConsoleCommand` remains available for prepared commands and built-in operations. After Stop, both refuse with `The runtime session has ended`.
 
 ### Asset preloading
 

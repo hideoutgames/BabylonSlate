@@ -77,7 +77,11 @@ export interface RuntimeDriverOptions {
   inputAssets?: InputAssetDefinition[];
   inputMappings?: InputMappings;
   focusNavigation?: Partial<FocusNavigationSettings>;
-  /** Demo actors exist so an empty project still shows motion in Preview. */
+  /**
+   * Demo actors exist so an empty project still shows motion in Preview. Without
+   * a `playScene` they spawn at the first `realizePlayWorld` or `start`, never
+   * during construction.
+   */
   seedDemoActors?: boolean;
   /** Scene physics world kind (defaults to 3d). */
   physicsWorld?: PhysicsWorldKind;
@@ -192,8 +196,9 @@ export interface RuntimeDriver {
     transform?: Transform;
   }): Actor | null;
   /**
-   * Instantiate `playScene` (if any) with compiled script hooks.
-   * Idempotent. Call after `loadScripts` so Begin Play binds on spawn.
+   * Instantiate `playScene` with compiled script hooks (without one, the demo
+   * actors unless `seedDemoActors` is false). Idempotent. Call after
+   * `loadScripts` so Begin Play binds on spawn.
    */
   realizePlayWorld(): void | Promise<void>;
   /** Start Game Instance during cooperative boot, with scene phases suspended. */
