@@ -41,6 +41,19 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     expect(await operation).toMatchObject({ success: false });
   });
 
+  it("refuses synchronous and asynchronous commands alike once the session stopped", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      onCommand: command => commands.push(command) });
+    runtime.stop();
+    commands.length = 0;
+    const refusal = { success: false, output: "The runtime session has ended" };
+    expect(runtime.executeConsoleCommand("showfps")).toEqual(refusal);
+    expect(runtime.executeConsoleCommand("slomo 2")).toEqual(refusal);
+    expect(await runtime.executeConsoleCommandAsync("showfps")).toEqual(refusal);
+    expect(commands).toEqual([]);
+  });
+
   it("does not send renderer work for repeated quality presets, values or resets", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false,

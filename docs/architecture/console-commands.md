@@ -10,7 +10,7 @@ The organising idea does not change: **the command system is always present; onl
 | --- | --- |
 | `@babylonslate/debugger` | Parser, registry, builtin catalog, `createUserCommand`, autocomplete. No React, Babylon, or runtime. |
 | `ConsoleCommandHost` | Callbacks the registry invokes. `RuntimeConsole` (`packages/runtime/src/runtime-console.ts`) implements it against the driver's subsystems. |
-| `RuntimeDriver.executeConsoleCommand` | Play, Preview, `ExecuteConsoleCommand`, and worker `{ type: "console" }` all go through this; it delegates to `RuntimeConsole`. |
+| `RuntimeDriver.executeConsoleCommand` | Play, Preview, `ExecuteConsoleCommand`, and worker `{ type: "console" }` all go through this (or `executeConsoleCommandAsync`); it delegates to `RuntimeConsole`. After Stop both refuse every command with `{ success: false, output: "The runtime session has ended" }` and change nothing. |
 | Overlay `DebugConsole` | Flat bottom-edge Sheet shared by Play and Preview Build; simulation keeps ticking. Completions from `playConsoleCommands` (builtins + compiled `script.command`). Live logs, prints, warnings, errors, and command results share the transcript. |
 | `BDebugCommand` | User class → `Event On Command Run` → compiled as **core** via `loadScripts` / `bindUserCommand`. Ships even when `includeDebug: false`. |
 

@@ -456,7 +456,7 @@ Class variable connections retain their declared ancestry when the graph editor 
 
 **Set Material Instance** and **Set Material Texture Parameter** await `ctx.setMeshMaterialAsync` and `ctx.setMaterialTextureParameterAsync`. They keep the previous value while the replacement prepares, and failed or superseded requests cannot overwrite a newer value. Their synchronous scripting counterparts accept prepared assets. Repeated automatic requests share ownership for their consuming object; the scope releases when that owner is destroyed. Multi-asset preparation fails as a unit and releases partial acquisition.
 
-Console command names and parameters are registered from the Class catalog without reading command graphs. The console host and **Execute Console Command** node await `executeConsoleCommandAsync` to prepare the selected Class and its required dependencies. Invocation ownership lasts through asynchronous command completion; stopping the session cancels pending preparation. `executeConsoleCommand` remains available for prepared commands and built-in operations.
+Console command names and parameters are registered from the Class catalog without reading command graphs. The console host and **Execute Console Command** node await `executeConsoleCommandAsync` to prepare the selected Class and its required dependencies. Invocation ownership lasts through asynchronous command completion; stopping the session cancels pending preparation. `executeConsoleCommand` remains available for prepared commands and built-in operations. After Stop, both refuse with `The runtime session has ended`.
 
 ### Asset preloading
 
