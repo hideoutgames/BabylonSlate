@@ -1,4 +1,5 @@
 import type { SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
+import { sceneAssetClassId, type ClassRegistry } from "@babylonslate/object-model";
 
 interface SceneLibrarySources {
   sceneLibrary?: Readonly<Record<string, SerializedScene>>;
@@ -64,5 +65,27 @@ export function indexSceneLibrary(sources: SceneLibrarySources, targets: SceneLi
       if (!sources.acquired) targets.scenes.set(sources.playScene.name, sources.playScene);
       targets.sceneGuids.set(sources.playScene.name, sources.playSceneGuid);
     }
+  }
+}
+
+/**
+ * Registers the Scene asset Class (a `Scene` subclass) of the Play Scene and of
+ * every Scene guid the library resolves, so their Scene objects are typed
+ * before scripts or Scene realization create them.
+ */
+export function registerSceneAssetClasses(registry: ClassRegistry, playSceneGuid: string, sceneGuids: Iterable<string>): void {
+  const guids = new Set<string>();
+  if (playSceneGuid) guids.add(playSceneGuid);
+  for (const guid of sceneGuids) {
+    if (guid) guids.add(guid);
+  }
+  for (const guid of guids) {
+    registry.ensure({
+      id: sceneAssetClassId(guid),
+      parentClassId: "Scene",
+      kind: "object",
+      variables: [],
+      implementedInterfaces: [],
+    });
   }
 }

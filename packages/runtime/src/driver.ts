@@ -2,7 +2,7 @@ import type { SimulationSceneCaptureResult } from "./simulation-scene-capture";
 import { SimulationSession } from "./simulation-session";
 import { RuntimeInspectorService } from "./runtime-inspector-service";
 import { RuntimeDataCatalog } from "./data-catalog";
-import { resolveActorDefaults, type SaveGameService } from "@babylonslate/core";
+import type { SaveGameService } from "@babylonslate/core";
 import { SessionBoundaries, type RuntimeSaveGameOptions } from "./session-boundaries";
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
 import { RuntimeAssetPreloads } from "./asset-preloads";
@@ -12,8 +12,7 @@ import type { FocusNavigationSettings } from "@babylonslate/core";
 import { CableWorldSync } from "./cable-sync";
 import { DynamicRuntimeMeshSync } from "./dynamic-runtime-mesh";
 import { MovementWorldSync } from "./movement";
-import { captureComponent } from "./render-targets";
-import { createDefaultRenderTargetCaptureProperties, type RenderTargetPayload, type RenderTargetTexturePayload } from "@babylonslate/core";
+import type { RenderTargetPayload, RenderTargetTexturePayload } from "@babylonslate/core";
 import type { WaterDefinition } from "@babylonslate/core";
 import { ScalabilitySession, type ScalabilityRequest, type ScalabilityResult, type ScalabilitySnapshot, type ScalabilityAcknowledgement, type RenderPath, type RenderProjectSettings } from "@babylonslate/core";
 import type { CollisionTriangleMesh, InputAssetDefinition } from "@babylonslate/core";
@@ -37,7 +36,6 @@ import {
   ClassRegistry,
   World,
   createActorFromSerialized,
-  attachSerializedComponents,
   createDebugInspectSnapshot,
   Actor,
   ActorComponent,
@@ -46,10 +44,7 @@ import {
   PostProcessMaterialObject,
   type MaterialInstanceObject,
   SceneLayer,
-  isLockedEngineClassId,
-  sceneAssetClassId,
   type DebugInspectSnapshot,
-  type SceneActorHooks,
 } from "@babylonslate/object-model";
 import {
   deprojectCursorRay,
@@ -74,7 +69,7 @@ import {
 } from "@babylonslate/input";
 import { sceneRealizationCancelled, type CooperativeSceneLoadingOptions } from "./scene-realization-work";
 import type { AcquireRuntimeScene } from "./scene-source";
-import { parseColliderProperties, type PhysicsWorldKind } from "@babylonslate/physics";
+import type { PhysicsWorldKind } from "@babylonslate/physics";
 import {
   createInfiniteLoopGuard,
   isInfiniteLoopError,
@@ -107,7 +102,8 @@ import type { PhysicsWorldSync } from "./physics-sync";
 import { RuntimePhysicsWorlds } from "./runtime-physics-worlds";
 import { RagdollWorldSync } from "./ragdoll-sync";
 import { RuntimeConsole } from "./runtime-console";
-import { actorChainWorldTransform, actorLabel, breakParentCycles, firstSpawnedActorIndex } from "./actor-world-transform";
+import { actorChainWorldTransform, firstSpawnedActorIndex } from "./actor-world-transform";
+import { ActorRealization, type ScriptedActorSpawn } from "./actor-realization";
 import type { OverlaySafeAreaInsets } from "@babylonslate/core";
 import type { ModelPayload, SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import { initNavigation, type NavObstacleKind, type NavPoint } from "@babylonslate/navigation";
@@ -131,7 +127,7 @@ import {
   createScalabilityHostBindings,
 } from "./runtime-host-render";
 import { createTimingHostBindings } from "./runtime-host-timing";
-import { indexSceneLibrary } from "./scene-library";
+import { indexSceneLibrary, registerSceneAssetClasses } from "./scene-library";
 import { RuntimeNavigation } from "./runtime-navigation";
 import { SceneStreams, createSceneStreamHostBindings } from "./scene-streams";
 import { SceneLayers, createSceneLayerHostBindings } from "./scene-layers";
@@ -466,7 +462,6 @@ class InProcessRuntime implements RuntimeDriver {
   private timeDilation = 1;
   private running = false;
   private frameId = 0;
-  private readonly removingActors = new WeakSet<Actor>();
   private readonly scriptHost: ScriptHost;
   private readonly scriptRuntime: ScriptRuntime;
   private readonly dataCatalog: RuntimeDataCatalog;
@@ -558,14 +553,14 @@ class InProcessRuntime implements RuntimeDriver {
     cooperativeLoading: () => this.cooperativeSceneLoading ?? {},
     deferModelsReady: () => this.deferSceneModelsReady,
     scripts: () => this.scriptHost,
-    createActor: (serialized) => createActorFromSerialized(this.world, serialized, this.sceneActorHooks),
-    realizeActor: (actor, checkpoint) => this.realizeActor(actor, checkpoint),
-    breakParentCycles: (actors, detach) => this.breakLoadedParentCycles(actors, detach),
+    createActor: (serialized) => createActorFromSerialized(this.world, serialized, this.actors.sceneActorHooks),
+    realizeActor: (actor, checkpoint) => this.actors.realize(actor, checkpoint),
+    breakParentCycles: (actors, detach) => this.actors.breakLoadedParentCycles(actors, detach),
     publishSnapshot: () => this.snapshots.publish(),
     slot: (actor) => this.actorSlot(actor),
     syncPhysics: () => this.physics.main.syncFromWorld(this.world),
     navigation: () => this.navigation,
-    removeActor: (actor) => this.removeOwnedActor(actor),
+    removeActor: (actor) => this.actors.remove(actor),
     cancelInvalidTweens: () => this.tweens.cancelInvalid(),
     releaseAssets: (ownerGuid) => this.assetPreloads.releaseOwner(ownerGuid),
     markUnsupportedInstance: (sceneGuid) => this.simulation.markUnsupportedInstance("stream", sceneGuid),
@@ -614,12 +609,12 @@ class InProcessRuntime implements RuntimeDriver {
     setWorldGravity: (gravity) => this.setWorldGravity(gravity),
     recordSimulationStart: (start) => this.simulation.recordStart(start),
     markSceneTransition: () => this.simulation.markSceneTransition(),
-    createActor: (serialized) => createActorFromSerialized(this.world, serialized, this.sceneActorHooks),
-    realizeActor: (actor, checkpoint) => this.realizeActor(actor, checkpoint),
-    breakParentCycles: (actors) => this.breakLoadedParentCycles(actors),
+    createActor: (serialized) => createActorFromSerialized(this.world, serialized, this.actors.sceneActorHooks),
+    realizeActor: (actor, checkpoint) => this.actors.realize(actor, checkpoint),
+    breakParentCycles: (actors) => this.actors.breakLoadedParentCycles(actors),
     possessViewTarget: () => this.attemptPossessViewTarget(),
     publishSnapshot: () => this.snapshots.publish(),
-    removeActor: (actor) => this.removeOwnedActor(actor),
+    removeActor: (actor) => this.actors.remove(actor),
     removeSceneLayer: (layerGuid) => this.removeSceneLayer(layerGuid),
     releaseAssets: (ownerGuid) => this.assetPreloads.releaseOwner(ownerGuid),
     resetForSceneLoad: () => this.subsystems.resetForSceneLoad(),
@@ -644,10 +639,10 @@ class InProcessRuntime implements RuntimeDriver {
     streams: () => this.streams,
     sceneRealizer: () => this.sceneRealizer,
     physics: () => this.physics,
-    actorHooks: () => this.sceneActorHooks,
+    actorHooks: () => this.actors.sceneActorHooks,
     canSpawnActorClass: (classId) => this.scriptRuntime.canSpawnActorClass(classId),
-    realizeActor: (actor) => this.realizeActor(actor),
-    removeActor: (actor) => this.removeOwnedActor(actor),
+    realizeActor: (actor) => this.actors.realize(actor),
+    removeActor: (actor) => this.actors.remove(actor),
     publishSnapshot: () => this.snapshots.publish(),
     takeDeferredOverlayLayout: () => this.overlay.takeDeferredLayout(),
     pauseReasons: () => this.pauseReasons,
@@ -686,6 +681,27 @@ class InProcessRuntime implements RuntimeDriver {
     recordDiagnostic: (diagnostic) => this.diagnostics.push(diagnostic),
     emit: (command) => this.emit(command),
   }, nowMs);
+  private readonly actors: ActorRealization = new ActorRealization(this.admission, {
+    world: () => this.world,
+    stopped: () => this.stopped,
+    scripts: () => this.scriptHost,
+    scriptRuntime: () => this.scriptRuntime,
+    streams: () => this.streams,
+    boundaries: () => this.boundaries,
+    physicsKind: () => this.physics.kind,
+    renderSlots: () => this.renderSlots,
+    renderEmitter: () => this.renderEmitter,
+    audioParticles: () => this.audioParticles,
+    overlay: () => this.overlay,
+    movement: () => this.movement,
+    dynamicMeshes: () => this.dynamicMeshes,
+    textAppear: () => this.textAppear,
+    subsystems: () => this.subsystems,
+    cancelInvalidTweens: () => this.tweens.cancelInvalid(),
+    frameActors: () => this.navFrameActors,
+    reportLog: (message, severity, category) => this.reportLog(message, severity, category),
+    emit: (command) => this.emit(command),
+  });
   /** Frame index (first-spawned actor per guid) the BT and crowd ticks share. */
   private navFrameActors: Map<string, Actor> | null = null;
   private readonly ticks: TickPipeline;
@@ -925,27 +941,7 @@ class InProcessRuntime implements RuntimeDriver {
       onPhase: (phase) => this.ticks.markPhase(phase),
       canTickScene: () => !this.stopped && !this.streams.blocking,
       canTickActor: (actor) => this.admission.canTickActor(actor),
-      componentHooksFor: (classId) => {
-        if (!registry.isA(classId, "ActorComponent")) return undefined;
-        return {
-          onCreation: (self) => {
-            this.movement.initialize(self);
-            this.scriptHost.bindInterfaceHandlers(self);
-            this.admission.runCreation(self, () => this.scriptHost.hooksFor(classId)?.onCreation?.(self));
-          },
-          // Engine component classes never carry scripts, so they skip the
-          // per-frame script lookup; project components keep it for reloads.
-          onTick: isLockedEngineClassId(classId)
-            ? undefined
-            : (self, ctx) =>
-                this.admission.guard(() => this.scriptHost.hooksFor(classId)?.onTick?.(self, ctx)),
-          onDestroyed: (self) => {
-            this.admission.runDestroyed(self, () => this.scriptHost.hooksFor(classId)?.onDestroyed?.(self));
-            this.dynamicMeshes.remove(self);
-            this.textAppear.remove(self);
-          },
-        };
-      },
+      componentHooksFor: (classId) => this.actors.componentHooks(classId),
       sceneSubsystemHooksFor: (classId) => this.scriptRuntime.sceneSubsystemHooks(classId),
       // Strict gate: Tick only after On Init, while the main Scene may run.
       canTickSceneSubsystem: (subsystem) =>
@@ -1055,20 +1051,20 @@ class InProcessRuntime implements RuntimeDriver {
     }, {
       stopped: () => this.stopped,
       saveBoundaryActive: () => this.boundaries.saveBoundaryActive,
-      removing: (actor) => this.removingActors.has(actor),
+      removing: (actor) => this.actors.removing(actor),
       pixelsPerUnit: () => this.physics.pixelsPerUnit,
       scripts: () => this.scriptHost,
       slot: (actor) => this.actorSlot(actor),
       guidSlot: (guid) => this.guidSlot(guid),
-      actorHooks: (classId) => this.sceneActorHooks(classId),
+      actorHooks: (classId) => this.actors.sceneActorHooks(classId),
       prepareActor: (actor) => {
         this.scriptHost.bindInterfaceHandlers(actor);
-        this.applyActorDefaults(actor);
-        this.assignSlot(actor);
+        this.actors.applyDefaults(actor);
+        this.actors.assignSlot(actor);
       },
-      breakParentCycles: (actors) => this.breakLoadedParentCycles(actors),
-      realizeActor: (actor) => this.realizeActor(actor),
-      removeActor: (actor) => this.removeOwnedActor(actor),
+      breakParentCycles: (actors) => this.actors.breakLoadedParentCycles(actors),
+      realizeActor: (actor) => this.actors.realize(actor),
+      removeActor: (actor) => this.actors.remove(actor),
       publishSnapshot: () => this.snapshots.publish(),
       syncOverlayPhysics: () => this.physics.overlay.syncFromWorld(this.world),
       emit: (command) => this.emit(command),
@@ -1088,11 +1084,11 @@ class InProcessRuntime implements RuntimeDriver {
       setOverlayGravity: (gravity) => this.physics.setOverlayGravity(gravity),
       markUnsupportedInstance: (layerGuid) => this.simulation.markUnsupportedInstance("layer", layerGuid),
       guidTaken: (id) => this.renderSlots.hasGuid(id) || this.world.findActor(id) != null,
-      createActor: (serialized, layerGuid) => createActorFromSerialized(this.world, serialized, this.sceneActorHooks, layerGuid),
+      createActor: (serialized, layerGuid) => createActorFromSerialized(this.world, serialized, this.actors.sceneActorHooks, layerGuid),
       publishSnapshot: () => this.snapshots.publish(),
       syncOverlayPhysics: () => this.physics.overlay.syncFromWorld(this.world),
       tryCompleteSceneLoad: () => this.sceneRealizer.tryCompleteSceneLoad(),
-      removeActor: (actor) => this.removeOwnedActor(actor),
+      removeActor: (actor) => this.actors.remove(actor),
       cancelInvalidTweens: () => this.tweens.cancelInvalid(),
       reportError: (error) => { this.reportError(error); },
       emit: (command) => this.emit(command),
@@ -1259,11 +1255,11 @@ class InProcessRuntime implements RuntimeDriver {
     this.subsystems.register(this.layers);
     this.subsystems.register(this.sceneRealizer);
 
-    this.registerPlaySceneTypes();
+    registerSceneAssetClasses(this.world.classRegistry, this.playSceneGuid, this.sceneGuidByKey.values());
     this.scriptRuntime.bindGameInstance();
 
     if (options.seedDemoActors !== false && !options.playScene) {
-      this.seedDefaultActors();
+      this.actors.seedDemoActors();
     }
   }
 
@@ -1512,60 +1508,9 @@ class InProcessRuntime implements RuntimeDriver {
     return this.scriptRuntime.updateSources(scripts, true);
   }
 
-  spawnScriptedActor(options: {
-    classId: string;
-    variables?: Record<string, unknown>;
-    implementedInterfaces?: string[];
-    transform?: Transform;
-    streamOwner?: BObject | null;
-  }): Actor | null {
-    if (this.stopped) return null;
-    if (!this.streams.canSpawnFor(options.streamOwner)) return null;
-    if (!this.scriptRuntime.canSpawnActorClass(options.classId)) return null;
-    const hooks = this.scriptHost.hooksFor(options.classId) ??
-      (this.world.classRegistry.isA(options.classId, "RenderTargetCapture") ? {} : undefined);
-    if (!hooks) return null;
-    const actor = this.world.createActor({
-      classId: options.classId,
-      variables: options.variables,
-      implementedInterfaces: options.implementedInterfaces,
-      transform: options.transform,
-      hooks: {
-        onCreation: (self) => this.admission.runCreation(self, () => hooks.onCreation?.(self)),
-        onTick: (self, ctx) =>
-          this.admission.guard(() => hooks.onTick?.(self, ctx)),
-        onDestroyed: (self) =>
-          this.admission.runDestroyed(self, () => hooks.onDestroyed?.(self)),
-      },
-    });
-    this.streams.adoptSpawned(options.streamOwner, actor);
-    this.scriptHost.bindInterfaceHandlers(actor);
-    const components = this.scriptHost.scriptsFor(options.classId)
-      .find((script) => script.components !== undefined)?.components;
-    if (components) attachSerializedComponents(this.world, actor, components, { freshIds: true });
-    this.boundaries.markSpawned(actor);
-    try {
-      this.realizeActor(actor);
-    } catch (error) {
-      if (!isInfiniteLoopError(error)) throw error;
-    }
-    return actor;
+  spawnScriptedActor(options: ScriptedActorSpawn): Actor | null {
+    return this.actors.spawnScripted(options);
   }
-
-  private readonly sceneActorHooks: SceneActorHooks = (classId) => {
-    const hooks = this.scriptHost.hooksFor(classId);
-    return {
-      onCreation: (self) => this.admission.runCreation(self, () => hooks?.onCreation?.(self)),
-      // Logic-free actors (Prefabs, scriptless classes) add no per-frame call.
-      onTick: hooks?.onTick
-        ? (self, ctx) => this.admission.guard(() => hooks.onTick?.(self, ctx))
-        : undefined,
-      onDestroyed: (self) => {
-        this.overlay.retireSwitcher(self);
-        this.admission.runDestroyed(self, () => hooks?.onDestroyed?.(self));
-      },
-    };
-  };
 
   private refreshRuntimeComponent(component: ActorComponent, propertyName?: string): void {
     const owner = component.owner;
@@ -1674,27 +1619,6 @@ class InProcessRuntime implements RuntimeDriver {
     this.bootLoading = false;
     this.layers.readyPresented();
     this.sceneRealizer.finishBootLoading();
-  }
-
-  private removeOwnedActor(actor: Actor): void {
-    if (this.removingActors.has(actor)) return;
-    this.removingActors.add(actor);
-    this.overlay.retireSwitcher(actor);
-    this.subsystems.retireActor(actor);
-    this.admission.dropActor(actor);
-    const slotId = this.actorSlot(actor);
-    const ownsSlot = () => slotId !== undefined && this.renderSlots.owner(slotId) === actor;
-    try {
-      if (ownsSlot()) this.audioParticles.stopAudio(actor);
-      if (ownsSlot()) this.audioParticles.stopParticles(actor);
-      if (ownsSlot()) this.emit({ type: "despawn", slotId: slotId!, actorGuid: actor.guid });
-    } finally {
-      if (ownsSlot()) this.renderSlots.release(actor.guid, slotId!);
-      this.overlay.forgetActor(actor);
-      this.world.destroyActorInstance(actor);
-      this.tweens.cancelInvalid();
-      this.removingActors.delete(actor);
-    }
   }
 
   realizePlayWorld(): void | Promise<void> {
@@ -1906,75 +1830,6 @@ class InProcessRuntime implements RuntimeDriver {
     this.physics.forActor(actor).setActorSpriteClip(actor, clip);
   }
 
-  private applyActorDefaults(actor: Actor): void {
-    for (const component of actor.components) {
-      this.scriptHost.bindInterfaceHandlers(component);
-    }
-    const resolved = resolveActorDefaults(
-      this.world.classRegistry.ancestry(actor.classId)
-        .map((classId) => this.scriptHost.scriptsFor(classId)[0]?.actorDefaults),
-    );
-    actor.generateHitEvents = resolved.generateHitEvents;
-    actor.generateOverlapEvents = resolved.generateOverlapEvents;
-    actor.tickEnabled = resolved.eventTick;
-  }
-
-  /**
-   * Loaded data can hold parent cycles that script writes would refuse. Once a
-   * scene, streamed scene or SceneLayer batch has spawned (before readiness,
-   * Begin Play, physics or the crowd see it), clear the link that closes each
-   * cycle in spawn order and warn once per cleared link. `detach` gives the
-   * actor the parent a root of its batch has (default: none).
-   */
-  private breakLoadedParentCycles(batch: Iterable<Actor>, detach?: (child: Actor) => void): void {
-    for (const { child, parent } of breakParentCycles(batch, (guid) => this.world.findActor(guid), detach)) {
-      this.reportLog(
-        `Loaded parent cycle broken: ${actorLabel(child)} is no longer parented to ${actorLabel(parent)}.`,
-        "warning",
-        "actor",
-      );
-    }
-  }
-
-  private realizeActor(actor: Actor, checkpoint: () => void = () => {}): void {
-    checkpoint();
-    this.boundaries.trackRealized(actor);
-    if (this.world.classRegistry.isA(actor.classId, "RenderTargetCapture") && !captureComponent(actor) && !actor.sceneLayerId) {
-      attachSerializedComponents(this.world, actor, [{
-        id: `${actor.guid}:capture`, classId: "RenderTargetCaptureComponent", properties: createDefaultRenderTargetCaptureProperties(),
-      }]);
-    }
-    this.applyActorDefaults(actor);
-    // Reject invalid draft primitives while the host still owns the Scene load.
-    // Deferring this until native physics boot left the host at Realizing Scene.
-    for (const component of actor.components) {
-      if (component.classId !== "ColliderComponent" || component.destroyed) continue;
-      const shape = component.getVariable("shape");
-      const kind = shape && typeof shape === "object" ? (shape as { kind?: unknown }).kind : undefined;
-      if (kind === "convex" || kind === "mesh" || kind === "polygon" || kind === "chain") continue;
-      try {
-        parseColliderProperties({ shape }, actor.sceneLayerId ? "2d" : this.physics.kind);
-      } catch (error) {
-        throw new Error(`${actorLabel(actor)} / ${component.guid}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
-      }
-    }
-    const slotId = this.assignSlot(actor);
-    checkpoint();
-    this.renderEmitter.emitMeshAssignment(actor, slotId);
-    checkpoint();
-    this.audioParticles.emitAudio(actor);
-    checkpoint();
-    this.audioParticles.emitParticles(actor);
-    checkpoint();
-    this.world.spawnActorNow(actor);
-    checkpoint();
-    this.admission.flushSpawned(actor);
-    checkpoint();
-    // The frame index answers first-spawned: a new actor enters only when no
-    // earlier live actor already holds its guid.
-    if (this.world.findActor(actor.guid) === actor) this.navFrameActors?.set(actor.guid, actor);
-  }
-
   private possessCamera(target: unknown): void {
     const actor = actorFromIlluminationTarget(target);
     if (!actor) return;
@@ -2096,50 +1951,6 @@ class InProcessRuntime implements RuntimeDriver {
     };
   }
 
-  private seedDefaultActors(): void {
-    const actor = this.world.createActor({
-      classId: "Enemy",
-      variables: { speed: 1, n: 0 },
-      hooks: {
-        onTick: (self, ctx) => {
-          const speed = Number(self.getVariable("speed") ?? 1);
-          const bump = ctx.world.rngNextFloat() * speed;
-          self.setVariable("n", Number(self.getVariable("n")) + bump);
-          self.transform.position.x += bump;
-          self.transform.position.y += bump * 0.5;
-        },
-      },
-    });
-    this.world.spawnActorNow(actor);
-    this.assignSlot(actor);
-
-    const second = this.world.createActor({
-      classId: "Actor",
-      variables: { tag: "follower" },
-      hooks: {
-        onTick: (self, ctx) => {
-          self.transform.position.z += ctx.world.rngNextFloat() * 0.1;
-        },
-      },
-    });
-    this.world.spawnActorNow(second);
-    this.assignSlot(second);
-  }
-
-  private assignSlot(actor: Actor): number {
-    const slotId = this.renderSlots.allocate(actor);
-    const stream = this.streams.actorInstance(actor);
-    this.emit({
-      type: "spawn",
-      slotId,
-      actorGuid: actor.guid,
-      classId: actor.classId,
-      ...(actor.sceneLayerId ? { sceneLayerId: actor.sceneLayerId } : {}),
-      ...(stream ? { sceneStreamActorGuid: stream.actor.guid, streamLoadId: stream.loadId } : {}),
-    });
-    return slotId;
-  }
-
   /** The render slot this actor's own commands target (`RenderSlots.actorSlot`). */
   private actorSlot(actor: Actor): number | undefined {
     return this.renderSlots.actorSlot(actor);
@@ -2148,23 +1959,6 @@ class InProcessRuntime implements RuntimeDriver {
   /** The slot of a guid's first-spawned live actor, the one guid lookups resolve. */
   private guidSlot(guid: string): number | undefined {
     return this.renderSlots.guidSlot(guid);
-  }
-
-  private registerPlaySceneTypes(): void {
-    const guids = new Set<string>();
-    if (this.playSceneGuid) guids.add(this.playSceneGuid);
-    for (const guid of this.sceneGuidByKey.values()) {
-      if (guid) guids.add(guid);
-    }
-    for (const guid of guids) {
-      this.world.classRegistry.ensure({
-        id: sceneAssetClassId(guid),
-        parentClassId: "Scene",
-        kind: "object",
-        variables: [],
-        implementedInterfaces: [],
-      });
-    }
   }
 
   notifySceneModelsReady(sceneAssetGuid: string, sceneLoadId: number): void {
