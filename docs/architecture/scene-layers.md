@@ -43,7 +43,7 @@ DockView: Viewport, Outliner, Details, Output Log. Hide the 3D/2D toolbar toggle
 
 ## Object model
 
-`SceneLayer` extends `BObject` (`kind: "object"`). `SceneLayerActor` extends `Actor`. Overlay actors stay in the same `World` (same tick/snapshots) tagged `sceneLayerId` so graph nodes, `2DButton` events, and Get All Actors still see them. HUD **meshes** are not world Scene children — they live on compositor overlay Scenes. `applyChangeScene` must not destroy overlay actors.
+`SceneLayer` extends `BObject` (`kind: "object"`). `SceneLayerActor` extends `Actor`. Overlay actors stay in the same `World` (same tick/snapshots) tagged `sceneLayerId` so graph nodes, `2DButton` events, and Get All Actors still see them. HUD **meshes** are not world Scene children — they live on compositor overlay Scenes. Change Scene (`SceneRealizer`) must not destroy overlay actors.
 
 `ENGINE_COMPONENT_DESCRIPTORS` is the placement authority used by Add Component, Place Actors, serialization, and overlay instantiation. World-only components include Landscape, Foliage, splines, water, Skybox, cameras, lights, fog, outlines, ragdolls, spring arms, render-target capture, and scene streaming. Overlay-only components are `2DAnchor`, `2DTexture`, `2DMaterial`, `2DButton`, `2DJoystick`, `2DText`, `2DRichText`, and `2DPanel`; components marked `any` remain available in both hosts. User Class prefabs that inherit `SceneLayerActor` follow the same derived denylist. Spawn Actor and world-scene instantiate never create `SceneLayerActor` (or subclasses) in the world.
 

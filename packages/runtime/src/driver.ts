@@ -48,7 +48,6 @@ import {
   PostProcessMaterialObject,
   getPostProcessMaterialObject,
   type MaterialInstanceObject,
-  Scene,
   SceneLayer,
   SceneSubsystem,
   GAME_SUBSYSTEM_CLASS_ID,
@@ -57,7 +56,6 @@ import {
   isLockedEngineClassId,
   sceneAssetClassId,
   hydrateClassVariableValue,
-  hydrateScenePropertyReferences,
   type ClassKind,
   type DebugInspectSnapshot,
   type GameSubsystemHooks,
@@ -88,8 +86,8 @@ import {
   type RawInputEvent,
   type ResolvedInputTick,
 } from "@babylonslate/input";
-import { runSceneRealizationWork, sceneRealizationCancelled, waitForSceneWork, type CooperativeSceneLoadingOptions } from "./scene-realization-work";
-import type { AcquireRuntimeScene, RuntimeSceneSource } from "./scene-source";
+import { sceneRealizationCancelled, type CooperativeSceneLoadingOptions } from "./scene-realization-work";
+import type { AcquireRuntimeScene } from "./scene-source";
 import { parseColliderProperties, type PhysicsWorldKind } from "@babylonslate/physics";
 import {
   createCommandRegistry,
@@ -163,6 +161,7 @@ import { indexSceneLibrary } from "./scene-library";
 import { RuntimeNavigation } from "./runtime-navigation";
 import { SceneStreams, createSceneStreamHostBindings } from "./scene-streams";
 import { SceneLayers, createSceneLayerHostBindings } from "./scene-layers";
+import { SceneRealizer } from "./scene-realizer";
 import { OwnerAdmission } from "./owner-admission";
 import { AnimGraphRuntime } from "./anim-graph-runtime";
 import { BehaviourTreeRuntime } from "./behaviour-tree-runtime";
@@ -427,29 +426,6 @@ export function createInProcessRuntime(
   return new InProcessRuntime(options);
 }
 
-interface SceneDeparture {
-  guid: string;
-  sceneInstance: Scene | null;
-  actors: Actor[];
-  layers: SceneLayer[];
-  sources?: RuntimeSceneSource[];
-}
-
-interface SceneRealization {
-  controller: AbortController;
-  scene: SerializedScene | undefined;
-  guid: string;
-  loadId: number;
-  actors: Actor[];
-  layers: SceneLayer[];
-  sceneInstance: Scene | null;
-  promise: Promise<void> | null;
-  finished: boolean;
-  departure: SceneDeparture | null;
-  painted: (() => void) | null;
-  refreshNavigation: boolean;
-}
-
 /** Hooks both `GameInstanceHooks` and `GameSubsystemHooks` accept. */
 type GameLifecycleHooks = {
   onCreation: (self: BObject) => void;
@@ -569,23 +545,18 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly gameInstanceClass: string;
   private readonly sceneLibrary = new Map<string, SerializedScene>();
   private readonly acquireScene?: AcquireRuntimeScene;
-  private activeSceneSource?: RuntimeSceneSource;
-  private pendingSceneSource?: AbortController;
   private readonly sceneGuidByKey = new Map<string, string>();
   private readonly sceneLayerLibrary = new Map<string, SerializedSceneLayer>();
-  private playWorldRealized = false;
-  private sceneLoadingProgress = 1;
   private readonly deferSceneModelsReady: boolean;
   private readonly deferSceneLoadingPaint: boolean;
   private readonly materialParameters: RuntimeMaterialParameters;
   private readonly validateLegacyMeshParameters: boolean;
-  private sceneLoadId = 0;
   private readonly admission = new OwnerAdmission({
     world: () => this.world,
     stopped: () => this.stopped,
     paused: () => this.paused,
     saveBoundaryActive: () => this.saveBoundaryActive,
-    sceneLoading: () => this.sceneWorkBlocked || this.bootLoading,
+    sceneLoading: () => this.sceneRealizer.blocked || this.bootLoading,
     streams: () => this.streams,
     layers: () => this.layers,
     releaseAssets: (ownerGuid) => this.assetPreloads.releaseOwner(ownerGuid),
@@ -605,19 +576,9 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly subsystemMatches = new Map<string, readonly Subsystem[]>();
   private readonly ambiguousSubsystemWarnings = new Set<string>();
   private readonly cooperativeSceneLoading: CooperativeSceneLoadingOptions | null;
-  private realization: SceneRealization | null = null;
-  private sceneWorkBlocked = false;
   private bootLoading = false;
-  private preparedBootScene: { work: SceneRealization; name: string } | null = null;
   private stopped = false;
   private lifecycleId = 0;
-  private sceneChangeId = 0;
-  private pendingSceneFinish: {
-    name: string;
-    guid: string;
-    sceneLoadId: number;
-    presented: boolean;
-  } | null = null;
   private gameInstanceBound = false;
   /** A script `Possess Camera` outranks the authored per-camera option. */
   private cameraPossessedByScript = false;
@@ -698,6 +659,63 @@ class InProcessRuntime implements RuntimeDriver {
         for (const resume of waiters) resume();
       }
     },
+    emit: (command) => this.emit(command),
+  });
+  private readonly sceneRealizer: SceneRealizer = new SceneRealizer(this.admission, {
+    world: () => this.world,
+    stopped: () => this.stopped,
+    frameId: () => this.frameId,
+    playScene: () => this.playScene,
+    playSceneGuid: () => this.playSceneGuid,
+    enterScene: (scene, guid) => {
+      this.playScene = scene;
+      this.scalability.setScene(scene.settings);
+      this.playSceneGuid = guid;
+      // The new scene owns its own camera choice.
+      this.cameraPossessedByScript = false;
+      this.possessedCameraSlotId = null;
+    },
+    sceneLibrary: () => this.sceneLibrary,
+    sceneGuid: (key) => this.sceneGuidByKey.get(key) ?? key,
+    acquireScene: () => this.acquireScene,
+    cooperativeLoading: () => this.cooperativeSceneLoading,
+    bootLoading: () => this.bootLoading,
+    deferModelsReady: () => this.deferSceneModelsReady,
+    deferLoadingPaint: () => this.deferSceneLoadingPaint,
+    physics: () => this.physics,
+    navigation: () => this.navigation,
+    layers: () => this.layers,
+    scripts: () => this.scriptHost,
+    startWorld: () => {
+      this.tilemapAnimationTimeMs = 0;
+      if (this.hasAnimatedTiles) this.emit({ type: "tilemapAnimationTime", elapsedMs: 0 });
+      this.loopGuard.reset();
+      this.world.start();
+    },
+    setWorldGravity: (gravity) => this.setWorldGravity(gravity),
+    recordSimulationStart: (start) => {
+      if (this.sessionMode === "simulate" && !this.simulationStart) this.simulationStart = start;
+    },
+    markSceneTransition: () => {
+      if (this.sessionMode === "simulate") this.emit({ type: "simulationRetentionUnavailable", sessionGeneration: this.sessionGeneration,
+        reason: "Keep cannot retain a scene transition into the starting scene document." });
+    },
+    createActor: (serialized) => createActorFromSerialized(this.world, serialized, this.sceneActorHooks),
+    realizeActor: (actor, checkpoint) => this.realizeActor(actor, checkpoint),
+    breakParentCycles: (actors) => this.breakLoadedParentCycles(actors),
+    possessViewTarget: () => this.attemptPossessViewTarget(),
+    publishSnapshot: () => this.snapshots.publish(),
+    removeActor: (actor) => this.removeOwnedActor(actor),
+    removeSceneLayer: (layerGuid) => this.removeSceneLayer(layerGuid),
+    releaseAssets: (ownerGuid) => this.assetPreloads.releaseOwner(ownerGuid),
+    resetForSceneLoad: () => this.subsystems.resetForSceneLoad(),
+    duringSceneTeardown: (teardown) => this.duringSceneTeardown(teardown),
+    retireStreams: () => this.streams.retireAll(),
+    emitSceneDebug: () => {
+      this.navigation.emitDebug(true);
+      this.behaviourTrees.emitSnapshot(true);
+    },
+    reportError: (error) => { this.reportError(error); },
     emit: (command) => this.emit(command),
   });
   private readonly layers: SceneLayers;
@@ -1045,7 +1063,7 @@ class InProcessRuntime implements RuntimeDriver {
       createActor: (serialized, layerGuid) => createActorFromSerialized(this.world, serialized, this.sceneActorHooks, layerGuid),
       publishSnapshot: () => this.snapshots.publish(),
       syncOverlayPhysics: () => this.physics.overlay.syncFromWorld(this.world),
-      tryCompleteSceneLoad: () => this.tryCompleteSceneLoad(),
+      tryCompleteSceneLoad: () => this.sceneRealizer.tryCompleteSceneLoad(),
       removeActor: (actor) => this.removeOwnedActor(actor),
       cancelInvalidTweens: () => this.tweens.cancelInvalid(),
       reportError: (error) => { this.reportError(error); },
@@ -1158,7 +1176,7 @@ class InProcessRuntime implements RuntimeDriver {
       getSubsystem: (classId) => this.findSubsystem(classId),
       getGameInstance: () => this.world.gameInstance,
       getSceneLoadingProgress: () => {
-        const value = this.sceneLoadingProgress;
+        const value = this.sceneRealizer.loadingProgress;
         if (!Number.isFinite(value)) return 0;
         return Math.min(1, Math.max(0, value));
       },
@@ -1175,7 +1193,7 @@ class InProcessRuntime implements RuntimeDriver {
         this.reportError(error);
       },
       changeScene: (scene) => {
-        this.applyChangeScene(scene);
+        this.sceneRealizer.change(scene);
       },
       ...createSceneLayerHostBindings({ layers: this.layers }),
       ...createSceneLayerOverlayHostBindings({ overlay: this.overlay }),
@@ -1187,8 +1205,10 @@ class InProcessRuntime implements RuntimeDriver {
     // the actor owns, then ragdolls, cables, dynamic meshes and animation
     // graphs; a released slot then drops its ragdoll/cable/mesh and BT state,
     // its owner's text reveal, its sent component-command state and, last,
-    // a camera possession that targeted it. Scene Layers register last: phase
-    // 1 ends by cancelling independent layer creation and removing its layers.
+    // a camera possession that targeted it. Scene Layers register next to
+    // last: phase 1 cancels independent layer creation and removes its layers,
+    // then the Scene realizer cancels the main Scene's realization and cleans
+    // up what it acquired.
     this.subsystems.register(this.delays);
     this.subsystems.register(this.streams);
     this.subsystems.register(this.ragdolls);
@@ -1209,6 +1229,7 @@ class InProcessRuntime implements RuntimeDriver {
       },
     });
     this.subsystems.register(this.layers);
+    this.subsystems.register(this.sceneRealizer);
 
     this.registerPlaySceneTypes();
     this.bindGameInstance();
@@ -1454,17 +1475,6 @@ class InProcessRuntime implements RuntimeDriver {
       const slotId = component.owner ? this.actorSlot(component.owner) : undefined;
       if (slotId !== undefined) this.emit({ type: "setText2DAppear", slotId, componentId: component.guid, progress });
     });
-  }
-
-  private *spawnOwnedSceneLayers(work: SceneRealization): Generator<void, void, unknown> {
-    const owned = { check: () => this.checkRealization(work), layers: work.layers, actors: work.actors };
-    for (const entry of work.scene?.settings.sceneLayers ?? []) {
-      this.checkRealization(work);
-      if (entry.enabled) {
-        yield* this.layers.createSteps(entry.assetGuid, entry.zOrder, work.guid, owned);
-      }
-      yield;
-    }
   }
 
   async loadScripts(scripts: readonly CompiledScript[]): Promise<void> {
@@ -1750,7 +1760,7 @@ class InProcessRuntime implements RuntimeDriver {
       const owner = material.owner;
       const target: Extract<CommandMessage, { type: "setPostProcessMaterialParameter" }>["owner"] = owner instanceof SceneLayer
         ? { kind: "sceneLayer", layerId: owner.guid, layerLoadId: this.layers.get(owner.guid)!.loadId }
-        : { kind: "scene", sceneAssetGuid: owner.assetGuid, sceneLoadId: this.sceneLoadId };
+        : { kind: "scene", sceneAssetGuid: owner.assetGuid, sceneLoadId: this.sceneRealizer.loadId };
       this.emit({ type: "setPostProcessMaterialParameter", owner: target, entryId: material.entry.id,
         materialAssetGuid: material.materialAssetGuid, parameterName, parameter });
     } else {
@@ -1783,39 +1793,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (this.stopped) throw sceneRealizationCancelled();
     this.bootLoading = false;
     this.layers.readyPresented();
-    const prepared = this.preparedBootScene;
-    this.preparedBootScene = null;
-    if (!prepared || this.realization !== prepared.work) return;
-    this.checkRealization(prepared.work);
-    // Game Instance may have changed poses or created actors during native boot.
-    this.snapshots.publish();
-    this.checkRealization(prepared.work);
-    this.finishOrDeferSceneLoad(prepared.name, prepared.work.guid, prepared.work.loadId);
-  }
-
-  private checkRealization(work: SceneRealization): void {
-    work.controller.signal.throwIfAborted();
-    if (this.stopped || this.realization !== work) throw sceneRealizationCancelled();
-  }
-
-  /** Clean up only objects acquired by this preparation, including unspawned actors. */
-  private cancelRealization(cleanup = true): SceneRealization | null {
-    const work = this.realization;
-    if (!work) return null;
-    this.realization = null;
-    if (this.preparedBootScene?.work === work) this.preparedBootScene = null;
-    work.controller.abort(sceneRealizationCancelled());
-    if (work.finished || !cleanup) return work;
-    for (const actor of work.departure?.actors ?? []) this.removeOwnedActor(actor);
-    for (const layer of work.departure?.layers ?? []) {
-      if (this.world.findSceneLayer(layer.guid) === layer) this.removeSceneLayer(layer.guid);
-    }
-    for (const actor of work.actors) this.removeOwnedActor(actor);
-    for (const layer of work.layers) {
-      if (this.world.findSceneLayer(layer.guid) === layer) this.removeSceneLayer(layer.guid);
-    }
-    this.world.flushPending();
-    return work;
+    this.sceneRealizer.finishBootLoading();
   }
 
   private removeOwnedActor(actor: Actor): void {
@@ -1840,260 +1818,11 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   realizePlayWorld(): void | Promise<void> {
-    if (this.stopped) {
-      if (this.cooperativeSceneLoading) return Promise.reject(sceneRealizationCancelled());
-      return;
-    }
-    if (!this.playWorldRealized) this.beginSceneRealization();
-    if (this.cooperativeSceneLoading || this.realization?.promise) return this.waitForSceneRealization();
-  }
-
-  /** Follow a replacement begun by Game Instance while the boot caller awaits. */
-  private async waitForSceneRealization(): Promise<void> {
-    while (true) {
-      const work = this.realization;
-      if (!work || this.stopped) throw sceneRealizationCancelled();
-      try {
-        await work.promise;
-      } catch (error) {
-        if (this.realization === work || this.stopped) throw error;
-        continue;
-      }
-      if (this.realization === work) return;
-    }
-  }
-
-  private beginSceneRealization(departure: SceneDeparture | null = null): void {
-    const changeId = this.sceneChangeId;
-    const previous = this.cancelRealization(false);
-    if (this.stopped || this.sceneChangeId !== changeId) return;
-    if (previous && !previous.finished) {
-      departure ??= { guid: previous.guid, sceneInstance: previous.sceneInstance, actors: [], layers: [] };
-      departure.actors = [...new Set([...departure.actors, ...previous.actors, ...(previous.departure?.actors ?? [])])];
-      departure.layers = [...new Set([...departure.layers, ...previous.layers, ...(previous.departure?.layers ?? [])])];
-      departure.sources = [...new Set([...(departure.sources ?? []), ...(previous.departure?.sources ?? [])])];
-    }
-    this.playWorldRealized = true;
-    this.sceneWorkBlocked = true;
-    this.pendingSceneFinish = null;
-    const work: SceneRealization = {
-      controller: new AbortController(), scene: this.playScene, guid: this.playSceneGuid,
-      loadId: ++this.sceneLoadId, actors: [], layers: [], sceneInstance: null,
-      promise: null, finished: false, departure, painted: null,
-      refreshNavigation: departure !== null,
-    };
-    this.realization = work;
-    this.sceneLoadingProgress = 0;
-    const steps = this.realizeSceneSteps(work);
-    const retirement = this.retireSceneSteps(work);
-    const nextKind = work.scene?.settings.physicsWorld ?? this.physics.kind;
-    const replaceNative = this.physics.replacesNative(nextKind);
-    const initializeNavigation = this.navigation.needsInitialization(work.guid);
-    if (this.cooperativeSceneLoading || replaceNative || initializeNavigation) {
-      work.promise = Promise.resolve().then(async () => {
-        await this.prepareSceneLoading(work);
-        await runSceneRealizationWork(retirement, work.controller.signal, this.cooperativeSceneLoading ?? {});
-        if (this.physics.replacesNative(nextKind)) {
-          const gravity = work.scene?.settings.gravity ?? this.physics.gravity;
-          const acquisition = this.physics.acquireNative(nextKind, gravity).then((backend) => {
-            try { this.checkRealization(work); } catch (error) { backend.dispose(); throw error; }
-            return backend;
-          });
-          const backend = await waitForSceneWork(acquisition, work.controller.signal);
-          this.physics.installScene(backend, () => this.checkRealization(work));
-        }
-        if (initializeNavigation) {
-          await waitForSceneWork(initNavigation(), work.controller.signal);
-          this.navigation.markInitialized();
-        }
-        this.prepareSceneBackends(work);
-        await runSceneRealizationWork(steps, work.controller.signal, this.cooperativeSceneLoading ?? {});
-      }).catch((error: unknown) => {
-        this.failRealization(work);
-        throw error;
-      });
-      // Scene changes from scripts have no awaiting caller. Keep the failure
-      // observable to boot waiters and report it once when it is still current.
-      void work.promise.catch((error: unknown) => {
-        if (this.realization === work && !work.controller.signal.aborted) {
-          this.emit({ type: "sceneLoadFailed", sceneAssetGuid: work.guid, sceneLoadId: work.loadId,
-            message: error instanceof Error ? error.message : String(error) });
-          this.reportError(error);
-        }
-      });
-      return;
-    }
-    try {
-      while (!retirement.next().done) { /* Retire before replacing native ownership. */ }
-      this.prepareSceneBackends(work);
-      while (!steps.next().done) { /* Immediate consumers retain synchronous ordering. */ }
-    } catch (error) {
-      this.failRealization(work);
-      if (!isInfiniteLoopError(error) && !work.controller.signal.aborted) throw error;
-    } finally {
-      retirement.return();
-      steps.return();
-    }
-  }
-
-  private prepareSceneBackends(work: SceneRealization): void {
-    this.checkRealization(work);
-    this.physics.prepareScene(work.scene?.settings, () => this.checkRealization(work));
-    this.navigation.prepareScene(work.guid, work.refreshNavigation);
-  }
-
-  private async prepareSceneLoading(work: SceneRealization): Promise<void> {
-    this.checkRealization(work);
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const painted = this.deferSceneLoadingPaint ? new Promise<void>((resolve, reject) => {
-      work.painted = resolve;
-      timer = setTimeout(() => reject(new Error("Scene Loading did not paint before the loading deadline.")), 30_000);
-    }) : Promise.resolve();
-    try {
-      // Install the latch before emitting: the in-process host can acknowledge immediately.
-      this.emit({ type: "sceneLoading", sceneAssetGuid: work.guid, sceneLoadId: work.loadId });
-      await waitForSceneWork(painted, work.controller.signal);
-      this.checkRealization(work);
-    } finally {
-      clearTimeout(timer);
-      work.painted = null;
-    }
+    return this.sceneRealizer.realizePlayWorld();
   }
 
   notifySceneLoadingPainted(sceneAssetGuid: string, sceneLoadId: number): void {
-    const work = this.realization;
-    if (this.stopped || !work || work.controller.signal.aborted || work.guid !== sceneAssetGuid || work.loadId !== sceneLoadId) return;
-    work.painted?.();
-  }
-
-  private *retireSceneSteps(work: SceneRealization): Generator<void, void, unknown> {
-    const departure = work.departure;
-    if (!departure) return;
-    if (departure.sceneInstance) this.assetPreloads.releaseOwner(departure.sceneInstance.guid);
-    const checkpoint = () => this.checkRealization(work);
-    checkpoint();
-    if (this.world.currentScene === departure.sceneInstance) this.world.exitActiveScene();
-    checkpoint();
-    // Exit hooks can add objects to the departing Scene. Retain exact identities
-    // so cancellation and a reentrant same-guid replacement cannot erase each other.
-    departure.layers = [...new Set([...departure.layers, ...this.world.getSceneLayers().filter((layer) => layer.ownerSceneGuid === departure.guid)])];
-    const departingLayers = new Set(departure.layers.map((layer) => layer.guid));
-    departure.actors = [...new Set([...departure.actors, ...this.world.getActors().filter((actor) => !actor.sceneLayerId || departingLayers.has(actor.sceneLayerId))])];
-    for (const actor of departure.actors) {
-      checkpoint();
-      this.removeOwnedActor(actor);
-      this.world.flushPending();
-      checkpoint();
-      yield;
-    }
-    for (const layer of departure.layers) {
-      checkpoint();
-      if (this.world.findSceneLayer(layer.guid) === layer) this.removeSceneLayer(layer.guid);
-      checkpoint();
-      yield;
-    }
-    // Prune native bodies before new objects can reuse a departing guid. Global
-    // SceneLayers remain in the World, retaining their bodies and motion.
-    this.physics.main.syncFromWorld(this.world);
-    checkpoint();
-    this.physics.overlay.syncFromWorld(this.world);
-    checkpoint();
-    // Actor removal releases only departing animation/BT state. Retained layers
-    // continue from their existing graph state while the world is replaced.
-    this.subsystems.resetForSceneLoad();
-    for (const source of departure.sources ?? []) source.release();
-    departure.sources = undefined;
-    work.departure = null;
-  }
-
-  private failRealization(work: SceneRealization): void {
-    if (this.realization !== work) return;
-    // Keep the failed promise/gate attached: a later ready acknowledgement must
-    // never turn a partial scene into a successful load.
-    this.pendingSceneFinish = null;
-    // Objects leave before the Scene exits (its SceneSubsystems' On End), silently.
-    this.duringSceneTeardown(() => {
-      for (const actor of work.departure?.actors ?? []) this.removeOwnedActor(actor);
-      for (const layer of work.departure?.layers ?? []) {
-        if (this.world.findSceneLayer(layer.guid) === layer) this.removeSceneLayer(layer.guid);
-      }
-      for (const actor of work.actors) this.removeOwnedActor(actor);
-      for (const layer of work.layers) {
-        if (this.world.findSceneLayer(layer.guid) === layer) this.removeSceneLayer(layer.guid);
-      }
-      this.world.flushPending();
-    });
-    if (this.world.currentScene === work.sceneInstance) this.world.exitActiveScene();
-    for (const source of work.departure?.sources ?? []) source.release();
-    if (work.departure) work.departure.sources = undefined;
-    this.activeSceneSource?.release();
-    this.activeSceneSource = undefined;
-  }
-
-  private *realizeSceneSteps(work: SceneRealization): Generator<void, void, unknown> {
-    const checkpoint = () => this.checkRealization(work);
-    checkpoint();
-    this.tilemapAnimationTimeMs = 0;
-    if (this.hasAnimatedTiles) this.emit({ type: "tilemapAnimationTime", elapsedMs: 0 });
-    this.loopGuard.reset();
-    this.world.start();
-    checkpoint();
-    const { scene, guid, loadId } = work;
-    const name = typeof scene?.name === "string" && scene.name.trim() ? scene.name : guid;
-    if (scene) {
-      this.sceneLoadingProgress = 0;
-      this.world.beginSceneLoad(name);
-      checkpoint();
-      const authoredGravity = scene.settings?.gravity;
-      const gravity = {
-        x: Number(authoredGravity?.[0] ?? this.physics.gravity[0]),
-        y: Number(authoredGravity?.[1] ?? this.physics.gravity[1]),
-        z: Number(authoredGravity?.[2] ?? this.physics.gravity[2]),
-      };
-      this.setWorldGravity(gravity);
-      work.sceneInstance = this.world.createScene({ assetGuid: guid, sceneName: name,
-        postProcessStack: scene.settings.postProcessStack, variables: { gravity } });
-      if (this.sessionMode === "simulate" && !this.simulationStart) this.simulationStart = {
-        sceneAssetGuid: guid, sceneInstanceId: work.sceneInstance.guid, sceneLoadId: loadId };
-      checkpoint();
-      this.emit({ type: "activeScene", sceneAssetGuid: guid, sceneLoadId: loadId });
-      checkpoint();
-      for (const serialized of scene.actors) {
-        checkpoint();
-        const actor = createActorFromSerialized(this.world, serialized, this.sceneActorHooks);
-        if (actor) work.actors.push(actor);
-        yield;
-      }
-      hydrateScenePropertyReferences(work.actors);
-      let realized = 0;
-      for (const actor of work.actors) {
-        checkpoint();
-        this.scriptHost.bindInterfaceHandlers(actor);
-        this.realizeActor(actor, checkpoint);
-        checkpoint();
-        this.sceneLoadingProgress = (++realized / work.actors.length) * 0.5;
-        yield;
-      }
-      this.breakLoadedParentCycles(work.actors);
-      this.sceneLoadingProgress = 0.5;
-    }
-    checkpoint();
-    this.navigation.registerAgents();
-    this.navigation.registerObstacles();
-    this.attemptPossessViewTarget();
-    checkpoint();
-    yield* this.spawnOwnedSceneLayers(work);
-    checkpoint();
-    // All actors, anchors, and renderer assignments precede the readiness latch.
-    this.world.flushPending();
-    checkpoint();
-    this.snapshots.publish();
-    checkpoint();
-    work.finished = true;
-    if (scene) {
-      if (this.bootLoading) this.preparedBootScene = { work, name };
-      else this.finishOrDeferSceneLoad(name, guid, loadId);
-    } else this.sceneWorkBlocked = false;
+    this.sceneRealizer.notifyLoadingPainted(sceneAssetGuid, sceneLoadId);
   }
 
   /**
@@ -2123,102 +1852,8 @@ class InProcessRuntime implements RuntimeDriver {
     }
   }
 
-  /** False when no loaded scene matches, so the console can report it. */
-  private applyChangeScene(sceneKey: string): boolean {
-    if (this.acquireScene) {
-      // Prepared transitions resolve asynchronously and report their own failures.
-      void this.changeSceneAsync(sceneKey).catch((error: unknown) => {
-        if (!this.stopped && (error as { name?: string })?.name !== "AbortError") this.reportError(error);
-      });
-      return true;
-    }
-    return this.commitSceneChange(sceneKey);
-  }
-
-  async changeSceneAsync(sceneKey: string): Promise<void> {
-    const key = String(sceneKey ?? "").trim();
-    if (this.stopped) throw sceneRealizationCancelled();
-    if (!key) throw new Error("Select a Scene before changing scenes.");
-    if (!this.acquireScene) {
-      if (!this.sceneLibrary.has(key)) throw new Error(`The target scene is not available: ${key}.`);
-      this.commitSceneChange(key);
-      await this.waitForSceneRealization();
-      return;
-    }
-    this.pendingSceneSource?.abort(sceneRealizationCancelled());
-    const controller = new AbortController();
-    this.pendingSceneSource = controller;
-    let acquired: RuntimeSceneSource | undefined;
-    const acquisition = Promise.resolve().then(() => this.acquireScene!(this.sceneGuidByKey.get(key) ?? key, {
-      consumer: `Scene transition from ${this.playSceneGuid}`, signal: controller.signal,
-    })).then((source) => {
-      if (this.stopped || controller.signal.aborted || this.pendingSceneSource !== controller) {
-        source.release();
-        throw sceneRealizationCancelled();
-      }
-      acquired = source;
-      return source;
-    });
-    try {
-      const source = await waitForSceneWork(acquisition, controller.signal);
-      controller.signal.throwIfAborted();
-      this.pendingSceneSource = undefined;
-      this.commitSceneChange(key, source.scene, source);
-      acquired = undefined;
-      await this.waitForSceneRealization();
-    } finally {
-      acquired?.release();
-      if (this.pendingSceneSource === controller) this.pendingSceneSource = undefined;
-    }
-  }
-
-  private commitSceneChange(sceneKey: string, prepared?: SerializedScene, source?: RuntimeSceneSource): boolean {
-    const key = String(sceneKey ?? "").trim();
-    const next = prepared ?? this.sceneLibrary.get(key);
-    if (!next) {
-      this.emit({
-        type: "log",
-        severity: "warning",
-        category: "scene",
-        message: `changeScene: no scene asset loaded for ${key}`,
-        frameId: this.frameId,
-      });
-      return false;
-    }
-    if (this.stopped) { source?.release(); return true; }
-    if (this.sessionMode === "simulate") this.emit({ type: "simulationRetentionUnavailable", sessionGeneration: this.sessionGeneration,
-      reason: "Keep cannot retain a scene transition into the starting scene document." });
-    // The departing Scene's teardown starts here; its SceneSubsystems End at the exit.
-    this.duringSceneTeardown(() => {
-      this.streams.retireAll();
-    });
-    const changeId = ++this.sceneChangeId;
-    const current = () => !this.stopped && this.sceneChangeId === changeId;
-    this.sceneWorkBlocked = true;
-    this.pendingSceneFinish = null;
-    const departingSceneGuid = this.playSceneGuid;
-    const departure: SceneDeparture = {
-      guid: departingSceneGuid, sceneInstance: this.world.currentScene,
-      actors: this.world.getActors().filter((actor) => !actor.sceneLayerId),
-      layers: this.world.getSceneLayers().filter((layer) => layer.ownerSceneGuid === departingSceneGuid),
-      sources: this.activeSceneSource ? [this.activeSceneSource] : undefined,
-    };
-    this.activeSceneSource = source;
-    this.playScene = next;
-    this.scalability.setScene(next.settings);
-    this.playSceneGuid = this.sceneGuidByKey.get(key) ?? key;
-    this.playWorldRealized = false;
-    // The new scene owns its own camera choice.
-    this.cameraPossessedByScript = false;
-    this.possessedCameraSlotId = null;
-    // The realization owns its rejection and diagnostics; script commands remain synchronous.
-    this.beginSceneRealization(departure);
-    if (!current()) return true;
-    if (this.admission.canTickScene()) {
-      this.navigation.emitDebug(true);
-      this.behaviourTrees.emitSnapshot(true);
-    }
-    return true;
+  changeSceneAsync(sceneKey: string): Promise<void> {
+    return this.sceneRealizer.changeAsync(sceneKey);
   }
 
   executeConsoleCommand(command: string): { success: boolean; output: string } {
@@ -2385,7 +2020,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.navigation.markInitialized();
     if (sceneGuid !== this.playSceneGuid) return;
     this.navigation.importNavMesh(sceneGuid, bytes);
-    if (this.playWorldRealized) {
+    if (this.sceneRealizer.realized) {
       this.navigation.registerAgents();
       this.navigation.registerObstacles();
     }
@@ -2430,7 +2065,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   private consoleHost(): ConsoleCommandHost {
     return {
-      changeScene: (scene) => this.applyChangeScene(scene),
+      changeScene: (scene) => this.sceneRealizer.change(scene),
       quality: (group, choice, value) => this.scalability.executeQuality(group, choice, value),
       setRenderPath: (path) => {
         this.requestScalability({ kind: "patch", render: { renderPath: path ?? this.scalabilityProjectRenderPath } });
@@ -2997,43 +2632,8 @@ class InProcessRuntime implements RuntimeDriver {
     }
   }
 
-  private finishOrDeferSceneLoad(
-    name: string,
-    guid: string,
-    sceneLoadId: number,
-  ): void {
-    // Install the latch first: an in-process host may acknowledge synchronously
-    // from sceneRealized, after the full world and owned-layer assignment batch.
-    this.pendingSceneFinish = { name, guid, sceneLoadId, presented: !this.deferSceneModelsReady };
-    this.emit({ type: "sceneRealized", sceneAssetGuid: guid, sceneLoadId });
-    if (
-      !this.deferSceneModelsReady &&
-      this.pendingSceneFinish?.sceneLoadId === sceneLoadId
-    )
-      this.tryCompleteSceneLoad();
-  }
-
-  private tryCompleteSceneLoad(): void {
-    const pending = this.pendingSceneFinish;
-    if (this.stopped || !pending?.presented || !this.layers.ownedReady(pending.guid)) return;
-    this.sceneLoadingProgress = 1;
-    this.sceneWorkBlocked = false;
-    this.pendingSceneFinish = null;
-    this.admission.flush();
-    // Authored creation may immediately replace this Scene or stop Play.
-    const owner = this.world.currentScene;
-    if (!this.stopped && owner && this.sceneLoadId === pending.sceneLoadId) this.admission.run(owner, () => {
-      if (this.world.currentScene === owner && this.sceneLoadId === pending.sceneLoadId) this.world.finishSceneLoad(pending.name);
-    });
-  }
-
   notifySceneModelsReady(sceneAssetGuid: string, sceneLoadId: number): void {
-    const pending = this.pendingSceneFinish;
-    if (!pending) return;
-    if (sceneAssetGuid !== pending.guid || sceneLoadId !== pending.sceneLoadId)
-      return;
-    pending.presented = true;
-    this.tryCompleteSceneLoad();
+    this.sceneRealizer.notifyModelsReady(sceneAssetGuid, sceneLoadId);
   }
 
   configureSaveGame(options: RuntimeSaveGameOptions): SaveGameService {
@@ -3083,7 +2683,7 @@ class InProcessRuntime implements RuntimeDriver {
         // World's deferred spawn/destroy flush, even when called by a Tick graph.
         await Promise.resolve();
         if (this.stopped) throw new SaveGameError("unavailable", "The game session has stopped.");
-        if (this.sceneWorkBlocked || this.streams.blocking || (this.realization && !this.realization.finished)) {
+        if (this.sceneRealizer.blocked || this.streams.blocking || this.sceneRealizer.realizing) {
           throw new SaveGameError("unavailable", "Wait for scene loading to finish before saving or loading.");
         }
         this.saveBoundaryActive = true;
@@ -3167,16 +2767,12 @@ class InProcessRuntime implements RuntimeDriver {
     this.tweens.stop();
     this.overlay.clear();
     this.lifecycleId++;
-    this.sceneChangeId++;
-    this.pendingSceneSource?.abort(sceneRealizationCancelled());
-    this.pendingSceneSource = undefined;
+    this.sceneRealizer.cancelSceneChange();
     this.running = false;
     for (const resume of this.simulationWaiters) resume();
     this.simulationWaiters.clear();
+    // The Scene realizer registers last: its realization cancels after every other subsystem's work.
     this.subsystems.cancelPending();
-    const retiring = this.cancelRealization();
-    this.sceneLoadId++;
-    this.pendingSceneFinish = null;
     this.ticks.finalizeTrace("session-ended");
     for (const actor of this.world.getActors()) {
       for (const component of [...actor.components]) {
@@ -3194,9 +2790,7 @@ class InProcessRuntime implements RuntimeDriver {
       this.world.classRegistry.unregister(classId);
     this.scriptSources.clear();
     this.anchors.clear();
-    for (const source of retiring?.departure?.sources ?? []) source.release();
-    this.activeSceneSource?.release();
-    this.activeSceneSource = undefined;
+    this.sceneRealizer.releaseSceneSources();
     this.playScene = undefined;
     this.sceneLibrary.clear();
     this.admission.clear();
@@ -3285,7 +2879,7 @@ class InProcessRuntime implements RuntimeDriver {
   captureSimulationState(request: SimulationCaptureRequest): Promise<SimulationSceneCaptureResult> {
     return new Promise(resolve => queueMicrotask(() => {
       const identity: SimulationCaptureIdentity = { generation: this.sessionGeneration, sceneAssetGuid: this.playSceneGuid,
-        sceneInstanceId: this.world.currentScene?.guid ?? "", sceneLoadId: this.sceneLoadId,
+        sceneInstanceId: this.world.currentScene?.guid ?? "", sceneLoadId: this.sceneRealizer.loadId,
         tickIndex: this.world.clock.tickIndex, commandRevision: this.commandRevision };
       const fail = (reason: string, code: "boundary" | "ownership" | "budget" | "resource" = "boundary") => resolve({ ok: false, code, path: "scene", reason, identity });
       if (request.sessionGeneration !== this.sessionGeneration || !Number.isSafeInteger(request.requestId) || request.requestId <= this.lastCaptureRequestId) { fail("Stale or superseded capture request."); return; }
@@ -3295,7 +2889,7 @@ class InProcessRuntime implements RuntimeDriver {
       if (request.maxBytes !== undefined && (!Number.isSafeInteger(request.maxBytes) || request.maxBytes < 1 || request.maxBytes > 64 * 1024 * 1024)) { fail("Invalid final scene capture budget.", "budget"); return; }
       try {
         const scene = this.world.currentScene;
-        if (!scene || this.sceneWorkBlocked || this.bootLoading || this.streams.blocking) { fail("Scene loading has not reached a complete final boundary."); return; }
+        if (!scene || this.sceneRealizer.blocked || this.bootLoading || this.streams.blocking) { fail("Scene loading has not reached a complete final boundary."); return; }
         const postProcessStack: typeof scene.postProcessStack = [];
         for (const entry of scene.postProcessStack) {
           const material = getPostProcessMaterialObject(scene, entry.id ?? "");
@@ -3326,7 +2920,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   private inspectorActorReady(actor: Actor): boolean {
     if (this.simulationQuiescent || this.stopped || this.saveBoundaryActive || actor.destroyed || actor.world !== this.world || this.world.findActorInstances(actor.guid).length !== 1 || this.streams.blocking || !this.streams.actorReady(actor)) return false;
-    return actor.sceneLayerId ? this.layers.get(actor.sceneLayerId)?.ready === true : !this.sceneWorkBlocked && !this.bootLoading;
+    return actor.sceneLayerId ? this.layers.get(actor.sceneLayerId)?.ready === true : !this.sceneRealizer.blocked && !this.bootLoading;
   }
 
   private getRuntimeInspector(): RuntimeInspector {
@@ -3340,7 +2934,7 @@ class InProcessRuntime implements RuntimeDriver {
         const stream = this.streams.actorInstance(actor);
         if (stream) return `stream:${stream.actor.guid}:${stream.loadId}`;
         if (actor.sceneLayerId) return `layer:${actor.sceneLayerId}:${this.layers.get(actor.sceneLayerId)?.loadId ?? -1}`;
-        return `scene:${this.playSceneGuid}:${this.sceneLoadId}:${this.world.currentScene?.guid ?? ""}`;
+        return `scene:${this.playSceneGuid}:${this.sceneRealizer.loadId}:${this.world.currentScene?.guid ?? ""}`;
       },
       boundary: () => ({ tickIndex: this.world.clock.tickIndex, frameId: this.frameId,
         commandRevision: this.commandRevision, structuralRevision: this.world.structuralRevision }),
@@ -3485,7 +3079,7 @@ class InProcessRuntime implements RuntimeDriver {
     return { sessionGeneration: request.sessionGeneration, requestId: request.requestId, success: !reason,
       ...(reason ? { reason } : {}), paused: pauseReasons.size > 0, pauseReasons: [...pauseReasons],
       tickIndex: this.world.clock.tickIndex, sceneAssetGuid: this.playSceneGuid,
-      sceneLoadId: this.sceneLoadId, commandRevision: this.commandRevision };
+      sceneLoadId: this.sceneRealizer.loadId, commandRevision: this.commandRevision };
   }
 
   private flushBoundaryRequests(): void {
@@ -3614,7 +3208,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   copySnapshot(out: Float32Array): boolean {
-    if (this.stopped || (this.sceneWorkBlocked && !this.realization?.finished &&
+    if (this.stopped || (this.sceneRealizer.blocked && !this.sceneRealizer.realizationFinished &&
       !this.layers.anyRealized())) return false;
     return this.snapshots.copy(out);
   }
