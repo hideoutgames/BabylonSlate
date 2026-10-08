@@ -139,10 +139,17 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     if (this.debug) this.host.emit({ type: "behaviourTreeSnapshot", trees: [] });
   }
 
+  /**
+   * Replace per-slot evaluation and Play Animation ownership with a trace
+   * frame's, so the Animation Graph skip, slot release and task end behave as
+   * in the recorded run.
+   */
   restoreFromTrace(states: readonly TraceBtState[]): void {
     this.evalBySlot.clear();
     this.lastStateJson.clear();
+    this.playAnimOwnedSlots.clear();
     for (const row of states) {
+      if (row.playAnimationOwned === true) this.playAnimOwnedSlots.add(row.slotId);
       this.evalBySlot.set(row.slotId, {
         stack: row.stack.map((frame) => ({ ...frame })),
         status: row.status as BtEvalState["status"],
@@ -174,6 +181,7 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
           { ...memory },
         ]),
       ),
+      ...(this.playAnimOwnedSlots.has(slotId) ? { playAnimationOwned: true } : {}),
     }));
   }
 
