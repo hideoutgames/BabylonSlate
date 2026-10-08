@@ -1,5 +1,8 @@
 import { isSceneGameTimePaused } from "./scene-game-time";
-import { ArcRotateCamera, Matrix, Mesh, PBRMaterial, Quaternion, Vector3, VertexBuffer, VertexData, type AbstractMesh, type Camera, type Material, type Scene, type SubMesh } from "@babylonjs/core";
+import {
+  ArcRotateCamera, Matrix, Mesh, PBRMaterial, Quaternion, Ray, Vector3, VertexBuffer, VertexData,
+  type AbstractMesh, type Camera, type Material, type PickingInfo, type Scene, type SubMesh, type TrianglePickingPredicate,
+} from "@babylonjs/core";
 import {
   createDefaultWaterDefinition, createWaterBlendSample, createWaterWaveOutput, evaluateWaterBlend, evaluateWaterVertex, MAX_WATER_BLEND_DISTANCE, normalizeWaterBody,
   normalizeWaterDefinition, waterBankFadeLength, WaterBlendIndex, waterEulerianGradient, waterFootprint, waterHorizontalEnvelope,
@@ -10,7 +13,7 @@ import { inActiveView } from "./active-view";
 import { updateDynamicMaterialBounds } from "./material-bounds";
 import { sceneWaterBlendDistance, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision } from "./render-settings";
 import { requestWaterFft, updateSceneWaterFft } from "./water-fft";
-import { applyWaterMaterialScalars, configureWaterMaterial, contactRange, setWaterGridOffsetSource, WaterMaterialPlugin } from "./water-material";
+import { applyWaterMaterialScalars, configureWaterMaterial, contactRange, setWaterGridOffsetSource, waterGridOffset, WaterMaterialPlugin } from "./water-material";
 import { WaterContactField } from "./water-contact-field";
 import { WaterField, type WaterFieldSurface } from "./water-field";
 import { WaterReflection } from "./water-reflection";
@@ -1227,6 +1230,31 @@ function markBlendDirty(s: Surface): void {
   if (state) state.dirty = true;
 }
 
+/**
+ * Babylon's CPU picks (`scene.pick`, `pickWithRay`, `Ray.intersectsMesh`) test the uploaded vertex buffer, which a GPU
+ * Global grid keeps relative to its snapped centre (`Surface.gridOffset`). With a non-zero offset the bounds (already the
+ * true local extents) are tested with the ray as given, then the triangles with the ray moved back by the local offset, and
+ * the hit point is moved forward by its world-space form. A translation leaves the hit distance unchanged.
+ */
+function intersectGridOffset(
+  mesh: Mesh, offset: Float64Array, ray: Ray, fastCheck?: boolean, trianglePredicate?: TrianglePickingPredicate, onlyBoundingInfo?: boolean,
+  worldToUse?: Matrix, skipBoundingInfo?: boolean,
+): PickingInfo {
+  const intersects = Mesh.prototype.intersects;
+  if ((offset[0] === 0 && offset[1] === 0) || onlyBoundingInfo) return intersects.call(mesh, ray, fastCheck, trianglePredicate, onlyBoundingInfo, worldToUse, skipBoundingInfo);
+  if (!skipBoundingInfo) {
+    const bounds = intersects.call(mesh, ray, fastCheck, trianglePredicate, true, worldToUse);
+    if (!bounds.hit) return bounds;
+  }
+  const moved = new Ray(new Vector3(ray.origin.x - offset[0]!, ray.origin.y, ray.origin.z - offset[1]!), ray.direction, ray.length);
+  const hit = intersects.call(mesh, moved, fastCheck, trianglePredicate, false, worldToUse, true);
+  if (hit.hit && hit.pickedPoint) {
+    const world = waterGridOffset(mesh);
+    hit.pickedPoint.addInPlaceFromFloats(world[0]!, world[1]!, world[2]!);
+  }
+  return hit;
+}
+
 /** Finite volumes keep fixed bounds; only Global Water Volume follows the camera. */
 export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProperties, definition?: WaterDefinition, customMaterial?: Material | null): Mesh {
   const body = normalizeWaterBody(input, input.kind), water = normalizeWaterDefinition(definition ?? createDefaultWaterDefinition());
@@ -1243,6 +1271,8 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
     plugin.mesh = mesh;
     plugin.gpuWaves = true;
     setWaterGridOffsetSource(mesh, gridOffset);
+    mesh.intersects = (ray, fastCheck, trianglePredicate, onlyBoundingInfo, worldToUse, skipBoundingInfo) =>
+      intersectGridOffset(mesh, gridOffset, ray, fastCheck, trianglePredicate, onlyBoundingInfo, worldToUse, skipBoundingInfo);
     // Unlit Stylized water never samples a reflection.
     if (water.style !== "stylized") {
       let reflection = reflections.get(scene);

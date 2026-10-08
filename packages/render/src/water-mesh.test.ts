@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ArcRotateCamera, CubeTexture, FreeCamera, type Mesh, MeshBuilder, NullEngine, PBRMaterial, Quaternion, Scene, SphericalPolynomial, Texture, type UniformBuffer, Vector3, VertexBuffer } from "@babylonjs/core";
+import { ArcRotateCamera, CubeTexture, FreeCamera, type Mesh, MeshBuilder, NullEngine, PBRMaterial, Quaternion, Ray, Scene, SphericalPolynomial, Texture, type UniformBuffer, Vector3, VertexBuffer } from "@babylonjs/core";
 import {
   createDefaultWaterDefinition, createWaterBlendSample, createWaterWaveOutput, DEFAULT_WATER_BLEND_DISTANCE, evaluateWaterBlend, evaluateWaterVertex,
   normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch, WaterBlendIndex,
@@ -582,6 +582,46 @@ describe("Water rendering", () => {
       camera.maxZ = 4000; updateSceneWater(scene);
       expect(created[1]).toHaveBeenCalled();
     } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
+  });
+  it("picks a recentred Global grid where its water is, as a grid built there is picked", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    const camera = new FreeCamera("camera", new Vector3(0, 4, 0), scene);
+    camera.maxZ = 100;
+    noBlending(scene);
+    try {
+      const global = createWaterMesh(scene, "global", normalizeWaterBody({}, "global"));
+      // A turned, scaled and lifted volume moves its offset through its own matrix.
+      const turn = (mesh: Mesh) => { mesh.position.set(10, 1, -5); mesh.rotation.y = Math.PI / 3; mesh.scaling.set(2, 1, 2); return mesh; };
+      const turned = turn(createWaterMesh(scene, "turned", normalizeWaterBody({}, "global")));
+      updateSceneWater(scene);
+      // The camera moves hundreds of cells: the uploaded lines stay where they were, and the shader offset follows the camera.
+      camera.position.set(400, 4, 0); updateSceneWater(scene);
+      const cell = 0.5 / RENDER_QUALITY_PROFILES.medium.water.meshDensity;
+      expect(Math.abs(gridOffset(global).x - 400)).toBeLessThanOrEqual(cell);
+      const fresh = createWaterMesh(scene, "fresh", normalizeWaterBody({}, "global"));
+      const freshTurned = turn(createWaterMesh(scene, "freshTurned", normalizeWaterBody({}, "global")));
+      updateSceneWater(scene);
+      for (const [x, z] of [[440.3, -17.7], [300, 120]] as const) {
+        const hit = scene.pickWithRay(new Ray(new Vector3(x, 20, z), Vector3.Down()), (candidate) => candidate === turned)!;
+        const expected = scene.pickWithRay(new Ray(new Vector3(x, 20, z), Vector3.Down()), (candidate) => candidate === freshTurned)!;
+        expect(hit.hit, `turned ${x}, ${z}`).toBe(true);
+        expect(hit.pickedPoint!.asArray()).toEqual([expect.closeTo(x, 3), expect.closeTo(1, 3), expect.closeTo(z, 3)]);
+        expect(hit.pickedPoint!.asArray()).toEqual(expected.pickedPoint!.asArray().map((value) => expect.closeTo(value, 3)));
+      }
+      const down = (x: number, z: number, mesh: Mesh) => scene.pickWithRay(new Ray(new Vector3(x, 20, z), Vector3.Down()), (candidate) => candidate === mesh)!;
+      // Far from the mesh origin and from the grid's centre alike: the rest plane under the ray, as a fresh grid gives it.
+      for (const [x, z] of [[440.3, -17.7], [400, 0], [150, 200]] as const) {
+        const hit = down(x, z, global), expected = down(x, z, fresh);
+        expect(hit.hit, `${x}, ${z}`).toBe(true);
+        expect(hit.pickedMesh).toBe(global);
+        expect(hit.pickedPoint!.asArray()).toEqual([expect.closeTo(x, 3), expect.closeTo(0, 3), expect.closeTo(z, 3)]);
+        expect(hit.pickedPoint!.asArray()).toEqual(expected.pickedPoint!.asArray().map((value) => expect.closeTo(value, 3)));
+        expect(hit.distance).toBeCloseTo(20, 3);
+      }
+      // The grid spans 256 m around the camera: the origin is past it, though the uploaded lines still cover it.
+      expect(down(0, 0, global).hit).toBe(false);
+      expect(down(0, 0, fresh).hit).toBe(false);
+    } finally { scene.dispose(); engine.dispose(); }
   });
   it("pauses CPU vertex work for surfaces out of view and resumes it in the frame they come back", () => {
     const engine = new NullEngine(), scene = new Scene(engine);

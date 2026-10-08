@@ -3417,7 +3417,7 @@ export function setWaterGridOffsetSource(mesh: AbstractMesh, offset: Float64Arra
  * world matrix applied to (x, 0, z). Taking it at bind time keeps it right under any rotation, scale or tilt, and a
  * floating origin (which only changes the matrix's translation) never reaches it.
  */
-function waterGridOffset(mesh: AbstractMesh | null | undefined): Float64Array {
+export function waterGridOffset(mesh: AbstractMesh | null | undefined): Float64Array {
   const offset = mesh ? gridOffsets.get(mesh) : undefined;
   if (!offset || (offset[0] === 0 && offset[1] === 0)) return gridWorld.fill(0);
   const m = mesh!.getWorldMatrix().m, x = offset[0]!, z = offset[1]!;

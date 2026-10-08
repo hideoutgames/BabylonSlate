@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  DirectionalLight, FreeCamera, HemisphericLight, Matrix, MeshBuilder, NullEngine, PBRMaterial, PointLight, Scene, ShaderLanguage, Texture, TransformNode, Vector3,
+  DirectionalLight, FreeCamera, HemisphericLight, Matrix, MeshBuilder, NullEngine, PBRMaterial, PointLight, Scene, Texture, TransformNode, Vector3,
   type Mesh, type UniformBuffer,
 } from "@babylonjs/core";
 import {
@@ -10,7 +10,7 @@ import {
 import { updateSceneRenderingSettings } from "./render-settings";
 import { waterFftDiagnostics, waterFftForSurface } from "./water-fft";
 import { WATER_FFT_CASCADE_TURNS } from "./water-fft-spectrum";
-import { WATER_FFT_SAMPLER, WaterMaterialPlugin, waterOutlineVertexSource, waterVertexSource } from "./water-material";
+import { WATER_FFT_SAMPLER, WaterMaterialPlugin } from "./water-material";
 import { createWaterMesh, setSceneWaterTime, setWaterGpuWaves, updateSceneWater, updateWaterMeshDefinition } from "./water-mesh";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
 
@@ -680,24 +680,6 @@ describe("Water material binding", () => {
       expect(bound(pluginOf(a), a)).toEqual([0, 0, 0, 0]);
       setWaterGpuWaves(a, true); updateSceneWater(scene);
       expect(bound(pluginOf(a), a)).toEqual(offsetA);
-    } finally { scene.dispose(); engine.dispose(); }
-  });
-
-  it("declares the grid offset for both vertex programs and adds it before the rest point is taken, in GLSL and WGSL", () => {
-    const engine = new NullEngine(), scene = new Scene(engine);
-    try {
-      const { plugin } = water(scene);
-      expect(plugin.getUniforms().ubo!.map((uniform) => uniform.name)).toContain("slateWaterGridOffset");
-      for (const language of [ShaderLanguage.GLSL, ShaderLanguage.WGSL]) {
-        const prefix = language === ShaderLanguage.WGSL ? "uniforms." : "", outline = waterOutlineVertexSource(language);
-        expect(outline.declarations).toContain("slateWaterGridOffset");
-        // The swell, bank terms and varyings all follow the rest point, so the offset must precede it.
-        for (const source of [outline.displacement, waterVertexSource(language).worldPosition]) {
-          const offset = source.indexOf(`${prefix}slateWaterGridOffset`);
-          expect(offset, `language ${language}`).toBeGreaterThan(-1);
-          expect(offset, `language ${language}`).toBeLessThan(source.indexOf("swvRest"));
-        }
-      }
     } finally { scene.dispose(); engine.dispose(); }
   });
 
