@@ -46,19 +46,9 @@ import {
   PostProcessMaterialObject,
   type MaterialInstanceObject,
   SceneLayer,
-  SceneSubsystem,
-  GAME_SUBSYSTEM_CLASS_ID,
-  SCENE_SUBSYSTEM_CLASS_ID,
-  instantiableSubsystemClassIds,
   isLockedEngineClassId,
   sceneAssetClassId,
-  hydrateClassVariableValue,
-  type ClassKind,
   type DebugInspectSnapshot,
-  type GameSubsystemHooks,
-  type SceneSubsystemHooks,
-  type Subsystem,
-  type TickContext,
   type SceneActorHooks,
 } from "@babylonslate/object-model";
 import {
@@ -111,9 +101,8 @@ import { TweenRuntime } from "./tween-runtime";
 import { parseOverlayVisualStyle, supportsOverlayVisualStyle } from "@babylonslate/core";
 import type { AnimClipCatalogEntry, AnimGraphDocument } from "@babylonslate/anim-graph";
 import type { BehaviourTreeDocument, BlackboardDocument } from "@babylonslate/behaviour-tree";
-import { ScriptHost, compiledScriptKey, compiledScriptSourceLabel, type CompiledScript } from "./script-host";
-import { COMPILED_MODULE_LINE_OFFSET } from "./module-loader";
-import { shouldSpawnScriptedActor } from "./play-load";
+import { ScriptHost, type CompiledScript } from "./script-host";
+import { ScriptRuntime } from "./script-runtime";
 import type { PhysicsWorldSync } from "./physics-sync";
 import { RuntimePhysicsWorlds } from "./runtime-physics-worlds";
 import { RagdollWorldSync } from "./ragdoll-sync";
@@ -410,17 +399,6 @@ export function createInProcessRuntime(
   return new InProcessRuntime(options);
 }
 
-/** Hooks both `GameInstanceHooks` and `GameSubsystemHooks` accept. */
-type GameLifecycleHooks = {
-  onCreation: (self: BObject) => void;
-  onTick: (self: BObject, ctx: TickContext) => void;
-  onGameEnd: (self: BObject) => void;
-  onSceneStartLoading: (self: BObject, sceneName: string) => void;
-  onSceneFinishLoading: (self: BObject, sceneName: string) => void;
-  onFirstSceneLoaded: (self: BObject, sceneName: string) => void;
-  onSceneExit: (self: BObject, sceneName: string) => void;
-};
-
 /** Tile animation time is sent only while a tilemap could show an animated tile. */
 function hasAnimatedTiles(tilemaps: ReadonlyMap<string, TilemapPayload>, tilesets: ReadonlyMap<string, TilesetPayload>): boolean {
   return tilemaps.size > 0 && [...tilesets.values()].some(
@@ -442,7 +420,6 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly pauseReasons = new Set<SessionPauseReason>();
   private readonly pendingPauseChanges = new Map<SessionPauseReason, boolean>();
   private readonly assetPreloads = new RuntimeAssetPreloads(command => this.emit(command));
-  private readonly classAssetGuids = new Map<string, string>();
   private readonly demandAssetCatalog: boolean;
 
   notifyAssetPreloadResult(result: { preloadId: string; success: boolean; error?: string; progress?: number }): void {
@@ -491,8 +468,7 @@ class InProcessRuntime implements RuntimeDriver {
   private frameId = 0;
   private readonly removingActors = new WeakSet<Actor>();
   private readonly scriptHost: ScriptHost;
-  private readonly scriptSources = new Map<string, CompiledScript>();
-  private scriptSourceWork: Promise<void> = Promise.resolve();
+  private readonly scriptRuntime: ScriptRuntime;
   private readonly dataCatalog: RuntimeDataCatalog;
   private readonly sourceRenderTargets = new Map<string, RenderTargetPayload>();
   private readonly sourceRenderTargetTextures = new Map<string, RenderTargetTexturePayload>();
@@ -502,7 +478,6 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly movement: MovementWorldSync;
   private playScene: SerializedScene | undefined;
   private playSceneGuid: string;
-  private readonly gameInstanceClass: string;
   private readonly sceneLibrary = new Map<string, SerializedScene>();
   private readonly acquireScene?: AcquireRuntimeScene;
   private readonly sceneGuidByKey = new Map<string, string>();
@@ -522,24 +497,10 @@ class InProcessRuntime implements RuntimeDriver {
     releaseAssets: (ownerGuid) => this.assetPreloads.releaseOwner(ownerGuid),
     reportError: (error) => { this.reportError(error); },
   });
-  /**
-   * Actors each SceneSubsystem heard enter play (Scene Actor Spawned); only
-   * these report Scene Actor Destroyed to it.
-   */
-  private readonly sceneSubsystemActors = new WeakMap<SceneSubsystem, WeakSet<Actor>>();
-  /**
-   * Nonzero while the main Scene's own teardown removes its streams, layers
-   * and actors: its SceneSubsystems hear none of those notifications.
-   */
-  private sceneTeardownDepth = 0;
-  /** `Get <Subsystem>` matches by class id; cleared when live subsystems change. */
-  private readonly subsystemMatches = new Map<string, readonly Subsystem[]>();
-  private readonly ambiguousSubsystemWarnings = new Set<string>();
   private readonly cooperativeSceneLoading: CooperativeSceneLoadingOptions | null;
   private bootLoading = false;
   private stopped = false;
   private lifecycleId = 0;
-  private gameInstanceBound = false;
   /** A script `Possess Camera` outranks the authored per-camera option. */
   private cameraPossessedByScript = false;
   private possessedCameraSlotId: number | null = null;
@@ -662,7 +623,7 @@ class InProcessRuntime implements RuntimeDriver {
     removeSceneLayer: (layerGuid) => this.removeSceneLayer(layerGuid),
     releaseAssets: (ownerGuid) => this.assetPreloads.releaseOwner(ownerGuid),
     resetForSceneLoad: () => this.subsystems.resetForSceneLoad(),
-    duringSceneTeardown: (teardown) => this.duringSceneTeardown(teardown),
+    duringSceneTeardown: (teardown) => this.scriptRuntime.duringSceneTeardown(teardown),
     retireStreams: () => this.streams.retireAll(),
     emitSceneDebug: () => {
       this.navigation.emitDebug(true);
@@ -684,7 +645,7 @@ class InProcessRuntime implements RuntimeDriver {
     sceneRealizer: () => this.sceneRealizer,
     physics: () => this.physics,
     actorHooks: () => this.sceneActorHooks,
-    canSpawnActorClass: (classId) => this.canSpawnActorClass(classId),
+    canSpawnActorClass: (classId) => this.scriptRuntime.canSpawnActorClass(classId),
     realizeActor: (actor) => this.realizeActor(actor),
     removeActor: (actor) => this.removeOwnedActor(actor),
     publishSnapshot: () => this.snapshots.publish(),
@@ -771,7 +732,19 @@ class InProcessRuntime implements RuntimeDriver {
     const projectName = options.project?.name ?? "";
     const projectVersion = options.project?.version ?? "";
     this.demandAssetCatalog = options.classAssetGuids !== undefined;
-    for (const [classId, guid] of Object.entries(options.classAssetGuids ?? {})) this.classAssetGuids.set(classId, guid);
+    this.scriptRuntime = new ScriptRuntime(this.admission, {
+      gameInstanceClass: options.gameInstanceClass ?? "GameInstance",
+      classAssetGuids: options.classAssetGuids ?? {},
+    }, {
+      world: () => this.world,
+      stopped: () => this.stopped,
+      scriptHost: () => this.scriptHost,
+      streams: () => this.streams,
+      registerAnchors: (label, anchors) => this.registerAnchors(label, anchors),
+      deleteAnchors: (label) => { this.anchors.delete(label); },
+      bindUserCommand: (def) => this.bindUserCommand(def),
+      reportLog: (message, severity, category) => this.reportLog(message, severity, category),
+    });
     this.diagnosticsEnabled = options.includeDebugCommands ?? true;
     this.inspector = new RuntimeInspectorService({
       deferMaterialEdits: options.deferMaterialEdits === true,
@@ -835,7 +808,6 @@ class InProcessRuntime implements RuntimeDriver {
     this.acquireScene = options.acquireScene;
     this.playSceneGuid = options.playSceneGuid ?? "play-scene";
     this.navigation.replaceSceneNavMeshes(options.sceneNavmeshBytes ?? {});
-    this.gameInstanceClass = options.gameInstanceClass ?? "GameInstance";
     this.deferSceneModelsReady = options.deferSceneModelsReady === true;
     this.deferSceneLoadingPaint = options.deferSceneLoadingPaint === true;
     this.cooperativeSceneLoading = options.cooperativeSceneLoading
@@ -856,7 +828,7 @@ class InProcessRuntime implements RuntimeDriver {
       world: () => this.world,
       stopped: () => this.stopped,
       sessionMode: () => this.sessionMode,
-      classAssetGuid: (classId) => this.classAssetGuids.get(classId),
+      classAssetGuid: (classId) => this.scriptRuntime.classAssetGuid(classId),
       scriptHost: () => this.scriptHost,
       assetPreloads: () => this.assetPreloads,
       sceneRealizer: () => this.sceneRealizer,
@@ -885,7 +857,7 @@ class InProcessRuntime implements RuntimeDriver {
       emit: (command) => this.emit(command),
     });
     for (const command of options.consoleCommands ?? []) {
-      this.classAssetGuids.set(command.classId, command.assetGuid);
+      this.scriptRuntime.setClassAssetGuid(command.classId, command.assetGuid);
       this.bindUserCommand({ ...command, name: command.name || command.classId.toLowerCase() });
     }
     this.loopGuard = createInfiniteLoopGuard({
@@ -974,7 +946,7 @@ class InProcessRuntime implements RuntimeDriver {
           },
         };
       },
-      sceneSubsystemHooksFor: (classId) => this.sceneSubsystemHooks(classId),
+      sceneSubsystemHooksFor: (classId) => this.scriptRuntime.sceneSubsystemHooks(classId),
       // Strict gate: Tick only after On Init, while the main Scene may run.
       canTickSceneSubsystem: (subsystem) =>
         this.admission.isCreated(subsystem) && this.admission.canRunSceneSubsystem(subsystem),
@@ -1163,7 +1135,7 @@ class InProcessRuntime implements RuntimeDriver {
         scripts: () => this.scriptHost,
         audioParticles: this.audioParticles,
         tweens: this.tweens,
-        classAssetGuids: this.classAssetGuids,
+        classAssetGuids: this.scriptRuntime.classAssetGuids,
         demandAssetCatalog: this.demandAssetCatalog,
         assetPreloads: this.assetPreloads,
         spawn: (spawn) => this.spawnScriptedActor(spawn),
@@ -1229,7 +1201,7 @@ class InProcessRuntime implements RuntimeDriver {
       registerSaveActor: (actor, persistentId) => this.registerSaveActor(actor, persistentId),
       getSaveActorId: (actor) => this.boundaries.saveActorId(actor),
       resolveSaveActor: (id) => this.boundaries.findSaveActor(id) ?? this.world.findActor(id),
-      getSubsystem: (classId) => this.findSubsystem(classId),
+      getSubsystem: (classId) => this.scriptRuntime.findSubsystem(classId),
       getGameInstance: () => this.world.gameInstance,
       getSceneLoadingProgress: () => {
         const value = this.sceneRealizer.loadingProgress;
@@ -1288,7 +1260,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.subsystems.register(this.sceneRealizer);
 
     this.registerPlaySceneTypes();
-    this.bindGameInstance();
+    this.scriptRuntime.bindGameInstance();
 
     if (options.seedDemoActors !== false && !options.playScene) {
       this.seedDefaultActors();
@@ -1533,158 +1505,11 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   async loadScripts(scripts: readonly CompiledScript[]): Promise<void> {
-    return this.updateScriptSources(scripts, false);
+    return this.scriptRuntime.updateSources(scripts, false);
   }
 
   replaceScriptSources(scripts: readonly CompiledScript[]): Promise<void> {
-    return this.updateScriptSources(scripts, true);
-  }
-
-  private updateScriptSources(scripts: readonly CompiledScript[], replace: boolean): Promise<void> {
-    const work = this.scriptSourceWork.catch(() => {}).then(async () => {
-      if (this.stopped) throw new Error("The runtime stopped during script preparation.");
-      const requested = new Map(scripts.map((script) => [compiledScriptKey(script), script]));
-      const actors = this.world.getActors();
-      const owners = [this.world.gameInstance, this.world.currentScene, ...actors, ...actors.flatMap((actor) => actor.components),
-        ...this.world.getSceneLayers(), ...this.world.getGameSubsystems(), ...this.world.getSceneSubsystems(),
-        ...this.streams.scenes()];
-      const liveClasses = new Set(owners.filter((owner) => owner && !owner.destroyed)
-        .flatMap((owner) => this.world.classRegistry.ancestry(owner!.classId)));
-      for (const script of this.scriptSources.values())
-        if ((!replace || liveClasses.has(script.classId)) && !requested.has(compiledScriptKey(script))) requested.set(compiledScriptKey(script), script);
-      const ordered = parentFirstScriptOrder([...requested.values()], (classId) => this.world.classRegistry.has(classId));
-      await this.scriptHost.replaceScripts(ordered);
-      if (this.stopped) throw new Error("The runtime stopped during script preparation.");
-      const classes = this.world.classRegistry;
-      for (const classId of [...new Set([...this.scriptSources.values()].map((script) => script.classId))]
-        .sort((a, b) => classes.ancestry(b).length - classes.ancestry(a).length)) classes.unregister(classId);
-      for (const previous of this.scriptSources.values()) {
-        this.anchors.delete(compiledScriptSourceLabel(previous));
-        this.anchors.delete(previous.assetGuid);
-      }
-      this.scriptSources.clear();
-      const ownerAnchors = new Map<string, AnchorEntry[]>();
-      for (const script of ordered) {
-        this.classAssetGuids.set(script.classId, script.assetGuid);
-        this.registerScriptClass(script);
-        this.scriptSources.set(compiledScriptKey(script), script);
-        if (script.anchors.length > 0) {
-          this.registerAnchors(compiledScriptSourceLabel(script), script.anchors.map((anchor) => ({
-            ...anchor, line: anchor.line + COMPILED_MODULE_LINE_OFFSET,
-          })));
-          const anchors = ownerAnchors.get(script.assetGuid) ?? [];
-          anchors.push(...script.anchors);
-          ownerAnchors.set(script.assetGuid, anchors);
-        }
-        if (script.command) {
-          this.bindUserCommand({
-            ...script.command,
-            classId: script.classId,
-          });
-        }
-      }
-      for (const [guid, anchors] of ownerAnchors)
-        this.registerAnchors(guid, anchors.sort((a, b) => a.line - b.line || a.column - b.column));
-      this.applyGameInstanceClassDefaults();
-      this.installSubsystems();
-      for (const owner of owners) if (owner && !owner.destroyed) this.scriptHost.bindInterfaceHandlers(owner);
-    });
-    this.scriptSourceWork = work;
-    return work;
-  }
-
-  /**
-   * Instantiate the leaf subsystem classes the registry now knows. Real hosts
-   * load scripts once, before `World.start()`, so GameSubsystems' On Init can
-   * precede the Game Instance's. Scripts loaded after the World started (only
-   * a headless caller can do that) cannot honour that order: the installed
-   * GameSubsystems stay and new ones are reported, never started late.
-   * SceneSubsystem classes apply to every later main Scene.
-   */
-  private installSubsystems(): void {
-    const classes = this.world.classRegistry;
-    const classIds = classes.classIds();
-    this.subsystemMatches.clear();
-    this.world.setSceneSubsystemClasses(
-      instantiableSubsystemClassIds(classes, classIds, SCENE_SUBSYSTEM_CLASS_ID),
-    );
-    const gameClassIds = instantiableSubsystemClassIds(classes, classIds, GAME_SUBSYSTEM_CLASS_ID);
-    const subsystems = gameClassIds.map((classId) =>
-      this.world.createGameSubsystem({ classId, hooks: this.gameSubsystemHooks(classId) }));
-    try {
-      this.world.setGameSubsystems(subsystems);
-    } catch {
-      const installed = this.world.getGameSubsystems().map((subsystem) => subsystem.classId);
-      const missing = gameClassIds.filter((classId) => !installed.includes(classId));
-      if (missing.length > 0) {
-        this.reportLog(`GameSubsystems loaded after Play started are not created: ${missing.join(", ")}`, "warning", "subsystem");
-      }
-      return;
-    }
-    for (const subsystem of subsystems) this.scriptHost.bindInterfaceHandlers(subsystem);
-  }
-
-  /**
-   * The Game Instance is created before scripts register its class, so apply
-   * its class variable defaults, inherited interfaces and interface handlers
-   * once they are known (before `World.start()` fires On Init). Values already
-   * on the instance win, as with `World.createGameInstance`.
-   */
-  private applyGameInstanceClassDefaults(): void {
-    const gameInstance = this.world.gameInstance;
-    if (!gameInstance) return;
-    const classes = this.world.classRegistry;
-    for (const variable of classes.inheritedVariables(gameInstance.classId)) {
-      if (gameInstance.variables.has(variable.name)) continue;
-      const value = hydrateClassVariableValue(variable);
-      if (value !== undefined) gameInstance.setVariable(variable.name, value);
-    }
-    const interfaces = new Set(gameInstance.implementedInterfaces);
-    for (const iface of classes.inheritedInterfaces(gameInstance.classId)) {
-      interfaces.add(iface);
-    }
-    gameInstance.implementedInterfaces = [...interfaces];
-    this.scriptHost.bindInterfaceHandlers(gameInstance);
-  }
-
-  private registerScriptClass(script: CompiledScript): void {
-    const classes = this.world.classRegistry;
-    const requestedParent =
-      script.parentClassId?.trim() || "Actor";
-    const parentClassId = classes.has(requestedParent)
-      ? requestedParent
-      : "Actor";
-    const kind: ClassKind =
-      classes.get(parentClassId)?.kind ?? "actor";
-    const existingParent = classes.get(script.classId)?.parentClassId;
-    // `ensure` keeps an existing class's parent. Repair a user class registered
-    // before its script (the built-in demo `Enemy : Actor`) to the registered
-    // parent the script names; `reparent` refuses cycles, keeping the old one.
-    if (existingParent !== undefined && parentClassId === requestedParent &&
-      existingParent !== requestedParent && !isLockedEngineClassId(script.classId)) {
-      classes.reparent(script.classId, requestedParent);
-    }
-    classes.ensure({
-      id: script.classId,
-      parentClassId,
-      kind,
-      variables: [
-        ...Object.entries(script.actorDefaults?.properties ?? {}).map(([name, defaultValue]) => ({ name, type: "unknown", defaultValue })),
-        ...(script.variables ?? []).map((variable) => ({
-        name: variable.name,
-        type: variable.type,
-        defaultValue: variable.defaultValue,
-        ...(variable.container === "array" || variable.container === "map"
-          ? { container: variable.container }
-          : {}),
-        ...(variable.keyTypeId ? { keyTypeId: variable.keyTypeId } : {}),
-        ...(variable.keyTypeClassId
-          ? { keyTypeClassId: variable.keyTypeClassId }
-          : {}),
-      })),
-      ],
-      implementedInterfaces: [...(script.implementedInterfaces ?? [])],
-    });
+    return this.scriptRuntime.updateSources(scripts, true);
   }
 
   spawnScriptedActor(options: {
@@ -1696,7 +1521,7 @@ class InProcessRuntime implements RuntimeDriver {
   }): Actor | null {
     if (this.stopped) return null;
     if (!this.streams.canSpawnFor(options.streamOwner)) return null;
-    if (!this.canSpawnActorClass(options.classId)) return null;
+    if (!this.scriptRuntime.canSpawnActorClass(options.classId)) return null;
     const hooks = this.scriptHost.hooksFor(options.classId) ??
       (this.world.classRegistry.isA(options.classId, "RenderTargetCapture") ? {} : undefined);
     if (!hooks) return null;
@@ -2325,180 +2150,6 @@ class InProcessRuntime implements RuntimeDriver {
     return this.renderSlots.guidSlot(guid);
   }
 
-  private bindGameInstance(): void {
-    if (this.gameInstanceBound) return;
-    this.gameInstanceBound = true;
-    const classId = this.gameInstanceClass;
-    const hooks = this.gameLifecycleHooks(classId);
-    this.world.setGameInstance(
-      this.world.createGameInstance({
-        classId,
-        guid: "runtime-gi",
-        variables: { ticks: 0 },
-        hooks: {
-          ...hooks,
-          onTick: (self, ctx) => {
-            self.setVariable(
-              "ticks",
-              Number(self.getVariable("ticks")) + 1,
-            );
-            hooks.onTick(self, ctx);
-          },
-        },
-      }),
-    );
-  }
-
-  /**
-   * Script binding shared by the Game Instance and GameSubsystems (full
-   * parity). Scripts resolve lazily, so objects built before `loadScripts`
-   * still run them. On End, and On Scene Exit once Play stops, are the final
-   * lifecycle.
-   */
-  private gameLifecycleHooks(classId: string): GameLifecycleHooks {
-    const sceneEvent = (event: string) => (self: BObject, sceneName: string) => {
-      this.admission.run(self, () => this.admission.guard(() => this.scriptHost.invokeEvent(classId, event, self, { sceneName })));
-    };
-    return {
-      onCreation: (self) => {
-        const hooks = this.scriptHost.hooksFor(classId);
-        this.admission.runCreation(self, () => hooks?.onCreation?.(self));
-      },
-      onTick: (self, ctx) => {
-        const hooks = this.scriptHost.hooksFor(classId);
-        this.admission.guard(() => hooks?.onTick?.(self, ctx));
-      },
-      onGameEnd: (self) => {
-        this.admission.guard(() =>
-          this.scriptHost.invokeGameShutdownEvent(classId, "onEnd", self),
-        );
-      },
-      onSceneStartLoading: sceneEvent("onSceneStartLoading"),
-      onSceneFinishLoading: sceneEvent("onSceneFinishLoading"),
-      onFirstSceneLoaded: sceneEvent("onFirstSceneLoaded"),
-      onSceneExit: (self, sceneName) => {
-        this.admission.guard(() => {
-          if (this.stopped) {
-            this.scriptHost.invokeGameShutdownEvent(classId, "onSceneExit", self, { sceneName });
-          } else {
-            this.admission.run(self, () => this.scriptHost.invokeEvent(classId, "onSceneExit", self, { sceneName }));
-          }
-        });
-      },
-    };
-  }
-
-  private gameSubsystemHooks(classId: string): GameSubsystemHooks {
-    const hooks = this.gameLifecycleHooks(classId);
-    return {
-      ...hooks,
-      onGameEnd: (self) => {
-        this.subsystemMatches.clear();
-        hooks.onGameEnd(self);
-      },
-    };
-  }
-
-  /**
-   * Script binding for a SceneSubsystem the World creates with the main Scene.
-   * Interface handlers bind at creation, so it is callable while the Scene
-   * prepares. On Init and every notification wait in its owner queue until
-   * the Scene may run, preserving the World's order (On Init first). On End
-   * is final and always runs, dropping anything still queued.
-   */
-  private sceneSubsystemHooks(classId: string): SceneSubsystemHooks {
-    const notify = (self: SceneSubsystem, event: string, args: Record<string, unknown>) => {
-      if (!this.sceneSubsystemNotificationsMuted()) this.runSceneSubsystemEvent(self, classId, event, args);
-    };
-    return {
-      onCreation: (self) => {
-        this.subsystemMatches.clear();
-        this.scriptHost.bindInterfaceHandlers(self);
-        this.admission.runCreation(self, () => this.scriptHost.hooksFor(classId)?.onCreation?.(self));
-      },
-      onTick: (self, ctx) =>
-        this.admission.guard(() => this.scriptHost.hooksFor(classId)?.onTick?.(self, ctx)),
-      onEnd: (self) => {
-        this.subsystemMatches.clear();
-        this.admission.drop(self);
-        this.admission.guard(() => this.scriptHost.invokeGameShutdownEvent(classId, "onEnd", self));
-      },
-      onSceneLoaded: (self, sceneName) => notify(self, "onSceneLoaded", { sceneName }),
-      onStreamedSceneLoaded: (self, streamingActor, scene) =>
-        notify(self, "onStreamedSceneLoaded", { streamingActor, scene }),
-      onStreamedSceneUnloaded: (self, streamingActor, scene) =>
-        notify(self, "onStreamedSceneUnloaded", { streamingActor, scene }),
-      onSceneLayerAdded: (self, sceneLayer) => notify(self, "onSceneLayerAdded", { sceneLayer }),
-      onSceneLayerRemoved: (self, sceneLayer) => notify(self, "onSceneLayerRemoved", { sceneLayer }),
-      onSceneActorSpawned: (self, actor) => {
-        if (this.sceneSubsystemNotificationsMuted()) return;
-        // The World announces at spawn commit; the actor enters play when its
-        // own queue runs, so Spawned waits there, right before its Begin Play.
-        this.admission.run(actor, () => {
-          if (self.ended) return;
-          let entered = this.sceneSubsystemActors.get(self);
-          if (!entered) this.sceneSubsystemActors.set(self, entered = new WeakSet());
-          entered.add(actor);
-          this.runSceneSubsystemEvent(self, classId, "onSceneActorSpawned", { actor });
-        });
-      },
-      onSceneActorDestroyed: (self, actor) => {
-        if (this.sceneSubsystemActors.get(self)?.delete(actor)) notify(self, "onSceneActorDestroyed", { actor });
-      },
-    };
-  }
-
-  /**
-   * The main Scene's own teardown is silent for its SceneSubsystems: Stop
-   * (streams, layers, the cancelled realization), Change Scene's stream
-   * retirement and a failed realization's cleanup.
-   */
-  private sceneSubsystemNotificationsMuted(): boolean {
-    return this.stopped || this.sceneTeardownDepth > 0;
-  }
-
-  private duringSceneTeardown(teardown: () => void): void {
-    this.sceneTeardownDepth++;
-    try {
-      teardown();
-    } finally {
-      this.sceneTeardownDepth--;
-    }
-  }
-
-  /** Dispatch after On Init and any earlier queued notification, in order. */
-  private runSceneSubsystemEvent(
-    subsystem: SceneSubsystem,
-    classId: string,
-    event: string,
-    args: Record<string, unknown>,
-  ): void {
-    this.admission.runAfterQueued(subsystem, () =>
-      this.admission.guard(() => this.scriptHost.invokeEvent(classId, event, subsystem, args)));
-  }
-
-  /**
-   * `Get <Subsystem>`: compiled graphs evaluate it at every use, so matches
-   * are cached until the live subsystems change. More than one match takes
-   * the first (class-id order) and warns once per class id.
-   */
-  private findSubsystem(classId: string): Subsystem | null {
-    let matches = this.subsystemMatches.get(classId);
-    if (!matches) {
-      matches = this.world.findSubsystems(classId);
-      this.subsystemMatches.set(classId, matches);
-      if (matches.length > 1 && !this.ambiguousSubsystemWarnings.has(classId)) {
-        this.ambiguousSubsystemWarnings.add(classId);
-        this.reportLog(
-          `Get ${classId} matches ${matches.length} subsystems (${matches.map((match) => match.classId).join(", ")}); using ${matches[0]!.classId}.`,
-          "warning",
-          "subsystem",
-        );
-      }
-    }
-    return matches[0] ?? null;
-  }
-
   private registerPlaySceneTypes(): void {
     const guids = new Set<string>();
     if (this.playSceneGuid) guids.add(this.playSceneGuid);
@@ -2571,10 +2222,7 @@ class InProcessRuntime implements RuntimeDriver {
     }
     this.world.end();
     this.scriptHost.dispose();
-    for (const classId of [...new Set([...this.scriptSources.values()].map((script) => script.classId))]
-      .sort((a, b) => this.world.classRegistry.ancestry(b).length - this.world.classRegistry.ancestry(a).length))
-      this.world.classRegistry.unregister(classId);
-    this.scriptSources.clear();
+    this.scriptRuntime.unregisterClasses();
     this.anchors.clear();
     this.sceneRealizer.releaseSceneSources();
     this.playScene = undefined;
@@ -2850,17 +2498,6 @@ class InProcessRuntime implements RuntimeDriver {
     }
     this.onCommand?.(command);
   }
-
-  private canSpawnActorClass(classId: string): boolean {
-    if (!shouldSpawnScriptedActor(classId)) return false;
-    const classes = this.world.classRegistry;
-    if (classes.isA(classId, "SceneLayerActor")) return false;
-    // Registration copies the parent's kind; a repaired parent (see
-    // registerScriptClass) can change it, so read it from the engine base.
-    const engineBase = classes.ancestry(classId).find(isLockedEngineClassId);
-    const kind = classes.get(engineBase ?? classId)?.kind;
-    return kind !== "object" && kind !== "gameInstance";
-  }
 }
 
 function nowMs(): number {
@@ -2869,33 +2506,3 @@ function nowMs(): number {
     : Date.now();
 }
 
-/**
- * Order scripts so a user parent class registers before its children; the
- * incoming order is kept otherwise. A parent that is missing, or reached again
- * through a parent cycle, falls back to `Actor` like any unknown parent.
- */
-function parentFirstScriptOrder(
-  scripts: readonly CompiledScript[],
-  isRegistered: (classId: string) => boolean,
-): CompiledScript[] {
-  const indicesByClassId = new Map<string, number[]>();
-  scripts.forEach((script, index) => {
-    const indices = indicesByClassId.get(script.classId) ?? [];
-    indices.push(index);
-    indicesByClassId.set(script.classId, indices);
-  });
-  const visited = new Set<number>();
-  const ordered: CompiledScript[] = [];
-  const visit = (index: number): void => {
-    if (visited.has(index)) return;
-    visited.add(index);
-    const script = scripts[index]!;
-    const parentClassId = script.parentClassId?.trim();
-    if (parentClassId && parentClassId !== script.classId && !isRegistered(parentClassId)) {
-      for (const parentIndex of indicesByClassId.get(parentClassId) ?? []) visit(parentIndex);
-    }
-    ordered.push(script);
-  };
-  scripts.forEach((_, index) => visit(index));
-  return ordered;
-}
