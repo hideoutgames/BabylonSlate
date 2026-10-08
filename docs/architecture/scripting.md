@@ -16,9 +16,9 @@ paused wall-clock interval. Boot completion does not release an existing hold.
 
 Engine delays count simulation time: each tick subtracts the step captured when
 the tick began (`dt` times time dilation). Every per-tick system (script Tick,
-physics, tweens, Delays, animation graphs, behaviour trees, the crowd) uses that
-same step for the whole tick, so a `slomo` or script dilation change made during
-a tick takes effect from the next tick.
+physics, water and Sample Water Surface, tweens, Delays, animation graphs,
+behaviour trees, the crowd) uses that same step for the whole tick, so a `slomo`
+or script dilation change made during a tick takes effect from the next tick.
 Engine delays, tween completion, ready-scene lifecycle, audio completion and
 scalability callbacks wait for game-owner admission while paused. Stop cancels
 waiting engine continuations. Asset I/O and readiness may finish during a pause.

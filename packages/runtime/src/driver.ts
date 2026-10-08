@@ -106,6 +106,7 @@ import { createWorldInputProvider } from "./runtime-host-input";
 import { createNavigationHostBindings } from "./runtime-host-navigation";
 import { createOutputHostBindings } from "./runtime-host-output";
 import { createPhysicsHostBindings } from "./runtime-host-physics";
+import { WaterClock } from "./water-world";
 import {
   createIlluminationHostBindings,
   createMaterialHostBindings,
@@ -192,6 +193,8 @@ class InProcessRuntime implements RuntimeDriver {
   private lastRenderPathStatus: RenderPathStatus | null = null;
   private tilemapAnimationTimeMs = 0;
   private hasAnimatedTiles = false;
+  /** Simulated water time: physics, buoyancy, script queries and Play water rendering share it. */
+  private readonly waterClock = new WaterClock();
   /** Frame index (live actor per guid) the BT and crowd ticks share. */
   private navFrameActors: Map<string, Actor> | null = null;
 
@@ -900,7 +903,7 @@ class InProcessRuntime implements RuntimeDriver {
       onPhysics: (ctx) => {
         this.dynamicMeshes.flush();
         this.ragdolls.sync();
-        if (this.admission.canTickScene()) this.physics.stepMain(ctx.dt, ctx.tickIndex, (sync) => this.movement.step(ctx.dt, sync));
+        if (this.admission.canTickScene()) this.physics.stepMain(ctx.dt, this.waterClock.stepTime, (sync) => this.movement.step(ctx.dt, sync));
         if (this.admission.hasReadyLayers()) this.physics.stepOverlay(ctx.dt, (sync) => this.movement.step(ctx.dt, sync));
         this.ragdolls.afterStep();
         if (this.admission.canTickScene()) this.cables.step(ctx.dt, this.physics.gravity, this.frameId + 1);
@@ -1098,7 +1101,7 @@ class InProcessRuntime implements RuntimeDriver {
         physics: () => this.physics.main,
         overlayPhysics: () => this.physics.overlay,
         ragdolls: this.ragdolls,
-        dt: this.dt,
+        waterTime: () => this.waterClock.time,
         projectCursorToScene: (channel, options) => this.camera.projectCursorToScene(channel, options),
       }),
       ...createScalabilityHostBindings({
@@ -1791,8 +1794,9 @@ class InProcessRuntime implements RuntimeDriver {
   /**
    * One fixed step; `TickPipeline` owns the gate, timing, stats and trace
    * around it. The step (fixed step × time dilation) is captured once here and
-   * passed to every phase, so a dilation change made during the tick applies
-   * from the next tick. Phases, in order:
+   * passed to every phase (and advances the water clock with the World clock),
+   * so a dilation change made during the tick applies from the next tick.
+   * Phases, in order:
    * 1. Input: drain and resolve queued input, reset prints, log gamepad changes.
    * 2. World (timed): tweens, text reveal, painters, Scene Layer focus, the
    *    World tick (actors, then physics through `onPhysics`), deferred owner
@@ -1806,6 +1810,7 @@ class InProcessRuntime implements RuntimeDriver {
   private runTick(): void {
     const simDt = this.simulationDt();
     this.world.clock.dt = simDt;
+    this.waterClock.advance(simDt);
     const pending = this.resolveTickInput(simDt);
     this.ticks.beginPhaseTiming();
     this.tickWorld(pending, simDt);

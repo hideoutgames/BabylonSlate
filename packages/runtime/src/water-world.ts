@@ -105,6 +105,28 @@ class WaterState {
   }
 }
 
+/**
+ * The session's simulated water time: it advances by each tick's captured (dilated) step, so waves, drift,
+ * buoyancy and script queries slow down with time dilation and stop while paused. Advanced once per World tick,
+ * alongside the World clock, whether or not the main Scene steps. A run of ticks with the same step is computed as
+ * `start + ticks × step`, so an undilated session reproduces the former `tickIndex × dt` clock exactly.
+ */
+export class WaterClock {
+  /** Water time at the start of the current tick: the physics step (and buoyancy) evaluates the water here. */
+  stepTime = 0;
+  /** Water time including the current tick (after it, between ticks): script queries sample here. */
+  time = 0;
+  private start = 0;
+  private ticks = 0;
+  private step = NaN;
+
+  advance(step: number): void {
+    this.stepTime = this.time;
+    if (step !== this.step) { this.start = this.time; this.ticks = 0; this.step = step; }
+    this.time = this.start + ++this.ticks * step;
+  }
+}
+
 /** Component attachments have the same transform meaning in physics and rendering. */
 function componentWorldTransform(component: ActorComponent, actor: Actor, world: Transform): Transform {
   const chain = [component.transform];

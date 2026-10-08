@@ -10,8 +10,8 @@ interface PhysicsHostDeps {
   /** Scene Layer (2D overlay) physics; replaced when the native backend loads. */
   overlayPhysics(): PhysicsWorldSync;
   ragdolls: Pick<RagdollWorldSync, "addImpulse" | "retireActor">;
-  /** Fixed simulation step, for water time. */
-  dt: number;
+  /** Simulated water time including the current tick (`WaterClock.time`). */
+  waterTime(): number;
   projectCursorToScene: NonNullable<ScriptHostServices["projectCursorToScene"]>;
 }
 
@@ -21,9 +21,9 @@ export function createPhysicsHostBindings(deps: PhysicsHostDeps): Pick<ScriptHos
   "addImpulse" | "moveCharacter" | "teleportActor"> {
   return {
     sampleWater: (position, actorId) =>
-      // Current at call time in its own state (reused within the tick while nothing it read changed); the step
-      // keeps its own evaluation and clock.
-      deps.physics().water.query(deps.world().getActors(), deps.world().clock.tickIndex * deps.dt, position, actorId),
+      // Current at call time in its own state (reused within the tick while nothing it read changed), at the
+      // dilated simulated water time; the step keeps its own evaluation and clock.
+      deps.physics().water.query(deps.world().getActors(), deps.waterTime(), position, actorId),
     lineTrace: (start, end, options) =>
       deps.physics().lineTrace(start, end, options),
     projectCursorToScene: deps.projectCursorToScene,

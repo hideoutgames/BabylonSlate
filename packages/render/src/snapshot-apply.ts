@@ -1,6 +1,6 @@
 import { sceneShadowController } from "./shadow-controller";
 import { setFogVolumesVisible } from "./fog-volumes";
-import { createWaterMesh } from "./water-mesh";
+import { createWaterMesh, sampleSceneWaterFrame } from "./water-mesh";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
 import { createCableMesh, sampleCableFrame } from "./cable-mesh";
 import { createDynamicRuntimeMesh } from "./dynamic-runtime-mesh";
@@ -2079,6 +2079,7 @@ export function applySnapshotToScene(
   snapshot: SampledSnapshot,
 ): void {
   sampleCableFrame(scene, snapshot.frameId, snapshot.previousFrameId ?? snapshot.frameId, snapshot.alpha);
+  sampleSceneWaterFrame(scene, snapshot.frameId, snapshot.previousFrameId ?? snapshot.frameId, snapshot.alpha);
   reconcileSnapshotVisuals(scene, binding, snapshot);
   const count = snapshot.actorCount ?? snapshot.actors.length;
   for (let i = 0; i < count; i++) {

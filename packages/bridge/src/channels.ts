@@ -440,7 +440,8 @@ export type CommandMessage =
   | { type: "captureRagdollPose"; slotId: number; requestId: string; boneNames: string[] }
   | { type: "setRagdollPose"; slotId: number; requestId: string; bones: import("@babylonslate/core").RagdollBonePose[] }
   | { type: "clearRagdollPose"; slotId: number; requestId: string }
-  | { type: "waterTime"; seconds: number }
+  /** Simulated water time the main physics step evaluated, for the snapshot frame that step publishes. */
+  | { type: "waterTime"; seconds: number; frameId: number }
   | { type: "setActorOutlines"; slotId: number; actorId: string; outlines: import("@babylonslate/core").OutlineBinding[] }
   | { type: "setActorDeformers"; slotId: number; actorId: string; revision: number; deformers: import("@babylonslate/core").DeformerBinding[] }
   | { type: "setFogVolumes"; slotId: number; actorId: string; volumes: import("@babylonslate/core").FogVolumeBinding[] }
