@@ -17,9 +17,11 @@
  * Wave Scale 1 and horizontal scale λ = 1:
  * - layer 2c     = (Dx, H, Dz, ∂Dx/∂z) of cascade c: Gerstner offset, height, and the shear term;
  * - layer 2c + 1 = (∂H/∂x, ∂H/∂z, ∂Dx/∂x, ∂Dz/∂z): slope and the Jacobian diagonal minus one (∂Dz/∂x = ∂Dx/∂z).
- * - Texel (i, j) of cascade c holds the field at world (X, Z) = (i, j) · L_c / N (mod L_c, `patchSizes[c]`): sample at
- *   uv = (X, Z) / L_c + 0.5 / N with layer 2c or 2c + 1. Under a floating origin, add `fract(origin / L_c)` from the CPU
- *   in float64 instead of passing absolute positions.
+ * - Texel (i, j) of cascade c holds the field at p = (i, j) · L_c / N (mod L_c, `patchSizes[c]`) in the cascade's turned
+ *   frame p = R(−θ_c)·(X, Z), θ_c = `WATER_FFT_CASCADE_TURNS[c]`: sample at uv = p / L_c + 0.5 / N with layer 2c or
+ *   2c + 1, and turn the outputs back to the world: slope and offset by R(θ_c), the ∂D tensor by R(θ_c)·∂D·R(θ_c)ᵀ.
+ *   Under a floating origin, add `fract(R(−θ_c)·origin / L_c)` from the CPU in float64 instead of passing absolute
+ *   positions.
  * Consumer contract (built-in water follows it, `SLATE_WATER_FFT` in `water-material.ts`):
  * - Multiply every channel by g = `amplitudeGain` (Detail Waves) · Wave Scale. H and ∂H/∂x, ∂H/∂z are then final.
  * - Scale the horizontal terms (Dx, Dz and the three ∂D terms) by λ = Steepness · bank gain (`waterBankGain` with the

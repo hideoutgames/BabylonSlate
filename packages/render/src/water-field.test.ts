@@ -6,7 +6,7 @@ import { createWaterMesh, setSceneWaterTime, updateSceneWater } from "./water-me
 import { createWaterRemovalMesh, sceneWaterRemovals } from "./water-removal-mesh";
 import { applyAssignMesh, createSnapshotSceneBinding } from "./snapshot-apply";
 import {
-  distanceTransform, WATER_FIELD_DEPTH_RANGE, WATER_FIELD_EDGE_RAMP, WATER_FIELD_SHORE_RANGE, WATER_FIELD_TERRAIN_ALPHA, WaterField,
+  distanceTransform, WATER_FIELD_DEPTH_RANGE, WATER_FIELD_EDGE_RAMP, WATER_FIELD_MOVE_MS, WATER_FIELD_SHORE_RANGE, WATER_FIELD_TERRAIN_ALPHA, WaterField,
 } from "./water-field";
 
 type FieldView = { data: Uint8Array; width: number; height: number; bounds: number[]; depthRange?: readonly [number, number]; fineDepthMin: number; fineDepthSpan: number };
@@ -34,6 +34,20 @@ describe("Water field", () => {
     expect(grid[0]).toBe(2);
   });
 
+  it("finishes only a requested region, exactly up to its cap, as contact rebuilds read it", () => {
+    const width = 41, height = 33, seeds = new Float32Array(width * height).fill(1e20);
+    // Scattered seeds, some with a vertical offset, around and outside the region.
+    for (let i = 0; i < 40; i++) seeds[(i * 7919) % seeds.length] = (i % 3) * 0.7;
+    const full = distanceTransform(seeds.slice(), width, height);
+    const region = { x0: 9, z0: 6, x1: 30, z1: 21, cap: 36 };
+    const part = distanceTransform(seeds.slice(), width, height, region);
+    for (let z = region.z0; z < region.z1; z++) for (let x = region.x0; x < region.x1; x++) {
+      const i = z * width + x;
+      if (full[i]! <= region.cap) expect(part[i]).toBe(full[i]);
+      else expect(part[i]).toBeGreaterThan(region.cap);
+    }
+  });
+
   it("records true depth over terrain and the shoreline", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     new FreeCamera("camera", new Vector3(0, 30, -30), scene);
@@ -50,7 +64,10 @@ describe("Water field", () => {
       expect(east.shore).toBeGreaterThan(8);
       expect(inland.depth).toBeLessThanOrEqual(0);
       expect(inland.shore).toBeLessThan(0);
-      // A vertical-only water move changes terrain depth even when its X/Z bounds stay fixed.
+      // A vertical-only water move changes terrain depth even when its X/Z bounds stay fixed (once the refill interval
+      // after the field's last fill has passed).
+      const clock = performance.now() + WATER_FIELD_MOVE_MS;
+      vi.spyOn(performance, "now").mockReturnValue(clock);
       ocean.position.y = 2;
       updateSceneWater(scene);
       expect(texel(fieldOf(ocean), 15, -10).depth).toBeCloseTo(6, 0);
@@ -58,7 +75,7 @@ describe("Water field", () => {
       expect(sceneWaterRemovals(scene).map((entry) => entry.mesh)).toEqual([hole]);
       hole.dispose();
       expect(sceneWaterRemovals(scene)).toEqual([]);
-    } finally { scene.dispose(); engine.dispose(); }
+    } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
   });
   it("realizes a Play removal volume as an invisible cutter with its live transform", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
@@ -96,6 +113,34 @@ describe("Water field", () => {
       }
       // ...while dry land still reads as dry below the lowest trough.
       expect(texel(view, 9.5, 0).fineDepth).toBeLessThan(-0.5);
+    } finally { field?.dispose(); scene.dispose(); engine.dispose(); }
+  });
+
+  it("samples a varying rest height sparsely but keeps depth within a few centimetres, and knows where the water ends", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    let field: WaterField | undefined;
+    try {
+      const surface = MeshBuilder.CreateGround("water", { width: 20, height: 20 }, scene);
+      surface.metadata = { slateWater: true };
+      createLandscapeMesh(scene, "floor", { width: 30, depth: 30, subdivisions: 4, heights: Array(25).fill(-3) });
+      // A rest height bending over metres (as a blend between bodies does), with no water beyond 8 m of the centre.
+      let calls = 0;
+      const level = (x: number, z: number) => 0.4 * Math.sin(x / 3) * Math.cos(z / 4);
+      const surfaceY = (x: number, z: number) => { calls++; return Math.hypot(x, z) < 8 ? level(x, z) : null; };
+      field = new WaterField(scene, { mesh: surface, unbounded: false, amplitude: 0.5, contactRange: 1, surfaceY });
+      field.update();
+      const view = field as unknown as FieldView, cells = view.width * view.height;
+      // Far fewer rest-height evaluations than cells...
+      expect(calls).toBeLessThan(cells / 4);
+      // ...and the stored fine depth (3 m of floor below the rest height) still follows it within a step or so.
+      for (let x = -7; x <= 7; x += 0.9) for (let z = -5; z <= 5; z += 1.3) {
+        if (Math.hypot(x, z) > 7.5) continue;
+        const cell = 1 / (view.bounds[2]! * view.width);
+        const cx = view.bounds[0]! + (Math.floor((x - view.bounds[0]!) / cell) + 0.5) * cell, cz = view.bounds[1]! + (Math.floor((z - view.bounds[1]!) / cell) + 0.5) * cell;
+        expect(Math.abs(texel(view, x, z).fineDepth - (level(cx, cz) + 3))).toBeLessThan(0.03);
+      }
+      // Beyond the water's edge nothing is known.
+      expect(texel(view, 9.5, 0).known).toBe(false);
     } finally { field?.dispose(); scene.dispose(); engine.dispose(); }
   });
 
@@ -197,23 +242,32 @@ describe("Water field", () => {
   it("follows landscapes added, moved, hidden and removed after the water, and refills nothing on unchanged frames", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     new FreeCamera("camera", new Vector3(0, 30, -30), scene).setTarget(Vector3.Zero());
+    let clock = 1000;
+    vi.spyOn(performance, "now").mockImplementation(() => clock);
+    // A frame some time after the last edit (fields refill at most every WATER_FIELD_MOVE_MS while edits keep coming).
+    const later = () => { clock += WATER_FIELD_MOVE_MS; updateSceneWater(scene); };
     try {
       const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 30, length: 30 }), createDefaultWaterDefinition());
       const field = liveField(lake);
       expect(field.texture).toBeNull();
       const floor = createLandscapeMesh(scene, "floor", { width: 40, depth: 40, subdivisions: 4, heights: Array(25).fill(-3) });
-      updateSceneWater(scene);
+      later();
       expect(texel(fieldOf(lake), 0, 0).depth).toBeCloseTo(3, 0);
-      floor.position.y = -2; floor.computeWorldMatrix(true); updateSceneWater(scene);
+      floor.position.y = -2; floor.computeWorldMatrix(true); later();
       expect(texel(fieldOf(lake), 0, 0).depth).toBeCloseTo(5, 0);
       const uploads = [vi.spyOn(engine, "updateRawTexture"), vi.spyOn(engine, "createRawTexture")];
-      for (let frame = 0; frame < 3; frame++) updateSceneWater(scene);
+      for (let frame = 0; frame < 3; frame++) later();
       for (const upload of uploads) expect(upload).not.toHaveBeenCalled();
-      floor.setEnabled(false); updateSceneWater(scene);
+      // A landscape moving every frame refills the field at most every WATER_FIELD_MOVE_MS, and its last pose lands.
+      for (let frame = 0; frame < 9; frame++) { floor.position.y -= 0.1; floor.computeWorldMatrix(true); clock += 1000 / 60; updateSceneWater(scene); }
+      expect(uploads[0]!.mock.calls.length).toBe(1);
+      later();
+      expect(texel(fieldOf(lake), 0, 0).depth).toBeCloseTo(5.9, 0);
+      floor.setEnabled(false); later();
       expect(field.texture).toBeNull();
-      floor.setEnabled(true); updateSceneWater(scene);
-      expect(texel(fieldOf(lake), 0, 0).depth).toBeCloseTo(5, 0);
-      floor.dispose(); updateSceneWater(scene);
+      floor.setEnabled(true); later();
+      expect(texel(fieldOf(lake), 0, 0).depth).toBeCloseTo(5.9, 0);
+      floor.dispose(); later();
       expect(field.texture).toBeNull();
     } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
   });

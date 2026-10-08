@@ -64,6 +64,8 @@ export const PROJECT_RENDER_SETTING_OWNERS = {
   cel: "independent",
   environmentLighting: "independent",
   effects: "independent",
+  // Water Blend Distance shapes physics too, so no quality tier may change it.
+  water: "independent",
   customResolution: "independent",
   width: "independent",
   height: "independent",

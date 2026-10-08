@@ -23,6 +23,7 @@ import {
   type RenderEffectsSettings,
   WATER_QUALITY_FIELDS,
   type WaterQuality,
+  normalizeWaterBlendDistance,
 } from "@babylonslate/core";
 import { ColorGradingSource } from "./color-grading";
 import type { MeshAssetContext } from "./mesh-assets";
@@ -35,7 +36,7 @@ import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { clampWaterQualityToDevice, type WaterQualityDeviceClamp } from "./water-quality-device";
 
 export type RenderShadingSettings = Partial<
-  Pick<RenderProjectSettings, "mode" | "cel" | "shadows" | "quality" | "environmentLighting" | "renderPath" | "gpuBackend" | "effects">
+  Pick<RenderProjectSettings, "mode" | "cel" | "shadows" | "quality" | "environmentLighting" | "renderPath" | "gpuBackend" | "effects" | "water">
 >;
 type SceneRendering = {
   mode: RenderMode;
@@ -285,6 +286,14 @@ export function followSceneRenderSettings(scene: Scene, owner: Scene): void {
   settingsOwners.set(scene, root);
   sceneRenderingSettings(root).followers.add(scene);
   if (!sameWaterQuality(before, sceneWaterQuality(scene))) markSceneReadinessDirty(scene);
+}
+
+/**
+ * Project Water Blend Distance for `scene` (metres; 0 when blending is off), through the Scene it follows. Not a quality
+ * setting: worker water queries read the same project value. Allocation-free, so the water update reads it every frame.
+ */
+export function sceneWaterBlendDistance(scene: Scene): number {
+  return normalizeWaterBlendDistance(sceneRenderingSettings(renderSettingsOwner(scene)).project.water?.blendDistance);
 }
 
 /**

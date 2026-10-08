@@ -3,7 +3,7 @@ import {
   createDefaultWaterDefinition, createSeededRng, normalizeWaterDefinition, waterWaveSet, type WaterDefinition, type WaterWaveSet,
 } from "@babylonslate/core";
 import {
-  WATER_FFT_PERIOD, waterFftBandVariance, waterFftCycle, waterFftInitialSpectrum, waterFftInverse, waterFftLayout,
+  WATER_FFT_CASCADE_TURNS, WATER_FFT_PERIOD, waterFftBandVariance, waterFftCycle, waterFftInitialSpectrum, waterFftInverse, waterFftLayout,
   waterFftSpectrumBuild, waterFftSynthesize, type WaterFftLayout,
 } from "./water-fft-spectrum";
 
@@ -118,7 +118,9 @@ describe("FFT ocean spectrum and CPU reference", () => {
       const definition = water({ waveModel, waveDirection: 40, waveSpread: 0.2 });
       const set = waterWaveSet(definition);
       expect(waterFftLayout(set, 64, 2).bandEdges[0]).toBe(set.cutoffK);
-      let ratio = 0, sumX = 0, sumZ = 0, outOfBand = 0;
+      let ratio = 0, outOfBand = 0;
+      // Energy-weighted heading sums per cascade, in its texture frame and turned back to the world.
+      const texel = [[0, 0], [0, 0]], world = [[0, 0], [0, 0]];
       const seeds = 24;
       for (let seed = 0; seed < seeds; seed++) {
         const seeded = waterWaveSet(water({ waveModel, waveDirection: 40, waveSpread: 0.2, waveSeed: seed * 101 + 7 }));
@@ -126,12 +128,16 @@ describe("FFT ocean spectrum and CPU reference", () => {
         const layers = waterFftSynthesize(spectrum, layout, waterFftCycle(seed * 1.3, layout.timeScale));
         for (let cascade = 0; cascade < layout.cascades; cascade++) {
           const scale = TAU / layout.patchSizes[cascade]!, low = layout.bandEdges[cascade]!, high = layout.bandEdges[cascade + 1]!;
+          const cos = Math.cos(WATER_FFT_CASCADE_TURNS[cascade]!), sin = Math.sin(WATER_FFT_CASCADE_TURNS[cascade]!);
           for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
             const i = (y * 64 * layout.cascades + cascade * 64 + x) * 4, power = spectrum[i]! ** 2 + spectrum[i + 1]! ** 2;
             const kx = (x < 32 ? x : x - 64) * scale, kz = (y < 32 ? y : y - 64) * scale, k = Math.hypot(kx, kz);
             // Inside the cascade's own band only, so neither the analytic band nor another cascade counts twice.
             if ((k < low * (1 - 1e-9) || k >= high * (1 + 1e-9)) && power !== 0) outOfBand++;
-            if (k > 0) { sumX += power * kx / k; sumZ += power * kz / k; }
+            if (k > 0) {
+              texel[cascade]![0] += power * kx / k; texel[cascade]![1] += power * kz / k;
+              world[cascade]![0] += power * (cos * kx - sin * kz) / k; world[cascade]![1] += power * (sin * kx + cos * kz) / k;
+            }
           }
           let variance = 0;
           const height = layers[2 * cascade]!;
@@ -143,8 +149,11 @@ describe("FFT ocean spectrum and CPU reference", () => {
       // Realized height variance matches ∫S(k)dk over the bands (averaged over seeds and cascades).
       expect(ratio / seeds).toBeGreaterThan(0.85);
       expect(ratio / seeds).toBeLessThan(1.15);
-      // Energy-weighted mean heading is the asset's Wave Direction.
-      expect(Math.atan2(sumZ, sumX) * 180 / Math.PI).toBeCloseTo(40, -1);
+      // Each cascade's texture frame is turned by its own angle, so the cascades' patches tile along different axes;
+      // turned back to the world, every cascade's energy-weighted mean heading is the asset's Wave Direction.
+      const degrees = ([x, z]: number[]) => Math.atan2(z!, x!) * 180 / Math.PI;
+      expect(degrees(texel[1]!) - degrees(texel[0]!)).toBeCloseTo(-WATER_FFT_CASCADE_TURNS[1] * 180 / Math.PI, -1);
+      for (const sums of world) expect(degrees(sums)).toBeCloseTo(40, -1);
     }
   });
 

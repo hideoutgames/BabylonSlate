@@ -14,6 +14,7 @@ export type RenderingSectionId =
   | "postProcessing"
   | "cel"
   | "resolution"
+  | "water"
   | "playPreview";
 
 const RENDERING_SECTION_PREFIXES: readonly (readonly [string, RenderingSectionId])[] = [
@@ -27,6 +28,7 @@ const RENDERING_SECTION_PREFIXES: readonly (readonly [string, RenderingSectionId
   ["setting-render-height", "resolution"],
   ["setting-render-black-bars", "resolution"],
   ["setting-play-", "playPreview"],
+  ["setting-water-", "water"],
 ];
 
 /** The Rendering section that must be open for a search result's control to exist. */
@@ -99,6 +101,7 @@ export const PROJECT_SETTING_FIELDS = fields([
   ["rendering", "Textures Quality", "quality-textures"],
   ["rendering", "Geometry Quality", "quality-geometry"],
   ["rendering", "Water Quality", "quality-water"],
+  ["rendering", "Water Blend Distance River Lake Ocean Merge", "setting-water-blend-distance"],
   ["rendering", "Post Processing Quality", "quality-postprocessing"],
   ["rendering", "Lighting Quality", "quality-lighting"],
   ["rendering", "Resolution Scale", "quality-resolution-scale"],

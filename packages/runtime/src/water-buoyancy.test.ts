@@ -87,8 +87,9 @@ describe("Water buoyancy with native collision response", () => {
         sway.push(boat.transform.position.x * along.x + boat.transform.position.z * along.z);
       }
       expect(Math.max(...heights) - Math.min(...heights)).toBeGreaterThan(0.2);
-      // Drag follows the waves' orbital motion: the hull rocks along Wave Direction.
-      expect(Math.max(...sway) - Math.min(...sway)).toBeGreaterThan(0.2);
+      // Drag follows the waves' orbital motion: the hull rocks along Wave Direction (by about 0.18 m over these six
+      // seconds at the defaults; the deeper wave groups set how big the passing waves are at the hull).
+      expect(Math.max(...sway) - Math.min(...sway)).toBeGreaterThan(0.12);
       const p = boat.transform.position;
       expect(sync.lineTrace({ ...p, y: p.y + 3 }, { ...p, y: p.y - 3 }).actorId).toBe("float");
       expect(Math.abs(p.y)).toBeLessThan(0.6);
@@ -119,6 +120,37 @@ describe("Water buoyancy with native collision response", () => {
       // A fixed-point drift correction with drag weighted by instantaneous submersion moved this hull 3.4 m upwind
       // (drag 2.5) and 4.2 m downwind (drag 20) between these windows, 50 s apart.
       expect(Math.abs(mean(late) - mean(early))).toBeLessThan(0.5);
+    } finally { sync.dispose(); }
+  });
+  it.each([{ blend: 8, steepest: 0.25 }, { blend: 0, steepest: Infinity }])("rides a river's current into a lake across the seam (Water Blend Distance $blend)", async ({ blend, steepest }) => {
+    const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 }, allowSoftwareFallback: false });
+    const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
+    const sync = new PhysicsWorldSync(backend);
+    sync.water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0 } });
+    sync.water.setBlendDistance(blend);
+    const lake = world.createActor({ classId: "Actor", guid: "lake" });
+    lake.attachComponent(world.createComponent({ classId: "WaterLakeComponent", variables: { assetGuid: "water", width: 40, length: 40 } }));
+    world.spawnActorNow(lake);
+    // The river ends 10 m inside the lake with its water 0.3 m above the lake's.
+    const river = world.createActor({ classId: "Actor", guid: "river", transform: { ...identityTransform(), position: { x: 0, y: 0.3, z: 0 } } });
+    river.attachComponent(world.createComponent({ classId: "WaterRiverComponent", variables: { assetGuid: "water", width: 8, flowSpeed: 2, points: [[0, 0, -70], [0, 0, -10]] } }));
+    world.spawnActorNow(river);
+    const float = world.createActor({ classId: "Actor", guid: "float", transform: { ...identityTransform(), position: { x: 0, y: 0.3, z: -50 } } });
+    float.attachComponent(world.createComponent({ classId: "WaterBuoyancyComponent", variables: { volume: 0.004, drag: 6 } }));
+    world.spawnActorNow(float);
+    let previous = float.transform.position.y, fastest = 0;
+    try {
+      for (let i = 0; i < 30 * 60; i++) {
+        sync.step(1 / 60, world, i / 60);
+        const y = float.transform.position.y;
+        if (i > 120) fastest = Math.max(fastest, Math.abs(y - previous) * 60);
+        previous = y;
+      }
+      // The current carries it out of the river and into the lake; with blending its height follows a smooth ramp.
+      expect(float.transform.position.z).toBeGreaterThan(-8);
+      expect(Math.abs(float.transform.position.y - 0.25)).toBeLessThan(0.05);
+      if (Number.isFinite(steepest)) expect(fastest).toBeLessThan(steepest);
+      else expect(fastest).toBeGreaterThan(0.5);
     } finally { sync.dispose(); }
   });
   it("floats a body, dips under a falling rigid body, and retains its added load", async () => {

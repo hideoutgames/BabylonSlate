@@ -1,5 +1,6 @@
 import type { CommandMessage } from "@babylonslate/bridge";
 import {
+  normalizeWaterBlendDistance,
   normalizeWaterDefinition,
   type CollisionTriangleMesh,
   type SceneLayerSettings,
@@ -53,6 +54,8 @@ interface RuntimePhysicsWorldsOptions {
   pixelsPerUnit?: number;
   tilemaps: Map<string, TilemapPayload>;
   tilesets: Map<string, TilesetPayload>;
+  /** Project Water Blend Distance (`RenderProjectSettings.water.blendDistance`); default when absent. */
+  waterBlendDistance?: number;
 }
 
 const vec3 = (value: readonly number[]) => ({ x: value[0], y: value[1], z: value[2] });
@@ -92,6 +95,8 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
   private readonly preferSoftwarePhysics: boolean;
   private showCollision = false;
   private waters = new Map<string, WaterDefinition>();
+  /** Project Water Blend Distance, applied to every world's water. */
+  private readonly waterBlendDistance: number;
   private tilemaps: Map<string, TilemapPayload>;
   private tilesets: Map<string, TilesetPayload>;
   private sprites = new Map<string, SpritePayload>();
@@ -123,6 +128,7 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
     if (options.pixelsPerUnit && options.pixelsPerUnit > 0) this._pixelsPerUnit = options.pixelsPerUnit;
     this.tilemaps = options.tilemaps;
     this.tilesets = options.tilesets;
+    this.waterBlendDistance = normalizeWaterBlendDistance(options.waterBlendDistance);
     this.mainSync = new PhysicsWorldSync(
       createSoftwarePhysicsBackend(this.worldKind, vec3(this.currentGravity)),
       {
@@ -131,6 +137,7 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
       },
     );
     this.mainSync.setMissingComplexMeshHandler(this.missingComplexMesh);
+    this.mainSync.water.setBlendDistance(this.waterBlendDistance);
   }
 
   /** Main-Scene physics; replaced by `load`, `installScene` and `prepareScene`. */
@@ -507,6 +514,7 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
 
   private bindContent(sync: PhysicsWorldSync): void {
     sync.water.setContent(this.waters);
+    sync.water.setBlendDistance(this.waterBlendDistance);
     sync.setTileContent({
       tilemaps: this.tilemaps,
       tilesets: this.tilesets,

@@ -315,6 +315,7 @@ describe("SettingsModal project authoring", () => {
   it.each([
     ["render width", /Render Width/, "Resolution", "setting-render-width"],
     ["play frame cap", /Play Frame Cap/, "Play Preview", "setting-play-frame-cap"],
+    ["water blend", /Water Blend Distance/, "Water", "setting-water-blend-distance"],
     ["shadow distance", /Shadow Distance/, "Shadows", "project-shadow-distance"],
     ["texture anisotropy", /Texture Anisotropy/, "Scalability", "quality-textures-anisotropy"],
     ["reflections", /Real-Time Reflections/, "Post Processing", "project-effects-reflections"],
@@ -334,6 +335,21 @@ describe("SettingsModal project authoring", () => {
     const control = target?.matches('input[type="checkbox"]') ? screen.getByTestId(targetId) : target;
     await waitFor(() => expect(document.activeElement).toBe(control));
     expect(screen.getByRole("button", { name: section }).getAttribute("aria-expanded")).toBe("true");
+  });
+  it("stages the Water Blend Distance with the project's render settings, clamped, with 0 for off", () => {
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
+    fireEvent.click(screen.getByRole("button", { name: "Water" }));
+    const field = screen.getByLabelText("Water Blend Distance") as HTMLInputElement;
+    expect(field.value).toBe("8");
+    fireEvent.change(field, { target: { value: "500" } });
+    fireEvent.blur(field);
+    expect(field.value).toBe("64");
+    fireEvent.change(field, { target: { value: "0" } });
+    fireEvent.blur(field);
+    expect(lastProjectRender.current).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(lastProjectRender.current?.water).toEqual({ blendDistance: 0 });
   });
   it("starts post processing closed and stages its settings until Done", () => {
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);

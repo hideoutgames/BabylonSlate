@@ -72,6 +72,8 @@ export * from "./deformer-component";
 export * from "./ragdoll";
 export * from "./movement";
 export * from "./water";
+export * from "./water-blend";
+export * from "./water-settings";
 export * from "./water-removal";
 export * from "./landscape";
 export * from "./collision-mesh";

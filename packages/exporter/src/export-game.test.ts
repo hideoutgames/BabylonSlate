@@ -157,6 +157,7 @@ describe("exportGame", () => {
         width: 1280,
         height: 720,
         blackBars: true,
+        water: { blendDistance: 24 },
       },
       scripts: [],
       assets: [
@@ -186,6 +187,7 @@ describe("exportGame", () => {
       height: 720,
       blackBars: true,
       effects: DEFAULT_RENDER_EFFECTS,
+      water: { blendDistance: 24 },
     });
     expect(result.value.manifest.bundleDebugger).toBe(false);
     expect(result.value.fileCount).toBeLessThan(800);
