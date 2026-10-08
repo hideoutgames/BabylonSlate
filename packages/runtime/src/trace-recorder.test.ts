@@ -247,9 +247,9 @@ describe("runtime trace recorder", () => {
 
     it("replays an input stream recorded with slomo issued mid-tick frame for frame", () => {
       let recorded: ReturnType<typeof probeRuntime> | null = null;
-      // slomo 0.5 issued during tick 3 takes effect from tick 4.
+      // slomo 0.5 issued during the third tick (World index 2) takes effect from the fourth.
       recorded = probeRuntime((tickIndex) => {
-        if (tickIndex === 3) expect(recorded!.executeConsoleCommand("slomo 0.5").success).toBe(true);
+        if (tickIndex === 2) expect(recorded!.executeConsoleCommand("slomo 0.5").success).toBe(true);
       });
       recorded.executeConsoleCommand("snapshot start");
       for (let tick = 0; tick < 6; tick += 1) {
