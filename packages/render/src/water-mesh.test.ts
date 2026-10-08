@@ -13,7 +13,7 @@ import { updateSceneRenderingSettings } from "./render-settings";
 import type { WaterMaterialPlugin } from "./water-material";
 import { createLandscapeMesh } from "./landscape-mesh";
 import { WATER_FIELD_EDGE_RAMP } from "./water-field";
-import { applyAssignMesh, createPlayMesh, createSnapshotSceneBinding } from "./snapshot-apply";
+import { applyAssignMesh, applySnapshotToScene, createPlayMesh, createSnapshotSceneBinding } from "./snapshot-apply";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
 import { compileMaterialPlan, prewarmMaterial } from "./material-compiler";
 import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit/environment-fixtures";
@@ -239,6 +239,30 @@ describe("Water rendering", () => {
       expect(updateWaterMeshDefinition(mesh, { ...edited, materialGuid: "custom", roughness: 0.9 })).toBe(false);
       expect(material.roughness).toBe(0.5);
       expect(updateWaterMeshDefinition(MeshBuilder.CreateBox("box", {}, scene), edited)).toBe(false);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+  it("draws Play water at the physics water time of the applied snapshot frames, interpolated between them like poses", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    const binding = createSnapshotSceneBinding();
+    const apply = (frameId: number, previousFrameId: number, alpha: number) =>
+      applySnapshotToScene(scene, binding, { frameId, previousFrameId, tickIndex: frameId, alpha, actorCount: 0, actors: [] });
+    try {
+      setSceneWaterTime(scene, 0);
+      const mesh = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 10, length: 10 }));
+      const drawnTime = () => { updateSceneWater(scene); return bindWater(mesh).get("slateWaterMotion")![0]; };
+      // The worker stepped frame 4's water at 0.15 s and frame 5's at 0.2 s (slomo 0.5 with a 0.1 s step).
+      setSceneWaterTime(scene, 0.15, 4); setSceneWaterTime(scene, 0.2, 5);
+      apply(5, 4, 1);
+      expect(drawnTime()).toBeCloseTo(0.2, 12);
+      apply(5, 4, 0.25);
+      expect(drawnTime()).toBeCloseTo(0.1625, 12);
+      apply(4, 4, 1);
+      expect(drawnTime()).toBeCloseTo(0.15, 12);
+      // A frame whose water time has not arrived keeps the newest earlier one; the late time applies without a new sample.
+      apply(6, 5, 0.5);
+      expect(drawnTime()).toBeCloseTo(0.2, 12);
+      setSceneWaterTime(scene, 0.25, 6);
+      expect(drawnTime()).toBeCloseTo(0.225, 12);
     } finally { scene.dispose(); engine.dispose(); }
   });
   it("resamples CPU-displaced waves for an edited definition while the water clock is paused", () => {

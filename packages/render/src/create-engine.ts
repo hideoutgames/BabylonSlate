@@ -3502,7 +3502,7 @@ function initializeEngine(
         scheduler.invalidate("snapshot");
       }
       if (command.type === "waterTime") {
-        setSceneWaterTime(scene, command.seconds);
+        setSceneWaterTime(scene, command.seconds, command.frameId);
         scheduler.invalidate("snapshot");
       }
       if (command.type === "cableFrame") {

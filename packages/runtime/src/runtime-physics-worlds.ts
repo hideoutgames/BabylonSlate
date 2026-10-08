@@ -327,11 +327,14 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
     return next;
   }
 
-  /** Main-Scene step; movement motors run inside it. Water bodies then publish the water clock. */
-  stepMain(dt: number, tickIndex: number, beforeStep: (sync: PhysicsWorldSync) => unknown): void {
-    const time = tickIndex * dt;
-    this.mainSync.step(dt, this.host.world(), time, -this.currentGravity[1], () => beforeStep(this.mainSync));
-    if (this.mainSync.water.hasBodies) this.host.emit({ type: "waterTime", seconds: time });
+  /**
+   * Main-Scene step at simulated water time `waterTime` (`WaterClock.stepTime`); movement motors run inside it.
+   * Water bodies then publish that time, paired with the snapshot frame this tick publishes, so Play rendering
+   * interpolates the water between frames exactly as it interpolates their poses.
+   */
+  stepMain(dt: number, waterTime: number, beforeStep: (sync: PhysicsWorldSync) => unknown): void {
+    this.mainSync.step(dt, this.host.world(), waterTime, -this.currentGravity[1], () => beforeStep(this.mainSync));
+    if (this.mainSync.water.hasBodies) this.host.emit({ type: "waterTime", seconds: waterTime, frameId: this.host.frameId() + 1 });
   }
 
   /** Each Scene Layer world in creation order; a world without bodies skips its native step. */
