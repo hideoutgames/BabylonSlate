@@ -517,7 +517,6 @@ class InProcessRuntime implements RuntimeDriver {
       physics: () => this.physics.main,
       streamActorReady: (actor) => this.streams.actorReady(actor),
       isStreamActor: (actor) => this.streams.isStreamActor(actor),
-      dt: () => this.simulationDt(),
       actorName: (actor) => this.debugActorName(actor),
       emit: (command) => this.emit(command),
     }, nowMs);
@@ -641,7 +640,6 @@ class InProcessRuntime implements RuntimeDriver {
       slot: (actor) => this.actorSlot(actor),
       hasRenderSlot: (actor) => this.renderSlots.recordedSlot(actor) !== undefined,
       playAnimationOwns: (slotId) => this.behaviourTrees.playAnimationOwns(slotId),
-      dt: () => this.simulationDt(),
       scripts: () => this.scriptHost,
       setSpriteClip: (actor, clip) => this.setActorSpriteClip(actor, clip),
       emit: (command) => this.emit(command),
@@ -658,7 +656,6 @@ class InProcessRuntime implements RuntimeDriver {
       navigation: () => this.navigation,
       worldKind: () => this.physics.kind,
       seed: () => this.seed,
-      dt: () => this.simulationDt(),
       frameId: () => this.frameId,
       tickIndex: () => this.world.clock.tickIndex,
       scripts: () => this.scriptHost,
@@ -1794,7 +1791,9 @@ class InProcessRuntime implements RuntimeDriver {
 
   /**
    * One fixed step; `TickPipeline` owns the gate, timing, stats and trace
-   * around it. Phases, in order:
+   * around it. The step (fixed step × time dilation) is captured once here and
+   * passed to every phase, so a dilation change made during the tick applies
+   * from the next tick. Phases, in order:
    * 1. Input: drain and resolve queued input, reset prints, log gamepad changes.
    * 2. World (timed): tweens, text reveal, painters, Scene Layer focus, the
    *    World tick (actors, then physics through `onPhysics`), deferred owner
@@ -1867,17 +1866,18 @@ class InProcessRuntime implements RuntimeDriver {
   /** Tick phase 3. */
   private tickSceneSystems(simDt: number): void {
     this.tweens.cancelInvalid();
-    // The tick's captured step: a mid-tick time dilation change applies next tick.
     this.delays.advance(simDt);
-    if (this.admission.canTickScene() || this.admission.hasReadyLayers()) this.animGraphs.tick();
+    if (this.admission.canTickScene() || this.admission.hasReadyLayers()) this.animGraphs.tick(simDt);
     if (this.admission.canTickScene() || this.admission.hasReadyLayers()) {
       this.tilemapAnimationTimeMs += simDt * 1000;
       if (this.hasAnimatedTiles) this.emit({ type: "tilemapAnimationTime", elapsedMs: this.tilemapAnimationTimeMs });
       // Only behaviour trees and the crowd read the frame index.
       this.navFrameActors = this.navigation.active || this.behaviourTrees.hasTrees ? firstSpawnedActorIndex(this.world.getActors()) : null;
       try {
-        this.behaviourTrees.tick();
-        if (this.navigation.active && this.admission.canTickScene()) this.navigation.tickCrowd(this.navFrameActors ?? firstSpawnedActorIndex(this.world.getActors()));
+        this.behaviourTrees.tick(simDt);
+        if (this.navigation.active && this.admission.canTickScene()) {
+          this.navigation.tickCrowd(this.navFrameActors ?? firstSpawnedActorIndex(this.world.getActors()), simDt);
+        }
       } finally {
         this.navFrameActors = null;
       }

@@ -25,7 +25,6 @@ interface AnimGraphRuntimeHost {
   hasRenderSlot(actor: Actor): boolean;
   /** A Behaviour Tree Play Animation task owns this slot's animation state. */
   playAnimationOwns(slotId: number): boolean;
-  dt(): number;
   scripts(): Pick<ScriptHost, "invokeAnimEvent" | "invokeAnimRule">;
   setSpriteClip(actor: Actor, clip: SpriteClip | null): void;
   emit(command: CommandMessage): void;
@@ -152,7 +151,8 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
     return variables;
   }
 
-  tick(): void {
+  /** One tick; `dtSeconds` is the tick's captured step, fixed for the whole tick. */
+  tick(dtSeconds: number): void {
     if (this.documents.size === 0) return;
     const liveKeys = this.liveInitKeys;
     const liveEvalKeys = this.liveEvalKeys;
@@ -232,13 +232,13 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
           objectClassId,
           "onUpdateAnimation",
           actor,
-          this.host.dt(),
+          dtSeconds,
           extras,
         );
         const next = evaluateAnimGraph(
           document,
           this.evalByComponent.get(evalKey) ?? null,
-          this.host.dt(),
+          dtSeconds,
           {
             variables: this.variablesFromComponent(component, document),
             ...this.inputsFromComponent(component),
