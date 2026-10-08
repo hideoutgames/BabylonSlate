@@ -180,6 +180,8 @@ class InProcessRuntime implements RuntimeDriver {
   private running = false;
   private stopped = false;
   private bootLoading = false;
+  /** An empty Preview's demo actors wait for `realizePlayWorld` or `start`. */
+  private demoActorsPending = false;
   private paused = false;
   private readonly pauseReasons = new Set<SessionPauseReason>();
   private readonly pendingPauseChanges = new Map<SessionPauseReason, boolean>();
@@ -310,8 +312,9 @@ class InProcessRuntime implements RuntimeDriver {
    * 6. The World input provider.
    * 7. ScriptHost last: its services take most subsystems directly.
    * 8. `RuntimeSubsystems` registration, in Stop order.
-   * 9. Startup: Scene asset Classes, the Game Instance and, for an empty
-   *    Preview, the demo actors (their `spawn` commands are emitted here).
+   * 9. Startup: Scene asset Classes and the Game Instance. An empty Preview's
+   *    demo actors wait for `realizePlayWorld` or `start`, so construction
+   *    emits no command.
    */
   constructor(options: RuntimeDriverOptions) {
     // 1. Core subsystems.
@@ -463,9 +466,18 @@ class InProcessRuntime implements RuntimeDriver {
     // 9. Startup objects.
     registerSceneAssetClasses(this.world.classRegistry, this.playSceneGuid, this.sceneGuidByKey.values());
     this.scriptRuntime.bindGameInstance();
-    if (options.seedDemoActors !== false && !options.playScene) {
-      this.actors.seedDemoActors();
-    }
+    this.demoActorsPending = options.seedDemoActors !== false && !options.playScene;
+  }
+
+  /**
+   * An empty Preview's demo actors spawn where a Play Scene's actors would:
+   * at `realizePlayWorld`, or `start` for a host that starts without it. Their
+   * `spawn` commands then never reach `onCommand` during construction.
+   */
+  private realizeDemoActors(): void {
+    if (!this.demoActorsPending || this.stopped) return;
+    this.demoActorsPending = false;
+    this.actors.seedDemoActors();
   }
 
   private createAdmission(): OwnerAdmission {
@@ -1415,6 +1427,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   realizePlayWorld(): void | Promise<void> {
+    this.realizeDemoActors();
     return this.sceneRealizer.realizePlayWorld();
   }
 
@@ -1622,6 +1635,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   start(): void {
     if (this.stopped) return;
+    this.realizeDemoActors();
     this.running = true;
     try {
       this.world.start();
