@@ -3,6 +3,8 @@ import {
   arrayOf,
   classRef,
   compileGraph,
+  knownGuidsFromSchemas,
+  mergeEngineTypeSchemas,
   validateGraphs,
   type ClassHierarchy,
   type GraphEdge,
@@ -89,6 +91,37 @@ describe("Get Assets By Class", () => {
   it("does not feed Spawn Actor when the picked Class is not an Actor", () => {
     expect(mismatches({ "default:class": "Inventory" })).toHaveLength(1);
     expect(mismatches({})).toHaveLength(1);
+  });
+});
+
+describe("Asset Registry nodes in a graph", () => {
+  const registry = createDefaultNodeRegistry();
+  const NODE_IDS = [
+    "assetRegistry.getAssetData",
+    "assetRegistry.getAssetByPath",
+    "assetRegistry.getAssetsByPath",
+    "assetRegistry.getAssetsByType",
+    "assetRegistry.getAssetsByClass",
+    "assetRegistry.findAssets",
+    "assetRegistry.getSubFolders",
+    "assetRegistry.folderHasAssets",
+    "assetRegistry.getDependencies",
+    "assetRegistry.getReferencers",
+  ];
+
+  it("names only engine types the editor offers, so no node reports an unknown Structure or Enum", () => {
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: NODE_IDS.map((id) => node(registry, id, id)),
+      edges: [],
+    };
+    const diagnostics = validateGraphs(
+      [graph],
+      { assetGuid: "a", knownGuids: knownGuidsFromSchemas(mergeEngineTypeSchemas()) },
+      { registry },
+    );
+    expect(diagnostics.filter((diagnostic) => diagnostic.code.startsWith("ref.") || diagnostic.code.startsWith("type."))).toEqual([]);
   });
 });
 
