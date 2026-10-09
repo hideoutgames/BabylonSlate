@@ -70,6 +70,7 @@ export const docsSidebar: SidebarItem[] = [
       { text: "Issue tracker", link: "/agents/issue-tracker" },
       { text: "Agent instructions", link: "/agents/instructions" },
       { text: "Distribution", link: "/development/distribution" },
+      { text: "Feature Test project", link: "/development/feature-test" },
       { text: "September QA register", link: "/agents/qa-2026-09-register" },
       { text: "October QA retest", link: "/agents/qa-2026-10-retest" },
     ],
