@@ -321,6 +321,10 @@ const TURBIDITY = 1.6;
 const UNDERWATER_COOL = 0.68;
 const UNDERWATER_TINT = [0.9, 1.0, 1.1] as const;
 const UNDERWATER_WET = 0.78;
+/** Realistic: what the wet band's film (the thinnest water at a waterline) keeps of the sand's colour: darker and warmer-grey than dry sand. */
+const WET_BAND_DARK = [0.56, 0.52, 0.48] as const;
+/** Realistic: how fast the cooling of the bed's light follows depth (per metre; `UNDERWATER_COOL` is its limit). */
+const UNDERWATER_COOL_RATE = 1.7;
 /**
  * Realistic Low: the floor colour its own bed light assumes (linear albedo: wet sand, cooled as above and a little
  * bluer, since the real bed it passes at one transmittance keeps its own yellow), and the share of the real bed it keeps
@@ -404,10 +408,13 @@ const FOAM_WEB_CELLS = [-1, 0, 1].flatMap((j) => [-1, 0, 1].map((i) => [i, j] as
  * `toWgsl`); each iteration advances at its own speed. Its input is radians of a 2π tile, wrapped first: the field also
  * depends on the point's magnitude.
  */
-const CAUSTIC_ITERATIONS = [0, 1, 2, 3].map((n) => `
+const causticIterations = (count: number) => [0, 1, 2, 3].slice(0, count).map((n) => `
   t = tm * ${(1 - 3.5 / (n + 1)).toFixed(6)};
   i = p + vec2(cos(t - i.x) + sin(t + i.y), sin(t - i.y) + cos(t + i.x));
   c += 1.0 / max(length(vec2(p.x / max(abs(sin(i.x + t)), 0.002), p.y / max(abs(cos(i.y + t)), 0.002))) * 0.005, 0.0001);`).join("");
+const CAUSTIC_ITERATIONS = causticIterations(4);
+/** `swCausticLite` (Medium): the same field with two iterations, about half the cost and a softer net. */
+const CAUSTIC_ITERATIONS_LITE = causticIterations(2);
 
 /**
  * Realistic sun glitter (`swGlitter`): one glint per cell of a world grid in rest (Lagrangian) space, so glints ride
@@ -440,6 +447,17 @@ const GLITTER_NORM = 1 / ((Math.PI * 4 / 5) * GLITTER_SIGMA * GLITTER_SIGMA * GL
  */
 const GLITTER_BASE = 0.18;
 const GLITTER_MAX = 12;
+/**
+ * Realistic upper-column in-scatter (`swColumn`): the sunlit top metre of the water, which still shows its blue-green at
+ * grazing angles where the Fresnel mirror would take the whole body. `REAL_COLUMN_GAIN` scales the body colour's own light,
+ * `REAL_COLUMN_TEAL` the share of Shallow Color's teal (blue held to green) added over shallows and in deep water, the facet's Fresnel
+ * only removes `REAL_COLUMN_FRESNEL` of it.
+ */
+const REAL_COLUMN_GAIN = 0.75;
+const REAL_COLUMN_TEAL = [0.14, 0.03] as const;
+const REAL_COLUMN_FRESNEL = 0.5;
+/** Realistic foam: how far the thin dark wet edge along a foam boundary darkens the water body there. */
+const REAL_FOAM_EDGE = 0.55;
 /**
  * Specular antialiasing: a lobe drawn on a normal that varies across the pixel widens by that variation, the per-axis
  * slope variance a Gaussian pixel filter of this variance (pixels²) sees through the slope's screen derivatives
@@ -531,6 +549,16 @@ float swCaustic(vec2 uv, float tm) {
   float c = 1.0;
   float t = 0.0;${CAUSTIC_ITERATIONS}
   c = 1.17 - pow(c * 0.25, 1.4);
+  c = c * c;
+  c = c * c;
+  return c * c;
+}
+float swCausticLite(vec2 uv, float tm) {
+  vec2 p = fract(uv * 0.159155) * 6.283185 - vec2(250.0);
+  vec2 i = p;
+  float c = 1.0;
+  float t = 0.0;${CAUSTIC_ITERATIONS_LITE}
+  c = 1.17 - pow(c * 0.4, 1.4);
   c = c * c;
   c = c * c;
   return c * c;
@@ -1178,7 +1206,10 @@ vec2 swChop = swFlowed + vec2(swLarge - 0.5, swGust - 0.5) * vec2(2.4, ${f(9 * G
 // Colour Variation's drifts: the two wide noises mixed, with edges bent by the medium one. Either wide noise alone shows
 // its cell grid as soft-edged rectangles (the gust's cells are about 77 m); mixed with each other and the medium noise
 // (six times finer than the large one) their edges curve and their cells no longer line up.
-float swDrift = swLarge * 0.5 + swGust * 0.3 + swMedium * 0.2;${realistic || painted ? fromTier(1, `
+float swDrift = swLarge * 0.5 + swGust * 0.3 + swMedium * 0.2;${realistic ? `
+// Wind gusts (Realistic): wide patches of the sea are glassy and others rippled, so capillaries, chop gain and the roughness
+// they add (the sub-capillary and filtered variance scale with the chop gain) come and go together.
+float swWindPatch = smoothstep(0.28, 0.72, swGust * 0.45 + swLarge * 0.4 + swMedium * 0.15);` : ""}${realistic || painted ? fromTier(1, `
 // Bend it at a finer scale too, so crossing octaves never settle into a regular quilt in the sun's reflection; the
 // fine part fades before its noise would alias.
 swChop += vec2(swMedium - 0.5, (swFine - 0.5) * (1.0 - smoothstep(0.3, 1.0, swFoot))${realistic ? "" : " * 0.35"}) * 0.6;`) : ""}
@@ -1196,8 +1227,8 @@ ${detail}${fromTier(1, "", `
 swDetailMid = swDetail;`)}${realistic ? fromTier(1, `
 // Capillaries ride a noise-bent domain and gather in drifting patches, so they never form a regular lattice.
 vec2 swRippleDomain = swChop + (vec2(swFine, swMedium) - vec2(0.5)) * 0.45;${fromTier(3, `
-float swRipplePatch = (0.6 + 0.8 * swMedium) * (0.55 + 0.9 * swFine);`, `
-float swRipplePatch = 0.6 + 0.8 * swMedium;`)}`) : ""}${capillaries}
+float swRipplePatch = (0.6 + 0.8 * swMedium) * (0.55 + 0.9 * swFine) * mix(0.2, 1.55, swWindPatch);`, `
+float swRipplePatch = (0.6 + 0.8 * swMedium) * mix(0.2, 1.55, swWindPatch);`)}`) : ""}${capillaries}
 // What meets the water: terrain shoreline and true depth, and objects crossing the surface.
 // Values stay continuous at the field's edges and range limits, so derivative-based antialiasing never spikes.
 float swFieldShore = mix(${f(SHORE[1])}, swTerrainShore, swFieldOn);
@@ -1381,7 +1412,7 @@ float swAgitate = exp(-swObject / swContactW) * swRippleAA * swNearContact;`, `
 float swAgitate = 0.0;`)}
 vec2 swRipple = swContactDir * (cos(swRipplePhase) * swRippleFade * (0.1 + 0.3 * U.slateWaterMotion.z) * (0.45 + 0.55 * swRippleNoise));
 // Rougher seas carry steeper chop (CPU factor in slateWaterTerms.w).
-float swChopGain = U.slateWaterMotion.z * (0.35 + 0.65 * swCalm + swAgitate) * ${realistic ? "(0.7 + 0.6 * swGust) * U.slateWaterTerms.w" : "(0.5 + swGust)"};
+float swChopGain = U.slateWaterMotion.z * (0.35 + 0.65 * swCalm + swAgitate) * ${realistic ? "mix(0.5, 1.35, swWindPatch) * U.slateWaterTerms.w" : "(0.5 + swGust)"};
 vec2 swSlope = swGradient + swDetail * swChopGain + swRipple;${ifFft(`
 swSlope += swFftSlope;`)}
 normalW = normalize(vec3(swBaseX - swSlope.x, 1.0, swBaseZ - swSlope.y));
@@ -1581,24 +1612,27 @@ swRefracts = smoothstep(-0.03, 0.03 + swWaterZ * 0.004, swSceneZ - swWaterZ);
 // Where the terrain field knows the bed lies under this water, the copy's texel holds that bed (unless something stands
 // well in front of the surface): the refracted path stands, so the copy's nearest-texel depth never flips shallows
 // between the two paths from texel to texel.
-swRefracts = max(swRefracts, swKnown * smoothstep(0.02, 0.12, swFieldDepth) * smoothstep(-0.6, -0.2, swSceneZ - swWaterZ));`)}${fromTier(2, `
-// Sun caustics on the bed (High up, ALU only): the surface focuses sunlight into a soft, slowly morphing shimmer of
+swRefracts = max(swRefracts, swKnown * smoothstep(0.02, 0.12, swFieldDepth) * smoothstep(-0.6, -0.2, swSceneZ - swWaterZ));`)}${fromTier(1, `
+// Sun caustics on the bed (ALU only): the surface focuses sunlight into a soft, slowly morphing shimmer of
 // bright filaments on shallow floors, over darker cells (\`swCaustic\`, evaluated where the refracted view ray meets the
 // floor and bent by a slow noise). The lines blur toward their mean with depth and before they would alias, weaken with
-// depth, and need a clear sun some way up. \`swCaustics\` is the floor's light factor less one.
+// depth, and need a clear sun some way up. \`swCaustics\` is the floor's light factor less one. Medium runs a lighter
+// field (\`swCausticLite\`, two iterations, no bending noises); High up the full one.
 // Natural caustics are a soft shimmer, not a pool's hard net: modest contrast, falling off as 1 / (1 + depth), with a
-// sun some way up (its incidence) and a clear sun; none where no floor shows, so open ocean, overcast skies and distant
-// water skip the field (it reads no derivatives, so the branch is legal in any control flow).
+// sun some way up (the root of its incidence: the water bends the sun's rays toward the vertical) and a clear sun; none
+// where no floor shows, so open ocean, overcast skies and distant water skip the field (it reads no derivatives, so the
+// branch is legal in any control flow).
 float swCauFade = (1.0 - smoothstep(0.08, 0.3, swFoot * 1.6)) / (1.0 + 0.45 * swDepth) * smoothstep(0.0, 0.25, swDepth)
-  * smoothstep(0.1, 0.45, swL.y) * swL.y * U.slateWaterSky.w * min(U.slateWaterSun.w, 1.5) * swVisible;
+  * smoothstep(0.1, 0.45, swL.y) * sqrt(max(swL.y, 0.0)) * U.slateWaterSky.w * min(U.slateWaterSun.w, 1.5) * swVisible;
 float swCaustics = 0.0;
 if (swCauFade > 0.0) {
   vec3 swRefrDir = refract(-swV, swWaveN, 0.75);
-  vec2 swBedXZ = swWorld + swRefrDir.xz * (swDepth / max(-swRefrDir.y, 0.3));
+  vec2 swBedXZ = swWorld + swRefrDir.xz * (swDepth / max(-swRefrDir.y, 0.3));${fromTier(2, `
   // About 4 m per tile; a slow, wide bend keeps the tile from repeating.
   vec2 swBedP = swBedXZ * 1.6 + (vec2(swNoise(swBedXZ * 0.11 + vec2(3.1, swTime * 0.02)), swNoise(swBedXZ * 0.11 + vec2(swTime * -0.015, 7.7))) - vec2(0.5)) * 1.6;
   float swCauField = mix(swCaustic(swBedP, swTime * 0.45 + 23.0), 0.12, smoothstep(0.0, 1.0, swDepth * 0.15 + swFoot * 2.5))
-    * (0.55 + 0.9 * swNoise(swBedXZ * 0.3 + vec2(swTime * -0.04, 1.7)));
+    * (0.55 + 0.9 * swNoise(swBedXZ * 0.3 + vec2(swTime * -0.04, 1.7)));`, `
+  float swCauField = mix(swCausticLite(swBedXZ * 1.6, swTime * 0.45 + 23.0), 0.12, smoothstep(0.0, 1.0, swDepth * 0.15 + swFoot * 2.5));`)}
   swCaustics = (swCauField * 1.25 - 0.15) * swCauFade;
 }`, `
 float swCaustics = 0.0;`)}
@@ -1644,6 +1678,15 @@ swGlow = (U.slateWaterThrough.rgb * (0.1 + 2.6 * swSssView) + vec3(U.slateWaterS
 // Open-water crests glow a muted sea green, not the saturated cyan of a shallow lagoon: part of the way to grey.
 swGlow = mix(swGlow, vec3(dot(swGlow, vec3(0.3, 0.59, 0.11))) * vec3(0.8, 1.05, 1.1), 0.4);
 swScatter += U.slateWaterThrough.rgb * (smoothstep(0.2, 0.9, swFoldN) * swRough * 0.07 * U.slateWaterLook.w);`)}
+// Upper-column in-scatter: the sunlit top metre keeps its blue-green at grazing views, where the facet's Fresnel would
+// hand the whole body to the mirror (it removes only \`REAL_COLUMN_FRESNEL\` of this term, and none of it hazes in: the far
+// sea is a pure mirror of the horizon). Facets turned toward the sun are lit through the water, troughs hold more of it;
+// Shallow Color's teal (blue held to green) lifts the body's hue. It leaves the bed alone over shallows (one minus the
+// transmittance) and greys with the body under an overcast sky.
+float swFlankLit = smoothstep(-0.25, 0.85, dot(swWaveN, swL));
+vec3 swColumnTint = swScatterCol + vec3(U.slateWaterShallow.r, U.slateWaterShallow.g, min(U.slateWaterShallow.b, U.slateWaterShallow.g * 1.15)) * mix(${f(REAL_COLUMN_TEAL[0])}, ${f(REAL_COLUMN_TEAL[1])}, swTone);
+vec3 swColumn = swColumnTint * (swAmb * 0.55 + swSun * (swSunShape.w * (0.1 + 0.9 * swFlankLit))) * (${f(REAL_COLUMN_GAIN)} * (0.65 + 0.35 * (1.0 - swCrestPhase)));
+swColumn = mix(swColumn, vec3(dot(swColumn, vec3(0.3, 0.59, 0.11))) * vec3(0.85, 1.0, 1.12), 0.5 * swOvercast);
 
 // Foam: a bubble web (Medium up) and clumpy noise, thresholded by a foam density (Crest-style), so dense foam is solid,
 // then opens round holes, thins into lace and breaks into scattered fragments as it decays. From High a finer web
@@ -1897,10 +1940,10 @@ swWet = max(swWet * swSwashCover, swFilm * (1.0 - smoothstep(0.4, 0.9, swFoam)))
 // smooth analytic lobe instead.
 float swFarSun = smoothstep(0.01, 0.08, swPxM);
 ${fromTier(1, `
-float swSpecSquash = 0.35 + 0.9 * swFarSun;
+float swSpecSquash = 0.35 + 0.9 * swFarSun + 4.0 * smoothstep(0.4, 2.5, swPxM);
 float swSpecKeep = 0.35 + 0.65 * swFarSun;`, `
 // Low's single analytic lobe has no glints to break it up: it is compressed harder, so it never reads as a chrome slab.
-float swSpecSquash = 1.2 + 1.6 * swFarSun;
+float swSpecSquash = 1.2 + 1.6 * swFarSun + 2.0 * smoothstep(0.4, 2.5, swPxM);
 float swSpecKeep = 1.0;`)}
 float swSpecMod = 1.0;
 float swSpecModW = 0.0;
@@ -1911,7 +1954,7 @@ float swSunFres = 0.02 + 0.98 * swSunX2 * swSunX2 * swSunX;
 // Sea slopes fall off like a Gaussian, not like GGX's long tail: a glint that needs a facet tilted far from the swell
 // (a sun behind or high above the eye) is rare, so steep chop crests never light up as rows of white scratches.
 float swHalfCos = max(dot(swSwellNormal, swHalf), 0.05);
-float swSunReach = mix(1.0, exp(-(1.0 - swHalfCos * swHalfCos) / (swHalfCos * swHalfCos * 0.12)), step(0.0001, U.slateWaterSun.w));
+float swSunReach = mix(1.0, exp(-(1.0 - swHalfCos * swHalfCos) / (swHalfCos * swHalfCos * 0.085)), step(0.0001, U.slateWaterSun.w));
 // Glitter (\`swGlitter\`, every tier): glints anchored to the water's rest surface (they ride the waves) on a world grid
 // whose cells are at least \`GLITTER_CELL_PX\` pixels across in their most compressed direction (perspective draws far
 // glints out into horizontal dashes), two nested levels crossfaded by the footprint. Each glint is filtered by the pixel
@@ -1941,7 +1984,7 @@ float swGlintNear = 1.0 - smoothstep(0.03, 0.2, swPxM);
 vec3 swGlint = min(swSun * vec3(1.0, 0.96, 0.88) * (swSunFres * step(0.0, swL.y) * 30.0 * swGlintKeep * swGlintKeep * exp(-swGlintX / swGlintS2) * swGlintNear * swSunReach * U.slateWaterSky.w), vec3(6.0));
 float swGlitterFar = smoothstep(0.025, 0.09, swPxM);
 // The broad lobe gathers into glints at every distance: close by the same unresolved capillaries break it.
-swSpecModW = U.slateWaterSky.w;
+swSpecModW = U.slateWaterSky.w * (1.0 - 0.55 * smoothstep(0.4, 2.5, swPxM));
 swSpecMod = swGlitterMod;
 // Close by, the capillaries no tier resolves break each facet's mirror image of the sun into small glints (the same
 // stable, surface-riding glitter), so sun-facing chop faces sparkle instead of shining as smooth chrome blobs.
@@ -2013,18 +2056,25 @@ swSkyRefl *= U.slateWaterDeep.w;
 float swEdgeFade = smoothstep(0.0, 0.2, swBank + 0.02) * swShoreSoft;
 // Uncovered by the backwash, only the wet film is left: no water body, a faint sheen of sky and sun on the wet sand.
 float swWaterFade = swEdgeFade * swSwashCover;
-float swSheen = swSwashCover + swFilm * 0.4;
+float swSheen = swSwashCover + swFilm * 0.75;
 float swGloss = (1.0 - swFoam) * swEdgeFade * swSheen;
 float swBodyGloss = (1.0 - swFoam) * swWaterFade;
 // Foam is a neutral white scatterer: thick fresh foam is a little brighter than its fraying lace, which reads thinner
 // through its lower coverage rather than through a grey colour.
 // Its bubbles shade one another, so foam keeps an inner texture under any light instead of reading as flat paint.
-surfaceAlbedo = U.slateWaterFoam.rgb * ((0.82 + 0.18 * swFoamThick) * (0.72 + 0.28 * smoothstep(0.15, 0.75, swFoamTex)) * swFoam * swEdgeFade);
+// Lit look: foam turned toward the sun is bright and warm, its shadowed side takes the cool sky; its dense core is
+// brighter than its fraying lace; and a thin dark wet edge (\`swEdgeDark\`: the outer fringe where coverage is partial,
+// \`REAL_FOAM_EDGE\`) darkens the water body and the bed seen through it along the foam's boundary.
+float swFoamSun = clamp(dot(swWaveN, swL) * 0.6 + 0.4, 0.0, 1.0);
+vec3 swFoamTint = mix(vec3(0.8, 0.91, 1.0), vec3(1.08, 1.03, 0.95), swFoamSun);
+surfaceAlbedo = U.slateWaterFoam.rgb * swFoamTint * ((0.78 + 0.26 * swFoamThick) * (0.66 + 0.34 * smoothstep(0.15, 0.75, swFoamTex)) * swFoam * swEdgeFade);
 swMatte = swFoam;
+float swEdgeDark = 1.0 - ${f(REAL_FOAM_EDGE)} * smoothstep(0.06, 0.3, swFoam) * (1.0 - smoothstep(0.35, 0.75, swFoam));
 // The water's own light covers, per channel, what the transmittance leaves: over a bright bed its colour is the bed's
 // light through the absorption, never a glow of its own.
-vec3 swEmissive = swScatter * (vec3(1.0) - swScatterT) * ((1.0 - swFres) * swBodyGloss)
-  + swGlow * ((1.0 - swFres) * swBodyGloss)
+vec3 swEmissive = swScatter * (vec3(1.0) - swScatterT) * ((1.0 - swFres) * swBodyGloss * swEdgeDark)
+  + swColumn * (vec3(1.0) - swScatterT) * ((1.0 - ${f(REAL_COLUMN_FRESNEL)} * swFres) * (1.0 - swHaze) * swBodyGloss * swEdgeDark)
+  + swGlow * ((1.0 - swFres) * swBodyGloss * swEdgeDark)
   + (swGlint + vec3(swSpark) * swSun) * swGloss;${fromTier(1, "", `
 // The floor is not one even colour: wide, soft patches (the medium noise) keep its shallows from reading as a glow.
 swEmissive += vec3(${LOW_BED.map(f).join(", ")}) * swLowBedT * (swAmb * 0.6 + swSun * max(swL.y, 0.0)) * ((1.0 - swFres) * (1.0 - swFoam) * swBodyGloss * (0.75 + 0.5 * swMedium));`)}
@@ -2033,23 +2083,23 @@ swEmissive += vec3(${LOW_BED.map(f).join(", ")}) * swLowBedT * (swAmb * 0.6 + sw
 swEmissive += swSun * swTransmitRgb * (max(swCaustics, 0.0) * 0.15 * swKnown * (1.0 - swFres) * swBodyGloss);
 #endif${fromTier(1, `
 // Foam scatters skylight from every side: a little fill keeps it the brightest thing on the sea even under a dull sky.
-swEmissive += surfaceAlbedo * swAmb * 0.25;`, `
+swEmissive += surfaceAlbedo * (swAmb * 0.25 + swSun * (max(dot(swWaveN, swL), 0.0) * 0.22));`, `
 // Low is unlit: the sun and sky light the foam here, as bright as Medium's lit foam (the environment adds its own).
 swEmissive += surfaceAlbedo * (swSun * max(dot(swWaveN, swL), 0.0) * 0.4 + swAmb * 0.85);`)}
 alpha = (1.0 - (1.0 - swFres * swSheen) * mix(1.0, swTransmit, swSwashCover) * (1.0 - swFoam)) * swEdgeFade;
 // The wet band darkens what blends under it: coverage without light.
-alpha = max(alpha, swWet * mix(0.35, 0.5, 1.0 - swSwashCover) * swEdgeFade);${ifDefined(REFRACTION, `
+alpha = max(alpha, swWet * mix(0.45, 0.62, 1.0 - swSwashCover) * swEdgeFade);${ifDefined(REFRACTION, `
 // The refracted scene replaces the blended background: the light transmitted through the water is the copy behind
 // this point, tinted by the per-channel absorption and darkened under the wet band, so coverage keeps only the shore
 // fade. It stays apart from the water's own light (\`swRefracted\`, see CUSTOM_FRAGMENT_BEFORE_FOG).
 // Underwater daylight (\`UNDERWATER_COOL\`, \`UNDERWATER_WET\`): the bed's light cools toward a neutral blue-grey and
 // darkens as wet sand does within the first half metre.
-float swUnder = 1.0 - exp(-swDepth * 5.0);
+float swUnder = 1.0 - exp(-swDepth * ${f(UNDERWATER_COOL_RATE)});
 swBackground = mix(swBackground, vec3(dot(swBackground, vec3(0.3, 0.59, 0.11))) * vec3(${UNDERWATER_TINT.map(f).join(", ")}), ${f(UNDERWATER_COOL)} * swUnder) * (1.0 - ${f(1 - UNDERWATER_WET)} * swUnder);
 // Caustics concentrate the sunlight that reaches the floor into bright lines over dimmer cells.
 swBackground *= 1.0 + swCaustics;
 float swRefractedWeight = (1.0 - swFres) * swTransmit * (1.0 - swFoam) * swWaterFade * swRefracts;
-vec3 swRefracted = swBackground * swTransmitRgb * mix(vec3(1.0), vec3(0.72, 0.68, 0.62), swWet) * ((1.0 - swFres) * (1.0 - swFoam) * swWaterFade * swRefracts);
+vec3 swRefracted = swBackground * swTransmitRgb * mix(vec3(1.0), vec3(${WET_BAND_DARK.map(f).join(", ")}), swWet) * ((1.0 - swFres) * (1.0 - swFoam) * swWaterFade * swRefracts * swEdgeDark);
 // Uncovered shallows blend their film over the scene instead (the darkening above).
 alpha = mix(alpha, max(alpha, swWaterFade), swRefracts);`)}
 ${objectReflectionSource("normalize(mix(reflect(-swV, swSwellNormal), normalize(swRefl), 0.25))", "sqrt(sqrt(U.slateWaterOrigin.w * U.slateWaterOrigin.w * U.slateWaterOrigin.w * U.slateWaterOrigin.w + 2.0 * swSlopeVariance))")}
@@ -4767,7 +4817,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
         // broken into glitter (see the sun in `realisticSource`).
         "finalSpecularScaled *= swGloss * swSunReach * swSpecKeep;",
         `finalSpecularScaled *= log(1.0 + dot(finalSpecularScaled, ${v3}(0.3, 0.59, 0.11)) * swSpecSquash + 0.0001) / (dot(finalSpecularScaled, ${v3}(0.3, 0.59, 0.11)) * swSpecSquash + 0.0001);`,
-        `finalSpecularScaled *= mix(1.0, swSpecMod, swSpecModW * smoothstep(0.05, 0.4, dot(finalSpecularScaled, ${v3}(0.3, 0.59, 0.11))));`,
+        `finalSpecularScaled *= mix(1.0, swSpecMod, swSpecModW * smoothstep(0.1, 0.9, dot(finalSpecularScaled, ${v3}(0.3, 0.59, 0.11))));`,
         "#endif",
         "#endif",
       ].join("\n"),
