@@ -420,7 +420,8 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
         const declared = definition ? context.definitionFields?.(definition) : undefined;
         const stored = Array.isArray(entry.schema);
         // Only the field's current declaration decides Loading; an entry's snapshot may predate it.
-        // Without a snapshot the Definition's fields type the values, as for reference tracking.
+        // Without a snapshot the Definition's fields type the values, as for reference tracking, and
+        // their nested schemas stay references (`schemaNeeded` false).
         for (const field of stored ? declaredLoading(rows(entry.schema), declared) : rows(declared)) {
           memberValue(field, row(entry.values)[String(field.name)], false, undefined, stored);
         }
