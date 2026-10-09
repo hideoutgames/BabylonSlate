@@ -270,6 +270,16 @@ function chopFm(i: number): string {
   return ` + ${depth} * (sin(dot(U.slateWaterChopShift.zw, vec2(${f(CHOP_FM_TURNS[i]![0])}, ${f(CHOP_FM_TURNS[i]![1])})) + swGust * 4.0 + ${f(0.9 + i * 1.7)})`
     + ` + sin(dot(U.slateWaterChopShift.zw, vec2(${f(CHOP_FM_SLOW_TURNS[i]![0])}, ${f(CHOP_FM_SLOW_TURNS[i]![1])})) + swLarge * 6.0 + ${f(2.0 + i * 2.3)}))`;
 }
+/**
+ * Painted shades the chop by a rounded copy of its octaves (a sine profile, `swDetailSoft`) at this share of the sharp
+ * crests' slope: broad soft lumps instead of narrow ridges. Its ripples are brush strokes: the first two capillary
+ * families at `PAINTED_STROKE_K` of their wavenumber (about two thirds of a metre and a third), shown only where a noise
+ * gate stretched along the wind is high (patches about a metre long and a third as wide), at `PAINTED_STROKE_SLOPE`
+ * of their slope.
+ */
+const PAINTED_LUMP_SLOPE = 0.8;
+const PAINTED_STROKE_K = 0.55;
+const PAINTED_STROKE_SLOPE = 0.45;
 /** The short-crest envelope (a factor) of the chop octave whose uniform vec4 (dir.x, dir.z, k, phase) is `octave`. */
 function chopCrests(octave: string, i: number): string {
   const turn = i % 2 ? CHOP_CREST_TURN : -CHOP_CREST_TURN, c = Math.cos(turn), s = Math.sin(turn);
@@ -1052,14 +1062,17 @@ float swOX${i} = swOC${i}.z * dot(swOC${i}.xy, swChop) + swOC${i}.w + (swLarge *
 // As Realistic's: the shared noises drift each octave's phase and, in opposition between neighbours, its strength, so
 // crossing octaves never lock into ribs or a dimple lattice.
 float swOX${i} = swOC${i}.z * dot(swOC${i}.xy, swChop) + swOC${i}.w + swLarge * ${f(CHOP_PHASE_DRIFT[i]![0])} + swMedium * ${f(CHOP_PHASE_DRIFT[i]![1])} + swChopShift * ${f(CHOP_SHIFT[i]!)}${chopFm(i)};`}
-float swOW${i} = exp(sin(swOX${i}) - 1.0);
+${painted ? `float swOS${i} = sin(swOX${i});
+float swOW${i} = exp(swOS${i} - 1.0);` : `float swOW${i} = exp(sin(swOX${i}) - 1.0);`}
 float swOCs${i} = cos(swOX${i});
 float swOA${i} = ${f(slope * (1 - Math.min(0.85, i * 0.14)))} * (1.0 - smoothstep(0.3, 1.1, swOC${i}.z * swFoot)) * ${painted
     ? `(0.25 + 1.5 * ${i % 2 === 0 ? "" : "(1.0 - "}smoothstep(0.3, 0.7, mix(swMedium, swLarge, 0.35))${i % 2 === 0 ? "" : ")"})`
     : `(0.35 + 1.3 * ${i % 2 === 0 ? "" : "(1.0 - "}smoothstep(0.3, 0.7, mix(swMedium, swLarge, 0.6))${i % 2 === 0 ? "" : ")"})`}
   * ${chopCrests(`swOC${i}`, i)};
 swDetail += swOC${i}.xy * (swOW${i} * swOCs${i} * swOA${i});
-swChopH += (swOW${i} - 0.37) * swOA${i};
+swChopH += (swOW${i} - 0.37) * swOA${i};${painted ? `
+swDetailSoft += swOC${i}.xy * (swOCs${i} * swOA${i} * ${f(PAINTED_LUMP_SLOPE)});
+swChopHs += swOS${i} * swOA${i};` : ""}
 swChop -= swOC${i}.xy * (swOW${i} * swOCs${i} * 0.3 / swOC${i}.z);${i === REFRACTION_OCTAVES[1] - 1 ? "\nswDetailMid = swDetail;" : ""}`)).join("");
   const capillaries = realistic ? CAPILLARY_OCTAVES.map(([, , slope, speed], i) => fromTier(CAPILLARY_TIER[i]!, `
 vec4 swCC${i} = U.${CAPILLARY_UNIFORMS[i]};
@@ -1116,7 +1129,10 @@ float swLostDetail = 0.0;` : painted ? `
 float swPrimLen = U.slateWaterWaves.y * 0.159155;
 float swPrimH = 0.0;
 vec2 swPrimG = vec2(0.0);
-float swPrimAmp = 0.0;` : ""}
+float swPrimAmp = 0.0;
+// The chop's rounded copy (sine profile, no sharp crest) that Painted shades its lumps by: slope and height.
+vec2 swDetailSoft = vec2(0.0);
+float swChopHs = 0.0;` : ""}
 float swChopShape = U.slateWaterShape.x;
 // Unfaded Gerstner offset and S = sum(q*a*k*sin(p) * d d^T) (xx, xz, zz) at the warped rest point, filtered like the swell.
 vec2 swOffset = vec2(0.0);
@@ -2210,63 +2226,61 @@ vec3 swBody = mix(swShallowC * vec3(0.1, 0.24, 0.42), swOpenC, swBedTone);
 vec3 swBody = mix(swShallowC * vec3(0.16, 0.5, 0.82), swOpenC, swBedTone);
 #endif
 
-// Wave form. Close up, short wind ripples shade the water as well: from Medium two crossing families (the first two
-// capillary octaves), both everywhere, whose strengths drift in opposition across patches a few metres wide, and from
-// High a third at a wide angle to both; their phases drift across the shared noises. (One dominant family drew even,
-// parallel ridges close up, like sand ripples or ribbed fabric.) Low draws two crossing families as smoothed triangle
-// waves (ALU only, no transcendentals).
+// Wave form. The swell and the chop's rounded lumps (\`swDetailSoft\`) shade the water; close up its ripples are sparse brush
+// strokes, never continuous ridges: the first two capillary families' crests show only where a drifting noise gate,
+// stretched along the wind, is high (patches about a metre long and a third as wide, with gaps between). The two families
+// take opposite halves of the one gate, so neither lies on the other and no pattern repeats in rows. They shade as a
+// small tilt (soft tone steps, below) and as thin bright lines (\`swStroke\`). Low draws its two families as smoothed
+// triangle waves under the same gate (ALU only, no transcendentals).
 float swNearSwell = 1.0 - smoothstep(0.25, 1.2, swFoot);
-vec2 swRippleUv = swChop + (vec2(swFine, swMedium) - vec2(0.5)) * 0.45;
+vec2 swWindUv = vec2(dot(swFlowed, swWindDir), dot(swFlowed, vec2(-swWindDir.y, swWindDir.x)));
+vec2 swRippleUv = swFlowed + vec2(swMedium - 0.5, 0.0) * 0.6;${fromTier(1, `
+swRippleUv += vec2(swLarge - 0.5, swGust - 0.5) * vec2(2.4, 9.0);`, `
+swRippleUv += vec2(swLarge - 0.5, swGust - 0.5) * vec2(2.4, ${f(9 * GUST_NOISE / LARGE_NOISE)});`)}
+float swStrokeN = swNoise(swWindUv * (vec2(0.7, 2.2) * U.slateWaterMotion.y) + vec2(swMedium - 0.5, swLarge - 0.5) * 1.5 - vec2(swTime * 0.1, 0.0));
+float swGate0 = smoothstep(0.68, 0.82, swStrokeN);
+float swGate1 = smoothstep(0.68, 0.82, 1.0 - swStrokeN);
 vec4 swCC0 = U.${CAPILLARY_UNIFORMS[0]};
-float swCX0 = swCC0.z * dot(swCC0.xy, swRippleUv) + swCC0.w + swMedium * 2.5 - swLarge * 1.5;
-// Low's triangle ripples fade sooner, before their regular creases read as stripes.${fromTier(1, `
-vec2 swCapRange = vec2(0.25, 0.8);`, `
-vec2 swCapRange = vec2(0.08, 0.35);`)}
-float swCFd0 = (1.0 - smoothstep(swCapRange.x, swCapRange.y, swCC0.z * swFoot * 0.64)) * (0.2 + 1.2 * swMedium * swFine);${fromTier(1, `
-// The two families' strengths in opposition across patches (the medium and large noises). All families fade together
-// where the finer one would alias: the longer one alone would draw even rows of lines across mid-distance water.
-float swRA = smoothstep(0.25, 0.75, swMedium * 0.7 + swLarge * 0.3);
 vec4 swCC1 = U.${CAPILLARY_UNIFORMS[1]};
-float swCFdR = 1.0 - smoothstep(swCapRange.x, swCapRange.y, swCC1.z * swFoot * 0.64);
+float swCK0 = swCC0.z * ${f(PAINTED_STROKE_K)};
+float swCK1 = swCC1.z * ${f(PAINTED_STROKE_K)};
+// The families run along the wind (their crests within about fifteen degrees of it, to either side), so every stroke
+// follows it; they slide slowly across it, and the gate drifts downwind.
+vec2 swSD0 = vec2(0.2079 * swWindDir.x - 0.9781 * swWindDir.y, 0.9781 * swWindDir.x + 0.2079 * swWindDir.y);
+vec2 swSD1 = vec2(0.309 * swWindDir.x + 0.9511 * swWindDir.y, -0.9511 * swWindDir.x + 0.309 * swWindDir.y);
+float swStrokeT = swTime * 2.0 * U.slateWaterWaves.z;
+float swCX0 = swCK0 * dot(swSD0, swRippleUv) - swStrokeT + swMedium * 1.6 - swLarge * 1.0 + swStrokeN * 3.5;
+// Low's triangle ripples fade sooner, before their regular creases read as stripes.${fromTier(1, `
+vec2 swCapRange = vec2(0.3, 1.0);`, `
+vec2 swCapRange = vec2(0.1, 0.4);`)}
+float swCFd0 = 1.0 - smoothstep(swCapRange.x, swCapRange.y, swCK0 * swFoot * 0.64);
+float swCFdR = 1.0 - smoothstep(swCapRange.x, swCapRange.y, swCK1 * swFoot * 0.64);${fromTier(1, `
 float swCE0 = exp(sin(swCX0) - 1.0);
-float swCA0 = swCFdR * (0.45 + 0.6 * swRA) * (0.6 + 0.8 * swFine);
-vec2 swRipples = swCC0.xy * (swCE0 * cos(swCX0) * swCA0);
-float swCX1 = swCC1.z * dot(swCC1.xy, swRippleUv) + swCC1.w - swMedium * 2.0 + swLarge * 1.8;
+float swCA0 = swCFd0 * swGate0 * (0.6 + 0.8 * swFine);
+vec2 swRipples = swSD0 * (swCE0 * cos(swCX0) * swCA0 * ${f(PAINTED_STROKE_SLOPE)});
+float swCX1 = swCK1 * dot(swSD1, swRippleUv) - swStrokeT * 0.8 - swMedium * 1.4 + swLarge * 1.2 - swStrokeN * 3.5;
 float swCE1 = exp(sin(swCX1) - 1.0);
-float swCA1 = swCFdR * (0.45 + 0.6 * (1.0 - swRA)) * (1.4 - 0.8 * swFine);
-swRipples += swCC1.xy * (swCE1 * cos(swCX1) * swCA1);${fromTier(2, `
-// High: a third family, about 70 degrees from the first, between the two in wavelength, on the third capillary's clock.
-vec4 swCC2 = U.${CAPILLARY_UNIFORMS[2]};
-vec2 swCD2 = vec2(swCC0.x * 0.34 - swCC0.y * 0.94, swCC0.x * 0.94 + swCC0.y * 0.34);
-float swCX2 = swCC0.z * 1.31 * dot(swCD2, swRippleUv) + swCC2.w + swMedium * 1.7 + swLarge * 2.3;
-float swCE2 = exp(sin(swCX2) - 1.0);
-float swCA2 = 0.55 * swCFdR * (0.5 + 0.7 * swMedium);
-swRipples += swCD2 * (swCE2 * cos(swCX2) * swCA2);`, `
-float swCE2 = 0.0;
-float swCA2 = 0.0;`)}`, `
-// The triangle families bend along a shared slow sine (one transcendental), so they curve like High's families instead
-// of running as straight, evenly spaced lines that converge toward the horizon like a rake.
-float swLowBend = sin(dot(swRippleUv, vec2(0.83, 0.55)) * swCC0.z * 0.29 + swLarge * 4.0);
+float swCA1 = swCFdR * swGate1 * (1.4 - 0.8 * swFine);
+swRipples += swSD1 * (swCE1 * cos(swCX1) * swCA1 * ${f(PAINTED_STROKE_SLOPE)});
+// The strokes: thin crest lines inside the gate, thinning toward its ends (the gate scales the crest before the cut).
+float swStroke = max(smoothstep(0.66, 0.92, swCE0 * swCFd0 * swGate0), smoothstep(0.66, 0.92, swCE1 * swCFdR * swGate1));`, `
+// The triangle families bend along a shared slow sine (one transcendental), so they curve instead of running as straight,
+// evenly spaced lines that converge toward the horizon like a rake.
+float swLowBend = sin(dot(swRippleUv, vec2(0.83, 0.55)) * swCK0 * 0.29 + swLarge * 4.0);
 float swRw = fract(swCX0 * ${f(1 / (2 * Math.PI))} + swMedium * 0.6 + swLowBend * 0.24);
 float swTri = abs(swRw * 2.0 - 1.0);
-// A second family across the first, the two fading in opposition across drifting patches (no regular stripes).
-vec4 swCC1 = U.${CAPILLARY_UNIFORMS[1]};
-float swRw1 = fract((swCC1.z * dot(swCC1.xy, swRippleUv) + swCC1.w) * ${f(1 / (2 * Math.PI))} - swMedium * 0.9 + swLarge * 0.5 - swLowBend * 0.19);
+float swRw1 = fract((swCK1 * dot(swSD1, swRippleUv) - swStrokeT * 0.8) * ${f(1 / (2 * Math.PI))} - swMedium * 0.9 + swLarge * 0.5 - swLowBend * 0.19);
 float swTri1 = abs(swRw1 * 2.0 - 1.0);
-float swRA = smoothstep(0.3, 0.7, swMedium);
-vec2 swRipples = swCC0.xy * (sign(swRw - 0.5) * swTri * (1.0 - swTri) * (1.4 * swRA) * swCFd0)
-  + swCC1.xy * (sign(swRw1 - 0.5) * swTri1 * (1.0 - swTri1) * (1.3 - 1.3 * swRA) * (1.0 - smoothstep(0.08, 0.35, swCC1.z * swFoot * 0.64)));
-// Low evaluates one chop octave, which close up reads as regular stripes: a crossing wavelet along the second octave's
-// direction, its phase bent by the shared noises, breaks them up.
+vec2 swRipples = swSD0 * (sign(swRw - 0.5) * swTri * (1.0 - swTri) * (1.6 * swGate0 * swCFd0 * ${f(PAINTED_STROKE_SLOPE / 0.45)}))
+  + swSD1 * (sign(swRw1 - 0.5) * swTri1 * (1.0 - swTri1) * (1.5 * swGate1 * swCFdR * ${f(PAINTED_STROKE_SLOPE / 0.45)}));
+// Low evaluates one chop octave, which close up reads as regular stripes: a broad crossing wavelet along the second
+// octave's direction, its phase bent by the shared noises, breaks them up.
 vec4 swOCb = U.${CHOP_UNIFORMS[1]};
 float swLw = fract((swOCb.z * dot(swOCb.xy, swChop) + swOCb.w + swChopShift * ${f(CHOP_SHIFT[1])}${chopFm(1)}) * ${f(1 / (2 * Math.PI))} + swMedium * 1.3 - swLarge * 0.7 + swLowBend * 0.16);
 float swLt = abs(swLw * 2.0 - 1.0);
-swRipples += swOCb.xy * (sign(swLw - 0.5) * swLt * (1.0 - swLt) * 1.0 * (1.0 - smoothstep(0.06, 0.2, swOCb.z * swFoot)) * (0.4 + 0.9 * swMedium));`)}
-float swCloseUp = 1.0 - smoothstep(0.01, 0.06, swFoot);${fromTier(1, `
-// The families' crests together (each 0 to 1): highest only where their crests meet, so crest lights fall in short,
-// scattered pieces rather than along one family's even rows.
-float swRippleCrest = (swCE0 * swCA0 + swCE1 * swCA1 + swCE2 * swCA2) / max(swCA0 + swCA1 + swCA2, 0.0001);`, `
-float swRippleCrest = (1.0 - swTri) * (1.0 - swTri);`)}
+swRipples += swOCb.xy * (sign(swLw - 0.5) * swLt * (1.0 - swLt) * 0.8 * (1.0 - smoothstep(0.06, 0.2, swOCb.z * swFoot)) * (0.4 + 0.9 * swMedium));
+float swStroke = max(smoothstep(0.55, 0.9, 1.0 - swTri) * swGate0 * swCFd0, smoothstep(0.55, 0.9, 1.0 - swTri1) * swGate1 * swCFdR);`)}
+float swCloseUp = 1.0 - smoothstep(0.01, 0.06, swFoot);
 // Seen from above the swell's crossing components print a regular pattern: their shading drifts in strength across
 // wide patches there.
 float swMacro = smoothstep(0.2, 0.8, swLarge * 0.55 + swGust * 0.25 + swMedium * 0.2);
@@ -2284,7 +2298,7 @@ vec2 swSwellShadeG = mix(swGradient, swVisG, swVisMix);
 // Low's single chop octave would draw regular satin ribbons: it shades less, unevenly.${fromTier(1, `
 float swChopShade = 1.0 + 0.4 * swCloseUp;`, `
 float swChopShade = 0.15 + 0.35 * swMedium;`)}
-vec2 swShadeSlope = swSwellShadeG * ((1.0 + 0.5 * swNearSwell) * swPatch) + swDetail * (swChopGain * swChopShade) + swRipples * (U.slateWaterMotion.z * (0.7 + 0.4 * swCloseUp)) + swRipple * 2.0;
+vec2 swShadeSlope = swSwellShadeG * ((1.0 + 0.5 * swNearSwell) * swPatch) + swDetailSoft * (swChopGain * swChopShade) + swRipples * (U.slateWaterMotion.z * (0.7 + 0.4 * swCloseUp)) + swRipple * 2.0;
 vec3 swShadeN = normalize(vec3(swBaseX - swShadeSlope.x, 1.0, swBaseZ - swShadeSlope.y));
 float swNL = dot(swShadeN, swL);
 float swFacing = clamp(0.5 + (swNL - swL.y) * 1.8, 0.0, 1.0);
@@ -2299,7 +2313,7 @@ float swWaveT = clamp(swSwellT + swChopH * 0.3, 0.0, 1.0);
 // the gust and large noises (tens of metres, along the crests as much as across them), so far crest rows fade in and
 // out in patches instead of banding the whole sea into even stripes.
 float swHeightK = mix(1.0, 0.15 + 0.85 * swMacro, swTopDown)
-  * mix(1.0, 0.3 + 0.7 * smoothstep(0.3, 0.7, swGust * 0.6 + swLarge * 0.4), smoothstep(0.35, 1.6, swFoot));
+  * mix(1.0, 0.5 + 0.5 * smoothstep(0.3, 0.7, swGust * 0.6 + swLarge * 0.4), smoothstep(0.35, 1.6, swFoot));
 // The face rising toward a crest away from the eye, relative to the primary swell's own slope: the water under the crest
 // is thin there and light passes through it toward the viewer.
 float swRise = dot(swPrimG, -swEyeH) * swPrimLen / max(swPrimAmp, 0.0001);
@@ -2311,27 +2325,37 @@ float swGlowH = clamp(0.5 + 0.5 * swPrimN + swChopH * 0.3, 0.0, 1.2);`)}
 // A thin band just under each crest line: wide enough to read near the eye, a few pixels only farther out (fading by footprint).
 float swUnder = 1.0 - smoothstep(0.02, 0.085, abs(swGlowH - 0.86));
 float swCrestFace = swUnder * swThin * mix(1.0, swHeightK, 0.8);
-// Three tones by height: navy troughs, blue-teal flanks and turquoise tops (Shallow Color in part). Seen from above the
-// swell's interference would print a dimple lattice, so the height contrast eases toward steep views, unevenly; over
-// shallows the bed's colour dominates instead.
-float swHeightT = clamp(0.5 + (swSwellT - 0.5) * swHeightK + swChopH * (0.25 + 0.5 * swCloseUp) * min(swChopShade, 1.0), 0.0, 1.0);
-vec3 swTroughC = swBody * vec3(0.5, 0.56, 0.68);
-vec3 swFlankC = swBody * vec3(0.92, 1.12, 1.08) * 1.25;
-vec3 swTopC = mix(swBody * vec3(1.0, 1.3, 1.18), swShallowC * 0.5, 0.25 * swBedTone) * 1.35;
-vec3 swBodyLit = mix(swTroughC, swFlankC, smoothstep(0.1, 0.55, swHeightT));
-swBodyLit = mix(swBodyLit, swTopC, smoothstep(0.55, 0.95, swHeightT) * 0.9);
-// Faces turned to the sun lean a little lighter and greener; close up the ripples shade it too.
-swBodyLit = mix(swBodyLit, swBodyLit * vec3(0.9, 1.12, 1.0), swShade * 0.5);
-// Close up the light falls on the ripples in two soft painted steps rather than a smooth satin gradient, gently: hard
-// terraces on every ripple's lit and shaded side read as sand dunes.
-float swShadeClose = clamp(0.5 + (swNL - swL.y) * 3.0, 0.0, 1.0);
-swShadeClose = smoothstep(0.2, 0.45, swShadeClose) * 0.5 + smoothstep(0.55, 0.8, swShadeClose) * 0.5;
-swBodyLit = mix(swBodyLit, mix(swBodyLit * vec3(0.8, 0.86, 0.93), swBodyLit * vec3(1.0, 1.2, 1.15), swShadeClose), swCloseUp * 0.45);
-// The chop's sharp crests near the eye are painted ridges of lighter, greener water over darker hollows.
-float swRidge = smoothstep(0.72, 0.93, swOW0) * (1.0 - smoothstep(0.15, 0.5, swOC0.z * swFoot)) * smoothstep(0.1, 0.4, swChopGain);
-swBodyLit = mix(swBodyLit, swBodyLit * vec3(1.05, 1.3, 1.25), swRidge * 0.55);
-// Ripple crests close up are crisp painted touches of light where the families' crests meet.
-swBodyLit = mix(swBodyLit, swBodyLit * vec3(1.1, 1.55, 1.48), smoothstep(0.62, 0.85, swRippleCrest) * clamp(swCFd0 * 1.6, 0.0, 1.0) * swCloseUp * 0.7);
+// Four broad tones by the primary swell's height, with soft edges: ultramarine troughs, deep cyan flanks, bright cyan-teal
+// backs and pale turquoise tops (Shallow Color in part). The edges' width follows the pixel's change of height, so far
+// water blurs into a gradient instead of aliasing. Seen from above the swell's interference would print a dimple
+// lattice, so the height contrast eases toward steep views, unevenly; over shallows the bed's colour dominates instead.
+// The chop only lifts the tones by its rounded lumps (\`swChopHs\`), never by its ridges.
+float swHeightT = clamp(0.5 + (swSwellT - 0.5) * swHeightK + swChopHs * (0.3 + 0.35 * swCloseUp) * min(swChopShade, 1.0), 0.0, 1.0);
+float swToneW = 0.05 + min(fwidth(swHeightT) * 1.2, 0.2);
+float swTones = smoothstep(0.3 - swToneW, 0.3 + swToneW, swHeightT) + smoothstep(0.5 - swToneW, 0.5 + swToneW, swHeightT) + smoothstep(0.7 - swToneW, 0.7 + swToneW, swHeightT);
+vec3 swTone0 = swBody * vec3(0.4, 0.52, 0.82);
+vec3 swTone1 = swBody * vec3(0.8, 1.04, 1.12) * 1.1;
+vec3 swTone2 = swBody * vec3(1.0, 1.3, 1.26) * 1.25;
+vec3 swTone3 = mix(swBody * vec3(1.05, 1.5, 1.3), swShallowC * 0.5, 0.25 * swBedTone) * 1.45;
+vec3 swBodyLit = mix(swTone0, swTone1, clamp(swTones, 0.0, 1.0));
+swBodyLit = mix(swBodyLit, swTone2, clamp(swTones - 1.0, 0.0, 1.0));
+swBodyLit = mix(swBodyLit, swTone3, clamp(swTones - 2.0, 0.0, 1.0));
+swBodyLit = max(mix(vec3(dot(swBodyLit, swLumW)), swBodyLit, 1.2), vec3(0.0));
+// Light through the thin tops toward the sun turns them yellow-green.
+float swToSun = clamp(dot(-swEyeH, swSunH) * 0.5 + 0.5, 0.0, 1.0);
+swToSun *= swToSun;
+swBodyLit = mix(swBodyLit, swBodyLit * vec3(1.15, 1.08, 0.55), clamp(swTones - 2.0, 0.0, 1.0) * swToSun * swSunUp * smoothstep(0.3, 0.7, swGraze) * 0.5);
+// Faces turned to the sun lean lighter and greener, in three soft steps (their edges widen with the pixel's change of
+// facing) rather than a smooth satin gradient. The facing comes from the swell and the chop's rounded lumps; the strokes
+// below only tilt it a little, so no ripple draws a step of its own.
+float swFaceW = 0.06 + min(fwidth(swFacing) * 1.2, 0.2);
+float swLitSteps = (smoothstep(0.32 - swFaceW, 0.32 + swFaceW, swFacing) + smoothstep(0.5 - swFaceW, 0.5 + swFaceW, swFacing) + smoothstep(0.68 - swFaceW, 0.68 + swFaceW, swFacing)) * 0.333333;
+swBodyLit = mix(swBodyLit, mix(swBodyLit * vec3(0.8, 0.88, 1.0), swBodyLit * vec3(1.02, 1.2, 1.1), swLitSteps), 0.6);
+// The chop's crests near the eye lighten the water in broad patches only (not along every ridge).
+float swRidge = smoothstep(0.72, 0.93, swOW0) * (1.0 - smoothstep(0.15, 0.5, swOC0.z * swFoot)) * smoothstep(0.1, 0.4, swChopGain) * smoothstep(0.35, 0.75, swMedium);
+swBodyLit = mix(swBodyLit, swBodyLit * vec3(1.05, 1.3, 1.25), swRidge * 0.35);
+// Ripple strokes: thin bright cyan lines (the ripples' crests inside their gate), brightest on the faces that catch the light.
+swBodyLit = mix(swBodyLit, swBodyLit * vec3(1.15, 1.6, 1.5), swStroke * (0.3 + 0.7 * swLitSteps) * 0.8);
 // Sky light (its hue in part) and the sun; a floor keeps the colours readable lit only by an environment.
 vec3 swAmbTint = mix(vec3(1.0), swAmbHue, 0.45);
 vec3 swKeyTint = mix(vec3(1.0), swKeyHue, 0.6);
@@ -2347,8 +2371,6 @@ float swGlow = 0.0;${ifDefined(subsurface, `
 // lobe around the light's own direction bent by the swell), weaker from other sides with the sky's light. A sun on the
 // horizon is dim and red and the water absorbs it, so a warm low sun glows less.
 float swSss = U.slateWaterLook.w;
-float swToSun = clamp(dot(-swEyeH, swSunH) * 0.5 + 0.5, 0.0, 1.0);
-swToSun *= swToSun;
 vec3 swSssDir = normalize(swL + swPrimNormal * 0.5);
 float swBack = clamp(dot(swV, -swSssDir), 0.0, 1.0);
 swBack *= swBack;
@@ -2393,11 +2415,11 @@ swZenith = mix(swZenith, swTopCopy, swHorOn * min(swTopN, 1.0) * 0.25);
 // to the eye: faces turned toward the eye show the water's body, crests and the backs of waves mirror the sky, so each
 // wave reads as a silhouette. Under an overcast sky the mirror is flatter and softer.
 float swFar = smoothstep(0.12, 1.0, swFoot);
-vec2 swReflSlope = (swSwellShadeG + swDetail * (swChopGain * 0.3 * (1.0 - swFar) * min(swChopShade, 1.0))) * mix(1.0, swPatch, 0.6) * (1.0 - 0.6 * swGrey);
+vec2 swReflSlope = (swSwellShadeG + swDetailSoft * (swChopGain * 0.3 * (1.0 - swFar) * min(swChopShade, 1.0))) * mix(1.0, swPatch, 0.6) * (1.0 - 0.6 * swGrey);
 // Close up the ripples and some more of the chop tilt it too, so near water reads glassy; the full chop would mirror
 // the bright horizon in streaks that read as foam.
 float swReflNear = 1.0 - smoothstep(0.03, 0.3, swFoot);
-swReflSlope += (swDetail * (swChopGain * 0.3 * min(swChopShade, 1.0)) + swRipples * (U.slateWaterMotion.z * 0.8)) * swReflNear;
+swReflSlope += (swDetailSoft * (swChopGain * 0.3 * min(swChopShade, 1.0)) + swRipples * (U.slateWaterMotion.z * 0.8)) * swReflNear;
 vec3 swReflN = normalize(vec3(swBaseX - swReflSlope.x, 1.0, swBaseZ - swReflSlope.y));
 float swNdotV = clamp(dot(swReflN, swV), 0.0, 1.0);
 float swFx = 1.0 - swNdotV;
@@ -2554,7 +2576,6 @@ swTrans *= 0.32;
 float swFoamScale = 0.55 * U.slateWaterMotion.y;
 float swNearFoam = 1.0 - smoothstep(0.4, 1.2, swFoot * 0.43);
 float swEdgeWobble = (swMedium - 0.5) * 0.6 * swNearFoam + (swLarge - 0.5) * 0.5;
-vec2 swWindUv = vec2(dot(swFlowed, swWindDir), dot(swFlowed, vec2(-swWindDir.y, swWindDir.x)));
 float swCrestNoise = swNoise(swWindUv * vec2(0.8, 0.3) * U.slateWaterMotion.y + vec2(swMedium - 0.5, swLarge - 0.5) * 1.3);
 // Shore: the band follows the waves where the depth (as if the bed shelved 1:10) is nearer, but reaches at most one and
 // a half foam widths beyond the rest shoreline's band, so a flat shallow bar far from the shore stays clear.
