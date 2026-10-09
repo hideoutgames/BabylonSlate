@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { RuntimeAssetCatalogEntry } from "@babylonslate/core";
-import { compileGraph, type GraphNode, type LogicGraph } from "@babylonslate/scripting";
+import { compileGraph, mergeEngineTypeSchemas, structInstanceDefault, type GraphNode, type LogicGraph } from "@babylonslate/scripting";
 import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
-import { RuntimeAssetCatalog, emptyAssetData } from "./asset-catalog";
+import { RuntimeAssetCatalog, emptyAssetData, type AssetFilterValue } from "./asset-catalog";
 import { createInProcessRuntime } from "./driver";
 import { loadCompiledModule } from "./module-loader";
 import { runtimeOptionsFromLoadControl } from "./play-load";
@@ -47,6 +47,15 @@ describe("RuntimeAssetCatalog", () => {
       Type: "Texture", Class: "", ParentClass: "",
     });
     expect(catalog.hasAsset("guid-Rifle")).toBe(true);
+  });
+
+  it("fills exactly the fields the Asset Data structure declares and reads a default Asset Filter as unconstrained", () => {
+    const schemas = mergeEngineTypeSchemas();
+    const declared = schemas.structs["engine:AssetData"]!.fields.map((field) => field.name);
+    expect(Object.keys(catalog.getAssetData("guid-Rifle"))).toEqual(declared);
+    expect(Object.keys(emptyAssetData())).toEqual(declared);
+    const defaultFilter = structInstanceDefault(schemas.structs["engine:AssetFilter"]!.fields, schemas);
+    expect(catalog.findAssets(defaultFilter as AssetFilterValue)).toEqual(catalog.getAssetsByPath("", true));
   });
 
   it("reports an unknown asset or path as an empty Asset Data and not found", () => {
