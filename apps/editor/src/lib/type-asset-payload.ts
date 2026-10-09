@@ -1,3 +1,4 @@
+import { hardLoadingProperty } from "@babylonslate/core";
 import type {
   EnumAsset,
   ScriptInterfaceAsset,
@@ -55,6 +56,7 @@ export function asStructureAsset(
         ...(row.defaultValue !== undefined
           ? { defaultValue: row.defaultValue }
           : {}),
+        ...hardLoadingProperty(row),
       };
     }),
   };

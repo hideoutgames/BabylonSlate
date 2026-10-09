@@ -71,4 +71,67 @@ describe("Data Definition and tree persistence", () => {
       expect(registry.list().some(asset => asset.header.name === "Invalid")).toBe(false);
     } finally { project.dispose(); }
   });
+
+  it("keeps Loading through save and reload and stamps Hard references into the saved headers", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("LoadingData");
+    const project = new ProjectService(storage);
+    try {
+      await project.loadCurrentProject();
+      const registry = project.registry!;
+      const loadingFields = [
+        { id: "mesh", name: "Mesh", typeId: "asset", typeClassId: "Model", loading: "hard" as const },
+        { id: "icon", name: "Icon", typeId: "asset", typeClassId: "Texture" },
+      ];
+      const definition = await createProjectAsset({
+        registry, rootId: "project", folderRelative: "Data", type: "DataDefinition", name: "Weapon",
+        dataDefinition: { kind: "dataDefinition", fields: loadingFields },
+      });
+      const definitionGuid = definition.header.guid;
+      const schema = { name: "Weapon", fields: loadingFields };
+      const typeSchemas: TypeSchemas = { structs: { [definitionGuid]: schema }, dataDefinitions: { [definitionGuid]: schema }, enums: {} };
+      const entry = createDataEntryForDefinition(definitionGuid, loadingFields, typeSchemas, "Sword", "sword");
+      const tree = await createProjectAsset({ registry, rootId: "project", folderRelative: "Data", type: "DataTree", name: "Weapons", defaultDefinitionGuid: definitionGuid, typeSchemas,
+        dataTree: { kind: "dataTree", defaultDefinitionGuid: definitionGuid, entries: [entry] },
+      });
+      await project.saveDocument("data-tree", tree.path, { kind: "dataTree", defaultDefinitionGuid: definitionGuid, entries: [{ ...entry, values: { Mesh: "sword-mesh", Icon: "sword-icon" } }] });
+
+      const hero = await createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "Class", name: "Hero" });
+      const members = [
+        { id: "weapon", kind: "variable", name: "Weapon", typeId: "asset", typeClassId: "Model", loading: "hard", defaultValue: "hero-weapon" },
+        { id: "trophy", kind: "variable", name: "Trophy", typeId: "asset", typeClassId: "Model", defaultValue: "hero-trophy" },
+      ];
+      await project.saveDocument("graph", hero.path, { nodes: [], edges: [], members } as never);
+      await project.remountRegistry();
+
+      expect(await project.loadDocument("data-definition", definition.path)).toMatchObject({ fields: [{ id: "mesh", loading: "hard" }, { id: "icon" }] });
+      expect((await project.loadDocument("data-definition", definition.path) as { fields: object[] }).fields[1]).not.toHaveProperty("loading");
+      expect((await project.loadDocument("graph", hero.path) as { members: unknown[] }).members).toEqual(members);
+
+      const treeHeader = project.registry!.getByGuid(tree.header.guid)!.header;
+      expect(treeHeader.dependencies).toEqual(expect.arrayContaining(["sword-mesh", "sword-icon"]));
+      expect(treeHeader.requiredDependencies).toContain("sword-mesh");
+      expect(treeHeader.requiredDependencies).not.toContain("sword-icon");
+      const heroHeader = project.registry!.getByGuid(hero.header.guid)!.header;
+      expect(heroHeader.requiredDependencies).toEqual(["hero-weapon"]);
+      expect(heroHeader.dependencies).toEqual(["hero-trophy", "hero-weapon"]);
+      expect(heroHeader.requiredVariableNames).toEqual(["Weapon"]);
+      expect(heroHeader.payload.variables).toMatchObject([{ id: "weapon", loading: "hard" }, { id: "trophy" }]);
+
+      // A Structure declares Loading for the struct-typed variables that use it.
+      const kit = await createProjectAsset({ registry: project.registry!, rootId: "project", folderRelative: "", type: "Structure", name: "Kit" });
+      await project.saveDocument("structure", kit.path, { kind: "structure", guid: kit.header.guid, name: "Kit", fields: [
+        { id: "sound", name: "Sound", typeId: "asset", typeClassId: "Audio", loading: "hard" },
+        { id: "skin", name: "Skin", typeId: "asset", typeClassId: "Texture" },
+      ] });
+      const rig = await createProjectAsset({ registry: project.registry!, rootId: "project", folderRelative: "", type: "Class", name: "Rig" });
+      await project.saveDocument("graph", rig.path, { nodes: [], edges: [], members: [
+        { id: "kit", kind: "variable", name: "Kit", typeId: "struct", typeClassId: kit.header.guid, defaultValue: { Sound: "kit-sound", Skin: "kit-skin" } },
+      ] } as never);
+      const rigHeader = project.registry!.getByGuid(rig.header.guid)!.header;
+      expect(rigHeader.dependencies).toEqual(expect.arrayContaining(["kit-sound", "kit-skin"]));
+      expect(rigHeader.requiredDependencies).toContain("kit-sound");
+      expect(rigHeader.requiredDependencies).not.toContain("kit-skin");
+    } finally { project.dispose(); }
+  });
 });

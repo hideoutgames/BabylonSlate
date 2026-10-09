@@ -4,7 +4,7 @@ import { useSimulationInspectionStore } from "../context/simulation-inspection-c
 import { GraphDataLiteralDefaults } from "../components/graph-data-literal-editor";
 import { saveGameVariableNames } from "../lib/save-game-property-rows";
 import { SceneLayerSwitcherFields } from "../components/scene-layer-switcher-fields";
-import { normalizeClassMemberCategory, parseUIControl2DProperties } from "@babylonslate/core";
+import { carriesLoadingPolicy, normalizeClassMemberCategory, parseUIControl2DProperties } from "@babylonslate/core";
 import { useMemo, useState } from "react";
 import { normalizeModelPayload } from "@babylonslate/assets";
 import { MODEL_MATERIALS_PICKER_ENTRY } from "../lib/mesh-material-properties";
@@ -13,6 +13,7 @@ import { normalizeRenderTargetCaptureProperties, type SerializedScene } from "@b
 import { RenderTargetCaptureActorsField } from "../components/render-target-capture-actors-field";
 import { RichTextAppearModesField } from "../components/rich-text-appear-modes-field";
 import {
+  AssetLoadingField,
   AssetPicker,
   AssetPickerControl,
   ClassPicker,
@@ -355,6 +356,8 @@ function ClassMemberDetails({
           nextContainer === "map" ? next.keyTypeClassId : undefined,
         typeClassId: nextClassId,
       };
+      // Loading only applies to asset and Class references.
+      if (member.loading && !carriesLoadingPolicy(patch)) patch.loading = undefined;
       if (
         typeChanged ||
         containerChanged ||
@@ -495,6 +498,16 @@ function ClassMemberDetails({
               </Button>
             </SearchDropdown>
           </Field>
+        ) : null}
+        {!member.functionId &&
+        carriesLoadingPolicy({ typeId, container, keyTypeId: member.keyTypeId }) ? (
+          <AssetLoadingField
+            value={member.loading}
+            onChange={(policy) =>
+              commit({ loading: policy === "hard" ? "hard" : undefined })
+            }
+            data-testid="inspector-member-loading"
+          />
         ) : null}
         {singleDefaultRows.length > 0 ? (
           <PropertyGrid rows={singleDefaultRows} />

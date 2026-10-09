@@ -164,3 +164,47 @@ it("switches a Tag Container to a nested Definition in Details and initializes i
   view.rerender(<View />);
   expect((details.getByRole("textbox", { name: "Default Value Count" }) as HTMLInputElement).value).toBe("5");
 });
+
+const savedField = () => (state.documents[0]!.content as { fields: object[] }).fields[0]!;
+
+function chooseLoading(details: ReturnType<typeof within>, name: string) {
+  fireEvent.click(details.getByTestId("data-definition-field-loading"));
+  const option = screen.getByRole("option", { name });
+  fireEvent.pointerDown(option);
+  fireEvent.click(option);
+}
+
+it("sets a reference field's Loading in Details and forgets it when the field stops being a reference", async () => {
+  const payload = { kind: "dataDefinition", fields: [{ id: "icon", name: "Icon", typeId: "asset", typeClassId: "Texture", defaultValue: "" }] };
+  state.documents[0]!.content = payload;
+  state.assets[0]!.header.payload = payload;
+  const view = render(<View />);
+  const details = within(screen.getByTestId("data-definition-details-panel"));
+  expect(details.getByTestId("data-definition-field-loading").textContent).toContain("Soft (Load On Demand)");
+  chooseLoading(details, "Hard (Load With Owner)");
+  await waitFor(() => expect(state.documents[0]!.content).toMatchObject({ fields: [{ id: "icon", typeClassId: "Texture", loading: "hard" }] }));
+  view.rerender(<View />);
+  chooseLoading(details, "Soft (Load On Demand)");
+  await waitFor(() => expect(savedField()).not.toHaveProperty("loading"));
+  view.rerender(<View />);
+  chooseLoading(details, "Hard (Load With Owner)");
+  await waitFor(() => expect(state.documents[0]!.content).toMatchObject({ fields: [{ loading: "hard" }] }));
+  view.rerender(<View />);
+  fireEvent.click(details.getByTestId("inspector-member-type"));
+  fireEvent.click(await screen.findByTestId("search-item-float"));
+  await waitFor(() => expect(state.documents[0]!.content).toMatchObject({ fields: [{ id: "icon", typeId: "float" }] }));
+  expect(savedField()).not.toHaveProperty("loading");
+  view.rerender(<View />);
+  expect(details.queryByTestId("data-definition-field-loading")).toBeNull();
+});
+
+it("shows Loading but keeps it read-only in a locked Definition", () => {
+  state.readOnly = true;
+  const payload = { kind: "dataDefinition", fields: [{ id: "icon", name: "Icon", typeId: "asset", typeClassId: "Texture", loading: "hard" }] };
+  state.documents[0]!.content = payload;
+  state.assets[0]!.header.payload = payload;
+  render(<View />);
+  const trigger = screen.getByTestId("data-definition-field-loading") as HTMLButtonElement;
+  expect(trigger.textContent).toContain("Hard (Load With Owner)");
+  expect(trigger.disabled).toBe(true);
+});

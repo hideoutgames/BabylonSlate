@@ -1,6 +1,8 @@
 import { useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
+import { carriesLoadingPolicy } from "@babylonslate/core";
 import {
+  AssetLoadingField,
   AssetPicker,
   AssetPickerControl,
   PanelFrame,
@@ -201,6 +203,8 @@ export function TypeDetailsPanel(_props: IDockviewPanelProps) {
                       nextTypeClassId,
                       typeSchemas,
                     ),
+                    // Loading only applies to asset and Class references.
+                    ...(carriesLoadingPolicy({ ...field, typeId }) ? {} : { loading: undefined }),
                   }),
                 );
               }}
@@ -227,6 +231,19 @@ export function TypeDetailsPanel(_props: IDockviewPanelProps) {
                 </Button>
               </AssetPickerControl>
             </div>
+          ) : null}
+          {carriesLoadingPolicy(field) ? (
+            <AssetLoadingField
+              value={field.loading}
+              onChange={(policy) =>
+                commit(
+                  patchStructureField(asset, selectedIndex, {
+                    loading: policy === "hard" ? "hard" : undefined,
+                  }),
+                )
+              }
+              data-testid="structure-field-loading"
+            />
           ) : null}
           {defaultRows.length > 0 ? <PropertyGrid rows={defaultRows} /> : null}
           <AssetPicker

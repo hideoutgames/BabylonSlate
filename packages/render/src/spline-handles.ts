@@ -45,7 +45,10 @@ export function removeSplinePoint(body: SplineProperties, index: number): { poin
   return { points: body.points.filter((_, i) => i !== index).map((point) => [...point]) };
 }
 
-/** XYZ points move in the camera-facing plane; orbiting provides the remaining axis. */
+/**
+ * XYZ points move in the camera-facing plane; orbiting provides the remaining axis.
+ * A clicked or dragged point stays selected for the translate gizmo.
+ */
 export function createSplineHandles(layer: UtilityLayerRenderer, scene: Scene, options: ShapeHandlesOptions = {}): ShapeHandlesHost<ShapeHandleTarget> {
   return createShapeHandles<SplineProperties, SplineHandle, ShapeHandleTarget>(layer, scene, {
     name: "spline",
@@ -63,5 +66,6 @@ export function createSplineHandles(layer: UtilityLayerRenderer, scene: Scene, o
     remove: (body, handle) => removeSplinePoint(body, handle.index),
     constraint: (_handle, _world, camera) => ({ dragPlaneNormal: camera ? cameraForward(camera) : FALLBACK_FORWARD }),
     color: () => new Color3(0.95, 0.97, 1),
+    selectable: (handle) => handle.kind === "point",
   }, options);
 }
