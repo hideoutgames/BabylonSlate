@@ -1446,15 +1446,11 @@ normalW = normalize(mix(mix(normalW, swSwellNormal, swGraze8 * swGraze4 * 0.6), 
 normalW = normalize(mix(normalW, swBaseNormal, swHaze * swHaze));
 swSharp = 1.0 - swHaze;
 #if ${SAMPLES_COPY}
-// From Medium the last degrees above the horizon take the sky actually drawn there (the scene copy, just above this
-// pixel's own azimuth on the horizon; \`beforeFogSource\`), so the sea never ends in a line whatever the environment
-// mirrors there.
-vec2 swHorAz = -viewDirectionW.xz / max(length(viewDirectionW.xz), 0.0001);
-vec4 swHorLC = S.viewProjection * vec4(swHorAz.x, 0.012, swHorAz.y, 0.0);
-vec2 swHorUv = swHorLC.xy / max(swHorLC.w, 0.0001) * 0.5 + 0.5;
-vec4 swHorLT = swSceneTexel(clamp(swHorUv, vec2(0.002), vec2(0.998)));
-vec3 swHorC = swHorLT.rgb;
-float swHorW = ${skyHit("swHorLT")} * step(0.0001, swHorLC.w) * step(abs(swHorUv.y - 0.5), 0.49) * smoothstep(0.975, 0.9985, swGraze);
+// From Medium the last half degree above the horizon takes the sky actually drawn there (the scene copy: a damped
+// average of the row just above the horizon around this pixel's azimuth, \`horizonCopySource\`; applied in
+// \`beforeFogSource\`), so the sea never ends in a line whatever the environment mirrors there.${horizonCopySource()}
+vec3 swHorC = swHorLocal;
+float swHorW = swHorOn * swHorHave * smoothstep(0.9905, 0.999, swGraze);
 #endif
 // Fresnel sees this facet normal; the shading normal below only steers the reflected sky lookup.
 vec3 swFresN = normalW;
@@ -2048,10 +2044,25 @@ vec3 swHorSum = swHorT0.rgb * ${skyHit("swHorT0")} + swHorT1.rgb * ${skyHit("swH
 float swHorN = ${skyHit("swHorT0")} + ${skyHit("swHorT1")};${fromTier(2, `${skyTap("swHorT2", 0.06, "swHorY")}${skyTap("swHorT3", 0.94, "swHorY")}
 swHorSum += swHorT2.rgb * ${skyHit("swHorT2")} + swHorT3.rgb * ${skyHit("swHorT3")};
 swHorN += ${skyHit("swHorT2")} + ${skyHit("swHorT3")};`)}
+vec3 swHorAvg = swHorSum / max(swHorN, 0.001);
 vec2 swHorAz = -viewDirectionW.xz / max(length(viewDirectionW.xz), 0.0001);
-vec4 swHorLC = S.viewProjection * vec4(swHorAz.x, 0.012, swHorAz.y, 0.0);
-vec4 swHorLT = swSceneTexel(clamp(swHorLC.xy / max(swHorLC.w, 0.0001) * 0.5 + 0.5, vec2(0.002), vec2(0.998)));
-vec3 swHorLocal = mix(swHorSum / max(swHorN, 0.001), swHorLT.rgb, ${skyHit("swHorLT")});`;
+vec4 swHorLC = S.viewProjection * vec4(swHorAz.x, 0.004, swHorAz.y, 0.0);
+vec2 swHorUv = clamp(swHorLC.xy / max(swHorLC.w, 0.0001) * 0.5 + 0.5, vec2(0.002), vec2(0.998));
+vec4 swHorL0 = swSceneTexel(vec2(clamp(swHorUv.x - 0.035, 0.002, 0.998), swHorUv.y));
+vec4 swHorL1 = swSceneTexel(swHorUv);
+vec4 swHorL2 = swSceneTexel(vec2(clamp(swHorUv.x + 0.035, 0.002, 0.998), swHorUv.y));
+vec3 swLocSum = swHorL0.rgb * ${skyHit("swHorL0")} + swHorL1.rgb * ${skyHit("swHorL1")} + swHorL2.rgb * ${skyHit("swHorL2")};
+float swLocN = ${skyHit("swHorL0")} + ${skyHit("swHorL1")} + ${skyHit("swHorL2")};${fromTier(2, `
+vec4 swHorL3 = swSceneTexel(vec2(clamp(swHorUv.x - 0.07, 0.002, 0.998), swHorUv.y));
+vec4 swHorL4 = swSceneTexel(vec2(clamp(swHorUv.x + 0.07, 0.002, 0.998), swHorUv.y));
+swLocSum += swHorL3.rgb * ${skyHit("swHorL3")} + swHorL4.rgb * ${skyHit("swHorL4")};
+swLocN += ${skyHit("swHorL3")} + ${skyHit("swHorL4")};`)}
+// The sky's colour at the horizon below this pixel: a horizontal average of the row just above the horizon (taps behind
+// geometry drop out), damped by the fixed-point average so the clouds' texture never streaks across columns. \`swHorHave\`
+// is 0 where no tap read sky (the average is then empty too).
+float swLocK = min(swLocN, 1.0) * step(0.0001, swHorLC.w) * step(abs(swHorUv.y - 0.5), 0.49);
+vec3 swHorLocal = mix(swHorAvg, swLocSum / max(swLocN, 0.001), swLocK * mix(1.0, 0.5, min(swHorN, 1.0)));
+float swHorHave = max(min(swHorN, 1.0), swLocK);`;
 }
 
 /**
@@ -2636,7 +2647,7 @@ vec3 swEmissive = swPremul / alpha;
 float swPaintHaze = 1.0 - (1.0 - swAir * smoothstep(0.3, 0.85, swGraze)) * (1.0 - smoothstep(0.98, 0.9985, swGraze));
 vec3 swPaintTarget = swHorizonSky;
 #if ${SAMPLES_COPY}
-swPaintTarget = mix(swHorizonSky, swHorLocal, swHorOn * min(swHorN, 1.0));
+swPaintTarget = mix(mix(swHorizonSky, swHorAvg, swHorOn * min(swHorN, 1.0)), swHorLocal, swHorOn * swHorHave * smoothstep(0.991, 0.999, swGraze));
 #endif
 swEmissive = mix(swEmissive, swPaintTarget, swPaintHaze);
 alpha = mix(alpha, 1.0, swPaintHaze);
@@ -3067,8 +3078,7 @@ swAirBand *= smoothstep(0.6, 0.95, swDepthTone);
 swHaze = max(swHaze, swAirBand);
 vec3 swHazeC = swFarC;
 #if ${SAMPLES_COPY}${horizonCopySource()}
-vec3 swHorSky = swHorLocal;
-swHazeC = mix(mix(swFarC, swHorSky, swHorOn * min(swHorN, 1.0) * (0.7 - 0.45 * swEve)), swHorSky, swHorOn * min(swHorN, 1.0) * (1.0 - smoothstep(0.0, 0.03, swUp)));
+swHazeC = mix(mix(swFarC, swHorAvg, swHorOn * min(swHorN, 1.0) * (0.7 - 0.45 * swEve)), swHorLocal, swHorOn * swHorHave * (1.0 - smoothstep(0.0, 0.009, swUp)));
 #endif
 
 // Foam: opaque white shapes antialiased by the footprint. Shore: a thick scalloped band on the waterline and a thinner
