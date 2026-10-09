@@ -88,6 +88,8 @@ export type CollectExportGameParams = {
   reverbWetScale?: number;
   reverbDecayScale?: number;
   reverbDampingScale?: number;
+  /** Project Always Package Folders: their assets ship even when unreferenced. */
+  alwaysPackageFolders?: readonly string[];
   assets: ExportIndexedAsset[];
   plugins: readonly ExportPluginDescriptor[];
   projectPluginOverrides: Record<string, PluginEnableOverride>;
@@ -288,6 +290,7 @@ export async function collectAndExportGame(
     gameInstanceClass: params.gameInstanceClass,
     audioMixerGuid: params.audioMixerGuid,
     renderAssetGuids: [...renderEffectsAssetGuids(params.renderSettings.effects), ...(params.defaultFontGuid ? [params.defaultFontGuid] : [])],
+    alwaysPackageFolders: params.alwaysPackageFolders,
     assets: params.assets,
     pluginEnabledGuids,
     parentOf: params.parentOf,
@@ -356,6 +359,7 @@ export async function collectAndExportGame(
       const textureSize = texturePixelSizeFromPayload(payload);
       exportAssets.push({
         guid,
+        assetPath: asset.path,
         parentClass: asset.parentClass,
         dependencies: asset.dependencies,
         requiredDependencies: asset.requiredDependencies,

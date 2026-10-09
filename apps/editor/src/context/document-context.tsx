@@ -2223,6 +2223,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         reverbWetScale: exportDocument?.settings.audio.reverbWetScale,
         reverbDecayScale: exportDocument?.settings.audio.reverbDecayScale,
         reverbDampingScale: exportDocument?.settings.audio.reverbDampingScale,
+        alwaysPackageFolders: exportDocument?.settings.alwaysPackageFolders,
         assets: assetsFromIndexed(list),
         plugins,
         projectPluginOverrides,
