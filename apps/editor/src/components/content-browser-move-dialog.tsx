@@ -1,12 +1,7 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import { FolderIcon } from "lucide-react";
 import type { FolderNode } from "@babylonslate/assets";
-import {
-  SearchInput,
-  TreeView,
-  TypeVisualIcon,
-  type TypeVisual,
-} from "@babylonslate/editor-kit";
+import { TypeVisualIcon, type TypeVisual } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
 import {
@@ -18,11 +13,10 @@ import {
 } from "@babylonslate/ui/components/dialog";
 import {
   contentBrowserMoveDialogTitle,
-  filterFolderTreeRows,
-  flattenFolderTree,
   isValidSelectionMoveDestination,
   type MoveKind,
 } from "../lib/content-browser-helpers";
+import { FolderTreePicker } from "./folder-tree-picker";
 
 export interface ContentBrowserMoveDialogProps {
   open: boolean;
@@ -63,8 +57,6 @@ export function ContentBrowserMoveDialog({
   assetSourcePaths,
   folderSourcePaths,
 }: ContentBrowserMoveDialogProps) {
-  const [search, setSearch] = useState("");
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const resolvedFolderSources = useMemo(
     () => folderSourcePaths ?? (kind === "folder" ? [sourcePath] : []),
     [folderSourcePaths, kind, sourcePath],
@@ -89,38 +81,17 @@ export function ContentBrowserMoveDialog({
     assetCount: resolvedAssetSources.length,
   });
 
-  const nodes = useMemo(() => {
-    if (!folderTree) return [];
-    const searching = search.trim().length > 0;
-    const rows = flattenFolderTree(
-      folderTree,
-      searching ? new Set() : collapsed,
-    );
-    return filterFolderTreeRows(rows, search).map((row) => {
-      const muted = !isValidSelectionMoveDestination({
-        destinationPath: row.path,
+  const folderTrees = useMemo(() => (folderTree ? [folderTree] : []), [folderTree]);
+  const isIllegalDestination = useCallback(
+    (path: string) =>
+      !isValidSelectionMoveDestination({
+        destinationPath: path,
         operation,
         assetSourcePaths: resolvedAssetSources,
         folderSourcePaths: resolvedFolderSources,
-      });
-      return {
-        id: row.id,
-        label: row.label,
-        depth: row.depth,
-        hasChildren: row.hasChildren,
-        expanded: searching ? true : row.expanded,
-        muted,
-        icon: <FolderIcon />,
-      };
-    });
-  }, [
-    collapsed,
-    folderTree,
-    operation,
-    resolvedAssetSources,
-    resolvedFolderSources,
-    search,
-  ]);
+      }),
+    [operation, resolvedAssetSources, resolvedFolderSources],
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -149,41 +120,14 @@ export function ContentBrowserMoveDialog({
             </p>
           </div>
         </div>
-        <SearchInput
-          value={search}
-          onChange={setSearch}
-          placeholder="Search Folders"
-          data-testid="content-browser-move-search"
+        <FolderTreePicker
+          folderTrees={folderTrees}
+          selectedPath={destinationPath}
+          onSelect={onDestinationChange}
+          isDisabled={isIllegalDestination}
+          searchTestId="content-browser-move-search"
+          treeTestId="content-browser-move-tree"
         />
-        <div className="h-64 min-h-0 rounded-md border border-border">
-          <TreeView
-            nodes={nodes}
-            selectedId={destinationPath}
-            onSelect={(id) => {
-              if (
-                !isValidSelectionMoveDestination({
-                  destinationPath: id,
-                  operation,
-                  assetSourcePaths: resolvedAssetSources,
-                  folderSourcePaths: resolvedFolderSources,
-                })
-              ) {
-                return;
-              }
-              onDestinationChange(id);
-            }}
-            onToggleExpanded={(id) =>
-              setCollapsed((current) => {
-                const next = new Set(current);
-                if (next.has(id)) next.delete(id);
-                else next.add(id);
-                return next;
-              })
-            }
-            emptyLabel="No folders"
-            data-testid="content-browser-move-tree"
-          />
-        </div>
         <p className="text-sm text-muted-foreground" data-testid="content-browser-move-destination">
           Destination: <span className="text-foreground">{destinationPath}</span>
         </p>

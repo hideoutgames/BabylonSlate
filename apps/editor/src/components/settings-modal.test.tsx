@@ -129,6 +129,13 @@ vi.mock("../context/document-context", async () => {
           path: "assets/Master.mixer.babasset",
         },
       ],
+      listRoots: () => [{ id: "project" }],
+      folderTree: () => ({
+        name: "assets",
+        path: "assets",
+        assets: [],
+        children: [{ name: "Weapons", path: "assets/Weapons", assets: [], children: [] }],
+      }),
       getByGuid: (guid: string) =>
         guid === "font-1"
           ? {
@@ -487,6 +494,22 @@ describe("SettingsModal project authoring", () => {
         ],
       }),
     );
+  });
+
+  it("adds an Always Package Folder from the Export category's folder picker", () => {
+    render(
+      <SettingsModal open onOpenChange={() => {}} scope="project" />,
+    );
+    fireEvent.click(screen.getByTestId("settings-modal-category-export"));
+    fireEvent.click(screen.getByTestId("settings-always-package-folders-add"));
+    const row = screen.getByTestId("tree-row-assets/Weapons");
+    for (const type of ["pointerdown", "pointerup"]) {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: 8, clientY: 8 });
+      Object.defineProperties(event, { pointerId: { value: 1 }, pointerType: { value: "mouse" }, isPrimary: { value: true } });
+      fireEvent(row, event);
+    }
+    fireEvent.click(screen.getByTestId("settings-always-package-folders-picker-confirm"));
+    expect(updateProjectSettings).toHaveBeenCalledWith({ alwaysPackageFolders: ["assets/Weapons"] });
   });
 
   it("authors custom render resolution on the Rendering category", () => {

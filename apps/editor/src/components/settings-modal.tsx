@@ -1,3 +1,4 @@
+import { AlwaysPackageFoldersField } from "./always-package-folders-field";
 import { ProjectSaveGamesSettings } from "./project-save-games-settings";
 import { RenderQualityFields } from "./render-quality-fields";
 import { FocusNavigationFields } from "./focus-navigation-fields";
@@ -171,7 +172,7 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
     id: "export",
     label: "Export",
     keywords:
-      "export project zip download packaged player export game packed debugger file count",
+      "export project zip download packaged player export game packed debugger file count always package folders folder include unreferenced",
   },
   {
     id: "sourceControl",
@@ -1509,6 +1510,20 @@ export function SettingsModal({
                 }}
                 data-testid="setting-export-file-fail"
               />
+            </Field>
+            <Field>
+              <FieldLabel>Always Package Folders</FieldLabel>
+              <AlwaysPackageFoldersField
+                folders={projectDocument.settings.alwaysPackageFolders}
+                onChange={(alwaysPackageFolders) =>
+                  updateProjectSettings({ alwaysPackageFolders })
+                }
+              />
+              <FieldDescription>
+                Assets in these folders and their subfolders ship in every
+                export and Preview Build, even when nothing references them.
+                Editor-only assets and disabled plugin content stay out.
+              </FieldDescription>
             </Field>
             {exportGameError ? (
                 <p
