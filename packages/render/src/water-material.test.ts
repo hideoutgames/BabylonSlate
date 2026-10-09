@@ -10,7 +10,7 @@ import {
 import { updateSceneRenderingSettings } from "./render-settings";
 import { waterFftDiagnostics, waterFftForSurface } from "./water-fft";
 import { WATER_FFT_CASCADE_TURNS } from "./water-fft-spectrum";
-import { WATER_FFT_SAMPLER, WaterMaterialPlugin } from "./water-material";
+import { WATER_FFT_SAMPLER, WaterMaterialPlugin, waterHazeConstants } from "./water-material";
 import { createWaterMesh, setSceneWaterTime, setWaterGpuWaves, updateSceneWater, updateWaterMeshDefinition } from "./water-mesh";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
 
@@ -72,15 +72,15 @@ describe("Water material binding", () => {
     } finally { scene.dispose(); engine.dispose(); }
   });
 
-  it("reflects a sky built from the scene's background, fog and sky light, and absorbs the colours Shallow Color lacks first", () => {
+  it("reflects a sky built from the scene's background, fog and sky light, hazes by the active camera's far plane, and absorbs the colours Shallow Color lacks first", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     try {
       const { plugin } = water(scene), output = uniforms();
       const bound = (name: string) => { plugin.hardBindForSubMesh(output.buffer, scene); return output.vectors.get(name)!.slice(0, 3); };
       const linear = (value: number) => value ** 2.2;
-      let sky: number[] = [], horizon: number[] = [];
+      let sky: number[] = [], horizon: number[] = [], haze: number[] = [];
       scene.clearColor.set(0.5, 0.6, 0.8, 1);
-      scene.customRenderFunction = () => { sky = bound("slateWaterSky"); horizon = bound("slateWaterHorizon"); };
+      scene.customRenderFunction = () => { sky = bound("slateWaterSky"); horizon = bound("slateWaterHorizon"); haze = [...output.vectors.get("slateWaterHaze")!]; };
       scene.render();
       // Without fog the horizon is the background the scene shows as its sky; overhead it is deeper.
       horizon.forEach((value, i) => expect(value).toBeCloseTo(linear([0.5, 0.6, 0.8][i]!), 5));
@@ -96,6 +96,19 @@ describe("Water material binding", () => {
       scene.render();
       const fog = scene.fogColor.toLinearSpace(engine.useExactSrgbConversions);
       expect(horizon).toEqual([expect.closeTo(fog.r, 5), expect.closeTo(fog.g, 5), expect.closeTo(fog.b, 5)]);
+      // Aerial perspective follows the active camera's far plane: half the light is the air's at 0.4 of its range, the ramp
+      // that makes the sea fully hazed ends before the far clip, a longer plane hazes over proportionally longer
+      // distances, and a very long one is capped at atmospheric distances (8000 m) rather than hazing nothing.
+      const camera = new FreeCamera("view", new Vector3(0, 2, 0), scene);
+      scene.activeCamera = camera;
+      const hazeFor = (far: number) => { camera.maxZ = far; scene.render(); return haze; };
+      const near = hazeFor(2000), far = hazeFor(4000);
+      expect(1 - Math.exp(-near[0]! * 0.4 * 2000)).toBeCloseTo(0.5, 6);
+      expect(near[1]!).toBeLessThan(near[2]!); expect(near[2]!).toBeLessThan(2000);
+      expect(far[0]!).toBeCloseTo(near[0]! / 2, 12); expect(far[2]!).toBeCloseTo(near[2]! * 2, 6);
+      expect(hazeFor(1e6)).toEqual(hazeFor(8000));
+      expect(Array.from(waterHazeConstants(1e6))).toEqual(hazeFor(8000));
+      expect(hazeFor(1e6)[2]!).toBeLessThan(8000);
       // Absorption: water whose shallows look blue loses red first and blue last; grey shallows absorb every channel alike.
       const absorb = (shallowColor: [number, number, number]) => { (plugin.water as { shallowColor: number[] }).shallowColor = shallowColor; return bound("slateWaterAbsorb"); };
       const [r, g, b] = absorb([0.1, 0.4, 0.8]);

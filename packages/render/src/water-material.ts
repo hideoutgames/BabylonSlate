@@ -49,6 +49,15 @@ const octaveVariance = (slope: number) => 0.07 * slope * slope;
  * between frames, so the sun's glints on them strobe instead of travelling. Uniform-only arithmetic, every tier.
  */
 const TEMPORAL_FADE = [0.6, 1.3] as const;
+/**
+ * A swell component fades by the phase it advances over one sample: radians per pixel footprint (the fragment, along its
+ * own heading) and per vertex spacing (`swvF`, whose 4/Wave Length constant makes `spacing * w` 0.64 k · spacing). The
+ * fragment's geometry terms (height, offset, resolved share) fade between `SWELL_GEOMETRY_FADE` per pixel, as the mesh
+ * drops it by 1.56 to π per vertex; Realistic shades only the slope it can still draw cleanly (`SWELL_SLOPE_FADE`, about
+ * 25 down to 6 pixels a cycle), the rest going to roughness, so a long swell row at a grazing angle never prints a stripe.
+ */
+const SWELL_GEOMETRY_FADE = [0.6, 2.2] as const;
+const SWELL_SLOPE_FADE = [0.25, 1.0] as const;
 const TEMPORAL_FRAME = 1 / 30;
 
 /**
@@ -964,7 +973,9 @@ vec2 swD${i} = swWD${i}.xy;
 vec2 swDm${i} = swD${i} + vec2(dot(swSwellWarpG.xy, swD${i}), dot(swSwellWarpG.yz, swD${i}));
 float swP${i} = swK${i} * dot(swD${i}, swRestW) + swWA${i}.y;
 float swA${i} = swWA${i}.x * swBlendH;
-float swFd${i} = 1.0 - smoothstep(0.6, 2.2, swK${i} * (abs(dot(swDm${i}, swFootX)) + abs(dot(swDm${i}, swFootY))));
+float swPh${i} = swK${i} * (abs(dot(swDm${i}, swFootX)) + abs(dot(swDm${i}, swFootY)));
+float swFd${i} = 1.0 - smoothstep(${f(SWELL_GEOMETRY_FADE[0])}, ${f(SWELL_GEOMETRY_FADE[1])}, swPh${i});${realistic ? `
+float swFs${i} = 1.0 - smoothstep(${f(SWELL_SLOPE_FADE[0])}, ${f(SWELL_SLOPE_FADE[1])}, swPh${i});` : ""}
 // The component's wave group (\`waterWaveGroups\`): its height envelope, which the Gerstner offset below does not carry.
 float swGn${i} = (1.0 / sqrt(1.0 + 0.5 * swWG${i}.w * swWG${i}.w));
 float swGq${i} = dot(swWG${i}.xy, swRestW) + swWG${i}.z;
@@ -975,12 +986,12 @@ float swC${i} = cos(swP${i});
 float swE${i} = exp(swS${i} - 1.0);
 float swHv${i} = mix(swS${i}, (swE${i} - ${f(WATER_CREST_MEAN)}) / ${f(WATER_CREST_RANGE)}, swChopShape);
 swHeight += swHv${i} * swF${i};
-swGradient += swD${i} * (mix(swC${i}, swE${i} * swC${i} / ${f(WATER_CREST_RANGE)}, swChopShape) * swK${i} * swF${i});${fromTier(2, `
+swGradient += swD${i} * (mix(swC${i}, swE${i} * swC${i} / ${f(WATER_CREST_RANGE)}, swChopShape) * swK${i} * ${realistic ? `swFs${i} * swA${i} * swG${i}` : `swF${i}`});${fromTier(2, `
 // The envelope's own slope (High up; about a sixteenth of the crest's, so lower tiers leave it out).
 swGradient -= swWG${i}.xy * (swWG${i}.w * swGn${i} * sin(swGq${i}) * swHv${i} * swFd${i} * swA${i});`)}
 swFold += swK${i} * swF${i} * mix(swS${i}, swE${i} * (swS${i} - swC${i} * swC${i}) / ${f(WATER_CREST_RANGE)}, swChopShape);
 swResolved += swK${i} * swFd${i} * swA${i};${realistic ? `
-swLost += swK${i} * swA${i} * swK${i} * swA${i} * (1.0 - swFd${i} * swFd${i});` : painted ? `
+swLost += swK${i} * swA${i} * swK${i} * swA${i} * (1.0 - swFs${i} * swFs${i});` : painted ? `
 // The primary swell: components near the dominant wavelength, which Painted shades as the big readable waves.
 float swPw${i} = 1.0 - smoothstep(1.3, 2.2, swK${i} * swPrimLen);
 swPrimH += mix(swS${i}, (swE${i} - ${f(WATER_CREST_MEAN)}) / ${f(WATER_CREST_RANGE)}, swChopShape) * swF${i} * swPw${i};
@@ -1430,9 +1441,21 @@ float swPxM = swFoot * 0.5;`)}
 // is level (see \`swHaze\`): its mirror is the horizon band itself.
 float swFar = smoothstep(0.1, 1.5, swPxM);
 vec3 swMeanN = normalize(swSwellNormal + vec3(0.0, 1.0, 0.0));
-float swHaze = 1.0 - (1.0 - swAir * smoothstep(0.3, 0.85, swGraze)) * (1.0 - 0.85 * smoothstep(0.98, 0.9985, swGraze));
+float swHaze = 1.0 - (1.0 - swAir * smoothstep(0.3, 0.85, swGraze)) * (1.0 - smoothstep(0.98, 0.9985, swGraze));
 normalW = normalize(mix(mix(normalW, swSwellNormal, swGraze8 * swGraze4 * 0.6), swMeanN, swFar * 0.45));
 normalW = normalize(mix(normalW, swBaseNormal, swHaze * swHaze));
+swSharp = 1.0 - swHaze;
+#if ${SAMPLES_COPY}
+// From Medium the last degrees above the horizon take the sky actually drawn there (the scene copy, just above this
+// pixel's own azimuth on the horizon; \`beforeFogSource\`), so the sea never ends in a line whatever the environment
+// mirrors there.
+vec2 swHorAz = -viewDirectionW.xz / max(length(viewDirectionW.xz), 0.0001);
+vec4 swHorLC = S.viewProjection * vec4(swHorAz.x, 0.012, swHorAz.y, 0.0);
+vec2 swHorUv = swHorLC.xy / max(swHorLC.w, 0.0001) * 0.5 + 0.5;
+vec4 swHorLT = swSceneTexel(clamp(swHorUv, vec2(0.002), vec2(0.998)));
+vec3 swHorC = swHorLT.rgb;
+float swHorW = ${skyHit("swHorLT")} * step(0.0001, swHorLC.w) * step(abs(swHorUv.y - 0.5), 0.49) * smoothstep(0.975, 0.9985, swGraze);
+#endif
 // Fresnel sees this facet normal; the shading normal below only steers the reflected sky lookup.
 vec3 swFresN = normalW;
 // Detail filtered away at a distance still roughens the surface, bounded by a sea-state cap (CPU): reflections blur
@@ -1449,9 +1472,12 @@ swSlopeVariance = min((swLost + swLostDetail * swChopGain * swChopGain * 0.85) *
 // the water would reflect only more water. A smooth maximum leaves no plateau of identical directions on wave backs.
 // The shading normal becomes the half vector toward the lifted reflection; the Fresnel stays the facet's own.
 vec3 swRefl = reflect(-swV, normalW);
-float swReflFloor = mix(0.02 + sqrt(swSlopeVariance) * 1.2, 0.004, swHaze);
+float swHorizonMirror = max(swHaze, smoothstep(0.94, 0.9985, swGraze));
+float swReflFloor = mix(0.02 + sqrt(swSlopeVariance) * 1.2, 0.004, swHorizonMirror);
 float swReflRawY = swRefl.y;
-float swReflLift = swRefl.y + log(1.0 + exp(30.0 * (swReflFloor - swRefl.y))) / 30.0;
+float swLiftK = mix(30.0, 400.0, swHorizonMirror);
+float swLiftA = swLiftK * (swReflFloor - swRefl.y);
+float swReflLift = swRefl.y + (max(swLiftA, 0.0) + log(1.0 + exp(-abs(swLiftA)))) / swLiftK;
 swRefl.y = mix(swRefl.y, swReflLift, step(0.0, swV.y));
 normalW = normalize(swV + normalize(swRefl));
 // Wind ripples below the smallest capillary octave (centimetres) tilt every facet a little; calm water stays a mirror.
@@ -2021,7 +2047,11 @@ float swHorY = clamp(swHorRaw, 0.002, 0.998);${skyTap("swHorT0", 0.25, "swHorY")
 vec3 swHorSum = swHorT0.rgb * ${skyHit("swHorT0")} + swHorT1.rgb * ${skyHit("swHorT1")};
 float swHorN = ${skyHit("swHorT0")} + ${skyHit("swHorT1")};${fromTier(2, `${skyTap("swHorT2", 0.06, "swHorY")}${skyTap("swHorT3", 0.94, "swHorY")}
 swHorSum += swHorT2.rgb * ${skyHit("swHorT2")} + swHorT3.rgb * ${skyHit("swHorT3")};
-swHorN += ${skyHit("swHorT2")} + ${skyHit("swHorT3")};`)}`;
+swHorN += ${skyHit("swHorT2")} + ${skyHit("swHorT3")};`)}
+vec2 swHorAz = -viewDirectionW.xz / max(length(viewDirectionW.xz), 0.0001);
+vec4 swHorLC = S.viewProjection * vec4(swHorAz.x, 0.012, swHorAz.y, 0.0);
+vec4 swHorLT = swSceneTexel(clamp(swHorLC.xy / max(swHorLC.w, 0.0001) * 0.5 + 0.5, vec2(0.002), vec2(0.998)));
+vec3 swHorLocal = mix(swHorSum / max(swHorN, 0.001), swHorLT.rgb, ${skyHit("swHorLT")});`;
 }
 
 /**
@@ -2216,7 +2246,8 @@ float swRise = dot(swPrimG, -swEyeH) * swPrimLen / max(swPrimAmp, 0.0001);
 float swThin = smoothstep(0.0, 0.6, swRise) * smoothstep(0.55, 0.85, swGraze);${fromTier(2, `
 float swGlowH = clamp(0.5 + 0.5 * swPrimN + swChopH * 0.5, 0.0, 1.2);`, `
 float swGlowH = clamp(0.5 + 0.5 * swPrimN + swChopH * 0.3, 0.0, 1.2);`)}
-float swUnder = smoothstep(0.55, 0.85, swGlowH) * (1.0 - 0.7 * smoothstep(0.97, 1.12, swGlowH));
+// A thin band just under each crest line: wide enough to read near the eye, a few pixels only farther out (fading by footprint).
+float swUnder = 1.0 - smoothstep(0.02, 0.085, abs(swGlowH - 0.86));
 float swCrestFace = swUnder * swThin * mix(1.0, swHeightK, 0.8);
 // Three tones by height: navy troughs, blue-teal flanks and turquoise tops (Shallow Color in part). Seen from above the
 // swell's interference would print a dimple lattice, so the height contrast eases toward steep views, unevenly; over
@@ -2264,7 +2295,7 @@ float swGlowSun = swKeyLum * smoothstep(0.02, 0.15, swL.y) * (1.0 - 0.6 * swWarm
 // Thin faces glow where the water is thin and the crest is near and in the foreground: the glow fades with the pixel
 // footprint and the distance (a crest a few pixels thick would otherwise be a neon line across the whole view), and
 // varies along each crest by the wide noises, so a long crest glows in patches instead of one unbroken band.
-float swGlowNear = (1.0 - smoothstep(0.12, 0.6, swFoot)) * exp(-swEyeDist * 0.05);
+float swGlowNear = (1.0 - smoothstep(0.1, 0.45, swFoot)) * exp(-swEyeDist * 0.07);
 float swGlowAlong = 0.1 + 0.9 * smoothstep(0.3, 0.7, swMedium * 0.5 + swLarge * 0.3 + swGust * 0.2);
 swGlow = min(swCrestFace * (swGlowSun * (0.2 + 0.8 * swToSun + 1.2 * swBack) + swAmbLum * 0.25) * swSss, 1.0) * swGlowAlong * swGlowNear;
 swLit += swGlowC * swGlow;`)}
@@ -2602,8 +2633,12 @@ vec3 swEmissive = swPremul / alpha;
 // Aerial perspective (the shared \`swAir\` at grazing views, and the last degrees above the horizon whatever the distance):
 // far water takes the painted horizon colour (the real sky read just above the horizon from Medium up), fully opaque, and
 // its foam thins, so the sea never ends in a seam against the sky.
-float swPaintHaze = 1.0 - (1.0 - swAir * smoothstep(0.3, 0.85, swGraze)) * (1.0 - 0.85 * smoothstep(0.98, 0.9985, swGraze));
-swEmissive = mix(swEmissive, swHorizonSky, swPaintHaze);
+float swPaintHaze = 1.0 - (1.0 - swAir * smoothstep(0.3, 0.85, swGraze)) * (1.0 - smoothstep(0.98, 0.9985, swGraze));
+vec3 swPaintTarget = swHorizonSky;
+#if ${SAMPLES_COPY}
+swPaintTarget = mix(swHorizonSky, swHorLocal, swHorOn * min(swHorN, 1.0));
+#endif
+swEmissive = mix(swEmissive, swPaintTarget, swPaintHaze);
 alpha = mix(alpha, 1.0, swPaintHaze);
 swFoam *= 1.0 - 0.7 * swPaintHaze;
 swEmissive = mix(swEmissive, swFoamC, swFoam);
@@ -3019,16 +3054,21 @@ swFarC = mix(swFarC, vec3(dot(swFarC, swLuma) * 1.15) * vec3(0.78, 0.92, 1.12), 
 // at dusk), otherwise the far tone. (A flat strip of far tone used to lie between the far water and the sky.)
 float swHaze = 1.0 - smoothstep(0.0, 0.05 + 0.02 * swEve, swUp);
 swHaze *= swHaze;
-// Aerial perspective in flat bands (the shared \`swAir\`, at grazing views): three hard steps of the far tone toward the
-// horizon's, the last one the horizon itself, so the sea's far edge never shows as a line and the bands run along
-// distance, not along the mesh. Each edge is antialiased by how fast the haze changes per pixel.
-float swAirT = swAir * smoothstep(0.3, 0.85, 1.0 - swUp);
+// Aerial perspective in flat bands (the shared \`swAir\`, at grazing views, over deep water only so shores keep their
+// tones): four hard steps (about 40, 110, 270 and 600 m for a 2 km far plane) take the whole sea a share of the way to
+// the horizon's tone, the last one all of it, so the dark swell islands dissolve with distance, the sea's far edge never
+// shows as a line and the bands run along distance, not along the mesh. Each edge is antialiased by how fast the haze
+// changes per pixel.
+float swAirD = 1.0 - swAir;
+float swAirT = (1.0 - swAirD * swAirD * swAirD) * smoothstep(0.3, 0.85, 1.0 - swUp);
 float swAirAA = fwidth(swAirT) * 0.75 + 0.002;
-float swAirBand = (smoothstep(0.3 - swAirAA, 0.3 + swAirAA, swAirT) + smoothstep(0.6 - swAirAA, 0.6 + swAirAA, swAirT) + smoothstep(0.9 - swAirAA, 0.9 + swAirAA, swAirT)) / 3.0;
+float swAirBand = 0.35 * smoothstep(0.1 - swAirAA, 0.1 + swAirAA, swAirT) + 0.3 * smoothstep(0.25 - swAirAA, 0.25 + swAirAA, swAirT) + 0.25 * smoothstep(0.5 - swAirAA, 0.5 + swAirAA, swAirT) + 0.1 * smoothstep(0.8 - swAirAA, 0.8 + swAirAA, swAirT);
+swAirBand *= smoothstep(0.6, 0.95, swDepthTone);
 swHaze = max(swHaze, swAirBand);
 vec3 swHazeC = swFarC;
 #if ${SAMPLES_COPY}${horizonCopySource()}
-swHazeC = mix(swFarC, swHorSum / max(swHorN, 0.001), swHorOn * min(swHorN, 1.0) * (0.7 - 0.45 * swEve));
+vec3 swHorSky = swHorLocal;
+swHazeC = mix(mix(swFarC, swHorSky, swHorOn * min(swHorN, 1.0) * (0.7 - 0.45 * swEve)), swHorSky, swHorOn * min(swHorN, 1.0) * (1.0 - smoothstep(0.0, 0.03, swUp)));
 #endif
 
 // Foam: opaque white shapes antialiased by the footprint. Shore: a thick scalloped band on the waterline and a thinner
@@ -3532,6 +3572,9 @@ function beforeFogSource(wgsl: boolean): string {
     `finalColor = ${v4}(finalColor.rgb + swRefractedOut, finalColor.a);`,
     "#endif",
     `finalColor = ${v4}(finalColor.rgb / swCover, swCover);`,
+    `#if ${SAMPLES_COPY}`,
+    `finalColor = ${v4}(mix(finalColor.rgb, swHorC, swHorW), mix(finalColor.a, 1.0, swHorW));`,
+    "#endif",
     "#endif",
     // Open-water edges fade out (`swOpenFade`, every look).
     "finalColor.a *= swOpenFade;",
@@ -3571,8 +3614,8 @@ export function waterShaderSource(language: ShaderLanguage): { helpers: string; 
     : "uniform sampler2D slateWaterFieldSampler;\nuniform sampler2D slateWaterContactSampler;\n";
   // Written by the realistic main code and read inside Babylon's reflectivity block (a separate function).
   const roughnessGlobals = wgsl
-    ? "var<private> swSlopeVariance: f32 = 0.0;\nvar<private> swMatte: f32 = 0.0;\n"
-    : "float swSlopeVariance = 0.0;\nfloat swMatte = 0.0;\n";
+    ? "var<private> swSlopeVariance: f32 = 0.0;\nvar<private> swMatte: f32 = 0.0;\nvar<private> swSharp: f32 = 1.0;\n"
+    : "float swSlopeVariance = 0.0;\nfloat swMatte = 0.0;\nfloat swSharp = 1.0;\n";
   return wgsl
     ? {
       helpers: samplerDeclaration + roughnessGlobals + toWgsl(HELPERS + REMOVAL_HELPER) + CONTACT_TAP_WGSL + objectHelpers(true) + fftHelpers(true),
@@ -4622,7 +4665,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
       CUSTOM_FRAGMENT_BEFORE_LIGHTS: source.main,
       // Realistic: filtered chop widens the GGX lobe with distance, and foam is fully rough.
       CUSTOM_FRAGMENT_UPDATE_METALLICROUGHNESS:
-        "metallicRoughness.g = mix(sqrt(sqrt(metallicRoughness.g * metallicRoughness.g * metallicRoughness.g * metallicRoughness.g + 2.0 * swSlopeVariance)), 1.0, swMatte);",
+        "metallicRoughness.g = mix(sqrt(sqrt(metallicRoughness.g * metallicRoughness.g * metallicRoughness.g * metallicRoughness.g * swSharp + 2.0 * swSlopeVariance)), 1.0, swMatte);",
       // Foam and the mesh edge hide the mirror; without an environment, the analytic scene sky (`swSkyRefl`) stands in.
       // Reflected objects (screen-space or planar) replace the sky or environment where found, with the water's own
       // Fresnel and Reflection Strength.
