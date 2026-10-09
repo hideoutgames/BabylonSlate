@@ -6,9 +6,9 @@ Its working agreements apply across clients: clarify ambiguous instructions befo
 
 ## Canonical files and compatibility
 
-- Maintain the eleven shared policies in `.agents/rules/*.md` and the nine skill packages in `.agents/skills/*/SKILL.md`.
+- Maintain the eleven shared policies in `.agents/rules/*.md` and the ten skill packages in `.agents/skills/*/SKILL.md`.
 - The root routing table preserves Cursor's original always-applied rules, path patterns, and task triggers. Documentation obligations also apply to behavior changes outside `docs/`.
-- `.cursor/rules/*.mdc` retain their original activation metadata and forward to shared rules. `.cursor/skills/*/SKILL.md` are forwarding entry points for existing discovery/invocations; all supporting files live with the canonical skill.
+- `.cursor/rules/*.mdc` retain their original activation metadata and forward to shared rules. `.cursor/skills/*/SKILL.md` are forwarding entry points for existing discovery/invocations; all supporting files live with the canonical skill. `.claude/skills/handoff/SKILL.md` is the same kind of entry point for Claude Code discovery (`/handoff`); `.claude/worktrees/` is ignored local agent state.
 - Edit canonical content. Keep forwarding entry points' names and descriptions consistent with their targets. Do not copy full instructions into adapters or require symlinks on Windows.
 - Every skill has portable `name` and `description` frontmatter. Optional `agents/openai.*` files are retained host UI metadata; core instructions do not depend on them. The shadcn host-specific command allowlist and template expansion were replaced by explicit shell instructions; host permissions still govern tools.
 - Delegation uses available capabilities and inherited models, with sequential passes when unavailable. The existing hard model allowlist remains in the workflow rule. Cursor-specific model identifiers there are compatibility examples, not required host tool names.
@@ -29,7 +29,7 @@ The [development testing skill](../../.agents/skills/test-driven-development/SKI
 - Preserve compact desktop Primary buttons, other small controls, margins, and panel spacing. Touch support uses input-specific hit areas or layouts; imported HIG guidance must not enlarge desktop defaults. The broad Apple HIG skill is not installed as a default design authority for this cross-platform editor.
 
 - Check that all root rule/skill links, forwarding targets, and supporting relative Markdown links resolve with exact filename case.
-- Check that all nine skill names match their lowercase directory names, descriptions remain useful, and supporting assets remain available.
+- Check that all ten skill names match their lowercase directory names, descriptions remain useful, and supporting assets remain available.
 - Compare Cursor adapter metadata with the root applicability table when changing scopes.
 - Exercise routing for engine work, editor UI, docs creation, pure-logic tests, investigation, and review. Confirm read-only requests do not trigger writes and planning can return a plan.
 - In each intended client, start a fresh session and ask it to identify the applicable rules and skill paths for those scenarios. Record actual client results; static link checks do not prove automatic discovery.
