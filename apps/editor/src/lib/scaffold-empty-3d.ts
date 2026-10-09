@@ -74,7 +74,7 @@ function mannequinPhysicsComponents(idPrefix: string): SerializedComponent[] {
   ];
 }
 
-function withDocumentPayload(
+export function withDocumentPayload(
   result: ImportResult,
   payload: Record<string, unknown>,
 ): ImportResult {

@@ -8,6 +8,7 @@ import { enginePluginsVitePlugin } from "./vite-engine-plugins.ts";
 import { kenneyMannequinVitePlugin } from "./vite-kenney-mannequin.ts";
 import { engineDefaultSkyboxVitePlugin } from "./vite-engine-skybox.ts";
 import { engineBillboardsVitePlugin } from "./vite-engine-billboards.ts";
+import { featureTestEngineContentVitePlugin } from "./vite-engine-content.ts";
 import { playerHostVitePlugin } from "./vite-player-host.ts";
 import { validateChangelog } from "../../scripts/distribution/changelog.mjs";
 
@@ -76,6 +77,7 @@ export default defineConfig({
     }),
     engineDefaultSkyboxVitePlugin(repoRoot, path.join(rootDir, "public")),
     engineBillboardsVitePlugin(repoRoot, path.join(rootDir, "public")),
+    featureTestEngineContentVitePlugin(repoRoot, path.join(rootDir, "public")),
     playerHostVitePlugin(
       path.join(rootDir, "../player/dist"),
       path.join(rootDir, "dist"),

@@ -1,0 +1,128 @@
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  documentKindForAssetType,
+  ENGINE_COMPONENT_CLASS_IDS,
+  type ProjectDocument,
+  type SerializedComponent,
+  type SerializedGraph,
+  type SerializedScene,
+  type SerializedSceneLayer,
+} from "@babylonslate/core";
+import { physicsActorsDiagnostics } from "@babylonslate/physics";
+import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import {
+  CREATABLE_ASSET_TYPES,
+  ENGINE_BASE_CLASSES,
+} from "../lib/content-browser-helpers";
+import { loadOptionalEngineContent } from "../lib/engine-content";
+import { FEATURE_TEST_OPTIONAL_SLOTS } from "../lib/feature-test/engine-content-files";
+import { DocumentService } from "./document-service";
+import { createPlayContentService } from "./play-content-service";
+import { ProjectService } from "./project-service";
+
+/** Source types FeatureTest imports from repository content. */
+const IMPORTED_ASSET_TYPES = ["Texture", "Model", "Skeleton", "Animation", "Material", "Font"] as const;
+
+describe("FeatureTest starter", () => {
+  const storage = new MemoryStorageAdapter("documents");
+  let created: ProjectService;
+  let reopened: ProjectService;
+  let document: ProjectDocument;
+  let migrationPending: readonly unknown[];
+
+  beforeAll(async () => {
+    created = new ProjectService(storage, { encode: async () => ({ ktx2: new Uint8Array(), wallMs: 0 }) });
+    await created.createEmptyProject("FeatureTest", { kind: "feature-test" });
+    reopened = new ProjectService(storage, { encode: async () => ({ ktx2: new Uint8Array(), wallMs: 0 }) });
+    const loaded = await reopened.loadCurrentProject();
+    document = loaded.document;
+    migrationPending = loaded.migrationPending;
+  }, 300_000);
+
+  afterAll(() => {
+    created?.dispose();
+    reopened?.dispose();
+  });
+
+  async function sceneDocuments(): Promise<Array<SerializedScene | SerializedSceneLayer>> {
+    const assets = reopened.registry!.list().filter(
+      (asset) => asset.header.type === "Scene" || asset.header.type === "SceneLayer",
+    );
+    return Promise.all(
+      assets.map(async (asset) =>
+        (await reopened.loadDocument(asset.header.type === "Scene" ? "scene" : "scene-layer", asset.path)) as
+          | SerializedScene
+          | SerializedSceneLayer,
+      ),
+    );
+  }
+
+  it("reopens cleanly with every scene and class listed", () => {
+    expect(migrationPending).toEqual([]);
+    const assets = reopened.registry!.list();
+    expect(assets.filter((asset) => asset.placeholder || asset.header.type === "Unresolved")).toEqual([]);
+    const paths = reopened.registry!.listDocumentPaths({ rootId: "project" });
+    expect(document.scenes).toEqual(expect.arrayContaining(paths.scenes));
+    expect(document.graphs).toEqual(expect.arrayContaining(paths.graphs));
+  });
+
+  it("showcases every engine component, asset type and engine base class", async () => {
+    const registry = reopened.registry!;
+    const assets = registry.list();
+    const components: SerializedComponent[] = [];
+    for (const scene of await sceneDocuments()) components.push(...scene.actors.flatMap((actor) => actor.components));
+    for (const asset of assets) {
+      if (asset.header.type === "Class") {
+        const graph = (await reopened.loadDocument("graph", asset.path)) as SerializedGraph;
+        components.push(...(graph.components ?? []));
+      } else if (asset.header.type === "Prefab") {
+        const prefab = (await reopened.loadDocument("prefab", asset.path)) as { components?: SerializedComponent[] };
+        components.push(...(prefab.components ?? []));
+      }
+    }
+    const classIds = new Set(components.map((component) => component.classId));
+    expect(ENGINE_COMPONENT_CLASS_IDS.filter((classId) => !classIds.has(classId))).toEqual([]);
+
+    const audioSlot = await loadOptionalEngineContent(FEATURE_TEST_OPTIONAL_SLOTS.loopAudio);
+    const required = [...CREATABLE_ASSET_TYPES, ...IMPORTED_ASSET_TYPES, ...(audioSlot ? ["Audio"] : [])];
+    const types = new Set(assets.map((asset) => asset.header.type));
+    expect(required.filter((type) => !types.has(type))).toEqual([]);
+
+    const parents = new Set(
+      assets.filter((asset) => asset.header.type === "Class").map((asset) => asset.header.parentClass ?? ""),
+    );
+    expect(ENGINE_BASE_CLASSES.filter((base) => !parents.has(base))).toEqual([]);
+  });
+
+  it("resolves every reference and decodes every document", async () => {
+    const registry = reopened.registry!;
+    for (const asset of registry.list()) {
+      for (const dependency of registry.requiredDependenciesFor(asset.header.guid)) {
+        const target = registry.getByGuid(dependency);
+        expect(target, `${asset.path} → ${dependency}`).toBeDefined();
+        expect(target?.placeholder, `${asset.path} → ${dependency}`).toBeFalsy();
+      }
+      const kind = documentKindForAssetType(asset.header.type);
+      if (!kind || kind === "trace") continue;
+      await expect(reopened.loadDocument(kind, asset.path), asset.path).resolves.toBeTruthy();
+    }
+  });
+
+  it("passes Play validation and compiles every graph", async () => {
+    const playContent = createPlayContentService({
+      documents: new DocumentService(),
+      project: reopened,
+      readAssetChunk: (path, chunk) => reopened.readAssetChunk(path, chunk),
+      projectDocument: () => document,
+      onPreviewScriptsCompiled: () => {},
+    });
+    const { diagnostics } = await playContent.collectPlayPreviewScripts();
+    expect(diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+  });
+
+  it("authors physics without pairing problems", async () => {
+    for (const scene of await sceneDocuments()) {
+      expect(physicsActorsDiagnostics(scene.actors), scene.name).toEqual([]);
+    }
+  });
+});

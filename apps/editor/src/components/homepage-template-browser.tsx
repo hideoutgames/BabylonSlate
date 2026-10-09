@@ -3,6 +3,7 @@ import {
   ArrowUpDownIcon,
   BoxIcon,
   FileIcon,
+  FlaskConicalIcon,
   Grid2x2Icon,
   LayersIcon,
   LayoutTemplateIcon,
@@ -70,6 +71,13 @@ export function homepageTemplates(templates: HomepageTemplate[]) {
       name: "Basic 2D",
       description: "Starter 2D Scene",
       icon: Grid2x2Icon,
+      imageUrl: undefined,
+    },
+    {
+      id: "feature-test",
+      name: "Feature Test",
+      description: "Every Engine Feature",
+      icon: FlaskConicalIcon,
       imageUrl: undefined,
     },
     ...templates.map((template) => ({

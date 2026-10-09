@@ -141,7 +141,7 @@ import { processAreaEmissionInWorker } from "@babylonslate/assets/area-emission-
 import { onEncodeQueuePause } from "./encode-queue-pause";
 import { validateClassDeletionReplacements } from "../lib/class-deletion";
 import { createAppSettingsStore, isTestModeEnabled, TEST_PROJECT_NAME } from "@babylonslate/vfs";
-import { extraChunksWithNavmesh } from "@babylonslate/navigation";
+import { extraChunksWithNavmesh, type NavMeshGenerateInput } from "@babylonslate/navigation";
 import {
   newAssetFileName,
   classIdFromClassAsset,
@@ -156,6 +156,7 @@ import { uniquePluginFolderName, pluginRootId, isPluginDocumentReadOnly } from "
 import { ENGINE_PLUGIN_LIBRARY_ROOT } from "../lib/engine-plugin-library";
 import {
   normalizeProjectFolderName,
+  type BuiltInStarterKind,
   type CreateProjectOptions,
 } from "../lib/create-project";
 import type { UpdateListedProjectOptions } from "../lib/listed-projects";
@@ -300,6 +301,21 @@ export type PluginImportResult =
       incoming: InspectedBabplugin;
       plan: Extract<PluginImportPlan, { kind: "conflict" }>;
     };
+
+/** Navmesh bake for scaffolds: the bake worker in the app, Recast directly in unit tests. */
+async function generateFeatureTestNavMesh(input: NavMeshGenerateInput): Promise<Uint8Array> {
+  if (typeof Worker === "function" && import.meta.env.MODE !== "test") {
+    const { createNavBakeWorker } = await import("./nav-bake-worker-host");
+    const worker = createNavBakeWorker();
+    try {
+      return await worker.generate(input);
+    } finally {
+      worker.terminate();
+    }
+  }
+  const { generateNavMesh } = await import("@babylonslate/navigation");
+  return generateNavMesh(input);
+}
 
 function newGuid(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -1956,7 +1972,7 @@ export class ProjectService {
 
   private async scaffoldNewProject(
     name: string,
-    kind: "blank" | "empty" | "2d" = "empty",
+    kind: BuiltInStarterKind = "empty",
     renderOptions?: {
       renderWidth?: number;
       renderHeight?: number;
@@ -1974,7 +1990,7 @@ export class ProjectService {
         }
       : undefined;
     const document = createEmptyProject(name, {
-      kind: kind === "blank" ? "empty" : kind,
+      kind: kind === "2d" ? "2d" : "empty",
       render,
     });
     const appearance = normalizeProjectAppearance(renderOptions?.appearance);
@@ -2010,10 +2026,11 @@ export class ProjectService {
     await this.storage.writeText(PROJECT_FILE, JSON.stringify(stored, null, 2));
     await this.installEnginePluginDefaultsIfNeeded();
     await this.mountAssetRegistry();
-    if (kind === "empty") {
+    if (kind === "empty" || kind === "feature-test") {
       await this.createInputAssets();
       await this.scaffoldKenneyMannequinEmpty(document);
     }
+    if (kind === "feature-test") await this.scaffoldFeatureTest(document);
     return {
       document,
       layouts: createEmptyLayouts(),
@@ -2053,6 +2070,38 @@ export class ProjectService {
     }
     const classPath = `assets/${MANNEQUIN_CLASS_FILE}`;
     document.graphs = [classPath];
+    await this.saveProject(document, createEmptyLayouts());
+  }
+
+  /**
+   * FeatureTest starter: every engine feature on top of Basic 3D. Lazily
+   * loaded so its scaffold code stays out of the editor startup chunk.
+   */
+  private async scaffoldFeatureTest(document: ProjectDocument): Promise<void> {
+    const registry = this.assetRegistry;
+    if (!registry) throw new Error("Asset registry is not mounted.");
+    const [{ applyFeatureTestScaffold }, content] = await Promise.all([
+      import("../lib/feature-test"),
+      import("../lib/engine-content"),
+    ]);
+    const result = await applyFeatureTestScaffold({
+      mainScenePath: MAIN_SCENE_FILE,
+      host: {
+        registry,
+        saveDocument: (kind, path, payload, options) => this.saveDocument(kind, path, payload, options),
+        loadDocument: (kind, path) => this.loadDocument(kind, path),
+        guidForAsset: (path) => this.guidForAsset(path),
+        writeSceneNavmeshChunk: (path, bytes, payload) => this.writeSceneNavmeshChunk(path, bytes, payload),
+        loadBytes: content.loadEngineContentBytes,
+        loadOptional: content.loadOptionalEngineContent,
+        generateNavMesh: generateFeatureTestNavMesh,
+        modelImportScale: 1,
+      },
+    });
+    const paths = registry.listDocumentPaths({ rootId: "project" });
+    document.scenes = paths.scenes;
+    document.graphs = paths.graphs;
+    document.settings = result.applySettings(document.settings);
     await this.saveProject(document, createEmptyLayouts());
   }
 
