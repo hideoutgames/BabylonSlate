@@ -14,6 +14,7 @@ import {
 } from "@babylonslate/object-model";
 import type { SceneLayers } from "./scene-layers";
 import type { SceneStreams } from "./scene-streams";
+import type { SimulationBlocks } from "./simulation-blocks";
 
 interface OwnerAdmissionHost {
   world(): World;
@@ -23,7 +24,8 @@ interface OwnerAdmissionHost {
   saveBoundaryActive(): boolean;
   /** The main Scene is still preparing (its load or Play boot loading). */
   sceneLoading(): boolean;
-  streams(): Pick<SceneStreams, "blocking" | "actorReady" | "sceneReady">;
+  streams(): Pick<SceneStreams, "actorReady" | "sceneReady">;
+  blocks(): Pick<SimulationBlocks, "active">;
   layers(): Pick<SceneLayers, "get" | "anyReady">;
   releaseAssets(ownerGuid: string): void;
   reportError(error: unknown): void;
@@ -46,17 +48,17 @@ export class OwnerAdmission {
 
   canTickScene(): boolean {
     return !this.host.paused() && !this.host.saveBoundaryActive() && !this.host.sceneLoading() && !this.host.stopped() &&
-      !this.host.streams().blocking;
+      !this.host.blocks().active;
   }
 
   hasReadyLayers(): boolean {
-    if (this.host.stopped() || this.host.streams().blocking) return false;
+    if (this.host.stopped() || this.host.blocks().active) return false;
     return this.host.layers().anyReady();
   }
 
   canTickActor(actor: Actor, ignorePause = false): boolean {
     const streams = this.host.streams();
-    if ((!ignorePause && this.host.paused()) || this.host.stopped() || actor.destroyed || streams.blocking || !streams.actorReady(actor)) return false;
+    if ((!ignorePause && this.host.paused()) || this.host.stopped() || actor.destroyed || this.host.blocks().active || !streams.actorReady(actor)) return false;
     if (!actor.sceneLayerId) return this.canTickScene();
     return this.host.layers().get(actor.sceneLayerId)?.ready === true;
   }
@@ -68,14 +70,15 @@ export class OwnerAdmission {
     if (owner instanceof GameSubsystem) return this.canRunGameSubsystem(owner);
     const world = this.host.world();
     const streams = this.host.streams();
+    const blocked = this.host.blocks().active;
     // Callable from creation until its On End returns, even while its Scene
     // prepares or Play stops (a sibling's On End may still call it); its own
     // lifecycle waits for the Scene (canRunSceneSubsystem).
     if (owner instanceof SceneSubsystem) {
       return !owner.destroyed && owner.scene === world.currentScene &&
-        (stopped || !streams.blocking);
+        (stopped || !blocked);
     }
-    if (stopped || owner.destroyed || streams.blocking) return false;
+    if (stopped || owner.destroyed || blocked) return false;
     if (owner instanceof PostProcessMaterialObject)
       return owner.isCurrent() && this.canRun(owner.owner);
     if (owner === world.gameInstance) return true;
@@ -212,7 +215,7 @@ export class OwnerAdmission {
     // and through the whole Stop lifecycle until their own On End has run, so
     // the Game Instance's On End (which runs first) can still call them.
     if (subsystem.destroyed || !this.host.world().getGameSubsystems().includes(subsystem)) return false;
-    return this.host.stopped() || !this.host.streams().blocking;
+    return this.host.stopped() || !this.host.blocks().active;
   }
 
   private drain(owner: BObject): void {

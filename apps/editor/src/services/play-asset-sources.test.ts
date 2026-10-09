@@ -128,6 +128,26 @@ describe("Play source ownership", () => {
     fixture.loading.dispose();
   });
 
+  it("schedules every source read of an acquisition at the priority it was asked for", async () => {
+    const fixture = await sceneSaveDuringCompilationFixture();
+    const priorities: unknown[] = [];
+    const createScope = fixture.host.createScope;
+    fixture.host.createScope = (owner: string) => {
+      const scope = createScope(owner);
+      const acquire = scope.acquire.bind(scope) as (...args: unknown[]) => unknown;
+      vi.spyOn(scope, "acquire").mockImplementation(((...args: unknown[]) => {
+        priorities.push((args[2] as { priority?: string } | undefined)?.priority);
+        return acquire(...args);
+      }) as never);
+      return scope;
+    };
+    const prepared = await acquirePlayAssetSources(fixture.host, ["scene"], { consumer: "Preload", signal: new AbortController().signal, priority: "background" });
+    expect(priorities.length).toBeGreaterThan(3);
+    expect(new Set(priorities)).toEqual(new Set(["background"]));
+    prepared.release();
+    fixture.loading.dispose();
+  });
+
   it.each(["continuous save", "cancelled save", "decode failure"] as const)("bounds retries for %s and releases every failed scope", async (mode) => {
     const fixture = await sceneSaveDuringCompilationFixture();
     const controller = new AbortController();
