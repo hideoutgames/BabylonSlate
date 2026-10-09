@@ -1,5 +1,19 @@
-import type { ProjectSettings, SerializedScene } from "@babylonslate/core";
-import { createFeatureTestContext, type FeatureTestContext, type FeatureTestHost } from "./context";
+import {
+  createDefaultScene,
+  lookAtRotation,
+  type ProjectSettings,
+  type SerializedScene,
+} from "@babylonslate/core";
+import {
+  actor,
+  createFeatureTestContext,
+  meshComp,
+  SCENE_SAVE_ORDER,
+  tf,
+  type FeatureTestContext,
+  type FeatureTestHost,
+} from "./context";
+import { FEATURE_TEST_STRESS_CAMERA } from "./layout";
 import { importFeatureTestContent } from "./imports";
 import { applyFeatureTestProjectSettings } from "./settings";
 import { buildFeatureTestAi, featureTestNavBakeInput, placeFeatureTestAi } from "./ai";
@@ -36,7 +50,20 @@ export async function applyFeatureTestScaffold(options: {
   mainScenePath: string;
 }): Promise<FeatureTestScaffoldResult> {
   const mainScene = (await options.host.loadDocument("scene", options.mainScenePath)) as SerializedScene;
-  const ctx = createFeatureTestContext({ host: options.host, mainScene, mainScenePath: options.mainScenePath });
+  const stressScene = createStressScene();
+  const ctx = createFeatureTestContext({
+    host: options.host,
+    mainScene,
+    mainScenePath: options.mainScenePath,
+    stressScene,
+  });
+  await ctx.addSceneDocument({
+    kind: "scene",
+    folder: "Scenes",
+    name: "FT_Stress",
+    content: stressScene,
+    order: SCENE_SAVE_ORDER.scene,
+  });
 
   // Assets, ordered so every reference already exists when its referrer is written.
   await importFeatureTestContent(ctx);
@@ -76,6 +103,26 @@ function placeHub(ctx: FeatureTestContext): void {
   hub.floor();
   const mannequin = ctx.mainScene.actors.find((actor) => actor.id === ctx.assets.mannequin.actorId);
   if (mannequin) mannequin.folderId = hub.folderId;
+}
+
+/** Heavy workload scene: default camera re-aimed over the regions, sky, sun and one floor (x -64..72). */
+function createStressScene(): SerializedScene {
+  const scene = createDefaultScene("3d");
+  scene.name = "FT_Stress";
+  const camera = scene.actors.find((entry) => entry.id === scene.settings.mainCameraActorId);
+  if (camera) {
+    camera.transform = tf(FEATURE_TEST_STRESS_CAMERA.position, {
+      rotation: lookAtRotation(FEATURE_TEST_STRESS_CAMERA.position, FEATURE_TEST_STRESS_CAMERA.target),
+    });
+  }
+  // Basic 3D's empty placeholder actor has no role here.
+  scene.actors = scene.actors.filter((entry) => entry.components.length > 0 || entry.id === camera?.id);
+  scene.actors.push(
+    actor("ft-stress-floor", "Stress Floor", tf([4, -0.15, 0], { scale: [136 / 1.5, 0.3 / 1.5, 40 / 1.5] }), [
+      meshComp("ft-stress-floor-mesh", "box", { collision: "simple" }),
+    ]),
+  );
+  return scene;
 }
 
 async function saveSceneDocuments(ctx: FeatureTestContext): Promise<void> {

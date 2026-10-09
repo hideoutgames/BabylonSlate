@@ -69,3 +69,33 @@ export function zonePoint(
   const { center } = FEATURE_TEST_ZONES[zone];
   return [center[0] + offset[0], offset[1], center[1] + offset[2]];
 }
+
+export type FeatureTestStressRegionId = "physics" | "particles" | "animation" | "foliage";
+
+/**
+ * `FT_Stress` scene regions (x range, z range). Heavy, scalable workloads live
+ * here so the main scene stays a moderate, representative showcase.
+ */
+export const FEATURE_TEST_STRESS_REGIONS: Readonly<
+  Record<FeatureTestStressRegionId, { center: readonly [number, number]; size: readonly [number, number] }>
+> = {
+  physics: { center: [-48, 0], size: [32, 32] },
+  particles: { center: [-12, 0], size: [24, 32] },
+  animation: { center: [20, 0], size: [24, 32] },
+  foliage: { center: [56, 0], size: [32, 32] },
+};
+
+/** Static `FT_Stress` main camera (the scene's default camera, re-aimed). */
+export const FEATURE_TEST_STRESS_CAMERA = {
+  position: [0, 34, -58] as [number, number, number],
+  target: [0, 0, 6] as [number, number, number],
+};
+
+/** World position in the `FT_Stress` scene from a region-local offset. */
+export function stressPoint(
+  region: FeatureTestStressRegionId,
+  offset: readonly [number, number, number] = [0, 0, 0],
+): [number, number, number] {
+  const { center } = FEATURE_TEST_STRESS_REGIONS[region];
+  return [center[0] + offset[0], offset[1], center[1] + offset[2]];
+}

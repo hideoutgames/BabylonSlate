@@ -163,6 +163,11 @@ export interface FeatureTestContext {
   /** `assets/main.scene.babasset`, mutated in memory and saved last. */
   readonly mainScene: SerializedScene;
   readonly mainScenePath: string;
+  /**
+   * `FeatureTest/Scenes/FT_Stress` heavy workload scene (camera, sky, sun and
+   * a large floor already present). Place actors with `stressPoint` regions.
+   */
+  readonly stressScene: SerializedScene;
   readonly assets: FeatureTestAssets;
   /** Applied in order to the project settings after every asset exists. */
   readonly settingsPatches: Array<(settings: ProjectSettings) => ProjectSettings>;
@@ -326,8 +331,9 @@ export function createFeatureTestContext(options: {
   host: FeatureTestHost;
   mainScene: SerializedScene;
   mainScenePath: string;
+  stressScene: SerializedScene;
 }): FeatureTestContext {
-  const { host, mainScene } = options;
+  const { host, mainScene, stressScene } = options;
   const registry = host.registry;
   const assets = emptyAssets();
   const settingsPatches: FeatureTestContext["settingsPatches"] = [];
@@ -410,6 +416,7 @@ export function createFeatureTestContext(options: {
     registry,
     mainScene,
     mainScenePath: options.mainScenePath,
+    stressScene,
     assets,
     settingsPatches,
     sceneDocuments,
