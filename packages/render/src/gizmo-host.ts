@@ -69,7 +69,8 @@ export interface GizmoHost {
   setMode: (mode: ViewportMode) => void;
   setSpace: (space: GizmoSpace) => void;
   setSnap: (snap: GizmoSnapSettings) => void;
-  attachTo: (mesh: AbstractMesh | null, visuals?: AbstractMesh[]) => void;
+  /** `tool` overrides the active tool for this attachment (a spline point always translates). */
+  attachTo: (mesh: AbstractMesh | null, visuals?: AbstractMesh[], attach?: { tool?: GizmoTool }) => void;
   attachedMesh: () => AbstractMesh | null;
   /** True while a gizmo handle drag is in progress. */
   isDragging: () => boolean;
@@ -438,6 +439,9 @@ export function createGizmoHost(
   const manipulator = options.manipulator ?? "trs";
   let attached: AbstractMesh | null = null;
   let overlayVisuals: AbstractMesh[] = [];
+  let forcedTool: GizmoTool | null = null;
+  const activeTool = () => forcedTool ?? tool;
+  const overlay = () => manipulator === "overlay-box" && !forcedTool;
   let releaseLease: (() => void) | null = null;
   let dragging = false;
   let translateSnap = 0;
@@ -527,7 +531,7 @@ export function createGizmoHost(
   );
 
   const applyAxisVisibility = () => {
-    if (manipulator === "overlay-box") {
+    if (overlay()) {
       position.xGizmo.isEnabled = false;
       position.yGizmo.isEnabled = false;
       position.zGizmo.isEnabled = false;
@@ -543,7 +547,7 @@ export function createGizmoHost(
       scale.uniformScaleGizmo.isEnabled = false;
       return;
     }
-    const flags = gizmoAxisEnabledFlags(mode, tool);
+    const flags = gizmoAxisEnabledFlags(mode, activeTool());
     position.xGizmo.isEnabled = flags.position.x;
     position.yGizmo.isEnabled = flags.position.y;
     position.zGizmo.isEnabled = flags.position.z;
@@ -596,15 +600,16 @@ export function createGizmoHost(
       : null;
 
   const applyAttachment = () => {
-    if (manipulator === "overlay-box") {
+    const current = activeTool();
+    if (overlay()) {
       position.attachedMesh = null;
       rotation.attachedMesh = null;
       scale.attachedMesh = null;
       overlayBox?.attachTo(attached, overlayVisuals);
     } else {
-      position.attachedMesh = tool === "translate" ? attached : null;
-      rotation.attachedMesh = tool === "rotate" ? attached : null;
-      scale.attachedMesh = tool === "scale" ? attached : null;
+      position.attachedMesh = current === "translate" ? attached : null;
+      rotation.attachedMesh = current === "rotate" ? attached : null;
+      scale.attachedMesh = current === "scale" ? attached : null;
       overlayBox?.attachTo(null);
     }
     applyAxisVisibility();
@@ -677,9 +682,10 @@ export function createGizmoHost(
       applySnap();
       overlayBox?.setSnap(snap);
     },
-    attachTo: (mesh: AbstractMesh | null, visuals?: AbstractMesh[]) => {
+    attachTo: (mesh, visuals, attach) => {
       attached = mesh;
       overlayVisuals = visuals ? [...visuals] : [];
+      forcedTool = mesh ? attach?.tool ?? null : null;
       applyAttachment();
     },
     attachedMesh: () => attached,

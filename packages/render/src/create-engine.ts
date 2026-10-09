@@ -1893,6 +1893,7 @@ function initializeEngine(
     const selection = outlineHost.selection;
     onRollback(() => selection.dispose());
     let multiSelectDrag: GizmoMultiSelectDrag | null = null;
+    let splinePointDrag = false;
     const parentIdOf = (id: string): string | null =>
       editorSync.serializedScene()?.actors.find((actor) => actor.id === id)
         ?.parentId ?? null;
@@ -1940,6 +1941,8 @@ function initializeEngine(
       canvasCssHeight: () => pointerCanvas().height,
       onDragStart: () => {
         const attached = gizmosRef.host?.attachedMesh() ?? null;
+        splinePointDrag = attached !== null && attached === splineHandles.selectedNode() && splineHandles.beginSelectionDrag();
+        if (splinePointDrag) return;
         const roots = selectionGizmoRoots(lastSelectedActorIds, parentIdOf);
         const followers = roots
           .map((id) => editorSync.meshForActor(id))
@@ -1956,6 +1959,7 @@ function initializeEngine(
         options.onGizmoDragStart?.();
       },
       onDrag: () => {
+        if (splinePointDrag) { splineHandles.dragSelection(); return; }
         const attached = gizmosRef.host?.attachedMesh() ?? null;
         if (multiSelectDrag && attached) {
           applyGizmoMultiSelectDrag(multiSelectDrag, attached);
@@ -1970,6 +1974,7 @@ function initializeEngine(
         debugOverlayInstance.followLivePose();
       },
       onDragEnd: () => {
+        if (splinePointDrag) { splinePointDrag = false; splineHandles.endSelectionDrag(); return; }
         const attached = gizmosRef.host?.attachedMesh() ?? null;
         if (multiSelectDrag && attached) {
           applyGizmoMultiSelectDrag(multiSelectDrag, attached);
@@ -1994,7 +1999,33 @@ function initializeEngine(
     const splineHandles = createSplineHandles(gizmos.layer, scene, {
       scheduler,
       onCommit: (edit) => options.onComponentShapeEdit?.(edit),
+      onSelectionChange: () => attachSelectionGizmo(),
     });
+    // A selected spline point takes the translate gizmo until a viewport tap
+    // outside the handles or a new selection returns it to the actor.
+    const attachSelectionGizmo = () => {
+      const point = splineHandles.selectedNode();
+      if (point) {
+        gizmos.attachTo(point, [], { tool: "translate" });
+        return;
+      }
+      // Locked actors are not pickable; keep the gizmo off them so lock is
+      // more than a pick filter. Attach to the first pickable selection root
+      // so a selected child is not the group handle when its parent is too.
+      const attachId = pickGizmoAttachActorId(lastSelectedActorIds, parentIdOf, (id) => {
+        const mesh = editorSync.meshForActor(id);
+        if (!mesh) return false;
+        const locked = editorSync
+          .serializedScene()
+          ?.actors.find((actor) => actor.id === id)?.locked;
+        if (locked) return false;
+        return mesh.isPickable || isEditorModelPlaceholder(mesh);
+      });
+      gizmos.attachTo(
+        attachId ? editorSync.meshForActor(attachId) : null,
+        attachId ? editorSync.visualMeshesForActor(attachId) : [],
+      );
+    };
     onRollback(() => splineHandles.dispose());
     const syncShapeHandles = (actorIds: readonly string[]) => {
       const selected = selectedShapeComponent(editorSync.serializedScene(), actorIds, lastSelectedComponentIds);
@@ -2028,6 +2059,7 @@ function initializeEngine(
             }
           : undefined,
       onTap: (x, y, tap) => {
+        splineHandles.clearSelection();
         const mapped = mapCanvasPointer(scene, x, y, pointerCanvas());
         const sequence = ++tapPickSequence;
         void pickActorMeshName(scene, mapped.x, mapped.y).then((meshName) => {
@@ -2114,23 +2146,8 @@ function initializeEngine(
         if (actorIds.length !== lastSelectedActorIds.length || actorIds.some((id, index) => id !== lastSelectedActorIds[index])) lastSelectedComponentIds = [];
         lastSelectedActorIds = [...actorIds];
         outlineHost.setSelection(actorIds);
-        // Locked actors are not pickable; keep the gizmo off them so lock is
-        // more than a pick filter. Attach to the first pickable selection root
-        // so a selected child is not the group handle when its parent is too.
-        const attachId = pickGizmoAttachActorId(actorIds, parentIdOf, (id) => {
-          const mesh = editorSync.meshForActor(id);
-          if (!mesh) return false;
-          const locked = editorSync
-            .serializedScene()
-            ?.actors.find((actor) => actor.id === id)?.locked;
-          if (locked) return false;
-          return mesh.isPickable || isEditorModelPlaceholder(mesh);
-        });
-        gizmos.attachTo(
-          attachId ? editorSync.meshForActor(attachId) : null,
-          attachId ? editorSync.visualMeshesForActor(attachId) : [],
-        );
         syncShapeHandles(actorIds);
+        attachSelectionGizmo();
         scheduler.invalidate("selection");
       },
       syncSelectionDebug: (options) => {
