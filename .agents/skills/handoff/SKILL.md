@@ -18,7 +18,7 @@ Do this before writing, because the handoff can only point at things that surviv
 - **Commit and push** work in progress to its feature branch, following the repository's commit rules. Uncommitted edits, local-only branches and worktrees are invisible to a new session. If something must stay uncommitted, the handoff says exactly what, where and why.
 - **Do not start** new long or risky operations. Let quick ones finish, or stop them cleanly.
 - **Inventory session-bound state** that will not transfer: background shells and test helpers, subagents, PR activity subscriptions, scheduled self check-ins or reminders (they fire into *this* session), dev servers, locks. For each one, decide whether to finish it, cancel it, or hand it over with the exact way to recreate it. Read what a scheduled item will actually do before calling it harmless.
-- **Settle ownership.** Two agents acting on the same branch or PR will collide. Decide whether this session stops or keeps working. If it stops, cancel its scheduled check-ins and drop its PR subscriptions (some hosts let only one session hold a subscription), and say so. If it continues, state which items each agent owns.
+- **Settle ownership.** Two agents acting on the same branch or PR will collide. Decide whether this session stops or keeps working. If it stops, cancel its scheduled check-ins and drop its PR subscriptions (some hosts let only one session hold a subscription), say so, and tell the user how to stop or archive this session. If it continues, state which items each agent owns.
 - **Rescue off-repo knowledge.** Specs, notes and logs that live only in a scratch or temp directory are gone for the next agent. Inline what matters in the handoff.
 
 ## 2. Refresh the facts from primary sources
@@ -31,7 +31,7 @@ Memory drifts over a long session; the handoff must not. Check immediately befor
 - Tooling that worked and tooling that did not: for example an unauthenticated CLI, and the tool or API you used instead. The receiving agent will otherwise retry the broken path first.
 - What you have already told the user, so the next agent neither repeats nor contradicts it.
 
-Record the snapshot time. State facts with evidence (SHA, PR number, path, command) rather than impressions:
+Record the snapshot time. Copy times, IDs and quoted text from tool output rather than reconstructing them from memory. State facts with evidence (SHA, PR number, path, command) rather than impressions:
 
 | Weak | Strong |
 | --- | --- |
@@ -76,7 +76,7 @@ Ownership after this handoff: <this session stops (and what it cancelled), or wh
 <Ordered, every step with a done-when. Step 1 re-verifies the state above.>
 
 ## How to verify
-<Exact commands to confirm the state and test the work, and why that scope covers the change, so the next agent can extend it when the change grows.>
+<Exact commands to confirm the state and test the work, runnable from a fresh shell (working directory, absolute paths of helper tools), and why that scope covers the change, so the next agent can extend it when the change grows.>
 <Working mechanisms for waiting on CI or other external state, and any tool that is unavailable.>
 
 ## Gotchas and lessons
