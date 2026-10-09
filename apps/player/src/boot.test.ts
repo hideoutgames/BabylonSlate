@@ -308,7 +308,7 @@ describe("player startup and Stop ownership", () => {
     sessions.push(startPlayer({ game, canvas }));
     const worker = TestWorker.instances[0]!;
     const before = worker.messages.length;
-    worker.command({ channel: "command", payload: { type: "sceneStreamBlocking", blocking: true } });
+    worker.command({ channel: "command", payload: { type: "simulationBlocking", blocking: true } });
     worker.command({ channel: "command", payload: { type: "sceneStreamLoading", actorGuid: "left", streamLoadId: 5 } });
     expect(handle.applyCommand).toHaveBeenCalledWith({ type: "sceneStreamLoading", actorGuid: "left", streamLoadId: 5 });
     worker.command({ channel: "command", payload: { type: "sceneStreamRealized", actorGuid: "left", streamLoadId: 5, slotIds: [7, 9] } });
@@ -318,7 +318,7 @@ describe("player startup and Stop ownership", () => {
     finish();
     await vi.waitFor(() => expect(worker.messages).toContainEqual({ channel: "control", payload: { type: "sceneStreamReady", actorGuid: "left", streamLoadId: 5 } }));
     expect(handle.loadScene).not.toHaveBeenCalled();
-    worker.command({ channel: "command", payload: { type: "sceneStreamBlocking", blocking: false } });
+    worker.command({ channel: "command", payload: { type: "simulationBlocking", blocking: false } });
     expect(handle.setSceneStreamingPaused).toHaveBeenLastCalledWith(false);
     worker.command({ channel: "command", payload: { type: "sceneStreamRemoved", actorGuid: "left", streamLoadId: 5 } });
     expect(handle.applyCommand).toHaveBeenCalledWith({ type: "sceneStreamRemoved", actorGuid: "left", streamLoadId: 5 });
@@ -333,16 +333,26 @@ describe("player startup and Stop ownership", () => {
       const message = [...worker.messages].reverse().find(entry => entry.channel === "control" && entry.payload.type === "assetLoadStates");
       return message?.channel === "control" && message.payload.type === "assetLoadStates" ? message.payload.states.find(entry => entry.guid === "world")?.state : undefined;
     };
-    worker.command({ channel: "command", payload: { type: "assetPreload", preloadId: "first", ownerId: "actor", assetGuids: ["world"] } });
+    worker.command({ channel: "command", payload: { type: "assetPreload", preloadId: "first", ownerId: "actor", assetGuids: ["world"], priority: "preload" } });
     await vi.waitFor(() => expect(fail).toBeTypeOf("function"));
     expect(game.assets?.getLoadState("world")).toBe("ready");
     expect(state()).toBe("loading");
     fail(new Error("Required native resource could not decode."));
     await vi.waitFor(() => expect(state()).toBe("failed"));
     expect(worker.messages).toContainEqual({ channel: "control", payload: { type: "assetPreloadResult", preloadId: "first", success: false, error: "Required native resource could not decode." } });
-    worker.command({ channel: "command", payload: { type: "assetPreload", preloadId: "retry", ownerId: "actor", assetGuids: ["world"] } });
+    worker.command({ channel: "command", payload: { type: "assetPreload", preloadId: "retry", ownerId: "actor", assetGuids: ["world"], priority: "preload" } });
     await vi.waitFor(() => expect(worker.messages).toContainEqual({ channel: "control", payload: { type: "assetPreloadResult", preloadId: "retry", success: true, progress: 1 } }));
     expect(state()).toBe("ready");
+  });
+  it.each(["gameplay", "preload", "background"] as const)("schedules a %s priority asset load that way in the loader and the renderer", async priority => {
+    const { game, canvas, handle } = await fixture();
+    const acquireAssets = vi.fn(async () => ({ release() {} }));
+    game.acquireAssets = acquireAssets;
+    sessions.push(startPlayer({ game, canvas }));
+    const worker = TestWorker.instances[0]!;
+    worker.command({ channel: "command", payload: { type: "assetPreload", preloadId: "load", ownerId: "actor", assetGuids: ["world"], priority } });
+    await vi.waitFor(() => expect(handle.acquireSceneSources).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ prepare: true, priority })));
+    expect(acquireAssets).toHaveBeenCalledWith(["world"], expect.objectContaining({ consumer: "preload:actor", priority }));
   });
   it("waits for worker Class registration before completing a cold preload", async () => {
     const { game, canvas } = await fixture();
@@ -350,7 +360,7 @@ describe("player startup and Stop ownership", () => {
     game.acquireAssets = async () => { game.scripts.push(script); return { release() {} }; };
     sessions.push(startPlayer({ game, canvas }));
     const worker = TestWorker.instances[0]!;
-    worker.command({ channel: "command", payload: { type: "assetPreload", preloadId: "cold", ownerId: "actor", assetGuids: ["world"] } });
+    worker.command({ channel: "command", payload: { type: "assetPreload", preloadId: "cold", ownerId: "actor", assetGuids: ["world"], priority: "preload" } });
     await vi.waitFor(() => expect(worker.messages.some(message => message.channel === "control" && message.payload.type === "loadScripts" && message.payload.replace === true)).toBe(true));
     const message = worker.messages.find(message => message.channel === "control" && message.payload.type === "loadScripts" && message.payload.replace === true);
     if (message?.channel !== "control" || message.payload.type !== "loadScripts") throw new Error("Class source request was not sent");

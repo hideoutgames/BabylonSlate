@@ -114,7 +114,6 @@ const BUILTIN_ASSET_PINS: Readonly<Record<string, readonly string[]>> = {
   "render-target.getMode": ["target", "Render Target"],
   "render-target.getTextureTarget": ["texture", "Texture"],
   "render-target.setRenderTarget": ["value", "Render Target"],
-  "assets.getLoadState": ["asset", "Asset"],
 };
 
 /** Typed fields, never a recursive search for arbitrary strings resembling GUIDs. */
@@ -353,7 +352,6 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
           const names = BUILTIN_ASSET_PINS[nodeType];
           if (names) add([`default:${names[0]}`, names[0]!, `default:${names[1]}`, names[1]!]
             .map(key => properties[key]).find(value => value !== undefined), needed);
-          if (nodeType === "assets.preload") addMany(values(properties["default:assets"] ?? properties.assets ?? properties["default:Assets"]), false);
           if (nodeType === "literal.makeClass") addClass(properties["default:in"] ?? properties.in ?? properties["default:In"], needed);
         }
         if (nodeType.startsWith("data.")) {

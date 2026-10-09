@@ -383,6 +383,8 @@ export type PlaySceneSourceLoader = (guid: string, options: {
 }) => Promise<PlaySourcePreparation & { scene: SerializedScene }>;
 export type PlayAssetSourceLoader = (guids: string[], options: {
   consumer: string; signal: AbortSignal; onProgress?: (progress: number) => void;
+  /** Orders this load's source reads against other queued work; default gameplay. */
+  priority?: import("@babylonslate/core").RuntimeAssetSchedulerPriority;
   fontModes?: import("@babylonslate/render").CommandFontModes;
 }) => Promise<PlaySourcePreparation>;
 
@@ -973,7 +975,7 @@ export function startPlaySession(options: {
     });
     if (options.getAssetLoadState) publishAssetStates([...knownAssetGuids], "unloaded", true);
   };
-  const prepareSources = async (prepared: PlaySourcePreparation, signal: AbortSignal, prepare = false, priority: "gameplay" | "preload" = "gameplay") => {
+  const prepareSources = async (prepared: PlaySourcePreparation, signal: AbortSignal, prepare = false, priority: import("@babylonslate/core").RuntimeAssetSchedulerPriority = "gameplay") => {
     let releaseRender: (() => void) | undefined;
     const scope = { guids: [...(prepared.required ?? [])], ready: false };
     preparedSourceScopes.set(prepared, scope);
@@ -1062,7 +1064,7 @@ export function startPlaySession(options: {
   const receivePreload = (command: CommandMessage) => {
     if (command.type === "assetPreloadRelease") { releasePreload(command.preloadId); return true; }
     if (command.type !== "assetPreload") return false;
-    const { preloadId, assetGuids, ownerId } = command;
+    const { preloadId, assetGuids, ownerId, priority } = command;
     if (preloads.has(preloadId)) return true;
     if (!options.acquireAssetSources) {
       publishPreloadResult({ preloadId, success: false, error: "This Play session has no asset source loader." });
@@ -1073,11 +1075,11 @@ export function startPlaySession(options: {
     };
     preloads.set(preloadId, request);
     publishAssetStates(assetGuids, "loading");
-    void options.acquireAssetSources(assetGuids, { consumer: ownerId, signal: request.controller.signal,
+    void options.acquireAssetSources(assetGuids, { consumer: ownerId, signal: request.controller.signal, priority,
       onProgress: (progress) => {
         if (preloads.get(preloadId) === request) publishPreloadResult({ preloadId, success: true, progress: Math.min(0.9, progress * 0.9) });
       },
-    }).then((prepared) => prepareSources(prepared, request.controller.signal, true, "preload")).then((release) => {
+    }).then((prepared) => prepareSources(prepared, request.controller.signal, true, priority)).then((release) => {
       if (preloads.get(preloadId) !== request) { release(); return; }
       request.release = release;
       publishAssetStates(assetGuids, "ready");
@@ -1330,7 +1332,7 @@ export function startPlaySession(options: {
     noteCommand();
     if (command.type === "activeScene") { inspectorClient.invalidateScene(); materialEditHost.invalidate(); }
     if (command.type === "despawn") { inspectorClient.invalidateActor(command.actorGuid); materialEditHost.invalidateActor(command.actorGuid); }
-    if (command.type === "sceneStreamBlocking") handle.setSceneStreamingPaused(command.blocking);
+    if (command.type === "simulationBlocking") handle.setSceneStreamingPaused(command.blocking);
     if (command.type === "snapshotLayout" && runtime)
       snapBuf = new Float32Array(snapshotFloatCount(command.capacity));
     if (command.type === "spawn") {

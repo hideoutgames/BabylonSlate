@@ -146,6 +146,11 @@ describe("assetPickerAllowedTypes", () => {
   it("falls back to the pin asset type when typeClassIds is missing", () => {
     expect(assetPickerAllowedTypes("Material", undefined)).toEqual(["Material", "MaterialInstance"]);
   });
+
+  it("lists every asset for a pin that accepts any asset instead of filtering to an empty type", () => {
+    expect(assetPickerAllowedTypes("", undefined)).toEqual([]);
+    expect(assetPickerAllowedTypes("  ", [])).toEqual([]);
+  });
 });
 
 describe("variableAssetPickerAllowedTypes", () => {
