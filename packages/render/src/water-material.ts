@@ -218,6 +218,20 @@ const STYLIZED_CHOP_TIER = [0, 1, 2] as const;
  */
 const CHOP_PHASE_DRIFT = [[3.1, 2.2], [-4.3, -2.5], [5.2, 1.8], [-6.1, -2.0], [7.4, 1.4], [-8.2, -1.6]] as const;
 /**
+ * Realistic chop and capillaries are sums of travelling directional waves; no noise bends their domain (a smooth noise
+ * displacing ripples by metres curls their crests along its closed isolines into eddies and rings). Each octave heads off
+ * the wind by `REAL_CHOP_TURNS` / `REAL_CAPILLARY_TURNS` (radians, within about 25 and 15 degrees: wind seas are
+ * directional; the octaves' wavenumbers stay incommensurate golden-ratio steps), and the noises only add a small
+ * per-octave phase jitter (`REAL_CHOP_JITTER`, radians over the noise's full range: well under a fifth of a wavelength)
+ * and modulate amplitude.
+ */
+const REAL_CHOP_TURNS = [0.0, 0.4, -0.34, 0.22, -0.43, -0.12] as const;
+const REAL_CAPILLARY_TURNS = [0.18, -0.22, 0.08, -0.13] as const;
+const REAL_CHOP_JITTER = [[0.9, 0.5], [-1.0, -0.5], [0.9, 0.45], [-1.0, -0.5], [0.9, 0.5], [-1.0, -0.45]] as const;
+/** Realistic: the share of the slow chop shift (`CHOP_SHIFT`) kept, and the capillaries' amplitude where the FFT band supplies fine detail. */
+const REAL_CHOP_SHIFT_SHARE = 0.5;
+const REAL_CAPILLARY_FFT = 0.45;
+/**
  * The chop's slow phase shift: each octave's phase also gains `CHOP_SHIFT[i]` radians times a rotating mix of the
  * centred large and gust noises, (cos θ · (large − ½) + sin θ · (gust − ½)), θ = `CHOP_SHIFT_RATE` × the first octave's
  * angular frequency × time (`slateWaterChopShift`, from the CPU). An octave is a plane wave, so without it a point saw
@@ -265,15 +279,16 @@ const CHOP_FM_TURNS = [[0, 1], [1, 1], [2, 1], [1, 2], [3, 1], [2, 2]] as const;
  * sine per octave.
  */
 const CHOP_FM_SLOW_TURNS = [[-1, 1], [2, -1], [-5, 4], [5, -3], [-4, 3], [3, -2]] as const;
-function chopFm(i: number): string {
+/** `spatial` scales how fast the modulation's world phase varies across the noises (Realistic keeps it small: no spatial bend). */
+function chopFm(i: number, spatial = 1): string {
   const depth = `${f(CHOP_FM_DEPTH)} * (0.4 + 0.75 * swGust + 0.45 * swLarge)`;
-  return ` + ${depth} * (sin(dot(U.slateWaterChopShift.zw, vec2(${f(CHOP_FM_TURNS[i]![0])}, ${f(CHOP_FM_TURNS[i]![1])})) + swGust * 4.0 + ${f(0.9 + i * 1.7)})`
-    + ` + sin(dot(U.slateWaterChopShift.zw, vec2(${f(CHOP_FM_SLOW_TURNS[i]![0])}, ${f(CHOP_FM_SLOW_TURNS[i]![1])})) + swLarge * 6.0 + ${f(2.0 + i * 2.3)}))`;
+  return ` + ${depth} * (sin(dot(U.slateWaterChopShift.zw, vec2(${f(CHOP_FM_TURNS[i]![0])}, ${f(CHOP_FM_TURNS[i]![1])})) + swGust * ${f(4 * spatial)} + ${f(0.9 + i * 1.7)})`
+    + ` + sin(dot(U.slateWaterChopShift.zw, vec2(${f(CHOP_FM_SLOW_TURNS[i]![0])}, ${f(CHOP_FM_SLOW_TURNS[i]![1])})) + swLarge * ${f(6 * spatial)} + ${f(2.0 + i * 2.3)}))`;
 }
 /** The short-crest envelope (a factor) of the chop octave whose uniform vec4 (dir.x, dir.z, k, phase) is `octave`. */
-function chopCrests(octave: string, i: number): string {
+function chopCrests(octave: string, i: number, bend = ""): string {
   const turn = i % 2 ? CHOP_CREST_TURN : -CHOP_CREST_TURN, c = Math.cos(turn), s = Math.sin(turn);
-  return `(0.55 + 0.9 * (0.5 - 0.5 * cos(${octave}.z * ${f(CHOP_CREST_K)} * dot(vec2(${f(c)} * ${octave}.x - ${f(s)} * ${octave}.y, ${f(s)} * ${octave}.x + ${f(c)} * ${octave}.y), swChop) + ${f(1.3 + i * 2.1)} - dot(U.slateWaterChopShift.zw, vec2(${f(CHOP_GROUP_TURNS[i]![0])}, ${f(CHOP_GROUP_TURNS[i]![1])})))))`;
+  return `(0.55 + 0.9 * (0.5 - 0.5 * cos(${octave}.z * ${f(CHOP_CREST_K)} * dot(vec2(${f(c)} * ${octave}.x - ${f(s)} * ${octave}.y, ${f(s)} * ${octave}.x + ${f(c)} * ${octave}.y), swChop)${bend} + ${f(1.3 + i * 2.1)} - dot(U.slateWaterChopShift.zw, vec2(${f(CHOP_GROUP_TURNS[i]![0])}, ${f(CHOP_GROUP_TURNS[i]![1])})))))`;
 }
 /**
  * Toon's crest lines seed each crest of the dominant swell component by its index, counted modulo this many crests
@@ -1052,10 +1067,11 @@ swLost += U.slateWaterSea.z * swBlendH * swBlendH;` : ""}`;
   const lowSwell = fromTier(2, "", fromTier(1, skipped(MEDIUM_SWELL_COMPONENTS - 1), skipped(LOW_SWELL_COMPONENTS - 1)));
   const detail = realistic
     ? DETAIL_OCTAVES.map(([, , slope, speed], i) => fromTier(CHOP_TIER[i]!, `
-vec4 swOC${i} = U.${CHOP_UNIFORMS[i]};
-// The large noise drifts each octave's phase by its own amount, so crossing octaves never lock into a lattice; the
-// medium one bends it harder, so its crests curve within a few metres.
-float swOX${i} = swOC${i}.z * dot(swOC${i}.xy, swChop) + swOC${i}.w + swLarge * ${f(CHOP_PHASE_DRIFT[i]![0])} + swMedium * ${f(CHOP_PHASE_DRIFT[i]![1] * 1.6)} + swChopShift * ${f(CHOP_SHIFT[i]!)}${chopFm(i)};
+// The octave is a straight travelling wave heading \`REAL_CHOP_TURNS\` off the wind (the uniform's wavenumber and clock
+// phase on a turned wind vector). The noises only jitter its phase by a fraction of a wavelength (\`REAL_CHOP_JITTER\`),
+// and the slow shift and modulation stay spatially gentle: crests stay straight over metres and never curl.
+vec4 swOC${i} = vec4(${f(Math.cos(REAL_CHOP_TURNS[i]!))} * U.slateWaterRipple.z - ${f(Math.sin(REAL_CHOP_TURNS[i]!))} * U.slateWaterRipple.w, ${f(Math.sin(REAL_CHOP_TURNS[i]!))} * U.slateWaterRipple.z + ${f(Math.cos(REAL_CHOP_TURNS[i]!))} * U.slateWaterRipple.w, U.${CHOP_UNIFORMS[i]}.zw);
+float swOX${i} = swOC${i}.z * dot(swOC${i}.xy, swChop) + swOC${i}.w + (swLarge - 0.5) * ${f(REAL_CHOP_JITTER[i]![0])} + (swMedium - 0.5) * ${f(REAL_CHOP_JITTER[i]![1])} + swChopShift * ${f(CHOP_SHIFT[i]! * REAL_CHOP_SHIFT_SHARE)}${chopFm(i, 0.25)};
 float swOW${i} = exp(sin(swOX${i}) - 1.0);
 float swOCs${i} = cos(swOX${i});${footprintFade("swOFd", i, `swOC${i}.z`, `swOC${i}.xy`, speed)}
 // Anti-tiling: each octave's strength drifts with the shared noises (in patches a few metres wide, the longer octaves
@@ -1064,7 +1080,7 @@ float swOCs${i} = cos(swOX${i});${footprintFade("swOFd", i, `swOC${i}.z`, `swOC$
 // chop's domain, so crests grow and fade as they travel through it) breaks every crest into lengths of about one and a
 // half wavelengths, so no octave runs in even parallel rows (corduroy).
 float swOA${i} = ${f(slope)} * swOFd${i} * (0.25 + 1.5 * ${i % 2 === 0 ? "" : "(1.0 - "}smoothstep(0.3, 0.7, mix(swMedium, swLarge, ${f(0.5 - Math.floor(i / 2) * 0.2)}))${i % 2 === 0 ? "" : ")"})
-  * ${chopCrests(`swOC${i}`, i)};
+  * ${chopCrests(`swOC${i}`, i, " + (swMedium - 0.5) * 2.4 + (swLarge - 0.5) * 3.0")};
 swDetail += swOC${i}.xy * (swOW${i} * swOCs${i} * swOA${i});
 swChopH += (swOW${i} - 0.37) * swOA${i};
 swChop -= swOC${i}.xy * (swOW${i} * swOCs${i} * 0.3 / swOC${i}.z);
@@ -1090,9 +1106,12 @@ swDetail += swOC${i}.xy * (swOW${i} * swOCs${i} * swOA${i});
 swChopH += (swOW${i} - 0.37) * swOA${i};
 swChop -= swOC${i}.xy * (swOW${i} * swOCs${i} * 0.3 / swOC${i}.z);${i === REFRACTION_OCTAVES[1] - 1 ? "\nswDetailMid = swDetail;" : ""}`)).join("");
   const capillaries = realistic ? CAPILLARY_OCTAVES.map(([, , slope, speed], i) => fromTier(CAPILLARY_TIER[i]!, `
-vec4 swCC${i} = U.${CAPILLARY_UNIFORMS[i]};
-float swCX${i} = swCC${i}.z * dot(swCC${i}.xy, swRippleDomain) + swCC${i}.w;${footprintFade("swCFd", i, `swCC${i}.z`, `swCC${i}.xy`, speed)}
-swDetail += swCC${i}.xy * (exp(sin(swCX${i}) - 1.0) * cos(swCX${i}) * ${f(slope)} * swCFd${i} * swRipplePatch);
+// A directional wind ripple within about 15 degrees of the wind, on the straight world domain, in gust patches (neighbouring
+// ripples take opposite shares of a noise, so no direction dominates everywhere); its phase jitters by a fraction of a
+// wavelength only.
+vec4 swCC${i} = vec4(${f(Math.cos(REAL_CAPILLARY_TURNS[i]!))} * U.slateWaterRipple.z - ${f(Math.sin(REAL_CAPILLARY_TURNS[i]!))} * U.slateWaterRipple.w, ${f(Math.sin(REAL_CAPILLARY_TURNS[i]!))} * U.slateWaterRipple.z + ${f(Math.cos(REAL_CAPILLARY_TURNS[i]!))} * U.slateWaterRipple.w, U.${CAPILLARY_UNIFORMS[i]}.zw);
+float swCX${i} = swCC${i}.z * dot(swCC${i}.xy, swChop) + swCC${i}.w + (swFine - 0.5) * ${f(i % 2 ? -0.9 : 0.9)};${footprintFade("swCFd", i, `swCC${i}.z`, `swCC${i}.xy`, speed)}
+swDetail += swCC${i}.xy * (exp(sin(swCX${i}) - 1.0) * cos(swCX${i}) * ${f(slope)} * swCFd${i} * swRipplePatch * (0.45 + 1.1 * ${i % 2 ? "(1.0 - " : ""}smoothstep(0.3, 0.7, mix(swFine, swMedium, 0.4))${i % 2 ? ")" : ""}));
 swLostDetail += ${f(octaveVariance(slope))} * (1.0 - swCFd${i} * swCFd${i});`, `
 swLostDetail += ${f(octaveVariance(slope))};`)).join("") : "";
   return `
@@ -1201,8 +1220,8 @@ float swGust = swLarge;`)}${fftFragmentSource()}
 // Anti-tiling: a bounded warp bends the chop domain, so crests curve and cross differently across the sea. (A rotation
 // about the world origin would compress the chop without limit far from it.) Each component's amplitude suits its
 // noise's frequency, so the warp never stretches the chop much; Low's gust is its large noise, so that one shrinks.${fromTier(1, `
-vec2 swChop = swFlowed + vec2(swLarge - 0.5, swGust - 0.5) * vec2(2.4, 9.0);`, `
-vec2 swChop = swFlowed + vec2(swLarge - 0.5, swGust - 0.5) * vec2(2.4, ${f(9 * GUST_NOISE / LARGE_NOISE)});`)}
+vec2 swChop = swFlowed${realistic ? "" : " + vec2(swLarge - 0.5, swGust - 0.5) * vec2(2.4, 9.0)"};`, `
+vec2 swChop = swFlowed${realistic ? "" : ` + vec2(swLarge - 0.5, swGust - 0.5) * vec2(2.4, ${f(9 * GUST_NOISE / LARGE_NOISE)})`};`)}
 // Colour Variation's drifts: the two wide noises mixed, with edges bent by the medium one. Either wide noise alone shows
 // its cell grid as soft-edged rectangles (the gust's cells are about 77 m); mixed with each other and the medium noise
 // (six times finer than the large one) their edges curve and their cells no longer line up.
@@ -1211,10 +1230,10 @@ float swDrift = swLarge * 0.5 + swGust * 0.3 + swMedium * 0.2;${realistic ? from
 // roughness they add (the sub-capillary and filtered variance scale with the chop gain) come and go together.
 float swWindPatch = smoothstep(0.28, 0.72, swGust * 0.45 + swLarge * 0.4 + swMedium * 0.15);
 float swWindGain = mix(0.5, 1.35, swWindPatch);`, `
-float swWindGain = 0.7 + 0.6 * swGust;`) : ""}${realistic || painted ? fromTier(1, `
+float swWindGain = 0.7 + 0.6 * swGust;`) : ""}${painted ? fromTier(1, `
 // Bend it at a finer scale too, so crossing octaves never settle into a regular quilt in the sun's reflection; the
 // fine part fades before its noise would alias.
-swChop += vec2(swMedium - 0.5, (swFine - 0.5) * (1.0 - smoothstep(0.3, 1.0, swFoot))${realistic ? "" : " * 0.35"}) * 0.6;`) : ""}
+swChop += vec2(swMedium - 0.5, (swFine - 0.5) * (1.0 - smoothstep(0.3, 1.0, swFoot)) * 0.35) * 0.6;`) : ""}
 vec2 swDetail = vec2(0.0);
 // The chop octaves refraction bends by (\`REFRACTION_OCTAVES\`): the medium-frequency part of \`swDetail\`, kept apart from the fine
 // octaves, whose high-frequency wobble would make the bed under the water shimmer like jelly.
@@ -1227,10 +1246,11 @@ float swDriftK = 1.0;`, `
 float swDriftK = 0.5;`) : ""}
 ${detail}${fromTier(1, "", `
 swDetailMid = swDetail;`)}${realistic ? fromTier(1, `
-// Capillaries ride a noise-bent domain and gather in drifting patches, so they never form a regular lattice.
-vec2 swRippleDomain = swChop + (vec2(swFine, swMedium) - vec2(0.5)) * 0.45;${fromTier(3, `
-float swRipplePatch = (0.6 + 0.8 * swMedium) * (0.55 + 0.9 * swFine) * mix(0.2, 1.55, swWindPatch);`, `
-float swRipplePatch = (0.6 + 0.8 * swMedium) * mix(0.2, 1.55, swWindPatch);`)}`) : ""}${capillaries}
+// Capillaries are directional wind ripples that gather in drifting gust patches (glassy water between them); where the FFT
+// band supplies the fine detail they are fainter, so the two never double-count it.
+float swRipplePatch = (0.6 + 0.8 * swMedium) * mix(0.2, 1.55, swWindPatch);${fromTier(3, `
+swRipplePatch *= 0.55 + 0.9 * swFine;`)}${ifFft(`
+swRipplePatch *= ${f(REAL_CAPILLARY_FFT)};`)}`) : ""}${capillaries}
 // What meets the water: terrain shoreline and true depth, and objects crossing the surface.
 // Values stay continuous at the field's edges and range limits, so derivative-based antialiasing never spikes.
 float swFieldShore = mix(${f(SHORE[1])}, swTerrainShore, swFieldOn);
