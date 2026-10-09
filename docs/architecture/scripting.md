@@ -460,6 +460,21 @@ Class variable connections retain their declared ancestry when the graph editor 
 
 Console command names and parameters are registered from the Class catalog without reading command graphs. The console host and **Execute Console Command** node await `executeConsoleCommandAsync` to prepare the selected Class and its required dependencies. Invocation ownership lasts through asynchronous command completion; stopping the session cancels pending preparation. `executeConsoleCommand` remains available for prepared commands and built-in operations. After Stop, both refuse with `The runtime session has ended`.
 
+### Asset references and Loading
+
+Every asset- or Class-typed declaration has a **Loading** policy that decides whether its reference travels with the asset that owns the value.
+
+| Policy | Stored | Behavior |
+| --- | --- | --- |
+| Soft (Load On Demand), default | Nothing (`loading` is absent) | Packaged, listed by Show References and Delete, and rename-safe by GUID, but never loaded with its owner. It loads on first use by a consuming node or through the load nodes. |
+| Hard (Load With Owner) | `loading: "hard"` | Part of the owner's required closure: prepared before Begin Play, before a spawn completes, or whenever its Data Tree loads. |
+
+- **Where:** Class variables of asset or Class type (including Map keys of those types), Structure fields and Data Definition fields. Details shows **Loading** directly after Asset Type / Class Type; choosing Soft deletes the property, and changing the type away from an asset or Class clears it. Function parameters, locals and the engine components' built-in asset fields have no policy (the components' assets stay required).
+- **Instance overrides:** a Hard Class variable adds its property key to the Class header's `requiredVariableNames`. Overrides of that property on placed actors (Scenes) and prefab components inherit the required role. There is no separate per-instance policy.
+- **Structure values:** the innermost declaring field decides. A Hard field is required even inside a Soft variable's override; a Soft field is only referenced unless a synchronous reader requires the whole value.
+- **Synchronous readers** keep their role: a variable read by an `input.*` or `data.readEntry` chain is required whatever its policy.
+- **Stamping:** dependency metadata is derived when the owning asset is saved or imported, from its content plus the current Class, Structure and Data Definition declarations. Changing a declaration's Loading takes effect for dependants when they are next saved. Saved Class, Data Definition and Structure headers carry the declarations dependants need (Class `variables`, Definition and Structure `fields`), including `loading`.
+
 ### Asset preloading
 
 Ordinary authored references load through their consuming actors/components. Explicit preloads provide predictable timing without exposing low-level cache leases.
@@ -706,6 +721,7 @@ Internal entry IDs remain stable through rename, move and undo. Graphs and scrip
 - The Tree pane follows the Tags editor's compact hierarchy and search patterns. Data Tree assets and Tree Root use Lucide's Database glyph; all entries share the same entry glyph, with disclosure arrows indicating children. Search retains matching ancestors. Entry selection and branch browsing are separate: the Entries grid shows the current branch's children, with optional descendants. Homogeneous Definition selections expose typed columns; mixed branches show entry metadata and a Definition filter.
 - Add roots or children, rename, move, duplicate or remove subtrees. Moves reject cycles and sibling name collisions. Duplicate assigns fresh internal IDs and copies owned values. Remove includes the selected entry's descendants. These operations each use one global undo transaction.
 - Names must be nonempty, trimmed, unique among siblings ignoring case, and cannot contain `/`, control characters, or be `.` or `..`. Hierarchy validation rejects missing parents, repeated IDs, cycles and depth greater than 128.
+- Asset and Class fields have a **Loading** policy, Soft by default. Hard fields put the assets referenced by an entry's values into the Data Tree's `requiredDependencies`, so they load whenever the tree does; Soft fields are only referenced. The Definition's current Loading decides, even when an entry's schema snapshot predates it.
 - Values exposes the selected entry's effective Definition and typed controls. Changing a schema assignment or moving to a differently typed branch preserves stored values and snapshots for explicit reconciliation.
 - Copy and paste typed cells as TSV. Rectangular paste validates all affected cells before committing; invalid input leaves the tree unchanged.
 - Cell edits, hierarchy operations and reconciliation use the document's global **Undo**, **Redo** and **Save All** controls. No entry edit writes another data asset.

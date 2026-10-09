@@ -26,6 +26,7 @@ export * from "./project-appearance";
 export * from "./document";
 export * from "./editor-only";
 export * from "./class-member-category";
+export * from "./asset-loading-policy";
 export * from "./engine-version";
 export * from "./guid-result";
 export * from "./math-rng";

@@ -232,6 +232,20 @@ describe("editor-only assets", () => {
     ]);
   });
 
+  it("indexes a Hard Loading policy on Class header variables so closed assets keep the role", () => {
+    expect(
+      classHeaderMeta({
+        members: [
+          { id: "weapon", kind: "variable", name: "Weapon", typeId: "asset", typeClassId: "Model", loading: "hard" },
+          { id: "cue", kind: "variable", name: "Cue", typeId: "asset", typeClassId: "Audio" },
+        ],
+      }).variables,
+    ).toEqual([
+      { id: "weapon", name: "Weapon", typeId: "asset", typeClassId: "Model", loading: "hard" },
+      { id: "cue", name: "Cue", typeId: "asset", typeClassId: "Audio" },
+    ]);
+  });
+
   it("indexes prefab components on Class headers", () => {
     expect(
       classHeaderMeta({

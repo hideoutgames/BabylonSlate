@@ -1,3 +1,4 @@
+import type { AssetLoadingPolicy } from "@babylonslate/core";
 import {
   EyeIcon,
   EyeOffIcon,
@@ -45,6 +46,7 @@ import {
   NumericDragField,
   PanelFrame,
   ParameterListEditor,
+  AssetLoadingField,
   PinListEditor,
   PinTypePicker,
   VariableTypeFields,
@@ -766,6 +768,7 @@ function GalleryComposites() {
     typeId: "float",
     container: "single",
   });
+  const [loading, setLoading] = useState<AssetLoadingPolicy>("soft");
   const [bindingCode, setBindingCode] = useState("Space");
   const [pins, setPins] = useState<PinListRow[]>([
     { id: "gallery-hit", name: "hit", type: "bool", direction: "out" },
@@ -982,6 +985,10 @@ function GalleryComposites() {
       <div className="rounded-lg border border-border p-3" data-testid="gallery-variable-type-fields">
         <div className="mb-2 text-sm font-medium">Variable Type Fields</div>
         <VariableTypeFields value={variableType} onChange={setVariableType} />
+      </div>
+      <div className="rounded-lg border border-border p-3" data-testid="gallery-asset-loading-field">
+        <div className="mb-2 text-sm font-medium">Asset Loading Field</div>
+        <AssetLoadingField value={loading} onChange={setLoading} data-testid="gallery-asset-loading" />
       </div>
       <div className="rounded-lg border border-border p-3" data-testid="gallery-binding-code-picker">
         <div className="mb-2 text-sm font-medium">Binding Code Picker</div>

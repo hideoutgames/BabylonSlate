@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDataDefinitionAsset } from "@babylonslate/core";
+import { dataTypeSchemas } from "./data-catalog";
 import { createDataEntryForDefinition, reconcileDataEntry, resolveDataEntryValues } from "./data-values";
 import type { TypeSchemas } from "./type-defaults";
 
@@ -74,5 +75,26 @@ describe("authored data snapshots", () => {
       Rows: [{ Parts: [] }, { Parts: [{ Surface: "row-icon" }] }],
       Lookup: new Map([[{ Surface: "key-icon" }, { Parts: [{ Surface: "value-icon" }] }]]),
     });
+  });
+
+  it("copies a Hard Loading policy from catalog Definitions into new entry snapshots, nested fields included", () => {
+    const schemas = dataTypeSchemas([
+      { guid: "kit", name: "Kit", type: "DataDefinition", payload: { kind: "dataDefinition", fields: [
+        { id: "sound", name: "Sound", typeId: "asset", typeClassId: "Audio", loading: "hard" },
+        { id: "skin", name: "Skin", typeId: "asset", typeClassId: "Texture" },
+      ] } },
+      { guid: "weapon", name: "Weapon", type: "DataDefinition", payload: { kind: "dataDefinition", fields: [
+        { id: "mesh", name: "Mesh", typeId: "asset", typeClassId: "Model", loading: "hard" },
+        { id: "kit", name: "Kit", typeId: "struct", typeClassId: "kit" },
+      ] } },
+    ]);
+    const entry = createDataEntryForDefinition("weapon", schemas.dataDefinitions!.weapon!.fields, schemas);
+    expect(entry.schema).toEqual([
+      { id: "mesh", name: "Mesh", typeId: "asset", typeClassId: "Model", loading: "hard" },
+      { id: "kit", name: "Kit", typeId: "struct", typeClassId: "kit", fields: [
+        { id: "sound", name: "Sound", typeId: "asset", typeClassId: "Audio", loading: "hard" },
+        { id: "skin", name: "Skin", typeId: "asset", typeClassId: "Texture" },
+      ] },
+    ]);
   });
 });

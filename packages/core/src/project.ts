@@ -366,6 +366,11 @@ export interface GraphClassMember {
   runtime?: string;
   /** Class tree folder for variables and functions; `|` nests subcategories. Missing is uncategorized. */
   category?: string;
+  /**
+   * Asset and Class variables only (including Map keys): `"hard"` loads the
+   * reference with its owner. Missing is Soft (load on demand).
+   */
+  loading?: "hard";
 }
 
 export interface SerializedGraph {

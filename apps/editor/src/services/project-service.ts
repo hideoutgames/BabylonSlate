@@ -165,6 +165,7 @@ import {
   applyKenneyMannequinEmptyScaffold,
   MANNEQUIN_CLASS_FILE,
 } from "../lib/scaffold-empty-3d";
+import { asStructureAsset } from "../lib/type-asset-payload";
 import { createDefaultLogicGraphSerialized, defaultNodeRegistry, hydrateClassDocumentPayload } from "./graph-validation";
 
 function headerMetaForSave(
@@ -214,6 +215,8 @@ function headerMetaForSave(
       },
     );
   }
+  // Closed Structures supply their fields to type catalogs and dependency collection.
+  if (type === "Structure") return { ...asStructureAsset(content as Record<string, unknown>) };
   if (type === "ScriptInterface") {
     const payload = content as {
       guid?: string;
