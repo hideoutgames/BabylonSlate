@@ -9,7 +9,7 @@ const IPAD_TOUCH = {
 export default defineConfig({
   testDir: "./e2e",
   // Performance and profiling routes run only through playwright.perf.config.ts.
-  testIgnore: /(?:play-(performance|sustained)-route|editor-edit-profile|rendering-baseline)\.spec\.ts$/,
+  testIgnore: /(?:play-(performance|sustained)-route|feature-test-perf-route|editor-edit-profile|rendering-baseline)\.spec\.ts$/,
   // Dirty Play saves/compiles and collects materials before the overlay mounts.
   timeout: 60_000,
   fullyParallel: true,

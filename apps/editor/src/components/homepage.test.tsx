@@ -10,6 +10,7 @@ import {
   within,
 } from "@testing-library/react";
 import { TooltipProvider } from "@babylonslate/ui/components/tooltip";
+import { BUILT_IN_STARTER_KINDS } from "../lib/create-project";
 import type { ListedProject } from "../lib/listed-projects";
 import { Homepage } from "./homepage";
 import { AppSettingsProvider } from "../context/app-settings-context";
@@ -198,7 +199,7 @@ describe("Slate project browser", () => {
     );
   });
 
-  it.each(["blank", "empty", "2d"])(
+  it.each([...BUILT_IN_STARTER_KINDS])(
     "creates a named %s project with the selected appearance",
     async (kind) => {
       const onCreateEmpty = vi.fn(async () => {});

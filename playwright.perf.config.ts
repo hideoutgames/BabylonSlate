@@ -6,13 +6,16 @@ import { defineConfig, devices } from "@playwright/test";
  * build identity are set, e.g.
  *   BL_PERF_ROUTE=1 node scripts/browser-session.mjs <test-build-dir> \
  *     --config playwright.perf.config.ts --project perf-gpu e2e/play-performance-route.spec.ts
+ * The FeatureTest route (agents' default workload) is opt-in the same way:
+ *   BL_PERF_FEATURE_TEST=1 pnpm run test:e2e e2e/feature-test-perf-route.spec.ts \
+ *     --config playwright.perf.config.ts --project perf-software
  * The editor-edit profiling route also needs a React profiling build:
  *   VITE_REACT_PROFILING=true pnpm run test:e2e e2e/editor-edit-profile.spec.ts \
  *     --config playwright.perf.config.ts --project perf-software
  */
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: /(?:play-(performance|sustained)-route|editor-edit-profile|rendering-baseline|shared-outline|scalability-play|lattice-deformer)\.spec\.ts$/,
+  testMatch: /(?:play-(performance|sustained)-route|feature-test-perf-route|editor-edit-profile|rendering-baseline|shared-outline|scalability-play|lattice-deformer)\.spec\.ts$/,
   timeout: 600_000,
   fullyParallel: false,
   retries: 0,
