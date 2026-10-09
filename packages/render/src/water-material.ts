@@ -1171,9 +1171,7 @@ float swRipplePatch = 0.6 + 0.8 * swMedium;`)}`) : ""}${capillaries}
 // What meets the water: terrain shoreline and true depth, and objects crossing the surface.
 // Values stay continuous at the field's edges and range limits, so derivative-based antialiasing never spikes.
 float swFieldShore = mix(${f(SHORE[1])}, swTerrainShore, swFieldOn);
-float swKnown = swField.a * swFieldOn;${realistic ? `
-// Toward the field's outer edge its depth hands over smoothly to the open-water estimate, so no seam marks the edge.
-swKnown *= smoothstep(0.0, 0.06, min(min(swFieldUv.x, 1.0 - swFieldUv.x), min(swFieldUv.y, 1.0 - swFieldUv.y)));` : ""}
+float swKnown = swField.a * swFieldOn;
 // Distance to the object waterline at this fragment's rendered height (metres; contacts sampled in the cut code).
 float swObject = abs(swContactSigned);
 // Open-water edges: where a terrain field is bound but holds no terrain under this point, the mesh's own bank is no
