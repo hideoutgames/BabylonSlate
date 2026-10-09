@@ -1,4 +1,4 @@
-import { consoleCommandMetadataFromGraph } from "@babylonslate/core";
+import { classIdForAssetPath, consoleCommandMetadataFromGraph } from "@babylonslate/core";
 import {
   type GraphClassMember,
   type SerializedGraph,
@@ -86,12 +86,7 @@ function alwaysCompilesClass(
  * use the file stem as the stable key.
  */
 export function classIdForGraphPath(path: string): string {
-  const file = path.split("/").pop() ?? path;
-  const base = file
-    .replace(/\.(graph|class)\.(babasset|json)$/, "")
-    .replace(/\.babasset$/, "");
-  const cleaned = base.replace(/[^A-Za-z0-9_]+/g, "_");
-  return cleaned.length > 0 ? cleaned : "Graph";
+  return classIdForAssetPath(path);
 }
 
 

@@ -541,6 +541,15 @@ describe("project schema", () => {
     });
   });
 
+  it("defaults Always Package Folders to none and keeps each saved folder once, normalized", () => {
+    expect(normalizeProjectSettings(undefined).alwaysPackageFolders).toEqual([]);
+    expect(
+      normalizeProjectSettings({
+        alwaysPackageFolders: ["/assets/Weapons/", "assets//Weapons", " assets/UI ", "", 7],
+      } as unknown as Partial<ProjectSettings>).alwaysPackageFolders,
+    ).toEqual(["assets/Weapons", "assets/UI"]);
+  });
+
   it("keeps fill Play layout when custom resolution is missing or off", () => {
     expect(normalizeProjectSettings(undefined).render).toMatchObject({
       customResolution: false,

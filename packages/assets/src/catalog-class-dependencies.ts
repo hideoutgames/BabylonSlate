@@ -1,4 +1,4 @@
-import { isBuiltinBehaviourTreeClassId } from "@babylonslate/core";
+import { classIdForAssetPath, isBuiltinBehaviourTreeClassId } from "@babylonslate/core";
 import { isLockedEngineClassId } from "@babylonslate/object-model";
 import { getRequiredDependencies } from "./asset-dependencies";
 import type { BabassetHeader } from "./babasset";
@@ -20,9 +20,7 @@ export function resolveAssetCatalogDependencies(
   const classes = new Map<string, Set<string>>();
   for (const asset of assets) {
     if (asset.header.type !== "Class" && asset.header.type !== "Graph") continue;
-    const file = asset.path.split("/").pop() ?? asset.header.name;
-    const stem = file.replace(/\.(graph|class)\.(babasset|json)$/, "").replace(/\.babasset$/, "");
-    const classId = stem.replace(/[^A-Za-z0-9_]+/g, "_") || "Graph";
+    const classId = classIdForAssetPath(asset.path);
     for (const alias of [asset.header.guid, classId, asset.header.payload.classId]) {
       if (typeof alias !== "string" || !alias) continue;
       const matches = classes.get(alias) ?? new Set<string>();
