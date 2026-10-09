@@ -99,6 +99,10 @@ export {
   type VariableTypeFieldsValue,
 } from "./variable-type-fields";
 export {
+  AssetLoadingField,
+  type AssetLoadingFieldProps,
+} from "./asset-loading-field";
+export {
   PinListEditor,
   nextPinRowName,
   type PinListEditorProps,

@@ -1632,6 +1632,8 @@ export function patchClassMember(
     if ("overridable" in patch && patch.overridable !== true) {
       delete next.overridable;
     }
+    // Soft is the absence of the property.
+    if ("loading" in patch && patch.loading !== "hard") delete next.loading;
     if ("category" in patch) {
       const category = normalizeClassMemberCategory(patch.category);
       if (category) next.category = category;

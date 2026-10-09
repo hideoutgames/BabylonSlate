@@ -126,4 +126,30 @@ describe("type asset member table", () => {
       id: "item-field", name: "Item", typeId: "struct", typeClassId: "item", defaultValue: { Price: 12 },
     }] }));
   });
+
+  it("edits the Loading of an asset field and offers none for other field types", () => {
+    harness.kind = "structure";
+    harness.content = { kind: "structure", guid: "s1", name: "Kit", fields: [
+      { id: "mesh", name: "Mesh", typeId: "asset", typeClassId: "Model", defaultValue: "", loading: "hard" },
+      { id: "health", name: "Health", typeId: "float" },
+    ] };
+    render(<TypeAssetEditingProvider>
+      <TypeMembersPanel {...({} as IDockviewPanelProps)} />
+      <TypeDetailsPanel {...({} as IDockviewPanelProps)} />
+    </TypeAssetEditingProvider>);
+    fireEvent.click(screen.getByTestId("structure-row-1"));
+    expect(screen.queryByTestId("structure-field-loading")).toBeNull();
+    fireEvent.click(screen.getByTestId("structure-row-0"));
+    const loading = screen.getByTestId("structure-field-loading");
+    expect(loading.textContent).toContain("Hard (Load With Owner)");
+    fireEvent.click(loading);
+    const soft = screen.getByRole("option", { name: "Soft (Load On Demand)" });
+    fireEvent.pointerDown(soft);
+    fireEvent.click(soft);
+    const saved = applyAssetDocumentChange.mock.calls.at(-1) as unknown as [string, { fields: object[] }];
+    expect(saved[1].fields).toEqual([
+      { id: "mesh", name: "Mesh", typeId: "asset", typeClassId: "Model", defaultValue: "" },
+      { id: "health", name: "Health", typeId: "float" },
+    ]);
+  });
 });

@@ -1,4 +1,4 @@
-import type { DataFieldSnapshot } from "@babylonslate/core";
+import { hardLoadingProperty, type DataFieldSnapshot } from "@babylonslate/core";
 import type { StructField } from "./type-assets";
 import type { TypeSchemas } from "./type-defaults";
 
@@ -14,6 +14,7 @@ export function defaultFieldSnapshot(field: StructField): DataFieldSnapshot {
     ...(field.container ? { container: field.container } : {}),
     ...(field.keyTypeId ? { keyTypeId: field.keyTypeId } : {}),
     ...(field.keyTypeClassId ? { keyTypeClassId: field.keyTypeClassId } : {}),
+    ...hardLoadingProperty(field),
   };
 }
 

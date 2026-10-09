@@ -51,6 +51,25 @@ describe("gizmo screen-scale clamp", () => {
   });
 });
 
+describe("gizmo tool override", () => {
+  it("translates an override attachment and restores the active tool for the next one", () => {
+    const { scene } = createHandle();
+    scene.activeCamera = new FreeCamera("cam", new Vector3(0, 0, -10), scene);
+    const point = MeshBuilder.CreateBox("point", { size: 1 }, scene);
+    const actor = MeshBuilder.CreateBox("actor", { size: 1 }, scene);
+    const host = createGizmoHost(scene, { tool: "rotate" });
+    host.attachTo(point, [], { tool: "translate" });
+    expect(host.positionGizmo.attachedMesh).toBe(point);
+    expect(host.rotationGizmo.attachedMesh).toBeNull();
+    host.setTool("scale");
+    expect(host.positionGizmo.attachedMesh).toBe(point);
+    host.attachTo(actor);
+    expect(host.positionGizmo.attachedMesh).toBeNull();
+    expect(host.scaleGizmo.attachedMesh).toBe(actor);
+    host.dispose();
+  });
+});
+
 describe("gizmo move snap", () => {
   it("lands dragged axes on the world grid and leaves other axes alone", () => {
     const { scene } = createHandle();

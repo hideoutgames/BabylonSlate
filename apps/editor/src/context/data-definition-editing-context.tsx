@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components -- context module */
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
-import { normalizeDataDefinitionAsset, type DataDefinitionField } from "@babylonslate/core";
+import { carriesLoadingPolicy, normalizeDataDefinitionAsset, type AssetLoadingPolicy, type DataDefinitionField } from "@babylonslate/core";
 import { reconcileDataDefinitionDefault, structInstanceDefaultWithSchema, validateDataDefinition } from "@babylonslate/scripting";
 import type { PinListRow } from "@babylonslate/editor-kit";
 import {
@@ -45,6 +45,13 @@ function useDataDefinitionState() {
     if (!selected) return;
     commit(definition.fields.map(field => field.id === selected.id ? { ...field, ...patch } : field), mergeKey);
   };
+  const setSelectedLoading = (policy: AssetLoadingPolicy) => {
+    if (!selected) return;
+    const next: DataDefinitionField = { ...selected };
+    delete next.loading;
+    if (policy === "hard") next.loading = "hard";
+    commit(definition.fields.map(field => field.id === selected.id ? next : field));
+  };
   const changeFields = (rows: PinListRow[]) => {
     if (readOnly) return;
     const current = new Map(definition.fields.map(field => [field.id, field]));
@@ -59,6 +66,7 @@ function useDataDefinitionState() {
         (previous.container ?? "single") !== field.container || previous.keyTypeId !== field.keyTypeId || previous.keyTypeClassId !== field.keyTypeClassId) {
         delete field.fields;
         delete field.keyFields;
+        if (!carriesLoadingPolicy(field)) delete field.loading;
         const defaults = structInstanceDefaultWithSchema([{ ...field, defaultValue: undefined }], catalog.schemas);
         Object.assign(field, defaults.schema[0], { defaultValue: defaults.values[field.name] });
         delete field.min;
@@ -78,7 +86,7 @@ function useDataDefinitionState() {
       return { ...next, type: next.typeId, defaultValue: undefined };
     }));
   };
-  return { catalog, definition, readOnly, selected, setSelectedId, error, issues, recursive, projectedSelected, selectedDefault, typeAssets, commit, patchSelected, changeFields, changeSelectedType };
+  return { catalog, definition, readOnly, selected, setSelectedId, error, issues, recursive, projectedSelected, selectedDefault, typeAssets, commit, patchSelected, setSelectedLoading, changeFields, changeSelectedType };
 }
 
 const DataDefinitionEditingContext = createContext<ReturnType<typeof useDataDefinitionState> | null>(null);
