@@ -16,6 +16,7 @@ import {
 } from "../lib/editor-utility-scripts";
 import { createEditorDataReader } from "../services/editor-data-reader";
 import { createEditorDataAuthoringApi } from "../services/editor-data-authoring";
+import { createRegistryCatalogSource } from "../services/asset-catalog";
 import { mergePluginEditorUtilityObjects } from "../lib/plugin-ui";
 
 function editorHostServices(
@@ -88,6 +89,7 @@ export function EditorUtilityRuntime() {
         () => latestRef.current.documents,
         () => !cancelled,
       ),
+      getAssetCatalog: createRegistryCatalogSource(() => latestRef.current.documents.assetRegistry),
       getProjectName: () => latestRef.current.metadata?.name ?? "",
       getProjectVersion: () => latestRef.current.metadata?.version ?? "",
     });

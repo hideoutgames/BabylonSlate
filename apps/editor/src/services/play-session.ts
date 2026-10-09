@@ -606,6 +606,8 @@ export function startPlaySession(options: {
   loopCount?: number;
   inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
   dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
+  /** Packaged authored assets the Asset Registry nodes query, snapshotted when Play starts. */
+  assetCatalog?: import("@babylonslate/core").RuntimeAssetCatalogEntry[];
   inputMappings?: import("@babylonslate/core").ProjectInputSettings;
   focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
   /** Called when a session-fatal diagnostic (infinite loop) arrives. */
@@ -1452,6 +1454,7 @@ export function startPlaySession(options: {
     loopCount: options.loopCount,
     inputAssets: options.inputAssets,
     dataAssets: options.dataAssets,
+    assetCatalog: options.assetCatalog,
     inputMappings: options.inputMappings,
     focusNavigation: options.focusNavigation,
     pixelsPerUnit: options.pixelsPerUnit,

@@ -1,6 +1,7 @@
 import { DiagnosticResultsProvider } from "./diagnostic-results-context";
 import { createPortal } from "react-dom";
 import { SimulationInspectionProvider } from "./simulation-inspection-context";
+import { playAssetCatalog } from "../services/asset-catalog";
 import { prepareSaveGameConfiguration } from "../services/save-game-configuration";
 import { createSaveGameStorage, isTestModeEnabled } from "@babylonslate/vfs";
 import { acquirePlayAssetSources, emptyPlaySourceControls, mergePreparedPlaySources, playDocumentOverrides, requiredProjectAssets, type PlayAssetSourceHost } from "../services/play-asset-sources";
@@ -369,6 +370,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     setPlayBehaviourTrees([]);
     setPlayBlackboards([]);
     setPlayDataAssets([]);
+    setPlayAssetCatalog([]);
     setPlaySpritePayloads(new Map());
     setPlaySpriteAnimationPayloads(new Map());
     setPlayTilemaps(new Map());
@@ -488,6 +490,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     useState<PlayAudioSourceLoader | undefined>(undefined);
   const [playInputAssets, setPlayInputAssets] = useState<import("@babylonslate/core").InputAssetDefinition[]>([]);
   const [playDataAssets, setPlayDataAssets] = useState<import("@babylonslate/core").DataAssetCatalogEntry[]>([]);
+  const [playCatalog, setPlayAssetCatalog] = useState<import("@babylonslate/core").RuntimeAssetCatalogEntry[]>([]);
   const [playAudioLibrary, setPlayAudioLibrary] = useState<PlayAudioLibrary>(
     () => emptyPlayAudioLibrary(),
   );
@@ -1290,6 +1293,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         setScripts(nextScripts);
         setDiagnostics(nextDiagnostics);
         setPlayDataAssets(content.dataAssets);
+        setPlayAssetCatalog(playAssetCatalog({ registry: assetRegistry, settings: projectDocument.settings, sceneGuid: effectiveGuid }));
         setPlayAnimGraphs(content.animGraphs);
         setPlayBehaviourTrees(content.behaviourTrees);
         setPlayBlackboards(content.blackboards);
@@ -1612,6 +1616,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             audioProjectSettings={projectDocument?.settings.audio}
             inputAssets={playInputAssets}
             dataAssets={playDataAssets}
+            assetCatalog={playCatalog}
             inputMappings={projectDocument?.settings.input}
             focusNavigation={projectDocument?.settings.focusNavigation}
             sortingLayers={projectDocument?.settings.twoD.sortingLayers}

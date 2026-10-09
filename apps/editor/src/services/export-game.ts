@@ -22,6 +22,7 @@ import {
   fontMsdfExportGuid,
   type ExportAssetBytes,
   type ExportIndexedAsset,
+  type ExportRootInput,
   type ExportArtifact,
 } from "@babylonslate/exporter";
 import {
@@ -73,6 +74,27 @@ export function assetsFromIndexed(
     dependencyMetadataVersion: asset.header.dependencyMetadataVersion,
     rootId: asset.rootId,
   }));
+}
+
+/**
+ * The roots that the project settings add to a packaged set, shared by game
+ * exports and the asset catalog Editor Play lists.
+ */
+export function exportRootSettings(settings: {
+  saveGameDefinitionGuid?: string | null;
+  defaultFontGuid?: string | null;
+  gameInstanceClass?: string | null;
+  audioMixerGuid?: string | null;
+  renderSettings: RenderProjectSettings;
+  alwaysPackageFolders?: readonly string[];
+}): Pick<ExportRootInput, "saveGameDefinitionGuid" | "gameInstanceClass" | "audioMixerGuid" | "renderAssetGuids" | "alwaysPackageFolders"> {
+  return {
+    saveGameDefinitionGuid: settings.saveGameDefinitionGuid,
+    gameInstanceClass: settings.gameInstanceClass,
+    audioMixerGuid: settings.audioMixerGuid,
+    renderAssetGuids: [...renderEffectsAssetGuids(settings.renderSettings.effects), ...(settings.defaultFontGuid ? [settings.defaultFontGuid] : [])],
+    alwaysPackageFolders: settings.alwaysPackageFolders,
+  };
 }
 
 export type ExportPluginDescriptor = PluginGraphInput;
@@ -286,11 +308,14 @@ export async function collectAndExportGame(
   const pluginEnabledGuids = new Set(pluginGraph.order.map((plugin) => plugin.pluginGuid));
   const closure = collectExportReachability({
     startupSceneGuid: params.startupSceneGuid,
-    saveGameDefinitionGuid: params.saveGameSettings?.definitionGuid,
-    gameInstanceClass: params.gameInstanceClass,
-    audioMixerGuid: params.audioMixerGuid,
-    renderAssetGuids: [...renderEffectsAssetGuids(params.renderSettings.effects), ...(params.defaultFontGuid ? [params.defaultFontGuid] : [])],
-    alwaysPackageFolders: params.alwaysPackageFolders,
+    ...exportRootSettings({
+      saveGameDefinitionGuid: params.saveGameSettings?.definitionGuid,
+      defaultFontGuid: params.defaultFontGuid,
+      gameInstanceClass: params.gameInstanceClass,
+      audioMixerGuid: params.audioMixerGuid,
+      renderSettings: params.renderSettings,
+      alwaysPackageFolders: params.alwaysPackageFolders,
+    }),
     assets: params.assets,
     pluginEnabledGuids,
     parentOf: params.parentOf,
