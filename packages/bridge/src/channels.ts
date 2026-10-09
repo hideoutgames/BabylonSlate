@@ -148,6 +148,8 @@ export type ControlMessage =
       simulationAssetGuids?: string[];
       saveGame?: import("@babylonslate/core").SaveGameConfiguration;
       dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
+      /** Packaged authored assets for the Asset Registry nodes, snapshotted when the session starts. */
+      assetCatalog?: import("@babylonslate/core").RuntimeAssetCatalogEntry[];
       /** Initial session render cap, shared with the renderer for console readback. */
       frameCap?: number;
       /** Serialized trace retention budget in bytes for this session. */

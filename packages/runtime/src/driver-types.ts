@@ -63,6 +63,8 @@ export interface RuntimeDriverOptions {
   consoleCommands?: ReadonlyArray<import("@babylonslate/core").ConsoleCommandMetadata & { classId: string; assetGuid: string }>;
   /** JSON data and shared Structures snapshotted at session startup. */
   dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
+  /** Packaged authored assets the Asset Registry nodes query; omitted means an empty catalog. */
+  assetCatalog?: readonly import("@babylonslate/core").RuntimeAssetCatalogEntry[];
   renderSettings?: Partial<RenderProjectSettings>;
   /** Initial render cap for console readback; does not change the simulation step. */
   frameCap?: number;

@@ -31,6 +31,7 @@ export function runtimeOptionsFromLoadControl(
   | "project"
   | "inputAssets"
   | "dataAssets"
+  | "assetCatalog"
   | "inputMappings"
   | "physicsWorld"
   | "gravity"
@@ -91,6 +92,7 @@ export function runtimeOptionsFromLoadControl(
     ...(msg.traceByteBudget !== undefined ? { traceByteBudget: msg.traceByteBudget } : {}),
     renderSettings: msg.renderSettings,
     dataAssets: msg.dataAssets,
+    ...(msg.assetCatalog ? { assetCatalog: msg.assetCatalog } : {}),
     focusNavigation: msg.focusNavigation,
     pixelsPerUnit: msg.pixelsPerUnit,
     texturePixelSizes: msg.texturePixelSizes,

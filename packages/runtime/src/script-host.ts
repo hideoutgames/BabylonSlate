@@ -1,6 +1,7 @@
 import { createUnavailableEditorDataApi, type EditorDataApi } from "@babylonslate/scripting";
 import type { RuntimeAssetLoadState, RuntimeAssetPreloadOptions, RuntimeAssetPreloadResult } from "@babylonslate/core";
 import { RuntimeDataCatalog, type RuntimeDataApi } from "./data-catalog";
+import { EMPTY_ASSET_CATALOG, type RuntimeAssetCatalog, type ScriptAssetRegistry } from "./asset-catalog";
 import { emptyWaterSample, parseDeformerProperties, updateDeformerProperties, DEFORMER_PROPERTY_KEYS, DEFORMER_MAX_COORDINATE, type WaterSample } from "@babylonslate/core";
 import { createDefaultRenderTargetCaptureProperties, type RenderTargetMode, type RenderTargetCaptureProperty } from "@babylonslate/core";
 import { captureActorReferences, captureComponent, captureProperties, setCaptureProperty } from "./render-targets";
@@ -125,6 +126,12 @@ export interface ScriptHostServices {
   getSubsystem?(classId: string): BObject | null;
   /** `Get Game Instance`: the session Game Instance, if the host has one. */
   getGameInstance?(): BObject | null;
+  /**
+   * The packaged asset list the Asset Registry nodes query. Read each time a
+   * graph touches `ctx.assetRegistry`, so a host may rebuild it when its
+   * source changes. Hosts without one answer every query with nothing.
+   */
+  getAssetCatalog?(): RuntimeAssetCatalog | null;
   getTargetSceneName?(target: unknown): string;
   loadScene?(target: unknown, blocking: boolean): Promise<void>;
   unloadScene?(target: unknown, blocking: boolean): Promise<void>;
@@ -292,6 +299,8 @@ export interface ScriptContext {
   /** Cold data reads prepare their owner-scoped source before returning copied values. */
   readDataEntryAsync(tree: string, path: string, definitionGuid?: string): Promise<Record<string, unknown> | null>;
   editorData: EditorDataApi;
+  /** Asset Registry queries over the host's packaged asset catalog. */
+  assetRegistry: ScriptAssetRegistry;
   inputBindings?: InputBindingControls;
   getInputState?: (input: InputTypeValue) => InputValueState | null;
   self: BObject | null;
@@ -1284,6 +1293,8 @@ export class ScriptHost {
         return services.data?.readEntry(tree, path, definitionGuid) ?? null;
       },
       editorData: services.editorData ?? UNAVAILABLE_EDITOR_DATA,
+      // Read on use: an editor host may rebuild its catalog after a registry change.
+      get assetRegistry() { return services.getAssetCatalog?.() ?? EMPTY_ASSET_CATALOG; },
       self,
       deltaSeconds,
       tickIndex,
