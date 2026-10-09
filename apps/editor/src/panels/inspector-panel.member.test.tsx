@@ -91,6 +91,24 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
             defaultValue: "audio-1",
           },
           {
+            id: "var-asset-hard",
+            kind: "variable",
+            name: "Hard Cue",
+            typeId: "asset",
+            typeClassId: "Audio",
+            loading: "hard",
+            defaultValue: "audio-1",
+          },
+          {
+            id: "var-asset-map",
+            kind: "variable",
+            name: "Cue Names",
+            typeId: "string",
+            container: "map",
+            keyTypeId: "asset",
+            keyTypeClassId: "Audio",
+          },
+          {
             id: "var-array",
             kind: "variable",
             name: "Hits",
@@ -596,5 +614,66 @@ describe("Inspector class member details", () => {
         defaultValue: "",
       }),
     );
+  });
+
+  describe("Loading", () => {
+    const lastMember = (id: string) =>
+      applyGraphChange.mock.calls.at(-1)![1].members!.find((member) => member.id === id)!;
+    function choose(name: string) {
+      fireEvent.click(screen.getByTestId("inspector-member-loading"));
+      const option = screen.getByRole("option", { name });
+      fireEvent.pointerDown(option);
+      fireEvent.click(option);
+    }
+
+    it("follows the Asset Type and Class Type and applies only to asset and Class references", () => {
+      renderMemberInspector("var-asset");
+      expect(screen.getByTestId("inspector-member-loading").textContent).toContain("Soft (Load On Demand)");
+      expectDocumentOrder(
+        screen.getByTestId("inspector-member-asset-type"),
+        screen.getByTestId("inspector-member-loading"),
+      );
+      expectDocumentOrder(
+        screen.getByTestId("inspector-member-loading"),
+        screen.getByTestId("property-default"),
+      );
+      cleanup();
+      renderMemberInspector("var-class");
+      expectDocumentOrder(
+        screen.getByTestId("inspector-member-class-type"),
+        screen.getByTestId("inspector-member-loading"),
+      );
+      cleanup();
+      renderMemberInspector("var-asset-hard");
+      expect(screen.getByTestId("inspector-member-loading").textContent).toContain("Hard (Load With Owner)");
+      cleanup();
+      renderMemberInspector("var-asset-map");
+      expect(screen.getByTestId("inspector-member-loading")).toBeTruthy();
+      for (const id of ["var-1", "var-obj", "var-struct", "var-actor", "loc-1"]) {
+        cleanup();
+        renderMemberInspector(id);
+        expect(screen.queryByTestId("inspector-member-loading")).toBeNull();
+      }
+    });
+
+    it("commits Hard as loading and removes the property again for Soft", () => {
+      renderMemberInspector("var-asset");
+      choose("Hard (Load With Owner)");
+      expect(lastMember("var-asset")).toMatchObject({ typeId: "asset", typeClassId: "Audio", loading: "hard", defaultValue: "audio-1" });
+      cleanup();
+      applyGraphChange.mockClear();
+      renderMemberInspector("var-asset-hard");
+      choose("Soft (Load On Demand)");
+      expect(lastMember("var-asset-hard")).not.toHaveProperty("loading");
+    });
+
+    it("forgets a Hard policy when the variable stops being a reference", async () => {
+      renderMemberInspector("var-asset-hard");
+      fireEvent.click(screen.getByTestId("inspector-member-type"));
+      fireEvent.click(await screen.findByTestId("search-item-float"));
+      await waitFor(() => expect(applyGraphChange).toHaveBeenCalled());
+      expect(lastMember("var-asset-hard")).toMatchObject({ typeId: "float" });
+      expect(lastMember("var-asset-hard")).not.toHaveProperty("loading");
+    });
   });
 });

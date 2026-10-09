@@ -1,8 +1,9 @@
 import { useId, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
+import { carriesLoadingPolicy } from "@babylonslate/core";
 import { reconcileDataDefinitionDefault } from "@babylonslate/scripting";
 import {
-  ASSET_REF_PICKER_TYPES, AssetPicker, ClassPicker, PanelFrame, PinListEditor,
+  ASSET_REF_PICKER_TYPES, AssetLoadingField, AssetPicker, ClassPicker, PanelFrame, PinListEditor,
   PropertyGrid, PropertySectionTitle, TypeColorMark, VariableTypeFields, assetRowIdentity, classRowIdentity,
   humanizePropertyLabel, pinPickerColorVar, pinPickerLabel, type PropertyRow,
 } from "@babylonslate/editor-kit";
@@ -34,7 +35,7 @@ export function DataDefinitionFieldsPanel(_props: IDockviewPanelProps) {
 
 function SelectedFieldDetails() {
   const controlId = useId();
-  const { catalog, definition, selected, readOnly, typeAssets, patchSelected, changeSelectedType, recursive, projectedSelected, selectedDefault, commit, issues } = useDataDefinitionEditing();
+  const { catalog, definition, selected, readOnly, typeAssets, patchSelected, setSelectedLoading, changeSelectedType, recursive, projectedSelected, selectedDefault, commit, issues } = useDataDefinitionEditing();
   const [classPickerOpen, setClassPickerOpen] = useState(false);
   const [typePickerOpen, setTypePickerOpen] = useState(false);
   if (!selected) return null;
@@ -92,6 +93,9 @@ function SelectedFieldDetails() {
       />
     </fieldset>
     {constraints.length ? <PropertyGrid rows={constraints} readOnly={readOnly} /> : null}
+    {carriesLoadingPolicy(selected) ? <div className="border-b border-border/30 px-2 py-1.5">
+      <AssetLoadingField value={selected.loading} onChange={setSelectedLoading} disabled={readOnly} data-testid="data-definition-field-loading" />
+    </div> : null}
     {recursive ? null : <>
       <PropertySectionTitle>Default</PropertySectionTitle>
       <DataValueEditor field={selected}
