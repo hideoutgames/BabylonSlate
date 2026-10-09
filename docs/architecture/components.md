@@ -261,7 +261,7 @@ The shared type visual registry recognizes this component for object-reference p
 
 ### Spline and river path editing
 
-Add Component > General > **Spline** exposes a general-purpose 3D path in Scene Details and the Class/Prefab Inspector. Spline and Water River share the typed Curvature, Path Point Count and XYZ point rows. Spline adds Closed Loop; Water River retains per-point Width Scale. Both use the same viewport handle lifecycle for live point dragging, midpoint insertion and double-click removal, with one history entry per released gesture in scenes and prefabs. Desktop control density is unchanged.
+Add Component > General > **Spline** exposes a general-purpose 3D path in Scene Details and the Class/Prefab Inspector. Spline and Water River share the typed Curvature, Path Point Count and XYZ point rows. Spline adds Closed Loop; Water River retains per-point Width Scale. Both use the same viewport handle lifecycle for live point dragging, midpoint insertion and double-click removal; a clicked Spline point also takes the translate gizmo, with one history entry per released gesture in scenes and prefabs. Desktop control density is unchanged.
 
 Scene component cards expose a compact **Edit In Viewport** action even when collapsed. **Editing In Viewport** marks the active shape; choosing another water or spline component redirects handles without changing card disclosure. This session-only target does not alter the scene or history. Locked actors and multiple actor selections disable the action. Class/Prefab uses its existing component selection.
 
