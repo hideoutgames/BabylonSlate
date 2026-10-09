@@ -266,8 +266,25 @@ const LARGE_NOISE = 0.07, GUST_NOISE = 0.013;
  * from the facet glint term (`swGlint`), not from this lobe. Ripple Strength 0 keeps a mirror.
  */
 const OCEAN_SUB_CAPILLARY_VARIANCE = 0.003;
-/** Realistic aerial perspective: how fast (per metre) grazing far water fades to a pure mirror of the horizon sky. */
-const OCEAN_HAZE_PER_METRE = 1 / 800;
+/**
+ * Aerial perspective (every look), scaled from the view's far plane so the editor's shorter one and Play's longer one
+ * haze alike: water is half hazed (toward the horizon sky) at `WATER_HAZE_HALF` of the range, and a ramp from
+ * `WATER_HAZE_EDGE[0]` to `WATER_HAZE_EDGE[1]` of it takes it fully there, so the far clip (and Global Water's own
+ * edge, which lies beyond it) never shows as a line. The range is capped at `WATER_HAZE_MAX_RANGE` metres, so a very
+ * long far plane still hazes at atmospheric distances.
+ */
+const WATER_HAZE_HALF = 0.4;
+const WATER_HAZE_EDGE = [0.75, 0.97] as const;
+const WATER_HAZE_MAX_RANGE = 8000;
+/** `slateWaterHaze` for a far plane: (per-metre rate of the exponential haze, ramp start, ramp end, 0) in metres. */
+export function waterHazeConstants(far: number, out: Float64Array = new Float64Array(4)): Float64Array {
+  const range = Math.min(WATER_HAZE_MAX_RANGE, far > 0 ? far : 1000);
+  out[0] = Math.LN2 / (WATER_HAZE_HALF * range);
+  out[1] = range * WATER_HAZE_EDGE[0];
+  out[2] = range * WATER_HAZE_EDGE[1];
+  out[3] = 0;
+  return out;
+}
 /** Realistic: wavelength-neutral scattering per absorption path unit, on top of each channel's absorption. */
 const TURBIDITY = 1.6;
 /**
@@ -1043,6 +1060,18 @@ vec2 swRestXZ = viewDirectionW.xz * (swEyeAbove / max(abs(viewDirectionW.y), 0.0
 vec2 swFootX = dFdx(swRestXZ);
 vec2 swFootY = dFdy(swRestXZ);
 float swFoot = length(swFootX) + length(swFootY);
+// Aerial perspective (every look; \`slateWaterHaze\`): the share of the view's light that the air has replaced with the
+// horizon's by this distance: an exponential, plus a ramp that makes the last stretch before the far plane fully hazed,
+// so no look ever ends in an edge. Scene fog takes precedence: the exponential only acts on what fog leaves (the ramp
+// stays, its horizon colour being the fog's). Orthographic views have no eye distance to haze by.
+float swEyeDist = length(S.vEyePosition.xyz - IN.vPositionW);
+#ifdef FOG
+float swAirKeep = max(toLinearSpace(CalcFogFactor()), 0.0);
+#else
+float swAirKeep = 1.0;
+#endif
+float swAirOn = 1.0 - S.projection[3][3];
+float swAir = 1.0 - (1.0 - (1.0 - exp(-swEyeDist * U.slateWaterHaze.x)) * swAirKeep * swAirOn) * (1.0 - smoothstep(U.slateWaterHaze.y, U.slateWaterHaze.z, swEyeDist) * swAirOn);
 vec2 swFlowed = swWorld - IN.vSlateWaterFlow.xy * swTime;
 // Rest (Lagrangian) point of this fragment relative to the floating origin: the interpolated Gerstner offset is
 // exact for the displaced triangle, since the mesh adds it to a planar rest grid.
@@ -1394,24 +1423,27 @@ float swGraze8 = swGraze4 * swGraze4;
 // Pixel footprint on the water (metres).${fromTier(1, `
 float swPxM = sqrt(length(swFootX) * length(swFootY));`, `
 float swPxM = swFoot * 0.5;`)}
-// Far away a pixel averages many facets: its reflection and Fresnel follow the mean surface (half the swell, toward
-// level) rather than one facet, so the far sea reads as a soft gradient instead of ruler-straight bands, and the slope
-// it averages away roughens it. Toward the horizon the chop flattens into the swell as well.
-float swFar = smoothstep(0.04, 0.6, swPxM);
+// Far away a pixel averages many facets, and the chop, capillaries and FFT band are filtered away by their own footprint
+// fades: the swell is not, so mid-distance water keeps its slope (banding and shading under the sun) and only a part
+// (\`swFar\`, a third of the way to the mean surface: half the swell, toward level) is averaged, which softens ruler-straight
+// bands; the slope it averages away roughens it. Toward the horizon the chop flattens into the swell as well. Hazed water
+// is level (see \`swHaze\`): its mirror is the horizon band itself.
+float swFar = smoothstep(0.1, 1.5, swPxM);
 vec3 swMeanN = normalize(swSwellNormal + vec3(0.0, 1.0, 0.0));
-normalW = normalize(mix(mix(normalW, swSwellNormal, swGraze8 * swGraze4 * 0.6), swMeanN, swFar * 0.75));
+float swHaze = 1.0 - (1.0 - swAir * smoothstep(0.3, 0.85, swGraze)) * (1.0 - 0.85 * smoothstep(0.98, 0.9985, swGraze));
+normalW = normalize(mix(mix(normalW, swSwellNormal, swGraze8 * swGraze4 * 0.6), swMeanN, swFar * 0.45));
+normalW = normalize(mix(normalW, swBaseNormal, swHaze * swHaze));
 // Fresnel sees this facet normal; the shading normal below only steers the reflected sky lookup.
 vec3 swFresN = normalW;
 // Detail filtered away at a distance still roughens the surface, bounded by a sea-state cap (CPU): reflections blur
 // more with distance, so cloud detail melts into sky colour toward the horizon. Wide wind slicks and rougher patches
 // (the shared wide noises) vary it.
 float swSlick = 0.6 + 0.8 * smoothstep(0.2, 0.8, swGust * 0.55 + swLarge * 0.45);
-// Aerial perspective: toward the horizon the far sea becomes a pure mirror of the horizon sky and melts into it. In that
-// haze the blur relaxes and the lifted ray drops back toward the horizon, so the farthest water mirrors the sky's own
-// horizon band (the colour drawn right above it) rather than a blurred average of the clouds higher up: no seam.
-float swEyeDist = length(S.vEyePosition.xyz - IN.vPositionW);
-float swHaze = (1.0 - exp(-swEyeDist * ${f(OCEAN_HAZE_PER_METRE)})) * smoothstep(0.6, 0.98, swGraze);
-float swHazeSharp = 1.0 - 0.75 * swHaze;
+// Aerial perspective (\`swHaze\`: the shared \`swAir\`, at grazing views): toward the horizon the far sea becomes a pure
+// mirror of the horizon sky and melts into it. In that haze the blur relaxes and the lifted ray drops back toward the
+// horizon, so the farthest water mirrors the sky's own horizon band (the colour drawn right above it) rather than a
+// blurred average of the clouds higher up: no seam.
+float swHazeSharp = 1.0 - 0.97 * swHaze;
 swSlopeVariance = min((swLost + swLostDetail * swChopGain * swChopGain * 0.85) * swSlick + swFar * 0.008, U.slateWaterTerms.z) * swHazeSharp;
 // Keep reflected rays above the horizon, a little higher for rougher water so its blurred lobe stays in the sky: below it
 // the water would reflect only more water. A smooth maximum leaves no plateau of identical directions on wave backs.
@@ -1432,7 +1464,7 @@ vec2 swShadeSlope = normalW.xz / max(normalW.y, 0.1);
 vec2 swShadeDx = dFdx(swShadeSlope);
 vec2 swShadeDy = dFdy(swShadeSlope);
 float swShadeVar = min((dot(swShadeDx, swShadeDx) + dot(swShadeDy, swShadeDy)) * ${f(PIXEL_SLOPE_FILTER / 2)}, ${f(PIXEL_SLOPE_CAP)});
-swSlopeVariance += swShadeVar;
+swSlopeVariance += swShadeVar * swHazeSharp;
 float swNdotV = clamp(dot(swFresN, swV), 0.0, 1.0);
 // Facets turned nearly edge-on to the eye are mostly hidden behind the waves in front of them (masking): the eye sees
 // those instead, so no visible facet reflects as if seen at a lower angle than about half the view's own.
@@ -2229,7 +2261,12 @@ float swBack = clamp(dot(swV, -swSssDir), 0.0, 1.0);
 swBack *= swBack;
 swBack *= swBack;
 float swGlowSun = swKeyLum * smoothstep(0.02, 0.15, swL.y) * (1.0 - 0.6 * swWarm * swLowSun);
-swGlow = min(swCrestFace * (swGlowSun * (0.2 + 0.8 * swToSun + 1.2 * swBack) + swAmbLum * 0.25) * swSss, 1.0);
+// Thin faces glow where the water is thin and the crest is near and in the foreground: the glow fades with the pixel
+// footprint and the distance (a crest a few pixels thick would otherwise be a neon line across the whole view), and
+// varies along each crest by the wide noises, so a long crest glows in patches instead of one unbroken band.
+float swGlowNear = (1.0 - smoothstep(0.12, 0.6, swFoot)) * exp(-swEyeDist * 0.05);
+float swGlowAlong = 0.1 + 0.9 * smoothstep(0.3, 0.7, swMedium * 0.5 + swLarge * 0.3 + swGust * 0.2);
+swGlow = min(swCrestFace * (swGlowSun * (0.2 + 0.8 * swToSun + 1.2 * swBack) + swAmbLum * 0.25) * swSss, 1.0) * swGlowAlong * swGlowNear;
 swLit += swGlowC * swGlow;`)}
 
 // Sky: the scene's background (or fog) colour, deeper overhead and brighter at the horizon, tinted by the sky light's
@@ -2332,14 +2369,19 @@ float swSheen8 = swSheen2 * swSheen2;
 swSheen8 *= swSheen8;
 float swSheen64 = swSheen8 * swSheen8;
 swSheen64 *= swSheen64;
-float swSheen = swSheen64 * 0.1 * swSunVis * (1.0 - 0.6 * swGrey);
+float swPathFar0 = smoothstep(0.15, 3.0, swFoot);
+float swSheen = swSheen64 * 0.1 * swSunVis * (1.0 - 0.6 * swGrey) * (1.0 - 0.5 * swPathFar0);
 // Marks and sparkles need a sun that stands out (none under an overcast or storm sky, where only the sheen and halo
 // stay), and only where the sun's reflection falls on the swell's broad shape (a wide lobe on the low-frequency normal):
 // close water looked down into off the sun's line never sparkles.
 float swGlintVis = swSunVis * smoothstep(0.15, 0.6, swClear);
 vec2 swGateSlope = swGradient + swDetail * (swChopGain * 0.3);
 float swGateA = dot(reflect(-swV, normalize(vec3(swBaseX - swGateSlope.x, 1.0, swBaseZ - swGateSlope.y))), swL);
-float swSunGate = smoothstep(1.0 - swLobeW0 * 4.0, 1.0 - swLobeW0 * 1.2, swGateA);
+// A real sun path narrows and dims with distance (the reflection's lobe is compressed by the foreshortening, as
+// Realistic's \`swFarSun\`): past a few tens of metres its gate closes to about half its width and its energy falls, so
+// the far path never washes the whole sea to white.
+float swPathFar = smoothstep(0.15, 3.0, swFoot);
+float swSunGate = smoothstep(1.0 - swLobeW0 * 4.0 * (1.0 - 0.5 * swPathFar), 1.0 - swLobeW0 * 1.2 * (1.0 - 0.5 * swPathFar), swGateA);
 // Marks (\`swMark\`): streaks drawn out across the view (perspective lengthens them further), anchored to the water's
 // rest surface so they ride the waves instead of sliding over them, each lit for a fixed share of a slow cycle and
 // brightening and fading smoothly over it, so none switches on or off between frames; the facets set how bright a lit
@@ -2362,7 +2404,7 @@ float swDash = mix(swDashA, swDashB, fract(swDashLevel));
 // Past the coarsest octave (about a hundred metres per cell's depth, at the horizon) an even share.
 swDash = mix(swDash * (0.6 + 1.6 * swFacet), swDashP * 0.2, smoothstep(4.0, 5.0, log2(max(length(swDashUx), length(swDashUy)) * 14.0)));
 float swPath = (0.2 + 0.8 * swFacet) * swSunGate * swDash * 1.5 * swGlintVis * (1.0 + 0.6 * swLowSun);
-swPath = 0.95 * (1.0 - exp(-swPath * 1.6));
+swPath = 0.95 * (1.0 - exp(-swPath * 1.6)) * (1.0 - 0.45 * swPathFar);
 float swHaloA = max(dot(swRefl, swL), 0.0);
 float swHalo2 = swHaloA * swHaloA;
 float swHalo8 = swHalo2 * swHalo2;
@@ -2371,7 +2413,7 @@ float swHalo64 = swHalo8 * swHalo8;
 swHalo64 *= swHalo64;
 swHalo64 *= swHalo64;
 // The soft glow lies on far water, where many facets average into it; close up the dashes carry the sun alone.
-float swHalo = (swHalo8 * swHalo8 * 0.05 + swHalo64 * 0.22) * swSunVis * smoothstep(0.82, 0.97, swGraze);
+float swHalo = (swHalo8 * swHalo8 * 0.05 + swHalo64 * 0.22) * swSunVis * smoothstep(0.82, 0.97, swGraze) * (1.0 - 0.5 * swPathFar);
 float swSpark = 0.0;${ifDefined(sparkles, fromTier(1, `
 vec2 swSparkUv = swFlowed * (1.1 * U.slateWaterMotion.y);
 vec2 swSparkId = floor(swSparkUv);
@@ -2557,6 +2599,13 @@ float swCover = 1.0 - (1.0 - swReflAmt) * swTrans;
 float swSpecLum = dot(swSpec, swLumW) * (1.0 - swFoam);
 alpha = clamp(max(swCover, min(swSpecLum, 1.0)), 0.001, 1.0);
 vec3 swEmissive = swPremul / alpha;
+// Aerial perspective (the shared \`swAir\` at grazing views, and the last degrees above the horizon whatever the distance):
+// far water takes the painted horizon colour (the real sky read just above the horizon from Medium up), fully opaque, and
+// its foam thins, so the sea never ends in a seam against the sky.
+float swPaintHaze = 1.0 - (1.0 - swAir * smoothstep(0.3, 0.85, swGraze)) * (1.0 - 0.85 * smoothstep(0.98, 0.9985, swGraze));
+swEmissive = mix(swEmissive, swHorizonSky, swPaintHaze);
+alpha = mix(alpha, 1.0, swPaintHaze);
+swFoam *= 1.0 - 0.7 * swPaintHaze;
 swEmissive = mix(swEmissive, swFoamC, swFoam);
 alpha = max(alpha, swFoam);
 // Backwash: uncovered shallows keep their foam and a wet film that darkens the sand under a faint sky sheen, drying
@@ -2576,7 +2625,7 @@ alpha = max(alpha, swReflWeight);
 // With the copy the water is opaque and adds what lies below: the refracted scene through the per-channel
 // transmittance, lit by the caustics, outside the reflection and foam. It joins the output after the water's own fog
 // (\`swRefracted\`, see CUSTOM_FRAGMENT_BEFORE_FOG). Uncovered shallows blend their film instead.
-swRefracts *= swSwashCover;
+swRefracts *= swSwashCover * (1.0 - swPaintHaze);
 vec3 swRefracted = swBackground * (1.0 + swCaustic * 0.6 * min(swKeyLum, 1.5)) * swTransRgb * ((1.0 - swReflAmt) * (1.0 - swFoam) * swRefracts);
 float swRefractedWeight = (1.0 - alpha) * swRefracts;
 swEmissive = swEmissive * mix(1.0, alpha, swRefracts);
@@ -2970,6 +3019,13 @@ swFarC = mix(swFarC, vec3(dot(swFarC, swLuma) * 1.15) * vec3(0.78, 0.92, 1.12), 
 // at dusk), otherwise the far tone. (A flat strip of far tone used to lie between the far water and the sky.)
 float swHaze = 1.0 - smoothstep(0.0, 0.05 + 0.02 * swEve, swUp);
 swHaze *= swHaze;
+// Aerial perspective in flat bands (the shared \`swAir\`, at grazing views): three hard steps of the far tone toward the
+// horizon's, the last one the horizon itself, so the sea's far edge never shows as a line and the bands run along
+// distance, not along the mesh. Each edge is antialiased by how fast the haze changes per pixel.
+float swAirT = swAir * smoothstep(0.3, 0.85, 1.0 - swUp);
+float swAirAA = fwidth(swAirT) * 0.75 + 0.002;
+float swAirBand = (smoothstep(0.3 - swAirAA, 0.3 + swAirAA, swAirT) + smoothstep(0.6 - swAirAA, 0.6 + swAirAA, swAirT) + smoothstep(0.9 - swAirAA, 0.9 + swAirAA, swAirT)) / 3.0;
+swHaze = max(swHaze, swAirBand);
 vec3 swHazeC = swFarC;
 #if ${SAMPLES_COPY}${horizonCopySource()}
 swHazeC = mix(swFarC, swHorSum / max(swHorN, 0.001), swHorOn * min(swHorN, 1.0) * (0.7 - 0.45 * swEve));
@@ -3585,7 +3641,7 @@ const FRAME_UNIFORMS: readonly string[] = [
   "slateWaterOrigin", "slateWaterLight",
   ...SWELL_DIRECTION.flatMap((direction, i) => [direction, SWELL_AMPLITUDE[i]!, SWELL_GROUP[i]!]), ...SWELL_WARP,
   "slateWaterSea", "slateWaterSwellInfo", "slateWaterShape", ...CHOP_UNIFORMS, ...CAPILLARY_UNIFORMS,
-  "slateWaterRipple", "slateWaterChopShift", "slateWaterTerms", "slateWaterSwash",
+  "slateWaterRipple", "slateWaterChopShift", "slateWaterTerms", "slateWaterSwash", "slateWaterHaze",
   ...BLEND_COLOR_UNIFORMS,
 ];
 const FRAME_BLEND_START = FRAME_UNIFORMS.length - BLEND_COLOR_UNIFORMS.length;
@@ -3635,6 +3691,8 @@ type WaterLighting = {
    */
   stylizedHorizon: Float64Array;
   stylizedGlitter: number;
+  /** `waterHazeConstants` of the active camera's far plane (`slateWaterHaze`). */
+  haze: Float64Array;
 };
 
 const toLinear = (value: number) => Math.max(0, value) ** 2.2;
@@ -3721,6 +3779,7 @@ function sceneWaterLighting(scene: Scene, out: WaterLighting): void {
   out.overcast = hemispheres > 0 ? 1 - out.sunGlitter : 0;
   const ambientLight = 0.3 * ambient[0]! + 0.59 * ambient[1]! + 0.11 * ambient[2]!;
   out.stylizedGlitter = smoothstep(0.8, 1.6, toSun[3]! / Math.max(ambientLight, 0.05));
+  waterHazeConstants(scene.activeCamera?.maxZ ?? 0, out.haze);
 }
 
 /** Each material's ambient: the scene's, plus its environment's share and a low-light floor. Writes `waterAmbient`. */
@@ -3762,7 +3821,7 @@ function sceneWaterBindingData(scene: Scene): WaterBindingData {
       frame, render, removals: NO_REMOVALS,
       lighting: {
         ambient: new Float64Array(3), sun: new Float64Array(4), sunColor: new Float64Array(3), sky: new Float64Array(3), horizon: new Float64Array(3),
-        sunShape: new Float64Array(4), subsurfaceLift: 0, sunGlitter: 0, overcast: 0, stylizedHorizon: new Float64Array(3), stylizedGlitter: 0,
+        sunShape: new Float64Array(4), subsurfaceLift: 0, sunGlitter: 0, overcast: 0, stylizedHorizon: new Float64Array(3), stylizedGlitter: 0, haze: new Float64Array(4),
       },
     };
     waterBindings.set(scene, data);
@@ -4155,7 +4214,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     const vectors = [
       "slateWaterShallow", "slateWaterDeep", "slateWaterFoam", "slateWaterMotion", "slateWaterLook", "slateWaterWaves", "slateWaterSun", "slateWaterSunColor",
       "slateWaterLight", "slateWaterShape", "slateWaterFieldBounds", "slateWaterFieldInfo", "slateWaterFieldStep", "slateWaterContactBounds", "slateWaterContactInfo",
-      "slateWaterOrigin", "slateWaterGridOffset", "slateWaterSwellInfo", "slateWaterSea", "slateWaterRipple", "slateWaterTerms", "slateWaterChopShift", "slateWaterSwash",
+      "slateWaterOrigin", "slateWaterGridOffset", "slateWaterSwellInfo", "slateWaterSea", "slateWaterRipple", "slateWaterTerms", "slateWaterChopShift", "slateWaterSwash", "slateWaterHaze",
       // Realistic: the analytic sky's zenith and horizon (scene background and fog colours), the per-channel
       // absorption from Shallow Color (w: Low's single coefficient), the uniform-only sun terms and the light through
       // thin crests (Subsurface).
@@ -4427,6 +4486,8 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
       smoothstep(0, 0.05, w.crestFoam), 0.004 + 0.016 * smoothstep(0.05, 0.4, this.seaState), 1 + 0.9 * smoothstep(0.25, 0.6, this.seaState));
     const swash = this.swash;
     o = put4(v, o, swash[0]!, swash[1]!, swash[2]!, swash[3]!);
+    const haze = lighting.haze;
+    o = put4(v, o, haze[0]!, haze[1]!, haze[2]!, haze[3]!);
     if (partner) {
       // The partner's colours, through the same conversions as the asset's own (its own again without a partner).
       o = put4(v, o, linearChannel(partner.shallowColor[0]), linearChannel(partner.shallowColor[1]), linearChannel(partner.shallowColor[2]), partner.opacity);
