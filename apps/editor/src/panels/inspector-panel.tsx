@@ -2032,7 +2032,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
               : undefined
         }
         allowNone
-        title={assetPinPick ? `Pick ${assetPinPick.assetType}` : "Pick Asset"}
+        title={assetPinPick ? `Pick ${assetPinPick.assetType || "Asset"}` : "Pick Asset"}
         onPick={(guid) => {
           if (assetPinPick) {
             updateNodeData(dataGraphAssetPickPatch(selectedNode.type, assetPinPick.pinId, guid, dataAssets, selectedNode.data, dataPinWired));

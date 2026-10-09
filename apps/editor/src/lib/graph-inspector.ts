@@ -205,21 +205,21 @@ function flattenStructFieldRows(
   return rows;
 }
 
-/** Prefer catalog `typeClassIds` (Mesh+Model) over the pin's single asset type. */
+/**
+ * Prefer catalog `typeClassIds` (Mesh+Model) over the pin's single asset type.
+ * The empty asset type accepts any asset, so it lists them all (no type filter).
+ */
 export function assetPickerAllowedTypes(
   pinAssetType: string,
   typeClassIds: unknown,
 ): string[] {
   const compatibleTypes = (types: string[]) => [...new Set(types.flatMap((type) =>
     type === "Texture" ? [type, "RenderTargetTexture"] : type === "Material" ? [type, "MaterialInstance"] : [type]))];
-  if (!Array.isArray(typeClassIds) || typeClassIds.length === 0) {
-    return compatibleTypes([pinAssetType]);
-  }
-  const ids = typeClassIds
+  const ids = (Array.isArray(typeClassIds) ? typeClassIds : [])
     .filter((id): id is string => typeof id === "string")
     .map((id) => id.trim())
     .filter(Boolean);
-  return compatibleTypes(ids.length > 0 ? ids : [pinAssetType]);
+  return compatibleTypes(ids.length > 0 ? ids : [pinAssetType.trim()].filter(Boolean));
 }
 
 /** Asset Variable Default picker kinds: the pre-cast Asset Type, or the catalog list. */
@@ -435,7 +435,7 @@ export function pinDefaultPropertyRows(
           displayLabel: identity.displayLabel,
           displayType: identity.displayType,
           visual: identity.visual,
-          placeholder: assetType,
+          placeholder: assetType || "Any Asset",
           onPick: () => mappingNames?.onPickAsset?.(entry.pinId, assetType),
           onChange: (value) => onPatch({ [key]: value }),
         });
