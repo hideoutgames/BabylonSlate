@@ -1,6 +1,11 @@
 import { expect, it } from "vitest";
-import { Constants, NullEngine } from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core";
 import { restoreEngineDrawingState, saveEngineDrawingState, createEngineDrawingState } from "./engine-drawing-state";
+
+const GL_FRONT = 1028;
+const GL_BACK = 1029;
+const GL_CW = 2304;
+const GL_CCW = 2305;
 
 it("never restores an unset cull or front face over a set one, which would send null to gl.cullFace and gl.frontFace", () => {
   const engine = new NullEngine();
@@ -9,11 +14,11 @@ it("never restores an unset cull or front face over a set one, which would send 
     saveEngineDrawingState(engine, state);
     expect(state.cullFace).toBeNull();
     expect(state.frontFace).toBeNull();
-    engine.depthCullingState.cullFace = Constants.BACK;
-    engine.depthCullingState.frontFace = Constants.CCW;
+    engine.depthCullingState.cullFace = GL_BACK;
+    engine.depthCullingState.frontFace = GL_CCW;
     restoreEngineDrawingState(engine, state);
-    expect(engine.depthCullingState.cullFace).toBe(Constants.BACK);
-    expect(engine.depthCullingState.frontFace).toBe(Constants.CCW);
+    expect(engine.depthCullingState.cullFace).toBe(GL_BACK);
+    expect(engine.depthCullingState.frontFace).toBe(GL_CCW);
   } finally {
     engine.dispose();
   }
@@ -22,15 +27,15 @@ it("never restores an unset cull or front face over a set one, which would send 
 it("restores a set cull and front face", () => {
   const engine = new NullEngine();
   try {
-    engine.depthCullingState.cullFace = Constants.FRONT;
-    engine.depthCullingState.frontFace = Constants.CW;
+    engine.depthCullingState.cullFace = GL_FRONT;
+    engine.depthCullingState.frontFace = GL_CW;
     const state = createEngineDrawingState();
     saveEngineDrawingState(engine, state);
-    engine.depthCullingState.cullFace = Constants.BACK;
-    engine.depthCullingState.frontFace = Constants.CCW;
+    engine.depthCullingState.cullFace = GL_BACK;
+    engine.depthCullingState.frontFace = GL_CCW;
     restoreEngineDrawingState(engine, state);
-    expect(engine.depthCullingState.cullFace).toBe(Constants.FRONT);
-    expect(engine.depthCullingState.frontFace).toBe(Constants.CW);
+    expect(engine.depthCullingState.cullFace).toBe(GL_FRONT);
+    expect(engine.depthCullingState.frontFace).toBe(GL_CW);
   } finally {
     engine.dispose();
   }
