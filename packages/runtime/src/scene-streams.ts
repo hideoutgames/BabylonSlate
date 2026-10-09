@@ -25,6 +25,7 @@ import type { RuntimeSubsystem } from "./runtime-subsystems";
 import { runSceneRealizationWork, sceneRealizationCancelled, waitForSceneWork, type CooperativeSceneLoadingOptions } from "./scene-realization-work";
 import type { AcquireRuntimeScene, RuntimeSceneSource } from "./scene-source";
 import type { ScriptHost, ScriptHostServices } from "./script-host";
+import type { SimulationBlocks } from "./simulation-blocks";
 
 interface SceneStream {
   actor: Actor;
@@ -77,8 +78,8 @@ interface SceneStreamsHost {
   releaseAssets(ownerGuid: string): void;
   /** Simulation Keep cannot retain this independent streamed Scene instance. */
   markUnsupportedInstance(sceneGuid: string): void;
-  /** A blocking load or unload has settled (the count is already decremented). */
-  blockSettled(): void;
+  /** Blocking loads and unloads hold the simulation here. */
+  blocks(): Pick<SimulationBlocks, "hold">;
   emit(command: CommandMessage): void;
 }
 
@@ -89,7 +90,6 @@ interface SceneStreamsHost {
  * the driver gates ticks and scripts on.
  */
 export class SceneStreams implements RuntimeSubsystem {
-  private blockingCount = 0;
   private loadId = 0;
   private readonly streams = new Map<string, SceneStream>();
   private readonly actorStream = new WeakMap<Actor, SceneStream>();
@@ -113,11 +113,6 @@ export class SceneStreams implements RuntimeSubsystem {
   retireActor(actor: Actor): void {
     const stream = this.streams.get(actor.guid);
     if (stream) this.retire(stream);
-  }
-
-  /** A blocking load or unload is in progress; the simulation waits. */
-  get blocking(): boolean {
-    return this.blockingCount > 0;
   }
 
   isStreamActor(actor: Actor): boolean {
@@ -380,14 +375,7 @@ export class SceneStreams implements RuntimeSubsystem {
   }
 
   private withBlock(operation: Promise<void>, blocking: boolean): Promise<void> {
-    if (!blocking) return operation;
-    this.blockingCount++;
-    if (this.blockingCount === 1) this.host.emit({ type: "sceneStreamBlocking", blocking: true });
-    return operation.finally(() => {
-      this.blockingCount--;
-      if (this.blockingCount === 0 && !this.host.stopped()) this.host.emit({ type: "sceneStreamBlocking", blocking: false });
-      this.host.blockSettled();
-    });
+    return blocking ? this.host.blocks().hold(operation) : operation;
   }
 
   private *realize(stream: SceneStream, document: SerializedScene, component: ActorComponent): Generator<void, void, unknown> {

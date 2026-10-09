@@ -163,9 +163,39 @@ describe("additive scene streaming", () => {
       expect(runtime.getSceneLoadProgress(left)).toBe(1);
       expect(runtime.getSceneLoadProgress(right)).toBe(1);
       await runtime.loadSceneStream(left, true);
-      expect(commands.filter((command) => command.type === "sceneStreamBlocking")).toEqual([
-        { type: "sceneStreamBlocking", blocking: true }, { type: "sceneStreamBlocking", blocking: false },
+      expect(commands.filter((command) => command.type === "simulationBlocking")).toEqual([
+        { type: "simulationBlocking", blocking: true }, { type: "simulationBlocking", blocking: false },
       ]);
+    } finally { runtime.stop(); }
+  });
+
+  it("holds a blocking asset load and a blocking scene load as one simulation block that frees their callers together", async () => {
+    const waiter: CompiledScript = { classId: "Parent", parentClassId: "Actor", assetGuid: "Parent-script", anchors: [],
+      source: `export async function begin(ctx) {
+        const result = await ctx.waitForAssetLoad(ctx.requestAssetLoad(["cold"]), { blocking: true });
+        ctx.self.setVariable("loaded", result.success);
+      }`,
+      entryPoints: [{ name: "begin", event: "onBeginPlay", isAsync: true }] };
+    const { runtime, commands, world, left } = await setup({ scripts: [waiter] });
+    try {
+      const authored = world.findActor("authored")!;
+      await vi.waitFor(() => expect(commands.some((command) => command.type === "assetPreload")).toBe(true));
+      const asset = commands.find((command): command is Extract<CommandMessage, { type: "assetPreload" }> => command.type === "assetPreload")!;
+      const streaming = runtime.loadSceneStream(left, true);
+      const ready = await realized(commands, "left");
+      runtime.notifyAssetPreloadResult({ preloadId: asset.preloadId, success: true });
+      await Promise.resolve();
+      runtime.tick();
+      expect(world.clock.tickIndex).toBe(0);
+      expect(authored.getVariable("loaded")).toBeUndefined();
+      acknowledge(runtime, ready);
+      await streaming;
+      await vi.waitFor(() => expect(authored.getVariable("loaded")).toBe(true));
+      expect(commands.filter((command) => command.type === "simulationBlocking")).toEqual([
+        { type: "simulationBlocking", blocking: true }, { type: "simulationBlocking", blocking: false },
+      ]);
+      runtime.tick();
+      expect(world.clock.tickIndex).toBe(1);
     } finally { runtime.stop(); }
   });
 

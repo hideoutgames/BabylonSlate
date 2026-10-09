@@ -636,8 +636,10 @@ export type CommandMessage =
   | { type: "possessCamera"; slotId: number }
   | { type: "sceneLoading"; sceneAssetGuid: string; sceneLoadId: number }
   | { type: "sceneStreamLoading"; actorGuid: string; streamLoadId: number }
-  | { type: "sceneStreamBlocking"; blocking: boolean }
-  | { type: "assetPreload"; preloadId: string; ownerId: string; assetGuids: string[] }
+  /** A blocking Scene load or asset load holds the simulation; the host pauses render game time to match. */
+  | { type: "simulationBlocking"; blocking: boolean }
+  /** `priority` orders the host's source and native preparation work. */
+  | { type: "assetPreload"; preloadId: string; ownerId: string; assetGuids: string[]; priority: import("@babylonslate/core").RuntimeAssetSchedulerPriority }
   | { type: "assetPreloadRelease"; preloadId: string }
   | { type: "assetSourcesReady"; requestId: number; success: boolean; error?: string }
   /** A Complex Collision Model had no cooked mesh; the host answers with `loadComplexCollision`. */

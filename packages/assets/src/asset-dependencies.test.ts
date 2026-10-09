@@ -58,6 +58,23 @@ describe("typed asset dependencies", () => {
     expect(metadata.requiredDependencies).toEqual(["entry-schema"]);
   });
 
+  it("references the literal assets of load nodes through their pin snapshots without making them required", () => {
+    const pins = (id: string, type: unknown, defaultValue?: unknown) => [
+      { id: "execIn", name: "Exec", direction: "in", type: { kind: "exec" } },
+      { id, name: id, direction: "in", type, ...(defaultValue === undefined ? {} : { defaultValue }) },
+    ];
+    const any = { kind: "assetRef", assetType: "" };
+    const metadata = collectAssetDependencyMetadata("Class", {
+      nodes: [
+        { id: "one", type: "assets.asyncLoad", data: { "default:asset": "boss-model", __pins: pins("asset", any) } },
+        { id: "many", type: "assets.requestLoad", data: { "default:assets": ["tree", "rock"], __pins: pins("assets", { kind: "array", element: any }) } },
+        { id: "state", type: "assets.getLoadState", data: { __pins: pins("asset", any, "ui-font") } },
+      ], edges: [],
+    });
+    expect(metadata.dependencies).toEqual(["boss-model", "rock", "tree", "ui-font"]);
+    expect(metadata.requiredDependencies).toEqual([]);
+  });
+
   it("requires a model referenced by a prefab component even when a gameplay variable also references that model", () => {
     const metadata = collectAssetDependencyMetadata("Class", {
       nodes: [], edges: [],
