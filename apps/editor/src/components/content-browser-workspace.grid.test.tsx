@@ -36,6 +36,7 @@ const { docs, loadAssetThumbnail, layout } = vi.hoisted(() => {
     renameAsset: (guid: string, name: string): Promise<IndexedAsset> =>
       (docs.assetRegistry as { renameAsset: (guid: string, name: string) => Promise<IndexedAsset> }).renameAsset(guid, name),
     repathDocument: vi.fn(),
+    repathProjectFolder: vi.fn(),
     openDocument: vi.fn(),
     closeDocumentsForPaths: vi.fn(),
     repairAfterAssetDelete: vi.fn(async () => {}),
@@ -191,6 +192,7 @@ afterEach(async () => {
   layout.phone = false;
   docs.openDocument.mockClear();
   docs.repathDocument.mockClear();
+  docs.repathProjectFolder.mockClear();
   docs.refreshAssetRegistry.mockClear();
   docs.sourceControl.enabled = false;
   docs.sourceControl.lockStateForPath.mockReset().mockReturnValue(null);
@@ -530,6 +532,34 @@ describe("ContentBrowserWorkspace grid window", () => {
     fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() => expect(screen.queryByTestId("content-browser-name-dialog")).toBeNull());
     expect(moveFolder).toHaveBeenCalledWith("project", "Characters", "", "Heroes");
+    expect(docs.repathProjectFolder).toHaveBeenCalledWith("assets/Characters", "assets/Heroes");
+  });
+
+  it("rewrites project settings that name a folder when the folder moves", async () => {
+    installRegistry([], ["Characters", "Archive"]);
+    const moveFolder = vi.fn().mockResolvedValue(undefined);
+    docs.assetRegistry = { ...(docs.assetRegistry as object), moveFolder };
+    render(<ContentBrowserWorkspace />);
+    fireEvent.contextMenu(screen.getByTestId("content-folder-assets/Characters"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Move…" }));
+    tapTreeRow(within(screen.getByTestId("content-browser-move-dialog")).getByTestId("tree-row-assets/Archive"));
+    fireEvent.click(screen.getByTestId("content-browser-move-confirm"));
+    await waitFor(() => expect(screen.queryByTestId("content-browser-move-dialog")).toBeNull());
+    expect(moveFolder).toHaveBeenCalledWith("project", "Characters", "Archive");
+    expect(docs.repathProjectFolder).toHaveBeenCalledWith("assets/Characters", "assets/Archive/Characters");
+  });
+
+  it("leaves project settings alone when a folder move fails", async () => {
+    installRegistry([], ["Characters", "Archive"]);
+    const moveFolder = vi.fn().mockRejectedValue(new Error("Folder is locked"));
+    docs.assetRegistry = { ...(docs.assetRegistry as object), moveFolder };
+    render(<ContentBrowserWorkspace />);
+    fireEvent.contextMenu(screen.getByTestId("content-folder-assets/Characters"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Move…" }));
+    tapTreeRow(within(screen.getByTestId("content-browser-move-dialog")).getByTestId("tree-row-assets/Archive"));
+    fireEvent.click(screen.getByTestId("content-browser-move-confirm"));
+    expect(await screen.findByText("Folder is locked")).toBeTruthy();
+    expect(docs.repathProjectFolder).not.toHaveBeenCalled();
   });
 
   it("renames an asset inline from a tree label double-tap", async () => {
@@ -750,7 +780,7 @@ describe("ContentBrowserWorkspace grid window", () => {
     fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
     fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
     await waitFor(() => expect(docs.repairAfterAssetDelete).toHaveBeenCalledWith(
-      new Set(), new Set(), expect.any(Function),
+      new Set(), new Set(), expect.any(Function), ["assets/Empty"],
     ));
   });
 
@@ -773,7 +803,7 @@ describe("ContentBrowserWorkspace grid window", () => {
     fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
     fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
     await waitFor(() => expect(screen.getByRole("alertdialog", { name: "Delete Failed" })).toBeTruthy());
-    expect(docs.repairAfterAssetDelete).toHaveBeenCalledWith(new Set(["tex-0"]), new Set(), expect.any(Function));
+    expect(docs.repairAfterAssetDelete).toHaveBeenCalledWith(new Set(["tex-0"]), new Set(), expect.any(Function), []);
   });
 
   it("mounts no tiles while hidden and shows the current folder again when visible", () => {

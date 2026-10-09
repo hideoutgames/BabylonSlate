@@ -51,6 +51,25 @@ describe("exportGame", () => {
     expect(result.value.manifest.assets.find(asset => asset.guid === "later")?.startupRequired).toBeUndefined();
     expect(result.value.manifest.assets.find(asset => asset.guid === "scene")).toMatchObject({ dependencies: ["later"], requiredDependencies: [] });
   });
+  it("records the authored storage path of exported assets but not of generated entries", async () => {
+    const result = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [{ assetGuid: "hero", classId: "Hero", source: "export function onTick() {}", anchors: [], entryPoints: [] }],
+      assets: [
+        { guid: "scene", type: "Scene", sceneGuid: "scene", bytes: new TextEncoder().encode("{}"), assetPath: "assets/Levels/Main.scene.babasset" },
+        { guid: "hero", type: "Class", sceneGuid: "scene", name: "Hero", bytes: new TextEncoder().encode("{}"), assetPath: "plugins/Foo/assets/Hero.class.babasset" },
+        { guid: "area-emission:tex", type: "AreaEmission", sceneGuid: "scene", bytes: new Uint8Array([1]), encoding: "bytes" },
+      ],
+    });
+    if (!result.ok) throw new Error(result.error);
+    const byGuid = new Map(result.value.manifest.assets.map(asset => [asset.guid, asset]));
+    expect(byGuid.get("scene")?.assetPath).toBe("assets/Levels/Main.scene.babasset");
+    expect(byGuid.get("hero")?.assetPath).toBe("plugins/Foo/assets/Hero.class.babasset");
+    // The exported file path stays the file in the game, not the authored path.
+    expect(byGuid.get("scene")?.path).toMatch(/^assets\/data-\d+\.bin$/);
+    const generated = result.value.manifest.assets.filter(asset => !asset.assetPath);
+    expect(generated.map(asset => asset.guid).sort()).toEqual(["area-emission:tex", "script:hero:Hero"]);
+    expect(generated.find(asset => asset.guid === "script:hero:Hero")?.ownerGuid).toBe("hero");
+  });
   it("preserves focus input selections and normalizes unsafe repeat values through player manifests", async () => {
     const result = await exportGame({ mode: "packed", bundleDebugger: false, startupSceneGuid: "scene-1", scripts: [], assets: [], playerFiles: stubPlayer(),
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,

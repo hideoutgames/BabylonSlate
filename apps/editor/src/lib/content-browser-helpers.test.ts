@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { IndexedAsset } from "@babylonslate/assets";
 import { createDefaultMigrationRegistry } from "@babylonslate/assets";
 import { createSceneStreamingActor } from "@babylonslate/core";
+import { mergeEngineTypeSchemas } from "@babylonslate/scripting";
 import {
   PARTICLE_OUTPUT_NODE_TYPE,
   normalizeParticleGraphDocument,
@@ -1403,6 +1404,11 @@ describe("content-browser-helpers", () => {
       ...group.types,
     ]);
     expect([...grouped].sort()).toEqual([...CREATABLE_ASSET_TYPES].sort());
+  });
+
+  it("offers every creatable type as an Asset Type, so Find Assets can target it", () => {
+    const targetable = mergeEngineTypeSchemas().enums["engine:AssetType"]!.members.map((member) => member.name);
+    for (const type of CREATABLE_ASSET_TYPES) expect(targetable, type).toContain(type);
   });
 
   it("filters creatable types by Title Case label", () => {

@@ -11,7 +11,7 @@ import {
   createDefaultParticleEmitterPayload,
   createDefaultParticleSystemPayload,
 } from "@babylonslate/assets";
-import { collectExportReachability } from "./closure";
+import { collectExportReachability, collectHeaderReachability, selectExportRoots } from "./closure";
 import { MISSING_STARTUP_SCENE_MESSAGE } from "./constants";
 import type { ExportIndexedAsset } from "./types";
 
@@ -1355,4 +1355,119 @@ it("exports virtual item classes, switcher default references and control visual
     sceneByGuid: () => scene, graphByGuid: guid => graphs[guid] ?? null,
   });
   expect(result).toMatchObject({ ok: true, value: { guids: ["base", "fill", "override", "popup", "scene", "screen", "thumb", "tile"] } });
+});
+
+describe("Always Package Folders", () => {
+  const withPath = (path: string, partial: Partial<ExportIndexedAsset> & Pick<ExportIndexedAsset, "guid" | "type" | "name">) =>
+    asset({ path, ...partial });
+  const scene = withPath("assets/Levels/Main.scene.babasset", { guid: "scene", name: "Main", type: "Scene" });
+  const closure = (assets: ExportIndexedAsset[], alwaysPackageFolders: string[], pluginEnabledGuids = new Set<string>()) => {
+    const result = collectExportReachability({ startupSceneGuid: "scene", pluginEnabledGuids, parentOf: id => id === "Tool" ? "EditorUtilityObject" : null,
+      alwaysPackageFolders, assets, sceneByGuid: () => null, graphByGuid: () => null });
+    return result.ok ? result.value.guids : result.error;
+  };
+
+  it("packs an unreferenced asset under a listed folder, its subfolders and everything it references", () => {
+    const assets = [scene,
+      withPath("assets/Weapons/Rifle.class.babasset", { guid: "rifle", name: "Rifle", type: "Class", dependencies: ["scope"] }),
+      withPath("assets/Weapons/Rifles/Sniper.class.babasset", { guid: "sniper", name: "Sniper", type: "Class" }),
+      withPath("assets/Textures/scope.texture.babasset", { guid: "scope", name: "Scope", type: "Texture" }),
+      withPath("assets/WeaponsOld/Rusty.class.babasset", { guid: "rusty", name: "Rusty", type: "Class" }),
+      withPath("assets/Textures/unused.texture.babasset", { guid: "unused", name: "Unused", type: "Texture" })];
+    expect(closure(assets, [])).toEqual(["scene"]);
+    expect(closure(assets, ["assets/Weapons"])).toEqual(["rifle", "scene", "scope", "sniper"]);
+    expect(closure(assets, ["/assets//Weapons/"])).toEqual(["rifle", "scene", "scope", "sniper"]);
+    expect(closure(assets, ["assets/weapons", "assets/Weap", "assets/Weapons/Rifles"])).toEqual(["scene", "sniper"]);
+  });
+
+  it("keeps editor-only assets and disabled plugin content out of a listed folder", () => {
+    const assets = [scene,
+      withPath("assets/Tools/Tool.class.babasset", { guid: "tool", name: "Tool", type: "Class", parentClass: "Tool" }),
+      withPath("assets/Tools/Skybox.skyboxcreator.babasset", { guid: "sky", name: "Sky", type: "SkyboxCreator" }),
+      withPath("assets/Tools/Prop.class.babasset", { guid: "prop", name: "Prop", type: "Class", parentClass: "Actor" }),
+      withPath("plugins/On/assets/On.class.babasset", { guid: "on", name: "On", type: "Class", rootId: "plugin:on" }),
+      withPath("plugins/Off/assets/Off.class.babasset", { guid: "off", name: "Off", type: "Class", rootId: "plugin:off" })];
+    expect(closure(assets, ["assets/Tools", "plugins/On/assets", "plugins/Off/assets"], new Set(["on"]))).toEqual(["on", "prop", "scene"]);
+  });
+
+  it("starts a listed Scene's own closure", () => {
+    const assets = [scene,
+      withPath("assets/Extra/Bonus.scene.babasset", { guid: "bonus", name: "Bonus", type: "Scene", dependencies: ["music"] }),
+      withPath("assets/Audio/music.audio.babasset", { guid: "music", name: "Music", type: "Audio" })];
+    expect(closure(assets, ["assets/Extra"])).toEqual(["bonus", "music", "scene"]);
+  });
+
+  it("ignores assets without a storage path", () => {
+    expect(closure([scene, asset({ guid: "loose", name: "Loose", type: "Texture" })], ["assets"])).toEqual(["scene"]);
+  });
+
+  it("selects the same roots for every packaged set, sorted by guid", () => {
+    const assets = [scene,
+      withPath("assets/Input/Jump.inputaction.babasset", { guid: "jump", name: "Jump", type: "InputAction" }),
+      withPath("assets/Weapons/B.class.babasset", { guid: "b", name: "B", type: "Class" }),
+      withPath("assets/Weapons/A.class.babasset", { guid: "a", name: "A", type: "Class" })];
+    expect(selectExportRoots({ startupSceneGuid: "scene", pluginEnabledGuids: new Set(), parentOf: () => null, assets,
+      gameInstanceClass: " Game ", alwaysPackageFolders: ["assets/Weapons"] })).toEqual({
+      startupRefs: ["jump", "Game"],
+      alwaysPackageGuids: ["a", "b"],
+    });
+  });
+});
+
+describe("collectHeaderReachability", () => {
+  const withPath = (path: string, partial: Partial<ExportIndexedAsset> & Pick<ExportIndexedAsset, "guid" | "type" | "name">) =>
+    asset({ path, ...partial });
+  /** Headers that declare every reference their documents hold. */
+  const assets = [
+    withPath("assets/Levels/Main.scene.babasset", { guid: "scene", name: "Main", type: "Scene", dependencies: ["hero", "ground"] }),
+    withPath("assets/Levels/Bonus.scene.babasset", { guid: "bonus", name: "Bonus", type: "Scene", dependencies: ["bonus-tex"] }),
+    withPath("assets/Hero.class.babasset", { guid: "hero", name: "Hero", type: "Class", parentClass: "Base", dependencies: ["hero-tex", "bonus"] }),
+    withPath("assets/Base.class.babasset", { guid: "base", name: "Base", type: "Class", parentClass: "Actor" }),
+    withPath("assets/Hero.texture.babasset", { guid: "hero-tex", name: "HeroTex", type: "Texture" }),
+    withPath("assets/Ground.material.babasset", { guid: "ground", name: "Ground", type: "Material", dependencies: ["ground-tex"] }),
+    withPath("assets/Ground.texture.babasset", { guid: "ground-tex", name: "GroundTex", type: "Texture" }),
+    withPath("assets/Bonus.texture.babasset", { guid: "bonus-tex", name: "BonusTex", type: "Texture" }),
+    withPath("assets/Jump.inputaction.babasset", { guid: "jump", name: "Jump", type: "InputAction" }),
+    withPath("assets/Save.class.babasset", { guid: "save", name: "Save", type: "Class", parentClass: "GameSubsystem", dependencies: ["save-tex"] }),
+    withPath("assets/Save.texture.babasset", { guid: "save-tex", name: "SaveTex", type: "Texture" }),
+    withPath("assets/Cmd.class.babasset", { guid: "cmd", name: "Cmd", type: "Class", parentClass: "BDebugCommand", dependencies: ["cmd-tex"] }),
+    withPath("assets/Cmd.texture.babasset", { guid: "cmd-tex", name: "CmdTex", type: "Texture" }),
+    withPath("assets/Pack/Crate.class.babasset", { guid: "crate", name: "Crate", type: "Class", parentClass: "Actor", dependencies: ["crate-tex"] }),
+    withPath("assets/Pack/Crate.texture.babasset", { guid: "crate-tex", name: "CrateTex", type: "Texture" }),
+    withPath("assets/Pack/Tool.class.babasset", { guid: "tool", name: "Tool", type: "Class", parentClass: "Tool", dependencies: ["tool-tex"] }),
+    withPath("assets/Tool.texture.babasset", { guid: "tool-tex", name: "ToolTex", type: "Texture" }),
+    withPath("plugins/Off/assets/Off.texture.babasset", { guid: "off-tex", name: "OffTex", type: "Texture", rootId: "plugin:off" }),
+    withPath("assets/Unused.texture.babasset", { guid: "unused", name: "Unused", type: "Texture" }),
+  ];
+  const parentOf = (id: string) => ({ Tool: "EditorUtilityObject", Base: "Actor" }[id] ?? null);
+  const roots = { pluginEnabledGuids: new Set<string>(), parentOf, assets, alwaysPackageFolders: ["assets/Pack", "plugins/Off/assets"],
+    gameInstanceClass: "Hero" };
+
+  it("reaches the same assets and Scene shares as the export closure when headers declare their references", () => {
+    const full = collectExportReachability({ ...roots, startupSceneGuid: "scene", sceneByGuid: () => null, graphByGuid: () => null });
+    const header = collectHeaderReachability({ ...roots, startupSceneGuid: "scene" });
+    if (!full.ok || !header.ok) throw new Error("closure failed");
+    expect(full.value.guids).toEqual([
+      "base", "bonus", "bonus-tex", "cmd", "cmd-tex", "crate", "crate-tex", "ground", "ground-tex", "hero", "hero-tex",
+      "jump", "save", "save-tex", "scene",
+    ]);
+    expect(header.value.guids).toEqual(full.value.guids);
+    expect([...header.value.bySceneGuid].map(([scene, guids]) => [scene, [...guids].sort()])).toEqual(
+      [...full.value.bySceneGuid].map(([scene, guids]) => [scene, [...guids].sort()]),
+    );
+  });
+
+  it("adds the Scene Play starts from beside the startup Scene", () => {
+    const withBonus = collectHeaderReachability({ ...roots, startupSceneGuid: "scene", extraSceneGuids: ["bonus"] });
+    const withoutStartup = collectHeaderReachability({ ...roots, startupSceneGuid: null, extraSceneGuids: ["bonus"] });
+    if (!withBonus.ok || !withoutStartup.ok) throw new Error("closure failed");
+    expect(withBonus.value.guids).toContain("hero");
+    expect(withoutStartup.value.guids).not.toContain("ground");
+    expect(withoutStartup.value.guids).toEqual(expect.arrayContaining(["bonus", "bonus-tex", "jump", "crate", "hero"]));
+  });
+
+  it("fails when no starting Scene exists", () => {
+    expect(collectHeaderReachability({ ...roots, startupSceneGuid: "missing" })).toEqual({ ok: false, error: MISSING_STARTUP_SCENE_MESSAGE });
+    expect(collectHeaderReachability({ ...roots, startupSceneGuid: null, extraSceneGuids: ["hero"] })).toEqual({ ok: false, error: MISSING_STARTUP_SCENE_MESSAGE });
+  });
 });

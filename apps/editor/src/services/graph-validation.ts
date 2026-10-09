@@ -60,6 +60,7 @@ import {
 import { collectParentEventNames } from "../lib/overridable-functions";
 import { prefabComponentLabel } from "../panels/add-component-catalog";
 import {
+  ASSET_REGISTRY_BY_CLASS_NODE_ID,
   createDefaultNodeRegistry,
   castDefaultClassId,
   callInterfaceTitle,
@@ -230,6 +231,7 @@ function shouldRegeneratePins(typeId: string): boolean {
     typeId === "variables.getValidated" ||
     typeId === "component.getNamed" ||
     typeId === "casting.cast" ||
+    typeId === ASSET_REGISTRY_BY_CLASS_NODE_ID ||
     typeId === SUBSYSTEM_GET_NODE_ID ||
     typeId === "struct.make" ||
     typeId === "struct.break" ||
@@ -369,6 +371,22 @@ function connectedCastClassId(
     (pin) => pin.id === edge.sourceHandle || pin.name === edge.sourceHandle,
   );
   return pinClassId(sourcePin?.type) ?? "BObject";
+}
+
+/**
+ * Get Assets By Class types Classes the way Cast types its result: from the
+ * Class wired into it, else from the Class picked on the node.
+ */
+function assetsByClassPinProperties(
+  typeId: string,
+  properties: Record<string, unknown>,
+  graph: SerializedGraph,
+  nodeId: string,
+  nodeRegistry: NodeRegistry,
+): Record<string, unknown> {
+  if (typeId !== ASSET_REGISTRY_BY_CLASS_NODE_ID) return properties;
+  const wiredClassId = connectedCastClassId(graph, nodeId, nodeRegistry);
+  return wiredClassId ? { ...properties, "default:class": wiredClassId } : properties;
 }
 
 function isEnumCatalogType(typeId: string): boolean {
@@ -794,7 +812,9 @@ export function hydrateSerializedGraphForEditor(
       }
 
       const def = nodeRegistry.get(typeId);
-      const pins: GraphPin[] = def ? def.pins(properties) : [];
+      const pins: GraphPin[] = def
+        ? def.pins(assetsByClassPinProperties(typeId, properties, graph, node.id, nodeRegistry))
+        : [];
 
       return {
         ...node,

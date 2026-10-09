@@ -87,6 +87,10 @@ describe("playLoadControl", () => {
     clipName: "Walk",
     durationMs: 200,
   };
+  const catalogEntry = {
+    guid: "rifle", name: "Rifle", type: "Class", path: "assets/Rifle.class.babasset", classId: "Rifle",
+    dependencies: [], requiredDependencies: [],
+  };
   it.each([
     {
       field: "the authored scene document",
@@ -125,6 +129,11 @@ describe("playLoadControl", () => {
       field: "animClipCatalog",
       input: { animClipCatalog: [clip] },
       expected: { animClipCatalog: [clip] },
+    },
+    {
+      field: "the packaged asset catalog",
+      input: { assetCatalog: [catalogEntry] },
+      expected: { assetCatalog: [catalogEntry] },
     },
   ])("forwards $field onto the load message", ({ input, expected }) => {
     expect(playLoadControl(input)).toMatchObject(expected);

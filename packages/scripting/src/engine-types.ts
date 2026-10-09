@@ -1,4 +1,5 @@
 import { SCALABILITY_ENUMS, SCALABILITY_STRUCTS } from "./scalability-types";
+import { ASSET_REGISTRY_ENUMS, ASSET_REGISTRY_STRUCTS } from "./asset-registry-types";
 import { ENGINE_EASING_CURVE_ENUM_ID, EASING_CURVES, ENGINE_TWEEN_SPACE_ENUM_ID, TWEEN_SPACES } from "@babylonslate/core";
 export { ENGINE_EASING_CURVE_ENUM_ID, ENGINE_TWEEN_SPACE_ENUM_ID } from "@babylonslate/core";
 import {
@@ -51,6 +52,7 @@ export type EngineStruct = {
 /** Built-in engine enums (`engine:CollisionChannel`, …). */
 export const ENGINE_ENUMS: readonly EngineEnum[] = [
   ...SCALABILITY_ENUMS,
+  ...ASSET_REGISTRY_ENUMS,
   { id: ENGINE_EASING_CURVE_ENUM_ID, name: "Easing Curve", members: EASING_CURVES.map((name, value) => ({ name, value })) },
   { id: ENGINE_TWEEN_SPACE_ENUM_ID, name: "Tween Space", members: TWEEN_SPACES.map((name, value) => ({ name, value })) },
   {
@@ -119,6 +121,7 @@ export const ENGINE_STRUCTS: readonly EngineStruct[] = [
     fields: [{ name: "Tags", typeId: "tag", container: "array", defaultValue: [] }],
   },
   ...SCALABILITY_STRUCTS,
+  ...ASSET_REGISTRY_STRUCTS,
   {
     id: "engine:SaveGameInfo", name: "Save Game Info",
     fields: [

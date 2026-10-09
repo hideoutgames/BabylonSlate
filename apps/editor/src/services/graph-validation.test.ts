@@ -422,6 +422,41 @@ describe("hydrateSerializedGraphForEditor", () => {
     });
   });
 
+  describe("Get Assets By Class", () => {
+    const classes = (hydrated: SerializedGraph, nodeId: string) =>
+      (hydrated.nodes.find((node) => node.id === nodeId)?.data.__pins as Array<{ id: string; type: unknown }>)
+        .find((pin) => pin.id === "classes")?.type;
+    const byClass = (data: Record<string, unknown>) => ({
+      id: "assets",
+      type: "assetRegistry.getAssetsByClass",
+      position: { x: 200, y: 0 },
+      data,
+    });
+
+    it("retypes Classes when the picked Class changes, even from stale saved pins", () => {
+      const stale = [{ id: "classes", name: "Classes", kind: "data", direction: "out", type: { kind: "array", element: { kind: "classRef", classId: "BObject" } } }];
+      const graph: SerializedGraph = { nodes: [byClass({ "default:class": "Weapon", __pins: stale })], edges: [] };
+      expect(classes(hydrateSerializedGraphForEditor(graph, registry), "assets")).toEqual({
+        kind: "array",
+        element: { kind: "classRef", classId: "Weapon" },
+      });
+    });
+
+    it("types Classes from the Class wired into it, as Cast does", () => {
+      const graph: SerializedGraph = {
+        nodes: [
+          { id: "kind", type: "variables.get", position: { x: 0, y: 0 }, data: { variableName: "Kind", typeId: "class", typeClassId: "Actor", implicitSelf: true } },
+          byClass({ "default:class": "Weapon" }),
+        ],
+        edges: [{ id: "e1", source: "kind", target: "assets", sourceHandle: "value", targetHandle: "class" }],
+      };
+      expect(classes(hydrateSerializedGraphForEditor(graph, registry), "assets")).toEqual({
+        kind: "array",
+        element: { kind: "classRef", classId: "Actor" },
+      });
+    });
+  });
+
   it("preserves existing __pins", () => {
     const customPins = [
       {

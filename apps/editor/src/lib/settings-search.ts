@@ -172,6 +172,7 @@ export const PROJECT_SETTING_FIELDS = fields([
   ["export", "Bundle Debugger", "setting-export-debugger"],
   ["export", "File Count Warn", "setting-export-file-warn"],
   ["export", "File Count Fail", "setting-export-file-fail"],
+  ["export", "Always Package Folders"],
   ["export", "Export Game", "export-game"],
   ["export", "Export Project Backup", "export-project"],
   ["sourceControl", "Enable Source Control", "settings-source-control-enabled"],

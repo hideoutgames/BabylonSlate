@@ -2,6 +2,7 @@ import type { SimulationSceneCaptureResult } from "./simulation-scene-capture";
 import { SimulationSession } from "./simulation-session";
 import { RuntimeInspectorService } from "./runtime-inspector-service";
 import { RuntimeDataCatalog } from "./data-catalog";
+import { RuntimeAssetCatalog } from "./asset-catalog";
 import type { SaveGameService } from "@babylonslate/core";
 import { SessionBoundaries, type RuntimeSaveGameOptions } from "./session-boundaries";
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
@@ -1078,8 +1079,10 @@ class InProcessRuntime implements RuntimeDriver {
     const slot = (actor: Actor): number | undefined => this.actorSlot(actor);
     const canRun = (owner: BObject): boolean => this.admission.canRun(owner);
     const continueSimulation = (owner: BObject | null): Promise<void> | undefined => this.waits.continueSimulation(owner);
+    const assetCatalog = new RuntimeAssetCatalog(options.assetCatalog);
     return new ScriptHost({
       data: this.dataCatalog,
+      getAssetCatalog: () => assetCatalog,
       seed: options.seed,
       canRunOwner: (owner) => this.admission.canRun(owner),
       inputBindings: this.resolver.bindings,

@@ -54,6 +54,14 @@ export {
 } from "./script-host";
 
 export { RuntimeDataCatalog, dataTypeSchemas, type RuntimeDataApi } from "./data-catalog";
+export {
+  RuntimeAssetCatalog,
+  emptyAssetData,
+  type AssetDataValue,
+  type AssetFilterValue,
+  type RuntimeAssetCatalogOptions,
+  type ScriptAssetRegistry,
+} from "./asset-catalog";
 export { defaultComponentAuthoringProperties } from "./component-authoring";
 export { captureSimulationScene, type SimulationSceneCaptureInput, type SimulationSceneCaptureResult, type SimulationCaptureIdentity } from "./simulation-scene-capture";
 export { createSceneSourceClient, createSceneSourceHost, type AcquireRuntimeScene, type RuntimeSceneSource } from "./scene-source";

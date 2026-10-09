@@ -295,6 +295,7 @@ function ContentBrowserWorkspaceBody({
     refreshAssetRegistry,
     renameAsset,
     repathDocument,
+    repathProjectFolder,
     openDocument,
     closeDocumentsForPaths,
     repairAfterAssetDelete,
@@ -1513,6 +1514,7 @@ function ContentBrowserWorkspaceBody({
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
     };
     const removedGuids = new Set<string>();
+    const removedFolders: string[] = [];
     setBusy(true);
     setDeleteTarget(null);
     setDeleteProgress({ done, total, currentName: "Preparing Deletion" });
@@ -1531,6 +1533,7 @@ function ContentBrowserWorkspaceBody({
           if (from.readOnly) continue;
           await reportProgress(path);
           await assetRegistry.deleteFolder(from.rootId, from.relative);
+          removedFolders.push(path);
           for (const asset of allAssets) {
             if (asset.path.startsWith(`${path}/`)) removedGuids.add(asset.header.guid);
           }
@@ -1564,7 +1567,7 @@ function ContentBrowserWorkspaceBody({
               (asset.header.type === "Class" || asset.header.type === "Graph"))
             .map((asset) => asset.header.name));
           await repairAfterAssetDelete(removedGuids, removedClassNames, (name) =>
-            reportProgress(`Updating References: ${name}`),
+            reportProgress(`Updating References: ${name}`), removedFolders,
           );
         }
       }
@@ -1724,6 +1727,7 @@ function ContentBrowserWorkspaceBody({
           dest.relative,
           newName,
         );
+        repathProjectFolder(fromPath, nextFolder);
         for (const asset of contained) {
           repairDocumentPath(
             asset.path,
@@ -1768,6 +1772,7 @@ function ContentBrowserWorkspaceBody({
     refreshAssetRegistry,
     refuseTheirsAssetPaths,
     repairDocumentPath,
+    repathProjectFolder,
     selectedFolderPath,
     selectedRoot,
     browserRoots,
@@ -1831,6 +1836,7 @@ function ContentBrowserWorkspaceBody({
             from.relative,
             destRelative,
           );
+          repathProjectFolder(fromPath, nextFolder);
           onMoved?.(move);
           for (const asset of contained) {
             repairDocumentPath(
@@ -1870,6 +1876,7 @@ function ContentBrowserWorkspaceBody({
       browserRoots,
       refuseTheirsAssetPaths,
       repairDocumentPath,
+      repathProjectFolder,
       sourceControl,
       transferFolderLocks,
     ],

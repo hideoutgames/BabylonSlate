@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ASSET_TYPES } from "@babylonslate/core";
 import { encodeBabasset } from "../babasset";
 import { importAudio, mimeForAudioBytes } from "./audio";
 import { importBabasset } from "./babasset";
@@ -135,6 +136,26 @@ describe("importers", () => {
     expect(
       results.find((result) => result.type === "Material")?.payload.shadingModel,
     ).toBe("unlit");
+  });
+
+  it("gives every imported asset a type the Asset Registry nodes can target", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { resolve } = await import("node:path");
+    const mannequin = new Uint8Array(
+      await readFile(resolve("engine-content/kenney-assets/Mannequin/mannequin.glb")),
+    );
+    const options = (fileName: string) => ({ fileName, existingGuids: new Set<string>() });
+    const imported = [
+      ...(await importByExtension("mannequin.glb", mannequin, options("mannequin.glb"))),
+      ...(await importByExtension("albedo.png", new Uint8Array([1, 2, 3]), options("albedo.png"))),
+      ...(await importByExtension("hit.wav", new Uint8Array([1]), options("hit.wav"))),
+      ...(await importByExtension("Ui.woff2", new Uint8Array([1, 2]), options("Ui.woff2"))),
+    ];
+    // The fixtures reach every kind of asset the importers create.
+    expect(new Set(imported.map((result) => result.type))).toEqual(
+      new Set(["Model", "Material", "Texture", "Skeleton", "Animation", "Audio", "Font"]),
+    );
+    for (const result of imported) expect(ASSET_TYPES, result.type).toContain(result.type);
   });
 
   it("rejects OBJ, STL, FBX, and invalid GLB bytes", async () => {

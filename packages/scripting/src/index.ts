@@ -16,6 +16,11 @@ export * from "./pin-defaults";
 
 export * from "./type-assets";
 export * from "./engine-types";
+export {
+  ENGINE_ASSET_TYPE_ENUM_ID,
+  ENGINE_ASSET_DATA_STRUCT_ID,
+  ENGINE_ASSET_FILTER_STRUCT_ID,
+} from "./asset-registry-types";
 export * from "./member-pin-type";
 export * from "./type-defaults";
 export * from "./data-values";

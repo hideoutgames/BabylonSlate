@@ -35,7 +35,7 @@ import type {
   SerializedScene,
   SerializedSceneLayer,
 } from "@babylonslate/core";
-import { ASSET_DOCUMENT_KINDS, documentId, isAssetDocumentKind, isSceneWorkspaceKind, normalizeProjectSettings, defaultExportPreset, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@babylonslate/core";
+import { ASSET_DOCUMENT_KINDS, documentId, isAssetDocumentKind, isSceneWorkspaceKind, normalizeProjectSettings, remapAlwaysPackageFolders, removeAlwaysPackageFolders, defaultExportPreset, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@babylonslate/core";
 import {
   appendJournalLines,
   getTile,
@@ -291,6 +291,11 @@ interface DocumentContextValue {
     oldPath: string,
     newPath: string,
   ) => void;
+  /**
+   * Follow a Content Browser folder rename or move in the project settings
+   * that name folders (Always Package Folders).
+   */
+  repathProjectFolder: (fromFolder: string, toFolder: string) => void;
   renameAsset: ProjectService["renameAsset"];
   /** Document opens and renames, for session state keyed by document id. */
   subscribeDocumentIdentity: (listener: DocumentIdentityListener) => () => void;
@@ -408,6 +413,8 @@ interface DocumentContextValue {
     deletedGuids: ReadonlySet<string>,
     deletedClassNames?: ReadonlySet<string>,
     onProgress?: (currentName: string) => Promise<void>,
+    /** Storage folders the operation deleted. */
+    deletedFolders?: readonly string[],
   ) => Promise<void>;
   setActiveDocument: (id: string) => void;
   reorderTabs: (fromIndex: number, toIndex: number) => void;
@@ -2223,6 +2230,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         reverbWetScale: exportDocument?.settings.audio.reverbWetScale,
         reverbDecayScale: exportDocument?.settings.audio.reverbDecayScale,
         reverbDampingScale: exportDocument?.settings.audio.reverbDampingScale,
+        alwaysPackageFolders: exportDocument?.settings.alwaysPackageFolders,
         assets: assetsFromIndexed(list),
         plugins,
         projectPluginOverrides,
@@ -2477,6 +2485,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       deletedGuids: ReadonlySet<string>,
       deletedClassNames: ReadonlySet<string> = new Set(),
       onProgress?: (currentName: string) => Promise<void>,
+      deletedFolders: readonly string[] = [],
     ) => {
       const schemas = collectGraphTypeSchemas();
       const definitionFields = (guid: string) => schemas.structs?.[guid]?.fields;
@@ -2508,11 +2517,15 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       });
       if (current) {
         await onProgress?.("Saving Project");
-        const settings = clearDeletedRefsFromProjectSettings(
+        const cleared = clearDeletedRefsFromProjectSettings(
           current.settings,
           deletedGuids,
           deletedClassNames,
         ).value;
+        const settings = {
+          ...cleared,
+          alwaysPackageFolders: removeAlwaysPackageFolders(cleared.alwaysPackageFolders, deletedFolders),
+        };
         const next = {
           ...current,
           settings,
@@ -2790,6 +2803,22 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       scheduleDebouncedSave();
     },
     [documentService, scheduleDebouncedSave, setProjectDocument],
+  );
+
+  const repathProjectFolder = useCallback(
+    (fromFolder: string, toFolder: string) => {
+      const current = projectDocumentRef.current;
+      if (!current) return;
+      const folders = remapAlwaysPackageFolders(current.settings.alwaysPackageFolders, fromFolder, toFolder);
+      if (folders.length === current.settings.alwaysPackageFolders.length && folders.every((folder, index) => folder === current.settings.alwaysPackageFolders[index])) return;
+      setProjectDocument({
+        ...current,
+        settings: { ...current.settings, alwaysPackageFolders: folders },
+        metadata: { ...current.metadata, updatedAt: new Date().toISOString() },
+      });
+      scheduleDebouncedSave();
+    },
+    [scheduleDebouncedSave, setProjectDocument],
   );
 
   const prefillSourceControlFromGit = useCallback(async () => {
@@ -3697,6 +3726,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       exportPlugin,
       importPlugin,
       repathDocument,
+      repathProjectFolder,
       renameAsset,
       subscribeDocumentIdentity,
       retryFailedTextureEncoding,
@@ -3816,6 +3846,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       exportPlugin,
       importPlugin,
       repathDocument,
+      repathProjectFolder,
       renameAsset,
       subscribeDocumentIdentity,
       retryFailedTextureEncoding,

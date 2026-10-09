@@ -82,6 +82,7 @@ function indexEntry(
     ...(asset.ownerGuid ? { ownerGuid: asset.ownerGuid } : {}),
     ...(asset.parentClass ? { parentClass: asset.parentClass } : {}),
     ...(asset.name ? { name: asset.name } : {}),
+    ...(asset.assetPath ? { assetPath: asset.assetPath } : {}),
     ...(asset.consoleCommand ? { consoleCommand: asset.consoleCommand } : {}),
     ...(typeof asset.width === "number" &&
     asset.width > 0 &&

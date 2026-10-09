@@ -8,6 +8,7 @@ import { normalizeRenderEffectsSettings, type RenderEffectsSettings } from "./re
 import { normalizeWaterProjectSettings, type WaterProjectSettings } from "./water-settings";
 import type { ProjectAppearance } from "./project-appearance";
 import { normalizeTagRegistry, type TagRegistry } from "./tags";
+import { normalizeAlwaysPackageFolders } from "./asset-folders";
 import { normalizeFocusNavigationSettings, type FocusNavigationSettings } from "./scene-layer-focus";
 import {
   createActor,
@@ -231,6 +232,12 @@ export interface ProjectSettings {
   extensionOverrides: Record<string, { enabled: boolean }>;
   /** Named export presets; each may override plugin enablement (layer 3). */
   exportPresets: ExportPreset[];
+  /**
+   * Storage folders (`assets/Weapons`) whose assets always ship, with their
+   * subfolders, even when nothing references them. Editor-only assets and
+   * disabled plugin content stay excluded.
+   */
+  alwaysPackageFolders: string[];
   /**
    * Git LFS locking opt-in. Token is never stored here — it lives in the
    * platform secret store (engineplan §12).
@@ -840,6 +847,7 @@ export function normalizeProjectSettings(
     pluginOverrides: normalizePluginOverrides(settings?.pluginOverrides),
     extensionOverrides: normalizePluginOverrides(settings?.extensionOverrides),
     exportPresets: normalizeExportPresets(settings?.exportPresets),
+    alwaysPackageFolders: normalizeAlwaysPackageFolders(settings?.alwaysPackageFolders),
     sourceControl: normalizeSourceControl(settings?.sourceControl),
   };
 }

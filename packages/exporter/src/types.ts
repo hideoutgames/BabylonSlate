@@ -35,12 +35,26 @@ export type ExportClosureInput = {
   audioMixerGuid?: string | null;
   /** Assets referenced by project render settings, such as the grading LUT. */
   renderAssetGuids?: readonly string[];
+  /**
+   * Storage folders (`assets/Weapons`) whose assets all ship, with their
+   * subfolders, even when nothing references them.
+   */
+  alwaysPackageFolders?: readonly string[];
   assets: readonly ExportIndexedAsset[];
   pluginEnabledGuids: ReadonlySet<string>;
   parentOf: (classId: string) => string | null | undefined;
   sceneByGuid: (guid: string) => SerializedScene | null;
   graphByGuid: (guid: string) => SerializedGraph | null;
   payloadByGuid?: (guid: string) => unknown | null;
+};
+
+/** What decides the roots of a packaged set, without any opened document. */
+export type ExportRootInput = Omit<ExportClosureInput, "sceneByGuid" | "graphByGuid" | "payloadByGuid">;
+
+/** Header-only reachability: the roots of an export, plus Scenes started beside the startup Scene. */
+export type HeaderReachabilityInput = ExportRootInput & {
+  /** For example the Scene Editor Play starts from. */
+  extraSceneGuids?: readonly string[];
 };
 
 /** The complete export closure and the assets attributable to each Scene root. */
@@ -72,6 +86,8 @@ export type ExportAssetBytes = {
   encoding?: "json" | "bytes";
   /** Asset display name; FontFace family falls back to this. */
   name?: string;
+  /** Authored storage path of an asset from the project or a plugin, such as `assets/Weapons/Rifle.class.babasset`. */
+  assetPath?: string;
   /** Authored Texture payload pixels for overlay 2DTexture layout. */
   width?: number;
   height?: number;
@@ -93,6 +109,12 @@ export type GameAssetIndexEntry = {
   pack?: string;
   path?: string;
   name?: string;
+  /**
+   * Authored storage path of an exported project or plugin asset. Absent on
+   * generated entries such as compiled scripts and sidecars; `path` is the
+   * exported file.
+   */
+  assetPath?: string;
   /** Authored Texture payload pixels for overlay 2DTexture layout. */
   width?: number;
   height?: number;

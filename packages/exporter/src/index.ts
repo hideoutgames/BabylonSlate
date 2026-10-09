@@ -29,7 +29,8 @@ export {
   fontGuidFromFontMsdfExport,
   fontGuidFromFontMsdfAtlasExport,
 } from "./constants";
-export { collectExportReachability } from "./closure";
+export { collectExportReachability, collectHeaderReachability, selectExportRoots, type ExportRoots } from "./closure";
+export { runtimeAssetCatalogFromIndexed, runtimeAssetCatalogFromManifest } from "./asset-catalog";
 export { selectPlayerRuntimeFiles } from "./player-files";
 export { encodeBabpack, decodeBabpack, decodeBabpackIndex } from "./babpack";
 export { createHttpPackSource, createMemoryPackSource } from "./pack-source";
@@ -71,6 +72,8 @@ export type {
   ExportMode,
   ExportIndexedAsset,
   ExportClosureInput,
+  ExportRootInput,
+  HeaderReachabilityInput,
   ExportReachability,
   ExportAssetBytes,
   ExportGameOptions,

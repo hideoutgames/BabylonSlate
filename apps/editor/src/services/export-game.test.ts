@@ -230,6 +230,38 @@ describe("collectAndExportGame", () => {
     ]);
   });
 
+  it("ships the unreferenced assets of Always Package Folders with their authored paths", async () => {
+    const scene = createDefaultScene();
+    const run = (alwaysPackageFolders: string[]) =>
+      collectAndExportGame({
+        startupSceneGuid: "scene-main",
+        alwaysPackageFolders,
+        assets: [
+          asset({ guid: "scene-main", type: "Scene", name: "Main", path: "assets/Levels/Main.scene.babasset" }),
+          asset({ guid: "unreferenced", type: "Texture", name: "Spare", path: "assets/Spare/spare.texture.babasset" }),
+          asset({ guid: "outside", type: "Texture", name: "Outside", path: "assets/Other/outside.texture.babasset" }),
+        ],
+        plugins: [],
+        projectPluginOverrides: {},
+        parentOf: () => null,
+        sceneByGuid: () => scene,
+        graphByGuid: () => null,
+        bytesByGuid: (guid) => new TextEncoder().encode(guid),
+        renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+        playFrameCap: 60,
+        physicsWorld: "3d",
+        playerFiles,
+      });
+    const without = await run([]);
+    const included = await run(["assets/Spare"]);
+    if (!isOk(without) || !isOk(included)) throw new Error("export failed");
+    expect(without.value.manifest.assets.map((entry) => entry.guid)).toEqual(["scene-main"]);
+    expect(included.value.manifest.assets.map((entry) => [entry.guid, entry.assetPath])).toEqual([
+      ["scene-main", "assets/Levels/Main.scene.babasset"],
+      ["unreferenced", "assets/Spare/spare.texture.babasset"],
+    ]);
+  });
+
   it("exports startup reachability through stable independent paths without duplicating shared assets", async () => {
     const start = {
       ...createDefaultScene(),

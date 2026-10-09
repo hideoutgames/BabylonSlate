@@ -128,6 +128,7 @@ function inertDocuments(current: () => DocumentsValue | undefined): DocumentsVal
     exportPlugin: unavailable("exportPlugin"),
     importPlugin: unavailable("importPlugin"),
     repathDocument: noop,
+    repathProjectFolder: noop,
     renameAsset: unavailable("renameAsset"),
     subscribeDocumentIdentity: unsubscribe,
     retryFailedTextureEncoding: async () => 0,

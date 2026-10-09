@@ -112,6 +112,29 @@ A save or background bake can replace a Scene while Play prepares it. Typed sour
 
 `snapshot()` exposes retained/reserved bytes, active/queued work, cache hits, revisions, representations and retaining owners. Storage metrics separately report actual read bytes, including failed range transports. Physical A16 iPad, Android and desktop peak-memory/frame-time qualification remains required; unit tests establish contracts, not device performance results.
 
+## NodeGraph Asset Registry
+
+Unreal AssetRegistry-style query nodes ([scripting](scripting.md#asset-registry-nodes)) read a **runtime asset catalog**: a list of `RuntimeAssetCatalogEntry` (`@babylonslate/core`: `guid`, header `name`, `type`, authored `path`, Class assets' `classId` and `parentClass`, header `dependencies`, `requiredDependencies`). `RuntimeAssetCatalog` (`@babylonslate/runtime`) is the pure query module; scripts reach it as `ctx.assetRegistry`.
+
+| Host | Catalog contents |
+| --- | --- |
+| Editor Play | The **packaged set** from registry headers, snapshotted when Play starts and sent in the `load` control as `assetCatalog` |
+| Preview Build / exported game | Manifest entries that carry `assetPath` (every exported authored asset; generated entries such as compiled scripts and sidecars have none), read by the player into the same `load` control field |
+| Editor graph hosts (Editor Utility Object / Editor Function Library) | The live registry across mounted roots, editor-only assets included, rebuilt on first use after `registry.generation` changes; the registry's empty folders count as folders |
+
+- **Paths** are the registry's full storage paths, including the content-root prefix: the project root is `assets`, a plugin's is `<plugin folder>/assets`, so plugin assets never collide with project assets. An asset's **Folder** is the parent directory of its path.
+- **Folder inputs** are trimmed, lose leading and trailing `/`, and collapse `//`; matching is exact and case-sensitive. An empty Folder with Recursive means every root. Exported games know only the folders of packaged assets, so an empty folder does not exist there.
+- **Class queries** resolve ancestry from the catalog's `classId` / `parentClass` chain and continue into engine base classes through the object-model class registry; no Class has to be loaded.
+- **Dependencies and referencers** consider only catalog entries; Hard Only uses `requiredDependencies`.
+- **Packaged set.** The export closure ([exporter](exporter.md#export-closure)) decides it, so Play and exports agree. Editor Play uses the header-only walk (`collectHeaderReachability`) from the same roots, with the Scene it starts from as an extra Scene root beside the project startup Scene; editor-only assets and disabled plugin content are excluded in both.
+
+### Always Package Folders
+
+`ProjectSettings.alwaysPackageFolders` (default `[]`, normalized wherever project settings default) lists storage folders such as `assets/Weapons`. Every asset under a listed folder, subfolders included, is an export and Play root, so it ships and appears in the catalog even when nothing references it. Editor-only assets and disabled plugin content stay out.
+
+- **Project Settings → Export → Always Package Folders** lists the folders; **Add Folder** opens a folder picker over every mounted root, and a folder that no longer exists shows a **Missing Folder** badge.
+- Moving or renaming a folder in the Content Browser rewrites matching entries by path prefix, and deleting one removes them.
+
 ## Importers
 
 Pure functions keyed by extension: `(bytes, options) → ImportResult[]`.

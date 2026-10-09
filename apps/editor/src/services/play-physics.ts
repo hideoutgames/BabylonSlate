@@ -175,6 +175,8 @@ export function playLoadControl(options: {
   project?: { name: string; version: string };
   inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
   dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
+  /** Packaged authored assets the Asset Registry nodes query. */
+  assetCatalog?: import("@babylonslate/core").RuntimeAssetCatalogEntry[];
   inputMappings?: ProjectInputSettings;
   focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
   pixelsPerUnit?: number;
@@ -222,6 +224,7 @@ export function playLoadControl(options: {
     ...(options.project ? { project: options.project } : {}),
     inputAssets: options.inputAssets,
     dataAssets: options.dataAssets,
+    assetCatalog: options.assetCatalog,
     inputMappings: options.inputMappings,
     focusNavigation: options.focusNavigation,
     pixelsPerUnit: options.pixelsPerUnit,
