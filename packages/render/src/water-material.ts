@@ -1820,7 +1820,8 @@ if (swContactOn > 0.5) {
 }`)}
 // The collar pulses with the swell at the hull: it pushes out and thickens as the water climbs, and as it drops a wider,
 // thinner ring of foam clings briefly before it drains (\`swHullPulse\`, \`swHullCling\`).
-float swHullW = swContactW * (0.55 + 0.8 * swHullPulse)${fromTier(2, " * 1.35", "")};
+float swHullW = swContactW * (0.55 + 0.8 * swHullPulse);${fromTier(2, `
+swHullW *= 1.35;`)}
 float swHullRing = swHullCling * exp(-abs(swObjectW - swContactW * 0.22) / (swContactW * 0.12)) * 0.55;${fromTier(1, `
 // Lee puffs: foam shed downstream with each rise drifts away in clumps, within about a Contact Foam Width (over two,
 // small floats trailed long marbled ribbons several times their own size).
