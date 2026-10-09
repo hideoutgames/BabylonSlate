@@ -34,7 +34,7 @@ import {
   type SceneLoadProgress,
 } from "@babylonslate/render";
 import { playFramebufferSize, type ResolvedRenderingPipeline, type SerializedScene } from "@babylonslate/core";
-import { gameSourceSubset, requiredGameAssets, type GameSourceContent, type GameManifest } from "@babylonslate/exporter";
+import { gameSourceSubset, requiredGameAssets, runtimeAssetCatalogFromManifest, type GameSourceContent, type GameManifest } from "@babylonslate/exporter";
 import { createPlayerWorkerHost, type PlayerWorkerHost } from "./worker-host";
 import { createGameAudioSourceLoader, type LoadedGame } from "./artifact";
 import {
@@ -484,6 +484,7 @@ function initializePlayer(
     physicsWorld: manifest.physicsWorld,
     inputAssets: manifest.inputAssets,
     dataAssets: content.dataAssets,
+    assetCatalog: runtimeAssetCatalogFromManifest(manifest.assets),
     inputMappings: manifest.inputMappings,
     focusNavigation: manifest.focusNavigation,
     pixelsPerUnit: content.pixelsPerUnit,

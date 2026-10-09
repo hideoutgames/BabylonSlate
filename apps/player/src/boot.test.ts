@@ -65,7 +65,7 @@ async function fixture(withWater = false, saveGame?: SaveGameConfiguration) {
   const scene = { ...createDefaultScene(), actors: [] };
   const packed = await exportGame({ bundleDebugger: false, startupSceneGuid: "world", scripts: [], renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
     ...(saveGame ? { saveGame, physicsWorld: "2d" as const } : {}),
-    assets: [{ guid: "world", type: "Scene", sceneGuid: "world", requiredDependencies: withWater ? ["water"] : [], bytes: new TextEncoder().encode(JSON.stringify(scene)) }, ...(withWater ? [{ guid: "water", type: "Water", sceneGuid: "world", bytes: new TextEncoder().encode(JSON.stringify(createDefaultWaterDefinition("stylized"))) }] : [])] });
+    assets: [{ guid: "world", type: "Scene", sceneGuid: "world", name: "World", assetPath: "assets/Levels/World.scene.babasset", requiredDependencies: withWater ? ["water"] : [], bytes: new TextEncoder().encode(JSON.stringify(scene)) }, ...(withWater ? [{ guid: "water", type: "Water", sceneGuid: "world", bytes: new TextEncoder().encode(JSON.stringify(createDefaultWaterDefinition("stylized"))) }] : [])] });
   if (!packed.ok) throw new Error("Fixture export failed");
   const game = await loadGameFromFiles(packed.value.files);
   const root = document.createElement("div");
@@ -285,6 +285,17 @@ describe("player startup and Stop ownership", () => {
     } finally {
       runtime.stop();
     }
+  });
+
+  it("gives the worker the authored paths of the packaged assets for Asset Registry queries", async () => {
+    const { game, canvas } = await fixture(true);
+    sessions.push(startPlayer({ game, canvas }));
+    const load = TestWorker.instances[0]!.messages.flatMap((message) =>
+      message.channel === "control" && message.payload.type === "load" ? [message.payload] : [])[0];
+    // The Water entry is a packaged asset without an authored path, so it is not listed.
+    expect(load?.assetCatalog).toEqual([
+      { guid: "world", name: "World", type: "Scene", path: "assets/Levels/World.scene.babasset", dependencies: [], requiredDependencies: ["water"] },
+    ]);
   });
 
   it("delivers capture configuration and explicit requests from the worker to the renderer", async () => {
