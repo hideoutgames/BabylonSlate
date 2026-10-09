@@ -984,7 +984,7 @@ vec4 swMarch(vec3 swOrigin, vec3 swRay) {
  * also gathers the primary swell and bends its chop domain finer.
  */
 function surfaceSource(style: WaterShaderStyle): string {
-  const realistic = style === "realistic", painted = style === "painted";
+  const realistic = style === "realistic", painted = style === "painted", toon = style === "toon";
   // The shared kernel's components (`waterWaveShaderConstants`) at this fragment's warped rest point (`swRestW`): the
   // same swell, crest profile and Gerstner offset the mesh, queries and buoyancy use. Phases arrive reduced on the CPU
   // relative to the floating origin, so no large-argument trigonometry runs here. Slots hold the components by
@@ -1022,7 +1022,14 @@ swLost += swK${i} * swA${i} * swK${i} * swA${i} * (1.0 - swFs${i} * swFs${i});` 
 float swPw${i} = 1.0 - smoothstep(1.3, 2.2, swK${i} * swPrimLen);
 swPrimH += mix(swS${i}, (swE${i} - ${f(WATER_CREST_MEAN)}) / ${f(WATER_CREST_RANGE)}, swChopShape) * swF${i} * swPw${i};
 swPrimG += swD${i} * (mix(swC${i}, swE${i} * swC${i} / ${f(WATER_CREST_RANGE)}, swChopShape) * swK${i} * swF${i} * swPw${i});
-swPrimAmp += swA${i} * swA${i} * swPw${i} * swPw${i};` : ""}
+swPrimAmp += swA${i} * swA${i} * swPw${i} * swPw${i};` : toon ? (i === 0 ? `
+// Toon's primary swell (its bands and crest lines follow it): the steepest slot, with from Medium the components near
+// its wavelength.
+swPrimH += swHv${i} * swF${i};
+swPrimAmp += swA${i} * swA${i};` : fromTier(1, `
+float swPw${i} = 1.0 - smoothstep(1.3, 2.2, swK${i} * swPrimLen);
+swPrimH += swHv${i} * swF${i} * swPw${i};
+swPrimAmp += swA${i} * swA${i} * swPw${i} * swPw${i};`)) : ""}
 float swQ${i} = swWA${i}.z * swFd${i} * swBlendD;
 swOffset += swD${i} * (swQ${i} * swC${i});
 swShear += vec3(swD${i}.x * swD${i}.x, swD${i}.x * swD${i}.y, swD${i}.y * swD${i}.y) * (swQ${i} * swK${i} * swS${i});`)).join("");
@@ -1134,7 +1141,10 @@ vec2 swPrimG = vec2(0.0);
 float swPrimAmp = 0.0;
 // The chop's rounded copy (sine profile, no sharp crest) that Painted shades its lumps by: slope and height.
 vec2 swDetailSoft = vec2(0.0);
-float swChopHs = 0.0;` : ""}
+float swChopHs = 0.0;` : toon ? `
+float swPrimLen = U.slateWaterWaves.y * 0.159155;
+float swPrimH = 0.0;
+float swPrimAmp = 0.0;` : ""}
 float swChopShape = U.slateWaterShape.x;
 // Unfaded Gerstner offset and S = sum(q*a*k*sin(p) * d d^T) (xx, xz, zz) at the warped rest point, filtered like the swell.
 vec2 swOffset = vec2(0.0);
@@ -1147,6 +1157,7 @@ swGradient = vec2(dot(swSwellWarpM.xy, swGradient), dot(swSwellWarpM.yz, swGradi
 swPrimG = vec2(dot(swSwellWarpM.xy, swPrimG), dot(swSwellWarpM.yz, swPrimG));
 // The primary swell's height scale: its components' root-sum-square, not their sum, so a crest reads as tall whether one
 // component carries the swell or several share it (${f(PRIMARY_RMS)} keeps a single dominant train's scale).
+swPrimAmp = ${f(PRIMARY_RMS)} * sqrt(swPrimAmp);` : toon ? `
 swPrimAmp = ${f(PRIMARY_RMS)} * sqrt(swPrimAmp);` : ""}
 vec3 swBaseNormal = normalize(IN.vSlateWaterBaseNormal);
 float swBaseX = swBaseNormal.x / max(0.001, swBaseNormal.y);
@@ -2877,15 +2888,25 @@ float swBedTone = 1.0 - exp(-swBedDepth * 2.0 / swAbsorb);
 float swBedTone = swTone;
 #endif
 float swBandCount = max(1.0, U.slateWaterLook.x);
-// The wide noises bend the band edges into lobes, so a bed's straight contours never read as a box around an island.
-// Only the edge into deep water bends (by at most about half a band), so gentle shallows keep wide, clean bands
-// rather than breaking into pools, and open water (at least about two thirds of a band deeper) never shoals.
+// The primary swell's height (-1 trough to 1 crest) and the large noise bend the band edges, so a bed's straight contours
+// never read as a box around an island and the deep tone settles into the swell's troughs as smooth, rounded shapes
+// running along the waves (the medium and fine noises stay out: their edges read as stains). Only the edge into deep
+// water bends (by at most about three quarters of a band), so gentle shallows keep wide, clean bands rather than
+// breaking into pools, and open water (at least about a band deeper) never shoals.
+float swPrimN = swPrimH / max(swPrimAmp, 0.0001);
 float swBandRaw = swBedTone * swBandCount;
-float swBandWarp = ((swLarge - 0.5) * 0.9 + (swMedium - 0.5) * 0.3 * (1.0 - smoothstep(0.3, 1.2, swFoot))) * step(1.5, swBandCount)
+float swBandWarp = ((swLarge - 0.5) * 0.5 - swPrimN * 0.55) * step(1.5, swBandCount)
   * smoothstep(swBandCount - 1.8, swBandCount - 1.3, swBandRaw);
 float swBand = max(swBandRaw + swBandWarp, 0.0);
 float swBandAA = min(fwidth(swBand), 0.5);
-float swBanded = min((floor(swBand) + smoothstep(1.0 - swBandAA * 1.5, 1.0, fract(swBand))) / max(swBandCount - 1.0, 1.0), 1.0);
+float swBandF = fract(swBand);
+float swBanded = min((floor(swBand) + smoothstep(1.0 - swBandAA * 1.5, 1.0, swBandF)) / max(swBandCount - 1.0, 1.0), 1.0);
+// Each band edge carries a thin, slightly lighter rim (Wind Waker's band outline), about a pixel and a half wide close
+// up and culled with the footprint, between the bands only (not at the shallowest edge or past the deepest).
+float swBandPx = min(swBandF, 1.0 - swBandF) / max(fwidth(swBand), 0.00001);
+float swRimHalf = 1.5 * (1.0 - smoothstep(0.3, 1.2, swFoot));
+float swBandRim = (1.0 - smoothstep(swRimHalf - 0.6, swRimHalf + 0.6, swBandPx)) * smoothstep(0.3, 0.8, swRimHalf)
+  * step(1.5, swBandCount) * step(1.0, swBand) * (1.0 - step(swBandCount - 0.5, swBand));
 float swDepthTone = mix(swBedTone, swBanded, step(1.5, swBandCount));
 // Inside the shallow bands the open sea's wave tones and dapples recede, so the lagoon reads as flat colour.
 float swOpenSea = clamp(swDepthTone * 2.0 - 0.6, 0.0, 1.0);
@@ -2941,6 +2962,7 @@ swLit = mix(swLit, vec3(swLit.r * 0.5 + swLit.b * 0.14, swLit.g * 0.4, swLit.b *
 float swDesat = clamp(max(swGrey, swGloom * 0.85), 0.0, 0.85);
 swLit = mix(swLit, vec3(dot(swLit, swLuma)) * vec3(0.5, 1.05, 2.0), swDesat);
 swLit *= 1.0 - 0.25 * swGloom * smoothstep(0.15, 0.5, swSeaState);
+swLit = mix(swLit, swLit * 1.22 + swShallowC * (0.05 * swExpo), swBandRim);
 // Foam and line work: opaque white in the scene's light (never below 90%), gold-tinted at dusk, a little greyer under
 // a drowned sun, and a cool white on shaded wave faces.
 vec3 swFoamLit = U.slateWaterFoam.rgb * clamp(swExpo * 1.05, 0.9, 1.05) * mix(vec3(1.0), swTint, 0.25);
@@ -2971,13 +2993,13 @@ swCrestId -= ${f(CREST_COUNT_PERIOD)} * floor(swCrestId / ${f(CREST_COUNT_PERIOD
 vec2 swCrestSeed = swHash2(vec2(swCrestId, 17.0));
 float swCrestAlong = dot(swFlowed, vec2(-swD0.y, swD0.x));
 vec2 swCrestUv = vec2(swCrestAlong + swCrestSeed.x * 37.0, swCrestSeed.y * 13.0);
-float swLineN = swNoise(swCrestUv * vec2(1.15, 1.0) + vec2(2.9, 5.3));${fromTier(1, `
-float swLineWig = swNoise(swCrestUv * vec2(0.3, 1.0) + vec2(7.3, 1.1));`, `
+float swLineN = swNoise(swCrestUv * vec2(0.34, 1.0) + vec2(2.9, 5.3));${fromTier(1, `
+float swLineWig = swNoise(swCrestUv * vec2(0.17, 1.0) + vec2(7.3, 1.1));`, `
 float swLineWig = swLineN;`)}
-float swLineH = swCrest + (swLineWig - 0.5) * 0.15 * swNearFoamL;
+float swLineH = swPrimN + (swLineWig - 0.5) * 0.7 * mix(0.4, 1.0, swNearFoamL);
 float swLineFw = max(fwidth(swLineH), 0.00001);
 float swLineDash = swLineN * 0.65 + swLineWig * 0.35;
-float swLineDashT = swNoise(swCrestUv * vec2(1.15, 1.0) + vec2(11.7, 2.3)) * 0.65 + swLineWig * 0.35;
+float swLineDashT = swNoise(swCrestUv * vec2(0.34, 1.0) + vec2(11.7, 2.3)) * 0.65 + swLineWig * 0.35;
 // A low sea state draws one isoline only: the top one thins out as its crests flatten, the trough one goes.
 float swLowSea = 1.0 - smoothstep(0.15, 0.45, swSeaState);
 // Where the crest field is too steep for its isoline to keep a width (more than about 0.07 per pixel), and toward the
@@ -2990,7 +3012,7 @@ float swLinePx = sqrt(1.5613 * max(U.slateWaterWaves.y, 0.1)) * U.slateWaterWave
 // into a whole ring that pops in at full size as the bump's peak crosses its level; there its dashes shorten and vanish
 // instead, and grow back as the slope steepens.
 float swLineFlat = 1.0 - smoothstep(0.05, 0.16, abs(dot(swGradient, swD0)) / max(U.slateWaterWaves.x * swK0, 0.0001));
-float swLineCut = 0.55 + 0.3 * smoothstep(0.05, 0.1, swLineFw) + 0.4 * smoothstep(0.06, 0.4, swFoot) + 0.6 * smoothstep(10.0, 22.0, swLinePx) + 0.8 * swColQuiet + 0.6 * swLineFlat;
+float swLineCut = 0.5 + 0.3 * smoothstep(0.05, 0.1, swLineFw) + 0.4 * smoothstep(0.1, 0.7, swFoot) + 0.6 * smoothstep(10.0, 22.0, swLinePx) + 0.8 * swColQuiet + 0.6 * swLineFlat;
 // Brush strokes: each dash swells from about a third of its width at its ends to its full width (about two to four
 // pixels); dashes too short to swell past half their width are dropped, so none shrinks to a speck.
 float swLineTaper = clamp((swLineDash - swLineCut) * 9.0, 0.0, 1.0);
@@ -3006,7 +3028,7 @@ float swLineAlongCrest = smoothstep(0.35, 0.65, abs(dot(swGradient, swD0)) / max
 swLines = max(swLines, (1.0 - smoothstep(swLineHalf * 0.75 - 0.6, swLineHalf * 0.75 + 0.6, abs(swLineH - swLineLvT) / swLineFw)) * smoothstep(0.25, 0.45, swLineTopTaper) * swLineAlongCrest);
 float swLinePxD = min(abs(swLineH - swLineLv0), abs(swLineH - swLineLvT));${fromTier(1, `
 float swLineLvB = -0.22 + 0.06 * sin(swCrestAlong * 0.43 + swCrestSeed.x * 3.1 + swCrestSeed.y * 2.0);
-float swLineDashB = swNoise(swCrestUv * vec2(1.15, 1.0) + vec2(5.1, 19.3)) * 0.65 + swLineWig * 0.35;
+float swLineDashB = swNoise(swCrestUv * vec2(0.34, 1.0) + vec2(5.1, 19.3)) * 0.65 + swLineWig * 0.35;
 float swLineTaperB = clamp((swLineDashB - swLineCut) * 9.0, 0.0, 1.0);
 swLines = max(swLines, (1.0 - smoothstep(swLineHalf * 0.8 - 0.6, swLineHalf * 0.8 + 0.6, abs(swLineH - swLineLvB) / swLineFw)) * smoothstep(0.25, 0.45, swLineTaperB) * (1.0 - swLowSea));
 swLinePxD = min(swLinePxD, abs(swLineH - swLineLvB));`)}
@@ -3034,9 +3056,11 @@ float swSqD1 = swNoise(swSqP1 * 1.3 + vec2(3.1, 7.7));
 float swSqBase = 0.54 - 0.06 * swClose;
 float swSqCut0 = swSqBase + (1.0 - swSqBase) * smoothstep(0.3, 1.0, swSqT) + swSqLife + 0.6 * swColQuiet;
 float swSqCut1 = 1.0 - (1.0 - swSqBase) * smoothstep(0.0, 0.7, swSqT) + 0.45 * clamp(swSqT - 1.0, 0.0, 1.0) + swSqLife + 0.6 * swColQuiet;
-// Dapples: a lighter flat tone on the same noise's highs, shrinking away by octave like the strokes.
-float swDapCut0 = 0.64 + 0.36 * clamp(swSqT, 0.0, 1.0);
-float swDapCut1 = 1.0 - 0.36 * clamp(swSqT, 0.0, 1.0) + 0.36 * clamp(swSqT - 1.0, 0.0, 1.0);
+// Dapples: a lighter flat tone on the same noise's highs, shrinking away by octave like the strokes, and about half as
+// many past a few metres from the eye.
+float swMidField = smoothstep(0.1, 0.5, swFoot);
+float swDapCut0 = 0.64 + 0.36 * clamp(swSqT, 0.0, 1.0) + 0.1 * swMidField;
+float swDapCut1 = 1.0 - 0.36 * clamp(swSqT, 0.0, 1.0) + 0.36 * clamp(swSqT - 1.0, 0.0, 1.0) + 0.1 * swMidField;
 float swDapple = max(smoothstep(swDapCut0 - fwidth(swSqN0), swDapCut0 + fwidth(swSqN0), swSqN0), smoothstep(swDapCut1 - fwidth(swSqN1), swDapCut1 + fwidth(swSqN1), swSqN1));
 // Brush strokes, like the crest lines: each swells to its full width (three to five pixels close up).
 float swSqHalf = mix(1.3, 2.3, swClose);
@@ -3051,7 +3075,8 @@ float swStrokes = max(swLines, max(swSq0, swSq1) * swClearOfLines);`, `
 float swSqN0 = swNoise(swSqP);
 float swSqCut0 = 0.52 + 0.4 * smoothstep(0.03, 0.1, swFoot) + swSqLife + 0.6 * swColQuiet;
 float swSqTaper0 = clamp((swNoise(swSqP * 1.3 + vec2(3.1, 7.7)) - swSqCut0) * 8.0, 0.0, 1.0);
-float swDapCut0 = 0.64 + 0.36 * smoothstep(0.03, 0.1, swFoot);
+float swMidField = smoothstep(0.1, 0.5, swFoot);
+float swDapCut0 = 0.64 + 0.36 * smoothstep(0.03, 0.1, swFoot) + 0.1 * swMidField;
 float swDapple = smoothstep(swDapCut0 - fwidth(swSqN0), swDapCut0 + fwidth(swSqN0), swSqN0);
 float swSqHalf = mix(1.3, 2.3, swClose) * (0.35 + 0.65 * swSqTaper0);
 float swSq0 = (1.0 - smoothstep(swSqHalf - 0.6, swSqHalf + 0.6, abs(swSqN0 - 0.5) / max(fwidth(swSqN0), 0.00001))) * smoothstep(0.25, 0.45, swSqTaper0);
@@ -3069,7 +3094,7 @@ float swFlRndA = swHash(swFlIdA + vec2(3.0, 11.0));
 vec2 swFlDA = (fract(swFlP / 3.0) - vec2(0.5) - (swHash2(swFlIdA) - vec2(0.5)) * 0.5) * 3.0;
 // Close to the eye a fleck stays small on screen (about a dozen pixels tall at most).
 float swFlMaxA = min(0.22, swFoot * 6.0);
-float swFlCutA = mix(1.05, 0.66 - 0.2 * swClose, smoothstep(2.5, 4.5, 1.8 * swFlMaxA / max(swFoot, 0.00001))) + 0.5 * swColQuiet;
+float swFlCutA = mix(1.05, 0.66 - 0.2 * swClose, smoothstep(2.5, 4.5, 1.8 * swFlMaxA / max(swFoot, 0.00001))) + 0.5 * swColQuiet + 0.14 * swMidField;
 float swFlLifeA = sin(min(fract(swFlRndA * 5.0 + swTime * (0.2 + 0.25 * fract(swFlRndA * 7.31))) * 1.3, 1.0) * 3.141593);
 float swFlRA = swFlMaxA * sqrt(swFlLifeA) * smoothstep(swFlCutA, swFlCutA + 0.05, swFlRndA);
 float swFlSA = length(swFlDA * vec2(2.2, 1.0)) - swFlRA;
@@ -3080,7 +3105,7 @@ vec2 swFlIdC = floor(swFlP / 0.9 + vec2(0.71, 0.23));
 float swFlRndC = swHash(swFlIdC + vec2(13.0, 19.0));
 vec2 swFlDC = (fract(swFlP / 0.9 + vec2(0.71, 0.23)) - vec2(0.5) - (swHash2(swFlIdC + vec2(4.0, 8.0)) - vec2(0.5)) * 0.5) * 0.9;
 float swFlMaxC = min(0.07, swFoot * 5.0);
-float swFlCutC = mix(1.05, 0.76, smoothstep(2.5, 4.5, 1.8 * swFlMaxC / max(swFoot, 0.00001))) + 0.5 * swColQuiet;
+float swFlCutC = mix(1.05, 0.76, smoothstep(2.5, 4.5, 1.8 * swFlMaxC / max(swFoot, 0.00001))) + 0.5 * swColQuiet + 0.08 * swMidField;
 float swFlLifeC = sin(min(fract(swFlRndC * 3.0 + swTime * (0.3 + 0.3 * fract(swFlRndC * 5.17))) * 1.3, 1.0) * 3.141593);
 float swFlRC = swFlMaxC * sqrt(swFlLifeC) * smoothstep(swFlCutC, swFlCutC + 0.05, swFlRndC);
 float swFlSC = length(swFlDC * vec2(2.2, 1.0)) - swFlRC;
@@ -3105,6 +3130,9 @@ vec2 swColDy = dFdy(swColSlope);
 float swColW = (0.007 + 0.03 * U.slateWaterOrigin.w) * (1.0 - 0.4 * swLowSun);${fromTier(1, "", `
 // Low's smoother normal (fewer swell and chop terms) would spread the column into one broad blob.
 swColW *= 0.7;`)}
+// Far out the column narrows and its dashes thin (they would merge into one white smear): the way Painted bounds its path.
+float swColFar = smoothstep(0.3, 2.5, swFoot);
+swColW *= 1.0 - 0.3 * swColFar;
 swColW += min((dot(swColDx, swColDx) + dot(swColDy, swColDy)) * ${f(PIXEL_SLOPE_FILTER / 2)}, ${f(PIXEL_SLOPE_CAP)});
 float swCol = clamp((swColAlign - 1.0 + swColW) / swColW, 0.0, 1.0) * smoothstep(0.05, 0.4, swSunSeen);
 vec2 swSunSide = vec2(-swSunH.y, swSunH.x);
@@ -3138,8 +3166,8 @@ float swDashLen = 0.35 * exp2(swDashL);
 float swAlong = dot(swWorld, swSunSide) + swTime * 0.05;
 float swDashN0 = swNoise(vec2(swAlong / swDashLen, swRowK * 1.37 + swDashL * 5.3));
 float swDashN1 = swNoise(vec2(swAlong / (swDashLen * 2.0), swRowK * 1.37 + swDashL * 5.3 + 5.3));
-float swDashCut = 0.92 + 0.14 * swNearSwell - swCol * 0.95;
-float swDashMax = 0.32 - 0.12 * swNearSwell;
+float swDashCut = 0.92 + 0.14 * swNearSwell - swCol * 0.95 + 0.12 * swColFar;
+float swDashMax = (0.32 - 0.12 * swNearSwell) * (1.0 - 0.5 * swColFar);
 float swDashHalf = max(clamp((swDashN0 - swDashCut - 1.1 * smoothstep(0.35, 1.0, swDashT)) * 1.3, 0.0, swDashMax),
   clamp((swDashN1 - swDashCut - 1.1 + 1.1 * smoothstep(0.0, 0.65, swDashT)) * 1.3, 0.0, swDashMax));
 // Half thickness in pixels: a share of the row spacing near the eye, of about ten pixels farther out.
@@ -3263,10 +3291,11 @@ swFoam = max(swFoam, (1.0 - smoothstep(swWashHalf - swWashAA, swWashHalf + swWas
 // thinner scalloped lines stepping seaward behind the band, each swinging in and out with the swash and the waves.
 float swBrkAA = min(fwidth(swSurfBreak) * 0.7 + 0.01, 0.3);
 swFoam = max(swFoam, smoothstep(0.42 - swBrkAA, 0.42 + swBrkAA, swSurfBreak) * step(0.01, swFoamAmt) * swToonCover);
-float swSurfLineOn = smoothstep(0.15, 0.4, swSurfGate) * step(0.01, swFoamAmt) * (1.0 - smoothstep(7.0, 9.0, swWashUnit));
+// The lines stand on every beach (about half of them where the surf's breaking depth would not reach), stronger where it does.
+float swSurfLineOn = (0.55 + 0.45 * smoothstep(0.15, 0.4, swSurfGate)) * step(0.01, swFoamAmt) * (1.0 - swOpenAny) * (1.0 - smoothstep(7.0, 9.0, swWashUnit));
 float swSurfLineAA = min(fwidth(swWashUnit) * 0.7 + 0.002, 0.5);
 float swSurfLineU = swWashUnit - swSurfEdge - swShoreLobes * 0.5;
-float swSurfLineHalf = max(0.15, swSurfLineAA * 1.1);
+float swSurfLineHalf = max(0.24, swSurfLineAA * 1.6);
 float swSurfLine1 = 1.0 - smoothstep(swSurfLineHalf - swSurfLineAA, swSurfLineHalf + swSurfLineAA, abs(swSurfLineU - 1.5 - 1.0 * swSwashRun - 0.5 * swBrkG));
 float swSurfLine2 = 1.0 - smoothstep(swSurfLineHalf * 0.8 - swSurfLineAA, swSurfLineHalf * 0.8 + swSurfLineAA, abs(swSurfLineU - 3.4 - 1.6 * swSwashRun - 0.9 * swBrkG));
 swFoam = max(swFoam, max(swSurfLine1, swSurfLine2 * step(0.0, swShoreLobes + 0.25)) * swSurfLineOn * swToonCover);
@@ -3360,6 +3389,16 @@ float swFilmAA = min(fwidth(swFilm) * 0.7 + 0.01, 0.2);
 float swFilmA = max(swFoam, smoothstep(0.32 - swFilmAA, 0.32 + swFilmAA, swFilm) * 0.34);
 swEmissive = mix(mix(swFoamLit * vec3(0.2, 0.17, 0.15), swFoamLit, clamp(swFoam / max(swFilmA, 0.001), 0.0, 1.0)), swEmissive, swToonCover);
 alpha = mix(swFilmA, alpha, swToonCover);
+// The wet line: a thin dark outline (about two pixels) along the waterline where the sand begins, measured in pixels by
+// the screen derivative of the distance: the swash's edge over terrain (it runs up and down the beach with the bores),
+// else the last pixels of the body's own edge (its bank, or the depth over terrain).
+float swWetS = swSwashEdgeS / max(fwidth(swSwashEdgeS), 0.00001);
+float swWetD = mix(IN.vSlateWater.y, swTerrainDepth, step(${f(WATER_FIELD_TERRAIN_ALPHA)}, swKnown));
+float swWetPx = swWetD / max(fwidth(swWetD), 0.00001);
+float swWetLine = max(smoothstep(-2.6, -1.0, swWetS) * (1.0 - smoothstep(0.4, 1.6, swWetS)) * (1.0 - smoothstep(0.4, 0.8, abs(swSwashEdgeS))), (1.0 - smoothstep(1.4, 2.6, swWetPx)) * swToonCover);
+swWetLine *= (1.0 - swOpenAny) * (1.0 - swHaze);
+swEmissive = mix(swEmissive, mix(swDeepC, vec3(0.12, 0.1, 0.09), 0.5) * (0.5 * swExpo), swWetLine);
+alpha = max(alpha, swWetLine);
 // Fresnel for object reflections: they replace the water by it, never over foam.
 float swNdotV = clamp(dot(normalize(mix(swSwellNormal, normalW, 0.5)), swV), 0.0, 1.0);
 float swFx = 1.0 - swNdotV;
@@ -3367,11 +3406,11 @@ float swFres = 0.03 + 0.97 * swFx * swFx * swFx * swFx * swFx;
 vec3 swRefl = reflect(-swV, normalize(mix(swSwellNormal, normalW, 0.5)));
 ${objectReflectionSource("swRefl", "U.slateWaterOrigin.w")}
 #if ${REFLECTS_OBJECTS}
-float swReflWeight = clamp(swObjRefl.a * swFres * U.slateWaterDeep.w * (1.0 - swFoam) * swToonCover, 0.0, 1.0);
+float swReflWeight = clamp(swObjRefl.a * swFres * U.slateWaterDeep.w * (1.0 - swFoam) * (1.0 - swWetLine) * swToonCover, 0.0, 1.0);
 swEmissive = mix(swEmissive, swObjRefl.rgb, swReflWeight);
 alpha = max(alpha, swReflWeight);
 #endif${ifDefined(REFRACTION, `
-swRefracts *= swToonCover;
+swRefracts *= swToonCover * (1.0 - swWetLine);
 // Refraction-tinted shallows: what shows through takes the water's hue (a gain of at most 1) and fades toward the
 // water's own colour with the refracted depth, so nothing below glows brighter than above.
 vec3 swTintHue = swShallowC / max(max(swShallowC.r, max(swShallowC.g, swShallowC.b)), 0.001);
@@ -3433,9 +3472,11 @@ vec3 swPosW = IN.vPositionW + U.slateWaterOrigin.xyz;
 #ifdef ${WATER_BLEND_DEFINE}
 float swBlendShare = IN.vSlateWaterBlend.w;
 #ifdef ${WATER_TOON_DEFINE}
-// Toon hands the colours over in three flat cels (soft-edged steps) rather than an airbrushed gradient.
-float swBlendCel = swBlendShare * 3.0;
-swBlendShare = (floor(swBlendCel) + smoothstep(0.4, 0.6, fract(swBlendCel))) / 3.0;
+// Toon hands the colours over in flat cels (the share rounded to quarters: up to 0.5 at the seam, so three flat steps)
+// with crisp edges, each antialiased over about a pixel by the share's screen derivative, not an airbrushed gradient.
+float swBlendCel = swBlendShare * 4.0;
+float swBlendAA = max(fwidth(swBlendCel) * 0.75, 0.0002);
+swBlendShare = (smoothstep(0.5 - swBlendAA, 0.5 + swBlendAA, swBlendCel) + smoothstep(1.5 - swBlendAA, 1.5 + swBlendAA, swBlendCel) + smoothstep(2.5 - swBlendAA, 2.5 + swBlendAA, swBlendCel)) * 0.25;
 #endif
 ${colors(true)}
 float swBlendKeep = min(IN.vSlateWater.y, IN.vSlateWaterBlend.z + 0.015);
