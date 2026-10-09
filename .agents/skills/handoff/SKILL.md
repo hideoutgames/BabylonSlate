@@ -17,7 +17,8 @@ Do this before writing, because the handoff can only point at things that surviv
 
 - **Commit and push** work in progress to its feature branch, following the repository's commit rules. Uncommitted edits, local-only branches and worktrees are invisible to a new session. If something must stay uncommitted, the handoff says exactly what, where and why.
 - **Do not start** new long or risky operations. Let quick ones finish, or stop them cleanly.
-- **Inventory session-bound state** that will not transfer: background shells and test helpers, subagents, PR activity subscriptions, scheduled self check-ins or reminders (they fire into *this* session), dev servers, locks. For each one, decide whether to finish it, cancel it, or hand it over with the exact way to recreate it.
+- **Inventory session-bound state** that will not transfer: background shells and test helpers, subagents, PR activity subscriptions, scheduled self check-ins or reminders (they fire into *this* session), dev servers, locks. For each one, decide whether to finish it, cancel it, or hand it over with the exact way to recreate it. Read what a scheduled item will actually do before calling it harmless.
+- **Settle ownership.** Two agents acting on the same branch or PR will collide. Decide whether this session stops or keeps working. If it stops, cancel its scheduled check-ins and drop its PR subscriptions (some hosts let only one session hold a subscription), and say so. If it continues, state which items each agent owns.
 - **Rescue off-repo knowledge.** Specs, notes and logs that live only in a scratch or temp directory are gone for the next agent. Inline what matters in the handoff.
 
 ## 2. Refresh the facts from primary sources
@@ -27,14 +28,16 @@ Memory drifts over a long session; the handoff must not. Check immediately befor
 - Git: current branch, `git status`, unpushed commits, and the commits each involved branch carries beyond the base branch.
 - Each PR, fetched fresh: draft or ready, head SHA, mergeability, CI per job, unresolved review threads. Do not rely on an earlier notification.
 - Verification you actually ran: command, scope, result and the commit it ran on. Keep passed, failed and not run separate. Never upgrade "not run" to "passing".
+- Tooling that worked and tooling that did not: for example an unauthenticated CLI, and the tool or API you used instead. The receiving agent will otherwise retry the broken path first.
+- What you have already told the user, so the next agent neither repeats nor contradicts it.
 
 Record the snapshot time. State facts with evidence (SHA, PR number, path, command) rather than impressions:
 
 | Weak | Strong |
 | --- | --- |
-| "PR is nearly ready" | "PR #123 head `ff265f2`: static and unit passed, e2e shards 1–4 running at 17:20 UTC" |
-| "Fixed the conflicts" | "Merged `origin/main` into `agent/example-1a2b` as `a3fbe16`; resolved `docs/engineplan.md` by keeping both paragraphs" |
-| "Tests pass" | "`pnpm --silent agent:wait local --script test -- packages/x/src/y.test.ts` passed (14 tests) on `8590766`; e2e not run locally" |
+| "PR is nearly ready" | "PR #123 head `abc1234`: static and unit passed, e2e shards 1–4 running at 17:20 UTC" |
+| "Fixed the conflicts" | "Merged `origin/main` into `agent/example-1a2b` as `def5678`; resolved `docs/engineplan.md` by keeping both paragraphs" |
+| "Tests pass" | "`pnpm --silent agent:wait local --script test -- packages/x/src/y.test.ts` passed (14 tests) on `0a1b2c3`; e2e not run locally" |
 
 ## 3. Write the handoff
 
@@ -52,24 +55,29 @@ Session link (if the host provides one): <link>
 
 ## Decisions already made
 User decisions (binding; do not ask again):
-- <question> → <answer>
+- <question> → "<the user's words, or the option they chose quoted in full>"
+Process instructions from the user (for example models to use, reviews required) and how each has been honored so far:
+- "<instruction>" → <status>
 Agent decisions (revisable for a good reason):
 - <choice> — <why> (rejected: <alternatives>)
 
 ## Current state
 <What is done and how it was verified.>
-| Work item | Branch | PR | Head SHA | CI / merge state |
-<State "merged into <base> as <sha>" or "NOT merged" for each item.>
+| Work item | Branch | PR | Head SHA | CI / merge state | Gates left |
+<State "merged into <base> as <sha>" or "NOT merged" for each item. Gates: CI, approvals, user review, ordering on another item.>
+Told the user so far: <the last status or deliverables they received>
 
 ## In flight
 <Each running or pending thing (CI run, background job, scheduled trigger, subscription, subagent), what happens to it when this session ends, and what the next agent must re-establish.>
+Ownership after this handoff: <this session stops (and what it cancelled), or what each agent owns>
 
 ## Next steps
 1. <Action> — <command or tool> — done when <observable criterion>.
-<Ordered. Step 1 re-verifies the state above.>
+<Ordered, every step with a done-when. Step 1 re-verifies the state above.>
 
 ## How to verify
-<Exact commands to confirm the state and test the work, with the scope previously used.>
+<Exact commands to confirm the state and test the work, and why that scope covers the change, so the next agent can extend it when the change grows.>
+<Working mechanisms for waiting on CI or other external state, and any tool that is unavailable.>
 
 ## Gotchas and lessons
 <Non-obvious things learned the hard way: rules that override defaults, conventions, environment quirks, failed approaches and why, flaky checks, tools that add text that must be removed.>
@@ -88,7 +96,8 @@ Agent decisions (revisable for a good reason):
 Writing guidance:
 
 - **Verbatim mission.** Paraphrase silently drops constraints. Quote the user's words, then summarize if they are long.
-- **Binding versus revisable.** Mark which decisions came from the user. Re-asking an answered question, or reversing a user decision, is the most costly mistake a receiving agent makes.
+- **Binding versus revisable.** Mark which decisions came from the user, and quote their answer so the receiver can see exactly what was agreed. When the user's answer was tentative and they then accepted your proposal, record both. Re-asking an answered question, or reversing a user decision, is the most costly mistake a receiving agent makes.
+- **Write it last.** The handoff is a snapshot. Anything you do after writing it (a push, a comment, a cancelled job) makes it stale, so update it before delivering.
 - **Self-contained.** No "as discussed", "the earlier error" or "that file". Name every branch, PR, path and command, and explain repository jargon once.
 - **Evidence over narrative.** Summarize logs and transcripts; quote a short error excerpt only when the next step is about it.
 - **Lessons are the expensive part.** A receiving agent can rediscover file layouts in minutes, but repeating a failed approach or breaking an unwritten rule costs hours. Spend words there.
@@ -108,8 +117,9 @@ Before sending, reread it as someone who knows nothing else:
 
 - Can I state the mission, the current state and the next action without asking anyone?
 - Is every claim checkable through a SHA, PR, path, command or link?
-- Does it cover every branch, PR, process and scheduled item from step 1?
-- Are the user's decisions marked binding?
+- Does it cover every branch, PR, process and scheduled item from step 1, and say who owns each one now?
+- Are the user's decisions marked binding, with their answers quoted?
+- Did anything happen after the snapshot that the handoff does not show?
 - Does anything refer to a file, output or tool result that existed only in this session?
 - Is there any secret or private data?
 
