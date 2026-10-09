@@ -1,6 +1,7 @@
 import {
   ASSET_LOAD_PRIORITY_SCHEDULING,
   type AssetLoadHandleState,
+  type AssetLoadPriorityName,
   type RuntimeAssetLoadState,
   type RuntimeAssetPreloadOptions,
   type RuntimeAssetPreloadResult,
@@ -191,7 +192,8 @@ export class RuntimeAssetPreloads {
     entry.hosted = true;
     try {
       this.emit({ type: "assetPreload", preloadId, ownerId: entry.ownerId, assetGuids: [...entry.assetGuids],
-        priority: ASSET_LOAD_PRIORITY_SCHEDULING[options.priority ?? "Normal"] });
+        // A script may pass any string; anything but a known priority schedules as Normal.
+        priority: ASSET_LOAD_PRIORITY_SCHEDULING[options.priority as AssetLoadPriorityName] ?? ASSET_LOAD_PRIORITY_SCHEDULING.Normal });
     } catch (error) {
       if (!entry.handle) this.preloads.delete(preloadId);
       this.settle(preloadId, entry, false, String(error));

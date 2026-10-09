@@ -138,9 +138,11 @@ it("tracks a script handle from Loading with monotonic progress to Loaded and se
 
 it.each([
   ["High", "gameplay"], ["Normal", "preload"], ["Low", "background"], [undefined, "preload"],
+  // A cleared enum pin or a script's arbitrary string must not reach the host unscheduled.
+  ["", "preload"], ["Urgent", "preload"],
 ] as const)("asks the host for %s priority loads as %s", (priority, scheduled) => {
   const { commands, manager } = handleSetup();
-  manager.request(["texture"], "actor", { priority });
+  manager.request(["texture"], "actor", { priority: priority as "High" | undefined });
   expect(commands[0]).toMatchObject({ type: "assetPreload", priority: scheduled });
 });
 
