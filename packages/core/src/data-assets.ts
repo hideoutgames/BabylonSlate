@@ -1,3 +1,4 @@
+import { hardLoadingProperty } from "./asset-loading-policy";
 import { newGuid } from "./guid-result";
 
 /** Persisted data assets. Identity and display names live in the .babasset header. */
@@ -14,6 +15,8 @@ export interface DataFieldSnapshot {
   fields?: DataFieldSnapshot[];
   /** Record schema for typed Map keys. Values use `fields` above. */
   keyFields?: DataFieldSnapshot[];
+  /** Asset and Class fields only: `"hard"` loads the reference with the asset that owns the value. Missing is Soft. */
+  loading?: "hard";
 }
 
 /** Independent authoring schema; no Structure asset is required. */
@@ -152,6 +155,7 @@ function normalizeSnapshot(fields: unknown[], depth = 0): DataFieldSnapshot[] {
     ...(typeof field.keyTypeClassId === "string" ? { keyTypeClassId: field.keyTypeClassId } : {}),
     ...(Array.isArray(field.fields) ? { fields: normalizeSnapshot(field.fields, depth + 1) } : {}),
     ...(Array.isArray(field.keyFields) ? { keyFields: normalizeSnapshot(field.keyFields, depth + 1) } : {}),
+    ...hardLoadingProperty(field),
   }));
 }
 

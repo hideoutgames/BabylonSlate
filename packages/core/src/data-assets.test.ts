@@ -28,6 +28,30 @@ describe("Definition and tree payloads", () => {
     expect(definition.fields[0]!.defaultValue).toEqual([]);
   });
 
+  it("keeps only a Hard Loading policy on fields and their nested snapshots", () => {
+    const authored = {
+      kind: "dataDefinition", fields: [
+        { id: "mesh", name: "Mesh", typeId: "asset", typeClassId: "Model", loading: "hard" },
+        { id: "icon", name: "Icon", typeId: "asset", typeClassId: "Texture", loading: "soft" },
+        { id: "boss", name: "Boss", typeId: "class", loading: true },
+        { id: "kit", name: "Kit", typeId: "struct", typeClassId: "kit", fields: [
+          { id: "sound", name: "Sound", typeId: "asset", typeClassId: "Audio", loading: "hard" },
+          { id: "skin", name: "Skin", typeId: "asset", typeClassId: "Texture" },
+        ] },
+      ],
+    };
+    const opened = normalizeDataDefinitionAsset(authored);
+    expect(opened.fields.map((field) => field.loading)).toEqual(["hard", undefined, undefined, undefined]);
+    expect(opened.fields.map((field) => "loading" in field)).toEqual([true, false, false, false]);
+    expect(opened.fields[3]!.fields!.map((field) => "loading" in field)).toEqual([true, false]);
+    // Saving and reopening is stable.
+    expect(normalizeDataDefinitionAsset(JSON.parse(JSON.stringify(opened)))).toEqual(opened);
+    const entry = normalizeDataTreeAsset(createDataTreeAsset(null, [
+      createDataTreeEntry({ name: "Sword", id: "sword", definitionGuid: "weapon", schema: opened.fields }),
+    ])).entries[0]!;
+    expect(entry.schema!.map((field) => field.loading)).toEqual(["hard", undefined, undefined, undefined]);
+  });
+
   it("refuses historical sheets and objects without silently discarding their data", () => {
     const referenceSheet = { kind: "dataSheet", structureGuid: "stats", objectGuids: ["sword", "shield"] };
     const ownedSheet = { kind: "dataSheet", definitionGuid: "stats", rows: [{ id: "sword", name: "Sword", values: { Health: 12 } }] };

@@ -1,6 +1,7 @@
 import {
   createDataTreeEntry,
   buildDataTreeIndex,
+  hardLoadingProperty,
   type DataFieldSnapshot,
   type DataTreeEntry,
   type DataTreeAsset,
@@ -123,6 +124,7 @@ function snapshotFieldRecords(
       ...(field.container ? { container: field.container } : {}),
       ...(field.keyTypeId ? { keyTypeId: field.keyTypeId } : {}),
       ...(field.keyTypeClassId ? { keyTypeClassId: field.keyTypeClassId } : {}),
+      ...hardLoadingProperty(field),
       ...(nested ? {
         fields: snapshotFieldRecords(nested.fields, values, schemas, new Set([...visiting, field.typeClassId!])),
       } : {}),

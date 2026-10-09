@@ -3,6 +3,11 @@ import {
   consoleCommandMetadataFromGraph,
   type ConsoleCommandMetadata,
   assetVariableGuidsFromGraph,
+  buildDataTreeIndex,
+  carriesLoadingPolicy,
+  hardLoadingProperty,
+  isDataTreeAsset,
+  isHardLoading,
   isLegacyMaterialAssetType,
   materialParameterTextureGuidsFromGraph,
   normalizeMaterialInstanceOverrides,
@@ -141,6 +146,21 @@ const COMPONENT_ASSET_FIELDS: Readonly<Record<string, readonly string[]>> = {
   "2DJoystickComponent": ["backgroundMaterialGuid", "joystickMaterialGuid", "backgroundTextureGuid", "joystickTextureGuid"],
 };
 
+const fieldIdentity = (field: Row): string => String(field.id || `legacy:${field.name}`);
+
+/** Copy each stored field's Loading from the declaration with the same identity, when it still exists. */
+function declaredLoading(stored: Row[], declared: readonly unknown[] | undefined): Row[] {
+  if (!declared) return stored;
+  const current = new Map(declared.map(field => [fieldIdentity(row(field)), row(field)] as const));
+  return stored.map(field => {
+    const live = current.get(fieldIdentity(field));
+    if (!live) return field;
+    const next: Row = { ...field };
+    delete next.loading;
+    return { ...next, ...hardLoadingProperty(live) };
+  });
+}
+
 /**
  * Collect both graphs in the same pass. Required wins when a GUID occurs in both
  * roles: e.g. a visible mesh and a prefab variable may reference the same model.
@@ -173,8 +193,9 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
 
   const typeValue = (type: unknown, value: unknown, needed = false, seen = new Set<string>(), schemaNeeded = true): void => {
     const spec = row(type);
-    if (spec.kind === "assetRef") add(value, needed);
-    else if (spec.kind === "classRef") { addClass(spec.classId, false); addClass(value, needed); }
+    // The declaring slot may require its own reference on top of what the consumer inherits.
+    if (spec.kind === "assetRef") add(value, needed || isHardLoading(spec));
+    else if (spec.kind === "classRef") { addClass(spec.classId, false); addClass(value, needed || isHardLoading(spec)); }
     else if (spec.kind === "actorRef" || spec.kind === "objectRef") addClass(spec.classId, false);
     else if (spec.kind === "enumRef" || spec.kind === "structRef") {
       add(spec.guid, schemaNeeded);
@@ -202,8 +223,10 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
   const memberType = (member: Row, key = false): Row => {
     const type = member[key ? "keyTypeId" : "typeId"];
     const id = member[key ? "keyTypeClassId" : "typeClassId"];
-    return type === "asset" ? { kind: "assetRef", assetType: id }
-      : type === "class" ? { kind: "classRef", classId: id }
+    // Loading policy belongs to the asset/Class slot, never to a record nested inside it.
+    const loading = hardLoadingProperty(member);
+    return type === "asset" ? { kind: "assetRef", assetType: id, ...loading }
+      : type === "class" ? { kind: "classRef", classId: id, ...loading }
         : type === "object" ? { kind: "objectRef", classId: id }
           : type === "struct" ? { kind: "structRef", guid: id }
             : type === "enum" ? { kind: "enumRef", guid: id } : { kind: type };
@@ -288,7 +311,13 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
     addMany(materialParameterTextureGuidsFromGraph({ ...serialized, nodes: serialized.nodes ?? [] }), false);
     addMany(renderTargetAssetGuidsFromGraph({ ...serialized, nodes: serialized.nodes ?? [] }), false);
     addMany(dataGraphAssetDependencies(source, classes, context.definitionFields), false);
-    for (const member of rows(source.members)) memberValue(member, member.defaultValue);
+    for (const member of rows(source.members)) {
+      memberValue(member, member.defaultValue);
+      // Overrides of a Hard property on placed actors and prefab components stay required.
+      if (member.kind === "variable" && !member.functionId && isHardLoading(member) && carriesLoadingPolicy(member)) {
+        requiredVariableNames.add(String(member.propertyKey ?? member.name));
+      }
+    }
     for (const slice of [source, ...Object.values(row(source.functionGraphs)).map(row)]) {
       const nodes = rows(slice.nodes).map(node => {
         const data = row(node.data);
@@ -384,9 +413,17 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
     for (const field of rows(payload.fields)) memberValue(field, field.defaultValue);
     if (assetType === "DataTree") {
       add(payload.defaultDefinitionGuid);
+      const hierarchy = isDataTreeAsset(payload) ? buildDataTreeIndex(payload).index : null;
       for (const entry of rows(payload.entries)) {
         add(entry.definitionGuid);
-        for (const field of rows(entry.schema)) memberValue(field, row(entry.values)[String(field.name)]);
+        const definition = typeof entry.definitionGuid === "string" ? entry.definitionGuid : hierarchy?.effectiveDefinitionById.get(String(entry.id));
+        const declared = definition ? context.definitionFields?.(definition) : undefined;
+        const stored = Array.isArray(entry.schema);
+        // Only the field's current declaration decides Loading; an entry's snapshot may predate it.
+        // Without a snapshot the Definition's fields type the values, as for reference tracking.
+        for (const field of stored ? declaredLoading(rows(entry.schema), declared) : rows(declared)) {
+          memberValue(field, row(entry.values)[String(field.name)], false, undefined, stored);
+        }
       }
     }
   } else if (assetType === "Scene" || assetType === "SceneLayer") {
