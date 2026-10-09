@@ -984,6 +984,21 @@ describe("DocumentProvider closed document history", () => {
     expect(documents().canRedoActiveDocument).toBe(false);
   });
 
+  it("keeps Always Package Folders on a folder that moves, drops one that is deleted, and saves both", async () => {
+    const actions = await openProject();
+    const folders = () => documents().projectDocument?.settings.alwaysPackageFolders;
+    act(() => actions.updateProjectSettings({ alwaysPackageFolders: ["assets/Weapons", "assets/Weapons/Rifles", "assets/UI"] }));
+    act(() => actions.repathProjectFolder("assets/Weapons", "assets/Gear/Weapons"));
+    expect(folders()).toEqual(["assets/Gear/Weapons", "assets/Gear/Weapons/Rifles", "assets/UI"]);
+    await act(() => actions.repairAfterAssetDelete(new Set(), new Set(), undefined, ["assets/Gear/Weapons/Rifles"]));
+    expect(folders()).toEqual(["assets/Gear/Weapons", "assets/UI"]);
+    await act(() => actions.saveAll());
+    const listed = documents().listedProjects.find((project) => project.label === "Stable");
+    await act(() => actions.forceCloseProject());
+    await act(() => actions.openListedProject(listed!));
+    expect(folders()).toEqual(["assets/Gear/Weapons", "assets/UI"]);
+  });
+
   it("reports failed automatic saves and saves retained edits on the next attempt", async () => {
     const actions = await openProject();
     await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
