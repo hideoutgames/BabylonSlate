@@ -45,3 +45,6 @@ release/generated/
 .bundle/
 vendor/bundle/
 apps/editor/public/build-manifest.json
+
+# Claude Code agent worktrees (local only; .claude/skills is tracked)
+.claude/worktrees/
