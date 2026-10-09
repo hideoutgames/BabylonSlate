@@ -1,5 +1,5 @@
 import { createUnavailableEditorDataApi, type EditorDataApi } from "@babylonslate/scripting";
-import type { RuntimeAssetLoadState, RuntimeAssetPreloadOptions, RuntimeAssetPreloadResult } from "@babylonslate/core";
+import { assetLoadStateName, type AssetLoadHandleState, type AssetLoadStateName, type RuntimeAssetLoadState, type RuntimeAssetPreloadOptions, type RuntimeAssetPreloadResult } from "@babylonslate/core";
 import { RuntimeDataCatalog, type RuntimeDataApi } from "./data-catalog";
 import { EMPTY_ASSET_CATALOG, type RuntimeAssetCatalog, type ScriptAssetRegistry } from "./asset-catalog";
 import { emptyWaterSample, parseDeformerProperties, updateDeformerProperties, DEFORMER_PROPERTY_KEYS, DEFORMER_MAX_COORDINATE, type WaterSample } from "@babylonslate/core";
@@ -87,6 +87,11 @@ export type AnimGraphControl = {
 
 export type ScriptColor = { x: number; y: number; z: number; w: number };
 
+/** How a load handle settled: Loaded succeeds; a Failed handle carries its error. */
+export type ScriptAssetLoadResult = Pick<RuntimeAssetPreloadResult, "success" | "errorMessage">;
+
+const ASSET_LOADING_UNAVAILABLE = "Asset loading is unavailable in this host";
+
 /**
  * Engine services a compiled graph calls through `ctx`. The host implements the
  * subsystems that exist today; the rest are inert stubs so a graph that uses a
@@ -135,10 +140,24 @@ export interface ScriptHostServices {
   getTargetSceneName?(target: unknown): string;
   loadScene?(target: unknown, blocking: boolean): Promise<void>;
   unloadScene?(target: unknown, blocking: boolean): Promise<void>;
-  preloadAssets?(assets: readonly string[], owner: BObject | null, options?: RuntimeAssetPreloadOptions): Promise<RuntimeAssetPreloadResult>;
+  /** A consumer's on-demand load of cold assets; `releaseAcquiredAssets` ends its ownership. */
+  acquireAssets?(assets: readonly string[], owner: BObject | null): Promise<RuntimeAssetPreloadResult>;
+  releaseAcquiredAssets?(preloadId: string): void;
   prepareAssets?(assets: readonly string[], owner: BObject | null): Promise<void>;
-  releasePreload?(preloadId: string): void;
+  /** The host-published state of one asset. */
   getAssetLoadState?(assetGuid: string): RuntimeAssetLoadState;
+  /**
+   * Load handles scripts request, wait on, query and release. A host that
+   * omits them fails every load with an "unavailable in this host" error.
+   */
+  requestAssetLoad?(assets: readonly string[], owner: BObject | null, options?: RuntimeAssetPreloadOptions): string;
+  requestClassLoad?(classId: string, owner: BObject | null, options?: RuntimeAssetPreloadOptions): string;
+  /** A blocking wait holds the simulation (like Load Scene Blocking) until the handle settles. */
+  waitForAssetLoad?(handle: string, owner: BObject | null, blocking: boolean): Promise<ScriptAssetLoadResult>;
+  releaseAssetLoad?(handle: string): void;
+  unloadAsset?(assetGuid: string, owner: BObject | null, options?: Pick<RuntimeAssetPreloadOptions, "sessionWide">): void;
+  getAssetLoadHandleState?(handle: string): AssetLoadHandleState;
+  getAssetLoadHandleProgress?(handle: string): number;
   isSceneLoaded?(target: unknown): boolean;
   getSceneLoadProgress?(target: unknown): number;
   getSceneState?(target: unknown): SceneStreamingState;
@@ -473,10 +492,26 @@ export interface ScriptContext {
   unloadSceneAsync(target: unknown): void;
   loadSceneBlocking(target: unknown): Promise<void>;
   unloadSceneBlocking(target: unknown): Promise<void>;
-  preloadAssets(assets: readonly string[], options?: RuntimeAssetPreloadOptions): Promise<RuntimeAssetPreloadResult>;
   prepareAssets(assets: readonly string[]): Promise<void>;
-  releasePreload(preloadId: string): void;
-  getAssetLoadState(assetGuid: string): RuntimeAssetLoadState;
+  /**
+   * Load handles (opaque strings) owned by the calling object, else the current
+   * Scene, else the session (`sessionWide`). `requestAssetLoad` and
+   * `requestClassLoad` return at once; the handle is Loading until the host
+   * reports the required closure prepared. Defaults: Normal priority, not
+   * session wide.
+   */
+  requestAssetLoad(assets: readonly string[], options?: RuntimeAssetPreloadOptions): string;
+  requestClassLoad(classId: string, options?: RuntimeAssetPreloadOptions): string;
+  /** Settles when the handle is Loaded or Failed; `blocking` holds the simulation until then. */
+  waitForAssetLoad(handle: string, options?: { blocking?: boolean }): Promise<ScriptAssetLoadResult>;
+  /** Cancels pending work and drops this handle's ownership; the handle then reads Released. */
+  releaseAssetLoad(handle: string): void;
+  /** Releases the calling owner's (or the session's) load handles that include the asset. */
+  unloadAsset(asset: string, options?: Pick<RuntimeAssetPreloadOptions, "sessionWide">): void;
+  getAssetLoadHandleState(handle: string): AssetLoadHandleState;
+  /** 0 to 1, monotonic; 1 only when Loaded. */
+  getAssetLoadHandleProgress(handle: string): number;
+  getAssetLoadState(asset: string): AssetLoadStateName;
   isSceneLoaded(target: unknown): boolean;
   getSceneLoadProgress(target: unknown): number;
   getSceneState(target: unknown): SceneStreamingState;
@@ -1426,7 +1461,7 @@ export class ScriptHost {
           !this.canInvokeOwner(target)) return null;
         const guid = typeof materialGuid === "string" ? materialGuid.trim() : "";
         if (guid && services.prepareAssets && services.getAssetLoadState?.(guid) !== "ready") {
-          throw new Error(`Material ${guid} is not prepared; await ctx.setMeshMaterialAsync or Preload Assets first`);
+          throw new Error(`Material ${guid} is not prepared; use Set Material Instance (ctx.setMeshMaterialAsync), or load the Material first with Async Load Asset`);
         }
         this.beginMaterialReplacement(target, "material");
         this.retainMaterialPreload(target, "material", "");
@@ -1455,7 +1490,7 @@ export class ScriptHost {
           preload = "";
           return material;
         } finally {
-          if (preload) services.releasePreload?.(preload);
+          if (preload) services.releaseAcquiredAssets?.(preload);
         }
       },
       getMaterialAsset: (material) =>
@@ -1489,7 +1524,7 @@ export class ScriptHost {
       setMaterialTextureParameter: (material, name, value) => {
         if (value !== null && typeof value !== "string") return;
         if (value && services.prepareAssets && services.getAssetLoadState?.(value.trim()) !== "ready") {
-          throw new Error(`Texture ${value} is not prepared; await ctx.setMaterialTextureParameterAsync or Preload Assets first`);
+          throw new Error(`Texture ${value} is not prepared; use Set Material Texture Parameter (ctx.setMaterialTextureParameterAsync), or load the Texture first with Async Load Asset`);
         }
         if (material instanceof MaterialObject || material instanceof PostProcessMaterialObject) {
           this.beginMaterialReplacement(material, `texture:${name.trim()}`);
@@ -1515,7 +1550,7 @@ export class ScriptHost {
           this.retainMaterialPreload(material, key, preload);
           preload = "";
         } finally {
-          if (preload) services.releasePreload?.(preload);
+          if (preload) services.releaseAcquiredAssets?.(preload);
         }
       },
       destroyActor: (actor) => {
@@ -1722,21 +1757,28 @@ export class ScriptHost {
       getSceneLoadingProgress: () =>
         clamp01(services.getSceneLoadingProgress?.() ?? 1),
       getTargetSceneName: (target) => services.getTargetSceneName?.(target) ?? "",
-      preloadAssets: async (assets, options) => {
-        const result = await services.preloadAssets?.(assets, self, options) ?? {
-          preloadId: "", success: false, progress: 0, errorMessage: "Asset preloading is unavailable in this host",
+      // A destroyed owner's handle would never be released, so it gets none. A host
+      // without load handles hands out "" too and fails every wait and state read.
+      requestAssetLoad: (assets, options) => self?.destroyed ? "" : services.requestAssetLoad?.(assets, self, options) ?? "",
+      requestClassLoad: (classId, options) => self?.destroyed ? "" : services.requestClassLoad?.(String(classId ?? ""), self, options) ?? "",
+      waitForAssetLoad: async (handle, options) => {
+        const result = await services.waitForAssetLoad?.(handle, self, options?.blocking === true) ?? {
+          success: false, errorMessage: ASSET_LOADING_UNAVAILABLE,
         };
-        if (self?.destroyed) throw Object.assign(new Error("The asset preload caller was destroyed"), { name: "AbortError" });
+        if (self?.destroyed) throw Object.assign(new Error("The asset load caller was destroyed"), { name: "AbortError" });
         return result;
       },
-      releasePreload: (preloadId) => services.releasePreload?.(preloadId),
+      releaseAssetLoad: (handle) => services.releaseAssetLoad?.(handle),
+      unloadAsset: (asset, options) => services.unloadAsset?.(String(asset ?? ""), self, options),
+      getAssetLoadHandleState: (handle) => services.getAssetLoadHandleState?.(handle) ?? "Failed",
+      getAssetLoadHandleProgress: (handle) => clamp01(services.getAssetLoadHandleProgress?.(handle) ?? 0),
       prepareAssets: async (assets) => {
         if (self?.destroyed) throw Object.assign(new Error("The asset consumer was destroyed"), { name: "AbortError" });
         if (!services.prepareAssets) throw new Error("This host cannot prepare cold assets");
         await services.prepareAssets(assets, self);
         if (self?.destroyed) throw Object.assign(new Error("The asset consumer was destroyed"), { name: "AbortError" });
       },
-      getAssetLoadState: (assetGuid) => services.getAssetLoadState?.(assetGuid) ?? "unloaded",
+      getAssetLoadState: (assetGuid) => assetLoadStateName(services.getAssetLoadState?.(assetGuid)),
       loadSceneAsync: (target) => { void services.loadScene?.(target, false).catch((error) => services.reportError(error)); },
       unloadSceneAsync: (target) => { void services.unloadScene?.(target, false).catch((error) => services.reportError(error)); },
       loadSceneBlocking: async (target) => {
@@ -2186,8 +2228,8 @@ export class ScriptHost {
   }
 
   private async prepareMaterialAsset(guid: string, owner: BObject | null): Promise<string> {
-    if (!this.services.preloadAssets) { await this.services.prepareAssets?.([guid], owner); return ""; }
-    const result = await this.services.preloadAssets([guid], owner);
+    if (!this.services.acquireAssets) { await this.services.prepareAssets?.([guid], owner); return ""; }
+    const result = await this.services.acquireAssets([guid], owner);
     if (!result.success) throw new Error(`Asset ${guid}, requested by ${owner?.guid ?? "scene"}: ${result.errorMessage}`);
     return result.preloadId;
   }
@@ -2199,13 +2241,13 @@ export class ScriptHost {
       if (!scopes) { scopes = new Map(); this.materialPreloads.set(owner, scopes); }
       scopes.set(key, preloadId);
     } else scopes?.delete(key);
-    if (previous && previous !== preloadId) this.services.releasePreload?.(previous);
+    if (previous && previous !== preloadId) this.services.releaseAcquiredAssets?.(previous);
   }
 
   private releaseMaterialPreloads(owner: BObject): void {
     const scopes = this.materialPreloads.get(owner);
     this.materialPreloads.delete(owner);
-    for (const id of scopes?.values() ?? []) this.services.releasePreload?.(id);
+    for (const id of scopes?.values() ?? []) this.services.releaseAcquiredAssets?.(id);
   }
 
   private isMaterialReplacementCurrent(owner: BObject, key: string, version: number): boolean {

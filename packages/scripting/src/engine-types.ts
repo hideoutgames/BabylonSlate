@@ -2,7 +2,10 @@ import { SCALABILITY_ENUMS, SCALABILITY_STRUCTS } from "./scalability-types";
 import { ASSET_REGISTRY_ENUMS, ASSET_REGISTRY_STRUCTS } from "./asset-registry-types";
 import { ENGINE_EASING_CURVE_ENUM_ID, EASING_CURVES, ENGINE_TWEEN_SPACE_ENUM_ID, TWEEN_SPACES } from "@babylonslate/core";
 export { ENGINE_EASING_CURVE_ENUM_ID, ENGINE_TWEEN_SPACE_ENUM_ID } from "@babylonslate/core";
-import { INPUT_KEYS, SCENE_STREAMING_STATES, ENGINE_RENDER_TARGET_MODE_ENUM_ID, RENDER_TARGET_MODES } from "@babylonslate/core";
+import {
+  ASSET_LOAD_HANDLE_STATES, ASSET_LOAD_PRIORITIES, ASSET_LOAD_STATES,
+  INPUT_KEYS, SCENE_STREAMING_STATES, ENGINE_RENDER_TARGET_MODE_ENUM_ID, RENDER_TARGET_MODES,
+} from "@babylonslate/core";
 import { ENGINE_TEXT2D_APPEAR_MODE_ENUM_ID, ENGINE_TEXT2D_APPEAR_TRANSITION_ENUM_ID, ENGINE_TEXT2D_APPEAR_START_ENUM_ID,
   TEXT2D_APPEAR_MODES, TEXT2D_APPEAR_TRANSITIONS, TEXT2D_APPEAR_STARTS } from "@babylonslate/core";
 export { ENGINE_RENDER_TARGET_MODE_ENUM_ID } from "@babylonslate/core";
@@ -19,6 +22,9 @@ export const ENGINE_INPUT_BINDING_STRUCT_ID = "engine:InputBinding";
 export const ENGINE_KEY_ENUM_ID = "engine:Key";
 export const ENGINE_INPUT_COMPONENT_ENUM_ID = "engine:InputComponent";
 export const ENGINE_SCENE_STREAMING_STATE_ENUM_ID = "engine:SceneStreamingState";
+export const ENGINE_ASSET_LOAD_STATE_ENUM_ID = "engine:AssetLoadState";
+export const ENGINE_ASSET_LOAD_HANDLE_STATE_ENUM_ID = "engine:AssetLoadHandleState";
+export const ENGINE_ASSET_LOAD_PRIORITY_ENUM_ID = "engine:AssetLoadPriority";
 
 export const ENGINE_COLLISION_CHANNEL_ENUM_ID = "engine:CollisionChannel";
 export const ENGINE_HIT_RESULT_STRUCT_ID = "engine:HitResult";
@@ -68,6 +74,21 @@ export const ENGINE_ENUMS: readonly EngineEnum[] = [
     id: ENGINE_SCENE_STREAMING_STATE_ENUM_ID,
     name: "Scene Streaming State",
     members: SCENE_STREAMING_STATES.map((name, value) => ({ name, value })),
+  },
+  {
+    id: ENGINE_ASSET_LOAD_STATE_ENUM_ID,
+    name: "Asset Load State",
+    members: ASSET_LOAD_STATES.map((name, value) => ({ name, value })),
+  },
+  {
+    id: ENGINE_ASSET_LOAD_HANDLE_STATE_ENUM_ID,
+    name: "Asset Load Handle State",
+    members: ASSET_LOAD_HANDLE_STATES.map((name, value) => ({ name, value })),
+  },
+  {
+    id: ENGINE_ASSET_LOAD_PRIORITY_ENUM_ID,
+    name: "Asset Load Priority",
+    members: ASSET_LOAD_PRIORITIES.map((name, value) => ({ name, value })),
   },
   {
     id: ENGINE_RENDER_TARGET_MODE_ENUM_ID,

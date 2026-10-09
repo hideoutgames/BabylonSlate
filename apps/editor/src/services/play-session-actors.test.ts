@@ -63,6 +63,9 @@ describe.each(["worker", "in-process"] as const)(
         applyCommand?: (command: CommandMessage) => void;
         captureFrame?: () => Promise<unknown>;
         onGameTimePaused?: (paused: boolean) => void;
+        acquireAssetSources?: Parameters<typeof startPlaySession>[0]["acquireAssetSources"];
+        acquireSceneSources?: (sources: unknown, options: { prepare?: boolean; priority?: string }) => Promise<() => void>;
+        onSceneStreamingPaused?: (paused: boolean) => void;
       } = {},
     ): Promise<RuntimeDriver> {
       vi.stubGlobal("window", new EventTarget());
@@ -89,11 +92,11 @@ describe.each(["worker", "in-process"] as const)(
         prewarmSceneMaterials: () => Promise.resolve(),
         presentFirstFrame: options.presentFirstFrame ?? (() => Promise.resolve()),
         prepareSceneStream: options.prepareSceneStream ?? (() => Promise.resolve()),
-        acquireSceneSources: async () => () => {},
+        acquireSceneSources: options.acquireSceneSources ?? (async () => () => {}),
         releaseInitialSources() {},
         setSourceLibraries() {},
         setCommandSourceLoader() {},
-        setSceneStreamingPaused() {},
+        setSceneStreamingPaused: options.onSceneStreamingPaused ?? (() => {}),
         dispose() {},
         whenReleased: () => Promise.resolve(),
       } as unknown as ReturnType<typeof createEngine>);
@@ -151,6 +154,8 @@ describe.each(["worker", "in-process"] as const)(
             if (control.type === "sceneStreamReady") runtime.notifySceneStreamReady(control.actorGuid, control.streamLoadId);
             if (control.type === "sceneStreamProgress") runtime.notifySceneStreamProgress(control.actorGuid, control.streamLoadId, control.progress);
             if (control.type === "sceneStreamFailed") runtime.notifySceneStreamFailed(control.actorGuid, control.streamLoadId, control.message);
+            if (control.type === "assetPreloadResult") runtime.notifyAssetPreloadResult(control);
+            if (control.type === "assetLoadStates") runtime.setAssetLoadStates(control.states);
             if (control.type === "sessionBoundary") void runtime.requestSessionBoundary(control).then(result => onCommand({ type: "sessionBoundaryResult", ...result }));
             if (control.type === "diagnosticOperation") void runtime.requestDiagnosticOperation(control).then(result => onCommand({ type: "diagnosticOperationResult", ...result }));
             if (control.type === "stop") {
@@ -171,6 +176,7 @@ describe.each(["worker", "in-process"] as const)(
         scripts: [mainScript, ...(options.scripts ?? [])],
         gameInstanceClass: options.gameInstanceClass,
         onFatalDiagnostic: options.onFatalDiagnostic,
+        acquireAssetSources: options.acquireAssetSources,
       });
       await booted;
       runtime.tick();
@@ -254,6 +260,47 @@ describe.each(["worker", "in-process"] as const)(
       await runtime.unloadSceneStream(target);
       expect(applyCommand).toHaveBeenCalledWith({ ...loadingCommand, type: "sceneStreamRemoved" });
       expect(runtime.getWorld().getActors().map((actor) => actor.guid)).toEqual(["streamer"]);
+    });
+
+    const loaderScript = (source: string): ScriptBundleEntry => ({
+      assetGuid: "loader", classId: "Loader", parentClassId: "Actor", anchors: [], source,
+      entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: source.includes("await") }],
+    });
+
+    it.each([["Low", "background"], ["Normal", "preload"], ["High", "gameplay"]] as const)(
+      "schedules a script's %s priority asset load as %s in source and renderer preparation",
+      async (priority, scheduled) => {
+        const acquireAssetSources = vi.fn(async () => ({ sources: {} as never, release() {} }));
+        const acquireSceneSources = vi.fn(async () => () => {});
+        await play({
+          actors: [createActor("loader", "Loader", { classId: "Loader" })],
+          scripts: [loaderScript(`export function onBeginPlay(ctx) { ctx.requestAssetLoad(["cold"], { priority: "${priority}" }); }`)],
+          acquireAssetSources, acquireSceneSources,
+        });
+        await vi.waitFor(() => expect(acquireAssetSources).toHaveBeenCalledOnce());
+        expect(acquireAssetSources).toHaveBeenCalledWith(["cold"], expect.objectContaining({ consumer: "loader", priority: scheduled }));
+        await vi.waitFor(() => expect(acquireSceneSources).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ prepare: true, priority: scheduled })));
+      },
+    );
+
+    it("pauses render game time while a blocking asset load holds the simulation", async () => {
+      let finish!: () => void;
+      const acquireAssetSources = vi.fn(() => new Promise<{ sources: never; release(): void }>((resolve) => {
+        finish = () => resolve({ sources: {} as never, release() {} });
+      }));
+      const onSceneStreamingPaused = vi.fn();
+      const runtime = await play({
+        actors: [createActor("loader", "Loader", { classId: "Loader" })],
+        scripts: [loaderScript('export async function onBeginPlay(ctx) { await ctx.waitForAssetLoad(ctx.requestAssetLoad(["cold"]), { blocking: true }); ctx.setVariable("done", true); }')],
+        acquireAssetSources, onSceneStreamingPaused,
+      });
+      await vi.waitFor(() => expect(onSceneStreamingPaused).toHaveBeenCalledWith(true));
+      const before = runtime.getWorld().clock.tickIndex;
+      runtime.tick();
+      expect(runtime.getWorld().clock.tickIndex).toBe(before);
+      finish();
+      await vi.waitFor(() => expect(onSceneStreamingPaused).toHaveBeenLastCalledWith(false));
+      await vi.waitFor(() => expect(runtime.getWorld().findActor("loader")!.getVariable("done")).toBe(true));
     });
 
     it("keeps Game Instance ticking and withholds scene finish until the renderer presents", async () => {

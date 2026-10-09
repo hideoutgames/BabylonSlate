@@ -802,6 +802,7 @@ function initializePlayer(
     if (command.type !== "assetPreload") return false;
     const preloadId = String(command.preloadId);
     const ids = Array.isArray(command.assetGuids) ? command.assetGuids.filter((id): id is string => typeof id === "string") : [];
+    const priority = command.priority === "gameplay" || command.priority === "background" ? command.priority : "preload";
     releasePreload(preloadId);
     const request: { controller: AbortController; release?: () => void } = { controller: new AbortController() };
     preloads.set(preloadId, request);
@@ -810,13 +811,13 @@ function initializePlayer(
     publishAssetStates();
     void (async () => {
       if (!game.acquireAssets) throw new Error("This player does not provide demand-driven asset loading.");
-      const source = await game.acquireAssets(ids, { consumer: `preload:${String(command.ownerId)}`, signal: request.controller.signal, priority: "preload",
+      const source = await game.acquireAssets(ids, { consumer: `preload:${String(command.ownerId)}`, signal: request.controller.signal, priority,
         onProgress: ({ completed, total }) => { preloadResult({ preloadId, success: true, progress: total ? Math.min(0.9, completed / total * 0.9) : 0 }); publishAssetStates(); },
       });
       let releaseRender: (() => void) | undefined;
       try {
         request.controller.signal.throwIfAborted();
-        releaseRender = await handle.acquireSceneSources(renderSources(gameSourceSubset(game, source.assetGuids ?? requiredGameAssets(manifest, ids))), { prepare: true, signal: request.controller.signal, priority: "preload" });
+        releaseRender = await handle.acquireSceneSources(renderSources(gameSourceSubset(game, source.assetGuids ?? requiredGameAssets(manifest, ids))), { prepare: true, signal: request.controller.signal, priority });
         request.controller.signal.throwIfAborted();
         request.release = () => { releaseRender?.(); source.release(); };
         clearResourceFailures(requiredGameAssets(manifest, ids));
@@ -866,7 +867,7 @@ function initializePlayer(
     if (command.type === "saveStorageRequest") { saveServer.receive(command.request as import("@babylonslate/core").SaveStorageRequest); return; }
     if (halted) return;
     if (command.type === "requestComplexCollision") { answerComplexCollision(String(command.assetGuid)); return; }
-    if (command.type === "sceneStreamBlocking") handle.setSceneStreamingPaused(command.blocking === true);
+    if (command.type === "simulationBlocking") handle.setSceneStreamingPaused(command.blocking === true);
     if (command.type === "sessionPaused") {
       if (boundaryClient) {
         // The console already changed its runtime reason. Read the effective

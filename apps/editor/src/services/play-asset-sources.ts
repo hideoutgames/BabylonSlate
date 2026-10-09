@@ -2,7 +2,7 @@ import { SourceRevisionChangedError, areaEmissionTextureGuids, collisionTriangle
 import {
   isAssetSourceRevisionChanged, AUDIO_DEFAULT_SOURCE_CHUNK, FONT_FACETYPE_CHUNK_ID, FONT_MSDF_CHUNK_ID, FONT_MSDF_PNG_CHUNK_ID,
   complexCollisionModelGuids, cookComplexCollisionMesh, currentAreaEmissionChunk, decodeAreaEmission, modelAnimationDurations, normalizeAudioPayload, normalizeFontPayload, normalizeModelPayload,
-  registryAssetRepresentation, selectTextureChunk, type AssetLoadScope, type AssetRegistry,
+  registryAssetRepresentation, selectTextureChunk, type AssetLoadPriority, type AssetLoadScope, type AssetRegistry,
   type IndexedAsset, type ModelPayload, type RegistryLoadedAsset,
 } from "@babylonslate/assets";
 import { packedContentFromGame, packedPlayControls, packedSourceControls, type GameSourceContent, type PackedGameContent } from "@babylonslate/exporter";
@@ -158,6 +158,8 @@ function selectedChunks(asset: IndexedAsset, payload: Record<string, unknown>, f
 type PlayAssetSourceOptions = {
   consumer: string;
   signal: AbortSignal;
+  /** Scheduling order of this acquisition's source reads and decodes; default gameplay. */
+  priority?: AssetLoadPriority;
   onProgress?: (progress: { completed: number; total: number }) => void;
   allowCompileErrors?: boolean;
   fontModes?: import("@babylonslate/render").CommandFontModes;
@@ -222,7 +224,7 @@ async function acquirePlayAssetSourcesAttempt(
       const mesh = cookComplexCollisionMesh(source, model);
       return { value: mesh, sourceBytes: 0, decodedBytes: mesh ? collisionTriangleMeshBytes(mesh) : 0 };
     },
-  }, { signal, dependencies: "none", refresh: false });
+  }, { signal, priority: options.priority, dependencies: "none", refresh: false });
   let released = false;
   const release = () => {
     if (released) return;
@@ -266,7 +268,7 @@ async function acquirePlayAssetSourcesAttempt(
       const value: RegistryLoadedAsset = override ? {
         revision: catalogRevisions.get(guid)!, chunks: new Map(),
         document: { guid, type: header.type, name: header.name, version: header.version, payload: override.payload },
-      } : await scope.acquire<RegistryLoadedAsset>(guid, undefined, { signal: options.signal, dependencies: "none", refresh: false });
+      } : await scope.acquire<RegistryLoadedAsset>(guid, undefined, { signal: options.signal, priority: options.priority, dependencies: "none", refresh: false });
       if (value.revision !== catalogRevisions.get(guid)) throw new SourceRevisionChangedError(`Asset ${guid} changed after resolving its dependencies; retry`);
       documents.set(guid, value);
       const payload = value.document.payload;
@@ -325,7 +327,7 @@ async function acquirePlayAssetSourcesAttempt(
         const representation = await registryAssetRepresentation(host.registry, guid, {
           selectChunks: () => [chunkId], includeDocument: false, representationKey: "runtime-source-chunk",
         }, { signal: options.signal }, false);
-        const loaded = await scope.acquire<RegistryLoadedAsset>(guid, representation, { signal: options.signal, dependencies: "none", refresh: false });
+        const loaded = await scope.acquire<RegistryLoadedAsset>(guid, representation, { signal: options.signal, priority: options.priority, dependencies: "none", refresh: false });
         if (loaded.revision !== preparedDocument.revision) throw new SourceRevisionChangedError(`Asset ${guid} changed while selecting source data; retry`);
         chunks.set(chunkId, loaded.chunks.get(chunkId)!);
       }
@@ -352,7 +354,7 @@ async function acquirePlayAssetSourcesAttempt(
               const value = modelAnimationDurations(source);
               return { value, sourceBytes: 0, decodedBytes: value.size * 128, dispose: () => value.clear() };
             },
-          }, { signal: options.signal, dependencies: "none", refresh: false });
+          }, { signal: options.signal, priority: options.priority, dependencies: "none", refresh: false });
           durations.set(guid, clips);
           // Only Models a Scene/Class in this closure simulates with Complex Collision are cooked up front.
           if (complexCollisionGuids.has(guid)) {
@@ -384,7 +386,7 @@ async function acquirePlayAssetSourcesAttempt(
           key: `area-emission:${entry.sha256}`,
           estimate: { sourceBytes: 0, decodedBytes: bytes.byteLength, temporaryBytes: bytes.byteLength },
           load: async () => ({ value: await decodeAreaEmission(bytes), sourceBytes: 0, decodedBytes: bytes.byteLength }),
-        }, { signal: options.signal, dependencies: "none", refresh: false });
+        }, { signal: options.signal, priority: options.priority, dependencies: "none", refresh: false });
         game.areaEmissions.set(guid, decoded);
       }
       const navmesh = value.chunks.get("navmesh");
@@ -426,7 +428,7 @@ async function acquirePlayAssetSourcesAttempt(
           dispose: () => { value.bundles.length = 0; value.diagnostics.length = 0; },
         };
       },
-    }, { signal: options.signal, dependencies: "none", refresh: false }) : { bundles: [], diagnostics: [] };
+    }, { signal: options.signal, priority: options.priority, dependencies: "none", refresh: false }) : { bundles: [], diagnostics: [] };
     const failure = compiled.diagnostics.find((entry) => entry.severity === "error");
     if (failure && !options.allowCompileErrors) throw new Error(failure.message);
     game.scripts = compiled.bundles;
@@ -447,7 +449,7 @@ async function acquirePlayAssetSourcesAttempt(
         }
         return { value, sourceBytes: 0, decodedBytes: cpuBytes, dispose: () => releasePackedContent(value) };
       },
-    }, { signal: options.signal, dependencies: "none", refresh: false }) : packedContentFromGame(game);
+    }, { signal: options.signal, priority: options.priority, dependencies: "none", refresh: false }) : packedContentFromGame(game);
     const content = copyContainers(cachedContent);
     content.audioLibrary = copyContainers(cachedContent.audioLibrary);
     content.particleLibrary = copyContainers(cachedContent.particleLibrary);

@@ -466,7 +466,7 @@ Every asset- or Class-typed declaration has a **Loading** policy that decides wh
 
 | Policy | Stored | Behavior |
 | --- | --- | --- |
-| Soft (Load On Demand), default | Nothing (`loading` is absent) | Packaged, listed by Show References and Delete, and rename-safe by GUID, but never loaded with its owner. It loads on first use by a consuming node or through the load nodes. |
+| Soft (Load On Demand), default | Nothing (`loading` is absent) | Packaged, listed by Show References and Delete, and rename-safe by GUID, but never loaded with its owner. It loads on first use by a consuming node or through the [load nodes](#asset-loading-and-load-handles). |
 | Hard (Load With Owner) | `loading: "hard"` | Part of the owner's required closure: prepared before Begin Play, before a spawn completes, or whenever its Data Tree loads. |
 
 - **Where:** Class variables of asset or Class type (including Map keys of those types), Structure fields and Data Definition fields. Details shows **Loading** directly after Asset Type / Class Type; choosing Soft deletes the property, and changing the type away from an asset or Class clears it. Function parameters, locals and the engine components' built-in asset fields have no policy (the components' assets stay required).
@@ -475,17 +475,30 @@ Every asset- or Class-typed declaration has a **Loading** policy that decides wh
 - **Synchronous readers** keep their role: a variable read by an `input.*` or `data.readEntry` chain is required whatever its policy.
 - **Stamping:** dependency metadata is derived when the owning asset is saved or imported, from its content plus the current Class, Structure and Data Definition declarations. Changing a declaration's Loading takes effect for dependants when they are next saved. Saved Class, Data Definition and Structure headers carry the declarations dependants need (Class `variables`, Definition and Structure `fields`), including `loading`.
 
-### Asset preloading
+### Asset loading and load handles
 
-Ordinary authored references load through their consuming actors/components. Explicit preloads provide predictable timing without exposing low-level cache leases.
+Ordinary authored references load through their consuming actors/components. A **Hard (Load With Owner)** reference joins its owner's required closure; a **Soft (Load On Demand)** reference never loads with its owner, so a graph loads it with these nodes (see [Asset references and loading](#asset-references-and-loading)). Loads follow Unreal's StreamableManager: a request returns a **load handle**, an opaque String that graphs wait on, poll and release without touching cache leases.
 
 | Node | Script API and result |
 | --- | --- |
-| Preload Assets | `await ctx.preloadAssets(guids, { sessionWide?, onProgress? })`; Completed/Failed, Preload handle, Progress and Error outputs |
-| Release Preload | `ctx.releasePreload(handle)`; drops this preload's ownership only |
-| Get Asset Load State | `ctx.getAssetLoadState(guid)`; `unloaded`, `loading`, `ready` or `failed` |
+| Async Load Asset / Async Load Assets / Async Load Class | Request, then wait while gameplay continues: `ctx.requestAssetLoad(assets, { priority?, sessionWide? })` or `ctx.requestClassLoad(classId, …)`, then `await ctx.waitForAssetLoad(handle)`. Completed or Failed; the Asset(s) pass through; Handle and Error outputs |
+| Load Asset Blocking / Load Assets Blocking / Load Class Blocking | The same at High priority, awaiting `ctx.waitForAssetLoad(handle, { blocking: true })`, which holds the simulation until the handle settles |
+| Request Async Load | `ctx.requestAssetLoad(...)` without waiting; returns the Handle at once, Loading with progress 0 |
+| Wait For Load Handle | `await ctx.waitForAssetLoad(handle)`; Completed when Loaded (at once if it already is), Failed with the stored Error, and Failed with an explanatory Error for a Released or unknown Handle |
+| Get Load Handle State / Get Load Handle Progress | `ctx.getAssetLoadHandleState(handle)`: engine `AssetLoadHandleState` (Loading, Loaded, Failed, Released); `ctx.getAssetLoadHandleProgress(handle)`: 0 to 1 |
+| Release Load Handle | `ctx.releaseAssetLoad(handle)`; cancels pending work and drops this handle's ownership |
+| Unload Asset | `ctx.unloadAsset(asset, { sessionWide? })`; releases the owner's handles that include the asset |
+| Get Asset Load State / Is Asset Loaded | `ctx.getAssetLoadState(asset)`: engine `AssetLoadState` (Unloaded, Loading, Loaded, Failed); Loaded includes runtime preparation |
 
-Preloads follow the calling runtime object or scene unless Session Wide is selected. Destroying that owner or stopping Play cancels pending requests and releases completed ownership; shared live resources remain valid. Readiness comes from the content host after runtime preparation, not merely byte transfer. Failures identify the asset/consumer and remain retryable. Scene loading continues to use the existing Scene Streaming nodes.
+- **Priority** is the engine `AssetLoadPriority` enum (Low, Normal, High; default Normal). It orders the host's source and native preparation work: High is gameplay, Normal is explicit preload, Low is background. Blocking loads always use High. Editor Play and the exported player both forward it.
+- **Ownership** follows the calling runtime object, else the current Scene, else the session; Session Wide selects the session. Destroying the owner, retiring its Scene or stopping Play releases its handles. Shared assets stay loaded while another owner holds them.
+- **Loaded** means the host reported the request's required closure prepared (runtime and native preparation, not just byte transfer). Hard-policy assets reachable from the requested assets are in that closure.
+- **Blocking** loads hold the same simulation block as Load Scene Blocking: gameplay ticks, physics, timers and tweens stop while loading and rendering preparation continue. Holds nest, share one `simulationBlocking` command, and a continuation waits for every hold and manual Pause to clear. A caller destroyed while blocked stops its graph. An already-settled handle holds nothing. Asynchronous continuations also wait out Pause: no graph resumes while the game is paused.
+- **Failure** keeps the handle Failed with its error and progress, and releases its host ownership; it stays queryable until released. Progress never decreases and is 1 only when Loaded.
+- **Unload Asset** releases whole handles, so load assets with separate requests to unload them individually. It never affects on-demand loads by consumers (Play Sound voices, spawned actors, material assignments).
+- **Class loads** resolve the Class to its Class asset through the runtime's Class catalog. An unknown Class gives an immediately Failed handle; an engine Class has nothing to load. A Loaded Class lets the synchronous `ctx.spawnActor` spawn it, which otherwise reports a cold-load error naming these nodes.
+- **Pins:** Asset pins use the any-asset type, so a typed Texture or Audio wire connects and the default picker lists every asset; Class pins accept any Class.
+- A host without load handles (the Editor Utility host) fails every load with `Asset loading is unavailable in this host`.
 
 ### Asset Registry nodes
 
@@ -522,7 +535,7 @@ All streaming nodes require a **Target** reference typed as `SceneStreamingActor
 | Get Scene Load Progress | Float from 0 to 1; 0 when unloaded, 1 only when fully loaded |
 | Get Scene State | Engine `SceneStreamingState` enum: Unloaded, Loading, Loaded, Unloading |
 
-Blocking operations keep realization and resource preparation running while gameplay simulation is paused. Their pause ownership is separate from manual Pause and other blocking operations; a graph continuation waits for overlapping blocks and manual Pause to clear. A destroyed caller cannot resume its blocked graph. Async loads can overlap; each actor has its own state and progress. Unloading cancels pending work and removes only that actor's streamed instance, including nested instances. These nodes have no editor streaming path.
+Blocking operations keep realization and resource preparation running while gameplay simulation is paused. Their pause ownership is separate from manual Pause and other blocking operations; a graph continuation waits for overlapping blocks and manual Pause to clear. Blocking [asset loads](#asset-loading-and-load-handles) share the same block. A destroyed caller cannot resume its blocked graph. Async loads can overlap; each actor has its own state and progress. Unloading cancels pending work and removes only that actor's streamed instance, including nested instances. These nodes have no editor streaming path.
 
 - **Spawn Actor** from a streamed graph creates an instance-owned actor parented to the `SceneStreamingActor`, interprets its transform in the streamed instance's space at the streaming origin, and destroys it with that instance.
 - **Get Scene Reference** from a streamed owner returns that instance's Scene. Setting its Gravity still writes the session's single world physics gravity.
@@ -754,7 +767,7 @@ Internal entry IDs remain stable through rename, move and undo. Graphs and scrip
 
 **Read Data Entry** (Get Data) takes a Data Tree and **Entry Path**, and returns typed **Value** plus **Found**. Selecting a known entry infers its effective Data Definition, including branch overrides. Both inline and Inspector defaults offer the tree's paths; no selected tree or a dynamically wired tree uses a normal string input. Missing paths stay visible for repair. A dynamically computed path requires an expected Definition: the read checks it internally and returns Found=false on mismatch, without a separate cast node.
 
-Fixed Tree literals on synchronous data nodes are required dependencies of their consuming Class. **Read Data Entry Async** / `ctx.readDataEntryAsync(tree, path, definitionGuid)` handles a dynamically selected cold Tree: it prepares the Tree and schema under the caller's ownership, then returns a detached value. The visual node exposes Completed/Failed, Found and Error. Existing `ctx.data` reads remain synchronous for prepared content; Preload Assets also prepares a dynamic Tree for those reads.
+Fixed Tree literals on synchronous data nodes are required dependencies of their consuming Class. **Read Data Entry Async** / `ctx.readDataEntryAsync(tree, path, definitionGuid)` handles a dynamically selected cold Tree: it prepares the Tree and schema under the caller's ownership, then returns a detached value. The visual node exposes Completed/Failed, Found and Error. Existing `ctx.data` reads remain synchronous for prepared content; [Async Load Asset](#asset-loading-and-load-handles) also prepares a dynamic Tree for those reads.
 
 Definitions behave as typed records in graph variables, member values and function signatures. **Make [Definition] Data** builds one; **Break [Definition] Data** exposes its fields. Generic Structures remain available for other scripting tasks; Data Definitions need no Structure asset. Definition typing also refreshes in Animation Object and transition-rule graphs. Graph literal reconciliation preserves stable field renames and diagnoses missing/incompatible values without adopting new defaults during hydration.
 

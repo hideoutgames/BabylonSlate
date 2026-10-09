@@ -141,30 +141,26 @@ describe("runtime session boundaries", () => {
     } finally { runtime.stop(); }
   });
 
-  it.each(["resume", "stop"] as const)("gates on-demand preload progress and completion until %s", async finish => {
+  it.each(["resume", "stop"] as const)("holds a finished asset load's continuation until %s", async finish => {
     const commands: CommandMessage[] = [];
     const runtime = makeRuntime({ classAssetGuids: { Loading: "loading-class" },
       playScene: { ...createDefaultScene(), actors: [createActor("actor", "Actor", { classId: "Loading" })] },
       onCommand: command => commands.push(command) });
     try {
       await runtime.loadScripts([{ classId: "Loading", parentClassId: "Actor", assetGuid: "loading-class", anchors: [],
-        source: 'export async function begin(ctx) { await ctx.preloadAssets(["cold"], { onProgress: value => ctx.setVariable("progress", value) }); ctx.setVariable("continued", true); }',
+        source: 'export async function begin(ctx) { const result = await ctx.waitForAssetLoad(ctx.requestAssetLoad(["cold"])); ctx.setVariable("continued", result.success); }',
         entryPoints: [{ name: "begin", event: "onBeginPlay", isAsync: true }] }]);
       runtime.realizePlayWorld(); runtime.start();
       const actor = runtime.getWorld().findActor("actor")!;
       const request = commands.find(command => command.type === "assetPreload");
-      if (request?.type !== "assetPreload") throw new Error("missing gameplay preload");
+      if (request?.type !== "assetPreload") throw new Error("missing asset load request");
       await runtime.requestSessionBoundary({ sessionGeneration: 7, requestId: 1, action: { kind: "pause", reason: "user", paused: true } });
-      runtime.notifyAssetPreloadResult({ preloadId: request.preloadId, success: true, progress: 0.2 });
-      runtime.notifyAssetPreloadResult({ preloadId: request.preloadId, success: true, progress: 0.8 });
       runtime.notifyAssetPreloadResult({ preloadId: request.preloadId, success: true });
       await flush();
       expect(actor.getVariable("continued")).toBeUndefined();
-      expect(actor.getVariable("progress")).toBe(0);
       if (finish === "resume") runtime.resume(); else runtime.stop();
       await flush();
       expect(actor.getVariable("continued")).toBe(finish === "resume" ? true : undefined);
-      expect(actor.getVariable("progress")).toBe(finish === "resume" ? 1 : 0);
       expect(runtime.getWorld().clock.tickIndex).toBe(0);
     } finally { runtime.stop(); }
   });
