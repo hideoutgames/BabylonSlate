@@ -63,6 +63,16 @@ const SURF_DEPTH = [1.3, 3.4] as const;
 const SURF_WAKE = 3.8;
 /** Furthest metres the swash runs up a beach (the run-up's width on a gentle slope). */
 const SWASH_REACH_MAX = 10;
+/** Metres of depth over which water thins to nothing at a gentle shore (`swShoreSoft`). */
+const SOFT_SHORE_DEPTH = 0.4;
+/**
+ * Refraction bends by the swell and the first chop octaves only (Realistic, Stylized): the finer chop, the capillaries and the FFT
+ * band move the bed at a frequency the eye reads as jelly, and stay in the shading normal alone.
+ */
+const REFRACTION_OCTAVES = [3, 2] as const;
+/** Largest refracted screen shift (pixels of the scene copy) near the camera, and far away, over `REFRACTION_FAR` metres of view depth. */
+const REFRACTION_SHIFT_PX = [28, 3] as const;
+const REFRACTION_FAR = [6, 60] as const;
 /** Compile-time style switch: each material compiles only its own style's shading. */
 const WATER_STYLIZED_DEFINE = "SLATE_WATER_STYLIZED";
 /** Within Stylized, the Stylized Look switch: Toon when set, Painted otherwise (`paintedSource`, `toonSource`). */
@@ -144,9 +154,8 @@ const EMPTY_TEXTURE = new ThinTexture(null);
 const PLANAR_REACH = 1;
 /** Refraction: screen offset per unit of view-space tilt, per metre of water behind the surface, at Refraction 1. */
 const REFRACTION_SHIFT = 1.2;
-/** Water thickness (metres) beyond which the refracted shift stops growing, and the largest shift (uv). */
+/** Water thickness (metres) beyond which the refracted shift stops growing. */
 const REFRACTION_DEPTH_CAP = 3;
-const REFRACTION_SHIFT_CAP = 0.06;
 /**
  * FFT ocean detail (`waterFftForSurface`), compiled where device-effective FFT Ocean Detail is on and the asset's
  * Detail Waves is above 0: the number of cascades sampled (`#if SLATE_WATER_FFT >= c`), 0 compiling every FFT term out.
@@ -549,11 +558,12 @@ function refractionSource(scale = 1): string {
 vec2 swScreenUv = SW_FRAG_COORD.xy * U.slateWaterScreen.xy;
 float swWaterZ = abs((S.view * vec4(IN.vPositionW, 1.0)).z);
 float swSceneZ0 = swSceneDepth(swScreenUv);
-vec2 swTiltV = (S.view * vec4(-swSlope.x, 0.0, -swSlope.y, 0.0)).xy;
+vec2 swRefrSlope = swGradient + swDetailMid * swChopGain;
+vec2 swTiltV = (S.view * vec4(-swRefrSlope.x, 0.0, -swRefrSlope.y, 0.0)).xy;
 float swRefrDepth = min(max(swSceneZ0 - swWaterZ, 0.0), ${f(REFRACTION_DEPTH_CAP)});
 float swOrtho = S.projection[3][3];
 vec2 swRefrShift = swTiltV * vec2(S.projection[0][0], S.projection[1][1]) * (U.slateWaterScreen.z * ${f(REFRACTION_SHIFT * scale)} * swRefrDepth * mix(1.0 / max(swWaterZ, 0.05), 1.0, swOrtho));
-swRefrShift = swRefrShift * min(1.0, ${f(REFRACTION_SHIFT_CAP * scale)} / max(length(swRefrShift), 0.000001));
+swRefrShift = swRefrShift * min(1.0, mix(${f(REFRACTION_SHIFT_PX[0] * scale)}, ${f(REFRACTION_SHIFT_PX[1] * scale)}, smoothstep(${f(REFRACTION_FAR[0])}, ${f(REFRACTION_FAR[1])}, swWaterZ)) * U.slateWaterScreen.x / max(length(swRefrShift), 0.000001));
 vec2 swRefrUv = swScreenUv + swRefrShift;
 float swSceneZ1 = swSceneDepth(swRefrUv);
 float swLeak = step(swSceneZ1, swWaterZ);
@@ -1019,7 +1029,7 @@ float swOA${i} = ${f(slope)} * swOFd${i} * (0.25 + 1.5 * ${i % 2 === 0 ? "" : "(
 swDetail += swOC${i}.xy * (swOW${i} * swOCs${i} * swOA${i});
 swChopH += (swOW${i} - 0.37) * swOA${i};
 swChop -= swOC${i}.xy * (swOW${i} * swOCs${i} * 0.3 / swOC${i}.z);
-swLostDetail += ${f(octaveVariance(slope))} * (1.0 - swOFd${i} * swOFd${i});`, `
+swLostDetail += ${f(octaveVariance(slope))} * (1.0 - swOFd${i} * swOFd${i});${i === REFRACTION_OCTAVES[0] - 1 ? "\nswDetailMid = swDetail;" : ""}`, `
 swLostDetail += ${f(octaveVariance(slope))};`)).join("")
     : DETAIL_OCTAVES.slice(0, STYLIZED_CHOP_TIER.length).map(([, , slope], i) => fromTier(STYLIZED_CHOP_TIER[i]!, `
 vec4 swOC${i} = U.${CHOP_UNIFORMS[i]};${painted ? `
@@ -1039,7 +1049,7 @@ float swOA${i} = ${f(slope * (1 - Math.min(0.85, i * 0.14)))} * (1.0 - smoothste
   * ${chopCrests(`swOC${i}`, i)};
 swDetail += swOC${i}.xy * (swOW${i} * swOCs${i} * swOA${i});
 swChopH += (swOW${i} - 0.37) * swOA${i};
-swChop -= swOC${i}.xy * (swOW${i} * swOCs${i} * 0.3 / swOC${i}.z);`)).join("");
+swChop -= swOC${i}.xy * (swOW${i} * swOCs${i} * 0.3 / swOC${i}.z);${i === REFRACTION_OCTAVES[1] - 1 ? "\nswDetailMid = swDetail;" : ""}`)).join("");
   const capillaries = realistic ? CAPILLARY_OCTAVES.map(([, , slope, speed], i) => fromTier(CAPILLARY_TIER[i]!, `
 vec4 swCC${i} = U.${CAPILLARY_UNIFORMS[i]};
 float swCX${i} = swCC${i}.z * dot(swCC${i}.xy, swRippleDomain) + swCC${i}.w;${footprintFade("swCFd", i, `swCC${i}.z`, `swCC${i}.xy`, speed)}
@@ -1162,13 +1172,17 @@ float swDrift = swLarge * 0.5 + swGust * 0.3 + swMedium * 0.2;${realistic || pai
 // fine part fades before its noise would alias.
 swChop += vec2(swMedium - 0.5, (swFine - 0.5) * (1.0 - smoothstep(0.3, 1.0, swFoot))${realistic ? "" : " * 0.35"}) * 0.6;`) : ""}
 vec2 swDetail = vec2(0.0);
+// The chop octaves refraction bends by (\`REFRACTION_OCTAVES\`): the medium-frequency part of \`swDetail\`, kept apart from the fine
+// octaves, whose high-frequency wobble would make the bed under the water shimmer like jelly.
+vec2 swDetailMid = vec2(0.0);
 float swChopH = 0.0;
 // The chop's slow phase shift (\`CHOP_SHIFT\`): a rotating mix of the two wide noises.
 float swChopShift = U.slateWaterChopShift.x * (swLarge - 0.5) + U.slateWaterChopShift.y * (swGust - 0.5);${painted ? fromTier(1, `
 float swDriftK = 1.0;`, `
 // Low's single octave would bend into swirls under the full drift.
 float swDriftK = 0.5;`) : ""}
-${detail}${realistic ? fromTier(1, `
+${detail}${fromTier(1, "", `
+swDetailMid = swDetail;`)}${realistic ? fromTier(1, `
 // Capillaries ride a noise-bent domain and gather in drifting patches, so they never form a regular lattice.
 vec2 swRippleDomain = swChop + (vec2(swFine, swMedium) - vec2(0.5)) * 0.45;${fromTier(3, `
 float swRipplePatch = (0.6 + 0.8 * swMedium) * (0.55 + 0.9 * swFine);`, `
@@ -1193,6 +1207,10 @@ float swOpenAny = max(swOpenEdge, swKnown * smoothstep(0.5, 2.5, swFieldShore - 
 float swOpenW = mix(${f(OPEN_EDGE_FADE_TERRAIN)}, ${f(OPEN_EDGE_FADE)}, swOpenEdge);`}
 float swBankV = mix(IN.vSlateWater.y, max(IN.vSlateWater.y, ${f(SHORE[1])}), swOpenAny);
 float swOpenFade = mix(1.0, smoothstep(0.0, swOpenW, IN.vSlateWater.y), swOpenAny);
+// Soft waterline (every look but Toon, whose banks are drawn lines): over known terrain the water thins to nothing over its
+// last \`SOFT_SHORE_DEPTH\` metres of depth instead of ending in a cut, and over a few centimetres where the bed drops away fast
+// (a wall, a cliff: the terrain slope \`swShoreSlope\` near 1), so it stays crisp there.
+float swShoreSoft = mix(1.0, smoothstep(0.0, mix(${f(SOFT_SHORE_DEPTH)}, 0.06, smoothstep(0.35, 1.0, swShoreSlope)), swTerrainDepth), swKnown);
 float swBank = min(min(max(0.0, swBankV), max(0.0, swFieldShore)), ${f(SHORE[1])});
 float swBodyDepth = max(0.01, IN.vSlateWater.z);
 float swFoamWidth = max(0.001, U.slateWaterMotion.w);
@@ -1802,7 +1820,7 @@ if (swContactOn > 0.5) {
 }`)}
 // The collar pulses with the swell at the hull: it pushes out and thickens as the water climbs, and as it drops a wider,
 // thinner ring of foam clings briefly before it drains (\`swHullPulse\`, \`swHullCling\`).
-float swHullW = swContactW * (0.55 + 0.8 * swHullPulse);
+float swHullW = swContactW * (0.55 + 0.8 * swHullPulse)${fromTier(2, " * 1.35", "")};
 float swHullRing = swHullCling * exp(-abs(swObjectW - swContactW * 0.22) / (swContactW * 0.12)) * 0.55;${fromTier(1, `
 // Lee puffs: foam shed downstream with each rise drifts away in clumps, within about a Contact Foam Width (over two,
 // small floats trailed long marbled ribbons several times their own size).
@@ -1818,7 +1836,9 @@ float swHugCut = 1.0 - swHug * 0.9;
 // brightest borders would otherwise pass the cut there and net the whole open sea in a faint, regular crackle.
 float swRealContact = smoothstep(swHugCut - swHugSoft * 0.5, swHugCut + swHugSoft, swPatchTex) * (0.15 + 0.75 * swHug) * mix(0.45 + 0.55 * swLace, 1.0, swHug * swHug)
   * smoothstep(0.0, 0.08, swHug);
-swRealContact = max(swRealContact, swContactLine * (0.65 + 0.3 * smoothstep(0.2, 0.6, swPatchTex)));`, `
+swRealContact = max(swRealContact, swContactLine * (0.65 + 0.3 * smoothstep(0.2, 0.6, swPatchTex)));${fromTier(2, `
+// High up the collar reads a little denser and wider at a distance (the ring and wake were faint beside the swell).
+swRealContact = min(swRealContact * 1.25, 1.0);`)}`, `
 float swHug = clamp(exp(-swObjectW / swHullW * 8.0) * (0.4 + 1.1 * swClump) * (0.7 + 0.5 * swHullPulse), 0.0, 1.0);
 float swRealContact = max(smoothstep(0.35, 0.85, swHug) * (0.25 + 0.6 * swHug) * (0.6 + 0.4 * swLace), swContactLine * 0.8);`)}
 // Aerial perspective fades distant foam into the horizon sky with the water, so far breakers never pile into a bright
@@ -1967,7 +1987,7 @@ swSkyRefl *= U.slateWaterDeep.w;
 
 // Foam is matte and lit: PBR shades it as albedo, and its roughness and coverage remove the mirror.
 // Over known terrain the water also thins out over its last few centimetres of depth, so a bank never shows a hard lip.
-float swEdgeFade = smoothstep(0.0, 0.2, swBank + 0.02) * mix(1.0, smoothstep(0.0, 0.25, swTerrainDepth), swKnown);
+float swEdgeFade = smoothstep(0.0, 0.2, swBank + 0.02) * swShoreSoft;
 // Uncovered by the backwash, only the wet film is left: no water body, a faint sheen of sky and sun on the wet sand.
 float swWaterFade = swEdgeFade * swSwashCover;
 float swSheen = swSwashCover + swFilm * 0.4;
@@ -3561,6 +3581,9 @@ function beforeFogSource(wgsl: boolean): string {
     `#ifdef ${WATER_STYLIZED_DEFINE}`,
     `#ifdef ${REFRACTION}`,
     `finalColor = ${v4}(finalColor.rgb + swRefractedOut, finalColor.a);`,
+    "#endif",
+    `#ifndef ${WATER_TOON_DEFINE}`,
+    "finalColor.a *= swShoreSoft;",
     "#endif",
     "#else",
     `#if defined(${REFRACTION}) && !defined(IMAGEPROCESSINGPOSTPROCESS)`,
