@@ -67,6 +67,21 @@ const TEMPORAL_FRAME = 1 / 30;
 const OPEN_EDGE_FADE = 6;
 /** Metres over which a body's edge over water-covered terrain (short of the terrain's shoreline) fades out. */
 const OPEN_EDGE_FADE_TERRAIN = 2.5;
+/** The surf zone's depth range in Wave Heights (full breaking at the first, none past the second) and the wake's decay in cycles⁻¹. */
+const SURF_DEPTH = [1.3, 3.4] as const;
+const SURF_WAKE = 3.8;
+/** Furthest metres the swash runs up a beach (the run-up's width on a gentle slope). */
+const SWASH_REACH_MAX = 10;
+/** Metres of depth over which water thins to nothing at a gentle shore (`swShoreSoft`). */
+const SOFT_SHORE_DEPTH = 0.4;
+/**
+ * Refraction bends by the swell and the first chop octaves only (Realistic, Stylized): the finer chop, the capillaries and the FFT
+ * band move the bed at a frequency the eye reads as jelly, and stay in the shading normal alone.
+ */
+const REFRACTION_OCTAVES = [3, 2] as const;
+/** Largest refracted screen shift (pixels of the scene copy) near the camera, and far away, over `REFRACTION_FAR` metres of view depth. */
+const REFRACTION_SHIFT_PX = [28, 3] as const;
+const REFRACTION_FAR = [6, 60] as const;
 /** Compile-time style switch: each material compiles only its own style's shading. */
 const WATER_STYLIZED_DEFINE = "SLATE_WATER_STYLIZED";
 /** Within Stylized, the Stylized Look switch: Toon when set, Painted otherwise (`paintedSource`, `toonSource`). */
@@ -148,9 +163,8 @@ const EMPTY_TEXTURE = new ThinTexture(null);
 const PLANAR_REACH = 1;
 /** Refraction: screen offset per unit of view-space tilt, per metre of water behind the surface, at Refraction 1. */
 const REFRACTION_SHIFT = 1.2;
-/** Water thickness (metres) beyond which the refracted shift stops growing, and the largest shift (uv). */
+/** Water thickness (metres) beyond which the refracted shift stops growing. */
 const REFRACTION_DEPTH_CAP = 3;
-const REFRACTION_SHIFT_CAP = 0.06;
 /**
  * FFT ocean detail (`waterFftForSurface`), compiled where device-effective FFT Ocean Detail is on and the asset's
  * Detail Waves is above 0: the number of cascades sampled (`#if SLATE_WATER_FFT >= c`), 0 compiling every FFT term out.
@@ -553,11 +567,12 @@ function refractionSource(scale = 1): string {
 vec2 swScreenUv = SW_FRAG_COORD.xy * U.slateWaterScreen.xy;
 float swWaterZ = abs((S.view * vec4(IN.vPositionW, 1.0)).z);
 float swSceneZ0 = swSceneDepth(swScreenUv);
-vec2 swTiltV = (S.view * vec4(-swSlope.x, 0.0, -swSlope.y, 0.0)).xy;
+vec2 swRefrSlope = swGradient + swDetailMid * swChopGain;
+vec2 swTiltV = (S.view * vec4(-swRefrSlope.x, 0.0, -swRefrSlope.y, 0.0)).xy;
 float swRefrDepth = min(max(swSceneZ0 - swWaterZ, 0.0), ${f(REFRACTION_DEPTH_CAP)});
 float swOrtho = S.projection[3][3];
 vec2 swRefrShift = swTiltV * vec2(S.projection[0][0], S.projection[1][1]) * (U.slateWaterScreen.z * ${f(REFRACTION_SHIFT * scale)} * swRefrDepth * mix(1.0 / max(swWaterZ, 0.05), 1.0, swOrtho));
-swRefrShift = swRefrShift * min(1.0, ${f(REFRACTION_SHIFT_CAP * scale)} / max(length(swRefrShift), 0.000001));
+swRefrShift = swRefrShift * min(1.0, mix(${f(REFRACTION_SHIFT_PX[0] * scale)}, ${f(REFRACTION_SHIFT_PX[1] * scale)}, smoothstep(${f(REFRACTION_FAR[0])}, ${f(REFRACTION_FAR[1])}, swWaterZ)) * U.slateWaterScreen.x / max(length(swRefrShift), 0.000001));
 vec2 swRefrUv = swScreenUv + swRefrShift;
 float swSceneZ1 = swSceneDepth(swRefrUv);
 float swLeak = step(swSceneZ1, swWaterZ);
@@ -1025,7 +1040,7 @@ float swOA${i} = ${f(slope)} * swOFd${i} * (0.25 + 1.5 * ${i % 2 === 0 ? "" : "(
 swDetail += swOC${i}.xy * (swOW${i} * swOCs${i} * swOA${i});
 swChopH += (swOW${i} - 0.37) * swOA${i};
 swChop -= swOC${i}.xy * (swOW${i} * swOCs${i} * 0.3 / swOC${i}.z);
-swLostDetail += ${f(octaveVariance(slope))} * (1.0 - swOFd${i} * swOFd${i});`, `
+swLostDetail += ${f(octaveVariance(slope))} * (1.0 - swOFd${i} * swOFd${i});${i === REFRACTION_OCTAVES[0] - 1 ? "\nswDetailMid = swDetail;" : ""}`, `
 swLostDetail += ${f(octaveVariance(slope))};`)).join("")
     : DETAIL_OCTAVES.slice(0, STYLIZED_CHOP_TIER.length).map(([, , slope], i) => fromTier(STYLIZED_CHOP_TIER[i]!, `
 vec4 swOC${i} = U.${CHOP_UNIFORMS[i]};${painted ? `
@@ -1045,7 +1060,7 @@ float swOA${i} = ${f(slope * (1 - Math.min(0.85, i * 0.14)))} * (1.0 - smoothste
   * ${chopCrests(`swOC${i}`, i)};
 swDetail += swOC${i}.xy * (swOW${i} * swOCs${i} * swOA${i});
 swChopH += (swOW${i} - 0.37) * swOA${i};
-swChop -= swOC${i}.xy * (swOW${i} * swOCs${i} * 0.3 / swOC${i}.z);`)).join("");
+swChop -= swOC${i}.xy * (swOW${i} * swOCs${i} * 0.3 / swOC${i}.z);${i === REFRACTION_OCTAVES[1] - 1 ? "\nswDetailMid = swDetail;" : ""}`)).join("");
   const capillaries = realistic ? CAPILLARY_OCTAVES.map(([, , slope, speed], i) => fromTier(CAPILLARY_TIER[i]!, `
 vec4 swCC${i} = U.${CAPILLARY_UNIFORMS[i]};
 float swCX${i} = swCC${i}.z * dot(swCC${i}.xy, swRippleDomain) + swCC${i}.w;${footprintFade("swCFd", i, `swCC${i}.z`, `swCC${i}.xy`, speed)}
@@ -1168,13 +1183,17 @@ float swDrift = swLarge * 0.5 + swGust * 0.3 + swMedium * 0.2;${realistic || pai
 // fine part fades before its noise would alias.
 swChop += vec2(swMedium - 0.5, (swFine - 0.5) * (1.0 - smoothstep(0.3, 1.0, swFoot))${realistic ? "" : " * 0.35"}) * 0.6;`) : ""}
 vec2 swDetail = vec2(0.0);
+// The chop octaves refraction bends by (\`REFRACTION_OCTAVES\`): the medium-frequency part of \`swDetail\`, kept apart from the fine
+// octaves, whose high-frequency wobble would make the bed under the water shimmer like jelly.
+vec2 swDetailMid = vec2(0.0);
 float swChopH = 0.0;
 // The chop's slow phase shift (\`CHOP_SHIFT\`): a rotating mix of the two wide noises.
 float swChopShift = U.slateWaterChopShift.x * (swLarge - 0.5) + U.slateWaterChopShift.y * (swGust - 0.5);${painted ? fromTier(1, `
 float swDriftK = 1.0;`, `
 // Low's single octave would bend into swirls under the full drift.
 float swDriftK = 0.5;`) : ""}
-${detail}${realistic ? fromTier(1, `
+${detail}${fromTier(1, "", `
+swDetailMid = swDetail;`)}${realistic ? fromTier(1, `
 // Capillaries ride a noise-bent domain and gather in drifting patches, so they never form a regular lattice.
 vec2 swRippleDomain = swChop + (vec2(swFine, swMedium) - vec2(0.5)) * 0.45;${fromTier(3, `
 float swRipplePatch = (0.6 + 0.8 * swMedium) * (0.55 + 0.9 * swFine);`, `
@@ -1182,9 +1201,7 @@ float swRipplePatch = 0.6 + 0.8 * swMedium;`)}`) : ""}${capillaries}
 // What meets the water: terrain shoreline and true depth, and objects crossing the surface.
 // Values stay continuous at the field's edges and range limits, so derivative-based antialiasing never spikes.
 float swFieldShore = mix(${f(SHORE[1])}, swTerrainShore, swFieldOn);
-float swKnown = swField.a * swFieldOn;${realistic ? `
-// Toward the field's outer edge its depth hands over smoothly to the open-water estimate, so no seam marks the edge.
-swKnown *= smoothstep(0.0, 0.06, min(min(swFieldUv.x, 1.0 - swFieldUv.x), min(swFieldUv.y, 1.0 - swFieldUv.y)));` : ""}
+float swKnown = swField.a * swFieldOn;
 // Distance to the object waterline at this fragment's rendered height (metres; contacts sampled in the cut code).
 float swObject = abs(swContactSigned);
 // Open-water edges: where a terrain field is bound but holds no terrain under this point, the mesh's own bank is no
@@ -1201,6 +1218,10 @@ float swOpenAny = max(swOpenEdge, swKnown * smoothstep(0.5, 2.5, swFieldShore - 
 float swOpenW = mix(${f(OPEN_EDGE_FADE_TERRAIN)}, ${f(OPEN_EDGE_FADE)}, swOpenEdge);`}
 float swBankV = mix(IN.vSlateWater.y, max(IN.vSlateWater.y, ${f(SHORE[1])}), swOpenAny);
 float swOpenFade = mix(1.0, smoothstep(0.0, swOpenW, IN.vSlateWater.y), swOpenAny);
+// Soft waterline (every look but Toon, whose banks are drawn lines): over known terrain the water thins to nothing over its
+// last \`SOFT_SHORE_DEPTH\` metres of depth instead of ending in a cut, and over a few centimetres where the bed drops away fast
+// (a wall, a cliff: the terrain slope \`swShoreSlope\` near 1), so it stays crisp there.
+float swShoreSoft = mix(1.0, smoothstep(0.0, mix(${f(SOFT_SHORE_DEPTH)}, 0.06, smoothstep(0.35, 1.0, swShoreSlope)), swTerrainDepth), swKnown);
 float swBank = min(min(max(0.0, swBankV), max(0.0, swFieldShore)), ${f(SHORE[1])});
 float swBodyDepth = max(0.01, IN.vSlateWater.z);
 float swFoamWidth = max(0.001, U.slateWaterMotion.w);
@@ -1219,8 +1240,8 @@ float swShoreRest = max(0.0, min(max(0.0, swBankV), mix(${f(SHORE[1])}, mix(${f(
 // Rest depth for breaking: the terrain's where known, else a shelving bank's estimate.
 float swBreakDepth = mix(swBodyDepth * (1.0 - exp(-swShoreRest * 0.3 / swBodyDepth)), max(0.0, swTerrainDepth - IN.vSlateWater.x), swKnown);
 float swSwashZone = swKnown * step(0.000001, U.slateWaterSwash.w);
-float swSwashX = min(U.slateWaterSwash.w / max(swShoreSlope, 0.02), 6.0);
-float swSurfW = clamp(swSwashX * 2.5 + swFoamWidth * 4.0, 2.0, 14.0);
+float swSwashX = min(U.slateWaterSwash.w / max(swShoreSlope, 0.02), ${f(SWASH_REACH_MAX)});
+float swSurfW = clamp(swSwashX * 2.5 + swFoamWidth * 4.0, 2.0, 22.0);
 float swShoreHere = max(swFieldShore, 0.0);
 float swSwashCover = 1.0;
 float swSwashWet = 0.0;
@@ -1247,10 +1268,10 @@ if (U.slateWaterSwash.w > 0.0 && swShoreRest < swSurfW && (swSwashZone > 0.0 || 
   float swEdgeX = swSwashX * (1.0 - swSwashRun);
   float swAAX = swFoot * 0.7 + 0.02;
   // The water thins to nothing over the last eighth of the excursion toward the edge (a thin sheet, not a cut).
-  swSwashCover = mix(1.0, smoothstep(swEdgeX - 2.0 * swAAX, swEdgeX + swSwashX * 0.12, swShoreHere), swSwashZone);
+  swSwashCover = mix(1.0, smoothstep(swEdgeX - 2.0 * swAAX, swEdgeX + swSwashX * 0.22, swShoreHere), swSwashZone);
   swSwashEdgeS = mix(1000.0, swShoreHere - swEdgeX, swSwashZone);
   // The bore's foamy front on the water side of the edge, thinning as it drains.
-  float swFrontW = swSwashX * 0.2 + swFoamWidth * 0.3 + swAAX;
+  float swFrontW = swSwashX * 0.26 + swFoamWidth * 0.3 + swAAX;
   float swFrontS = swShoreHere - swEdgeX;
   float swFront = smoothstep(-swAAX, swAAX * 0.5, swFrontS) * (1.0 - smoothstep(swFrontW * 0.25, swFrontW, swFrontS)) * mix(1.0, exp(-swDn * 3.0), swSwashBack) * (0.6 + 0.4 * swReach);${fromTier(1, `
   // Its furthest reach leaves a stranded line that fades as the water drains.
@@ -1290,6 +1311,32 @@ if (U.slateWaterSwash.w > 0.0 && swShoreRest < swSurfW && (swSwashZone > 0.0 || 
   // Low: the front alone, and a film that dries through the backwash.
   swSwashFoam = swFront * swSwashZone * 0.75;
   swSwashWet = (1.0 - swSwashCover) * (0.3 + 0.5 * (1.0 - swDn));`)}
+}
+// Surf zone (every look, ALU; \`swSurfGate\` is 0 in open water, on calm water and past a landscape's edge, which skip it): the
+// waves break where the water is under about two Wave Heights deep (so a gentle beach breaks over a wide band, a steep one
+// over a narrow one), and the breaking is the swell's own. White water stands on each crest of the steepest slot's phase
+// (\`swBrkG\`: cycles from the crest, ahead positive) and trails seaward behind it, patchy along the crest (a noise per wave),
+// so foam patches advance shoreward with the crests; between them long streaks, stretched along the seaward direction (the
+// terrain's gradient where measured, else the bank's), trail out from the swash and drift slowly back to sea. \`swSurfBreak\` is
+// the density (0-1) every look's foam composite takes; Toon thresholds it into its hard-edged shapes.
+float swSurfGate = (1.0 - smoothstep(${f(SURF_DEPTH[0])} * U.slateWaterWaves.x, ${f(SURF_DEPTH[1])} * U.slateWaterWaves.x, swBreakDepth)) * smoothstep(0.02, 0.1, U.slateWaterWaves.x)
+  * (1.0 - swOpenAny) * smoothstep(0.0, swSwashX * 0.5 + 0.5, swShoreRest);
+float swSurfBreak = 0.0;
+float swBrkG = 0.0;
+if (swSurfGate > 0.0) {
+  vec2 swBrkBank = swBankGrad / max(length(swBankGrad), 0.000001);
+  vec2 swBrkN = mix(swBrkBank, swShoreNormal / max(length(swShoreNormal), 0.0001), step(0.5, length(swShoreNormal)));
+  float swBrkA = dot(swWorld, vec2(-swBrkN.y, swBrkN.x));
+  float swBrkB = dot(swWorld, swBrkN);
+  float swBrkQ = (swP0 - 1.570796) * 0.159155;
+  swBrkG = fract(swBrkQ + 0.5) - 0.5;
+  float swBrkWake = mix(exp(swBrkG * ${f(SURF_WAKE)}) * smoothstep(-0.5, -0.3, swBrkG), 1.0 - smoothstep(0.0, 0.07, swBrkG), step(0.0, swBrkG));${fromTier(1, `
+  float swBrkPatch = swNoise(vec2(swBrkA * 0.4 + 11.0 * floor(swBrkQ + 0.5), 3.7));
+  float swBrkStreak = swNoise(vec2(swBrkA * 0.55 + swMedium * 1.5, swBrkB * 0.08 - swTime * 0.015) + vec2(5.3, 1.7));`, `
+  float swBrkPatch = swMedium;
+  float swBrkStreak = swLarge;`)}
+  float swBrkTrail = smoothstep(0.4, 0.75, swBrkStreak) * exp(-max(swShoreRest - swSwashX * 0.5, 0.0) / (6.0 + swFoamWidth * 3.0));
+  swSurfBreak = swSurfGate * clamp(swBrkWake * (0.4 + 0.9 * swBrkPatch) * 1.2 + swBrkTrail * 0.7 + 0.16, 0.0, 1.0);
 }
 // Small waves around objects that cut the surface: they travel outward at the deep-water speed of their
 // wavelength (wavenumber and clock phase from the CPU), fade with distance, and a drifting noise bends and breaks
@@ -1658,6 +1705,7 @@ float swSurfFoam = swSurf * max(smoothstep(0.0, 0.6, swCrest + swChopH * 0.6), 0
 // Each bore leaves thinner foam behind it that decays over a few Foam Widths.
 float swBoreTrail = exp(-swBorePhase * 6.283185 / max(U.slateWaterSwash.z, 0.001) / (swFoamWidth * 4.0));
 swSurfFoam = max(swSurfFoam, min(max(swBore * 1.5, swBoreOn * 0.5 * swBoreTrail), 1.0) * (0.7 + 0.3 * swSurf));
+swSurfFoam = max(swSurfFoam, swSurfBreak * 0.95);
 vec2 swWindUv = vec2(dot(swFlowed, swWindDir), dot(swFlowed, vec2(-swWindDir.y, swWindDir.x)));
 float swCap = 0.0;
 float swCapCore = 0.0;
@@ -1794,7 +1842,8 @@ if (swContactOn > 0.5) {
 }`)}
 // The collar pulses with the swell at the hull: it pushes out and thickens as the water climbs, and as it drops a wider,
 // thinner ring of foam clings briefly before it drains (\`swHullPulse\`, \`swHullCling\`).
-float swHullW = swContactW * (0.55 + 0.8 * swHullPulse);
+float swHullW = swContactW * (0.55 + 0.8 * swHullPulse);${fromTier(2, `
+swHullW *= 1.35;`)}
 float swHullRing = swHullCling * exp(-abs(swObjectW - swContactW * 0.22) / (swContactW * 0.12)) * 0.55;${fromTier(1, `
 // Lee puffs: foam shed downstream with each rise drifts away in clumps, within about a Contact Foam Width (over two,
 // small floats trailed long marbled ribbons several times their own size).
@@ -1810,7 +1859,9 @@ float swHugCut = 1.0 - swHug * 0.9;
 // brightest borders would otherwise pass the cut there and net the whole open sea in a faint, regular crackle.
 float swRealContact = smoothstep(swHugCut - swHugSoft * 0.5, swHugCut + swHugSoft, swPatchTex) * (0.15 + 0.75 * swHug) * mix(0.45 + 0.55 * swLace, 1.0, swHug * swHug)
   * smoothstep(0.0, 0.08, swHug);
-swRealContact = max(swRealContact, swContactLine * (0.65 + 0.3 * smoothstep(0.2, 0.6, swPatchTex)));`, `
+swRealContact = max(swRealContact, swContactLine * (0.65 + 0.3 * smoothstep(0.2, 0.6, swPatchTex)));${fromTier(2, `
+// High up the collar reads a little denser and wider at a distance (the ring and wake were faint beside the swell).
+swRealContact = min(swRealContact * 1.25, 1.0);`)}`, `
 float swHug = clamp(exp(-swObjectW / swHullW * 8.0) * (0.4 + 1.1 * swClump) * (0.7 + 0.5 * swHullPulse), 0.0, 1.0);
 float swRealContact = max(smoothstep(0.35, 0.85, swHug) * (0.25 + 0.6 * swHug) * (0.6 + 0.4 * swLace), swContactLine * 0.8);`)}
 // Aerial perspective fades distant foam into the horizon sky with the water, so far breakers never pile into a bright
@@ -1959,7 +2010,7 @@ swSkyRefl *= U.slateWaterDeep.w;
 
 // Foam is matte and lit: PBR shades it as albedo, and its roughness and coverage remove the mirror.
 // Over known terrain the water also thins out over its last few centimetres of depth, so a bank never shows a hard lip.
-float swEdgeFade = smoothstep(0.0, 0.2, swBank + 0.02) * mix(1.0, smoothstep(0.0, 0.25, swTerrainDepth), swKnown);
+float swEdgeFade = smoothstep(0.0, 0.2, swBank + 0.02) * swShoreSoft;
 // Uncovered by the backwash, only the wet film is left: no water body, a faint sheen of sky and sun on the wet sand.
 float swWaterFade = swEdgeFade * swSwashCover;
 float swSheen = swSwashCover + swFilm * 0.4;
@@ -2580,7 +2631,7 @@ vec2 swStreakUv = swWindUv * vec2(0.12, 0.6) + vec2(swMedium - 0.5, swGust - 0.5
 float swStreakN = mix(swNoise(swStreakUv), 0.5, smoothstep(0.25, 0.7, swFoot)) * 0.8 + swGust * 0.2;
 float swOpenCut = 0.85 - 0.3 * U.slateWaterSunColor.w;
 swStreakD = smoothstep(swOpenCut, swOpenCut + 0.2, swStreakN) * clamp(0.45 + swTrailD + swCapD - max(swCrest, 0.0) * 0.2, 0.0, 1.0) * 0.72 * smoothstep(0.0, 0.3, U.slateWaterSunColor.w) * swCalm * (1.0 - smoothstep(0.25, 0.7, swFoot));`))}
-float swDensity = max(max(clamp(max(max(swShoreD, swWash), swCapD) * swFoamAmount, 0.0, 1.0), clamp(swContactD * swContactStrength, 0.0, 1.0)), clamp(max(swTrailD, swStreakD) * swFoamAmount, 0.0, 1.0));
+float swDensity = max(max(clamp(max(max(swShoreD, swWash), max(swCapD, swSurfBreak)) * swFoamAmount, 0.0, 1.0), clamp(swContactD * swContactStrength, 0.0, 1.0)), clamp(max(swTrailD, swStreakD) * swFoamAmount, 0.0, 1.0));
 // The lace pattern: low along curved strands (a noise's mid iso-lines), so thinning foam keeps strands and opens holes.
 vec2 swFoamUv = swFlowed * swFoamScale + swWindDir * (swTime * 0.05) + vec2(swMedium, swLarge) * 0.6;${fromTier(1, `
 float swLaceA = swNoise(swFoamUv * 1.6 + vec2(swFine - 0.5, swMedium - 0.5) * 0.3);
@@ -3105,7 +3156,7 @@ float swShoreLobes = (abs(swScallop * 2.0 - 1.0) - 0.3) * 1.3 * swNearFoam + (sw
 // A body's own edge over open water (a lake's bank, no terrain shoreline near) keeps a narrower band than a beach.
 float swBodyEdge = smoothstep(0.5, 3.0, swFieldShore - max(0.0, swBankV));
 // The band's edge runs in and out with the swash (\`swSwashRun\`): wider as each bore runs up, narrower as it drains.
-float swSurfEdge = mix(2.3, 1.2, swBodyEdge) * swFoamAmt * (0.72 + 0.45 * swSwashRun);
+float swSurfEdge = mix(3.3, 1.3, swBodyEdge) * swFoamAmt * (0.72 + 0.45 * swSwashRun);
 float swShoreX = swShoreUnit - swShoreLobes * 0.9;
 float swAAU = min(fwidth(swShoreX) * 0.7 + 0.002, 0.5);
 // Over terrain the band gives way where the backwash has uncovered the shallows (a hard cut, the swash's own edge), and
@@ -3131,6 +3182,17 @@ float swWashPhase = sin(swTime * 0.8 + swLarge * 5.0);
 float swWashAA = min(fwidth(swWashUnit) * 0.7 + 0.002, 0.5);
 float swWashHalf = max((0.26 + 0.06 * swWashPhase) * mix(1.0, 0.6, swBodyEdge) * swFoamAmt, swWashAA * 1.1) * step(0.01, swFoamAmt);
 swFoam = max(swFoam, (1.0 - smoothstep(swWashHalf - swWashAA, swWashHalf + swWashAA, abs(swWashUnit - swSurfEdge - 1.0 - 0.3 * swWashPhase))) * (1.0 - smoothstep(5.0, 6.0, swWashUnit)));`)}
+// Surf (\`swSurfBreak\`, \`swSurfGate\`): the breaking patches that advance with the swell's crests as hard shapes, and two
+// thinner scalloped lines stepping seaward behind the band, each swinging in and out with the swash and the waves.
+float swBrkAA = min(fwidth(swSurfBreak) * 0.7 + 0.01, 0.3);
+swFoam = max(swFoam, smoothstep(0.42 - swBrkAA, 0.42 + swBrkAA, swSurfBreak) * step(0.01, swFoamAmt) * swToonCover);
+float swSurfLineOn = smoothstep(0.15, 0.4, swSurfGate) * step(0.01, swFoamAmt) * (1.0 - smoothstep(7.0, 9.0, swWashUnit));
+float swSurfLineAA = min(fwidth(swWashUnit) * 0.7 + 0.002, 0.5);
+float swSurfLineU = swWashUnit - swSurfEdge - swShoreLobes * 0.5;
+float swSurfLineHalf = max(0.15, swSurfLineAA * 1.1);
+float swSurfLine1 = 1.0 - smoothstep(swSurfLineHalf - swSurfLineAA, swSurfLineHalf + swSurfLineAA, abs(swSurfLineU - 1.5 - 1.0 * swSwashRun - 0.5 * swBrkG));
+float swSurfLine2 = 1.0 - smoothstep(swSurfLineHalf * 0.8 - swSurfLineAA, swSurfLineHalf * 0.8 + swSurfLineAA, abs(swSurfLineU - 3.4 - 1.6 * swSwashRun - 0.9 * swBrkG));
+swFoam = max(swFoam, max(swSurfLine1, swSurfLine2 * step(0.0, swShoreLobes + 0.25)) * swSurfLineOn * swToonCover);
 // Object contacts, in contact widths from the waterline: a collar whose radius swells and shrinks with a noise scaled
 // to the width (so it never opens holes at the waterline) and pulses with the swell at the hull (\`swHullPulse\`: out as
 // the water climbs, clinging a moment as it drops), one bold ring breathing with it close outside, a thinner ring sent
@@ -3570,6 +3632,9 @@ function beforeFogSource(wgsl: boolean): string {
     `#ifdef ${WATER_STYLIZED_DEFINE}`,
     `#ifdef ${REFRACTION}`,
     `finalColor = ${v4}(finalColor.rgb + swRefractedOut, finalColor.a);`,
+    "#endif",
+    `#ifndef ${WATER_TOON_DEFINE}`,
+    "finalColor.a *= swShoreSoft;",
     "#endif",
     "#else",
     `#if defined(${REFRACTION}) && !defined(IMAGEPROCESSINGPOSTPROCESS)`,
