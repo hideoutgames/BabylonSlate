@@ -129,8 +129,8 @@ For devices without a test harness (iPad, phones, other browsers), a Feature Tes
 | Full | `main`, `FT_World`, `FT_Clustered`, `FT_2D`, `FT_Stress` | As Quick; the main scene also runs `ft_spawn 10`, `ft_stream`, `ft_cel`, `ft_pbr` |
 | Benchmark | All five | Play with the frame cap lifted to 240, then 5 s per profile: `low`, `medium`, `high`, `ultra` on Forward and `high` on Clustered Forward; quality, render path and cap are restored afterwards |
 
-- **Report:** app version, device (platform, touch points, pixel ratio, screen, cores, memory), browser and GPU adapter. Per scene it adds:
-  - editor and Play load times, plus where a load stuck;
+- **Report:** app version, device (platform, touch points, pixel ratio, screen, cores, memory), browser and GPU adapter. iPadOS Safari reports a Mac; a `MacIntel` platform with touch points is labelled `iPad (reports MacIntel)`. Per scene it adds:
+  - editor and Play load times, plus where a load stuck; an editor load failure adds its error with the cause chain, and the GPU line falls back to the viewport's adapter when Play never ran;
   - fps, p95, max frame and stalls over 100 ms;
   - draw calls, mesh and texture counts, CPU/GPU frame cost and render resolution;
   - console command output and duration;

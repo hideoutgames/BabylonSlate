@@ -1,5 +1,6 @@
 import type { PlaySessionResult } from "./play-session";
 import type { PlayProbe, ViewportProbe } from "./runtime-probes";
+import { describeError } from "../lib/diagnostic-info";
 
 /** Scenes a Full check walks, in order; the heaviest runs last. */
 export const FEATURE_TEST_CHECK_SCENES = [
@@ -63,7 +64,15 @@ export interface FeatureTestCheckCommandResult {
 export interface FeatureTestCheckSceneResult {
   name: string;
   path: string;
-  editor: { status: "ready" | "failed" | "timeout" | "not-opened"; ms: number; phase: string | null; frames: FrameStats | null };
+  editor: {
+    status: "ready" | "failed" | "timeout" | "not-opened";
+    ms: number;
+    phase: string | null;
+    frames: FrameStats | null;
+    /** The viewport's load failure, one line per message, frame and cause. */
+    error: string[] | null;
+    gpu: ReturnType<ViewportProbe["gpu"]>;
+  };
   play: {
     status: "loaded" | "timeout" | "closed" | "not-started" | "skipped";
     ms: number;
@@ -207,7 +216,7 @@ export async function runFeatureTestCheck(options: {
 function emptySceneResult(scene: { name: string; path: string }): FeatureTestCheckSceneResult {
   return {
     name: scene.name, path: scene.path,
-    editor: { status: "not-opened", ms: 0, phase: null, frames: null },
+    editor: { status: "not-opened", ms: 0, phase: null, frames: null, error: null, gpu: null },
     play: { status: "not-started", ms: 0, phase: null, frames: null, runtimeFps: null, snapshot: null, commands: [], benchmark: [], logs: [] },
     session: null, passed: false, problems: [],
   };
@@ -233,6 +242,10 @@ async function checkScene(
     return viewport?.ready() ? "ready" as const : null;
   });
   result.editor.ms = deps.now() - started;
+  const viewport = deps.viewport(documentId);
+  result.editor.gpu = viewport?.gpu() ?? null;
+  const error = viewport?.error();
+  if (error !== undefined && error !== null) result.editor.error = describeError(error);
   if (opened === null) {
     const active = deps.activeDocumentId() === documentId;
     result.editor.status = active ? "timeout" : "not-opened";

@@ -200,6 +200,15 @@ export function AppSettingsProvider({
   );
 }
 
+/** Trace Graphics Errors, effective only in Debug Mode; re-renders only when it changes. */
+export function useGraphicsErrorTrace(): boolean {
+  const read = () => {
+    const { settings } = getActiveAppSettingsSnapshot();
+    return settings.debugMode && settings.traceGraphicsErrors;
+  };
+  return useSyncExternalStore(subscribeAppSettings, read, read);
+}
+
 /** Debug Mode Engine Setting; re-renders only when it changes. */
 export function useDebugMode(): boolean {
   return useSyncExternalStore(

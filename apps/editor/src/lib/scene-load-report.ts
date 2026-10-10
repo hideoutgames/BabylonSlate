@@ -1,4 +1,14 @@
+import { formatGlErrorTrace, glErrorTraceActive, glErrorTraceEntries } from "@babylonslate/render";
 import { collectDiagnosticEnvironment, describeError, formatDiagnosticEnvironment, recentDiagnosticLog, type DiagnosticEnvironment } from "./diagnostic-info";
+
+/** Report lines for the WebGL call trace, or how to turn it on. */
+export function graphicsErrorTraceLines(): string[] {
+  if (!glErrorTraceActive()) return ["Graphics error trace: off (Engine Settings → Debugger → Trace Graphics Errors)"];
+  const count = glErrorTraceEntries().length;
+  return count
+    ? [`Graphics error trace (${count} failing WebGL call${count === 1 ? "" : "s"}, newest last):`, ...formatGlErrorTrace().map((line) => `  ${line}`)]
+    : ["Graphics error trace: on, no failing WebGL calls recorded"];
+}
 
 export interface SceneLoadReportInput {
   surface: "Scene Viewport" | "Play" | "Scene Document";
@@ -22,6 +32,7 @@ export function formatSceneLoadReport(
   input: SceneLoadReportInput,
   environment: DiagnosticEnvironment = collectDiagnosticEnvironment(),
   log: string[] = recentDiagnosticLog(),
+  graphicsTrace: string[] = graphicsErrorTraceLines(),
 ): string {
   const status = input.failed
     ? `FAILED (${input.rendering ? "Rendering Update Failed" : "Scene Loading Failed"})`
@@ -37,5 +48,6 @@ export function formatSceneLoadReport(
   if (input.error !== undefined) lines.push("Error:", ...describeError(input.error).map((line) => `  ${line}`));
   lines.push(log.length ? `Recent console errors and warnings (${log.length}):` : "Recent console errors and warnings: none recorded since Debug Mode was enabled");
   lines.push(...log.map((line) => `  ${line}`));
+  lines.push(...graphicsTrace);
   return lines.join("\n");
 }

@@ -20,7 +20,7 @@ export function collectDiagnosticEnvironment(appVersion = getApplicationVersion(
     appVersion,
     buildLabel,
     userAgent: nav.userAgent,
-    platform: nav.userAgentData?.platform || nav.platform || "unknown",
+    platform: describePlatform(nav.userAgentData?.platform || nav.platform || "unknown", nav.maxTouchPoints ?? 0),
     touchPoints: nav.maxTouchPoints ?? 0,
     devicePixelRatio: window.devicePixelRatio,
     screen: `${window.screen.width}x${window.screen.height}`,
@@ -28,6 +28,11 @@ export function collectDiagnosticEnvironment(appVersion = getApplicationVersion(
     cores: nav.hardwareConcurrency || null,
     memoryGb: nav.deviceMemory ?? null,
   };
+}
+
+/** iPadOS Safari reports a Mac platform and user agent by default; touch support gives it away. */
+export function describePlatform(platform: string, touchPoints: number): string {
+  return platform === "MacIntel" && touchPoints > 1 ? "iPad (reports MacIntel)" : platform;
 }
 
 export function clipText(text: string, max = 240): string {

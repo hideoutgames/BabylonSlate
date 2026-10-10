@@ -33,6 +33,8 @@ function fakeEditor(scenes: Record<string, SceneBehavior>, onSleep?: (now: numbe
       ready: () => (behavior(id).open ?? "ready") === "ready",
       failed: () => behavior(id).open === "failed",
       phase: () => behavior(id).open === "failed" ? "Loading Models" : null,
+      error: () => behavior(id).open === "failed" ? new Error("Scene construction failed.", { cause: new Error("WebGPU device lost") }) : undefined,
+      gpu: () => ({ api: "webgpu", vendor: "apple", renderer: "apple-a16", version: null }),
     } : null,
     startPlay: async () => {
       playScene = active;
@@ -115,6 +117,10 @@ describe("runFeatureTestCheck", () => {
       mode: "full", scenes: [scene("blocked"), scene("broken")], deps: editor.deps, signal: new AbortController().signal,
     });
     expect(report.scenes.map((entry) => entry.editor.status)).toEqual(["not-opened", "failed"]);
+    const broken = report.scenes[1].editor;
+    expect(broken.gpu?.renderer).toBe("apple-a16");
+    expect(broken.error?.[0]).toBe("Error: Scene construction failed.");
+    expect(broken.error).toContain("  Error: WebGPU device lost");
     expect(report.scenes.map((entry) => entry.play.status)).toEqual(["not-started", "not-started"]);
     expect(editor.started).toEqual([]);
   });

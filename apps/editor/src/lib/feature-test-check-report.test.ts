@@ -20,13 +20,13 @@ describe("formatFeatureTestCheckReport", () => {
       scenes: [{
         name: "main", path: "assets/main.scene.babasset", passed: false,
         problems: ["Play did not finish loading in 120 s (stuck at Loading Models 45%)."],
-        editor: { status: "ready", ms: 4200, phase: null, frames: { frames: 180, durationMs: 3000, fps: 60, p95Ms: 18, maxMs: 40, stalls: 0 } },
+        editor: { status: "ready", ms: 4200, phase: null, frames: { frames: 180, durationMs: 3000, fps: 60, p95Ms: 18, maxMs: 40, stalls: 0 }, error: null, gpu: null },
         play: { status: "timeout", ms: 120_000, phase: "Loading Models 45%", frames: null, runtimeFps: null, snapshot: null, commands: [], benchmark: [],
           logs: [{ severity: "error", message: "Material FT_Glass failed to compile" }] },
         session: { diagnostics: [], droppedDiagnostics: 0, runtimeMode: "worker", textures: { before: 55, after: 55, leak: false, quarantined: false } },
       }, {
         name: "FT_2D", path: "assets/FeatureTest/Scenes/FT_2D.scene.babasset", passed: true, problems: [],
-        editor: { status: "ready", ms: 900, phase: null, frames: null },
+        editor: { status: "ready", ms: 900, phase: null, frames: null, error: null, gpu: null },
         play: { status: "loaded", ms: 3000, phase: null, frames: { frames: 300, durationMs: 5000, fps: 60, p95Ms: 17, maxMs: 25, stalls: 0 }, runtimeFps: 60,
           snapshot: { drawCalls: 42, meshes: 80, textures: 30, accountedBytes: 8 * 1048576, rendering },
           commands: [{ line: "ft_stats", success: true, output: "FeatureTest score 0, spinners 4, spawned 0", ms: 1200 }], benchmark: [], logs: [] },
@@ -54,7 +54,7 @@ describe("formatFeatureTestCheckReport", () => {
     });
     const scene = (name: string, benchmark: FeatureTestBenchmarkSample[]): FeatureTestCheckSceneResult => ({
       name, path: `assets/${name}.scene.babasset`, passed: true, problems: [],
-      editor: { status: "ready", ms: 1000, phase: null, frames: null },
+      editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },
       play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null, snapshot: null, commands: [], benchmark, logs: [] },
       session: null,
     });
@@ -71,5 +71,26 @@ describe("formatFeatureTestCheckReport", () => {
     expect(lines).toContain("Benchmark: highest tier every benchmarked scene holds at 60 fps: low · forward · at 30 fps: medium · forward (2/2 scenes benchmarked)");
     expect(lines).toContain("  Highest tier at 60 fps: high · forward · at 30 fps: ultra · forward");
     expect(lines.find((line) => line.includes("high · clustered") && line.includes("57"))).toContain("(ran forward)");
+  });
+
+  it("shows an editor load failure's error and the viewport's GPU when Play never ran", () => {
+    const report: FeatureTestCheckReport = {
+      mode: "quick", startedAt: 0, durationMs: 15_400, cancelled: false, pageErrors: [],
+      scenes: [{
+        name: "main", path: "assets/main.scene.babasset", passed: false,
+        problems: ["Editor viewport reported Scene Loading Failed at Presenting First Frame."],
+        editor: { status: "failed", ms: 15_300, phase: "Presenting First Frame", frames: null,
+          error: ["Error: The scene did not present a frame before the loading deadline. Ready: true; draws: 3; rendered: true; GPU pending: true; copied: false."],
+          gpu: { api: "webgpu", vendor: "apple", renderer: "apple-a16", version: null } },
+        play: { status: "not-started", ms: 0, phase: null, frames: null, runtimeFps: null, snapshot: null, commands: [], benchmark: [], logs: [] },
+        session: null,
+      }],
+    };
+    const lines = formatFeatureTestCheckReport(report, environment).split("\n");
+    expect(lines).toContain("GPU: webgpu · apple · apple-a16");
+    expect(lines).toContain("  Editor: failed after 15.3 s at Presenting First Frame");
+    expect(lines.slice(lines.indexOf("  Editor error:") + 1, lines.indexOf("  Editor error:") + 2)).toEqual([
+      "    Error: The scene did not present a frame before the loading deadline. Ready: true; draws: 3; rendered: true; GPU pending: true; copied: false.",
+    ]);
   });
 });

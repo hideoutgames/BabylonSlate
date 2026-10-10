@@ -30,6 +30,7 @@ function sceneLines(scene: FeatureTestCheckSceneResult): string[] {
   lines.push(editor.status === "ready"
     ? `  Editor: ready in ${s(editor.ms)} · ${frames(editor.frames)}`
     : `  Editor: ${editor.status} after ${s(editor.ms)}${editor.phase ? ` at ${editor.phase}` : ""}`);
+  if (editor.error) lines.push("  Editor error:", ...editor.error.map((line) => `    ${line}`));
   const play = scene.play;
   if (play.status === "loaded") {
     lines.push(`  Play: loaded in ${s(play.ms)} · ${frames(play.frames)}${play.runtimeFps !== null ? ` · runtime ${play.runtimeFps.toFixed(0)} fps` : ""}`);
@@ -103,13 +104,15 @@ function bestProfile(sweeps: ReadonlyArray<readonly FeatureTestBenchmarkSample[]
 /** Plain-text report sized for pasting into a chat or issue. */
 export function formatFeatureTestCheckReport(report: FeatureTestCheckReport, environment: FeatureTestCheckEnvironment): string {
   const passed = report.scenes.filter((scene) => scene.passed).length;
-  const adapter = report.scenes.map((scene) => scene.play.snapshot?.rendering?.adapter).find(Boolean);
+  // Play reports its adapter; an editor-only failure still names the viewport's.
+  const adapter = report.scenes.map((scene) => scene.play.snapshot?.rendering?.adapter).find(Boolean)
+    ?? report.scenes.map((scene) => scene.editor.gpu).find(Boolean);
   const pipeline = report.scenes.map((scene) => scene.play.snapshot?.rendering?.pipeline.effective).find(Boolean);
   const lines = [
     `BabylonSlate Feature Test Check (${MODE_LABELS[report.mode]}) · ${new Date(report.startedAt).toISOString()}`,
     `Result: ${passed}/${report.scenes.length} scenes passed${report.cancelled ? " · CANCELLED" : ""} · took ${s(report.durationMs)}`,
     ...formatDiagnosticEnvironment(environment),
-    `GPU: ${adapter ? `${adapter.api} · ${adapter.vendor ?? "?"} · ${adapter.renderer ?? "?"}` : "unknown (Play did not start)"}${pipeline ? ` · ${pipeline.gpuBackend} ${pipeline.renderPath}` : ""}`,
+    `GPU: ${adapter ? `${adapter.api} · ${adapter.vendor ?? "?"} · ${adapter.renderer ?? "?"}` : "unknown (no viewport or Play engine reported one)"}${pipeline ? ` · ${pipeline.gpuBackend} ${pipeline.renderPath}` : ""}`,
   ];
   const sweeps = report.scenes.map((scene) => scene.play.benchmark).filter((sweep) => sweep.length);
   if (report.mode === "benchmark") {

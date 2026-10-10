@@ -13,7 +13,7 @@ describe("formatSceneLoadReport", () => {
       surface: "Scene Viewport", scene: "assets/main.scene.babasset", phase: "Warming Shaders", progress: null, failed: true,
       elapsedMs: 21_400, error, gpu: { api: "webgpu", vendor: "apple", renderer: "apple-a16", version: null },
       details: ["Project rendering: path auto · backend webgpu"],
-    }, environment, ["[error] 10:00:01 [viewport] failed to load scene Error: Material FT_Glass"]).split("\n");
+    }, environment, ["[error] 10:00:01 [viewport] failed to load scene Error: Material FT_Glass"], ["Graphics error trace (1 failing WebGL call, newest last):", "  21:06:59 drawElements(0x4, 36, 0x1403, 0) → 1282 INVALID_OPERATION"]).split("\n");
 
     expect(lines[1]).toBe("Status: FAILED (Scene Loading Failed) · Scene Viewport · assets/main.scene.babasset");
     expect(lines[2]).toBe("Phase: Warming Shaders · 21.4 s since loading started");
@@ -21,9 +21,11 @@ describe("formatSceneLoadReport", () => {
     expect(lines).toContain("Project rendering: path auto · backend webgpu");
     expect(lines).toContain("  Error: Material FT_Glass: WebGPU pipeline creation failed");
     expect(lines).toContain("    TypeError: binding 3 is undefined");
-    expect(lines.slice(-2)).toEqual([
+    expect(lines.slice(-4)).toEqual([
       "Recent console errors and warnings (1):",
       "  [error] 10:00:01 [viewport] failed to load scene Error: Material FT_Glass",
+      "Graphics error trace (1 failing WebGL call, newest last):",
+      "  21:06:59 drawElements(0x4, 36, 0x1403, 0) → 1282 INVALID_OPERATION",
     ]);
   });
 });
