@@ -584,8 +584,25 @@ These are documentation mismatches. The code is the behavior below.
 
 ## Coverage still open
 
-These reads are still running: render snapshot files other than `snapshot-apply.ts`, the assets package pass, render files `g`–`o`, and the architecture docs whose names start with `a`–`m`.
+## Verified in the twelfth batch
 
-Docs read in this batch: `navigation.md`, `object-model.md`, `overview.md`, `particles.md`, `physics.md`, `plugins.md`, `scene-editing.md`, `scene-layers.md`, `source-control.md`, `sprites.md`, `tilemaps.md`, `vfs.md`, `feature-test.md`, `gestures.md`, and `save-games.md`. `scripting.md`, `shader-graph.md`, `testing.md`, `theming.md`, `distribution.md`, `particle-emitters.md`, and `engineplan.md` were read only where a sentence stated a save, load, delete, security, or lifecycle guarantee. `render.md`, `perf-budget.md`, and `renderer-qualification.md` were not line-read.
+These are documentation mismatches. The code is the behavior below. The `useDocuments()` claim in `command-layer.md` is the same `ActorDefaultsGrid` call already recorded.
+
+- **Medium.** `docs/architecture/input.md` says the Play worker stamps canvas and gamepad samples from the last `stats.tickIndex`. `applyPlaySnapshotTick` returns `snapshotTickIndex(buffer)` (`apps/editor/src/services/play-session.ts`).
+- **Medium.** `docs/architecture/audio.md` says console `pause` stays simulation-only. Console `pause` calls `host.pause()` and emits `sessionPaused`. The editor then requests a `resetInput` boundary, and a successful result calls `setGameTimePaused`. That sets `gameTimePaused`, and `applyPause` calls `audioService.setPaused` (`runtime-console.ts`, `play-session.ts`, `create-engine.ts`). A `resetInput` reply after pause reports `paused: true` (`session-boundary.test.ts`).
+- **Medium.** `docs/architecture/asset-registry.md` says Model Import Default Scale defaults to 10. `modelImportDefaultScale` defaults to 1 (`packages/vfs/src/app-settings.ts`). `docs/architecture/vfs.md` already says 1.
+- **Medium.** That page says Model Preview Show Collision defaults on. `model-collider-session.tsx` initializes `showCollision` to `false`.
+- **Medium.** That page says New Asset creates a fixed World / Scripting / 2D / Animation / Rendering / AI / Audio list. `CREATABLE_ASSET_TYPES` also creates SceneLayer, Prefab, MaterialInstance, SaveGame, DataDefinition, DataTree, InputAction, InputAxis, Water, RenderTarget, and RenderTargetTexture, and the dialog adds Input and Data groups (`content-browser-helpers.ts`).
+- **Medium.** `docs/architecture/containers.md` says header `parentClass` is an optional parent class guid. Class saves store a class id such as `BObject` or `Hero` (`class-asset-refs.test.ts`).
+- **Medium.** `docs/architecture/components.md` says the Animation Graph variable picker is Bool / Int / Float / String. `VARIABLE_TYPES` also includes `tag` and `tagContainer` (`anim-graph-editor.tsx`).
+- **Medium.** `docs/architecture/behaviour-tree.md` says `HOST_TASKS` is `moveTo`, `rotateToFace`, `playAnimation`, and `playSound`. The set also includes `bt.task.moveToBlackboardKey` (`builtins.ts`).
+- **Medium.** `docs/architecture/keybinds.md` lists Editing defaults as Duplicate, Rename, and Delete. `editor-keybinds.ts` also defaults Copy Actors to `Mod+C` and Paste Actors to `Mod+V`.
+- **Medium.** `docs/architecture/debugger.md` does not list `renderpath`, `possess`, or `destroyactor`. All three are commands (`commands.ts`). `lightsdebug` is documented there. `docs/architecture/console-commands.md` describes `quality lighting` as `[tier|reset]`. `quality lighting budget 3` succeeds and sets `maxLocalLights` (`execute-console.test.ts`).
+
+## Coverage still open
+
+These reads are still running: render snapshot files other than `snapshot-apply.ts`, the assets package pass, and render files `g`–`o`.
+
+Architecture docs `a`–`m` were read in full: `anim-graph.md`, `asset-registry.md`, `audio.md`, `behaviour-tree.md`, `bridge.md`, `command-layer.md`, `components.md`, `console-commands.md`, `containers.md`, `debugger.md`, `editor-extensions.md`, `exporter.md`, `fonts.md`, `global-search.md`, `index.md`, `input.md`, and `keybinds.md`. Earlier docs read: `navigation.md`, `object-model.md`, `overview.md`, `particles.md`, `physics.md`, `plugins.md`, `scene-editing.md`, `scene-layers.md`, `source-control.md`, `sprites.md`, `tilemaps.md`, `vfs.md`, `feature-test.md`, `gestures.md`, and `save-games.md`. `scripting.md`, `shader-graph.md`, `testing.md`, `theming.md`, `distribution.md`, `particle-emitters.md`, and `engineplan.md` were read only where a sentence stated a save, load, delete, security, or lifecycle guarantee. `render.md`, `perf-budget.md`, and `renderer-qualification.md` were not line-read.
 
 Package test files were often left unread by the production-source passes. Assets `n`–`z` left 21 test files unread or partial. Runtime `a`–`r` left 52 test files unread.
