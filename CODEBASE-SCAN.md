@@ -1461,6 +1461,11 @@ No new unchecked claims were added in this pass. The items above were read in so
 - **Low.** Adding a folder whose id already exists returns the same document. Undo is a remove, so it deletes the existing folder. Ordinary diffs do not emit that add (`AddFolderCommand`).
 - **Low.** Every scene diff stringifies every settings key, including foliage and the post-process stack, even when the edit did not change them (`diffSceneCommands`).
 
+## Verified in the fifty-seventh batch
+
+- **Medium.** A Git LFS lock response whose body is not a JSON object is treated as an empty object. A 200 with invalid JSON, a JSON array, or a bare string becomes an empty lock list and verify returns no ours or theirs (`parseJson`, `GitLfsLockProvider.list`, `GitLfsLockProvider.verify`).
+- **Low.** A lock with no `locked_at` is stored as the Unix epoch, so it sorts as if it were created in 1970 (`parseLock`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
@@ -1473,4 +1478,4 @@ The assets-package read and the UI-package second pass have both returned. Rende
 
 Architecture docs `a`–`m` were read in full: `anim-graph.md`, `asset-registry.md`, `audio.md`, `behaviour-tree.md`, `bridge.md`, `command-layer.md`, `components.md`, `console-commands.md`, `containers.md`, `debugger.md`, `editor-extensions.md`, `exporter.md`, `fonts.md`, `global-search.md`, `index.md`, `input.md`, and `keybinds.md`. Earlier docs read: `navigation.md`, `object-model.md`, `overview.md`, `particles.md`, `physics.md`, `plugins.md`, `scene-editing.md`, `scene-layers.md`, `source-control.md`, `sprites.md`, `tilemaps.md`, `vfs.md`, `feature-test.md`, `gestures.md`, and `save-games.md`. The deeper pass has now line-read `render.md`, `perf-budget.md`, `renderer-qualification.md`, `scripting.md`, `shader-graph.md`, `testing.md`, `theming.md`, `distribution.md`, `particle-emitters.md`, and `engineplan.md`; only the mismatches checked above are recorded.
 
-Package test files were often left unread by the production-source passes. The deeper wave was assigned those tests. Returned slices with no new product defect beyond this file include runtime tests `sn`–`z` and `sa`–`sm`, and render tests `t`–`z`. The fifty-first batch checked the still-open reports for animation-graph load scope, plugin catalog storage, bridge commands, template storage, audio weights, the folder minimum, Feature Test paths, focus-keep keys, and the docs brand button.
+Package test files were often left unread by the production-source passes. The deeper wave was assigned those tests. Returned slices with no new product defect beyond this file include runtime tests `sn`–`z` and `sa`–`sm`, and render tests `t`–`z`. The fifty-first batch checked the still-open reports for animation-graph load scope, plugin catalog storage, bridge commands, template storage, audio weights, the folder minimum, Feature Test paths, focus-keep keys, and the docs brand button. A later pass is reading object-model, scripting-nodes, core, physics, editor services, editor lib, vfs, exporter, and editor-kit.
