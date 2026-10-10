@@ -1682,6 +1682,17 @@ No new unchecked claims were added in this pass. The items above were read in so
 
 - Recognizing a historical Data Sheet or Data Object and refusing to open it as a Data Tree is a rejection, not a reader that keeps the old payload (`normalizeDataTreeAsset`).
 
+## Verified in the seventy-first batch
+
+- **Medium.** Desktop settings are written in place with no queue and no temporary-file rename. Two windows can overlap those writes, so the file and the updater flag can disagree. A parse failure turns automatic updates on (`settings:write`, `automaticUpdatesEnabled`).
+- **Medium.** Opening a known `node:` project skips the folder grant when that id is already listed, then opens `realpath` of the id. That canonical path is not required to stay the listed path (`project:openKnown`).
+- **Medium.** A second desktop process calls `app.quit()` and continues. Startup returns before IPC is registered. On macOS, `activate` still creates a window when none exists, and closing the last window does not quit (`requestSingleInstanceLock`, `activate`).
+- **Medium.** Account secret reads wait for the mutation queue they observed, then read the file outside it. A set or delete that starts in that gap is not included, so the read can return a token that the queued write has already replaced (`DesktopAccountSecretStore.get`).
+- **Medium.** The outliner folder test renames `folder-1` to Lighting and checks that `actor-1` is still visible. Nothing is parented into the folder (`scene-outliner-folders.spec.ts`).
+- **Medium.** After Play stops, the player test reads `data-ticks`, waits, and expects the same string. A missing attribute is `null` both times, so a player that is still running still passes (`player-backend.spec.ts`).
+- **Medium.** The custom-event legacy loop is only `false`, so deleting `members` and asserting a saved graph has none never run (`qa-custom-events.spec.ts`).
+- **Medium.** The spatial-effects kind loop is typed as reflections, point, spot, sun, and combined, and the array contains only `combined`. The per-kind cases never run (`spatial-effects.spec.ts`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
