@@ -60,6 +60,12 @@ function sampleFrames(durationMs: number, signal: AbortSignal) {
   });
 }
 
+const MODE_DESCRIPTIONS: Record<FeatureTestCheckMode, string> = {
+  quick: "Checks the current scene in the editor and in Play on this device, then writes a report you can copy. About a minute.",
+  full: "Checks every Feature Test scene in the editor and in Play and runs the ft_ console commands. A few minutes.",
+  benchmark: "Plays every Feature Test scene and measures each quality tier and Clustered Forward with the frame cap lifted, to find the settings this device holds at 60 and 30 fps. About ten minutes; keep the device awake and plugged in.",
+};
+
 type Phase = { kind: "idle" } | { kind: "running"; message: string } | { kind: "done"; text: string; report: FeatureTestCheckReport };
 
 export interface FeatureTestCheckDialogProps {
@@ -93,7 +99,7 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
     setPhase({ kind: "running", message: "Starting" });
     const active = activeRef.current;
     const current = FEATURE_TEST_CHECK_SCENES.find((scene) => `scene:${scene.path}` === active);
-    const scenes = mode === "full" ? FEATURE_TEST_CHECK_SCENES : [current ?? FEATURE_TEST_CHECK_SCENES[0]];
+    const scenes = mode === "quick" ? [current ?? FEATURE_TEST_CHECK_SCENES[0]] : FEATURE_TEST_CHECK_SCENES;
     const pageErrors: string[] = [];
     const onError = (event: ErrorEvent) => { pageErrors.push(event.message || String(event.error)); };
     const onRejection = (event: PromiseRejectionEvent) => {
@@ -166,7 +172,7 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
           <DialogDescription>
             {report
               ? `${passed} of ${report.scenes.length} scenes passed${report.cancelled ? " before the check was cancelled" : ""}. Copy the report and paste it into your chat or issue.`
-              : "Opens Feature Test scenes in the editor and in Play on this device, then writes a report you can copy."}
+              : MODE_DESCRIPTIONS[mode]}
           </DialogDescription>
         </DialogHeader>
         {phase.kind === "done" ? (
@@ -183,11 +189,12 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
             size="sm"
             spacing={1}
             value={[mode]}
-            onValueChange={(value) => { if (value[0] === "quick" || value[0] === "full") setMode(value[0]); }}
+            onValueChange={(value) => { if (value[0] === "quick" || value[0] === "full" || value[0] === "benchmark") setMode(value[0]); }}
             aria-label="Check Scope"
           >
             <ToggleGroupItem value="quick" data-testid="feature-test-check-quick">Quick (Current Scene)</ToggleGroupItem>
             <ToggleGroupItem value="full" data-testid="feature-test-check-full">Full (All Scenes)</ToggleGroupItem>
+            <ToggleGroupItem value="benchmark" data-testid="feature-test-check-benchmark">Benchmark</ToggleGroupItem>
           </ToggleGroup>
         )}
         <DialogFooter>

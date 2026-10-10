@@ -1,4 +1,10 @@
-import type { FeatureTestCheckReport, FeatureTestCheckSceneResult, FrameStats } from "../services/feature-test-check";
+import {
+  FEATURE_TEST_BENCHMARK_PROFILES,
+  type FeatureTestBenchmarkSample,
+  type FeatureTestCheckReport,
+  type FeatureTestCheckSceneResult,
+  type FrameStats,
+} from "../services/feature-test-check";
 
 export interface FeatureTestCheckEnvironment {
   appVersion: string;
@@ -31,6 +37,7 @@ export function collectFeatureTestCheckEnvironment(appVersion: string, buildLabe
 }
 
 const MAX_LOG_LINES = 8;
+const MODE_LABELS = { quick: "Quick", full: "Full", benchmark: "Benchmark" } as const;
 const MAX_TEXT = 240;
 
 function clip(text: string, max = MAX_TEXT): string {
@@ -67,7 +74,14 @@ function sceneLines(scene: FeatureTestCheckSceneResult): string[] {
     lines.push(`  Play: ${play.status} after ${s(play.ms)}${play.phase ? ` at ${play.phase}` : ""}`);
   }
   for (const command of play.commands) {
-    lines.push(`  > ${command.line}: ${command.success ? "ok" : "FAILED"}${command.output ? ` · ${clip(command.output, 160)}` : ""}`);
+    lines.push(`  > ${command.line}: ${command.success ? "ok" : "FAILED"} in ${s(command.ms)}${command.output ? ` · ${clip(command.output, 160)}` : ""}`);
+  }
+  if (play.benchmark.length) {
+    lines.push("  Benchmark (frame cap lifted):", `    ${pad("Profile", 18)}${pad("fps", 6)}${pad("p95", 8)}${pad("cpu", 8)}${pad("gpu", 8)}${pad("draws", 7)}resolution`);
+    for (const sample of play.benchmark) {
+      lines.push(`    ${pad(sample.label, 18)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 6)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 8)}${pad(ms(sample.cpuMs), 8)}${pad(ms(sample.gpuMs), 8)}${pad(String(sample.drawCalls), 7)}${sample.resolution ?? "-"}${ranInstead(sample)}`);
+    }
+    lines.push(`  Holds 60 fps up to: ${bestProfile([play.benchmark], SMOOTH) ?? "none"} · 30 fps up to: ${bestProfile([play.benchmark], PLAYABLE) ?? "none"}`);
   }
   const session = scene.session;
   if (session) {
@@ -85,20 +99,58 @@ function sceneLines(scene: FeatureTestCheckSceneResult): string[] {
   return lines;
 }
 
+/** Notes when the engine fell back from the requested render path. */
+function ranInstead(sample: FeatureTestBenchmarkSample): string {
+  const requested = sample.label.endsWith("clustered") ? "clusteredForward" : "forward";
+  return sample.renderPath && sample.renderPath !== requested ? ` (ran ${sample.renderPath})` : "";
+}
+
+function pad(text: string, width: number): string {
+  return text.length >= width ? `${text} ` : text.padEnd(width);
+}
+
+function ms(value: number | null): string {
+  return value === null ? "-" : `${value.toFixed(1)}ms`;
+}
+
+type FrameTarget = { fps: number; p95Ms: number };
+/** 60 fps with headroom for vsync jitter, and a steady 30 fps. */
+const SMOOTH: FrameTarget = { fps: 55, p95Ms: 25 };
+const PLAYABLE: FrameTarget = { fps: 28, p95Ms: 45 };
+
+function meets(sample: FeatureTestBenchmarkSample | undefined, target: FrameTarget): boolean {
+  return Boolean(sample?.frames && !sample.failed.length && sample.frames.fps >= target.fps && sample.frames.p95Ms <= target.p95Ms);
+}
+
+/** Highest forward quality tier that meets `target` in every sweep, or null. */
+function bestProfile(sweeps: ReadonlyArray<readonly FeatureTestBenchmarkSample[]>, target: FrameTarget): string | null {
+  let best: string | null = null;
+  for (const { label } of FEATURE_TEST_BENCHMARK_PROFILES.filter((profile) => profile.label.endsWith("forward"))) {
+    if (sweeps.every((sweep) => meets(sweep.find((sample) => sample.label === label), target))) best = label;
+  }
+  return best;
+}
+
 /** Plain-text report sized for pasting into a chat or issue. */
 export function formatFeatureTestCheckReport(report: FeatureTestCheckReport, environment: FeatureTestCheckEnvironment): string {
   const passed = report.scenes.filter((scene) => scene.passed).length;
   const adapter = report.scenes.map((scene) => scene.play.snapshot?.rendering?.adapter).find(Boolean);
   const pipeline = report.scenes.map((scene) => scene.play.snapshot?.rendering?.pipeline.effective).find(Boolean);
   const lines = [
-    `BabylonSlate Feature Test Check (${report.mode === "full" ? "Full" : "Quick"}) · ${new Date(report.startedAt).toISOString()}`,
+    `BabylonSlate Feature Test Check (${MODE_LABELS[report.mode]}) · ${new Date(report.startedAt).toISOString()}`,
     `Result: ${passed}/${report.scenes.length} scenes passed${report.cancelled ? " · CANCELLED" : ""} · took ${s(report.durationMs)}`,
     `App: ${environment.appVersion || "dev"}${environment.buildLabel ? ` (${environment.buildLabel})` : ""}`,
     `Device: ${environment.platform} · touch ${environment.touchPoints} · DPR ${environment.devicePixelRatio} · screen ${environment.screen} · viewport ${environment.viewport} · cores ${environment.cores ?? "?"} · memory ${environment.memoryGb === null ? "?" : `${environment.memoryGb} GB`}`,
     `Browser: ${clip(environment.userAgent, 300)}`,
     `GPU: ${adapter ? `${adapter.api} · ${adapter.vendor ?? "?"} · ${adapter.renderer ?? "?"}` : "unknown (Play did not start)"}${pipeline ? ` · ${pipeline.gpuBackend} ${pipeline.renderPath}` : ""}`,
-    "",
   ];
+  const sweeps = report.scenes.map((scene) => scene.play.benchmark).filter((sweep) => sweep.length);
+  if (report.mode === "benchmark") {
+    lines.push(sweeps.length
+      ? `Benchmark: every benchmarked scene holds 60 fps up to ${bestProfile(sweeps, SMOOTH) ?? "none"} and 30 fps up to ${bestProfile(sweeps, PLAYABLE) ?? "none"} (${sweeps.length}/${report.scenes.length} scenes benchmarked)`
+      : "Benchmark: no scene reached Play");
+  }
+  lines.push("");
   for (const scene of report.scenes) lines.push(...sceneLines(scene), "");
   if (report.pageErrors.length) {
     lines.push(`Page errors (${report.pageErrors.length}):`);

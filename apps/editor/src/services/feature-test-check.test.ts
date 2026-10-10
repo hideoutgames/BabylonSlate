@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SessionReportEntry } from "@babylonslate/runtime";
-import { runFeatureTestCheck, type FeatureTestCheckDeps } from "./feature-test-check";
+import { FEATURE_TEST_BENCHMARK_PROFILES, runFeatureTestCheck, type FeatureTestCheckDeps } from "./feature-test-check";
 import type { PlaySessionResult } from "./play-session";
 import type { PlayProbe } from "./runtime-probes";
 
@@ -24,6 +24,7 @@ function fakeEditor(scenes: Record<string, SceneBehavior>, onSleep?: (now: numbe
   const listeners = new Set<(result: PlaySessionResult) => void>();
   const started: string[] = [];
   const stopped: string[] = [];
+  const commands: string[] = [];
   const behavior = (path: string | null) => scenes[(path ?? "").replace(/^scene:/, "")] ?? {};
   const deps: FeatureTestCheckDeps = {
     openScene: async (path) => { if (behavior(path).open !== "blocked") active = `scene:${path}`; },
@@ -43,7 +44,11 @@ function fakeEditor(scenes: Record<string, SceneBehavior>, onSleep?: (now: numbe
         runtimeFps: () => 60,
         snapshot: () => ({ drawCalls: 10, meshes: 20, textures: 5, accountedBytes: 0, rendering: null }),
         problemLogs: () => [],
-        executeConsoleCommand: async (line) => scene.commands?.[line] ?? { success: true, output: `${line} ok` },
+        executeConsoleCommand: async (line) => {
+          commands.push(line);
+          if (line === "framecap") return { success: true, output: "framecap 30" };
+          return scene.commands?.[line] ?? { success: true, output: `${line} ok` };
+        },
         stop: () => {
           if (!play) return;
           stopped.push(playScene!);
@@ -69,7 +74,7 @@ function fakeEditor(scenes: Record<string, SceneBehavior>, onSleep?: (now: numbe
       signal.throwIfAborted();
     },
   };
-  return { deps, started, stopped };
+  return { deps, started, stopped, commands };
 }
 
 const scene = (name: string) => ({ name, path: `assets/${name}.scene.babasset` });
@@ -86,7 +91,7 @@ describe("runFeatureTestCheck", () => {
     expect(stuck.problems.join(" ")).toContain("did not finish loading");
     expect(editor.stopped).toEqual(["scene:assets/stuck.scene.babasset", "scene:assets/fine.scene.babasset"]);
     expect(fine.passed).toBe(true);
-    expect(fine.play.commands).toEqual([{ line: "ft_stats", success: true, output: "ft_stats ok" }]);
+    expect(fine.play.commands).toMatchObject([{ line: "ft_stats", success: true, output: "ft_stats ok" }]);
     expect(report.cancelled).toBe(false);
   });
 
@@ -126,5 +131,19 @@ describe("runFeatureTestCheck", () => {
     ]);
     expect(editor.stopped).toEqual(["scene:assets/stuck.scene.babasset"]);
     expect(editor.started).toEqual(["scene:assets/stuck.scene.babasset"]);
+  });
+
+  it("benchmarks every profile with the frame cap lifted, then restores the session settings", async () => {
+    const editor = fakeEditor({});
+    const report = await runFeatureTestCheck({
+      mode: "benchmark", scenes: [scene("main")], deps: editor.deps, signal: new AbortController().signal,
+    });
+    const [main] = report.scenes;
+    expect(main.passed).toBe(true);
+    expect(main.play.benchmark.map((sample) => sample.label)).toEqual(FEATURE_TEST_BENCHMARK_PROFILES.map((profile) => profile.label));
+    expect(editor.commands.slice(0, 2)).toEqual(["framecap", "framecap 240"]);
+    expect(editor.commands.slice(-3)).toEqual(["quality reset", "renderpath reset", "framecap 30"]);
+    expect(editor.commands).toContain("renderpath clusteredForward");
+    expect(editor.commands).not.toContain("ft_stats");
   });
 });

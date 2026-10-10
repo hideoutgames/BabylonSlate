@@ -117,6 +117,26 @@ Counts are constants in the area modules; changing one changes performance basel
 | `FEATURE_TEST_SCENE_LAYER_KNOBS` | list 10 000, grid 400 | `scene-layers.ts` |
 | `CLUSTER_*`, `CAPTURES`, `LOD_DISTANCES` | 48 lights, 3 captures, 5 menorahs | `rendering.ts` |
 
+## On-device check and benchmark
+
+For devices without a test harness (iPad, phones, other browsers), a Feature Test project's **Debug** menu has **Run Feature Test Check…** (phones: **More Tools** → Debug). It walks the scenes with the editor's own controls and writes a plain-text report; **Copy Report** puts it on the clipboard to paste into a chat or issue. The report text stays selectable when the clipboard is unavailable.
+
+| Mode | Scenes | Per scene |
+| --- | --- | --- |
+| Quick | Current Feature Test scene (main otherwise) | Open in the editor and sample viewport frames; Play, sample frames, run `ft_stats`; Stop |
+| Full | `main`, `FT_World`, `FT_Clustered`, `FT_2D`, `FT_Stress` | As Quick; the main scene also runs `ft_spawn 10`, `ft_stream`, `ft_cel`, `ft_pbr` |
+| Benchmark | All five | Play with the frame cap lifted to 240, then 5 s per profile: `low`, `medium`, `high`, `ultra` on Forward and `high` on Clustered Forward; quality, render path and cap are restored afterwards |
+
+- **Report:** app version, device (platform, touch points, pixel ratio, screen, cores, memory), browser and GPU adapter. Per scene it adds:
+  - editor and Play load times, plus where a load stuck;
+  - fps, p95, max frame and stalls over 100 ms;
+  - draw calls, mesh and texture counts, CPU/GPU frame cost and render resolution;
+  - console command output and duration;
+  - the Preview Session Report entries, texture counts before and after Play (`LEAK` when Play left textures), and Play error/warning lines.
+- **Benchmark output:** a per-profile table per scene. It also lists the highest Forward tier that holds 60 fps (at least 55 fps, p95 ≤ 25 ms) and 30 fps (at least 28 fps, p95 ≤ 45 ms), per scene and across all of them. A profile the engine could not apply (for example Clustered Forward on an orthographic camera) shows `(ran forward)`.
+- **Pass/fail:** a scene fails when it does not open or load (120 s each), a command fails or times out (60 s), the session report has an error, or release is not confirmed. While a check runs, a small status bar with **Cancel** replaces the dialog, and the Preview Session Report dialog is held back; its entries go into the report instead.
+- **Code:** runner `apps/editor/src/services/feature-test-check.ts`; text report `apps/editor/src/lib/feature-test-check-report.ts`; dialog `apps/editor/src/components/feature-test-check-dialog.tsx`. `FEATURE_TEST_CHECK_SCENES` must name existing scenes; the scaffold gate checks this.
+
 ## Performance testing
 
 The opt-in route `e2e/feature-test-perf-route.spec.ts` runs only through `playwright.perf.config.ts`:

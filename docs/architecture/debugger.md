@@ -107,6 +107,9 @@ Stats keeps the measured timings and **Over Budget** warning; normal ticks no lo
 | Session | Pause On Play | off | Shared by Play and Simulation. After Play boot, `setPaused(true)` via `createPlayPauseGate` so `boot.play`'s `resume()` cannot undo it. `start()` / Begin Play may still run; the first tick after that waits for Resume / Step. Overlay boot also posts `{ type: "setPaused", paused: true }` after `{ type: "play" }`. |
 | Session | Preview Build | off | Disabled while playing or preparing |
 | Session | Play from Scene | on | Overlay Play and Preview Build seed the open scene tab; off seeds project startup. Disabled while playing or preparing. Export Game ignores this. |
+| Feature Test | Run Feature Test Check… | — | Feature Test projects only (all check scenes present). Opens the on-device check / benchmark ([FeatureTest doc](../development/feature-test.md#on-device-check-and-benchmark)). Disabled while playing or preparing. |
+
+In-app diagnostics read the session through `apps/editor/src/services/runtime-probes.ts`, not the test-mode globals. The Play overlay registers a `PlayProbe`: loading phase, tick, runtime fps, a render/resource snapshot, error and warning logs, console commands and Stop. Each Scene viewport registers a `ViewportProbe` (ready, failed, phase) under its document id. `PlayProvider` publishes every closing `PlaySessionResult`. While `holdAutomatedSessionReporting()` is held, the Preview Session Report dialog stays closed so an automated run can record its entries.
 
 `showcollision` / `showbounds` / `actorboundingbox` / `wireframe` / `shownav` / `showaudiodebug` apply from the console (not Debug-menu items). Audio debug is a DOM overlay that keeps drawing while Pause freezes the sim.
 

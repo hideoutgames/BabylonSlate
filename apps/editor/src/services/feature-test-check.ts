@@ -16,7 +16,32 @@ export function featureTestCheckCommands(sceneName: string, mode: FeatureTestChe
   return ["ft_stats"];
 }
 
-export type FeatureTestCheckMode = "quick" | "full";
+export type FeatureTestCheckMode = "quick" | "full" | "benchmark";
+
+/** Performance profiles a Benchmark sweeps per scene: each quality tier, then Clustered Forward at High. */
+export const FEATURE_TEST_BENCHMARK_PROFILES = [
+  { label: "low · forward", commands: ["renderpath forward", "quality low"] },
+  { label: "medium · forward", commands: ["renderpath forward", "quality medium"] },
+  { label: "high · forward", commands: ["renderpath forward", "quality high"] },
+  { label: "ultra · forward", commands: ["renderpath forward", "quality ultra"] },
+  { label: "high · clustered", commands: ["renderpath clusteredForward", "quality high"] },
+] as const;
+
+/** Above any display refresh, so a Benchmark measures the device rather than the project frame cap. */
+const BENCHMARK_FRAME_CAP = 240;
+
+export interface FeatureTestBenchmarkSample {
+  label: string;
+  frames: FrameStats | null;
+  runtimeFps: number | null;
+  /** Mean CPU and GPU frame cost while sampling; GPU is null where timer queries are unavailable. */
+  cpuMs: number | null;
+  gpuMs: number | null;
+  drawCalls: number;
+  resolution: string | null;
+  renderPath: string | null;
+  failed: string[];
+}
 
 export interface FrameStats {
   frames: number;
@@ -32,6 +57,7 @@ export interface FeatureTestCheckCommandResult {
   line: string;
   success: boolean;
   output: string;
+  ms: number;
 }
 
 export interface FeatureTestCheckSceneResult {
@@ -46,6 +72,7 @@ export interface FeatureTestCheckSceneResult {
     runtimeFps: number | null;
     snapshot: ReturnType<PlayProbe["snapshot"]> | null;
     commands: FeatureTestCheckCommandResult[];
+    benchmark: FeatureTestBenchmarkSample[];
     logs: Array<{ severity: string; message: string }>;
   };
   session: {
@@ -90,6 +117,8 @@ export interface FeatureTestCheckTimeouts {
   playCloseMs: number;
   commandMs: number;
   releaseMs: number;
+  /** Wait after a profile change for shaders and render targets to settle. */
+  profileSettleMs: number;
   editorSampleMs: number;
   playSampleMs: number;
 }
@@ -98,8 +127,9 @@ export const DEFAULT_FEATURE_TEST_CHECK_TIMEOUTS: FeatureTestCheckTimeouts = {
   sceneOpenMs: 120_000,
   playLoadMs: 120_000,
   playCloseMs: 30_000,
-  commandMs: 15_000,
+  commandMs: 60_000,
   releaseMs: 10_000,
+  profileSettleMs: 3_000,
   editorSampleMs: 3_000,
   playSampleMs: 5_000,
 };
@@ -154,6 +184,7 @@ export async function runFeatureTestCheck(options: {
   const { deps, signal, mode } = options;
   const limits = { ...DEFAULT_FEATURE_TEST_CHECK_TIMEOUTS, ...options.timeouts };
   const startedAt = deps.now();
+  const wallClock = Date.now();
   const scenes: FeatureTestCheckSceneResult[] = [];
   let cancelled = false;
   for (const scene of options.scenes) {
@@ -170,14 +201,14 @@ export async function runFeatureTestCheck(options: {
       break;
     }
   }
-  return { mode, startedAt, durationMs: deps.now() - startedAt, cancelled, scenes, pageErrors: options.pageErrors?.() ?? [] };
+  return { mode, startedAt: wallClock, durationMs: deps.now() - startedAt, cancelled, scenes, pageErrors: options.pageErrors?.() ?? [] };
 }
 
 function emptySceneResult(scene: { name: string; path: string }): FeatureTestCheckSceneResult {
   return {
     name: scene.name, path: scene.path,
     editor: { status: "not-opened", ms: 0, phase: null, frames: null },
-    play: { status: "not-started", ms: 0, phase: null, frames: null, runtimeFps: null, snapshot: null, commands: [], logs: [] },
+    play: { status: "not-started", ms: 0, phase: null, frames: null, runtimeFps: null, snapshot: null, commands: [], benchmark: [], logs: [] },
     session: null, passed: false, problems: [],
   };
 }
@@ -242,15 +273,19 @@ async function checkScene(
     result.play.frames = await deps.sampleFrames(limits.playSampleMs, signal);
     result.play.runtimeFps = play.runtimeFps();
     result.play.snapshot = play.snapshot();
-    for (const line of featureTestCheckCommands(scene.name, mode)) {
-      deps.onProgress?.(`${scene.name}: running ${line}`);
-      const outcome = await timeout(play.executeConsoleCommand(line), limits.commandMs, deps, signal)
-        .catch((error: unknown) => ({ success: false, output: error instanceof Error ? error.message : String(error) }));
-      const command = outcome === "timeout"
-        ? { line, success: false, output: `No reply in ${seconds(limits.commandMs)}.` }
-        : { line, success: outcome.success, output: outcome.output };
-      result.play.commands.push(command);
-      if (!command.success) result.problems.push(`Command ${line} failed: ${command.output || "no output"}.`);
+    const run = (line: string) => runCommand(play, line, deps, signal, limits);
+    if (mode === "benchmark") {
+      result.play.benchmark = await benchmarkProfiles(scene.name, play, run, deps, signal, limits);
+      for (const sample of result.play.benchmark) {
+        for (const failure of sample.failed) result.problems.push(`${sample.label}: ${failure}`);
+      }
+    } else {
+      for (const line of featureTestCheckCommands(scene.name, mode)) {
+        deps.onProgress?.(`${scene.name}: running ${line}`);
+        const command = await run(line);
+        result.play.commands.push(command);
+        if (!command.success) result.problems.push(`Command ${line} failed: ${sentence(command.output || "no output")}`);
+      }
     }
   } else if (loaded === "closed") {
     result.play.status = "closed";
@@ -287,6 +322,91 @@ async function checkScene(
   }
   await waitFor(deps, signal, limits.playCloseMs, () => deps.sessionIdle() || null);
   result.passed = result.problems.length === 0;
+}
+
+async function runCommand(
+  play: PlayProbe,
+  line: string,
+  deps: FeatureTestCheckDeps,
+  signal: AbortSignal,
+  limits: FeatureTestCheckTimeouts,
+): Promise<FeatureTestCheckCommandResult> {
+  const started = deps.now();
+  const outcome = await timeout(play.executeConsoleCommand(line), limits.commandMs, deps, signal)
+    .catch((error: unknown) => ({ success: false, output: error instanceof Error ? error.message : String(error) }));
+  const ms = deps.now() - started;
+  return outcome === "timeout"
+    ? { line, success: false, output: `No reply in ${seconds(limits.commandMs)}`, ms }
+    : { line, success: outcome.success, output: outcome.output, ms };
+}
+
+/**
+ * Sweeps FEATURE_TEST_BENCHMARK_PROFILES on the running scene with the frame
+ * cap lifted, then restores the session's quality, render path and cap.
+ */
+async function benchmarkProfiles(
+  sceneName: string,
+  play: PlayProbe,
+  run: (line: string) => Promise<FeatureTestCheckCommandResult>,
+  deps: FeatureTestCheckDeps,
+  signal: AbortSignal,
+  limits: FeatureTestCheckTimeouts,
+): Promise<FeatureTestBenchmarkSample[]> {
+  const samples: FeatureTestBenchmarkSample[] = [];
+  const cap = /(\d+)/.exec((await run("framecap")).output)?.[1];
+  await run(`framecap ${BENCHMARK_FRAME_CAP}`);
+  try {
+    for (const profile of FEATURE_TEST_BENCHMARK_PROFILES) {
+      deps.onProgress?.(`${sceneName}: benchmarking ${profile.label}`);
+      const failed: string[] = [];
+      for (const line of profile.commands) {
+        const command = await run(line);
+        if (!command.success) failed.push(`${line} failed: ${sentence(command.output || "no output")}`);
+      }
+      await deps.sleep(limits.profileSettleMs, signal);
+      const cpu: number[] = [];
+      const gpu: number[] = [];
+      let sampling = true;
+      const frames = deps.sampleFrames(limits.playSampleMs, signal).finally(() => { sampling = false; });
+      while (sampling) {
+        const rendering = play.snapshot().rendering;
+        if (rendering) {
+          cpu.push(rendering.cpuMs);
+          if (rendering.gpuMs !== null) gpu.push(rendering.gpuMs);
+        }
+        await Promise.race([frames, deps.sleep(500, signal)]);
+      }
+      const snapshot = play.snapshot();
+      const rendering = snapshot.rendering;
+      samples.push({
+        label: profile.label,
+        frames: await frames,
+        runtimeFps: play.runtimeFps(),
+        cpuMs: mean(cpu),
+        gpuMs: mean(gpu),
+        drawCalls: snapshot.drawCalls,
+        resolution: rendering ? `${rendering.width}x${rendering.height}@${rendering.scalingLevel.toFixed(2)}` : null,
+        renderPath: rendering?.pipeline.effective.renderPath ?? null,
+        failed,
+      });
+    }
+  } finally {
+    if (!signal.aborted) {
+      await run("quality reset");
+      await run("renderpath reset");
+      await run(`framecap ${cap ?? 60}`);
+    }
+  }
+  return samples;
+}
+
+function mean(values: readonly number[]): number | null {
+  return values.length ? values.reduce((total, value) => total + value, 0) / values.length : null;
+}
+
+/** Ends `text` with exactly one full stop. */
+function sentence(text: string): string {
+  return /[.!?]$/.test(text.trim()) ? text.trim() : `${text.trim()}.`;
 }
 
 function seconds(ms: number): string {

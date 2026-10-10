@@ -27,3 +27,5 @@ If a feature cannot be showcased (for example, it needs art the repository lacks
 ## Performance testing
 
 Use FeatureTest for performance comparisons during development: the opt-in route `e2e/feature-test-perf-route.spec.ts` (`BL_PERF_FEATURE_TEST=1`, `playwright.perf.config.ts`) creates the starter through the real Create dialog and records editor and Play timings. Compare runs on the same machine and build settings only, and never assert a frame rate. See [the FeatureTest doc](../../docs/development/feature-test.md#performance-testing).
+
+On real devices (iPad, phones), users run **Debug → Run Feature Test Check…** (Quick, Full or Benchmark) and paste its text report; read it with [the doc's report section](../../docs/development/feature-test.md#on-device-check-and-benchmark). A new or renamed Feature Test scene must be added to `FEATURE_TEST_CHECK_SCENES` in `apps/editor/src/services/feature-test-check.ts` in the same PR.
