@@ -844,9 +844,53 @@ Runtime tests `sn`–`z` and render tests `t`–`z` reported no new product bugs
 - Nine-slice cells reuse scaled corner sizes as texture coordinates when the panel is smaller than the margins (`overlayNineSliceCells`).
 - A locked play framebuffer does not pass the 8192 side cap (`playFramebufferSize`).
 
+## Verified in the twenty-eighth batch
+
+- **High.** Havok `sphereOverlap` tests the body’s world AABB, not the collider shape. `ignoreActorIds` drops only the body owner, so a hosted child stays in the hit. `includeTriggers: false` drops the body only when every collider is a trigger (`havok-backend.ts`).
+- **High.** Rapier `moveCharacter` applies the solved pose only with `setNextKinematicTranslation`. The returned pose still says the body moved. A static or dynamic body does not take that kinematic target, and Play writes the returned pose onto the actor (`rapier-backend.ts`, `physics-sync.ts`).
+- **High.** An interface handler runs with delta 0, tick 0, and no tick or extras. A returned promise is logged and the call returns `{}`. A throw, including an infinite-loop error, is logged and also returns `{}`, so the session is not aborted (`script-host.ts`).
+- **High.** An anim-rule throw, including an infinite-loop error, is logged and the rule returns undefined. The graph then treats that as no decision (`script-host.ts`).
+- **High.** Loop instrumentation copies an unbraced body through the first semicolon at depth 0. `for (...) if (item.ok) { use(item); } cleanup();` includes `cleanup()` in the guarded statement (`infinite-loop.ts`).
+- **High.** An empty float parameter succeeds as 0. `Number("")` is finite. An empty int is rejected (`parser.ts`).
+- **High.** Anim-graph evaluation falls back to `entryStateId`, then uses `states.get(stateId)!`. A missing entry state throws on the next sample (`graph.ts`).
+- **High.** A parallel with no children never succeeds. The empty result list fails the `results.length > 0` check, then the node is set back to running and the tick stops (`evaluate.ts`).
+- **Medium.** A software ray that starts inside an AABB keeps a zero normal. `tMin` stays 0 and the normal is never written (`software-backend.ts`).
+- **Medium.** Software `sphereOverlap` pushes every overlapping collider. One actor with two shapes is listed twice (`software-backend.ts`).
+- **Medium.** `getComponent` returns the first component with that class id and does not skip destroyed components (`script-host.ts`).
+- **Medium.** `setActorRotation` does not reject a null rotator. `rotatorToQuat(null)` is identity, and the actor is teleported to that rotation (`script-host.ts`, `euler.ts`).
+- **Medium.** Blackboard equality is `===`. A number on the blackboard does not match the same digits stored as a string (`evaluate.ts`).
+- **Medium.** `normalizeChord("+")` splits on `+` and the remaining key is empty, so the chord is rejected. The plus key is accepted only when the chord ends in `++` (`keybinds.ts`).
+- **Medium.** A Rapier trigger overlap that ends because its collider was replaced is reported at the origin with an up normal (`rapier-backend.ts`).
+
+## Reported in the twenty-eighth batch, not re-checked
+
+- A `for` or `while` written inside another loop header is not rewritten (`infinite-loop.ts`).
+- `destroyactor` with a quoted value such as `boss=final` is parsed as the wrong command.
+- Play free-cam pitch is not clamped.
+- Particle `orderInLayer` is not applied to the rendered component.
+- Particle `preparationFailed` disables the whole component.
+- `onTextChanged` can call itself again.
+- A behaviour-tree service applies a large elapsed interval in one tick.
+- A Wait node with a NaN duration does not finish.
+- A preview save can race the lock.
+- The distribution splash says Development build while the manifest says Test.
+- The homepage says sign-in is not set up while a temporary demo is wired.
+- A three-digit color such as `#0f0` commits immediately.
+- A disabled module card hides its summary.
+- Navigation eval tests only assert `path.length > 1`.
+- Console `quality` autocomplete offers `li`.
+
+## Rejected in the twenty-eighth batch
+
+- `serializedToAnimGraph` does not throw when the graph has no states. The entry id is `states[0]?.id ?? previous.entryStateId` (`serialize.ts`).
+- `persistTransitionRuleGraph` strips `__disabled` because that flag is canvas-only. One-way exits are applied again by `decorateTransitionRuleGraph` (`graph.ts`).
+- The software vertical-overlap separation is the same defect already recorded in the twenty-seventh batch.
+
 ## Deeper pass
 
-One hundred further reads were requested. Ninety-nine are running. The UI-package second pass did not start: the concurrent cap was already full, and the earlier assets-package read is still marked running. These reads are told not to edit this file and not to repeat findings already listed here.
+One hundred further reads were requested. Ninety-nine started. The UI-package second pass did not start: the concurrent cap was already full, and the earlier assets-package read is still marked running. These reads are told not to edit this file and not to repeat findings already listed here.
+
+A later status check still shows that assets-package read marked running, along with second passes of the editor shell, native plugins, bridge, edit, exporter, play context, player, desktop, script compile, play boot, snapshot apply, material compile, and water material, plus several test slices. The editor-kit, behaviour, physics, script-host, debugger, document, and docs slices from this wave have returned; their checked defects are in the twenty-eighth batch.
 
 They cover the previously unread tests (editor, render, runtime, e2e, assets, core, editor-kit, scripting-nodes, and the smaller packages), the docs that were not line-read (`render.md`, `perf-budget.md`, `renderer-qualification.md`, plus full passes of `scripting.md`, `shader-graph.md`, `testing.md`, `theming.md`, `distribution.md`, `particle-emitters.md`, and `engineplan.md`), and a second pass of the files that already produced the serious defects.
 
@@ -854,6 +898,6 @@ They cover the previously unread tests (editor, render, runtime, e2e, assets, co
 
 The assets-package read from the previous wave is still marked running. Render files `g`–`o` and names starting with `s`, including `snapshot-apply.ts`, are recorded. The UI-package second pass is the slice that did not launch.
 
-Architecture docs `a`–`m` were read in full: `anim-graph.md`, `asset-registry.md`, `audio.md`, `behaviour-tree.md`, `bridge.md`, `command-layer.md`, `components.md`, `console-commands.md`, `containers.md`, `debugger.md`, `editor-extensions.md`, `exporter.md`, `fonts.md`, `global-search.md`, `index.md`, `input.md`, and `keybinds.md`. Earlier docs read: `navigation.md`, `object-model.md`, `overview.md`, `particles.md`, `physics.md`, `plugins.md`, `scene-editing.md`, `scene-layers.md`, `source-control.md`, `sprites.md`, `tilemaps.md`, `vfs.md`, `feature-test.md`, `gestures.md`, and `save-games.md`. `scripting.md`, `shader-graph.md`, `testing.md`, `theming.md`, `distribution.md`, `particle-emitters.md`, and `engineplan.md` were read only where a sentence stated a save, load, delete, security, or lifecycle guarantee. `render.md`, `perf-budget.md`, and `renderer-qualification.md` were not line-read.
+Architecture docs `a`–`m` were read in full: `anim-graph.md`, `asset-registry.md`, `audio.md`, `behaviour-tree.md`, `bridge.md`, `command-layer.md`, `components.md`, `console-commands.md`, `containers.md`, `debugger.md`, `editor-extensions.md`, `exporter.md`, `fonts.md`, `global-search.md`, `index.md`, `input.md`, and `keybinds.md`. Earlier docs read: `navigation.md`, `object-model.md`, `overview.md`, `particles.md`, `physics.md`, `plugins.md`, `scene-editing.md`, `scene-layers.md`, `source-control.md`, `sprites.md`, `tilemaps.md`, `vfs.md`, `feature-test.md`, `gestures.md`, and `save-games.md`. The deeper pass has now line-read `render.md`, `perf-budget.md`, `renderer-qualification.md`, `scripting.md`, `shader-graph.md`, `testing.md`, `theming.md`, `distribution.md`, `particle-emitters.md`, and `engineplan.md`; only the mismatches checked above are recorded.
 
-Package test files were often left unread by the production-source passes. Assets `n`–`z` left 21 test files unread or partial. Runtime `a`–`r` left 52 test files unread.
+Package test files were often left unread by the production-source passes. The deeper wave was assigned those tests. Returned slices with no new product defect beyond this file include runtime tests `sn`–`z` and `sa`–`sm`, and render tests `t`–`z`.
