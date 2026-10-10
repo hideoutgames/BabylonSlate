@@ -481,7 +481,6 @@ These are separate from the iframe bridge, the unbounded `lfs:fetch` body, the s
 - Parametric reverb `dispose` leaves the caller’s send connections (`parametric-reverb.ts`).
 - A failed collider rebuild keeps a disposed mesh in the overlay slot map (`play-console-viz.ts`).
 - `PostProcessRetirement.whenReleased` does not include generations added after the wait starts (`post-process-retirement.ts`).
-- The basic emission driver loops forever when duration is not positive (`particle-emission-driver.ts`).
 - Own class delete and rename writes of `project.json` skip the mtime snapshot, so the next rescan looks external (`document-context.tsx`).
 - A foreground rescan in flight can classify the new project against the previous snapshot (`runForegroundRescan`).
 - Save All can mark documents clean and then skip journal truncate when the project document object was replaced (`saveProject`).
@@ -546,6 +545,19 @@ These are separate from the iframe bridge, the unbounded `lfs:fetch` body, the s
 - `clearCurrentScene` destroying a scene created during On End was called intentional.
 - Double `sceneLoadGeneration` increments were called harmless.
 - `PhysicsWorldSync.retireActor` leaking character controllers was withdrawn because `destroyBody` already destroys the controller.
+
+## Verified in the tenth batch
+
+- **Medium.** Two graph pastes in the same millisecond reuse node ids. `pasteClipboard` stamps every copy with one `Date.now()` plus the clipboard index, and the position is always the original clipboard point plus 40 (`graph-editor.tsx`).
+- **Medium.** A palette insert id is `` `${paletteNode.id}-${Date.now()}` `` with no counter. Two inserts of the same palette node in one millisecond share an id, while their positions do step by 40 (`graph-editor.tsx` `handleAddPaletteNode`).
+- **Medium.** Render-target history checks call `getActiveTextures()` on every mesh in the capture list and on each particle material, with no cache (`render-target-capture.ts` `samplesAttachment`).
+
+## Rejected in the tenth batch
+
+- The basic emission `while (cycleTime >= duration)` loop has no duration guard. Authored Basic schedules clamp duration to at least 0.05 (`PARTICLE_EMITTER_LIMITS`), so the play path does not spin. The earlier “loops forever” report is withdrawn for that path.
+- `getAnimationRatio() || 1` on the GPU particle override was called an intentional copy of Babylon’s clock, not a preview desync.
+- `play-free-cam.ts` 3D `look()` was called standard zero-roll order. Unclamped pitch past vertical was not re-checked.
+- Ragdoll pose matrix order was accepted as Babylon’s row-vector `local = world * inverse(parentWorld)`.
 
 ## Coverage still open
 
