@@ -1029,7 +1029,7 @@ export function PlayOverlay({
     const problems = logs.filter((entry) => entry.severity === "error" || entry.severity === "warning" || entry.severity === "warn").slice(-15);
     return formatSceneLoadReport({
       surface: "Play",
-      scene: sceneAssetGuid ?? null,
+      scene: sceneAssetGuid ? `${sceneCatalog?.find((entry) => entry.guid === sceneAssetGuid)?.name ?? "Scene"} (${sceneAssetGuid})` : null,
       phase: sceneLoading?.phase ?? "Preparing Scene",
       progress: sceneLoading?.progress ?? null,
       failed: false,
