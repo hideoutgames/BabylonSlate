@@ -623,9 +623,15 @@ The second-sprite overlay map entry was already reported: `createPlayMesh` store
 - Overlay style records the child list once and does not see meshes added later (`overlay-visual-style.ts`).
 - Linked skeletons parent bones by node name, so duplicate names last-write-win (`node-rig.ts`).
 
+## Deeper pass
+
+One hundred further reads were requested. Ninety-nine are running. The UI-package second pass did not start: the concurrent cap was already full, and the earlier assets-package read is still marked running. These reads are told not to edit this file and not to repeat findings already listed here.
+
+They cover the previously unread tests (editor, render, runtime, e2e, assets, core, editor-kit, scripting-nodes, and the smaller packages), the docs that were not line-read (`render.md`, `perf-budget.md`, `renderer-qualification.md`, plus full passes of `scripting.md`, `shader-graph.md`, `testing.md`, `theming.md`, `distribution.md`, `particle-emitters.md`, and `engineplan.md`), and a second pass of the files that already produced the serious defects.
+
 ## Coverage still open
 
-These reads are still running: the assets package pass. Render files `g`–`o` and names starting with `s`, including `snapshot-apply.ts`, are recorded.
+The assets-package read from the previous wave is still marked running. Render files `g`–`o` and names starting with `s`, including `snapshot-apply.ts`, are recorded. The UI-package second pass is the slice that did not launch.
 
 Architecture docs `a`–`m` were read in full: `anim-graph.md`, `asset-registry.md`, `audio.md`, `behaviour-tree.md`, `bridge.md`, `command-layer.md`, `components.md`, `console-commands.md`, `containers.md`, `debugger.md`, `editor-extensions.md`, `exporter.md`, `fonts.md`, `global-search.md`, `index.md`, `input.md`, and `keybinds.md`. Earlier docs read: `navigation.md`, `object-model.md`, `overview.md`, `particles.md`, `physics.md`, `plugins.md`, `scene-editing.md`, `scene-layers.md`, `source-control.md`, `sprites.md`, `tilemaps.md`, `vfs.md`, `feature-test.md`, `gestures.md`, and `save-games.md`. `scripting.md`, `shader-graph.md`, `testing.md`, `theming.md`, `distribution.md`, `particle-emitters.md`, and `engineplan.md` were read only where a sentence stated a save, load, delete, security, or lifecycle guarantee. `render.md`, `perf-budget.md`, and `renderer-qualification.md` were not line-read.
 
