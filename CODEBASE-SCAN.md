@@ -1117,17 +1117,35 @@ Runtime tests `sn`–`z` and render tests `t`–`z` reported no new product bugs
 - **Medium.** Public hygiene skips an issue comment that is not on a pull request, so that comment body is never scanned (`security.yml`).
 - **Low.** The Pages smoke exits 0 when the live site returns HTTP 200, contains `id="root"`, and does not contain `Jekyll v`. The previous production page already matches (`preview.yml`).
 
+## Verified in the thirty-seventh batch
+
+- **High.** Import GUID remap rewrites `dependencies` and only Audio, Particle, Model, Skeleton, Animation, RenderTarget, Data, and InputType `Asset` fields. Sprite and tileset `textureGuid`, tilemap tileset ids, scene and prefab component fields, font fallbacks, and water `materialGuid` stay on the old ids (`guid-remap.ts`).
+- **Medium.** Tilemap collision chains are built one chunk at a time. A solid region that crosses a chunk boundary becomes separate loops, and the shared edge is not cancelled (`tilemap-chains.ts`).
+- **Medium.** One to seven external adds or deletes leave `classifyExternalChanges` as `none`. The returned `changedPaths` is only mtime changes, not the added or removed paths (`mtime-diff.ts`).
+- **Medium.** Every `.json` import goes through `importFont`. A file that is not a font representation is still stored as a Font (`importers/index.ts`, `font.ts`).
+
+## Reported in the thirty-seventh batch, not re-checked
+
+- Convex hull unique and build run on the full point cloud before the 64-point cap (`convex-hull.ts`).
+- Tilemap paint copies the whole map once per cell (`tilemap-paint.ts`).
+- Sprite animation pixel sizes are read only from PNG bytes (`sprite-animation-payload.ts`).
+- Project search decodes Scene, Graph, and Class bodies only (`search-index.ts`).
+- Audio import stores the MIME from the extension, not the sniffed bytes (`audio.ts`).
+
+## Rejected in the thirty-seventh batch
+
+- `gltfJsonToGlb` encoding an empty BIN for a non-relative buffer URI, including a `data:` buffer, is already recorded (`glb-parse.ts`).
+- OBJ import treating any same-stem non-model file as a sidecar is already recorded (`obj-import-batch.ts`).
+
 ## Deeper pass
 
-One hundred further reads were requested. Ninety-nine started. The UI-package second pass did not start: the concurrent cap was already full, and the earlier assets-package read is still marked running. These reads are told not to edit this file and not to repeat findings already listed here.
-
-A later status check still shows that assets-package read marked running, along with second passes of the editor shell, native plugins, bridge, edit, exporter, play context, player, desktop, script compile, play boot, snapshot apply, material compile, and water material, plus several test slices. The editor-kit, behaviour, physics, script-host, debugger, document, and docs slices from this wave have returned; their checked defects are in the twenty-eighth batch.
+One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
 
 They cover the previously unread tests (editor, render, runtime, e2e, assets, core, editor-kit, scripting-nodes, and the smaller packages), the docs that were not line-read (`render.md`, `perf-budget.md`, `renderer-qualification.md`, plus full passes of `scripting.md`, `shader-graph.md`, `testing.md`, `theming.md`, `distribution.md`, `particle-emitters.md`, and `engineplan.md`), and a second pass of the files that already produced the serious defects.
 
 ## Coverage still open
 
-The assets-package read from the previous wave is still marked running. Render files `g`–`o` and names starting with `s`, including `snapshot-apply.ts`, are recorded. The UI-package second pass is the slice that did not launch.
+The assets-package read and the UI-package second pass have both returned. Render files `g`–`o` and names starting with `s`, including `snapshot-apply.ts`, are recorded.
 
 Architecture docs `a`–`m` were read in full: `anim-graph.md`, `asset-registry.md`, `audio.md`, `behaviour-tree.md`, `bridge.md`, `command-layer.md`, `components.md`, `console-commands.md`, `containers.md`, `debugger.md`, `editor-extensions.md`, `exporter.md`, `fonts.md`, `global-search.md`, `index.md`, `input.md`, and `keybinds.md`. Earlier docs read: `navigation.md`, `object-model.md`, `overview.md`, `particles.md`, `physics.md`, `plugins.md`, `scene-editing.md`, `scene-layers.md`, `source-control.md`, `sprites.md`, `tilemaps.md`, `vfs.md`, `feature-test.md`, `gestures.md`, and `save-games.md`. The deeper pass has now line-read `render.md`, `perf-budget.md`, `renderer-qualification.md`, `scripting.md`, `shader-graph.md`, `testing.md`, `theming.md`, `distribution.md`, `particle-emitters.md`, and `engineplan.md`; only the mismatches checked above are recorded.
 
