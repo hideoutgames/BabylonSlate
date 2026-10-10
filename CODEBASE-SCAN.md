@@ -623,6 +623,20 @@ The second-sprite overlay map entry was already reported: `createPlayMesh` store
 - Overlay style records the child list once and does not see meshes added later (`overlay-visual-style.ts`).
 - Linked skeletons parent bones by node name, so duplicate names last-write-win (`node-rig.ts`).
 
+## Verified in the fifteenth batch
+
+These are end-to-end tests whose titles name a behavior the body does not run.
+
+- **Medium.** `Particle Emitter and System assets survive save and reopen` creates and reopens `ReopenSparks`, a Particle Emitter. It never creates a Particle System (`e2e/p17-particles.spec.ts`).
+- **Medium.** `enables Fake locks, auto-locks on edit, Edit Anyway, Release All, and mtime reload` opens the Release All confirm and clicks `locks-release-all-cancel`. The lock count is not released. The mtime clause touches the file, rescans, and clicks `external-change-keep-edits`. Reload is not confirmed (`e2e/p15-source-control.spec.ts`).
+- **Medium.** `2D project paints tiles, plays an animated sprite, and reports physics` opens the sprite editor and creates an Animation Graph named `Loco` with no states. Play checks physics time, fps, and actor Y. No sprite frame or graph playback is read (`e2e/p10-tilemap.spec.ts`).
+
+## Reported in the fifteenth batch, not re-checked
+
+- `build, save, reopen, play in 3D and 2D with gamepad and gizmo undo` asserts gamepad `data-move-x` only while the viewport says 2D (`e2e/p6-scene-editing.spec.ts`).
+- `Prefab Preview, Play overlay, and Scene viewport share one session` checks that three canvases are visible and does not read a shared session (`e2e/p18-editor-opt.spec.ts`).
+- `play-performance-route.spec.ts` and `play-sustained-route.spec.ts` skip unless `BL_PERF_ROUTE` or `BL_PERF_SUSTAINED` is set.
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine are running. The UI-package second pass did not start: the concurrent cap was already full, and the earlier assets-package read is still marked running. These reads are told not to edit this file and not to repeat findings already listed here.
