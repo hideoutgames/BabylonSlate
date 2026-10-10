@@ -1263,6 +1263,26 @@ Bloat to remove. The engine is not released, so these paths exist only to accept
 - Exec outputs not fanning out is already recorded. `gestures.md` repeats the claim that exec pins allow multiple outgoing wires (`graph-connect.ts`).
 - Call Interface dropping an argument whose id is `target` is already recorded (`interface.ts`).
 
+## Verified in the forty-fifth batch
+
+- **Medium.** A Texture or Audio search hit opens a document tab. `documentKindForAssetType` returns `texture` and `audio`. The search page says those hits open a Settings tab (`search-navigation.ts`, `document.ts`, `global-search.md`).
+- **Medium.** The console catalog page says the core list is seven setters plus `help` and never names `renderpath`. That command is registered and can query or set the render path (`console-commands.md`, `commands.ts`).
+- **Medium.** `stat threads` shows bridge messages per second. The console page describes it as main-versus-worker timings (`stats-hud.tsx`, `console-commands.md`).
+- **Removal.** Shader assets still run the material migration chain, including `migrateLegacyShaderPayload`, and are rewritten to a Material header. The containers page says Shader has no migration (`migration.ts`, `containers.md`).
+- **Medium.** Game Instance and Scene Subsystem event lists omit On Game Loaded. Both catalogs include `onGameLoaded` (`engine-script-api.ts`, `object-model.md`).
+- **Medium.** Open Scene tabs stay mounted. They still count toward the warm-workspace cap of 3. The overview says inactive workspaces unmount after 2 minutes (`document-working-set.ts`, `overview.md`).
+- **Low.** Move To stamps `acceptRadius` 0.5. The navigation page says the arrival default is 0.75, which is only the fallback when the property is missing (`catalog.ts`, `runtime-navigation.ts`, `navigation.md`).
+
+## Reported in the forty-fifth batch, not re-checked
+
+- The content-browser folder pane minimum is 162px. The overview says 160px (`content-browser-workspace.tsx`).
+- Feature Test keeps the Basic 3D scene at `assets/main.scene.babasset` and reuses `assets/Mannequin/`. The page says every asset lives under `assets/FeatureTest/<Area>/` (`feature-test.md`).
+
+## Rejected in the forty-fifth batch
+
+- `renderpath` missing from `debugger.md` is already recorded. The console catalog omission above is the other page.
+- The qualification notes through line 959 did not add a new mismatch.
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
