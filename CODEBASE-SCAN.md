@@ -680,6 +680,18 @@ These are editor tests whose titles name a sequence the body does not run.
 - `never blocks an edit when create conflicts or is offline` only adds a theirs lock (`source-control-service.test.ts`).
 - `adds a distinct component after deleting a middle row` never deletes a row (`scene-details-panel.test.tsx`).
 
+## Verified in the twentieth batch
+
+- **Medium.** `skips pointer and keyboard while free cam is on, but still forwards gamepads` drops pointer and keyboard while `steal` is true, then sets `steal` to false before `pollGamepads()`. The gamepad sample is taken with free cam off (`input-capture.test.ts`).
+- **Medium.** `opens web folder or ZIP imports explicitly` only clicks Import ZIP and expects `"zip"`. Import Folder is not clicked (`homepage.test.tsx`).
+- **Medium.** `lists the subsystem's Call, Get, Set and Call event rows first` requires the event id somewhere in `suggested`. The prefix check is `suggested.slice(0, 3)` with `expect.arrayContaining`, so those three ids can be in any order and the event row can sit anywhere after them (`graph-validation.test.ts`).
+
+## Reported in the twentieth batch, not re-checked
+
+- `does not report a pure cycle when Line Trace location feeds back through Make Vector3` builds `vector.add3`, not `vector.make3` (`graph-validation.test.ts`).
+- `keeps phone-sized project access available without an account` stubs width and the gate returns children for every non-mobile host without reading width (`homepage-mobile-account-gate.test.tsx`).
+- `commits Array container and resets the Default` uses a bool member with no default (`inspector-panel.member.test.tsx`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine are running. The UI-package second pass did not start: the concurrent cap was already full, and the earlier assets-package read is still marked running. These reads are told not to edit this file and not to repeat findings already listed here.
