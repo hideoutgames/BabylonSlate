@@ -333,6 +333,40 @@ These are separate from the iframe bridge, the unbounded `lfs:fetch` body, the s
 - **Medium.** `registerIpc` builds one `NodeStorageAdapter` for every window. Project reads and writes follow whichever folder was opened last. `activate` can create another window when none are open.
 - **Medium.** Navigation blocking is `will-navigate` on the main frame. There is no `will-frame-navigate` handler, so the Preview iframe can navigate itself.
 
+## Verified in the fourth batch
+
+- **High.** A single simulation step does not pause if the tick throws. `worker-entry.ts` handles `"step"` as `resume()`, `tick()`, `pause()` with no `finally`. Pause is skipped, and the scheduler keeps running.
+- **High.** A Class display name can replace an engine parent. `classParentLookup` stores `header.name` in the same map as class ids. A class named `Actor` makes `map.get("Actor")` return that class’s parent instead of the engine parent.
+- **High.** Function-graph inspector edits write the class graph. `updateNodeData` patches `graph.nodes` by id. Data-graph nodes go through `patchDataGraphNode` with `activeFunctionId`. Other nodes do not. A function node that is not in the class graph is a no-op, and a colliding id patches the class node.
+- **High.** Android external writes truncate in place. `BabylonSlateScopedStoragePlugin.writeFile` opens the stream with `"wt"` and writes the payload. There is no temporary file.
+- **High.** iOS ranged reads do not start an iCloud download. `readFileRange` calls `withCoordinatedRead` with `materialize: false`.
+
+## Reported in the fourth batch, not re-checked
+
+- Choosing a font with no MSDF pair calls `update` for the font and then for the renderer. Scene Details applies each update to the scene captured when the callback was created, so the second write can drop the font (`component-property-rows.ts`).
+- Duplicate component labels can collide after uniquify (`component-graph-members.ts`).
+- A viewport registered while the editor is paused never receives `setPaused(true)` (`editor-scheduler-registry.ts`).
+- Retargeted animation file names collapse characters outside `[A-Za-z0-9_.-]`, so distinct display names can share one path (`animation-retarget.ts`).
+- A failed optional-content fetch is cached as an empty set for the session (`engine-content.ts`).
+- Deleting an event removes event nodes and leaves `flow.event.call` nodes (`class-members.ts` `removeClassMember`).
+- Canvas resize dispose can leave the scheduler in a resizing hold (`canvas-resize-guard.ts`).
+- A failed scene realization leaves `sceneWorkBlocked` set, and the next realize awaits the same rejected promise (`scene-realizer.ts`).
+- Change Scene deletes the old scene before the new one is ready. Failure then has no scene to restore (`scene-realizer.ts`).
+- `WaterWorld.evaluate` scratch is cleared only at the end, so a throw leaves stale actors for the next pass (`water-world.ts`).
+- Save-game registration keeps the first selection and does not update it (`save-game-world.ts`).
+- Scene-stream `notifyReady` resolves the load promise before admission flush. A later throw retires a stream the caller already saw as loaded (`scene-streams.ts`).
+- `invokeFunction` returns on the first Promise and skips later modules of the same class (`script-host.ts`).
+- `ResourceCacheOwner.acquireExisting` is not tracked by `dispose` (`resource-cache.ts`).
+- Font `dispose` does not clear `loaded`, so `isReady` stays true (`font-registry.ts`).
+- Android text reads replace invalid UTF-8 instead of rejecting it (`BabylonSlateScopedStoragePlugin.java`).
+- iOS permission errors on one file are reported as `ACCESS_REVOKED` for the folder (`BabylonSlateScopedStoragePlugin.swift`).
+- `docs/architecture/overview.md` still says Android keeps the Clerk token only in process memory. The Android secrets plugin uses AndroidKeyStore.
+- iOS Keychain `set` deletes the old item before `SecItemAdd` (`BabylonSlateSecretsPlugin.swift`).
+- Android SAF listings can collapse two children with the same display name on later read and write (`DirectoryReadCache.java`).
+- Parse Float success uses `Number` while the value uses `parseFloat`, so `0x10` and `1_000` disagree (`string.ts`).
+- Switch on Enum routes by a Title Case label, so members that share a label share one arm (`enum.ts`).
+- Custom event names that differ only by spaces, underscores, or hyphens compile to the same identifier (`member-pins.ts`).
+
 ## Coverage still open
 
 Large-file reads are still running for `water-material.ts`, `create-engine.ts`, `document-context.tsx`, `registry.ts`, `snapshot-apply.ts`, `script-host.ts`, and `driver.ts`, plus the remaining letter buckets. This note is updated as those reads are checked.
