@@ -1161,6 +1161,21 @@ Bloat to remove. The engine is not released, so these paths exist only to accept
 - **Removal.** `migrateSceneMeshesToActors` still converts scenes that store meshes outside actors (`migration.ts`).
 - **Removal.** A material test keeps whole-actor `assignMaterial` commands that name only a slot id (`runtime-material-identity.test.ts`).
 
+## Verified in the fortieth batch
+
+- **Medium.** Material compile cost is compared with twice the frame budget. A compile that takes between one and two frames stays cheap and still auto-queues (`shader-graph.md`, `preview-state.ts`).
+- **Medium.** The shader-graph page says Post Processing has no mesh vertex attributes. `input.uv` has no domain list, so it stays legal in Post Processing. Local vertex position and normal are surface-only (`shader-graph.md`, `catalog.ts`).
+- **Medium.** The home Design card promises gesture contracts and links only to the performance budget. Gesture contracts are on the Gestures page (`index.md`, `sidebar.ts`).
+- **Medium.** The architecture index still describes editor extensions as Editor Utility graphs and Skybox Creator. The page now leads with Engine and Project Extensions (`architecture/index.md`, `editor-extensions.md`).
+- **Medium.** The architecture index still titles the materials page “Shader graph” and reduces it to shader IR. The page and sidebar call it Materials and Material Functions (`architecture/index.md`, `shader-graph.md`, `sidebar.ts`).
+- **Low.** A new Text material previews on a plane. The page calls cube the document default (`shader-graph.md`, `document.ts`).
+- **Low.** The page calls two landscape nodes Landscape Layers and Landscape Blend. The catalog titles are Landscape Paint Layers and Landscape Layer Blend (`shader-graph.md`, `catalog.ts`).
+- **Low.** The architecture landing table omits Save Games and CI performance. Both are in that sidebar group (`architecture/index.md`, `sidebar.ts`).
+
+## Rejected in the fortieth batch
+
+- The Noise section still saying UV widens with zero Z is the same pad-with-`1` mismatch already recorded (`shader-graph.md`, `types.ts`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
