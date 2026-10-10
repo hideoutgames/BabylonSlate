@@ -1041,6 +1041,15 @@ Runtime tests `sn`–`z` and render tests `t`–`z` reported no new product bugs
 - An asset field inside a struct default does open a picker. `singleDefaultRows` passes `onPickAsset`, and struct fields use that mapping (`graph-inspector.ts`).
 - `SetComponentTransformPresenceCommand` does define `byteSize`. The missing sizes are the property and scene-setting commands recorded above.
 
+## Verified in the thirty-first batch
+
+- **High.** Software separation ignores collision layers. The overlap loop never reads `layer` or `mask`, while `pollContacts` skips a pair unless each layer hits the other mask. A pair that produces no contact is still pushed apart (`software-backend.ts`).
+- **High.** That same loop builds the dynamic box once. After the first static collider moves the body, the next static collider is tested against the old box (`software-backend.ts`).
+- **Medium.** A looped Rapier chain stores its closing segment under the chain’s collider id. Contact keys use that id, so leaving either the polyline or the segment ends the overlap while the other shape is still touching (`rapier-backend.ts`).
+- **Medium.** Havok `moveCharacter` returns null for `dt <= 0` and leaves the body in place. A positive `dt` at or below `1e-8` forces the integrated velocity to 0, so that displacement is dropped (`havok-backend.ts`).
+- **Medium.** Software circles and capsules extend `±radius` on Z. Boxes, polygons, and chains use a `±0.01` slab, so a 2D circle overlaps geometry a box at the same Z would miss (`software-backend.ts`).
+- **Low.** Snapshot `frameId` and `tickIndex` are stored as binary32. Past 16,777,216 those integers are no longer distinct, so an interpolation reset can miss the teleport frame and water sampling looks up the rounded id (`snapshot-buffer.ts`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass did not start: the concurrent cap was already full, and the earlier assets-package read is still marked running. These reads are told not to edit this file and not to repeat findings already listed here.
