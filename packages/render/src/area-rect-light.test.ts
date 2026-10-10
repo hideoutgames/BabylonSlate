@@ -2,7 +2,7 @@ import { Matrix, Quaternion, Scene, Vector3 } from "@babylonjs/core";
 import { areaRectLightBindings, identitySerializedTransform } from "@babylonslate/core";
 import { describe, expect, it, vi } from "vitest";
 import { createTestEngine } from "./create-null-engine";
-import { AreaRectLightOwner } from "./area-rect-light";
+import { AreaRectLightGroup, AreaRectLightOwner } from "./area-rect-light";
 import { managedRenderReservations, limitManagedRenderBytes } from "./managed-render-resources";
 import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission } from "@babylonslate/assets";
 import { AREA_EMISSION_TEXTURE_BYTES } from "./area-emission-resource";
@@ -38,6 +38,22 @@ describe("native rectangular area light ownership", () => {
     expect(managedRenderReservations(engine).categoryBytes.areaLight).toBe(0);
     scene.dispose(); engine.dispose();
   });
+  // Play merges a new emission map for every per-slot asset install; each identity change used to invalidate the render graph.
+  it("reports an emission refresh only when the emission a binding uses changes", async () => {
+    const { engine, scene } = createTestEngine();
+    const encode = async (fill: number, hash: string) =>
+      decodeAreaEmission(await encodeAreaEmission(new Uint8Array(AREA_EMISSION_EDGE ** 2 * 4).fill(fill), hash.repeat(64)));
+    const first = await encode(170, "a");
+    const authored = binding(); authored.properties.textureGuid = "texture";
+    const group = new AreaRectLightGroup(scene, "group");
+    expect(group.update([authored], new Map([["texture", first]]))).toBe(true);
+    expect(group.refreshEmissions(new Map([["texture", first], ["unrelated", first]]))).toBe(false);
+    expect(group.refreshEmissions(new Map([["texture", await encode(90, "b")]]))).toBe(true);
+    expect(group.refreshEmissions(new Map())).toBe(true);
+    group.dispose();
+    scene.dispose(); engine.dispose();
+  });
+
   it("shares offline lookup textures across views until the last emitter releases them", () => {
     const { engine, scene } = createTestEngine();
     const other = new Scene(engine);

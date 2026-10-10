@@ -133,6 +133,7 @@ export class AreaRectLightGroup {
   private signature = "";
   private bindings: readonly AreaRectLightBinding[] = [];
   private emissions?: MeshAssetContext["areaEmissions"];
+  private emissionSignatureValue = "";
   private readonly scene: Scene;
   private readonly name: string;
   private readonly onDiagnostic?: (message: string) => void;
@@ -140,9 +141,24 @@ export class AreaRectLightGroup {
   constructor(scene: Scene, name: string, onDiagnostic?: (message: string) => void) {
     this.scene = scene; this.name = name; this.onDiagnostic = onDiagnostic;
   }
+  /**
+   * The prepared emission each binding uses. Play merges a new emission map
+   * for every per-slot asset install; only a change in these entries is visible.
+   */
+  private emissionSignature(bindings: readonly AreaRectLightBinding[], emissions?: MeshAssetContext["areaEmissions"]): string {
+    return bindings.map((binding) => {
+      const guid = binding.properties.textureGuid;
+      const pixels = guid ? emissions?.get(guid) : undefined;
+      return guid ? `${guid}:${pixels ? areaEmissionResourceKey(pixels) : "missing"}` : "";
+    }).join("|");
+  }
   update(bindings: readonly AreaRectLightBinding[], emissions?: MeshAssetContext["areaEmissions"]): boolean {
     const signature = JSON.stringify(bindings);
-    if (signature === this.signature && emissions === this.emissions) return false;
+    const emissionSignature = this.emissionSignature(bindings, emissions);
+    if (signature === this.signature && emissionSignature === this.emissionSignatureValue) {
+      this.emissions = emissions;
+      return false;
+    }
     const live = new Set(bindings.map((binding) => binding.id));
     for (const [id, emitter] of this.emitters) if (!live.has(id)) { emitter.dispose(); this.emitters.delete(id); }
     for (const binding of bindings) {
@@ -152,6 +168,7 @@ export class AreaRectLightGroup {
       emitter.setWorld(this.world);
     }
     this.signature = signature;
+    this.emissionSignatureValue = emissionSignature;
     this.bindings = bindings;
     this.emissions = emissions;
     return true;
@@ -163,5 +180,5 @@ export class AreaRectLightGroup {
     this.world.copyFrom(world);
     for (const emitter of this.emitters.values()) emitter.setWorld(world);
   }
-  dispose(): void { for (const emitter of this.emitters.values()) emitter.dispose(); this.emitters.clear(); this.signature = ""; this.bindings = []; this.emissions = undefined; }
+  dispose(): void { for (const emitter of this.emitters.values()) emitter.dispose(); this.emitters.clear(); this.signature = ""; this.emissionSignatureValue = ""; this.bindings = []; this.emissions = undefined; }
 }
