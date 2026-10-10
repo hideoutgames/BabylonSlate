@@ -1283,6 +1283,22 @@ Bloat to remove. The engine is not released, so these paths exist only to accept
 - `renderpath` missing from `debugger.md` is already recorded. The console catalog omission above is the other page.
 - The qualification notes through line 959 did not add a new mismatch.
 
+## Verified in the forty-sixth batch
+
+- **High.** Each iOS free-memory sample calls `mach_host_self()` twice and never releases the send right. After enough Play stats polls the process host port hits its reference cap and later host calls fail (`BabylonSlateMemoryPlugin.swift`).
+- **Medium.** That free-memory total adds purgeable pages on top of free and inactive. Purgeable pages are already on those queues, so the HUD free figure is high (`BabylonSlateMemoryPlugin.swift`).
+- **Medium.** iOS audio starts a `.playback` session, which ignores the silent switch. After an interruption ends, the plugin emits `audioInterruption` and does not call `setActive(true)` again (`BabylonSlateAudioLifecyclePlugin.swift`).
+- **Low.** `os_proc_available_memory()` returns 0 when the jetsam limit is unknown. The plugin treats 0 as a real headroom value (`BabylonSlateMemoryPlugin.swift`).
+- **Medium.** The Create Scene Layer graph node awaits `createSceneLayerAsync`. The scene-layer page says it calls the synchronous `createSceneLayer` (`scene-layer.ts`, `scene-layers.md`).
+- **Medium.** A Scene Layer workspace starts unlit, but the viewport shading menu still offers PBR, CEL, Unlit, and Wireframe (`document-workspace.tsx`, `viewport-toolbar.tsx`).
+- **Medium.** The class parent list also includes Render Target Capture, Scene Layer Actor, Scene Layer Actor Switcher, and Scene Streaming Actor. The registry page says its shorter list is every class parent (`content-browser-helpers.ts`, `asset-registry.md`).
+- **Medium.** `updateScene` writes the open scene and its dirty flag without the edit session or the journal (`document-context.tsx`, `document-service.ts`). The command-layer page says there is no direct update path.
+
+## Reported in the forty-sixth batch, not re-checked
+
+- `e2e/p2-accept.spec.ts` covers import only. Killed-tab journal recovery is in `e2e/qa-recovery.spec.ts` (`command-layer.md`).
+- `e2e/p18-editor-opt.spec.ts` does not cover idle unmount or the warm-workspace cap (`command-layer.md`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
