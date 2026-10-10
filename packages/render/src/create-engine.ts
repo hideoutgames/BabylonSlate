@@ -253,6 +253,7 @@ import {
   pendingSceneTextures,
   prewarmSceneMaterials as warmSceneMaterials,
   SCENE_LOOKUP_MAPS,
+  SCENE_FIRST_FRAME_TIMEOUT_MS,
   SCENE_SHADER_WARM_TIMEOUT_MS,
 } from "./scene-perf";
 
@@ -4012,7 +4013,7 @@ function initializeEngine(
       let resolve!: () => void;
       let reject!: (error: Error) => void;
       const promise = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
-      const timer = setTimeout(() => expirePresentation(key), SCENE_SHADER_WARM_TIMEOUT_MS);
+      const timer = setTimeout(() => expirePresentation(key), SCENE_FIRST_FRAME_TIMEOUT_MS);
       pendingPresentations.set(key, { promise, resolve, reject, timer, ready: false, attempts: 0, rendered: false, owner, submission: null, copied: false, completionStarted: false });
       return promise;
     },

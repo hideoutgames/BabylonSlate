@@ -42,7 +42,7 @@ import { visualMeshes } from "./visual-meshes";
 import { prewarmMaterial } from "./material-compiler";
 import { MaterialLibrary } from "./material-library";
 import { OwnedPostProcess } from "./owned-post-process";
-import { markSceneReadinessDirty, prewarmSceneMaterials, SCENE_SHADER_WARM_TIMEOUT_MS } from "./scene-perf";
+import { markSceneReadinessDirty, prewarmSceneMaterials, SCENE_FIRST_FRAME_TIMEOUT_MS, SCENE_SHADER_WARM_TIMEOUT_MS } from "./scene-perf";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { sceneRenderTargetCaptures } from "./render-target-capture";
 import type { SharedOutlineView } from "./shared-outline";
@@ -945,6 +945,41 @@ describe("Play createEngine view", () => {
     await presented;
     expect(frames).toBe(1);
     engine.activeView = null;
+  });
+
+  // Software GL can take longer than the shader stall budget to produce a heavy scene's first valid frame.
+  it.each(["validates", "never validates"] as const)("gives a first frame that %s the first-frame budget", async (outcome) => {
+    const engine = sharedEngine();
+    const { handle } = playHandle(engine);
+    await handle.prewarmSceneMaterials();
+    handle.setPaused(true);
+    const ready = vi.fn(() => false);
+    handle.scene.addIsReadyCheck({ isReady: ready });
+    markSceneReadinessDirty(handle.scene);
+    vi.useFakeTimers();
+    let state = "pending";
+    const frame = handle.presentFirstFrame().then(() => { state = "ready"; }, (error) => { state = "failed"; return error as Error; });
+    try {
+      renderViews(engine);
+      engine.onEndFrameObservable.notifyObservers(engine);
+      await vi.advanceTimersByTimeAsync(SCENE_SHADER_WARM_TIMEOUT_MS * 2);
+      expect(state).toBe("pending");
+      if (outcome === "validates") {
+        ready.mockReturnValue(true);
+        renderViews(engine);
+        engine.onEndFrameObservable.notifyObservers(engine);
+        await frame;
+        expect(state).toBe("ready");
+      } else {
+        await vi.advanceTimersByTimeAsync(SCENE_FIRST_FRAME_TIMEOUT_MS);
+        expect(await frame).toMatchObject({ message: expect.stringContaining("loading deadline") });
+        expect(state).toBe("failed");
+      }
+    } finally {
+      handle.dispose();
+      await frame;
+      vi.useRealTimers();
+    }
   });
 
   it("keeps loading through skipped effects until a complete ready frame is presented", async () => {

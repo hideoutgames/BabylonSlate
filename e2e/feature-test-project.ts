@@ -73,8 +73,8 @@ export async function reopenFeatureTestProject(page: Page, timeout = LONG_MS): P
 
 /**
  * Open a FeatureTest scene and wait for its viewport to finish loading. A
- * first-frame deadline miss (FT_World on software GL, see the FeatureTest doc's
- * Known gaps) is retried once and counted; a second failure fails the route.
+ * loading-deadline miss on a slow software-GL runner is retried once and
+ * counted; a second failure fails the route.
  */
 export async function openFeatureTestScene(
   page: Page,
