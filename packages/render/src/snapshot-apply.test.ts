@@ -1825,7 +1825,14 @@ describe("createPlayMesh", () => {
     ).toBe(true);
   });
 
-  it("draws Play collider dashes when meshKind encodes a collider shape", () => {
+  it.each([
+    { label: "box", shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } },
+    // Authored triangle meshes store vertex rows; the visual needs the packed form.
+    {
+      label: "authored triangle mesh",
+      shape: { kind: "mesh", vertices: [{ x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, { x: 0, y: 0, z: 1 }], indices: [0, 1, 2] },
+    },
+  ])("draws Play collider dashes when meshKind encodes a $label collider shape", ({ shape }) => {
     const handle = createTestEngine();
     handles.push(handle);
     const { scene } = handle;
@@ -1834,7 +1841,7 @@ describe("createPlayMesh", () => {
       type: "assignMesh",
       slotId: 5,
       meshAssetGuid: null,
-      meshKind: "collider:{\"kind\":\"box\",\"halfExtents\":{\"x\":0.5,\"y\":0.5,\"z\":0.5}}",
+      meshKind: `collider:${JSON.stringify(shape)}`,
     });
     const mesh = scene.getMeshByName("actor-5") as Mesh | null;
     expect(mesh).not.toBeNull();

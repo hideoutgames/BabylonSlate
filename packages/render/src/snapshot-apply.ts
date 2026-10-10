@@ -44,7 +44,7 @@ import {
   type Text3DProperties,
   type Transform,
 } from "@babylonslate/core";
-import type { ColliderShape } from "@babylonslate/physics";
+import { parseColliderProperties, type ColliderShape } from "@babylonslate/physics";
 import type { SampledSnapshot } from "./snapshot-sync";
 import {
   applyAlbedoTexture,
@@ -1328,11 +1328,16 @@ export function isPlayHelperMeshKind(
   );
 }
 
+/** Collider kinds only a 2D physics world accepts; every other kind parses as 3D. */
+const PLAY_2D_COLLIDER_KINDS = new Set(["box2d", "circle", "capsule2d", "polygon", "chain"]);
+
 function parsePlayColliderShape(encoded: string): ColliderShape {
   try {
     const parsed = JSON.parse(encoded) as unknown;
     if (parsed && typeof parsed === "object" && "kind" in parsed) {
-      return parsed as ColliderShape;
+      // Authored rows (for example triangle-mesh vertices) normalize as in the editor visual.
+      const world = PLAY_2D_COLLIDER_KINDS.has(String(parsed.kind)) ? "2d" : "3d";
+      return parseColliderProperties({ shape: parsed }, world, { validation: "authoring" }).shape;
     }
   } catch {
     // Fall through to a unit box so Play still has a visible collider.
