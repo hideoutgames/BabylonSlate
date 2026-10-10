@@ -1409,6 +1409,20 @@ No new unchecked claims were added in this pass. The items above were read in so
 - **Removal.** A performance profile with no `gpu` stream is filled with an empty stream (`parsePerformanceProfile`).
 - **Removal.** `debugphysics`, `shownavdebug`, `actorboundingbox`, and `unpause` only forward to `showcollision`, `shownav`, `setShowBounds`, and `resume` (`commands.ts`).
 
+## Verified in the fifty-fourth batch
+
+- **High.** Paste appends wires by calling `setEdges` inside the `setNodes` updater. The editor runs in Strict Mode, which invokes that updater twice, so one paste stores two copies of every internal wire. The graph tests render without Strict Mode (`graph-editor.tsx`, `main.tsx`).
+- **Medium.** The rubber-band hint treats pins by their declared type. Releasing the wire uses the resolved wildcard type. A wildcard already bound to float still counts every data pin as a safe target, so the cancel badge stays hidden while the drop follows the resolved type (`connection-line.tsx`, `collectDisplayConnectPins`). That hint also queries every handle and measures every mounted node on each pointer move.
+- **Medium.** Focusing a node from search or a diagnostic selects the node and leaves the previous edge selected. Selecting a node from the canvas clears edge selection. Break Links then deletes the leftover wire (`FocusedNodeSync`, `SelectedNodeSync`).
+- **Medium.** A generic pin is edited as a float. Particle Split’s Value pin accepts `vec2`, `vec3`, and `color` and is required, and that required flag is not on the serialized pin. Saving the float writes a one-element default, which the particle graph treats as set, so the missing-wire error disappears (`literalPinType`, `isPinSet`).
+- **Medium.** While nodes are dragged near each other, each candidate connection resolves every wildcard pin again (`collectProximityConnections`).
+- **Medium.** Format keeps an edge only when its source handle is an output on the source node. A reversed exec wire whose source handle is `execIn` is dropped, and the layout proceeds as if that wire were absent (`indexGraph`).
+- **Medium.** A gamepad sample writes stick values only for the axes in that sample and leaves higher indexes in place. A later shorter sample keeps the old deflection. Disconnect clears the pad; a live short sample does not (`InputResolver.resolve`).
+- **Medium.** Every input resolve samples all actions and axes before the event list, after each event, and again after the list. Each sample allocates a new mapping list and searches the axis array (`InputResolver.resolve`).
+- **Removal.** Binding import still requires a version-1 `overrides` array and applies those slots before version-2 edits. Current add, set, and remove persist as edits. The comment calls the overrides older player saves (`input-bindings.ts`).
+- **Removal.** Input mappings with neither an `actions` nor an `axes` array are replaced by Jump, Confirm, Move, and Look. An explicit empty list stays empty. The comment says this fills an unknown project input blob (`normalizeInputMappings`).
+- **Low.** The pointer binding catalog is still registered. The binding picker returns no codes for pointer or touch, and nothing authors `device: "pointer"` (`binding-catalog.ts`, `binding-code-picker.tsx`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
