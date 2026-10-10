@@ -1389,6 +1389,26 @@ No new unchecked claims were added in this pass. The items above were read in so
 
 - A Preview stop between backend start and `stopCurrentPlayer = stop` does not leave the session running. That stretch does not yield, and a stop during `startPlayerWithBackend` hits the abort check that calls `session.stop()` (`main.ts`).
 
+## Verified in the fifty-third batch
+
+- **High.** Enum and structure member rows key the input with the name plus the index, and the name commits on each keystroke. Focus drops after one character. This is the same remount as `NamedListEditor`, on `TypeMembersPanel` (`type-members-panel.tsx`).
+- **High.** The debug-tier warning reads `properties.command`. The Execute Console Command pin is stored as `default:command`. An unwired `showfps` literal is not warned, so a release export can strip it with no diagnostic. The test still sets the old `command` key (`validation.ts`, `pin-defaults.ts`, `debug.ts`).
+- **High.** Frame samples call `recordFrame` with no `try`. A non-monotonic timestamp throws. The render feed catches that, drops the listener, and logs. The diagnostic session stays active until the timer and then reports `duration` (`session-diagnostics.ts`, `render-performance.ts`, `performance-recorder.ts`).
+- **Medium.** A wired particle Lifetime is not clamped. The `0.01` minimum applies only to an unwired default. A constant `0` reaches Babylon’s `1 / lifeTime` (`lower.ts`, `catalog.ts`).
+- **Medium.** Particle gradient stops clamp to 0–1, sort, and keep duplicates. Two stops can share a position, and the span used to interpolate is then zero (`gradient.ts`).
+- **Medium.** The particle compile fingerprint always includes Duration and Pre Warm. Duration is applied only when Loop is Once, and Pre Warm only when Loop is Infinite. The settings comment still calls Duration the infinite loop length (`hash.ts`, `particle-graph-blocks.ts`, `document.ts`).
+- **Medium.** `particleGraphCompileKey` lowers the graph. Lowering validates, which builds a type resolver, then builds a second resolver to emit (`lower.ts`, `validate.ts`).
+- **Medium.** The scene outliner walks children of `null` and of actors it has already listed. An actor whose `parentId` is missing from the scene never appears. Search still lists it, because that path walks every actor. A folder with a missing parent is hidden the same way (`scene-outliner-panel.tsx`).
+- **Medium.** Prefab components walk only a parent id that exists in the list. A component whose `parentId` is missing never appears under Prefab Root (`actor-prefab-panel.tsx`).
+- **Medium.** A tick stamped past the profile window returns false and does not add to `droppedRecords`. The session keeps draining and ignores that false (`performance-recorder.ts`, `session-diagnostics.ts`).
+- **Removal.** Add Component still maps a `Mesh` asset onto `MeshComponent.assetGuid` beside `Model` (`add-component-catalog.ts`).
+- **Removal.** Particle emitter load ignores old flat fields (`emitRate`, `textureGuid`, `sizeGradient`) and substitutes current defaults (`normalizeParticleEmitterPayload`).
+- **Removal.** Opening a graph retitles a stored `"Graph"` panel to Event Graph (`graph-panel.tsx`).
+- **Removal.** Particle edges with no pin id become `"out"` and `"in"`. No catalog input is named `"in"` (`normalizeEdges`).
+- **Removal.** Trace documents still treat `retention` as optional and a missing `timeDilation` as `1`. Current recording writes both (`trace-recorder.ts`, `tick-pipeline.ts`).
+- **Removal.** A performance profile with no `gpu` stream is filled with an empty stream (`parsePerformanceProfile`).
+- **Removal.** `debugphysics`, `shownavdebug`, `actorboundingbox`, and `unpause` only forward to `showcollision`, `shownav`, `setShowBounds`, and `resume` (`commands.ts`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
