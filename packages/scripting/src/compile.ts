@@ -1011,11 +1011,13 @@ export function compileGraph(
           `  const ${snapshot} = ${candidate}?.valueType === ${JSON.stringify(valueType)} ? ${candidate} : null;`,
           anchor,
         );
+        // Function-level declarations: a pure consumer may already have hoisted these slots.
+        declareDataOuts(node, ctx);
         for (const p of node.pins.filter(
           (p) => p.kind === "data" && p.direction === "out",
         )) {
           emitBody(
-            `  let ${ctx.output(p.id)} = ${snapshot}?.${p.id} ?? ${defaultValueLiteral(p.type)};`,
+            `  ${ctx.output(p.id)} = ${snapshot}?.${p.id} ?? ${defaultValueLiteral(p.type)};`,
             anchor,
           );
         }
@@ -1078,12 +1080,7 @@ export function compileGraph(
           graphId: graph.id,
           nodeId: node.id,
         };
-        for (const p of node.pins) {
-          if (p.kind === "data" && p.direction === "out") {
-            const name = ctx.output(p.id);
-            emitBody(`  let ${name} = ${defaultValueLiteral(p.type)};`, anchor);
-          }
-        }
+        declareDataOuts(node, ctx);
         const connected = node.typeId === "input.onGamepadConnected";
         const index = ctx.output("index");
         emitBody(
