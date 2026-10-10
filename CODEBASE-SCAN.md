@@ -420,12 +420,80 @@ These are separate from the iframe bridge, the unbounded `lfs:fetch` body, the s
 - `setVariable` on `RenderTargetCaptureComponent` returns without writing non-capture fields (`script-host.ts`).
 - `waitForSceneWork` can resolve an already fulfilled promise before it honors an already aborted signal (`scene-realization-work.ts`).
 
+## Verified in the eighth batch
+
+- **High.** A failed Preview input boundary leaves input suppressed. `setEditorInputSuppressed` sets `inputTransitionPending` and clears it only after `requestBoundary` resolves. The boundary client rejects after 3000ms, and a `success: false` result throws. `applyInputOwnership` keeps pointer, keyboard, and gamepad input suppressed for the rest of the session (`boot.ts`).
+- **High.** A failed Preview resume leaves the view paused while the frame pump runs. The lifecycle handler calls `handle.setPaused(true)` and then `requestBoundary({ kind: "pause" })`. `setPaused(false)` runs only in the boundary success path. When the page becomes visible again, the pump is restarted from `lifecyclePaused` alone (`boot.ts`).
+- **High.** A failed startup scene-source upload rejects every later scene acquire. `systemSources` is `acquireSceneSources(...).then(...)` with no `catch`. `acquireScene` awaits that same promise (`boot.ts`).
+- **High.** Cable particle frames never reach the Play handle. `CommandMessage` includes `cableFrame`. `PLAY_ENGINE_COMMAND_TYPES` forwards `waterTime` and does not include `cableFrame` (`play-engine-commands.ts`, `channels.ts`). `setVoiceGain` was already noted.
+- **High.** Loop instrumentation ends a regex at a slash inside a character class. In regex mode, `classifyCode` does `if (ch === "/") stack.pop()` with no class tracking. A pattern such as `/[/)]/` inside `while (` or `for (` closes the header early and `parseStatement` rewrites the following source (`infinite-loop.ts`). The operator-versus-`return` slash heuristic is a separate case.
+- **High.** Moving an asset keeps the old locator path. `moveAssetUnlocked` and `moveFolderUnlocked` copy the indexed asset and overwrite `path` only. `getAssetLocator` returns that locator when the new file’s revision and size still match. Payload reads use `locator.path` (`registry.ts`, `payload-loader.ts`).
+- **High.** Delete drops unsaved edits before the files are removed. `confirmDelete` runs class-reference replacement and `closeDocumentsForPaths` before `deleteFolder` / `deleteAsset`. `closeDocumentsForPaths` drops undo history and closes the tabs. A later throw leaves the files on disk and the open edits gone. A class delete that fails after reference replacement leaves the class file while its usages are already rewritten (`content-browser-workspace.tsx`, `document-context.tsx`).
+- **High.** Opening another Scene stops Play before the save-or-discard choice. `openDocument` awaits the `replace-document` gate, and that gate calls `sessionOwner.stop()`, before it looks for dirty scenes. Cancel only bumps `exclusiveSceneRequest` and clears the prompt (`document-context.tsx`, `play-context.tsx`).
+- **High.** Cancel during the exclusive-scene gate still opens the Scene. `confirmExclusiveSceneOpen` captures `ref` before the gate await and samples `exclusiveSceneRequest` after it. Discard mode never reads the token. A cancel in that window has already incremented it, then discard and the post-await save path both call `finishOpenDocument(ref)` (`document-context.tsx`).
+- **High.** Crash-recovery replay is not tied to the project that was open. `replayRecoveryJournal` reads `project.guid` once, then applies lines when the authoring-lock object is unchanged. That object changes only when an authoring lock is published. Close and project enter do not publish one. The guid check is only inside the later truncate predicate (`document-editing-service.ts`, `document-service.ts`).
+- **High.** A nested `World.tick` double-steps the clock and drops spawn deferral. `tick` always calls `clock.advance()` and has no re-entry guard. `runPhase` clears `ticking` in `finally`. The nested clear runs while the outer phase is still walking actors, so `spawnActorNow` commits immediately and later actors tick twice (`world.ts`).
+- **High.** Number-prompt Save submits the last live value. The confirm button calls `submit()` with React state. `NumberField` updates that state only for an in-range parse. Enter runs `finishDraft` first, which clamps or refuses. An out-of-range draft such as `30/6` with `min={10}` is saved as the previous number and the dialog closes (`number-prompt-dialog.tsx`, `number-field.tsx`).
+- **High.** Size Graph To Fit frames the mounted neighborhood. The control calls `fitView` with no node list. Once the host has a size, React Flow is given `visibleGraph.nodes` only (`graph-viewport-controls.tsx`, `graph-editor.tsx`).
+- **Medium.** A text property commits on blur even when the draft never changed. `TextRowControl` `onBlur` calls `row.onCommit` unless the row is read-only or Escape set the cancel flag (`property-grid.tsx`).
+- **Medium.** Debug-draw spheres take an unbounded segment count (`Math.max(4, Math.round(segments))` with two `O(rings²)` loops). Cone radius is `length * Math.tan(angle)` and frustum size is `Math.tan(fov / 2)`, with no upper angle (`play-debug-draw.ts`). The sphere bound was previously only reported.
+
+## Reported in the eighth batch, not re-checked
+
+- Stop or preview abort during a `.babpack` range download does not cancel the HTTP request (`artifact.ts` `createHttpPackSource`).
+- Cooked complex collision is ignored after the Model bytes are trimmed (`artifact.ts` `cookComplexCollision`).
+- An in-process snapshot copy failure throws before `sceneReadiness.receive` (`boot.ts` `onCommand`).
+- In-process halt from `runtime.advance` disposes the engine, then `pump` requests another frame (`boot.ts`).
+- Stop during profiling admits profile-stop only after the worker has halted (`main.ts` `cleanupPage`).
+- `help stat unit` looks up `stat` because `parseCommandArgs` keeps one token (`commands.ts`).
+- `framecap -1` is applied, while manifest parsing normalizes `0` and `-1` to `60` (`commands.ts`).
+- A scene `classId` of a duplicate class name packages every class with that name (`closure.ts` `walkClosure`).
+- `dependencyCatalog` binds an unresolved name to the last asset with that display name (`export-game.ts`).
+- A CSS file whose `href` is not `filename.css` or `./filename.css` is deleted from the export while the link stays (`inlineCssIntoIndex`).
+- Concatenated scripts with no trailing newline glue the next `//# sourceURL=` onto the last line (`scripts.ts`).
+- An `http:` LFS remote is rewritten to `https:` (`lfs-endpoint.ts`).
+- `GitLfsLockProvider.list` marks every lock `ours: false` (`git-lfs-lock-provider.ts`).
+- A second `TraceRecorder.start` drops the in-progress frames (`trace-recorder.ts`).
+- A large preview profile is failed 10 seconds after start, not after the last chunk (`preview-diagnostics.ts`).
+- `diagnosticOperationStopped` cannot carry the `"error"` stop reason (`channels.ts`).
+- `packedSourceControls` on a subset still declares every original audio guid (`hydrate.ts`).
+- `ClassRegistry.reparent` checks only the moved class against the depth cap, so an existing child can land at depth 17 (`class-registry.ts`).
+- Cyclic actor parents are omitted from the inspect tree (`inspect-snapshot.ts`).
+- A SceneLayer drop rewrites a surviving child’s `parentId` onto a component that was never created (`instantiate-scene.ts`).
+- Interface pin defaults share nested objects across dispatches (`interfaces.ts`).
+- A second `World.end` runs Game Instance On End again (`world.ts`).
+- `setGameInstance` after `start` skips On End for the old instance and On Creation for the new one (`world.ts`).
+- Actor On Init failure leaves the actor spawned and skips component On Init (`commitSpawn`).
+- Read-only folder delete is skipped and still clears the selection (`confirmDelete`).
+- Folder drag calls `applyRegistryMoves` without reading `busy` (`handleTreeReparent`).
+- New Asset accepts `.` and `..`, which the rename dialog rejects (`ContentBrowserNewAssetDialog`).
+- Console follow-output stays on because `ScrollArea` `onScroll` is on the root, not the viewport (`debug-console.tsx`).
+- A failed mobile session refresh unmounts the local project library (`homepage-account-native.tsx`).
+- Folder copy duplicates files without a folder-local guid remap (`registry.ts` `copyFolder`).
+- `map_Kd -s 1 1 1 hero.png` captures `-s` as the texture name (`obj-import-batch.ts`).
+- Tilemap collision chains cancel shared edges only inside one chunk (`tilemap-chains.ts`).
+- A selected anim transition that leaves the viewport stays selected (`AnimTransitionEdge`).
+- Graph format sizes an unmeasured node as 220×88 (`graph-format.ts`).
+- A property-grid slider never calls `onCommit` (`property-grid.tsx`).
+- Range, color, curve, and gradient fields combine the edited component with the last rendered sibling (`property-grid.tsx`).
+- `NumericDragField` commits on `pointercancel` and does not require button 0 (`numeric-drag-field.tsx`).
+- Flag bit 31 is a negative mask and bits past 31 alias (`flags-field.tsx`).
+- Multiline text Escape and overlay click commit (`multiline-text-field.tsx`).
+- Parametric reverb `dispose` leaves the caller’s send connections (`parametric-reverb.ts`).
+- A failed collider rebuild keeps a disposed mesh in the overlay slot map (`play-console-viz.ts`).
+- `PostProcessRetirement.whenReleased` does not include generations added after the wait starts (`post-process-retirement.ts`).
+- The basic emission driver loops forever when duration is not positive (`particle-emission-driver.ts`).
+- Own class delete and rename writes of `project.json` skip the mtime snapshot, so the next rescan looks external (`document-context.tsx`).
+- A foreground rescan in flight can classify the new project against the previous snapshot (`runForegroundRescan`).
+- Save All can mark documents clean and then skip journal truncate when the project document object was replaced (`saveProject`).
+- Two asset-tab activations resolve in completion order, with no last-click token (`finishOpenDocument`).
+- `dismissRecovery` clears the banner after the await even if another project is now open (`document-context.tsx`).
+- Delete repair writes the on-disk copy under dirty tabs and patches those tabs only in memory (`repairAfterAssetDelete`).
+
 ## Coverage still open
 
-These reads are still running: `water-material.ts`, `document-context.tsx`, `registry.ts`, `snapshot-apply.ts`, `script-host.ts`, `driver.ts`, the editor shell, render files whose names start with `p`, render snapshot files, the assets package, runtime files `a`–`r`, and render files `g`–`o`.
+These reads are still running: `water-material.ts`, `registry.ts`, `snapshot-apply.ts`, `script-host.ts`, `driver.ts`, the editor shell, render snapshot files, the assets package, runtime files `a`–`r`, and render files `g`–`o`.
 
-`create-engine.ts` has finished. Its checked findings are in the seventh batch.
+Recorded from the reads that just finished: player, exporter and locks, editor components `c`/`d`/`h`, assets `n`–`z`, graph-ui, editor-kit, object-model, render files `p`, and `document-context.tsx`. Graph editor and inspector, and runtime files `p`–`r`, are not in this batch yet.
 
-Dedicated reads that finished after that batch are being extracted next: object-model, editor-kit, graph-ui, assets `n`–`z`, editor components `c`/`d`/`h`, exporter and locks, the player app, the graph editor and inspector, runtime files `p`–`r`, and render files `p`–`r`.
-
-Docs pages, other than the Android token note in `docs/architecture/overview.md`, have not been line-audited. Package test files were often left unread by the production-source passes.
+Docs pages, other than the Android token note in `docs/architecture/overview.md`, have not been line-audited. Package test files were often left unread by the production-source passes. Assets `n`–`z` left 21 test files unread or partial.
