@@ -1199,6 +1199,34 @@ Bloat to remove. The engine is not released, so these paths exist only to accept
 
 - The plan’s 60% coverage floor is the same physics gate already recorded at 50/50/45/50 (`testing.md`, `vitest.workspace.ts`).
 
+## Verified in the forty-second batch
+
+- **High.** Docs evidence links that are not JSON stay as relative hrefs. VitePress does not copy those png, mp4, and zip files, and the dead-link check ignores them, so the published page 404s. A Play screenshot in the qualification notes is one of them (`rewrite-repo-links.ts`, `renderer-qualification.md`).
+- **Medium.** The render page says a file whose name contains `lut` imports as a color-grading LUT. The matcher requires `lut` as its own token, so `salute.png` stays an albedo (`render.md`, `image.ts`).
+- **Medium.** The same page says the LUT guid is always an export root. It is packed only when color grading is enabled (`render.md`, `render-effects.ts`).
+- **Medium.** The radius audit allowlist matches one whole value. A legal shorthand such as `var(--radius-sm) var(--radius-sm) 0 0` is reported as hardcoded (`style-audit.ts`).
+- **Medium.** The test-kit golden refresh reads `UPDATE_GOLDEN`. The testing doc and the other goldens use `UPDATE_GOLDENS` (`harness.test.ts`, `testing.md`).
+- **Medium.** Physics pairing treats Movement, and a Dynamic Runtime Mesh with collision enabled, as an implicit body and emits no missing-body warning. The physics page lists only Tilemap, Blocking Volume, Mesh collision, and Landscape (`pairing.ts`, `physics.md`).
+- **Medium.** The qualification notes name `e2e/particle-lifecycle.spec.ts` and `e2e/post-process-owner-overrides.spec.ts`. Those files are not in the tree (`renderer-qualification.md`).
+
+## Reported in the forty-second batch, not re-checked
+
+- The qualification coverage matrix says authored post-process is unit-only, names a WebGL fallback reason that the spec does not show, and says the sustained route enumerates on CI (`renderer-qualification.md`).
+- The engine plan’s New Asset list, Play Anyway bypass, palette row height, command list, Begin Play naming, Dockview 4 pin, validation debounce, and Grid Settings label disagree with the editor (`engineplan.md`).
+- Issue-tracker status rows still say cylinders draw as boxes, UserInterface is packed, nested `parentId` is dropped, Play requires an open scene tab, and touch input is test-only (`issue-tracker.md`).
+- Play and export load only scene-reached animation graphs, not every project graph (`anim-graph.md`).
+- Engine plugin storage uses an HTTP catalog when the index loads, not an unpacked memory root (`plugins.md`).
+- The bridge command list omits behaviour-tree, navmesh, and water loads, and omits `btState` (`bridge.md`).
+- A 3D cylinder always uses `PhysicsShapeCylinder`. There is no convex-prism fallback (`havok-backend.ts`).
+- Dark mode does not set the brand button’s active colors, so the pressed home button is white on white (`custom.css`).
+
+## Rejected in the forty-second batch
+
+- `editorTextureLodEnabled` defaulting off is already recorded. `vfs.md` repeats that default (`app-settings.ts`).
+- Medium shadows using two cascades is already recorded. The engine plan repeats it (`shadows.ts`).
+- The sustained-route sample-window name is already recorded (`play-sustained-route.spec.ts`).
+- The remaining workflows did not add a new gate or publish finding.
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
