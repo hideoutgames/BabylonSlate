@@ -969,6 +969,78 @@ Runtime tests `sn`–`z` and render tests `t`–`z` reported no new product bugs
 - The missing anim-graph entry throw is the same defect already recorded in the twenty-eighth batch.
 - Cost-volume removal is limited on purpose in the registration comment. The missing remove is recorded above as that limitation, not as a forgotten `removeObstacle` call.
 
+## Verified in the thirtieth batch
+
+- **High.** Opening another Scene does not stop Play. The transition gate allows a `replace-document` whose id is not the playing scene, and `beforeCommit` then closes that playing scene with `performCloseDocument`, which never asks the gate. Play keeps the shared engine after the document is gone (`play-context.tsx`, `document-context.tsx`).
+- **High.** Closing a project stops Play before the unsaved-documents dialog. `closeProject` awaits the `close-project` gate, and that gate calls `sessionOwner.stop()`, then looks for dirty documents. Cancel does not start Play again (`document-context.tsx`, `play-context.tsx`).
+- **High.** A library function called by class id stores Do Once, Do N, Flip Flop, and Gate state with a null receiver. Every caller shares that latch. The context comment says this state is keyed by the receiving object (`script-host.ts`).
+- **High.** Undo cannot put a transform back on a `2DAnchorComponent`. `SetComponentTransformPresenceCommand` allows the transform to be deleted and returns the component unchanged when `to` is set. A batch undo restores the transform while the component is still an anchor, so the transform stays missing (`scene-fields.ts`).
+- **High.** `SetComponentPropertyCommand` and `SetSceneSettingCommand` have no `byteSize`. The undo stack treats a missing size as 0, so landscape heights, tile data, spline points, and foliage groups do not count toward the byte budget (`scene.ts`, `stack.ts`).
+- **Medium.** A class variable’s scalar default produces no inspector rows. `variableDefaultPropertyRows` returns nothing for `class` when `onPickClass` is absent, and the class-member panel does not pass it (`graph-inspector.ts`, `inspector-panel.tsx`).
+
+## Reported in the thirtieth batch, not re-checked
+
+- `releaseInitialSources` clears the play scene, so the close gate then keys off the editor tab (`play-context.tsx`).
+- A compile error leaves `requestPlay` unable to start while the viewport has already resumed (`play-context.tsx`).
+- `invokeCommand` returns success when `dispatchEvent` swallowed the throw (`script-host.ts`).
+- A destroyed camera or light component is still updated (`script-host.ts`).
+- A destroyed scene layer still matches the generic guid branch (`script-host.ts`).
+- With temporal anti-aliasing, occlusion, reflection, and volume reconstruct from the unjittered projection (`spatial-effects.ts`).
+- Orthographic reflection rays use a parallel view direction while the combiner does not (`spatial-effects.ts`).
+- Temporal anti-aliasing blends encoded color on Legacy Display and CEL (`spatial-effects.ts`).
+- A mount at `plugin/virtual` and another at `plugin/virtual/note` makes `readdir("plugin")` report `virtual` as a file (`mounted-storage.ts`).
+- An OPFS project delete and a save can recreate or remove the directory after the other call has succeeded (`web-adapter.ts`).
+- A web save read takes one snapshot and does not retry a commit that lands between `getFile` and the read (`save-game-web.ts`).
+- Documents and scoped storage reject `"."` as the project root (`project-path.ts`).
+- Rotated 2D static nav blockers are mirrored, and a 2D circle solid is centered on the walk plane so half of it is under the floor (`blockers.ts`).
+- Search dropdowns swallow arrow keys, so the result list cannot be chosen from the keyboard (`search-dropdown.tsx`).
+- Create New can run twice before `creatingId` is set (`use-picker-create.ts`).
+- Creating a tag overwrites toggles made while the create was in flight (`tag-picker.tsx`).
+- Enter submits a name prompt during IME composition (`name-prompt-dialog.tsx`).
+- An unknown pin type is labeled Float while the stored type stays put (`pin-type-picker.tsx`).
+- Get Assets By Class materializes the class picked on the node, not the wired class (`graph-validation.ts`).
+- A blank component id is saved onto the only matching component (`graph-validation.ts`).
+- Inherited custom events `Foo Bar` and `Foo-Bar` share one slug, so the later event is skipped (`graph-validation.ts`).
+- A play worker that fails to post is left running when the session falls back in-process (`play-session.ts`).
+- A rejected profile start leaves `profileActive` true (`preview-diagnostics.ts`).
+- A document repath does not abort the load, so completion inserts a second tab at the old id (`document-service.ts`).
+- Execute JavaScript looks up pins by display name and can bind the flow pin (`debug.ts`).
+- Call Interface drops arguments named `target`, `result`, `method`, or `interfaceGuid` (`interface.ts`).
+- Normalize reads a random vector once per component, so the result is not one unit vector (`vector.ts`).
+- `pipeline?.limits.join` throws when `limits` is missing, and the fallback does not run (`scalability.ts`).
+- Rotator nearly-equal treats `0` and `360` as different (`rotator.ts`).
+- A screen-locked tilemap chunk is parented to the actor, so the actor pose shifts it (`tilemap-mesh.ts`).
+- Sprite quads ignore the frame pivot and stay centered (`sprite-quad.ts`).
+- A throw from `sceneForSlot` still marks the slot seen (`snapshot-apply.ts`).
+- `diffActor` ignores `prefabGuid`, so that one-field edit becomes a full scene replace (`scene-diff.ts`).
+- `quality lighting:high` tokenizes as a named argument and succeeds as a query (`parser.ts`).
+- A profiler budget stop discards the rest of the tick chunk without counting it (`session-diagnostics.ts`).
+- Dock positions are remembered only in memory, so a clean close restores the last saved layout (`document-context.tsx`).
+- A failed disk reload clears the prompt and does not offer those files again (`document-context.tsx`).
+- `pendingExclusiveScene` survives project close and can open the previous project’s scene (`document-context.tsx`).
+- Class-reference repair writes referrers first, and a later failed save can put the old contents back (`document-context.tsx`).
+- Fonts are indexed only by header name, so a later font captures an import (`registry.ts`).
+- Duplicate, rename, and attach reindex with a null mtime (`registry.ts`).
+- A texture encode that cannot read pixels leaves the file in `pending` (`registry.ts`).
+- Two overlapping folder copies can choose the same destination name (`registry.ts`).
+- `firstSceneLoaded` stays set when On First Scene Loaded throws, so later loads do not retry it (`world.ts`).
+- A suppressed deformer target becomes `undefined` even when a later active mesh has the same source id (`instantiate-scene.ts`).
+- Dynamic MoveTo can succeed from a 4 m closest-point box while the actor is still far in XZ (`runtime-navigation.ts`).
+- Reloading a navmesh clears steered actors and leaves their last velocity (`runtime-navigation.ts`).
+- `moveCharacter` does not take the composed parent pose that `moveMovement` uses (`physics-sync.ts`).
+- Font registration does not invalidate the scheduler, so bitmap text keeps the fallback face (`create-engine.ts`).
+- A free-cam drag on a HUD control also looks or pans the camera (`create-engine.ts`).
+- A shift-click in the content tree anchors on the open folder when the selection is not one asset (`content-browser-workspace.tsx`).
+- The move dialog rejects a destination that already holds any selected asset, while a tree drop of that selection still moves the others (`content-browser-helpers.ts`).
+- Asset duplicate writes into the open grid folder, not beside the source (`content-browser-workspace.tsx`).
+- A thumbnail load throw skips the rest of that batch (`content-browser-thumbnails.ts`).
+
+## Rejected in the thirtieth batch
+
+- The earlier note that opening another Scene stops Play before the save-or-discard choice does not match the current gate. A `replace-document` for a different document id returns before `stop()`. The scene is closed later, without that stop, as recorded above.
+- An asset field inside a struct default does open a picker. `singleDefaultRows` passes `onPickAsset`, and struct fields use that mapping (`graph-inspector.ts`).
+- `SetComponentTransformPresenceCommand` does define `byteSize`. The missing sizes are the property and scene-setting commands recorded above.
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass did not start: the concurrent cap was already full, and the earlier assets-package read is still marked running. These reads are told not to edit this file and not to repeat findings already listed here.
