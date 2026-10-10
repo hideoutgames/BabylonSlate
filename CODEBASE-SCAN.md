@@ -367,6 +367,21 @@ These are separate from the iframe bridge, the unbounded `lfs:fetch` body, the s
 - Switch on Enum routes by a Title Case label, so members that share a label share one arm (`enum.ts`).
 - Custom event names that differ only by spaces, underscores, or hyphens compile to the same identifier (`member-pins.ts`).
 
+## Verified in the fifth batch
+
+- **High.** Painter2D size changes do not resize the surface. `createPainter2DMesh` builds the plane and texture from width, height, and pixels per unit. `updatePainter2DMesh` paints into the existing texture and does not change the mesh or the texture size.
+- **High.** Dynamic nav cost volumes are restamped from the actor’s local transform. `syncNavCostVolumes` passes `actor.transform` into `rotatedBoxWorldAabb`. Obstacle registration uses `actorWorldTransforms`. A cost volume parented to a moving actor is corrected once, then overwritten on the next crowd tick.
+- **High.** Script traces, overlaps, and sweeps always use the main physics world. `createPhysicsHostBindings` calls `deps.physics()` for `lineTrace`, `sphereOverlap`, and `shapeSweep`. Impulses, character movement, and teleports use `deps.physicsFor(actor)`, which can be a Scene Layer world.
+
+## Reported in the fifth batch, not re-checked
+
+- Tilemap collision chains ignore actor scale and the component’s local transform (`physics-sync.ts` `collectTilemapColliders`).
+- A failed ragdoll capture is not retried while the descriptor stays the same (`ragdoll-sync.ts`).
+- Any `RagdollComponent`, including `enabled: false`, excludes Movement physics (`physics-sync.ts` `classifyActor`).
+- Debug sphere segment counts are unbounded and duration-0 draws rebuild the mesh every tick (`play-debug-draw.ts`).
+- Render-target history captures walk every mesh material every frame (`render-target-capture.ts`).
+- A 0×0 registered view reports the frame as rendered and skips the engine fallback (`registered-view-admission.ts`).
+
 ## Coverage still open
 
 Large-file reads are still running for `water-material.ts`, `create-engine.ts`, `document-context.tsx`, `registry.ts`, `snapshot-apply.ts`, `script-host.ts`, and `driver.ts`, plus the remaining letter buckets. This note is updated as those reads are checked.
