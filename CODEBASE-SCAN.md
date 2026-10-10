@@ -1539,6 +1539,22 @@ No new unchecked claims were added in this pass. The items above were read in so
 - Scene Layer post-process validation reads only the unwired material default (`validatePostProcessDomain`).
 - Validated Get treats an unset tag `0` as valid because the check is `!= null` (`variables.getValidated`).
 
+## Verified in the sixty-second batch
+
+- **High.** Havok character movement copies only the start position onto the body and the controller. The returned rotation is the node quaternion from before the move. That pose is written back with `setBodyTargetTransform` or `teleportBody`, so a start yaw never reaches the solve and a kinematic rotation set earlier in the frame is replaced (`HavokPhysicsBackend.moveCharacter`).
+- **High.** Rapier character movement applies the start angle only for the query, then restores the previous angle. It sets the next kinematic translation and does not set a kinematic rotation. The returned rotation is the pre-move angle. The already recorded defect is that the returned position claims a move the body may not take (`Rapier2DPhysicsBackend.moveCharacter`).
+- **Medium.** Havok line and shape sweeps report the actor id of the body that owns the compound. A hosted child shape is reported as the host (`hitFromCast`).
+- **Medium.** With `includeTriggers` omitted, Havok’s line trace leaves trigger hits to the plugin default, and its shape sweep forces them off. Rapier hits a trigger unless `includeTriggers` is false (`havok-backend.ts`, `rapier-backend.ts`).
+- **Medium.** Every software overlap end, including a trigger that simply stops overlapping, is emitted at the origin with an up normal. Begin events carry the contact point (`pollContacts`).
+- **Medium.** A compiled script whose asset is not in the export list becomes a new Class whose document is only `{ components }`. Variables, actor defaults, and the graph are left out, and the export still succeeds (`exportGame`).
+- **Low.** Inlining CSS uses a non-global replace, so only the first link is rewritten. The stylesheet is then deleted, and a second link to that file points at a removed path (`inlineCssIntoIndex`).
+- **Removal.** Pack readers still decode `.babpack` archives. The file says they are for legacy packs. Current export writes `packs: []` and one loose file per asset (`createMemoryPackSource`, `exportGame`).
+- **Removal.** A manifest with no `project` becomes an empty name and version. A missing `sortingLayers` list becomes the four default names (`parseGameManifest`).
+
+## Rejected in the sixty-second batch
+
+- Refusing a reachable `DataObject` or `DataSheet` is the export rejecting a historical type. That is not an old-format reader.
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
