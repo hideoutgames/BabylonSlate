@@ -1369,6 +1369,26 @@ No new unchecked claims were added in this pass. The items above were read in so
 - Scene Layer fallback calls `render()` on the retained blit scene. That is the prior image the scene-layer page describes (`scene-layer-compositor.ts`).
 - `requireConfirmAboveDimension: 4096` is not a live `>` comparison. No caller reads it.
 
+## Verified in the fifty-second batch
+
+- **Medium.** A failed Preview pack leaves `launched` true. The listener is installed before `launchFromFiles` finishes, and a later pack on the same iframe is ignored (`main.ts`).
+- **Medium.** An in-process `inspect()` throw becomes `{ tickIndex: 0, nodes: [] }`. Preview then publishes an empty actor catalog. A worker `inspect` promise settles only on `inspectSnapshot` or `dispose` (`console-host.ts`).
+- **Medium.** Audio whose bytes are not a packed envelope is stored as an empty payload. Scene and model loads reject corrupt bytes (`artifact.ts`, `peekPackedAudioPayload`).
+- **Medium.** Each acquire or release rebuilds packed content and posts the full source-control union. Only `loadScripts` is skipped when the list is unchanged (`boot.ts`, `packedSourceControls`).
+- **Low.** With the debugger bundle on, an animation-frame loop samples audio, lights, and the unlock hint for the life of the page, including when every overlay is empty (`hud.ts`).
+- **Low.** Each stats sample rebuilds the HUD with `replaceChildren`, including while the panel is hidden (`hud.ts`).
+- **Removal.** The packaged player still accepts shapes current export does not need:
+  - Class lookup still treats `Graph` as `Class` (`boot.ts`). The exporter closure still does the same (`closure.ts`).
+  - After the manifest Game Instance field, load still reads `scene.settings.gameInstanceClass` (`boot.ts`).
+  - Startup loads every catalog entry unless `assetCatalogVersion` is `1`. Current export always writes `1` (`artifact.ts`, `export-game.ts`).
+  - A missing catalog revision is stored as `"legacy"` and skips the SHA-256 check. Current export always stamps `sha256Hex` (`artifact.ts`).
+  - NavMesh, audio reverb, and font sidecars fall back to the raw guid when the prefixed id does not match (`artifact.ts`).
+  - A raw GLB model loads with a default payload (`extractPackedModelAsset`).
+
+## Rejected in the fifty-second batch
+
+- A Preview stop between backend start and `stopCurrentPlayer = stop` does not leave the session running. That stretch does not yield, and a stop during `startPlayerWithBackend` hits the abort check that calls `session.stop()` (`main.ts`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
