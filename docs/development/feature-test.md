@@ -17,7 +17,8 @@ Only existing repository files and runtime primitives are used (no generated art
 | --- | --- | --- |
 | Kenney Mannequin | `engine-content/kenney-assets/Mannequin` (Basic 3D) | Hierarchy Skeleton, 27 clips, animation, ragdoll, crowds |
 | Holiday Pack subset | `engine-content/kenney-assets/Holiday Pack` (CC0; list in `engine-content-files.ts`) | Models, foliage, buoyancy, Automatic LOD (menorah), rigid node animation (door) |
-| Holiday colormap | `Holiday Pack/Textures/colormap.png` | Albedo Texture (KTX2 encode path), Pixel Art copy for Sprites and Tilesets |
+| Holiday colormap | `Holiday Pack/Textures/colormap.png` | Albedo Texture (KTX2 encode path), Pixel Art copy for HUD panels and an authored multi-frame Sprite |
+| Kenney platformer art | `engine-content/kenney-assets/Platformer` (CC0, Platformer Pack Redux tilesheet and toon robot frames; `License.txt`, `Source.txt`) | `FT_2D` Tilesets, robot Sprites and Sprite Animations |
 | Skybox faces and net | `engine-content/skybox` | Skybox Texture faces, Skybox Creator source |
 | Billboards | `engine-content/billboards` | UI Textures |
 | Geist | `engine-content/fonts/Geist` (SIL OFL 1.1, `OFL.txt` alongside) | Source Font for overlay text |
@@ -75,7 +76,7 @@ Zones sit on a 32 m grid (`layout.ts`); each has an Outliner folder and a 3D Tex
 | --- | --- |
 | `FT_Stress` | 320 dynamic bodies over a scaled sweeper, 6 ragdolls and a 32-link chain; 4 stress particle actors (about 16 000 GPU particles); an 8 × 8 animated Mannequin crowd; a 5184-instance foliage carpet. |
 | `FT_Clustered` | 48 unshadowed point lights over a plain floor with the engine default sky, so Auto can select Clustered Forward. |
-| `FT_2D` | Orthographic 2D camera over a 64 × 36 Tilemap (sky, collision ground with a chain ramp and animated tiles, decor), 32 falling sprite bodies with every 2D collider shape, a hinge pendulum, Sprite Animations played by `FT_2DIconGraph`, custom `Characters` sorting layer. |
+| `FT_2D` | Orthographic camera over a 16 × 9 Tilemap of 128 px Kenney platformer tiles: parallax backdrop, collision ground (grass on dirt, crates, chain ramp, top-edge ledges, animated switch blocks) and a decor layer from a second Tileset (animated water and torches, signs, plants). `FT_2DRobotGraph` cycles robot Idle, Walk, Jump and Fall Sprite Animations on a mascot and a dynamic walking robot; 32 falling robot bodies use every 2D collider shape; chain funnel; hinge pendulum; custom `Characters` sorting layer. |
 | `FT_StreamedRoom` | Platform, pillars, sign and a streamed spinner; no camera or lights. |
 | `FT_HUD` (Scene Layer) | Every overlay widget: text with the Text-domain Material, rich text, panels, safe area, form controls, scroll box, virtualized list (10 000 rows) and grid (400 cells), mask and mask panel, texture, material swatch, click button (`FT_UIClickButton`), focus target, card switcher (`FT_UICardSwitcher`), joystick bound to Move, persistent painter. Focus navigation uses Confirm. |
 | `FT_OverlayPhysics` (Scene Layer) | Eight 2D bodies falling into a pit in the overlay's own physics world. |
@@ -146,6 +147,7 @@ Rules: compare runs on the same machine, browser project and build only; never a
 
 - Skinned Skeletons and retargeted Animations: the repository has no skinned model (the Mannequin is a hierarchy rig and the door a node animation).
 - MSDF font atlases: none exists; text uses the facetype and Geist source Fonts.
+- Sprites cut from atlas sub-rects: the Sprite editor preview reads V top-down and the runtime bottom-up, so `FT_2D` Sprites use whole-frame Textures and crates stay Tilemap tiles.
 - Color grading waits for a human-supplied CC0 LUT in its slot (Kenney publishes no LUTs).
 - Project plugins (PluginSettings): the scaffold host has no plugin API, so no project plugin is authored.
 - Environment IBL: no `.env` or prefiltered cube exists in `engine-content`.
