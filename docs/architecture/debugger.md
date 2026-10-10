@@ -107,7 +107,15 @@ Stats keeps the measured timings and **Over Budget** warning; normal ticks no lo
 | Session | Pause On Play | off | Shared by Play and Simulation. After Play boot, `setPaused(true)` via `createPlayPauseGate` so `boot.play`'s `resume()` cannot undo it. `start()` / Begin Play may still run; the first tick after that waits for Resume / Step. Overlay boot also posts `{ type: "setPaused", paused: true }` after `{ type: "play" }`. |
 | Session | Preview Build | off | Disabled while playing or preparing |
 | Session | Play from Scene | on | Overlay Play and Preview Build seed the open scene tab; off seeds project startup. Disabled while playing or preparing. Export Game ignores this. |
-| Feature Test | Run Feature Test Check… | — | Feature Test projects only (all check scenes present). Opens the on-device check / benchmark ([FeatureTest doc](../development/feature-test.md#on-device-check-and-benchmark)). Disabled while playing or preparing. |
+| Feature Test | Run Feature Test Check… | — | Debug Mode and Feature Test projects only (all check scenes present). Opens the on-device check / benchmark ([FeatureTest doc](../development/feature-test.md#on-device-check-and-benchmark)). Disabled while playing or preparing. |
+
+**Debug Mode** (Engine Settings → Debugger → Diagnostics, `debugMode`, off by default) is the switch for developer diagnostics that a user copies and sends. It currently:
+
+- lists the **Feature Test** starter in Create Project; existing Feature Test projects open regardless;
+- enables **Run Feature Test Check…** in the Debug menu;
+- adds a copy action to the Scene Loading dialog in the editor viewport, Play and scene document loading. A failed load shows **Copy Error**, and a load still in progress shows **Copy Details** next to Stop.
+
+The copied text (`apps/editor/src/lib/scene-load-report.ts`) names the surface, scene, phase, progress and elapsed time. It adds app version, device, browser and GPU adapter (`engineAdapterInfo`), the project rendering path/backend/quality, the error with its stack and `cause` chain, and Play log errors where present. It ends with the newest console errors and warnings. Debug Mode starts recording those (`installDiagnosticLog`, 60 entries, uncaught errors included; the original console still prints). Reports carry no project files. Copy handlers build their text synchronously so iPad Safari keeps the clipboard write inside the tap (`copyText` falls back to a selected textarea). Put future copyable diagnostics behind `useDebugMode()`, using these helpers.
 
 In-app diagnostics read the session through `apps/editor/src/services/runtime-probes.ts`, not the test-mode globals. The Play overlay registers a `PlayProbe`: loading phase, tick, runtime fps, a render/resource snapshot, error and warning logs, console commands and Stop. Each Scene viewport registers a `ViewportProbe` (ready, failed, phase) under its document id. `PlayProvider` publishes every closing `PlaySessionResult`. While `holdAutomatedSessionReporting()` is held, the Preview Session Report dialog stays closed so an automated run can record its entries.
 
