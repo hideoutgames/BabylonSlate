@@ -1050,6 +1050,21 @@ Runtime tests `sn`–`z` and render tests `t`–`z` reported no new product bugs
 - **Medium.** Software circles and capsules extend `±radius` on Z. Boxes, polygons, and chains use a `±0.01` slab, so a 2D circle overlaps geometry a box at the same Z would miss (`software-backend.ts`).
 - **Low.** Snapshot `frameId` and `tickIndex` are stored as binary32. Past 16,777,216 those integers are no longer distinct, so an interpolation reset can miss the teleport frame and water sampling looks up the rounded id (`snapshot-buffer.ts`).
 
+## Verified in the thirty-second batch
+
+- **Medium.** The in-process player pump requests the next frame only after `runtime.advance` returns. Any tick error other than the infinite-loop sentinel ends the callback, so input, simulation, and snapshot push never resume (`boot.ts`).
+- **Medium.** On that same fallback, `sceneRealized`, `sceneLayerRealized`, and `sceneStreamRealized` throw when `copySnapshot` returns false, and they throw before readiness is recorded. The load stays open (`boot.ts`).
+- **Medium.** Preview `profile-stop` returns `{ success: true }` after `publishProfile`. That publisher catches a transfer failure, sends `profile-error`, and still resolves (`preview-diagnostics.ts`).
+- **Medium.** Prefab, Data Definition, Data Tree, Material Instance, Save Game, and Water are not focus-keep keys. Focus then keeps only the primary panel and closes every other open panel, including the last one if the primary is not open (`layout-ops.ts`, `app-settings.ts`).
+- **Medium.** Source control and the actor prefab panels are closed only inside Dockview’s one-time ready callback. Turning source control off, or resolving a class as non-Actor after that, leaves Locks, Prefab, and Components mounted (`dockview-shell.tsx`).
+- **Medium.** On every shell ready, a Class tab that shares a group with Components is moved below Components. The next layout save stores that split (`layout-ops.ts`).
+- **Medium.** A phone open keeps the desktop layout only when the saved panel count still matches after migration and the Locks or Prefab closes. If those closes change the count, the saved snapshot is the already inlined grid (`dockview-shell.tsx`).
+- **Low.** The player HUD tick count is the last applied snapshot index. The stats command’s `tickIndex` is ignored, so a dropped snapshot leaves the count behind the simulation (`boot.ts`).
+
+## Rejected in the thirty-second batch
+
+- The startup `systemSources` rejection is the same defect already recorded: `acquireSceneSources(...).then(...)` has no `catch`, and every later scene acquire awaits that promise (`boot.ts`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass did not start: the concurrent cap was already full, and the earlier assets-package read is still marked running. These reads are told not to edit this file and not to repeat findings already listed here.
