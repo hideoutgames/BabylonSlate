@@ -692,6 +692,28 @@ These are editor tests whose titles name a sequence the body does not run.
 - `keeps phone-sized project access available without an account` stubs width and the gate returns children for every non-mobile host without reading width (`homepage-mobile-account-gate.test.tsx`).
 - `commits Array container and resets the Default` uses a bool member with no default (`inspector-panel.member.test.tsx`).
 
+## Verified in the twenty-first batch
+
+`docs/engineplan.md` still describes these as current behavior. The code does the other thing.
+
+- **Medium.** Sections 3.5 and 7.2 say editor texture LOD defaults on. `editorTextureLodEnabled` defaults to false (`packages/vfs/src/app-settings.ts`).
+- **Medium.** Section 2.4 says `skipPointerMovePicking` is true in every scene. Each SceneLayer scene sets it false (`scene-layer-compositor.ts`).
+- **Medium.** Section 7.4 says proximity wire previews appear within 96 screen pixels. `assistantDistance` defaults to 48 (`graph-interaction-settings.ts`).
+- **Medium.** Section 17 says a wasm physics failure uses the software backend. Play creates Havok and Rapier with `allowSoftwareFallback: false` (`runtime-physics-worlds.ts`).
+- **Medium.** Section 2.4 says a WebGL restore drops one quality tier and flushes the texture cache. `noteRestore` clears hitch samples and sets the level to `minLevel` (`hardware-scaling.ts`).
+- **Medium.** Section 2.5 says area lights are out of v1. `AreaRectLightComponent` is a world engine component (`engine-components.ts`).
+- **Low.** The CI paragraph says each Verify end-to-end shard times out at 25 minutes. The `e2e` job is `timeout-minutes: 35` (`.github/workflows/verify.yml`).
+- **Low.** Sections 1 and 16.1 say the ready-PR cap is two. The cadence rule waits when four other counted pull requests are already ready.
+- **Low.** Section 15.1 points at `apps/editor/ios/App/App/public/assets`. `apps/editor/ios/.gitignore` ignores `App/App/public`.
+
+## Reported in the twenty-first batch, not re-checked
+
+- SceneLayer joysticks push `touchAxis` events in Play and the player. The plan says Touch bindings are fed only by `injectTestTouchAxis`.
+- A 3D scene clear color is `settings.environmentColor`, not the dark editor chrome gray.
+- The Texture document labels the control Downsample. The plan’s window list still says Max Dimension.
+- The Stats HUD has no invalidations-per-second row and no hardware-scaling level.
+- The checked `p11-bt-editor` item says behaviour trees have no free drag. The editor passes `commitPositionsOnDragEnd`.
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine are running. The UI-package second pass did not start: the concurrent cap was already full, and the earlier assets-package read is still marked running. These reads are told not to edit this file and not to repeat findings already listed here.
