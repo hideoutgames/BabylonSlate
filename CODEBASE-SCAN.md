@@ -654,6 +654,14 @@ These loops type a second arm and then pass a one-element list, so the other arm
 - **Medium.** `color-grading.spec.ts` and `lattice-deformer.spec.ts` iterate `["webgl2"]` only. The lattice cost call is `__latticeDeformerCost("webgl2")`.
 - **Medium.** `basic-3d-mannequin-shadow-hosts.spec.ts` checks per-region contact coverage only when `region.contacts > 5`. The required sum of contacts can be greater than 5 while every region stays at or below 5, so `retained / contacts` never runs. `sourceSha256` and `materialDefines` are attached and not expected. The same-pixel-buffer call in this file was already noted.
 
+## Verified in the eighteenth batch
+
+- **Medium.** `dirty Class tab close prompts Save / Discard / Cancel` opens the dialog and clicks `dirty-cancel`. `dirty-save` and `dirty-discard` are never clicked (`e2e/type-editor-chrome.spec.ts`).
+- **Medium.** `Object Reference variables show Class Type and drag opens Get/Set` clicks Get and Validated Get. `member-access-set` is never used (`e2e/type-editor-chrome.spec.ts`).
+- **Medium.** `Unlit preserves skyboxes and PBR model color in Scene, Prefab, and Model Preview` checks skybox pixels on the scene and model previews. The prefab section only requires more than 500 green pixels in Unlit and again in PBR (`e2e/viewport-shading.spec.ts`).
+- **Medium.** `encoded Tilemap atlas renders its pixels in Scene Preview and Play` accepts a green canvas for both the PNG and the KTX2. The format, mip, and byte-size expects sit inside the software-renderer branch. Play does not read `ktx2Uploads` (`e2e/tileset-preview.spec.ts`).
+- **Medium.** `water.spec.ts` and `temporal-anti-aliasing.spec.ts` type `"webgl2" | "webgpu"` and iterate `["webgl2"]`. `webgpu-previews.spec.ts` iterates `["webgpu"]` only, and its material and model canvases are only required to be non-blank.
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine are running. The UI-package second pass did not start: the concurrent cap was already full, and the earlier assets-package read is still marked running. These reads are told not to edit this file and not to repeat findings already listed here.
