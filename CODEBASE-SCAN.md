@@ -1466,6 +1466,25 @@ No new unchecked claims were added in this pass. The items above were read in so
 - **Medium.** A Git LFS lock response whose body is not a JSON object is treated as an empty object. A 200 with invalid JSON, a JSON array, or a bare string becomes an empty lock list and verify returns no ours or theirs (`parseJson`, `GitLfsLockProvider.list`, `GitLfsLockProvider.verify`).
 - **Low.** A lock with no `locked_at` is stored as the Unix epoch, so it sorts as if it were created in 1970 (`parseLock`).
 
+## Verified in the fifty-eighth batch
+
+- **High.** Pure outputs shorter than 512 characters are pasted at every use. Several nodes build each output as its own call, so one node evaluates an input twice. A short Random Int is a different sample each time:
+  - Array Get and Get Safe paste the array and the index into both Valid and Out (`array-map.ts`).
+  - Lerp pastes A twice. Lerp Color pastes A once per channel (`math.ts`, `color.ts`).
+  - Get Cursor Position calls `getCursorPosition` for Position and again for Pressed (`input.ts`).
+  - Cast To Actor runs `isA` on the object expression and then reads that expression again for the result. Cast does the same across its two statements (`casting.ts`).
+  - Get Assets By Class runs the catalog query for Assets and again for Classes (`asset-registry.ts`).
+  - Read Data Entry uses `readEntry` for Value and `canReadEntry` for Found. Get Parent and Get Asset Data split the same way (`data.ts`, `asset-registry.ts`).
+  - Material getters call `getMaterial*Parameter` for Value and again for Found (`material.ts`).
+  - Get Current State calls `getAnimGraphCurrentState` for the name and again for the id (`animation.ts`).
+- **Medium.** An unwired Call Interface target compiles to `ctx.self` unless `implicitSelf` is false. A disconnected call still runs on Self (`interface.ts`).
+- **Medium.** Event On Text Changed and the UI text-changed event share one title and bind different handlers (`flow.ts`).
+- **Medium.** Map Get scans for Found and again for Value. Map Break walks `entries()` once for keys and again for values (`map.ts`).
+- **Removal.** `casting.castActor` is a second Cast kept so graphs that still store that type id load. Result typing prefers `defaultClassId` while the class default prefers `default:class`, so the two fields can disagree (`casting.ts`).
+- **Removal.** Call Parent reads `eventName` and then `name`. Call Custom Event still uses `name` (`flow.ts`).
+- **Removal.** An unwired audio volume treats `properties.volume` as authored. The pin default is `default:volume` (`audio.ts`).
+- **Low.** Array Get and Get Safe emit the same pins and the same code (`array-map.ts`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
