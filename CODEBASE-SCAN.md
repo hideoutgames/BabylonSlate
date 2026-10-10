@@ -1299,6 +1299,14 @@ Bloat to remove. The engine is not released, so these paths exist only to accept
 - `e2e/p2-accept.spec.ts` covers import only. Killed-tab journal recovery is in `e2e/qa-recovery.spec.ts` (`command-layer.md`).
 - `e2e/p18-editor-opt.spec.ts` does not cover idle unmount or the warm-workspace cap (`command-layer.md`).
 
+## Verified in the forty-seventh batch
+
+- **High.** The Android application theme references `@color/colorPrimary`, `@color/colorPrimaryDark`, and `@color/colorAccent`. No color resource defines them, so resource linking fails before an APK is produced (`styles.xml`, `AndroidManifest.xml`).
+- **Medium.** Desktop smoke loads `dist/public/build-manifest.json` and the installer beside it. It never compares `sourceSha` to the current commit, so a leftover package from an earlier build still passes (`smoke-desktop.mjs`).
+- **Medium.** Desktop packaging clears nothing under `dist/installers` or `dist/public`. It only refuses a leftover `dist/app`. A previous installer with the same name can be copied into the public output (`package-desktop.mjs`).
+- **Medium.** The render page says the FrameGraph post-process adapter admits only GLSL. The task compiles `material.shaderLanguage` with no WebGL gate (`framegraph-post-process.ts`).
+- **Medium.** A Text3D editor fingerprint is text, size, color, font, and alignment. Depth is parsed and left out of the key, and the mesh builder does not read it (`scene-loader.ts`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
