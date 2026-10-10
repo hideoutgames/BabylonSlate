@@ -1089,6 +1089,22 @@ Runtime tests `sn`–`z` and render tests `t`–`z` reported no new product bugs
 
 - The indeterminate checkbox still drawing `CheckIcon` is already recorded (`checkbox.tsx`).
 
+## Verified in the thirty-fifth batch
+
+- **Medium.** Android `pickFolder` sets `pickPending` before `startActivityForResult` and clears it only in the result callback. If that launch returns or throws without the callback, every later pick rejects with “A native picker is already open” (`BabylonSlateScopedStoragePlugin.java`).
+- **Medium.** Android backup is enabled, and the backup rules exclude only `babylonslate-secrets.xml`. Project files under app data are included (`AndroidManifest.xml`, `backup_rules.xml`, `data_extraction_rules.xml`).
+- **Medium.** Desktop folder grants are written in place with `writeFile`. A crash during that write leaves a file `grantedFolders` cannot parse, and it then returns an empty list, so every previously picked folder fails the open check (`main.ts`).
+- **Low.** The Android FileProvider `external-path` is `path="."`, so a content URI under that name can point at any file on external storage (`file_paths.xml`).
+
+## Reported in the thirty-fifth batch, not re-checked
+
+- Android `Filesystem.rename` deletes the destination before `renameTo`. A failed mobile save update would remove the current generation, and the temp name is not a valid save key (`save-game-mobile.ts`). The Android helper is not in this tree.
+- iOS `pickFolder` stores the pending call and then presents the picker. A presentation that never calls the delegate leaves the next pick rejected (`BabylonSlateScopedStoragePlugin.swift`).
+
+## Rejected in the thirty-fifth batch
+
+- A leftover `.babylonslate-creating` marker wiping the next create of that name is already recorded (`project-service.ts`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass did not start: the concurrent cap was already full, and the earlier assets-package read is still marked running. These reads are told not to edit this file and not to repeat findings already listed here.
