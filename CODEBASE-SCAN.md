@@ -1105,6 +1105,18 @@ Runtime tests `sn`–`z` and render tests `t`–`z` reported no new product bugs
 
 - A leftover `.babylonslate-creating` marker wiping the next create of that name is already recorded (`project-service.ts`).
 
+## Verified in the thirty-sixth batch
+
+- **High.** Preview `workflow_dispatch` has no main-branch guard. Dispatching it on another ref checks out that ref, builds it with Pages write permission, and `deploy-pages` publishes it to the public site. The `pages` concurrency group cancels an in-progress main deploy (`preview.yml`).
+- **Medium.** The resource lock is created empty, and the owner pid is written afterward. A waiter deletes an unreadable lock older than 10 seconds. The stalled owner’s `finally` then deletes that same path, which can be the next waiter’s lock, so two admissions run at once (`resource-admission.mjs`).
+- **Medium.** Apple stage commands time out by signaling only the spawned process. Cleanup ignores every `security delete-keychain` error and then deletes the private directory (`private-command.mjs`, `apple-cleanup.mjs`).
+- **Medium.** Required-check validation reads one page of check runs and does not follow `Link`. A commit status missing from that page is treated as a completed check whose conclusion is the status state, so a `success` status can satisfy a context whose latest run was not on the page (`preflight.mjs`).
+- **Medium.** The signing scan requires the setting name to be followed immediately by `=`. `DEVELOPMENT_TEAM[sdk=iphoneos*] = ABCD123456;` does not match (`check-public-hygiene.mjs`).
+- **Medium.** `.svg` files and any file containing a NUL byte skip content rules. A session link in an SVG, or after a NUL, is not reported, and a binary diff has no added lines to scan (`check-public-hygiene.mjs`).
+- **Medium.** The pull-request range scan is the diff from the merge base to the head. A session link added and then removed on the same branch is absent from that diff and from commit-message scanning (`check-public-hygiene.mjs`).
+- **Medium.** Public hygiene skips an issue comment that is not on a pull request, so that comment body is never scanned (`security.yml`).
+- **Low.** The Pages smoke exits 0 when the live site returns HTTP 200, contains `id="root"`, and does not contain `Jekyll v`. The previous production page already matches (`preview.yml`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass did not start: the concurrent cap was already full, and the earlier assets-package read is still marked running. These reads are told not to edit this file and not to repeat findings already listed here.
