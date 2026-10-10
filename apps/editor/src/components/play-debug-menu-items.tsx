@@ -2,6 +2,7 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuGroup,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@babylonslate/ui/components/dropdown-menu";
@@ -22,6 +23,8 @@ export type PlayDebugMenuItemsProps = {
   onPauseOnPlayChange: (checked: boolean) => void;
   onPreviewBuildChange: (checked: boolean) => void;
   onPlayFromSceneChange: (checked: boolean) => void;
+  /** Shown for Feature Test projects only. */
+  onRunFeatureTestCheck?: () => void;
 };
 
 /** Debug-menu overlay chrome and session checkboxes next to Play. */
@@ -41,6 +44,7 @@ export function PlayDebugMenuItems({
   onPauseOnPlayChange,
   onPreviewBuildChange,
   onPlayFromSceneChange,
+  onRunFeatureTestCheck,
 }: PlayDebugMenuItemsProps) {
   return (
     <DropdownMenuContent align="center" className="w-max min-w-56 whitespace-nowrap">
@@ -113,6 +117,19 @@ export function PlayDebugMenuItems({
           Play from Scene
         </DropdownMenuCheckboxItem>
       </DropdownMenuGroup>
+      {onRunFeatureTestCheck ? (
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Feature Test</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            data-testid="feature-test-check-open"
+            disabled={sessionLocked}
+            onClick={onRunFeatureTestCheck}
+          >
+            Run Feature Test Check…
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+      ) : null}
     </DropdownMenuContent>
   );
 }

@@ -8,6 +8,7 @@ import { useSimulationInspectionStore } from "../context/simulation-inspection-c
 import { useAppSettings } from "../context/app-settings-context";
 import { captureShadowDiagnostics, lightsDebugText } from "@babylonslate/render";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
+import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
 import { nextStatGroups, type StatGroup } from "@babylonslate/debugger";
 import type { SceneLoadProgress } from "@babylonslate/render";
 import type { RenderDiagnostics } from "@babylonslate/render";
@@ -1018,6 +1019,31 @@ export function PlayOverlay({
       delete host.__babylonslatePlayTest;
     };
   }, []);
+
+  const probeStateRef = useRef({ sceneLoading, fps: null as number | null, logs });
+  probeStateRef.current = { sceneLoading, fps: fps > 0 ? fps : probeStateRef.current.fps, logs };
+  useEffect(() => playProbes.register(PLAY_PROBE_KEY, {
+    loadingPhase: () => probeStateRef.current.sceneLoading,
+    tickIndex: () => sessionRef.current?.lastTickIndex() ?? 0,
+    runtimeFps: () => probeStateRef.current.fps,
+    snapshot: () => {
+      const session = sessionRef.current;
+      const counts = session?.liveObjectCounts();
+      return {
+        drawCalls: session?.drawCalls() ?? 0,
+        meshes: counts?.meshes ?? 0,
+        textures: counts?.textures ?? 0,
+        accountedBytes: session?.accountedBytes() ?? 0,
+        rendering: session?.handle.renderDiagnostics() ?? null,
+      };
+    },
+    problemLogs: () => probeStateRef.current.logs
+      .filter((entry) => entry.severity === "error" || entry.severity === "warning" || entry.severity === "warn")
+      .map(({ severity, message }) => ({ severity, message })),
+    executeConsoleCommand: (line) => sessionRef.current?.executeConsoleCommand(line)
+      ?? Promise.resolve({ success: false, output: "Play is not running." }),
+    stop: () => finishSessionRef.current(),
+  }), []);
 
   useEffect(() => {
     let raf = 0;

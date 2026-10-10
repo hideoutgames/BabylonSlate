@@ -89,6 +89,7 @@ import {
   waitForSceneLoadingPaint,
   type SceneViewportLoadPhase,
 } from "../lib/scene-viewport-load";
+import { viewportProbes } from "../services/runtime-probes";
 
 export function ViewportPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -1421,6 +1422,14 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       delete panel.dataset.renderDiagnostics;
     };
   }, [engineEpoch, sceneReady, sceneLoad.open, requestedRenderSettingsKey, renderSettingsKey]);
+
+  const probeStateRef = useRef({ sceneReady, sceneLoad });
+  probeStateRef.current = { sceneReady, sceneLoad };
+  useEffect(() => documentId ? viewportProbes.register(documentId, {
+    ready: () => probeStateRef.current.sceneReady && !probeStateRef.current.sceneLoad.open,
+    failed: () => probeStateRef.current.sceneLoad.failed === true,
+    phase: () => probeStateRef.current.sceneLoad.open ? probeStateRef.current.sceneLoad.phase : null,
+  }) : undefined, [documentId]);
 
   return (
     <div
