@@ -738,7 +738,8 @@ function foliageGroup(models: Record<FeatureTestHolidayModel, string>): FoliageG
     models: ISLAND_FOLIAGE.map((spec) => ({
       modelGuid: requireRef(models[spec.model], `the ${spec.model} Model`),
       materialGuid: null,
-      weight: spec.count,
+      // Brush weights are 0..100; half the scatter counts keeps their ratio.
+      weight: spec.count / 2,
       minScale: spec.minScale,
       maxScale: spec.maxScale,
     })),

@@ -191,7 +191,11 @@ async function measurePlay(page: Page, cdp: CDPSession) {
     )
     .toBeGreaterThan(30);
   const playBootMs = Date.now() - started;
-  if (QUALITY) await runConsoleCommand(page, `quality ${QUALITY}`);
+  if (QUALITY) {
+    await runConsoleCommand(page, `quality ${QUALITY}`);
+    // Presets below ultra enable dynamic resolution; keep the project's fixed scale.
+    await runConsoleCommand(page, "quality resolution reset");
+  }
   if (FRAMECAP) await runConsoleCommand(page, `framecap ${FRAMECAP}`);
   await page.waitForTimeout(WARMUP_MS);
   const windows = [];

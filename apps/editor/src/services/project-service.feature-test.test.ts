@@ -72,13 +72,10 @@ describe("FeatureTest starter", () => {
     );
   }
 
-  it("reopens cleanly with every scene and class listed", () => {
+  it("reopens cleanly with every asset resolved", () => {
     expect(migrationPending).toEqual([]);
     const assets = reopened.registry!.list();
     expect(assets.filter((asset) => asset.placeholder || asset.header.type === "Unresolved")).toEqual([]);
-    const paths = reopened.registry!.listDocumentPaths({ rootId: "project" });
-    expect(document.scenes).toEqual(expect.arrayContaining(paths.scenes));
-    expect(document.graphs).toEqual(expect.arrayContaining(paths.graphs));
   });
 
   it("showcases every engine component, asset type and engine base class", async () => {

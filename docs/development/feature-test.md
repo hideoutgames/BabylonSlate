@@ -16,7 +16,7 @@ Only existing repository files and runtime primitives are used (no generated art
 | Content | Source | Use |
 | --- | --- | --- |
 | Kenney Mannequin | `engine-content/kenney-assets/Mannequin` (Basic 3D) | Hierarchy Skeleton, 27 clips, animation, ragdoll, crowds |
-| Holiday Pack subset | `engine-content/kenney-assets/Holiday Pack` (CC0; list in `engine-content-files.ts`) | Models, foliage, buoyancy, Automatic LOD (menorah), rigid node animation (door) |
+| Holiday Pack subset | `engine-content/kenney-assets/Holiday Pack` (CC0, `License.txt`, `Source.txt`; list in `engine-content-files.ts`) | Models, foliage, buoyancy, Automatic LOD (menorah), rigid node animation (door) |
 | Holiday colormap | `Holiday Pack/Textures/colormap.png` | Albedo Texture (KTX2 encode path), Pixel Art copy for HUD panels and an authored multi-frame Sprite |
 | Kenney platformer art | `engine-content/kenney-assets/Platformer` (CC0, Platformer Pack Redux tilesheet and toon robot frames; `License.txt`, `Source.txt`) | `FT_2D` Tilesets, robot Sprites and Sprite Animations |
 | Skybox faces and net | `engine-content/skybox` | Skybox Texture faces, Skybox Creator source |
@@ -133,7 +133,7 @@ It creates FeatureTest through the Create dialog, waits for background texture e
 | `BL_PERF_SCENES` | `main,stress` | Any of `main`, `stress`, `world`, `clustered`, `2d` |
 | `BL_PERF_SAMPLE_MS` / `BL_PERF_SAMPLES` | 15000 / 2 | Measurement windows per host |
 | `BL_PERF_WARMUP_MS` / `BL_PERF_SETTLE_MS` | 10000 / 5000 | Play warm-up and editor settle |
-| `BL_PERF_QUALITY` / `BL_PERF_FRAMECAP` | project defaults | Play console `quality` and `framecap` |
+| `BL_PERF_QUALITY` / `BL_PERF_FRAMECAP` | project defaults | Play console `quality` (then `quality resolution reset`, so resolution stays fixed) and `framecap` |
 | `BL_PERF_VIEWPORT_CAP` | Engine Settings (30) | Editor viewport frame cap |
 | `BL_PERF_REOPEN` | 1 | `0` skips the reload-and-reopen timing |
 | `BL_PERF_LABEL` / `BL_PERF_OUT` | none | Free-text label; extra report path that survives the next run |

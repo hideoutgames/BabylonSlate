@@ -2030,7 +2030,8 @@ export class ProjectService {
     await this.mountAssetRegistry();
     if (kind === "empty" || kind === "feature-test") {
       await this.createInputAssets();
-      await this.scaffoldKenneyMannequinEmpty(document);
+      // FeatureTest pins import scale so the workload ignores Engine Settings.
+      await this.scaffoldKenneyMannequinEmpty(document, kind === "feature-test" ? 1 : undefined);
     }
     if (kind === "feature-test") await this.scaffoldFeatureTest(document);
     return {
@@ -2050,6 +2051,7 @@ export class ProjectService {
 
   private async scaffoldKenneyMannequinEmpty(
     document: ProjectDocument,
+    modelImportScale?: number,
   ): Promise<void> {
     const registry = this.assetRegistry;
     if (!registry) {
@@ -2059,12 +2061,11 @@ export class ProjectService {
       "scene",
       MAIN_SCENE_FILE,
     )) as SerializedScene;
-    const engineSettings = await createAppSettingsStore().load();
     const next = await applyKenneyMannequinEmptyScaffold({
       registry,
       scene,
       mannequinBytes: await loadKenneyMannequinGlb(),
-      modelImportScale: engineSettings.modelImportDefaultScale,
+      modelImportScale: modelImportScale ?? (await createAppSettingsStore().load()).modelImportDefaultScale,
     });
     await this.saveDocument("scene", MAIN_SCENE_FILE, next);
     if (await this.storage.exists(MAIN_CLASS_FILE)) {
