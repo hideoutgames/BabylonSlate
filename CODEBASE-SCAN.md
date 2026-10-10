@@ -714,6 +714,19 @@ These are editor tests whose titles name a sequence the body does not run.
 - The Stats HUD has no invalidations-per-second row and no hardware-scaling level.
 - The checked `p11-bt-editor` item says behaviour trees have no free drag. The editor passes `commitPositionsOnDragEnd`.
 
+## Verified in the twenty-second batch
+
+- **High.** A non-MSDF 2D font pick drops the font. `PrefabComponentDetails` calls `onUpdate("fontAssetGuid", guid)` and then `onUpdate("renderer", "bitmap")`. `updateComponent` maps the component list captured when the callback was created. The second apply still has the old properties, so the new font guid is replaced and only `renderer: "bitmap"` remains. Clearing the font does the same. An MSDF pair is one update (`inspector-panel.tsx`, `prefab-editing-context.tsx`).
+- **High.** A struct variable’s asset field replaces the whole default. Struct rows call `onPickAsset(pinId, assetType)`. The member inspector ignores both arguments and opens the scalar default picker. That picker commits `{ defaultValue: guid ?? "" }` and allows types from `member.typeClassId`, the structure id (`inspector-panel.tsx`, `graph-inspector.ts`).
+
+## Reported in the twenty-second batch, not re-checked
+
+- Function and event pin editors key selection by index, so a reorder selects a different pin (`memberPinRows`).
+- Optional and Default controls on those pin editors commit and then snap back because the saved pin drops them (`memberPinsFromRows`).
+- Selecting Prefab Root does not clear `selectedMemberId`, so the member inspector stays up (`AuthoringInspectorPanel`).
+- Render-target capture actors come from the first open Scene tab (`sceneDocuments[0]`).
+- A function-graph binding still looks unwired because the wiring check reads the class event graph (`inputEventPropertyRows`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine are running. The UI-package second pass did not start: the concurrent cap was already full, and the earlier assets-package read is still marked running. These reads are told not to edit this file and not to repeat findings already listed here.
