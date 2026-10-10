@@ -71,7 +71,8 @@ export const FEATURE_TEST_WORLD_WATER = {
 type WaterKey = keyof typeof FEATURE_TEST_WORLD_WATER;
 
 const WATER_LOOKS: Record<WaterKey, { style: WaterStyle; look: WaterStylizedLook; patch: Partial<WaterDefinition> }> = {
-  sea: { style: "realistic", look: "painted", patch: {} },
+  // Ray-marched reflections over the whole horizon are the costliest pixels on software GL; the Ocean keeps them.
+  sea: { style: "realistic", look: "painted", patch: { objectReflections: false } },
   ocean: {
     style: "realistic",
     look: "painted",

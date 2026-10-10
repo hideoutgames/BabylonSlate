@@ -75,7 +75,7 @@ Zones sit on a 32 m grid (`layout.ts`); each has an Outliner folder and a 3D Tex
 | Document | Contents |
 | --- | --- |
 | `FT_Stress` | 320 dynamic bodies over a scaled sweeper, 6 ragdolls and a 32-link chain; 4 stress particle actors (about 16 000 GPU particles); an 8 × 8 animated Mannequin crowd; a 5184-instance foliage carpet. |
-| `FT_World` (`world.ts`) | 80 m island Landscape (grass, snow, sand and rock layers, collision), 226 foliage instances, Global Sea at -6 m, Ocean (Ocean Spectrum waves, object reflections), Lake, River and Puddle bodies, Dry Dock removal volume, buoyant presents, seven Cables, two editor Splines; shadowed sun and light fog. It is separate from the main scene because the Ocean on top of every main-scene zone misses the first-frame deadline on software GL. |
+| `FT_World` (`world.ts`) | 80 m island Landscape (grass, snow, sand and rock layers, collision), 226 foliage instances, Global Sea at -6 m (object reflections off), Ocean (Ocean Spectrum waves, object reflections), Lake, River and Puddle bodies, Dry Dock removal volume, buoyant presents, seven Cables, two editor Splines; shadowed sun and light fog. It is separate from the main scene because the Ocean on top of every main-scene zone misses the first-frame deadline on software GL. |
 | `FT_Clustered` | 48 unshadowed point lights over a plain floor with the engine default sky, so Auto can select Clustered Forward. |
 | `FT_2D` | Orthographic camera over a 16 × 9 Tilemap of 128 px Kenney platformer tiles: parallax backdrop, collision ground (grass on dirt, crates, chain ramp, top-edge ledges, animated switch blocks) and a decor layer from a second Tileset (animated water and torches, signs, plants). `FT_2DRobotGraph` cycles robot Idle, Walk, Jump and Fall Sprite Animations on a mascot and a dynamic walking robot; 32 falling robot bodies use every 2D collider shape; chain funnel; hinge pendulum; custom `Characters` sorting layer. |
 | `FT_StreamedRoom` | Platform, pillars, sign and a streamed spinner; no camera or lights. |
@@ -126,7 +126,7 @@ BL_PERF_FEATURE_TEST=1 pnpm run test:e2e e2e/feature-test-perf-route.spec.ts \
   --config playwright.perf.config.ts --project perf-software
 ```
 
-It creates FeatureTest through the Create dialog, waits for background texture encodes, then for each scene in `BL_PERF_SCENES` records editor viewport frames, overlay Play frames, tick rate, draw calls, main-thread busy time and long tasks. It also times create, scene ready, Play boot and reopen. The JSON report is attached to the test, written to `test-results/perf-route/`, and also to `BL_PERF_OUT` when set.
+It creates FeatureTest through the Create dialog, waits for background texture encodes, then for each scene in `BL_PERF_SCENES` records editor viewport frames, overlay Play frames, tick rate, draw calls, main-thread busy time and long tasks. It also times create, scene ready, Play boot and reopen. A scene that shows **Scene Loading Failed** is retried once and counted as `loadRetries`; a second failure fails the run. The JSON report is attached to the test, written to `test-results/perf-route/`, and also to `BL_PERF_OUT` when set.
 
 | Env | Default | Effect |
 | --- | --- | --- |
@@ -154,4 +154,5 @@ Rules: compare runs on the same machine, browser project and build only; never a
 - Environment IBL: no `.env` or prefiltered cube exists in `engine-content`.
 - WebGPU is not the default backend because Clustered Forward is WebGL2-only.
 - Editor-only by design: Splines, the EditorFunctionLibrary, and BObject classes (not instantiable).
+- `FT_World` on software GL (the `perf-software` project, SwiftShader) misses the engine's first-frame deadline in roughly half of cold opens; **Retry** loads it. The first draw of the realistic Ocean is not validated for presentation, so the software-GL completion budget never starts and the 4 s `SCENE_SHADER_WARM_TIMEOUT_MS` budget expires while that draw is still on the GPU (`packages/render/src/create-engine.ts`). No single content cut fixes it reliably; it is an engine follow-up. Hardware GPUs load it normally.
 - Engine follow-ups found while authoring: Scene Layer switcher entries and virtualized-list item classes are not in Play's required closure (the HUD places sample instances as a workaround); BT Play Animation and Play Sound guids are not header dependencies.

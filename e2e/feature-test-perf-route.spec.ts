@@ -235,7 +235,7 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
 
   const scenes: Record<string, unknown> = {};
   for (const scene of SCENES) {
-    const sceneReadyMs = await openFeatureTestScene(page, scene);
+    const { readyMs: sceneReadyMs, loadRetries } = await openFeatureTestScene(page, scene);
     await page.waitForTimeout(SETTLE_MS);
     const viewport = [];
     for (let index = 0; index < SAMPLES; index += 1) {
@@ -243,7 +243,7 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
       viewport.push({ ...result, mainThreadBusy: busy });
     }
     await page.getByTestId("viewport-canvas").screenshot({ path: testInfo.outputPath(`${scene}-viewport.png`) });
-    scenes[scene] = { sceneReadyMs, viewport, play: await measurePlay(page, cdp) };
+    scenes[scene] = { sceneReadyMs, loadRetries, viewport, play: await measurePlay(page, cdp) };
   }
 
   const reopenToInteractiveMs = REOPEN ? await reopenFeatureTestProject(page) : null;

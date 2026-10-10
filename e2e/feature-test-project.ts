@@ -71,20 +71,34 @@ export async function reopenFeatureTestProject(page: Page, timeout = LONG_MS): P
   return Date.now() - started;
 }
 
-/** Open a FeatureTest scene and wait for its viewport to finish loading. */
+/**
+ * Open a FeatureTest scene and wait for its viewport to finish loading. A
+ * first-frame deadline miss (FT_World on software GL, see the FeatureTest doc's
+ * Known gaps) is retried once and counted; a second failure fails the route.
+ */
 export async function openFeatureTestScene(
   page: Page,
   scene: FeatureTestSceneName,
   timeout = LONG_MS,
-): Promise<number> {
+): Promise<{ readyMs: number; loadRetries: number }> {
   const started = Date.now();
   await openAssetFromBrowser(page, FEATURE_TEST_SCENES[scene]);
   await expect(page.getByTestId("document-workspace-scene")).toBeVisible({ timeout });
   const panel = page.getByTestId("viewport-panel");
   await expect(page.getByTestId("viewport-canvas")).toBeVisible({ timeout });
-  await expect(panel).toHaveAttribute("data-scene-ready", "true", { timeout });
-  await expect(panel).toHaveAttribute("aria-busy", "false", { timeout });
-  return Date.now() - started;
+  const retry = page.getByTestId("scene-loading-dialog").getByRole("button", { name: "Retry" });
+  let loadRetries = 0;
+  for (;;) {
+    if ((await panel.getAttribute("data-scene-ready")) === "true" && (await panel.getAttribute("aria-busy")) === "false") break;
+    if (await retry.isVisible()) {
+      expect(loadRetries, `${scene} failed to load after a retry`).toBe(0);
+      loadRetries += 1;
+      await retry.click();
+    }
+    expect(Date.now() - started, `${scene} did not load within ${timeout} ms`).toBeLessThan(timeout);
+    await page.waitForTimeout(250);
+  }
+  return { readyMs: Date.now() - started, loadRetries };
 }
 
 /** Wait until background KTX2 encodes finish so measurements see final GPU textures. */
