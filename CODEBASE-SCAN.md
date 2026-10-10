@@ -1585,6 +1585,33 @@ No new unchecked claims were added in this pass. The items above were read in so
 - **Low.** Toggle pressed styling is also written for `data-state=on`. Base UI sets `aria-pressed` and `data-pressed`, so those selectors never match. The pressed fill still comes from `aria-pressed` (`toggle.tsx`).
 - **Low.** Tooltip animation includes `data-state=delayed-open`. Base UI uses `data-open` and `data-closed`. The open animation still runs from `data-open` (`tooltip.tsx`).
 
+## Verified in the sixty-fifth batch
+
+- **High.** A Tileset, Sprite, or Sprite Animation whose header has no `atlasTextures` list is queued, and every texture-encode pass waits while those documents are decoded. The header reader returns null when the list is absent, including a referrer that was created and not yet saved (`resolveLegacyAtlasReferrers`, `headerAtlasTextureGuids`).
+- **High.** Plugin import remaps only a colliding Plugin Settings guid. Class and Texture files inside the pack keep their ids. A contained asset that already exists is written beside the original, and the index keeps whichever scan sees last (`planPluginImport`, `applyPluginImport`).
+- **Medium.** Newly created `.babasset` files are stamped `engineVersion: "0.0.0"`. The live engine version is `0.0.1` (`writeCreatedAsset`, `release/version.json`).
+- **Medium.** Detaching an actor composes a world matrix that can contain shear, then decomposes it and ignores a failed decompose. The sibling component helper returns the local pose when decompose fails (`authoredActorWorldTransform`).
+- **Medium.** A scene edit that is not already transform-only or deformer-only clones the scene, strips fog properties, and stringifies both copies to decide whether the edit was fog-only (`isFogVolumeOnlySceneEdit`).
+- **Removal.** A font header that only sets `representations.msdf` becomes JSON without a PNG, so the computed MSDF flag is false. Current writes store the two part flags (`normalizeFontPayload`).
+- **Removal.** A sprite animation with no `frameDurationMs` promotes the first frame duration. Current saves write the field (`parseSpriteAnimationPayload`).
+- **Removal.** Billboard icons still accept `light`, `rigidbody`, and `particles`. Live helpers emit the canonical names (`ICON_ALIASES`).
+- **Removal.** The editor audio debug overlay reads `audioAssetGuid` and then `assetGuid` (`EditorDebugOverlay.sync`).
+- **Low.** After clustered lights already return a reason for an unsupported device, a second `supported` check never runs (`ClusteredSceneLights.sync`).
+
+## Reported in the sixty-fifth batch, not re-checked
+
+- Skybox Creator import leaves `sourceTextureGuid` and `generatedFaces` on the old ids (`remapHeaderPayload`).
+- Tile lookup is a linear scan per painted cell (`tilesetTileById`).
+- Every GPU upload copies the full byte array first (`copyTextureBytesForUpload`).
+- Search rebuilds Scene, Graph, and Class hits by reading the whole `.babasset` (`indexAsset`).
+- Skybox face extract fills a 4×3 net and then copies the faces back out (`fitSourceIntoSkyboxNet`).
+- `listTemplates` is only used by tests and still opens every archive (`templates.ts`).
+- Duplicate names still preserve `.eui.babasset`, `.shader.babasset`, `.dataobject.babasset`, and `.datasheet.babasset` (`stripAssetFileSuffix`).
+- A particle system still drops stored `looping` and `duration` (`normalizeParticleSystemPayload`).
+- Graph and Class migration v0, and several identity version bumps, exist only to raise the stored version (`createDefaultMigrationRegistry`).
+- Render-target material remap still treats `Shader` and `ShaderGraph` as live types (`remapRenderTargetPayloadGuids`).
+- Texture usage `"ui"` still skips compression and nothing authors it (`shouldCompressTexture`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
