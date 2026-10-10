@@ -1621,6 +1621,15 @@ No new unchecked claims were added in this pass. The items above were read in so
 - **Medium.** Exporting a save creates a blob URL, clicks the download link, and revokes the URL in the same turn (`downloadSave`).
 - **Medium.** Changing the selected collider or the Move, Rotate, or Scale tool disposes every collider visual and builds them again. Selection only needs to reattach the gizmo (`ModelPreviewCanvas`).
 
+## Verified in the sixty-seventh batch
+
+- **Medium.** Project color stays enabled while a picture is encoding. Choosing a color aborts that encode and drops the picture. The upload writes `{ ...appearance, image }` from the render that started the pick (`uploadPicture`, `changeAppearance`).
+- **Medium.** Every animation-graph panel render stringifies every indexed asset header to rebuild the clip catalog. The key is not limited to Animation, Model, and Sprite Animation, and it does not use the registry epoch (`useAnimGraphDocument`).
+- **Medium.** An empty behaviour-tree selection returns without clearing the selected node. Details keeps the previous node (`BehaviourTreeGraphPanel`).
+- **Medium.** Each imported file loads engine settings again for `modelImportDefaultScale`. The value does not change per file (`importPickedFiles`).
+- **Removal.** Engine plugin listing throws when loose `.babplugin` files exist without `catalog.json`. Settings then offers an upgrade that expands those archives (`upgradeLegacyArchives`).
+- **Removal.** Content-browser delete-reference repair still treats `header.type === "Graph"` as a Class (`deletingClassGuids`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
