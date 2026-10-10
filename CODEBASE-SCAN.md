@@ -141,7 +141,7 @@ These are from completed file reads. They are kept so they are not lost. They ar
 - `e2e/p11-ai.spec.ts` fills the decorator key only when the control is an `INPUT`.
 - `e2e/basic-3d-mannequin-shadow-hosts.spec.ts` passes the same pixel buffer twice into `mannequinShadowMetrics`. The visible assertions do not read `changed`, so this is not yet a false pass.
 - `e2e/webgl2-fallback.spec.ts` does not replace `requestAdapter` when `navigator.gpu` is already missing.
-- Several specs keep a second mode in a one-element loop, so the Preview Build arm never runs. Named files include `play-debug-console.spec.ts`, `scene-layer-joystick.spec.ts`, `scene-layer-controls.spec.ts`, `scene-streaming.spec.ts`, `runtime-scene-loading.spec.ts`, `preview-build-preparation.spec.ts`, `qa-custom-events.spec.ts`, `qa-input.spec.ts`, `qa-state-lifecycle.spec.ts`, `qa-core-runtime.spec.ts`, `save-game-parity.spec.ts`, `render-settings-export.spec.ts`, `framegraph-forward.spec.ts`, and `player-backend.spec.ts`.
+- Several specs keep a second mode in a one-element loop, so the Preview Build arm never runs. Named files include `play-debug-console.spec.ts`, `scene-layer-joystick.spec.ts`, `scene-layer-controls.spec.ts`, `scene-streaming.spec.ts`, `runtime-scene-loading.spec.ts`, `preview-build-preparation.spec.ts`, `qa-custom-events.spec.ts` (`preview` is `[false]`), `qa-input.spec.ts`, `qa-state-lifecycle.spec.ts`, `framegraph-forward.spec.ts`, and `player-backend.spec.ts`. `qa-core-runtime.spec.ts` is the opposite: `preview` is `[true]`, so Normal Play never runs. `save-game-parity.spec.ts` and `render-settings-export.spec.ts` are packed-only loops, not missing Preview Build arms.
 - `e2e/p14-export.spec.ts` treats a missing `data-ticks` attribute as not equal to `"0"`.
 
 ### Scripts and CI
@@ -636,6 +636,17 @@ These are end-to-end tests whose titles name a behavior the body does not run.
 - `build, save, reopen, play in 3D and 2D with gamepad and gizmo undo` asserts gamepad `data-move-x` only while the viewport says 2D (`e2e/p6-scene-editing.spec.ts`).
 - `Prefab Preview, Play overlay, and Scene viewport share one session` checks that three canvases are visible and does not read a shared session (`e2e/p18-editor-opt.spec.ts`).
 - `play-performance-route.spec.ts` and `play-sustained-route.spec.ts` skip unless `BL_PERF_ROUTE` or `BL_PERF_SUSTAINED` is set.
+
+## Verified in the sixteenth batch
+
+These loops type a second arm and then pass a one-element list, so the other arm never runs.
+
+- **Medium.** `spatial-effects.spec.ts` types reflections, point, spot, sun, and combined, and both WebGL2 and WebGPU. The lists are `["combined"]` and `["webgl2"]`. The fog-volume and ambient-occlusion tests are also `["webgl2"]` only.
+- **Medium.** `render-targets.spec.ts`, `scalability-play.spec.ts`, and `shared-outline.spec.ts` type `"webgl2" | "webgpu"` and iterate `["webgl2"]`.
+- **Medium.** `qa-custom-events.spec.ts` types a legacy arm and iterates `legacy` as `[false]`. `delete next.members` never runs. Its Preview Build arm was already noted.
+- **Medium.** `qa-core-runtime.spec.ts` iterates `preview` as `[true]`. The title’s Normal Play arm never runs. Preview Build does.
+- **Medium.** `save-game-parity.spec.ts` types `"packed" | "loose"` and iterates `["packed"]`.
+- **Medium.** `render-settings-export.spec.ts` types packed/loose, WebGL2/WebGPU, and an initialization-failure flag. The only entry is packed WebGL2 with `fail: false`. The file comment says other specs cover backend variants.
 
 ## Deeper pass
 
