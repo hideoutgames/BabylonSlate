@@ -12,8 +12,11 @@ import {
   FEATURE_TEST_OPTIONAL_SLOTS,
   GEIST_FONT_PATH,
   HOLIDAY_COLORMAP_PATH,
+  PLATFORMER_TILESHEET_PATH,
+  ROBOT_FRAMES,
   SKYBOX_NET_PATH,
   holidayModelPath,
+  robotFramePath,
 } from "./engine-content-files";
 
 const TEXTURES = "Textures";
@@ -26,7 +29,8 @@ const UI_ICON_STEMS = ["camera", "audio", "particles", "point_light", "spot_ligh
 
 /**
  * Import every source file FeatureTest needs: Textures (albedo + KTX2 encode,
- * pixel art, UI, skybox faces, Skybox Creator net, optional LUT), Holiday Pack
+ * pixel art, Kenney platformer tiles and robot frames, UI, skybox faces,
+ * Skybox Creator net, optional LUT), Holiday Pack
  * Models (the door brings rigid node Animations), and Fonts
  * (bundled ASCII facetype + Geist). Also records the Basic 3D Mannequin.
  */
@@ -41,6 +45,17 @@ export async function importFeatureTestContent(ctx: FeatureTestContext): Promise
     await ctx.importFile(TEXTURES, "FT_Colormap_tileset.png", colormap),
     "Texture",
   ).header.guid;
+  // `_tileset` / `_sprite` names select uncompressed Pixel Art usage.
+  assets.textures.platformerTiles = single(
+    await ctx.importFile(TEXTURES, "FT_PlatformerTiles_tileset.png", await host.loadBytes(PLATFORMER_TILESHEET_PATH)),
+    "Texture",
+  ).header.guid;
+  for (const frame of ROBOT_FRAMES) {
+    assets.textures.robotFrames[frame] = single(
+      await ctx.importFile(TEXTURES, `FT_Robot_${frame}_sprite.png`, await host.loadBytes(robotFramePath(frame))),
+      "Texture",
+    ).header.guid;
+  }
   for (const stem of UI_ICON_STEMS) {
     const bytes = await host.loadBytes(`engine-content/billboards/${stem}.png`);
     assets.textures.ui[stem] = single(await ctx.importFile(TEXTURES, `ui_${stem}.png`, bytes), "Texture").header.guid;

@@ -25,6 +25,31 @@ export const GEIST_FONT_PATH = "engine-content/fonts/Geist/Geist-Latin-Variable.
 export const GEIST_LICENSE_PATH = "engine-content/fonts/Geist/OFL.txt";
 export const SKYBOX_NET_PATH = "engine-content/skybox/cubemap_layout.png";
 
+/** Kenney Platformer Pack Redux tilesheet: 13 × 12 tiles of 128 px (CC0). */
+export const PLATFORMER_TILESHEET_PATH = "engine-content/kenney-assets/Platformer/tiles.png";
+export const PLATFORMER_TILE_PX = 128;
+
+/** Kenney toon robot animation frames, 96 × 128 px each (CC0). */
+export const ROBOT_FRAMES = [
+  "idle",
+  "jump",
+  "fall",
+  "walk0",
+  "walk1",
+  "walk2",
+  "walk3",
+  "walk4",
+  "walk5",
+  "walk6",
+  "walk7",
+] as const;
+
+export type RobotFrame = (typeof ROBOT_FRAMES)[number];
+
+export function robotFramePath(frame: RobotFrame): string {
+  return `engine-content/kenney-assets/Platformer/Robot/robot_${frame}.png`;
+}
+
 export function holidayModelPath(stem: FeatureTestHolidayModel): string {
   return `${HOLIDAY_PACK_DIR}/${stem}.glb`;
 }
@@ -33,15 +58,17 @@ export function holidayModelPath(stem: FeatureTestHolidayModel): string {
 export const FEATURE_TEST_ENGINE_CONTENT: readonly string[] = [
   ...FEATURE_TEST_HOLIDAY_MODELS.map(holidayModelPath),
   HOLIDAY_COLORMAP_PATH,
+  PLATFORMER_TILESHEET_PATH,
+  ...ROBOT_FRAMES.map(robotFramePath),
   GEIST_FONT_PATH,
   GEIST_LICENSE_PATH,
   SKYBOX_NET_PATH,
 ];
 
 /**
- * Optional, human-supplied CC0 media. The repository ships none of these: a
- * missing slot leaves the matching feature authored but silent or ungraded.
- * Each slot lists accepted file names in priority order.
+ * Optional CC0 media slots (the repository ships Kenney sounds for the audio
+ * slots and no LUT). A missing slot leaves the matching feature authored but
+ * silent or ungraded. Each slot lists accepted file names in priority order.
  */
 export const FEATURE_TEST_OPTIONAL_SLOTS = {
   /** Looping sound for spatial Audio Components. */

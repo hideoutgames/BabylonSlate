@@ -30,7 +30,7 @@ import {
 } from "../content-browser-helpers";
 import { withDocumentPayload } from "../scaffold-empty-3d";
 import { classIdForGraphPath } from "../../services/script-compiler";
-import type { FeatureTestHolidayModel } from "./engine-content-files";
+import type { FeatureTestHolidayModel, RobotFrame } from "./engine-content-files";
 import {
   FEATURE_TEST_ZONES,
   zonePoint,
@@ -99,6 +99,10 @@ export interface FeatureTestAssets {
     colormap: string;
     /** Same pixels with `pixelArt` usage for Sprites, Tilesets and Sprite Animations. */
     colormapPixelArt: string;
+    /** Kenney platformer tilesheet (`pixelArt`, 13 × 12 tiles of 128 px) for Tilesets. */
+    platformerTiles: string;
+    /** Kenney toon robot frames (`pixelArt`, 96 × 128 px) keyed by frame name (`idle`, `walk0`…). */
+    robotFrames: Record<RobotFrame, string>;
     /** Engine billboard PNGs imported with `ui` usage, keyed by file stem (`camera`, `audio`, ...). */
     ui: Record<string, string>;
     /** Six uncompressed `skybox` usage face Textures. */
@@ -298,6 +302,8 @@ function emptyAssets(): FeatureTestAssets {
     textures: {
       colormap: "",
       colormapPixelArt: "",
+      platformerTiles: "",
+      robotFrames: {} as Record<RobotFrame, string>,
       ui: {},
       skyFaces: { px: null, nx: null, py: null, ny: null, pz: null, nz: null },
       skyboxNet: "",
