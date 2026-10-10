@@ -66,12 +66,21 @@ export function createProjectNameIssue(
   return taken ? "Name already exists." : null;
 }
 
+/** Built-in starters: Blank, Basic 3D (legacy `empty`), Basic 2D, and Feature Test. */
+export const BUILT_IN_STARTER_KINDS = ["blank", "empty", "2d", "feature-test"] as const;
+
+export type BuiltInStarterKind = (typeof BUILT_IN_STARTER_KINDS)[number];
+
+export function isBuiltInStarterKind(id: string): id is BuiltInStarterKind {
+  return (BUILT_IN_STARTER_KINDS as readonly string[]).includes(id);
+}
+
 export type CreateProjectOptions = {
   appearance?: ProjectAppearance;
   /** Native only: pick an external folder, then scaffold into it. */
   pickFolder?: boolean;
-  /** Built-in starter: Blank, Basic 3D (legacy empty), or Basic 2D. */
-  kind?: "blank" | "empty" | "2d";
+  /** Built-in starter; omitted creates Basic 3D. */
+  kind?: BuiltInStarterKind;
   renderWidth?: number;
   renderHeight?: number;
   blackBars?: boolean;

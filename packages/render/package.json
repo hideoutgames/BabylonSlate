@@ -20,7 +20,8 @@
     "./framegraph-forward-scene": "./src/framegraph-forward-scene.ts",
     "./fog-volumes": "./src/fog-volumes.ts",
     "./render-settings": "./src/render-settings.ts",
-    "./audio-playback-backend": "./src/audio-playback-backend.ts"
+    "./audio-playback-backend": "./src/audio-playback-backend.ts",
+    "./default-typeface": "./src/default-typeface.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

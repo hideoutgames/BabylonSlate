@@ -41,6 +41,7 @@ Before working on matching files or tasks, read the corresponding rule in full. 
 | `apps/editor/**`, `packages/editor-kit/**`, `packages/graph-ui/**`, `packages/scripting-nodes/**` | [Display names](.agents/rules/display-names.md) |
 | `packages/ui/src/components/**`, `packages/editor-kit/src/**`, `packages/graph-ui/src/**`, `apps/editor/src/components/**`, `docs/architecture/components.md`; reusable editor component changes | [Component catalog](.agents/rules/editor-ui-components.md) |
 | `apps/editor/**`, `packages/ui/**` | [Touch editor](.agents/rules/touch-editor.md) |
+| Adding, removing, or changing an engine component, asset type, engine base class, node family, console command, Play feature, or project/scene setting; `apps/editor/src/lib/feature-test/**`, `packages/core/src/engine-components.ts`, `docs/development/feature-test.md` | [FeatureTest starter](.agents/rules/feature-test.md) |
 
 ## Skills
 

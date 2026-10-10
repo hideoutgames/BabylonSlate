@@ -1780,7 +1780,8 @@ describe("createPlayMesh", () => {
     expect(extent).toBeCloseTo(125);
   });
 
-  it("creates a 3D Text mesh for meshKind text3d", () => {
+  // The runtime sends a Text3D's Font as its asset guid; it must not load as a Model.
+  it.each([null, "font-guid"])("creates a 3D Text mesh for meshKind text3d (font %s)", (fontAssetGuid) => {
     const handle = createTestEngine();
     handles.push(handle);
     const { scene } = handle;
@@ -1788,14 +1789,14 @@ describe("createPlayMesh", () => {
     applyAssignMesh(scene, binding, {
       type: "assignMesh",
       slotId: 4,
-      meshAssetGuid: null,
+      meshAssetGuid: fontAssetGuid,
       meshKind: "text3d",
       text3d: {
         text: "Hi",
         size: 1,
         depth: 0.1,
         color: [1, 0, 0],
-        fontAssetGuid: null,
+        fontAssetGuid,
         alignment: "left",
       },
     });
@@ -1825,7 +1826,14 @@ describe("createPlayMesh", () => {
     ).toBe(true);
   });
 
-  it("draws Play collider dashes when meshKind encodes a collider shape", () => {
+  it.each([
+    { label: "box", shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } },
+    // Authored triangle meshes store vertex rows; the visual needs the packed form.
+    {
+      label: "authored triangle mesh",
+      shape: { kind: "mesh", vertices: [{ x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, { x: 0, y: 0, z: 1 }], indices: [0, 1, 2] },
+    },
+  ])("draws Play collider dashes when meshKind encodes a $label collider shape", ({ shape }) => {
     const handle = createTestEngine();
     handles.push(handle);
     const { scene } = handle;
@@ -1834,7 +1842,7 @@ describe("createPlayMesh", () => {
       type: "assignMesh",
       slotId: 5,
       meshAssetGuid: null,
-      meshKind: "collider:{\"kind\":\"box\",\"halfExtents\":{\"x\":0.5,\"y\":0.5,\"z\":0.5}}",
+      meshKind: `collider:${JSON.stringify(shape)}`,
     });
     const mesh = scene.getMeshByName("actor-5") as Mesh | null;
     expect(mesh).not.toBeNull();

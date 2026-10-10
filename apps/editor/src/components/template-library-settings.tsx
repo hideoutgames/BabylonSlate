@@ -10,6 +10,10 @@ import {
 } from "@babylonslate/ui/components/field";
 import { useDocumentActions, useEditorShellState } from "../context/document-context";
 import { importTemplateArchive } from "../services/template-service";
+import { homepageTemplates } from "./homepage-template-browser";
+
+/** Built-in starters, in project creator order. */
+const BUILT_IN_TEMPLATE_NAMES = homepageTemplates([]).map((template) => template.name);
 
 /** The launcher and Engine Settings edit the same installed template library. */
 export function TemplateLibrarySettings() {
@@ -42,7 +46,7 @@ export function TemplateLibrarySettings() {
         Shown in the project creator. Add an exported Slate project to create one.
       </FieldDescription>
       <div className="divide-y rounded-lg border px-3">
-        {["Blank", "Basic 3D", "Basic 2D"].map((name) => (
+        {BUILT_IN_TEMPLATE_NAMES.map((name) => (
           <div
             key={name}
             className="flex min-h-11 items-center justify-between gap-3 text-sm"

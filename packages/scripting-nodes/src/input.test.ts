@@ -240,6 +240,36 @@ describe("asset input event compilation", () => {
     expect(logged).toEqual(["KeyW", "MouseLeft", "Gamepad2Button0"]);
   });
 
+  it("feeds an axis value through pure nodes into its held chain", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "axis-pure",
+      kind: "event",
+      nodes: [
+        node(registry, "move", "input.axisEvent", {
+          "default:binding": { Input: { Name: "Move", Asset: "move" } },
+          valueType: "2d",
+        }),
+        node(registry, "axes", "vector.break2"),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        edge("exec", "move", "held", "log", "execIn"),
+        edge("value", "move", "value", "axes", "in"),
+        edge("x", "axes", "x", "log", "message"),
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    const mod = loadModule(compiled.source);
+    const values: unknown[] = [];
+    (mod.onTick as (ctx: unknown) => void)({
+      getInputState: () => ({ valueType: "2d", started: false, held: true, released: false, value: { x: 0.25, y: -1 } }),
+      formatValue: (entry: unknown) => entry,
+      log: (_severity: string, _category: string, entry: unknown) => values.push(entry),
+    });
+    expect(values).toEqual([0.25]);
+  });
+
   it("dispatches independent phase chains and typed values without polling strings", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {

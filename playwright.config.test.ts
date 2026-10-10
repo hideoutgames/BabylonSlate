@@ -85,6 +85,7 @@ describe("Playwright iPad project filter", () => {
     // Performance and profiling routes run only through playwright.perf.config.ts.
     for (const file of [
       "editor-edit-profile.spec.ts",
+      "feature-test-perf-route.spec.ts",
       "play-performance-route.spec.ts",
       "play-sustained-route.spec.ts",
       "rendering-baseline.spec.ts",

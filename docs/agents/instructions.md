@@ -6,7 +6,7 @@ Its working agreements apply across clients: clarify ambiguous instructions befo
 
 ## Canonical files and compatibility
 
-- Maintain the eleven shared policies in `.agents/rules/*.md` and the ten skill packages in `.agents/skills/*/SKILL.md`.
+- Maintain the twelve shared policies in `.agents/rules/*.md` and the ten skill packages in `.agents/skills/*/SKILL.md`.
 - The root routing table preserves Cursor's original always-applied rules, path patterns, and task triggers. Documentation obligations also apply to behavior changes outside `docs/`.
 - `.cursor/rules/*.mdc` retain their original activation metadata and forward to shared rules. `.cursor/skills/*/SKILL.md` are forwarding entry points for existing discovery/invocations; all supporting files live with the canonical skill. `.claude/skills/handoff/SKILL.md` is the same kind of entry point for Claude Code discovery (`/handoff`); `.claude/worktrees/` is ignored local agent state.
 - Edit canonical content. Keep forwarding entry points' names and descriptions consistent with their targets. Do not copy full instructions into adapters or require symlinks on Windows.

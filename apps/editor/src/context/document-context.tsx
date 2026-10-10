@@ -3139,6 +3139,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         resetRenderProfile: () => void;
         /** Texture alignment passes run and queued, and the Textures they requeued. */
         textureAlignment: () => { runs: number; pending: number; requeued: string[] };
+        /** Texture paths whose KTX2 encode is still pending or running. */
+        pendingTextureEncodes: () => string[];
         textureEncodeState: (path: string) => {
           compressionState: string | null;
           encodeError: string | null;
@@ -3339,6 +3341,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         projectService.readAssetChunk(path, chunkId),
       lastNavBake: () => lastNavBakeSaveResult(),
       textureAlignment: () => projectService.textureAlignmentState,
+      pendingTextureEncodes: () =>
+        (projectService.registry?.list() ?? [])
+          .filter((entry) => {
+            const state = entry.header.payload.compressionState;
+            return entry.header.type === "Texture" && (state === "pending" || state === "encoding");
+          })
+          .map((entry) => entry.path),
       textureEncodeState: (path: string) => {
         const asset = projectService.registry
           ?.list()

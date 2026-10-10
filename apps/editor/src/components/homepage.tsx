@@ -76,6 +76,7 @@ import {
 } from "../lib/listed-projects";
 import {
   createProjectNameIssue,
+  isBuiltInStarterKind,
   randomProjectName,
   normalizeProjectFolderName,
   type CreateProjectOptions,
@@ -768,11 +769,7 @@ export function Homepage({
                   };
                   const folderName = normalizeProjectFolderName(createName);
                   if (!folderName) return;
-                  if (
-                    templateId === "blank" ||
-                    templateId === "empty" ||
-                    templateId === "2d"
-                  )
+                  if (isBuiltInStarterKind(templateId))
                     await onCreateEmpty(folderName, {
                       ...options,
                       kind: templateId,

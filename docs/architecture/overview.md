@@ -14,7 +14,7 @@ apps/player/          Packaged game host (itch zip + Preview Build iframe); no R
 apps/desktop/         Electron main + preload; Node VFS + userData for the editor
 apps/docs/            VitePress site; content is the markdown in `docs/`
 engine-logos/         Slate wordmark and icon (dark/light ink); copied into editor and docs `public/branding/`
-engine-content/       Engine default skybox faces (`skybox/px.png` … `nz.png`, copied to editor/player public); Kenney packs are present, not wired
+engine-content/       Engine default skybox faces (`skybox/px.png` … `nz.png`, copied to editor/player public); Kenney Mannequin (Basic 3D); Holiday Pack subset, Kenney platformer art, Geist font and optional CC0 audio/LUT slots (Feature Test, copied by `vite-engine-content.ts`)
 packages/core/        GUIDs, Result, math, seeded RNG, schemas, command bus, storage port, formatValue, print HUD helper (P5)
 packages/vfs/         Storage adapters (OPFS, Capacitor, Electron IPC, Node), platform detection, app settings, SecretStore, nativeHttp
 packages/assets/      Containers, asset registry, search index, importers, encode queue

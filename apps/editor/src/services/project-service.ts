@@ -141,7 +141,7 @@ import { processAreaEmissionInWorker } from "@babylonslate/assets/area-emission-
 import { onEncodeQueuePause } from "./encode-queue-pause";
 import { validateClassDeletionReplacements } from "../lib/class-deletion";
 import { createAppSettingsStore, isTestModeEnabled, TEST_PROJECT_NAME } from "@babylonslate/vfs";
-import { extraChunksWithNavmesh } from "@babylonslate/navigation";
+import { extraChunksWithNavmesh, type NavMeshGenerateInput } from "@babylonslate/navigation";
 import {
   newAssetFileName,
   classIdFromClassAsset,
@@ -156,6 +156,7 @@ import { uniquePluginFolderName, pluginRootId, isPluginDocumentReadOnly } from "
 import { ENGINE_PLUGIN_LIBRARY_ROOT } from "../lib/engine-plugin-library";
 import {
   normalizeProjectFolderName,
+  type BuiltInStarterKind,
   type CreateProjectOptions,
 } from "../lib/create-project";
 import type { UpdateListedProjectOptions } from "../lib/listed-projects";
@@ -301,6 +302,21 @@ export type PluginImportResult =
       plan: Extract<PluginImportPlan, { kind: "conflict" }>;
     };
 
+/** Navmesh bake for scaffolds: the bake worker in the app, Recast directly in unit tests. */
+async function generateFeatureTestNavMesh(input: NavMeshGenerateInput): Promise<Uint8Array> {
+  if (typeof Worker === "function" && import.meta.env.MODE !== "test") {
+    const { createNavBakeWorker } = await import("./nav-bake-worker-host");
+    const worker = createNavBakeWorker();
+    try {
+      return await worker.generate(input);
+    } finally {
+      worker.terminate();
+    }
+  }
+  const { generateNavMesh } = await import("@babylonslate/navigation");
+  return generateNavMesh(input);
+}
+
 function newGuid(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
@@ -365,6 +381,8 @@ export class ProjectService {
   private pluginOverrides: Record<string, PluginEnableOverride> = {};
   /** Asset guids stay stable across saves so references survive a rewrite. */
   private readonly assetGuids = new Map<string, string>();
+  /** Guids a scaffold embedded in other documents before writing these paths. */
+  private readonly reservedAssetGuids = new Map<string, string>();
   /** Unsaved geometry results become persistent only with the matching Scene. */
   private readonly sceneAudioReverb = new Map<string, { fingerprint: string; bytes: Uint8Array }>();
   private readonly registryListeners = new Set<() => void>();
@@ -1956,7 +1974,7 @@ export class ProjectService {
 
   private async scaffoldNewProject(
     name: string,
-    kind: "blank" | "empty" | "2d" = "empty",
+    kind: BuiltInStarterKind = "empty",
     renderOptions?: {
       renderWidth?: number;
       renderHeight?: number;
@@ -1974,7 +1992,7 @@ export class ProjectService {
         }
       : undefined;
     const document = createEmptyProject(name, {
-      kind: kind === "blank" ? "empty" : kind,
+      kind: kind === "2d" ? "2d" : "empty",
       render,
     });
     const appearance = normalizeProjectAppearance(renderOptions?.appearance);
@@ -2010,10 +2028,12 @@ export class ProjectService {
     await this.storage.writeText(PROJECT_FILE, JSON.stringify(stored, null, 2));
     await this.installEnginePluginDefaultsIfNeeded();
     await this.mountAssetRegistry();
-    if (kind === "empty") {
+    if (kind === "empty" || kind === "feature-test") {
       await this.createInputAssets();
-      await this.scaffoldKenneyMannequinEmpty(document);
+      // FeatureTest pins import scale so the workload ignores Engine Settings.
+      await this.scaffoldKenneyMannequinEmpty(document, kind === "feature-test" ? 1 : undefined);
     }
+    if (kind === "feature-test") await this.scaffoldFeatureTest(document);
     return {
       document,
       layouts: createEmptyLayouts(),
@@ -2031,6 +2051,7 @@ export class ProjectService {
 
   private async scaffoldKenneyMannequinEmpty(
     document: ProjectDocument,
+    modelImportScale?: number,
   ): Promise<void> {
     const registry = this.assetRegistry;
     if (!registry) {
@@ -2040,12 +2061,11 @@ export class ProjectService {
       "scene",
       MAIN_SCENE_FILE,
     )) as SerializedScene;
-    const engineSettings = await createAppSettingsStore().load();
     const next = await applyKenneyMannequinEmptyScaffold({
       registry,
       scene,
       mannequinBytes: await loadKenneyMannequinGlb(),
-      modelImportScale: engineSettings.modelImportDefaultScale,
+      modelImportScale: modelImportScale ?? (await createAppSettingsStore().load()).modelImportDefaultScale,
     });
     await this.saveDocument("scene", MAIN_SCENE_FILE, next);
     if (await this.storage.exists(MAIN_CLASS_FILE)) {
@@ -2053,6 +2073,48 @@ export class ProjectService {
     }
     const classPath = `assets/${MANNEQUIN_CLASS_FILE}`;
     document.graphs = [classPath];
+    await this.saveProject(document, createEmptyLayouts());
+  }
+
+  /**
+   * FeatureTest starter: every engine feature on top of Basic 3D. Lazily
+   * loaded so its scaffold code stays out of the editor startup chunk.
+   */
+  private async scaffoldFeatureTest(document: ProjectDocument): Promise<void> {
+    const registry = this.assetRegistry;
+    if (!registry) throw new Error("Asset registry is not mounted.");
+    const [{ applyFeatureTestScaffold }, content] = await Promise.all([
+      import("../lib/feature-test"),
+      import("../lib/engine-content"),
+    ]);
+    let result: Awaited<ReturnType<typeof applyFeatureTestScaffold>>;
+    try {
+      result = await applyFeatureTestScaffold({
+        mainScenePath: MAIN_SCENE_FILE,
+        host: {
+          registry,
+          saveDocument: (kind, path, payload, options) => this.saveDocument(kind, path, payload, options),
+          loadDocument: (kind, path) => this.loadDocument(kind, path),
+          // References are written before their targets, so the guid must hold until the save.
+          guidForAsset: async (path) => {
+            const guid = await this.guidForAsset(path);
+            if (!registry.getByPath(path)) this.reservedAssetGuids.set(path, guid);
+            return guid;
+          },
+          writeSceneNavmeshChunk: (path, bytes, payload) => this.writeSceneNavmeshChunk(path, bytes, payload),
+          loadBytes: content.loadEngineContentBytes,
+          loadOptional: content.loadOptionalEngineContent,
+          generateNavMesh: generateFeatureTestNavMesh,
+          modelImportScale: 1,
+        },
+      });
+    } finally {
+      this.reservedAssetGuids.clear();
+    }
+    const paths = registry.listDocumentPaths({ rootId: "project" });
+    document.scenes = paths.scenes;
+    document.graphs = paths.graphs;
+    document.settings = result.applySettings(document.settings);
     await this.saveProject(document, createEmptyLayouts());
   }
 
@@ -2642,6 +2704,8 @@ export class ProjectService {
   private async guidForAsset(path: string): Promise<string> {
     const indexed = this.assetRegistry?.getByPath(path);
     if (indexed) return indexed.header.guid;
+    const reserved = this.reservedAssetGuids.get(path);
+    if (reserved) return reserved;
     const storage = this.storageForPath(path);
     if (await storage.exists(path)) {
       try {
