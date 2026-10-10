@@ -799,6 +799,26 @@ Runtime tests `sn`–`z` and render tests `t`–`z` reported no new product bugs
 - OBJ import treats any same-stem file other than `.obj`, `.glb`, or `.gltf` as a sidecar (`groupObjImportSidecars`).
 - Pull-request review bodies are not scanned for session links (`check-public-hygiene.mjs`).
 
+## Verified in the twenty-sixth batch
+
+- **High.** A shift-range folder delete includes an ancestor and its descendants. `requestDeleteSnapshot` does not call `rootSelectedFolderPaths`. Move and duplicate do. Deleting the parent removes the child directory, then deleting the child throws and the dialog reports Delete Failed (`content-browser-workspace.tsx`).
+- **High.** Closing a project does not wait for an in-flight save. `forceCloseProject` truncates the recovery journal and calls `closeProject` without waiting on `projectWriteQueue` (`document-context.tsx`).
+- **High.** Export class lookup uses the header name, not the compile id. `indexAssets` keys classes by `asset.name`. The editor’s class id comes from the file path (`classIdFromClassAsset`). A scene reference to `main` does not match a header named `main.class` (`closure.ts`).
+- **High.** A failed OPFS write still changes the file revision. `writeBinary` increments the write counter before `write`/`close` and again in `finally`, including after `abort()` leaves the previous bytes in place. The next read with the old revision throws `SourceRevisionChangedError` (`web-adapter.ts`).
+- **Medium.** Prepare Emission stays enabled while another user’s lock blocks encoding. `textureUsageBlockedReason` disables Retry Encoding only. Prepare Emission is disabled only while a job is already running (`texture-editor.tsx`).
+
+## Reported in the twenty-sixth batch, not re-checked
+
+- After a folder move, `selectedFolderPaths` still names the old path, so the next Delete misses (`content-browser-workspace.tsx`).
+- A move into a read-only destination closes with no error (`confirmMove`).
+- Preview route changes during boot are not replayed (`attachPreviewLifecycle`).
+- A definition rename’s `previousPath` uses the new parent name (`reconcileDataEntry`).
+- One-element color and quaternion defaults are copied into every channel, including alpha (`coerceLiteralValue`).
+- A missing render-target guid is reported as `"SceneColor"` (`getRenderTargetMode`).
+- Clearing `materialGuid` and assigning the same asset again drops authored material-instance overrides (`captureOverrides`).
+- Theme docs say pin rows use `gap-6`, settings save immediately, and surfaces never call `env()`. The pin row is `gap-12`, render settings commit on Done, and the simulation bar uses `env(safe-area-inset-top)`.
+- HTTP catalog range reads of a partial part are not checked against `part.sha256` (`http-catalog-storage.ts`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine are running. The UI-package second pass did not start: the concurrent cap was already full, and the earlier assets-package read is still marked running. These reads are told not to edit this file and not to repeat findings already listed here.
