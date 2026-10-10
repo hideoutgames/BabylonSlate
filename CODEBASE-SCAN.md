@@ -1337,6 +1337,38 @@ Bloat to remove. The engine is not released, so these paths exist only to accept
 - **Medium.** Sprite blend mode is alpha test by default, alpha test and blend when visibility is between 0 and 1, and alpha blend only when `alwaysBlend` is set. The sprites page says blending is opted in through `alphaIndex`, which is draw order (`mesh-assets.ts`, `sorting.ts`, `sprites.md`).
 - **Medium.** While Play free cam is on, the audio listener uses the game camera. The rendered camera is the free cam (`create-engine.ts`, `play-free-cam.ts`, `audio.md`).
 
+## Verified in the fifty-first batch
+
+- **Medium.** Play keeps only Animation Graphs referenced by the scenes in that session. An open graph that the scene does not reference is dropped. The anim-graph page says Compile, Play, and export also load every project Animation Graph. Export hydrates the graphs the closure packed, not every graph in the project (`play-content-service.ts`, `anim-graph.md`, `hydrate.ts`).
+- **Medium.** A successful engine-plugin index load returns an HTTP catalog. The memory adapter created beside it is returned only when the index fetch fails, and that store is empty. The plugins page says the editor unpacks the index into a read-only memory root. The unpacked counter counts catalog entries and does not unpack archives (`engine-plugins.ts`, `plugins.md`).
+- **Medium.** The bridge control list omits `loadBehaviourTrees`, `loadNavMesh`, and `loadWater`. The command list omits `btState`. Those messages are on the channel types (`bridge.md`, `channels.ts`).
+- **Medium.** Template and derived libraries use OPFS on web and Electron, and Documents storage on iOS and Android. Electron projects use the Node adapter under user data. The vfs page says those libraries use the same tier as projects on every host (`template-storage.ts`, `derived-storage.ts`, `vfs.md`).
+- **Low.** When every clip weight is 0, playback returns the first clip. The audio page says all-zero weights are equal (`audio-payload.ts`, `audio.md`).
+- **Low.** The content-browser folder pane minimum is 162px. The overview says 160px (`content-browser-workspace.tsx`, `overview.md`).
+- **Low.** The Feature Test page says every asset lives under `assets/FeatureTest/<Area>/`. The scaffold keeps the Basic 3D scene at `assets/main.scene.babasset` and reuses that scaffold’s Mannequin (`feature-test.md`, `feature-test/context.ts`).
+- **Low.** The settings page’s focus-keep key list stops at the behaviour tree. The schema continues through scene landscape, foliage, scene layer, sprite animation, audio, input, particles, model, skeleton, animation, skybox, trace, and texture (`vfs.md`, `app-settings.ts`).
+- **Low.** Dark mode sets the brand button background and hover to near-white with dark text, and does not set the active colors. The theme default keeps active text white and active background on brand-1, which dark mode sets to near-white (`custom.css`).
+- **Low.** The checked-in A16 policy that should confirm a native 4096 import is never read. Nothing asks before that size (`a16-encode-fixtures.ts`).
+- **Removal.** These readers exist so an older in-repo shape still loads. The engine is not released, so they are bloat:
+  - Anim connections rewrite `in` / `out` and side-only handles (`migrateAnimHandle`).
+  - A transition still stored as a string condition is rebuilt into a rule graph (`migrateConditionToRuleGraph`).
+  - A scene Game Instance is copied onto the project when the project field is empty (`migrateGameInstanceClassFromScenes`).
+  - An old layout object is wrapped as the main scene tab (`migrateLegacyLayout`). Restored `asset-settings` tabs are rewritten to the newer document kind (`migrateRestoredDocumentId`).
+  - Scene v2 to v3 is an empty migration step. An old numeric shadow capacity is rewritten to manual local-light mode (`migration.ts`).
+  - Web projects still resolve and copy the old OPFS directory name (`legacyDirectoryName`).
+  - A manifest with no `scriptsFile` is given `scripts.js`. `ui` and `uiDesignerPresets` are stripped on parse (`parseGameManifest`).
+  - A missing Prefab snap distance is filled from the saved grid size (`viewportSnapTranslate`).
+
+## Reported in the fifty-first batch, not re-checked
+
+No new unchecked claims were added in this pass. The items above were read in source.
+
+## Rejected in the fifty-first batch
+
+- Transport parity republishing one in-process buffer is already described in the testing page and the issue tracker. It is not a hidden defect (`transport-parity.test.ts`, `testing.md`).
+- Scene Layer fallback calls `render()` on the retained blit scene. That is the prior image the scene-layer page describes (`scene-layer-compositor.ts`).
+- `requireConfirmAboveDimension: 4096` is not a live `>` comparison. No caller reads it.
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
@@ -1349,4 +1381,4 @@ The assets-package read and the UI-package second pass have both returned. Rende
 
 Architecture docs `a`–`m` were read in full: `anim-graph.md`, `asset-registry.md`, `audio.md`, `behaviour-tree.md`, `bridge.md`, `command-layer.md`, `components.md`, `console-commands.md`, `containers.md`, `debugger.md`, `editor-extensions.md`, `exporter.md`, `fonts.md`, `global-search.md`, `index.md`, `input.md`, and `keybinds.md`. Earlier docs read: `navigation.md`, `object-model.md`, `overview.md`, `particles.md`, `physics.md`, `plugins.md`, `scene-editing.md`, `scene-layers.md`, `source-control.md`, `sprites.md`, `tilemaps.md`, `vfs.md`, `feature-test.md`, `gestures.md`, and `save-games.md`. The deeper pass has now line-read `render.md`, `perf-budget.md`, `renderer-qualification.md`, `scripting.md`, `shader-graph.md`, `testing.md`, `theming.md`, `distribution.md`, `particle-emitters.md`, and `engineplan.md`; only the mismatches checked above are recorded.
 
-Package test files were often left unread by the production-source passes. The deeper wave was assigned those tests. Returned slices with no new product defect beyond this file include runtime tests `sn`–`z` and `sa`–`sm`, and render tests `t`–`z`.
+Package test files were often left unread by the production-source passes. The deeper wave was assigned those tests. Returned slices with no new product defect beyond this file include runtime tests `sn`–`z` and `sa`–`sm`, and render tests `t`–`z`. The fifty-first batch checked the still-open reports for animation-graph load scope, plugin catalog storage, bridge commands, template storage, audio weights, the folder minimum, Feature Test paths, focus-keep keys, and the docs brand button.
