@@ -1612,6 +1612,15 @@ No new unchecked claims were added in this pass. The items above were read in so
 - Render-target material remap still treats `Shader` and `ShaderGraph` as live types (`remapRenderTargetPayloadGuids`).
 - Texture usage `"ui"` still skips compression and nothing authors it (`shouldCompressTexture`).
 
+## Verified in the sixty-sixth batch
+
+- **Medium.** The texture preview reads the `pixels` chunk with no `try`. A revision change rejects that read, the rejection is unhandled, and the panel stays on “Loading Preview…” (`TexturePreview`).
+- **Medium.** Model and skeleton previews load the owning model’s `source` chunk with no `catch` and do not clear the previous bytes when the path changes. A failed or in-flight read keeps drawing the previous mesh (`useModelSourceBytes`, `useOwningModelBytes`).
+- **Medium.** Tilemap paint and pan redraw the canvas. Visible cells are decoded, and the grid then strokes every column and row of the full map. The clip is the map rectangle, so lines outside the viewport are still submitted (`drawTilemapCanvas`).
+- **Medium.** Skybox Create captures the helper from the click, awaits the image read and face writes, then writes that helper back with the new faces. Placement edits during the wait are overwritten. The cubemap decode also awaits the texture read outside a `try`, so a rejected read leaves the panel on “Decoding the Texture…” (`useSkyboxCreatorCreate`, `useSkyboxCreatorDecodedSource`).
+- **Medium.** Exporting a save creates a blob URL, clicks the download link, and revokes the URL in the same turn (`downloadSave`).
+- **Medium.** Changing the selected collider or the Move, Rotate, or Scale tool disposes every collider visual and builds them again. Selection only needs to reattach the gizmo (`ModelPreviewCanvas`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
