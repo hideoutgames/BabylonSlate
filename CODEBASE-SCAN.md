@@ -396,6 +396,30 @@ These are separate from the iframe bridge, the unbounded `lfs:fetch` body, the s
 - Preview Build posts the pack from both iframe `onLoad` and the player pack request, and the second call disposes the first asset server (`play-context.tsx` `sendPreviewPack`).
 - Material render control registration keeps one owner. A second registration replaces the first, and the first does not register again (`material-render-control-context.tsx`).
 
+## Verified in the seventh batch
+
+- **High.** A live Play scene change does not clear the interpolator. `loadScene` calls `interpolator.clear()` and retires world slots. The `sceneLoading` / `activeScene` command path updates `worldLoadId` and does not. Slot ids are reused, so the next apply can put the previous scene’s poses on the new meshes (`create-engine.ts`).
+- **High.** Havok `shapeSweep` only calls `shapeCast`. It does not test whether the shape already overlaps the start pose. `end.rotation` is unused. The cast keeps `start.rotation` for the whole segment (`havok-backend.ts`).
+- **High.** Rapier dynamic bodies call `setAdditionalMass` and do not set their own collider density to 0. Hosted child shapes do call `setDensity(0)`. Authored mass is added on top of the collider’s default density (`rapier-backend.ts`).
+- **High.** Scene display names overwrite library keys. `indexSceneLibrary` always `scenes.set(displayName, scene)`. The guid map only stores a display name when that key is free. The file comment says a key wins over a display name (`scene-library.ts`).
+- **High.** A thrown stream despawn leaves the stream unloading. `SceneStreams.unload` sets `state` to `"Unloading"` and calls `retire` only after actor removal finishes. There is no `catch`. `load` then rejects because the target is still unloading (`scene-streams.ts`).
+
+## Reported in the seventh batch, not re-checked
+
+- World material warm-up ignores `worldLoadId` and can finish after a Play scene change (`create-engine.ts` `loadingScope`).
+- `applyRenderingQuality` returns before fog, LUT, and water revisions are compared (`create-engine.ts`).
+- Construction-time `fontRegistry.registerAll` is not awaited and does not invalidate the scheduler (`create-engine.ts`).
+- Overlay animation apply searches the world scene’s animation groups (`create-engine.ts`).
+- Play dispose re-enables every other registered view, not the set that was enabled before Play (`create-engine.ts`).
+- Commands queued behind a loading slot are dropped when that load fails (`command-source-preparation.ts`).
+- A Both Ways animation transition inserts a reverse row with an empty rule graph, and that reverse row is hidden on the canvas (`anim-graph` `setTransitionBidirectional`).
+- A Loop restart clears cooldown memory on descendant nodes (`behaviour-tree` `resetSubtreeForLoop`).
+- Animation clip speed of 0 or a negative speed is treated as `0.001`, so the clip becomes extremely long (`anim-graph` `clipDurationMs`).
+- Save-game `register` keeps the first selection (`save-game-world.ts`). Already noted; this read adds that `capture` then writes that frozen selection.
+- `SimulationSession.quiesce` has no `try/catch`. A throw leaves the returned promise pending and the loading pause on (`simulation-session.ts`).
+- `setVariable` on `RenderTargetCaptureComponent` returns without writing non-capture fields (`script-host.ts`).
+- `waitForSceneWork` can resolve an already fulfilled promise before it honors an already aborted signal (`scene-realization-work.ts`).
+
 ## Coverage still open
 
 Large-file reads are still running for `water-material.ts`, `create-engine.ts`, `document-context.tsx`, `registry.ts`, `snapshot-apply.ts`, `script-host.ts`, and `driver.ts`, plus the remaining letter buckets. This note is updated as those reads are checked.
