@@ -1505,6 +1505,16 @@ No new unchecked claims were added in this pass. The items above were read in so
 
 - `NodeStorageAdapter.openKnownFolder` ignoring the folder id is already recorded.
 
+## Verified in the sixtieth batch
+
+- **Medium.** The numeric expression tokenizer accepts digits and one dot. `1e3` and `1e-3` fail and blur restores the last value. `NumberField` accepts the same text through `Number()` (`evaluateNumericExpression`, `parseNumberInput`).
+- **Medium.** A context submenu is placed with a width of 192. The panel’s minimum width is `13rem` (208px at a 16px root), and a nested panel is created with `parentWidth={192}`. The fit check is too narrow, and a grandchild is placed from 192px (`OverlayMenu`, `context-menu.css`).
+- **Medium.** A variable row height rebuilds every row offset on each render, including each scroll. Compiler Results passes a new function every render (`WindowedList`, `compiler-results-panel.tsx`).
+- **Medium.** The Add Node catalog remounts its list on each query. The new list starts with a viewport height of 0, which mounts every row for a frame (`CatalogMenu`).
+- **Medium.** Every atlas tile is a button. A selection-drag preview is in the memo dependencies, so each pointer move rebuilds every button (`AtlasTileGrid`).
+- **Medium.** Each flag bit writes `setFlagBit` from the last rendered mask. Two clicks before the parent re-renders both start from the old value, and the second write drops the first (`FlagsField`).
+- **Low.** `NumericDragField` declares `step` and never reads it. Scrub and typed commits ignore it (`numeric-drag-field.tsx`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
