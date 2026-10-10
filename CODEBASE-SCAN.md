@@ -819,6 +819,31 @@ Runtime tests `sn`–`z` and render tests `t`–`z` reported no new product bugs
 - Theme docs say pin rows use `gap-6`, settings save immediately, and surfaces never call `env()`. The pin row is `gap-12`, render settings commit on Done, and the simulation bar uses `env(safe-area-inset-top)`.
 - HTTP catalog range reads of a partial part are not checked against `part.sha256` (`http-catalog-storage.ts`).
 
+## Verified in the twenty-seventh batch
+
+- **High.** A behaviour-tree lower-priority abort needs the selector frame on the stack. `yieldToParallel` pops every frame above the parallel and marks those nodes running. The selector is gone on the next tick, so the abort walk pops the parallel instead (`evaluate.ts`).
+- **High.** Set At Index pastes the index expression three times: the integer check, the bounds check, and the write. A pure `randomInt` rolls again on each paste, so the write can land on a different index than the check (`array-map.ts`).
+- **High.** Sequence output count is `Math.max(1, Number(properties.count ?? 2))` with no finite cap. `Infinity` never finishes the pin loop (`flow.ts`).
+- **High.** Editor-utility scripts are matched by header name first. Registered ids are path class ids. A class named `Level Tools` is stored as `Level Tools` and registered as `Level_Tools`, so it never boots (`play-content-service.ts`).
+- **High.** A quiet prefab sync rewrites a clean scene in memory and stores that rewrite as the saved identity. `patchLoadedContent` does this only when `dirty` is false, so Save stays off and the file keeps the old instances (`document-editing-service.ts`, `document-service.ts`).
+- **High.** Software physics separates a dynamic body only from non-dynamic bodies, and only by adding the vertical overlap to `position.y` when vertical velocity is not upward. A side wall throws the body up, and two dynamic bodies never separate (`software-backend.ts`).
+- **High.** Static nav blockers are baked from each actor’s local `transform`. A blocker parented under a moved actor is carved at that local pose (`blockers.ts`).
+- **High.** Android derived and template storage use `DocumentsStorageAdapter` with no directory, which is `Directory.Documents`. Project storage on Android uses `Directory.Data` (`derived-storage.ts`, `create-storage.ts`).
+- **High.** The player class map is `Object.fromEntries` of class id, display name, asset guid, and `scene:` guid. A later class whose display name is another class’s id, including `Actor`, overwrites that key (`boot.ts`).
+
+## Reported in the twenty-seventh batch, not re-checked
+
+- An anim-rule enter sink with no input compiles as the constant `"true"` (`compile.ts`).
+- Call Parent Event forwards only `properties.pins`, so catalog scene-event arguments are dropped (`flow.event.callParent`).
+- A missing render-target guid is reported as `"SceneColor"` (`getRenderTargetMode`).
+- Reassigning the same material after clearing it drops authored instance overrides (`captureOverrides`).
+- Preview headphones-route changes during boot are not replayed (`attachPreviewLifecycle`).
+- `docs/design/perf-budget.md` says Medium shadows use four cascades. `SHADOW_PROFILES.medium` uses two.
+- `docs/architecture/render.md` says snapshot interpolation runs when the render rate exceeds the tick rate. `interpAlpha` is only assigned `1`.
+- `docs/architecture/theming.md` says pin rows use `gap-6` and settings save immediately. The row is `gap-12`, and render settings commit on Done.
+- Nine-slice cells reuse scaled corner sizes as texture coordinates when the panel is smaller than the margins (`overlayNineSliceCells`).
+- A locked play framebuffer does not pass the 8192 side cap (`playFramebufferSize`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine are running. The UI-package second pass did not start: the concurrent cap was already full, and the earlier assets-package read is still marked running. These reads are told not to edit this file and not to repeat findings already listed here.
