@@ -5,45 +5,14 @@ import {
   type FeatureTestCheckSceneResult,
   type FrameStats,
 } from "../services/feature-test-check";
+import { clipText, formatDiagnosticEnvironment, type DiagnosticEnvironment } from "./diagnostic-info";
 
-export interface FeatureTestCheckEnvironment {
-  appVersion: string;
-  buildLabel?: string;
-  userAgent: string;
-  platform: string;
-  touchPoints: number;
-  devicePixelRatio: number;
-  screen: string;
-  viewport: string;
-  cores: number | null;
-  memoryGb: number | null;
-}
-
-/** Device facts that help reproduce a report; never includes project content or identifiers. */
-export function collectFeatureTestCheckEnvironment(appVersion: string, buildLabel?: string): FeatureTestCheckEnvironment {
-  const nav = navigator as Navigator & { userAgentData?: { platform?: string }; deviceMemory?: number };
-  return {
-    appVersion,
-    buildLabel,
-    userAgent: nav.userAgent,
-    platform: nav.userAgentData?.platform || nav.platform || "unknown",
-    touchPoints: nav.maxTouchPoints ?? 0,
-    devicePixelRatio: window.devicePixelRatio,
-    screen: `${window.screen.width}x${window.screen.height}`,
-    viewport: `${window.innerWidth}x${window.innerHeight}`,
-    cores: nav.hardwareConcurrency || null,
-    memoryGb: nav.deviceMemory ?? null,
-  };
-}
+export type FeatureTestCheckEnvironment = DiagnosticEnvironment;
 
 const MAX_LOG_LINES = 8;
 const MODE_LABELS = { quick: "Quick", full: "Full", benchmark: "Benchmark" } as const;
-const MAX_TEXT = 240;
 
-function clip(text: string, max = MAX_TEXT): string {
-  const line = text.replace(/\s+/g, " ").trim();
-  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
-}
+const clip = clipText;
 
 function s(ms: number): string {
   return `${(ms / 1000).toFixed(1)} s`;
@@ -139,9 +108,7 @@ export function formatFeatureTestCheckReport(report: FeatureTestCheckReport, env
   const lines = [
     `BabylonSlate Feature Test Check (${MODE_LABELS[report.mode]}) · ${new Date(report.startedAt).toISOString()}`,
     `Result: ${passed}/${report.scenes.length} scenes passed${report.cancelled ? " · CANCELLED" : ""} · took ${s(report.durationMs)}`,
-    `App: ${environment.appVersion || "dev"}${environment.buildLabel ? ` (${environment.buildLabel})` : ""}`,
-    `Device: ${environment.platform} · touch ${environment.touchPoints} · DPR ${environment.devicePixelRatio} · screen ${environment.screen} · viewport ${environment.viewport} · cores ${environment.cores ?? "?"} · memory ${environment.memoryGb === null ? "?" : `${environment.memoryGb} GB`}`,
-    `Browser: ${clip(environment.userAgent, 300)}`,
+    ...formatDiagnosticEnvironment(environment),
     `GPU: ${adapter ? `${adapter.api} · ${adapter.vendor ?? "?"} · ${adapter.renderer ?? "?"}` : "unknown (Play did not start)"}${pipeline ? ` · ${pipeline.gpuBackend} ${pipeline.renderPath}` : ""}`,
   ];
   const sweeps = report.scenes.map((scene) => scene.play.benchmark).filter((sweep) => sweep.length);

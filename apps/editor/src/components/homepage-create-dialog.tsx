@@ -251,7 +251,7 @@ export function HomepageCreateDialog({
               ? "Edit Project"
               : step === "templates"
                 ? "Start With"
-                : `New ${homepageTemplates(templates).find((template) => template.id === templateId)?.name ?? "Project"}`}
+                : `New ${homepageTemplates(templates, { debugMode: true }).find((template) => template.id === templateId)?.name ?? "Project"}`}
           </DialogTitle>
           <DialogDescription className="sr-only">
             {editing

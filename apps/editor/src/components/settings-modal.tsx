@@ -223,7 +223,7 @@ const ENGINE_CATEGORIES: Array<
   {
     id: "debugger",
     label: "Debugger",
-    keywords: "trace babtrace snapshot performance profiler recording duration gpu timing frames memory budget pause play simulation",
+    keywords: "trace babtrace snapshot performance profiler recording duration gpu timing frames memory budget pause play simulation debug mode diagnostics feature test copy error",
   },
   {
     id: "viewport",

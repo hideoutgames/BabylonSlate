@@ -27,6 +27,7 @@ import {
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
 import { HomepageGallery } from "./homepage-gallery";
+import { useDebugMode } from "../context/app-settings-context";
 import { TemplatePickCard } from "./homepage-template-card";
 
 export type HomepageTemplate = { id: string; name: string; imageUrl?: string };
@@ -50,7 +51,10 @@ export function recordTemplateUse(id: string) {
     /* Optional preference. */
   }
 }
-export function homepageTemplates(templates: HomepageTemplate[]) {
+/** Built-in starters listed only in the Debug Mode Engine Setting. */
+const DEBUG_STARTERS = new Set(["feature-test"]);
+
+export function homepageTemplates(templates: HomepageTemplate[], options: { debugMode?: boolean } = {}) {
   return [
     {
       id: "blank",
@@ -86,7 +90,7 @@ export function homepageTemplates(templates: HomepageTemplate[]) {
       description: "Installed Template",
       icon: LayoutTemplateIcon,
     })),
-  ];
+  ].filter((template) => options.debugMode || !DEBUG_STARTERS.has(template.id));
 }
 
 const TEMPLATE_CATEGORIES = [
@@ -120,7 +124,8 @@ export function HomepageTemplateBrowser({
   const [sort, setSort] = useState("frequent");
   const [category, setCategory] = useState<TemplateCategory>("all");
   const [usage] = useState(readUsage);
-  const all = useMemo(() => homepageTemplates(templates), [templates]);
+  const debugMode = useDebugMode();
+  const all = useMemo(() => homepageTemplates(templates, { debugMode }), [templates, debugMode]);
   const choices = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
     const filtered = all.filter(

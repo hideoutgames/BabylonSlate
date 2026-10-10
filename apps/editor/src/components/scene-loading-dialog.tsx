@@ -1,4 +1,4 @@
-import type React from "react";
+import { useEffect, useState, type ComponentProps, type RefObject } from "react";
 import { Dialog } from "@babylonslate/ui/components/dialog";
 import { Button } from "@babylonslate/ui/components/button";
 import type { SceneViewportLoadPhase } from "../lib/scene-viewport-load";
@@ -8,6 +8,7 @@ import {
   ProgressDialogFailure,
   ProgressDialogStatus,
 } from "./progress-dialog-parts";
+import { copyText } from "../lib/diagnostic-info";
 
 type SceneLoadingPhase = SceneViewportLoadPhase | SceneLoadPhase;
 
@@ -22,8 +23,25 @@ export type SceneLoadingDialogProps = {
   onRetry?: () => void;
   onDismiss?: () => void;
   /** Where focus returns on close, e.g. the game canvas that owns exclusive input. */
-  finalFocus?: React.RefObject<HTMLElement | null>;
+  finalFocus?: RefObject<HTMLElement | null>;
+  /** Debug Mode only: builds the text **Copy Error** / **Copy Details** puts on the clipboard. */
+  onCopyDetails?: () => string;
 };
+
+/** Copies synchronously built text inside the tap and shows the result briefly. */
+function CopyDetailsButton({ label, build, ...props }: { label: string; build: () => string } & Omit<ComponentProps<typeof Button>, "onClick" | "children">) {
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+  useEffect(() => {
+    if (state === "idle") return;
+    const timer = setTimeout(() => setState("idle"), 2000);
+    return () => clearTimeout(timer);
+  }, [state]);
+  return (
+    <Button {...props} data-testid="scene-loading-copy" onClick={() => { void copyText(build()).then((ok) => setState(ok ? "copied" : "failed")); }}>
+      {state === "copied" ? "Copied" : state === "failed" ? "Copy Failed" : label}
+    </Button>
+  );
+}
 
 export function SceneLoadingDialog({
   open,
@@ -35,6 +53,7 @@ export function SceneLoadingDialog({
   onDismiss,
   onStop,
   finalFocus,
+  onCopyDetails,
 }: SceneLoadingDialogProps) {
   return (
     <Dialog open={open} onOpenChange={() => {}}>
@@ -52,6 +71,7 @@ export function SceneLoadingDialog({
               : "The viewport could not finish loading. Retry, or close this message to adjust the scene or rendering settings."}
             actions={(
               <>
+                {onCopyDetails ? <CopyDetailsButton label="Copy Error" build={onCopyDetails} variant="outline" size="sm" /> : null}
                 <Button variant="outline" size="sm" onClick={onDismiss}>Close</Button>
                 <Button size="sm" onClick={onRetry}>Retry</Button>
               </>
@@ -64,8 +84,15 @@ export function SceneLoadingDialog({
             value={progress}
             valueLabel={progress === null ? null : `${Math.round(progress)}%`}
             progressProps={{ "data-testid": "scene-loading-progress" }}
-            action={onStop ? (
-              <Button variant="ghost" size="xs" className="-mr-1 text-muted-foreground hover:text-foreground" onClick={onStop}>Stop</Button>
+            action={onStop || onCopyDetails ? (
+              <>
+                {onCopyDetails ? (
+                  <CopyDetailsButton label="Copy Details" build={onCopyDetails} variant="ghost" size="xs" className="text-muted-foreground hover:text-foreground" />
+                ) : null}
+                {onStop ? (
+                  <Button variant="ghost" size="xs" className="-mr-1 text-muted-foreground hover:text-foreground" onClick={onStop}>Stop</Button>
+                ) : null}
+              </>
             ) : null}
           />
         )}

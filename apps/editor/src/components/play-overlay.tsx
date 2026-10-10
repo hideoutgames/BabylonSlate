@@ -9,6 +9,8 @@ import { useAppSettings } from "../context/app-settings-context";
 import { captureShadowDiagnostics, lightsDebugText } from "@babylonslate/render";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
 import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
+import { clipText } from "../lib/diagnostic-info";
+import { formatSceneLoadReport } from "../lib/scene-load-report";
 import { nextStatGroups, type StatGroup } from "@babylonslate/debugger";
 import type { SceneLoadProgress } from "@babylonslate/render";
 import type { RenderDiagnostics } from "@babylonslate/render";
@@ -1020,6 +1022,28 @@ export function PlayOverlay({
     };
   }, []);
 
+  const playStartedRef = useRef(performance.now());
+  const copyLoadDetails = () => {
+    const session = sessionRef.current;
+    const rendering = (() => { try { return session?.handle.renderDiagnostics() ?? null; } catch { return null; } })();
+    const problems = logs.filter((entry) => entry.severity === "error" || entry.severity === "warning" || entry.severity === "warn").slice(-15);
+    return formatSceneLoadReport({
+      surface: "Play",
+      scene: sceneAssetGuid ?? null,
+      phase: sceneLoading?.phase ?? "Preparing Scene",
+      progress: sceneLoading?.progress ?? null,
+      failed: false,
+      elapsedMs: performance.now() - playStartedRef.current,
+      gpu: rendering?.adapter ?? null,
+      details: [
+        `Play: ${session ? `${session.runtimeMode} runtime · tick ${session.lastTickIndex()} · models loaded ${session.modelLoadCount()}` : "session not started"}`,
+        ...(rendering ? [`Render: ${rendering.pipeline.effective.gpuBackend} ${rendering.pipeline.effective.renderPath} · ${rendering.width}x${rendering.height} · draws ${rendering.drawCalls} · meshes ${rendering.resources.meshes} · textures ${rendering.resources.textures}${rendering.qualityLimits.length ? ` · limits ${clipText(rendering.qualityLimits.join("; "), 200)}` : ""}`] : []),
+        problems.length ? `Play log errors and warnings (last ${problems.length}):` : "Play log errors and warnings: none",
+        ...problems.map((entry) => `  [${entry.severity}] ${clipText(entry.message, 300)}`),
+      ],
+    });
+  };
+
   const probeStateRef = useRef({ sceneLoading, fps: null as number | null, logs });
   probeStateRef.current = { sceneLoading, fps: fps > 0 ? fps : probeStateRef.current.fps, logs };
   useEffect(() => playProbes.register(PLAY_PROBE_KEY, {
@@ -1073,7 +1097,8 @@ export function PlayOverlay({
     >
       {simulationSession ? <SimulationRetentionDialog session={simulationSession} onStop={() => finishSessionRef.current()} /> : null}
       <SceneLoadingDialog open={sceneLoading !== null} progress={sceneLoading?.progress ?? 0}
-        phase={sceneLoading?.phase ?? "Preparing Scene"} onStop={() => finishSessionRef.current()} finalFocus={canvasRef} />
+        phase={sceneLoading?.phase ?? "Preparing Scene"} onStop={() => finishSessionRef.current()} finalFocus={canvasRef}
+        onCopyDetails={localEngineSettings.debugMode ? copyLoadDetails : undefined} />
       <PlayOverlayChrome
         paused={paused}
         statsOpen={statsOpen}

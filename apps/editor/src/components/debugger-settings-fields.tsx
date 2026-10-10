@@ -17,6 +17,17 @@ export function DebuggerSettingsFields({ settings, onChange, focusTargetId }: {
   const update = (patch: Partial<typeof defaults>) => void onChange({ debuggerDefaults: { ...defaults, ...patch } });
   return <>
     <FieldSet>
+      <FieldLegend>Diagnostics</FieldLegend>
+      <Field orientation="horizontal" className="settings-field">
+        <FieldContent>
+          <FieldLabel htmlFor="setting-debug-mode">Debug Mode</FieldLabel>
+          <FieldDescription>Shows developer diagnostics: the Feature Test starter and its device check, and Copy Error when a scene fails to load. Copied reports include device and GPU details but no project files.</FieldDescription>
+        </FieldContent>
+        <Switch id="setting-debug-mode" data-testid="setting-debug-mode" checked={settings.debugMode}
+          onCheckedChange={(debugMode) => void onChange({ debugMode })} />
+      </Field>
+    </FieldSet>
+    <FieldSet>
       <FieldLegend>Simulation</FieldLegend>
       <Field orientation="horizontal" className="settings-field">
         <FieldContent>

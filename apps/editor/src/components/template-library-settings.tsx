@@ -13,7 +13,7 @@ import { importTemplateArchive } from "../services/template-service";
 import { homepageTemplates } from "./homepage-template-browser";
 
 /** Built-in starters, in project creator order. */
-const BUILT_IN_TEMPLATE_NAMES = homepageTemplates([]).map((template) => template.name);
+const BUILT_IN_TEMPLATE_NAMES = homepageTemplates([], { debugMode: true }).map((template) => template.name);
 
 /** The launcher and Engine Settings edit the same installed template library. */
 export function TemplateLibrarySettings() {

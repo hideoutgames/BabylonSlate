@@ -13,8 +13,8 @@ import { Textarea } from "@babylonslate/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@babylonslate/ui/components/toggle-group";
 import { useActiveDocumentId, useDocumentActions } from "../context/document-context";
 import { usePlay } from "../context/play-context";
-import { getApplicationVersion } from "../lib/changelog";
-import { collectFeatureTestCheckEnvironment, formatFeatureTestCheckReport } from "../lib/feature-test-check-report";
+import { formatFeatureTestCheckReport } from "../lib/feature-test-check-report";
+import { collectDiagnosticEnvironment, copyText } from "../lib/diagnostic-info";
 import {
   FEATURE_TEST_CHECK_SCENES,
   frameStats,
@@ -125,7 +125,7 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
     };
     try {
       const report = await runFeatureTestCheck({ mode, scenes, deps, signal: controller.signal, pageErrors: () => [...pageErrors] });
-      const environment = collectFeatureTestCheckEnvironment(getApplicationVersion());
+      const environment = collectDiagnosticEnvironment();
       setPhase({ kind: "done", report, text: formatFeatureTestCheckReport(report, environment) });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -142,12 +142,7 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
   }, [mode, onOpenChange, openDocument]);
 
   const copy = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied("copied");
-    } catch {
-      setCopied("failed");
-    }
+    setCopied(await copyText(text) ? "copied" : "failed");
   };
 
   if (phase.kind === "running") {
