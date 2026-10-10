@@ -886,6 +886,89 @@ Runtime tests `sn`–`z` and render tests `t`–`z` reported no new product bugs
 - `persistTransitionRuleGraph` strips `__disabled` because that flag is canvas-only. One-way exits are applied again by `decorateTransitionRuleGraph` (`graph.ts`).
 - The software vertical-overlap separation is the same defect already recorded in the twenty-seventh batch.
 
+## Verified in the twenty-ninth batch
+
+- **High.** Deleting a connected node from the keyboard puts its wires back. React Flow removes the edges and then the node as two changes. Each handler emits through `graphStateRef`, which still has the other side from the last commit, so the node delete sends the pre-delete edge list and the wires return with no node. Toolbar delete updates both together (`graph-editor.tsx`).
+- **High.** A SceneSubsystem Spawned hook that destroys the actor and flushes runs On Destroyed, then `commitSpawn` still calls On Init. The destroyed check is only at the start of `commitSpawn`, and `callOnCreation` does not look again (`world.ts`).
+- **High.** Arrival is marked before the subsystem loop. If an earlier subsystem destroys the actor, Destroyed is sent to every live subsystem, including ones that have not heard Spawned, and the loop then still calls Spawned (`world.ts`).
+- **High.** SceneSubsystem On Init runs only after the whole list is published. If the first On Init changes scene, On End runs on siblings whose On Init has not run, and those siblings are then skipped (`world.ts`).
+- **High.** Destroying a scene layer removes actors already in the world and leaves actors queued in `pendingSpawn`. The next flush still runs On Init (`world.ts`).
+- **High.** `retryTextureEncoding` and `requeueUncompressedTextures` rewrite a texture with no `assertWritable` check. A read-only plugin texture can be marked pending and then committed (`registry.ts`).
+- **High.** Input actions, axes, and 2D axes are stored by display name. Two assets named Jump share one slot, and the later one wins, so `isActionHeld("Jump")` can be false while the first asset is held (`resolver.ts`).
+- **High.** A new finger is ignored while an extra finger is still in `contacts`. Primary is chosen only when that set is empty, so another tap does not press a mouse-button action until every finger is up (`resolver.ts`).
+- **High.** A Switch on String case whose value is `Default` creates an exec pin with that same name as the default pin. Both arms follow every wire on either pin (`compile.ts`, `flow.ts`).
+- **High.** Sequence outputs are emitted in one function scope. A second path into a node that declares a local emits that declaration twice, and the module does not parse (`compile.ts`).
+- **High.** A custom event whose name is a reserved word (`default`, `function`, `await`, `if`) is exported as that word. The module does not parse, so every entry in that graph fails to load (`compile.ts`).
+- **High.** A second material acquire for the same key with a different plan disposes the pending material already returned to the first caller, and the replacement keeps that caller’s reference count (`material-library.ts`).
+- **High.** Play water is returned before `finishPlayWorldMesh`, so it stays in rendering group 0. Other Play world meshes are moved into the world group (`snapshot-apply.ts`).
+- **High.** A collision cloud with no volume becomes a box at the origin whose half extents match the cloud size. A segment from `x = 0` to `x = 2` is covered only on `[-1, 1]`, so the far point sits outside the cooked box (`simple-collision.ts`).
+- **High.** The desktop renderer jail rejects a path segment that is exactly `..`. `..%20` decodes to `.. ` with a trailing space, the lexical check allows it, and Win32 then treats that segment as a parent (`packaged-security.ts`).
+- **High.** Painted and Toon refraction still composite a sky-depth texel as the bed. Realistic open water clears transmission there. Painted also multiplies caustics onto that sky color (`water-material.ts`).
+- **High.** Refracted fog is pre-corrected with `toLinearSpace(CalcFogFactor())`. That factor is already the linear mix weight, so partial fog divides by the gamma-decoded value (`water-material.ts`).
+- **High.** A non-physical nav agent writes its rotation every crowd tick from a yaw that defaults to 0. Before it has a target, a kinematic or 2D agent snaps to yaw 0 (`runtime-navigation.ts`).
+- **High.** `stopAgent` and dynamic steering write velocity through the main-scene physics world. A dynamic nav agent on a Scene Layer has its body on the layer world, so the write does nothing and MoveTo never arrives (`runtime-navigation.ts`).
+- **High.** `teleportActor` calls `teleportBody` and does not call `setBodyTargetTransform`. A kinematic body, including Movement, still has the target captured before the teleport, and the next step moves it back (`physics-sync.ts`).
+- **High.** If `snapshotLayout` cannot grow the snapshot buffer, the worker reports the error and returns without posting the layout. Later copies that do not fit the old buffer fail, and nothing retries the layout, so poses stop (`worker-entry.ts`).
+- **High.** A reference that is not an asset guid is resolved as a class name and a scene display name together. An actor class id of `Level2` also packages a scene named `Level2`, and two scenes with that name keep only the first guid (`closure.ts`).
+- **High.** Clamp, Smooth Step, and Remap are built by `generic()`, which sets every input default to `[0]`. An unwired Clamp is `clamp(x, 0, 0)`. Smooth Step and Remap divide by a zero range (`catalog.ts`).
+- **Medium.** `attachComponent` does not check `destroyed`. On Destroyed still sees `world`, so a component attached there is initialized and never ended (`objects.ts`, `world.ts`).
+- **Medium.** A nav cost volume can be applied and cannot be removed. Deleting the blocker, or switching it from cost to unwalkable, leaves the detour on that cost. The registration comment states that cost volumes cannot be removed (`recast-backend.ts`, `runtime-navigation.ts`).
+
+## Reported in the twenty-ninth batch, not re-checked
+
+- Marquee, paste, and palette selection replace the node selection and leave the previous edge selected, so Break Links can delete that stale wire (`graph-editor.tsx`).
+- A second finger during an armed marquee leaves pane panning off (`graph-marquee.ts`).
+- A class-member drop on the graph toolbar is accepted (`graph-canvas-api.ts`).
+- Read-only canvases apply node selection and drop edge selection (`graph-editor.tsx`).
+- Replacing a texture parameter can settle the in-flight compile as cancelled and dispose the new material (`material-library.ts`).
+- World Position Offset ancestors stay on the pre-offset tap when the fragment graph reads the same node (`material-compiler.ts`).
+- Scene-layer dynamic meshes, cables, water time, area lights, and anisotropy are applied on the world scene (`create-engine.ts`).
+- A horizontal scroll container sends wheel `deltaY` as `deltaX` (`create-engine.ts`).
+- A focus-script infinite loop is swallowed together with `world.tick`, so that frame’s world tick never runs (`driver.ts`).
+- `quit` from anim-graph, behaviour-tree, or crowd tick still flushes commands and publishes (`driver.ts`).
+- Boot can tick the world while the loading-screen latch is still held (`driver.ts`).
+- Dynamic unwalkable blockers are tracked only when the caller passes `acquired`, so a blocker destroyed after load keeps carving (`runtime-navigation.ts`).
+- A parent nav agent’s child is stored against the parent’s pre-tick pose (`runtime-navigation.ts`).
+- Electron denies `clipboard-sanitized-write`, so editor copy actions fail (`main.ts`).
+- Same-document navigation releases the desktop save lease (`main.ts`).
+- A truncated `engine-settings.json` turns automatic updates back on (`desktop-updates.ts`).
+- A damaged account-secret record drops every stored key on the next write (`desktop-account-secrets.ts`).
+- Overlapping folder picks can overwrite each other’s grants (`main.ts`).
+- Android `DocumentFile.delete` failure is reported as not found (`BabylonSlateScopedStoragePlugin.java`).
+- A full-file native read has no 512 MiB cap (`BabylonSlateScopedStoragePlugin.java`, `BabylonSlateScopedStoragePlugin.swift`).
+- An input ring that is all releases drops a release when it overflows (`ring-buffer.ts`).
+- A partial gamepad sample leaves higher button indices held (`resolver.ts`).
+- Render-target capture restores the view and projection from the same matrix objects the probe camera overwrites (`render-target-capture.ts`).
+- An unresolved material guid leaves the mesh on the previous material and fails the final resource fence (`snapshot-apply.ts`).
+- A glTF clip whose keys share one time, including a pose at t = 0, stores no duration and falls back to 1000 ms (`glb-parse.ts`).
+- `pixel`, `sprite`, `normal`, and `button` match anywhere in an image file name (`image.ts`).
+- Reverb occlusion does not count the voxel that contains the emitter (`audio-reverb.ts`).
+- Erasing an empty tilemap cell allocates a chunk, and the next bucket fill paints it (`tilemap-paint.ts`).
+- A UI slider step grid never snaps to a partial last step, so the maximum can be unreachable (`ui-controls2d.ts`).
+- Repairing a missing actor id as `actor-${index}` throws when that id already exists (`scene.ts`).
+- An inverted deformer axis is replaced with the unit interval at the origin (`deformer-component.ts`).
+- A model clip named like its state, when that name is not on the model, plays the first glTF group (`graph.ts`).
+- A dangling anim transition still passes for one tick, then snaps back to the entry state (`graph.ts`).
+- Graph reorder produces no edit commands, so a pure reorder is dropped (`graph-diff.ts`).
+- Clearing a component property stores an own `undefined` key (`scene.ts`).
+- A duplicate component add is recorded as history and its undo deletes the existing component (`scene.ts`).
+- TestFlight processing is marked failed, so a build still processing fails the distribution job (`summary.mjs`).
+- GitHub release uploads share a 120-second timeout with metadata requests (`publish.mjs`).
+- An Attractor after Align Angle reads the previous particle and can throw out of the uncaught update loop (`validate.ts`).
+- A shader function still emits an input it never reads, including a Scene Depth requirement (`lower.ts`).
+- Switching a Text material back to Surface keeps unlit, translucent, and two-sided (`document.ts`).
+- `return(A);` is rejected as custom GLSL, and `dFdxCoarse` is not treated as a derivative (`custom-glsl.ts`).
+- A stale profile error aborts the capture that is in progress (`preview-diagnostics.ts`).
+- Exported CSS is inserted with `String.prototype.replace`, so `$&` and `</style>` in the stylesheet are special (`export-game.ts`).
+- A startup-required flag matches every asset whose display name equals the game-instance class (`export-game.ts`).
+- Navmesh loads are not chained, so an earlier import can land after a later one (`play-boot.ts`).
+- A save client replacement restarts request ids at 1, so an in-flight response can resolve the new session’s first call (`worker-entry.ts`).
+
+## Rejected in the twenty-ninth batch
+
+- The missing anim-graph entry throw is the same defect already recorded in the twenty-eighth batch.
+- Cost-volume removal is limited on purpose in the registration comment. The missing remove is recorded above as that limitation, not as a forgotten `removeObstacle` call.
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass did not start: the concurrent cap was already full, and the earlier assets-package read is still marked running. These reads are told not to edit this file and not to repeat findings already listed here.
