@@ -13,6 +13,8 @@ class PreparationChanged extends Error {}
 
 /** Bound on one preparation generation without observable readiness. */
 const PREPARATION_TIMEOUT_MS = 10_000;
+/** Bound on one owner's preparation across every invalidation restart. */
+const PREPARATION_TOTAL_TIMEOUT_MS = 60_000;
 
 function outputSnapshot(scene: Scene, camera: Camera) {
   const target = camera.outputRenderTarget;
@@ -120,13 +122,15 @@ export class SceneRenderCoordinator {
     const previous = this.pending;
     const pending = { generation: this.generation, promise: undefined as unknown as Promise<ForwardSceneGraphResult> };
     let deadline = 0;
+    let finalDeadline = Infinity;
+    const restartDeadline = () => { deadline = Math.min(performance.now() + PREPARATION_TIMEOUT_MS, finalDeadline); };
     const check = () => {
       assertCurrent();
       if (this.disposed || this.scene.isDisposed)
         throw new PreparationChanged("Scene rendering preparation was superseded or disposed.");
       if (this.generation !== pending.generation) {
         pending.generation = this.generation;
-        deadline = performance.now() + PREPARATION_TIMEOUT_MS;
+        restartDeadline();
       }
     };
     const promise = (async () => {
@@ -135,7 +139,8 @@ export class SceneRenderCoordinator {
         try { await previous.promise; }
         catch { /* previous owner's outcome */ }
       }
-      deadline = performance.now() + PREPARATION_TIMEOUT_MS;
+      finalDeadline = performance.now() + PREPARATION_TOTAL_TIMEOUT_MS;
+      restartDeadline();
       check();
       for (;;) {
         check();
