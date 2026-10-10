@@ -98,6 +98,11 @@ export function subscribeAppSettings(listener: Listener): () => void {
   return activeOwner.subscribe(listener);
 }
 
+/** Current settings outside React rendering, for event handlers. */
+export function getAppSettingsSnapshot(): AppSettingsSnapshot {
+  return getActiveAppSettingsSnapshot();
+}
+
 function getActiveAppSettingsSnapshot(): AppSettingsSnapshot {
   return activeOwner.getSnapshot();
 }
@@ -192,6 +197,15 @@ export function AppSettingsProvider({
         {children}
       </GraphInteractionSettingsContext.Provider>
     </AppSettingsContext.Provider>
+  );
+}
+
+/** Debug Mode Engine Setting; re-renders only when it changes. */
+export function useDebugMode(): boolean {
+  return useSyncExternalStore(
+    subscribeAppSettings,
+    () => getActiveAppSettingsSnapshot().settings.debugMode,
+    () => getActiveAppSettingsSnapshot().settings.debugMode,
   );
 }
 

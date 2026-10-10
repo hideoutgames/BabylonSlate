@@ -90,6 +90,7 @@ import type { PlaySessionResult } from "../services/play-session";
 import { SimulationSession } from "../services/simulation-session";
 import { simulationSceneDocument, type SimulationViewport } from "../services/simulation-viewport";
 import { GameSessionOwner, type GameSessionState, type GameSessionTicket } from "../services/game-session-owner";
+import { automatedSessionReportingHeld, publishPlaySessionClosed } from "../services/runtime-probes";
 import { PREVIEW_FIXTURE_NODE_ID } from "../services/play-session";
 import {
   canonicalPlaySceneGuid,
@@ -1436,9 +1437,10 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       setDropped(result.droppedDiagnostics);
       setReportEntries(result.diagnostics);
       setLastRuntimeMode(result.runtimeMode);
-      if (result.diagnostics.length > 0) {
+      if (result.diagnostics.length > 0 && !automatedSessionReportingHeld()) {
         setReportOpen(true);
       }
+      publishPlaySessionClosed(result);
       appendLog(
         `Play ended (${result.runtimeMode}; textures ${result.textureCountBefore}→pending)`,
       );

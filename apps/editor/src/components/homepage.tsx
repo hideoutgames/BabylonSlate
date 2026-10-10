@@ -99,6 +99,7 @@ import {
   recordTemplateUse,
 } from "./homepage-template-browser";
 import { importTemplateArchive } from "../services/template-service";
+import { useDebugMode } from "../context/app-settings-context";
 import { useLauncherTransition } from "./launcher-transition";
 import homepageStyles from "./homepage.css?inline";
 
@@ -226,6 +227,7 @@ export function Homepage({
     }
   };
 
+  const debugMode = useDebugMode();
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<HomepageProjectSortMode>("last-opened-desc");
   const [error, setError] = useState<string | null>(null);
@@ -273,7 +275,7 @@ export function Homepage({
       ),
     [projects, search, sort],
   );
-  const templateCount = homepageTemplates(templates).length;
+  const templateCount = homepageTemplates(templates, { debugMode }).length;
   const LayoutIcon =
     PROJECT_LAYOUT_OPTIONS.find((option) => option.value === layout)?.icon ??
     Grid2x2Icon;

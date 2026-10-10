@@ -21,6 +21,7 @@ import {
   navmeshOverlayEnabled,
   selectionGizmoRoots,
   syncEditorPlayState,
+  engineAdapterInfo,
   type EngineHandle,
   type EditorSceneLoadOptions,
 } from "@babylonslate/render";
@@ -34,7 +35,7 @@ import {
   useOpenDocument,
 } from "../context/document-context";
 import { useKeybindChord, useKeybindCommand } from "../context/keybind-context";
-import { subscribeAppSettings } from "../context/app-settings-context";
+import { getAppSettingsSnapshot, subscribeAppSettings, useDebugMode } from "../context/app-settings-context";
 import {
   materialViewportTestSnapshot,
   type MaterialViewportTestSnapshot,
@@ -89,6 +90,9 @@ import {
   waitForSceneLoadingPaint,
   type SceneViewportLoadPhase,
 } from "../lib/scene-viewport-load";
+import { viewportProbes } from "../services/runtime-probes";
+import { clipText } from "../lib/diagnostic-info";
+import { formatSceneLoadReport } from "../lib/scene-load-report";
 
 export function ViewportPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -199,6 +203,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     phase: SceneViewportLoadPhase;
     failed?: boolean;
     rendering?: boolean;
+    /** Kept for Debug Mode's Copy Error. */
+    error?: unknown;
   }>({ open: false, progress: 0, phase: "Preparing Scene" });
   const [sceneReady, setSceneReady] = useState(false);
   const [dropReady, setDropReady] = useState<{
@@ -602,7 +608,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         release();
         if (controller.signal.aborted) return;
         console.error("[viewport] failed to create scene", error);
-        setSceneLoad({ open: true, progress: 0, phase: "Realizing Scene", failed: true });
+        setSceneLoad({ open: true, progress: 0, phase: "Realizing Scene", failed: true, error });
       } finally {
         // Keep construction covered until the scene-loading effect takes over.
         if (blockingLoadRef.current === controller && (!engineRef.current || !sceneRef.current)) {
@@ -893,7 +899,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         if (!isCurrent()) return;
         console.error("[viewport] failed to load scene", error);
         releaseEngineRef.current?.();
-        setSceneLoad((current) => ({ ...current, open: true, failed: true }));
+        setSceneLoad((current) => ({ ...current, open: true, failed: true, error }));
       } finally {
         if (blockingLoadRef.current === controller) blockingLoadRef.current = null;
       }
@@ -1422,6 +1428,43 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     };
   }, [engineEpoch, sceneReady, sceneLoad.open, requestedRenderSettingsKey, renderSettingsKey]);
 
+  const debugMode = useDebugMode();
+  const loadStartedRef = useRef<number | null>(null);
+  useEffect(() => {
+    loadStartedRef.current = sceneLoad.open ? (loadStartedRef.current ?? performance.now()) : null;
+  }, [sceneLoad.open]);
+  const copyLoadDetails = () => {
+    const engine = engineRef.current?.engine;
+    const render = projectDocument?.settings.render;
+    const appSettings = getAppSettingsSnapshot().settings;
+    return formatSceneLoadReport({
+      surface: "Scene Viewport",
+      scene: doc?.ref.path ?? null,
+      phase: sceneLoad.phase,
+      progress: sceneLoad.failed ? null : sceneLoad.progress,
+      failed: sceneLoad.failed === true,
+      rendering: sceneLoad.rendering,
+      elapsedMs: loadStartedRef.current === null ? null : performance.now() - loadStartedRef.current,
+      error: sceneLoad.error,
+      gpu: (() => {
+        try { return engine ? engineAdapterInfo(engine) : null; } catch { return null; }
+      })(),
+      details: [
+        `Project rendering: path ${render?.renderPath ?? "default"} · backend ${render?.gpuBackend ?? "default"} · quality ${clipText(JSON.stringify(render?.quality ?? "default"), 160)} · mode ${render?.mode ?? "default"}`,
+        `Engine Settings: overrides ${appSettings.renderingOverridesEnabled ? "on" : "off"} · hardware scaling ${appSettings.hardwareScalingLevel} · viewport cap ${appSettings.viewportFrameCap} fps`,
+        `Scene: ${scene?.actors.length ?? 0} actors`,
+      ],
+    });
+  };
+
+  const probeStateRef = useRef({ sceneReady, sceneLoad });
+  probeStateRef.current = { sceneReady, sceneLoad };
+  useEffect(() => documentId ? viewportProbes.register(documentId, {
+    ready: () => probeStateRef.current.sceneReady && !probeStateRef.current.sceneLoad.open,
+    failed: () => probeStateRef.current.sceneLoad.failed === true,
+    phase: () => probeStateRef.current.sceneLoad.open ? probeStateRef.current.sceneLoad.phase : null,
+  }) : undefined, [documentId]);
+
   return (
     <div
       ref={panelRef}
@@ -1500,6 +1543,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         rendering={sceneLoad.rendering}
         onRetry={() => setReloadVersion((version) => version + 1)}
         onDismiss={() => setSceneLoad((current) => ({ ...current, open: false }))}
+        onCopyDetails={debugMode ? copyLoadDetails : undefined}
       />
     </div>
   );

@@ -84,6 +84,9 @@ import { physicsPairingDiagnostics } from "../lib/physics-pairing-diagnostics";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 import { SettingsModal } from "./settings-modal";
 import { GlobalSearchDialog } from "./global-search-dialog";
+import { FeatureTestCheckDialog } from "./feature-test-check-dialog";
+import { useIsFeatureTestProject } from "../lib/use-is-feature-test-project";
+import { useDebugMode } from "../context/app-settings-context";
 import { IconActionButton } from "./icon-action-button";
 import { ActionFeedbackButton } from "./action-feedback-button";
 import { CompilationErrorIndicator } from "./compilation-error-indicator";
@@ -316,6 +319,10 @@ export function EditorChromeBar({
   }
   const [searchOpen, setSearchOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [featureTestCheckOpen, setFeatureTestCheckOpen] = useState(false);
+  const featureTestProject = useIsFeatureTestProject();
+  const debugMode = useDebugMode();
+  const featureTestCheck = featureTestProject && debugMode;
   const phone = usePhoneLayout();
   // Keeps its lazy class lookup until the registry changes, not per edit.
   const resolveDocumentVisual = useMemo(() => {
@@ -427,6 +434,10 @@ export function EditorChromeBar({
         onPauseOnPlayChange={setPauseOnPlay}
         onPreviewBuildChange={setPreviewBuild}
         onPlayFromSceneChange={setPlayFromScene}
+        onRunFeatureTestCheck={featureTestCheck ? () => {
+          setToolsOpen(false);
+          setFeatureTestCheckOpen(true);
+        } : undefined}
       />
     </DropdownMenu>
   );
@@ -860,6 +871,9 @@ export function EditorChromeBar({
       </div>
 
       <GlobalSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
+      {featureTestCheck ? (
+        <FeatureTestCheckDialog open={featureTestCheckOpen} onOpenChange={setFeatureTestCheckOpen} />
+      ) : null}
       {openedSettings.project ? (
         <SettingsModal
           open={settingsScope === "project"}

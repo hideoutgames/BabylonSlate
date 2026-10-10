@@ -109,6 +109,8 @@ export const engineSettingsSchema = z.object({
   }, z.number().min(MIN_VIEWPORT_FRAME_CAP).max(MAX_VIEWPORT_FRAME_CAP).default(30)),
   viewportDropDistance: z.number().finite().positive().default(DEFAULT_EDITOR_DROP_DISTANCE),
   renderingOverridesEnabled: z.boolean().default(false),
+  /** Shows developer diagnostics: the Feature Test starter, its device check, and Copy Error on load failures. */
+  debugMode: z.boolean().default(false),
   hardwareScalingLevel: z.number().positive().default(1),
   modelImportDefaultScale: z.preprocess((value) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return value;

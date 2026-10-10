@@ -202,9 +202,12 @@ describe("Slate project browser", () => {
   it.each([...BUILT_IN_STARTER_KINDS])(
     "creates a named %s project with the selected appearance",
     async (kind) => {
+      // Feature Test is listed only in the Debug Mode Engine Setting.
+      if (kind === "feature-test") localStorage.setItem("babylonslate:engine-settings", JSON.stringify({ debugMode: true }));
       const onCreateEmpty = vi.fn(async () => {});
       renderHomepage({ onCreateEmpty });
-      createDialog(kind);
+      fireEvent.click(screen.getByTestId("create-project"));
+      fireEvent.click(await screen.findByTestId(`create-project-${kind}`));
       fireEvent.change(screen.getByTestId("create-project-name"), {
         target: { value: "Orbit" },
       });

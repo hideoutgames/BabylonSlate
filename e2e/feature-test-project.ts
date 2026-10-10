@@ -31,6 +31,8 @@ export async function seedEngineSettings(
   const response = await page.goto("/__test_identity");
   expect(response?.ok()).toBe(true);
   const settings = defaultEngineSettings();
+  // The Feature Test starter is listed only in Debug Mode.
+  settings.debugMode = true;
   patch(settings);
   await page.evaluate(
     (value) => localStorage.setItem("babylonslate:engine-settings", JSON.stringify(value)),

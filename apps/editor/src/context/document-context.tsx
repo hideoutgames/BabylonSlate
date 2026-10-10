@@ -234,6 +234,8 @@ import type {
   MaterialDocument,
   MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
+import { useDebugMode } from "./app-settings-context";
+import { formatSceneLoadReport } from "../lib/scene-load-report";
 export type AppRoute = "home" | "editor";
 
 interface DocumentContextValue {
@@ -860,7 +862,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const documentTransitions = useRef(new DocumentTransitionGate()).current;
   const registerBeforeTransition = useCallback<DocumentTransitionGate["register"]>(handler => documentTransitions.register(handler), [documentTransitions]);
   const sceneDocumentLoadRef = useRef<AbortController | null>(null);
-  const [sceneDocumentLoad, setSceneDocumentLoad] = useState<{ ref: DocumentRef; failed: boolean } | null>(null);
+  const [sceneDocumentLoad, setSceneDocumentLoad] = useState<{ ref: DocumentRef; failed: boolean; error?: unknown } | null>(null);
+  const debugMode = useDebugMode();
   useEffect(() => () => sceneDocumentLoadRef.current?.abort(), []);
   const cancelSceneDocumentLoad = useCallback(() => {
     sceneDocumentLoadRef.current?.abort();
@@ -2588,7 +2591,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         if (controller?.signal.aborted) return;
         if (!controller) throw error;
         console.error("[editor] failed to open scene document", error);
-        setSceneDocumentLoad({ ref, failed: true });
+        setSceneDocumentLoad({ ref, failed: true, error });
         return;
       }
       if (controller?.signal.aborted) return;
@@ -4186,6 +4189,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
                             failed={sceneDocumentLoad?.failed}
                             onRetry={() => { if (sceneDocumentLoad) void finishOpenDocument(sceneDocumentLoad.ref); }}
                             onDismiss={cancelSceneDocumentLoad}
+                            onCopyDetails={debugMode && sceneDocumentLoad ? () => formatSceneLoadReport({
+                              surface: "Scene Document", scene: sceneDocumentLoad.ref.path, phase: "Loading Document",
+                              progress: null, failed: sceneDocumentLoad.failed, elapsedMs: null, error: sceneDocumentLoad.error,
+                            }) : undefined}
                           />
                         </DocumentContext.Provider>
                       </SourceControlStateContext.Provider>

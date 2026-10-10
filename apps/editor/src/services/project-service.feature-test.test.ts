@@ -15,6 +15,7 @@ import {
 } from "@babylonslate/particle-graph";
 import { physicsActorsDiagnostics } from "@babylonslate/physics";
 import { loadCompiledModule } from "@babylonslate/runtime";
+import { FEATURE_TEST_CHECK_SCENES } from "./feature-test-check";
 import {
   lowerMaterialDocument,
   materializeMaterialInstances,
@@ -77,6 +78,13 @@ describe("FeatureTest starter", () => {
     expect(migrationPending).toEqual([]);
     const assets = reopened.registry!.list();
     expect(assets.filter((asset) => asset.placeholder || asset.header.type === "Unresolved")).toEqual([]);
+  });
+
+  it("contains every scene the Feature Test Check walks", () => {
+    const missing = FEATURE_TEST_CHECK_SCENES
+      .filter((scene) => reopened.registry!.getByPath(scene.path)?.header.type !== "Scene")
+      .map((scene) => scene.path);
+    expect(missing).toEqual([]);
   });
 
   it("showcases every engine component, asset type and engine base class", async () => {
