@@ -606,9 +606,26 @@ These are documentation mismatches. The code is the behavior below. The `useDocu
 
 The second-sprite overlay map entry was already reported: `createPlayMesh` stores one overlay per slot.
 
+## Verified in the fourteenth batch
+
+- **High.** `updateLandscapeMesh` does not rebuild chunks when subdivisions change. Chunks and their `width` / `depth` are created once. The updater only rewrites vertex data for those chunks. A smaller subdivision indexes `heights` past the new grid, and a larger one never creates the extra cells (`landscape-mesh.ts`).
+- **High.** `MaterialLibrary.cancelPending` looks up and deletes `pending` by the raw asset guid. `acquire` stores unlit, instanced, and logical-buffer jobs under `cacheKey`, which is `"${assetGuid}:unlit"` or a JSON tuple (`material-library.ts`). This was previously only reported.
+
+## Reported in the fourteenth batch, not re-checked
+
+- Authored prepass view depth writes `(view * position).z` without the right-handed Z negation that geometry capture applies (`geometry-surface-output-block.ts`).
+- PBR lattice shadows read `opacityTexture` from a `StandardMaterial` cast, so an alpha-tested PBR material draws a solid shadow (`native-lattice-shadow.ts`).
+- Text-2D gizmo resize inverse-scales every descendant mesh, not only glyphs (`overlay-transform-box.ts`).
+- Overlapping `NavMeshDebugOverlay.sync` calls can leave blocker meshes after `clear` bumps the generation (`nav-debug-overlay.ts`).
+- Joystick pointer moves allocate vectors and invert a matrix on every event (`joystick2d-input.ts`).
+- Overlay clip scissor allocates on every bind (`overlay-layout-render.ts`).
+- The first native-preparation caller’s memory limits stick for the engine (`native-preparation.ts`).
+- Overlay style records the child list once and does not see meshes added later (`overlay-visual-style.ts`).
+- Linked skeletons parent bones by node name, so duplicate names last-write-win (`node-rig.ts`).
+
 ## Coverage still open
 
-These reads are still running: the assets package pass and render files `g`–`o`. Render files whose names start with `s`, including `snapshot-apply.ts`, are recorded.
+These reads are still running: the assets package pass. Render files `g`–`o` and names starting with `s`, including `snapshot-apply.ts`, are recorded.
 
 Architecture docs `a`–`m` were read in full: `anim-graph.md`, `asset-registry.md`, `audio.md`, `behaviour-tree.md`, `bridge.md`, `command-layer.md`, `components.md`, `console-commands.md`, `containers.md`, `debugger.md`, `editor-extensions.md`, `exporter.md`, `fonts.md`, `global-search.md`, `index.md`, `input.md`, and `keybinds.md`. Earlier docs read: `navigation.md`, `object-model.md`, `overview.md`, `particles.md`, `physics.md`, `plugins.md`, `scene-editing.md`, `scene-layers.md`, `source-control.md`, `sprites.md`, `tilemaps.md`, `vfs.md`, `feature-test.md`, `gestures.md`, and `save-games.md`. `scripting.md`, `shader-graph.md`, `testing.md`, `theming.md`, `distribution.md`, `particle-emitters.md`, and `engineplan.md` were read only where a sentence stated a save, load, delete, security, or lifecycle guarantee. `render.md`, `perf-budget.md`, and `renderer-qualification.md` were not line-read.
 
