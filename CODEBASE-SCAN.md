@@ -727,6 +727,31 @@ These are editor tests whose titles name a sequence the body does not run.
 - Render-target capture actors come from the first open Scene tab (`sceneDocuments[0]`).
 - A function-graph binding still looks unwired because the wiring check reads the class event graph (`inputEventPropertyRows`).
 
+## Verified in the twenty-third batch
+
+- **High.** Havok contact ids cannot name a hosted child shape. `firstColliderIdForActor` walks colliders for the body owner, and the comment says hosted child shapes cannot be told apart from the owner’s colliders. `dispatchContacts` sends that id to `onHit`. Software and Rapier report the handle’s collider. The Havok test requires the parent crate’s collider (`havok-backend.ts`, `physics-hosted-shapes.test.ts`).
+- **High.** In-process Step does not pause if the tick throws. `applyPlaySessionStep` calls `resume()`, `tick()`, then `pause()` with no `finally`. The worker step path was already noted (`play-session.ts`).
+- **Medium.** Idle numerics round to two places and show `0.001` as `0`. `formatNumericDisplay` uses `toFixed(2)` and strips trailing zeros. A later edit commits that rounded text (`numeric-expression.ts`).
+- **Medium.** A relative numeric edit of a scientific value is rejected. A leading `*`, `/`, or `+` is applied by concatenating `String(currentValue)`. `String(1e-7)` is `"1e-7"`, and the tokenizer accepts only digits and a dot (`numeric-expression.ts`).
+- **Medium.** Picker titles strip any trailing `.Word`. `displayPickerTitle` uses `/\.[A-Za-z][A-Za-z0-9]*$/`. A class named `Boss.Phase` is shown and indexed as `Boss` (`picker-identity.tsx`).
+- **Medium.** Switching a pin type to enum keeps the previous `typeClassId`. `pinPickerKeepsTypeClassId` returns true for `enum`, so an object pin’s class id stays on the enum pin (`pin-types.ts`, `pin-list-editor.tsx`).
+- **Medium.** A list viewport height of 0 mounts every row. `windowedSlice` returns `lastIndex: itemCount` in that case. `SearchDialog` remounts the list on each query, and the height state starts at 0 (`windowed-slice.ts`).
+- **Medium.** Low directional shadows add three texture fetches. `shadow-diagnostics.ts` sets `extraTextureFetches: 3` for `QUALITY_LOW`. `docs/design/renderer-qualification.md` says native PCF fetch counts are unchanged.
+- **Low.** The sustained Play route reads `BL_PERF_SUSTAINED_SAMPLE_MS`. Its header and the qualification doc say `BL_PERF_SAMPLE_MS` (`play-sustained-route.spec.ts`).
+
+## Reported in the twenty-third batch, not re-checked
+
+- A static trigger on a moving parent stays at the pose from the start of the step until the next tick (`physics-static-follow.test.ts`).
+- Software complex-collision overlap uses the AABB of every position and does not read indices (`software-backend.ts`).
+- `uses a live size override without writing project settings` uses a 16:9 live size and a 16:9 lock, so ignoring the live size still fits (`play-preview-aspect.test.ts`).
+- Play Without Saving is judged only by the dialog closing. The fixture throws `No project catalog is available.` before Play starts (`play-context.test.tsx`).
+- Content-browser search tests can pass if only one of name, path, or type matches (`content-browser-helpers.test.ts`).
+- `writes renderer back to bitmap when the Font no longer has an MSDF pair` calls `onChange(null)` while the MSDF checkers still return true (`component-property-rows.test.ts`).
+- The qualification matrix says CI applies `SOFTWARE_WEBGPU_ARGS` to the whole suite. `playwright.config.ts` `desktop-chrome` sets no launch args.
+- Preview Build sustained windows store tick rate as null because the player test hook has no `tickIndex`.
+
+Runtime tests `sn`–`z` and render tests `t`–`z` reported no new product bugs.
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine are running. The UI-package second pass did not start: the concurrent cap was already full, and the earlier assets-package read is still marked running. These reads are told not to edit this file and not to repeat findings already listed here.
