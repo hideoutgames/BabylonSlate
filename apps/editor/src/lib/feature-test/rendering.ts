@@ -325,6 +325,18 @@ async function saveDynamicMesh(ctx: FeatureTestContext): Promise<PlacedClass> {
   return { ref, components };
 }
 
+/**
+ * Every capture renders only this subject group. A full-scene capture warms
+ * every main-scene shader for each pass, which misses the first-frame deadline
+ * on software GL.
+ */
+const CAPTURE_SUBJECT_IDS = [
+  "ft-render-subject-sphere",
+  "ft-render-subject-box",
+  "ft-render-subject-cylinder",
+  "ft-render-subject-backdrop",
+] as const;
+
 /** RenderTargetCapture subclass: manual capture once the scene has settled after Begin Play. */
 async function saveManualCapture(ctx: FeatureTestContext, renderTargetGuid: string): Promise<PlacedClass> {
   const components = [
@@ -332,6 +344,8 @@ async function saveManualCapture(ctx: FeatureTestContext, renderTargetGuid: stri
       ...createDefaultRenderTargetCaptureProperties(),
       renderTargetGuid,
       captureEveryFrame: false,
+      captureOnlyActors: true,
+      actorIds: [...CAPTURE_SUBJECT_IDS],
       fieldOfView: 50,
       nearClip: 0.5,
       farClip: 30,
@@ -665,14 +679,14 @@ function placeRenderTargets(ctx: FeatureTestContext, refs: RenderingRefs): void 
   const add = zoneAdder(ctx, "renderTargets");
   zone.floor();
 
-  add(primitive("ft-render-subject-sphere", "Capture Subject Sphere", "sphere", zone.at(-2.5, 0.75, -5), {
+  add(primitive(CAPTURE_SUBJECT_IDS[0], "Capture Subject Sphere", "sphere", zone.at(-2.5, 0.75, -5), {
     materialGuid: ctx.assets.materials.emissive ?? null,
   }));
-  add(primitive("ft-render-subject-box", "Capture Subject Box", "box", zone.at(0, 0.75, -5), {
+  add(primitive(CAPTURE_SUBJECT_IDS[1], "Capture Subject Box", "box", zone.at(0, 0.75, -5), {
     materialGuid: ctx.assets.materials.surface ?? null, rotationDeg: [0, 30, 0],
   }));
-  add(primitive("ft-render-subject-cylinder", "Capture Subject Cylinder", "cylinder", zone.at(2.5, 0.75, -5)));
-  add(primitive("ft-render-subject-backdrop", "Capture Backdrop", "box", zone.at(0, 1.5, -9), { scale: [4, 2, 0.2] }));
+  add(primitive(CAPTURE_SUBJECT_IDS[2], "Capture Subject Cylinder", "cylinder", zone.at(2.5, 0.75, -5)));
+  add(primitive(CAPTURE_SUBJECT_IDS[3], "Capture Backdrop", "box", zone.at(0, 1.5, -9), { scale: [4, 2, 0.2] }));
 
   const aim = zone.at(0, 0.75, -5);
   for (const { mode, everyFrame, x, y } of CAPTURES) {
@@ -687,6 +701,8 @@ function placeRenderTargets(ctx: FeatureTestContext, refs: RenderingRefs): void 
           ...createDefaultRenderTargetCaptureProperties(),
           renderTargetGuid: refs.targets[mode].renderTarget,
           captureEveryFrame: true,
+          captureOnlyActors: true,
+          actorIds: [...CAPTURE_SUBJECT_IDS],
           fieldOfView: 50,
           nearClip: 0.5,
           farClip: mode === "DepthPass" ? 20 : 30,

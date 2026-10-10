@@ -58,7 +58,7 @@ Zones sit on a 32 m grid (`layout.ts`); each has an Outliner folder and a 3D Tex
 | Meshes And Materials (-32, 0) | `materials.ts` | Every primitive kind; `FT_MatSurface` (colormap, Material Function tint, pulse), `FT_MatSurfaceInstance` and a chained metal instance, scene-owned instance overrides, `FT_MatEmissive` (scrolling bands), `FT_MatGlass` (translucent, WPO ripple, fresnel), `FT_MatNoiseMasked` (alpha clip). Holiday models keep their slot Materials; one uses a `materialGuid` override. |
 | Lights And Shadows (32, 0) | `rendering.ts` | Shadowed spot, shadowed point (cube shadows from a pillar ring), three unshadowed color point lights, unshadowed spot, Area Rect Light, Hemispheric Fill Light. |
 | Effects (-64, 0) | `rendering.ts` | Fog Volume around a glowing sphere; x-ray Outline through an occluder wall; lattice Deformer; 3D Text with the facetype Font and the bundled face; Dynamic Runtime Mesh pyramid (`FT_RenderDynamicMesh`, Play only); Spring Arm rig with lag (`FT_RenderSpringArmRig`); orthographic camera `Effects Ortho Camera`. |
-| Render Targets (64, 0) | `rendering.ts` | Scene Color (512, every frame), Depth Pass (256, every frame) and World Normal (256, one manual capture by `FT_RenderCaptureManual`) captures, each on a monitor Material sampling its Render Target Texture. |
+| Render Targets (64, 0) | `rendering.ts` | Scene Color (512, every frame), Depth Pass (256, every frame) and World Normal (256, one manual capture by `FT_RenderCaptureManual`) captures of a four-actor subject group (Capture Only Actors), each on a monitor Material sampling its Render Target Texture. |
 | Audio (-64, 32) | `audio.ts` | Spatial loop, one-shot cue and looping cue emitters, a muffle wall and a reverb back wall. Channels `FT_AudioMaster` → `FT_AudioWorld` → `FT_AudioCues`; attenuations `FT_AudioNear` and `FT_AudioWide`; `FT_AudioMixer` is the project mixer. Use `possess "Audio Listener Camera"` to hear them. |
 | Physics (-32, 32) | `physics.ts` | Box, capsule, convex, cylinder and bouncy sphere bodies; friction ramp; triangle-mesh trough; 15-box stack; rising balloon and damped sphere; `Ghost` collision layer wall; trigger launch pad (`FT_PhysLaunchPad`); kinematic sweeper (`FT_PhysSweeper`). |
 | Constraints And Movement (0, 32) | `physics.ts` | Ball-socket pendulum, distance rod, limited hinge, 8-link chain, fixed weld, Mannequin ragdoll, Blocking Volume shelf, two Movement walkers (`FT_PhysWalker`, one hopping). |
@@ -68,7 +68,7 @@ Zones sit on a 32 m grid (`layout.ts`); each has an Outliner folder and a 3D Tex
 | Scripting (-32, 64) | `scripting.ts` | 4 × 4 `FT_ScriptSpinner` grid (enum, structure and tag variables, custom event, interface, subsystem call, static Function Library, input) plus `FT_ScriptSpinnerFast` (inheritance and override); interface, data and save probes; three logic-free `FT_ScriptMarker` Prefab instances. |
 | AI And Navigation (0, 64) | `ai.ts` | Baked tile-cache navmesh (bake bounds inside the zone), static, cost and dynamic blockers, four guards on `FT_AIPatrolTree` (every built-in node plus the custom BT Task, Decorator, Service and Composite classes), and a Mannequin sentry on `FT_AISentryTree`. |
 | Model LOD (64, 64) | `rendering.ts` | Five menorah instances (1150 triangles) at 4 to 48 m from `LOD Lane Camera` for Automatic Model LOD. |
-| Landscape And Water (0, 144) | `world.ts` | 80 m island Landscape (grass, snow, sand and rock layers, collision), 226 foliage instances, Global Sea at -6 m, Ocean, Lake, River and Puddle bodies, Dry Dock removal volume, buoyant presents, seven Cables, two editor Splines. |
+| Landscape And Water (0, 144) | `world.ts` | 80 m island Landscape (grass, snow, sand and rock layers, collision), 226 foliage instances, Global Sea at -6 m (object reflections off), Ocean (object reflections on), Lake, River and Puddle bodies, Dry Dock removal volume, buoyant presents, seven Cables, two editor Splines. |
 
 ## Other scenes and layers
 
@@ -141,7 +141,7 @@ Rules: compare runs on the same machine, browser project and build only; never a
 
 ## Verification
 
-`apps/editor/src/services/project-service.feature-test.test.ts` (node) creates the project in memory and reopens it. It requires every `ENGINE_COMPONENT_CLASS_IDS` entry, every creatable and imported asset type, and every `ENGINE_BASE_CLASSES` entry to be present. It also requires every dependency to resolve, every document to decode, Play validation to report no errors, and physics pairing to be clean.
+`apps/editor/src/services/project-service.feature-test.test.ts` (node) creates the project in memory and reopens it. It requires every `ENGINE_COMPONENT_CLASS_IDS` entry, every creatable and imported asset type, and every `ENGINE_BASE_CLASSES` entry to be present. It also requires every dependency to resolve, every document to decode, Play validation to report no errors, every Material and Material Instance to compile, every Particle and Animation Graph to validate, and physics pairing to be clean.
 
 ## Known gaps
 
