@@ -136,6 +136,8 @@ type AppSettingsContextValue = AppSettingsSnapshot & {
 };
 
 const AppSettingsContext = createContext<AppSettingsContextValue | null>(null);
+/** Stable per provider: selector hooks subscribe to their own provider's owner. */
+const AppSettingsOwnerContext = createContext<AppSettingsOwner | null>(null);
 
 export function AppSettingsProvider({
   children,
@@ -193,29 +195,35 @@ export function AppSettingsProvider({
   );
   return (
     <AppSettingsContext.Provider value={value}>
+      <AppSettingsOwnerContext.Provider value={owner}>
       <GraphInteractionSettingsContext.Provider value={{ assistantEnabled: snapshot.settings.graphAssistantEnabled, assistantDistance: snapshot.settings.graphAssistantDistance, shakeEnabled: snapshot.settings.graphShakeEnabled, readOnlyPinDefaults: snapshot.settings.readOnlyPinDefaults }}>
         {children}
       </GraphInteractionSettingsContext.Provider>
+      </AppSettingsOwnerContext.Provider>
     </AppSettingsContext.Provider>
   );
 }
 
 /** Trace Graphics Errors, effective only in Debug Mode; re-renders only when it changes. */
 export function useGraphicsErrorTrace(): boolean {
-  const read = () => {
-    const { settings } = getActiveAppSettingsSnapshot();
-    return settings.debugMode && settings.traceGraphicsErrors;
-  };
-  return useSyncExternalStore(subscribeAppSettings, read, read);
+  return useSettingSelector((settings) => settings.debugMode && settings.traceGraphicsErrors);
 }
 
 /** Debug Mode Engine Setting; re-renders only when it changes. */
 export function useDebugMode(): boolean {
-  return useSyncExternalStore(
-    subscribeAppSettings,
-    () => getActiveAppSettingsSnapshot().settings.debugMode,
-    () => getActiveAppSettingsSnapshot().settings.debugMode,
-  );
+  return useSettingSelector((settings) => settings.debugMode);
+}
+
+/**
+ * One primitive setting, re-rendering only when it changes. Inside a provider
+ * it subscribes to that provider's owner: a child's effects run before the
+ * provider's, so the module's active owner is still the fallback when a
+ * component mounted with the provider subscribes.
+ */
+function useSettingSelector<T extends string | number | boolean>(select: (settings: EngineSettings) => T): T {
+  const owner = useContext(AppSettingsOwnerContext);
+  const read = () => select((owner ?? activeOwner).getSnapshot().settings);
+  return useSyncExternalStore(owner?.subscribe ?? subscribeAppSettings, read, read);
 }
 
 export function useAppSettings(): AppSettingsContextValue {
