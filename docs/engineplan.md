@@ -180,7 +180,7 @@ apps/
   editor/        Vite + React + Capacitor host: editor UI + renderer (main thread)
   player/        Standalone runtime host: Preview Build iframe (section 15.2) + exported game shell
   desktop/       Electron wrapper for Windows/macOS/Linux (Capacitor has no desktop target)
-engine-content/  Engine default skybox faces, editor billboards, Kenney Mannequin (Basic 3D) and a curated Holiday Pack subset plus the Geist font (Feature Test)
+engine-content/  Engine default skybox faces, editor billboards, Kenney Mannequin (Basic 3D); a curated Holiday Pack subset, Kenney platformer tiles and robot frames, the Geist font and CC0 audio/LUT slots (Feature Test)
 engine-plugins/  First-party plugins bundled with the engine (see section 10)
 packages/
   core/            GUIDs, Result, math types, zod schemas, typed event bus   [was shared]

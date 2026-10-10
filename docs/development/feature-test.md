@@ -4,7 +4,7 @@
 
 ## How it is built
 
-- `ProjectService.scaffoldNewProject("feature-test")` runs the Basic 3D scaffold (Input assets, Kenney Mannequin) and then lazily loads `apps/editor/src/lib/feature-test/`.
+- `ProjectService.createEmptyProject(name, { kind: "feature-test" })` runs the Basic 3D scaffold (Input assets, Kenney Mannequin) and then lazily loads `apps/editor/src/lib/feature-test/`.
 - `index.ts` runs each area in a fixed order: imports, audio, materials, scripting types, scripting, rendering, physics, world, animation, particles, AI, 2D, Scene Layers. Every referenced asset exists before the asset that uses it. Area modules then place actors in their zones. Scene documents save last (Scene Layers, sub-scenes, scenes, then the main scene), followed by the navmesh bake and project settings.
 - Content is deterministic: fixed ids, fixed positions and fixed counts. Only asset guids differ between projects, so tooling finds assets by path or name.
 - All assets live under `assets/FeatureTest/<Area>/`, which is an Always Package Folder so Preview Build and export ship the whole showcase.
@@ -21,7 +21,7 @@ Only existing repository files and runtime primitives are used (no generated art
 | Kenney platformer art | `engine-content/kenney-assets/Platformer` (CC0, Platformer Pack Redux tilesheet and toon robot frames; `License.txt`, `Source.txt`) | `FT_2D` Tilesets, robot Sprites and Sprite Animations |
 | Skybox faces and net | `engine-content/skybox` | Skybox Texture faces, Skybox Creator source |
 | Billboards | `engine-content/billboards` | UI Textures |
-| Geist | `engine-content/fonts/Geist` (SIL OFL 1.1, `OFL.txt` alongside) | Source Font for overlay text |
+| Geist | `engine-content/fonts/Geist` (SIL OFL 1.1, `OFL.txt` and `Source.txt` alongside; keep `OFL.txt` with any export that ships the font) | Source Font for overlay text |
 | Bundled ASCII glyphs | `@babylonslate/render/default-typeface` | Facetype Font for 3D Text |
 
 ### Media slots

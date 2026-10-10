@@ -344,8 +344,8 @@ The runtime ticked at 60 Hz in every run; the regression is main-thread render a
 
 Recovery measurement with the readiness-admission cache (#633, measured on its branch before merge), same machine, route, Low quality, browser and adapter: the two 30-second samples averaged 59.6 and 59.8 fps, interval median 16.72 ms, p95 16.9 ms, p99 17.0 ms, longest 33.5 ms, 4 and 1 stalls over 33 ms, zero long tasks, runtime tick 60.0 Hz, canvas back to 1280×720. The pre-overhaul reference on the same route was 59.4 fps with a 16.72 ms median. CEL-mode and post-#638/#640 runs are pending a machine with enough free memory for the route (`BL_PERF_RENDER_MODE=cel` selects CEL).
 
+The sustained variant — 20-minute post-warm-up windows through Play **and** Preview Build with per-window diagnostics — is `e2e/play-sustained-route.spec.ts` (`BL_PERF_SUSTAINED=1`, same `playwright.perf.config.ts` projects). The full coverage matrix, procedure, adapter caveats and acceptance thresholds live in [renderer-qualification.md](renderer-qualification.md).
+
 ### Feature Test route (agents' default workload)
 
 `e2e/feature-test-perf-route.spec.ts` (`BL_PERF_FEATURE_TEST=1`, perf config only) creates the **Feature Test** starter through the Create dialog, waits for texture encodes, then for each scene in `BL_PERF_SCENES` (default `main,stress`; also `world`, `clustered`, `2d`) records editor viewport frames and overlay Play frames, draw calls and main-thread busy time into one JSON report. Use it to compare revisions on the same machine; see [Feature Test project](../development/feature-test.md#performance-testing).
-
-The sustained variant — 20-minute post-warm-up windows through Play **and** Preview Build with per-window diagnostics — is `e2e/play-sustained-route.spec.ts` (`BL_PERF_SUSTAINED=1`, same `playwright.perf.config.ts` projects). The full coverage matrix, procedure, adapter caveats and acceptance thresholds live in [renderer-qualification.md](renderer-qualification.md).

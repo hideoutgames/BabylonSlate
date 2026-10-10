@@ -20,6 +20,8 @@ Any change that adds, removes, renames, or changes the authored data or runtime 
 4. **Keep it a fair workload.** Content stays deterministic (no random values, stable ids). The main scene stays moderate and representative; heavy scalable load goes in `FT_Stress`. Every scene must present its first frame on software GL (the `perf-software` project); when an addition pushes a scene past the loading deadline, move that content to its own scene, as `FT_World` does, rather than dropping the feature. Changing workload size or render settings changes performance baselines, so say so in the PR.
 5. **No new artwork.** Use existing `engine-content/` files, runtime primitives, and numeric data only ([no-ai-artwork.md](no-ai-artwork.md)). Optional CC0 audio and LUT files enter only through the documented slots.
 
+Prose-only edits to the FeatureTest doc need the diff and link checks from [AGENTS.md](../../AGENTS.md), not the scaffold gate.
+
 If a feature cannot be showcased (for example, it needs art the repository lacks), record it under **Known gaps** in the doc with the reason. Do not skip it silently or weaken the gate.
 
 ## Performance testing
