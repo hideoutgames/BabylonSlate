@@ -8,11 +8,26 @@ import {
   type SerializedScene,
   type SerializedSceneLayer,
 } from "@babylonslate/core";
+import { validateAnimGraph, type AnimGraphDocument } from "@babylonslate/anim-graph";
+import {
+  normalizeParticleGraphDocument,
+  validateParticleGraphDocument,
+} from "@babylonslate/particle-graph";
 import { physicsActorsDiagnostics } from "@babylonslate/physics";
+import {
+  lowerMaterialDocument,
+  materializeMaterialInstances,
+  normalizeMaterialDocument,
+  normalizeMaterialFunctionDocument,
+  normalizeMaterialInstanceDocument,
+  type MaterialDocument,
+  type MaterialFunctionDocument,
+} from "@babylonslate/shader-graph";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import {
   CREATABLE_ASSET_TYPES,
   ENGINE_BASE_CLASSES,
+  isMaterialSamplerTextureAsset,
 } from "../lib/content-browser-helpers";
 import { loadOptionalEngineContent } from "../lib/engine-content";
 import { FEATURE_TEST_OPTIONAL_SLOTS } from "../lib/feature-test/engine-content-files";
@@ -118,6 +133,52 @@ describe("FeatureTest starter", () => {
     });
     const { diagnostics } = await playContent.collectPlayPreviewScripts();
     expect(diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+  });
+
+  it("compiles every Material and validates every Particle and Animation Graph", async () => {
+    const registry = reopened.registry!;
+    const assets = registry.list();
+    const ofType = (type: string) => assets.filter((asset) => asset.header.type === type);
+    const functions: Record<string, MaterialFunctionDocument> = {};
+    for (const asset of ofType("MaterialFunction")) {
+      functions[asset.header.guid] = normalizeMaterialFunctionDocument(
+        await reopened.loadDocument("material-function", asset.path),
+      );
+    }
+    const materials = new Map<string, MaterialDocument>();
+    for (const asset of ofType("Material")) {
+      materials.set(asset.header.guid, normalizeMaterialDocument(await reopened.loadDocument("material", asset.path)));
+    }
+    const instances = new Map();
+    for (const asset of ofType("MaterialInstance")) {
+      instances.set(
+        asset.header.guid,
+        normalizeMaterialInstanceDocument(await reopened.loadDocument("material-instance", asset.path)),
+      );
+    }
+    // Instances render as their root graph with replaced parameter values.
+    for (const [guid, material] of materializeMaterialInstances(materials, instances)) materials.set(guid, material);
+    // Same sampler rule as the Material editor (Textures and Render Target Textures).
+    const textureExists = (guid: string) => {
+      const header = registry.getByGuid(guid)?.header;
+      return header ? isMaterialSamplerTextureAsset(header) : false;
+    };
+    const materialErrors = [...materials].flatMap(([guid, material]) => {
+      const lowered = lowerMaterialDocument(material, { functions, textureExists });
+      return lowered.ok
+        ? []
+        : [{ path: registry.getByGuid(guid)?.path, errors: lowered.diagnostics.filter((row) => row.severity === "error") }];
+    });
+    expect(materialErrors).toEqual([]);
+
+    for (const asset of ofType("ParticleGraph")) {
+      const graph = normalizeParticleGraphDocument(await reopened.loadDocument("particle-graph", asset.path));
+      expect(validateParticleGraphDocument(graph).filter((row) => row.severity === "error"), asset.path).toEqual([]);
+    }
+    for (const asset of ofType("AnimationGraph")) {
+      const graph = (await reopened.loadDocument("anim-graph", asset.path)) as AnimGraphDocument;
+      expect(validateAnimGraph(graph).filter((row) => row.severity === "error"), asset.path).toEqual([]);
+    }
   });
 
   it("authors physics without pairing problems", async () => {
