@@ -142,7 +142,7 @@ Rules: compare runs on the same machine, browser project and build only; never a
 
 ## Verification
 
-`apps/editor/src/services/project-service.feature-test.test.ts` (node) creates the project in memory and reopens it. It requires every `ENGINE_COMPONENT_CLASS_IDS` entry, every creatable and imported asset type, and every `ENGINE_BASE_CLASSES` entry to be present. It also requires every dependency to resolve, every document to decode, Play validation to report no errors, every Material and Material Instance to compile, every Particle and Animation Graph to validate, and physics pairing to be clean.
+`apps/editor/src/services/project-service.feature-test.test.ts` (node) creates the project in memory and reopens it. It requires every `ENGINE_COMPONENT_CLASS_IDS` entry, every creatable and imported asset type, and every `ENGINE_BASE_CLASSES` entry to be present. It also requires every dependency to resolve, every document to decode, Play validation to report no errors, every compiled script to load the way Play loads it, every Material and Material Instance to compile, every Particle and Animation Graph to validate, and physics pairing to be clean.
 
 ## Known gaps
 

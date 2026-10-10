@@ -14,6 +14,7 @@ import {
   validateParticleGraphDocument,
 } from "@babylonslate/particle-graph";
 import { physicsActorsDiagnostics } from "@babylonslate/physics";
+import { loadCompiledModule } from "@babylonslate/runtime";
 import {
   lowerMaterialDocument,
   materializeMaterialInstances,
@@ -129,8 +130,16 @@ describe("FeatureTest starter", () => {
       projectDocument: () => document,
       onPreviewScriptsCompiled: () => {},
     });
-    const { diagnostics } = await playContent.collectPlayPreviewScripts();
+    const { bundles, diagnostics } = await playContent.collectPlayPreviewScripts();
     expect(diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+    // Play loads each generated module the same way; a codegen collision only surfaces here.
+    const loadErrors: string[] = [];
+    for (const bundle of bundles) {
+      await loadCompiledModule(bundle.source, bundle.classId).catch((error: unknown) => {
+        loadErrors.push(`${bundle.classId}: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    }
+    expect(loadErrors).toEqual([]);
   });
 
   it("compiles every Material and validates every Particle and Animation Graph", async () => {
