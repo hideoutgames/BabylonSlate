@@ -1643,6 +1643,33 @@ No new unchecked claims were added in this pass. The items above were read in so
 - **Medium.** A local function name marks every interface method and parent overridable of that name as already filled, even when the local function does not implement or override it (`collectOverridableFunctionRows`).
 - **Removal.** A variable Get or Set with no `variableId` is matched by name. New nodes always write `variableId` (`isVariableAccessNode`).
 
+## Verified in the sixty-ninth batch
+
+- **High.** Attach To Bone sets the child’s parent and zeroes its local pose, then asks the host to emit the bone command. The host returns without emitting when either actor has no render slot. The child stays at the parent origin with no bone attachment (`script-host.ts`, `createActorHostBindings`).
+- **High.** Deferred snapshot writes still flush after the burst function throws. The comment says a thrown tick skips that frame. The flush sits after the `try`/`finally` (`SnapshotPublisher.deferWrites`).
+- **High.** A simulation capture posts chunks and yields between them. If `load` or `stop` bumps `bootGeneration` during that loop, the worker returns without `simulationCaptureResult`. Chunks already posted have no terminal result (`worker-entry.ts`).
+- **Medium.** A refused close-project gate is reported as unsaved work. The close dialog’s Discard then calls `forceCloseProject`, which checks the same gate and returns. The dialog is already gone (`closeProject`, `requestClose`).
+- **Medium.** Every DockView layout change lists the project and rebuilds the class parent lookup, then writes panel placements. Drags and resizes fire that event continuously (`rememberPlacements`).
+- **Medium.** Replacing the material catalog leaves the per-material parameter cache in place. Later reads and writes keep the previous defaults (`replaceCatalog`).
+- **Medium.** Script gamepad rumble emits a log line and does not send a rumble command (`setGamepadRumble`).
+- **Medium.** Each scene-layer layout pass stringifies the layer to build its signature, including when the cached pose is reused (`scene-layer-layout.ts`).
+
+## Reported in the sixty-ninth batch, not re-checked
+
+- Prefab ancestor data is rebuilt and stringified on ordinary Class edits (`PrefabEditingProvider`).
+- Material cost and texture keys each lower the graph, and instances lower it again (`MaterialEditingProvider`).
+- Behaviour-tree selection parses the tree on every render and discards the result (`asTree`).
+- `updateGraph` has no production caller and writes without the edit session (`document-context.tsx`).
+- Thumbnail keys still use `.render-v2` and rebuild legacy JPEG thumbnails (`loadAssetThumbnail`).
+- Source reload snapshots actors before the await, so objects created during the load are not rebound (`updateSources`).
+- Water registration updates only the main physics world (`registerWaterContent`).
+- Focus candidates walk every actor on each simulation tick (`scene-layer-focus.ts`).
+
+## Rejected in the sixty-ninth batch
+
+- Reparenting a Class writing the open graph immediately is already recorded (`reparentClassDocument`).
+- Step leaving a paused session running when the tick throws is already recorded (`applyPlaySessionStep`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
