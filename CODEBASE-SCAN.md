@@ -1515,6 +1515,30 @@ No new unchecked claims were added in this pass. The items above were read in so
 - **Medium.** Each flag bit writes `setFlagBit` from the last rendered mask. Two clicks before the parent re-renders both start from the old value, and the second write drops the first (`FlagsField`).
 - **Low.** `NumericDragField` declares `step` and never reads it. Scrub and typed commits ignore it (`numeric-drag-field.tsx`).
 
+## Verified in the sixty-first batch
+
+- **High.** Add Impulse’s Strength pin is optional and has no catalog default, so an unwired pin compiles as `0`. The node always passes that number. The backend default of `1` applies only when the argument is omitted, and the software backend multiplies the impulse by strength. A default Add Impulse applies nothing (`physics.ts`, `script-host.ts`, `software-backend.ts`).
+- **High.** Set Variable on a class or object member evaluates the value expression inside `setVariable` and again when writing the pass-through output. A short Random Float is sampled twice, so the stored value can differ from the output pin. A local variable is assigned once and then copied (`variables.ts`).
+- **Medium.** While building an outliner drop, the ancestor walk follows `parentId` with no visited set. A parent cycle that does not contain a selected id never returns (`ancestorActorSelected`).
+- **Medium.** A closed Class header stores array and map fields (`container`, `keyTypeId`, `keyTypeClassId`, `loading`). Rebuilding that header as a graph keeps only id, name, type, and category, so a closed parent’s array or map variable becomes a scalar (`classHeaderMeta`, `classGraphFromHeaderPayload`).
+- **Medium.** Substring forces both bounds through `| 0` and calls `String.prototype.substring`, which swaps the arguments when end is less than start. An unwired End is `0`, so Start `5` returns the first five characters (`string.ts`).
+- **Medium.** An unwired Split separator compiles as `""`. `split("")` returns one string per character (`string.ts`).
+- **Medium.** When the format string is wired, Format returns that string unchanged and drops the placeholder pins (`formatStringCodegen`).
+- **Medium.** On a physics miss, the Hit Result struct stores Location and Normal as the origin. The separate Location and Normal pins are `null` (`emitMappedHit`).
+- **Medium.** Enum Select compares from the second member. An index that matches nothing, including an unwired `""`, returns the first option (`enumSelectCodegen`).
+- **Removal.** A missing class-header member id becomes the member name. Current saves always write `id`. A function and a variable with the same name become one id (`headerMemberId`).
+- **Removal.** Search still titles `logMessage` as Log. Load already rewrites that node to `debug.log` (`SEARCH_NODE_TITLES`).
+- **Removal.** An object-shaped tag map turns each key through `Number`. Current inspect stores non-string keys as `{ key, value }` entries (`playInspectPropertyRows`).
+- **Removal.** Class deletion and thumbnail parent lookup still treat `Graph` as a class and default a missing parent to `Actor` (`class-deletion.ts`, `asset-thumbnail-input.ts`).
+
+## Reported in the sixty-first batch, not re-checked
+
+- Get Effective Scalability calls `getScalability()` once per output pin, and that method clones the snapshot (`scalability.ts`).
+- Set Vignette Color and Set CEL Outlines paste the color expression once per channel (`scalability.ts`).
+- Vector lerp, distance, and cross paste each input once per component (`vector.ts`).
+- Scene Layer post-process validation reads only the unwired material default (`validatePostProcessDomain`).
+- Validated Get treats an unset tag `0` as valid because the check is `!= null` (`variables.getValidated`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
