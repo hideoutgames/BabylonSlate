@@ -1065,6 +1065,16 @@ Runtime tests `sn`–`z` and render tests `t`–`z` reported no new product bugs
 
 - The startup `systemSources` rejection is the same defect already recorded: `acquireSceneSources(...).then(...)` has no `catch`, and every later scene acquire awaits that promise (`boot.ts`).
 
+## Verified in the thirty-third batch
+
+- **High.** The theme link in `docs/engineplan.md` is `../../packages/ui/src/styles/globals.css`. From a doc at the docs root, `rewriteRepoSourceHref` keeps one `..`, so the published URL is `blob/main/../packages/ui/src/styles/globals.css`. GitHub drops `main` from that path. The same link from a nested doc collapses correctly (`rewrite-repo-links.ts`).
+- **Medium.** The continuation-status fragment omits the em dash. The heading is `Current continuation status — 23 September 2026`, and VitePress keeps that dash in the id (`renderer-qualification.md`, `issue-tracker.md`, `render.md`).
+- **Medium.** The 2D Text fragment is `2d-text-and-2d-rich-text`. The heading starts with a digit, so the id is `_2d-text-and-2d-rich-text` (`scripting.md`, `scene-layers.md`).
+- **Medium.** The P4 and P5 follow-up fragments keep a double hyphen. The headings use a slash, and VitePress collapses that run, so the ids are `p4-follow-ups-open-deferrals` and `p5-follow-ups-open-deferrals` (`issue-tracker.md`, `scripting.md`, `testing.md`, `engineplan.md`).
+- **Medium.** The pin-defaults fragment is `pin-defaults-inspector--canvas`. Parentheses and `+` are removed, so the id is `pin-defaults-inspector-canvas` (`scripting.md`, `engineplan.md`).
+- **Medium.** `physics.md#change-driven-preparation-and-verification-pickup` is not a heading. The page has `change-driven-preparation` and `native-lifecycle-verification` (`renderer-qualification.md`).
+- **Medium.** Directory links are published as GitHub blob URLs. `GITHUB_BLOB_BASE` is always `blob/main/`, including for `packages/ui/src/components/`, `packages/editor-kit/src/`, `engine-logos/`, and `packages/render/src/default-skybox/` (`rewrite-repo-links.ts`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass did not start: the concurrent cap was already full, and the earlier assets-package read is still marked running. These reads are told not to edit this file and not to repeat findings already listed here.
