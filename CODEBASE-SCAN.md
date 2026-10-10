@@ -1451,6 +1451,16 @@ No new unchecked claims were added in this pass. The items above were read in so
 - **Low.** `debugOverlay` is still parsed and a stored `true` is kept. The overlay the scene uses is `showNavmesh` (`settings.ts`).
 - **Low.** `addAgent` uses height `1` when the caller omits it. The default agent height is `2` (`recast-backend.ts`, `DEFAULT_NAV_AGENT_PARAMS`).
 
+## Verified in the fifty-sixth batch
+
+- **High.** Prefab component equality treats a missing list and `[]` as the same value. A missing list is the default mesh, and `[]` is an authored empty prefab. Deleting that mesh calls `applyGraphChange` with `components: []`, the diff emits nothing, and the class stays on the default mesh with no undo entry (`componentsEqual`, `prefabComponentsFromGraph`, `applyGraphChange`).
+- **High.** An edit inside a function graph replaces the whole `functionGraphs` map. That command has no merge key and does not coalesce. The event graph’s node edits do. A pin scrub in a function is a new undo step on every sample, and each step keeps both full maps (`SetGraphFunctionGraphsCommand`).
+- **Medium.** Folder and component reorder ignore the stored `from` index. They remove the row from wherever it is and insert it at `to`. Replaying one after a later insert moves the row again. Actor reorder already does this (`ReorderFolderCommand`, `ReorderComponentCommand`).
+- **Medium.** A multi-select transform is one command with a merge key, so the undo stack can fold the drag. The journal’s supersede list includes `scene.setActorTransform` and omits `scene.setActorsTransforms`. Each pointer sample stays its own journal line (`coalesceJournalLines`, `SetActorsTransformsCommand`).
+- **Medium.** `DocumentEditStack.apply` clears redo before it measures the inverse. If that measure throws, the caller still holds the old document and redo is already empty. On a merged gesture the forward command is also replaced before the inverse is updated (`stack.ts`).
+- **Low.** Adding a folder whose id already exists returns the same document. Undo is a remove, so it deletes the existing folder. Ordinary diffs do not emit that add (`AddFolderCommand`).
+- **Low.** Every scene diff stringifies every settings key, including foliage and the post-process stack, even when the edit did not change them (`diffSceneCommands`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
