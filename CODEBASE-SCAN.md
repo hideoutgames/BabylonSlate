@@ -662,6 +662,24 @@ These loops type a second arm and then pass a one-element list, so the other arm
 - **Medium.** `encoded Tilemap atlas renders its pixels in Scene Preview and Play` accepts a green canvas for both the PNG and the KTX2. The format, mip, and byte-size expects sit inside the software-renderer branch. Play does not read `ktx2Uploads` (`e2e/tileset-preview.spec.ts`).
 - **Medium.** `water.spec.ts` and `temporal-anti-aliasing.spec.ts` type `"webgl2" | "webgpu"` and iterate `["webgl2"]`. `webgpu-previews.spec.ts` iterates `["webgpu"]` only, and its material and model canvases are only required to be non-blank.
 
+## Verified in the nineteenth batch
+
+These are editor tests whose titles name a sequence the body does not run.
+
+- **Medium.** `moves and removes repeated post-process assets` asserts the move, then clicks remove without writing that scene back. The panel still shows `[a, b]`. Removing the original first row leaves `b`, which is what the test expects. Removing the row the move placed first would leave `a` (`scene-details-panel.test.tsx`).
+- **Medium.** `reorders, disables, and removes a post-process pass` also leaves the scene at `[pp-a, pp-b]` after the move. Disable and remove then act on that original order. The checks are only `enabled === false` and `length === 1` (`scene-details-panel.test.tsx`).
+- **Medium.** `keeps repeated layers' Z-Order and enabled state` asserts a Z-Order edit of `12`, then expects the enabled switch to save `{ zOrder: 8, enabled: true }`. `8` is the last rendered value. The toggle never sees `12` (`scene-details-panel.test.tsx`).
+- **Medium.** `opens Duplicate/Delete from the row menu button` clicks `outliner-delete-actor-1` only. Duplicate is never opened (`scene-outliner-panel.menu.test.tsx`).
+- **Medium.** `pastes a copied actor into an empty scene after switching documents` replaces `harness.scene.actors` and rerenders the same provider. The document id stays `scene:assets/Main.scene.babasset` (`scene-outliner-panel.menu.test.tsx`).
+- **Medium.** `falls back to the owned engine when overlay Play is not running` passes a usable `owned` engine. `nextRegisteredSharedEngine` returns that engine before it reads `overlayPlaying` (`shared-engine-generation.ts`).
+
+## Reported in the nineteenth batch, not re-checked
+
+- `returns the guid and path for Content Browser reveal` passes only a Texture, which opens as a document, so the `{ guid, path }` branch never runs (`search-navigation.test.ts`).
+- `does not change selection when unlocking` calls `selectionAfterLockChange` with the lock flag (`scene-editing-context.test.ts`).
+- `never blocks an edit when create conflicts or is offline` only adds a theirs lock (`source-control-service.test.ts`).
+- `adds a distinct component after deleting a middle row` never deletes a row (`scene-details-panel.test.tsx`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine are running. The UI-package second pass did not start: the concurrent cap was already full, and the earlier assets-package read is still marked running. These reads are told not to edit this file and not to repeat findings already listed here.
