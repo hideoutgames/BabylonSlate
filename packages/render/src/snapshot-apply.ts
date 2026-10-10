@@ -1850,6 +1850,20 @@ export function createPlayMesh(
     }
     return mesh;
   }
+  // Text kinds carry their Font as the asset guid, so they precede the Model branch.
+  if (meshKind === "text3d") {
+    const fromPart =
+      partText3d ??
+      binding?.meshParts
+        .get(slotId)
+        ?.find(
+          (part) => playComponentMeshName(slotId, part.componentId) === name,
+        )?.text3d;
+    const props = fromPart ?? binding?.text3dProps.get(slotId);
+    return finishPlayWorldMesh(
+      createText3DMesh(scene, name, props ?? {}, binding),
+    );
+  }
   if (meshKind === "2dtext" || meshKind === "2drichtext") {
     const fromPart =
       partText2d ??
@@ -1913,19 +1927,6 @@ export function createPlayMesh(
         name,
         parsePlayColliderShape(meshKind.slice("collider:".length)),
       ),
-    );
-  }
-  if (meshKind === "text3d") {
-    const fromPart =
-      partText3d ??
-      binding?.meshParts
-        .get(slotId)
-        ?.find(
-          (part) => playComponentMeshName(slotId, part.componentId) === name,
-        )?.text3d;
-    const props = fromPart ?? binding?.text3dProps.get(slotId);
-    return finishPlayWorldMesh(
-      createText3DMesh(scene, name, props ?? {}, binding),
     );
   }
   if (isPlayHelperMeshKind(meshKind)) {

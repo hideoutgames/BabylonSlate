@@ -1780,7 +1780,8 @@ describe("createPlayMesh", () => {
     expect(extent).toBeCloseTo(125);
   });
 
-  it("creates a 3D Text mesh for meshKind text3d", () => {
+  // The runtime sends a Text3D's Font as its asset guid; it must not load as a Model.
+  it.each([null, "font-guid"])("creates a 3D Text mesh for meshKind text3d (font %s)", (fontAssetGuid) => {
     const handle = createTestEngine();
     handles.push(handle);
     const { scene } = handle;
@@ -1788,14 +1789,14 @@ describe("createPlayMesh", () => {
     applyAssignMesh(scene, binding, {
       type: "assignMesh",
       slotId: 4,
-      meshAssetGuid: null,
+      meshAssetGuid: fontAssetGuid,
       meshKind: "text3d",
       text3d: {
         text: "Hi",
         size: 1,
         depth: 0.1,
         color: [1, 0, 0],
-        fontAssetGuid: null,
+        fontAssetGuid,
         alignment: "left",
       },
     });
