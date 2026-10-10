@@ -382,6 +382,20 @@ These are separate from the iframe bridge, the unbounded `lfs:fetch` body, the s
 - Render-target history captures walk every mesh material every frame (`render-target-capture.ts`).
 - A 0×0 registered view reports the frame as rendered and skips the engine fallback (`registered-view-admission.ts`).
 
+## Verified in the sixth batch
+
+- **High.** Reparenting a Class writes the open graph immediately. `reparentClassDocument` calls `saveDocument` with `doc.content` and `{ parentClass }`, then `bump()`. It does not mark the document clean and does not catch a failed write. Discard after that only drops memory. The parent change is already on disk.
+- **High.** A nav bake writes the scene body captured when the bake started. `startBake` passes `doc.content` into `writeSceneNavmeshChunk`. Each new bake replaces `abortRef` without aborting the previous controller, and `finally` sets `abortRef.current = null`. Edits made during the bake stay in the tab. Disk gets the older body plus the new navmesh chunk.
+- **Medium.** Settings events that include `theme` republish appearance as the previous snapshot plus the new theme. `AppSettingsOwner.receiveUpdate` does that whenever `patch.theme` is set, so a Touch Target Scale change stored in the same settings object is not what `useAppSettings()` publishes.
+- **Medium.** Approving migrations does not run compile-on-save, model thumbnail jobs, or the scene-saved editor-utility hook. `saveProject` does all three. `approveMigrationsAndSave` writes the documents, marks them clean, and stops.
+
+## Reported in the sixth batch, not re-checked
+
+- Data Definition `commit` applies `{ ...definition, fields }` from the render that created it, with no mutation queue (`data-definition-editing-context.tsx`).
+- A Material Instance whose root graph will not lower stays on `"loading"` instead of `"error"` (`material-editing-context.tsx`).
+- Preview Build posts the pack from both iframe `onLoad` and the player pack request, and the second call disposes the first asset server (`play-context.tsx` `sendPreviewPack`).
+- Material render control registration keeps one owner. A second registration replaces the first, and the first does not register again (`material-render-control-context.tsx`).
+
 ## Coverage still open
 
 Large-file reads are still running for `water-material.ts`, `create-engine.ts`, `document-context.tsx`, `registry.ts`, `snapshot-apply.ts`, `script-host.ts`, and `driver.ts`, plus the remaining letter buckets. This note is updated as those reads are checked.
