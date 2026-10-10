@@ -559,10 +559,33 @@ These are separate from the iframe bridge, the unbounded `lfs:fetch` body, the s
 - `play-free-cam.ts` 3D `look()` was called standard zero-roll order. Unclamped pitch past vertical was not re-checked.
 - Ragdoll pose matrix order was accepted as Babylon’s row-vector `local = world * inverse(parentWorld)`.
 
+## Verified in the eleventh batch
+
+These are documentation mismatches. The code is the behavior below.
+
+- **Medium.** `docs/architecture/scene-editing.md` says `normalizeScene` renames a repeated actor id (`dupe` to `dupe-2`). `assertUniqueSceneActorIds` throws `"<document>" contains duplicate actor id "<id>"` (`packages/core/src/scene.ts`). The same page later says load rejects duplicates.
+- **Medium.** That page says 3D pinch and wheel zoom dolly toward the point under the cursor. `EditorCamera.zoom` changes only `camera.radius` in 3D. The pointer pivot is computed only when `mode === "2d"` (`packages/render/src/editor-camera.ts`).
+- **Medium.** `docs/architecture/physics.md` lists the tick order as `gameInstance` → `actors` → `components` → `physics` → `postPhysics`. `TICK_PHASES` inserts `sceneSubsystems` between `gameInstance` and `actors` (`packages/object-model/src/tick.ts`).
+- **Medium.** `docs/architecture/object-model.md` lists seven overlay-exclusive components. `ENGINE_COMPONENT_DESCRIPTORS` also marks layout boxes, padding, spacer, painter, joystick, form controls, virtualized list and grid, mask, safe area, and focus target as `placement: "overlay"` (`packages/core/src/engine-components.ts`).
+- **Medium.** `docs/architecture/overview.md` says only `PlayProvider` and the Content Browser call `useDocuments()`. `ActorDefaultsGrid` calls it too (`apps/editor/src/panels/actor-defaults-grid.tsx`).
+- **Medium.** `docs/design/gestures.md`, `docs/engineplan.md`, and `docs/CODING_STANDARDS.md` say Dockview tab strips are 18px on fine pointers and 26px on coarse pointers. `dockview-theme.css` sets the strip to 26px by default and 30px under `pointer: coarse`.
+- **Medium.** `docs/engineplan.md` says the Outliner can group by sorting layer. `scene-outliner-panel.tsx` groups by folders and actor `parentId`.
+- **Medium.** `docs/engineplan.md` says pixel-perfect mode offers integer-only zoom steps. `PixelPerfectSettings.integerZoomSteps` is documented as unused by editor pinch and wheel, and `EditorCamera.zoom` multiplies continuously (`packages/render/src/pixel-perfect.ts`).
+- **Medium.** `docs/engineplan.md` says cost volumes stamp Detour poly area `1`. `applyAreaCosts` assigns `index + 1`, and tile-cache walkable polygons use area 63 (`packages/navigation/src/recast-backend.ts`).
+- **Low.** `docs/engineplan.md` still tells the reader to add `@recast-navigation/babylon`. `docs/architecture/navigation.md` and the `p11-nav-editor-host` checklist say that package is unpublished.
+
+## Reported in the eleventh batch, not re-checked
+
+- `docs/architecture/scene-layers.md` repeats the short overlay-only list while later sections describe the extra components.
+- `docs/engineplan.md` says the tile palette is a searchable dropdown from a Palette button. The editor opens a DockView `tilemap-palette` panel.
+- `docs/engineplan.md` says a NavMesh actor owns a debug-overlay toggle. The overlay is `scene.settings.showNavmesh`.
+- `docs/engineplan.md` says nav geometry collection is chunked across frames and the editor stays interactive once generation starts. `runNavBake` collects in one call, and Cancel is enabled only while generating.
+- `docs/design/particle-emitters.md` says Particle Graph lowering targets Babylon 9.20. `packages/render/package.json` pins `@babylonjs/core` at 9.29.0.
+
 ## Coverage still open
 
-These reads are still running: render snapshot files other than `snapshot-apply.ts`, the assets package pass, and render files `g`–`o`.
+These reads are still running: render snapshot files other than `snapshot-apply.ts`, the assets package pass, render files `g`–`o`, and the architecture docs whose names start with `a`–`m`.
 
-Finished and recorded since the eighth batch: `water-material.ts`, the editor shell, runtime files `a`–`r`, `registry.ts`, `snapshot-apply.ts`, `script-host.ts`, `driver.ts`, the graph editor and inspector slice, and runtime files `p`–`r`.
+Docs read in this batch: `navigation.md`, `object-model.md`, `overview.md`, `particles.md`, `physics.md`, `plugins.md`, `scene-editing.md`, `scene-layers.md`, `source-control.md`, `sprites.md`, `tilemaps.md`, `vfs.md`, `feature-test.md`, `gestures.md`, and `save-games.md`. `scripting.md`, `shader-graph.md`, `testing.md`, `theming.md`, `distribution.md`, `particle-emitters.md`, and `engineplan.md` were read only where a sentence stated a save, load, delete, security, or lifecycle guarantee. `render.md`, `perf-budget.md`, and `renderer-qualification.md` were not line-read.
 
-Docs pages, other than the Android token note in `docs/architecture/overview.md`, have not been line-audited. Package test files were often left unread by the production-source passes. Assets `n`–`z` left 21 test files unread or partial. Runtime `a`–`r` left 52 test files unread.
+Package test files were often left unread by the production-source passes. Assets `n`–`z` left 21 test files unread or partial. Runtime `a`–`r` left 52 test files unread.
