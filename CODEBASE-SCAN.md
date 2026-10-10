@@ -1246,6 +1246,23 @@ Bloat to remove. The engine is not released, so these paths exist only to accept
 - An empty class id is rejected in `runtime-host-actors.ts`, not in `driver.ts`.
 - Undo goes through `undoActiveDocument`, not `stepActiveDocumentHistory` (`document-editing-service.ts`).
 
+## Verified in the forty-fourth batch
+
+- **High.** The editor camera export maps Blender `(x, y, z)` to `(x, z, -y)`, which keeps orientation, then reverses every triangle. The helper material leaves back-face culling on, so the shell is drawn from the inside (`create-editor-camera.py`, `editor-camera-model.ts`).
+- **High.** Animation rule compilation does not resolve wildcard pins. A missing generic value stays unresolved and emits `null`. The scripting page says compilation applies the resolved view first, so a missing string is `""` (`compile.ts`, `scripting.md`).
+- **High.** Call Function drops every input named `target`, including a real parameter of that name (`functions.ts`). The custom-event case of the same skip is already recorded.
+
+## Reported in the forty-fourth batch, not re-checked
+
+- A While Loop warns only when an unwired condition default is true, not when a wired constant True is connected (`validate.ts`).
+- For Loop forces both bounds through `| 0`, so values outside int32 wrap (`compile.ts`).
+- Set Material Instance and the texture setter emit the async context methods (`material.ts`).
+
+## Rejected in the forty-fourth batch
+
+- Exec outputs not fanning out is already recorded. `gestures.md` repeats the claim that exec pins allow multiple outgoing wires (`graph-connect.ts`).
+- Call Interface dropping an argument whose id is `target` is already recorded (`interface.ts`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
