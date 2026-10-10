@@ -1433,8 +1433,12 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   useEffect(() => {
     loadStartedRef.current = sceneLoad.open ? (loadStartedRef.current ?? performance.now()) : null;
   }, [sceneLoad.open]);
-  const copyLoadDetails = () => {
+  /** Read lazily: a failed or disposed Engine may no longer report its adapter. */
+  const viewportAdapter = () => {
     const engine = engineRef.current?.engine;
+    try { return engine ? engineAdapterInfo(engine) : null; } catch { return null; }
+  };
+  const copyLoadDetails = () => {
     const render = projectDocument?.settings.render;
     const appSettings = getAppSettingsSnapshot().settings;
     return formatSceneLoadReport({
@@ -1446,9 +1450,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       rendering: sceneLoad.rendering,
       elapsedMs: loadStartedRef.current === null ? null : performance.now() - loadStartedRef.current,
       error: sceneLoad.error,
-      gpu: (() => {
-        try { return engine ? engineAdapterInfo(engine) : null; } catch { return null; }
-      })(),
+      gpu: viewportAdapter(),
       details: [
         `Project rendering: path ${render?.renderPath ?? "default"} · backend ${render?.gpuBackend ?? "default"} · quality ${clipText(JSON.stringify(render?.quality ?? "default"), 160)} · mode ${render?.mode ?? "default"}`,
         `Engine Settings: overrides ${appSettings.renderingOverridesEnabled ? "on" : "off"} · hardware scaling ${appSettings.hardwareScalingLevel} · viewport cap ${appSettings.viewportFrameCap} fps`,
@@ -1463,6 +1465,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     ready: () => probeStateRef.current.sceneReady && !probeStateRef.current.sceneLoad.open,
     failed: () => probeStateRef.current.sceneLoad.failed === true,
     phase: () => probeStateRef.current.sceneLoad.open ? probeStateRef.current.sceneLoad.phase : null,
+    error: () => probeStateRef.current.sceneLoad.error,
+    gpu: viewportAdapter,
   }) : undefined, [documentId]);
 
   return (

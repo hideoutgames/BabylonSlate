@@ -26,6 +26,10 @@ export interface ViewportProbe {
   ready(): boolean;
   failed(): boolean;
   phase(): string | null;
+  /** The load failure, when one was caught. */
+  error(): unknown;
+  /** Graphics API and adapter of this viewport's Engine; null without one. */
+  gpu(): { api: string; vendor: string | null; renderer: string | null; version: string | null } | null;
 }
 
 /** Latest registration wins; unregistering an older one leaves the newer intact. */
