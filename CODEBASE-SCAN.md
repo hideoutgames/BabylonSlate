@@ -1227,6 +1227,25 @@ Bloat to remove. The engine is not released, so these paths exist only to accept
 - The sustained-route sample-window name is already recorded (`play-sustained-route.spec.ts`).
 - The remaining workflows did not add a new gate or publish finding.
 
+## Verified in the forty-third batch
+
+- **Medium.** Duplicating an actor does not keep component ids. Each copy gets `${id}-${classId}-${index}` (`place-actors.ts`). The September QA register still says the ids are retained (`qa-2026-09-register.md`).
+- **Medium.** A graph edit with more than one command is one undo step. `applyBatch` stores a `CommandBatch` (`session.ts`). The register still says each diff command is its own history step.
+- **Medium.** The debug inspector runs `possess` and `destroyactor`. The property grids stay read-only (`debug-inspect-dialog.tsx`). The register still says the dialog takes no action.
+- **Medium.** An actor gets one Babylon light per `LightComponent` and `HemisphericFillLightComponent`, not one light for the actor (`scene-illumination.ts`).
+- **Medium.** Engine settings write on change. Project settings call `scheduleDebouncedSave`, which waits `autoSaveIntervalMs` (default 120 seconds) (`settings-modal.tsx`, `document-context.tsx`).
+- **Medium.** Verify is six jobs: `static`, `unit`, and four end-to-end shards. The agent instructions still say nine (`verify.yml`, `preflight.mjs`, `instructions.md`).
+
+## Reported in the forty-third batch, not re-checked
+
+- A right-click on an unselected content-browser tile replaces the selection instead of adding to it (`content-browser-workspace.tsx`).
+- Play load forwards `projectDocument.settings.input` (`play-context.tsx`).
+- Asset header dependencies include Scene and Class references (`content-browser-helpers.ts`).
+- Pointer down focuses the play canvas unless free cam is on (`dom-input-capture.ts`).
+- The debug menu labels are Stats, Console, and Inspector, not “Stats Button” (`play-debug-menu-items.tsx`).
+- An empty class id is rejected in `runtime-host-actors.ts`, not in `driver.ts`.
+- Undo goes through `undoActiveDocument`, not `stepActiveDocumentHistory` (`document-editing-service.ts`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
