@@ -324,6 +324,15 @@ These are from completed file reads. They are kept so they are not lost. They ar
 - Mannequin contact coverage is asserted only when one region has more than five contacts (`e2e/basic-3d-mannequin-shadows.spec.ts`).
 - Input Listen does not assert that the binding became `KeyJ` (`e2e/input-assets.spec.ts`).
 
+## Verified from the desktop-only read
+
+These are separate from the iframe bridge, the unbounded `lfs:fetch` body, the source-control secret file mode, and the update fail-open already recorded above.
+
+- **Medium.** `project:readBinary` has no size cap. `validateIpcArguments` limits `project:readBinaryRange` and `project:writeBinary` to 512 MiB. A full read only checks the path, then `readFile`s the file in the main process.
+- **Medium.** Save-game leases are not hierarchical. `DesktopSaveGames.acquire` locks the exact key. `operation` then allows `key === lease.key` or `key.startsWith(lease.key + "/")`. Two owners can hold `project/game` and `project/game/slot` at the same time and both write the child path.
+- **Medium.** `registerIpc` builds one `NodeStorageAdapter` for every window. Project reads and writes follow whichever folder was opened last. `activate` can create another window when none are open.
+- **Medium.** Navigation blocking is `will-navigate` on the main frame. There is no `will-frame-navigate` handler, so the Preview iframe can navigate itself.
+
 ## Coverage still open
 
 Large-file reads are still running for `water-material.ts`, `create-engine.ts`, `document-context.tsx`, `registry.ts`, `snapshot-apply.ts`, `script-host.ts`, and `driver.ts`, plus the remaining letter buckets. This note is updated as those reads are checked.
