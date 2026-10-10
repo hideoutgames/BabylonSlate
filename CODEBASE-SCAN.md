@@ -4,6 +4,8 @@ Read-only scan notes. No product code was changed to produce these findings. Thi
 
 Status: in progress. Package reads are still running. Entries under **Verified** were checked against the current source. Entries under **Reported, not re-checked** came back from a file read and have not been opened again here. Rejected claims are listed so they are not treated as bugs later.
 
+The engine is not released. Backwards compatibility should not exist. An old-format reader, renamed-node adapter, legacy field, or migration that exists only so older projects still load is bloat to remove. Do not record that code as intended support.
+
 ## Verified
 
 ### Play and runtime
@@ -1148,6 +1150,16 @@ Runtime tests `sn`–`z` and render tests `t`–`z` reported no new product bugs
 - **Medium.** The component catalog says New Asset groups are World, Scripting, 2D, Animation, Rendering, Audio, and AI. The menu also has Input and Data, and those come before Scripting (`components.md`, `content-browser-helpers.ts`).
 - **Medium.** The debugger doc says the Stats, Console, and Inspector overlay buttons default on. Stats defaults on. Console and Inspector default off (`debugger.md`, `play-debugger-defaults.ts`).
 - **Medium.** The debugger doc says the Play console is 58dvh, capped at 38rem. Play uses `min(40dvh, 22rem)`, and coarse pointers use `min(50dvh, 26rem)`. The component gallery sheet still uses the documented size (`debugger.md`, `debug-console.tsx`, `component-gallery.tsx`).
+
+## Verified in the thirty-ninth batch
+
+Bloat to remove. The engine is not released, so these paths exist only to accept older data.
+
+- **Removal.** `fromSerializedGraph` still accepts graphs with no pin ends, and it rewrites `logMessage` nodes into `debug.log` (`serialize.ts`).
+- **Removal.** Tilemaps still accept a single `tilesetGuid` and turn it into a tileset list with `firstGid` 1 (`tilemap-payload.ts`).
+- **Removal.** `migrateMaxDimensionToDownsample` converts an old texture `maxDimension` into a downsample step (`texture-lod.ts`).
+- **Removal.** `migrateSceneMeshesToActors` still converts scenes that store meshes outside actors (`migration.ts`).
+- **Removal.** A material test keeps whole-actor `assignMaterial` commands that name only a slot id (`runtime-material-identity.test.ts`).
 
 ## Deeper pass
 
