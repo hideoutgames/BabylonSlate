@@ -1485,6 +1485,26 @@ No new unchecked claims were added in this pass. The items above were read in so
 - **Removal.** An unwired audio volume treats `properties.volume` as authored. The pin default is `default:volume` (`audio.ts`).
 - **Low.** Array Get and Get Safe emit the same pins and the same code (`array-map.ts`).
 
+## Verified in the fifty-ninth batch
+
+- **High.** The Play compile fingerprint watches Class graphs and the input, data, enum, and structure catalogs. It does not watch Animation Graphs. Those graphs are compiled into the same Play bundle list. Editing one leaves `currentGraphSignature` unchanged, so Play reuses the previous scripts (`GRAPH_SIGNATURE_KINDS`, `graphSignature`, `playBundlesNeedCollect`, `collectPlayPreviewScripts`).
+- **High.** Export compiles a Class with `classIdForGraphPath` on the asset’s display name, then stores the guid as the script path. Editor Play uses the file path. A header named `Player Character` compiles as `Player_Character` while scene actors still use the file-stem id (`collectAndExportGame`, `classIdForAssetPath`).
+- **High.** A codegen throw is logged and returned as `null`. Export uses that compiler and still writes the pack, so a class that fails codegen is omitted (`compileGraphDocumentCached`, `compileGraphDocuments`).
+- **Medium.** Moving a locked asset unlocks the old path and then creates the new lock. If the create fails, the remote lock is gone (`transferLock`).
+- **Medium.** A lock owned by someone else stores the lock and shows “Editing anyway” without setting the path read-only (`autoLock`).
+- **Medium.** A failed Class, Animation Graph, or scene load is logged and skipped. Play still starts without that payload (`play-content-service.ts`).
+- **Medium.** Tearing down the nav bake worker clears its pending map and does not reject the waiters. A bake in flight never settles (`createNavBakeWorker.terminate`).
+- **Medium.** Save stamps Data Definition, Data Tree, and Structure into the header. It does not stamp Enum. Closed Enum reads use `header.payload` (`headerMetaForSave`, `createEditorDataReader`).
+- **Medium.** `overlayLogForCommand` returns null for every command. The `playSound` branch never reaches different code (`play-session.ts`).
+- **Medium.** Node directory listings take `isDir` from the directory entry and size from `stat`, which follows links. A symlink to a directory is listed as a file, so a walk never descends, while `readFile` still follows it (`NodeStorageAdapter.readdir`).
+- **Medium.** A save-game unlock that throws replaces the error from the write. The write can succeed and still be reported as a failure, with the main-process lock left held (`ElectronSaveGameStorage.withLock`).
+- **Removal.** Opening a project still scans for `.scene.json` and `.graph.json`, and Class save still treats `Graph` as a live type (`discoverLegacyJsonDocuments`, `headerMetaForSave`).
+- **Removal.** An id that looks like a long base64 string is imported as an old iOS security-scoped bookmark. Android has no `importBookmark`, so that id is marked stale (`isLegacyBookmark`).
+
+## Rejected in the fifty-ninth batch
+
+- `NodeStorageAdapter.openKnownFolder` ignoring the folder id is already recorded.
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
