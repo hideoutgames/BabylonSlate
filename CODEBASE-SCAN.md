@@ -422,4 +422,10 @@ These are separate from the iframe bridge, the unbounded `lfs:fetch` body, the s
 
 ## Coverage still open
 
-Large-file reads are still running for `water-material.ts`, `create-engine.ts`, `document-context.tsx`, `registry.ts`, `snapshot-apply.ts`, `script-host.ts`, and `driver.ts`, plus the remaining letter buckets. This note is updated as those reads are checked.
+These reads are still running: `water-material.ts`, `document-context.tsx`, `registry.ts`, `snapshot-apply.ts`, `script-host.ts`, `driver.ts`, the editor shell, render files whose names start with `p`, render snapshot files, the assets package, runtime files `a`–`r`, and render files `g`–`o`.
+
+`create-engine.ts` has finished. Its checked findings are in the seventh batch.
+
+Dedicated reads that finished after that batch are being extracted next: object-model, editor-kit, graph-ui, assets `n`–`z`, editor components `c`/`d`/`h`, exporter and locks, the player app, the graph editor and inspector, runtime files `p`–`r`, and render files `p`–`r`.
+
+Docs pages, other than the Android token note in `docs/architecture/overview.md`, have not been line-audited. Package test files were often left unread by the production-source passes.
