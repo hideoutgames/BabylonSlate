@@ -648,6 +648,12 @@ These loops type a second arm and then pass a one-element list, so the other arm
 - **Medium.** `save-game-parity.spec.ts` types `"packed" | "loose"` and iterates `["packed"]`.
 - **Medium.** `render-settings-export.spec.ts` types packed/loose, WebGL2/WebGPU, and an initialization-failure flag. The only entry is packed WebGL2 with `fail: false`. The file comment says other specs cover backend variants.
 
+## Verified in the seventeenth batch
+
+- **Medium.** `basic-3d-mannequin-shadows.spec.ts` types WebGPU, CEL, low, and an alternate light. `cases` has one entry: WebGL2, PBR, medium, alternate off. The WebGPU settings branch and the alternate-light edit never run.
+- **Medium.** `color-grading.spec.ts` and `lattice-deformer.spec.ts` iterate `["webgl2"]` only. The lattice cost call is `__latticeDeformerCost("webgl2")`.
+- **Medium.** `basic-3d-mannequin-shadow-hosts.spec.ts` checks per-region contact coverage only when `region.contacts > 5`. The required sum of contacts can be greater than 5 while every region stays at or below 5, so `retained / contacts` never runs. `sourceSha256` and `materialDefines` are attached and not expected. The same-pixel-buffer call in this file was already noted.
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine are running. The UI-package second pass did not start: the concurrent cap was already full, and the earlier assets-package read is still marked running. These reads are told not to edit this file and not to repeat findings already listed here.
