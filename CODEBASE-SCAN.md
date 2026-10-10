@@ -173,6 +173,115 @@ These are from completed file reads. They are kept so they are not lost. They ar
 - `NodeStorageAdapter.openKnownFolder` ignores the folder id and opens `baseDir/<name>`. The desktop IPC path does not use that method for `node:` ids. It reopens those with `openAbsoluteFolder`.
 - `AlertDialogAction` was first described as a Close. The source renders a plain `Button`. The finding that Confirm does not dismiss is the one that holds.
 
+## Verified in the later batch
+
+- **High.** A While Loop compiles with an empty body. `execSuccessorEdges` in `packages/scripting/src/compile.ts` keeps an exec output only when `pin.name` equals the requested pin. `flow.whileLoop` names those pins `Loop Body` and `Completed` and passes the ids `loopBody` and `completed`. For Loop pins use the same string for id and name, so those loops still connect. The condition can run. The body and the Completed chain are not emitted.
+- **High.** Renaming a function does not retarget Call nodes. `patchClassMember` in `apps/editor/src/lib/class-members.ts` returns as soon as `patch.pins` is absent. A name-only edit never reaches `syncFunctionGraphPins`. Variable and event renames take earlier branches.
+- **High.** Graph diff ignores edge endpoint changes and node type changes. `diffGraphCommands` adds or removes edges only by id. It compares node position and data, not `type`. Rewiring an existing edge id, or retyping a node, emits nothing.
+- **High.** Prefab is not in `JSON_TYPES` in `apps/editor/src/services/export-game-inputs.ts`. A Prefab whose payload is only a JSON document chunk is not loaded as a document for export.
+
+## Reported in the later batch, not re-checked
+
+### Editor library
+
+- A failed audio-reverb bake is stored under the real geometry hash, so the next flush returns dry silence (`audio-reverb-bake.ts`). The default bake ignores the abort signal.
+- Removing an Animation Graph variable drops it from the variable list and leaves Get and Set nodes bound to it (`anim-graph-variables.ts`).
+- Plugin import can catalog a new generation and then throw on `defaults.json`, with no rollback (`engine-plugin-library.ts`).
+- A user plugin or extension whose name matches a bundled entry is skipped and then cannot be removed (`engine-extension-library.ts`, `engine-plugin-library.ts`).
+- `classParentLookup` only reads `header.type === "Class"`, so a parent that is still a legacy Graph is missing (`content-browser-helpers.ts`).
+- Collision layer `0` is labeled with the first layer name (`component-property-rows.ts`).
+- `downloadPluginArchive` revokes the blob URL in the same turn as the click (`plugin-download.ts`). The same pattern is in `extension-download.ts`.
+- `prefabPreviewLoadKey` JSON-stringifies component transforms, so a gizmo drag restarts collection every frame (`prefab-preview.ts`).
+- `flattenInspectTree` and `reparentPrefabComponents` walk `parentId` with no cycle guard (`play-inspect-tree.ts`, `prefab-preview.ts`).
+- `folderMoveForTarget` drops a folder onto the scene root when the drop target is an actor (`outliner-drop.ts`).
+- `useInspectWorldPoll` has no `catch`, so a rejected inspect poll is an unhandled rejection (`use-inspect-world-poll.ts`).
+- The scene viewport asset key does not include particle documents, and it JSON-stringifies every project resource of the watched types (`scene-viewport-assets.ts`).
+- `moveKeyedEntry` deletes the destination when the source key is missing (`move-keyed-entry.ts`).
+- `playPrefabDependencyScene` is only referenced from tests (`play-content.ts`).
+
+### Editor shell and services
+
+- Exclusive-scene Save calls `saveAll()` directly. It does not open the migration prompt, and a pending migration leaves that dialog stuck (`editor-route.tsx`).
+- Migration approve still closes the dialog before the write and can resume Play when the save did not happen. Already noted; the shell read adds that a thrown approve leaves `playAwaitingMigration` set with no dialog left to cancel.
+- Dev player middleware treats a sibling path such as `dist-backup` as inside `dist` because `startsWith` has no separator (`vite-player-host.ts`).
+- The engine-plugin Vite watcher does not rebuild the public catalog on change (`vite-engine-plugins.ts`).
+- Dismissing a recovery journal drops a rejecting promise (`home-route.tsx`, `editor-route.tsx`).
+- An unreadable existing `.babasset` save mints a new GUID and drops extra chunks (`project-service.ts` `guidForAsset`, `extraChunksFor`).
+- Navmesh and audio-clip writes stamp the current schema version without the migration-approval gate (`writeSceneNavmeshChunkUnlocked`, `writeAssetDocumentWithExtra`).
+- `hydrateClassDocumentPayload` replaces a Class payload with a default graph when `nodes` or `edges` is not an array (`graph-validation.ts`).
+- Editor hydration prunes wires and rewrites enum defaults, and the graph panel commits that hydrated graph (`hydrateSerializedGraphForEditor`).
+- Validation does not apply the wired Cast class the way editor hydration does (`materializeLogicGraph`).
+- Audio clip writes do not take the rename-safe document lock.
+- Simulate-mode pointer and focus navigation ignore the pause input gate (`play-session.ts`).
+- Worker console and inspect waiters never time out.
+- A zip import without `project.json` throws on a missing file instead of an import error.
+- `SimulationInspectionStore.poll` publishes the structural cursor before the selection fetch returns, so a cancelled selection leaves the identity list empty (`simulation-inspection-store.ts`).
+- `SimulationSession.resolveStop` checks discard only before `applyScene` (`simulation-session.ts`).
+- A failed preview or play input-suppression request can leave input suppressed (`preview-diagnostics.ts`, `play-session.ts`).
+- A failed simulation capture does not roll back `captureRequested` (`play-session.ts`).
+- A source-control lock that appears after the document is open does not mark it read-only (`source-control-service.ts`).
+- Nav, audio, and game worker hosts clear pending work on `terminate` without rejecting it.
+- `collectPlayDataCatalog` always reloads Structure and Enum instead of using the indexed payload (`play-data-assets.ts`).
+- `playAssetCatalog` turns a reachability error into an empty catalog (`asset-catalog.ts`).
+- Export omits an asset whose document bytes fail to load and can still succeed (`export-game-inputs.ts`).
+- `loadPlayerDistFiles` trusts names in `player-files.json` (`load-player-files.ts`).
+- `replayRecoveryJournal` can return before `onRecoveryResolved`, so the recovery banner stays up (`document-editing-service.ts`).
+
+### Scripting
+
+- Set Variable looks up pins by the variable name, and `pinForCodegen` matches id before name. A variable named `exec`, `target`, or `then` binds the wrong pin (`variables.ts`).
+- Call Function can create two pins with id `target` (`functions.ts`).
+- Wildcard int/float binding depends on edge order (`wildcard-resolve.ts`).
+- Interface signature matching ignores Array versus Map (`validate.ts` `pinsMatch`).
+- `struct.break` optional chaining does not cover `.Name` when `input` is missing (`struct.ts`).
+- Get Effective Scalability reads `?.effects?.vignette.color`, which throws when `effects` exists and `vignette` does not (`scalability.ts`).
+- An unwired physics radius compiles as `0` and is not diagnosed (`physics.ts`).
+- Float To Int uses `| 0`, which wraps through int32 (`casting.ts`).
+- For Each inlines the array expression twice (`compile.ts`).
+
+### Navigation
+
+- Cylinder bake and obstacles treat `size.x` as a radius. The editor cylinder is a diameter-1 mesh (`blockers.ts`, `recast-backend.ts`).
+- Tile-cache cylinder obstacles take a base pose. Callers pass a center (`addObstacle`).
+- Walkable height, climb, and radius are documented as world units and forwarded as Recast voxels (`toRecastConfig`).
+- `addAgent` returns an id even when the native add fails.
+- Cost-volume queries force a Y half-extent of at least 4 (`costVolumeHalfExtents`).
+- `stampCostVolumes` stops at 512 polygons.
+- `removeObstacle` deletes the JS id before the native remove succeeds.
+- Dynamic navmesh generation does not destroy `TileCacheMeshProcess`.
+- `setAgentTarget` uses Crowd extents `{1,1,1}`, not the 4-unit query extents.
+
+### Render files `a`–`f` and `m`
+
+- `resolveAnimationGroup` can seek another actor’s group when the clip guid is empty (`anim-apply.ts`).
+- Bold or italic font faces are marked ready after loading only `16px` regular (`font-registry.ts`).
+- Voice muffle adds a low-passed copy on top of the still-connected dry output (`babylon-audio-backend.ts`).
+- Doppler off does not restore the last playback rate (`audio-service.ts`).
+- A failed environment cube throws from `isReady` inside the render observer (`environment-lighting.ts`).
+- Missing foliage indices become an empty index buffer (`foliage-mesh.ts`).
+- `MaterialLibrary.cancelPending` looks up the bare guid, not the unlit or instance cache key.
+- Auto LOD selection allocates a camera delta per mesh per pass (`model-lod.ts`).
+- Tilemap, tileset, and water fingerprints JSON-stringify the whole map (`mesh-assets.ts`).
+
+### VFS
+
+- Derived and template OPFS binds are remembered as user projects and can become `currentId` (`derived-storage.ts`, `web-adapter.ts`).
+- Memory `writeBinary` replaces a directory entry with a file (`memory-adapter.ts`).
+- Electron renderer `getCurrentFolder` is not the main-process root (`electron-storage-adapter.ts`).
+- OPFS and memory path split do not reject `..` (`web-adapter.ts`, `memory-adapter.ts`).
+- Mobile `getCurrentFolder` does not wait for adapter init (`mobile-storage-adapter.ts`).
+
+### End-to-end and distribution
+
+- `e2e/p9-content.spec.ts` “Material Function edits reach every calling material” only checks that the outputs panel is visible.
+- `e2e/p15-source-control.spec.ts` Edit Anyway only checks that the same button is still visible.
+- `e2e/basic-3d-mannequin-shadows.spec.ts` checks contact coverage only when a single region has more than five contacts.
+- `e2e/input-assets.spec.ts` Listen does not assert that the binding became `KeyJ`.
+- iPadOS metadata uses `GITHUB_RUN_ATTEMPT` while the GitHub Release identity stays on the preflight attempt (`generate-metadata.mjs`).
+- `assertAppleBuildAvailable` rejects any existing App Store build version that is not `X.Y.Z` (`contract.mjs`).
+- Apple `xcodebuild` and upload commands use a 30-minute private-command timeout inside a 75-minute job (`private-command.mjs`).
+- TestFlight finalization lists only the first 200 builds (`testflight.mjs`).
+
 ## Coverage still open
 
-Letter-bucket and large-file reads are still running across render, runtime, assets, core, scripting, editor services, panels, context, and the largest single files (`water-material.ts`, `create-engine.ts`, `document-context.tsx`, `registry.ts`, `snapshot-apply.ts`, `script-host.ts`, `driver.ts`, `project-service.ts`). This note will be updated as those reads are checked.
+Large-file reads are still running for `water-material.ts`, `create-engine.ts`, `document-context.tsx`, `registry.ts`, `snapshot-apply.ts`, `script-host.ts`, and `driver.ts`, plus the remaining letter buckets. This note is updated as those reads are checked.
