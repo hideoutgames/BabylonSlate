@@ -1,0 +1,9 @@
+Kenney sound effects (CC0, see License.txt), used by the Feature Test starter.
+
+FT_Loop.wav     = Kenney "upgrade1.wav"
+FT_OneShot.wav  = Kenney "coin1.wav"
+
+Original author: Kenney (https://kenney.nl). Copied unmodified from the Kenney
+subset bundled in the Python Arcade package (arcade 3.3.3 on PyPI,
+arcade/resources/assets/sounds/), which redistributes these files with
+Kenney's CC0 License.txt.

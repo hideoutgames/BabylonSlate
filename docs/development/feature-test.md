@@ -23,17 +23,17 @@ Only existing repository files and runtime primitives are used (no generated art
 | Geist | `engine-content/fonts/Geist` (SIL OFL 1.1, `OFL.txt` alongside) | Source Font for overlay text |
 | Bundled ASCII glyphs | `@babylonslate/render/default-typeface` | Facetype Font for 3D Text |
 
-### Optional CC0 slots
+### Media slots
 
-The repository ships no audio or color grading LUT. Drop CC0 files at these paths and rebuild; new FeatureTest projects pick them up automatically (`vite-engine-content.ts` publishes a `slots.json` manifest):
+Audio and the color grading LUT come from human-made CC0 files in fixed slots. New FeatureTest projects pick up whatever is present at build time (`vite-engine-content.ts` publishes a `slots.json` manifest):
 
-| Slot | Path | Effect when present |
-| --- | --- | --- |
-| Loop audio | `engine-content/feature-test/audio/FT_Loop.ogg` (or `.wav`, `.mp3`) | Spatial Audio Components play it |
-| One-shot audio | `engine-content/feature-test/audio/FT_OneShot.ogg` (or `.wav`, `.mp3`) | UI and gameplay cues |
-| Color grading LUT | `engine-content/feature-test/lut/FT_Grade_lut.png` (strip: width = size², height = size) | Project color grading is enabled |
+| Slot | Path | Shipped | Effect when present |
+| --- | --- | --- | --- |
+| Loop audio | `engine-content/feature-test/audio/FT_Loop.ogg` (or `.wav`, `.mp3`) | Kenney `upgrade1.wav` | Spatial Audio Components play it |
+| One-shot audio | `engine-content/feature-test/audio/FT_OneShot.ogg` (or `.wav`, `.mp3`) | Kenney `coin1.wav` | UI and gameplay cues |
+| Color grading LUT | `engine-content/feature-test/lut/FT_Grade_lut.png` (strip: width = size², height = size) | none | Project color grading is enabled |
 
-When a slot is empty the feature stays authored but silent or ungraded.
+The Kenney sounds are CC0; `License.txt` and `Source.txt` beside them record the license and origin. Replace a slot file to change the sound; an empty slot leaves the feature authored but silent or ungraded.
 
 ## Scenes
 
@@ -100,4 +100,4 @@ Rules: compare runs on the same machine, browser project and build only; never a
 
 - Skinned Skeletons and retargeted Animations: the repository has no skinned model (the Mannequin and the door are hierarchy and node rigs).
 - MSDF font atlases: no atlas exists; text uses the facetype and Geist source Fonts.
-- Audio playback and LUT grading wait for the optional CC0 slots above.
+- Color grading waits for a human-supplied CC0 LUT in its slot (Kenney publishes no LUTs).
