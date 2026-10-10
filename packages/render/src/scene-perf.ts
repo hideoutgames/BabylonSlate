@@ -20,7 +20,7 @@ import { admittedSceneMeshes, admittedSceneParticles, admittedSceneTextures } fr
 // graph must import these from the leaves, or they close an import cycle back
 // through this file.
 export { markSceneReadinessDirty, onSceneReadinessDirty, withSceneReadinessState } from "./scene-readiness-signal";
-export { createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_MS, type StallDeadline } from "./stall-deadline";
+export { createStallDeadline, SCENE_FIRST_FRAME_TIMEOUT_MS, SCENE_SHADER_WARM_TIMEOUT_MS, type StallDeadline } from "./stall-deadline";
 
 /** Fast large-scene lookups (§2.4). Babylon 9 defaults these on; pass them explicitly. */
 export const SCENE_LOOKUP_MAPS: SceneOptions = {

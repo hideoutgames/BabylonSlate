@@ -4,6 +4,14 @@
  */
 export const SCENE_SHADER_WARM_TIMEOUT_MS = 4_000;
 
+/**
+ * Budget for a loading owner's first valid draw after its readiness gates pass.
+ * One draw is not a progress unit a stall deadline can observe: on software GL
+ * (SwiftShader) a heavy scene's first draw compiles its pipeline states inside
+ * the GPU submission and can take several seconds before a validated frame.
+ */
+export const SCENE_FIRST_FRAME_TIMEOUT_MS = 20_000;
+
 export interface StallDeadline {
   /** Restart the deadline after one unit of progress; `unit` names the next one. */
   advance(unit: string): void;
