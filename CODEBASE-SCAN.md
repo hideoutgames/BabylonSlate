@@ -92,7 +92,6 @@ These are from completed file reads. They are kept so they are not lost. They ar
 
 - Skybox source drag re-encodes all six faces and recreates the preview engine on each pointer move (`skybox-creator-editor.tsx`).
 - Play overlay polls memory, draws, and rendering every 200ms even when Stats is hidden, and runs a permanent audio-debug animation frame (`play-overlay.tsx`).
-- `new Blob([bytes.buffer])` in export download can attach bytes outside the `Uint8Array` view (`settings-modal.tsx`).
 - Behaviour-tree blackboard state is not cleared when the linked asset changes or fails to load (`behaviour-tree-editor.tsx`).
 - Animation-graph commits apply a captured document in `queueMicrotask` and can drop a Details edit (`anim-graph-editor.tsx`).
 - `CodeBodyEditor` replaces the whole buffer when the `value` prop differs (`js-body-editor.tsx`).
@@ -490,10 +489,68 @@ These are separate from the iframe bridge, the unbounded `lfs:fetch` body, the s
 - `dismissRecovery` clears the banner after the await even if another project is now open (`document-context.tsx`).
 - Delete repair writes the on-disk copy under dirty tabs and patches those tabs only in memory (`repairAfterAssetDelete`).
 
+## Verified in the ninth batch
+
+- **High.** Phone layout freezes the desktop dock snapshot. `enterPhoneDockLayout` stores `api.toJSON()` once. `captureAdaptiveDockviewLayout` returns that object instead of the live API, and document save uses it. A function-graph tab opened or renamed after phone layout starts is missing from rotation restore and from the saved layout (`phone-dock-layout.ts`, `document-context.tsx`).
+- **High.** Call Custom Event drops the caller’s tick. `invokeCustomEvent` dispatches with delta `0`, tick index `0`, and no `tick` or `extras`. Call Parent passes `deltaSeconds`, `tickIndex`, `tick`, and `extras`. Input queries inside the custom event therefore see empty defaults (`script-host.ts`).
+- **High.** An async event swallows an infinite-loop abort. `dispatchEvent` rethrows `isInfiniteLoopError` only from the synchronous `catch`. A returned promise is logged and then `clearPending` runs, so the next tick starts the event again (`script-host.ts`).
+- **High.** Project and game export put `bytes.buffer` in the download `Blob`. A `Uint8Array` view with a non-zero `byteOffset` or spare capacity includes bytes outside the zip. `handleExportGame` revokes the object URL only on the success path (`settings-modal.tsx`). This was previously only reported.
+- **High.** Water chop and glitter run in absolute float32 world space. `swPosW` adds `slateWaterOrigin`, and `swWorld` is `swPosW.xz`. Swell rest is `vPositionW.xz` without that origin. `swGlitterP` adds `slateWaterOrigin.xz` to that eye-relative rest (`water-material.ts`). Fine chop and glints quantize once the origin is large.
+- **Medium.** `stopParticles` uses slot `0` when the actor has no slot and still emits `assignParticle` with a null guid (`audio-particle-emitter.ts`).
+- **Medium.** Aborting a non-sound behaviour-tree task stops the actor’s leftover PlaySound voice. The PlaySound branch stops that node’s voice. The `else if` still calls `stopPlaySound` whenever `voiceByActor` has the actor (`behaviour-tree-runtime.ts`).
+- **Medium.** An overlay slot whose layer scene is not live is added to `liveSlots` and then skipped. Migration, leftover disposal, and the pose pass do not run, so a mesh already in the world scene keeps its last transform (`snapshot-apply.ts` `reconcileSnapshotVisuals`).
+- **Medium.** `retirePlayWorldSlots` skips overlay slots and then sets `possessedCameraSlotId` and `defaultCameraSlotId` to null. An overlay camera that was selected is cleared on a world-scene reload (`snapshot-apply.ts`).
+
+## Reported in the ninth batch, not re-checked
+
+- A remembered dock placement on the other side of its catalog reference, or tabbed into that reference, reopens on the catalog side (`dock-window-ops.ts`).
+- Phone inlining flattens a multi-panel floating group and drops the splits inside it (`inlineDetachedDockviewLayout`).
+- A default Sprite Animation layout created while the host width is 0 never receives the 75% Details width (`window-catalog.ts`).
+- Renaming the active function leaves the phone Window picker on the old title (`dockview-shell.tsx`).
+- Orthographic water thickness uses `|view[1][2]|`, so a horizontal ortho view forces refracting depth to 0 (`water-material.ts`).
+- Painted water fog removal treats `swRefractedWeight` as the share of `swRefracted`, but the color also includes transmittance, caustics, and foam (`water-material.ts`).
+- A reflected ray with negative clip `w` is divided by a tiny positive number and can still contribute (`water-material.ts`).
+- The water outline vertex path never defines `SLATE_WATER_BLEND`, so a blending surface uses the unscaled swell (`water-material.ts`).
+- Low water shading with refraction on still draws the fake sand bed for sky-depth pixels (`water-material.ts`).
+- Water removal selection uses `getAbsolutePosition()` while the shader cuts with the eye-relative world matrix (`water-material.ts`). Confidence was medium without the installed Babylon matrix source.
+- Contact derivatives are taken before `discard`. Shading footprints in `surfaceSource` run after that discard (`water-material.ts`).
+- Water temporal fade assumes 30 fps (`TEMPORAL_FRAME`).
+- A failed registry walk leaves the root mounted with a partial index (`mountRoot`).
+- Path reservation is case-insensitive, and the existing-asset check is exact case (`reservePath`).
+- `copyFolder` throws when the destination directory exists but was not indexed (`registry.ts`).
+- `unmountRoot` does not wait for `textureWriteChain`, so an in-flight rewrite can index a file under a root that is gone (`registry.ts`).
+- `attachToExistingAssetUnlocked` can rewrite a read-only root when the caller’s `rootId` is writable (`registry.ts`).
+- A second sprite part replaces the only tracked blend mesh for that slot (`createPlayMesh`).
+- Component parent cycles are not broken when play visuals are parented (`createPlayVisual`).
+- `isPathValid` treats a one-point path as invalid (`runtime-host-navigation.ts`).
+- Tilemap collider chains ignore actor scale and the component’s local transform (`physics-sync.ts`).
+- A failed ragdoll capture stays in `states` and is not retried until the descriptor changes (`ragdoll-sync.ts`).
+- Any live `RagdollComponent` excludes movement and blocks inspector teleport, including when it is disabled (`physics-sync.ts`, `runtime-inspector.ts`).
+- `showcollision` lists only main-world colliders (`runtime-physics-worlds.ts`).
+- A synchronous infinite loop in an animation graph or behaviour tree returns before the frame is published (`driver.ts` `tickSceneSystems`).
+- Nested sync console commands share one `commandResult` (`script-host.ts` `invokeCommand`).
+- Cancelling an async console command rejects the waiter and leaves the handler running (`invokeCommandAsync`).
+- The first async function export returns immediately, so later modules on that class never run (`invokeFunction`).
+- `setText`, audio, particles, camera, impulse, constraint, and movement native calls do not check `canInvokeOwner` (`callNativeComponentFunction`).
+- Attach Actor to a destroyed parent clears the live parent (`attachActor`).
+- Transform writes accept non-finite numbers and destroyed actors (`setActorLocation`).
+- Source-control prefill writes the pre-await settings snapshot, so edits made during the await are overwritten (`settings-modal.tsx`).
+- Light `shadowPriority` also appears as a generic numeric row (`component-property-rows.ts`).
+- Text3D `depth` has no inspector row (`component-property-rows.ts`).
+- The next Collision Layer edit keeps only the first set bit (`layerNameFromBitmask`).
+- Sprite frame boxes replace authored `box2d` half-extents at the same collider id (`collectSpriteColliders`).
+
+## Rejected in the ninth batch
+
+- `InProcessRuntime.start` swallowing an infinite loop in Game Instance On Init is tested containment (`infinite-loop.test.ts` expects `start()` not to throw). The same swallow still leaves `running` true, and `World.start` will not retry hooks that had not run.
+- `clearCurrentScene` destroying a scene created during On End was called intentional.
+- Double `sceneLoadGeneration` increments were called harmless.
+- `PhysicsWorldSync.retireActor` leaking character controllers was withdrawn because `destroyBody` already destroys the controller.
+
 ## Coverage still open
 
-These reads are still running: `water-material.ts`, `registry.ts`, `snapshot-apply.ts`, `script-host.ts`, `driver.ts`, the editor shell, render snapshot files, the assets package, runtime files `a`–`r`, and render files `g`–`o`.
+These reads are still running: render snapshot files other than `snapshot-apply.ts`, the assets package pass, and render files `g`–`o`.
 
-Recorded from the reads that just finished: player, exporter and locks, editor components `c`/`d`/`h`, assets `n`–`z`, graph-ui, editor-kit, object-model, render files `p`, and `document-context.tsx`. Graph editor and inspector, and runtime files `p`–`r`, are not in this batch yet.
+Finished and recorded since the eighth batch: `water-material.ts`, the editor shell, runtime files `a`–`r`, `registry.ts`, `snapshot-apply.ts`, `script-host.ts`, `driver.ts`, the graph editor and inspector slice, and runtime files `p`–`r`.
 
-Docs pages, other than the Android token note in `docs/architecture/overview.md`, have not been line-audited. Package test files were often left unread by the production-source passes. Assets `n`–`z` left 21 test files unread or partial.
+Docs pages, other than the Android token note in `docs/architecture/overview.md`, have not been line-audited. Package test files were often left unread by the production-source passes. Assets `n`–`z` left 21 test files unread or partial. Runtime `a`–`r` left 52 test files unread.
