@@ -1307,6 +1307,20 @@ Bloat to remove. The engine is not released, so these paths exist only to accept
 - **Medium.** The render page says the FrameGraph post-process adapter admits only GLSL. The task compiles `material.shaderLanguage` with no WebGL gate (`framegraph-post-process.ts`).
 - **Medium.** A Text3D editor fingerprint is text, size, color, font, and alignment. Depth is parsed and left out of the key, and the mesh builder does not read it (`scene-loader.ts`).
 
+## Verified in the forty-eighth batch
+
+- **High.** Restoring `Info.plist` sits outside the archive cleanup. If that write throws, `cleanupApple()` does not run, so the distribution keychain, certificate, and provisioning profile stay on disk (`ios-archive.mjs`).
+- **Medium.** The iOS upload gate requires the secrets, storage, and audio plugins. It does not require `BabylonSlateMemoryPlugin`, which sync adds. A config missing only that plugin still archives (`ios-archive.mjs`, `ios-sync.mjs`).
+- **Medium.** iOS sync captures `cap sync` through a pipe and leaves Node’s 1 MiB buffer default. A longer CocoaPods log kills the sync after the Podfile may already have changed (`ios-sync.mjs`).
+- **Medium.** An early archive failure whose message contains `ENOENT` is printed as an uncertain App Store upload. A missing manifest or icon does that before any upload, with `uploaded` still false (`ios-archive.mjs`).
+- **Medium.** Android release rejects test mode only in that process. It signs the web bundle already in `dist` and does not rebuild it. The iOS archive has no equivalent check (`android-release.mjs`, `ios-archive.mjs`).
+- **Medium.** The Apple distribution password is passed as `-P` on the `security import` argument list, so it is visible in the process list (`ios-archive.mjs`).
+- **Low.** After iOS sync, the Podfile check only requires the text `end`. A file that lost `post_install` but still has a target `end` is accepted (`ios-sync.mjs`).
+
+## Reported in the forty-eighth batch, not re-checked
+
+- Capacitor `cap sync` can log a web-asset copy error and still exit 0, so sync then archive signs the previous native web copy. The Capacitor CLI source is not in this tree (`ios-sync.mjs`, `android-sync.mjs`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
