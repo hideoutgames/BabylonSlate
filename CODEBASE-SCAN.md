@@ -1075,6 +1075,20 @@ Runtime tests `sn`–`z` and render tests `t`–`z` reported no new product bugs
 - **Medium.** `physics.md#change-driven-preparation-and-verification-pickup` is not a heading. The page has `change-driven-preparation` and `native-lifecycle-verification` (`renderer-qualification.md`).
 - **Medium.** Directory links are published as GitHub blob URLs. `GITHUB_BLOB_BASE` is always `blob/main/`, including for `packages/ui/src/components/`, `packages/editor-kit/src/`, `engine-logos/`, and `packages/render/src/default-skybox/` (`rewrite-repo-links.ts`).
 
+## Verified in the thirty-fourth batch
+
+- **Medium.** Every horizontal slider control is at least 44px tall and sets `touch-none`. A drag that starts on the slider changes the value and does not scroll the panel (`slider.tsx`).
+- **Medium.** Sliders default to `thumbAlignment="edge"`, so the thumb center stays inside the track. The hue track paints its gradient across the whole track, and the thumb sits on the wrong color at both ends (`slider.tsx`, `color-picker.tsx`).
+- **Medium.** Dialog content scrolls, and the close button is `absolute` inside that scroller. A dialog taller than the max height moves the close button with the content (`dialog.tsx`).
+- **Medium.** Sheet content uses the same pattern. Side and bottom sheets scroll the close button out of the visible top (`sheet.tsx`).
+- **Low.** `Tabs` copies `orientation` onto `data-orientation` and does not pass it to the Base UI root, so arrow keys stay left and right (`tabs.tsx`).
+- **Low.** `ToggleGroup` does the same. A vertical group can lay out in a column while keyboard movement stays horizontal (`toggle-group.tsx`).
+- **Low.** Disabled buttons set `pointer-events-none`, so a tooltip on the button itself does not show once the control is disabled (`button.tsx`).
+
+## Rejected in the thirty-fourth batch
+
+- The indeterminate checkbox still drawing `CheckIcon` is already recorded (`checkbox.tsx`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass did not start: the concurrent cap was already full, and the earlier assets-package read is still marked running. These reads are told not to edit this file and not to repeat findings already listed here.
