@@ -1555,6 +1555,27 @@ No new unchecked claims were added in this pass. The items above were read in so
 
 - Refusing a reachable `DataObject` or `DataSheet` is the export rejecting a historical type. That is not an old-format reader.
 
+## Verified in the sixty-third batch
+
+- **High.** `createScene` clears the current scene in a loop until none remains. Clearing runs every Scene Subsystem On End. If that hook calls `createScene`, the replacement is installed and the outer loop clears it, which runs On End again. A hook that always opens a scene never returns. `exitActiveScene` clears once, so the same hook keeps its replacement (`world.ts`).
+- **Medium.** `end` runs scene exit and On End, then returns. The `tick` that called it still walks the remaining phases. Actors are not removed, so actor ticks, component ticks, and physics still run after On End (`World.tick`).
+- **Medium.** Creating a scene layer always appends, even when that guid is already live. Destroy removes the first match and every actor with that `sceneLayerId`, including actors of the layer that stays (`createSceneLayer`, `destroySceneLayer`).
+- **Medium.** Material Object is created only when the class id is exactly `MeshComponent` or `DynamicRuntimeMeshComponent`. Collider shape freezing is only for exactly `ColliderComponent`. A project class parented to those engine classes never builds a `MaterialObject` and never freezes `shape` (`objects.ts`).
+- **Medium.** An actor is marked announced before the Spawned loop. `createScene` replaces that set. The new subsystems are not in the old loop and the new set does not contain the actor, so they never hear Spawned or Destroyed for it. The actor still gets On Init (`announceSceneActor`).
+- **Removal.** Header types `Shader` and `ShaderGraph` still open as a Material document (`LEGACY_MATERIAL_ASSET_TYPES`).
+- **Removal.** Built-in behaviour-tree ids still accept Unreal-style names such as `BTTask_Wait` and rewrite them to `bt.task.wait` (`BT_CLASS_ALIASES`).
+- **Removal.** A post-process entry with no id is assigned `legacy-pass-N`. A scene with no `showNavmesh` turns the overlay on when a stored Nav Mesh `debugOverlay` is true (`normalizeScene`).
+- **Removal.** Tab labels still strip `.shader`, `.eui`, `.ui`, and `.graph` suffixes. `assetTypeForDocumentSave` accepts an existing type and discards it (`document.ts`).
+
+## Reported in the sixty-third batch, not re-checked
+
+- Landscape water height samples local XZ through the actor’s Y, so a pitched landscape can cut water against the wrong height (`landscapeWorldHeightAt`).
+- Overlay layout clones every actor transform and component on each pass when a layout class is present (`resolveOverlayLayout`).
+- Authored overlay margins above 1 are kept as old pixel values (`overlayPanelMarginToPx`).
+- A data-definition field with no id becomes `legacy:${name}` (`normalizeDataDefinitionAsset`).
+- Plugin overrides still persist `acceptedCompatibility` (`normalizePluginOverrides`).
+- Material texture closure still reads `value` and `Value` beside `default:value` (`materialParameterTextureGuidsFromGraph`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
