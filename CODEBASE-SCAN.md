@@ -1176,6 +1176,29 @@ Bloat to remove. The engine is not released, so these paths exist only to accept
 
 - The Noise section still saying UV widens with zero Z is the same pad-with-`1` mismatch already recorded (`shader-graph.md`, `types.ts`).
 
+## Verified in the forty-first batch
+
+- **High.** Export does not build packed asset files. `writeLooseAssets` writes `assets/data-N.bin` and returns `packs: []`. `encodeBabpack` is never called (`export-game.ts`).
+- **High.** Export does not concatenate class modules into one script bundle. `scripts.js` is `serializeScriptRegistry([])`, an empty bootstrap kept for the old filename, and each class is a separate `CompiledScript` sidecar (`export-game.ts`, `scripts.ts`). That empty bootstrap is compatibility bloat.
+- **Medium.** Android call detection never reads the current audio mode. The listener does not replay it, and `interrupted` starts false. Opening the app during a call sends no interruption, and the later hangup does not resume (`BabylonSlateAudioLifecyclePlugin.java`).
+- **Medium.** That listener treats only ringtone, in-call, and in-communication as active. Call screening and call redirect, which exist on the same API level as the listener, do not pause audio (`BabylonSlateAudioLifecyclePlugin.java`).
+- **Medium.** The Play console input is a text field. The plan’s CodeMirror console input is not there (`debug-console.tsx`).
+- **Medium.** The plan’s particle-material domains are `surface`, `postProcess`, and `interface`. Current domains are surface, landscape, post process, particle, and text. `interface` parses as surface (`catalog.ts`).
+- **Low.** Android audio teardown unregisters the noisy receiver with no guard. If registration threw, destroy throws before Capacitor teardown (`BabylonSlateAudioLifecyclePlugin.java`).
+
+## Reported in the forty-first batch, not re-checked
+
+- The plan’s stats HUD lists a rolling graph, memory, draw calls, actor counts, and per-channel bridge bytes. Default Stats shows FPS and script/physics time (`stats-hud.tsx`).
+- Session-report aggregation keeps the latest message and frame ids, not the first message plus timestamps (`diagnostics.ts`).
+- Session-report rows show guid and node id, and every row is expanded (`preview-session-report.tsx`).
+- The Play button badge is the compile-error count, not a failed-session flag (`editor-chrome-bar.tsx`).
+- The plan’s one-fixture-per-diagnostic-code set only has two scripting fixtures (`packages/scripting/fixtures`).
+- MSDF text does not use `@babylonjs/addons` or `@babylonjs/materials` (`packages/render/package.json`).
+
+## Rejected in the forty-first batch
+
+- The plan’s 60% coverage floor is the same physics gate already recorded at 50/50/45/50 (`testing.md`, `vitest.workspace.ts`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
