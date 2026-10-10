@@ -1670,6 +1670,18 @@ No new unchecked claims were added in this pass. The items above were read in so
 - Reparenting a Class writing the open graph immediately is already recorded (`reparentClassDocument`).
 - Step leaving a paused session running when the tick throws is already recorded (`applyPlaySessionStep`).
 
+## Verified in the seventieth batch
+
+- **Medium.** A perspective cursor ray normalizes the view direction, then places the near and far points at those distances along that unit vector. Off center, the vector’s z is less than 1, so the segment starts in front of the near plane and ends short of the far plane. The center ray is the only case whose local z is already 1 (`deprojectCursorRay`).
+- **Medium.** Device safe insets are divided by the safe-area node’s world scale. Measure runs for every node before arrange assigns that scale, so the scale is 1. A content-sized safe area is measured with the full inset and arranged with the inset divided by the real scale (`inset`, `measure`).
+- **Removal.** A project saved without a `geometry` or `water` quality group copies that group from the other groups’ shared tier (`sharedQualityTier`).
+- **Removal.** Asset references on Set Variable still read `value`, `default:<name>`, and the bare name after `default:value` (`assetVariableGuidsFromGraph`).
+- **Removal.** `createDefaultGraph` still builds a `logMessage` node. Load already rewrites that type to `debug.log` (`project.ts`).
+
+## Rejected in the seventieth batch
+
+- Recognizing a historical Data Sheet or Data Object and refusing to open it as a Data Tree is a rejection, not a reader that keeps the old payload (`normalizeDataTreeAsset`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
