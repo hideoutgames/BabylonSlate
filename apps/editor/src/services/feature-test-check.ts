@@ -158,11 +158,14 @@ export async function runFeatureTestCheck(options: {
   let cancelled = false;
   for (const scene of options.scenes) {
     if (signal.aborted) { cancelled = true; break; }
+    const result = emptySceneResult(scene);
+    scenes.push(result);
     try {
-      scenes.push(await checkScene(scene, mode, deps, signal, limits));
+      await checkScene(result, mode, deps, signal, limits);
     } catch (error) {
       if (!signal.aborted) throw error;
       cancelled = true;
+      result.problems.push("Cancelled while checking this scene.");
       deps.play()?.stop();
       break;
     }
@@ -170,19 +173,24 @@ export async function runFeatureTestCheck(options: {
   return { mode, startedAt, durationMs: deps.now() - startedAt, cancelled, scenes, pageErrors: options.pageErrors?.() ?? [] };
 }
 
-async function checkScene(
-  scene: { name: string; path: string },
-  mode: FeatureTestCheckMode,
-  deps: FeatureTestCheckDeps,
-  signal: AbortSignal,
-  limits: FeatureTestCheckTimeouts,
-): Promise<FeatureTestCheckSceneResult> {
-  const result: FeatureTestCheckSceneResult = {
+function emptySceneResult(scene: { name: string; path: string }): FeatureTestCheckSceneResult {
+  return {
     name: scene.name, path: scene.path,
     editor: { status: "not-opened", ms: 0, phase: null, frames: null },
     play: { status: "not-started", ms: 0, phase: null, frames: null, runtimeFps: null, snapshot: null, commands: [], logs: [] },
     session: null, passed: false, problems: [],
   };
+}
+
+/** Fills `result` in place, so a cancelled run still reports how far the scene got. */
+async function checkScene(
+  result: FeatureTestCheckSceneResult,
+  mode: FeatureTestCheckMode,
+  deps: FeatureTestCheckDeps,
+  signal: AbortSignal,
+  limits: FeatureTestCheckTimeouts,
+): Promise<void> {
+  const scene = result;
   const documentId = `scene:${scene.path}`;
   deps.onProgress?.(`${scene.name}: opening in the editor`);
   let started = deps.now();
@@ -201,13 +209,13 @@ async function checkScene(
     result.problems.push(active
       ? `Editor viewport did not finish loading in ${seconds(limits.sceneOpenMs)}${result.editor.phase ? ` (stuck at ${result.editor.phase})` : ""}.`
       : "Scene did not open; an unsaved-changes prompt or another dialog may have blocked it.");
-    return result;
+    return;
   }
   result.editor.status = opened;
   if (opened === "failed") {
     result.editor.phase = deps.viewport(documentId)?.phase() ?? null;
     result.problems.push(`Editor viewport reported Scene Loading Failed${result.editor.phase ? ` at ${result.editor.phase}` : ""}.`);
-    return result;
+    return;
   }
   deps.onProgress?.(`${scene.name}: measuring the editor viewport`);
   result.editor.frames = await deps.sampleFrames(limits.editorSampleMs, signal);
@@ -279,7 +287,6 @@ async function checkScene(
   }
   await waitFor(deps, signal, limits.playCloseMs, () => deps.sessionIdle() || null);
   result.passed = result.problems.length === 0;
-  return result;
 }
 
 function seconds(ms: number): string {
