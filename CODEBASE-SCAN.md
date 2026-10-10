@@ -282,6 +282,48 @@ These are from completed file reads. They are kept so they are not lost. They ar
 - Apple `xcodebuild` and upload commands use a 30-minute private-command timeout inside a 75-minute job (`private-command.mjs`).
 - TestFlight finalization lists only the first 200 builds (`testflight.mjs`).
 
+## Verified in the third batch
+
+- **High.** `wouldCreateCycle` in `packages/core/src/scene.ts` walks `parentId` with no visited set. `wouldCreateComponentCycle` records `seen`. An actor parent cycle that does not include the actor being moved never ends, so the next reparent check can hang.
+- **High.** `decodeBabasset` copies an inline chunk with `subarray` and does not compare `sha256`. A short payload is returned as the chunk.
+- **High.** Deleting a Class loads every closed document except traces. Any null or thrown load sets `failed`, and `deleteBlocked` disables confirm (`content-browser-workspace.tsx`).
+- **High.** `recastMeshesFromCollider2d` handles chain, polygon, and circle. `capsule2d` falls through to a default box.
+
+## Reported in the third batch, not re-checked
+
+- Creating a project deletes the finished folder if removing `.babylonslate-creating` throws, and the next create deletes a folder that still has that marker (`project-service.ts` `scaffoldOwnedProject`).
+- A `.gltf` import that consumes a PNG sidecar and then misses the `.bin` drops the PNG from the remaining import set (`gltf-import-batch.ts`).
+- `gltfJsonToGlb` can encode an empty BIN for a non-relative buffer URI (`glb-parse.ts`).
+- Static audio geometry bakes every mesh as a 1×1×1 box at the actor transform, ignoring mesh kind and parent (`audio-reverb.ts`).
+- glTF node scale `0` is treated as `1` (`glb-geometry.ts`).
+- Reverb occupancy rasterizes each triangle as its axis-aligned box (`audio-reverb.ts`).
+- External-change classification ignores deleted open files when the change count is small (`mtime-diff.ts`).
+- A guid-remap failure on the document chunk returns the original bytes after the header was already remapped (`guid-remap.ts`).
+- Encode timeout does not abort the in-flight worker job, and a commit throw after `compressed` is then reported as `encode_failed` (`encode-queue.ts`).
+- A font named `serif` is dropped from its own CSS stack (`font-stack.ts`).
+- Font file import does not attach TTF, WOFF, or OTF to an existing family (`importers/font.ts`).
+- An MSDF PNG can be consumed when the JSON page names a different file (`msdf-import-batch.ts`).
+- An audio-channel parent cycle also clears parents of nodes that only lead into the cycle (`audio-payload.ts`).
+- Memory blob storage returns the caller’s `Uint8Array` by reference (`blob-store.ts`).
+- Extra-chunk helpers skip chunks whose bytes were not loaded, so a later save can drop them (`asset-document.ts`).
+- An empty `actors` array drops meshes converted by `migrateSceneMeshesToActors` (`migration.ts`).
+- Havok character movement does not apply collider layer and mask (`havok-backend.ts` `moveCharacter`).
+- Software `shapeSweep` returns the center ray from both overlap branches (`software-backend.ts`).
+- An oriented software cylinder AABB uses four corners instead of the full slab (`software-backend.ts`).
+- `importNavMesh` disposes the live mesh before import, with no restore if import throws (`recast-backend.ts`).
+- Shader and particle reciprocal, log, and square-root nodes default to `0` (`shader-graph` and `particle-graph` catalogs).
+- Duplicating a behaviour-tree root does not parent the clone (`behaviour-tree` `duplicateSubtree`).
+- Unknown behaviour-tree decorators pass when no decorator host is set (`evaluate.ts`).
+- Canvas and document behaviour-tree parsers disagree on a missing service `intervalMs` (`serialize.ts` vs `tree.ts`).
+- Overlay pointer `up` and `cancel` do not clear hover (`scene-layer-pointer.ts`).
+- 2D marquee selection force-updates every pickable mesh (`two-d.ts`).
+- Water reflection searches every mesh for the skybox on each sync (`water-reflection.ts`).
+- `sameComponentVisuals` JSON-stringifies mesh parts during snapshot reconcile, separate from the rejection fingerprint (`snapshot-apply.ts`).
+- The material-function end-to-end test only checks that the outputs panel is visible (`e2e/p9-content.spec.ts`).
+- Source-control Edit Anyway only checks that the same button is still visible (`e2e/p15-source-control.spec.ts`).
+- Mannequin contact coverage is asserted only when one region has more than five contacts (`e2e/basic-3d-mannequin-shadows.spec.ts`).
+- Input Listen does not assert that the binding became `KeyJ` (`e2e/input-assets.spec.ts`).
+
 ## Coverage still open
 
 Large-file reads are still running for `water-material.ts`, `create-engine.ts`, `document-context.tsx`, `registry.ts`, `snapshot-apply.ts`, `script-host.ts`, and `driver.ts`, plus the remaining letter buckets. This note is updated as those reads are checked.
