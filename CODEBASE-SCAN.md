@@ -1576,6 +1576,15 @@ No new unchecked claims were added in this pass. The items above were read in so
 - Plugin overrides still persist `acceptedCompatibility` (`normalizePluginOverrides`).
 - Material texture closure still reads `value` and `Value` beside `default:value` (`materialParameterTextureGuidsFromGraph`).
 
+## Verified in the sixty-fourth batch
+
+- **Medium.** A dropdown menu is fixed to the trigger width and hides overflow on the cross axis. A select list only uses that width as a minimum, so it can grow. Long labels in an un-overridden menu wrap or clip (`DropdownMenuContent`, `SelectContent`).
+- **Medium.** The empty state sets a dashed border style and no border width. With the default border width of zero, the dashed well does not paint unless the caller adds a border (`Empty`).
+- **Low.** A disabled input sets `pointer-events-none`, so the value cannot be selected or copied and a tooltip on the input itself does not open. A disabled textarea does not (`input.tsx`, `textarea.tsx`).
+- **Low.** `KbdGroup` is typed as a `div` and renders a `kbd`. Shortcut keys nest another `kbd` inside it (`kbd.tsx`).
+- **Low.** Toggle pressed styling is also written for `data-state=on`. Base UI sets `aria-pressed` and `data-pressed`, so those selectors never match. The pressed fill still comes from `aria-pressed` (`toggle.tsx`).
+- **Low.** Tooltip animation includes `data-state=delayed-open`. Base UI uses `data-open` and `data-closed`. The open animation still runs from `data-open` (`tooltip.tsx`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
