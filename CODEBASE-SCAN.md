@@ -752,6 +752,27 @@ These are editor tests whose titles name a sequence the body does not run.
 
 Runtime tests `sn`–`z` and render tests `t`–`z` reported no new product bugs.
 
+## Verified in the twenty-fourth batch
+
+- **Medium.** Dismissing the material custom-mesh picker resets the preview to a cube. `openCustomMeshPicker` marks a fallback whenever the current mesh is not already a custom mesh with a guid. Closing the picker without a pick then writes `{ mesh: "cube", customMeshGuid: null }` (`material-editor.tsx`).
+- **Medium.** Renaming an existing material parameter commits `setProperties({ name })` with no uniqueness check. The new-parameter prompt rejects a duplicate name (`material-editor.tsx`).
+- **Medium.** A streaming scene can present while scene-level work is still pending. `isSceneFrameReady` treats the waiting count as clear whenever an admission scope exists (`admitted !== undefined || scene.getWaitingItemsCount() === 0`) (`scene-perf.ts`).
+- **Medium.** A scripting exec output does not fan out. `edgesAfterConnect` drops the previous wire when `singleExecOutput` is set and the source pin is exec. `docs/architecture/scripting.md` says exec pins accept multiple wires out (`graph-connect.ts`).
+- **Medium.** `callInterface` returns `{}` when there is no interface registry or no receiver. The scripting page says a miss returns pin defaults (`script-host.ts`).
+- **Medium.** Renaming a Class to a locked engine id throws. The scripting page says renaming an existing Class is not guarded (`project-service.ts`).
+- **Medium.** Play does not log `playSound`. `overlayLogForCommand` returns null for that command (`play-session.ts`).
+- **Low.** `docs/architecture/testing.md` says every package is gated at 60%. `packages/physics` is 50% lines, 50% functions, 45% branches, and 50% statements (`vitest.workspace.ts`).
+- **Low.** That page says end-to-end shards reuse a shared static artifact. The `e2e` job sets `BL_TEST_BUILD_MODE: ci-bundle` and does not depend on `static` (`.github/workflows/verify.yml`).
+
+## Reported in the twenty-fourth batch, not re-checked
+
+- Escape during keybind recording is tested with a window keydown, which does not reach the document listener (`keybind-settings.test.tsx`).
+- The 1 fps model preview test never creates a presenter because the shared engine stays null (`model-editor.test.tsx`).
+- `signOut` is not checked for an Authorization header on the session-remove request (`native-clerk.test.ts`).
+- Scene-layer `dispose` rethrows a bounded retirement failure as a failed teardown (`scene-layer-compositor.test.ts`).
+- Actor and ActorComponent event stubs also include On Game Loaded and Scalability Changed. SceneLayerActor does special-case overlay pointer events. A Call Interface miss with no method returns `{}` rather than pin defaults (`docs/architecture/scripting.md`).
+- The testing page’s exclusion table, shard count, merge-job count, phone safe-area viewport, and `fast-check` list do not match the current configs.
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine are running. The UI-package second pass did not start: the concurrent cap was already full, and the earlier assets-package read is still marked running. These reads are told not to edit this file and not to repeat findings already listed here.
