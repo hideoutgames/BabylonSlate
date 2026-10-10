@@ -112,7 +112,8 @@ describe("FeatureTest starter", () => {
   it("resolves every reference and decodes every document", async () => {
     const registry = reopened.registry!;
     for (const asset of registry.list()) {
-      for (const dependency of registry.requiredDependenciesFor(asset.header.guid)) {
+      // Hard and soft references alike: a dangling soft reference fails only at runtime.
+      for (const dependency of new Set([...asset.header.dependencies, ...registry.requiredDependenciesFor(asset.header.guid)])) {
         const target = registry.getByGuid(dependency);
         expect(target, `${asset.path} → ${dependency}`).toBeDefined();
         expect(target?.placeholder, `${asset.path} → ${dependency}`).toBeFalsy();
@@ -176,7 +177,7 @@ describe("FeatureTest starter", () => {
       expect(validateParticleGraphDocument(graph).filter((row) => row.severity === "error"), asset.path).toEqual([]);
     }
     for (const asset of ofType("AnimationGraph")) {
-      const graph = (await reopened.loadDocument("anim-graph", asset.path)) as AnimGraphDocument;
+      const graph = (await reopened.loadDocument("anim-graph", asset.path)) as unknown as AnimGraphDocument;
       expect(validateAnimGraph(graph).filter((row) => row.severity === "error"), asset.path).toEqual([]);
     }
   });

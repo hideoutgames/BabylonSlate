@@ -75,7 +75,7 @@ const HILL = { x: -20, z: -22, height: 4.5, radius: 7 };
 const LAKE = { x: 6, z: 14, width: 18, length: 13, surface: 0.5, bed: 2.5 };
 const PUDDLE = { x: -12, z: -8, height: 2, radius: 4 };
 const RIVER_WIDTH = 6;
-/** River bed depth below the surface; banks rise 0.6 m above it at the footprint edge. */
+/** River bed depth below the surface; banks rise 0.6 m above the surface at the footprint edge. */
 const RIVER_BED = 1;
 /**
  * River course from the mountain into the lake. A pinned `y` sets the surface;
@@ -125,7 +125,7 @@ const ISLAND_FOLIAGE: ReadonlyArray<{
   { model: "rocks-medium", count: 36, seed: 23, minScale: 0.7, maxScale: 1.5, minHeight: -1.5, maxSlope: 1.2 },
   { model: "snow-pile", count: 70, seed: 37, minScale: 0.8, maxScale: 1.8, minHeight: 1.2, maxSlope: 0.6 },
 ];
-const FOLIAGE_GROUP_ID = "ft-world-foliage";
+const FOLIAGE_GROUP_ID = "ft-world-foliage-group";
 /** `FT_Stress` Foliage: a jittered GRID × GRID carpet (72² = 5184 instances, 3 batches). Perf knob. */
 const STRESS_FOLIAGE_GRID = 72;
 const STRESS_FOLIAGE_SPACING = 0.42;
@@ -152,7 +152,11 @@ export async function placeFeatureTestWorld(ctx: FeatureTestContext): Promise<vo
   const land = (x: number, y: number, z: number): Vec3 => zone.at(LAND_CENTER[0] + x, y, LAND_CENTER[1] + z);
   const island = buildIsland(requireRef(ctx.assets.materials.landscape, "the landscape Material"));
   const ground = (x: number, z: number) => landscapeHeightAt(island.data, x, z) ?? SEABED;
-  const present = requireRef(ctx.assets.models["present-a-cube"], "the present-a-cube Model");
+  /** Terrain height under a zone-local point. */
+  const seabed = (x: number, z: number) => ground(x - LAND_CENTER[0], z - LAND_CENTER[1]);
+  const presentModel = requireRef(ctx.assets.models["present-a-cube"], "the present-a-cube Model");
+  const addPresent = (id: string, name: string, position: Vec3, yaw: number, waterActorId: string) =>
+    add(floatingPresent(id, name, position, yaw, presentModel, waterActorId));
   const cableMaterial = ctx.assets.materials.surface ?? null;
   /** Landscape-local discs (x, z, radius) kept clear of foliage. */
   const keepOut: Array<readonly [number, number, number]> = [[PUDDLE.x, PUDDLE.z, PUDDLE.radius + 3]];
@@ -192,16 +196,16 @@ export async function placeFeatureTestWorld(ctx: FeatureTestContext): Promise<vo
   add(actor("ft-world-puddle", "Puddle", tf(land(PUDDLE.x, PUDDLE.height + 0.03, PUDDLE.z)), [
     comp("ft-world-puddle-water", "WaterPuddleComponent", { width: 3, length: 2 }),
   ]));
-  add(dryDock(zone.at(DRY_DOCK.x, SEA, DRY_DOCK.z), ground(DRY_DOCK.x - LAND_CENTER[0], DRY_DOCK.z - LAND_CENTER[1])));
+  add(dryDock(zone.at(DRY_DOCK.x, SEA, DRY_DOCK.z), seabed(DRY_DOCK.x, DRY_DOCK.z)));
 
   // Buoyant presents: free in the ocean, moored to piles by Cables, and one in the lake.
   OCEAN_PRESENTS.forEach(([x, z, yaw], index) => {
-    add(floatingPresent(`ft-world-float-${index + 1}`, `Floating Present ${index + 1}`, zone.at(x, SEA + 0.15, z), yaw, present, OCEAN.id));
+    addPresent(`ft-world-float-${index + 1}`, `Floating Present ${index + 1}`, zone.at(x, SEA + 0.15, z), yaw, OCEAN.id);
   });
   MOORINGS.forEach(({ pile, present: [x, z], yaw }, index) => {
     const presentId = `ft-world-moored-${index + 1}`;
-    add(floatingPresent(presentId, `Moored Present ${index + 1}`, zone.at(x, SEA + 0.15, z), yaw, present, OCEAN.id));
-    const base = ground(pile[0] - LAND_CENTER[0], pile[1] - LAND_CENTER[1]);
+    addPresent(presentId, `Moored Present ${index + 1}`, zone.at(x, SEA + 0.15, z), yaw, OCEAN.id);
+    const base = seabed(pile[0], pile[1]);
     const height = SEA + 1.6 - base;
     const id = `ft-world-pile-${index + 1}`;
     add(actor(id, `Mooring Pile ${index + 1}`, tf(zone.at(pile[0], base, pile[1])), [
@@ -215,7 +219,7 @@ export async function placeFeatureTestWorld(ctx: FeatureTestContext): Promise<vo
       }, tf([0, height - 0.2, 0])),
     ]));
   });
-  add(floatingPresent("ft-world-lake-float", "Lake Present", land(LAKE.x + 3, LAKE.surface + 0.15, LAKE.z + 1), 25, present, LAKE_ID));
+  addPresent("ft-world-lake-float", "Lake Present", land(LAKE.x + 3, LAKE.surface + 0.15, LAKE.z + 1), 25, LAKE_ID);
 
   // Landscape and its Foliage share one origin, so instance transforms are landscape-local.
   add(actor("ft-world-landscape", "Island Landscape", tf(land(0, 0, 0)), [
@@ -360,9 +364,17 @@ function boxMesh(id: string, center: Vec3, size: Vec3): SerializedComponent {
 }
 
 /** Dynamic present with a fitted box collider that floats on `waterActorId`. */
-function floatingPresent(id: string, name: string, position: Vec3, yaw: number, modelGuid: string, waterActorId: string): SerializedActor {
+function floatingPresent(
+  id: string,
+  name: string,
+  position: Vec3,
+  yaw: number,
+  modelGuid: string,
+  waterActorId: string,
+): SerializedActor {
   const center = PRESENT_HEIGHT / 2;
-  return actor(id, name, tf(position, { rotationDeg: [0, yaw, 0], scale: [PRESENT_SCALE, PRESENT_SCALE, PRESENT_SCALE] }), [
+  const scale: Vec3 = [PRESENT_SCALE, PRESENT_SCALE, PRESENT_SCALE];
+  return actor(id, name, tf(position, { rotationDeg: [0, yaw, 0], scale }), [
     meshComp(`${id}-mesh`, "box", { assetGuid: modelGuid }),
     comp(`${id}-body`, "RigidBodyComponent", { motionType: "dynamic", mass: 40, angularDamping: 0.4 }),
     comp(`${id}-collider`, "ColliderComponent", {

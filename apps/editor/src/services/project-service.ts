@@ -381,6 +381,8 @@ export class ProjectService {
   private pluginOverrides: Record<string, PluginEnableOverride> = {};
   /** Asset guids stay stable across saves so references survive a rewrite. */
   private readonly assetGuids = new Map<string, string>();
+  /** Guids a scaffold embedded in other documents before writing these paths. */
+  private readonly reservedAssetGuids = new Map<string, string>();
   /** Unsaved geometry results become persistent only with the matching Scene. */
   private readonly sceneAudioReverb = new Map<string, { fingerprint: string; bytes: Uint8Array }>();
   private readonly registryListeners = new Set<() => void>();
@@ -2084,20 +2086,30 @@ export class ProjectService {
       import("../lib/feature-test"),
       import("../lib/engine-content"),
     ]);
-    const result = await applyFeatureTestScaffold({
-      mainScenePath: MAIN_SCENE_FILE,
-      host: {
-        registry,
-        saveDocument: (kind, path, payload, options) => this.saveDocument(kind, path, payload, options),
-        loadDocument: (kind, path) => this.loadDocument(kind, path),
-        guidForAsset: (path) => this.guidForAsset(path),
-        writeSceneNavmeshChunk: (path, bytes, payload) => this.writeSceneNavmeshChunk(path, bytes, payload),
-        loadBytes: content.loadEngineContentBytes,
-        loadOptional: content.loadOptionalEngineContent,
-        generateNavMesh: generateFeatureTestNavMesh,
-        modelImportScale: 1,
-      },
-    });
+    let result: Awaited<ReturnType<typeof applyFeatureTestScaffold>>;
+    try {
+      result = await applyFeatureTestScaffold({
+        mainScenePath: MAIN_SCENE_FILE,
+        host: {
+          registry,
+          saveDocument: (kind, path, payload, options) => this.saveDocument(kind, path, payload, options),
+          loadDocument: (kind, path) => this.loadDocument(kind, path),
+          // References are written before their targets, so the guid must hold until the save.
+          guidForAsset: async (path) => {
+            const guid = await this.guidForAsset(path);
+            if (!registry.getByPath(path)) this.reservedAssetGuids.set(path, guid);
+            return guid;
+          },
+          writeSceneNavmeshChunk: (path, bytes, payload) => this.writeSceneNavmeshChunk(path, bytes, payload),
+          loadBytes: content.loadEngineContentBytes,
+          loadOptional: content.loadOptionalEngineContent,
+          generateNavMesh: generateFeatureTestNavMesh,
+          modelImportScale: 1,
+        },
+      });
+    } finally {
+      this.reservedAssetGuids.clear();
+    }
     const paths = registry.listDocumentPaths({ rootId: "project" });
     document.scenes = paths.scenes;
     document.graphs = paths.graphs;
@@ -2691,6 +2703,8 @@ export class ProjectService {
   private async guidForAsset(path: string): Promise<string> {
     const indexed = this.assetRegistry?.getByPath(path);
     if (indexed) return indexed.header.guid;
+    const reserved = this.reservedAssetGuids.get(path);
+    if (reserved) return reserved;
     const storage = this.storageForPath(path);
     if (await storage.exists(path)) {
       try {
