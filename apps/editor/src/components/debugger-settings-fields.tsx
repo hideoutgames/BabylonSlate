@@ -26,6 +26,15 @@ export function DebuggerSettingsFields({ settings, onChange, focusTargetId }: {
         <Switch id="setting-debug-mode" data-testid="setting-debug-mode" checked={settings.debugMode}
           onCheckedChange={(debugMode) => void onChange({ debugMode })} />
       </Field>
+      <Field orientation="horizontal" className="settings-field" data-disabled={!settings.debugMode || undefined}>
+        <FieldContent>
+          <FieldLabel htmlFor="setting-trace-graphics-errors">Trace Graphics Errors</FieldLabel>
+          <FieldDescription>Checks every WebGL call so Copy Error names the call that failed. Rendering becomes much slower while this is on; turn it off after collecting a report. Requires Debug Mode.</FieldDescription>
+        </FieldContent>
+        <Switch id="setting-trace-graphics-errors" data-testid="setting-trace-graphics-errors" disabled={!settings.debugMode}
+          checked={settings.debugMode && settings.traceGraphicsErrors}
+          onCheckedChange={(traceGraphicsErrors) => void onChange({ traceGraphicsErrors })} />
+      </Field>
     </FieldSet>
     <FieldSet>
       <FieldLegend>Simulation</FieldLegend>

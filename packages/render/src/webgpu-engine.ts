@@ -63,6 +63,7 @@ export async function createAppWebGpuEngine(
       caps: engine.getCaps(),
       renderer: engine.getInfo().renderer,
     });
+    reportWebGpuDeviceProblems(engine);
     return engine;
   } catch (error) {
     const failures: unknown[] = [error];
@@ -126,4 +127,26 @@ function disposeFailedWebGpuInitialization(
       failures,
       "Failed to release a partially initialized WebGPU Engine.",
     );
+}
+
+type DiagnosedDevice = {
+  lost?: Promise<{ reason?: string; message?: string }>;
+  addEventListener?: (type: "uncapturederror", listener: (event: { error?: { message?: string } }) => void) => void;
+};
+
+/**
+ * A lost device makes every later call fail with an unrelated-looking
+ * InvalidStateError. Log the loss reason and uncaptured errors so copied
+ * load reports name the cause; our own disposal ("destroyed") is not logged.
+ */
+function reportWebGpuDeviceProblems(engine: WebGPUEngine): void {
+  // Pinned Babylon 9.29 owning-device boundary.
+  const device = (engine as unknown as { _device?: DiagnosedDevice })._device;
+  void device?.lost?.then((info) => {
+    if (info.reason === "destroyed") return;
+    console.error(`[render] WebGPU device lost (${info.reason ?? "unknown"}): ${info.message || "no message"}`);
+  }, () => undefined);
+  device?.addEventListener?.("uncapturederror", (event) => {
+    console.warn(`[render] WebGPU uncaptured error: ${event.error?.message ?? "unknown"}`);
+  });
 }

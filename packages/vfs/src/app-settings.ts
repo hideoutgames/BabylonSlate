@@ -111,6 +111,8 @@ export const engineSettingsSchema = z.object({
   renderingOverridesEnabled: z.boolean().default(false),
   /** Shows developer diagnostics: the Feature Test starter, its device check, and Copy Error on load failures. */
   debugMode: z.boolean().default(false),
+  /** Debug Mode only: check every WebGL call so load reports name the failing one. Slow. */
+  traceGraphicsErrors: z.boolean().default(false),
   hardwareScalingLevel: z.number().positive().default(1),
   modelImportDefaultScale: z.preprocess((value) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return value;
