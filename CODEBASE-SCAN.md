@@ -1423,6 +1423,34 @@ No new unchecked claims were added in this pass. The items above were read in so
 - **Removal.** Input mappings with neither an `actions` nor an `axes` array are replaced by Jump, Confirm, Move, and Look. An explicit empty list stays empty. The comment says this fills an unknown project input blob (`normalizeInputMappings`).
 - **Low.** The pointer binding catalog is still registered. The binding picker returns no codes for pointer or touch, and nothing authors `device: "pointer"` (`binding-catalog.ts`, `binding-code-picker.tsx`).
 
+## Verified in the fifty-fifth batch
+
+- **High.** Behaviour-tree abort walks parents until it finds a selector, with no visited set. `parentOf` keeps one parent per node, so a cycle walks forever. That walk runs in `applyAborts`, before the 10,000-step guard. Play does not call `validateBehaviourTree` (`evaluate.ts`).
+- **High.** A 2D nav bake floor is the bounding box of actor origins plus 8 units. Collider and tilemap walls are still emitted from those origins, so geometry farther than the pad sits off the only walkable surface (`xyBoundsFromActors`, `collectNavBakeGeometry`).
+- **Medium.** A Loop whose count is `0` or missing restarts forever. The catalog default is `0`. Instant tasks restart in the same tick until the 10,000-step guard, and the tree stays running (`consumeLoop`, `catalog.ts`).
+- **Medium.** Blackboard Is Set treats `false` as unset, the same as a missing key. `0` and `""` count as set (`isSet`).
+- **Medium.** A node under two parents keeps whichever parent was written last. Both parents share that child’s `lastResults` entry, so a success or failure from the first parent makes the second skip the child (`parentOf`, `evaluate.ts`).
+- **Medium.** An abort starts a cooldown and the following cooldown tick subtracts this frame’s `dt`. A cooldown shorter than the frame never blocks. A time-limit failure starts its cooldown after that tick (`applyAborts`, `tickCooldowns`).
+- **Medium.** The behaviour-tree overlay marks `running` only for the stack and `btNodeId`. A parallel branch that yielded keeps `lastResult: "running"` and `running: false` (`behaviourTreeToSerialized`).
+- **Low.** Only the first Loop decorator on a node counts. Another Loop on the same node never stops the restart (`consumeLoop`).
+- **Low.** A non-finite service `intervalMs` is kept. The service never elapses. The editor parser replaces those values with `250` (`parseServices`).
+- **Medium.** World Position Offset validation, once it reaches a node, walks every incoming edge. A fragment-only node wired only to an unused Combine `w` still fails the vertex-stage check (`walkWorldPositionOffsetNode`).
+- **Medium.** The GLSL converter truncates a one-argument constructor that is wider than the target. `float(vec3(1.0, 2.0, 3.0))` becomes the first component. GLSL does not allow that constructor (`Converter.call`).
+- **Medium.** A short authored vector copies component 0 into the missing channels. A vec3 default `[1, 2]` lowers as `[1, 2, 1]`. The unconnected-pin list leaves a length-2 array unchanged, so the inspector and the shader disagree (`constantComponents`, `listUnconnectedMaterialPinDefaults`).
+- **Low.** The material plan hash stores `alphaCutoff` to four decimal places. The compiler bakes the full number. Two cutoffs that round together share a program (`hashPlan`).
+- **Low.** VectorMask’s value pin is fixed as vec4. The “numeric input” error cannot fire. Only the empty-channel check is live (`vectorMaskError`).
+- **Removal.** A material whose `schemaVersion` is below current rewrites blank and duplicate parameter names, and rewrites a Color Parameter `out` link to `rgb` (`normalizeLegacyParameterNames`, `normalizeColorParameterEdges`).
+- **Removal.** Custom GLSL whose `customVersion` is not `2` still copies `glsl` to `body`, fills a missing body with `a + b`, and validates the old expression form. New palette nodes are version 2 (`normalizeNodeProperties`, `custom-glsl.ts`).
+- **Medium.** In 2D, blocker culling tests a stand-in slab `z = [-1, 1]` and ignores actor Z. A blocker at `z = 0` and one at `z = 50` pass or fail together (`blockerIntersectsBakeBounds`).
+- **Medium.** Nav cylinders use `size.x` as the radius and `size.y` as the height. `size.z` is never read (`cylinderMesh`).
+- **Medium.** `findPath` returns the points from a successful `computePath` and does not check that the path ends at the goal (`recast-backend.ts`).
+- **Medium.** Dynamic bakes set `expectedLayersPerTile` to 4. The tile budget is width times height times 4 (`generateNavMesh`).
+- **Medium.** `maxEdgeLen`, `minRegionArea`, `mergeRegionArea`, and `detailSampleDist` are copied into the Recast config with no cell-size conversion (`toRecastConfig`).
+- **Medium.** `syncAgentPosition` writes `npos` and returns true. It does not move the path corridor (`recast-backend.ts`).
+- **Medium.** The nav actor stores a tiled flag and the details panel can edit it. `generateNavMesh` never reads it. Tile-cache output follows `supportDynamicObstacles` (`settings.ts`, `generateNavMesh`).
+- **Low.** `debugOverlay` is still parsed and a stored `true` is kept. The overlay the scene uses is `showNavmesh` (`settings.ts`).
+- **Low.** `addAgent` uses height `1` when the caller omits it. The default agent height is `2` (`recast-backend.ts`, `DEFAULT_NAV_AGENT_PARAMS`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
