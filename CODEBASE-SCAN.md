@@ -1630,6 +1630,19 @@ No new unchecked claims were added in this pass. The items above were read in so
 - **Removal.** Engine plugin listing throws when loose `.babplugin` files exist without `catalog.json`. Settings then offers an upgrade that expands those archives (`upgradeLegacyArchives`).
 - **Removal.** Content-browser delete-reference repair still treats `header.type === "Graph"` as a Class (`deletingClassGuids`).
 
+## Verified in the sixty-eighth batch
+
+- **High.** Deleting a function removes the member and its function graph and leaves `functions.call` nodes. Deleting a variable removes only the member and leaves Get, Set, and Validated Get nodes. Event deletion already keeps `flow.event.call` (`removeClassMember`).
+- **High.** Thumbnail capture queues every material guid as type `Material` and skips any other header type. A mesh `materialGuid` that points at a Material Instance is never loaded, so the parent Material is not pulled. A Material Instance asset itself returns null (`prepareAssetThumbnailInput`).
+- **High.** Play collects material guids from Mesh, Cable, Landscape, Foliage, and several 2D components. It does not collect `DynamicRuntimeMeshComponent`, Sprite, Tilemap, or Text3D `materialGuid`. The asset field list includes those (`materialAssetGuidsFromScene`, `COMPONENT_ASSET_FIELDS`).
+- **High.** Saving an Animation Object stores only `{ nodes, edges }`. Parsing still reads `functionGraphs`. The next persist drops any function slice on that object. Class graphs store the whole graph (`replaceSerializedGraphInDocument`, `parseAnimationObject`).
+- **Medium.** The viewport render gate observes the whole document body and queries for dialog overlays on every insert, removal, and overlay attribute change (`attachViewportRenderGate`).
+- **Medium.** A missing plugin `defaults.json` is an empty map. A present file that is not JSON throws from `JSON.parse` and fails list, import, and the default-enabled toggle (`readDefaults`).
+- **Medium.** Nested structure rows recurse with no depth or seen set. A structure that references itself overflows the inspector (`flattenStructFieldRows`).
+- **Medium.** Extension API calls are tracked so dispose can wait. `command.execute` is not tracked, so deactivate can drop project storage while the command is still running (`EditorExtensionHost.run`).
+- **Medium.** A local function name marks every interface method and parent overridable of that name as already filled, even when the local function does not implement or override it (`collectOverridableFunctionRows`).
+- **Removal.** A variable Get or Set with no `variableId` is matched by name. New nodes always write `variableId` (`isVariableAccessNode`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
