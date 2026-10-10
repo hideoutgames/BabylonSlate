@@ -1321,6 +1321,15 @@ Bloat to remove. The engine is not released, so these paths exist only to accept
 
 - Capacitor `cap sync` can log a web-asset copy error and still exit 0, so sync then archive signs the previous native web copy. The Capacitor CLI source is not in this tree (`ios-sync.mjs`, `android-sync.mjs`).
 
+## Verified in the forty-ninth batch
+
+- **Medium.** The theming page says Project Settings Input colors devices with pin tokens and axis colors on 2D binding toggles. Settings has no Input category. Binding details show the words “X · Horizontal” and “Y · Vertical” and do not use those tokens (`theming.md`, `settings-modal.tsx`, `input-asset-panels.tsx`).
+- **Low.** The testing page says the static job’s 15 minutes include test-artifact builds. That job typechecks, lints, and builds the docs site. Each end-to-end shard builds the browser bundle (`testing.md`, `verify.yml`).
+- **Low.** The node Vitest project also includes UI, scripting, scripting-nodes, editor-kit, and the Playwright config test. The testing page’s package list leaves those out (`vitest.workspace.ts`, `testing.md`).
+- **Low.** Code multiline editors use a fixed `720px` by `960px` cap. The theming page says they use `editor-dialog-large` with no fixed desktop cap (`multiline-text-field.tsx`, `theming.md`).
+- **Low.** On a coarse pointer the launcher title bar is at least 44px tall and the status bar is 26px. The theming page says 28px and 22px (`homepage.css`, `theming.md`).
+- **Low.** There is no `docs/architecture/distribution.md`. The distribution page is `docs/development/distribution.md`.
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
