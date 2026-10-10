@@ -599,9 +599,16 @@ These are documentation mismatches. The code is the behavior below. The `useDocu
 - **Medium.** `docs/architecture/keybinds.md` lists Editing defaults as Duplicate, Rename, and Delete. `editor-keybinds.ts` also defaults Copy Actors to `Mod+C` and Paste Actors to `Mod+V`.
 - **Medium.** `docs/architecture/debugger.md` does not list `renderpath`, `possess`, or `destroyactor`. All three are commands (`commands.ts`). `lightsdebug` is documented there. `docs/architecture/console-commands.md` describes `quality lighting` as `[tier|reset]`. `quality lighting budget 3` succeeds and sets `maxLocalLights` (`execute-console.test.ts`).
 
+## Verified in the thirteenth batch
+
+- **High.** Screen-space reflections compose onto the original scene color and drop ambient occlusion when both are on. AO compose records `mainInput` as the stage index of the color to composite. SSR combine hardcodes `mainInput: 0`. The frame graph binds `inputs[stage.mainInput]` as `mainSampler`, and `inputs[0]` is the color before the first stage (`spatial-effects.ts`, `spatial-effects-graph.ts`). Documented order is occlusion, then reflections (`scene-effects.ts`).
+- **Medium.** The volumetric march shader does not receive the compile-failure callback. AO, SSR, and volume compose pass `failure` into `customWrapper`. The volume march call omits it, so a failed march does not set `compileFailure` (`spatial-effects.ts`).
+
+The second-sprite overlay map entry was already reported: `createPlayMesh` stores one overlay per slot.
+
 ## Coverage still open
 
-These reads are still running: render snapshot files other than `snapshot-apply.ts`, the assets package pass, and render files `g`–`o`.
+These reads are still running: the assets package pass and render files `g`–`o`. Render files whose names start with `s`, including `snapshot-apply.ts`, are recorded.
 
 Architecture docs `a`–`m` were read in full: `anim-graph.md`, `asset-registry.md`, `audio.md`, `behaviour-tree.md`, `bridge.md`, `command-layer.md`, `components.md`, `console-commands.md`, `containers.md`, `debugger.md`, `editor-extensions.md`, `exporter.md`, `fonts.md`, `global-search.md`, `index.md`, `input.md`, and `keybinds.md`. Earlier docs read: `navigation.md`, `object-model.md`, `overview.md`, `particles.md`, `physics.md`, `plugins.md`, `scene-editing.md`, `scene-layers.md`, `source-control.md`, `sprites.md`, `tilemaps.md`, `vfs.md`, `feature-test.md`, `gestures.md`, and `save-games.md`. `scripting.md`, `shader-graph.md`, `testing.md`, `theming.md`, `distribution.md`, `particle-emitters.md`, and `engineplan.md` were read only where a sentence stated a save, load, delete, security, or lifecycle guarantee. `render.md`, `perf-budget.md`, and `renderer-qualification.md` were not line-read.
 
