@@ -773,6 +773,32 @@ Runtime tests `sn`–`z` and render tests `t`–`z` reported no new product bugs
 - Actor and ActorComponent event stubs also include On Game Loaded and Scalability Changed. SceneLayerActor does special-case overlay pointer events. A Call Interface miss with no method returns `{}` rather than pin defaults (`docs/architecture/scripting.md`).
 - The testing page’s exclusion table, shard count, merge-job count, phone safe-area viewport, and `fast-check` list do not match the current configs.
 
+## Verified in the twenty-fifth batch
+
+- **High.** A custom-event argument named `target` is never sent. Call codegen skips every input pin whose name is `target`, including the data argument. Implicit self still drops that argument (`scripting-nodes` `flow.ts`).
+- **High.** Array Contains, Find, and Remove Item use `includes` and `indexOf`. Vector, rotator, color, transform, and struct values are new objects on each read, so an equal value does not match the stored element (`array-map.ts`).
+- **High.** A data definition with a `missing-field` error is omitted from the runtime catalog. `RuntimeDataCatalog.replace` adds a definition only when validation has no error. Every tree entry of that definition then keeps `values` null, including entries that already have the new field (`data-catalog.ts`).
+- **High.** Struct map keys are compared by object identity. `projectFieldValue` stores keys in a `Set`. Two entries with the same struct fields are different objects, so both are kept and a later equal lookup misses (`data-values.ts`).
+- **High.** An LFS lock response that is empty, invalid JSON, or not an object becomes `{}`. `list` then returns success with no locks. A refresh that applies that result clears `locksByPath` and drops read-only mode (`git-lfs-lock-provider.ts`).
+- **High.** A particle texture can bind an older block-aligned KTX2 chunk. The committed particle encode is read only when the first selected chunk is not block-aligned (`resolve-gpu-texture.ts`).
+- **High.** Shift-click in a tree toggles one row. `onPointerUp` treats Shift like Ctrl and calls `onSelect` with `{ additive: true }`. Shift+Arrow passes `{ range: true }` (`tree-view.tsx`).
+
+## Reported in the twenty-fifth batch, not re-checked
+
+- Int switch cases truncate `2.9` to `2` with no warning (`normalizeIntSwitchCases`).
+- A color pin that has never had an alpha is stored as `{ w: 0 }` (`colorRgbToPinDefault`).
+- An unknown member pin type compiles as float (`pinTypeForMember`).
+- A stale material-preview failure sets `status` to `error` and drops a newer dirty edit (`materialPreviewReducer`).
+- An unclosed `/*` in Custom GLSL is accepted and comments out the generated helper’s closing brace (`custom-glsl.ts`).
+- Shader-graph docs say a missing vector channel is widened with Z = 0. `convertMaterialValue` pads with `1`. The page also omits the landscape and text material domains.
+- A sprite pivot uses Babylon `setPivotPoint`, so the graphic stays centered while the collider shifts (`applySpriteAnimationAssetFrame`).
+- `pointercancel` over a 2D button emits `onClick` (`applyOverlayPointer`).
+- Scale-down hardware pressure treats a null presentation interval as 0 ms (`noteFramePressure`).
+- Lock polling can start after a hidden-document pause that arrived before `start`, and overlapping refreshes can drop a successful older result (`poll-scheduler.ts`).
+- Git prefill of a detached HEAD uses the first branch merge ref (`git-config.ts`).
+- OBJ import treats any same-stem file other than `.obj`, `.glb`, or `.gltf` as a sidecar (`groupObjImportSidecars`).
+- Pull-request review bodies are not scanned for session links (`check-public-hygiene.mjs`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine are running. The UI-package second pass did not start: the concurrent cap was already full, and the earlier assets-package read is still marked running. These reads are told not to edit this file and not to repeat findings already listed here.
