@@ -68,8 +68,8 @@ describe("formatFeatureTestCheckReport", () => {
       ],
     };
     const lines = formatFeatureTestCheckReport(report, environment).split("\n");
-    expect(lines).toContain("Benchmark: every benchmarked scene holds 60 fps up to low · forward and 30 fps up to medium · forward (2/2 scenes benchmarked)");
-    expect(lines).toContain("  Holds 60 fps up to: high · forward · 30 fps up to: ultra · forward");
+    expect(lines).toContain("Benchmark: highest tier every benchmarked scene holds at 60 fps: low · forward · at 30 fps: medium · forward (2/2 scenes benchmarked)");
+    expect(lines).toContain("  Highest tier at 60 fps: high · forward · at 30 fps: ultra · forward");
     expect(lines.find((line) => line.includes("high · clustered") && line.includes("57"))).toContain("(ran forward)");
   });
 });

@@ -50,7 +50,7 @@ function sceneLines(scene: FeatureTestCheckSceneResult): string[] {
     for (const sample of play.benchmark) {
       lines.push(`    ${pad(sample.label, 18)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 6)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 8)}${pad(ms(sample.cpuMs), 8)}${pad(ms(sample.gpuMs), 8)}${pad(String(sample.drawCalls), 7)}${sample.resolution ?? "-"}${ranInstead(sample)}`);
     }
-    lines.push(`  Holds 60 fps up to: ${bestProfile([play.benchmark], SMOOTH) ?? "none"} · 30 fps up to: ${bestProfile([play.benchmark], PLAYABLE) ?? "none"}`);
+    lines.push(`  Highest tier at 60 fps: ${bestProfile([play.benchmark], SMOOTH) ?? "none"} · at 30 fps: ${bestProfile([play.benchmark], PLAYABLE) ?? "none"}`);
   }
   const session = scene.session;
   if (session) {
@@ -114,7 +114,7 @@ export function formatFeatureTestCheckReport(report: FeatureTestCheckReport, env
   const sweeps = report.scenes.map((scene) => scene.play.benchmark).filter((sweep) => sweep.length);
   if (report.mode === "benchmark") {
     lines.push(sweeps.length
-      ? `Benchmark: every benchmarked scene holds 60 fps up to ${bestProfile(sweeps, SMOOTH) ?? "none"} and 30 fps up to ${bestProfile(sweeps, PLAYABLE) ?? "none"} (${sweeps.length}/${report.scenes.length} scenes benchmarked)`
+      ? `Benchmark: highest tier every benchmarked scene holds at 60 fps: ${bestProfile(sweeps, SMOOTH) ?? "none"} · at 30 fps: ${bestProfile(sweeps, PLAYABLE) ?? "none"} (${sweeps.length}/${report.scenes.length} scenes benchmarked)`
       : "Benchmark: no scene reached Play");
   }
   lines.push("");

@@ -135,7 +135,7 @@ For devices without a test harness (iPad, phones, other browsers), a Feature Tes
   - draw calls, mesh and texture counts, CPU/GPU frame cost and render resolution;
   - console command output and duration;
   - the Preview Session Report entries, texture counts before and after Play (`LEAK` when Play left textures), and Play error/warning lines.
-- **Benchmark output:** a per-profile table per scene. It also lists the highest Forward tier that holds 60 fps (at least 55 fps, p95 ≤ 25 ms) and 30 fps (at least 28 fps, p95 ≤ 45 ms), per scene and across all of them. A profile the engine could not apply (for example Clustered Forward on an orthographic camera) shows `(ran forward)`.
+- **Benchmark output:** a per-profile table per scene. Quality tiers include their resolution scale, so the resolution column changes between tiers. It also lists the highest Forward tier that holds 60 fps (at least 55 fps, p95 ≤ 25 ms) and 30 fps (at least 28 fps, p95 ≤ 45 ms), per scene and across all of them. A profile the engine could not apply (for example Clustered Forward on an orthographic camera) shows `(ran forward)`.
 - **Pass/fail:** a scene fails when it does not open or load (120 s each), a command fails or times out (60 s), the session report has an error, or release is not confirmed. While a check runs, a small status bar with **Cancel** replaces the dialog, and the Preview Session Report dialog is held back; its entries go into the report instead.
 - **Code:** runner `apps/editor/src/services/feature-test-check.ts`; text report `apps/editor/src/lib/feature-test-check-report.ts`; dialog `apps/editor/src/components/feature-test-check-dialog.tsx`. `FEATURE_TEST_CHECK_SCENES` must name existing scenes; the scaffold gate checks this.
 
