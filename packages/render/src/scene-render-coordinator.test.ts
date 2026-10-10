@@ -350,6 +350,20 @@ it("rejects a superseded owner while allowing its replacement to finish preparat
   renderer.dispose();
 });
 
+// Play loads invalidate the graph as assets arrive (for example an Area Light's emission texture).
+it("finishes a current owner's preparation when the graph is invalidated during it", async () => {
+  const { scene, renderer } = host();
+  let assetsReady = false;
+  scene.addIsReadyCheck({ isReady: () => assetsReady });
+  const preparing = renderer.prepare();
+  await vi.waitFor(() => expect(scene.objectRenderers).toHaveLength(1));
+  renderer.invalidate();
+  assetsReady = true;
+  expect(await preparing).toEqual({ path: "frameGraph" });
+  expect(renderer.render()).toMatchObject({ path: "frameGraph", readyForPresentation: true });
+  renderer.dispose();
+});
+
 it("disposes a pending graph without stranding readiness or touching a sibling scene", async () => {
   const { engine, scene, renderer } = host();
   scene.addIsReadyCheck({ isReady: () => false });

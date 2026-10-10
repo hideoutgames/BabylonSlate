@@ -11,6 +11,9 @@ import { retainWaterPlanarReflections } from "./water-planar-reflection";
 
 class PreparationChanged extends Error {}
 
+/** Bound on one preparation generation without observable readiness. */
+const PREPARATION_TIMEOUT_MS = 10_000;
+
 function outputSnapshot(scene: Scene, camera: Camera) {
   const target = camera.outputRenderTarget;
   const size = target?.getSize();
@@ -103,29 +106,37 @@ export class SceneRenderCoordinator {
     this.graph.invalidate();
   }
 
-  /** No drawing: a resize or camera change restarts preparation within one deadline. */
+  /**
+   * No drawing: a resize, camera change or invalidation restarts preparation
+   * with a fresh deadline while the owner stays current. Asset arrival during a
+   * load (for example an Area Light's emission texture) invalidates the graph;
+   * only the owner's own cancellation or disposal ends the preparation.
+   */
   prepare(assertCurrent: () => void = () => {}): Promise<ForwardSceneGraphResult> {
     assertCurrent();
     this.refreshOutline();
-    const generation = this.generation;
-    if (this.pending?.generation === generation)
+    if (this.pending?.generation === this.generation)
       return this.pending.promise.then((result) => { assertCurrent(); return result; });
     const previous = this.pending;
+    const pending = { generation: this.generation, promise: undefined as unknown as Promise<ForwardSceneGraphResult> };
+    let deadline = 0;
     const check = () => {
       assertCurrent();
-      if (this.disposed || this.scene.isDisposed || this.generation !== generation)
+      if (this.disposed || this.scene.isDisposed)
         throw new PreparationChanged("Scene rendering preparation was superseded or disposed.");
+      if (this.generation !== pending.generation) {
+        pending.generation = this.generation;
+        deadline = performance.now() + PREPARATION_TIMEOUT_MS;
+      }
     };
     const promise = (async () => {
       if (previous) {
-        // A previous owner's cancellation cannot reject its replacement. The
-        // previous owner is always superseded here: a same-generation owner
-        // is reused above.
+        // A previous owner's cancellation cannot reject its replacement.
         try { await previous.promise; }
-        catch { /* superseded owner's outcome */ }
+        catch { /* previous owner's outcome */ }
       }
+      deadline = performance.now() + PREPARATION_TIMEOUT_MS;
       check();
-      const deadline = performance.now() + 10_000;
       for (;;) {
         check();
         flushSceneLatticeDeformers(this.scene);
@@ -134,8 +145,12 @@ export class SceneRenderCoordinator {
         const camera = this.scene.activeCamera;
         if (!camera) throw new Error("Scene rendering requires an active camera.");
         const snapshot = outputSnapshot(this.scene, camera);
+        const iteration = pending.generation;
         const checkOutput = () => {
           check();
+          // An invalidated build is stale: abort it and rebuild for the new generation.
+          if (pending.generation !== iteration)
+            throw new PreparationChanged("Scene rendering was invalidated during preparation.");
           if (performance.now() >= deadline)
             throw new Error("Scene rendering preparation timed out.");
           const current = outputSnapshot(this.scene, camera);
@@ -152,12 +167,12 @@ export class SceneRenderCoordinator {
           }
         } catch (error) {
           check();
-          if (!(error instanceof PreparationChanged)) throw error;
+          if (!(error instanceof PreparationChanged) && pending.generation === iteration) throw error;
         }
         await new Promise<void>((resolve) => setTimeout(resolve, 16));
       }
     })();
-    const pending = { generation, promise };
+    pending.promise = promise;
     this.pending = pending;
     const settled = () => { if (this.pending === pending) this.pending = undefined; };
     void promise.then(settled, settled);
