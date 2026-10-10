@@ -2,6 +2,7 @@
  * Fixed world layout of the FeatureTest main scene. Every area places its
  * actors inside its own zone so features never overlap and performance runs
  * always see the same scene. +X right, +Y up, +Z away from the main camera.
+ * Landscape and water live in the separate `FT_World` scene (`world.ts`).
  */
 
 export type FeatureTestZoneId =
@@ -18,8 +19,7 @@ export type FeatureTestZoneId =
   | "ai"
   | "scripting"
   | "streaming"
-  | "lod"
-  | "world";
+  | "lod";
 
 export interface FeatureTestZone {
   id: FeatureTestZoneId;
@@ -47,7 +47,6 @@ export const FEATURE_TEST_ZONES: Readonly<Record<FeatureTestZoneId, FeatureTestZ
   scripting: { id: "scripting", title: "Scripting", center: [-32, 64], size: [24, 24] },
   ai: { id: "ai", title: "AI And Navigation", center: [0, 64], size: [24, 24] },
   lod: { id: "lod", title: "Model LOD", center: [64, 64], size: [56, 24] },
-  world: { id: "world", title: "Landscape And Water", center: [0, 144], size: [112, 80] },
 };
 
 /** Static main camera: frames the three zone rows from behind and above. */
@@ -57,9 +56,6 @@ export const FEATURE_TEST_MAIN_CAMERA = {
   position: [0, 38, -52] as [number, number, number],
   target: [0, 0, 36] as [number, number, number],
 };
-
-/** Global Water Volume elevation: below every zone floor so nothing floods. */
-export const FEATURE_TEST_SEA_LEVEL = -6;
 
 /** World position from a zone-local offset (x, y, z). */
 export function zonePoint(

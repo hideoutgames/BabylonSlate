@@ -13,6 +13,7 @@ export const FEATURE_TEST_SCENES = {
   stress: "assets/FeatureTest/Scenes/FT_Stress.scene.babasset",
   clustered: "assets/FeatureTest/Scenes/FT_Clustered.scene.babasset",
   "2d": "assets/FeatureTest/Scenes/FT_2D.scene.babasset",
+  world: "assets/FeatureTest/Scenes/FT_World.scene.babasset",
 } as const;
 
 export type FeatureTestSceneName = keyof typeof FEATURE_TEST_SCENES;

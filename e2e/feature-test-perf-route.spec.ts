@@ -19,7 +19,7 @@ import {
  * frames. It records one JSON report and asserts only that the route ran
  * cleanly; it never asserts a frame rate.
  *
- * Env: BL_PERF_SCENES (comma list of main|stress|clustered|2d, default main,stress),
+ * Env: BL_PERF_SCENES (comma list of main|stress|world|clustered|2d, default main,stress),
  *      BL_PERF_SAMPLE_MS (default 15000), BL_PERF_SAMPLES (default 2),
  *      BL_PERF_WARMUP_MS (default 10000), BL_PERF_SETTLE_MS (default 5000),
  *      BL_PERF_QUALITY (low|medium|high|ultra, applied with the Play console),

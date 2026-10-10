@@ -346,6 +346,6 @@ Recovery measurement with the readiness-admission cache (#633, measured on its b
 
 ### Feature Test route (agents' default workload)
 
-`e2e/feature-test-perf-route.spec.ts` (`BL_PERF_FEATURE_TEST=1`, perf config only) creates the **Feature Test** starter through the Create dialog, waits for texture encodes, then for each scene in `BL_PERF_SCENES` (default `main,stress`; also `clustered`, `2d`) records editor viewport frames and overlay Play frames, draw calls and main-thread busy time into one JSON report. Use it to compare revisions on the same machine; see [Feature Test project](../development/feature-test.md#performance-testing).
+`e2e/feature-test-perf-route.spec.ts` (`BL_PERF_FEATURE_TEST=1`, perf config only) creates the **Feature Test** starter through the Create dialog, waits for texture encodes, then for each scene in `BL_PERF_SCENES` (default `main,stress`; also `world`, `clustered`, `2d`) records editor viewport frames and overlay Play frames, draw calls and main-thread busy time into one JSON report. Use it to compare revisions on the same machine; see [Feature Test project](../development/feature-test.md#performance-testing).
 
 The sustained variant — 20-minute post-warm-up windows through Play **and** Preview Build with per-window diagnostics — is `e2e/play-sustained-route.spec.ts` (`BL_PERF_SUSTAINED=1`, same `playwright.perf.config.ts` projects). The full coverage matrix, procedure, adapter caveats and acceptance thresholds live in [renderer-qualification.md](renderer-qualification.md).

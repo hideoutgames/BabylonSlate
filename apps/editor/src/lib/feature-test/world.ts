@@ -1,6 +1,9 @@
 import {
+  createDefaultScene,
   createSeededRng,
+  DEFAULT_SCENE_SUN_ACTOR_ID,
   landscapeHeightAt,
+  lookAtRotation,
   normalizeWaterBody,
   parseLandscapeProperties,
   waterRiverCentreline,
@@ -17,12 +20,21 @@ import {
   type WaterStylizedLook,
 } from "@babylonslate/core";
 import { newAssetFileName } from "../content-browser-helpers";
-import { actor, comp, meshComp, requireRef, tf, type FeatureTestContext, type Vec3 } from "./context";
+import {
+  actor,
+  comp,
+  meshComp,
+  requireRef,
+  SCENE_SAVE_ORDER,
+  tf,
+  type FeatureTestContext,
+  type Vec3,
+} from "./context";
 import type { FeatureTestHolidayModel } from "./engine-content-files";
-import { FEATURE_TEST_SEA_LEVEL, stressPoint } from "./layout";
+import { stressPoint } from "./layout";
 
 /**
- * `Landscape And Water` zone: an island Landscape (painted layers, collision,
+ * `FT_World` scene: an island Landscape (painted layers, collision,
  * a river channel and a lake basin) with Foliage, every water body kind, a
  * Water Removal dry dock, buoyant presents, Splines and Cables. The dense
  * Foliage workload lives only in `FT_Stress` (`foliage` region).
@@ -30,6 +42,16 @@ import { FEATURE_TEST_SEA_LEVEL, stressPoint } from "./layout";
  * Landscape-local coordinates (`land(x, y, z)`) share the landscape actor's
  * origin, so river points, the lake, splines and foliage reuse its height data.
  */
+
+/**
+ * Scene name. The world has its own scene: Ocean Spectrum water with object
+ * reflections on top of the main scene misses the first-frame deadline on
+ * software GL.
+ */
+export const FEATURE_TEST_WORLD_SCENE = "FT_World";
+const SCENES_FOLDER = "Scenes";
+/** High over the south shore, looking across the island to the Ocean. */
+const WORLD_CAMERA = { position: [-4, 52, -82] as Vec3, target: [4, 0, 6] as Vec3 };
 
 /** Folder under `assets/FeatureTest/` for the Water assets. */
 export const FEATURE_TEST_WORLD_FOLDER = "World";
@@ -49,8 +71,7 @@ export const FEATURE_TEST_WORLD_WATER = {
 type WaterKey = keyof typeof FEATURE_TEST_WORLD_WATER;
 
 const WATER_LOOKS: Record<WaterKey, { style: WaterStyle; look: WaterStylizedLook; patch: Partial<WaterDefinition> }> = {
-  // Object reflections re-render the whole main scene; the bounded Ocean keeps them.
-  sea: { style: "realistic", look: "painted", patch: { objectReflections: false } },
+  sea: { style: "realistic", look: "painted", patch: {} },
   ocean: {
     style: "realistic",
     look: "painted",
@@ -60,7 +81,8 @@ const WATER_LOOKS: Record<WaterKey, { style: WaterStyle; look: WaterStylizedLook
   river: { style: "stylized", look: "toon", patch: {} },
 };
 
-const SEA = FEATURE_TEST_SEA_LEVEL;
+/** Global Water Volume elevation: the island shore and the Ocean surface. */
+const SEA = -6;
 
 /** Landscape: 80 m square at 64 cells (1.25 m) = 4 render chunks and 8192 collision triangles. Perf knob. */
 const LAND_SIZE = 80;
@@ -98,7 +120,7 @@ const MOORINGS: ReadonlyArray<{ pile: readonly [number, number]; present: readon
   { pile: [22, -2], present: [27, -2], yaw: 20 },
   { pile: [22, 8], present: [27, 9], yaw: -35 },
 ];
-/** Free-floating ocean presents (zone-local x, z, yaw): dynamic bodies that ride the swell and never sleep. */
+/** Free-floating ocean presents (scene x, z, yaw): dynamic bodies that ride the swell and never sleep. */
 const OCEAN_PRESENTS: ReadonlyArray<readonly [number, number, number]> = [
   [32, -12, 10],
   [38, 0, 55],
@@ -143,17 +165,18 @@ export async function buildFeatureTestWorld(ctx: FeatureTestContext): Promise<vo
 }
 
 /**
- * `world` zone: island Landscape with Foliage, Global Water Volume at sea level,
+ * `FT_World`: island Landscape with Foliage, Global Water Volume at sea level,
  * Ocean, Lake, River, Puddle, Water Removal dry dock, buoyant presents (two
  * moored by Cables), static Cables, two Splines; plus the `FT_Stress` Foliage.
  */
 export async function placeFeatureTestWorld(ctx: FeatureTestContext): Promise<void> {
-  const zone = ctx.zone("world");
-  const add = (next: SerializedActor) => ctx.addActor(next, { zone: "world" });
-  const land = (x: number, y: number, z: number): Vec3 => zone.at(LAND_CENTER[0] + x, y, LAND_CENTER[1] + z);
+  const scene = createWorldScene();
+  const add = (next: SerializedActor) => ctx.addActor(next, { scene });
+  const at = (x: number, y: number, z: number): Vec3 => [x, y, z];
+  const land = (x: number, y: number, z: number): Vec3 => at(LAND_CENTER[0] + x, y, LAND_CENTER[1] + z);
   const island = buildIsland(requireRef(ctx.assets.materials.landscape, "the landscape Material"));
   const ground = (x: number, z: number) => landscapeHeightAt(island.data, x, z) ?? SEABED;
-  /** Terrain height under a zone-local point. */
+  /** Terrain height under a scene point. */
   const seabed = (x: number, z: number) => ground(x - LAND_CENTER[0], z - LAND_CENTER[1]);
   const presentModel = requireRef(ctx.assets.models["present-a-cube"], "the present-a-cube Model");
   const addPresent = (id: string, name: string, position: Vec3, yaw: number, waterActorId: string) =>
@@ -162,11 +185,11 @@ export async function placeFeatureTestWorld(ctx: FeatureTestContext): Promise<vo
   /** Landscape-local discs (x, z, radius) kept clear of foliage. */
   const keepOut: Array<readonly [number, number, number]> = [[PUDDLE.x, PUDDLE.z, PUDDLE.radius + 3]];
 
-  // Water bodies. The Global Water Volume sits at sea level, below every zone floor.
-  add(actor("ft-world-sea", "Global Sea", tf(zone.at(0, SEA, 0)), [
+  // Water bodies. The Global Water Volume sits at sea level around the island.
+  add(actor("ft-world-sea", "Global Sea", tf(at(0, SEA, 0)), [
     comp("ft-world-sea-water", "GlobalWaterVolumeComponent", { assetGuid: waterGuid(ctx, "sea") }),
   ]));
-  add(actor(OCEAN.id, "Ocean", tf(zone.at(OCEAN.x, SEA, OCEAN.z)), [
+  add(actor(OCEAN.id, "Ocean", tf(at(OCEAN.x, SEA, OCEAN.z)), [
     comp("ft-world-ocean-water", "WaterOceanComponent", {
       assetGuid: waterGuid(ctx, "ocean"),
       width: OCEAN.width,
@@ -197,19 +220,19 @@ export async function placeFeatureTestWorld(ctx: FeatureTestContext): Promise<vo
   add(actor("ft-world-puddle", "Puddle", tf(land(PUDDLE.x, PUDDLE.height + 0.03, PUDDLE.z)), [
     comp("ft-world-puddle-water", "WaterPuddleComponent", { width: 3, length: 2 }),
   ]));
-  add(dryDock(zone.at(DRY_DOCK.x, SEA, DRY_DOCK.z), seabed(DRY_DOCK.x, DRY_DOCK.z)));
+  add(dryDock(at(DRY_DOCK.x, SEA, DRY_DOCK.z), seabed(DRY_DOCK.x, DRY_DOCK.z)));
 
   // Buoyant presents: free in the ocean, moored to piles by Cables, and one in the lake.
   OCEAN_PRESENTS.forEach(([x, z, yaw], index) => {
-    addPresent(`ft-world-float-${index + 1}`, `Floating Present ${index + 1}`, zone.at(x, SEA + 0.15, z), yaw, OCEAN.id);
+    addPresent(`ft-world-float-${index + 1}`, `Floating Present ${index + 1}`, at(x, SEA + 0.15, z), yaw, OCEAN.id);
   });
   MOORINGS.forEach(({ pile, present: [x, z], yaw }, index) => {
     const presentId = `ft-world-moored-${index + 1}`;
-    addPresent(presentId, `Moored Present ${index + 1}`, zone.at(x, SEA + 0.15, z), yaw, OCEAN.id);
+    addPresent(presentId, `Moored Present ${index + 1}`, at(x, SEA + 0.15, z), yaw, OCEAN.id);
     const base = seabed(pile[0], pile[1]);
     const height = SEA + 1.6 - base;
     const id = `ft-world-pile-${index + 1}`;
-    add(actor(id, `Mooring Pile ${index + 1}`, tf(zone.at(pile[0], base, pile[1])), [
+    add(actor(id, `Mooring Pile ${index + 1}`, tf(at(pile[0], base, pile[1])), [
       postMesh(`${id}-mesh`, height, 0.5),
       comp(`${id}-line`, "CableComponent", {
         targetActorId: presentId,
@@ -327,7 +350,7 @@ export async function placeFeatureTestWorld(ctx: FeatureTestContext): Promise<vo
     }),
   ]));
   const group = foliageGroup(models);
-  addFoliageGroup(ctx.mainScene, group);
+  addFoliageGroup(scene, group);
 
   // FT_Stress: one dense Foliage carpet on the stress floor.
   addFoliageGroup(ctx.stressScene, group);
@@ -337,6 +360,36 @@ export async function placeFeatureTestWorld(ctx: FeatureTestContext): Promise<vo
       batches: stressFoliage(models),
     }),
   ]), { scene: ctx.stressScene });
+
+  await ctx.addSceneDocument({
+    kind: "scene",
+    folder: SCENES_FOLDER,
+    name: FEATURE_TEST_WORLD_SCENE,
+    content: scene,
+    order: SCENE_SAVE_ORDER.scene,
+  });
+}
+
+/** Basic 3D sky, shadowed sun and a camera framing the island and the Ocean. */
+function createWorldScene(): SerializedScene {
+  const scene = createDefaultScene("3d");
+  scene.name = FEATURE_TEST_WORLD_SCENE;
+  // Basic 3D's empty placeholder actor has no role here.
+  scene.actors = scene.actors.filter((entry) => entry.components.length > 0);
+  const camera = scene.actors.find((entry) => entry.id === scene.settings.mainCameraActorId);
+  if (camera) {
+    camera.transform = tf(WORLD_CAMERA.position, {
+      rotation: lookAtRotation(WORLD_CAMERA.position, WORLD_CAMERA.target),
+    });
+  }
+  for (const component of scene.actors.find((entry) => entry.id === DEFAULT_SCENE_SUN_ACTOR_ID)?.components ?? []) {
+    if (component.classId === "LightComponent") component.properties = { ...component.properties, castShadows: true };
+  }
+  scene.settings.fogEnabled = true;
+  scene.settings.fogMode = "exponential";
+  scene.settings.fogDensity = 0.003;
+  scene.settings.fogColor = [0.68, 0.76, 0.86];
+  return scene;
 }
 
 function waterGuid(ctx: FeatureTestContext, key: WaterKey): string {

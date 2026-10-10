@@ -40,8 +40,9 @@ The Kenney sounds are CC0; `License.txt` and `Source.txt` beside them record the
 
 | Scene | Path | Purpose |
 | --- | --- | --- |
-| Main | `assets/main.scene.babasset` | Every 3D feature in fixed zones at moderate cost; startup scene and default perf workload |
+| Main | `assets/main.scene.babasset` | Every 3D feature except the open world, in fixed zones at moderate cost; startup scene and default perf workload |
 | FT_Stress | `assets/FeatureTest/Scenes/FT_Stress.scene.babasset` | Heavy, scalable load: physics pile, particle stress, animated crowd, dense foliage |
+| FT_World | `assets/FeatureTest/Scenes/FT_World.scene.babasset` | Landscape, Foliage, every water body kind, buoyancy, Cables and Splines |
 | FT_Clustered | `assets/FeatureTest/Scenes/FT_Clustered.scene.babasset` | Many unshadowed point lights for Clustered Forward comparisons |
 | FT_2D | `assets/FeatureTest/Scenes/FT_2D.scene.babasset` | Sprites, Sprite Animation, Tilemaps and 2D physics |
 | FT_StreamedRoom | `assets/FeatureTest/Scenes/FT_StreamedRoom.scene.babasset` | Sub-scene streamed into the main scene |
@@ -50,7 +51,7 @@ Open a scene from the Content Browser, or use the console `changescene` command 
 
 ## Main scene zones
 
-Zones sit on a 32 m grid (`layout.ts`); each has an Outliner folder and a 3D Text label. The static main camera (`ft-camera-main`) looks over the three zone rows; Landscape And Water lies further along +Z. The scene spawns the `FT_HUD` and `FT_OverlayPhysics` Scene Layers in Play.
+Zones sit on a 32 m grid (`layout.ts`); each has an Outliner folder and a 3D Text label. The static main camera (`ft-camera-main`) looks over the three zone rows. The scene spawns the `FT_HUD` and `FT_OverlayPhysics` Scene Layers in Play.
 
 | Zone (center x, z) | Module | Contents and what they do |
 | --- | --- | --- |
@@ -68,13 +69,13 @@ Zones sit on a 32 m grid (`layout.ts`); each has an Outliner folder and a 3D Tex
 | Scripting (-32, 64) | `scripting.ts` | 4 × 4 `FT_ScriptSpinner` grid (enum, structure and tag variables, custom event, interface, subsystem call, static Function Library, input) plus `FT_ScriptSpinnerFast` (inheritance and override); interface, data and save probes; three logic-free `FT_ScriptMarker` Prefab instances. |
 | AI And Navigation (0, 64) | `ai.ts` | Baked tile-cache navmesh (bake bounds inside the zone), static, cost and dynamic blockers, four guards on `FT_AIPatrolTree` (every built-in node plus the custom BT Task, Decorator, Service and Composite classes), and a Mannequin sentry on `FT_AISentryTree`. |
 | Model LOD (64, 64) | `rendering.ts` | Five menorah instances (1150 triangles) at 4 to 48 m from `LOD Lane Camera` for Automatic Model LOD. |
-| Landscape And Water (0, 144) | `world.ts` | 80 m island Landscape (grass, snow, sand and rock layers, collision), 226 foliage instances, Global Sea at -6 m (object reflections off), Ocean (object reflections on), Lake, River and Puddle bodies, Dry Dock removal volume, buoyant presents, seven Cables, two editor Splines. |
 
 ## Other scenes and layers
 
 | Document | Contents |
 | --- | --- |
 | `FT_Stress` | 320 dynamic bodies over a scaled sweeper, 6 ragdolls and a 32-link chain; 4 stress particle actors (about 16 000 GPU particles); an 8 × 8 animated Mannequin crowd; a 5184-instance foliage carpet. |
+| `FT_World` (`world.ts`) | 80 m island Landscape (grass, snow, sand and rock layers, collision), 226 foliage instances, Global Sea at -6 m, Ocean (Ocean Spectrum waves, object reflections), Lake, River and Puddle bodies, Dry Dock removal volume, buoyant presents, seven Cables, two editor Splines; shadowed sun and light fog. It is separate from the main scene because the Ocean on top of every main-scene zone misses the first-frame deadline on software GL. |
 | `FT_Clustered` | 48 unshadowed point lights over a plain floor with the engine default sky, so Auto can select Clustered Forward. |
 | `FT_2D` | Orthographic camera over a 16 × 9 Tilemap of 128 px Kenney platformer tiles: parallax backdrop, collision ground (grass on dirt, crates, chain ramp, top-edge ledges, animated switch blocks) and a decor layer from a second Tileset (animated water and torches, signs, plants). `FT_2DRobotGraph` cycles robot Idle, Walk, Jump and Fall Sprite Animations on a mascot and a dynamic walking robot; 32 falling robot bodies use every 2D collider shape; chain funnel; hinge pendulum; custom `Characters` sorting layer. |
 | `FT_StreamedRoom` | Platform, pillars, sign and a streamed spinner; no camera or lights. |
@@ -129,7 +130,7 @@ It creates FeatureTest through the Create dialog, waits for background texture e
 
 | Env | Default | Effect |
 | --- | --- | --- |
-| `BL_PERF_SCENES` | `main,stress` | Any of `main`, `stress`, `clustered`, `2d` |
+| `BL_PERF_SCENES` | `main,stress` | Any of `main`, `stress`, `world`, `clustered`, `2d` |
 | `BL_PERF_SAMPLE_MS` / `BL_PERF_SAMPLES` | 15000 / 2 | Measurement windows per host |
 | `BL_PERF_WARMUP_MS` / `BL_PERF_SETTLE_MS` | 10000 / 5000 | Play warm-up and editor settle |
 | `BL_PERF_QUALITY` / `BL_PERF_FRAMECAP` | project defaults | Play console `quality` and `framecap` |
