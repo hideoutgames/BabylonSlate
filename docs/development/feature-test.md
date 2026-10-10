@@ -67,7 +67,7 @@ Zones sit on a 32 m grid (`layout.ts`); each has an Outliner folder and a 3D Tex
 | Particles (64, 32) | `particles.ts` | `FT_FxShowcase` (Basic emitter plus Particle Graph `FT_FxGlowGraph`), `FT_FxSparks` (additive bursts), `FT_FxSmoke` (local space, Material Instance). |
 | Scene Streaming (-64, 64) | `scripting.ts` | `FT_StreamLoader` (SceneStreamingActor with a Scene Streaming Component) streams in `FT_StreamedRoom` 1.5 s after Begin Play. |
 | Scripting (-32, 64) | `scripting.ts` | 4 × 4 `FT_ScriptSpinner` grid (enum, structure and tag variables, custom event, interface, subsystem call, static Function Library, input) plus `FT_ScriptSpinnerFast` (inheritance and override); interface, data and save probes; three logic-free `FT_ScriptMarker` Prefab instances. |
-| AI And Navigation (0, 64) | `ai.ts` | Baked tile-cache navmesh (bake bounds inside the zone), static, cost and dynamic blockers, four guards on `FT_AIPatrolTree` (every built-in node plus the custom BT Task, Decorator, Service and Composite classes), and a Mannequin sentry on `FT_AISentryTree`. |
+| AI And Navigation (0, 64) | `ai.ts` | Baked tile-cache navmesh (bake bounds inside the zone), static, cost and dynamic blockers, four guards on `FT_AIPatrolTree` (every built-in composite, decorator and service, every built-in task except Play Animation and Play Sound, and the custom BT Task, Decorator, Service and Composite classes), and a Mannequin sentry on `FT_AISentryTree` (Play Animation and Play Sound, when a Mannequin clip and the one-shot audio slot exist). |
 | Model LOD (64, 64) | `rendering.ts` | Five menorah instances (1150 triangles) at 4 to 48 m from `LOD Lane Camera` for Automatic Model LOD. |
 
 ## Other scenes and layers
@@ -84,7 +84,7 @@ Zones sit on a 32 m grid (`layout.ts`); each has an Outliner folder and a 3D Tex
 
 ## Scripting, data and settings
 
-- **Game Instance** `FT_GameInstance` (Project Settings): prints on init, spawns `FT_ScriptSpawned` on the first scene and runs `ft_stats`. **Subsystems**: `FT_GameScoreSubsystem` (GameSubsystem) and `FT_GameSceneWatcher` (SceneSubsystem).
+- **Game Instance** `FT_GameInstance` (Project Settings): logs on init (Output Log); on the first scene it prints the scene name, spawns `FT_ScriptSpawned` when the Scripting zone exists, and runs `ft_stats`. **Subsystems**: `FT_GameScoreSubsystem` (GameSubsystem) and `FT_GameSceneWatcher` (SceneSubsystem).
 - **Editor**: `FT_EditorProbe` (EditorUtilityObject, registered) logs editor events; `FT_EditorMath` (EditorFunctionLibrary) is authored only.
 - **Types and data**: `FT_ScriptSpeedMode` (Enum), `FT_ScriptSpinConfig` (Structure), `FT_ScriptDescribable` (ScriptInterface), `FT_DataItemStats` / `FT_DataItems` (Data Definition and Data Tree), `FT_DataProgress` (SaveGame, `wipeOnPlay` on).
 - **Input**: Basic 3D actions plus `FT_ScriptPulse` (P) and `FT_ScriptNudge` (arrow keys); the HUD joystick adds touch bindings to Move.
