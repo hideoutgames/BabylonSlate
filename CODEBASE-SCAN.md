@@ -1330,6 +1330,13 @@ Bloat to remove. The engine is not released, so these paths exist only to accept
 - **Low.** On a coarse pointer the launcher title bar is at least 44px tall and the status bar is 26px. The theming page says 28px and 22px (`homepage.css`, `theming.md`).
 - **Low.** There is no `docs/architecture/distribution.md`. The distribution page is `docs/development/distribution.md`.
 
+## Verified in the fiftieth batch
+
+- **High.** Attaching MSDF to a Font merges representation flags from the header payload and leaves the document chunk as it was. A saved Font header does not keep the font payload, so that merge can drop `representations.source` and the fallbacks. An open Font editor then saves the header payload. A closed Font keeps the old document flags, so `representations.msdf` stays false while the new chunks are stored (`registry.ts`, `project-service.ts`, `asset-document-workspace.tsx`).
+- **Medium.** New Asset cannot create a Font. Fonts come from import (`content-browser-helpers.ts`, `fonts.md`).
+- **Medium.** Sprite blend mode is alpha test by default, alpha test and blend when visibility is between 0 and 1, and alpha blend only when `alwaysBlend` is set. The sprites page says blending is opted in through `alphaIndex`, which is draw order (`mesh-assets.ts`, `sorting.ts`, `sprites.md`).
+- **Medium.** While Play free cam is on, the audio listener uses the game camera. The rendered camera is the free cam (`create-engine.ts`, `play-free-cam.ts`, `audio.md`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
