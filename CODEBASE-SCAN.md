@@ -1137,6 +1137,18 @@ Runtime tests `sn`–`z` and render tests `t`–`z` reported no new product bugs
 - `gltfJsonToGlb` encoding an empty BIN for a non-relative buffer URI, including a `data:` buffer, is already recorded (`glb-parse.ts`).
 - OBJ import treating any same-stem non-model file as a sidecar is already recorded (`obj-import-batch.ts`).
 
+## Verified in the thirty-eighth batch
+
+- **Medium.** Scene editing says scale-gizmo sensitivity is 10. `GIZMO_SCALE_SENSITIVITY` is 1.5 (`scene-editing.md`, `gizmo-host.ts`).
+- **Medium.** Scene editing says a new scene camera matches the editor orbit at radius 8, and 2D starts at `(0, 0, -8)`. Both radii are 12, and 2D starts at `(0, 0, -12)` (`scene-editing.md`, `project.ts`, `editor-camera.ts`).
+- **Medium.** Scene editing says the actor menu is Open Actor, Frame Selection, Duplicate, and Delete. The menu also has Select or Deselect, Copy, and Paste (`scene-editing.md`, `scene-outliner-panel.tsx`).
+- **Medium.** The component catalog says that menu is Open Actor, Select or Deselect, Duplicate, and Delete. It also has Frame Selection, Copy, and Paste (`components.md`, `scene-outliner-panel.tsx`).
+- **Medium.** Scene editing says 2D Z-Order is the same stored value as Position Z. The Details field shows and writes the negated Z (`scene-editing.md`, `transform-property-rows.ts`).
+- **Medium.** Scene editing says Field Of View and Orthographic Size both stay visible. Details shows only the slider for the current projection (`scene-editing.md`, `component-property-rows.ts`).
+- **Medium.** The component catalog says New Asset groups are World, Scripting, 2D, Animation, Rendering, Audio, and AI. The menu also has Input and Data, and those come before Scripting (`components.md`, `content-browser-helpers.ts`).
+- **Medium.** The debugger doc says the Stats, Console, and Inspector overlay buttons default on. Stats defaults on. Console and Inspector default off (`debugger.md`, `play-debugger-defaults.ts`).
+- **Medium.** The debugger doc says the Play console is 58dvh, capped at 38rem. Play uses `min(40dvh, 22rem)`, and coarse pointers use `min(50dvh, 26rem)`. The component gallery sheet still uses the documented size (`debugger.md`, `debug-console.tsx`, `component-gallery.tsx`).
+
 ## Deeper pass
 
 One hundred further reads were requested. Ninety-nine started. The UI-package second pass was blocked until a slot opened, then returned; its checked defects are in the thirty-fourth batch. The earlier assets-package read has now returned; its new defects are in the thirty-seventh batch. These reads were told not to edit this file and not to repeat findings already listed here.
