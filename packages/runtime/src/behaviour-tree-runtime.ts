@@ -13,6 +13,12 @@ import {
   type BtEvalState,
   type BtResult,
 } from "@babylonslate/behaviour-tree";
+import {
+  actorChainWorldTransform,
+  actorParentGuid,
+  inverseQuaternion,
+  multiplyQuaternion,
+} from "./actor-world-transform";
 import { blackboardInspectTypes, blackboardTargetPosition, snapshotBlackboard } from "./bt-blackboard";
 import type { RuntimeDiagnostic } from "./diagnostics";
 import { samePlainData } from "./plain-data";
@@ -307,7 +313,11 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
   ): BtResult {
     const target = navPointFromUnknown(node.properties?.target);
     if (!target) return "failure";
-    const position = actor.transform.position;
+    // The target is a world point: aim from the actor's world position, and
+    // store the world heading as a rotation local to its parent.
+    const world = this.host.world();
+    const findActor = (guid: string) => world.findActor(guid);
+    const position = actorChainWorldTransform(actor, findActor)?.position ?? actor.transform.position;
     const twoD = this.host.worldKind() === "2d";
     const yawRad = twoD
       ? Math.atan2(target.y - position.y, target.x - position.x)
@@ -316,11 +326,14 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     const euler: [number, number, number] = twoD
       ? [0, 0, yawDeg]
       : [0, yawDeg, 0];
-    const quat = eulerDegreesToQuaternion(euler);
-    actor.transform.rotation.x = quat[0];
-    actor.transform.rotation.y = quat[1];
-    actor.transform.rotation.z = quat[2];
-    actor.transform.rotation.w = quat[3];
+    const [x, y, z, w] = eulerDegreesToQuaternion(euler);
+    const parentGuid = actorParentGuid(actor);
+    const parent = parentGuid ? world.findActor(parentGuid) : undefined;
+    const parentWorld = parent ? actorChainWorldTransform(parent, findActor) : null;
+    const local = parentWorld
+      ? multiplyQuaternion(inverseQuaternion(parentWorld.rotation), { x, y, z, w })
+      : { x, y, z, w };
+    Object.assign(actor.transform.rotation, local);
     // Trees tick after the physics step: a body must take the new heading too,
     // or its next step writes the old rotation back.
     this.host.scripts().teleportActor(actor);
