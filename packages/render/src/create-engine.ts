@@ -185,7 +185,7 @@ import {
   type PlayDebugDrawController,
 } from "./play-debug-draw";
 import {
-  SnapshotInterpolator,
+  SnapshotSampler,
   writeSampledAudioPoses,
   type SampledAudioPose,
 } from "./snapshot-sync";
@@ -1163,7 +1163,7 @@ function initializeEngine(
         ? 1000 / options.frameCap
         : 1000 / 60,
   });
-  const interpolator = new SnapshotInterpolator(options.maxActors ?? 256);
+  const snapshots = new SnapshotSampler(options.maxActors ?? 256);
   const binding: SnapshotSceneBinding = createSnapshotSceneBinding();
   let gameInputEnabled = true;
   let simulationEditMode = false;
@@ -1867,7 +1867,7 @@ function initializeEngine(
     }
     if (options.playMode) {
       disablePlayFreeCam(playFreeCam);
-      interpolator.clear();
+      snapshots.clear();
       appliedSnapshotIdentity = null;
       lastRenderedSnapshotFrame = null;
       retirePlayWorldSlots(binding);
@@ -2301,12 +2301,9 @@ function initializeEngine(
       notifyOverlayResize();
     };
 
-  // Play samples the latest published snapshot (alpha 1); render and the
-  // worker tick share one cap, so a time-based alpha would only add lag.
-  const interpAlpha = 1;
   // Registered-view admission and renderLoop both prepare the same frame; apply
   // only when the sampled identity changes or a command invalidated it.
-  let appliedSnapshotIdentity: { frameId: number; alpha: number; layoutGeneration: number } | null = null;
+  let appliedSnapshotIdentity: { frameId: number; layoutGeneration: number } | null = null;
   // renderLoop reuses admission's sample until end-frame unless a push or
   // command invalidated the applied identity in between.
   let admittedSnapshot: ReturnType<typeof prepareSnapshot> = null;
@@ -2422,13 +2419,12 @@ function initializeEngine(
   }
   const tilemapPreviewStart = performance.now();
   function prepareSnapshot() {
-    const sampled = interpolator.sample(interpAlpha);
+    const sampled = snapshots.sample();
     if (!sampled) return null;
-    const layoutGeneration = interpolator.layoutGeneration;
+    const layoutGeneration = snapshots.layoutGeneration;
     if (
       appliedSnapshotIdentity &&
       appliedSnapshotIdentity.frameId === sampled.frameId &&
-      appliedSnapshotIdentity.alpha === sampled.alpha &&
       appliedSnapshotIdentity.layoutGeneration === layoutGeneration
     ) {
       return sampled;
@@ -2463,7 +2459,6 @@ function initializeEngine(
     }
     appliedSnapshotIdentity = {
       frameId: sampled.frameId,
-      alpha: sampled.alpha,
       layoutGeneration,
     };
     return sampled;
@@ -3195,9 +3190,9 @@ function initializeEngine(
     pushSnapshot: (buffer: Float32Array) => {
       // Deliveries already queued when the view stopped must not repose it.
       if (disposed) return;
-      interpolator.push(buffer);
+      snapshots.push(buffer);
       appliedSnapshotIdentity = null;
-      const sampled = interpolator.sample(interpAlpha);
+      const sampled = snapshots.sample();
       if (sampled) positionsFromSample(sampled, lastPositions);
       if (sampled && sampled.frameId !== lastRenderedSnapshotFrame) scheduler.requestPausedFrame();
       if (isPublishedSnapshot(buffer)) {
@@ -3218,16 +3213,9 @@ function initializeEngine(
       })) return;
       streamAdmission?.receive(command);
       if (command.type === "snapshotLayout") {
-        interpolator.installLayout(command.capacity, command.generation);
+        snapshots.installLayout(command.capacity, command.generation);
         appliedSnapshotIdentity = null;
         scheduler.invalidate("snapshot");
-        return;
-      }
-      if (command.type === "resetActorInterpolation") {
-        if (captureActorSlots.get(command.slotId) !== command.actorGuid) return;
-        interpolator.resetInterpolationFrom(command.frameId);
-        appliedSnapshotIdentity = null;
-        scheduler.requestPausedFrame();
         return;
       }
       if (!simulationEditMode || (command.type !== "possessCamera" && command.type !== "setFreeCam"))

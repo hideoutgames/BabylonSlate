@@ -10,7 +10,7 @@ const handles: ReturnType<typeof createTestEngine>[] = [];
 afterEach(() => { for (const handle of handles.splice(0)) { handle.scene.dispose(); handle.engine.dispose(); } });
 function host() { const handle = createTestEngine(); handles.push(handle); return handle; }
 function sample(): SampledSnapshot {
-  return { frameId: 1, tickIndex: 1, alpha: 1, actorCount: 1,
+  return { frameId: 1, tickIndex: 1, actorCount: 1,
     actors: [{ slotId: 0, flags: SNAPSHOT_FLAG_VISIBLE, ...identityTransform(), position: { x: 10, y: 1, z: 0 } }] };
 }
 

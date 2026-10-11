@@ -128,7 +128,6 @@ describe("spring arm", () => {
       applySnapshotToScene(scene, binding, {
         frameId: nowMs,
         tickIndex: nowMs,
-        alpha: 1,
         actorCount: 1,
         actors: [
           {

@@ -49,7 +49,6 @@ import type { SharedOutlineView } from "./shared-outline";
 import * as sceneWork from "./scene-work";
 import * as snapshotApply from "./snapshot-apply";
 import * as presentation from "./presented-frame";
-import { SnapshotInterpolator } from "./snapshot-sync";
 import { hasFogVolumes, selectFogVolumes } from "./fog-volumes";
 import { sceneRenderingSettings, setSceneEffectsEnabled } from "./render-settings";
 import { uiControl2DMesh } from "./ui-controls2d-mesh";
@@ -1835,52 +1834,6 @@ describe("Play createEngine view", () => {
     expect(mesh.material).toBe(material);
     frame();
     expect(mesh.getAbsolutePosition().asArray()).toEqual([7, 3, 0]);
-  });
-
-  it("re-applies the same snapshot frame when the sampled alpha changes", () => {
-    const engine = sharedEngine();
-    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
-    const { handle } = playHandle(engine);
-    const renderLoop = runRenderLoop.mock.calls[0]![0]!;
-    const frame = () => {
-      engine.onBeginFrameObservable.notifyObservers(engine);
-      renderLoop();
-      engine.onEndFrameObservable.notifyObservers(engine);
-    };
-    handle.applyCommand({
-      type: "assignMesh",
-      slotId: 0,
-      meshKind: "box",
-      meshAssetGuid: null,
-    });
-    handle.pushSnapshot(actorSnapshot(1, 0));
-    handle.pushSnapshot(actorSnapshot(2, 10));
-    const apply = vi.spyOn(snapshotApply, "applySnapshotToScene");
-    // The host samples between the pushed pair; force the interpolation alpha
-    // through the interpolator boundary so the pose really differs.
-    const realSample = SnapshotInterpolator.prototype.sample;
-    let forcedAlpha: number | null = null;
-    const sample = vi
-      .spyOn(SnapshotInterpolator.prototype, "sample")
-      .mockImplementation(function (this: SnapshotInterpolator, alpha: number) {
-        return realSample.call(this, forcedAlpha ?? alpha);
-      });
-    try {
-      forcedAlpha = 0.5;
-      frame();
-      expect(apply).toHaveBeenCalledTimes(1);
-      expect(handle.lastActorPositions()[0]?.x).toBeCloseTo(5);
-      frame();
-      expect(apply).toHaveBeenCalledTimes(1);
-
-      forcedAlpha = 0.75;
-      frame();
-      expect(apply).toHaveBeenCalledTimes(2);
-      expect(handle.lastActorPositions()[0]?.x).toBeCloseTo(7.5);
-    } finally {
-      sample.mockRestore();
-      apply.mockRestore();
-    }
   });
 
   it("restores an already-blocked material dirty mechanism after snapshot apply", () => {

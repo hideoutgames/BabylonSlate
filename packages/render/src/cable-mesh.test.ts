@@ -147,7 +147,7 @@ describe("cable rendering", () => {
     const cable = { ...parseCableProperties({ numSegments: 2, numSides: 4, cableWidth: 0.4 }), simulationId: 4 };
     applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 8, meshKind: "cable", meshAssetGuid: null, parts: [{ componentId: "wire", meshKind: "cable", meshAssetGuid: null, ...identitySerializedTransform(), cable }] });
     applyCableFrame(scene, packet(4, [3, 4, 0, 4, 4, 0, 5, 4, 0]), 1);
-    applySnapshotToScene(scene, binding, { frameId: 1, tickIndex: 1, alpha: 1, actorCount: 1, actors: [{ slotId: 8, flags: SNAPSHOT_FLAG_VISIBLE, position: { x: 3, y: 4, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 } }] });
+    applySnapshotToScene(scene, binding, { frameId: 1, tickIndex: 1, actorCount: 1, actors: [{ slotId: 8, flags: SNAPSHOT_FLAG_VISIBLE, position: { x: 3, y: 4, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 } }] });
     scene.onBeforeRenderObservable.notifyObservers(scene);
     const mesh = scene.getMeshByName("actor-8|wire")!;
     expect(mesh.getBoundingInfo().boundingBox.maximumWorld.x).toBeCloseTo(5);

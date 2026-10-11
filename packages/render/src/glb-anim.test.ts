@@ -63,7 +63,6 @@ describe("adoptLoadedHierarchy", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {

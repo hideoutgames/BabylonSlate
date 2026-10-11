@@ -288,7 +288,7 @@ Appendix A `p4-*` checkboxes are landed as a vertical Play path. Leftovers below
 | `renderquality` / Engine Settings `hardwareScalingLevel` → Engine | Done (`cursor/material-shader-improvements-fa96`) | Engine Settings `hardwareScalingLevel` is applied at viewport/Play start and on change. Console `renderquality` still logs. |
 | Context-loss user notify | later polish (`render`, editor) | Restore drops a quality tier and flushes LRU; no one-shot toast |
 | Mesh live-object assert on Play close | later polish (`play-session`) | Texture-cache growth is logged; mesh counts are captured unused |
-| Snapshot interpolation α in the live loop | documented | `SnapshotInterpolator` can lerp; Play samples α=1 (latest) while render and tick share the 60 Hz cap. Time-based α waits on a render/tick mismatch |
+| Snapshot interpolation α in the live loop | removed | Play draws the latest snapshot while render and tick share the 60 Hz cap; `SnapshotSampler` keeps no previous endpoint |
 | Log Error → session report | Done (this branch) | `ctx.log(..., "error")` pushes `runtime.log` diagnostics |
 | ExecuteJavaScript `bodyLine` navigation | Done (this branch) | Hoisted body lines carry `bodyLine`; session report focuses CodeMirror |
 

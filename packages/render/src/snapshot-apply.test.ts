@@ -807,7 +807,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -861,7 +860,7 @@ describe("createPlayMesh", () => {
       ] };
     applyAssignMesh(scene, binding, command);
     await binding.slotAnimLoads?.get(0);
-    applySnapshotToScene(scene, binding, { frameId: 1, tickIndex: 1, alpha: 1, actorCount: 1, actors: [{ slotId: 0, position: { x: 10, y: 0, z: 0 },
+    applySnapshotToScene(scene, binding, { frameId: 1, tickIndex: 1, actorCount: 1, actors: [{ slotId: 0, position: { x: 10, y: 0, z: 0 },
       rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 2, y: 2, z: 2 }, flags: SNAPSHOT_FLAG_VISIBLE }] });
     const lamp = scene.getLightByName("authoredLight:0") as PointLight;
     const fill = scene.getLightByName("authoredLight:0|fill") as HemisphericLight;
@@ -910,7 +909,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -982,7 +980,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -1049,7 +1046,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -1065,7 +1061,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 2,
       tickIndex: 2,
-      alpha: 1,
       actorCount: 0,
       actors: [],
     });
@@ -1093,7 +1088,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -1143,7 +1137,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -1190,7 +1183,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 4,
       actors: [1, 2, 3, 8].map((slotId) => ({
         slotId,
@@ -1225,7 +1217,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -1257,7 +1248,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -1298,7 +1288,7 @@ describe("createPlayMesh", () => {
     });
     // The tilemap slot precedes the camera slot that moves in this snapshot.
     applySnapshotToScene(scene, binding, {
-      frameId: 1, tickIndex: 1, alpha: 1, actorCount: 2, actors: [pose(1, 0, 0), pose(2, 3.014, 1.026)],
+      frameId: 1, tickIndex: 1, actorCount: 2, actors: [pose(1, 0, 0), pose(2, 3.014, 1.026)],
     });
     const chunk = binding.meshes.get(1)!.getChildMeshes()[0]!;
     expect(chunk.position.x).toBeCloseTo(3.01, 6);
@@ -1328,7 +1318,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 2,
       actors: [1, 2].map((slotId) => ({
         slotId,
@@ -1368,7 +1357,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 2,
       actors: [1, 2].map((slotId) => ({
         slotId,
@@ -1384,7 +1372,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 2,
       tickIndex: 2,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -1421,7 +1408,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 2,
       actors: [
         {
@@ -1472,7 +1458,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 2,
       actors: [
         {
@@ -1509,7 +1494,6 @@ describe("createPlayMesh", () => {
     const snapshot = {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -1563,7 +1547,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 2,
       actors: [
         {
@@ -1604,7 +1587,7 @@ describe("createPlayMesh", () => {
     });
     applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 2, meshKind: "box", meshAssetGuid: "model-1" });
     const snapshot = (flags: number) => ({
-      frameId: 1, tickIndex: 1, alpha: 1, actorCount: 2,
+      frameId: 1, tickIndex: 1, actorCount: 2,
       actors: [1, 2].map((slotId) => ({
         slotId, flags, position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 },
       })),
@@ -1639,7 +1622,7 @@ describe("createPlayMesh", () => {
     applyAssignMesh(scene, binding, text("HI"));
     applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 2, meshKind: "box", meshAssetGuid: null });
     const snapshot = (flags: number) => ({
-      frameId: 1, tickIndex: 1, alpha: 1, actorCount: 2,
+      frameId: 1, tickIndex: 1, actorCount: 2,
       actors: [1, 2].map((slotId) => ({
         slotId, flags, position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 },
       })),
@@ -1696,7 +1679,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -1754,7 +1736,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -1916,7 +1897,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -1945,7 +1925,7 @@ describe("createPlayMesh", () => {
       meshKind: "2dtexture",
     });
     const worldCopy = scene.getMeshByName("actor-4")!;
-    const sample = (flags: number) => ({ frameId: 1, tickIndex: 1, alpha: 1, actorCount: 1, actors: [{ slotId: 4,
+    const sample = (flags: number) => ({ frameId: 1, tickIndex: 1, actorCount: 1, actors: [{ slotId: 4,
       position: { x: 2, y: 1, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 }, flags }] });
     applySnapshotToScene(scene, binding, sample(SNAPSHOT_FLAG_VISIBLE));
     expect(worldCopy.isVisible).toBe(true);
@@ -1975,7 +1955,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -2001,7 +1980,6 @@ describe("createPlayMesh", () => {
     const world = (slotIds: number[], frameId: number) => ({
       frameId,
       tickIndex: frameId,
-      alpha: 1,
       actorCount: slotIds.length,
       actors: slotIds.map((slotId) => ({
         slotId,
@@ -2073,7 +2051,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -2097,7 +2074,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 0,
       actors: [],
     });
