@@ -184,9 +184,7 @@ export function collectFunctionLibrariesForPalette(options: {
   };
 
   for (const asset of options.assets) {
-    if (asset.header.type !== "Class" && asset.header.type !== "Graph") {
-      continue;
-    }
+    if (asset.header.type !== "Class") continue;
     consider(
       options.classIdForPath(asset.path),
       asset.header.parentClass,
@@ -236,9 +234,7 @@ export function collectSubsystemClassesForPalette(options: {
     if (base) bases.set(classId, base);
   };
   for (const asset of options.assets) {
-    if (asset.header.type !== "Class" && asset.header.type !== "Graph") {
-      continue;
-    }
+    if (asset.header.type !== "Class") continue;
     consider(options.classIdForPath(asset.path), asset.header.parentClass);
   }
   for (const doc of options.openDocuments) {
@@ -505,13 +501,8 @@ export function collectClassGraphsForPalette(options: {
 }): Record<string, SerializedGraph> {
   const graphs: Record<string, SerializedGraph> = {};
   for (const asset of options.assets) {
-    if (asset.header.type !== "Class" && asset.header.type !== "Graph") {
-      continue;
-    }
-    const classId = options.classIdForPath(asset.path);
-    const graph = classGraphFromHeaderPayload(asset.header.payload);
-    graphs[classId] = graph;
-    if (asset.header.name !== classId) graphs[asset.header.name] = graph;
+    if (asset.header.type !== "Class") continue;
+    graphs[options.classIdForPath(asset.path)] = classGraphFromHeaderPayload(asset.header.payload);
   }
   for (const doc of options.openDocuments) {
     if (doc.ref.kind !== "graph") continue;

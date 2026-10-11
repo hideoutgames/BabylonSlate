@@ -144,7 +144,7 @@ describe("chrome document icons", () => {
       for (const [id, name, parentClass] of [
         ["base", "Shared Base", "Actor"],
         ["first", "First", "base"],
-        ["second", "Second", "Shared Base"],
+        ["second", "Second", "base"],
       ]) {
         await registry.createAsset("project", `${id}.class.babasset`, {
           guid: id!,
