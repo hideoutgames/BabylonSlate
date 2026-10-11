@@ -99,6 +99,17 @@ describe("diffGraphCommands", () => {
     );
   });
 
+  it("emits an undoable SetGraphComponentsCommand when the default prefab mesh is deleted", () => {
+    const before: SerializedGraph = { ...createDefaultGraph() };
+    delete before.components;
+    const after = { ...before, components: [] };
+    const commands = diffGraphCommands(before, after);
+    expect(commands).toHaveLength(1);
+    const [command] = commands as [SetGraphComponentsCommand];
+    expect(command.apply(before).components).toEqual([]);
+    expect(command.invert().apply(after)).not.toHaveProperty("components");
+  });
+
   it("emits AddEdgeCommand and RemoveEdgeCommand for edge deltas", () => {
     const before = createDefaultGraph();
     const edge = {

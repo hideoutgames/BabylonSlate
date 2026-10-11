@@ -97,11 +97,16 @@ function membersEqual(
   return JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
 }
 
+/**
+ * A missing list means the default prefab mesh and `[]` an authored empty
+ * prefab, so the two are different values.
+ */
 function componentsEqual(
   a: SerializedGraph["components"],
   b: SerializedGraph["components"],
 ): boolean {
-  return JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
+  if (a === undefined || b === undefined) return a === b;
+  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 function functionGraphsEqual(
