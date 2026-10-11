@@ -12,7 +12,7 @@ import type { RuntimeAssetPreloads } from "./asset-preloads";
 import type { RagdollWorldSync } from "./ragdoll-sync";
 import type { RenderCommandEmitter } from "./render-command-emitter";
 import type { RenderSlots } from "./render-slots";
-import { RuntimeInspector } from "./runtime-inspector";
+import { RuntimeInspector, hasEnabledRagdoll } from "./runtime-inspector";
 import { RuntimeMaterialEditGate } from "./runtime-material-edit-gate";
 import type { RuntimeMaterialParameters } from "./runtime-material-parameters";
 import type { RuntimePhysicsWorlds } from "./runtime-physics-worlds";
@@ -213,7 +213,7 @@ export class RuntimeInspectorService {
             }
           }
         }
-        if (affected.some(entry => entry.components.some(component => !component.destroyed && component.classId === "RagdollComponent")))
+        if (affected.some(hasEnabledRagdoll))
           throw new Error("This transform moves an articulated body; preserving its live state requires a new session.");
         const apply = () => {
           for (const affectedActor of affected) {
