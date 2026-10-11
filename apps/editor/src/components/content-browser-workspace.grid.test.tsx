@@ -615,6 +615,35 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(createFolder).toHaveBeenCalledWith("project", "Hero 🤖 Ünïcødé");
   });
 
+  it("refuses a Class name whose class id another Class uses, in New Asset and Rename", () => {
+    const rain = texture(0);
+    rain.path = "assets/Weather/Rain_Weather.class.babasset";
+    rain.header = { ...rain.header, type: "Class", name: "Rain_Weather", guid: "rain" };
+    const hero = texture(1);
+    hero.path = "assets/Hero.class.babasset";
+    hero.header = { ...hero.header, type: "Class", name: "Hero", guid: "hero" };
+    installRegistry([rain, hero], ["Weather"]);
+    const renameAsset = vi.fn();
+    docs.assetRegistry = { ...(docs.assetRegistry as object), renameAsset };
+    render(<ContentBrowserWorkspace />);
+    const taken = 'Another Class already uses the class id "Rain_Weather".';
+
+    fireEvent.click(screen.getByTestId("content-browser-new-asset"));
+    fireEvent.click(screen.getByTestId("new-asset-type-Class"));
+    fireEvent.change(screen.getByTestId("new-asset-name"), { target: { value: "Rain-Weather" } });
+    expect(screen.getByTestId("new-asset-name-taken").textContent).toBe(taken);
+    expect(screen.getByTestId("content-browser-new-asset-create").hasAttribute("disabled")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    fireEvent.contextMenu(screen.getByTestId(`content-item-${hero.path}`));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+    const input = screen.getByTestId("content-browser-name-input");
+    fireEvent.change(input, { target: { value: "Rain Weather" } });
+    expect(screen.getByTestId("content-browser-name-taken").textContent).toBe(taken);
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(renameAsset).not.toHaveBeenCalled();
+  });
+
   it("retains the new asset draft when the storage write fails", async () => {
     installRegistry([]);
     docs.assetRegistry = { ...(docs.assetRegistry as object), createAsset: vi.fn().mockRejectedValue(new Error("Project storage unavailable")) };

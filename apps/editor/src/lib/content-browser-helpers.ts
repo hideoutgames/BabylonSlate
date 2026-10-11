@@ -1447,18 +1447,48 @@ export function uniqueAssetTypes(assets: IndexedAsset[]): string[] {
 export function classParentLookup(
   assets: ReadonlyArray<ClassAssetRef>,
 ): (id: string) => string | null {
-  const map = new Map<string, string | null>();
+  const byId = new Map<string, string>();
+  const byName = new Map<string, string>();
   for (const asset of assets) {
     if (asset.header.type !== "Class") continue;
     const parent = asset.header.parentClass ?? "BObject";
     const id = classIdFromClassAsset(asset);
-    map.set(id, parent);
-    if (asset.header.name !== id) map.set(asset.header.name, parent);
+    // The first file keeps a shared id, as in buildParentClassTreeRows, and a
+    // display name never replaces another Class's id.
+    if (!byId.has(id)) byId.set(id, parent);
+    if (asset.header.name !== id && !byName.has(asset.header.name)) byName.set(asset.header.name, parent);
   }
   return (id) => {
     if (isSceneAssetClassId(id) && id !== "Scene") return "Scene";
-    return map.get(id) ?? engineParentOf(id) ?? null;
+    return byId.get(id) ?? byName.get(id) ?? engineParentOf(id) ?? null;
   };
+}
+
+function isEngineClassId(classId: string): boolean {
+  return isLockedEngineClassId(classId) || engineParentOf(classId) !== undefined;
+}
+
+/**
+ * Class ids are file stems shared by the whole project, so `Rain-Weather` and
+ * `Rain_Weather`, or one stem in two folders, would compile to one class.
+ * Why a Class written at `path` cannot take its id, or null. `exceptPath` is
+ * the Class being renamed.
+ */
+export function classIdConflict(
+  assets: ReadonlyArray<{ path: string; header: { type: string } }>,
+  path: string,
+  exceptPath?: string,
+): string | null {
+  const classId = classIdForGraphPath(path);
+  if (isEngineClassId(classId)) {
+    return `"${classId}" is an engine class name. Choose another Class name.`;
+  }
+  return assets.some((asset) =>
+    asset.header.type === "Class" &&
+    asset.path !== exceptPath &&
+    classIdForGraphPath(asset.path) === classId)
+    ? `Another Class already uses the class id "${classId}".`
+    : null;
 }
 
 export function visualForIndexedAsset(

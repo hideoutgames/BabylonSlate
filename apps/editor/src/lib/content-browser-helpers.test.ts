@@ -58,6 +58,7 @@ import {
   isParticleMaterialForPicker,
   materialDomainsFromAssets,
   filterInspectorPinPickerAssets,
+  classIdConflict,
   classIdFromClassAsset,
   classParentLookup,
   exclusiveSelectAsset,
@@ -1062,15 +1063,27 @@ describe("content-browser-helpers", () => {
     expect(parentOf("Scene")).toBe("BObject");
   });
 
-  it("looks up Class parents by compile id when the header name still has a type suffix", () => {
-    const parentOf = classParentLookup([
-      {
-        path: "assets/main.class.babasset",
-        header: { type: "Class", name: "main.class", parentClass: "Actor" },
-      },
-    ]);
-    expect(parentOf("main")).toBe("Actor");
-    expect(parentOf("main.class")).toBe("Actor");
+  it("keeps the first Class's parent for a shared class id, as the Parent Class tree does", () => {
+    const assets = [
+      { path: "assets/A/Rain_Weather.class.babasset", header: { type: "Class", name: "Rain_Weather", parentClass: "Actor" } },
+      { path: "assets/Storm.class.babasset", header: { type: "Class", name: "Rain_Weather", parentClass: "BTTask" } },
+      { path: "assets/B/Rain-Weather.class.babasset", header: { type: "Class", name: "Rain-Weather", parentClass: "GameInstance" } },
+    ];
+    expect(classParentLookup(assets)("Rain_Weather")).toBe("Actor");
+    expect(buildParentClassTreeRows(assets).find((row) => row.id === "Rain_Weather")?.parentClassId).toBe("Actor");
+  });
+
+  it("refuses a Class id that another Class or the engine already uses", () => {
+    const assets = [
+      { path: "assets/Weather/Rain_Weather.class.babasset", header: { type: "Class" } },
+      { path: "assets/Snow.scene.babasset", header: { type: "Scene" } },
+    ];
+    const taken = 'Another Class already uses the class id "Rain_Weather".';
+    expect(classIdConflict(assets, "assets/Rain-Weather.class.babasset")).toBe(taken);
+    expect(classIdConflict(assets, "assets/Other/Rain_Weather.class.babasset")).toBe(taken);
+    expect(classIdConflict(assets, "assets/Weather/Rain-Weather.class.babasset", "assets/Weather/Rain_Weather.class.babasset")).toBeNull();
+    expect(classIdConflict(assets, "assets/Snow.class.babasset")).toBeNull();
+    expect(classIdConflict(assets, "assets/Actor.class.babasset")).toMatch(/"Actor" is an engine class name/);
   });
 
   it("uses the file stem as the class id, or without a path the stem New Asset writes for the name", () => {

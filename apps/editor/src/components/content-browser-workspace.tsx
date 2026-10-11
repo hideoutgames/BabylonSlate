@@ -43,6 +43,7 @@ import {
   embedGltfImportBatch,
   groupMsdfImportBatch,
   contentEntryNameError,
+  renamedAssetPath,
   stripAssetFileSuffix,
 } from "@babylonslate/assets";
 import {
@@ -155,6 +156,7 @@ import {
   assetDependenciesIncludingOpenDocuments,
   applyContentBrowserTreeSelect,
   applyContentBrowserTileSelect,
+  classIdConflict,
   classIdFromClassAsset,
   classParentLookup,
   classDocumentShowsPrefab,
@@ -841,32 +843,40 @@ function ContentBrowserWorkspaceBody({
   const newDataTypes = useMemo(() => newAssetOpen && (newAssetType === "DataDefinition" || newAssetType === "DataTree")
     ? collectGraphTypeAssets({ assets: allAssets, openDocuments })
     : { structures: [], enums: [], dataDefinitions: [] }, [newAssetOpen, newAssetType, allAssets, openDocuments]);
-  const newAssetNameTaken = isNewAssetNameTaken(
-    existingAssetPaths,
-    selectedFolderPath,
-    newAssetType,
-    newAssetName,
-  );
+  const newAssetTakenError = useMemo(() => {
+    if (!newAssetOpen) return null;
+    if (isNewAssetNameTaken(existingAssetPaths, selectedFolderPath, newAssetType, newAssetName)) {
+      return "An asset with this name already exists in the folder.";
+    }
+    const fileName = newAssetType === "Class" ? newAssetFileName("Class", newAssetName) : "";
+    return fileName
+      ? classIdConflict(referenceAssets, joinAssetFolderPath(selectedFolderPath, fileName))
+      : null;
+  }, [existingAssetPaths, newAssetName, newAssetOpen, newAssetType, referenceAssets, selectedFolderPath]);
   const nameEntryError = (entry: NameEntry): string | null => {
+    const invalid = contentEntryNameError(entry.value);
+    if (invalid) return invalid;
+    if (entry.kind === "rename") {
+      const asset = assetRegistry?.getByGuid(entry.guid);
+      if (!asset) return null;
+      if (isRenameNameTaken(existingAssetPaths, asset.path, entry.value)) {
+        return "That name is already used in this folder.";
+      }
+      const next = renamedAssetPath(asset.path, entry.value);
+      return asset.header.type === "Class" && next !== asset.path
+        ? classIdConflict(referenceAssets, next, asset.path)
+        : null;
+    }
     const taken =
       entry.kind === "folder"
         ? isFolderNameTaken(existingFolderPaths, selectedFolderPath, entry.value)
-        : entry.kind === "rename-folder"
-          ? (() => {
-              const parent = parentFolderPath(entry.path);
-              const next = joinAssetFolderPath(parent, entry.value.trim());
-              if (next === entry.path) return false;
-              return isFolderNameTaken(existingFolderPaths, parent, entry.value);
-            })()
-          : assetRegistry
-            ? isRenameNameTaken(
-                existingAssetPaths,
-                assetRegistry.getByGuid(entry.guid)?.path ?? "",
-                entry.value,
-              )
-            : false;
-    return contentEntryNameError(entry.value) ??
-      (taken ? "That name is already used in this folder." : null);
+        : (() => {
+            const parent = parentFolderPath(entry.path);
+            const next = joinAssetFolderPath(parent, entry.value.trim());
+            if (next === entry.path) return false;
+            return isFolderNameTaken(existingFolderPaths, parent, entry.value);
+          })();
+    return taken ? "That name is already used in this folder." : null;
   };
   const nameDialogError = nameDialog ? nameEntryError(nameDialog) : null;
 
@@ -2309,7 +2319,7 @@ function ContentBrowserWorkspaceBody({
   );
 
   const handleCreateAsset = useCallback(async () => {
-    if (!assetRegistry || newAssetNameTaken || selectedRoot.readOnly) return;
+    if (!assetRegistry || newAssetTakenError || selectedRoot.readOnly) return;
     const name = newAssetName.trim();
     if (!name || contentEntryNameError(name)) return;
     setBusy(true);
@@ -2352,7 +2362,7 @@ function ContentBrowserWorkspaceBody({
     assetRegistry,
     classParentOf,
     newAssetName,
-    newAssetNameTaken,
+    newAssetTakenError,
     newAssetParent,
     newDataDefinition,
     newDataTypes,
@@ -2883,7 +2893,7 @@ function ContentBrowserWorkspaceBody({
         definitionAssets={newDataTypes.dataDefinitions.map(definition => ({ guid: definition.guid, name: definition.name, type: "DataDefinition" }))}
         onParentClassChange={setNewAssetParent}
         classAssets={allAssets.filter((asset) => asset.header.type === "Class")}
-        nameTaken={newAssetNameTaken}
+        takenNameError={newAssetTakenError}
         destinationFolder={selectedFolderPath}
         error={operationError}
         busy={busy}
