@@ -218,7 +218,6 @@ async function profileProjectFiles() {
   );
   const tilemap = {
     ...createDefaultTilemapPayload(),
-    tilesetGuid: TILESET_GUID,
     tilesets: [{ guid: TILESET_GUID, firstGid: 1, tileCount: tileset.tiles.length }],
   };
   files.set(

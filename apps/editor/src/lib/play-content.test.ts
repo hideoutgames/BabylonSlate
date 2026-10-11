@@ -407,7 +407,7 @@ describe("scene-referenced Play content", () => {
   it("collects tileset guids from loaded tilemaps", () => {
     const tilemap = {
       ...createDefaultTilemapPayload(),
-      tilesetGuid: "overworld-set",
+      tilesets: [{ guid: "overworld-set", firstGid: 1, tileCount: 4 }],
     };
     expect(tilesetGuidsFromTilemaps(new Map([["overworld", tilemap]]))).toEqual([
       "overworld-set",

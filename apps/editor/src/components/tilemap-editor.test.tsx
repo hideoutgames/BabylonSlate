@@ -85,7 +85,6 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
 function mapWithGround(): TilemapPayload {
   return {
     ...createDefaultTilemapPayload(),
-    tilesetGuid: "ts-ground",
     tilesets: [{ guid: "ts-ground", firstGid: 1, tileCount: 2 }],
   };
 }

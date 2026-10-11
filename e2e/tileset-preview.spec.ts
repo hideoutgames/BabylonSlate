@@ -132,7 +132,6 @@ test("encoded Tilemap atlas renders its pixels in Scene Preview and Play", async
 }, testInfo) => {
   const files = await atlasFiles(page, 64, 64, true);
   const tilemap = createDefaultTilemapPayload();
-  tilemap.tilesetGuid = tilesetGuid;
   tilemap.tilesets = [{ guid: tilesetGuid, firstGid: 1, tileCount: 16 }];
   tilemap.layers[0]!.chunks = [
     { cx: 0, cy: 0, tiles: Array<number>(32 * 32).fill(1) },

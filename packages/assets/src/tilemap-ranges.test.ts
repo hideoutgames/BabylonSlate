@@ -105,7 +105,7 @@ describe("Tilemap Tileset reservations", () => {
 
   it("allocates additions after unknown painted IDs and legacy atlas capacity", () => {
     const map = normalizeTilemapPayload({
-      tilesetGuid: "a",
+      tilesets: [{ guid: "a", firstGid: 1 }],
       chunkSize: 2,
       layers: [{ chunks: [{ cx: 0, cy: 0, tiles: [4, 0, 0, 0] }] }],
     });

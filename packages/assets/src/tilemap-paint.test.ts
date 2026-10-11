@@ -229,6 +229,22 @@ describe("applyTilemapPaint", () => {
     expect(getTile(next, "layer-1", 1, 0)).toBe(1);
   });
 
+  it("keeps storage sparse when erasing, so a later bucket fill stays put", () => {
+    const map = mapWithTiles([[0, 0, 1]], 4);
+    const erase = (cells: Array<{ x: number; y: number }>) => (from: typeof map) =>
+      applyTilemapPaint(from, { tool: "eraser", layerId: "layer-1", tileId: 1, start: cells[0]!, end: cells[0]!, cells });
+    // An empty cell in an unallocated chunk erases to the same map.
+    expect(erase([{ x: 9, y: 9 }])(map)).toBe(map);
+    // Erasing a chunk's last tile drops the chunk.
+    expect(erase([{ x: 0, y: 0 }])(map).layers[0]!.chunks).toEqual([]);
+    const bucket = applyTilemapPaint(erase([{ x: 9, y: 9 }])(map), {
+      tool: "bucket", layerId: "layer-1", tileId: 5, start: { x: 1, y: 1 }, end: { x: 1, y: 1 },
+    });
+    expect(getTile(bucket, "layer-1", 3, 3)).toBe(5);
+    expect(getTile(bucket, "layer-1", 9, 9)).toBe(0);
+    expect(bucket.layers[0]!.chunks).toHaveLength(1);
+  });
+
   it("fills an inclusive rectangle from start to end", () => {
     const next = applyTilemapPaint(createDefaultTilemapPayload(), {
       tool: "rect",
@@ -267,7 +283,7 @@ describe("applyTilemapPaint", () => {
 
   it("keeps a bucket fill inside the AABB of existing chunks", () => {
     const next = applyTilemapPaint(
-      mapWithTiles([[0, 0, 0]], 4),
+      mapWithTiles([[3, 3, 5]], 4),
       {
         tool: "bucket",
         layerId: "layer-1",
@@ -277,7 +293,8 @@ describe("applyTilemapPaint", () => {
       },
     );
     expect(getTile(next, "layer-1", 0, 0)).toBe(9);
-    expect(getTile(next, "layer-1", 3, 3)).toBe(9);
+    expect(getTile(next, "layer-1", 3, 2)).toBe(9);
+    expect(getTile(next, "layer-1", 3, 3)).toBe(5);
     expect(getTile(next, "layer-1", 4, 0)).toBe(0);
     expect(getTile(next, "layer-1", 0, 4)).toBe(0);
   });

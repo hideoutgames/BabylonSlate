@@ -142,7 +142,6 @@ describe("tilemapCollisionChains", () => {
     floor[0] = 1;
     floor[1] = 1;
     const map = normalizeTilemapPayload({
-      tilesetGuid: "set",
       tileWidth: 1,
       tileHeight: 1,
       chunkSize: 2,

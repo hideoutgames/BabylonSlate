@@ -145,7 +145,7 @@ describe("packedContentFromGame", () => {
       clips: [{ name: "Idle", frames: ["idle"] }],
     };
     const tilemap = {
-      tilesetGuid: "tileset-1",
+      tilesets: [{ guid: "tileset-1", firstGid: 1, tileCount: 1 }],
       tileWidth: 16,
       tileHeight: 16,
       chunkSize: 32,
@@ -262,7 +262,7 @@ describe("packedContentFromGame", () => {
       width: 200,
       height: 100,
     });
-    expect(content.tilemapPayloads.get("tilemap-1")?.tilesetGuid).toBe("tileset-1");
+    expect(content.tilemapPayloads.get("tilemap-1")?.tilesets[0]?.guid).toBe("tileset-1");
     expect(content.tilesetPayloads.get("tileset-1")?.textureGuid).toBe("tex-1");
     expect(content.navmeshBytes).toEqual(new Uint8Array([4, 5, 6]));
     expect(content.navmeshByScene.get("scene-2")).toEqual(new Uint8Array([7, 8]));

@@ -141,8 +141,7 @@ function asTilesetMap(
   tilesets: TilesetPayload | ReadonlyMap<string, TilesetPayload>,
 ): ReadonlyMap<string, TilesetPayload> {
   if (isTilesetMap(tilesets)) return tilesets;
-  const guid =
-    tilemap.tilesetGuid ?? tilemap.tilesets[0]?.guid ?? tilemapTilesetGuids(tilemap)[0] ?? "_";
+  const guid = tilemapTilesetGuids(tilemap)[0] ?? "_";
   return new Map([[guid, tilesets]]);
 }
 

@@ -358,11 +358,7 @@ export function TilemapDetails({
           const tilesets = guids
             .map((guid) => byGuid.get(guid))
             .filter((ref): ref is (typeof tilemap.tilesets)[number] => Boolean(ref));
-          commit({
-            ...tilemap,
-            tilesets,
-            tilesetGuid: tilesets[0]?.guid ?? null,
-          });
+          commit({ ...tilemap, tilesets });
         }}
         renderItem={({ value }) => {
           const asset = assets.find((entry) => entry.guid === value);
