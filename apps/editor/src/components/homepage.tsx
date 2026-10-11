@@ -324,7 +324,7 @@ export function Homepage({
   const importTemplate = () =>
     void run(async () => {
       const files = await pickImportFiles({
-        accept: ".zip,.babproject",
+        accept: ".zip",
         multiple: false,
       });
       if (!files[0]) return;
