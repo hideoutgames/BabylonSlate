@@ -57,6 +57,7 @@ function textureHeader(
   chunks: BabassetHeader["chunks"],
 ): BabassetHeader {
   return {
+    dependencyMetadataVersion: 1, requiredDependencies: [],
     guid: "tex-1",
     type: "Texture",
     name: "Hero",
@@ -126,7 +127,7 @@ describe("player KTX2 transcoder files", () => {
 
 describe("selectTextureChunk authored variant", () => {
   it("selects canonical 2D pixels or retained cube source independently of chunk order", () => {
-    const pixels = { id: "pixels", kind: "pixels", mime: "image/png", sha256: "pixels", locator: { inline: { offset: 0, length: 1 } } };
+    const pixels = { id: "pixels", kind: "pixels", mime: "image/png", sha256: "pixels", byteLength: 1, locator: { inline: { offset: 0, length: 1 } } };
     const source = { ...pixels, id: "source", kind: "source", mime: "image/vnd-ms.dds" };
     for (const chunks of [[source, pixels], [pixels, source]]) {
       const header = textureHeader(chunks);
@@ -142,21 +143,21 @@ describe("selectTextureChunk authored variant", () => {
         kind: "pixels",
         mime: "image/png",
         sha256: "aa",
-        locator: { inline: { offset: 0, length: 1 } },
+        byteLength: 1, locator: { inline: { offset: 0, length: 1 } },
       },
       {
         id: "ktx2:stale",
         kind: "ktx2",
         mime: "image/ktx2",
         sha256: "old",
-        locator: { inline: { offset: 1, length: 1 } },
+        byteLength: 1, locator: { inline: { offset: 1, length: 1 } },
       },
       {
         id: "ktx2:authored",
         kind: "ktx2",
         mime: "image/ktx2",
         sha256: "new",
-        locator: { inline: { offset: 2, length: 1 } },
+        byteLength: 1, locator: { inline: { offset: 2, length: 1 } },
       },
     ]);
     header.payload = { ktx2ChunkId: "ktx2:authored" };
@@ -173,14 +174,14 @@ describe("selectTextureChunk authored variant", () => {
         kind: "pixels",
         mime: "image/png",
         sha256: "aa",
-        locator: { inline: { offset: 0, length: 1 } },
+        byteLength: 1, locator: { inline: { offset: 0, length: 1 } },
       },
       {
         id: "ktx2:other",
         kind: "ktx2",
         mime: "image/ktx2",
         sha256: "bb",
-        locator: { inline: { offset: 1, length: 1 } },
+        byteLength: 1, locator: { inline: { offset: 1, length: 1 } },
       },
     ]);
     expect(

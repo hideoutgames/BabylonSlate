@@ -526,6 +526,7 @@ describe("loadModelPreviewSource", () => {
     const glb = encodeTriangleGlb();
     const encoded = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "model-1",
         type: "Model",
         name: "Hero",

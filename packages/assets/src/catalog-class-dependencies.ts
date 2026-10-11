@@ -1,6 +1,5 @@
 import { classIdForAssetPath, isBuiltinBehaviourTreeClassId } from "@babylonslate/core";
 import { isLockedEngineClassId } from "@babylonslate/object-model";
-import { getRequiredDependencies } from "./asset-dependencies";
 import type { BabassetHeader } from "./babasset";
 
 export interface AssetClassCatalogEntry {
@@ -14,7 +13,7 @@ export function resolveAssetCatalogDependencies(
   assets: readonly AssetClassCatalogEntry[],
   required = false,
 ): string[] {
-  const dependencies = new Set(required ? getRequiredDependencies(header) : header.dependencies);
+  const dependencies = new Set(required ? header.requiredDependencies : header.dependencies);
   const references = required ? header.requiredClassReferences : header.classReferences;
   if (!references?.length) return [...dependencies].sort();
   const classes = new Map<string, Set<string>>();

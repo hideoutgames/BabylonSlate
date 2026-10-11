@@ -20,6 +20,7 @@ async function registryWith(
     await storage.mkdir(file.path.slice(0, file.path.lastIndexOf("/")), true);
     const bytes = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [], requiredVariableNames: [],
         guid: `guid-${file.path}`,
         type: file.type,
         name: file.name,

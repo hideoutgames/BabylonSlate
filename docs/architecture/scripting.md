@@ -829,8 +829,6 @@ Writes honor locks and cancellation when the utility/project closes. Entry edits
 
 Definitions use `.datadefinition.babasset`; trees use `.datatree.babasset` (version 1). Indexed headers contain canonical payloads, avoiding per-entry file reads. Dependencies include the tree's default Definition, explicit branch Definitions, typed values/defaults and retained schema snapshots. Nested snapshots follow populated values; empty collections do not expand unused element schemas. Schema-aware traversal supports deletion replacement, import GUID remapping and export closure; ordinary text, names, paths and internal parent/entry IDs remain unchanged.
 
-Experimental Data Object and Data Sheet formats are unsupported. Their files are preserved and never silently reinterpreted as empty trees. Unsupported reachable data blocks export with an actionable error.
-
 Editor screenshots: [Data Definition fields](../design/evidence/data-workspace/01-data-definition.png), [Data Tree workspace](../design/evidence/data-workspace/02-data-tree.png), and [typed entry node with Inspector defaults](../design/evidence/data-workspace/03-data-tree-node.png).
 
 ### Simulation runtime inspection and edits

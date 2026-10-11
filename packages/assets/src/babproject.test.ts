@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
-import { createEmptyProject, normalizeProjectSettings } from "@babylonslate/core";
+import { createDefaultScene, createEmptyProject, normalizeProjectSettings, SCENE_SCHEMA_VERSION } from "@babylonslate/core";
 import { readGoldenBinary, writeGoldenBinary } from "@babylonslate/test-kit";
 import { decodeAssetDocument, encodeAssetDocument } from "./asset-document";
 import {
@@ -48,8 +48,8 @@ describe("babproject codec", () => {
         type: "Scene",
         name: "main.scene",
         guid: "00000000-0000-4000-8000-00000000scene".slice(0, 36),
-        version: 1,
-        payload: { name: "Main", meshes: [] },
+        version: SCENE_SCHEMA_VERSION,
+        payload: { ...createDefaultScene("2d") },
       }, { engineVersion }),
     });
     await writeProjectTree(storage, files);
@@ -74,9 +74,9 @@ describe("babproject codec", () => {
     const sceneFromGolden = decodeProjectZip(golden).find(
       (f) => f.path === "assets/main.scene.babasset",
     );
-    expect((await decodeAssetDocument(sceneFromGolden!.data)).payload).toEqual({
-      name: "Main",
-      meshes: [],
+    expect(await decodeAssetDocument(sceneFromGolden!.data)).toMatchObject({
+      version: SCENE_SCHEMA_VERSION,
+      payload: createDefaultScene("2d"),
     });
   });
 

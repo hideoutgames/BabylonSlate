@@ -44,6 +44,7 @@ async function writePluginFolder(
     await storage.mkdir(dir, true);
     const bytes = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [], requiredVariableNames: [],
         guid: asset.guid,
         type: asset.type,
         name: asset.name,
@@ -564,6 +565,7 @@ describe("indexUnresolvedPlaceholders", () => {
     });
     const withDeps = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "scene-1",
         type: "Scene",
         name: "Main",

@@ -14,6 +14,7 @@ function indexed(
     path,
     ...(extra.placeholder ? { placeholder: true } : {}),
     header: {
+      dependencyMetadataVersion: 1, requiredDependencies: [],
       chunks: [], dependencies: extra.dependencies ?? [], engineVersion: "0", guid: extra.guid ?? `guid-${name}`, mode: "thin",
       name, parentClass: extra.parentClass ?? null, payload: {}, type, version: 1,
     },

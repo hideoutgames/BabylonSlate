@@ -48,6 +48,7 @@ describe("asset documents", () => {
   it("rejects assets without a document chunk or header payload", async () => {
     const bytes = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "font-1",
         type: "Font",
         name: "Ui",
@@ -76,6 +77,7 @@ describe("asset documents", () => {
     const source = new Uint8Array([1, 2, 3, 4]);
     const bytes = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "audio-1",
         type: "Audio",
         name: "Beep",
@@ -105,6 +107,7 @@ describe("asset documents", () => {
   it("opens imported assets that store payload in the header (no document chunk)", async () => {
     const bytes = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "font-1",
         type: "Font",
         name: "Ui",
@@ -197,6 +200,7 @@ describe("asset documents", () => {
     const source = new Uint8Array([10, 11, 12]);
     const imported = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "font-1",
         type: "Font",
         name: "Ui",

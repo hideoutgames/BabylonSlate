@@ -25,15 +25,13 @@ import {
 } from "@babylonslate/shader-graph";
 import { animationAssetGuids } from "./animation-payload";
 import { audioAssetDependencies } from "./audio-payload";
-import type { BabassetHeader } from "./babasset";
+import { ASSET_DEPENDENCY_METADATA_VERSION } from "./babasset";
 import { dataAssetDependencies, dataGraphAssetDependencies, type DataDefinitionFieldsResolver } from "./data-asset-refs";
 import { modelAssetGuids } from "./model-payload";
 import { particleAssetDependencies } from "./particle-payload";
 import { skeletonAssetGuids } from "./skeleton-payload";
 import { skyboxCreatorAssetDependencies } from "./skybox-creator-payload";
 import { parseSpriteAnimationPayload, spriteAnimationTextureGuids } from "./sprite-animation-payload";
-
-export const ASSET_DEPENDENCY_METADATA_VERSION = 1;
 
 export interface AssetDependencyMetadata {
   dependencyMetadataVersion: number;
@@ -47,25 +45,6 @@ export interface AssetDependencyMetadata {
   consoleCommand?: ConsoleCommandMetadata;
   /** Class property keys required by synchronous graph consumers. */
   requiredVariableNames?: string[];
-}
-
-export class DependencyMetadataUpgradeRequiredError extends Error {
-  readonly code = "dependency-metadata-upgrade-required";
-  readonly assetGuid: string;
-  readonly metadataVersion?: number;
-  constructor(assetGuid: string, metadataVersion?: number) {
-    super(`Asset ${assetGuid} has dependency metadata version ${metadataVersion ?? "legacy"}; run the explicit dependency metadata upgrade before loading it.`);
-    this.name = "DependencyMetadataUpgradeRequiredError";
-    this.assetGuid = assetGuid;
-    this.metadataVersion = metadataVersion;
-  }
-}
-
-export function getRequiredDependencies(header: Pick<BabassetHeader, "guid" | "dependencyMetadataVersion" | "requiredDependencies">): readonly string[] {
-  if (header.dependencyMetadataVersion !== ASSET_DEPENDENCY_METADATA_VERSION || !header.requiredDependencies) {
-    throw new DependencyMetadataUpgradeRequiredError(header.guid, header.dependencyMetadataVersion);
-  }
-  return header.requiredDependencies;
 }
 
 export interface AssetDependencyClass {

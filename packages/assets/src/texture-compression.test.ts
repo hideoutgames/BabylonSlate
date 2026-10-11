@@ -263,6 +263,7 @@ describe("selectTextureChunk", () => {
   it("prefers KTX2 when transcoder is available", async () => {
     const bytes = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "t1",
         type: "Texture",
         name: "t",
@@ -352,6 +353,7 @@ async function mountSingleTexture(
     path,
     await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: `${name}-tex`,
         type: "Texture",
         name,
@@ -469,6 +471,7 @@ describe("registry encode pipeline", () => {
     await storage.mkdir("assets", true);
     const bytes = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "fail-tex",
         type: "Texture",
         name: "Fail",
@@ -543,6 +546,7 @@ describe("registry encode pipeline", () => {
     ] as const) {
       const bytes = await encodeBabasset({
         header: {
+          dependencyMetadataVersion: 1, requiredDependencies: [],
           guid,
           type: "Texture",
           name,
@@ -592,6 +596,7 @@ describe("registry encode pipeline", () => {
     await storage.mkdir("assets", true);
     const bytes = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "stuck-tex",
         type: "Texture",
         name: "Stuck",
@@ -636,6 +641,7 @@ describe("registry encode pipeline", () => {
     await storage.mkdir("assets", true);
     const bytes = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "keep-tex",
         type: "Texture",
         name: "Keep",
@@ -687,6 +693,7 @@ describe("registry encode pipeline", () => {
     await storage.mkdir("assets", true);
     const bytes = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "clear-tex",
         type: "Texture",
         name: "Clear",
@@ -738,6 +745,7 @@ describe("registry encode pipeline", () => {
     await storage.mkdir("assets", true);
     const bytes = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "race-tex",
         type: "Texture",
         name: "Race",
