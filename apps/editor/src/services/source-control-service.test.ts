@@ -341,10 +341,11 @@ describe("SourceControlService", () => {
     service.dispose();
   });
 
-  it("never blocks an edit when create conflicts or is offline", async () => {
+  it.each(["conflicts", "is offline"] as const)("never blocks an edit when create %s", async (failure) => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider({ selfName: "Ada" });
-    fake.addTheirs("assets/a.babasset", "Bob");
+    if (failure === "conflicts") fake.addTheirs("assets/a.babasset", "Bob");
+    else vi.spyOn(fake, "create").mockRejectedValue(new TypeError("Failed to fetch"));
     await service.configure({
       settings: enabled,
       projectGuid: "proj",
