@@ -379,7 +379,7 @@ export type PlaySourcePreparation = {
 };
 export type PlaySceneSourceLoader = (guid: string, options: {
   consumer: string; signal: AbortSignal;
-}) => Promise<PlaySourcePreparation & { scene: SerializedScene }>;
+}) => Promise<PlaySourcePreparation & { scene: SerializedScene; /** The Scene's baked reverb field, if any. */ audioReverb: Uint8Array | null }>;
 export type PlayAssetSourceLoader = (guids: string[], options: {
   consumer: string; signal: AbortSignal; onProgress?: (progress: number) => void;
   /** Orders this load's source reads against other queued work; default gameplay. */
@@ -909,6 +909,8 @@ export function startPlaySession(options: {
   }) : Promise.resolve();
   void sessionSourcesReady.catch((error: unknown) => options.onLog?.(`Session sources: ${String(error)}`, "error"));
   const preparedScenes = new Map((options.scenes ?? []).map((entry) => [entry.guid, entry.scene]));
+  // Baked reverb follows its prepared Scene, so every later activation finds it.
+  const preparedSceneReverbs = new Map(options.audioReverbByScene ?? []);
   const sceneSourceOwners = new Map<string, number>();
   let nextSourceRequestId = 0;
   const sourceRequests = new Map<number, { resolve(): void; reject(error: Error): void }>();
@@ -1023,7 +1025,7 @@ export function startPlaySession(options: {
   const acquireScene: AcquireRuntimeScene | undefined = options.acquireSceneSources ? async (guid, request) => {
     publishAssetStates([guid], "loading");
     if (request.stream) streamSceneAssets.set(request.stream.actorGuid, { guid, loadId: request.stream.streamLoadId });
-    let prepared: PlaySourcePreparation & { scene: SerializedScene };
+    let prepared: Awaited<ReturnType<PlaySceneSourceLoader>>;
     let release: () => void;
     try {
       prepared = await options.acquireSceneSources!(guid, request);
@@ -1033,6 +1035,8 @@ export function startPlaySession(options: {
       throw error;
     }
     preparedScenes.set(guid, prepared.scene);
+    if (prepared.audioReverb) preparedSceneReverbs.set(guid, prepared.audioReverb);
+    else preparedSceneReverbs.delete(guid);
     let sceneScopes = sceneSourceScopes.get(guid);
     if (!sceneScopes) sceneSourceScopes.set(guid, sceneScopes = new Set());
     sceneScopes.add(prepared);
@@ -1046,7 +1050,10 @@ export function startPlaySession(options: {
       if (!sceneSourceScopes.get(guid)?.size) sceneSourceScopes.delete(guid);
       const remaining = (sceneSourceOwners.get(guid) ?? 1) - 1;
       if (remaining) sceneSourceOwners.set(guid, remaining);
-      else { sceneSourceOwners.delete(guid); preparedScenes.delete(guid); preparedAssetGuids.delete(guid); publishAssetStates([guid], "unloaded"); }
+      else {
+        sceneSourceOwners.delete(guid); preparedScenes.delete(guid); preparedSceneReverbs.delete(guid);
+        preparedAssetGuids.delete(guid); publishAssetStates([guid], "unloaded");
+      }
       release();
     } };
   } : undefined;
@@ -1112,6 +1119,7 @@ export function startPlaySession(options: {
     for (const guid of persistent) if (!scoped.has(guid)) initialSourceGuids.add(guid);
     if (initialSourcesReady) publishAssetStates([...initialSourceGuids], "ready");
     for (const guid of preparedScenes.keys()) if (!sceneSourceOwners.has(guid)) preparedScenes.delete(guid);
+    for (const guid of preparedSceneReverbs.keys()) if (!sceneSourceOwners.has(guid)) preparedSceneReverbs.delete(guid);
     for (const key of ["textureBytes", "modelBytes", "modelPayloads", "complexMeshes", "spritePayloads", "spriteAnimationPayloads",
       "tilemapPayloads", "tilesetPayloads", "waterPayloads", "fontFacetypeBytes", "fontMsdfJson", "fontMsdfPng",
       "fontCssStackByGuid", "fontFaceEntries", "materialDocuments", "materialFunctions", "audioLibrary", "particleLibrary",
@@ -1150,7 +1158,7 @@ export function startPlaySession(options: {
         boot: { guid: options.sceneAssetGuid, scene: options.scene },
         currentSceneGuid: hostSceneGuid,
         forceReload: receivedActiveScene,
-        audioReverbByScene: options.audioReverbByScene,
+        audioReverbByScene: preparedSceneReverbs,
       });
       if (receivedActiveScene && options.acquireSceneSources) releaseInitialSources();
       receivedActiveScene = true;
@@ -1909,6 +1917,7 @@ export function startPlaySession(options: {
       sceneSources?.dispose();
       for (const preloadId of preloads.keys()) releasePreload(preloadId);
       preparedScenes.clear();
+      preparedSceneReverbs.clear();
       sceneSourceOwners.clear();
       streamSceneAssets.clear();
       sceneSourceScopes.clear();

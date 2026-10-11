@@ -10,7 +10,7 @@ import {
 } from "@babylonslate/runtime";
 import { createEngine } from "@babylonslate/render";
 import { createGameWorkerHost } from "./game-worker-host";
-import { startPlaySession, type PlaySession } from "./play-session";
+import { startPlaySession, type PlaySceneSourceLoader, type PlaySession } from "./play-session";
 
 vi.mock("@babylonslate/render", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@babylonslate/render")>()),
@@ -78,6 +78,10 @@ describe.each(["worker", "in-process"] as const)(
         failingWorkerTerminate?: () => void;
         /** Worker mode: deliver output as the worker would, including after Stop. */
         onWorker?: (worker: { command(command: CommandMessage): void; snapshot(buffer: Float32Array): void }) => void;
+        /** In-process mode: prepares Scenes for scene changes. */
+        sceneSources?: PlaySceneSourceLoader;
+        audioReverbByScene?: ReadonlyMap<string, Uint8Array>;
+        onAudioReverbField?: (field: Uint8Array | null) => void;
       } = {},
     ): Promise<RuntimeDriver> {
       vi.stubGlobal("window", new EventTarget());
@@ -99,6 +103,10 @@ describe.each(["worker", "in-process"] as const)(
         pushSnapshot: options.pushSnapshot ?? (() => {}),
         setGameInputEnabled() {},
         setSimulationEditMode() {},
+        loadScene() {},
+        resetAudioSession() {},
+        resetParticleSession() {},
+        setAudioReverbField: options.onAudioReverbField ?? (() => {}),
         renderPathStatus: () => ({
           requested: { renderPath: "forward", gpuBackend: "webgl2" },
           effective: { renderPath: "forward", gpuBackend: "webgl2" },
@@ -125,9 +133,10 @@ describe.each(["worker", "in-process"] as const)(
         finishBoot = resolve;
         failBoot = reject;
       });
-      vi.mocked(createRuntimeFromLoad).mockImplementation((load, onCommand) => {
+      vi.mocked(createRuntimeFromLoad).mockImplementation((load, onCommand, _storage, sourceHost) => {
         runtime = createInProcessRuntime({
           ...runtimeOptionsFromLoadControl(load),
+          ...sourceHost,
           onCommand,
           preferSoftwarePhysics: true,
         });
@@ -204,6 +213,8 @@ describe.each(["worker", "in-process"] as const)(
         gameInstanceClass: options.gameInstanceClass,
         onFatalDiagnostic: options.onFatalDiagnostic,
         acquireAssetSources: options.acquireAssetSources,
+        acquireSceneSources: options.sceneSources,
+        audioReverbByScene: options.audioReverbByScene,
       });
       await booted;
       runtime.tick();
@@ -270,6 +281,33 @@ describe.each(["worker", "in-process"] as const)(
       worker.snapshot(new Float32Array(16));
       expect(applyCommand).not.toHaveBeenCalled();
       expect(pushSnapshot).not.toHaveBeenCalled();
+    });
+
+    it.runIf(mode === "in-process")("applies each Scene's baked reverb on every later scene change", async () => {
+      const reverbs: Record<string, Uint8Array> = { scene: new Uint8Array([1]), other: new Uint8Array([2]) };
+      const fields: Array<Uint8Array | null> = [];
+      const frames: FrameRequestCallback[] = [];
+      const runtime = await play({
+        frames,
+        audioReverbByScene: new Map([["scene", reverbs.scene!]]),
+        onAudioReverbField: (field) => fields.push(field),
+        sceneSources: async (guid) => ({
+          sources: {} as never, release() {}, scene: { ...createDefaultScene(), actors: [] }, audioReverb: reverbs[guid] ?? null,
+        }),
+      });
+      const change = async (guid: string) => {
+        let done = false;
+        const work = runtime.changeSceneAsync(guid).finally(() => { done = true; });
+        await vi.waitFor(() => {
+          frames.shift()?.(performance.now());
+          expect(done).toBe(true);
+        }, { timeout: 4000 });
+        await work;
+      };
+      await change("other");
+      await change("scene");
+      await change("other");
+      expect(fields).toEqual([reverbs.other, reverbs.scene, reverbs.other]);
     });
 
     it("does not create the default model actor when its class is merely loaded", async () => {

@@ -355,7 +355,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     const prepared = await acquireAssetSources([guid], options);
     const scene = prepared.game.scenes.get(guid);
     if (!scene) { prepared.release(); throw new Error(`Scene ${guid} could not be prepared.`); }
-    return { ...prepared, scene };
+    return { ...prepared, scene, audioReverb: prepared.game.audioReverbBytes.get(guid) ?? null };
   }, [acquireAssetSources]);
   const releaseInitialSources = useCallback(() => {
     const prepared = initialPlaySourceRef.current;
