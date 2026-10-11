@@ -524,7 +524,7 @@ export function ClassMembersView({
         (entry.detail ?? `${entry.kind}-${entry.name}`) !== id,
     );
     if (taken) return;
-    onGraphChange(patchClassMember(graph, id, { name }));
+    onGraphChange(patchClassMember(graph, id, { name }, classId));
   };
   const addVariable = (pickerType: string, local: boolean) => {
     if (!graph) return;
@@ -845,7 +845,7 @@ export function ClassMembersView({
         label: "Delete",
         onSelect: () => {
           if (!graph || !selectedId) return;
-          onGraphChange(removeClassMember(graph, selectedId));
+          onGraphChange(removeClassMember(graph, selectedId, { ...membersOptions, classId }));
         },
       },
     ],
@@ -923,7 +923,7 @@ export function ClassMembersView({
                     label: "Delete",
                     onSelect: () => {
                       if (!graph) return;
-                      onGraphChange(removeClassMember(graph, id));
+                      onGraphChange(removeClassMember(graph, id, { ...membersOptions, classId }));
                     },
                   },
                 ]

@@ -307,6 +307,7 @@ function ClassMemberDetails({
   pickerAssets,
   schemas,
   enumMembers,
+  classId,
   onChange,
 }: {
   graph: SerializedGraph;
@@ -322,6 +323,8 @@ function ClassMemberDetails({
   }>;
   schemas: ReturnType<typeof typeSchemasFromGraphAssets>;
   enumMembers: Record<string, string[]>;
+  /** This document's class id, so renames and signature edits reach only its own Calls. */
+  classId?: string;
   onChange: (next: SerializedGraph) => void;
 }) {
   const [interfacePickerOpen, setInterfacePickerOpen] = useState(false);
@@ -338,7 +341,7 @@ function ClassMemberDetails({
   } | null>(null);
   const [pinRowIds, setPinRowIds] = useState<CommittedPinRowIds | null>(null);
   const commit = (patch: Partial<GraphClassMember>) => {
-    onChange(patchClassMember(graph, member.id, patch));
+    onChange(patchClassMember(graph, member.id, patch, classId));
   };
   const categoryRow = {
     id: "category",
@@ -1517,6 +1520,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
           pickerAssets={pickerAssets}
           schemas={typeSchemas}
           enumMembers={enumMembers}
+          classId={doc?.ref.path ? classIdForGraphPath(doc.ref.path) : undefined}
           onChange={persistGraph}
         />
       </PanelFrame>
