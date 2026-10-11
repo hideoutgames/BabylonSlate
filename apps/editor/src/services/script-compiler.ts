@@ -322,6 +322,8 @@ function classMetadataFromGraph(
 export type GraphCompileDocument = {
   path: string;
   content: SerializedGraph;
+  /** The Class's saved parent, which the compile inherits from. */
+  parentClassId?: string | null;
 };
 
 function compileNodeFingerprint(
@@ -395,6 +397,7 @@ export function graphCompileSignature(
     .map((doc) => ({
       path: doc.path,
       fingerprint: documentCompileFingerprint(doc.content),
+      ...(doc.parentClassId ? { parentClassId: doc.parentClassId } : {}),
     }))
     .sort((a, b) => a.path.localeCompare(b.path));
   return JSON.stringify(

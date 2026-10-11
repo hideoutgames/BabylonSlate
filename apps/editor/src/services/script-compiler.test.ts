@@ -1159,6 +1159,13 @@ describe("graphCompileSignature", () => {
     ).not.toBe(base);
   });
 
+  it("changes when a Class's saved parent changes", () => {
+    const document = { path: "assets/main.class.babasset", content: tickToLog };
+    expect(
+      graphCompileSignature([{ ...document, parentClassId: "Pawn" }]),
+    ).not.toBe(graphCompileSignature([{ ...document, parentClassId: "Actor" }]));
+  });
+
   it("is order-independent across documents", () => {
     const other: SerializedGraph = { nodes: [], edges: [] };
     const a = { path: "assets/a.class.babasset", content: tickToLog };
