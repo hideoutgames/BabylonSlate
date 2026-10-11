@@ -168,6 +168,7 @@ export const PROJECT_SETTING_FIELDS = fields([
   ["extensions", "New Extension", "settings-extension-new"],
   ["extensions", "Import Extension", "settings-extension-import"],
   ["extensions", "GLSL to Material"],
+  ["export", "Packed", "setting-export-packed"],
   ["export", "Bundle Debugger", "setting-export-debugger"],
   ["export", "File Count Warn", "setting-export-file-warn"],
   ["export", "File Count Fail", "setting-export-file-fail"],

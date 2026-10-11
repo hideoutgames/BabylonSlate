@@ -288,6 +288,7 @@ export async function collectAndExportGame(
   const preset = params.preset ?? defaultExportPreset();
   const bundleDebugger =
     params.previewBuild === true ? true : preset.bundleDebugger;
+  const mode = preset.packed === false ? "loose" : "packed";
   const pluginGraph = resolveExportPluginGraph(
     params.plugins,
     params.projectPluginOverrides,
@@ -547,6 +548,7 @@ export async function collectAndExportGame(
     includePreviewDiagnostics: params.previewBuild === true,
     saveGame,
     project: params.project,
+    mode,
     bundleDebugger,
     startupSceneGuid: startup,
     gameInstanceClass: params.gameInstanceClass,

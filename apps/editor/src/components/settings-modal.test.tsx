@@ -500,26 +500,27 @@ describe("SettingsModal project authoring", () => {
     fireEvent.click(screen.getByTestId("settings-modal-category-export"));
     expect(screen.getByTestId("export-game")).toBeTruthy();
     expect(screen.getByTestId("export-project")).toBeTruthy();
+    expect(screen.getByTestId("setting-export-packed")).toBeTruthy();
     expect(screen.getByTestId("setting-export-debugger")).toBeTruthy();
     fireEvent.click(screen.getByTestId("setting-export-debugger"));
     expect(updateProjectSettings).toHaveBeenCalledWith(
       expect.objectContaining({
         exportPresets: [
-          expect.objectContaining({ bundleDebugger: true }),
+          expect.objectContaining({ bundleDebugger: true, packed: true }),
         ],
       }),
     );
   });
 
   it("edits the first export preset and keeps the others", () => {
-    const web = defaultExportPreset();
-    const desktop = { ...defaultExportPreset("desktop", "Desktop"), bundleDebugger: true };
+    const web = { ...defaultExportPreset(), bundleDebugger: true };
+    const desktop = { ...defaultExportPreset("desktop", "Desktop"), packed: false };
     projectExportPresets.current = [web, desktop];
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     fireEvent.click(screen.getByTestId("settings-modal-category-export"));
-    fireEvent.click(screen.getByTestId("setting-export-debugger"));
+    fireEvent.click(screen.getByTestId("setting-export-packed"));
     expect(updateProjectSettings).toHaveBeenLastCalledWith({
-      exportPresets: [{ ...web, bundleDebugger: true }, desktop],
+      exportPresets: [{ ...web, packed: false }, desktop],
     });
   });
 
