@@ -1,3 +1,4 @@
+import type { MouseEvent } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   NumberField,
@@ -47,6 +48,17 @@ export function TypeMembersPanel(_props: IDockviewPanelProps) {
 
   const commit = (next: Record<string, unknown>) => {
     void applyAssetDocumentChange(documentId, next);
+  };
+  // Rows are selected by index, so a moved row takes the selection to its new
+  // slot. The click must not reach the row, which would select the old slot.
+  const moveRow = (
+    event: MouseEvent,
+    next: Record<string, unknown>,
+    index: number,
+  ) => {
+    event.stopPropagation();
+    commit(next);
+    setSelectedMemberId(memberKey(index));
   };
 
   if (kind === "enum") {
@@ -122,7 +134,7 @@ export function TypeMembersPanel(_props: IDockviewPanelProps) {
                   size="icon-sm"
                   aria-label={`Move ${member.name} up`}
                   disabled={index === 0}
-                  onClick={() => commit(moveEnumMember(asset, index, -1))}
+                  onClick={(event) => moveRow(event, moveEnumMember(asset, index, -1), index - 1)}
                 >
                   <ChevronUpIcon />
                 </Button>
@@ -132,7 +144,7 @@ export function TypeMembersPanel(_props: IDockviewPanelProps) {
                   size="icon-sm"
                   aria-label={`Move ${member.name} down`}
                   disabled={index === asset.members.length - 1}
-                  onClick={() => commit(moveEnumMember(asset, index, 1))}
+                  onClick={(event) => moveRow(event, moveEnumMember(asset, index, 1), index + 1)}
                 >
                   <ChevronDownIcon />
                 </Button>
@@ -211,7 +223,7 @@ export function TypeMembersPanel(_props: IDockviewPanelProps) {
                   size="icon-sm"
                   aria-label={`Move ${field.name} up`}
                   disabled={index === 0}
-                  onClick={() => commit(moveStructureField(asset, index, -1))}
+                  onClick={(event) => moveRow(event, moveStructureField(asset, index, -1), index - 1)}
                 >
                   <ChevronUpIcon />
                 </Button>
@@ -221,7 +233,7 @@ export function TypeMembersPanel(_props: IDockviewPanelProps) {
                   size="icon-sm"
                   aria-label={`Move ${field.name} down`}
                   disabled={index === asset.fields.length - 1}
-                  onClick={() => commit(moveStructureField(asset, index, 1))}
+                  onClick={(event) => moveRow(event, moveStructureField(asset, index, 1), index + 1)}
                 >
                   <ChevronDownIcon />
                 </Button>

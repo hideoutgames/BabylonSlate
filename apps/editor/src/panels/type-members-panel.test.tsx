@@ -107,6 +107,29 @@ describe("type asset member table", () => {
     expect(document.activeElement).toBe(input);
   });
 
+  it.each(["enum", "structure"] as const)("keeps a moved %s row selected in Details", (kind) => {
+    harness.kind = kind;
+    harness.content = kind === "enum"
+      ? { kind, guid: "e1", name: "Colors", members: [{ name: "Red", value: 0 }, { name: "Blue", value: 1 }] }
+      : { kind, guid: "s1", name: "Stats", fields: [
+        { id: "red", name: "Red", typeId: "float" },
+        { id: "blue", name: "Blue", typeId: "float" },
+      ] };
+    const panels = () => (
+      <TypeAssetEditingProvider>
+        <TypeMembersPanel {...({} as IDockviewPanelProps)} />
+        <TypeDetailsPanel {...({} as IDockviewPanelProps)} />
+      </TypeAssetEditingProvider>
+    );
+    const { rerender } = render(panels());
+    fireEvent.click(screen.getByTestId(`${kind}-row-0`));
+    fireEvent.click(screen.getByRole("button", { name: "Move Red down" }));
+    const [, saved] = applyAssetDocumentChange.mock.calls.at(-1) as unknown as [string, Record<string, unknown>];
+    harness.content = saved;
+    rerender(panels());
+    expect((screen.getByTestId("property-name") as HTMLInputElement).value).toBe("Red");
+  });
+
   it("shows a PinTypePicker for the selected structure field", () => {
     harness.kind = "structure";
     harness.content = {
