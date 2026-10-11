@@ -105,7 +105,7 @@ function previewMeshIcon(mesh: MaterialPreviewMesh): LucideIcon {
 type MaterialGraphDocument = MaterialDocument | MaterialFunctionDocument;
 
 function renderMaterialNodeBody(_id: string, data: Record<string, unknown>) {
-  return data.__nodeType === "custom.glsl" ? <div className="w-88 max-w-88 overflow-hidden border-t px-3 py-2"><GlslCodePreview value={String(data.body ?? "a + b")} /></div> : null;
+  return data.__nodeType === "custom.glsl" ? <div className="w-88 max-w-88 overflow-hidden border-t px-3 py-2"><GlslCodePreview value={String(data.body ?? "")} /></div> : null;
 }
 
 function materialPinDefaultRows(
@@ -889,7 +889,7 @@ function MaterialNodeDetails<T extends MaterialGraphDocument>({
         ]} />}
       /></div> : null}
       {node.type === "custom.glsl" ? (
-        <MaterialCustomGlsl node={node} document={document} setProperties={setProperties} bodyLine={editing.compileDiagnostics.find((diagnostic) => diagnostic.nodeId === node.id)?.line} />
+        <MaterialCustomGlsl node={node} setProperties={setProperties} bodyLine={editing.compileDiagnostics.find((diagnostic) => diagnostic.nodeId === node.id)?.line} />
       ) : null}
       {isTextureNode ? (
         <div className="px-3">
