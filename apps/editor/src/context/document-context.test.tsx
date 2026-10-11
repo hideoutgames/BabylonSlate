@@ -534,6 +534,20 @@ describe("DocumentProvider actions and route", () => {
     expect(firstActorPosition(MAIN_SCENE_ID)).toEqual(baseline.actors[0]!.transform.position);
   });
 
+  it("closes a tab whose file was deleted on disk when its external change is reloaded", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    const load = vi.spyOn(ProjectService.prototype, "loadDocument").mockRejectedValue(new Error("File not found"));
+    const exists = vi.spyOn(ProjectService.prototype, "documentExists").mockResolvedValue(false);
+    try {
+      await act(() => actions.confirmExternalChangeReloadDocs([MAIN_SCENE_FILE]));
+      expect(documents().openDocuments.some((doc) => doc.id === MAIN_SCENE_ID)).toBe(false);
+    } finally {
+      load.mockRestore();
+      exists.mockRestore();
+    }
+  });
+
   it("ignores an external reload that crosses an authoring lease even when it finishes after release", async () => {
     const actions = await openProject();
     await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));

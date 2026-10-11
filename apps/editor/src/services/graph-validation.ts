@@ -376,7 +376,7 @@ function connectedCastClassId(
 
 /**
  * Cast types its Result from the Class wired into it, else from the Class
- * picked on the node. Records the picked Class and the Result kind on
+ * picked on the node (`default:class`). Records the Result kind on
  * `properties` and returns the pin inputs, for the editor and validation alike.
  */
 function castPinProperties(
@@ -385,13 +385,20 @@ function castPinProperties(
   nodeId: string,
   nodeRegistry: NodeRegistry,
   parentOf: (id: string) => string | null | undefined,
-): { pinProperties: Record<string, unknown>; wiredClassId: string | undefined } {
+): {
+  pinProperties: Record<string, unknown>;
+  defaultClassId: string;
+  wiredClassId: string | undefined;
+} {
   const defaultClassId = castDefaultClassId(properties);
-  properties.defaultClassId = defaultClassId;
   const wiredClassId = connectedCastClassId(graph, nodeId, nodeRegistry);
   const resultClassId = wiredClassId ?? defaultClassId;
   properties.resultKind = resultKindForClass(resultClassId, parentOf);
-  return { pinProperties: { ...properties, "default:class": resultClassId }, wiredClassId };
+  return {
+    pinProperties: { ...properties, "default:class": resultClassId },
+    defaultClassId,
+    wiredClassId,
+  };
 }
 
 /**
@@ -727,7 +734,7 @@ export function hydrateSerializedGraphForEditor(
         };
       }
 
-      let typeId =
+      const typeId =
         typeof rawData.__nodeType === "string"
           ? rawData.__nodeType
           : node.type;
@@ -738,26 +745,13 @@ export function hydrateSerializedGraphForEditor(
       refreshInputEvent(typeId, properties, options, graph, node.id);
       refreshVariableReferenceAccess(typeId, properties);
 
-      if (typeId === "logMessage") {
-        typeId = "debug.log";
-        if (properties.message === undefined) {
-          properties.message = "";
-        }
-        if (properties.severity === undefined) {
-          properties.severity = "log";
-        }
-        if (properties.category === undefined) {
-          properties.category = "Script";
-        }
-      }
-
       const authoredTitle =
         typeof rawData.title === "string" && rawData.title.trim()
           ? rawData.title
           : undefined;
 
       if (typeId === "casting.cast") {
-        const { pinProperties, wiredClassId } = castPinProperties(properties, graph, node.id, nodeRegistry, parentOf);
+        const { pinProperties, defaultClassId, wiredClassId } = castPinProperties(properties, graph, node.id, nodeRegistry, parentOf);
         const def = nodeRegistry.get(typeId);
         const pins: GraphPin[] = def ? def.pins(pinProperties) : [];
         return {
@@ -766,7 +760,7 @@ export function hydrateSerializedGraphForEditor(
           data: withVisualMeta(
             {
               ...properties,
-              title: wiredClassId ? "Cast to Class" : `Cast to ${String(properties.defaultClassId)}`,
+              title: wiredClassId ? "Cast to Class" : `Cast to ${defaultClassId}`,
               __pins: pins,
             },
             def,
@@ -796,16 +790,9 @@ export function hydrateSerializedGraphForEditor(
         const eventType =
           typeof properties.eventType === "string" ? properties.eventType : "";
         const rawName =
-          typeof properties.eventName === "string"
-            ? properties.eventName
-            : typeof properties.name === "string"
-              ? properties.name
-              : "";
+          typeof properties.eventName === "string" ? properties.eventName : "";
         const bodyName = formatEventMemberName(rawName);
-        if (bodyName) {
-          properties.eventName = bodyName;
-          properties.name = bodyName;
-        }
+        if (bodyName) properties.eventName = bodyName;
         const label =
           eventType && eventType !== "flow.event.custom"
             ? formatEventMemberName(
@@ -1762,7 +1749,6 @@ function castPaletteNodes(
   return classIds.map((classId) => {
     const resultKind = resultKindForClass(classId, parentOf);
     const defaultData: Record<string, unknown> = {
-      defaultClassId: classId,
       "default:class": classId,
       resultKind,
     };
@@ -2119,13 +2105,6 @@ function scriptPaletteCatalogNodes(
       if (def.id === "string.format") {
         defaultData["default:format"] = "{input}";
       }
-      if (
-        def.id === "audio.play" ||
-        def.id === "audio.setChannelVolume" ||
-        def.id === "audio.setGlobalVolume"
-      ) {
-        defaultData["default:volume"] = 1;
-      }
       const pins = def.pins(defaultData);
       if (def.editorOnly) defaultData.__editorOnly = true;
       return {
@@ -2340,9 +2319,9 @@ export function materializeLogicGraph(
     .map((e, i) => ({
       id: e.id || `e${i}`,
       sourceNodeId: e.source,
-      sourcePinId: e.sourceHandle ?? logic.edges[i]?.sourcePinId ?? "execOut",
+      sourcePinId: e.sourceHandle ?? "",
       targetNodeId: e.target,
-      targetPinId: e.targetHandle ?? logic.edges[i]?.targetPinId ?? "execIn",
+      targetPinId: e.targetHandle ?? "",
     }))
     .filter((edge) => {
       const source = logic.nodes.find((node) => node.id === edge.sourceNodeId);

@@ -154,10 +154,7 @@ function prefabAncestors(
   }
   if (chain.length === 0) return NO_ANCESTORS;
   const graphs = collectClassGraphsForPalette({
-    assets: assets.filter(
-      (asset) =>
-        seen.has(asset.header.name) || seen.has(classIdForGraphPath(asset.path)),
-    ),
+    assets: assets.filter((asset) => seen.has(classIdForGraphPath(asset.path))),
     openDocuments: openDocuments.filter(
       (entry) =>
         entry.ref.kind === "graph" && seen.has(classIdForGraphPath(entry.ref.path)),

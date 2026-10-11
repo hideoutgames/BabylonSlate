@@ -424,11 +424,6 @@ function AnimGraphVariablesList({
   );
 }
 
-export function AnimGraphParametersPanel(_props: IDockviewPanelProps) {
-  void _props;
-  return <AnimGraphVariablesList showStates />;
-}
-
 export function AnimGraphVariablesPanel(_props: IDockviewPanelProps) {
   void _props;
   return <AnimGraphVariablesList showStates />;

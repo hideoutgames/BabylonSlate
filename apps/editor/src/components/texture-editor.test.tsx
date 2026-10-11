@@ -144,6 +144,20 @@ describe("Texture editor", () => {
     expect(retryTextureEncoding).toHaveBeenCalledWith("tex-odd", { force: true, usage: "normal" });
   });
 
+  it("explains a re-encode that could not start", async () => {
+    retryTextureEncoding.mockRejectedValueOnce(new Error("Read-only during Simulation Play"));
+    render(
+      <TextureDetails
+        guid="tex-albedo"
+        dependencies={[]}
+        payload={{ usage: "albedo", compressionState: "encode_failed" }}
+        onChange={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("texture-retry-encode"));
+    expect((await screen.findByTestId("texture-requeue-error")).textContent).toContain("Read-only during Simulation Play");
+  });
+
   it("re-encodes and prepares nothing while another user's lock keeps the Texture read-only", async () => {
     textureUsageBlockedReason.mockReturnValue("The Texture is locked by Bob.");
     textureAlignmentStale.mockResolvedValue(true);

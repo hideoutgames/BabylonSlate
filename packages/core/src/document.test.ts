@@ -182,19 +182,6 @@ describe("Class and settings documents", () => {
     ).toBe("Grass Texture");
   });
 
-  it("keeps legacy settings tabs parseable", () => {
-    expect(assetTypeForDocumentKind("asset-settings")).toBe("Texture");
-    expect(documentKindLabel("asset-settings")).toBe("Settings");
-    expect(isAssetDocumentKind("asset-settings")).toBe(true);
-    expect(parseDocumentId("asset-settings:assets/hero.babasset")).toEqual({
-      kind: "asset-settings",
-      path: "assets/hero.babasset",
-    });
-    expect(
-      createDocumentRef("asset-settings", "assets/hero.babasset").label,
-    ).toMatch(/Settings$/);
-  });
-
   it("opens Enum, Structure, and ScriptInterface as their own document kinds", () => {
     expect(documentKindForAssetType("Enum")).toBe("enum");
     expect(documentKindForAssetType("Structure")).toBe("structure");

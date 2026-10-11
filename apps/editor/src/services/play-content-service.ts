@@ -84,6 +84,7 @@ import {
   compileGraphDocuments,
   graphCompileSignature,
   GraphScriptCompileCache,
+  type GraphCompileDocument,
 } from "./script-compiler";
 
 /** Class graphs, Animation Graphs and the typed asset catalogs their compilation reads. */
@@ -104,13 +105,18 @@ export type PlayContentService = ReturnType<typeof createPlayContentService>;
 
 function openGraphCompileDocuments(
   documentService: DocumentService,
-): Array<{ path: string; content: SerializedGraph }> {
+  assets: ReadonlyArray<{ path: string; header: { parentClass?: string | null } }>,
+): GraphCompileDocument[] {
+  // The saved parent is part of what compiles, so a parent changed on disk
+  // (outside Reparent) also changes the signature.
+  const parentByPath = new Map(assets.map((asset) => [asset.path, asset.header.parentClass ?? null]));
   return documentService
     .getOpenDocumentsOrdered()
     .filter((doc) => doc.ref.kind === "graph" && doc.content)
     .map((doc) => ({
       path: doc.ref.path,
       content: doc.content as SerializedGraph,
+      parentClassId: parentByPath.get(doc.ref.path) ?? null,
     }));
 }
 
@@ -168,7 +174,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
 
   /** Fingerprint of the open Class and Animation Graphs and the catalogs they compile against (node positions omitted). */
   const graphSignature = (tags: ProjectDocument["settings"]["tags"] | undefined) => graphCompileSignature(
-    [...openGraphCompileDocuments(documentService), ...openAnimGraphSignatureSlices(documentService)],
+    [...openGraphCompileDocuments(documentService, projectService.registry?.list() ?? []), ...openAnimGraphSignatureSlices(documentService)],
     inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
     tags,
     collectDataGraphAssets(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
@@ -455,8 +461,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
       | "enum"
       | "audio"
       | "scene-layer"
-      | "texture"
-      | "asset-settings",
+      | "texture",
     path: string,
   ): Promise<unknown | null> => {
     const openDoc = documentService

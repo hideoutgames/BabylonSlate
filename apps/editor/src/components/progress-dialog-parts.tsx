@@ -73,7 +73,7 @@ export function ProgressDialogStatus({
 }: ProgressDialogStatusProps) {
   return (
     <>
-      <DialogHeader className="min-h-0 flex-row items-baseline gap-3 pr-0">
+      <DialogHeader className="min-h-0 flex-row items-baseline gap-3">
         <DialogTitle className="min-w-0 flex-1 truncate text-sm leading-5">
           {title}
         </DialogTitle>
@@ -133,7 +133,7 @@ export function ProgressDialogFailure({
 }: ProgressDialogFailureProps) {
   return (
     <>
-      <DialogHeader className="min-h-0 flex-row items-start gap-2.5 pr-0">
+      <DialogHeader className="min-h-0 flex-row items-start gap-2.5">
         <TriangleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <DialogTitle className="text-sm leading-5">{title}</DialogTitle>

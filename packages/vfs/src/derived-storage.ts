@@ -3,7 +3,8 @@ import type { ProjectStorage } from "@babylonslate/core";
 import { DocumentsStorageAdapter } from "./documents-adapter";
 import { isMobilePlatform } from "./platform";
 
-const DERIVED_ROOT = "__babylonslate_derived__";
+/** Folder name of the app-private derived-data store; never a project. */
+export const DERIVED_STORAGE_ROOT = "__babylonslate_derived__";
 
 /**
  * App-private derived-data store keyed under a stable root (outside project trees).
@@ -14,6 +15,6 @@ export async function createDerivedStorage(): Promise<ProjectStorage> {
   const storage = isMobilePlatform()
     ? new DocumentsStorageAdapter()
     : new OpfsStorageAdapter({ library: true });
-  await storage.openDocumentsProject(DERIVED_ROOT);
+  await storage.openDocumentsProject(DERIVED_STORAGE_ROOT);
   return storage;
 }

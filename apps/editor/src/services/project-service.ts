@@ -2,7 +2,7 @@ import { createDefaultInputAssets, SourceRevisionChangedError } from "@babylonsl
 import { isLockedEngineClassId } from "@babylonslate/object-model";
 import { normalizeDataDefinitionAsset, normalizeDataTreeAsset } from "@babylonslate/core";
 import { normalizeImportedProject, readProjectArchive, PROJECT_IMPORT_LIMIT } from "./project-import";
-import { getHostPlatform, pickImportFiles } from "@babylonslate/vfs";
+import { DERIVED_STORAGE_ROOT, getHostPlatform, pickImportFiles } from "@babylonslate/vfs";
 import type { DockviewApi } from "dockview-react";
 import { staticAudioGeometryFingerprint } from "../lib/audio-reverb-bake";
 import { convertGlslToMaterial, normalizeMaterialDocument, normalizeMaterialFunctionDocument, validateMaterialParameterNames } from "@babylonslate/shader-graph";
@@ -354,6 +354,8 @@ export class ProjectService {
   private readonly migrations = defaultRegistry();
   private readonly blobs: BlobStore;
   private assetRegistry: AssetRegistry | null = null;
+  /** The source session `assetRegistry` was mounted in. */
+  private assetRegistrySession = -1;
   private readonly registryMounts = new Set<{ session: number; promise: Promise<AssetRegistry> }>();
   private sourceLoading: AssetLoadingService | null = null;
   private sourceSession = 0;
@@ -500,11 +502,13 @@ export class ProjectService {
         ? createWorkerEncodeFn({ workerUrl: editorEncodeWorkerUrl() })
         : null);
     this.encodeQueue = new EncodeQueue({
-      encode: (source, settings, mime) =>
+      // The signal aborts a timed-out job, so the worker encoder can end a hung encode.
+      encode: (source, settings, mime, signal) =>
         (this.configuredEncode ?? this.workerEncode ?? stubEncodeKtx2)(
           source,
           settings,
           mime,
+          signal,
         ),
       onState: (guid, state, job) => {
         if (state === "encoding") this.encodeWriteReleases.set(guid, this.writeAdmission.retain());
@@ -512,11 +516,12 @@ export class ProjectService {
         // (alignment) job leaves the saved state alone until it commits, so
         // nothing on disk requeues it later, source control on or not.
         if (state === "compressed" || job.guard) return;
-        const registry = this.assetRegistry;
+        const registry = this.encodeRegistry();
         if (!registry) return;
         const session = this.sourceSession;
         void this.writeAdmission.continue(async () => {
-          await registry.setCompressionState(guid, state);
+          // Nothing lands on a file whose pixels were replaced after this job read them.
+          await registry.setCompressionState(guid, state, { canWrite: (_guid, current) => encodeJobMayWrite(job, current) });
           await this.refreshTextureWrite(guid, registry, session);
         }).catch(error => this.emitTextureEncodeDiagnostic(guid, error));
       },
@@ -525,7 +530,7 @@ export class ProjectService {
         this.encodeWriteReleases.delete(result.assetGuid);
         let succeeded = false;
         try {
-          const registry = this.assetRegistry;
+          const registry = this.encodeRegistry();
           if (!registry) { succeeded = true; return; }
           const session = this.sourceSession;
           const commit = registry.commitCompressedTexture(result);
@@ -549,7 +554,7 @@ export class ProjectService {
           const saved = current.getByGuid(result.assetGuid)?.header.payload.usage;
           const usage = this.openTextureUsage?.(result.assetGuid) ?? String(saved ?? "albedo");
           if (result.usage === undefined || result.usage === usage) {
-            void this.reconcileTextureAlignment([result.assetGuid]);
+            this.reconcileTextureAlignmentInBackground([result.assetGuid]);
           }
           succeeded = true;
         } finally {
@@ -563,13 +568,13 @@ export class ProjectService {
         this.encodeWriteReleases.delete(guid);
         this.emitTextureEncodeDiagnostic(guid, error);
         const message = error instanceof Error ? error.message : String(error);
-        const registry = this.assetRegistry;
+        const registry = this.encodeRegistry();
         if (!registry) { release?.(); return; }
         const session = this.sourceSession;
         void this.writeAdmission.continue(async () => {
           await registry.setCompressionState(guid, "encode_failed", {
             error: message,
-            ...(job.guard ? { canWrite: (_guid: string, current: BabassetHeader) => encodeJobMayWrite(job, current) } : {}),
+            canWrite: (_guid, current) => encodeJobMayWrite(job, current),
           });
           await this.refreshTextureWrite(guid, registry, session);
         }).catch(failure => this.emitTextureEncodeDiagnostic(guid, failure)).finally(() => release?.());
@@ -645,7 +650,9 @@ export class ProjectService {
   /** Release provider-lifetime resources; project close deliberately does not. */
   dispose(): void {
     this.resetAssetLoading();
-    void this.extensions.close();
+    this.extensions.close().catch((error: unknown) => {
+      console.warn("[editor] Closing editor extensions failed", error);
+    });
     this.cancelEmissionJobs();
     this.encodeQueuePauseUnsubscribe?.();
     this.encodeQueuePauseUnsubscribe = null;
@@ -668,10 +675,21 @@ export class ProjectService {
     const asset = this.assetRegistry?.getByGuid(guid);
     const name = asset?.header.name?.trim() || "Texture";
     const message = error instanceof Error ? error.message : String(error);
-    const line = `Texture ${failure} for ${name} (${guid}): ${message}`;
+    this.pushDiagnostic(`Texture ${failure} for ${name} (${guid}): ${message}`);
+  }
+
+  private pushDiagnostic(line: string): void {
     this.diagnostics.push(line);
     if (this.diagnostics.length > 200) this.diagnostics.shift();
     for (const listener of this.diagnosticListeners) listener(line);
+  }
+
+  /** Background alignment pass: a refused or failed pass is reported, never left unhandled. */
+  private reconcileTextureAlignmentInBackground(guids: readonly string[]): void {
+    this.reconcileTextureAlignment(guids).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      this.pushDiagnostic(`Texture alignment check failed: ${message}`);
+    });
   }
 
   /** A scan may have captured the old encode state before this write committed. */
@@ -1069,7 +1087,8 @@ export class ProjectService {
 
   async listProjects(): Promise<ProjectFolderHandle[]> {
     return (await this.storage.listProjects()).filter(
-      (folder) => folder.name !== ENGINE_PLUGIN_LIBRARY_ROOT && folder.name !== ENGINE_EXTENSION_LIBRARY_ROOT && folder.name !== "__slate_templates__",
+      (folder) => folder.name !== ENGINE_PLUGIN_LIBRARY_ROOT && folder.name !== ENGINE_EXTENSION_LIBRARY_ROOT &&
+        folder.name !== "__slate_templates__" && folder.name !== DERIVED_STORAGE_ROOT,
     );
   }
 
@@ -1437,13 +1456,10 @@ export class ProjectService {
     }
 
     const withDocuments = await this.ensureDocuments(document);
-    // Legacy Scene-local GameInstance defaults resolve when that Scene is
-    // requested. Project opening must not scan every Scene to guess a default.
-    const migratedDocument = withDocuments;
     const layouts = await this.loadLayouts();
 
     return {
-      document: migratedDocument,
+      document: withDocuments,
       layouts,
       migrationPending: this.pendingMigrations,
     };
@@ -1505,6 +1521,16 @@ export class ProjectService {
     return this.assetLoadingService.createScope(owner);
   }
 
+  /**
+   * The registry an encode callback writes through. Once Close Project or a
+   * project load bumps the session, the old registry is still set, but the
+   * shared storage it writes through may be released or rebound to another
+   * folder, so a late result writes nothing.
+   */
+  private encodeRegistry(): AssetRegistry | null {
+    return this.assetRegistrySession === this.sourceSession ? this.assetRegistry : null;
+  }
+
   private resetAssetLoading(): void {
     this.sourceLoading?.dispose();
     this.sourceLoading = null;
@@ -1542,9 +1568,16 @@ export class ProjectService {
       const committed = committedKtx2Sha256(header);
       if (committed) this.sessionEncodes.set(header.guid, committed);
     });
+    // A remount reports only conflicts the previous catalog did not have.
+    const reportedConflicts = new Set((this.assetRegistry?.listGuidConflicts() ?? []).map((conflict) => conflict.path));
     await registry.mountRoot(projectContentRoot());
     if (session !== this.sourceSession) throw new DOMException("Project changed during catalog scan", "AbortError");
     this.assetRegistry = registry;
+    this.assetRegistrySession = session;
+    for (const conflict of registry.listGuidConflicts()) {
+      if (reportedConflicts.has(conflict.path)) continue;
+      this.pushDiagnostic(`${conflict.path} is hidden: it has the same asset id as ${conflict.indexedPath}. Remove the copy or import it again to give it its own id.`);
+    }
     await this.syncPlugins();
     if (session !== this.sourceSession) throw new DOMException("Project changed during catalog scan", "AbortError");
     this.projectSearchIndex = new ProjectSearchIndex(this.storage, {
@@ -1556,7 +1589,7 @@ export class ProjectService {
     // Opening a project only builds its catalog. Legacy metadata upgrades and
     // bulk texture processing are explicit maintenance operations.
     registry.setAtlasStatusListener((guids) => {
-      void this.reconcileTextureAlignment(guids);
+      this.reconcileTextureAlignmentInBackground(guids);
     });
     return registry;
   }
@@ -2326,12 +2359,9 @@ export class ProjectService {
       await storage.mkdir(dir, true);
     }
     const existing = await this.readExistingAssetMeta(path);
-    const type =
-      kind === "asset-settings" && existing?.type
-        ? existing.type
-        : isAssetDocumentKind(kind)
-          ? assetTypeForDocumentKind(kind)
-          : "Class";
+    const type = isAssetDocumentKind(kind)
+      ? assetTypeForDocumentKind(kind)
+      : "Class";
     const ownerPlugin = this.pluginForPath(path);
     let pluginContentChanged = false;
     if (ownerPlugin && type !== "PluginSettings") {
@@ -2366,8 +2396,7 @@ export class ProjectService {
     // Imported assets keep their settings in the header beside their binary
     // chunks; a Font's MSDF attach merges into that header payload.
     const storeInHeader =
-      (kind === "asset-settings" ||
-        kind === "texture" ||
+      (kind === "texture" ||
         kind === "font" ||
         kind === "model" ||
         kind === "skeleton" ||

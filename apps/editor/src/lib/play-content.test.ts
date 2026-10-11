@@ -369,7 +369,7 @@ describe("scene-referenced Play content", () => {
     expect(environmentTextureGuidsFromScenes([active, null, destination, active, createDefaultScene()])).toEqual(["active-cube", "destination-cube"]);
   });
 
-  it("collects MeshComponent materialGuid values as surface materials", () => {
+  it("collects Mesh and Dynamic Runtime Mesh materialGuid values as surface materials", () => {
     const scene = createDefaultScene();
     scene.actors.push(
       createActor("rock", "Rock", {
@@ -379,10 +379,15 @@ describe("scene-referenced Play content", () => {
             classId: "MeshComponent",
             properties: { meshKind: "box", materialGuid: "mat-rock" },
           },
+          {
+            id: "runtime-mesh",
+            classId: "DynamicRuntimeMeshComponent",
+            properties: { materialGuid: "mat-runtime" },
+          },
         ],
       }),
     );
-    expect(materialAssetGuidsFromScene(scene)).toEqual(["mat-rock"]);
+    expect(materialAssetGuidsFromScene(scene)).toEqual(["mat-rock", "mat-runtime"]);
   });
 
   it("collects landscape materials and every Model and material in mixed foliage strokes", () => {

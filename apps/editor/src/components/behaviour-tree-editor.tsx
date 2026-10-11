@@ -66,7 +66,7 @@ import { Button } from "@babylonslate/ui/components/button";
 import { Empty, EmptyDescription, EmptyTitle } from "@babylonslate/ui/components/empty";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { commitBehaviourTreeGraphChange } from "../lib/behaviour-tree-graph-commit";
-import { classParentLookup } from "../lib/content-browser-helpers";
+import { classIdFromClassAsset, classParentLookup } from "../lib/content-browser-helpers";
 import { pinDefaultPropertyRows } from "../lib/graph-inspector";
 import { documentId } from "@babylonslate/core";
 import {
@@ -286,7 +286,7 @@ function useBehaviourTreeDocument() {
     const asset = (assetRegistry?.list() ?? []).find(
       (item) =>
         item.header.type === "Class" &&
-        (item.header.name === classId || item.header.guid === classId),
+        (classIdFromClassAsset(item) === classId || item.header.guid === classId),
     );
     if (!asset) return;
     void openDocument({

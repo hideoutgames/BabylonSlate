@@ -9,7 +9,6 @@ import {
   assetRowIdentity,
   selectedPickerIdentity,
 } from "@babylonslate/editor-kit";
-import type { PropertyRow } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
 import {
@@ -55,7 +54,6 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 export function AssetDocumentWorkspace({ documentId }: { documentId: string }) {
   const { applyAssetDocumentChange } = useDocumentActions();
-  const { assetRegistry } = useRegistryState();
   const doc = useOpenDocument(documentId);
   if (!doc) return null;
   const payload = asRecord(doc.content);
@@ -73,19 +71,6 @@ export function AssetDocumentWorkspace({ documentId }: { documentId: string }) {
   }
   if (doc.ref.kind === "blackboard") {
     return <BlackboardEditor payload={payload} onChange={commit} />;
-  }
-  if (doc.ref.kind === "asset-settings") {
-    const indexed = assetRegistry
-      ?.list()
-      .find((asset) => asset.path === doc.ref.path);
-    return (
-      <AssetSettingsEditor
-        assetType={indexed?.header.type ?? "Asset"}
-        dependencies={indexed?.header.dependencies ?? []}
-        payload={payload}
-        onChange={commit}
-      />
-    );
   }
   return (
     <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
@@ -442,66 +427,6 @@ function FontEditor({
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      </div>
-    </PanelFrame>
-  );
-}
-
-function AssetSettingsEditor({
-  assetType,
-  dependencies,
-  payload,
-  onChange,
-}: {
-  assetType: string;
-  dependencies: string[];
-  payload: Record<string, unknown>;
-  onChange: (next: Record<string, unknown>, mergeKey?: string) => void;
-}) {
-  const rows: PropertyRow[] = [];
-  for (const [key, value] of Object.entries(payload)) {
-    if (typeof value === "number") {
-      rows.push({
-        id: key,
-        kind: "number",
-        label: key,
-        value,
-        onChange: (next) =>
-          onChange({ ...payload, [key]: next }, `asset-settings:${key}`),
-      });
-    } else if (typeof value === "boolean") {
-      rows.push({
-        id: key,
-        kind: "boolean",
-        label: key,
-        value,
-        onChange: (next) => onChange({ ...payload, [key]: next }),
-      });
-    } else if (typeof value === "string") {
-      rows.push({
-        id: key,
-        kind: "text",
-        label: key,
-        value,
-        onChange: (next) => onChange({ ...payload, [key]: next }),
-      });
-    }
-  }
-  if (dependencies.length > 0) {
-    rows.push({
-      id: "dependencies",
-      kind: "text",
-      label: "Dependencies",
-      value: String(dependencies.length),
-      disabled: true,
-      onChange: () => undefined,
-    });
-  }
-
-  return (
-    <PanelFrame className="flex-1" title={assetType}>
-      <div className="flex flex-col gap-3" data-testid="asset-settings">
-        <PropertyGrid rows={rows} />
       </div>
     </PanelFrame>
   );

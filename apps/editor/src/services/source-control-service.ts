@@ -95,6 +95,8 @@ export class SourceControlService {
   private provider: LockProvider | null = null;
   private fake: FakeLockProvider | null = null;
   private scheduler: LockPollScheduler | null = null;
+  /** Host visibility from pausePolling / resumePolling, kept for schedulers created later. */
+  private pollingPaused = false;
   private locksByPath = new Map<string, FileLock>();
   private editMode = new Map<string, DocumentLockEditMode>();
   private autoLockAttempted = new Set<string>();
@@ -212,14 +214,7 @@ export class SourceControlService {
       return;
     }
     if (identity === this.providerIdentity && this.provider) {
-      if (!this.scheduler) {
-        this.scheduler = new LockPollScheduler({
-          intervalMs: this.settings.pollIntervalMs,
-          tick: () => {
-            void this.refresh();
-          },
-        });
-      }
+      this.scheduler ??= this.createScheduler();
       this.scheduler.start();
       this.emit();
       return;
@@ -280,12 +275,7 @@ export class SourceControlService {
       }
     }
     if (this.provider) {
-      this.scheduler = new LockPollScheduler({
-        intervalMs: this.settings.pollIntervalMs,
-        tick: () => {
-          void this.refresh();
-        },
-      });
+      this.scheduler = this.createScheduler();
       this.scheduler.start();
     }
     this.emit();
@@ -310,11 +300,26 @@ export class SourceControlService {
     this.emit();
   }
 
+  /**
+   * The tick returns the refresh so the scheduler never overlaps two, and a
+   * scheduler created while the host is hidden starts paused.
+   */
+  private createScheduler(): LockPollScheduler {
+    const scheduler = new LockPollScheduler({
+      intervalMs: this.settings.pollIntervalMs,
+      tick: () => this.refresh(),
+    });
+    if (this.pollingPaused) scheduler.pause();
+    return scheduler;
+  }
+
   pausePolling(): void {
+    this.pollingPaused = true;
     this.scheduler?.pause();
   }
 
   resumePolling(): void {
+    this.pollingPaused = false;
     this.scheduler?.resume();
   }
 

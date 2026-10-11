@@ -668,7 +668,6 @@ describe("componentPropertyRows", () => {
         tiled: false,
         supportDynamicObstacles: false,
         autoBakeOnSave: false,
-        debugOverlay: true,
       },
     });
     expect(navMesh.rows.find((row) => row.id.endsWith("-cellSize"))).toMatchObject({
@@ -694,9 +693,6 @@ describe("componentPropertyRows", () => {
     expect(
       navMesh.rows.find((row) => row.id.endsWith("-bakeBoundsMax")),
     ).toMatchObject({ kind: "vector3" });
-    expect(
-      navMesh.rows.find((row) => row.id.endsWith("-debugOverlay")),
-    ).toBeUndefined();
 
     const agent = rowsFor({
       id: "agent",

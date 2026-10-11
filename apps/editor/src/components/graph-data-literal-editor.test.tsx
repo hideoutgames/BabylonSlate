@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import type { SerializedGraph } from "@babylonslate/core";
-import { mergeEngineTypeSchemas, type TypeSchemas } from "@babylonslate/scripting";
+import type { DataDefinitionField, SerializedGraph } from "@babylonslate/core";
+import { mergeEngineTypeSchemas } from "@babylonslate/scripting";
 import { patchDataGraphNode } from "../lib/data-graph";
 import { graphDataLiteralField, inspectorLiteralPinDefaults } from "../lib/graph-inspector";
 import type { useDataCatalog } from "../lib/use-data-catalog";
@@ -10,7 +10,7 @@ import { compileGraphDocument } from "../services/script-compiler";
 import { hydrateSerializedGraphForEditor, validateSerializedGraph } from "../services/graph-validation";
 import { GraphDataLiteralEditor } from "./graph-data-literal-editor";
 
-const definitions: NonNullable<TypeSchemas["dataDefinitions"]> = {
+const definitions: Record<string, { name: string; fields: DataDefinitionField[] }> = {
   inventory: { name: "Inventory", fields: [
     { id: "prices", name: "Prices", typeId: "float", container: "array" },
     { id: "lookup", name: "Lookup", typeId: "struct", typeClassId: "details", container: "map", keyTypeId: "struct", keyTypeClassId: "key" },

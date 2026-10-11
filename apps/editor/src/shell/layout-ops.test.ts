@@ -51,7 +51,6 @@ describe("canFocusLayout", () => {
     expect(canFocusLayout("content-browser")).toBe(false);
     expect(canFocusLayout("font")).toBe(false);
     expect(canFocusLayout("blackboard")).toBe(false);
-    expect(canFocusLayout("asset-settings")).toBe(false);
     expect(canFocusLayout(undefined)).toBe(false);
   });
 });

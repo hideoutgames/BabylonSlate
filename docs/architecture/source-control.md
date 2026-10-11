@@ -99,7 +99,7 @@ Missing settings normalize to disabled (a stray `token` field is dropped and nev
 
 ### Poll (`LockPollScheduler`)
 
-Tick on subscribe, then every `pollIntervalMs` (default 60s). `pause()` / `resume()`; no tick while paused. Editor: project open, Content Browser focus, manual Refresh, foreground = resume + immediate tick; background = pause.
+Tick on subscribe, then every `pollIntervalMs` (default 60s). `pause()` / `resume()`; no tick while paused, and a tick never overlaps the previous refresh. Editor: project open, Content Browser focus, manual Refresh, foreground = resume + immediate tick; background = pause, which also holds a scheduler the project configures while backgrounded.
 
 `SourceControlService.refreshState` exposes status, an error message, and `lastSuccessAt`. A failed check keeps the cached lock list and identifies it as the last known result. **Refresh** retries the check. A successful retry clears the error; superseded requests and replies after reconfiguration or disposal cannot replace current state.
 
@@ -112,6 +112,8 @@ Tick on subscribe, then every `pollIntervalMs` (default 60s). `pause()` / `resum
 | Many assets and/or `project.json` changed (`MANY_EXTERNAL_CHANGES` = 8) | **Reload Project** |
 | Dirty open docs whose files changed or were deleted | Keep Edits vs Reload From Disk |
 | Clean open docs whose files changed or were deleted | Reload From Disk |
+
+Reload From Disk closes the tab of a document whose file was deleted; a file that exists but cannot be read keeps its tab and stays in the prompt.
 
 Reload must not drop in-memory locks until the next verify poll. This is the acceptance path for a Working Copy branch switch while backgrounded.
 

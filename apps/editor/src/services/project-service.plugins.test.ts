@@ -244,10 +244,11 @@ describe("ProjectService plugin roots", () => {
     expect(service.registry?.getByGuid("export-texture")).toBeUndefined();
   });
 
-  it("keeps app-owned Engine Plugin and template libraries out of the project list", async () => {
+  it("keeps app-owned Engine Plugin, template and derived-data libraries out of the project list", async () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("__slate_engine_plugins__");
     await storage.openDocumentsProject("__slate_templates__");
+    await storage.openDocumentsProject("__babylonslate_derived__");
     await storage.openDocumentsProject("My Project");
     expect((await new ProjectService(storage).listProjects()).map((folder) => folder.name))
       .toEqual(["My Project"]);

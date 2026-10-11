@@ -3,6 +3,7 @@ import {
   normalizeClassMemberCategory,
   normalizeDataDefinitionAsset,
   normalizeScene,
+  type DataDefinitionField,
   type GraphClassMember,
   type GraphClassMemberPin,
   type SerializedGraph,
@@ -184,9 +185,7 @@ export function collectFunctionLibrariesForPalette(options: {
   };
 
   for (const asset of options.assets) {
-    if (asset.header.type !== "Class" && asset.header.type !== "Graph") {
-      continue;
-    }
+    if (asset.header.type !== "Class") continue;
     consider(
       options.classIdForPath(asset.path),
       asset.header.parentClass,
@@ -236,9 +235,7 @@ export function collectSubsystemClassesForPalette(options: {
     if (base) bases.set(classId, base);
   };
   for (const asset of options.assets) {
-    if (asset.header.type !== "Class" && asset.header.type !== "Graph") {
-      continue;
-    }
+    if (asset.header.type !== "Class") continue;
     consider(options.classIdForPath(asset.path), asset.header.parentClass);
   }
   for (const doc of options.openDocuments) {
@@ -505,13 +502,8 @@ export function collectClassGraphsForPalette(options: {
 }): Record<string, SerializedGraph> {
   const graphs: Record<string, SerializedGraph> = {};
   for (const asset of options.assets) {
-    if (asset.header.type !== "Class" && asset.header.type !== "Graph") {
-      continue;
-    }
-    const classId = options.classIdForPath(asset.path);
-    const graph = classGraphFromHeaderPayload(asset.header.payload);
-    graphs[classId] = graph;
-    if (asset.header.name !== classId) graphs[asset.header.name] = graph;
+    if (asset.header.type !== "Class") continue;
+    graphs[options.classIdForPath(asset.path)] = classGraphFromHeaderPayload(asset.header.payload);
   }
   for (const doc of options.openDocuments) {
     if (doc.ref.kind !== "graph") continue;
@@ -659,9 +651,16 @@ export type GraphEnumEntry = {
   members: EnumMember[];
 };
 
+/** A Data Definition's fields always carry their persisted id. */
+export type GraphDataDefinitionEntry = {
+  guid: string;
+  name: string;
+  fields: DataDefinitionField[];
+};
+
 export type GraphTypeAssetCatalog = {
   structures: GraphStructureEntry[];
-  dataDefinitions: GraphStructureEntry[];
+  dataDefinitions: GraphDataDefinitionEntry[];
   enums: GraphEnumEntry[];
 };
 
@@ -721,7 +720,7 @@ export function collectGraphTypeAssets(options: {
     content: unknown;
   }>;
 }): GraphTypeAssetCatalog {
-  const dataDefinitions = new Map<string, GraphStructureEntry>();
+  const dataDefinitions = new Map<string, GraphDataDefinitionEntry>();
   const structures = new Map<string, GraphStructureEntry>();
   const enums = new Map<string, GraphEnumEntry>();
   for (const entry of ENGINE_STRUCTS) {

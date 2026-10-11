@@ -15,6 +15,9 @@ export const MAX_UNDO_BYTE_BUDGET = 1024 * MEBIBYTE;
 /** Below this a visible viewport is unusably choppy. */
 export const MIN_VIEWPORT_FRAME_CAP = 10;
 export const MAX_VIEWPORT_FRAME_CAP = 240;
+/** Hardware scaling 1 is native resolution; 4 is the quarter-scale floor rendering quality accepts. */
+export const MIN_HARDWARE_SCALING_LEVEL = 1;
+export const MAX_HARDWARE_SCALING_LEVEL = 4;
 
 /**
  * Focus keep-list defaults: one key per dock document kind (plus the Scene
@@ -131,7 +134,10 @@ export const engineSettingsSchema = z.object({
   debugMode: z.boolean().default(false),
   /** Debug Mode only: check every WebGL call so load reports name the failing one. Slow. */
   traceGraphicsErrors: z.boolean().default(false),
-  hardwareScalingLevel: z.number().positive().default(1),
+  hardwareScalingLevel: z.preprocess((value) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return value;
+    return Math.min(MAX_HARDWARE_SCALING_LEVEL, Math.max(MIN_HARDWARE_SCALING_LEVEL, value));
+  }, z.number().min(MIN_HARDWARE_SCALING_LEVEL).max(MAX_HARDWARE_SCALING_LEVEL).default(1)),
   modelImportDefaultScale: z.preprocess((value) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return value;
     return Math.max(0.0001, value);

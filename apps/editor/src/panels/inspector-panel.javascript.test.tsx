@@ -43,6 +43,16 @@ describe("Execute JavaScript Inspector", () => {
     expect(state.graph.nodes[0]!.data.outputs).toEqual([expect.objectContaining({ name: "NewOutput", type: { kind: "float" } })]);
   });
 
+  it("reports a name repeated across inputs and outputs", () => {
+    const pin = { name: "value", type: { kind: "float" } };
+    state.graph = {
+      nodes: [{ id: "js", type: "debug.executeJavaScript", position: { x: 0, y: 0 }, data: { inputs: [{ id: "a", ...pin }], outputs: [{ id: "b", ...pin }] } }],
+      edges: [], members: [],
+    } as SerializedGraph;
+    render(<PrefabEditingProvider initialSelectedId={null}><GraphEditingProvider initialSelectedNodeIds={["js"]}><InspectorPanel {...({} as IDockviewPanelProps)} /></GraphEditingProvider></PrefabEditingProvider>);
+    expect(screen.getByTestId("js-name-error").textContent).toBe("Duplicate JS identifier: value");
+  });
+
   it("edits the function graph node, not an Event Graph node with the same id", async () => {
     const eventNode = { id: "js", type: "debug.executeJavaScript", position: { x: 0, y: 0 }, data: {} };
     state.graph = {

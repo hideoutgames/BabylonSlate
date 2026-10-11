@@ -800,7 +800,7 @@ describe("projectPlaceActors", () => {
           guid: "hero-guid",
           name: "Hero",
           type: "Class",
-          parentClass: "Pawn",
+          parentClass: "pawn",
         },
       },
     ];

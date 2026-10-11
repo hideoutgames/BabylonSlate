@@ -739,11 +739,11 @@ describe("project documents as .babasset", () => {
     );
 
     const payload = (await service.loadDocument(
-      "asset-settings",
+      "texture",
       path,
     )) as Record<string, unknown>;
     expect(payload.usage).toBe("albedo");
-    await service.saveDocument("asset-settings", path, {
+    await service.saveDocument("texture", path, {
       ...payload,
       usage: "pixelArt",
     });
@@ -1392,6 +1392,17 @@ describe("project documents as .babasset", () => {
     expect(saved.header.chunks.some((chunk) => chunk.id === "document")).toBe(
       false,
     );
+  });
+
+  it("reports a copied asset file hidden because its guid duplicates another asset, once", async () => {
+    const { storage, service } = await scaffolded();
+    await storage.mkdir("assets/Copies", true);
+    await storage.writeBinary("assets/Copies/main.scene.babasset", await storage.readBinary(MAIN_SCENE_FILE));
+    await service.remountRegistry();
+    await service.remountRegistry();
+    expect(service.sessionDiagnostics.filter((line) => line.includes("assets/Copies/main.scene.babasset"))).toEqual([
+      `assets/Copies/main.scene.babasset is hidden: it has the same asset id as ${MAIN_SCENE_FILE}. Remove the copy or import it again to give it its own id.`,
+    ]);
   });
 
   it("writes a Scene navmesh extra chunk without regenerating at Play", async () => {

@@ -1325,11 +1325,18 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     noteAssetsCreated();
   }, [noteAssetsCreated, projectService]);
 
-  /** Returns the paths whose file could not be read; their tabs keep their content. */
+  /** Set once `closeDocumentsForPaths` exists; reload closes tabs whose file is gone. */
+  const closeDocumentsForPathsRef = useRef<(paths: Iterable<string>) => void>(() => {});
+  /**
+   * Returns the paths whose file could not be read; their tabs keep their
+   * content. A tab whose file was deleted on disk closes, as reloading it has
+   * nothing to load.
+   */
   const reloadDocumentsFromDisk = useCallback(
     async (paths: string[]): Promise<string[]> => {
       const authoring = documentService.getAuthoringLock();
       const failed: string[] = [];
+      const deleted: string[] = [];
       if (authoring.readOnly) return failed;
       for (const path of paths) {
         const doc = [...documentService.getState().openDocuments.values()].find(
@@ -1348,11 +1355,17 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           );
           editSessionRef.current.dropDocument(doc.id);
         } catch (error) {
-          // Deleted or unreadable on disk.
+          const exists = await projectService.documentExists(path).catch(() => true);
+          if (documentService.getAuthoringLock() !== authoring) return failed;
+          if (!exists) {
+            deleted.push(path);
+            continue;
+          }
           console.warn(`[editor] Could not reload ${path} from disk`, error);
           failed.push(path);
         }
       }
+      if (deleted.length > 0) closeDocumentsForPathsRef.current(deleted);
       bump();
       return failed;
     },
@@ -2382,6 +2395,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     },
     [performCloseDocument, documentService],
   );
+  closeDocumentsForPathsRef.current = closeDocumentsForPaths;
 
   const replaceClassReferencesBeforeDelete = useCallback(async (
     replacements: readonly ClassAssetReplacement[],

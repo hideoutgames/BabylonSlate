@@ -42,7 +42,6 @@ export const ASSET_DOCUMENT_KINDS = [
   "texture",
   "render-target",
   "render-target-texture",
-  "asset-settings",
 ] as const;
 
 export type AssetDocumentKind = (typeof ASSET_DOCUMENT_KINDS)[number];
@@ -155,7 +154,6 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
     case "trace":
       return "Trace";
     case "texture":
-    case "asset-settings":
       return "Texture";
     case "render-target":
       return "RenderTarget";
@@ -333,8 +331,6 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Render Target";
     case "render-target-texture":
       return "Render Target Texture";
-    case "asset-settings":
-      return "Settings";
   }
 }
 
