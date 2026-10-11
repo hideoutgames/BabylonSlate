@@ -99,7 +99,7 @@ Missing settings normalize to disabled (a stray `token` field is dropped and nev
 
 ### Poll (`LockPollScheduler`)
 
-Tick on subscribe, then every `pollIntervalMs` (default 60s). `pause()` / `resume()`; no tick while paused. Editor: project open, Content Browser focus, manual Refresh, foreground = resume + immediate tick; background = pause.
+Tick on subscribe, then every `pollIntervalMs` (default 60s). `pause()` / `resume()`; no tick while paused, and a tick never overlaps the previous refresh. Editor: project open, Content Browser focus, manual Refresh, foreground = resume + immediate tick; background = pause, which also holds a scheduler the project configures while backgrounded.
 
 `SourceControlService.refreshState` exposes status, an error message, and `lastSuccessAt`. A failed check keeps the cached lock list and identifies it as the last known result. **Refresh** retries the check. A successful retry clears the error; superseded requests and replies after reconfiguration or disposal cannot replace current state.
 

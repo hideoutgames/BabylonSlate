@@ -46,6 +46,20 @@ describe("SourceControlService", () => {
     } finally { service.dispose(); }
   });
 
+  it("keeps a lock scheduler created while polling is paused from polling until resumed", async () => {
+    const service = new SourceControlService();
+    const fake = new FakeLockProvider();
+    const verify = vi.spyOn(fake, "verify");
+    try {
+      service.pausePolling();
+      await service.configure({ settings: enabled, projectGuid: "proj", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(verify).not.toHaveBeenCalled();
+      service.resumePolling();
+      await vi.waitFor(() => expect(verify).toHaveBeenCalled());
+    } finally { service.dispose(); }
+  });
+
   it("does not revive a disposed service when its secret lookup finishes", async () => {
     const service = new SourceControlService();
     const secrets = new MemorySecretStore();
