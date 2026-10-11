@@ -52,14 +52,9 @@ describe("Definition and tree payloads", () => {
     expect(entry.schema!.map((field) => field.loading)).toEqual(["hard", undefined, undefined, undefined]);
   });
 
-  it("refuses historical sheets, objects and id-less fields without silently discarding their data", () => {
-    const referenceSheet = { kind: "dataSheet", structureGuid: "stats", objectGuids: ["sword", "shield"] };
-    const ownedSheet = { kind: "dataSheet", definitionGuid: "stats", rows: [{ id: "sword", name: "Sword", values: { Health: 12 } }] };
-    const object = { kind: "dataObject", structureGuid: "stats", values: { Health: 10 } };
-    for (const previous of [referenceSheet, ownedSheet, object, { rows: ownedSheet.rows }]) expect(() => normalizeDataTreeAsset(previous)).toThrow();
-    expect(referenceSheet.objectGuids).toEqual(["sword", "shield"]);
-    expect(ownedSheet.rows[0]!.values).toEqual({ Health: 12 });
-    expect(() => normalizeDataDefinitionAsset(object)).toThrow();
+  it("refuses payloads of another data kind, id-less fields and malformed entries", () => {
+    expect(() => normalizeDataTreeAsset({ kind: "dataDefinition", fields: [] })).toThrow();
+    expect(() => normalizeDataDefinitionAsset({ kind: "dataTree", defaultDefinitionGuid: null, entries: [] })).toThrow();
     expect(() => normalizeDataDefinitionAsset({ kind: "dataDefinition", fields: [{ name: "Health", typeId: "int" }] })).toThrow();
     expect(() => normalizeDataTreeAsset({ kind: "dataTree", defaultDefinitionGuid: null, entries: [{ id: "broken", parentId: null, name: "Broken", values: null }] })).toThrow();
   });

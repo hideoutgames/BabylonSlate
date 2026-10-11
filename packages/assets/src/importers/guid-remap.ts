@@ -168,9 +168,6 @@ export function applyImportGuidRemap(
       }
       catch { /* An unreadable document is handled by its normal import validation. */ }
     }
-    if (result.type === "DataObject" || result.type === "DataSheet") {
-      throw new Error("Historical Data Object and Data Sheet assets cannot be imported with GUID collisions. Their original files have not been changed.");
-    }
     if ((result.type === "DataDefinition" || result.type === "Structure") && Array.isArray(payload.fields)) definitions.set(result.guid, payload.fields);
   }
   const definitionFields: DataDefinitionFieldsResolver = (guid) => definitions.get(guid) ?? outsideDefinitionFields?.(guid);
