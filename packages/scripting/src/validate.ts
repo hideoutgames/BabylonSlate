@@ -775,10 +775,12 @@ type SignaturePin = {
   typeId: string;
   direction: "in" | "out";
   typeClassId?: string;
+  container?: "single" | "array" | "map";
 };
 
 function signaturePinKey(pin: SignaturePin): string {
-  return `${pin.direction}:${pin.name}:${pin.typeId}:${pin.typeClassId ?? ""}`;
+  const container = pin.container === "array" || pin.container === "map" ? pin.container : "single";
+  return `${pin.direction}:${pin.name}:${container}:${pin.typeId}:${pin.typeClassId ?? ""}`;
 }
 
 function pinsMatch(

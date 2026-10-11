@@ -1074,6 +1074,29 @@ describe("validateGraphs", () => {
     );
   });
 
+  it("errors when an interface implementation pin is a Map where the method takes an Array", () => {
+    const signature = (container: "array" | "map") => [
+      { name: "targets", typeId: "actorRef", direction: "in" as const, container },
+    ];
+    const diags = validateGraphs([createEmptyLogicGraph("g")], {
+      assetGuid: "a",
+      implementedInterfaces: [
+        { guid: "iface-1", name: "Damageable", methods: [{ name: "Apply Damage", pins: signature("array") }] },
+      ],
+      members: [
+        {
+          id: "fn-1",
+          name: "Apply Damage",
+          kind: "function",
+          classId: "Hero",
+          implementsInterface: { assetGuid: "iface-1", methodName: "Apply Damage" },
+          pins: signature("map"),
+        },
+      ],
+    });
+    expect(diags.some((d) => d.code === "interface.signature_mismatch")).toBe(true);
+  });
+
   it("errors missing interface implementation outputs without defaults", () => {
     const graph: LogicGraph = {
       id: "Apply Damage",
