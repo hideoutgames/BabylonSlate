@@ -25,6 +25,7 @@ import {
   PhysicsShapeMesh,
   PhysicsShapeSphere,
 } from "@babylonjs/core/Physics/v2/physicsShape";
+import type { CastingResult } from "@babylonjs/core/Physics/castingResult";
 import { ShapeCastResult } from "@babylonjs/core/Physics/shapeCastResult";
 import { ProximityCastResult } from "@babylonjs/core/Physics/proximityCastResult";
 import type { PhysicsBackend, SphereSweepQuery } from "./backend";
@@ -727,10 +728,10 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     this.tmpFrom.copyFrom(toVector3(start));
     this.tmpTo.copyFrom(toVector3(end));
     return this.withQueryFilter(options, () => {
-      const hit = engine.raycast(this.tmpFrom, this.tmpTo,
-        options?.includeTriggers === undefined ? undefined : { shouldHitTriggers: options.includeTriggers });
+      // Triggers are hit unless excluded, as on every backend (Babylon's default skips them).
+      const hit = engine.raycast(this.tmpFrom, this.tmpTo, { shouldHitTriggers: options?.includeTriggers !== false });
       if (!hit.hasHit) return miss();
-      return this.hitFromCast(hit.hasHit, hit.hitPointWorld, hit.hitNormalWorld, hit.hitDistance, hit.body);
+      return this.hitFromCast(hit, hit.hitDistance);
     });
   }
 
@@ -748,12 +749,10 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     try {
       if (ignored.size || options?.includeTriggers === false) {
         for (const record of this.bodies.values()) {
-          // Hits name the body's actor, so ignoring it excludes the whole
-          // compound; ignoring a hosted child excludes only its own shapes.
-          const excluded = ignored.has(record.desc.actorId);
-          if (excluded) mask(record.body.shape);
+          // Hits name each shape's owner, so ignoring an actor excludes only
+          // its own shapes: a host's shapes, or the shapes hosted for a child.
           for (const collider of record.colliders.values()) {
-            if (excluded || (collider.desc.actorId !== undefined && ignored.has(collider.desc.actorId)) ||
+            if (ignored.has(collider.desc.actorId ?? record.desc.actorId) ||
               (options?.includeTriggers === false && collider.desc.isTrigger)) mask(collider.shape);
           }
         }
@@ -768,13 +767,14 @@ export class HavokPhysicsBackend implements PhysicsBackend {
 
   /**
    * Tests the collider shapes, not body bounds: a point proximity query within
-   * `radius` finds the closest body, which is then excluded until no body is
-   * left in range. Like traces, it names each body's actor; ignored actors and
-   * excluded triggers are masked shape by shape. Results keep body order.
+   * `radius` finds the closest shape, whose owner's shapes on that body are then
+   * excluded until no shape is left in range. Like traces, it names the shape's
+   * owner, so a body lists itself and each actor it hosts once; ignored actors
+   * and excluded triggers are masked shape by shape. Results keep body order.
    */
   sphereOverlap(center: Vec3, radius: number, options?: LineTraceOptions): OverlapResult {
     this.flushMutations();
-    const found = new Set<BodyRecord>();
+    const found = new Map<BodyRecord, Set<string>>();
     if ([center.x, center.y, center.z, radius].every(Number.isFinite) && radius >= 0) {
       const query = {
         position: toVector3(center),
@@ -786,14 +786,19 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       this.withQueryFilter(options, () => {
         const memberships = new Map<PhysicsShape, number>();
         try {
-          while (found.size < this.bodies.size) {
+          for (;;) {
             this.plugin.pointProximity(query, result);
             const bodyId = result.hasHit && result.body ? this.bodyIdByPhysicsBody.get(result.body) : undefined;
             const record = bodyId ? this.bodies.get(bodyId) : undefined;
-            if (!record || found.has(record)) break;
-            found.add(record);
-            for (const shape of [record.body.shape, ...[...record.colliders.values()].map((c) => c.shape)]) {
-              if (!shape || memberships.has(shape)) continue;
+            if (!record) break;
+            const owner = this.shapeOwner(record, result.shape);
+            const owners = found.get(record) ?? new Set<string>();
+            if (owners.has(owner)) break;
+            owners.add(owner);
+            found.set(record, owners);
+            for (const collider of record.colliders.values()) {
+              const shape = collider.shape;
+              if ((collider.desc.actorId ?? record.desc.actorId) !== owner || memberships.has(shape)) continue;
               memberships.set(shape, shape.filterMembershipMask);
               shape.filterMembershipMask = 0;
             }
@@ -806,9 +811,14 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     const actorIds: string[] = [];
     const bodyIds: string[] = [];
     for (const record of this.bodies.values()) {
-      if (!found.has(record)) continue;
-      actorIds.push(record.desc.actorId);
-      bodyIds.push(record.desc.id);
+      const owners = found.get(record);
+      if (!owners) continue;
+      for (const collider of record.colliders.values()) {
+        const owner = collider.desc.actorId ?? record.desc.actorId;
+        if (!owners.delete(owner)) continue;
+        actorIds.push(owner);
+        bodyIds.push(record.desc.id);
+      }
     }
     return { actorIds, bodyIds };
   }
@@ -827,7 +837,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       const rotation = toQuaternion(sweep.start.rotation);
       const from = toVector3(sweep.start.position);
       const to = toVector3(sweep.end);
-      const shouldHitTriggers = options?.includeTriggers ?? false;
+      const shouldHitTriggers = options?.includeTriggers !== false;
       return this.withQueryFilter(options, () => {
         // A cast alone misses shapes the swept shape already penetrates at its start.
         const proximityInput = new ProximityCastResult();
@@ -838,7 +848,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
           proximity,
         );
         if (proximity.hasHit && proximity.hitDistance < -1e-6)
-          return this.hitFromCast(true, proximity.hitPoint, proximity.hitNormal, 0, proximity.body);
+          return this.hitFromCast(proximity, 0);
         const input = new ShapeCastResult();
         const hit = new ShapeCastResult();
         this.plugin.shapeCast(
@@ -847,7 +857,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
           hit,
         );
         if (!hit.hasHit) return miss();
-        return this.hitFromCast(true, hit.hitPoint, hit.hitNormal, Vector3.Distance(from, to) * hit.hitFraction, hit.body);
+        return this.hitFromCast(hit, Vector3.Distance(from, to) * hit.hitFraction);
       });
     } finally {
       queryShape.dispose();
@@ -888,8 +898,9 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       result.location = location;
       result.normal = normal;
       result.distance = distance;
-      result.bodyId = native.body ? this.bodyIdByPhysicsBody.get(native.body) ?? null : null;
-      result.actorId = result.bodyId ? this.bodies.get(result.bodyId)?.desc.actorId ?? null : null;
+      const owner = this.castHitOwner(native);
+      result.bodyId = owner.bodyId;
+      result.actorId = owner.actorId;
       return result;
     };
     const query: SphereSweepQuery = {
@@ -1318,27 +1329,37 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     }
   }
 
-  private hitFromCast(
-    hasHit: boolean,
-    point: Vector3,
-    normal: Vector3,
-    distance: number,
-    body: PhysicsBody | undefined,
-  ): HitResult {
-    if (!hasHit) return miss();
-    const bodyId = body ? (this.bodyIdByPhysicsBody.get(body) ?? null) : null;
-    // Casts report a compound's root shape, so hits name the body's actor.
-    const actorId = bodyId
-      ? (this.bodies.get(bodyId)?.desc.actorId ?? null)
-      : null;
+  private hitFromCast(native: CastingResult, distance: number): HitResult {
+    if (!native.hasHit) return miss();
+    const { bodyId, actorId } = this.castHitOwner(native);
     return {
       hit: true,
-      location: { x: point.x, y: point.y, z: point.z },
-      normal: { x: normal.x, y: normal.y, z: normal.z },
+      location: { x: native.hitPoint.x, y: native.hitPoint.y, z: native.hitPoint.z },
+      normal: { x: native.hitNormal.x, y: native.hitNormal.y, z: native.hitNormal.z },
       distance,
       actorId,
       bodyId,
     };
+  }
+
+  /**
+   * Query hits name the leaf shape inside a compound, so a shape hosted for
+   * another actor names that actor, as on software and Rapier.
+   */
+  private castHitOwner(native: CastingResult): { bodyId: string | null; actorId: string | null } {
+    const bodyId = native.body ? (this.bodyIdByPhysicsBody.get(native.body) ?? null) : null;
+    const record = bodyId ? this.bodies.get(bodyId) : undefined;
+    if (!bodyId || !record) return { bodyId, actorId: null };
+    return { bodyId, actorId: this.shapeOwner(record, native.shape) };
+  }
+
+  private shapeOwner(record: BodyRecord, shape: PhysicsShape | undefined): string {
+    if (shape)
+      for (const collider of record.colliders.values())
+        if (collider.shape === shape) return collider.desc.actorId ?? record.desc.actorId;
+    // Havok reports no child shape for a body with a single collider.
+    const only = record.colliders.size === 1 ? record.colliders.values().next().value : undefined;
+    return only?.desc.actorId ?? record.desc.actorId;
   }
 
   private disposeBodyRecord(record: BodyRecord): void {
