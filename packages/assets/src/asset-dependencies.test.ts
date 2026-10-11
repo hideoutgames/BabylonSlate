@@ -44,7 +44,7 @@ describe("typed asset dependencies", () => {
 
   it("collects typed graph literals, nested structure collections and selected classes without treating free text as references", () => {
     const metadata = collectAssetDependencyMetadata("Class", {
-      nodes: [{ id: "spawn", type: "spawn", data: { "default:class": "Enemy", "default:asset": "", Asset: "old-texture", text: "unrelated" } }], edges: [],
+      nodes: [{ id: "spawn", type: "spawn", data: { "default:class": "Enemy", asset: "bare-id-texture", Asset: "old-texture", text: "unrelated" } }], edges: [],
       members: [{ kind: "variable", name: "Catalog", typeId: "struct", typeClassId: "entry-schema", container: "array", defaultValue: [{ model: "enemy-model" }] }],
     }, {
       classes: [{ guid: "enemy-class", classId: "Enemy" }],
