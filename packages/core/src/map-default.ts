@@ -25,11 +25,14 @@ export function parseMapDefaultEntries(value: unknown): MapDefaultEntry[] {
   }));
 }
 
-/** Spawn / runtime Map. Later duplicate keys win. */
+/**
+ * Spawn / runtime Map. Later duplicate keys win. Each value is a copy, so one
+ * spawn writing into a struct value never changes another spawn's default.
+ */
 export function mapFromDefaultEntries(value: unknown): Map<unknown, unknown> {
   const map = new Map<unknown, unknown>();
   for (const entry of parseMapDefaultEntries(value)) {
-    map.set(entry.key, entry.value);
+    map.set(entry.key, structuredClone(entry.value));
   }
   return map;
 }

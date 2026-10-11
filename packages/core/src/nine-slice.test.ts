@@ -130,7 +130,7 @@ describe("overlayNineSliceCells", () => {
     });
   });
 
-  it("clamps margins when they exceed the destination size", () => {
+  it("squeezes whole corners when margins exceed the destination size", () => {
     const cells = overlayNineSliceCells({
       destWidth: 0.1,
       destHeight: 0.1,
@@ -144,5 +144,11 @@ describe("overlayNineSliceCells", () => {
     });
     const widths = cells.map((cell) => cell.width);
     expect(widths.reduce((sum, width) => sum + width, 0) / 3).toBeCloseTo(0.1);
+    // The texture splits stay at the authored 40px corners rather than the shrunken size.
+    const center = cells[4]!;
+    expect(center.u0).toBeCloseTo(0.4);
+    expect(center.u1).toBeCloseTo(0.6);
+    expect(center.v0).toBeCloseTo(0.4);
+    expect(center.v1).toBeCloseTo(0.6);
   });
 });
