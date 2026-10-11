@@ -715,12 +715,10 @@ revision, keeping imports, renames, removals, and texture eligibility current;
 closed controls resolve their selected labels by GUID without listing assets.
 Preview texture references are retained once per byte revision and released on
 tab teardown. Newly added Divide / Modulo nodes start with divisor 1 and Power
-starts with exponent 1. New Time nodes expose elapsed seconds since the shared
+starts with exponent 1. Time nodes expose elapsed seconds since the shared
 Engine started, independent of preview frame rate or the Scene viewport's render
 loop. Time-driven displacement continues when only a Material preview is drawing;
-after a suspended preview resumes, Time reflects the current elapsed time. Legacy
-nodes preserve Babylon's previous scene-animation timing (0.6 units per second
-at 60 FPS).
+after a suspended preview resumes, Time reflects the current elapsed time.
 
 Custom GLSL nodes created by the editor use node-local `customVersion: 2`, with
 stable pin IDs, GLSL variable names and explicit Float / Vector 2 / Vector 3 /
