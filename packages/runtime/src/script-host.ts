@@ -752,6 +752,8 @@ export class ScriptHost {
   private readonly materialReplacements = new WeakMap<BObject, Map<string, number>>();
   private readonly materialPreloads = new WeakMap<BObject, Map<string, string>>();
   private readonly boundInterfaceKeys = new WeakMap<BObject, Set<string>>();
+  /** Text components whose On Text Changed handlers are running now. */
+  private readonly textChangeDispatches = new Set<ActorComponent>();
   private readonly byClassId = new Map<string, LoadedScript[]>();
   private sourceGeneration = 0;
   /**
@@ -2312,12 +2314,19 @@ export class ScriptHost {
     previous?: unknown,
   ): void {
     this.services.refreshComponent?.(component, name);
-    // On Text Changed fires only on a change, so a handler that writes the
-    // same text again does not re-enter itself.
-    if (name === "text" && isTextComponent(component) && value !== previous) {
-      this.fireComponentOwnerEvent(component, "onTextChanged", {
-        text: value,
-      });
+    // On Text Changed fires only on a change, and a text write from inside
+    // that component's own handler applies without firing it again, so a
+    // handler that rewrites the text cannot recurse.
+    if (name === "text" && isTextComponent(component) && value !== previous &&
+      !this.textChangeDispatches.has(component)) {
+      this.textChangeDispatches.add(component);
+      try {
+        this.fireComponentOwnerEvent(component, "onTextChanged", {
+          text: value,
+        });
+      } finally {
+        this.textChangeDispatches.delete(component);
+      }
     }
   }
 

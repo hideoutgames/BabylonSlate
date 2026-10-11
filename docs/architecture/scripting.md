@@ -638,7 +638,7 @@ Compiled Get/Set of catalog variables uses `ctx.getVariableFrom` / `ctx.setVaria
 - `RigidBodyComponent` / `ColliderComponent`: `PhysicsWorldSync.applyComponent` → `updateBody` / `applyColliderChanges` (see [physics.md](physics.md)). `MeshComponent` / `RagdollComponent`: `PhysicsWorldSync.syncActor` reconciles only the owner's body, which a collision or ragdoll change can create or retire.
 - `NavAgentComponent`: `updateAgent` on the live Recast crowd (radius / height / max speed / max acceleration). Call **Move To** / actor `navigation.moveTo` adds the crowd agent if Begin Play ran before the batch register.
 
-`setVariableOn` / Set Text on a text component also fires `onTextChanged` for entries bound to that component id when the text changes, so a handler that writes the same text again does not re-enter itself. Set Text applies while the owner is still loading; its event waits for admission. Native calls on a destroyed component do nothing, and Play / Stop, particle, Possess, Add Impulse and navigation calls need an admitted owner.
+`setVariableOn` / Set Text on a text component also fires `onTextChanged` for entries bound to that component id when the text changes, so a handler that writes the same text again does not re-enter itself. A different text written from inside that component's own handler applies without firing the event again, so a handler that rewrites its text cannot recurse. Set Text applies while the owner is still loading; its event waits for admission. Native calls on a destroyed component do nothing, and Play / Stop, particle, Possess, Add Impulse and navigation calls need an admitted owner.
 
 ### Runtime material parameters
 
