@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { StrictMode } from "react";
 import {
   cleanup,
   act,
@@ -1058,6 +1059,17 @@ describe("ContentBrowserWorkspace grid window", () => {
     render(<ContentBrowserWorkspace />);
     expect(screen.getByTestId("content-browser-folder-tree")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Browse Folders" })).toBeNull();
+  });
+
+  it("restores the folder pane when a phone window widens", () => {
+    // StrictMode re-registers the returning pane after the assets pane; the
+    // resizable group must not keep that order and crash on its separator.
+    layout.phone = true;
+    docs.thumbnailsEnabled = false;
+    const { rerender } = render(<StrictMode><ContentBrowserWorkspace /></StrictMode>);
+    layout.phone = false;
+    rerender(<StrictMode><ContentBrowserWorkspace /></StrictMode>);
+    expect(screen.getByTestId("content-browser-folder-tree")).toBeTruthy();
   });
 
   it("dismisses folder navigation when the Content Browser becomes hidden", async () => {

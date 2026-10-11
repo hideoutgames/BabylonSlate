@@ -238,7 +238,11 @@ export interface GraphEditorProps {
   normalizeConnection?: (connection: Connection) => Connection | null;
   /** React Flow connection mode. Animation Graph uses Loose for side handles. */
   connectionMode?: "strict" | "loose";
-  /** Forwarded to React Flow. Behaviour trees pass null to avoid Delete trapping chrome. */
+  /**
+   * Keys that delete the selection (default Backspace) while this graph was the
+   * last surface pressed or focused. Behaviour trees pass null to avoid Delete
+   * trapping chrome.
+   */
   deleteKeyCode?: string | string[] | null;
   /** Forwarded to React Flow. Default true; BT passes false to avoid focus traps. */
   nodesFocusable?: boolean;
@@ -1831,6 +1835,49 @@ function GraphEditorCanvas({
     });
   }, [emitChange]);
 
+  // React Flow's own delete key listens on the whole document, so hidden tabs
+  // and other panels' Backspace deleted this graph's selection. Only the graph
+  // last pressed or focused reacts, and protected nodes stay.
+  const deleteKeys = useMemo(
+    () => (deleteKeyCode === undefined ? ["Backspace"] : [deleteKeyCode ?? []].flat()),
+    [deleteKeyCode],
+  );
+  useEffect(() => {
+    const root = wrapperRef.current;
+    if (readOnly || !root || deleteKeys.length === 0) return;
+    let engaged = false;
+    const inside = (target: EventTarget | null) => target instanceof Node && root.contains(target);
+    const onPointerDown = (event: PointerEvent) => { engaged = inside(event.target); };
+    const onFocusIn = (event: FocusEvent) => { if (inside(event.target)) engaged = true; };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!engaged || event.defaultPrevented || event.isComposing) return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      if (!deleteKeys.includes(event.key) && !deleteKeys.includes(event.code)) return;
+      if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"], .nokey')) return;
+      if (!root.isConnected || !(root.checkVisibility?.() ?? true)) return;
+      const { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
+      const removed = new Set(deletableNodeIds(currentNodes));
+      const nextEdges = currentEdges.filter(
+        (edge) => !edge.selected && !removed.has(edge.source) && !removed.has(edge.target),
+      );
+      if (removed.size === 0 && nextEdges.length === currentEdges.length) return;
+      event.preventDefault();
+      const nextNodes = currentNodes.filter((node) => !removed.has(node.id));
+      graphStateRef.current = { nodes: nextNodes, edges: nextEdges };
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      emitChange(nextNodes, nextEdges);
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("focusin", onFocusIn, true);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("focusin", onFocusIn, true);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [deleteKeys, emitChange, readOnly]);
+
   const breakSelectionLinks = useCallback(() => {
     const selectedEdgeIds = new Set(
       graphStateRef.current.edges
@@ -2450,7 +2497,7 @@ function GraphEditorCanvas({
                 ? ConnectionMode.Strict
                 : undefined
           }
-          deleteKeyCode={deleteKeyCode}
+          deleteKeyCode={null}
           nodesFocusable={nodesFocusable}
           edgesFocusable={nodesFocusable}
           fitView={mountViewport.fitView}

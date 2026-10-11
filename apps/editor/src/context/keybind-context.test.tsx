@@ -87,6 +87,30 @@ describe("KeybindProvider", () => {
     expect(save).not.toHaveBeenCalled();
   });
 
+  it("keeps the browser's Save Page action off Save All's chord when nothing saves", () => {
+    const save = vi.fn();
+    const { rerender } = render(
+      <KeybindProvider>
+        <Command id="editor.saveAll" run={save} enabled={false} />
+      </KeybindProvider>,
+    );
+    expect(fireEvent.keyDown(document.body, ctrl("S"))).toBe(false);
+    rerender(
+      <KeybindProvider>
+        <Command id="editor.saveAll" run={save} />
+        <div role="dialog" aria-modal="true" />
+      </KeybindProvider>,
+    );
+    expect(fireEvent.keyDown(document.body, ctrl("S"))).toBe(false);
+    rerender(
+      <KeybindProvider suspended>
+        <Command id="editor.saveAll" run={save} />
+      </KeybindProvider>,
+    );
+    expect(fireEvent.keyDown(document.body, ctrl("S"))).toBe(false);
+    expect(save).not.toHaveBeenCalled();
+  });
+
   it("falls back to an older registration when the newest is disabled", () => {
     const older = vi.fn();
     const newer = vi.fn();

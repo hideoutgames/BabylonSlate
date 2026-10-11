@@ -3767,6 +3767,43 @@ describe("GraphEditor", () => {
     expect(container.querySelector('[data-id="in-1"]')).not.toBeNull();
   });
 
+  it("deletes the selection with Backspace only in the graph last pressed", async () => {
+    const onChange = vi.fn();
+    const { container, getByTestId, getByRole } = render(
+      <>
+        <button type="button">Outliner row</button>
+        <GraphEditor
+          initialGraph={{
+            nodes: [
+              { id: "in-1", type: "flow.function.input", position: { x: 0, y: 0 }, data: { __protected: true, title: "Input" } },
+              { id: "log-a", type: "debug.log", position: { x: 200, y: 0 }, data: { message: "A", __pins: debugLogPins } },
+            ],
+            edges: [],
+          }}
+          focusedNodeId="log-a"
+          onChange={onChange}
+        />
+      </>,
+    );
+    await waitFor(() => {
+      expect(container.querySelector('.react-flow__node.selected[data-id="log-a"]')).not.toBeNull();
+    });
+    const outside = getByRole("button", { name: "Outliner row" });
+
+    fireEvent.keyDown(document.body, { key: "Backspace" });
+    fireEvent.pointerDown(getByTestId("graph-editor"));
+    fireEvent.pointerDown(outside);
+    fireEvent.keyDown(outside, { key: "Backspace" });
+    // Let any asynchronous canvas deletion settle before asserting none ran.
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    expect(onChange).not.toHaveBeenCalled();
+
+    fireEvent.pointerDown(getByTestId("graph-editor"));
+    fireEvent.keyDown(document.body, { key: "Backspace" });
+    const emitted = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+    expect(emitted.nodes.map((node) => node.id)).toEqual(["in-1"]);
+  });
+
   it("stamps XYFlow node.dragHandle from nodeDragHandle", async () => {
     function ProbeNode({ dragHandle }: { dragHandle?: string }) {
       return <div data-testid="xyflow-drag-handle">{dragHandle ?? ""}</div>;
