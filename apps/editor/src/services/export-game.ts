@@ -2,7 +2,7 @@ import { validateSaveGameDefinition, type SaveGameConfiguration } from "@babylon
 import { subsystemBaseClassIdOf } from "@babylonslate/object-model";
 import { dataTypeSchemas } from "@babylonslate/scripting";
 import type { DataAssetCatalogEntry } from "@babylonslate/core";
-import { areaEmissionTextureGuids, buildDataTreeIndex, isDataTreeAsset, isInputAssetType, normalizeInputAssetPayload, renderEffectsAssetGuids } from "@babylonslate/core";
+import { areaEmissionTextureGuids, buildDataTreeIndex, classIdForAssetPath, isDataTreeAsset, isInputAssetType, normalizeInputAssetPayload, renderEffectsAssetGuids } from "@babylonslate/core";
 import {
   collectExportReachability,
   exportGame,
@@ -357,7 +357,8 @@ export async function collectAndExportGame(
       if (graph) {
         graphDocs.push({
           guid,
-          path: asset.name,
+          // The class id comes from the file path, as in Play and the runtime catalog.
+          path: asset.path ?? asset.name,
           content: graph,
           parentClassId: asset.parentClass,
         });
@@ -399,7 +400,7 @@ export async function collectAndExportGame(
         requiredClassReferences: asset.requiredClassReferences,
         consoleCommand: asset.consoleCommand,
         dependencyMetadataVersion: asset.dependencyMetadataVersion,
-        startupRequired: asset.type === "InputAction" || asset.type === "InputAxis" || asset.guid === params.audioMixerGuid || asset.guid === params.gameInstanceClass || asset.name === params.gameInstanceClass || (asset.type === "Class" && !!asset.parentClass && subsystemBaseClassIdOf(subsystemHierarchy, asset.parentClass) !== null),
+        startupRequired: asset.type === "InputAction" || asset.type === "InputAxis" || asset.guid === params.audioMixerGuid || (asset.type === "Class" && !!asset.path && !!params.gameInstanceClass && classIdForAssetPath(asset.path) === params.gameInstanceClass) || (asset.type === "Class" && !!asset.parentClass && subsystemBaseClassIdOf(subsystemHierarchy, asset.parentClass) !== null),
         type: asset.type,
         sceneGuid: packSceneGuidForAsset(
           guid,
@@ -518,22 +519,23 @@ export async function collectAndExportGame(
   const scripts: ScriptBundleEntry[] = [];
   if (graphDocs.length || animDocs.length) {
     const { compileAnimGraphScripts, compileGraphDocuments, classIdForGraphPath } = await import("./script-compiler");
-    scripts.push(
-      ...compileGraphDocuments(graphDocs.map(document => ({ ...document, classId: classIdForGraphPath(document.path), path: document.guid })), {
-        stripDevelopmentOnly: !bundleDebugger,
-        inputAssets,
-        dataAssets,
-        ...typeSchemas,
-        tagRegistry: params.tagRegistry,
-      }),
-      ...compileAnimGraphScripts(animDocs.map(document => ({ ...document, path: document.guid })), {
-        stripDevelopmentOnly: !bundleDebugger,
-        inputAssets,
-        dataAssets,
-        ...typeSchemas,
-        tagRegistry: params.tagRegistry,
-      }),
-    );
+    // A script that fails codegen fails the export instead of shipping without it.
+    const compileOptions = {
+      stripDevelopmentOnly: !bundleDebugger,
+      inputAssets,
+      dataAssets,
+      ...typeSchemas,
+      tagRegistry: params.tagRegistry,
+      throwOnError: true,
+    };
+    try {
+      scripts.push(
+        ...compileGraphDocuments(graphDocs.map(document => ({ ...document, classId: classIdForGraphPath(document.path), path: document.guid })), compileOptions),
+        ...compileAnimGraphScripts(animDocs.map(document => ({ ...document, path: document.guid })), compileOptions),
+      );
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
   }
 
   params.onPhase?.("Writing Pack");
