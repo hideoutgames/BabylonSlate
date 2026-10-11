@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   HIDDEN_VIEWPORT_HEIGHT,
   WINDOWED_SLICE_OVERSCAN,
@@ -65,10 +65,14 @@ export function WindowedList({
 }: WindowedListProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const fixedRowHeight = typeof rowHeight === "number" ? rowHeight : 0;
-  const rowOffsets =
-    typeof rowHeight === "function"
-      ? windowedRowOffsets(itemCount, rowHeight)
-      : undefined;
+  // A stable per-row height function keeps the offsets across scroll renders.
+  const rowOffsets = useMemo(
+    () =>
+      typeof rowHeight === "function"
+        ? windowedRowOffsets(itemCount, rowHeight)
+        : undefined,
+    [itemCount, rowHeight],
+  );
   const rowTop = (index: number) =>
     rowOffsets ? rowOffsets[index]! : index * fixedRowHeight;
   const rowSize = (index: number) =>
