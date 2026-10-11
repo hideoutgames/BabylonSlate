@@ -71,7 +71,9 @@ Worker → main (ordered). Main thread resolves Audio / Mixer / Channel / Attenu
 ```ts
 | { type: "playSound"; assetGuid: string; volume: number; frameId: number;
     emitterActorGuid?: string | null; loop?: boolean; voiceId?: string;
-    startOffsetSeconds?: number }
+    startOffsetSeconds?: number; clipRoll?: number; pitchRoll?: number;
+    restoredAtSeconds?: number }
+| { type: "audioSimTime"; seconds: number }
 | { type: "stopSound"; voiceId: string }
 | { type: "setVoiceGain"; voiceId: string; volume: number }
 | { type: "setChannelVolume"; channelGuid: string; volume: number }
@@ -80,7 +82,10 @@ Worker → main (ordered). Main thread resolves Audio / Mixer / Channel / Attenu
 
 Main → worker when a **non-looping** voice ends: `{ type: "audioVoiceEnded"; voiceId: string }`. Overlay Play and the packaged player post that control from `AudioService.onVoiceEnded` (the service already skips `voice.loop`). `RuntimeDriver.applyAudioVoiceEnded` matches `voiceId` to an `AudioComponent` guid/`sourceId` and `invokeEvent(..., "onAudioFinished", actor, {}, component.guid)`. Catalog: **Event On Audio Finished** (`flow.event.audioFinished`). There is no per-voice Pause (AudioV2 `setPaused` is overlay-global).
 
-`startOffsetSeconds` (trace restore only; see [debugger.md](debugger.md#trace-recorder)) is how long the voice already played. `AudioService` multiplies it by the voice's pitch into the backend request's clip position (Doppler is not replayed). The AudioV2 backend starts there (`play({ startOffset })`), wraps it by the clip duration for looping voices, and does not start a one-shot whose offset is at or past its end — it reports that voice ended instead, so the worker forgets it. Commands queued before unlock keep their original offset.
+`startOffsetSeconds` (trace restore only; see [debugger.md](debugger.md#trace-recorder)) is how long the voice already played. `AudioService` multiplies it by the voice's pitch into the backend request's clip position (Doppler is not replayed). The AudioV2 backend starts there (`play({ startOffset })`), wraps it by the clip duration for looping voices, and does not start a one-shot whose offset is at or past its end — it reports that voice ended instead, so the worker forgets it.
+
+- **Clip and pitch draws:** the runtime gives every `playSound` with an asset `clipRoll` and `pitchRoll` (uniform `[0, 1)`, a seeded stream of its own derived from the session seed, so World and script random sequences do not shift). `AudioService` uses them as the random source of `pickWeightedAudioClip` and `resolveAudioPitch`; commands without them (asset preview) draw from `Math.random`. The distribution is unchanged, and a trace restore resends the recorded draws, so it plays the same clip at the same pitch.
+- **Unlock catch-up (restored voices only):** a restored `playSound` carries `restoredAtSeconds`, the runtime's simulated (dilated) clock when it was issued. While restored voices are live the runtime sends `audioSimTime` with that clock each tick (never while paused). When the unlock drains the queue, a restored voice's `startOffsetSeconds` grows by the simulated time it waited, so the backend ends a one-shot already past its clip and wraps a loop. Ordinary commands queued before unlock still start at the beginning.
 
 `AudioComponent` properties: `audioAssetGuid`, `playOnStart`, `loop`, `volume` (`playCallVolume`). Play-on-start emits **once** (`voiceId` = component guid, `emitterActorGuid` = owning actor). Native `loop: true` is **one** Babylon voice — do not retrigger every tick. Graph **Play** / **Stop** on the component pin use that same `voiceId`: Play sends `playSound`, Stop sends `stopSound`. Graph **Set Volume** emits `setVoiceGain` for the live voice (`AudioService.setVoiceGain` updates `playCallVolume` and refreshes backend gain). Graph **Play Sound** uses `self` as emitter and does not send `loop` (the Audio asset’s Loop flag applies); the runtime names its voice `script:<n>` (a per-session sequence) so traces can record and resume it. Missing Actor + attenuation → non-spatial + one diagnostic. Overlay Play does not log every `playSound` into the chrome log (retriggers must not paint the DOM).
 
