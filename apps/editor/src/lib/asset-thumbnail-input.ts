@@ -90,10 +90,9 @@ export async function prepareAssetThumbnailInput(
     for (const entry of registry.list()) {
       if (!classAsset(entry)) continue;
       byClass.set(classIdForGraphPath(entry.path), entry);
-      byClass.set(entry.header.name, entry);
     }
     const chain: IndexedAsset[] = [];
-    const seen = new Set<string>([classIdForGraphPath(asset.path), asset.header.name]);
+    const seen = new Set<string>([classIdForGraphPath(asset.path)]);
     let parent: string | null = parentClass(asset);
     let isActor = false;
     while (parent && !seen.has(parent)) {

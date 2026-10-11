@@ -1089,13 +1089,17 @@ describe("content-browser-helpers", () => {
     expect(parentOf("Scene")).toBe("BObject");
   });
 
-  it("keeps the first Class's parent for a shared class id, as the Parent Class tree does", () => {
+  it("looks up Class parents by class id only, keeping the first Class for a shared id as the Parent Class tree does", () => {
     const assets = [
       { path: "assets/A/Rain_Weather.class.babasset", header: { type: "Class", name: "Rain_Weather", parentClass: "Actor" } },
       { path: "assets/Storm.class.babasset", header: { type: "Class", name: "Rain_Weather", parentClass: "BTTask" } },
       { path: "assets/B/Rain-Weather.class.babasset", header: { type: "Class", name: "Rain-Weather", parentClass: "GameInstance" } },
+      { path: "assets/Hero.class.babasset", header: { type: "Class", name: "Actor", parentClass: "GameInstance" } },
     ];
-    expect(classParentLookup(assets)("Rain_Weather")).toBe("Actor");
+    const parentOf = classParentLookup(assets);
+    expect(parentOf("Rain_Weather")).toBe("Actor");
+    // A display name is not a class id, so it never replaces an engine class's parent.
+    expect(parentOf("Actor")).toBe("BObject");
     expect(buildParentClassTreeRows(assets).find((row) => row.id === "Rain_Weather")?.parentClassId).toBe("Actor");
   });
 
@@ -1548,21 +1552,25 @@ describe("content-browser-helpers", () => {
     const hero = asset({
       type: "Class",
       name: "MyHero",
+      path: "assets/MyHero.class.babasset",
       parentClass: "Actor",
     });
     const stats = asset({
       type: "Class",
       name: "GameStats",
+      path: "assets/GameStats.class.babasset",
       parentClass: "BObject",
     });
     const meshComp = asset({
       type: "Class",
       name: "MyMesh",
+      path: "assets/MyMesh.class.babasset",
       parentClass: "ActorComponent",
     });
     const subclass = asset({
       type: "Class",
       name: "Boss",
+      path: "assets/Boss.class.babasset",
       parentClass: "MyHero",
     });
     const parentOf = classParentLookup([hero, stats, meshComp, subclass]);

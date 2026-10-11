@@ -1496,19 +1496,15 @@ export function classParentLookup(
   assets: ReadonlyArray<ClassAssetRef>,
 ): (id: string) => string | null {
   const byId = new Map<string, string>();
-  const byName = new Map<string, string>();
   for (const asset of assets) {
     if (asset.header.type !== "Class") continue;
-    const parent = asset.header.parentClass ?? "BObject";
     const id = classIdFromClassAsset(asset);
-    // The first file keeps a shared id, as in buildParentClassTreeRows, and a
-    // display name never replaces another Class's id.
-    if (!byId.has(id)) byId.set(id, parent);
-    if (asset.header.name !== id && !byName.has(asset.header.name)) byName.set(asset.header.name, parent);
+    // The first file keeps a shared id, as in buildParentClassTreeRows.
+    if (!byId.has(id)) byId.set(id, asset.header.parentClass ?? "BObject");
   }
   return (id) => {
     if (isSceneAssetClassId(id) && id !== "Scene") return "Scene";
-    return byId.get(id) ?? byName.get(id) ?? engineParentOf(id) ?? null;
+    return byId.get(id) ?? engineParentOf(id) ?? null;
   };
 }
 

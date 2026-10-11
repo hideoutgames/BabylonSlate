@@ -15,10 +15,7 @@ export function createAssetThumbnailRevisionIndex(
 ) {
   const byGuid = new Map(assets.map((asset) => [asset.header.guid, asset]));
   const classes = assets.filter((asset) => asset.header.type === "Class");
-  const byClassId = new Map(classes.flatMap((asset) => [
-    [classIdFromClassAsset(asset), asset] as const,
-    [asset.header.name, asset] as const,
-  ]));
+  const byClassId = new Map(classes.map((asset) => [classIdFromClassAsset(asset), asset] as const));
   const parentOf = classParentLookup(assets);
   const revisions = new Map<string, string | null>();
   const keys = new Map<string, Promise<string | null>>();
