@@ -21,7 +21,6 @@ import {
   DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   DEFAULT_RENDER_PROJECT_SETTINGS,
   type PlayPreviewProjectSettings,
-  type ProjectInputSettings,
   type RenderProjectSettings,
   type AudioProjectSettings,
   type SerializedScene,
@@ -139,7 +138,6 @@ export interface PlayOverlayProps {
   inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
   dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
   assetCatalog?: import("@babylonslate/core").RuntimeAssetCatalogEntry[];
-  inputMappings?: ProjectInputSettings;
   focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
   /** Project Play Preview letterbox; snapshotted when the session starts. */
   playPreview?: PlayPreviewProjectSettings;
@@ -253,7 +251,6 @@ export function PlayOverlay({
   inputAssets,
   dataAssets,
   assetCatalog,
-  inputMappings,
   focusNavigation,
   playPreview = DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   render = DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -596,7 +593,6 @@ export function PlayOverlay({
   const initialInputAssetsRef = useRef(inputAssets);
   const initialDataAssetsRef = useRef(dataAssets);
   const initialAssetCatalogRef = useRef(assetCatalog);
-  const initialInputMappingsRef = useRef(inputMappings);
   const initialFocusNavigationRef = useRef(focusNavigation);
   const initialPlayPreviewRef = useRef(playPreview);
   const { settings: localEngineSettings } = useAppSettings();
@@ -728,7 +724,6 @@ export function PlayOverlay({
           inputAssets: initialInputAssetsRef.current,
           dataAssets: initialDataAssetsRef.current,
           assetCatalog: initialAssetCatalogRef.current,
-          inputMappings: initialInputMappingsRef.current,
           focusNavigation: initialFocusNavigationRef.current,
           animGraphs: animGraphsRef.current,
           behaviourTrees: behaviourTreesRef.current,

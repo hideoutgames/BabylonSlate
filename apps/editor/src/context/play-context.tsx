@@ -1621,7 +1621,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             inputAssets={playInputAssets}
             dataAssets={playDataAssets}
             assetCatalog={playCatalog}
-            inputMappings={projectDocument?.settings.input}
             focusNavigation={projectDocument?.settings.focusNavigation}
             sortingLayers={projectDocument?.settings.twoD.sortingLayers}
             pixelsPerUnit={
