@@ -2108,13 +2108,6 @@ function scriptPaletteCatalogNodes(
       if (def.id === "string.format") {
         defaultData["default:format"] = "{input}";
       }
-      if (
-        def.id === "audio.play" ||
-        def.id === "audio.setChannelVolume" ||
-        def.id === "audio.setGlobalVolume"
-      ) {
-        defaultData["default:volume"] = 1;
-      }
       const pins = def.pins(defaultData);
       if (def.editorOnly) defaultData.__editorOnly = true;
       return {

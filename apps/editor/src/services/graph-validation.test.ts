@@ -1164,9 +1164,12 @@ describe("scriptPaletteNodes", () => {
       expect(nodes.some((node) => node.id === "audio.setGlobalVolume")).toBe(
         true,
       );
-      expect(nodes.find((node) => node.id === "audio.play")?.defaultData).toMatchObject({
-        "default:volume": 1,
-      });
+      for (const id of ["audio.play", "audio.setChannelVolume", "audio.setGlobalVolume"]) {
+        const volume = nodes
+          .find((node) => node.id === id)
+          ?.pins?.find((pin) => pin.id === "volume");
+        expect(volume?.defaultValue).toBe(1);
+      }
     }
   });
 
