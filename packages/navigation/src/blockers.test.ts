@@ -60,6 +60,18 @@ describe("2D bake remap", () => {
     expect(walls.positions.length).toBeGreaterThan(9);
     expect(walls.indices.length).toBeGreaterThanOrEqual(6);
   });
+
+  it("extrudes a diagonal edge along the edge, not as its bounding box", () => {
+    const walls = recastWallsFromXyChains(
+      [{ points: [{ x: 0, y: 0 }, { x: 4, y: 4 }], loop: false }],
+      2,
+    );
+    for (let i = 0; i < walls.positions.length; i += 3) {
+      // Recast (x, _, z) is world (x, y); every corner sits half a wall from y = x.
+      const distance = Math.abs(walls.positions[i]! - walls.positions[i + 2]!) / Math.SQRT2;
+      expect(distance).toBeCloseTo(0.4, 5);
+    }
+  });
 });
 
 describe("staticBlockerBakeParts", () => {
@@ -299,6 +311,17 @@ describe("recastMeshesFromCollider2d", () => {
     const { min, max } = extents(circle!.positions);
     expect([min[0], min[1], max[1], max[2]]).toEqual([
       expect.closeTo(1.5, 5), expect.closeTo(0, 5), expect.closeTo(2, 5), expect.closeTo(5.5, 5),
+    ]);
+  });
+
+  it("turns a box by the collider's planar angle", () => {
+    const [box] = recastMeshesFromCollider2d(
+      { x: 1, y: 0, angle: Math.PI / 2 },
+      { kind: "box2d", halfExtents: { x: 2, y: 0.5 } },
+    );
+    const { min, max } = extents(box!.positions);
+    expect([min[0], max[0], min[2], max[2]]).toEqual([
+      expect.closeTo(0.5, 5), expect.closeTo(1.5, 5), expect.closeTo(-2, 5), expect.closeTo(2, 5),
     ]);
   });
 

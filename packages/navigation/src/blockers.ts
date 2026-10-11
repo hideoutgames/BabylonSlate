@@ -52,6 +52,9 @@ function pushQuad(
 
 const IDENTITY_ROTATION = { x: 0, y: 0, z: 0, w: 1 };
 
+/** Width of the wall a zero-thickness 2D chain edge bakes to. */
+const WALL_THICKNESS = 0.8;
+
 function rotatePoint(
   rotation: { x: number; y: number; z: number; w: number },
   point: NavPoint,
@@ -294,13 +297,21 @@ export function recastWalkableQuadFromXy(bounds: XyBounds): {
   };
 }
 
-/** Extrude XY polylines into Recast XZ walls of `height` (Recast Y). */
+/** Recast rotation about +Y that turns local +X onto the 2D world angle `radians` (CCW in XY). */
+function recastYawFromXyAngle(radians: number): { x: number; y: number; z: number; w: number } {
+  // World XY maps to Recast XZ, so a CCW turn in XY is a negative Recast yaw.
+  return { x: 0, y: Math.sin(-radians / 2), z: 0, w: Math.cos(-radians / 2) };
+}
+
+/**
+ * Extrude XY polylines into Recast XZ walls of `height` (Recast Y). Each edge
+ * becomes a box along that edge, `WALL_THICKNESS` across it.
+ */
 export function recastWallsFromXyChains(
   chains: readonly XyChain[],
   height: number,
 ): { positions: number[]; indices: number[] } {
   const wallHeight = Math.max(height, 0.05);
-  const thickness = 0.8;
   const parts: Array<{ positions: number[]; indices: number[] }> = [];
   for (const chain of chains) {
     if (chain.points.length < 2) continue;
@@ -308,27 +319,17 @@ export function recastWallsFromXyChains(
     for (let i = 0; i < count; i += 1) {
       const a = chain.points[i]!;
       const b = chain.points[(i + 1) % chain.points.length]!;
-      const from = worldToRecast({ x: a.x, y: a.y, z: 0 });
-      const to = worldToRecast({ x: b.x, y: b.y, z: 0 });
-      const dx = to.x - from.x;
-      const dz = to.z - from.z;
-      const length = Math.hypot(dx, dz);
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const length = Math.hypot(dx, dy);
       if (length < 1e-6) continue;
-      const nx = Math.abs(-dz / length);
-      const nz = Math.abs(dx / length);
+      const center = worldToRecast({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: 0 });
       parts.push(
         solidBlockerMesh({
           kind: "box",
-          pose: {
-            x: (from.x + to.x) / 2,
-            y: wallHeight / 2,
-            z: (from.z + to.z) / 2,
-          },
-          size: {
-            x: Math.abs(dx) + thickness * nx,
-            y: wallHeight,
-            z: Math.abs(dz) + thickness * nz,
-          },
+          pose: { x: center.x, y: wallHeight / 2, z: center.z },
+          size: { x: length, y: wallHeight, z: WALL_THICKNESS },
+          rotation: recastYawFromXyAngle(Math.atan2(dy, dx)),
         }),
       );
     }
@@ -575,13 +576,28 @@ export function xyBoundsFromActors(
   };
 }
 
-/** 2D ColliderComponent shapes as Recast walls / solids. */
+/** World placement of a 2D collider: its center and CCW angle in the XY plane. */
+export type Collider2dPose = { x: number; y: number; angle?: number };
+
+/**
+ * 2D ColliderComponent shapes as Recast walls / solids. `shape` is already
+ * world-sized (actor and component scale baked in, as physics bakes it) and
+ * `pose` is the collider's world placement, so turned shapes bake turned.
+ */
 export function recastMeshesFromCollider2d(
-  position: { x: number; y: number },
+  pose: Collider2dPose,
   shape: Record<string, unknown> | undefined,
   height = 2,
 ): NavBakeMeshPart[] {
   if (!shape) return [];
+  const angle = pose.angle ?? 0;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const place = (x: number, y: number) => ({
+    x: pose.x + x * cos - y * sin,
+    y: pose.y + x * sin + y * cos,
+  });
+  const yaw = recastYawFromXyAngle(angle);
   const kind = typeof shape.kind === "string" ? shape.kind : "box2d";
   if (kind === "chain" || kind === "polygon") {
     const points = Array.isArray(shape.points)
@@ -590,7 +606,7 @@ export function recastMeshesFromCollider2d(
             if (!point || typeof point !== "object") return null;
             const row = point as { x?: unknown; y?: unknown };
             if (typeof row.x !== "number" || typeof row.y !== "number") return null;
-            return { x: row.x + position.x, y: row.y + position.y };
+            return place(row.x, row.y);
           })
           .filter((point): point is { x: number; y: number } => point !== null)
       : [];
@@ -605,41 +621,42 @@ export function recastMeshesFromCollider2d(
   const positive = (value: unknown, fallback: number) =>
     typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
   // Solids stand on the walk plane (Recast Y = 0), like the walls.
-  const disc = (x: number, y: number, radius: number) => {
-    const recast = worldToRecast({ x, y, z: 0 });
+  const disc = (center: { x: number; y: number }, radius: number) => {
+    const recast = worldToRecast({ x: center.x, y: center.y, z: 0 });
     return solidBlockerMesh({
       kind: "cylinder",
       pose: { x: recast.x, y: height / 2, z: recast.z },
       size: { x: radius * 2, y: height, z: radius * 2 },
     });
   };
+  const center = worldToRecast({ x: pose.x, y: pose.y, z: 0 });
   if (kind === "circle") {
-    return [disc(position.x, position.y, positive(shape.radius, 0.5))];
+    return [disc(pose, positive(shape.radius, 0.5))];
   }
   if (kind === "capsule2d") {
-    // A vertical stadium: a box between the two end discs.
+    // A stadium along the collider's local Y: a box between the two end discs.
     const radius = positive(shape.radius, 0.25);
     const halfHeight = positive(shape.halfHeight, 0.5);
-    const recast = worldToRecast({ x: position.x, y: position.y, z: 0 });
     return [
       solidBlockerMesh({
         kind: "box",
-        pose: { x: recast.x, y: height / 2, z: recast.z },
+        pose: { x: center.x, y: height / 2, z: center.z },
         size: { x: radius * 2, y: height, z: halfHeight * 2 },
+        rotation: yaw,
       }),
-      disc(position.x, position.y - halfHeight, radius),
-      disc(position.x, position.y + halfHeight, radius),
+      disc(place(0, -halfHeight), radius),
+      disc(place(0, halfHeight), radius),
     ];
   }
   const half = (shape.halfExtents ?? {}) as { x?: unknown; y?: unknown };
   const hx = typeof half.x === "number" ? half.x : 0.5;
   const hy = typeof half.y === "number" ? half.y : 0.5;
-  const recast = worldToRecast({ x: position.x, y: position.y, z: 0 });
   return [
     solidBlockerMesh({
       kind: "box",
-      pose: { x: recast.x, y: height / 2, z: recast.z },
+      pose: { x: center.x, y: height / 2, z: center.z },
       size: { x: hx * 2, y: height, z: hy * 2 },
+      rotation: yaw,
     }),
   ];
 }

@@ -40,6 +40,7 @@ export {
   solidBlockerMesh,
   staticBlockerBakeParts,
   xyBoundsFromActors,
+  type Collider2dPose,
   type NavBakeBounds,
   type SolidBlockerInput,
   type XyBounds,
