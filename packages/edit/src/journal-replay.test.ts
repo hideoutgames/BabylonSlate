@@ -299,6 +299,20 @@ describe("journal replay", () => {
     expect(result.documents.size).toBe(0);
   });
 
+  it("reports lines that are not journal records while replaying the rest", () => {
+    const docId = "graph:assets/main.graph.babasset";
+    const graph = { nodes: [{ id: "node-1", type: "print", position: { x: 0, y: 0 }, data: {} }], edges: [] };
+    const torn = '{"v":1,"docId":"graph:assets/main.graph.babasset","at":"2026-';
+    const line = serializeJournalLine({
+      v: 1, docId, at: "2026-10-11T00:00:00Z",
+      command: commandToJournalPayload(new MoveNodeCommand("node-1", { x: 0, y: 0 }, { x: 5, y: 0 })),
+    });
+    const result = replayJournalLines([torn, line, "{}"], new Map([[docId, graph]]));
+    expect(result.malformed).toEqual([torn, "{}"]);
+    expect(result.skipped).toEqual([]);
+    expect(result.documents.get(docId)?.nodes[0]?.position).toEqual({ x: 5, y: 0 });
+  });
+
   it("skips a whole batch when one child command cannot be recovered", () => {
     const docId = "graph:assets/history.class.babasset";
     const graph = { nodes: [{ id: "node-1", type: "print", position: { x: 0, y: 0 }, data: {} }], edges: [] };
