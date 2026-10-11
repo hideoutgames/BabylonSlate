@@ -1070,7 +1070,7 @@ export class ProjectService {
       const picked = await pickImportFiles({
         directory: source === "folder",
         multiple: source === "folder",
-        accept: source === "zip" ? ".zip,.babproject" : undefined,
+        accept: source === "zip" ? ".zip" : undefined,
         maxTotalBytes:
           source === "zip" ? 50 * 1024 * 1024 : PROJECT_IMPORT_LIMIT,
       });
@@ -1092,7 +1092,7 @@ export class ProjectService {
             ? manifest.metadata.name
             : picked[0]!.name
                 .split("/")[0]!
-                .replace(/\.(zip|babproject)$/i, ""),
+                .replace(/\.zip$/i, ""),
         ) || "Imported Project";
       let name = base;
       let suffix = 2;

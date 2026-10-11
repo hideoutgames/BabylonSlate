@@ -78,7 +78,7 @@ MyGame/                     (directory)  or  MyGame.zip
 `.babplugin` zip (kind=plugin): `plugin.json` + PluginSettings + `assets/` (no `layout.json`). `plugin.json` is the **zip manifest only** — in-project discovery scans for `type: "PluginSettings"`. Detail: [plugins.md](plugins.md).
 
 - **Directory backend** — incremental writes (OPFS, iPad Documents / external folder, desktop). Folder name is the display name (`MyGame/`), not `MyGame.babproject/`. Existing `*.babproject` folders still open.
-- **Zip backend** — single-file `.zip` (`fflate`); used for Export Project and interchange. Legacy Export Project `.babproject` zips still decode.
+- **Zip backend** — single-file `.zip` (`fflate`); used for Export Project and interchange. Open Project from a zip picks `.zip` files only.
 
 Web persists the directory layout into OPFS and offers Export Project as a `.zip` download. **Export Game** (itch zip) is a different artifact — see [exporter.md](exporter.md).
 
