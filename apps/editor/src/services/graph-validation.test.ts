@@ -1935,7 +1935,6 @@ describe("scriptPaletteNodes", () => {
     expect(getMesh?.defaultData).toMatchObject({
       propertyKey: "assetGuid",
       typeClassId: "Model",
-      typeClassIds: ["Mesh", "Model"],
     });
     expect(
       nodes.some((node) => node.id === "functions.call:CameraComponent:Possess"),

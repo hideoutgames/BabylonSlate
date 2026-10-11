@@ -600,7 +600,7 @@ Engine classes expose an optional script catalog in `@babylonslate/object-model`
 | Component | Variables | Functions | Events |
 | --- | --- | --- | --- |
 | `Scene` | Scene Name, Asset Guid (Get-only), Gravity (`vec3`) | — | — |
-| `MeshComponent` | Mesh Kind, Mesh (`assetGuid`; picker `typeClassIds` Mesh **and** Model), Material asset, Material Object (Get-only live reference) | — | — |
+| `MeshComponent` | Mesh Kind, Mesh (`assetGuid`; a Model asset), Material asset, Material Object (Get-only live reference) | — | — |
 | `SpriteComponent` | Sprite, Sorting Layer, Order In Layer | — | — |
 | `TilemapComponent` | Tilemap, Sorting Layer, Order In Layer | — | — |
 | `SkyboxComponent` | Size | — | — |

@@ -15,8 +15,6 @@ export type EngineScriptVariable = {
   name: string;
   typeId: string;
   typeClassId?: string;
-  /** Extra Content Browser types the pin picker accepts (e.g. Mesh + Model). */
-  typeClassIds?: readonly string[];
   container?: "single" | "array" | "map";
   propertyKey: string;
   /** When true, the palette injects Get only (no Set). */
@@ -493,7 +491,6 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
         name: "Mesh",
         typeId: "asset",
         typeClassId: "Model",
-        typeClassIds: ["Mesh", "Model"],
         propertyKey: "assetGuid",
       },
       {
