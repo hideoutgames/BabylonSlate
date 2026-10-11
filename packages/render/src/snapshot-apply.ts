@@ -2074,10 +2074,10 @@ function reconcileSnapshotVisuals(
     const actor = snapshot.actors[i]!;
     binding.snapshotMeshes[i] = null;
     live.add(actor.slotId);
-    seen.add(actor.slotId);
     const wantsOverlay = snapshotSlotWantsOverlay(actor, binding);
     const overlayScene = binding.sceneForSlot?.(actor.slotId) ?? null;
     if (wantsOverlay && !overlayScene) {
+      seen.add(actor.slotId);
       // Until its layer is live, a world copy must not keep drawing at its
       // last pose; migration restores it once the layer Scene exists.
       const waiting = binding.meshes.get(actor.slotId);
@@ -2101,6 +2101,9 @@ function reconcileSnapshotVisuals(
       disposeWorldOverlayLeftovers(scene, actor.slotId);
     }
     binding.snapshotMeshes[i] = mesh;
+    // Seen only once applied: a scene lookup or visual build that throws
+    // leaves a command-built visual protected from a stale buffer.
+    seen.add(actor.slotId);
   }
   for (const slotId of binding.meshes.keys()) {
     // A command-built visual not yet seen must survive a stale buffer.

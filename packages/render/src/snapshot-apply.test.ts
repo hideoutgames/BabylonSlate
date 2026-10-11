@@ -2041,6 +2041,16 @@ describe("createPlayMesh", () => {
     expect(quad!.isDisposed()).toBe(false);
     expect(quad!.metadata?.playHelperVisual).toBeUndefined();
     expect(binding.meshKinds.get(2)).toBe("2dtexture");
+    // A sample whose scene lookup throws for the slot has not applied it.
+    binding.sceneForSlot = (slotId) => {
+      if (slotId === 2) throw new Error("layer lookup failed");
+      return null;
+    };
+    expect(() => applySnapshotToScene(scene, binding, world([0, 1, 2], 2))).toThrow("layer lookup failed");
+    binding.sceneForSlot = undefined;
+    applySnapshotToScene(scene, binding, world([0, 1], 2));
+    expect(binding.meshes.get(2)).toBe(quad);
+    expect(quad!.isDisposed()).toBe(false);
     // Once an applied snapshot has contained the slot, later absence retires.
     applySnapshotToScene(scene, binding, world([0, 1, 2], 2));
     expect(quad!.isVisible).toBe(true);
