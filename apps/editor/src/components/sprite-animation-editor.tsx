@@ -434,10 +434,10 @@ export function SpriteAnimationDetails({
   const pivot = parseSpritePivot(frame?.pivot);
 
   // A texture pick reads the image first; it then patches the document as it
-  // is, and only if no later pick replaced it.
+  // is, and only if no later pick on the same frame replaced it.
   const latestRef = useRef(animation);
   latestRef.current = animation;
-  const texturePickRef = useRef(0);
+  const texturePickByFrameRef = useRef(new Map<number, object>());
 
   /** `field` marks a continuous edit whose scrub is one undo step. */
   const patchFrameIn = (
@@ -452,8 +452,11 @@ export function SpriteAnimationDetails({
       ...frames[index]!,
       ...patch,
     };
-    if (field) onChange({ ...base, frames }, spriteFrameMergeKey(index, field));
-    else onChange({ ...base, frames });
+    const next = { ...base, frames };
+    // Later reads that finish before the next render build on this edit.
+    latestRef.current = next;
+    if (field) onChange(next, spriteFrameMergeKey(index, field));
+    else onChange(next);
   };
   const patchFrame = (
     patch: Partial<NonNullable<typeof frame>>,
@@ -479,7 +482,10 @@ export function SpriteAnimationDetails({
   };
 
   const applyTextureGuid = (guid: string | null): void => {
-    const pick = ++texturePickRef.current;
+    const frameIndex = selectedFrameIndex;
+    const pick = {};
+    const picks = texturePickByFrameRef.current;
+    picks.set(frameIndex, pick);
     if (!guid) {
       patchFrame({ textureGuid: "" });
       return;
@@ -489,14 +495,14 @@ export function SpriteAnimationDetails({
       patchFrame({ textureGuid: guid });
       return;
     }
-    const frameIndex = selectedFrameIndex;
     void (async () => {
       const pixels = await readAssetChunk(path, "pixels");
       const source =
         pixels && pixels.byteLength > 0
           ? pixels
           : await readAssetChunk(path, "source");
-      if (pick !== texturePickRef.current) return;
+      if (picks.get(frameIndex) !== pick) return;
+      picks.delete(frameIndex);
       const size = source && source.byteLength > 0 ? pngPixelSize(source) : null;
       patchFrameIn(
         latestRef.current,
