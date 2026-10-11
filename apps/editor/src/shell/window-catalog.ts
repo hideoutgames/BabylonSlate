@@ -195,22 +195,11 @@ export interface DockWindowDefaultPosition {
   initialHeight?: number;
 }
 
-export function dockLayoutHostWidth(api: {
-  width?: number;
-  element?: { clientWidth?: number };
-}): number {
-  if (typeof api.width === "number" && Number.isFinite(api.width) && api.width > 0) {
-    return api.width;
-  }
-  const clientWidth = api.element?.clientWidth;
-  if (
-    typeof clientWidth === "number" &&
-    Number.isFinite(clientWidth) &&
-    clientWidth > 0
-  ) {
-    return clientWidth;
-  }
-  return 0;
+/** DockView host width, or 0 while the dock has not been laid out (a hidden tab). */
+export function dockLayoutHostWidth(api: { width?: number }): number {
+  return typeof api.width === "number" && Number.isFinite(api.width) && api.width > 0
+    ? api.width
+    : 0;
 }
 
 export function resolveDockInitialWidth(

@@ -13,8 +13,6 @@ export type AnimPreFocusSnapshot = {
   surface: DockviewSurface;
 };
 
-const SPLIT_KEYS = new Set(["animEditorMode", "stateMachine", "animationObject"]);
-
 export function normalizeAnimEditorMode(value: unknown): AnimEditorMode {
   return value === "animationObject" ? "animationObject" : "stateMachine";
 }
@@ -23,27 +21,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isSplitAnimLayout(layout: Record<string, unknown>): boolean {
-  return Object.keys(layout).some((key) => SPLIT_KEYS.has(key));
-}
-
-/** Split a stored Animation Graph layout, migrating a raw DockView snapshot to State Machine. */
+/** Read the stored `{ animEditorMode, stateMachine, animationObject }` layout. */
 export function parseAnimDocumentLayout(
   layout: Record<string, unknown> | null | undefined,
 ): AnimDocumentLayout {
-  if (!layout) {
-    return { animEditorMode: "stateMachine", stateMachine: null, animationObject: null };
-  }
-  if (isSplitAnimLayout(layout)) {
-    return {
-      animEditorMode: normalizeAnimEditorMode(layout.animEditorMode),
-      stateMachine: isRecord(layout.stateMachine) ? layout.stateMachine : null,
-      animationObject: isRecord(layout.animationObject)
-        ? layout.animationObject
-        : null,
-    };
-  }
-  return { animEditorMode: "stateMachine", stateMachine: layout, animationObject: null };
+  const stateMachine = layout?.stateMachine;
+  const animationObject = layout?.animationObject;
+  return {
+    animEditorMode: normalizeAnimEditorMode(layout?.animEditorMode),
+    stateMachine: isRecord(stateMachine) ? stateMachine : null,
+    animationObject: isRecord(animationObject) ? animationObject : null,
+  };
 }
 
 export function serializeAnimDocumentLayout(

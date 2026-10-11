@@ -12,7 +12,6 @@ vi.mock("./use-platform-layout", () => ({
   usePlatformLayoutOptions: () => ({
     singleWindow: false,
     disableFloatingGroups: false,
-    disablePopout: false,
     dndStrategy: "pointer",
   }),
 }));
