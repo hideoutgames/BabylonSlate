@@ -139,6 +139,34 @@ function graphSlices(content: Record<string, unknown>): GraphSlice[] {
   return slices;
 }
 
+type GraphNode = SerializedGraph["nodes"][number];
+
+/** Hydrated nodes per authored node list, so a report hydrates each graph once. */
+const hydratedSlices = new WeakMap<object, ReadonlyMap<string, GraphNode> | null>();
+
+function hydratedNodes(
+  content: Record<string, unknown>,
+  slice: GraphSlice,
+): ReadonlyMap<string, GraphNode> | null {
+  if (hydratedSlices.has(slice.nodes)) return hydratedSlices.get(slice.nodes)!;
+  let nodes: ReadonlyMap<string, GraphNode> | null = null;
+  try {
+    // Hydration supplies catalog titles (Call / Cast / input events) the canvas shows.
+    const graph = hydrateSerializedGraphForEditor({
+      nodes: slice.nodes,
+      edges: slice.edges,
+      members: Array.isArray(content.members)
+        ? (content.members as SerializedGraph["members"])
+        : undefined,
+    });
+    nodes = new Map(graph.nodes.map((node) => [node.id, node]));
+  } catch {
+    // Keep the authored data; a stale document still has its node types.
+  }
+  hydratedSlices.set(slice.nodes, nodes);
+  return nodes;
+}
+
 function graphNodeTitle(
   content: Record<string, unknown>,
   nodeId: string,
@@ -148,21 +176,10 @@ function graphNodeTitle(
     if (!node) continue;
     let data = record(node.data) ?? {};
     let type = typeof node.type === "string" ? node.type : "";
-    try {
-      // Hydration supplies catalog titles (Call / Cast / input events) the canvas shows.
-      const hydrated = hydrateSerializedGraphForEditor({
-        nodes: slice.nodes,
-        edges: slice.edges,
-        members: Array.isArray(content.members)
-          ? (content.members as SerializedGraph["members"])
-          : undefined,
-      }).nodes.find((candidate) => candidate.id === nodeId);
-      if (hydrated) {
-        data = hydrated.data;
-        type = hydrated.type;
-      }
-    } catch {
-      // Keep the authored data; a stale document still has its node type.
+    const hydrated = hydratedNodes(content, slice)?.get(nodeId);
+    if (hydrated) {
+      data = hydrated.data;
+      type = hydrated.type;
     }
     const nodeType = typeof data.__nodeType === "string" ? data.__nodeType : type;
     if (!nodeType) return null;

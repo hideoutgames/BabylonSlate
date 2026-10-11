@@ -128,9 +128,9 @@ function SessionReportGroupSection({
       </Button>
       {expanded ? (
         <ul id={listId} className="flex flex-col">
-          {group.entries.map((entry) => (
+          {group.entries.map((entry, index) => (
             <li
-              key={`${entry.code}-${entry.assetGuid}-${entry.nodeId}-${entry.btNodeId}`}
+              key={`${index}-${entry.code}-${entry.nodeId}-${entry.btNodeId}`}
               className="h-11"
             >
               <DiagnosticResultRow
