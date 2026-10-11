@@ -27,7 +27,6 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "pickFolder", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openFolder", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "importBookmark", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "readFileRange", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "readDocumentsRange", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "readFile", returnType: CAPPluginReturnPromise),
@@ -85,30 +84,6 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
             case .success(let name): call.resolve(["folder": ["id": id, "name": name]])
             case .failure(let error): self.reject(call, error: error)
             }
-        }
-    }
-
-    @objc func importBookmark(_ call: CAPPluginCall) {
-        guard let bookmark = call.getString("bookmark"), !bookmark.isEmpty,
-              let data = Data(base64Encoded: bookmark) else {
-            call.reject("bookmark is required", "NOT_FOUND")
-            return
-        }
-        do {
-            var isStale = false
-            let url = try URL(resolvingBookmarkData: data,
-                              options: [],
-                              relativeTo: nil,
-                              bookmarkDataIsStale: &isStale)
-            let accessing = url.startAccessingSecurityScopedResource()
-            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-            guard let folder = storeFolder(url: url, name: call.getString("name"), renewing: isStale) else {
-                call.reject("Bookmark is stale", "STALE")
-                return
-            }
-            call.resolve(["folder": ["id": folder.id, "name": folder.name]])
-        } catch {
-            call.reject("Invalid bookmark", "STALE", error)
         }
     }
 
@@ -409,7 +384,7 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    private func storeFolder(url: URL, name: String?, renewing: Bool) -> (id: String, name: String)? {
+    private func storeFolder(url: URL) -> (id: String, name: String)? {
         let accessing = url.startAccessingSecurityScopedResource()
         guard accessing else { return nil }
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
@@ -417,16 +392,11 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
         do {
             let values = try url.resourceValues(forKeys: [.isDirectoryKey])
             guard values.isDirectory == true else { return nil }
-            if renewing {
-                _ = try url.bookmarkData(options: [],
-                                         includingResourceValuesForKeys: nil,
-                                         relativeTo: nil)
-            }
             let data = try url.bookmarkData(options: [],
                                             includingResourceValuesForKeys: nil,
                                             relativeTo: nil)
             let id = UUID().uuidString
-            let folderName = name ?? url.lastPathComponent
+            let folderName = url.lastPathComponent
             UserDefaults.standard.set(data, forKey: bookmarkKey(id))
             UserDefaults.standard.set(folderName, forKey: nameKey(id))
             return (id, folderName)
@@ -698,7 +668,7 @@ extension BabylonSlateScopedStoragePlugin: UIDocumentPickerDelegate {
         }
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
-            guard let folder = self.storeFolder(url: url, name: nil, renewing: false) else {
+            guard let folder = self.storeFolder(url: url) else {
                 DispatchQueue.main.async {
                     call.reject("Could not create folder bookmark", "UNREACHABLE")
                 }
