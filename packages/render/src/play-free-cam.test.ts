@@ -274,7 +274,7 @@ describe("attachPlayFreeCamInput", () => {
     const camera = scene.activeCamera as UniversalCamera;
     for (const delta of [1, 1, 1, -1, -1, -1, -1, -1, -1]) {
       freeCam.look(0.3, delta);
-      camera.computeWorldMatrix(true);
+      camera.computeWorldMatrix();
       expect(camera.getDirection(Vector3.Up()).y).toBeGreaterThan(0);
     }
     freeCam.dispose();
