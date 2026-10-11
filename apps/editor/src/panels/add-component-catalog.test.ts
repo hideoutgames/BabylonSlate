@@ -425,4 +425,11 @@ describe("physicsWorldFromOpenDocuments", () => {
       ]),
     ).toBe("2d");
   });
+
+  it("reads an open Scene before a Scene Layer and uses the layer only alone", () => {
+    const layer = { ref: { kind: "scene-layer" }, content: { settings: {} } };
+    const scene3d = { ref: { kind: "scene" }, content: { settings: { physicsWorld: "3d" } } };
+    expect(physicsWorldFromOpenDocuments([layer, scene3d])).toBe("3d");
+    expect(physicsWorldFromOpenDocuments([layer])).toBe("2d");
+  });
 });
