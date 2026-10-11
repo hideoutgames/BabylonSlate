@@ -37,6 +37,14 @@ describe("FlagsField", () => {
     expect(onChange).toHaveBeenCalledWith(5);
   });
 
+  it("keeps an earlier toggle when a second one lands before the host re-renders", () => {
+    const onChange = vi.fn();
+    render(<FlagsField value={0} bitCount={3} onChange={onChange} data-testid="mask" />);
+    fireEvent.click(screen.getByTestId("mask-bit-0"));
+    fireEvent.click(screen.getByTestId("mask-bit-2"));
+    expect(onChange.mock.calls).toEqual([[1], [5]]);
+  });
+
   it("keeps bit 31 as an unsigned mask and shows at most 32 bits", () => {
     expect(setFlagBit(0, 31, true)).toBe(2 ** 31);
     expect(setFlagBit(0xffffffff, 0, false)).toBe(0xfffffffe);

@@ -342,8 +342,21 @@ export function AtlasTileGrid({
           );
         })
         .map((tile) => tile.id);
-      selection.ids = ids;
-      setSelectionPreview({ ids, x, y, width: right - x, height: bottom - y });
+      // Keep the same array while the covered tiles stay the same, so moving
+      // inside them redraws the rectangle without rebuilding every tile.
+      const previous = selection.ids;
+      const unchanged =
+        previous?.length === ids.length &&
+        ids.every((id, index) => previous[index] === id);
+      const nextIds = unchanged ? previous : ids;
+      selection.ids = nextIds;
+      setSelectionPreview({
+        ids: nextIds,
+        x,
+        y,
+        width: right - x,
+        height: bottom - y,
+      });
       return;
     }
     const drag = panDragRef.current;

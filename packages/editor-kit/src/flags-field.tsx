@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from "react";
 import { Toggle } from "@babylonslate/ui/components/toggle";
 
 export const DEFAULT_FLAG_BIT_COUNT = 32;
@@ -43,6 +44,12 @@ export function FlagsField({
   id,
   "data-testid": testId,
 }: FlagsFieldProps) {
+  // Bits toggled before the host re-renders build on the last mask sent,
+  // not the rendered one, so a second quick toggle keeps the first.
+  const latest = useRef(value);
+  useLayoutEffect(() => {
+    latest.current = value;
+  });
   const bits = Array.from(
     { length: Math.max(0, Math.min(bitCount, MAX_FLAG_BIT_COUNT)) },
     (_, bit) => bit,
@@ -66,7 +73,10 @@ export function FlagsField({
             disabled={disabled}
             aria-label={label}
             aria-pressed={pressed}
-            onPressedChange={(next) => onChange(setFlagBit(value, bit, next))}
+            onPressedChange={(next) => {
+              latest.current = setFlagBit(latest.current, bit, next);
+              onChange(latest.current);
+            }}
             data-testid={testId ? `${testId}-bit-${bit}` : undefined}
           >
             {label}
