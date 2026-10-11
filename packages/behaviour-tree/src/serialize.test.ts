@@ -130,6 +130,17 @@ describe("behaviour tree serialize", () => {
     ).toEqual(["root", "sequence", "task"]);
   });
 
+  it("marks a Parallel branch that yielded off the stack as running", () => {
+    const graph = behaviourTreeToSerialized(createDefaultBehaviourTree(), {
+      lastResults: { sequence: "running", task: "running" },
+      btNodeId: null,
+      stack: [{ nodeId: "root", childIndex: 1, opened: true }],
+    });
+    expect(
+      graph.nodes.filter((entry) => entry.data.running === true).map((entry) => entry.id),
+    ).toEqual(["root", "sequence", "task"]);
+  });
+
   it("lays out the root above its children", () => {
     const tree = createDefaultBehaviourTree();
     const positions = layoutBehaviourTree(tree);

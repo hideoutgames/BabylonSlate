@@ -141,12 +141,45 @@ function tickTask(
   }
 }
 
-function parentOf(nodes: Map<string, BtNode>): Map<string, string> {
-  const parent = new Map<string, string>();
-  for (const node of nodes.values()) {
-    for (const childId of node.children) parent.set(childId, node.id);
+/**
+ * The tree an evaluation walks: the nodes reachable from the root, each under
+ * the first parent a depth-first walk in child order reaches. A later
+ * reference to a placed node (a second parent, a repeat, or a cycle back to an
+ * ancestor or the root) is dropped, so every node has one parent and one
+ * `lastResults` entry, and parent walks end at the root. A missing child id is
+ * kept and fails like before. `validateBehaviourTree` reports both shapes.
+ */
+function evaluationTree(tree: BehaviourTreeDocument): {
+  nodes: Map<string, BtNode>;
+  parents: Map<string, string>;
+} {
+  const source = new Map(tree.nodes.map((node) => [node.id, node]));
+  const nodes = new Map<string, BtNode>();
+  const parents = new Map<string, string>();
+  if (!source.has(tree.rootId)) return { nodes, parents };
+  const kept = new Map<string, string[]>();
+  const pending: Array<{ id: string; parentId: string | null }> = [
+    { id: tree.rootId, parentId: null },
+  ];
+  while (pending.length > 0) {
+    const { id, parentId } = pending.pop()!;
+    const node = source.get(id);
+    if (parentId !== null) {
+      if (node && kept.has(id)) continue;
+      kept.get(parentId)!.push(id);
+      if (!node) continue;
+      parents.set(id, parentId);
+    }
+    kept.set(id, []);
+    for (let index = node!.children.length - 1; index >= 0; index -= 1) {
+      pending.push({ id: node!.children[index]!, parentId: id });
+    }
   }
-  return parent;
+  for (const [id, children] of kept) {
+    const node = source.get(id)!;
+    nodes.set(id, children.length === node.children.length ? node : { ...node, children });
+  }
+  return { nodes, parents };
 }
 
 function subtreeIds(nodes: Map<string, BtNode>, rootId: string): Set<string> {
@@ -368,25 +401,36 @@ function applyTimeLimits(
   }
 }
 
+/**
+ * Counts one finished iteration on every Loop decorator of the node. The node
+ * restarts until any finite Loop reaches its count, so several Loops stop at
+ * the smallest one; `numLoops` 0 (or missing) is infinite.
+ */
 function consumeLoop(
   node: BtNode,
   nodeMemory: Record<string, Record<string, unknown>>,
-): "restart" | "done" {
-  const decorator = node.decorators.find(
-    (row) => builtinClassId(row.classId) === "bt.decorator.loop",
-  );
-  if (!decorator) return "done";
-  const numLoops =
-    typeof decorator.properties.numLoops === "number" &&
-    Number.isFinite(decorator.properties.numLoops)
-      ? decorator.properties.numLoops
-      : 0;
-  const memory = (nodeMemory[node.id] ??= {});
-  const key = loopKey(decorator.id);
-  const count = (typeof memory[key] === "number" ? memory[key] : 0) + 1;
-  memory[key] = count;
-  if (numLoops <= 0) return "restart";
-  return count < numLoops ? "restart" : "done";
+): "restart" | "infinite" | "done" {
+  let looped = false;
+  let finite = false;
+  let done = false;
+  for (const decorator of node.decorators) {
+    if (builtinClassId(decorator.classId) !== "bt.decorator.loop") continue;
+    looped = true;
+    const numLoops =
+      typeof decorator.properties.numLoops === "number" &&
+      Number.isFinite(decorator.properties.numLoops)
+        ? decorator.properties.numLoops
+        : 0;
+    const memory = (nodeMemory[node.id] ??= {});
+    const key = loopKey(decorator.id);
+    const count = (typeof memory[key] === "number" ? memory[key] : 0) + 1;
+    memory[key] = count;
+    if (numLoops <= 0) continue;
+    finite = true;
+    if (count >= numLoops) done = true;
+  }
+  if (!looped || done) return "done";
+  return finite ? "restart" : "infinite";
 }
 
 function cooldownOnlyMemory(
@@ -445,20 +489,6 @@ function resetSubtreeForLoop(
       key.startsWith("__loop:"),
     );
   }
-}
-
-function restartLoop(
-  node: BtNode,
-  frame: BtStackFrame,
-  nodes: Map<string, BtNode>,
-  lastResults: Record<string, BtResult>,
-  nodeMemory: Record<string, Record<string, unknown>>,
-): boolean {
-  if (consumeLoop(node, nodeMemory) !== "restart") return false;
-  resetSubtreeForLoop(nodes, lastResults, nodeMemory, node.id);
-  frame.opened = false;
-  frame.childIndex = 0;
-  return true;
 }
 
 function observerKey(decoratorId: string): string {
@@ -746,7 +776,7 @@ export function evaluateBehaviourTree(
   dtSeconds: number,
   options?: EvaluateBehaviourTreeOptions,
 ): BtEvalState {
-  const nodes = new Map(tree.nodes.map((node) => [node.id, node]));
+  const { nodes, parents } = evaluationTree(tree);
   const blackboard: BlackboardValues =
     options?.blackboard !== undefined
       ? { ...options.blackboard }
@@ -762,7 +792,9 @@ export function evaluateBehaviourTree(
     stack.push({ nodeId: tree.rootId, childIndex: 0, opened: false });
   }
 
-  const parents = parentOf(nodes);
+  // Cooldowns count down before anything this tick can start one, so every
+  // cooldown (finish, abort or TimeLimit) loses its first dt on the next tick.
+  tickCooldowns(nodes, nodeMemory, dtSeconds);
   applyAborts(
     nodes,
     parents,
@@ -773,7 +805,6 @@ export function evaluateBehaviourTree(
     options?.decoratorHost,
     options?.host,
   );
-  tickCooldowns(nodes, nodeMemory, dtSeconds);
   applyTimeLimits(
     nodes,
     stack,
@@ -797,21 +828,39 @@ export function evaluateBehaviourTree(
   // A Loop restart re-enters its subtree within this pass. The restarted
   // subtree runs with dt = 0 so latent work (Wait, MoveTo, custom tasks, time
   // limits) yields until the next tick instead of consuming the same dt again;
-  // instant tasks still loop within the tick.
+  // instant tasks still loop within the tick. An infinite Loop restarts at
+  // most once per tick: when its subtree finishes again in the same pass, the
+  // node stays running and the next iteration starts on the next tick, so
+  // instant tasks never spin until the step guard.
   const restarted = new Set<string>();
+  let yielded = false;
   const stepDt = (): number =>
     restarted.size > 0 && stack.some((entry) => restarted.has(entry.nodeId))
       ? 0
       : dtSeconds;
   const loop = (node: BtNode, frame: BtStackFrame): boolean => {
-    if (!restartLoop(node, frame, nodes, lastResults, nodeMemory)) return false;
+    const mode = consumeLoop(node, nodeMemory);
+    if (mode === "done") return false;
+    const again = mode === "infinite" && restarted.has(node.id);
+    resetSubtreeForLoop(nodes, lastResults, nodeMemory, node.id);
     restarted.add(node.id);
+    frame.childIndex = 0;
+    frame.opened = again;
+    if (again) {
+      lastResults[node.id] = "running";
+      yielded = true;
+    }
     return true;
   };
 
   let status: BtResult = "running";
   let guard = 0;
   while (stack.length > 0 && guard < 10_000) {
+    if (yielded) {
+      yielded = false;
+      if (yieldToParallel(stack, nodes, lastResults)) continue;
+      break;
+    }
     guard += 1;
     const frame = stack[stack.length - 1]!;
     const node = nodes.get(frame.nodeId);

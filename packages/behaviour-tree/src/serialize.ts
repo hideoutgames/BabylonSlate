@@ -242,8 +242,12 @@ export function behaviourTreeToSerialized(
   overlay?: BtGraphOverlay,
 ): SerializedGraph {
   const positions = layoutBehaviourTree(doc);
+  // A Parallel branch that yielded is off the stack but still `running`.
   const running = new Set(overlay?.stack.map((frame) => frame.nodeId) ?? []);
   if (overlay?.btNodeId) running.add(overlay.btNodeId);
+  for (const [id, result] of Object.entries(overlay?.lastResults ?? {})) {
+    if (result === "running") running.add(id);
+  }
   return {
     nodes: doc.nodes.map((node) => ({
       id: node.id,
