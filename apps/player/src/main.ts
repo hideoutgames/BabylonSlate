@@ -3,6 +3,7 @@ import {
   getHostMemoryStats,
   type HostMemoryStats,
 } from "@babylonslate/vfs";
+import { audioStats, particleStats } from "@babylonslate/render";
 import { loadGameFromFiles, loadGameFromHttp } from "./artifact";
 import { startPlayerWithBackend } from "./player-backend";
 import type { PlayerTestHandle } from "./boot";
@@ -244,6 +245,8 @@ async function launchLoaded(
       executeConsoleCommand: (line) => session.executeConsoleCommand(line),
       stop: () => session.stop(),
     };
+    // Test-mode hatches, as in the editor; release players do not install them.
+    Object.assign(window, { __babylonslateAudioStats: audioStats, __babylonslateParticleStats: particleStats });
   }
   if (window.parent !== window) {
     window.parent.postMessage(
