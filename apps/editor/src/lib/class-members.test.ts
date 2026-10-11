@@ -1010,6 +1010,21 @@ describe("ensureEventNodeOnGraph Call Parent", () => {
     ).toHaveLength(once);
   });
 
+  it("wires a catalog event's arguments to Call Parent by pin id", () => {
+    const graph = ensureEventNodeOnGraph(emptyGraph(), "flow.event.hit", {
+      parentClassId: "Actor",
+      idFactory: () => "evt-hit",
+      pins: [{ name: "Hit Result", typeId: "struct", direction: "out" }],
+    });
+    expect(graph.edges).toContainEqual(expect.objectContaining({
+      source: "evt-hit",
+      target: "call-parent-flow-event-hit",
+      sourceHandle: "hitResult",
+      targetHandle: "hitResult",
+    }));
+    expect(graph.edges.some((edge) => edge.sourceHandle === "Hit Result")).toBe(false);
+  });
+
   it("does not rewire when the user already moved Call Parent later", () => {
     let graph = ensureEventNodeOnGraph(emptyGraph(), "flow.event.beginPlay", {
       parentClassId: "Actor",

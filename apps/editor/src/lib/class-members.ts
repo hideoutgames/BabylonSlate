@@ -18,7 +18,7 @@ import {
   SCENE_SUBSYSTEM_CLASS_ID,
   engineNativeEventsFor,
 } from "@babylonslate/object-model";
-import { SUBSYSTEM_GET_NODE_ID } from "@babylonslate/scripting-nodes";
+import { flowNodes, SUBSYSTEM_GET_NODE_ID } from "@babylonslate/scripting-nodes";
 import { defaultValueForMember } from "@babylonslate/scripting";
 import { nextCopyName } from "@babylonslate/assets";
 
@@ -944,25 +944,49 @@ export function ensureCallParentForEvent(
       targetHandle: "execIn",
     });
   }
-  for (const pin of pins) {
-    if (!pin.name) continue;
+  for (const pinId of callParentArgPinIds(next, options.eventNodeId, callNodeId)) {
     const hasDataOut = edges.some(
       (edge) =>
-        edge.source === options.eventNodeId && edge.sourceHandle === pin.name,
+        edge.source === options.eventNodeId && edge.sourceHandle === pinId,
     );
     const hasDataIn = edges.some(
-      (edge) => edge.target === callNodeId && edge.targetHandle === pin.name,
+      (edge) => edge.target === callNodeId && edge.targetHandle === pinId,
     );
     if (hasDataOut || hasDataIn) continue;
     edges.push({
-      id: `e:${options.eventNodeId}:${pin.name}:${callNodeId}:${pin.name}`,
+      id: `e:${options.eventNodeId}:${pinId}:${callNodeId}:${pinId}`,
       source: options.eventNodeId,
       target: callNodeId,
-      sourceHandle: pin.name,
-      targetHandle: pin.name,
+      sourceHandle: pinId,
+      targetHandle: pinId,
     });
   }
   return { ...next, edges };
+}
+
+/**
+ * Pin ids an event output and its Call Parent argument share: a catalog
+ * event's own output ids, or a custom event's signature pin ids. Only ids the
+ * event node also outputs are wired.
+ */
+function callParentArgPinIds(
+  graph: SerializedGraph,
+  eventNodeId: string,
+  callNodeId: string,
+): string[] {
+  const dataPinIds = (
+    node: SerializedGraph["nodes"][number] | undefined,
+    direction: "in" | "out",
+  ): string[] | null => {
+    const def = node && flowNodes.find((entry) => entry.id === node.type);
+    if (!def) return null;
+    return def.pins(node.data)
+      .filter((pin) => pin.kind === "data" && pin.direction === direction)
+      .map((pin) => pin.id);
+  };
+  const callIds = dataPinIds(graph.nodes.find((node) => node.id === callNodeId), "in") ?? [];
+  const eventIds = dataPinIds(graph.nodes.find((node) => node.id === eventNodeId), "out");
+  return eventIds ? callIds.filter((id) => eventIds.includes(id)) : callIds;
 }
 
 /** Inherited custom events from parent graphs (ancestor-first). */
