@@ -859,7 +859,7 @@ describe("validateSerializedGraph", () => {
             typeId: "debug.executeConsoleCommand",
             position: { x: 0, y: 0 },
             pins: [],
-            properties: { command: "showfps" },
+            properties: { "default:command": "showfps" },
           },
         ],
         edges: [],
