@@ -107,16 +107,16 @@ describe("collectAndExportGame", () => {
     const indexed: IndexedAsset[] = [
       { rootId: "project", path: "assets/Main.scene.babasset", header: {
         guid: "scene", type: "Scene", name: "Main", engineVersion: "0.0.0", version: SCENE_SCHEMA_VERSION, mode: "thin",
-        payload: scene as unknown as Record<string, unknown>, dependencies: [], chunks: [],
+        payload: scene as unknown as Record<string, unknown>, dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, chunks: [],
       } },
       // Audio packs from its header settings when its document cannot load.
       { rootId: "project", path: "assets/Clip.audio.babasset", header: {
         guid: "clip", type: "Audio", name: "Clip", engineVersion: "0.0.0", version: 0, mode: "thin",
-        payload: { clips: [] }, dependencies: [], chunks: [],
+        payload: { clips: [] }, dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, chunks: [],
       } },
     ];
     const exportReaching = async (dependencies: string[]) => {
-      indexed[0]!.header.dependencies = dependencies;
+      indexed[0]!.header.dependencies = indexed[0]!.header.requiredDependencies = dependencies;
       const loaded = await loadExportDocuments({
         assets: indexed,
         loadDocument: async (_kind, path) => indexed.find(entry => entry.path === path)?.header.payload ?? null,
