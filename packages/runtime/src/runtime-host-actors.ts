@@ -101,8 +101,9 @@ export function createActorHostBindings(deps: ActorHostDeps): Pick<ScriptHostSer
     attachToBone: (actor, target, boneName) => {
       const slotId = deps.slot(actor);
       const targetSlotId = target ? deps.slot(target) : null;
-      if (slotId === undefined || targetSlotId === undefined) return;
+      if (slotId === undefined || targetSlotId === undefined) return false;
       deps.emit({ type: "attachToBone", slotId, targetSlotId, boneName });
+      return true;
     },
     findActor: (actorId) => {
       const actor = deps.world().findActor(actorId);

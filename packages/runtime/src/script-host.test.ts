@@ -2395,14 +2395,14 @@ describe("script host runs compiled graphs", () => {
     runtime.stop();
   });
 
-  it("requests session output settings when Begin Play runs render.setResolution", async () => {
+  it("requests session output settings when Begin Play runs Set Render Resolution", async () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "event-graph",
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "res", "render.setResolution", {
+        node(registry, "res", "scalability.setResolution", {
           width: 800,
           height: 600,
         }),

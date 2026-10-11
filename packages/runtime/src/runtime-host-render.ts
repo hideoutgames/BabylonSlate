@@ -109,13 +109,10 @@ interface ScalabilityHostDeps {
   requestScalability(request: ScalabilityRequest): ScalabilityResult;
 }
 
-/** Script scalability calls; Set Render Resolution is a custom-resolution patch. */
+/** Script scalability calls (the Scalability nodes, Set Render Resolution included). */
 export function createScalabilityHostBindings(deps: ScalabilityHostDeps): Pick<ScriptHostServices,
-  "setRenderResolution" | "getScalability" | "requestScalability"> {
+  "getScalability" | "requestScalability"> {
   return {
-    setRenderResolution: (width, height) => {
-      deps.requestScalability({ kind: "patch", render: { width, height, customResolution: true, blackBars: true } });
-    },
     getScalability: () => deps.getScalability(),
     requestScalability: (request) => deps.requestScalability(request),
   };

@@ -174,7 +174,8 @@ export interface ScriptHostServices {
   animGraphControl?(target: unknown): AnimGraphControl | null;
   spawnActor?(classId: string, transform?: unknown, owner?: BObject | null): Actor | null;
   spawnActorAsync?(classId: string, transform?: unknown, owner?: BObject | null): Promise<Actor | null>;
-  attachToBone?(actor: Actor, target: Actor | null, boneName: string): void;
+  /** Emit a bone attachment (or detach with a null target); false when the renderer cannot address either actor. */
+  attachToBone?(actor: Actor, target: Actor | null, boneName: string): boolean;
   print(
     message: string,
     key: string,
@@ -263,7 +264,6 @@ export interface ScriptHostServices {
   ): void;
   setChannelVolume?(channelGuid: string, volume: number): void;
   setGlobalVolume?(volume: number): void;
-  setRenderResolution?(width: number, height: number): void;
   getScalability?(): ScalabilitySnapshot | null;
   requestScalability?(request: ScalabilityRequest): ScalabilityResult;
   setMaterialParameter?(
@@ -634,7 +634,6 @@ export interface ScriptContext {
     layer: BObject | string | null | undefined,
     materialGuid: string,
   ): void;
-  setRenderResolution(width: number, height: number): void;
   getScalability(): ScalabilitySnapshot | null;
   requestScalability(request: ScalabilityRequest): ScalabilityResult;
   setMaterialFloatParameter(
@@ -1701,10 +1700,12 @@ export class ScriptHost {
         if (!child || child.destroyed || !parent || parent.destroyed ||
           typeof boneName !== "string" || !boneName.trim()) return;
         if (refuseParentCycle(services, child, parent, "Attach To Bone")) return;
+        // Without a renderer attachment the child would sit at the parent's
+        // origin, so a refused attachment keeps its parent link and pose.
+        if (!services.attachToBone?.(child, parent, boneName)) return;
         child.setVariable("parentId", parent.guid);
         child.transform.position = { x: 0, y: 0, z: 0 };
         child.transform.rotation = { x: 0, y: 0, z: 0, w: 1 };
-        services.attachToBone?.(child, parent, boneName);
       },
       getParent: (actor) => readActorLink(services, actor, "parentId"),
       setOwner: (actor, owner) => {
@@ -2144,9 +2145,6 @@ export class ScriptHost {
           );
         }
       },
-      setRenderResolution: (width, height) => {
-        services.setRenderResolution?.(Number(width), Number(height));
-      },
       getScalability: () => services.getScalability?.() ?? null,
       requestScalability: (request) => services.requestScalability?.(request) ?? {
         revision: 0, status: "unsupported", message: "Scalability requires an active Play or player session.",
@@ -2378,10 +2376,7 @@ export class ScriptHost {
     if (!this.canInvokeOwner(component)) return {};
     if (name === "playAudio") {
       const owner = component.owner;
-      const assetGuid =
-        (typeof component.getVariable("audioAssetGuid") === "string"
-          ? component.getVariable("audioAssetGuid")
-          : null) ?? component.assetGuid;
+      const assetGuid = component.getVariable("audioAssetGuid");
       if (typeof assetGuid === "string" && assetGuid && owner) {
         this.services.playSound?.(assetGuid, Number(component.getVariable("volume") ?? 1), {
           emitterActorGuid: owner.guid,
