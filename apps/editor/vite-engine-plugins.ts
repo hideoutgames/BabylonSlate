@@ -163,7 +163,18 @@ export function enginePluginsVitePlugin(options: {
       await packAll();
     },
     configureServer(server) {
-      server.watcher.add(options.sourceDir);
+      const sourceRoot = path.resolve(options.sourceDir);
+      server.watcher.add(sourceRoot);
+      // Rebuild the catalog and payload objects when an engine plugin changes.
+      server.watcher.on("all", (_event, file) => {
+        const changed = path.resolve(file);
+        if (changed !== sourceRoot && !changed.startsWith(`${sourceRoot}${path.sep}`)) return;
+        packAll().catch((error: unknown) => {
+          server.config.logger.error(
+            `Engine plugin catalog rebuild failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
+      });
     },
   };
 }
