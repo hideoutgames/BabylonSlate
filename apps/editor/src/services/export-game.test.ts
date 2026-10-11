@@ -38,6 +38,8 @@ function asset(
     dependencies: [],
     rootId: "project",
     parentClass: null,
+    // A Class's compile id is its file stem; fixtures name the file after the Class.
+    ...(partial.type === "Class" ? { path: `assets/${partial.name}.class.babasset` } : {}),
     ...partial,
   };
 }

@@ -23,6 +23,8 @@ function asset(
     dependencies: [],
     rootId: "project",
     parentClass: null,
+    // A Class's compile id is its file stem; fixtures name the file after the Class.
+    ...(partial.type === "Class" ? { path: `assets/${partial.name}.class.babasset` } : {}),
     ...partial,
   };
 }
@@ -85,6 +87,17 @@ describe("collectExportReachability", () => {
       assets: [asset({ guid: "scene", name: "Scene", type: "Scene", dependencies: ["legacy"] }), asset({ guid: "legacy", name: "Old Weapon", type })],
       sceneByGuid: () => createDefaultScene(), graphByGuid: () => null });
     expect(result).toMatchObject({ ok: false, error: expect.stringContaining("Historical") });
+  });
+  it("resolves a class reference by the compile id of the Class file, never by a display name", () => {
+    const scene = { ...createDefaultScene(), actors: [createActor("hero", "Hero", { classId: "main" })] };
+    const result = collectExportReachability({ startupSceneGuid: "scene", pluginEnabledGuids: new Set(), parentOf: () => "Actor",
+      assets: [
+        asset({ guid: "scene", name: "Start", type: "Scene" }),
+        asset({ guid: "main-class", name: "main.class", type: "Class", path: "assets/main.class.babasset" }),
+        asset({ guid: "named-main", name: "main", type: "Class", path: "assets/Other.class.babasset" }),
+        asset({ guid: "main-scene", name: "main", type: "Scene" }),
+      ], sceneByGuid: (guid) => guid === "scene" ? scene : null, graphByGuid: () => null });
+    expect(result).toMatchObject({ ok: true, value: { guids: ["main-class", "scene"] } });
   });
   it("exports nested definition default assets when entries and nested snapshots are absent", () => {
     const payloads: Record<string, unknown> = {
@@ -359,7 +372,6 @@ describe("collectExportReachability", () => {
       ...createDefaultScene(),
       settings: {
         ...createDefaultScene().settings,
-        gameInstanceClass: "MyGame",
         environmentTextureGuid: "ibl-1",
       },
       actors: [
@@ -381,6 +393,7 @@ describe("collectExportReachability", () => {
     };
     const result = collectExportReachability({
       startupSceneGuid: "scene-1",
+      gameInstanceClass: "MyGame",
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
         asset({
@@ -776,50 +789,6 @@ describe("collectExportReachability", () => {
     expect(result.value.guids).not.toContain("helper-1");
     expect(result.value.guids).not.toContain("src-tex");
     expect(result.value.guids).not.toContain("unused-tex");
-  });
-
-  it("includes a Scene referenced by Change Scene display name", () => {
-    const graph: SerializedGraph = {
-      nodes: [
-        {
-          id: "n1",
-          type: "scene.change",
-          position: { x: 0, y: 0 },
-          data: { properties: { scene: "Level 2" } },
-        },
-      ],
-      edges: [],
-    };
-    const result = collectExportReachability({
-      startupSceneGuid: "scene-1",
-      assets: [
-        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
-        asset({ guid: "scene-2", type: "Scene", name: "Level 2" }),
-        asset({
-          guid: "class-pawn",
-          type: "Class",
-          name: "Pawn",
-          parentClass: "Actor",
-        }),
-      ],
-      pluginEnabledGuids: new Set(),
-      parentOf: () => "Actor",
-      sceneByGuid: (guid) =>
-        guid === "scene-1"
-          ? {
-              ...createDefaultScene(),
-              actors: [createActor("a", "Pawn", { classId: "Pawn" })],
-            }
-          : guid === "scene-2"
-            ? { ...createDefaultScene(), name: "Level 2", actors: [] }
-            : null,
-      graphByGuid: (guid) => (guid === "class-pawn" ? graph : null),
-    });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.guids).toEqual(
-      expect.arrayContaining(["scene-1", "scene-2", "class-pawn"]),
-    );
   });
 
   it("packs the project grading LUT although no scene references it", () => {

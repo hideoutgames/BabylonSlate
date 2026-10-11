@@ -29,7 +29,7 @@ export type ExportIndexedAsset = {
 export type ExportClosureInput = {
   startupSceneGuid: string | null;
   saveGameDefinitionGuid?: string | null;
-  /** Project Game Instance class id; packed even when scene settings omit it. */
+  /** Project Game Instance class id or Class asset guid; a startup root. */
   gameInstanceClass?: string | null;
   /** Project AudioMixer guid; packed even when no scene actor references it. */
   audioMixerGuid?: string | null;
