@@ -440,10 +440,13 @@ it("remaps every stored reference to a colliding asset, keeping values declared 
     { id: "mesh", classId: "MeshComponent", properties: { assetGuid: "tex", materialSlotOverrides: { Body: "mat" } } },
     { id: "label", classId: "2DRichTextComponent", properties: { text: "Coin [img=tex size=14] x3 [IMG=other]" } },
   ] }] };
-  const player = { members: [
-    { kind: "variable", name: "Skin", typeId: "asset", typeClassId: "Texture", defaultValue: "tex" },
-    { kind: "variable", name: "Caption", typeId: "string", defaultValue: "tex" },
-  ] };
+  const player = {
+    members: [
+      { kind: "variable", name: "Skin", typeId: "asset", typeClassId: "Texture", defaultValue: "tex" },
+      { kind: "variable", name: "Caption", typeId: "string", defaultValue: "tex" },
+    ],
+    functionGraphs: { fn: { nodes: [{ data: { dataSchema: [{ name: "Caption", typeId: "string" }], "default:values": { Caption: "tex" } } }] } },
+  };
   const results = remapImportResultGuids([
     asset("Texture", "tex", {}),
     asset("Material", "mat", {}),
@@ -472,5 +475,6 @@ it("remaps every stored reference to a colliding asset, keeping values declared 
   expect(document("scene").actors[0].components[0].properties).toEqual({ assetGuid: guid("tex"), materialSlotOverrides: { Body: guid("mat") } });
   expect(document("scene").actors[0].components[1].properties.text).toBe(`Coin [img=${guid("tex")} size=14] x3 [IMG=other]`);
   expect(document("player").members.map((member: { defaultValue: unknown }) => member.defaultValue)).toEqual([guid("tex"), "tex"]);
+  expect(document("player").functionGraphs.fn.nodes[0].data["default:values"]).toEqual({ Caption: "tex" });
   expect(payload("player")).toEqual(document("player"));
 });

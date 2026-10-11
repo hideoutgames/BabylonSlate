@@ -90,11 +90,13 @@ function remapAssetReferences(
     // Data nodes and payloads say which of their values are references.
     if (isDataGraphNodePayload(row)) return mapDataGraphReferences(row, map, definitionFields);
     if (isDataAssetPayload(row)) return mapDataAssetReferences(row, map, definitionFields);
-    const literal = Array.isArray(row.dataSchema) ? mapDataGraphLiteralReferences(row, map, definitionFields) : row;
+    // A Data literal's schema decides its references, whether or not any changed.
+    const schemaTyped = Array.isArray(row.dataSchema);
+    const literal = schemaTyped ? mapDataGraphLiteralReferences(row, map, definitionFields) : row;
     const declaresSlot = typeof row.typeId === "string" || typeof row.keyTypeId === "string";
     let next = row;
     for (const [key, child] of Object.entries(row)) {
-      const mapped = literal !== row && (key === "dataSchema" || key === "default:values") ? literal[key]
+      const mapped = schemaTyped && (key === "dataSchema" || key === "default:values") ? literal[key]
         : declaresSlot && isSlotValueKey(key) ? slotValue(row, child)
           : walk(child);
       if (mapped === child) continue;
