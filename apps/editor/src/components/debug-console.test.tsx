@@ -27,6 +27,35 @@ describe("DebugConsole", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false, expect.anything());
   });
 
+  it("draws a block caret that follows the typed text instead of key hints", () => {
+    render(
+      <DebugConsole
+        open
+        onOpenChange={() => {}}
+        commands={createCommandRegistry().list()}
+        onExecute={() => ({ success: true, output: "" })}
+      />,
+    );
+    const input = screen.getByTestId("debug-console-input") as HTMLInputElement;
+    expect(input.getAttribute("placeholder")).toBeNull();
+    expect(screen.queryByTestId("debug-console-caret")).toBeNull();
+    input.focus();
+    fireEvent.change(input, { target: { value: "fps" } });
+    const before = () => screen.getByTestId("debug-console-caret").previousSibling?.textContent;
+    expect(before()).toBe("fps");
+    input.setSelectionRange(1, 1);
+    fireEvent.select(input);
+    expect(before()).toBe("f");
+    // A selected range shows the native highlight, not the block.
+    input.setSelectionRange(0, 2);
+    fireEvent.select(input);
+    expect(screen.queryByTestId("debug-console-caret")).toBeNull();
+    input.setSelectionRange(3, 3);
+    fireEvent.select(input);
+    fireEvent.blur(input);
+    expect(screen.queryByTestId("debug-console-caret")).toBeNull();
+  });
+
   it("runs a command, shows SelectableText output, and suggests names", async () => {
     const onExecute = vi.fn().mockResolvedValue({
       success: true,
