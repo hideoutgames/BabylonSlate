@@ -167,7 +167,7 @@ All 100 numbered IDs have dispositions below. The implementation entries record 
 | Custom-event calls | Implementer: minimal Ping H12 then follow-on calls; preserve functions workaround as control. |
 | Input load and persistence | Implementer: add/rebind/delete/reload, Stop→Play, fresh and representative existing settings, both hosts; no Fire-only closure. |
 | Duplicate collider1/5 | Implementer: exact logical duplicate-vs-placement configuration, explicit and supported implicit shapes; stream680 never closes duplication. |
-| Runtime camera destruction / active-camera switching | Not exposed in stream660: read-only Inspector and no console commands. Product owner determines supported control surface; implementer tests any existing runtime API independently. No claim of original UI reproduction. |
+| Runtime camera destruction / active-camera switching | Not exposed in stream660. Current Play exposes it: the Inspector's **Use Camera** and **Destroy Actor** actions run the `possess` and `destroyactor` console commands on the selected live actor, while its property grids stay read-only. Implementer tests those commands and any other runtime API independently. No claim of original UI reproduction. |
 | Missing CODE-NOTES | Unavailable original; this audit is newly collected work. No fabricated file reconstruction. |
 
 ## Controls and corrected hypotheses
