@@ -29,15 +29,16 @@ describe("Preview diagnostics lifecycle", () => {
       quality: "Low", frameCap: 60, dynamicResolution: false, enabledDiagnostics: ["performance"], gpuTiming: "unavailable" });
     recorder.recordTick({ tickId: 14, elapsedMs: 0, scriptMs: 2, physicsMs: 1, publishMs: 0.1, otherMs: 0 });
     const result = recorder.stop()!;
-    const { frames, ticks, ...header } = result;
+    const { frames, ticks, gpu, ...header } = result;
     const server = createPreviewDiagnosticServer({ source: () => parent, origin: () => origin,
       send: (data) => window.dispatchEvent(new MessageEvent("message", { source: player, origin, data })) }, {
       async execute(operation) {
         events.push(operation);
         if (operation === "profile-start") await startBoundary;
         if (operation === "profile-stop") await server.publishProfile({
-          metadata: { ...header, frames: { columns: frames.columns, count: frames.count }, ticks: { columns: ticks.columns, count: ticks.count } },
-          frames: frames.chunks, ticks: ticks.chunks,
+          metadata: { ...header, frames: { columns: frames.columns, count: frames.count }, ticks: { columns: ticks.columns, count: ticks.count },
+            gpu: { columns: gpu.columns, count: gpu.count } },
+          frames: frames.chunks, ticks: ticks.chunks, gpu: gpu.chunks,
         });
         return { success: true };
       },

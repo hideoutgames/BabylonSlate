@@ -243,7 +243,7 @@ export function parsePerformanceProfile(value: unknown): PerformanceProfile | nu
   };
   const frames = parseStream(data.frames, PERFORMANCE_FRAME_COLUMNS);
   const ticks = frames && parseStream(data.ticks, PERFORMANCE_TICK_COLUMNS);
-  const gpu = ticks && (data.gpu === undefined ? { columns: PERFORMANCE_GPU_COLUMNS, count: 0, chunks: [] } : parseStream(data.gpu, PERFORMANCE_GPU_COLUMNS));
+  const gpu = ticks && parseStream(data.gpu, PERFORMANCE_GPU_COLUMNS);
   if (!frames || !ticks || !gpu || bytes > data.retainedBytes || (gpu.count > 0 && data.identity.gpuTiming !== "unpaired")) return null;
   return { kind: "babylonslate-performance", version: 1, identity: copyIdentity(data.identity),
     requestedDurationMs: data.requestedDurationMs, durationMs: data.durationMs,
