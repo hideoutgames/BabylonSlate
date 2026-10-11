@@ -133,6 +133,24 @@ describe("additive scene streaming", () => {
     } finally { runtime.stop(); }
   });
 
+  it("retires a stream whose despawn throws so its actor can load the scene again", async () => {
+    const { runtime, commands, world, left } = await setup();
+    try {
+      const first = runtime.loadSceneStream(left);
+      const firstReady = await realized(commands, "left");
+      acknowledge(runtime, firstReady);
+      await first;
+      vi.spyOn(world, "flushPending").mockImplementationOnce(() => { throw new Error("despawn failed"); });
+      await expect(runtime.unloadSceneStream(left)).rejects.toThrow("despawn failed");
+      expect(runtime.getSceneState(left)).toBe("Unloaded");
+      expect(world.getActors().filter((actor) => actor.classId === "ChildActor")).toHaveLength(0);
+      const second = runtime.loadSceneStream(left);
+      acknowledge(runtime, await realized(commands, "left", firstReady.streamLoadId));
+      await second;
+      expect(runtime.getSceneState(left)).toBe("Loaded");
+    } finally { runtime.stop(); }
+  });
+
   it("holds concurrent blocking loads through readiness without clearing manual pause", async () => {
     const { runtime, commands, world, left, right } = await setup();
     try {
