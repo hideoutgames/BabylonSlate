@@ -71,6 +71,8 @@ export function NavBakeProvider({ children }: { children: ReactNode }) {
   };
   const collectorRef = useRef<NavBakeCollector | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // One bake at a time: each owns the dialog, its abort controller and its write.
+  const bakeQueueRef = useRef<Promise<unknown>>(Promise.resolve());
   const [phase, setPhase] = useState<NavBakePhase | null>(null);
   const [cancellable, setCancellable] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -103,6 +105,7 @@ export function NavBakeProvider({ children }: { children: ReactNode }) {
         const parsed = parseNavMeshActorSettings(properties);
         const settings: NavMeshGenerateSettings = {
           ...parseNavMeshSettings(properties),
+          tiled: parsed.tiled,
           supportDynamicObstacles: parsed.supportDynamicObstacles,
         };
         const controller = new AbortController();
@@ -139,10 +142,15 @@ export function NavBakeProvider({ children }: { children: ReactNode }) {
             },
             generate: (input) => worker.generate(input),
             write: async (next) => {
+              // The chunk travels with the Scene body as it is now, including
+              // edits made while the worker generated.
+              const current = latestRef.current
+                .getOpenDocuments()
+                .find((entry) => entry.id === doc.id);
               await writeSceneNavmeshChunk(
-                doc.ref.path,
+                current?.ref.path ?? doc.ref.path,
                 next,
-                doc.content as Record<string, unknown>,
+                (current?.content ?? doc.content) as Record<string, unknown>,
               );
               setLastBytes(next);
             },
@@ -178,13 +186,16 @@ export function NavBakeProvider({ children }: { children: ReactNode }) {
           }
         } finally {
           worker.terminate();
-          abortRef.current = null;
+          if (abortRef.current === controller) abortRef.current = null;
           setCancellable(false);
           if (!failed) setPhase(null);
         }
       };
-      if (admittedWriter) return bake(admittedWriter);
-      return latestRef.current.withSceneWrite(bake);
+      const run = () =>
+        admittedWriter ? bake(admittedWriter) : latestRef.current.withSceneWrite(bake);
+      const queued = bakeQueueRef.current.then(run);
+      bakeQueueRef.current = queued.catch(() => undefined);
+      return queued;
     },
     [],
   );

@@ -1,5 +1,5 @@
 import type { NavBakeMeshPart } from "./geometry";
-import { worldToRecast } from "./remap";
+import { recastToWorld, worldToRecast } from "./remap";
 import type { NavObstacleKind, NavPoint } from "./types";
 
 export type SolidBlockerInput = {
@@ -187,6 +187,7 @@ function boxMesh(
   return { positions, indices };
 }
 
+/** Upright (elliptic) cylinder whose X/Z size are diameters, like the editor's unit cylinder scaled by the actor. */
 function cylinderMesh(
   pose: NavPoint,
   size: NavPoint,
@@ -195,7 +196,8 @@ function cylinderMesh(
   positions: number[];
   indices: number[];
 } {
-  const radius = Math.max(size.x, 0.05);
+  const radiusX = Math.max(size.x, 0.05) / 2;
+  const radiusZ = Math.max(size.z, 0.05) / 2;
   const height = Math.max(size.y, 0.05);
   const segments = 12;
   const y0 = -height / 2;
@@ -206,9 +208,9 @@ function cylinderMesh(
   for (let i = 0; i < segments; i += 1) {
     const angle = (i / segments) * Math.PI * 2;
     ring.push({
-      x: Math.cos(angle) * radius,
+      x: Math.cos(angle) * radiusX,
       y: 0,
-      z: Math.sin(angle) * radius,
+      z: Math.sin(angle) * radiusZ,
     });
   }
   const world = (local: NavPoint) => transformLocalPoint(pose, rotation, local);
@@ -259,7 +261,11 @@ function cylinderMesh(
   return { positions, indices };
 }
 
-/** Closed solid Recast can voxelise as a carve (static unwalkable blocker). */
+/**
+ * Closed solid Recast can voxelise as a carve (static unwalkable blocker).
+ * `pose` is the center and `size` the full extent; a cylinder stands on Y and
+ * its X/Z sizes are diameters.
+ */
 export function solidBlockerMesh(input: SolidBlockerInput): {
   positions: number[];
   indices: number[];
@@ -339,6 +345,9 @@ export function recastWallsFromXyChains(
 }
 
 export type BlockerActorBakeInput = {
+  /** With `parentId`, places a child under its parent's world transform. */
+  id?: string;
+  parentId?: string | null;
   transform: {
     position: [number, number, number];
     rotation?: [number, number, number, number];
@@ -356,57 +365,147 @@ function asBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
 
-function aabbIntersects(
-  minA: { x: number; y: number; z: number },
-  maxA: { x: number; y: number; z: number },
-  bounds: NavBakeBounds,
-): boolean {
-  const minX = Math.min(bounds.min.x, bounds.max.x);
-  const maxX = Math.max(bounds.min.x, bounds.max.x);
-  const minY = Math.min(bounds.min.y, bounds.max.y);
-  const maxY = Math.max(bounds.min.y, bounds.max.y);
-  const minZ = Math.min(bounds.min.z, bounds.max.z);
-  const maxZ = Math.max(bounds.min.z, bounds.max.z);
-  return (
-    minA.x <= maxX &&
-    maxA.x >= minX &&
-    minA.y <= maxY &&
-    maxA.y >= minY &&
-    minA.z <= maxZ &&
-    maxA.z >= minZ
+/** Row-major 3x4 affine transform: rotation-scale columns plus translation. */
+type Affine = readonly number[];
+
+function trsAffine(
+  position: readonly number[],
+  rotation: readonly number[] | undefined,
+  scale: readonly number[] | undefined,
+): Affine {
+  const { x, y, z, w } = asRotation(
+    rotation ? { x: rotation[0]!, y: rotation[1]!, z: rotation[2]!, w: rotation[3]! } : undefined,
   );
+  const sx = scale?.[0] ?? 1;
+  const sy = scale?.[1] ?? 1;
+  const sz = scale?.[2] ?? 1;
+  return [
+    (1 - 2 * (y * y + z * z)) * sx, 2 * (x * y - z * w) * sy, 2 * (x * z + y * w) * sz, position[0] ?? 0,
+    2 * (x * y + z * w) * sx, (1 - 2 * (x * x + z * z)) * sy, 2 * (y * z - x * w) * sz, position[1] ?? 0,
+    2 * (x * z - y * w) * sx, 2 * (y * z + x * w) * sy, (1 - 2 * (x * x + y * y)) * sz, position[2] ?? 0,
+  ];
 }
 
-function recastRotationFromWorld(
-  rotation: [number, number, number, number] | undefined,
-  viewportMode: "2d" | "3d",
-): { x: number; y: number; z: number; w: number } {
-  const quat = asRotation(
-    rotation
-      ? { x: rotation[0], y: rotation[1], z: rotation[2], w: rotation[3] }
-      : undefined,
-  );
-  if (viewportMode !== "2d") return quat;
-  return { x: quat.x, y: quat.z, z: quat.y, w: quat.w };
-}
-
-function blockerIntersectsBakeBounds(
-  position: [number, number, number],
-  rotation: [number, number, number, number] | undefined,
-  scale: [number, number, number],
-  viewportMode: "2d" | "3d",
-  bounds: NavBakeBounds,
-): boolean {
-  const quat = rotation ?? [0, 0, 0, 1];
-  const aabb = rotatedBoxWorldAabb(position, quat, scale);
-  if (viewportMode === "2d") {
-    return aabbIntersects(
-      { x: aabb.min.x, y: aabb.min.y, z: -1 },
-      { x: aabb.max.x, y: aabb.max.y, z: 1 },
-      bounds,
-    );
+/** `outer` applied after `inner`. */
+function multiplyAffine(outer: Affine, inner: Affine): Affine {
+  const out: number[] = [];
+  for (let row = 0; row < 3; row += 1) {
+    for (let column = 0; column < 4; column += 1) {
+      let value = column === 3 ? outer[row * 4 + 3]! : 0;
+      for (let k = 0; k < 3; k += 1) value += outer[row * 4 + k]! * inner[k * 4 + column]!;
+      out.push(value);
+    }
   }
-  return aabbIntersects(aabb.min, aabb.max, bounds);
+  return out;
+}
+
+function applyAffine(m: Affine, x: number, y: number, z: number): NavPoint {
+  return {
+    x: m[0]! * x + m[1]! * y + m[2]! * z + m[3]!,
+    y: m[4]! * x + m[5]! * y + m[6]! * z + m[7]!,
+    z: m[8]! * x + m[9]! * y + m[10]! * z + m[11]!,
+  };
+}
+
+/** The blocker's world transform through its parent chain, as the editor and Play compose it. */
+function blockerWorldAffine(
+  actor: BlockerActorBakeInput,
+  actorsById: ReadonlyMap<string, BlockerActorBakeInput>,
+): Affine {
+  // A blocker never collapses below the bake's minimum extent on any axis.
+  const scale = (actor.transform.scale ?? [1, 1, 1]).map((value) =>
+    Math.sign(value || 1) * Math.max(Math.abs(value), 0.05));
+  let world = trsAffine(actor.transform.position, actor.transform.rotation, scale);
+  const visited = new Set<string>(actor.id ? [actor.id] : []);
+  for (let parentId = actor.parentId; parentId && !visited.has(parentId);) {
+    visited.add(parentId);
+    const parent = actorsById.get(parentId);
+    if (!parent) break;
+    world = multiplyAffine(trsAffine(parent.transform.position, parent.transform.rotation, parent.transform.scale), world);
+    parentId = parent.parentId;
+  }
+  return world;
+}
+
+/**
+ * A blocker actor's world transform exactly as the bake carves it (through its
+ * parent chain, no axis below the minimum extent), as the 16 entries Babylon's
+ * `Matrix.FromArray` reads: row-vector layout with the translation at 12–14.
+ */
+export function blockerWorldMatrix(
+  actor: BlockerActorBakeInput,
+  actorsById: ReadonlyMap<string, BlockerActorBakeInput>,
+): number[] {
+  const m = blockerWorldAffine(actor, actorsById);
+  return [
+    m[0]!, m[4]!, m[8]!, 0,
+    m[1]!, m[5]!, m[9]!, 0,
+    m[2]!, m[6]!, m[10]!, 0,
+    m[3]!, m[7]!, m[11]!, 1,
+  ];
+}
+
+/**
+ * The unit volume the editor draws for a blocker (a box or a diameter-1
+ * cylinder, height 1 along local Y) placed by its world transform. In 2D the
+ * actor's local XY plane is the walk plane and the volume becomes a prism
+ * on Recast Y from 0 to 2.
+ */
+function blockerSolid(
+  kind: NavObstacleKind,
+  world: Affine,
+  viewportMode: "2d" | "3d",
+): { positions: number[]; indices: number[] } {
+  const unit = solidBlockerMesh({ kind, pose: { x: 0, y: 0, z: 0 }, size: { x: 1, y: 1, z: 1 } });
+  const positions: number[] = [];
+  for (let i = 0; i < unit.positions.length; i += 3) {
+    const lx = unit.positions[i]!;
+    const ly = unit.positions[i + 1]!;
+    const lz = unit.positions[i + 2]!;
+    if (viewportMode === "2d") {
+      const planar = applyAffine(world, lx, lz, 0);
+      const recast = worldToRecast(planar);
+      positions.push(recast.x, 1 + ly * 2, recast.z);
+    } else {
+      const point = applyAffine(world, lx, ly, lz);
+      positions.push(point.x, point.y, point.z);
+    }
+  }
+  const determinant = viewportMode === "2d"
+    ? world[0]! * world[5]! - world[1]! * world[4]!
+    : world[0]! * (world[5]! * world[10]! - world[6]! * world[9]!) -
+      world[1]! * (world[4]! * world[10]! - world[6]! * world[8]!) +
+      world[2]! * (world[4]! * world[9]! - world[5]! * world[8]!);
+  // A mirrored transform flips the winding; keep the solid's faces outward.
+  const indices = [...unit.indices];
+  if (determinant < 0) {
+    for (let i = 0; i < indices.length; i += 3) {
+      [indices[i + 1], indices[i + 2]] = [indices[i + 2]!, indices[i + 1]!];
+    }
+  }
+  return { positions, indices };
+}
+
+/** Whether a Recast-space solid meets the bake bounds; 2D compares world XY only. */
+function solidIntersectsBakeBounds(
+  positions: readonly number[],
+  viewportMode: "2d" | "3d",
+  bounds: NavBakeBounds,
+): boolean {
+  const min = { x: Infinity, y: Infinity, z: Infinity };
+  const max = { x: -Infinity, y: -Infinity, z: -Infinity };
+  for (let i = 0; i < positions.length; i += 3) {
+    const point = viewportMode === "2d"
+      ? recastToWorld({ x: positions[i]!, y: positions[i + 1]!, z: positions[i + 2]! })
+      : { x: positions[i]!, y: positions[i + 1]!, z: positions[i + 2]! };
+    min.x = Math.min(min.x, point.x); max.x = Math.max(max.x, point.x);
+    min.y = Math.min(min.y, point.y); max.y = Math.max(max.y, point.y);
+    min.z = Math.min(min.z, point.z); max.z = Math.max(max.z, point.z);
+  }
+  const overlaps = (axis: "x" | "y" | "z") =>
+    min[axis] <= Math.max(bounds.min[axis], bounds.max[axis]) &&
+    max[axis] >= Math.min(bounds.min[axis], bounds.max[axis]);
+  return overlaps("x") && overlaps("y") && (viewportMode === "2d" || overlaps("z"));
 }
 
 /** Static unwalkable blockers become bake solids. Dynamic / cost are skipped. */
@@ -416,6 +515,7 @@ export function staticBlockerBakeParts(
   bakeBounds?: NavBakeBounds,
 ): NavBakeMeshPart[] {
   const parts: NavBakeMeshPart[] = [];
+  let actorsById: Map<string, BlockerActorBakeInput> | null = null;
   for (const actor of actors) {
     for (const component of actor.components) {
       if (component.classId !== "NavMeshBlockerComponent") continue;
@@ -423,72 +523,46 @@ export function staticBlockerBakeParts(
       if (component.properties.area === "cost") continue;
       const kind: NavObstacleKind =
         component.properties.kind === "cylinder" ? "cylinder" : "box";
-      const position = actor.transform.position;
-      const rotation = actor.transform.rotation ?? [0, 0, 0, 1];
-      const scale = actor.transform.scale ?? [1, 1, 1];
-      if (
-        bakeBounds &&
-        !blockerIntersectsBakeBounds(
-          position,
-          rotation,
-          scale,
-          viewportMode,
-          bakeBounds,
-        )
-      ) {
-        continue;
-      }
-      if (viewportMode === "2d") {
-        const recast = worldToRecast({
-          x: position[0],
-          y: position[1],
-          z: 0,
-        });
-        parts.push(
-          solidBlockerMesh({
-            kind,
-            pose: { x: recast.x, y: 1, z: recast.z },
-            size: {
-              x: Math.abs(scale[0] ?? 1),
-              y: 2,
-              z: Math.abs(scale[1] ?? 1),
-            },
-            rotation: recastRotationFromWorld(rotation, "2d"),
-          }),
-        );
-      } else {
-        parts.push(
-          solidBlockerMesh({
-            kind,
-            pose: { x: position[0], y: position[1], z: position[2] },
-            size: {
-              x: Math.abs(scale[0] ?? 1),
-              y: Math.abs(scale[1] ?? 1),
-              z: Math.abs(scale[2] ?? 1),
-            },
-            rotation: recastRotationFromWorld(rotation, "3d"),
-          }),
-        );
-      }
+      actorsById ??= new Map(actors.flatMap((entry) => (entry.id ? [[entry.id, entry] as const] : [])));
+      const solid = blockerSolid(kind, blockerWorldAffine(actor, actorsById), viewportMode);
+      if (bakeBounds && !solidIntersectsBakeBounds(solid.positions, viewportMode, bakeBounds)) continue;
+      parts.push(solid);
     }
   }
   return parts;
 }
 
+/**
+ * 2D floor bounds: actor origins plus the Recast XZ walls and solids baked on
+ * it (collider and tilemap geometry), padded so walls never sit off the floor.
+ */
 export function xyBoundsFromActors(
   actors: readonly BlockerActorBakeInput[],
   pad = 8,
+  geometry: readonly NavBakeMeshPart[] = [],
 ): XyBounds {
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
-  for (const actor of actors) {
-    const [x, y] = actor.transform.position;
+  const include = (x: number, y: number) => {
     minX = Math.min(minX, x);
     minY = Math.min(minY, y);
     maxX = Math.max(maxX, x);
     maxY = Math.max(maxY, y);
+  };
+  for (const actor of actors) {
+    include(actor.transform.position[0], actor.transform.position[1]);
+  }
+  for (const part of geometry) {
+    for (let i = 0; i + 2 < part.positions.length; i += 3) {
+      const x = Number(part.positions[i]);
+      const y = Number(part.positions[i + 1]);
+      const z = Number(part.positions[i + 2]);
+      const recast = part.transform ? part.transform(x, y, z) : { x, y, z };
+      const point = recastToWorld(recast);
+      include(point.x, point.y);
+    }
   }
   if (!Number.isFinite(minX)) {
     return { minX: -pad, minY: -pad, maxX: pad, maxY: pad };
@@ -528,18 +602,33 @@ export function recastMeshesFromCollider2d(
       ),
     ];
   }
+  const positive = (value: unknown, fallback: number) =>
+    typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
+  // Solids stand on the walk plane (Recast Y = 0), like the walls.
+  const disc = (x: number, y: number, radius: number) => {
+    const recast = worldToRecast({ x, y, z: 0 });
+    return solidBlockerMesh({
+      kind: "cylinder",
+      pose: { x: recast.x, y: height / 2, z: recast.z },
+      size: { x: radius * 2, y: height, z: radius * 2 },
+    });
+  };
   if (kind === "circle") {
-    const radius =
-      typeof shape.radius === "number" && Number.isFinite(shape.radius)
-        ? shape.radius
-        : 0.5;
+    return [disc(position.x, position.y, positive(shape.radius, 0.5))];
+  }
+  if (kind === "capsule2d") {
+    // A vertical stadium: a box between the two end discs.
+    const radius = positive(shape.radius, 0.25);
+    const halfHeight = positive(shape.halfHeight, 0.5);
     const recast = worldToRecast({ x: position.x, y: position.y, z: 0 });
     return [
       solidBlockerMesh({
-        kind: "cylinder",
-        pose: { x: recast.x, y: 0, z: recast.z },
-        size: { x: radius, y: height, z: radius },
+        kind: "box",
+        pose: { x: recast.x, y: height / 2, z: recast.z },
+        size: { x: radius * 2, y: height, z: halfHeight * 2 },
       }),
+      disc(position.x, position.y - halfHeight, radius),
+      disc(position.x, position.y + halfHeight, radius),
     ];
   }
   const half = (shape.halfExtents ?? {}) as { x?: unknown; y?: unknown };

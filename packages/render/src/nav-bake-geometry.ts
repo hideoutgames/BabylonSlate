@@ -35,9 +35,7 @@ export function collectNavBakeGeometry(
   const mode = sceneData.viewportMode === "2d" ? "2d" : "3d";
   const bounds = extras?.bakeBounds;
   if (mode === "2d") {
-    const xy = xyBoundsFromActors(sceneData.actors);
-    const clipped = bounds ? intersectXyBounds(xy, bounds) : xy;
-    if (clipped) parts.push(recastWalkableQuadFromXy(clipped));
+    const walls: NavBakeMeshPart[] = [];
     for (const actor of sceneData.actors) {
       const position = {
         x: actor.transform.position[0],
@@ -51,7 +49,7 @@ export function collectNavBakeGeometry(
           typeof component.properties.shape === "object"
             ? (component.properties.shape as Record<string, unknown>)
             : undefined;
-        parts.push(...recastMeshesFromCollider2d(position, shape));
+        walls.push(...recastMeshesFromCollider2d(position, shape));
       }
     }
     if (extras?.tilemapChains && extras.tilemapChains.length > 0) {
@@ -60,8 +58,13 @@ export function collectNavBakeGeometry(
             xyChainIntersectsBounds(chain, bounds),
           )
         : extras.tilemapChains;
-      if (chains.length > 0) parts.push(recastWallsFromXyChains(chains, 2));
+      if (chains.length > 0) walls.push(recastWallsFromXyChains(chains, 2));
     }
+    // The floor reaches past every wall, not only past the actor origins.
+    const xy = xyBoundsFromActors(sceneData.actors, undefined, walls);
+    const clipped = bounds ? intersectXyBounds(xy, bounds) : xy;
+    if (clipped) parts.push(recastWalkableQuadFromXy(clipped));
+    parts.push(...walls);
   } else {
     for (const actor of sceneData.actors) {
       if (

@@ -8,6 +8,17 @@ import {
   xyBoundsFromActors,
 } from "./blockers";
 
+/** Min/max of a flat xyz array on each axis. */
+function extents(positions: ArrayLike<number>): { min: number[]; max: number[] } {
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < positions.length; i += 1) {
+    min[i % 3] = Math.min(min[i % 3]!, positions[i]!);
+    max[i % 3] = Math.max(max[i % 3]!, positions[i]!);
+  }
+  return { min, max };
+}
+
 describe("solidBlockerMesh", () => {
   it("emits a closed box that Recast can voxelise as a carve", () => {
     const mesh = solidBlockerMesh({
@@ -19,14 +30,17 @@ describe("solidBlockerMesh", () => {
     expect(mesh.indices.length).toBeGreaterThanOrEqual(12 * 3);
   });
 
-  it("emits a cylinder prism for dynamic/static cylinder blockers", () => {
+  it("emits a cylinder whose X/Z sizes are diameters", () => {
     const mesh = solidBlockerMesh({
       kind: "cylinder",
       pose: { x: 1, y: 0, z: 1 },
-      size: { x: 0.5, y: 2, z: 0.5 },
+      size: { x: 2, y: 2, z: 4 },
     });
-    expect(mesh.positions.length).toBeGreaterThan(9);
-    expect(mesh.indices.length).toBeGreaterThan(3);
+    const { min, max } = extents(mesh.positions);
+    expect(min[0]).toBeCloseTo(0, 5);
+    expect(max[0]).toBeCloseTo(2, 5);
+    expect(max[2]! - min[2]!).toBeCloseTo(4, 5);
+    expect(max[1]! - min[1]!).toBeCloseTo(2, 5);
   });
 });
 
@@ -104,6 +118,55 @@ describe("staticBlockerBakeParts", () => {
     expect(parts[0]!.positions.length).toBeGreaterThanOrEqual(8 * 3);
   });
 
+  it("bakes a parented blocker at its world pose", () => {
+    const quarterTurn = [0, Math.SQRT1_2, 0, Math.SQRT1_2] as [number, number, number, number];
+    const parts = staticBlockerBakeParts(
+      [
+        { id: "door", parentId: "frame", transform: { position: [1, 0, 0] }, components: [
+          { classId: "NavMeshBlockerComponent", properties: { kind: "box" } },
+        ] },
+        { id: "frame", parentId: null, transform: { position: [10, 0, 0], rotation: quarterTurn, scale: [2, 2, 2] },
+          components: [] },
+      ],
+      "3d",
+    );
+    // The child's local X turns onto -Z and doubles: center (10, 0, -2), size 2.
+    const { min, max } = extents(parts[0]!.positions);
+    expect(min).toEqual([expect.closeTo(9, 5), expect.closeTo(-1, 5), expect.closeTo(-3, 5)]);
+    expect(max).toEqual([expect.closeTo(11, 5), expect.closeTo(1, 5), expect.closeTo(-1, 5)]);
+  });
+
+  it("turns a 2D blocker with its Z rotation, not mirrored", () => {
+    const angle = Math.PI / 6;
+    const parts = staticBlockerBakeParts(
+      [{
+        transform: { position: [0, 0, 0], rotation: [0, 0, Math.sin(angle / 2), Math.cos(angle / 2)], scale: [4, 1, 1] },
+        components: [{ classId: "NavMeshBlockerComponent", properties: { kind: "box" } }],
+      }],
+      "2d",
+    );
+    const positions = parts[0]!.positions;
+    let farthest = 0;
+    for (let i = 3; i < positions.length; i += 3) {
+      if (positions[i]! > positions[farthest]!) farthest = i;
+    }
+    // Local (2, -0.5) turned 30° counterclockwise lands at world (1.98, 0.57), Recast Z = world Y.
+    expect(positions[farthest]).toBeCloseTo(2 * Math.cos(angle) + 0.5 * Math.sin(angle), 5);
+    expect(positions[farthest + 2]).toBeCloseTo(2 * Math.sin(angle) - 0.5 * Math.cos(angle), 5);
+    const { min, max } = extents(positions);
+    expect(min[1]).toBeCloseTo(0, 5);
+    expect(max[1]).toBeCloseTo(2, 5);
+  });
+
+  it("culls 2D blockers by XY only", () => {
+    const parts = staticBlockerBakeParts(
+      [blocker({ kind: "box" }, [0, 0, 50])],
+      "2d",
+      { min: { x: -5, y: -5, z: 5 }, max: { x: 5, y: 5, z: 10 } },
+    );
+    expect(parts).toHaveLength(1);
+  });
+
   it("rotates 3D bake verts by the actor quaternion", () => {
     const identity = staticBlockerBakeParts(
       [blocker({ kind: "box" }, [0, 0, 0], [4, 2, 2])],
@@ -144,6 +207,20 @@ describe("xyBoundsFromActors", () => {
       minY: -5,
       maxX: 5,
       maxY: 5,
+    });
+  });
+
+  it("covers the walls baked on the floor, not only actor origins", () => {
+    // 0.8-thick walls from the origin to x = 30 and to y = -20.
+    const wall = recastWallsFromXyChains([
+      { points: [{ x: 0, y: 0 }, { x: 30, y: 0 }], loop: false },
+      { points: [{ x: 0, y: 0 }, { x: 0, y: -20 }], loop: false },
+    ], 2);
+    expect(xyBoundsFromActors([{ transform: { position: [0, 0, 0] }, components: [] }], 2, [wall])).toEqual({
+      minX: expect.closeTo(-2.4, 5),
+      minY: expect.closeTo(-22, 5),
+      maxX: expect.closeTo(32, 5),
+      maxY: expect.closeTo(2.4, 5),
     });
   });
 
@@ -215,5 +292,22 @@ describe("recastMeshesFromCollider2d", () => {
       { kind: "box2d", halfExtents: { x: 2, y: 1 } },
     );
     expect(box).toHaveLength(1);
+  });
+
+  it("stands a circle on the walk plane at its radius", () => {
+    const [circle] = recastMeshesFromCollider2d({ x: 3, y: 4 }, { kind: "circle", radius: 1.5 }, 2);
+    const { min, max } = extents(circle!.positions);
+    expect([min[0], min[1], max[1], max[2]]).toEqual([
+      expect.closeTo(1.5, 5), expect.closeTo(0, 5), expect.closeTo(2, 5), expect.closeTo(5.5, 5),
+    ]);
+  });
+
+  it("bakes a 2D capsule as a stadium along its Y axis", () => {
+    const parts = recastMeshesFromCollider2d({ x: 0, y: 0 }, { kind: "capsule2d", radius: 0.25, halfHeight: 0.5 });
+    const { min, max } = extents(parts.flatMap((part) => Array.from(part.positions)));
+    expect(min[0]).toBeCloseTo(-0.25, 5);
+    expect(max[0]).toBeCloseTo(0.25, 5);
+    expect(min[2]).toBeCloseTo(-0.75, 5);
+    expect(max[2]).toBeCloseTo(0.75, 5);
   });
 });

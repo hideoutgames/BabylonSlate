@@ -1,6 +1,11 @@
-import { VertexBuffer } from "@babylonjs/core";
+import { Matrix, Quaternion, Vector3, VertexBuffer, type Mesh } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { generateNavMesh, initNavigation, navMeshDebugPrimitives } from "@babylonslate/navigation";
+import {
+  generateNavMesh,
+  initNavigation,
+  navMeshDebugPrimitives,
+  staticBlockerBakeParts,
+} from "@babylonslate/navigation";
 
 vi.mock("@babylonslate/navigation", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@babylonslate/navigation")>();
@@ -11,7 +16,6 @@ import {
   NAVMESH_DEBUG_Y_OFFSET,
   NavMeshDebugOverlay,
   navDebugBlockersFromActors,
-  navmeshOverlayEnabled,
 } from "./nav-debug-overlay";
 import { createActor } from "@babylonslate/core";
 
@@ -112,93 +116,83 @@ describe("NavMeshDebugOverlay", () => {
     const handle = createTestEngine();
     handles.push(handle);
     const overlay = new NavMeshDebugOverlay(handle.scene);
-    await overlay.sync(null, [
-      {
-        id: "door",
-        kind: "box",
-        position: [1, 0, 2],
-        rotation: [0, 0, 0, 1],
-        scale: [2, 3, 4],
-      },
-    ]);
+    const world = Matrix.Compose(new Vector3(2, 3, 4), Quaternion.Identity(), new Vector3(1, 0, 2));
+    await overlay.sync(null, [{ id: "door", kind: "box", world: world.asArray() }]);
     expect(overlay.mesh).toBeNull();
     expect(overlay.blockerMeshes).toHaveLength(1);
     expect(overlay.blockerMeshes[0]!.renderingGroupId).toBe(1);
-    expect(overlay.blockerMeshes[0]!.position.x).toBe(1);
-    expect(overlay.blockerMeshes[0]!.scaling.z).toBe(4);
+    const box = worldBox(overlay.blockerMeshes[0]!);
+    expectClose(box.min, [0, -1.5, 0]);
+    expectClose(box.max, [2, 1.5, 4]);
     overlay.clear();
     expect(overlay.blockerMeshes).toHaveLength(0);
   });
 });
 
 describe("navmesh overlay helpers", () => {
-  it("collects NavMesh Blocker poses and ignores other actors", () => {
-    const poses = navDebugBlockersFromActors([
+  it("places NavMesh Blockers where the bake carves them, through their parents", async () => {
+    const blocker = (kind: string) => [
+      { id: "vol", classId: "NavMeshBlockerComponent", properties: { kind } },
+    ];
+    const actors = [
       createActor("empty", "Empty"),
-      createActor("door", "Door", {
+      createActor("pillar", "Pillar", { components: blocker("cylinder") }),
+      createActor("rig", "Rig", {
         transform: {
-          position: [3, 1, 0],
-          rotation: [0, 0, 0, 1],
-          scale: [2, 4, 6],
+          position: [10, 0, 0],
+          rotation: [0, Math.SQRT1_2, 0, Math.SQRT1_2],
+          scale: [1, 2, 1],
         },
-        components: [
-          {
-            id: "vol",
-            classId: "NavMeshBlockerComponent",
-            properties: { kind: "cylinder" },
-          },
-        ],
       }),
+      createActor("door", "Door", {
+        parentId: "rig",
+        transform: {
+          position: [1, 0.5, 0],
+          rotation: [0, 0, 0, 1],
+          scale: [2, 1, 4],
+        },
+        components: blocker("box"),
+      }),
+    ];
+    const poses = navDebugBlockersFromActors(actors);
+    expect(poses.map(({ id, kind }) => [id, kind])).toEqual([
+      ["pillar", "cylinder"],
+      ["door", "box"],
     ]);
-    expect(poses).toEqual([
-      {
-        id: "door",
-        kind: "cylinder",
-        position: [3, 1, 0],
-        rotation: [0, 0, 0, 1],
-        scale: [2, 4, 6],
-      },
-    ]);
-  });
-
-  it("enables the overlay from showNavmesh or a leftover debugOverlay flag", () => {
-    expect(
-      navmeshOverlayEnabled({
-        settings: { showNavmesh: false },
-        actors: [
-          createActor("nav", "Nav", {
-            components: [
-              {
-                id: "n",
-                classId: "NavMeshComponent",
-                properties: { debugOverlay: false },
-              },
-            ],
-          }),
-        ],
-      }),
-    ).toBe(false);
-    expect(
-      navmeshOverlayEnabled({
-        settings: { showNavmesh: true },
-        actors: [],
-      }),
-    ).toBe(true);
-    expect(
-      navmeshOverlayEnabled({
-        settings: {},
-        actors: [
-          createActor("nav", "Nav", {
-            components: [
-              {
-                id: "n",
-                classId: "NavMeshComponent",
-                properties: { debugOverlay: true },
-              },
-            ],
-          }),
-        ],
-      }),
-    ).toBe(true);
+    const { engine, scene } = createTestEngine();
+    const overlay = new NavMeshDebugOverlay(scene);
+    await overlay.sync(null, poses.filter((pose) => pose.id === "door"));
+    const drawn = worldBox(overlay.blockerMeshes[0]!);
+    const carved = staticBlockerBakeParts(actors, "3d").map(boundsOf)[1]!;
+    expectClose(drawn.min, carved.min);
+    expectClose(drawn.max, carved.max);
+    // The rig at x = 10 turns the door a quarter turn and doubles its height.
+    expectClose(drawn.min, [8, 0, -2]);
+    expectClose(drawn.max, [12, 2, 0]);
+    overlay.dispose();
+    scene.dispose();
+    engine.dispose();
   });
 });
+
+function expectClose(actual: readonly number[], expected: readonly number[]): void {
+  expect(actual).toHaveLength(expected.length);
+  expected.forEach((value, index) => expect(actual[index]).toBeCloseTo(value, 5));
+}
+
+function boundsOf(part: { positions: ArrayLike<number> }): { min: number[]; max: number[] } {
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+  for (let index = 0; index < part.positions.length; index += 1) {
+    const axis = index % 3;
+    min[axis] = Math.min(min[axis]!, part.positions[index]!);
+    max[axis] = Math.max(max[axis]!, part.positions[index]!);
+  }
+  return { min, max };
+}
+
+function worldBox(mesh: Mesh): { min: number[]; max: number[] } {
+  mesh.computeWorldMatrix(true);
+  const { minimumWorld, maximumWorld } = mesh.getBoundingInfo().boundingBox;
+  return { min: minimumWorld.asArray(), max: maximumWorld.asArray() };
+}

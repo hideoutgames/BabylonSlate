@@ -18,7 +18,6 @@ import {
   EDITOR_CANVAS_COLOR_SCHEME,
   NavMeshDebugOverlay,
   navDebugBlockersFromActors,
-  navmeshOverlayEnabled,
   selectionGizmoRoots,
   syncEditorPlayState,
   engineAdapterInfo,
@@ -378,7 +377,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const navmeshPath =
     doc && isSceneWorkspaceKind(doc.ref.kind) ? doc.ref.path : null;
   const navmeshOverlayOn = Boolean(
-    scene && (navmeshVisible || navmeshOverlayEnabled(scene)),
+    scene && (navmeshVisible || scene.settings.showNavmesh === true),
   );
   const lastBakedNavmesh = navBake?.lastBytes ?? null;
   // The stored chunk changes only with the asset (a registry change), so scene

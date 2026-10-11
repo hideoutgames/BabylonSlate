@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Mesh, MeshBuilder, StandardMaterial, VertexBuffer } from "@babylonjs/core";
+import { Matrix, Mesh, MeshBuilder, StandardMaterial, VertexBuffer } from "@babylonjs/core";
 import { createTestEngine } from "./create-null-engine";
 import {
   applyPlayShowBounds,
@@ -261,13 +261,7 @@ describe("play console visualization", () => {
     const { engine, scene } = createTestEngine();
     const viz = createPlayConsoleViz(scene, {
       navBlockers: [
-        {
-          id: "door",
-          kind: "box",
-          position: [1, 0, 2],
-          rotation: [0, 0, 0, 1],
-          scale: [2, 3, 4],
-        },
+        { id: "door", kind: "box", world: Matrix.Identity().asArray() },
       ],
     });
     expect(viz.applyCommand({ type: "setShowNav", enabled: true })).toBe(true);

@@ -389,7 +389,6 @@ describe("spawnPlacedActor", () => {
     expect(actor.components[0]?.properties.tiled).toBe(false);
     expect(actor.components[0]?.properties.supportDynamicObstacles).toBe(false);
     expect(actor.components[0]?.properties.autoBakeOnSave).toBe(false);
-    expect(actor.components[0]?.properties.debugOverlay).toBe(false);
   });
 
   it("spawns a NavMesh blocker with static unwalkable defaults", () => {

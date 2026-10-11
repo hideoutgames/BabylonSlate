@@ -4,6 +4,8 @@ import {
   type CrowdAgent,
   NavMesh,
   NavMeshQuery,
+  Recast,
+  type RecastBuildContext,
   TileCache,
   TileCacheMeshProcess,
   Raw,
@@ -12,12 +14,15 @@ import {
   importNavMesh,
   importTileCache,
   init,
+  statusDetail,
   type Obstacle,
 } from "@recast-navigation/core";
 import {
   generateSoloNavMesh,
   generateTileCache,
+  generateTiledNavMesh,
 } from "@recast-navigation/generators";
+import { DEFAULT_NAV_AGENT_PARAMS } from "./settings";
 import {
   DEFAULT_NAV_MESH_SETTINGS,
   type NavAgentParams,
@@ -37,6 +42,20 @@ const WALKABLE_AREA = 63;
 const MAX_COST_AREAS = WALKABLE_AREA - 1;
 const WALKABLE_FLAGS = 1;
 const DEFAULT_COST_AREA_COST = 10;
+/** Tiled and tile-cache bakes split the input into square tiles of this many cells. */
+const TILE_SIZE = 32;
+/** Tile-cache layer budget per tile; a bake that overflows it is retried with twice the budget. */
+const TILE_CACHE_LAYERS_PER_TILE = 4;
+const TILE_CACHE_MAX_LAYERS_PER_TILE = 32;
+const TILE_CACHE_MAX_OBSTACLES = 128;
+/** Crowd capacity; Detour places a new agent within (2, 1.5, 2) x the max agent radius. */
+const CROWD_MAX_AGENTS = 128;
+const CROWD_MAX_AGENT_RADIUS = 2;
+const MAX_PATH_POLYS = 1024;
+const MIN_OBSTACLE_EXTENT = 0.05;
+/** Recast surfaces sit up to a few cells off the authored floor, so cost volumes reach this far past their box vertically. */
+const COST_VOLUME_SURFACE_MARGIN = 0.5;
+const COST_VOLUME_QUERY_POLYS = 512;
 
 let recastReady: Promise<void> | null = null;
 
@@ -45,6 +64,10 @@ export function initNavigation(): Promise<void> {
   return recastReady;
 }
 
+/**
+ * Settings pass through in Recast's own units (see `NavMeshSettings`); the
+ * generators scale cell counts by the cell size and square the region areas.
+ */
 function toRecastConfig(settings: NavMeshSettings) {
   return {
     cs: settings.cellSize,
@@ -98,32 +121,11 @@ export async function generateNavMesh(
   input: NavMeshGenerateInput,
 ): Promise<Uint8Array> {
   await initNavigation();
-  const settings = { ...DEFAULT_NAV_MESH_SETTINGS, ...input.settings };
-  if (input.settings?.supportDynamicObstacles) {
-    const result = generateTileCache(input.positions, input.indices, {
-      ...toRecastConfig(settings),
-      tileSize: 32,
-      expectedLayersPerTile: 4,
-      maxObstacles: 128,
-      tileCacheMeshProcess: walkableTileCacheMeshProcess(),
-    });
-    if (!result.success) {
-      throw recastGenerateErrorMessage(
-        "error" in result ? result.error : undefined,
-      );
-    }
-    try {
-      return wrapTileCacheBytes(exportTileCache(result.navMesh, result.tileCache));
-    } finally {
-      result.tileCache.destroy();
-      result.navMesh.destroy();
-    }
-  }
-  const result = generateSoloNavMesh(
-    input.positions,
-    input.indices,
-    toRecastConfig(settings),
-  );
+  const config = toRecastConfig({ ...DEFAULT_NAV_MESH_SETTINGS, ...input.settings });
+  if (input.settings?.supportDynamicObstacles) return generateTileCacheBytes(input, config);
+  const result = input.settings?.tiled
+    ? generateTiledNavMesh(input.positions, input.indices, { ...config, tileSize: TILE_SIZE })
+    : generateSoloNavMesh(input.positions, input.indices, config);
   if (!result.success) {
     throw recastGenerateErrorMessage(
       "error" in result ? result.error : undefined,
@@ -136,6 +138,75 @@ export async function generateNavMesh(
   }
 }
 
+/** The tile-cache generator only logs the walkable layers that did not fit its tile budget. */
+function droppedTileCacheLayers(buildContext: RecastBuildContext): boolean {
+  return buildContext.logs.some((entry) =>
+    entry.category === Recast.RC_LOG_WARNING && entry.msg.startsWith("Failed to add tile to tile cache"));
+}
+
+function generateTileCacheBytes(
+  input: NavMeshGenerateInput,
+  config: ReturnType<typeof toRecastConfig>,
+): Uint8Array {
+  for (let layers = TILE_CACHE_LAYERS_PER_TILE; ; layers *= 2) {
+    const process = walkableTileCacheMeshProcess();
+    try {
+      const result = generateTileCache(input.positions, input.indices, {
+        ...config,
+        tileSize: TILE_SIZE,
+        expectedLayersPerTile: layers,
+        maxObstacles: TILE_CACHE_MAX_OBSTACLES,
+        tileCacheMeshProcess: process,
+      });
+      if (!result.success) {
+        throw recastGenerateErrorMessage(
+          "error" in result ? result.error : undefined,
+        );
+      }
+      try {
+        if (droppedTileCacheLayers(result.intermediates.buildContext)) {
+          if (layers < TILE_CACHE_MAX_LAYERS_PER_TILE) continue;
+          throw recastGenerateErrorMessage("too many stacked walkable layers for the tile cache");
+        }
+        return wrapTileCacheBytes(exportTileCache(result.navMesh, result.tileCache));
+      } finally {
+        result.tileCache.destroy();
+        result.navMesh.destroy();
+      }
+    } finally {
+      Raw.destroy(process.raw);
+    }
+  }
+}
+
+type LoadedNavMesh = {
+  navMesh: NavMesh;
+  tileCache: TileCache | null;
+  release: (() => void) | null;
+};
+
+/** Decode baked bytes without touching any live navigation state. */
+function loadNavMesh(bytes: Uint8Array): LoadedNavMesh {
+  const tileBytes = unwrapTileCacheBytes(bytes);
+  if (!tileBytes) return { navMesh: importNavMesh(bytes).navMesh, tileCache: null, release: null };
+  const process = walkableTileCacheMeshProcess();
+  try {
+    const imported = importTileCache(tileBytes, process);
+    return {
+      navMesh: imported.navMesh,
+      tileCache: imported.tileCache,
+      release: () => {
+        Raw.destroy(imported.allocator);
+        Raw.destroy(imported.compressor);
+        Raw.destroy(process.raw);
+      },
+    };
+  } catch (error) {
+    Raw.destroy(process.raw);
+    throw error;
+  }
+}
+
 class RecastNavigationBackend implements NavigationBackend {
   private navMesh: NavMesh | null = null;
   private query: NavMeshQuery | null = null;
@@ -144,15 +215,7 @@ class RecastNavigationBackend implements NavigationBackend {
   private releaseTileCacheResources: (() => void) | null = null;
   private tileCacheDirty = false;
   private costVolumesDirty = false;
-  private obstacles = new Map<
-    string,
-    {
-      kind: NavObstacleKind;
-      pose: NavPoint;
-      size: NavPoint;
-      recast: Obstacle | null;
-    }
-  >();
+  private obstacles = new Map<string, Obstacle>();
   private nextObstacle = 1;
   private agents = new Map<string, CrowdAgent>();
   private nextAgent = 1;
@@ -164,38 +227,58 @@ class RecastNavigationBackend implements NavigationBackend {
   private costAreas = new Map<number, number>();
 
   importNavMesh(bytes: Uint8Array): void {
+    // A failed decode leaves the current navmesh, crowd and obstacles live.
+    const loaded = loadNavMesh(bytes);
     this.dispose();
-    const tileBytes = unwrapTileCacheBytes(bytes);
-    if (tileBytes) {
-      const process = walkableTileCacheMeshProcess();
-      try {
-        const imported = importTileCache(tileBytes, process);
-        this.navMesh = imported.navMesh;
-        this.tileCache = imported.tileCache;
-        this.releaseTileCacheResources = () => {
-          Raw.destroy(imported.allocator);
-          Raw.destroy(imported.compressor);
-          Raw.destroy(process.raw);
-        };
-      } catch (error) {
-        Raw.destroy(process.raw);
-        throw error;
-      }
-    } else {
-      const imported = importNavMesh(bytes);
-      this.navMesh = imported.navMesh;
-    }
+    this.navMesh = loaded.navMesh;
+    this.tileCache = loaded.tileCache;
+    this.releaseTileCacheResources = loaded.release;
     this.query = new NavMeshQuery(this.navMesh);
-    this.crowd = new Crowd(this.navMesh, { maxAgents: 32, maxAgentRadius: 0.6 });
+    this.crowd = new Crowd(this.navMesh, {
+      maxAgents: CROWD_MAX_AGENTS,
+      maxAgentRadius: CROWD_MAX_AGENT_RADIUS,
+    });
+    // Move targets project onto the mesh with the same reach as path queries.
+    this.crowd.navMeshQuery.defaultQueryHalfExtents = { ...QUERY_EXTENTS };
     this.applyAreaCosts();
   }
 
   findPath(from: NavPoint, to: NavPoint): NavPoint[] {
     this.flushPendingChanges();
-    if (!this.query) return [];
-    const result = this.query.computePath(from, to, { halfExtents: QUERY_EXTENTS });
-    if (!result.success) return [];
-    return result.path.map((point) => ({ x: point.x, y: point.y, z: point.z }));
+    const query = this.query;
+    if (!query) return [];
+    const start = query.findNearestPoly(from, { halfExtents: QUERY_EXTENTS });
+    const end = query.findNearestPoly(to, { halfExtents: QUERY_EXTENTS });
+    if (!start.success || !end.success || !start.nearestRef || !end.nearestRef) return [];
+    const corridor = query.findPath(start.nearestRef, end.nearestRef, from, to, {
+      maxPathPolys: MAX_PATH_POLYS,
+    });
+    try {
+      const count = corridor.polys.size;
+      // Detour returns a partial corridor toward an unreachable goal; that is no path.
+      if (!corridor.success || count === 0 || corridor.polys.get(count - 1) !== end.nearestRef) return [];
+      const straight = query.findStraightPath(from, to, corridor.polys, {
+        maxStraightPathPoints: MAX_PATH_POLYS,
+      });
+      try {
+        if (!straight.success) return [];
+        const points: NavPoint[] = [];
+        for (let i = 0; i < straight.straightPathCount; i += 1) {
+          points.push({
+            x: straight.straightPath.get(i * 3),
+            y: straight.straightPath.get(i * 3 + 1),
+            z: straight.straightPath.get(i * 3 + 2),
+          });
+        }
+        return points;
+      } finally {
+        straight.straightPath.destroy();
+        straight.straightPathFlags.destroy();
+        straight.straightPathRefs.destroy();
+      }
+    } finally {
+      corridor.polys.destroy();
+    }
   }
 
   closestPoint(point: NavPoint): NavPoint | null {
@@ -216,45 +299,44 @@ class RecastNavigationBackend implements NavigationBackend {
     return { x: result.randomPoint.x, y: result.randomPoint.y, z: result.randomPoint.z };
   }
 
-  addObstacle(kind: NavObstacleKind, pose: NavPoint, size: NavPoint): string {
+  addObstacle(kind: NavObstacleKind, pose: NavPoint, size: NavPoint, yaw = 0): string {
+    const tileCache = this.tileCache;
+    if (!tileCache) return "";
+    const extent = (value: number) => Math.max(Math.abs(value), MIN_OBSTACLE_EXTENT);
+    let added: { success: boolean; obstacle?: Obstacle };
+    if (kind === "cylinder") {
+      // Tile-cache cylinders stand on their base; callers pass the volume center.
+      const height = extent(size.y);
+      added = tileCache.addCylinderObstacle(
+        { x: pose.x, y: pose.y - height / 2, z: pose.z },
+        Math.max(extent(size.x), extent(size.z)) / 2,
+        height,
+      );
+    } else {
+      added = tileCache.addBoxObstacle(
+        pose,
+        { x: extent(size.x) / 2, y: extent(size.y) / 2, z: extent(size.z) / 2 },
+        Number.isFinite(yaw) ? yaw : 0,
+      );
+    }
+    // A full tile cache carves nothing, so the caller gets no id to remove.
+    if (!added.success || !added.obstacle) return "";
     const id = `obstacle-${this.nextObstacle}`;
     this.nextObstacle += 1;
-    let recast: Obstacle | null = null;
-    if (this.tileCache) {
-      if (kind === "cylinder") {
-        const added = this.tileCache.addCylinderObstacle(
-          pose,
-          Math.max(size.x, 0.05),
-          Math.max(size.y, 0.05),
-        );
-        if (added.success) recast = added.obstacle;
-      } else {
-        const added = this.tileCache.addBoxObstacle(
-          pose,
-          {
-            x: Math.max(size.x, 0.05) / 2,
-            y: Math.max(size.y, 0.05) / 2,
-            z: Math.max(size.z, 0.05) / 2,
-          },
-          0,
-        );
-        if (added.success) recast = added.obstacle;
-      }
-      if (recast) this.tileCacheDirty = true;
-      this.flushTileCache();
-    }
-    this.obstacles.set(id, { kind, pose, size, recast });
+    this.obstacles.set(id, added.obstacle);
+    this.tileCacheDirty = true;
+    this.flushTileCache();
     return id;
   }
 
   removeObstacle(id: string): void {
-    const record = this.obstacles.get(id);
+    const obstacle = this.obstacles.get(id);
+    if (!obstacle || !this.tileCache) return;
+    // Keep the id while the carve is still in place so removal can be retried.
+    if (!this.tileCache.removeObstacle(obstacle).success) return;
     this.obstacles.delete(id);
-    if (record?.recast && this.tileCache) {
-      const removed = this.tileCache.removeObstacle(record.recast);
-      if (removed.success) this.tileCacheDirty = true;
-      this.flushTileCache();
-    }
+    this.tileCacheDirty = true;
+    this.flushTileCache();
   }
 
   applyCostVolume(volume: NavCostVolume): void {
@@ -289,15 +371,32 @@ class RecastNavigationBackend implements NavigationBackend {
     if (changed) this.costVolumesDirty = true;
   }
 
+  removeCostVolume(id: string): void {
+    const record = this.costVolumes.get(id);
+    if (!record) return;
+    const walkable = this.walkablePolyArea();
+    for (const ref of record.polyRefs) {
+      if (ref) this.navMesh?.setPolyArea(ref, walkable);
+    }
+    this.costVolumes.delete(id);
+    // Overlapping volumes and the area table restamp before the next query.
+    this.costVolumesDirty = true;
+  }
+
   addAgent(position: NavPoint, params?: NavAgentParams): string {
     this.flushPendingChanges();
-    if (!this.crowd) return "";
+    // Detour has no slot for another agent once the crowd is full.
+    if (!this.crowd || this.agents.size >= CROWD_MAX_AGENTS) return "";
     const agent = this.crowd.addAgent(position, {
-      radius: params?.radius ?? 0.5,
-      height: params?.height ?? 1,
-      maxSpeed: params?.maxSpeed ?? 3.5,
-      maxAcceleration: params?.maxAcceleration ?? 8,
+      radius: params?.radius ?? DEFAULT_NAV_AGENT_PARAMS.radius,
+      height: params?.height ?? DEFAULT_NAV_AGENT_PARAMS.height,
+      maxSpeed: params?.maxSpeed ?? DEFAULT_NAV_AGENT_PARAMS.maxSpeed,
+      maxAcceleration: params?.maxAcceleration ?? DEFAULT_NAV_AGENT_PARAMS.maxAcceleration,
     });
+    if (agent.agentIndex < 0) {
+      delete this.crowd.agents[agent.agentIndex];
+      return "";
+    }
     const id = `agent-${this.nextAgent}`;
     this.nextAgent += 1;
     this.agents.set(id, agent);
@@ -411,9 +510,14 @@ class RecastNavigationBackend implements NavigationBackend {
   private flushTileCache(): void {
     if (!this.tileCacheDirty || !this.tileCache || !this.navMesh) return;
     this.restoreCostVolumePolys();
-    for (let i = 0; i < 64; i += 1) {
+    // Each update rebuilds one touched tile; finish them all before the next query.
+    for (;;) {
       const result = this.tileCache.update(this.navMesh);
-      if (result.upToDate) { this.tileCacheDirty = false; break; }
+      if (result.upToDate) {
+        this.tileCacheDirty = false;
+        break;
+      }
+      if (!result.success) break;
     }
     // Detour queries retain the same mutable NavMesh. Tile rebuilds do not
     // require allocating a replacement query; only stamped areas need refresh.
@@ -466,18 +570,23 @@ class RecastNavigationBackend implements NavigationBackend {
     // More expensive overlapping volumes win independently of insertion order.
     const volumes = [...this.costVolumes.values()].sort((a, b) => a.volume.cost - b.volume.cost);
     for (const record of volumes) {
-      const halfExtents = costVolumeHalfExtents(record.volume);
-      const result = this.query.queryPolygons(record.volume.pose, halfExtents, {
-        maxPolys: 512,
-      });
-      if (!result.success) continue;
       const refs: number[] = [];
-      for (const ref of result.polyRefs) {
+      for (const ref of this.costVolumePolys(this.query, record.volume)) {
         if (!ref) continue;
         this.navMesh.setPolyArea(ref, this.costAreas.get(record.volume.cost)!);
         refs.push(ref);
       }
       record.polyRefs = refs;
+    }
+  }
+
+  /** Every polygon overlapping the volume's box, growing the result buffer until none are left out. */
+  private costVolumePolys(query: NavMeshQuery, volume: NavCostVolume): number[] {
+    const halfExtents = costVolumeHalfExtents(volume);
+    for (let maxPolys = COST_VOLUME_QUERY_POLYS; ; maxPolys *= 2) {
+      const result = query.queryPolygons(volume.pose, halfExtents, { maxPolys });
+      if (!result.success) return [];
+      if (!statusDetail(result.status, Detour.DT_BUFFER_TOO_SMALL)) return result.polyRefs;
     }
   }
 
@@ -505,19 +614,12 @@ class RecastNavigationBackend implements NavigationBackend {
   }
 }
 
+/** The box Detour searches for a volume's polygons; a cylinder uses its bounding box. */
 function costVolumeHalfExtents(volume: NavCostVolume): NavPoint {
-  if (volume.kind === "cylinder") {
-    const radius = Math.max(Math.abs(volume.size.x), 0.05);
-    return {
-      x: radius,
-      y: Math.max(Math.abs(volume.size.y) / 2, 4),
-      z: radius,
-    };
-  }
   return {
-    x: Math.max(Math.abs(volume.size.x) / 2, 0.05),
-    y: Math.max(Math.abs(volume.size.y) / 2, 4),
-    z: Math.max(Math.abs(volume.size.z) / 2, 0.05),
+    x: Math.max(Math.abs(volume.size.x), MIN_OBSTACLE_EXTENT) / 2,
+    y: Math.max(Math.abs(volume.size.y), MIN_OBSTACLE_EXTENT) / 2 + COST_VOLUME_SURFACE_MARGIN,
+    z: Math.max(Math.abs(volume.size.z), MIN_OBSTACLE_EXTENT) / 2,
   };
 }
 

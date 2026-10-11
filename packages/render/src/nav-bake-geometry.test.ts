@@ -41,7 +41,7 @@ describe("collectNavBakeGeometry", () => {
             {
               id: "nav",
               classId: "NavMeshComponent",
-              properties: { debugOverlay: true },
+              properties: {},
             },
           ],
         }),
@@ -347,6 +347,26 @@ describe("collectNavBakeGeometry", () => {
       expect(clipped.positions[i]).toBeGreaterThanOrEqual(-3);
       expect(clipped.positions[i]).toBeLessThanOrEqual(3);
     }
+  });
+
+  it("extends the 2D floor under colliders far from every actor origin", () => {
+    const sceneData: SerializedScene = {
+      ...createDefaultScene("2d"),
+      viewportMode: "2d",
+      actors: [
+        createActor("wall", "Wall", {
+          components: [{
+            id: "col",
+            classId: "ColliderComponent",
+            properties: { shape: { kind: "chain", points: [{ x: 0, y: 0 }, { x: 30, y: 0 }] } },
+          }],
+        }),
+      ],
+    };
+    const geometry = collectNavBakeGeometry({ meshForActor: () => null }, sceneData);
+    // The floor quad comes first; it reaches past the wall's far end.
+    const floorXs = [0, 3, 6, 9].map((index) => geometry.positions[index]!);
+    expect(Math.max(...floorXs)).toBeGreaterThan(30);
   });
 
   it("drops 2D tilemap chains whose XY misses bake bounds", () => {
