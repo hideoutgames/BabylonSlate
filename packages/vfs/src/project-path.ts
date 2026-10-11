@@ -1,7 +1,7 @@
-/** Validate before crossing a native filesystem boundary. */
+/** Validate before crossing a native filesystem boundary. `"."` names the root, like `""`. */
 export function projectRelativePath(path: string, allowRoot = false): string {
-  if (path === "") {
-    if (allowRoot) return path;
+  if (path === "" || path === ".") {
+    if (allowRoot) return "";
     throw new Error("Cannot mutate or read the project root as a file");
   }
   if (path.includes("\\") || path.includes("\0") ||
