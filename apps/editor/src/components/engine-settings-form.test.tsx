@@ -171,6 +171,16 @@ describe("EngineSettingsForm assets", () => {
 });
 
 describe("EngineSettingsForm focus", () => {
+  it("lists every Focus keep-list Engine Settings stores", () => {
+    const settings = defaultEngineSettings();
+    const { getByTestId } = render(
+      <EngineSettingsForm settings={settings} onChange={vi.fn()} categoryId="focus" />,
+    );
+    for (const [key, ids] of Object.entries(settings.focusKeepPanels)) {
+      expect(getByTestId(`focus-keep-${key}-${ids[0]}`)).toBeTruthy();
+    }
+  });
+
   it("adds a class tab from the keep dropdown", () => {
     const onChange = vi.fn();
     const { getByTestId } = render(
