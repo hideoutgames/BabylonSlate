@@ -78,6 +78,9 @@ describe.each(["worker", "in-process"] as const)(
         failingWorkerTerminate?: () => void;
         /** Worker mode: deliver output as the worker would, including after Stop. */
         onWorker?: (worker: { command(command: CommandMessage): void; snapshot(buffer: Float32Array): void }) => void;
+        /** Worker mode: handle `stop` in a later task, as a real worker does, and observe terminate. */
+        deferWorkerStop?: boolean;
+        onWorkerTerminate?: () => void;
         /** In-process mode: prepares Scenes for scene changes. */
         sceneSources?: PlaySceneSourceLoader;
         audioReverbByScene?: ReadonlyMap<string, Uint8Array>;
@@ -167,6 +170,7 @@ describe.each(["worker", "in-process"] as const)(
         const boot = createPlayBootCoordinator();
         let onCommand: (command: CommandMessage) => void = () => {};
         let onSnapshot: (buffer: Float32Array) => void = () => {};
+        let terminated = false;
         options.onWorker?.({ command: (command) => onCommand(command), snapshot: (buffer) => onSnapshot(buffer) });
         vi.mocked(createGameWorkerHost).mockReturnValue({
           onCommand: (handler) => {
@@ -176,7 +180,10 @@ describe.each(["worker", "in-process"] as const)(
             onSnapshot = handler;
           },
           pushInput() {},
-          terminate() {},
+          terminate() {
+            terminated = true;
+            options.onWorkerTerminate?.();
+          },
           postControl(control) {
             if (control.type === "load")
               runtime = createRuntimeFromLoad(control, onCommand);
@@ -195,8 +202,14 @@ describe.each(["worker", "in-process"] as const)(
             if (control.type === "sessionBoundary") void runtime.requestSessionBoundary(control).then(result => onCommand({ type: "sessionBoundaryResult", ...result }));
             if (control.type === "diagnosticOperation") void runtime.requestDiagnosticOperation(control).then(result => onCommand({ type: "diagnosticOperationResult", ...result }));
             if (control.type === "stop") {
-              boot.reset();
-              runtime.stop();
+              const stopPhase = () => {
+                if (terminated) return;
+                boot.reset();
+                runtime.stop();
+                onCommand({ type: "stopped" });
+              };
+              if (options.deferWorkerStop) setTimeout(stopPhase, 0);
+              else stopPhase();
             }
           },
         });
@@ -281,6 +294,22 @@ describe.each(["worker", "in-process"] as const)(
       worker.snapshot(new Float32Array(16));
       expect(applyCommand).not.toHaveBeenCalled();
       expect(pushSnapshot).not.toHaveBeenCalled();
+    });
+
+    it.runIf(mode === "worker")("terminates the worker only after its stop phase ran", async () => {
+      const terminate = vi.fn();
+      let stopPhase!: ReturnType<typeof vi.spyOn>;
+      await play({
+        deferWorkerStop: true,
+        onWorkerTerminate: terminate,
+        onRuntime: (runtime) => { stopPhase = vi.spyOn(runtime, "stop"); },
+      });
+      session!.stop();
+      session = undefined;
+      expect(terminate).not.toHaveBeenCalled();
+      await vi.waitFor(() => expect(terminate).toHaveBeenCalledOnce());
+      expect(stopPhase).toHaveBeenCalledOnce();
+      expect(stopPhase.mock.invocationCallOrder[0]!).toBeLessThan(terminate.mock.invocationCallOrder[0]!);
     });
 
     it.runIf(mode === "in-process")("applies each Scene's baked reverb on every later scene change", async () => {

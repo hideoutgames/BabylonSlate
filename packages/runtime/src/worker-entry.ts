@@ -388,6 +388,8 @@ function handleControl(msg: ControlMessage): void {
       sceneSources.dispose();
       stopConsoleCapture?.();
       stopConsoleCapture = null;
+      // The host terminates this worker only after the stop phase's output.
+      onCommand({ type: "stopped" });
       return;
     case "setPaused":
       pauseGate.setPaused(msg.paused);
