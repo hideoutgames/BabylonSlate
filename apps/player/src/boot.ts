@@ -813,7 +813,8 @@ function initializePlayer(
     else runtime?.notifyAssetPreloadResult(result);
   };
   const publishAssetStates = () => {
-    const states = manifest.assets.map(entry => ({ guid: entry.guid, state: [...preparingPreloads.values()].some(ids => ids.has(entry.guid)) ? "loading" as const : resourceFailures.has(entry.guid) ? "failed" as const : game.assets?.getLoadState(entry.guid) ?? "ready" as const }));
+    const preparing = new Set([...preparingPreloads.values()].flatMap(ids => [...ids]));
+    const states = manifest.assets.map(entry => ({ guid: entry.guid, state: preparing.has(entry.guid) ? "loading" as const : resourceFailures.has(entry.guid) ? "failed" as const : game.assets?.getLoadState(entry.guid) ?? "ready" as const }));
     if (worker) worker.postControl({ type: "assetLoadStates", states });
     else runtime?.setAssetLoadStates(states);
   };
@@ -843,7 +844,8 @@ function initializePlayer(
     void (async () => {
       if (!game.acquireAssets) throw new Error("This player does not provide demand-driven asset loading.");
       const source = await game.acquireAssets(ids, { consumer: `preload:${String(command.ownerId)}`, signal: request.controller.signal, priority,
-        onProgress: ({ completed, total }) => { preloadResult({ preloadId, success: true, progress: total ? Math.min(0.9, completed / total * 0.9) : 0 }); publishAssetStates(); },
+        // Progress changes no published state: the preload's closure stays loading until it settles.
+        onProgress: ({ completed, total }) => { preloadResult({ preloadId, success: true, progress: total ? Math.min(0.9, completed / total * 0.9) : 0 }); },
       });
       let releaseRender: (() => void) | undefined;
       try {
