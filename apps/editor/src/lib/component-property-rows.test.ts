@@ -445,7 +445,6 @@ describe("componentPropertyRows", () => {
         properties: {
           text: "Hello",
           size: 2,
-          depth: 0.25,
           color: [0.2, 0.4, 0.6],
           fontAssetGuid: "font-1",
           alignment: "center",
@@ -467,7 +466,6 @@ describe("componentPropertyRows", () => {
       value: "center",
       defaultValue: "left",
     });
-    expect(text3d.rows.find((row) => row.id.endsWith("-depth"))).toBeUndefined();
     expect(text3d.rows.find((row) => row.id.endsWith("-color"))).toMatchObject({
       kind: "color",
       label: "Color",

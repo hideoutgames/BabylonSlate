@@ -595,7 +595,7 @@ Parent a Class to **GameSubsystem** (session lifetime) or **SceneSubsystem** (ma
 
 ### Actor component graph APIs
 
-Engine classes expose an optional script catalog in `@babylonslate/object-model` (`ENGINE_CLASS_SCRIPT_APIS` / `engineScriptApiFor`): variables, functions, and events. Not every component has all three. A property, Call, or event is listed only when the inspector already serializes it **and** Play can apply it (`setVariableOn` → `refreshComponent` for components, Scene **Gravity** → `setWorldGravity` on the physics backend, or `callNativeComponentFunction`). Authoring-only fields (`playOnStart`, collider `shape` blobs, Skybox face slots, Text3D `depth`, scene-wide fog/IBL, `physicsWorld`, editor grid) stay off the catalog.
+Engine classes expose an optional script catalog in `@babylonslate/object-model` (`ENGINE_CLASS_SCRIPT_APIS` / `engineScriptApiFor`): variables, functions, and events. Not every component has all three. A property, Call, or event is listed only when the inspector already serializes it **and** Play can apply it (`setVariableOn` → `refreshComponent` for components, Scene **Gravity** → `setWorldGravity` on the physics backend, or `callNativeComponentFunction`). Authoring-only fields (`playOnStart`, collider `shape` blobs, Skybox face slots, scene-wide fog/IBL, `physicsWorld`, editor grid) stay off the catalog.
 
 | Component | Variables | Functions | Events |
 | --- | --- | --- | --- |
