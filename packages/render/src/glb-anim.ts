@@ -807,7 +807,7 @@ export function beginSlotModelAnimLoad(
         for (const group of wrapped) group.retire();
         const current = binding.slotAnimationGroups?.get(slotId);
         if (!current) return;
-        const remaining = current.filter((group) => !wrapped.includes(group));
+        const remaining = current.filter((group) => !wrapped.some((own) => own === group));
         if (remaining.length) binding.slotAnimationGroups!.set(slotId, remaining);
         else binding.slotAnimationGroups!.delete(slotId);
       });
