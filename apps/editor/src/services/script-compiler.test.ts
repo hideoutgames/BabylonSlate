@@ -404,10 +404,8 @@ describe("script compiler service", () => {
     ).toBe("sphere");
   });
   it("derives a stable class id from the graph path", () => {
-    expect(classIdForGraphPath("assets/main.graph.babasset")).toBe("main");
     expect(classIdForGraphPath("assets/main.class.babasset")).toBe("main");
     expect(classIdForGraphPath("assets/hero.class.babasset")).toBe("hero");
-    expect(classIdForGraphPath("graphs/My Enemy.graph.json")).toBe("My_Enemy");
     expect(classIdForGraphPath("")).toBe("Graph");
     expect(classIdForGraphPath("assets/HUD.class.babasset")).toBe("HUD");
   });
@@ -454,7 +452,7 @@ describe("script compiler service", () => {
 
   it("compiles a serialized graph into a runtime script bundle", () => {
     const script = compileGraphDocument(tickToLog, {
-      path: "assets/main.graph.babasset",
+      path: "assets/main.class.babasset",
     });
     expect(script).not.toBeNull();
     expect(script!.classId).toBe("main");
@@ -900,7 +898,7 @@ describe("script compiler service", () => {
 
   it("returns null for an empty graph", () => {
     expect(
-      compileGraphDocument({ nodes: [], edges: [] }, { path: "a.graph.babasset" }),
+      compileGraphDocument({ nodes: [], edges: [] }, { path: "a.class.babasset" }),
     ).toBeNull();
   });
 
@@ -910,8 +908,8 @@ describe("script compiler service", () => {
       edges: [],
     } as unknown as SerializedGraph;
     const scripts = compileGraphDocuments([
-      { path: "broken.graph.babasset", content: broken },
-      { path: "main.graph.babasset", content: tickToLog },
+      { path: "broken.class.babasset", content: broken },
+      { path: "main.class.babasset", content: tickToLog },
     ]);
     expect(scripts.map((s) => s.classId)).toContain("main");
   });
@@ -1007,7 +1005,7 @@ describe("script compiler service", () => {
       ],
     };
     const script = compileGraphDocument(graph, {
-      path: "assets/HealCommand.graph.babasset",
+      path: "assets/HealCommand.class.babasset",
     });
     expect(script?.command).toEqual({
       name: "heal",
@@ -1127,9 +1125,9 @@ describe("graphCompileSignature", () => {
       })),
     };
     expect(
-      graphCompileSignature([{ path: "assets/main.graph.babasset", content: tickToLog }]),
+      graphCompileSignature([{ path: "assets/main.class.babasset", content: tickToLog }]),
     ).toBe(
-      graphCompileSignature([{ path: "assets/main.graph.babasset", content: moved }]),
+      graphCompileSignature([{ path: "assets/main.class.babasset", content: moved }]),
     );
   });
 
@@ -1144,22 +1142,22 @@ describe("graphCompileSignature", () => {
     };
     const disconnected: SerializedGraph = { ...tickToLog, edges: [] };
     const base = graphCompileSignature([
-      { path: "assets/main.graph.babasset", content: tickToLog },
+      { path: "assets/main.class.babasset", content: tickToLog },
     ]);
     expect(
-      graphCompileSignature([{ path: "assets/main.graph.babasset", content: edited }]),
+      graphCompileSignature([{ path: "assets/main.class.babasset", content: edited }]),
     ).not.toBe(base);
     expect(
       graphCompileSignature([
-        { path: "assets/main.graph.babasset", content: disconnected },
+        { path: "assets/main.class.babasset", content: disconnected },
       ]),
     ).not.toBe(base);
   });
 
   it("is order-independent across documents", () => {
     const other: SerializedGraph = { nodes: [], edges: [] };
-    const a = { path: "assets/a.graph.babasset", content: tickToLog };
-    const b = { path: "assets/b.graph.babasset", content: other };
+    const a = { path: "assets/a.class.babasset", content: tickToLog };
+    const b = { path: "assets/b.class.babasset", content: other };
     expect(graphCompileSignature([a, b])).toBe(graphCompileSignature([b, a]));
   });
 
@@ -1275,7 +1273,7 @@ describe("graphCompileSignature", () => {
 describe("graphsNeedCompile", () => {
   it("is true before any compile and false when the signature matches", () => {
     const signature = graphCompileSignature([
-      { path: "assets/main.graph.babasset", content: tickToLog },
+      { path: "assets/main.class.babasset", content: tickToLog },
     ]);
     expect(graphsNeedCompile(signature, null)).toBe(true);
     expect(graphsNeedCompile(signature, signature)).toBe(false);
@@ -1751,13 +1749,13 @@ describe("GraphScriptCompileCache", () => {
       edges: [],
     } as unknown as SerializedGraph;
     compileGraphDocuments(
-      [{ path: "broken.graph.babasset", content: broken }],
+      [{ path: "broken.class.babasset", content: broken }],
       { cache },
     );
     expect(cache.compiles).toBe(1);
     expect(cache.graphs.size).toBe(0);
     compileGraphDocuments(
-      [{ path: "broken.graph.babasset", content: broken }],
+      [{ path: "broken.class.babasset", content: broken }],
       { cache },
     );
     expect(cache.compiles).toBe(2);

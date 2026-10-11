@@ -6,7 +6,6 @@ import {
   DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
   DEFAULT_SORTING_LAYERS,
   MAIN_CLASS_FILE,
-  MAIN_GRAPH_FILE,
   MAIN_SCENE_FILE,
   PROJECT_FILE,
   normalizeProjectSettings,
@@ -49,7 +48,6 @@ describe("project schema", () => {
     expect(project.metadata.name).toBe("Demo");
     expect(project.scenes).toContain(MAIN_SCENE_FILE);
     expect(project.graphs).toContain(MAIN_CLASS_FILE);
-    expect(MAIN_GRAPH_FILE).toBe("assets/main.graph.babasset");
     expect(PROJECT_FILE).toBe("project.json");
     expect(project.settings.twoD.pixelsPerUnit).toBe(100);
     expect(project.settings.twoD.sortingLayers).toEqual([

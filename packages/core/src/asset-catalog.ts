@@ -35,7 +35,7 @@ export const ASSET_TYPES: readonly string[] = [
 export function classIdForAssetPath(path: string): string {
   const file = path.split("/").pop() ?? path;
   const stem = file
-    .replace(/\.(graph|class)\.(babasset|json)$/, "")
+    .replace(/\.class\.babasset$/, "")
     .replace(/\.babasset$/, "");
   const cleaned = stem.replace(/[^A-Za-z0-9_]+/g, "_");
   return cleaned.length > 0 ? cleaned : "Graph";

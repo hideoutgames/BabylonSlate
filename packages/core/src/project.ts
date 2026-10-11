@@ -27,7 +27,6 @@ import {
 
 export const PROJECT_FILE = "project.json";
 export const LAYOUT_FILE = "layout.json";
-export const MAIN_GRAPH_FILE = "assets/main.graph.babasset";
 export const MAIN_CLASS_FILE = "assets/main.class.babasset";
 export const MAIN_SCENE_FILE = "assets/main.scene.babasset";
 

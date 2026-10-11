@@ -39,7 +39,6 @@ import {
   isAssetDocumentKind,
   LAYOUT_FILE,
   MAIN_CLASS_FILE,
-  MAIN_GRAPH_FILE,
   MAIN_SCENE_FILE,
   PROJECT_FILE,
   type ProjectDocument,
@@ -1436,16 +1435,12 @@ export class ProjectService {
       scenes.push(MAIN_SCENE_FILE);
     }
     if (!graphs.length) {
-      if (await this.storage.exists(MAIN_GRAPH_FILE)) {
-        graphs.push(MAIN_GRAPH_FILE);
-      } else {
-        await this.saveDocument(
-          "graph",
-          MAIN_CLASS_FILE,
-          createDefaultLogicGraphSerialized(),
-        );
-        graphs.push(MAIN_CLASS_FILE);
-      }
+      await this.saveDocument(
+        "graph",
+        MAIN_CLASS_FILE,
+        createDefaultLogicGraphSerialized(),
+      );
+      graphs.push(MAIN_CLASS_FILE);
     }
     await this.mountAssetRegistry();
     return { ...document, scenes, graphs };
