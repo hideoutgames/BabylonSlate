@@ -214,13 +214,13 @@ describe("project documents as .babasset", () => {
     expect(await storage.readBinary(path)).toEqual(bytes);
   });
 
-  it.each([false, true])("refuses to save over an asset it cannot read (rescanned=%s)", async (rescanned) => {
+  it.each([true, false])("refuses to save over an asset it cannot read (indexed=%s)", async (indexed) => {
     const { service, storage } = await scaffolded();
     const path = "assets/Corrupt.class.babasset";
-    await service.saveDocument("graph", path, { nodes: [], edges: [] });
+    // An indexed file keeps its GUID but not its chunks; an unindexed one has neither.
+    if (indexed) await service.saveDocument("graph", path, { nodes: [], edges: [] });
     const corrupt = new Uint8Array([1, 2, 3]);
     await storage.writeBinary(path, corrupt);
-    if (rescanned) await service.remountRegistry();
     await expect(service.saveDocument("graph", path, { nodes: [], edges: [] })).rejects.toThrow(/could not be read/);
     expect(await storage.readBinary(path)).toEqual(corrupt);
   });

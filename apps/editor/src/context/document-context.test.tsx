@@ -285,7 +285,7 @@ describe("DocumentProvider actions and route", () => {
   it("writes a Class reparent with the saved graph and keeps the tab's unsaved edits unsaved", async () => {
     const actions = await openProject();
     const registry = documents().assetRegistry!;
-    await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "Class", name: "Hero" }));
+    await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "Class", name: "Hero", parentClass: "Actor" }));
     act(() => actions.noteAssetsCreated());
     const ref = { kind: "graph" as const, path: MAIN_CLASS_FILE, label: "Main" };
     const id = documentId(ref);
@@ -297,9 +297,13 @@ describe("DocumentProvider actions and route", () => {
 
     expect(await act(() => actions.reparentClassDocument(id, "Hero"))).toBeNull();
     expect(registry.getByPath(MAIN_CLASS_FILE)?.header.parentClass).toBe("Hero");
+    expect(documents().dirtyDocuments.map((doc) => doc.id)).toEqual([id]);
+
+    // Discard: the unsaved member never reached disk.
+    act(() => actions.closeDocument(id));
     const stored = await actions.loadAssetDocument("graph", MAIN_CLASS_FILE) as SerializedGraph;
     expect(stored.members ?? []).not.toContainEqual(expect.objectContaining({ id: "speed" }));
-    expect(documents().dirtyDocuments.map((doc) => doc.id)).toEqual([id]);
+    expect(registry.getByPath(MAIN_CLASS_FILE)?.header.parentClass).toBe("Hero");
   });
 
   it("records a SceneLayer switcher entries edit for Undo and crash recovery", async () => {
