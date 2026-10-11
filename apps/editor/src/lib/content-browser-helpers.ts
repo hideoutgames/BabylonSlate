@@ -892,6 +892,11 @@ export function isValidMoveDestination(options: {
   return destinationPath !== parentFolderPath(sourcePath);
 }
 
+/**
+ * Move or Copy target for a mixed selection. A folder never goes into itself
+ * or a descendant. Items already in the destination are skipped, as a tree
+ * drop skips them, so a move only needs one item that changes folder.
+ */
 export function isValidSelectionMoveDestination(options: {
   destinationPath: string;
   operation?: "move" | "copy";
@@ -900,32 +905,14 @@ export function isValidSelectionMoveDestination(options: {
 }): boolean {
   const assetSourcePaths = options.assetSourcePaths ?? [];
   const folderSourcePaths = options.folderSourcePaths ?? [];
+  const destination = options.destinationPath;
   if (assetSourcePaths.length + folderSourcePaths.length === 0) return false;
-  for (const sourcePath of folderSourcePaths) {
-    if (
-      !isValidMoveDestination({
-        kind: "folder",
-        sourcePath,
-        destinationPath: options.destinationPath,
-        operation: options.operation,
-      })
-    ) {
-      return false;
-    }
+  if (folderSourcePaths.some((source) => destination === source || destination.startsWith(`${source}/`))) {
+    return false;
   }
-  for (const sourcePath of assetSourcePaths) {
-    if (
-      !isValidMoveDestination({
-        kind: "asset",
-        sourcePath,
-        destinationPath: options.destinationPath,
-        operation: options.operation,
-      })
-    ) {
-      return false;
-    }
-  }
-  return true;
+  if (options.operation === "copy") return true;
+  return folderSourcePaths.some((source) => destination !== parentFolderPath(source)) ||
+    assetSourcePaths.some((source) => destination !== source);
 }
 
 export type ContentBrowserContextAction =

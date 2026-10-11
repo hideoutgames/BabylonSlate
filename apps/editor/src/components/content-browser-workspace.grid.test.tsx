@@ -1072,6 +1072,20 @@ describe("ContentBrowserWorkspace grid window", () => {
     ).toBeNull();
   });
 
+  it("extends a keyboard range in the tree from the row where it started", () => {
+    docs.thumbnailsEnabled = false;
+    installRegistry([texture(0), texture(1), texture(2)]);
+    render(<ContentBrowserWorkspace />);
+    const tree = screen.getByTestId("content-browser-folder-tree");
+    tapTreeRow(screen.getByTestId("tree-row-assets/tex-1.babasset"));
+    fireEvent.keyDown(tree, { key: "ArrowDown", shiftKey: true });
+    fireEvent.keyDown(tree, { key: "ArrowUp", shiftKey: true });
+
+    const selected = (index: number) =>
+      screen.getByTestId(`content-item-assets/tex-${index}.babasset`).getAttribute("data-selected");
+    expect([selected(0), selected(1), selected(2)]).toEqual(["false", "true", "false"]);
+  });
+
   it("keeps folder navigation alongside assets on larger screens", () => {
     docs.thumbnailsEnabled = false;
     render(<ContentBrowserWorkspace />);

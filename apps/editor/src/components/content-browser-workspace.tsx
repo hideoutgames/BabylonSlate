@@ -244,6 +244,16 @@ type MoveTarget = {
 
 type GridItem = ContentBrowserGridItem;
 
+/** Folder selection after `fromFolder` moved to `toFolder`; an unchanged set is kept. */
+function remapFolderSelection(
+  selected: Set<string>,
+  fromFolder: string,
+  toFolder: string,
+): Set<string> {
+  const next = new Set([...selected].map((path) => remapPathAfterFolderMove(path, fromFolder, toFolder)));
+  return next.size === selected.size && [...next].every((path) => selected.has(path)) ? selected : next;
+}
+
 /**
  * Locks of the mounted asset tiles, serialized so the memoized grid sees a new
  * value only when one of them changes (the service mutates its locks in place).
@@ -337,6 +347,8 @@ function ContentBrowserWorkspaceBody({
     () => new Set(),
   );
   const [tileAnchorKey, setTileAnchorKey] = useState<string | null>(null);
+  /** Last tree row selected without a Shift range. */
+  const [treeAnchorId, setTreeAnchorId] = useState<string | null>(null);
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(
     () => new Set(),
   );
@@ -765,14 +777,19 @@ function ContentBrowserWorkspaceBody({
     return flattenContentBrowserForest(folderTrees, allAssets, collapsedFolders);
   }, [allAssets, collapsedFolders, folderTrees]);
 
+  /** Primary tree row and Shift range anchor: the last clicked row while it stays selected. */
   const treeSelectedId = useMemo(() => {
+    if (treeAnchorId && (selectedFolderPaths.has(treeAnchorId) ||
+      [...selectedGuids].some((guid) => assetsByGuid.get(guid)?.path === treeAnchorId))) {
+      return treeAnchorId;
+    }
     if (selectedGuids.size === 1) {
       const guid = [...selectedGuids][0]!;
       const asset = assetsByGuid.get(guid);
       if (asset) return asset.path;
     }
     return selectedFolderPath;
-  }, [assetsByGuid, selectedFolderPath, selectedGuids]);
+  }, [assetsByGuid, selectedFolderPath, selectedFolderPaths, selectedGuids, treeAnchorId]);
 
   const treeSelectedIds = useMemo(() => {
     const ids: string[] = [...selectedFolderPaths];
@@ -1169,26 +1186,27 @@ function ContentBrowserWorkspaceBody({
             folders,
             (guid) => assetRegistry.getByGuid(guid)?.path,
           );
-          const browse = contentBrowserFolderOps(
-            selectedFolderPath,
-            browserRoots,
-          );
-          if (browse.readOnly) return;
+          // Each copy is written beside its source, as folder duplicates are.
+          const sources = [
+            ...folders.map((path) => ({ guid: null, from: contentBrowserFolderOps(path, browserRoots) })),
+            ...guids.flatMap((guid) => {
+              const path = assetRegistry.getByGuid(guid)?.path;
+              return path ? [{ guid, from: contentBrowserFolderOps(parentFolderPath(path), browserRoots) }] : [];
+            }),
+          ];
+          const readOnly = sources.find(({ from }) => from.readOnly);
+          if (readOnly) {
+            setOperationError(`${readOnly.from.pathPrefix} is read-only.`);
+            return;
+          }
           void (async () => {
             setBusy(true);
             setOperationError(null);
             try {
               try {
-                for (const path of folders) {
-                  const from = contentBrowserFolderOps(path, browserRoots);
-                  await assetRegistry.duplicateFolder(from.rootId, from.relative);
-                }
-                for (const guid of guids) {
-                  await assetRegistry.duplicateAsset(
-                    guid,
-                    browse.rootId,
-                    browse.relative,
-                  );
+                for (const { guid, from } of sources) {
+                  if (guid) await assetRegistry.duplicateAsset(guid, from.rootId, from.relative);
+                  else await assetRegistry.duplicateFolder(from.rootId, from.relative);
                 }
               } finally {
                 await refreshAssetRegistry();
@@ -1596,6 +1614,7 @@ function ContentBrowserWorkspaceBody({
               currentName: prepared[0]!.name,
             });
             const folder = selectedRoot.relative;
+            const { modelImportDefaultScale } = await createAppSettingsStore().load();
             for (let index = 0; index < prepared.length; index += 1) {
               const file = prepared[index]!;
               setImportProgress({
@@ -1604,14 +1623,13 @@ function ContentBrowserWorkspaceBody({
                 currentName: file.name,
               });
               try {
-                const engineSettings = await createAppSettingsStore().load();
                 const created = await assetRegistry.importFile(
                   selectedRoot.rootId,
                   folder,
                   file.name,
                   file.bytes,
                   {
-                    modelImportScale: engineSettings.modelImportDefaultScale,
+                    modelImportScale: modelImportDefaultScale,
                     sidecars: file.sidecars,
                   },
                 );
@@ -1698,6 +1716,7 @@ function ContentBrowserWorkspaceBody({
         setSelectedFolderPath((current) =>
           remapPathAfterFolderMove(current, fromPath, nextFolder),
         );
+        setSelectedFolderPaths((current) => remapFolderSelection(current, fromPath, nextFolder));
         await refreshAssetRegistry();
         setNameDialog(null);
         await transferFolderLocks(fromPath, nextFolder);
@@ -1798,6 +1817,7 @@ function ContentBrowserWorkspaceBody({
           );
           repathProjectFolder(fromPath, nextFolder);
           onMoved?.(move);
+          setSelectedFolderPaths((current) => remapFolderSelection(current, fromPath, nextFolder));
           for (const asset of contained) {
             repairDocumentPath(
               asset.path,
@@ -1845,7 +1865,10 @@ function ContentBrowserWorkspaceBody({
   const confirmMove = useCallback(async () => {
     if (!assetRegistry || !moveTarget) return;
     const dest = contentBrowserFolderOps(moveTarget.folderPath, browserRoots);
-    if (dest.readOnly) return;
+    if (dest.readOnly) {
+      setOperationError(`${moveTarget.folderPath} is read-only. Choose a folder in project content.`);
+      return;
+    }
     setBusy(true);
     setOperationError(null);
     const remainingGuids = new Set(moveTarget.guids);
@@ -1870,16 +1893,27 @@ function ContentBrowserWorkspaceBody({
           remainingGuids.delete(guid);
         }
       } else {
+        // Items already in the destination stay where they are, as in a tree drop.
         const moves: ContentBrowserDropMove[] = [
-          ...moveTarget.folderPaths.map((path) => ({
-            kind: "folder" as const,
-            sourcePath: path,
-            destinationPath: destPath,
-            id: path,
-          })),
+          ...moveTarget.folderPaths.flatMap((path) => {
+            if (parentFolderPath(path) === destPath) {
+              remainingFolders.delete(path);
+              return [];
+            }
+            return [{
+              kind: "folder" as const,
+              sourcePath: path,
+              destinationPath: destPath,
+              id: path,
+            }];
+          }),
           ...moveTarget.guids.flatMap((guid) => {
             const before = assetRegistry.getByGuid(guid);
             if (!before) return [];
+            if (parentFolderPath(before.path) === destPath) {
+              remainingGuids.delete(guid);
+              return [];
+            }
             return [
               {
                 kind: "asset" as const,
@@ -2188,6 +2222,7 @@ function ContentBrowserWorkspaceBody({
       setSelectedGuids(next.selectedGuids);
       setSelectedFolderPaths(next.selectedFolderPaths);
       setSelectedFolderPath(next.selectedFolderPath);
+      if (!options?.range) setTreeAnchorId(id);
     },
     [
       browserRows,
@@ -2204,7 +2239,7 @@ function ContentBrowserWorkspaceBody({
       targetId: string | null,
       placement?: TreeDropPlacement,
     ) => {
-      if (!assetRegistry) return;
+      if (!assetRegistry || busy) return;
       const moves = contentBrowserTreeDropMoves({
         dragId,
         targetId,
@@ -2236,6 +2271,7 @@ function ContentBrowserWorkspaceBody({
       applyRegistryMoves,
       assetRegistry,
       browserRows,
+      busy,
       refreshAssetRegistry,
       rootPrefixes,
       selectedFolderPaths,

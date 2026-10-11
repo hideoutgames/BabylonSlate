@@ -1774,6 +1774,23 @@ describe("content-browser-helpers", () => {
     ).toBe(true);
   });
 
+  it("allows a move when only some selected items already live in the destination", () => {
+    expect(
+      isValidSelectionMoveDestination({
+        destinationPath: "assets",
+        operation: "move",
+        assetSourcePaths: ["assets", "assets/textures"],
+      }),
+    ).toBe(true);
+    expect(
+      isValidSelectionMoveDestination({
+        destinationPath: "assets",
+        operation: "move",
+        assetSourcePaths: ["assets"],
+      }),
+    ).toBe(false);
+  });
+
   it("drops selected assets that already live under a selected folder", () => {
     expect(
       guidsOutsideSelectedFolders(
