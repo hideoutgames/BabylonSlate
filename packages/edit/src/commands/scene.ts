@@ -36,17 +36,20 @@ function withProperty(
   return next;
 }
 
+/** Returns `doc` itself when `update` keeps the actor, so the stack sees a no-op. */
 function replaceActor(
   doc: SerializedScene,
   actorId: string,
   update: (actor: SerializedActor) => SerializedActor,
 ): SerializedScene {
-  return {
-    ...doc,
-    actors: doc.actors.map((actor) =>
-      actor.id === actorId ? update(actor) : actor,
-    ),
-  };
+  let changed = false;
+  const actors = doc.actors.map((actor) => {
+    if (actor.id !== actorId) return actor;
+    const next = update(actor);
+    changed ||= next !== actor;
+    return next;
+  });
+  return changed ? { ...doc, actors } : doc;
 }
 
 export class AddActorCommand implements EditCommand<SerializedScene> {
@@ -269,7 +272,9 @@ export class ReorderActorCommand implements EditCommand<SerializedScene> {
 
   apply(doc: SerializedScene): SerializedScene {
     const index = doc.actors.findIndex((actor) => actor.id === this.actorId);
-    if (index === -1) return doc;
+    // A row no longer at `from` was moved by an edit this one does not know
+    // about (a journal replayed over saved content), so it is left in place.
+    if (index !== this.from) return doc;
     const actors = [...doc.actors];
     const [moved] = actors.splice(index, 1);
     if (!moved) return doc;
@@ -411,7 +416,8 @@ export class ReorderComponentCommand implements EditCommand<SerializedScene> {
       const index = actor.components.findIndex(
         (entry) => entry.id === this.componentId,
       );
-      if (index === -1) return actor;
+      // Only the row recorded at `from` moves, as in ReorderActorCommand.
+      if (index !== this.from) return actor;
       const components = [...actor.components];
       const [moved] = components.splice(index, 1);
       if (!moved) return actor;

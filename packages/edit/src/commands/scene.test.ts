@@ -36,6 +36,7 @@ import {
   SetViewportModeCommand,
   type SceneEditCommand,
 } from "./scene";
+import { ReorderFolderCommand } from "./scene-fields";
 import { diffSceneCommands, planSceneChange } from "./scene-diff";
 import { EditSession } from "../session";
 import { commandToJournalPayload, reviveCommand } from "../journal";
@@ -216,6 +217,27 @@ describe("scene commands", () => {
   it("ReorderActorCommand apply-then-invert restores the document", () => {
     const scene = baseScene();
     expectRoundTrip(scene, new ReorderActorCommand("a", 0, 1));
+  });
+
+  it("reorders a row only while it is still at the recorded from index", () => {
+    const scene = baseScene();
+    scene.folders = [
+      { id: "f1", name: "One", parentFolderId: null },
+      { id: "f2", name: "Two", parentFolderId: null },
+    ];
+    scene.actors[0]!.components.push(createMeshComponent("c2", "sphere"));
+    const reorders = [
+      new ReorderActorCommand("a", 0, 1),
+      new ReorderFolderCommand("f1", 0, 1),
+      new ReorderComponentCommand("a", "c1", 0, 1),
+    ];
+    const moved = reorders.reduce((doc, command) => command.apply(doc), scene);
+    expect(moved.actors.map((actor) => actor.id)).toEqual(["b", "a"]);
+    expect(moved.folders.map((folder) => folder.id)).toEqual(["f2", "f1"]);
+    expect(moved.actors[1]!.components.map((component) => component.id)).toEqual(["c2", "c1"]);
+    // Replayed again (a journal over content that already holds it), each
+    // reorder leaves its row where the later edits put it.
+    for (const command of reorders) expect(command.apply(moved)).toBe(moved);
   });
 
   it("SetActorFlagsCommand apply-then-invert restores the document", () => {
