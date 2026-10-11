@@ -507,7 +507,7 @@ Do **not** rebuild `shader-graph`, `anim-graph`, `scripting`, `physics`, or `deb
 | Item | Status |
 | --- | --- |
 | ScriptHost `TickContext` input, tick Delay, spawn, addComponent, interface handlers | Done |
-| Play loads startup/main scene + `gameInstanceClass` with no scene tab | Superseded — Debug **Play from Scene** (default on) seeds Play from the open scene tab and disables Play without one; with it off, Play and Preview Build start at `startupSceneGuid`. `collectPlayStartupScene` path fallback removed |
+| Play loads startup/main scene + `gameInstanceClass` with no scene tab | Superseded — with Debug **Play from Scene** on (default), Play and Preview Build seed the open scene tab and fall back to `startupSceneGuid` when no scene tab is open; with it off they start at `startupSceneGuid`. Play is disabled only when neither resolves to a Scene (`playIsEnabled` / `resolvePreviewStartupGuid`). `collectPlayStartupScene` path fallback removed |
 | Place Actors copies closed-tab class prefab components from disk | Done |
 | `changescene` / `ctx.changeScene` instantiates a library scene | Done |
 | Sprite/tilemap textures via `ResourceCache`; GLB `assetGuid`; authored lights/cameras | Done (full lighting/camera contract landed in `p-lighting-camera`) |

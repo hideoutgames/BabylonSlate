@@ -1321,10 +1321,10 @@ Pickup selections (keep `BL_TEST_PROFILE=shared` and the shared host configurati
 
 ```powershell
 pnpm --silent agent:wait local --script test -- apps/editor/src/lib/component-property-rows.test.ts packages/physics/src/physics.test.ts
-pnpm --silent agent:wait local --script test:e2e -- e2e/tileset-preview.spec.ts e2e/cel-render-mode.spec.ts --project=desktop-chrome -g 'encoded Tilemap|Mannequin illumination'
+pnpm --silent agent:wait local --script test:e2e -- e2e/tileset-preview.spec.ts --project=desktop-chrome -g 'encoded Tilemap'
 ```
 
-`e2e/particle-lifecycle.spec.ts` and `e2e/post-process-owner-overrides.spec.ts` are no longer in the tree, so the GPU WebGPU particle and saved duplicate post-process override cases have no browser pickup; their earlier results above are historical.
+`e2e/particle-lifecycle.spec.ts` and `e2e/post-process-owner-overrides.spec.ts` are no longer in the tree, and `e2e/cel-render-mode.spec.ts` no longer has a Mannequin illumination test (its only case is the authored-color check). The GPU WebGPU particle, saved duplicate post-process override and CEL Mannequin illumination cases therefore have no browser pickup; their earlier results above are historical.
 
 Current-head scoped editor/render typechecking and changed-file lint remain pending after the latest diagnostic and inspector edits. Hosted verification remains mandatory before merge; later CI results must be recorded separately from these unexecuted local selections. Isolated before/after physics timing and sustained representative Play measurements remain follow-up items, not performance claims.
 
