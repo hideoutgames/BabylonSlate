@@ -1447,13 +1447,10 @@ export class ProjectService {
     }
 
     const withDocuments = await this.ensureDocuments(document);
-    // Legacy Scene-local GameInstance defaults resolve when that Scene is
-    // requested. Project opening must not scan every Scene to guess a default.
-    const migratedDocument = withDocuments;
     const layouts = await this.loadLayouts();
 
     return {
-      document: migratedDocument,
+      document: withDocuments,
       layouts,
       migrationPending: this.pendingMigrations,
     };
