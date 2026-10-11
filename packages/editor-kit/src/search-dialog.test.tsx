@@ -422,13 +422,13 @@ describe("AssetPicker", () => {
         assets={[
           {
             guid: "g1",
-            name: "main.scene",
+            name: "main",
             type: "Scene",
             path: "assets/main.scene.babasset",
           },
           {
             guid: "g2",
-            name: "main.scene",
+            name: "main",
             type: "Scene",
             path: "assets/levels/main.scene.babasset",
           },

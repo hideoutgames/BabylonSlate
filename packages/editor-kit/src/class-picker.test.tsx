@@ -79,7 +79,7 @@ describe("ClassPicker", () => {
         open
         onOpenChange={() => {}}
         classes={[
-          { id: "main", name: "main.class", group: "Project" },
+          { id: "main", name: "Main", group: "Project" },
           { id: "Actor", name: "Actor", group: "Engine" },
         ]}
         allowNone={false}
@@ -87,8 +87,7 @@ describe("ClassPicker", () => {
       />,
     );
     const projectRow = screen.getByTestId("search-item-main");
-    expect(projectRow.textContent).toContain("main");
-    expect(projectRow.textContent).not.toContain("main.class");
+    expect(projectRow.textContent).toContain("Main");
     expect(projectRow.textContent).toContain("Class");
     expect(projectRow.textContent).not.toContain("Project");
     const engineRow = screen.getByTestId("search-item-Actor");
