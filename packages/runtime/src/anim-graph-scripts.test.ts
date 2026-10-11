@@ -444,7 +444,6 @@ describe("runtime AnimationGraph scripts", () => {
       toStateId: "run",
       blendSeconds: 0.2,
       priority: 0,
-      condition: "moving",
       ruleGraph: createDefaultTransitionRuleGraph(),
     });
     const commands: CommandMessage[] = [];
@@ -452,10 +451,7 @@ describe("runtime AnimationGraph scripts", () => {
       seed: 1,
       maxActors: 4,
       seedDemoActors: false,
-      playScene: animScene({
-        graphGuid: "graph-1",
-        conditions: { moving: true },
-      }),
+      playScene: animScene(),
       animGraphs: { "graph-1": doc },
       onCommand: (command) => commands.push(command),
     });
@@ -492,7 +488,6 @@ describe("runtime AnimationGraph scripts", () => {
       toStateId: "run",
       blendSeconds: 0.2,
       priority: 0,
-      condition: "moving",
       ruleGraph: createDefaultTransitionRuleGraph(),
     });
     const commands: CommandMessage[] = [];
@@ -500,7 +495,7 @@ describe("runtime AnimationGraph scripts", () => {
       seed: 1,
       maxActors: 4,
       seedDemoActors: false,
-      playScene: animScene({ graphGuid: "graph-1", conditions: { moving: true } }),
+      playScene: animScene(),
       playSceneGuid: "anim",
       animGraphs: { "graph-1": doc },
       onCommand: (command) => commands.push(command),
