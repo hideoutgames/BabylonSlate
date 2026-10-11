@@ -6,7 +6,7 @@ import { Material, Mesh, MeshBuilder, HemisphericLight, PointLight, Quaternion, 
 import { afterEach, describe, expect, it } from "vitest";
 import { SNAPSHOT_FLAG_OVERLAY, SNAPSHOT_FLAG_VISIBLE } from "@babylonslate/bridge";
 import { createDefaultSpritePayload, createDefaultTilemapPayload, decodeBabasset, embedGlbExternalImages, encodeBabasset, normalizeTilesetPayload, setTile } from "@babylonslate/assets";
-import { DEFAULT_SORTING_LAYERS, parseText2DProperties } from "@babylonslate/core";
+import { createDefaultWaterDefinition, DEFAULT_SORTING_LAYERS, normalizeWaterBody, parseText2DProperties } from "@babylonslate/core";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import { createTestEngine } from "./create-null-engine";
 import { encodeAnimatedTriangleGlb, encodeParentedAnimatedTriangleGlb, encodeTriangleGlb, encodeUvHierarchyGlb } from "./glb-test-fixtures";
@@ -290,13 +290,14 @@ describe("createPlayMesh", () => {
     ).toBe("btn-1");
   });
 
-  it("puts primitive and model Play meshes in the same world rendering group", async () => {
+  it("puts primitive, model and water Play meshes in the same world rendering group", async () => {
     const handle = createTestEngine();
     handles.push(handle);
     const { scene } = handle;
     const binding = createSnapshotSceneBinding();
     binding.modelBytes = new Map([["model-1", encodeTriangleGlb()]]);
     binding.modelSources = installModelSources(binding);
+    binding.waters = new Map([["water", createDefaultWaterDefinition()]]);
     const box = createPlayMesh(scene, 1, "box", null, binding);
     const model = createPlayMesh(scene, 2, "box", "model-1", binding);
     await binding.slotAnimLoads?.get(2);
@@ -305,6 +306,14 @@ describe("createPlayMesh", () => {
     for (const child of model.getChildMeshes()) {
       expect(child.renderingGroupId).toBe(model.renderingGroupId);
     }
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh", slotId: 3, meshKind: "water", meshAssetGuid: "water",
+      parts: [{ componentId: "lake", meshKind: "water", meshAssetGuid: "water", parentId: null, position: [0, 0, 0],
+        rotation: [0, 0, 0, 1], scale: [1, 1, 1], water: normalizeWaterBody({ width: 4, length: 4, resolution: 8 }) }],
+    });
+    const surface = binding.meshes.get(3)!.getChildMeshes()[0]!;
+    expect(surface.isVerticesDataPresent("slateWaterData")).toBe(true);
+    expect(surface.renderingGroupId).toBe(box.renderingGroupId);
   });
 
   it("loads a Model guid once for two Play slots", async () => {

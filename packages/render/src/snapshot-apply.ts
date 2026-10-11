@@ -1777,7 +1777,7 @@ export function createPlayMesh(
   if (meshKind === "water" && water) {
     const definition = assetGuid ? binding?.waters?.get(assetGuid) : undefined;
     const material = definition?.materialGuid ? binding?.resolveMaterial?.(definition.materialGuid) : null;
-    return createWaterMesh(scene, name, water, definition, material);
+    return finishPlayWorldMesh(createWaterMesh(scene, name, water, definition, material));
   }
   if (meshKind === "landscape" && landscape) return createLandscapeMesh(scene, name, landscape, binding);
   if (meshKind === "foliage" && foliage) return createFoliageMesh(scene, name, foliage, binding);
