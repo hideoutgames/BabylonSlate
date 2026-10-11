@@ -104,11 +104,15 @@ export class SessionDiagnostics<FrameReport> {
     if (Number.isSafeInteger(message.droppedRecords) && message.droppedRecords! >= 0)
       state.droppedRecords += message.droppedRecords!;
     try {
-      for (let index = 0; index < message.rows.length; index += 6) state.recorder.recordTick({
-        tickId: message.rows[index]!, elapsedMs: message.rows[index + 1]!,
-        scriptMs: message.rows[index + 2]!, physicsMs: message.rows[index + 3]!,
-        publishMs: message.rows[index + 4]!, otherMs: message.rows[index + 5]!,
-      }, { drain: true });
+      for (let index = 0; index < message.rows.length; index += 6) {
+        // A budget stop counts its rejected row; the rest of the chunk is dropped too.
+        if (!state.recorder.recording) { state.droppedRecords += (message.rows.length - index) / 6; break; }
+        state.recorder.recordTick({
+          tickId: message.rows[index]!, elapsedMs: message.rows[index + 1]!,
+          scriptMs: message.rows[index + 2]!, physicsMs: message.rows[index + 3]!,
+          publishMs: message.rows[index + 4]!, otherMs: message.rows[index + 5]!,
+        }, { drain: true });
+      }
       return true;
     } catch { void this.finish(state, "error"); return false; }
   }
@@ -174,6 +178,8 @@ export class SessionDiagnostics<FrameReport> {
     return state.stopping;
   }
   private async request(request: DiagnosticOperationRequest): Promise<DiagnosticOperationResult> {
+    // Backstop for ports without their own deadline. The correlated client fails first
+    // (2.5 s) with a specific reason and frees its pending slot.
     try { return await bounded(this.ports.runtimeOperation(request), 3000); }
     catch (error) { return { success: false, reason: error instanceof Error ? error.message : String(error) }; }
   }

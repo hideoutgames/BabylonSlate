@@ -137,7 +137,9 @@ export class TraceRecorder {
     return this.recording;
   }
 
-  start(meta: { seed: number; dt: number }): void {
+  /** Returns false and keeps the current recording when one is already running. */
+  start(meta: { seed: number; dt: number }): boolean {
+    if (this.recording) return false;
     const retention: TraceRetention = {
       byteBudget: this.byteBudget,
       droppedFrames: 0,
@@ -159,6 +161,7 @@ export class TraceRecorder {
     this.frameBytes = [];
     this.headerBytes = headerBytes;
     this.encodedBytes = headerBytes;
+    return true;
   }
 
   recordFrame(frame: TraceFrame): void {

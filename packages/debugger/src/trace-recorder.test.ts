@@ -63,6 +63,17 @@ describe("TraceRecorder", () => {
     expect(recorder.stop()).toBeNull();
   });
 
+  it("keeps the frames of a running recording when start is requested again", () => {
+    const recorder = new TraceRecorder({ byteBudget: 64 * 1024 });
+    expect(recorder.start({ seed: 1, dt: 1 / 60 })).toBe(true);
+    recorder.recordFrame(frame(1));
+    expect(recorder.start({ seed: 2, dt: 1 / 30 })).toBe(false);
+    recorder.recordFrame(frame(2));
+    const payload = recorder.stop();
+    expect(payload).toMatchObject({ seed: 1, dt: 1 / 60 });
+    expect(payload?.frames.map((entry) => entry.tickIndex)).toEqual([1, 2]);
+  });
+
   it("retains a multi-megabyte recording with the default budget", () => {
     const recorder = new TraceRecorder();
     recorder.start({ seed: 7, dt: 1 / 60 });

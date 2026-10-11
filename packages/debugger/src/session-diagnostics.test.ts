@@ -70,6 +70,22 @@ describe("SessionDiagnostics", () => {
     expect(session.lastProfile?.stopReason).toBe("error");
   });
 
+  it("counts every tick of a chunk that a budget stop leaves unrecorded", async () => {
+    const requests: DiagnosticOperationRequest[] = [];
+    const session = new SessionDiagnostics({ mode: "play", identity: () => identity, now: () => 0,
+      observeFrames: () => () => {}, captureFrame: async () => "frame",
+      runtimeOperation: async (request) => { requests.push(request); return { success: true }; },
+    });
+    await session.startProfile({ byteBudget: 4096 });
+    const rows = new Float64Array(256 * 6);
+    for (let row = 0; row < 256; row++) rows.set([row, row, 1, 1, 0, 0], row * 6);
+    expect(session.receiveTicks({ recordingId: requests[0]!.recordingId, sequence: 0, rows })).toBe(true);
+    const profile = await session.stopProfile();
+    expect(profile?.stopReason).toBe("budget");
+    expect(profile!.ticks.count).toBeGreaterThan(0);
+    expect(profile!.ticks.count + profile!.droppedRecords).toBe(256);
+  });
+
   it("collects GPU values only on explicit request and releases every profile lease", async () => {
     let gpu: ((sample: PerformanceGpuSample) => void) | undefined;
     const release = vi.fn(() => { gpu = undefined; });
