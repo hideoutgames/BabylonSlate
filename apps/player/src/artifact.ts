@@ -1,9 +1,6 @@
 import { collisionTriangleMeshBytes, normalizeScene, normalizeSceneLayer, parseText2DProperties, type CollisionTriangleMesh, type SerializedScene, type SerializedSceneLayer, type StorageReadMetrics } from "@babylonslate/core";
 import {
-  createHttpPackSource,
-  createMemoryPackSource,
   parseGameManifest,
-  parseScriptRegistry,
   GAME_MANIFEST_FILE,
   NAVMESH_EXPORT_TYPE,
   sceneGuidFromNavmeshExport,
@@ -22,7 +19,6 @@ import {
   fontMsdfAtlasExportGuid,
   type GameAssetIndexEntry,
   type GameManifest,
-  type PackSource,
 } from "@babylonslate/exporter";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import {
@@ -89,20 +85,6 @@ function textFromFiles(files: Map<string, Uint8Array>, name: string): string {
   return decoder.decode(bytes);
 }
 
-function packSourceFor(
-  files: Map<string, Uint8Array>,
-  packName: string,
-  fetchImpl?: typeof fetch,
-  baseUrl?: string,
-): PackSource {
-  const bytes = files.get(packName);
-  if (bytes) return createMemoryPackSource(bytes);
-  if (!baseUrl || !fetchImpl) {
-    throw new Error(`Pack ${packName} is not in memory and no HTTP source was given`);
-  }
-  return createHttpPackSource(new URL(packName, baseUrl).href, undefined, fetchImpl);
-}
-
 function parseJsonAsset(bytes: Uint8Array): unknown {
   return JSON.parse(decoder.decode(bytes));
 }
@@ -115,7 +97,8 @@ export async function loadGameFromFiles(
   // browser rejects the latter's receiver with an Illegal invocation error.
   const fetchAsset = options.fetchImpl;
   const manifest = parseGameManifest(textFromFiles(files, GAME_MANIFEST_FILE));
-  const scripts = parseScriptRegistry(textFromFiles(files, manifest.scriptsFile));
+  // Compiled Class code arrives as CompiledScript sidecars when acquired.
+  const scripts: ScriptBundleEntry[] = [];
   const scenes = new Map<string, SerializedScene>();
   const sceneLayers = new Map<string, SerializedSceneLayer>();
   const textureBytes = new Map<string, Uint8Array>();
@@ -136,8 +119,8 @@ export async function loadGameFromFiles(
   const navmeshBytes = new Map<string, Uint8Array>();
   const audioReverbBytes = new Map<string, Uint8Array>();
 
-  const packSources = new Map<string, PackSource>();
-  const readMetrics: StorageReadMetrics = { operations: 2, fullReads: 2, rangeReads: 0, requestedBytes: (files.get(GAME_MANIFEST_FILE)?.byteLength ?? 0) + (files.get(manifest.scriptsFile)?.byteLength ?? 0), actualBytesRead: (files.get(GAME_MANIFEST_FILE)?.byteLength ?? 0) + (files.get(manifest.scriptsFile)?.byteLength ?? 0) };
+  const manifestLength = files.get(GAME_MANIFEST_FILE)?.byteLength ?? 0;
+  const readMetrics: StorageReadMetrics = { operations: 1, fullReads: 1, rangeReads: 0, requestedBytes: manifestLength, actualBytesRead: manifestLength };
   const entries = new Map(manifest.assets.map(entry => [entry.guid, entry]));
   for (const entry of manifest.assets) if (entry.type === "Font") fontFamilies.set(entry.guid, entry.name?.trim() || entry.guid);
   const projectId = options.baseUrl ?? `memory-export:${manifest.project?.name ?? "game"}`;
@@ -186,15 +169,8 @@ export async function loadGameFromFiles(
       if (!response.ok) throw new Error(`Asset ${entry.guid} is missing (${entry.path}, HTTP ${response.status}).`);
       accounted = true;
       bytes = await readResponse(entry, response);
-    } else if (entry.pack) {
-      let source = packSources.get(entry.pack);
-      if (!source) {
-        source = packSourceFor(files, entry.pack, fetchAsset, options.baseUrl);
-        packSources.set(entry.pack, source);
-      }
-      bytes = await source.read(entry.guid);
     } else throw new Error(`Missing bytes for asset ${entry.guid}.`);
-    if (!entry.pack && !accounted) { readMetrics.operations++; readMetrics.fullReads++; readMetrics.requestedBytes += entry.byteLength ?? bytes.byteLength; readMetrics.actualBytesRead += bytes.byteLength; }
+    if (!accounted) { readMetrics.operations++; readMetrics.fullReads++; readMetrics.requestedBytes += entry.byteLength ?? bytes.byteLength; readMetrics.actualBytesRead += bytes.byteLength; }
     signal.throwIfAborted();
     if (entry.byteLength !== undefined && bytes.byteLength !== entry.byteLength) throw new Error(`Asset ${entry.guid} has a corrupt length.`);
     if (entry.revision && await sha256Hex(bytes) !== entry.revision) throw new Error(`Asset ${entry.guid} has a corrupt revision.`);
@@ -317,11 +293,7 @@ export async function loadGameFromFiles(
     },
   });
   game.assets = service;
-  game.getReadMetrics = () => {
-    const result = { ...readMetrics };
-    for (const source of packSources.values()) { const stats = source.getReadMetrics?.(); if (stats) for (const key of Object.keys(result) as Array<keyof StorageReadMetrics>) result[key] += stats[key]; }
-    return result;
-  };
+  game.getReadMetrics = () => ({ ...readMetrics });
   function acquireCollision(scope: AssetLoadScope, id: string, model: { source: Uint8Array; payload: ModelPayload }, signal?: AbortSignal, priority: AssetLoadPriority = "gameplay") {
     return scope.acquire<PreparedAsset>(id, {
       key: "export-complex-collision",
@@ -425,7 +397,7 @@ export async function loadGameFromFiles(
     if (!scene) { source.release(); throw new Error(`Asset ${guid} is not a Scene.`); }
     return { scene, release: source.release, assetGuids: source.assetGuids };
   };
-  game.dispose = () => { sourceListeners.clear(); for (const scope of liveScopes) scope.dispose(); liveScopes.clear(); service.dispose(); packSources.clear(); };
+  game.dispose = () => { sourceListeners.clear(); for (const scope of liveScopes) scope.dispose(); liveScopes.clear(); service.dispose(); };
   const roots = manifest.assetCatalogVersion === 1
     ? manifest.assets.filter(entry => entry.guid === manifest.startupSceneGuid).map(entry => entry.guid)
     : manifest.assets.map(entry => entry.guid);
@@ -486,12 +458,6 @@ export async function loadGameFromHttp(
   const manifestRes = await fetchImpl(manifestUrl, { signal });
   if (!manifestRes.ok) throw new Error("Export is missing game.json");
   const manifestBytes = new Uint8Array(await manifestRes.arrayBuffer());
-  const manifest = parseGameManifest(decoder.decode(manifestBytes));
-  const scriptsRes = await fetchImpl(new URL(manifest.scriptsFile, baseUrl).href, { signal });
-  if (!scriptsRes.ok) throw new Error(`Export is missing ${manifest.scriptsFile}`);
-  const files = new Map<string, Uint8Array>([
-    [GAME_MANIFEST_FILE, manifestBytes],
-    [manifest.scriptsFile, new Uint8Array(await scriptsRes.arrayBuffer())],
-  ]);
+  const files = new Map<string, Uint8Array>([[GAME_MANIFEST_FILE, manifestBytes]]);
   return loadGameFromFiles(files, { fetchImpl, baseUrl, signal });
 }

@@ -4,27 +4,13 @@ import {
   createDefaultSceneLayer,
   DEFAULT_RENDER_PROJECT_SETTINGS,
 } from "@babylonslate/core";
-import { exportGame, GAME_MANIFEST_FILE, SCRIPTS_FILE, AREA_EMISSION_EXPORT_TYPE, areaEmissionExportGuid, FONT_FACETYPE_EXPORT_TYPE, FONT_MSDF_EXPORT_TYPE, FONT_MSDF_ATLAS_EXPORT_TYPE, fontFacetypeExportGuid, fontMsdfExportGuid, fontMsdfAtlasExportGuid } from "@babylonslate/exporter";
+import { exportGame, GAME_MANIFEST_FILE, AREA_EMISSION_EXPORT_TYPE, areaEmissionExportGuid, FONT_FACETYPE_EXPORT_TYPE, FONT_MSDF_EXPORT_TYPE, FONT_MSDF_ATLAS_EXPORT_TYPE, fontFacetypeExportGuid, fontMsdfExportGuid, fontMsdfAtlasExportGuid } from "@babylonslate/exporter";
 import { AREA_EMISSION_EDGE, encodeAreaEmission } from "@babylonslate/assets";
 import { loadGameFromFiles, loadGameFromHttp } from "./artifact";
 
 const encoder = new TextEncoder();
-const decoder = new TextDecoder();
 /** Response bodies need ArrayBuffer-backed views; exported bytes never use SharedArrayBuffer. */
 const body = (bytes: Uint8Array | undefined) => bytes as Uint8Array<ArrayBuffer> | undefined;
-
-function useScriptsFilename(files: Map<string, Uint8Array>, scriptsFile: string) {
-  const customized = new Map(files);
-  const scripts = customized.get(SCRIPTS_FILE);
-  const manifestBytes = customized.get(GAME_MANIFEST_FILE);
-  if (!scripts || !manifestBytes) throw new Error("Incomplete test artifact");
-  const manifest = JSON.parse(decoder.decode(manifestBytes)) as Record<string, unknown>;
-  manifest.scriptsFile = scriptsFile;
-  customized.delete(SCRIPTS_FILE);
-  customized.set(scriptsFile, scripts);
-  customized.set(GAME_MANIFEST_FILE, encoder.encode(JSON.stringify(manifest)));
-  return customized;
-}
 
 describe("loadGameFromFiles", () => {
   it("uses a valid native fetch receiver for default HTTP source loading", async () => {
@@ -42,7 +28,7 @@ describe("loadGameFromFiles", () => {
     try {
       const game = await loadGameFromHttp("https://game.example/");
       expect(game.scenes.has("scene")).toBe(true);
-      expect(requested).toEqual([GAME_MANIFEST_FILE, SCRIPTS_FILE, exported.value.manifest.assets.find(asset => asset.guid === "scene")!.path]);
+      expect(requested).toEqual([GAME_MANIFEST_FILE, exported.value.manifest.assets.find(asset => asset.guid === "scene")!.path]);
       game.dispose!();
     } finally { vi.unstubAllGlobals(); }
   });
@@ -54,7 +40,7 @@ describe("loadGameFromFiles", () => {
     ] });
     if (!exported.ok) throw new Error(exported.error);
     const paths: string[] = [];
-    const metadata = new Map([...exported.value.files].filter(([path]) => path === GAME_MANIFEST_FILE || path === SCRIPTS_FILE));
+    const metadata = new Map([...exported.value.files].filter(([path]) => path === GAME_MANIFEST_FILE));
     const game = await loadGameFromFiles(metadata, { readFile: async path => { paths.push(path); return exported.value.files.get(path)!; } });
     const scriptEntry = exported.value.manifest.assets.find(asset => asset.type === "CompiledScript" && asset.ownerGuid === "prefab")!;
     const scriptPath = scriptEntry.path!;
@@ -86,7 +72,7 @@ describe("loadGameFromFiles", () => {
     ] });
     if (!exported.ok) throw new Error(exported.error);
     const paths: string[] = [];
-    const metadata = new Map([...exported.value.files].filter(([path]) => path === GAME_MANIFEST_FILE || path === SCRIPTS_FILE));
+    const metadata = new Map([...exported.value.files].filter(([path]) => path === GAME_MANIFEST_FILE));
     const game = await loadGameFromFiles(metadata, { readFile: async path => { paths.push(path); return exported.value.files.get(path)!; } });
     const path = (guid: string) => exported.value.manifest.assets.find(asset => asset.guid === guid)!.path!;
     expect(paths).toEqual(expect.arrayContaining([path("scene"), path(fontMsdfExportGuid("font")), path(fontMsdfAtlasExportGuid("font"))]));
@@ -168,25 +154,6 @@ describe("loadGameFromFiles", () => {
     if (!corrupted.ok) throw new Error(corrupted.error);
     await expect(loadGameFromFiles(corrupted.value.files)).rejects.toThrow(/corrupt/i);
   });
-  it("loads scripts from the filename declared by the manifest", async () => {
-    const packed = await exportGame({
-      bundleDebugger: false,
-      startupSceneGuid: "scene-1",
-      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
-      scripts: [],
-      assets: [],
-    });
-    expect(packed.ok).toBe(true);
-    if (!packed.ok) return;
-
-    const loaded = await loadGameFromFiles(
-      useScriptsFilename(packed.value.files, "runtime/custom-scripts.js"),
-    );
-
-    expect(loaded.manifest.scriptsFile).toBe("runtime/custom-scripts.js");
-    expect(loaded.scripts).toEqual([]);
-  });
-
   it("boots the packed startup scene guid, not a path", async () => {
     const scene = {
       ...createDefaultScene(),
@@ -429,38 +396,6 @@ describe("loadGameFromFiles", () => {
   });
 });
 
-describe("loadGameFromHttp", () => {
-  it("fetches scripts from the filename declared by the manifest", async () => {
-    const packed = await exportGame({
-      bundleDebugger: false,
-      startupSceneGuid: "scene-1",
-      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
-      scripts: [],
-      assets: [],
-    });
-    expect(packed.ok).toBe(true);
-    if (!packed.ok) return;
-    const files = useScriptsFilename(packed.value.files, "runtime/custom-scripts.js");
-    const requested: string[] = [];
-    const fetchImpl: typeof fetch = async (input) => {
-      const url = typeof input === "string" ? input : input.toString();
-      requested.push(url);
-      const path = new URL(url).pathname.replace(/^\/game\//, "");
-      const bytes = files.get(path);
-      return new Response(body(bytes), { status: bytes ? 200 : 404 });
-    };
-
-    const loaded = await loadGameFromHttp("https://example.com/game/", fetchImpl);
-
-    expect(loaded.scripts).toEqual([]);
-    expect(requested).toEqual([
-      "https://example.com/game/game.json",
-      "https://example.com/game/runtime/custom-scripts.js",
-    ]);
-  });
-});
-
-
 describe("demand-driven exported sources", () => {
   it.each(["packed", "loose"] as const)("keeps deferred assets unread, shares source reads, and releases the last consumer (%s)", async mode => {
     const scene = encoder.encode(JSON.stringify(createDefaultScene()));
@@ -478,7 +413,7 @@ describe("demand-driven exported sources", () => {
       return new Response(body(bytes), { status: bytes ? 200 : 404 });
     });
     try {
-      expect(reads).toEqual(["game.json", "scripts.js", "assets/data-0.bin"]);
+      expect(reads).toEqual(["game.json", "assets/data-0.bin"]);
       expect(game.scenes.has("b")).toBe(false);
       expect(game.textureBytes.size).toBe(0);
       const controller = new AbortController();
@@ -534,7 +469,7 @@ it("cancels a cold offline scene before publication and ignores its late storage
   let began!: () => void;
   const started = new Promise<void>(resolve => { began = resolve; });
   let delayed = true;
-  const game = await loadGameFromFiles(new Map([[GAME_MANIFEST_FILE, files.get(GAME_MANIFEST_FILE)!], [SCRIPTS_FILE, files.get(SCRIPTS_FILE)!]]), {
+  const game = await loadGameFromFiles(new Map([[GAME_MANIFEST_FILE, files.get(GAME_MANIFEST_FILE)!]]), {
     readFile: async path => {
       if (delayed && path === "assets/data-2.bin") { began(); return new Promise(resolve => { finish = resolve; }); }
       return files.get(path)!;

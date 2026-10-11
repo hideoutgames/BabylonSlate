@@ -141,7 +141,6 @@ export type CollectExportGameParams = {
   focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
   tagRegistry?: TagRegistry;
   playerFiles: Map<string, Uint8Array>;
-  extraFiles?: Map<string, Uint8Array>;
   /** Preview Build keeps Development Only nodes. */
   previewBuild?: boolean;
   onPhase?: (phase: "Compiling" | "Writing Pack") => void;
@@ -573,7 +572,6 @@ export async function collectAndExportGame(
     scripts,
     assets: exportAssets,
     playerFiles: params.playerFiles,
-    extraFiles: params.extraFiles,
     fileCountWarn: preset.fileCountWarn,
     fileCountFail: preset.fileCountFail,
   });

@@ -119,14 +119,14 @@ export function filesFromPreviewPack(
   return files;
 }
 
+/** On demand, the handoff carries only the catalog; the player requests every other file. */
 export function previewPackFromFiles(
   files: Map<string, Uint8Array>,
   options: Pick<PreviewPackMessage, "traceByteBudget" | "onDemand"> = {},
 ): PreviewPackMessage {
   const record: Record<string, ArrayBuffer> = {};
-  const scripts = options.onDemand ? JSON.parse(new TextDecoder().decode(files.get(GAME_MANIFEST_FILE))).scriptsFile ?? "scripts.js" : "";
   for (const [path, bytes] of files) {
-    if (options.onDemand && path !== GAME_MANIFEST_FILE && path !== scripts) continue;
+    if (options.onDemand && path !== GAME_MANIFEST_FILE) continue;
     record[path] = bytes.buffer.slice(
       bytes.byteOffset,
       bytes.byteOffset + bytes.byteLength,

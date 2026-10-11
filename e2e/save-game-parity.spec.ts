@@ -153,7 +153,8 @@ for (const mode of ["packed"] as ("packed" | "loose")[]) {
       physicsWorld: "2d",
       saveGame: { projectId: `export-${mode}`, definition, preview: false },
       scripts: [{ ...compiled, assetGuid: "save-flow-class", classId: "SaveFlow", parentClassId: "GameInstance" }],
-      assets: [{ guid: "start", type: "Scene", sceneGuid: "start", encoding: "json", bytes: new TextEncoder().encode(JSON.stringify(scene)) }],
+      assets: [{ guid: "start", type: "Scene", sceneGuid: "start", encoding: "json", bytes: new TextEncoder().encode(JSON.stringify(scene)) },
+        { guid: "save-flow-class", type: "Class", sceneGuid: "start", name: "SaveFlow", encoding: "json", bytes: new TextEncoder().encode(JSON.stringify({ components: [] })) }],
       playerFiles: await loadPlayerDistFiles(new URL("/player/", baseURL).href),
     });
     if (!artifact.ok) throw new Error(artifact.error);
