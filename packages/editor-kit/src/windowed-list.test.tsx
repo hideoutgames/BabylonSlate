@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
-import { WINDOWED_SLICE_OVERSCAN } from "./windowed-slice";
+import { HIDDEN_VIEWPORT_HEIGHT, WINDOWED_SLICE_OVERSCAN } from "./windowed-slice";
 import {
   WindowedList,
 } from "./windowed-list";
@@ -96,6 +96,28 @@ describe("WindowedList", () => {
     expect(slot(1).style.top).toBe("28px");
     expect(slot(2).style.top).toBe("72px");
     expect(slot(0).parentElement!.style.height).toBe("116px");
+  });
+
+  it("never renders rows past the first window before measuring a 500-row list", () => {
+    const restore = stubScrollViewportHeight(280);
+    const rendered = new Set<number>();
+    try {
+      render(
+        <ScrollArea>
+          <WindowedList itemCount={500} rowHeight={28}>
+            {(index) => {
+              rendered.add(index);
+              return <div data-testid={`windowed-row-${index}`}>{index}</div>;
+            }}
+          </WindowedList>
+        </ScrollArea>,
+      );
+      expect(Math.max(...rendered)).toBeLessThan(
+        Math.ceil(HIDDEN_VIEWPORT_HEIGHT / 28) + WINDOWED_SLICE_OVERSCAN,
+      );
+    } finally {
+      restore();
+    }
   });
 
   it("mounts only viewport-near rows plus overscan for a 500-row list", () => {

@@ -293,6 +293,28 @@ describe("SearchDialog", () => {
     expect(screen.getByText("No matches")).toBeTruthy();
   });
 
+  it("grows the popup for items that arrive after it opens", () => {
+    const props = {
+      open: true,
+      onOpenChange: () => {},
+      title: "Pick",
+      onSelect: () => {},
+      anchor: { x: 10, y: 10 },
+      "data-testid": "picker",
+    };
+    const view = render(<SearchDialog {...props} items={[]} />);
+    const popup = screen.getByTestId("picker");
+    const emptyHeight = parseFloat(popup.style.maxHeight);
+    const many = Array.from({ length: 12 }, (_, i) => ({
+      id: `n${i}`,
+      label: `Item ${i}`,
+    }));
+    view.rerender(<SearchDialog {...props} items={many} />);
+    expect(parseFloat(screen.getByTestId("picker").style.maxHeight)).toBeGreaterThan(
+      emptyHeight,
+    );
+  });
+
   it("mounts every picker row when the list viewport height is 0", () => {
     const many = Array.from({ length: 80 }, (_, i) => ({
       id: `n${i}`,
@@ -400,13 +422,13 @@ describe("AssetPicker", () => {
         assets={[
           {
             guid: "g1",
-            name: "main.scene",
+            name: "main",
             type: "Scene",
             path: "assets/main.scene.babasset",
           },
           {
             guid: "g2",
-            name: "main.scene",
+            name: "main",
             type: "Scene",
             path: "assets/levels/main.scene.babasset",
           },

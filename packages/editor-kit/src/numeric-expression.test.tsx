@@ -16,6 +16,13 @@ describe("formatNumericDisplay", () => {
     expect(formatNumericDisplay(-1)).toBe("-1");
     expect(formatNumericDisplay(0)).toBe("0");
   });
+
+  it("keeps significant digits of a nonzero value below the precision", () => {
+    expect(formatNumericDisplay(0.001)).toBe("0.001");
+    expect(formatNumericDisplay(-0.0046)).toBe("-0.0046");
+    expect(formatNumericDisplay(1e-7)).toBe("0.0000001");
+    expect(formatNumericDisplay(0.00123, 6)).toBe("0.00123");
+  });
 });
 
 describe("evaluateNumericExpression", () => {
@@ -34,11 +41,21 @@ describe("evaluateNumericExpression", () => {
     expect(evaluateNumericExpression("-(1+2)", 0)).toBe(-3);
   });
 
+  it("reads exponent literals like a plain number field", () => {
+    expect(evaluateNumericExpression("1e3", 0)).toBe(1000);
+    expect(evaluateNumericExpression("1e-3", 0)).toBe(0.001);
+    expect(evaluateNumericExpression("2.5E+2*2", 0)).toBe(500);
+    expect(evaluateNumericExpression("1e", 0)).toBeUndefined();
+    expect(evaluateNumericExpression("1e-", 0)).toBeUndefined();
+  });
+
   it("applies a leading * / or + to the current value", () => {
     expect(evaluateNumericExpression("*2", 1.5)).toBe(3);
     expect(evaluateNumericExpression("/2", 1.5)).toBe(0.75);
     expect(evaluateNumericExpression("+2", 1.5)).toBe(3.5);
     expect(evaluateNumericExpression("*2+1", 1.5)).toBe(4);
+    expect(evaluateNumericExpression("*2", 1e-7)).toBe(2e-7);
+    expect(evaluateNumericExpression("+1", 1e21)).toBe(1e21 + 1);
   });
 
   it("returns undefined for incomplete drafts", () => {

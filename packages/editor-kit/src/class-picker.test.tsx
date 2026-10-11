@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ClassPicker } from "./class-picker";
 import { AssetCreateProvider, type AssetCreateApi } from "./asset-create-context";
 
@@ -79,7 +79,7 @@ describe("ClassPicker", () => {
         open
         onOpenChange={() => {}}
         classes={[
-          { id: "main", name: "main.class", group: "Project" },
+          { id: "main", name: "Main", group: "Project" },
           { id: "Actor", name: "Actor", group: "Engine" },
         ]}
         allowNone={false}
@@ -87,8 +87,7 @@ describe("ClassPicker", () => {
       />,
     );
     const projectRow = screen.getByTestId("search-item-main");
-    expect(projectRow.textContent).toContain("main");
-    expect(projectRow.textContent).not.toContain("main.class");
+    expect(projectRow.textContent).toContain("Main");
     expect(projectRow.textContent).toContain("Class");
     expect(projectRow.textContent).not.toContain("Project");
     const engineRow = screen.getByTestId("search-item-Actor");
@@ -134,9 +133,14 @@ describe("ClassPicker Create New Class", () => {
     fireEvent.change(screen.getByTestId("class-picker-query"), {
       target: { value: "Arcade Game" },
     });
-    fireEvent.click(screen.getByTestId("search-item-__create__Class"));
+    // Two activations before React renders the busy row start one create.
+    act(() => {
+      screen.getByTestId("search-item-__create__Class").click();
+      screen.getByTestId("search-item-__create__Class").click();
+    });
 
     await waitFor(() => expect(onPick).toHaveBeenCalledWith("Arcade_Game"));
+    expect(createClass).toHaveBeenCalledTimes(1);
     expect(createClass).toHaveBeenCalledWith({
       parentClass: "GameInstance",
       name: "Arcade Game",

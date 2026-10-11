@@ -116,6 +116,32 @@ describe("GraphConnectionLineView", () => {
     });
     expect(queryByTestId("add-node-hint")).toBeNull();
   });
+
+  it("judges a bound wildcard by its resolved type, like the release", () => {
+    mountHandles([
+      { nodeId: "source", pinId: "value", x: 0, y: 0 },
+      { nodeId: "target", pinId: "text", x: 300, y: 0 },
+    ]);
+    const wildcardOut = { ...stringOut, type: { kind: "wildcard" } };
+    const textIn = { ...execIn, id: "text", kind: "data" as const, type: { kind: "string" } };
+    const line = {
+      fromNode: { id: "source", data: { __pins: [wildcardOut] } },
+      fromHandle: { id: "value" },
+      nodes: [{ id: "source", data: { __pins: [wildcardOut] } }, { id: "target", data: { __pins: [textIn] } }],
+      pointer: { x: 300, y: 0 },
+    };
+    const unbound = renderLine(line);
+    expect(unbound.queryByTestId("add-node-hint")).toBeNull();
+    unbound.unmount();
+
+    const { getByTestId } = renderLine({
+      ...line,
+      pinDisplayType: (nodeId, pinId) =>
+        nodeId === "source" && pinId === "value" ? { kind: "float" } : undefined,
+    });
+    expect(getByTestId("add-node-hint").textContent).toBe("Tap to Cancel");
+  });
+
   it("shows a Tap to Cancel hint when the drop would open the palette", () => {
     mountHandles([{ nodeId: "source", pinId: "execOut", x: 0, y: 0 }]);
     const { getByTestId, queryByRole } = renderLine();

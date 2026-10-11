@@ -1,6 +1,12 @@
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { NamedListEditor } from "./named-list-editor";
+
+function StatefulList({ initial }: { initial: string[] }) {
+  const [values, setValues] = useState(initial);
+  return <NamedListEditor values={values} onChange={setValues} />;
+}
 
 afterEach(() => {
   cleanup();
@@ -38,6 +44,19 @@ describe("NamedListEditor", () => {
     onChange.mockClear();
     fireEvent.click(screen.getByTestId("named-list-0-remove"));
     expect(onChange).toHaveBeenCalledWith(["Foreground"]);
+  });
+
+  it("keeps the edited row focused while typing and after reordering", () => {
+    render(<StatefulList initial={["Default", "Foreground"]} />);
+    const input = screen.getByTestId("named-list-0-value") as HTMLInputElement;
+    input.focus();
+    fireEvent.change(input, { target: { value: "Defaults" } });
+    expect(document.activeElement).toBe(input);
+    expect(input.value).toBe("Defaults");
+
+    fireEvent.click(screen.getByTestId("named-list-0-move-down"));
+    expect(screen.getByTestId("named-list-1-value")).toBe(input);
+    expect(input.value).toBe("Defaults");
   });
 
   it("renders a custom item control", () => {

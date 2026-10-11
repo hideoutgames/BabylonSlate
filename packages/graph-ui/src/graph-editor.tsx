@@ -9,6 +9,7 @@ import {
   applyEdgeChanges,
   applyNodeChanges,
   getBezierPath,
+  getViewportForBounds,
   useReactFlow,
   useStore,
   useStoreApi,
@@ -20,6 +21,7 @@ import {
   type FinalConnectionState,
   type NodeChange,
   type NodeTypes,
+  type OnBeforeDelete,
   type OnConnectStartParams,
   type OnNodeDrag,
 } from "@xyflow/react";
@@ -86,7 +88,7 @@ import { edgeStyleForPin } from "./node-theme";
 import { NodePalette } from "./node-palette";
 import { GraphConnectionLine } from "./connection-line";
 import {
-  collectSafeConnectPins,
+  collectDisplayConnectPins,
   connectEndAction,
   connectEventPointerId,
   containerPointerToClient,
@@ -97,7 +99,6 @@ import {
   isClientPointOverGraphNode,
   isClientPointOverHandle,
   nearestSnapConnectPin,
-  nodePinLists,
   finalizeOrientedConnection,
   pinWithDisplayType,
   pinsAreCompatible,
@@ -126,6 +127,7 @@ import { formatGraphNodes } from "./graph-format";
 import { findProximityConnections, type ProximityPin } from "./graph-proximity";
 import {
   GRAPH_VIRTUALIZE_OVERSCAN_PX,
+  graphNodesBounds,
   selectVisibleGraphElements,
 } from "./graph-virtualize";
 import {
@@ -259,6 +261,37 @@ export interface GraphEditorProps {
 const DOUBLE_TAP_MS = 350;
 const PASTE_OFFSET = 40;
 
+/** `base`, or `base-2`, `base-3`, … when a node already uses it. */
+function uniqueNodeId(base: string, taken: ReadonlySet<string>): string {
+  if (!taken.has(base)) return base;
+  for (let suffix = 2; ; suffix++) {
+    const id = `${base}-${suffix}`;
+    if (!taken.has(id)) return id;
+  }
+}
+
+/**
+ * Nudge a placement by `PASTE_OFFSET` steps until none of `positions` lands
+ * on an existing node, so repeated inserts and pastes cascade.
+ */
+function nonOverlappingOffset(
+  positions: ReadonlyArray<{ x: number; y: number }>,
+  existing: ReadonlyArray<{ position: { x: number; y: number } }>,
+  firstStep: number,
+): number {
+  const overlaps = (offset: number) =>
+    positions.some((position) =>
+      existing.some(
+        (node) =>
+          Math.abs(node.position.x - (position.x + offset)) < PASTE_OFFSET &&
+          Math.abs(node.position.y - (position.y + offset)) < PASTE_OFFSET,
+      ),
+    );
+  let offset = firstStep * PASTE_OFFSET;
+  while (overlaps(offset)) offset += PASTE_OFFSET;
+  return offset;
+}
+
 function asConnection(connection: Connection | Edge): Connection {
   return {
     source: connection.source,
@@ -375,31 +408,9 @@ function overlayPin(
   return pinWithDisplayType(pin, displayTypes.get(pinTypeKey(nodeId, pin.id)));
 }
 
-function overlayPinLists(
-  lists: Array<{ id: string; pins?: SerializedPin[] }>,
-  displayTypes: PinDisplayLookup,
-): Array<{ id: string; pins?: SerializedPin[] }> {
-  return lists.map((node) => ({
-    ...node,
-    pins: node.pins?.map((pin) =>
-      pinWithDisplayType(pin, displayTypes.get(pinTypeKey(node.id, pin.id))),
-    ),
-  }));
-}
-
-function collectDisplayConnectPins(
-  nodes: CanvasNode[],
-  draggedNodeId: string,
-  draggedPin: SerializedPin,
-  displayTypes: PinDisplayLookup,
-  rule?: PinCompatibilityRule,
-) {
-  return collectSafeConnectPins(
-    overlayPinLists(nodePinLists(nodes), displayTypes),
-    draggedNodeId,
-    overlayPin(draggedPin, draggedNodeId, displayTypes),
-    rule,
-  );
+function displayTypeLookup(displayTypes: PinDisplayLookup) {
+  return (nodeId: string, pinId: string) =>
+    displayTypes.get(pinTypeKey(nodeId, pinId));
 }
 
 function connectDragClientPoint(
@@ -434,6 +445,13 @@ function clientPoint(
   return null;
 }
 
+/** The same edges with no wire selected; unchanged when none was. */
+function withoutEdgeSelection(edges: Edge[]): Edge[] {
+  return edges.some((edge) => edge.selected)
+    ? edges.map((edge) => (edge.selected ? { ...edge, selected: false } : edge))
+    : edges;
+}
+
 function SelectedNodeSync({ selectedNodeId }: { selectedNodeId?: string }) {
   const { setNodes, setEdges } = useReactFlow();
   const nodeExists = useStore((state) => !!selectedNodeId && state.nodeLookup.has(selectedNodeId));
@@ -452,11 +470,7 @@ function SelectedNodeSync({ selectedNodeId }: { selectedNodeId?: string }) {
         selected: entry.id === selectedNodeId,
       }));
     });
-    setEdges((current) =>
-      current.some((edge) => edge.selected)
-        ? current.map((edge) => ({ ...edge, selected: false }))
-        : current,
-    );
+    setEdges(withoutEdgeSelection);
   }, [nodeExists, selectedNodeId, setEdges, setNodes]);
 
   return null;
@@ -469,7 +483,7 @@ function FocusedNodeSync({
   focusedNodeId?: string;
   fitViewOptions: GraphViewport["focusedFitViewOptions"];
 }) {
-  const { fitView, setNodes } = useReactFlow();
+  const { fitView, setEdges, setNodes } = useReactFlow();
   const nodeExists = useStore((state) => !!focusedNodeId && state.nodeLookup.has(focusedNodeId));
   const canFrame = useStore((state) => {
     const node = focusedNodeId ? state.nodeLookup.get(focusedNodeId) : undefined;
@@ -485,8 +499,9 @@ function FocusedNodeSync({
         selected: entry.id === focusedNodeId,
       })),
     );
-
-  }, [focusedNodeId, nodeExists, setNodes]);
+    // Like a canvas click: Break Links must not act on an earlier wire.
+    setEdges(withoutEdgeSelection);
+  }, [focusedNodeId, nodeExists, setEdges, setNodes]);
 
   useEffect(() => {
     if (!focusedNodeId || !canFrame) return;
@@ -641,7 +656,7 @@ function GraphEditorCanvas({
     membersRef.current = initialGraph.members;
     componentsRef.current = initialGraph.components;
   });
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, setViewport } = useReactFlow();
   const storeApi = useStoreApi();
   const graphStateRef = useRef({ nodes, edges });
   useLayoutEffect(() => {
@@ -765,9 +780,7 @@ function GraphEditorCanvas({
           data.__nodeType = node.type;
         }
         const typeId =
-          typeof data.__nodeType === "string"
-            ? data.__nodeType
-            : (node.type ?? "logMessage");
+          typeof data.__nodeType === "string" ? data.__nodeType : (node.type ?? "");
         return withDragHandle(
           {
             id: node.id,
@@ -852,17 +865,33 @@ function GraphEditorCanvas({
 
   const handleEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
-      if (readOnly) return;
+      const effective = replaceChangesAsSelection(changes);
+      // Read-only canvases still select wires, as they select nodes.
+      const applied = readOnly
+        ? effective.filter((change) => change.type === "select")
+        : effective;
+      if (applied.length === 0) return;
       setEdges((current) => {
-        const effective = replaceChangesAsSelection(changes);
-        const next = applyEdgeChanges(effective, current);
-        if (nodeChangesMutateGraph(effective)) {
+        const next = applyEdgeChanges(applied, current);
+        if (!readOnly && nodeChangesMutateGraph(applied)) {
           emitChange(graphStateRef.current.nodes, next);
         }
         return next;
       });
     },
     [emitChange, readOnly],
+  );
+
+  // Writes both sides at once, so a handler running before the next commit
+  // sees this edit rather than the last rendered graph.
+  const commitGraph = useCallback(
+    (nextNodes: CanvasNode[], nextEdges: Edge[]) => {
+      graphStateRef.current = { nodes: nextNodes, edges: nextEdges };
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      emitChange(nextNodes, nextEdges);
+    },
+    [emitChange],
   );
 
   const addEdge = useCallback(
@@ -1084,13 +1113,18 @@ function GraphEditorCanvas({
       // group cannot preview mutually incompatible types.
       const savedDisplayTypes = pinDisplayTypesRef.current;
       let proposedEdges = graphStateRef.current.edges;
+      // Wildcards are resolved again only after a suggestion is accepted.
+      let resolvedEdges: Edge[] | null = null;
       const accepted: OrientedConnection[] = [];
       try {
         for (const connection of connections) {
-          pinDisplayTypesRef.current = displayPinTypesForGraph(
-            graphStateRef.current.nodes,
-            proposedEdges,
-          );
+          if (resolvedEdges !== proposedEdges) {
+            pinDisplayTypesRef.current = displayPinTypesForGraph(
+              graphStateRef.current.nodes,
+              proposedEdges,
+            );
+            resolvedEdges = proposedEdges;
+          }
           if (!isValidConnection(connection)) continue;
           if (
             proposedEdges.some(
@@ -1235,17 +1269,14 @@ function GraphEditorCanvas({
           const nextNodes = graphStateRef.current.nodes.map((entry) =>
             positions.has(entry.id) ? { ...entry, position: positions.get(entry.id)! } : entry,
           );
-          graphStateRef.current = { nodes: nextNodes, edges: nextEdges };
-          setNodes(nextNodes);
-          setEdges(nextEdges);
-          emitChange(nextNodes, nextEdges);
+          commitGraph(nextNodes, nextEdges);
         }
       }
       const paths = collectProximityConnections(moving);
       proximityPathsRef.current = paths;
       setProximityPaths(paths);
     },
-    [collectProximityConnections, emitChange, interactions.shakeEnabled, nodesDraggable, readOnly, storeApi],
+    [collectProximityConnections, commitGraph, interactions.shakeEnabled, nodesDraggable, readOnly, storeApi],
   );
 
   const handleNodeDragStop: OnNodeDrag<CanvasNode> = useCallback(
@@ -1256,8 +1287,7 @@ function GraphEditorCanvas({
         const positions = new Map(moving.map((entry) => [entry.id, entry.position]));
         const nextNodes = graphStateRef.current.nodes.map((entry) => positions.has(entry.id) ? { ...entry, position: positions.get(entry.id)! } : entry);
         cancelProximityConnections();
-        graphStateRef.current = { nodes: nextNodes, edges: nextEdges };
-        setNodes(nextNodes); setEdges(nextEdges); emitChange(nextNodes, nextEdges);
+        commitGraph(nextNodes, nextEdges);
         return;
       }
       const previewed = new Set(
@@ -1293,12 +1323,16 @@ function GraphEditorCanvas({
       );
       let nextEdges = graphStateRef.current.edges;
       const previousEdges = nextEdges;
+      let resolvedEdges: Edge[] | null = null;
       for (const { connection } of candidates) {
         // Earlier accepted pins may resolve wildcard groups for later suggestions.
-        pinDisplayTypesRef.current = displayPinTypesForGraph(
-          nextNodes,
-          nextEdges,
-        );
+        if (resolvedEdges !== nextEdges) {
+          pinDisplayTypesRef.current = displayPinTypesForGraph(
+            nextNodes,
+            nextEdges,
+          );
+          resolvedEdges = nextEdges;
+        }
         if (!isValidConnection(connection)) continue;
         if (
           nextEdges.some(
@@ -1337,19 +1371,16 @@ function GraphEditorCanvas({
         ];
       }
       if (nextEdges === previousEdges) return;
-      graphStateRef.current = { nodes: nextNodes, edges: nextEdges };
-      setNodes(nextNodes);
-      setEdges(nextEdges);
-      emitChange(nextNodes, nextEdges);
+      commitGraph(nextNodes, nextEdges);
     },
     [
       cancelProximityConnections,
       collectProximityConnections,
+      commitGraph,
       defaultEdgeOptions.type,
       interactions.shakeEnabled,
       nodesDraggable,
       readOnly,
-      emitChange,
       isValidConnection,
       replaceIncomingOnConnect,
       uniqueDirectedPairOnConnect,
@@ -1398,7 +1429,9 @@ function GraphEditorCanvas({
 
   const handleConnect = useCallback(
     (connection: Connection) => {
-      if (readOnly) return;
+      // A cancelled drag ends without a wire, even when XYFlow later reports
+      // the handle it last hovered.
+      if (readOnly || connectDragRef.current?.connectEndHandled) return;
       const next = orientThenNormalize(
         connection,
         graphStateRef.current.nodes,
@@ -1531,7 +1564,7 @@ function GraphEditorCanvas({
           graphStateRef.current.nodes,
           fromNode.id,
           pin,
-          pinDisplayTypesRef.current,
+          displayTypeLookup(pinDisplayTypesRef.current),
           pinCompatibility,
         ),
       );
@@ -1608,14 +1641,17 @@ function GraphEditorCanvas({
           y: window.innerHeight / 2,
         });
       if (!pendingConnect) {
-        while (graphStateRef.current.nodes.some((node) =>
-          Math.abs(node.position.x - position.x) < PASTE_OFFSET &&
-          Math.abs(node.position.y - position.y) < PASTE_OFFSET,
-        )) {
-          position = { x: position.x + PASTE_OFFSET, y: position.y + PASTE_OFFSET };
-        }
+        const offset = nonOverlappingOffset(
+          [position],
+          graphStateRef.current.nodes,
+          0,
+        );
+        position = { x: position.x + offset, y: position.y + offset };
       }
-      const id = `${paletteNode.id}-${Date.now()}`;
+      const id = uniqueNodeId(
+        `${paletteNode.id}-${Date.now()}`,
+        new Set(graphStateRef.current.nodes.map((node) => node.id)),
+      );
       const data: Record<string, unknown> = {
         ...(paletteNode.defaultData ?? {}),
         title: paletteNode.title,
@@ -1645,57 +1681,55 @@ function GraphEditorCanvas({
         nodeDragHandle,
       );
 
-      setNodes((current) => {
-        const next = [
-          ...current.map((node) => ({ ...node, selected: false })),
-          nextNode,
-        ];
-        const connect = pendingConnect;
-        let nextEdges = graphStateRef.current.edges;
-        if (connect?.pin && connect.nodeId) {
-          const dragged = overlayPin(
-            connect.pin,
-            connect.nodeId,
-            pinDisplayTypesRef.current,
+      const next = [
+        ...graphStateRef.current.nodes.map((node) =>
+          node.selected ? { ...node, selected: false } : node,
+        ),
+        nextNode,
+      ];
+      const connect = pendingConnect;
+      let nextEdges = withoutEdgeSelection(graphStateRef.current.edges);
+      if (connect?.pin && connect.nodeId) {
+        const dragged = overlayPin(
+          connect.pin,
+          connect.nodeId,
+          pinDisplayTypesRef.current,
+        );
+        const match = firstCompatiblePin(
+          paletteNode.pins,
+          dragged,
+          pinCompatibility,
+        );
+        if (match) {
+          const sourceIsDragged = connect.pin.direction === "out";
+          const source = sourceIsDragged ? connect.nodeId : id;
+          const sourceHandle = sourceIsDragged ? connect.pin.id : match.id;
+          const target = sourceIsDragged ? id : connect.nodeId;
+          const targetHandle = sourceIsDragged ? match.id : connect.pin.id;
+          const edgeId = createEdgeId(source, sourceHandle, target, targetHandle);
+          nextEdges = edgesAfterConnect(
+            nextEdges,
+            {
+              id: edgeId,
+              source,
+              target,
+              sourceHandle,
+              targetHandle,
+              ...(defaultEdgeOptions.type
+                ? { type: defaultEdgeOptions.type }
+                : {}),
+            },
+            (nodeId, pinId) => pinOnNode(next, nodeId, pinId),
+            { replaceIncoming: replaceIncomingOnConnect, uniqueDirectedPair: uniqueDirectedPairOnConnect, singleExecOutput: singleExecOutputOnConnect },
           );
-          const match = firstCompatiblePin(
-            paletteNode.pins,
-            dragged,
-            pinCompatibility,
-          );
-          if (match) {
-            const sourceIsDragged = connect.pin.direction === "out";
-            const source = sourceIsDragged ? connect.nodeId : id;
-            const sourceHandle = sourceIsDragged ? connect.pin.id : match.id;
-            const target = sourceIsDragged ? id : connect.nodeId;
-            const targetHandle = sourceIsDragged ? match.id : connect.pin.id;
-            const edgeId = createEdgeId(source, sourceHandle, target, targetHandle);
-            nextEdges = edgesAfterConnect(
-              nextEdges,
-              {
-                id: edgeId,
-                source,
-                target,
-                sourceHandle,
-                targetHandle,
-                ...(defaultEdgeOptions.type
-                  ? { type: defaultEdgeOptions.type }
-                  : {}),
-              },
-              (nodeId, pinId) => pinOnNode(next, nodeId, pinId),
-              { replaceIncoming: replaceIncomingOnConnect, uniqueDirectedPair: uniqueDirectedPairOnConnect, singleExecOutput: singleExecOutputOnConnect },
-            );
-            setEdges(nextEdges);
-          }
         }
-        emitChange(next, nextEdges);
-        return next;
-      });
+      }
+      commitGraph(next, nextEdges);
       setPendingConnect(null);
     },
     [
+      commitGraph,
       defaultEdgeOptions.type,
-      emitChange,
       knownTypes,
       nodeDragHandle,
       pendingConnect,
@@ -1767,10 +1801,19 @@ function GraphEditorCanvas({
     if (!clip) return;
     const pasteable = clip.nodes.filter((node) => !isProtectedNode(node));
     if (pasteable.length === 0) return;
+    const current = graphStateRef.current.nodes;
+    // Each paste lands one step past the copies already on the canvas.
+    const offset = nonOverlappingOffset(
+      pasteable.map((node) => node.position),
+      current,
+      1,
+    );
+    const taken = new Set(current.map((node) => node.id));
     const idMap = new Map<string, string>();
     const stamp = Date.now();
     const nextNodes = pasteable.map((node, index) => {
-      const id = `${node.id}-copy-${stamp}-${index}`;
+      const id = uniqueNodeId(`${node.id}-copy-${stamp}-${index}`, taken);
+      taken.add(id);
       idMap.set(node.id, id);
       return withDragHandle(
         {
@@ -1778,8 +1821,8 @@ function GraphEditorCanvas({
           id,
           selected: true,
           position: {
-            x: node.position.x + PASTE_OFFSET,
-            y: node.position.y + PASTE_OFFSET,
+            x: node.position.x + offset,
+            y: node.position.y + offset,
           },
           data: { ...node.data },
         },
@@ -1798,38 +1841,86 @@ function GraphEditorCanvas({
           id: createEdgeId(source, sourceHandle, target, targetHandle),
           source,
           target,
+          selected: false,
         },
       ];
     });
-    setNodes((current) => {
-      const cleared = current.map((node) => ({ ...node, selected: false }));
-      const next = [...cleared, ...nextNodes];
-      setEdges((currentEdges) => {
-        const combined = [...currentEdges, ...nextEdges];
-        emitChange(next, combined);
-        return combined;
-      });
-      return next;
-    });
-  }, [emitChange, nodeDragHandle]);
+    // The pasted nodes become the whole selection, wires included.
+    const { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
+    commitGraph(
+      [
+        ...currentNodes.map((node) =>
+          node.selected ? { ...node, selected: false } : node,
+        ),
+        ...nextNodes,
+      ],
+      [...withoutEdgeSelection(currentEdges), ...nextEdges],
+    );
+  }, [commitGraph, nodeDragHandle]);
+
+  // Removes the nodes, their wires and the listed wires as one graph change.
+  const removeGraphElements = useCallback(
+    (nodeIds: ReadonlySet<string>, edgeIds: ReadonlySet<string>) => {
+      const { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
+      const nextNodes = currentNodes.filter((node) => !nodeIds.has(node.id));
+      const nextEdges = currentEdges.filter(
+        (edge) =>
+          !edgeIds.has(edge.id) &&
+          !nodeIds.has(edge.source) &&
+          !nodeIds.has(edge.target),
+      );
+      if (
+        nextNodes.length === currentNodes.length &&
+        nextEdges.length === currentEdges.length
+      ) {
+        return;
+      }
+      commitGraph(nextNodes, nextEdges);
+    },
+    [commitGraph],
+  );
 
   const deleteSelection = useCallback(() => {
     const selected = new Set(
       deletableNodeIds(graphStateRef.current.nodes),
     );
     if (selected.size === 0) return;
-    setNodes((current) => {
-      const nextNodes = current.filter((node) => !selected.has(node.id));
-      setEdges((currentEdges) => {
-        const nextEdges = currentEdges.filter(
-          (edge) => !selected.has(edge.source) && !selected.has(edge.target),
+    removeGraphElements(selected, new Set());
+  }, [removeGraphElements]);
+
+  // Keyboard delete (XYFlow `deleteKeyCode`) keeps protected nodes, like the
+  // toolbar. XYFlow would remove the wires and then the nodes as two changes,
+  // each emitted against the other side's last render, so the wires came
+  // back; the removal is applied here as one change instead.
+  const handleBeforeDelete = useCallback<OnBeforeDelete<CanvasNode, Edge>>(
+    async ({ nodes: doomedNodes, edges: doomedEdges }) => {
+      if (!readOnly) {
+        removeGraphElements(
+          new Set(
+            doomedNodes
+              .filter((node) => !isProtectedNode(node))
+              .map((node) => node.id),
+          ),
+          new Set(
+            doomedEdges.filter((edge) => edge.selected).map((edge) => edge.id),
+          ),
         );
-        emitChange(nextNodes, nextEdges);
-        return nextEdges;
-      });
-      return nextNodes;
-    });
-  }, [emitChange]);
+      }
+      return false;
+    },
+    [readOnly, removeGraphElements],
+  );
+
+  // XYFlow `fitView` only sees mounted nodes; virtualisation unmounts the rest.
+  const fitGraph = useCallback(() => {
+    const bounds = graphNodesBounds(graphStateRef.current.nodes);
+    const { width, height, minZoom } = storeApi.getState();
+    if (!bounds || width <= 0 || height <= 0) return;
+    const { maxZoom, padding } = graphViewport.fitViewOptions;
+    void setViewport(
+      getViewportForBounds(bounds, width, height, minZoom, maxZoom, padding),
+    );
+  }, [graphViewport.fitViewOptions, setViewport, storeApi]);
 
   const breakSelectionLinks = useCallback(() => {
     const selectedEdgeIds = new Set(
@@ -1910,11 +2001,7 @@ function GraphEditorCanvas({
     setNodes((current) =>
       current.map((node) => ({ ...node, selected: false })),
     );
-    setEdges((current) =>
-      current.some((edge) => edge.selected)
-        ? current.map((edge) => ({ ...edge, selected: false }))
-        : current,
-    );
+    setEdges(withoutEdgeSelection);
   }, []);
 
   const handlePaneClick = useCallback(
@@ -2031,12 +2118,24 @@ function GraphEditorCanvas({
             selected: ids.has(node.id),
           })),
         );
+        setEdges(withoutEdgeSelection);
       },
     });
     return () => handle.dispose();
   }, []);
 
   useEffect(() => {
+    // The gesture ends with no action: a later release only lets XYFlow tidy
+    // up, and the next move ends its drag because the connection is gone.
+    const endConnectSession = (
+      session: NonNullable<typeof connectDragRef.current>,
+    ) => {
+      session.connectEndHandled = true;
+      pendingPinRef.current = null;
+      setPendingPin(null);
+      storeApi.getState().cancelConnection();
+    };
+
     const onMove = (event: Event) => {
       const session = connectDragRef.current;
       if (!session) return;
@@ -2048,6 +2147,22 @@ function GraphEditorCanvas({
       }
       const point = clientPoint(event as MouseEvent | TouchEvent);
       if (point) session.pointer = point;
+    };
+
+    // XYFlow drags pins with touch events and never sees `touchcancel`.
+    const onTouchCancel = (event: Event) => {
+      const session = connectDragRef.current;
+      if (!session || session.connectEndHandled) return;
+      const touches = (event as TouchEvent).changedTouches;
+      if (
+        !touches ||
+        !Array.from(touches).some(
+          (touch) => touch.identifier === session.pointerId,
+        )
+      ) {
+        return;
+      }
+      endConnectSession(session);
     };
 
     const onSecondaryPointerDown = (event: Event) => {
@@ -2063,11 +2178,8 @@ function GraphEditorCanvas({
       if (eventPointerId === session.pointerId) return;
       event.preventDefault();
       const cancelRubberBand = () => {
-        session.connectEndHandled = true;
         skipPaneClickRef.current = true;
-        pendingPinRef.current = null;
-        setPendingPin(null);
-        storeApi.getState().cancelConnection();
+        endConnectSession(session);
       };
       if (
         shouldCancelConnectionOnSecondaryPointer({
@@ -2103,7 +2215,7 @@ function GraphEditorCanvas({
             graphStateRef.current.nodes,
             session.nodeId,
             pin,
-            pinDisplayTypesRef.current,
+            displayTypeLookup(pinDisplayTypesRef.current),
             pinCompatibilityRef.current,
           ),
         ),
@@ -2129,12 +2241,14 @@ function GraphEditorCanvas({
       capture: true,
       passive: false,
     });
+    document.addEventListener("touchcancel", onTouchCancel, true);
     return () => {
       document.removeEventListener("pointermove", onMove, true);
       document.removeEventListener("mousemove", onMove, true);
       document.removeEventListener("touchmove", onMove, true);
       document.removeEventListener("pointerdown", onSecondaryPointerDown, true);
       document.removeEventListener("touchstart", onSecondaryPointerDown, true);
+      document.removeEventListener("touchcancel", onTouchCancel, true);
     };
   }, [storeApi]);
 
@@ -2328,6 +2442,7 @@ function GraphEditorCanvas({
         <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
           <div
             className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-lg border border-border bg-popover p-1 shadow-sm"
+            data-graph-overlay=""
             data-testid="graph-toolbar"
           >
             {paletteNodes && paletteNodes.length > 0 ? (
@@ -2427,6 +2542,7 @@ function GraphEditorCanvas({
           edgesReconnectable={false}
           onlyRenderVisibleElements={false}
           onNodesChange={handleNodesChange}
+          onBeforeDelete={handleBeforeDelete}
           onNodeDragStart={(_event, node) => { proximityDragRef.current = !readOnly && nodesDraggable; shakenRef.current = false; const zoom = storeApi.getState().transform[2]; shakeTracker.current.reset(node.position.x * zoom, node.position.y * zoom, performance.now()); }}
           onNodeDrag={handleNodeDrag}
           onNodeDragStop={handleNodeDragStop}
@@ -2492,7 +2608,7 @@ function GraphEditorCanvas({
             fitViewOptions={graphViewport.focusedFitViewOptions}
           />
         </ReactFlow>
-        <GraphViewportControls fitViewOptions={graphViewport.fitViewOptions} />
+        <GraphViewportControls onFitGraph={fitGraph} />
         {marqueeScreen ? (
           <div
             data-testid="graph-marquee"

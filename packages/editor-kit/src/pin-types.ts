@@ -91,16 +91,30 @@ export function pinPickerLabel(type: string): string {
   return type;
 }
 
-/** Object/class constraints and Structure/Enum guids share `typeClassId`. */
-export function pinPickerKeepsTypeClassId(type: string): boolean {
-  return (
-    type === "object" ||
-    type === "actor" ||
-    type === "class" ||
-    type === "asset" ||
-    type === "struct" ||
-    type === "enum"
-  );
+/** What a type's `typeClassId` names: a class, an asset type, or a Structure / Enum guid. */
+function typeClassIdKind(type: string): string | undefined {
+  switch (type) {
+    case "object":
+    case "actor":
+    case "class":
+      return "class";
+    case "asset":
+    case "struct":
+    case "enum":
+      return type;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Object/class constraints, asset types and Structure/Enum guids share
+ * `typeClassId`. A type change keeps it only when both types read it the same
+ * way (Object to Actor keeps a class); Object to Enum must not keep a class id.
+ */
+export function pinPickerKeepsTypeClassId(from: string, to: string): boolean {
+  const kind = typeClassIdKind(to);
+  return kind !== undefined && kind === typeClassIdKind(from);
 }
 
 /** Content Browser types stored on `typeClassId` when the picker type is Asset. */

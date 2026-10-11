@@ -283,13 +283,15 @@ export function displayNodeTitle(
 
 /**
  * Overlay a resolved display type onto a declared pin for connect / Add Node.
- * Does not mutate the stored pin.
+ * A boxed wildcard keeps its declared type: it accepts any value, and its
+ * display type (the wired peer's type) only colours it. Does not mutate the
+ * stored pin.
  */
 export function pinWithDisplayType(
   pin: SerializedPin,
   displayType: SerializedPin["type"] | undefined,
 ): SerializedPin {
-  if (!displayType) return pin;
+  if (!displayType || pin.type.kind === "boxedWildcard") return pin;
   return { ...pin, type: displayType };
 }
 
@@ -654,6 +656,30 @@ export function collectSafeConnectPins(
   return refs;
 }
 
+/**
+ * Safe pins judged by resolved wildcard types, so the rubber-band hint and the
+ * release both follow what the graph would actually connect.
+ */
+export function collectDisplayConnectPins(
+  nodes: Array<{ id: string; data?: Record<string, unknown> }>,
+  draggedNodeId: string,
+  draggedPin: SerializedPin,
+  displayType: (nodeId: string, pinId: string) => SerializedPin["type"] | undefined,
+  rule?: PinCompatibilityRule,
+): SafeConnectPinRef[] {
+  return collectSafeConnectPins(
+    nodePinLists(nodes).map((node) => ({
+      ...node,
+      pins: node.pins?.map((pin) =>
+        pinWithDisplayType(pin, displayType(node.id, pin.id)),
+      ),
+    })),
+    draggedNodeId,
+    pinWithDisplayType(draggedPin, displayType(draggedNodeId, draggedPin.id)),
+    rule,
+  );
+}
+
 export function connectEventPointerId(event: Event | {
   pointerId?: number;
   changedTouches?: ArrayLike<{ identifier: number }>;
@@ -789,14 +815,15 @@ export function screenPinsForSafeRefs(
   root: ParentNode,
   refs: SafeConnectPinRef[],
 ): SnapConnectPin[] {
-  const handles = Array.from(root.querySelectorAll(".react-flow__handle"));
+  // One pass over the mounted handles; this runs on every rubber-band move.
+  const handles = new Map<string, Element>();
+  for (const entry of root.querySelectorAll(".react-flow__handle")) {
+    const key = `${entry.getAttribute("data-nodeid")}\u0000${entry.getAttribute("data-handleid")}`;
+    if (!handles.has(key)) handles.set(key, entry);
+  }
   const pins: SnapConnectPin[] = [];
   for (const ref of refs) {
-    const handle = handles.find(
-      (entry) =>
-        entry.getAttribute("data-nodeid") === ref.nodeId &&
-        entry.getAttribute("data-handleid") === ref.pinId,
-    );
+    const handle = handles.get(`${ref.nodeId}\u0000${ref.pinId}`);
     if (!handle) continue;
     const rect = handle.getBoundingClientRect();
     pins.push({

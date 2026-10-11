@@ -92,6 +92,48 @@ describe("selectVisibleGraphElements", () => {
     expect(visible.edges.map((edge) => edge.id)).toEqual(["focus-link"]);
   });
 
+  it("keeps an unmeasured pin-heavy node whose lower pins reach the viewport", () => {
+    const pins = Array.from({ length: 20 }, (_, index) => ({
+      id: `in${index}`,
+      direction: "in",
+    }));
+    const nodes = [
+      { id: "tall", position: { x: 0, y: -1000 }, data: { __pins: pins } },
+      { id: "short", position: { x: 400, y: -1000 }, data: { __pins: pins.slice(0, 1) } },
+    ];
+    const visible = selectVisibleGraphElements(nodes, [], {
+      x: 0,
+      y: 0,
+      zoom: 1,
+      width: 800,
+      height: 600,
+    });
+    expect(visible.nodes.map((node) => node.id)).toEqual(["tall"]);
+  });
+
+  it("keeps both ends of a selected off-screen edge mounted", () => {
+    const nodes = [
+      { id: "near", position: { x: 0, y: 0 } },
+      { id: "from", position: { x: 8000, y: 8000 } },
+      { id: "to", position: { x: 9000, y: 9000 } },
+    ];
+    const edges = [
+      { id: "picked", source: "from", target: "to", selected: true },
+      { id: "idle", source: "to", target: "from" },
+    ];
+    const viewport = { x: 0, y: 0, zoom: 1, width: 400, height: 300 };
+    expect(
+      selectVisibleGraphElements(nodes, edges, viewport).edges.map((edge) => edge.id),
+    ).toEqual(["picked", "idle"]);
+    expect(
+      selectVisibleGraphElements(
+        nodes,
+        edges.map((edge) => ({ ...edge, selected: false })),
+        viewport,
+      ).edges,
+    ).toEqual([]);
+  });
+
   it("uses the named overscan and fallback node size", () => {
     expect(GRAPH_VIRTUALIZE_OVERSCAN_PX).toBeGreaterThan(0);
     expect(GRAPH_NODE_FALLBACK_WIDTH).toBeGreaterThan(0);

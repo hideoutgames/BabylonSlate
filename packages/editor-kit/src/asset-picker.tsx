@@ -9,7 +9,6 @@ import {
   SearchDialog,
   type SearchDialogItem,
 } from "./search-dialog";
-import { displayPickerTitle } from "./picker-identity";
 import { TypeVisualIcon, resolveTypeVisual } from "./type-visuals";
 import { useAssetCreate, type AssetCreateOptions } from "./asset-create-context";
 import { usePickerCreate } from "./use-picker-create";
@@ -91,7 +90,7 @@ export function AssetPicker({
         : assets;
     const rows: SearchDialogItem[] = filtered.map((asset) => ({
       id: asset.guid,
-      label: displayPickerTitle(asset.name),
+      label: asset.name,
       description: [asset.type, asset.path].filter(Boolean).join(" · "),
       group: asset.path,
       leading: (
