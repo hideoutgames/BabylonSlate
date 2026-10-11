@@ -156,6 +156,27 @@ describe("runtimeOptionsFromLoadControl", () => {
     });
   });
 
+  it("keeps guid keys and the first Scene's display name when names collide", () => {
+    const first = { name: "Level", actors: [] };
+    const second = { name: "Level", actors: [] };
+    const namedLikeKey = { name: "first", actors: [] };
+    const options = runtimeOptionsFromLoadControl({
+      type: "load",
+      sceneAssetGuid: "play-scene",
+      scenes: [
+        { guid: "first", scene: first as never },
+        { guid: "second", scene: second as never },
+        { guid: "third", scene: namedLikeKey as never },
+      ],
+      sceneCatalog: [{ guid: "cold", name: "Cold" }, { guid: "cold-copy", name: "Cold" }],
+    });
+    expect(options.sceneGuidByKey).toEqual({
+      first: "first", second: "second", third: "third", cold: "cold", "cold-copy": "cold-copy",
+      Cold: "cold", Level: "first",
+    });
+    expect(options.sceneLibrary).toEqual({ first, second, third: namedLikeKey, Level: first });
+  });
+
   it("defaults to a 3d world when the load message omits physics fields", () => {
     expect(
       runtimeOptionsFromLoadControl({
