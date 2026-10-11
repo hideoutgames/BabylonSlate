@@ -1274,7 +1274,12 @@ float swSwashX = min(U.slateWaterSwash.w / max(swShoreSlope, 0.02), ${f(SWASH_RE
 float swSurfW = clamp(swSwashX * 2.5 + swFoamWidth * 4.0, 2.0, 22.0);
 float swShoreHere = max(swFieldShore, 0.0);
 float swSwashCover = 1.0;
-float swSwashWet = 0.0;
+float swSwashWet = 0.0;${toon ? `
+float swFilmCur = 0.0;
+float swFilmOld = 0.0;
+float swFilmG0 = -1.0;
+float swFilmG1 = -1.0;
+float swFilmG2 = -1.0;` : ""}
 float swSwashFoam = 0.0;
 float swSwashRun = 0.0;
 float swSwashBack = 0.0;
@@ -1320,7 +1325,14 @@ if (U.slateWaterSwash.w > 0.0 && swShoreRest < swSurfW && (swSwashZone > 0.0 || 
   float swPassC = 0.3 + 0.7 * pow(max(1.0 - swNeedC, 0.000001), 0.6667);
   float swPassP = 0.3 + 0.7 * pow(max(1.0 - swNeedP, 0.000001), 0.6667);
   float swSince = mix(swSwU + 1.0 - swPassP + step(1.0, swNeedP) * 3.0, swSwU - swPassC, step(swNeedC, 1.0) * step(swPassC, swSwU));
-  swSwashWet = exp(-swSince * 1.4) * step(0.0, swNeed) * swSwashZone;
+  ${toon ? `// Toon cannot antialias the film's hard switches (the swash's furthest reach, this cycle's reach, the moment the backwash
+  // uncovered the point) from inside this branch, which has no derivatives: it exports the two ages and the continuous
+  // quantities the switches test, and blends them outside (\`swSwashWet\` below).
+  swFilmCur = exp(-(swSwU - swPassC) * 1.4);
+  swFilmOld = exp(-(swSwU + 1.0 - swPassP + step(1.0, swNeedP) * 3.0) * 1.4);
+  swFilmG0 = swNeed * swSwashX;
+  swFilmG1 = 1.0 - swNeedC;
+  swFilmG2 = swSwU - swPassC;` : `swSwashWet = exp(-swSince * 1.4) * step(0.0, swNeed) * swSwashZone;`}
   // Bores: cycles behind the nearest front travelling shoreward through the surf, each as strong as the run-up it brings.
   float swPsiB = swPsi + U.slateWaterSwash.z * swShoreRest * 0.159155;
   float swBoreC = floor(swPsiB);
@@ -3040,11 +3052,18 @@ float swLinePx = sqrt(1.5613 * max(U.slateWaterWaves.y, 0.1)) * U.slateWaterWave
 // into a whole ring that pops in at full size as the bump's peak crosses its level; there its dashes shorten and vanish
 // instead, and grow back as the slope steepens.
 float swLineFlat = 1.0 - smoothstep(0.05, 0.16, abs(dot(swGradient, swD0)) / max(U.slateWaterWaves.x * swK0, 0.0001));
-// Beyond the near field the crest lines are also broken at fixed world intervals along the crest (about 0.8 metres, their
-// phase bent by the slow noise so the pieces differ), so a dash never stretches into a long speed line. Low (no budget for
-// the breaks) simply thins its lines out sooner.${fromTier(1, `
-float swLineGap = abs(fract(swCrestAlong * (1.0 + 0.5 * swCrestSeed.y) + (swLineWig - 0.5) * 6.0 + swCrestSeed.x * 7.0) * 2.0 - 1.0);
-float swLineFar = 1.2 * smoothstep(0.05, 0.12, swFoot) * (1.0 - smoothstep(0.3, 0.5, swLineGap)) + 0.5 * smoothstep(0.05, 0.4, swFoot);`, `
+// Beyond the near field the crest lines are also broken into short strokes along the crest, each cell of about a metre
+// (its size and phase seeded by the crest, bent by the slow noise) holding a stroke of its own length at its own place or,
+// for about two cells in five, none, so neighbouring lines never share a rhythm (evenly spaced, equal dashes in parallel
+// rows read as road markings). Low (no budget for the breaks) simply thins its lines out sooner.${fromTier(1, `
+float swLineT = swCrestAlong * (0.8 + 0.5 * swCrestSeed.y) + (swLineWig - 0.5) * 6.0 + swCrestSeed.x * 31.0;
+float swLineCell = floor(swLineT);
+vec2 swLineH2 = swHash2(vec2(swLineCell, swCrestId + 3.0));
+float swLineLen = 0.3 + 0.45 * swLineH2.y;
+float swLineStart = (1.0 - swLineLen) * fract(swLineH2.x * 7.13);
+float swLineF = fract(swLineT);
+float swLineIn = smoothstep(swLineStart - 0.06, swLineStart + 0.06, swLineF) * (1.0 - smoothstep(swLineStart + swLineLen - 0.06, swLineStart + swLineLen + 0.06, swLineF)) * step(0.4, swLineH2.x);
+float swLineFar = 1.2 * smoothstep(0.05, 0.12, swFoot) * (1.0 - swLineIn) + 0.5 * smoothstep(0.05, 0.4, swFoot);`, `
 float swLineFar = 0.9 * smoothstep(0.05, 0.4, swFoot);`)}
 float swLineCut = 0.5 + 0.3 * smoothstep(0.05, 0.1, swLineFw) + swLineFar + 0.6 * smoothstep(10.0, 22.0, swLinePx) + 0.8 * swColQuiet + 0.6 * swLineFlat;
 // Brush strokes: each dash swells from about a third of its width at its ends to its full width (about two to four
@@ -3434,6 +3453,14 @@ surfaceAlbedo = vec3(0.0);
 alpha = clamp(max(U.slateWaterShallow.a * mix(0.65, 1.0, clamp(swDepthTone * 2.0, 0.0, 1.0)), max(max(swFoam, swStrokes), max(swSunShape, swHaze))), 0.0, 1.0);
 // Backwash: uncovered shallows keep their foam and one flat wet tone with a hard edge where the film is still wet
 // (darker water over the sand), which shrinks back as the sand dries behind the swash.
+${fromTier(1, `
+// The film's switches, each blended over about a pixel and a half of its own continuous quantity (metres for the furthest reach,
+// cycles for the others), so the wet sand's edge is antialiased instead of a stair-stepped hard cut.
+float swFilmA0 = fwidth(swFilmG0) * 1.1 + 0.002;
+float swFilmA1 = fwidth(swFilmG1) * 1.1 + 0.002;
+float swFilmA2 = fwidth(swFilmG2) * 1.1 + 0.002;
+swSwashWet = mix(swFilmOld, swFilmCur, smoothstep(-swFilmA1, swFilmA1, swFilmG1) * smoothstep(-swFilmA2, swFilmA2, swFilmG2))
+  * smoothstep(-swFilmA0, swFilmA0, swFilmG0) * swSwashZone;`)}
 float swFilm = (1.0 - swToonCover) * swSwashWet;
 float swFilmAA = min(fwidth(swFilm) * 0.7 + 0.01, 0.2);
 float swFilmA = max(swFoam, smoothstep(0.32 - swFilmAA, 0.32 + swFilmAA, swFilm) * 0.4);
@@ -3442,17 +3469,18 @@ alpha = mix(swFilmA, alpha, swToonCover);
 ${fromTier(1, `
 // The wet line (Medium up): wet sand along the outermost edge of everything the water leaves on the beach, so nothing
 // water-coloured lies beyond it. That edge is the outer boundary of the union of the swash's covered water and the drying
-// film behind it (wet sand, below); the line stands just outside it, about two pixels wide close up and gone in the
-// far field (it would outline every shoreline from above). Each distance is turned into pixels by its screen derivative,
-// bounded by the pixel footprint so the texel steps of a field's slope never spike it into a jagged line. Where the union
-// reaches the body's own edge (the mesh ends at the waterline) it is drawn there instead. It is the scene behind the
-// water darkened (a warm dark at partial coverage, so sand reads as wet sand, not ink), refracted bed included, since
-// nothing refracts under it.
+// film behind it (wet sand, below). Where the film stands, the line is the film's own outer ramp (its switches are
+// blended over about a pixel and a half, so the ramp is continuous and antialiased by construction), darkest on the
+// ramp's lower part and about two pixels wide at most; where it does not, the line stands just beyond the swash's edge.
+// Both fade out in the far field (a line would outline every shoreline from above). Where the union reaches the body's own
+// edge (the mesh ends at the waterline) it is drawn there instead. It is the scene behind the water darkened (a warm dark
+// at partial coverage, so sand reads as wet sand, not ink); nothing refracts under it.
 float swWetIn = swSwashEdgeS / clamp(fwidth(swSwashEdgeS), swFoot * 0.3, swFoot * 1.2);
-float swFilmPx = (swFilm - 0.32) / clamp(fwidth(swFilm), 0.005, 0.2);
-float swWetOut = -max(swWetIn, swFilmPx);
 float swWetHw = 2.4 * (1.0 - smoothstep(0.03, 0.2, swFoot));
-float swWetBand = smoothstep(-0.8, 0.8, swWetOut) * (1.0 - smoothstep(swWetHw - 0.8, swWetHw + 0.8, swWetOut));
+float swWetFilm = smoothstep(0.02, 0.2, swFilm) * (1.0 - smoothstep(0.3, 0.6, swFilm));
+float swWetSwash = smoothstep(-0.8, 0.8, -swWetIn) * (1.0 - smoothstep(swWetHw - 0.8, swWetHw + 0.8, -swWetIn)) * (1.0 - smoothstep(0.1, 0.3, swFilm));
+float swWetBand = max(swWetFilm, swWetSwash);
+float swWetOut = -swWetIn;
 // Only real terrain draws it (or, with no terrain field bound at all, a body's own bank): a field's last texels, where its
 // known share ramps down, and a body's edge over open water are no shore, and would draw a dashed line along them.
 float swWetTerrain = step(${f(WATER_FIELD_TERRAIN_ALPHA)}, swKnown);
