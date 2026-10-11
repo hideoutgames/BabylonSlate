@@ -115,7 +115,8 @@ async function releaseLock(path, token) {
   const deadline = Date.now() + 1000;
   for (;;) {
     try {
-      if ((await readJson(path))?.token === token) await rm(path, { force: true });
+      if ((await readJson(path))?.token === token)
+        await rm(path, { force: true });
       return;
     } catch (error) {
       if (
@@ -128,48 +129,91 @@ async function releaseLock(path, token) {
   }
 }
 
+/**
+ * Links a complete owner record into place, so `path` never exists without
+ * its owner. Returns the record's token, or null while another record holds it.
+ */
+async function linkOwner(path) {
+  const token = randomUUID();
+  const temporary = `${path}.${token}.tmp`;
+  try {
+    await writeFile(temporary, JSON.stringify({ pid: process.pid, token }));
+    await link(temporary, path);
+    return token;
+  } catch (error) {
+    if (error.code === "EEXIST") return null;
+    throw error;
+  } finally {
+    await rm(temporary, { force: true });
+  }
+}
+
+/** A killed owner may leave a record; an unreadable one gets a grace period. */
+async function abandoned(path) {
+  let age, owner;
+  try {
+    age = Date.now() - (await stat(path)).mtimeMs;
+    owner = JSON.parse(await readFile(path, "utf8"));
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    if (!(error instanceof SyntaxError)) throw error;
+  }
+  return owner ? !alive(owner.pid) : age > 10_000;
+}
+
+/**
+ * Removes the owner record at `path` only while it is still abandoned. Removers
+ * decide under an exclusive claim, so a waiter that read a killed owner earlier
+ * never deletes the live record that replaced it. A claim left by a killed
+ * remover is removed the same way.
+ */
+export async function removeAbandoned(path) {
+  const claim = `${path}.claim`;
+  const token = await linkOwner(claim);
+  if (!token) {
+    if (await abandoned(claim)) await removeAbandoned(claim);
+    return false;
+  }
+  let removed = false;
+  let failure;
+  try {
+    if (await abandoned(path)) {
+      await rm(path, { force: true });
+      removed = true;
+    }
+  } catch (error) {
+    failure = error;
+  }
+  await releaseLock(claim, token).catch((error) => {
+    // Report a retained claim instead of retrying behind it as a sharing denial.
+    throw new Error(`Admission lock claim was not released: ${claim}`, {
+      cause: error,
+    });
+  });
+  if (failure) throw failure;
+  return removed;
+}
+
 /** Serializes admission state changes across processes sharing `directory`. */
 export async function withAdmissionLock(directory, check, operation) {
   const path = join(directory, "lock");
-  const token = randomUUID();
-  const temporary = `${path}.${token}.tmp`;
   for (;;) {
     check();
+    let token = null;
+    let removed = false;
     try {
-      // Link a complete owner record into place, so the lock never exists
-      // without its owner and a stalled owner is not mistaken for an abandoned one.
-      await writeFile(temporary, JSON.stringify({ pid: process.pid, token }));
-      await link(temporary, path);
+      token = await linkOwner(path);
+      if (!token)
+        removed = (await abandoned(path)) && (await removeAbandoned(path));
     } catch (error) {
-      if (["EPERM", "EACCES", "EBUSY"].includes(error.code)) {
-        await delay(20);
-        continue;
-      }
-      if (error.code !== "EEXIST") throw error;
-      let owner;
-      try {
-        owner = await readJson(path);
-      } catch (readError) {
-        if (!["EPERM", "EACCES", "EBUSY"].includes(readError.code))
-          throw readError;
-        // A Windows sharing denial does not prove the lock is abandoned.
-        // Retry through the outer cancellation/deadline check before inspecting it.
-        await delay(20);
-        continue;
-      }
-      // A killed owner may leave a lock; an unreadable one gets a grace period.
-      let age;
-      try {
-        age = Date.now() - (await stat(path)).mtimeMs;
-      } catch {
-        continue;
-      }
-      if ((owner && !alive(owner.pid)) || (!owner && age > 10_000))
-        await rm(path, { force: true });
-      else await delay(20);
+      if (!["EPERM", "EACCES", "EBUSY"].includes(error.code)) throw error;
+      // A Windows sharing denial does not prove the lock is abandoned.
+      // Retry through the outer cancellation/deadline check before inspecting it.
+    }
+    if (removed) continue;
+    if (!token) {
+      await delay(20);
       continue;
-    } finally {
-      await rm(temporary, { force: true });
     }
     try {
       return await operation();
