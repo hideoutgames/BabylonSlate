@@ -31,7 +31,7 @@ function repository(t) {
     git("commit", "--quiet", "-m", `Update ${file}`);
     return git("rev-parse", "HEAD");
   };
-  return { directory, commit };
+  return { directory, git, commit };
 }
 
 test("review bodies, review comments and issue comments are scanned", () => {
@@ -79,12 +79,14 @@ test("conditional Xcode signing settings are checked like plain ones", () => {
 });
 
 test("SVG and NUL-containing text are scanned in the tree and in each branch commit", (t) => {
-  const { directory, commit } = repository(t);
+  const { directory, git, commit } = repository(t);
   const base = commit("README.md", "Clean\n");
   commit("icon.svg", `<svg><!-- ${sessionLink} --></svg>\n`);
   commit("data.bin.txt", `header\0${sessionLink}\n`);
   assert.deepEqual(
-    scanTrackedFiles(directory).map((violation) => violation.path).sort(),
+    scanTrackedFiles(directory)
+      .map((violation) => violation.path)
+      .sort(),
     ["data.bin.txt", "icon.svg"],
   );
 
@@ -102,6 +104,22 @@ test("SVG and NUL-containing text are scanned in the tree and in each branch com
       file,
     );
   }
+
+  // A renamed file's new path is reported once, whether or not it was edited.
+  commit("notes.txt", "one\ntwo\nthree\nfour\n");
+  const unrenamed = commit("plain.txt", "unchanged\n");
+  git("mv", "notes.txt", "cert.pem");
+  git("mv", "plain.txt", "signing.key");
+  const renamed = commit("cert.pem", "one\ntwo\nthree\nfive\n");
+  assert.deepEqual(
+    scanAddedLines(`${unrenamed}..${renamed}`, directory)
+      .map((violation) => [violation.path, violation.rule])
+      .sort(),
+    [
+      [`commit:${renamed}:cert.pem`, "signing-material"],
+      [`commit:${renamed}:signing.key`, "signing-material"],
+    ],
+  );
 });
 
 test("the command line runs the scan when started through a differently named path", (t) => {

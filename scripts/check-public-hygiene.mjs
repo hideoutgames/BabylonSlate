@@ -271,26 +271,30 @@ function scanCommitPatch(commit, patch) {
   });
   let path = "";
   let inHeader = false;
+  // A renamed and edited file names its target twice (`rename to`, `+++`);
+  // scan the path once, when its header ends at the first hunk or next file.
+  const endHeader = () => {
+    if (inHeader && path) violations.push(...scanPath(path).map(at));
+    inHeader = false;
+  };
   for (const line of patch.split("\n")) {
     if (line.startsWith("diff --git ")) {
+      endHeader();
       inHeader = true;
       path = "";
       continue;
     }
     if (inHeader) {
       const target = /^(?:\+\+\+ "?b\/|rename to |copy to )(.*?)"?$/.exec(line);
-      if (target) {
-        path = target[1];
-        violations.push(...scanPath(path).map(at));
-      } else if (line.startsWith("@@")) {
-        inHeader = false;
-      }
+      if (target) path = target[1];
+      else if (line.startsWith("@@")) endHeader();
       continue;
     }
     if (line.startsWith("+")) {
       violations.push(...scanText(path, line.slice(1)).map(at));
     }
   }
+  endHeader();
   return violations;
 }
 
@@ -307,7 +311,9 @@ export function scanEventMetadata(event) {
     );
   }
   if (event.review) {
-    violations.push(...scanText("pull-request:review", event.review.body ?? ""));
+    violations.push(
+      ...scanText("pull-request:review", event.review.body ?? ""),
+    );
   }
   if (event.comment) {
     // Pull-request review comments carry `pull_request`; issue comments carry
@@ -337,7 +343,8 @@ function option(name, hint) {
   const index = process.argv.indexOf(name);
   if (index === -1) return null;
   const value = process.argv[index + 1];
-  if (!value || value.startsWith("--")) throw new Error(`${name} needs ${hint}`);
+  if (!value || value.startsWith("--"))
+    throw new Error(`${name} needs ${hint}`);
   return value;
 }
 
@@ -376,7 +383,9 @@ function main() {
 function invokedDirectly() {
   if (!process.argv[1]) return false;
   try {
-    return import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
+    return (
+      import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href
+    );
   } catch {
     return false;
   }
