@@ -78,7 +78,7 @@ export function remapImportResultGuids(
         mapped = remapDocumentPayload(result.type, JSON.parse(new TextDecoder().decode(chunk.data)), remap, definitionFields);
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
-        throw new Error(`Cannot give "${result.name}" (${result.type}) new asset ids: its document could not be read (${reason}). Nothing was imported.`);
+        throw new Error(`Cannot give "${result.name}" (${result.type}) new asset ids: its document could not be read (${reason}). Nothing was imported.`, { cause: error });
       }
       return { ...chunk, data: new TextEncoder().encode(JSON.stringify(mapped)) };
     }),
