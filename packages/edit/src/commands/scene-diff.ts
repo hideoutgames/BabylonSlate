@@ -314,12 +314,15 @@ export function diffSceneCommands(
     commands.push(new SetSceneOverlayEditorCommand(before.overlayEditor, after.overlayEditor));
   }
 
-  const settingKeys = new Set([
+  // Untouched settings keep their references, so only replaced values
+  // (not foliage groups or the post-process stack on every edit) serialize.
+  const settingKeys = before.settings === after.settings ? [] : new Set([
     ...Object.keys(before.settings),
     ...Object.keys(after.settings),
   ] as Array<keyof SceneSettings>);
   for (const key of settingKeys) {
     if (
+      before.settings[key] !== after.settings[key] &&
       JSON.stringify(before.settings[key]) !==
       JSON.stringify(after.settings[key])
     ) {
