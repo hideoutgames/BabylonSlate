@@ -1397,10 +1397,10 @@ describe("SceneLayer runtime compositor", () => {
               properties: {
                 source: "texture",
                 textureGuid: "tex-panel",
-                marginLeft: 8,
-                marginRight: 8,
-                marginTop: 4,
-                marginBottom: 4,
+                marginLeft: 0.08,
+                marginRight: 0.08,
+                marginTop: 0.04,
+                marginBottom: 0.04,
               },
             },
           ],
@@ -1427,10 +1427,10 @@ describe("SceneLayer runtime compositor", () => {
       overlayPanel: {
         source: "texture",
         textureGuid: "tex-panel",
-        marginLeft: 8,
-        marginRight: 8,
-        marginTop: 4,
-        marginBottom: 4,
+        marginLeft: 0.08,
+        marginRight: 0.08,
+        marginTop: 0.04,
+        marginBottom: 0.04,
       },
     });
   });

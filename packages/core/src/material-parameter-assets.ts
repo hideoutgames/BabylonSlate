@@ -40,15 +40,8 @@ export function materialParameterTextureGuidsFromGraph(
   for (const slice of slices) {
     for (const node of slice.nodes) {
       if (node.type !== "material.setTextureParameter") continue;
-      const nested = node.data.properties;
-      const properties =
-        nested && typeof nested === "object" && !Array.isArray(nested)
-          ? (nested as Record<string, unknown>)
-          : node.data;
-      // Match script pin-default precedence. Explicitly cleared defaults mask legacy values.
-      const value = ["default:value", "value", "default:Value", "Value"]
-        .map((key) => properties[key])
-        .find((entry) => entry !== undefined);
+      // The Value pin's authored literal, where the compiler reads it.
+      const value = node.data["default:value"];
       if (typeof value === "string" && value.trim()) guids.add(value.trim());
     }
   }

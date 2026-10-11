@@ -27,7 +27,6 @@ import {
 
 export const PROJECT_FILE = "project.json";
 export const LAYOUT_FILE = "layout.json";
-export const MAIN_GRAPH_FILE = "assets/main.graph.babasset";
 export const MAIN_CLASS_FILE = "assets/main.class.babasset";
 export const MAIN_SCENE_FILE = "assets/main.scene.babasset";
 
@@ -211,10 +210,7 @@ export interface ProjectSettings {
    * Play uses the open scene tab.
    */
   startupSceneGuid: string | null;
-  /**
-   * GameInstance subclass constructed for Play, Preview, and export.
-   * Scene `settings.gameInstanceClass` remains for old files.
-   */
+  /** GameInstance subclass constructed for Play, Preview, and export. */
   gameInstanceClass: string | null;
   textures: TextureProjectSettings;
   twoD: TwoDProjectSettings;
@@ -271,8 +267,6 @@ export interface SourceControlProjectSettings {
 
 export interface PluginEnableOverride {
   enabled: boolean;
-  /** Legacy acknowledgement of version warnings; never required for enablement. */
-  acceptedCompatibility?: string;
 }
 
 export const DEFAULT_EXPORT_FILE_COUNT_WARN = 800;
@@ -651,37 +645,6 @@ function normalizeGameInstanceClass(value: unknown): string | null {
   return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
 }
 
-/**
- * One-shot copy of a scene Game Instance onto the project field so old
- * projects keep Play/Preview/export after the picker moved to Project Settings.
- */
-export function migrateGameInstanceClassFromScenes(
-  settings: ProjectSettings,
-  scenes: ReadonlyArray<{
-    settings?: { gameInstanceClass?: string | null };
-  }>,
-): ProjectSettings {
-  if (settings.gameInstanceClass) return settings;
-  for (const scene of scenes) {
-    const value = scene.settings?.gameInstanceClass;
-    if (typeof value === "string" && value.trim()) {
-      return { ...settings, gameInstanceClass: value.trim() };
-    }
-  }
-  return settings;
-}
-
-/** Project field wins; scene value is a fallback for unsaved / in-flight loads. */
-export function resolveGameInstanceClass(
-  project: { gameInstanceClass?: string | null } | null | undefined,
-  scene: { settings?: { gameInstanceClass?: string | null } } | null | undefined,
-): string | undefined {
-  const fromProject = project?.gameInstanceClass?.trim();
-  if (fromProject) return fromProject;
-  const fromScene = scene?.settings?.gameInstanceClass?.trim();
-  return fromScene || undefined;
-}
-
 function normalizePluginOverrides(value: unknown): Record<string, PluginEnableOverride> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   const out: Record<string, PluginEnableOverride> = {};
@@ -691,13 +654,7 @@ function normalizePluginOverrides(value: unknown): Record<string, PluginEnableOv
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
     const enabled = (raw as { enabled?: unknown }).enabled;
     if (typeof enabled !== "boolean") continue;
-    const accepted = (raw as { acceptedCompatibility?: unknown }).acceptedCompatibility;
-    out[guid] = {
-      enabled,
-      ...(enabled && typeof accepted === "string" && accepted.trim() !== ""
-        ? { acceptedCompatibility: accepted }
-        : {}),
-    };
+    out[guid] = { enabled };
   }
   return out;
 }
@@ -1018,16 +975,3 @@ export function createDefaultScene(
   };
 }
 
-export function createDefaultGraph(): SerializedGraph {
-  return {
-    nodes: [
-      {
-        id: "log-1",
-        type: "logMessage",
-        position: { x: 120, y: 120 },
-        data: { message: "Hello from BabylonSlate" },
-      },
-    ],
-    edges: [],
-  };
-}

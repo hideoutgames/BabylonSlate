@@ -72,13 +72,26 @@ export function landscapeHeightAt(data: LandscapeProperties, x: number, z: numbe
 
 /** World-space terrain height below a point, or null when the point is outside the landscape. */
 export function landscapeWorldHeightAt(data: LandscapeProperties, transform: Transform, x: number, z: number): number | null {
-  const local = worldToLocal(transform, { x, y: transform.position.y, z });
-  if (!local) return null;
-  const height = landscapeHeightAt(data, local.x, local.z);
-  if (height === null) return null;
+  // The world vertical through (x, z) is the local line `base + s * step`, where
+  // `s` is the world height above the actor. A pitched or rolled landscape
+  // moves along local X/Z as `s` changes, so the crossing is solved for rather
+  // than sampled at the local point level with the actor's origin.
+  const base = worldToLocal(transform, { x, y: transform.position.y, z });
+  if (!base) return null;
+  const up = quatRotateVector(inverseQuat(transform.rotation), { x: 0, y: 1, z: 0 });
   const { x: sx, y: sy, z: sz } = transform.scale;
-  const world = quatRotateVector(transform.rotation, { x: local.x * sx, y: height * sy, z: local.z * sz });
-  return world.y + transform.position.y;
+  const step = { x: up.x / sx, y: up.y / sy, z: up.z / sz };
+  if (Math.abs(step.y) < 1e-9) return null;
+  let s = 0;
+  for (let i = 0; i < 16; i++) {
+    const height = landscapeHeightAt(data, base.x + s * step.x, base.z + s * step.z);
+    if (height === null) return null;
+    const next = (height - base.y) / step.y;
+    const settled = Math.abs(next - s) < 1e-6;
+    s = next;
+    if (settled) break;
+  }
+  return transform.position.y + s;
 }
 
 export interface WaterCutters {

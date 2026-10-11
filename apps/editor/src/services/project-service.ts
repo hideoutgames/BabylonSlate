@@ -24,7 +24,6 @@ import {
   ENGINE_VERSION,
   normalizeInputAssetPayload,
   assetTypeForDocumentKind,
-  assetTypeForDocumentSave,
   createDefaultScene,
   createEmptyLayouts,
   createEmptyProject,
@@ -2323,7 +2322,7 @@ export class ProjectService {
       kind === "asset-settings" && existing?.type
         ? existing.type
         : isAssetDocumentKind(kind)
-          ? assetTypeForDocumentSave(kind, existing?.type)
+          ? assetTypeForDocumentKind(kind)
           : "Class";
     const ownerPlugin = this.pluginForPath(path);
     let pluginContentChanged = false;

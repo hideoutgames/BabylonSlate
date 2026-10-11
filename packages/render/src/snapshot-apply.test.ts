@@ -182,10 +182,10 @@ describe("createPlayMesh", () => {
       source: "texture",
       textureGuid: "tex-1",
       materialGuid: null,
-      marginLeft: 10,
-      marginRight: 10,
-      marginTop: 10,
-      marginBottom: 10,
+      marginLeft: 0.1,
+      marginRight: 0.1,
+      marginTop: 0.1,
+      marginBottom: 0.1,
       hitTest: "ignore",
     });
     const mesh = createPlayMesh(handle.scene, 4, "2dpanel", "tex-1", binding);

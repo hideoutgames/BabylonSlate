@@ -40,6 +40,16 @@ describe("SceneLayer containers", () => {
     const result = resolveOverlayLayout([root], { safeAreaInsets: { left: 2, right: 9, top: 2, bottom: 0 } });
     expect(result.entries.get("root/child")!.rect).toEqual({ x: 2, y: -1, width: 16, height: 14 });
     expect(root.components[1]!.transform).toEqual(identitySerializedTransform());
+
+    // A content-sized safe area measures the same scaled inset it arranges with.
+    const fitted = createActor("fitted", "Fitted", { components: [
+      component("safe", "2DSafeAreaComponent", { widthMode: "content", heightMode: "content" }),
+      component("child", "2DMaterialComponent", { width: 4, height: 3, widthMode: "fixed", heightMode: "fixed" }, "safe"),
+    ] });
+    fitted.transform.scale = [2, 2, 1];
+    const fittedResult = resolveOverlayLayout([fitted], { safeAreaInsets: { left: 2, top: 2 } });
+    expect(fittedResult.entries.get("fitted/safe")!.rect).toEqual({ x: 0, y: 0, width: 10, height: 8 });
+    expect(fittedResult.entries.get("fitted/child")!.rect).toEqual({ x: 1, y: -1, width: 8, height: 6 });
   });
 
   it("clips a MaskPanel's contents and intersects an actor Mask across siblings and descendants", () => {

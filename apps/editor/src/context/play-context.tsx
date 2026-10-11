@@ -29,7 +29,6 @@ import {
   engineCommandBus,
   isErr,
   normalizeRenderingPipeline,
-  resolveGameInstanceClass,
   type CollisionTriangleMesh,
 } from "@babylonslate/core";
 import type { SessionReportEntry } from "@babylonslate/runtime";
@@ -1560,10 +1559,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             scene={playScene?.scene}
             project={projectDocument?.metadata}
             saveGame={playSaveGame}
-            gameInstanceClass={resolveGameInstanceClass(
-              projectDocument?.settings,
-              playScene?.scene,
-            )}
+            gameInstanceClass={projectDocument?.settings.gameInstanceClass ?? undefined}
             scenes={playSceneLibrary}
             sceneCatalog={(assetRegistry?.list() ?? []).filter((asset) => asset.header.type === "Scene").map((asset) => ({ guid: asset.header.guid, name: asset.header.name }))}
             classAssetGuids={Object.fromEntries((assetRegistry?.list() ?? []).filter((asset) => asset.header.type === "Class").map((asset) => [classIdFromClassAsset(asset), asset.header.guid]))}

@@ -170,7 +170,7 @@ describe("collectExportReachability", () => {
       ],
       sceneByGuid: (guid) => guid === "scene" ? scene : null,
       graphByGuid: (guid) => guid === "class" ? { nodes: [
-        { id: "mode", type: "render-target.getMode", position: { x: 0, y: 0 }, data: { properties: { "default:target": "normals" } } },
+        { id: "mode", type: "render-target.getMode", position: { x: 0, y: 0 }, data: { "default:target": "normals" } },
       ], edges: [], members: [{ id: "name", kind: "variable", name: "Label", typeId: "string", defaultValue: "unused" }] } : null,
       payloadByGuid: (guid) => guid === "material" ? { nodes: [{ type: "texture.sample", properties: { textureGuid: "image" } }] }
         : guid === "image" ? { renderTargetGuid: "depth" } : null,
@@ -233,7 +233,7 @@ describe("collectExportReachability", () => {
         { id: "ordinary-name", kind: "variable", name: "Name", typeId: "string", defaultValue: "tex-unused" },
       ],
       nodes: [], edges: [], functionGraphs: { tint: {
-        nodes: [{ id: "texture", type: "material.setTextureParameter", position: { x: 0, y: 0 }, data: { properties: { "default:value": "tex-runtime", "default:name": "tex-unused" } } }], edges: [],
+        nodes: [{ id: "texture", type: "material.setTextureParameter", position: { x: 0, y: 0 }, data: { "default:value": "tex-runtime", "default:name": "tex-unused" } }], edges: [],
       } },
     };
     const result = collectExportReachability({

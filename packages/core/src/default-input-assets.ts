@@ -4,6 +4,13 @@ import {
   type InputAssetDefinition,
 } from "./input-assets";
 
+/** Each starter binding's stable id within its asset. */
+function withBindingIds(
+  bindings: readonly Record<string, unknown>[],
+): Record<string, unknown>[] {
+  return bindings.map((binding, index) => ({ ...binding, id: `binding-${index + 1}` }));
+}
+
 /** Starter controls for the built-in 3D template and explicit test fixtures. */
 export function createDefaultInputAssets(): Array<
   Omit<InputAssetDefinition, "guid">
@@ -13,7 +20,7 @@ export function createDefaultInputAssets(): Array<
       type: "InputAction" as const,
       name: action.name,
       ...normalizeInputAssetPayload("InputAction", {
-        bindings: action.bindings,
+        bindings: withBindingIds(action.bindings),
       }),
     })),
     ...DEFAULT_PROJECT_INPUT_SETTINGS.axes.map((axis) => ({
@@ -21,7 +28,7 @@ export function createDefaultInputAssets(): Array<
       name: axis.name,
       ...normalizeInputAssetPayload("InputAxis", {
         valueType: axis.kind === "2d" ? "2d" : "1d",
-        bindings: axis.bindings,
+        bindings: withBindingIds(axis.bindings),
       }),
     })),
   ];

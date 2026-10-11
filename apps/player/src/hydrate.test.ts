@@ -472,7 +472,7 @@ describe("packedContentFromGame", () => {
       name: "Arena",
       settings: {
         ...createDefaultScene().settings,
-        postProcessStack: [{ materialGuid: "mat-bloom", enabled: true }],
+        postProcessStack: [{ id: "bloom", materialGuid: "mat-bloom", enabled: true }],
       },
       actors: [
         createActor("hero", "Hero", {

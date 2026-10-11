@@ -2090,8 +2090,8 @@ describe("Play createEngine view", () => {
     });
     try {
       handle.setPostProcessStack([
-        { materialGuid: "pp", enabled: true },
-        { materialGuid: "pp", enabled: true },
+        { id: "pass-1", materialGuid: "pp", enabled: true },
+        { id: "pass-2", materialGuid: "pp", enabled: true },
       ]);
       const created = captureGraphPasses();
       await handle.prewarmSceneMaterials();
@@ -2117,7 +2117,7 @@ describe("Play createEngine view", () => {
 
   it("routes editor, Play and layer post effects through their coordinators", async () => {
     const attach = vi.spyOn(SceneRenderCoordinator.prototype, "attachPostProcess");
-    const options = { sharedEngine: sharedEngine(), materialDocuments: new Map([["pp", createDefaultMaterialDocument("Scene Color", "postProcess")]]), postProcessStack: [{ materialGuid: "pp", enabled: true }] };
+    const options = { sharedEngine: sharedEngine(), materialDocuments: new Map([["pp", createDefaultMaterialDocument("Scene Color", "postProcess")]]), postProcessStack: [{ id: "pass", materialGuid: "pp", enabled: true }] };
     const editor = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { ...options, editor: true });
     handles.push(editor);
     editor.setPostProcessStack(options.postProcessStack);
@@ -2165,7 +2165,7 @@ describe("Play createEngine view", () => {
     });
     handles.push(handle);
     // Editor handles seed the default scene, which owns the post-process stack.
-    handle.setPostProcessStack([{ materialGuid: "pp", enabled: true }]);
+    handle.setPostProcessStack([{ id: "pass", materialGuid: "pp", enabled: true }]);
     const passes = captureGraphPasses();
     await handle.prewarmSceneMaterials();
     const pass = passes.at(-1)!;
@@ -2258,7 +2258,7 @@ describe("Play createEngine view", () => {
       materialDocuments: new Map([["pp", document]]),
     });
     handles.push(handle);
-    handle.setPostProcessStack([{ materialGuid: "pp", enabled: true }]);
+    handle.setPostProcessStack([{ id: "pass", materialGuid: "pp", enabled: true }]);
     const passes = captureGraphPasses();
     await handle.prewarmSceneMaterials();
     const retired = passes.at(-1)!;
@@ -2291,7 +2291,7 @@ describe("Play createEngine view", () => {
       materialDocuments: new Map([["pp", document]]),
     });
     handles.push(handle);
-    handle.setPostProcessStack([{ materialGuid: "pp", enabled: true }]);
+    handle.setPostProcessStack([{ id: "pass", materialGuid: "pp", enabled: true }]);
     const passes = captureGraphPasses();
     await handle.prewarmSceneMaterials();
     const pass = passes.at(-1)!;
@@ -2317,7 +2317,7 @@ describe("Play createEngine view", () => {
       materialDocuments: new Map([["pp", document]]),
     });
     handles.push(handle);
-    handle.setPostProcessStack([{ materialGuid: "pp", enabled: true }]);
+    handle.setPostProcessStack([{ id: "pass", materialGuid: "pp", enabled: true }]);
     const passes = captureGraphPasses();
     await handle.prewarmSceneMaterials();
     const pass = passes.at(-1)!;
@@ -2423,7 +2423,7 @@ describe("Play createEngine view", () => {
       sharedEngine: sharedEngine(),
       playMode: true,
       postProcessingEnabled: true,
-      postProcessStack: [{ materialGuid: "pp", enabled: true, order: 0 }],
+      postProcessStack: [{ id: "pass", materialGuid: "pp", enabled: true, order: 0 }],
       materialDocuments: new Map([
         ["pp", createDefaultMaterialDocument("Blur", "postProcess")],
       ]),
@@ -2439,7 +2439,7 @@ describe("Play createEngine view", () => {
       sharedEngine: sharedEngine(),
       playMode: true,
       postProcessingEnabled: true,
-      postProcessStack: [{ materialGuid: "pp", enabled: true, order: 0 }],
+      postProcessStack: [{ id: "pass", materialGuid: "pp", enabled: true, order: 0 }],
       materialDocuments: new Map([
         ["pp", createDefaultMaterialDocument("Blur", "postProcess")],
       ]),
@@ -2701,7 +2701,7 @@ describe("Play createEngine view", () => {
     const handle = createEngine(canvas, {
       sharedEngine: sharedEngine(),
       playMode: true,
-      postProcessStack: [{ materialGuid: "pp", enabled: true, order: 0 }],
+      postProcessStack: [{ id: "pass", materialGuid: "pp", enabled: true, order: 0 }],
       materialDocuments: new Map([
         ["pp", createDefaultMaterialDocument("Blur", "postProcess")],
       ]),
@@ -2719,7 +2719,7 @@ describe("Play createEngine view", () => {
       sharedEngine: sharedEngine(),
       playMode: true,
       postProcessingEnabled: false,
-      postProcessStack: [{ materialGuid: "pp", enabled: true, order: 0 }],
+      postProcessStack: [{ id: "pass", materialGuid: "pp", enabled: true, order: 0 }],
       materialDocuments: new Map([
         ["pp", createDefaultMaterialDocument("Blur", "postProcess")],
       ]),
@@ -2953,7 +2953,7 @@ describe("Play createEngine view", () => {
     const handle = createEngine(canvas, {
       sharedEngine: engine,
       playMode: true,
-      postProcessStack: [{ materialGuid: "pp", enabled: true, order: 0 }],
+      postProcessStack: [{ id: "pass", materialGuid: "pp", enabled: true, order: 0 }],
       materialDocuments: new Map([
         ["pp", createDefaultMaterialDocument("Blur", "postProcess")],
       ]),
@@ -3002,7 +3002,7 @@ describe("Play createEngine view", () => {
     const handle = createEngine(canvas, {
       sharedEngine: engine,
       playMode: true,
-      postProcessStack: [{ materialGuid: "pp", enabled: true, order: 0 }],
+      postProcessStack: [{ id: "pass", materialGuid: "pp", enabled: true, order: 0 }],
       materialDocuments: new Map([
         ["pp", createDefaultMaterialDocument("Blur", "postProcess")],
       ]),
@@ -3601,7 +3601,7 @@ describe("Play createEngine view", () => {
     });
     handles.push(handle);
     let data = createDefaultScene();
-    data.settings.postProcessStack = [{ materialGuid: "pp", enabled: true }];
+    data.settings.postProcessStack = [{ id: "pass", materialGuid: "pp", enabled: true }];
     data.actors = [createActor("fog-bank", "Fog Bank", { components: [{
       id: "fog", classId: "FogVolumeComponent", properties: { density: 0.1, edgeFalloff: 0.2 },
     }] })];

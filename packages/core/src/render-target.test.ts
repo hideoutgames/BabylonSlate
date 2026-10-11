@@ -31,12 +31,12 @@ describe("render target asset contracts", () => {
   });
 
   it("keeps assets referenced by graph nodes and typed containers reachable without collecting text", () => {
-    const node = (type: string, props: Record<string, unknown>): SerializedGraph["nodes"][number] => ({
-      id: type, type, position: { x: 0, y: 0 }, data: { properties: props },
+    const node = (type: string, data: Record<string, unknown>): SerializedGraph["nodes"][number] => ({
+      id: type, type, position: { x: 0, y: 0 }, data,
     });
     expect(renderTargetAssetGuidsFromGraph({
       nodes: [node("render-target.getMode", { "default:target": "depth-target" }),
-        node("render-target.setRenderTarget", { "default:value": null, value: "cleared-target" }),
+        node("render-target.getTextureTarget", { "default:texture": null, texture: "cleared-texture" }),
         node("debug.log", { "default:target": "text-ignore" })],
       edges: [],
       members: [
@@ -48,8 +48,8 @@ describe("render target asset contracts", () => {
     })).toEqual(["array-target", "map-target", "map-texture", "depth-target", "function-texture"]);
   });
   it("collects reflected setter literals and typed containers while preserving cleared defaults", () => {
-    const setter = (id: string, properties: Record<string, unknown>): SerializedGraph["nodes"][number] => ({
-      id, type: "variables.set", position: { x: 0, y: 0 }, data: { properties },
+    const setter = (id: string, data: Record<string, unknown>): SerializedGraph["nodes"][number] => ({
+      id, type: "variables.set", position: { x: 0, y: 0 }, data,
     });
     expect(renderTargetAssetGuidsFromGraph({ nodes: [
       setter("target", { typeId: "asset", typeClassId: "RenderTarget", propertyKey: "renderTargetGuid", "default:value": "reflected-target" }),
@@ -58,7 +58,8 @@ describe("render target asset contracts", () => {
       setter("map", { typeId: "string", container: "map", keyTypeId: "asset", keyTypeClassId: "RenderTarget", "default:value": [{ key: "map-target", value: "ignore-text" }] }),
       setter("text", { typeId: "string", "default:value": "ignore-text" }),
     ], edges: [], functionGraphs: { sample: { nodes: [
-      setter("sampler", { typeId: "asset", typeClassId: "Texture", variableName: "Monitor", "default:Monitor": "function-image" }),
+      setter("sampler", { typeId: "asset", typeClassId: "Texture", variableName: "Monitor", "default:value": "function-image" }),
+      setter("named", { typeId: "asset", typeClassId: "Texture", variableName: "Monitor", "default:Monitor": "ignore-named" }),
     ], edges: [] } } })).toEqual(["reflected-target", "array-image", "map-target", "function-image"]);
   });
 

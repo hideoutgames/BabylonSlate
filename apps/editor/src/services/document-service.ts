@@ -17,7 +17,6 @@ import {
   isAssetDocumentKind,
   isContentBrowserId,
   isSceneWorkspaceKind,
-  migrateRestoredDocumentId,
   parseDocumentId,
 } from "@babylonslate/core";
 import type { ProjectDocument } from "@babylonslate/core";
@@ -426,34 +425,30 @@ export class DocumentService {
     const savedOrder = layouts.tabOrder.filter(
       (id) => !isContentBrowserId(id) && id.includes(":"),
     );
-    const typeForPath = (path: string) =>
-      projectService.registry?.list().find((asset) => asset.path === path)
-        ?.header.type ?? null;
     const lastSceneId = [...savedOrder]
       .reverse()
       .find((id) => parseDocumentId(id)?.kind === "scene");
 
     for (const id of savedOrder) {
       if (this.authoringLock !== authoringLock) throw new Error("Project initialization crossed an authoring lock.");
-      const restoredId = migrateRestoredDocumentId(id, typeForPath);
-      const parsed = parseDocumentId(restoredId);
+      const parsed = parseDocumentId(id);
       if (!parsed || !isAssetDocumentKind(parsed.kind)) continue;
-      if (parsed.kind === "scene" && restoredId !== lastSceneId) continue;
+      if (parsed.kind === "scene" && id !== lastSceneId) continue;
       // Legacy layouts have only paths. Drop a tab whose file was deleted or
       // renamed rather than restoring one that cannot load; saved GUIDs repair
       // newer layouts.
       if (parsed.kind !== "trace" && projectService.documentExists && !(await projectService.documentExists(parsed.path))) continue;
       // Restored navigation is metadata only. Activate through openDocument to
       // acquire a scope and read the document when the user actually needs it.
-      this.state.openDocuments.set(restoredId, {
-        id: restoredId,
+      this.state.openDocuments.set(id, {
+        id,
         // Same kind suffix openDocument adds on load ("Main Scene", not "Main").
         ref: createDocumentRef(parsed.kind, parsed.path),
         content: null,
-        layout: layouts.documents[restoredId] ?? layouts.documents[id] ?? null,
+        layout: layouts.documents[id] ?? null,
         dirty: false,
       });
-      this.state.tabOrder.push(restoredId);
+      this.state.tabOrder.push(id);
       this.advanceKinds([parsed.kind]);
     }
 

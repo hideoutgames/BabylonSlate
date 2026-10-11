@@ -1,19 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
-  createDefaultGraph,
   createDefaultScene,
   createEmptyProject,
   DEFAULT_CAMERA_FIELD_OF_VIEW,
   DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
   DEFAULT_SORTING_LAYERS,
   MAIN_CLASS_FILE,
-  MAIN_GRAPH_FILE,
   MAIN_SCENE_FILE,
   PROJECT_FILE,
   normalizeProjectSettings,
   normalizeRenderProjectSettings,
-  migrateGameInstanceClassFromScenes,
-  resolveGameInstanceClass,
   type ProjectSettings,
 } from "./project";
 
@@ -52,7 +48,6 @@ describe("project schema", () => {
     expect(project.metadata.name).toBe("Demo");
     expect(project.scenes).toContain(MAIN_SCENE_FILE);
     expect(project.graphs).toContain(MAIN_CLASS_FILE);
-    expect(MAIN_GRAPH_FILE).toBe("assets/main.graph.babasset");
     expect(PROJECT_FILE).toBe("project.json");
     expect(project.settings.twoD.pixelsPerUnit).toBe(100);
     expect(project.settings.twoD.sortingLayers).toEqual([
@@ -96,11 +91,6 @@ describe("project schema", () => {
       height: 1080,
       blackBars: false,
     });
-  });
-
-  it("creates default scene and graph structures", () => {
-    expect(createDefaultScene().actors.length).toBeGreaterThan(0);
-    expect(createDefaultGraph().nodes.length).toBeGreaterThan(0);
   });
 
   it("seeds a 3D default scene with an empty Actor and a possessing Default Camera", () => {
@@ -343,37 +333,6 @@ describe("project schema", () => {
     ).toBe("MyGame");
   });
 
-  it("copies Game Instance from a scene when the project field is empty", () => {
-    const settings = normalizeProjectSettings({});
-    expect(
-      migrateGameInstanceClassFromScenes(settings, [
-        { settings: { gameInstanceClass: null } },
-        { settings: { gameInstanceClass: "MyGame" } },
-      ]).gameInstanceClass,
-    ).toBe("MyGame");
-    expect(
-      migrateGameInstanceClassFromScenes(
-        { ...settings, gameInstanceClass: "Keep" },
-        [{ settings: { gameInstanceClass: "MyGame" } }],
-      ).gameInstanceClass,
-    ).toBe("Keep");
-  });
-
-  it("prefers the project Game Instance over a scene value", () => {
-    expect(
-      resolveGameInstanceClass(
-        { gameInstanceClass: "ProjectGame" },
-        { settings: { gameInstanceClass: "SceneGame" } },
-      ),
-    ).toBe("ProjectGame");
-    expect(
-      resolveGameInstanceClass(
-        { gameInstanceClass: null },
-        { settings: { gameInstanceClass: "SceneGame" } },
-      ),
-    ).toBe("SceneGame");
-  });
-
   it("normalizes editorUtilityObjects to unique class ids", () => {
     expect(normalizeProjectSettings(undefined).editorUtilityObjects).toEqual([]);
     expect(normalizeProjectSettings({}).editorUtilityObjects).toEqual([]);
@@ -458,16 +417,6 @@ describe("project schema", () => {
     ).toEqual({
       "plug-1": { enabled: true },
       "plug-2": { enabled: false },
-    });
-  });
-
-  it("persists accepted plugin compatibility only while the plugin is enabled", () => {
-    expect(normalizeProjectSettings({ pluginOverrides: {
-      on: { enabled: true, acceptedCompatibility: "reviewed-context" },
-      off: { enabled: false, acceptedCompatibility: "old-context" },
-    } }).pluginOverrides).toEqual({
-      on: { enabled: true, acceptedCompatibility: "reviewed-context" },
-      off: { enabled: false },
     });
   });
 

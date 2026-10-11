@@ -76,7 +76,7 @@ describe("Plugin version warnings", () => {
     expect(screen.queryByRole("button", { name: "Review Pack Compatibility" })).toBeNull();
   });
 
-  it("warns for an enabled outdated plugin and retains the separate Beta enable confirmation", async () => {
+  it("keeps an enabled outdated plugin's warning nonblocking and retains the separate Beta enable confirmation", async () => {
     harness.overrides = { pack: { enabled: true } };
     harness.plugins[0]!.settings.beta = true;
     render(<ProjectPluginsSettings />);

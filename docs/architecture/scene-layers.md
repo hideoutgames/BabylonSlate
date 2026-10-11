@@ -91,7 +91,7 @@ Runtime mesh assignments share one live-button lookup for Hit Test, button prese
 
 `2DTexture` / `2DMaterial` (and 2D Panel texture/material source) share the Engine `ResourceCache` with world Scenes. Assigning the default Mannequin albedo Texture or its Material must **reuse** that GPU wrapper — overlay NEAREST sampling, `hasAlpha`, pixel-art resample, and NodeMaterial dispose must not steal it or the 3D Mannequin goes black. Overlay `2DMaterial` / panel-from-material acquire a **scene-local unlit** NodeMaterial compile on the overlay Scene (separate cache key from the world PBR instance) so graphs draw without overlay lights. Play `assignMaterial` for an overlay slot must resolve that same overlay host + `:unlit` compile — a world-scene lit compile on a HUD mesh looks like the material is in the world. Overlay-only meshes never fall back onto the world Scene; leftover `actor-<slot>` / `actor-<slot>|…` world copies are disposed.
 
-**2D Panel** is a 9-slice unlit plane (`source` texture or material, **0–1 source-texture fractions** (`0.5` = 50% of that edge), Hit Test Ignore). Values **above 1** stay legacy **pixels**. Corners stay `marginPx / pixelsPerUnit` in world space as the actor scale changes (mesh is a unit quad; dest is `|scale.xy|`). UV borders stay `marginPx / sourcePx` and do not shrink with dest. Edges stretch on one axis; the center stretches. Margins clamp when the destination is smaller than L+R or T+B. Editor Preview and Play share the same builder. Details shows a still frame of the Texture (or the Material’s first Texture Sample) with dashed margin lines and orange intersection dots; margins edit as 0–1 sliders.
+**2D Panel** is a 9-slice unlit plane (`source` texture or material, **0–1 source-texture fractions** (`0.5` = 50% of that edge; values above 1 clamp to the whole edge), Hit Test Ignore). Corners stay `marginPx / pixelsPerUnit` in world space as the actor scale changes (mesh is a unit quad; dest is `|scale.xy|`). UV borders stay `marginPx / sourcePx` and do not shrink with dest. Edges stretch on one axis; the center stretches. Margins clamp when the destination is smaller than L+R or T+B. Editor Preview and Play share the same builder. Details shows a still frame of the Texture (or the Material’s first Texture Sample) with dashed margin lines and orange intersection dots; margins edit as 0–1 sliders.
 
 Editor Preview shows unlit planes for `2DTexture` / `2DMaterial` / `2DPanel` / solo `2DButton`. A button with a sibling or parent visual does not add an extra quad (same as Play). A nested button helper stays an unpickable origin so viewport picks hit the parent visual; select that actor in the Outliner to edit the button. Other non-surface children of a visual actor (empty, script-only, RigidBody-only, area light) keep their pickable helper billboard.
 
@@ -135,7 +135,7 @@ Category `scene-layer` (GameInstance and other graphs; instances live on the ses
 
 | Node | Runtime |
 | --- | --- |
-| Create Scene Layer | `ctx.createSceneLayer(guid, zOrder)` |
+| Create Scene Layer | `await ctx.createSceneLayerAsync(guid, zOrder)`: preloads the asset when assets load on demand, creates the layer, and resolves once it is ready (30-second deadline) |
 | Remove Scene Layer | Destroy instance + actors; no-op if already gone |
 | Clear Scene Layer | Remove all |
 | Register Scene Layer Post-Processing | Append a `postProcess` Material |
@@ -143,7 +143,7 @@ Category `scene-layer` (GameInstance and other graphs; instances live on the ses
 
 Register/Unregister pickers require `domain === "postProcess"`.
 
-World Scene Details **Scene Layers** (`settings.sceneLayers`) and **Create Scene Layer** both call `createSceneLayer`. They differ only in `ownerSceneGuid` (scene-owned vs graph/`null`). Neither path instantiates overlay meshes into the world Babylon Scene. The Details list does not copy overlay actors into the authored world `scene.actors`.
+World Scene Details **Scene Layers** (`settings.sceneLayers`) are created while that Scene realizes, and **Create Scene Layer** creates through `createSceneLayerAsync`; both use the same SceneLayer creation steps and differ only in `ownerSceneGuid` (scene-owned vs graph/`null`). Neither path instantiates overlay meshes into the world Babylon Scene. The Details list does not copy overlay actors into the authored world `scene.actors`.
 
 ## Play / export / player
 

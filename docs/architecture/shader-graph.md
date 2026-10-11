@@ -70,10 +70,8 @@ Aliases are catalog metadata and are not stored in authored graph properties.
 | `MaterialFunction` | `material-function` | `.matfunc.babasset` |
 | `MaterialInstance` | `material-instance` | `.matinst.babasset` |
 
-`documentKindForAssetType` also opens legacy `Shader` / `ShaderGraph` headers
-as `material`, and saving rewrites the header to `Material`. No migration
-converts their payloads: the Material chain only advances the version, and
-`Shader` has none. Paths are **not** renamed.
+Imported `Material` stubs open as `material` too. The removed `Shader` /
+`ShaderGraph` header types no longer open as Material documents.
 
 `MaterialDocument` (v3) carries `domain` (`surface` | `landscape` | `postProcess` | `particle` | `text`),
 `shadingModel`, `blendMode`, `twoSided`, `defaultNormals`, `alphaCutoff`, `preview` and the graph.
@@ -423,8 +421,8 @@ Render would bind a dead GPU object and the preview would stay a white cube
 until the Material tab closed.
 
 The compact `material-preview-overlay` contains only the viewport-style mesh
-`ToggleGroup`. Preview icons resolve at render time so lazy production chunk initialization cannot leave stale, undefined icon entries. Cube is the document default (a new Text material starts on Plane) and the runtime fallback for
-missing/invalid custom bytes. **Custom** opens the existing Model `AssetPicker`
+`ToggleGroup`. Preview icons resolve at render time so lazy production chunk initialization cannot leave stale, undefined icon entries. Cube is the document default (a new Text material starts on Plane) and the
+runtime fallback for missing/invalid custom bytes. **Custom** opens the existing Model `AssetPicker`
 directly; selecting None returns to Cube, and dismissing the picker without a
 pick keeps the current preview mesh. A picked custom Model can be re-picked
 from the same Custom icon. There is no

@@ -13,7 +13,10 @@ export interface ConsoleCommandMetadata {
   }>;
 }
 
-/** Accepts persisted and hydrated graphs; only the typed Command Run event counts. */
+/**
+ * Accepts persisted graphs (flat node `data`) and hydrated graphs (node
+ * `properties`); only the typed Command Run event counts.
+ */
 export function consoleCommandMetadataFromGraph(graph: unknown, classId = ""): ConsoleCommandMetadata | undefined {
   const record = (value: unknown): Record<string, unknown> => value && typeof value === "object" ? value as Record<string, unknown> : {};
   const nodes = record(graph).nodes;
@@ -21,7 +24,7 @@ export function consoleCommandMetadataFromGraph(graph: unknown, classId = ""): C
   for (const value of nodes) {
     const node = record(value);
     const data = record(node.data);
-    const properties = record(node.properties ?? data.properties ?? data);
+    const properties = record(node.properties ?? data);
     if ((data.__nodeType ?? node.typeId ?? node.type) !== "flow.event.commandRun") continue;
     return {
       name: typeof properties.commandName === "string" && properties.commandName.trim() ? properties.commandName.trim() : classId.toLowerCase(),

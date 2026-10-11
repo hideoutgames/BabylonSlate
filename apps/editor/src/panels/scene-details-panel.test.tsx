@@ -959,8 +959,8 @@ describe("SceneDetailsPanel authoring", () => {
 
   it("reorders, disables, and removes a post-process pass", () => {
     scene().settings.postProcessStack = [
-      { materialGuid: "pp-a", enabled: true },
-      { materialGuid: "pp-b", enabled: true },
+      { id: "a", materialGuid: "pp-a", enabled: true },
+      { id: "b", materialGuid: "pp-b", enabled: true },
     ];
     const { rerender } = render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     const passes = () =>

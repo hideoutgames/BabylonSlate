@@ -242,7 +242,7 @@ describe("journal", () => {
       "tilemap-stroke:abc",
     );
     // Undo history has already measured the command; its size stays out of the journal.
-    expect(command.byteSize).toBe(new TextEncoder().encode('{"from":{"n":1},"to":{"n":2}}').byteLength);
+    expect(command.byteSize).toBe(new TextEncoder().encode('{"n":1}{"n":2}').byteLength);
     const payload = commandToJournalPayload(command);
     expect(payload).toEqual({
       type: "asset.setDocument",

@@ -118,10 +118,15 @@ function diffComponents(
     const previous = beforeComponents.get(id);
     if (!previous || previous === component) continue;
     // Class first: the transform deltas below honour the 2D anchor guard of
-    // the component's final class.
-    if (previous.classId !== component.classId) {
-      commands.push(new SetComponentClassCommand(actorId, id, previous.classId, component.classId));
-    }
+    // the component's final class. A component that becomes an anchor changes
+    // class last instead, so its transform leaves while it is not yet an
+    // anchor and the reversed batch (Undo) restores the class before the
+    // transform returns.
+    const classChange = previous.classId === component.classId
+      ? undefined
+      : new SetComponentClassCommand(actorId, id, previous.classId, component.classId);
+    const becomesAnchor = classChange !== undefined && component.classId === "2DAnchorComponent";
+    if (classChange && !becomesAnchor) commands.push(classChange);
     if (previous.name !== component.name) {
       commands.push(new SetComponentNameCommand(actorId, id, previous.name, component.name));
     }
@@ -178,6 +183,7 @@ function diffComponents(
     } else if (previousTransform || nextTransform) {
       commands.push(new SetComponentTransformPresenceCommand(actorId, id, previousTransform, nextTransform));
     }
+    if (classChange && becomesAnchor) commands.push(classChange);
     if (changedLinkage && !recordedLinkage) {
       commands.push(new SetComponentLinkageCommand(actorId, id, linkage.from, linkage.to));
     }
@@ -308,12 +314,15 @@ export function diffSceneCommands(
     commands.push(new SetSceneOverlayEditorCommand(before.overlayEditor, after.overlayEditor));
   }
 
-  const settingKeys = new Set([
+  // Untouched settings keep their references, so only replaced values
+  // (not foliage groups or the post-process stack on every edit) serialize.
+  const settingKeys = before.settings === after.settings ? [] : new Set([
     ...Object.keys(before.settings),
     ...Object.keys(after.settings),
   ] as Array<keyof SceneSettings>);
   for (const key of settingKeys) {
     if (
+      before.settings[key] !== after.settings[key] &&
       JSON.stringify(before.settings[key]) !==
       JSON.stringify(after.settings[key])
     ) {

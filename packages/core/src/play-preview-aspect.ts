@@ -23,9 +23,10 @@ export function fitContainedRect(
 }
 
 /**
- * Locked custom-resolution size for letterbox present.
- * `blackBars: false` does not cap the buffer — the host fills and cameras
- * follow the live aspect. A live `ctx.setRenderResolution` override still locks.
+ * Locked custom-resolution size for letterbox present, each side clamped to
+ * 1..8192 like a live override. `blackBars: false` does not cap the buffer —
+ * the host fills and cameras follow the live aspect. A live
+ * `ctx.setRenderResolution` override still locks.
  */
 export function playFramebufferSize(
   render?: {
@@ -37,11 +38,11 @@ export function playFramebufferSize(
   liveSize?: { width: number; height: number } | null,
 ): { width: number; height: number } | null {
   if (liveSize && liveSize.width > 0 && liveSize.height > 0) {
-    return { width: Math.round(liveSize.width), height: Math.round(liveSize.height) };
+    return { width: clampRenderResolution(liveSize.width), height: clampRenderResolution(liveSize.height) };
   }
   if (!render?.customResolution || !render.blackBars) return null;
-  const width = render.width > 0 ? Math.round(render.width) : 1920;
-  const height = render.height > 0 ? Math.round(render.height) : 1080;
+  const width = render.width > 0 ? clampRenderResolution(render.width) : 1920;
+  const height = render.height > 0 ? clampRenderResolution(render.height) : 1080;
   return { width, height };
 }
 

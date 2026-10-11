@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   CONTENT_BROWSER_ID,
   assetTypeForDocumentKind,
-  assetTypeForDocumentSave,
   createDocumentRef,
   createEmptyLayouts,
   documentId,
@@ -11,16 +10,12 @@ import {
   isAssetDocumentKind,
   isSceneWorkspaceKind,
   labelFromPath,
-  migrateLegacyLayout,
-  migrateRestoredDocumentId,
   parseDocumentId,
 } from "./document";
 
 describe("P9 document kinds", () => {
-  it("opens legacy Shader assets and imported Material assets as Material documents", () => {
+  it("opens Material assets as Material documents", () => {
     expect(documentKindForAssetType("Material")).toBe("material");
-    expect(documentKindForAssetType("Shader")).toBe("material");
-    expect(documentKindForAssetType("ShaderGraph")).toBe("material");
     expect(documentKindForAssetType("MaterialFunction")).toBe(
       "material-function",
     );
@@ -28,7 +23,6 @@ describe("P9 document kinds", () => {
 
   it("saves a Material document under the canonical header type", () => {
     expect(assetTypeForDocumentKind("material")).toBe("Material");
-    expect(assetTypeForDocumentSave("material", "Shader")).toBe("Material");
     expect(assetTypeForDocumentKind("material-function")).toBe(
       "MaterialFunction",
     );
@@ -37,7 +31,6 @@ describe("P9 document kinds", () => {
   it("strips material file suffixes from tab labels", () => {
     expect(labelFromPath("assets/Rock.material.babasset")).toBe("Rock");
     expect(labelFromPath("assets/Tint.matfunc.babasset")).toBe("Tint");
-    expect(labelFromPath("assets/Legacy.shader.babasset")).toBe("Legacy");
     expect(labelFromPath("assets/Depth.rendertarget.babasset")).toBe("Depth");
     expect(labelFromPath("assets/Depth Image.rendertargettexture.babasset")).toBe("Depth Image");
   });
@@ -51,7 +44,7 @@ describe("P9 document kinds", () => {
       const ref = createDocumentRef(mapped, path);
       expect(parseDocumentId(documentId(ref))).toEqual({ kind, path });
       expect(ref.label).toBe(label);
-      expect(assetTypeForDocumentSave(mapped)).toBe(type);
+      expect(assetTypeForDocumentKind(mapped)).toBe(type);
     }
   });
 
@@ -117,8 +110,8 @@ describe("P9 document kinds", () => {
   });
 
   it("parses document ids and labels compound suffixes", () => {
-    expect(labelFromPath("assets/player_hud.ui.babasset")).toBe("Player Hud");
-    expect(labelFromPath("assets/scene_tools.eui.babasset")).toBe("Scene Tools");
+    expect(labelFromPath("assets/player_hud.scenelayer.babasset")).toBe("Player Hud");
+    expect(labelFromPath("assets/move_input.inputaction.babasset")).toBe("Move Input");
   });
 });
 
@@ -168,33 +161,6 @@ describe("Class and settings documents", () => {
         name: "Hero_Idle",
       }).label,
     ).toBe("Hero_Idle Animation");
-  });
-
-  it("rewrites a saved asset-settings Model tab to the model document kind", () => {
-    expect(
-      migrateRestoredDocumentId(
-        "asset-settings:assets/hero.babasset",
-        (path) => (path === "assets/hero.babasset" ? "Model" : null),
-      ),
-    ).toBe("model:assets/hero.babasset");
-    expect(
-      migrateRestoredDocumentId(
-        "asset-settings:assets/albedo.babasset",
-        () => "Texture",
-      ),
-    ).toBe("texture:assets/albedo.babasset");
-    expect(
-      migrateRestoredDocumentId("asset-settings:assets/missing.babasset", () => null),
-    ).toBe("asset-settings:assets/missing.babasset");
-    expect(
-      migrateRestoredDocumentId("model:assets/hero.babasset", () => "Model"),
-    ).toBe("model:assets/hero.babasset");
-    expect(
-      migrateRestoredDocumentId(
-        "asset-settings:assets/hero_idle.babasset",
-        () => "Animation",
-      ),
-    ).toBe("animation:assets/hero_idle.babasset");
   });
 
   it("opens imported Audio as a DockView document", () => {
@@ -368,18 +334,12 @@ describe("document ids and layouts", () => {
     });
   });
 
-  it("starts empty and wraps a legacy dock layout under the main scene", () => {
+  it("starts with empty layouts", () => {
     expect(createEmptyLayouts()).toEqual({
       documents: {},
       tabOrder: [],
       activeDocumentId: null,
       showPluginContent: false,
-    });
-    const legacy = { grid: { root: "viewport" } };
-    expect(migrateLegacyLayout(legacy, "scene:main")).toEqual({
-      documents: { "scene:main": legacy },
-      tabOrder: ["scene:main"],
-      activeDocumentId: "scene:main",
     });
   });
 

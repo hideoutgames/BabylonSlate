@@ -67,6 +67,10 @@ function relative(a: Pose, world: Pose): Pose {
   const c = Math.cos(a.angle), s = Math.sin(a.angle), x = world.x - a.x, y = world.y - a.y;
   return { x: (c * x + s * y) / (a.sx || 1), y: (-s * x + c * y) / (a.sy || 1), angle: world.angle - a.angle, sx: world.sx / (a.sx || 1), sy: world.sy / (a.sy || 1) };
 }
+/** An independent copy of a transform's position, rotation and scale. */
+function copyTransform(t: SerializedTransform): SerializedTransform {
+  return { position: [...t.position], rotation: [...t.rotation], scale: [...t.scale] };
+}
 function rectAt(world: Pose, width: number, height: number): OverlayLayoutRect {
   const c = Math.abs(Math.cos(world.angle)), s = Math.abs(Math.sin(world.angle));
   return { x: world.x, y: world.y, width: c * width * Math.abs(world.sx) + s * height * Math.abs(world.sy), height: s * width * Math.abs(world.sx) + c * height * Math.abs(world.sy) };
@@ -110,7 +114,7 @@ export function resolveOverlayLayout(source: readonly SerializedActor[], options
   const hasLayout = source.some(a => a.components.some(c => isOverlayLayoutClass(c.classId)));
   if (!hasLayout && !options.includeUnmanagedBounds) return { actors: source as SerializedActor[], entries: new Map() };
   const anchorActors = new Set(source.filter(isSceneLayerAnchorActor).map(actor => actor.id));
-  const actors = source.map(a => ({ ...a, transform: anchorActors.has(a.id) ? identitySerializedTransform() : structuredClone(a.transform), components: a.components.map(c => ({ ...c, properties: { ...c.properties }, transform: structuredClone(c.transform ?? identitySerializedTransform()) })) }));
+  const actors = source.map(a => ({ ...a, transform: anchorActors.has(a.id) ? identitySerializedTransform() : copyTransform(a.transform), components: a.components.map(c => ({ ...c, properties: { ...c.properties }, transform: c.transform ? copyTransform(c.transform) : identitySerializedTransform() })) }));
   const nodes = new Map<string, Node>(), actorNodes = new Map<string, Node>();
   for (const actor of actors) {
     const node: Node = { key: actor.id, actor, classId: "actor", props: parseOverlayLayoutProperties({}, "actor"), local: actor.transform, parent: null, actualParent: null, children: [], native: [1, 1], desired: [1, 1], size: [1, 1], managed: false };
@@ -170,17 +174,25 @@ export function resolveOverlayLayout(source: readonly SerializedActor[], options
     return isOverlayLayoutClass(n.classId) || surfaceClasses.has(n.classId) || n.classId === "2DButtonComponent";
   }
   const items = (n: Node) => n.children.filter(participates);
+  // Arrange composes these local scales into each node's world pose. Measure
+  // runs before any node is placed, so both passes read scale from here.
+  const layoutScale = (n: Node): [number, number] => {
+    let sx = 1, sy = 1;
+    for (let at: Node | null = n; at; at = at.parent) { sx *= at.local.scale[0]; sy *= at.local.scale[1]; }
+    return [Math.abs(sx), Math.abs(sy)];
+  };
   const inset = (n: Node) => {
     // A root component box lends its dimensions to its actor, but owns padding once.
     if (n.proxy) return { left: 0, right: 0, top: 0, bottom: 0 };
     const p = { left: n.props.paddingLeft, right: n.props.paddingRight, top: n.props.paddingTop, bottom: n.props.paddingBottom };
     if (n.classId === "2DSafeAreaComponent") {
       const safe = parseOverlayContainerProperties(n.component?.properties);
+      const [scaleX, scaleY] = layoutScale(n);
       for (const side of ["left", "right", "top", "bottom"] as const) {
         const enabled = { left: safe.safeLeft, right: safe.safeRight, top: safe.safeTop, bottom: safe.safeBottom }[side];
         const manual = { left: safe.insetLeft, right: safe.insetRight, top: safe.insetTop, bottom: safe.insetBottom }[side];
         // Device insets arrive in world units; account for scaled safe-area actors.
-        const scale = n.world ? Math.abs(side === "left" || side === "right" ? n.world.sx : n.world.sy) : 1;
+        const scale = side === "left" || side === "right" ? scaleX : scaleY;
         p[side] += manual + (safe.useSafeArea && enabled ? positive(options.safeAreaInsets?.[side]) / (scale || 1) : 0);
       }
     }
