@@ -826,7 +826,7 @@ describe("@babylonslate/physics", () => {
     } finally { backend.dispose(); }
   });
 
-  it("software 2D shapes are planar slabs at their body's depth, whatever their kind", () => {
+  it("software 2D shapes collide as planar slabs at their body's depth, whatever their kind, while overlaps ignore depth", () => {
     const backend = createSoftwarePhysicsBackend("2d", { x: 0, y: 0, z: 0 });
     const body = (id: string, z: number, shape: { kind: "box2d"; halfExtents: { x: number; y: number } } | { kind: "circle"; radius: number }) => {
       backend.createBody({ id, actorId: id, motionType: "kinematic", mass: 1, linearDamping: 0, angularDamping: 0,
@@ -840,7 +840,8 @@ describe("@babylonslate/physics", () => {
       body("circle", 0.5, { kind: "circle", radius: 1 });
       const touching = backend.pollContacts().flatMap((event) => [event.actorAId, event.actorBId]);
       expect(touching).not.toContain("ground");
-      expect(backend.sphereOverlap({ x: 0, y: 0, z: 0.5 }, 0.1).actorIds.sort()).toEqual(["box", "circle"]);
+      // Sphere Overlap reads only X/Y in a 2D world, as Rapier does.
+      expect(backend.sphereOverlap({ x: 0, y: 0, z: 5 }, 0.1).actorIds.sort()).toEqual(["box", "circle", "ground"]);
     } finally { backend.dispose(); }
   });
 
