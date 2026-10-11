@@ -69,6 +69,14 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
             typeClassId: "struct-stats",
           },
           {
+            id: "var-loadout",
+            kind: "variable",
+            name: "Loadout",
+            typeId: "struct",
+            typeClassId: "struct-loadout",
+            defaultValue: { Cue: "", Count: 3 },
+          },
+          {
             id: "var-enum",
             kind: "variable",
             name: "Team",
@@ -199,6 +207,13 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
           { id: "price", name: "Price", typeId: "int", defaultValue: 12 },
         ] } },
         path: "assets/Item.datadefinition.babasset",
+      },
+      {
+        header: { guid: "struct-loadout", name: "Loadout", type: "Structure", payload: { fields: [
+          { name: "Cue", typeId: "asset", typeClassId: "Audio" },
+          { name: "Count", typeId: "int" },
+        ] } },
+        path: "assets/Loadout.structure.babasset",
       },
       {
         header: {
@@ -600,6 +615,21 @@ describe("Inspector class member details", () => {
   });
 
   it("clears an incompatible Asset Default when Asset Type changes", async () => {
+  it("picks a Structure Default's asset field without replacing the other fields", async () => {
+    renderMemberInspector("var-loadout");
+    screen.getByTestId("property-:Cue").click();
+    await waitFor(() => {
+      expect(screen.getByTestId("search-item-audio-1")).toBeTruthy();
+    });
+    expect(screen.queryByTestId("search-item-tex-1")).toBeNull();
+    screen.getByTestId("search-item-audio-1").click();
+    const next = applyGraphChange.mock.calls.at(-1)?.[1];
+    expect(next?.members?.find((member) => member.id === "var-loadout")?.defaultValue).toEqual({
+      Cue: "audio-1",
+      Count: 3,
+    });
+  });
+
     renderMemberInspector("var-asset");
     screen.getByTestId("inspector-member-asset-type").click();
     await waitFor(() => {
