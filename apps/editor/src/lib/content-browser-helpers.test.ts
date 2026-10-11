@@ -20,7 +20,6 @@ import {
   collectFolderGuids,
   contentBrowserMoveFromDrop,
   contentBrowserTreeDropMoves,
-  displayAssetTitle,
   filterAssets,
   sortAssets,
   sortChildFolders,
@@ -225,7 +224,7 @@ describe("content-browser-helpers", () => {
     expect(matchesAssetSearch(item, "missing")).toBe(false);
   });
 
-  it("sorts assets by display name case-insensitively", () => {
+  it("sorts assets by name case-insensitively", () => {
     const zebra = asset({ guid: "z", name: "Zebra.Texture" });
     const alpha = asset({ guid: "a", name: "alpha" });
     const beta = asset({ guid: "b", name: "Beta" });
@@ -321,13 +320,6 @@ describe("content-browser-helpers", () => {
       "Zed",
     ]);
     expect(folders.map((folder) => folder.name)).toEqual(["Zed", "alpha", "Beta"]);
-  });
-
-  it("strips a trailing type suffix from asset titles", () => {
-    expect(displayAssetTitle("main.scene")).toBe("main");
-    expect(displayAssetTitle("logic.graph")).toBe("logic");
-    expect(displayAssetTitle("Hero")).toBe("Hero");
-    expect(displayAssetTitle("crate.model")).toBe("crate");
   });
 
   it("collects only direct children unless the folder is recursive", () => {
@@ -1081,18 +1073,16 @@ describe("content-browser-helpers", () => {
     expect(parentOf("main.class")).toBe("Actor");
   });
 
-  it("uses the compile class id for a Class asset named main.class", () => {
+  it("uses the file stem as the class id, or without a path the stem New Asset writes for the name", () => {
     expect(
       classIdFromClassAsset({
-        path: "assets/main.class.babasset",
-        header: { type: "Class", name: "main.class", parentClass: "Actor" },
+        path: "assets/Rain-Weather.class.babasset",
+        header: { type: "Class", name: "Rain Weather" },
       }),
-    ).toBe("main");
-    expect(
-      classIdFromClassAsset({
-        header: { type: "Class", name: "main.class", parentClass: "Actor" },
-      }),
-    ).toBe("main");
+    ).toBe("Rain_Weather");
+    // New Asset writes `Rain-Weather.class.babasset` and `main.class.class.babasset`.
+    expect(classIdFromClassAsset({ header: { type: "Class", name: "Rain-Weather" } })).toBe("Rain_Weather");
+    expect(classIdFromClassAsset({ header: { type: "Class", name: "main.class" } })).toBe("main_class");
   });
 
   it("offers behaviour-tree bases as Class parents", () => {

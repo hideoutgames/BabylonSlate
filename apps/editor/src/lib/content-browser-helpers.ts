@@ -402,10 +402,6 @@ export function isFolderTreeRoot(
   return rootPath.includes(path);
 }
 
-export function displayAssetTitle(name: string): string {
-  return name.replace(/\.[A-Za-z][A-Za-z0-9]*$/, "");
-}
-
 export type ClassAssetRef = {
   path?: string;
   header: {
@@ -418,10 +414,12 @@ export type ClassAssetRef = {
   };
 };
 
-/** Compile class id for a Class asset (`main.class` header → `main`). */
+/**
+ * Compile class id for a Class asset: its file stem, or without a path the
+ * stem New Asset writes for its name (`Rain-Weather` → `Rain_Weather`).
+ */
 export function classIdFromClassAsset(asset: ClassAssetRef): string {
-  if (asset.path) return classIdForGraphPath(asset.path);
-  return displayAssetTitle(asset.header.name) || asset.header.name;
+  return classIdForGraphPath(asset.path ?? newAssetFileName("Class", asset.header.name));
 }
 
 /** Single tap / click replaces the whole Content Browser selection with one asset. */
@@ -715,16 +713,8 @@ export const CONTENT_BROWSER_SORT_OPTIONS: ReadonlyArray<{
 const NAME_COLLATOR = new Intl.Collator(undefined, { sensitivity: "base" });
 const compareNames = NAME_COLLATOR.compare;
 
-function assetDisplayName(asset: IndexedAsset): string {
-  return displayAssetTitle(asset.header.name) || asset.header.name;
-}
-
-type SortableAsset = { asset: IndexedAsset; displayName: string };
-
-function compareAssetNames(a: SortableAsset, b: SortableAsset): number {
-  const byDisplay = compareNames(a.displayName, b.displayName);
-  if (byDisplay !== 0) return byDisplay;
-  return compareNames(a.asset.header.name, b.asset.header.name);
+function compareAssetNames(a: IndexedAsset, b: IndexedAsset): number {
+  return compareNames(a.header.name, b.header.name);
 }
 
 function assetMtime(asset: IndexedAsset): number {
@@ -739,18 +729,12 @@ export function sortAssets(
   assets: readonly IndexedAsset[],
   mode: ContentBrowserSortMode,
 ): IndexedAsset[] {
-  const rows: SortableAsset[] = assets.map((asset) => ({
-    asset,
-    displayName: assetDisplayName(asset),
-  }));
-  rows.sort((leftRow, rightRow) => {
-    const left = leftRow.asset;
-    const right = rightRow.asset;
+  return [...assets].sort((left, right) => {
     let primary = 0;
     switch (mode) {
       case "name-asc":
       case "name-desc":
-        primary = compareAssetNames(leftRow, rightRow);
+        primary = compareAssetNames(left, right);
         if (mode === "name-desc") primary = -primary;
         break;
       case "type-asc":
@@ -766,12 +750,11 @@ export function sortAssets(
     }
     if (primary !== 0) return primary;
     if (mode !== "name-asc" && mode !== "name-desc") {
-      const byName = compareAssetNames(leftRow, rightRow);
+      const byName = compareAssetNames(left, right);
       if (byName !== 0) return byName;
     }
     return left.header.guid.localeCompare(right.header.guid);
   });
-  return rows.map((row) => row.asset);
 }
 
 export function sortChildFolders<T extends { name: string }>(
@@ -1208,7 +1191,7 @@ export function flattenContentBrowserTree(
     rows.push({
       id: asset.path,
       kind: "asset",
-      label: displayAssetTitle(asset.header.name),
+      label: asset.header.name,
       depth: depth + 1,
       hasChildren: false,
       expanded: true,

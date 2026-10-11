@@ -167,7 +167,6 @@ import {
   contentBrowserTreeDropMoves,
   lastSceneClassDeleteLines,
   CONTENT_BROWSER_SORT_OPTIONS,
-  displayAssetTitle,
   filterAssets,
   flattenContentBrowserForest,
   flattenFolderForest,
@@ -1020,7 +1019,7 @@ function ContentBrowserWorkspaceBody({
       for (const guid of guids) {
         const asset = assetRegistry.getByGuid(guid);
         if (!asset) continue;
-        names.push(displayAssetTitle(asset.header.name));
+        names.push(asset.header.name);
         const folderPath = parentFolderPath(asset.path);
         if (!assetSourcePaths.includes(folderPath)) {
           assetSourcePaths.push(folderPath);
@@ -1950,7 +1949,7 @@ function ContentBrowserWorkspaceBody({
           kind: guids.length === 0 ? "folder" : "asset",
           name: contentBrowserMovePreviewName([
             ...folders.map((path) => path.split("/").at(-1) ?? path),
-            ...guids.map((guid) => displayAssetTitle(assetRegistry.getByGuid(guid)?.header.name ?? guid)),
+            ...guids.map((guid) => assetRegistry.getByGuid(guid)?.header.name ?? guid),
           ]),
         } : null);
       }
