@@ -726,7 +726,7 @@ export function hydrateSerializedGraphForEditor(
         };
       }
 
-      let typeId =
+      const typeId =
         typeof rawData.__nodeType === "string"
           ? rawData.__nodeType
           : node.type;
@@ -736,19 +736,6 @@ export function hydrateSerializedGraphForEditor(
       delete properties.title;
       refreshInputEvent(typeId, properties, options, graph, node.id);
       refreshVariableReferenceAccess(typeId, properties);
-
-      if (typeId === "logMessage") {
-        typeId = "debug.log";
-        if (properties.message === undefined) {
-          properties.message = "";
-        }
-        if (properties.severity === undefined) {
-          properties.severity = "log";
-        }
-        if (properties.category === undefined) {
-          properties.category = "Script";
-        }
-      }
 
       const authoredTitle =
         typeof rawData.title === "string" && rawData.title.trim()
@@ -2343,9 +2330,9 @@ export function materializeLogicGraph(
     .map((e, i) => ({
       id: e.id || `e${i}`,
       sourceNodeId: e.source,
-      sourcePinId: e.sourceHandle ?? logic.edges[i]?.sourcePinId ?? "execOut",
+      sourcePinId: e.sourceHandle ?? "",
       targetNodeId: e.target,
-      targetPinId: e.targetHandle ?? logic.edges[i]?.targetPinId ?? "execIn",
+      targetPinId: e.targetHandle ?? "",
     }))
     .filter((edge) => {
       const source = logic.nodes.find((node) => node.id === edge.sourceNodeId);

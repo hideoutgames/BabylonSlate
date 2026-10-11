@@ -171,32 +171,6 @@ describe("hydrateSerializedGraphForEditor", () => {
     });
   });
 
-  it("maps legacy logMessage to debug.log with Log pins", () => {
-    const graph: SerializedGraph = {
-      nodes: [
-        {
-          id: "log-1",
-          type: "logMessage",
-          position: { x: 10, y: 20 },
-          data: { message: "Hello" },
-        },
-      ],
-      edges: [],
-    };
-
-    const hydrated = hydrateSerializedGraphForEditor(graph, registry);
-    expect(hydrated.nodes[0]?.type).toBe("debug.log");
-    expect(hydrated.nodes[0]?.data.message).toBe("Hello");
-    const pins = hydrated.nodes[0]?.data.__pins as unknown[];
-    expect(pins).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: "execIn" }),
-        expect.objectContaining({ id: "execOut" }),
-        expect.objectContaining({ id: "message" }),
-      ]),
-    );
-  });
-
   it("titles Call Parent from eventType and the name fallback", () => {
     const graph: SerializedGraph = {
       nodes: [
@@ -277,10 +251,10 @@ describe("hydrateSerializedGraphForEditor", () => {
             interfaceGuid: "iface-damageable",
             method: "Apply Damage",
             implicitSelf: true,
+            // Signature saved before the method was edited.
             pins: [
-              { name: "interfaceGuid", typeId: "string", direction: "in" },
-              { name: "method", typeId: "string", direction: "in" },
-              { name: "result", typeId: "object", direction: "out" },
+              { name: "damage", typeId: "int", direction: "in" },
+              { name: "dealt", typeId: "float", direction: "out" },
             ],
           },
         },
@@ -296,7 +270,7 @@ describe("hydrateSerializedGraphForEditor", () => {
           id: "stale-result",
           source: "call-1",
           target: "print-1",
-          sourceHandle: "result",
+          sourceHandle: "dealt",
           targetHandle: "value",
         },
       ],
@@ -322,9 +296,8 @@ describe("hydrateSerializedGraphForEditor", () => {
     expect(pins.map((pin) => pin.id)).toEqual(
       expect.arrayContaining(["target", "amount", "remaining"]),
     );
-    expect(pins.map((pin) => pin.id)).not.toEqual(
-      expect.arrayContaining(["interfaceGuid", "method", "result"]),
-    );
+    expect(pins.map((pin) => pin.id)).not.toContain("damage");
+    expect(pins.map((pin) => pin.id)).not.toContain("dealt");
     expect(hydrated.nodes[0]?.data.pins).toEqual([
       { name: "amount", typeId: "float", direction: "in" },
       { name: "remaining", typeId: "float", direction: "out" },
