@@ -147,21 +147,26 @@ function handleControl(msg: ControlMessage): void {
         result: { ok: false, code: "boundary", path: "scene", reason, identity: {
           generation: msg.sessionGeneration, sceneAssetGuid: "", sceneInstanceId: "", sceneLoadId: 0, tickIndex: 0, commandRevision: 0 } } });
       if (!rt) { refuse("Runtime is unavailable."); return; }
+      // Every request ends with a result, so chunks already posted never wait on
+      // the host's capture timeout when `load` or `stop` replaces the session.
+      const superseded = () => runtime !== rt || bootGeneration !== generation;
+      const refuseSuperseded = () => refuse("The session was replaced or stopped before its final capture completed.");
       void rt.captureSimulationState(msg).then(async result => {
-        if (runtime !== rt || bootGeneration !== generation) return;
+        if (superseded()) { refuseSuperseded(); return; }
         if (!result.ok) { onCommand({ type: "simulationCaptureResult", sessionGeneration: msg.sessionGeneration, requestId: msg.requestId, result }); return; }
         let sequence = 0;
         for (const bytes of simulationCaptureChunks(result.scene)) {
-          if (runtime !== rt || bootGeneration !== generation) return;
+          if (superseded()) { refuseSuperseded(); return; }
           const chunk: CommandMessage = { type: "simulationCaptureChunk", sessionGeneration: msg.sessionGeneration, requestId: msg.requestId, sequence: sequence++, bytes };
           postMessage({ channel: "command", payload: chunk }, [bytes.buffer as ArrayBuffer]);
           await new Promise(resolve => setTimeout(resolve, 0));
         }
-        if (runtime === rt && bootGeneration === generation) onCommand({ type: "simulationCaptureResult", sessionGeneration: msg.sessionGeneration, requestId: msg.requestId,
+        if (superseded()) { refuseSuperseded(); return; }
+        onCommand({ type: "simulationCaptureResult", sessionGeneration: msg.sessionGeneration, requestId: msg.requestId,
           result: { ok: true, identity: result.identity, byteSize: result.byteSize, chunkCount: sequence } });
       }).catch((error: unknown) => {
         // Report the failure now instead of leaving the host to its capture timeout.
-        if (runtime === rt && bootGeneration === generation) refuse(error instanceof Error ? error.message : String(error));
+        refuse(error instanceof Error ? error.message : String(error));
       });
       return;
     }

@@ -211,6 +211,8 @@ service; Inspector/trace snapshots are never used as a fallback.
 
 Successful candidates travel in ordered, bounded 64 KiB UTF-8 chunks followed by
 a correlated summary. Count, sequence, byte budget, JSON shape and identity are
-validated before publication. Stop/cancellation clears pending requests and partial
-buffers. Capture failures keep the runtime quiescent for explicit Retry/Discard;
+validated before publication. A worker `load` or `stop` that supersedes a transfer
+still ends it with a failed summary instead of leaving sent chunks to the host's
+timeout. Stop/cancellation clears pending requests and partial buffers. Capture
+failures keep the runtime quiescent for explicit Retry/Discard;
 a stopped or unresponsive Worker cannot provide a guaranteed retained result.

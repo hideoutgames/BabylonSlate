@@ -248,6 +248,30 @@ describe("worker entry snapshot transport", () => {
     expect(runtime.getWorld().clock.tickIndex).toBe(tickIndex);
   });
 
+  it("ends a final capture with a failed result when stop supersedes it between chunks", async () => {
+    const { deliver, posts, runFrames, kinds } = await bootWorker({ type: "load", sceneAssetGuid: "main", sessionGeneration: 4, sessionMode: "simulate",
+      scene: { ...createDefaultScene(), actors: Array.from({ length: 120 }, (_, index) => createActor(`prop-${index}`, "Prop")) } });
+    for (let i = 0; i < 100 && !kinds().includes("sceneRealized"); i++) {
+      runFrames(1);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    const commands = () => posts.flatMap((post) => post.kind === "command" ? [post.command] : []);
+    deliver({ channel: "control", payload: { type: "quiesceSimulation", sessionGeneration: 4, requestId: 1 } });
+    await vi.waitFor(() => expect(commands().some((command) => command.type === "simulationQuiesced")).toBe(true));
+    const boundary = commands().find((command) => command.type === "simulationQuiesced");
+    if (boundary?.type !== "simulationQuiesced" || !boundary.success) throw new Error("Simulation did not quiesce");
+    deliver({ channel: "control", payload: { type: "captureSimulationState", sessionGeneration: 4, requestId: 2,
+      renderRevision: boundary.commandRevision } });
+    // The worker yields one task per chunk; stop right after the first one.
+    const chunks = () => commands().filter((command) => command.type === "simulationCaptureChunk").length;
+    for (let i = 0; i < 100 && chunks() === 0; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(chunks()).toBeGreaterThan(0);
+    send!({ type: "stop" });
+    await vi.waitFor(() => expect(commands().some((command) => command.type === "simulationCaptureResult")).toBe(true));
+    const result = commands().find((command) => command.type === "simulationCaptureResult");
+    expect(result).toMatchObject({ sessionGeneration: 4, requestId: 2, result: { ok: false } });
+  });
+
   it("retries a layout whose transfer buffers failed to allocate, then resumes poses at the new capacity", async () => {
     let failures = 0;
     let restoreGrow = () => {};
