@@ -1139,13 +1139,13 @@ export function compileGraph(
         };
         declareDataOuts(node, ctx);
         const connected = node.typeId === "input.onGamepadConnected";
-        const index = ctx.output("index");
+        const padIndexSlot = ctx.output("index");
         emitBody(
           `  for (const __pad of (ctx.gamepadConnections ?? []).filter((c) => c.connected === ${connected})) {`,
           anchor,
         );
         if (instrumentLoops) emitBody(`    ${loopCheck(anchor.nodeId)}`, anchor);
-        emitBody(`    ${index} = __pad.gamepadIndex;`, anchor);
+        emitBody(`    ${padIndexSlot} = __pad.gamepadIndex;`, anchor);
         emitAlong(execSuccessorEdges(index, node.id, "then"), visited);
         emitBody(`  }`, anchor);
         break;
