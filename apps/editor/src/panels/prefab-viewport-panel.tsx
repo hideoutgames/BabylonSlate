@@ -13,6 +13,7 @@ import { isTestModeEnabled } from "@babylonslate/vfs";
 import { ViewportToolbar } from "../components/viewport-toolbar";
 import { ViewportJoystick } from "../components/viewport-joystick";
 import { usePrefabEditing } from "../context/prefab-editing-context";
+import { useGraphEditing } from "../context/graph-editing-context";
 import { usePlay } from "../context/play-context";
 import {
   useDocumentActions,
@@ -177,8 +178,18 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   useEffect(() => {
     engineRef.current?.setRenderSettings(projectDocument?.settings.render ?? {});
   }, [projectDocument?.settings.render, engineEpoch]);
-  const setSelectedIdRef = useRef(setSelectedId);
-  setSelectedIdRef.current = setSelectedId;
+  const { setSelectedMemberId, setSelectedNodeIds } = useGraphEditing();
+  // A picked component or Prefab Root takes the Inspector, so it also leaves
+  // the canvas and Class member selection, as a pick in the Components tree does.
+  const selectPicked = (id: string | null) => {
+    setSelectedId(id);
+    if (id) {
+      setSelectedMemberId(null);
+      setSelectedNodeIds([]);
+    }
+  };
+  const selectPickedRef = useRef(selectPicked);
+  selectPickedRef.current = selectPicked;
   const componentsRef = useRef(components);
   componentsRef.current = components;
   const selectedIdRef = useRef(selectedId);
@@ -213,7 +224,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
         const ids = new Set(
           componentsRef.current.map((component) => component.id),
         );
-        setSelectedIdRef.current(prefabSelectedIdFromPick(actorId, ids));
+        selectPickedRef.current(prefabSelectedIdFromPick(actorId, ids));
       },
       onGizmoDragEnd: () => {
         const lives =

@@ -188,6 +188,10 @@ vi.mock("../context/play-context", () => ({
   usePlay: () => play,
 }));
 
+vi.mock("../context/graph-editing-context", () => ({
+  useGraphEditing: () => ({ setSelectedMemberId: vi.fn(), setSelectedNodeIds: vi.fn() }),
+}));
+
 vi.mock("../context/prefab-editing-context", () => ({
   usePrefabEditing: () => ({
     components: prefabState.components,
