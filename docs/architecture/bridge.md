@@ -42,8 +42,8 @@ Double-buffered `Float32Array`. Views are little-endian; header and per-actor sl
 | --- | --- | --- |
 | 0 | `magic` | `0x42534e50` bits as f32 (“BSNP”) |
 | 1 | `version` | Layout version (`2`) |
-| 2 | `frameId` | Monotonic render/sync frame |
-| 3 | `tickIndex` | Last completed simulation tick |
+| 2 | `frameId` | Monotonic render/sync frame, stored as raw u32 bits like `seq` so it stays exact past 2^24 |
+| 3 | `tickIndex` | Last completed simulation tick, raw u32 bits |
 | 4 | `actorCount` | Occupied slots |
 | 5 | `scriptMs` | Script phase time for last tick |
 | 6 | `physicsMs` | Physics phase time (separate from `scriptMs`; HUD reads the 5 Hz `stats` command, but this header field is per-tick) |
