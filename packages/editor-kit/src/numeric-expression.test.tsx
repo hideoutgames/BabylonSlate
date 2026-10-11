@@ -16,6 +16,13 @@ describe("formatNumericDisplay", () => {
     expect(formatNumericDisplay(-1)).toBe("-1");
     expect(formatNumericDisplay(0)).toBe("0");
   });
+
+  it("keeps significant digits of a nonzero value below the precision", () => {
+    expect(formatNumericDisplay(0.001)).toBe("0.001");
+    expect(formatNumericDisplay(-0.0046)).toBe("-0.0046");
+    expect(formatNumericDisplay(1e-7)).toBe("0.0000001");
+    expect(formatNumericDisplay(0.00123, 6)).toBe("0.00123");
+  });
 });
 
 describe("evaluateNumericExpression", () => {
@@ -39,6 +46,8 @@ describe("evaluateNumericExpression", () => {
     expect(evaluateNumericExpression("/2", 1.5)).toBe(0.75);
     expect(evaluateNumericExpression("+2", 1.5)).toBe(3.5);
     expect(evaluateNumericExpression("*2+1", 1.5)).toBe(4);
+    expect(evaluateNumericExpression("*2", 1e-7)).toBe(2e-7);
+    expect(evaluateNumericExpression("+1", 1e21)).toBe(1e21 + 1);
   });
 
   it("returns undefined for incomplete drafts", () => {

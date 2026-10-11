@@ -79,7 +79,9 @@ export function NumericDragField({
 
   const onPointerDown = useCallback(
     (event: PointerEvent<HTMLSpanElement>) => {
-      if (disabled) return;
+      // Only the primary button or first touch scrubs; a second finger or a
+      // right / middle press must not restart the gesture.
+      if (disabled || event.button !== 0 || event.isPrimary === false) return;
       setError(null);
       setNotice(null);
       dragRef.current = {
@@ -118,6 +120,20 @@ export function NumericDragField({
     [onDragEnd],
   );
 
+  // The platform took the pointer (system gesture, palm rejection): restore
+  // the starting value and end the gesture with it instead of committing.
+  const cancelDrag = useCallback(
+    (event: PointerEvent<HTMLSpanElement>) => {
+      const drag = dragRef.current;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      dragRef.current = null;
+      setDragging(false);
+      if (drag.latest !== drag.startValue) onChange(drag.startValue);
+      onDragEnd?.(drag.startValue);
+    },
+    [onChange, onDragEnd],
+  );
+
   return (
     <div
       className="flex min-w-0 flex-col gap-1"
@@ -148,7 +164,7 @@ export function NumericDragField({
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={endDrag}
-          onPointerCancel={endDrag}
+          onPointerCancel={cancelDrag}
         >
           {label || <GripVerticalIcon className="size-3" />}
         </span>

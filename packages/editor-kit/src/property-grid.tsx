@@ -324,7 +324,10 @@ function TextRowControl({ row }: { row: Extract<PropertyRow, { kind: "text" }> }
       }
     }}
     onBlur={(event) => {
-      if (!row.readOnly && !cancelledRef.current) row.onCommit?.(event.target.value);
+      // Focus alone is not an edit; commit only text typed since focus.
+      if (!row.readOnly && !cancelledRef.current && draft !== null) {
+        row.onCommit?.(event.target.value);
+      }
       cancelledRef.current = false;
       setDraft(null);
     }}
@@ -383,7 +386,12 @@ function RowControl({ row }: { row: PropertyRow }) {
                   value[index] = next;
                   row.onChange(value as typeof row.value);
                 }}
-                onDragEnd={() => row.onCommit?.(row.value)}
+                onDragEnd={(next) => {
+                  // The finished axis value may not have re-rendered into row.value yet.
+                  const value = [...row.value];
+                  value[index] = next;
+                  row.onCommit?.(value as typeof row.value);
+                }}
                 data-testid={`property-${row.id}-${axis.toLowerCase()}`}
               />
             </div>
@@ -475,6 +483,10 @@ function RowControl({ row }: { row: PropertyRow }) {
             onValueChange={(next) => {
               const value = Array.isArray(next) ? next[0] : next;
               if (typeof value === "number") row.onChange(value);
+            }}
+            onValueCommitted={(next) => {
+              const value = Array.isArray(next) ? next[0] : next;
+              if (typeof value === "number") row.onCommit?.(value);
             }}
             data-testid={`property-${row.id}-slider`}
           />
