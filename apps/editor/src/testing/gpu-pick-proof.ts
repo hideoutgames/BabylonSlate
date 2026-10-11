@@ -9,7 +9,9 @@ import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonsl
 
 const WIDTH = 240, HEIGHT = 160;
 // Orthographic 6 × 4 world units: 40 px per unit, origin at the canvas centre.
+// The perspective camera frames the same 6 × 4 rectangle on the z = 0 plane.
 const toPixel = (x: number, y: number) => ({ x: WIDTH / 2 + x * 40, y: HEIGHT / 2 - y * 40 });
+const CAMERA_DISTANCE = 8;
 
 export async function runGpuPickProof(backend: "webgl2" | "webgpu") {
   const canvas = document.createElement("canvas");
@@ -20,7 +22,7 @@ export async function runGpuPickProof(backend: "webgl2" | "webgpu") {
   engine.setSize(WIDTH, HEIGHT);
   requestRenderPath(engine, { renderPath: "forward" });
   const scene = new Scene(engine); scene.clearColor = new Color4(0, 0, 0, 1);
-  const camera = new FreeCamera("Pick Camera", new Vector3(0, 0, -8), scene);
+  const camera = new FreeCamera("Pick Camera", new Vector3(0, 0, -CAMERA_DISTANCE), scene);
   camera.setTarget(Vector3.Zero()); camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
   camera.orthoLeft = -3; camera.orthoRight = 3; camera.orthoTop = 2; camera.orthoBottom = -2;
   camera.minZ = 0.1; camera.maxZ = 30; scene.activeCamera = camera;
@@ -47,24 +49,65 @@ export async function runGpuPickProof(backend: "webgl2" | "webgpu") {
     const displaced = MeshBuilder.CreateBox("Displaced", { size: 1 }, scene);
     displaced.material = compiled.material;
 
+    // Frame corners and edges, where an off-centre pick projection is extreme.
+    const box = (name: string, size: number, x: number, y: number, z = 0) => {
+      const mesh = MeshBuilder.CreateBox(name, { size }, scene);
+      mesh.position.set(x, y, z);
+      mesh.material = new StandardMaterial(`${name} Material`, scene);
+      return mesh;
+    };
+    box("Top Left", 0.5, -2.75, 1.75);
+    box("Top Right", 0.5, 2.75, 1.75);
+    box("Bottom Left", 0.5, -2.75, -1.75);
+    // Drawn 2 units right of its bind pose, covering the bottom-right corner.
+    const displacedCorner = MeshBuilder.CreateBox("Displaced Corner", { size: 0.5 }, scene);
+    displacedCorner.position.set(0.75, -1.75, 0);
+    displacedCorner.material = compiled.material;
+    // Near is drawn first: only the depth test keeps Far from overwriting it.
+    box("Near", 0.6, -2.7, 0, -1);
+    box("Far", 1.5, -2.75, 0, 1);
+
     await scene.whenReadyAsync();
     // Picks run between frames of the editor's render loop.
     engine.runRenderLoop(() => scene.render());
     for (let frame = 0; frame < 3; frame++) await new Promise<void>((resolve) => scene.onAfterRenderObservable.addOnce(() => resolve()));
     const name = (mesh: { name: string } | null | undefined) => mesh === undefined ? "unavailable" : mesh?.name ?? null;
-    const at = async (x: number, y: number) => {
-      const pixel = toPixel(x, y);
-      return {
-        gpu: name(await gpuPickMesh(scene, pixel.x, pixel.y)),
-        cpu: pickAtCanvas(scene, pixel.x, pixel.y)?.meshName ?? null,
-      };
+    // Every texture the pick allocates; the render loop allocates none once warm.
+    const pickTargetSizes = new Set<string>();
+    const createTexture = engine._createInternalTexture;
+    const at = async (pixel: { x: number; y: number }) => {
+      engine._createInternalTexture = function (this: typeof engine, size, ...rest) {
+        const { width, height } = typeof size === "number" ? { width: size, height: size } : size;
+        pickTargetSizes.add(`${width}x${height}`);
+        return createTexture.call(this, size, ...rest);
+      } as typeof createTexture;
+      try {
+        return {
+          gpu: name(await gpuPickMesh(scene, pixel.x, pixel.y)),
+          cpu: pickAtCanvas(scene, pixel.x, pixel.y)?.meshName ?? null,
+        };
+      } finally {
+        engine._createInternalTexture = createTexture;
+      }
     };
-    const result = {
-      plain: await at(-2, 0),
-      displacedDrawn: await at(2, 0),
-      displacedBindPose: await at(0, 0),
-      background: await at(0, 1.6),
-    };
+    const pickAll = async () => ({
+      plain: await at(toPixel(-2, 0)),
+      displacedDrawn: await at(toPixel(2, 0)),
+      displacedBindPose: await at(toPixel(0, 0)),
+      background: await at(toPixel(0, 1.6)),
+      topLeft: await at({ x: 0.5, y: 0.5 }),
+      topRight: await at({ x: WIDTH - 0.5, y: 0.5 }),
+      bottomLeft: await at({ x: 0.5, y: HEIGHT - 0.5 }),
+      bottomRightDisplaced: await at({ x: WIDTH - 0.5, y: HEIGHT - 0.5 }),
+      displacedCornerBindPose: await at(toPixel(0.75, -1.75)),
+      leftEdgeOccluded: await at({ x: 0.5, y: HEIGHT / 2 + 0.5 }),
+    });
+    const orthographic = await pickAll();
+    camera.mode = Camera.PERSPECTIVE_CAMERA;
+    camera.fov = 2 * Math.atan(2 / CAMERA_DISTANCE);
+    for (let frame = 0; frame < 2; frame++) await new Promise<void>((resolve) => scene.onAfterRenderObservable.addOnce(() => resolve()));
+    const perspective = await pickAll();
+    const result = { orthographic, perspective, pickTargetSizes: [...pickTargetSizes] };
     compiled.dispose();
     return { effectiveBackend: engine.isWebGPU ? "webgpu" : (engine as Engine).webGLVersion === 2 ? "webgl2" : "webgl1", ...result };
   } finally {
