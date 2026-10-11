@@ -385,6 +385,15 @@ export function TextureDetails({
   const emissionJob = useRef<AbortController | null>(null);
   const [emissionProgress, setEmissionProgress] = useState<AreaEmissionProgress | null>(null);
   const [emissionError, setEmissionError] = useState("");
+  const [requeueError, setRequeueError] = useState("");
+  // A re-encode can be refused (authoring writes locked, a lock not granted);
+  // say so instead of leaving the rejection unhandled.
+  const requeueEncoding = (textureGuid: string, options: { force: true; usage: string }) => {
+    setRequeueError("");
+    retryTextureEncoding(textureGuid, options).catch((error: unknown) => {
+      setRequeueError(error instanceof Error ? error.message : String(error));
+    });
+  };
   useEffect(() => () => { emissionJob.current?.abort(); }, [guid]);
   const emissionHeader = guid ? assetRegistry?.getByGuid(guid)?.header : undefined;
   const emissionReady = emissionHeader && currentAreaEmissionChunk(emissionHeader);
@@ -431,7 +440,7 @@ export function TextureDetails({
       onChange: (value) => {
         const { payload: next, shouldRequeue } = applyTextureUsageChange(payload, value);
         onChange(next);
-        if (guid && shouldRequeue && !encodeBlocked) void retryTextureEncoding(guid, { force: true, usage: value });
+        if (guid && shouldRequeue && !encodeBlocked) requeueEncoding(guid, { force: true, usage: value });
       },
     },
     {
@@ -443,7 +452,7 @@ export function TextureDetails({
       onChange: (value) => {
         const { payload: next, shouldRequeue } = applyTextureDownsampleChange(payload, value);
         onChange(next);
-        if (guid && shouldRequeue && !encodeBlocked) void retryTextureEncoding(guid, { force: true, usage });
+        if (guid && shouldRequeue && !encodeBlocked) requeueEncoding(guid, { force: true, usage });
       },
     },
   ];
@@ -456,7 +465,7 @@ export function TextureDetails({
       onChange: (value) => {
         const { payload: next, shouldRequeue } = applyTextureCompressionQualityChange(payload, value);
         onChange(next, "texture:compressionQuality");
-        if (guid && shouldRequeue && !encodeBlocked) void retryTextureEncoding(guid, { force: true, usage });
+        if (guid && shouldRequeue && !encodeBlocked) requeueEncoding(guid, { force: true, usage });
       },
     });
   }
@@ -490,6 +499,12 @@ export function TextureDetails({
             <AlertDescription>{encodeError}</AlertDescription>
           </Alert>
         ) : null}
+        {requeueError ? (
+          <Alert variant="destructive" data-testid="texture-requeue-error">
+            <AlertTitle>Encoding Not Started</AlertTitle>
+            <AlertDescription>{requeueError}</AlertDescription>
+          </Alert>
+        ) : null}
         {guid && compressed && (compression === "encode_failed" || alignmentStale) ? (
           <Button
             size="sm"
@@ -497,7 +512,7 @@ export function TextureDetails({
             className="w-fit"
             data-testid="texture-retry-encode"
             disabled={encodeBlocked}
-            onClick={() => void retryTextureEncoding(guid, { force: true, usage })}
+            onClick={() => requeueEncoding(guid, { force: true, usage })}
           >
             Retry Encoding
           </Button>
