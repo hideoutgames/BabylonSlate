@@ -1329,17 +1329,22 @@ describe("applyPrefabPropertyDefaults", () => {
         },
       },
       {
-        fontHasMsdfJson: (guid) => guid === "font-1",
+        fontHasMsdfJson: (guid) => guid === "font-1" || guid === "font-json-only",
         fontHasMsdfPng: (guid) => guid === "font-1",
       },
     );
     const font = text.rows.find((row) => row.id.endsWith("-fontAssetGuid"));
-    expect(font?.kind).toBe("asset");
-    if (font?.kind === "asset") font.onChange(null);
-    // One write: Details applies each update to its render snapshot, so a
-    // separate renderer write would restore the cleared font.
-    expect(text.update).toHaveBeenCalledOnce();
-    expect(text.update).toHaveBeenCalledWith("fontAssetGuid", null, { renderer: "bitmap" });
+    if (font?.kind !== "asset") throw new Error("Missing Font row");
+    font.onChange("font-json-only");
+    font.onChange("font-1");
+    font.onChange(null);
+    // One write per pick: Details applies each update to its render snapshot,
+    // so a separate renderer write would restore the previous font.
+    expect(text.update.mock.calls).toEqual([
+      ["fontAssetGuid", "font-json-only", { renderer: "bitmap" }],
+      ["fontAssetGuid", "font-1", undefined],
+      ["fontAssetGuid", null, { renderer: "bitmap" }],
+    ]);
   });
 });
 
