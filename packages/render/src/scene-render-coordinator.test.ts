@@ -171,6 +171,15 @@ it("keeps the parent drawing after cancel while native import and detached textu
   admission.receive({ type: "sceneStreamRemoved", actorGuid: "cancelled", streamLoadId: 1 });
   admission.sync();
   expect(renderer.render().rendered).toBe(true);
+  // Named scene-level work, such as a water reflection's irradiance, is the
+  // parent's own and still holds it while the stream scope exists.
+  const parentWork = new (class ParentSceneWork {})();
+  scene.addPendingData(parentWork);
+  markSceneReadinessDirty(scene);
+  expect(renderer.render().rendered).toBe(false);
+  scene.removePendingData(parentWork);
+  markSceneReadinessDirty(scene);
+  expect(renderer.render().rendered).toBe(true);
   scene.removePendingData(nativeImport);
   admission.sync();
   expect(renderer.render().rendered).toBe(true);

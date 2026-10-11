@@ -1,4 +1,6 @@
 import {
+  BaseTexture,
+  InternalTexture,
   Mesh,
   MultiMaterial,
   NodeMaterial,
@@ -188,6 +190,22 @@ export function pendingSceneTextures(scene: Scene): string[] {
 }
 
 /**
+ * Pinned Babylon 9.29 adapter for a staged scene stream. Anonymous pending
+ * tokens (glTF imports, cube images, particle helpers, prefiltering) cannot be
+ * told apart from the stream's own, and texture uploads are decided per
+ * admitted texture. Any other pending owner, such as a water reflection's
+ * irradiance, is scene-level work the parent still waits for.
+ */
+function hasParentPendingData(scene: Scene): boolean {
+  for (const data of scene._pendingData as unknown[]) {
+    if (data instanceof InternalTexture || data instanceof BaseTexture) continue;
+    if (typeof data === "object" && data !== null && Object.getPrototypeOf(data) === Object.prototype) continue;
+    return true;
+  }
+  return false;
+}
+
+/**
  * Babylon 9.29 Scene.isReady also waits for every cached Engine effect. Mirror
  * its scene-owned checks so an unrelated preview cannot block this viewport.
  */
@@ -197,7 +215,8 @@ export function isSceneFrameReady(scene: Scene, targets: readonly RenderTargetTe
     const engine = scene.getEngine();
     const admitted = admittedSceneMeshes(scene);
     const meshes = admitted ?? scene.meshes;
-    let ready = (admitted !== undefined || scene.getWaitingItemsCount() === 0) && isEnvironmentLightingReady(scene);
+    const pendingData = admitted !== undefined ? hasParentPendingData(scene) : scene.getWaitingItemsCount() > 0;
+    let ready = !pendingData && isEnvironmentLightingReady(scene);
     const textures = admittedSceneTextures(scene, meshes);
     if (textures) {
       for (const texture of textures) {
