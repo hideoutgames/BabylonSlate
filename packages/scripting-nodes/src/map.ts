@@ -126,9 +126,12 @@ export const mapNodes: NodeDefinition[] = [
       const key = ctx.input("key");
       const fallback = valueFallback(ctx);
       const k = storedKey(ctx, "key", "t", "k");
+      // One lookup per statement serves both Found and Value.
+      const lookup = `((m,k)=>{const t=m??new Map();const s=${k};return t.has(s)?{found:true,value:t.get(s)}:{found:false};})(${map},${key})`;
+      const result = ctx.shared?.(lookup) ?? lookup;
       return {
-        found: `((m,k)=>{const t=m??new Map();return t.has(${k});})(${map},${key})`,
-        out: `((m,k,d)=>{const t=m??new Map();const s=${k};return t.has(s)?t.get(s):d;})(${map},${key},${fallback})`,
+        found: `(${result}.found)`,
+        out: `((r,d)=>r.found?r.value:d)(${result},${fallback})`,
       };
     },
   },
@@ -261,10 +264,12 @@ export const mapNodes: NodeDefinition[] = [
       pin("values", "Values", "out", arrayOf(V)),
     ],
     codegen: (ctx) => {
-      const map = ctx.input("map");
+      // One walk of the entries per statement serves both outputs.
+      const walk = `[...((${ctx.input("map")})??new Map()).entries()]`;
+      const entries = ctx.shared?.(walk) ?? walk;
       return {
-        keys: `((m)=>{const k=[]; for (const e of (m??new Map()).entries()) k.push(e[0]); return k;})(${map})`,
-        values: `((m)=>{const v=[]; for (const e of (m??new Map()).entries()) v.push(e[1]); return v;})(${map})`,
+        keys: `(${entries}.map((e)=>e[0]))`,
+        values: `(${entries}.map((e)=>e[1]))`,
       };
     },
   },

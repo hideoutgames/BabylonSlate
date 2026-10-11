@@ -94,7 +94,7 @@ App-private storage keyed by project guid: compiled scripts, thumbnails, import 
 - Future (unknown) versions refuse with a clear message **when a chain is registered**. Types with no chain (Font / Sprite / AnimationGraph) pass through so a version-1 document is not treated as “newer than current 0”.
 - Opening a project that needs migration prompts once; migrate-on-save; never silently rewrite untouched files. `ProjectService.saveDocument` / `saveProject`, the NavMesh bake write and Audio clip writes refuse a pending path until `approveMigrateOnSave()`. Pending migrations list each path once; loading an unmigrated asset again replaces its entry.
 - A Save All the user asks for (toolbar, the close prompt, an exclusive Scene switch, Play) that pending migrations refuse opens **Schema Migration Required**. **Migrate On Save** approves migration for the rest of the project session and runs the complete Save All (bakes, journal clear, compile-on-save, thumbnails, Scene Saved hooks), upgrading dependency metadata; Play resumes only when that save completed. Auto-save never prompts.
-- Golden fixtures: one committed `.babasset` per historical version per type — `graph-v0.babasset` (payload in header), `scene-v0.babasset` (payload in the document chunk, the shape the editor writes), `graph-v1.babasset` at current.
+- Golden fixtures: one committed `.babasset` per historical version per type — `class-v0.babasset` (payload in header), `scene-v0.babasset` (payload in the document chunk, the shape the editor writes), `class-v1.babasset` at current.
 - The project manifest (`project.json`) migrates as type `Project` on load and is gated by the same approval.
 
 ## Golden / property tests

@@ -168,16 +168,16 @@ describe("ProjectSearchIndex", () => {
 
   it("indexes graph nodes, variable names, and skips ExecuteJavaScript bodies", async () => {
     const storage = await createStorage();
-    await writeDocument(storage, "assets/main.graph.babasset", {
+    await writeDocument(storage, "assets/main.class.babasset", {
       guid: "graph-1",
-      type: "Graph",
+      type: "Class",
       name: "MainGraph",
       payload: {
         nodes: [
           {
             id: "log-1",
-            type: "logMessage",
-            data: { message: "Hello from BabylonSlate" },
+            type: "debug.log",
+            data: { "default:message": "Hello from BabylonSlate" },
           },
           {
             id: "var-1",
@@ -203,7 +203,7 @@ describe("ProjectSearchIndex", () => {
     await registry.mountRoot(projectContentRoot());
     const index = new ProjectSearchIndex(storage, {
       nodeTitles: {
-        logMessage: "Log",
+        "debug.log": "Log",
         "variables.get": "Get Variable",
         "variables.getValidated": "Validated Get",
         "debug.executeJavaScript": "Execute JavaScript",
@@ -219,7 +219,7 @@ describe("ProjectSearchIndex", () => {
       hello.find((hit) => hit.kind === "graph-node")?.target,
     ).toMatchObject({
       kind: "graph-node",
-      graphPath: "assets/main.graph.babasset",
+      graphPath: "assets/main.class.babasset",
       nodeId: "log-1",
     });
 
@@ -246,8 +246,8 @@ describe("ProjectSearchIndex", () => {
         nodes: [
           {
             id: "log-1",
-            type: "logMessage",
-            data: { message: "Class owned hello" },
+            type: "debug.log",
+            data: { "default:message": "Class owned hello" },
           },
         ],
         edges: [],
@@ -256,7 +256,7 @@ describe("ProjectSearchIndex", () => {
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     const index = new ProjectSearchIndex(storage, {
-      nodeTitles: { logMessage: "Log" },
+      nodeTitles: { "debug.log": "Log" },
     });
     await index.rebuild(registry);
     expect(
@@ -429,8 +429,8 @@ describe("ProjectSearchIndex", () => {
                 nodes: [
                   {
                     id: `node-${i}`,
-                    type: "logMessage",
-                    data: { message: `Node${i}` },
+                    type: "debug.log",
+                    data: { "default:message": `Node${i}` },
                   },
                 ],
                 edges: [],

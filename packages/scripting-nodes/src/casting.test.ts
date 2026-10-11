@@ -4,7 +4,9 @@ import {
   actorRef,
   BOOL,
   classRef,
+  COLOR,
   objectRef,
+  QUAT,
   wildcardConverterNodeId,
   type GraphNode,
   type LogicGraph,
@@ -297,6 +299,21 @@ describe("wildcard conversions", () => {
         actorClassIds: ["Hero"],
       }),
     ).toMatchObject({ success: true, value: hero, typeOf: "actorRef:Hero" });
+  });
+
+  it("converts an untyped { x, y, z, w } value to Quat and Color, but not a boxed Vec4", () => {
+    const xyzw = { x: 0, y: 0, z: 0, w: 1 };
+    for (const target of [QUAT, COLOR]) {
+      expect(
+        convert(blackboard(), wildcardConverterNodeId(target), { blackboard: { slot: xyzw } }),
+      ).toMatchObject({ success: true, value: xyzw });
+      expect(
+        convert(blackboard(), wildcardConverterNodeId(target), {
+          blackboard: { slot: { tag: "vec4", value: xyzw } },
+          fallback: { x: 9, y: 9, z: 9, w: 9 },
+        }),
+      ).toMatchObject({ success: false, value: { x: 9, y: 9, z: 9, w: 9 } });
+    }
   });
 });
 

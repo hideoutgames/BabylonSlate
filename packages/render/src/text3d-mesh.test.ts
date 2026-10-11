@@ -77,7 +77,6 @@ describe("3D Text mesh", () => {
     const mesh = createText3DMesh(handle.scene, "letter-t", {
       text: "T",
       size: 1,
-      depth: 0.1,
       color: [1, 0, 0],
       fontAssetGuid: "font-t",
       alignment: "left",
@@ -115,7 +114,6 @@ describe("3D Text mesh", () => {
     const mesh = createText3DMesh(handle.scene, "bundled-t", {
       text: "T",
       size: 1,
-      depth: 4,
       color: [1, 1, 1],
       fontAssetGuid: null,
       alignment: "left",
@@ -165,7 +163,6 @@ describe("3D Text mesh", () => {
     const mesh = createText3DMesh(handle.scene, "blank", {
       text: " ",
       size: 2,
-      depth: 0.1,
       color: [1, 1, 1],
       fontAssetGuid: "font-t",
       alignment: "left",
@@ -193,7 +190,6 @@ describe("3D Text mesh", () => {
       {
         text: "Text",
         size: 1,
-        depth: 0.1,
         color: [1, 1, 1],
         fontAssetGuid: "missing",
         alignment: "left",
@@ -208,7 +204,6 @@ describe("3D Text mesh", () => {
     const properties = {
       text: "T",
       size: 1,
-      depth: 0.1,
       color: [1, 1, 1] as [number, number, number],
       fontAssetGuid: "font-1",
       alignment: "left" as const,

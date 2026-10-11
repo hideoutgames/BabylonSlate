@@ -75,6 +75,7 @@ export function callInterfaceTitle(methodName: string): string {
 export const interfaceNodes: NodeDefinition[] = [
   {
     id: "interface.call",
+    implicitSelfTarget: true,
     title: "Call",
     category: "interface",
     pins: (properties) => signaturePins(properties),

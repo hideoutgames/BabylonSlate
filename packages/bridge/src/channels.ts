@@ -547,7 +547,6 @@ export type CommandMessage =
         text3d?: {
           text: string;
           size: number;
-          depth: number;
           color: [number, number, number];
           fontAssetGuid: string | null;
           alignment: "left" | "center" | "right";
@@ -593,7 +592,6 @@ export type CommandMessage =
       text3d?: {
         text: string;
         size: number;
-        depth: number;
         color: [number, number, number];
         fontAssetGuid: string | null;
         alignment: "left" | "center" | "right";

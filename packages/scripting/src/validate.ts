@@ -28,6 +28,7 @@ import {
   normalizeStringSwitchCases,
 } from "./flow-switch-pins";
 import { isBreakableLoopKind } from "./structured-flow";
+import { eventNameForEntry } from "./compile";
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as FunctionConstructor;
 
@@ -224,14 +225,27 @@ function validateStructural(
   for (const node of graph.nodes) {
     if (!compiled.has(node.id) || node.typeId !== "flow.whileLoop") continue;
     const condition = node.pins.find((pin) => pin.id === "condition");
-    if (!condition || graph.edges.some((edge) => edge.targetNodeId === node.id && edge.targetPinId === condition.id)) continue;
-    if (readPinDefaultForPin(node.properties, condition) !== true) continue;
+    if (!condition || !isConstantTrue(graph, node, condition.id)) continue;
     out.push(diagnostic({ severity: "warning", code: "flow.constant_loop",
       message: "While Loop condition is always True. Ensure the loop body breaks or yields.",
       assetGuid: ctx.assetGuid, graphId: graph.id, nodeId: node.id, pinId: condition.id }));
   }
 
   return out;
+}
+
+/**
+ * True when an input is the literal True: its unwired default, or a wire from
+ * a Make Bool whose own input is (recursively) the literal True.
+ */
+function isConstantTrue(graph: LogicGraph, node: GraphNode, pinId: string, seen = new Set<string>()): boolean {
+  const pin = findPin(node, pinId);
+  if (!pin || seen.has(node.id)) return false;
+  seen.add(node.id);
+  const edge = graph.edges.find((entry) => entry.targetNodeId === node.id && entry.targetPinId === pinId);
+  if (!edge) return readPinDefaultForPin(node.properties, pin) === true;
+  const source = findNode(graph, edge.sourceNodeId);
+  return source?.typeId === "literal.makeBool" && isConstantTrue(graph, source, "in", seen);
 }
 
 function validatePinTyping(
@@ -424,9 +438,10 @@ function validatePinTyping(
       }
       if (!connected && pin.type.kind !== "exec") {
         const implicitSelfTarget =
-          pin.name === "target" &&
+          pin.id === "target" &&
           node.properties.implicitSelf === true &&
-          (pin.type.kind === "objectRef" || pin.type.kind === "actorRef");
+          (pin.type.kind === "objectRef" || pin.type.kind === "actorRef") &&
+          (registry === undefined || registry.get(node.typeId)?.implicitSelfTarget === true);
         const defaultClearsMissing =
           !requiresReference && hasStored &&
           (pinAcceptsLiteralDefault(pin.type) ||
@@ -462,6 +477,14 @@ function validatePinTyping(
   return out;
 }
 
+function executeJavaScriptRowNames(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((row: unknown) => {
+    const name = row && typeof row === "object" ? (row as { name?: unknown }).name : undefined;
+    return typeof name === "string" ? [name] : [];
+  });
+}
+
 function validateExecuteJavaScript(
   graph: LogicGraph,
   ctx: TypeContext,
@@ -470,10 +493,23 @@ function validateExecuteJavaScript(
   for (const node of graph.nodes) {
     if (node.typeId !== "debug.executeJavaScript") continue;
     const body = String(node.properties.body ?? "");
+    // Parse the body the way the compiler wraps it, without evaluating it: a
+    // strict-mode module function taking ctx and the inputs, with each output
+    // declared by `let`. Invalid row names are the node's own error, so they
+    // fall back to a bare wrapper here.
+    const ParseFunction = node.properties.async ? AsyncFunction : Function;
+    const inputs = executeJavaScriptRowNames(node.properties.inputs);
+    const outputs = executeJavaScriptRowNames(node.properties.outputs);
+    let params = ["ctx", ...inputs];
+    let prologue = `"use strict";${outputs.length > 0 ? ` let ${outputs.join(", ")};` : ""}`;
     try {
-      // Match the compiler's function kind without evaluating authored code.
-      const ParseFunction = node.properties.async ? AsyncFunction : Function;
-      new ParseFunction(body);
+      new ParseFunction(...params, prologue);
+    } catch {
+      params = ["ctx"];
+      prologue = '"use strict";';
+    }
+    try {
+      new ParseFunction(...params, `${prologue}\n${body}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const match = /:(\d+):(\d+)/.exec(message);
@@ -484,7 +520,7 @@ function validateExecuteJavaScript(
           assetGuid: ctx.assetGuid,
           graphId: graph.id,
           nodeId: node.id,
-          bodyLine: match ? Number(match[1]) : 1,
+          bodyLine: match ? Math.max(1, Number(match[1]) - 1) : 1,
           bodyColumn: match ? Number(match[2]) : 1,
         }),
       );
@@ -775,10 +811,12 @@ type SignaturePin = {
   typeId: string;
   direction: "in" | "out";
   typeClassId?: string;
+  container?: "single" | "array" | "map";
 };
 
 function signaturePinKey(pin: SignaturePin): string {
-  return `${pin.direction}:${pin.name}:${pin.typeId}:${pin.typeClassId ?? ""}`;
+  const container = pin.container === "array" || pin.container === "map" ? pin.container : "single";
+  return `${pin.direction}:${pin.name}:${container}:${pin.typeId}:${pin.typeClassId ?? ""}`;
 }
 
 function pinsMatch(
@@ -855,6 +893,42 @@ function validateInterfaceAndOverrides(
           graphId,
         }),
       );
+    }
+  }
+  return out;
+}
+
+/**
+ * The runtime dispatches a custom event by its compiled identifier, so two
+ * differently spelled names that compile to one identifier ("A/B", "A B")
+ * would both run whenever either is called.
+ */
+function validateCustomEventNames(
+  graphs: readonly LogicGraph[],
+  ctx: TypeContext,
+): Diagnostic[] {
+  const out: Diagnostic[] = [];
+  const firstNameByEvent = new Map<string, string>();
+  for (const graph of graphs) {
+    for (const node of graph.nodes) {
+      if (node.typeId !== "flow.event.custom") continue;
+      const event = eventNameForEntry(node);
+      const name = node.properties.name;
+      if (!event || typeof name !== "string") continue;
+      const first = firstNameByEvent.get(event);
+      if (first === undefined) {
+        firstNameByEvent.set(event, name);
+      } else if (first !== name) {
+        out.push(
+          diagnostic({
+            code: "event.name_collision",
+            message: `Custom events "${first}" and "${name}" compile to the same event "${event}"; rename one of them`,
+            assetGuid: ctx.assetGuid,
+            graphId: graph.id,
+            nodeId: node.id,
+          }),
+        );
+      }
     }
   }
   return out;
@@ -1065,6 +1139,7 @@ export function validateGraphs(
   }
   diagnostics.push(...validateMemberTypes(graphs, ctx));
   diagnostics.push(...validateInterfaceAndOverrides(graphs, ctx));
+  diagnostics.push(...validateCustomEventNames(graphs, ctx));
   for (const rule of listValidationRules()) {
     diagnostics.push(...rule.run(graphs, ctx));
   }

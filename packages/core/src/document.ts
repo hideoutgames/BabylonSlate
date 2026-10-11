@@ -170,7 +170,6 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "scene";
     case "SceneLayer":
       return "scene-layer";
-    case "Graph":
     case "Class":
       return "graph";
     case "Prefab":

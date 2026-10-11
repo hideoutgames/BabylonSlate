@@ -498,7 +498,7 @@ describe("DocumentService", () => {
     );
 
     service.updateGraph(graphId, {
-      nodes: [{ id: "n1", type: "logMessage", position: { x: 0, y: 0 }, data: {} }],
+      nodes: [{ id: "n1", type: "debug.log", position: { x: 0, y: 0 }, data: {} }],
       edges: [],
     });
 
@@ -1004,12 +1004,12 @@ describe("DocumentService", () => {
       tabOrder: [graphId],
     });
     service.updateGraph(graphId, {
-      nodes: [{ id: "n1", type: "logMessage", position: { x: 0, y: 0 }, data: {} }],
+      nodes: [{ id: "n1", type: "debug.log", position: { x: 0, y: 0 }, data: {} }],
       edges: [],
     } as never);
     expect(service.getDocument(graphId)?.dirty).toBe(true);
     service.patchLoadedContent(graphId, {
-      nodes: [{ id: "n1", type: "logMessage", position: { x: 0, y: 0 }, data: { "default:asset": null } }],
+      nodes: [{ id: "n1", type: "debug.log", position: { x: 0, y: 0 }, data: { "default:asset": null } }],
       edges: [],
     } as never);
     expect(service.getDocument(graphId)?.dirty).toBe(true);

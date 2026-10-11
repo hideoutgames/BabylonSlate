@@ -105,7 +105,7 @@ Tileset and Tilemap documents are DockView shells (**Windows** enabled):
 
 Stamp places a 2×2 of the selected GID. Bucket is 4-connected and stays inside the AABB of existing chunks (plus the click cell).
 
-The Create Project dialog has a built-in **2D** card (`create-project-2d`) next to Empty: `viewportMode` / `physicsWorld` 2d, no default cube, `pixelPerfect` + `integerZoomSteps` on. Do not expand that card into a demo scene.
+The Create Project dialog has a built-in **2D** card (`create-project-2d`) next to Empty: `viewportMode` / `physicsWorld` 2d, no default cube, `pixelPerfect` on. Do not expand that card into a demo scene.
 
 ## Alpha test vs blend
 

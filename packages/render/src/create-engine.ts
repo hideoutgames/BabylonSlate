@@ -654,9 +654,7 @@ export interface EditorTools {
   /** Session MeshComponent collision dashes (default off). */
   setDrawMeshCollision: (enabled: boolean) => void;
   /** Project 2D unit settings; pass null to leave pixel-perfect framing off. */
-  setPixelPerfect: (
-    settings: { pixelsPerUnit: number; integerZoomSteps: boolean } | null,
-  ) => void;
+  setPixelPerfect: (settings: { pixelsPerUnit: number } | null) => void;
   /** Ordered sorting layers from project settings, back to front. */
   setSortingLayers: (layers: readonly string[]) => void;
   /** Tile grid, subdivision and 2D game camera bounds from scene settings. */

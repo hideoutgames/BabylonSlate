@@ -405,3 +405,35 @@ describe("string.substring", () => {
     expect(logs).toEqual([expected]);
   });
 });
+
+describe("string.replace", () => {
+  it.each([
+    ["l", "L", "heLLo"],
+    ["", "-", "hello"],
+  ])("Replace %j with %j in hello is %j", (search, replacement, expected) => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "replace",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "replace", "string.replace", {
+          "default:in": "hello",
+          "default:search": search,
+          "default:replacement": replacement,
+        }),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "log", targetPinId: "execIn" },
+        { id: "e2", sourceNodeId: "replace", sourcePinId: "out", targetNodeId: "log", targetPinId: "message" },
+      ],
+    };
+    const logs: string[] = [];
+    (loadModule(compileGraph(graph, { assetGuid: "a", registry }).source).onBeginPlay as (ctx: unknown) => void)({
+      formatValue: (value: unknown) => String(value),
+      log: (_s: string, _c: string, message: string) => logs.push(message),
+    });
+    expect(logs).toEqual([expected]);
+  });
+});

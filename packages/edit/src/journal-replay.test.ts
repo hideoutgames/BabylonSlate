@@ -263,7 +263,7 @@ describe("journal replay", () => {
   });
 
   it("keeps a document later opened at a renamed path apart from the renamed one", () => {
-    const [a, b, c] = ["graph:assets/a.graph.babasset", "graph:assets/b.graph.babasset", "graph:assets/c.graph.babasset"];
+    const [a, b, c] = ["graph:assets/a.class.babasset", "graph:assets/b.class.babasset", "graph:assets/c.class.babasset"];
     const at = "2026-09-28T12:00:00Z";
     const move = (docId: string, x: number) => serializeJournalLine({
       v: 1, docId, at,
@@ -279,12 +279,12 @@ describe("journal replay", () => {
   });
 
   it("replays lines onto open graph documents", () => {
-    const docId = "graph:assets/main.graph.babasset";
+    const docId = "graph:assets/main.class.babasset";
     const graph = {
       nodes: [
         {
           id: "node-1",
-          type: "logMessage",
+          type: "debug.log",
           position: { x: 0, y: 0 },
           data: {},
         },
@@ -325,9 +325,9 @@ describe("journal replay", () => {
   });
 
   it("reports lines that are not journal records while replaying the rest", () => {
-    const docId = "graph:assets/main.graph.babasset";
+    const docId = "graph:assets/main.class.babasset";
     const graph = { nodes: [{ id: "node-1", type: "print", position: { x: 0, y: 0 }, data: {} }], edges: [] };
-    const torn = '{"v":1,"docId":"graph:assets/main.graph.babasset","at":"2026-';
+    const torn = '{"v":1,"docId":"graph:assets/main.class.babasset","at":"2026-';
     const line = serializeJournalLine({
       v: 1, docId, at: "2026-10-11T00:00:00Z",
       command: commandToJournalPayload(new MoveNodeCommand("node-1", { x: 0, y: 0 }, { x: 5, y: 0 })),
@@ -340,7 +340,7 @@ describe("journal replay", () => {
 
   it("skips a record whose apply throws and still replays later documents", () => {
     const sceneId = "scene:assets/Main.scene.babasset";
-    const graphId = "graph:assets/main.graph.babasset";
+    const graphId = "graph:assets/main.class.babasset";
     const scene = createDefaultScene();
     scene.actors.push(createActor("a", "A"));
     const graph = { nodes: [{ id: "node-1", type: "print", position: { x: 0, y: 0 }, data: {} }], edges: [] };

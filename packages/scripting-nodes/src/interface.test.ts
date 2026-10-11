@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   compileGraph,
+  validateGraphs,
   type GraphNode,
   type LogicGraph,
   type NodeRegistry,
@@ -148,6 +149,29 @@ describe("interface nodes", () => {
     });
     expect(calls).toEqual([["guard", "iface-aim", "Aim", { target: 7 }]]);
     expect(logged).toEqual(["4"]);
+  });
+
+  it("validation exempts an unwired implicit-self Target, not an argument named target", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "call", "interface.call", {
+          interfaceGuid: "iface-aim",
+          method: "Aim",
+          implicitSelf: true,
+          pins: [{ name: "target", typeId: "objectRef", typeClassId: "Hero", direction: "in" }],
+        }),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "call", targetPinId: "execIn" },
+      ],
+    };
+    const missing = validateGraphs([graph], { assetGuid: "a" }, { registry })
+      .filter((d) => d.code === "pin.missing_input");
+    expect(missing.map((d) => d.pinId)).toEqual(["target__arg"]);
   });
 
   it("signature pins include a Target of any object plus method I/O", () => {

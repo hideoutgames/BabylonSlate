@@ -9,7 +9,7 @@ The asset registry is **header-only** ([asset-registry.md](asset-registry.md)): 
 | Layer | Reads | Answers |
 | --- | --- | --- |
 | `AssetRegistry` | `.babasset` headers | guid, type, name, path, parentClass, dependencies |
-| `ProjectSearchIndex` | headers + Scene/Class (and legacy Graph) `document` chunks | substring query over assets, actors, components, graph nodes, classes, variables |
+| `ProjectSearchIndex` | headers + Scene/Class `document` chunks | substring query over assets, actors, components, graph nodes, classes, variables |
 
 ## Entry kinds
 

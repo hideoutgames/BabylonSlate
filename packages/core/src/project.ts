@@ -53,8 +53,6 @@ export interface TwoDProjectSettings {
    * nearest with mipmaps off and snap the camera to the pixel grid.
    */
   pixelPerfect: boolean;
-  /** Restrict zoom to integer pixel scales, which keeps sprites crisp. */
-  integerZoomSteps: boolean;
   /**
    * Ordered sorting layers, back to front. The index in this list is the
    * coarse half of the 2D sort key.
@@ -504,7 +502,6 @@ export interface PhysicsProjectSettings {
 export const DEFAULT_TWO_D_PROJECT_SETTINGS: TwoDProjectSettings = {
   pixelsPerUnit: 100,
   pixelPerfect: false,
-  integerZoomSteps: false,
   sortingLayers: [...DEFAULT_SORTING_LAYERS],
 };
 
@@ -766,7 +763,6 @@ export function normalizeProjectSettings(
           ? twoD.pixelsPerUnit
           : DEFAULT_TWO_D_PROJECT_SETTINGS.pixelsPerUnit,
       pixelPerfect: twoD?.pixelPerfect === true,
-      integerZoomSteps: twoD?.integerZoomSteps === true,
       sortingLayers: normalizeSortingLayers(twoD?.sortingLayers),
     },
     physics: {
@@ -867,7 +863,6 @@ export function createEmptyProject(
       ? {
           ...DEFAULT_TWO_D_PROJECT_SETTINGS,
           pixelPerfect: true,
-          integerZoomSteps: true,
         }
       : undefined;
   return {

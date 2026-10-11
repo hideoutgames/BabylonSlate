@@ -118,7 +118,6 @@ describe("P9 document kinds", () => {
 describe("Class and settings documents", () => {
   it("opens Class as the graph workspace and labels the tab Class", () => {
     expect(documentKindForAssetType("Class")).toBe("graph");
-    expect(documentKindForAssetType("Graph")).toBe("graph");
     expect(assetTypeForDocumentKind("graph")).toBe("Class");
     expect(documentKindLabel("graph")).toBe("Class");
     expect(labelFromPath("assets/hero.class.babasset")).toBe("Hero");

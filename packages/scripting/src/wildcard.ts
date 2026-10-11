@@ -34,6 +34,7 @@ function boxedTest(value: string): string {
  * box keeps its tag. Other values are tagged by shape, conservatively: a
  * whole number reads as `int`; Quat and Color share Vec4's `{ x, y, z, w }`
  * shape and read as `vec4`; arrays, maps and structs read as `unknown`.
+ * Converters therefore accept an unboxed `vec4` shape as Quat or Color too.
  */
 function runtimeTagExpr(value: string): string {
   return `((v) => { if (v === null || v === undefined) return "null"; if (typeof v === "boolean") return "bool"; if (typeof v === "number") return Number.isInteger(v) ? "int" : "float"; if (typeof v === "string") return "string"; if (typeof v !== "object") return "unknown"; if (${boxedTest("v")}) return v.tag; if (typeof v.classId === "string" && v.classId) return (ctx.isA(v, "Actor") ? "actorRef:" : "objectRef:") + v.classId; const n = (k) => typeof v[k] === "number"; if (n("pitch") && n("yaw") && n("roll")) return "rotator"; if (v.position && v.rotation && v.scale) return "transform"; if (n("x") && n("y")) return n("z") ? (n("w") ? "vec4" : "vec3") : "vec2"; return "unknown"; })(${value})`;
@@ -63,6 +64,9 @@ export function wildcardConverterNodeId(target: PinType): string {
   return `wildcard.to_${suffix}`;
 }
 
+/** Targets whose runtime value has Vec4's `{ x, y, z, w }` shape. */
+const XYZW_KINDS: ReadonlySet<PinType["kind"]> = new Set(["vec4", "quat", "color"]);
+
 function converterCodegen(target: PinType): NodeDefinition["codegen"] {
   return (ctx) => {
     const input = ctx.input("in");
@@ -72,8 +76,12 @@ function converterCodegen(target: PinType): NodeDefinition["codegen"] {
     const typed = staticInputTag(ctx, "in");
     const tag = typed === undefined ? runtimeTagExpr("__w") : JSON.stringify(typed);
     const unboxed = typed === undefined ? `(${boxedTest("__w")} ? __w.value : __w)` : "__w";
+    // An unboxed `{ x, y, z, w }` value may be a Vec4, Quat or Color.
+    const converts = typed === undefined && XYZW_KINDS.has(target.kind)
+      ? `(${tagConvertsExpr(target, "__t")} || (__t === "vec4" && !${boxedTest("__w")}))`
+      : tagConvertsExpr(target, "__t");
     ctx.emit(
-      `(() => { const __w = ${input}; const __t = ${tag}; if (${tagConvertsExpr(target, "__t")}) { ${success} = true; ${value} = ${unboxed}; } else { ${success} = false; ${value} = ${fallback}; } })();`,
+      `(() => { const __w = ${input}; const __t = ${tag}; if (${converts}) { ${success} = true; ${value} = ${unboxed}; } else { ${success} = false; ${value} = ${fallback}; } })();`,
     );
   };
 }

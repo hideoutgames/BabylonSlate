@@ -510,6 +510,7 @@ export const flowNodes: NodeDefinition[] = [
   },
   {
     id: "flow.event.call",
+    implicitSelfTarget: true,
     title: "Call Custom Event",
     category: "flow",
     pins: (properties) => {

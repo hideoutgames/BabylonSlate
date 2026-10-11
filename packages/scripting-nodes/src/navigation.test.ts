@@ -118,4 +118,29 @@ describe("navigation nodes", () => {
     expect(run(null)).toEqual([false, { x: 0, y: 0, z: 0 }]);
     expect(run({ x: 1, y: 2, z: 3 })).toEqual([true, { x: 1, y: 2, z: 3 }]);
   });
+
+  it("Add Obstacle sends a box when Kind is unwired", () => {
+    const registry = createDefaultNodeRegistry();
+    const node = (id: string, type: string) => ({
+      id, typeId: type, position: { x: 0, y: 0 }, pins: registry.get(type)!.pins({}), properties: {},
+    });
+    const compiled = compileGraph(
+      {
+        id: "g",
+        kind: "event",
+        nodes: [node("entry", "flow.event.beginPlay"), node("add", "navigation.addObstacle")],
+        edges: [{ id: "e1", sourceNodeId: "entry", sourcePinId: "execOut", targetNodeId: "add", targetPinId: "execIn" }],
+      },
+      { assetGuid: "a", registry },
+    );
+    const body = compiled.source.replace(/export\s+(async\s+)?function\s+/g, "$1function ");
+    const kinds: unknown[] = [];
+    (new Function(`${body}\nreturn onBeginPlay;`)() as (ctx: unknown) => void)({
+      addObstacle: (kind: unknown) => {
+        kinds.push(kind);
+        return "obstacle-1";
+      },
+    });
+    expect(kinds).toEqual(["box"]);
+  });
 });

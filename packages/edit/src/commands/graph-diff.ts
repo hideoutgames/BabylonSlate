@@ -185,9 +185,9 @@ export function diffGraphCommands(
 
   // A retyped node is a different node under the same id: it leaves and returns.
   const nodes = planRows(before.nodes, after.nodes, (previous, next) => previous.type === next.type);
-  // RemoveNodeCommand drops a node's edges (and so does the inverse of an
-  // add), so an edge stays in place only when it is unchanged and neither
-  // endpoint is removed or added.
+  // RemoveNodeCommand removes only the node, so every edge touching a removed
+  // or added node is its own RemoveEdge/AddEdge command: an edge stays in
+  // place only when it is unchanged and neither endpoint is removed or added.
   const moving = new Set([...nodes.removed, ...nodes.added].map(({ item }) => item.id));
   const edges = planRows(before.edges, after.edges, (previous, next) =>
     shallowEqual(previous, next) && !moving.has(next.source) && !moving.has(next.target));

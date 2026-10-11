@@ -8,6 +8,8 @@ import {
   STRING,
   actorRef,
   arrayOf,
+  enumRef,
+  ENGINE_NAV_OBSTACLE_KIND_ENUM_ID,
 } from "@babylonslate/scripting";
 
 /**
@@ -126,10 +128,12 @@ export const navigationNodes: NodeDefinition[] = [
     id: "navigation.addObstacle",
     title: "Add Obstacle",
     category: "navigation",
+    description:
+      "Carve an unwalkable box or cylinder. Pose is the volume center and Size its full extent (a cylinder uses its X/Z size as diameters and Y as height). The id is empty when nothing was carved.",
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("kind", "kind", "in", STRING),
+      pin("kind", "kind", "in", enumRef(ENGINE_NAV_OBSTACLE_KIND_ENUM_ID), "data", false, "box"),
       pin("pose", "pose", "in", VEC3),
       pin("size", "size", "in", VEC3),
       pin("id", "id", "out", STRING),

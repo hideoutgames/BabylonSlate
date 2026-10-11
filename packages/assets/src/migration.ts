@@ -78,23 +78,18 @@ function keepPayload(payload: Record<string, unknown>): Record<string, unknown> 
   return { ...payload };
 }
 
-/** Default registry with Graph/Class logic-graph chains and Scene/Project. */
+/** Default registry with the Class logic-graph chain and Scene/Project. */
 export function createDefaultMigrationRegistry(): MigrationRegistry {
   const registry = new MigrationRegistry();
-  const graphMigrations: MigrationFn[] = [
-    (payload) => ({
-      ...payload,
-      nodes: Array.isArray(payload.nodes) ? payload.nodes : [],
-      edges: Array.isArray(payload.edges) ? payload.edges : [],
-    }),
-  ];
-  registry.register({
-    type: "Graph",
-    migrations: graphMigrations,
-  });
   registry.register({
     type: "Class",
-    migrations: graphMigrations,
+    migrations: [
+      (payload) => ({
+        ...payload,
+        nodes: Array.isArray(payload.nodes) ? payload.nodes : [],
+        edges: Array.isArray(payload.edges) ? payload.edges : [],
+      }),
+    ],
   });
   registry.register({
     type: "Scene",

@@ -249,7 +249,7 @@ Encode coverage (unit): source-first encode + Safari RGBA fallback + `encodeErro
 
 `readGolden` / `writeGolden` / `normalizeGoldenText` in `@babylonslate/test-kit` back byte-exact surfaces (container formats, compiler output, P3 world snapshots, tilemap chunks, 2D projection). `normalizeGoldenText` normalizes CRLF and trailing newlines so goldens do not churn across platforms.
 
-Historical migration fixtures (`graph-v0`, `scene-v0`, and `audio-legacy`) are frozen inputs: tests decode their original bytes, including missing dependency metadata and chunk lengths. `UPDATE_GOLDENS=1` only refreshes current-format output fixtures; it must not rewrite historical files with the current encoder. Review regenerated container headers and verify their payload bytes remain unchanged when updating metadata.
+Historical migration fixtures (`class-v0`, `scene-v0`, and `audio-legacy`) are frozen inputs: tests decode their original bytes, including missing dependency metadata and chunk lengths. `UPDATE_GOLDENS=1` only refreshes current-format output fixtures; it must not rewrite historical files with the current encoder. Review regenerated container headers and verify their payload bytes remain unchanged when updating metadata.
 
 ## Deterministic runtime harness (P3 / P4)
 

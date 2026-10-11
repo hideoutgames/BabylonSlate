@@ -1617,7 +1617,6 @@ describe("p7-play-scene-load", () => {
         text3d: {
           text: "Hi",
           size: 1,
-          depth: 0.1,
           color: [1, 1, 1],
           fontAssetGuid: "font-1",
           alignment: "left",

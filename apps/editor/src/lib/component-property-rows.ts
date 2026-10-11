@@ -1426,7 +1426,7 @@ export function componentPropertyRows(
           actorId,
           component,
           update,
-          new Set(["text", "size", "depth", "color", "fontAssetGuid", "alignment", "editorOnly"]),
+          new Set(["text", "size", "color", "fontAssetGuid", "alignment", "editorOnly"]),
         ),
       );
       return rows;

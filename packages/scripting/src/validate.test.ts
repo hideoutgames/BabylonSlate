@@ -149,6 +149,10 @@ describe("validateGraphs", () => {
     { async: true, body: "const result = await ctx.saveGame();", parseError: false },
     { async: true, body: "await ctx.saveGame(!!! invalid js {", parseError: true },
     { async: false, body: "this is !!! invalid js {", parseError: true },
+    // The compiled wrapper is strict-mode, takes the inputs as parameters and declares the outputs.
+    { async: false, body: "with (ctx) { doubled = speed; }", parseError: true },
+    { async: false, body: "let doubled = speed;", parseError: true },
+    { async: false, body: "doubled = speed * 2;", parseError: false },
   ])("validates ExecuteJavaScript with its authored async flag ($async, $body)", ({ async, body, parseError }) => {
     const graph: LogicGraph = {
       id: "g",
@@ -169,7 +173,12 @@ describe("validateGraphs", () => {
             pin("execIn", "exec", "in", EXEC),
             pin("execOut", "then", "out", EXEC),
           ],
-          properties: { async, body },
+          properties: {
+            async,
+            body,
+            inputs: [{ name: "speed", type: FLOAT }],
+            outputs: [{ name: "doubled", type: FLOAT }],
+          },
         },
       ],
       edges: [execThen("in", "js")],
@@ -317,7 +326,7 @@ describe("validateGraphs", () => {
     expect(diags.some((d) => d.code === "pin.missing_input")).toBe(true);
   });
 
-  it("does not warn pin.missing_input for an implicit-self Target", () => {
+  it("does not warn pin.missing_input for an implicit-self Target, only for an argument named target", () => {
     const graph: LogicGraph = {
       id: "g",
       kind: "event",
@@ -325,19 +334,20 @@ describe("validateGraphs", () => {
         flowEntry(),
         {
           id: "call",
-          typeId: "flow.event.call",
+          typeId: "interface.call",
           position: { x: 200, y: 0 },
           pins: [
             pin("execIn", "exec", "in", EXEC),
-            pin("target", "target", "in", objectRef("Hero")),
+            pin("target", "Target", "in", objectRef("Hero")),
+            pin("target__arg", "target", "in", objectRef("Hero")),
           ],
-          properties: { implicitSelf: true, name: "On Hit", classId: "Hero" },
+          properties: { implicitSelf: true, method: "Hit", interfaceGuid: "iface-1" },
         },
       ],
       edges: [execThen("entry", "call")],
     };
-    const diags = validateGraphs([graph], { assetGuid: "a" });
-    expect(diags.some((d) => d.code === "pin.missing_input")).toBe(false);
+    const missing = validateGraphs([graph], { assetGuid: "a" }).filter((d) => d.code === "pin.missing_input");
+    expect(missing.map((d) => d.pinId)).toEqual(["target__arg"]);
   });
 
   it("clears pin.missing_input for an unconnected classRef with a stored default", () => {
@@ -1074,6 +1084,47 @@ describe("validateGraphs", () => {
     );
   });
 
+  it("errors when two custom event names compile to the same event", () => {
+    const customEvent = (id: string, name: string) => ({
+      id,
+      typeId: "flow.event.custom",
+      position: { x: 0, y: 0 },
+      pins: [pin("execOut", "then", "out", EXEC)],
+      properties: { name },
+    });
+    const graph: LogicGraph = {
+      ...createEmptyLogicGraph("g"),
+      nodes: [customEvent("a", "Open/Close"), customEvent("b", "Open Close"), customEvent("c", "Reset")],
+    };
+    const collisions = validateGraphs([graph], { assetGuid: "a" }).filter(
+      (d) => d.code === "event.name_collision",
+    );
+    expect(collisions).toEqual([expect.objectContaining({ severity: "error", nodeId: "b" })]);
+  });
+
+  it("errors when an interface implementation pin is a Map where the method takes an Array", () => {
+    const signature = (container: "array" | "map") => [
+      { name: "targets", typeId: "actorRef", direction: "in" as const, container },
+    ];
+    const diags = validateGraphs([createEmptyLogicGraph("g")], {
+      assetGuid: "a",
+      implementedInterfaces: [
+        { guid: "iface-1", name: "Damageable", methods: [{ name: "Apply Damage", pins: signature("array") }] },
+      ],
+      members: [
+        {
+          id: "fn-1",
+          name: "Apply Damage",
+          kind: "function",
+          classId: "Hero",
+          implementsInterface: { assetGuid: "iface-1", methodName: "Apply Damage" },
+          pins: signature("map"),
+        },
+      ],
+    });
+    expect(diags.some((d) => d.code === "interface.signature_mismatch")).toBe(true);
+  });
+
   it("errors missing interface implementation outputs without defaults", () => {
     const graph: LogicGraph = {
       id: "Apply Damage",
@@ -1514,6 +1565,27 @@ describe("validateGraphs", () => {
     expect(validateGraphs([graph], { assetGuid: "a" })).toContainEqual(expect.objectContaining({ code: "flow.constant_loop", nodeId: "while", severity: "warning" }));
     graph.nodes[1]!.properties["default:condition"] = false;
     expect(validateGraphs([graph], { assetGuid: "a" })).toEqual([]);
+  });
+
+  it("warns on a While Loop whose condition is wired from a Make Bool True", () => {
+    const makeBool: GraphNode = {
+      id: "true", typeId: "literal.makeBool", position: { x: 0, y: 0 },
+      properties: { "default:in": true }, pins: [pin("in", "In", "in", BOOL), pin("out", "Out", "out", BOOL)],
+    };
+    const graph: LogicGraph = {
+      id: "g", kind: "event", nodes: [flowEntry(), makeBool, {
+        id: "while", typeId: "flow.whileLoop", position: { x: 0, y: 0 },
+        properties: { "default:condition": false }, pins: [pin("execIn", "exec", "in", EXEC), pin("condition", "Condition", "in", BOOL), pin("loopBody", "Loop Body", "out", EXEC)],
+      }],
+      edges: [
+        execThen("entry", "while"),
+        { id: "cond", sourceNodeId: "true", sourcePinId: "out", targetNodeId: "while", targetPinId: "condition" },
+      ],
+    };
+    const constantLoop = () => validateGraphs([graph], { assetGuid: "a" }).filter((d) => d.code === "flow.constant_loop");
+    expect(constantLoop()).toEqual([expect.objectContaining({ nodeId: "while", severity: "warning" })]);
+    makeBool.properties["default:in"] = false;
+    expect(constantLoop()).toEqual([]);
   });
 
   it("still diagnoses a Branch false arm reachable from Begin Play", () => {
