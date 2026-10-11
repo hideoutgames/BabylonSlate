@@ -396,6 +396,8 @@ export function PlayOverlay({
     const session = sessionRef.current;
     if (!session || !simulating || closedRef.current) return;
     const sequence = ++inputSequenceRef.current;
+    const previousMode = inputModeRef.current;
+    const previousEditable = transformEditableRef.current;
     inputModeRef.current = mode;
     transformEditableRef.current = false;
     syncTransformVisibilityRef.current();
@@ -411,7 +413,12 @@ export function PlayOverlay({
       syncTransformVisibilityRef.current();
       session.requestPausedRedraw();
     }, (error: unknown) => {
-      if (sessionRef.current === session && inputSequenceRef.current === sequence) setControlError(String(error));
+      if (sessionRef.current !== session || inputSequenceRef.current !== sequence) return;
+      // The session keeps its previous mode after a failed reset; so do Escape, Tab and the transform tools.
+      inputModeRef.current = previousMode;
+      transformEditableRef.current = previousEditable;
+      syncTransformVisibilityRef.current();
+      setControlError(String(error));
     }).finally(() => {
       if (sessionRef.current === session && inputSequenceRef.current === sequence) setInputPending(false);
     });
