@@ -2273,7 +2273,7 @@ export class ProjectService {
     return { guid: header.guid, type: header.type, name: header.name, version: header.version, payload };
   }
 
-  /** Projects authored before assets moved to .babasset still load from JSON. */
+  /** Writes a `.babasset` document in its asset's write queue. */
   async saveDocument(
     kind: Exclude<DocumentKind, "content-browser">,
     path: string,
@@ -2419,16 +2419,20 @@ export class ProjectService {
     await this.assetRegistry?.reindexPath(path);
     this.noteMigrated(path);
     if (pluginContentChanged && ownerPlugin) {
-      const document = await decodeAssetDocument(await storage.readBinary(ownerPlugin.settingsPath));
-      const settings = normalizePluginSettings(document.payload, { pluginGuid: ownerPlugin.pluginGuid });
-      await storage.writeBinary(ownerPlugin.settingsPath, await encodePluginSettingsDocument({
-        ...settings,
-        engineVersion: ENGINE_VERSION,
-        pluginDependencies: settings.pluginDependencies.map((dependency) => ({
-          ...dependency,
-          version: this.pluginDescriptors.find((plugin) => plugin.pluginGuid === dependency.guid)?.settings.version ?? dependency.version,
-        })),
-      }));
+      // In the settings file's own write queue, so a PluginSettings save is
+      // read here rather than replaced by the copy read before it.
+      await this.withDocumentWrite(ownerPlugin.settingsPath, async (settingsPath) => {
+        const document = await decodeAssetDocument(await storage.readBinary(settingsPath));
+        const settings = normalizePluginSettings(document.payload, { pluginGuid: ownerPlugin.pluginGuid });
+        await storage.writeBinary(settingsPath, await encodePluginSettingsDocument({
+          ...settings,
+          engineVersion: ENGINE_VERSION,
+          pluginDependencies: settings.pluginDependencies.map((dependency) => ({
+            ...dependency,
+            version: this.pluginDescriptors.find((plugin) => plugin.pluginGuid === dependency.guid)?.settings.version ?? dependency.version,
+          })),
+        }));
+      });
     }
     if (type === "PluginSettings" || pluginContentChanged) {
       await this.syncPlugins();
