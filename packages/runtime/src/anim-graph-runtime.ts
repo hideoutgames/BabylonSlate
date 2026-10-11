@@ -167,11 +167,12 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
   ): void {
     for (const variable of document.variables) {
       if (component.getVariable(variable.name) !== undefined) continue;
+      // Each component owns its copy: an object default must not be shared with the document or other components.
       component.setVariable(
         variable.name,
         variable.defaultValue !== undefined
-          ? variable.defaultValue
-          : defaultAnimVariableValue(variable.typeId),
+          ? structuredClone(variable.defaultValue)
+          : defaultAnimVariableValue(variable.typeId, variable.typeClassId),
       );
     }
   }
@@ -199,12 +200,11 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
     liveEvalKeys.clear();
     for (const actor of this.host.actors()) {
       if (this.host.stopped()) return;
-      if (!this.host.canTick(actor)) continue;
       const slotId = this.host.slot(actor);
-      if (slotId === undefined) continue;
-      if (this.host.playAnimationOwns(slotId)) continue;
+      // A graph skipped this tick (owner not admitted, no slot, or a Behaviour
+      // Tree Play Animation owns the slot) keeps its state and resumes later.
+      const runs = slotId !== undefined && this.host.canTick(actor) && !this.host.playAnimationOwns(slotId);
       for (const component of actor.components) {
-        if (!this.host.canTick(actor)) break;
         if (
           component.classId !== "AnimationGraphComponent" ||
           component.destroyed
@@ -219,6 +219,7 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
         const initKey = `${evalKey}:${guid}`;
         liveKeys.add(initKey);
         liveEvalKeys.add(evalKey);
+        if (!runs || slotId === undefined || !this.host.canTick(actor)) continue;
         this.seedVariables(component, document);
         const jumpTo = this.pendingJumpByComponent.get(evalKey);
         if (jumpTo) {
