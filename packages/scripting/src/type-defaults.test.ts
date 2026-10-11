@@ -81,4 +81,21 @@ describe("type defaults", () => {
       Nested: { Label: "hit" },
     });
   });
+
+  it("hydrates structures inside array elements and map keys and values", () => {
+    const fields: StructField[] = [
+      { name: "List", typeId: "struct", typeClassId: "struct-inner", container: "array" },
+      { name: "Lookup", typeId: "struct", typeClassId: "struct-inner", container: "map", keyTypeId: "struct", keyTypeClassId: "struct-inner" },
+    ];
+    expect(
+      hydrateStructInstance(
+        fields,
+        { List: [{ skip: 1 }], Lookup: [{ key: { Label: "k", extra: 1 }, value: {} }] },
+        schemas,
+      ),
+    ).toEqual({
+      List: [{ Label: "ok" }],
+      Lookup: [{ key: { Label: "k" }, value: { Label: "ok" } }],
+    });
+  });
 });
