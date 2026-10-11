@@ -154,7 +154,6 @@ describe("Add Component catalog", () => {
     expect(defaultPropertiesFor("Text3DComponent")).toEqual({
       text: "Text",
       size: 1,
-      depth: 0.1,
       color: [1, 1, 1],
       fontAssetGuid: null,
       alignment: "left",
