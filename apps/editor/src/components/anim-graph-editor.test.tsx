@@ -217,7 +217,6 @@ function lastCommit(): AnimGraphDocument {
 
 function locoGraph(): AnimGraphDocument {
   const doc = createDefaultAnimGraph();
-  doc.parameters = ["moving"];
   doc.states.push({
     id: "run",
     name: "Run",
@@ -237,10 +236,7 @@ function locoGraph(): AnimGraphDocument {
     id: "idle-to-run",
     fromStateId: "idle",
     toStateId: "run",
-    condition: "moving",
     blendSeconds: 0.25,
-    hasExitTime: false,
-    exitTime: 0,
     priority: 0,
     ruleGraph: createDefaultTransitionRuleGraph(),
   });

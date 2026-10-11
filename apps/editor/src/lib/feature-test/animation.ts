@@ -204,7 +204,6 @@ function locomotionGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
       transition("cheer-to-idle", "cheer", "idle", 0.2, 0, UPWARD, [exitTime(1)]),
     ],
     animationObject: createDefaultAnimationObjectGraph(),
-    parameters: [CHEER.name],
   };
 }
 
@@ -215,12 +214,11 @@ function locomotionGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
  */
 function doorGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
   const clips = ctx.assets.doorAnimations;
-  const base: Pick<AnimGraphDocument, "schemaVersion" | "name" | "variables" | "animationObject" | "parameters"> = {
+  const base: Pick<AnimGraphDocument, "schemaVersion" | "name" | "variables" | "animationObject"> = {
     schemaVersion: ANIM_GRAPH_SCHEMA_VERSION,
     name: NAMES.doorGraph,
     variables: [],
     animationObject: createDefaultAnimationObjectGraph(),
-    parameters: [],
   };
   if (clips.open && clips.close) {
     return {
