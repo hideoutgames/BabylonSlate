@@ -23,7 +23,7 @@ Particles wrap Babylon `GPUParticleSystem` / `ParticleSystem` as **billboard qua
 | Particle Graph | `ParticleGraph`, `.particlegraph.babasset` | `schemaVersion: 1` graph document ([below](#particle-graph)) | Its Material only |
 | Particle System | `ParticleSystem`, `.particles.babasset` | `emitterGuids` (Basic emitters or Particle Graphs; up to 8, ordered, duplicates allowed); `space` (World / Local → `isLocal` on every slot); `previewSkybox` (editor only, missing → true) | Its emitters |
 
-- `ParticleComponent` references a Particle System: `particleSystemGuid`, `playOnStart`, sorting layer/order. The actor transform is the Babylon `emitter`. Sorting layer maps onto `renderingGroupId`; `orderInLayer` is stored and forwarded on `assignParticle` for component parity.
+- `ParticleComponent` references a Particle System: `particleSystemGuid`, `playOnStart`, sorting layer/order. The actor transform is the Babylon `emitter`. Sorting layer (resolved against the project's sorting layers) maps onto `renderingGroupId`. Babylon draws a group's particle systems in `scene.particleSystems` order, so `applySortingToParticleSystem` keeps that list in layer + `orderInLayer` sort-key order (equal keys keep creation order). Particles still draw after their group's opaque and cutout meshes and before its blended meshes, whatever the keys.
 - **No migration.** Header versions are 1 for all three types; `schemaVersion` is a payload field, never a top-level `version`. Normalizers read only the nested shape. Old flat P17 fields (`emitRate`, `textureGuid`, `materialGuid`, `sizeGradient`, …) and the System's old `looping` / `duration` are ignored, so old assets load with the defaults below and may change look.
 - The registry runs no normalizer at v1, so every read site normalizes: Play and previews (`particleLibraryFromAssets`), the packed player (`hydrate.ts`) and Details.
 - `ParticleLibrary` in `@babylonslate/assets` is the one library shape for Play, previews, render and the player: `emitters` (tagged `{ kind: "basic", payload }` or `{ kind: "graph", document }`) and `systems`. `particleLibraryEmitterKey(entry)` keys a graph by its [compile key](#lowering-and-build) plus `materialGuid`, so node moves and renames never change it.
@@ -393,7 +393,7 @@ Worker → main. The main thread resolves Emitter / System payloads from the Pla
 | { type: "setParticlePlaying"; actorGuid: string; componentId?: string; playing: boolean }
 ```
 
-`ParticleComponent` properties: `particleSystemGuid`, `playOnStart`, sorting layer/order. Play-on-start emits `assignParticle` with `play: true`. Sorting layer sets `IParticleSystem.renderingGroupId`. Script graph Play/Stop nodes target `self` when Actor is unconnected.
+`ParticleComponent` properties: `particleSystemGuid`, `playOnStart`, sorting layer/order. Play-on-start emits `assignParticle` with `play: true`. Sorting layer and order set `IParticleSystem.renderingGroupId` and the system's place in `scene.particleSystems` ([Assets](#assets)). Script graph Play/Stop nodes target `self` when Actor is unconnected.
 
 ## Component ownership and playback
 

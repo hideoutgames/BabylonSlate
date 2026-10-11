@@ -2104,8 +2104,8 @@ export function applySnapshotToScene(
   snapshot: SampledSnapshot,
 ): void {
   // Play samples the latest snapshot, so cables and water pair with its frame alone.
-  sampleCableFrame(scene, snapshot.frameId, snapshot.frameId, 1);
-  sampleSceneWaterFrame(scene, snapshot.frameId, snapshot.frameId, 1);
+  sampleCableFrame(scene, snapshot.frameId);
+  sampleSceneWaterFrame(scene, snapshot.frameId);
   reconcileSnapshotVisuals(scene, binding, snapshot);
   const count = snapshot.actorCount ?? snapshot.actors.length;
   for (let i = 0; i < count; i++) {

@@ -1,4 +1,4 @@
-import { Vector3, type Mesh } from "@babylonjs/core";
+import type { Mesh } from "@babylonjs/core";
 import type { CommandMessage } from "@babylonslate/bridge";
 import type { SpriteAnimationPayload, SpriteFrame, SpritePayload } from "@babylonslate/assets";
 import {
@@ -46,6 +46,7 @@ export function seekGameplayAnimation(
   group.setWeightForAllAnimatables?.(weight);
 }
 
+/** Bake a legacy atlas clip frame's UVs, size and pivot into the sprite quad, as `createSpriteQuad` does. */
 export function applySpriteAnimFrame(
   mesh: Mesh,
   payload: SpritePayload,
@@ -53,11 +54,12 @@ export function applySpriteAnimFrame(
   normalisedTime: number,
 ): void {
   const frame = spriteClipFrameAt(payload, clipName, normalisedTime);
-  if (frame) applySpriteFrameUvs(mesh, frame);
+  if (!frame) return;
+  applySpriteFrameUvs(mesh, frame);
+  const ppu = payload.pixelsPerUnit > 0 ? payload.pixelsPerUnit : 100;
+  setSpriteQuadSize(mesh, (frame.width ?? 100) / ppu || 1, (frame.height ?? 100) / ppu || 1, frame.pivot);
 }
 
-const spritePivots = new WeakMap<Mesh, { x: number; y: number }>();
-const spritePivot = new Vector3();
 /** Each Sprite Animation frame owns its whole texture; applySpriteFrameUvs reads only u/v/uSize/vSize. */
 const FULL_TEXTURE_FRAME: SpriteFrame = {
   name: "sprite-animation",
@@ -69,7 +71,7 @@ const FULL_TEXTURE_FRAME: SpriteFrame = {
   pivot: { x: 0.5, y: 0.5 },
 };
 
-/** Bind a Sprite Animation asset frame (full UVs, texture, pivot) onto the sprite quad. */
+/** Bind a Sprite Animation asset frame (full UVs, texture, size, pivot) onto the sprite quad. */
 export function applySpriteAnimationAssetFrame(
   mesh: Mesh,
   payload: SpriteAnimationPayload,
@@ -87,18 +89,8 @@ export function applySpriteAnimationAssetFrame(
     options?.pixelsPerUnit && options.pixelsPerUnit > 0
       ? options.pixelsPerUnit
       : 100;
-  const worldWidth = (frame.width ?? 100) / ppu;
-  const worldHeight = (frame.height ?? 100) / ppu;
-  setSpriteQuadSize(mesh, worldWidth, worldHeight);
-  const x = (frame.pivot.x - 0.5) * worldWidth;
-  const y = (0.5 - frame.pivot.y) * worldHeight;
-  const previous = spritePivots.get(mesh);
-  if (!previous || previous.x !== x || previous.y !== y) {
-    mesh.setPivotPoint(spritePivot.set(x, y, 0));
-    // A static actor's frozen matrix would otherwise keep the previous pivot.
-    if (mesh.isWorldMatrixFrozen) mesh.freezeWorldMatrix();
-    spritePivots.set(mesh, { x, y });
-  }
+  // The frame's pivot sits on the actor origin, where the box2d collider is centred.
+  setSpriteQuadSize(mesh, (frame.width ?? 100) / ppu, (frame.height ?? 100) / ppu, frame.pivot);
 }
 
 export type AnimStateCommand = Extract<CommandMessage, { type: "animState" }>;

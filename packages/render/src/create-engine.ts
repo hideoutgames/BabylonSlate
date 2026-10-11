@@ -1323,6 +1323,7 @@ function initializeEngine(
         },
         resolveEmitter: (slotId) => binding.meshes.get(slotId) ?? null,
         onDiagnostic: options.onParticleDiagnostic,
+        sortingLayers: () => binding.sortingLayers,
       })
     : null;
   onRollback(() => particleService?.dispose());

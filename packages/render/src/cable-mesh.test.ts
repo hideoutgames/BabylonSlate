@@ -184,34 +184,38 @@ describe("cable rendering", () => {
     expect(scaled.getBoundingInfo().boundingBox.minimumWorld.y).toBeCloseTo(-0.2);
   });
 
-  it("coalesces pending packets and samples the actor frame pair across skipped and sleeping frames", () => {
+  it("coalesces pending packets and samples the actor frame across skipped and sleeping frames", () => {
     const { scene } = setup();
     const mesh = createCableMesh(scene, "cable", { numSegments: 2, numSides: 4, cableWidth: 0.4 }, 1);
     const upload = vi.spyOn(mesh, "updateVerticesData");
+    const positionUploads = () => upload.mock.calls.filter(([kind]) => kind === VertexBuffer.PositionKind);
     applyCableFrame(scene, packet(1, [0, 0, 0, 1, 0, 0, 2, 0, 0]), 1);
     applyCableFrame(scene, packet(1, [0, 4, 0, 1, 4, 0, 2, 4, 0]), 4);
     applyCableFrame(scene, packet(1, [0, 8, 0, 1, 8, 0, 2, 8, 0]), 8);
     expect(upload).not.toHaveBeenCalled();
-    sampleCableFrame(scene, 4, 1, 0.25);
+    sampleCableFrame(scene, 4);
     scene.onBeforeRenderObservable.notifyObservers(scene);
-    expect(mesh.getBoundingInfo().boundingBox.minimumWorld.y).toBeCloseTo(0.8);
-    expect(upload.mock.calls.filter(([kind]) => kind === VertexBuffer.PositionKind)).toHaveLength(1);
+    expect(mesh.getBoundingInfo().boundingBox.minimumWorld.y).toBeCloseTo(3.8);
+    expect(positionUploads()).toHaveLength(1);
     scene.onBeforeRenderObservable.notifyObservers(scene);
-    expect(upload.mock.calls.filter(([kind]) => kind === VertexBuffer.PositionKind)).toHaveLength(1);
+    expect(positionUploads()).toHaveLength(1);
     // No packet at frame 6: sleeping particles retain their last frame-4 pose.
-    sampleCableFrame(scene, 8, 6, 0.5);
+    sampleCableFrame(scene, 6);
     scene.onBeforeRenderObservable.notifyObservers(scene);
-    expect(mesh.getBoundingInfo().boundingBox.minimumWorld.y).toBeCloseTo(5.8);
-    // Future packets wrapping the bounded history cannot evict this pinned pair.
+    expect(mesh.getBoundingInfo().boundingBox.minimumWorld.y).toBeCloseTo(3.8);
+    expect(positionUploads()).toHaveLength(1);
+    sampleCableFrame(scene, 8);
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    expect(mesh.getBoundingInfo().boundingBox.minimumWorld.y).toBeCloseTo(7.8);
+    // Future packets wrapping the bounded history cannot evict the shape drawn for this frame.
     for (let frame = 9; frame < 30; frame++) applyCableFrame(scene, packet(1, [0, frame, 0, 1, frame, 0, 2, frame, 0]), frame);
-    sampleCableFrame(scene, 8, 6, 0.75);
     scene.onBeforeRenderObservable.notifyObservers(scene);
-    expect(mesh.getBoundingInfo().boundingBox.minimumWorld.y).toBeCloseTo(6.8);
-    sampleCableFrame(scene, 31, 30, 0.3);
+    expect(mesh.getBoundingInfo().boundingBox.minimumWorld.y).toBeCloseTo(7.8);
+    sampleCableFrame(scene, 31);
     scene.onBeforeRenderObservable.notifyObservers(scene);
     expect(mesh.getBoundingInfo().boundingBox.minimumWorld.y).toBeCloseTo(28.8);
     const sleepingUploads = upload.mock.calls.length;
-    sampleCableFrame(scene, 32, 31, 0.7);
+    sampleCableFrame(scene, 32);
     scene.onBeforeRenderObservable.notifyObservers(scene);
     expect(upload.mock.calls).toHaveLength(sleepingUploads);
     upload.mockRestore();
@@ -223,7 +227,7 @@ describe("cable rendering", () => {
     start.position.set(10, 5, 0); end.position.set(16, 5, 0);
     const mesh = createCableMesh(scene, "cable", { numSegments: 2, numSides: 4, cableWidth: 0.4 }, 1, (slot) => slot === 3 ? start : end);
     applyCableFrame(scene, packet(1, [100, 50, 0, 101, 50, 0, 102, 50, 0], [3, 4, 1, 0, 0, -1, 0, 0]), 30);
-    sampleCableFrame(scene, 2, 1, 0.5);
+    sampleCableFrame(scene, 2);
     scene.onBeforeRenderObservable.notifyObservers(scene);
     const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!;
     // Opposite ring vertices average to the particle, independent of its tangent.

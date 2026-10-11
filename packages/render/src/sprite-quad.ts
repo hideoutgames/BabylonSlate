@@ -30,7 +30,6 @@ export function createSpriteQuad(
   return mesh;
 }
 
-const CENTER_PIVOT = { x: 0.5, y: 0.5 };
 const appliedQuads = new WeakMap<Mesh, { positions: Float32Array; uvs: Float32Array; width?: number; height?: number; pivotX?: number; pivotY?: number; u0?: number; v0?: number; u1?: number; v1?: number }>();
 function quadState(mesh: Mesh) {
   let state = appliedQuads.get(mesh);
@@ -42,16 +41,18 @@ function quadState(mesh: Mesh) {
 }
 
 /** Resize the quad; the normalized `pivot` (v grows downward) lands on the mesh origin. */
-export function setSpriteQuadSize(mesh: Mesh, width: number, height: number, pivot: { x: number; y: number } = CENTER_PIVOT): void {
+export function setSpriteQuadSize(mesh: Mesh, width: number, height: number, pivot: { x: number; y: number }): void {
   const state = quadState(mesh);
   width = Math.max(0, width); height = Math.max(0, height);
   if (state.width === width && state.height === height && state.pivotX === pivot.x && state.pivotY === pivot.y) return;
   const left = -pivot.x * width; const right = left + width;
   const top = pivot.y * height; const bottom = top - height;
   state.positions.set([left, bottom, 0, right, bottom, 0, right, top, 0, left, top, 0]);
-  if (mesh.isWorldMatrixFrozen) mesh.unfreezeWorldMatrix();
   if (!mesh.getVertexBuffer(VertexBuffer.PositionKind)?.isUpdatable()) mesh.markVerticesDataAsUpdatable(VertexBuffer.PositionKind, true);
   mesh.updateVerticesData(VertexBuffer.PositionKind, state.positions, true, false);
+  // updateVerticesData rebuilds the bounds without the world matrix, which an
+  // unchanged (or frozen) transform never recomputes: refresh them against it.
+  mesh.refreshBoundingInfo();
   state.width = width; state.height = height; state.pivotX = pivot.x; state.pivotY = pivot.y;
 }
 
