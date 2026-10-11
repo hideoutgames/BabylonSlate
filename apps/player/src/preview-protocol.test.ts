@@ -12,7 +12,7 @@ describe("preview pack protocol", () => {
       { source: parentWindow, origin: "https://preview.example", data: pack },
       parentWindow, "https://preview.example",
     )).toBe(pack);
-    for (const incomplete of [previewPackFromFiles(files, { traceByteBudget: 1024 }), previewPackFromFiles(files, { onDemand: true })]) {
+    for (const incomplete of [{ ...pack, onDemand: undefined }, { ...pack, traceByteBudget: undefined }]) {
       expect(previewPackFromExpectedHostMessage(
         { source: parentWindow, origin: "https://preview.example", data: incomplete },
         parentWindow, "https://preview.example",
