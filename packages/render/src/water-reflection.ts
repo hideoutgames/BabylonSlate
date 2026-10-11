@@ -1,4 +1,4 @@
-import { CubeTexture, PBRMaterial, Texture, type Scene } from "@babylonjs/core";
+import { CubeTexture, PBRMaterial, Texture, type AbstractMesh, type Scene } from "@babylonjs/core";
 import { ownEnvironmentIrradiance } from "./environment-irradiance";
 import { resourceCacheForEngine, type ResourceLease } from "./resource-cache";
 import { isSkyboxMesh } from "./skybox";
@@ -13,8 +13,14 @@ export class WaterReflection {
   private materials = new Set<PBRMaterial>();
   private scene: Scene;
   private pending = false;
+  private skyboxes: AbstractMesh[] = [];
+  private skyboxesStale = true;
+  private scannedMeshes = 0;
   constructor(scene: Scene) {
     this.scene = scene;
+    // Removal notifies synchronously; Babylon defers the add notification, so adds are
+    // caught by the mesh count instead.
+    scene.onMeshRemovedObservable.add(() => { this.skyboxesStale = true; });
     scene.onDisposeObservable.addOnce(() => this.clear());
   }
   add(material: PBRMaterial): void {
@@ -29,7 +35,7 @@ export class WaterReflection {
   }
   sync(): void {
     if (!this.materials.size) return;
-    const sky = this.scene.environmentTexture ? null : this.scene.meshes.find((mesh) => isSkyboxMesh(mesh) && mesh.isEnabled() && mesh.isVisible);
+    const sky = this.scene.environmentTexture ? null : this.visibleSky();
     const texture = sky?.material instanceof PBRMaterial ? sky.material.reflectionTexture : null;
     const source = texture instanceof CubeTexture && texture.isReady() ? texture : null;
     if (source !== this.source) {
@@ -54,6 +60,19 @@ export class WaterReflection {
       this.pending = true;
       this.scene.addPendingData(this);
     }
+  }
+  /**
+   * Runs every frame, so the full mesh list is scanned only after it changed. Skybox
+   * metadata is set as the mesh is created, before it can be rendered.
+   */
+  private visibleSky(): AbstractMesh | undefined {
+    const meshes = this.scene.meshes;
+    if (this.skyboxesStale || meshes.length !== this.scannedMeshes) {
+      this.skyboxes = meshes.filter(isSkyboxMesh);
+      this.skyboxesStale = false;
+      this.scannedMeshes = meshes.length;
+    }
+    return this.skyboxes.find((mesh) => mesh.isEnabled() && mesh.isVisible);
   }
   private clear(): void {
     this.scene.removePendingData(this);

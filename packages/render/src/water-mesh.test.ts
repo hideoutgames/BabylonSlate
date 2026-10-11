@@ -105,6 +105,30 @@ describe("Water rendering", () => {
       expect(source.getInternalTexture()).toBeNull();
     } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
   });
+  it("reflects a skybox added after the water and follows its visibility", () => {
+    const engine = new NullEngine(), scene = new Scene(engine), cache = resourceCacheForEngine(engine);
+    vi.spyOn(engine, "createPrefilteredCubeTexture").mockImplementation((url) => {
+      const internal = engine.createTexture(url, false, false, null);
+      internal.isCube = true; internal._sphericalPolynomial = new SphericalPolynomial();
+      return internal;
+    });
+    try {
+      const water = createWaterMesh(scene, "water", normalizeWaterBody({ resolution: 8 }));
+      const material = water.material as PBRMaterial;
+      updateSceneWater(scene);
+      expect(material.reflectionTexture).toBeNull();
+      const lease = cache.acquireTexture("sky", engine, buildFloatDdsCubeFixture(), { isCube: true }) as ResourceLease<CubeTexture>;
+      const sky = createSkyboxMesh(scene, "sky", lease);
+      updateSceneWater(scene);
+      expect(material.reflectionTexture?.getInternalTexture()).toBe(lease.resource.getInternalTexture());
+      sky.setEnabled(false); updateSceneWater(scene);
+      expect(material.reflectionTexture).toBeNull();
+      sky.setEnabled(true); updateSceneWater(scene);
+      expect(material.reflectionTexture).not.toBeNull();
+      sky.dispose(); updateSceneWater(scene);
+      expect(material.reflectionTexture).toBeNull();
+    } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
+  });
   it("resizes tessellation with a stretched volume while rendered waves still match world-space queries", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     const water = createDefaultWaterDefinition(), body = normalizeWaterBody({ width: 12, length: 10, waveScale: 1 }, "ocean");
