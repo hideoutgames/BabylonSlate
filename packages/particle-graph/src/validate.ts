@@ -12,7 +12,11 @@ import type {
   ParticleGraphNode,
 } from "./document";
 import { readParticlePinDefault } from "./pin-defaults";
-import { createParticleTypeResolver, particleGenericGroup } from "./resolve";
+import {
+  createParticleTypeResolver,
+  particleGenericGroup,
+  type ParticleTypeResolver,
+} from "./resolve";
 import { particleTypeLabel, particleTypesAreAssignable } from "./types";
 
 export type ParticleDiagnosticSeverity = "error" | "warning";
@@ -206,6 +210,8 @@ function isPinSet(
 function validateGraph(graph: GraphLike): {
   diagnostics: ParticleGraphDiagnostic[];
   definitions: Map<string, ParticleNodeDefinition>;
+  /** Null when a cycle stopped the type checks. */
+  resolver: ParticleTypeResolver | null;
 } {
   const diagnostics: ParticleGraphDiagnostic[] = [];
   const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
@@ -290,6 +296,7 @@ function validateGraph(graph: GraphLike): {
   }
 
   const cycle = findParticleGraphCycle(graph);
+  let resolver: ParticleTypeResolver | null = null;
   if (cycle) {
     diagnostics.push({
       code: "particle.cycle",
@@ -298,7 +305,7 @@ function validateGraph(graph: GraphLike): {
       nodeId: cycle[0],
     });
   } else {
-    const resolver = createParticleTypeResolver(graph);
+    resolver = createParticleTypeResolver(graph);
     for (const nodeId of resolver.conflicts()) {
       diagnostics.push({
         code: "particle.genericConflict",
@@ -349,7 +356,7 @@ function validateGraph(graph: GraphLike): {
     }
   }
 
-  return { diagnostics, definitions };
+  return { diagnostics, definitions, resolver };
 }
 
 function validateSpine(
@@ -534,13 +541,24 @@ function validateSettings(
   return diagnostics;
 }
 
+/**
+ * Validation plus the type resolver it built, so lowering does not resolve the
+ * graph a second time. The resolver is null when a cycle stopped type checks.
+ */
+export function checkParticleGraphDocument(
+  doc: ParticleGraphDocument,
+  context: ParticleGraphValidationContext = {},
+): { diagnostics: ParticleGraphDiagnostic[]; resolver: ParticleTypeResolver | null } {
+  const { diagnostics, definitions, resolver } = validateGraph(doc);
+  diagnostics.push(...validateSpine(doc, definitions));
+  diagnostics.push(...validateSettings(doc, context));
+  return { diagnostics, resolver };
+}
+
 /** Errors block lowering; warnings do not. */
 export function validateParticleGraphDocument(
   doc: ParticleGraphDocument,
   context: ParticleGraphValidationContext = {},
 ): ParticleGraphDiagnostic[] {
-  const { diagnostics, definitions } = validateGraph(doc);
-  diagnostics.push(...validateSpine(doc, definitions));
-  diagnostics.push(...validateSettings(doc, context));
-  return diagnostics;
+  return checkParticleGraphDocument(doc, context).diagnostics;
 }

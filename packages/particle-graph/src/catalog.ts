@@ -46,6 +46,11 @@ export interface ParticlePinDefinition {
   /** Per-component clamp applied by Details and by lowering. */
   min?: number;
   max?: number;
+  /**
+   * The range also bounds a wired value: lowering marks the operand and render
+   * clamps it, because Babylon divides by this input (Lifetime).
+   */
+  clampWired?: true;
   /** Pin typed by the node's `valueType` property (Random, Gradient). */
   followsValueType?: true;
   description?: string;
@@ -366,7 +371,7 @@ const EMITTER_NODES: ParticleNodeDefinition[] = [
       "Starts the particle spine. Inputs are read once per new particle, before the Shape sets its position and direction.",
     inputs: [
       { id: "emitPower", name: "Emit Power", type: FLOAT, defaultValue: [1], unit: "m/s", description: "Initial speed along the emit direction (m/s)." },
-      { id: "lifetime", name: "Lifetime", type: FLOAT, defaultValue: [1], min: 0.01, unit: "s", description: "Seconds." },
+      { id: "lifetime", name: "Lifetime", type: FLOAT, defaultValue: [1], min: 0.01, clampWired: true, unit: "s", description: "Seconds." },
       {
         id: "color",
         name: "Color",

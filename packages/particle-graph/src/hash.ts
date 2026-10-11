@@ -11,13 +11,18 @@ export function fnv1a(input: string): string {
   return hash.toString(16).padStart(8, "0");
 }
 
-/** Settings with a fixed key order, so the hash never depends on authoring order. */
+/**
+ * Settings with a fixed key order, so the hash never depends on authoring
+ * order. Only Once reads Duration and only Infinite reads Pre Warm, so the
+ * other one never forces a rebuild.
+ */
 export function particleSettingsFingerprint(settings: ParticleGraphSettings): string {
+  const once = settings.loop === "once";
   return JSON.stringify([
     settings.capacity,
     settings.loop,
-    settings.duration,
-    settings.prewarm,
+    once ? settings.duration : null,
+    once ? null : settings.prewarm,
     settings.blendMode,
     settings.billboard,
   ]);
@@ -26,7 +31,8 @@ export function particleSettingsFingerprint(settings: ParticleGraphSettings): st
 function describeOperand(operand: ParticleOperand): string {
   if (operand.kind === "constant") return `c:${operand.type}:${operand.value.join("/")}`;
   const conversion = operand.conversion ? `:${operand.conversion.kind}>${operand.conversion.to}` : "";
-  return `o:${operand.operationId}:${operand.pinId}${conversion}`;
+  const range = operand.range ? `:[${operand.range.min ?? ""},${operand.range.max ?? ""}]` : "";
+  return `o:${operand.operationId}:${operand.pinId}${conversion}${range}`;
 }
 
 /**

@@ -2,6 +2,7 @@ import {
   PARTICLE_OUTPUT_NODE_TYPE,
   isParticleSpineRole,
   particleNodeValueType,
+  type ParticlePinDefinition,
 } from "./catalog";
 import type {
   ParticleGraphDocument,
@@ -14,7 +15,6 @@ import {
 } from "./gradient";
 import { fnv1a, hashParticlePlan, particleSettingsFingerprint } from "./hash";
 import { clampParticlePinValue, resolveParticlePinDefault } from "./pin-defaults";
-import { createParticleTypeResolver } from "./resolve";
 import {
   particleConversionFor,
   resizeParticleValue,
@@ -23,7 +23,7 @@ import {
   type ParticleValueType,
 } from "./types";
 import {
-  validateParticleGraphDocument,
+  checkParticleGraphDocument,
   type ParticleGraphDiagnostic,
   type ParticleGraphValidationContext,
 } from "./validate";
@@ -35,6 +35,11 @@ export type ParticleOperand =
       pinId: string;
       /** Float wired into a vector or color input; render realizes the splat. */
       conversion?: ParticleConversion;
+      /**
+       * The pin's range on a wired input Babylon divides by (Lifetime); render
+       * clamps the value into it. Other wired inputs are never clamped.
+       */
+      range?: ParticleOperandRange;
     }
   | {
       kind: "constant";
@@ -42,6 +47,11 @@ export type ParticleOperand =
       /** Already sized to `type` and clamped to the pin range. */
       value: number[];
     };
+
+export interface ParticleOperandRange {
+  min?: number;
+  max?: number;
+}
 
 export interface ParticleOperation {
   /** The graph node id: the anchor for build diagnostics and focus. */
@@ -68,6 +78,13 @@ export type ParticleGraphLowerResult =
 
 export type ParticleGraphLowerContext = ParticleGraphValidationContext;
 
+function pinRange(pin: ParticlePinDefinition): ParticleOperandRange {
+  return {
+    ...(pin.min !== undefined ? { min: pin.min } : {}),
+    ...(pin.max !== undefined ? { max: pin.max } : {}),
+  };
+}
+
 function planProperties(node: ParticleGraphNode): Record<string, unknown> {
   const properties: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(node.properties)) {
@@ -91,11 +108,10 @@ export function lowerParticleGraphDocument(
   doc: ParticleGraphDocument,
   context: ParticleGraphLowerContext = {},
 ): ParticleGraphLowerResult {
-  const diagnostics = validateParticleGraphDocument(doc, context);
-  if (diagnostics.some((entry) => entry.severity === "error")) {
+  const { diagnostics, resolver } = checkParticleGraphDocument(doc, context);
+  if (!resolver || diagnostics.some((entry) => entry.severity === "error")) {
     return { ok: false, diagnostics };
   }
-  const resolver = createParticleTypeResolver(doc);
   const nodesById = new Map(doc.nodes.map((node) => [node.id, node]));
   const operations: ParticleOperation[] = [];
   const emitted = new Map<string, ParticleOperation>();
@@ -120,6 +136,7 @@ export function lowerParticleGraphDocument(
           operationId: source.id,
           pinId: edge.sourcePinId,
           ...(conversion ? { conversion } : {}),
+          ...(pin.clampWired ? { range: pinRange(pin) } : {}),
         };
         continue;
       }
