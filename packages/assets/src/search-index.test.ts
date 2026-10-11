@@ -246,8 +246,8 @@ describe("ProjectSearchIndex", () => {
         nodes: [
           {
             id: "log-1",
-            type: "logMessage",
-            data: { message: "Class owned hello" },
+            type: "debug.log",
+            data: { "default:message": "Class owned hello" },
           },
         ],
         edges: [],
@@ -256,7 +256,7 @@ describe("ProjectSearchIndex", () => {
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     const index = new ProjectSearchIndex(storage, {
-      nodeTitles: { logMessage: "Log" },
+      nodeTitles: { "debug.log": "Log" },
     });
     await index.rebuild(registry);
     expect(
@@ -429,8 +429,8 @@ describe("ProjectSearchIndex", () => {
                 nodes: [
                   {
                     id: `node-${i}`,
-                    type: "logMessage",
-                    data: { message: `Node${i}` },
+                    type: "debug.log",
+                    data: { "default:message": `Node${i}` },
                   },
                 ],
                 edges: [],
