@@ -21,87 +21,58 @@ export function nextCopyName(name: string, existingNames: string[]): string {
   return `${stem}_${index}`;
 }
 
-/** File stem without `.scene.babasset` / `.graph.babasset` / `.class.babasset` / `.babasset`. */
-export function stripAssetFileSuffix(fileName: string): string {
-  return fileName
-    .replace(/\.scenelayer\.babasset$/i, "")
-    .replace(/\.matinst\.babasset$/i, "")
-    .replace(/\.bt\.babasset$/i, "")
-    .replace(/\.blackboard\.babasset$/i, "")
-    .replace(/\.water\.babasset$/i, "")
-    .replace(/\.datadefinition\.babasset$/i, "")
-    .replace(/\.datatree\.babasset$/i, "")
-    .replace(/\.dataobject\.babasset$/i, "")
-    .replace(/\.datasheet\.babasset$/i, "")
-    .replace(/\.rendertargettexture\.babasset$/i, "")
-    .replace(/\.rendertarget\.babasset$/i, "")
-    .replace(/\.inputaction\.babasset$/i, "")
-    .replace(/\.inputaxis\.babasset$/i, "")
-    .replace(/\.savegame\.babasset$/i, "")
-    .replace(/\.scene\.babasset$/i, "")
-    .replace(/\.graph\.babasset$/i, "")
-    .replace(/\.class\.babasset$/i, "")
-    .replace(/\.prefab\.babasset$/i, "")
-    .replace(/\.eui\.babasset$/i, "")
-    .replace(/\.spriteanim\.babasset$/i, "")
-    .replace(/\.sprite\.babasset$/i, "")
-    .replace(/\.anim\.babasset$/i, "")
-    .replace(/\.shader\.babasset$/i, "")
-    .replace(/\.material\.babasset$/i, "")
-    .replace(/\.matfunc\.babasset$/i, "")
-    .replace(/\.tileset\.babasset$/i, "")
-    .replace(/\.tilemap\.babasset$/i, "")
-    .replace(/\.mixer\.babasset$/i, "")
-    .replace(/\.channel\.babasset$/i, "")
-    .replace(/\.atten\.babasset$/i, "")
-    .replace(/\.plugin\.babasset$/i, "")
-    .replace(/\.skyboxcreator\.babasset$/i, "")
-    .replace(/\.emitter\.babasset$/i, "")
-    .replace(/\.particlegraph\.babasset$/i, "")
-    .replace(/\.particles\.babasset$/i, "")
-    .replace(/\.babasset$/i, "");
+/**
+ * Container suffixes of typed assets (`newAssetFileSuffix`, `PLUGIN_FILE_SUFFIX`
+ * and `MAIN_GRAPH_FILE`). Rename and Duplicate keep these; any other file name
+ * only loses its trailing `.babasset`.
+ */
+const ASSET_FILE_SUFFIXES = [
+  ".scenelayer.babasset",
+  ".matinst.babasset",
+  ".bt.babasset",
+  ".blackboard.babasset",
+  ".water.babasset",
+  ".datadefinition.babasset",
+  ".datatree.babasset",
+  ".rendertargettexture.babasset",
+  ".rendertarget.babasset",
+  ".inputaction.babasset",
+  ".inputaxis.babasset",
+  ".savegame.babasset",
+  ".scene.babasset",
+  ".graph.babasset",
+  ".class.babasset",
+  ".prefab.babasset",
+  ".spriteanim.babasset",
+  ".sprite.babasset",
+  ".anim.babasset",
+  ".material.babasset",
+  ".matfunc.babasset",
+  ".tileset.babasset",
+  ".tilemap.babasset",
+  ".mixer.babasset",
+  ".channel.babasset",
+  ".atten.babasset",
+  ".plugin.babasset",
+  ".skyboxcreator.babasset",
+  ".emitter.babasset",
+  ".particlegraph.babasset",
+  ".particles.babasset",
+] as const;
+
+function containerSuffix(fileName: string): string | undefined {
+  const lower = fileName.toLowerCase();
+  return ASSET_FILE_SUFFIXES.find((suffix) => lower.endsWith(suffix))
+    ?? (lower.endsWith(".babasset") ? ".babasset" : undefined);
 }
 
-/** Preserve Scene/Graph/Class/P9 container suffixes when duplicating. Leftover `.eui.babasset` keeps its suffix on rename/duplicate. */
+/** File stem without its container suffix (`main.scene.babasset` → `main`, `tex.babasset` → `tex`). */
+export function stripAssetFileSuffix(fileName: string): string {
+  const suffix = containerSuffix(fileName);
+  return suffix ? fileName.slice(0, fileName.length - suffix.length) : fileName;
+}
+
+/** Container suffix to keep when renaming or duplicating; `.babasset` for untyped names. */
 export function assetFileSuffix(fileName: string): string {
-  if (/\.scenelayer\.babasset$/i.test(fileName)) return ".scenelayer.babasset";
-  if (/\.matinst\.babasset$/i.test(fileName)) return ".matinst.babasset";
-  if (/\.bt\.babasset$/i.test(fileName)) return ".bt.babasset";
-  if (/\.blackboard\.babasset$/i.test(fileName)) return ".blackboard.babasset";
-  if (/\.water\.babasset$/i.test(fileName)) return ".water.babasset";
-  if (/\.datadefinition\.babasset$/i.test(fileName)) return ".datadefinition.babasset";
-  if (/\.datatree\.babasset$/i.test(fileName)) return ".datatree.babasset";
-  if (/\.dataobject\.babasset$/i.test(fileName)) return ".dataobject.babasset";
-  if (/\.datasheet\.babasset$/i.test(fileName)) return ".datasheet.babasset";
-  if (/\.rendertargettexture\.babasset$/i.test(fileName)) return ".rendertargettexture.babasset";
-  if (/\.rendertarget\.babasset$/i.test(fileName)) return ".rendertarget.babasset";
-  if (/\.inputaction\.babasset$/i.test(fileName)) return ".inputaction.babasset";
-  if (/\.inputaxis\.babasset$/i.test(fileName)) return ".inputaxis.babasset";
-  if (/\.savegame\.babasset$/i.test(fileName)) return ".savegame.babasset";
-  if (/\.scene\.babasset$/i.test(fileName)) return ".scene.babasset";
-  if (/\.graph\.babasset$/i.test(fileName)) return ".graph.babasset";
-  if (/\.class\.babasset$/i.test(fileName)) return ".class.babasset";
-  if (/\.prefab\.babasset$/i.test(fileName)) return ".prefab.babasset";
-  if (/\.eui\.babasset$/i.test(fileName)) return ".eui.babasset";
-  if (/\.spriteanim\.babasset$/i.test(fileName)) return ".spriteanim.babasset";
-  if (/\.sprite\.babasset$/i.test(fileName)) return ".sprite.babasset";
-  if (/\.anim\.babasset$/i.test(fileName)) return ".anim.babasset";
-  if (/\.shader\.babasset$/i.test(fileName)) return ".shader.babasset";
-  if (/\.material\.babasset$/i.test(fileName)) return ".material.babasset";
-  if (/\.matfunc\.babasset$/i.test(fileName)) return ".matfunc.babasset";
-  if (/\.tileset\.babasset$/i.test(fileName)) return ".tileset.babasset";
-  if (/\.tilemap\.babasset$/i.test(fileName)) return ".tilemap.babasset";
-  if (/\.mixer\.babasset$/i.test(fileName)) return ".mixer.babasset";
-  if (/\.channel\.babasset$/i.test(fileName)) return ".channel.babasset";
-  if (/\.atten\.babasset$/i.test(fileName)) return ".atten.babasset";
-  if (/\.plugin\.babasset$/i.test(fileName)) return ".plugin.babasset";
-  if (/\.skyboxcreator\.babasset$/i.test(fileName)) {
-    return ".skyboxcreator.babasset";
-  }
-  if (/\.emitter\.babasset$/i.test(fileName)) return ".emitter.babasset";
-  if (/\.particlegraph\.babasset$/i.test(fileName)) {
-    return ".particlegraph.babasset";
-  }
-  if (/\.particles\.babasset$/i.test(fileName)) return ".particles.babasset";
-  return ".babasset";
+  return containerSuffix(fileName) ?? ".babasset";
 }
