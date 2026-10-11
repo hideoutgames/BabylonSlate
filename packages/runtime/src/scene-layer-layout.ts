@@ -1,7 +1,7 @@
 import { resolveOverlayLayout, type OverlaySafeAreaInsets, type VirtualizedItem, type OverlayLayoutEntry, type OverlayLayoutResult, type SerializedActor, type SerializedTransform, type Transform } from "@babylonslate/core";
 import type { Actor, ActorComponent } from "@babylonslate/object-model";
 
-type CachedPose = { authored: SerializedTransform; applied: string };
+type CachedPose = { authored: SerializedTransform; applied: SerializedTransform };
 const LAYOUT_PROPERTY_KEYS = ["width", "height", "widthMode", "heightMode", "fillWeight", "gap", "horizontalAlignment", "verticalAlignment", "paddingLeft", "paddingRight", "paddingTop", "paddingBottom", "scrollX", "scrollY", "scrollAxis", "visible", "enabled", "size", "text", "wrapWidth", "wrapHeight", "textureGuid", "itemClassId", "itemCount", "itemWidth", "itemHeight", "columns", "overscan", "useSafeArea", "safeLeft", "safeRight", "safeTop", "safeBottom", "insetLeft", "insetRight", "insetTop", "insetBottom"] as const;
 function layoutProperties(component: ActorComponent): Record<string, unknown> {
   const properties: Record<string, unknown> = {};
@@ -14,18 +14,34 @@ function layoutProperties(component: ActorComponent): Record<string, unknown> {
 const serialize = (t: Transform): SerializedTransform => ({ position: [t.position.x, t.position.y, t.position.z], rotation: [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w], scale: [t.scale.x, t.scale.y, t.scale.z] });
 const live = (t: SerializedTransform): Transform => ({ position: { x: t.position[0], y: t.position[1], z: t.position[2] }, rotation: { x: t.rotation[0], y: t.rotation[1], z: t.rotation[2], w: t.rotation[3] }, scale: { x: t.scale[0], y: t.scale[1], z: t.scale[2] } });
 
+/** Structural equality of the plain layout inputs, so an unchanged pass allocates no signature string. */
+function sameInput(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a === "number" && typeof b === "number") return Number.isNaN(a) && Number.isNaN(b);
+  if (!a || !b || typeof a !== "object" || typeof b !== "object" || Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a)) {
+    const other = b as unknown[];
+    return a.length === other.length && a.every((value, index) => sameInput(value, other[index]));
+  }
+  const left = a as Record<string, unknown>, right = b as Record<string, unknown>;
+  const keys = Object.keys(left);
+  return keys.length === Object.keys(right).length && keys.every((key) => Object.hasOwn(right, key) && sameInput(left[key], right[key]));
+}
+
 /** Retains design poses while arranging; script transform edits replace the design pose. */
 export class SceneLayerLayout {
   private poses = new WeakMap<Actor | ActorComponent, CachedPose>();
-  private readonly signatures = new Map<string, string>();
+  /** Each layer's last laid-out inputs; layout reads but never mutates them. */
+  private readonly inputs = new Map<string, unknown[]>();
   private readonly results = new Map<string, OverlayLayoutResult>();
   private readonly owners = new Map<string, Array<Actor | ActorComponent>>();
   entries(layerId: string): ReadonlyMap<string, OverlayLayoutEntry> { return this.results.get(layerId)?.entries ?? new Map(); }
+  /** The design pose: reused while the live pose is still the one layout applied. */
   private authored(target: Actor | ActorComponent): SerializedTransform {
-    const current = serialize(target.transform), signature = JSON.stringify(current), cached = this.poses.get(target);
-    if (cached && cached.applied === signature) return structuredClone(cached.authored);
-    this.poses.set(target, { authored: current, applied: signature });
-    return structuredClone(current);
+    const current = serialize(target.transform), cached = this.poses.get(target);
+    if (cached && sameInput(cached.applied, current)) return cached.authored;
+    this.poses.set(target, { authored: current, applied: current });
+    return current;
   }
   update(layerId: string, actors: readonly Actor[], pixelsPerUnit: number, texturePixelSizes: Readonly<Record<string, { width: number; height: number }>> = {}, safeAreaInsets: Partial<OverlaySafeAreaInsets> = {}): OverlayLayoutResult | null {
     const owners = actors.filter(actor => actor.sceneLayerId === layerId && !actor.destroyed).flatMap(actor => [actor, ...actor.components.filter(component => !component.destroyed)]);
@@ -39,16 +55,22 @@ export class SceneLayerLayout {
       const index = actor.getVariable("itemIndex"), containerId = actor.getVariable("virtualizedContainerId");
       if (actor.sceneLayerId === layerId && typeof index === "number" && Number.isSafeInteger(index) && index >= 0 && typeof containerId === "string") virtualItems[actor.guid] = { containerId, index };
     }
-    const sizes = source.flatMap(actor => actor.components.flatMap(component => typeof component.properties.textureGuid === "string" ? [[component.properties.textureGuid, texturePixelSizes[component.properties.textureGuid]]] : []));
-    const signature = JSON.stringify([source, pixelsPerUnit, sizes, safeAreaInsets, virtualItems]);
+    const sizes = source.flatMap(actor => actor.components.flatMap(component => {
+      const guid = component.properties.textureGuid;
+      if (typeof guid !== "string") return [];
+      const size = texturePixelSizes[guid];
+      return [[guid, size?.width, size?.height]];
+    }));
+    const inputs = [source, pixelsPerUnit, sizes, { ...safeAreaInsets }, virtualItems];
+    const previousInputs = this.inputs.get(layerId);
     const previousOwners = this.owners.get(layerId);
-    if (this.signatures.get(layerId) === signature && previousOwners?.length === owners.length && owners.every((owner, index) => previousOwners[index] === owner)) return null;
+    if (previousInputs && sameInput(previousInputs, inputs) && previousOwners?.length === owners.length && owners.every((owner, index) => previousOwners[index] === owner)) return null;
     const result = resolveOverlayLayout(source, { pixelsPerUnit, safeAreaInsets, virtualItems, textureSize: (guid) => texturePixelSizes[guid], includeUnmanagedBounds: true });
     const byId = new Map(actors.map(a => [a.guid, a]));
     const apply = (target: Actor | ActorComponent, transform: SerializedTransform) => {
       target.transform = live(transform);
       const cache = this.poses.get(target);
-      if (cache) cache.applied = JSON.stringify(transform);
+      if (cache) cache.applied = serialize(target.transform);
     };
     for (const actor of result.actors) {
       const target = byId.get(actor.id); if (!target) continue;
@@ -57,12 +79,12 @@ export class SceneLayerLayout {
       for (const c of actor.components) { const component = components.get(c.id); if (component && c.transform) apply(component, c.transform); }
     }
     this.results.set(layerId, result);
-    this.signatures.set(layerId, signature);
+    this.inputs.set(layerId, inputs);
     this.owners.set(layerId, owners);
     return result;
   }
   remove(layerId: string): void {
-    this.results.delete(layerId); this.signatures.delete(layerId); this.owners.delete(layerId);
+    this.results.delete(layerId); this.inputs.delete(layerId); this.owners.delete(layerId);
   }
-  clear(): void { this.results.clear(); this.signatures.clear(); this.owners.clear(); this.poses = new WeakMap(); }
+  clear(): void { this.results.clear(); this.inputs.clear(); this.owners.clear(); this.poses = new WeakMap(); }
 }
