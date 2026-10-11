@@ -715,12 +715,17 @@ function normalizeEditorUtilityObjects(value: unknown): string[] {
 
 function normalizeProjectInput(value: unknown): ProjectInputSettings {
   const source = (value ?? {}) as Record<string, unknown>;
+  const hasActions = Array.isArray(source.actions);
+  const hasAxes = Array.isArray(source.axes);
+  if (!hasActions && !hasAxes) {
+    return structuredClone(DEFAULT_PROJECT_INPUT_SETTINGS);
+  }
   // Full validation (device enums, dead zones) runs in `@babylonslate/input`.
   return {
-    actions: Array.isArray(source.actions)
+    actions: hasActions
       ? (source.actions as ProjectInputSettings["actions"])
       : [],
-    axes: Array.isArray(source.axes) ? (source.axes as ProjectInputSettings["axes"]) : [],
+    axes: hasAxes ? (source.axes as ProjectInputSettings["axes"]) : [],
   };
 }
 
