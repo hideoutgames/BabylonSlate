@@ -1986,6 +1986,7 @@ describe("Play createEngine view", () => {
     expect(sceneValve).not.toHaveBeenCalled();
     expect(prefabValve).not.toHaveBeenCalled();
     prefab.setRegisterViewEnabled(false);
+    scene.scheduler.invalidate("asset");
     frame();
     expect(sceneValve).toHaveBeenCalled();
     expect(prefabValve).not.toHaveBeenCalled();
