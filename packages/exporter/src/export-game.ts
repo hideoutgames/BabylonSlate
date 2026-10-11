@@ -372,9 +372,20 @@ export function unzipExport(bytes: Uint8Array): Record<string, Uint8Array> {
 
 const OUTDATED_MANIFEST = "rebuild this game with the current exporter.";
 
+/** Fields `exportGame` always writes; a manifest without one predates the current exporter. */
+const REQUIRED_MANIFEST_FIELDS = [
+  "project", "focusNavigation", "startupSceneGuid", "occlusionEnabled", "reverbWetScale", "reverbDecayScale",
+  "reverbDampingScale", "bundleDebugger", "mode", "render", "playFrameCap", "touchMinTargetPx", "pixelsPerUnit",
+  "pixelPerfect", "sortingLayers", "physicsWorld", "assets",
+] as const satisfies readonly (keyof GameManifest)[];
+const DEBUGGER_MANIFEST_FIELDS = ["infiniteLoopDetection", "loopCount"] as const satisfies readonly (keyof GameManifest)[];
+
 export function parseGameManifest(source: string): GameManifest {
   const parsed = JSON.parse(source) as GameManifest;
   if (parsed.assetCatalogVersion !== 1) throw new Error(`Unsupported asset catalog version; ${OUTDATED_MANIFEST}`);
+  const missing = [...REQUIRED_MANIFEST_FIELDS, ...(parsed.bundleDebugger === true ? DEBUGGER_MANIFEST_FIELDS : [])]
+    .filter(field => parsed[field] === undefined || parsed[field] === null);
+  if (missing.length > 0) throw new Error(`game.json has no ${missing.join(", ")}; ${OUTDATED_MANIFEST}`);
   const project: unknown = parsed.project;
   if (!project || typeof project !== "object" || typeof (project as { name?: unknown }).name !== "string" ||
     typeof (project as { version?: unknown }).version !== "string") {

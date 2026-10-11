@@ -22,15 +22,6 @@ function stubPlayer(): Map<string, Uint8Array> {
   ]);
 }
 
-/** A current game.json carrying only its required fields, plus `fields`. */
-function minimalManifest(fields: Record<string, unknown> = {}): string {
-  return JSON.stringify({
-    assetCatalogVersion: 1, project: { name: "Game", version: "1.0.0" }, startupSceneGuid: "scene-1",
-    bundleDebugger: false, mode: "packed", render: DEFAULT_RENDER_PROJECT_SETTINGS, playFrameCap: 60,
-    sortingLayers: ["Default"], physicsWorld: "3d", assets: [], ...fields,
-  });
-}
-
 describe("exportGame", () => {
   it("excludes Preview diagnostics from ordinary exports even when debugging is enabled", async () => {
     const playerFiles = stubPlayer();
@@ -89,8 +80,6 @@ describe("exportGame", () => {
     const malformed = JSON.parse(json);
     malformed.focusNavigation.repeatInterval = -10;
     expect(parseGameManifest(JSON.stringify(malformed)).focusNavigation?.repeatInterval).toBe(0.02);
-    delete malformed.focusNavigation;
-    expect(parseGameManifest(JSON.stringify(malformed)).focusNavigation?.enabled).toBe(true);
   });
   it.each(["packed", "loose"] as const)("normalizes the complete %s render contract at export and player read", async (mode) => {
     const authored = {
@@ -120,17 +109,15 @@ describe("exportGame", () => {
     expect(restored.render).not.toHaveProperty("localQualityOverrides");
     authored.quality.textures.anisotropy = 1;
     expect(result.value.manifest.render.quality?.textures.anisotropy).toBe(8);
-    const legacy = JSON.parse(json);
-    legacy.render = { gpuBackend: "webgpu", width: -1, height: "bad", mode: "cel" };
-    expect(parseGameManifest(JSON.stringify(legacy)).render).toMatchObject({
+    const malformed = JSON.parse(json);
+    malformed.render = { gpuBackend: "webgpu", width: -1, height: "bad", mode: "cel" };
+    expect(parseGameManifest(JSON.stringify(malformed)).render).toMatchObject({
       gpuBackend: "webgpu", width: 1920, height: 1080, mode: "cel",
       renderPath: "forward", customResolution: false,
     });
-    delete legacy.render;
-    expect(parseGameManifest(JSON.stringify(legacy)).render).toEqual(DEFAULT_RENDER_PROJECT_SETTINGS);
-    for (const value of [undefined, null, "30", 0, -1, 24]) {
-      legacy.playFrameCap = value;
-      expect(parseGameManifest(JSON.stringify(legacy)).playFrameCap).toBe(value === 24 ? 24 : 60);
+    for (const value of ["30", 0, -1, 24]) {
+      malformed.playFrameCap = value;
+      expect(parseGameManifest(JSON.stringify(malformed)).playFrameCap).toBe(value === 24 ? 24 : 60);
     }
   });
   it.each(["packed", "loose"] as const)("retains project identity in %s release builds", async (mode) => {
@@ -762,22 +749,15 @@ describe("exportGame", () => {
     ).toBe("Display");
   });
 
-  it("defaults pixelsPerUnit when game.json omits 2D fields", () => {
-    const manifest = parseGameManifest(minimalManifest());
-    expect(manifest.pixelsPerUnit).toBe(100);
-    expect(manifest.pixelPerfect).toBe(false);
-    expect(manifest.touchMinTargetPx).toBe(44);
-    expect(manifest.infiniteLoopDetection).toBeUndefined();
-    expect(manifest.loopCount).toBeUndefined();
-    expect(manifest.occlusionEnabled).toBe(true);
-  });
-
-  it("rejects a game.json written by an outdated exporter", () => {
-    const current = JSON.parse(minimalManifest()) as Record<string, unknown>;
-    for (const field of ["assetCatalogVersion", "project", "sortingLayers"]) {
+  it.each([false, true])("rejects a game.json missing any field the exporter writes (debugger=%s)", async (bundleDebugger) => {
+    const result = await exportGame({ bundleDebugger, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [] });
+    if (!result.ok) throw new Error(result.error);
+    const current = JSON.parse(new TextDecoder().decode(result.value.files.get(GAME_MANIFEST_FILE))) as Record<string, unknown>;
+    expect(parseGameManifest(JSON.stringify(current)).bundleDebugger).toBe(bundleDebugger);
+    for (const field of Object.keys(current)) {
       const outdated = { ...current };
       delete outdated[field];
-      expect(() => parseGameManifest(JSON.stringify(outdated))).toThrow(/rebuild this game with the current exporter/);
+      expect(() => parseGameManifest(JSON.stringify(outdated)), field).toThrow(/rebuild this game with the current exporter/);
     }
   });
 
@@ -851,18 +831,12 @@ describe("exportGame", () => {
     expect(result.value.manifest.reverbDecayScale).toBe(0.25);
     expect(result.value.manifest.reverbDampingScale).toBe(2);
     expect(
-      parseGameManifest(minimalManifest()),
+      parseGameManifest(new TextDecoder().decode(result.value.files.get(GAME_MANIFEST_FILE)!)),
     ).toMatchObject({
-      reverbWetScale: 1,
-      reverbDecayScale: 1,
-      reverbDampingScale: 1,
+      reverbWetScale: 1.5,
+      reverbDecayScale: 0.25,
+      reverbDampingScale: 2,
     });
-  });
-
-  it("defaults bundled debugger loop settings when game.json omits them", () => {
-    const manifest = parseGameManifest(minimalManifest({ bundleDebugger: true }));
-    expect(manifest.infiniteLoopDetection).toBe(true);
-    expect(manifest.loopCount).toBe(1_000_000);
   });
 
   it("records Animation catalog payloads as JSON", async () => {
