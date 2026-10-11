@@ -23,30 +23,28 @@ interface ChainChunk {
 }
 
 /**
- * Merge the solid tiles of `chunks` into Rapier chain polylines, measured
- * from the `origin` chunk. Shared edges cancel, across chunk borders too;
+ * Merge a layer's solid tiles across all its chunks into Rapier chain
+ * polylines in world space. Shared edges cancel, across chunk borders too, so
+ * a floor that spans a border has no edge there for a body to catch on;
  * collinear outer edges collapse so a solid rectangle is one four-point loop
  * rather than a box per tile.
  */
-function chainsForChunks(options: {
+export function tilemapLayerChains(options: {
   chunks: readonly ChainChunk[];
-  origin: { cx: number; cy: number };
   chunkSize: number;
   tileset: TilesetPayload;
   worldTileWidth: number;
   worldTileHeight: number;
   resolveGid?: GidResolver;
 }): TilemapChain[] {
-  const { chunks, origin, chunkSize, tileset, worldTileWidth, worldTileHeight, resolveGid } = options;
-  const originX = origin.cx * chunkSize * worldTileWidth;
-  const originY = origin.cy * chunkSize * worldTileHeight;
+  const { chunks, chunkSize, tileset, worldTileWidth, worldTileHeight, resolveGid } = options;
   const unitEdges: Array<[Point, Point]> = [];
   const custom: TilemapChain[] = [];
 
   for (const chunk of chunks) {
-    // Tile offset of this chunk from the origin chunk, in whole tiles.
-    const offsetX = (chunk.cx - origin.cx) * chunkSize;
-    const offsetY = (chunk.cy - origin.cy) * chunkSize;
+    // Grid position of this chunk's first tile, in whole tiles.
+    const offsetX = chunk.cx * chunkSize;
+    const offsetY = chunk.cy * chunkSize;
     for (let ly = 0; ly < chunkSize; ly++) {
       for (let lx = 0; lx < chunkSize; lx++) {
         const tileId = chunk.tiles[ly * chunkSize + lx] ?? 0;
@@ -74,8 +72,8 @@ function chainsForChunks(options: {
           custom.push({
             loop: false,
             points: def.collision.points.map((point) => ({
-              x: originX + (gx + point.x) * worldTileWidth,
-              y: originY + (gy + point.y) * worldTileHeight,
+              x: (gx + point.x) * worldTileWidth,
+              y: (gy + point.y) * worldTileHeight,
             })),
           });
         }
@@ -86,41 +84,11 @@ function chainsForChunks(options: {
   const outlines = outlineChains(unitEdges).map((chain) => ({
     ...chain,
     points: chain.points.map((point) => ({
-      x: originX + point.x * worldTileWidth,
-      y: originY + point.y * worldTileHeight,
+      x: point.x * worldTileWidth,
+      y: point.y * worldTileHeight,
     })),
   }));
   return [...outlines, ...custom.filter((c) => c.points.length >= 2)];
-}
-
-/** Merge solid tiles in one chunk into Rapier chain polylines. */
-export function tilemapChunkChains(options: {
-  tiles: readonly number[];
-  chunkSize: number;
-  chunkX: number;
-  chunkY: number;
-  tileset: TilesetPayload;
-  worldTileWidth: number;
-  worldTileHeight: number;
-  resolveGid?: GidResolver;
-}): TilemapChain[] {
-  const origin = { cx: options.chunkX, cy: options.chunkY };
-  return chainsForChunks({ ...options, chunks: [{ ...origin, tiles: options.tiles }], origin });
-}
-
-/**
- * Merge a layer's solid tiles across all its chunks, so a floor that spans a
- * chunk border is one outline with no edge at the border for a body to catch on.
- */
-export function tilemapLayerChains(options: {
-  chunks: readonly ChainChunk[];
-  chunkSize: number;
-  tileset: TilesetPayload;
-  worldTileWidth: number;
-  worldTileHeight: number;
-  resolveGid?: GidResolver;
-}): TilemapChain[] {
-  return chainsForChunks({ ...options, origin: { cx: 0, cy: 0 } });
 }
 
 /** Collision-layer chains for a tilemap, merged per layer (nav bake / Rapier). */
