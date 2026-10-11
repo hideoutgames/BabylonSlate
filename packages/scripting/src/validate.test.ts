@@ -1224,6 +1224,28 @@ describe("validateGraphs", () => {
     expect(diags.some((d) => d.code === "type.unbound_enum")).toBe(true);
   });
 
+  it("checks member types once, for the validated class only", () => {
+    const graphs: LogicGraph[] = [
+      { id: "event", kind: "event", nodes: [], edges: [] },
+      { id: "fn-1", kind: "function", nodes: [], edges: [] },
+    ];
+    const diags = validateGraphs(graphs, {
+      assetGuid: "a",
+      classId: "Hero",
+      members: [
+        { id: "speed", name: "Speed", kind: "variable", classId: "Hero", typeId: "vector3" },
+        { id: "aim", name: "Aim", kind: "variable", classId: "Villain", typeId: "vector3" },
+        { id: "loot", name: "Loot", kind: "variable", classId: "Villain", typeId: "struct" },
+      ],
+    });
+    const memberDiags = diags.filter(
+      (d) => d.code === "member.unknown_type" || d.code === "type.unbound_struct",
+    );
+    expect(memberDiags).toEqual([
+      expect.objectContaining({ code: "member.unknown_type", message: expect.stringContaining("Speed") }),
+    ]);
+  });
+
   it("errors unknown struct and enum guids when a known-guid table is provided", () => {
     const graph: LogicGraph = {
       id: "g",

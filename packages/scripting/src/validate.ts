@@ -899,12 +899,19 @@ function reportTypeGuid(
   }
 }
 
-function validateTypeRefs(
-  graph: LogicGraph,
+/**
+ * Member declarations belong to the class, not to one graph: `ctx.members`
+ * may also list other project classes' members, so only the validated
+ * class's own members are checked, once per `validateGraphs` call.
+ */
+function validateMemberTypes(
+  graphs: readonly LogicGraph[],
   ctx: TypeContext,
 ): Diagnostic[] {
   const out: Diagnostic[] = [];
+  const graphId = graphs[0]?.id ?? "";
   for (const member of ctx.members ?? []) {
+    if (ctx.classId && member.classId !== ctx.classId) continue;
     const typeIds = [
       member.typeId,
       member.container === "map" ? member.keyTypeId : undefined,
@@ -917,7 +924,7 @@ function validateTypeRefs(
           code: "member.unknown_type",
           message: `"${member.name}" uses unknown type "${typeId}"`,
           assetGuid: ctx.assetGuid,
-          graphId: graph.id,
+          graphId,
         }),
       );
     }
@@ -925,11 +932,19 @@ function validateTypeRefs(
     reportTypeGuid(
       out,
       ctx,
-      graph.id,
+      graphId,
       member.typeId === "struct" ? "structRef" : "enumRef",
       member.typeClassId?.trim() || undefined,
     );
   }
+  return out;
+}
+
+function validateTypeRefs(
+  graph: LogicGraph,
+  ctx: TypeContext,
+): Diagnostic[] {
+  const out: Diagnostic[] = [];
   for (const node of graph.nodes) {
     const typeId = stringProp(node.properties, "typeId");
     if (isStructOrEnumTypeId(typeId)) {
@@ -1048,6 +1063,7 @@ export function validateGraphs(
     diagnostics.push(...keep(validateTypeRefs(graph, ctx)));
     diagnostics.push(...keep(validateFlowSwitchCases(graph, ctx)));
   }
+  diagnostics.push(...validateMemberTypes(graphs, ctx));
   diagnostics.push(...validateInterfaceAndOverrides(graphs, ctx));
   for (const rule of listValidationRules()) {
     diagnostics.push(...rule.run(graphs, ctx));
