@@ -29,7 +29,6 @@ describe("node catalog", () => {
     expect(registry.get("debug.drawCoordinateSystem")?.title).toBe(
       "Draw Debug Coordinate System",
     );
-    expect(registry.get("render.setResolution")).toBeDefined();
     expect(registry.get("camera.possess")).toBeDefined();
     expect(registry.get("light.setIntensity")).toBeDefined();
     expect(registry.get("bt.event.activate")).toBeDefined();
@@ -113,7 +112,7 @@ describe("compiler goldens", () => {
             inputs: [{ name: "damage", type: FLOAT }],
             outputs: [{ name: "newHealth", type: FLOAT }],
             body: "newHealth = 100 - damage;",
-            damage: 10,
+            "default:in_damage": 10,
           },
         },
         {
@@ -180,7 +179,7 @@ describe("compiler goldens", () => {
           typeId: "math.add",
           position: { x: 0, y: 80 },
           pins: registry.get("math.add")!.pins({}),
-          properties: { a: 2, b: 3 },
+          properties: { "default:a": 2, "default:b": 3 },
         },
         {
           id: "log",

@@ -37,7 +37,7 @@ describe("collectGpuTextureBytes", () => {
       id,
       type: "material.setTextureParameter",
       position: { x: 0, y: 0 },
-      data: { properties: { "default:name": "Albedo", "default:value": guid } },
+      data: { "default:name": "Albedo", "default:value": guid },
     });
     const bytes = await collectGpuTextureBytes({
       assets: ["tex-event", "tex-function", "tex-class", "tex-local", "tex-unused"].map((guid) => ({

@@ -6,7 +6,7 @@ import { openMainScene, waitForEditorInteractive } from "./open-test-project";
 import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot, showOverlayButtons } from "./play";
 import { setPreviewScene } from "./preview-parity";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
-import { captureMannequinPixels, mannequinShadowMetrics, mannequinShadowSamples, posedMannequin, type MannequinGeometry } from "./mannequin-shadow-pixels";
+import { captureMannequinPixels, mannequinContactCoverage, mannequinShadowMetrics, mannequinShadowSamples, posedMannequin, type MannequinGeometry } from "./mannequin-shadow-pixels";
 
 if (process.env.BL_RENDER_NATIVE_GPU !== "1" || process.env.CI)
   test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
@@ -108,7 +108,7 @@ test("Basic 3D mannequin preserves real materials, contacts and animation in Pla
       }
       await settings(canvas, host, { ...render, shadows: { ...render.shadows!, enabled: false } });
       const direct = await captureMannequinPixels(canvas, points);
-      const regions = mannequinShadowMetrics(points, shadowed.pixels, shadowed.pixels, direct.pixels);
+      const regions = mannequinShadowMetrics(points, shadowed.pixels, direct.pixels);
       evidence.push({ host, mode, initial, state, regions });
       for (const [name, value] of Object.entries({ shadowed, direct })) await testInfo.attach(`${host}-${mode}-${name}`, { body: Buffer.from(value.png, "base64"), contentType: "image/png" });
       await testInfo.attach(`${host}-${mode}-effective`, { body: JSON.stringify({ state, regions }), contentType: "application/json" });
@@ -120,7 +120,10 @@ test("Basic 3D mannequin preserves real materials, contacts and animation in Pla
         expect(region.falseDark, `${host} ${mode} ${name}: known lit face`).toBeLessThanOrEqual(1);
         if (region.contacts > 5) expect(region.retained / region.contacts, `${host} ${mode} ${name}: contact coverage`).toBeGreaterThan(0.8);
       }
-      expect(Object.values(regions).reduce((sum, region) => sum + region.contacts, 0)).toBeGreaterThan(5);
+      // Small regions can each hold five or fewer contacts; their sum is still covered.
+      const contact = mannequinContactCoverage(regions);
+      expect(contact.contacts).toBeGreaterThan(5);
+      expect(contact.coverage, `${host} ${mode}: total contact coverage`).toBeGreaterThan(0.8);
       await settings(canvas, host, render);
       const frozen = (await diagnostics(canvas, host))!;
       expect(posedMannequin(geometry, frozen)).toEqual(pose);

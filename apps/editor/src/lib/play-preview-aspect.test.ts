@@ -203,6 +203,12 @@ describe("custom render resolution layout", () => {
     overlay.append(canvas);
     document.body.append(overlay);
     stubClientSize(overlay, 1600, 1200);
+    const render = {
+      customResolution: true,
+      width: 1920,
+      height: 1080,
+      blackBars: true,
+    };
 
     applyPlayPreviewCanvasLayout({
       overlay,
@@ -210,17 +216,14 @@ describe("custom render resolution layout", () => {
       followSystem: true,
       aspectWidth: 16,
       aspectHeight: 9,
-      render: {
-        customResolution: true,
-        width: 1920,
-        height: 1080,
-        blackBars: true,
-      },
-      liveSize: { width: 1280, height: 720 },
+      render,
+      // A square live size differs from the 16:9 project resolution.
+      liveSize: { width: 720, height: 720 },
     });
 
-    expect(canvas.style.width).toBe("1600px");
-    expect(canvas.style.height).toBe("900px");
+    expect(canvas.style.width).toBe("1200px");
+    expect(canvas.style.height).toBe("1200px");
+    expect(render).toEqual({ customResolution: true, width: 1920, height: 1080, blackBars: true });
   });
 });
 

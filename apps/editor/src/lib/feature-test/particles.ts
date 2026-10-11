@@ -21,6 +21,7 @@ import {
 } from "./context";
 import { stressPoint } from "./layout";
 import { FEATURE_TEST_MATERIAL_NAMES, featureTestMaterialAssetGuid } from "./materials";
+import { FEATURE_TEST_TWO_D_CHARACTERS_LAYER } from "./two-d";
 
 /** Folder under `assets/FeatureTest/` for every Particle Emitter, Particle Graph and Particle System. */
 export const FEATURE_TEST_PARTICLES_FOLDER = "Particles";
@@ -96,22 +97,40 @@ export async function buildFeatureTestParticles(ctx: FeatureTestContext): Promis
 }
 
 /**
- * `Particles` zone: floor and three Particle Component actors (mixed fountain
- * and graph, spark bursts, rising smoke). The stress System goes only into
- * `FT_Stress` (`particles` region), one actor per grid cell.
+ * `Particles` zone: floor and four Particle Component actors (mixed fountain
+ * and graph, mist around the fountain, spark bursts, rising smoke). The stress
+ * System goes only into `FT_Stress` (`particles` region), one actor per grid cell.
  */
 export async function placeFeatureTestParticles(ctx: FeatureTestContext): Promise<void> {
   const zone = ctx.zone("particles");
   zone.floor();
   const system = (name: string) => featureTestParticleAssetGuid(ctx, "ParticleSystem", name);
-  const emitterActor = (id: string, name: string, systemGuid: string, position: Vec3) =>
+  const emitterActor = (
+    id: string,
+    name: string,
+    systemGuid: string,
+    position: Vec3,
+    sorting?: { sortingLayer: string; orderInLayer: number },
+  ) =>
     actor(`ft-fx-${id}`, name, tf(position), [
-      comp(`ft-fx-${id}-particles`, "ParticleComponent", { particleSystemGuid: systemGuid, playOnStart: true }),
+      comp(`ft-fx-${id}-particles`, "ParticleComponent", { particleSystemGuid: systemGuid, playOnStart: true, ...sorting }),
     ]);
 
-  ctx.addActor(emitterActor("showcase", "Fountain And Glow Graph", system(NAMES.showcase), zone.at(-7, 0.1, -2)), {
-    zone: "particles",
-  });
+  // Overlapping alpha-blended systems: the fountain is on the project's custom
+  // Characters layer (FT_2D adds it), the mist on Default with a higher order.
+  // The layer outranks the order, so the fountain water draws over the mist.
+  const fountain = zone.at(-7, 0.1, -2);
+  ctx.addActor(
+    emitterActor("showcase", "Fountain And Glow Graph", system(NAMES.showcase), fountain, {
+      sortingLayer: FEATURE_TEST_TWO_D_CHARACTERS_LAYER,
+      orderInLayer: 0,
+    }),
+    { zone: "particles" },
+  );
+  ctx.addActor(
+    emitterActor("mist", "Fountain Mist", system(NAMES.smoke), fountain, { sortingLayer: "Default", orderInLayer: 5 }),
+    { zone: "particles" },
+  );
   ctx.addActor(emitterActor("sparks", "Spark Bursts", system(NAMES.sparks), zone.at(0, 1.2, -2)), { zone: "particles" });
   ctx.addActor(emitterActor("smoke", "Rising Smoke", system(NAMES.smoke), zone.at(7, 0.1, -2)), { zone: "particles" });
 

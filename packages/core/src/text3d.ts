@@ -6,7 +6,6 @@ import {
 
 export const DEFAULT_TEXT3D_TEXT = "Text";
 export const DEFAULT_TEXT3D_SIZE = 1;
-export const DEFAULT_TEXT3D_DEPTH = 0.1;
 export const DEFAULT_TEXT3D_COLOR: [number, number, number] = [1, 1, 1];
 export const DEFAULT_TEXT3D_ALIGNMENT = "left" as const;
 
@@ -22,7 +21,6 @@ export const TEXT3D_ALIGNMENT_LABELS: Record<Text3DAlignment, string> = {
 export type Text3DProperties = {
   text: string;
   size: number;
-  depth: number;
   color: [number, number, number];
   fontAssetGuid: string | null;
   alignment: Text3DAlignment;
@@ -36,12 +34,6 @@ export function parseText3DSize(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0
     ? value
     : DEFAULT_TEXT3D_SIZE;
-}
-
-export function parseText3DDepth(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0
-    ? value
-    : DEFAULT_TEXT3D_DEPTH;
 }
 
 export function parseText3DColor(value: unknown): [number, number, number] {
@@ -80,7 +72,6 @@ export function parseText3DProperties(value: unknown): Text3DProperties {
   return {
     text: parseText3DText(source.text),
     size: parseText3DSize(source.size),
-    depth: parseText3DDepth(source.depth),
     color: parseText3DColor(source.color),
     fontAssetGuid: parseText3DFontAssetGuid(source.fontAssetGuid),
     alignment: parseText3DAlignment(source.alignment),
@@ -94,7 +85,6 @@ export function createText3DComponent(id: string): SerializedComponent {
     properties: {
       text: DEFAULT_TEXT3D_TEXT,
       size: DEFAULT_TEXT3D_SIZE,
-      depth: DEFAULT_TEXT3D_DEPTH,
       color: [...DEFAULT_TEXT3D_COLOR],
       fontAssetGuid: null,
       alignment: DEFAULT_TEXT3D_ALIGNMENT,

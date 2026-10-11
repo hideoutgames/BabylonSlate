@@ -1,20 +1,14 @@
 import { normalizeWaterDefinition } from "@babylonslate/core";
 import {
-  createDefaultSceneSettings,
   normalizeInputAssetPayload,
   validateSaveGameDefinition,
-  identitySerializedTransform,
   normalizeSceneLayer,
-  normalizeShadowOverrides,
   normalizeDataDefinitionAsset,
   normalizeDataTreeAsset,
   normalizePrefab,
 } from "@babylonslate/core";
 import { normalizeParticleGraphDocument } from "@babylonslate/particle-graph";
-import {
-  migrateLegacyShaderPayload,
-  normalizeMaterialFunctionDocument,
-} from "@babylonslate/shader-graph";
+import { normalizeMaterialFunctionDocument } from "@babylonslate/shader-graph";
 import {
   normalizeAudioChannelPayload,
   normalizeAudioMixerPayload,
@@ -76,129 +70,37 @@ export class MigrationRegistry {
 }
 
 /**
- * Scene v1 → v2: the placeholder `meshes[]` list becomes actors carrying a
- * MeshComponent, plus scene settings and a viewport mode default.
+ * A version step whose payload needs no change, kept so the type's current
+ * version number stays where saved files have it. Older shapes are not
+ * converted: the type's normalizer fills current defaults on load.
  */
-function migrateSceneMeshesToActors(
-  payload: Record<string, unknown>,
-): Record<string, unknown> {
-  const { meshes, ...rest } = payload;
-  const legacyMeshes = Array.isArray(meshes) ? meshes : [];
-  const actors = legacyMeshes.map((entry, index) => {
-    const mesh = (entry ?? {}) as Record<string, unknown>;
-    const id = typeof mesh.id === "string" ? mesh.id : `actor-${index + 1}`;
-    const position = Array.isArray(mesh.position)
-      ? (mesh.position as number[]).slice(0, 3)
-      : [0, 0, 0];
-    const transform = identitySerializedTransform();
-    return {
-      id,
-      name: id,
-      classId: "Actor",
-      parentId: null,
-      transform: {
-        ...transform,
-        position: [
-          Number(position[0]) || 0,
-          Number(position[1]) || 0,
-          Number(position[2]) || 0,
-        ],
-      },
-      visible: true,
-      locked: false,
-      components: [
-        {
-          id: `${id}-mesh`,
-          classId: "MeshComponent",
-          properties: {
-            meshKind: typeof mesh.type === "string" ? mesh.type : "box",
-            assetGuid: null,
-          },
-        },
-      ],
-    };
-  });
-
-  return {
-    ...rest,
-    viewportMode: rest.viewportMode === "2d" ? "2d" : "3d",
-    settings: rest.settings ?? createDefaultSceneSettings(),
-    actors: Array.isArray(rest.actors) ? rest.actors : actors,
-  };
-}
-
-/** Scene v2 → v3: physicsWorld / editorJoystickEnabled are additive on normalize. */
-function migrateSceneV2ToV3(
-  payload: Record<string, unknown>,
-): Record<string, unknown> {
+function keepPayload(payload: Record<string, unknown>): Record<string, unknown> {
   return { ...payload };
 }
 
-/** Preserve legacy numeric capacity once; current sparse overrides stay independent. */
-function migrateSceneShadowCapacity(
-  payload: Record<string, unknown>,
-): Record<string, unknown> {
-  if (!payload.settings || typeof payload.settings !== "object") return payload;
-  const settings = payload.settings as Record<string, unknown>;
-  const shadowOverrides = normalizeShadowOverrides(settings.shadowOverrides);
-  if (
-    shadowOverrides.maxLocalLights === undefined ||
-    shadowOverrides.localLightMode !== undefined
-  )
-    return payload;
-  return {
-    ...payload,
-    settings: {
-      ...settings,
-      shadowOverrides: { ...shadowOverrides, localLightMode: "manual" },
-    },
-  };
-}
-
-/** Default registry with Graph/Class logic-graph chains and Scene/Project. */
+/** Default registry with the Class logic-graph chain and Scene/Project. */
 export function createDefaultMigrationRegistry(): MigrationRegistry {
   const registry = new MigrationRegistry();
-  const graphMigrations: MigrationFn[] = [
-    (payload) => ({
-      ...payload,
-      nodes: Array.isArray(payload.nodes) ? payload.nodes : [],
-      edges: Array.isArray(payload.edges) ? payload.edges : [],
-    }),
-  ];
-  registry.register({
-    type: "Graph",
-    migrations: graphMigrations,
-  });
   registry.register({
     type: "Class",
-    migrations: graphMigrations,
-  });
-  registry.register({
-    type: "Scene",
     migrations: [
       (payload) => ({
         ...payload,
-        meshes: Array.isArray(payload.meshes) ? payload.meshes : [],
+        nodes: Array.isArray(payload.nodes) ? payload.nodes : [],
+        edges: Array.isArray(payload.edges) ? payload.edges : [],
       }),
-      migrateSceneMeshesToActors,
-      migrateSceneV2ToV3,
-      migrateSceneShadowCapacity,
     ],
+  });
+  registry.register({
+    type: "Scene",
+    migrations: [keepPayload, keepPayload, keepPayload, keepPayload],
   });
   registry.register({
     type: "Project",
     migrations: [(payload) => ({ ...payload })],
   });
-  // v1 was the empty imported glTF stub; v2 is the authored Material graph.
-  const materialMigrations: MigrationFn[] = [
-    (payload) => ({ ...payload }),
-    (payload) =>
-      migrateLegacyShaderPayload(payload) as unknown as Record<string, unknown>,
-  ];
-  registry.register({ type: "Material", migrations: materialMigrations });
-  // Legacy authored Shader assets read through the same chain and are
-  // rewritten to the `Material` header type on save.
-  registry.register({ type: "Shader", migrations: materialMigrations });
+  // Version 2 is the authored Material graph.
+  registry.register({ type: "Material", migrations: [keepPayload, keepPayload] });
   registry.register({
     type: "MaterialFunction",
     migrations: [

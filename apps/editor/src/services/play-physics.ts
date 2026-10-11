@@ -3,7 +3,6 @@ import {
   normalizeScene,
   type MaterialParameterCatalog,
   type PhysicsWorldKind,
-  type ProjectInputSettings,
   type SerializedScene,
   type SerializedSceneLayer,
 } from "@babylonslate/core";
@@ -177,7 +176,6 @@ export function playLoadControl(options: {
   dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
   /** Packaged authored assets the Asset Registry nodes query. */
   assetCatalog?: import("@babylonslate/core").RuntimeAssetCatalogEntry[];
-  inputMappings?: ProjectInputSettings;
   focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
   pixelsPerUnit?: number;
   texturePixelSizes?: Record<string, { width: number; height: number }>;
@@ -225,7 +223,6 @@ export function playLoadControl(options: {
     inputAssets: options.inputAssets,
     dataAssets: options.dataAssets,
     assetCatalog: options.assetCatalog,
-    inputMappings: options.inputMappings,
     focusNavigation: options.focusNavigation,
     pixelsPerUnit: options.pixelsPerUnit,
     texturePixelSizes: options.texturePixelSizes,

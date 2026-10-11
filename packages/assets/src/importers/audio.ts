@@ -54,8 +54,11 @@ export async function importAudio(
   bytes: Uint8Array,
   options: ImportOptions,
 ): Promise<ImportResult[]> {
-  const extension = extensionOf(options.fileName);
-  const mime = MIME_BY_EXTENSION[extension] ?? "application/octet-stream";
+  // The bytes decide, as for an added clip; the extension only names bytes no sniff knows.
+  const sniffed = mimeForAudioBytes(bytes);
+  const mime = sniffed !== "application/octet-stream"
+    ? sniffed
+    : MIME_BY_EXTENSION[extensionOf(options.fileName)] ?? sniffed;
 
   return [
     {

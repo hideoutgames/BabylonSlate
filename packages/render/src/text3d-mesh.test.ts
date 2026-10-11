@@ -33,6 +33,32 @@ const TEXT3D_TEST_FONTFACE_T: IFontData = {
   },
 };
 
+// Outer contours wind clockwise in Y-up font space; holes wind the other way.
+function outerRect(x0: number, y0: number, x1: number, y1: number): string {
+  return `m ${x0} ${y0} l ${x0} ${y1} l ${x1} ${y1} l ${x1} ${y0} `;
+}
+
+function holeRect(x0: number, y0: number, x1: number, y1: number): string {
+  return `m ${x0} ${y0} l ${x1} ${y0} l ${x1} ${y1} l ${x0} ${y1} `;
+}
+
+function triangleArea(mesh: Mesh): number {
+  const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!;
+  const indices = mesh.getIndices()!;
+  let area = 0;
+  for (let i = 0; i < indices.length; i += 3) {
+    const [a, b, c] = [indices[i]! * 3, indices[i + 1]! * 3, indices[i + 2]! * 3];
+    const ux = positions[b]! - positions[a]!;
+    const uy = positions[b + 1]! - positions[a + 1]!;
+    const uz = positions[b + 2]! - positions[a + 2]!;
+    const vx = positions[c]! - positions[a]!;
+    const vy = positions[c + 1]! - positions[a + 1]!;
+    const vz = positions[c + 2]! - positions[a + 2]!;
+    area += Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx) / 2;
+  }
+  return area;
+}
+
 describe("3D Text mesh", () => {
   const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
     [];
@@ -51,7 +77,6 @@ describe("3D Text mesh", () => {
     const mesh = createText3DMesh(handle.scene, "letter-t", {
       text: "T",
       size: 1,
-      depth: 0.1,
       color: [1, 0, 0],
       fontAssetGuid: "font-t",
       alignment: "left",
@@ -89,7 +114,6 @@ describe("3D Text mesh", () => {
     const mesh = createText3DMesh(handle.scene, "bundled-t", {
       text: "T",
       size: 1,
-      depth: 4,
       color: [1, 1, 1],
       fontAssetGuid: null,
       alignment: "left",
@@ -99,13 +123,46 @@ describe("3D Text mesh", () => {
     expect(indices!.length).toBeLessThanOrEqual(12);
   });
 
+  it("keeps a later contour's hole when the first contour has none", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const font: IFontData = {
+      resolution: 1000,
+      underlineThickness: 50,
+      boundingBox: { yMin: 0, yMax: 700 },
+      glyphs: {
+        I: {
+          ha: 700,
+          o: [
+            outerRect(0, 0, 100, 700),
+            outerRect(200, 0, 600, 700),
+            holeRect(300, 200, 500, 500),
+          ]
+            .join("")
+            .trimEnd(),
+        },
+      },
+    };
+    const mesh = createText3DMesh(handle.scene, "bar-and-ring", {
+      text: "I",
+      size: 1,
+      fontAssetGuid: "font-ring",
+      alignment: "left",
+    }, {
+      fontFacetypeBytes: new Map([
+        ["font-ring", new TextEncoder().encode(JSON.stringify(font))],
+      ]),
+    });
+    // Bar 0.07 plus ring 0.28 minus its 0.06 counter.
+    expect(triangleArea(mesh)).toBeCloseTo(0.29, 5);
+  });
+
   it("falls back to a plane when no glyph paths exist", () => {
     const handle = createTestEngine();
     handles.push(handle);
     const mesh = createText3DMesh(handle.scene, "blank", {
       text: " ",
       size: 2,
-      depth: 0.1,
       color: [1, 1, 1],
       fontAssetGuid: "font-t",
       alignment: "left",
@@ -133,7 +190,6 @@ describe("3D Text mesh", () => {
       {
         text: "Text",
         size: 1,
-        depth: 0.1,
         color: [1, 1, 1],
         fontAssetGuid: "missing",
         alignment: "left",
@@ -148,7 +204,6 @@ describe("3D Text mesh", () => {
     const properties = {
       text: "T",
       size: 1,
-      depth: 0.1,
       color: [1, 1, 1] as [number, number, number],
       fontAssetGuid: "font-1",
       alignment: "left" as const,
@@ -182,18 +237,6 @@ describe("3D Text mesh", () => {
     const before = actorVisualFingerprint(actor);
     actor.components[0]!.properties.text = "Hi";
     expect(actorVisualFingerprint(actor)).not.toBe(before);
-    actor.components[0]!.properties.depth = 9;
-    expect(actorVisualFingerprint(actor)).toBe(
-      actorVisualFingerprint({
-        ...actor,
-        components: [
-          {
-            ...actor.components[0]!,
-            properties: { ...actor.components[0]!.properties, depth: 0.01 },
-          },
-        ],
-      }),
-    );
     actor.components[0]!.properties.alignment = "right";
     expect(actorVisualFingerprint(actor)).not.toBe(
       actorVisualFingerprint({

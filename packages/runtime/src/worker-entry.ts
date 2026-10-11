@@ -66,6 +66,8 @@ function releaseAfterPose(): void {
 }
 let installedGeneration = 0;
 let pendingGeneration: number | null = null;
+// A layout whose transfer buffers could not be allocated yet; poses wait for it.
+let unpostedLayout: Extract<CommandMessage, { type: "snapshotLayout" }> | null = null;
 let stopConsoleCapture: (() => void) | null = null;
 
 function onCommand(command: CommandMessage): void {
@@ -84,15 +86,31 @@ function onCommand(command: CommandMessage): void {
     return;
   }
   if (command.type === "snapshotLayout") {
-    try {
-      snapshotPing = snapshotPing.grow(command.capacity);
-      pendingGeneration = command.generation;
-    } catch (error) {
-      ensureRuntime().reportError(new Error(`Unable to allocate transferable Actor snapshots (${command.capacity}): ${error instanceof Error ? error.message : String(error)}`));
-      return;
-    }
+    installSnapshotLayout(command);
+    return;
   }
   postMessage({ channel: "command", payload: command });
+}
+
+/**
+ * Grow the transfer buffers for a layout, then announce it. When allocation
+ * fails, the failure is reported once and poses wait; each later publish
+ * retries the newest layout, so poses resume once memory allows.
+ */
+function installSnapshotLayout(command: Extract<CommandMessage, { type: "snapshotLayout" }>): boolean {
+  try {
+    snapshotPing = snapshotPing.grow(command.capacity);
+  } catch (error) {
+    if (unpostedLayout?.generation !== command.generation) {
+      ensureRuntime().reportError(new Error(`Unable to allocate transferable Actor snapshots (${command.capacity}): ${error instanceof Error ? error.message : String(error)}`));
+    }
+    unpostedLayout = command;
+    return false;
+  }
+  unpostedLayout = null;
+  pendingGeneration = command.generation;
+  postMessage({ channel: "command", payload: command });
+  return true;
 }
 
 function ensureRuntime(seed = 1): RuntimeDriver {
@@ -129,21 +147,26 @@ function handleControl(msg: ControlMessage): void {
         result: { ok: false, code: "boundary", path: "scene", reason, identity: {
           generation: msg.sessionGeneration, sceneAssetGuid: "", sceneInstanceId: "", sceneLoadId: 0, tickIndex: 0, commandRevision: 0 } } });
       if (!rt) { refuse("Runtime is unavailable."); return; }
+      // Every request ends with a result, so chunks already posted never wait on
+      // the host's capture timeout when `load` or `stop` replaces the session.
+      const superseded = () => runtime !== rt || bootGeneration !== generation;
+      const refuseSuperseded = () => refuse("The session was replaced or stopped before its final capture completed.");
       void rt.captureSimulationState(msg).then(async result => {
-        if (runtime !== rt || bootGeneration !== generation) return;
+        if (superseded()) { refuseSuperseded(); return; }
         if (!result.ok) { onCommand({ type: "simulationCaptureResult", sessionGeneration: msg.sessionGeneration, requestId: msg.requestId, result }); return; }
         let sequence = 0;
         for (const bytes of simulationCaptureChunks(result.scene)) {
-          if (runtime !== rt || bootGeneration !== generation) return;
+          if (superseded()) { refuseSuperseded(); return; }
           const chunk: CommandMessage = { type: "simulationCaptureChunk", sessionGeneration: msg.sessionGeneration, requestId: msg.requestId, sequence: sequence++, bytes };
           postMessage({ channel: "command", payload: chunk }, [bytes.buffer as ArrayBuffer]);
           await new Promise(resolve => setTimeout(resolve, 0));
         }
-        if (runtime === rt && bootGeneration === generation) onCommand({ type: "simulationCaptureResult", sessionGeneration: msg.sessionGeneration, requestId: msg.requestId,
+        if (superseded()) { refuseSuperseded(); return; }
+        onCommand({ type: "simulationCaptureResult", sessionGeneration: msg.sessionGeneration, requestId: msg.requestId,
           result: { ok: true, identity: result.identity, byteSize: result.byteSize, chunkCount: sequence } });
       }).catch((error: unknown) => {
         // Report the failure now instead of leaving the host to its capture timeout.
-        if (runtime === rt && bootGeneration === generation) refuse(error instanceof Error ? error.message : String(error));
+        refuse(error instanceof Error ? error.message : String(error));
       });
       return;
     }
@@ -219,6 +242,8 @@ function handleControl(msg: ControlMessage): void {
         runtime.stop();
         runtime = null;
       }
+      // The replaced runtime's layout never applies to the next one.
+      unpostedLayout = null;
       saveStorage.dispose();
       sceneSources.dispose();
       sceneSources = createSceneSourceClient(onCommand);
@@ -345,11 +370,14 @@ function handleControl(msg: ControlMessage): void {
     case "step": {
       const rt = ensureRuntime();
       rt.resume();
-      rt.tick();
-      rt.pause();
+      try {
+        rt.tick();
+      } finally {
+        rt.pause();
+      }
       return;
     }
-    case "stop":
+    case "stop": {
       releaseAfterPose();
       bootGeneration++;
       boot.reset();
@@ -360,7 +388,11 @@ function handleControl(msg: ControlMessage): void {
       sceneSources.dispose();
       stopConsoleCapture?.();
       stopConsoleCapture = null;
+      // End Play and On Game End may still be writing saves through the host:
+      // report the stop once they finish, so the host keeps this worker until then.
+      void saveStorage.whenIdle().then(() => onCommand({ type: "runtimeStopped" }));
       return;
+    }
     case "setPaused":
       pauseGate.setPaused(msg.paused);
       return;
@@ -444,7 +476,9 @@ function handleControl(msg: ControlMessage): void {
 
 function publishSnapshot(): boolean {
   const rt = runtime;
-  if (!rt || pendingGeneration !== null) return false;
+  if (!rt) return false;
+  if (unpostedLayout) installSnapshotLayout(unpostedLayout);
+  if (unpostedLayout || pendingGeneration !== null) return false;
   if (inFlightSnapshots >= MAX_IN_FLIGHT_SNAPSHOTS) {
     snapshotSkipped = true;
     return false;

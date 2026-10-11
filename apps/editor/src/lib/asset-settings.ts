@@ -187,7 +187,6 @@ export function patchTextureDownsample(
 ): Record<string, unknown> {
   const parsed = typeof value === "number" ? value : Number(value);
   const next = { ...payload };
-  delete next.maxDimension;
   if (!TEXTURE_DOWNSAMPLE_OPTIONS.includes(parsed as (typeof TEXTURE_DOWNSAMPLE_OPTIONS)[number])) {
     delete next.downsample;
     return next;

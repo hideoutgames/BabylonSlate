@@ -9,7 +9,6 @@ import {
   normalizeFocusNavigationSettings,
 } from "@babylonslate/core";
 import { exportGame, zipExport, unzipExport, parseGameManifest, SAFE_ZIP_MTIME } from "./export-game";
-import { parseScriptRegistry } from "./scripts";
 import { GAME_MANIFEST_FILE } from "./constants";
 
 function stubPlayer(): Map<string, Uint8Array> {
@@ -71,7 +70,7 @@ describe("exportGame", () => {
     expect(generated.find(asset => asset.guid === "script:hero:Hero")?.ownerGuid).toBe("hero");
   });
   it("preserves focus input selections and normalizes unsafe repeat values through player manifests", async () => {
-    const result = await exportGame({ mode: "packed", bundleDebugger: false, startupSceneGuid: "scene-1", scripts: [], assets: [], playerFiles: stubPlayer(),
+    const result = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene-1", scripts: [], assets: [], playerFiles: stubPlayer(),
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       focusNavigation: normalizeFocusNavigationSettings({ navigationInputGuid: "menu-axis", activateInputGuid: "accept", wrap: true }),
     });
@@ -81,10 +80,8 @@ describe("exportGame", () => {
     const malformed = JSON.parse(json);
     malformed.focusNavigation.repeatInterval = -10;
     expect(parseGameManifest(JSON.stringify(malformed)).focusNavigation?.repeatInterval).toBe(0.02);
-    delete malformed.focusNavigation;
-    expect(parseGameManifest(JSON.stringify(malformed)).focusNavigation?.enabled).toBe(true);
   });
-  it.each(["packed", "loose"] as const)("normalizes the complete %s render contract at export and player read", async (mode) => {
+  it("normalizes the complete render contract at export and player read", async () => {
     const authored = {
       ...DEFAULT_RENDER_PROJECT_SETTINGS,
       gpuBackend: "webgpu" as const,
@@ -96,7 +93,7 @@ describe("exportGame", () => {
       localQualityOverrides: { resolution: { scale: 0.25 } },
     };
     const result = await exportGame({
-      mode, bundleDebugger: false, startupSceneGuid: "scene-1",
+      bundleDebugger: false, startupSceneGuid: "scene-1",
       renderSettings: authored, playFrameCap: Infinity, scripts: [], assets: [], playerFiles: stubPlayer(),
     });
     if (!result.ok) throw new Error(result.error);
@@ -112,22 +109,19 @@ describe("exportGame", () => {
     expect(restored.render).not.toHaveProperty("localQualityOverrides");
     authored.quality.textures.anisotropy = 1;
     expect(result.value.manifest.render.quality?.textures.anisotropy).toBe(8);
-    const legacy = JSON.parse(json);
-    legacy.render = { gpuBackend: "webgpu", width: -1, height: "bad", mode: "cel" };
-    expect(parseGameManifest(JSON.stringify(legacy)).render).toMatchObject({
+    const malformed = JSON.parse(json);
+    malformed.render = { gpuBackend: "webgpu", width: -1, height: "bad", mode: "cel" };
+    expect(parseGameManifest(JSON.stringify(malformed)).render).toMatchObject({
       gpuBackend: "webgpu", width: 1920, height: 1080, mode: "cel",
       renderPath: "forward", customResolution: false,
     });
-    delete legacy.render;
-    expect(parseGameManifest(JSON.stringify(legacy)).render).toEqual(DEFAULT_RENDER_PROJECT_SETTINGS);
-    for (const value of [undefined, null, "30", 0, -1, 24]) {
-      legacy.playFrameCap = value;
-      expect(parseGameManifest(JSON.stringify(legacy)).playFrameCap).toBe(value === 24 ? 24 : 60);
+    for (const value of ["30", 0, -1, 24]) {
+      malformed.playFrameCap = value;
+      expect(parseGameManifest(JSON.stringify(malformed)).playFrameCap).toBe(value === 24 ? 24 : 60);
     }
   });
-  it.each(["packed", "loose"] as const)("retains project identity in %s release builds", async (mode) => {
+  it("retains project identity in release builds", async () => {
     const result = await exportGame({
-      mode,
       project: { name: "Orbit Workshop", version: "2.4.0-beta.3" },
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
@@ -137,21 +131,6 @@ describe("exportGame", () => {
     if (!result.ok) throw new Error("Export failed");
     const stored = new TextDecoder().decode(result.value.files.get(GAME_MANIFEST_FILE));
     expect(parseGameManifest(stored).project).toEqual({ name: "Orbit Workshop", version: "2.4.0-beta.3" });
-    const legacy = JSON.parse(stored);
-    delete legacy.project;
-    expect(parseGameManifest(JSON.stringify(legacy)).project).toEqual({ name: "", version: "" });
-  });
-  it.each([true, false])("H13: retains authored input in exported manifests with debugger=%s", async (bundleDebugger) => {
-    const inputMappings = { actions: [{ name: "Jump", bindings: [{ device: "key", code: "KeyH" }] }], axes: [] };
-    const options = { bundleDebugger, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [], playerFiles: stubPlayer(), inputMappings };
-    const result = await exportGame(options);
-    expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error("Export failed");
-    const stored = new TextDecoder().decode(result.value.files.get(GAME_MANIFEST_FILE));
-    expect(parseGameManifest(stored).inputMappings).toEqual(inputMappings);
-    const legacy = JSON.parse(stored);
-    delete legacy.inputMappings;
-    expect(parseGameManifest(JSON.stringify(legacy)).inputMappings).toBeUndefined();
   });
   it("puts index.html at the zip root and records startupSceneGuid", async () => {
     const cel = normalizeCelShadingSettings({ shadowBands: 5, lightMixing: "blend",
@@ -263,7 +242,6 @@ describe("exportGame", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.manifest.mode).toBe("packed");
     expect(result.value.manifest.assets[0]?.path).toBe("assets/data-0.bin");
     expect(result.value.files.get("assets/data-0.bin")).toEqual(new Uint8Array([1, 2, 3]));
     expect(result.value.manifest.bundleDebugger).toBe(true);
@@ -358,13 +336,11 @@ describe("exportGame", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.manifest.packs).toEqual([]);
     expect(result.value.files.get(result.value.manifest.assets.find(asset => asset.guid === "scene-2")!.path!)).toEqual(new Uint8Array([3]));
   });
 
-  it("keeps loose mode as one file per asset", async () => {
+  it("writes one file per asset", async () => {
     const result = await exportGame({
-      mode: "loose",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -387,17 +363,15 @@ describe("exportGame", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.manifest.mode).toBe("loose");
     expect(result.value.manifest.assets).toHaveLength(2);
     expect(result.value.files.get(result.value.manifest.assets[0]!.path!)).toEqual(new Uint8Array([1]));
     expect(result.value.files.get(result.value.manifest.assets[1]!.path!)).toEqual(new Uint8Array([2]));
-    expect(result.value.files.has("boot.babpack")).toBe(false);
   });
 
   it("exports namespaced sidecars to portable loose files without merging distinct asset IDs", async () => {
     const guids = ["area-emission:tex", "area-emission/tex", "area-emission_tex", "Area-emission:tex", "audioReverb:scene", "CON"];
     const result = await exportGame({
-      mode: "loose", bundleDebugger: false, startupSceneGuid: "scene-1",
+      bundleDebugger: false, startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [], playerFiles: stubPlayer(),
       assets: guids.map((guid, index) => ({
@@ -421,7 +395,6 @@ describe("exportGame", () => {
 
   it("records authored Texture pixel size on the manifest index", async () => {
     const result = await exportGame({
-      mode: "loose",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -452,12 +425,7 @@ describe("exportGame", () => {
   });
 
   it("fails when the file count exceeds the hard limit", async () => {
-    const extras = new Map<string, Uint8Array>();
-    for (let i = 0; i < 5; i++) {
-      extras.set(`extra-${i}.dat`, new Uint8Array([i]));
-    }
     const result = await exportGame({
-      mode: "loose",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -471,12 +439,11 @@ describe("exportGame", () => {
         },
       ],
       playerFiles: stubPlayer(),
-      extraFiles: extras,
-      fileCountFail: 4,
+      fileCountFail: 3,
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error).toMatch(/1000|file count|4/i);
+    expect(result.error).toBe("Export file count 4 exceeds the limit of 3.");
   });
 
   it("warns when the file count crosses the warn threshold", async () => {
@@ -504,7 +471,7 @@ describe("exportGame", () => {
     );
   });
 
-  it("writes a tiny bootstrap and independently addressed compiled script sources", async () => {
+  it("writes compiled script sources as independently addressed sidecars of their Class", async () => {
     const result = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
@@ -533,6 +500,7 @@ describe("exportGame", () => {
           sceneGuid: "scene-1",
           bytes: new Uint8Array([1]),
         },
+        { guid: "hero", type: "Class", sceneGuid: "scene-1", bytes: new TextEncoder().encode("{}") },
       ],
     });
     expect(result.ok).toBe(true);
@@ -540,13 +508,38 @@ describe("exportGame", () => {
     const html = new TextDecoder().decode(result.value.files.get("index.html"));
     expect(html).toContain("player.js");
     expect(html.toLowerCase()).toContain("<!doctype html>");
-    const scripts = new TextDecoder().decode(result.value.files.get("scripts.js"));
-    expect(scripts).toContain("globalThis.__babylonslateScripts");
-    expect(parseScriptRegistry(scripts)).toEqual([]);
     const code = result.value.manifest.assets.find(asset => asset.type === "CompiledScript" && asset.ownerGuid === "hero")!;
     const compiled = JSON.parse(new TextDecoder().decode(result.value.files.get(code.path!)));
     expect(compiled).toMatchObject({ assetGuid: "hero", classId: "Hero", anchors: [{ line: 1 }] });
     expect(result.value.manifest.assets.find(asset => asset.guid === "hero")).toMatchObject({ classId: "Hero", requiredDependencies: [code.guid] });
+  });
+
+  it("fails instead of inventing a Class for a compiled script whose asset is not exported", async () => {
+    const result = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [{ assetGuid: "ghost", classId: "Ghost", source: "", anchors: [], entryPoints: [] }],
+      assets: [{ guid: "scene-1", type: "Scene", sceneGuid: "scene-1", bytes: new Uint8Array([1]) }],
+    });
+    expect(result).toEqual({ ok: false, error: "Compiled script Ghost has no exported asset ghost." });
+  });
+
+  it("never treats a display name as an asset or Game Instance identity, nor a guid as its class id", async () => {
+    const result = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+      gameInstanceClass: "MyGame",
+      scripts: [{ assetGuid: "game", classId: "MyGame", source: "", anchors: [], entryPoints: [] }],
+      assets: [
+        { guid: "scene-1", type: "Scene", sceneGuid: "scene-1", bytes: new Uint8Array([1]), dependencies: ["Rock"], requiredDependencies: ["Rock"] },
+        { guid: "game", type: "Class", sceneGuid: "scene-1", name: "Game Instance", bytes: new TextEncoder().encode("{}") },
+        { guid: "rock", type: "Texture", sceneGuid: "scene-1", name: "Rock", bytes: new Uint8Array([2]) },
+        { guid: "label", type: "Texture", sceneGuid: "scene-1", name: "MyGame", bytes: new Uint8Array([3]) },
+        { guid: "MyGame", type: "Texture", sceneGuid: "scene-1", name: "Banner", bytes: new Uint8Array([4]) },
+      ],
+    });
+    if (!result.ok) throw new Error(result.error);
+    const byGuid = new Map(result.value.manifest.assets.map(asset => [asset.guid, asset]));
+    expect(byGuid.get("game")?.startupRequired).toBe(true);
+    expect(byGuid.get("label")?.startupRequired).toBeUndefined();
+    expect(byGuid.get("MyGame")?.startupRequired).toBeUndefined();
+    expect(byGuid.get("scene-1")?.requiredDependencies).not.toContain("rock");
   });
 
   it("packs only the world physics engine when no SceneLayers are exported", async () => {
@@ -615,15 +608,14 @@ describe("exportGame", () => {
     ["assets/rapier.es.js", new TextEncoder().encode("rapier")],
   ]);
 
-  it.each(["packed", "loose"] as const)(
-    "retains Rapier for a physics-enabled SceneLayer alongside a 3d world in %s exports",
-    async (mode) => {
+  it(
+    "retains Rapier for a physics-enabled SceneLayer alongside a 3d world",
+    async () => {
       const result = await exportGame({
         bundleDebugger: false,
         startupSceneGuid: "scene-1",
         renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
         physicsWorld: "3d",
-        mode,
         scripts: [],
         assets: [
           {
@@ -667,6 +659,26 @@ describe("exportGame", () => {
     expect(result.value.files.has("assets/HavokPhysics_es.js")).toBe(true);
     expect(result.value.manifest.assets.filter((asset) => asset.type === "SceneLayer").map((asset) => asset.guid))
       .toEqual(["hud", "pause-menu"]);
+  });
+
+  it("inlines every link to a stylesheet verbatim and keeps an unlinked stylesheet", async () => {
+    const theme = "a::after{content:\"$& </style>\"}";
+    const result = await exportGame({
+      bundleDebugger: false, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [],
+      playerFiles: new Map([
+        ["index.html", new TextEncoder().encode(
+          `<html><head><link rel="stylesheet" href="styles/theme.css"><link rel="stylesheet" href="./styles/theme.css"></head></html>`,
+        )],
+        ["styles/theme.css", new TextEncoder().encode(theme)],
+        ["styles/unlinked.css", new TextEncoder().encode("p{}")],
+      ]),
+    });
+    if (!result.ok) throw new Error(result.error);
+    const html = new TextDecoder().decode(result.value.files.get("index.html"));
+    const inline = `<style>${theme.replace("</style", "<\\/style")}</style>`;
+    expect(html).toBe(`<html><head>${inline}${inline}</head></html>`);
+    expect(result.value.files.has("styles/theme.css")).toBe(false);
+    expect(result.value.files.has("styles/unlinked.css")).toBe(true);
   });
 
   it("inlines CSS into index.html and keeps wasm as a real file", async () => {
@@ -744,59 +756,16 @@ describe("exportGame", () => {
     ).toBe("Display");
   });
 
-  it("defaults pixelsPerUnit when game.json omits 2D fields", () => {
-    const manifest = parseGameManifest(
-      JSON.stringify({
-        startupSceneGuid: "scene-1",
-        bundleDebugger: false,
-        mode: "packed",
-        render: DEFAULT_RENDER_PROJECT_SETTINGS,
-        playFrameCap: 60,
-        packs: [],
-        scriptsFile: "scripts.js",
-        physicsWorld: "3d",
-        assets: [],
-        ui: {
-          designResolution: { width: 1280, height: 720 },
-          scaleRule: "fitWidth",
-        },
-        uiDesignerPresets: [
-          {
-            id: "phone",
-            label: "Phone",
-            width: 390,
-            height: 844,
-            safeArea: { left: 0, right: 0, top: 47, bottom: 34 },
-          },
-        ],
-      }),
-    );
-    expect(manifest.pixelsPerUnit).toBe(100);
-    expect(manifest.sortingLayers).toEqual(["Background", "Default", "Foreground", "UI"]);
-    expect(manifest.pixelPerfect).toBe(false);
-    expect(manifest.touchMinTargetPx).toBe(44);
-    expect(manifest.infiniteLoopDetection).toBeUndefined();
-    expect(manifest.loopCount).toBeUndefined();
-    expect(manifest.occlusionEnabled).toBe(true);
-    expect(manifest).not.toHaveProperty("ui");
-    expect(manifest).not.toHaveProperty("uiDesignerPresets");
-  });
-
-  it("migrates manifests without scriptsFile to the legacy filename", () => {
-    const manifest = parseGameManifest(
-      JSON.stringify({
-        startupSceneGuid: "scene-1",
-        bundleDebugger: false,
-        mode: "packed",
-        render: DEFAULT_RENDER_PROJECT_SETTINGS,
-        playFrameCap: 60,
-        packs: [],
-        physicsWorld: "3d",
-        assets: [],
-      }),
-    );
-
-    expect(manifest.scriptsFile).toBe("scripts.js");
+  it.each([false, true])("rejects a game.json missing any field the exporter writes (debugger=%s)", async (bundleDebugger) => {
+    const result = await exportGame({ bundleDebugger, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [] });
+    if (!result.ok) throw new Error(result.error);
+    const current = JSON.parse(new TextDecoder().decode(result.value.files.get(GAME_MANIFEST_FILE))) as Record<string, unknown>;
+    expect(parseGameManifest(JSON.stringify(current)).bundleDebugger).toBe(bundleDebugger);
+    for (const field of Object.keys(current)) {
+      const outdated = { ...current };
+      delete outdated[field];
+      expect(() => parseGameManifest(JSON.stringify(outdated)), field).toThrow(/rebuild this game with the current exporter/);
+    }
   });
 
   it("writes Audio occlusion into game.json", async () => {
@@ -869,42 +838,12 @@ describe("exportGame", () => {
     expect(result.value.manifest.reverbDecayScale).toBe(0.25);
     expect(result.value.manifest.reverbDampingScale).toBe(2);
     expect(
-      parseGameManifest(
-        JSON.stringify({
-          startupSceneGuid: "scene-1",
-          bundleDebugger: false,
-          mode: "packed",
-          render: DEFAULT_RENDER_PROJECT_SETTINGS,
-          playFrameCap: 60,
-          packs: [],
-          scriptsFile: "scripts.js",
-          physicsWorld: "3d",
-          assets: [],
-        }),
-      ),
+      parseGameManifest(new TextDecoder().decode(result.value.files.get(GAME_MANIFEST_FILE)!)),
     ).toMatchObject({
-      reverbWetScale: 1,
-      reverbDecayScale: 1,
-      reverbDampingScale: 1,
+      reverbWetScale: 1.5,
+      reverbDecayScale: 0.25,
+      reverbDampingScale: 2,
     });
-  });
-
-  it("defaults bundled debugger loop settings when game.json omits them", () => {
-    const manifest = parseGameManifest(
-      JSON.stringify({
-        startupSceneGuid: "scene-1",
-        bundleDebugger: true,
-        mode: "packed",
-        render: DEFAULT_RENDER_PROJECT_SETTINGS,
-        playFrameCap: 60,
-        packs: [],
-        scriptsFile: "scripts.js",
-        physicsWorld: "3d",
-        assets: [],
-      }),
-    );
-    expect(manifest.infiniteLoopDetection).toBe(true);
-    expect(manifest.loopCount).toBe(1_000_000);
   });
 
   it("records Animation catalog payloads as JSON", async () => {
@@ -950,9 +889,8 @@ describe("exportGame", () => {
     );
   });
 
-  it("records Font names on loose-mode index entries", async () => {
+  it("records Font names on index entries", async () => {
     const result = await exportGame({
-      mode: "loose",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,

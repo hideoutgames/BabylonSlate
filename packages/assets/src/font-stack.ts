@@ -14,16 +14,27 @@ const GENERIC_FAMILIES = new Set([
   "fangsong",
 ]);
 
-export function quoteCssFamily(family: string): string {
+function quotedFamily(family: string): string {
   const trimmed = family.trim();
   if (!trimmed) return "";
-  if (GENERIC_FAMILIES.has(trimmed.toLowerCase())) {
-    return trimmed.toLowerCase();
-  }
   const escaped = trimmed.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
   return `"${escaped}"`;
 }
 
+/** A CSS family for a stack's generic fallback: a generic keyword stays bare, any other name is quoted. */
+export function quoteCssFamily(family: string): string {
+  const trimmed = family.trim();
+  if (GENERIC_FAMILIES.has(trimmed.toLowerCase())) {
+    return trimmed.toLowerCase();
+  }
+  return quotedFamily(trimmed);
+}
+
+/**
+ * CSS stack for a Font: its family, its fallbacks' and the project default's
+ * (Font asset families, always quoted, so a Font named `serif` is still that
+ * registered face), then the generic fallback.
+ */
 export function compileFontStack(options: {
   family: string;
   fallbackFamilies?: readonly string[];
@@ -32,26 +43,22 @@ export function compileFontStack(options: {
 }): string {
   const seen = new Set<string>();
   const parts: string[] = [];
-  const push = (family: string | null | undefined, allowGeneric: boolean) => {
-    if (!family) return;
-    const quoted = quoteCssFamily(family);
+  const push = (quoted: string) => {
     if (!quoted) return;
-    const generic = GENERIC_FAMILIES.has(quoted);
-    if (generic && !allowGeneric) return;
     const key = quoted.toLowerCase();
     if (seen.has(key)) return;
     seen.add(key);
     parts.push(quoted);
   };
 
-  push(options.family, false);
+  push(quotedFamily(options.family));
   for (const fallback of options.fallbackFamilies ?? []) {
-    push(fallback, false);
+    push(quotedFamily(fallback));
   }
-  push(options.projectDefaultFamily ?? null, false);
-  push(options.globalFallback ?? "sans-serif", true);
+  push(quotedFamily(options.projectDefaultFamily ?? ""));
+  push(quoteCssFamily(options.globalFallback ?? "sans-serif"));
   if (parts.length === 0 || !GENERIC_FAMILIES.has(parts[parts.length - 1]!)) {
-    push("sans-serif", true);
+    push("sans-serif");
   }
   return parts.join(", ");
 }

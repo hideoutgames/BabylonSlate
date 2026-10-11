@@ -15,17 +15,17 @@ import {
 } from "@babylonslate/core";
 import { migrateLegacyShaderPayload } from "@babylonslate/shader-graph";
 import { collectAssetDependencyMetadata, createDefaultPluginSettings, type IndexedAsset } from "@babylonslate/assets";
-import {
-  MISSING_STARTUP_SCENE_MESSAGE,
-  parseScriptRegistry,
-} from "@babylonslate/exporter";
+import { MISSING_STARTUP_SCENE_MESSAGE } from "@babylonslate/exporter";
+import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import { assetsFromIndexed, collectAndExportGame, resolveExportPluginGraph } from "./export-game";
 import { loadExportDocuments } from "./export-game-inputs";
 import type { ExportIndexedAsset, ExportArtifact } from "@babylonslate/exporter";
 // Collect the real compiler with the suite so cold transforms are not timed as export work.
 import "./script-compiler";
+import { defaultNodeRegistry } from "./graph-validation";
+import { EXEC, pin } from "@babylonslate/scripting";
 
-function compiledScripts(artifact: ExportArtifact): ReturnType<typeof parseScriptRegistry> {
+function compiledScripts(artifact: ExportArtifact): ScriptBundleEntry[] {
   return artifact.manifest.assets.filter(asset => asset.type === "CompiledScript").map(asset =>
     JSON.parse(new TextDecoder().decode(artifact.files.get(asset.path!))));
 }
@@ -38,6 +38,8 @@ function asset(
     dependencies: [],
     rootId: "project",
     parentClass: null,
+    // A Class's compile id is its file stem; fixtures name the file after the Class.
+    ...(partial.type === "Class" ? { path: `assets/${partial.name}.class.babasset` } : {}),
     ...partial,
   };
 }
@@ -319,9 +321,7 @@ describe("collectAndExportGame", () => {
     expect(paths(first.value)).toEqual(paths(reversed.value));
     expect(Object.keys(paths(first.value)).sort()).toEqual(["boot-only", "scene-a", "scene-start", "scene-z", "shared"]);
     expect(new Set(Object.values(paths(first.value))).size).toBe(5);
-    expect(first.value.manifest.packs).toEqual([]);
     for (const entry of first.value.manifest.assets) {
-      expect(entry.pack).toBeUndefined();
       expect(entry.path).toMatch(/^assets\/data-\d+\.bin$/);
       expect(new TextDecoder().decode(first.value.files.get(entry.path!))).toBe(entry.guid);
     }
@@ -399,12 +399,10 @@ describe("collectAndExportGame", () => {
     expect(result.ok).toBe(true);
     if (!isOk(result)) return;
     expect(result.value.manifest.startupSceneGuid).toBe("scene-1");
-    expect(result.value.manifest.mode).toBe("packed");
     expect(result.value.manifest.bundleDebugger).toBe(false);
     const startupAsset = result.value.manifest.assets.find(entry => entry.guid === "scene-1")!;
     expect(startupAsset.path).toMatch(/^assets\/data-\d+\.bin$/);
     expect(new TextDecoder().decode(result.value.files.get(startupAsset.path!))).toBe(JSON.stringify(scene));
-    expect(result.value.manifest.packs).toEqual([]);
     expect(
       result.value.manifest.assets.some((entry) => entry.guid === "euo-1"),
     ).toBe(false);
@@ -451,6 +449,33 @@ describe("collectAndExportGame", () => {
     expect(
       result.value.warnings.some((warning) => warning.includes("tex-missing")),
     ).toBe(true);
+  });
+
+  it("fails instead of omitting a reachable asset that could not be read", async () => {
+    const mesh = createMeshComponent("mesh-1", "box");
+    mesh.properties.materialGuid = "mat-rock";
+    const scene = { ...createDefaultScene(), actors: [createActor("hero", "Hero", { components: [mesh] })] };
+    const result = await collectAndExportGame({
+      startupSceneGuid: "scene-1",
+      assets: [
+        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
+        asset({ guid: "mat-rock", type: "Material", name: "Rock" }),
+      ],
+      plugins: [],
+      projectPluginOverrides: {},
+      parentOf: () => null,
+      sceneByGuid: (guid) => (guid === "scene-1" ? scene : null),
+      graphByGuid: () => null,
+      bytesByGuid: (guid) => {
+        if (guid === "mat-rock") throw new Error("Storage unavailable");
+        return new TextEncoder().encode(JSON.stringify(scene));
+      },
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+      playFrameCap: 60,
+      physicsWorld: "3d",
+      playerFiles,
+    });
+    expect(result).toEqual({ ok: false, error: expect.stringMatching(/Rock.*Storage unavailable/) });
   });
 
   it("packs a live render texture and its target without a missing-pixels warning", async () => {
@@ -508,6 +533,71 @@ describe("collectAndExportGame", () => {
     expect(
       result.value.manifest.assets.some((entry) => entry.guid === "class-game"),
     ).toBe(true);
+  });
+
+  it("compiles a Class under its file-path class id and requires the Game Instance by that id", async () => {
+    const scene = createDefaultScene();
+    const result = await collectAndExportGame({
+      startupSceneGuid: "scene-1",
+      gameInstanceClass: "PlayerGame",
+      alwaysPackageFolders: ["assets/Game"],
+      assets: [
+        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
+        asset({ guid: "class-game", type: "Class", name: "Player Game", path: "assets/Game/PlayerGame.class.babasset", parentClass: "GameInstance" }),
+      ],
+      plugins: [],
+      projectPluginOverrides: {},
+      parentOf: (id) => (id === "PlayerGame" ? "GameInstance" : null),
+      sceneByGuid: (guid) => (guid === "scene-1" ? scene : null),
+      graphByGuid: (guid) => (guid === "class-game" ? { nodes: [], edges: [] } : null),
+      bytesByGuid: (guid) => new TextEncoder().encode(JSON.stringify(guid === "scene-1" ? scene : {})),
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+      playFrameCap: 60,
+      physicsWorld: "3d",
+      playerFiles,
+    });
+    if (!isOk(result)) throw new Error(result.error);
+    expect(compiledScripts(result.value).map((script) => script.classId)).toEqual(["PlayerGame"]);
+    expect(result.value.manifest.assets.find((entry) => entry.guid === "class-game")?.startupRequired).toBe(true);
+  });
+
+  it("fails the export when a reached Class does not compile", async () => {
+    if (!defaultNodeRegistry.get("test.exportCodegenFailure")) {
+      defaultNodeRegistry.register({
+        id: "test.exportCodegenFailure",
+        title: "Codegen Failure",
+        category: "debug",
+        pins: () => [pin("execIn", "exec", "in", EXEC), pin("execOut", "then", "out", EXEC)],
+        codegen: () => { throw new Error("codegen exploded"); },
+      });
+    }
+    const scene = createDefaultScene();
+    const graph = {
+      nodes: [
+        { id: "begin", type: "flow.event.beginPlay", position: { x: 0, y: 0 }, data: {} },
+        { id: "broken", type: "test.exportCodegenFailure", position: { x: 200, y: 0 }, data: {} },
+      ],
+      edges: [{ id: "exec", source: "begin", target: "broken", sourceHandle: "execOut", targetHandle: "execIn" }],
+    };
+    const result = await collectAndExportGame({
+      startupSceneGuid: "scene-1",
+      alwaysPackageFolders: ["assets/Game"],
+      assets: [
+        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
+        asset({ guid: "class-broken", type: "Class", name: "Broken", path: "assets/Game/Broken.class.babasset", parentClass: "Actor" }),
+      ],
+      plugins: [],
+      projectPluginOverrides: {},
+      parentOf: () => "Actor",
+      sceneByGuid: (guid) => (guid === "scene-1" ? scene : null),
+      graphByGuid: (guid) => (guid === "class-broken" ? graph : null),
+      bytesByGuid: (guid) => new TextEncoder().encode(JSON.stringify(guid === "scene-1" ? scene : graph)),
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+      playFrameCap: 60,
+      physicsWorld: "3d",
+      playerFiles,
+    });
+    expect(result).toEqual({ ok: false, error: expect.stringMatching(/Broken could not be compiled: codegen exploded/) });
   });
 
   it("packs a sprite textureGuid reached through the sprite payload", async () => {
@@ -884,6 +974,31 @@ describe("collectAndExportGame", () => {
         (entry) => entry.type === "Texture" && entry.guid === "tex-1",
       ),
     ).toBe(true);
+  });
+
+  it("exports a Texture whose unused area emission is unreadable, without that emission", async () => {
+    const scene = {
+      ...createDefaultScene(),
+      actors: [createActor("hero", "Hero", {
+        components: [{ id: "mesh-1", classId: "MeshComponent", properties: { textureGuid: "tex-1" } }],
+      })],
+    };
+    const result = await collectAndExportGame({
+      startupSceneGuid: "scene-1",
+      assets: [
+        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
+        asset({ guid: "tex-1", type: "Texture", name: "Logo" }),
+      ],
+      plugins: [], projectPluginOverrides: {}, parentOf: () => null,
+      sceneByGuid: () => scene, graphByGuid: () => null,
+      bytesByGuid: (guid) => guid === "scene-1" ? new TextEncoder().encode(JSON.stringify(scene)) : new Uint8Array([1]),
+      areaEmissionBytesByGuid: () => { throw new Error("Corrupt area emission"); },
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, playFrameCap: 60, physicsWorld: "3d", playerFiles,
+    });
+    if (!isOk(result)) throw new Error(result.error);
+    const types = result.value.manifest.assets.map((entry) => entry.type);
+    expect(types).toContain("Texture");
+    expect(types).not.toContain("AreaEmission");
   });
 
   it("packs a scene audioReverb chunk under a sidecar guid", async () => {

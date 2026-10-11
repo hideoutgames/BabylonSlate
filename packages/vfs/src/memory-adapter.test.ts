@@ -41,6 +41,16 @@ describe("memory storage adapter", () => {
     expect(storage.getReadMetrics()).toMatchObject({ actualBytesRead: 4, fullReads: 0 });
   });
 
+  it("refuses to replace a directory with a file or to leave the project", async () => {
+    const storage = new MemoryStorageAdapter();
+    await storage.openDocumentsProject("Paths");
+    await storage.writeText("assets/hero.babasset", "hero");
+    await expect(storage.writeText("assets", "file")).rejects.toThrow(/directory/);
+    expect(await storage.readText("assets/hero.babasset")).toBe("hero");
+    await expect(storage.writeText("assets/../escape.json", "{}")).rejects.toThrow(/escapes project root/);
+    expect(await storage.readdir(".")).toEqual([expect.objectContaining({ name: "assets", isDir: true })]);
+  });
+
   it("releases the current folder", async () => {
     const storage = new MemoryStorageAdapter();
     await storage.pickProjectFolder("X.babproject");

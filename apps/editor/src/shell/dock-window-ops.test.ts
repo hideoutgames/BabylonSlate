@@ -30,8 +30,6 @@ interface FakePanelState {
   box?: GroupBox;
   width?: number;
   height?: number;
-  neighborId?: string;
-  neighborDirection?: DockWindowPanel["neighborDirection"];
 }
 
 function groupCenter(box: GroupBox): { cx: number; cy: number } {
@@ -89,8 +87,6 @@ function createFakeApi(initial: FakePanelState[]): DockWindowApi & {
           width: state.width,
           height: state.height,
         },
-        neighborId: state.neighborId,
-        neighborDirection: state.neighborDirection,
       };
       panels.set(state.id, panel);
     }
@@ -155,8 +151,6 @@ function createFakeApi(initial: FakePanelState[]): DockWindowApi & {
             : options.id,
         width: options.initialWidth,
         height: options.initialHeight,
-        neighborId: referenceId,
-        neighborDirection: options.position?.direction,
       });
       rebuild(initial);
       return panels.get(options.id);
@@ -288,14 +282,17 @@ describe("capturePanelPlacement", () => {
 
   it("records a split neighbor and last size", () => {
     const api = createFakeApi([
-      { id: "viewport", groupId: "center" },
+      {
+        id: "viewport",
+        groupId: "center",
+        box: { x: 0, y: 0, width: 900, height: 480 },
+      },
       {
         id: "output-log",
         groupId: "bottom",
+        box: { x: 0, y: 480, width: 900, height: 180 },
         width: 900,
         height: 180,
-        neighborId: "viewport",
-        neighborDirection: "below",
       },
     ]);
     expect(capturePanelPlacement(api, "output-log")).toEqual({
@@ -476,40 +473,35 @@ describe("openDockWindow", () => {
     expect(opened.initialHeight).toBe(160);
   });
 
-  it("treats a mirrored remembered placement as the catalog default", () => {
-    const api = createFakeApi([{ id: "viewport", groupId: "center" }]);
+  it("reopens on the remembered side of the catalog reference, or tabbed into it", () => {
     const outliner = catalogWindow("scene", "scene-outliner")!;
-    openDockWindow(api, outliner, {
-      referencePanelId: "viewport",
-      direction: "right",
-      width: 260,
-    });
-    expect(addedPosition(api).position.direction).toBe("left");
-    expect(addedPosition(api).position.referencePanel.id).toBe("viewport");
-  });
-
-  it("treats a within dump as the catalog split when the catalog is not within", () => {
-    const api = createFakeApi([{ id: "viewport", groupId: "center" }]);
-    const outliner = catalogWindow("scene", "scene-outliner")!;
-    openDockWindow(api, outliner, {
-      referencePanelId: "viewport",
-      direction: "within",
-    });
-    expect(addedPosition(api).position.direction).toBe("left");
+    for (const direction of ["right", "within"] as const) {
+      const api = createFakeApi([{ id: "viewport", groupId: "center" }]);
+      openDockWindow(api, outliner, {
+        referencePanelId: "viewport",
+        direction,
+        width: 260,
+      });
+      expect(addedPosition(api).position.direction).toBe(direction);
+      expect(addedPosition(api).position.referencePanel.id).toBe("viewport");
+    }
   });
 });
 
 describe("toggleDockWindow", () => {
   it("closes an open panel after capturing placement", () => {
     const api = createFakeApi([
-      { id: "viewport", groupId: "center" },
+      {
+        id: "viewport",
+        groupId: "center",
+        box: { x: 0, y: 0, width: 500, height: 480 },
+      },
       {
         id: "output-log",
         groupId: "bottom",
+        box: { x: 0, y: 480, width: 500, height: 140 },
         width: 500,
         height: 140,
-        neighborId: "viewport",
-        neighborDirection: "below",
       },
     ]);
     const result = toggleDockWindow(api, outputLog);

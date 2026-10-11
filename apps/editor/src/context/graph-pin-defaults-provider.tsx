@@ -110,7 +110,7 @@ export function GraphPinDefaultEditor({ request, catalogs, editorGraph: hostEdit
         data-testid="graph-pin-class-picker" />
       <AssetPicker open={activePick?.kind === "asset"} onOpenChange={(open) => { if (!open) setPick(null); }}
         assets={assets} allowedTypes={activePick?.kind === "asset"
-          ? assetPickerAllowedTypes(activePick.assetType, request.nodeData.typeClassIds) : undefined}
+          ? assetPickerAllowedTypes(activePick.assetType) : undefined}
         createOptions={postProcess ? { materialDomain: "postProcess" }
           : dataGraphAssetCreateOptions(request.nodeType ?? "", request.pin.id, request.nodeData)}
         allowNone onPick={commitPick} data-testid="graph-pin-asset-picker" />

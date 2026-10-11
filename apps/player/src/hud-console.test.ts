@@ -10,6 +10,8 @@ describe("Player console HUD commands", () => {
     expect(element.hidden).toBe(true);
     hud.setStats({ ticks: 12, fps: 60, scriptMs: 2, physicsMs: 1, draws: 18, geometryBytes: 1048576 });
     expect(element.hidden).toBe(true);
+    // Hidden: the sample is kept, but the panel is not rebuilt until shown.
+    expect(element.textContent).not.toContain("60");
     expect(element.querySelector('[data-stat="memory"]')).toBeNull();
     expect(hud.applyCommand({ type: "setStat", name: "memory", enabled: true })).toBe(true);
     expect(element.hidden).toBe(false);

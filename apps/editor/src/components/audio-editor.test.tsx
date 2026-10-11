@@ -65,6 +65,23 @@ describe("Audio editor docks", () => {
     expect(screen.getByTestId("audio-clip-1-name").textContent).toBe("Second");
   });
 
+  it("keeps an edit made while a clip removal is saving", async () => {
+    let finishRemove = () => {};
+    audioIO.remove.mockImplementationOnce(() => new Promise<void>((resolve) => { finishRemove = resolve; }));
+    const onChange = vi.fn();
+    const clips = [{ chunkId: "source", name: "Jump", weight: 1 }, { chunkId: "clip-1", name: "Second", weight: 1 }];
+    const view = render(<AudioClips path="assets/Jump.babasset" assetName="Jump" payload={{ volume: 1, clips }} onChange={onChange} />);
+    fireEvent.click(screen.getByTestId("audio-clip-1-remove"));
+    await waitFor(() => expect(audioIO.remove).toHaveBeenCalled());
+    view.rerender(<AudioClips path="assets/Jump.babasset" assetName="Jump" payload={{ volume: 0.25, clips }} onChange={onChange} />);
+    finishRemove();
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      volume: 0.25,
+      clips: [expect.objectContaining({ chunkId: "source" })],
+    }));
+  });
+
   it("hides Pitch when Randomize Pitch is on and keeps min/max", () => {
     render(
       <AudioDetails

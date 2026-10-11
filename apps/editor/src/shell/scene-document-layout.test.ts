@@ -5,12 +5,10 @@ import { applyFocusLayout, focusKeepPanelIds } from "./layout-ops";
 import { engineSettingsSchema } from "@babylonslate/vfs";
 
 describe("Scene mode layouts", () => {
-  it("migrates an existing scene arrangement to Design and round-trips independent layouts", () => {
+  it("round-trips independent per-mode layouts", () => {
     const design = { panels: { viewport: { id: "viewport" }, custom: { id: "custom" } } };
-    const migrated = parseSceneDocumentLayout(design);
-    expect(migrated.design).toBe(design);
     const landscape = { panels: { viewport: { id: "viewport" }, "landscape-settings": { id: "landscape-settings" } } };
-    const saved = JSON.parse(JSON.stringify({ ...migrated, sceneMode: "foliage", landscape }));
+    const saved = JSON.parse(JSON.stringify({ sceneMode: "foliage", design, landscape, foliage: null }));
     expect(parseSceneDocumentLayout(saved)).toEqual({ sceneMode: "foliage", design, landscape, foliage: null });
   });
   it("uses each mode's window catalog and Focus keep-list", () => {

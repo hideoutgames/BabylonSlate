@@ -1,7 +1,5 @@
 import type { GraphDocument, GraphEdge } from "./graph-types";
 
-export const DEFAULT_NODE_TYPE = "logMessage";
-
 interface CanvasNode {
   id: string;
   type?: string;
@@ -16,7 +14,7 @@ function serializedNodeType(node: CanvasNode): string {
   if (typeof data[NODE_TYPE_KEY] === "string") {
     return data[NODE_TYPE_KEY];
   }
-  return node.type ?? DEFAULT_NODE_TYPE;
+  return node.type ?? "";
 }
 
 function serializedNodeData(data: unknown): Record<string, unknown> {

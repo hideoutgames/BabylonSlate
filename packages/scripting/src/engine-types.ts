@@ -27,6 +27,7 @@ export const ENGINE_ASSET_LOAD_HANDLE_STATE_ENUM_ID = "engine:AssetLoadHandleSta
 export const ENGINE_ASSET_LOAD_PRIORITY_ENUM_ID = "engine:AssetLoadPriority";
 
 export const ENGINE_COLLISION_CHANNEL_ENUM_ID = "engine:CollisionChannel";
+export const ENGINE_NAV_OBSTACLE_KIND_ENUM_ID = "engine:NavObstacleKind";
 export const ENGINE_HIT_RESULT_STRUCT_ID = "engine:HitResult";
 
 export const COLLISION_CHANNEL_MEMBERS = [
@@ -99,6 +100,11 @@ export const ENGINE_ENUMS: readonly EngineEnum[] = [
     id: ENGINE_COLLISION_CHANNEL_ENUM_ID,
     name: "Collision Channel",
     members: COLLISION_CHANNEL_MEMBERS.map((name, value) => ({ name, value })),
+  },
+  {
+    id: ENGINE_NAV_OBSTACLE_KIND_ENUM_ID,
+    name: "Nav Obstacle Kind",
+    members: ["box", "cylinder"].map((name, value) => ({ name, value })),
   },
 
   {

@@ -22,6 +22,5 @@ describe("native Key controls", () => {
     expect(inputControlFromKey("Gamepad1Button999")).toBeNull();
     expect(inputControlFromKey({ key: "Space" })).toBeNull();
     expect(inputKeyFromControl("key", "")).toBeNull();
-    expect(inputKeyFromControl("pointer", "primary")).toBe("MouseLeft");
   });
 });

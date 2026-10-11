@@ -889,6 +889,14 @@ describe("AudioService", () => {
       1 + 50 / AUDIO_SPEED_OF_SOUND,
       5,
     );
+    // An emitter that leaves the snapshot holds still: pitch returns to authored.
+    now = 200;
+    service.syncSnapshot([]);
+    expect(backend.playbackRates.get("v1")).toBe(1);
+    // Its return is not read as motion from the pose before the gap.
+    now = 300;
+    service.syncSnapshot([{ slotId: 1, position: { x: 40, y: 0, z: 0 } }]);
+    expect(backend.playbackRates.get("v1")).toBe(1);
     service.dispose();
   });
 

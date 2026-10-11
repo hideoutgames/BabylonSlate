@@ -80,4 +80,67 @@ describe("navigation nodes", () => {
     );
     expect(compiled.source).toContain("ctx.findPathTo");
   });
+
+  it.each([
+    ["navigation.getClosestNavigablePoint", "closest", "getClosestNavigablePoint"],
+    ["navigation.getRandomPointInRadius", "point", "getRandomPointInRadius"],
+  ] as const)("%s reports Found and keeps the point a Vector3", (typeId, pointPin, method) => {
+    const registry = createDefaultNodeRegistry();
+    const node = (id: string, type: string) => ({
+      id, typeId: type, position: { x: 0, y: 0 }, pins: registry.get(type)!.pins({}), properties: {},
+    });
+    const compiled = compileGraph(
+      {
+        id: "g",
+        kind: "event",
+        nodes: [node("entry", "flow.event.beginPlay"), node("query", typeId), node("logFound", "debug.log"), node("logPoint", "debug.log")],
+        edges: [
+          { id: "e1", sourceNodeId: "entry", sourcePinId: "execOut", targetNodeId: "query", targetPinId: "execIn" },
+          { id: "e2", sourceNodeId: "query", sourcePinId: "execOut", targetNodeId: "logFound", targetPinId: "execIn" },
+          { id: "e3", sourceNodeId: "logFound", sourcePinId: "execOut", targetNodeId: "logPoint", targetPinId: "execIn" },
+          { id: "e4", sourceNodeId: "query", sourcePinId: "found", targetNodeId: "logFound", targetPinId: "message" },
+          { id: "e5", sourceNodeId: "query", sourcePinId: pointPin, targetNodeId: "logPoint", targetPinId: "message" },
+        ],
+      },
+      { assetGuid: "a", registry },
+    );
+    const body = compiled.source.replace(/export\s+(async\s+)?function\s+/g, "$1function ");
+    const onBeginPlay = new Function(`${body}\nreturn onBeginPlay;`)() as (ctx: unknown) => void;
+    const run = (result: unknown) => {
+      const logs: unknown[] = [];
+      onBeginPlay({
+        [method]: () => result,
+        formatValue: (value: unknown) => value,
+        log: (_severity: string, _category: string, value: unknown) => logs.push(value),
+      });
+      return logs;
+    };
+    expect(run(null)).toEqual([false, { x: 0, y: 0, z: 0 }]);
+    expect(run({ x: 1, y: 2, z: 3 })).toEqual([true, { x: 1, y: 2, z: 3 }]);
+  });
+
+  it("Add Obstacle sends a box when Kind is unwired", () => {
+    const registry = createDefaultNodeRegistry();
+    const node = (id: string, type: string) => ({
+      id, typeId: type, position: { x: 0, y: 0 }, pins: registry.get(type)!.pins({}), properties: {},
+    });
+    const compiled = compileGraph(
+      {
+        id: "g",
+        kind: "event",
+        nodes: [node("entry", "flow.event.beginPlay"), node("add", "navigation.addObstacle")],
+        edges: [{ id: "e1", sourceNodeId: "entry", sourcePinId: "execOut", targetNodeId: "add", targetPinId: "execIn" }],
+      },
+      { assetGuid: "a", registry },
+    );
+    const body = compiled.source.replace(/export\s+(async\s+)?function\s+/g, "$1function ");
+    const kinds: unknown[] = [];
+    (new Function(`${body}\nreturn onBeginPlay;`)() as (ctx: unknown) => void)({
+      addObstacle: (kind: unknown) => {
+        kinds.push(kind);
+        return "obstacle-1";
+      },
+    });
+    expect(kinds).toEqual(["box"]);
+  });
 });

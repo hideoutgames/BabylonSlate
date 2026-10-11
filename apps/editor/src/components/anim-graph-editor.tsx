@@ -227,29 +227,39 @@ function transitionLabel(doc: AnimGraphDocument, transition: AnimTransition): st
   return `${from} To ${to}`;
 }
 
+/** Asset types a state clip, its label or its skeleton check can name. */
+const CLIP_CATALOG_TYPES: ReadonlySet<string> = new Set([
+  "Animation",
+  "Model",
+  "SpriteAnimation",
+]);
+
 function useAnimGraphDocument() {
   const { documentId } = useDocumentWorkspace();
-  const { applyAssetDocumentChange } = useDocumentActions();
-  const { assetRegistry } = useRegistryState();
+  const { applyAssetDocumentChange, getOpenDocuments } = useDocumentActions();
+  const { assetRegistry, registryEpoch } = useRegistryState();
   const entry = useOpenDocument(documentId);
-  const listed = assetRegistry?.list() ?? [];
-  const catalogKey = listed
-    .map(
-      (asset) =>
-        `${asset.header.guid}:${asset.header.type}:${JSON.stringify(asset.header.payload ?? {})}`,
-    )
-    .join("|");
-  const catalog = useMemo(
-    () => animClipCatalogFromAssets(listed),
-    // listed is rebuilt each render; catalogKey is the actual input.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [catalogKey],
-  );
+  const catalog = useMemo(() => {
+    void registryEpoch; // Registry contents change without replacing its instance.
+    return animClipCatalogFromAssets(
+      (assetRegistry?.list() ?? []).filter((asset) =>
+        CLIP_CATALOG_TYPES.has(asset.header.type),
+      ),
+    );
+  }, [assetRegistry, registryEpoch]);
   const doc = useMemo(
     () =>
       asAnimGraph((entry?.content ?? {}) as Record<string, unknown>, catalog),
     [entry?.content, catalog],
   );
+  /**
+   * The stored document now. GraphEditor reports edits while it renders, so
+   * the graph commits a microtask later; it builds on this, not on `doc`.
+   */
+  const latestDoc = () => {
+    const content = getOpenDocuments().find((open) => open.id === documentId)?.content;
+    return content ? asAnimGraph(content as Record<string, unknown>, catalog) : doc;
+  };
   /** `mergeKey` groups one scrub's edits into one undo entry. */
   const commit = (next: AnimGraphDocument, mergeKey?: string) => {
     void applyAssetDocumentChange(
@@ -258,7 +268,7 @@ function useAnimGraphDocument() {
       mergeKey,
     );
   };
-  return { doc, commit, assetRegistry, documentId, catalog };
+  return { doc, latestDoc, commit, assetRegistry, documentId, catalog };
 }
 
 function AnimGraphVariablesList({
@@ -414,11 +424,6 @@ function AnimGraphVariablesList({
   );
 }
 
-export function AnimGraphParametersPanel(_props: IDockviewPanelProps) {
-  void _props;
-  return <AnimGraphVariablesList showStates />;
-}
-
 export function AnimGraphVariablesPanel(_props: IDockviewPanelProps) {
   void _props;
   return <AnimGraphVariablesList showStates />;
@@ -431,7 +436,7 @@ export function AnimObjectVariablesPanel(_props: IDockviewPanelProps) {
 
 export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
   void _props;
-  const { doc, commit, documentId, catalog } = useAnimGraphDocument();
+  const { doc, latestDoc, commit, documentId, catalog } = useAnimGraphDocument();
   const {
     selectedId,
     setSelectedId,
@@ -620,7 +625,7 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
               const transitionId = openTransition.id;
               queueMicrotask(() => {
                 commit(
-                  patchTransition(doc, transitionId, {
+                  patchTransition(latestDoc(), transitionId, {
                     ruleGraph: persistTransitionRuleGraph(nextRule),
                   }),
                 );
@@ -665,9 +670,9 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
             queueMicrotask(() => setSelectedTransitionId(edgeIds[0] ?? null));
           }}
           onChange={(next) => {
-            const updated = serializedToAnimGraph(next, doc);
             const keepSelection = selectedId;
             queueMicrotask(() => {
+              const updated = serializedToAnimGraph(next, latestDoc());
               if (
                 keepSelection &&
                 !updated.states.some((state) => state.id === keepSelection)

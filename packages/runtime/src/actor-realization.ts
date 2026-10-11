@@ -144,8 +144,10 @@ export class ActorRealization {
       transform: options.transform,
       hooks: {
         onCreation: (self) => this.admission.runCreation(self, () => hooks.onCreation?.(self)),
-        onTick: (self, ctx) =>
-          this.admission.guard(() => hooks.onTick?.(self, ctx)),
+        // Like scene actors, a class without a tick hook adds no per-frame call.
+        onTick: hooks.onTick
+          ? (self, ctx) => this.admission.guard(() => hooks.onTick?.(self, ctx))
+          : undefined,
         onDestroyed: (self) =>
           this.admission.runDestroyed(self, () => hooks.onDestroyed?.(self)),
       },
@@ -160,6 +162,14 @@ export class ActorRealization {
       this.realize(actor);
     } catch (error) {
       if (!isInfiniteLoopError(error)) throw error;
+      // The loop is already reported and ends the session; the half-spawned
+      // actor leaves the world instead of being handed to the caller.
+      try {
+        this.remove(actor);
+      } catch (removal) {
+        if (!isInfiniteLoopError(removal)) throw removal;
+      }
+      return null;
     }
     return actor;
   }

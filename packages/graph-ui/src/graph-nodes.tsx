@@ -39,10 +39,6 @@ import { pinDefaultPreview, readPinDefaultValue } from "./pin-default-preview";
 import { PinDefaultEditor } from "./pin-default-editor";
 import { isPinWired } from "./pin-connections";
 
-type LogNodeData = {
-  message: string;
-};
-
 export type CanvasNode = Node<Record<string, unknown>>;
 
 function visualFromData(
@@ -599,24 +595,6 @@ export function VariableGetNode({
   );
 }
 
-export function LogMessageNode({
-  id,
-  data,
-  selected,
-}: NodeProps<Node<LogNodeData>>) {
-  return (
-    <BlueprintNodeShell
-      nodeId={id}
-      title="Log Message"
-      role="debug"
-      selected={selected}
-      data={data}
-    >
-      <div className="px-3 py-2 text-sm">{data.message}</div>
-    </BlueprintNodeShell>
-  );
-}
-
 export function resolveNodeType(
   type: string,
   data: Record<string, unknown>,
@@ -627,14 +605,10 @@ export function resolveNodeType(
     return "variableGet";
   }
   if (type in knownTypes) return type;
-  if (type === "logMessage" && !hasSerializedPins(data)) {
-    return "logMessage";
-  }
   return "pinNode";
 }
 
 export const graphNodeTypes = {
-  logMessage: LogMessageNode,
   pinNode: PinNode,
   variableGet: VariableGetNode,
 };

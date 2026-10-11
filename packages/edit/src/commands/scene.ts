@@ -25,17 +25,31 @@ function byteSizeOf(value: unknown): number {
   return new TextEncoder().encode(JSON.stringify(value)).byteLength;
 }
 
+/** `undefined` clears the key, as saving to JSON would. */
+function withProperty(
+  properties: Record<string, unknown>,
+  key: string,
+  value: unknown,
+): Record<string, unknown> {
+  const next = { ...properties, [key]: value };
+  if (value === undefined) delete next[key];
+  return next;
+}
+
+/** Returns `doc` itself when `update` keeps the actor, so the stack sees a no-op. */
 function replaceActor(
   doc: SerializedScene,
   actorId: string,
   update: (actor: SerializedActor) => SerializedActor,
 ): SerializedScene {
-  return {
-    ...doc,
-    actors: doc.actors.map((actor) =>
-      actor.id === actorId ? update(actor) : actor,
-    ),
-  };
+  let changed = false;
+  const actors = doc.actors.map((actor) => {
+    if (actor.id !== actorId) return actor;
+    const next = update(actor);
+    changed ||= next !== actor;
+    return next;
+  });
+  return changed ? { ...doc, actors } : doc;
 }
 
 export class AddActorCommand implements EditCommand<SerializedScene> {
@@ -57,11 +71,13 @@ export class AddActorCommand implements EditCommand<SerializedScene> {
     if (doc.actors.some((actor) => actor.id === this.actor.id)) {
       return doc;
     }
+    // A copy, so an in-place write to the added actor cannot reach the snapshot.
+    const actor = structuredClone(this.actor);
     const actors = [...doc.actors];
     if (this.index >= 0 && this.index <= actors.length) {
-      actors.splice(this.index, 0, this.actor);
+      actors.splice(this.index, 0, actor);
     } else {
-      actors.push(this.actor);
+      actors.push(actor);
     }
     return { ...doc, actors };
   }
@@ -258,7 +274,9 @@ export class ReorderActorCommand implements EditCommand<SerializedScene> {
 
   apply(doc: SerializedScene): SerializedScene {
     const index = doc.actors.findIndex((actor) => actor.id === this.actorId);
-    if (index === -1) return doc;
+    // A row no longer at `from` was moved by an edit this one does not know
+    // about (a journal replayed over saved content), so it is left in place.
+    if (index !== this.from) return doc;
     const actors = [...doc.actors];
     const [moved] = actors.splice(index, 1);
     if (!moved) return doc;
@@ -324,15 +342,19 @@ export class AddComponentCommand implements EditCommand<SerializedScene> {
   }
 
   apply(doc: SerializedScene): SerializedScene {
+    const target = doc.actors.find((actor) => actor.id === this.actorId);
+    // Unchanged, so Undo history records no inverse that would delete the existing row.
+    if (!target || target.components.some((entry) => entry.id === this.component.id)) {
+      return doc;
+    }
+    // A copy, so an in-place write to the added component cannot reach the snapshot.
+    const component = structuredClone(this.component);
     return replaceActor(doc, this.actorId, (actor) => {
-      if (actor.components.some((entry) => entry.id === this.component.id)) {
-        return actor;
-      }
       const components = [...actor.components];
       if (this.index >= 0 && this.index <= components.length) {
-        components.splice(this.index, 0, this.component);
+        components.splice(this.index, 0, component);
       } else {
-        components.push(this.component);
+        components.push(component);
       }
       return { ...actor, components };
     });
@@ -398,7 +420,8 @@ export class ReorderComponentCommand implements EditCommand<SerializedScene> {
       const index = actor.components.findIndex(
         (entry) => entry.id === this.componentId,
       );
-      if (index === -1) return actor;
+      // Only the row recorded at `from` moves, as in ReorderActorCommand.
+      if (index !== this.from) return actor;
       const components = [...actor.components];
       const [moved] = components.splice(index, 1);
       if (!moved) return actor;
@@ -515,6 +538,14 @@ export class SetComponentPropertyCommand
   readonly from: unknown;
   readonly to: unknown;
   readonly linkage?: ComponentLinkageChange;
+  #byteSize?: number;
+  /**
+   * Both values count toward the byte budget (landscape heights, tile data,
+   * spline points); measured on first read and memoised.
+   */
+  get byteSize(): number {
+    return (this.#byteSize ??= byteSizeOf({ from: this.from, to: this.to }));
+  }
 
   constructor(
     actorId: string,
@@ -540,7 +571,8 @@ export class SetComponentPropertyCommand
         component.id === this.componentId
           ? withComponentLinkage({
               ...component,
-              properties: { ...component.properties, [this.property]: this.to },
+              // A copy, so an in-place write to the live value cannot reach the snapshot.
+              properties: withProperty(component.properties, this.property, structuredClone(this.to)),
             }, this.linkage?.to)
           : component,
       ),
@@ -548,7 +580,7 @@ export class SetComponentPropertyCommand
   }
 
   invert(): SetComponentPropertyCommand {
-    return new SetComponentPropertyCommand(
+    const inverse = new SetComponentPropertyCommand(
       this.actorId,
       this.componentId,
       this.property,
@@ -556,6 +588,9 @@ export class SetComponentPropertyCommand
       this.from,
       this.linkage ? { from: this.linkage.to, to: this.linkage.from } : undefined,
     );
+    // Swapping `from` and `to` keeps the measured size.
+    inverse.#byteSize = this.#byteSize;
+    return inverse;
   }
 }
 
@@ -590,7 +625,14 @@ export class SetComponentTransformCommand
       ...actor,
       components: actor.components.map((component) =>
         component.id === this.componentId && component.classId !== "2DAnchorComponent"
-          ? withComponentLinkage({ ...component, transform: this.to }, this.linkage?.to)
+          ? withComponentLinkage({
+              ...component,
+              transform: {
+                position: [...this.to.position],
+                rotation: [...this.to.rotation],
+                scale: [...this.to.scale],
+              },
+            }, this.linkage?.to)
           : component,
       ),
     }));
@@ -613,6 +655,14 @@ export class SetSceneSettingCommand implements EditCommand<SerializedScene> {
   readonly key: keyof SceneSettings;
   readonly from: SceneSettings[keyof SceneSettings];
   readonly to: SceneSettings[keyof SceneSettings];
+  #byteSize?: number;
+  /**
+   * Both values count toward the byte budget (foliage groups, the
+   * post-process stack); measured on first read and memoised.
+   */
+  get byteSize(): number {
+    return (this.#byteSize ??= byteSizeOf({ from: this.from, to: this.to }));
+  }
 
   constructor(
     key: keyof SceneSettings,
@@ -635,7 +685,10 @@ export class SetSceneSettingCommand implements EditCommand<SerializedScene> {
   }
 
   invert(): SetSceneSettingCommand {
-    return new SetSceneSettingCommand(this.key, this.to, this.from);
+    const inverse = new SetSceneSettingCommand(this.key, this.to, this.from);
+    // Swapping `from` and `to` keeps the measured size.
+    inverse.#byteSize = this.#byteSize;
+    return inverse;
   }
 }
 

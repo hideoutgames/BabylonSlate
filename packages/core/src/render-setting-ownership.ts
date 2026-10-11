@@ -100,7 +100,6 @@ export const SCENE_RENDER_SETTING_OWNERS = {
   cameraBounds2D: "independent",
   gravity: "non-rendering",
   fixedTimestepMs: "non-rendering",
-  gameInstanceClass: "non-rendering",
   physicsWorld: "non-rendering",
   grid: "non-rendering",
   editorJoystickEnabled: "non-rendering",

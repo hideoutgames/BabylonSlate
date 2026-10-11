@@ -17,7 +17,9 @@ import {
   publish,
   workloadFor,
   claimInheritedLease,
+  removeAbandoned,
   resourceStateDirectory,
+  withAdmissionLock,
 } from "./resource-admission.mjs";
 import { runCommand } from "./process-runner.mjs";
 
@@ -447,6 +449,52 @@ test("memory pressure queues work until the request fits above the host reserve"
   assert.equal(admitted, false);
   free = 5 * 1024 ** 3;
   await (await pending).release();
+});
+
+test("admission lock owners and waiters never remove a successor's lock", async (t) => {
+  const { directory } = await fixture(t);
+  const lock = join(directory, "lock");
+  const successor = { pid: process.pid, token: "successor" };
+  await withAdmissionLock(
+    directory,
+    () => {},
+    async () => {
+      const owner = JSON.parse(await readFile(lock, "utf8"));
+      assert.equal(owner.pid, process.pid);
+      // A waiter judged this lock abandoned, removed it, and now holds its own.
+      await writeFile(lock, JSON.stringify(successor));
+    },
+  );
+  assert.deepEqual(JSON.parse(await readFile(lock, "utf8")), successor);
+  // A waiter that read a killed owner acts only after the successor took over.
+  assert.equal(await removeAbandoned(lock), false);
+  assert.deepEqual(JSON.parse(await readFile(lock, "utf8")), successor);
+
+  // A killed owner's lock and a killed remover's claim block no waiters, and
+  // removing them never lets two waiters hold the lock at once.
+  const killed = JSON.stringify({ pid: 2147483647, token: "killed" });
+  await writeFile(lock, killed);
+  await writeFile(`${lock}.claim`, killed);
+  let holders = 0;
+  let overlapped = false;
+  await Promise.all(
+    Array.from({ length: 8 }, () =>
+      withAdmissionLock(
+        directory,
+        () => {},
+        async () => {
+          overlapped ||= ++holders > 1;
+          await delay(10);
+          holders -= 1;
+        },
+      ),
+    ),
+  );
+  assert.equal(overlapped, false);
+  assert.deepEqual(
+    (await readdir(directory)).filter((file) => file.startsWith("lock")),
+    [],
+  );
 });
 
 test("abandoned tickets do not block work; an impossible request fails immediately", async (t) => {

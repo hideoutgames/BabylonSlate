@@ -93,3 +93,26 @@ describe("reusable Havok sphere sweeps", () => {
     } finally { backend.dispose(); }
   });
 });
+
+describe("Havok shape sweeps", () => {
+  it("report a shape that already overlaps at its start and reject a rotating sweep", async () => {
+    const backend = await HavokPhysicsBackend.create({ kind: "3d", gravity: { x: 0, y: 0, z: 0 } });
+    const identity = { x: 0, y: 0, z: 0, w: 1 };
+    const pose = (x: number) => ({ position: { x, y: 0, z: 0 }, rotation: identity });
+    const cube = { kind: "box" as const, halfExtents: { x: 0.2, y: 0.2, z: 0.2 } };
+    try {
+      addWall(backend, "wall");
+      const cast = backend.shapeSweep(cube, pose(-2), pose(2));
+      expect(cast).toMatchObject({ hit: true, bodyId: "wall" });
+      expect(cast.distance).toBeCloseTo(1.775, 2);
+      // Starting inside the wall: the cast alone would report nothing.
+      const overlapping = backend.shapeSweep(cube, pose(0.1), pose(2));
+      expect(overlapping).toMatchObject({ hit: true, bodyId: "wall", distance: 0 });
+      expect(overlapping.normal!.x).toBeCloseTo(1, 2);
+      // The negated quaternion is the same rotation; a turn is not.
+      expect(backend.shapeSweep(cube, pose(-2), { position: { x: 2, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: -1 } }).hit).toBe(true);
+      expect(() => backend.shapeSweep(cube, pose(-2),
+        { position: { x: 2, y: 0, z: 0 }, rotation: { x: 0, y: Math.SQRT1_2, z: 0, w: Math.SQRT1_2 } })).toThrow(/rotation/);
+    } finally { backend.dispose(); }
+  });
+});

@@ -3,6 +3,7 @@ import {
   getHostMemoryStats,
   type HostMemoryStats,
 } from "@babylonslate/vfs";
+import { audioStats, particleStats } from "@babylonslate/render";
 import { loadGameFromFiles, loadGameFromHttp } from "./artifact";
 import { startPlayerWithBackend } from "./player-backend";
 import type { PlayerTestHandle } from "./boot";
@@ -30,6 +31,13 @@ import {
 } from "./preview-protocol";
 
 const previewHostOrigin = window.location.origin;
+// The query string and frame nesting are fixed for the page's lifetime.
+const previewMode = new URLSearchParams(window.location.search).get("preview") === "1";
+const previewHosted = previewMode && window.parent !== window;
+/** Runtime console events mirrored into the Preview host's console. */
+const PREVIEW_CONSOLE_EVENTS: ReadonlySet<string> = new Set([
+  "log", "print", "diagnostic", "setBehaviourTreeDebug", "behaviourTreeSnapshot", "trace", "setShowFps", "setStat",
+]);
 const startupAbort = new AbortController();
 let stopCurrentPlayer: (() => void) | undefined;
 // Install before pack loading, fonts or asynchronous backend initialization.
@@ -70,16 +78,17 @@ function layoutFromManifest(manifest: GameManifest): void {
   });
 }
 
-async function launchFromFiles(files: Map<string, Uint8Array>, traceByteBudget?: number, onDemand = false): Promise<void> {
-  const source = onDemand ? createPreviewAssetClient({ send: message => window.parent.postMessage(message, previewHostOrigin) }) : undefined;
+/** Preview hands off the catalog; every asset file is requested from the host. */
+async function launchFromPreview(files: Map<string, Uint8Array>, traceByteBudget: number): Promise<void> {
+  const source = createPreviewAssetClient({ send: message => window.parent.postMessage(message, previewHostOrigin) });
   const receive = (event: MessageEvent) => {
-    if (isExpectedPreviewHostMessage(event, window.parent, previewHostOrigin)) source?.receive(event.data);
+    if (isExpectedPreviewHostMessage(event, window.parent, previewHostOrigin)) source.receive(event.data);
   };
-  if (source) window.addEventListener("message", receive);
-  const release = () => { source?.dispose(); window.removeEventListener("message", receive); };
+  window.addEventListener("message", receive);
+  const release = () => { source.dispose(); window.removeEventListener("message", receive); };
   startupAbort.signal.addEventListener("abort", release, { once: true });
   try {
-    const game = await loadGameFromFiles(files, { signal: startupAbort.signal, readFile: source?.readFile });
+    const game = await loadGameFromFiles(files, { signal: startupAbort.signal, readFile: source.readFile });
     const dispose = game.dispose;
     game.dispose = () => { try { dispose?.(); } finally { startupAbort.signal.removeEventListener("abort", release); release(); } };
     try { await launchLoaded(game, traceByteBudget); } catch (error) { game.dispose(); throw error; }
@@ -102,7 +111,7 @@ async function launchLoaded(
   const hud = mountPlayerHud(
     document.getElementById("player-hud") ?? document.createElement("div"),
     // Preview Build starts with Stats closed, like Play; its overlay toggles them.
-    { bundleDebugger: game.manifest.bundleDebugger, visible: !(previewMode() && window.parent !== window) },
+    { bundleDebugger: game.manifest.bundleDebugger, visible: !previewHosted },
   );
   let currentLightsDebugText: string | null = null;
   const stopAudioOverlays = mountPlayerDebuggerOverlays(rootEl(), {
@@ -130,7 +139,7 @@ async function launchLoaded(
   let stopped = false;
   let previewDiagnostics: ReturnType<typeof import("./preview-diagnostics")["installPreviewDiagnostics"]> | undefined;
   let preparingDiagnostics: Promise<void> | undefined;
-  const previewSaves = previewMode() && window.parent !== window ? createPreviewSaveStorageClient({
+  const previewSaves = previewHosted ? createPreviewSaveStorageClient({
     source: () => window.parent,
     origin: () => previewHostOrigin,
     send: (message) => window.parent.postMessage(message, previewHostOrigin),
@@ -164,28 +173,15 @@ async function launchLoaded(
     game,
     saveStorage: previewSaves?.storage,
     traceByteBudget,
-    previewDiagnostics: previewMode() && window.parent !== window,
+    previewDiagnostics: previewHosted,
     onStopped: cleanupPage,
     onConsoleEvent: (command) => {
       hud.applyCommand(command);
-      if (window.parent === window || !previewMode()) return;
-      if (
-        [
-          "log",
-          "print",
-          "diagnostic",
-          "setBehaviourTreeDebug",
-          "behaviourTreeSnapshot",
-          "trace",
-          "setShowFps",
-          "setStat",
-        ].includes(command.type)
-      ) {
-        window.parent.postMessage(
-          { type: PREVIEW_CONSOLE_EVENT_MESSAGE, command },
-          previewHostOrigin,
-        );
-      }
+      if (!previewHosted || !PREVIEW_CONSOLE_EVENTS.has(command.type)) return;
+      window.parent.postMessage(
+        { type: PREVIEW_CONSOLE_EVENT_MESSAGE, command },
+        previewHostOrigin,
+      );
     },
     onRenderOutputChanged: (render) => {
       runtimeRender = render;
@@ -233,6 +229,7 @@ async function launchLoaded(
         __babylonslatePlayerTest?: PlayerTestHandle;
       }
     ).__babylonslatePlayerTest = {
+      tickIndex: () => session.ticks(),
       visuals: () => session.visuals(),
       rendering: () => session.rendering(),
       scalability: () => session.scalability(),
@@ -244,6 +241,8 @@ async function launchLoaded(
       executeConsoleCommand: (line) => session.executeConsoleCommand(line),
       stop: () => session.stop(),
     };
+    // Test-mode hatches, as in the editor; release players do not install them.
+    Object.assign(window, { __babylonslateAudioStats: audioStats, __babylonslateParticleStats: particleStats });
   }
   if (window.parent !== window) {
     window.parent.postMessage(
@@ -268,7 +267,41 @@ async function launchLoaded(
       previewHostOrigin,
     );
   }
+  // One inspection runs at a time; requests during it coalesce into one more.
   let inspecting = false;
+  let inspectAgain = false;
+  let publishedActors: readonly string[] = [];
+  const refreshActorCatalog = () => {
+    if (inspecting) { inspectAgain = true; return; }
+    inspecting = true;
+    inspectAgain = false;
+    void session
+      .inspectWorld()
+      .then((snapshot) => {
+        if (stopped) return;
+        const actors = [
+          ...new Set(
+            snapshot.nodes.flatMap((node) =>
+              node.kind === "actor" ? [node.label, node.id] : [],
+            ),
+          ),
+        ];
+        if (actors.length === publishedActors.length && actors.every((actor, index) => actor === publishedActors[index])) return;
+        publishedActors = actors;
+        window.parent.postMessage(
+          { type: PREVIEW_CONSOLE_CATALOG_MESSAGE, actors },
+          previewHostOrigin,
+        );
+      })
+      // A failed or unanswered inspection keeps the last published actors and
+      // the next context request retries. Console output would reach the
+      // game's Preview log through console capture, once per poll.
+      .catch(() => {})
+      .finally(() => {
+        inspecting = false;
+        if (inspectAgain && !stopped) refreshActorCatalog();
+      });
+  };
   const stop = () => {
     if (stopped) return;
     let result: ReturnType<typeof session.stop>;
@@ -285,7 +318,7 @@ async function launchLoaded(
     if (!isExpectedPreviewHostMessage(event, window.parent, previewHostOrigin))
       return;
     if (stopped) return;
-    if (previewMode() && session.previewDiagnostics && event.data?.type === "babylonslate-preview-diagnostic-control") {
+    if (previewMode && session.previewDiagnostics && event.data?.type === "babylonslate-preview-diagnostic-control") {
       if (previewDiagnostics) { previewDiagnostics.receive(event); return; }
       if (event.data?.action !== "open" || preparingDiagnostics) return;
       // This independently built entry is absent from ordinary exported games.
@@ -303,32 +336,12 @@ async function launchLoaded(
         .finally(() => { preparingDiagnostics = undefined; });
       return;
     }
-    if (previewMode() && event.data?.type === PREVIEW_CONSOLE_CONTEXT_MESSAGE) {
-      if (inspecting) return;
-      inspecting = true;
-      void session
-        .inspectWorld()
-        .then((snapshot) => {
-          if (stopped) return;
-          const actors = [
-            ...new Set(
-              snapshot.nodes.flatMap((node) =>
-                node.kind === "actor" ? [node.label, node.id] : [],
-              ),
-            ),
-          ];
-          window.parent.postMessage(
-            { type: PREVIEW_CONSOLE_CATALOG_MESSAGE, actors },
-            previewHostOrigin,
-          );
-        })
-        .finally(() => {
-          inspecting = false;
-        });
+    if (previewMode && event.data?.type === PREVIEW_CONSOLE_CONTEXT_MESSAGE) {
+      refreshActorCatalog();
       return;
     }
     if (
-      previewMode() &&
+      previewMode &&
       event.data?.type === PREVIEW_CONSOLE_REQUEST_MESSAGE &&
       isPreviewConsoleRequest(event.data)
     ) {
@@ -345,11 +358,6 @@ async function launchLoaded(
   window.addEventListener("message", onSessionMessage);
 }
 
-function previewMode(): boolean {
-  const params = new URLSearchParams(window.location.search);
-  return params.get("preview") === "1";
-}
-
 function bootFailure(error: unknown): void {
   if (startupAbort.signal.aborted) return;
   const message = error instanceof Error ? error.message : String(error);
@@ -362,7 +370,7 @@ function bootFailure(error: unknown): void {
   }
 }
 
-if (previewMode()) {
+if (previewMode) {
   let launched = false;
   window.addEventListener("message", (event) => {
     const pack = previewPackFromExpectedHostMessage(
@@ -371,10 +379,15 @@ if (previewMode()) {
       previewHostOrigin,
     );
     if (!pack) return;
-    // The host may resend the pack until it sees the player boot; ignore repeats.
+    // The host may resend the pack until it sees the player boot; ignore repeats
+    // while a launch is running or has started. A failed launch accepts a later pack.
     if (launched) return;
     launched = true;
-    void launchFromFiles(filesFromPreviewPack(pack), pack.traceByteBudget, pack.onDemand).catch(bootFailure);
+    delete rootEl().dataset.error;
+    void launchFromPreview(filesFromPreviewPack(pack), pack.traceByteBudget).catch((error: unknown) => {
+      if (!startupAbort.signal.aborted) launched = false;
+      bootFailure(error);
+    });
   });
   // Ask only once the listener above exists. Waiting for the parent's iframe
   // `load` event alone raced module evaluation and silently dropped the pack.

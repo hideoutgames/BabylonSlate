@@ -6,18 +6,18 @@ import { projectContentRoot } from "./content-root";
 import { AssetRegistry, type IndexedAsset } from "./registry";
 import { ProjectSearchIndex } from "./search-index";
 
-const decodeAssetDocument = vi.hoisted(() => vi.fn());
+const readStoredAssetDocument = vi.hoisted(() => vi.fn());
 
 vi.mock("./asset-document", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./asset-document")>();
-  decodeAssetDocument.mockImplementation((...args: unknown[]) =>
+  readStoredAssetDocument.mockImplementation((...args: unknown[]) =>
     (
-      actual.decodeAssetDocument as (
+      actual.readStoredAssetDocument as (
         ...inner: unknown[]
-      ) => ReturnType<typeof actual.decodeAssetDocument>
+      ) => ReturnType<typeof actual.readStoredAssetDocument>
     )(...args),
   );
-  return { ...actual, decodeAssetDocument };
+  return { ...actual, readStoredAssetDocument };
 });
 
 async function createStorage(): Promise<MemoryStorageAdapter> {
@@ -168,16 +168,16 @@ describe("ProjectSearchIndex", () => {
 
   it("indexes graph nodes, variable names, and skips ExecuteJavaScript bodies", async () => {
     const storage = await createStorage();
-    await writeDocument(storage, "assets/main.graph.babasset", {
+    await writeDocument(storage, "assets/main.class.babasset", {
       guid: "graph-1",
-      type: "Graph",
+      type: "Class",
       name: "MainGraph",
       payload: {
         nodes: [
           {
             id: "log-1",
-            type: "logMessage",
-            data: { message: "Hello from BabylonSlate" },
+            type: "debug.log",
+            data: { "default:message": "Hello from BabylonSlate" },
           },
           {
             id: "var-1",
@@ -203,7 +203,7 @@ describe("ProjectSearchIndex", () => {
     await registry.mountRoot(projectContentRoot());
     const index = new ProjectSearchIndex(storage, {
       nodeTitles: {
-        logMessage: "Log",
+        "debug.log": "Log",
         "variables.get": "Get Variable",
         "variables.getValidated": "Validated Get",
         "debug.executeJavaScript": "Execute JavaScript",
@@ -219,7 +219,7 @@ describe("ProjectSearchIndex", () => {
       hello.find((hit) => hit.kind === "graph-node")?.target,
     ).toMatchObject({
       kind: "graph-node",
-      graphPath: "assets/main.graph.babasset",
+      graphPath: "assets/main.class.babasset",
       nodeId: "log-1",
     });
 
@@ -246,8 +246,8 @@ describe("ProjectSearchIndex", () => {
         nodes: [
           {
             id: "log-1",
-            type: "logMessage",
-            data: { message: "Class owned hello" },
+            type: "debug.log",
+            data: { "default:message": "Class owned hello" },
           },
         ],
         edges: [],
@@ -256,7 +256,7 @@ describe("ProjectSearchIndex", () => {
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     const index = new ProjectSearchIndex(storage, {
-      nodeTitles: { logMessage: "Log" },
+      nodeTitles: { "debug.log": "Log" },
     });
     await index.rebuild(registry);
     expect(
@@ -380,6 +380,30 @@ describe("ProjectSearchIndex", () => {
     expect(hits.some((hit) => hit.label === "StarterActor")).toBe(true);
   });
 
+  it("reads a Scene's header and document chunk, never its bakes", async () => {
+    const storage = await createStorage();
+    await storage.mkdir("assets", true);
+    const bake = new Uint8Array(256 * 1024);
+    await storage.writeBinary("assets/baked.scene.babasset", await encodeAssetDocument(
+      {
+        type: "Scene", name: "Baked", guid: "baked", version: 1,
+        payload: { actors: [{ id: "actor-1", name: "BakedHero", classId: "Actor", components: [] }] },
+      },
+      { extraChunks: [{ id: "audioReverb", kind: "audioReverb", mime: "application/octet-stream", data: bake }] },
+    ));
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const whole = vi.spyOn(storage, "readBinary");
+    const ranges = vi.spyOn(storage, "readBinaryRange");
+    const index = new ProjectSearchIndex(storage);
+    await index.rebuild(registry);
+    expect(index.query("BakedHero").some((hit) => hit.kind === "actor")).toBe(true);
+    expect(whole).not.toHaveBeenCalled();
+    const requested = ranges.mock.calls.reduce((sum, call) => sum + (call[2] as number), 0);
+    expect(requested).toBeLessThan(bake.byteLength);
+    expect(registry.accountedPayloadBytes).toBe(0);
+  });
+
   it("does not decode Scene or Class chunks until rebuild", async () => {
     const storage = await createStorage();
     await storage.mkdir("assets", true);
@@ -405,8 +429,8 @@ describe("ProjectSearchIndex", () => {
                 nodes: [
                   {
                     id: `node-${i}`,
-                    type: "logMessage",
-                    data: { message: `Node${i}` },
+                    type: "debug.log",
+                    data: { "default:message": `Node${i}` },
                   },
                 ],
                 edges: [],
@@ -415,16 +439,16 @@ describe("ProjectSearchIndex", () => {
     }
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
-    expect(decodeAssetDocument).not.toHaveBeenCalled();
+    expect(readStoredAssetDocument).not.toHaveBeenCalled();
 
     const index = new ProjectSearchIndex(storage);
     expect(index.size).toBe(0);
     expect(index.query("hero0")).toEqual([]);
     expect(index.query("node1")).toEqual([]);
-    expect(decodeAssetDocument).not.toHaveBeenCalled();
+    expect(readStoredAssetDocument).not.toHaveBeenCalled();
 
     await index.rebuild(registry);
-    expect(decodeAssetDocument.mock.calls.length).toBe(2);
+    expect(readStoredAssetDocument.mock.calls.length).toBe(2);
     expect(
       index.query("hero0").some((hit) => hit.kind === "actor"),
     ).toBe(true);
@@ -549,11 +573,11 @@ describe("ProjectSearchIndex", () => {
     let finishRead!: () => void;
     const started = new Promise<void>((resolve) => { startRead = resolve; });
     const held = new Promise<void>((resolve) => { finishRead = resolve; });
-    const read = storage.readBinary.bind(storage);
-    vi.spyOn(storage, "readBinary").mockImplementationOnce(async (file) => {
+    const read = storage.readBinaryRange.bind(storage);
+    vi.spyOn(storage, "readBinaryRange").mockImplementationOnce(async (...args) => {
       startRead();
       await held;
-      return read(file);
+      return read(...args);
     });
     const controller = new AbortController();
     const older = index.rebuild(registry, { signal: controller.signal });
@@ -609,7 +633,7 @@ describe("ProjectSearchIndex", () => {
 });
 
 afterEach(() => {
-  decodeAssetDocument.mockClear();
+  readStoredAssetDocument.mockClear();
 });
 
 describe("ProjectSearchIndex ranking", () => {

@@ -11,6 +11,8 @@ import type { ScriptHostServices } from "./script-host";
 interface SceneLayerLoad {
   readonly layer: SceneLayer;
   readonly loadId: number;
+  /** Actors this load created, including ones whose spawn is still queued. */
+  readonly actors: Actor[];
   /** Its actors are created, spawned and assigned. */
   realized: boolean;
   /** The host acknowledged it (or no acknowledgement was deferred). */
@@ -288,6 +290,7 @@ export class SceneLayers implements RuntimeSubsystem {
     const world = this.host.world();
     const layer = world.findSceneLayer(layerGuid);
     if (!layer) return;
+    const load = this.loads.get(layerGuid);
     this.loads.delete(layerGuid);
     this.host.removeLayerPhysics(layerGuid);
     this.overlay.forget(layerGuid);
@@ -300,6 +303,12 @@ export class SceneLayers implements RuntimeSubsystem {
       if (actor.sceneLayerId !== layer.guid) continue;
       if (world.findSceneLayer(layer.guid) !== layer) return;
       this.host.removeActor(actor);
+    }
+    // A layer removed in the tick phase that created it holds actors whose
+    // spawn is still queued: they own render slots and must despawn too.
+    for (const actor of load?.layer === layer ? load.actors : []) {
+      if (world.findSceneLayer(layer.guid) !== layer) return;
+      if (!actor.destroyed && !actor.world) this.host.removeActor(actor);
     }
     if (world.findSceneLayer(layer.guid) !== layer) return;
     this.host.emit({ type: "sceneLayerRemove", layerId: layer.guid });
@@ -392,9 +401,9 @@ export class SceneLayers implements RuntimeSubsystem {
     this.host.addLayerPhysics(layer.guid, guid, document.settings, Array.isArray(raw.actors) ? raw.actors : []);
     ownedLayer = layer;
     work?.layers.push(layer);
-    const layerLoad: SceneLayerLoad = { layer, loadId: ++this.loadId, realized: false, presented: false, ready: false };
-    this.loads.set(layer.guid, layerLoad);
     const actors: Actor[] = [];
+    const layerLoad: SceneLayerLoad = { layer, loadId: ++this.loadId, actors, realized: false, presented: false, ready: false };
+    this.loads.set(layer.guid, layerLoad);
     let completed = false;
     try {
       independent?.created(layer, layerLoad.loadId);

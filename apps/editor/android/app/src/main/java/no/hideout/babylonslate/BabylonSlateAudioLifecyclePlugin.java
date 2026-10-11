@@ -39,7 +39,7 @@ public class BabylonSlateAudioLifecyclePlugin extends Plugin {
         };
         audioManager.registerAudioDeviceCallback(deviceCallback, new Handler(Looper.getMainLooper()));
 
-        noisyReceiver = new BroadcastReceiver() {
+        BroadcastReceiver receiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
                 if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(intent.getAction())) routeChange(2);
@@ -47,10 +47,12 @@ public class BabylonSlateAudioLifecyclePlugin extends Plugin {
         };
         ContextCompat.registerReceiver(
             getContext(),
-            noisyReceiver,
+            receiver,
             new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY),
             ContextCompat.RECEIVER_NOT_EXPORTED
         );
+        // Teardown unregisters only a receiver that registration accepted.
+        noisyReceiver = receiver;
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) registerModeListener();
     }
@@ -60,6 +62,8 @@ public class BabylonSlateAudioLifecyclePlugin extends Plugin {
         AudioManager.OnModeChangedListener listener = this::modeChanged;
         modeChangedListener = listener;
         audioManager.addOnModeChangedListener(ContextCompat.getMainExecutor(getContext()), listener);
+        // The listener reports changes only; a call already in progress is the starting state.
+        modeChanged(audioManager.getMode());
     }
 
     @androidx.annotation.RequiresApi(Build.VERSION_CODES.S)
@@ -73,19 +77,35 @@ public class BabylonSlateAudioLifecyclePlugin extends Plugin {
         notifyListeners("audioRouteChange", data);
     }
 
+    private static boolean callActive(int mode) {
+        switch (mode) {
+            case AudioManager.MODE_RINGTONE:
+            case AudioManager.MODE_IN_CALL:
+            case AudioManager.MODE_IN_COMMUNICATION:
+            case AudioManager.MODE_CALL_SCREENING:
+            case AudioManager.MODE_CALL_REDIRECT:
+            case AudioManager.MODE_COMMUNICATION_REDIRECT:
+                return true;
+            default:
+                return false;
+        }
+    }
+
     private void modeChanged(int mode) {
-        boolean active = mode == AudioManager.MODE_RINGTONE || mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_IN_COMMUNICATION;
+        boolean active = callActive(mode);
+        // Retained until the web listener attaches, so a call that began before
+        // startup still pauses audio and its hang-up still resumes it.
         if (active && !interrupted) {
             interrupted = true;
             JSObject data = new JSObject();
             data.put("type", "began");
-            notifyListeners("audioInterruption", data);
+            notifyListeners("audioInterruption", data, true);
         } else if (!active && interrupted && mode == AudioManager.MODE_NORMAL) {
             interrupted = false;
             JSObject data = new JSObject();
             data.put("type", "ended");
             data.put("shouldResume", true);
-            notifyListeners("audioInterruption", data);
+            notifyListeners("audioInterruption", data, true);
         }
     }
 
@@ -95,7 +115,14 @@ public class BabylonSlateAudioLifecyclePlugin extends Plugin {
         if (audioManager != null && modeChangedListener != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             unregisterModeListener();
         }
-        if (noisyReceiver != null) getContext().unregisterReceiver(noisyReceiver);
+        if (noisyReceiver != null) {
+            try {
+                getContext().unregisterReceiver(noisyReceiver);
+            } catch (IllegalArgumentException ignored) {
+                // Already unregistered; Capacitor teardown must still run.
+            }
+            noisyReceiver = null;
+        }
         super.handleOnDestroy();
     }
 }

@@ -41,25 +41,6 @@ export function normalizeAnimationPayload(value: unknown): AnimationPayload {
   return payload;
 }
 
-export function remapAnimationPayloadGuids(
-  assetType: string,
-  payload: Record<string, unknown>,
-  remap: ReadonlyMap<string, string>,
-): Record<string, unknown> {
-  if (assetType !== "Animation") return payload;
-  const animation = normalizeAnimationPayload(payload);
-  return {
-    ...animation,
-    modelGuid: remap.get(animation.modelGuid) ?? animation.modelGuid,
-    skeletonGuid: animation.skeletonGuid
-      ? (remap.get(animation.skeletonGuid) ?? animation.skeletonGuid)
-      : null,
-    sourceAnimationGuid: animation.sourceAnimationGuid
-      ? (remap.get(animation.sourceAnimationGuid) ?? animation.sourceAnimationGuid)
-      : null,
-  };
-}
-
 export function animationAssetGuids(payload: unknown): string[] {
   const animation = normalizeAnimationPayload(payload);
   const guids = new Set<string>();

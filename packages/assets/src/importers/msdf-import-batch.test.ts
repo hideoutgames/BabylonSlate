@@ -19,6 +19,21 @@ describe("groupMsdfImportBatch", () => {
     expect(prepared.find((file) => file.name === "Ui-msdf.png")).toBeUndefined();
   });
 
+  it("leaves a same-family msdf PNG alone when the JSON names a different atlas page", () => {
+    const json = {
+      name: "Ui-msdf.json",
+      bytes: new TextEncoder().encode(JSON.stringify({ pages: ["Ui-atlas.png"], chars: [] })),
+    };
+    const sameFamily = { name: "Ui-msdf.png", bytes: new Uint8Array([1]) };
+    const named = { name: "Ui-atlas.png", bytes: new Uint8Array([2]) };
+    const prepared = groupMsdfImportBatch([json, sameFamily, named]);
+    expect(prepared.find((file) => file.name === "Ui-msdf.json")?.sidecars).toEqual({
+      "Ui-atlas.png": named.bytes,
+      "ui-atlas.png": named.bytes,
+    });
+    expect(prepared.find((file) => file.name === "Ui-msdf.png")).toEqual(sameFamily);
+  });
+
   it("keeps an unpaired /msdf/ PNG so importFont can create or attach a Font", () => {
     const png = { name: "Display.msdf.png", bytes: new Uint8Array([9]) };
     expect(groupMsdfImportBatch([png])).toEqual([png]);

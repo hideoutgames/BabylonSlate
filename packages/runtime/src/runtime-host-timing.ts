@@ -25,7 +25,9 @@ export function createTimingHostBindings(deps: TimingHostDeps): Pick<ScriptHostS
       new Promise<void>((resolve) => {
         if (deps.stopped()) { resolve(); return; }
         deps.delays.add(seconds, resolve, owner);
-        // A boundary requested after the timer fired still holds the continuation.
-      }).then(() => deps.continueSimulation(owner ?? null)),
+      }).then(() =>
+        // A boundary requested after the timer fired still holds the continuation;
+        // a destroyed owner's continuation is cancelled there.
+        deps.continueSimulation(owner ?? null)),
   };
 }

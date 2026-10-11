@@ -201,7 +201,6 @@ export async function placeFeatureTestAi(ctx: FeatureTestContext): Promise<void>
         bakeBoundsEnabled: true,
         bakeBoundsMin: navPoint(zone.at(-halfX, BAKE_MIN_Y, -halfZ)),
         bakeBoundsMax: navPoint(zone.at(halfX, BAKE_MAX_Y, halfZ)),
-        debugOverlay: false,
       }),
     ]),
   );
@@ -324,7 +323,11 @@ export function featureTestNavBakeInput(scene: SerializedScene): NavMeshGenerate
   parts.push(...staticBlockerBakeParts(scene.actors, "3d", bounds));
   return {
     ...mergeNavBakeMeshes(parts),
-    settings: { ...parseNavMeshSettings(navMesh.properties), supportDynamicObstacles: settings.supportDynamicObstacles },
+    settings: {
+      ...parseNavMeshSettings(navMesh.properties),
+      tiled: settings.tiled,
+      supportDynamicObstacles: settings.supportDynamicObstacles,
+    },
   };
 }
 
@@ -708,7 +711,7 @@ function primitiveTriangles(meshKind: unknown): { positions: number[]; indices: 
     case "ground":
       return { positions: [-5, 0, -5, 5, 0, -5, 5, 0, 5, -5, 0, 5], indices: [0, 3, 2, 0, 2, 1] };
     case "cylinder":
-      return solidBlockerMesh({ kind: "cylinder", pose: ORIGIN, size: { x: 0.5, y: 1.5, z: 0.5 } });
+      return solidBlockerMesh({ kind: "cylinder", pose: ORIGIN, size: { x: 1, y: 1.5, z: 1 } });
     case "sphere":
     case "plane":
     case "quad":

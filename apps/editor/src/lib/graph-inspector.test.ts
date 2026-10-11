@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { COLOR, FLOAT, STRING, VEC2, VEC4, assetRef, classRef, enumRef, objectRef, pin, type PinType } from "@babylonslate/scripting";
 import {
   collectEnumMemberNames,
+  commandParameterRows,
   connectedEnumGuidFromSerialized,
   connectedInputPinIds,
   containerConstructorPropertyRows,
@@ -133,23 +134,17 @@ describe("structNodePropertyRows", () => {
 
 describe("assetPickerAllowedTypes", () => {
   it("admits live render output for a Texture pin without widening other asset types", () => {
-    expect(assetPickerAllowedTypes("Texture", undefined)).toEqual(["Texture", "RenderTargetTexture"]);
-    expect(assetPickerAllowedTypes("RenderTarget", undefined)).toEqual(["RenderTarget"]);
-  });
-  it("uses catalog typeClassIds so Mesh Get/Set can pick Mesh or Model", () => {
-    expect(assetPickerAllowedTypes("Model", ["Mesh", "Model"])).toEqual([
-      "Mesh",
-      "Model",
-    ]);
+    expect(assetPickerAllowedTypes("Texture")).toEqual(["Texture", "RenderTargetTexture"]);
+    expect(assetPickerAllowedTypes("RenderTarget")).toEqual(["RenderTarget"]);
   });
 
-  it("falls back to the pin asset type when typeClassIds is missing", () => {
-    expect(assetPickerAllowedTypes("Material", undefined)).toEqual(["Material", "MaterialInstance"]);
+  it("admits Material Instances for a Material pin", () => {
+    expect(assetPickerAllowedTypes("Material")).toEqual(["Material", "MaterialInstance"]);
   });
 
   it("lists every asset for a pin that accepts any asset instead of filtering to an empty type", () => {
-    expect(assetPickerAllowedTypes("", undefined)).toEqual([]);
-    expect(assetPickerAllowedTypes("  ", [])).toEqual([]);
+    expect(assetPickerAllowedTypes("")).toEqual([]);
+    expect(assetPickerAllowedTypes("  ")).toEqual([]);
   });
 });
 
@@ -591,6 +586,22 @@ describe("variableDefaultPropertyRows structs and enums", () => {
     );
   });
 
+  it("stops expanding a Structure field that re-enters a Structure already shown", () => {
+    const schemas = { enums: {}, structs: {
+      node: { name: "Node", fields: [
+        { name: "value", typeId: "int" },
+        { name: "next", typeId: "struct", typeClassId: "node" },
+        { name: "link", typeId: "struct", typeClassId: "link" },
+      ] },
+      link: { name: "Link", fields: [
+        { name: "weight", typeId: "float" },
+        { name: "back", typeId: "struct", typeClassId: "node" },
+      ] },
+    } };
+    const rows = variableDefaultPropertyRows("struct", { value: 1 }, vi.fn(), { typeClassId: "node", schemas });
+    expect(rows.map((row) => row.label)).toEqual(["Value", "Link Weight"]);
+  });
+
   it("never scalar-edits array or map fields while editing a sibling Structure field", () => {
     const onChange = vi.fn();
     const value = { health: 8, prices: [10, 20], labels: [{ key: 7, value: "Rare" }] };
@@ -786,6 +797,16 @@ describe("parameter type conversion", () => {
   it("keeps enum parameters and maps them onto string pins", () => {
     expect(parameterTypeFromPin("enum")).toBe("enum");
     expect(pinTypeFromParameterType("enum")).toEqual(STRING);
+  });
+});
+
+describe("commandParameterRows", () => {
+  it("keeps a parameter's row id while its name is typed", () => {
+    // The parameter editor keys the name input on the row id.
+    const typing = ["", "a", "am", "amount"].map((name) => commandParameterRows([{ name, type: "int" }])[0]?.id);
+    expect(new Set(typing).size).toBe(1);
+    expect(commandParameterRows([{ name: "b" }, { name: "a" }], ["row-a", "row-b"]).map((row) => row.id))
+      .toEqual(["row-a", "row-b"]);
   });
 });
 

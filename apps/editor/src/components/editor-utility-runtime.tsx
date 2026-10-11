@@ -95,8 +95,9 @@ export function EditorUtilityRuntime() {
     });
     hostRef.current = host;
     void latestRef.current.collectScripts().then(async (scripts) => {
-      if (cancelled) return;
       for (const script of scripts) {
+        // A replaced or unmounted host loads nothing further.
+        if (cancelled) return;
         await host.load(script);
       }
       if (cancelled) return;
@@ -107,6 +108,8 @@ export function EditorUtilityRuntime() {
         fireEditorUtilityEvent(host, event);
       }
       startedRef.current = true;
+    }).catch((error: unknown) => {
+      if (!cancelled) latestRef.current.appendLog(`Editor utility scripts could not start: ${error instanceof Error ? error.message : String(error)}`);
     });
     return () => {
       cancelled = true;

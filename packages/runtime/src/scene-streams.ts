@@ -280,7 +280,6 @@ export class SceneStreams implements RuntimeSubsystem {
       this.host.navigation().registerAgents();
       this.host.navigation().registerObstacles([...stream.actors], stream.navObstacles);
       stream.progress = 1;
-      stream.resolve();
       for (const pending of [...this.streams.values()]) this.publishRealized(pending);
       this.admission.flush();
       // After the streamed actors' Begin Play, as Scene Loaded follows the main
@@ -291,6 +290,8 @@ export class SceneStreams implements RuntimeSubsystem {
         this.announced.add(stream);
         this.host.world().notifyStreamedSceneLoaded(stream.actor, stream.scene);
       });
+      // Only a completed admission loads the stream; a throw above rejects the load instead.
+      stream.resolve();
     } catch (error) {
       this.retire(stream, error);
     }
@@ -312,7 +313,13 @@ export class SceneStreams implements RuntimeSubsystem {
     stream.controller.abort(sceneRealizationCancelled());
     const controller = new AbortController();
     const operation = Promise.resolve().then(async () => {
-      await runSceneRealizationWork(this.removeActors(stream), controller.signal, this.host.cooperativeLoading());
+      try {
+        await runSceneRealizationWork(this.removeActors(stream), controller.signal, this.host.cooperativeLoading());
+      } catch (error) {
+        // A failed despawn still retires the stream, so its actor can load again.
+        this.retire(stream, error);
+        throw error;
+      }
       this.retire(stream);
       if (!this.host.stopped()) this.host.publishSnapshot();
     });

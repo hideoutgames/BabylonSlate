@@ -38,19 +38,25 @@ export interface NodePaletteProps {
   presentation?: "popup" | "modal";
 }
 
+const compact = (text: string) => text.toLowerCase().replace(/\s+/g, "");
+
 function filterNodes(nodes: PaletteNode[], query: string): PaletteNode[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return nodes;
-  const formula = needle.replace(/\s+/g, "");
+  const formula = compact(needle);
   const symbolsOnly = /^[^\p{L}\p{N}\s]+$/u.test(formula);
   return nodes.filter((node) => {
     const aliasMatch = node.searchAliases?.some((alias) => {
-      const normalized = alias.toLowerCase().replace(/\s+/g, "");
+      const normalized = compact(alias);
       return symbolsOnly ? normalized === formula : normalized.includes(formula);
     });
-    return aliasMatch || (
-      !symbolsOnly &&
-      `${node.title} ${node.category} ${humanizePropertyLabel(node.category)}`
+    if (aliasMatch) return true;
+    if (symbolsOnly) return false;
+    // Spaces are optional against the Title Case title, so `BeginPlay`
+    // finds Event Begin Play.
+    return (
+      compact(node.title).includes(formula) ||
+      `${node.title} ${node.category} ${humanizePropertyLabel(node.category)} ${node.description ?? ""}`
         .toLowerCase()
         .includes(needle)
     );

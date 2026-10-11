@@ -6,6 +6,8 @@ describe("SceneLayer controls", () => {
     const properties = parseUIControl2DProperties("2DSliderComponent", { min: 0.2, max: 1, step: 0.3 });
     expect(clampUIControl2DValue(0.63, properties)).toBe(0.5);
     expect(clampUIControl2DValue(0.7, properties)).toBe(0.8);
+    // Nearer the maximum than the last whole step.
+    expect(clampUIControl2DValue(0.92, properties)).toBe(1);
     expect(clampUIControl2DValue(5, properties)).toBe(1);
     expect(clampUIControl2DValue(-3, properties)).toBe(0.2);
     expect(clampUIControl2DValue(NaN, properties)).toBe(0.2);

@@ -41,7 +41,10 @@ export default function HomeRoute() {
         onRemoveFromList={removeListedProject}
         onReconnect={reconnectProject}
         onRecover={keepRecovery}
-        onDismissRecovery={() => void dismissRecovery()}
+        onDismissRecovery={() => {
+          // A failed clear keeps the journal, so the banner stays for a retry.
+          dismissRecovery().catch((error: unknown) => console.error("[editor] could not discard the recovery journal", error));
+        }}
         onSettingsChanged={refreshTemplates}
       />
     </HomepageMobileAccountGate>

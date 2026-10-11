@@ -17,8 +17,10 @@ export interface ApplyResult<TDoc> {
  *   (including this step) was cleared and the edit cannot be undone.
  * - `cleared-gesture`: continues a gesture already `cleared`; nothing more is
  *   recorded, so Undo never stops part-way through that gesture.
+ * - `unchanged`: the command returned the document it was given, so there is
+ *   nothing to undo; Undo, Redo and the open gesture are left as they were.
  */
-export type HistoryOutcome = "recorded" | "cleared" | "cleared-gesture";
+export type HistoryOutcome = "recorded" | "cleared" | "cleared-gesture" | "unchanged";
 
 export interface EditApplyResult<TDoc> extends ApplyResult<TDoc> {
   history: HistoryOutcome;
@@ -106,33 +108,41 @@ export class DocumentEditStack<TDoc> {
 
   apply(doc: TDoc, command: EditCommand<TDoc>): EditApplyResult<TDoc> {
     const next = command.apply(doc);
-    this.redoStack = [];
+    // A no-op (such as an Add whose id already exists) has an inverse that
+    // would undo state this command never created, so it records nothing.
+    if (next === doc) return { doc, command, history: "unchanged" };
     const continuesGesture = this.mergeOpen && command.mergeKey !== undefined;
     if (continuesGesture && command.mergeKey === this.clearedMergeKey) {
+      this.redoStack = [];
       return { doc: next, command, history: "cleared-gesture" };
     }
-    this.clearedMergeKey = undefined;
     const top = this.undoStack[this.undoStack.length - 1];
     let entry: BudgetedEntry<TDoc>;
+    // Inverting and measuring can throw, so both run before history changes:
+    // a failed edit leaves Undo, Redo and the open gesture's entry intact.
     if (continuesGesture && top && top.command.mergeKey === command.mergeKey) {
-      entry = top;
       const coalesced = top.command.coalesce?.(command);
-      if (coalesced) {
-        // One command from the gesture's start to its latest state.
-        top.command = coalesced;
-        ({ inverse: top.inverse, bytes: top.bytes } = invertMeasured(coalesced));
-      } else {
-        // Keep the inverse from the first gesture event; update the forward
-        // cmd. The group retains the first inverse as well as the last forward
-        // snapshots. A small final value must not hide a large original payload.
-        top.command = command;
-        top.bytes = (top.inverse.byteSize ?? 0) + (command.byteSize ?? 0);
-      }
+      // One command from the gesture's start to its latest state. Otherwise
+      // keep the inverse from the first gesture event and update the forward
+      // cmd: the group retains the first inverse as well as the last forward
+      // snapshots, so a small final value cannot hide a large original payload.
+      const merged = coalesced
+        ? { command: coalesced, ...invertMeasured(coalesced) }
+        : {
+            command,
+            inverse: top.inverse,
+            bytes: (top.inverse.byteSize ?? 0) + (command.byteSize ?? 0),
+          };
+      this.redoStack = [];
+      Object.assign(top, merged);
+      entry = top;
     } else {
       // Inverting only here: a merged step never needs its own inverse.
       entry = { command, ...invertMeasured(command) };
+      this.redoStack = [];
       this.undoStack.push(entry);
     }
+    this.clearedMergeKey = undefined;
     this.mergeOpen = true;
     this.trim();
     if (this.undoStack[this.undoStack.length - 1] === entry) {

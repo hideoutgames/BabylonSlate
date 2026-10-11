@@ -1,9 +1,15 @@
 import {
+  composeAffineTransform,
   identitySerializedTransform,
+  multiplyAffineTransforms,
+  springArmChildOffset,
+  type AffineTransform,
+  type CollisionTriangleMesh,
   type SerializedActor,
   type SerializedComponent,
   type SerializedTransform,
 } from "@babylonslate/core";
+import { complexCollisionMeshForMeshKind } from "./mesh-collision";
 import {
   AUDIO_GEOMETRY_COLLECT_SLICE,
   AUDIO_MAX_PROBES,
@@ -409,123 +415,79 @@ export function geometryHashForAudioBake(
   return hash.toString(16).padStart(8, "0");
 }
 
-function actorTransform(actor: SerializedActor): SerializedTransform {
-  return actor.transform ?? identitySerializedTransform();
+/** `Matrix.Compose` of a serialized transform (row-vector layout, as authored). */
+function affineOf(transform: SerializedTransform | undefined): AffineTransform {
+  const { position: [px, py, pz], rotation: [rx, ry, rz, rw], scale: [sx, sy, sz] } =
+    transform ?? identitySerializedTransform();
+  return composeAffineTransform({
+    position: { x: px, y: py, z: pz },
+    rotation: { x: rx, y: ry, z: rz, w: rw },
+    scale: { x: sx, y: sy, z: sz },
+  });
 }
 
-function componentTransform(
-  component: SerializedComponent,
-): SerializedTransform {
-  return component.transform ?? identitySerializedTransform();
+/**
+ * Authored world matrices of actors (`local × parentWorld`, as the editor and
+ * Play place them). A cyclic or dangling attachment has no placement: null.
+ */
+function actorWorldMatrices(actors: readonly SerializedActor[]): (actor: SerializedActor) => AffineTransform | null {
+  const byId = new Map(actors.map((actor) => [actor.id, actor]));
+  const worlds = new Map<string, AffineTransform | null>();
+  const world = (actor: SerializedActor): AffineTransform | null => {
+    const cached = worlds.get(actor.id);
+    if (cached !== undefined) return cached;
+    worlds.set(actor.id, null);
+    let matrix: AffineTransform | null = affineOf(actor.transform);
+    if (actor.parentId) {
+      const parent = byId.get(actor.parentId);
+      const parentWorld = parent ? world(parent) : null;
+      matrix = parentWorld ? multiplyAffineTransforms(matrix, parentWorld, matrix) : null;
+    }
+    worlds.set(actor.id, matrix);
+    return matrix;
+  };
+  return world;
 }
 
-function rotateByQuat(
-  x: number,
-  y: number,
-  z: number,
-  q: readonly [number, number, number, number],
-): [number, number, number] {
-  const [qx, qy, qz, qw] = q;
-  const uvx = qy * z - qz * y;
-  const uvy = qz * x - qx * z;
-  const uvz = qx * y - qy * x;
-  const uuvx = qy * uvz - qz * uvy;
-  const uuvy = qz * uvx - qx * uvz;
-  const uuvz = qx * uvy - qy * uvx;
-  const w2 = qw * 2;
-  return [
-    x + uvx * w2 + uuvx * 2,
-    y + uvy * w2 + uuvy * 2,
-    z + uvz * w2 + uuvz * 2,
-  ];
+/** A component relative to its actor: its parent components (and Spring Arm sockets) compose in. */
+function componentActorMatrix(actor: SerializedActor, component: SerializedComponent): AffineTransform {
+  const matrix = affineOf(component.transform);
+  const byId = new Map(actor.components.map((entry) => [entry.id, entry]));
+  const visited = new Set([component.id]);
+  let parent = component.parentId ? byId.get(component.parentId) : undefined;
+  while (parent && !visited.has(parent.id)) {
+    visited.add(parent.id);
+    const offset = springArmChildOffset(parent);
+    if (offset) {
+      matrix[9] = matrix[9]! + offset[0];
+      matrix[10] = matrix[10]! + offset[1];
+      matrix[11] = matrix[11]! + offset[2];
+    }
+    multiplyAffineTransforms(matrix, affineOf(parent.transform), matrix);
+    parent = parent.parentId ? byId.get(parent.parentId) : undefined;
+  }
+  return matrix;
 }
 
-function applyTransform(
-  x: number,
-  y: number,
-  z: number,
-  transform: SerializedTransform,
-): [number, number, number] {
-  const scaledX = x * transform.scale[0];
-  const scaledY = y * transform.scale[1];
-  const scaledZ = z * transform.scale[2];
-  const rotated = rotateByQuat(
-    scaledX,
-    scaledY,
-    scaledZ,
-    transform.rotation,
-  );
-  return [
-    rotated[0] + transform.position[0],
-    rotated[1] + transform.position[1],
-    rotated[2] + transform.position[2],
-  ];
-}
-
-function worldPoint(
-  local: readonly [number, number, number],
-  component: SerializedTransform,
-  actor: SerializedTransform,
-): [number, number, number] {
-  const mid = applyTransform(local[0], local[1], local[2], component);
-  return applyTransform(mid[0], mid[1], mid[2], actor);
-}
-
-const BOX_CORNERS: ReadonlyArray<readonly [number, number, number]> = [
-  [-0.5, -0.5, -0.5],
-  [0.5, -0.5, -0.5],
-  [0.5, 0.5, -0.5],
-  [-0.5, 0.5, -0.5],
-  [-0.5, -0.5, 0.5],
-  [0.5, -0.5, 0.5],
-  [0.5, 0.5, 0.5],
-  [-0.5, 0.5, 0.5],
-];
-
-const BOX_FACES: ReadonlyArray<readonly [number, number, number, number]> = [
-  [0, 1, 2, 3],
-  [4, 7, 6, 5],
-  [0, 4, 5, 1],
-  [3, 2, 6, 7],
-  [0, 3, 7, 4],
-  [1, 5, 6, 2],
-];
-
-function pushBoxTriangles(
+function pushMeshTriangles(
   triangles: AudioReverbTriangle[],
-  component: SerializedTransform,
-  actor: SerializedTransform,
+  mesh: CollisionTriangleMesh,
+  world: AffineTransform,
 ): void {
-  const corners = BOX_CORNERS.map((corner) =>
-    worldPoint(corner, component, actor),
-  );
-  for (const face of BOX_FACES) {
-    const a = corners[face[0]]!;
-    const b = corners[face[1]]!;
-    const c = corners[face[2]]!;
-    const d = corners[face[3]]!;
-    triangles.push({
-      ax: a[0],
-      ay: a[1],
-      az: a[2],
-      bx: b[0],
-      by: b[1],
-      bz: b[2],
-      cx: c[0],
-      cy: c[1],
-      cz: c[2],
-    });
-    triangles.push({
-      ax: a[0],
-      ay: a[1],
-      az: a[2],
-      bx: c[0],
-      by: c[1],
-      bz: c[2],
-      cx: d[0],
-      cy: d[1],
-      cz: d[2],
-    });
+  const { positions, indices } = mesh;
+  const point = (index: number): [number, number, number] => {
+    const x = positions[index * 3]!, y = positions[index * 3 + 1]!, z = positions[index * 3 + 2]!;
+    return [
+      x * world[0]! + y * world[3]! + z * world[6]! + world[9]!,
+      x * world[1]! + y * world[4]! + z * world[7]! + world[10]!,
+      x * world[2]! + y * world[5]! + z * world[8]! + world[11]!,
+    ];
+  };
+  for (let i = 0; i + 2 < indices.length; i += 3) {
+    const [ax, ay, az] = point(indices[i]!);
+    const [bx, by, bz] = point(indices[i + 1]!);
+    const [cx, cy, cz] = point(indices[i + 2]!);
+    triangles.push({ ax, ay, az, bx, by, bz, cx, cy, cz });
   }
 }
 
@@ -543,19 +505,35 @@ function hasMeshComponent(actor: SerializedActor): boolean {
   );
 }
 
+/**
+ * Static MeshComponent triangles in world space: each primitive's own shape
+ * and size (`createPrimitiveMesh`), placed through its component and actor
+ * attachments. A Model mesh (`assetGuid`) stands in as the Box primitive:
+ * the bake reads scene actors only, not Model geometry.
+ */
 export async function collectStaticAudioGeometry(options: {
   actors: readonly SerializedActor[];
   yieldSlice?: () => Promise<void>;
 }): Promise<AudioReverbGeometry> {
   const triangles: AudioReverbTriangle[] = [];
+  const actorWorld = actorWorldMatrices(options.actors);
+  const meshes = new Map<string, CollisionTriangleMesh>();
   let processed = 0;
   for (const actor of options.actors) {
     if (isDynamicRigidBody(actor)) continue;
     if (!hasMeshComponent(actor)) continue;
-    const actorT = actorTransform(actor);
-    for (const component of actor.components) {
+    const world = actorWorld(actor);
+    for (const component of world ? actor.components : []) {
       if (component.classId !== "MeshComponent") continue;
-      pushBoxTriangles(triangles, componentTransform(component), actorT);
+      const kind = typeof component.properties.assetGuid === "string" && component.properties.assetGuid
+        ? "box"
+        : String(component.properties.meshKind ?? "box");
+      let mesh = meshes.get(kind);
+      if (!mesh) {
+        mesh = complexCollisionMeshForMeshKind(kind);
+        meshes.set(kind, mesh);
+      }
+      pushMeshTriangles(triangles, mesh, multiplyAffineTransforms(componentActorMatrix(actor, component), world!));
     }
     processed += 1;
     if (
@@ -671,14 +649,18 @@ function buildOccupancy(geometry: AudioReverbGeometry): InternalGrid {
   };
   const indexOf = (ix: number, iy: number, iz: number) =>
     ix + iy * grid.sizeX + iz * grid.sizeX * grid.sizeY;
-  const markRange = (
-    x0: number,
-    y0: number,
-    z0: number,
-    x1: number,
-    y1: number,
-    z1: number,
-  ) => {
+  const halfX = grid.voxelX / 2;
+  const halfY = grid.voxelY / 2;
+  const halfZ = grid.voxelZ / 2;
+  // Mark the voxels of the triangle's bounds that the triangle itself touches:
+  // a slanted wall marks a band of voxels, not the box around it.
+  const markTriangle = (triangle: AudioReverbTriangle) => {
+    const x0 = Math.min(triangle.ax, triangle.bx, triangle.cx);
+    const y0 = Math.min(triangle.ay, triangle.by, triangle.cy);
+    const z0 = Math.min(triangle.az, triangle.bz, triangle.cz);
+    const x1 = Math.max(triangle.ax, triangle.bx, triangle.cx);
+    const y1 = Math.max(triangle.ay, triangle.by, triangle.cy);
+    const z1 = Math.max(triangle.az, triangle.bz, triangle.cz);
     const ix0 = Math.max(0, Math.floor((x0 - grid.originX) / grid.voxelX));
     const iy0 = Math.max(0, Math.floor((y0 - grid.originY) / grid.voxelY));
     const iz0 = Math.max(0, Math.floor((z0 - grid.originZ) / grid.voxelZ));
@@ -697,22 +679,58 @@ function buildOccupancy(geometry: AudioReverbGeometry): InternalGrid {
     for (let iz = iz0; iz <= iz1; iz += 1) {
       for (let iy = iy0; iy <= iy1; iy += 1) {
         for (let ix = ix0; ix <= ix1; ix += 1) {
-          occupied[indexOf(ix, iy, iz)] = 1;
+          const index = indexOf(ix, iy, iz);
+          if (occupied[index]) continue;
+          if (triangleTouchesBox(
+            grid.originX + (ix + 0.5) * grid.voxelX,
+            grid.originY + (iy + 0.5) * grid.voxelY,
+            grid.originZ + (iz + 0.5) * grid.voxelZ,
+            halfX, halfY, halfZ, triangle,
+          )) occupied[index] = 1;
         }
       }
     }
   };
-  for (const triangle of geometry.triangles) {
-    markRange(
-      Math.min(triangle.ax, triangle.bx, triangle.cx),
-      Math.min(triangle.ay, triangle.by, triangle.cy),
-      Math.min(triangle.az, triangle.bz, triangle.cz),
-      Math.max(triangle.ax, triangle.bx, triangle.cx),
-      Math.max(triangle.ay, triangle.by, triangle.cy),
-      Math.max(triangle.az, triangle.bz, triangle.cz),
-    );
-  }
+  for (const triangle of geometry.triangles) markTriangle(triangle);
   return grid;
+}
+
+/** Separating-axis triangle / axis-aligned box test; touching counts as overlap. */
+function triangleTouchesBox(
+  centerX: number,
+  centerY: number,
+  centerZ: number,
+  halfX: number,
+  halfY: number,
+  halfZ: number,
+  triangle: AudioReverbTriangle,
+): boolean {
+  const eps = 1e-9;
+  const v0x = triangle.ax - centerX, v0y = triangle.ay - centerY, v0z = triangle.az - centerZ;
+  const v1x = triangle.bx - centerX, v1y = triangle.by - centerY, v1z = triangle.bz - centerZ;
+  const v2x = triangle.cx - centerX, v2y = triangle.cy - centerY, v2z = triangle.cz - centerZ;
+  const separated = (ax: number, ay: number, az: number): boolean => {
+    const p0 = v0x * ax + v0y * ay + v0z * az;
+    const p1 = v1x * ax + v1y * ay + v1z * az;
+    const p2 = v2x * ax + v2y * ay + v2z * az;
+    const radius = halfX * Math.abs(ax) + halfY * Math.abs(ay) + halfZ * Math.abs(az);
+    return Math.min(p0, p1, p2) > radius + eps || Math.max(p0, p1, p2) < -radius - eps;
+  };
+  // The box's face normals.
+  if (separated(1, 0, 0) || separated(0, 1, 0) || separated(0, 0, 1)) return false;
+  // Each triangle edge crossed with each box axis.
+  const edges: Array<[number, number, number]> = [
+    [v1x - v0x, v1y - v0y, v1z - v0z],
+    [v2x - v1x, v2y - v1y, v2z - v1z],
+    [v0x - v2x, v0y - v2y, v0z - v2z],
+  ];
+  for (const [ex, ey, ez] of edges) {
+    if (separated(0, -ez, ey) || separated(ez, 0, -ex) || separated(-ey, ex, 0)) return false;
+  }
+  // The triangle's plane.
+  const [e0x, e0y, e0z] = edges[0]!;
+  const [e1x, e1y, e1z] = edges[1]!;
+  return !separated(e0y * e1z - e0z * e1y, e0z * e1x - e0x * e1z, e0x * e1y - e0y * e1x);
 }
 
 const NEIGHBORS: ReadonlyArray<readonly [number, number, number]> = [

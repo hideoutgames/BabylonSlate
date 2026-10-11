@@ -36,10 +36,9 @@ afterEach(() => {
 describe("attachInputCapture", () => {
   it("skips pointer and keyboard while free cam is on, but still forwards gamepads", () => {
     const canvas = new FakeCanvas();
-    let steal = true;
     const handle = attachInputCapture(canvas as unknown as HTMLCanvasElement, {
       ring: new InputRingBuffer(32),
-      skipPointerAndKeyboard: () => steal,
+      skipPointerAndKeyboard: () => true,
     });
     canvas.dispatch(
       "pointerdown",
@@ -55,7 +54,6 @@ describe("attachInputCapture", () => {
       Object.assign(new KeyboardEvent("keydown", { code: "KeyW" }), {}),
     );
     expect(handle.ring.drain()).toEqual([]);
-    steal = false;
     Object.assign(navigator, {
       getGamepads: () => [
         { index: 0, axes: [0.2, 0], buttons: [{ value: 0 }] },

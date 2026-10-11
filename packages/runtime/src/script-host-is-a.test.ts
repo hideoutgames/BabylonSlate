@@ -86,7 +86,6 @@ describe("ScriptContext.isA", () => {
         node(nodeRegistry, "begin", "flow.event.beginPlay"),
         node(nodeRegistry, "self", "actor.getSelf"),
         node(nodeRegistry, "cast", "casting.cast", {
-          defaultClassId: "Actor",
           "default:class": "Actor",
           resultKind: "actorRef",
         }),

@@ -100,11 +100,9 @@ describe("defaultJsValue", () => {
 });
 
 describe("readPinDefault", () => {
-  it("prefers default:name over a bare pin-named property", () => {
-    expect(
-      readPinDefault({ "default:a": 4, a: 2 }, "a"),
-    ).toBe(4);
-    expect(readPinDefault({ a: 2 }, "a")).toBe(2);
+  it("reads only the default:<pinId> key, never a node field with the pin's name", () => {
+    expect(readPinDefault({ "default:a": 4, a: 2 }, "a")).toBe(4);
+    expect(readPinDefault({ a: 2 }, "a")).toBeUndefined();
     expect(readPinDefault({}, "a")).toBeUndefined();
   });
 });

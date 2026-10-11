@@ -79,7 +79,13 @@ export interface PhysicsBackend {
   pollContacts(): PhysicsContactEvent[];
 
   lineTrace(start: Vec3, end: Vec3, options?: LineTraceOptions): HitResult;
+  /** Colliders within `radius` of `center`; each body lists each shape owner once. */
   sphereOverlap(center: Vec3, radius: number, options?: LineTraceOptions): OverlapResult;
+  /**
+   * Linear sweep: the shape keeps `start.rotation` along the path, and a
+   * different `end.rotation` throws. Distance is shape travel; a shape that
+   * already overlaps a collider at `start` hits with distance zero.
+   */
   shapeSweep(
     shape: ColliderDesc["shape"],
     start: PhysicsTransform,
@@ -92,7 +98,13 @@ export interface PhysicsBackend {
   /** 2D Rapier kinematic character controller; 3D uses Babylon `PhysicsCharacterController`. */
   createCharacterController(desc: CharacterControllerDesc): void;
   destroyCharacterController(id: string): void;
-  /** Optional authored start pose repositions the solve without adding motor velocity. */
+  /**
+   * Optional authored start pose repositions the solve without adding motor
+   * velocity; the result keeps its rotation. A kinematic body moves to the
+   * result through its native target (replacing an earlier target this frame),
+   * other bodies by teleport. `dt = 0` still applies the displacement and
+   * reports zero velocity.
+   */
   moveCharacter(
     id: string,
     translation: Vec3,

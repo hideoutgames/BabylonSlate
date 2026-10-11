@@ -179,17 +179,26 @@ export function WaterPreviewPanel(_props: IDockviewPanelProps) {
     let materials: MaterialLibrary | null = null;
     let cancelled = false;
     let frame = 0;
+    let animating = false;
     const start = performance.now();
     setError(null);
+    const shown = () => document.visibilityState !== "hidden" && canvas.clientWidth > 0 && canvas.clientHeight > 0;
+    // A hidden page or zero-size canvas ends the loop; a resize or visibility change starts it again.
     const tick = (now: number) => {
+      frame = 0;
+      if (!shown()) return;
       try {
-        if (document.visibilityState !== "hidden" && canvas.clientWidth > 0 && canvas.clientHeight > 0) {
-          setSceneWaterTime(host.scene, (now - start) / 1000);
-          presenter.present();
-        }
+        setSceneWaterTime(host.scene, (now - start) / 1000);
+        presenter.present();
         frame = requestAnimationFrame(tick);
       } catch (cause) { setError(cause instanceof Error ? cause.message : "Water preview could not render."); }
     };
+    const resume = () => {
+      if (animating && frame === 0 && shown()) frame = requestAnimationFrame(tick);
+    };
+    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(resume);
+    resizeObserver?.observe(canvas);
+    document.addEventListener("visibilitychange", resume);
     void (async () => {
       let customMaterial = null;
       if (materialGuid) {
@@ -217,9 +226,14 @@ export function WaterPreviewPanel(_props: IDockviewPanelProps) {
       }
       if (cancelled) return;
       meshRef.current = createWaterMesh(host.scene, "water-preview", normalizeWaterBody(PREVIEW_BODY), definitionRef.current, customMaterial);
+      animating = true;
       frame = requestAnimationFrame(tick);
     })().catch((cause) => { if (!cancelled) setError(cause instanceof Error ? cause.message : "Water preview could not load."); });
-    return () => { cancelled = true; sceneRef.current = null; meshRef.current = null; cancelAnimationFrame(frame); presenter.dispose(); host.dispose(); materials?.dispose(); };
+    return () => {
+      cancelled = true; sceneRef.current = null; meshRef.current = null;
+      resizeObserver?.disconnect(); document.removeEventListener("visibilitychange", resume);
+      cancelAnimationFrame(frame); presenter.dispose(); host.dispose(); materials?.dispose();
+    };
   }, [engine, style, materialGuid, closureKey]);
 
   useEffect(() => {

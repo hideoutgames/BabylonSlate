@@ -16,6 +16,8 @@ import type {
 } from "./capacitor-scoped-storage";
 import {
   BabylonSlateScopedStorage,
+  decodeBase64,
+  encodeBase64,
   isScopedStorageError,
   ScopedStorageErrorCode,
 } from "./capacitor-scoped-storage";
@@ -35,28 +37,6 @@ function toHandle(folder: FolderRef): ProjectFolderHandle {
     name: folder.name ?? "Project",
     tier: "external",
   };
-}
-
-function isLegacyBookmark(id: string): boolean {
-  // Legacy ids are base64 bookmarks; new ids are UUIDs.
-  return /^[A-Za-z0-9+/=]{40,}$/.test(id) && !/^[0-9a-f-]{36}$/i.test(id);
-}
-
-function encodeBinary(data: Uint8Array): string {
-  let binary = "";
-  for (let i = 0; i < data.length; i++) {
-    binary += String.fromCharCode(data[i]!);
-  }
-  return btoa(binary);
-}
-
-function decodeBinary(b64: string): Uint8Array {
-  const binary = atob(b64);
-  const out = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    out[i] = binary.charCodeAt(i);
-  }
-  return out;
 }
 
 function toDirEntry(entry: NativeDirEntry): DirEntry {
@@ -140,17 +120,6 @@ export class ScopedStorageAdapter implements ProjectStorage {
     }
     const stale = await Preferences.get({ key: STALE_PREF_KEY });
     this.stale = !!this.folder && stale.value === "1";
-
-    if (this.folder && isLegacyBookmark(this.folder.id)) {
-      try {
-        await this.openKnownFolder(toHandle(this.folder));
-      } catch {
-        // An offline legacy provider must not block the Documents tier.
-        // Keep its identity for a later explicit reconnect instead.
-        this.stale = true;
-        await Preferences.set({ key: STALE_PREF_KEY, value: "1" });
-      }
-    }
   }
 
   async pickProjectFolder(): Promise<ProjectFolderHandle> {
@@ -178,12 +147,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
     if (handle.tier !== "external") throw new Error("Expected an external project folder");
     let folder: FolderRef;
     try {
-      if (isLegacyBookmark(handle.id)) {
-        if (!this.plugin.importBookmark) throw { code: ScopedStorageErrorCode.Stale };
-        ({ folder } = await this.plugin.importBookmark({ bookmark: handle.id, name: handle.name }));
-      } else {
-        ({ folder } = await this.plugin.openFolder({ id: handle.id }));
-      }
+      ({ folder } = await this.plugin.openFolder({ id: handle.id }));
     } catch (error) {
       if (isScopedStorageError(error, ScopedStorageErrorCode.Stale) ||
           isScopedStorageError(error, ScopedStorageErrorCode.AccessRevoked) ||
@@ -282,7 +246,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
         }),
       { path },
     );
-    const bytes = decodeBinary(data);
+    const bytes = decodeBase64(data);
     this.reads.record("full", bytes.byteLength);
     return bytes;
   }
@@ -295,7 +259,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
       folder: folder.id, path, offset, length, expectedRevision,
       ...(this.readScopeId ? { readScope: this.readScopeId } : {}),
     }), { path }));
-    try { return validateStorageRangeResult(path, offset, length, { ...result, bytes: decodeBinary(result.data) }, expectedRevision); }
+    try { return validateStorageRangeResult(path, offset, length, { ...result, bytes: decodeBase64(result.data) }, expectedRevision); }
     catch (error) { rethrowStorageReadFailure(error, result.actualBytesRead); }
   }
 
@@ -306,7 +270,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
       this.plugin.writeFile({
         folder: folder.id,
         path,
-        data: encodeBinary(data),
+        data: encodeBase64(data),
         encoding: "base64",
       }),
     );
@@ -327,7 +291,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
   }
 
   async readdir(path: string): Promise<DirEntry[]> {
-    path = scopedStoragePath(path === "." ? "" : path, true);
+    path = scopedStoragePath(path, true);
     const folder = this.getFolder();
     const { entries } = await this.withScope(() =>
       this.plugin.readdir({ folder: folder.id, path, ...(this.readScopeId ? { readScope: this.readScopeId } : {}) }),

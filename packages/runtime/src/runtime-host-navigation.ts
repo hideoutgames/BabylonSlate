@@ -20,7 +20,8 @@ export function createNavigationHostBindings(deps: NavigationHostDeps): Pick<Scr
       if (!actor) return;
       deps.navigation().stopAgent(actor.guid);
     },
-    isPathValid: (from, to) => deps.navigation().findPath(from, to).length > 1,
+    // A path reaches its goal or is empty; one point means the goal is the start.
+    isPathValid: (from, to) => deps.navigation().findPath(from, to).length > 0,
     getClosestNavigablePoint: (point) => deps.navigation().closestNavigablePoint(point),
     getRandomPointInRadius: (center, radius) => deps.navigation().randomPointInRadius(center, radius),
     addObstacle: (kind, pose, size) =>

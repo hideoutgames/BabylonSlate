@@ -208,6 +208,13 @@ describe("scene schema", () => {
     })).toThrow('"HUD" contains duplicate actor id "button"');
   });
 
+  it("gives an actor without an id one that no other actor in the document uses", () => {
+    const scene = normalizeScene({
+      actors: [{ id: "actor-1" }, { name: "Unnamed" }, { id: "actor-1-2" }],
+    });
+    expect(scene.actors.map((actor) => actor.id)).toEqual(["actor-1", "actor-1-3", "actor-1-2"]);
+  });
+
   it("normalizes a scene without folders to an empty folder list", () => {
     const scene = normalizeScene({ actors: [{ id: "a" }] });
     expect(scene.folders).toEqual([]);
@@ -299,42 +306,6 @@ describe("scene schema", () => {
     ).toBe(false);
     expect(
       normalizeScene({ settings: { showNavmesh: false } }).settings.showNavmesh,
-    ).toBe(false);
-  });
-
-  it("migrates a leftover NavMesh debugOverlay flag onto showNavmesh when the key is missing", () => {
-    expect(
-      normalizeScene({
-        actors: [
-          {
-            id: "nav",
-            components: [
-              {
-                id: "nav",
-                classId: "NavMeshComponent",
-                properties: { debugOverlay: true },
-              },
-            ],
-          },
-        ],
-      }).settings.showNavmesh,
-    ).toBe(true);
-    expect(
-      normalizeScene({
-        settings: { showNavmesh: false },
-        actors: [
-          {
-            id: "nav",
-            components: [
-              {
-                id: "nav",
-                classId: "NavMeshComponent",
-                properties: { debugOverlay: true },
-              },
-            ],
-          },
-        ],
-      }).settings.showNavmesh,
     ).toBe(false);
   });
 
@@ -481,6 +452,12 @@ describe("scene schema", () => {
     expect(wouldCreateCycle(scene, "root", "grandchild")).toBe(true);
     expect(wouldCreateCycle(scene, "root", "other")).toBe(false);
     expect(wouldCreateCycle(scene, "root", null)).toBe(false);
+    // A loop above the new parent that skips the moved actor still ends the walk.
+    scene.actors.push(
+      createActor("loop-a", "Loop A", { parentId: "loop-b" }),
+      createActor("loop-b", "Loop B", { parentId: "loop-a" }),
+    );
+    expect(wouldCreateCycle(scene, "other", "loop-a")).toBe(true);
   });
 
   it("collects a folder subtree so deletes can promote its contents", () => {

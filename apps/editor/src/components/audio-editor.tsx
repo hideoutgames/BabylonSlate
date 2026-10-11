@@ -473,6 +473,10 @@ export function AudioClips({
 }) {
   const { writeAudioClipChunk, removeAudioClipChunk } = useDocumentActions();
   const audio = fillEmptySourceClipName(payload, assetName);
+  // Clip writes await storage; their follow-up commit must start from the
+  // document as it is then, not from the render that started the click.
+  const audioRef = useRef(audio);
+  audioRef.current = audio;
   const [busy, setBusy] = useState(false);
   const pendingRef = useRef(false);
   const [clipError, setClipError] = useState<string | null>(null);
@@ -547,14 +551,14 @@ export function AudioClips({
                   data-testid={`audio-clip-${index}-remove`}
                   disabled={busy}
                   onClick={() => void run(async () => {
-                    const clips = audio.clips.filter(
-                      (entry) => entry.chunkId !== clip.chunkId,
-                    );
-                    await removeAudioClipChunk(path, clip.chunkId, {
-                      ...audio,
-                      clips,
+                    const withoutClip = (current: AudioPayload): AudioPayload => ({
+                      ...current,
+                      clips: current.clips.filter(
+                        (entry) => entry.chunkId !== clip.chunkId,
+                      ),
                     });
-                    onChange?.({ ...audio, clips });
+                    await removeAudioClipChunk(path, clip.chunkId, withoutClip(audioRef.current));
+                    onChange?.(withoutClip(audioRef.current));
                   })}
                 >
                   <Trash2Icon className="icon-sm" />
@@ -575,11 +579,15 @@ export function AudioClips({
           onClick={() => void run(async () => {
             const [file] = await pickImportFiles({ multiple: false, accept: ".wav,.mp3,.ogg" });
             if (!file) return;
-            const chunkId = allocateAudioClipChunkId(audio.clips.map((clip) => clip.chunkId));
+            const chunkId = allocateAudioClipChunkId(audioRef.current.clips.map((clip) => clip.chunkId));
             if (!chunkId) return;
-            const clips = [...audio.clips, { chunkId, name: file.name.replace(/\.[^.]+$/, ""), weight: 1 }];
-            await writeAudioClipChunk(path, chunkId, file.bytes, mimeForAudioBytes(file.bytes), { ...audio, clips });
-            onChange?.({ ...audio, clips });
+            const added = { chunkId, name: file.name.replace(/\.[^.]+$/, ""), weight: 1 };
+            const withClip = (current: AudioPayload): AudioPayload => ({
+              ...current,
+              clips: [...current.clips, added],
+            });
+            await writeAudioClipChunk(path, chunkId, file.bytes, mimeForAudioBytes(file.bytes), withClip(audioRef.current));
+            onChange?.(withClip(audioRef.current));
           })}
         >
           <PlusIcon />

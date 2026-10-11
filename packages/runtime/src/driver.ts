@@ -422,7 +422,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.behaviourTrees.replaceAnimClipCatalog((options.animClipCatalog ?? []).filter((entry) => entry.guid));
     const registry = createClassRegistry();
     this.resolver = new InputResolver(normalizeInputMappings(
-      options.inputAssets !== undefined ? inputMappingsFromAssets(options.inputAssets) : options.inputMappings ?? createDefaultInputMappings(),
+      options.inputAssets !== undefined ? inputMappingsFromAssets(options.inputAssets) : createDefaultInputMappings(),
     ));
     if (options.tilemaps || options.tilesets) this.physics.bindAll();
     if (options.sprites || options.spriteAnimations) {
@@ -1528,7 +1528,7 @@ class InProcessRuntime implements RuntimeDriver {
    * recorded voice.
    */
   restoreFromTrace(frame: TraceFrame): void {
-    this.setTimeDilation(frame.timeDilation ?? 1);
+    this.setTimeDilation(frame.timeDilation);
     this.behaviourTrees.restoreFromTrace(frame.bt ?? []);
     this.animGraphs.restoreFromTrace(frame.animGraphs ?? []);
     const recordedClips = new Map((frame.sprites ?? []).map((clip) => [clip.actorGuid, clip]));
@@ -1873,7 +1873,8 @@ class InProcessRuntime implements RuntimeDriver {
    *    World tick (actors, then physics through `onPhysics`), deferred owner
    *    work and streamed Scenes. The tick ends here when it stopped the session.
    * 3. Scene systems (timed): tween cleanup, Delays, animation graphs, tile
-   *    animation time, behaviour trees and the crowd.
+   *    animation time, behaviour trees and the crowd. The tick also ends here
+   *    when one of them stopped the session.
    * 4. Component commands changed during the tick: painters, text reveal, deformers.
    * 5. Publish: advance the frame id, then the pose snapshot and debug views;
    *    `TickPipeline` records stats and the trace frame last.
@@ -1892,6 +1893,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.tickWorld(pending, simDt);
     if (this.stopped) return;
     this.tickSceneSystems(simDt);
+    if (this.stopped) return;
     this.ticks.closePhaseTiming();
     this.flushComponentCommands();
     const completedFrameId = this.frameId;

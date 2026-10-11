@@ -52,6 +52,11 @@ describe("wrapInSequence", () => {
 });
 
 describe("duplicateSubtree", () => {
+  it("refuses to duplicate the root, whose copy would have no parent", () => {
+    const doc = createDefaultBehaviourTree();
+    expect(duplicateSubtree(doc, "root")).toBe(doc);
+  });
+
   it("clones a node and its descendants as the next sibling", () => {
     const next = duplicateSubtree(createDefaultBehaviourTree(), "sequence");
     const root = next.nodes.find((entry) => entry.id === "root")!;

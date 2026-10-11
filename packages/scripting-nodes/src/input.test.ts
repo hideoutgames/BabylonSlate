@@ -281,7 +281,7 @@ describe("asset input event compilation", () => {
           valueType: "button",
         }),
         ...["started", "held", "released"].map((phase) =>
-          node(registry, phase, "debug.log", { message: phase }),
+          node(registry, phase, "debug.log", { "default:message": phase }),
         ),
       ],
       edges: ["started", "held", "released"].map((phase) =>

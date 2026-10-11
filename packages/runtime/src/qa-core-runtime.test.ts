@@ -139,12 +139,12 @@ it("H4: Stop cancels a Delay pending from paused simulation", async () => {
     kind: "event",
     nodes: [
       node("begin", "flow.event.beginPlay"),
-      node("delay", "timers.delay", { duration: 0.5 }),
+      node("delay", "timers.delay", { "default:duration": 0.5 }),
       variable("done", "Done", "bool", { "default:Done": true }),
       node("print", "debug.print", {
-        value: "after delay",
-        key: "delay",
-        duration: 1,
+        "default:value": "after delay",
+        "default:key": "delay",
+        "default:duration": 1,
       }),
     ],
     edges: [

@@ -13,48 +13,6 @@ import {
 } from "./document";
 
 describe("material document", () => {
-  it("gives legacy parameters stable unique names without taking existing authored names", () => {
-    const doc = normalizeMaterialDocument({
-      schemaVersion: 2,
-      nodes: [
-        { id: "unnamed", type: "param.color", properties: {} },
-        { id: "authored", type: "param.color", properties: { name: "Color Parameter" } },
-        { id: "scale", type: "param.float", properties: { name: "Scale" } },
-        { id: "duplicate", type: "param.texture", properties: { name: "Scale" } },
-      ],
-    });
-    expect(doc.nodes.filter((node) => node.type.startsWith("param.")).map((node) => node.properties.name)).toEqual(["Color Parameter 2", "Color Parameter", "Scale", "Scale 2"]);
-    expect(normalizeMaterialDocument(doc)).toEqual(doc);
-  });
-
-  it("migrates missing function parameter names without naming new current-schema nodes", () => {
-    const legacy = normalizeMaterialFunctionDocument({ schemaVersion: 1, nodes: [{ id: "value", type: "param.float", properties: {} }] });
-    expect(legacy.nodes.find((node) => node.id === "value")?.properties.name).toBe("Float Parameter");
-    expect(normalizeMaterialFunctionDocument(legacy)).toEqual(legacy);
-    const current = normalizeMaterialDocument({ schemaVersion: 3, nodes: [{ id: "value", type: "param.float", properties: {} }] });
-    expect(current.nodes.find((node) => node.id === "value")?.properties.name).toBeUndefined();
-  });
-  it("retains Color Parameter links while migrating a legacy Shader asset", () => {
-    const doc = migrateLegacyShaderPayload({
-      nodes: [
-        { id: "tint", type: "param.color", properties: { name: "Tint", value: [0.2, 0.3, 0.4] } },
-        { id: "output", type: "output.fragment", properties: {} },
-      ],
-      edges: [{ id: "tint-edge", sourceNodeId: "tint", sourcePinId: "out", targetNodeId: "output", targetPinId: "color" }],
-    });
-    expect(doc.edges).toEqual([{ id: "tint-edge", sourceNodeId: "tint", sourcePinId: "rgb", targetNodeId: "output", targetPinId: "baseColor" }]);
-  });
-  it("preserves legacy Color Parameter RGB links while upgrading its default to RGBA", () => {
-    const doc = normalizeMaterialDocument({
-      schemaVersion: 2,
-      nodes: [{ id: "tint", type: "param.color", properties: { name: "Tint", value: [0.2, 0.3, 0.4] } }],
-      edges: [{ id: "tint-edge", sourceNodeId: "tint", sourcePinId: "out", targetNodeId: "output", targetPinId: "baseColor" }],
-    });
-    expect(doc.nodes.find((node) => node.id === "tint")?.properties.value).toEqual([0.2, 0.3, 0.4, 1]);
-    expect(doc.edges[0]?.sourcePinId).toBe("rgb");
-    expect(normalizeMaterialDocument(doc)).toEqual(doc);
-  });
-
   it("keeps new Color Parameter Vector 4 connections intact", () => {
     const doc = normalizeMaterialDocument({
       schemaVersion: 3,
@@ -406,6 +364,11 @@ describe("switching material domain", () => {
     expect(surface.blendMode).toBe("masked");
   });
 
+  it("drops the Text-forced unlit, translucent and two-sided settings when leaving Text", () => {
+    const surface = setMaterialDomain(createDefaultMaterialDocument("Label", "text"), "surface");
+    expect(surface).toMatchObject({ shadingModel: "pbr", blendMode: "opaque", twoSided: false });
+  });
+
   it("keeps an edited Base Color constant when switching to Particle", () => {
     const doc = createDefaultMaterialDocument("Rock");
     doc.nodes = doc.nodes.map((node) =>
@@ -454,36 +417,5 @@ describe("switching material domain", () => {
   it("is a no-op when the domain is unchanged", () => {
     const doc = createDefaultMaterialDocument("Rock");
     expect(setMaterialDomain(doc, "surface")).toBe(doc);
-  });
-
-  it("defaults Custom GLSL nodes to an a + b expression", () => {
-    const doc = normalizeMaterialDocument({
-      nodes: [
-        {
-          id: "glsl",
-          type: "custom.glsl",
-          position: { x: 0, y: 0 },
-          properties: {},
-        },
-      ],
-    });
-    const node = doc.nodes.find((entry) => entry.id === "glsl");
-    expect(node?.properties.body).toBe("a + b");
-  });
-
-  it("migrates a legacy glsl property onto the Custom GLSL body", () => {
-    const doc = normalizeMaterialDocument({
-      nodes: [
-        {
-          id: "glsl",
-          type: "custom.glsl",
-          position: { x: 0, y: 0 },
-          properties: { glsl: "a * b" },
-        },
-      ],
-    });
-    const node = doc.nodes.find((entry) => entry.id === "glsl");
-    expect(node?.properties.body).toBe("a * b");
-    expect(node?.properties.glsl).toBeUndefined();
   });
 });

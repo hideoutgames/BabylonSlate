@@ -1,0 +1,101 @@
+{
+  "id": "invalid-reference",
+  "kind": "event",
+  "nodes": [
+    {
+      "id": "entry",
+      "typeId": "flow.entry",
+      "position": {
+        "x": 4800,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {}
+    },
+    {
+      "id": "tween",
+      "typeId": "tween.float",
+      "position": {
+        "x": 4600,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execIn",
+          "name": "exec",
+          "kind": "exec",
+          "direction": "in",
+          "type": {
+            "kind": "exec"
+          }
+        },
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        },
+        {
+          "id": "target",
+          "name": "Target",
+          "kind": "data",
+          "direction": "in",
+          "type": {
+            "kind": "float"
+          },
+          "reference": "required"
+        }
+      ],
+      "properties": {}
+    },
+    {
+      "id": "value",
+      "typeId": "literal.make",
+      "position": {
+        "x": 5000,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "out",
+          "name": "out",
+          "kind": "data",
+          "direction": "out",
+          "type": {
+            "kind": "float"
+          }
+        }
+      ],
+      "properties": {}
+    }
+  ],
+  "edges": [
+    {
+      "id": "entry.execOut->tween.execIn",
+      "sourceNodeId": "entry",
+      "sourcePinId": "execOut",
+      "targetNodeId": "tween",
+      "targetPinId": "execIn"
+    },
+    {
+      "id": "value.out->tween.target",
+      "sourceNodeId": "value",
+      "sourcePinId": "out",
+      "targetNodeId": "tween",
+      "targetPinId": "target"
+    }
+  ]
+}

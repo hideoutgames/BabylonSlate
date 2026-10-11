@@ -1,5 +1,4 @@
 import type { CommandMessage, ControlMessage } from "@babylonslate/bridge";
-import { normalizeInputMappings } from "@babylonslate/input";
 import { type SerializedScene, type SerializedSceneLayer } from "@babylonslate/core";
 import { isSceneAssetClassId } from "@babylonslate/object-model";
 import {
@@ -32,7 +31,6 @@ export function runtimeOptionsFromLoadControl(
   | "inputAssets"
   | "dataAssets"
   | "assetCatalog"
-  | "inputMappings"
   | "physicsWorld"
   | "gravity"
   | "havokWasmUrl"
@@ -61,27 +59,30 @@ export function runtimeOptionsFromLoadControl(
   | "deferSceneLoadingPaint"
   | "cooperativeSceneLoading"
 > {
-  const sceneLibrary: Record<string, SerializedScene> = {};
-  const sceneGuidByKey: Record<string, string> = {};
-  const sceneLayerLibrary: Record<string, SerializedSceneLayer> = {};
-  for (const entry of msg.sceneCatalog ?? []) {
-    sceneGuidByKey[entry.guid] = entry.guid;
-    if (entry.name) sceneGuidByKey[entry.name] = entry.guid;
-  }
+  // Guid keys first. A display name never replaces a guid key, and when two
+  // assets share a name the first one keeps it, as the driver's own index does.
+  const sceneLibrary = new Map<string, SerializedScene>();
+  const sceneGuidByKey = new Map<string, string>();
+  const sceneLayerLibrary = new Map<string, SerializedSceneLayer>();
+  for (const entry of msg.sceneCatalog ?? []) sceneGuidByKey.set(entry.guid, entry.guid);
   for (const entry of msg.scenes ?? []) {
-    sceneLibrary[entry.guid] = entry.scene;
-    sceneGuidByKey[entry.guid] = entry.guid;
-    if (entry.scene.name) {
-      sceneLibrary[entry.scene.name] = entry.scene;
-      sceneGuidByKey[entry.scene.name] = entry.guid;
-    }
+    sceneLibrary.set(entry.guid, entry.scene);
+    sceneGuidByKey.set(entry.guid, entry.guid);
   }
+  const nameScene = (name: string | undefined, guid: string) => {
+    if (name && !sceneGuidByKey.has(name)) sceneGuidByKey.set(name, guid);
+  };
+  for (const entry of msg.sceneCatalog ?? []) nameScene(entry.name, entry.guid);
+  for (const entry of msg.scenes ?? []) {
+    const name = entry.scene.name;
+    nameScene(name, entry.guid);
+    if (name && sceneGuidByKey.get(name) === entry.guid && !sceneLibrary.has(name)) sceneLibrary.set(name, entry.scene);
+  }
+  for (const entry of msg.sceneLayers ?? []) sceneLayerLibrary.set(entry.guid, entry.layer);
   for (const entry of msg.sceneLayers ?? []) {
-    sceneLayerLibrary[entry.guid] = entry.layer;
-    if (entry.layer.name) {
-      sceneLayerLibrary[entry.layer.name] = entry.layer;
-    }
+    if (entry.layer.name && !sceneLayerLibrary.has(entry.layer.name)) sceneLayerLibrary.set(entry.layer.name, entry.layer);
   }
+  const record = <T>(map: ReadonlyMap<string, T>) => map.size > 0 ? Object.fromEntries(map) : undefined;
   return {
     seed: msg.seed ?? 1,
     sessionGeneration: msg.sessionGeneration,
@@ -102,7 +103,6 @@ export function runtimeOptionsFromLoadControl(
     renderTargetTextures: msg.renderTargetTextures,
     ...(msg.project ? { project: msg.project } : {}),
     ...(msg.inputAssets !== undefined ? { inputAssets: msg.inputAssets } : {}),
-    ...(msg.inputMappings !== undefined ? { inputMappings: normalizeInputMappings(msg.inputMappings) } : {}),
     physicsWorld: msg.physicsWorld === "2d" ? "2d" : "3d",
     gravity: msg.gravity ?? [0, -9.81, 0],
     havokWasmUrl: msg.havokWasmUrl,
@@ -112,12 +112,10 @@ export function runtimeOptionsFromLoadControl(
     consoleCommands: msg.consoleCommands,
     seedDemoActors: msg.scene ? false : true,
     gameInstanceClass: msg.gameInstanceClass,
-    sceneLibrary: Object.keys(sceneLibrary).length > 0 ? sceneLibrary : undefined,
+    sceneLibrary: record(sceneLibrary),
     ...(msg.sceneNavmeshBytes ? { sceneNavmeshBytes: msg.sceneNavmeshBytes } : {}),
-    sceneGuidByKey:
-      Object.keys(sceneGuidByKey).length > 0 ? sceneGuidByKey : undefined,
-    sceneLayerLibrary:
-      Object.keys(sceneLayerLibrary).length > 0 ? sceneLayerLibrary : undefined,
+    sceneGuidByKey: record(sceneGuidByKey),
+    sceneLayerLibrary: record(sceneLayerLibrary),
     includeDebugCommands: msg.includeDebugCommands,
     infiniteLoopDetection: msg.infiniteLoopDetection,
     loopCount: msg.loopCount,
@@ -138,11 +136,11 @@ export function createRuntimeFromLoad(
   msg: PlayLoadControl,
   onCommand: (command: CommandMessage) => void,
   saveGameStorage?: import("@babylonslate/core").SaveGameStorage,
-  sourceHost?: { acquireScene?: AcquireRuntimeScene; sceneGuidByKey?: Readonly<Record<string, string>> },
+  sourceHost?: { acquireScene?: AcquireRuntimeScene },
 ): RuntimeDriver {
   const runtime = createInProcessRuntime({
     ...runtimeOptionsFromLoadControl(msg),
-    ...sourceHost,
+    ...(sourceHost?.acquireScene ? { acquireScene: sourceHost.acquireScene } : {}),
     onCommand,
   });
   if (msg.saveGame && saveGameStorage) runtime.configureSaveGame({ ...msg.saveGame, storage: saveGameStorage });

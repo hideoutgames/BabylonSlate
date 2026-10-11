@@ -24,11 +24,27 @@ export type RunNavBakeOptions = {
   signal?: AbortSignal;
 };
 
-function throwIfAborted(signal?: AbortSignal): void {
-  if (!signal?.aborted) return;
+function abortError(): Error {
   const error = new Error("Bake aborted");
   error.name = "AbortError";
-  throw error;
+  return error;
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw abortError();
+}
+
+/** Settles with `work`, or rejects as soon as `signal` aborts. */
+function untilAborted<T>(work: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return work;
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(abortError());
+    if (signal.aborted) onAbort();
+    else signal.addEventListener("abort", onAbort, { once: true });
+    work.then(resolve, reject).finally(() => {
+      signal.removeEventListener("abort", onAbort);
+    });
+  });
 }
 
 function geometryReady(geometry: NavBakeGeometry): boolean {
@@ -54,11 +70,16 @@ export async function runNavBake(options: RunNavBakeOptions): Promise<Uint8Array
   }
   throwIfAborted(options.signal);
   options.onPhase("generating");
-  const bytes = await options.generate({
-    positions: geometry.positions,
-    indices: geometry.indices,
-    settings: options.settings,
-  });
+  // Cancel must not wait for a worker that may never reply; the caller
+  // terminates it once the bake settles.
+  const bytes = await untilAborted(
+    options.generate({
+      positions: geometry.positions,
+      indices: geometry.indices,
+      settings: options.settings,
+    }),
+    options.signal,
+  );
   throwIfAborted(options.signal);
   options.onPhase("writing");
   await options.write(bytes);

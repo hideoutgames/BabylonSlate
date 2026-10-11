@@ -89,6 +89,8 @@ export function NamePromptDialog({
               setError(null);
             }}
             onKeyDown={(event) => {
+              // Enter that confirms an IME candidate is not a submit.
+              if (event.nativeEvent.isComposing || event.keyCode === 229) return;
               if (event.key === "Enter") {
                 event.preventDefault();
                 submit();

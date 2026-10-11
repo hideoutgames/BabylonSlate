@@ -15,9 +15,16 @@ const KEY = "babylonslate:engine-settings";
  */
 export class PreferencesAppSettingsStore implements AppSettingsStore {
   async load(): Promise<EngineSettings> {
+    // A failed native read propagates, so an update cannot replace stored
+    // settings with defaults. Unreadable stored JSON is unrecoverable: start
+    // from defaults so the next update replaces it.
     const { value } = await Preferences.get({ key: KEY });
     if (!value) return defaultEngineSettings();
-    return engineSettingsSchema.parse(JSON.parse(value));
+    try {
+      return engineSettingsSchema.parse(JSON.parse(value));
+    } catch {
+      return defaultEngineSettings();
+    }
   }
 
   async save(settings: EngineSettings): Promise<void> {

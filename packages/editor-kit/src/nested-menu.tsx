@@ -403,7 +403,7 @@ function OverlayMenu({
   y,
   contentTestId,
   onClose,
-  parentWidth,
+  besideWidth,
   parentPanels,
   onBack,
   beforeSelect,
@@ -413,13 +413,17 @@ function OverlayMenu({
   y: number;
   contentTestId?: string;
   onClose: () => void;
-  parentWidth?: number;
+  /**
+   * Submenus: (`x`, `y`) is the parent panel's corner and this its width. The
+   * panel opens to the right, or to the left when its own width does not fit.
+   */
+  besideWidth?: number;
   parentPanels?: RefObject<Set<HTMLElement>>;
   onBack?: () => void;
   beforeSelect?: () => void;
 }) {
   const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null);
-  const [position, setPosition] = useState({ x, y, width: 192 });
+  const [position, setPosition] = useState({ x, y, width: 0 });
   const panelRef = useRef<HTMLDivElement>(null);
   const ownedPanels = useRef(new Set<HTMLElement>());
   const returnFocus = useRef<Element | null>(null);
@@ -553,12 +557,24 @@ function OverlayMenu({
   useLayoutEffect(() => {
     const panel = panelRef.current;
     // Layout size, not the rect: the open animation starts scaled down.
-    const width = panel?.offsetWidth ?? 192;
+    const width = panel?.offsetWidth ?? 0;
     const height = panel?.offsetHeight ?? 0;
+    const origin =
+      besideWidth === undefined
+        ? { x, y }
+        : overlaySubmenuOrigin({
+            parentX: x,
+            parentY: y,
+            parentWidth: besideWidth,
+            submenuWidth: width,
+            viewportWidth: viewport.width,
+            margin: 8,
+            insets: viewport.insets,
+          });
     setPosition({
       ...clampOverlayMenuPosition({
-        x,
-        y,
+        x: origin.x,
+        y: origin.y,
         width,
         height,
         viewportWidth: viewport.width,
@@ -568,19 +584,7 @@ function OverlayMenu({
       }),
       width,
     });
-  }, [x, y, items, viewport]);
-
-  const submenuOrigin = openSubmenu
-    ? overlaySubmenuOrigin({
-        parentX: position.x,
-        parentY: position.y,
-        parentWidth: parentWidth ?? position.width,
-        submenuWidth: 192,
-        viewportWidth: viewport.width,
-        margin: 8,
-        insets: viewport.insets,
-      })
-    : null;
+  }, [x, y, besideWidth, items, viewport]);
 
   return (
     <>
@@ -601,12 +605,12 @@ function OverlayMenu({
           onBeforeSelect={prepareSelection}
         />
       </div>
-      {openSubmenu && openSubmenu.type === "submenu" && submenuOrigin ? (
+      {openSubmenu && openSubmenu.type === "submenu" ? (
         <OverlayMenu
           items={openSubmenu.items}
-          x={submenuOrigin.x}
-          y={submenuOrigin.y}
-          parentWidth={192}
+          x={position.x}
+          y={position.y}
+          besideWidth={position.width}
           parentPanels={focusPanelsRef}
           beforeSelect={prepareSelection}
           onBack={() => {

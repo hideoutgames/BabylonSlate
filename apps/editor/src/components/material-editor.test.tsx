@@ -8,6 +8,7 @@ import {
   createDefaultMaterialFunctionDocument,
   createMaterialPreviewState,
   materialPreviewReducer,
+  newCustomGlslProperties,
   type MaterialDocument,
   type MaterialPreviewState,
 } from "@babylonslate/shader-graph";
@@ -153,17 +154,17 @@ describe("Material preview panel", () => {
     });
   });
 
-  it("returns to Cube when an initial custom pick is dismissed", () => {
+  it("keeps the current primitive when an initial custom pick is dismissed", async () => {
     const doc = createDefaultMaterialDocument("Rock");
     doc.preview = { mesh: "cylinder", customMeshGuid: null };
     harness.content = doc as unknown as Record<string, unknown>;
     render(<MaterialPreviewPanel {...panelProps} />);
     fireEvent.click(screen.getByTestId("material-preview-mesh-custom"));
     fireEvent.keyDown(document.body, { key: "Escape" });
-    expect(lastCommit().preview).toEqual({
-      mesh: "cube",
-      customMeshGuid: null,
-    });
+    await waitFor(() =>
+      expect(screen.queryByTestId("material-preview-mesh-picker")).toBeNull(),
+    );
+    expect(harness.applyAssetDocumentChange).not.toHaveBeenCalled();
   });
 
   it("surfaces a compile error under the canvas", () => {
@@ -288,20 +289,20 @@ describe("Material details panel", () => {
     ).toBe("expensive");
   });
 
-  it("shows a GLSL expression editor for the selected Custom GLSL node", () => {
+  it("shows a GLSL function body editor for the selected Custom GLSL node", () => {
     const doc = createDefaultMaterialDocument("Rock");
     doc.nodes.push({
       id: "glsl",
       type: "custom.glsl",
       position: { x: 0, y: 0 },
-      properties: { body: "a + b" },
+      properties: newCustomGlslProperties(),
     });
     harness.content = doc as unknown as Record<string, unknown>;
     harness.selectedNodeId = "glsl";
     render(<MaterialDetailsPanel {...panelProps} />);
     expect(screen.getByTestId("material-node-glsl")).toBeTruthy();
     expect(screen.getByTestId("material-node-glsl-signature").textContent).toMatch(
-      /a,\s*b/,
+      /Use input names as variables/,
     );
   });
 

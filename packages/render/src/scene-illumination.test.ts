@@ -642,7 +642,7 @@ describe("syncAuthoredIllumination", () => {
       { size: 0.5 },
       scene,
     );
-    billboard.metadata = { editorBillboard: "light" };
+    billboard.metadata = { editorBillboard: "directional_light" };
     billboard.receiveShadows = true;
     const playHelper = MeshBuilder.CreateBox("actor-3", { size: 0.25 }, scene);
     playHelper.metadata = { playHelperVisual: true };

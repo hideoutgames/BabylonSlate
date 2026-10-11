@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { SerializedGraph } from "@babylonslate/core";
 import {
   collectOverridableEventRows,
   collectOverridableFunctionRows,
@@ -64,6 +65,26 @@ describe("collectOverridableFunctionRows", () => {
       description: "Parent · Pawn",
     });
     expect(rows.some((row) => row.name === "Dash")).toBe(false);
+  });
+
+  it("fills an interface method only with a function that implements it", () => {
+    const interfaceRow = (members: NonNullable<SerializedGraph["members"]>) =>
+      collectOverridableFunctionRows({
+        graph: {
+          nodes: [],
+          edges: [],
+          members: [
+            { id: "if-1", kind: "interface", name: "Damageable", assetGuid: "iface-1" },
+            ...members,
+          ],
+        },
+        scriptInterfaces: [{ guid: "iface-1", name: "Damageable", methods: [{ name: "Apply Damage" }] }],
+      }).find((row) => row.kind === "interface");
+    expect(interfaceRow([{ id: "fn-1", kind: "function", name: "Apply Damage", pins: [] }])?.overwritten).toBe(false);
+    expect(interfaceRow([{
+      id: "fn-1", kind: "function", name: "Apply Damage", pins: [],
+      implementsInterface: { assetGuid: "iface-1", methodName: "Apply Damage" },
+    }])?.overwritten).toBe(true);
   });
 });
 

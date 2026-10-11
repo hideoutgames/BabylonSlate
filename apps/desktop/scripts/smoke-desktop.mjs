@@ -1,6 +1,6 @@
 /* global window -- page.evaluate callbacks run in the packaged renderer */
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { access, chmod, cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
@@ -19,6 +19,8 @@ const desktop = fileURLToPath(new URL("..", import.meta.url));
 const repo = resolve(desktop, "../..");
 const manifest = JSON.parse(await readFile(join(desktop, "dist/public/build-manifest.json"), "utf8"));
 if (manifest.platform !== platform) throw new Error("Packaged manifest platform differs from smoke host");
+// A package left from an earlier commit must not pass as this checkout's build.
+if (manifest.sourceSha !== execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim()) throw new Error("Packaged manifest source differs from the checked-out commit");
 const sandbox = await mkdtemp(join(tmpdir(), "BabylonSlate-installed-check-"));
 const installDir = join(sandbox, "installed");
 const userData = join(sandbox, "user-data");

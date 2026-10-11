@@ -14,6 +14,7 @@ const tests = [
   "packages/core/src/math.test.ts",
   "packages/core/src/unrelated.test.ts",
   "packages/test-kit/src/public-hygiene.test.ts",
+  "apps/docs/src/heading-fragments.test.ts",
   "apps/docs/src/sidebar.test.ts",
   "apps/editor/src/panel.test.tsx",
   "playwright.config.test.ts",
@@ -72,7 +73,10 @@ test("docs changes run a lightweight catalog contract and the docs build", () =>
     tests,
   );
   assert.deepEqual(content.packages, []);
-  assert.deepEqual(content.unitTests, ["apps/docs/src/sidebar.test.ts"]);
+  assert.deepEqual(content.unitTests, [
+    "apps/docs/src/heading-fragments.test.ts",
+    "apps/docs/src/sidebar.test.ts",
+  ]);
   assert.equal(content.docs, true);
 
   const code = selectChecks(["apps/docs/src/sidebar.ts"], packages, tests);

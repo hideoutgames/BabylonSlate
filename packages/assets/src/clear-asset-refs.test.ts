@@ -87,20 +87,11 @@ describe("clearDeletedAssetRefs", () => {
     expect(result.value).toBe(payload);
   });
 
-  it("nulls gameInstanceClass when that class was deleted, leaving actor classId", () => {
-    const payload = {
-      actors: [{ classId: "HeroGame" }],
-      settings: { gameInstanceClass: "HeroGame" },
-    };
+  it("leaves an actor classId when that class was deleted", () => {
+    const payload = { actors: [{ classId: "HeroGame" }] };
     expect(
       clearDeletedAssetRefs(payload, new Set(), new Set(["HeroGame"])),
-    ).toEqual({
-      value: {
-        actors: [{ classId: "HeroGame" }],
-        settings: { gameInstanceClass: null },
-      },
-      changed: true,
-    });
+    ).toEqual({ value: payload, changed: false });
   });
 });
 

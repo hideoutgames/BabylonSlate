@@ -14,10 +14,7 @@ import {
 } from "@babylonjs/core";
 import { ClusteredLightContainer } from "@babylonjs/core/Lights/Clustered/clusteredLightContainer";
 import { LightConstants } from "@babylonjs/core/Lights/lightConstants";
-import {
-  clusteredLightCapabilities,
-  type ClusteredLightCapabilities,
-} from "./clustered-light-capabilities";
+import { clusteredLightCapabilities } from "./clustered-light-capabilities";
 import { registerClusteredLightPolicy } from "./clustered-light-policy";
 import {
   isGlobalLight,
@@ -193,20 +190,15 @@ export class ClusteredSceneLights {
           );
       }
       const capability = clusteredLightCapabilities(this.scene.getEngine());
-      const reason = this.unsupported(this.scene.activeCamera, capability);
-      if (reason) {
-        this.localSelection = undefined;
-        this.releaseContainer();
-        this.statusValue = {
-          clustered: 0,
-          conventional: this.registry.length,
-          estimatedBytes: 0,
-          reasons: [reason],
-          fallbackReason: reason,
-        };
+      if (!capability.supported) {
+        this.useConventional(capability.reason);
         return;
       }
-      if (!capability.supported) return;
+      const reason = this.unsupported(this.scene.activeCamera);
+      if (reason) {
+        this.useConventional(reason);
+        return;
+      }
       // Controller entries retain the authored registry even while clustered
       // children leave scene.lights. New admitted maps therefore promote them.
       findSceneShadowController(this.scene)?.sync();
@@ -686,11 +678,21 @@ export class ClusteredSceneLights {
     );
   }
 
-  private unsupported(
-    camera: Camera | null,
-    caps: ClusteredLightCapabilities,
-  ): string | undefined {
-    if (caps.supported === false) return caps.reason;
+  /** Every local light stays conventional for `reason`. */
+  private useConventional(reason: string): void {
+    this.localSelection = undefined;
+    this.releaseContainer();
+    this.statusValue = {
+      clustered: 0,
+      conventional: this.registry.length,
+      estimatedBytes: 0,
+      reasons: [reason],
+      fallbackReason: reason,
+    };
+  }
+
+  /** Why a supported device still cannot cluster this frame. */
+  private unsupported(camera: Camera | null): string | undefined {
     if (this.allocationFailure) return this.allocationFailure;
     // The cluster itself requires one ordinary light UBO. Global sun/fill keep
     // their conventional priority; do not borrow children if no slot remains.

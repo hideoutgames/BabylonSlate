@@ -66,7 +66,7 @@ import { Button } from "@babylonslate/ui/components/button";
 import { Empty, EmptyDescription, EmptyTitle } from "@babylonslate/ui/components/empty";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { commitBehaviourTreeGraphChange } from "../lib/behaviour-tree-graph-commit";
-import { classParentLookup } from "../lib/content-browser-helpers";
+import { classIdFromClassAsset, classParentLookup } from "../lib/content-browser-helpers";
 import { pinDefaultPropertyRows } from "../lib/graph-inspector";
 import { documentId } from "@babylonslate/core";
 import {
@@ -240,23 +240,26 @@ function useBehaviourTreeDocument() {
   const linkedBlackboardContent = useOpenDocument(
     blackboardPath ? documentId({ kind: "blackboard", path: blackboardPath }) : null,
   )?.content;
-  const [loadedBlackboard, setLoadedBlackboard] = useState<BlackboardDocument | null>(
-    null,
-  );
+  // A closed Blackboard loads from storage. Keep the path it was read from so
+  // a relink, or a load that finds nothing, never shows the previous keys.
+  const [loadedBlackboard, setLoadedBlackboard] = useState<{
+    path: string;
+    document: BlackboardDocument | null;
+  } | null>(null);
   useEffect(() => {
-    if (!blackboardPath) {
-      setLoadedBlackboard(null);
-      return;
-    }
+    if (!blackboardPath) return;
     if (linkedBlackboardContent && typeof linkedBlackboardContent === "object") {
       return;
     }
     let cancelled = false;
     void loadAssetDocument("blackboard", blackboardPath).then((payload) => {
-      if (cancelled || !payload || typeof payload !== "object") return;
-      setLoadedBlackboard(
-        parseBlackboardDocument(payload as Record<string, unknown>),
-      );
+      if (cancelled) return;
+      setLoadedBlackboard({
+        path: blackboardPath,
+        document: payload && typeof payload === "object"
+          ? parseBlackboardDocument(payload as Record<string, unknown>)
+          : null,
+      });
     });
     return () => {
       cancelled = true;
@@ -268,8 +271,10 @@ function useBehaviourTreeDocument() {
         linkedBlackboardContent as Record<string, unknown>,
       );
     }
-    return loadedBlackboard;
-  }, [linkedBlackboardContent, loadedBlackboard]);
+    return loadedBlackboard && loadedBlackboard.path === blackboardPath
+      ? loadedBlackboard.document
+      : null;
+  }, [blackboardPath, linkedBlackboardContent, loadedBlackboard]);
   const blackboardKeyEntries = blackboardDocument?.keys ?? [];
   const blackboardKeys = blackboardKeyEntries.map((key) => key.name);
   const diagnostics = validateBehaviourTree(doc, {
@@ -281,7 +286,7 @@ function useBehaviourTreeDocument() {
     const asset = (assetRegistry?.list() ?? []).find(
       (item) =>
         item.header.type === "Class" &&
-        (item.header.name === classId || item.header.guid === classId),
+        (classIdFromClassAsset(item) === classId || item.header.guid === classId),
     );
     if (!asset) return;
     void openDocument({
@@ -336,6 +341,8 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
     setAttachmentCatalog,
   } = useBehaviourTreeEditing();
   const knownNodeIds = useRef<Set<string> | null>(null);
+  /** The node the canvas last reported as selected, if any. */
+  const canvasSelectedId = useRef<string | null>(null);
   const nodeIdKey = doc.nodes.map((node) => node.id).join("\0");
   useEffect(() => {
     const current = new Set(doc.nodes.map((node) => node.id));
@@ -473,7 +480,19 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
           hiddenToolbarActions={["copy", "paste", "breakLinks", "format"]}
           onSelectionChange={(nodeIds) => {
             const nextId = nodeIds[0];
-            if (!nextId) return;
+            if (!nextId) {
+              // Deselecting a node on the canvas clears Details. The empty
+              // selection reported on mount keeps the default Root selection,
+              // and a deleted node leaves the selection its delete chose.
+              const previous = canvasSelectedId.current;
+              canvasSelectedId.current = null;
+              if (previous && doc.nodes.some((node) => node.id === previous)) {
+                setSelectedId(null);
+                setAttachmentId(null);
+              }
+              return;
+            }
+            canvasSelectedId.current = nextId;
             setSelectedId(nextId);
             setAttachmentId((current) => {
               if (!current) return null;

@@ -1,5 +1,6 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
+  HIDDEN_VIEWPORT_HEIGHT,
   WINDOWED_SLICE_OVERSCAN,
   windowedRowOffsets,
   windowedSlice,
@@ -64,23 +65,34 @@ export function WindowedList({
 }: WindowedListProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const fixedRowHeight = typeof rowHeight === "number" ? rowHeight : 0;
-  const rowOffsets =
-    typeof rowHeight === "function"
-      ? windowedRowOffsets(itemCount, rowHeight)
-      : undefined;
+  // A stable per-row height function keeps the offsets across scroll renders.
+  const rowOffsets = useMemo(
+    () =>
+      typeof rowHeight === "function"
+        ? windowedRowOffsets(itemCount, rowHeight)
+        : undefined,
+    [itemCount, rowHeight],
+  );
   const rowTop = (index: number) =>
     rowOffsets ? rowOffsets[index]! : index * fixedRowHeight;
   const rowSize = (index: number) =>
     rowOffsets ? rowOffsets[index + 1]! - rowOffsets[index]! : fixedRowHeight;
   const totalHeight = rowOffsets ? rowOffsets[itemCount]! : itemCount * fixedRowHeight;
-  const [viewportHeight, setViewportHeight] = useState(0);
+  // `null` until measured: the first render windows by a typical height rather
+  // than mounting every row (a remount per search query would otherwise do so).
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
 
   useLayoutEffect(() => {
     const viewport = findWindowedListScrollParent(listRef.current);
-    if (!(viewport instanceof HTMLElement)) return;
+    if (!(viewport instanceof HTMLElement)) {
+      setViewportHeight(0);
+      return;
+    }
     const read = () => {
-      setViewportHeight((previous) => windowedViewportHeight(viewport, previous));
+      setViewportHeight((previous) =>
+        windowedViewportHeight(viewport, previous ?? 0),
+      );
       setScrollTop(viewport.scrollTop);
     };
     read();
@@ -117,7 +129,7 @@ export function WindowedList({
     itemCount,
     rowHeight: fixedRowHeight,
     scrollTop,
-    viewportHeight,
+    viewportHeight: viewportHeight ?? HIDDEN_VIEWPORT_HEIGHT,
     overscan: WINDOWED_SLICE_OVERSCAN,
     rowOffsets,
   });

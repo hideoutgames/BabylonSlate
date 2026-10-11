@@ -27,6 +27,7 @@ const applySceneChange = vi.hoisted(() =>
 const openDocument = vi.hoisted(() => vi.fn());
 const frameActor = vi.hoisted(() => vi.fn());
 const harness = vi.hoisted(() => ({
+  documentPath: "assets/Main.scene.babasset",
   phone: false,
   assetListReads: 0,
   registryEpoch: 0,
@@ -50,7 +51,7 @@ vi.mock("../shell/use-platform-layout", () => ({
 
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({
-    documentId: "scene:assets/Main.scene.babasset",
+    documentId: `scene:${harness.documentPath}`,
   }),
 }));
 
@@ -65,10 +66,10 @@ vi.mock("../context/scene-editing-context", async (importOriginal) => {
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   openDocuments: [
     {
-      id: "scene:assets/Main.scene.babasset",
+      id: `scene:${harness.documentPath}`,
       ref: {
         kind: "scene",
-        path: "assets/Main.scene.babasset",
+        path: harness.documentPath,
         label: "Main",
       },
       content: harness.scene,
@@ -89,6 +90,7 @@ afterEach(() => {
   openDocument.mockClear();
   frameActor.mockClear();
   harness.assets = [];
+  harness.documentPath = "assets/Main.scene.babasset";
   harness.phone = false;
   harness.assetListReads = 0;
   harness.registryEpoch = 0;
@@ -105,11 +107,13 @@ describe("SceneOutlinerPanel menus", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "Copy" }));
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
     expect(applySceneChange).not.toHaveBeenCalled();
+    harness.documentPath = "assets/Empty.scene.babasset";
     harness.scene = { ...createDefaultScene(), actors: [] };
     view.rerender(panel());
     fireEvent.click(screen.getByTestId("outliner-paste-actors"));
     await waitFor(() => expect(applySceneChange).toHaveBeenCalledOnce());
-    const pasted = applySceneChange.mock.calls[0]![1];
+    const [documentId, pasted] = applySceneChange.mock.calls[0]!;
+    expect(documentId).toBe("scene:assets/Empty.scene.babasset");
     expect(pasted.actors).toEqual([expect.objectContaining({ name: "Copied Cube Copy" })]);
   });
 
@@ -195,7 +199,7 @@ describe("SceneOutlinerPanel menus", () => {
     expect(frameActor).toHaveBeenCalledWith("actor-1");
   });
 
-  it("opens Duplicate/Delete from the row menu button", () => {
+  it("opens Duplicate/Delete from the row menu button", async () => {
     const scene = createDefaultScene();
     scene.actors = [createActor("actor-1", "Cube")];
     harness.scene = scene;
@@ -205,9 +209,13 @@ describe("SceneOutlinerPanel menus", () => {
       </SceneEditingProvider>,
     );
     fireEvent.click(screen.getByTestId("outliner-menu-actor-1"));
+    fireEvent.click(screen.getByTestId("outliner-duplicate-actor-1"));
+    const duplicated = applySceneChange.mock.calls[0]?.[1] as SerializedScene;
+    expect(duplicated.actors.map((actor) => actor.name)).toEqual(["Cube", "Cube Copy"]);
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    fireEvent.click(screen.getByTestId("outliner-menu-actor-1"));
     fireEvent.click(screen.getByTestId("outliner-delete-actor-1"));
-    expect(applySceneChange).toHaveBeenCalled();
-    const next = applySceneChange.mock.calls[0]?.[1] as SerializedScene;
+    const next = applySceneChange.mock.calls.at(-1)?.[1] as SerializedScene;
     expect(next.actors.find((actor) => actor.id === "actor-1")).toBeUndefined();
   });
 

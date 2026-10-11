@@ -176,6 +176,7 @@ export class ParticleService {
   private readonly resolveEmitter?: (slotId: number) => AbstractMesh | null;
   private sceneForSlot?: (slotId: number) => Scene | null;
   private readonly onDiagnostic?: (diagnostic: ParticleServiceDiagnostic) => void;
+  private readonly sortingLayers?: () => readonly string[] | undefined;
   private library: ParticleLibrary = emptyLibrary();
   private readonly live = new Map<string, LiveComponent>();
   private readonly slotMeshes = new Map<number, AbstractMesh | null>();
@@ -197,6 +198,8 @@ export class ParticleService {
     /** A null result means that the intended owner is not available yet. */
     sceneForSlot?: (slotId: number) => Scene | null;
     onDiagnostic?: (diagnostic: ParticleServiceDiagnostic) => void;
+    /** The project's ordered sorting layers, read when a system is built; `DEFAULT_SORTING_LAYERS` when unset. */
+    sortingLayers?: () => readonly string[] | undefined;
     /** "global" (Play, player) publishes `particleStats`; "local" (previews) only serves `stats()`. */
     statsScope?: "global" | "local";
   }) {
@@ -207,6 +210,7 @@ export class ParticleService {
     this.resolveEmitter = options.resolveEmitter;
     this.sceneForSlot = options.sceneForSlot;
     this.onDiagnostic = options.onDiagnostic;
+    this.sortingLayers = options.sortingLayers;
     const observer = this.scene.onDisposeObservable.addOnce(() => this.dispose());
     this.cancelSceneDispose = () => this.scene.onDisposeObservable.remove(observer);
     this.publishStats();
@@ -413,7 +417,7 @@ export class ParticleService {
   private slotContext(entry: LiveComponent, host: Scene, node: Mesh, space: ParticleSpace): SlotContext {
     return {
       host, node, space, generation: entry.generation,
-      sorting: resolveSortingLayer(DEFAULT_SORTING_LAYERS, entry.command.sortingLayer?.trim() || "Default", entry.command.orderInLayer ?? 0),
+      sorting: resolveSortingLayer(this.sortingLayers?.() ?? DEFAULT_SORTING_LAYERS, entry.command.sortingLayer?.trim() || "Default", entry.command.orderInLayer ?? 0),
       // The owning engine decides, not the last-created one.
       backend: particleSimBackend(host.getEngine(), this.gpuRequested),
     };

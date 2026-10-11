@@ -109,6 +109,7 @@ describe("Get <Subsystem>", () => {
         ),
         node(registry, "capacity", "variables.get", {
           classId: "InventorySubsystem",
+          variableId: "cap",
           variableName: "Capacity",
           typeId: "int",
           implicitSelf: false,
@@ -121,6 +122,7 @@ describe("Get <Subsystem>", () => {
         }),
         node(registry, "set", "variables.set", {
           classId: "InventoryBase",
+          variableId: "last",
           variableName: "Last Total",
           typeId: "int",
           implicitSelf: false,

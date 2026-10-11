@@ -72,7 +72,6 @@ describe("asset catalog helpers", () => {
   it.each([
     ["assets/Weapons/Rifle.class.babasset", "Rifle"],
     ["assets/my-weapon.class.babasset", "my_weapon"],
-    ["assets/Old.graph.babasset", "Old"],
     ["assets/.class.babasset", "Graph"],
   ])("derives the class id of %s", (path, expected) => {
     expect(classIdForAssetPath(path)).toBe(expected);

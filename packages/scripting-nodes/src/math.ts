@@ -7,6 +7,15 @@ import {
 } from "@babylonslate/scripting";
 import { ARITHMETIC_SEARCH_ALIASES } from "./arithmetic-search-aliases";
 
+/**
+ * Divide Int truncates toward zero and Modulo Int keeps the dividend's sign.
+ * A zero divisor yields 0, so an Int pin never carries Infinity or NaN.
+ */
+function intDivisionExpr(a: string, b: string, op: "/" | "%"): string {
+  const result = op === "/" ? "Math.trunc(a / b)" : "a % b";
+  return `((a, b) => (b === 0 ? 0 : ${result}))(${a}, ${b})`;
+}
+
 function binary(
   id: string,
   title: string,
@@ -26,8 +35,8 @@ function binary(
       pin("out", "out", "out", type),
     ],
     codegen: (ctx) => ({
-      out: type === INT && op === "/"
-        ? `Math.trunc(${ctx.input("a")} / ${ctx.input("b")})`
+      out: type === INT && (op === "/" || op === "%")
+        ? intDivisionExpr(ctx.input("a"), ctx.input("b"), op)
         : `(${ctx.input("a")} ${op} ${ctx.input("b")})`,
     }),
   };
@@ -224,7 +233,7 @@ export const mathNodes: NodeDefinition[] = [
       pin("out", "Out", "out", FLOAT),
     ],
     codegen: (ctx) => ({
-      out: `((${ctx.input("a")}) + ((${ctx.input("b")}) - (${ctx.input("a")})) * (${ctx.input("alpha")}))`,
+      out: `((a, b, t) => a + (b - a) * t)(${ctx.input("a")}, ${ctx.input("b")}, ${ctx.input("alpha")})`,
     }),
   },
   {

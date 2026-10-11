@@ -1,5 +1,6 @@
 import path from "node:path";
 import { existsSync, readFileSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
@@ -40,7 +41,14 @@ const buildIdentity = distributionBuild
 if (buildIdentity && buildIdentity.applicationVersion !== declaredVersion) {
   throw new Error("Build metadata and declared application version differ");
 }
-const buildLabel = `${declaredVersion} ${buildIdentity?.channel === "release" ? "Release" : "Development build"}`;
+// Distribution builds name their channel as the manifest and release notes do.
+const channelLabel =
+  buildIdentity?.channel === "release"
+    ? "Release"
+    : buildIdentity?.channel === "test"
+      ? "Test (Indev)"
+      : "Development build";
+const buildLabel = `${declaredVersion} ${channelLabel}`;
 const changelog = validateChangelog(
   JSON.parse(readFileSync(path.join(repoRoot, "release/changelog.json"), "utf8")),
   declaredVersion,
@@ -61,6 +69,17 @@ export default defineConfig({
     {
       name: "slate-loading-build-label",
       transformIndexHtml: (html) => html.replace("__SLATE_BUILD_LABEL__", buildLabel),
+    },
+    {
+      // Only a distribution build, which refuses test-mode storage, may ship the generated
+      // manifest: native packaging and signing require it as proof of a production bundle.
+      name: "slate-distribution-manifest",
+      apply: "build",
+      async writeBundle(options) {
+        if (!distributionBuild && options.dir) {
+          await rm(path.join(options.dir, "build-manifest.json"), { force: true });
+        }
+      },
     },
     react(),
     tailwindcss(),

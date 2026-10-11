@@ -181,6 +181,28 @@ describe("attachViewportGestures", () => {
     vi.useRealTimers();
   });
 
+  it("does not arm a 2D hold marquee for the finger left after a pinch", () => {
+    vi.useFakeTimers();
+    const marquees: unknown[] = [];
+    const rects: unknown[] = [];
+    attach("2d", {
+      onMarquee: (rect) => marquees.push(rect),
+      onMarqueeMove: (rect) => { if (rect) rects.push(rect); },
+    });
+
+    canvas.emit("pointerdown", pointer(1, 100, 100));
+    canvas.emit("pointerdown", pointer(2, 200, 100));
+    // The hold would arm while both fingers rest during the pinch.
+    vi.advanceTimersByTime(250);
+    canvas.emit("pointerup", pointer(2, 200, 100));
+    canvas.emit("pointermove", pointer(1, 60, 140));
+    canvas.emit("pointerup", pointer(1, 60, 140));
+
+    expect(rects).toHaveLength(0);
+    expect(marquees).toHaveLength(0);
+    vi.useRealTimers();
+  });
+
   it("does not pan in 2D when blockLook reports a gizmo hit", () => {
     const { controller } = attach("2d", { blockLook: () => true });
     const targetBefore = controller.camera.target.clone();
@@ -485,7 +507,7 @@ describe("attachViewportGestures", () => {
   it("pinch-zooms a pixel-perfect 2D camera smoothly", () => {
     const { controller } = attach("2d");
     controller.setCanvasHeight(600);
-    controller.setPixelPerfect({ pixelsPerUnit: 100, integerZoomSteps: true });
+    controller.setPixelPerfect({ pixelsPerUnit: 100 });
 
     canvas.emit("pointerdown", pointer(1, 0, 100));
     canvas.emit("pointerdown", pointer(2, 100, 100));

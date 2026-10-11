@@ -1,4 +1,3 @@
-import { displayProjectName } from "./display-project-name";
 import type { ProjectAppearance } from "@babylonslate/core";
 
 // Descriptor + noun + head noun reads as a compound name in any combination,
@@ -47,7 +46,7 @@ export function randomProjectName(
 
 /** Folder name written to storage; empty when the display name is blank. */
 export function normalizeProjectFolderName(displayName: string): string {
-  return displayProjectName(displayName.trim());
+  return displayName.trim();
 }
 
 export type CreateProjectNameIssue = "Name required." | "Name already exists.";

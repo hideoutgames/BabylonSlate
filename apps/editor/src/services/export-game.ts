@@ -2,7 +2,7 @@ import { validateSaveGameDefinition, type SaveGameConfiguration } from "@babylon
 import { subsystemBaseClassIdOf } from "@babylonslate/object-model";
 import { dataTypeSchemas } from "@babylonslate/scripting";
 import type { DataAssetCatalogEntry } from "@babylonslate/core";
-import { areaEmissionTextureGuids, buildDataTreeIndex, isDataTreeAsset, isInputAssetType, normalizeInputAssetPayload, renderEffectsAssetGuids } from "@babylonslate/core";
+import { areaEmissionTextureGuids, buildDataTreeIndex, classIdForAssetPath, isDataTreeAsset, isInputAssetType, normalizeInputAssetPayload, renderEffectsAssetGuids } from "@babylonslate/core";
 import {
   collectExportReachability,
   exportGame,
@@ -119,6 +119,7 @@ export type CollectExportGameParams = {
   parentOf: (classId: string) => string | null | undefined;
   sceneByGuid: (guid: string) => SerializedScene | null;
   graphByGuid: (guid: string) => SerializedGraph | null;
+  /** Throws for an asset whose bytes failed to load; the export then fails. */
   bytesByGuid: (guid: string) => Uint8Array | null;
   payloadByGuid?: (guid: string) => unknown | null;
   navmeshByGuid?: (guid: string) => Uint8Array | null;
@@ -137,11 +138,9 @@ export type CollectExportGameParams = {
   physicsWorld: "2d" | "3d";
   infiniteLoopDetection?: boolean;
   loopCount?: number;
-  inputMappings?: import("@babylonslate/core").ProjectInputSettings;
   focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
   tagRegistry?: TagRegistry;
   playerFiles: Map<string, Uint8Array>;
-  extraFiles?: Map<string, Uint8Array>;
   /** Preview Build keeps Development Only nodes. */
   previewBuild?: boolean;
   onPhase?: (phase: "Compiling" | "Writing Pack") => void;
@@ -159,13 +158,7 @@ export function resolveExportPluginGraph(
       preset.pluginOverrides[plugin.pluginGuid]?.enabled,
     ),
   );
-  const graph = resolvePluginGraph(enabled, undefined, Object.fromEntries(
-    enabled.map((plugin) => [plugin.pluginGuid, {
-      ...projectOverrides[plugin.pluginGuid],
-      ...preset.pluginOverrides[plugin.pluginGuid],
-      enabled: true,
-    }]),
-  ));
+  const graph = resolvePluginGraph(enabled);
   const name = (guid: string | undefined) =>
     plugins.find((plugin) => plugin.pluginGuid === guid)?.settings
       .displayName ??
@@ -295,7 +288,6 @@ export async function collectAndExportGame(
   const preset = params.preset ?? defaultExportPreset();
   const bundleDebugger =
     params.previewBuild === true ? true : preset.bundleDebugger;
-  const mode = preset.packed === false ? "loose" : "packed";
   const pluginGraph = resolveExportPluginGraph(
     params.plugins,
     params.projectPluginOverrides,
@@ -334,13 +326,13 @@ export async function collectAndExportGame(
     content: SerializedGraph;
     parentClassId?: string | null;
   }> = [];
-  const animDocs: Array<{ guid: string; path: string; document: unknown }> = [];
+  const animDocs: Array<{ guid: string; name: string; document: unknown }> = [];
   const exportAssets: ExportAssetBytes[] = [];
   const subsystemHierarchy = { ancestry(classId: string) { const result: string[] = []; const seen = new Set<string>(); let current: string | null | undefined = classId; while (current && !seen.has(current)) { seen.add(current); result.push(current); current = params.parentOf(current); } return result; } };
   const requiredEmissions = new Set<string>();
   for (const guid of closure.value.guids) {
     const asset = params.assets.find((entry) => entry.guid === guid);
-    const document = asset?.type === "Scene" ? params.sceneByGuid(guid) : asset?.type === "Class" || asset?.type === "Graph" ? params.graphByGuid(guid) : params.payloadByGuid?.(guid);
+    const document = asset?.type === "Scene" ? params.sceneByGuid(guid) : asset?.type === "Class" ? params.graphByGuid(guid) : params.payloadByGuid?.(guid);
     for (const texture of areaEmissionTextureGuids(document)) requiredEmissions.add(texture);
   }
   for (const guid of requiredEmissions) {
@@ -351,12 +343,13 @@ export async function collectAndExportGame(
   for (const guid of closure.value.guids) {
     const asset = params.assets.find((entry) => entry.guid === guid);
     if (!asset) continue;
-    if (asset.type === "Class" || asset.type === "Graph") {
+    if (asset.type === "Class") {
       const graph = params.graphByGuid(guid);
       if (graph) {
         graphDocs.push({
           guid,
-          path: asset.name,
+          // The class id comes from the file path, as in Play and the runtime catalog.
+          path: asset.path ?? asset.name,
           content: graph,
           parentClassId: asset.parentClass,
         });
@@ -364,20 +357,24 @@ export async function collectAndExportGame(
     }
     if (asset.type === "AnimationGraph") {
       const payload = params.payloadByGuid?.(guid) ?? null;
-      if (payload) {
-        const animPath =
-          asset.path && /\.anim\.(babasset|json)$/i.test(asset.path)
-            ? asset.path
-            : `assets/${asset.name}.anim.babasset`;
-        animDocs.push({ guid, path: animPath, document: payload });
-      }
+      if (payload) animDocs.push({ guid, name: asset.name, document: payload });
     }
-    const bytes = params.bytesByGuid(guid);
+    let bytes: Uint8Array | null;
+    try {
+      bytes = params.bytesByGuid(guid);
+    } catch (error) {
+      return { ok: false, error: `${asset.name} could not be read for export: ${error instanceof Error ? error.message : String(error)}` };
+    }
     if (asset.type === "Texture") {
+      // Required emissions were checked above; a stale emission no area light
+      // in the closure uses is left out rather than failing the export.
+      let emission: Uint8Array | null | undefined;
       try {
-        const emission = params.areaEmissionBytesByGuid?.(guid);
-        if (emission) exportAssets.push({ guid: areaEmissionExportGuid(guid), type: AREA_EMISSION_EXPORT_TYPE, sceneGuid: packSceneGuidForAsset(guid, startup, closure.value.bySceneGuid), bytes: emission, encoding: "bytes", name: `${asset.name} Area Emission` });
-      } catch (error) { return { ok: false, error: `Area emission ${asset.name}: ${String(error)}` }; }
+        emission = params.areaEmissionBytesByGuid?.(guid);
+      } catch {
+        emission = null;
+      }
+      if (emission) exportAssets.push({ guid: areaEmissionExportGuid(guid), type: AREA_EMISSION_EXPORT_TYPE, sceneGuid: packSceneGuidForAsset(guid, startup, closure.value.bySceneGuid), bytes: emission, encoding: "bytes", name: `${asset.name} Area Emission` });
     }
     if (bytes) {
       const payload = params.payloadByGuid?.(guid);
@@ -393,7 +390,7 @@ export async function collectAndExportGame(
         requiredClassReferences: asset.requiredClassReferences,
         consoleCommand: asset.consoleCommand,
         dependencyMetadataVersion: asset.dependencyMetadataVersion,
-        startupRequired: asset.type === "InputAction" || asset.type === "InputAxis" || asset.guid === params.audioMixerGuid || asset.guid === params.gameInstanceClass || asset.name === params.gameInstanceClass || (asset.type === "Class" && !!asset.parentClass && subsystemBaseClassIdOf(subsystemHierarchy, asset.parentClass) !== null),
+        startupRequired: asset.type === "InputAction" || asset.type === "InputAxis" || asset.guid === params.audioMixerGuid || (asset.type === "Class" && !!asset.path && !!params.gameInstanceClass && classIdForAssetPath(asset.path) === params.gameInstanceClass) || (asset.type === "Class" && !!asset.parentClass && subsystemBaseClassIdOf(subsystemHierarchy, asset.parentClass) !== null),
         type: asset.type,
         sceneGuid: packSceneGuidForAsset(
           guid,
@@ -512,22 +509,24 @@ export async function collectAndExportGame(
   const scripts: ScriptBundleEntry[] = [];
   if (graphDocs.length || animDocs.length) {
     const { compileAnimGraphScripts, compileGraphDocuments, classIdForGraphPath } = await import("./script-compiler");
-    scripts.push(
-      ...compileGraphDocuments(graphDocs.map(document => ({ ...document, classId: classIdForGraphPath(document.path), path: document.guid })), {
-        stripDevelopmentOnly: !bundleDebugger,
-        inputAssets,
-        dataAssets,
-        ...typeSchemas,
-        tagRegistry: params.tagRegistry,
-      }),
-      ...compileAnimGraphScripts(animDocs.map(document => ({ ...document, path: document.guid })), {
-        stripDevelopmentOnly: !bundleDebugger,
-        inputAssets,
-        dataAssets,
-        ...typeSchemas,
-        tagRegistry: params.tagRegistry,
-      }),
-    );
+    // A script that fails codegen fails the export instead of shipping without it.
+    const compileOptions = {
+      stripDevelopmentOnly: !bundleDebugger,
+      inputAssets,
+      dataAssets,
+      ...typeSchemas,
+      tagRegistry: params.tagRegistry,
+      throwOnError: true,
+    };
+    try {
+      scripts.push(
+        ...compileGraphDocuments(graphDocs.map(document => ({ ...document, classId: classIdForGraphPath(document.path), path: document.guid })), compileOptions),
+        // Exported Animation Graph scripts are keyed by guid, as the pack is.
+        ...compileAnimGraphScripts(animDocs.map(document => ({ ...document, path: document.guid })), compileOptions),
+      );
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
   }
 
   params.onPhase?.("Writing Pack");
@@ -548,7 +547,6 @@ export async function collectAndExportGame(
     includePreviewDiagnostics: params.previewBuild === true,
     saveGame,
     project: params.project,
-    mode,
     bundleDebugger,
     startupSceneGuid: startup,
     gameInstanceClass: params.gameInstanceClass,
@@ -568,12 +566,10 @@ export async function collectAndExportGame(
     infiniteLoopDetection: params.infiniteLoopDetection,
     loopCount: params.loopCount,
     inputAssets,
-    inputMappings: params.inputMappings,
     focusNavigation: params.focusNavigation,
     scripts,
     assets: exportAssets,
     playerFiles: params.playerFiles,
-    extraFiles: params.extraFiles,
     fileCountWarn: preset.fileCountWarn,
     fileCountFail: preset.fileCountFail,
   });

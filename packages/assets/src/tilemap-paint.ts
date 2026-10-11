@@ -1,4 +1,4 @@
-import { getTile, setTile, type TilemapPayload } from "./tilemap-payload";
+import { chunkCoordForTile, getTile, localIndex, setTiles, type TilemapPayload, type TileWrite } from "./tilemap-payload";
 
 export const MIN_PAINT_CELL_SIZE = 8;
 export const MAX_PAINT_CELL_SIZE = 96;
@@ -224,11 +224,7 @@ function paintCells(
   cells: readonly TileCell[],
   tileId: number,
 ): TilemapPayload {
-  let next = map;
-  for (const cell of cells) {
-    next = setTile(next, layerId, cell.x, cell.y, tileId);
-  }
-  return next;
+  return setTiles(map, layerId, cells.map((cell) => ({ x: cell.x, y: cell.y, id: tileId })));
 }
 
 function rectCells(start: TileCell, end: TileCell): TileCell[] {
@@ -252,14 +248,14 @@ function stampTiles(
   stamp: TileStamp | undefined,
 ): TilemapPayload {
   if (!stamp || stamp.width < 1 || stamp.height < 1) return map;
-  let next = map;
+  const writes: TileWrite[] = [];
   for (let ly = 0; ly < stamp.height; ly++) {
     for (let lx = 0; lx < stamp.width; lx++) {
       const id = stamp.tiles[ly * stamp.width + lx] ?? 0;
-      next = setTile(next, layerId, origin.x + lx, origin.y + ly, id);
+      writes.push({ x: origin.x + lx, y: origin.y + ly, id });
     }
   }
-  return next;
+  return setTiles(map, layerId, writes);
 }
 
 function floodFill(
@@ -268,7 +264,8 @@ function floodFill(
   start: TileCell,
   tileId: number,
 ): TilemapPayload {
-  const source = getTile(map, layerId, start.x, start.y);
+  const tileAt = layerTileReader(map, layerId);
+  const source = tileAt(start.x, start.y);
   if (source === tileId) return map;
   const bounds = fillBounds(map, layerId, start);
   const seen = new Set<string>();
@@ -287,7 +284,7 @@ function floodFill(
     ) {
       continue;
     }
-    if (getTile(map, layerId, cell.x, cell.y) !== source) continue;
+    if (tileAt(cell.x, cell.y) !== source) continue;
     cells.push(cell);
     queue.push(
       { x: cell.x + 1, y: cell.y },
@@ -297,6 +294,23 @@ function floodFill(
     );
   }
   return paintCells(map, layerId, cells, tileId);
+}
+
+/** One layer's tiles by cell, with its chunks indexed once for a per-cell scan. */
+function layerTileReader(
+  map: TilemapPayload,
+  layerId: string,
+): (x: number, y: number) => number {
+  const size = Math.max(1, map.chunkSize);
+  const chunks = new Map<string, readonly number[]>();
+  for (const chunk of map.layers.find((entry) => entry.id === layerId)?.chunks ?? []) {
+    const key = `${chunk.cx},${chunk.cy}`;
+    if (!chunks.has(key)) chunks.set(key, chunk.tiles);
+  }
+  return (x, y) => {
+    const { cx, cy, lx, ly } = chunkCoordForTile(x, y, size);
+    return chunks.get(`${cx},${cy}`)?.[localIndex(lx, ly, size)] ?? 0;
+  };
 }
 
 function fillBounds(

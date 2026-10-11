@@ -39,6 +39,22 @@ it("waits for older retired generations even after the latest one releases", asy
   expect(completed).toBe(true);
 });
 
+it("waits for a generation retired after the release wait began", async () => {
+  const first = signal();
+  const late = signal();
+  const retirement = new PostProcessRetirement();
+  retirement.add({ whenDisposed: () => first.promise, whenReleased: () => first.promise });
+  let completed = false;
+  const done = retirement.whenReleased().then(() => { completed = true; });
+  retirement.add({ whenDisposed: () => late.promise, whenReleased: () => late.promise });
+  first.resolve();
+  await new Promise((settled) => setTimeout(settled, 0));
+  expect(completed).toBe(false);
+  late.resolve();
+  await done;
+  expect(completed).toBe(true);
+});
+
 it("never treats a failed actual cleanup as release permission after its promise settles", async () => {
   const failure = Promise.reject(new Error("native cleanup failed"));
   const retirement = new PostProcessRetirement();

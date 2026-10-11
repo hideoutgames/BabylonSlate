@@ -41,10 +41,8 @@ export const SEARCH_CATALOG_CLASS_IDS: readonly string[] = [
 
 const nodeRegistry = createDefaultNodeRegistry();
 
-/** Graph node type id → palette title, plus the legacy logMessage alias. */
-export const SEARCH_NODE_TITLES: Record<string, string> = {
-  logMessage: "Log",
-};
+/** Graph node type id → palette title. */
+export const SEARCH_NODE_TITLES: Record<string, string> = {};
 
 for (const definition of nodeRegistry.list()) {
   SEARCH_NODE_TITLES[definition.id] = definition.title;

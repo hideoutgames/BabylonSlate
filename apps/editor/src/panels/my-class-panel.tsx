@@ -23,6 +23,7 @@ import {
   type SerializedGraph,
 } from "@babylonslate/core";
 import { isLockedEngineClassId } from "@babylonslate/object-model";
+import { nextCopyName } from "@babylonslate/assets";
 import { Badge } from "@babylonslate/ui/components/badge";
 import {
   addClassMember,
@@ -523,7 +524,7 @@ export function ClassMembersView({
         (entry.detail ?? `${entry.kind}-${entry.name}`) !== id,
     );
     if (taken) return;
-    onGraphChange(patchClassMember(graph, id, { name }));
+    onGraphChange(patchClassMember(graph, id, { name }, classId));
   };
   const addVariable = (pickerType: string, local: boolean) => {
     if (!graph) return;
@@ -605,8 +606,15 @@ export function ClassMembersView({
     if (!graph) return;
     const row = overridableRows.find((entry) => entry.id === id);
     if (!row || row.overwritten) return;
+    // Interface dispatch reads `implementsInterface`, not the function name, so
+    // an implementation beside an unrelated function of that name takes a free one.
+    const functionNames = namesOfKind("function");
+    const name =
+      row.kind === "interface" && functionNames.includes(row.name)
+        ? nextCopyName(row.name, functionNames)
+        : row.name;
     selectAddedFunction(
-      addClassMember(graph, "function", row.name, undefined, {
+      addClassMember(graph, "function", name, undefined, {
         pins: row.pins,
         implementsInterface: row.implementsInterface,
         overrides: row.overrides,
@@ -837,7 +845,7 @@ export function ClassMembersView({
         label: "Delete",
         onSelect: () => {
           if (!graph || !selectedId) return;
-          onGraphChange(removeClassMember(graph, selectedId));
+          onGraphChange(removeClassMember(graph, selectedId, { ...membersOptions, classId }));
         },
       },
     ],
@@ -915,7 +923,7 @@ export function ClassMembersView({
                     label: "Delete",
                     onSelect: () => {
                       if (!graph) return;
-                      onGraphChange(removeClassMember(graph, id));
+                      onGraphChange(removeClassMember(graph, id, { ...membersOptions, classId }));
                     },
                   },
                 ]

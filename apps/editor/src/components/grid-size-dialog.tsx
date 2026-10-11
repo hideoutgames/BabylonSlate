@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { NumberField } from "@babylonslate/editor-kit";
 import {
   AlertDialog,
@@ -54,7 +54,11 @@ export function GridSizeDialog({
     if (open) setValue({ gridSize, snapTranslate, snapRotateDeg, snapScale });
   }, [open, gridSize, snapTranslate, snapRotateDeg, snapScale]);
 
-  const submit = (next = value) => {
+  const finishRefs = useRef<
+    Partial<Record<keyof SnapValues, (() => number | undefined) | null>>
+  >({});
+
+  const submit = (next: SnapValues) => {
     if (
       Object.values(next).some(
         (entry) => !Number.isFinite(entry) || entry < 0.0001,
@@ -63,6 +67,21 @@ export function GridSizeDialog({
       return;
     onSubmit(next);
     onOpenChange(false);
+  };
+
+  // Finish every field's draft like Enter, so Save never submits the last live
+  // value behind an invalid or out-of-range draft; any invalid draft keeps the
+  // dialog open with its explanation.
+  const finishAndSubmit = (entered?: { key: keyof SnapValues; value: number }) => {
+    const next = { ...value };
+    let valid = true;
+    for (const { key } of FIELDS) {
+      const finished =
+        entered?.key === key ? entered.value : finishRefs.current[key]?.();
+      if (finished === undefined) valid = false;
+      else next[key] = finished;
+    }
+    if (valid) submit(next);
   };
 
   return (
@@ -88,7 +107,10 @@ export function GridSizeDialog({
                   onChange={(next) =>
                     setValue((current) => ({ ...current, [key]: next }))
                   }
-                  onEnter={(next) => submit({ ...value, [key]: next })}
+                  onEnter={(next) => finishAndSubmit({ key, value: next })}
+                  finishRef={(finish) => {
+                    finishRefs.current[key] = finish;
+                  }}
                 />
               </Field>
             ))}
@@ -102,7 +124,7 @@ export function GridSizeDialog({
             data-testid="number-prompt-confirm"
             onClick={(event) => {
               event.preventDefault();
-              submit();
+              finishAndSubmit();
             }}
           >
             Save

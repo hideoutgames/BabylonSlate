@@ -20,13 +20,14 @@ export function asTracePayload(content: unknown): TracePayload | null {
   if (
     !Number.isFinite(record.seed) ||
     !Number.isFinite(record.dt) ||
-    (record.retention !== undefined && !validTraceRetention(record.retention)) ||
+    !validTraceRetention(record.retention) ||
     !Array.isArray(record.frames) ||
     !record.frames.every((frame: unknown) => {
       if (!frame || typeof frame !== "object") return false;
       const row = frame as Record<string, unknown>;
       return (
         Number.isInteger(row.tickIndex) &&
+        Number.isFinite(row.timeDilation) &&
         Number.isFinite(row.scriptMs) &&
         Number.isFinite(row.physicsMs) &&
         Array.isArray(row.logs) &&
@@ -69,7 +70,6 @@ function validTraceRetention(value: unknown): boolean {
 
 export function traceRetentionSummary(payload: TracePayload): string {
   const retention = payload.retention;
-  if (!retention) return "Retention Details Unavailable";
   const budget = retention.byteBudget >= 1024 * 1024
     ? `${Number((retention.byteBudget / (1024 * 1024)).toFixed(2))} MiB`
     : `${retention.byteBudget} B`;

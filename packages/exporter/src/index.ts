@@ -3,8 +3,6 @@ export {
   DEFAULT_FILE_COUNT_WARN,
   DEFAULT_FILE_COUNT_FAIL,
   GAME_MANIFEST_FILE,
-  SCRIPTS_FILE,
-  BOOT_PACK_FILE,
   NAVMESH_EXPORT_TYPE,
   NAVMESH_EXPORT_GUID_PREFIX,
   navmeshExportGuid,
@@ -32,14 +30,6 @@ export {
 export { collectExportReachability, collectHeaderReachability, selectExportRoots, type ExportRoots } from "./closure";
 export { runtimeAssetCatalogFromIndexed, runtimeAssetCatalogFromManifest } from "./asset-catalog";
 export { selectPlayerRuntimeFiles } from "./player-files";
-export { encodeBabpack, decodeBabpack, decodeBabpackIndex } from "./babpack";
-export { createHttpPackSource, createMemoryPackSource } from "./pack-source";
-export type { PackSource } from "./pack-source";
-export {
-  concatenateScripts,
-  serializeScriptRegistry,
-  parseScriptRegistry,
-} from "./scripts";
 export {
   PREVIEW_PACK_MESSAGE,
   PREVIEW_REQUEST_PACK_MESSAGE,
@@ -69,7 +59,6 @@ export {
   SAFE_ZIP_MTIME,
 } from "./export-game";
 export type {
-  ExportMode,
   ExportIndexedAsset,
   ExportClosureInput,
   ExportRootInput,

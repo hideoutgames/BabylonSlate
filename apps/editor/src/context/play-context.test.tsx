@@ -266,6 +266,8 @@ it("cancels or plays without saving from the Unsaved Changes prompt", async () =
   });
   // The dialog unmounts after its closing animation.
   await waitFor(() => expect(screen.queryByTestId("play-unsaved-dialog")).toBeNull());
+  // Cancel starts no Play session.
+  expect(controls.sessionState.generation).toBe(0);
   await act(async () => {
     void controls.requestPlay();
   });
@@ -273,6 +275,8 @@ it("cancels or plays without saving from the Unsaved Changes prompt", async () =
     fireEvent.click(screen.getByTestId("play-unsaved-skip"));
   });
   await waitFor(() => expect(screen.queryByTestId("play-unsaved-dialog")).toBeNull());
+  // Play Without Saving starts a session from the unsaved documents.
+  expect(controls.sessionState.generation).toBe(1);
   expect(saveAll).not.toHaveBeenCalled();
 });
 

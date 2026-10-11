@@ -26,7 +26,7 @@ export function TemplateLibrarySettings() {
     setError(null);
     try {
       const files = await pickImportFiles({
-        accept: ".zip,.babproject",
+        accept: ".zip",
         multiple: false,
         maxTotalBytes: 50 * 1024 * 1024,
       });

@@ -9,8 +9,13 @@ const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(rootDir, "../..");
 const editorPublic = path.join(repoRoot, "apps/editor/public");
 
-function copyIfPresent(from: string, to: string): void {
-  if (!existsSync(from)) return;
+/** The player cannot run without these tracked editor assets, so a missing one fails the build. */
+function copyRequired(name: string, dest: string): void {
+  const from = path.join(editorPublic, name);
+  if (!existsSync(from)) {
+    throw new Error(`Player runtime asset is missing: apps/editor/public/${name}`);
+  }
+  const to = path.join(dest, name);
   mkdirSync(path.dirname(to), { recursive: true });
   cpSync(from, to, { recursive: true });
 }
@@ -18,15 +23,9 @@ function copyIfPresent(from: string, to: string): void {
 function copyRuntimePublic(): Plugin {
   const dest = path.join(rootDir, "public");
   const copy = () => {
-    copyIfPresent(
-      path.join(editorPublic, "coi-serviceworker.js"),
-      path.join(dest, "coi-serviceworker.js"),
-    );
-    copyIfPresent(path.join(editorPublic, "havok"), path.join(dest, "havok"));
-    copyIfPresent(path.join(editorPublic, "ktx2"), path.join(dest, "ktx2"));
-    copyIfPresent(path.join(editorPublic, "draco"), path.join(dest, "draco"));
-    copyIfPresent(path.join(editorPublic, "meshopt"), path.join(dest, "meshopt"));
-    copyIfPresent(path.join(editorPublic, "legal"), path.join(dest, "legal"));
+    for (const name of ["coi-serviceworker.js", "havok", "ktx2", "draco", "meshopt", "legal"]) {
+      copyRequired(name, dest);
+    }
     copyEngineDefaultSkyboxFaces(repoRoot, dest);
   };
   return {

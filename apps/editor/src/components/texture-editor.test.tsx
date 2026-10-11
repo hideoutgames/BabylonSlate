@@ -144,7 +144,21 @@ describe("Texture editor", () => {
     expect(retryTextureEncoding).toHaveBeenCalledWith("tex-odd", { force: true, usage: "normal" });
   });
 
-  it("re-encodes nothing while another user's lock keeps the Texture read-only", async () => {
+  it("explains a re-encode that could not start", async () => {
+    retryTextureEncoding.mockRejectedValueOnce(new Error("Read-only during Simulation Play"));
+    render(
+      <TextureDetails
+        guid="tex-albedo"
+        dependencies={[]}
+        payload={{ usage: "albedo", compressionState: "encode_failed" }}
+        onChange={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("texture-retry-encode"));
+    expect((await screen.findByTestId("texture-requeue-error")).textContent).toContain("Read-only during Simulation Play");
+  });
+
+  it("re-encodes and prepares nothing while another user's lock keeps the Texture read-only", async () => {
     textureUsageBlockedReason.mockReturnValue("The Texture is locked by Bob.");
     textureAlignmentStale.mockResolvedValue(true);
     const onChange = vi.fn();
@@ -152,6 +166,11 @@ describe("Texture editor", () => {
     const retry = await screen.findByTestId("texture-retry-encode");
     expect(retry).toHaveProperty("disabled", true);
     fireEvent.click(retry);
+    // Emission preparation stores derived chunks in the same file.
+    const prepare = screen.getByRole("button", { name: "Prepare Emission" });
+    expect(prepare).toHaveProperty("disabled", true);
+    fireEvent.click(prepare);
+    expect(prepareAreaEmission).not.toHaveBeenCalled();
     // A Details change the read-only tab refuses must not re-encode the file either.
     fireEvent.click(screen.getByRole("combobox", { name: "Usage" }));
     const particle = screen.getByRole("option", { name: "Particle" });
@@ -203,5 +222,16 @@ describe("Texture editor", () => {
     readAssetChunk.mockResolvedValueOnce(new Uint8Array());
     render(<TexturePreview path="assets/empty.babasset" payload={{ usage: "albedo" }} />);
     expect(await screen.findByText("No Image Data")).toBeTruthy();
+  });
+
+  it("reports a failed pixel read and previews the pixels on Retry", async () => {
+    readAssetChunk.mockRejectedValueOnce(new Error("Asset chunk changed during 3 read attempts"));
+    render(<TexturePreview path="assets/albedo.babasset" payload={{ usage: "albedo" }} />);
+    expect(await screen.findByText("Texture Preview Failed")).toBeTruthy();
+    expect(screen.getByText("Asset chunk changed during 3 read attempts")).toBeTruthy();
+    expect(screen.queryByText("Loading Preview…")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByTestId("texture-preview-image")).toBeTruthy();
+    expect(readAssetChunk).toHaveBeenCalledTimes(2);
   });
 });

@@ -28,28 +28,23 @@ export function pinRejectsStoredDefault(type: PinType): boolean {
   return type.kind === "objectRef" || type.kind === "actorRef";
 }
 
-export function pinDefaultPropertyKey(pinName: string): string {
-  return `default:${pinName}`;
+/** Authored literals live under `default:<pinId>`, apart from node fields. */
+export function pinDefaultPropertyKey(pinId: string): string {
+  return `default:${pinId}`;
 }
 
 export function readPinDefault(
   properties: Record<string, unknown>,
-  pinName: string,
+  pinId: string,
 ): unknown {
-  const keyed = properties[pinDefaultPropertyKey(pinName)];
-  if (keyed !== undefined) return keyed;
-  return properties[pinName];
+  return properties[pinDefaultPropertyKey(pinId)];
 }
 
-/** Prefer the pin id (codegen key) so Title Case display names can differ. */
 export function readPinDefaultForPin(
   properties: Record<string, unknown>,
-  pin: { id: string; name: string },
+  pin: { id: string },
 ): unknown {
-  const byId = readPinDefault(properties, pin.id);
-  if (byId !== undefined) return byId;
-  if (pin.name !== pin.id) return readPinDefault(properties, pin.name);
-  return undefined;
+  return readPinDefault(properties, pin.id);
 }
 
 /** JS value used when an applicable data pin has no authored default. */

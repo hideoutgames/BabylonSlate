@@ -133,6 +133,36 @@ describe("additive scene streaming", () => {
     } finally { runtime.stop(); }
   });
 
+  it("retires a stream whose despawn throws so its actor can load the scene again", async () => {
+    const { runtime, commands, world, left } = await setup();
+    try {
+      const first = runtime.loadSceneStream(left);
+      const firstReady = await realized(commands, "left");
+      acknowledge(runtime, firstReady);
+      await first;
+      vi.spyOn(world, "flushPending").mockImplementationOnce(() => { throw new Error("despawn failed"); });
+      await expect(runtime.unloadSceneStream(left)).rejects.toThrow("despawn failed");
+      expect(runtime.getSceneState(left)).toBe("Unloaded");
+      expect(world.getActors().filter((actor) => actor.classId === "ChildActor")).toHaveLength(0);
+      const second = runtime.loadSceneStream(left);
+      acknowledge(runtime, await realized(commands, "left", firstReady.streamLoadId));
+      await second;
+      expect(runtime.getSceneState(left)).toBe("Loaded");
+    } finally { runtime.stop(); }
+  });
+
+  it("rejects a load whose readiness admission throws instead of reporting it loaded", async () => {
+    const { runtime, commands, world, left } = await setup();
+    try {
+      const load = runtime.loadSceneStream(left);
+      const ready = await realized(commands, "left");
+      vi.spyOn(world, "notifyStreamedSceneLoaded").mockImplementationOnce(() => { throw new Error("admission failed"); });
+      acknowledge(runtime, ready);
+      await expect(load).rejects.toThrow("admission failed");
+      expect(runtime.getSceneState(left)).toBe("Unloaded");
+    } finally { runtime.stop(); }
+  });
+
   it("holds concurrent blocking loads through readiness without clearing manual pause", async () => {
     const { runtime, commands, world, left, right } = await setup();
     try {
@@ -303,7 +333,7 @@ describe("additive scene streaming", () => {
       source: `export async function begin(ctx) {
         if (ctx.self.getVariable("parentId") !== "left") return;
         const target = ctx.getAllActorsOfClass("SceneStreamingActor").find(actor => actor.guid === "right");
-        await ctx.loadSceneBlocking(target);
+        try { await ctx.loadSceneBlocking(target); } catch (error) { ctx.log("log", "test", "ended " + error.message); throw error; }
         ctx.setVariable("continued", true);
         ctx.spawnActor("Spawned");
       }
@@ -319,7 +349,9 @@ describe("additive scene streaming", () => {
       await runtime.unloadSceneStream(left);
       expect(waiting.destroyed).toBe(true);
       acknowledge(runtime, sibling);
-      await vi.waitFor(() => expect(runtime.getDiagnostics().entries().some((entry) => entry.message.includes("owner was destroyed"))).toBe(true));
+      await vi.waitFor(() => expect(commands.some((command) => command.type === "log" && command.category === "test" &&
+        command.message === "ended Script continuation cancelled: its owner was destroyed.")).toBe(true));
+      expect(runtime.getDiagnostics().entries()).toEqual([]);
       expect(waiting.getVariable("continued")).toBeUndefined();
       expect(world.getActors().some((actor) => actor.classId === "Spawned")).toBe(false);
     } finally { runtime.stop(); }

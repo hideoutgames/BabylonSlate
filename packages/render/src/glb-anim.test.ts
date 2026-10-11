@@ -1,6 +1,6 @@
 import { renderSceneWithGameTime, setSceneGameTimePaused } from "./scene-game-time";
 import { installAssetBytes } from "@babylonslate/assets";
-import { FreeCamera, Vector3, MeshBuilder, TransformNode, type Mesh } from "@babylonjs/core";
+import { AnimationGroup, FreeCamera, Vector3, MeshBuilder, TransformNode, type Mesh } from "@babylonjs/core";
 import { encodeGlbJsonBin, splitGlbJsonBin } from "@babylonslate/assets";
 import {
   applyAnimStateToScene,
@@ -63,7 +63,6 @@ describe("adoptLoadedHierarchy", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -195,7 +194,7 @@ describe("beginSlotModelAnimLoad", () => {
       channels: [...animations[0]!.channels, { sampler: 0, target: { node: 0, path: "translation" } }],
     });
     await beginSlotModelAnimLoad(handle.scene, binding, 1, "model", installAssetBytes(encodeGlbJsonBin(split.json, split.bin)), root);
-    const host = sceneAnimHostFromBinding(binding, { animationGroups: handle.scene.animationGroups });
+    const host = sceneAnimHostFromBinding(binding);
     const part = visualMeshes(root)[0]!;
     return {
       scene: handle.scene,
@@ -216,6 +215,7 @@ describe("beginSlotModelAnimLoad", () => {
         });
       },
       pose: () => [part.position.y, (part.parent as TransformNode).position.y],
+      root,
     };
   }
 
@@ -253,6 +253,17 @@ describe("beginSlotModelAnimLoad", () => {
     const [part, root] = model.pose();
     expect(part).toBeCloseTo(1);
     expect(root).toBeCloseTo(0);
+  });
+
+  it("drops a queued crossfade when its model instance is disposed", async () => {
+    const model = await loadCrossfadeModel();
+    model.apply([["First", 1, 0.5], ["Second", 0.5, 0.5]]);
+    model.root.dispose();
+    const seek = vi.spyOn(AnimationGroup.prototype, "goToFrame");
+    try {
+      model.scene.render();
+      expect(seek).not.toHaveBeenCalled();
+    } finally { seek.mockRestore(); }
   });
 
   it("retains a queued weighted pose while a paused scene redraws", async () => {

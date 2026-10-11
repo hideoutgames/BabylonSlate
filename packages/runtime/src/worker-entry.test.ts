@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createActor, createDefaultScene, createDefaultSceneLayer } from "@babylonslate/core";
+import { createActor, createDefaultScene, createDefaultSceneLayer, type SaveGameStorage } from "@babylonslate/core";
 import {
   readSnapshotHeader,
   snapshotFloatCount,
@@ -107,6 +107,17 @@ describe.each([
     expect(() => harness.runNext(16)).toThrow("No scheduled worker callback");
     expect(advance).toHaveBeenCalledTimes(3);
   });
+  it("keeps advancing after a frame throws", () => {
+    const harness = createHost(withAnimationFrame);
+    const advance = vi.fn().mockImplementationOnce(() => { throw new Error("tick failed"); });
+    const scheduler = createWorkerScheduler(harness.host, advance);
+    scheduler.start();
+    expect(() => harness.runNext(16)).toThrow("tick failed");
+    expect(harness.activeCount()).toBe(1);
+    harness.runNext(20);
+    expect(advance.mock.calls).toEqual([[0], [0.02]]);
+    scheduler.stop();
+  });
 });
 
 describe("worker entry snapshot transport", () => {
@@ -114,15 +125,18 @@ describe("worker entry snapshot transport", () => {
     | { kind: "snapshot"; frameId: number; buffer: ArrayBuffer }
     | { kind: "command"; command: CommandMessage };
   let send: ((control: ControlMessage) => void) | undefined;
-  afterEach(() => {
+  afterEach(async () => {
     send?.({ type: "stop" });
     send = undefined;
+    // The stopped worker reports it a task later; let that land before the stubs go.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     vi.unstubAllGlobals();
   });
 
   /** Boot the real worker entry against a host that recycles only when told to. */
-  async function bootWorker(load: Extract<ControlMessage, { type: "load" }>, before: ControlMessage[] = []) {
+  async function bootWorker(load: Extract<ControlMessage, { type: "load" }>, before: ControlMessage[] = [], beforeImport?: () => Promise<void>) {
     vi.resetModules();
+    await beforeImport?.();
     let now = 0;
     const frames: FrameRequestCallback[] = [];
     const host = {
@@ -150,8 +164,10 @@ describe("worker entry snapshot transport", () => {
     });
     const emitted: CommandMessage[] = [];
     let runtime!: RuntimeDriver;
+    let saveStorage!: SaveGameStorage;
     const hud = { ...createDefaultSceneLayer(), actors: [createActor("badge", "Badge", { classId: "SceneLayerActor" })] };
-    vi.mocked(createRuntimeFromLoad).mockImplementation((control, onCommand) => {
+    vi.mocked(createRuntimeFromLoad).mockImplementation((control, onCommand, storage) => {
+      saveStorage = storage!;
       runtime = createInProcessRuntime({
         ...runtimeOptionsFromLoadControl(control),
         preferSoftwarePhysics: true,
@@ -170,7 +186,7 @@ describe("worker entry snapshot transport", () => {
     send({ type: "play" });
     await vi.waitFor(() => expect(frames.length).toBeGreaterThan(0));
     return {
-      deliver, posts, emitted, runtime,
+      deliver, posts, emitted, runtime, saveStorage: () => saveStorage,
       runFrames(count: number) {
         for (let i = 0; i < count; i++) {
           now += 1000 / 60;
@@ -224,6 +240,93 @@ describe("worker entry snapshot transport", () => {
     deliver({ channel: "recycleSnapshot", payload: snapshots()[1]!.buffer });
     expect(kinds(posts.slice(before))).toEqual(["snapshot"]);
     expect(snapshots()[3]!.frameId).toBe(newest);
+  });
+
+  it("pauses again after a single step whose tick throws", async () => {
+    const { runtime, runFrames } = await bootWorker({ type: "load", sceneAssetGuid: "main", scene: { ...createDefaultScene(), actors: [createActor("prop", "Prop")] } });
+    send!({ type: "setPaused", paused: true });
+    const tickIndex = runtime.getWorld().clock.tickIndex;
+    vi.spyOn(runtime, "tick").mockImplementationOnce(() => { throw new Error("tick failed"); });
+    expect(() => send!({ type: "step" })).toThrow("tick failed");
+    runFrames(3);
+    expect(runtime.getWorld().clock.tickIndex).toBe(tickIndex);
+  });
+
+  it("reports the stop only after the host answers the save writes still in flight", async () => {
+    const { deliver, posts, saveStorage } = await bootWorker({ type: "load", sceneAssetGuid: "main", scene: createDefaultScene() });
+    const commands = () => posts.flatMap((post) => post.kind === "command" ? [post.command] : []);
+    // An End Play save write the host has not answered yet.
+    const written = saveStorage().write("slot", "end of play");
+    const request = commands().find((command) => command.type === "saveStorageRequest");
+    if (request?.type !== "saveStorageRequest") throw new Error("No save request");
+    send!({ type: "stop" });
+    send = undefined;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(commands().some((command) => command.type === "runtimeStopped")).toBe(false);
+    deliver({ channel: "control", payload: { type: "saveStorageResponse", response: { id: request.request.id } } });
+    await written;
+    await vi.waitFor(() => expect(commands().some((command) => command.type === "runtimeStopped")).toBe(true));
+  });
+
+  it("ends a final capture with a failed result when stop supersedes it between chunks", async () => {
+    const { deliver, posts, runFrames, kinds } = await bootWorker({ type: "load", sceneAssetGuid: "main", sessionGeneration: 4, sessionMode: "simulate",
+      scene: { ...createDefaultScene(), actors: Array.from({ length: 120 }, (_, index) => createActor(`prop-${index}`, "Prop")) } });
+    for (let i = 0; i < 100 && !kinds().includes("sceneRealized"); i++) {
+      runFrames(1);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    const commands = () => posts.flatMap((post) => post.kind === "command" ? [post.command] : []);
+    deliver({ channel: "control", payload: { type: "quiesceSimulation", sessionGeneration: 4, requestId: 1 } });
+    await vi.waitFor(() => expect(commands().some((command) => command.type === "simulationQuiesced")).toBe(true));
+    const boundary = commands().find((command) => command.type === "simulationQuiesced");
+    if (boundary?.type !== "simulationQuiesced" || !boundary.success) throw new Error("Simulation did not quiesce");
+    deliver({ channel: "control", payload: { type: "captureSimulationState", sessionGeneration: 4, requestId: 2,
+      renderRevision: boundary.commandRevision } });
+    // The worker yields one task per chunk; stop right after the first one.
+    const chunks = () => commands().filter((command) => command.type === "simulationCaptureChunk").length;
+    for (let i = 0; i < 100 && chunks() === 0; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(chunks()).toBeGreaterThan(0);
+    send!({ type: "stop" });
+    await vi.waitFor(() => expect(commands().some((command) => command.type === "simulationCaptureResult")).toBe(true));
+    const result = commands().find((command) => command.type === "simulationCaptureResult");
+    expect(result).toMatchObject({ sessionGeneration: 4, requestId: 2, result: { ok: false } });
+  });
+
+  it("retries a layout whose transfer buffers failed to allocate, then resumes poses at the new capacity", async () => {
+    let failures = 0;
+    let restoreGrow = () => {};
+    try {
+      const { posts, emitted, runFrames, kinds } = await bootWorker({ type: "load", sceneAssetGuid: "main",
+        scene: { ...createDefaultScene(), actors: Array.from({ length: 300 }, (_, index) => createActor(`prop-${index}`, "Prop")) } }, [], async () => {
+        // The worker module's own bridge instance, loaded after the module reset.
+        const { TransferablePingPong } = await import("@babylonslate/bridge");
+        const grow = TransferablePingPong.prototype.grow;
+        const spy = vi.spyOn(TransferablePingPong.prototype, "grow").mockImplementation(function (this: InstanceType<typeof TransferablePingPong>, capacity: number) {
+          if (capacity > this.maxActors && failures++ < 2) throw new RangeError("Array buffer allocation failed");
+          return grow.call(this, capacity);
+        });
+        restoreGrow = () => spy.mockRestore();
+      });
+      const settleFrame = async () => {
+        runFrames(1);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      };
+      for (let i = 0; i < 100 && !kinds().includes("snapshotLayout"); i++) await settleFrame();
+      // Both failed allocations were retried; only the first was reported.
+      expect(failures).toBe(3);
+      expect(emitted.filter((command) => command.type === "diagnostic" &&
+        command.message.includes("Unable to allocate transferable Actor snapshots"))).toHaveLength(1);
+      const layoutAt = kinds().indexOf("snapshotLayout");
+      const layout = posts[layoutAt]!;
+      if (layout.kind !== "command" || layout.command.type !== "snapshotLayout") throw new Error("missing layout");
+      // Realization may still be spawning when the layout lands; poses resume once it finishes.
+      const resumed = () => posts.slice(layoutAt).flatMap((post) => post.kind === "snapshot" ? [post] : []);
+      for (let i = 0; i < 100 && resumed().length === 0; i++) await settleFrame();
+      expect(resumed().length).toBeGreaterThan(0);
+      expect(resumed()[0]!.buffer.byteLength).toBe(snapshotFloatCount(layout.command.capacity) * 4);
+    } finally {
+      restoreGrow();
+    }
   });
 
   it("delivers a held runtime Inspector edit result right after the pose that shows the edit", async () => {

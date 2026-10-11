@@ -194,7 +194,6 @@ export {
 } from "./windowed-list";
 export {
   PickerIdentity,
-  displayPickerTitle,
   assetRowIdentity,
   classRowIdentity,
   selectedPickerIdentity,

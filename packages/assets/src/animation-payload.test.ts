@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  animationAssetGuids,
   modelClipAnimationGuidsFromAnimations,
   normalizeAnimationPayload,
-  remapAnimationPayloadGuids,
   retargetAnimationLoadsFromAnimations,
 } from "./animation-payload";
 
@@ -36,34 +34,6 @@ describe("normalizeAnimationPayload", () => {
       sourceAnimationGuid: null,
     });
     expect(normalizeAnimationPayload({ clipName: "Idle", durationMs: 0 }).durationMs).toBeUndefined();
-  });
-
-  it("rewrites model, skeleton, and source guids", () => {
-    const remapped = remapAnimationPayloadGuids(
-      "Animation",
-      {
-        clipName: "Walk",
-        modelGuid: "m-old",
-        skeletonGuid: "s-old",
-        sourceAnimationGuid: "a-old",
-      },
-      new Map([
-        ["m-old", "m-new"],
-        ["s-old", "s-new"],
-        ["a-old", "a-new"],
-      ]),
-    );
-    expect(remapped).toMatchObject({
-      modelGuid: "m-new",
-      skeletonGuid: "s-new",
-      sourceAnimationGuid: "a-new",
-    });
-    expect(animationAssetGuids(remapped)).toEqual(["a-new", "m-new", "s-new"]);
-  });
-
-  it("leaves non-Animation payloads alone", () => {
-    const payload = { clipNames: ["Idle"] };
-    expect(remapAnimationPayloadGuids("Model", payload, new Map())).toBe(payload);
   });
 });
 

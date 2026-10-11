@@ -146,7 +146,9 @@ export function mountPlayerHud(
     return line;
   };
   const mb = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  // A hidden panel keeps sampling but builds nothing until it is shown.
   const render = () => {
+    if (element.hidden) return;
     const stats = latest;
     const over = isTickOverBudget(stats.scriptMs, stats.physicsMs);
     element.dataset.fps = String(Math.round(stats.fps));
@@ -218,6 +220,7 @@ export function mountPlayerHud(
     applyCommand(command) {
       if (command.type === "setShowFps") {
         element.hidden = command.enabled !== true;
+        render();
         return true;
       }
       if (command.type === "setStat" && isStatGroup(command.name)) {
@@ -249,21 +252,35 @@ export function mountPlayerDebuggerOverlays(
     "position:fixed;bottom:16px;left:50%;transform:translateX(-50%);margin:0;color:#fff;font:12px/1.4 ui-sans-serif,system-ui,sans-serif;pointer-events:none;display:none;";
   parent.appendChild(hint);
   let raf = 0;
+  // Sampling is cheap; the DOM changes only when an overlay's content does, so
+  // empty overlays cost no layout work.
+  let shownLightText: string | null = null;
+  let shownDebugText: string | null = null;
+  let shownHint = false;
   const tick = () => {
     const lightText = options.lightsDebugText?.() ?? null;
-    if (lightText === null) lightsEl.remove();
-    else { lightsEl.textContent = lightText; if (!lightsEl.parentNode) parent.appendChild(lightsEl); }
+    if (lightText !== shownLightText) {
+      shownLightText = lightText;
+      if (lightText === null) lightsEl.remove();
+      else { lightsEl.textContent = lightText; if (!lightsEl.parentNode) parent.appendChild(lightsEl); }
+    }
     const debugText = audioDebugOverlayText(audioStats);
-    if (debugText === null) {
-      debugEl.remove();
-      debugEl.textContent = "";
-    } else {
-      debugEl.textContent = debugText;
-      if (!debugEl.parentNode) parent.appendChild(debugEl);
+    if (debugText !== shownDebugText) {
+      shownDebugText = debugText;
+      if (debugText === null) {
+        debugEl.remove();
+        debugEl.textContent = "";
+      } else {
+        debugEl.textContent = debugText;
+        if (!debugEl.parentNode) parent.appendChild(debugEl);
+      }
     }
     const showHint = shouldShowPlayAudioUnlockHint(audioStats);
-    hint.style.display = showHint ? "block" : "none";
-    hint.textContent = showHint ? PLAY_AUDIO_UNLOCK_HINT : "";
+    if (showHint !== shownHint) {
+      shownHint = showHint;
+      hint.style.display = showHint ? "block" : "none";
+      hint.textContent = showHint ? PLAY_AUDIO_UNLOCK_HINT : "";
+    }
     raf = requestAnimationFrame(tick);
   };
   raf = requestAnimationFrame(tick);

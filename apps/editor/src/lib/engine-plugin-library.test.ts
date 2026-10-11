@@ -156,15 +156,41 @@ describe("EnginePluginLibrary", () => {
     expect(await (await store.createStorageSnapshot()).readText("user-pack/assets/data.txt")).toBe("replacement");
   });
 
-  it("detects legacy archives without reading them and upgrades only through the explicit operation", async () => {
+  it.each([false, true])("keeps the prior library listing when defaults persistence fails (replacement: %s)", async (replace) => {
     const { saved, library: store } = await library();
-    await saved.writeBinary("legacy.babplugin", await archive("legacy-guid", "Legacy Pack"));
-    const reads = vi.spyOn(saved, "readBinary");
-    await expect(store.list()).rejects.toMatchObject({ code: "engine-plugin-library-upgrade-required" });
-    expect(reads.mock.calls.some(([path]) => path.endsWith(".babplugin"))).toBe(false);
-    expect(await store.upgradeLegacyArchives()).toBe(1);
-    expect(await saved.exists("legacy.babplugin")).toBe(false);
-    expect((await store.list()).some((entry) => entry.pluginGuid === "legacy-guid")).toBe(true);
-    expect(await (await store.createStorageSnapshot()).readText("legacy-pack/assets/data.txt")).toBe("original");
+    if (replace) {
+      await store.import(await archive("original-guid", "User Pack"));
+      await store.setEnabledByDefault("original-guid", true);
+    }
+    const before = await store.list();
+    const writeText = saved.writeText.bind(saved);
+    let failed = false;
+    const failingWrite = vi.spyOn(saved, "writeText").mockImplementation(async (path, value) => {
+      await writeText(path, value);
+      if (!failed && path === "defaults.json") {
+        failed = true;
+        throw new Error("Defaults write failed");
+      }
+    });
+
+    await expect(store.import(await archive("incoming-guid", "User Pack", "replacement"),
+      replace ? { replaceGuid: "original-guid" } : {})).rejects.toThrow("Defaults write failed");
+
+    expect(await store.list()).toEqual(before);
+    if (replace) {
+      const restored = await inspectBabplugin(await store.export("original-guid"));
+      expect(restored.settings.enabledByDefault).toBe(true);
+      expect(new TextDecoder().decode(restored.files.find((file) => file.path === "assets/data.txt")?.data)).toBe("original");
+    }
+    failingWrite.mockRestore();
+  });
+
+  it("falls back to plugin defaults when the saved defaults file is unreadable", async () => {
+    const { saved, library: store } = await library();
+    await store.import(await archive("user-guid", "User Pack"));
+    await saved.writeText("defaults.json", "{not json");
+    expect((await store.list()).map((entry) => entry.enabledByDefault)).toEqual([false, false]);
+    await store.setEnabledByDefault("user-guid", true);
+    expect((await store.list()).find((entry) => entry.pluginGuid === "user-guid")?.enabledByDefault).toBe(true);
   });
 });

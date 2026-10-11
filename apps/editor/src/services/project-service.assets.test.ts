@@ -214,6 +214,17 @@ describe("project documents as .babasset", () => {
     expect(await storage.readBinary(path)).toEqual(bytes);
   });
 
+  it.each([true, false])("refuses to save over an asset it cannot read (indexed=%s)", async (indexed) => {
+    const { service, storage } = await scaffolded();
+    const path = "assets/Corrupt.class.babasset";
+    // An indexed file keeps its GUID but not its chunks; an unindexed one has neither.
+    if (indexed) await service.saveDocument("graph", path, { nodes: [], edges: [] });
+    const corrupt = new Uint8Array([1, 2, 3]);
+    await storage.writeBinary(path, corrupt);
+    await expect(service.saveDocument("graph", path, { nodes: [], edges: [] })).rejects.toThrow(/could not be read/);
+    expect(await storage.readBinary(path)).toEqual(corrupt);
+  });
+
   it.each([false, true])("persists one Class replacement across all usages (None=%s)", async (none) => {
     const { service, storage } = await scaffolded();
     const sourcePath = "assets/Hero.class.babasset";
@@ -273,6 +284,28 @@ describe("project documents as .babasset", () => {
     expect(await storage.readBinary(childPath)).toEqual(damaged);
     expect(await storage.readBinary(sourcePath)).toEqual(sourceBytes);
     expect(service.guidForPath(sourcePath)).toBe(sourceGuid);
+  });
+
+  it("restores the referrers already rewritten when a later Class replacement write fails", async () => {
+    const { service, storage } = await scaffolded();
+    const sourcePath = "assets/Hero.class.babasset";
+    await service.saveDocument("graph", sourcePath, { nodes: [], edges: [] }, { parentClass: "Actor" });
+    await service.saveDocument("graph", "assets/A.class.babasset", { nodes: [], edges: [] }, { parentClass: "Hero" });
+    await service.saveDocument("graph", "assets/B.class.babasset", { nodes: [], edges: [] }, { parentClass: "Hero" });
+    const sourceGuid = service.guidForPath(sourcePath)!;
+    const before = new Map(await Promise.all(["assets/A.class.babasset", "assets/B.class.babasset"].map(async (path) => [path, await storage.readBinary(path)] as const)));
+    const write = storage.writeBinary.bind(storage);
+    let writes = 0;
+    vi.spyOn(storage, "writeBinary").mockImplementation(async (path, bytes) => {
+      // The first referrer saves; the second fails, and the restores go through.
+      if (before.has(path) && ++writes === 2) throw new Error("Disk full");
+      return write(path, bytes);
+    });
+    await expect(service.replaceClassReferencesBeforeDelete([
+      { guid: sourceGuid, classId: "Hero", replacement: null },
+    ], new Set([sourceGuid]))).rejects.toThrow("Disk full");
+    for (const [path, bytes] of before) expect(await storage.readBinary(path)).toEqual(bytes);
+    expect(service.registry!.getByPath("assets/A.class.babasset")?.header.parentClass).toBe("Hero");
   });
 
   it("refuses to save unnamed or duplicate material parameters and keeps the saved asset intact", async () => {
@@ -494,31 +527,6 @@ describe("project documents as .babasset", () => {
     ).toBe("Renamed");
   });
 
-  it("still reads projects whose documents are legacy JSON", async () => {
-    const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("Legacy.babproject");
-    await storage.mkdir("scenes", true);
-    await storage.writeText(
-      "scenes/main.scene.json",
-      JSON.stringify({ name: "Legacy", meshes: [], version: 1 }),
-    );
-    const service = new ProjectService(storage);
-
-    const scene = (await service.loadDocument(
-      "scene",
-      "scenes/main.scene.json",
-    )) as SerializedScene;
-    expect(scene.name).toBe("Legacy");
-
-    // The legacy payload is a schema version behind, so saving it back needs
-    // the same explicit migrate-on-save approval as any other stale asset.
-    service.approveMigrateOnSave();
-    await service.saveDocument("scene", "scenes/main.scene.json", scene);
-    expect(
-      JSON.parse(await storage.readText("scenes/main.scene.json")).version,
-    ).toBe(4);
-  });
-
   it("does not rebuild a search index on project open", async () => {
     const { service } = await scaffolded();
     expect(service.searchIndex).toBeTruthy();
@@ -696,32 +704,14 @@ describe("project documents as .babasset", () => {
     });
     const saved = await decodeBabasset(await storage.readBinary(path));
     expect(saved.chunks.get("source")).toEqual(source);
+    // The whole payload stays in the header, where an MSDF attach merges.
+    expect(saved.header.payload).toMatchObject({ family: "Ui Display", weight: 400, style: "normal" });
+    expect(saved.header.chunks.some((chunk) => chunk.id === "document")).toBe(false);
     const reloaded = (await service.loadDocument("font", path)) as Record<
       string,
       unknown
     >;
     expect(reloaded.family).toBe("Ui Display");
-  });
-
-  it("rewrites legacy Graph assets to Class on save", async () => {
-    const { storage, service } = await scaffolded();
-    const path = "assets/legacy.graph.babasset";
-    await storage.writeBinary(
-      path,
-      await encodeAssetDocument({
-        type: "Graph",
-        name: "legacy",
-        guid: "graph-guid",
-        version: 1,
-        payload: { nodes: [], edges: [] },
-      }),
-    );
-    const loaded = await service.loadDocument("graph", path);
-    service.approveMigrateOnSave();
-    await service.saveDocument("graph", path, loaded);
-    const header = readAssetDocumentHeader(await storage.readBinary(path));
-    expect(header.type).toBe("Class");
-    expect(header.parentClass).toBe("Actor");
   });
 
   it("saves Texture settings onto the header without dropping pixel chunks", async () => {
@@ -749,11 +739,11 @@ describe("project documents as .babasset", () => {
     );
 
     const payload = (await service.loadDocument(
-      "asset-settings",
+      "texture",
       path,
     )) as Record<string, unknown>;
     expect(payload.usage).toBe("albedo");
-    await service.saveDocument("asset-settings", path, {
+    await service.saveDocument("texture", path, {
       ...payload,
       usage: "pixelArt",
     });
@@ -1348,43 +1338,6 @@ describe("project documents as .babasset", () => {
     expect(encode).toHaveBeenCalledTimes(3);
   });
 
-  it("decodes a legacy Tileset only during explicit maintenance and reuses it across remounts until it changes", async () => {
-    const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("Legacy.babproject");
-    await installMinimalProject(storage);
-    const tilesetPath = "assets/ground.tileset.babasset";
-    // Saved before atlas meta existed: only its document names the texture.
-    const writeLegacyTileset = async (textureGuid: string) => storage.writeBinary(tilesetPath, await encodeAssetDocument({
-      guid: "ground", type: "Tileset", name: "Ground", version: 1,
-      payload: { ...createDefaultTilesetPayload(), textureGuid } as unknown as Record<string, unknown>,
-    }, { dependencies: [textureGuid] }));
-    await writeLegacyTileset("tex-a");
-    const service = new ProjectService(storage);
-    await service.loadCurrentProject();
-    const tilesetReads = () => service.registry!.payloadLoader.snapshot().recentRequests
-      .filter(request => request.path === tilesetPath && request.chunkId === "document").length;
-    expect(tilesetReads()).toBe(0);
-    expect(service.registry!.isAtlasTexture("tex-a")).toBe(false);
-    await service.registry!.resolveLegacyAtlasReferrers();
-    expect(tilesetReads()).toBe(1);
-    expect(service.registry!.isAtlasTexture("tex-a")).toBe(true);
-
-    await service.remountRegistry();
-    // The new registry reuses the decoded referrer without another document read.
-    await service.registry!.resolveLegacyAtlasReferrers();
-    expect(tilesetReads()).toBe(0);
-    expect(service.registry!.isAtlasTexture("tex-a")).toBe(true);
-
-    // Another checkout of the Tileset, still without meta, picks another texture.
-    await writeLegacyTileset("tex-b");
-    await service.remountRegistry();
-    expect(tilesetReads()).toBe(0);
-    await service.registry!.resolveLegacyAtlasReferrers();
-    expect(tilesetReads()).toBe(1);
-    expect(service.registry!.isAtlasTexture("tex-a")).toBe(false);
-    expect(service.registry!.isAtlasTexture("tex-b")).toBe(true);
-  });
-
   it("saves Model slots onto the header without replacing the source GLB", async () => {
     const { storage, service } = await scaffolded();
     const source = new Uint8Array([0x67, 0x6c, 0x54, 0x46, 1, 2, 3, 4]);
@@ -1439,6 +1392,17 @@ describe("project documents as .babasset", () => {
     expect(saved.header.chunks.some((chunk) => chunk.id === "document")).toBe(
       false,
     );
+  });
+
+  it("reports a copied asset file hidden because its guid duplicates another asset, once", async () => {
+    const { storage, service } = await scaffolded();
+    await storage.mkdir("assets/Copies", true);
+    await storage.writeBinary("assets/Copies/main.scene.babasset", await storage.readBinary(MAIN_SCENE_FILE));
+    await service.remountRegistry();
+    await service.remountRegistry();
+    expect(service.sessionDiagnostics.filter((line) => line.includes("assets/Copies/main.scene.babasset"))).toEqual([
+      `assets/Copies/main.scene.babasset is hidden: it has the same asset id as ${MAIN_SCENE_FILE}. Remove the copy or import it again to give it its own id.`,
+    ]);
   });
 
   it("writes a Scene navmesh extra chunk without regenerating at Play", async () => {
@@ -1830,10 +1794,8 @@ describe("project documents as .babasset", () => {
     ]);
   });
 
-  it("writes extra Audio clip chunks and refuses to delete source", async () => {
-    const { storage, service } = await scaffolded();
-    const path = "assets/Jump.babasset";
-    const source = new Uint8Array([1, 2, 3, 4]);
+  /** An imported Audio asset with one `source` clip, indexed by the registry. */
+  async function audioAsset(service: ProjectService, storage: MemoryStorageAdapter, path: string, source: Uint8Array) {
     await storage.writeBinary(
       path,
       await encodeBabasset({
@@ -1854,6 +1816,13 @@ describe("project documents as .babasset", () => {
       }),
     );
     await service.remountRegistry();
+  }
+
+  it("writes extra Audio clip chunks and refuses to delete source", async () => {
+    const { storage, service } = await scaffolded();
+    const path = "assets/Jump.babasset";
+    const source = new Uint8Array([1, 2, 3, 4]);
+    await audioAsset(service, storage, path, source);
     const extra = new Uint8Array([9, 8, 7]);
     await service.writeAudioClipChunk(path, "source:2", extra, "audio/ogg", {
       clips: [
@@ -1872,6 +1841,19 @@ describe("project documents as .babasset", () => {
     });
     expect(await service.readAssetChunk(path, "source:2")).toBeNull();
     expect(await service.readAssetChunk(path, "source")).toEqual(source);
+  });
+
+  it("follows a queued rename before an Audio clip write without recreating the old file", async () => {
+    const { storage, service } = await scaffolded();
+    const path = "assets/Jump.babasset";
+    await audioAsset(service, storage, path, new Uint8Array([1, 2]));
+    const rename = service.registry!.renameAsset("audio-guid", "Leap");
+    const write = service.writeAudioClipChunk(path, "source:2", new Uint8Array([9]), "audio/ogg", {
+      clips: [{ chunkId: "source", weight: 1 }, { chunkId: "source:2", weight: 1 }],
+    });
+    const [renamed] = await Promise.all([rename, write]);
+    expect(await storage.exists(path)).toBe(false);
+    expect(await service.readAssetChunk(renamed.path, "source:2")).toEqual(new Uint8Array([9]));
   });
 
   it("rewrites remaining sprites to None after a referenced texture is deleted", async () => {
@@ -1933,6 +1915,33 @@ describe("project documents as .babasset", () => {
       readAssetDocumentHeader(await storage.readBinary(spritePath))
         .dependencies,
     ).toEqual([]);
+  });
+
+  it("reports a referrer it could not rewrite and still repairs the others", async () => {
+    const { storage, service } = await scaffolded();
+    await storage.writeBinary("assets/wall.babasset", await encodeAssetDocument({
+      type: "Texture", name: "wall", guid: "tex-1", version: 1, payload: { usage: "albedo" },
+    }));
+    const sprite = (name: string) => encodeAssetDocument(
+      { type: "Sprite", name, guid: `${name}-1`, version: 1, payload: { textureGuid: "tex-1", pixelsPerUnit: 100, frames: [], clips: [] } },
+      { dependencies: ["tex-1"] },
+    );
+    await storage.writeBinary("assets/stuck.sprite.babasset", await sprite("stuck"));
+    await storage.writeBinary("assets/hero.sprite.babasset", await sprite("hero"));
+    await service.remountRegistry();
+    await service.registry!.deleteAsset("tex-1");
+    const write = storage.writeBinary.bind(storage);
+    vi.spyOn(storage, "writeBinary").mockImplementation(async (path, bytes) => {
+      if (path.startsWith("assets/stuck")) throw new Error("Disk full");
+      return write(path, bytes);
+    });
+
+    const failed = await service.clearDeletedAssetReferences(new Set(["tex-1"]));
+    expect(failed.map((entry) => [entry.path, String(entry.error)])).toEqual([
+      ["assets/stuck.sprite.babasset", "Error: Disk full"],
+    ]);
+    expect((await service.loadDocument("sprite", "assets/hero.sprite.babasset") as { textureGuid: string | null }).textureGuid).toBeNull();
+    expect((await service.loadDocument("sprite", "assets/stuck.sprite.babasset") as { textureGuid: string | null }).textureGuid).toBe("tex-1");
   });
 
   it("resets a Class parentClass to BObject when the parent Class is deleted", async () => {

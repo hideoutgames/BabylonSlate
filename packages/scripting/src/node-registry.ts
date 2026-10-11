@@ -48,6 +48,14 @@ export type CodegenContext = {
    * work inside that Function).
    */
   isLatentFunction?(classId: string, functionName: string): boolean;
+  /**
+   * Pure codegen: an expression reading `expression` evaluated at most once
+   * per executing statement, so several outputs can share one evaluation.
+   * Returns `expression` unchanged when the node has fewer than two wired
+   * outputs. Missing where the host compiles without statements (callers fall
+   * back to `expression`).
+   */
+  shared?(expression: string): string;
   indent: string;
 };
 
@@ -66,6 +74,11 @@ export type NodeDefinition = {
   /** No observable reads/effects beyond inputs. Allows caching immutable outputs
    * only when every dependency is also referentially transparent. */
   referentiallyTransparent?: boolean;
+  /**
+   * An unwired `target` input resolves to Self when the node's `implicitSelf`
+   * property is true, so validation does not report it missing.
+   */
+  implicitSelfTarget?: boolean;
   latent?: boolean;
   /**
    * Render pins in their declared order instead of lifting exec pins to the

@@ -106,36 +106,3 @@ export function particleAssetDependencies(
   }
   return [];
 }
-
-export function remapParticlePayloadGuids(
-  assetType: string,
-  payload: Record<string, unknown>,
-  remap: ReadonlyMap<string, string>,
-): Record<string, unknown> {
-  if (assetType === "ParticleEmitter") {
-    const emitter = normalizeParticleEmitterPayload(payload);
-    const guid = emitter.render.materialGuid;
-    return {
-      ...emitter,
-      render: {
-        ...emitter.render,
-        materialGuid: guid ? (remap.get(guid) ?? guid) : null,
-      },
-    };
-  }
-  if (assetType === "ParticleGraph") {
-    const graph = normalizeParticleGraphDocument(payload);
-    const guid = graph.materialGuid;
-    return { ...graph, materialGuid: guid ? (remap.get(guid) ?? guid) : null };
-  }
-  if (assetType === "ParticleSystem") {
-    const system = normalizeParticleSystemPayload(payload);
-    return {
-      ...system,
-      emitterGuids: system.emitterGuids.map(
-        (guid) => remap.get(guid) ?? guid,
-      ),
-    };
-  }
-  return payload;
-}

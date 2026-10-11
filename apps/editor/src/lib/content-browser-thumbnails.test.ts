@@ -49,6 +49,32 @@ describe("syncContentBrowserThumbnailUrls", () => {
     expect(revokeObjectURL).toHaveBeenCalledWith(first.a);
   });
 
+  it("keeps loading the batch when one thumbnail read throws", async () => {
+    const load = vi.fn(async (guid: string) => {
+      if (guid === "broken") throw new Error("Thumbnail storage is unavailable");
+      return new Uint8Array([1]);
+    });
+    const createObjectURL = vi.fn((blob: Blob) => `blob:${blob.size}:${createObjectURL.mock.calls.length}`);
+    const revokeObjectURL = vi.fn();
+    const commit = vi.fn();
+
+    await syncContentBrowserThumbnailUrls({
+      mountedTextureGuids: ["broken", "after"],
+      urls: { broken: "blob:previous" },
+      refreshGuids: new Set(["broken"]),
+      hidden: false,
+      load,
+      createObjectURL,
+      revokeObjectURL,
+      commit,
+    });
+
+    expect(load.mock.calls).toEqual([["broken"], ["after"]]);
+    expect(commit).toHaveBeenCalledOnce();
+    expect(commit.mock.calls[0]![0]).toMatchObject({ broken: "blob:previous", after: expect.any(String) });
+    expect(revokeObjectURL).not.toHaveBeenCalled();
+  });
+
   it("skips decode while the Content Browser is CSS-hidden", async () => {
     const load = vi.fn(async () => new Uint8Array([1]));
     const createObjectURL = vi.fn(() => "blob:new");

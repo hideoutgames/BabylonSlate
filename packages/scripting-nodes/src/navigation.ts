@@ -8,7 +8,25 @@ import {
   STRING,
   actorRef,
   arrayOf,
+  enumRef,
+  ENGINE_NAV_OBSTACLE_KIND_ENUM_ID,
 } from "@babylonslate/scripting";
+
+/**
+ * A navigation point query: the host returns null on a miss. Found reports
+ * the miss and the Vector3 output stays a zero vector, never null.
+ */
+function emitNavPoint(
+  ctx: Parameters<NodeDefinition["codegen"]>[0],
+  pointPin: string,
+  query: string,
+): void {
+  const point = ctx.output(pointPin);
+  const found = ctx.output("found");
+  ctx.emit(
+    `{ const __point = ${query}; ${found} = __point != null; ${point} = __point ?? { x: 0, y: 0, z: 0 }; }`,
+  );
+}
 
 /** Navigation query and crowd nodes — sync on the calling execution pin (P11). */
 export const navigationNodes: NodeDefinition[] = [
@@ -84,11 +102,10 @@ export const navigationNodes: NodeDefinition[] = [
       pin("execOut", "then", "out", EXEC),
       pin("point", "point", "in", VEC3),
       pin("closest", "closest", "out", VEC3),
+      pin("found", "Found", "out", BOOL),
     ],
     codegen: (ctx) => {
-      ctx.emit(
-        `${ctx.output("closest")} = ctx.getClosestNavigablePoint(${ctx.input("point")});`,
-      );
+      emitNavPoint(ctx, "closest", `ctx.getClosestNavigablePoint(${ctx.input("point")})`);
     },
   },
   {
@@ -101,21 +118,22 @@ export const navigationNodes: NodeDefinition[] = [
       pin("center", "center", "in", VEC3),
       pin("radius", "radius", "in", FLOAT),
       pin("point", "point", "out", VEC3),
+      pin("found", "Found", "out", BOOL),
     ],
     codegen: (ctx) => {
-      ctx.emit(
-        `${ctx.output("point")} = ctx.getRandomPointInRadius(${ctx.input("center")}, ${ctx.input("radius")});`,
-      );
+      emitNavPoint(ctx, "point", `ctx.getRandomPointInRadius(${ctx.input("center")}, ${ctx.input("radius")})`);
     },
   },
   {
     id: "navigation.addObstacle",
     title: "Add Obstacle",
     category: "navigation",
+    description:
+      "Carve an unwalkable box or cylinder. Pose is the volume center and Size its full extent (a cylinder uses its X/Z size as diameters and Y as height). The id is empty when nothing was carved.",
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("kind", "kind", "in", STRING),
+      pin("kind", "kind", "in", enumRef(ENGINE_NAV_OBSTACLE_KIND_ENUM_ID), "data", false, "box"),
       pin("pose", "pose", "in", VEC3),
       pin("size", "size", "in", VEC3),
       pin("id", "id", "out", STRING),

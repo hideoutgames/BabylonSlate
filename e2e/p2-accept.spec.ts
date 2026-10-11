@@ -80,10 +80,8 @@ test.describe("P2 acceptance proofs", () => {
       });
       expect(readable).toBe(true);
     }).toPass({ timeout: 60_000 });
-    const importErrors = page.getByTestId("import-errors-dialog");
-    if (await importErrors.isVisible()) {
-      await page.getByTestId("import-errors-dismiss").click();
-    }
+    // Both fixtures import cleanly; any import issue is a failure, not a dialog to dismiss.
+    await expect(page.getByTestId("import-errors-dialog")).toHaveCount(0);
     await expect(async () => {
       const openError = page.getByTestId("content-browser-open-error");
       if (await openError.count()) {

@@ -22,5 +22,6 @@ export function previewPackFromExpectedHostMessage(
   expectedOrigin: string,
 ): PreviewPackMessage | null {
   if (!isExpectedPreviewHostMessage(event, parentWindow, expectedOrigin)) return null;
-  return isPackMessage(event.data) ? event.data : null;
+  const pack: unknown = event.data;
+  return isPackMessage(pack) ? pack : null;
 }

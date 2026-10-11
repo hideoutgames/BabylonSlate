@@ -12,7 +12,11 @@ import type {
   ParticleGraphNode,
 } from "./document";
 import { readParticlePinDefault } from "./pin-defaults";
-import { createParticleTypeResolver, particleGenericGroup } from "./resolve";
+import {
+  createParticleTypeResolver,
+  particleGenericGroup,
+  type ParticleTypeResolver,
+} from "./resolve";
 import { particleTypeLabel, particleTypesAreAssignable } from "./types";
 
 export type ParticleDiagnosticSeverity = "error" | "warning";
@@ -101,6 +105,12 @@ export function particleSpine(graph: GraphLike): string[] {
 const RADIAL_SHAPES = new Set(["shape.sphere", "shape.cone", "shape.cylinder"]);
 /** Update closures that move particles; without one nothing moves. */
 const MOTION_UPDATES = new Set(["update.position", "update.basicPosition"]);
+/**
+ * Updates whose Babylon blocks never set the build state's particle context
+ * (`AlignAngleBlock`, `UpdateAttractorBlock`). An Attractor after only these
+ * still reads the previous particle, or none on the first one.
+ */
+const NO_PARTICLE_CONTEXT_UPDATES = new Set(["update.alignAngle", "force.attractor"]);
 
 function pinById(
   pins: readonly ParticlePinDefinition[],
@@ -200,6 +210,8 @@ function isPinSet(
 function validateGraph(graph: GraphLike): {
   diagnostics: ParticleGraphDiagnostic[];
   definitions: Map<string, ParticleNodeDefinition>;
+  /** Null when a cycle stopped the type checks. */
+  resolver: ParticleTypeResolver | null;
 } {
   const diagnostics: ParticleGraphDiagnostic[] = [];
   const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
@@ -284,6 +296,7 @@ function validateGraph(graph: GraphLike): {
   }
 
   const cycle = findParticleGraphCycle(graph);
+  let resolver: ParticleTypeResolver | null = null;
   if (cycle) {
     diagnostics.push({
       code: "particle.cycle",
@@ -292,7 +305,7 @@ function validateGraph(graph: GraphLike): {
       nodeId: cycle[0],
     });
   } else {
-    const resolver = createParticleTypeResolver(graph);
+    resolver = createParticleTypeResolver(graph);
     for (const nodeId of resolver.conflicts()) {
       diagnostics.push({
         code: "particle.genericConflict",
@@ -343,7 +356,7 @@ function validateGraph(graph: GraphLike): {
     }
   }
 
-  return { diagnostics, definitions };
+  return { diagnostics, definitions, resolver };
 }
 
 function validateSpine(
@@ -430,14 +443,14 @@ function validateSpine(
         if (!found) continue;
         diagnostics.push({
           code: "particle.attractorParticleInput",
-          message: `"${found.title}" reads the previous particle here: the Attractor runs first, before any update sets the particle. Place it after another update`,
+          message: `"${found.title}" reads the previous particle here: no update before the Attractor sets the particle (Align Angle and Attractor do not). Place it after another update`,
           severity: "warning",
           nodeId,
           pinId,
         });
       }
     }
-    sawContextUpdate = true;
+    if (!NO_PARTICLE_CONTEXT_UPDATES.has(node.type)) sawContextUpdate = true;
   }
   for (const nodeId of shapes.slice(0, -1)) {
     diagnostics.push({
@@ -528,13 +541,24 @@ function validateSettings(
   return diagnostics;
 }
 
+/**
+ * Validation plus the type resolver it built, so lowering does not resolve the
+ * graph a second time. The resolver is null when a cycle stopped type checks.
+ */
+export function checkParticleGraphDocument(
+  doc: ParticleGraphDocument,
+  context: ParticleGraphValidationContext = {},
+): { diagnostics: ParticleGraphDiagnostic[]; resolver: ParticleTypeResolver | null } {
+  const { diagnostics, definitions, resolver } = validateGraph(doc);
+  diagnostics.push(...validateSpine(doc, definitions));
+  diagnostics.push(...validateSettings(doc, context));
+  return { diagnostics, resolver };
+}
+
 /** Errors block lowering; warnings do not. */
 export function validateParticleGraphDocument(
   doc: ParticleGraphDocument,
   context: ParticleGraphValidationContext = {},
 ): ParticleGraphDiagnostic[] {
-  const { diagnostics, definitions } = validateGraph(doc);
-  diagnostics.push(...validateSpine(doc, definitions));
-  diagnostics.push(...validateSettings(doc, context));
-  return diagnostics;
+  return checkParticleGraphDocument(doc, context).diagnostics;
 }

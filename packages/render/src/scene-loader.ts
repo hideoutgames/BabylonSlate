@@ -1059,9 +1059,11 @@ function parentVisualMeshId(
   visuals: ReadonlyMap<string, Mesh>,
   componentsById: ReadonlyMap<string, SerializedComponent>,
 ): string | null {
+  const visited = new Set<string>();
   let parentId = component.parentId ?? null;
-  while (parentId) {
+  while (parentId && !visited.has(parentId)) {
     if (visuals.has(parentId)) return parentId;
+    visited.add(parentId);
     parentId = componentsById.get(parentId)?.parentId ?? null;
   }
   return null;
@@ -1130,7 +1132,9 @@ function createActorOriginHierarchy(
       }
       const parentId = parentVisualMeshId(component, meshes, componentsById);
       const parent = parentId ? meshes.get(parentId) : undefined;
-      mesh.parent = parent ? attachmentParentFor(parent) : root;
+      // The link that would close a component parent cycle attaches to the root.
+      const socket = parent ? attachmentParentFor(parent) : undefined;
+      mesh.parent = socket && socket !== mesh && !socket.isDescendantOf(mesh) ? socket : root;
     }
     const helperIcon = helperBillboardIconOf(actor);
     if (helperIcon && !visuals.some(isBillboardComponent)) {

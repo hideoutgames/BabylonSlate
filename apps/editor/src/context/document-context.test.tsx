@@ -26,6 +26,7 @@ import { UndoHistoryNotice } from "../components/undo-history-notice";
 import { createProjectAsset } from "../lib/create-project-asset";
 import { subscribeModelThumbnailJobs } from "../lib/model-thumbnail-queue";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
+import { JOURNAL_FLUSH_DELAY_MS } from "../lib/journal-buffer";
 import { registerNavBakeSaveFlush } from "../lib/nav-bake-save";
 import type { OpenDocument } from "../services/document-service";
 import { ProjectService } from "../services/project-service";
@@ -281,6 +282,34 @@ describe("DocumentProvider actions and route", () => {
     expect(documents().dirtyDocuments.some(doc => doc.id === MAIN_SCENE_ID)).toBe(true);
   });
 
+  it("writes a Class reparent with the saved graph and keeps the tab's unsaved edits unsaved", async () => {
+    const actions = await openProject();
+    const registry = documents().assetRegistry!;
+    await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "Class", name: "Hero", parentClass: "Actor" }));
+    act(() => actions.noteAssetsCreated());
+    const ref = { kind: "graph" as const, path: MAIN_CLASS_FILE, label: "Main" };
+    const id = documentId(ref);
+    await act(() => actions.openDocument(ref));
+    const graph = actions.getOpenDocuments().find((doc) => doc.id === id)!.content as SerializedGraph;
+    await act(() => actions.applyGraphChange(id, { ...graph, members: [
+      ...(graph.members ?? []), { id: "speed", kind: "variable", name: "Speed", typeId: "float", defaultValue: 3 },
+    ] }));
+    await act(() => actions.collectPlayPreviewScripts());
+    expect(documents()).toMatchObject({ graphsNeedCompile: false, scriptsStale: false });
+
+    expect(await act(() => actions.reparentClassDocument(id, "Hero"))).toBeNull();
+    expect(registry.getByPath(MAIN_CLASS_FILE)?.header.parentClass).toBe("Hero");
+    expect(documents().dirtyDocuments.map((doc) => doc.id)).toEqual([id]);
+    // The new parent reaches Compile and Play's bundles, though the graph is unchanged.
+    expect(documents()).toMatchObject({ graphsNeedCompile: true, scriptsStale: true });
+
+    // Discard: the unsaved member never reached disk.
+    act(() => actions.closeDocument(id));
+    const stored = await actions.loadAssetDocument("graph", MAIN_CLASS_FILE) as SerializedGraph;
+    expect(stored.members ?? []).not.toContainEqual(expect.objectContaining({ id: "speed" }));
+    expect(registry.getByPath(MAIN_CLASS_FILE)?.header.parentClass).toBe("Hero");
+  });
+
   it("records a SceneLayer switcher entries edit for Undo and crash recovery", async () => {
     const actions = await openProject();
     await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
@@ -489,7 +518,6 @@ describe("DocumentProvider actions and route", () => {
     expect(documents().canRedoActiveDocument).toBe(false);
     await act(async () => {
       expect(await actions.applySceneChange(MAIN_SCENE_ID, movedScene(restored, 20))).toBe(false);
-      actions.updateScene(MAIN_SCENE_ID, movedScene(restored, 30));
       actions.undoActiveDocument();
       actions.redoActiveDocument();
       actions.updateProjectSettings({ compileOnSave: !settings.compileOnSave });
@@ -504,6 +532,20 @@ describe("DocumentProvider actions and route", () => {
     expect(firstActorPosition(MAIN_SCENE_ID)).toEqual(edited.actors[0]!.transform.position);
     act(() => actions.undoActiveDocument());
     expect(firstActorPosition(MAIN_SCENE_ID)).toEqual(baseline.actors[0]!.transform.position);
+  });
+
+  it("closes a tab whose file was deleted on disk when its external change is reloaded", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    const load = vi.spyOn(ProjectService.prototype, "loadDocument").mockRejectedValue(new Error("File not found"));
+    const exists = vi.spyOn(ProjectService.prototype, "documentExists").mockResolvedValue(false);
+    try {
+      await act(() => actions.confirmExternalChangeReloadDocs([MAIN_SCENE_FILE]));
+      expect(documents().openDocuments.some((doc) => doc.id === MAIN_SCENE_ID)).toBe(false);
+    } finally {
+      load.mockRestore();
+      exists.mockRestore();
+    }
   });
 
   it("ignores an external reload that crosses an authoring lease even when it finishes after release", async () => {
@@ -548,9 +590,9 @@ describe("DocumentProvider actions and route", () => {
     expect(openScene(MAIN_SCENE_ID)).toBe(original);
     await act(async () => { resolve(false); await Promise.resolve(); });
     expect(openScene(MAIN_SCENE_ID)).toBe(original);
-    let closing!: Promise<void>;
+    let closing!: Promise<boolean>;
     act(() => { closing = actions.forceCloseProject(); });
-    await act(async () => { resolve(false); await closing; });
+    await act(async () => { resolve(false); expect(await closing).toBe(false); });
     expect(documents().route).toBe("editor");
     expect(openScene(MAIN_SCENE_ID)).toBe(original);
     act(() => actions.closeDocument(MAIN_SCENE_ID));
@@ -624,10 +666,8 @@ describe("DocumentProvider actions and route", () => {
     const storage = registry.storageFor("project");
     const before = storage.getReadMetrics!().actualBytesRead;
     const required = new Set<string>();
-    expect(await actions.collectPlaySceneLibrary(required)).toEqual([]);
     expect(await actions.collectPlayPreviewScripts(required)).toEqual({ bundles: [], diagnostics: [] });
     expect(await actions.collectEditorUtilityScripts()).toEqual([]);
-    expect(await actions.collectPlayDataAssets(required)).toEqual([]);
     expect(await actions.collectPlayInputAssets(required)).toEqual([]);
     expect(await actions.collectPlayFontFaceEntries(required)).toEqual([]);
     expect((await actions.collectPlayWaterContent(required)).size).toBe(0);
@@ -635,7 +675,6 @@ describe("DocumentProvider actions and route", () => {
     expect(targets.renderTargets.size).toBe(0);
     expect(targets.renderTargetTextures.size).toBe(0);
     await actions.collectPlayAudio(required);
-    await actions.collectPlayParticles(required);
     const thumbnails = vi.fn();
     const unsubscribe = subscribeModelThumbnailJobs(thumbnails);
     try {
@@ -793,6 +832,209 @@ describe("DocumentProvider actions and route", () => {
     expect(documents().canUndoActiveDocument).toBe(false);
   });
 
+  it("asks a session owner only after the exclusive scene choice, and opens nothing when cancelled meanwhile", async () => {
+    const actions = await openProject();
+    const second = await createScene(actions, "Second");
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 2)));
+    let asked = 0;
+    let resolve!: (allowed: boolean) => void;
+    const unregister = actions.registerBeforeTransition(() => {
+      asked += 1;
+      return new Promise<boolean>((done) => { resolve = done; });
+    });
+    try {
+      await act(() => actions.openDocument(sceneRef(second.path)));
+      expect(documents().pendingExclusiveScene?.path).toBe(second.path);
+      expect(asked).toBe(0);
+
+      let confirming!: Promise<void>;
+      act(() => { confirming = actions.confirmExclusiveSceneOpen("discard"); });
+      expect(asked).toBe(1);
+      act(() => actions.cancelExclusiveSceneOpen());
+      await act(async () => { resolve(true); await confirming; });
+      expect(documents().openDocuments.filter((doc) => doc.ref.kind === "scene").map((doc) => doc.id)).toEqual([MAIN_SCENE_ID]);
+      expect(documents().dirtyDocuments.map((doc) => doc.id)).toEqual([MAIN_SCENE_ID]);
+    } finally {
+      unregister();
+    }
+  });
+
+  it("asks a session owner to release the open Scene that another Scene replaces", async () => {
+    const actions = await openProject();
+    const second = await createScene(actions, "Second");
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    const asked: Array<{ kind: string; documentId?: string }> = [];
+    let allow = false;
+    const unregister = actions.registerBeforeTransition((transition) => {
+      asked.push(transition);
+      return allow;
+    });
+    try {
+      await act(() => actions.openDocument(sceneRef(second.path)));
+      expect(asked).toEqual([{ kind: "replace-document", documentId: MAIN_SCENE_ID }]);
+      expect(documents().openDocuments.filter((doc) => doc.ref.kind === "scene").map((doc) => doc.id)).toEqual([MAIN_SCENE_ID]);
+      allow = true;
+      await act(() => actions.openDocument(sceneRef(second.path)));
+      expect(documents().openDocuments.filter((doc) => doc.ref.kind === "scene").map((doc) => doc.id))
+        .toEqual([documentId({ kind: "scene", path: second.path })]);
+    } finally {
+      unregister();
+    }
+  });
+
+  it("returns unsaved work from Close Project without asking a session to stop", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 2)));
+    const gate = vi.fn(() => false);
+    const unregister = actions.registerBeforeTransition(gate);
+    try {
+      const result = await act(() => actions.closeProject());
+      expect(result).toMatchObject({ outcome: "unsaved", projectDirty: false });
+      expect(gate).not.toHaveBeenCalled();
+      expect(await act(() => actions.forceCloseProject())).toBe(false);
+      expect(gate).toHaveBeenCalledWith({ kind: "close-project" });
+      expect(documents().route).toBe("editor");
+    } finally {
+      unregister();
+    }
+  });
+
+  /** A session whose stop applies its final Scene to Main, as Simulation's Keep Changes does. */
+  function keepChangesOnStop(actions: DocumentActions, kind: "close-project" | "replace-document") {
+    let kept: SerializedScene | null = null;
+    const unregister = actions.registerBeforeTransition(async (transition) => {
+      if (transition.kind !== kind || kept) return true;
+      kept = movedScene(openScene(MAIN_SCENE_ID), 4);
+      await actions.applySceneChange(MAIN_SCENE_ID, kept);
+      return true;
+    });
+    return { unregister, kept: () => kept };
+  }
+
+  it("lists the changes a stopping session keeps instead of closing a clean project", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    const session = keepChangesOnStop(actions, "close-project");
+    try {
+      expect(await act(() => actions.closeProject())).toMatchObject({
+        outcome: "unsaved", dirty: [expect.objectContaining({ id: MAIN_SCENE_ID })], projectDirty: false,
+      });
+      expect(documents().route).toBe("editor");
+      expect(openScene(MAIN_SCENE_ID)).toEqual(session.kept());
+    } finally {
+      session.unregister();
+    }
+  });
+
+  it("asks to save the changes a stopping session keeps before replacing their Scene", async () => {
+    const actions = await openProject();
+    const second = await createScene(actions, "Second");
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    const session = keepChangesOnStop(actions, "replace-document");
+    try {
+      await act(() => actions.openDocument(sceneRef(second.path)));
+      expect(documents().pendingExclusiveScene?.path).toBe(second.path);
+      expect(openScene(MAIN_SCENE_ID)).toEqual(session.kept());
+      expect(documents().dirtyDocuments.map((doc) => doc.id)).toEqual([MAIN_SCENE_ID]);
+      // Save keeps them and then opens the Scene.
+      await act(() => actions.confirmExclusiveSceneOpen("save"));
+      expect(documents().openDocuments.filter((doc) => doc.ref.kind === "scene").map((doc) => doc.ref.path))
+        .toEqual([second.path]);
+      const saved = await actions.loadAssetDocument("scene", MAIN_SCENE_FILE) as SerializedScene;
+      expect(saved.actors[0]!.transform.position).toEqual(session.kept()!.actors[0]!.transform.position);
+    } finally {
+      session.unregister();
+    }
+  });
+
+  it("closes a project only after a Save All already writing has finished", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    const edited = movedScene(openScene(MAIN_SCENE_ID), 3);
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, edited));
+    const listed = documents().listedProjects.find((project) => project.label === "Stable")!;
+    let releaseWrite!: () => void;
+    const held = new Promise<void>((resolve) => { releaseWrite = resolve; });
+    const original = ProjectService.prototype.saveProject;
+    const write = vi.spyOn(ProjectService.prototype, "saveProject").mockImplementation(async function (this: ProjectService, ...args) {
+      await held;
+      return original.apply(this, args);
+    });
+    try {
+      let saving!: Promise<boolean>;
+      let closing!: Promise<boolean>;
+      act(() => { saving = actions.saveAll(); });
+      await waitFor(() => expect(write).toHaveBeenCalled());
+      act(() => { closing = actions.forceCloseProject(); });
+      await act(async () => { await Promise.resolve(); });
+      expect(documents().route).toBe("editor");
+      await act(async () => {
+        releaseWrite();
+        expect(await saving).toBe(true);
+        expect(await closing).toBe(true);
+      });
+    } finally {
+      write.mockRestore();
+    }
+    expect(documents().route).toBe("home");
+    await act(() => actions.openListedProject(listed));
+    const saved = await actions.loadAssetDocument("scene", MAIN_SCENE_FILE) as SerializedScene;
+    expect(saved.actors[0]!.transform.position).toEqual(edited.actors[0]!.transform.position);
+  });
+
+  it("keeps tabs opened since the last save when a clean project closes", async () => {
+    const actions = await openProject();
+    const second = await createScene(actions, "Second");
+    await act(() => actions.saveAll());
+    const secondId = documentId({ kind: "scene", path: second.path });
+    await act(() => actions.openDocument(sceneRef(second.path)));
+    const listed = documents().listedProjects.find((project) => project.label === "Stable")!;
+    expect(await act(() => actions.closeProject())).toEqual({ outcome: "closed" });
+    await act(() => actions.openListedProject(listed));
+    expect(documents().openDocuments.map((doc) => doc.id)).toContain(secondId);
+  });
+
+  it("drops a pending exclusive Scene request when the project closes", async () => {
+    const actions = await openProject();
+    const second = await createScene(actions, "Second");
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 2)));
+    await act(() => actions.openDocument(sceneRef(second.path)));
+    expect(documents().pendingExclusiveScene?.path).toBe(second.path);
+    await act(() => actions.forceCloseProject());
+    expect(documents().pendingExclusiveScene).toBeNull();
+  });
+
+  it("keeps the last tab asked for active when an earlier open finishes later", async () => {
+    const actions = await openProject();
+    const animation = await act(() => createProjectAsset({
+      registry: documents().assetRegistry!, rootId: "project", folderRelative: "", type: "AnimationGraph", name: "Locomotion",
+    }));
+    act(() => actions.noteAssetsCreated());
+    const classRef = { kind: "graph" as const, path: MAIN_CLASS_FILE, label: "Main" };
+    const animationRef = { kind: "anim-graph" as const, path: animation.path, label: "Locomotion" };
+    let finishRead!: () => void;
+    const heldRead = new Promise<void>((resolve) => { finishRead = resolve; });
+    const realLoad = ProjectService.prototype.loadDocument;
+    const read = vi.spyOn(ProjectService.prototype, "loadDocument").mockImplementation(async function (this: ProjectService, kind, path, options) {
+      if (path === MAIN_CLASS_FILE) await heldRead;
+      return realLoad.call(this, kind, path, options);
+    });
+    try {
+      let first!: Promise<void>;
+      act(() => { first = actions.openDocument(classRef); });
+      await act(() => actions.openDocument(animationRef));
+      await act(async () => { finishRead(); await first; });
+      expect(documents().openDocuments.some((doc) => doc.id === documentId(classRef))).toBe(true);
+      expect(documents().activeDocumentId).toBe(documentId(animationRef));
+    } finally {
+      finishRead();
+      read.mockRestore();
+    }
+  });
+
   it("keeps document lists through registry-only updates and tab switches, and Class inputs through Scene edits", async () => {
     const actions = await openProject();
     const classId = documentId({ kind: "graph", path: MAIN_CLASS_FILE });
@@ -901,7 +1143,7 @@ describe("DocumentProvider closed document history", () => {
     expect(documents().canUndoActiveDocument).toBe(false);
   });
 
-  it("reopens Main with empty history when the open-time prefab sync updates its Class instance", async () => {
+  it("reopens Main dirty with empty history when the open-time prefab sync updates its Class instance", async () => {
     const actions = await openProject();
     const second = await createScene(actions, "Second");
     await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
@@ -952,6 +1194,14 @@ describe("DocumentProvider closed document history", () => {
     // History from before the sync cannot replay onto the synced instance.
     expect(documents().canUndoActiveDocument).toBe(false);
     expect(documents().canRedoActiveDocument).toBe(false);
+    // The file still holds the old instance until Save writes the synced one.
+    expect(documents().dirtyDocuments.map((doc) => doc.id)).toContain(MAIN_SCENE_ID);
+    await act(() => actions.saveAll());
+    // Closed, Main is read from its file.
+    await act(() => actions.openDocument(sceneRef(second.path)));
+    const saved = (await actions.loadAssetDocument("scene", MAIN_SCENE_FILE)) as SerializedScene;
+    expect(saved.actors.find((actor) => actor.id === instance.id)!.components.map((component) => component.sourceId))
+      .toEqual([sprite.id]);
   });
 
   it("gives a Scene created at a deleted Scene's path none of the deleted Scene's history", async () => {
@@ -1029,6 +1279,36 @@ describe("DocumentProvider closed document history", () => {
     } finally {
       save.mockRestore();
       vi.useRealTimers();
+    }
+  });
+
+  it("runs a complete Save All for Migrate On Save and asks only once per project session", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 3)));
+    const derived = await createDerivedStorage();
+    const guid = documents().projectGuid!;
+    // An untouched file still waits for migration after the approved save.
+    const pending = vi.spyOn(ProjectService.prototype, "pendingMigrations", "get").mockReturnValue([
+      { type: "Scene", fromVersion: 0, toVersion: 4, path: "assets/Untouched.scene.babasset" },
+    ]);
+    try {
+      expect(await act(() => actions.saveAll())).toBe(false);
+      expect(documents().migrationPromptRequest).toBe(1);
+      expect(documents().dirtyDocuments.map((doc) => doc.id)).toEqual([MAIN_SCENE_ID]);
+
+      expect(await act(() => actions.approveMigrationsAndSave())).toBe(true);
+      expect(documents().dirtyDocuments).toEqual([]);
+      // Save cleared the journal its edit was written to, so no recovery remains.
+      await act(() => new Promise((resolve) => setTimeout(resolve, JOURNAL_FLUSH_DELAY_MS * 2)));
+      expect(await readJournalLines(derived, guid)).toEqual([]);
+
+      await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 1)));
+      expect(await act(() => actions.saveAll())).toBe(true);
+      expect(documents().migrationPromptRequest).toBe(1);
+      expect(documents().dirtyDocuments).toEqual([]);
+    } finally {
+      pending.mockRestore();
     }
   });
 

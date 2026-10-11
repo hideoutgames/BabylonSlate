@@ -895,7 +895,7 @@ function GalleryComposites() {
       placeholder: "None",
       onPick: () => setPickerOpen(true),
       onChange: () => {},
-      ...assetRowIdentity({ name: "Rock", type: "Mesh" }),
+      ...assetRowIdentity({ name: "Rock", type: "Model" }),
     },
     {
       kind: "asset",
@@ -1141,7 +1141,7 @@ function GalleryComposites() {
         </div>
         <Button variant="outline" className="h-auto" onClick={() => setPickerOpen(true)}>
           {selectedPickerIdentity(
-            assetRowIdentity({ name: "Rock", type: "Mesh" }),
+            assetRowIdentity({ name: "Rock", type: "Model" }),
             "Open asset picker",
           )}
         </Button>
@@ -1265,7 +1265,7 @@ function GalleryComposites() {
           open={pickerOpen}
           onOpenChange={setPickerOpen}
           assets={[
-            { guid: "gallery-asset", name: "Rock", type: "Mesh" },
+            { guid: "gallery-asset", name: "Rock", type: "Model" },
             { guid: "gallery-material", name: "Stone", type: "Material" },
           ]}
           allowedTypes={["Material"]}
@@ -1492,8 +1492,10 @@ function GalleryForms() {
 }
 
 function GalleryDangerDialog() {
+  // Controlled like production callers: the Action is a plain button.
+  const [open, setOpen] = useState(false);
   return (
-    <AlertDialog>
+    <AlertDialog open={open} onOpenChange={setOpen}>
       <AlertDialogTrigger
         render={
           <Button variant="outline" data-testid="gallery-danger-dialog-open" />
@@ -1521,6 +1523,7 @@ function GalleryDangerDialog() {
             variant="destructive"
             size="touch"
             data-testid="gallery-danger-dialog-confirm"
+            onClick={() => setOpen(false)}
           >
             Delete
           </AlertDialogAction>
@@ -1588,7 +1591,7 @@ export function ComponentGallery() {
             <GalleryDangerDialog />
             <Sheet modal={false}>
               <SheetTrigger render={<Button variant="outline" size="sm" data-testid="gallery-console-sheet-open" />}>Open Console Sheet</SheetTrigger>
-              <SheetContent side="bottom" showOverlay={false} className="gap-0 rounded-none shadow-none data-[side=bottom]:h-[min(58dvh,38rem)]" data-testid="gallery-console-sheet">
+              <SheetContent side="bottom" showOverlay={false} className="gap-0 rounded-none shadow-none data-[side=bottom]:h-[min(40dvh,22rem)] pointer-coarse:data-[side=bottom]:h-[min(50dvh,26rem)]" data-testid="gallery-console-sheet">
                 <SheetHeader><SheetTitle>Console Sheet</SheetTitle></SheetHeader>
                 <SelectableText className="px-4 font-mono text-xs">A flat nonmodal drawer leaves the view above visible and interactive.</SelectableText>
               </SheetContent>

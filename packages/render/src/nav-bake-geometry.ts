@@ -1,5 +1,14 @@
 import { Mesh, Vector3, VertexBuffer } from "@babylonjs/core";
-import type { SerializedScene } from "@babylonslate/core";
+import {
+  composeAffineTransform,
+  decomposeAffineTransform,
+  identitySerializedTransform,
+  multiplyAffineTransforms,
+  type SerializedActor,
+  type SerializedScene,
+  type SerializedTransform,
+  type Transform,
+} from "@babylonslate/core";
 import {
   mergeNavBakeMeshes,
   recastMeshesFromCollider2d,
@@ -11,6 +20,12 @@ import {
   type NavBakeMeshPart,
   type XyChain,
 } from "@babylonslate/navigation";
+import {
+  bakeColliderLocal,
+  multiplyQuat,
+  parseColliderProperties,
+  quatToPlanarAngle,
+} from "@babylonslate/physics";
 import type { EditorSceneSync } from "./editor-scene-sync";
 import { visualMeshes } from "./visual-meshes";
 import { isEditorCameraModel } from "./editor-camera-model";
@@ -35,23 +50,15 @@ export function collectNavBakeGeometry(
   const mode = sceneData.viewportMode === "2d" ? "2d" : "3d";
   const bounds = extras?.bakeBounds;
   if (mode === "2d") {
-    const xy = xyBoundsFromActors(sceneData.actors);
-    const clipped = bounds ? intersectXyBounds(xy, bounds) : xy;
-    if (clipped) parts.push(recastWalkableQuadFromXy(clipped));
+    const walls: NavBakeMeshPart[] = [];
+    const actorsById = new Map(sceneData.actors.map((actor) => [actor.id, actor]));
     for (const actor of sceneData.actors) {
-      const position = {
-        x: actor.transform.position[0],
-        y: actor.transform.position[1],
-      };
-      if (bounds && !pointInXyBounds(position, bounds)) continue;
-      for (const component of actor.components) {
-        if (component.classId !== "ColliderComponent") continue;
-        const shape =
-          component.properties.shape &&
-          typeof component.properties.shape === "object"
-            ? (component.properties.shape as Record<string, unknown>)
-            : undefined;
-        parts.push(...recastMeshesFromCollider2d(position, shape));
+      if (!actor.components.some((component) => component.classId === "ColliderComponent")) continue;
+      const world = actorWorldPose(actor, actorsById);
+      if (!world) continue;
+      for (const part of collider2dParts(actor, world)) {
+        if (bounds && !partIntersectsXyBounds(part, bounds)) continue;
+        walls.push(part);
       }
     }
     if (extras?.tilemapChains && extras.tilemapChains.length > 0) {
@@ -60,8 +67,13 @@ export function collectNavBakeGeometry(
             xyChainIntersectsBounds(chain, bounds),
           )
         : extras.tilemapChains;
-      if (chains.length > 0) parts.push(recastWallsFromXyChains(chains, 2));
+      if (chains.length > 0) walls.push(recastWallsFromXyChains(chains, 2));
     }
+    // The floor reaches past every wall, not only past the actor origins.
+    const xy = xyBoundsFromActors(sceneData.actors, undefined, walls);
+    const clipped = bounds ? intersectXyBounds(xy, bounds) : xy;
+    if (clipped) parts.push(recastWalkableQuadFromXy(clipped));
+    parts.push(...walls);
   } else {
     for (const actor of sceneData.actors) {
       if (
@@ -90,6 +102,102 @@ function bakeVisualMeshes(root: Mesh): Mesh[] {
   });
 }
 
+function runtimeTransform(transform: SerializedTransform): Transform {
+  const [px, py, pz] = transform.position;
+  const [rx, ry, rz, rw] = transform.rotation;
+  const [sx, sy, sz] = transform.scale;
+  return {
+    position: { x: px, y: py, z: pz },
+    rotation: { x: rx, y: ry, z: rz, w: rw },
+    scale: { x: sx, y: sy, z: sz },
+  };
+}
+
+/** World pose through the parent chain (`local × parentWorld`), as Play composes it; null on a cycle. */
+function actorWorldPose(
+  actor: SerializedActor,
+  actorsById: ReadonlyMap<string, SerializedActor>,
+): Transform | null {
+  const local = runtimeTransform(actor.transform);
+  if (!actor.parentId || !actorsById.has(actor.parentId)) return local;
+  const matrix = composeAffineTransform(local);
+  let reference = local.rotation;
+  const signs = { ...local.scale };
+  const visited = new Set([actor.id]);
+  for (let parentId: string | null = actor.parentId; parentId;) {
+    if (visited.has(parentId)) return null;
+    visited.add(parentId);
+    const parent = actorsById.get(parentId);
+    if (!parent) break;
+    const parentLocal = runtimeTransform(parent.transform);
+    multiplyAffineTransforms(matrix, composeAffineTransform(parentLocal), matrix);
+    reference = multiplyQuat(parentLocal.rotation, reference);
+    signs.x *= parentLocal.scale.x;
+    signs.y *= parentLocal.scale.y;
+    signs.z *= parentLocal.scale.z;
+    parentId = parent.parentId;
+  }
+  const world = runtimeTransform(identitySerializedTransform());
+  decomposeAffineTransform(matrix, reference, world, signs);
+  return world;
+}
+
+/**
+ * An actor's 2D colliders placed as the 2D physics world places them: actor ×
+ * component scale baked into the shape, the component offset turned by the
+ * actor's planar angle. A collider physics rejects bakes nothing.
+ */
+function collider2dParts(actor: SerializedActor, world: Transform): NavBakeMeshPart[] {
+  const parts: NavBakeMeshPart[] = [];
+  const bodyAngle = quatToPlanarAngle(world.rotation);
+  const cos = Math.cos(bodyAngle);
+  const sin = Math.sin(bodyAngle);
+  for (const component of actor.components) {
+    if (component.classId !== "ColliderComponent") continue;
+    let baked: ReturnType<typeof bakeColliderLocal>;
+    try {
+      const { shape } = parseColliderProperties({ shape: component.properties.shape }, "2d");
+      const local = runtimeTransform(component.transform ?? identitySerializedTransform());
+      baked = bakeColliderLocal(shape, local, world.scale);
+    } catch {
+      continue;
+    }
+    const offset = baked.translation;
+    parts.push(...recastMeshesFromCollider2d(
+      {
+        x: world.position.x + offset.x * cos - offset.y * sin,
+        y: world.position.y + offset.x * sin + offset.y * cos,
+        angle: bodyAngle + quatToPlanarAngle(baked.rotation),
+      },
+      baked.shape as unknown as Record<string, unknown>,
+    ));
+  }
+  return parts;
+}
+
+/** Whether a Recast-space part's world XY extent meets the bake bounds. */
+function partIntersectsXyBounds(part: NavBakeMeshPart, bounds: NavBakeBounds): boolean {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (let i = 0; i + 2 < part.positions.length; i += 3) {
+    // Recast (x, _, z) is world (x, z).
+    const x = Number(part.positions[i]);
+    const y = Number(part.positions[i + 2]);
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  }
+  return (
+    minX <= Math.max(bounds.min.x, bounds.max.x) &&
+    maxX >= Math.min(bounds.min.x, bounds.max.x) &&
+    minY <= Math.max(bounds.min.y, bounds.max.y) &&
+    maxY >= Math.min(bounds.min.y, bounds.max.y)
+  );
+}
+
 function xyChainIntersectsBounds(
   chain: XyChain,
   bounds: NavBakeBounds,
@@ -110,17 +218,6 @@ function xyChainIntersectsBounds(
   const boxMinY = Math.min(bounds.min.y, bounds.max.y);
   const boxMaxY = Math.max(bounds.min.y, bounds.max.y);
   return minX <= boxMaxX && maxX >= boxMinX && minY <= boxMaxY && maxY >= boxMinY;
-}
-
-function pointInXyBounds(
-  point: { x: number; y: number },
-  bounds: NavBakeBounds,
-): boolean {
-  const minX = Math.min(bounds.min.x, bounds.max.x);
-  const maxX = Math.max(bounds.min.x, bounds.max.x);
-  const minY = Math.min(bounds.min.y, bounds.max.y);
-  const maxY = Math.max(bounds.min.y, bounds.max.y);
-  return point.x >= minX && point.x <= maxX && point.y >= minY && point.y <= maxY;
 }
 
 function intersectXyBounds(

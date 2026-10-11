@@ -18,7 +18,6 @@ import {
 } from "react";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { createDefaultLayoutForKind } from "./default-layout";
-import { migrateRestoredLayout, restoreDockviewLayout } from "./layout-ops";
 import { panelComponents } from "./panel-registry";
 import { usePlatformLayoutOptions } from "./use-platform-layout";
 import type { AnimEditorMode } from "./anim-document-layout";
@@ -28,7 +27,11 @@ import {
   inlineDetachedDockviewLayout,
 } from "./phone-dock-layout";
 import { PhoneWindowSwitcher } from "./phone-window-switcher";
-import { listDockWindows, type DockWindowDefinition } from "./window-catalog";
+import {
+  listDockWindows,
+  LOCKS_WINDOW_ID,
+  type DockWindowDefinition,
+} from "./window-catalog";
 import {
   FUNCTION_GRAPH_PANEL_COMPONENT,
   isFunctionGraphPanelId,
@@ -53,6 +56,34 @@ function profiledDockPanelComponents() {
   ));
 }
 
+/**
+ * Catalog windows a document hides: Prefab and Components outside the Actor
+ * lineage, Locks without source control.
+ */
+function closeHiddenWindows(
+  api: DockviewApi,
+  { actorPrefab, sourceControl }: { actorPrefab: boolean; sourceControl: boolean },
+): void {
+  if (!actorPrefab) {
+    api.getPanel("prefab-viewport")?.api.close();
+    api.getPanel("actor-prefab")?.api.close();
+  }
+  if (!sourceControl) api.getPanel(LOCKS_WINDOW_ID)?.api.close();
+}
+
+function sameWindows(
+  current: readonly DockWindowDefinition[],
+  next: readonly DockWindowDefinition[],
+): boolean {
+  return (
+    current.length === next.length &&
+    current.every(
+      (entry, index) =>
+        entry.id === next[index]!.id && entry.title === next[index]!.title,
+    )
+  );
+}
+
 export interface DockviewShellProps {
   documentKind: DockviewDocumentKind;
   onReady?: (api: DockviewApi) => void;
@@ -73,6 +104,7 @@ export function DockviewShell({
   sceneMode,
 }: DockviewShellProps) {
   const apiRef = useRef<DockviewApi | null>(null);
+  const hostRef = useRef<HTMLDivElement>(null);
   const [api, setApi] = useState<DockviewApi | null>(null);
   const [activePanelId, setActivePanelId] = useState<string | null>(null);
   const [functionWindows, setFunctionWindows] = useState<
@@ -88,6 +120,8 @@ export function DockviewShell({
   onReadyRef.current = onReady;
   const initialLayoutRef = useRef(initialLayout);
   initialLayoutRef.current = initialLayout;
+  const hiddenWindowsRef = useRef({ actorPrefab, sourceControl });
+  hiddenWindowsRef.current = { actorPrefab, sourceControl };
   const platformOptions = usePlatformLayoutOptions();
 
   const handleReady = useCallback(
@@ -101,42 +135,25 @@ export function DockviewShell({
               originalLayout as unknown as ReturnType<DockviewApi["toJSON"]>,
             )
           : originalLayout;
-      restoreDockviewLayout(
-        event.api,
-        hostLayout as Record<string, unknown> | null,
-        () => {
-          createDefaultLayoutForKind(event.api, documentKind, {
-            actorPrefab,
-            sourceControl,
-            animEditorMode,
-            sceneMode,
-          });
-        },
-      );
-      migrateRestoredLayout(event.api);
-      if (!actorPrefab) {
-        event.api.getPanel("prefab-viewport")?.api.close();
-        event.api.getPanel("actor-prefab")?.api.close();
+      if (hostLayout) {
+        event.api.fromJSON(
+          hostLayout as unknown as ReturnType<DockviewApi["toJSON"]>,
+        );
+      } else {
+        createDefaultLayoutForKind(
+          event.api,
+          documentKind,
+          { actorPrefab, sourceControl, animEditorMode, sceneMode },
+          hostRef.current?.clientWidth ?? 0,
+        );
       }
-      if (!sourceControl) {
-        event.api.getPanel("locks")?.api.close();
-      }
-      if (
-        platformOptions.singleWindow &&
-        hostLayout !== originalLayout &&
-        originalLayout
-      ) {
-        const saved = originalLayout as unknown as ReturnType<
+      closeHiddenWindows(event.api, { actorPrefab, sourceControl });
+      // A phone returns to the saved floating and popout groups, not the
+      // inlined grid; hidden windows close again after that restore.
+      if (platformOptions.singleWindow && hostLayout !== originalLayout) {
+        initialDesktopLayoutRef.current = originalLayout as unknown as ReturnType<
           DockviewApi["toJSON"]
         >;
-        const panelIds = Object.keys(saved.panels ?? {});
-        // Invalid/retired catalog layouts keep the safe migration/default instead.
-        if (
-          panelIds.length === event.api.panels.length &&
-          panelIds.every((id) => event.api.getPanel(id))
-        ) {
-          initialDesktopLayoutRef.current = saved;
-        }
       }
 
       setApi(event.api);
@@ -156,17 +173,20 @@ export function DockviewShell({
   useLayoutEffect(() => {
     if (!api) return;
     const updateSelection = () => setActivePanelId(api.activePanel?.id ?? null);
-    // Open function graph tabs join the phone Window picker.
-    const updateFunctionWindows = () =>
-      setFunctionWindows(
-        api.panels
-          .filter((panel) => isFunctionGraphPanelId(panel.id))
-          .map((panel) => ({
-            id: panel.id,
-            component: FUNCTION_GRAPH_PANEL_COMPONENT,
-            title: panel.api.title ?? panel.id,
-          })),
+    // Open function graph tabs join the phone Window picker; a rename only
+    // reaches it through the layout change Dockview fires for a new title.
+    const updateFunctionWindows = () => {
+      const next = api.panels
+        .filter((panel) => isFunctionGraphPanelId(panel.id))
+        .map((panel) => ({
+          id: panel.id,
+          component: FUNCTION_GRAPH_PANEL_COMPONENT,
+          title: panel.api.title ?? panel.id,
+        }));
+      setFunctionWindows((current) =>
+        sameWindows(current, next) ? current : next,
       );
+    };
     updateSelection();
     updateFunctionWindows();
     const subscriptions = [
@@ -176,11 +196,16 @@ export function DockviewShell({
       }),
       api.onDidAddPanel(updateFunctionWindows),
       api.onDidRemovePanel(updateFunctionWindows),
+      api.onDidLayoutChange(updateFunctionWindows),
     ];
     return () => {
       for (const subscription of subscriptions) subscription.dispose();
     };
   }, [api]);
+
+  useLayoutEffect(() => {
+    if (api) closeHiddenWindows(api, { actorPrefab, sourceControl });
+  }, [api, actorPrefab, sourceControl]);
 
   useLayoutEffect(() => {
     if (!api) return;
@@ -195,6 +220,7 @@ export function DockviewShell({
         allowDetached: !platformOptions.disableFloatingGroups,
       });
       phoneLayoutRef.current = null;
+      closeHiddenWindows(api, hiddenWindowsRef.current);
     }
   }, [
     api,
@@ -237,6 +263,7 @@ export function DockviewShell({
       data-layout={platformOptions.singleWindow ? "phone" : "docked"}
     >
       <div
+        ref={hostRef}
         className={cn(
           "min-h-0 min-w-0 flex-1",
           !platformOptions.singleWindow && "dockview-frame",

@@ -114,9 +114,7 @@ describe("public repository hygiene", () => {
   });
 
   it("treats glTF JSON and lockfiles as scannable text", () => {
-    expect(isProbablyBinary("model.gltf", '{"asset":{"version":"2.0"}}')).toBe(
-      false,
-    );
+    expect(isProbablyBinary("model.gltf")).toBe(false);
     const config = readFileSync(join(repoRoot, ".gitleaks.toml"), "utf8");
     expect(config).not.toContain("pnpm-lock.yaml");
     expect(config).not.toContain("Podfile.lock");

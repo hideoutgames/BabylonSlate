@@ -37,7 +37,14 @@ interface ColorDraft {
 }
 
 const CHECKERBOARD = "conic-gradient(var(--muted) 0.25turn, var(--border) 0 0.5turn, var(--muted) 0 0.75turn, var(--border) 0) 0 0 / 8px 8px";
-const HUE_GRADIENT = "linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)";
+// Slider thumbs (`size-4`) are edge-aligned, so a thumb's center travels from
+// 0.5rem to 100% - 0.5rem. Each track gradient spans exactly that travel.
+const THUMB_TRAVEL = "0.5rem 0 / calc(100% - 1rem) 100% no-repeat";
+const HUE_TRACK = `linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00) ${THUMB_TRAVEL}, #f00`;
+
+function alphaTrack(hex: string): string {
+  return `linear-gradient(to right, transparent, ${hex}) ${THUMB_TRAVEL}, linear-gradient(to right, transparent calc(100% - 0.5rem), ${hex} 0), ${CHECKERBOARD}`;
+}
 
 function clampUnit(value: number): number {
   return Math.max(0, Math.min(1, value));
@@ -214,7 +221,7 @@ export function ColorPicker({
             <FieldLabel id={`${id}-hue-label`} className="text-xs">Hue</FieldLabel>
             <Slider aria-labelledby={`${id}-hue-label`} min={0} max={360} step={1} value={current.hsv[0]}
               className="[&_[data-slot=slider-track]]:h-3 [&_[data-slot=slider-track]]:[background:var(--color-picker-track)] [&_[data-slot=slider-range]]:bg-transparent"
-              style={{ "--color-picker-track": HUE_GRADIENT } as CSSProperties}
+              style={{ "--color-picker-track": HUE_TRACK } as CSSProperties}
               onValueChange={(next) => setDraft((previous) => previous ? editHsv(previous, [Array.isArray(next) ? next[0]! : next, previous.hsv[1], previous.hsv[2]]) : null)} />
           </Field>
           <div className="flex items-end gap-3">
@@ -252,7 +259,7 @@ export function ColorPicker({
             <div className="flex items-center gap-3">
               <Slider aria-label="Alpha" min={0} max={1} step={0.01} value={clampUnit(current.color[3])}
                 className="min-w-0 flex-1 [&_[data-slot=slider-track]]:h-3 [&_[data-slot=slider-track]]:[background:var(--color-picker-track)] [&_[data-slot=slider-range]]:bg-transparent"
-                style={{ "--color-picker-track": `linear-gradient(to right, transparent, ${colorToHex(rgb(current.color))}), ${CHECKERBOARD}` } as CSSProperties}
+                style={{ "--color-picker-track": alphaTrack(colorToHex(rgb(current.color))) } as CSSProperties}
                 onValueChange={(next) => {
                   const alpha = Array.isArray(next) ? next[0]! : next;
                   setDraft((previous) => previous ? { ...previous, color: [...rgb(previous.color), alpha], alpha: String(alpha) } : null);

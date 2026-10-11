@@ -233,7 +233,6 @@ const PROJECT_ASSET_BINDINGS: Record<
   { classId: string; property: string }
 > = {
   Model: { classId: "MeshComponent", property: "assetGuid" },
-  Mesh: { classId: "MeshComponent", property: "assetGuid" },
   Audio: { classId: "AudioComponent", property: "audioAssetGuid" },
   ParticleSystem: { classId: "ParticleComponent", property: "particleSystemGuid" },
   Water: { classId: "WaterLakeComponent", property: "assetGuid" },
@@ -372,12 +371,18 @@ export function physicsWorldFromOpenDocuments(
     content: unknown;
   }>,
 ): PhysicsWorldKind {
+  // A world Scene sets the physics world; a Scene Layer (always 2D) decides
+  // only when no Scene is open.
   const sceneDoc = openDocuments.find(
-    (entry) =>
-      (entry.ref.kind === "scene" || entry.ref.kind === "scene-layer") &&
-      entry.content,
+    (entry) => entry.ref.kind === "scene" && entry.content,
   );
-  const settings = (sceneDoc?.content as SerializedScene | undefined)?.settings;
-  if (sceneDoc?.ref.kind === "scene-layer") return "2d";
-  return settings?.physicsWorld === "2d" ? "2d" : "3d";
+  if (sceneDoc) {
+    const settings = (sceneDoc.content as SerializedScene).settings;
+    return settings?.physicsWorld === "2d" ? "2d" : "3d";
+  }
+  return openDocuments.some(
+    (entry) => entry.ref.kind === "scene-layer" && entry.content,
+  )
+    ? "2d"
+    : "3d";
 }

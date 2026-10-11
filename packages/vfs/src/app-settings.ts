@@ -15,15 +15,26 @@ export const MAX_UNDO_BYTE_BUDGET = 1024 * MEBIBYTE;
 /** Below this a visible viewport is unusably choppy. */
 export const MIN_VIEWPORT_FRAME_CAP = 10;
 export const MAX_VIEWPORT_FRAME_CAP = 240;
+/** Hardware scaling 1 is native resolution; 4 is the quarter-scale floor rendering quality accepts. */
+export const MIN_HARDWARE_SCALING_LEVEL = 1;
+export const MAX_HARDWARE_SCALING_LEVEL = 4;
 
+/**
+ * Focus keep-list defaults: one key per dock document kind (plus the Scene
+ * Landscape / Foliage modes and Animation Graph Object), each keeping that
+ * editor's primary panel.
+ */
 export const DEFAULT_FOCUS_KEEP_PANELS = {
   scene: ["viewport"],
   sceneLandscape: ["viewport"],
   sceneFoliage: ["viewport"],
   "scene-layer": ["viewport"],
   graph: ["graph"],
+  prefab: ["prefab-viewport"],
   enum: ["enum-members"],
   structure: ["structure-members"],
+  "data-definition": ["data-definition-fields"],
+  "data-tree": ["data-tree-entries"],
   "script-interface": ["script-interface-preview"],
   sprite: ["sprite-preview"],
   "sprite-animation": ["sprite-animation-preview"],
@@ -31,11 +42,13 @@ export const DEFAULT_FOCUS_KEEP_PANELS = {
   tilemap: ["tilemap-paint"],
   material: ["material-graph"],
   "material-function": ["material-function-graph"],
+  "material-instance": ["material-instance-preview"],
   "plugin-settings": ["plugin-settings-details"],
   "anim-graph": ["anim-graph-graph"],
   animGraphObject: ["anim-object-graph"],
   "behaviour-tree": ["behaviour-tree-graph"],
   audio: ["audio-preview"],
+  "save-game": ["save-game-fields"],
   "audio-mixer": ["audio-mixer-details"],
   "input-action": ["input-bindings"],
   "input-axis": ["input-bindings"],
@@ -44,6 +57,9 @@ export const DEFAULT_FOCUS_KEEP_PANELS = {
   "particle-emitter": ["particle-emitter-preview"],
   "particle-graph": ["particle-graph-canvas"],
   "particle-system": ["particle-system-preview"],
+  water: ["water-preview"],
+  "render-target": ["render-target-details"],
+  "render-target-texture": ["render-target-texture-details"],
   model: ["model-preview"],
   skeleton: ["skeleton-preview"],
   animation: ["animation-preview"],
@@ -52,19 +68,24 @@ export const DEFAULT_FOCUS_KEEP_PANELS = {
   texture: ["texture-preview"],
 } as const;
 
-function mutableFocusKeepPanels(): {
-  [K in keyof typeof DEFAULT_FOCUS_KEEP_PANELS]: string[];
-} {
+type FocusKeepPanelKey = keyof typeof DEFAULT_FOCUS_KEEP_PANELS;
+
+function mutableFocusKeepPanels(): Record<FocusKeepPanelKey, string[]> {
   return Object.fromEntries(
     Object.entries(DEFAULT_FOCUS_KEEP_PANELS).map(([key, value]) => [
       key,
       [...value],
     ]),
-  ) as { [K in keyof typeof DEFAULT_FOCUS_KEEP_PANELS]: string[] };
+  ) as Record<FocusKeepPanelKey, string[]>;
 }
 
-const focusKeepPanelList = (fallback: readonly string[]) =>
-  z.array(z.string()).default([...fallback]);
+/** Every default key is a schema key, so a new kind cannot be dropped on load. */
+const focusKeepPanelsShape = Object.fromEntries(
+  Object.entries(DEFAULT_FOCUS_KEEP_PANELS).map(([key, value]) => [
+    key,
+    z.array(z.string()).default([...value]),
+  ]),
+) as Record<FocusKeepPanelKey, z.ZodDefault<z.ZodArray<z.ZodString>>>;
 
 export const engineSettingsSchema = z.object({
   automaticUpdatesEnabled: z.boolean().default(true),
@@ -113,7 +134,10 @@ export const engineSettingsSchema = z.object({
   debugMode: z.boolean().default(false),
   /** Debug Mode only: check every WebGL call so load reports name the failing one. Slow. */
   traceGraphicsErrors: z.boolean().default(false),
-  hardwareScalingLevel: z.number().positive().default(1),
+  hardwareScalingLevel: z.preprocess((value) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return value;
+    return Math.min(MAX_HARDWARE_SCALING_LEVEL, Math.max(MIN_HARDWARE_SCALING_LEVEL, value));
+  }, z.number().min(MIN_HARDWARE_SCALING_LEVEL).max(MAX_HARDWARE_SCALING_LEVEL).default(1)),
   modelImportDefaultScale: z.preprocess((value) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return value;
     return Math.max(0.0001, value);
@@ -127,7 +151,7 @@ export const engineSettingsSchema = z.object({
     return Math.max(0.0001, value);
   }, z.number().positive().default(1)),
   viewportSnapRotateDeg: z.number().finite().positive().default(15),
-  viewportSnapTranslate: z.number().finite().positive().optional(),
+  viewportSnapTranslate: z.number().finite().positive().default(1),
   viewportSnapScale: z.number().finite().positive().default(0.25),
   postProcessingEnabled: z.boolean().default(true),
   editorTextureLodEnabled: z.boolean().default(false),
@@ -206,74 +230,9 @@ export const engineSettingsSchema = z.object({
       profileGpuTiming: false,
     }),
   focusKeepPanels: z
-    .object({
-      scene: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.scene),
-      sceneLandscape: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.sceneLandscape),
-      sceneFoliage: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.sceneFoliage),
-      "scene-layer": focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS["scene-layer"]),
-      graph: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.graph),
-      enum: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.enum),
-      structure: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.structure),
-      "script-interface": focusKeepPanelList(
-        DEFAULT_FOCUS_KEEP_PANELS["script-interface"],
-      ),
-      sprite: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.sprite),
-      "sprite-animation": focusKeepPanelList(
-        DEFAULT_FOCUS_KEEP_PANELS["sprite-animation"],
-      ),
-      tileset: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.tileset),
-      tilemap: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.tilemap),
-      material: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.material),
-      "material-function": focusKeepPanelList(
-        DEFAULT_FOCUS_KEEP_PANELS["material-function"],
-      ),
-      "plugin-settings": focusKeepPanelList(
-        DEFAULT_FOCUS_KEEP_PANELS["plugin-settings"],
-      ),
-      "anim-graph": focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS["anim-graph"]),
-      animGraphObject: focusKeepPanelList(
-        DEFAULT_FOCUS_KEEP_PANELS.animGraphObject,
-      ),
-      "behaviour-tree": focusKeepPanelList(
-        DEFAULT_FOCUS_KEEP_PANELS["behaviour-tree"],
-      ),
-      audio: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.audio),
-      "audio-mixer": focusKeepPanelList(
-        DEFAULT_FOCUS_KEEP_PANELS["audio-mixer"],
-      ),
-      "input-action": focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS["input-action"]),
-      "input-axis": focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS["input-axis"]),
-      "audio-channel": focusKeepPanelList(
-        DEFAULT_FOCUS_KEEP_PANELS["audio-channel"],
-      ),
-      "sound-attenuation": focusKeepPanelList(
-        DEFAULT_FOCUS_KEEP_PANELS["sound-attenuation"],
-      ),
-      "particle-emitter": focusKeepPanelList(
-        DEFAULT_FOCUS_KEEP_PANELS["particle-emitter"],
-      ),
-      "particle-graph": focusKeepPanelList(
-        DEFAULT_FOCUS_KEEP_PANELS["particle-graph"],
-      ),
-      "particle-system": focusKeepPanelList(
-        DEFAULT_FOCUS_KEEP_PANELS["particle-system"],
-      ),
-      model: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.model),
-      skeleton: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.skeleton),
-      animation: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.animation),
-      "skybox-creator": focusKeepPanelList(
-        DEFAULT_FOCUS_KEEP_PANELS["skybox-creator"],
-      ),
-      trace: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.trace),
-      texture: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.texture),
-    })
+    .object(focusKeepPanelsShape)
     .default(mutableFocusKeepPanels),
-}).transform((settings) => ({
-  ...settings,
-  // Older Prefab preferences used the grid spacing for movement snapping.
-  // Materialize that value on load so later grid edits cannot change it.
-  viewportSnapTranslate: settings.viewportSnapTranslate ?? settings.viewportGridSize,
-}));
+});
 
 export type EngineSettings = z.infer<typeof engineSettingsSchema>;
 

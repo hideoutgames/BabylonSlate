@@ -88,42 +88,22 @@ describe("SpriteAnimation payload", () => {
     expect(spriteAnimationFrameAt(payload, 0.5)?.textureGuid).toBe("b");
   });
 
-  it("promotes a uniform legacy clip to global frameDurationMs without overrides", () => {
-    const parsed = parseSpriteAnimationPayload({
-      frames: [{ durationMs: 40, textureGuid: "a" }, { durationMs: 40, textureGuid: "b" }],
-    });
-    expect(parsed.frameDurationMs).toBe(40);
-    expect(parsed.frames[0]?.durationMsOverride).toBeUndefined();
-    expect(parsed.frames[1]?.durationMsOverride).toBeUndefined();
-    expect(spriteAnimationDurationMs(parsed)).toBe(80);
-  });
-
-  it("marks mixed legacy frame durations as overrides against the first frame", () => {
-    const parsed = parseSpriteAnimationPayload({
-      frames: [{ durationMs: 100, textureGuid: "a" }, { durationMs: 150, textureGuid: "b" }],
-    });
-    expect(parsed.frameDurationMs).toBe(100);
-    expect(parsed.frames[0]?.durationMsOverride).toBeUndefined();
-    expect(parsed.frames[1]).toMatchObject({
-      durationMsOverride: true,
-      durationMs: 150,
-    });
-    expect(spriteAnimationDurationMs(parsed)).toBe(250);
-  });
-
-  it("does not infer overrides when frameDurationMs is already authored", () => {
-    const parsed = parseSpriteAnimationPayload({
+  it("plays frames at frameDurationMs unless they set durationMsOverride", () => {
+    const authored = parseSpriteAnimationPayload({
       frameDurationMs: 50,
       frames: [{ durationMs: 100 }, { durationMs: 150 }],
     });
-    expect(parsed.frameDurationMs).toBe(50);
-    expect(parsed.frames[0]?.durationMsOverride).toBeUndefined();
-    expect(parsed.frames[1]?.durationMsOverride).toBeUndefined();
-    expect(spriteAnimationDurationMs(parsed)).toBe(100);
+    expect(authored.frames.map((frame) => frame.durationMsOverride)).toEqual([undefined, undefined]);
+    expect(spriteAnimationDurationMs(authored)).toBe(100);
+    // Without frameDurationMs the default applies; frame durations are never promoted.
+    const unset = parseSpriteAnimationPayload({ frames: [{ durationMs: 40 }, { durationMs: 150, durationMsOverride: true }] });
+    expect(unset.frameDurationMs).toBe(100);
+    expect(spriteAnimationDurationMs(unset)).toBe(250);
   });
 
   it("picks the frame at normalised time and sums clip duration", () => {
     const payload = parseSpriteAnimationPayload({
+      frameDurationMs: 100,
       frames: [
         { textureGuid: "a", durationMs: 100 },
         { textureGuid: "b", durationMs: 100 },
@@ -137,6 +117,7 @@ describe("SpriteAnimation payload", () => {
 
   it("maps elapsed time onto a looping or finishing playhead", () => {
     const payload = parseSpriteAnimationPayload({
+      frameDurationMs: 100,
       frames: [
         { textureGuid: "a", durationMs: 100 },
         { textureGuid: "b", durationMs: 100 },
@@ -198,18 +179,20 @@ describe("SpriteAnimation payload", () => {
     expect(sized.frames[2]?.height).toBeUndefined();
   });
 
-  it("hydrates missing sizes from PNG IHDR bytes keyed by texture guid", () => {
-    const payload = createDefaultSpriteAnimationPayload();
-    payload.frames[0]!.textureGuid = "hero-tex";
+  it("hydrates missing sizes from texture source bytes keyed by guid, not only PNG", () => {
+    const payload = parseSpriteAnimationPayload({
+      frames: [{ textureGuid: "hero-tex" }, { textureGuid: "gif-tex" }],
+    });
+    // GIF89a with a 48 x 24 logical screen.
+    const gif = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 48, 0, 24, 0]);
     const hydrated = hydrateSpriteAnimationPixelSizes(
       new Map([["walk", payload]]),
-      new Map([["hero-tex", pngIhdr(200, 100)]]),
+      new Map([["hero-tex", pngIhdr(200, 100)], ["gif-tex", gif]]),
     );
-    expect(hydrated.get("walk")?.frames[0]).toMatchObject({
-      textureGuid: "hero-tex",
-      width: 200,
-      height: 100,
-    });
+    expect(hydrated.get("walk")?.frames).toMatchObject([
+      { textureGuid: "hero-tex", width: 200, height: 100 },
+      { textureGuid: "gif-tex", width: 48, height: 24 },
+    ]);
   });
 });
 

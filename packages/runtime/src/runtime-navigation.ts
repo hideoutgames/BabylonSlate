@@ -1,5 +1,5 @@
 import type { CommandMessage, DebugNavAgent } from "@babylonslate/bridge";
-import { eulerDegreesToQuaternion, type Transform } from "@babylonslate/core";
+import { eulerDegreesToQuaternion, type Quat, type Transform } from "@babylonslate/core";
 import type { Actor, World } from "@babylonslate/object-model";
 import { parseRigidBodyProperties, type PhysicsWorldKind } from "@babylonslate/physics";
 import type { BtResult } from "@babylonslate/behaviour-tree";
@@ -12,10 +12,16 @@ import {
   rotatedBoxWorldAabb,
   worldToRecast,
   type NavigationBackend,
+  type NavMeshBlockerProperties,
   type NavObstacleKind,
   type NavPoint,
 } from "@babylonslate/navigation";
-import { actorChainWorldTransform, composeActorWorldTransforms, actorWorldTransforms } from "./actor-world-transform";
+import {
+  actorChainWorldTransform,
+  actorParentGuid,
+  composeActorWorldTransforms,
+  actorWorldTransforms,
+} from "./actor-world-transform";
 import { actorLocalPhysicsTransform, type PhysicsWorldSync } from "./physics-sync";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 
@@ -53,7 +59,12 @@ export class RuntimeNavigation implements RuntimeSubsystem {
   private navSceneGuid: string | null = null;
   private navigationInitialized = false;
   private readonly navAgentByActor = new Map<string, string>();
-  private readonly navYawByActor = new Map<string, number>();
+  /** A Rotate To Face heading the next crowd tick applies to an idle agent. */
+  private readonly navFacingRequests = new Map<string, number>();
+  /** Dynamic unwalkable blocker obstacles, removed when their blocker no longer applies. */
+  private readonly navObstacleByActor = new Map<string, { actor: Actor; id: string }>();
+  /** Blockers whose cost volume is applied, keyed like the volume by actor guid. */
+  private readonly navCostVolumeActors = new Map<string, Actor>();
   private readonly navTargetByActor = new Map<string, NavPoint>();
   private readonly navSteeredActors = new Set<string>();
   private readonly navPhysicalAgents = new Set<string>();
@@ -98,7 +109,9 @@ export class RuntimeNavigation implements RuntimeSubsystem {
     this.nav ??= createNavigationBackend();
     this.nav.importNavMesh(bytes);
     this.navSceneGuid = sceneGuid;
+    this.releaseSteering();
     this.clearAgents();
+    this.forgetBlockers();
   }
 
   /** Select the realizing Scene's baked navmesh, or none, before its actors spawn. */
@@ -107,12 +120,16 @@ export class RuntimeNavigation implements RuntimeSubsystem {
     if (bytes && (refresh || this.navSceneGuid !== sceneGuid)) {
       const nav = createNavigationBackend();
       try { nav.importNavMesh(bytes); } catch (error) { nav.dispose(); throw error; }
+      this.releaseSteering();
       this.clearAgents();
+      this.forgetBlockers();
       this.nav?.dispose();
       this.nav = nav;
       this.navSceneGuid = sceneGuid;
     } else if (!bytes) {
+      this.releaseSteering();
       this.clearAgents();
+      this.forgetBlockers();
       this.nav?.dispose();
       this.nav = null;
       this.navSceneGuid = null;
@@ -126,6 +143,7 @@ export class RuntimeNavigation implements RuntimeSubsystem {
 
   dispose(): void {
     this.clearAgents();
+    this.forgetBlockers();
     this.nav?.dispose();
     this.nav = null;
     this.sceneNavmeshBytes.clear();
@@ -222,14 +240,23 @@ export class RuntimeNavigation implements RuntimeSubsystem {
     if (agent) this.nav?.removeAgent(agent);
     this.navAgentByActor.delete(actorGuid);
     this.navTargetByActor.delete(actorGuid);
-    this.navYawByActor.delete(actorGuid);
+    this.navFacingRequests.delete(actorGuid);
     this.navSteeredActors.delete(actorGuid);
+    // A departed blocker stops carving and pricing the navmesh.
+    const obstacle = this.navObstacleByActor.get(actorGuid);
+    if (obstacle) this.nav?.removeObstacle(obstacle.id);
+    this.navObstacleByActor.delete(actorGuid);
+    if (this.navCostVolumeActors.delete(actorGuid)) this.nav?.removeCostVolume(actorGuid);
   }
 
-  /** Rotate To Face also turns a crowd agent's heading. */
+  /**
+   * Rotate To Face on a crowd agent: an idle agent takes this heading (radians,
+   * Rotate To Face's convention) on the next crowd tick; a moving one faces
+   * its velocity instead.
+   */
   faceYaw(actorGuid: string, yawRad: number): void {
     if (this.navAgentByActor.has(actorGuid)) {
-      this.navYawByActor.set(actorGuid, yawRad);
+      this.navFacingRequests.set(actorGuid, yawRad);
     }
   }
 
@@ -265,13 +292,32 @@ export class RuntimeNavigation implements RuntimeSubsystem {
       }
     }
     this.navAgentByActor.clear();
-    this.navYawByActor.clear();
+    this.navFacingRequests.clear();
     this.navTargetByActor.clear();
     this.navSteeredActors.clear();
   }
 
+  /** A replaced navmesh drops its crowd; stop the horizontal velocity it was steering. */
+  private releaseSteering(): void {
+    for (const actorGuid of this.navSteeredActors) {
+      this.host.physics().setActorLinearVelocity(actorGuid, { x: 0, z: 0 });
+    }
+    this.navSteeredActors.clear();
+  }
+
+  /** Blocker obstacles and cost volumes belong to the navmesh they were added to. */
+  private forgetBlockers(): void {
+    this.navObstacleByActor.clear();
+    this.navCostVolumeActors.clear();
+  }
+
+  /**
+   * Physics steering covers bodies in the main world. A Scene Layer actor's
+   * body lives in its layer's own world, so its agent follows the crowd pose
+   * like a kinematic one.
+   */
   private isDynamicNavActor(actor: Actor): boolean {
-    if (this.host.worldKind() !== "3d") return false;
+    if (this.host.worldKind() !== "3d" || actor.sceneLayerId) return false;
     const rigid = actor.components.find(
       (component) => component.classId === "RigidBodyComponent" && !component.destroyed,
     );
@@ -368,99 +414,130 @@ export class RuntimeNavigation implements RuntimeSubsystem {
     const transforms = actorWorldTransforms(this.host.world().getActors(), actors);
     for (const actor of actors) {
       if (actor.destroyed || !this.host.streamActorReady(actor)) continue;
-      const component = actor.components.find(
-        (entry) =>
-          entry.classId === "NavMeshBlockerComponent" && !entry.destroyed,
-      );
-      if (!component) continue;
-      const props = parseNavMeshBlockerProperties(
-        Object.fromEntries(component.variables),
-      );
+      const props = this.blockerProperties(actor);
+      if (!props) continue;
       const transform = transforms.get(actor.guid) ?? actor.transform;
-      const aabb = rotatedBoxWorldAabb(
-        [
-          transform.position.x,
-          transform.position.y,
-          transform.position.z,
-        ],
-        [
-          transform.rotation.x,
-          transform.rotation.y,
-          transform.rotation.z,
-          transform.rotation.w,
-        ],
-        [
-          transform.scale.x,
-          transform.scale.y,
-          transform.scale.z,
-        ],
-      );
-      const pose = this.toNavObstaclePose(aabb.center);
-      const navSize = this.toNavObstacleSize(aabb.size);
       if (props.area === "cost") {
-        // Cost volumes mutate the parent's baked navmesh and cannot be removed.
-        // Streamed instances therefore share its existing navigation costs.
+        // Streamed instances keep the main Scene's navigation costs.
         if (this.host.isStreamActor(actor)) continue;
-        this.nav.applyCostVolume({
-          id: actor.guid,
-          kind: props.kind,
-          pose,
-          size: navSize,
-          cost: props.cost,
-        });
+        this.applyCostVolume(actor, props, transform);
         continue;
       }
-      if (!props.dynamic) continue;
-      const obstacle = this.nav.addObstacle("box", pose, navSize);
-      acquired?.push(obstacle);
+      if (!props.dynamic || this.navObstacleByActor.get(actor.guid)?.actor === actor) continue;
+      const obstacle = this.blockerObstacle(props.kind, transform);
+      const id = this.nav.addObstacle(obstacle.kind, obstacle.pose, obstacle.size, obstacle.yaw);
+      if (!id) continue;
+      this.navObstacleByActor.set(actor.guid, { actor, id });
+      acquired?.push(id);
     }
   }
 
-  private syncNavCostVolumes(): void {
+  private blockerProperties(actor: Actor): NavMeshBlockerProperties | null {
+    const component = actor.components.find(
+      (entry) => entry.classId === "NavMeshBlockerComponent" && !entry.destroyed,
+    );
+    return component ? parseNavMeshBlockerProperties(Object.fromEntries(component.variables)) : null;
+  }
+
+  /** Cost volumes price the world AABB of the blocker's volume. */
+  private applyCostVolume(actor: Actor, props: NavMeshBlockerProperties, transform: Transform): void {
+    const aabb = rotatedBoxWorldAabb(
+      [transform.position.x, transform.position.y, transform.position.z],
+      [transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w],
+      [transform.scale.x, transform.scale.y, transform.scale.z],
+    );
+    this.nav?.applyCostVolume({
+      id: actor.guid,
+      kind: props.kind,
+      pose: this.toNavObstaclePose(aabb.center),
+      size: this.toNavObstacleSize(aabb.size),
+      cost: props.cost,
+    });
+    this.navCostVolumeActors.set(actor.guid, actor);
+  }
+
+  /**
+   * A tile-cache obstacle for a blocker's world volume. An upright volume
+   * (turned only about the walk plane's normal) keeps its shape and yaw;
+   * any tilt falls back to a box over its world AABB.
+   */
+  private blockerObstacle(
+    kind: NavObstacleKind,
+    transform: Transform,
+  ): { kind: NavObstacleKind; pose: NavPoint; size: NavPoint; yaw: number } {
+    const { x, y, z, w } = normalizedQuat(transform.rotation);
+    const twoD = this.host.worldKind() === "2d";
+    if (Math.abs(x) < UPRIGHT_EPSILON && Math.abs(twoD ? y : z) < UPRIGHT_EPSILON) {
+      const turn = 2 * Math.atan2(twoD ? z : y, w);
+      return {
+        kind,
+        pose: this.toNavObstaclePose(transform.position),
+        size: this.toNavObstacleSize({
+          x: Math.abs(transform.scale.x),
+          y: Math.abs(transform.scale.y),
+          z: Math.abs(transform.scale.z),
+        }),
+        // Recast turns about +Y; a 2D turn about +Z maps onto it reversed.
+        yaw: twoD ? -turn : turn,
+      };
+    }
+    const aabb = rotatedBoxWorldAabb(
+      [transform.position.x, transform.position.y, transform.position.z],
+      [x, y, z, w],
+      [transform.scale.x, transform.scale.y, transform.scale.z],
+    );
+    return {
+      kind: "box",
+      pose: this.toNavObstaclePose(aabb.center),
+      size: this.toNavObstacleSize(aabb.size),
+      yaw: 0,
+    };
+  }
+
+  /** Drop obstacles and cost volumes whose blocker left, lost its component, or changed area. */
+  private syncNavBlockers(index: ReadonlyMap<string, Actor>): void {
     if (!this.nav) return;
+    const applies = (actor: Actor, area: "cost" | "unwalkable") => {
+      if (actor.destroyed || this.navFrameActor(index, actor.guid) !== actor) return false;
+      const props = this.blockerProperties(actor);
+      return !!props && props.area === area && (area === "cost" || props.dynamic);
+    };
+    for (const [actorGuid, obstacle] of this.navObstacleByActor) {
+      if (applies(obstacle.actor, "unwalkable")) continue;
+      this.nav.removeObstacle(obstacle.id);
+      this.navObstacleByActor.delete(actorGuid);
+    }
+    for (const [actorGuid, actor] of this.navCostVolumeActors) {
+      if (applies(actor, "cost")) continue;
+      this.nav.removeCostVolume(actorGuid);
+      this.navCostVolumeActors.delete(actorGuid);
+    }
+  }
+
+  /** Moving dynamic cost blockers restamp from their current world pose. */
+  private syncNavCostVolumes(index: ReadonlyMap<string, Actor>): void {
+    if (!this.nav) return;
+    const moving: Array<{ actor: Actor; props: NavMeshBlockerProperties }> = [];
     for (const actor of this.host.world().getActors()) {
       if (actor.destroyed || this.host.isStreamActor(actor)) continue;
-      const component = actor.components.find(
-        (entry) =>
-          entry.classId === "NavMeshBlockerComponent" && !entry.destroyed,
-      );
-      if (!component) continue;
-      const props = parseNavMeshBlockerProperties(
-        Object.fromEntries(component.variables),
-      );
-      if (props.area !== "cost" || !props.dynamic) continue;
-      const aabb = rotatedBoxWorldAabb(
-        [
-          actor.transform.position.x,
-          actor.transform.position.y,
-          actor.transform.position.z,
-        ],
-        [
-          actor.transform.rotation.x,
-          actor.transform.rotation.y,
-          actor.transform.rotation.z,
-          actor.transform.rotation.w,
-        ],
-        [
-          actor.transform.scale.x,
-          actor.transform.scale.y,
-          actor.transform.scale.z,
-        ],
-      );
-      this.nav.applyCostVolume({
-        id: actor.guid,
-        kind: props.kind,
-        pose: this.toNavObstaclePose(aabb.center),
-        size: this.toNavObstacleSize(aabb.size),
-        cost: props.cost,
-      });
+      const props = this.blockerProperties(actor);
+      if (props?.area === "cost" && props.dynamic) moving.push({ actor, props });
+    }
+    if (moving.length === 0) return;
+    const transforms = composeActorWorldTransforms(
+      (guid) => this.navFrameActor(index, guid),
+      moving.map((entry) => entry.actor),
+    );
+    for (const { actor, props } of moving) {
+      this.applyCostVolume(actor, props, transforms.get(actor.guid) ?? actor.transform);
     }
   }
 
   /** One crowd step; `dtSeconds` is the tick's captured step. */
   tickCrowd(actors: ReadonlyMap<string, Actor>, dtSeconds: number): void {
     if (!this.nav) return;
-    this.syncNavCostVolumes();
+    this.syncNavBlockers(actors);
+    this.syncNavCostVolumes(actors);
     const worldTransforms = this.navAgentWorldTransforms(actors);
     this.registerAgents(worldTransforms);
     const physicalAgents = this.navPhysicalAgents;
@@ -473,7 +550,7 @@ export class RuntimeNavigation implements RuntimeSubsystem {
         this.stopAgent(actorGuid);
         this.nav.removeAgent(agentId);
         this.navAgentByActor.delete(actorGuid);
-        this.navYawByActor.delete(actorGuid);
+        this.navFacingRequests.delete(actorGuid);
         removed = true;
         continue;
       }
@@ -493,6 +570,7 @@ export class RuntimeNavigation implements RuntimeSubsystem {
       }
     }
     this.nav.stepCrowd(dtSeconds);
+    const posed: Actor[] = [];
     for (const [actorGuid, agentId] of this.navAgentByActor) {
       const actor = this.navFrameActor(actors, actorGuid);
       if (!actor || actor.destroyed) continue;
@@ -504,27 +582,60 @@ export class RuntimeNavigation implements RuntimeSubsystem {
         }
         continue;
       }
+      posed.push(actor);
+    }
+    const lookup = (guid: string) => this.navFrameActor(actors, guid);
+    // Parents first, so a child agent resolves against its parent's new pose.
+    if (posed.length > 1) {
+      const depth = new Map(posed.map((actor) => [actor, ancestorCount(actor, lookup)] as const));
+      posed.sort((a, b) => depth.get(a)! - depth.get(b)!);
+    }
+    for (const actor of posed) {
+      const agentId = this.navAgentByActor.get(actor.guid)!;
       const position = this.nav.agentPosition(agentId);
       if (!position) continue;
-      const world = this.fromNav(position);
       const velocity = this.nav.agentVelocity(agentId) ?? { x: 0, y: 0, z: 0 };
-      const previous = this.navYawByActor.get(actorGuid) ?? 0;
-      const yaw = facingYawFromVelocity(velocity, previous);
-      this.navYawByActor.set(actorGuid, yaw);
-      const euler =
-        this.host.worldKind() === "2d"
-          ? ([0, 0, (yaw * 180) / Math.PI] as [number, number, number])
-          : ([0, (yaw * 180) / Math.PI, 0] as [number, number, number]);
-      const quat = eulerDegreesToQuaternion(euler);
-      const local = actorLocalPhysicsTransform({
-        position: world,
-        rotation: { x: quat[0], y: quat[1], z: quat[2], w: quat[3] },
-      }, actor, worldTransforms);
+      // Agents face their movement; an idle agent keeps its facing unless Rotate To Face asked.
+      const heading = this.movementHeading(velocity) ?? this.navFacingRequests.get(actor.guid);
+      this.navFacingRequests.delete(actor.guid);
+      const parentId = actorParentGuid(actor);
+      const parent = parentId ? lookup(parentId) : undefined;
+      const parentWorld = parent ? actorChainWorldTransform(parent, lookup) : null;
+      const rotation = heading !== undefined
+        ? this.headingRotation(heading)
+        : parentWorld
+          ? actorChainWorldTransform(actor, lookup)?.rotation ?? actor.transform.rotation
+          : actor.transform.rotation;
+      const local = actorLocalPhysicsTransform(
+        { position: this.fromNav(position), rotation },
+        actor,
+        parentId && parentWorld ? new Map([[parentId, parentWorld]]) : NO_TRANSFORMS,
+      );
       Object.assign(actor.transform.position, local.position);
-      Object.assign(actor.transform.rotation, local.rotation);
+      if (heading !== undefined) Object.assign(actor.transform.rotation, local.rotation);
     }
     physicalAgents.clear();
     if (removed) this.emitDebug(true);
+  }
+
+  /**
+   * Heading from crowd velocity, in Rotate To Face's convention: 3D turns
+   * about +Y with +Z forward, 2D about +Z with +X forward. None when idle.
+   */
+  private movementHeading(velocity: NavPoint): number | undefined {
+    const heading = this.host.worldKind() === "2d"
+      // Recast Z is world Y: atan2(world y, world x).
+      ? facingYawFromVelocity({ x: velocity.z, y: 0, z: velocity.x }, Number.NaN)
+      : facingYawFromVelocity(velocity, Number.NaN);
+    return Number.isNaN(heading) ? undefined : heading;
+  }
+
+  private headingRotation(heading: number): Quat {
+    const degrees = (heading * 180) / Math.PI;
+    const [x, y, z, w] = eulerDegreesToQuaternion(
+      this.host.worldKind() === "2d" ? [0, 0, degrees] : [0, degrees, 0],
+    );
+    return { x, y, z, w };
   }
 
   /** Behaviour Tree MoveTo / MoveToBlackboardKey task host. */
@@ -573,10 +684,13 @@ export class RuntimeNavigation implements RuntimeSubsystem {
       // surface-based; do not report arrival for a distant airborne owner.
       if (Math.abs(world.y - position.y) > Math.max(height, accept)) return "running";
     }
+    // A physical owner arrives by its own horizontal position, not the nearest
+    // navmesh point, which can lie up to the query reach away.
+    const horizontal = world ? this.toNav(world) : position;
     const distance = Math.hypot(
-      position.x - target.x,
+      horizontal.x - target.x,
       position.y - target.y,
-      position.z - target.z,
+      horizontal.z - target.z,
     );
     if (distance > accept) return "running";
     this.stopAgent(actor.guid);
@@ -625,4 +739,28 @@ export class RuntimeNavigation implements RuntimeSubsystem {
     }
     this.host.emit({ type: "debugNavigation", agents, world: this.host.worldKind() });
   }
+}
+
+const NO_TRANSFORMS: ReadonlyMap<string, Transform> = new Map();
+/** Quaternion components below this count as no tilt off the walk plane. */
+const UPRIGHT_EPSILON = 1e-5;
+
+function normalizedQuat(rotation: Quat): Quat {
+  const length = Math.hypot(rotation.x, rotation.y, rotation.z, rotation.w);
+  if (!(length > 1e-8)) return { x: 0, y: 0, z: 0, w: 1 };
+  return { x: rotation.x / length, y: rotation.y / length, z: rotation.z / length, w: rotation.w / length };
+}
+
+/** How many live ancestors an actor has, stopping at a parent cycle. */
+function ancestorCount(actor: Actor, lookup: (guid: string) => Actor | undefined): number {
+  let count = 0;
+  const visited = new Set([actor.guid]);
+  for (let parentId = actorParentGuid(actor); parentId && !visited.has(parentId);) {
+    visited.add(parentId);
+    const parent = lookup(parentId);
+    if (!parent) break;
+    count += 1;
+    parentId = actorParentGuid(parent);
+  }
+  return count;
 }

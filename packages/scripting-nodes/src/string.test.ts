@@ -142,6 +142,34 @@ describe("string.format node", () => {
     expect(compiled.source).toContain('"Hi "');
   });
 
+  it("formats a repeated placeholder from one read of its pin", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "roll", "math.randomInt", { "default:min": 0, "default:max": 9 }),
+        node(registry, "fmt", "string.format", { "default:format": "{score}/{score}" }),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "log", targetPinId: "execIn" },
+        { id: "e2", sourceNodeId: "roll", sourcePinId: "out", targetNodeId: "fmt", targetPinId: formatArgPinId("score") },
+        { id: "e3", sourceNodeId: "fmt", sourcePinId: "out", targetNodeId: "log", targetPinId: "message" },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    let rolls = 0;
+    const logs: string[] = [];
+    (loadModule(compiled.source).onBeginPlay as (ctx: unknown) => void)({
+      random: { int: () => (rolls += 1) },
+      formatValue: (value: unknown) => String(value),
+      log: (_s: string, _c: string, message: string) => logs.push(message),
+    });
+    expect({ rolls, logs }).toEqual({ rolls: 1, logs: ["1/1"] });
+  });
+
   it("types Split as string array out and Join as string array in", () => {
     const split = stringNodes.find((entry) => entry.id === "string.split");
     expect(split?.pins({}).find((pin) => pin.id === "out")?.type).toEqual(
@@ -180,7 +208,6 @@ describe("string.format node", () => {
       ["string.toLower", "toLowerCase", "out"],
       ["string.toUpper", "toUpperCase", "out"],
       ["string.parseInt", "parseInt", "out"],
-      ["string.parseFloat", "parseFloat", "out"],
     ] as const) {
       const graph: LogicGraph = {
         id: "g",
@@ -306,5 +333,107 @@ describe("string.format node", () => {
       log: (_s: string, _c: string, message: string) => parseLogs.push(message),
     });
     expect(parseLogs).toEqual(["true"]);
+  });
+});
+
+describe("string.parseFloat", () => {
+  it.each([
+    ["1.5e2", ["true", "150"]],
+    ["-.5", ["true", "-0.5"]],
+    ["0x10", ["false", "0"]],
+    ["1_000", ["false", "0"]],
+    ["12abc", ["false", "0"]],
+    ["1e400", ["false", "0"]],
+  ])("parses %s with matching Success and Out", (text, expected) => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "parse",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "parse", "string.parseFloat", { "default:in": text }),
+        node(registry, "logSuccess", "debug.log"),
+        node(registry, "logOut", "debug.log"),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "logSuccess", targetPinId: "execIn" },
+        { id: "e2", sourceNodeId: "logSuccess", sourcePinId: "execOut", targetNodeId: "logOut", targetPinId: "execIn" },
+        { id: "e3", sourceNodeId: "parse", sourcePinId: "success", targetNodeId: "logSuccess", targetPinId: "message" },
+        { id: "e4", sourceNodeId: "parse", sourcePinId: "out", targetNodeId: "logOut", targetPinId: "message" },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    const logs: string[] = [];
+    (loadModule(compiled.source).onBeginPlay as (ctx: unknown) => void)({
+      formatValue: (value: unknown) => String(value),
+      log: (_s: string, _c: string, message: string) => logs.push(message),
+    });
+    expect(logs).toEqual(expected);
+  });
+});
+
+describe("string.substring", () => {
+  it.each([
+    [1, 3, "el"],
+    [3, 1, ""],
+    [2, 99, "llo"],
+    [-2, 2, "he"],
+  ])("Substring of hello from %s to %s is %j", (start, end, expected) => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "substring",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "sub", "string.substring", {
+          "default:in": "hello",
+          "default:start": start,
+          "default:end": end,
+        }),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "log", targetPinId: "execIn" },
+        { id: "e2", sourceNodeId: "sub", sourcePinId: "out", targetNodeId: "log", targetPinId: "message" },
+      ],
+    };
+    const logs: string[] = [];
+    (loadModule(compileGraph(graph, { assetGuid: "a", registry }).source).onBeginPlay as (ctx: unknown) => void)({
+      formatValue: (value: unknown) => String(value),
+      log: (_s: string, _c: string, message: string) => logs.push(message),
+    });
+    expect(logs).toEqual([expected]);
+  });
+});
+
+describe("string.replace", () => {
+  it.each([
+    ["l", "L", "heLLo"],
+    ["", "-", "hello"],
+  ])("Replace %j with %j in hello is %j", (search, replacement, expected) => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "replace",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "replace", "string.replace", {
+          "default:in": "hello",
+          "default:search": search,
+          "default:replacement": replacement,
+        }),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "log", targetPinId: "execIn" },
+        { id: "e2", sourceNodeId: "replace", sourcePinId: "out", targetNodeId: "log", targetPinId: "message" },
+      ],
+    };
+    const logs: string[] = [];
+    (loadModule(compileGraph(graph, { assetGuid: "a", registry }).source).onBeginPlay as (ctx: unknown) => void)({
+      formatValue: (value: unknown) => String(value),
+      log: (_s: string, _c: string, message: string) => logs.push(message),
+    });
+    expect(logs).toEqual([expected]);
   });
 });

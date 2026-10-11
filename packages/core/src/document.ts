@@ -42,7 +42,6 @@ export const ASSET_DOCUMENT_KINDS = [
   "texture",
   "render-target",
   "render-target-texture",
-  "asset-settings",
 ] as const;
 
 export type AssetDocumentKind = (typeof ASSET_DOCUMENT_KINDS)[number];
@@ -155,7 +154,6 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
     case "trace":
       return "Trace";
     case "texture":
-    case "asset-settings":
       return "Texture";
     case "render-target":
       return "RenderTarget";
@@ -164,34 +162,12 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
   }
 }
 
-/**
- * A legacy `Shader` asset opens as a Material document and is rewritten to the
- * canonical `Material` header type on save, which the migrate-on-save approval
- * flow gates. Its `.shader.babasset` path is deliberately left alone so open
- * documents, layout ids, references and source-control locks stay valid.
- */
-export function assetTypeForDocumentSave(
-  kind: AssetDocumentKind,
-  existingType?: string | null,
-): string {
-  void existingType;
-  return assetTypeForDocumentKind(kind);
-}
-
-/** Header types that open as a Material document. */
-export const LEGACY_MATERIAL_ASSET_TYPES = ["Shader", "ShaderGraph"] as const;
-
-export function isLegacyMaterialAssetType(type: string): boolean {
-  return (LEGACY_MATERIAL_ASSET_TYPES as readonly string[]).includes(type);
-}
-
 export function documentKindForAssetType(type: string): AssetDocumentKind | null {
   switch (type) {
     case "Scene":
       return "scene";
     case "SceneLayer":
       return "scene-layer";
-    case "Graph":
     case "Class":
       return "graph";
     case "Prefab":
@@ -211,8 +187,6 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
     case "SaveGame":
       return "save-game";
     case "Material":
-    case "Shader":
-    case "ShaderGraph":
       return "material";
     case "MaterialFunction":
       return "material-function";
@@ -357,8 +331,6 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Render Target";
     case "render-target-texture":
       return "Render Target Texture";
-    case "asset-settings":
-      return "Settings";
   }
 }
 
@@ -380,23 +352,6 @@ export function parseDocumentId(
   const kind = id.slice(0, colon);
   if (!isAssetDocumentKind(kind)) return null;
   return { kind, path: id.slice(colon + 1) };
-}
-
-/**
- * Reopen a layout.json `asset-settings:…` tab as the current document kind
- * when the registry type has since gained its own DockView (Model, Texture).
- */
-export function migrateRestoredDocumentId(
-  id: string,
-  typeForPath: (path: string) => string | null | undefined,
-): string {
-  const parsed = parseDocumentId(id);
-  if (!parsed || parsed.kind !== "asset-settings") return id;
-  const type = typeForPath(parsed.path);
-  if (!type) return id;
-  const kind = documentKindForAssetType(type);
-  if (!kind || kind === parsed.kind) return id;
-  return documentId({ kind, path: parsed.path });
 }
 
 export function isContentBrowserId(id: string): boolean {
@@ -433,24 +388,13 @@ export function createEmptyLayouts(): ProjectLayouts {
   };
 }
 
-export function migrateLegacyLayout(
-  legacy: Record<string, unknown>,
-  mainSceneId: string,
-): ProjectLayouts {
-  return {
-    documents: { [mainSceneId]: legacy },
-    tabOrder: [mainSceneId],
-    activeDocumentId: mainSceneId,
-  };
-}
-
 export function labelFromPath(path: string): string {
   const base =
     path
       .split("/")
       .pop()
       ?.replace(
-        /\.(inputaction|inputaxis|scene|scenelayer|graph|prefab|eui|ui|spriteanim|sprite|anim|shader|material|matfunc|class|tileset|tilemap|datadefinition|datatree|plugin|mixer|channel|atten|emitter|particlegraph|particles|skyboxcreator|rendertargettexture|rendertarget|savegame)\.(babasset|json)$/i,
+        /\.(inputaction|inputaxis|scene|scenelayer|prefab|spriteanim|sprite|anim|material|matfunc|class|tileset|tilemap|datadefinition|datatree|plugin|mixer|channel|atten|emitter|particlegraph|particles|skyboxcreator|rendertargettexture|rendertarget|savegame)\.babasset$/i,
         "",
       )
       .replace(/\.babasset$/i, "")

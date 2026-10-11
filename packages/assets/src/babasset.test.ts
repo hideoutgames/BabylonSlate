@@ -14,7 +14,7 @@ describe("babasset codec", () => {
     const bytes = await encodeBabasset({
       header: {
         guid: "guid-1",
-        type: "Graph",
+        type: "Class",
         name: "Main",
         engineVersion: "0.0.0",
         version: 1,
@@ -78,6 +78,39 @@ describe("babasset codec", () => {
     expect(bytesEqual(decoded.chunks.get("pixels")!, big)).toBe(true);
   });
 
+  it("rejects a truncated inline chunk and a torn blob instead of returning short bytes", async () => {
+    const header = {
+      guid: "g4",
+      type: "Texture",
+      name: "Torn",
+      engineVersion: "0.0.0",
+      version: 1,
+      mode: "thin" as const,
+      dependencies: [],
+      payload: {},
+    };
+    const inline = await encodeBabasset({
+      header,
+      chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: new Uint8Array([1, 2, 3, 4]) }],
+      blobThreshold: 1024,
+    });
+    await expect(decodeBabasset(inline.subarray(0, inline.byteLength - 2))).rejects.toThrow(/pixels/);
+
+    const big = new Uint8Array(70 * 1024).map((_, i) => i % 251);
+    const blobs = new Map<string, Uint8Array>();
+    const thin = await encodeBabasset({
+      header,
+      chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: big }],
+      writeBlob: async (hash, data) => { blobs.set(hash, data); },
+    });
+    const [hash] = [...blobs.keys()];
+    const torn = big.slice();
+    torn.fill(0, 1024);
+    await expect(decodeBabasset(thin, async () => big.subarray(0, 1024))).rejects.toThrow(/Length mismatch/);
+    await expect(decodeBabasset(thin, async () => torn)).rejects.toThrow(/Hash mismatch/);
+    expect(hash).toBe(await sha256Hex(big));
+  });
+
   it("header-only read does not require chunk payload access", async () => {
     const bytes = await encodeBabasset({
       header: {
@@ -110,7 +143,7 @@ describe("babasset codec", () => {
         const bytes = await encodeBabasset({
           header: {
             guid: "p",
-            type: "Graph",
+            type: "Class",
             name: "P",
             engineVersion: "0.0.0",
             version: 1,
@@ -181,9 +214,9 @@ describe("babasset codec", () => {
 });
 
 describe("schema migration", () => {
-  it("migrates Graph v0 to v1", () => {
+  it("migrates Class v0 to v1", () => {
     const registry = createDefaultMigrationRegistry();
-    const result = registry.migrate("Graph", 0, {});
+    const result = registry.migrate("Class", 0, {});
     expect(result.migrated).toBe(true);
     expect(result.version).toBe(1);
     expect(result.payload.nodes).toEqual([]);
@@ -191,7 +224,7 @@ describe("schema migration", () => {
 
   it("refuses future versions", () => {
     const registry = createDefaultMigrationRegistry();
-    expect(() => registry.migrate("Graph", 99, {})).toThrow(/newer engine version/);
+    expect(() => registry.migrate("Class", 99, {})).toThrow(/newer engine version/);
   });
 
   it("passes through types that have no migration chain", () => {

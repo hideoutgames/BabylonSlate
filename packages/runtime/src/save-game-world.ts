@@ -144,18 +144,20 @@ export class SaveGameWorld {
     }
     if (!this.host.eligible(actor)) throw new SaveGameError("incompatible", "Save Game actors must belong to the main world scene; overlays and streamed scenes are not supported.");
     const previousId = this.identity.get(actor);
-    if (previousId && this.tracked.get(previousId)?.actor === actor) {
+    const tracked = previousId ? this.tracked.get(previousId) : undefined;
+    if (tracked?.actor === actor) {
+      // Capture writes the component's current selection, the one load validates against.
+      tracked.selection = selected;
       if (persistentId && persistentId !== previousId) {
-        const entry = this.tracked.get(previousId)!;
-        if (!entry.spawned || entry.captured || this.tracked.has(persistentId) || reserved.has(persistentId)) {
+        if (!tracked.spawned || tracked.captured || this.tracked.has(persistentId) || reserved.has(persistentId)) {
           throw new SaveGameError("incompatible", "Set a unique spawned actor identity before its first save.");
         }
         this.assertIdentityFree(persistentId, actor);
-        this.tracked.delete(previousId);
+        this.tracked.delete(previousId!);
         this.identity.set(actor, persistentId);
-        entry.id = persistentId;
-        entry.initial.id = persistentId;
-        this.tracked.set(persistentId, entry);
+        tracked.id = persistentId;
+        tracked.initial.id = persistentId;
+        this.tracked.set(persistentId, tracked);
       }
       return;
     }

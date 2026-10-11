@@ -75,6 +75,16 @@ describe("loadExportDocuments", () => {
     expect(loaded.payloadByGuid("capture")).toEqual(document);
     expect(JSON.parse(new TextDecoder().decode(loaded.bytesByGuid("capture")!))).toEqual(document);
   });
+  it("reports a document that failed to load when the export asks for its bytes", async () => {
+    const asset: IndexedAsset = { ...textureAsset(), path: "assets/Hero.class.babasset", header: {
+      ...textureAsset().header, guid: "hero", type: "Class", payload: {}, chunks: [],
+    } };
+    const loaded = await loadExportDocuments({ assets: [asset], loadDocument: async () => { throw new Error("Storage unavailable"); },
+      readAssetChunk: async () => null });
+    expect(() => loaded.bytesByGuid("hero")).toThrow("Storage unavailable");
+    expect(loaded.graphByGuid("hero")).toBeNull();
+    expect(loaded.bytesByGuid("unrelated")).toBeNull();
+  });
   it("keeps processed emission separate from a Texture's visual representation and rejects corrupt data on reachability", async () => {
     const asset = textureAsset();
     const sourceHash = "a".repeat(64);

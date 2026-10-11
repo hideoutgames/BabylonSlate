@@ -18,7 +18,7 @@ import {
   SCENE_SUBSYSTEM_CLASS_ID,
   engineNativeEventsFor,
 } from "@babylonslate/object-model";
-import { SUBSYSTEM_GET_NODE_ID } from "@babylonslate/scripting-nodes";
+import { flowNodes, SUBSYSTEM_GET_NODE_ID } from "@babylonslate/scripting-nodes";
 import { defaultValueForMember } from "@babylonslate/scripting";
 import { nextCopyName } from "@babylonslate/assets";
 
@@ -440,7 +440,7 @@ export function isScriptCatalogNodeAllowed(
   if (nodeId === "component.getNamed") {
     return false;
   }
-  if (nodeId === "casting.cast" || nodeId === "casting.castActor") {
+  if (nodeId === "casting.cast") {
     return false;
   }
   // One Get <Subsystem> row per project subsystem class is injected instead.
@@ -911,10 +911,6 @@ export function ensureCallParentForEvent(
                 : formatEventMemberName(
                     NATIVE_EVENT_TITLES[options.eventType] ?? options.eventType,
                   ),
-            name:
-              options.eventType === "flow.event.custom"
-                ? formatEventMemberName(options.eventName ?? "Event")
-                : undefined,
             parentClassId,
             pins,
             __nodeType: "flow.event.callParent",
@@ -944,25 +940,49 @@ export function ensureCallParentForEvent(
       targetHandle: "execIn",
     });
   }
-  for (const pin of pins) {
-    if (!pin.name) continue;
+  for (const pinId of callParentArgPinIds(next, options.eventNodeId, callNodeId)) {
     const hasDataOut = edges.some(
       (edge) =>
-        edge.source === options.eventNodeId && edge.sourceHandle === pin.name,
+        edge.source === options.eventNodeId && edge.sourceHandle === pinId,
     );
     const hasDataIn = edges.some(
-      (edge) => edge.target === callNodeId && edge.targetHandle === pin.name,
+      (edge) => edge.target === callNodeId && edge.targetHandle === pinId,
     );
     if (hasDataOut || hasDataIn) continue;
     edges.push({
-      id: `e:${options.eventNodeId}:${pin.name}:${callNodeId}:${pin.name}`,
+      id: `e:${options.eventNodeId}:${pinId}:${callNodeId}:${pinId}`,
       source: options.eventNodeId,
       target: callNodeId,
-      sourceHandle: pin.name,
-      targetHandle: pin.name,
+      sourceHandle: pinId,
+      targetHandle: pinId,
     });
   }
   return { ...next, edges };
+}
+
+/**
+ * Pin ids an event output and its Call Parent argument share: a catalog
+ * event's own output ids, or a custom event's signature pin ids. Only ids the
+ * event node also outputs are wired.
+ */
+function callParentArgPinIds(
+  graph: SerializedGraph,
+  eventNodeId: string,
+  callNodeId: string,
+): string[] {
+  const dataPinIds = (
+    node: SerializedGraph["nodes"][number] | undefined,
+    direction: "in" | "out",
+  ): string[] | null => {
+    const def = node && flowNodes.find((entry) => entry.id === node.type);
+    if (!def) return null;
+    return def.pins(node.data)
+      .filter((pin) => pin.kind === "data" && pin.direction === direction)
+      .map((pin) => pin.id);
+  };
+  const callIds = dataPinIds(graph.nodes.find((node) => node.id === callNodeId), "in") ?? [];
+  const eventIds = dataPinIds(graph.nodes.find((node) => node.id === eventNodeId), "out");
+  return eventIds ? callIds.filter((id) => eventIds.includes(id)) : callIds;
 }
 
 /** Inherited custom events from parent graphs (ancestor-first). */
@@ -1028,12 +1048,12 @@ function syncEventPins(
   return {
     ...graph,
     nodes: graph.nodes.map((node) => {
+      // Call Parent names its event in `eventName`; the event and Call Custom
+      // Event use `name`.
+      const rawName =
+        node.type === "flow.event.callParent" ? node.data.eventName : node.data.name;
       const nodeName =
-        typeof node.data.name === "string"
-          ? formatEventMemberName(node.data.name)
-          : typeof node.data.eventName === "string"
-            ? formatEventMemberName(node.data.eventName)
-            : "";
+        typeof rawName === "string" ? formatEventMemberName(rawName) : "";
       const isEvent =
         node.type === "flow.event.custom" &&
         (node.id === member.id || nodeName === memberName);
@@ -1052,7 +1072,6 @@ function syncEventPins(
       }
       if (isCallParent) {
         nextData.eventName = memberName;
-        nextData.name = memberName;
         nextData.title = `Call ${memberName} Parent`;
       }
       delete nextData.__pins;
@@ -1065,14 +1084,12 @@ function syncFunctionGraphPins(
   graph: SerializedGraph,
   memberId: string,
   pins: GraphClassMemberPin[],
+  classId: string | undefined,
 ): SerializedGraph {
   const member = (graph.members ?? []).find((entry) => entry.id === memberId);
   const syncCalls = (nodes: SerializedGraph["nodes"]) =>
     nodes.map((node) => {
-      if (
-        node.type !== "functions.call" ||
-        node.data.functionName !== member?.name
-      ) {
+      if (!member || !isOwnFunctionCall(node, member.name, classId)) {
         return node;
       }
       const nextData: Record<string, unknown> = { ...node.data, pins };
@@ -1120,10 +1137,10 @@ function syncFunctionGraphPins(
   };
 }
 
+/** Get / Set / Validated Get nodes bound to `member` by its id. */
 function isVariableAccessNode(
   node: SerializedGraph["nodes"][number],
   member: GraphClassMember,
-  previous?: GraphClassMember,
 ): boolean {
   if (
     node.type !== "variables.get" &&
@@ -1132,15 +1149,7 @@ function isVariableAccessNode(
   ) {
     return false;
   }
-  const variableId = node.data.variableId;
-  if (typeof variableId === "string" && variableId) {
-    return variableId === member.id;
-  }
-  const variableName = node.data.variableName;
-  return (
-    variableName === member.name ||
-    (typeof previous?.name === "string" && variableName === previous.name)
-  );
+  return node.data.variableId === member.id;
 }
 
 function stampVariableTypeOnData(
@@ -1212,13 +1221,80 @@ function mapGraphNodes(
   };
 }
 
+/** Remove matching nodes and their wires from the event graph and every function graph. */
+function dropGraphNodes(
+  graph: SerializedGraph,
+  drop: (node: SerializedGraph["nodes"][number]) => boolean,
+): SerializedGraph {
+  const slice = <T extends Pick<SerializedGraph, "nodes" | "edges">>(entry: T): T => {
+    const dropIds = new Set(entry.nodes.filter(drop).map((node) => node.id));
+    if (dropIds.size === 0) return entry;
+    return {
+      ...entry,
+      nodes: entry.nodes.filter((node) => !dropIds.has(node.id)),
+      edges: entry.edges.filter(
+        (edge) => !dropIds.has(edge.source) && !dropIds.has(edge.target),
+      ),
+    };
+  };
+  const functionGraphs = graph.functionGraphs
+    ? Object.fromEntries(
+        Object.entries(graph.functionGraphs).map(([id, entry]) => [id, slice(entry)]),
+      )
+    : graph.functionGraphs;
+  return {
+    ...slice(graph),
+    ...(functionGraphs ? { functionGraphs } : {}),
+  };
+}
+
+/** The open Class and its ancestry, so member edits can tell its own Call Function nodes from others. */
+export type ClassMemberEditContext = {
+  /** This document's class id; Call Function nodes stamped with it, or with none, are its own. */
+  classId?: string;
+  parentClass?: string | null;
+  parentOf?: (id: string) => string | null | undefined;
+  /** Class graphs keyed by class id, used to find a parent that declares a function. */
+  parentGraphs?: Record<string, SerializedGraph>;
+};
+
+/**
+ * A Call Function node bound to this Class's own function `name`. Function
+ * Library, parent and other-class Calls of the same name carry that class's id.
+ */
+function isOwnFunctionCall(
+  node: SerializedGraph["nodes"][number],
+  name: string,
+  classId: string | undefined,
+): boolean {
+  if (node.type !== "functions.call" || node.data.functionName !== name) return false;
+  const bound = typeof node.data.classId === "string" ? node.data.classId.trim() : "";
+  return !bound || bound === classId;
+}
+
+/** The nearest parent Class that declares a function named like `member`. */
+function inheritedFunctionClassId(
+  member: GraphClassMember,
+  context: ClassMemberEditContext | undefined,
+): string | undefined {
+  const parentOf = context?.parentOf ?? ((id: string) => engineParentOf(id) ?? null);
+  const parentClass =
+    context?.parentClass ?? (context?.classId ? parentOf(context.classId) : null);
+  for (const ancestor of walkAncestry(parentClass, parentOf)) {
+    const declares = context?.parentGraphs?.[ancestor]?.members?.some(
+      (entry) => entry.kind === "function" && entry.name === member.name,
+    );
+    if (declares) return ancestor;
+  }
+  return member.overrides?.name === member.name ? member.overrides.classId : undefined;
+}
+
 export function syncVariableAccessNodes(
   graph: SerializedGraph,
   member: GraphClassMember,
-  previous?: GraphClassMember,
 ): SerializedGraph {
   return mapGraphNodes(graph, (node) =>
-    isVariableAccessNode(node, member, previous)
+    isVariableAccessNode(node, member)
       ? patchVariableAccessNode(node, member)
       : node,
   );
@@ -1609,10 +1685,29 @@ export function renameCustomEvent(
   };
 }
 
+/** Retarget this Class's own Call Function nodes, in every graph, to a renamed function. */
+function renameFunctionCalls(
+  graph: SerializedGraph,
+  previousName: string,
+  nextName: string,
+  classId: string | undefined,
+): SerializedGraph {
+  return mapGraphNodes(graph, (node) =>
+    isOwnFunctionCall(node, previousName, classId)
+      ? {
+          ...node,
+          data: { ...node.data, functionName: nextName, title: `Call ${nextName}` },
+        }
+      : node,
+  );
+}
+
 export function patchClassMember(
   graph: SerializedGraph,
   memberId: string,
   patch: Partial<GraphClassMember>,
+  /** This document's class id, so a function rename or signature edit reaches only its own Calls. */
+  classId?: string,
 ): SerializedGraph {
   const previous = (graph.members ?? []).find((member) => member.id === memberId);
   if (previous?.kind === "event" && patch.name !== undefined) {
@@ -1625,6 +1720,9 @@ export function patchClassMember(
     if (!event || customEventRenameError(graph, event.id, patch.name)) return graph;
     graph = renameCustomEvent(graph, event.id, patch.name);
     patch = { ...patch, name: formatEventMemberName(patch.name) };
+  }
+  if (previous?.kind === "function" && patch.name !== undefined && patch.name !== previous.name) {
+    graph = renameFunctionCalls(graph, previous.name, patch.name, classId);
   }
   const members = (graph.members ?? []).map((member) => {
     if (member.id !== memberId) return member;
@@ -1644,13 +1742,13 @@ export function patchClassMember(
   const next = { ...graph, members };
   const declared = next.members?.find((member) => member.id === memberId);
   if (declared?.kind === "variable") {
-    return syncVariableAccessNodes(next, declared, previous);
+    return syncVariableAccessNodes(next, declared);
   }
   if (!patch.pins) return next;
   if (declared?.kind === "event") {
     return syncEventPins(next, declared, patch.pins);
   }
-  return syncFunctionGraphPins(next, memberId, patch.pins);
+  return syncFunctionGraphPins(next, memberId, patch.pins, classId);
 }
 
 export function pruneEventMembersToNodes(
@@ -1684,6 +1782,7 @@ export function pruneEventMembersToNodes(
 export function removeClassMember(
   graph: SerializedGraph,
   memberId: string,
+  context?: ClassMemberEditContext,
 ): SerializedGraph {
   const declared = (graph.members ?? []).find((member) => member.id === memberId);
   const members = (graph.members ?? []).filter((member) => {
@@ -1696,13 +1795,31 @@ export function removeClassMember(
   if (declared?.kind === "function") {
     const functionGraphs = { ...graph.functionGraphs };
     delete functionGraphs[memberId];
-    return { ...graph, members, functionGraphs };
+    const next = { ...graph, members, functionGraphs };
+    const ownCall = (node: SerializedGraph["nodes"][number]) =>
+      isOwnFunctionCall(node, declared.name, context?.classId);
+    // A parent's function of that name still answers this Class's Calls.
+    const inherited = inheritedFunctionClassId(declared, context);
+    if (inherited) {
+      return mapGraphNodes(next, (node) =>
+        ownCall(node) ? { ...node, data: { ...node.data, classId: inherited } } : node,
+      );
+    }
+    // Otherwise its own Call Function nodes go with it, as a rename retargets them.
+    return dropGraphNodes(next, ownCall);
   }
   if (declared?.kind === "event") {
+    const eventName = formatEventMemberName(declared.name);
     const dropIds = new Set(
       graph.nodes
         .filter((node) => {
           if (node.type === "flow.event.call") return false;
+          if (node.type === "flow.event.callParent") {
+            return (
+              node.data.eventType === "flow.event.custom" &&
+              formatEventMemberName(String(node.data.eventName ?? "")) === eventName
+            );
+          }
           if (!node.type.startsWith("flow.event.")) return false;
           const named = node.data.name;
           return named === declared.name || node.id === memberId;
@@ -1717,6 +1834,12 @@ export function removeClassMember(
         (edge) => !dropIds.has(edge.source) && !dropIds.has(edge.target),
       ),
     };
+  }
+  if (declared?.kind === "variable") {
+    // Get / Set / Validated Get nodes go with the variable, as a rename syncs them.
+    return dropGraphNodes({ ...graph, members }, (node) =>
+      isVariableAccessNode(node, declared),
+    );
   }
   if (declared) {
     return { ...graph, members };

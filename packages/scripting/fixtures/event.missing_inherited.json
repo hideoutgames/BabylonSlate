@@ -1,0 +1,35 @@
+{
+  "id": "missing-inherited",
+  "kind": "event",
+  "nodes": [
+    {
+      "id": "event",
+      "typeId": "flow.event.custom",
+      "position": {
+        "x": 7800,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {
+        "name": "Ghost",
+        "eventQualifier": "Inherited"
+      }
+    }
+  ],
+  "edges": [],
+  "context": {
+    "parentEventNames": [
+      "Landed"
+    ]
+  }
+}

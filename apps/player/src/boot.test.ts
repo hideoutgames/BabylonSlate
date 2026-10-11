@@ -79,7 +79,7 @@ async function fixture(withWater = false, saveGame?: SaveGameConfiguration) {
     loadScene: vi.fn(),
     acquireSceneSources: vi.fn(async () => () => {}), releaseInitialSources: vi.fn(),
     applySceneEnvironment: vi.fn(),
-    resize: vi.fn(), setSize: vi.fn(), dispose: vi.fn(),
+    resize: vi.fn(), setSize: vi.fn(), dispose: vi.fn(), whenReleased: vi.fn(async () => {}),
     applyCommand: vi.fn(), pushSnapshot: vi.fn(), setPaused: vi.fn(),
     setGameTimePaused: vi.fn(), setGameInputEnabled: vi.fn(),
     captureFrame: vi.fn(async () => ({ version: 1 })), cancelFrameCapture: vi.fn(),
@@ -102,13 +102,19 @@ async function fixture(withWater = false, saveGame?: SaveGameConfiguration) {
 async function backendFixture() {
   const value = await fixture();
   const owner: rendering.BackendEngineSession = {
-    engine: {} as AbstractEngine,
+    engine: { runRenderLoop: vi.fn(), stopRenderLoop: vi.fn() } as unknown as AbstractEngine,
     requestedBackend: "webgl2",
     effectiveBackend: "webgl2",
     dispose: vi.fn(() => { expect(value.handle.dispose).toHaveBeenCalledOnce(); }),
   };
   vi.spyOn(rendering, "createBackendEngineSession").mockResolvedValue(owner);
   return { ...value, owner };
+}
+
+/** The Engine goes once its view's Scene release settles, after Stop returns. */
+async function expectEngineReleased(owner: rendering.BackendEngineSession) {
+  await vi.waitFor(() => expect(owner.dispose).toHaveBeenCalledOnce());
+  expect(vi.mocked(owner.dispose).mock.results[0]?.type).toBe("return");
 }
 
 describe("player startup and Stop ownership", () => {
@@ -161,6 +167,33 @@ describe("player startup and Stop ownership", () => {
     pad.axes[0] = 0.8; pad.buttons[0]!.value = 1;
     input().pollGamepads();
     expect(input().ring.drain()).toContainEqual({ kind: "gamepad", tick: 0, gamepadIndex: 0, axes: [0.8], buttons: [1] });
+  });
+
+  it("releases the view freeze and input hold of a failed Preview boundary", async () => {
+    const { game, canvas, handle } = await fixture();
+    game.manifest.bundleDebugger = true;
+    const session = startPlayer({ game, canvas, previewDiagnostics: true });
+    sessions.push(session);
+    const worker = TestWorker.instances[0]!;
+    const reject = () => {
+      const message = [...worker.messages].reverse().find(entry => entry.channel === "control" && entry.payload.type === "sessionBoundary");
+      if (message?.channel !== "control" || message.payload.type !== "sessionBoundary") throw new Error("Missing boundary request");
+      worker.command({ channel: "command", payload: { type: "sessionBoundaryResult", sessionGeneration: 0, requestId: message.payload.requestId,
+        success: false, reason: "Runtime busy", paused: false, pauseReasons: [], tickIndex: 0, sceneAssetGuid: "world", sceneLoadId: 1, commandRevision: 0 } });
+    };
+    // Resuming from app inactivity freezes the view until the runtime answers.
+    window.dispatchEvent(new CustomEvent("babylonslate:appstate", { detail: { isActive: false } }));
+    window.dispatchEvent(new CustomEvent("babylonslate:appstate", { detail: { isActive: true } }));
+    expect(handle.setPaused).toHaveBeenLastCalledWith(true);
+    reject();
+    await vi.waitFor(() => expect(handle.setPaused).toHaveBeenLastCalledWith(false));
+    expect(handle.setGameInputEnabled).toHaveBeenLastCalledWith(true);
+    // A failed editor input reset ends its transition instead of holding input.
+    const restore = session.previewDiagnostics!.setEditorInputSuppressed(false);
+    expect(handle.setGameInputEnabled).toHaveBeenLastCalledWith(false);
+    reject();
+    await expect(restore).rejects.toThrow("Runtime busy");
+    expect(handle.setGameInputEnabled).toHaveBeenLastCalledWith(true);
   });
 
   it("reopens a packed player's checkpoint through the real in-process fallback", async () => {
@@ -252,10 +285,37 @@ describe("player startup and Stop ownership", () => {
     ]));
     expect(worker.terminated).toBe(true);
     expect(handle.dispose).toHaveBeenCalledOnce();
-    expect(owner.dispose).toHaveBeenCalledOnce();
+    await expectEngineReleased(owner);
     expect(frames.size).toBe(0);
     expect(session.stop().diagnostics).toContainEqual(expect.objectContaining({ code: "player.worker.failed" }));
     expect(owner.dispose).toHaveBeenCalledOnce();
+  });
+
+  it.each(["confirmed", "quarantined"] as const)("keeps the backend Engine until a %s view release settles", async (outcome) => {
+    const { game, canvas, handle, owner } = await backendFixture();
+    let settle!: () => void;
+    handle.whenReleased.mockReturnValue(new Promise<void>((resolve, reject) => {
+      settle = outcome === "confirmed" ? resolve : () => reject(new Error("Native release timed out"));
+    }));
+    const onStopped = vi.fn();
+    const session = await startPlayerWithBackend({ game, canvas, onStopped });
+    sessions.push(session);
+    session.stop();
+    expect(handle.dispose).toHaveBeenCalledOnce();
+    expect(onStopped).toHaveBeenCalledOnce();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(owner.dispose).not.toHaveBeenCalled();
+    settle();
+    await expectEngineReleased(owner);
+  });
+
+  it("reports a failed audio unlock from a gesture instead of leaving it unhandled", async () => {
+    const { game, canvas, handle } = await fixture();
+    vi.spyOn(handle, "unlockAudio").mockRejectedValue(new Error("AudioContext resume was rejected"));
+    const commands: Array<{ type: string } & Record<string, unknown>> = [];
+    sessions.push(startPlayer({ game, canvas, onConsoleEvent: (command) => commands.push(command) }));
+    canvas.dispatchEvent(new Event("touchstart"));
+    await vi.waitFor(() => expect(commands).toContainEqual({ type: "log", severity: "warning", message: "Audio could not start: AudioContext resume was rejected" }));
   });
 
   it.each([
@@ -296,6 +356,97 @@ describe("player startup and Stop ownership", () => {
     expect(load?.assetCatalog).toEqual([
       { guid: "world", name: "World", type: "Scene", path: "assets/Levels/World.scene.babasset", dependencies: [], requiredDependencies: ["water"] },
     ]);
+  });
+
+  it("keys the worker Class lookup by class id only", async () => {
+    const { game, canvas } = await fixture();
+    // A display name equal to another Class id must not take over that id.
+    game.manifest.assets.push(
+      { guid: "actor-class", type: "Class", classId: "Actor", encoding: "json" },
+      { guid: "hero-class", type: "Class", classId: "Hero", name: "Actor", encoding: "json" },
+      { guid: "door-class", type: "Class", assetPath: "assets/Door.class.babasset", encoding: "json" },
+    );
+    sessions.push(startPlayer({ game, canvas }));
+    const load = TestWorker.instances[0]!.messages.flatMap((message) =>
+      message.channel === "control" && message.payload.type === "load" ? [message.payload] : [])[0];
+    expect(load?.classAssetGuids).toEqual({ Actor: "actor-class", Hero: "hero-class", Door: "door-class" });
+  });
+
+  it("counts HUD ticks from the worker stats even when snapshots were dropped", async () => {
+    const { game, canvas, handle } = await fixture();
+    Object.assign(handle, { drawCalls: () => 0, accountedGeometryBytes: () => 0 });
+    const onStats = vi.fn();
+    sessions.push(startPlayer({ game, canvas, onStats }));
+    TestWorker.instances[0]!.command({ channel: "command", payload: { type: "stats", frameId: 40, tickIndex: 40, scriptMs: 1, physicsMs: 1 } });
+    expect(onStats).toHaveBeenLastCalledWith(expect.objectContaining({ ticks: 40 }));
+  });
+
+  it("retries startup-required render sources for a later Scene after their startup upload failed", async () => {
+    const { game, canvas, handle } = await fixture();
+    game.systemAssetGuids = new Set(["world"]);
+    handle.acquireSceneSources.mockRejectedValueOnce(new Error("Upload failed"));
+    sessions.push(startPlayer({ game, canvas }));
+    const worker = TestWorker.instances[0]!;
+    await vi.waitFor(() => expect(handle.acquireSceneSources).toHaveBeenCalledOnce());
+    await Promise.resolve();
+    worker.command({ channel: "command", payload: { type: "sceneSourceRequested", requestId: 1, assetGuid: "world", consumer: "transition" } });
+    await vi.waitFor(() => expect(worker.messages).toContainEqual({ channel: "control", payload: { type: "sceneSourceResponse", requestId: 1, scene: game.scenes.get("world") } }));
+    expect(handle.acquireSceneSources).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not rebuild or repost the source union when an acquire leaves the loaded sources unchanged", async () => {
+    const { game, canvas } = await fixture();
+    sessions.push(startPlayer({ game, canvas }));
+    const worker = TestWorker.instances[0]!;
+    const contentPosts = () => worker.messages.filter((message) => message.channel === "control" && message.payload.type === "loadSceneContent").length;
+    const preload = async (preloadId: string) => {
+      worker.command({ channel: "command", payload: { type: "assetPreload", preloadId, ownerId: "actor", assetGuids: ["world"], priority: "preload" } });
+      await vi.waitFor(() => expect(worker.messages).toContainEqual({ channel: "control", payload: { type: "assetPreloadResult", preloadId, success: true, progress: 1 } }));
+    };
+    await preload("first");
+    const posted = contentPosts();
+    expect(posted).toBeGreaterThan(0);
+    await preload("second");
+    expect(contentPosts()).toBe(posted);
+  });
+
+  it("keeps the in-process pump running after a throwing tick and delivers a held Scene marker with the next pose", async () => {
+    const { game, canvas, fireEndFrame } = await fixture();
+    TestWorker.failPost = true;
+    let throwTick = true;
+    let failCopy = false;
+    const createRuntime = runtimes.createRuntimeFromLoad;
+    const create = vi.spyOn(runtimes, "createRuntimeFromLoad").mockImplementation((...args) => {
+      const runtime = createRuntime(...args);
+      vi.spyOn(runtime, "loadPhysics").mockResolvedValue(undefined);
+      const advance = runtime.advance.bind(runtime);
+      vi.spyOn(runtime, "advance").mockImplementation((elapsed) => {
+        if (!throwTick) return advance(elapsed);
+        throwTick = false;
+        throw new Error("Tick failed");
+      });
+      const copy = runtime.copySnapshot.bind(runtime);
+      vi.spyOn(runtime, "copySnapshot").mockImplementation((out) => {
+        if (!failCopy) return copy(out);
+        failCopy = false;
+        return false;
+      });
+      return runtime;
+    });
+    // The realized marker's own pose copy misses once; the next frame's pose delivers it.
+    sessions.push(startPlayer({ game, canvas, onConsoleEvent: (command) => { if (command.type === "sceneRealized") failCopy = true; } }));
+    const runtime = create.mock.results.at(-1)!.value as runtimes.RuntimeDriver;
+    const reported = vi.spyOn(runtime, "reportError");
+    const ready = vi.spyOn(runtime, "notifySceneModelsReady");
+    flushFrames(1);
+    expect(reported).toHaveBeenCalledWith(expect.objectContaining({ message: "Tick failed" }));
+    await vi.waitFor(() => {
+      flushFrames(2);
+      fireEndFrame();
+      if (!ready.mock.calls.length) throw new Error("Scene readiness is still open");
+    });
+    expect(failCopy).toBe(false);
+    expect(vi.mocked(runtime.advance).mock.calls.length).toBeGreaterThan(1);
   });
 
   it("delivers capture configuration and explicit requests from the worker to the renderer", async () => {
@@ -415,8 +566,8 @@ describe("player startup and Stop ownership", () => {
     expect(worker.terminate).toHaveBeenCalledOnce();
     expect(worker.onmessage).toBeNull();
     expect(handle.dispose).toHaveBeenCalledOnce();
-    expect(owner.dispose).toHaveBeenCalledOnce();
     expect(onStopped).toHaveBeenCalledOnce();
+    await expectEngineReleased(owner);
     expect(document.querySelector("dialog")).toBeNull();
     session.stop();
     expect(owner.dispose).toHaveBeenCalledOnce();
@@ -441,7 +592,7 @@ describe("player startup and Stop ownership", () => {
     expect(handle.scheduler.acquireObstruction).not.toHaveBeenCalled();
     expect(document.querySelector("dialog")).toBeNull();
     const result = session.stop();
-    expect(owner.dispose).toHaveBeenCalledOnce();
+    await expectEngineReleased(owner);
     expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: "player.cleanup.failed", message: expect.stringContaining("Input disposal failed") }));
     expect(TestWorker.instances[0]!.terminate).toHaveBeenCalledOnce();
     expect(handle.dispose).toHaveBeenCalledOnce();
@@ -512,7 +663,7 @@ describe("player startup and Stop ownership", () => {
     await expect(startPlayerWithBackend({ game, canvas })).rejects.toThrow("Input setup failed");
     expect(TestWorker.instances[0]!.terminate).toHaveBeenCalledOnce();
     expect(handle.dispose).toHaveBeenCalledOnce();
-    expect(owner.dispose).toHaveBeenCalledOnce();
+    await expectEngineReleased(owner);
     expect(document.querySelector("dialog")).toBeNull();
     expect(frames.size).toBe(0);
   });
@@ -546,7 +697,7 @@ describe("player startup and Stop ownership", () => {
     worker.command({ channel: "command", payload: { type: "sceneLoadFailed", sceneAssetGuid: "world", sceneLoadId: 1, message: "Owned scene realization failed" } });
     expect(worker.terminate).toHaveBeenCalledOnce();
     expect(handle.dispose).toHaveBeenCalledOnce();
-    expect(owner.dispose).toHaveBeenCalledOnce();
+    await expectEngineReleased(owner);
     expect(document.querySelector("dialog")).toBeNull();
     expect(session.stop().diagnostics).toContainEqual(expect.objectContaining({ code: "scene.load.failed" }));
     expect(owner.dispose).toHaveBeenCalledOnce();

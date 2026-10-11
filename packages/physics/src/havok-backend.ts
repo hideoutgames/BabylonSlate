@@ -25,6 +25,7 @@ import {
   PhysicsShapeMesh,
   PhysicsShapeSphere,
 } from "@babylonjs/core/Physics/v2/physicsShape";
+import type { CastingResult } from "@babylonjs/core/Physics/castingResult";
 import { ShapeCastResult } from "@babylonjs/core/Physics/shapeCastResult";
 import { ProximityCastResult } from "@babylonjs/core/Physics/proximityCastResult";
 import type { PhysicsBackend, SphereSweepQuery } from "./backend";
@@ -51,6 +52,7 @@ import type {
 import {
   copyColliderDesc,
   identityColliderPose,
+  linearSweepPoses,
   normalizedPhysicsPose,
   sameColliderGeometry,
   sameColliderPose,
@@ -85,6 +87,10 @@ type CharacterRecord = {
   shape: PhysicsShape;
   grounded: boolean;
 };
+
+/** Character solves shorter than this integrate their displacement over the nominal step. */
+const MIN_CHARACTER_SOLVE_DT = 1e-3;
+const NOMINAL_CHARACTER_SOLVE_DT = 1 / 60;
 
 function miss(): HitResult {
   return {
@@ -161,6 +167,9 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     {
       actorAId: string;
       actorBId: string;
+      /** The begin event's colliders, so every end routes to the same components. */
+      colliderAId?: string;
+      colliderBId?: string;
       contacts: number;
       /** A teleport dropped the native pair; the next step must re-report it. */
       refreshing: boolean;
@@ -722,10 +731,10 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     this.tmpFrom.copyFrom(toVector3(start));
     this.tmpTo.copyFrom(toVector3(end));
     return this.withQueryFilter(options, () => {
-      const hit = engine.raycast(this.tmpFrom, this.tmpTo,
-        options?.includeTriggers === undefined ? undefined : { shouldHitTriggers: options.includeTriggers });
+      // Triggers are hit unless excluded, as on every backend (Babylon's default skips them).
+      const hit = engine.raycast(this.tmpFrom, this.tmpTo, { shouldHitTriggers: options?.includeTriggers !== false });
       if (!hit.hasHit) return miss();
-      return this.hitFromCast(hit.hasHit, hit.hitPointWorld, hit.hitNormalWorld, hit.hitDistance, hit.body);
+      return this.hitFromCast(hit, hit.hitDistance);
     });
   }
 
@@ -743,12 +752,10 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     try {
       if (ignored.size || options?.includeTriggers === false) {
         for (const record of this.bodies.values()) {
-          // Hits name the body's actor, so ignoring it excludes the whole
-          // compound; ignoring a hosted child excludes only its own shapes.
-          const excluded = ignored.has(record.desc.actorId);
-          if (excluded) mask(record.body.shape);
+          // Hits name each shape's owner, so ignoring an actor excludes only
+          // its own shapes: a host's shapes, or the shapes hosted for a child.
           for (const collider of record.colliders.values()) {
-            if (excluded || (collider.desc.actorId !== undefined && ignored.has(collider.desc.actorId)) ||
+            if (ignored.has(collider.desc.actorId ?? record.desc.actorId) ||
               (options?.includeTriggers === false && collider.desc.isTrigger)) mask(collider.shape);
           }
         }
@@ -761,29 +768,58 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     }
   }
 
+  /**
+   * Tests the collider shapes, not body bounds: a point proximity query within
+   * `radius` finds the closest shape, whose owner's shapes on that body are then
+   * excluded until no shape is left in range. Like traces, it names the shape's
+   * owner, so a body lists itself and each actor it hosts once; ignored actors
+   * and excluded triggers are masked shape by shape. Results keep body order.
+   */
   sphereOverlap(center: Vec3, radius: number, options?: LineTraceOptions): OverlapResult {
     this.flushMutations();
+    const found = new Map<BodyRecord, Set<string>>();
+    if ([center.x, center.y, center.z, radius].every(Number.isFinite) && radius >= 0) {
+      const query = {
+        position: toVector3(center),
+        maxDistance: radius,
+        collisionFilter: {},
+        shouldHitTriggers: options?.includeTriggers !== false,
+      };
+      const result = new ProximityCastResult();
+      this.withQueryFilter(options, () => {
+        const memberships = new Map<PhysicsShape, number>();
+        try {
+          for (;;) {
+            this.plugin.pointProximity(query, result);
+            const bodyId = result.hasHit && result.body ? this.bodyIdByPhysicsBody.get(result.body) : undefined;
+            const record = bodyId ? this.bodies.get(bodyId) : undefined;
+            if (!record) break;
+            const owner = this.shapeOwner(record, result.shape);
+            const owners = found.get(record) ?? new Set<string>();
+            if (owners.has(owner)) break;
+            owners.add(owner);
+            found.set(record, owners);
+            for (const collider of record.colliders.values()) {
+              const shape = collider.shape;
+              if ((collider.desc.actorId ?? record.desc.actorId) !== owner || memberships.has(shape)) continue;
+              memberships.set(shape, shape.filterMembershipMask);
+              shape.filterMembershipMask = 0;
+            }
+          }
+        } finally {
+          for (const [shape, membership] of memberships) shape.filterMembershipMask = membership;
+        }
+      });
+    }
     const actorIds: string[] = [];
     const bodyIds: string[] = [];
-    const c = toVector3(center);
-    const r2 = radius * radius;
-    const ignored = new Set(options?.ignoreActorIds);
     for (const record of this.bodies.values()) {
-      const body = record.body;
-      if (!record.colliders.size) continue;
-      if (ignored.has(record.desc.actorId) || (options?.includeTriggers === false &&
-        [...record.colliders.values()].every((collider) => collider.desc.isTrigger))) continue;
-      const bb = body.getBoundingBox();
-      const min = bb.minimumWorld;
-      const max = bb.maximumWorld;
-      const x = Math.max(min.x, Math.min(c.x, max.x));
-      const y = Math.max(min.y, Math.min(c.y, max.y));
-      const z = Math.max(min.z, Math.min(c.z, max.z));
-      const dx = c.x - x;
-      const dy = c.y - y;
-      const dz = c.z - z;
-      if (dx * dx + dy * dy + dz * dz <= r2) {
-        actorIds.push(record.desc.actorId);
+      const owners = found.get(record);
+      if (!owners) continue;
+      for (const collider of record.colliders.values()) {
+        const owner = collider.desc.actorId ?? record.desc.actorId;
+        if (!owners.delete(owner)) continue;
+        actorIds.push(owner);
         bodyIds.push(record.desc.id);
       }
     }
@@ -797,34 +833,35 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     options?: LineTraceOptions,
   ): HitResult {
     this.flushMutations();
-    if (!isShape3D(shape)) return miss();
+    const sweep = linearSweepPoses(start, end);
+    if (!sweep || !isShape3D(shape)) return miss();
     const queryShape = this.createQueryShape(shape);
     try {
-      const input = new ShapeCastResult();
-      const hit = new ShapeCastResult();
-      this.withQueryFilter(options, () => this.plugin.shapeCast(
-        {
-          shape: queryShape,
-          rotation: toQuaternion(start.rotation),
-          startPosition: toVector3(start.position),
-          endPosition: toVector3(end.position),
-          shouldHitTriggers: options?.includeTriggers ?? false,
-        },
-        input,
-        hit,
-      ));
-      if (!hit.hasHit) return miss();
-      const dx = end.position.x - start.position.x;
-      const dy = end.position.y - start.position.y;
-      const dz = end.position.z - start.position.z;
-      const path = Math.hypot(dx, dy, dz);
-      return this.hitFromCast(
-        true,
-        hit.hitPoint,
-        hit.hitNormal,
-        path * hit.hitFraction,
-        hit.body,
-      );
+      const rotation = toQuaternion(sweep.start.rotation);
+      const from = toVector3(sweep.start.position);
+      const to = toVector3(sweep.end);
+      const shouldHitTriggers = options?.includeTriggers !== false;
+      return this.withQueryFilter(options, () => {
+        // A cast alone misses shapes the swept shape already penetrates at its start.
+        const proximityInput = new ProximityCastResult();
+        const proximity = new ProximityCastResult();
+        this.plugin.shapeProximity(
+          { shape: queryShape, position: from, rotation, maxDistance: 0, shouldHitTriggers },
+          proximityInput,
+          proximity,
+        );
+        if (proximity.hasHit && proximity.hitDistance < -1e-6)
+          return this.hitFromCast(proximity, 0);
+        const input = new ShapeCastResult();
+        const hit = new ShapeCastResult();
+        this.plugin.shapeCast(
+          { shape: queryShape, rotation, startPosition: from, endPosition: to, shouldHitTriggers },
+          input,
+          hit,
+        );
+        if (!hit.hasHit) return miss();
+        return this.hitFromCast(hit, Vector3.Distance(from, to) * hit.hitFraction);
+      });
     } finally {
       queryShape.dispose();
     }
@@ -864,8 +901,9 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       result.location = location;
       result.normal = normal;
       result.distance = distance;
-      result.bodyId = native.body ? this.bodyIdByPhysicsBody.get(native.body) ?? null : null;
-      result.actorId = result.bodyId ? this.bodies.get(result.bodyId)?.desc.actorId ?? null : null;
+      const owner = this.castHitOwner(native);
+      result.bodyId = owner.bodyId;
+      result.actorId = owner.actorId;
       return result;
     };
     const query: SphereSweepQuery = {
@@ -949,9 +987,10 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     const character = this.characters.get(id);
     if (!character) return null;
     const body = this.bodies.get(character.desc.bodyId);
-    if (!body || !Number.isFinite(dt) || dt <= 0) return null;
-    if (startPose) {
-      const position = toVector3(startPose.position);
+    if (!body || !Number.isFinite(dt) || dt < 0) return null;
+    const start = startPose ? normalizedPhysicsPose(startPose) : undefined;
+    if (start) {
+      const position = toVector3(start.position);
       if (!body.node.position.equals(position)) {
         // Inherited repositioning is not velocity: large parent changes must
         // not be clipped by Havok's world speed limit. Keep contact membership;
@@ -976,14 +1015,23 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       }
       character.controller.setPosition(position);
     }
-    const invDt = dt > 1e-8 ? 1 / dt : 0;
+    // A displacement requested outside a tick (dt = 0, discrete graph events)
+    // still moves: the controller integrates it over a nominal step, and the
+    // reported velocity is the displacement over the real dt (zero for dt = 0).
+    const solveDt = dt >= MIN_CHARACTER_SOLVE_DT ? dt : NOMINAL_CHARACTER_SOLVE_DT;
     character.controller.setVelocity(
       new Vector3(
-        translation.x * invDt,
-        translation.y * invDt,
-        translation.z * invDt,
+        translation.x / solveDt,
+        translation.y / solveDt,
+        translation.z / solveDt,
       ),
     );
+    // The controller's casts use its capsule's filter: the actor's own solid
+    // collider's layer and mask, as the other backends' solves do.
+    const self = [...body.colliders.values()].find((c) => !c.desc.isTrigger &&
+      (c.desc.actorId ?? body.desc.actorId) === body.desc.actorId);
+    character.shape.filterMembershipMask = self?.desc.layer ?? 0xffffffff;
+    character.shape.filterCollideMask = self?.desc.mask ?? 0xffffffff;
     const memberships = new Map<PhysicsShape, number>();
     let grounded: boolean;
     try {
@@ -994,9 +1042,9 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         memberships.set(shape, shape.filterMembershipMask);
         shape.filterMembershipMask = 0;
       }
-      const support = character.controller.checkSupport(dt, this.down);
-      character.controller.integrate(dt, support, this.zeroGravity);
-      grounded = translation.y <= 0 && character.controller.checkSupport(dt, this.down).supportedState === CharacterSupportedState.SUPPORTED;
+      const support = character.controller.checkSupport(solveDt, this.down);
+      character.controller.integrate(solveDt, support, this.zeroGravity);
+      grounded = translation.y <= 0 && character.controller.checkSupport(solveDt, this.down).supportedState === CharacterSupportedState.SUPPORTED;
       const snap = character.desc.groundSnapDistance ?? 0.1;
       if (character.grounded && translation.y <= 0 && snap > 0) {
         const position = character.controller.getPosition();
@@ -1019,21 +1067,21 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       for (const [shape, membership] of memberships) shape.filterMembershipMask = membership;
     }
     const pos = character.controller.getPosition();
-    const velocity = character.controller.getVelocity();
-    character.grounded = grounded;
+    const velocity = dt > 0
+      ? character.controller.getVelocity().scale(solveDt / dt)
+      : { x: 0, y: 0, z: 0 };
+    // The solve keeps the start rotation; without one, the body's current rotation.
     const pose = {
       position: { x: pos.x, y: pos.y, z: pos.z },
-      rotation: this.getBodyTransform(character.desc.bodyId)?.rotation ?? {
-        x: 0,
-        y: 0,
-        z: 0,
-        w: 1,
-      },
+      rotation: start?.rotation ?? this.getBodyTransform(character.desc.bodyId)!.rotation,
     };
     // Kinematic movement uses a native target, which keeps contact membership
-    // without the world-membership refresh an explicit teleport performs.
+    // without the world-membership refresh an explicit teleport performs. It
+    // replaces any target set earlier in the frame.
     if (body.desc.motionType === "kinematic") this.setBodyTargetTransform(character.desc.bodyId, pose);
     else this.teleportBody(character.desc.bodyId, pose);
+    // After the teleport, which resets the controller's support state.
+    character.grounded = grounded;
     return {
       ...pose,
       velocity: { x: velocity.x, y: velocity.y, z: velocity.z },
@@ -1105,19 +1153,14 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     // overlap events to its trigger component, even after a blocking collider.
     let colliderAId = this.firstColliderIdForActor(actorAId, isTriggerEvent);
     let colliderBId = this.firstColliderIdForActor(actorBId, isTriggerEvent);
-    let normal = {
-      x: event.normal?.x ?? 0,
-      y: event.normal?.y ?? 1,
-      z: event.normal?.z ?? 0,
-    };
-    if (a > b) {
+    const swapped = a > b;
+    if (swapped) {
       const swap = a;
       a = b;
       b = swap;
       const swapCollider = colliderAId;
       colliderAId = colliderBId;
       colliderBId = swapCollider;
-      normal = { x: -normal.x, y: -normal.y, z: -normal.z };
     }
     if (kind === "overlapBegin" || kind === "overlapEnd") {
       // Havok reports each overlapping child-shape pair. Keep the actor overlap
@@ -1134,6 +1177,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         this.activeTriggerPairs.set(pairKey, {
           actorAId: a,
           actorBId: b,
+          ...(colliderAId ? { colliderAId } : {}),
+          ...(colliderBId ? { colliderBId } : {}),
           contacts: 1,
           refreshing: false,
         });
@@ -1144,6 +1189,9 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         pair.contacts -= 1;
         if (pair.contacts > 0) return;
         this.activeTriggerPairs.delete(pairKey);
+        // End on the colliders the begin event named.
+        colliderAId = pair.colliderAId;
+        colliderBId = pair.colliderBId;
       }
     }
     const key = `${kind}|${a}|${b}`;
@@ -1155,18 +1203,41 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     ) {
       return;
     }
-    this.pendingContacts.push({
-      kind,
+    const pair = {
       actorAId: a,
       actorBId: b,
       ...(colliderAId ? { colliderAId } : {}),
       ...(colliderBId ? { colliderBId } : {}),
+    };
+    if (kind !== "hit") {
+      this.pendingContacts.push({ kind, ...pair });
+      return;
+    }
+    const sign = swapped ? -1 : 1;
+    this.pendingContacts.push({
+      kind,
+      ...pair,
       location: {
         x: event.point?.x ?? 0,
         y: event.point?.y ?? 0,
         z: event.point?.z ?? 0,
       },
-      normal,
+      normal: {
+        x: sign * (event.normal?.x ?? 0),
+        y: sign * (event.normal?.y ?? 1),
+        z: sign * (event.normal?.z ?? 0),
+      },
+    });
+  }
+
+  /** Ends an actor overlap with the colliders its begin event named. */
+  private pushOverlapEnd(pair: { actorAId: string; actorBId: string; colliderAId?: string; colliderBId?: string }): void {
+    this.pendingContacts.push({
+      kind: "overlapEnd",
+      actorAId: pair.actorAId,
+      actorBId: pair.actorBId,
+      ...(pair.colliderAId ? { colliderAId: pair.colliderAId } : {}),
+      ...(pair.colliderBId ? { colliderBId: pair.colliderBId } : {}),
     });
   }
 
@@ -1284,27 +1355,37 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     }
   }
 
-  private hitFromCast(
-    hasHit: boolean,
-    point: Vector3,
-    normal: Vector3,
-    distance: number,
-    body: PhysicsBody | undefined,
-  ): HitResult {
-    if (!hasHit) return miss();
-    const bodyId = body ? (this.bodyIdByPhysicsBody.get(body) ?? null) : null;
-    // Casts report a compound's root shape, so hits name the body's actor.
-    const actorId = bodyId
-      ? (this.bodies.get(bodyId)?.desc.actorId ?? null)
-      : null;
+  private hitFromCast(native: CastingResult, distance: number): HitResult {
+    if (!native.hasHit) return miss();
+    const { bodyId, actorId } = this.castHitOwner(native);
     return {
       hit: true,
-      location: { x: point.x, y: point.y, z: point.z },
-      normal: { x: normal.x, y: normal.y, z: normal.z },
+      location: { x: native.hitPoint.x, y: native.hitPoint.y, z: native.hitPoint.z },
+      normal: { x: native.hitNormal.x, y: native.hitNormal.y, z: native.hitNormal.z },
       distance,
       actorId,
       bodyId,
     };
+  }
+
+  /**
+   * Query hits name the leaf shape inside a compound, so a shape hosted for
+   * another actor names that actor, as on software and Rapier.
+   */
+  private castHitOwner(native: CastingResult): { bodyId: string | null; actorId: string | null } {
+    const bodyId = native.body ? (this.bodyIdByPhysicsBody.get(native.body) ?? null) : null;
+    const record = bodyId ? this.bodies.get(bodyId) : undefined;
+    if (!bodyId || !record) return { bodyId, actorId: null };
+    return { bodyId, actorId: this.shapeOwner(record, native.shape) };
+  }
+
+  private shapeOwner(record: BodyRecord, shape: PhysicsShape | undefined): string {
+    if (shape)
+      for (const collider of record.colliders.values())
+        if (collider.shape === shape) return collider.desc.actorId ?? record.desc.actorId;
+    // Havok reports no child shape for a body with a single collider.
+    const only = record.colliders.size === 1 ? record.colliders.values().next().value : undefined;
+    return only?.desc.actorId ?? record.desc.actorId;
   }
 
   private disposeBodyRecord(record: BodyRecord): void {
@@ -1361,13 +1442,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     for (const [key, pair] of this.activeTriggerPairs) {
       if (!pair.refreshing) continue;
       this.activeTriggerPairs.delete(key);
-      this.pendingContacts.push({
-        kind: "overlapEnd",
-        actorAId: pair.actorAId,
-        actorBId: pair.actorBId,
-        location: { x: 0, y: 0, z: 0 },
-        normal: { x: 0, y: 1, z: 0 },
-      });
+      this.pushOverlapEnd(pair);
     }
   }
 
@@ -1380,13 +1455,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     for (const [key, pair] of this.activeTriggerPairs) {
       if (pair.actorAId !== actorId && pair.actorBId !== actorId) continue;
       this.activeTriggerPairs.delete(key);
-      this.pendingContacts.push({
-        kind: "overlapEnd",
-        actorAId: pair.actorAId,
-        actorBId: pair.actorBId,
-        location: { x: 0, y: 0, z: 0 },
-        normal: { x: 0, y: 1, z: 0 },
-      });
+      this.pushOverlapEnd(pair);
     }
     this.resetTriggerActors.add(actorId);
   }

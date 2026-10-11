@@ -86,7 +86,7 @@ export async function resolveGpuTexture(
   const sourceEdge =
     longestEdge(sniffed) ??
     DEFAULT_TEXTURE_ENCODE_SETTINGS.maxDimension;
-  const downsample = textureDownsampleFromPayload(header.payload, sourceEdge);
+  const downsample = textureDownsampleFromPayload(header.payload);
   const usage = String(header.payload.usage ?? "albedo");
   const lod = options.editorLod;
   const targetEdge = resolveTextureTargetEdge({
@@ -125,24 +125,31 @@ export async function resolveGpuTexture(
     preferredChunkId,
   });
   let selectedChunkId = selected.chunk.id;
-  let selectedBytes = await readChunk(selectedChunkId);
+  let selectedBytes: Uint8Array | null = null;
   if (blockAlign && selected.kind === "ktx2") {
     // Particle Textures bind only a block-aligned KTX2, the size Particle encodes at.
-    // A retained encode from an earlier Usage may be selected first; try the
-    // committed encode before falling back to source pixels.
+    // When the preferred id misses, the first retained KTX2 was selected,
+    // which may be an older encode (another Usage's, or an earlier Particle
+    // quality), aligned or not: the committed encode comes first.
     const committed = header.payload.ktx2ChunkId;
     if (
-      !(selectedBytes && isKtx2BlockAligned(selectedBytes, blockAlign)) &&
+      selectedChunkId !== preferredChunkId &&
       typeof committed === "string" &&
       committed !== selectedChunkId &&
       header.chunks.some((chunk) => chunk.id === committed)
     ) {
-      selectedChunkId = committed;
-      selectedBytes = await readChunk(committed);
+      const committedBytes = await readChunk(committed);
+      if (committedBytes && isKtx2BlockAligned(committedBytes, blockAlign)) {
+        selectedChunkId = committed;
+        selectedBytes = committedBytes;
+      }
     }
+    selectedBytes ??= await readChunk(selectedChunkId);
     if (!(selectedBytes && isKtx2BlockAligned(selectedBytes, blockAlign))) {
       selectedBytes = null;
     }
+  } else {
+    selectedBytes = await readChunk(selectedChunkId);
   }
   const lodOn = lod?.enabled === true && !isTextureLodExemptUsage(usage);
   const ktx2MatchesPreferred =
@@ -199,7 +206,7 @@ export function authoredEncodeMaxDimension(
     (typeof payload.width === "number" && typeof payload.height === "number"
       ? Math.max(payload.width, payload.height)
       : projectMax);
-  const downsample = textureDownsampleFromPayload(payload, edge);
+  const downsample = textureDownsampleFromPayload(payload);
   return Math.min(
     projectMax,
     authoredTextureMaxDimension({ sourceEdge: edge, downsample }),

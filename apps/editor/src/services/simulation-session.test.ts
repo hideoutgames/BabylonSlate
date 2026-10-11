@@ -62,7 +62,8 @@ it("takes its baseline after admitted writes, protects it, and discards save wri
   await expect(simulation.storage.read("score")).rejects.toThrow(/closed/i);
 });
 
-async function retainingFixture(maxBytes = 1_000_000) {
+/** `announce` stands in for the editor notification awaited after the atomic Scene write. */
+async function retainingFixture(maxBytes = 1_000_000, announce?: () => Promise<void>) {
   const documents = new DocumentService();
   const original = createDefaultScene();
   const id = await documents.openDocument({ loadDocument: async () => original } as unknown as ProjectService,
@@ -82,7 +83,9 @@ async function retainingFixture(maxBytes = 1_000_000) {
             return { scene: result.ok ? result.doc : previous, value: result };
           });
           if (!committed.ok) return committed;
-          return committed.value.ok ? { ok: true, status: committed.value.status } : { ok: false, reason: "Undo history budget exceeded" };
+          if (!committed.value.ok) return { ok: false, reason: "Undo history budget exceeded" };
+          await announce?.();
+          return { ok: true, status: committed.value.status };
         } };
       },
     },
@@ -144,6 +147,25 @@ it("lets Discard release a pending capture and ignores its late final state", as
   expect(simulation.getRetention()).toEqual({ status: "discarded", reason: "Host closed", unavailableReason: null });
 });
 
+it("keeps a Scene write that already committed when Discard arrives during its announcement", async () => {
+  let announced!: () => void;
+  const announcing = new Promise<void>(resolve => { announced = resolve; });
+  let started = false;
+  const { simulation, capture, documents, candidate, id } = await retainingFixture(1_000_000, () => { started = true; return announcing; });
+  const published: string[] = [];
+  simulation.subscribeRetention(() => published.push(simulation.getRetention().status));
+  let settled = false;
+  const stopping = simulation.resolveStop(capture).finally(() => { settled = true; });
+  await vi.waitFor(() => expect(started).toBe(true));
+  simulation.discardChanges("Host closed");
+  await Promise.resolve();
+  expect(settled).toBe(false);
+  announced();
+  expect(await stopping).toBe(true);
+  expect(documents.getState().openDocuments.get(id)).toMatchObject({ content: candidate, dirty: true });
+  expect(published).toEqual(["capturing", "applied"]);
+  simulation.dispose(true);
+});
 
 it("latches unsupported topology while gameplay runs but still quiesces on Stop", async () => {
   const { simulation, capture, documents, original, id } = await retainingFixture();

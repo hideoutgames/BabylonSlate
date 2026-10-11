@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { identityTransform } from "./math-rng";
-import { eulerDegreesToQuaternion } from "./euler";
+import { eulerDegreesToQuaternion, quatRotateVector } from "./euler";
 import { landscapeCollisionMesh, parseLandscapeProperties } from "./landscape";
 import { landscapeHeightAt, landscapeWorldHeightAt, normalizeWaterRemoval, waterCutAt, waterRemovalDistance } from "./water-removal";
 
@@ -48,5 +48,17 @@ describe("Water removal and terrain cut-outs", () => {
     expect(waterCutAt(cutters, { x: -30, y: 0, z: 0 })).toBe(true);
     expect(waterCutAt(cutters, { x: -38, y: 0, z: 0 })).toBe(false);
     expect(waterCutAt({ removals: [{ ...removal, volume: { ...removal.volume, enabled: false } }], landscapes: [] }, { x: 10, y: 0, z: 0 })).toBe(false);
+  });
+
+  it("measures a rolled landscape's height straight below the queried point", () => {
+    const [x, y, z, w] = eulerDegreesToQuaternion([0, 0, 30]);
+    // A ramp rising 0.25 per metre along local X, so its triangles are one plane.
+    const ramp = parseLandscapeProperties({ width: 20, depth: 20, subdivisions: 4, heights: Array.from({ length: 25 }, (_, i) => 0.25 * (5 * (i % 5) - 10)) });
+    const transform = { ...identityTransform(), position: { x: 1, y: 2, z: 0 }, rotation: { x, y, z, w } };
+    for (const u of [-6, 0, 4]) {
+      const local = quatRotateVector(transform.rotation, { x: u, y: 0.25 * u, z: 3 });
+      const surface = { x: local.x + 1, y: local.y + 2, z: local.z };
+      expect(landscapeWorldHeightAt(ramp, transform, surface.x, surface.z)).toBeCloseTo(surface.y, 6);
+    }
   });
 });

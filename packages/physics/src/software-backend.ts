@@ -1,5 +1,5 @@
 import type { PhysicsBackend } from "./backend";
-import { copyColliderDesc, normalizedPhysicsPose } from "./collider-validation";
+import { copyColliderDesc, linearSweepPoses, normalizedPhysicsPose } from "./collider-validation";
 import { listDebugCollidersFromRecords } from "./debug-colliders";
 import { isIdentityQuat, rotateQuatVec, multiplyQuat } from "./collider-bake";
 import type {
@@ -91,63 +91,61 @@ function aabbForShape(
     case "box2d": {
       const h = shape.halfExtents;
       if (!oriented) {
-        return {
-          min: vec(position.x - h.x, position.y - h.y, position.z - 0.01),
-          max: vec(position.x + h.x, position.y + h.y, position.z + 0.01),
-        };
+        return planar(position, {
+          min: vec(position.x - h.x, position.y - h.y),
+          max: vec(position.x + h.x, position.y + h.y),
+        });
       }
-      const box = aabbFromLocalPoints(
+      return planar(position, aabbFromLocalPoints(
         position,
         rotation,
         boxCorners(h.x, h.y, 0),
-      );
-      return {
-        min: vec(box.min.x, box.min.y, position.z - 0.01),
-        max: vec(box.max.x, box.max.y, position.z + 0.01),
-      };
+      ));
     }
     case "sphere":
     case "circle": {
       const r = shape.radius;
-      return {
+      const box = {
         min: vec(position.x - r, position.y - r, position.z - r),
         max: vec(position.x + r, position.y + r, position.z + r),
       };
+      return shape.kind === "circle" ? planar(position, box) : box;
     }
     case "capsule":
     case "capsule2d": {
       const r = shape.radius;
       const hh = shape.halfHeight;
-      if (!oriented) {
-        return {
-          min: vec(position.x - r, position.y - hh - r, position.z - r),
-          max: vec(position.x + r, position.y + hh + r, position.z + r),
-        };
-      }
-      const box = aabbFromLocalPoints(position, rotation, [
-        { x: 0, y: -hh, z: 0 },
-        { x: 0, y: hh, z: 0 },
-      ]);
-      return {
-        min: vec(box.min.x - r, box.min.y - r, box.min.z - r),
-        max: vec(box.max.x + r, box.max.y + r, box.max.z + r),
+      const segment = oriented
+        ? aabbFromLocalPoints(position, rotation, [
+            { x: 0, y: -hh, z: 0 },
+            { x: 0, y: hh, z: 0 },
+          ])
+        : {
+            min: vec(position.x, position.y - hh, position.z),
+            max: vec(position.x, position.y + hh, position.z),
+          };
+      const box = {
+        min: vec(segment.min.x - r, segment.min.y - r, segment.min.z - r),
+        max: vec(segment.max.x + r, segment.max.y + r, segment.max.z + r),
       };
+      return shape.kind === "capsule2d" ? planar(position, box) : box;
     }
     case "cylinder": {
       const r = shape.radius;
       const hh = shape.height / 2;
-      if (!oriented) {
-        return {
-          min: vec(position.x - r, position.y - hh, position.z - r),
-          max: vec(position.x + r, position.y + hh, position.z + r),
-        };
-      }
-      return aabbFromLocalPoints(position, rotation, [
-        { x: -r, y: -hh, z: -r },
-        { x: r, y: -hh, z: -r },
-        { x: r, y: hh, z: r },
-        { x: -r, y: hh, z: r },
-      ]);
+      const axis = oriented
+        ? rotateQuatVec(rotation, { x: 0, y: 1, z: 0 })
+        : { x: 0, y: 1, z: 0 };
+      // The axis segment plus the end discs, whose radius spans r·√(1 − a²) on each world axis.
+      const extent = (a: number) =>
+        hh * Math.abs(a) + r * Math.sqrt(Math.max(0, 1 - a * a));
+      const ex = extent(axis.x);
+      const ey = extent(axis.y);
+      const ez = extent(axis.z);
+      return {
+        min: vec(position.x - ex, position.y - ey, position.z - ez),
+        max: vec(position.x + ex, position.y + ey, position.z + ez),
+      };
     }
     case "convex":
     case "mesh": {
@@ -168,23 +166,23 @@ function aabbForShape(
     case "polygon":
     case "chain": {
       const pts = shape.points.map((p) => ({ x: p.x, y: p.y, z: 0 }));
-      const box = aabbFromLocalPoints(
+      return planar(position, aabbFromLocalPoints(
         position,
         oriented ? rotation : undefined,
         pts,
-      );
-      if (!Number.isFinite(box.min.x)) {
-        return {
-          min: vec(position.x, position.y, position.z - 0.01),
-          max: vec(position.x, position.y, position.z + 0.01),
-        };
-      }
-      return {
-        min: vec(box.min.x, box.min.y, position.z - 0.01),
-        max: vec(box.max.x, box.max.y, position.z + 0.01),
-      };
+      ));
     }
   }
+}
+
+/** Every 2D shape is the same thin slab around its body's Z, whatever its planar size. */
+const PLANAR_HALF_DEPTH = 0.01;
+
+function planar(position: Vec3, box: { min: Vec3; max: Vec3 }): { min: Vec3; max: Vec3 } {
+  return {
+    min: vec(box.min.x, box.min.y, position.z - PLANAR_HALF_DEPTH),
+    max: vec(box.max.x, box.max.y, position.z + PLANAR_HALF_DEPTH),
+  };
 }
 
 function boxCorners(hx: number, hy: number, hz: number): Vec3[] {
@@ -513,64 +511,43 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
         const boxA = aabbForCollider(colliderA.desc, bodyA.transform);
         const boxB = aabbForCollider(colliderB.desc, bodyB.transform);
         if (!aabbOverlap(boxA, boxB)) continue;
-        const centerA = aabbCenter(boxA);
-        const centerB = aabbCenter(boxB);
         let colliderAId = colliderA.desc.id;
         let colliderBId = colliderB.desc.id;
-        const location = {
-          x: (centerA.x + centerB.x) * 0.5,
-          y: (centerA.y + centerB.y) * 0.5,
-          z: (centerA.z + centerB.z) * 0.5,
-        };
-        let normal = {
-          x: centerB.x - centerA.x,
-          y: centerB.y - centerA.y,
-          z: centerB.z - centerA.z,
-        };
-        const length = Math.hypot(normal.x, normal.y, normal.z);
-        if (length < 1e-8) {
-          normal = { x: 0, y: 1, z: 0 };
-        } else {
-          normal = {
-            x: normal.x / length,
-            y: normal.y / length,
-            z: normal.z / length,
-          };
-        }
-        if (actorAId > actorBId) {
+        const swapped = actorAId > actorBId;
+        if (swapped) {
           const swapId = actorAId;
           actorAId = actorBId;
           actorBId = swapId;
           const swapCollider = colliderAId;
           colliderAId = colliderBId;
           colliderBId = swapCollider;
-          normal = { x: -normal.x, y: -normal.y, z: -normal.z };
         }
         const key = `${actorAId}\t${colliderAId}\t${actorBId}\t${colliderBId}`;
         const isTrigger = colliderA.desc.isTrigger || colliderB.desc.isTrigger;
         if (isTrigger) {
           currentOverlap.add(key);
-          if (!this.previousOverlapKeys.has(key)) {
-            events.push({
-              kind: "overlapBegin",
-              actorAId,
-              actorBId,
-              colliderAId,
-              colliderBId,
-              location,
-              normal,
-            });
-          }
+          if (!this.previousOverlapKeys.has(key))
+            events.push({ kind: "overlapBegin", actorAId, actorBId, colliderAId, colliderBId });
         } else if (!hitKeys.has(key)) {
           hitKeys.add(key);
+          const centerA = aabbCenter(swapped ? boxB : boxA);
+          const centerB = aabbCenter(swapped ? boxA : boxB);
+          const dx = centerB.x - centerA.x;
+          const dy = centerB.y - centerA.y;
+          const dz = centerB.z - centerA.z;
+          const length = Math.hypot(dx, dy, dz);
           events.push({
             kind: "hit",
             actorAId,
             actorBId,
             colliderAId,
             colliderBId,
-            location,
-            normal,
+            location: {
+              x: (centerA.x + centerB.x) * 0.5,
+              y: (centerA.y + centerB.y) * 0.5,
+              z: (centerA.z + centerB.z) * 0.5,
+            },
+            normal: length < 1e-8 ? { x: 0, y: 1, z: 0 } : { x: dx / length, y: dy / length, z: dz / length },
           });
         }
       }
@@ -579,15 +556,7 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
       if (currentOverlap.has(key)) continue;
       const [actorAId, colliderAId, actorBId, colliderBId] = key.split("\t");
       if (!actorAId || !actorBId) continue;
-      events.push({
-        kind: "overlapEnd",
-        actorAId,
-        actorBId,
-        colliderAId,
-        colliderBId,
-        location: { x: 0, y: 0, z: 0 },
-        normal: { x: 0, y: 1, z: 0 },
-      });
+      events.push({ kind: "overlapEnd", actorAId, actorBId, colliderAId, colliderBId });
     }
     this.previousOverlapKeys = currentOverlap;
     return events;
@@ -629,24 +598,73 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
       }
     }
 
-    // Resolve dynamic vs static AABB overlaps with simple positional correction.
+    this.separateOverlaps();
+  }
+
+  /**
+   * Pushes overlapping solid shapes apart along their least-penetrating axis,
+   * for the same pairs that report contacts (layer/mask both ways, distinct
+   * owners). Dynamic pairs share the correction by inverse mass; any approaching
+   * velocity along that axis is removed. A box is rebuilt only after a
+   * correction moves its body, so each correction sees the earlier ones.
+   */
+  private separateOverlaps(): void {
+    const axes = this.kind === "3d" ? AXES_3D : AXES_2D;
+    type Solid = {
+      desc: ColliderDesc;
+      body: BodyState;
+      actorId: string;
+      inverseMass: number;
+      box: { min: Vec3; max: Vec3 } | null;
+      boxMoves: number;
+    };
+    const solids: Solid[] = [];
     for (const collider of this.colliders.values()) {
-      if (collider.desc.isTrigger) continue;
       const body = this.bodies.get(collider.desc.bodyId);
-      if (!body || body.desc.motionType !== "dynamic") continue;
-      const a = aabbForCollider(collider.desc, body.transform);
-      for (const other of this.colliders.values()) {
-        if (other.desc.id === collider.desc.id || other.desc.isTrigger)
-          continue;
-        const otherBody = this.bodies.get(other.desc.bodyId);
-        if (!otherBody || otherBody.desc.motionType === "dynamic") continue;
-        const b = aabbForCollider(other.desc, otherBody.transform);
-        if (!aabbOverlap(a, b)) continue;
-        const overlapY =
-          Math.min(a.max.y, b.max.y) - Math.max(a.min.y, b.min.y);
-        if (overlapY > 0 && body.linearVelocity.y <= 0) {
-          body.transform.position.y += overlapY;
-          body.linearVelocity.y = 0;
+      if (!body || collider.desc.isTrigger) continue;
+      solids.push({
+        desc: collider.desc,
+        body,
+        actorId: collider.desc.actorId ?? body.desc.actorId,
+        inverseMass: body.desc.motionType === "dynamic" ? 1 / Math.max(body.desc.mass, 1e-6) : 0,
+        box: null,
+        boxMoves: 0,
+      });
+    }
+    // Corrections applied to each body so far; a cached box from fewer is stale.
+    const moves = new Map<BodyState, number>();
+    const boxOf = (solid: Solid) => {
+      const bodyMoves = moves.get(solid.body) ?? 0;
+      if (!solid.box || solid.boxMoves !== bodyMoves) {
+        solid.box = aabbForCollider(solid.desc, solid.body.transform);
+        solid.boxMoves = bodyMoves;
+      }
+      return solid.box;
+    };
+    for (let i = 0; i < solids.length; i++) {
+      const a = solids[i]!;
+      if (a.inverseMass === 0) continue;
+      for (let j = 0; j < solids.length; j++) {
+        const b = solids[j]!;
+        // A dynamic pair is visited once, from its earlier collider.
+        if (j === i || (b.inverseMass > 0 && j < i)) continue;
+        if (a.body === b.body || a.actorId === b.actorId) continue;
+        if (!(a.desc.layer & b.desc.mask) || !(b.desc.layer & a.desc.mask)) continue;
+        const separation = separationAxis(boxOf(a), boxOf(b), axes);
+        if (!separation) continue;
+        const { axis, sign, depth } = separation;
+        const total = a.inverseMass + b.inverseMass;
+        a.body.transform.position[axis] += (sign * depth * a.inverseMass) / total;
+        b.body.transform.position[axis] -= (sign * depth * b.inverseMass) / total;
+        moves.set(a.body, (moves.get(a.body) ?? 0) + 1);
+        if (b.inverseMass > 0) moves.set(b.body, (moves.get(b.body) ?? 0) + 1);
+        // Bodies that are not dynamic do not integrate a velocity here.
+        const approach =
+          sign * (a.body.linearVelocity[axis] - (b.inverseMass > 0 ? b.body.linearVelocity[axis] : 0));
+        if (approach < 0) {
+          const impulse = -approach / total;
+          a.body.linearVelocity[axis] += sign * impulse * a.inverseMass;
+          b.body.linearVelocity[axis] -= sign * impulse * b.inverseMass;
         }
       }
     }
@@ -689,6 +707,8 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     const ignored = new Set(options?.ignoreActorIds);
     const actorIds: string[] = [];
     const bodyIds: string[] = [];
+    // A body reports each shape owner once, however many of its shapes overlap.
+    const reported = new Set<string>();
     for (const collider of this.colliders.values()) {
       const body = this.bodies.get(collider.desc.bodyId);
       if (!body) continue;
@@ -702,7 +722,9 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
       const dy = center.y - cy;
       // A 2D world has no depth, as in Rapier: only X/Y decide an overlap.
       const dz = this.kind === "2d" ? 0 : center.z - cz;
-      if (dx * dx + dy * dy + dz * dz <= radius * radius) {
+      const key = `${body.desc.id}\t${actorId}`;
+      if (dx * dx + dy * dy + dz * dz <= radius * radius && !reported.has(key)) {
+        reported.add(key);
         actorIds.push(actorId);
         bodyIds.push(body.desc.id);
       }
@@ -710,30 +732,70 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     return { actorIds, bodyIds };
   }
 
+  /**
+   * Sweeps the shape's box (at its start rotation) against each collider's box:
+   * the center traces the collider box grown by the shape's extents. An initial
+   * overlap reports distance zero with the least-penetrating face's normal.
+   */
   shapeSweep(
     shape: ColliderDesc["shape"],
     start: PhysicsTransform,
     end: PhysicsTransform,
     options?: LineTraceOptions,
   ): HitResult {
-    // Approximate sweep as a line trace from start to end using shape AABB radius.
-    const box = aabbForShape(shape, start.position);
-    const radius =
-      Math.max(
-        box.max.x - box.min.x,
-        box.max.y - box.min.y,
-        box.max.z - box.min.z,
-      ) * 0.5;
-    const midStart = start.position;
-    const hit = this.lineTrace(midStart, end.position, options);
-    if (!hit.hit || !hit.location) return hit;
-    // Inflate: if we would overlap at end, report hit.
-    const overlap = this.sphereOverlap(end.position, radius, options);
-    if (overlap.bodyIds.length === 0) {
-      // Still report geometry hit along the path.
-      return hit;
+    const sweep = linearSweepPoses(start, end);
+    if (!sweep) return miss();
+    const from = sweep.start.position;
+    const extents = aabbForShape(shape, vec(), sweep.start.rotation);
+    const dir = vec(sweep.end.x - from.x, sweep.end.y - from.y, sweep.end.z - from.z);
+    const ignored = new Set(options?.ignoreActorIds);
+    const axes = this.kind === "3d" ? AXES_3D : AXES_2D;
+    let bestT = Infinity;
+    let best: HitResult = miss();
+    for (const collider of this.colliders.values()) {
+      const body = this.bodies.get(collider.desc.bodyId);
+      if (!body) continue;
+      const actorId = collider.desc.actorId ?? body.desc.actorId;
+      if (ignored.has(actorId) || (options?.includeTriggers === false && collider.desc.isTrigger)) continue;
+      const box = aabbForCollider(collider.desc, body.transform);
+      const grown = {
+        min: vec(box.min.x - extents.max.x, box.min.y - extents.max.y, box.min.z - extents.max.z),
+        max: vec(box.max.x - extents.min.x, box.max.y - extents.min.y, box.max.z - extents.min.z),
+      };
+      const intersection = rayAabb(from, dir, grown.min, grown.max);
+      if (!intersection || intersection.time >= bestT) continue;
+      const t = intersection.time;
+      const center = vec(from.x + dir.x * t, from.y + dir.y * t, from.z + dir.z * t);
+      const location = vec(
+        Math.max(box.min.x, Math.min(center.x, box.max.x)),
+        Math.max(box.min.y, Math.min(center.y, box.max.y)),
+        Math.max(box.min.z, Math.min(center.z, box.max.z)),
+      );
+      let normal = intersection.normal;
+      if (t === 0) {
+        const separation = separationAxis(
+          { min: vec(from.x + extents.min.x, from.y + extents.min.y, from.z + extents.min.z),
+            max: vec(from.x + extents.max.x, from.y + extents.max.y, from.z + extents.max.z) },
+          box,
+          axes,
+        );
+        if (separation) {
+          normal = vec();
+          normal[separation.axis] = separation.sign;
+          location[separation.axis] = separation.sign > 0 ? box.max[separation.axis] : box.min[separation.axis];
+        }
+      }
+      bestT = t;
+      best = {
+        hit: true,
+        location,
+        normal,
+        distance: Math.hypot(dir.x, dir.y, dir.z) * t,
+        actorId,
+        bodyId: body.desc.id,
+      };
     }
-    return hit;
+    return best;
   }
 
   createCharacterController(desc: CharacterControllerDesc): void {
@@ -847,6 +909,31 @@ function aabbOverlap(
     a.min.z <= b.max.z &&
     a.max.z >= b.min.z
   );
+}
+
+const AXES_3D = ["x", "y", "z"] as const;
+const AXES_2D = ["x", "y"] as const;
+
+/**
+ * The least-penetrating axis of two overlapping boxes, and the direction
+ * (`sign`) that moves `a` out of `b` by `depth`. Null when they do not overlap.
+ */
+function separationAxis(
+  a: { min: Vec3; max: Vec3 },
+  b: { min: Vec3; max: Vec3 },
+  axes: readonly ("x" | "y" | "z")[],
+): { axis: "x" | "y" | "z"; sign: 1 | -1; depth: number } | null {
+  if (!aabbOverlap(a, b)) return null;
+  let best: { axis: "x" | "y" | "z"; sign: 1 | -1; depth: number } | null = null;
+  for (const axis of axes) {
+    const up = b.max[axis] - a.min[axis];
+    const down = a.max[axis] - b.min[axis];
+    const candidate = up <= down
+      ? { axis, sign: 1 as const, depth: up }
+      : { axis, sign: -1 as const, depth: down };
+    if (!best || candidate.depth < best.depth) best = candidate;
+  }
+  return best && best.depth > 0 ? best : null;
 }
 
 function isShape3D(shape: ColliderShape): boolean {

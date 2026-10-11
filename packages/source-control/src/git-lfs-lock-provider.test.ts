@@ -106,22 +106,22 @@ describe("GitLfsLockProvider", () => {
     expect(urls.some((url) => url.endsWith("/locks/verify"))).toBe(true);
   });
 
-  it("paginates GET /locks", async () => {
-    const urls: string[] = [];
+  it("paginates verify and stops on a repeated cursor", async () => {
+    const cursors: unknown[] = [];
+    let repeat = false;
     const provider = new GitLfsLockProvider({
       repositoryUrl: "https://github.com/org/repo",
       branch: "main",
       getToken: async () => "token",
       fetch: async (request) => {
-        urls.push(request.url);
-        if (!request.url.includes("cursor=")) {
-          return jsonResponse(200, {
-            locks: [sampleLock],
-            next_cursor: "page-2",
-          });
+        const cursor = (JSON.parse(request.body ?? "{}") as { cursor?: string }).cursor;
+        cursors.push(cursor);
+        if (!cursor) {
+          return jsonResponse(200, { ours: [sampleLock], theirs: [], next_cursor: "page-2" });
         }
         return jsonResponse(200, {
-          locks: [
+          ours: [],
+          theirs: [
             {
               id: "lock-2",
               path: "assets/other.babasset",
@@ -129,16 +129,19 @@ describe("GitLfsLockProvider", () => {
               owner: { name: "Bob" },
             },
           ],
+          ...(repeat ? { next_cursor: "page-2" } : {}),
         });
       },
     });
-    const result = await provider.list();
-    expect(isOk(result) && result.value.map((lock) => lock.id)).toEqual([
+    const result = await provider.verify();
+    expect(isOk(result) && [...result.value.ours, ...result.value.theirs].map((lock) => lock.id)).toEqual([
       "lock-1",
       "lock-2",
     ]);
-    expect(urls[0]).toContain("refspec=refs%2Fheads%2Fmain");
-    expect(urls[1]).toContain("cursor=page-2");
+    expect(cursors).toEqual([undefined, "page-2"]);
+    repeat = true;
+    const looping = await provider.verify();
+    expect(isErr(looping) && looping.error.kind).toBe("http");
   });
 
   it("POSTs verify and marks ours versus theirs", async () => {
@@ -202,9 +205,9 @@ describe("GitLfsLockProvider", () => {
       repositoryUrl: "https://github.com/org/repo",
       branch: "main",
       getToken: async () => null,
-      fetch: async () => jsonResponse(200, { locks: [] }),
+      fetch: async () => jsonResponse(200, { ours: [], theirs: [] }),
     });
-    const result = await provider.list();
+    const result = await provider.verify();
     expect(isErr(result) && result.error.kind).toBe("unauthorized");
   });
 
@@ -228,7 +231,7 @@ describe("GitLfsLockProvider", () => {
       getToken: async () => "bad",
       fetch: async () => jsonResponse(401, { message: "bad credentials" }),
     });
-    const result = await provider.list();
+    const result = await provider.verify();
     expect(isErr(result) && result.error.kind).toBe("unauthorized");
   });
 
@@ -280,44 +283,48 @@ describe("GitLfsLockProvider", () => {
     expect(unlocked.error.message).toBe("unlock failed");
   });
 
-  it("treats a JSON array body as empty and maps 403 to unauthorized", async () => {
+  it("rejects a verify body that is not a JSON object and maps 403 to unauthorized", async () => {
+    let bodyText = "";
     const provider = new GitLfsLockProvider({
       repositoryUrl: "https://github.com/org/repo",
       branch: "main",
       getToken: async () => "token",
       fetch: async (request) => {
-        if (request.method === "GET") {
-          return { status: 200, bodyText: "[{}]" };
-        }
+        if (request.url.endsWith("/locks/verify")) return { status: 200, bodyText };
         return jsonResponse(403, { message: "forbidden" });
       },
     });
-    const listed = await provider.list();
-    expect(isOk(listed) && listed.value).toEqual([]);
+    for (const body of ["", "not json", "[{}]", '"locks"', '{"ours":{}}']) {
+      bodyText = body;
+      const verified = await provider.verify();
+      expect(isErr(verified) && verified.error.kind).toBe("http");
+    }
     const created = await provider.create("assets/a.babasset");
     expect(isErr(created) && created.error.kind).toBe("unauthorized");
     if (!isErr(created)) return;
     expect(created.error.status).toBe(403);
   });
 
-  it("skips list entries missing id or path", async () => {
+  it("skips verify entries missing id or path and leaves a missing locked_at unknown", async () => {
     const provider = new GitLfsLockProvider({
       repositoryUrl: "https://github.com/org/repo",
       branch: "main",
       getToken: async () => "token",
       fetch: async () =>
         jsonResponse(200, {
-          locks: [
+          ours: [
             sampleLock,
             { id: "", path: "assets/skip.babasset" },
             { id: "lock-2", path: "" },
             { not: "a lock" },
+            { id: "lock-3", path: "assets/undated.babasset" },
           ],
         }),
     });
-    const result = await provider.list();
-    expect(isOk(result) && result.value.map((lock) => lock.id)).toEqual([
-      "lock-1",
+    const result = await provider.verify();
+    expect(isOk(result) && result.value.ours.map(({ id, lockedAt }) => [id, lockedAt])).toEqual([
+      ["lock-1", "2026-08-15T12:00:00Z"],
+      ["lock-3", ""],
     ]);
   });
 

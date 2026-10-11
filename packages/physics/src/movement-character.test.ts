@@ -33,19 +33,18 @@ it.each(["havok", "rapier", "software3d", "software2d"] as const)(
       box(backend, "wall", { x: 0.5, y: 2, z: 8 });
       body(backend, "trigger", { x: 0.6, y: 1, z: 0 });
       box(backend, "trigger", { x: 0.2, y: 1, z: 8 }, true);
-      body(backend, "player", { x: kind === "havok" ? 0 : -0.25, y: 3, z: 0 }, true);
+      body(backend, "player", { x: -0.25, y: 3, z: 0 }, true);
       backend.createCollider({
         id: "player:shape", bodyId: "player",
         shape: { kind: worldKind === "3d" ? "capsule" : "capsule2d", radius: 0.4, halfHeight: 0.5 },
         friction: 0, restitution: 0, isTrigger: false, layer: 1, mask: 0xffffffff,
       });
       backend.createCharacterController({ id: "motor", bodyId: "player", offset: 0.01, radius: 0.4, height: 1.8 });
-      if (kind !== "havok") {
-        const immediate = backend.moveCharacter("motor", { x: 0.25, y: 0, z: 0 }, 0)!;
-        expect(immediate.position.x).toBeCloseTo(0, 4);
-        expect(immediate.velocity).toEqual({ x: 0, y: 0, z: 0 });
-        backend.step(dt);
-      }
+      // A discrete graph event moves the character before any tick.
+      const immediate = backend.moveCharacter("motor", { x: 0.25, y: 0, z: 0 }, 0)!;
+      expect(immediate.position.x).toBeCloseTo(0, 4);
+      expect(immediate.velocity).toEqual({ x: 0, y: 0, z: 0 });
+      backend.step(dt);
       let result = backend.moveCharacter("motor", { x: 0, y: -0.05, z: 0 }, dt)!;
       for (let i = 0; i < 90; i++) {
         result = backend.moveCharacter("motor", { x: 0, y: -0.05, z: 0 }, dt)!;
@@ -163,3 +162,85 @@ it.each(["havok", "rapier", "software3d", "software2d"] as const)("%s snaps a gr
     backend.dispose();
   }
 });
+
+async function characterBackend(kind: "havok" | "rapier" | "software3d" | "software2d") {
+  const worldKind = kind === "rapier" || kind === "software2d" ? "2d" : "3d";
+  const gravity = { x: 0, y: 0, z: 0 };
+  return kind.startsWith("software")
+    ? createSoftwarePhysicsBackend(worldKind, gravity)
+    : createPhysicsBackend({ kind: worldKind, gravity, allowSoftwareFallback: false });
+}
+
+function capsule(backend: PhysicsBackend, id: string, layer = 1, mask = 0xffffffff) {
+  backend.createCollider({ id: `${id}:shape`, bodyId: id,
+    shape: { kind: backend.kind === "3d" ? "capsule" : "capsule2d", radius: 0.4, halfHeight: 0.5 },
+    friction: 0, restitution: 0, isTrigger: false, layer, mask });
+}
+
+it.each(["havok", "rapier", "software3d", "software2d"] as const)(
+  "%s keeps the start rotation through a kinematic target and places other bodies at their solve",
+  async (kind) => {
+    const backend = await characterBackend(kind);
+    try {
+      body(backend, "player", { x: 0, y: 0, z: 0 }, true);
+      capsule(backend, "player");
+      backend.createCharacterController({ id: "motor", bodyId: "player", offset: 0.01 });
+      // A small turn about the world's up axis (Y in 3D, the view axis Z in 2D).
+      const half = 0.05;
+      const turn = backend.kind === "3d"
+        ? { x: 0, y: Math.sin(half), z: 0, w: Math.cos(half) }
+        : { x: 0, y: 0, z: Math.sin(half), w: Math.cos(half) };
+      const result = backend.moveCharacter("motor", { x: 0.5, y: 0, z: 0 }, 1 / 60,
+        { position: { x: 0, y: 0, z: 0 }, rotation: turn })!;
+      expect(result.position.x).toBeCloseTo(0.5, 3);
+      expect(result.rotation.w).toBeCloseTo(turn.w, 6);
+      backend.step(1 / 60);
+      const pose = backend.getBodyTransform("player")!;
+      expect(pose.position.x).toBeCloseTo(0.5, 3);
+      expect(pose.rotation.y + pose.rotation.z).toBeCloseTo(Math.sin(half), 3);
+
+      // Dynamic and static bodies take no kinematic target: the solve places them.
+      for (const [id, motionType, x] of [["crate", "dynamic", 5], ["post", "static", 10]] as const) {
+        backend.createBody({ id, actorId: id, motionType, mass: 1, linearDamping: 0, angularDamping: 0,
+          gravityScale: 0, transform: { position: { x, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } } });
+        capsule(backend, id);
+        backend.createCharacterController({ id: `${id}-motor`, bodyId: id, offset: 0.01 });
+        const moved = backend.moveCharacter(`${id}-motor`, { x: 1, y: 0, z: 0 }, 1 / 60)!;
+        expect(moved.position.x).toBeCloseTo(x + 1, 3);
+        expect(backend.getBodyTransform(id)!.position.x).toBeCloseTo(x + 1, 3);
+      }
+    } finally {
+      backend.dispose();
+    }
+  },
+);
+
+it.each(["havok", "rapier", "software3d", "software2d"] as const)(
+  "%s character passes obstacles outside its collision mask and stops at the others",
+  async (kind) => {
+    const backend = await characterBackend(kind);
+    try {
+      // The character (layer 2) collides only with layer 2.
+      for (const [id, x, layer] of [["ignored", 1.5, 4], ["blocking", 4, 2]] as const) {
+        body(backend, id, { x, y: 0, z: 0 });
+        backend.createCollider({ id: `${id}:shape`, bodyId: id,
+          shape: backend.kind === "3d" ? { kind: "box", halfExtents: { x: 0.25, y: 2, z: 2 } }
+            : { kind: "box2d", halfExtents: { x: 0.25, y: 2 } },
+          friction: 0, restitution: 0, isTrigger: false, layer, mask: 0xffffffff });
+      }
+      body(backend, "player", { x: 0, y: 0, z: 0 }, true);
+      capsule(backend, "player", 2, 2);
+      backend.createCharacterController({ id: "motor", bodyId: "player", offset: 0.01 });
+      let result;
+      for (let i = 0; i < 60; i++) {
+        result = backend.moveCharacter("motor", { x: 0.1, y: 0, z: 0 }, 1 / 60)!;
+        backend.step(1 / 60);
+      }
+      // Past the ignored wall, held a capsule radius before the blocking one.
+      expect(result!.position.x).toBeGreaterThan(3);
+      expect(result!.position.x).toBeLessThan(3.4);
+    } finally {
+      backend.dispose();
+    }
+  },
+);

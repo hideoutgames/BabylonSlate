@@ -44,12 +44,11 @@ export function MultilineTextField({
 }: MultilineTextFieldProps) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(value);
-  // Reseed the draft while rendering when the editor opens or the value changes.
-  const [seededFrom, setSeededFrom] = useState<{ open: boolean; value: string } | null>(null);
-  if (seededFrom?.open !== open || seededFrom.value !== value) {
-    setSeededFrom({ open, value });
-    if (open) setDraft(value);
-  }
+  // Seed only when the editor opens; a value change while open keeps the typing.
+  const openEditor = () => {
+    setDraft(value);
+    setOpen(true);
+  };
 
   const finish = () => {
     if (!open) return;
@@ -72,7 +71,7 @@ export function MultilineTextField({
           !value.trim() && "text-muted-foreground",
           className,
         )}
-        onClick={() => setOpen(true)}
+        onClick={openEditor}
         data-testid={testId}
       >
         {renderPreview ? renderPreview(value) : <span className="line-clamp-4 break-words">{preview}</span>}
@@ -81,11 +80,11 @@ export function MultilineTextField({
         open={open}
         onOpenChange={(next) => {
           if (!next) finish();
-          else setOpen(true);
+          else if (!open) openEditor();
         }}
       >
         <DialogContent
-          className={cn("flex max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none", code ? "h-[min(720px,80dvh)] w-[min(960px,calc(100vw-32px))] rounded-md" : "editor-dialog-large")}
+          className={cn("editor-dialog-large flex max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none", code && "rounded-md")}
           data-testid={testId ? `${testId}-dialog` : undefined}
         >
           <DialogHeader className={cn("shrink-0 border-b pr-14", code ? "min-h-11 px-3 py-2" : "min-h-14 px-4 py-3")}>

@@ -59,6 +59,7 @@ describe("ParticleService", () => {
     ready?: (guid: string, released: Promise<void>) => Promise<void> | undefined;
     sceneForSlot?: (slotId: number) => Scene | null;
     statsScope?: "global" | "local";
+    sortingLayers?: () => readonly string[] | undefined;
     /** Transform-feedback caps: GPU slots are built, but NullEngine never draws them. */
     gpu?: boolean;
   } = {}) {
@@ -88,6 +89,7 @@ describe("ParticleService", () => {
       sceneForSlot: options.sceneForSlot,
       onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
       statsScope: options.statsScope,
+      sortingLayers: options.sortingLayers,
     });
     const assign = (slotId = 1, play = true) => service.handleCommand({ type: "assignParticle", slotId, actorGuid: "fx",
       componentId: "particle-1", particleSystemGuid: "sys-1", play });
@@ -290,6 +292,19 @@ describe("ParticleService", () => {
     service.handleCommand({ type: "assignParticle", slotId: 1, actorGuid: "fx", componentId: "particle-1", particleSystemGuid: "sys-1",
       play: true, sortingLayer: "UI", orderInLayer: 3 });
     expect(scene.particleSystems[0]!.renderingGroupId).toBe(3);
+    service.dispose();
+  });
+
+  it("draws ParticleComponents in the project's sorting layer and order", () => {
+    const { scene, service } = host({ sortingLayers: () => ["Default", "Characters"] });
+    service.setLibrary(library({ "em-1": basic() }));
+    const assign = (componentId: string, sortingLayer: string, orderInLayer: number) =>
+      service.handleCommand({ type: "assignParticle", slotId: 1, actorGuid: "fx", componentId, particleSystemGuid: "sys-1",
+        play: true, sortingLayer, orderInLayer });
+    assign("characters", "Characters", 0);
+    assign("default", "Default", 9);
+    const emitters = scene.particleSystems.map((system) => (system.emitter as { name: string }).name);
+    expect(emitters).toEqual(["particleEmitter:fx:default", "particleEmitter:fx:characters"]);
     service.dispose();
   });
 
@@ -538,6 +553,26 @@ describe("ParticleService", () => {
     expect(system.isStarted()).toBe(true);
     service.dispose();
     expect(leases.released).toBe(2);
+  });
+
+  it("keeps the drawn Material leased until the rebind that supersedes a pending one binds", async () => {
+    const { scene, service, leases, bound, assign } = host();
+    service.updateLibrary(library({ "fx-graph": graph("mat") }));
+    assign();
+    const system = scene.particleSystems[0] as ParticleSystem;
+    await vi.waitFor(() => expect(started(system)).toBe(true));
+    const releasedAtBind = new Map<string, number>();
+    const push = bound.push.bind(bound);
+    bound.push = (...guids: string[]) => { for (const guid of guids) releasedAtBind.set(guid, leases.released); return push(...guids); };
+    // The second edit supersedes the first one's bind before its Material is built.
+    service.updateLibrary(library({ "fx-graph": graph("mat-2") }));
+    service.updateLibrary(library({ "fx-graph": graph("mat-3") }));
+    await vi.waitFor(() => expect(leases.released).toBe(2));
+    expect([...bound]).toEqual(["mat", "mat-3"]);
+    // "mat" was still drawing when "mat-3" bound: no lease went before it.
+    expect(releasedAtBind.get("mat-3")).toBe(0);
+    service.dispose();
+    expect(leases.released).toBe(3);
   });
 
   it("keeps a rebound Particle Graph slot when the replaced Material's preparation is cancelled", async () => {

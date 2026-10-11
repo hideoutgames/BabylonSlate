@@ -136,9 +136,26 @@ export function patchDataGraphNode(
       ...value,
     };
   }
-  const patchNodes = (nodes: SerializedGraph["nodes"]) => nodes.map((node) => node.id === selected.id ? {
+  return patchInspectedGraphNode(graph, selected.id, {
+    definitionGuid: selected.data.definitionGuid, dataSchema: selected.data.dataSchema, ...nextPatch,
+  }, functionId);
+}
+
+/**
+ * Merge `patch` into node `nodeId` of the graph the Inspector shows: function
+ * `functionId` when it has a graph, otherwise the Event Graph. Node ids are
+ * unique per graph, not per Class, so a function node must not be looked up
+ * in the Event Graph.
+ */
+export function patchInspectedGraphNode(
+  graph: SerializedGraph,
+  nodeId: string,
+  patch: Record<string, unknown>,
+  functionId?: string | null,
+): SerializedGraph {
+  const patchNodes = (nodes: SerializedGraph["nodes"]) => nodes.map((node) => node.id === nodeId ? {
     ...node,
-    data: { ...node.data, definitionGuid: selected.data.definitionGuid, dataSchema: selected.data.dataSchema, ...nextPatch },
+    data: { ...node.data, ...patch },
   } : node);
   const slice = functionId ? graph.functionGraphs?.[functionId] : undefined;
   if (slice && functionId) {

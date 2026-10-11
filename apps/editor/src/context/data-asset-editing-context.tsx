@@ -60,7 +60,7 @@ function useDataTreeState() {
       let result = cache.get(guid);
       if (!result) {
         const definition = definitions.get(guid);
-        result = definition ? validateDataDefinition({ kind: "dataDefinition", fields: definition.fields.map((field) => ({ ...field, id: field.id ?? `legacy:${field.name}` })) }, schemas, guid) : [{ code: "missing-definition", path: "", severity: "error", message: "Choose an existing Data Definition." }];
+        result = definition ? validateDataDefinition({ kind: "dataDefinition", fields: definition.fields }, schemas, guid) : [{ code: "missing-definition", path: "", severity: "error", message: "Choose an existing Data Definition." }];
         cache.set(guid, result);
       }
       return result;

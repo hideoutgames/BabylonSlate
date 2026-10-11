@@ -115,8 +115,8 @@ export function normalizeDataDefinitionAsset(value: unknown): DataDefinitionAsse
   if (!record(value) || (value.kind !== undefined && value.kind !== "dataDefinition") ||
     (value.fields !== undefined && !Array.isArray(value.fields))) throw new Error("Invalid Data Definition payload.");
   const fields = ((value.fields ?? []) as unknown[]).map((entry): DataDefinitionField => {
-    if (!record(entry) || typeof entry.name !== "string" || typeof entry.typeId !== "string") {
-      throw new Error("Data Definition fields need a name and type.");
+    if (!record(entry) || typeof entry.id !== "string" || !entry.id || typeof entry.name !== "string" || typeof entry.typeId !== "string") {
+      throw new Error("Data Definition fields need an id, name and type.");
     }
     if ((entry.required !== undefined && typeof entry.required !== "boolean") ||
       (entry.min !== undefined && typeof entry.min !== "number") || (entry.max !== undefined && typeof entry.max !== "number") ||
@@ -125,7 +125,7 @@ export function normalizeDataDefinitionAsset(value: unknown): DataDefinitionAsse
     }
     const snapshot = normalizeSnapshot([entry])[0]!;
     return {
-      ...snapshot, id: typeof entry.id === "string" && entry.id ? entry.id : `legacy:${entry.name}`,
+      ...snapshot, id: entry.id,
       ...(entry.defaultValue !== undefined ? { defaultValue: structuredClone(entry.defaultValue) } : {}),
       ...(typeof entry.category === "string" ? { category: entry.category } : {}),
       ...(typeof entry.description === "string" ? { description: entry.description } : {}),

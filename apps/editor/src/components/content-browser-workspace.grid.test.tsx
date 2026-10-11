@@ -46,7 +46,6 @@ const { docs, loadAssetThumbnail, layout } = vi.hoisted(() => {
     setActiveDocument: vi.fn(),
     tabOrder: [] as string[],
     loadAssetThumbnail,
-    loadAssetDocument: vi.fn(async () => ({})),
     thumbnailsEnabled: true,
     thumbnailVersions: {} as Record<string, number>,
     pluginDescriptors: [] as unknown[],
@@ -204,7 +203,6 @@ afterEach(async () => {
   docs.projectDocument.settings.gameInstanceClass = null;
   docs.projectDocument.settings.editorUtilityObjects = [];
   docs.projectDocument.settings.startupSceneGuid = "";
-  docs.loadAssetDocument.mockReset().mockResolvedValue({});
   docs.replaceClassReferencesBeforeDelete.mockReset().mockResolvedValue(undefined);
   if (clientWidthDescriptor) {
     Object.defineProperty(
@@ -257,22 +255,6 @@ describe("ContentBrowserWorkspace referenced Class deletion", () => {
     fireEvent.click(screen.getByTestId("content-browser-delete-cancel"));
     expect(screen.getByTestId(`content-item-${actorClass.path}`)).toBeTruthy();
     expect(content.actors).toEqual([{ classId: "Hero", components: [] }]);
-  });
-
-  it("requires a second confirmation for a folder containing a Class used by a closed legacy scene", async () => {
-    const { actorClass, scene } = classAndScene("assets/Actors");
-    docs.loadAssetDocument.mockResolvedValue({ actors: [{ classId: "Hero" }] });
-    installRegistry([actorClass, scene], ["Actors"]);
-    render(<ContentBrowserWorkspace />);
-    fireEvent.click(screen.getByTestId("content-folder-assets/Actors"));
-    fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
-
-    await waitFor(() => {
-      expect(screen.getByTestId("content-browser-delete-dialog").textContent).toContain("main");
-    });
-    expect((screen.getByTestId("content-browser-delete-confirm") as HTMLButtonElement).disabled).toBe(false);
-    fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
-    expect(screen.getByTestId("content-browser-delete-references-confirmation")).toBeTruthy();
   });
 
   it("allows deleting a folder when its Class referrers are also selected for deletion", async () => {
@@ -634,6 +616,35 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(createFolder).toHaveBeenCalledWith("project", "Hero 🤖 Ünïcødé");
   });
 
+  it("refuses a Class name whose class id another Class uses, in New Asset and Rename", () => {
+    const rain = texture(0);
+    rain.path = "assets/Weather/Rain_Weather.class.babasset";
+    rain.header = { ...rain.header, type: "Class", name: "Rain_Weather", guid: "rain" };
+    const hero = texture(1);
+    hero.path = "assets/Hero.class.babasset";
+    hero.header = { ...hero.header, type: "Class", name: "Hero", guid: "hero" };
+    installRegistry([rain, hero], ["Weather"]);
+    const renameAsset = vi.fn();
+    docs.assetRegistry = { ...(docs.assetRegistry as object), renameAsset };
+    render(<ContentBrowserWorkspace />);
+    const taken = 'Another Class already uses the class id "Rain_Weather".';
+
+    fireEvent.click(screen.getByTestId("content-browser-new-asset"));
+    fireEvent.click(screen.getByTestId("new-asset-type-Class"));
+    fireEvent.change(screen.getByTestId("new-asset-name"), { target: { value: "Rain-Weather" } });
+    expect(screen.getByTestId("new-asset-name-taken").textContent).toBe(taken);
+    expect(screen.getByTestId("content-browser-new-asset-create").hasAttribute("disabled")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    fireEvent.contextMenu(screen.getByTestId(`content-item-${hero.path}`));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+    const input = screen.getByTestId("content-browser-name-input");
+    fireEvent.change(input, { target: { value: "Rain Weather" } });
+    expect(screen.getByTestId("content-browser-name-taken").textContent).toBe(taken);
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(renameAsset).not.toHaveBeenCalled();
+  });
+
   it("retains the new asset draft when the storage write fails", async () => {
     installRegistry([]);
     docs.assetRegistry = { ...(docs.assetRegistry as object), createAsset: vi.fn().mockRejectedValue(new Error("Project storage unavailable")) };
@@ -711,6 +722,39 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(await screen.findByTestId("content-folder-assets/Characters")).toBeTruthy();
     expect(location.querySelector('[aria-current="page"]')?.textContent).toBe("Content");
     expect(screen.getByRole("button", { name: "Parent Folder" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("enters a selected folder with Enter, as the Open action does", async () => {
+    installRegistry([], ["Characters"]);
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId("content-folder-assets/Characters"));
+    fireEvent.keyDown(screen.getByTestId("content-browser-asset-grid"), { key: "Enter" });
+    const location = await screen.findByRole("navigation", { name: "Folder Location" });
+    expect(location.querySelector('[aria-current="page"]')?.textContent).toBe("Characters");
+  });
+
+  it("disables the empty-grid New Folder, New Asset and Import in a read-only root", () => {
+    docs.thumbnailsEnabled = false;
+    docs.showPluginContent = true;
+    const plugin = {
+      pluginGuid: "starter", source: "engine", folderName: "starter", readOnly: true,
+      folderPath: "plugins/starter", contentPath: "plugins/starter/assets",
+      settingsPath: "plugins/starter/starter.plugin.babasset",
+      settings: { ...createDefaultPluginSettings({ pluginGuid: "starter", displayName: "Starter" }), enabledByDefault: true },
+    };
+    docs.pluginDescriptors = [plugin];
+    const root = projectContentRoot();
+    docs.assetRegistry = {
+      getRoot: (id: string) => id === "project" ? root : { ...root, id, pathPrefix: plugin.contentPath, readOnly: true },
+      list: () => [],
+      folderTree: (id: string) => ({ name: "assets", path: id === "project" ? "assets" : plugin.contentPath, children: [], assets: [] }),
+    };
+    render(<ContentBrowserWorkspace />);
+    tapTreeRow(screen.getByTestId("tree-row-plugins/starter/assets"));
+    fireEvent.contextMenu(screen.getByTestId("content-browser-asset-grid"));
+    for (const id of ["new-folder", "new-asset", "import"]) {
+      expect((screen.getByTestId(`context-menu-item-${id}`) as HTMLButtonElement).disabled).toBe(true);
+    }
   });
 
   it("clears an unsuccessful search without leaving the current folder", async () => {
@@ -807,6 +851,44 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(docs.repairAfterAssetDelete).toHaveBeenCalledWith(new Set(["tex-0"]), new Set(), expect.any(Function), []);
   });
 
+  it("keeps the tabs of assets a failed deletion did not reach", async () => {
+    docs.thumbnailsEnabled = false;
+    docs.closeDocumentsForPaths.mockClear();
+    installRegistry([texture(0), texture(1), texture(2)]);
+    Object.assign(docs.assetRegistry as object, {
+      deleteAsset: async (guid: string) => {
+        if (guid === "tex-1") throw new Error("Storage unavailable");
+      },
+    });
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.babasset"));
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-1.babasset"), { ctrlKey: true });
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-2.babasset"), { ctrlKey: true });
+    fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
+    fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
+    await waitFor(() => expect(screen.getByRole("alertdialog", { name: "Delete Failed" })).toBeTruthy());
+    const closed = docs.closeDocumentsForPaths.mock.calls.flatMap(([paths]) => [...paths as Iterable<string>]);
+    expect(closed).toContain("assets/tex-0.babasset");
+    expect(closed).not.toContain("assets/tex-2.babasset");
+  });
+
+  it("repairs a deleted Class by its compile id, not its display name", async () => {
+    docs.thumbnailsEnabled = false;
+    const classAsset = texture(0);
+    classAsset.path = "assets/Rain-Weather.class.babasset";
+    classAsset.header = { ...classAsset.header, type: "Class", name: "Actor", guid: "rain" };
+    installRegistry([classAsset]);
+    Object.assign(docs.assetRegistry as object, { deleteAsset: async () => {} });
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId(`content-item-${classAsset.path}`));
+    fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
+    await waitFor(() => expect((screen.getByTestId("content-browser-delete-confirm") as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
+    await waitFor(() => expect(docs.repairAfterAssetDelete).toHaveBeenCalledWith(
+      new Set(["rain"]), new Set(["Rain_Weather"]), expect.any(Function), [],
+    ));
+  });
+
   it("mounts no tiles while hidden and shows the current folder again when visible", () => {
     docs.thumbnailsEnabled = false;
     stubGridSize(
@@ -899,7 +981,6 @@ describe("ContentBrowserWorkspace grid window", () => {
       await waitFor(() => expect(jobs).toHaveLength(2));
       expect(jobs.map(({ guid }) => guid)).toEqual(selected.map(({ header }) => header.guid));
       expect(jobs.every((job) => job.projectGuid === docs.projectGuid && job.cacheKey?.includes(".preview-v1."))).toBe(true);
-      expect(docs.loadAssetDocument).not.toHaveBeenCalled();
     } finally {
       unsubscribe();
       loadAssetThumbnail.mockResolvedValue(new Uint8Array([1, 2, 3]));
@@ -1052,6 +1133,20 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(
       screen.queryByTestId("content-item-assets/tex-0.babasset"),
     ).toBeNull();
+  });
+
+  it("extends a keyboard range in the tree from the row where it started", () => {
+    docs.thumbnailsEnabled = false;
+    installRegistry([texture(0), texture(1), texture(2)]);
+    render(<ContentBrowserWorkspace />);
+    const tree = screen.getByTestId("content-browser-folder-tree");
+    tapTreeRow(screen.getByTestId("tree-row-assets/tex-1.babasset"));
+    fireEvent.keyDown(tree, { key: "ArrowDown", shiftKey: true });
+    fireEvent.keyDown(tree, { key: "ArrowUp", shiftKey: true });
+
+    const selected = (index: number) =>
+      screen.getByTestId(`content-item-assets/tex-${index}.babasset`).getAttribute("data-selected");
+    expect([selected(0), selected(1), selected(2)]).toEqual(["false", "true", "false"]);
   });
 
   it("keeps folder navigation alongside assets on larger screens", () => {

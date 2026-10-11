@@ -50,7 +50,8 @@ export function TypeDetailsPanel(_props: IDockviewPanelProps) {
   const typeDocuments = useOpenDocumentsOfKinds(TYPE_KINDS);
   const { selectedMemberId } = useTypeAssetEditing();
   const [typeAssetPickerOpen, setTypeAssetPickerOpen] = useState(false);
-  const [defaultAssetPickerOpen, setDefaultAssetPickerOpen] = useState(false);
+  /** The Default row the asset picker fills: the whole value or one Structure field. */
+  const [defaultAssetPick, setDefaultAssetPick] = useState<{ rowId: string; assetType: string } | null>(null);
   const doc = useOpenDocument(documentId);
   const payload = (doc?.content ?? {}) as Record<string, unknown>;
   const kind = doc?.ref.kind;
@@ -164,7 +165,7 @@ export function TypeDetailsPanel(_props: IDockviewPanelProps) {
           name: entry.name,
           type: entry.type,
         })),
-        onPickAsset: () => setDefaultAssetPickerOpen(true),
+        onPickAsset: (rowId, assetType) => setDefaultAssetPick({ rowId, assetType }),
       },
     );
     return (
@@ -269,19 +270,20 @@ export function TypeDetailsPanel(_props: IDockviewPanelProps) {
             data-testid="structure-field-type-asset-picker"
           />
           <AssetPicker
-            open={defaultAssetPickerOpen}
-            onOpenChange={setDefaultAssetPickerOpen}
+            open={defaultAssetPick !== null}
+            onOpenChange={(open) => {
+              if (!open) setDefaultAssetPick(null);
+            }}
             assets={pickerAssets}
-            allowedTypes={variableAssetPickerAllowedTypes(field.typeClassId)}
+            allowedTypes={variableAssetPickerAllowedTypes(defaultAssetPick?.assetType)}
             allowNone
             title="Pick Asset"
             onPick={(guid) => {
-              commit(
-                patchStructureField(asset, selectedIndex, {
-                  defaultValue: guid ?? "",
-                }),
-              );
-              setDefaultAssetPickerOpen(false);
+              // The picked row writes its own value, so a Structure field keeps
+              // the rest of the Structure default.
+              const row = defaultRows.find((entry) => entry.id === defaultAssetPick?.rowId);
+              if (row?.kind === "asset") row.onChange(guid ?? "");
+              setDefaultAssetPick(null);
             }}
             data-testid="structure-field-default-asset-picker"
           />

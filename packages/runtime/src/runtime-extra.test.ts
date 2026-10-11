@@ -11,7 +11,7 @@ import { createInProcessRuntime } from "./driver";
 import { encodeInputEvents } from "@babylonslate/input";
 
 describe("diagnostics aggregator", () => {
-  it("dedupes by code/asset/node and caps entries", () => {
+  it("dedupes by code/asset/node, keeps the first message, and caps entries", () => {
     const agg = new SessionDiagnosticAggregator(2);
     agg.push({
       code: "a",
@@ -42,7 +42,12 @@ describe("diagnostics aggregator", () => {
       frameId: 4,
     });
     expect(agg.entries()).toHaveLength(2);
-    expect(agg.entries()[0]!.count).toBe(2);
+    expect(agg.entries()[0]).toMatchObject({
+      message: "one",
+      count: 2,
+      firstFrameId: 1,
+      lastFrameId: 2,
+    });
     expect(agg.droppedCount()).toBe(1);
   });
 });

@@ -245,16 +245,21 @@ export function SearchDialog({
               );
     setActiveId(filtered[next]!.id);
   };
-  // Placed once per opening so filtering does not move the popup.
+  // Anchored once per opening; the height follows the item count so items
+  // that arrive after opening get room, while filtering never moves the popup.
+  const openAnchor = useMemo(
+    () => (open ? (anchor ?? openerAnchor()) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- placed once per opening
+    [open],
+  );
   const frame = useMemo(() => {
     if (!open) return null;
-    const { left, top, width, height } = popupMenuFrame(anchor ?? openerAnchor(), {
+    const { left, top, width, height } = popupMenuFrame(openAnchor, {
       width: POPUP_WIDTH,
       height: POPUP_CHROME_HEIGHT + pickerListHeightPx(items.length),
     });
     return { left, top, width, maxHeight: height };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- placed once per opening
-  }, [open]);
+  }, [items.length, open, openAnchor]);
   const lastPinnedIndex = filtered.filter((item) => item.pinned).length - 1;
   // An external close clears the query while rendering; the list unmounts with it.
   const [wasOpen, setWasOpen] = useState(open);

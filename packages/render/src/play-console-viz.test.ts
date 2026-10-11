@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Mesh, MeshBuilder, Scene, StandardMaterial, VertexBuffer } from "@babylonjs/core";
+import { Matrix, Mesh, MeshBuilder, Scene, StandardMaterial, VertexBuffer } from "@babylonjs/core";
 import { createTestEngine } from "./create-null-engine";
 import {
   applyPlayShowBounds,
@@ -213,6 +213,28 @@ describe("play console visualization", () => {
     engine.dispose();
   });
 
+  it("redraws a collider whose shape returns after a rebuild produced no geometry", () => {
+    const { engine, scene } = createTestEngine();
+    const overlay = createPlayCollisionOverlay(scene);
+    const hull = (apexZ: number) => ({
+      id: "hull",
+      shape: "convex" as const,
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
+      points: [{ x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, { x: 0, y: 1, z: 0 }, { x: 0, y: 0, z: apexZ }],
+    });
+    overlay.sync([hull(1)]);
+    expect(scene.getMeshByName("playConsoleViz:hull")).not.toBeNull();
+    // A flat hull has no edges to draw.
+    overlay.sync([hull(0)]);
+    expect(scene.getMeshByName("playConsoleViz:hull")).toBeNull();
+    overlay.sync([hull(1)]);
+    const redrawn = scene.getMeshByName("playConsoleViz:hull");
+    expect(redrawn?.isDisposed()).toBe(false);
+    overlay.dispose();
+    engine.dispose();
+  });
+
   it("keeps a triangle mesh collider across ticks until one of its vertices changes", () => {
     const { engine, scene } = createTestEngine();
     const overlay = createPlayCollisionOverlay(scene);
@@ -296,13 +318,7 @@ describe("play console visualization", () => {
     const { engine, scene } = createTestEngine();
     const viz = createPlayConsoleViz(scene, {
       navBlockers: [
-        {
-          id: "door",
-          kind: "box",
-          position: [1, 0, 2],
-          rotation: [0, 0, 0, 1],
-          scale: [2, 3, 4],
-        },
+        { id: "door", kind: "box", world: Matrix.Identity().asArray() },
       ],
     });
     expect(viz.applyCommand({ type: "setShowNav", enabled: true })).toBe(true);

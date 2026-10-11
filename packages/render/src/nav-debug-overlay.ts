@@ -1,14 +1,15 @@
 import {
   Color3,
   Color4,
+  Matrix,
   Mesh,
-  Quaternion,
   StandardMaterial,
   VertexData,
   type Scene,
 } from "@babylonjs/core";
 import "@babylonjs/core/Rendering/edgesRenderer";
 import {
+  blockerWorldMatrix,
   initNavigation,
   navMeshDebugPrimitives,
 } from "@babylonslate/navigation";
@@ -27,43 +28,29 @@ export const NAVMESH_DEBUG_EDGE = new Color4(0.06, 0.32, 0.12, 1);
 export type NavDebugBlockerPose = {
   id: string;
   kind: EditorVolumeKind;
-  position: [number, number, number];
-  rotation: [number, number, number, number];
-  scale: [number, number, number];
+  /** World matrix of the unit volume in `Matrix.FromArray` order (16 entries). */
+  world: readonly number[];
 };
 
+/** Each NavMesh Blocker at the world pose the bake carves it, through its parent chain. */
 export function navDebugBlockersFromActors(
   actors: readonly SerializedActor[],
 ): NavDebugBlockerPose[] {
   const poses: NavDebugBlockerPose[] = [];
+  let actorsById: Map<string, SerializedActor> | null = null;
   for (const actor of actors) {
     const component = actor.components.find(
       (entry) => entry.classId === "NavMeshBlockerComponent",
     );
     if (!component) continue;
+    actorsById ??= new Map(actors.map((entry) => [entry.id, entry]));
     poses.push({
       id: actor.id,
       kind: component.properties.kind === "cylinder" ? "cylinder" : "box",
-      position: actor.transform.position,
-      rotation: actor.transform.rotation,
-      scale: actor.transform.scale,
+      world: blockerWorldMatrix(actor, actorsById),
     });
   }
   return poses;
-}
-
-export function navmeshOverlayEnabled(scene: {
-  settings: { showNavmesh?: boolean };
-  actors: readonly SerializedActor[];
-}): boolean {
-  if (scene.settings.showNavmesh === true) return true;
-  return scene.actors.some((actor) =>
-    actor.components.some(
-      (component) =>
-        component.classId === "NavMeshComponent" &&
-        component.properties.debugOverlay === true,
-    ),
-  );
 }
 
 /**
@@ -141,14 +128,8 @@ export class NavMeshDebugOverlay {
         pose.kind,
       );
       mesh.receiveShadows = false;
-      mesh.position.set(pose.position[0], pose.position[1], pose.position[2]);
-      mesh.rotationQuaternion = new Quaternion(
-        pose.rotation[0],
-        pose.rotation[1],
-        pose.rotation[2],
-        pose.rotation[3],
-      );
-      mesh.scaling.set(pose.scale[0], pose.scale[1], pose.scale[2]);
+      // A pretransform keeps the shear a nonuniformly scaled parent gives a turned child.
+      mesh.setPreTransformMatrix(Matrix.FromArray(pose.world));
       this.blockerMeshes.push(mesh);
     }
   }

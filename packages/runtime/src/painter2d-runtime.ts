@@ -8,6 +8,8 @@ type State = { commands: PainterCommand[]; path: PainterPathSegment[]; maskDepth
 export class Painter2DRuntime {
   private readonly states = new WeakMap<ActorComponent, State>();
   private readonly dirty = new Set<ActorComponent>();
+  /** Painters that may hold drawing for a frame start to clear; while empty, frames skip the actor walk. */
+  private readonly drawn = new Set<ActorComponent>();
 
   payload(component: ActorComponent): Painter2DProperties {
     const properties = parsePainter2DProperties(Object.fromEntries(component.variables));
@@ -15,6 +17,7 @@ export class Painter2DRuntime {
     if (!state) {
       state = { commands: properties.commands, path: [], maskDepth: properties.commands.reduce((depth, command) => depth + (command.kind === "pushMask" ? 1 : command.kind === "popMask" ? -1 : 0), 0), segments: properties.commands.reduce((count, command) => count + (command.kind === "popMask" ? 0 : command.path.length), 0) };
       this.states.set(component, state);
+      if (state.commands.length) this.drawn.add(component);
     }
     return { ...properties, commands: structuredClone(state.commands) };
   }
@@ -22,6 +25,7 @@ export class Painter2DRuntime {
   execute(component: ActorComponent, name: string, args: Record<string, unknown>): boolean {
     if (component.classId !== "2DPainterComponent" || component.destroyed || !component.owner?.sceneLayerId || component.owner.destroyed) return false;
     if (!this.states.has(component)) this.payload(component);
+    this.drawn.add(component);
     const properties = parsePainter2DProperties({ ...Object.fromEntries(component.variables), commands: [] });
     const state = this.states.get(component)!;
     if (name === "painterClear") {
@@ -97,11 +101,16 @@ export class Painter2DRuntime {
   }
 
   beginFrame(actors: readonly Actor[], canTick: (actor: Actor) => boolean): void {
+    if (this.drawn.size === 0) return;
+    for (const component of this.drawn) {
+      if (component.destroyed || !component.owner || component.owner.destroyed) this.drawn.delete(component);
+    }
     for (const actor of actors) {
       if (!actor.sceneLayerId || actor.destroyed || !canTick(actor)) continue;
       for (const component of actor.components) {
         if (component.classId !== "2DPainterComponent" || component.destroyed || component.getVariable("clearEachFrame") === false) continue;
         const state = this.states.get(component);
+        this.drawn.delete(component);
         if (!state || (!state.commands.length && !state.path.length)) continue;
         state.commands = []; state.path = []; state.maskDepth = 0; state.segments = 0; this.dirty.add(component);
       }

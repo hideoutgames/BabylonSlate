@@ -169,8 +169,15 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     ).toBeVisible();
     await dragClassMemberOntoGraph(page, "Target");
     await page.getByTestId("member-access-validated-get").click();
+    // Until the chooser has closed, its backdrop takes the next drag's raw mouse press.
+    await expect(page.getByTestId("member-access-chooser")).toHaveCount(0);
     await expect(nodes).toHaveCount(baseline + 2);
     await expect(graph.getByText("Validated Get Target")).toBeVisible();
+    await dragClassMemberOntoGraph(page, "Target");
+    await page.getByTestId("member-access-set").click();
+    await expect(page.getByTestId("member-access-chooser")).toHaveCount(0);
+    await expect(nodes).toHaveCount(baseline + 3);
+    await expect(graph.getByText("Set Target")).toBeVisible();
   });
 
   test("dragging a Class function onto the graph spawns Call Function", async ({
@@ -302,27 +309,57 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
   test("dirty Class tab close prompts Save / Discard / Cancel", async ({
     page,
   }) => {
-    await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
-    await expect(page.getByTestId("actor-prefab-panel")).toBeVisible({
-      timeout: 15_000,
-    });
-    await page.getByTestId("prefab-add-component").click();
-    await pickCatalogItem(
-      page,
-      "prefab-add-component-catalog",
-      "LightComponent",
-      "Scene light",
+    const classTab = page.locator(
+      '[data-testid="document-tab"][data-document-kind="graph"]',
     );
-    await expect(page.getByTestId("save-all-dirty")).toBeVisible();
-    await page
-      .locator('[data-testid="document-tab"][data-document-kind="graph"]')
-      .getByTestId("document-tab-close")
-      .click();
+    // The scaffolded Mannequin rows use fixed ids; no prefab-component-* row exists until a component is added.
+    const addedComponents = page
+      .getByTestId("prefab-tree")
+      .locator('[data-testid^="tree-row-prefab-component-"]');
+    const openClass = async () => {
+      await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+      await expect(page.getByTestId("actor-prefab-panel")).toBeVisible({
+        timeout: 15_000,
+      });
+      await expect(page.getByTestId("tree-row-prefab-mesh")).toBeVisible();
+    };
+    const addLight = async () => {
+      await page.getByTestId("prefab-add-component").click();
+      await pickCatalogItem(
+        page,
+        "prefab-add-component-catalog",
+        "LightComponent",
+        "Scene light",
+      );
+      await expect(addedComponents).toHaveCount(1);
+      await expect(page.getByTestId("save-all-dirty")).toBeVisible();
+    };
+    await openTestProject(page);
+    await openClass();
+    await addLight();
+    await classTab.getByTestId("document-tab-close").click();
     await expect(page.getByTestId("dirty-close-dialog")).toBeVisible();
     await page.getByTestId("dirty-cancel").click();
     await expect(page.getByTestId("dirty-close-dialog")).toHaveCount(0);
     await expect(page.getByTestId("actor-prefab-panel")).toBeVisible();
     await expect(page.getByTestId("save-all-dirty")).toBeVisible();
+
+    // Discard closes the tab and drops the unsaved Light.
+    await classTab.getByTestId("document-tab-close").click();
+    await page.getByTestId("dirty-discard").click();
+    await expect(page.getByTestId("dirty-close-dialog")).toHaveCount(0);
+    await expect(classTab).toHaveCount(0);
+    await openClass();
+    await expect(addedComponents).toHaveCount(0);
+
+    // Save closes the tab and keeps the Light on disk.
+    await addLight();
+    await classTab.getByTestId("document-tab-close").click();
+    await page.getByTestId("dirty-save").click();
+    await expect(page.getByTestId("dirty-close-dialog")).toHaveCount(0);
+    await expect(classTab).toHaveCount(0);
+    await expect(page.getByTestId("save-all-dirty")).toBeHidden();
+    await openClass();
+    await expect(addedComponents).toHaveCount(1);
   });
 });

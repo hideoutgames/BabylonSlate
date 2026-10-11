@@ -16,8 +16,19 @@ export class ElectronSaveGameStorage implements SaveGameStorage {
   write(key: string, text: string): Promise<void> { return unwrap(this.bridge.write(key, text)); }
   remove(key: string): Promise<void> { return unwrap(this.bridge.remove(key)); }
   list(prefix: string): Promise<string[]> { return unwrap(this.bridge.list(prefix)); }
+  /**
+   * The operation's outcome is the result. A release the host refuses means
+   * the lease is already gone (the host drops a window's leases on reload,
+   * crash or close), so it must not report a completed write as failed or
+   * replace the write's own error.
+   */
   async withLock<T>(key: string, operation: () => Promise<T>): Promise<T> {
     const token = await unwrap(this.bridge.acquireLock(key));
-    try { return await operation(); } finally { await unwrap(this.bridge.releaseLock(token)); }
+    let outcome: { ok: true; value: T } | { ok: false; error: unknown };
+    try { outcome = { ok: true, value: await operation() }; }
+    catch (error) { outcome = { ok: false, error }; }
+    await unwrap(this.bridge.releaseLock(token)).catch((error: unknown) => console.warn("Save lock release failed", error));
+    if (!outcome.ok) throw outcome.error;
+    return outcome.value;
   }
 }

@@ -5,12 +5,15 @@ const audio = vi.hoisted(() => {
     state = "suspended";
     resume = vi.fn(async () => { this.state = "running"; });
     suspend = vi.fn(async () => { this.state = "suspended"; });
+    createGain = vi.fn(() => ({ gain: { value: 1 }, connect: vi.fn(), disconnect: vi.fn() }));
+    createBiquadFilter = vi.fn(() => ({ type: "", frequency: { value: 0 }, connect: vi.fn(), disconnect: vi.fn() }));
   }
   const context = new Context();
-  const engine = { _audioContext: context, unlockAsync: vi.fn(async () => {}), dispose: vi.fn() };
+  const engine = { _audioContext: context, mainOut: { _inNode: { connect: vi.fn() } },
+    unlockAsync: vi.fn(async () => {}), dispose: vi.fn() };
   const sound = () => ({
     play: vi.fn(), stop: vi.fn(), dispose: vi.fn(), pause: vi.fn(), resume: vi.fn(),
-    onEndedObservable: { addOnce: vi.fn() },
+    volume: 1, _outNode: { connect: vi.fn() }, onEndedObservable: { addOnce: vi.fn() },
   });
   return { Context, context, engine, sound,
     createEngine: vi.fn(async () => engine),
@@ -80,6 +83,23 @@ describe("Babylon audio backend lifecycle", () => {
     expect(audio.createSound.mock.calls.map((call) => (call as unknown[])[0])).toEqual(["loop", "once"]);
     expect(sounds.map((sound) => sound.play.mock.calls[0])).toEqual([[{ startOffset: 1 }], [{ startOffset: 0.5 }]]);
     expect(ended).toEqual(["done"]);
+    backend.dispose();
+  });
+
+  it("muffles a voice by lowering its dry level while the lowpass send keeps the low band", async () => {
+    const backend = new BabylonAudioPlaybackBackend();
+    await backend.play({ ...request, gain: 0.8 });
+    const sound = await (audio.createSound.mock.results[0]!.value as Promise<ReturnType<typeof audio.sound>>);
+    backend.setVoiceMuffle(request.voiceId, 0.5);
+    const send = audio.context.createGain.mock.results[0]!.value as { gain: { value: number } };
+    // Dry 0.4 plus the lowpassed 0.4 keeps the low band at the requested 0.8.
+    expect(sound.volume).toBeCloseTo(0.4);
+    expect(send.gain.value).toBeCloseTo(1);
+    backend.setVoiceGain(request.voiceId, 0.6);
+    expect(sound.volume).toBeCloseTo(0.3);
+    backend.setVoiceMuffle(request.voiceId, 0);
+    expect(sound.volume).toBeCloseTo(0.6);
+    expect(send.gain.value).toBe(0);
     backend.dispose();
   });
 

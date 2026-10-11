@@ -309,20 +309,33 @@ function editGradientsInPlace(system: IParticleSystem, gradients: BasicEmitterPl
   return true;
 }
 
-const pendingParticleMaterials = new WeakMap<IParticleSystem, () => void>();
+/** Settles a pending bind: with its successor's bind when one replaces it, or at once (a disposed system). */
+const pendingParticleMaterials = new WeakMap<IParticleSystem, (successor?: Promise<void>) => void>();
 
 /**
  * Binds a particle-domain Material after `applyBasicEmitterPlan(..., "create")`. A later
- * bind replaces a pending one. The promise rejects when the Material cannot prepare.
+ * bind replaces a pending one, whose promise then settles with the later bind: it never
+ * drew, so an owner waiting on it to release the Material drawn until then waits for the
+ * Material that actually replaces it. The promise rejects when the Material cannot prepare.
  */
 export function bindParticleMaterial(system: IParticleSystem, material: NodeMaterial): Promise<void> {
-  pendingParticleMaterials.get(system)?.();
+  const superseded = pendingParticleMaterials.get(system);
   const scene = system.getScene();
   if (!scene || material.mode !== NodeMaterialModes.Particle || isDisposedNodeMaterial(material, scene)) {
+    superseded?.();
     throw new Error("Particle material must be a live particle-domain instance in the system's owning scene.");
   }
-  system.particleTexture ??= createParticleReadinessTexture(scene);
-  return bindReadyParticleMaterial(system, material, scene);
+  try {
+    system.particleTexture ??= createParticleReadinessTexture(scene);
+  } catch (error) {
+    superseded?.();
+    throw error;
+  }
+  let follow: ((ready: Promise<void>) => void) | undefined;
+  superseded?.(new Promise<void>((resolve, reject) => { follow = (ready) => { ready.then(resolve, reject); }; }));
+  const ready = bindReadyParticleMaterial(system, material, scene);
+  follow?.(ready);
+  return ready;
 }
 
 function bindReadyParticleMaterial(system: IParticleSystem, material: NodeMaterial, scene: Scene): Promise<void> {
@@ -333,16 +346,17 @@ function bindReadyParticleMaterial(system: IParticleSystem, material: NodeMateri
   // Standalone factory consumers may leave preparation to scene readiness.
   // The returned promise still rejects for an owning service to diagnose and retire.
   void ready.catch(() => {});
-  const cancel = () => {
+  const cancel = (successor?: Promise<void>) => {
     if (pendingParticleMaterials.get(system) !== cancel) return;
     pendingParticleMaterials.delete(system);
     scene.removeIsReadyCheck(readiness);
     system.onDisposeObservable.remove(disposeObserver);
     if (timer !== undefined) clearTimeout(timer);
     markSceneReadinessDirty(scene);
-    resolve();
+    if (successor) successor.then(resolve, reject);
+    else resolve();
   };
-  const disposeObserver = system.onDisposeObservable.addOnce(cancel);
+  const disposeObserver = system.onDisposeObservable.addOnce(() => cancel());
   pendingParticleMaterials.set(system, cancel);
   scene.addIsReadyCheck(readiness);
   // Custom checks join strict readiness without a Scene observable; admit the

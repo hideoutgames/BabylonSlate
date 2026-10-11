@@ -9,14 +9,14 @@ export type EngineScriptPin = {
   direction: "in" | "out";
   typeClassId?: string;
   container?: "single" | "array" | "map";
+  /** Literal a new Call starts with on this input; scalar inputs otherwise start at zero / false. */
+  defaultValue?: number | boolean | string;
 };
 
 export type EngineScriptVariable = {
   name: string;
   typeId: string;
   typeClassId?: string;
-  /** Extra Content Browser types the pin picker accepts (e.g. Mesh + Model). */
-  typeClassIds?: readonly string[];
   container?: "single" | "array" | "map";
   propertyKey: string;
   /** When true, the palette injects Get only (no Set). */
@@ -493,7 +493,6 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
         name: "Mesh",
         typeId: "asset",
         typeClassId: "Model",
-        typeClassIds: ["Mesh", "Model"],
         propertyKey: "assetGuid",
       },
       {
@@ -735,7 +734,7 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
           EXEC_IN,
           EXEC_OUT,
           { name: "impulse", typeId: "vec3", direction: "in" },
-          { name: "strength", typeId: "float", direction: "in" },
+          { name: "strength", typeId: "float", direction: "in", defaultValue: 1 },
         ],
       },
     ],
@@ -783,7 +782,8 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
     ],
     functions: [{
       name: "Add Impulse", runtime: "addImpulse",
-      pins: [EXEC_IN, EXEC_OUT, { name: "impulse", typeId: "vec3", direction: "in" }, { name: "strength", typeId: "float", direction: "in" }],
+      pins: [EXEC_IN, EXEC_OUT, { name: "impulse", typeId: "vec3", direction: "in" },
+        { name: "strength", typeId: "float", direction: "in", defaultValue: 1 }],
     }],
   },
   {

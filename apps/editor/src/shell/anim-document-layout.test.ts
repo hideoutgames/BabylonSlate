@@ -16,15 +16,6 @@ describe("normalizeAnimEditorMode", () => {
 });
 
 describe("parseAnimDocumentLayout", () => {
-  it("migrates a raw DockView snapshot onto the State Machine surface", () => {
-    const raw = { grid: { root: {} } };
-    expect(parseAnimDocumentLayout(raw)).toEqual({
-      animEditorMode: "stateMachine",
-      stateMachine: raw,
-      animationObject: null,
-    });
-  });
-
   it("reads a split State Machine / Animation Object layout", () => {
     expect(
       parseAnimDocumentLayout({

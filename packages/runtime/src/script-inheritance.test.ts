@@ -99,7 +99,7 @@ function callParentScript(
     kind: "event",
     nodes: [
       node(registry, "begin", "flow.event.beginPlay"),
-      node(registry, "log", "debug.log", { message: `${classId}.beginPlay` }),
+      node(registry, "log", "debug.log", { "default:message": `${classId}.beginPlay` }),
       node(registry, "parent", "flow.event.callParent", {
         parentClassId,
         eventType: "flow.event.beginPlay",

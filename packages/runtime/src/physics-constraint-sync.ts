@@ -87,6 +87,9 @@ export class PhysicsConstraintSync {
     hosting?: ConstraintHosting;
   }): void {
     const live = new Set<string>();
+    // A failing constraint keeps its last usable joint; the others still
+    // reconcile and absent joints are released before the failure is reported.
+    let failure: Error | undefined;
     for (const owner of options.actors) {
       if (owner.destroyed || options.actorById.get(owner.guid) !== owner || !options.eligible(owner)) continue;
       for (const component of owner.components) {
@@ -155,12 +158,14 @@ export class PhysicsConstraintSync {
           this.backend.createConstraint(constraint);
           this.applied.set(id, { owner, target, component, descriptor: descriptor.slice(), constraint });
         } catch (error) {
+          if (failure) continue;
           const detail = error instanceof Error ? error.message : String(error);
-          throw new Error(`Physics constraint ${component.guid} on actor ${owner.guid}: ${detail}`, { cause: error });
+          failure = new Error(`Physics constraint ${component.guid} on actor ${owner.guid}: ${detail}`, { cause: error });
         }
       }
     }
     for (const id of this.applied.keys()) if (!live.has(id)) this.remove(id);
+    if (failure) throw failure;
   }
 
   retireBody(bodyId: string): void {

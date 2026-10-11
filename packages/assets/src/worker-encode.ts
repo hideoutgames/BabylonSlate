@@ -166,24 +166,37 @@ export function createWorkerEncodeFn(
     source: Uint8Array,
     settings: TextureEncodeSettings,
     mime?: string,
+    signal?: AbortSignal,
   ) => {
+    signal?.throwIfAborted();
     await ensureWorker();
+    signal?.throwIfAborted();
     const id = nextId++;
-    const result = await new Promise<{ ktx2: Uint8Array; wallMs: number }>(
-      (resolve, reject) => {
-        const job: PendingEncode = {
-          resolve,
-          reject,
-          source,
-          settings,
-          mime,
-        };
-        pending.set(id, job);
-        postSourceEncode(id, job);
-      },
-    );
-    await maybeRecycle();
-    return result;
+    // A Basis encode cannot be interrupted inside the worker: an aborted job
+    // terminates the worker, and the next encode starts a fresh one.
+    const abort = () => {
+      if (pending.has(id)) failPending(signal?.reason ?? new Error("encode aborted"));
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+    try {
+      const result = await new Promise<{ ktx2: Uint8Array; wallMs: number }>(
+        (resolve, reject) => {
+          const job: PendingEncode = {
+            resolve,
+            reject,
+            source,
+            settings,
+            mime,
+          };
+          pending.set(id, job);
+          postSourceEncode(id, job);
+        },
+      );
+      await maybeRecycle();
+      return result;
+    } finally {
+      signal?.removeEventListener("abort", abort);
+    }
   };
 
   return Object.assign(encode, {

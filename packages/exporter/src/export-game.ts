@@ -1,13 +1,11 @@
-import { err, ok, DEFAULT_LOOP_COUNT, normalizeSceneLayer, DEFAULT_SORTING_LAYERS, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, renderEffectsAssetGuids, consoleCommandMetadataFromGraph, type Result } from "@babylonslate/core";
-import { collectAssetDependencyMetadata, extractPackedModelAsset, peekPackedAudioPayload, sha256Hex, PARTICLE_ASSET_TYPES, type AssetDependencyClass } from "@babylonslate/assets";
+import { err, ok, classIdForAssetPath, DEFAULT_LOOP_COUNT, normalizeSceneLayer, DEFAULT_SORTING_LAYERS, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, renderEffectsAssetGuids, consoleCommandMetadataFromGraph, type Result } from "@babylonslate/core";
+import { collectAssetDependencyMetadata, decodePackedModelAsset, peekPackedAudioPayload, sha256Hex, PARTICLE_ASSET_TYPES, type AssetDependencyClass } from "@babylonslate/assets";
 import { zipSync, unzipSync } from "fflate";
 import {
   DEFAULT_FILE_COUNT_FAIL,
   DEFAULT_FILE_COUNT_WARN,
   GAME_MANIFEST_FILE,
-  SCRIPTS_FILE,
 } from "./constants";
-import { serializeScriptRegistry } from "./scripts";
 import { selectPlayerRuntimeFiles } from "./player-files";
 import type {
   ExportArtifact,
@@ -37,7 +35,6 @@ const JSON_TYPES = new Set<string>([
   "InputAction", "InputAxis",
   "Scene",
   "Class",
-  "Graph",
   "AnimationGraph",
   "BehaviourTree",
   "Blackboard",
@@ -70,9 +67,15 @@ function encodingFor(asset: ExportAssetBytes): "json" | "bytes" {
   return asset.encoding ?? (JSON_TYPES.has(asset.type) ? "json" : "bytes");
 }
 
+/** Compile class id of a Class: the compiled script's id, else its storage file stem. */
+function classIdOf(asset: ExportAssetBytes): string | undefined {
+  if (asset.type !== "Class") return undefined;
+  return asset.classId ?? (asset.assetPath ? classIdForAssetPath(asset.assetPath) : undefined);
+}
+
 function indexEntry(
   asset: ExportAssetBytes,
-  extra: { pack?: string; path?: string },
+  extra: { path: string },
 ): GameAssetIndexEntry {
   return {
     guid: asset.guid,
@@ -120,30 +123,36 @@ export function defaultPlayerIndexHtml(): string {
 `;
 }
 
+/**
+ * Replaces every `<link>` to a stylesheet in the export with that stylesheet
+ * inline. A stylesheet no link names stays a real file.
+ */
 function inlineCssIntoIndex(files: Map<string, Uint8Array>): void {
   const htmlBytes = files.get("index.html");
   if (!htmlBytes) return;
   let html = decoder.decode(htmlBytes);
   for (const [path, bytes] of [...files.entries()]) {
     if (!path.endsWith(".css")) continue;
-    const fileName = path.split("/").pop() ?? path;
-    const css = decoder.decode(bytes);
-    html = html.replace(
-      new RegExp(
-        `<link[^>]*href=["'](?:\\./)?${fileName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}["'][^>]*>`,
-        "i",
-      ),
-      `<style>${css}</style>`,
+    const link = new RegExp(
+      `<link[^>]*href=["'](?:\\.?/)?${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}["'][^>]*>`,
+      "gi",
     );
-    files.delete(path);
+    // A literal `</style` in the stylesheet would close the inline element early.
+    const style = `<style>${decoder.decode(bytes).replace(/<\/style/gi, "<\\/style")}</style>`;
+    let inlined = false;
+    html = html.replace(link, () => {
+      inlined = true;
+      return style;
+    });
+    if (inlined) files.delete(path);
   }
   files.set("index.html", encoder.encode(html));
 }
 
-async function writeLooseAssets(
+async function writeAssetFiles(
   files: Map<string, Uint8Array>,
   assets: readonly ExportAssetBytes[],
-): Promise<{ packs: string[]; index: GameAssetIndexEntry[] }> {
+): Promise<GameAssetIndexEntry[]> {
   const index: GameAssetIndexEntry[] = [];
   for (const [indexInExport, asset] of assets.entries()) {
     // Asset IDs include namespaced sidecars (for example area-emission:guid).
@@ -155,7 +164,7 @@ async function writeLooseAssets(
       ...(asset.startupRequired ? { startupRequired: true } : {}),
     });
   }
-  return { packs: [], index };
+  return index;
 }
 
 /**
@@ -173,7 +182,6 @@ function enablesSceneLayerPhysics(asset: ExportAssetBytes): boolean {
 
 function dependencyCatalog(assets: readonly ExportAssetBytes[]): ExportAssetBytes[] {
   const byId = new Map(assets.map(asset => [asset.guid, asset]));
-  const byName = new Map(assets.filter(asset => asset.name).map(asset => [asset.name!, asset.guid]));
   const documents = new Map<string, Record<string, unknown>>();
   const document = (asset: ExportAssetBytes) => {
     if (documents.has(asset.guid)) return documents.get(asset.guid);
@@ -187,9 +195,9 @@ function dependencyCatalog(assets: readonly ExportAssetBytes[]): ExportAssetByte
     } catch { /* The player reports corrupt requested payloads. */ }
     return undefined;
   };
-  const classes: AssetDependencyClass[] = assets.filter(asset => asset.type === "Class" || asset.type === "Graph").map(asset => {
+  const classes: AssetDependencyClass[] = assets.filter(asset => asset.type === "Class").map(asset => {
     const payload = document(asset);
-    return { guid: asset.guid, classId: asset.classId ?? asset.name ?? asset.guid, parentClassId: asset.parentClass,
+    return { guid: asset.guid, classId: classIdOf(asset) ?? asset.guid, parentClassId: asset.parentClass,
       members: Array.isArray(payload?.members) ? payload.members as AssetDependencyClass["members"] : undefined,
       requiredVariableNames: asset.requiredVariableNames };
   });
@@ -221,7 +229,7 @@ function dependencyCatalog(assets: readonly ExportAssetBytes[]): ExportAssetByte
     let requiredClassReferences = asset.requiredClassReferences;
     if (!required) {
       let payload: unknown;
-      if (asset.type === "Model") payload = extractPackedModelAsset(asset.bytes).payload;
+      if (asset.type === "Model") payload = decodePackedModelAsset(asset.bytes)?.payload;
       else if (asset.type === "Audio") payload = peekPackedAudioPayload(asset.bytes);
       else payload = document(asset);
       if (payload && typeof payload === "object" && !Array.isArray(payload)) {
@@ -234,23 +242,23 @@ function dependencyCatalog(assets: readonly ExportAssetBytes[]): ExportAssetByte
         requiredClassReferences = metadata.requiredClassReferences;
       }
     }
-    const resolve = (refs: readonly string[]) => [...new Set(refs.map(ref => byId.has(ref) ? ref : byName.get(ref) ?? ref))];
+    const unique = (refs: readonly string[]) => [...new Set(refs)];
     const resolveClasses = (refs: readonly string[] = []) => refs.flatMap(ref => {
-      const match = classes.find(entry => entry.guid === ref || entry.classId === ref || `scene:${entry.guid}` === ref);
+      const match = classes.find(entry => entry.guid === ref || entry.classId === ref);
       return match ? [match.guid] : [];
     });
-    const consoleCommand = asset.consoleCommand ?? (["Class", "Graph"].includes(asset.type) ? consoleCommandMetadataFromGraph(document(asset)) : undefined);
-    return { ...asset, consoleCommand, dependencies: resolve([...(dependencies ?? []), ...resolveClasses(classReferences), ...(sidecars.get(asset.guid) ?? [])]),
-      requiredDependencies: resolve([...(required ?? []), ...resolveClasses(requiredClassReferences), ...(asset.type === "Font" ? [] : sidecars.get(asset.guid) ?? [])]) };
+    const consoleCommand = asset.consoleCommand ?? (asset.type === "Class" ? consoleCommandMetadataFromGraph(document(asset)) : undefined);
+    return { ...asset, consoleCommand, dependencies: unique([...(dependencies ?? []), ...resolveClasses(classReferences), ...(sidecars.get(asset.guid) ?? [])]),
+      requiredDependencies: unique([...(required ?? []), ...resolveClasses(requiredClassReferences), ...(asset.type === "Font" ? [] : sidecars.get(asset.guid) ?? [])]) };
   });
 }
 
 export async function exportGame(
   options: ExportGameOptions,
 ): Promise<Result<ExportArtifact, string>> {
-  const mode = options.mode ?? "packed";
   const warnAt = options.fileCountWarn ?? DEFAULT_FILE_COUNT_WARN;
   const failAt = options.fileCountFail ?? DEFAULT_FILE_COUNT_FAIL;
+  const gameInstanceClass = options.gameInstanceClass?.trim() || undefined;
   const files = new Map<string, Uint8Array>();
 
   if (options.playerFiles) {
@@ -266,30 +274,18 @@ export async function exportGame(
   if (!files.has("index.html")) {
     files.set("index.html", encoder.encode(defaultPlayerIndexHtml()));
   }
-  if (options.extraFiles) {
-    for (const [path, bytes] of options.extraFiles) {
-      files.set(path.replace(/^\/+/, ""), bytes);
-    }
-  }
 
-  // Keep the historical bootstrap filename without eagerly shipping every
-  // compiled Class source inside it. Class code has the same scoped ownership
-  // and independently addressed source contract as other required sidecars.
-  files.set(SCRIPTS_FILE, encoder.encode(serializeScriptRegistry([])));
+  // Compiled Class code ships as required sidecars of its owning asset, each
+  // independently addressed like any other source.
   const scriptByAsset = new Map(options.scripts.map(script => [script.assetGuid, script]));
   const sourceAssets: ExportAssetBytes[] = options.assets.map(asset => {
     const script = scriptByAsset.get(asset.guid);
-    return script && ["Class", "Graph"].includes(asset.type) ? { ...asset, classId: script.classId, parentClass: script.parentClassId ?? asset.parentClass,
+    return script && asset.type === "Class" ? { ...asset, classId: script.classId, parentClass: script.parentClassId ?? asset.parentClass,
       consoleCommand: script.command ?? asset.consoleCommand } : asset;
   });
   for (const script of options.scripts) {
-    let owner = sourceAssets.find(asset => asset.guid === script.assetGuid);
-    if (!owner) {
-      owner = { guid: script.assetGuid, type: "Class", classId: script.classId, name: script.classId,
-        parentClass: script.parentClassId, consoleCommand: script.command, sceneGuid: options.startupSceneGuid,
-        bytes: encoder.encode(JSON.stringify({ components: script.components ?? [] })), encoding: "json" };
-      sourceAssets.push(owner);
-    }
+    const owner = sourceAssets.find(asset => asset.guid === script.assetGuid);
+    if (!owner) return err(`Compiled script ${script.classId} has no exported asset ${script.assetGuid}.`);
     sourceAssets.push({ guid: `script:${script.assetGuid}:${encodeURIComponent(script.classId)}`, ownerGuid: script.assetGuid, type: "CompiledScript", classId: script.classId,
       sceneGuid: owner.sceneGuid, encoding: "json", bytes: encoder.encode(JSON.stringify(script)), requiredDependencies: [] });
   }
@@ -297,11 +293,11 @@ export async function exportGame(
   const projectAssetGuids = new Set(renderEffectsAssetGuids(options.renderSettings?.effects));
   const prepared = dependencyCatalog(sourceAssets).map(asset => ({ ...asset,
     startupRequired: asset.startupRequired || projectAssetGuids.has(asset.guid) || asset.guid === options.audioMixerGuid ||
-      asset.guid === options.gameInstanceClass || (!!options.gameInstanceClass && asset.name === options.gameInstanceClass) || asset.type === "InputAction" || asset.type === "InputAxis",
+      (!!gameInstanceClass && classIdOf(asset) === gameInstanceClass) || asset.type === "InputAction" || asset.type === "InputAxis",
   }));
-  // Packaging choice never changes runtime addressability. A ZIP is only the
-  // delivery container; static hosts serve independent immutable asset files.
-  const packed = await writeLooseAssets(files, prepared);
+  // Every asset is its own immutable file. A ZIP is only the delivery
+  // container; static hosts serve the files independently.
+  const index = await writeAssetFiles(files, prepared);
 
   inlineCssIntoIndex(files);
 
@@ -310,13 +306,10 @@ export async function exportGame(
     ...(options.saveGame ? { saveGame: structuredClone(options.saveGame) } : {}),
     project: { name: options.project?.name ?? "", version: options.project?.version ?? "" },
     ...(options.inputAssets !== undefined ? { inputAssets: structuredClone(options.inputAssets) } : {}),
-    ...(options.inputMappings !== undefined ? { inputMappings: structuredClone(options.inputMappings) } : {}),
     focusNavigation: normalizeFocusNavigationSettings(options.focusNavigation),
     startupSceneGuid: options.startupSceneGuid,
     ...(options.defaultFontGuid ? { defaultFontGuid: options.defaultFontGuid } : {}),
-    ...(options.gameInstanceClass?.trim()
-      ? { gameInstanceClass: options.gameInstanceClass.trim() }
-      : {}),
+    ...(gameInstanceClass ? { gameInstanceClass } : {}),
     ...(options.audioMixerGuid?.trim()
       ? { audioMixerGuid: options.audioMixerGuid.trim() }
       : {}),
@@ -325,7 +318,6 @@ export async function exportGame(
     reverbDecayScale: clampAudioScale(options.reverbDecayScale, 1),
     reverbDampingScale: clampAudioScale(options.reverbDampingScale, 1),
     bundleDebugger: options.bundleDebugger,
-    mode,
     render: normalizeRenderProjectSettings(options.renderSettings),
     playFrameCap: normalizePlayFrameCap(options.playFrameCap),
     touchMinTargetPx:
@@ -339,10 +331,8 @@ export async function exportGame(
         : 100,
     pixelPerfect: options.pixelPerfect === true,
     sortingLayers: normalizeSortingLayers(options.sortingLayers),
-    packs: packed.packs,
-    scriptsFile: SCRIPTS_FILE,
     physicsWorld: options.physicsWorld ?? "3d",
-    assets: packed.index,
+    assets: index,
     ...(options.bundleDebugger
       ? {
           infiniteLoopDetection: options.infiniteLoopDetection !== false,
@@ -390,19 +380,30 @@ export function unzipExport(bytes: Uint8Array): Record<string, Uint8Array> {
   return unzipSync(bytes);
 }
 
+const OUTDATED_MANIFEST = "rebuild this game with the current exporter.";
+
+/** Fields `exportGame` always writes; a manifest without one predates the current exporter. */
+const REQUIRED_MANIFEST_FIELDS = [
+  "project", "focusNavigation", "startupSceneGuid", "occlusionEnabled", "reverbWetScale", "reverbDecayScale",
+  "reverbDampingScale", "bundleDebugger", "render", "playFrameCap", "touchMinTargetPx", "pixelsPerUnit",
+  "pixelPerfect", "sortingLayers", "physicsWorld", "assets",
+] as const satisfies readonly (keyof GameManifest)[];
+const DEBUGGER_MANIFEST_FIELDS = ["infiniteLoopDetection", "loopCount"] as const satisfies readonly (keyof GameManifest)[];
+
 export function parseGameManifest(source: string): GameManifest {
-  const parsed = JSON.parse(source) as Omit<GameManifest, "scriptsFile"> & {
-    scriptsFile?: unknown;
-    ui?: unknown;
-    uiDesignerPresets?: unknown;
-  };
-  if (parsed.assetCatalogVersion !== undefined && parsed.assetCatalogVersion !== 1) throw new Error("Unsupported asset catalog version; rebuild this game with the current exporter.");
-  let scriptsFile = SCRIPTS_FILE;
-  if (parsed.scriptsFile !== undefined) {
-    if (typeof parsed.scriptsFile !== "string" || parsed.scriptsFile.length === 0) {
-      throw new Error("game.json scriptsFile must be a non-empty string");
-    }
-    scriptsFile = parsed.scriptsFile;
+  const parsed = JSON.parse(source) as GameManifest;
+  if (parsed.assetCatalogVersion !== 1) throw new Error(`Unsupported asset catalog version; ${OUTDATED_MANIFEST}`);
+  const missing = [...REQUIRED_MANIFEST_FIELDS, ...(parsed.bundleDebugger === true ? DEBUGGER_MANIFEST_FIELDS : [])]
+    .filter(field => parsed[field] === undefined || parsed[field] === null);
+  if (missing.length > 0) throw new Error(`game.json has no ${missing.join(", ")}; ${OUTDATED_MANIFEST}`);
+  const project: unknown = parsed.project;
+  if (!project || typeof project !== "object" || typeof (project as { name?: unknown }).name !== "string" ||
+    typeof (project as { version?: unknown }).version !== "string") {
+    throw new Error(`game.json has no project name and version; ${OUTDATED_MANIFEST}`);
+  }
+  const sortingLayers: unknown = parsed.sortingLayers;
+  if (!Array.isArray(sortingLayers) || sortingLayers.length === 0 || !sortingLayers.every(layer => typeof layer === "string")) {
+    throw new Error(`game.json has no sorting layers; ${OUTDATED_MANIFEST}`);
   }
   const gameInstanceClass =
     typeof parsed.gameInstanceClass === "string" &&
@@ -414,21 +415,12 @@ export function parseGameManifest(source: string): GameManifest {
       ? parsed.audioMixerGuid.trim()
       : undefined;
   const bundleDebugger = parsed.bundleDebugger === true;
-  const rest = { ...parsed, scriptsFile } as GameManifest & {
-    ui?: unknown;
-    uiDesignerPresets?: unknown;
-  };
-  delete rest.ui;
-  delete rest.uiDesignerPresets;
   return {
-    ...rest,
+    ...parsed,
     render: normalizeRenderProjectSettings(parsed.render),
     focusNavigation: normalizeFocusNavigationSettings(parsed.focusNavigation),
     playFrameCap: normalizePlayFrameCap(parsed.playFrameCap),
-    project: {
-      name: typeof parsed.project?.name === "string" ? parsed.project.name : "",
-      version: typeof parsed.project?.version === "string" ? parsed.project.version : "",
-    },
+    project: { name: parsed.project!.name, version: parsed.project!.version },
     ...(gameInstanceClass ? { gameInstanceClass } : {}),
     ...(audioMixerGuid ? { audioMixerGuid } : {}),
     occlusionEnabled: parsed.occlusionEnabled !== false,
@@ -445,7 +437,7 @@ export function parseGameManifest(source: string): GameManifest {
         ? parsed.touchMinTargetPx
         : 44,
     pixelPerfect: parsed.pixelPerfect === true,
-    sortingLayers: normalizeSortingLayers(parsed.sortingLayers),
+    sortingLayers: [...sortingLayers],
     ...(bundleDebugger
       ? {
           infiniteLoopDetection: parsed.infiniteLoopDetection !== false,

@@ -1,10 +1,9 @@
 import { Texture, type BaseTexture } from "@babylonjs/core";
 import { isEngineOwnedGpuTexture } from "./gpu-resource-live";
 
+/** Editor pinch and wheel zoom stay continuous; there are no integer zoom steps. */
 export interface PixelPerfectSettings {
   pixelsPerUnit: number;
-  /** Project flag; editor pinch and wheel stay continuous regardless. */
-  integerZoomSteps: boolean;
 }
 
 /**

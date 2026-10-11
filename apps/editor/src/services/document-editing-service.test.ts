@@ -1,18 +1,32 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  createActor,
   createDefaultScene,
+  DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS,
   documentId,
   MAIN_SCENE_FILE,
   type DocumentRef,
+  type ProjectStorage,
   type SerializedActor,
+  type SerializedComponent,
   type SerializedGraph,
   type SerializedScene,
 } from "@babylonslate/core";
-import { DEFAULT_EDIT_BYTE_BUDGET, EditSession } from "@babylonslate/edit";
+import { appendJournalLines, readJournalLines } from "@babylonslate/assets";
+import {
+  commandToJournalPayload,
+  DEFAULT_EDIT_BYTE_BUDGET,
+  EditSession,
+  serializeJournalLine,
+  SetSceneNameCommand,
+} from "@babylonslate/edit";
+import { FakeLockProvider } from "@babylonslate/source-control";
+import { MemorySecretStore, MemoryStorageAdapter } from "@babylonslate/vfs";
 import { JournalBuffer } from "../lib/journal-buffer";
 import { DocumentEditingService } from "./document-editing-service";
 import { DocumentService } from "./document-service";
 import type { ProjectService } from "./project-service";
+import { classIdForGraphPath } from "./script-compiler";
 import { SourceControlService } from "./source-control-service";
 
 const LOCKED_PLUGIN = {
@@ -26,7 +40,13 @@ function fromDisk<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-function createEditing(options: { maxBytes?: number } = {}) {
+function createEditing(options: {
+  maxBytes?: number;
+  derivedStorage?: () => Promise<ProjectStorage>;
+  onRecoveryResolved?: () => void;
+  sourceControl?: SourceControlService;
+  scheduleDebouncedSave?: () => void;
+} = {}) {
   const documents = new DocumentService();
   const editSession = new EditSession({ maxBytes: options.maxBytes ?? DEFAULT_EDIT_BYTE_BUDGET });
   const files = new Map<string, unknown>();
@@ -46,15 +66,15 @@ function createEditing(options: { maxBytes?: number } = {}) {
     documents,
     editSession,
     project,
-    sourceControl: new SourceControlService(),
+    sourceControl: options.sourceControl ?? new SourceControlService(),
     journal,
-    derivedStorage: () => Promise.reject(new Error("Recovery is not part of these tests.")),
+    derivedStorage: options.derivedStorage ?? (() => Promise.reject(new Error("Recovery is not part of these tests."))),
     bump: () => {},
-    scheduleDebouncedSave: () => {},
+    scheduleDebouncedSave: options.scheduleDebouncedSave ?? (() => {}),
     onHistoryCleared: (id) => historyCleared.push(id),
     registryTick: () => 0,
     isProjectDirty: () => false,
-    onRecoveryResolved: () => {},
+    onRecoveryResolved: options.onRecoveryResolved ?? (() => {}),
   });
   const open = async (ref: DocumentRef, content: unknown) => {
     files.set(ref.path, content);
@@ -64,7 +84,7 @@ function createEditing(options: { maxBytes?: number } = {}) {
     await journal.flush();
     return journalLines.map((line) => ({ docId: line.docId, type: line.command.type }));
   };
-  return { documents, editSession, editing, historyCleared, open, journaled };
+  return { documents, editSession, editing, historyCleared, open, journaled, project };
 }
 
 const SCENE_REF: DocumentRef = { kind: "scene", path: MAIN_SCENE_FILE, label: "Main" };
@@ -154,6 +174,41 @@ describe("DocumentEditingService", () => {
     expect((await journaled()).map((line) => line.docId)).toEqual([editableId]);
   });
 
+  it.each([
+    { scene: "a writable Scene", path: "assets/Level.babasset", teammateLock: false, saved: true },
+    { scene: "a read-only plugin Scene", path: "plugins/Locked/Level.babasset", teammateLock: false, saved: false },
+    { scene: "a Scene a teammate locked", path: "assets/Level.babasset", teammateLock: true, saved: false },
+  ])("leaves only $scene for Save after the open-time prefab sync updates its instance", async ({ path, teammateLock, saved }) => {
+    const fake = new FakeLockProvider();
+    if (teammateLock) fake.addTheirs(path, "Teammate");
+    const sourceControl = new SourceControlService();
+    const saves = vi.fn();
+    try {
+      await sourceControl.configure({
+        settings: { ...DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, enabled: true }, projectGuid: "project-guid",
+        platform: "web", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake,
+      });
+      sourceControl.pausePolling();
+      await sourceControl.refresh();
+      const { documents, editing, open } = createEditing({ sourceControl, scheduleDebouncedSave: saves });
+      const classPath = "assets/Hero.class.babasset";
+      const sprite: SerializedComponent = { id: "component-sprite", classId: "SpriteComponent", properties: {}, parentId: null };
+      await open({ kind: "graph", path: classPath, label: "Hero" }, { nodes: [], edges: [], components: [sprite] });
+      const instance = createActor("hero", "Hero", { classId: classIdForGraphPath(classPath) });
+      const sceneId = await open({ kind: "scene", path, label: "Level" }, { ...createDefaultScene("2d"), actors: [instance] });
+      sourceControl.onOpenDocument(path);
+
+      await editing.syncPrefabInstances({ quiet: true });
+      const synced = documents.getDocument(sceneId)!;
+      expect((synced.content as SerializedScene).actors[0]!.components.map((component) => component.sourceId))
+        .toEqual([sprite.id]);
+      expect(synced.dirty).toBe(saved);
+      expect(saves).toHaveBeenCalledTimes(saved ? 1 : 0);
+      // Like an edit, the sync takes the writable Scene's lock before Auto-Save writes it.
+      await vi.waitFor(() => expect(sourceControl.lockStateForPath(path)).toBe(saved ? "mine" : teammateLock ? "theirs" : null));
+    } finally { sourceControl.dispose(); }
+  });
+
   it("keeps the Scene, dirty state and history when a Simulation result exceeds the Undo memory limit", async () => {
     const { documents, editSession, editing, open, journaled } = createEditing({ maxBytes: 1_024 });
     await open(SCENE_REF, createDefaultScene("2d"));
@@ -187,5 +242,54 @@ describe("DocumentEditingService", () => {
     editing.stepHistory("undo");
     expect(documents.getDocument(SCENE_ID)!.content).toEqual(baseline);
     expect(documents.getDocument(SCENE_ID)!.dirty).toBe(false);
+  });
+
+  it("keeps the recovery journal when one of its records cannot be read", async () => {
+    const derived = new MemoryStorageAdapter("documents");
+    await derived.openDocumentsProject("derived-root");
+    const resolved = vi.fn();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { documents, editing, open } = createEditing({
+      derivedStorage: async () => derived,
+      onRecoveryResolved: resolved,
+    });
+    await open(SCENE_REF, createDefaultScene("2d"));
+    const opened = documents.getDocument(SCENE_ID)!.content as SerializedScene;
+    // The readable record ends at the saved content, which alone would clear the journal.
+    await appendJournalLines(derived, "project-guid", [serializeJournalLine({
+      v: 1, docId: SCENE_ID, at: "2026-10-11T10:00:00Z",
+      command: commandToJournalPayload(new SetSceneNameCommand(opened.name, opened.name)),
+    }), "{\"v\":1,\"docId\""]);
+
+    await editing.replayRecoveryJournal();
+    expect(resolved).toHaveBeenCalled();
+    expect(documents.getDocument(SCENE_ID)!.dirty).toBe(false);
+    expect(await readJournalLines(derived, "project-guid")).toHaveLength(2);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("1 unreadable recovery record"));
+    warn.mockRestore();
+  });
+
+  it("does not replay a project's recovery journal into another project opened during the read", async () => {
+    const derived = new MemoryStorageAdapter("documents");
+    await derived.openDocumentsProject("derived-root");
+    let switchProject = () => {};
+    const resolved = vi.fn();
+    const { documents, editing, open, project } = createEditing({
+      derivedStorage: async () => { switchProject(); return derived; },
+      onRecoveryResolved: resolved,
+    });
+    await open(SCENE_REF, createDefaultScene("2d"));
+    const opened = documents.getDocument(SCENE_ID)!.content as SerializedScene;
+    await appendJournalLines(derived, "project-guid", [serializeJournalLine({
+      v: 1, docId: SCENE_ID, at: "2026-10-11T10:00:00Z",
+      command: commandToJournalPayload(new SetSceneNameCommand(opened.name, "Recovered")),
+    })]);
+    // The same Scene path in the project that replaced it.
+    switchProject = () => { (project as { guid: string }).guid = "other-project-guid"; };
+
+    await editing.replayRecoveryJournal();
+    expect(documents.getDocument(SCENE_ID)!.content).toBe(opened);
+    expect(documents.getDocument(SCENE_ID)!.dirty).toBe(false);
+    expect(resolved).not.toHaveBeenCalled();
   });
 });

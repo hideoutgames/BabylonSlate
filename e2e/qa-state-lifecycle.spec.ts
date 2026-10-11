@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { openAssetFromBrowser, openMainScene, openTestProject } from "./open-test-project";
-import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot } from "./play";
+import { clickPlayAndWaitForOverlay } from "./play";
 import { saveAllIfEnabled } from "./save-all";
 
 const CLASS_PATH = "assets/Mannequin.class.babasset";
@@ -84,8 +84,9 @@ test("H6: Undo in a Class preserves unsaved Scene content and its independent hi
   expect(await graphPosition(page)).toEqual(originalGraph);
 });
 
-for (const preview of [false]) {
-  test(`M3/M4: ${preview ? "Preview Build" : "Normal Play"} saves content and retains document Undo after Stop`, async ({ page }) => {
+// Preview Build save-before-launch is not part of this CI journey.
+for (const mode of ["Normal Play"] as const) {
+  test(`M3/M4: ${mode} saves content and retains document Undo after Stop`, async ({ page }) => {
     test.setTimeout(180_000);
     await openTestProject(page);
     await openClassGraph(page);
@@ -94,18 +95,9 @@ for (const preview of [false]) {
     await moveGraph(page);
     const moved = { x: original.x + 42, y: original.y + 17 };
     await openMainScene(page);
-    if (preview) {
-      await page.getByTestId("debug-menu").click();
-      await page.getByTestId("preview-build-toggle").click();
-      await page.getByTestId("play-preview").click();
-      await waitForPreviewBuildBoot(page);
-      await page.getByTestId("preview-build-close").click();
-      await expect(page.getByTestId("preview-build-overlay")).toHaveCount(0);
-    } else {
-      await clickPlayAndWaitForOverlay(page);
-      await page.getByTestId("play-overlay-close").click();
-      await expect(page.getByTestId("play-overlay")).toHaveCount(0);
-    }
+    await clickPlayAndWaitForOverlay(page);
+    await page.getByTestId("play-overlay-close").click();
+    await expect(page.getByTestId("play-overlay")).toHaveCount(0);
     await openClassGraph(page);
     expect(await graphPosition(page)).toEqual(moved);
     expect(await dirtyKinds(page)).toEqual([]);

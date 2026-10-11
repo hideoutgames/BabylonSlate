@@ -6,10 +6,17 @@ export class SetAssetDocumentCommand implements EditCommand<Record<string, unkno
   readonly from: Record<string, unknown>;
   readonly to: Record<string, unknown>;
   readonly mergeKey?: string;
-  #byteSize?: number;
-  /** Retained snapshot cost, measured on first read and memoised. */
+  #fromBytes?: number;
+  #toBytes?: number;
+  /**
+   * Retained snapshot cost. Each side is measured on first read and memoised,
+   * and inverting or coalescing carries the measured sides, so each sample of
+   * a merged gesture measures only its new `to`.
+   */
   get byteSize(): number {
-    return (this.#byteSize ??= snapshotBytes({ from: this.from, to: this.to }));
+    this.#fromBytes ??= snapshotBytes(this.from);
+    this.#toBytes ??= snapshotBytes(this.to);
+    return this.#fromBytes + this.#toBytes;
   }
 
   constructor(
@@ -29,18 +36,30 @@ export class SetAssetDocumentCommand implements EditCommand<Record<string, unkno
 
   invert(): SetAssetDocumentCommand {
     const inverse = new SetAssetDocumentCommand(this.to, this.from);
-    // Swapping `from` and `to` keeps the measured size.
-    inverse.#byteSize = this.#byteSize;
+    inverse.#fromBytes = this.#toBytes;
+    inverse.#toBytes = this.#fromBytes;
     return inverse;
   }
 
   /** A gesture keeps only its first `from` and its latest `to`. */
   coalesce(next: EditCommand<Record<string, unknown>>): SetAssetDocumentCommand | undefined {
     if (!(next instanceof SetAssetDocumentCommand) || next.mergeKey !== this.mergeKey) return undefined;
-    return new SetAssetDocumentCommand(this.from, next.to, this.mergeKey);
+    const merged = new SetAssetDocumentCommand(this.from, next.to, this.mergeKey);
+    merged.#fromBytes = this.#fromBytes;
+    merged.#toBytes = next.#toBytes;
+    return merged;
   }
 }
 
+function documentSnapshot(payload: Record<string, unknown>, side: "from" | "to"): Record<string, unknown> {
+  const value = payload[side];
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`asset.setDocument has no "${side}" document.`);
+  }
+  return value as Record<string, unknown>;
+}
+
+/** Revives a journaled edit; a record without both documents throws, so replay skips it. */
 export function createSetAssetDocumentCommandFromJson(
   payload: Record<string, unknown>,
 ): SetAssetDocumentCommand {
@@ -49,8 +68,8 @@ export function createSetAssetDocumentCommandFromJson(
       ? payload.mergeKey
       : undefined;
   return new SetAssetDocumentCommand(
-    (payload.from ?? {}) as Record<string, unknown>,
-    (payload.to ?? {}) as Record<string, unknown>,
+    documentSnapshot(payload, "from"),
+    documentSnapshot(payload, "to"),
     mergeKey,
   );
 }

@@ -5,17 +5,13 @@ import {
   refreshMeshLatticeDeformer,
   setMeshLatticeDeformer,
 } from "./lattice-deformer";
+import { isComponentPropertyOnlySceneEdit } from "./scene-transform-edit";
 
 type Target = { mesh: AbstractMesh; key: string; binding: DeformerBinding };
 
 /** Live cage controls retain the scene's assets, effects and geometry topology. */
 export function isDeformerOnlySceneEdit(previous: SerializedScene | null, next: SerializedScene): boolean {
-  if (!previous || previous === next) return false;
-  const otherState = (scene: SerializedScene) => ({ ...scene, actors: scene.actors.map((actor) => ({
-    ...actor, components: actor.components.map((component) => component.classId === "DeformerComponent"
-      ? { ...component, properties: {} } : component),
-  })) });
-  return JSON.stringify(otherState(previous)) === JSON.stringify(otherState(next));
+  return isComponentPropertyOnlySceneEdit(previous, next, "DeformerComponent");
 }
 
 /** Retains component identity across async model replacement, without touching geometry. */

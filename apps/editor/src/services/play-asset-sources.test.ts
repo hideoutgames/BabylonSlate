@@ -506,4 +506,32 @@ describe("Play source ownership", () => {
     expect(await prepared.cookComplexCollision("model")).toBeNull();
     loading.dispose();
   });
+
+  it("lets Play Sound accept Audio from every merged acquisition, not only the first", async () => {
+    const storage = new MemoryStorageAdapter();
+    await storage.pickProjectFolder();
+    await storage.mkdir("assets");
+    const write = async (guid: string, type: string, payload: Record<string, unknown>, chunks: ChunkInput[], required: string[] = []) =>
+      storage.writeBinary(`assets/${guid}.babasset`, await encodeBabasset({
+        header: { guid, name: guid, type, version: 1, engineVersion: "0.0.0", mode: "thin", payload,
+          dependencies: required, requiredDependencies: required, dependencyMetadataVersion: 1 },
+        chunks,
+      }));
+    await write("system", "Class", { nodes: [], edges: [] }, []);
+    await write("scene", "Scene", { actors: [] }, [], ["audio"]);
+    await write("audio", "Audio", { clips: [{ chunkId: "source", name: "One", weight: 1 }] },
+      [{ id: "source", kind: "audio", mime: "audio/wav", data: new Uint8Array([1, 2]) }]);
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const loading = createRegistryAssetLoadingService(registry, { projectId: "play" });
+    const host = { registry, project: createEmptyProject("Play"), createScope: (owner: string) => loading.createScope(owner),
+      compile: async () => ({ bundles: [], diagnostics: [] }) };
+    // Play acquires project systems before the Scene, so the first set has no Audio.
+    const systems = await acquirePlayAssetSources(host, ["system"], { consumer: "Systems", signal: new AbortController().signal });
+    const scene = await acquirePlayAssetSources(host, ["scene"], { consumer: "Scene", signal: new AbortController().signal });
+    const content = mergePreparedPlaySources([systems, scene])!.controls.find((control) => control.type === "loadSceneContent");
+    expect(content?.type === "loadSceneContent" ? content.audioAssetGuids : null).toEqual(["audio"]);
+    expect(systems.game.manifest.assets.map((entry) => entry.guid)).toEqual(["system"]);
+    systems.release(); scene.release(); loading.dispose();
+  });
 });

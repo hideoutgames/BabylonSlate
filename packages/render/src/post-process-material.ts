@@ -48,9 +48,15 @@ export function normalizePostProcessStack(
         },
       ];
     });
-  const identities = normalizeScenePostProcessStack(entries);
-  return entries.map((entry, index) => ({ ...entry, parameters: identities[index]!.parameters, id: identities[index]!.id }))
-    .sort((a, b) => a.order - b.order);
+  // The Scene normalizer keeps the first entry for each id and drops an entry
+  // without one, so its results pair with these entries by id.
+  const identities = new Map(normalizeScenePostProcessStack(entries).map((entry) => [entry.id, entry]));
+  return entries.flatMap((entry) => {
+    const identity = typeof entry.id === "string" ? identities.get(entry.id) : undefined;
+    if (!identity) return [];
+    identities.delete(identity.id);
+    return [{ ...entry, parameters: identity.parameters, id: identity.id }];
+  }).sort((a, b) => a.order - b.order);
 }
 
 export interface AttachedPostProcessStack {

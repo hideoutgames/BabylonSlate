@@ -159,7 +159,6 @@ describe("material node catalog", () => {
     expect(parseMaterialDomain("postProcess")).toBe("postProcess");
     expect(parseMaterialDomain("surface")).toBe("surface");
     expect(parseMaterialDomain("nope")).toBe("surface");
-    expect(parseMaterialDomain("interface")).toBe("surface");
   });
 
   it("filters palette entries by domain", () => {
@@ -169,14 +168,34 @@ describe("material node catalog", () => {
     expect(surface).not.toContain("input.sceneColor");
     expect(surface).not.toContain("input.sceneNormal");
     expect(surface).not.toContain("input.particleColor");
-    expect(surface).not.toContain("output.interface");
     const particle = materialPaletteEntries("particle").map((row) => row.type);
     expect(particle).toContain("output.particle");
     expect(particle).toContain("input.particleColor");
     expect(particle).not.toContain("output.surface");
     expect(particle).not.toContain("input.worldPosition");
     expect(particle).not.toContain("input.sceneColor");
-    expect(particle).not.toContain("output.interface");
+  });
+
+  it("offers UV only where the domain has a UV attribute", () => {
+    for (const domain of ["surface", "landscape", "particle", "text"] as const) {
+      expect(nodeIsLegalInDomain("input.uv", domain), domain).toBe(true);
+    }
+    expect(nodeIsLegalInDomain("input.uv", "postProcess")).toBe(false);
+  });
+
+  it("gives unwired math inputs defaults with a defined result", () => {
+    const defaultOf = (type: string, pin: string) =>
+      materialNodeDefinition(type)!.inputs.find((entry) => entry.id === pin)!.defaultValue![0]!;
+    for (const [type, pin] of [["math.divide", "b"], ["math.mod", "b"], ["math.pow", "exponent"], ["math.atan2", "x"]] as const) {
+      expect(defaultOf(type, pin), `${type}.${pin}`).not.toBe(0);
+    }
+    for (const type of ["math.reciprocal", "math.log", "math.log2", "math.inverseSqrt"]) {
+      expect(defaultOf(type, "value"), type).toBeGreaterThan(0);
+    }
+    expect(defaultOf("math.clamp", "max")).toBeGreaterThan(defaultOf("math.clamp", "min"));
+    expect(defaultOf("math.smoothstep", "edgeB")).toBeGreaterThan(defaultOf("math.smoothstep", "edgeA"));
+    expect(defaultOf("math.remap", "fromMax")).toBeGreaterThan(defaultOf("math.remap", "fromMin"));
+    expect(defaultOf("math.remap", "toMax")).toBeGreaterThan(defaultOf("math.remap", "toMin"));
   });
 
   it("costs a texture sample above a scalar multiply", () => {

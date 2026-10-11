@@ -13,7 +13,7 @@ import { createDefaultMigrationRegistry } from "../packages/assets/src/migration
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
 import { openMinimalTestProject } from "./minimal-project";
 import { openMainScene, waitForSceneViewportReady } from "./open-test-project";
-import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot, showOverlayButtons } from "./play";
+import { clickPlayAndWaitForOverlay, showOverlayButtons } from "./play";
 
 const MAIN_GUID = "00000000-0000-4000-8000-000000000001";
 const CHILD_GUID = "20000000-0000-4000-8000-000000000001";
@@ -26,7 +26,7 @@ function commandGraph(commandName: string, actorClass: string, method: string): 
     nodes: [
       { id: "run", type: "flow.event.commandRun", data: { commandName }, position: { x: 0, y: 0 } },
       { id: "target", type: "actor.getOfClass", data: { "default:classId": actorClass }, position: { x: 0, y: 200 } },
-      { id: "cast", type: "casting.cast", data: { "default:class": "SceneStreamingActor", defaultClassId: "SceneStreamingActor", resultKind: "actorRef" }, position: { x: 250, y: 0 } },
+      { id: "cast", type: "casting.cast", data: { "default:class": "SceneStreamingActor", resultKind: "actorRef" }, position: { x: 250, y: 0 } },
       { id: "stream", type: `sceneStreaming.${method}`, data: {}, position: { x: 500, y: 0 } },
     ],
     edges: [
@@ -113,15 +113,15 @@ async function streamingProject() {
 async function visiblePositions(host: Locator) {
   return host.evaluate(() => {
     type VisualHost = { visuals: () => Array<{ visible: boolean; position: number[] }> };
-    const global = globalThis as unknown as { __babylonslatePlayTest?: VisualHost; __babylonslatePlayerTest?: VisualHost };
-    return (global.__babylonslatePlayTest ?? global.__babylonslatePlayerTest)?.visuals()
+    return (globalThis as unknown as { __babylonslatePlayTest?: VisualHost }).__babylonslatePlayTest?.visuals()
       .filter((visual) => visual.visible)
       .map((visual) => visual.position.map((value) => Math.round(value * 1000) / 1000))
       .sort((a, b) => a[0]! - b[0]! || a[1]! - b[1]!) ?? [];
   });
 }
 
-for (const mode of ["Play"] as ("Play" | "Preview Build")[]) {
+// Preview Build streaming is not part of this CI journey.
+for (const mode of ["Play"] as const) {
   test(`${mode} streams two scene instances at their component origins and unloads them independently`, async ({ page }, testInfo) => {
     test.setTimeout(180_000);
     const errors: string[] = [];
@@ -136,26 +136,18 @@ for (const mode of ["Play"] as ("Play" | "Preview Build")[]) {
     expect(editorActors).toEqual(expect.arrayContaining(["parent-box", "left", "right"]));
     expect(editorActors.some((id) => id === "room" || id === "room-child" || id.startsWith("scene-stream:"))).toBe(false);
 
-    if (mode === "Preview Build") {
-      await page.getByTestId("debug-menu").click();
-      await page.getByTestId("preview-build-toggle").click();
-      await page.getByTestId("play-preview").click();
-      await waitForPreviewBuildBoot(page);
-      await page.getByRole("button", { name: "Console", exact: true }).click();
-    } else {
-      try {
-        await clickPlayAndWaitForOverlay(page);
-      } catch (error) {
-        await page.getByRole("tab", { name: "Output Log", exact: true }).click();
-        await testInfo.attach("play-preparation-output", {
-          body: JSON.stringify({ errors, output: await page.getByTestId("output-log-line").allTextContents() }),
-          contentType: "application/json",
-        });
-        throw error;
-      }
-      await page.getByTestId("play-console-open").click();
+    try {
+      await clickPlayAndWaitForOverlay(page);
+    } catch (error) {
+      await page.getByRole("tab", { name: "Output Log", exact: true }).click();
+      await testInfo.attach("play-preparation-output", {
+        body: JSON.stringify({ errors, output: await page.getByTestId("output-log-line").allTextContents() }),
+        contentType: "application/json",
+      });
+      throw error;
     }
-    const host = mode === "Play" ? page.getByTestId("play-overlay") : page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("player-root");
+    await page.getByTestId("play-console-open").click();
+    const host = page.getByTestId("play-overlay");
     const run = async (command: string) => {
       await page.getByTestId("debug-console-input").fill(command);
       await page.getByTestId("debug-console-submit").click();
@@ -177,26 +169,24 @@ for (const mode of ["Play"] as ("Play" | "Preview Build")[]) {
         entry.path === "assets/StreamedRoom.scene.babasset" && entry.chunkId === "document").length;
     });
     await positions([PARENT_POSITION]);
-    if (mode === "Play") {
-      expect(await sceneSources()).toEqual([]);
-      expect(await sceneDocumentReads()).toBe(0);
-    }
+    expect(await sceneSources()).toEqual([]);
+    expect(await sceneDocumentReads()).toBe(0);
     await run("stream_left_load");
     await positions([...LEFT_POSITIONS, PARENT_POSITION]);
     await run("stream_right_load");
     await positions([...LEFT_POSITIONS, PARENT_POSITION, ...RIGHT_POSITIONS]);
-    if (mode === "Play") expect(await sceneDocumentReads()).toBe(1);
+    expect(await sceneDocumentReads()).toBe(1);
     await run("stream_left_unload");
     await positions([PARENT_POSITION, ...RIGHT_POSITIONS]);
-    if (mode === "Play") expect((await sceneSources()).some((entry) => entry.owners.length > 0)).toBe(true);
+    expect((await sceneSources()).some((entry) => entry.owners.length > 0)).toBe(true);
     await run("stream_left_load");
     await positions([...LEFT_POSITIONS, PARENT_POSITION, ...RIGHT_POSITIONS]);
     await run("stream_right_unload");
     await positions([...LEFT_POSITIONS, PARENT_POSITION]);
     await run("stream_left_unload");
     await positions([PARENT_POSITION]);
-    if (mode === "Play") await expect.poll(sceneSources).toEqual([]);
+    await expect.poll(sceneSources).toEqual([]);
     expect(errors).toEqual([]);
-    await page.getByTestId(mode === "Play" ? "play-overlay-close" : "preview-build-close").click();
+    await page.getByTestId("play-overlay-close").click();
   });
 }

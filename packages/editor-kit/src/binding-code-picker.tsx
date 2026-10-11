@@ -43,7 +43,7 @@ function pickerTitle(device: InputDevice): string {
 }
 
 function catalogItems(device: InputDevice): SearchDialogItem[] {
-  if (device === "pointer" || device === "touch") return [];
+  if (device === "touch") return [];
   return bindingCodesForDevice(device).map((entry) => ({
     id: entry.code,
     label: entry.label,

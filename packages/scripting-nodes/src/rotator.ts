@@ -129,12 +129,9 @@ export const rotatorNodes: NodeDefinition[] = [
       pin("b", "B", "in", ROTATOR),
       pin("out", "Out", "out", BOOL),
     ],
-    codegen: (ctx) => {
-      const a = ctx.input("a");
-      const b = ctx.input("b");
-      return {
-        out: `(Math.abs((${a})?.pitch - (${b})?.pitch) < 1e-3 && Math.abs((${a})?.yaw - (${b})?.yaw) < 1e-3 && Math.abs((${a})?.roll - (${b})?.roll) < 1e-3)`,
-      };
-    },
+    // Each axis difference wraps to [-180, 180), so 0 and 360 are equal.
+    codegen: (ctx) => ({
+      out: `((a, b) => { const d = (x) => Math.abs((((x % 360) + 540) % 360) - 180); return d(a?.pitch - b?.pitch) < 1e-3 && d(a?.yaw - b?.yaw) < 1e-3 && d(a?.roll - b?.roll) < 1e-3; })(${ctx.input("a")}, ${ctx.input("b")})`,
+    }),
   },
 ];

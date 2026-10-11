@@ -10,17 +10,17 @@ function fileNameOf(fileName: string): string {
   return (fileName.split(/[\\/]/).pop() ?? fileName).toLowerCase();
 }
 
+/**
+ * A JSON that names its atlas page pairs only with that file; one that names
+ * none pairs with the `msdf` PNG of the same family.
+ */
 function pngMatchesJson(png: ImportFileBytes, json: ImportFileBytes): boolean {
-  if (isMsdfAtlasPng(png.name) && isMsdfJsonFile(json.name, json.bytes)) {
-    const jsonFamily = fileNameOf(json.name).replace(/\.json$/i, "");
-    const pngFamily = fileNameOf(png.name).replace(/\.png$/i, "");
-    if (jsonFamily.replace(/[-._]?msdf$/i, "") === pngFamily.replace(/[-._]?msdf$/i, "")) {
-      return true;
-    }
-  }
   const pages = msdfJsonAtlasPageNames(json.bytes).map(fileNameOf);
-  const pngName = fileNameOf(png.name);
-  return pages.includes(pngName);
+  if (pages.length > 0) return pages.includes(fileNameOf(png.name));
+  if (!isMsdfAtlasPng(png.name) || !isMsdfJsonFile(json.name, json.bytes)) return false;
+  const jsonFamily = fileNameOf(json.name).replace(/\.json$/i, "");
+  const pngFamily = fileNameOf(png.name).replace(/\.png$/i, "");
+  return jsonFamily.replace(/[-._]?msdf$/i, "") === pngFamily.replace(/[-._]?msdf$/i, "");
 }
 
 /** Pair MSDF JSON with a companion PNG so the PNG is not imported as a Texture. */

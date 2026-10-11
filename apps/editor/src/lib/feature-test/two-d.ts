@@ -363,7 +363,6 @@ async function buildRobotGraph(ctx: FeatureTestContext): Promise<string> {
       exitTimeTransition("fall-to-idle", "fall", "idle", 0, 2),
     ],
     variables: [],
-    parameters: [],
   };
   return (await ctx.createAsset("AnimationGraph", FOLDER, NAMES.robotGraph, { payload: payload(graph) })).guid;
 }

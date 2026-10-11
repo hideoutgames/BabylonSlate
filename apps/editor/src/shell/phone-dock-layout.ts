@@ -1,7 +1,39 @@
 import type { DockviewApi } from "dockview-react";
+import {
+  EVENT_GRAPH_PANEL_ID,
+  isFunctionGraphPanelId,
+} from "./function-graph-panels";
 
 type DockviewLayout = ReturnType<DockviewApi["toJSON"]>;
+type GridNode = DockviewLayout["grid"]["root"];
+type DetachedGroup =
+  | NonNullable<DockviewLayout["floatingGroups"]>[number]
+  | NonNullable<DockviewLayout["popoutGroups"]>[number];
+type GroupState = NonNullable<DetachedGroup["data"]>;
 const desktopLayouts = new WeakMap<DockviewApi, DockviewLayout>();
+
+/** Size along the docked root for a window moved in from a floating or popout group. */
+const INLINED_GROUP_SIZE = 240;
+
+/**
+ * A detached window joins the docked root as one node. Its own grid keeps its
+ * splits; a child of the root runs across the root, so a window split along
+ * the root's direction is wrapped once to keep that direction.
+ */
+function inlineDetachedGroup(
+  group: DetachedGroup,
+  rootOrientation: DockviewLayout["grid"]["orientation"],
+): GridNode | undefined {
+  if (group.grid) {
+    const root = { ...group.grid.root, size: INLINED_GROUP_SIZE };
+    return group.grid.orientation === rootOrientation
+      ? { type: "branch", data: [root], size: INLINED_GROUP_SIZE }
+      : root;
+  }
+  return group.data
+    ? { type: "leaf", data: group.data, size: INLINED_GROUP_SIZE }
+    : undefined;
+}
 
 export function inlineDetachedDockviewLayout(
   layout: DockviewLayout,
@@ -17,17 +49,8 @@ export function inlineDetachedDockviewLayout(
     ...(layout.popoutGroups ?? []),
   ];
   if (detached.length === 0) return layout;
-  type GridNode = DockviewLayout["grid"]["root"];
-  const leaves = (node: GridNode): GridNode[] =>
-    node.type === "branch" && Array.isArray(node.data)
-      ? node.data.flatMap(leaves)
-      : [node];
-  const groups: GridNode[] = detached.flatMap((group) =>
-    group.grid
-      ? leaves(group.grid.root)
-      : group.data
-        ? [{ type: "leaf" as const, data: group.data, size: 240 }]
-        : [],
+  const nodes = detached.flatMap(
+    (group) => inlineDetachedGroup(group, layout.grid.orientation) ?? [],
   );
   const result: DockviewLayout = {
     ...layout,
@@ -35,13 +58,67 @@ export function inlineDetachedDockviewLayout(
       ...layout.grid,
       root: {
         ...layout.grid.root,
-        data: [...layout.grid.root.data, ...groups],
+        data: [...layout.grid.root.data, ...nodes],
       },
     },
   };
   delete result.floatingGroups;
   delete result.popoutGroups;
   return result;
+}
+
+function layoutGroups(layout: DockviewLayout): GroupState[] {
+  const groups: GroupState[] = [];
+  const visit = (node: GridNode) => {
+    if (node.type === "branch" && Array.isArray(node.data)) {
+      node.data.forEach(visit);
+    } else {
+      groups.push(node.data as GroupState);
+    }
+  };
+  visit(layout.grid.root);
+  for (const group of [
+    ...(layout.floatingGroups ?? []),
+    ...(layout.popoutGroups ?? []),
+  ]) {
+    if (group.grid) visit(group.grid.root);
+    else if (group.data) groups.push(group.data);
+  }
+  return groups;
+}
+
+/**
+ * Function graph tabs are document content rather than window choices: one
+ * opened or renamed on the phone joins the desktop arrangement, as a tab
+ * beside the Event Graph (or another function tab).
+ */
+function withLiveFunctionGraphs(
+  desktop: DockviewLayout,
+  api: DockviewApi,
+): DockviewLayout {
+  const changed = api.panels.filter(
+    (panel) =>
+      isFunctionGraphPanelId(panel.id) &&
+      (!(panel.id in desktop.panels) ||
+        desktop.panels[panel.id]!.title !== panel.title),
+  );
+  if (changed.length === 0) return desktop;
+  const layout = structuredClone(desktop);
+  const groups = layoutGroups(layout);
+  const target =
+    groups.find((group) => group.views.includes(EVENT_GRAPH_PANEL_ID)) ??
+    groups.find((group) => group.views.some(isFunctionGraphPanelId)) ??
+    groups[0];
+  for (const panel of changed) {
+    const saved = layout.panels[panel.id];
+    if (saved) {
+      saved.title = panel.title;
+    } else if (target) {
+      layout.panels[panel.id] = panel.toJSON();
+      target.views.push(panel.id);
+    }
+  }
+  return layout;
 }
 
 export function isPhoneDockLayout(api: DockviewApi): boolean {
@@ -52,10 +129,10 @@ export function isPhoneDockLayout(api: DockviewApi): boolean {
 export function captureAdaptiveDockviewLayout(
   api: DockviewApi,
 ): Record<string, unknown> {
-  return (desktopLayouts.get(api) ?? api.toJSON()) as unknown as Record<
-    string,
-    unknown
-  >;
+  const desktop = desktopLayouts.get(api);
+  return (
+    desktop ? withLiveFunctionGraphs(desktop, api) : api.toJSON()
+  ) as unknown as Record<string, unknown>;
 }
 
 /** Use Dockview's visibility lifecycle, preserving mounted panel instances. */
@@ -105,8 +182,9 @@ export function enterPhoneDockLayout(
       if (disposed) return;
       dispose();
       api.exitMaximizedGroup();
+      const layout = withLiveFunctionGraphs(desktop, api);
       api.fromJSON(
-        allowDetached ? desktop : inlineDetachedDockviewLayout(desktop),
+        allowDetached ? layout : inlineDetachedDockviewLayout(layout),
         { reuseExistingPanels: true },
       );
       desktopLayouts.delete(api);

@@ -16,26 +16,31 @@ export function enginePluginPublicUrl(baseUrl: string, file: string): string {
 
 export const lastEnginePluginLoad: {
   entries: number;
-  unpacked: number;
   errors: string[];
-} = { entries: 0, unpacked: 0, errors: [] };
+} = { entries: 0, errors: [] };
 
+/** Read-only storage with no plugins, used when the bundled index cannot be read. */
+async function emptyEnginePluginStorage(): Promise<ProjectStorage> {
+  const storage = new MemoryStorageAdapter("opfs");
+  await storage.openDocumentsProject("engine-plugins");
+  return createReadOnlyProjectStorage(storage);
+}
+
+/** Mount the bundled plugin catalog; file parts are fetched on demand, never as archives. */
 export async function loadEnginePluginStorage(options: {
   fetch: typeof fetch;
   baseUrl?: string;
 }): Promise<ProjectStorage> {
   lastEnginePluginLoad.entries = 0;
-  lastEnginePluginLoad.unpacked = 0;
   lastEnginePluginLoad.errors = [];
-  const storage = new MemoryStorageAdapter("opfs");
-  await storage.openDocumentsProject("engine-plugins");
   const baseUrl = options.baseUrl ?? "/";
   try {
+    // Call fetch unbound: the platform fetch rejects any `this` but the global.
     const fetchCatalog = options.fetch;
     const response = await fetchCatalog(enginePluginPublicUrl(baseUrl, ENGINE_PLUGIN_INDEX_FILE));
     if (!response.ok) {
       lastEnginePluginLoad.errors.push(`index ${response.status}`);
-      return createReadOnlyProjectStorage(storage);
+      return emptyEnginePluginStorage();
     }
     const bytes = new Uint8Array(await response.arrayBuffer());
     const catalog = JSON.parse(new TextDecoder().decode(bytes)) as HttpStorageCatalog & { plugins?: Array<{ id: string }> };
@@ -44,13 +49,11 @@ export async function loadEnginePluginStorage(options: {
       fetch: options.fetch, baseUrl: enginePluginPublicUrl(baseUrl, ""), name: "engine-plugins", catalogBytesRead: bytes.byteLength,
     });
     lastEnginePluginLoad.entries = catalog.plugins.length;
-    // Retained diagnostic field: counts mounted plugins; no archives are unpacked.
-    lastEnginePluginLoad.unpacked = catalog.plugins.length;
     return result;
   } catch (error) {
     lastEnginePluginLoad.errors.push(`index ${error instanceof Error ? error.message : String(error)}`);
   }
-  return createReadOnlyProjectStorage(storage);
+  return emptyEnginePluginStorage();
 }
 
 let cachedEnginePluginStorage: ProjectStorage | null = null;

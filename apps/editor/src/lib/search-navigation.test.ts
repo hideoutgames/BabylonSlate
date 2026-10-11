@@ -16,7 +16,7 @@ function entry(
 }
 
 describe("documentOpenForTarget", () => {
-  it("opens Scene and Graph assets as documents", () => {
+  it("opens Scene and Class assets as documents", () => {
     expect(
       documentOpenForTarget({
         kind: "asset",
@@ -25,14 +25,6 @@ describe("documentOpenForTarget", () => {
         assetType: "Scene",
       }),
     ).toEqual({ kind: "scene", path: "assets/main.scene.babasset" });
-    expect(
-      documentOpenForTarget({
-        kind: "asset",
-        path: "assets/main.graph.babasset",
-        guid: "g1",
-        assetType: "Graph",
-      }),
-    ).toEqual({ kind: "graph", path: "assets/main.graph.babasset" });
     expect(
       documentOpenForTarget({
         kind: "asset",
@@ -54,18 +46,18 @@ describe("documentOpenForTarget", () => {
     expect(
       documentOpenForTarget({
         kind: "graph-node",
-        graphPath: "assets/main.graph.babasset",
+        graphPath: "assets/main.class.babasset",
         nodeId: "log-1",
       }),
-    ).toEqual({ kind: "graph", path: "assets/main.graph.babasset" });
+    ).toEqual({ kind: "graph", path: "assets/main.class.babasset" });
     expect(
       documentOpenForTarget({
         kind: "variable",
         name: "health",
-        graphPath: "assets/main.graph.babasset",
+        graphPath: "assets/main.class.babasset",
         nodeId: "var-1",
       }),
-    ).toEqual({ kind: "graph", path: "assets/main.graph.babasset" });
+    ).toEqual({ kind: "graph", path: "assets/main.class.babasset" });
   });
 
   it("opens settings documents for import and type assets", () => {
@@ -141,6 +133,14 @@ describe("revealAssetFromTarget", () => {
         assetType: "Texture",
       }),
     ).toBeNull();
+    expect(
+      revealAssetFromTarget({
+        kind: "asset",
+        path: "assets/tools.babasset",
+        guid: "tools-1",
+        assetType: "EditorUtilityInterface",
+      }),
+    ).toEqual({ guid: "tools-1", path: "assets/tools.babasset" });
     expect(
       revealAssetFromTarget({
         kind: "class",

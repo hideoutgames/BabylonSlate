@@ -13,8 +13,8 @@ function floatScript(): CompiledScript {
   const graph: LogicGraph = { id: "tween", kind: "event", nodes: [
     node("begin", "flow.event.beginPlay"),
     node("value", "variables.get", { variableName: "amount", typeId: "float", implicitSelf: true }),
-    node("tween", "tween.float", { a: 0, b: 8 }),
-    node("done", "debug.log", { message: "completed" }),
+    node("tween", "tween.float", { "default:a": 0, "default:b": 8 }),
+    node("done", "debug.log", { "default:message": "completed" }),
   ], edges: [
     { id: "exec", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "tween", targetPinId: "execIn" },
     { id: "value", sourceNodeId: "value", sourcePinId: "value", targetNodeId: "tween", targetPinId: "target" },

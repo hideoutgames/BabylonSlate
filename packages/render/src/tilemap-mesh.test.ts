@@ -140,6 +140,15 @@ describe("createTilemapMeshes", () => {
     expect(child!.position.y).toBeCloseTo(3, 6);
     expect(vertical!.position.x).toBeCloseTo(0, 6);
     expect(vertical!.position.y).toBeCloseTo(2, 6);
+
+    // The offset is a world displacement: a scaled tilemap root must not stretch it.
+    root.position.set(7, -3, 0);
+    root.scaling.set(2, 4, 1);
+    updateSceneTilemapParallax(scene, { x: 10, y: 4 });
+    child!.computeWorldMatrix(true);
+    const world = child!.getAbsolutePosition();
+    expect(world.x - root.position.x).toBeCloseTo(5, 6);
+    expect(world.y - root.position.y).toBeCloseTo(3, 6);
   });
 
   it("skips hidden layers", () => {
@@ -179,7 +188,6 @@ describe("createTilemapMeshes", () => {
     tilemap = {
       ...tilemap,
       chunkSize: 2,
-      tilesetGuid: "ground",
       tilesets: [
         { guid: "ground", firstGid: 1, tileCount: 1 },
         { guid: "deco", firstGid: 2, tileCount: 1 },

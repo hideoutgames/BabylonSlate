@@ -72,7 +72,7 @@ export function isEditorOnlyAsset(
   parentOf: (id: string) => string | null | undefined,
 ): boolean {
   if (isEditorOnlyAssetType(header.type)) return true;
-  if (header.type !== "Class" && header.type !== "Graph") return false;
+  if (header.type !== "Class") return false;
   return isEditorGraphClass(header.parentClass, parentOf);
 }
 

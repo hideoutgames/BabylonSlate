@@ -155,14 +155,37 @@ export function instantiatePrefabComponents(
   });
 }
 
-/** Nested flatten: Prefab Root then children by `parentId`. */
-export function childrenOfPrefabParent<T extends SerializedComponent>(
+/**
+ * Components grouped under the parent the tree lists them beneath (`null` is
+ * Prefab Root). A parent missing from the list, or a chain that loops back to
+ * the component, lists it under Prefab Root so it stays visible.
+ */
+export function prefabChildrenByParent<T extends SerializedComponent>(
   components: readonly T[],
-  parentId: string | null,
-): T[] {
-  return components.filter(
-    (component) => (component.parentId ?? null) === parentId,
+): Map<string | null, T[]> {
+  const parentById = new Map(
+    components.map((component) => [component.id, component.parentId ?? null]),
   );
+  const listedParent = (id: string): string | null => {
+    const parent = parentById.get(id) ?? null;
+    if (parent === null || !parentById.has(parent)) return null;
+    const seen = new Set<string>();
+    let cursor: string | null = parent;
+    while (cursor !== null && parentById.has(cursor) && !seen.has(cursor)) {
+      if (cursor === id) return null;
+      seen.add(cursor);
+      cursor = parentById.get(cursor) ?? null;
+    }
+    return parent;
+  };
+  const children = new Map<string | null, T[]>();
+  for (const component of components) {
+    const parent = listedParent(component.id);
+    const bucket = children.get(parent) ?? [];
+    bucket.push(component);
+    children.set(parent, bucket);
+  }
+  return children;
 }
 
 export function componentSubtreeIds(
@@ -222,9 +245,12 @@ export function reparentPrefabComponents(
     components.map((component) => [component.id, component]),
   );
   const roots = selected.filter((id) => {
+    const seen = new Set<string>([id]);
     let parent = byId.get(id)?.parentId ?? null;
-    while (parent) {
+    // A cyclic parent chain in saved data must not hang the drop.
+    while (parent && !seen.has(parent)) {
       if (selectedSet.has(parent)) return false;
+      seen.add(parent);
       parent = byId.get(parent)?.parentId ?? null;
     }
     return true;
@@ -425,6 +451,8 @@ function prefabRootPreviewActor() {
  * (compiler bump, Save All) rebuilds the component list even when the
  * authored payload is unchanged; keying on that array restarts collection
  * and can cancel `setMaterialDocuments` before MeshComponent materials bind.
+ * Transforms do not change what loads, so a Details scrub or gizmo commit
+ * only reloads the preview scene (`prefabPreviewTransformKey`).
  */
 export function prefabPreviewLoadKey(
   components: readonly SerializedComponent[],
@@ -434,10 +462,16 @@ export function prefabPreviewLoadKey(
       id: component.id,
       classId: component.classId,
       parentId: component.parentId ?? null,
-      transform: component.transform ?? null,
       properties: component.properties,
     })),
   );
+}
+
+/** Changes when a component moves, so the preview scene reloads without restarting asset loads. */
+export function prefabPreviewTransformKey(
+  components: readonly SerializedComponent[],
+): string {
+  return JSON.stringify(components.map((component) => component.transform ?? null));
 }
 
 /** Preview: Prefab Root at the origin plus one actor per component. */

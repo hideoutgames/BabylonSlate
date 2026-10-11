@@ -2,12 +2,10 @@ import {
   Camera,
   Color3,
   Color4,
-  DirectionalLight,
   Engine,
   FreeCamera,
   MeshBuilder,
   PBRMaterial,
-  PointLight,
   Scene,
   SpotLight,
   TransformNode,
@@ -119,46 +117,10 @@ async function captureAmbientOcclusion(
   return { off, on, linear, orthographic, orthographicOff, disabled };
 }
 
-function normalIdentityDocument() {
-  const document = createDefaultMaterialDocument("Normals Identity", "postProcess");
-  // World normals are stored as n * 0.5 + 0.5. Decode before length so a unit
-  // normal keeps scene color while the sample still keeps the prepass alive.
-  for (const [id, type, properties] of [
-    ["normal", "input.sceneNormal", {}],
-    ["two", "const.vec3", { value: [2, 2, 2] }],
-    ["one", "const.vec3", { value: [1, 1, 1] }],
-    ["scaled", "math.multiply", {}],
-    ["decoded", "math.subtract", {}],
-    ["length", "vector.length", {}],
-    ["multiply", "math.multiply", {}],
-  ] as const)
-    document.nodes.push({ id, type, position: { x: 0, y: 0 }, properties: { ...properties } });
-  document.edges = document.edges.filter((edge) => edge.id !== "e-scene-output");
-  for (const [from, output, to, input] of [
-    ["screenUv", "uv", "normal", "uv"],
-    ["normal", "normal", "scaled", "a"],
-    ["two", "out", "scaled", "b"],
-    ["scaled", "out", "decoded", "a"],
-    ["one", "out", "decoded", "b"],
-    ["decoded", "out", "length", "value"],
-    ["length", "out", "multiply", "b"],
-    ["sceneColor", "color", "multiply", "a"],
-    ["multiply", "out", "output", "color"],
-  ])
-    document.edges.push({
-      id: `${from}-${to}`,
-      sourceNodeId: from,
-      sourcePinId: output,
-      targetNodeId: to,
-      targetPinId: input,
-    });
-  return document;
-}
-
 /** Actual numeric pixels from authored materials and scene lights, without editor chrome. */
 export async function runSpatialEffectsProof(
   backend: "webgl2" | "webgpu",
-  kind: "reflections" | "point" | "spot" | "sun" | "combined" | "fogVolumes" | "ambientOcclusion",
+  kind: "combined" | "fogVolumes" | "ambientOcclusion",
 ) {
   const canvas = document.createElement("canvas");
   canvas.width = 96;
@@ -210,14 +172,14 @@ export async function runSpatialEffectsProof(
         floor.rotation.x = -Math.PI / 2;
         floor.position.z = 8;
       }
-      let light: DirectionalLight | SpotLight | PointLight | undefined;
+      let light: SpotLight | undefined;
       if (kind === "ambientOcclusion") {
         black.albedoColor.set(0.7, 0.7, 0.7);
         const crate = MeshBuilder.CreateBox("Occluding Crate", { size: 1.5 }, scene);
         crate.position.y = 0.75;
         crate.material = black;
       }
-      if (kind === "reflections" || kind === "combined") {
+      if (kind === "combined") {
         const document = createDefaultMaterialDocument("Authored Mirror");
         document.nodes.find(
           (node) => node.id === "baseColor",
@@ -244,27 +206,17 @@ export async function runSpatialEffectsProof(
         box.position.y = 1.3;
         box.material = red;
       }
-      if (kind !== "reflections" && kind !== "fogVolumes" && kind !== "ambientOcclusion") {
-        const position = new Vector3(0, 3, 0);
-        light =
-          kind === "point"
-            ? new PointLight("Fog Light", position, scene)
-            : kind === "spot" || kind === "combined"
-              ? new SpotLight(
-                  "Fog Light",
-                  position,
-                  Vector3.Down(),
-                  Math.PI / 2,
-                  1,
-                  scene,
-                )
-              : new DirectionalLight(
-                  "Fog Light",
-                  new Vector3(0.2, -1, 0.1),
-                  scene,
-                );
+      if (kind === "combined") {
+        light = new SpotLight(
+          "Fog Light",
+          new Vector3(0, 3, 0),
+          Vector3.Down(),
+          Math.PI / 2,
+          1,
+          scene,
+        );
         applyAuthoredLightProperties(light, {
-          intensity: kind === "sun" ? 5 : 20,
+          intensity: 20,
           range: 12,
           outerAngle: 90,
           innerAngle: 60,
@@ -368,36 +320,9 @@ export async function runSpatialEffectsProof(
           return { occlusionCaptures: [await captureAmbientOcclusion(camera, effects, draw)] };
         }
         const off = await draw();
-        effects.reflections.enabled =
-          kind === "reflections" || kind === "combined";
-        effects.volumetricLighting.enabled = kind !== "reflections";
+        effects.reflections.enabled = true;
+        effects.volumetricLighting.enabled = true;
         const on = await draw();
-        const stackDifferences: number[] = [];
-        if (kind === "reflections") {
-          const document = normalIdentityDocument();
-          const attach = () => graph.attachPostProcess({ scene, camera, library,
-            stack: [{ materialGuid: "normal-identity", enabled: true, order: 0 }], documentFor: () => document,
-          }, () => {});
-          let stack = attach();
-          // A normal-consuming authored pass keeps the prepass alive while
-          // spatial requirements change from fog depth to reflection buffers.
-          effects.reflections.enabled = false;
-          effects.volumetricLighting.enabled = true;
-          effects.volumetricLighting.density = 0;
-          await draw();
-          effects.reflections.enabled = true;
-          effects.volumetricLighting.enabled = false;
-          const checkStack = async () => {
-            const pixels = await draw();
-            stackDifferences.push(pixels.reduce((sum, value, i) => sum + Math.abs(value - on[i]!), 0) / on.length);
-          };
-          await checkStack();
-          stack = attach();
-          await checkStack();
-          stack.dispose();
-          const restored = await draw();
-          stackDifferences.push(restored.reduce((sum, value, i) => sum + Math.abs(value - on[i]!), 0) / on.length);
-        }
         effects.vignette.enabled = true;
         effects.vignette.weight = 0;
         const identityDisplay = await draw();
@@ -405,58 +330,22 @@ export async function runSpatialEffectsProof(
         effects.colorPipeline.mode = "sceneLinear";
         const linear = await draw();
         effects.colorPipeline.mode = "legacyDisplay";
-        let changed: number[];
-        let cameraSwitchDifference = 0;
-        if (light) {
-          applyAuthoredLightProperties(light, {
-            intensity: kind === "sun" ? 5 : 20,
-            range: 12,
-            outerAngle: 90,
-            innerAngle: 60,
-            castShadows: false,
-          });
-          changed = await draw();
-          applyAuthoredLightProperties(light, {
-            intensity: kind === "sun" ? 5 : 20,
-            range: 12,
-            outerAngle: 90,
-            innerAngle: 60,
-            castShadows: true,
-          });
-        } else {
-          camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
-          camera.orthoLeft = -4;
-          camera.orthoRight = 4;
-          camera.orthoTop = 3;
-          camera.orthoBottom = -3;
-          changed = await draw();
-          const alternate = new FreeCamera(
-            "Alternate Spatial Camera",
-            new Vector3(1, 2.5, -6),
-            scene,
-          );
-          alternate.minZ = camera.minZ;
-          alternate.maxZ = camera.maxZ;
-          alternate.mode = Camera.ORTHOGRAPHIC_CAMERA;
-          alternate.orthoLeft = -4;
-          alternate.orthoRight = 4;
-          alternate.orthoTop = 3;
-          alternate.orthoBottom = -3;
-          alternate.setTarget(new Vector3(0, 0.6, 0));
-          const switched = await draw(alternate);
-          camera.position.copyFrom(alternate.position);
-          camera.setTarget(new Vector3(0, 0.6, 0));
-          const samePose = await draw();
-          cameraSwitchDifference =
-            switched.reduce(
-              (sum, value, i) => sum + Math.abs(value - samePose[i]!),
-              0,
-            ) / switched.length;
-          alternate.dispose();
-          camera.position.set(0, 2.5, -6);
-          camera.setTarget(new Vector3(0, 0.6, 0));
-          camera.mode = Camera.PERSPECTIVE_CAMERA;
-        }
+        if (!light) throw new Error("The combined capture has no spot light");
+        applyAuthoredLightProperties(light, {
+          intensity: 20,
+          range: 12,
+          outerAngle: 90,
+          innerAngle: 60,
+          castShadows: false,
+        });
+        const changed = await draw();
+        applyAuthoredLightProperties(light, {
+          intensity: 20,
+          range: 12,
+          outerAngle: 90,
+          innerAngle: 60,
+          castShadows: true,
+        });
         effects.reflections.enabled =
           effects.volumetricLighting.enabled = false;
         const disabled = await draw();
@@ -467,8 +356,6 @@ export async function runSpatialEffectsProof(
           linear,
           changed,
           disabled,
-          cameraSwitchDifference,
-          stackDifferences,
         }] };
       } finally {
         graph.dispose();

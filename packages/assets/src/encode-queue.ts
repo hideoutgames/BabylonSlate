@@ -31,7 +31,7 @@ export interface EncodeJob {
   /** Usage the job encodes for, which an unsaved Details edit may override. */
   usage?: string;
   guard?: EncodeJobGuard;
-  /** sha256 of `source`, set on a guarded job: it writes only while the file's `pixels` chunk still has it. */
+  /** sha256 of `source`: the job writes only while the file's `pixels` chunk still has it. */
   sourceSha256?: string;
 }
 
@@ -47,25 +47,30 @@ export interface EncodeJobResult {
 }
 
 /**
- * Whether a guarded job may make a write to its Texture's file as it is on
- * disk now (`current`): its guard allows it, and the file's source pixels are
- * still the ones it encoded, so an encode of replaced pixels never lands.
- * An unguarded job (the user's own encode) always may.
+ * Whether a job may make a write to its Texture's file as it is on disk now
+ * (`current`): its guard, if any, allows it, and the file's source pixels are
+ * still the ones it encoded (`sourceSha256`), so an encode of replaced pixels
+ * never lands, whether it is a background or the user's own encode.
  */
 export function encodeJobMayWrite(
   job: Pick<EncodeJob, "assetGuid" | "guard" | "sourceSha256">,
   current: BabassetHeader,
 ): boolean {
-  if (!job.guard) return true;
-  if (!job.guard.canWrite(job.assetGuid, current)) return false;
+  if (job.guard && !job.guard.canWrite(job.assetGuid, current)) return false;
   if (job.sourceSha256 === undefined) return true;
   return current.chunks.find((chunk) => chunk.kind === "pixels")?.sha256 === job.sourceSha256;
 }
 
+/**
+ * Encode one source. `signal` aborts when the queue gives up on the job (its
+ * timeout): an encoder that can stop should, so a hung encode does not hold
+ * the next job behind it.
+ */
 export type EncodeFn = (
   source: Uint8Array,
   settings: TextureEncodeSettings,
   mime?: string,
+  signal?: AbortSignal,
 ) => Promise<{ ktx2: Uint8Array; wallMs: number }>;
 
 export const DEFAULT_ENCODE_JOB_TIMEOUT_MS = 120_000;
@@ -83,11 +88,14 @@ export interface EncodeQueueOptions {
   ) => void;
   onComplete?: (result: EncodeJobResult) => void | Promise<void>;
   onError?: (assetGuid: string, error: unknown, job: EncodeJob) => void;
-  /** A guarded job its guard refused at the front of the queue, dropped unencoded. */
+  /**
+   * A job that writes nothing: a guarded job its guard refused at the front of
+   * the queue, or the job that was encoding when `clear()` dropped the queue.
+   */
   onDrop?: (job: EncodeJob) => void;
 }
 
-type DerivedJob = { run: () => Promise<void> };
+type DerivedJob = { run: () => Promise<void>; cancel: (reason: unknown) => void };
 
 /**
  * Main-thread encode scheduler: one job at a time, pauseable for Preview /
@@ -104,10 +112,12 @@ export class EncodeQueue {
   private readonly onDrop?: EncodeQueueOptions["onDrop"];
   private paused = false;
   private running = false;
-  /** The job being encoded, until its result or error is reported. */
+  /** The job being encoded, until its result or error is reported or `clear()` drops it. */
   private encoding: EncodeJob | null = null;
   private completedSinceRecycle = 0;
   private recycled = 0;
+  /** Advanced by `clear()`: an encode started before it reports `onDrop`. */
+  private generation = 0;
 
   constructor(options: EncodeQueueOptions = {}) {
     this.encode = options.encode ?? stubEncodeKtx2;
@@ -130,7 +140,9 @@ export class EncodeQueue {
 
   /**
    * A job for this asset waits or is encoding. Its completion callbacks run
-   * after this turns false, so they may queue the asset again.
+   * after this turns false, so they may queue the asset again. An encode
+   * `clear()` dropped no longer counts, so a reopened project may queue its
+   * asset again.
    */
   has(assetGuid: string): boolean {
     if (this.encoding?.assetGuid === assetGuid) return true;
@@ -159,7 +171,11 @@ export class EncodeQueue {
           reject(controller.signal.reason);
         }
       };
-      const job: DerivedJob = { run: async () => {
+      const job: DerivedJob = { cancel: (reason) => {
+        controller.abort(reason);
+        signal?.removeEventListener("abort", cancel);
+        reject(reason);
+      }, run: async () => {
         started = true;
         const timer = this.jobTimeoutMs > 0 ? setTimeout(() => controller.abort(new Error("Derived texture processing timed out.")), this.jobTimeoutMs) : undefined;
         try {
@@ -177,6 +193,20 @@ export class EncodeQueue {
     });
   }
 
+  /**
+   * Drops the jobs of a closed project: every waiting job (a waiting derived
+   * job rejects) and the result of the encode running now, which reports
+   * `onDrop` instead of `onComplete` or `onError`. A new project's jobs run
+   * after that encode settles.
+   */
+  clear(): void {
+    this.generation += 1;
+    this.encoding = null;
+    for (const job of this.queue.splice(0)) {
+      if ("run" in job) job.cancel(new Error("Asset processing cancelled."));
+    }
+  }
+
   pause(): void {
     this.paused = true;
   }
@@ -190,17 +220,19 @@ export class EncodeQueue {
     ktx2: Uint8Array;
     wallMs: number;
   }> {
-    const encodePromise = this.encode(job.source, job.settings, job.mime);
     const timeoutMs = this.jobTimeoutMs;
-    if (!timeoutMs || timeoutMs <= 0) return encodePromise;
+    if (!timeoutMs || timeoutMs <= 0) return this.encode(job.source, job.settings, job.mime);
+    const controller = new AbortController();
+    const encodePromise = this.encode(job.source, job.settings, job.mime, controller.signal);
     return new Promise((resolve, reject) => {
       let settled = false;
       const timer = setTimeout(() => {
         if (settled) return;
         settled = true;
-        reject(
-          new Error(`texture encode timed out for ${job.assetGuid}`),
-        );
+        const error = new Error(`texture encode timed out for ${job.assetGuid}`);
+        // Stop the hung encoder too, so the next job does not queue behind it.
+        controller.abort(error);
+        reject(error);
       }, timeoutMs);
       encodePromise.then(
         (value) => {
@@ -235,11 +267,16 @@ export class EncodeQueue {
       finally { this.running = false; void this.pump(); }
       return;
     }
+    const generation = this.generation;
     this.encoding = job;
     this.onState?.(job.assetGuid, "encoding", job);
     try {
       const { ktx2, wallMs } = await this.encodeWithTimeout(job);
       this.encoding = null;
+      if (generation !== this.generation) {
+        this.onDrop?.(job);
+        return;
+      }
       this.onState?.(job.assetGuid, "compressed", job);
       await this.onComplete?.({
         assetGuid: job.assetGuid,
@@ -258,6 +295,10 @@ export class EncodeQueue {
       }
     } catch (error) {
       this.encoding = null;
+      if (generation !== this.generation) {
+        this.onDrop?.(job);
+        return;
+      }
       this.onState?.(job.assetGuid, "encode_failed", job);
       this.onError?.(job.assetGuid, error, job);
     } finally {

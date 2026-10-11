@@ -124,8 +124,20 @@ describe("Slate project browser", () => {
     const onOpenExternal = vi.fn(async () => {});
     renderHomepage({ onOpenExternal });
     fireEvent.click(screen.getByTestId("open-project"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Import Folder" }));
+    await waitFor(() =>
+      expect(onOpenExternal).toHaveBeenLastCalledWith("folder"),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("open-project")).toHaveProperty(
+        "disabled",
+        false,
+      ),
+    );
+    fireEvent.click(screen.getByTestId("open-project"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Import ZIP" }));
-    await waitFor(() => expect(onOpenExternal).toHaveBeenCalledWith("zip"));
+    await waitFor(() => expect(onOpenExternal).toHaveBeenLastCalledWith("zip"));
+    expect(onOpenExternal).toHaveBeenCalledTimes(2);
   });
 
   it("locks actions while opening and exposes a recoverable failure", async () => {

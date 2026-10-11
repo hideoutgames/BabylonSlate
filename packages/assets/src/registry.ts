@@ -1,5 +1,5 @@
 import type { ProjectStorage, ProjectStorageReader, StorageReadOptions } from "@babylonslate/core";
-import { ENGINE_VERSION, SourceRevisionChangedError } from "@babylonslate/core";
+import { classIdForAssetPath, ENGINE_VERSION, isStorageNotFound, SourceRevisionChangedError } from "@babylonslate/core";
 import {
   decodeBabasset,
   encodeBabasset,
@@ -43,7 +43,7 @@ import { clampDimension,
 import { payloadPixelSize, textureEncodeSettingsFor } from "./resolve-gpu-texture";
 import { DEFAULT_THUMBNAIL_MAX_EDGE, generateThumbnailBytes } from "./thumbnails";
 import { AREA_EMISSION_CHUNK_KIND, areaEmissionChunkId, currentAreaEmissionChunk, decodeAreaEmission, type AreaEmissionProgress } from "./area-emission";
-import { sha256Hex } from "./bytes";
+import { sha256Hex, stableStringify } from "./bytes";
 import { moveStorageFile, moveStorageTree, STORAGE_MOVE_BACKUP_PREFIX } from "./storage-move";
 import { collectAssetDependencyMetadata, type AssetDependencyClass } from "./asset-dependencies";
 import { resolveAssetCatalogDependencies } from "./catalog-class-dependencies";
@@ -89,6 +89,17 @@ export interface FolderNode {
 }
 
 /**
+ * An asset file a scan left out of the index because an already indexed file
+ * (`indexedPath`) has the same guid, such as a copy made outside the editor.
+ */
+export interface GuidConflict {
+  rootId: string;
+  path: string;
+  guid: string;
+  indexedPath: string;
+}
+
+/**
  * Change counter behind `AssetRegistry.generation`. Registries that share one
  * clock (every remount of a project) advance it together, so a registry that
  * replaces another never reports an earlier or repeated generation.
@@ -115,12 +126,6 @@ export interface AssetRegistryOptions {
    */
   generationClock?: RegistryGenerationClock;
   /**
-   * Textures each decoded legacy atlas referrer samples, by type and document
-   * chunk sha256. Pass the same map to every remount so unchanged referrers
-   * are not read and decoded again.
-   */
-  legacyAtlasCache?: Map<string, readonly string[]>;
-  /**
    * Textures an alignment check is requeuing right now. Pass the same set to
    * every remount that shares one encode queue, so a check on the previous
    * registry and one on the next skip each other's Texture.
@@ -145,6 +150,8 @@ export class AssetRegistry {
   private readonly locatorRequests = new Map<string, { asset: IndexedAsset; promise: Promise<AssetSourceLocator> }>();
   /** Empty (or marker-backed) folders discovered during scan, keyed by storage path. */
   private readonly knownFolders = new Set<string>();
+  /** Scanned files left unindexed because another file has their guid, by path. */
+  private readonly guidConflicts = new Map<string, GuidConflict>();
   /** guid -> guids of assets whose header `dependencies[]` names it. */
   private readonly inbound = new Map<string, Set<string>>();
   private encodeQueue: EncodeQueue | null = null;
@@ -166,16 +173,12 @@ export class AssetRegistry {
   private readonly atlasByReferrer = new Map<string, readonly string[]>();
   /** Texture guid -> atlas referrers sampling it. */
   private readonly atlasReferrers = new Map<string, Set<string>>();
-  /** Atlas referrers whose header predates the `atlasTextures` meta. */
-  private readonly legacyAtlasReferrers = new Set<string>();
-  private legacyAtlasResolution: Promise<void> = Promise.resolve();
   private atlasStatusListener: ((textureGuids: string[]) => void) | null = null;
   /** Texture guid -> atlas status before the changes not yet reported. */
   private readonly atlasStatusBefore = new Map<string, boolean>();
   private atlasFlushScheduled = false;
   private ownWriteListener: ((write: OwnAssetWrite) => void) | null = null;
   private createdTextureListener: ((asset: IndexedAsset) => void) | null = null;
-  private readonly legacyAtlasCache: Map<string, readonly string[]>;
   /**
    * Textures an alignment check is requeuing right now. Imports and
    * Duplicates run the pass outside the editor's serialized passes, so a
@@ -189,7 +192,6 @@ export class AssetRegistry {
     this.blobs = options.blobs ?? createVfsBlobStore(storage);
     this.loader =
       options.payloadLoader ?? new AccountedPayloadLoader(storage, { blobs: this.blobs });
-    this.legacyAtlasCache = options.legacyAtlasCache ?? new Map();
     this.alignmentRequeues = options.alignmentRequeues ?? new Set();
     this.clock = options.generationClock ?? new RegistryGenerationClock();
   }
@@ -257,7 +259,8 @@ export class AssetRegistry {
     if (existing && existing.header.guid !== header.guid) {
       throw new Error(`Asset already exists: ${path} (indexed as ${existing.header.guid})`);
     }
-    return this.reportCreatedTexture(this.indexHeader(rootId, path, header, false, mtime));
+    const indexed = this.indexHeader(rootId, path, header, false, mtime);
+    return this.byGuid.get(header.guid) === indexed ? this.reportCreatedTexture(indexed) : indexed;
   }
 
   /** Bind the §3.5 encode scheduler (ProjectService owns the queue lifetime). */
@@ -393,13 +396,34 @@ export class AssetRegistry {
     return { guid, type: header.type, name: header.name, version: header.version, payload };
   }
 
+  /**
+   * Scan a root into the index, replacing what an earlier mount of the same
+   * id indexed. A folder that cannot be listed fails the mount and leaves the
+   * root unmounted: a partial index would hide the folder's assets, and
+   * deleting that folder would remove them unseen.
+   */
   async mountRoot(root: ContentRoot): Promise<void> {
+    if (this.roots.has(root.id)) this.unmountRoot(root.id);
     this.roots.set(root.id, root);
     this.changed();
     const storage = this.storageOf(root);
-    if (storage.withReadScope) {
-      await storage.withReadScope((reader) => this.walk(root, root.pathPrefix, reader));
-    } else await this.walk(root, root.pathPrefix, storage);
+    try {
+      if (storage.withReadScope) {
+        await storage.withReadScope((reader) => this.walk(root, root.pathPrefix, reader));
+      } else await this.walk(root, root.pathPrefix, storage);
+    } catch (error) {
+      this.unmountRoot(root.id);
+      throw error;
+    }
+  }
+
+  /**
+   * Asset files the scans left out of the index because an already indexed
+   * file has the same guid. They stay on disk; a folder holding one cannot be
+   * deleted here until the copy gets its own guid or is removed.
+   */
+  listGuidConflicts(): GuidConflict[] {
+    return [...this.guidConflicts.values()];
   }
 
   unmountRoot(rootId: string): void {
@@ -409,6 +433,9 @@ export class AssetRegistry {
       if (asset.rootId === rootId) {
         this.removeFromIndex(asset);
       }
+    }
+    for (const [path, conflict] of [...this.guidConflicts]) {
+      if (conflict.rootId === rootId) this.guidConflicts.delete(path);
     }
     if (!root) return;
     // A remount walks storage again; folders removed meanwhile must not linger.
@@ -587,7 +614,7 @@ export class AssetRegistry {
       .map((asset) => ({
         guid: asset.header.guid,
         classId: typeof asset.header.payload.classId === "string" ? asset.header.payload.classId
-          : (asset.path.split("/").pop() ?? "").replace(/\.(graph|class)\.(babasset|json)$/, "").replace(/\.babasset$/, "").replace(/[^A-Za-z0-9_]+/g, "_") || "Graph",
+          : classIdForAssetPath(asset.path),
         parentClassId: asset.header.parentClass,
         requiredVariableNames: asset.header.requiredVariableNames,
         members: Array.isArray(asset.header.payload.members) ? asset.header.payload.members as AssetDependencyClass["members"]
@@ -609,7 +636,7 @@ export class AssetRegistry {
         guid: result.guid,
         type: result.type,
         name: result.name,
-        engineVersion: "0.0.0",
+        engineVersion: ENGINE_VERSION,
         version: result.version,
         mode: "thin",
         ...dependencies,
@@ -667,6 +694,12 @@ export class AssetRegistry {
     this.assertWritable(root);
     const storage = this.storageOf(root);
     const folderPath = joinRootPath(root, relativeFolder);
+    // The recursive remove below would also delete files the index does not show.
+    const hidden = [...this.guidConflicts.values()].find((conflict) =>
+      conflict.rootId === rootId && isWithinFolder(conflict.path, folderPath));
+    if (hidden) {
+      throw new Error(`Cannot delete ${folderPath}: it holds ${hidden.path}, which is not listed because ${hidden.indexedPath} has the same asset id. Remove that file outside the editor first.`);
+    }
     for (const asset of [...this.byGuid.values()]) {
       if (asset.rootId === rootId && isWithinFolder(asset.path, folderPath)) {
         await this.deleteAssetUnlocked(asset.header.guid);
@@ -744,12 +777,24 @@ export class AssetRegistry {
       if (this.byPath.get(asset.path) === asset) {
         this.byPath.delete(asset.path);
       }
-      const moved: IndexedAsset = { ...asset, path: newPath };
+      // A locator names the old path; the next read resolves the moved file.
+      const moved: IndexedAsset = { ...asset, path: newPath, locator: undefined };
       this.byGuid.set(guid, moved);
       this.byPath.set(newPath, moved);
+      this.repathGuidConflicts((path) => path === asset.path ? newPath : path);
       this.changed();
       return moved;
     });
+  }
+
+  /** Keep recorded guid conflicts pointing at files a move relocated. */
+  private repathGuidConflicts(map: (path: string) => string): void {
+    for (const [path, conflict] of [...this.guidConflicts]) {
+      const next = { ...conflict, path: map(conflict.path), indexedPath: map(conflict.indexedPath) };
+      if (next.path === conflict.path && next.indexedPath === conflict.indexedPath) continue;
+      this.guidConflicts.delete(path);
+      this.guidConflicts.set(next.path, next);
+    }
   }
 
   async renameAsset(guid: string, newName: string): Promise<IndexedAsset> {
@@ -798,10 +843,11 @@ export class AssetRegistry {
     });
     if (newPath !== asset.path) {
       await moveStorageFile(storage, asset.path, newPath, fileBytes, encoded);
-      return this.indexHeader(asset.rootId, newPath, readBabassetHeader(encoded));
+      this.repathGuidConflicts((path) => path === asset.path ? newPath : path);
+      return this.indexHeader(asset.rootId, newPath, readBabassetHeader(encoded), false, await this.statMtime(storage, newPath));
     }
     await storage.writeBinary(asset.path, encoded);
-    return this.indexHeader(asset.rootId, asset.path, readBabassetHeader(encoded));
+    return this.indexHeader(asset.rootId, asset.path, readBabassetHeader(encoded), false, await this.statMtime(storage, asset.path));
   }
 
   async duplicateAsset(
@@ -860,6 +906,12 @@ export class AssetRegistry {
         : other.path;
       siblingStems.push(stripAssetFileSuffix(otherFile));
     }
+    // A Class's file stem is its class id, which no other Class in any root may use.
+    const classIds = decoded.header.type === "Class"
+      ? new Set([...this.byGuid.values()]
+        .filter((other) => !other.placeholder && other.header.type === "Class")
+        .map((other) => classIdForAssetPath(other.path)))
+      : null;
     // Pick and claim the copy's name together, skipping names another write
     // holds and unindexed files already on disk.
     let uniqueName: string;
@@ -870,6 +922,7 @@ export class AssetRegistry {
       candidate = joinRootPath(root, joinRelative(targetFolderRelative, `${uniqueName}${suffix}`));
       siblingStems.push(uniqueName);
       if (this.isPathReserved(candidate) || this.byPath.has(candidate)) continue;
+      if (classIds?.has(classIdForAssetPath(candidate))) continue;
       release = this.reservePath(candidate, `Asset already exists: ${candidate}`);
       let free = false;
       try {
@@ -895,7 +948,7 @@ export class AssetRegistry {
         : "";
       if (dir) await destStorage.mkdir(dir, true);
       await destStorage.writeBinary(candidate, encoded);
-      return this.indexCreatedHeader(rootId, candidate, readBabassetHeader(encoded));
+      return this.indexCreatedHeader(rootId, candidate, readBabassetHeader(encoded), await this.statMtime(destStorage, candidate));
     } finally {
       release();
     }
@@ -938,14 +991,36 @@ export class AssetRegistry {
         siblingNames.push(folder.slice(folder.lastIndexOf("/") + 1));
       }
     }
-    const uniqueName = nextCopyName(folderName, siblingNames);
-    const destRelative = joinRelative(targetParentRelative, uniqueName);
-    const destPath = joinRootPath(root, destRelative);
-    if (destPath !== fromPath && isWithinFolder(destPath, fromPath)) {
+    if (isWithinFolder(destParentPath, fromPath)) {
       throw new Error("Cannot copy a folder into itself");
     }
-
-    await this.createFolder(rootId, destRelative);
+    // Pick and claim the copy's name together, skipping names another copy
+    // holds and folders on disk the index does not know (made outside the
+    // editor since the scan), as Duplicate does for files.
+    let destRelative: string;
+    let destPath: string;
+    let release: () => void;
+    for (;;) {
+      const uniqueName = nextCopyName(folderName, siblingNames);
+      siblingNames.push(uniqueName);
+      destRelative = joinRelative(targetParentRelative, uniqueName);
+      destPath = joinRootPath(root, destRelative);
+      if (this.isPathReserved(destPath) || this.knownFolders.has(destPath)) continue;
+      release = this.reservePath(destPath, `Folder already exists: ${destPath}`);
+      let free = false;
+      try {
+        free = !(await storage.exists(destPath));
+      } finally {
+        if (!free) release();
+      }
+      if (free) break;
+    }
+    try {
+      const conflict = `Folder already exists: ${destPath}`;
+      await this.withCreationWrite(() => this.writeCreatedFolder(root, destPath, conflict));
+    } finally {
+      release();
+    }
 
     const nested = [...this.knownFolders].filter(
       (folder) => folder !== fromPath && isWithinFolder(folder, fromPath),
@@ -1014,13 +1089,16 @@ export class AssetRegistry {
         asset.rootId === rootId && isWithinFolder(asset.path, fromPath),
     );
     const folders = await moveStorageTree(storage, fromPath, toPath);
+    const relocate = (path: string) => isWithinFolder(path, fromPath) ? `${toPath}${path.slice(fromPath.length)}` : path;
     for (const asset of assets) {
-      const path = `${toPath}/${asset.path.slice(fromPath.length + 1)}`;
+      const path = relocate(asset.path);
       this.byPath.delete(asset.path);
-      const moved = { ...asset, path };
+      // A locator names the old path; the next read resolves the moved file.
+      const moved = { ...asset, path, locator: undefined };
       this.byGuid.set(asset.header.guid, moved);
       this.byPath.set(path, moved);
     }
+    this.repathGuidConflicts(relocate);
     if (assets.length > 0) this.changed();
     for (const folder of [...this.knownFolders]) {
       if (isWithinFolder(folder, fromPath)) this.removeKnownFolder(folder);
@@ -1043,7 +1121,7 @@ export class AssetRegistry {
     const options: ImportOptions = {
       fileName,
       existingGuids: new Set(this.byGuid.keys()),
-      fontGuidsByName: this.fontGuidsByName(),
+      fontGuidsByName: this.fontGuidsByName(rootId, folderRelative),
       modelImportScale: extras?.modelImportScale,
       sidecars: extras?.sidecars,
       attachToGuid: extras?.attachToGuid,
@@ -1144,8 +1222,8 @@ export class AssetRegistry {
    * prefers, or the first one when none matches, and WebGPU would decode it
    * to RGBA. An atlas keeps them (its own-size encode, should a Particle
    * Usage be switched back). Resolves false when nothing was written (the
-   * Texture is gone, or a guarded job may not write the file on disk now:
-   * `encodeJobMayWrite`).
+   * Texture is gone or in a read-only root, or the job may not write the file
+   * on disk now: `encodeJobMayWrite`).
    */
   commitCompressedTexture(result: EncodeJobResult): Promise<boolean> {
     // Entered at once: a pass that awaits this Texture's writes reads the commit.
@@ -1247,10 +1325,11 @@ export class AssetRegistry {
   /**
    * Re-encode a Texture. `usage` overrides the saved header's Usage so a
    * Details edit that has not been saved yet encodes with its new policy.
-   * A `guard`ed re-encode (the alignment pass) writes no state before its
-   * commit, and its guard is asked again when the job starts and before each
-   * write; it carries its source's sha256, so it writes nothing once the
-   * file's source pixels changed.
+   * Every job carries its source's sha256, so its commit writes nothing once
+   * the file's source pixels changed. A `guard`ed re-encode (the alignment
+   * pass) also writes no state before its commit, and its guard is asked
+   * again when the job starts and before each write. A Texture in a
+   * read-only root is never queued.
    */
   async retryTextureEncoding(
     guid: string,
@@ -1260,6 +1339,9 @@ export class AssetRegistry {
     if (!asset || asset.header.type !== "Texture" || !this.encodeQueue) {
       return false;
     }
+    // A read-only root or plugin is never rewritten, not even to `pending`.
+    const root = this.roots.get(asset.rootId);
+    if (asset.placeholder || !root || root.readOnly) return false;
     const state = asset.header.payload.compressionState;
     const recoverable =
       state === "encode_failed" ||
@@ -1275,9 +1357,9 @@ export class AssetRegistry {
       await this.setCompressionState(guid, "pending");
     }
     const latest = this.byGuid.get(guid) ?? asset;
-    const source = await this.loadSourcePixels(latest);
+    // A guarded job wrote no state, so a missing source leaves the Texture as it was.
+    const source = options?.guard ? await this.loadSourcePixels(latest) : await this.encodeSource(latest);
     if (!source) return false;
-    await this.resolveLegacyAtlasReferrers();
     const settings = this.encodeSettingsFor(latest, usage, {
       sourceSize: sniffSourceImageSize(source.bytes),
       ...(options?.maxDimension
@@ -1287,7 +1369,6 @@ export class AssetRegistry {
     const chunkId = await textureEncodeChunkId(settings, usage);
     const queue = this.encodeQueue;
     if (!queue) return false;
-    const sourceSha256 = options?.guard ? await sha256Hex(source.bytes) : undefined;
     queue.enqueue({
       assetGuid: guid,
       source: source.bytes,
@@ -1295,7 +1376,8 @@ export class AssetRegistry {
       settings,
       chunkId,
       usage,
-      ...(options?.guard ? { guard: options.guard, sourceSha256 } : {}),
+      sourceSha256: source.sha256,
+      ...(options?.guard ? { guard: options.guard } : {}),
     });
     return true;
   }
@@ -1318,7 +1400,13 @@ export class AssetRegistry {
         state === "pending" ||
         state === "encoding"
       ) {
-        if (await this.retryTextureEncoding(header.guid)) count += 1;
+        try {
+          if (await this.retryTextureEncoding(header.guid)) count += 1;
+        } catch (error) {
+          // One Texture replaced on disk mid-pass must not stop the others;
+          // the next rescan indexes the new file. Any other failure is real.
+          if (!(error instanceof SourceRevisionChangedError)) throw error;
+        }
       }
     }
     return count;
@@ -1331,7 +1419,7 @@ export class AssetRegistry {
     return this.byGuid.get(guid);
   }
 
-  /** Paths of Scene and Graph assets for ProjectDocument reconciliation. */
+  /** Paths of Scene and Class assets for ProjectDocument reconciliation. */
   listDocumentPaths(filter?: { rootId?: string }): { scenes: string[]; graphs: string[] } {
     const scenes: string[] = [];
     const graphs: string[] = [];
@@ -1339,19 +1427,32 @@ export class AssetRegistry {
       if (asset.placeholder || asset.header.type === "Unresolved") continue;
       if (filter?.rootId && asset.rootId !== filter.rootId) continue;
       if (asset.header.type === "Scene") scenes.push(asset.path);
-      else if (asset.header.type === "Graph" || asset.header.type === "Class") {
-        graphs.push(asset.path);
-      }
+      else if (asset.header.type === "Class") graphs.push(asset.path);
     }
     return { scenes: scenes.sort(), graphs: graphs.sort() };
   }
 
-  private fontGuidsByName(): Map<string, string> {
-    const map = new Map<string, string>();
+  /**
+   * The Font each family name attaches an imported representation to: the
+   * Font of that name in the import folder, else the only one in the import's
+   * root. A name several Fonts there share attaches to none, so the import
+   * makes its own Font rather than joining whichever one the index lists last.
+   */
+  private fontGuidsByName(rootId: string, folderRelative: string): Map<string, string> {
+    const root = this.roots.get(rootId);
+    const folder = root ? joinRootPath(root, folderRelative) : null;
+    const byName = new Map<string, IndexedAsset[]>();
     for (const asset of this.byGuid.values()) {
-      if (asset.header.type === "Font") {
-        map.set(asset.header.name, asset.header.guid);
-      }
+      if (asset.placeholder || asset.header.type !== "Font" || asset.rootId !== rootId) continue;
+      const fonts = byName.get(asset.header.name) ?? [];
+      fonts.push(asset);
+      byName.set(asset.header.name, fonts);
+    }
+    const map = new Map<string, string>();
+    for (const [name, fonts] of byName) {
+      const local = fonts.filter((font) => parentPath(font.path) === folder);
+      const font = local.length > 0 ? (local.length === 1 ? local[0] : undefined) : fonts.length === 1 ? fonts[0] : undefined;
+      if (font) map.set(name, font.header.guid);
     }
     return map;
   }
@@ -1361,9 +1462,8 @@ export class AssetRegistry {
     const usage = String(asset.header.payload.usage ?? "albedo");
     if (isEnvironmentTexturePayload(asset.header.payload) || !shouldCompressTexture(usage)) return;
     if (asset.header.payload.compressionState !== "pending") return;
-    const source = await this.loadSourcePixels(asset);
+    const source = await this.encodeSource(asset);
     if (!source) return;
-    await this.resolveLegacyAtlasReferrers();
     const settings = this.encodeSettingsFor(asset, usage, { sourceSize: sniffSourceImageSize(source.bytes) });
     const chunkId = await textureEncodeChunkId(settings, usage);
     this.encodeQueue?.enqueue({
@@ -1373,6 +1473,7 @@ export class AssetRegistry {
       settings,
       chunkId,
       usage,
+      sourceSha256: source.sha256,
     });
   }
 
@@ -1396,42 +1497,11 @@ export class AssetRegistry {
   /**
    * Report textures whose atlas status changed (a referrer saved, deleted,
    * duplicated, imported, or a plugin root mounted). Set after the initial
-   * scan; changes are reported once legacy referrers are decoded.
+   * scan.
    */
   setAtlasStatusListener(listener: ((textureGuids: string[]) => void) | null): void {
     this.atlasStatusListener = listener;
     this.atlasStatusBefore.clear();
-  }
-
-  /**
-   * Decode referrers whose header has no `atlasTextures` meta (saved before
-   * it existed, or created and never saved) so their atlases are known.
-   * Serialized; the alignment pass and every enqueue await it.
-   */
-  resolveLegacyAtlasReferrers(): Promise<void> {
-    const run = async () => {
-      while (this.legacyAtlasReferrers.size > 0) {
-        const guid = this.legacyAtlasReferrers.values().next().value as string;
-        this.legacyAtlasReferrers.delete(guid);
-        const asset = this.byGuid.get(guid);
-        if (!asset || !ATLAS_REFERRER_TYPES.has(asset.header.type)) continue;
-        let textures: string[] = [];
-        try {
-          const document = await this.readAssetDocument(guid);
-          textures = atlasTextureGuids(asset.header.type, document.payload);
-          const key = legacyAtlasCacheKey(asset.header);
-          if (key) this.legacyAtlasCache.set(key, textures);
-        } catch {
-          // Unreadable: it samples nothing we can see.
-        }
-        // Re-indexed or removed meanwhile: that entry owns its atlas state.
-        if (this.byGuid.get(guid) !== asset) continue;
-        this.setAtlasReferrer(guid, textures);
-      }
-    };
-    const next = this.legacyAtlasResolution.then(run, run);
-    this.legacyAtlasResolution = next.catch(() => undefined);
-    return next;
   }
 
   /**
@@ -1461,7 +1531,6 @@ export class AssetRegistry {
     ktx2SizeCache?: Map<string, ImageSize | null>;
   } = {}): Promise<string[]> {
     if (!this.encodeQueue) return [];
-    await this.resolveLegacyAtlasReferrers();
     const guids = options.guids
       ? [...new Set(options.guids)]
       : this.list({ type: "Texture" }).map((asset) => asset.header.guid);
@@ -1503,7 +1572,6 @@ export class AssetRegistry {
   ): Promise<boolean> {
     const queue = this.encodeQueue;
     if (!queue) return false;
-    await this.resolveLegacyAtlasReferrers();
     const asset = await this.settledTexture(guid);
     if (!asset || queue.has(guid) || this.alignmentRequeues.has(guid)) return false;
     const usage = options.usage ?? String(asset.header.payload.usage ?? "albedo");
@@ -1605,9 +1673,30 @@ export class AssetRegistry {
     return size;
   }
 
+  /**
+   * Source pixels for an encode job the Texture's `pending` state announced.
+   * When it has no pixels chunk, or the chunk cannot be read, the Texture is
+   * marked `encode_failed` with the reason rather than left `pending` with no
+   * job to finish it.
+   */
+  private async encodeSource(asset: IndexedAsset): Promise<{ bytes: Uint8Array; mime?: string; sha256: string } | null> {
+    let error = "The Texture has no source pixels to encode.";
+    try {
+      const source = await this.loadSourcePixels(asset);
+      if (source) return source;
+    } catch (cause) {
+      // Replaced on disk meanwhile: the next rescan indexes the new file.
+      if (cause instanceof SourceRevisionChangedError) throw cause;
+      error = `The Texture's source pixels could not be read: ${cause instanceof Error ? cause.message : String(cause)}`;
+    }
+    await this.setCompressionState(asset.header.guid, "encode_failed", { error });
+    return null;
+  }
+
+  /** Source pixels with their sha256, which an encode job's commit checks the file against. */
   private async loadSourcePixels(
     asset: IndexedAsset,
-  ): Promise<{ bytes: Uint8Array; mime?: string } | null> {
+  ): Promise<{ bytes: Uint8Array; mime?: string; sha256: string } | null> {
     // Encode callbacks can queue a state rewrite while a retry is obtaining its
     // source. Share their write fence so the snapshot remains valid through the
     // asynchronous hash/revision checks, without relaxing stale-read rejection.
@@ -1616,7 +1705,7 @@ export class AssetRegistry {
       const pixels = current?.header.chunks.find((chunk) => chunk.kind === "pixels");
       if (!pixels) return null;
       const bytes = await this.readChunk(asset.header.guid, pixels.id);
-      return { bytes, mime: pixels.mime };
+      return { bytes, mime: pixels.mime, sha256: await sha256Hex(bytes) };
     });
   }
 
@@ -1669,7 +1758,9 @@ export class AssetRegistry {
     assertCurrent: () => void = () => {},
   ): Promise<boolean> {
     const asset = this.byGuid.get(guid);
-    if (!asset) return false;
+    // Encode state and derived chunks are never written into a read-only root.
+    const root = asset ? this.roots.get(asset.rootId) : undefined;
+    if (!asset || asset.placeholder || !root || root.readOnly) return false;
     const storage = this.storageForAsset(asset);
     const blobs = this.blobsForAsset(asset);
     const previousMtime = await this.statMtime(storage, asset.path);
@@ -1715,9 +1806,11 @@ export class AssetRegistry {
 
   private async attachToExistingAssetUnlocked(guid: string, result: ImportResult): Promise<void> {
     const asset = this.byGuid.get(guid);
-    if (!asset) {
+    if (!asset || asset.placeholder) {
       throw new Error(`Cannot attach representation: no asset for guid ${guid}`);
     }
+    // The target's own root decides, whatever root the import was started in.
+    this.assertWritable(this.getRootOrThrow(asset.rootId));
     const storage = this.storageForAsset(asset);
     const blobs = this.blobsForAsset(asset);
     const fileBytes = await storage.readBinary(asset.path);
@@ -1736,27 +1829,29 @@ export class AssetRegistry {
 
     const { chunks, ...headerRest } = decoded.header;
     void chunks;
-    const familyFallback =
-      typeof (headerRest.payload as { family?: unknown } | undefined)?.family ===
-      "string"
-        ? ((headerRest.payload as { family: string }).family)
-        : asset.header.name;
-    const payload =
+    // A Font saved from its editor keeps its payload in the document chunk,
+    // which readers prefer: merge into that payload and store it there too.
+    const documentChunk = chunksById.get(DOCUMENT_CHUNK_ID);
+    const current = documentChunk
+      ? JSON.parse(new TextDecoder().decode(documentChunk.data)) as Record<string, unknown>
+      : headerRest.payload;
+    const familyFallback = typeof current.family === "string" ? current.family : asset.header.name;
+    const merged =
       asset.header.type === "Font"
-        ? (mergeFontAttachPayload(
-            headerRest.payload,
-            result.payload,
-            familyFallback,
-          ) as unknown as Record<string, unknown>)
-        : { ...headerRest.payload, ...result.payload };
+        ? (mergeFontAttachPayload(current, result.payload, familyFallback) as unknown as Record<string, unknown>)
+        : { ...current, ...result.payload };
+    if (documentChunk) {
+      chunksById.set(DOCUMENT_CHUNK_ID, { ...documentChunk, data: new TextEncoder().encode(stableStringify(merged)) });
+    }
     const bytes = await encodeBabasset({
-      header: { ...headerRest, payload },
+      // Header readers (font stacks, an open Font editor) see the same payload.
+      header: { ...headerRest, payload: { ...headerRest.payload, ...merged } },
       chunks: [...chunksById.values()],
       writeBlob: (sha256, data) => blobs.writeBlob(sha256, data),
     });
     await storage.writeBinary(asset.path, bytes);
     const header = readBabassetHeader(bytes);
-    this.indexHeader(asset.rootId, asset.path, header);
+    this.indexHeader(asset.rootId, asset.path, header, false, await this.statMtime(storage, asset.path));
   }
 
   private storageOf(root: ContentRoot): ProjectStorage {
@@ -1807,8 +1902,11 @@ export class AssetRegistry {
     let entries;
     try {
       entries = await storage.readdir(dir);
-    } catch {
-      return;
+    } catch (error) {
+      // Missing (a root without content yet, or a folder removed since its
+      // parent was listed) is empty. Any other failure fails the scan.
+      if (isStorageNotFound(error)) return;
+      throw error;
     }
     for (const entry of entries) {
       const path = `${dir}/${entry.name}`;
@@ -1824,6 +1922,14 @@ export class AssetRegistry {
       }
       if (!path.endsWith(".babasset")) continue;
       const { header, locator } = await readScannedCatalog(storage, path);
+      const indexed = this.byGuid.get(header.guid);
+      if (indexed && !indexed.placeholder && indexed.path !== path) {
+        // A second file with an indexed guid (a copy made outside the editor)
+        // must not evict the first one's entry; it is recorded instead.
+        this.guidConflicts.set(path, { rootId: root.id, path, guid: header.guid, indexedPath: indexed.path });
+        this.changed();
+        continue;
+      }
       this.indexHeader(root.id, path, header, false, entry.mtime ?? null, locator);
     }
   }
@@ -1836,12 +1942,14 @@ export class AssetRegistry {
     mtime: number | null = null,
     locator?: AssetSourceLocator,
   ): IndexedAsset {
+    const indexed: IndexedAsset = { rootId, path, header, placeholder, mtime, locator };
+    // A write that finishes after its root was unmounted leaves the index alone.
+    if (!placeholder && !this.roots.has(rootId)) return indexed;
     const existingAtPath = this.byPath.get(path);
     if (existingAtPath) this.removeFromIndex(existingAtPath, existingAtPath.header.guid === header.guid);
     const existingByGuid = this.byGuid.get(header.guid);
     if (existingByGuid) this.removeFromIndex(existingByGuid, true);
 
-    const indexed: IndexedAsset = { rootId, path, header, placeholder, mtime, locator };
     this.byGuid.set(header.guid, indexed);
     this.byPath.set(path, indexed);
     this.changed();
@@ -1854,13 +1962,14 @@ export class AssetRegistry {
       set.add(header.guid);
     }
     if (!placeholder && ATLAS_REFERRER_TYPES.has(header.type)) {
-      const key = legacyAtlasCacheKey(header);
-      const listed = headerAtlasTextureGuids(header.payload) ?? (key ? this.legacyAtlasCache.get(key) : undefined);
-      if (listed) {
-        this.setAtlasReferrer(header.guid, listed);
-      } else {
-        this.legacyAtlasReferrers.add(header.guid);
-      }
+      // Every document save lists the atlases in the header. A referrer whose
+      // payload is still its header (created or imported, not yet saved as a
+      // document) names them in that payload.
+      const inHeader = !header.chunks.some((chunk) => chunk.id === DOCUMENT_CHUNK_ID);
+      this.setAtlasReferrer(
+        header.guid,
+        headerAtlasTextureGuids(header.payload) ?? (inHeader ? atlasTextureGuids(header.type, header.payload) : []),
+      );
     }
     return indexed;
   }
@@ -1920,7 +2029,6 @@ export class AssetRegistry {
       this.byPath.delete(asset.path);
     }
     this.changed();
-    this.legacyAtlasReferrers.delete(asset.header.guid);
     this.setAtlasReferrer(asset.header.guid, []);
     for (const dep of asset.header.dependencies) {
       const set = this.inbound.get(dep);
@@ -1959,12 +2067,6 @@ function committedEncodeRecord(
   };
 }
 
-/** A legacy atlas referrer's document content, when it has a document chunk. */
-function legacyAtlasCacheKey(header: BabassetHeader): string | null {
-  const document = header.chunks.find((chunk) => chunk.id === DOCUMENT_CHUNK_ID);
-  return document ? `${header.type}:${document.sha256}` : null;
-}
-
 function sortFolderTree(node: FolderNode): void {
   node.children.sort((a, b) => a.name.localeCompare(b.name));
   node.assets.sort();
@@ -1979,6 +2081,10 @@ function joinRootPath(root: ContentRoot, relativePath: string): string {
 function joinRelative(folderRelative: string, fileName: string): string {
   const trimmed = folderRelative.replace(/^\/+|\/+$/g, "");
   return trimmed ? `${trimmed}/${fileName}` : fileName;
+}
+
+function parentPath(path: string): string {
+  return path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
 }
 
 function isWithinFolder(path: string, folder: string): boolean {

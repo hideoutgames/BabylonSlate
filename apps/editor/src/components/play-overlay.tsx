@@ -21,7 +21,6 @@ import {
   DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   DEFAULT_RENDER_PROJECT_SETTINGS,
   type PlayPreviewProjectSettings,
-  type ProjectInputSettings,
   type RenderProjectSettings,
   type AudioProjectSettings,
   type SerializedScene,
@@ -139,7 +138,6 @@ export interface PlayOverlayProps {
   inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
   dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
   assetCatalog?: import("@babylonslate/core").RuntimeAssetCatalogEntry[];
-  inputMappings?: ProjectInputSettings;
   focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
   /** Project Play Preview letterbox; snapshotted when the session starts. */
   playPreview?: PlayPreviewProjectSettings;
@@ -253,7 +251,6 @@ export function PlayOverlay({
   inputAssets,
   dataAssets,
   assetCatalog,
-  inputMappings,
   focusNavigation,
   playPreview = DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   render = DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -350,6 +347,8 @@ export function PlayOverlay({
   const inputModeRef = useRef<"game" | "edit">("game");
   const inputSequenceRef = useRef(0);
   const [statsOpen, setStatsOpen] = useState(false);
+  const statsVisibleRef = useRef(false);
+  statsVisibleRef.current = statsOpen && overlayStats;
   const [statGroups, setStatGroups] = useState<readonly StatGroup[]>([]);
   const inspectSelectionRef = useRef<string | null>(null);
   const hostMemoryInFlight = useRef(false);
@@ -397,6 +396,8 @@ export function PlayOverlay({
     const session = sessionRef.current;
     if (!session || !simulating || closedRef.current) return;
     const sequence = ++inputSequenceRef.current;
+    const previousMode = inputModeRef.current;
+    const previousEditable = transformEditableRef.current;
     inputModeRef.current = mode;
     transformEditableRef.current = false;
     syncTransformVisibilityRef.current();
@@ -412,7 +413,12 @@ export function PlayOverlay({
       syncTransformVisibilityRef.current();
       session.requestPausedRedraw();
     }, (error: unknown) => {
-      if (sessionRef.current === session && inputSequenceRef.current === sequence) setControlError(String(error));
+      if (sessionRef.current !== session || inputSequenceRef.current !== sequence) return;
+      // The session keeps its previous mode after a failed reset; so do Escape, Tab and the transform tools.
+      inputModeRef.current = previousMode;
+      transformEditableRef.current = previousEditable;
+      syncTransformVisibilityRef.current();
+      setControlError(String(error));
     }).finally(() => {
       if (sessionRef.current === session && inputSequenceRef.current === sequence) setInputPending(false);
     });
@@ -594,7 +600,6 @@ export function PlayOverlay({
   const initialInputAssetsRef = useRef(inputAssets);
   const initialDataAssetsRef = useRef(dataAssets);
   const initialAssetCatalogRef = useRef(assetCatalog);
-  const initialInputMappingsRef = useRef(inputMappings);
   const initialFocusNavigationRef = useRef(focusNavigation);
   const initialPlayPreviewRef = useRef(playPreview);
   const { settings: localEngineSettings } = useAppSettings();
@@ -726,7 +731,6 @@ export function PlayOverlay({
           inputAssets: initialInputAssetsRef.current,
           dataAssets: initialDataAssetsRef.current,
           assetCatalog: initialAssetCatalogRef.current,
-          inputMappings: initialInputMappingsRef.current,
           focusNavigation: initialFocusNavigationRef.current,
           animGraphs: animGraphsRef.current,
           behaviourTrees: behaviourTreesRef.current,
@@ -823,6 +827,8 @@ export function PlayOverlay({
           onFatalDiagnostic: () => finishSessionRef.current(),
         });
       } catch (error) {
+        // Closed here: a later Stop must not stop or close this session again.
+        closedRef.current = true;
         if (sessionOwner && sessionTicket) sessionOwner.fail(sessionTicket, error, true);
         pushLog("error", `Play startup failed: ${error instanceof Error ? error.message : String(error)}`);
         onCloseRef.current(emptyPlayResult(), sessionTicket);
@@ -930,26 +936,30 @@ export function PlayOverlay({
         setAudioQueued(audioStats.queued);
         setAudioUnlocked(audioStats.unlocked);
         if (current) {
-          setMemoryBytes(current.accountedBytes());
-          if (!hostMemoryInFlight.current) {
-            hostMemoryInFlight.current = true;
-            void getHostMemoryStats()
-              .then(setHostMemory)
-              .catch(() => setHostMemory(null))
-              .finally(() => {
-                hostMemoryInFlight.current = false;
-              });
-          }
-          setGeometryBytes(current.handle.accountedGeometryBytes());
-          const counts = current.liveObjectCounts();
-          setMeshCount(counts.meshes);
-          setTextureCount(counts.textures);
-          setDraws(current.drawCalls());
+          // The lights debug overlay also reads these diagnostics.
           setRendering(current.handle.renderDiagnostics());
-          setBridgeRate(current.bridgeMessagesPerSec());
           setPostProcessPasses(current.handle.postProcessPassCount());
           setAssignedMaterials(current.handle.assignedMaterialGuids().join(","));
           setFreeCamEnabled(current.handle.isFreeCamEnabled());
+          // Only the Stats HUD shows these; skip their reads while it is hidden.
+          if (statsVisibleRef.current) {
+            setMemoryBytes(current.accountedBytes());
+            if (!hostMemoryInFlight.current) {
+              hostMemoryInFlight.current = true;
+              void getHostMemoryStats()
+                .then(setHostMemory)
+                .catch(() => setHostMemory(null))
+                .finally(() => {
+                  hostMemoryInFlight.current = false;
+                });
+            }
+            setGeometryBytes(current.handle.accountedGeometryBytes());
+            const counts = current.liveObjectCounts();
+            setMeshCount(counts.meshes);
+            setTextureCount(counts.textures);
+            setDraws(current.drawCalls());
+            setBridgeRate(current.bridgeMessagesPerSec());
+          }
         }
       }, 200);
       const onSettings = (event: Event) => {

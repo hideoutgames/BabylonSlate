@@ -228,8 +228,9 @@ export function playInspectPropertyRows(
       if (separator < 0) return [toRow({ ...source, type: "unknown" })];
       const keyType = source.type.slice("map:".length, separator);
       const valueType = source.type.slice(separator + 2);
+      // Inspect sends string-keyed maps as objects and every other key type as { key, value } entries.
       const entries = isRecord(source.value) && !(source.value instanceof Map)
-        ? Object.entries(source.value).map(([key, value]) => ({ key: keyType === "tag" ? Number(key) : key, value }))
+        ? Object.entries(source.value).map(([key, value]) => ({ key, value }))
         : parseMapDefaultEntries(source.value);
       if (entries.length === 0) return [toRow({ ...source, type: "string", value: "Empty Map" })];
       return playInspectPropertyRows(entries.flatMap((entry, index) => [

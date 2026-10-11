@@ -33,7 +33,7 @@ describe("audio nodes", () => {
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "play", "audio.play", { asset: "jump.wav", volume: 0.5 }),
+        node(registry, "play", "audio.play", { "default:asset": "jump.wav", "default:volume": 0.5 }),
       ],
       edges: [
         {

@@ -201,6 +201,37 @@ it("displaces built-in GPU water in the mask with the material's swell for the f
   }
 });
 
+it("scales a blending water surface's displacement in the mask by its per-vertex blend, as the material does", async () => {
+  const engine = new NullEngine();
+  const scene = new Scene(engine);
+  const camera = new FreeCamera("camera", new Vector3(0, 30, -40), scene);
+  camera.setTarget(Vector3.Zero());
+  scene.activeCamera = camera;
+  const a = createWaterMesh(scene, "a", normalizeWaterBody({ width: 24, length: 24, waveScale: 0.3, resolution: 24 }));
+  const b = createWaterMesh(scene, "b", normalizeWaterBody({ width: 24, length: 24, waveScale: 0.9, resolution: 24 }));
+  b.position.set(16, 0.5, 0);
+  const owner = SharedOutlineOwner.forScene(scene), view = owner.createView("test");
+  view.setContribution("lake", { kind: "component", targets: [{ key: "lake", meshes: [a] }], color: [1, 0, 0], width: 1 });
+  registerSharedOutlineShaders();
+  const objects = new ObjectRenderer("mask", scene);
+  objects.activeCamera = camera;
+  objects.renderList = [a];
+  owner.registerRenderPass(objects.renderPassId);
+  const mask = new SharedOutlineMaskRenderer(objects, view, "strict");
+  try {
+    updateSceneWater(scene);
+    expect((a.material as PBRMaterial).pluginManager!.getPlugin<WaterMaterialPlugin>("SlateWater")!.blend).toBe(true);
+    expect(objects.isReadyForRendering(80, 64)).toBe(true);
+    const program = a.subMeshes[0]!._getDrawWrapper(objects.renderPassId)!;
+    expect(program.defines).toContain("#define SLATE_WATER_BLEND");
+    expect(program.effect!.getAttributesNames()).toContain("slateWaterBlend");
+  } finally {
+    mask.dispose(); objects.dispose(); view.dispose();
+    await owner.whenReleased();
+    scene.dispose(); engine.dispose();
+  }
+});
+
 it("adds the FFT detail band's displacement in the mask from the band the water material binds", async () => {
   const engine = new NullEngine();
   Object.assign(engine.getCaps(), { textureFloatRender: true, textureHalfFloatRender: true });

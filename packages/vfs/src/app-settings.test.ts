@@ -137,13 +137,11 @@ describe("app settings", () => {
     );
   });
 
-  it("migrates the old movement increment once and persists independent grid and snap values", () => {
-    const legacy = engineSettingsSchema.parse({ viewportGridSize: 4 });
-    expect(legacy.viewportSnapTranslate).toBe(4);
-    const changed = engineSettingsSchema.parse({ ...legacy, viewportGridSize: 8 });
-    expect(changed.viewportSnapTranslate).toBe(4);
+  it("persists independent grid and movement snap values", () => {
+    const settings = engineSettingsSchema.parse({ viewportGridSize: 4 });
+    expect(settings.viewportSnapTranslate).toBe(1);
     const reopened = engineSettingsSchema.parse(JSON.parse(JSON.stringify({
-      ...changed, viewportSnapTranslate: 0.5,
+      ...settings, viewportGridSize: 8, viewportSnapTranslate: 0.5,
     })));
     expect([reopened.viewportGridSize, reopened.viewportSnapTranslate]).toEqual([8, 0.5]);
     for (const value of [0, -1, Infinity, NaN])
@@ -159,15 +157,17 @@ describe("app settings", () => {
     );
   });
 
-  it("bounds undo history length, the Undo memory limit and the viewport frame cap", () => {
-    const high = engineSettingsSchema.parse({ undoHistoryLength: 1e9, undoByteBudget: 1e12, viewportFrameCap: 1000 });
+  it("bounds undo history length, the Undo memory limit, the viewport frame cap and hardware scaling", () => {
+    const high = engineSettingsSchema.parse({ undoHistoryLength: 1e9, undoByteBudget: 1e12, viewportFrameCap: 1000, hardwareScalingLevel: 8 });
     expect(high.undoHistoryLength).toBe(1000);
     expect(high.undoByteBudget).toBe(1_073_741_824);
     expect(high.viewportFrameCap).toBe(240);
-    const low = engineSettingsSchema.parse({ undoHistoryLength: 2.6, undoByteBudget: 0, viewportFrameCap: 0 });
+    expect(high.hardwareScalingLevel).toBe(4);
+    const low = engineSettingsSchema.parse({ undoHistoryLength: 2.6, undoByteBudget: 0, viewportFrameCap: 0, hardwareScalingLevel: 0.25 });
     expect(low.undoHistoryLength).toBe(3);
     expect(low.undoByteBudget).toBe(1_048_576);
     expect(low.viewportFrameCap).toBe(10);
+    expect(low.hardwareScalingLevel).toBe(1);
     expect(engineSettingsSchema.safeParse({ undoByteBudget: "16" }).success).toBe(false);
   });
 
@@ -295,6 +295,37 @@ describe("app settings", () => {
     expect((await reloaded.load()).graphDefaultZoom).toBe(0.8);
     expect((await reloaded.load()).viewportDropDistance).toBe(25_000.5);
     expect((await reloaded.load()).traceByteBudget).toBe(201_326_592);
+  });
+
+  it("builds the next update on a save localStorage refused, not the older stored copy", async () => {
+    localStorage.setItem("babylonslate:engine-settings", JSON.stringify({ viewportFrameCap: 60 }));
+    const store = new WebAppSettingsStore();
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("quota", "QuotaExceededError");
+    });
+    try {
+      await store.update((settings) => { settings.viewportFrameCap = 30; });
+      const next = await store.update((settings) => { settings.undoHistoryLength = 75; });
+      expect([next.viewportFrameCap, next.undoHistoryLength]).toEqual([30, 75]);
+      expect((await store.load()).viewportFrameCap).toBe(30);
+    } finally {
+      setItem.mockRestore();
+    }
+  });
+
+  it("builds the next update on the last saved settings when a later localStorage read fails", async () => {
+    localStorage.clear();
+    const store = new WebAppSettingsStore();
+    await store.update((settings) => { settings.viewportFrameCap = 60; });
+    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementationOnce(() => {
+      throw new DOMException("denied", "SecurityError");
+    });
+    try {
+      const next = await store.update((settings) => { settings.undoHistoryLength = 75; });
+      expect([next.viewportFrameCap, next.undoHistoryLength]).toEqual([60, 75]);
+    } finally {
+      getItem.mockRestore();
+    }
   });
 
   it("falls back to defaults when localStorage holds invalid JSON", async () => {

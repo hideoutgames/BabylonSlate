@@ -32,19 +32,6 @@ describe("font payload", () => {
     ).toBe(true);
   });
 
-  it("maps a legacy msdf:true flag to JSON-only until the PNG flag is set", () => {
-    const normalized = normalizeFontPayload(
-      { representations: { source: true, msdf: true } },
-      "Ui",
-    );
-    expect(normalized.representations).toMatchObject({
-      source: true,
-      msdfJson: true,
-      msdfPng: false,
-      msdf: false,
-    });
-  });
-
   it("ORs representation flags when attaching an MSDF chunk to a source Font", () => {
     const merged = mergeFontAttachPayload(
       createFontPayload("Ui", {

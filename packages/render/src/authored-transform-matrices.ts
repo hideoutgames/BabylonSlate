@@ -68,7 +68,11 @@ export function authoredActorMatrices(actors: readonly SerializedActor[]): (acto
   return world;
 }
 
-/** Serializable world pose for detaching an actor from its authored parents. */
+/**
+ * Serializable world pose for detaching an actor from its authored parents: the world matrix's translation, rotation
+ * and scale (a sheared matrix loses its shear), or for a degenerate one (a zero scale on the chain) its exact position,
+ * the chain's composed rotation, and each local axis's world length.
+ */
 export function authoredActorWorldTransform(
   actors: readonly SerializedActor[],
   actor: SerializedActor,
@@ -78,7 +82,25 @@ export function authoredActorWorldTransform(
   const scale = new Vector3();
   const rotation = new Quaternion();
   const position = new Vector3();
-  matrix.decompose(scale, rotation, position);
+  // A zero scale on the chain leaves no rotation in the matrix: Babylon resets it, or derives one from the singular
+  // axes, and flips Y on the zero determinant. The actor then keeps its exact world position and composes its rotation
+  // along the chain. Each scale is its local axis's world length, negative where that axis points against the
+  // rotation's, so a matrix the rotation can express (such as a right-angle turn under a flattened parent) is kept.
+  const decomposed = matrix.decompose(scale, rotation, position);
+  if (!decomposed || Math.abs(matrix.determinant()) <= 1e-6 * Math.abs(scale.x * scale.y * scale.z)) {
+    const byId = new Map(actors.map((entry) => [entry.id, entry]));
+    rotation.copyFrom(Quaternion.FromArray(actor.transform.rotation));
+    for (let parent = byId.get(actor.parentId); parent; parent = parent.parentId ? byId.get(parent.parentId) : undefined) {
+      Quaternion.FromArray(parent.transform.rotation).multiplyToRef(rotation, rotation);
+    }
+    const world = matrix.m, axes = rotation.toRotationMatrix(new Matrix()).m;
+    const axisScale = (row: number): number => {
+      const x = world[row * 4]!, y = world[row * 4 + 1]!, z = world[row * 4 + 2]!;
+      const length = Math.hypot(x, y, z);
+      return x * axes[row * 4]! + y * axes[row * 4 + 1]! + z * axes[row * 4 + 2]! < 0 ? -length : length;
+    };
+    scale.set(axisScale(0), axisScale(1), axisScale(2));
+  }
   return {
     position: [position.x, position.y, position.z],
     rotation: [rotation.x, rotation.y, rotation.z, rotation.w],

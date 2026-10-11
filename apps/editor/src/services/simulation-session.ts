@@ -26,6 +26,9 @@ export class SimulationSession {
   private pendingStop: Promise<boolean> | null = null;
   private captured: Extract<SimulationSceneCaptureResult, { ok: true }> | null = null;
   private discardRequested = false;
+  private discardReason: string | null = null;
+  /** The Scene write is atomic once started; a Discard during it waits for its result. */
+  private applying = false;
   private readonly discardWaiters = new Set<() => void>();
   private readonly document: SimulationDocumentTransaction;
   readonly keepChanges: boolean;
@@ -133,12 +136,18 @@ export class SimulationSession {
         }
         // Retain only one bounded complete candidate for permission/budget retries.
         this.captured = result;
-        const applied = await this.document.applyScene(result.scene);
-        if (!applied.ok) { this.publishRetention("failed", applied.reason); return false; }
+        this.applying = true;
+        let applied: Awaited<ReturnType<SimulationDocumentTransaction["applyScene"]>>;
+        try { applied = await this.document.applyScene(result.scene); }
+        finally { this.applying = false; }
+        if (!applied.ok) {
+          if (this.discardRequested) { this.completeDiscard(); return true; }
+          this.publishRetention("failed", applied.reason); return false;
+        }
         this.publishRetention("applied", null); this.captured = null;
         return true;
       } catch (error) {
-        if (this.discardRequested) return true;
+        if (this.discardRequested) { if (this.retention.status !== "discarded") this.completeDiscard(); return true; }
         this.publishRetention("failed", error instanceof Error ? error.message : "Simulation changes could not be retained.");
         return false;
       }
@@ -151,11 +160,19 @@ export class SimulationSession {
     return this.pendingStop;
   }
 
-  /** Explicit user discard, or inaccessible host teardown, never applies a subset. */
+  /**
+   * Explicit user discard, or inaccessible host teardown, never applies a
+   * subset. A Scene write that already started is atomic: it finishes, and
+   * Discard only takes effect if that write fails.
+   */
   discardChanges(reason: string | null = null): void {
-    this.discardRequested = true; this.captured = null;
+    this.discardRequested = true; this.captured = null; this.discardReason = reason;
+    if (!this.applying) this.completeDiscard();
+  }
+
+  private completeDiscard(): void {
     for (const resolve of this.discardWaiters) resolve();
-    this.publishRetention("discarded", reason);
+    this.publishRetention("discarded", this.discardReason);
   }
 
   /** Latch unsupported topology as soon as it occurs, without pausing gameplay. */

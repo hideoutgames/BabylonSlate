@@ -80,7 +80,8 @@ describe("authored Data Tree entries", () => {
     const migrated = reconcileDataEntry(asset, "stats", current.structs.stats!.fields, current);
     expect(migrated.entry.values).toEqual({ HitPoints: 35, Settings: { Power: 8, Other: "retained" }, OldTexture: "texture-guid" });
     expect(migrated.entry.schema).toContainEqual({ id: "old", name: "OldTexture", typeId: "asset", typeClassId: "Texture" });
-    expect(migrated.changes).toContainEqual({ kind: "renamed", path: "Settings.Power", previousPath: "Settings.Damage" });
+    expect(migrated.changes).toContainEqual({ kind: "renamed", path: "Settings", previousPath: "Config" });
+    expect(migrated.changes).toContainEqual({ kind: "renamed", path: "Settings.Power", previousPath: "Config.Damage" });
   });
 
   it("supports simultaneous swapped names without overwriting either field", () => {
@@ -255,6 +256,28 @@ describe("Data Tree entry tags and typed collections", () => {
     ]));
     expect(errors.some((entry) => entry.path === "Tags.0" || entry.path === "Tags.1")).toBe(false);
     expect(resolveDataEntryValues(asset, "stats", schemasFor(fields))).toBeNull();
+  });
+
+  it("rejects vector and structure map keys that are equal by value", () => {
+    const point: StructField = { id: "x", name: "X", typeId: "int" };
+    const fields: StructField[] = [
+      { id: "spots", name: "Spots", typeId: "string", container: "map", keyTypeId: "vec3" },
+      { id: "cells", name: "Cells", typeId: "string", container: "map", keyTypeId: "struct", keyTypeClassId: "point" },
+    ];
+    const schemas: TypeSchemas = {
+      enums: {},
+      structs: { point: { name: "Point", fields: [point] } },
+      dataDefinitions: { stats: { name: "Stats", fields }, point: { name: "Point", fields: [point] } },
+    };
+    const asset = createDataEntryForDefinition("stats", fields, schemas);
+    asset.values = {
+      Spots: [{ key: { x: 1, y: 2, z: 3 }, value: "a" }, { key: { z: 3, y: 2, x: 1 }, value: "b" }],
+      Cells: [{ key: { X: 1 }, value: "a" }, { key: { X: 2 }, value: "b" }, { key: { X: 1 }, value: "c" }],
+    };
+    const duplicates = validateDataEntry(asset, "stats", schemas)
+      .filter((entry) => entry.code === "duplicate-key").map((entry) => entry.path);
+    expect(duplicates).toEqual(["Spots.1.key", "Cells.2.key"]);
+    expect(resolveDataEntryValues(asset, "stats", schemas)).toBeNull();
   });
 
   it("migrates nested array/map key and value renames while retaining removed values and reference metadata", () => {

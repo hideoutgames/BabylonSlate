@@ -9,8 +9,13 @@ const documents = vi.hoisted(() => {
     { path: "assets/Base.class.babasset", header: { guid: "base", name: "Base", type: "Class", parentClass: "SceneLayerActor" } },
     { path: "assets/Screen.class.babasset", header: { guid: "screen", name: "Screen", type: "Class", parentClass: "Base" } },
     { path: "assets/WorldActor.class.babasset", header: { guid: "world", name: "WorldActor", type: "Class", parentClass: "Actor" } },
+    { path: "assets/Menu.class.babasset", header: { guid: "menu", name: "Menu", type: "Class", parentClass: "SceneLayerActorSwitcher" } },
   ];
-  return { assetRegistry: { list: () => assets }, registryEpoch: 0, openDocuments: [], loadGraphDocument: vi.fn(async (path: string): Promise<SerializedGraph> => ({ nodes: [], edges: [], members: path.endsWith("Base.class.babasset") ? [{ id: "title", kind: "variable", name: "Title", typeId: "string", defaultValue: "Inherited Title" }] : [] })) };
+  return { assetRegistry: { list: () => assets }, registryEpoch: 0, openDocuments: [], loadGraphDocument: vi.fn(async (path: string): Promise<SerializedGraph> => ({
+    nodes: [], edges: [],
+    members: path.endsWith("Base.class.babasset") ? [{ id: "title", kind: "variable", name: "Title", typeId: "string", defaultValue: "Inherited Title" }] : [],
+    ...(path.endsWith("Menu.class.babasset") ? { actorDefaults: { properties: { initialIndex: 0, sceneLayerActors: [{ classId: "Screen", defaults: {} }] } } } : {}),
+  })) };
 });
 vi.mock("../context/document-context", async () =>
   (await import("../testing/document-context-mock")).documentContextMock(() => documents),
@@ -35,5 +40,15 @@ describe("SceneLayerSwitcherFields", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add Scene Layer Actor" }));
     expect(await screen.findByRole("option", { name: /Screen/ })).toBeTruthy();
     expect(screen.queryByRole("option", { name: /WorldActor/ })).toBeNull();
+  });
+
+  it("stores only the edited field over inherited Class defaults", async () => {
+    const onChange = vi.fn();
+    render(<SceneLayerSwitcherFields classId="Menu" properties={{ name: "Pause Menu" }} onChange={onChange} />);
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "Defaults" })).toHaveLength(1));
+    const initialIndex = screen.getByTestId("property-switcher-initial-index");
+    fireEvent.change(initialIndex, { target: { value: "-1" } });
+    fireEvent.blur(initialIndex);
+    expect(onChange).toHaveBeenLastCalledWith({ name: "Pause Menu", initialIndex: -1 });
   });
 });

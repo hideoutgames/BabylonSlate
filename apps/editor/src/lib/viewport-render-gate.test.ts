@@ -128,13 +128,28 @@ describe("attachViewportRenderGate", () => {
     expect(scheduler.shouldRender(20)).toBe(false);
     expect(scheduler.shouldRender(34)).toBe(true);
 
+    const portal = document.createElement("div");
     const overlay = document.createElement("div");
     overlay.setAttribute("data-slot", "dialog-overlay");
     overlay.setAttribute("data-open", "");
-    document.body.append(overlay);
+    portal.append(overlay);
+    document.body.append(portal);
     await Promise.resolve();
 
     expect(scheduler.shouldRender(50)).toBe(false);
+    // Unrelated DOM churn keeps the freeze; the overlay's own changes lift and restore it.
+    document.body.append(document.createElement("p"));
+    await Promise.resolve();
+    expect(scheduler.shouldRender(50)).toBe(false);
+    overlay.setAttribute("data-closed", "");
+    await Promise.resolve();
+    expect(scheduler.shouldRender(50)).toBe(true);
+    overlay.removeAttribute("data-closed");
+    await Promise.resolve();
+    expect(scheduler.shouldRender(50)).toBe(false);
+    portal.remove();
+    await Promise.resolve();
+    expect(scheduler.shouldRender(50)).toBe(true);
     detach();
   });
 

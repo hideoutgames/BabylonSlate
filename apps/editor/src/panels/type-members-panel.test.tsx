@@ -84,6 +84,52 @@ describe("type asset member table", () => {
     );
   });
 
+  it.each(["enum", "structure"] as const)("keeps the %s name input mounted while its name is typed", (kind) => {
+    harness.kind = kind;
+    harness.content = kind === "enum"
+      ? { kind, guid: "e1", name: "Colors", members: [{ name: "None", value: 0 }] }
+      : { kind, guid: "s1", name: "Stats", fields: [{ id: "health", name: "Health", typeId: "float" }] };
+    const panel = () => (
+      <TypeAssetEditingProvider>
+        <TypeMembersPanel {...({} as IDockviewPanelProps)} />
+      </TypeAssetEditingProvider>
+    );
+    const { rerender } = render(panel());
+    const label = kind === "enum" ? "Member 1 name" : "Field 1 name";
+    const input = screen.getByLabelText(label);
+    input.focus();
+    fireEvent.change(input, { target: { value: "Renamed" } });
+    // The document applies each keystroke, so the row re-renders with the new name.
+    const [, saved] = applyAssetDocumentChange.mock.calls.at(-1) as unknown as [string, Record<string, unknown>];
+    harness.content = saved;
+    rerender(panel());
+    expect(screen.getByLabelText(label)).toBe(input);
+    expect(document.activeElement).toBe(input);
+  });
+
+  it.each(["enum", "structure"] as const)("keeps a moved %s row selected in Details", (kind) => {
+    harness.kind = kind;
+    harness.content = kind === "enum"
+      ? { kind, guid: "e1", name: "Colors", members: [{ name: "Red", value: 0 }, { name: "Blue", value: 1 }] }
+      : { kind, guid: "s1", name: "Stats", fields: [
+        { id: "red", name: "Red", typeId: "float" },
+        { id: "blue", name: "Blue", typeId: "float" },
+      ] };
+    const panels = () => (
+      <TypeAssetEditingProvider>
+        <TypeMembersPanel {...({} as IDockviewPanelProps)} />
+        <TypeDetailsPanel {...({} as IDockviewPanelProps)} />
+      </TypeAssetEditingProvider>
+    );
+    const { rerender } = render(panels());
+    fireEvent.click(screen.getByTestId(`${kind}-row-0`));
+    fireEvent.click(screen.getByRole("button", { name: "Move Red down" }));
+    const [, saved] = applyAssetDocumentChange.mock.calls.at(-1) as unknown as [string, Record<string, unknown>];
+    harness.content = saved;
+    rerender(panels());
+    expect((screen.getByTestId("property-name") as HTMLInputElement).value).toBe("Red");
+  });
+
   it("shows a PinTypePicker for the selected structure field", () => {
     harness.kind = "structure";
     harness.content = {

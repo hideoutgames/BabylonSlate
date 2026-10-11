@@ -100,12 +100,12 @@ test.describe("P4 Play overlay and session report", () => {
           };
         };
         await host.__babylonslatePlayTest?.whenModelsReady();
-        return host.__babylonslatePlayTest?.liveObjectCounts() ?? {
-          meshes: -1,
-          textures: -1,
-        };
+        return host.__babylonslatePlayTest?.liveObjectCounts() ?? null;
       });
-      samples.push(sample);
+      expect(sample, `cycle ${cycle} live object counts`).not.toBeNull();
+      expect(sample!.meshes).toBeGreaterThan(0);
+      expect(sample!.textures).toBeGreaterThan(0);
+      samples.push(sample!);
       await page.getByTestId("play-overlay-close").click();
       await expect(page.getByTestId("play-overlay")).toHaveCount(0);
     }

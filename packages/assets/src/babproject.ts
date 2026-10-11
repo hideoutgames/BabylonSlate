@@ -1,5 +1,5 @@
 import { unzipSync, zipSync } from "fflate";
-import type { ProjectStorage, ProjectDocument } from "@babylonslate/core";
+import { ENGINE_VERSION, type ProjectStorage, type ProjectDocument } from "@babylonslate/core";
 import { stableStringify } from "./bytes";
 
 export type ManifestKind = "project" | "plugin";
@@ -106,7 +106,7 @@ export function createEmptyProjectFiles(options: {
     kind,
     guid: options.guid,
     name: options.name,
-    engineVersion: options.engineVersion ?? "0.0.0",
+    engineVersion: options.engineVersion ?? ENGINE_VERSION,
     version: 1,
     startupScene: kind === "project" ? "assets/main.scene.babasset" : undefined,
   };

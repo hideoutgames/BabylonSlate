@@ -611,6 +611,12 @@ function applyPlayShadows(scene: Scene): void {
 
 const rejectedTextAssignments = new WeakMap<SnapshotSceneBinding, Map<number, string>>();
 const rejectedPreparedAssignments = new WeakMap<SnapshotSceneBinding, Map<number, string>>();
+
+/** Hash a request and its installed assets only to compare or record a rejection. */
+function rejectionKey(command: AssignMeshCommand, assets: MeshAssetContext, suffix = ""): () => string {
+  let key: string | undefined;
+  return () => key ??= `${JSON.stringify(command)}|${meshAssetFingerprint(assets)}${suffix}`;
+}
 const pendingVisualReplacements = new WeakMap<SnapshotSceneBinding, Map<number, Mesh>>();
 const visualAssignments = new WeakMap<SnapshotSceneBinding, Map<number, AssignMeshCommand>>();
 type ComponentTransformCommand = Extract<CommandMessage, { type: "setComponentTransforms" }>;
@@ -1018,12 +1024,13 @@ export function applyAssignMesh(
   if (stagesModels || (existing && (ownsTexture(meshKind) || command.parts?.some((part) => ownsTexture(part.meshKind))))) {
     const working = existing ?? createModelActorRoot(scene, `actor-${command.slotId}`);
     if (!existing) binding.meshes.set(command.slotId, working);
-    // Staged models never record or compare rejections; skip hashing every
-    // installed asset. Other preparations keep the request-time asset state.
-    const descriptor = stagesModels ? "" : `${JSON.stringify(command)}|${meshAssetFingerprint(binding)}`;
+    // Staged models never record or compare rejections. Other preparations keep
+    // the request-time asset state: installs replace the binding's asset maps,
+    // so a shallow copy is enough to key a later asynchronous rejection.
+    const descriptor = rejectionKey(command, stagesModels ? binding : { ...binding });
     const rejected = rejectedPreparedAssignments.get(binding) ?? new Map<number, string>();
     rejectedPreparedAssignments.set(binding, rejected);
-    if (!stagesModels && rejected.get(command.slotId) === descriptor) return;
+    if (!stagesModels && rejected.has(command.slotId) && rejected.get(command.slotId) === descriptor()) return;
     const targets: PlayVisualTargets = { spriteOverlays: new Map(), lights: new Map(), cameras: new Map() };
     const deferred: DeferredModelLoad[] = [];
     let candidate: Mesh | undefined;
@@ -1042,7 +1049,7 @@ export function applyAssignMesh(
       applyMaterialToActorMeshes(binding, command.slotId, candidate);
     } catch (error) {
       candidate?.dispose(); releaseProvisional();
-      if (!stagesModels) rejected.set(command.slotId, descriptor);
+      if (!stagesModels) rejected.set(command.slotId, descriptor());
       console.warn(`[render] Visual preparation failed: ${String(error)}`);
       return;
     }
@@ -1097,14 +1104,14 @@ export function applyAssignMesh(
       // The adopted root inherits the last snapshot flag, not live membership.
       setPlayVisualVisibility(binding, staged,
         appliedPlayVisibility.get(working) ?? binding.liveSlots.has(command.slotId));
-      if (deferred.length) publishModelHierarchyAnimations(scene, binding, command.slotId, staged);
+      if (deferred.length) publishModelHierarchyAnimations(binding, command.slotId, staged);
       refreshPlayActiveCamera(scene, binding);
       applyPlayShadows(scene);
       binding.onVisualChanged?.(command.slotId);
     }, (error: unknown) => {
       if (!ownsLoad()) return;
       if (stagesModels) throw error;
-      rejected.set(command.slotId, descriptor);
+      rejected.set(command.slotId, descriptor());
       // The exact texture owner reports preparation failure once.
     }).finally(() => {
       if (refreshes.get(command.slotId) === restart) refreshes.delete(command.slotId);
@@ -1132,7 +1139,7 @@ export function applyAssignMesh(
   if (stagesText) {
     // Script text writes re-emit assignMesh every tick; hash installed assets
     // only to compare or record a rejected allocation.
-    const descriptor = () => `${JSON.stringify(command)}|${meshAssetFingerprint(binding)}|${scene.getEngine().getCaps().maxTextureSize}`;
+    const descriptor = rejectionKey(command, binding, `|${scene.getEngine().getCaps().maxTextureSize}`);
     const rejected = rejectedTextAssignments.get(binding);
     if (existing && rejected?.has(command.slotId) && rejected.get(command.slotId) === descriptor()) return;
     try {
@@ -1602,7 +1609,9 @@ function createPlayVisual(
     for (const part of parts ?? []) {
       const child = meshes.get(part.componentId);
       if (!child) continue;
-      const parent = part.parentId ? meshes.get(part.parentId) : undefined;
+      // The link that would close a component parent cycle attaches to the origin.
+      const named = part.parentId ? meshes.get(part.parentId) : undefined;
+      const parent = named && named !== child && !named.isDescendantOf(child) ? named : undefined;
       child.parent = parent ?? root;
       let attachment: TransformNode = child;
       const ancestors: TransformNode[] = [];
@@ -1681,7 +1690,8 @@ function attachPlaySpringArms(
       for (let i = 0; i < (part.parentTransforms?.length ?? 0); i++) {
         if (attachment.parent instanceof TransformNode) attachment = attachment.parent;
       }
-      attachment.parent = attachmentParentFor(parent);
+      const socket = attachmentParentFor(parent);
+      if (socket !== attachment && !socket.isDescendantOf(attachment)) attachment.parent = socket;
     }
   }
   const cameraPart = parts.find((part) => part.meshKind === "camera");
@@ -1765,7 +1775,7 @@ export function createPlayMesh(
   if (meshKind === "water" && water) {
     const definition = assetGuid ? binding?.waters?.get(assetGuid) : undefined;
     const material = definition?.materialGuid ? binding?.resolveMaterial?.(definition.materialGuid) : null;
-    return createWaterMesh(scene, name, water, definition, material);
+    return finishPlayWorldMesh(createWaterMesh(scene, name, water, definition, material));
   }
   if (meshKind === "landscape" && landscape) return createLandscapeMesh(scene, name, landscape, binding);
   if (meshKind === "foliage" && foliage) return createFoliageMesh(scene, name, foliage, binding);
@@ -1800,7 +1810,9 @@ export function createPlayMesh(
         )
       : createPrimitiveMesh(scene, name, "sprite");
     applyAlbedoTexture(mesh, scene, payload?.textureGuid, binding);
-    if (frame && binding) {
+    // Sprite clip crossfades blend the slot's own visual (`resolvePlaySpriteSlot`);
+    // a component part's quad must not take over that single tracked overlay.
+    if (frame && binding && meshName === undefined) {
       if (!binding.spriteOverlays) binding.spriteOverlays = new Map();
       const overlay = createSpriteQuad(
         scene,
@@ -2047,10 +2059,14 @@ function reconcileSnapshotVisuals(
     const actor = snapshot.actors[i]!;
     binding.snapshotMeshes[i] = null;
     live.add(actor.slotId);
-    seen.add(actor.slotId);
     const wantsOverlay = snapshotSlotWantsOverlay(actor, binding);
     const overlayScene = binding.sceneForSlot?.(actor.slotId) ?? null;
     if (wantsOverlay && !overlayScene) {
+      seen.add(actor.slotId);
+      // Until its layer is live, a world copy must not keep drawing at its
+      // last pose; migration restores it once the layer Scene exists.
+      const waiting = binding.meshes.get(actor.slotId);
+      if (waiting?.getScene() === scene) setPlayVisualVisibility(binding, waiting, false);
       continue;
     }
     const hostScene = wantsOverlay ? overlayScene : scene;
@@ -2070,6 +2086,9 @@ function reconcileSnapshotVisuals(
       disposeWorldOverlayLeftovers(scene, actor.slotId);
     }
     binding.snapshotMeshes[i] = mesh;
+    // Seen only once applied: a scene lookup or visual build that throws
+    // leaves a command-built visual protected from a stale buffer.
+    seen.add(actor.slotId);
   }
   for (const slotId of binding.meshes.keys()) {
     // A command-built visual not yet seen must survive a stale buffer.
@@ -2084,8 +2103,9 @@ export function applySnapshotToScene(
   binding: SnapshotSceneBinding,
   snapshot: SampledSnapshot,
 ): void {
-  sampleCableFrame(scene, snapshot.frameId, snapshot.previousFrameId ?? snapshot.frameId, snapshot.alpha);
-  sampleSceneWaterFrame(scene, snapshot.frameId, snapshot.previousFrameId ?? snapshot.frameId, snapshot.alpha);
+  // Play samples the latest snapshot, so cables and water pair with its frame alone.
+  sampleCableFrame(scene, snapshot.frameId);
+  sampleSceneWaterFrame(scene, snapshot.frameId);
   reconcileSnapshotVisuals(scene, binding, snapshot);
   const count = snapshot.actorCount ?? snapshot.actors.length;
   for (let i = 0; i < count; i++) {

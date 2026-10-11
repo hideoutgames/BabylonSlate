@@ -19,7 +19,7 @@ magic "BABA" (4) | version u32 LE | headerLen u32 LE | header JSON (utf8) | chun
 | `name` | Display name |
 | `engineVersion` | Engine that wrote the file |
 | `version` | Payload schema version (per type) |
-| `parentClass` | Optional parent class guid |
+| `parentClass` | Optional parent class id (for example `BObject` or `Hero`) |
 | `dependencies` | Guid list |
 | `mode` | `thin` (in-project) or `bundled` (share/export) |
 | `payload` | Structured data (graphs, properties, component trees) |
@@ -43,11 +43,9 @@ Inline locators point at byte ranges after the header. Blob locators name `{path
 
 ### Editor documents
 
-Scenes and Class logic graphs are `.babasset` files under `assets/` (`assets/main.scene.babasset`, `assets/main.class.babasset`). Legacy `.graph.babasset` still loads. `encodeAssetDocument` / `decodeAssetDocument` keep the JSON body in a single `document` chunk so type, schema version and guid stay header-only readable. Importers (Font, Texture, Model, …) often store structured data on **`header.payload`** with binary `source` / `pixels` chunks and no document chunk; `decodeAssetDocument` falls back to that header payload so those assets open in document workspaces. Settings-tab saves for those import types write `headerPayload` so binary chunks are not replaced by a document chunk. A document save keeps extra chunks (`extraChunksFromDecoded`) so font bytes are not wiped. Asset guids survive a re-save: an existing file's guid is read from its header rather than regenerated.
+Scenes and Class logic graphs are `.babasset` files under `assets/` (`assets/main.scene.babasset`, `assets/main.class.babasset`). `encodeAssetDocument` / `decodeAssetDocument` keep the JSON body in a single `document` chunk so type, schema version and guid stay header-only readable. Importers (Font, Texture, Model, …) often store structured data on **`header.payload`** with binary `source` / `pixels` chunks and no document chunk; `decodeAssetDocument` falls back to that header payload so those assets open in document workspaces. Settings-tab saves for those import types, and Font editor saves, write `headerPayload` so binary chunks are not replaced by a document chunk and an MSDF attach merges into the complete Font payload. A document save keeps extra chunks (`extraChunksFromDecoded`) so font bytes are not wiped. Asset guids survive a re-save: an existing file's guid is read from its header rather than regenerated.
 
-Projects authored before this move still load: `ProjectService` reads a `.json` document as an unversioned-or-versioned payload and writes it back in the same format. Nothing rewrites a legacy file into a container behind the user's back.
-
-Scene payloads use schema version 4 for automatic versus manual local-shadow capacity. New Scene headers and migrated legacy JSON saves carry that version; legacy saves retain the existing explicit migration approval flow.
+Scene payloads are at schema version 4. Older Scene versions step up without payload changes (`normalizeScene` fills current defaults), still through the explicit migration approval flow. Documents are `.babasset` only: a `.json` scene or Class path is not read, written or discovered on project open.
 
 ### Modes
 
@@ -77,14 +75,14 @@ MyGame/                     (directory)  or  MyGame.zip
 
 `.babplugin` zip (kind=plugin): `plugin.json` + PluginSettings + `assets/` (no `layout.json`). `plugin.json` is the **zip manifest only** — in-project discovery scans for `type: "PluginSettings"`. Detail: [plugins.md](plugins.md).
 
-- **Directory backend** — incremental writes (OPFS, iPad Documents / external folder, desktop). Folder name is the display name (`MyGame/`), not `MyGame.babproject/`. Existing `*.babproject` folders still open.
-- **Zip backend** — single-file `.zip` (`fflate`); used for Export Project and interchange. Legacy Export Project `.babproject` zips still decode.
+- **Directory backend** — incremental writes (OPFS, iPad Documents / external folder, desktop). Folder name is the display name (`MyGame/`), not `MyGame.babproject/`.
+- **Zip backend** — single-file `.zip` (`fflate`); used for Export Project and interchange. Open Project from a zip picks `.zip` files only.
 
 Web persists the directory layout into OPFS and offers Export Project as a `.zip` download. **Export Game** (itch zip) is a different artifact — see [exporter.md](exporter.md).
 
-## `.babpack` (packaged games)
+## Packaged games
 
-Packed export concatenates reached asset bytes into `boot.babpack` plus one `scene-<guid>.babpack` per additional scene. Magic `BPK1`, then a JSON index of `{ guid, offset, length, hash }` with **absolute file offsets** so HTTP `Range` maps 1:1. The player prefers range requests and falls back to a whole-pack fetch on range-blind hosts. Fonts stay inside packs (`FontFace` from bytes). This format is **export-only** — the editor project on disk stays one `.babasset` per asset (see Write performance in [vfs.md](vfs.md)).
+Export Game writes each reached asset as an independent `assets/data-<n>.bin` file, listed in `game.json` with its byte length and SHA-256 revision ([exporter.md](exporter.md#runtime-file-layout)). Fonts are catalog assets loaded through `FontFace` from bytes. This layout is **export-only** — the editor project on disk stays one `.babasset` per asset (see Write performance in [vfs.md](vfs.md)).
 
 ### Derived data (outside the project)
 
@@ -93,9 +91,10 @@ App-private storage keyed by project guid: compiled scripts, thumbnails, import 
 ## Schema migration
 
 - Each asset type owns ordered migrations `N → N+1`, applied on load.
-- Future (unknown) versions refuse with a clear message **when a chain is registered**. Types with no chain (Font / Sprite / AnimationGraph / Shader) pass through so a version-1 document is not treated as “newer than current 0”.
-- Opening a project that needs migration prompts once; migrate-on-save; never silently rewrite untouched files. `ProjectService.saveDocument` / `saveProject` refuse a pending path until `approveMigrateOnSave()`. Pending migrations list each path once; loading an unmigrated asset again replaces its entry.
-- Golden fixtures: one committed `.babasset` per historical version per type — `graph-v0.babasset` (payload in header), `scene-v0.babasset` (payload in the document chunk, the shape the editor writes), `graph-v1.babasset` at current.
+- Future (unknown) versions refuse with a clear message **when a chain is registered**. Types with no chain (Font / Sprite / AnimationGraph) pass through so a version-1 document is not treated as “newer than current 0”.
+- Opening a project that needs migration prompts once; migrate-on-save; never silently rewrite untouched files. `ProjectService.saveDocument` / `saveProject`, the NavMesh bake write and Audio clip writes refuse a pending path until `approveMigrateOnSave()`. Pending migrations list each path once; loading an unmigrated asset again replaces its entry.
+- A Save All the user asks for (toolbar, the close prompt, an exclusive Scene switch, Play) that pending migrations refuse opens **Schema Migration Required**. **Migrate On Save** approves migration for the rest of the project session and runs the complete Save All (bakes, journal clear, compile-on-save, thumbnails, Scene Saved hooks), upgrading dependency metadata; Play resumes only when that save completed. Auto-save never prompts.
+- Golden fixtures: one committed `.babasset` per historical version per type — `class-v0.babasset` (payload in header), `scene-v0.babasset` (payload in the document chunk, the shape the editor writes), `class-v1.babasset` at current.
 - The project manifest (`project.json`) migrates as type `Project` on load and is gated by the same approval.
 
 ## Golden / property tests

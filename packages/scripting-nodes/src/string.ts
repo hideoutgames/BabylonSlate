@@ -10,6 +10,13 @@ import {
   readPinDefault,
 } from "@babylonslate/scripting";
 
+/**
+ * Parse Float input grammar: an optional minus, decimal digits with an
+ * optional fraction, and an optional exponent. Success and Out both use it,
+ * so hex, digit separators, trailing text and overflow fail and return 0.
+ */
+const DECIMAL_LITERAL = String.raw`/^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/`;
+
 export const FORMAT_ARG_PIN_PREFIX = "arg:";
 export const FORMAT_STRING_DEFAULT = "{input}";
 
@@ -96,18 +103,28 @@ function formatStringCodegen(ctx: {
     return { out: `String(${ctx.input("format")})` };
   }
   const format = formatStringOf(ctx.node.properties);
-  const parts: string[] = [];
-  for (const token of parseFormatTokens(format)) {
-    if (token.kind === "lit") {
-      if (token.text.length === 0) continue;
-      parts.push(JSON.stringify(token.text));
-      continue;
-    }
-    parts.push(`ctx.formatValue(${ctx.input(formatArgPinId(token.name))})`);
+  const tokens = parseFormatTokens(format).filter(
+    (token) => token.kind === "arg" || token.text.length > 0,
+  );
+  if (tokens.length === 0) return { out: '""' };
+  const names = parseFormatPlaceholders(format);
+  const arg = (name: string) =>
+    `ctx.formatValue(${ctx.input(formatArgPinId(name))})`;
+  const argTokens = tokens.filter((token) => token.kind === "arg").length;
+  if (argTokens === names.length) {
+    // Every placeholder appears once: concatenate the formatted values in place.
+    const parts = tokens.map((token) =>
+      token.kind === "lit" ? JSON.stringify(token.text) : arg(token.name),
+    );
+    return { out: parts.length === 1 ? parts[0]! : `(${parts.join(" + ")})` };
   }
-  if (parts.length === 0) return { out: '""' };
-  if (parts.length === 1) return { out: parts[0]! };
-  return { out: `(${parts.join(" + ")})` };
+  // A repeated placeholder is read and formatted once, so `{score}/{score}`
+  // prints one value twice.
+  const parts = tokens.map((token) =>
+    token.kind === "lit" ? JSON.stringify(token.text) : `a${names.indexOf(token.name)}`,
+  );
+  const params = names.map((_, index) => `a${index}`).join(", ");
+  return { out: `((${params}) => ${parts.join(" + ")})(${names.map(arg).join(", ")})` };
 }
 
 export const stringNodes: NodeDefinition[] = [
@@ -204,8 +221,10 @@ export const stringNodes: NodeDefinition[] = [
       pin("replacement", "Replacement", "in", STRING),
       pin("out", "Out", "out", STRING),
     ],
+    // An empty Search leaves In unchanged; replaceAll("") would insert the
+    // replacement at every character boundary.
     codegen: (ctx) => ({
-      out: `(String(${ctx.input("in")}).replaceAll(String(${ctx.input("search")}), String(${ctx.input("replacement")})))`,
+      out: `((s, f, r) => f === "" ? s : s.replaceAll(f, r))(String(${ctx.input("in")}), String(${ctx.input("search")}), String(${ctx.input("replacement")}))`,
     }),
   },
   {
@@ -248,7 +267,8 @@ export const stringNodes: NodeDefinition[] = [
       pin("out", "Out", "out", STRING),
     ],
     codegen: (ctx) => ({
-      out: `(String(${ctx.input("in")}).substring((${ctx.input("start")}) | 0, (${ctx.input("end")}) | 0))`,
+      // Start and End clamp to the string; End before Start is empty, never swapped.
+      out: `((s, a, b) => (b > a ? s.substring(a, b) : ""))(String(${ctx.input("in")}), Math.trunc(${ctx.input("start")}) || 0, Math.trunc(${ctx.input("end")}) || 0)`,
     }),
   },
   {
@@ -315,8 +335,8 @@ export const stringNodes: NodeDefinition[] = [
     codegen: (ctx) => {
       const raw = `String(${ctx.input("in")}).trim()`;
       return {
-        success: `((s => { const n = Number(s); return s !== "" && Number.isFinite(n); })(${raw}))`,
-        out: `((s => { const n = Number.parseFloat(s); return s !== "" && Number.isFinite(n) ? n : 0; })(${raw}))`,
+        success: `((s => ${DECIMAL_LITERAL}.test(s) && Number.isFinite(Number(s)))(${raw}))`,
+        out: `((s => { const n = Number(s); return ${DECIMAL_LITERAL}.test(s) && Number.isFinite(n) ? n : 0; })(${raw}))`,
       };
     },
   },

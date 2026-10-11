@@ -206,7 +206,7 @@ describe("map nodes", () => {
       kind: "event",
       nodes: [
         node(registry, "entry", "flow.entry"),
-        node(registry, "vec", "vector.make3", { x: 1, y: 2, z: 3 }),
+        node(registry, "vec", "vector.make3", { "default:x": 1, "default:y": 2, "default:z": 3 }),
         node(registry, "make", "map.make", { count: 1, "default:value0": 1 }),
         node(registry, "set", "map.set", {
           "default:key": key,

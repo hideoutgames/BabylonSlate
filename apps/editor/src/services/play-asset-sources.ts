@@ -1,7 +1,7 @@
 import { SourceRevisionChangedError, areaEmissionTextureGuids, collisionTriangleMeshBytes, normalizeScene, normalizeSceneLayer, parseText2DProperties, renderEffectsAssetGuids, type CollisionTriangleMesh, type ProjectDocument } from "@babylonslate/core";
 import {
   isAssetSourceRevisionChanged, AUDIO_DEFAULT_SOURCE_CHUNK, FONT_FACETYPE_CHUNK_ID, FONT_MSDF_CHUNK_ID, FONT_MSDF_PNG_CHUNK_ID,
-  complexCollisionModelGuids, cookComplexCollisionMesh, currentAreaEmissionChunk, decodeAreaEmission, modelAnimationDurations, normalizeAudioPayload, normalizeFontPayload, normalizeModelPayload,
+  complexCollisionModelGuids, cookComplexCollisionMesh, currentAreaEmissionChunk, decodeAreaEmission, normalizeAudioPayload, normalizeFontPayload, normalizeModelPayload,
   registryAssetRepresentation, selectTextureChunk, type AssetLoadPriority, type AssetLoadScope, type AssetRegistry,
   type IndexedAsset, type ModelPayload, type RegistryLoadedAsset,
 } from "@babylonslate/assets";
@@ -44,7 +44,7 @@ export function playDocumentOverrides(registry: AssetRegistry, documents: readon
   });
   for (const asset of schemas) {
     const override = overrides.get(asset.header.guid);
-    if (override && ["Class", "Graph"].includes(asset.header.type)) {
+    if (override && asset.header.type === "Class") {
       asset.header.requiredVariableNames = assetHeaderDependencyMetadata(asset.header.type, override.payload, schemas, asset.header.parentClass).requiredVariableNames;
     }
   }
@@ -112,8 +112,9 @@ function cancellableCatalogRead<T>(read: Promise<T>, signal: AbortSignal): Promi
 export function requiredProjectAssets(registry: AssetRegistry, project: ProjectDocument): string[] {
   const settings = project.settings;
   const roots = [settings.audio.audioMixerGuid, ...renderEffectsAssetGuids(settings.render.effects)];
-  const classes = registry.list().filter(asset => asset.header.type === "Class" || asset.header.type === "Graph");
-  const byId = new Map(classes.flatMap(asset => [[classIdFromClassAsset(asset), asset], [asset.header.guid, asset]] as const));
+  const classes = registry.list().filter(asset => asset.header.type === "Class");
+  // Game Instance and parentClass settings name compile class ids.
+  const byId = new Map(classes.map(asset => [classIdFromClassAsset(asset), asset] as const));
   const classId = settings.gameInstanceClass;
   const asset = classId ? byId.get(classId) : undefined;
   if (asset) roots.push(asset.header.guid);
@@ -195,16 +196,15 @@ async function acquirePlayAssetSourcesAttempt(
   const audioChunks = new Map<string, Map<string, Uint8Array>>();
   const audioRevisions = new Map<string, string>();
   const complexMeshes: PackedGameContent["complexMeshes"] = new Map();
-  const durations = new Map<string, ReadonlyMap<string, number | undefined>>();
   const controls: ControlMessage[] = [];
   const fonts: Array<NonNullable<SceneSourceAssets["fonts"]>[number]> = [];
   let ownedContent: PackedGameContent | undefined;
   const game: GameSourceContent = {
     manifest: {
       assetCatalogVersion: 1, startupSceneGuid: roots.find((id) => host.registry.getByGuid(id)?.header.type === "Scene") ?? "",
-      bundleDebugger: true, mode: "loose", render: project.settings.render, playFrameCap: project.settings.playFrameCap,
+      bundleDebugger: true, render: project.settings.render, playFrameCap: project.settings.playFrameCap,
       pixelsPerUnit: project.settings.twoD.pixelsPerUnit, sortingLayers: project.settings.twoD.sortingLayers,
-      pixelPerfect: project.settings.twoD.pixelPerfect, packs: [], scriptsFile: "", physicsWorld: "3d",
+      pixelPerfect: project.settings.twoD.pixelPerfect, physicsWorld: "3d",
       audioMixerGuid: project.settings.audio.audioMixerGuid ?? undefined,
       assets: [],
     },
@@ -212,7 +212,7 @@ async function acquirePlayAssetSourcesAttempt(
     modelBytes: new Map(), modelPayloads: new Map(), fontBytes: new Map(), fontFacetypeBytes: new Map(),
     fontMsdfJson: new Map(), fontMsdfPng: new Map(), fontFamilies: new Map(), audioBytes: new Map(),
     audioPayloads: new Map(), payloads: new Map(), decodedPayloads: new Map(), navmeshBytes: new Map(), audioReverbBytes: new Map(),
-    complexMeshes, modelAnimationDurations: durations,
+    complexMeshes,
   };
   // One cache entry per Model revision: up-front and on-demand cooking share it,
   // so a Model is cooked at most once while any consumer retains it.
@@ -345,22 +345,10 @@ async function acquirePlayAssetSourcesAttempt(
         if (source) game.modelBytes.set(guid, source);
         const model = normalizeModelPayload(payload);
         game.modelPayloads.set(guid, model);
-        if (source) {
-          const clips = await scope.acquire(guid, {
-            key: `model-cpu:clips-v1:${host.documentOverrides?.get(guid)?.cacheKey ?? "saved"}`,
-            estimate: { sourceBytes: 0, decodedBytes: 4096, temporaryBytes: source.byteLength },
-            load: async (_asset, signal) => {
-              signal.throwIfAborted();
-              const value = modelAnimationDurations(source);
-              return { value, sourceBytes: 0, decodedBytes: value.size * 128, dispose: () => value.clear() };
-            },
-          }, { signal: options.signal, priority: options.priority, dependencies: "none", refresh: false });
-          durations.set(guid, clips);
-          // Only Models a Scene/Class in this closure simulates with Complex Collision are cooked up front.
-          if (complexCollisionGuids.has(guid)) {
-            const mesh = await cookModelCollision(guid, source, model, options.signal);
-            if (mesh) complexMeshes.set(guid, mesh);
-          }
+        // Only Models a Scene/Class in this closure simulates with Complex Collision are cooked up front.
+        if (source && complexCollisionGuids.has(guid)) {
+          const mesh = await cookModelCollision(guid, source, model, options.signal);
+          if (mesh) complexMeshes.set(guid, mesh);
         }
       } else if (type === "Audio") {
         const audio = normalizeAudioPayload(payload);
@@ -496,7 +484,7 @@ async function acquirePlayAssetSourcesAttempt(
   }
 }
 
-const SCRIPT_ASSET_TYPES = new Set(["Class", "Graph", "AnimationGraph"]);
+const SCRIPT_ASSET_TYPES = new Set(["Class", "AnimationGraph"]);
 const COMPILE_INPUT_TYPES = new Set([...SCRIPT_ASSET_TYPES, "InputAction", "InputAxis", "DataDefinition", "DataTree", "Enum", "Structure", "ScriptInterface"]);
 
 /** Drop cache-owned containers without mutating authored payload objects. */
@@ -520,11 +508,14 @@ export function mergePreparedPlaySources(entries: Iterable<PreparedPlaySources>)
   if (!prepared.length) return null;
   const first = prepared[0];
   const game = copyContainers(first.game);
+  // The manifest's asset list (for example the Audio GUIDs Play Sound accepts) is a union too.
+  game.manifest = copyContainers(first.game.manifest);
   const content = copyContainers(first.content);
   content.audioLibrary = copyContainers(first.content.audioLibrary);
   content.particleLibrary = copyContainers(first.content.particleLibrary);
   for (const next of prepared.slice(1)) {
     mergeContainers(game, next.game);
+    mergeContainers(game.manifest, next.game.manifest);
     mergeContainers(content, next.content);
     mergeContainers(content.audioLibrary, next.content.audioLibrary);
     mergeContainers(content.particleLibrary, next.content.particleLibrary);

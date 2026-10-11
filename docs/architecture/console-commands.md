@@ -14,7 +14,7 @@ The organising idea does not change: **the command system is always present; onl
 | Overlay `DebugConsole` | Flat bottom-edge Sheet shared by Play and Preview Build; simulation keeps ticking. Completions from `playConsoleCommands` (builtins + compiled `script.command`). Live logs, prints, warnings, errors, and command results share the transcript. |
 | `BDebugCommand` | User class → `Event On Command Run` → compiled as **core** via `loadScripts` / `bindUserCommand`. Ships even when `includeDebug: false`. |
 
-Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `snapshot start`), positional or `name=value` args, coercion to string/float/int/bool/enum. Unknown names and stripped debug names return `{ success: false, output }` and never throw.
+Parser: whitespace tokens, quoted strings (always values), longest-name match (`stat unit`, `snapshot start`), positional or `name=value` args (undeclared names are rejected), coercion to string/float/int/bool/enum. Unknown names and stripped debug names return `{ success: false, output }` and never throw.
 
 ## Audit — builtins
 
@@ -24,13 +24,15 @@ Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `sna
 
 | Command | Registered | Applies | Notes |
 | --- | --- | --- | --- |
-| `changescene` | yes | **yes** | Loads from the Play scene library (guid or display name). Same path as `ctx.changeScene`. An unknown scene fails with `unknown scene: <name>`. |
+| `changescene` | yes | **yes** | Loads from the Play scene library (guid or display name). A library key wins over another Scene's display name, and a display name shared by several Scenes resolves to the first one listed. The Play Scene's guid and display name always resolve to the Play Scene. Same path as `ctx.changeScene`. An unknown scene fails with `unknown scene: <name>`. |
 | `quality [low\|medium\|high\|ultra\|reset]` | yes | **yes** | Applies all scalability groups, or queries effective values when omitted. |
 | `quit` | yes | **yes** | `runtime.stop()`. Overlay Stop is a separate chrome path. |
 | `quality shadows/resolution/textures/geometry/water/postprocessing/lighting [tier\|reset]` | yes | **yes** | Applies or resets one group. Shadow budget, distance and enabled state are independent settings. |
+| `quality lighting budget <N\|auto>` | yes | **yes** | Sets the session local-light budget (`maxLocalLights`, a non-negative integer) or returns it to automatic; the lighting group then reports Custom. |
 | `quality geometry lod on\|off`, `quality geometry distance <0.25..4>` | yes | **yes** | Switches automatic Model LOD or scales its switch distances for the session. |
 | `quality water <field> <value>` | yes | **yes** | One Water setting for the session: `shadingDetail low..ultra`, `meshDensity 0.5..1.5`, `contactResolution 256..1024`, `refraction on\|off`, `refractionScale 0.25..1`, `reflections sky\|screenSpace\|planar`, `reflectionSteps 4..32`, `planarScale 0.25..1`, `fft on\|off`, `fftSize 64\|128\|256`, `fftCascades 1..3`. Out-of-range or non-integer values are rejected. |
 | `quality resolution scale <0.25..1>` | yes | **yes** | Sets a fixed fraction of target width/height without resetting simulation. |
+| `renderpath [auto\|forward\|clusteredForward\|reset]` | yes | **yes** | Requests a non-persistent session render path for every live Scene; `reset` returns to the project path. No arg → print the requested and effective path and GPU backend. |
 | `framecap` | yes | **yes** | `setScalability` frame-cap patch → Play/player `scheduler.setFrameCap`. No arg → print current. |
 | `volume` | yes | **yes** | `{ type: "setGlobalVolume" }` (P16 mixer). Rejects values outside `0..1`. No arg → print current. |
 | `help` | yes | **yes** | Core. Lists registered names or one command’s parameters. Stripped debug names print “not available in this build”. |
@@ -43,10 +45,10 @@ Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `sna
 | `resume` / `unpause` | yes | **yes** | Idempotent. Emits `sessionPaused: false`. Does not stop free cam. |
 | `step` | yes | **yes** | Overlay Step: `resume()` → `tick()` → `pause()` if it was paused. |
 | `slomo` | yes | **yes** | Rejects negative rates and rates above `8`; `0` stays a deliberate freeze (`slomo 1` resumes). `RuntimeDriver.timeDilation` still clamps `0..8`. `tick` uses `dt * rate` for script, physics, nav, BT. Every per-tick system (scripts, physics and movement, water waves, buoyancy and Sample Water Surface, tweens, text reveal, Delays, streamed Scenes, animation graphs, tile animation, behaviour trees, the crowd) uses the step captured when the tick began, so a rate set during a tick (console or script) takes effect from the next tick. Water time accumulates those steps, so a rate change slows the waves without jumping them, and Play rendering draws the same water time as physics. Trace header and frame snapshots store undilated `dt`. No arg → print current. |
-| `freecam` | yes | **yes** | `{ type: "setFreeCam" }`. Detached fly/pan camera; simulation keeps ticking. Pointer/WASD stolen; 2D pinch zooms ortho; gamepad still forwards (`help freecam` documents that split). Overlay Play shows a touch fly stick while on. Off / `changescene` / `possessCamera` restore. FPS look (drag right looks right). |
+| `freecam` | yes | **yes** | `{ type: "setFreeCam" }`. Detached fly/pan camera; simulation keeps ticking. Pointer/WASD stolen; 2D pinch zooms ortho; gamepad still forwards (`help freecam` documents that split). Overlay Play shows a touch fly stick while on. Off / `changescene` / `possessCamera` restore. FPS look (drag right looks right), with pitch stopping just short of straight up or down. |
 | `lightsdebug on/off` | yes | **yes** | Independent default-off light diagnostics; detailed rows are collected only while enabled. |
 | `showfps` | yes | **yes** | Opens/collapses Stats HUD (`setShowFps`). Flag default is **on**. |
-| `stat unit` / `memory` / `draws` / `threads` | yes | **yes** | Opens Stats HUD and highlights that row. A bare group word (`stat`, `snapshot`) fails with its subcommand usage instead of `unknown command`. `threads` is main vs worker timings (fps vs script/physics), not OS threads. |
+| `stat unit` / `memory` / `draws` / `threads` | yes | **yes** | Opens Stats HUD and highlights that row. A bare group word (`stat`, `snapshot`) fails with its subcommand usage instead of `unknown command`. `threads` adds worker traffic, not OS threads: overlay Play shows bridge messages per second, and the packed player HUD shows live actors / snapshot capacity and tick count. |
 | `showcollision` / `showbounds` / `actorboundingbox` / `wireframe` | yes | **yes** | Play-scene overlays. Collision uses `listDebugColliders()` (boxes/spheres/circles/capsules/polylines/convex hulls, including body rotation of local offsets and polyline points), main world in the Play scene and each physics-enabled Scene Layer world in its own overlay scene. Overlay meshes sit in `RENDERING_GROUP.world` (depth-tested, not a group-0 underlay). Reuse by id when pose changes. Skip helper/debug meshes. `actorboundingbox` is an alias of `showbounds`. |
 | `shownav` / `shownavdebug` | yes | **yes** | Baked navmesh and NavMesh Blocker volumes in the world rendering group. A bake with no walkable triangles draws no navmesh fill. Blocking Volumes belong to physics. |
 | `debugphysics [on\|off]` | yes | **yes** | Alias of `showcollision`: actual simulation collider shapes, including cylinders, triangle meshes, planar capsules, and closed chains. Reuses meshes as bodies move. |
@@ -59,7 +61,7 @@ Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `sna
 | `possess <name\|guid>` | yes | **yes** | Switches to a live actor's CameraComponent and exits free cam, including while paused. Ambiguous names or actors without cameras are rejected. |
 | `destroyactor <name\|guid>` | yes | **yes** | Destroys a live actor through its runtime lifecycle, including while paused. Ambiguous names are rejected; authored scene data is unchanged. |
 | `dumplog` | yes | **yes** | Returns the log-ring messages, or `(log is empty)`. Every emitted `log` command and Print String enters the ring. |
-| `snapshot start` / `stop` | yes | **yes** | `TraceRecorder`; stop emits `{ type: "trace" }`. Both Play modes retain the trace and open its editor document when the session closes. |
+| `snapshot start` / `stop` | yes | **yes** | `TraceRecorder`; stop emits `{ type: "trace" }`. A `snapshot start` while recording fails with `snapshot already recording` and keeps the running recording. Both Play modes retain the trace and open its editor document when the session closes. |
 
 ### Overlay vs console (session control)
 
@@ -107,7 +109,7 @@ The console shows a scrollable suggestion list above the input with command desc
 
 ### Core catalog (every build)
 
-Seven core setters plus `help`. Optional args print the current value.
+Core setters plus `help`. Optional args print the current value.
 
 | Command | Target |
 | --- | --- |
@@ -117,6 +119,8 @@ Seven core setters plus `help`. Optional args print the current value.
 | `quality resolution scale N` | Fixed fraction of target width and height, from 0.25 to 1. |
 | `quality geometry [tier\|reset\|lod on/off\|distance N]` | Automatic Model LOD and its distance scale, from 0.25 to 4. |
 | `quality water [tier\|reset\|<field> <value>]` | Render-only water cost; field names complete from `WATER_QUALITY_FIELDS`. Buoyancy is unaffected. |
+| `quality lighting [tier\|reset\|budget N\|budget auto]` | Local-light admission tier and the session `maxLocalLights` budget. |
+| `renderpath [auto\|forward\|clusteredForward\|reset]` | Session render path request through the shared rendering session; never persisted. |
 | `framecap [fps]` | `setScalability` frame-cap patch → Play/player `scheduler.setFrameCap`. No arg → print current. |
 | `volume [0..1]` | Emit `setGlobalVolume` (same as the graph node). No arg → print current. |
 | `quit` | Unchanged. |
@@ -145,7 +149,7 @@ Constraints:
 
 - Does **not** call `pause`. Overlay Pause stays independent (free-cam a running fight, or a paused tableau).
 - Worker emits `{ type: "setFreeCam"; enabled }`. Main thread owns the camera: 3D fly (`UniversalCamera` with look + WASD/stick), 2D pan/pinch on an ortho camera. Game cameras stay detached and keep receiving snapshot TRS; they are just not `scene.activeCamera`.
-- While enabled, Play canvas look/move (pointer, touch, WASD) drive the debug camera and are **not** forwarded into the input ring. Gamepad can keep feeding the worker so a pad-controlled pawn still moves while the operator flies. Overlay Play mounts the editor fly stick (`ViewportJoystick`) while free cam is on. Document that split in the command help string.
+- While enabled, Play canvas look/move (pointer, touch, WASD) drive the debug camera and are **not** forwarded into the input ring. A pointer that lands on a blocking SceneLayer hit (such as a 2D Button) stays with the HUD and does not move the camera. Gamepad can keep feeding the worker so a pad-controlled pawn still moves while the operator flies. Overlay Play mounts the editor fly stick (`ViewportJoystick`) while free cam is on. Document that split in the command help string.
 - Re-possess / `changescene` turns free cam off (new scene owns the camera, same as the runtime's `RuntimeCamera.resetPossession`).
 - Touch-first: one-finger look (3D) or pan (2D), pinch zoom, on-screen fly stick in overlay Play. 44px is not required on the canvas itself (existing Play canvas rules). Drag right looks right; drag up looks up.
 
@@ -156,7 +160,7 @@ This is the missing “spectate without pausing” tool. It is not a Possess Cam
 | Command | Target |
 | --- | --- |
 | `showfps [on\|off]` | Open/collapse the Stats HUD (same as the Stats chrome button), not a second FPS widget. |
-| `stat unit` / `memory` / `draws` / `threads` | Ensure Stats HUD is open and highlight that row. `threads` means main vs worker timings (script/physics vs render), not OS threads. |
+| `stat unit` / `memory` / `draws` / `threads` | Ensure Stats HUD is open and highlight that row. `threads` means worker traffic (bridge messages per second in overlay Play; actors and ticks in the packed player), not OS threads. |
 | `wireframe [on\|off]` | Force wireframe on Play scene meshes (skip helper/debug lines). |
 | `showbounds [on\|off]` | AABB / selection-style bounds on spawned Play meshes. |
 | `actorboundingbox [on\|off]` | Same host as `showbounds` (`setShowBounds`). Keep `showbounds` as the existing alias. |

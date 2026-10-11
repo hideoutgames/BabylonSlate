@@ -65,18 +65,39 @@ function isDynamicRigidBody(actor: SerializedActor): boolean {
 export function staticAudioGeometryFingerprint(
   scene: Pick<AudioReverbBakeScene, "actors">,
 ): string {
+  const actors = actorsOf(scene);
+  const byId = new Map(actors.map((actor) => [actor.id, actor]));
   const parts: string[] = [];
-  for (const actor of actorsOf(scene)) {
+  for (const actor of actors) {
     if (isDynamicRigidBody(actor)) continue;
-    for (const component of actor.components) {
-      if (component.classId !== "MeshComponent") continue;
+    const meshes = actor.components.filter((component) => component.classId === "MeshComponent");
+    if (meshes.length === 0) continue;
+    parts.push(actor.id, JSON.stringify(actor.transform ?? null));
+    // The bake places meshes through their actor attachments: every ancestor's
+    // pose, and a missing or cyclic link, moves them.
+    const seenActors = new Set([actor.id]);
+    for (let parentId = actor.parentId ?? null; parentId; ) {
+      if (seenActors.has(parentId)) { parts.push("cycle"); break; }
+      seenActors.add(parentId);
+      const parent = byId.get(parentId);
+      parts.push(parentId, parent ? JSON.stringify(parent.transform ?? null) : "missing");
+      parentId = parent?.parentId ?? null;
+    }
+    const components = new Map(actor.components.map((component) => [component.id, component]));
+    for (const component of meshes) {
       parts.push(
-        actor.id,
-        JSON.stringify(actor.transform ?? null),
         component.id,
         JSON.stringify(component.transform ?? null),
         JSON.stringify(component.properties ?? null),
       );
+      // Parent components (and Spring Arm sockets) compose into the mesh pose.
+      const seenComponents = new Set([component.id]);
+      for (let parentId = component.parentId ?? null; parentId && !seenComponents.has(parentId); ) {
+        seenComponents.add(parentId);
+        const parent = components.get(parentId);
+        parts.push(parentId, parent ? JSON.stringify([parent.transform ?? null, parent.properties ?? null]) : "missing");
+        parentId = parent?.parentId ?? null;
+      }
     }
   }
   return parts.join("\0");

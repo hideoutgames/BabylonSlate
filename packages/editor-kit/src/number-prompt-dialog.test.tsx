@@ -87,7 +87,34 @@ describe("NumberPromptDialog", () => {
     expect(onSubmit).toHaveBeenCalledExactlyOnceWith(30);
   });
 
-  it("submits the clamped expression result instead of stale state on Enter", () => {
+  it.each(["Enter", "Save"] as const)(
+    "submits the clamped expression result instead of stale state on %s",
+    (route) => {
+      const onSubmit = vi.fn();
+      const onOpenChange = vi.fn();
+      render(
+        <NumberPromptDialog
+          open
+          onOpenChange={onOpenChange}
+          title="Grid Size"
+          label="Grid Size"
+          initialValue={16}
+          min={10}
+          onSubmit={onSubmit}
+        />,
+      );
+      const input = screen.getByTestId("number-prompt-input");
+      fireEvent.change(input, { target: { value: "30" } });
+      fireEvent.change(input, { target: { value: "30/6" } });
+      if (route === "Enter") fireEvent.keyDown(input, { key: "Enter" });
+      else fireEvent.click(screen.getByTestId("number-prompt-confirm"));
+
+      expect(onSubmit).toHaveBeenCalledExactlyOnceWith(10);
+      expect(onOpenChange).toHaveBeenCalledWith(false);
+    },
+  );
+
+  it("keeps the prompt open when Save finds an invalid expression", () => {
     const onSubmit = vi.fn();
     const onOpenChange = vi.fn();
     render(
@@ -97,16 +124,19 @@ describe("NumberPromptDialog", () => {
         title="Grid Size"
         label="Grid Size"
         initialValue={30}
-        min={10}
         onSubmit={onSubmit}
       />,
     );
     const input = screen.getByTestId("number-prompt-input");
-    fireEvent.change(input, { target: { value: "30/6" } });
-    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.change(input, { target: { value: "40" } });
+    fireEvent.change(input, { target: { value: "40/" } });
+    // Clicking, tapping or tabbing to Save blurs the field before activation.
+    fireEvent.blur(input);
+    fireEvent.click(screen.getByTestId("number-prompt-confirm"));
 
-    expect(onSubmit).toHaveBeenCalledExactlyOnceWith(10);
-    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toMatch(/expression/i);
   });
 
   it.each(["30/", "30/0"])(

@@ -27,7 +27,6 @@ import {
 
 export const PROJECT_FILE = "project.json";
 export const LAYOUT_FILE = "layout.json";
-export const MAIN_GRAPH_FILE = "assets/main.graph.babasset";
 export const MAIN_CLASS_FILE = "assets/main.class.babasset";
 export const MAIN_SCENE_FILE = "assets/main.scene.babasset";
 
@@ -54,30 +53,11 @@ export interface TwoDProjectSettings {
    * nearest with mipmaps off and snap the camera to the pixel grid.
    */
   pixelPerfect: boolean;
-  /** Restrict zoom to integer pixel scales, which keeps sprites crisp. */
-  integerZoomSteps: boolean;
   /**
    * Ordered sorting layers, back to front. The index in this list is the
    * coarse half of the 2D sort key.
    */
   sortingLayers: string[];
-}
-
-/**
- * Action / axis mappings authored in Project Settings. The structural shape
- * matches `@babylonslate/input`'s `InputMappings`; normalisation lives there so
- * `core` stays free of an input dependency.
- */
-export interface ProjectInputSettings {
-  actions: Array<{
-    name: string;
-    bindings: Array<Record<string, unknown>>;
-  }>;
-  axes: Array<{
-    name: string;
-    kind?: "1d" | "2d";
-    bindings: Array<Record<string, unknown>>;
-  }>;
 }
 
 export interface PlayPreviewProjectSettings {
@@ -211,15 +191,11 @@ export interface ProjectSettings {
    * Play uses the open scene tab.
    */
   startupSceneGuid: string | null;
-  /**
-   * GameInstance subclass constructed for Play, Preview, and export.
-   * Scene `settings.gameInstanceClass` remains for old files.
-   */
+  /** GameInstance subclass constructed for Play, Preview, and export. */
   gameInstanceClass: string | null;
   textures: TextureProjectSettings;
   twoD: TwoDProjectSettings;
   physics: PhysicsProjectSettings;
-  input: ProjectInputSettings;
   focusNavigation: FocusNavigationSettings;
   fonts: FontProjectSettings;
   audio: AudioProjectSettings;
@@ -271,8 +247,6 @@ export interface SourceControlProjectSettings {
 
 export interface PluginEnableOverride {
   enabled: boolean;
-  /** Legacy acknowledgement of version warnings; never required for enablement. */
-  acceptedCompatibility?: string;
 }
 
 export const DEFAULT_EXPORT_FILE_COUNT_WARN = 800;
@@ -282,8 +256,6 @@ export interface ExportPreset {
   id: string;
   name: string;
   pluginOverrides: Record<string, PluginEnableOverride>;
-  /** Packed `.babpack` export; default on. */
-  packed: boolean;
   /** Release zip default off; Preview Build always on. */
   bundleDebugger: boolean;
   fileCountWarn: number;
@@ -298,7 +270,6 @@ export function defaultExportPreset(
     id,
     name,
     pluginOverrides: {},
-    packed: true,
     bundleDebugger: false,
     fileCountWarn: DEFAULT_EXPORT_FILE_COUNT_WARN,
     fileCountFail: DEFAULT_EXPORT_FILE_COUNT_FAIL,
@@ -510,7 +481,6 @@ export interface PhysicsProjectSettings {
 export const DEFAULT_TWO_D_PROJECT_SETTINGS: TwoDProjectSettings = {
   pixelsPerUnit: 100,
   pixelPerfect: false,
-  integerZoomSteps: false,
   sortingLayers: [...DEFAULT_SORTING_LAYERS],
 };
 
@@ -543,51 +513,6 @@ function normalizeCollisionLayers(value: unknown): string[] {
   }
   return layers.length > 0 ? layers : [...DEFAULT_COLLISION_LAYERS];
 }
-
-export const DEFAULT_PROJECT_INPUT_SETTINGS: ProjectInputSettings = {
-  actions: [
-    {
-      name: "Jump",
-      bindings: [
-        { device: "key", code: "Space" },
-        { device: "gamepadButton", code: "0:0" },
-      ],
-    },
-    {
-      name: "Confirm",
-      bindings: [
-        { device: "key", code: "Enter" },
-        // Face Button Right (index 1) — Jump already owns Face Button Down (0:0).
-        { device: "gamepadButton", code: "0:1" },
-      ],
-    },
-  ],
-  axes: [
-    {
-      name: "Move",
-      kind: "2d",
-      bindings: [
-        { device: "key", code: "KeyA", component: "x", digitalValue: -1 },
-        { device: "key", code: "KeyD", component: "x", digitalValue: 1 },
-        { device: "key", code: "KeyS", component: "y", digitalValue: -1 },
-        { device: "key", code: "KeyW", component: "y", digitalValue: 1 },
-        { device: "gamepadAxis", code: "0:0", component: "x", deadZone: 0.15 },
-        {
-          device: "gamepadAxis",
-          code: "0:1",
-          component: "y",
-          deadZone: 0.15,
-          invert: true,
-        },
-      ],
-    },
-    {
-      name: "Look",
-      kind: "1d",
-      bindings: [{ device: "gamepadAxis", code: "0:2", deadZone: 0.15 }],
-    },
-  ],
-};
 
 function normalizePositiveAspect(value: unknown, fallback: number): number {
   return typeof value === "number" && value > 0 ? value : fallback;
@@ -651,37 +576,6 @@ function normalizeGameInstanceClass(value: unknown): string | null {
   return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
 }
 
-/**
- * One-shot copy of a scene Game Instance onto the project field so old
- * projects keep Play/Preview/export after the picker moved to Project Settings.
- */
-export function migrateGameInstanceClassFromScenes(
-  settings: ProjectSettings,
-  scenes: ReadonlyArray<{
-    settings?: { gameInstanceClass?: string | null };
-  }>,
-): ProjectSettings {
-  if (settings.gameInstanceClass) return settings;
-  for (const scene of scenes) {
-    const value = scene.settings?.gameInstanceClass;
-    if (typeof value === "string" && value.trim()) {
-      return { ...settings, gameInstanceClass: value.trim() };
-    }
-  }
-  return settings;
-}
-
-/** Project field wins; scene value is a fallback for unsaved / in-flight loads. */
-export function resolveGameInstanceClass(
-  project: { gameInstanceClass?: string | null } | null | undefined,
-  scene: { settings?: { gameInstanceClass?: string | null } } | null | undefined,
-): string | undefined {
-  const fromProject = project?.gameInstanceClass?.trim();
-  if (fromProject) return fromProject;
-  const fromScene = scene?.settings?.gameInstanceClass?.trim();
-  return fromScene || undefined;
-}
-
 function normalizePluginOverrides(value: unknown): Record<string, PluginEnableOverride> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   const out: Record<string, PluginEnableOverride> = {};
@@ -691,13 +585,7 @@ function normalizePluginOverrides(value: unknown): Record<string, PluginEnableOv
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
     const enabled = (raw as { enabled?: unknown }).enabled;
     if (typeof enabled !== "boolean") continue;
-    const accepted = (raw as { acceptedCompatibility?: unknown }).acceptedCompatibility;
-    out[guid] = {
-      enabled,
-      ...(enabled && typeof accepted === "string" && accepted.trim() !== ""
-        ? { acceptedCompatibility: accepted }
-        : {}),
-    };
+    out[guid] = { enabled };
   }
   return out;
 }
@@ -730,7 +618,6 @@ function normalizeExportPresets(value: unknown): ExportPreset[] {
       id,
       name,
       pluginOverrides: normalizePluginOverrides(record.pluginOverrides),
-      packed: record.packed !== false,
       bundleDebugger: record.bundleDebugger === true,
       fileCountWarn: normalizeCountThreshold(
         record.fileCountWarn,
@@ -757,22 +644,6 @@ function normalizeEditorUtilityObjects(value: unknown): string[] {
     ids.push(id);
   }
   return ids;
-}
-
-function normalizeProjectInput(value: unknown): ProjectInputSettings {
-  const source = (value ?? {}) as Record<string, unknown>;
-  const hasActions = Array.isArray(source.actions);
-  const hasAxes = Array.isArray(source.axes);
-  if (!hasActions && !hasAxes) {
-    return structuredClone(DEFAULT_PROJECT_INPUT_SETTINGS);
-  }
-  // Full validation (device enums, dead zones) runs in `@babylonslate/input`.
-  return {
-    actions: hasActions
-      ? (source.actions as ProjectInputSettings["actions"])
-      : [],
-    axes: hasAxes ? (source.axes as ProjectInputSettings["axes"]) : [],
-  };
 }
 
 export function normalizeProjectSettings(
@@ -809,7 +680,6 @@ export function normalizeProjectSettings(
           ? twoD.pixelsPerUnit
           : DEFAULT_TWO_D_PROJECT_SETTINGS.pixelsPerUnit,
       pixelPerfect: twoD?.pixelPerfect === true,
-      integerZoomSteps: twoD?.integerZoomSteps === true,
       sortingLayers: normalizeSortingLayers(twoD?.sortingLayers),
     },
     physics: {
@@ -823,7 +693,6 @@ export function normalizeProjectSettings(
         settings?.textures?.autoRequeueUncompressed ??
         DEFAULT_TEXTURE_PROJECT_SETTINGS.autoRequeueUncompressed,
     },
-    input: normalizeProjectInput(settings?.input),
     focusNavigation: normalizeFocusNavigationSettings(settings?.focusNavigation),
     fonts: {
       defaultFontGuid:
@@ -910,7 +779,6 @@ export function createEmptyProject(
       ? {
           ...DEFAULT_TWO_D_PROJECT_SETTINGS,
           pixelPerfect: true,
-          integerZoomSteps: true,
         }
       : undefined;
   return {
@@ -1018,16 +886,3 @@ export function createDefaultScene(
   };
 }
 
-export function createDefaultGraph(): SerializedGraph {
-  return {
-    nodes: [
-      {
-        id: "log-1",
-        type: "logMessage",
-        position: { x: 120, y: 120 },
-        data: { message: "Hello from BabylonSlate" },
-      },
-    ],
-    edges: [],
-  };
-}

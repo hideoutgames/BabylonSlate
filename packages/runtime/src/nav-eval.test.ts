@@ -144,6 +144,22 @@ const physicalMoveTree = {
   }],
 };
 
+/**
+ * A path along X = start..`goalX` (on the line where `axis` is 0) that reaches
+ * the goal and bends at least `reach` off that line. A straight two-point path
+ * through a blocker fails it.
+ */
+function detours(
+  path: ReadonlyArray<{ x: number; y: number; z: number }>,
+  goalX: number,
+  axis: "y" | "z",
+  reach: number,
+): boolean {
+  const end = path.at(-1);
+  return !!end && Math.abs(end.x - goalX) < 0.05 && Math.abs(end[axis]) < 0.05 &&
+    path.some((point) => Math.abs(point[axis]) >= reach);
+}
+
 describe("runtime navmesh import and crowd", () => {
   let bytes: Uint8Array;
 
@@ -748,10 +764,8 @@ describe("runtime navmesh import and crowd", () => {
     runtime.start();
     runtime.realizePlayWorld();
     const path = runtime.findNavPath({ x: -4, y: 0, z: 0 }, { x: 4, y: 0, z: 0 });
-    expect(path.length).toBeGreaterThan(1);
-    expect(
-      path.some((point) => Math.abs(point.x) < 1 && Math.abs(point.z) < 1),
-    ).toBe(false);
+    // Around the 8-long door's end, not through it.
+    expect(detours(path, 4, "z", 3.8)).toBe(true);
     runtime.stop();
   });
 
@@ -815,10 +829,8 @@ describe("runtime navmesh import and crowd", () => {
     runtime.start();
     runtime.realizePlayWorld();
     const path = runtime.findNavPath({ x: -4, y: 0, z: 0 }, { x: 4, y: 0, z: 0 });
-    expect(path.length).toBeGreaterThan(1);
-    expect(
-      path.some((point) => Math.abs(point.x) < 1 && Math.abs(point.y) < 1),
-    ).toBe(false);
+    // Scene XY: around the 8-tall door's end, not through it.
+    expect(detours(path, 4, "y", 3.8)).toBe(true);
     runtime.stop();
   });
 
@@ -863,8 +875,7 @@ describe("runtime navmesh import and crowd", () => {
     runtime.start();
     runtime.realizePlayWorld();
     const path = runtime.findNavPath({ x: -8, y: 0, z: 0 }, { x: 8, y: 0, z: 0 });
-    expect(path.length).toBeGreaterThan(1);
-    expect(path.some((point) => Math.abs(point.z) > 6)).toBe(true);
+    expect(detours(path, 8, "z", 6)).toBe(true);
     runtime.stop();
   });
 });

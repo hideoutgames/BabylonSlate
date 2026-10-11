@@ -675,8 +675,10 @@ export function TreeView({
           }
         }
       } else if (!drag.armed && !drag.moved) {
-        const additive = event.ctrlKey || event.metaKey || event.shiftKey;
-        if (additive) {
+        // Shift extends a range like Shift+Arrow; Ctrl / Meta toggle one row.
+        if (event.shiftKey) {
+          onSelect?.(drag.nodeId, { range: true });
+        } else if (event.ctrlKey || event.metaKey) {
           onSelect?.(drag.nodeId, { additive: true });
         } else {
           onSelect?.(drag.nodeId);

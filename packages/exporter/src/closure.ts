@@ -1,6 +1,7 @@
 import {
   actorPropertyReferences,
   assetFolderOfPath,
+  classIdForAssetPath,
   classIdsFromVariableMembers,
   assetVariableGuidsFromGraph,
   areaEmissionTextureGuids,
@@ -45,9 +46,7 @@ function isReferenceField(key: string): boolean {
     key === "sceneLayerActors" ||
     key === "default:classId" ||
     key === "parentClass" ||
-    key === "gameInstanceClass" ||
     key === "scene" ||
-    key === "sceneName" ||
     key === "sceneGuid" ||
     key.endsWith(":asset")
   );
@@ -125,33 +124,33 @@ function isSubsystemClassAsset(
   );
 }
 
+/**
+ * Compile class id of a Class asset: its storage file stem, as the editor
+ * compiles and lists it. A header without a storage path has none.
+ */
+function classIdOf(asset: ExportIndexedAsset): string | undefined {
+  return asset.type === "Class" && asset.path ? classIdForAssetPath(asset.path) : undefined;
+}
+
 type ClosureIndex = {
   sortedAssets: ExportIndexedAsset[];
   byGuid: Map<string, ExportIndexedAsset>;
-  byClassName: Map<string, ExportIndexedAsset[]>;
-  bySceneName: Map<string, ExportIndexedAsset>;
+  /** Class assets by compile class id, in guid order. */
+  byClassId: Map<string, ExportIndexedAsset[]>;
 };
 
 function indexAssets(assets: readonly ExportIndexedAsset[]): ClosureIndex {
   const sortedAssets = [...assets].sort((a, b) => a.guid.localeCompare(b.guid));
   const byGuid = new Map(sortedAssets.map((asset) => [asset.guid, asset]));
-  const byClassName = new Map<string, ExportIndexedAsset[]>();
-  const bySceneName = new Map<string, ExportIndexedAsset>();
+  const byClassId = new Map<string, ExportIndexedAsset[]>();
   for (const asset of sortedAssets) {
-    if (asset.type === "Class" || asset.type === "Graph") {
-      const list = byClassName.get(asset.name) ?? [];
-      list.push(asset);
-      byClassName.set(asset.name, list);
-    }
-    if (
-      asset.type === "Scene" &&
-      asset.name.trim() &&
-      !bySceneName.has(asset.name)
-    ) {
-      bySceneName.set(asset.name, asset);
-    }
+    const classId = classIdOf(asset);
+    if (!classId) continue;
+    const list = byClassId.get(classId) ?? [];
+    list.push(asset);
+    byClassId.set(classId, list);
   }
-  return { sortedAssets, byGuid, byClassName, bySceneName };
+  return { sortedAssets, byGuid, byClassId };
 }
 
 /** What a game ships without any Scene referencing it. */
@@ -194,8 +193,21 @@ function rootsFromIndex(input: ExportRootInput, { sortedAssets }: ClosureIndex):
   return { startupRefs, alwaysPackageGuids };
 }
 
-/** Adds the references beyond the header `dependencies` that a closure follows from `asset`. */
+/**
+ * Adds the references beyond the header `dependencies` that a closure follows
+ * from `asset`, or returns why the asset cannot ship.
+ */
 type RefExpander = (asset: ExportIndexedAsset, refs: Set<string>) => string | undefined;
+
+/**
+ * The included asset a reference names: an asset guid, or else the compile
+ * class id of a Class. Display names never resolve.
+ */
+function resolveReference(input: ExportRootInput, { byGuid, byClassId }: ClosureIndex, ref: string): ExportIndexedAsset | undefined {
+  const direct = byGuid.get(ref);
+  if (direct) return isIncluded(direct, input) ? direct : undefined;
+  return byClassId.get(ref)?.find((candidate) => isIncluded(candidate, input));
+}
 
 /**
  * Walks references from the roots. `scenes` are the Scene passes to start;
@@ -208,53 +220,45 @@ function walkClosure(
   scenes: readonly string[],
   expand: RefExpander,
 ): Result<ExportReachability, string> {
-  const { byGuid, byClassName, bySceneName } = index;
   const roots = rootsFromIndex(input, index);
   const bySceneGuid = new Map<string, Set<string>>();
-  const pendingScenes = [...scenes];
+  const pendingScenes = [...scenes].reverse();
   const traversedScenes = new Set<string>();
 
   while (pendingScenes.length) {
-    pendingScenes.sort((a, b) => b.localeCompare(a));
     const sceneRoot = pendingScenes.pop()!;
     if (traversedScenes.has(sceneRoot)) continue;
     traversedScenes.add(sceneRoot);
     const reached = new Set<string>();
     bySceneGuid.set(sceneRoot, reached);
-    const pending = [sceneRoot];
+    const rootAsset = index.byGuid.get(sceneRoot);
+    const pending = rootAsset && isIncluded(rootAsset, input) ? [sceneRoot] : [];
     const seen = new Set<string>([sceneRoot]);
 
     const enqueue = (ref: string): void => {
-      const direct = byGuid.get(ref);
-      const matches = direct ? [direct] : (byClassName.get(ref) ?? []);
-      const sceneByName = bySceneName.get(ref);
-      if (sceneByName && !matches.includes(sceneByName))
-        matches.push(sceneByName);
-      for (const asset of matches) {
-        if (!isIncluded(asset, input)) continue;
-        if (asset.type === "Scene" && asset.guid !== sceneRoot) {
-          if (!traversedScenes.has(asset.guid)) pendingScenes.push(asset.guid);
-          continue;
-        }
-        if (!seen.has(asset.guid)) {
-          seen.add(asset.guid);
-          pending.push(asset.guid);
-        }
+      const asset = resolveReference(input, index, ref);
+      if (!asset) return;
+      if (asset.type === "Scene" && asset.guid !== sceneRoot) {
+        if (!traversedScenes.has(asset.guid)) pendingScenes.push(asset.guid);
+        return;
+      }
+      if (!seen.has(asset.guid)) {
+        seen.add(asset.guid);
+        pending.push(asset.guid);
       }
     };
 
     if (sceneRoot === scenes[0]) {
-      pending.push(...roots.startupRefs);
+      for (const ref of roots.startupRefs) enqueue(ref);
       for (const guid of roots.alwaysPackageGuids) enqueue(guid);
     }
 
+    // Every queued guid is an included asset; the order is deterministic
+    // because roots come from guid-sorted headers and references are sorted.
     while (pending.length) {
-      pending.sort((a, b) => b.localeCompare(a));
-      const ref = pending.pop()!;
-      const asset = byGuid.get(ref) ?? byClassName.get(ref)?.[0];
-      if (!asset || !isIncluded(asset, input)) continue;
+      const asset = index.byGuid.get(pending.pop()!)!;
       const refs = new Set<string>(asset.dependencies);
-      const parentClass = asset.type === "Class" || asset.type === "Graph" ? asset.parentClass?.trim() : "";
+      const parentClass = asset.type === "Class" ? asset.parentClass?.trim() : "";
       if (parentClass) refs.add(parentClass);
       const failure = expand(asset, refs);
       if (failure) return err(failure);
@@ -274,7 +278,7 @@ export function collectExportReachability(
 ): Result<ExportReachability, string> {
   const startup = input.startupSceneGuid?.trim() ?? "";
   const index = indexAssets(input.assets);
-  const { sortedAssets, byGuid, byClassName } = index;
+  const { sortedAssets, byGuid, byClassId } = index;
   const definitionFields = (guid: string): readonly unknown[] | undefined => {
     const type = byGuid.get(guid)?.type;
     if (type !== "DataDefinition" && type !== "Structure") return undefined;
@@ -286,15 +290,17 @@ export function collectExportReachability(
     return err(MISSING_STARTUP_SCENE_MESSAGE);
   }
 
-  const dataClassReferences = sortedAssets.filter((entry) => entry.type === "Class" || entry.type === "Graph")
-    .map((entry) => ({ guid: entry.guid, classId: entry.name }));
+  const dataClassReferences = sortedAssets.flatMap((entry) => {
+    const classId = classIdOf(entry);
+    return classId ? [{ guid: entry.guid, classId }] : [];
+  });
 
   /** Scans the document and payload of an asset for the references its header omits. */
   const expand: RefExpander = (asset, refs) => {
     if (asset.type === "DataObject" || asset.type === "DataSheet") return `Historical ${asset.type === "DataObject" ? "Data Object" : "Data Sheet"} "${asset.name}" is referenced by this game. Replace that reference with a Data Tree entry before exporting.`;
     const collectOverrides = (value: unknown) => {
       const references = actorPropertyReferences(value, classId => {
-        const entry = byGuid.get(classId) ?? byClassName.get(classId)?.find(candidate => candidate.type === "Class");
+        const entry = byGuid.get(classId) ?? byClassId.get(classId)?.[0];
         if (!entry) return null;
         return { parentClassId: entry.parentClass, members: input.graphByGuid(entry.guid)?.members };
       });
@@ -307,11 +313,11 @@ export function collectExportReachability(
         collectOverrides(scene);
         for (const guid of text2dImageGuidsFromScene(scene)) refs.add(guid);
       }
-    } else if (asset.type === "Class" || asset.type === "Graph") {
+    } else if (asset.type === "Class") {
       const graph: SerializedGraph | null = input.graphByGuid(asset.guid);
       if (graph) {
         collectTypedRefs(graph, refs);
-        collectOverrides({ classId: asset.name, properties: graph.actorDefaults?.properties, graph });
+        collectOverrides({ classId: classIdOf(asset) ?? asset.guid, properties: graph.actorDefaults?.properties, graph });
         for (const classId of classIdsFromVariableMembers(graph.members ?? [])) refs.add(classId);
         for (const guid of assetVariableGuidsFromGraph(graph)) refs.add(guid);
         for (const guid of materialParameterTextureGuidsFromGraph(graph)) refs.add(guid);

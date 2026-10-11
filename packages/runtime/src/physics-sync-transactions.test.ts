@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { identityTransform } from "@babylonslate/core";
 import { ClassRegistry, World, type Actor } from "@babylonslate/object-model";
-import { createSoftwarePhysicsBackend } from "@babylonslate/physics";
+import { createPhysicsBackend, createSoftwarePhysicsBackend } from "@babylonslate/physics";
 import { PhysicsWorldSync } from "./physics-sync";
 
 afterEach(() => vi.restoreAllMocks());
@@ -177,6 +177,34 @@ describe("atomic runtime collider publication", () => {
       expect(target).toHaveBeenCalledTimes(1);
       expect(teleport).not.toHaveBeenCalled();
       expect(actor.transform.position.x).toBeCloseTo(6);
+    } finally { sync.dispose(); }
+  });
+
+  it.each(["3d", "2d"] as const)("keeps a kinematic body at a pose written after its pre-step target (%s native)", async (kind) => {
+    const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
+    const actor = world.createActor({ classId: "Actor", guid: "platform", transform: identityTransform() });
+    actor.attachComponent(world.createComponent({
+      classId: "RigidBodyComponent", variables: { motionType: "kinematic", mass: 1, gravityScale: 0 },
+    }));
+    actor.attachComponent(world.createComponent({
+      classId: "ColliderComponent",
+      variables: { shape: kind === "3d" ? { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } }
+        : { kind: "box2d", halfExtents: { x: 0.5, y: 0.5 } } },
+    }));
+    world.spawnActorNow(actor);
+    const sync = new PhysicsWorldSync(await createPhysicsBackend({
+      kind, gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false,
+    }));
+    try {
+      sync.step(1 / 60, world);
+      // The step hook runs after the pre-step pass captured the target at x = 0,
+      // as a Movement transition event's script does.
+      sync.step(1 / 60, world, undefined, undefined, () => {
+        actor.transform.position.x = 5;
+        sync.teleportActor(actor, world);
+      });
+      expect(actor.transform.position.x).toBeCloseTo(5, 4);
+      expect(sync.getBackend().getBodyTransform(`body:${actor.guid}`)!.position.x).toBeCloseTo(5, 4);
     } finally { sync.dispose(); }
   });
 });

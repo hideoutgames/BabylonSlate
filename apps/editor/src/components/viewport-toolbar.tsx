@@ -214,43 +214,46 @@ export function ViewportToolbar({
     ...viewportKeys, enabled: Boolean(onDrop) && !dropDisabled,
   });
 
+  const shadingMenu: NestedMenuItem = {
+    type: "submenu",
+    id: "viewport-mode",
+    label: "Viewport Mode",
+    testId: `${testIdPrefix}viewport-shading-mode`,
+    items: [
+      {
+        type: "radio-group",
+        id: "viewport-shading",
+        value: viewportShadingMode,
+        closeOnClick: false,
+        onValueChange: (value) =>
+          setViewportShadingMode(value as ViewportShadingMode),
+        items: [
+          {
+            id: "pbr",
+            label: projectDocument?.settings.render.mode === "cel" ? "CEL" : "PBR",
+            value: "pbr",
+            testId: `${testIdPrefix}viewport-shading-pbr`,
+          },
+          {
+            id: "unlit",
+            label: "Unlit",
+            value: "unlit",
+            testId: `${testIdPrefix}viewport-shading-unlit`,
+          },
+          {
+            id: "wireframe",
+            label: "Wireframe",
+            value: "wireframe",
+            testId: `${testIdPrefix}viewport-shading-wireframe`,
+          },
+        ],
+      },
+    ],
+  };
   const settingsItems: NestedMenuItem[] = [
-    {
-      type: "submenu",
-      id: "viewport-mode",
-      label: "Viewport Mode",
-      testId: `${testIdPrefix}viewport-shading-mode`,
-      items: [
-        {
-          type: "radio-group",
-          id: "viewport-shading",
-          value: viewportShadingMode,
-          closeOnClick: false,
-          onValueChange: (value) =>
-            setViewportShadingMode(value as ViewportShadingMode),
-          items: [
-            {
-              id: "pbr",
-              label: projectDocument?.settings.render.mode === "cel" ? "CEL" : "PBR",
-              value: "pbr",
-              testId: `${testIdPrefix}viewport-shading-pbr`,
-            },
-            {
-              id: "unlit",
-              label: "Unlit",
-              value: "unlit",
-              testId: `${testIdPrefix}viewport-shading-unlit`,
-            },
-            {
-              id: "wireframe",
-              label: "Wireframe",
-              value: "wireframe",
-              testId: `${testIdPrefix}viewport-shading-wireframe`,
-            },
-          ],
-        },
-      ],
-    },
+    // SceneLayer and overlay-prefab viewports (no 3D / 2D toggle) are HUD
+    // overlays that always draw Unlit, so they offer no Viewport Mode choice.
+    ...(showViewportModeToggle ? [shadingMenu] : []),
     {
       type: "checkbox",
       id: "show-grid",

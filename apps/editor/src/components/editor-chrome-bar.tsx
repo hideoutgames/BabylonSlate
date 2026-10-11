@@ -92,7 +92,6 @@ import { ActionFeedbackButton } from "./action-feedback-button";
 import { CompilationErrorIndicator } from "./compilation-error-indicator";
 import { WindowsMenu } from "./windows-menu";
 import { PlayDebugMenuItems } from "./play-debug-menu-items";
-import { displayProjectName } from "../lib/display-project-name";
 import { useMaterialRenderControl } from "../context/material-render-control-context";
 import {
   playChromeLaunchAriaLabel,
@@ -555,11 +554,11 @@ export function EditorChromeBar({
           <div
             className="editor-chrome-title"
             data-testid="project-name"
-            title={projectName ? displayProjectName(projectName) : undefined}
+            title={projectName || undefined}
           >
             <BrandIcon className="editor-chrome-brand" />
             <span className="editor-chrome-project">
-              {projectName ? displayProjectName(projectName) : ""}
+              {projectName ?? ""}
             </span>
           </div>
         ) : null}

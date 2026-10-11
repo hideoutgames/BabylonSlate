@@ -120,6 +120,50 @@ describe("NumericDragField", () => {
     expect(onDragEnd).toHaveBeenCalledWith(9);
   });
 
+  it("restores the starting value when the platform cancels a scrub", () => {
+    const onChange = vi.fn();
+    const onDragEnd = vi.fn();
+    render(
+      <NumericDragField
+        label="X"
+        value={2}
+        sensitivity={1}
+        onChange={onChange}
+        onDragEnd={onDragEnd}
+        data-testid="field"
+      />,
+    );
+    const scrub = screen.getByTestId("field-scrub");
+    dispatchPointerEvent(scrub, "pointerdown", { clientX: 0 });
+    dispatchPointerEvent(scrub, "pointermove", { clientX: 5 });
+    dispatchPointerEvent(scrub, "pointercancel", { clientX: 5 });
+
+    expect(onChange).toHaveBeenLastCalledWith(2);
+    expect(onDragEnd).toHaveBeenCalledExactlyOnceWith(2);
+  });
+
+  it("scrubs only with the primary button and pointer", () => {
+    const onChange = vi.fn();
+    render(
+      <NumericDragField
+        label="X"
+        value={0}
+        sensitivity={1}
+        onChange={onChange}
+        data-testid="field"
+      />,
+    );
+    const scrub = screen.getByTestId("field-scrub");
+    dispatchPointerEvent(scrub, "pointerdown", { pointerType: "mouse", button: 2, clientX: 0 });
+    dispatchPointerEvent(scrub, "pointermove", { pointerType: "mouse", clientX: 5 });
+    expect(onChange).not.toHaveBeenCalled();
+
+    dispatchPointerEvent(scrub, "pointerdown", { pointerId: 1, clientX: 0 });
+    dispatchPointerEvent(scrub, "pointerdown", { pointerId: 2, isPrimary: false, clientX: 50 });
+    dispatchPointerEvent(scrub, "pointermove", { pointerId: 1, clientX: 5 });
+    expect(onChange).toHaveBeenLastCalledWith(5);
+  });
+
   it("clamps scrubbed values to the configured range", () => {
     const onChange = vi.fn();
     render(

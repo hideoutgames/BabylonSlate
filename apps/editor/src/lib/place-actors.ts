@@ -317,9 +317,7 @@ export function prefabComponentsForGuid(
     if (entry.header.type !== "Class" || !entry.path) continue;
     const graph = options.graphForPath(entry.path);
     if (!graph) continue;
-    const classId = classIdFromClassAsset(entry);
-    graphs[classId] = graph;
-    if (entry.header.name !== classId) graphs[entry.header.name] = graph;
+    graphs[classIdFromClassAsset(entry)] = graph;
   }
   const classId = classIdFromClassAsset(asset);
   const merged = mergedPrefabComponentsForClass({

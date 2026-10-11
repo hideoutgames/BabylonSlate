@@ -113,9 +113,11 @@ function ancestorFolderSelected(
   folderId: string,
   selected: ReadonlySet<string>,
 ): boolean {
+  const seen = new Set<string>();
   let parent = findFolder(scene, folderId)?.parentFolderId ?? null;
-  while (parent) {
+  while (parent && !seen.has(parent)) {
     if (selected.has(parent)) return true;
+    seen.add(parent);
     parent = findFolder(scene, parent)?.parentFolderId ?? null;
   }
   return false;
@@ -126,9 +128,12 @@ function ancestorActorSelected(
   actorId: string,
   selected: ReadonlySet<string>,
 ): boolean {
+  // A parent cycle (a damaged scene) ends the walk instead of looping forever.
+  const seen = new Set<string>();
   let parent = findActor(scene, actorId)?.parentId ?? null;
-  while (parent) {
+  while (parent && !seen.has(parent)) {
     if (selected.has(parent)) return true;
+    seen.add(parent);
     parent = findActor(scene, parent)?.parentId ?? null;
   }
   return false;
@@ -201,15 +206,12 @@ function folderMoveForTarget(
   scene: SerializedScene,
   folderId: string,
   target: OutlinerRowTarget | null,
-  rejectActorTarget: boolean,
   placement: TreeDropPlacement,
 ): OutlinerDropMove | null {
   const around = placement === "before" || placement === "after";
   if (!around) {
-    if (target?.kind === "actor") {
-      if (rejectActorTarget) return null;
-      return { kind: "folder", id: folderId, parentFolderId: null };
-    }
+    // A folder cannot nest under an actor.
+    if (target?.kind === "actor") return null;
     const parentFolderId = target?.kind === "folder" ? target.id : null;
     if (parentFolderId === folderId) return null;
     if (wouldCreateFolderCycle(scene, folderId, parentFolderId)) return null;
@@ -247,7 +249,6 @@ export function outlinerTreeDropMoves(options: {
 }): OutlinerDropMove[] {
   const { dragRowId, targetRowId, scene } = options;
   const placement = options.placement ?? "into";
-  const around = placement === "before" || placement === "after";
   if (!outlinerRowTarget(dragRowId)) return [];
   const inSelection = options.selectedRowIds.includes(dragRowId);
   const selected = splitOutlinerRowIds(
@@ -266,14 +267,6 @@ export function outlinerTreeDropMoves(options: {
   );
 
   const target = outlinerRowTarget(targetRowId);
-  if (
-    inSelection &&
-    folderRoots.length > 0 &&
-    target?.kind === "actor" &&
-    !around
-  ) {
-    return [];
-  }
 
   const movingFolders = coveredFolderIds(scene, folderRoots);
   const movingActors = new Set<string>();
@@ -285,13 +278,7 @@ export function outlinerTreeDropMoves(options: {
 
   const moves: OutlinerDropMove[] = [];
   for (const folderId of folderRoots) {
-    const move = folderMoveForTarget(
-      scene,
-      folderId,
-      target,
-      inSelection,
-      placement,
-    );
+    const move = folderMoveForTarget(scene, folderId, target, placement);
     if (!move) return [];
     moves.push(move);
   }

@@ -180,4 +180,23 @@ describe("private native saved games", () => {
     await expect(storage.read(key)).rejects.toHaveProperty("code", "EACCES");
     await expect(storage.write(key, "data")).rejects.toHaveProperty("name", "StorageFullError");
   });
+
+  it("reports the locked operation's outcome when the Electron host refuses the release", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const bridge: ElectronSaveGameBridge = {
+      read: async () => ({ ok: true, value: null }),
+      write: async () => ({ ok: true, value: undefined }),
+      remove: async () => ({ ok: true, value: undefined }),
+      list: async () => ({ ok: true, value: [] }),
+      acquireLock: async () => ({ ok: true, value: "token" }),
+      releaseLock: async () => ({ ok: false, error: { name: "Error", message: "Invalid save lock owner" } }),
+    };
+    const storage = new ElectronSaveGameStorage(bridge);
+    try {
+      expect(await storage.withLock(key, async () => "written")).toBe("written");
+      await expect(storage.withLock(key, async () => { throw new Error("write failed"); })).rejects.toThrow("write failed");
+    } finally {
+      warn.mockRestore();
+    }
+  });
 });

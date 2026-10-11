@@ -1,10 +1,8 @@
 import { documentKindForAssetType, type AssetDocumentKind } from "@babylonslate/core";
 import {
   createDefaultParticleSystemPayload,
-  isParticleAssetType,
   isParticleEmitterAssetType,
   particleLibraryEmitter,
-  particleLibraryFromAssets,
   type ParticleLibrary,
   type ParticleLibraryEmitter,
   type ParticleSystemPayload,
@@ -93,32 +91,4 @@ export async function loadEmittersForPreview(options: {
     if (entry) emitters.set(guid, entry);
   }
   return emitters;
-}
-
-/**
- * The Play particle library: every Basic emitter, Particle Graph and Particle System
- * in the project, loaded through its own document kind (so an open tab's unsaved
- * content wins) and normalized once. A failed load falls back to the header payload.
- */
-export async function loadPlayParticleLibrary(options: {
-  assets: ReadonlyArray<{
-    header: { guid: string; type: string; name?: string; payload?: unknown };
-    path: string;
-  }>;
-  loadDocument: (kind: ParticleDocumentKind, path: string) => Promise<unknown | null>;
-}): Promise<ParticleLibrary> {
-  const loaded: Array<{ guid: string; type: string; name?: string; payload: unknown }> = [];
-  for (const asset of options.assets) {
-    if (!isParticleAssetType(asset.header.type)) continue;
-    const kind = particleDocumentKind(asset.header.type);
-    if (!kind) continue;
-    const payload = (await options.loadDocument(kind, asset.path)) ?? asset.header.payload;
-    loaded.push({
-      guid: asset.header.guid,
-      type: asset.header.type,
-      name: asset.header.name,
-      payload,
-    });
-  }
-  return particleLibraryFromAssets(loaded);
 }

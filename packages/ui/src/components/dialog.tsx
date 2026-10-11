@@ -56,6 +56,7 @@ function DialogContent({
         data-slot="dialog-content"
         className={cn(
           "editor-dialog fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto rounded-xl bg-popover p-4 shadow-xl text-sm text-popover-foreground ring-1 ring-border duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 motion-reduce:animate-none",
+          showCloseButton && "[--dialog-close-inset:--spacing(12)]",
           className
         )}
         {...props}
@@ -86,7 +87,7 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="dialog-header"
-      className={cn("flex min-h-10 flex-col justify-center gap-1 pr-12", className)}
+      className={cn("flex min-h-10 flex-col justify-center gap-1 pr-(--dialog-close-inset)", className)}
       {...props}
     />
   )

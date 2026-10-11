@@ -1,11 +1,14 @@
+import { useLayoutEffect, useRef } from "react";
 import { Toggle } from "@babylonslate/ui/components/toggle";
 
 export const DEFAULT_FLAG_BIT_COUNT = 32;
+/** Masks are unsigned 32-bit integers; JavaScript bit operators stop at bit 31. */
+const MAX_FLAG_BIT_COUNT = 32;
 
 export interface FlagsFieldProps {
   value: number;
   onChange: (value: number) => void;
-  /** Number of bits shown. Defaults to 32. */
+  /** Number of bits shown. Defaults to and is capped at 32. */
   bitCount?: number;
   /** Per-bit labels; missing entries fall back to the bit index. */
   labels?: readonly string[];
@@ -14,13 +17,21 @@ export interface FlagsFieldProps {
   "data-testid"?: string;
 }
 
-export function hasFlagBit(value: number, bit: number): boolean {
-  return (value & (1 << bit)) !== 0;
+function flagMask(bit: number): number {
+  if (!Number.isInteger(bit) || bit < 0 || bit >= MAX_FLAG_BIT_COUNT) {
+    throw new RangeError(`Flag bit ${bit} is outside 0-${MAX_FLAG_BIT_COUNT - 1}.`);
+  }
+  return 2 ** bit;
 }
 
+export function hasFlagBit(value: number, bit: number): boolean {
+  return (value & flagMask(bit)) !== 0;
+}
+
+/** Returns the unsigned mask, so bit 31 stays positive (2147483648). */
 export function setFlagBit(value: number, bit: number, on: boolean): number {
-  const mask = 1 << bit;
-  return on ? value | mask : value & ~mask;
+  const mask = flagMask(bit);
+  return (on ? value | mask : value & ~mask) >>> 0;
 }
 
 /** Compact bitmask toggles (Unity LayerMask / Godot @export_flags). */
@@ -33,7 +44,16 @@ export function FlagsField({
   id,
   "data-testid": testId,
 }: FlagsFieldProps) {
-  const bits = Array.from({ length: bitCount }, (_, bit) => bit);
+  // Bits toggled before the host re-renders build on the last mask sent,
+  // not the rendered one, so a second quick toggle keeps the first.
+  const latest = useRef(value);
+  useLayoutEffect(() => {
+    latest.current = value;
+  });
+  const bits = Array.from(
+    { length: Math.max(0, Math.min(bitCount, MAX_FLAG_BIT_COUNT)) },
+    (_, bit) => bit,
+  );
   return (
     <div
       id={id}
@@ -53,7 +73,10 @@ export function FlagsField({
             disabled={disabled}
             aria-label={label}
             aria-pressed={pressed}
-            onPressedChange={(next) => onChange(setFlagBit(value, bit, next))}
+            onPressedChange={(next) => {
+              latest.current = setFlagBit(latest.current, bit, next);
+              onChange(latest.current);
+            }}
             data-testid={testId ? `${testId}-bit-${bit}` : undefined}
           >
             {label}

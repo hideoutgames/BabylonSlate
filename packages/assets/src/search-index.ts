@@ -1,12 +1,12 @@
 import type { ProjectStorage } from "@babylonslate/core";
-import { decodeAssetDocument } from "./asset-document";
+import { readStoredAssetDocument } from "./asset-document";
 import type { BlobStore } from "./blob-store";
 import type { AssetRegistry, IndexedAsset } from "./registry";
 
 export const DEFAULT_SEARCH_LIMIT = 80;
 const MAX_INDEXED_STRING = 200;
 const SKIP_PAYLOAD_KEYS = new Set(["body", "code", "source", "__pins"]);
-const DOCUMENT_TYPES = new Set(["Scene", "Graph", "Class"]);
+const DOCUMENT_TYPES = new Set(["Scene", "Class"]);
 const VARIABLE_NODE_TYPES = new Set([
   "variables.get",
   "variables.set",
@@ -64,7 +64,8 @@ export interface ProjectSearchRebuildOptions {
 
 /**
  * Project-wide text index layered on the header-only asset registry.
- * May decode Scene/Graph document JSON; never loads binary payloads.
+ * Reads only the header and document chunk of Scene/Class files; never
+ * loads binary payloads.
  */
 export class ProjectSearchIndex {
   private readonly storage: ProjectStorage;
@@ -200,8 +201,7 @@ export class ProjectSearchIndex {
     try {
       const storage = registry?.storageFor(asset.rootId) ?? this.storage;
       const blobs = registry?.blobsFor(asset.rootId) ?? this.blobs;
-      const bytes = await storage.readBinary(asset.path);
-      const document = await decodeAssetDocument(bytes, { blobs });
+      const document = await readStoredAssetDocument(storage, asset.path, { blobs });
       this.addDocumentEntries(asset, document.payload);
     } catch {
       // Header-only fallback when the document chunk is missing or corrupt.
@@ -259,7 +259,7 @@ export class ProjectSearchIndex {
       this.addSceneEntries(asset, payload);
       return;
     }
-    if (asset.header.type === "Graph" || asset.header.type === "Class") {
+    if (asset.header.type === "Class") {
       this.addGraphEntries(asset, payload);
     }
   }

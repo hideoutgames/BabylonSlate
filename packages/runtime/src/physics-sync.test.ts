@@ -65,7 +65,7 @@ function collisionTilemap(): TilemapPayload {
   let tilemap = createDefaultTilemapPayload();
   tilemap = {
     ...tilemap,
-    tilesetGuid: "tileset-1",
+    tilesets: [{ guid: "tileset-1", firstGid: 1, tileCount: 1 }],
     tileWidth: 16,
     tileHeight: 16,
   };
@@ -353,6 +353,39 @@ describe("PhysicsWorldSync tilemap colliders", () => {
       backend.sphereOverlap({ x: 0.5, y: 0.5, z: 0 }, 0.2).actorIds,
     ).toContain("ground");
     sync.dispose();
+  });
+
+  it("scales tilemap chains with the actor and places them by the component transform, as drawn", () => {
+    const world = createWorld();
+    const ground = world.createActor({
+      guid: "ground",
+      classId: "Actor",
+      transform: { ...identityTransform(), scale: { x: 2, y: 3, z: 1 } },
+    });
+    ground.attachComponent(
+      world.createComponent({
+        classId: "TilemapComponent",
+        assetGuid: "map-1",
+        transform: { ...identityTransform(), position: { x: 0.5, y: 0, z: 0 } },
+        variables: { assetGuid: "map-1" },
+      }),
+    );
+    world.spawnActorNow(ground);
+    const backend = createSoftwarePhysicsBackend("2d", { x: 0, y: 0, z: 0 });
+    const sync = new PhysicsWorldSync(backend);
+    sync.setTileContent({
+      tilemaps: new Map([["map-1", collisionTilemap()]]),
+      tilesets: new Map([["tileset-1", tileset]]),
+      pixelsPerUnit: 16,
+    });
+    try {
+      sync.syncFromWorld(world);
+      // The unit tile spans x 1..3 and y 0..3 once scaled and offset by 0.5 × 2.
+      expect(backend.sphereOverlap({ x: 2.5, y: 2.5, z: 0 }, 0.2).actorIds).toEqual(["ground"]);
+      expect(backend.sphereOverlap({ x: 0.5, y: 0.5, z: 0 }, 0.2).actorIds).toEqual([]);
+    } finally {
+      sync.dispose();
+    }
   });
 
   it("does not emit tilemap colliders when the asset guid is missing", () => {

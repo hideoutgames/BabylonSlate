@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import type { CommandMessage } from "@babylonslate/bridge";
 import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
-import { quaternionToEulerDegrees } from "@babylonslate/core";
+import { eulerDegreesToQuaternion, quaternionToEulerDegrees } from "@babylonslate/core";
 import {
   createActor,
   createDefaultSceneSettings,
@@ -82,6 +82,38 @@ describe("P19 behaviour tree task hosts", () => {
     ]);
     expect(euler[0]).toBeCloseTo(0, 4);
     expect(euler[1]).toBeCloseTo(90, 4);
+    expect(euler[2]).toBeCloseTo(0, 4);
+    runtime.stop();
+  });
+
+  it("Rotate To Face aims a parented actor from its world position", () => {
+    const scene = hostScene();
+    // The mount stands at x = 10 turned 90 degrees, so the guard's world heading differs from its local one.
+    scene.actors = [
+      createActor("mount", "Mount", {
+        transform: { position: [10, 0, 0], rotation: eulerDegreesToQuaternion([0, 90, 0]), scale: [1, 1, 1] },
+      }),
+      { ...scene.actors[0]!, parentId: "mount" },
+    ];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 4,
+      seedDemoActors: false,
+      playScene: scene,
+      behaviourTrees: {
+        "tree-1": leafTree("face", "bt.task.rotateToFace", {
+          target: { x: 10, y: 0, z: 5 },
+        }),
+      },
+    });
+    runtime.start();
+    runtime.realizePlayWorld();
+    runtime.tick();
+    const rotation = runtime.getWorld().findActor("guard")!.transform.rotation;
+    // Facing world +Z under a parent turned +90 degrees is a local turn of -90 degrees.
+    const euler = quaternionToEulerDegrees([rotation.x, rotation.y, rotation.z, rotation.w]);
+    expect(euler[0]).toBeCloseTo(0, 4);
+    expect(euler[1]).toBeCloseTo(-90, 4);
     expect(euler[2]).toBeCloseTo(0, 4);
     runtime.stop();
   });
@@ -727,6 +759,7 @@ describe("trace restore of Play Sound voices", () => {
           properties: {},
         },
         task("sound", "bt.task.playSound", { audioAssetGuid: "audio-1", volume: 0.4 }),
+        task("sound2", "bt.task.playSound", { audioAssetGuid: "audio-1", volume: 0.6 }),
         task("wait", "bt.task.wait", { durationMs: 2000 }),
         task("delay", "bt.task.wait", { durationMs: 200 }),
       ],
@@ -778,6 +811,28 @@ describe("trace restore of Play Sound voices", () => {
     commands.length = 0;
     replay.tick();
     expect(audioCommands(commands)).toEqual([{ type: "stopSound", voiceId: "bt:guard:sound" }]);
+    replay.stop();
+  });
+
+  it("restores ownership of every voice the tree started, so an abort stops them all", () => {
+    const recordedCommands: CommandMessage[] = [];
+    const recorded = soundRuntime(["sound", "sound2", "wait"], 350, recordedCommands);
+    recorded.executeConsoleCommand("snapshot start");
+    for (let i = 0; i < 3; i += 1) recorded.tick();
+    recorded.executeConsoleCommand("snapshot stop");
+    const frame = recorded.stopTrace()!.frames.at(-1)!;
+    expect(frame.bt?.[0]?.playSoundVoiceIds).toEqual(["bt:guard:sound", "bt:guard:sound2"]);
+    recorded.stop();
+
+    const commands: CommandMessage[] = [];
+    const replay = soundRuntime(["sound", "sound2", "wait"], 350, commands);
+    replay.restoreFromTrace(frame);
+    commands.length = 0;
+    replay.tick();
+    expect(audioCommands(commands)).toEqual([
+      { type: "stopSound", voiceId: "bt:guard:sound" },
+      { type: "stopSound", voiceId: "bt:guard:sound2" },
+    ]);
     replay.stop();
   });
 

@@ -1,0 +1,79 @@
+{
+  "id": "flow-switch-invalid_string",
+  "kind": "event",
+  "nodes": [
+    {
+      "id": "entry",
+      "typeId": "flow.entry",
+      "position": {
+        "x": 12600,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {}
+    },
+    {
+      "id": "switch",
+      "typeId": "flow.switchString",
+      "position": {
+        "x": 12400,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execIn",
+          "name": "exec",
+          "kind": "exec",
+          "direction": "in",
+          "type": {
+            "kind": "exec"
+          }
+        },
+        {
+          "id": "value",
+          "name": "value",
+          "kind": "data",
+          "direction": "in",
+          "type": {
+            "kind": "string"
+          },
+          "optional": true
+        },
+        {
+          "id": "default",
+          "name": "Default",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {
+        "cases": [
+          "idle",
+          3
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "entry.execOut->switch.execIn",
+      "sourceNodeId": "entry",
+      "sourcePinId": "execOut",
+      "targetNodeId": "switch",
+      "targetPinId": "execIn"
+    }
+  ]
+}

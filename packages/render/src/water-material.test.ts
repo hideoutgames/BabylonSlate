@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  DirectionalLight, FreeCamera, HemisphericLight, Matrix, MeshBuilder, NullEngine, PBRMaterial, PointLight, Scene, Texture, TransformNode, Vector3, type UniformBuffer,
+  Color3, DirectionalLight, FreeCamera, HemisphericLight, Matrix, MeshBuilder, NullEngine, PBRMaterial, PointLight, Scene, Texture, TransformNode, Vector3, type UniformBuffer,
 } from "@babylonjs/core";
 import {
   WATER_WAVE_MAX_COMPONENTS, createDefaultWaterDefinition, createWaterWaveOutput, evaluateWaterWaves, normalizeRenderingQuality, normalizeWaterBody,
@@ -95,6 +95,11 @@ describe("Water material binding", () => {
       scene.render();
       const fog = scene.fogColor.toLinearSpace(engine.useExactSrgbConversions);
       expect(horizon).toEqual([expect.closeTo(fog.r, 5), expect.closeTo(fog.g, 5), expect.closeTo(fog.b, 5)]);
+      // The asset's colours convert as the fog does, through the exact sRGB curve where the engine uses it.
+      Object.defineProperty(engine, "useExactSrgbConversions", { value: true });
+      (plugin.water as { deepColor: number[] }).deepColor = [0.03, 0.4, 0.8];
+      const deep = new Color3(0.03, 0.4, 0.8).toLinearSpace(true);
+      expect(bound("slateWaterDeep")).toEqual([expect.closeTo(deep.r, 6), expect.closeTo(deep.g, 6), expect.closeTo(deep.b, 6)]);
       // Absorption: water whose shallows look blue loses red first and blue last; grey shallows absorb every channel alike.
       const absorb = (shallowColor: [number, number, number]) => { (plugin.water as { shallowColor: number[] }).shallowColor = shallowColor; return bound("slateWaterAbsorb"); };
       const [r, g, b] = absorb([0.1, 0.4, 0.8]);

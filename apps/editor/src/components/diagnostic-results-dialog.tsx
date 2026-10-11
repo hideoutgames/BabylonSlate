@@ -9,6 +9,7 @@ import { cn } from "@babylonslate/ui/lib/utils";
 import { CameraIcon, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, CircleIcon, CopyIcon, DownloadIcon, FolderOpenIcon, SquareIcon, XIcon } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@babylonslate/ui/components/toggle-group";
 import { useAppSettings } from "../context/app-settings-context";
+import { downloadBlob } from "../lib/download";
 import { profileDefaultsFromSettings } from "../lib/play-debugger-defaults";
 import { DiagnosticResultsStore, type DiagnosticResult } from "../services/diagnostic-results-store";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@babylonslate/ui/components/empty";
@@ -388,9 +389,7 @@ export default function DiagnosticResultsDialog({ store }: { store: DiagnosticRe
       const text = serializeResult(state.result);
       if (copy) { await navigator.clipboard.writeText(text); setMessage("Copied diagnostic JSON."); }
       else {
-        const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
-        const anchor = document.createElement("a"); anchor.href = url; anchor.download = state.result.kind === "profile" ? "performance.babprofile.json" : "frame.babframe.json";
-        anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 0);
+        downloadBlob(new Blob([text], { type: "application/json" }), state.result.kind === "profile" ? "performance.babprofile.json" : "frame.babframe.json");
         setMessage("Exported diagnostic JSON.");
       }
     } catch (error) { setMessage(error instanceof Error ? error.message : String(error)); }

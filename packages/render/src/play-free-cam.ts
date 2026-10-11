@@ -28,6 +28,9 @@ export type PlayFreeCamController = {
   dispose(): void;
 };
 
+/** Just short of straight up or down. */
+const MAX_FREE_CAM_PITCH = Math.PI / 2 - 0.01;
+
 function copyPose(source: Camera, dest: UniversalCamera, mode: ViewportMode): void {
   dest.position.copyFrom(source.globalPosition);
   dest.minZ = source.minZ;
@@ -119,8 +122,13 @@ export function createPlayFreeCamController(
       if (!camera.rotationQuaternion) {
         camera.rotationQuaternion = Quaternion.Identity();
       }
+      // World yaw and local pitch keep roll at zero; stop short of vertical so
+      // the view never flips upside down and inverts yaw.
+      const forwardY = Vector3.Forward().applyRotationQuaternion(camera.rotationQuaternion).y;
+      const currentPitch = Math.asin(Math.min(1, Math.max(-1, -forwardY)));
+      const nextPitch = Math.min(MAX_FREE_CAM_PITCH, Math.max(-MAX_FREE_CAM_PITCH, currentPitch + deltaPitch));
       const yaw = Quaternion.FromEulerAngles(0, deltaYaw, 0);
-      const pitch = Quaternion.FromEulerAngles(deltaPitch, 0, 0);
+      const pitch = Quaternion.FromEulerAngles(nextPitch - currentPitch, 0, 0);
       camera.rotationQuaternion = yaw
         .multiply(camera.rotationQuaternion)
         .multiply(pitch);

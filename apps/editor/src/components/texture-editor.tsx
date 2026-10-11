@@ -13,6 +13,7 @@ import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   Empty,
+  EmptyContent,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
@@ -152,7 +153,9 @@ export const TexturePreview = memo(function TexturePreview({
   const { readAssetChunk } = useDocumentActions();
   const environment = isEnvironmentTexturePayload(payload);
   const [url, setUrl] = useState<string | null>(null);
-  const [status, setStatus] = useState<"loading" | "ready" | "missing">("loading");
+  const [status, setStatus] = useState<"loading" | "ready" | "missing" | "failed">("loading");
+  const [readError, setReadError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
   const [zoom, setZoom] = useState<TextureZoom>("fit");
 
@@ -161,23 +164,30 @@ export const TexturePreview = memo(function TexturePreview({
     let cancelled = false;
     let objectUrl: string | null = null;
     setStatus("loading");
+    setReadError(null);
     setUrl(null);
     void (async () => {
-      const bytes = await readAssetChunk(path, "pixels");
-      if (cancelled) return;
-      if (!bytes || bytes.byteLength === 0) {
-        setStatus("missing");
-        return;
+      try {
+        const bytes = await readAssetChunk(path, "pixels");
+        if (cancelled) return;
+        if (!bytes || bytes.byteLength === 0) {
+          setStatus("missing");
+          return;
+        }
+        objectUrl = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "image/png" }));
+        setUrl(objectUrl);
+        setStatus("ready");
+      } catch (error) {
+        if (cancelled) return;
+        setReadError(error instanceof Error ? error.message : "The Texture pixels could not be read.");
+        setStatus("failed");
       }
-      objectUrl = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "image/png" }));
-      setUrl(objectUrl);
-      setStatus("ready");
     })();
     return () => {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [environment, path, readAssetChunk]);
+  }, [attempt, environment, path, readAssetChunk]);
 
   const payloadWidth = typeof payload.sourceWidth === "number" ? payload.sourceWidth : null;
   const payloadHeight = typeof payload.sourceHeight === "number" ? payload.sourceHeight : null;
@@ -262,6 +272,17 @@ export const TexturePreview = memo(function TexturePreview({
             title="No Image Data"
             description="This Texture has no decoded pixels yet. Reimport the source image."
           />
+        ) : status === "failed" ? (
+          <TexturePreviewEmpty
+            icon={<ImageIcon />}
+            title="Texture Preview Failed"
+            description={readError ?? undefined}
+            action={
+              <Button type="button" variant="outline" size="sm" onClick={() => setAttempt((value) => value + 1)}>
+                Retry
+              </Button>
+            }
+          />
         ) : url ? (
           <img
             src={url}
@@ -295,10 +316,12 @@ function TexturePreviewEmpty({
   icon,
   title,
   description,
+  action,
 }: {
   icon: ReactNode;
   title: string;
   description?: string;
+  action?: ReactNode;
 }) {
   return (
     <Empty className="m-auto border-0" data-testid="texture-preview-empty">
@@ -307,6 +330,7 @@ function TexturePreviewEmpty({
         <EmptyTitle>{title}</EmptyTitle>
         {description ? <EmptyDescription>{description}</EmptyDescription> : null}
       </EmptyHeader>
+      {action ? <EmptyContent>{action}</EmptyContent> : null}
     </Empty>
   );
 }
@@ -354,12 +378,22 @@ export function TextureDetails({
   const texturePath = guid ? assetRegistry?.getByGuid(guid)?.path : undefined;
   useOpenDocument(texturePath ? documentId({ kind: "texture", path: texturePath }) : null);
   const alignmentStale = useTextureAlignmentStale(guid, payload, textureAlignmentStale, registryEpoch);
-  // A re-encode rewrites the file: not while it is read-only, such as under
-  // another user's lock (the tab's banner offers Edit Anyway).
+  // A re-encode or emission preparation rewrites the file: not while it is
+  // read-only, such as under another user's lock (the tab's banner offers
+  // Edit Anyway).
   const encodeBlocked = guid ? textureUsageBlockedReason(guid) !== null : true;
   const emissionJob = useRef<AbortController | null>(null);
   const [emissionProgress, setEmissionProgress] = useState<AreaEmissionProgress | null>(null);
   const [emissionError, setEmissionError] = useState("");
+  const [requeueError, setRequeueError] = useState("");
+  // A re-encode can be refused (authoring writes locked, a lock not granted);
+  // say so instead of leaving the rejection unhandled.
+  const requeueEncoding = (textureGuid: string, options: { force: true; usage: string }) => {
+    setRequeueError("");
+    retryTextureEncoding(textureGuid, options).catch((error: unknown) => {
+      setRequeueError(error instanceof Error ? error.message : String(error));
+    });
+  };
   useEffect(() => () => { emissionJob.current?.abort(); }, [guid]);
   const emissionHeader = guid ? assetRegistry?.getByGuid(guid)?.header : undefined;
   const emissionReady = emissionHeader && currentAreaEmissionChunk(emissionHeader);
@@ -406,7 +440,7 @@ export function TextureDetails({
       onChange: (value) => {
         const { payload: next, shouldRequeue } = applyTextureUsageChange(payload, value);
         onChange(next);
-        if (guid && shouldRequeue && !encodeBlocked) void retryTextureEncoding(guid, { force: true, usage: value });
+        if (guid && shouldRequeue && !encodeBlocked) requeueEncoding(guid, { force: true, usage: value });
       },
     },
     {
@@ -418,7 +452,7 @@ export function TextureDetails({
       onChange: (value) => {
         const { payload: next, shouldRequeue } = applyTextureDownsampleChange(payload, value);
         onChange(next);
-        if (guid && shouldRequeue && !encodeBlocked) void retryTextureEncoding(guid, { force: true, usage });
+        if (guid && shouldRequeue && !encodeBlocked) requeueEncoding(guid, { force: true, usage });
       },
     },
   ];
@@ -431,7 +465,7 @@ export function TextureDetails({
       onChange: (value) => {
         const { payload: next, shouldRequeue } = applyTextureCompressionQualityChange(payload, value);
         onChange(next, "texture:compressionQuality");
-        if (guid && shouldRequeue && !encodeBlocked) void retryTextureEncoding(guid, { force: true, usage });
+        if (guid && shouldRequeue && !encodeBlocked) requeueEncoding(guid, { force: true, usage });
       },
     });
   }
@@ -465,6 +499,12 @@ export function TextureDetails({
             <AlertDescription>{encodeError}</AlertDescription>
           </Alert>
         ) : null}
+        {requeueError ? (
+          <Alert variant="destructive" data-testid="texture-requeue-error">
+            <AlertTitle>Encoding Not Started</AlertTitle>
+            <AlertDescription>{requeueError}</AlertDescription>
+          </Alert>
+        ) : null}
         {guid && compressed && (compression === "encode_failed" || alignmentStale) ? (
           <Button
             size="sm"
@@ -472,7 +512,7 @@ export function TextureDetails({
             className="w-fit"
             data-testid="texture-retry-encode"
             disabled={encodeBlocked}
-            onClick={() => void retryTextureEncoding(guid, { force: true, usage })}
+            onClick={() => requeueEncoding(guid, { force: true, usage })}
           >
             Retry Encoding
           </Button>
@@ -494,7 +534,7 @@ export function TextureDetails({
               Prepare this Texture for rectangular lights. The original image stays available for materials. Prepared data is saved with the asset and included in game exports.
             </p>
             <div className="flex items-center gap-2">
-              <Button size="sm" variant="outline" disabled={emissionProgress !== null} onClick={() => void prepareEmission()}>
+              <Button size="sm" variant="outline" disabled={emissionProgress !== null || encodeBlocked} onClick={() => void prepareEmission()}>
                 {emissionReady ? "Check Emission Data" : "Prepare Emission"}
               </Button>
               {emissionProgress ? (

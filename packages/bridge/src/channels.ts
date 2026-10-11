@@ -1,7 +1,7 @@
 import type { ScalabilityTransaction, ScalabilityAcknowledgement, RenderPathStatus, RenderProjectSettings, ScenePostProcessEntry, MaterialParameterCatalog, MaterialParameterValue } from "@babylonslate/core";
 /** Reliable ordered channel message types (never through the snapshot buffer). */
 
-import type { ActorDefaults, CollisionTriangleMesh, ProjectInputSettings, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
+import type { ActorDefaults, CollisionTriangleMesh, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
 
 /** Rest-pose Complex Collision triangles for one Model; typed arrays clone as one memcpy. */
 export type CookedCollisionMeshEntry = { guid: string } & CollisionTriangleMesh;
@@ -157,9 +157,8 @@ export type ControlMessage =
   renderSettings?: Partial<RenderProjectSettings>;
       project?: { name: string; version: string };
       sceneAssetGuid: string;
-      /** Authored project mappings; omitted legacy loads use defaults. */
+      /** Authored Input Action / Input Axis assets; omitted loads use the starter controls. */
       inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
-  inputMappings?: ProjectInputSettings;
       focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
       pixelsPerUnit?: number;
       texturePixelSizes?: Record<string, { width: number; height: number }>;
@@ -423,7 +422,6 @@ export type CommandMessage =
   | ({ type: "performanceTicks" } & import("./diagnostic-operation").PerformanceTickChunk)
   | { type: "diagnosticOperationStopped"; sessionGeneration: number; recordingId: string; kind: "profile" | "frame"; reason: "requested" | "duration" | "budget" | "session-ended" }
   | ({ type: "runtimeInspectorResult" } & import("./runtime-inspector").RuntimeInspectorResult)
-  | { type: "resetActorInterpolation"; actorGuid: string; slotId: number; frameId: number }
   | ({ type: "sessionBoundaryResult" } & SessionBoundaryResult)
   | { type: "saveStorageRequest"; request: import("@babylonslate/core").SaveStorageRequest }
   | { type: "setUIControl2D"; slotId: number; componentId: string; uiControl: { classId: string; properties: import("@babylonslate/core").UIControl2DProperties }; focused?: boolean; beginEditing?: boolean }
@@ -547,7 +545,6 @@ export type CommandMessage =
         text3d?: {
           text: string;
           size: number;
-          depth: number;
           color: [number, number, number];
           fontAssetGuid: string | null;
           alignment: "left" | "center" | "right";
@@ -593,7 +590,6 @@ export type CommandMessage =
       text3d?: {
         text: string;
         size: number;
-        depth: number;
         color: [number, number, number];
         fontAssetGuid: string | null;
         alignment: "left" | "center" | "right";
@@ -741,6 +737,16 @@ export type CommandMessage =
   | {
       type: "setCursorVisible";
       visible: boolean;
+      frameId: number;
+    }
+  /** The worker finished its `stop` phase (End Play, On Game End and their save writes). */
+  | { type: "runtimeStopped" }
+  /** Rumble a pad by its Gamepad API index: intensity 0..1; zero intensity or duration stops it. */
+  | {
+      type: "setGamepadRumble";
+      gamepadIndex: number;
+      intensity: number;
+      durationMs: number;
       frameId: number;
     }
   | {

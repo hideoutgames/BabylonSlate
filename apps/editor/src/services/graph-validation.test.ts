@@ -8,7 +8,7 @@ import {
   classHierarchyFromParentOf,
   classMemberSymbolsFromGraphs,
   createDefaultLogicGraphSerialized,
-  hydrateClassDocumentPayload,
+  requireClassGraphPayload,
   hydrateSerializedGraphForEditor,
   knownClassIdSet,
   materializeLogicGraph,
@@ -57,18 +57,15 @@ describe("custom event declaration validation", () => {
   });
 });
 
-describe("hydrateClassDocumentPayload", () => {
-  it("seeds a default event graph when the Class payload is empty", () => {
-    const seeded = hydrateClassDocumentPayload({});
-    expect(seeded.nodes.some((node) => node.type.includes("beginPlay"))).toBe(
-      true,
-    );
-    expect(seeded.nodes.some((node) => node.type.includes("tick"))).toBe(true);
+describe("requireClassGraphPayload", () => {
+  it("refuses a Class payload without node and edge lists instead of replacing it", () => {
+    expect(() => requireClassGraphPayload({})).toThrow(/not a graph/);
+    expect(() => requireClassGraphPayload({ nodes: [], members: [] })).toThrow(/not a graph/);
   });
 
   it("keeps an existing SerializedGraph payload", () => {
     const existing: SerializedGraph = { nodes: [], edges: [] };
-    expect(hydrateClassDocumentPayload(existing)).toEqual(existing);
+    expect(requireClassGraphPayload(existing)).toBe(existing);
   });
 });
 
@@ -174,33 +171,7 @@ describe("hydrateSerializedGraphForEditor", () => {
     });
   });
 
-  it("maps legacy logMessage to debug.log with Log pins", () => {
-    const graph: SerializedGraph = {
-      nodes: [
-        {
-          id: "log-1",
-          type: "logMessage",
-          position: { x: 10, y: 20 },
-          data: { message: "Hello" },
-        },
-      ],
-      edges: [],
-    };
-
-    const hydrated = hydrateSerializedGraphForEditor(graph, registry);
-    expect(hydrated.nodes[0]?.type).toBe("debug.log");
-    expect(hydrated.nodes[0]?.data.message).toBe("Hello");
-    const pins = hydrated.nodes[0]?.data.__pins as unknown[];
-    expect(pins).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: "execIn" }),
-        expect.objectContaining({ id: "execOut" }),
-        expect.objectContaining({ id: "message" }),
-      ]),
-    );
-  });
-
-  it("titles Call Parent from eventType and the name fallback", () => {
+  it("titles Call Parent from eventType and eventName", () => {
     const graph: SerializedGraph = {
       nodes: [
         {
@@ -218,7 +189,7 @@ describe("hydrateSerializedGraphForEditor", () => {
           position: { x: 0, y: 80 },
           data: {
             eventType: "flow.event.custom",
-            name: "on hit",
+            eventName: "on hit",
             parentClassId: "Actor",
           },
         },
@@ -230,7 +201,6 @@ describe("hydrateSerializedGraphForEditor", () => {
     expect(hydrated.nodes[1]?.data).toMatchObject({
       title: "Call On Hit Parent",
       eventName: "On Hit",
-      name: "On Hit",
     });
   });
 
@@ -280,10 +250,10 @@ describe("hydrateSerializedGraphForEditor", () => {
             interfaceGuid: "iface-damageable",
             method: "Apply Damage",
             implicitSelf: true,
+            // Signature saved before the method was edited.
             pins: [
-              { name: "interfaceGuid", typeId: "string", direction: "in" },
-              { name: "method", typeId: "string", direction: "in" },
-              { name: "result", typeId: "object", direction: "out" },
+              { name: "damage", typeId: "int", direction: "in" },
+              { name: "dealt", typeId: "float", direction: "out" },
             ],
           },
         },
@@ -299,7 +269,7 @@ describe("hydrateSerializedGraphForEditor", () => {
           id: "stale-result",
           source: "call-1",
           target: "print-1",
-          sourceHandle: "result",
+          sourceHandle: "dealt",
           targetHandle: "value",
         },
       ],
@@ -325,9 +295,8 @@ describe("hydrateSerializedGraphForEditor", () => {
     expect(pins.map((pin) => pin.id)).toEqual(
       expect.arrayContaining(["target", "amount", "remaining"]),
     );
-    expect(pins.map((pin) => pin.id)).not.toEqual(
-      expect.arrayContaining(["interfaceGuid", "method", "result"]),
-    );
+    expect(pins.map((pin) => pin.id)).not.toContain("damage");
+    expect(pins.map((pin) => pin.id)).not.toContain("dealt");
     expect(hydrated.nodes[0]?.data.pins).toEqual([
       { name: "amount", typeId: "float", direction: "in" },
       { name: "remaining", typeId: "float", direction: "out" },
@@ -343,7 +312,6 @@ describe("hydrateSerializedGraphForEditor", () => {
           type: "casting.cast",
           position: { x: 0, y: 0 },
           data: {
-            defaultClassId: "Hero",
             "default:class": "Hero",
             title: "Cast to BObject",
             __pins: [
@@ -393,7 +361,6 @@ describe("hydrateSerializedGraphForEditor", () => {
           type: "casting.cast",
           position: { x: 200, y: 0 },
           data: {
-            defaultClassId: "Hero",
             "default:class": "Hero",
           },
         },
@@ -417,6 +384,14 @@ describe("hydrateSerializedGraphForEditor", () => {
       type: { kind: string; classId?: string };
     }>;
     expect(pins.find((pin) => pin.id === "result")?.type).toEqual({
+      kind: "actorRef",
+      classId: "Actor",
+    });
+    // Validation and compile type the Result the same way.
+    const logic = materializeLogicGraph(graph, "cast-graph", "event", {
+      parentOf: (id) => (id === "Hero" ? "Actor" : undefined),
+    });
+    expect(logic.nodes.find((node) => node.id === "cast-1")?.pins.find((pin) => pin.id === "result")?.type).toEqual({
       kind: "actorRef",
       classId: "Actor",
     });
@@ -760,6 +735,26 @@ describe("createDefaultLogicGraphSerialized", () => {
     ).toBe(true);
   });
 
+  it("seeds each inherited custom event whose name shares a node id slug", () => {
+    const graph = createDefaultLogicGraphSerialized(registry, {
+      parentClass: "HeroBase",
+      parentOf: (id) => (id === "HeroBase" ? "Actor" : null),
+      parentGraphs: {
+        HeroBase: {
+          nodes: [],
+          edges: [],
+          members: [
+            { id: "evt-1", kind: "event", name: "Ping", pins: [] },
+            { id: "evt-2", kind: "event", name: "PiNG", pins: [] },
+          ],
+        },
+      },
+    });
+    const custom = graph.nodes.filter((node) => node.type === "flow.event.custom");
+    expect(custom.map((node) => node.data.name)).toEqual(["Ping", "PiNG"]);
+    expect(new Set(custom.map((node) => node.id)).size).toBe(2);
+  });
+
   it("seeds On Evaluate for a BTDecorator class", () => {
     const graph = createDefaultLogicGraphSerialized(registry, {
       parentClass: "BTDecorator",
@@ -859,7 +854,7 @@ describe("validateSerializedGraph", () => {
             typeId: "debug.executeConsoleCommand",
             position: { x: 0, y: 0 },
             pins: [],
-            properties: { command: "showfps" },
+            properties: { "default:command": "showfps" },
           },
         ],
         edges: [],
@@ -897,7 +892,7 @@ describe("validateSerializedGraph", () => {
     ).toBe(true);
   });
 
-  it("does not report a pure cycle when Line Trace location feeds back through Make Vector3", () => {
+  it("does not report a pure cycle when Line Trace location feeds back through Add Vector3", () => {
     const beginPins = registry.get("flow.event.beginPlay")!.pins({});
     const tracePins = registry.get("physics.lineTrace")!.pins({});
     const addPins = registry.get("vector.add3")!.pins({});
@@ -1169,9 +1164,12 @@ describe("scriptPaletteNodes", () => {
       expect(nodes.some((node) => node.id === "audio.setGlobalVolume")).toBe(
         true,
       );
-      expect(nodes.find((node) => node.id === "audio.play")?.defaultData).toMatchObject({
-        "default:volume": 1,
-      });
+      for (const id of ["audio.play", "audio.setChannelVolume", "audio.setGlobalVolume"]) {
+        const volume = nodes
+          .find((node) => node.id === id)
+          ?.pins?.find((pin) => pin.id === "volume");
+        expect(volume?.defaultValue).toBe(1);
+      }
     }
   });
 
@@ -1322,7 +1320,7 @@ describe("scriptPaletteNodes", () => {
     );
     expect(sceneCast?.title).toBe("Cast to Main Hall");
     expect(sceneCast?.defaultData).toMatchObject({
-      defaultClassId: "Scene:scene-1",
+      "default:class": "Scene:scene-1",
       resultKind: "objectRef",
     });
     expect(nodes.some((node) => node.title === "Get Scene Name")).toBe(true);
@@ -1845,6 +1843,23 @@ describe("scriptPaletteNodes", () => {
     expect(validated?.defaultData).toMatchObject({ componentId: "text-1" });
   });
 
+  it("injects Get rows for components inherited from the parent Class prefab", () => {
+    // The graph panel passes parent graphs as otherClassGraphs, not parentGraphs.
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "Base",
+      parentOf: (id) => (id === "Hero" ? "Base" : id === "Base" ? "Actor" : null),
+      classId: "Hero",
+      graph: { nodes: [], edges: [] },
+      otherClassGraphs: {
+        Base: { nodes: [], edges: [], components: [createText3DComponent("text-1")] },
+      },
+    });
+    expect(nodes.find((node) => node.title === "Get 3D Text")?.defaultData).toMatchObject({
+      componentId: "text-1",
+      implicitSelf: true,
+    });
+  });
+
   it("injects engine component Get/Set and Call Function from the script API catalog", () => {
     const nodes = scriptPaletteNodes(registry, {
       parentClass: "Actor",
@@ -1893,16 +1908,16 @@ describe("scriptPaletteNodes", () => {
     expect(getMesh?.defaultData).toMatchObject({
       propertyKey: "assetGuid",
       typeClassId: "Model",
-      typeClassIds: ["Mesh", "Model"],
     });
     expect(
       nodes.some((node) => node.id === "functions.call:CameraComponent:Possess"),
     ).toBe(true);
+    // An unwired Strength applies the full impulse, like the Physics Add Impulse node.
     expect(
-      nodes.some(
+      nodes.find(
         (node) => node.id === "functions.call:RigidBodyComponent:Add Impulse",
-      ),
-    ).toBe(true);
+      )?.defaultData,
+    ).toMatchObject({ runtime: "addImpulse", "default:strength": 1 });
     expect(
       nodes.some(
         (node) => node.id === "functions.call:NavAgentComponent:Move To",
@@ -2533,14 +2548,12 @@ describe("scriptPaletteNodes", () => {
       },
     });
     expect(nodes.some((node) => node.id === "casting.cast")).toBe(false);
-    expect(nodes.some((node) => node.id === "casting.castActor")).toBe(false);
     const actorCast = nodes.find((node) => node.id === "casting.cast:Actor");
     expect(actorCast?.title).toBe("Cast to Actor");
     expect(actorCast?.pure).not.toBe(true);
     expect(actorCast?.pins?.some((pin) => pin.id === "execIn")).toBe(true);
     expect(actorCast?.pins?.some((pin) => pin.id === "execOut")).toBe(true);
     expect(actorCast?.defaultData).toMatchObject({
-      defaultClassId: "Actor",
       "default:class": "Actor",
       resultKind: "actorRef",
     });
@@ -2555,7 +2568,7 @@ describe("scriptPaletteNodes", () => {
     const heroCast = nodes.find((node) => node.id === "casting.cast:Hero");
     expect(heroCast?.title).toBe("Cast to Hero");
     expect(heroCast?.defaultData).toMatchObject({
-      defaultClassId: "Hero",
+      "default:class": "Hero",
       resultKind: "actorRef",
     });
     const giCast = nodes.find((node) => node.id === "casting.cast:GameInstance");
@@ -3522,8 +3535,7 @@ describe("subsystems", () => {
       "variables.set:Inventory:Gold",
       "flow.event.call:Inventory:On Refresh",
     ];
-    for (const id of members) expect(suggested).toContain(id);
-    expect(suggested.slice(0, 3)).toEqual(expect.arrayContaining(members.slice(0, 3)));
+    expect(suggested.slice(0, members.length)).toEqual(expect.arrayContaining(members));
   });
 
   it("rebuilds a saved Get node's typed pin and title from its class", () => {

@@ -4,7 +4,6 @@ import {
   createDefaultParticleSystemPayload,
   normalizeParticleSystemPayload,
   particleAssetDependencies,
-  remapParticlePayloadGuids,
 } from "./particle-payload";
 import {
   createDefaultParticleEmitterPayload,
@@ -56,30 +55,6 @@ describe("particle payloads", () => {
       }),
     ).toEqual(["em-1", "em-2"]);
     expect(particleAssetDependencies("Audio", {})).toEqual([]);
-  });
-
-  it("remaps the Emitter Material and System emitters on import collision", () => {
-    const remap = new Map([
-      ["mat-old", "mat-new"],
-      ["em-old", "em-new"],
-    ]);
-    const emitter = remapParticlePayloadGuids(
-      "ParticleEmitter",
-      { render: { materialGuid: "mat-old", blendMode: "multiply" } },
-      remap,
-    );
-    expect(normalizeParticleEmitterPayload(emitter).render).toEqual({
-      materialGuid: "mat-new",
-      blendMode: "multiply",
-      billboard: "all",
-    });
-    expect(
-      remapParticlePayloadGuids(
-        "ParticleSystem",
-        { emitterGuids: ["em-old", "em-keep"] },
-        remap,
-      ),
-    ).toMatchObject({ emitterGuids: ["em-new", "em-keep"] });
   });
 
   it("round-trips Emitter and System documents", async () => {

@@ -50,7 +50,22 @@ export type VariableTypeSpec = {
   hierarchy?: ClassHierarchy;
 };
 
-/** Convert a Class/function picker id plus optional typeClassId into a pin type. */
+/** Picker ids `pinTypeForMember` maps; it reads any other id as Float. */
+const MEMBER_TYPE_IDS = new Set([
+  "exec", "bool", "int", "tag", "float", "string", "vec2", "vec3", "vec4",
+  "rotator", "quat", "color", "transform", "object", "actor", "class",
+  "asset", "struct", "enum", "wildcard",
+]);
+
+export function isMemberTypeId(typeId: string): boolean {
+  return MEMBER_TYPE_IDS.has(typeId);
+}
+
+/**
+ * Convert a Class/function picker id plus optional typeClassId into a pin type.
+ * A missing id is Float, the default variable type; validation reports an
+ * unknown id as `member.unknown_type`.
+ */
 export function pinTypeForMember(
   typeId: string | undefined,
   typeClassId?: string,
@@ -65,6 +80,8 @@ export function pinTypeForMember(
       return INT;
     case "tag":
       return TAG;
+    case "float":
+      return FLOAT;
     case "string":
       return STRING;
     case "vec2":

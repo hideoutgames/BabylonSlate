@@ -24,48 +24,28 @@ describe("nextRegisteredSharedEngine", () => {
   const viewport = { isDisposed: false };
   const owned = { isDisposed: false };
 
-  it("keeps the live overlay Play engine when the viewport unregisters", () => {
+  it("keeps a still-usable engine when the viewport unregisters", () => {
     expect(
-      nextRegisteredSharedEngine({
-        incoming: null,
-        previous: viewport,
-        owned: null,
-        overlayPlaying: true,
-      }),
+      nextRegisteredSharedEngine({ incoming: null, previous: viewport, owned: null }),
     ).toBe(viewport);
   });
 
-  it("falls back to the owned engine when overlay Play is not running", () => {
+  it("prefers the project-owned engine when the viewport unregisters", () => {
     expect(
-      nextRegisteredSharedEngine({
-        incoming: null,
-        previous: viewport,
-        owned,
-        overlayPlaying: false,
-      }),
+      nextRegisteredSharedEngine({ incoming: null, previous: viewport, owned }),
     ).toBe(owned);
   });
 
-  it("keeps the project-owned engine when the viewport unregisters during overlay Play", () => {
-    expect(
-      nextRegisteredSharedEngine({
-        incoming: null,
-        previous: viewport,
-        owned,
-        overlayPlaying: true,
-      }),
-    ).toBe(owned);
-  });
-
-  it("accepts a usable incoming engine even during overlay Play", () => {
+  it("accepts a usable incoming engine over the previous one", () => {
     const remounted = { isDisposed: false };
     expect(
-      nextRegisteredSharedEngine({
-        incoming: remounted,
-        previous: viewport,
-        owned: null,
-        overlayPlaying: true,
-      }),
+      nextRegisteredSharedEngine({ incoming: remounted, previous: viewport, owned: null }),
     ).toBe(remounted);
+  });
+
+  it("drops a disposed previous engine when nothing usable replaces it", () => {
+    expect(
+      nextRegisteredSharedEngine({ incoming: null, previous: { isDisposed: true }, owned: null }),
+    ).toBeNull();
   });
 });

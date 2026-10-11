@@ -5,9 +5,7 @@ import {
   canFocusLayout,
   focusKeepCandidates,
   focusKeepPanelIds,
-  migrateRestoredLayout,
   resolveFocusKeepPanelIds,
-  restoreDockviewLayout,
 } from "./layout-ops";
 import { listDockWindows } from "./window-catalog";
 
@@ -18,7 +16,6 @@ function fakeApi(ids: string[]) {
       {
         id,
         api: {
-          maximize: vi.fn(),
           close: vi.fn(),
           addPanel: vi.fn(),
         },
@@ -54,7 +51,6 @@ describe("canFocusLayout", () => {
     expect(canFocusLayout("content-browser")).toBe(false);
     expect(canFocusLayout("font")).toBe(false);
     expect(canFocusLayout("blackboard")).toBe(false);
-    expect(canFocusLayout("asset-settings")).toBe(false);
     expect(canFocusLayout(undefined)).toBe(false);
   });
 });
@@ -211,69 +207,24 @@ describe("applyFocusLayout", () => {
     ]);
     applyFocusLayout("scene", api, ["viewport", "scene-outliner"]);
     expect(api.getPanel("viewport")!.api.close).not.toHaveBeenCalled();
-    expect(api.getPanel("viewport")!.api.maximize).not.toHaveBeenCalled();
     expect(api.getPanel("scene-outliner")!.api.close).not.toHaveBeenCalled();
     expect(api.getPanel("scene-details")!.api.close).toHaveBeenCalled();
     expect(api.getPanel("output-log")!.api.close).toHaveBeenCalled();
   });
-});
 
-describe("migrateRestoredLayout", () => {
-  it("closes the retired Assets dock", () => {
-    const api = fakeApi(["viewport", "mini-asset-browser", "scene-details"]);
-    migrateRestoredLayout(api);
-    expect(api.getPanel("mini-asset-browser")!.api.close).toHaveBeenCalled();
-  });
+  it("never empties the dock when no keep-listed panel is open", () => {
+    // The keep-listed Inspector is closed.
+    const withPrimary = fakeApi(["prefab-viewport", "actor-prefab"]);
+    applyFocusLayout("prefab", withPrimary, ["inspector"]);
+    expect(withPrimary.getPanel("prefab-viewport")!.api.close).not.toHaveBeenCalled();
+    expect(withPrimary.getPanel("actor-prefab")!.api.close).toHaveBeenCalled();
 
-  it("moves Class below Components when they share a group", () => {
-    const group = { id: "left" };
-    const myClass = {
-      api: { close: vi.fn(), moveTo: vi.fn() },
-      group,
+    const withoutPrimary = {
+      ...fakeApi(["water-details", "locks"]),
+      activePanel: { id: "locks" },
     };
-    const components = {
-      api: { close: vi.fn(), moveTo: vi.fn() },
-      group,
-    };
-    const api = {
-      getPanel: (id: string) => {
-        if (id === "my-class") return myClass;
-        if (id === "actor-prefab") return components;
-        return undefined;
-      },
-    };
-    migrateRestoredLayout(api);
-    expect(myClass.api.moveTo).toHaveBeenCalledWith({
-      position: "bottom",
-      group,
-    });
-  });
-});
-
-describe("restoreDockviewLayout", () => {
-  it("falls back to the default layout when fromJSON throws", () => {
-    const fromJSON = vi.fn(() => {
-      throw new Error("stale catalog");
-    });
-    const createDefault = vi.fn();
-    restoreDockviewLayout({ fromJSON }, { panels: [] }, createDefault);
-    expect(fromJSON).toHaveBeenCalledWith({ panels: [] });
-    expect(createDefault).toHaveBeenCalledTimes(1);
-  });
-
-  it("keeps a restored snapshot when fromJSON succeeds", () => {
-    const fromJSON = vi.fn();
-    const createDefault = vi.fn();
-    restoreDockviewLayout({ fromJSON }, { panels: ["viewport"] }, createDefault);
-    expect(fromJSON).toHaveBeenCalledWith({ panels: ["viewport"] });
-    expect(createDefault).not.toHaveBeenCalled();
-  });
-
-  it("uses the default layout when no snapshot exists", () => {
-    const fromJSON = vi.fn();
-    const createDefault = vi.fn();
-    restoreDockviewLayout({ fromJSON }, null, createDefault);
-    expect(fromJSON).not.toHaveBeenCalled();
-    expect(createDefault).toHaveBeenCalledTimes(1);
+    applyFocusLayout("water", withoutPrimary, undefined);
+    expect(withoutPrimary.getPanel("locks")!.api.close).not.toHaveBeenCalled();
+    expect(withoutPrimary.getPanel("water-details")!.api.close).toHaveBeenCalled();
   });
 });

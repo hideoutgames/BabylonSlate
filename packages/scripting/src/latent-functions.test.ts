@@ -173,6 +173,22 @@ describe("collectLatentFunctions", () => {
     )).toBe(true);
   });
 
+  it("awaits a Call naming an ancestor when a subclass override is latent", () => {
+    const registry = registryWithLatentCatalog();
+    const parentOf = (classId: string) => (classId === "Hero" ? "Actor" : null);
+    const latent = collectLatentFunctions(
+      [
+        { classId: "Actor", functionName: "Wait", nodes: [{ typeId: "debug.log", properties: {} }] },
+        { classId: "Hero", functionName: "Wait", nodes: [{ typeId: "timers.delay", properties: {} }] },
+      ],
+      registry,
+      parentOf,
+    );
+    expect(isLatentFunctionKey("Actor", "Wait", latent, parentOf)).toBe(true);
+    expect(isLatentFunctionKey("Actor", "Jump", latent, parentOf)).toBe(false);
+    expect(isLatentFunctionKey("Villain", "Wait", latent, (id) => (id === "Villain" ? "Actor" : null))).toBe(false);
+  });
+
   it("uses the same ident as Call codegen for odd function names", () => {
     expect(latentFunctionKey("Hero", "2 Jump!")).toBe("Hero:_2_Jump_");
   });
@@ -194,7 +210,7 @@ describe("latentSourcesFromSerializedGraph", () => {
               id: "delay",
               type: "timers.delay",
               position: { x: 0, y: 0 },
-              data: { duration: 0.25 },
+              data: { "default:duration": 0.25 },
             },
           ],
           edges: [],
@@ -206,7 +222,7 @@ describe("latentSourcesFromSerializedGraph", () => {
       {
         classId: "Hero",
         functionName: "Wait",
-        nodes: [{ typeId: "timers.delay", properties: { duration: 0.25 } }],
+        nodes: [{ typeId: "timers.delay", properties: { "default:duration": 0.25 } }],
       },
       {
         classId: "Hero",

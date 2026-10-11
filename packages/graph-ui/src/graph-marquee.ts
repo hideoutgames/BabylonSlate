@@ -2,9 +2,7 @@ import {
   CONTEXT_MENU_MOVE_TOLERANCE_PX,
   DRAG_ARM_MS,
 } from "@babylonslate/editor-kit";
-
-export const MARQUEE_FALLBACK_WIDTH = 220;
-export const MARQUEE_FALLBACK_HEIGHT = 88;
+import { graphNodeSize } from "./graph-virtualize";
 
 export type MarqueeNode = {
   id: string;
@@ -12,6 +10,8 @@ export type MarqueeNode = {
   width?: number;
   height?: number;
   measured?: { width?: number; height?: number };
+  /** `__pins` size a node that was never measured. */
+  data?: unknown;
 };
 
 export type FlowRect = {
@@ -59,12 +59,7 @@ export function flowRectFromPoints(
 }
 
 export function nodeMarqueeBox(node: MarqueeNode): FlowRect {
-  return {
-    x: node.position.x,
-    y: node.position.y,
-    width: node.width ?? node.measured?.width ?? MARQUEE_FALLBACK_WIDTH,
-    height: node.height ?? node.measured?.height ?? MARQUEE_FALLBACK_HEIGHT,
-  };
+  return { x: node.position.x, y: node.position.y, ...graphNodeSize(node) };
 }
 
 function rectsIntersect(a: FlowRect, b: FlowRect): boolean {
@@ -181,6 +176,18 @@ export function attachGraphPaneMarquee(
     options.onMarqueeRect(null);
   };
 
+  const cancelGesture = () => {
+    if (!gesture) return;
+    try {
+      if (wrapper.hasPointerCapture?.(gesture.pointerId)) {
+        wrapper.releasePointerCapture(gesture.pointerId);
+      }
+    } catch {
+      // jsdom may not implement releasePointerCapture.
+    }
+    clearGesture();
+  };
+
   const captureIfArmed = () => {
     if (!gesture?.armed || gesture.captured) return;
     try {
@@ -194,8 +201,14 @@ export function attachGraphPaneMarquee(
   const onDown = (event: Event) => {
     const target = event.target as Node | null;
     if (!target || !wrapper.contains(target)) return;
+    if (gesture) {
+      // A second finger pinches or pans, so the held marquee ends and pane
+      // panning comes back; a repeated press from the same pointer restarts.
+      const secondPointer = pointerIdOf(event) !== gesture.pointerId;
+      cancelGesture();
+      if (secondPointer) return;
+    }
     if (!isEmptyPaneTarget(event.target)) return;
-    if (gesture?.timer) clearTimeout(gesture.timer);
     const startClient = clientPointFromEvent(event);
     if (!startClient) return;
     const next = {
@@ -272,14 +285,7 @@ export function attachGraphPaneMarquee(
       event.stopImmediatePropagation();
       options.onMarqueeEnd(start, point);
     }
-    try {
-      if (wrapper.hasPointerCapture?.(gesture.pointerId)) {
-        wrapper.releasePointerCapture(gesture.pointerId);
-      }
-    } catch {
-      // jsdom may not implement releasePointerCapture.
-    }
-    clearGesture();
+    cancelGesture();
   };
 
   const touchMoveOptions: AddEventListenerOptions = {

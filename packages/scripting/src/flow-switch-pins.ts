@@ -4,7 +4,8 @@ export type FlowSwitchCaseWarning = {
   code:
     | "flow.switch.empty_case"
     | "flow.switch.duplicate_case"
-    | "flow.switch.invalid_int";
+    | "flow.switch.invalid_int"
+    | "flow.switch.invalid_string";
   message: string;
   value?: string;
 };
@@ -60,7 +61,7 @@ export function normalizeIntSwitchCases(raw: unknown): {
           ? Number(entry.trim())
           : Number.NaN;
 
-    if (!Number.isFinite(numeric)) {
+    if (!Number.isInteger(numeric)) {
       warnings.push({
         code: "flow.switch.invalid_int",
         message: "Non-integer Switch on Int case was removed.",
@@ -69,7 +70,7 @@ export function normalizeIntSwitchCases(raw: unknown): {
       continue;
     }
 
-    const value = Math.trunc(numeric);
+    const value = numeric;
     if (seen.has(value)) {
       warnings.push({
         code: "flow.switch.duplicate_case",
@@ -94,10 +95,18 @@ export function normalizeStringSwitchCases(raw: unknown): {
   const seen = new Set<string>();
 
   for (const entry of asRawCaseList(raw)) {
-    if (typeof entry !== "string") {
+    if (entry === null || entry === undefined) {
       warnings.push({
         code: "flow.switch.empty_case",
         message: "Empty Switch on String case was removed.",
+      });
+      continue;
+    }
+    if (typeof entry !== "string") {
+      warnings.push({
+        code: "flow.switch.invalid_string",
+        message: "Non-string Switch on String case was removed.",
+        value: String(entry),
       });
       continue;
     }

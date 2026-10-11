@@ -20,17 +20,14 @@ function record(value: unknown): Record<string, unknown> | null {
     ? value as Record<string, unknown> : null;
 }
 
-/** Existing raw DockView layouts become the Design layout without losing panels. */
+/** Read the stored `{ sceneMode, design, landscape, foliage }` scene layout. */
 export function parseSceneDocumentLayout(
   layout: Record<string, unknown> | null | undefined,
 ): SceneDocumentLayout {
-  if (layout && "sceneMode" in layout) {
-    return {
-      sceneMode: normalizeSceneMode(layout.sceneMode),
-      design: record(layout.design),
-      landscape: record(layout.landscape),
-      foliage: record(layout.foliage),
-    };
-  }
-  return { sceneMode: "design", design: layout ?? null, landscape: null, foliage: null };
+  return {
+    sceneMode: normalizeSceneMode(layout?.sceneMode),
+    design: record(layout?.design),
+    landscape: record(layout?.landscape),
+    foliage: record(layout?.foliage),
+  };
 }

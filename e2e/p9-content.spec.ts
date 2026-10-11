@@ -439,6 +439,10 @@ test.describe("P9 content systems", () => {
       await canvas.getAttribute("data-camera-radius"),
     );
     expect(radiusBefore).toBeGreaterThan(0);
+    // Read the presented pixels, not an element screenshot that hover chrome can change.
+    const presentedFrame = () =>
+      canvas.evaluate((node) => (node as HTMLCanvasElement).toDataURL());
+    const frameBeforeOrbit = await presentedFrame();
     await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
     await page.mouse.down();
     await page.mouse.move(
@@ -446,15 +450,12 @@ test.describe("P9 content systems", () => {
       box!.y + box!.height / 2 + 24,
     );
     await page.mouse.up();
-    await expect
-      .poll(async () => {
-        const value = await canvas.getAttribute("data-camera-radius");
-        return value && Number.isFinite(Number(value)) ? Number(value) : null;
-      })
-      .not.toBeNull();
+    // Orbit turns the camera around the mesh (the frame changes) without zooming.
+    await expect.poll(presentedFrame).not.toBe(frameBeforeOrbit);
     const radiusBeforeWheel = Number(
       await canvas.getAttribute("data-camera-radius"),
     );
+    expect(radiusBeforeWheel).toBeCloseTo(radiusBefore, 3);
     await dispatchPreviewWheel(canvas, 400);
     await expect
       .poll(async () => Number(await canvas.getAttribute("data-camera-radius")))
@@ -622,9 +623,8 @@ test.describe("P9 content systems", () => {
       .toBe("1");
     await page.getByTestId("play-overlay-close").click();
     await expect(overlay).toHaveCount(0);
-    if ((await page.getByTestId("preview-session-report").count()) > 0) {
-      await page.getByTestId("session-report-close").click();
-    }
+    // Stop opens the session report only for runtime errors; this Play has none.
+    await expect(page.getByTestId("preview-session-report")).toHaveCount(0);
     await page.getByTestId("settings-menu").click();
     await page.getByTestId("engine-settings").click();
     await page.getByTestId("engine-settings-modal-category-viewport").click();
@@ -684,7 +684,9 @@ test.describe("P9 content systems", () => {
     await page.getByTestId("play-overlay-close").click();
   });
 
-  test("Material Function edits reach every calling material", async ({
+  // Recompiling every calling material after a function edit is unit-covered
+  // (material-library.test.ts); this proves the editor opens the function graph.
+  test("Material Function editor opens its graph with Inputs and Outputs", async ({
     page,
   }) => {
     await openTestProject(page);
