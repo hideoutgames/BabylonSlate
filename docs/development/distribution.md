@@ -210,7 +210,7 @@ gh workflow run distribute.yml --ref main -f operation=finalize-testflight -f ch
 
 A finalization-only dispatch never creates a GitHub Release. For a combined operation, rerun failed jobs so every desktop/Android package keeps the validate identity. Artifacts are retained for one day; never substitute an unverified package after expiry. A Test prerelease may publish while Apple is unavailable, but the overall result remains partial; a normal combined Release requires Apple availability or reported pending beta review.
 
-All logs, summaries, caches and GitHub artifacts are public. The public asset allowlist is: Windows x64 `.exe` plus release `latest.yml`/`.blockmap`; macOS arm64+x64 `.dmg` and `.zip` plus release `latest-mac.yml`; Linux x64 `.AppImage` plus release `latest-linux.yml`; Android universal `.apk`; and one merged `SHA256SUMS.txt`/`build-manifest.json`. Apple IPAs, archives, keychains, profiles, raw diagnostics and tester exports stay off GitHub. Sensitive commands clean up on failure and success; secret masking alone is insufficient.
+All logs, summaries, caches and GitHub artifacts are public. The public asset allowlist is: Windows x64 `.exe` plus release `latest.yml`/`.blockmap`; macOS arm64+x64 `.dmg` and `.zip` plus release `latest-mac.yml`; Linux x64 `.AppImage` plus release `latest-linux.yml`; Android universal `.apk`; and one merged `SHA256SUMS.txt`/`build-manifest.json`. Apple IPAs, archives, keychains, profiles, raw diagnostics and tester exports stay off GitHub. Sensitive commands clean up on failure and success: a timed-out or cancelled Apple stage stops every process it started, and a keychain that exists but cannot be deleted fails cleanup. Secret masking alone is insufficient.
 
 ## Acceptance record
 

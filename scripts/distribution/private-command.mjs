@@ -11,13 +11,35 @@ export async function privateCommand(command, args, { directory, stage, cwd, env
   for (const key of Object.keys(childEnv)) if (/(?:_BASE64|_PASSWORD|_TOKEN)$/.test(key)) delete childEnv[key];
   try {
     await new Promise((resolve, reject) => {
-      const child = spawn(command, args, { cwd, env: childEnv, stdio: ["ignore", stdout.fd, stderr.fd], timeout: timeoutMs, windowsHide: true });
-      const stop = () => child.kill("SIGTERM");
+      // A separate process group lets a timeout or cancellation also stop the tools the
+      // command started (xcodebuild compilers, Fastlane's uploader) before cleanup runs.
+      const group = process.platform !== "win32";
+      const child = spawn(command, args, { cwd, env: childEnv, stdio: ["ignore", stdout.fd, stderr.fd], detached: group, windowsHide: true });
+      const signal = name => {
+        try { if (group && child.pid) process.kill(-child.pid, name); else child.kill(name); } catch { /* Already exited. */ }
+      };
+      let stopping = false;
+      let escalation;
+      const stop = () => {
+        if (stopping) return;
+        stopping = true;
+        signal("SIGTERM");
+        escalation = setTimeout(() => signal("SIGKILL"), 10_000);
+      };
+      const timer = setTimeout(stop, timeoutMs);
       process.once("SIGTERM", stop);
       process.once("SIGINT", stop);
-      const clean = () => { process.off("SIGTERM", stop); process.off("SIGINT", stop); };
-      child.once("error", () => { clean(); reject(new Error(`Apple ${stage} failed; private diagnostics were not published`)); });
-      child.once("close", code => { clean(); if (code === 0) resolve(); else reject(new Error(`Apple ${stage} failed; private diagnostics were not published`)); });
+      const clean = () => {
+        clearTimeout(timer);
+        clearTimeout(escalation);
+        process.off("SIGTERM", stop);
+        process.off("SIGINT", stop);
+        // Descendants that outlived a stopped command must not keep using private files.
+        if (stopping) signal("SIGKILL");
+      };
+      const fail = () => reject(new Error(`Apple ${stage} failed; private diagnostics were not published`));
+      child.once("error", () => { clean(); fail(); });
+      child.once("close", code => { clean(); if (code === 0 && !stopping) resolve(); else fail(); });
     });
     return await readFile(stdoutPath, "utf8");
   } finally { await stdout.close(); await stderr.close(); }
