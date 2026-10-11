@@ -19,39 +19,27 @@ interface SceneLibraryTargets {
 
 /**
  * Fills the driver's Scene lookups from its options: documents and guids by
- * key and by display name (a key wins over a display name), Scene Layer
- * documents, and the Play Scene under its guid and name.
+ * key, then by display name where no key or earlier display name holds it (a
+ * key wins over a display name, and both lookups resolve a name to the same
+ * Scene), Scene Layer documents, and the Play Scene under its guid and name,
+ * which replace library entries.
  */
 export function indexSceneLibrary(sources: SceneLibrarySources, targets: SceneLibraryTargets): void {
-  if (sources.sceneLibrary && !sources.acquired) {
-    for (const [key, scene] of Object.entries(sources.sceneLibrary)) {
-      targets.scenes.set(key, scene);
-      const displayName =
-        typeof scene.name === "string" ? scene.name.trim() : "";
-      if (displayName && displayName !== key) {
-        targets.scenes.set(displayName, scene);
-      }
-    }
+  const library = Object.entries(sources.sceneLibrary ?? {});
+  const documents = !sources.acquired;
+  for (const [key, guid] of Object.entries(sources.sceneGuidByKey ?? {})) targets.sceneGuids.set(key, guid);
+  for (const [key, scene] of library) {
+    if (documents) targets.scenes.set(key, scene);
+    if (!targets.sceneGuids.has(key)) targets.sceneGuids.set(key, key);
   }
-  if (sources.sceneGuidByKey) {
-    for (const [key, guid] of Object.entries(sources.sceneGuidByKey)) {
-      targets.sceneGuids.set(key, guid);
-    }
-  }
-  if (sources.sceneLibrary) {
-    for (const [key, scene] of Object.entries(sources.sceneLibrary)) {
-      if (!targets.sceneGuids.has(key)) {
-        targets.sceneGuids.set(key, key);
-      }
-      const displayName =
-        typeof scene.name === "string" ? scene.name.trim() : "";
-      if (displayName && !targets.sceneGuids.has(displayName)) {
-        targets.sceneGuids.set(
-          displayName,
-          targets.sceneGuids.get(key) ?? key,
-        );
-      }
-    }
+  for (const [key, scene] of library) {
+    const displayName = typeof scene.name === "string" ? scene.name.trim() : "";
+    const guid = targets.sceneGuids.get(key)!;
+    const named = targets.sceneGuids.get(displayName);
+    // The name already resolves to another Scene: a key, or an earlier display name.
+    if (!displayName || (named !== undefined && named !== guid)) continue;
+    if (documents && !targets.scenes.has(displayName)) targets.scenes.set(displayName, scene);
+    targets.sceneGuids.set(displayName, guid);
   }
   if (sources.sceneLayerLibrary) {
     for (const [key, layer] of Object.entries(sources.sceneLayerLibrary)) {

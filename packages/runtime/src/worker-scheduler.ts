@@ -38,8 +38,12 @@ export function createWorkerScheduler(
     handle = null;
     const elapsed = lastTick === null ? 0 : (now - lastTick) / 1000;
     lastTick = now;
-    advance(elapsed);
-    schedule();
+    // A throwing frame still reaches the host's error handler; the loop keeps running.
+    try {
+      advance(elapsed);
+    } finally {
+      schedule();
+    }
   };
 
   return {

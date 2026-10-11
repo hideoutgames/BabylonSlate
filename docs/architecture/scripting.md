@@ -541,7 +541,7 @@ Blocking operations keep realization and resource preparation running while game
 
 - **Spawn Actor** from a streamed graph creates an instance-owned actor parented to the `SceneStreamingActor`, interprets its transform in the streamed instance's space at the streaming origin, and destroys it with that instance.
 - **Get Scene Reference** from a streamed owner returns that instance's Scene. Setting its Gravity still writes the session's single world physics gravity.
-- A failed or cancelled **Load Scene Blocking** / **Unload Scene Blocking** reports an error, stops that graph at the node, and does not fire **Then**. Async variants report the error and continue immediately.
+- A failed or cancelled **Load Scene Blocking** / **Unload Scene Blocking** reports an error, stops that graph at the node, and does not fire **Then**. Async variants report the error and continue immediately. A failed unload still retires the instance (state Unloaded), so the actor can load again; a load whose readiness work throws fails instead of reporting Loaded.
 
 The nodes acquire the requested Scene document and required source dependencies on demand, then prepare runtime resources before publishing Loaded. Child Scene Defaults, baked navigation and default SceneLayers do not replace or extend the parent's settings automatically. See [runtime ownership and preparation](render.md#additive-scene-streaming).
 
@@ -786,7 +786,7 @@ Runtime `ctx.data` provides:
 | `getDescendants(tree, parentPath = "")` | Descendant paths in preorder, excluding the parent |
 | `getParent(tree, path)` | Parent path, or `null` for an unknown entry/root |
 
-The session catalog validates topology and builds hierarchy/path indexes when a source scope is prepared; replacing the owned source union removes released trees. Bad topology rejects the tree; invalid values or schemas fail the affected entry's read while valid siblings and hierarchy navigation remain available. Branch on Found before consuming Value; failed reads return `null`. Gameplay edits to returned values never rewrite authored data. Restart Play to load authoring changes. Worker/in-process Play and loose/packed players use the same catalog.
+The session catalog validates topology and builds hierarchy/path indexes when a source scope is prepared; replacing the owned source union removes released trees. Bad topology rejects the tree; invalid values or schemas fail the affected entry's read while valid siblings and hierarchy navigation remain available. Only a Definition's schema gates its entries: reads never use Definition defaults, so a stale default (for example one authored before a nested Definition gained a field) does not fail entries whose own values are complete. Branch on Found before consuming Value; failed reads return `null`. Gameplay edits to returned values never rewrite authored data. Restart Play to load authoring changes. Worker/in-process Play and loose/packed players use the same catalog.
 
 Asset pickers inside NodeGraph nodes omit Open Asset. Inspector/default value pickers retain it.
 

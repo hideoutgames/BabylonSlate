@@ -219,6 +219,28 @@ describe("bounded runtime Inspector", () => {
     } finally { runtime.stop(); }
   });
 
+  it("teleports actors whose Ragdoll is disabled and restricts them once it is enabled", async () => {
+    const { runtime, request, actor } = await fixture();
+    try {
+      const world = runtime.getWorld(); const hero = world.findActor("hero")!;
+      const child = world.createActor({ classId: "Actor", guid: "rider" }); world.spawnActorNow(child); child.setVariable("parentId", hero.guid);
+      const ragdolls = [hero, child].map(owner => {
+        const ragdoll = world.createComponent({ classId: "RagdollComponent", variables: { enabled: false } });
+        owner.attachComponent(ragdoll); return ragdoll;
+      });
+      runtime.pause(); const transform = identitySerializedTransform(); transform.position = [7, 0, 0];
+      expect((await request({ kind: "selection", target: actor })).payload).toMatchObject({ transformCapability: "live" });
+      expect((await request({ kind: "setTransform", target: actor, sequence: 1, transform })).success).toBe(true);
+      expect(hero.transform.position.x).toBe(7);
+      ragdolls[1]!.setVariable("enabled", true);
+      transform.position = [9, 0, 0];
+      expect((await request({ kind: "setTransform", target: actor, sequence: 2, transform })).success).toBe(false);
+      ragdolls[0]!.setVariable("enabled", true);
+      expect((await request({ kind: "selection", target: actor })).payload).toMatchObject({ transformCapability: "restart" });
+      expect(hero.transform.position.x).toBe(7);
+    } finally { runtime.stop(); }
+  });
+
   it("teleports a paused physics body through its owner and preserves velocity", async () => {
     const { runtime, request, actor } = await fixture();
     try {

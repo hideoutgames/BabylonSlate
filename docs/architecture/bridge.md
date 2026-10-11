@@ -136,7 +136,7 @@ Play and exported player hosts enable the cooperative runtime path (`cooperative
 
 Game Instance ticks continue during cooperative boot and scene preparation. Actor, component, physics, animation, and behaviour-tree work stay suspended until the complete scene and renderer readiness acknowledgement; native physics boot has a separate gate. The initial completed batch is announced only after native physics initialization succeeds; a replacement during that wait supersedes the held batch. Scene changes from a Game Instance tick recheck the gate before the remaining phases. Actor-owned delays pause during preparation while Game Instance delays continue. Partial preparations publish no snapshots. The full authored world pose is pushed before the realization command; the Worker holds that command through snapshot-layout acknowledgement when capacity grows. Stop and replacement Load discard held markers and cancel boot waiters, preventing late script/physics completion from starting or resuming another session. Explicit Pause on Play applies as soon as the early Game Instance scheduler starts and survives boot completion.
 
-The worker loop uses worker `requestAnimationFrame` when the host exposes both scheduling and cancellation. Other worker environments use a monotonic `performance.now()` timer fallback. Both feed elapsed time into the runtime's fixed-step accumulator (including its catch-up cap), and Stop or a replacement Load cancels either kind of pending callback.
+The worker loop uses worker `requestAnimationFrame` when the host exposes both scheduling and cancellation. Other worker environments use a monotonic `performance.now()` timer fallback. Both feed elapsed time into the runtime's fixed-step accumulator (including its catch-up cap), and Stop or a replacement Load cancels either kind of pending callback. A frame that throws still schedules the next one; the error reaches the worker's `error` handler below. A `step` control pauses again even when its tick throws.
 
 Diagnostics: `worker-entry.ts` mirrors the in-process driver's `reportError` on the worker's own uncaught `error` / `unhandledrejection` handlers, emitting the same `diagnostic` command shape (including optional `bodyLine`). `play-session.ts` feeds every `diagnostic` command into a `SessionDiagnosticAggregator` on the main thread (`diagnosticFromCommand`) so the Preview session report is populated for the Worker transport too, not only the in-process fallback. `Log` at Error severity also emits `runtime.log` diagnostics (not only the log ring / Output Log).
 
@@ -144,7 +144,7 @@ Diagnostics: `worker-entry.ts` mirrors the in-process driver's `reportError` on 
 
 The Worker's per-frame snapshot is produced by `TransferablePingPong` (`packages/bridge`), not a fresh `ArrayBuffer` per tick. The host recycles the consumed buffer back to the worker over a `recycleSnapshot` host message once its synchronous consumer (`SnapshotInterpolator.push`, which copies into an owned ping-pong pair immediately) is done with it, so a warmed-up Play session allocates no new snapshot buffer per frame. A frame with nothing to publish (`copySnapshot` returns `false`) calls `cancelWrite()` to return the buffer to the free pool rather than leaking it. The free pool keeps at most two spare buffers.
 
-Backpressure: poses are latest-state. The worker counts transferred snapshots until their `recycleSnapshot` returns (stale layout generations are returned too). With two outstanding it skips the tick's pose instead of queueing another transfer; when a buffer returns it publishes the newest pose at once. Realized markers (`sceneRealized`, `sceneLayerRealized`, `sceneStreamRealized`) stay held until a pose snapshot is sent, then follow it. A successful runtime Inspector edit reply (`runtimeInspectorResult` with a `mutation` payload) is held the same way, in order, so a paused host never redraws an older pose; held replies are sent on the next pose, or immediately on `load`/`stop`, and are never dropped. Poses are the only latest-state data: header fields (tick, frame, origin) are always the newest, and no other state rides on a snapshot. Structural commands are never held, and the `snapshotLayout` handshake is unchanged. Hosts recycle in a `finally`, so a throwing consumer cannot stall poses.
+Backpressure: poses are latest-state. The worker counts transferred snapshots until their `recycleSnapshot` returns (stale layout generations are returned too). With two outstanding it skips the tick's pose instead of queueing another transfer; when a buffer returns it publishes the newest pose at once. Realized markers (`sceneRealized`, `sceneLayerRealized`, `sceneStreamRealized`) stay held until a pose snapshot is sent, then follow it. A successful runtime Inspector edit reply (`runtimeInspectorResult` with a `mutation` payload) is held the same way, in order, so a paused host never redraws an older pose; held replies are sent on the next pose, or immediately on `load`/`stop`, and are never dropped. Poses are the only latest-state data: header fields (tick, frame, origin) are always the newest, and no other state rides on a snapshot. Other structural commands are never held; `snapshotLayout` is announced only once its transfer buffers are allocated. If the worker cannot allocate them for a new layout, it reports the failure once, holds poses, and retries the newest layout on every later publish before announcing it. Hosts recycle in a `finally`, so a throwing consumer cannot stall poses.
 
 This still layers over `postMessage` transfer per frame; true zero-copy `SharedArrayBuffer` main-thread reads (no message per frame at all) when `crossOriginIsolated` remain unwired — a follow-up, not required for correctness since transferables are the CI-mandatory path.
 
@@ -210,7 +210,9 @@ it, and takes effect only if the write fails.
 
 `quiesceSimulation` is correlated by session generation and request ID. It rejects
 new mutations, settles accepted writes at a completed boundary, and reports tick,
-scene/load identity and command revision without running End Play. The host drains
+scene/load identity and command revision without running End Play. A failure while
+settling answers at once with an unsuccessful result that a newer request ID can
+retry, instead of leaving the request to the host's timeout. The host drains
 that exact render revision, including staged material preparation, before sending
 `captureSimulationState`. A mismatched revision, stale identity or unconfirmed
 resource owner fails the capture. Worker and in-process hosts use the same capture
@@ -218,6 +220,8 @@ service; Inspector/trace snapshots are never used as a fallback.
 
 Successful candidates travel in ordered, bounded 64 KiB UTF-8 chunks followed by
 a correlated summary. Count, sequence, byte budget, JSON shape and identity are
-validated before publication. Stop/cancellation clears pending requests and partial
-buffers. Capture failures keep the runtime quiescent for explicit Retry/Discard;
+validated before publication. A worker `load` or `stop` that supersedes a transfer
+still ends it with a failed summary instead of leaving sent chunks to the host's
+timeout. Stop/cancellation clears pending requests and partial buffers. Capture
+failures keep the runtime quiescent for explicit Retry/Discard;
 a stopped or unresponsive Worker cannot provide a guaranteed retained result.

@@ -24,7 +24,7 @@ Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `sna
 
 | Command | Registered | Applies | Notes |
 | --- | --- | --- | --- |
-| `changescene` | yes | **yes** | Loads from the Play scene library (guid or display name). Same path as `ctx.changeScene`. An unknown scene fails with `unknown scene: <name>`. |
+| `changescene` | yes | **yes** | Loads from the Play scene library (guid or display name). A library key wins over another Scene's display name, and a display name shared by several Scenes resolves to the first one listed. The Play Scene's guid and display name always resolve to the Play Scene. Same path as `ctx.changeScene`. An unknown scene fails with `unknown scene: <name>`. |
 | `quality [low\|medium\|high\|ultra\|reset]` | yes | **yes** | Applies all scalability groups, or queries effective values when omitted. |
 | `quit` | yes | **yes** | `runtime.stop()`. Overlay Stop is a separate chrome path. |
 | `quality shadows/resolution/textures/geometry/water/postprocessing/lighting [tier\|reset]` | yes | **yes** | Applies or resets one group. Shadow budget, distance and enabled state are independent settings. |

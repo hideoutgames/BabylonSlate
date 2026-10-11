@@ -207,6 +207,33 @@ describe("runtime AnimationGraph scripts", () => {
     runtime.stop();
   });
 
+  it("ends the tick before its publish point when an Animation Object update quits", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 4,
+      seedDemoActors: false,
+      playScene: animScene(),
+      animGraphs: { "graph-1": createDefaultAnimGraph() },
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([{
+      assetGuid: "assets/Loco.anim.babasset",
+      classId: animGraphScriptClassId("graph-1"),
+      parentClassId: "BObject",
+      anchors: [],
+      source: 'export function update(ctx) { ctx.executeConsoleCommand("quit"); }',
+      entryPoints: [{ name: "update", event: "onUpdateAnimation", isAsync: false }],
+    }]);
+    runtime.start();
+    runtime.realizePlayWorld();
+    runtime.tick();
+    expect(runtime.getWorld().clock.tickIndex).toBe(1);
+    // The tick's stats follow its publish point; a stopped session publishes nothing.
+    expect(commands.some((command) => command.type === "stats")).toBe(false);
+    runtime.stop();
+  });
+
   it("fires a compiled Exit Time Reached rule on the tick a looping clip wraps past it", async () => {
     const registry = createDefaultNodeRegistry();
     const doc = locoDocument();
