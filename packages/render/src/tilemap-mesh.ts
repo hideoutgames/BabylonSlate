@@ -1,4 +1,4 @@
-import { Mesh, Scene, VertexBuffer, VertexData, type AbstractMesh } from "@babylonjs/core";
+import { Matrix, Mesh, Scene, Vector3, VertexBuffer, VertexData, type AbstractMesh, type Node } from "@babylonjs/core";
 import {
   tilemapChunkVertexData,
   decodeTileGid,
@@ -186,6 +186,9 @@ export function worldTileSize(
   };
 }
 
+const scratchParallaxOffset = new Vector3();
+const scratchParallaxInverse = new Matrix();
+
 /** Offset this Scene's parallax chunks so each layer tracks the Play camera. */
 export function updateSceneTilemapParallax(
   scene: Scene,
@@ -193,14 +196,25 @@ export function updateSceneTilemapParallax(
 ): void {
   const chunks = parallaxChunks.get(scene);
   if (!chunks) return;
+  let inverted: Node | null = null;
   for (const chunk of chunks) {
     const parallax = chunk.metadata?.tilemapParallax as
       | { x: number; y: number }
       | undefined;
     if (!parallax) continue;
-    // Parallax 1 stays world-locked; 0 tracks the camera.
-    chunk.position.x = camera.x * (1 - parallax.x);
-    chunk.position.y = camera.y * (1 - parallax.y);
+    // Parallax 1 stays world-locked; 0 tracks the camera. The offset is a
+    // world displacement, so undo the tilemap root's rotation and scale; its
+    // translation stays the layer's authored placement.
+    scratchParallaxOffset.set(camera.x * (1 - parallax.x), camera.y * (1 - parallax.y), 0);
+    const parent = chunk.parent;
+    if (parent) {
+      if (parent !== inverted) {
+        parent.computeWorldMatrix(true).invertToRef(scratchParallaxInverse);
+        inverted = parent;
+      }
+      Vector3.TransformNormalToRef(scratchParallaxOffset, scratchParallaxInverse, scratchParallaxOffset);
+    }
+    chunk.position.copyFrom(scratchParallaxOffset);
   }
 }
 
