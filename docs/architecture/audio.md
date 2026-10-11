@@ -8,7 +8,7 @@ There is **no second sound type**. Imported `Audio` stays kind `audio` with a `s
 
 - **Import** a WAV / MP3 / OGG. New Asset does not create sounds (the Audio group says so). Imported Audio opens a DockView document (`audio`: Preview / Details / Clips).
 - **Place Actors → Project** tile for that Audio. That binds `audioAssetGuid` with Play On Start. The engine **Audio** speaker stays empty until an asset is picked.
-- **Play**, then **click the game view** to enable audio. Overlay Play and the bundled-debugger player show **Click the game view to enable audio** while play-on-start is queued and AudioV2 is still locked. Do not auto-unlock at load. Overlay **Pause** pauses live AudioV2 voices (it does not stop or dispose them). Console `pause` stays sim-only.
+- **Play**, then **click the game view** to enable audio. Overlay Play and the bundled-debugger player show **Click the game view to enable audio** while play-on-start is queued and AudioV2 is still locked. Do not auto-unlock at load. Overlay **Pause** pauses live AudioV2 voices (it does not stop or dispose them). Console `pause` does the same: its `sessionPaused` reaches the game view's pause (editor Play once the `resetInput` boundary reports `paused`; the player immediately), which pauses audio with game time.
 - Mixer, channel, and attenuation are optional. Playback is `assetVolume × playCallVolume` with those refs at None.
 
 Also:
