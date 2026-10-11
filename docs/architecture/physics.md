@@ -223,7 +223,7 @@ The actor fixtures count unrelated transform reads (409,600 → 0 across 100 tic
 | `BlockingVolumeComponent` | No authored properties. Place Actors **Physics → Blocking Volume** only (hidden from Add Component / Search). Editor: blue dotted unit box + `default.png` at the center. Play: helper hidden; static physics box from actor TRS. Not a navmesh input. |
 | `LandscapeComponent` | `collisionsEnabled` (default **false**), edited in Landscape mode → Landscape Settings. 3D triangle mesh from `width`, `depth`, `subdivisions`, and `heights`; friction 0.5, restitution 0. |
 
-Simulation needs **both** a rigid body and at least one collider on the same actor (tilemaps, **blocking volumes**, enabled **Landscape Collisions**, and **MeshComponent** collision that is not `none` are the exception: they create an implicit static body). That pairing is the authored workflow — not a Play blocker. Compile warnings:
+Simulation needs **both** a rigid body and at least one collider on the same actor (tilemaps, **blocking volumes**, enabled **Landscape Collisions**, **Dynamic Runtime Mesh** with **Enable Collision**, and **MeshComponent** collision that is not `none` are the exception: they create an implicit static body; **Movement** supplies its own kinematic capsule body). Actors with any of these get no ordinary pairing warning. That pairing is the authored workflow — not a Play blocker. Compile warnings:
 
 | Case | Code | Severity |
 | --- | --- | --- |
