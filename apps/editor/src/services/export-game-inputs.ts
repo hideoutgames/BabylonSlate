@@ -184,7 +184,6 @@ export async function loadExportDocuments(
       kind !== "texture" &&
       (JSON_TYPES.has(asset.header.type) ||
         asset.header.type === "Class" ||
-        asset.header.type === "Graph" ||
         asset.header.type === "Scene" ||
         asset.header.type === "Font" ||
         asset.header.type === "Audio" ||
@@ -207,10 +206,7 @@ export async function loadExportDocuments(
     if (asset.header.type === "Scene" && document) {
       scenes.set(asset.header.guid, document as SerializedScene);
     }
-    if (
-      (asset.header.type === "Class" || asset.header.type === "Graph") &&
-      document
-    ) {
+    if (asset.header.type === "Class" && document) {
       graphs.set(asset.header.guid, document as SerializedGraph);
     }
     if (!byteErrors.has(asset.header.guid)) {

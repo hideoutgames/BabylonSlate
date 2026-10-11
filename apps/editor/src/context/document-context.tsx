@@ -2476,7 +2476,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const before = registry?.getByGuid(guid);
       if (!registry || !before) throw new Error("The asset is unavailable.");
       const nextPath = renamedAssetPath(before.path, newName);
-      const replacements: ClassAssetReplacement[] = before.header.type === "Class" || before.header.type === "Graph"
+      const replacements: ClassAssetReplacement[] = before.header.type === "Class"
         ? [{ guid, classId: classIdFromClassAsset(before), replacement: { guid, classId: classIdFromClassAsset({ ...before, path: nextPath }) } }]
         : [];
       const schemas = collectGraphTypeSchemas();
@@ -3224,7 +3224,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const candidates = [
           "assets/Mannequin.class.babasset",
           "assets/main.class.babasset",
-          "assets/main.graph.babasset",
         ];
         const existing = [...documentService.getState().openDocuments.values()].find(
           (entry) => entry.ref.kind === "graph",
@@ -3326,7 +3325,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const candidates = [
           "assets/Mannequin.class.babasset",
           "assets/main.class.babasset",
-          "assets/main.graph.babasset",
         ];
         const openGraph = [...documentService.getState().openDocuments.values()].find(
           (entry) => entry.ref.kind === "graph",

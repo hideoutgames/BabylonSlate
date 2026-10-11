@@ -40,7 +40,6 @@ import {
   isAssetDocumentKind,
   LAYOUT_FILE,
   MAIN_CLASS_FILE,
-  MAIN_GRAPH_FILE,
   MAIN_SCENE_FILE,
   migrateLegacyLayout,
   PROJECT_FILE,
@@ -192,7 +191,7 @@ function headerMetaForSave(
   if (materialMeta) return materialMeta;
   // Closed Prefabs sync placed instances and place new ones from the header alone.
   if (type === "Prefab") return { components: normalizePrefab(content).components };
-  if (type === "Class" || type === "Graph") {
+  if (type === "Class") {
     return classHeaderMeta(
       content as {
         members?: Array<{
@@ -1425,30 +1424,19 @@ export class ProjectService {
     };
   }
 
-  /**
-   * Reconcile the manifest's document list with the asset registry (header-only
-   * index). Legacy `.json` scene/graph files still participate via a thin
-   * fallback so pre-container projects keep opening.
-   */
+  /** Reconcile the manifest's document list with the asset registry (header-only index). */
   private async ensureDocuments(
     document: ProjectDocument,
   ): Promise<ProjectDocument> {
     await this.mountAssetRegistry();
     const found = this.assetRegistry!.listDocumentPaths({ rootId: "project" });
-    const legacy = await this.discoverLegacyJsonDocuments();
     const scenes = uniquePaths([
       ...found.scenes,
-      ...legacy.scenes,
-      ...(found.scenes.length || legacy.scenes.length
-        ? []
-        : await this.keepExisting(document.scenes)),
+      ...(found.scenes.length ? [] : await this.keepExisting(document.scenes)),
     ]);
     const graphs = uniquePaths([
       ...found.graphs,
-      ...legacy.graphs,
-      ...(found.graphs.length || legacy.graphs.length
-        ? []
-        : await this.keepExisting(document.graphs)),
+      ...(found.graphs.length ? [] : await this.keepExisting(document.graphs)),
     ]);
 
     if (scenes.length && graphs.length) {
@@ -1460,16 +1448,12 @@ export class ProjectService {
       scenes.push(MAIN_SCENE_FILE);
     }
     if (!graphs.length) {
-      if (await this.storage.exists(MAIN_GRAPH_FILE)) {
-        graphs.push(MAIN_GRAPH_FILE);
-      } else {
-        await this.saveDocument(
-          "graph",
-          MAIN_CLASS_FILE,
-          createDefaultLogicGraphSerialized(),
-        );
-        graphs.push(MAIN_CLASS_FILE);
-      }
+      await this.saveDocument(
+        "graph",
+        MAIN_CLASS_FILE,
+        createDefaultLogicGraphSerialized(),
+      );
+      graphs.push(MAIN_CLASS_FILE);
     }
     await this.mountAssetRegistry();
     return { ...document, scenes, graphs };
@@ -1830,7 +1814,7 @@ export class ProjectService {
     if (nextPath !== before.path && registry.list().some((asset) => asset.path === nextPath)) {
       throw new Error(`Target path already exists: ${nextPath}`);
     }
-    if (before.header.type !== "Class" && before.header.type !== "Graph") {
+    if (before.header.type !== "Class") {
       await options?.beforeWrite?.([before.path, nextPath]);
       return registry.renameAsset(guid, newName);
     }
@@ -1844,7 +1828,7 @@ export class ProjectService {
       throw new Error(`"${nextClassId}" is an engine class name. Choose another Class name.`);
     }
     if (registry.list().some((asset) => asset.header.guid !== guid &&
-      (asset.header.type === "Class" || asset.header.type === "Graph") && classIdFromClassAsset(asset) === nextClassId)) {
+      asset.header.type === "Class" && classIdFromClassAsset(asset) === nextClassId)) {
       throw new Error("A Class with that name already exists.");
     }
     const replacements = [{ guid, classId, replacement: { guid, classId: nextClassId } }];
@@ -1932,8 +1916,7 @@ export class ProjectService {
           return header && ["DataDefinition", "Structure"].includes(header.type) && Array.isArray(header.payload.fields) ? header.payload.fields : undefined;
         },
       );
-      const isClass =
-        asset.header.type === "Class" || asset.header.type === "Graph";
+      const isClass = asset.header.type === "Class";
       const nextParent = isClass
         ? fallbackParentClass(asset.header.parentClass, deletedClassNames)
         : undefined;
@@ -1960,31 +1943,6 @@ export class ProjectService {
       if (await this.storage.exists(path)) kept.push(path);
     }
     return kept;
-  }
-
-  /** Pre-container `.json` documents that the registry does not index. */
-  private async discoverLegacyJsonDocuments(): Promise<{
-    scenes: string[];
-    graphs: string[];
-  }> {
-    const scenes: string[] = [];
-    const graphs: string[] = [];
-
-    for (const dir of ["assets", "scenes", "graphs"]) {
-      let entries;
-      try {
-        entries = await this.storage.readdir(dir);
-      } catch {
-        continue;
-      }
-      for (const entry of entries) {
-        if (entry.isDir) continue;
-        const path = `${dir}/${entry.name}`;
-        if (/\.scene\.json$/.test(entry.name)) scenes.push(path);
-        if (/\.graph\.json$/.test(entry.name)) graphs.push(path);
-      }
-    }
-    return { scenes: scenes.sort(), graphs: graphs.sort() };
   }
 
   private async scaffoldNewProject(
@@ -2156,9 +2114,8 @@ export class ProjectService {
     const fallbackType = isAssetDocumentKind(kind)
       ? assetTypeForDocumentKind(kind)
       : "Class";
-    const raw = isAssetDocumentPath(path)
-      ? await this.readAssetDocument(path, fallbackType, options)
-      : await this.readLegacyJsonDocument(path, fallbackType);
+    if (!isAssetDocumentPath(path)) throw new Error(`${path} is not a .babasset document.`);
+    const raw = await this.readAssetDocument(path, fallbackType, options);
 
     const migrated = loadPayloadWithMigration(this.migrations, {
       type: raw.type,
@@ -2266,24 +2223,6 @@ export class ProjectService {
   }
 
   /** Projects authored before assets moved to .babasset still load from JSON. */
-  private async readLegacyJsonDocument(
-    path: string,
-    type: string,
-  ): Promise<{ type: string; version: number; payload: Record<string, unknown> }> {
-    const raw = JSON.parse(await this.storage.readText(path)) as Record<
-      string,
-      unknown
-    > & { version?: number };
-    return {
-      type,
-      version:
-        typeof raw.version === "number"
-          ? raw.version
-          : this.migrations.currentVersion(type),
-      payload: raw,
-    };
-  }
-
   async saveDocument(
     kind: Exclude<DocumentKind, "content-browser">,
     path: string,
@@ -2325,6 +2264,7 @@ export class ProjectService {
       const diagnostic = validateMaterialParameterNames(graph)[0];
       if (diagnostic) throw new Error(diagnostic.message);
     }
+    if (!isAssetDocumentPath(path)) throw new Error(`${path} is not a .babasset document.`);
     this.assertMigrationApproved(path);
     const storage = this.storageForPath(path);
     const blobs = this.blobsForPath(path);
@@ -2335,9 +2275,7 @@ export class ProjectService {
     if (dir) {
       await storage.mkdir(dir, true);
     }
-    const existing = isAssetDocumentPath(path)
-      ? await this.readExistingAssetMeta(path)
-      : null;
+    const existing = await this.readExistingAssetMeta(path);
     const type =
       kind === "asset-settings" && existing?.type
         ? existing.type
@@ -2387,51 +2325,44 @@ export class ProjectService {
       content = withSavedTextureEncodeState(content as Record<string, unknown>, existing.payload);
     }
 
-    if (isAssetDocumentPath(path)) {
-      const guid = await this.guidForAsset(path);
-      const extraChunks = type === "Scene"
-        ? await this.sceneExtraChunksForWrite(path, content as SerializedScene, guid)
-        : await this.extraChunksFor(path);
-      const bytes = await encodeAssetDocument(
-        {
+    const guid = await this.guidForAsset(path);
+    const extraChunks = type === "Scene"
+      ? await this.sceneExtraChunksForWrite(path, content as SerializedScene, guid)
+      : await this.extraChunksFor(path);
+    const bytes = await encodeAssetDocument(
+      {
+        type,
+        name:
+          type === "PluginSettings" &&
+          typeof (content as { displayName?: unknown }).displayName ===
+            "string" &&
+          (content as { displayName: string }).displayName.trim() !== ""
+            ? (content as { displayName: string }).displayName.trim()
+            : (isInputAssetType(type) || type === "DataDefinition" || type === "DataTree") && existing?.name
+              ? existing.name
+              : assetName(path),
+        guid,
+        version,
+        payload: content as unknown as Record<string, unknown>,
+      },
+      {
+        blobs,
+        extraChunks,
+        parentClass,
+        headerPayload: storeInHeader
+          ? (content as unknown as Record<string, unknown>)
+          : undefined,
+        headerMeta: headerMetaForSave(type, content),
+        dependencyMetadata: assetHeaderDependencyMetadata(
           type,
-          name:
-            type === "PluginSettings" &&
-            typeof (content as { displayName?: unknown }).displayName ===
-              "string" &&
-            (content as { displayName: string }).displayName.trim() !== ""
-              ? (content as { displayName: string }).displayName.trim()
-              : (isInputAssetType(type) || type === "DataDefinition" || type === "DataTree") && existing?.name
-                ? existing.name
-                : assetName(path),
-          guid,
-          version,
-          payload: content as unknown as Record<string, unknown>,
-        },
-        {
-          blobs,
-          extraChunks,
+          content as unknown as Record<string, unknown>,
+          this.assetRegistry?.list(),
           parentClass,
-          headerPayload: storeInHeader
-            ? (content as unknown as Record<string, unknown>)
-            : undefined,
-          headerMeta: headerMetaForSave(type, content),
-          dependencyMetadata: assetHeaderDependencyMetadata(
-            type,
-            content as unknown as Record<string, unknown>,
-            this.assetRegistry?.list(),
-            parentClass,
-          ),
-        },
-      );
-      await storage.writeBinary(path, bytes);
-      await this.assetRegistry?.reindexPath(path);
-    } else {
-      await storage.writeText(
-        path,
-        JSON.stringify({ ...content, version }, null, 2),
-      );
-    }
+        ),
+      },
+    );
+    await storage.writeBinary(path, bytes);
+    await this.assetRegistry?.reindexPath(path);
     this.noteMigrated(path);
     if (pluginContentChanged && ownerPlugin) {
       const document = await decodeAssetDocument(await storage.readBinary(ownerPlugin.settingsPath));

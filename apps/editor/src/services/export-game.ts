@@ -341,7 +341,7 @@ export async function collectAndExportGame(
   const requiredEmissions = new Set<string>();
   for (const guid of closure.value.guids) {
     const asset = params.assets.find((entry) => entry.guid === guid);
-    const document = asset?.type === "Scene" ? params.sceneByGuid(guid) : asset?.type === "Class" || asset?.type === "Graph" ? params.graphByGuid(guid) : params.payloadByGuid?.(guid);
+    const document = asset?.type === "Scene" ? params.sceneByGuid(guid) : asset?.type === "Class" ? params.graphByGuid(guid) : params.payloadByGuid?.(guid);
     for (const texture of areaEmissionTextureGuids(document)) requiredEmissions.add(texture);
   }
   for (const guid of requiredEmissions) {
@@ -352,7 +352,7 @@ export async function collectAndExportGame(
   for (const guid of closure.value.guids) {
     const asset = params.assets.find((entry) => entry.guid === guid);
     if (!asset) continue;
-    if (asset.type === "Class" || asset.type === "Graph") {
+    if (asset.type === "Class") {
       const graph = params.graphByGuid(guid);
       if (graph) {
         graphDocs.push({

@@ -505,31 +505,6 @@ describe("project documents as .babasset", () => {
     ).toBe("Renamed");
   });
 
-  it("still reads projects whose documents are legacy JSON", async () => {
-    const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("Legacy.babproject");
-    await storage.mkdir("scenes", true);
-    await storage.writeText(
-      "scenes/main.scene.json",
-      JSON.stringify({ name: "Legacy", meshes: [], version: 1 }),
-    );
-    const service = new ProjectService(storage);
-
-    const scene = (await service.loadDocument(
-      "scene",
-      "scenes/main.scene.json",
-    )) as SerializedScene;
-    expect(scene.name).toBe("Legacy");
-
-    // The legacy payload is a schema version behind, so saving it back needs
-    // the same explicit migrate-on-save approval as any other stale asset.
-    service.approveMigrateOnSave();
-    await service.saveDocument("scene", "scenes/main.scene.json", scene);
-    expect(
-      JSON.parse(await storage.readText("scenes/main.scene.json")).version,
-    ).toBe(4);
-  });
-
   it("does not rebuild a search index on project open", async () => {
     const { service } = await scaffolded();
     expect(service.searchIndex).toBeTruthy();

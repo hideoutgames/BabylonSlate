@@ -279,10 +279,7 @@ export async function createPickerAsset(options: {
   const classIds =
     type === "Class"
       ? assets
-          .filter(
-            (asset) =>
-              asset.header.type === "Class" || asset.header.type === "Graph",
-          )
+          .filter((asset) => asset.header.type === "Class")
           .map((asset) => classIdFromClassAsset(asset))
       : undefined;
   const name = uniqueNewAssetName({
