@@ -108,11 +108,44 @@ describe("addClassMember", () => {
     expect(slice?.edges).toHaveLength(1);
   });
 
-  it("drops the function graph when the function member is removed", () => {
+  it("drops the function graph and its self Call Function nodes when the function member is removed", () => {
     let graph = addClassMember(emptyGraph(), "function", "Jump", () => "fn-1");
+    graph = addCallFunctionNode(graph, graph.members![0]!, { idFactory: () => "call-self" });
+    graph = addCallFunctionNode(graph, { name: "Jump" }, {
+      classId: "OtherActor",
+      implicitSelf: false,
+      idFactory: () => "call-other",
+    });
+    graph = {
+      ...graph,
+      edges: [{ id: "e1", source: "call-self", target: "call-other", sourceHandle: "then", targetHandle: "exec" }],
+    };
     graph = removeClassMember(graph, "fn-1");
     expect(graph.members).toEqual([]);
     expect(graph.functionGraphs?.["fn-1"]).toBeUndefined();
+    expect(graph.nodes.map((node) => node.id)).toEqual(["call-other"]);
+    expect(graph.edges).toEqual([]);
+  });
+
+  it("drops the Get and Set nodes bound to a removed variable in every graph", () => {
+    let graph = addClassMember(emptyGraph(), "function", "Jump", () => "fn-1");
+    graph = addClassMember(graph, "variable", "Health", () => "var-1");
+    graph = addClassMember(graph, "variable", "Armor", () => "var-2");
+    const [, health, armor] = graph.members!;
+    graph = addVariableAccessNode(graph, health!, "get", { idFactory: () => "get-health" });
+    graph = addVariableAccessNode(graph, armor!, "get", { idFactory: () => "get-armor" });
+    graph = addVariableAccessNode(graph, health!, "set", {
+      functionId: "fn-1",
+      idFactory: () => "set-health",
+    });
+    expect(graph.functionGraphs?.["fn-1"]?.nodes.map((node) => node.id)).toContain("set-health");
+    graph = removeClassMember(graph, "var-1");
+    expect(graph.members?.map((member) => member.id)).toEqual(["fn-1", "var-2"]);
+    expect(graph.nodes.map((node) => node.id)).toEqual(["get-armor"]);
+    expect(graph.functionGraphs?.["fn-1"]?.nodes.map((node) => node.id)).toEqual([
+      "fn-1-input",
+      "fn-1-output",
+    ]);
   });
 
   it("adds a named custom event node for Events +", () => {

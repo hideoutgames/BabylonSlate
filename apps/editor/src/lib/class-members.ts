@@ -1204,6 +1204,33 @@ function mapGraphNodes(
   };
 }
 
+/** Remove matching nodes and their wires from the event graph and every function graph. */
+function dropGraphNodes(
+  graph: SerializedGraph,
+  drop: (node: SerializedGraph["nodes"][number]) => boolean,
+): SerializedGraph {
+  const slice = <T extends Pick<SerializedGraph, "nodes" | "edges">>(entry: T): T => {
+    const dropIds = new Set(entry.nodes.filter(drop).map((node) => node.id));
+    if (dropIds.size === 0) return entry;
+    return {
+      ...entry,
+      nodes: entry.nodes.filter((node) => !dropIds.has(node.id)),
+      edges: entry.edges.filter(
+        (edge) => !dropIds.has(edge.source) && !dropIds.has(edge.target),
+      ),
+    };
+  };
+  const functionGraphs = graph.functionGraphs
+    ? Object.fromEntries(
+        Object.entries(graph.functionGraphs).map(([id, entry]) => [id, slice(entry)]),
+      )
+    : graph.functionGraphs;
+  return {
+    ...slice(graph),
+    ...(functionGraphs ? { functionGraphs } : {}),
+  };
+}
+
 export function syncVariableAccessNodes(
   graph: SerializedGraph,
   member: GraphClassMember,
@@ -1708,7 +1735,14 @@ export function removeClassMember(
   if (declared?.kind === "function") {
     const functionGraphs = { ...graph.functionGraphs };
     delete functionGraphs[memberId];
-    return { ...graph, members, functionGraphs };
+    // Self Call Function nodes go with the function, as a rename retargets them.
+    return dropGraphNodes(
+      { ...graph, members, functionGraphs },
+      (node) =>
+        node.type === "functions.call" &&
+        node.data.functionName === declared.name &&
+        (node.data.implicitSelf === true || !node.data.classId),
+    );
   }
   if (declared?.kind === "event") {
     const dropIds = new Set(
@@ -1729,6 +1763,12 @@ export function removeClassMember(
         (edge) => !dropIds.has(edge.source) && !dropIds.has(edge.target),
       ),
     };
+  }
+  if (declared?.kind === "variable") {
+    // Get / Set / Validated Get nodes go with the variable, as a rename syncs them.
+    return dropGraphNodes({ ...graph, members }, (node) =>
+      isVariableAccessNode(node, declared),
+    );
   }
   if (declared) {
     return { ...graph, members };
