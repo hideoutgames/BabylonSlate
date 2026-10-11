@@ -111,11 +111,15 @@ export type PlayerBootHandle = {
   stop: () => { diagnostics: PlayerDiagnostic[] };
 };
 
-/** Browser qualification surface installed only in test-mode player builds. */
+/**
+ * Browser qualification surface installed only in test-mode player builds.
+ * `tickIndex` matches the editor Play hook, so sustained-window samplers read
+ * a tick rate from either host.
+ */
 export type PlayerTestHandle = Pick<PlayerBootHandle,
   "visuals" | "meshMaterialNames" | "rendering" | "shadowDiagnostics" |
   "postProcessPassCount" | "renderTasks" | "setRenderSettings" | "executeConsoleCommand" | "scalability" | "stop"
->;
+> & { tickIndex: () => number };
 
 export type PlayerBootOptions = {
   /** Only the editor-hosted Preview path grants the lazy diagnostic transport. */
