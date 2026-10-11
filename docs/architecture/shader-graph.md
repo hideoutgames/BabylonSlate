@@ -387,7 +387,8 @@ place. `MaterialLibrary` caches per Scene keyed by asset guid plus plan hash and
 refcounts instances. A Babylon material belongs to one Scene, so the editor
 viewport, a preview tab and a Play session each hold their own. A new material
 replaces the old one only after it builds, so a failed edit leaves the previous
-material on screen. `acquire` rebuilds when the cached `NodeMaterial` is
+material on screen. A newer edit supersedes a build that has not published yet:
+meshes already using it move to the newer build, which inherits its references. `acquire` rebuilds when the cached `NodeMaterial` is
 already disposed (removed from `scene.materials` — NodeMaterial has no
 `isDisposed()`). Disposing a Scene releases its entries, pending builds and
 texture leases even without `releaseScene`; `acquire` on a disposed Scene returns

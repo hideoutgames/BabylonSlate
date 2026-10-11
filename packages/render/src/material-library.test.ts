@@ -352,6 +352,43 @@ describe("material library", () => {
     expect(second.material).not.toBe(first.material);
   });
 
+  it("moves meshes from a superseded unpublished build to its replacement", async () => {
+    const scene = host();
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const mesh = MeshBuilder.CreateBox("box", {}, scene);
+    const first = library.resolve(scene, "material", tinted(1));
+    if (!first) throw new Error("Expected a pending material");
+    mesh.material = first;
+    const second = library.resolve(scene, "material", tinted(0.25));
+    expect(second).not.toBe(first);
+    expect(mesh.material).toBe(second);
+    expect(scene.materials).not.toContain(first);
+    const ready = library.acquire(scene, "material", tinted(0.25));
+    if (!ready.ok) throw new Error("Expected the replacement material");
+    expect(await ready.ready).toEqual([]);
+    expect(library.materialFor(scene, "material")).toBe(second);
+    library.release(scene, "material");
+    library.release(scene, "material");
+    expect(scene.materials).not.toContain(second);
+  });
+
+  it("cancels pending builds for every variant of an asset", async () => {
+    const scene = host();
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const unlit = library.acquire(scene, "material", tinted(1), { unlit: true });
+    const instance = library.acquire(scene, "material", tinted(1), { instanceKey: "actor" });
+    const other = library.acquire(scene, "other", tinted(1), { unlit: true });
+    if (!unlit.ok || !instance.ok || !other.ok) throw new Error("Expected pending materials");
+    library.cancelPending(scene, "material");
+    expect(await unlit.ready).toEqual([expect.objectContaining({ code: "material.compile.cancelled" })]);
+    expect(await instance.ready).toEqual([expect.objectContaining({ code: "material.compile.cancelled" })]);
+    expect(scene.materials).not.toContain(unlit.material);
+    expect(scene.materials).not.toContain(instance.material);
+    expect(await other.ready).toEqual([]);
+  });
+
   it("recompiles the same graph when its material functions change", () => {
     const scene = host();
     const boosted = createDefaultMaterialFunctionDocument("Tint");
