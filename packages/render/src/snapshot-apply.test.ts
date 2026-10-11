@@ -26,6 +26,7 @@ import {
   disposeWorldOverlayLeftovers,
   isPlayHelperMeshKind,
   retirePlaySlot,
+  retirePlayWorldSlots,
   type AssignMeshCommand,
 } from "./snapshot-apply";
 import { setupDefaultViewport } from "./viewport";
@@ -1935,27 +1936,35 @@ describe("createPlayMesh", () => {
       meshAssetGuid: null,
       meshKind: "2dtexture",
     });
-    expect(scene.getMeshByName("actor-4")).not.toBeNull();
+    const worldCopy = scene.getMeshByName("actor-4")!;
+    const sample = (flags: number) => ({ frameId: 1, tickIndex: 1, alpha: 1, actorCount: 1, actors: [{ slotId: 4,
+      position: { x: 2, y: 1, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 }, flags }] });
+    applySnapshotToScene(scene, binding, sample(SNAPSHOT_FLAG_VISIBLE));
+    expect(worldCopy.isVisible).toBe(true);
+    // Its layer is not live yet: the world copy stops drawing until migration.
+    binding.sceneForSlot = () => null;
+    applySnapshotToScene(scene, binding, sample(SNAPSHOT_FLAG_VISIBLE | SNAPSHOT_FLAG_OVERLAY));
+    expect(worldCopy.isVisible).toBe(false);
     binding.sceneForSlot = () => overlay;
-    applySnapshotToScene(scene, binding, {
-      frameId: 1,
-      tickIndex: 1,
-      alpha: 1,
-      actorCount: 1,
-      actors: [
-        {
-          slotId: 4,
-          position: { x: 2, y: 1, z: 0 },
-          rotation: { x: 0, y: 0, z: 0, w: 1 },
-          scale: { x: 1, y: 1, z: 1 },
-          flags: SNAPSHOT_FLAG_VISIBLE | SNAPSHOT_FLAG_OVERLAY,
-        },
-      ],
-    });
+    applySnapshotToScene(scene, binding, sample(SNAPSHOT_FLAG_VISIBLE | SNAPSHOT_FLAG_OVERLAY));
     expect(overlay.getMeshByName("actor-4")).not.toBeNull();
     expect(scene.getMeshByName("actor-4")).toBeNull();
     expect(binding.meshes.get(4)?.position.x).toBeCloseTo(2);
+    expect(binding.meshes.get(4)?.isVisible).toBe(true);
     overlay.dispose();
+  });
+
+  it("keeps a possessed or Default overlay camera when world slots retire", () => {
+    const binding = createSnapshotSceneBinding();
+    binding.isOverlaySlot = (slotId) => slotId === 5;
+    binding.possessedCameraSlotId = 5;
+    binding.defaultCameraSlotId = 3;
+    retirePlayWorldSlots(binding);
+    expect([binding.possessedCameraSlotId, binding.defaultCameraSlotId]).toEqual([5, null]);
+    binding.possessedCameraSlotId = 3;
+    binding.defaultCameraSlotId = 5;
+    retirePlayWorldSlots(binding);
+    expect([binding.possessedCameraSlotId, binding.defaultCameraSlotId]).toEqual([null, 5]);
   });
 
   it("disposes leftover world actor meshes that are not in the snapshot binding", () => {

@@ -1512,8 +1512,10 @@ export function retirePlayWorldSlots(binding: SnapshotSceneBinding): void {
   for (const slotId of [...binding.seenSlots]) {
     if (!binding.isOverlaySlot?.(slotId)) binding.seenSlots.delete(slotId);
   }
-  binding.possessedCameraSlotId = null;
-  binding.defaultCameraSlotId = null;
+  // Like their visuals, a possessed or Default overlay camera survives.
+  const survives = (slotId: number | null) => slotId !== null && binding.isOverlaySlot?.(slotId) === true ? slotId : null;
+  binding.possessedCameraSlotId = survives(binding.possessedCameraSlotId);
+  binding.defaultCameraSlotId = survives(binding.defaultCameraSlotId);
 }
 
 function disposeSlotVisuals(
@@ -2063,6 +2065,10 @@ function reconcileSnapshotVisuals(
     const wantsOverlay = snapshotSlotWantsOverlay(actor, binding);
     const overlayScene = binding.sceneForSlot?.(actor.slotId) ?? null;
     if (wantsOverlay && !overlayScene) {
+      // Until its layer is live, a world copy must not keep drawing at its
+      // last pose; migration restores it once the layer Scene exists.
+      const waiting = binding.meshes.get(actor.slotId);
+      if (waiting?.getScene() === scene) setPlayVisualVisibility(binding, waiting, false);
       continue;
     }
     const hostScene = wantsOverlay ? overlayScene : scene;
