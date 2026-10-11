@@ -222,9 +222,37 @@ export function PrefabEditingProvider({
     [parentSignature],
   );
 
+  // Only open ancestor Classes feed the inherited components. Keep that list
+  // while its documents are unchanged, so an edit to this Class or to an
+  // unrelated one does not rebuild and compare the ancestor data.
+  const ancestorIds = useMemo(() => {
+    const ids = new Set<string>();
+    let current = classId ? parentOf(classId) : null;
+    while (current && !ids.has(current)) {
+      ids.add(current);
+      current = parentOf(current);
+    }
+    return ids;
+  }, [classId, parentOf]);
+  const ancestorDocumentsRef = useRef<readonly OpenDocument[]>([]);
+  const ancestorDocuments = useMemo(() => {
+    const next = classDocuments.filter(
+      (entry) =>
+        entry.ref.kind === "graph" &&
+        ancestorIds.has(classIdForGraphPath(entry.ref.path)),
+    );
+    const previous = ancestorDocumentsRef.current;
+    if (
+      next.length !== previous.length ||
+      next.some((entry, index) => entry !== previous[index])
+    ) {
+      ancestorDocumentsRef.current = next;
+    }
+    return ancestorDocumentsRef.current;
+  }, [ancestorIds, classDocuments]);
+
   const ancestorsRef = useRef<readonly PrefabAncestor[]>(NO_ANCESTORS);
-  // Rebuilt when the registry or an open Class document changes, not when a
-  // Scene, Material or other non-Class document is edited.
+  // Rebuilt when the registry or an open ancestor Class document changes.
   const isClassDocument = graph !== null;
   const ancestors = useMemo(() => {
     void registryEpoch;
@@ -232,7 +260,7 @@ export function PrefabEditingProvider({
       classId,
       parentOf,
       isClassDocument ? (assetRegistry?.list() ?? NO_ASSETS) : NO_ASSETS,
-      classDocuments,
+      ancestorDocuments,
     );
     // Header payloads parse into fresh arrays; keep the previous list while
     // the inherited components are unchanged so the published value stays
@@ -242,8 +270,8 @@ export function PrefabEditingProvider({
     }
     return ancestorsRef.current;
   }, [
+    ancestorDocuments,
     assetRegistry,
-    classDocuments,
     classId,
     isClassDocument,
     parentOf,
