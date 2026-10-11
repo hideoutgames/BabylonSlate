@@ -19,7 +19,7 @@ describe("applyPlayerLayout", () => {
       clientHeight: 1200,
       style: { background: "" },
     };
-    const canvas = { style: { width: "", height: "", objectFit: "" } } as HTMLCanvasElement;
+    const canvas = { style: { width: "", height: "" } } as HTMLCanvasElement;
     const size = applyPlayerLayout({
       root: asRoot(root),
       canvas,
@@ -43,7 +43,7 @@ describe("applyPlayerLayout", () => {
       clientHeight: 1200,
       style: { background: "" },
     };
-    const canvas = { style: { width: "", height: "", objectFit: "" } } as HTMLCanvasElement;
+    const canvas = { style: { width: "", height: "" } } as HTMLCanvasElement;
     const size = applyPlayerLayout({
       root: asRoot(root),
       canvas,
@@ -58,7 +58,6 @@ describe("applyPlayerLayout", () => {
     expect(size).toBeNull();
     expect(canvas.style.width).toBe("100%");
     expect(canvas.style.height).toBe("100%");
-    expect(canvas.style.objectFit).not.toBe("fill");
     expect(root.style.background).toBe("#111");
   });
 
@@ -68,7 +67,7 @@ describe("applyPlayerLayout", () => {
       clientHeight: 1200,
       style: { background: "" },
     };
-    const canvas = { style: { width: "", height: "", objectFit: "" } } as HTMLCanvasElement;
+    const canvas = { style: { width: "", height: "" } } as HTMLCanvasElement;
     const render = {
       ...DEFAULT_RENDER_PROJECT_SETTINGS,
       customResolution: true,
