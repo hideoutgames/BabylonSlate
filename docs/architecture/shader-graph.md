@@ -422,8 +422,9 @@ until the Material tab closed.
 The compact `material-preview-overlay` contains only the viewport-style mesh
 `ToggleGroup`. Preview icons resolve at render time so lazy production chunk initialization cannot leave stale, undefined icon entries. Cube is the document default and the runtime fallback for
 missing/invalid custom bytes. **Custom** opens the existing Model `AssetPicker`
-directly; selecting None or dismissing an initial pick returns to Cube. A
-picked custom Model can be re-picked from the same Custom icon. There is no
+directly; selecting None returns to Cube, and dismissing the picker without a
+pick keeps the current preview mesh. A picked custom Model can be re-picked
+from the same Custom icon. There is no
 separate Pick Mesh button or visible Ready/status badge (the canvas keeps its
 machine-state data attributes for tests).
 
