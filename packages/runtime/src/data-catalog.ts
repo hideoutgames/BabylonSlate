@@ -55,7 +55,7 @@ export class RuntimeDataCatalog implements RuntimeDataApi {
       // read Definition defaults, so a stale default (for example one missing a field
       // added to a nested Definition) must not hide every entry.
       try {
-        const schema = { ...asset.payload, fields: asset.payload.fields.map(({ defaultValue: _default, ...field }) => field) };
+        const schema = { ...asset.payload, fields: asset.payload.fields.map((field) => ({ ...field, defaultValue: undefined })) };
         if (!validateDataDefinition(schema, schemas, asset.guid).some((issue) => issue.severity === "error")) {
           definitions.add(asset.guid);
         }
