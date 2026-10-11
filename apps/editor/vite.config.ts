@@ -40,7 +40,14 @@ const buildIdentity = distributionBuild
 if (buildIdentity && buildIdentity.applicationVersion !== declaredVersion) {
   throw new Error("Build metadata and declared application version differ");
 }
-const buildLabel = `${declaredVersion} ${buildIdentity?.channel === "release" ? "Release" : "Development build"}`;
+// Distribution builds name their channel as the manifest and release notes do.
+const channelLabel =
+  buildIdentity?.channel === "release"
+    ? "Release"
+    : buildIdentity?.channel === "test"
+      ? "Test (Indev)"
+      : "Development build";
+const buildLabel = `${declaredVersion} ${channelLabel}`;
 const changelog = validateChangelog(
   JSON.parse(readFileSync(path.join(repoRoot, "release/changelog.json"), "utf8")),
   declaredVersion,
