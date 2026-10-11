@@ -18,6 +18,7 @@ import {
   workloadFor,
   claimInheritedLease,
   resourceStateDirectory,
+  withAdmissionLock,
 } from "./resource-admission.mjs";
 import { runCommand } from "./process-runner.mjs";
 
@@ -447,6 +448,19 @@ test("memory pressure queues work until the request fits above the host reserve"
   assert.equal(admitted, false);
   free = 5 * 1024 ** 3;
   await (await pending).release();
+});
+
+test("an admission lock owner never removes a lock that replaced its own", async (t) => {
+  const { directory } = await fixture(t);
+  const lock = join(directory, "lock");
+  const successor = { pid: process.pid, token: "successor" };
+  await withAdmissionLock(directory, () => {}, async () => {
+    const owner = JSON.parse(await readFile(lock, "utf8"));
+    assert.equal(owner.pid, process.pid);
+    // A waiter judged this lock abandoned, removed it, and now holds its own.
+    await writeFile(lock, JSON.stringify(successor));
+  });
+  assert.deepEqual(JSON.parse(await readFile(lock, "utf8")), successor);
 });
 
 test("abandoned tickets do not block work; an impossible request fails immediately", async (t) => {
