@@ -1,5 +1,6 @@
 export type DocumentTransition = {
   kind: "close-project" | "replace-project" | "close-document" | "replace-document";
+  /** The open document that closes, or that the document being opened replaces. */
   documentId?: string;
 };
 export type BeforeDocumentTransition = (transition: DocumentTransition) => boolean | Promise<boolean>;

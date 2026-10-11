@@ -13,14 +13,17 @@ import {
   CONTENT_BROWSER_REF,
   createDocumentRef,
 } from "@babylonslate/core";
+import type { CloseProjectResult } from "../context/document-context";
 import type { OpenDocument } from "../services/document-service";
 import EditorRoute from "./editor-route";
 
 const state = vi.hoisted(() => ({
   documents: [] as OpenDocument[],
   projectDirty: false,
-  closeProject: vi.fn(async (): Promise<{ blocked: boolean; projectDirty: boolean; dirty: OpenDocument[] }> => ({ blocked: state.projectDirty, projectDirty: state.projectDirty, dirty: [] })),
-  forceCloseProject: vi.fn(async () => {}),
+  closeProject: vi.fn(async (): Promise<CloseProjectResult> =>
+    state.projectDirty ? { outcome: "unsaved", projectDirty: true, dirty: [] } : { outcome: "closed" }),
+  releaseSessionsForProjectClose: vi.fn(async () => true),
+  forceCloseProject: vi.fn(async () => true),
   saveAll: vi.fn(async () => true),
   approveMigrationsAndSave: vi.fn(async () => true),
   migrationPromptRequest: 0,
@@ -35,6 +38,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   dirtyDocuments: state.documents.filter((doc) => doc.dirty),
   projectDirty: state.projectDirty,
   closeProject: state.closeProject,
+  releaseSessionsForProjectClose: state.releaseSessionsForProjectClose,
   forceCloseProject: state.forceCloseProject,
   migrationPending: [],
   migrationPromptRequest: state.migrationPromptRequest,
@@ -122,7 +126,8 @@ vi.mock("../lib/test-particle-host-stats", () => ({
 beforeEach(() => {
   state.projectDirty = false;
   state.closeProject.mockClear();
-  state.forceCloseProject.mockClear();
+  state.releaseSessionsForProjectClose.mockReset().mockResolvedValue(true);
+  state.forceCloseProject.mockReset().mockResolvedValue(true);
   state.documents = [
     {
       id: CONTENT_BROWSER_ID,
@@ -270,6 +275,7 @@ describe("document tab close requests", () => {
     await screen.findByTestId("dirty-close-dialog");
     fireEvent.click(screen.getByTestId("dirty-save"));
     expect(screen.getByTestId("dirty-save")).toHaveProperty("disabled", true);
+    await waitFor(() => expect(state.saveAll).toHaveBeenCalledOnce());
     fireEvent.click(screen.getByTestId("dirty-cancel"));
     await act(async () => {
       state.documents.forEach((doc) => { doc.dirty = false; });
@@ -320,6 +326,76 @@ describe("document tab close requests", () => {
       "graph",
       "other",
     ]);
+  });
+});
+
+describe("project close requests", () => {
+  beforeEach(() => {
+    state.documents.forEach((doc) => { doc.dirty = false; });
+  });
+
+  it("asks a running session to stop only after Save All is chosen", async () => {
+    state.projectDirty = true;
+    state.saveAll.mockImplementation(async () => {
+      state.projectDirty = false;
+      return true;
+    });
+    render(<EditorRoute />);
+    fireEvent.click(screen.getByRole("button", { name: "Close Project" }));
+    await screen.findByTestId("dirty-close-dialog");
+    expect(state.releaseSessionsForProjectClose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("dirty-save"));
+    await waitFor(() => expect(state.closeProject).toHaveBeenCalledTimes(2));
+    expect(state.releaseSessionsForProjectClose.mock.invocationCallOrder[0])
+      .toBeLessThan(state.saveAll.mock.invocationCallOrder[0]!);
+  });
+
+  it("reports a session that refuses to stop instead of listing unsaved work", async () => {
+    state.closeProject.mockResolvedValueOnce({ outcome: "refused" });
+    render(<EditorRoute />);
+    fireEvent.click(screen.getByRole("button", { name: "Close Project" }));
+    await screen.findByTestId("close-project-error-dialog");
+    expect(screen.queryByTestId("dirty-close-dialog")).toBeNull();
+    fireEvent.click(screen.getByTestId("close-project-error-ok"));
+    await waitFor(() => expect(screen.queryByTestId("close-project-error-dialog")).toBeNull());
+  });
+
+  it("reports a Discard whose close fails", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    state.projectDirty = true;
+    state.forceCloseProject.mockRejectedValue(new Error("Journal unavailable"));
+    try {
+      render(<EditorRoute />);
+      fireEvent.click(screen.getByRole("button", { name: "Close Project" }));
+      await screen.findByTestId("dirty-close-dialog");
+      fireEvent.click(screen.getByTestId("dirty-discard"));
+      expect((await screen.findByTestId("close-project-error-dialog")).textContent).toContain("Journal unavailable");
+      expect(screen.queryByTestId("dirty-close-dialog")).toBeNull();
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it("continues the close once Migrate On Save approves the Save All that migrations refused", async () => {
+    state.projectDirty = true;
+    state.saveAll.mockImplementation(async () => {
+      if (state.projectDirty) {
+        state.migrationPromptRequest += 1;
+        return false;
+      }
+      return true;
+    });
+    state.approveMigrationsAndSave.mockImplementation(async () => {
+      state.projectDirty = false;
+      return true;
+    });
+    render(<EditorRoute />);
+    fireEvent.click(screen.getByRole("button", { name: "Close Project" }));
+    await screen.findByTestId("dirty-close-dialog");
+    fireEvent.click(screen.getByTestId("dirty-save"));
+    fireEvent.click(await screen.findByTestId("migrate-approve"));
+    await waitFor(() => expect(state.closeProject).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByTestId("dirty-close-dialog")).toBeNull());
   });
 });
 

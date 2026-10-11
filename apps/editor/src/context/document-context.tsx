@@ -238,6 +238,15 @@ import { useDebugMode } from "./app-settings-context";
 import { formatSceneLoadReport } from "../lib/scene-load-report";
 export type AppRoute = "home" | "editor";
 
+/**
+ * `closeProject`: closed, held by unsaved work (nothing was stopped or
+ * written), or refused by a running Play / Simulate session.
+ */
+export type CloseProjectResult =
+  | { outcome: "closed" }
+  | { outcome: "unsaved"; dirty: OpenDocument[]; projectDirty: boolean }
+  | { outcome: "refused" };
+
 interface DocumentContextValue {
   registerBeforeTransition: DocumentTransitionGate["register"];
   /** Protect in-memory authoring; the owner must release its lease on every exit. */
@@ -385,8 +394,15 @@ interface DocumentContextValue {
   saveAll: () => Promise<boolean>;
   /** Approve pending schema migrations and run the complete Save All; false when it did not save. */
   approveMigrationsAndSave: () => Promise<boolean>;
-  closeProject: () => Promise<{ blocked: boolean; dirty: OpenDocument[]; projectDirty: boolean }>;
-  forceCloseProject: () => Promise<void>;
+  /** Closes a clean project; unsaved work returns it without asking a session to stop. */
+  closeProject: () => Promise<CloseProjectResult>;
+  /**
+   * Ask a running Play or Simulate session to stop before the close prompt's
+   * Save All, whose writes the session's authoring lock refuses.
+   */
+  releaseSessionsForProjectClose: () => Promise<boolean>;
+  /** Close without saving once sessions stop and queued writes finish; false when a session refused. */
+  forceCloseProject: () => Promise<boolean>;
   exportProject: (snapshot?: ProjectDocument) => Promise<Uint8Array>;
   exportGameArtifact: (options?: {
     projectSnapshot?: ProjectDocument;
@@ -2073,22 +2089,36 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [projectService, setShowPluginContent],
   );
 
-  const forceCloseProject = useCallback(async () => {
+  const releaseSessionsForProjectClose = useCallback(
+    async () => documentTransitions.check({ kind: "close-project" }),
+    [documentTransitions],
+  );
+
+  const forceCloseProject = useCallback(async (): Promise<boolean> => {
     setAutoSaveStatus(null);
-    if (!await documentTransitions.check({ kind: "close-project" })) return;
+    if (!await documentTransitions.check({ kind: "close-project" })) return false;
     documentService.assertAuthoringWritable();
     cancelSceneDocumentLoad();
-    if (saveDebounceRef.current) {
+    exclusiveSceneRequest.current += 1;
+    setPendingExclusiveScene(null);
+    const clearDebouncedSave = () => {
+      if (!saveDebounceRef.current) return;
       clearTimeout(saveDebounceRef.current);
       saveDebounceRef.current = null;
-    }
-    const guid = projectService.guid;
-    if (guid) {
-      const derived = await ensureDerived();
-      await journalBuffer.clearAfterFlush(guid, () => truncateJournal(derived, guid));
-    }
-    emitEditorUtilityLifecycle(EDITOR_UTILITY_EVENTS.shutdown);
-    await projectService.closeProject();
+    };
+    clearDebouncedSave();
+    // A Save All or rename already admitted finishes before the journal is
+    // cleared and the folder released; later queued saves find no project.
+    await enqueueProjectWrite(async () => {
+      clearDebouncedSave();
+      const guid = projectService.guid;
+      if (guid) {
+        const derived = await ensureDerived();
+        await journalBuffer.clearAfterFlush(guid, () => truncateJournal(derived, guid));
+      }
+      emitEditorUtilityLifecycle(EDITOR_UTILITY_EVENTS.shutdown);
+      await projectService.closeProject();
+    });
     sourceControlRef.current.dispose();
     projectService.setDerivedStorage(null);
     dockviewApisRef.current.clear();
@@ -2111,10 +2141,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setExternalChangePrompt(null);
     await refreshProjectList();
     bump();
+    return true;
   }, [
     bump,
     disposeDockSubscriptions,
     documentService,
+    enqueueProjectWrite,
     ensureDerived,
     journalBuffer,
     projectService,
@@ -2123,22 +2155,19 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     cancelSceneDocumentLoad,
     playContent,
     setAnimEditorModes,
+    setPendingExclusiveScene,
     setProjectDocument,
     documentTransitions,
   ]);
 
-  const closeProject = useCallback(async () => {
-    if (!await documentTransitions.check({ kind: "close-project" })) {
-      return { blocked: true, dirty: documentService.getDirtyDocuments(), projectDirty: projectSaveState.current.isDirty(projectDocumentRef.current) };
-    }
+  const closeProject = useCallback(async (): Promise<CloseProjectResult> => {
+    // Unsaved work prompts first: a running session stops only once the user
+    // chooses Save All or Discard, so Cancel leaves it running.
     const dirty = documentService.getDirtyDocuments();
     const projectDirty = projectSaveState.current.isDirty(projectDocumentRef.current);
-    if (dirty.length > 0 || projectDirty) {
-      return { blocked: true, dirty, projectDirty };
-    }
-    await forceCloseProject();
-    return { blocked: false, dirty: [], projectDirty: false };
-  }, [documentService, forceCloseProject, documentTransitions]);
+    if (dirty.length > 0 || projectDirty) return { outcome: "unsaved", dirty, projectDirty };
+    return await forceCloseProject() ? { outcome: "closed" } : { outcome: "refused" };
+  }, [documentService, forceCloseProject]);
 
   const exportProject = useCallback(async (snapshot?: ProjectDocument) => {
     return projectService.exportZip(snapshot);
@@ -2545,12 +2574,31 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     ],
   );
 
+  /**
+   * Opening a Scene closes every other open Scene. Each one it replaces goes
+   * through the gate, so a session playing or simulating it stops first.
+   */
+  const checkSceneReplacement = useCallback((ref: DocumentRef): boolean | Promise<boolean> => {
+    const nextId = documentId(ref);
+    const replaced = documentService.getOpenDocumentsOrdered()
+      .filter((doc) => doc.ref.kind === "scene" && doc.id !== nextId);
+    const next = (index: number): boolean | Promise<boolean> => {
+      for (let cursor = index; cursor < replaced.length; cursor++) {
+        const allowed = documentTransitions.check({ kind: "replace-document", documentId: replaced[cursor]!.id });
+        if (allowed === false) return false;
+        if (allowed !== true) return allowed.then((ok) => ok && next(cursor + 1));
+      }
+      return true;
+    };
+    return next(0);
+  }, [documentService, documentTransitions]);
+
   const finishOpenDocument = useCallback(
     async (ref: DocumentRef) => {
       // Taken before the session gate's wait, so a tab picked during it stays active.
       const request = ++activationRequest.current;
       if (ref.kind === "scene" && !documentService.getDocument(documentId(ref))) {
-        const allowed = documentTransitions.check({ kind: "replace-document", documentId: documentId(ref) });
+        const allowed = checkSceneReplacement(ref);
         if (allowed === false || (typeof allowed !== "boolean" && !await allowed)) return;
       }
       const controller = isSceneWorkspaceKind(ref.kind) ? new AbortController() : null;
@@ -2601,7 +2649,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         await editing.syncPrefabInstances({ quiet: true });
       }
     },
-    [bump, captureLayoutForId, editing, performCloseDocument, documentService, projectService, cancelSceneDocumentLoad, documentTransitions],
+    [bump, captureLayoutForId, checkSceneReplacement, editing, performCloseDocument, documentService, projectService, cancelSceneDocumentLoad],
   );
 
   const ensureAssetDocument = useCallback(async (ref: DocumentRef): Promise<string> => {
@@ -2665,7 +2713,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (!ref) return;
       // Cancel, or a newer open request, while the gate or Save awaits ends this one.
       const request = exclusiveSceneRequest.current;
-      const allowed = documentTransitions.check({ kind: "replace-document", documentId: documentId(ref) });
+      const allowed = checkSceneReplacement(ref);
       if (allowed === false || (typeof allowed !== "boolean" && !await allowed)) return;
       if (request !== exclusiveSceneRequest.current) return;
       if (mode === "save") {
@@ -2676,7 +2724,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setPendingExclusiveScene(null);
       await finishOpenDocument(ref);
     },
-    [documentService, finishOpenDocument, saveAll, setPendingExclusiveScene, documentTransitions],
+    [checkSceneReplacement, documentService, finishOpenDocument, saveAll, setPendingExclusiveScene],
   );
 
   const cancelExclusiveSceneOpen = useCallback(() => {
@@ -3758,6 +3806,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       saveAll,
       approveMigrationsAndSave,
       closeProject,
+      releaseSessionsForProjectClose,
       forceCloseProject,
       exportProject,
       exportGameArtifact,
@@ -3878,6 +3927,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       saveAll,
       approveMigrationsAndSave,
       closeProject,
+      releaseSessionsForProjectClose,
       forceCloseProject,
       exportProject,
       exportGameArtifact,

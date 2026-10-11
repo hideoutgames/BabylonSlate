@@ -846,6 +846,93 @@ describe("DocumentProvider actions and route", () => {
     }
   });
 
+  it("asks a session owner to release the open Scene that another Scene replaces", async () => {
+    const actions = await openProject();
+    const second = await createScene(actions, "Second");
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    const asked: Array<{ kind: string; documentId?: string }> = [];
+    let allow = false;
+    const unregister = actions.registerBeforeTransition((transition) => {
+      asked.push(transition);
+      return allow;
+    });
+    try {
+      await act(() => actions.openDocument(sceneRef(second.path)));
+      expect(asked).toEqual([{ kind: "replace-document", documentId: MAIN_SCENE_ID }]);
+      expect(documents().openDocuments.filter((doc) => doc.ref.kind === "scene").map((doc) => doc.id)).toEqual([MAIN_SCENE_ID]);
+      allow = true;
+      await act(() => actions.openDocument(sceneRef(second.path)));
+      expect(documents().openDocuments.filter((doc) => doc.ref.kind === "scene").map((doc) => doc.id))
+        .toEqual([documentId({ kind: "scene", path: second.path })]);
+    } finally {
+      unregister();
+    }
+  });
+
+  it("returns unsaved work from Close Project without asking a session to stop", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 2)));
+    const gate = vi.fn(() => false);
+    const unregister = actions.registerBeforeTransition(gate);
+    try {
+      const result = await act(() => actions.closeProject());
+      expect(result).toMatchObject({ outcome: "unsaved", projectDirty: false });
+      expect(gate).not.toHaveBeenCalled();
+      expect(await act(() => actions.forceCloseProject())).toBe(false);
+      expect(gate).toHaveBeenCalledWith({ kind: "close-project" });
+      expect(documents().route).toBe("editor");
+    } finally {
+      unregister();
+    }
+  });
+
+  it("closes a project only after a Save All already writing has finished", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    const edited = movedScene(openScene(MAIN_SCENE_ID), 3);
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, edited));
+    const listed = documents().listedProjects.find((project) => project.label === "Stable")!;
+    let releaseWrite!: () => void;
+    const held = new Promise<void>((resolve) => { releaseWrite = resolve; });
+    const original = ProjectService.prototype.saveProject;
+    const write = vi.spyOn(ProjectService.prototype, "saveProject").mockImplementation(async function (this: ProjectService, ...args) {
+      await held;
+      return original.apply(this, args);
+    });
+    try {
+      let saving!: Promise<boolean>;
+      let closing!: Promise<boolean>;
+      act(() => { saving = actions.saveAll(); });
+      await waitFor(() => expect(write).toHaveBeenCalled());
+      act(() => { closing = actions.forceCloseProject(); });
+      await act(async () => { await Promise.resolve(); });
+      expect(documents().route).toBe("editor");
+      await act(async () => {
+        releaseWrite();
+        expect(await saving).toBe(true);
+        expect(await closing).toBe(true);
+      });
+    } finally {
+      write.mockRestore();
+    }
+    expect(documents().route).toBe("home");
+    await act(() => actions.openListedProject(listed));
+    const saved = await actions.loadAssetDocument("scene", MAIN_SCENE_FILE) as SerializedScene;
+    expect(saved.actors[0]!.transform.position).toEqual(edited.actors[0]!.transform.position);
+  });
+
+  it("drops a pending exclusive Scene request when the project closes", async () => {
+    const actions = await openProject();
+    const second = await createScene(actions, "Second");
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 2)));
+    await act(() => actions.openDocument(sceneRef(second.path)));
+    expect(documents().pendingExclusiveScene?.path).toBe(second.path);
+    await act(() => actions.forceCloseProject());
+    expect(documents().pendingExclusiveScene).toBeNull();
+  });
+
   it("keeps the last tab asked for active when an earlier open finishes later", async () => {
     const actions = await openProject();
     const animation = await act(() => createProjectAsset({
