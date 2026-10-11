@@ -1055,7 +1055,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     editor.setSortingLayers(twoD.sortingLayers);
     editor.setPixelPerfect(
       viewportMode === "2d" && twoD.pixelPerfect
-        ? { pixelsPerUnit: twoD.pixelsPerUnit }
+        ? {
+            pixelsPerUnit: twoD.pixelsPerUnit,
+          }
         : null,
     );
   }, [projectDocument?.settings.twoD, viewportMode, engineEpoch]);

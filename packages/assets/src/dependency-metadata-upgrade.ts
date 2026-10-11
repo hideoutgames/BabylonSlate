@@ -20,6 +20,7 @@ export function assetsNeedingDependencyMetadataUpgrade(assets: readonly IndexedA
   ));
 }
 
+
 /**
  * An explicit, versioned maintenance operation, never invoked by catalog scans.
  * It reads documents to rebuild typed relationships. The file rewrite preserves

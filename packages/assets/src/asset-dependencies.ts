@@ -467,6 +467,5 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
   else if (assetType === "PluginSettings") for (const dependency of rows(payload.pluginDependencies)) add(dependency.guid);
   return { dependencyMetadataVersion: ASSET_DEPENDENCY_METADATA_VERSION, dependencies: [...all].sort(), requiredDependencies: [...required].sort(),
     classReferences: [...classReferences].sort(), requiredClassReferences: [...requiredClassReferences].sort(),
-    ...(assetType === "Class" ? { consoleCommand: consoleCommandMetadataFromGraph(payload) } : {}),
-    ...(assetType === "Class" ? { requiredVariableNames: [...requiredVariableNames].sort() } : {}) };
+    ...(assetType === "Class" ? { consoleCommand: consoleCommandMetadataFromGraph(payload), requiredVariableNames: [...requiredVariableNames].sort() } : {}) };
 }

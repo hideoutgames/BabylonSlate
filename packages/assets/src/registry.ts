@@ -1420,9 +1420,7 @@ export class AssetRegistry {
       if (asset.placeholder || asset.header.type === "Unresolved") continue;
       if (filter?.rootId && asset.rootId !== filter.rootId) continue;
       if (asset.header.type === "Scene") scenes.push(asset.path);
-      else if (asset.header.type === "Class") {
-        graphs.push(asset.path);
-      }
+      else if (asset.header.type === "Class") graphs.push(asset.path);
     }
     return { scenes: scenes.sort(), graphs: graphs.sort() };
   }

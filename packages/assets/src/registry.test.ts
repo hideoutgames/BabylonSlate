@@ -863,7 +863,7 @@ describe("AssetRegistry", () => {
     expect(fx?.assets).toContain("r2");
   });
 
-  it("lists Scene and Class document paths", async () => {
+  it("lists Scene documents and Class assets as graph documents", async () => {
     const storage = await createStorage();
     await writeAsset(storage, "assets/main.scene.babasset", {
       guid: "s1",
@@ -875,12 +875,17 @@ describe("AssetRegistry", () => {
       type: "Class",
       name: "Hero",
     });
+    await writeAsset(storage, "assets/main.class.babasset", {
+      guid: "g1",
+      type: "Class",
+      name: "Main",
+    });
 
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     expect(registry.listDocumentPaths()).toEqual({
       scenes: ["assets/main.scene.babasset"],
-      graphs: ["assets/hero.class.babasset"],
+      graphs: ["assets/hero.class.babasset", "assets/main.class.babasset"],
     });
   });
 

@@ -10,7 +10,7 @@ import { createDefaultMigrationRegistry } from "./migration";
 const FIXTURE_DIR = dirname(fileURLToPath(import.meta.url));
 
 describe("historical migration goldens", () => {
-  it("migrates Class v0 golden payload to current", () => {
+  it("runs a frozen v0 logic graph payload through the Class chain", () => {
     const registry = createDefaultMigrationRegistry();
     // Frozen pre-nodes/edges file: never regenerate it with the current writer.
     const golden = readGoldenBinary(FIXTURE_DIR, "__fixtures__/class-v0.babasset");
