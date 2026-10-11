@@ -2855,6 +2855,12 @@ function initializeEngine(
     playCursor?.notePointer(event.pointerType ?? "mouse", x, y);
     dispatchOverlayPointer("cancel", x, y);
   };
+  // A lifted or cancelled touch, and a mouse leaving the canvas, both end in
+  // pointerleave: nothing stays hovered, while up/cancel keep a mouse's hover.
+  const onPointerLeave = () => {
+    if (!acceptsGameInput()) return;
+    for (const event of applyOverlayPointer(overlayPointerState, "move", [])) options.onSceneLayerPointer?.(event);
+  };
   const resetJoysticks = () => {
     scrollDrag = null;
     joysticks.reset();
@@ -2894,6 +2900,7 @@ function initializeEngine(
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", onPointerUp);
       canvas.removeEventListener("pointercancel", onPointerCancel);
+      canvas.removeEventListener("pointerleave", onPointerLeave);
       canvas.removeEventListener("touchstart", onOverlayTouch);
       canvas.removeEventListener("touchmove", onOverlayTouch);
       canvas.removeEventListener("wheel", onOverlayWheel);
@@ -2909,6 +2916,7 @@ function initializeEngine(
       canvas.addEventListener("pointermove", onPointerMove);
       canvas.addEventListener("pointerup", onPointerUp);
       canvas.addEventListener("pointercancel", onPointerCancel);
+      canvas.addEventListener("pointerleave", onPointerLeave);
       canvas.addEventListener("touchstart", onOverlayTouch, { passive: false });
       canvas.addEventListener("touchmove", onOverlayTouch, { passive: false });
       canvas.addEventListener("wheel", onOverlayWheel, { passive: false });
@@ -3031,6 +3039,7 @@ function initializeEngine(
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", onPointerUp);
       canvas.removeEventListener("pointercancel", onPointerCancel);
+      canvas.removeEventListener("pointerleave", onPointerLeave);
       canvas.removeEventListener("touchstart", onOverlayTouch);
       canvas.removeEventListener("touchmove", onOverlayTouch);
       canvas.removeEventListener("wheel", onOverlayWheel);

@@ -4101,7 +4101,7 @@ describe("Play createEngine view", () => {
     expect(handle.scene.activeCamera).toBe(camera);
   });
 
-  it("emits 2DButton onClick from touch down/up and from pointercancel over the button", () => {
+  it("emits 2DButton onClick from touch down/up and pointercancel, and ends hover when the touch leaves", () => {
     const engine = sharedEngine();
     vi.spyOn(engine, "getRenderWidth").mockReturnValue(256);
     vi.spyOn(engine, "getRenderHeight").mockReturnValue(256);
@@ -4128,6 +4128,10 @@ describe("Play createEngine view", () => {
         { event: "onClick", actorGuid: "btn" },
       ]),
     );
+    events.length = 0;
+    // A lifted touch leaves the canvas, so the button stops being hovered.
+    canvas.emit("pointerleave", pointerAt(128, 128));
+    expect(events).toEqual([{ event: "onMouseLeave", actorGuid: "btn" }]);
 
     events.length = 0;
     canvas.emit("pointerdown", pointerAt(128, 128, { pointerId: 2 }));
