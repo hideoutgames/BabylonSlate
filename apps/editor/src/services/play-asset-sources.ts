@@ -1,7 +1,7 @@
 import { SourceRevisionChangedError, areaEmissionTextureGuids, collisionTriangleMeshBytes, normalizeScene, normalizeSceneLayer, parseText2DProperties, renderEffectsAssetGuids, type CollisionTriangleMesh, type ProjectDocument } from "@babylonslate/core";
 import {
   isAssetSourceRevisionChanged, AUDIO_DEFAULT_SOURCE_CHUNK, FONT_FACETYPE_CHUNK_ID, FONT_MSDF_CHUNK_ID, FONT_MSDF_PNG_CHUNK_ID,
-  complexCollisionModelGuids, cookComplexCollisionMesh, currentAreaEmissionChunk, decodeAreaEmission, normalizeAudioPayload, normalizeFontPayload, normalizeModelPayload,
+  complexCollisionModelGuids, cookComplexCollisionMesh, createDefaultMigrationRegistry, currentAreaEmissionChunk, decodeAreaEmission, normalizeAudioPayload, normalizeFontPayload, normalizeModelPayload,
   registryAssetRepresentation, selectTextureChunk, type AssetLoadPriority, type AssetLoadScope, type AssetRegistry,
   type IndexedAsset, type ModelPayload, type RegistryLoadedAsset,
 } from "@babylonslate/assets";
@@ -81,7 +81,13 @@ export function requiredPlayAssets(registry: AssetRegistry, roots: readonly stri
   return result;
 }
 
-/** Resolve mutable catalogs before using their dependency edges for a cold load. */
+const assetFormats = createDefaultMigrationRegistry();
+
+/**
+ * Resolve mutable catalogs before using their dependency edges for a cold load.
+ * Play reads stored payloads without migrating them, so every required asset
+ * not open as a working document must be at its type's current version.
+ */
 async function currentRequiredPlayAssets(host: PlayAssetSourceHost, roots: readonly string[], signal: AbortSignal): Promise<Map<string, string>> {
   const { registry } = host;
   const revisions = new Map<string, string>();
@@ -94,6 +100,7 @@ async function currentRequiredPlayAssets(host: PlayAssetSourceHost, roots: reado
     signal.throwIfAborted();
     const asset = registry.getByGuid(guid);
     if (!asset || asset.placeholder || asset.locator !== locator) throw new SourceRevisionChangedError(`Required asset changed while resolving: ${guid}`);
+    if (!host.documentOverrides?.has(guid)) assetFormats.requireCurrent(asset.header.type, asset.header.version);
     revisions.set(guid, locator.revision);
     pending.push(...(host.documentOverrides?.get(guid)?.requiredDependencies ?? registry.requiredDependenciesFor(guid, asset.header)));
   }

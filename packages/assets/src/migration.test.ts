@@ -62,6 +62,23 @@ describe("migration harness", () => {
       }),
     ).toThrow(/cannot follow 2 migration steps/);
   });
+
+  it("requires the current version where payloads are read without migrating", () => {
+    const registry = registryWithSteps();
+    expect(() => registry.requireCurrent("Thing", 3)).not.toThrow();
+    // Unregistered types pass through, as in migrate.
+    expect(() => registry.requireCurrent("Texture", 7)).not.toThrow();
+    const refused = [
+      [1, /version 1 must be upgraded to version 3 before it can be played or exported/],
+      [0, /version 0 uses an unsupported old format/],
+      [4, /newer engine version/],
+    ] as const;
+    for (const [version, message] of refused) {
+      const read = () => registry.requireCurrent("Thing", version);
+      expect(read).toThrow(AssetFormatVersionError);
+      expect(read).toThrow(message);
+    }
+  });
 });
 
 describe("default migration registry", () => {

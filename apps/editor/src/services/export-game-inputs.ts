@@ -8,6 +8,7 @@ import {
   currentAreaEmissionChunk,
   decodeAreaEmission,
   collectPackedAudioClipBlobs,
+  createDefaultMigrationRegistry,
   encodePackedAudioAsset,
   encodePackedModelAsset,
   FONT_FACETYPE_CHUNK_ID,
@@ -57,6 +58,7 @@ const JSON_TYPES = new Set<string>([
 ]);
 
 const encoder = new TextEncoder();
+const assetFormats = createDefaultMigrationRegistry();
 
 export type ExportDocumentLoaders = {
   assets: readonly IndexedAsset[];
@@ -70,7 +72,7 @@ export type LoadedExportDocuments = {
   sceneByGuid: (guid: string) => SerializedScene | null;
   graphByGuid: (guid: string) => SerializedGraph | null;
   payloadByGuid: (guid: string) => unknown | null;
-  /** Throws the read error of an asset whose document or packed bytes failed to load. */
+  /** Throws the read error of an asset whose format is unsupported or whose document or packed bytes failed to load. */
   bytesByGuid: (guid: string) => Uint8Array | null;
   fontFacetypeBytesByGuid: (guid: string) => Uint8Array | null;
   areaEmissionBytesByGuid: (guid: string) => Uint8Array | null;
@@ -175,6 +177,14 @@ export async function loadExportDocuments(
   const navmeshes = new Map<string, Uint8Array>();
   const audioReverbs = new Map<string, Uint8Array>();
   for (const asset of loaders.assets) {
+    // Payloads are packed without migration. An unsupported format fails the
+    // export once the game reaches the asset; an unreached one does not.
+    try {
+      assetFormats.requireCurrent(asset.header.type, asset.header.version);
+    } catch (error) {
+      byteErrors.set(asset.header.guid, error);
+      continue;
+    }
     const kind = documentKindForAssetType(asset.header.type);
     let document: unknown = null;
     if (

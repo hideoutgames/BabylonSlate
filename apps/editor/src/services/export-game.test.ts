@@ -11,6 +11,7 @@ import {
   normalizeFocusNavigationSettings,
   isErr,
   isOk,
+  SCENE_SCHEMA_VERSION,
   type SerializedGraph,
 } from "@babylonslate/core";
 import { migrateLegacyShaderPayload } from "@babylonslate/shader-graph";
@@ -68,7 +69,7 @@ describe("collectAndExportGame", () => {
       rootId: "project",
       path: `assets/${guid}.babasset`,
       header: {
-        guid, type, name: guid, engineVersion: "0.0.0", version: 1, mode: "thin",
+        guid, type, name: guid, engineVersion: "0.0.0", version: type === "Scene" ? SCENE_SCHEMA_VERSION : 1, mode: "thin",
         payload, ...collectAssetDependencyMetadata(type, payload),
         chunks: type === "Model" ? [{
           id: "source", kind: "geometry", mime: "model/gltf-binary", sha256: "aa",
@@ -99,6 +100,40 @@ describe("collectAndExportGame", () => {
     expect(exportedSkeleton.encoding).toBe("json");
     expect(JSON.parse(new TextDecoder().decode(result.value.files.get(exportedSkeleton.path!))))
       .toEqual({ modelGuid: "hero-model", kind: "hierarchy", boneNames: ["Root"] });
+  });
+
+  it("fails once the game reaches an asset stored in an unsupported format", async () => {
+    const scene = createDefaultScene();
+    const indexed: IndexedAsset[] = [
+      { rootId: "project", path: "assets/Main.scene.babasset", header: {
+        guid: "scene", type: "Scene", name: "Main", engineVersion: "0.0.0", version: SCENE_SCHEMA_VERSION, mode: "thin",
+        payload: scene as unknown as Record<string, unknown>, dependencies: [], chunks: [],
+      } },
+      // Audio packs from its header settings when its document cannot load.
+      { rootId: "project", path: "assets/Clip.audio.babasset", header: {
+        guid: "clip", type: "Audio", name: "Clip", engineVersion: "0.0.0", version: 0, mode: "thin",
+        payload: { clips: [] }, dependencies: [], chunks: [],
+      } },
+    ];
+    const exportReaching = async (dependencies: string[]) => {
+      indexed[0]!.header.dependencies = dependencies;
+      const loaded = await loadExportDocuments({
+        assets: indexed,
+        loadDocument: async (_kind, path) => indexed.find(entry => entry.path === path)?.header.payload ?? null,
+        readAssetChunk: async () => null,
+      });
+      return collectAndExportGame({
+        startupSceneGuid: "scene", assets: assetsFromIndexed(indexed),
+        plugins: [], projectPluginOverrides: {}, parentOf: () => null, ...loaded,
+        renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, playFrameCap: 60, physicsWorld: "3d", playerFiles,
+      });
+    };
+    // An unused stale asset does not block the game.
+    expect(isOk(await exportReaching([]))).toBe(true);
+    expect(await exportReaching(["clip"])).toEqual({
+      ok: false,
+      error: 'Clip could not be read for export: Asset type "Audio" version 0 uses an unsupported old format. This engine reads version 1; older files are not upgraded.',
+    });
   });
 
   it.each([true, false])("retains project focus navigation in editor exports with preview=%s", async (previewBuild) => {
