@@ -14,11 +14,11 @@ import {
 import { useOutputLog, useOutputLogWindow } from "../context/play-context";
 import { MessageDetails } from "../components/message-details";
 import { parseOutputLogLine } from "../lib/output-log-line";
+import { useDockPanelShown } from "../lib/use-dock-panel-shown";
 import { useCoarsePointer } from "../shell/use-platform-layout";
 
-export function OutputLogPanel(_props: IDockviewPanelProps) {
-  void _props;
-  useOutputLogWindow();
+export function OutputLogPanel({ api }: IDockviewPanelProps) {
+  useOutputLogWindow(useDockPanelShown(api));
   const { lines } = useOutputLog();
   const coarsePointer = useCoarsePointer();
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
