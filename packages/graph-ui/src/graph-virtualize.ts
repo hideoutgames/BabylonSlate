@@ -59,7 +59,10 @@ function nodePins(
   return Array.isArray(pins) ? pins : undefined;
 }
 
-function nodeSize(node: GraphVirtualizeNode): { width: number; height: number } {
+/** Measured size, else the pin-row estimate for a node that never mounted. */
+export function graphNodeSize(
+  node: GraphVirtualizeNode,
+): { width: number; height: number } {
   const width = node.measured?.width || node.width;
   const height = node.measured?.height || node.height;
   if (width && height) return { width, height };
@@ -77,7 +80,7 @@ export function graphNodesBounds(
   let maxX = -Infinity;
   let maxY = -Infinity;
   for (const node of nodes) {
-    const { width, height } = nodeSize(node);
+    const { width, height } = graphNodeSize(node);
     minX = Math.min(minX, node.position.x);
     minY = Math.min(minY, node.position.y);
     maxX = Math.max(maxX, node.position.x + width);
@@ -93,7 +96,7 @@ function nodeIntersectsWorld(
   maxX: number,
   maxY: number,
 ): boolean {
-  const { width, height } = nodeSize(node);
+  const { width, height } = graphNodeSize(node);
   return (
     node.position.x + width >= minX &&
     node.position.x <= maxX &&

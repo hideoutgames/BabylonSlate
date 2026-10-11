@@ -1,8 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DRAG_ARM_MS } from "@babylonslate/editor-kit";
 import {
-  MARQUEE_FALLBACK_HEIGHT,
-  MARQUEE_FALLBACK_WIDTH,
   attachGraphPaneMarquee,
   clientPointFromEvent,
   nodesIntersectingMarquee,
@@ -106,23 +104,23 @@ describe("nodesIntersectingMarquee", () => {
     ).toEqual(["a", "b"]);
   });
 
-  it("uses fallback size when a node has not been measured", () => {
-    const nodes = [node("wide", 0, 0)];
+  it("sizes a never-measured node from its pin rows, like the painted body", () => {
+    const pins = Array.from({ length: 6 }, (_, index) => ({
+      id: `in${index}`,
+      direction: "in",
+    }));
+    const nodes: MarqueeNode[] = [
+      { ...node("tall", 0, 0), data: { __pins: pins } },
+    ];
+    // Six 44px rows under the title reach 314px; the lower pins are hit.
     expect(
-      nodesIntersectingMarquee(nodes, {
-        x: MARQUEE_FALLBACK_WIDTH - 10,
-        y: 0,
-        width: 20,
-        height: MARQUEE_FALLBACK_HEIGHT,
-      }),
-    ).toEqual(["wide"]);
+      nodesIntersectingMarquee(nodes, { x: 250, y: 250, width: 40, height: 40 }),
+    ).toEqual(["tall"]);
     expect(
-      nodesIntersectingMarquee(nodes, {
-        x: MARQUEE_FALLBACK_WIDTH + 1,
-        y: 0,
-        width: 20,
-        height: 20,
-      }),
+      nodesIntersectingMarquee(nodes, { x: 321, y: 0, width: 20, height: 20 }),
+    ).toEqual([]);
+    expect(
+      nodesIntersectingMarquee(nodes, { x: 0, y: 315, width: 20, height: 20 }),
     ).toEqual([]);
   });
 });

@@ -70,22 +70,14 @@ function indexGraph(
     const target = graph.byId.get(edge.target);
     if (!source || !target) continue;
     const pin = source.pins?.find((entry) => entry.id === edge.sourceHandle);
-    const handle = edge.sourceHandle ?? "";
-    const fallbackExec =
-      handle === "execOut" ||
-      handle === "then" ||
-      handle === "true" ||
-      handle === "false" ||
-      handle.startsWith("then");
+    // A host node that supplies no pins links through data walks.
     const kind = pin
       ? pin.direction === "out"
         ? pin.kind
         : undefined
-      : fallbackExec
-        ? "exec"
-        : handle
-          ? "data"
-          : undefined;
+      : edge.sourceHandle
+        ? "data"
+        : undefined;
     if (kind !== "exec" && kind !== "data") continue;
     const targets = graph.outgoing[kind].get(source.id) ?? [];
     if (!targets.includes(target.id)) targets.push(target.id);
@@ -119,11 +111,8 @@ function indexGraph(
 }
 
 function chainWalkKind(startId: string, graph: GraphIndex): ChainWalk {
-  const node = graph.byId.get(startId);
-  if (node?.pins?.length) {
-    return node.pins.some((pin) => pin.kind === "exec") ? "exec" : "data";
-  }
-  return graph.outgoing.exec.has(startId) ? "exec" : "data";
+  const pins = graph.byId.get(startId)?.pins ?? [];
+  return pins.some((pin) => pin.kind === "exec") ? "exec" : "data";
 }
 
 function collectChain(startId: string, graph: GraphIndex): string[] {
