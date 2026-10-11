@@ -406,6 +406,11 @@ describe("switching material domain", () => {
     expect(surface.blendMode).toBe("masked");
   });
 
+  it("drops the Text-forced unlit, translucent and two-sided settings when leaving Text", () => {
+    const surface = setMaterialDomain(createDefaultMaterialDocument("Label", "text"), "surface");
+    expect(surface).toMatchObject({ shadingModel: "pbr", blendMode: "opaque", twoSided: false });
+  });
+
   it("keeps an edited Base Color constant when switching to Particle", () => {
     const doc = createDefaultMaterialDocument("Rock");
     doc.nodes = doc.nodes.map((node) =>

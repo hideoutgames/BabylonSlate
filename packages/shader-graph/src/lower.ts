@@ -106,8 +106,11 @@ interface Frame {
   callPath: string[];
   functionGuid?: string;
   functionInterface?: MaterialFunctionDocument;
-  /** Operands supplied by the caller for this function's declared inputs. */
-  inputBindings: Map<string, MaterialOperand>;
+  /**
+   * The caller's operand for one declared input, resolved on first read so an
+   * input the body never reads emits nothing (and requires no scene buffer).
+   */
+  bindInput?: (pinId: string) => MaterialOperand;
 }
 
 /** Widen a literal to the component count of `type`, splatting a scalar. */
@@ -262,7 +265,6 @@ export function lowerMaterialDocument(
     resolver: createTypeResolver(doc, { functions }),
     prefix: "",
     callPath: [],
-    inputBindings: new Map(),
   };
 
   /** Frames for call nodes, memoized so one call inlines its body once. */
@@ -275,10 +277,7 @@ export function lowerMaterialDocument(
     const guid = callNode.properties.functionGuid;
     const fn = typeof guid === "string" ? functions[guid] : undefined;
     if (!fn) return null;
-    const bindings = new Map<string, MaterialOperand>();
-    for (const pin of fn.inputs) {
-      bindings.set(pin.id, operandForInput(frame, callNode, pin.id));
-    }
+    const bound = new Map<string, MaterialOperand>();
     const child: Frame = {
       graph: fn,
       resolver: createTypeResolver(fn, { functions, functionInterface: fn }),
@@ -286,7 +285,14 @@ export function lowerMaterialDocument(
       callPath: [...frame.callPath, callNode.id],
       functionGuid: guid as string,
       functionInterface: fn,
-      inputBindings: bindings,
+      bindInput: (pinId) => {
+        let operand = bound.get(pinId);
+        if (!operand) {
+          operand = operandForInput(frame, callNode, pinId);
+          bound.set(pinId, operand);
+        }
+        return operand;
+      },
     };
     callFrames.set(key, child);
     return child;
@@ -346,11 +352,10 @@ export function lowerMaterialDocument(
     if (!node) return null;
 
     if (node.type === "function.input") {
-      const bound = frame.inputBindings.get(pinId);
-      if (bound) return bound;
       const declared = frame.functionInterface?.inputs.find(
         (entry) => entry.id === pinId,
       );
+      if (declared && frame.bindInput) return frame.bindInput(pinId);
       return constantOperand(declared?.type ?? "float", declared?.defaultValue);
     }
 

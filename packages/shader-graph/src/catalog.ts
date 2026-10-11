@@ -115,12 +115,18 @@ const MATERIAL_SEARCH_ALIASES: Readonly<Record<string, readonly string[]>> = {
   "vector.reflect": ["reflect(i,n)"],
 };
 
+/**
+ * Generic math node. Inputs default to `0` unless `defaults` names another
+ * value: a divisor, exponent or upper bound of `0` would make an unwired node
+ * undefined (division by zero, `pow(0, 0)`, an empty Clamp or Remap range).
+ */
 function generic(
   type: string,
   title: string,
   category: string,
   inputs: readonly string[],
   cost = 1,
+  defaults: Readonly<Record<string, number>> = {},
 ): MaterialNodeDefinition {
   return {
     type,
@@ -128,11 +134,11 @@ function generic(
     category,
     searchAliases: MATERIAL_SEARCH_ALIASES[type],
     cost,
-    inputs: inputs.map((id, index) => ({
+    inputs: inputs.map((id) => ({
       id,
       name: titleCasePin(id),
       type: GENERIC,
-      defaultValue: index === 0 ? [0] : [0],
+      defaultValue: [defaults[id] ?? 0],
     })),
     outputs: [{ id: "out", name: "Out", type: GENERIC }],
   };
@@ -143,8 +149,9 @@ function unaryGeneric(
   title: string,
   category = "Math",
   cost = 1,
+  defaultValue = 0,
 ): MaterialNodeDefinition {
-  return generic(type, title, category, ["value"], cost);
+  return generic(type, title, category, ["value"], cost, { value: defaultValue });
 }
 
 function titleCasePin(id: string): string {
@@ -227,9 +234,12 @@ const INPUT_NODES: MaterialNodeDefinition[] = [
   { type: "input.vertexNormal", title: "Vertex Normal (Local)", category: "Input", domains: ["surface"], cost: 0, inputs: [], outputs: [{ id: "normal", name: "Normal", type: VEC3 }] },
   { type: "input.vertexPosition", title: "Vertex Position (Local)", category: "Input", domains: ["surface"], cost: 0, inputs: [], outputs: [{ id: "position", name: "Position", type: VEC3 }] },
   {
+    // Mesh, particle quad and glyph UVs. A post-process quad has no UV
+    // attribute; it reads Screen UV instead.
     type: "input.uv",
     title: "UV",
     category: "Input",
+    domains: ["surface", "particle", "text"],
     cost: 0,
     inputs: [],
     outputs: [{ id: "uv", name: "UV", type: VEC2 }],
@@ -395,9 +405,9 @@ const MATH_NODES: MaterialNodeDefinition[] = [
   generic("math.add", "Add", "Math", ["a", "b"]),
   generic("math.subtract", "Subtract", "Math", ["a", "b"]),
   generic("math.multiply", "Multiply", "Math", ["a", "b"]),
-  generic("math.divide", "Divide", "Math", ["a", "b"]),
+  generic("math.divide", "Divide", "Math", ["a", "b"], 1, { b: 1 }),
   unaryGeneric("math.negate", "Negate"),
-  unaryGeneric("math.reciprocal", "Reciprocal"),
+  unaryGeneric("math.reciprocal", "Reciprocal", "Math", 1, 1),
   unaryGeneric("math.radians", "Radians"),
   unaryGeneric("math.degrees", "Degrees"),
   unaryGeneric("math.sin", "Sine", "Math", 2),
@@ -406,24 +416,24 @@ const MATH_NODES: MaterialNodeDefinition[] = [
   unaryGeneric("math.asin", "Arcsine", "Math", 3),
   unaryGeneric("math.acos", "Arccosine", "Math", 3),
   unaryGeneric("math.atan", "Arctangent", "Math", 3),
-  generic("math.atan2", "Arctangent 2", "Math", ["y", "x"], 4),
-  generic("math.pow", "Power", "Math", ["base", "exponent"], 3),
+  generic("math.atan2", "Arctangent 2", "Math", ["y", "x"], 4, { x: 1 }),
+  generic("math.pow", "Power", "Math", ["base", "exponent"], 3, { exponent: 1 }),
   unaryGeneric("math.exp", "Exponential", "Math", 2),
   unaryGeneric("math.exp2", "Exponential 2", "Math", 2),
-  unaryGeneric("math.log", "Logarithm", "Math", 2),
-  unaryGeneric("math.log2", "Logarithm 2", "Math", 2),
+  unaryGeneric("math.log", "Logarithm", "Math", 2, 1),
+  unaryGeneric("math.log2", "Logarithm 2", "Math", 2, 1),
   unaryGeneric("math.sqrt", "Square Root", "Math", 2),
-  unaryGeneric("math.inverseSqrt", "Inverse Square Root", "Math", 2),
+  unaryGeneric("math.inverseSqrt", "Inverse Square Root", "Math", 2, 1),
   unaryGeneric("math.abs", "Absolute"),
   unaryGeneric("math.sign", "Sign"),
   unaryGeneric("math.floor", "Floor"),
   unaryGeneric("math.ceil", "Ceiling"),
   unaryGeneric("math.round", "Round"),
   unaryGeneric("math.fract", "Fraction"),
-  generic("math.mod", "Modulo", "Math", ["a", "b"], 2),
+  generic("math.mod", "Modulo", "Math", ["a", "b"], 2, { b: 1 }),
   generic("math.min", "Minimum", "Math", ["a", "b"]),
   generic("math.max", "Maximum", "Math", ["a", "b"]),
-  generic("math.clamp", "Clamp", "Math", ["value", "min", "max"], 2),
+  generic("math.clamp", "Clamp", "Math", ["value", "min", "max"], 2, { max: 1 }),
   unaryGeneric("math.saturate", "Saturate"),
   generic("math.mix", "Mix", "Math", ["a", "b", "alpha"], 2),
   generic("math.step", "Step", "Math", ["edge", "value"]),
@@ -433,8 +443,9 @@ const MATH_NODES: MaterialNodeDefinition[] = [
     "Math",
     ["edgeA", "edgeB", "value"],
     3,
+    { edgeB: 1 },
   ),
-  generic("math.remap", "Remap", "Math", ["value", "fromMin", "fromMax", "toMin", "toMax"], 3),
+  generic("math.remap", "Remap", "Math", ["value", "fromMin", "fromMax", "toMin", "toMax"], 3, { fromMax: 1, toMax: 1 }),
 ];
 
 const NOISE_NODES: MaterialNodeDefinition[] = [

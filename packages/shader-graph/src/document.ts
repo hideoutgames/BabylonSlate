@@ -367,8 +367,15 @@ export function setMaterialDomain(
     return definition.domains ? definition.domains.includes(domain) || (domain === "landscape" && definition.domains.includes("surface")) : true;
   });
   const keptIds = new Set(kept.map((node) => node.id));
+  // Text forces unlit, translucent and two-sided, so those values were never
+  // authored. Leaving Text takes the new domain's defaults instead.
+  const target = doc.domain === "text" ? createDefaultMaterialDocument(doc.name, domain) : null;
+  const leavingText = target
+    ? { shadingModel: target.shadingModel, blendMode: target.blendMode, twoSided: target.twoSided }
+    : {};
   const switched = normalizeMaterialDocument({
     ...doc,
+    ...leavingText,
     domain,
     nodes: kept,
     edges: doc.edges.filter(
