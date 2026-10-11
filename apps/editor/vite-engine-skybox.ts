@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync } from "node:fs";
+import { cpSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import type { Plugin } from "vite";
 
@@ -12,7 +12,7 @@ export const ENGINE_DEFAULT_SKYBOX_FACE_FILES = [
   "nz.png",
 ] as const;
 
-/** Copy engine default cubemap PNGs into an app `public/` tree. */
+/** Copy engine default cubemap PNGs into an app `public/` tree; a missing face fails the copy. */
 export function copyEngineDefaultSkyboxFaces(
   repoRoot: string,
   destPublicDir: string,
@@ -21,9 +21,7 @@ export function copyEngineDefaultSkyboxFaces(
   const toDir = path.join(destPublicDir, "engine-content/skybox");
   mkdirSync(toDir, { recursive: true });
   for (const file of ENGINE_DEFAULT_SKYBOX_FACE_FILES) {
-    const from = path.join(fromDir, file);
-    if (!existsSync(from)) continue;
-    cpSync(from, path.join(toDir, file));
+    cpSync(path.join(fromDir, file), path.join(toDir, file));
   }
 }
 
