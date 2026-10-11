@@ -61,6 +61,19 @@ test("release preflight requires patch notes from the exact selected source", as
   await assert.rejects(preflight({ ...request, channel: "release" }, dependencies), /Patch notes/);
 });
 
+test("required checks read every check-run page before accepting a commit status", async () => {
+  const original = fixture();
+  const page = (count, offset) => Array.from({ length: count }, (_, i) => ({ id: offset + i, name: `other ${offset + i}`, head_sha: sha, status: "completed", conclusion: "success" }));
+  const dependencies = { ...original.dependencies, api: async path => {
+    if (path === "/branches/main") return { protected: true, protection: { required_status_checks: { contexts: ["public-hygiene"] } } };
+    if (path === `/commits/${sha}/check-runs?filter=latest&per_page=100&page=1`) return { total_count: 101, check_runs: page(100, 1) };
+    if (path === `/commits/${sha}/check-runs?filter=latest&per_page=100&page=2`) return { total_count: 101, check_runs: [{ id: 500, name: "public-hygiene", head_sha: sha, status: "completed", conclusion: "failure" }] };
+    if (path === `/commits/${sha}/status?per_page=100&page=1`) return { total_count: 1, statuses: [{ context: "public-hygiene", state: "success" }] };
+    return original.dependencies.api(path);
+  } };
+  await assert.rejects(preflight(request, dependencies), /Required check has not succeeded: public-hygiene/);
+});
+
 test("published Windows release and conflicting annotated tags fail preflight", async () => {
   for (const conflict of ["release", "tag"]) {
     const original = fixture();

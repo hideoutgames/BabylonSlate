@@ -13,14 +13,19 @@ import { validateUpdateFeed } from "../../../scripts/distribution/update-feed.mj
 const platform = process.argv[2];
 const hosts = { windows: "win32", macos: "darwin", linux: "linux" };
 if (!hosts[platform] || process.platform !== hosts[platform]) throw new Error(`${platform || "Desktop"} packaging requires its native host`);
-if (process.env.VITE_TEST_MODE === "true" || process.env.VITE_TEST_QUERY === "true") throw new Error("Native distribution must use production storage");
 const desktop = fileURLToPath(new URL("..", import.meta.url));
+// Only a distribution build (which refuses test-mode storage) emits build-manifest.json into dist.
 const manifest = JSON.parse(await readFile(join(desktop, "../editor/dist/build-manifest.json"), "utf8"));
 if (!["test", "release"].includes(manifest.channel) || !manifest.packageVersion || manifest.platform !== platform) throw new Error("Distribution manifest required for the selected platform");
 if (manifest.channel === "release") validatePatchNotes(manifest.patchNotes, manifest.applicationVersion);
 const stage = join(desktop, "dist/app");
-try { await access(stage); throw new Error("Packaging stage already exists; use a clean checkout"); }
-catch (error) { if (error.code !== "ENOENT") throw error; }
+const output = join(desktop, "dist/installers");
+const publicDir = join(desktop, "dist/public");
+// Leftover installers or public files from an earlier package would be published as this one.
+for (const directory of [stage, output, publicDir]) {
+  try { await access(directory); throw new Error("Packaging output already exists; use a clean checkout"); }
+  catch (error) { if (error.code !== "ENOENT") throw error; }
+}
 await mkdir(stage, { recursive: true });
 await cp(join(desktop, "dist/host"), join(stage, "host"), { recursive: true });
 await stageRenderer(join(desktop, "../editor/dist"), join(stage, "renderer"));
@@ -33,7 +38,6 @@ const targets = {
   macos: () => Platform.MAC.createTarget(["dmg", "zip"], Arch.arm64, Arch.x64),
   linux: () => Platform.LINUX.createTarget(["AppImage"], Arch.x64),
 };
-const output = join(desktop, "dist/installers");
 async function findAppArchives(directory) {
   const archives = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -83,7 +87,6 @@ try {
   for (const name of [...signingEnvironment, "CSC_IDENTITY_AUTO_DISCOVERY"]) delete process.env[name];
 }
 
-const publicDir = join(desktop, "dist/public");
 await mkdir(publicDir, { recursive: true });
 const assets = new Map();
 for (const name of artifactNames(platform, manifest.packageVersion)) {
