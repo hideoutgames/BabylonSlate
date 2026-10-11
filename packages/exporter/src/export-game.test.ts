@@ -540,7 +540,7 @@ describe("exportGame", () => {
     expect(result).toEqual({ ok: false, error: "Compiled script Ghost has no exported asset ghost." });
   });
 
-  it("never treats a display name as an asset or Game Instance identity", async () => {
+  it("never treats a display name as an asset or Game Instance identity, nor a guid as its class id", async () => {
     const result = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       gameInstanceClass: "MyGame",
       scripts: [{ assetGuid: "game", classId: "MyGame", source: "", anchors: [], entryPoints: [] }],
@@ -549,12 +549,14 @@ describe("exportGame", () => {
         { guid: "game", type: "Class", sceneGuid: "scene-1", name: "Game Instance", bytes: new TextEncoder().encode("{}") },
         { guid: "rock", type: "Texture", sceneGuid: "scene-1", name: "Rock", bytes: new Uint8Array([2]) },
         { guid: "label", type: "Texture", sceneGuid: "scene-1", name: "MyGame", bytes: new Uint8Array([3]) },
+        { guid: "MyGame", type: "Texture", sceneGuid: "scene-1", name: "Banner", bytes: new Uint8Array([4]) },
       ],
     });
     if (!result.ok) throw new Error(result.error);
     const byGuid = new Map(result.value.manifest.assets.map(asset => [asset.guid, asset]));
     expect(byGuid.get("game")?.startupRequired).toBe(true);
     expect(byGuid.get("label")?.startupRequired).toBeUndefined();
+    expect(byGuid.get("MyGame")?.startupRequired).toBeUndefined();
     expect(byGuid.get("scene-1")?.requiredDependencies).not.toContain("rock");
   });
 

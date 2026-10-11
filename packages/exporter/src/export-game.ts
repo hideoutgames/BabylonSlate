@@ -281,7 +281,7 @@ export async function exportGame(
   const projectAssetGuids = new Set(renderEffectsAssetGuids(options.renderSettings?.effects));
   const prepared = dependencyCatalog(sourceAssets).map(asset => ({ ...asset,
     startupRequired: asset.startupRequired || projectAssetGuids.has(asset.guid) || asset.guid === options.audioMixerGuid ||
-      (!!gameInstanceClass && (asset.guid === gameInstanceClass || classIdOf(asset) === gameInstanceClass)) || asset.type === "InputAction" || asset.type === "InputAxis",
+      (!!gameInstanceClass && classIdOf(asset) === gameInstanceClass) || asset.type === "InputAction" || asset.type === "InputAxis",
   }));
   // Packaging choice never changes runtime addressability. A ZIP is only the
   // delivery container; static hosts serve independent immutable asset files.
