@@ -17,7 +17,7 @@ interface FileLock {
   id: string;
   path: string;
   ownerName: string;
-  lockedAt: string; // ISO
+  lockedAt: string; // ISO; "" when the server omits locked_at (shown as Unknown Age)
   ours: boolean;
 }
 

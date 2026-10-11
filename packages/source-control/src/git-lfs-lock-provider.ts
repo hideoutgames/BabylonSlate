@@ -222,15 +222,12 @@ function parseLock(raw: unknown, ours: boolean): FileLock | null {
   if (typeof lock.path !== "string" || lock.path === "") return null;
   const ownerName =
     lock.owner && typeof lock.owner.name === "string" ? lock.owner.name : "";
-  const lockedAt =
-    typeof lock.locked_at === "string" && lock.locked_at !== ""
-      ? lock.locked_at
-      : new Date(0).toISOString();
   return {
     id: lock.id,
     path: lock.path,
     ownerName,
-    lockedAt,
+    // Unknown stays empty (shown as an unknown age), never a 1970 timestamp.
+    lockedAt: typeof lock.locked_at === "string" ? lock.locked_at : "",
     ours,
   };
 }

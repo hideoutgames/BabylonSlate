@@ -305,7 +305,7 @@ describe("GitLfsLockProvider", () => {
     expect(created.error.status).toBe(403);
   });
 
-  it("skips verify entries missing id or path", async () => {
+  it("skips verify entries missing id or path and leaves a missing locked_at unknown", async () => {
     const provider = new GitLfsLockProvider({
       repositoryUrl: "https://github.com/org/repo",
       branch: "main",
@@ -317,12 +317,14 @@ describe("GitLfsLockProvider", () => {
             { id: "", path: "assets/skip.babasset" },
             { id: "lock-2", path: "" },
             { not: "a lock" },
+            { id: "lock-3", path: "assets/undated.babasset" },
           ],
         }),
     });
     const result = await provider.verify();
-    expect(isOk(result) && result.value.ours.map((lock) => lock.id)).toEqual([
-      "lock-1",
+    expect(isOk(result) && result.value.ours.map(({ id, lockedAt }) => [id, lockedAt])).toEqual([
+      ["lock-1", "2026-08-15T12:00:00Z"],
+      ["lock-3", ""],
     ]);
   });
 
