@@ -24,7 +24,7 @@ async function sceneSaveDuringCompilationFixture() {
   await storage.writeBinary("assets/script.babasset", await encodeBabasset({
     header: {
       guid: "script", name: "Script", type: "Class", version: 1, engineVersion: "0.0.0", mode: "thin", payload: { nodes: [], edges: [] },
-      dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1,
+      dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, requiredVariableNames: [],
     }, chunks: [],
   }));
   const registry = new AssetRegistry(storage);
@@ -178,7 +178,7 @@ describe("Play source ownership", () => {
     const command = { name: "stream_left_load", description: "Load left", category: "game", parameters: [] };
     await storage.writeBinary(path, await encodeBabasset({
       header: { guid, name: "LoadLeft.class", type: "Class", parentClass: "BDebugCommand", version: 1, engineVersion: "0.0.0", mode: "thin",
-        payload: { nodes: [], edges: [] }, dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, consoleCommand: command },
+        payload: { nodes: [], edges: [] }, dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, requiredVariableNames: [], consoleCommand: command },
       chunks: [],
     }));
     const registry = new AssetRegistry(storage);
@@ -228,7 +228,7 @@ describe("Play source ownership", () => {
     for (const id of ["scene-a", "scene-b", "script"]) await storage.writeBinary(`assets/${id}.babasset`, await encodeBabasset({
       header: {
         guid: id, name: id, type: id === "script" ? "Class" : "Scene", version: 1, engineVersion: "0.0.0", mode: "thin",
-        dependencies: id === "script" ? [] : ["script"], requiredDependencies: id === "script" ? [] : ["script"], dependencyMetadataVersion: 1,
+        dependencies: id === "script" ? [] : ["script"], requiredDependencies: id === "script" ? [] : ["script"], dependencyMetadataVersion: 1, requiredVariableNames: [],
         payload: id === "script" ? { nodes: [], edges: [], members: [] } : { actors: [] },
       }, chunks: [],
     }));
@@ -276,7 +276,7 @@ describe("Play source ownership", () => {
       ["Debug", "debug", "BDebugCommand"], ["UnusedPrefab", "unused", "Actor"],
     ]) await storage.writeBinary(`assets/${name}.class.babasset`, await encodeBabasset({
       header: { guid: guid!, name: name!, type: "Class", parentClass: parent, engineVersion: "0.0.0", version: 1, mode: "thin",
-        dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, payload: {} },
+        dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, requiredVariableNames: [], payload: {} },
       chunks: [{ id: "document", kind: "document", mime: "application/json", data: new Uint8Array(4000) }],
     }));
     const registry = new AssetRegistry(storage);
@@ -399,7 +399,7 @@ describe("Play source ownership", () => {
       await storage.writeBinary(`assets/${guid}.babasset`, await encodeBabasset({
         header: {
           guid, name: guid, type, version: 1, engineVersion: "0.0.0", mode: "thin", payload,
-          dependencies: required, requiredDependencies: required, dependencyMetadataVersion: 1,
+          dependencies: required, requiredDependencies: required, dependencyMetadataVersion: 1, requiredVariableNames: [],
         }, chunks,
       }));
     };
@@ -514,7 +514,7 @@ describe("Play source ownership", () => {
     const write = async (guid: string, type: string, payload: Record<string, unknown>, chunks: ChunkInput[], required: string[] = []) =>
       storage.writeBinary(`assets/${guid}.babasset`, await encodeBabasset({
         header: { guid, name: guid, type, version: 1, engineVersion: "0.0.0", mode: "thin", payload,
-          dependencies: required, requiredDependencies: required, dependencyMetadataVersion: 1 },
+          dependencies: required, requiredDependencies: required, dependencyMetadataVersion: 1, requiredVariableNames: [] },
         chunks,
       }));
     await write("system", "Class", { nodes: [], edges: [] }, []);
