@@ -247,17 +247,8 @@ export function normalizeRenderingQuality(value: unknown): RenderingQuality {
       ? (value as Partial<RenderingQuality>)
       : {};
   const defaults = RENDER_QUALITY_PROFILES.medium;
-  // Projects saved before a group existed follow their other groups' shared tier.
-  const legacyGroups = [source.resolution, source.textures, source.postprocessing, source.lighting];
-  const geometryTier = source.geometry ? undefined : sharedQualityTier(legacyGroups);
-  const geometry: Partial<GeometryQuality> | undefined = source.geometry ??
-    (geometryTier ? { ...RENDER_QUALITY_PROFILES[geometryTier].geometry, profile: geometryTier } : undefined);
-  const savedWater = isRecord(source.water) ? (source.water as Partial<WaterQuality>) : undefined;
-  const waterTier = savedWater
-    ? undefined
-    : sharedQualityTier(source.geometry ? [...legacyGroups, source.geometry] : legacyGroups);
-  const water = savedWater ??
-    (waterTier ? { ...RENDER_QUALITY_PROFILES[waterTier].water, profile: waterTier } : undefined);
+  const geometry: Partial<GeometryQuality> | undefined = source.geometry;
+  const water = isRecord(source.water) ? (source.water as Partial<WaterQuality>) : undefined;
   const finite = (n: unknown, fallback: number, min: number, max: number) =>
     typeof n === "number" && Number.isFinite(n)
       ? Math.min(max, Math.max(min, n))
@@ -344,15 +335,6 @@ export function normalizeRenderingQuality(value: unknown): RenderingQuality {
 }
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-/** The tier every listed group last targeted, or undefined when any differs or is missing. */
-function sharedQualityTier(
-  groups: readonly (QualitySelection | undefined)[],
-): QualityLevel | undefined {
-  const first = groups[0]?.profile;
-  return isQualityLevel(first) && groups.every((group) => group?.profile === first)
-    ? first
-    : undefined;
 }
 function snapWaterFftSize(value: number): number {
   return WATER_FFT_SIZES.reduce((best, size) =>
