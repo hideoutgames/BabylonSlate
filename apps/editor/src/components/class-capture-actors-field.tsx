@@ -55,13 +55,12 @@ export function ClassCaptureActorsField({ actorIds, onChange }: {
   }, [selectedPath, openContent, loadAssetDocument, registryEpoch]);
   const actors = openContent ? sceneActors(openContent)
     : loaded && loaded.path === selectedPath ? loaded.actors : NO_ACTORS;
-  const openLabel = openScenes.find((doc) => doc.ref.path === selectedPath)?.ref.label;
   return <>
     <RenderTargetCaptureActorsField actorIds={actorIds} actors={actors} onChange={onChange}
       source={<PropertyGrid density="compact" rows={[{
         id: "capture-source-scene", kind: "asset", label: "Source Scene", value: selected?.guid ?? null,
         description: "Which Scene's actors to list. Not saved.",
-        displayLabel: selected?.name ?? openLabel, displayType: "Scene", visual: { assetType: "Scene" },
+        displayLabel: selected?.name, displayType: "Scene", visual: { assetType: "Scene" },
         placeholder: "None", onPick: () => setPicking(true), onChange: (guid) => setPickedGuid(guid),
       }]} />} />
     <AssetPicker open={picking} onOpenChange={setPicking} assets={scenes} allowedTypes={["Scene"]} createTypes={NO_CREATE_TYPES}
