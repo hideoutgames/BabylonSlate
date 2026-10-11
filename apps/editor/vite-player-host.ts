@@ -41,8 +41,10 @@ export function playerHostVitePlugin(playerDist: string, editorDist: string): Pl
           url === bare || url === mount
             ? "index.html"
             : decodeURIComponent(url.slice(mount.length));
-        const file = path.resolve(playerDist, rel);
-        if (!file.startsWith(path.resolve(playerDist))) return next();
+        const root = path.resolve(playerDist);
+        const file = path.resolve(root, rel);
+        // A separator-terminated prefix, so a sibling such as `dist-backup` is outside.
+        if (!file.startsWith(`${root}${path.sep}`)) return next();
         if (!existsSync(file) || statSync(file).isDirectory()) return next();
         res.setHeader("Content-Type", contentType(file));
         createReadStream(file).pipe(res);
