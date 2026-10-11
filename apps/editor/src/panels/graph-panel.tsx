@@ -56,11 +56,7 @@ import {
   collectImplementedInterfaceContexts,
   collectParentFunctionSignatures,
 } from "../lib/overridable-functions";
-import {
-  EVENT_GRAPH_PANEL_ID,
-  type FunctionGraphPanelParams,
-} from "../shell/function-graph-panels";
-import { EVENT_GRAPH_TITLE } from "../shell/window-catalog";
+import type { FunctionGraphPanelParams } from "../shell/function-graph-panels";
 
 const registry = defaultNodeRegistry;
 const VALIDATION_DEBOUNCE_MS = 250;
@@ -238,17 +234,12 @@ export function GraphPanel(
     !graphContent.functionGraphs?.[functionId];
   useEffect(() => {
     if (!panelApi) return;
-    // A deleted function closes its tab; a rename retitles it. Layouts saved
-    // before function tabs existed still carry the old "Graph" title.
+    // A deleted function closes its tab; a rename retitles it.
     if (functionMissing) {
       panelApi.close();
       return;
     }
-    const title = functionId
-      ? functionMember?.name
-      : panelApi.id === EVENT_GRAPH_PANEL_ID
-        ? EVENT_GRAPH_TITLE
-        : undefined;
+    const title = functionId ? functionMember?.name : undefined;
     if (title && panelApi.title !== title) panelApi.setTitle(title);
   }, [functionId, functionMember?.name, functionMissing, panelApi]);
 
