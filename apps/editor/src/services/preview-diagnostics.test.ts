@@ -75,8 +75,9 @@ describe("Preview diagnostics lifecycle", () => {
     const server = createPreviewDiagnosticServer({ source: () => parent, origin: () => origin,
       send: (data) => window.dispatchEvent(new MessageEvent("message", { source: player, origin, data })) }, {
       async execute(operation) {
-        // A chunk over the transport limit makes the publisher send profile-error and still resolve.
-        if (operation === "profile-stop") await server.publishProfile({
+        // A chunk over the transport limit makes the publisher send profile-error;
+        // the player answers Stop with that transfer outcome.
+        if (operation === "profile-stop") return server.publishProfile({
           metadata: { ...header, frames: { columns: frames.columns, count: frames.count }, ticks: { columns: ticks.columns, count: ticks.count },
             gpu: { columns: gpu.columns, count: gpu.count } },
           frames: [new Float64Array(8192)], ticks: ticks.chunks, gpu: gpu.chunks,
@@ -97,7 +98,9 @@ describe("Preview diagnostics lifecycle", () => {
     expect(onProfile).not.toHaveBeenCalled();
     expect(adapter.lastProfile).toBeNull();
     expect((await adapter.startProfile()).success).toBe(true);
-    await adapter.finish();
+    // Closing Preview reports the second failed transfer once, through onError only.
+    await expect(adapter.finish()).resolves.toBeUndefined();
+    expect(onError).toHaveBeenCalledTimes(2);
   });
 
   it("bounds Stop while a player is unresponsive and clears pending transport timers", async () => {
