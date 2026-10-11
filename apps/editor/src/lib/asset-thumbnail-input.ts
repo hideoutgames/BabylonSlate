@@ -11,10 +11,14 @@ import { engineParentOf } from "@babylonslate/editor-kit";
 import type { AssetThumbnailRequest } from "@babylonslate/render";
 import {
   materialDependencies,
+  materialInstanceDependencies,
+  materializeMaterialInstances,
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
+  normalizeMaterialInstanceDocument,
   type MaterialDocument,
   type MaterialFunctionDocument,
+  type MaterialInstanceDocument,
 } from "@babylonslate/shader-graph";
 import { classIdForGraphPath } from "../services/script-compiler";
 import { texturePixelSizesFromHeaders } from "./collect-gpu-texture-bytes";
@@ -41,11 +45,11 @@ export interface AssetThumbnailInputOptions {
 }
 
 function classAsset(asset: IndexedAsset): boolean {
-  return asset.header.type === "Class" || asset.header.type === "Graph";
+  return asset.header.type === "Class";
 }
 
 function parentClass(asset: IndexedAsset): string {
-  return asset.header.parentClass ?? (asset.header.type === "Graph" ? "Actor" : "BObject");
+  return asset.header.parentClass ?? "BObject";
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -86,10 +90,9 @@ export async function prepareAssetThumbnailInput(
     for (const entry of registry.list()) {
       if (!classAsset(entry)) continue;
       byClass.set(classIdForGraphPath(entry.path), entry);
-      byClass.set(entry.header.name, entry);
     }
     const chain: IndexedAsset[] = [];
-    const seen = new Set<string>([classIdForGraphPath(asset.path), asset.header.name]);
+    const seen = new Set<string>([classIdForGraphPath(asset.path)]);
     let parent: string | null = parentClass(asset);
     let isActor = false;
     while (parent && !seen.has(parent)) {
@@ -172,8 +175,10 @@ export async function prepareAssetThumbnailInput(
   }
 
   const materials = new Map<string, MaterialDocument>();
+  const instances = new Map<string, MaterialInstanceDocument>();
   const functions: Record<string, MaterialFunctionDocument> = {};
-  const needed = [...materialGuids].map((guid) => ({ guid, type: "Material" }));
+  const needed: Array<{ guid: string; type: "Material" | "MaterialFunction" }> =
+    [...materialGuids].map((guid) => ({ guid, type: "Material" }));
   const visited = new Set<string>();
   for (let index = 0; index < needed.length; index += 1) {
     if (!current()) return null;
@@ -181,10 +186,20 @@ export async function prepareAssetThumbnailInput(
     if (visited.has(guid)) continue;
     visited.add(guid);
     const entry = registry.getByGuid(guid);
-    if (!entry || entry.header.type !== type) continue;
+    // A material reference may name a Material Instance; it renders as its parent chain.
+    const instance = type === "Material" && entry?.header.type === "MaterialInstance";
+    if (!entry || (entry.header.type !== type && !instance)) continue;
     const content = await readDocument(entry);
     if (!current()) return null;
     if (!content) continue;
+    if (instance) {
+      const document = normalizeMaterialInstanceDocument(content);
+      instances.set(guid, document);
+      const dependencies = materialInstanceDependencies(document);
+      for (const texture of dependencies.textures) textureGuids.add(texture);
+      if (dependencies.parent) needed.push({ guid: dependencies.parent, type: "Material" });
+      continue;
+    }
     const document = type === "Material"
       ? normalizeMaterialDocument(content)
       : normalizeMaterialFunctionDocument(content);
@@ -193,6 +208,9 @@ export async function prepareAssetThumbnailInput(
     const dependencies = materialDependencies(document);
     for (const texture of dependencies.textures) textureGuids.add(texture);
     for (const fn of dependencies.functions) needed.push({ guid: fn, type: "MaterialFunction" });
+  }
+  for (const [guid, document] of materializeMaterialInstances(materials, instances)) {
+    materials.set(guid, document);
   }
   if (!prefab && !materials.has(asset.header.guid)) return null;
   if (!current()) return null;

@@ -130,6 +130,13 @@ describe("ContentBrowserAssetTile", () => {
     expect(onLongPressMenu).toHaveBeenCalledWith(12, 18);
   });
 
+  it("titles a dotted asset name in full", () => {
+    const item = asset();
+    item.header.name = "Player.Idle";
+    const { tile } = renderTile({ asset: item });
+    expect(tile.textContent).toContain("Player.Idle");
+  });
+
   it("selects on click", () => {
     const { tile, onSelect } = renderTile();
     fireEvent.click(tile);

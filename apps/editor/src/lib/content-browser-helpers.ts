@@ -43,7 +43,6 @@ import {
   createDefaultSaveGameDefinition,
   isInputAssetType,
   createDefaultSceneLayer,
-  isLegacyMaterialAssetType,
   isMaterialTextureAssetType,
 } from "@babylonslate/core";
 import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
@@ -72,7 +71,6 @@ import {
   type TypeVisual,
   type TreeDropPlacement,
 } from "@babylonslate/editor-kit";
-import { typeColorThumbAccent } from "@babylonslate/ui/lib/data-types";
 import {
   GAME_SUBSYSTEM_CLASS_ID,
   SCENE_SUBSYSTEM_CLASS_ID,
@@ -404,10 +402,6 @@ export function isFolderTreeRoot(
   return rootPath.includes(path);
 }
 
-export function displayAssetTitle(name: string): string {
-  return name.replace(/\.[A-Za-z][A-Za-z0-9]*$/, "");
-}
-
 export type ClassAssetRef = {
   path?: string;
   header: {
@@ -420,10 +414,12 @@ export type ClassAssetRef = {
   };
 };
 
-/** Compile class id for a Class asset (`main.class` header → `main`). */
+/**
+ * Compile class id for a Class asset: its file stem, or without a path the
+ * stem New Asset writes for its name (`Rain-Weather` → `Rain_Weather`).
+ */
 export function classIdFromClassAsset(asset: ClassAssetRef): string {
-  if (asset.path) return classIdForGraphPath(asset.path);
-  return displayAssetTitle(asset.header.name) || asset.header.name;
+  return classIdForGraphPath(asset.path ?? newAssetFileName("Class", asset.header.name));
 }
 
 /** Single tap / click replaces the whole Content Browser selection with one asset. */
@@ -611,8 +607,6 @@ export function resolveContentBrowserPaintHit(
   return null;
 }
 
-export { typeColorThumbAccent as assetTypeThumbAccent };
-
 type AssetSearchHaystack = {
   sourceName: string;
   sourcePath: string;
@@ -719,16 +713,8 @@ export const CONTENT_BROWSER_SORT_OPTIONS: ReadonlyArray<{
 const NAME_COLLATOR = new Intl.Collator(undefined, { sensitivity: "base" });
 const compareNames = NAME_COLLATOR.compare;
 
-function assetDisplayName(asset: IndexedAsset): string {
-  return displayAssetTitle(asset.header.name) || asset.header.name;
-}
-
-type SortableAsset = { asset: IndexedAsset; displayName: string };
-
-function compareAssetNames(a: SortableAsset, b: SortableAsset): number {
-  const byDisplay = compareNames(a.displayName, b.displayName);
-  if (byDisplay !== 0) return byDisplay;
-  return compareNames(a.asset.header.name, b.asset.header.name);
+function compareAssetNames(a: IndexedAsset, b: IndexedAsset): number {
+  return compareNames(a.header.name, b.header.name);
 }
 
 function assetMtime(asset: IndexedAsset): number {
@@ -743,18 +729,12 @@ export function sortAssets(
   assets: readonly IndexedAsset[],
   mode: ContentBrowserSortMode,
 ): IndexedAsset[] {
-  const rows: SortableAsset[] = assets.map((asset) => ({
-    asset,
-    displayName: assetDisplayName(asset),
-  }));
-  rows.sort((leftRow, rightRow) => {
-    const left = leftRow.asset;
-    const right = rightRow.asset;
+  return [...assets].sort((left, right) => {
     let primary = 0;
     switch (mode) {
       case "name-asc":
       case "name-desc":
-        primary = compareAssetNames(leftRow, rightRow);
+        primary = compareAssetNames(left, right);
         if (mode === "name-desc") primary = -primary;
         break;
       case "type-asc":
@@ -770,12 +750,11 @@ export function sortAssets(
     }
     if (primary !== 0) return primary;
     if (mode !== "name-asc" && mode !== "name-desc") {
-      const byName = compareAssetNames(leftRow, rightRow);
+      const byName = compareAssetNames(left, right);
       if (byName !== 0) return byName;
     }
     return left.header.guid.localeCompare(right.header.guid);
   });
-  return rows.map((row) => row.asset);
 }
 
 export function sortChildFolders<T extends { name: string }>(
@@ -892,40 +871,73 @@ export function isValidMoveDestination(options: {
   return destinationPath !== parentFolderPath(sourcePath);
 }
 
-export function isValidSelectionMoveDestination(options: {
+/**
+ * What Move… / Copy to Folder… does with a selection at `destinationPath`,
+ * under the tree drop's rules: items in another content root stay where they
+ * are, as do items already in the destination (Move). A folder never goes
+ * into itself or a descendant, and a Move never lands on an existing or
+ * already-claimed name, so it cannot fail after moving part of the
+ * selection. `error` says why the destination cannot be used.
+ */
+export function contentBrowserSelectionMoves(options: {
   destinationPath: string;
   operation?: "move" | "copy";
-  assetSourcePaths?: readonly string[];
-  folderSourcePaths?: readonly string[];
-}): boolean {
-  const assetSourcePaths = options.assetSourcePaths ?? [];
-  const folderSourcePaths = options.folderSourcePaths ?? [];
-  if (assetSourcePaths.length + folderSourcePaths.length === 0) return false;
-  for (const sourcePath of folderSourcePaths) {
-    if (
-      !isValidMoveDestination({
-        kind: "folder",
-        sourcePath,
-        destinationPath: options.destinationPath,
-        operation: options.operation,
-      })
-    ) {
-      return false;
-    }
+  assetPaths: readonly string[];
+  folderPaths: readonly string[];
+  rootPaths?: readonly string[];
+  /** Asset and folder paths that already exist, for the Move name check. */
+  existingPaths?: ReadonlySet<string>;
+}): { moves: ContentBrowserDropMove[]; error: string | null } {
+  const { destinationPath: destination, operation = "move" } = options;
+  const rootPaths = options.rootPaths ?? [ASSETS_ROOT];
+  const verb = operation === "copy" ? "copied" : "moved";
+  if (options.folderPaths.some((path) => isFolderMoveCycle(path, destination))) {
+    return { moves: [], error: `A folder cannot be ${verb} inside itself.` };
   }
-  for (const sourcePath of assetSourcePaths) {
-    if (
-      !isValidMoveDestination({
-        kind: "asset",
-        sourcePath,
-        destinationPath: options.destinationPath,
-        operation: options.operation,
-      })
-    ) {
-      return false;
-    }
+  const destRoot = contentRootOfPath(destination, rootPaths);
+  const inRoot = (path: string) => contentRootOfPath(path, rootPaths) === destRoot;
+  const folders = options.folderPaths.filter(inRoot);
+  const assets = options.assetPaths.filter(inRoot);
+  if (folders.length + assets.length === 0) {
+    return { moves: [], error: `Items in another content root cannot be ${verb} here.` };
   }
-  return true;
+  const changesFolder = (from: string) => operation === "copy" || from !== destination;
+  const moves: ContentBrowserDropMove[] = [
+    ...folders
+      .filter((path) => changesFolder(parentFolderPath(path, destRoot)))
+      .map((path) => ({ kind: "folder" as const, sourcePath: path, destinationPath: destination, id: path })),
+    ...assets.flatMap((path) => {
+      const from = parentFolderPath(path, destRoot);
+      return changesFolder(from)
+        ? [{ kind: "asset" as const, sourcePath: from, destinationPath: destination, id: path }]
+        : [];
+    }),
+  ];
+  if (moves.length === 0) {
+    return { moves, error: "The selected items are already in this folder." };
+  }
+  const collision = operation === "move" ? moveNameCollision(moves, options.existingPaths) : null;
+  return collision ? { moves: [], error: collision } : { moves, error: null };
+}
+
+/**
+ * Why these moves would land on an existing file or folder name in their
+ * destination, or on a name another of them claims; null when none does.
+ */
+export function moveNameCollision(
+  moves: readonly ContentBrowserDropMove[],
+  existingPaths: ReadonlySet<string> = new Set(),
+): string | null {
+  const claimed = new Set<string>();
+  for (const move of moves) {
+    const name = move.id.slice(move.id.lastIndexOf("/") + 1);
+    const target = joinAssetFolderPath(move.destinationPath, name);
+    if (existingPaths.has(target) || claimed.has(target)) {
+      return `"${name}" already exists in ${move.destinationPath}.`;
+    }
+    claimed.add(target);
+  }
+  return null;
 }
 
 export type ContentBrowserContextAction =
@@ -1225,7 +1237,7 @@ export function flattenContentBrowserTree(
     rows.push({
       id: asset.path,
       kind: "asset",
-      label: displayAssetTitle(asset.header.name),
+      label: asset.header.name,
       depth: depth + 1,
       hasChildren: false,
       expanded: true,
@@ -1411,8 +1423,10 @@ export function contentBrowserTreeDropMoves(options: {
     }),
   );
   const moves: ContentBrowserDropMove[] = [];
+  // Selected items in another content root stay where they are, as items
+  // already in the destination do.
   for (const path of folders) {
-    if (contentRootOfPath(path, rootPaths) !== dest.destRoot) return [];
+    if (contentRootOfPath(path, rootPaths) !== dest.destRoot) continue;
     moves.push({
       kind: "folder",
       sourcePath: path,
@@ -1424,7 +1438,7 @@ export function contentBrowserTreeDropMoves(options: {
     const path = pathOf(guid);
     if (!path) continue;
     const sourceRoot = contentRootOfPath(path, rootPaths);
-    if (sourceRoot !== dest.destRoot) return [];
+    if (sourceRoot !== dest.destRoot) continue;
     const sourcePath = parentFolderPath(path, sourceRoot);
     if (
       !isValidMoveDestination({
@@ -1481,18 +1495,44 @@ export function uniqueAssetTypes(assets: IndexedAsset[]): string[] {
 export function classParentLookup(
   assets: ReadonlyArray<ClassAssetRef>,
 ): (id: string) => string | null {
-  const map = new Map<string, string | null>();
+  const byId = new Map<string, string>();
   for (const asset of assets) {
     if (asset.header.type !== "Class") continue;
-    const parent = asset.header.parentClass ?? "BObject";
     const id = classIdFromClassAsset(asset);
-    map.set(id, parent);
-    if (asset.header.name !== id) map.set(asset.header.name, parent);
+    // The first file keeps a shared id, as in buildParentClassTreeRows.
+    if (!byId.has(id)) byId.set(id, asset.header.parentClass ?? "BObject");
   }
   return (id) => {
     if (isSceneAssetClassId(id) && id !== "Scene") return "Scene";
-    return map.get(id) ?? engineParentOf(id) ?? null;
+    return byId.get(id) ?? engineParentOf(id) ?? null;
   };
+}
+
+function isEngineClassId(classId: string): boolean {
+  return isLockedEngineClassId(classId) || engineParentOf(classId) !== undefined;
+}
+
+/**
+ * Class ids are file stems shared by the whole project, so `Rain-Weather` and
+ * `Rain_Weather`, or one stem in two folders, would compile to one class.
+ * Why a Class written at `path` cannot take its id, or null. `exceptPath` is
+ * the Class being renamed.
+ */
+export function classIdConflict(
+  assets: ReadonlyArray<{ path: string; header: { type: string } }>,
+  path: string,
+  exceptPath?: string,
+): string | null {
+  const classId = classIdForGraphPath(path);
+  if (isEngineClassId(classId)) {
+    return `"${classId}" is an engine class name. Choose another Class name.`;
+  }
+  return assets.some((asset) =>
+    asset.header.type === "Class" &&
+    asset.path !== exceptPath &&
+    classIdForGraphPath(asset.path) === classId)
+    ? `Another Class already uses the class id "${classId}".`
+    : null;
 }
 
 export function visualForIndexedAsset(
@@ -1513,12 +1553,8 @@ export function visualForIndexedAsset(
 export function classDocumentShowsPrefab(
   parentClass: string | null | undefined,
   parentOf: (id: string) => string | null,
-  options?: { assetType?: string },
 ): boolean {
-  const start =
-    parentClass ??
-    (options?.assetType === "Graph" ? "Actor" : "BObject");
-  return walkAncestry(start, parentOf).includes("Actor");
+  return walkAncestry(parentClass ?? "BObject", parentOf).includes("Actor");
 }
 
 export function defaultParentClassForType(
@@ -1889,7 +1925,7 @@ export function materialAssetDependencies(
   assetType: string,
   payload: Record<string, unknown>,
 ): string[] {
-  if (assetType === "Material" || isLegacyMaterialAssetType(assetType)) {
+  if (assetType === "Material") {
     return materialDependencies(normalizeMaterialDocument(payload)).all;
   }
   if (assetType === "MaterialFunction") {
@@ -1914,38 +1950,22 @@ function legacyAssetHeaderDependencies(
       ? [[asset.header.guid, fields] as const] : [];
   }));
   const definitionFields = (guid: string) => schemasByGuid.get(guid);
+  const classRefs = classes.flatMap((asset) =>
+    asset.header.guid && asset.header.type === "Class"
+      ? [{ guid: asset.header.guid, classId: classIdFromClassAsset(asset) }] : []);
   if (["DataDefinition", "DataTree", "Structure", "Enum"].includes(assetType)) {
-    return dataAssetDependencies(assetType, payload, classes.flatMap((asset) =>
-      asset.header.guid && ["Class", "Graph"].includes(asset.header.type)
-        ? [{ guid: asset.header.guid, classId: classIdFromClassAsset(asset) }] : []), definitionFields);
+    return dataAssetDependencies(assetType, payload, classRefs, definitionFields);
   }
-  const inputRefs: string[] = [];
-  const visitInputRefs = (value: unknown): void => {
-    if (!value || typeof value !== "object") return;
-    if (Array.isArray(value)) { value.forEach(visitInputRefs); return; }
-    const row = value as Record<string, unknown>;
-    if (typeof row.Name === "string" && typeof row.Asset === "string" && row.Asset) inputRefs.push(row.Asset);
-    Object.entries(row).forEach(([key, entry]) => {
-      if (Array.isArray(row.dataSchema) && (key === "default:values" || key === "dataSchema")) return;
-      visitInputRefs(entry);
-    });
-  };
-  visitInputRefs(payload);
   const unique = new Set<string>([
-    ...(["Class", "Graph"].includes(assetType) ? dataGraphAssetDependencies(payload, classes.flatMap((asset) =>
-      asset.header.guid && ["Class", "Graph"].includes(asset.header.type)
-        ? [{ guid: asset.header.guid, classId: classIdFromClassAsset(asset) }] : []), definitionFields) : []),
-    ...inputRefs,
+    ...(assetType === "Class" ? dataGraphAssetDependencies(payload, classRefs, definitionFields) : []),
     ...(assetType === "SaveGame" && Array.isArray(payload.fields) ? payload.fields.flatMap((field) => {
       if (!field || typeof field !== "object" || field.type !== "asset") return [];
       return (Array.isArray(field.defaultValue) ? field.defaultValue : [field.defaultValue]).filter((value: unknown): value is string => typeof value === "string" && !!value);
     }) : []),
-    ...(["Class", "Graph"].includes(assetType) ? assetVariableGuidsFromGraph(payload as unknown as import("@babylonslate/core").SerializedGraph) : []),
-    ...(["Class", "Graph"].includes(assetType) ? renderTargetAssetGuidsFromGraph(payload as unknown as import("@babylonslate/core").SerializedGraph) : []),
+    ...(assetType === "Class" ? assetVariableGuidsFromGraph(payload as unknown as import("@babylonslate/core").SerializedGraph) : []),
+    ...(assetType === "Class" ? renderTargetAssetGuidsFromGraph(payload as unknown as import("@babylonslate/core").SerializedGraph) : []),
     ...areaEmissionTextureGuids(payload),
-    ...findClassAssetReferences({ ...payload, parentClass }, classes.flatMap((asset) =>
-      asset.header.guid && ["Class", "Graph"].includes(asset.header.type)
-        ? [{ guid: asset.header.guid, classId: classIdFromClassAsset(asset) }] : []), definitionFields),
+    ...findClassAssetReferences({ ...payload, parentClass }, classRefs, definitionFields),
     ...materialAssetDependencies(assetType, payload),
     ...audioAssetDependencies(assetType, payload),
     ...particleAssetDependencies(assetType, payload),
@@ -1964,14 +1984,11 @@ function legacyAssetHeaderDependencies(
     const environment = settings?.environmentTextureGuid;
     if (typeof environment === "string" && environment.length > 0) unique.add(environment);
   }
-  if (["Scene", "SceneLayer", "Class", "Graph"].includes(assetType)) {
+  if (["Scene", "SceneLayer", "Class"].includes(assetType)) {
     const addClass = (classId: unknown) => {
       if (typeof classId !== "string" || !classId) return;
-      const asset = classes.find((entry) =>
-        (entry.header.type === "Class" || entry.header.type === "Graph") &&
-        classIdFromClassAsset(entry) === classId,
-      );
-      if (asset?.header.guid) unique.add(asset.header.guid);
+      const asset = classRefs.find((entry) => entry.classId === classId);
+      if (asset) unique.add(asset.guid);
     };
     const addComponents = (components: unknown) => {
       if (!Array.isArray(components)) return;
@@ -2025,11 +2042,12 @@ export function assetHeaderDependencyMetadata(
   return collectAssetDependencyMetadata(assetType, payload, {
     dependencies: legacyAssetHeaderDependencies(assetType, payload, classes, parentClass),
     parentClass,
-    classes: classes.flatMap(asset => asset.header.guid && ["Class", "Graph"].includes(asset.header.type) ? [{
+    classes: classes.flatMap(asset => asset.header.guid && asset.header.type === "Class" ? [{
       guid: asset.header.guid,
       classId: classIdFromClassAsset(asset),
       parentClassId: asset.header.parentClass,
       requiredVariableNames: asset.header.requiredVariableNames,
+      // Saved Class headers carry `classHeaderMeta` variables, not graph members.
       members: (asset.header.payload?.members ?? (Array.isArray(asset.header.payload?.variables)
         ? asset.header.payload.variables.map(variable => ({ ...variable, kind: "variable" })) : [])) as import("@babylonslate/core").GraphClassMember[],
     }] : []),
@@ -2093,9 +2111,7 @@ export function materialHeaderMeta(
     const instance = normalizeMaterialInstanceDocument(payload);
     return { domain: instance.domain, parentGuid: instance.parentGuid };
   }
-  if (assetType !== "Material" && !isLegacyMaterialAssetType(assetType)) {
-    return undefined;
-  }
+  if (assetType !== "Material") return undefined;
   return {
     domain: parseMaterialDomain(payload.domain),
   };

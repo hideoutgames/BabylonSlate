@@ -26,7 +26,6 @@ function renderDialog(
       onNameChange={onNameChange}
       parentClass="BObject"
       onParentClassChange={onParentClassChange}
-      nameTaken={false}
       onCreate={onCreate}
       {...overrides}
     />,
@@ -81,7 +80,6 @@ describe("ContentBrowserNewAssetDialog", () => {
         onNameChange={() => {}}
         parentClass="BObject"
         onParentClassChange={() => {}}
-        nameTaken={false}
         destinationFolder="assets/Levels"
         onCreate={() => {}}
       />,
@@ -146,7 +144,6 @@ describe("ContentBrowserNewAssetDialog", () => {
         onNameChange={onNameChange}
         parentClass="BObject"
         onParentClassChange={onParentClassChange}
-        nameTaken={false}
         onCreate={onCreate}
       />,
     );
@@ -163,10 +160,10 @@ describe("ContentBrowserNewAssetDialog", () => {
   });
 
   it.each([
-    { name: "Hero", nameTaken: false, busy: false, calls: 1 },
-    { name: "", nameTaken: false, busy: false, calls: 0 },
-    { name: "Hero", nameTaken: true, busy: false, calls: 0 },
-    { name: "Hero", nameTaken: false, busy: true, calls: 0 },
+    { name: "Hero", takenNameError: null, busy: false, calls: 1 },
+    { name: "", takenNameError: null, busy: false, calls: 0 },
+    { name: "Hero", takenNameError: "An asset with this name already exists in the folder.", busy: false, calls: 0 },
+    { name: "Hero", takenNameError: null, busy: true, calls: 0 },
   ])("validates keyboard creation: %j", ({ calls, ...props }) => {
     const { onCreate } = renderDialog(props);
     fireEvent.keyDown(screen.getByTestId("new-asset-name"), { key: "Enter" });
@@ -227,16 +224,34 @@ describe("ContentBrowserNewAssetDialog", () => {
         onNameChange={onNameChange}
         parentClass="BObject"
         onParentClassChange={onParentClassChange}
-        nameTaken
+        takenNameError="An asset with this name already exists in the folder."
         onCreate={onCreate}
       />,
     );
-    expect(screen.getByTestId("new-asset-name-taken")).toBeTruthy();
+    expect(screen.getByTestId("new-asset-name-taken").textContent).toBe("An asset with this name already exists in the folder.");
     expect(
       screen
         .getByTestId("content-browser-new-asset-create")
         .hasAttribute("disabled"),
     ).toBe(true);
+  });
+
+  it.each([".", "..", "Hero."])("rejects %s as Rename does", (name) => {
+    const { onCreate } = renderDialog({ name });
+    expect(screen.getByTestId("new-asset-name-invalid").textContent).toMatch(/\.|period/);
+    const create = screen.getByTestId("content-browser-new-asset-create");
+    expect(create.hasAttribute("disabled")).toBe(true);
+    fireEvent.keyDown(screen.getByTestId("new-asset-name"), { key: "Enter" });
+    expect(onCreate).not.toHaveBeenCalled();
+  });
+
+  it("disables Create when the type search matches no type", () => {
+    const { onCreate } = renderDialog({ name: "Arena" });
+    fireEvent.change(screen.getByTestId("new-asset-type-search"), { target: { value: "no such type" } });
+    expect(screen.getByText("No Types")).toBeTruthy();
+    expect(screen.getByTestId("content-browser-new-asset-create").hasAttribute("disabled")).toBe(true);
+    fireEvent.keyDown(screen.getByTestId("new-asset-name"), { key: "Enter" });
+    expect(onCreate).not.toHaveBeenCalled();
   });
 
   it("creates with the selected type after a name is typed", () => {

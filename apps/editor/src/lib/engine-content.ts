@@ -78,23 +78,28 @@ export async function loadEngineContentBytes(relativePath: string): Promise<Uint
 
 let publishedSlots: Promise<ReadonlySet<string>> | null = null;
 
-/** Optional CC0 slot files the build published (see `FEATURE_TEST_SLOTS_MANIFEST`). */
+/**
+ * Optional CC0 slot files the build published (see `FEATURE_TEST_SLOTS_MANIFEST`).
+ * Only a manifest that was read is cached; a failed fetch is retried next time.
+ */
 async function publishedOptionalContent(): Promise<ReadonlySet<string>> {
-  publishedSlots ??= (async () => {
-    try {
-      const response = await fetch(engineContentUrl(FEATURE_TEST_SLOTS_MANIFEST));
-      if (!response.ok) return new Set<string>();
-      const manifest = (await response.json()) as { present?: unknown };
-      return new Set(
-        Array.isArray(manifest.present)
-          ? manifest.present.filter((entry): entry is string => typeof entry === "string")
-          : [],
-      );
-    } catch {
-      return new Set<string>();
-    }
+  const pending = publishedSlots ?? (async () => {
+    const response = await fetch(engineContentUrl(FEATURE_TEST_SLOTS_MANIFEST));
+    if (!response.ok) throw new Error(`Engine content manifest is missing (${response.status}).`);
+    const manifest = (await response.json()) as { present?: unknown };
+    return new Set(
+      Array.isArray(manifest.present)
+        ? manifest.present.filter((entry): entry is string => typeof entry === "string")
+        : [],
+    );
   })();
-  return publishedSlots;
+  publishedSlots = pending;
+  try {
+    return await pending;
+  } catch {
+    if (publishedSlots === pending) publishedSlots = null;
+    return new Set<string>();
+  }
 }
 
 /**

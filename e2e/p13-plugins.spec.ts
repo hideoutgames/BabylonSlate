@@ -54,7 +54,6 @@ test.describe("P13 plugins", () => {
           pluginGuids: () => string[];
           enginePluginLoad: () => {
             entries: number;
-            unpacked: number;
             errors: string[];
           };
         };

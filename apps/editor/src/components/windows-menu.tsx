@@ -45,7 +45,6 @@ export function WindowsMenu() {
     return classDocumentShowsPrefab(
       indexed.header.parentClass,
       classParentLookup(assetRegistry?.list() ?? []),
-      { assetType: indexed.header.type },
     );
   }, [activeKind, activePath, assetRegistry, registryEpoch]);
   const openDockWindowCount = getOpenDockWindowCount();

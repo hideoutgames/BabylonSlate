@@ -11,6 +11,7 @@ import {
   resolveTypeVisual,
   walkAncestry,
 } from "@babylonslate/editor-kit";
+import { contentEntryNameError } from "@babylonslate/assets";
 import { MAX_CLASS_INHERITANCE_DEPTH } from "@babylonslate/object-model";
 import { Button } from "@babylonslate/ui/components/button";
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
@@ -72,7 +73,8 @@ export interface ContentBrowserNewAssetDialogProps {
   definitionAssets?: readonly { guid: string; name: string; type: string }[];
   /** Project + enabled-plugin Class assets for the Parent Class tree. */
   classAssets?: readonly NewAssetClassAssetRef[];
-  nameTaken: boolean;
+  /** Why the name is taken: by a file in the folder, or by another Class's id. */
+  takenNameError?: string | null;
   /** Content Browser folder the asset is written to (`assets/Characters`). */
   destinationFolder?: string;
   busy?: boolean;
@@ -150,7 +152,7 @@ export function ContentBrowserNewAssetDialog({
   onDefinitionGuidChange,
   definitionAssets = [],
   classAssets = [],
-  nameTaken,
+  takenNameError = null,
   destinationFolder,
   busy = false,
   error = null,
@@ -166,7 +168,9 @@ export function ContentBrowserNewAssetDialog({
   const detailsRef = useRef<HTMLElement>(null);
   const selectedVisual = resolveTypeVisual({ assetType: type });
   const isData = type === "DataTree";
-  const canCreate = !busy && !nameTaken && Boolean(name.trim());
+  // The same rule as Rename, so a created name can always be renamed back.
+  const nameError = name.trim() ? contentEntryNameError(name) : null;
+  const nameInvalid = Boolean(takenNameError) || Boolean(nameError);
 
   useEffect(() => {
     if (open) {
@@ -196,6 +200,9 @@ export function ContentBrowserNewAssetDialog({
     if (visible.includes(type)) return;
     onTypeChange(visible[0]!);
   }, [onTypeChange, type, visibleGroups]);
+  // A search that matches no type leaves nothing to create.
+  const typeListed = visibleGroups.some((group) => group.types.includes(type));
+  const canCreate = !busy && !nameInvalid && Boolean(name.trim()) && typeListed;
 
   const parentOf = useMemo(() => classParentLookup(classAssets), [classAssets]);
   const parentRows = useMemo(
@@ -332,15 +339,15 @@ export function ContentBrowserNewAssetDialog({
                   </div>
                 </div>
                 <FieldGroup>
-                  <Field data-invalid={nameTaken || undefined}>
+                  <Field data-invalid={nameInvalid || undefined}>
                     <FieldLabel htmlFor="new-asset-name">Name</FieldLabel>
                     <Input
                       id="new-asset-name"
                       data-testid="new-asset-name"
                       className="min-h-[var(--chrome-row,28px)]"
                       value={name}
-                      aria-invalid={nameTaken || undefined}
-                      aria-describedby={nameTaken ? "new-asset-name-error" : undefined}
+                      aria-invalid={nameInvalid || undefined}
+                      aria-describedby={nameInvalid ? "new-asset-name-error" : undefined}
                       onChange={(event) => onNameChange(event.target.value)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" && !event.nativeEvent.isComposing) {
@@ -349,9 +356,13 @@ export function ContentBrowserNewAssetDialog({
                         }
                       }}
                     />
-                    {nameTaken ? (
+                    {nameError ? (
+                      <FieldError id="new-asset-name-error" data-testid="new-asset-name-invalid">
+                        {nameError}
+                      </FieldError>
+                    ) : takenNameError ? (
                       <FieldError id="new-asset-name-error" data-testid="new-asset-name-taken">
-                        An asset with this name already exists in the folder.
+                        {takenNameError}
                       </FieldError>
                     ) : null}
                   </Field>

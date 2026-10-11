@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { createDefaultSpritePayload, type IndexedAsset } from "@babylonslate/assets";
 import { createMeshComponent, identitySerializedTransform } from "@babylonslate/core";
-import { createDefaultMaterialDocument, createDefaultMaterialFunctionDocument } from "@babylonslate/shader-graph";
+import {
+  createDefaultMaterialDocument,
+  createDefaultMaterialFunctionDocument,
+  createDefaultMaterialInstanceDocument,
+} from "@babylonslate/shader-graph";
 import { prepareAssetThumbnailInput } from "./asset-thumbnail-input";
 
 function asset(guid: string, type: string, payload: Record<string, unknown> = {}, parentClass?: string): IndexedAsset {
@@ -141,13 +145,26 @@ describe("prepareAssetThumbnailInput", () => {
     expect(inputs.collectTextureBytes).not.toHaveBeenCalled();
   });
 
-  it("prepares legacy Graph prefabs with an omitted parent as Actor descendants", async () => {
-    const selected = asset("legacy", "Graph", { nodes: [], edges: [], components: [createMeshComponent("mesh", "sphere")] });
-    const result = await prepareAssetThumbnailInput({ asset: selected, ...fixture([selected]) });
+  it("renders a mesh Material Instance from its saved parent Material and texture overrides", async () => {
+    const bytes = new Map<string, Uint8Array>();
+    const component = createMeshComponent("mesh", "box");
+    component.properties.materialGuid = "instance";
+    const selected = asset("prefab", "Class", { components: [component] }, "Actor");
+    const instance = createDefaultMaterialInstanceDocument("Painted", "base");
+    instance.overrides = { Albedo: { kind: "texture", textureAssetGuid: "override" } };
+    const inputs = fixture([
+      selected,
+      saved(asset("instance", "MaterialInstance"), instance, bytes),
+      saved(asset("base", "Material"), createDefaultMaterialDocument("Base"), bytes),
+      asset("override", "Texture"),
+    ], bytes);
+
+    const result = await prepareAssetThumbnailInput({ asset: selected, ...inputs });
 
     expect(result?.kind).toBe("ActorPrefab");
-    if (result?.kind !== "ActorPrefab") throw new Error("Expected an Actor Prefab");
-    expect(result.prefab.actors.find((actor) => actor.id === "mesh")?.components[0]?.properties.meshKind).toBe("sphere");
+    expect([...result!.materials.keys()].sort()).toEqual(["base", "instance"]);
+    expect(result!.materials.get("instance")).toMatchObject({ name: "Painted", instanceOf: "base" });
+    expect(inputs.collectTextureBytes).toHaveBeenCalledWith(["override"]);
   });
 
   it("selects a front-facing capture for a sprite-only prefab", async () => {
@@ -178,7 +195,7 @@ describe("prepareAssetThumbnailInput", () => {
   it("does not read non-Actor classes or cyclic inheritance", async () => {
     const ordinary = asset("ordinary", "Class", {}, "BObject");
     const cycleA = asset("cycleA", "Class", {}, "cycleB");
-    const cycleB = asset("cycleB", "Graph", {}, "cycleA");
+    const cycleB = asset("cycleB", "Class", {}, "cycleA");
     const inputs = fixture([ordinary, cycleA, cycleB]);
 
     expect(await prepareAssetThumbnailInput({ asset: ordinary, ...inputs })).toBeNull();

@@ -43,6 +43,7 @@ import {
   embedGltfImportBatch,
   groupMsdfImportBatch,
   contentEntryNameError,
+  renamedAssetPath,
   stripAssetFileSuffix,
 } from "@babylonslate/assets";
 import {
@@ -152,9 +153,10 @@ import { useProjectSearch } from "../context/project-search-context";
 import { useValidation } from "../context/validation-context";
 import {
   ASSETS_ROOT,
-  assetReferencesIncludingOpenDocuments,
+  assetDependenciesIncludingOpenDocuments,
   applyContentBrowserTreeSelect,
   applyContentBrowserTileSelect,
+  classIdConflict,
   classIdFromClassAsset,
   classParentLookup,
   classDocumentShowsPrefab,
@@ -164,10 +166,10 @@ import {
   contentBrowserDeleteListNames,
   contentBrowserDeletingGuids,
   contentBrowserMovePreviewName,
+  contentBrowserSelectionMoves,
   contentBrowserTreeDropMoves,
   lastSceneClassDeleteLines,
   CONTENT_BROWSER_SORT_OPTIONS,
-  displayAssetTitle,
   filterAssets,
   flattenContentBrowserForest,
   flattenFolderForest,
@@ -177,6 +179,7 @@ import {
   isContentBrowserEmptyGridDoubleClickTarget,
   isNewAssetNameTaken,
   isRenameNameTaken,
+  moveNameCollision,
   newAssetFileName,
   joinAssetFolderPath,
   listChildFoldersFromTrees,
@@ -236,13 +239,25 @@ type MoveTarget = {
   name: string;
   sourcePath: string;
   folderPath: string;
-  assetSourcePaths: string[];
-  folderSourcePaths: string[];
+  /** Asset files of `guids`, in order. */
+  assetPaths: string[];
   itemCount: number;
   typeVisual: TypeVisual | null;
 };
 
 type GridItem = ContentBrowserGridItem;
+
+const NO_PATHS: readonly string[] = [];
+
+/** Folder selection after `fromFolder` moved to `toFolder`; an unchanged set is kept. */
+function remapFolderSelection(
+  selected: Set<string>,
+  fromFolder: string,
+  toFolder: string,
+): Set<string> {
+  const next = new Set([...selected].map((path) => remapPathAfterFolderMove(path, fromFolder, toFolder)));
+  return next.size === selected.size && [...next].every((path) => selected.has(path)) ? selected : next;
+}
 
 /**
  * Locks of the mounted asset tiles, serialized so the memoized grid sees a new
@@ -304,7 +319,6 @@ function ContentBrowserWorkspaceBody({
     setActiveDocument,
     tabOrder,
     loadAssetThumbnail,
-    loadAssetDocument,
     thumbnailVersions,
     thumbnailsEnabled,
     pluginDescriptors,
@@ -338,6 +352,8 @@ function ContentBrowserWorkspaceBody({
     () => new Set(),
   );
   const [tileAnchorKey, setTileAnchorKey] = useState<string | null>(null);
+  /** Last tree row selected without a Shift range. */
+  const [treeAnchorId, setTreeAnchorId] = useState<string | null>(null);
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(
     () => new Set(),
   );
@@ -743,7 +759,7 @@ function ContentBrowserWorkspaceBody({
       const item = gridItems[index];
       if (item?.kind === "asset" && isThumbnailableAssetType(item.asset.header.type)) {
         const { type, parentClass } = item.asset.header;
-        if ((type === "Class" || type === "Graph") && !classDocumentShowsPrefab(parentClass, classParentOf, { assetType: type })) continue;
+        if (type === "Class" && !classDocumentShowsPrefab(parentClass, classParentOf)) continue;
         guids.push(item.asset.header.guid);
       }
     }
@@ -766,14 +782,19 @@ function ContentBrowserWorkspaceBody({
     return flattenContentBrowserForest(folderTrees, allAssets, collapsedFolders);
   }, [allAssets, collapsedFolders, folderTrees]);
 
+  /** Primary tree row and Shift range anchor: the last clicked row while it stays selected. */
   const treeSelectedId = useMemo(() => {
+    if (treeAnchorId && (selectedFolderPaths.has(treeAnchorId) ||
+      [...selectedGuids].some((guid) => assetsByGuid.get(guid)?.path === treeAnchorId))) {
+      return treeAnchorId;
+    }
     if (selectedGuids.size === 1) {
       const guid = [...selectedGuids][0]!;
       const asset = assetsByGuid.get(guid);
       if (asset) return asset.path;
     }
     return selectedFolderPath;
-  }, [assetsByGuid, selectedFolderPath, selectedGuids]);
+  }, [assetsByGuid, selectedFolderPath, selectedFolderPaths, selectedGuids, treeAnchorId]);
 
   const treeSelectedIds = useMemo(() => {
     const ids: string[] = [...selectedFolderPaths];
@@ -823,35 +844,47 @@ function ContentBrowserWorkspaceBody({
       flattenFolderForest(folderTrees).map((row) => row.path),
     [folderTrees],
   );
+  const existingContentPaths = useMemo(
+    () => new Set([...existingAssetPaths, ...existingFolderPaths]),
+    [existingAssetPaths, existingFolderPaths],
+  );
   const newDataTypes = useMemo(() => newAssetOpen && (newAssetType === "DataDefinition" || newAssetType === "DataTree")
     ? collectGraphTypeAssets({ assets: allAssets, openDocuments })
     : { structures: [], enums: [], dataDefinitions: [] }, [newAssetOpen, newAssetType, allAssets, openDocuments]);
-  const newAssetNameTaken = isNewAssetNameTaken(
-    existingAssetPaths,
-    selectedFolderPath,
-    newAssetType,
-    newAssetName,
-  );
+  const newAssetTakenError = useMemo(() => {
+    if (!newAssetOpen) return null;
+    if (isNewAssetNameTaken(existingAssetPaths, selectedFolderPath, newAssetType, newAssetName)) {
+      return "An asset with this name already exists in the folder.";
+    }
+    const fileName = newAssetType === "Class" ? newAssetFileName("Class", newAssetName) : "";
+    return fileName
+      ? classIdConflict(referenceAssets, joinAssetFolderPath(selectedFolderPath, fileName))
+      : null;
+  }, [existingAssetPaths, newAssetName, newAssetOpen, newAssetType, referenceAssets, selectedFolderPath]);
   const nameEntryError = (entry: NameEntry): string | null => {
+    const invalid = contentEntryNameError(entry.value);
+    if (invalid) return invalid;
+    if (entry.kind === "rename") {
+      const asset = assetRegistry?.getByGuid(entry.guid);
+      if (!asset) return null;
+      if (isRenameNameTaken(existingAssetPaths, asset.path, entry.value)) {
+        return "That name is already used in this folder.";
+      }
+      const next = renamedAssetPath(asset.path, entry.value);
+      return asset.header.type === "Class" && next !== asset.path
+        ? classIdConflict(referenceAssets, next, asset.path)
+        : null;
+    }
     const taken =
       entry.kind === "folder"
         ? isFolderNameTaken(existingFolderPaths, selectedFolderPath, entry.value)
-        : entry.kind === "rename-folder"
-          ? (() => {
-              const parent = parentFolderPath(entry.path);
-              const next = joinAssetFolderPath(parent, entry.value.trim());
-              if (next === entry.path) return false;
-              return isFolderNameTaken(existingFolderPaths, parent, entry.value);
-            })()
-          : assetRegistry
-            ? isRenameNameTaken(
-                existingAssetPaths,
-                assetRegistry.getByGuid(entry.guid)?.path ?? "",
-                entry.value,
-              )
-            : false;
-    return contentEntryNameError(entry.value) ??
-      (taken ? "That name is already used in this folder." : null);
+        : (() => {
+            const parent = parentFolderPath(entry.path);
+            const next = joinAssetFolderPath(parent, entry.value.trim());
+            if (next === entry.path) return false;
+            return isFolderNameTaken(existingFolderPaths, parent, entry.value);
+          })();
+    return taken ? "That name is already used in this folder." : null;
   };
   const nameDialogError = nameDialog ? nameEntryError(nameDialog) : null;
 
@@ -933,9 +966,10 @@ function ContentBrowserWorkspaceBody({
 
   const requestDeleteSnapshot = useCallback(
     (guids: string[], folderPaths: string[]) => {
-      const folders = folderPaths.filter(
+      // A range selection can hold a folder and its descendants; delete the outermost.
+      const folders = rootSelectedFolderPaths(folderPaths.filter(
         (path) => !isFolderTreeRoot(path, rootPrefixes),
-      );
+      ));
       if (folderTrees.length === 0) {
         requestDelete(guids);
         return;
@@ -995,7 +1029,7 @@ function ContentBrowserWorkspaceBody({
       );
       if (folders.length + guids.length === 0) return;
       const names: string[] = [];
-      const assetSourcePaths: string[] = [];
+      const assetPaths: string[] = [];
       for (const path of folders) {
         names.push(path.slice(path.lastIndexOf("/") + 1));
       }
@@ -1003,17 +1037,14 @@ function ContentBrowserWorkspaceBody({
       for (const guid of guids) {
         const asset = assetRegistry.getByGuid(guid);
         if (!asset) continue;
-        names.push(displayAssetTitle(asset.header.name));
-        const folderPath = parentFolderPath(asset.path);
-        if (!assetSourcePaths.includes(folderPath)) {
-          assetSourcePaths.push(folderPath);
-        }
+        names.push(asset.header.name);
+        assetPaths.push(asset.path);
         if (guids.length === 1 && folders.length === 0) {
           typeVisual = visualForIndexedAsset(asset, classParentOf);
         }
       }
       const sourcePath =
-        folders[0] ?? assetSourcePaths[0] ?? selectedFolderPath;
+        folders[0] ?? (assetPaths[0] ? parentFolderPath(assetPaths[0]) : selectedFolderPath);
       setMoveTarget({
         operation,
         kind: folders.length > 0 && guids.length === 0 ? "folder" : "asset",
@@ -1022,13 +1053,12 @@ function ContentBrowserWorkspaceBody({
         name: contentBrowserMovePreviewName(names),
         sourcePath,
         folderPath: sourcePath,
-        assetSourcePaths,
-        folderSourcePaths: folders,
+        assetPaths,
         itemCount: folders.length + guids.length,
         typeVisual,
       });
     },
-    [assetRegistry, classParentOf, selectedFolderPath],
+    [assetRegistry, classParentOf, rootPrefixes, selectedFolderPath],
   );
 
   const keybinds = useKeybindings();
@@ -1062,7 +1092,7 @@ function ContentBrowserWorkspaceBody({
               const asset = assetRegistry.getByGuid(guid);
               if (!asset) continue;
               const type = asset.header.type;
-              if (type !== "Model" && type !== "Animation" && type !== "Material" && type !== "Class" && type !== "Graph") continue;
+              if (type !== "Model" && type !== "Animation" && type !== "Material" && type !== "Class") continue;
               jobs.push({
                 guid, path: asset.path, type, payload: asset.header.payload,
                 projectGuid, cacheKey: await revisions.cacheKey(guid) ?? guid,
@@ -1169,26 +1199,27 @@ function ContentBrowserWorkspaceBody({
             folders,
             (guid) => assetRegistry.getByGuid(guid)?.path,
           );
-          const browse = contentBrowserFolderOps(
-            selectedFolderPath,
-            browserRoots,
-          );
-          if (browse.readOnly) return;
+          // Each copy is written beside its source, as folder duplicates are.
+          const sources = [
+            ...folders.map((path) => ({ guid: null, from: contentBrowserFolderOps(path, browserRoots) })),
+            ...guids.flatMap((guid) => {
+              const path = assetRegistry.getByGuid(guid)?.path;
+              return path ? [{ guid, from: contentBrowserFolderOps(parentFolderPath(path), browserRoots) }] : [];
+            }),
+          ];
+          const readOnly = sources.find(({ from }) => from.readOnly);
+          if (readOnly) {
+            setOperationError(`${readOnly.from.pathPrefix} is read-only.`);
+            return;
+          }
           void (async () => {
             setBusy(true);
             setOperationError(null);
             try {
               try {
-                for (const path of folders) {
-                  const from = contentBrowserFolderOps(path, browserRoots);
-                  await assetRegistry.duplicateFolder(from.rootId, from.relative);
-                }
-                for (const guid of guids) {
-                  await assetRegistry.duplicateAsset(
-                    guid,
-                    browse.rootId,
-                    browse.relative,
-                  );
+                for (const { guid, from } of sources) {
+                  if (guid) await assetRegistry.duplicateAsset(guid, from.rootId, from.relative);
+                  else await assetRegistry.duplicateFolder(from.rootId, from.relative);
                 }
               } finally {
                 await refreshAssetRegistry();
@@ -1292,12 +1323,11 @@ function ContentBrowserWorkspaceBody({
       thumbnailsEnabled,
       openMoveForSnapshot,
       openOrFocusDocument,
-      referenceAssets,
-      openDocuments,
       refreshAssetRegistry,
       requestDeleteSnapshot,
       selectedFolderPath,
       browserRoots,
+      rootPrefixes,
       setImportErrors,
       keybinds,
     ],
@@ -1323,66 +1353,16 @@ function ContentBrowserWorkspaceBody({
     assets: allAssets,
   }), [allAssets, deleteTarget]);
   const deletingClassGuids = useMemo(() => new Set(referenceAssets
-    .filter((asset) => deletingGuids.has(asset.header.guid) &&
-      (asset.header.type === "Class" || asset.header.type === "Graph"))
+    .filter((asset) => deletingGuids.has(asset.header.guid) && asset.header.type === "Class")
     .map((asset) => asset.header.guid)), [deletingGuids, referenceAssets]);
-  const [deleteReferenceScan, setDeleteReferenceScan] = useState<{
-    deleting: ReadonlySet<string>;
-    assets: readonly IndexedAsset[];
-    openDocuments: typeof openDocuments;
-    documents: Array<{ ref: { path: string }; content: unknown }>;
-    failed: boolean;
-  } | null>(null);
-
-  useEffect(() => {
-    if (deletingClassGuids.size === 0) return;
-    let cancelled = false;
-    void (async () => {
-      const documents: Array<{ ref: { path: string }; content: unknown }> = [];
-      let failed = false;
-      // Older scenes may predate Class dependency headers. Read their actual
-      // payloads before allowing a Class (or its containing folder) to disappear.
-      for (const asset of referenceAssets) {
-        if (deletingGuids.has(asset.header.guid)) continue;
-        if (openDocuments.some((doc) => doc.ref.path === asset.path)) continue;
-        const kind = documentKindForAssetType(asset.header.type);
-        if (!kind || kind === "trace") continue;
-        try {
-          const content = await loadAssetDocument(kind, asset.path);
-          if (cancelled) return;
-          if (!content) failed = true;
-          else documents.push({ ref: { path: asset.path }, content });
-        } catch {
-          failed = true;
-        }
-      }
-      if (!cancelled) setDeleteReferenceScan({
-        deleting: deletingGuids, assets: referenceAssets, openDocuments,
-        documents, failed,
-      });
-    })();
-    return () => { cancelled = true; };
-  }, [deletingClassGuids, deletingGuids, referenceAssets, openDocuments, loadAssetDocument]);
-
-  const deleteReferenceScanCurrent = deleteReferenceScan?.deleting === deletingGuids &&
-    deleteReferenceScan.assets === referenceAssets &&
-    deleteReferenceScan.openDocuments === openDocuments;
-  const checkingDeleteReferences = deletingClassGuids.size > 0 && !deleteReferenceScanCurrent;
-  const deleteReferenceCheckFailed = deletingClassGuids.size > 0 &&
-    deleteReferenceScanCurrent && deleteReferenceScan.failed;
-
   const deleteInboundRefs = useMemo(() => {
     if (!deleteTarget || !assetRegistry) return [];
+    // One dependency pass for the whole project, not one per deleted guid.
     const refs = new Map<string, string[]>();
-    const documents = [...openDocuments,
-      ...(deleteReferenceScanCurrent ? deleteReferenceScan.documents : [])];
-    for (const guid of deletingGuids) {
-      for (const inbound of assetReferencesIncludingOpenDocuments(guid, referenceAssets, documents).inbound) {
-        if (deletingGuids.has(inbound)) continue;
-        const targets = refs.get(inbound) ?? [];
-        targets.push(guid);
-        refs.set(inbound, targets);
-      }
+    for (const [inbound, dependencies] of assetDependenciesIncludingOpenDocuments(referenceAssets, openDocuments)) {
+      if (deletingGuids.has(inbound)) continue;
+      const targets = dependencies.filter((guid) => deletingGuids.has(guid));
+      if (targets.length > 0) refs.set(inbound, targets);
     }
     const rows = [...refs].map(([guid, targets]) => {
       const asset = assetRegistry.getByGuid(guid);
@@ -1411,7 +1391,7 @@ function ContentBrowserWorkspaceBody({
     });
     return rows.sort((a, b) => a.name.localeCompare(b.name) || a.path.localeCompare(b.path));
   }, [assetRegistry, referenceAssets, openDocuments, deleteTarget, resolveAssetName,
-    deletingGuids, deletingClassGuids, deleteReferenceScan, deleteReferenceScanCurrent, projectDocument]);
+    deletingGuids, deletingClassGuids, projectDocument]);
   const hasReferencedClass = deleteInboundRefs.some((ref) => ref.blocksClassDelete);
   const deletedClasses = useMemo(() => referenceAssets.filter((asset) => deletingClassGuids.has(asset.header.guid)), [referenceAssets, deletingClassGuids]);
   const classReplacements = useMemo(() => deletedClasses.map((asset) => {
@@ -1422,7 +1402,6 @@ function ContentBrowserWorkspaceBody({
   }), [deletedClasses, referenceAssets, classReplacementChoices]);
   const pickerSource = deletedClasses.find((asset) => asset.header.guid === replacementPicker);
   const pickerCandidates = pickerSource ? classDeletionCandidates(pickerSource, referenceAssets, deletingGuids) : [];
-  const deleteBlocked = checkingDeleteReferences || deleteReferenceCheckFailed;
 
   const deleteListNames = useMemo(() => {
     if (!deleteTarget) return [];
@@ -1479,7 +1458,7 @@ function ContentBrowserWorkspaceBody({
   }, [allAssets, deleteTarget]);
 
   const confirmDelete = useCallback(async () => {
-    if (busy || !assetRegistry || !deleteTarget || deleteBlocked) return;
+    if (busy || !assetRegistry || !deleteTarget) return;
     const paths = new Set<string>();
     for (const guid of deleteTarget.guids) {
       const path = assetRegistry.getByGuid(guid)?.path;
@@ -1495,6 +1474,14 @@ function ContentBrowserWorkspaceBody({
       for (const path of containedAssetPaths(allAssets, folder)) {
         paths.add(path);
       }
+    }
+    const readOnly =
+      folders.find((path) => contentBrowserFolderOps(path, browserRoots).readOnly) ??
+      [...paths].find((path) => contentBrowserFolderOps(parentFolderPath(path), browserRoots).readOnly);
+    if (readOnly) {
+      setDeleteTarget(null);
+      setDeleteError(`${readOnly} is read-only and cannot be deleted.`);
+      return;
     }
     if (refuseTheirsAssetPaths([...paths, ...deleteInboundRefs.filter((ref) => ref.blocksClassDelete && ref.guid !== "project-settings").map((ref) => ref.path)])) return;
     const oursToRelease = oursLockPaths([...paths], (path) =>
@@ -1526,12 +1513,13 @@ function ContentBrowserWorkspaceBody({
         await replaceClassReferencesBeforeDelete(classReplacements, deletingGuids, (name) =>
           reportProgress(`Updating Class References: ${name}`));
       }
-      closeDocumentsForPaths(paths);
       try {
+        // Each item's tabs close just before it is deleted, so a failure keeps
+        // the unsaved edits of every item that was not reached.
         for (const path of folders) {
           const from = contentBrowserFolderOps(path, browserRoots);
-          if (from.readOnly) continue;
           await reportProgress(path);
+          closeDocumentsForPaths(containedAssetPaths(allAssets, path));
           await assetRegistry.deleteFolder(from.rootId, from.relative);
           removedFolders.push(path);
           for (const asset of allAssets) {
@@ -1548,6 +1536,7 @@ function ContentBrowserWorkspaceBody({
           const asset = assetRegistry.getByGuid(guid);
           if (asset) {
             await reportProgress(asset.header.name);
+            closeDocumentsForPaths([asset.path]);
             await assetRegistry.deleteAsset(guid);
             removedGuids.add(guid);
           }
@@ -1562,10 +1551,10 @@ function ContentBrowserWorkspaceBody({
               await sourceControl.releasePath(path);
             }
           }
+          // Stored Class references and parentClass use the compile id, not the display name.
           const removedClassNames = new Set(allAssets
-            .filter((asset) => removedGuids.has(asset.header.guid) &&
-              (asset.header.type === "Class" || asset.header.type === "Graph"))
-            .map((asset) => asset.header.name));
+            .filter((asset) => removedGuids.has(asset.header.guid) && asset.header.type === "Class")
+            .map(classIdFromClassAsset));
           await repairAfterAssetDelete(removedGuids, removedClassNames, (name) =>
             reportProgress(`Updating References: ${name}`), removedFolders,
           );
@@ -1586,7 +1575,6 @@ function ContentBrowserWorkspaceBody({
     busy,
     closeDocumentsForPaths,
     deleteTarget,
-    deleteBlocked,
     deleteInboundRefs,
     classReplacements,
     referenceAssets,
@@ -1636,6 +1624,7 @@ function ContentBrowserWorkspaceBody({
               currentName: prepared[0]!.name,
             });
             const folder = selectedRoot.relative;
+            const { modelImportDefaultScale } = await createAppSettingsStore().load();
             for (let index = 0; index < prepared.length; index += 1) {
               const file = prepared[index]!;
               setImportProgress({
@@ -1644,14 +1633,13 @@ function ContentBrowserWorkspaceBody({
                 currentName: file.name,
               });
               try {
-                const engineSettings = await createAppSettingsStore().load();
                 const created = await assetRegistry.importFile(
                   selectedRoot.rootId,
                   folder,
                   file.name,
                   file.bytes,
                   {
-                    modelImportScale: engineSettings.modelImportDefaultScale,
+                    modelImportScale: modelImportDefaultScale,
                     sidecars: file.sidecars,
                   },
                 );
@@ -1738,6 +1726,7 @@ function ContentBrowserWorkspaceBody({
         setSelectedFolderPath((current) =>
           remapPathAfterFolderMove(current, fromPath, nextFolder),
         );
+        setSelectedFolderPaths((current) => remapFolderSelection(current, fromPath, nextFolder));
         await refreshAssetRegistry();
         setNameDialog(null);
         await transferFolderLocks(fromPath, nextFolder);
@@ -1838,6 +1827,7 @@ function ContentBrowserWorkspaceBody({
           );
           repathProjectFolder(fromPath, nextFolder);
           onMoved?.(move);
+          setSelectedFolderPaths((current) => remapFolderSelection(current, fromPath, nextFolder));
           for (const asset of contained) {
             repairDocumentPath(
               asset.path,
@@ -1884,53 +1874,50 @@ function ContentBrowserWorkspaceBody({
 
   const confirmMove = useCallback(async () => {
     if (!assetRegistry || !moveTarget) return;
-    const dest = contentBrowserFolderOps(moveTarget.folderPath, browserRoots);
-    if (dest.readOnly) return;
+    const destPath = moveTarget.folderPath;
+    const dest = contentBrowserFolderOps(destPath, browserRoots);
+    if (dest.readOnly) {
+      setOperationError(`${destPath} is read-only. Choose a folder in project content.`);
+      return;
+    }
+    const guidByPath = new Map(moveTarget.guids.flatMap((guid) => {
+      const path = assetRegistry.getByGuid(guid)?.path;
+      return path ? [[path, guid] as const] : [];
+    }));
+    // The tree drop's rules: items in another content root, and for Move
+    // items already in the destination, stay where they are.
+    const plan = contentBrowserSelectionMoves({
+      destinationPath: destPath,
+      operation: moveTarget.operation,
+      assetPaths: [...guidByPath.keys()],
+      folderPaths: moveTarget.folderPaths,
+      rootPaths: rootPrefixes,
+      existingPaths: existingContentPaths,
+    });
+    if (plan.error) {
+      setOperationError(plan.error);
+      return;
+    }
+    const moves = plan.moves.map((move) =>
+      move.kind === "asset" ? { ...move, guid: guidByPath.get(move.id) } : move);
     setBusy(true);
     setOperationError(null);
-    const remainingGuids = new Set(moveTarget.guids);
-    const remainingFolders = new Set(moveTarget.folderPaths);
+    const remainingGuids = new Set(moves.flatMap((move) => move.guid ? [move.guid] : []));
+    const remainingFolders = new Set(moves.flatMap((move) => move.kind === "folder" ? [move.sourcePath] : []));
     const total = remainingGuids.size + remainingFolders.size;
     try {
-      const destPath = moveTarget.folderPath;
-      const destRelative = dest.relative;
       if (moveTarget.operation === "copy") {
-        for (const fromPath of moveTarget.folderPaths) {
-          const from = contentBrowserFolderOps(fromPath, browserRoots);
-          if (from.rootId !== dest.rootId) continue;
-          await assetRegistry.copyFolder(
-            from.rootId,
-            from.relative,
-            destRelative,
-          );
-          remainingFolders.delete(fromPath);
-        }
-        for (const guid of moveTarget.guids) {
-          await assetRegistry.copyAsset(guid, dest.rootId, destRelative);
-          remainingGuids.delete(guid);
+        for (const move of moves) {
+          if (move.kind === "folder") {
+            const from = contentBrowserFolderOps(move.sourcePath, browserRoots);
+            await assetRegistry.copyFolder(from.rootId, from.relative, dest.relative);
+            remainingFolders.delete(move.sourcePath);
+          } else if (move.guid) {
+            await assetRegistry.copyAsset(move.guid, dest.rootId, dest.relative);
+            remainingGuids.delete(move.guid);
+          }
         }
       } else {
-        const moves: ContentBrowserDropMove[] = [
-          ...moveTarget.folderPaths.map((path) => ({
-            kind: "folder" as const,
-            sourcePath: path,
-            destinationPath: destPath,
-            id: path,
-          })),
-          ...moveTarget.guids.flatMap((guid) => {
-            const before = assetRegistry.getByGuid(guid);
-            if (!before) return [];
-            return [
-              {
-                kind: "asset" as const,
-                sourcePath: parentFolderPath(before.path),
-                destinationPath: destPath,
-                id: before.path,
-                guid,
-              },
-            ];
-          }),
-        ];
         await applyRegistryMoves(moves, (move) => {
           if (move.kind === "folder") remainingFolders.delete(move.sourcePath);
           else if (move.guid) remainingGuids.delete(move.guid);
@@ -1950,16 +1937,15 @@ function ContentBrowserWorkspaceBody({
           ...moveTarget,
           guids,
           folderPaths: folders,
-          folderSourcePaths: folders,
-          assetSourcePaths: [...new Set(guids.flatMap((guid) => {
+          assetPaths: guids.flatMap((guid) => {
             const asset = assetRegistry.getByGuid(guid);
-            return asset ? [parentFolderPath(asset.path)] : [];
-          }))],
+            return asset ? [asset.path] : [];
+          }),
           itemCount: remaining,
           kind: guids.length === 0 ? "folder" : "asset",
           name: contentBrowserMovePreviewName([
             ...folders.map((path) => path.split("/").at(-1) ?? path),
-            ...guids.map((guid) => displayAssetTitle(assetRegistry.getByGuid(guid)?.header.name ?? guid)),
+            ...guids.map((guid) => assetRegistry.getByGuid(guid)?.header.name ?? guid),
           ]),
         } : null);
       }
@@ -1972,8 +1958,10 @@ function ContentBrowserWorkspaceBody({
   }, [
     applyRegistryMoves,
     assetRegistry,
+    existingContentPaths,
     moveTarget,
     refreshAssetRegistry,
+    rootPrefixes,
     browserRoots,
   ]);
 
@@ -2001,6 +1989,9 @@ function ContentBrowserWorkspaceBody({
     setNewAssetOpen(true);
   }, [busy, selectedRootWritable]);
 
+  // Disabled like the toolbar buttons, so a read-only root offers no action
+  // that would then do nothing.
+  const creationDisabled = busy || !selectedRootWritable;
   const emptyGridItems = useMemo(
     () => [
       {
@@ -2008,6 +1999,7 @@ function ContentBrowserWorkspaceBody({
         label: "New Folder",
         shortcut: keybinds.get("edit.newFolder")?.[0],
         icon: <FolderPlusIcon />,
+        disabled: creationDisabled,
         onSelect: () => setNameDialog({ kind: "folder", value: "NewFolder" }),
       },
       {
@@ -2015,6 +2007,7 @@ function ContentBrowserWorkspaceBody({
         label: "New Asset",
         shortcut: keybinds.get("browser.newAsset")?.[0],
         icon: <PlusIcon />,
+        disabled: creationDisabled,
         onSelect: openNewAssetDialog,
       },
       {
@@ -2022,12 +2015,13 @@ function ContentBrowserWorkspaceBody({
         label: "Import",
         shortcut: keybinds.get("browser.import")?.[0],
         icon: <UploadIcon />,
+        disabled: creationDisabled,
         onSelect: () => {
           void handleImport();
         },
       },
     ],
-    [handleImport, openNewAssetDialog, keybinds],
+    [creationDisabled, handleImport, openNewAssetDialog, keybinds],
   );
   const {
     menu: emptyGridMenu,
@@ -2066,7 +2060,7 @@ function ContentBrowserWorkspaceBody({
             if (!asset) return false;
             const type = asset.header.type;
             return type === "Model" || type === "Animation" || type === "Material" ||
-              ((type === "Class" || type === "Graph") && classDocumentShowsPrefab(asset.header.parentClass, classParentOf, { assetType: type }));
+              (type === "Class" && classDocumentShowsPrefab(asset.header.parentClass, classParentOf));
           }),
           singleAssetType:
             guids.length === 1 && folders.length === 0
@@ -2228,6 +2222,7 @@ function ContentBrowserWorkspaceBody({
       setSelectedGuids(next.selectedGuids);
       setSelectedFolderPaths(next.selectedFolderPaths);
       setSelectedFolderPath(next.selectedFolderPath);
+      if (!options?.range) setTreeAnchorId(id);
     },
     [
       browserRows,
@@ -2244,7 +2239,7 @@ function ContentBrowserWorkspaceBody({
       targetId: string | null,
       placement?: TreeDropPlacement,
     ) => {
-      if (!assetRegistry) return;
+      if (!assetRegistry || busy) return;
       const moves = contentBrowserTreeDropMoves({
         dragId,
         targetId,
@@ -2256,6 +2251,12 @@ function ContentBrowserWorkspaceBody({
         placement,
       });
       if (moves.length === 0) return;
+      // Refuse before moving anything, so a taken name cannot stop the drop halfway.
+      const collision = moveNameCollision(moves, existingContentPaths);
+      if (collision) {
+        setOperationError(collision);
+        return;
+      }
       void (async () => {
         setBusy(true);
         setOperationError(null);
@@ -2276,6 +2277,8 @@ function ContentBrowserWorkspaceBody({
       applyRegistryMoves,
       assetRegistry,
       browserRows,
+      busy,
+      existingContentPaths,
       refreshAssetRegistry,
       rootPrefixes,
       selectedFolderPaths,
@@ -2311,9 +2314,9 @@ function ContentBrowserWorkspaceBody({
   );
 
   const handleCreateAsset = useCallback(async () => {
-    if (!assetRegistry || newAssetNameTaken || selectedRoot.readOnly) return;
+    if (!assetRegistry || newAssetTakenError || selectedRoot.readOnly) return;
     const name = newAssetName.trim();
-    if (!name) return;
+    if (!name || contentEntryNameError(name)) return;
     setBusy(true);
     setOperationError(null);
     try {
@@ -2354,7 +2357,7 @@ function ContentBrowserWorkspaceBody({
     assetRegistry,
     classParentOf,
     newAssetName,
-    newAssetNameTaken,
+    newAssetTakenError,
     newAssetParent,
     newDataDefinition,
     newDataTypes,
@@ -2772,14 +2775,10 @@ function ContentBrowserWorkspaceBody({
               ) {
                 return;
               }
-              if (selectedGuids.size !== 1 || selectedFolderPaths.size !== 0) {
-                return;
-              }
-              const guid = [...selectedGuids][0]!;
-              const asset = assetRegistry?.getByGuid(guid);
-              if (!asset) return;
+              // The toolbar Open action: open one asset or enter one folder.
+              if (!canOpenSelection) return;
               event.preventDefault();
-              void openOrFocusDocument(asset);
+              openSelection();
             }}
             onDoubleClick={(event) => {
               if (!isContentBrowserEmptyGridDoubleClickTarget(event.target)) {
@@ -2889,7 +2888,7 @@ function ContentBrowserWorkspaceBody({
         definitionAssets={newDataTypes.dataDefinitions.map(definition => ({ guid: definition.guid, name: definition.name, type: "DataDefinition" }))}
         onParentClassChange={setNewAssetParent}
         classAssets={allAssets.filter((asset) => asset.header.type === "Class")}
-        nameTaken={newAssetNameTaken}
+        takenNameError={newAssetTakenError}
         destinationFolder={selectedFolderPath}
         error={operationError}
         busy={busy}
@@ -2924,9 +2923,7 @@ function ContentBrowserWorkspaceBody({
                     : `Delete ${deleteListNames.length} Assets`}
               </AlertDialogTitle>
               <AlertDialogDescription>
-                {checkingDeleteReferences ? "Checking references…"
-                  : deleteReferenceCheckFailed ? "Class references could not be checked. Reopen the affected assets and try again."
-                  : hasReferencedClass ? "Choose a replacement for each referenced Class, or leave None to clear its usages. This cannot be undone."
+                {hasReferencedClass ? "Choose a replacement for each referenced Class, or leave None to clear its usages. This cannot be undone."
                   : deleteInboundRefs.length > 0
                   ? `${deleteInboundRefs.length === 1 ? "1 asset or setting" : `${deleteInboundRefs.length} assets or settings`} will lose references. This cannot be undone.`
                   : "This cannot be undone."}
@@ -2960,7 +2957,7 @@ function ContentBrowserWorkspaceBody({
                   </li>
                 ))}
               </ul>
-              {deleteInboundRefs.length === 0 && !deleteBlocked && (
+              {deleteInboundRefs.length === 0 && (
                 <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <CircleCheckIcon className="size-3.5 shrink-0" />
                   Nothing else references {deleteListItems.length === 1 ? "this item" : "these items"}.
@@ -3037,7 +3034,7 @@ function ContentBrowserWorkspaceBody({
               variant="destructive"
               size="touch"
               className="h-[var(--touch-target,44px)]"
-              disabled={busy || deleteBlocked}
+              disabled={busy}
               data-testid="content-browser-delete-confirm"
               onClick={(event) => {
                 event.preventDefault();
@@ -3077,7 +3074,7 @@ function ContentBrowserWorkspaceBody({
           </ul>
           <AlertDialogFooter>
             <AlertDialogCancel>Back</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" disabled={busy || deleteBlocked}
+            <AlertDialogAction variant="destructive" disabled={busy}
               data-testid="content-browser-delete-references-confirm" onClick={(event) => { event.preventDefault(); void confirmDelete(); }}>
               Delete And Update References
             </AlertDialogAction>
@@ -3184,10 +3181,11 @@ function ContentBrowserWorkspaceBody({
                   contentBrowserFolderOps(moveTarget.sourcePath, browserRoots)
                     .pathPrefix,
                 )
-              : moveTarget.assetSourcePaths[0] ?? moveTarget.sourcePath
+              : moveTarget.assetPaths[0]
+                ? parentFolderPath(moveTarget.assetPaths[0])
+                : moveTarget.sourcePath
             : ASSETS_ROOT
         }
-        sourcePath={moveTarget?.sourcePath ?? ASSETS_ROOT}
         folderTree={
           folderTrees.find((tree) => {
             const source = moveTarget?.sourcePath ?? ASSETS_ROOT;
@@ -3207,8 +3205,10 @@ function ContentBrowserWorkspaceBody({
         error={operationError}
         typeVisual={moveTarget?.typeVisual ?? null}
         itemCount={moveTarget?.itemCount}
-        assetSourcePaths={moveTarget?.assetSourcePaths}
-        folderSourcePaths={moveTarget?.folderSourcePaths}
+        assetPaths={moveTarget?.assetPaths ?? NO_PATHS}
+        folderPaths={moveTarget?.folderPaths ?? NO_PATHS}
+        rootPaths={rootPrefixes}
+        existingPaths={existingContentPaths}
       />
 
       {referenceGuid ? (

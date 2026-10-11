@@ -783,9 +783,7 @@ function dockOptionsForIndexed(
     actorPrefab:
       kind !== "graph" ||
       !indexed ||
-      classDocumentShowsPrefab(indexed.header.parentClass, (id) => parentOf(id) ?? null, {
-        assetType: indexed.header.type,
-      }),
+      classDocumentShowsPrefab(indexed.header.parentClass, (id) => parentOf(id) ?? null),
     sourceControl: sourceControlEnabled,
     sceneMode: kind === "scene" ? (sceneMode ?? "design") : undefined,
     animEditorMode:
@@ -3136,7 +3134,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         pluginGuids: () => string[];
         enginePluginLoad: () => {
           entries: number;
-          unpacked: number;
           errors: string[];
         };
         seedMissingPluginOverride: (guid: string) => Promise<{
