@@ -105,6 +105,7 @@ import {
   type EncodeFn,
   stubEncodeKtx2,
   type MigrationPending,
+  type MigrationRegistry,
   type PluginDescriptor,
   type PluginDiagnostic,
   type IndexedAsset,
@@ -351,7 +352,7 @@ export class ProjectService {
   private projectGuid: string | null = null;
   private migrationPending: MigrationPending[] = [];
   private migrateOnSaveApproved = false;
-  private readonly migrations = defaultRegistry();
+  private readonly migrations: MigrationRegistry;
   private readonly blobs: BlobStore;
   private assetRegistry: AssetRegistry | null = null;
   /** The source session `assetRegistry` was mounted in. */
@@ -427,8 +428,11 @@ export class ProjectService {
       createWorkerEncode?: () =>
         | (EncodeFn & { dispose: () => void; recycleCount: () => number })
         | null;
+      /** Schema versions and migration steps; tests inject steps to exercise the approval flow. */
+      migrations?: MigrationRegistry;
     } = {},
   ) {
+    this.migrations = options.migrations ?? defaultRegistry();
     storage = guardProjectStorage(storage, this.writeAdmission, true);
     this.storage = storage;
     this.publicStorage = guardProjectStorage(storage, this.writeAdmission);

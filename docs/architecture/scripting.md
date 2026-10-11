@@ -124,7 +124,7 @@ type LogicGraph = {
 };
 ```
 
-Migration: bump graph asset schema; committed historical goldens under `packages/assets` migration chains (same pattern as P1). Keep a thin adapter from the old `SerializedGraph` until editor documents are migrated.
+Schema changes bump the Class asset version. Before release, older Class versions are refused as an unsupported old format rather than migrated ([containers.md](containers.md#schema-migration)).
 
 ## Pin type system
 

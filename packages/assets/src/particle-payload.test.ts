@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   PARTICLE_SYSTEM_MAX_EMITTERS,
-  createDefaultParticleSystemPayload,
   normalizeParticleSystemPayload,
   particleAssetDependencies,
 } from "./particle-payload";
@@ -10,8 +9,6 @@ import {
   normalizeParticleEmitterPayload,
 } from "./particle-basic-emitter";
 import { encodeAssetDocument, decodeAssetDocument } from "./asset-document";
-import { loadPayloadWithMigration } from "./migrate-on-load";
-import { createDefaultMigrationRegistry } from "./migration";
 
 describe("particle payloads", () => {
   it("treats a missing Preview Skybox field as on and keeps an explicit off", () => {
@@ -92,37 +89,5 @@ describe("particle payloads", () => {
     expect(normalizeParticleSystemPayload(decodedSystem.payload)).toEqual(
       system,
     );
-  });
-
-  it("loads v0 payloads to defaults and v1 payloads without a pending save", () => {
-    const registry = createDefaultMigrationRegistry();
-    const emitter = loadPayloadWithMigration(registry, {
-      type: "ParticleEmitter",
-      version: 0,
-      payload: {},
-      path: "assets/Sparks.emitter.babasset",
-    });
-    expect(emitter.version).toBe(1);
-    expect(normalizeParticleEmitterPayload(emitter.payload)).toEqual(
-      createDefaultParticleEmitterPayload(),
-    );
-    const system = loadPayloadWithMigration(registry, {
-      type: "ParticleSystem",
-      version: 0,
-      payload: {},
-      path: "assets/Fire.particles.babasset",
-    });
-    expect(system.pending).not.toBeNull();
-    expect(normalizeParticleSystemPayload(system.payload)).toEqual(
-      createDefaultParticleSystemPayload(),
-    );
-    // A P17 file is already header v1: it loads with new defaults and no save prompt.
-    const p17 = loadPayloadWithMigration(registry, {
-      type: "ParticleEmitter",
-      version: 1,
-      payload: { textureGuid: "tex-1", emitRate: 30, blendMode: "standard" },
-      path: "assets/Old.emitter.babasset",
-    });
-    expect(p17.pending).toBeNull();
   });
 });

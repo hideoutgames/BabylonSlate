@@ -45,7 +45,7 @@ Inline locators point at byte ranges after the header. Blob locators name `{path
 
 Scenes and Class logic graphs are `.babasset` files under `assets/` (`assets/main.scene.babasset`, `assets/main.class.babasset`). `encodeAssetDocument` / `decodeAssetDocument` keep the JSON body in a single `document` chunk so type, schema version and guid stay header-only readable. Importers (Font, Texture, Model, …) often store structured data on **`header.payload`** with binary `source` / `pixels` chunks and no document chunk; `decodeAssetDocument` falls back to that header payload so those assets open in document workspaces. Settings-tab saves for those import types, and Font editor saves, write `headerPayload` so binary chunks are not replaced by a document chunk and an MSDF attach merges into the complete Font payload. A document save keeps extra chunks (`extraChunksFromDecoded`) so font bytes are not wiped. Asset guids survive a re-save: an existing file's guid is read from its header rather than regenerated.
 
-Scene payloads are at schema version 4. Older Scene versions step up without payload changes (`normalizeScene` fills current defaults), still through the explicit migration approval flow. Documents are `.babasset` only: a `.json` scene or Class path is not read, written or discovered on project open.
+Scene payloads are at schema version 4 (`SCENE_SCHEMA_VERSION`). Older Scene versions are refused as an unsupported old format; additive fields within version 4 are filled by `normalizeScene` on load. Documents are `.babasset` only: a `.json` scene or Class path is not read, written or discovered on project open.
 
 ### Modes
 
@@ -90,11 +90,13 @@ App-private storage keyed by project guid: compiled scripts, thumbnails, import 
 
 ## Schema migration
 
-- Each asset type owns ordered migrations `N → N+1`, applied on load.
-- Future (unknown) versions refuse with a clear message **when a chain is registered**. Types with no chain (Font / Sprite / AnimationGraph) pass through so a version-1 document is not treated as “newer than current 0”.
+- Each registered asset type declares its `currentVersion` and may own ordered steps `N → N+1` ending there, applied on load (`MigrationRegistry`, `loadPayloadWithMigration`).
+- `createDefaultMigrationRegistry()` registers **no steps**: the engine is unreleased, so a stored version older than current is refused with an “unsupported old format” error rather than upgraded. Add a step only when a released format must be read again.
+- Both refusals throw `AssetFormatVersionError`, whose message is user-facing: opening such a Scene shows it in **Scene Loading Failed**, and other assets show it in **Could Not Open Asset**. Play, Preview Build and export read payloads without this version check.
+- Future (unknown) versions refuse with a clear message **when a type is registered**. Unregistered types (Font / Sprite / AnimationGraph) pass through so a version-1 document is not treated as “newer than current 0”.
 - Opening a project that needs migration prompts once; migrate-on-save; never silently rewrite untouched files. `ProjectService.saveDocument` / `saveProject`, the NavMesh bake write and Audio clip writes refuse a pending path until `approveMigrateOnSave()`. Pending migrations list each path once; loading an unmigrated asset again replaces its entry.
 - A Save All the user asks for (toolbar, the close prompt, an exclusive Scene switch, Play) that pending migrations refuse opens **Schema Migration Required**. **Migrate On Save** approves migration for the rest of the project session and runs the complete Save All (bakes, journal clear, compile-on-save, thumbnails, Scene Saved hooks), upgrading dependency metadata; Play resumes only when that save completed. Auto-save never prompts.
-- Golden fixtures: one committed `.babasset` per historical version per type — `class-v0.babasset` (payload in header), `scene-v0.babasset` (payload in the document chunk, the shape the editor writes), `class-v1.babasset` at current.
+- The approval flow stays covered with no shipped steps: `ProjectService` accepts an injected `migrations` registry, and `project-service.migration.test.ts` registers test steps for Scene and Project. A new step for a released format also gets a committed golden of the version it reads; `class-v1.babasset` is the current-format container golden.
 - The project manifest (`project.json`) migrates as type `Project` on load and is gated by the same approval.
 
 ## Golden / property tests
