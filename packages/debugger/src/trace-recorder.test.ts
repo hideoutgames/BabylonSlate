@@ -4,6 +4,7 @@ import { TraceRecorder, type TraceFrame } from "./trace-recorder";
 function frame(tickIndex: number, snapshotText?: string): TraceFrame {
   return {
     tickIndex,
+    timeDilation: 1,
     scriptMs: 0,
     physicsMs: 0,
     logs: [],
@@ -18,6 +19,7 @@ describe("TraceRecorder", () => {
     recorder.start({ seed: 7, dt: 1 / 60 });
     recorder.recordFrame({
       tickIndex: 1,
+      timeDilation: 1,
       scriptMs: 1.5,
       physicsMs: 0.5,
       logs: [{ severity: "log", category: "game", message: "tick" }],
@@ -55,6 +57,7 @@ describe("TraceRecorder", () => {
     const recorder = new TraceRecorder();
     recorder.recordFrame({
       tickIndex: 0,
+      timeDilation: 1,
       scriptMs: 0,
       physicsMs: 0,
       logs: [],
@@ -88,13 +91,13 @@ describe("TraceRecorder", () => {
   });
 
   it.each([
-    { byteBudget: 270, retained: [2, 3] },
-    { byteBudget: 269, retained: [3] },
+    { byteBudget: 304, retained: [2, 3] },
+    { byteBudget: 303, retained: [3] },
   ])(
     "evicts oldest frames at the $byteBudget-byte boundary and resets between recordings",
     ({ byteBudget, retained }) => {
       const recorder = new TraceRecorder({ byteBudget });
-      // Terminal metadata reserves 141 bytes; two 64-byte frames plus their comma fit at 270.
+      // Terminal metadata reserves 141 bytes; two 81-byte frames plus their comma fit at 304.
       for (let recording = 0; recording < 2; recording++) {
         recorder.start({ seed: 7, dt: 1 });
         for (let tick = 1; tick <= 3; tick++) recorder.recordFrame(frame(tick));
@@ -119,7 +122,7 @@ describe("TraceRecorder", () => {
   });
 
   it("stops before an oversized frame can evict complete frames or exceed the retained budget", () => {
-    const recorder = new TraceRecorder({ byteBudget: 270 });
+    const recorder = new TraceRecorder({ byteBudget: 304 });
     recorder.start({ seed: 7, dt: 1 });
     for (let tick = 1; tick <= 3; tick++) recorder.recordFrame(frame(tick));
     recorder.recordFrame(frame(4, "x".repeat(1024)));
@@ -128,9 +131,9 @@ describe("TraceRecorder", () => {
     const payload = recorder.stop("session-ended")!;
     expect(payload.frames.map((entry) => entry.tickIndex)).toEqual([2, 3]);
     expect(payload.retention).toEqual({
-      byteBudget: 270, droppedFrames: 2, complete: false, stopReason: "oversized-frame",
+      byteBudget: 304, droppedFrames: 2, complete: false, stopReason: "oversized-frame",
     });
-    expect(new TextEncoder().encode(JSON.stringify(payload)).byteLength).toBeLessThanOrEqual(270);
+    expect(new TextEncoder().encode(JSON.stringify(payload)).byteLength).toBeLessThanOrEqual(304);
     expect(recorder.stop()).toBeNull();
 
     recorder.start({ seed: 7, dt: 1 });
@@ -138,7 +141,7 @@ describe("TraceRecorder", () => {
     const restarted = recorder.stop()!;
     expect(restarted.frames.map((entry) => entry.tickIndex)).toEqual([1]);
     expect(restarted.retention).toEqual({
-      byteBudget: 270, droppedFrames: 0, complete: true, stopReason: "requested",
+      byteBudget: 304, droppedFrames: 0, complete: true, stopReason: "requested",
     });
   });
 

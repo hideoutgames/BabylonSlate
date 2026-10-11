@@ -10,6 +10,7 @@ import type { TraceFrame } from "@babylonslate/debugger";
 
 const frame: TraceFrame = {
   tickIndex: 99,
+  timeDilation: 1,
   scriptMs: 1,
   physicsMs: 2,
   logs: [],

@@ -11,9 +11,11 @@ import {
 const payload: TracePayload = {
   seed: 1,
   dt: 1 / 60,
+  retention: { byteBudget: 1024, droppedFrames: 0, complete: true, stopReason: "requested" },
   frames: [
     {
       tickIndex: 1,
+      timeDilation: 1,
       scriptMs: 1,
       physicsMs: 0.5,
       logs: [{ severity: "log", category: "game", message: "first" }],
@@ -21,6 +23,7 @@ const payload: TracePayload = {
     },
     {
       tickIndex: 2,
+      timeDilation: 1,
       scriptMs: 2,
       physicsMs: 1,
       logs: [{ severity: "log", category: "game", message: "second" }],
@@ -35,7 +38,7 @@ describe("trace view helpers", () => {
     expect(asTracePayload({ name: "nope" })).toBeNull();
   });
 
-  it("validates optional retention metadata while accepting legacy traces", () => {
+  it("requires valid retention metadata and per-frame time dilation", () => {
     const retention = {
       byteBudget: 1024,
       droppedFrames: 1,
@@ -44,6 +47,9 @@ describe("trace view helpers", () => {
     };
     expect(asTracePayload({ ...payload, retention })?.retention).toEqual(retention);
     expect(asTracePayload({ ...payload, retention: null })).toBeNull();
+    expect(asTracePayload({ ...payload, retention: undefined })).toBeNull();
+    const { timeDilation: _timeDilation, ...withoutDilation } = payload.frames[0]!;
+    expect(asTracePayload({ ...payload, frames: [withoutDilation] })).toBeNull();
     for (const invalid of [
       { byteBudget: -1 },
       { droppedFrames: 0.5 },
@@ -91,6 +97,7 @@ describe("trace view helpers", () => {
   it("keeps each timing bucket's true spike and recorded-event marker", () => {
     const frames = [1, 50, 2, 4, 3].map((scriptMs, tickIndex) => ({
       tickIndex,
+      timeDilation: 1,
       scriptMs,
       physicsMs: 1,
       logs: [],
