@@ -860,7 +860,6 @@ export function beginSlotModelAnimLoad(
 /** Publish already prepared multipart model animations with the whole visual.
  * Parts prepare against isolated animation maps; the live slot changes only here. */
 export function publishModelHierarchyAnimations(
-  scene: Scene,
   binding: ModelAnimLoadBinding,
   slotId: number,
   root: AbstractMesh,

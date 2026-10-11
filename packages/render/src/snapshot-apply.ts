@@ -1104,7 +1104,7 @@ export function applyAssignMesh(
       // The adopted root inherits the last snapshot flag, not live membership.
       setPlayVisualVisibility(binding, staged,
         appliedPlayVisibility.get(working) ?? binding.liveSlots.has(command.slotId));
-      if (deferred.length) publishModelHierarchyAnimations(scene, binding, command.slotId, staged);
+      if (deferred.length) publishModelHierarchyAnimations(binding, command.slotId, staged);
       refreshPlayActiveCamera(scene, binding);
       applyPlayShadows(scene);
       binding.onVisualChanged?.(command.slotId);
