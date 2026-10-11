@@ -61,7 +61,7 @@ Parser: whitespace tokens, quoted strings (always values), longest-name match (`
 | `possess <name\|guid>` | yes | **yes** | Switches to a live actor's CameraComponent and exits free cam, including while paused. Ambiguous names or actors without cameras are rejected. |
 | `destroyactor <name\|guid>` | yes | **yes** | Destroys a live actor through its runtime lifecycle, including while paused. Ambiguous names are rejected; authored scene data is unchanged. |
 | `dumplog` | yes | **yes** | Returns the log-ring messages, or `(log is empty)`. Every emitted `log` command and Print String enters the ring. |
-| `snapshot start` / `stop` | yes | **yes** | `TraceRecorder`; stop emits `{ type: "trace" }`. Both Play modes retain the trace and open its editor document when the session closes. |
+| `snapshot start` / `stop` | yes | **yes** | `TraceRecorder`; stop emits `{ type: "trace" }`. A `snapshot start` while recording fails with `snapshot already recording` and keeps the running recording. Both Play modes retain the trace and open its editor document when the session closes. |
 
 ### Overlay vs console (session control)
 
