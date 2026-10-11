@@ -206,37 +206,36 @@ describe("collidable static descendants of simulated bodies", () => {
     }
   });
 
-  it.each([
-    { backend: "software", kind: "3d" as const, named: "handle" },
-    { backend: "Rapier", kind: "2d" as const, named: "handle" },
-    // Havok reports contacts per body, so they name the body's owner and its own collider.
-    { backend: "Havok", kind: "3d" as const, named: "crate" },
-  ])("$backend names $named for a hosted shape's ground contact", async ({ backend: name, kind, named }) => {
+  it.each(everyBackend)("$backend names the hosted shape that touched each ground", async ({ backend: name, kind }) => {
     const { world, spawn } = createWorld();
-    spawn("ground", { position: { x: 0, y: -0.5, z: 0 } }, [staticBody, box(kind, 10, 0.5, 10)]);
+    // Two separate grounds, each under one of the crate's hosted feet.
+    const grounds = ["groundLeft", "groundRight"];
+    spawn("groundLeft", { position: { x: -1, y: -0.5, z: 0 } }, [staticBody, box(kind, 0.5)]);
+    spawn("groundRight", { position: { x: 1, y: -0.5, z: 0 } }, [staticBody, box(kind, 0.5)]);
     const crate = spawn("crate", { position: { x: 0, y: 2, z: 0 } }, [fallingBody, box(kind, 0.5)]);
-    const handle = spawn("handle", { position: { x: 0, y: -1, z: 0 } }, [staticBody, box(kind, 0.25)], crate.guid);
+    const leftFoot = spawn("leftFoot", { position: { x: -1, y: -1, z: 0 } }, [staticBody, box(kind, 0.25)], crate.guid);
+    const rightFoot = spawn("rightFoot", { position: { x: 1, y: -1, z: 0 } }, [staticBody, box(kind, 0.25)], crate.guid);
     const backend = await backendFor(name, kind, -9.81);
     const sync = new PhysicsWorldSync(backend);
-    const others: Array<{ actor: string; component: string | undefined }> = [];
+    const touched = new Map<string, Set<string>>();
     try {
       for (let tick = 0; tick < 90; tick++) {
         sync.step(1 / 60, world);
         for (const event of backend.pollContacts()) {
           if (event.kind !== "hit") continue;
-          if (event.actorAId === "ground")
-            others.push({ actor: event.actorBId, component: componentIdFromColliderPhysicsId(event.colliderBId) });
-          else if (event.actorBId === "ground")
-            others.push({ actor: event.actorAId, component: componentIdFromColliderPhysicsId(event.colliderAId) });
+          const groundIsA = grounds.includes(event.actorAId);
+          if (!groundIsA && !grounds.includes(event.actorBId)) continue;
+          const ground = groundIsA ? event.actorAId : event.actorBId;
+          const other = groundIsA
+            ? { actor: event.actorBId, component: componentIdFromColliderPhysicsId(event.colliderBId) }
+            : { actor: event.actorAId, component: componentIdFromColliderPhysicsId(event.colliderAId) };
+          touched.set(ground, (touched.get(ground) ?? new Set()).add(JSON.stringify(other)));
         }
       }
-      // The handle's bottom (crate y - 1.25) reached the ground first.
+      // The feet's bottoms (crate y - 1.25) rest on the grounds; the crate's own box touches neither.
       expect(crate.transform.position.y).toBeCloseTo(1.25, 1);
-      const owner = named === "handle" ? handle : crate;
-      expect(others.length).toBeGreaterThan(0);
-      expect(new Set(others.map((other) => JSON.stringify(other)))).toEqual(
-        new Set([JSON.stringify({ actor: named, component: colliderGuid(owner) })]),
-      );
+      const named = (actor: Actor) => new Set([JSON.stringify({ actor: actor.guid, component: colliderGuid(actor) })]);
+      expect(touched).toEqual(new Map([["groundLeft", named(leftFoot)], ["groundRight", named(rightFoot)]]));
     } finally {
       sync.dispose();
     }
