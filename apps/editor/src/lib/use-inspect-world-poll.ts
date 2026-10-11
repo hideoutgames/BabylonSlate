@@ -28,6 +28,8 @@ export function useInspectWorldPoll(
         if (!cancelled) {
           setSnapshot(next);
         }
+      } catch {
+        // Keep the last snapshot; the next poll asks again.
       } finally {
         inFlight = false;
       }
