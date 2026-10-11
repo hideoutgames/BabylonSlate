@@ -471,8 +471,6 @@ export interface CreateEngineOptions {
   onGizmoDragEnd?: () => void;
   /** A component shape handle was released; merge properties as one undoable change. */
   onComponentShapeEdit?: (edit: ComponentShapeEdit) => void;
-  /** Legacy water-only callback; used when onComponentShapeEdit is absent. */
-  onWaterShapeEdit?: (edit: ComponentShapeEdit) => void;
   /**
    * SceneLayer / overlay-prefab viewports: 2D transform box instead of
    * Position/Rotation/Scale gizmos. World 2D scenes stay on axis gizmos.
@@ -1997,7 +1995,7 @@ function initializeEngine(
     onRollback(() => gizmos.dispose());
     const waterHandles = createWaterHandles(gizmos.layer, scene, {
       scheduler,
-      onCommit: (edit) => (options.onComponentShapeEdit ?? options.onWaterShapeEdit)?.(edit),
+      onCommit: (edit) => options.onComponentShapeEdit?.(edit),
     });
     onRollback(() => waterHandles.dispose());
     const splineHandles = createSplineHandles(gizmos.layer, scene, {
