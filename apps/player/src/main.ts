@@ -71,16 +71,17 @@ function layoutFromManifest(manifest: GameManifest): void {
   });
 }
 
-async function launchFromFiles(files: Map<string, Uint8Array>, traceByteBudget?: number, onDemand = false): Promise<void> {
-  const source = onDemand ? createPreviewAssetClient({ send: message => window.parent.postMessage(message, previewHostOrigin) }) : undefined;
+/** Preview hands off the catalog; every asset file is requested from the host. */
+async function launchFromPreview(files: Map<string, Uint8Array>, traceByteBudget: number): Promise<void> {
+  const source = createPreviewAssetClient({ send: message => window.parent.postMessage(message, previewHostOrigin) });
   const receive = (event: MessageEvent) => {
-    if (isExpectedPreviewHostMessage(event, window.parent, previewHostOrigin)) source?.receive(event.data);
+    if (isExpectedPreviewHostMessage(event, window.parent, previewHostOrigin)) source.receive(event.data);
   };
-  if (source) window.addEventListener("message", receive);
-  const release = () => { source?.dispose(); window.removeEventListener("message", receive); };
+  window.addEventListener("message", receive);
+  const release = () => { source.dispose(); window.removeEventListener("message", receive); };
   startupAbort.signal.addEventListener("abort", release, { once: true });
   try {
-    const game = await loadGameFromFiles(files, { signal: startupAbort.signal, readFile: source?.readFile });
+    const game = await loadGameFromFiles(files, { signal: startupAbort.signal, readFile: source.readFile });
     const dispose = game.dispose;
     game.dispose = () => { try { dispose?.(); } finally { startupAbort.signal.removeEventListener("abort", release); release(); } };
     try { await launchLoaded(game, traceByteBudget); } catch (error) { game.dispose(); throw error; }
@@ -381,7 +382,7 @@ if (previewMode()) {
     if (launched) return;
     launched = true;
     delete rootEl().dataset.error;
-    void launchFromFiles(filesFromPreviewPack(pack), pack.traceByteBudget, pack.onDemand).catch((error: unknown) => {
+    void launchFromPreview(filesFromPreviewPack(pack), pack.traceByteBudget).catch((error: unknown) => {
       if (!startupAbort.signal.aborted) launched = false;
       bootFailure(error);
     });
