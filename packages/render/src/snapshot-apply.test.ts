@@ -1798,7 +1798,6 @@ describe("createPlayMesh", () => {
       text3d: {
         text: "Hi",
         size: 1,
-        depth: 0.1,
         color: [1, 0, 0],
         fontAssetGuid,
         alignment: "left",

@@ -126,7 +126,7 @@ describe("cold command source preparation", () => {
     await preparation.whenReady();
     expect(peak).toBe(1);
     expect(commandSourceGuids({ ...mesh("model"), text3d: {
-      text: "Label", size: 1, depth: 0.1, color: [1, 1, 1], alignment: "left", fontAssetGuid: "font",
+      text: "Label", size: 1, color: [1, 1, 1], alignment: "left", fontAssetGuid: "font",
     }, skybox: { size: 10, faces: { px: "texture", py: null, pz: null, nx: null, ny: null, nz: null } } })).toEqual(["font", "model", "texture"]);
     preparation.dispose();
   });
