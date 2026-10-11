@@ -131,7 +131,7 @@ describe("seekGameplayAnimation", () => {
     engine.dispose();
   });
 
-  it("binds a Sprite Animation frame texture, full UVs, and pivot on the sprite mesh", () => {
+  it("binds a Sprite Animation frame texture and full UVs with its pivot on the actor origin", () => {
     const sprite: SpritePayload = {
       textureGuid: "sprite-tex",
       pixelsPerUnit: 100,
@@ -211,14 +211,18 @@ describe("seekGameplayAnimation", () => {
     expect(uvs[0]).toBeCloseTo(0);
     expect(uvs[2]).toBeCloseTo(1);
     expect(textures).toEqual(["frame-b"]);
-    const pivot = mesh.getPivotPoint();
-    expect(pivot.x).toBeCloseTo(-0.5);
-    expect(pivot.y).toBeCloseTo(-0.5);
+    // Pivot (0, 1) is the bottom-left corner (v grows downward).
+    mesh.refreshBoundingInfo();
+    const bounds = mesh.getBoundingInfo().boundingBox;
+    expect(bounds.minimum.x).toBeCloseTo(0);
+    expect(bounds.minimum.y).toBeCloseTo(0);
+    expect(bounds.maximum.x).toBeCloseTo(1);
+    expect(bounds.maximum.y).toBeCloseTo(1);
     scene.dispose();
     engine.dispose();
   });
 
-  it("moves a frozen scaled sprite when only the frame pivot changes", () => {
+  it("moves a frozen scaled sprite's world bounds when only the frame pivot changes", () => {
     const frame = {
       textureGuid: "frame",
       durationMs: 100,
@@ -249,12 +253,14 @@ describe("seekGameplayAnimation", () => {
     mesh.scaling.set(2, 2, 1);
     applySpriteAnimationAssetFrame(mesh, animation, 0);
     mesh.freezeWorldMatrix();
-    expect(mesh.getWorldMatrix().getTranslation().x).toBeCloseTo(0);
+    expect(mesh.getBoundingInfo().boundingBox.minimumWorld.x).toBeCloseTo(-1);
+    expect(mesh.getBoundingInfo().boundingBox.maximumWorld.y).toBeCloseTo(1);
     applySpriteAnimationAssetFrame(mesh, animation, 0.99);
-    const translation = mesh.getWorldMatrix().getTranslation();
-    expect(translation.x).toBeCloseTo(0.5);
-    expect(translation.y).toBeCloseTo(0.5);
-    expect(mesh.isWorldMatrixFrozen).toBe(true);
+    const bounds = mesh.getBoundingInfo().boundingBox;
+    expect(bounds.minimumWorld.x).toBeCloseTo(0);
+    expect(bounds.minimumWorld.y).toBeCloseTo(0);
+    expect(bounds.maximumWorld.x).toBeCloseTo(2);
+    expect(bounds.maximumWorld.y).toBeCloseTo(2);
     scene.dispose();
     engine.dispose();
   });
@@ -621,7 +627,7 @@ describe("applySpriteAnimFrame", () => {
     engine.dispose();
   });
 
-  it("bakes the clip frame UVs for the given normalised time", () => {
+  it("bakes the clip frame UVs, size and pivot for the given normalised time", () => {
     const payload: SpritePayload = {
       textureGuid: null,
       pixelsPerUnit: 100,
@@ -644,8 +650,8 @@ describe("applySpriteAnimFrame", () => {
           uSize: 0.5,
           vSize: 1,
           durationMs: 100,
-          pivot: { x: 0.5, y: 0.5 },
-          width: 16,
+          pivot: { x: 0, y: 1 },
+          width: 32,
           height: 16,
         },
       ],
@@ -657,6 +663,13 @@ describe("applySpriteAnimFrame", () => {
     const expected = spriteFrameUvs(payload.frames[1]!);
     expect(uvs[0]).toBeCloseTo(expected.u0);
     expect(uvs[2]).toBeCloseTo(expected.u1);
+    // Frame b's bottom-left pivot sits on the actor origin, as its collider does.
+    mesh.refreshBoundingInfo();
+    const bounds = mesh.getBoundingInfo().boundingBox;
+    expect(bounds.minimum.x).toBeCloseTo(0);
+    expect(bounds.minimum.y).toBeCloseTo(0);
+    expect(bounds.maximum.x).toBeCloseTo(0.32);
+    expect(bounds.maximum.y).toBeCloseTo(0.16);
   });
 });
 
