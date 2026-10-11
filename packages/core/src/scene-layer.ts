@@ -210,9 +210,10 @@ export type OverlayPanelProperties = {
   hitTest: SceneLayerHitTest;
 };
 
-function nonNegativeNumber(value: unknown): number {
+/** A 0–1 fraction of the source texture edge. */
+function marginFraction(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0
-    ? value
+    ? Math.min(value, 1)
     : 0;
 }
 
@@ -228,10 +229,10 @@ export function parseOverlayPanelProperties(
     source: source.source === "material" ? "material" : "texture",
     textureGuid: optionalGuid(source.textureGuid),
     materialGuid: optionalGuid(source.materialGuid),
-    marginLeft: nonNegativeNumber(source.marginLeft),
-    marginRight: nonNegativeNumber(source.marginRight),
-    marginTop: nonNegativeNumber(source.marginTop),
-    marginBottom: nonNegativeNumber(source.marginBottom),
+    marginLeft: marginFraction(source.marginLeft),
+    marginRight: marginFraction(source.marginRight),
+    marginTop: marginFraction(source.marginTop),
+    marginBottom: marginFraction(source.marginBottom),
     hitTest: parseSceneLayerHitTest(source.hitTest, "ignore"),
   };
 }

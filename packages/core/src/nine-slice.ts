@@ -21,11 +21,10 @@ export type OverlayNineSliceOptions = {
   pixelsPerUnit: number;
 };
 
-/** Authored 0–1 is a source-texture fraction; values above 1 stay legacy pixels. */
+/** An authored margin is a 0–1 fraction of the source texture edge; values above 1 clamp to the whole edge. */
 export function overlayPanelMarginToPx(margin: number, srcPx: number): number {
   if (!Number.isFinite(margin) || margin <= 0) return 0;
-  if (margin > 1) return margin;
-  return margin * (srcPx > 0 ? srcPx : 0);
+  return Math.min(margin, 1) * (srcPx > 0 ? srcPx : 0);
 }
 
 /**

@@ -281,8 +281,8 @@ describe("SceneLayer anchors and hit tests", () => {
 });
 
 describe("2DPanel properties", () => {
-  it("keeps 0-1 margins as fractions and values above 1 as legacy pixels", () => {
+  it("keeps margins as 0-1 source fractions", () => {
     expect(parseOverlayPanelProperties({ marginLeft: 0.5 }).marginLeft).toBe(0.5);
-    expect(parseOverlayPanelProperties({ marginRight: 10 }).marginRight).toBe(10);
+    expect(parseOverlayPanelProperties({ marginRight: 10 }).marginRight).toBe(1);
   });
 });

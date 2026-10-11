@@ -6,16 +6,16 @@ import {
 } from "./nine-slice";
 
 describe("overlayNineSliceCells", () => {
-  it("keeps corners at pixel/ppu size and stretches the center on a 1x1 dest", () => {
+  it("keeps 0.1 source-fraction corners at 10px/ppu and stretches the center on a 1x1 dest", () => {
     const cells = overlayNineSliceCells({
       destWidth: 1,
       destHeight: 1,
       srcWidthPx: 100,
       srcHeightPx: 100,
-      marginLeft: 10,
-      marginRight: 10,
-      marginTop: 10,
-      marginBottom: 10,
+      marginLeft: 0.1,
+      marginRight: 0.1,
+      marginTop: 0.1,
+      marginBottom: 0.1,
       pixelsPerUnit: 100,
     });
     expect(cells).toHaveLength(9);
@@ -39,10 +39,10 @@ describe("overlayNineSliceCells", () => {
       destHeight: 2,
       srcWidthPx: 100,
       srcHeightPx: 100,
-      marginLeft: 10,
-      marginRight: 10,
-      marginTop: 10,
-      marginBottom: 10,
+      marginLeft: 0.1,
+      marginRight: 0.1,
+      marginTop: 0.1,
+      marginBottom: 0.1,
       pixelsPerUnit: 100,
     });
     const center = cells[4]!;
@@ -54,57 +54,21 @@ describe("overlayNineSliceCells", () => {
     expect(center.height).toBeCloseTo(1.8);
   });
 
-  it("treats 0-1 margins as source fractions and values above 1 as legacy pixels", () => {
+  it("treats margins as 0-1 source fractions", () => {
     expect(overlayPanelMarginToPx(0.1, 100)).toBe(10);
     expect(overlayPanelMarginToPx(0.5, 50)).toBe(25);
-    expect(overlayPanelMarginToPx(10, 100)).toBe(10);
+    expect(overlayPanelMarginToPx(10, 100)).toBe(100);
     expect(overlayPanelMarginToPx(0, 100)).toBe(0);
-  });
-
-  it("keeps 0.1 source-fraction corners equal to 10px on a 100px source", () => {
-    const cells = overlayNineSliceCells({
-      destWidth: 1,
-      destHeight: 1,
-      srcWidthPx: 100,
-      srcHeightPx: 100,
-      marginLeft: 0.1,
-      marginRight: 0.1,
-      marginTop: 0.1,
-      marginBottom: 0.1,
-      pixelsPerUnit: 100,
-    });
-    const center = cells[4]!;
-    expect(center.width).toBeCloseTo(0.8);
-    expect(center.u0).toBeCloseTo(0.1);
-    expect(center.u1).toBeCloseTo(0.9);
-  });
-
-  it("maps pixel margins onto source UV fractions for the Details overlay", () => {
-    expect(
-      overlayNineSliceSourceFractions({
-        srcWidthPx: 100,
-        srcHeightPx: 50,
-        marginLeft: 10,
-        marginRight: 20,
-        marginTop: 5,
-        marginBottom: 15,
-      }),
-    ).toEqual({
-      left: 0.1,
-      right: 0.8,
-      top: 0.1,
-      bottom: 0.7,
-    });
   });
 
   it("scales source fractions when opposite margins exceed the image", () => {
     const splits = overlayNineSliceSourceFractions({
       srcWidthPx: 100,
       srcHeightPx: 100,
-      marginLeft: 80,
-      marginRight: 80,
-      marginTop: 80,
-      marginBottom: 80,
+      marginLeft: 0.8,
+      marginRight: 0.8,
+      marginTop: 0.8,
+      marginBottom: 0.8,
     });
     expect(splits.left).toBeCloseTo(0.5);
     expect(splits.right).toBeCloseTo(0.5);
@@ -136,10 +100,10 @@ describe("overlayNineSliceCells", () => {
       destHeight: 0.1,
       srcWidthPx: 100,
       srcHeightPx: 100,
-      marginLeft: 40,
-      marginRight: 40,
-      marginTop: 40,
-      marginBottom: 40,
+      marginLeft: 0.4,
+      marginRight: 0.4,
+      marginTop: 0.4,
+      marginBottom: 0.4,
       pixelsPerUnit: 100,
     });
     const widths = cells.map((cell) => cell.width);
