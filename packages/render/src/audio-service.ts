@@ -184,8 +184,8 @@ export class AudioService {
   private lastDistance: number | null = null;
   private wet = 0;
   private voiceSeq = 0;
-  /** Latest runtime simulated seconds (`audioSimTime`, restored `playSound` stamps). */
-  private simulatedSeconds = 0;
+  /** Latest runtime audio clock seconds (`audioSimTime`, restored `playSound` stamps). */
+  private audioClockSeconds = 0;
   private listener: AudioPose = { x: 0, y: 0, z: 0 };
   private reverbField: AudioReverbField | null = null;
   private readonly now: () => number;
@@ -393,12 +393,12 @@ export class AudioService {
       return;
     }
     if (command.type === "audioSimTime") {
-      if (Number.isFinite(command.seconds)) this.simulatedSeconds = command.seconds;
+      if (Number.isFinite(command.seconds)) this.audioClockSeconds = command.seconds;
       return;
     }
     if (!isAudioCommand(command)) return;
     if (command.type === "playSound" && Number.isFinite(command.restoredAtSeconds))
-      this.simulatedSeconds = command.restoredAtSeconds!;
+      this.audioClockSeconds = command.restoredAtSeconds!;
     if (!this.unlocked) {
       if (this.queue.length >= AUDIO_PRE_UNLOCK_QUEUE_CAP) this.queue.shift();
       this.queue.push(command);
@@ -475,13 +475,13 @@ export class AudioService {
 
   /**
    * A trace-restored voice that waited for the unlock starts later by the
-   * simulated time that passed meanwhile (paused time never counts). The
+   * undilated simulation time that passed meanwhile, excluding pauses. The
    * backend wraps a looping voice and ends a one-shot already past its clip.
    * Ordinary queued voices still start at the beginning.
    */
   private caughtUp(command: QueuedCommand): QueuedCommand {
     if (command.type !== "playSound" || !Number.isFinite(command.restoredAtSeconds)) return command;
-    const waited = this.simulatedSeconds - command.restoredAtSeconds!;
+    const waited = this.audioClockSeconds - command.restoredAtSeconds!;
     if (!(waited > 0)) return command;
     return { ...command, startOffsetSeconds: (command.startOffsetSeconds ?? 0) + waited };
   }

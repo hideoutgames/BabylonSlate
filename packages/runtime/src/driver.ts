@@ -1880,10 +1880,10 @@ class InProcessRuntime implements RuntimeDriver {
     const simDt = this.simulationDt();
     this.world.clock.dt = simDt;
     this.waterClock.advance(simDt);
-    // Voices play in real time, so their age follows the undilated step; restored
-    // voices waiting for the audio unlock catch up by the simulated step.
-    this.voices.advance(this.dt, simDt);
-    if (this.voices.hasRestoredVoices) this.emit({ type: "audioSimTime", seconds: this.voices.simulatedTime });
+    // Voices play in real time, so their age (and the clock restored voices
+    // waiting for the audio unlock catch up by) follows the undilated step.
+    this.voices.advance(this.dt);
+    if (this.voices.hasRestoredVoices) this.emit({ type: "audioSimTime", seconds: this.voices.audioTime });
     const pending = this.resolveTickInput(simDt);
     this.ticks.beginPhaseTiming();
     this.tickWorld(pending, simDt);

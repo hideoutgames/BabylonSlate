@@ -1897,7 +1897,7 @@ describe("AudioService with runtime Audio component commands", () => {
     }
   });
 
-  it("starts a restored voice that waited for the unlock later by the simulated time it waited, and an ordinary one at 0", async () => {
+  it("starts a restored voice that waited for the unlock later by the undilated unpaused time it waited, and an ordinary one at 0", async () => {
     const recording = chimeService(() => 0.5);
     let host = recording.service;
     const runtime = speakerRuntime((command) => host.handleCommand(command));
@@ -1908,7 +1908,7 @@ describe("AudioService with runtime Audio component commands", () => {
       host = locked.service;
       locked.service.handleCommand({ type: "playSound", assetGuid: "chime", volume: 1, frameId: 1, voiceId: "ordinary" });
       runtime.restoreFromTrace(frame);
-      // 4 ticks at slomo 0.5 simulate 0.2 s; paused ticks simulate nothing.
+      // Audio ignores slomo: 4 ticks at slomo 0.5 count 4 × 0.1 s; paused ticks count nothing.
       expect(runtime.executeConsoleCommand("slomo 0.5").success).toBe(true);
       for (let tick = 0; tick < 4; tick += 1) runtime.tick();
       runtime.pause();
@@ -1917,7 +1917,7 @@ describe("AudioService with runtime Audio component commands", () => {
       const pitchOf = (voiceId: string) => locked.backend.playbackRates.get(voiceId)!;
       expect(locked.backend.plays.map((play) => [play.voiceId, play.startOffsetSeconds])).toEqual([
         ["ordinary", undefined],
-        ["audio-1", expect.closeTo((0.3 + 0.2) * pitchOf("audio-1"), 9)],
+        ["audio-1", expect.closeTo((0.3 + 0.4) * pitchOf("audio-1"), 9)],
       ]);
     } finally {
       runtime.stop();

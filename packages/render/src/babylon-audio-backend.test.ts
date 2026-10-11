@@ -83,7 +83,7 @@ describe("Babylon audio backend lifecycle", () => {
     backend.dispose();
   });
 
-  it("catches restored voices up by the simulated time they waited for the unlock: a passed one-shot ends, a loop wraps", async () => {
+  it("catches restored voices up by the audio clock time they waited for the unlock: a passed one-shot ends, a loop wraps", async () => {
     audio.createBuffer.mockImplementationOnce(async (source: ArrayBuffer) => ({ length: source.byteLength, channelCount: 1, duration: 2 }));
     const ended: string[] = [];
     const service = new AudioService({ backend: new BabylonAudioPlaybackBackend(), onVoiceEnded: (voiceId) => ended.push(voiceId) });

@@ -17,7 +17,8 @@ const VOICE_STREAM_SALT = 0x564f4943;
  *
  * It also draws each new voice's clip and pitch choice (`prepare`) from a
  * seeded stream of its own, so traces record the choice and restores replay it,
- * and keeps the simulated (dilated) clock restored voices catch up by.
+ * and its voice-age clock (undilated simulation time, excluding pauses) is
+ * the audio clock restored voices catch up by.
  */
 export class RuntimeVoices {
   private readonly live = new Map<string, LiveVoice>();
@@ -26,7 +27,6 @@ export class RuntimeVoices {
   private readonly seed: () => number;
   private rng: Rng | null = null;
   private clockSeconds = 0;
-  private simulatedSeconds = 0;
   private nextScriptVoice = 1;
   private activeSceneGuid: string | undefined;
 
@@ -35,18 +35,14 @@ export class RuntimeVoices {
     this.seed = seed;
   }
 
-  /**
-   * A tick starts: voices started from now on are `dtSeconds` (undilated)
-   * younger, and the simulated clock moves by the tick's dilated step.
-   */
-  advance(dtSeconds: number, simulatedDtSeconds: number): void {
+  /** A tick starts: voices started from now on are that many seconds younger. */
+  advance(dtSeconds: number): void {
     this.clockSeconds += dtSeconds;
-    this.simulatedSeconds += simulatedDtSeconds;
   }
 
-  /** Simulated (dilated) seconds this session has ticked; paused time does not count. */
-  get simulatedTime(): number {
-    return this.simulatedSeconds;
+  /** The audio clock: undilated simulation seconds this session has ticked, excluding pauses. */
+  get audioTime(): number {
+    return this.clockSeconds;
   }
 
   /** True while a voice a trace restore started is live; the host then needs `audioSimTime`. */
@@ -121,7 +117,7 @@ export class RuntimeVoices {
    * Commands that make the host's voices the recorded ones: `stopSound` for
    * each live voice the frame lacks (start order), then `playSound` at its
    * recorded offset and clip and pitch draws for each recorded voice (recorded
-   * start order), stamped with the simulated time of the restore.
+   * start order), stamped with the audio clock at the restore.
    */
   restoreCommands(state: TraceAudioState, frameId: number): CommandMessage[] {
     const recorded = new Set(state.voices.map((voice) => voice.voiceId));
@@ -141,7 +137,7 @@ export class RuntimeVoices {
         voiceId: voice.voiceId,
         ...(voice.elapsedSeconds > 0 ? { startOffsetSeconds: voice.elapsedSeconds } : {}),
         ...rolls(voice),
-        restoredAtSeconds: this.simulatedSeconds,
+        restoredAtSeconds: this.clockSeconds,
       });
     }
     return commands;

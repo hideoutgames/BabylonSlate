@@ -834,12 +834,13 @@ export type CommandMessage =
       clipRoll?: number;
       pitchRoll?: number;
       /**
-       * Trace restore only: the runtime's simulated (dilated) seconds when it issued the voice. A
-       * restored voice that waits for the audio unlock starts later by the simulated time it waited.
+       * Trace restore only: the runtime's audio clock (undilated simulation time, excluding pauses)
+       * when it issued the voice. A restored voice that waits for the audio unlock starts later by
+       * the audio clock time it waited.
        */
       restoredAtSeconds?: number;
     }
-  /** Runtime simulated (dilated) seconds; sent each tick while trace-restored voices are live. */
+  /** Runtime audio clock (undilated simulation seconds, excluding pauses); sent each tick while trace-restored voices are live. */
   | { type: "audioSimTime"; seconds: number }
   | { type: "stopSound"; voiceId: string }
   | { type: "setVoiceGain"; voiceId: string; volume: number }
