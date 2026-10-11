@@ -112,7 +112,7 @@ export class EncodeQueue {
   private readonly onDrop?: EncodeQueueOptions["onDrop"];
   private paused = false;
   private running = false;
-  /** The job being encoded, until its result or error is reported. */
+  /** The job being encoded, until its result or error is reported or `clear()` drops it. */
   private encoding: EncodeJob | null = null;
   private completedSinceRecycle = 0;
   private recycled = 0;
@@ -140,7 +140,9 @@ export class EncodeQueue {
 
   /**
    * A job for this asset waits or is encoding. Its completion callbacks run
-   * after this turns false, so they may queue the asset again.
+   * after this turns false, so they may queue the asset again. An encode
+   * `clear()` dropped no longer counts, so a reopened project may queue its
+   * asset again.
    */
   has(assetGuid: string): boolean {
     if (this.encoding?.assetGuid === assetGuid) return true;
@@ -199,6 +201,7 @@ export class EncodeQueue {
    */
   clear(): void {
     this.generation += 1;
+    this.encoding = null;
     for (const job of this.queue.splice(0)) {
       if ("run" in job) job.cancel(new Error("Asset processing cancelled."));
     }

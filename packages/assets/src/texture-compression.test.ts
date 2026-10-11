@@ -249,6 +249,7 @@ describe("EncodeQueue", () => {
     const derived = queue.enqueueDerived(async () => "derived");
     await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
     queue.clear();
+    expect(queue.has("running")).toBe(false);
     await expect(derived).rejects.toThrow("cancelled");
     queue.enqueue({ assetGuid: "next", source: new Uint8Array([3]), settings });
     finish!();
