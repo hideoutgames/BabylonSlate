@@ -80,7 +80,7 @@ Zones sit on a 32 m grid (`layout.ts`); each has an Outliner folder and a 3D Tex
 | `FT_2D` | Orthographic camera over a 16 × 9 Tilemap of 128 px Kenney platformer tiles: parallax backdrop, collision ground (grass on dirt, crates, chain ramp, top-edge ledges, animated switch blocks) and a decor layer from a second Tileset (animated water and torches, signs, plants). `FT_2DRobotGraph` cycles robot Idle, Walk, Jump and Fall Sprite Animations on a mascot and a dynamic walking robot; 32 falling robot bodies use every 2D collider shape; chain funnel; hinge pendulum; custom `Characters` sorting layer. |
 | `FT_StreamedRoom` | Platform, pillars, sign and a streamed spinner; no camera or lights. |
 | `FT_HUD` (Scene Layer) | Every overlay widget: text with the Text-domain Material, rich text, panels, safe area, form controls, scroll box, virtualized list (10 000 rows) and grid (400 cells), mask and mask panel, texture, material swatch, click button (`FT_UIClickButton`), focus target, card switcher (`FT_UICardSwitcher`), joystick bound to Move, persistent painter. Focus navigation uses Confirm. |
-| `FT_OverlayPhysics` (Scene Layer) | Eight 2D bodies falling into a pit in the overlay's own physics world. |
+| `FT_OverlayPhysics` (Scene Layer) | Eight 2D bodies falling into a pit in the overlay's own physics world. `FT_UIPitCounter` under the pit counts them each tick with Sphere Overlap Actors (World Dynamic) from a layer actor's script, which reads the layer's world rather than main-Scene bodies at the same coordinates; its label updates only when the count changes. `showcollision` draws the pit and boxes in the layer. |
 
 ## Scripting, data and settings
 
