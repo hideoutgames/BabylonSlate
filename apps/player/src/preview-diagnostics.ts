@@ -1,5 +1,5 @@
 import { SessionDiagnostics, createDiagnosticOperationClient } from "@babylonslate/debugger";
-import { createPreviewDiagnosticServer, type PreviewDiagnosticEndpoint } from "@babylonslate/exporter";
+import { createPreviewDiagnosticServer, type PreviewDiagnosticEndpoint, type PreviewDiagnosticResult } from "@babylonslate/exporter";
 import type { DiagnosticOperationResult, PerformanceTickChunk } from "@babylonslate/bridge";
 import type { RenderFrameReport } from "@babylonslate/render";
 import type { PlayerPreviewDiagnosticPorts } from "./player-diagnostic-types";
@@ -7,7 +7,8 @@ import type { PlayerPreviewDiagnosticPorts } from "./player-diagnostic-types";
 /** Separate Preview-only entry. No renderer/runtime substitute: all samples
  * arrive through the packaged player's existing owners. */
 export function installPreviewDiagnostics(ports: PlayerPreviewDiagnosticPorts, endpoint: PreviewDiagnosticEndpoint) {
-  let transfer = Promise.resolve();
+  /** The latest recording's profile transfer; Stop reports its outcome. */
+  let transfer: Promise<PreviewDiagnosticResult> = Promise.resolve({ success: true });
   let closed = false;
   const client = createDiagnosticOperationClient({ sessionGeneration: ports.sessionGeneration,
     send: async (request) => { const reply = await ports.send(request); if (reply) client.receive(reply); } });
@@ -25,8 +26,11 @@ export function installPreviewDiagnostics(ports: PlayerPreviewDiagnosticPorts, e
   const server = createPreviewDiagnosticServer(endpoint, {
     execute: async (operation, settings) => {
       if (closed) return { success: false, reason: "Preview diagnostics stopped." };
-      if (operation === "profile-start") return session.startProfile(settings);
-      if (operation === "profile-stop") { await session.stopProfile(); await transfer; return { success: true }; }
+      if (operation === "profile-start") {
+        transfer = Promise.resolve({ success: true });
+        return session.startProfile(settings);
+      }
+      if (operation === "profile-stop") { await session.stopProfile(); return transfer; }
       if (operation === "input") { await ports.setEditorInputSuppressed(settings.inputSuppressed === true); return { success: true }; }
       return { success: true, result: await session.captureFrame() };
     },

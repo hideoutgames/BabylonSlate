@@ -23,10 +23,20 @@ describe("Preview diagnostics transport", () => {
     const pair = linked();
     expect(await pair.client.request("frame")).toEqual({ success: true, result: "packaged frame", reason: undefined });
     const frames = new Float64Array([1, 2, 3]);
-    await pair.server.publishProfile({ metadata: { byteBudget: 4096 }, frames: [frames], ticks: [] });
+    expect(await pair.server.publishProfile({ metadata: { byteBudget: 4096 }, frames: [frames], ticks: [] })).toEqual({ success: true });
     expect(frames.byteLength).toBe(24);
     expect(pair.profiles[0]?.frames[0]).toEqual(frames);
     expect(pair.profiles[0]?.frames[0]?.buffer).not.toBe(frames.buffer);
+    pair.client.dispose(); pair.server.dispose();
+  });
+
+  it("reports a failed profile transfer to the publisher as well as the editor", async () => {
+    const pair = linked();
+    await pair.client.connect();
+    const published = await pair.server.publishProfile({ metadata: { byteBudget: 1 << 20 }, frames: [new Float64Array(8192)], ticks: [] });
+    expect(published).toMatchObject({ success: false, reason: expect.stringContaining("transport budget") });
+    expect(pair.errors).toEqual([published.reason]);
+    expect(pair.profiles).toEqual([]);
     pair.client.dispose(); pair.server.dispose();
   });
 
