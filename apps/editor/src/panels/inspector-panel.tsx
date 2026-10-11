@@ -169,15 +169,54 @@ const INTERFACE_KINDS = ["script-interface"] as const;
 const TYPE_KINDS = ["structure", "enum", "data-definition"] as const;
 const DATA_KINDS = ["data-tree"] as const;
 
+/**
+ * Saved member pins carry no ids, so their rows get positional ids. The rows
+ * the Inspector last committed keep their editor ids while the saved pins
+ * still match that commit, so a moved or added pin stays selected instead of
+ * the selection staying on its old position.
+ */
+type CommittedPinRowIds = {
+  ownerId: string;
+  pins: string;
+  in: string[];
+  out: string[];
+};
+
+function committedPinRowIds(
+  ownerId: string,
+  pins: GraphClassMember["pins"],
+  inputs: readonly PinListRow[],
+  outputs: readonly PinListRow[],
+): CommittedPinRowIds {
+  return {
+    ownerId,
+    pins: JSON.stringify(pins ?? []),
+    in: inputs.map((row) => row.id),
+    out: outputs.map((row) => row.id),
+  };
+}
+
+function pinRowIdsFor(
+  committed: CommittedPinRowIds | null,
+  ownerId: string,
+  pins: GraphClassMember["pins"],
+  direction: "in" | "out",
+): readonly string[] | undefined {
+  return committed?.ownerId === ownerId && committed.pins === JSON.stringify(pins ?? [])
+    ? committed[direction]
+    : undefined;
+}
+
 function memberPinRows(
   pins: GraphClassMember["pins"],
   memberId: string,
   direction: "in" | "out",
+  ids?: readonly string[],
 ): PinListRow[] {
   return (pins ?? [])
     .filter((pin) => pin.direction === direction)
     .map((pin, index) => ({
-      id: `${memberId}-${direction}-${index}`,
+      id: ids?.[index] ?? `${memberId}-${direction}-${index}`,
       name: pin.name,
       type: pin.typeId,
       ...(pin.container ? { container: pin.container } : {}),
@@ -297,6 +336,7 @@ function ClassMemberDetails({
     index: number;
     field: "value" | "key";
   } | null>(null);
+  const [pinRowIds, setPinRowIds] = useState<CommittedPinRowIds | null>(null);
   const commit = (patch: Partial<GraphClassMember>) => {
     onChange(patchClassMember(graph, member.id, patch));
   };
@@ -743,13 +783,17 @@ function ClassMemberDetails({
   }
 
   if (member.kind === "function") {
-    const inputRows = memberPinRows(member.pins, member.id, "in");
-    const outputRows = memberPinRows(member.pins, member.id, "out");
+    const inputRows = memberPinRows(member.pins, member.id, "in",
+      pinRowIdsFor(pinRowIds, member.id, member.pins, "in"));
+    const outputRows = memberPinRows(member.pins, member.id, "out",
+      pinRowIdsFor(pinRowIds, member.id, member.pins, "out"));
     const commitPins = (
       nextInputs: PinListRow[],
       nextOutputs: PinListRow[],
     ) => {
-      commit({ pins: memberPinsFromRows(nextInputs, nextOutputs) });
+      const pins = memberPinsFromRows(nextInputs, nextOutputs);
+      setPinRowIds(committedPinRowIds(member.id, pins, nextInputs, nextOutputs));
+      commit({ pins });
     };
     const interfaceImpl = member.implementsInterface;
     const lockSignature = Boolean(interfaceImpl);
@@ -801,6 +845,8 @@ function ClassMemberDetails({
           itemLabel="Input"
           testIdPrefix="class-fn-in"
           data-testid="inspector-member-inputs"
+          showOptional={false}
+          showDefault={false}
           readOnly={lockSignature}
           onChange={(nextRows) => commitPins(nextRows, outputRows)}
         />
@@ -813,6 +859,8 @@ function ClassMemberDetails({
           itemLabel="Output"
           testIdPrefix="class-fn-out"
           data-testid="inspector-member-outputs"
+          showOptional={false}
+          showDefault={false}
           readOnly={lockSignature}
           onChange={(nextRows) => commitPins(inputRows, nextRows)}
         />
@@ -1123,6 +1171,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
     assetType: string;
     allowedTypes: string[];
   } | null>(null);
+  const [eventPinRowIds, setEventPinRowIds] = useState<CommittedPinRowIds | null>(null);
 
   const doc = useOpenDocument(documentId);
   const docPath = doc?.ref.path;
@@ -1612,6 +1661,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
               formatEventMemberName(String(selectedNode.data.name ?? ""))),
       )
     : undefined;
+  const eventOutputIds = pinRowIdsFor(eventPinRowIds, selectedNode.id, eventMember?.pins, "out");
   const eventOutputRows: PinListRow[] = (
     eventMember?.pins ??
     (Array.isArray(selectedNode.data.pins)
@@ -1625,7 +1675,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
   )
     .filter((pin) => pin.direction !== "in" && pin.name)
     .map((pin, index) => ({
-      id: `${selectedNode.id}-out-${index}`,
+      id: eventOutputIds?.[index] ?? `${selectedNode.id}-out-${index}`,
       name: String(pin.name),
       type: pin.typeId ?? "float",
       ...("typeClassId" in pin && pin.typeClassId
@@ -1681,6 +1731,11 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
       schemas: typeSchemas,
     },
   );
+  /** A Structure field inside a pin default writes through its own row, not as a pin. */
+  const nestedPinDefaultRow = (rowId: string) =>
+    literalDefaults.some((entry) => entry.pinId === rowId)
+      ? undefined
+      : pinDefaultRows.find((row) => row.id === rowId);
   const isEnumNode = selectedNode.type.startsWith("enum.");
   const enumNodeRows = isEnumNode
     ? enumNodePropertyRows(
@@ -1731,11 +1786,6 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
   );
   const isFlowSwitch = isFlowSwitchTypeId(selectedNode.type);
   const flowSwitchCases = isFlowSwitch
-  /** A Structure field inside a pin default writes through its own row, not as a pin. */
-  const nestedPinDefaultRow = (rowId: string) =>
-    literalDefaults.some((entry) => entry.pinId === rowId)
-      ? undefined
-      : pinDefaultRows.find((row) => row.id === rowId);
     ? flowSwitchCaseListValues(selectedNode.type, selectedNode.data)
     : [];
   const developmentOnlyRows = developmentOnlyPropertyRows(
@@ -1950,8 +2000,11 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
             itemLabel="Output"
             testIdPrefix="event-out"
             data-testid="inspector-event-outputs"
+            showOptional={false}
+            showDefault={false}
             onChange={(rows) => {
               const pins = memberPinsFromRows([], rows);
+              setEventPinRowIds(committedPinRowIds(selectedNode.id, pins, [], rows));
               if (eventMember) {
                 persistGraph(patchClassMember(graph, eventMember.id, { pins }));
                 return;
