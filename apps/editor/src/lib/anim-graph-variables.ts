@@ -6,19 +6,6 @@ import {
 import type { SerializedGraph } from "@babylonslate/core";
 import { syncVariableAccessNodes } from "./class-members";
 
-function withVariables(
-  doc: AnimGraphDocument,
-  variables: AnimGraphVariable[],
-): AnimGraphDocument {
-  return {
-    ...doc,
-    variables,
-    parameters: variables
-      .filter((variable) => variable.typeId === "bool")
-      .map((variable) => variable.name),
-  };
-}
-
 function syncGraph(
   graph: SerializedGraph,
   declared: ReturnType<typeof animGraphMembersFromVariables>[number],
@@ -51,8 +38,5 @@ export function commitAnimGraphVariables(
       ruleGraph: syncGraph(transition.ruleGraph, declared),
     }));
   }
-  return withVariables(
-    { ...doc, animationObject, transitions },
-    variables,
-  );
+  return { ...doc, animationObject, transitions, variables };
 }
