@@ -4524,6 +4524,14 @@ describe("GraphEditor", () => {
       }) as DOMRect;
     expect(api?.containsClientPoint(15, 25)).toBe(true);
     expect(api?.containsClientPoint(0, 0)).toBe(false);
+    // A drop over chrome drawn on the canvas would spawn hidden under it.
+    getByTestId("graph-toolbar").getBoundingClientRect = () =>
+      ({ left: 80, top: 28, right: 140, bottom: 60 }) as DOMRect;
+    getByTestId("graph-viewport-controls").getBoundingClientRect = () =>
+      ({ left: 18, top: 120, right: 50, bottom: 212 }) as DOMRect;
+    expect(api?.containsClientPoint(100, 40)).toBe(false);
+    expect(api?.containsClientPoint(30, 200)).toBe(false);
+    expect(api?.containsClientPoint(100, 100)).toBe(true);
     expect(api?.clientToFlow(15, 25)).toEqual(
       expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) }),
     );

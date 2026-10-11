@@ -18,8 +18,9 @@ function pointInRect(
 
 /**
  * Client hit-test + React Flow conversion for tree drops onto the graph.
- * Chrome drawn over the canvas (`data-graph-overlay`, the toolbar) is not
- * graph, so a drop there is refused rather than spawning under it.
+ * Chrome drawn over the canvas (`data-graph-overlay`: the toolbar and the
+ * navigation island) is not graph, so a drop there is refused rather than
+ * spawning under it.
  */
 export function createGraphCanvasDropApi(
   element: HTMLElement | null,

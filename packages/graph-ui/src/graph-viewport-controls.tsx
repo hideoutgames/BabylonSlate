@@ -23,6 +23,7 @@ export function GraphViewportControls({ onFitGraph }: { onFitGraph: () => void }
       role="group"
       aria-label="Graph Navigation"
       data-testid="graph-viewport-controls"
+      data-graph-overlay=""
       className="absolute bottom-2 left-2 z-10 flex flex-col gap-1 rounded-lg border border-border bg-popover p-1 shadow-sm"
     >
       {actions.map(({ label, Icon, disabled, run }) => (
