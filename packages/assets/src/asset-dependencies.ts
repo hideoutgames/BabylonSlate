@@ -442,7 +442,7 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
       }
       components(actor.components);
     }
-  } else if (assetType === "Class" || assetType === "Graph") {
+  } else if (assetType === "Class") {
     addClass(context.parentClass);
     components(payload.components);
     graph(payload);
@@ -468,6 +468,5 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
   else if (assetType === "PluginSettings") for (const dependency of rows(payload.pluginDependencies)) add(dependency.guid);
   return { dependencyMetadataVersion: ASSET_DEPENDENCY_METADATA_VERSION, dependencies: [...all].sort(), requiredDependencies: [...required].sort(),
     classReferences: [...classReferences].sort(), requiredClassReferences: [...requiredClassReferences].sort(),
-    ...(["Class", "Graph"].includes(assetType) ? { consoleCommand: consoleCommandMetadataFromGraph(payload) } : {}),
-    ...(["Class", "Graph"].includes(assetType) ? { requiredVariableNames: [...requiredVariableNames].sort() } : {}) };
+    ...(assetType === "Class" ? { consoleCommand: consoleCommandMetadataFromGraph(payload), requiredVariableNames: [...requiredVariableNames].sort() } : {}) };
 }

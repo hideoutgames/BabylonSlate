@@ -16,7 +16,7 @@ export interface DependencyMetadataUpgradeOptions {
 export function assetsNeedingDependencyMetadataUpgrade(assets: readonly IndexedAsset[]): IndexedAsset[] {
   return assets.filter(asset => !asset.placeholder && (
     asset.header.dependencyMetadataVersion !== ASSET_DEPENDENCY_METADATA_VERSION || !asset.header.requiredDependencies
-    || (["Class", "Graph"].includes(asset.header.type) && !asset.header.requiredVariableNames)
+    || (asset.header.type === "Class" && !asset.header.requiredVariableNames)
   ));
 }
 
@@ -44,9 +44,9 @@ export async function upgradeAssetDependencyMetadata(registry: AssetRegistry, op
   // Schema documents are small; scene/source documents are consumed one at a time.
   for (const asset of catalog) {
     options.signal?.throwIfAborted();
-    if (!["Class", "Graph", "DataDefinition", "Structure"].includes(asset.header.type)) continue;
+    if (!["Class", "DataDefinition", "Structure"].includes(asset.header.type)) continue;
     const document = await registry.readAssetDocument(asset.header.guid);
-    if (asset.header.type === "Class" || asset.header.type === "Graph") {
+    if (asset.header.type === "Class") {
       // Role keys are declared on variable getter nodes. Resolve them while this
       // one graph is in memory; retain only its schema for later instance overrides.
       const roles = collectAssetDependencyMetadata("Class", document.payload, {

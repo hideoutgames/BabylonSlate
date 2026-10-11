@@ -1419,7 +1419,7 @@ export class AssetRegistry {
     return this.byGuid.get(guid);
   }
 
-  /** Paths of Scene and Graph assets for ProjectDocument reconciliation. */
+  /** Paths of Scene and Class assets for ProjectDocument reconciliation. */
   listDocumentPaths(filter?: { rootId?: string }): { scenes: string[]; graphs: string[] } {
     const scenes: string[] = [];
     const graphs: string[] = [];
@@ -1427,9 +1427,7 @@ export class AssetRegistry {
       if (asset.placeholder || asset.header.type === "Unresolved") continue;
       if (filter?.rootId && asset.rootId !== filter.rootId) continue;
       if (asset.header.type === "Scene") scenes.push(asset.path);
-      else if (asset.header.type === "Graph" || asset.header.type === "Class") {
-        graphs.push(asset.path);
-      }
+      else if (asset.header.type === "Class") graphs.push(asset.path);
     }
     return { scenes: scenes.sort(), graphs: graphs.sort() };
   }

@@ -6,7 +6,7 @@ import type { AssetRegistry, IndexedAsset } from "./registry";
 export const DEFAULT_SEARCH_LIMIT = 80;
 const MAX_INDEXED_STRING = 200;
 const SKIP_PAYLOAD_KEYS = new Set(["body", "code", "source", "__pins"]);
-const DOCUMENT_TYPES = new Set(["Scene", "Graph", "Class"]);
+const DOCUMENT_TYPES = new Set(["Scene", "Class"]);
 const VARIABLE_NODE_TYPES = new Set([
   "variables.get",
   "variables.set",
@@ -64,7 +64,7 @@ export interface ProjectSearchRebuildOptions {
 
 /**
  * Project-wide text index layered on the header-only asset registry.
- * Reads only the header and document chunk of Scene/Graph/Class files; never
+ * Reads only the header and document chunk of Scene/Class files; never
  * loads binary payloads.
  */
 export class ProjectSearchIndex {
@@ -259,7 +259,7 @@ export class ProjectSearchIndex {
       this.addSceneEntries(asset, payload);
       return;
     }
-    if (asset.header.type === "Graph" || asset.header.type === "Class") {
+    if (asset.header.type === "Class") {
       this.addGraphEntries(asset, payload);
     }
   }
