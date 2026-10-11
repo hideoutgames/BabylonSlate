@@ -11,6 +11,7 @@ When adding a new `docs/**/*.md` file, add a sidebar entry in [`apps/docs/src/si
 | [engineplan.md](engineplan.md) | Authoritative architecture, feature spec, roadmap, and delivery checklist |
 | [CODING_STANDARDS.md](CODING_STANDARDS.md) | Coding conventions |
 | [agents/instructions.md](agents/instructions.md) | Portable agent rules, skills, compatibility, and maintenance |
+| [design/](design/) | Design notes and budgets |
 | [design/perf-budget.md](design/perf-budget.md) | A16 iPad performance budget and render rules |
 | [design/renderer-qualification.md](design/renderer-qualification.md) | Renderer coverage matrix and the sustained qualification route |
 | [design/gestures.md](design/gestures.md) | Touch and gesture design |
@@ -46,7 +47,7 @@ When adding a new `docs/**/*.md` file, add a sidebar entry in [`apps/docs/src/si
 | [architecture/shader-graph.md](architecture/shader-graph.md) | Material and Material Function graphs, compiler, preview, runtime |
 | [architecture/theming.md](architecture/theming.md) | UI color palette and semantic tokens |
 | [architecture/components.md](architecture/components.md) | Reusable Editor UI primitives and composites |
-| [architecture/editor-extensions.md](architecture/editor-extensions.md) | EditorUtilityObject, editor-only graphs, Skybox Creator |
+| [architecture/editor-extensions.md](architecture/editor-extensions.md) | Engine and Project Extensions, EditorUtilityObject graphs, Skybox Creator |
 | [architecture/exporter.md](architecture/exporter.md) | Itch zip, `.babpack`, Preview Build, `apps/player` |
 | [architecture/source-control.md](architecture/source-control.md) | Git LFS locking, SecretStore, advisory UX, mtime rescan |
 | [architecture/testing.md](architecture/testing.md) | Vitest projects, coverage gates, Playwright |

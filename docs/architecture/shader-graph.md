@@ -453,8 +453,9 @@ An explicit Render remains queued while cold Texture or Material Function
 sources arrive; unrelated catalog changes do not reload the preview's textures.
 
 `classifyMaterialCost` prefers measured compile durations once the session has
-two of them and compares them against the **active frame budget**
-(`1000 / playFrameCap`), not a fixed millisecond constant. Custom GLSL and
+two of them and stays cheap while the slowest is at most **two frames** of the
+active frame budget (`2 × 1000 / playFrameCap`, `AUTO_COMPILE_FRAME_ALLOWANCE`),
+not a fixed millisecond constant. Custom GLSL and
 post-process passes are always manual because neither is profiled on the device.
 Timings stay session-local and are never written into an asset.
 
