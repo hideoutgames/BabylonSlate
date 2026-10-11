@@ -546,6 +546,7 @@ Prefab instances track Material GUID and source as one override: explicit None s
 `createText3DMesh` (editor `createMeshForComponent` and Play `createPlayMesh`) is a **flat** triangulated TypeFace mesh, not GUI `TextBlock`, not a `DynamicTexture` plane, and not extruded `CreateText` cubes:
 
 - `CreateTextShapePaths` + `CreatePolygon` (`FRONTSIDE`) + `Mesh.MergeMeshes`; inject `earcut` (Babylon does not bundle it)
+- Each glyph hole is cut only from the contour that contains it; a hole inside no contour is dropped rather than punched into another contour
 - One `StandardMaterial`: unlit, two-sided (`backFaceCulling = false`), emissive color (default white)
 - `fontData` is facetype.js JSON: Font chunk `facetype-glyphs` when `fontAssetGuid` is set, else the bundled ASCII TypeFace in `packages/render/src/default-typeface.ts` (5×7 pixels greedy-merged into rectangles)
 - Defaults: `text` `"Text"`, `size` `1`, `color` white, `alignment` `"left"`. Serialized `depth` still parses for old scenes but does not affect the mesh or fingerprint
