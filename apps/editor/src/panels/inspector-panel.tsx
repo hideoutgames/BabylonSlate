@@ -154,7 +154,7 @@ import {
   typeSchemasFromGraphAssets,
 } from "../lib/logic-graph-document";
 import { hydrateSerializedGraphForEditor } from "../services/graph-validation";
-import { collectDataGraphAssets, dataGraphAssetCreateOptions, dataGraphAssetPickPatch, isDataGraphNode, patchDataGraphNode } from "../lib/data-graph";
+import { collectDataGraphAssets, dataGraphAssetCreateOptions, dataGraphAssetPickPatch, isDataGraphNode, patchDataGraphNode, patchInspectedGraphNode } from "../lib/data-graph";
 import { classIdForGraphPath } from "../services/script-compiler";
 import {
   MATERIAL_DOCUMENT_KINDS,
@@ -1629,17 +1629,9 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
       : selectedNode.type;
 
   const updateNodeData = (patch: Record<string, unknown>) => {
-    if (isDataGraphNode(selectedNode.type)) {
-      persistGraph(patchDataGraphNode(graph, selectedNode, patch, activeFunctionId));
-      return;
-    }
-    const next: SerializedGraph = {
-      ...graph,
-      nodes: graph.nodes.map((n) =>
-        n.id === selectedNode.id ? { ...n, data: { ...n.data, ...patch } } : n,
-      ),
-    };
-    persistGraph(next);
+    persistGraph(isDataGraphNode(selectedNode.type)
+      ? patchDataGraphNode(graph, selectedNode, patch, activeFunctionId)
+      : patchInspectedGraphNode(graph, selectedNode.id, patch, activeFunctionId));
   };
 
   const dataPinWired = (pinId: string) => (inspectGraph?.edges ?? graph.edges)
@@ -1715,7 +1707,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
     selectedNode.data,
     updateNodeData,
     pickerAssets.map((asset) => ({ id: asset.guid, name: asset.name, type: asset.type })),
-    graph.edges.some((edge) => edge.target === selectedNode.id && edge.targetHandle === "binding"),
+    dataPinWired("binding"),
   );
   const containerConstructorRows = containerConstructorPropertyRows(
     selectedNode.type,
