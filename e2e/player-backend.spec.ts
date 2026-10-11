@@ -78,6 +78,7 @@ for (const backend of ["webgpu"] as const) {
       await page.evaluate((type) => window.postMessage({ type }, window.location.origin), PREVIEW_STOP_MESSAGE);
       await expect(root).toHaveAttribute("data-booted", "false");
       const ticks = await root.getAttribute("data-ticks");
+      expect(Number(ticks ?? "0"), "the booted player ticked before Stop").toBeGreaterThan(0);
       await page.waitForTimeout(200);
       expect(await root.getAttribute("data-ticks")).toBe(ticks);
       expect(errors).toEqual([]);

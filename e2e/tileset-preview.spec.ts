@@ -30,14 +30,14 @@ test.afterEach(async ({ page }, info) => {
 });
 
 // Numeric solid-color fixtures, with no pictorial assets or generated artwork.
-async function greenPng(page: Page, width: number, height: number) {
+async function redPng(page: Page, width: number, height: number) {
   const bytes = await page.evaluate(
     async ({ width, height }) => {
       const canvas = document.createElement("canvas");
       canvas.width = width;
       canvas.height = height;
       const context = canvas.getContext("2d")!;
-      context.fillStyle = "rgb(0, 200, 0)";
+      context.fillStyle = "rgb(200, 0, 0)";
       context.fillRect(0, 0, width, height);
       const blob = await new Promise<Blob>((resolve) =>
         canvas.toBlob((value) => resolve(value!)),
@@ -49,46 +49,37 @@ async function greenPng(page: Page, width: number, height: number) {
   return new Uint8Array(bytes);
 }
 
-async function atlasFiles(
-  page: Page,
-  width: number,
-  height: number,
-  compressed = false,
-) {
+/**
+ * A compressed atlas whose KTX2 is green while its PNG source is red, so a
+ * green canvas proves the encoded texture rendered rather than a PNG fallback.
+ */
+async function atlasFiles(page: Page, width: number, height: number) {
   const files = await minimalProjectFiles();
-  const pixels = await greenPng(page, width, height);
+  const pixels = await redPng(page, width, height);
+  const encode = createNodeBasisEncodeFn(() => {
+    const rgba = new Uint8Array(width * height * 4);
+    for (let i = 0; i < rgba.length; i += 4) {
+      rgba[i + 1] = 200;
+      rgba[i + 3] = 255;
+    }
+    return { rgba, width, height };
+  });
+  const settings = {
+    ...DEFAULT_TEXTURE_ENCODE_SETTINGS,
+    maxDimension: Math.max(width, height),
+  };
+  const { ktx2 } = await encode(pixels, settings);
+  const encodedChunkId = ktx2ChunkId(await encodeSettingsHash(settings));
   const extraChunks = [
     { id: "pixels", kind: "pixels", mime: "image/png", data: pixels },
+    { id: encodedChunkId, kind: "ktx2", mime: "image/ktx2", data: ktx2 },
   ];
-  let encodedChunkId: string | undefined;
-  if (compressed) {
-    const encode = createNodeBasisEncodeFn(() => {
-      const rgba = new Uint8Array(width * height * 4);
-      for (let i = 0; i < rgba.length; i += 4) {
-        rgba[i + 1] = 200;
-        rgba[i + 3] = 255;
-      }
-      return { rgba, width, height };
-    });
-    const settings = {
-      ...DEFAULT_TEXTURE_ENCODE_SETTINGS,
-      maxDimension: Math.max(width, height),
-    };
-    const { ktx2 } = await encode(pixels, settings);
-    encodedChunkId = ktx2ChunkId(await encodeSettingsHash(settings));
-    extraChunks.push({
-      id: encodedChunkId,
-      kind: "ktx2",
-      mime: "image/ktx2",
-      data: ktx2,
-    });
-  }
   const texture = {
     width,
     height,
-    usage: compressed ? "albedo" : "pixelArt",
+    usage: "albedo",
     downsample: 1,
-    compressionState: compressed ? "compressed" : "fallback_uncompressed",
+    compressionState: "compressed",
     ktx2ChunkId: encodedChunkId,
   };
   files.set(
@@ -130,7 +121,7 @@ async function atlasFiles(
 test("encoded Tilemap atlas renders its pixels in Scene Preview and Play", async ({
   page,
 }, testInfo) => {
-  const files = await atlasFiles(page, 64, 64, true);
+  const files = await atlasFiles(page, 64, 64);
   const tilemap = createDefaultTilemapPayload();
   tilemap.tilesetGuid = tilesetGuid;
   tilemap.tilesets = [{ guid: tilesetGuid, firstGid: 1, tileCount: 16 }];

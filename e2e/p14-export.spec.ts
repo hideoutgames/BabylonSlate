@@ -93,15 +93,18 @@ test.describe("P14 export smoke", () => {
           "data-startup-scene",
           "scene-guid-export",
         );
+        // A missing data-ticks attribute counts as zero ticks, not progress.
         await expect
           .poll(
             async () =>
-              page.getByTestId("player-root").getAttribute("data-ticks"),
+              Number(
+                (await page.getByTestId("player-root").getAttribute("data-ticks")) ?? "0",
+              ),
             {
               timeout: 20_000,
             },
           )
-          .not.toBe("0");
+          .toBeGreaterThan(0);
         await expect(page.getByTestId("player-root")).toHaveAttribute(
           "data-booted",
           "true",
