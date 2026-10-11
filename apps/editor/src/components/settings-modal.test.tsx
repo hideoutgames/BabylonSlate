@@ -334,6 +334,7 @@ describe("SettingsModal project authoring", () => {
     ["texture anisotropy", /Texture Anisotropy/, "Scalability", "quality-textures-anisotropy"],
     ["reflections", /Real-Time Reflections/, "Post Processing", "project-effects-reflections"],
     ["fft ocean", /Water FFT Ocean Detail/, "Scalability", "quality-water-fft"],
+    ["allow reflections", /Allow Reflections/, "Scalability", "quality-postprocessing-reflections"],
     ["ssao", /Ambient Occlusion/, "Post Processing", "project-effects-ambient-occlusion"],
     ["lut", /Color Grading/, "Post Processing", "project-effects-color-grading"],
     ["temporal", /Temporal Anti-Aliasing/, "Post Processing", "project-effects-temporal"],

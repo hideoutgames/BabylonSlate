@@ -16,6 +16,7 @@ import {
   type SerializedScene,
   type SerializedSceneLayer,
 } from "@babylonslate/core";
+import type { Actor } from "@babylonslate/object-model";
 import { createInProcessRuntime } from "./driver";
 import { createPlayBootCoordinator } from "./play-boot";
 
@@ -165,6 +166,139 @@ describe("Scene Layer physics worlds", () => {
     expect(dispose).toHaveBeenCalledTimes(1);
     expect(runtime.getSceneLayerPhysicsSync(layer!.guid)).toBeNull();
     runtime.stop();
+  });
+});
+
+/** A static wall: the same collider in whichever world its actor joins. */
+function wall(id: string, x: number, classId = "Actor") {
+  return createActor(id, "Wall", {
+    classId,
+    transform: { position: [x, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+    components: [
+      { id: "rb", classId: "RigidBodyComponent", properties: { motionType: "static", mass: 0, gravityScale: 0 } },
+      { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } } },
+    ],
+  });
+}
+
+/** Records each Scene query's answer on the calling actor. */
+const PROBE_SOURCE = `
+export function Probe(ctx) {
+  ctx.setVariable("trace", ctx.lineTrace({ x: 0, y: 0, z: 0 }, { x: 10, y: 0, z: 0 }, undefined, { drawDebug: false }).actor);
+  ctx.setVariable("sweep", ctx.shapeSweep({ kind: "sphere", radius: 0.1 }, { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } },
+    { position: { x: 10, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } }).actor);
+  ctx.setVariable("overlap", ctx.sphereOverlap({ x: 2, y: 0, z: 0 }, 0.2).actors);
+  ctx.setVariable("cursor", ctx.projectCursorToScene(undefined, { drawDebug: false }));
+}`;
+
+/**
+ * A main Scene with a wall at x = 2 and a probe, plus Scene Layer `layer`,
+ * started and stepped once so every world holds its bodies.
+ */
+async function queryRuntime(layer: SerializedSceneLayer) {
+  const scene = worldScene("A");
+  scene.actors = [wall("main-wall", 2), createActor("main-probe", "Probe", { classId: "MainProbe" })];
+  const runtime = createInProcessRuntime({
+    seed: 1, preferSoftwarePhysics: true, seedDemoActors: false, playScene: scene, sceneLayerLibrary: { layer },
+  });
+  await runtime.loadScripts([
+    { assetGuid: "main-probe", classId: "MainProbe", parentClassId: "Actor", source: PROBE_SOURCE, anchors: [],
+      entryPoints: [{ name: "Probe", event: "Probe", isAsync: false }] },
+    { assetGuid: "layer-probe", classId: "LayerProbe", parentClassId: "SceneLayerActor", source: PROBE_SOURCE, anchors: [],
+      entryPoints: [{ name: "Probe", event: "Probe", isAsync: false }] },
+  ]);
+  runtime.realizePlayWorld();
+  const instance = runtime.createSceneLayer("layer", 0);
+  runtime.start();
+  runtime.tick();
+  const probe = (actor: Actor | undefined) => {
+    runtime.invokeScriptEvent(actor!.classId, "Probe", actor);
+    return {
+      trace: actor!.getVariable("trace"),
+      sweep: actor!.getVariable("sweep"),
+      overlap: actor!.getVariable("overlap"),
+      cursor: actor!.getVariable("cursor"),
+    };
+  };
+  return { runtime, instance, probe };
+}
+
+describe("Scene Layer physics queries", () => {
+  it("answers a script's queries from its own actor's world", async () => {
+    const { runtime, instance, probe } = await queryRuntime(
+      physicsLayer("Layer", [0, 0, 0], [wall("wall", 2, "SceneLayerActor"), createActor("probe", "Probe", { classId: "LayerProbe" })]),
+    );
+    try {
+      const world = runtime.getWorld();
+      const mainWall = world.findActor("main-wall");
+      const layerWall = world.findActor(inLayer(instance, "wall"));
+      expect(mainWall).toBeDefined();
+      expect(layerWall).toBeDefined();
+      // Both walls sit at the same coordinates, each in its own world.
+      expect(probe(world.findActor(inLayer(instance, "probe")))).toMatchObject({
+        trace: layerWall, sweep: layerWall, overlap: [layerWall],
+      });
+      expect(probe(world.findActor("main-probe"))).toMatchObject({
+        trace: mainWall, sweep: mainWall, overlap: [mainWall],
+      });
+    } finally { runtime.stop(); }
+  });
+
+  it("gives a layer without Enable Physics no hits instead of the main world's", async () => {
+    const { runtime, instance, probe } = await queryRuntime(
+      physicsLayer("Layer", [0, 0, 0], [createActor("probe", "Probe", { classId: "LayerProbe" })], false),
+    );
+    try {
+      runtime.applySceneLayerResize(32, 18, 800, 600);
+      // The cursor over layer point (2, 0), where the main wall is.
+      runtime.pushInput([{ kind: "pointer", tick: 0, pointerId: 1, phase: "move", x: 450, y: 300, button: 0 }]);
+      runtime.tick();
+      expect(probe(runtime.getWorld().findActor(inLayer(instance, "probe")))).toMatchObject({
+        trace: null, sweep: null, overlap: [], cursor: { hit: false, actor: null },
+      });
+    } finally { runtime.stop(); }
+  });
+
+  it("projects a layer script's cursor through the layer camera onto its own world", async () => {
+    const { runtime, instance, probe } = await queryRuntime(physicsLayer("Layer", [0, 0, 0], [
+      wall("target", 4, "SceneLayerActor"),
+      createActor("probe", "Probe", { classId: "LayerProbe" }),
+    ]));
+    try {
+      const world = runtime.getWorld();
+      const layerProbe = world.findActor(inLayer(instance, "probe"));
+      runtime.applySceneLayerResize(32, 18, 800, 600);
+      // 32 × 18 layer units stretch over 800 × 600 px: x 500 px is layer x 4.
+      runtime.pushInput([{ kind: "pointer", tick: 0, pointerId: 1, phase: "move", x: 500, y: 300, button: 0 }]);
+      runtime.tick();
+      expect(probe(layerProbe).cursor).toMatchObject({
+        hit: true, actor: world.findActor(inLayer(instance, "target")), location: { x: 4, y: 0, z: 0 },
+      });
+      runtime.pushInput([{ kind: "pointer", tick: 0, pointerId: 1, phase: "move", x: 300, y: 300, button: 0 }]);
+      runtime.tick();
+      expect(probe(layerProbe).cursor).toMatchObject({ hit: false, actor: null });
+    } finally { runtime.stop(); }
+  });
+
+  it("emits each physics layer's colliders for showcollision tagged with its layer", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = softwareLayerRuntime({
+      hud: physicsLayer("HUD", [0, 0, 0], [wall("wall", 2, "SceneLayerActor")]),
+    }, (command) => commands.push(command));
+    const layer = runtime.createSceneLayer("hud", 0);
+    runtime.start();
+    runtime.tick();
+    try {
+      expect(runtime.executeConsoleCommand("showcollision on").success).toBe(true);
+      runtime.tick();
+      const emitted = commands.filter((command) => command.type === "debugColliders");
+      expect(emitted).toContainEqual({ type: "debugColliders", colliders: [] });
+      expect(emitted).toContainEqual({
+        type: "debugColliders",
+        layerId: layer!.guid,
+        colliders: [expect.objectContaining({ shape: "box", position: { x: 2, y: 0, z: 0 } })],
+      });
+    } finally { runtime.stop(); }
   });
 });
 

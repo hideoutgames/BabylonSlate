@@ -2708,6 +2708,8 @@ function ContentBrowserWorkspaceBody({
       </div>
 
       <ResizablePanelGroup
+        // A changed pane set remounts the group so panes register in tree order.
+        key={phone ? "phone" : "docked"}
         orientation="horizontal"
         className={cn(
           "min-h-0 flex-1 overflow-hidden",

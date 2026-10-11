@@ -3857,7 +3857,7 @@ describe("GraphEditor", () => {
 
   it("keeps protected nodes when the Backspace key deletes the selection", async () => {
     const onChange = vi.fn();
-    const { container } = render(
+    const { container, getByTestId } = render(
       <GraphEditor
         initialGraph={{
           nodes: [
@@ -3890,6 +3890,7 @@ describe("GraphEditor", () => {
         container.querySelector('.react-flow__node.selected[data-id="in-1"]'),
       ).not.toBeNull();
     });
+    fireEvent.pointerDown(getByTestId("graph-editor"));
     await pressBackspace();
     expect(container.querySelector('[data-id="in-1"]')).not.toBeNull();
 
@@ -3905,9 +3906,10 @@ describe("GraphEditor", () => {
 
   it("removes a wired node's links when the Backspace key deletes it", async () => {
     const onChange = vi.fn();
-    const { container } = render(
+    const { container, getByTestId } = render(
       <GraphEditor initialGraph={graphWithWiredPins()} onChange={onChange} />,
     );
+    fireEvent.pointerDown(getByTestId("graph-editor"));
     fireEvent.click(container.querySelector('.react-flow__node[data-id="log-b"]')!);
     fireEvent.keyDown(document.body, { key: "Backspace", code: "Backspace" });
     fireEvent.keyUp(document.body, { key: "Backspace", code: "Backspace" });
@@ -3974,6 +3976,43 @@ describe("GraphEditor", () => {
     } finally {
       now.mockRestore();
     }
+  });
+
+  it("deletes the selection with Backspace only in the graph last pressed", async () => {
+    const onChange = vi.fn();
+    const { container, getByTestId, getByRole } = render(
+      <>
+        <button type="button">Outliner row</button>
+        <GraphEditor
+          initialGraph={{
+            nodes: [
+              { id: "in-1", type: "flow.function.input", position: { x: 0, y: 0 }, data: { __protected: true, title: "Input" } },
+              { id: "log-a", type: "debug.log", position: { x: 200, y: 0 }, data: { message: "A", __pins: debugLogPins } },
+            ],
+            edges: [],
+          }}
+          focusedNodeId="log-a"
+          onChange={onChange}
+        />
+      </>,
+    );
+    await waitFor(() => {
+      expect(container.querySelector('.react-flow__node.selected[data-id="log-a"]')).not.toBeNull();
+    });
+    const outside = getByRole("button", { name: "Outliner row" });
+
+    fireEvent.keyDown(document.body, { key: "Backspace" });
+    fireEvent.pointerDown(getByTestId("graph-editor"));
+    fireEvent.pointerDown(outside);
+    fireEvent.keyDown(outside, { key: "Backspace" });
+    // Let any asynchronous canvas deletion settle before asserting none ran.
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    expect(onChange).not.toHaveBeenCalled();
+
+    fireEvent.pointerDown(getByTestId("graph-editor"));
+    fireEvent.keyDown(document.body, { key: "Backspace" });
+    const emitted = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+    expect(emitted.nodes.map((node) => node.id)).toEqual(["in-1"]);
   });
 
   it("stamps XYFlow node.dragHandle from nodeDragHandle", async () => {

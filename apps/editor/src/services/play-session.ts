@@ -305,6 +305,21 @@ export function playSessionBootControls(options: {
   return controls;
 }
 
+/**
+ * Textures created during a session that are still in the shared Engine's
+ * cache, compared by identity rather than count. Babylon's 1×1 placeholders
+ * are created once per Engine on first use and live as long as it, so they
+ * are not a session leak.
+ */
+export function texturesRetainedAfterPlay(
+  engine: Pick<EngineHandle["engine"], "getLoadedTexturesCache">,
+  before: ReadonlySet<unknown>,
+): number {
+  const native = engine as unknown as Partial<Record<"_emptyTexture" | "_emptyCubeTexture" | "_emptyTexture3D" | "_emptyTexture2DArray", unknown>>;
+  const placeholders = new Set([native._emptyTexture, native._emptyCubeTexture, native._emptyTexture3D, native._emptyTexture2DArray]);
+  return engine.getLoadedTexturesCache().filter((texture) => !before.has(texture) && !placeholders.has(texture)).length;
+}
+
 export interface PlaySessionResult {
   diagnostics: SessionReportEntry[];
   droppedDiagnostics: number;
@@ -317,7 +332,7 @@ export interface PlaySessionResult {
    */
   released: Promise<{
     textureCountAfter: number;
-    /** True when Play left more GPU textures than it started with. */
+    /** True when textures created during Play outlived its release. */
     textureLeak: boolean;
     quarantined: boolean;
   }>;
@@ -639,7 +654,8 @@ export function startPlaySession(options: {
 }): PlaySession {
   options = { ...options };
   const { canvas, sharedEngine } = options;
-  const textureCountBefore = sharedEngine.getLoadedTexturesCache().length;
+  const texturesBefore = new Set(sharedEngine.getLoadedTexturesCache());
+  const textureCountBefore = texturesBefore.size;
   const liveBefore = {
     meshes: 0,
     textures: textureCountBefore,
@@ -1965,10 +1981,11 @@ export function startPlaySession(options: {
         .then(([quarantined]) => {
           const textureCountAfter =
             sharedEngine.getLoadedTexturesCache().length;
-          const textureLeak = textureCountAfter > textureCountBefore;
+          const retained = texturesRetainedAfterPlay(sharedEngine, texturesBefore);
+          const textureLeak = retained > 0;
           if (textureLeak && !quarantined) {
             console.error(
-              `[play] texture cache grew ${textureCountBefore} → ${textureCountAfter}`,
+              `[play] ${retained} texture(s) created during Play outlived it (cache ${textureCountBefore} → ${textureCountAfter})`,
             );
           }
           return { textureCountAfter, textureLeak, quarantined };

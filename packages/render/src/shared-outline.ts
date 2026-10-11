@@ -1,12 +1,13 @@
 import {
   Constants, RawTexture, Texture, VertexBuffer,
-  type AbstractMesh, type InstancedMesh, type Mesh, type Scene,
+  type AbstractMesh, type Camera, type InstancedMesh, type Mesh, type Scene,
 } from "@babylonjs/core";
 import type { WebGPUDrawContext } from "@babylonjs/core/Engines/WebGPU/webgpuDrawContext";
 import {
   beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal,
   type ManagedRenderLease,
 } from "./managed-render-resources";
+import { cullStrictOccluders } from "./shared-outline-occluders";
 
 export const SHARED_OUTLINE_ATTRIBUTE = "babylonSlateOutlineIdentity";
 export const SHARED_OUTLINE_MAX_ID = 65_535;
@@ -301,6 +302,8 @@ export class SharedOutlineView {
   private readonly maximumWidths = new Map<SharedOutlineGroup, number>();
   private occluders: readonly AbstractMesh[] | null = null;
   private readonly meshLists = new Map<SharedOutlineGroup, { revision: number; sceneRevision: number; meshes: AbstractMesh[] }>();
+  /** Reused per-frame strict occluder list. */
+  private readonly strictOccluders: AbstractMesh[] = [];
   private styleUploads = 0;
   tableWidth = 1;
   tableHeight = 1;
@@ -461,6 +464,19 @@ export class SharedOutlineView {
       this.scene.meshes.filter((mesh) => !mesh.isDisposed() && (data?.[this.owner.identityFor(mesh) * 4 + 3] ?? 0) > 0);
     this.meshLists.set(group, { revision: this.revision, sceneRevision: this.owner.meshRevision, meshes });
     return meshes;
+  }
+  /**
+   * The strict group's occluders that can affect this frame's mask for
+   * `camera`; readiness keeps using the full `meshesForGroup("strict")` list.
+   */
+  strictOccludersFor(camera: Camera, widthPx: number, heightPx: number): AbstractMesh[] {
+    const candidates = this.meshesForGroup("strict");
+    const data = this.styles.get("strict")?.data;
+    // Per-instance identities live in an instanced buffer: keep such sources as members.
+    const isMember = (mesh: AbstractMesh) => (data?.[this.owner.identityFor(mesh) * 4 + 3] ?? 0) > 0 ||
+      mesh.instancedBuffers?.[SHARED_OUTLINE_ATTRIBUTE] !== undefined;
+    return cullStrictOccluders(candidates, isMember, camera, widthPx, heightPx,
+      Math.ceil(this.maximumWidthForGroup("strict")) + 1, this.strictOccluders);
   }
   diagnostics() {
     return { revision: this.revision, consumerCount: this.contributions.size,

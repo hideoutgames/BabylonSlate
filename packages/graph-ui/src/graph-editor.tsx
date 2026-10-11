@@ -21,7 +21,6 @@ import {
   type FinalConnectionState,
   type NodeChange,
   type NodeTypes,
-  type OnBeforeDelete,
   type OnConnectStartParams,
   type OnNodeDrag,
 } from "@xyflow/react";
@@ -240,7 +239,11 @@ export interface GraphEditorProps {
   normalizeConnection?: (connection: Connection) => Connection | null;
   /** React Flow connection mode. Animation Graph uses Loose for side handles. */
   connectionMode?: "strict" | "loose";
-  /** Forwarded to React Flow. Behaviour trees pass null to avoid Delete trapping chrome. */
+  /**
+   * Keys that delete the selection (default Backspace) while this graph was the
+   * last surface pressed or focused. Behaviour trees pass null to avoid Delete
+   * trapping chrome.
+   */
   deleteKeyCode?: string | string[] | null;
   /** Forwarded to React Flow. Default true; BT passes false to avoid focus traps. */
   nodesFocusable?: boolean;
@@ -1859,8 +1862,9 @@ function GraphEditorCanvas({
   }, [commitGraph, nodeDragHandle]);
 
   // Removes the nodes, their wires and the listed wires as one graph change.
+  // Returns whether anything was removed.
   const removeGraphElements = useCallback(
-    (nodeIds: ReadonlySet<string>, edgeIds: ReadonlySet<string>) => {
+    (nodeIds: ReadonlySet<string>, edgeIds: ReadonlySet<string>): boolean => {
       const { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
       const nextNodes = currentNodes.filter((node) => !nodeIds.has(node.id));
       const nextEdges = currentEdges.filter(
@@ -1873,9 +1877,10 @@ function GraphEditorCanvas({
         nextNodes.length === currentNodes.length &&
         nextEdges.length === currentEdges.length
       ) {
-        return;
+        return false;
       }
       commitGraph(nextNodes, nextEdges);
+      return true;
     },
     [commitGraph],
   );
@@ -1888,29 +1893,6 @@ function GraphEditorCanvas({
     removeGraphElements(selected, new Set());
   }, [removeGraphElements]);
 
-  // Keyboard delete (XYFlow `deleteKeyCode`) keeps protected nodes, like the
-  // toolbar. XYFlow would remove the wires and then the nodes as two changes,
-  // each emitted against the other side's last render, so the wires came
-  // back; the removal is applied here as one change instead.
-  const handleBeforeDelete = useCallback<OnBeforeDelete<CanvasNode, Edge>>(
-    async ({ nodes: doomedNodes, edges: doomedEdges }) => {
-      if (!readOnly) {
-        removeGraphElements(
-          new Set(
-            doomedNodes
-              .filter((node) => !isProtectedNode(node))
-              .map((node) => node.id),
-          ),
-          new Set(
-            doomedEdges.filter((edge) => edge.selected).map((edge) => edge.id),
-          ),
-        );
-      }
-      return false;
-    },
-    [readOnly, removeGraphElements],
-  );
-
   // XYFlow `fitView` only sees mounted nodes; virtualisation unmounts the rest.
   const fitGraph = useCallback(() => {
     const bounds = graphNodesBounds(graphStateRef.current.nodes);
@@ -1921,6 +1903,44 @@ function GraphEditorCanvas({
       getViewportForBounds(bounds, width, height, minZoom, maxZoom, padding),
     );
   }, [graphViewport.fitViewOptions, setViewport, storeApi]);
+
+  // React Flow's own delete key listens on the whole document, so hidden tabs
+  // and other panels' Backspace deleted this graph's selection. Only the graph
+  // last pressed or focused reacts, and protected nodes stay. The selected
+  // nodes, their wires and the selected wires go in one graph change.
+  const deleteKeys = useMemo(
+    () => (deleteKeyCode === undefined ? ["Backspace"] : [deleteKeyCode ?? []].flat()),
+    [deleteKeyCode],
+  );
+  useEffect(() => {
+    const root = wrapperRef.current;
+    if (readOnly || !root || deleteKeys.length === 0) return;
+    let engaged = false;
+    const inside = (target: EventTarget | null) => target instanceof Node && root.contains(target);
+    const onPointerDown = (event: PointerEvent) => { engaged = inside(event.target); };
+    const onFocusIn = (event: FocusEvent) => { if (inside(event.target)) engaged = true; };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!engaged || event.defaultPrevented || event.isComposing) return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      if (!deleteKeys.includes(event.key) && !deleteKeys.includes(event.code)) return;
+      if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"], .nokey')) return;
+      if (!root.isConnected || !(root.checkVisibility?.() ?? true)) return;
+      const { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
+      const removed = removeGraphElements(
+        new Set(deletableNodeIds(currentNodes)),
+        new Set(currentEdges.filter((edge) => edge.selected).map((edge) => edge.id)),
+      );
+      if (removed) event.preventDefault();
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("focusin", onFocusIn, true);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("focusin", onFocusIn, true);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [deleteKeys, readOnly, removeGraphElements]);
 
   const breakSelectionLinks = useCallback(() => {
     const selectedEdgeIds = new Set(
@@ -2542,7 +2562,6 @@ function GraphEditorCanvas({
           edgesReconnectable={false}
           onlyRenderVisibleElements={false}
           onNodesChange={handleNodesChange}
-          onBeforeDelete={handleBeforeDelete}
           onNodeDragStart={(_event, node) => { proximityDragRef.current = !readOnly && nodesDraggable; shakenRef.current = false; const zoom = storeApi.getState().transform[2]; shakeTracker.current.reset(node.position.x * zoom, node.position.y * zoom, performance.now()); }}
           onNodeDrag={handleNodeDrag}
           onNodeDragStop={handleNodeDragStop}
@@ -2566,7 +2585,7 @@ function GraphEditorCanvas({
                 ? ConnectionMode.Strict
                 : undefined
           }
-          deleteKeyCode={deleteKeyCode}
+          deleteKeyCode={null}
           nodesFocusable={nodesFocusable}
           edgesFocusable={nodesFocusable}
           fitView={mountViewport.fitView}

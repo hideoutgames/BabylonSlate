@@ -702,7 +702,8 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
       const cz = Math.max(box.min.z, Math.min(center.z, box.max.z));
       const dx = center.x - cx;
       const dy = center.y - cy;
-      const dz = center.z - cz;
+      // A 2D world has no depth, as in Rapier: only X/Y decide an overlap.
+      const dz = this.kind === "2d" ? 0 : center.z - cz;
       const key = `${body.desc.id}\t${actorId}`;
       if (dx * dx + dy * dy + dz * dz <= radius * radius && !reported.has(key)) {
         reported.add(key);

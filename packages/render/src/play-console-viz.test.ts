@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Matrix, Mesh, MeshBuilder, StandardMaterial, VertexBuffer } from "@babylonjs/core";
+import { Matrix, Mesh, MeshBuilder, Scene, StandardMaterial, VertexBuffer } from "@babylonjs/core";
 import { createTestEngine } from "./create-null-engine";
 import {
   applyPlayShowBounds,
@@ -257,6 +257,41 @@ describe("play console visualization", () => {
     expect(rebuilt?.getVerticesData(VertexBuffer.PositionKind)).toEqual([0, 0, 0, 2, 0, 0, 0, 4, 0]);
     expect(rebuilt?.position.x).toBe(5);
     overlay.dispose();
+    engine.dispose();
+  });
+
+  it("draws each Scene Layer's colliders in that layer's scene and clears them with the layer or the toggle", () => {
+    const { engine, scene } = createTestEngine();
+    const hud = new Scene(engine);
+    const map = new Scene(engine);
+    const layers = new Map([["hud", hud], ["map", map]]);
+    const viz = createPlayConsoleViz(scene, { layerScene: (layerId) => layers.get(layerId) });
+    const box = (id: string, x: number) => ({
+      id, shape: "box" as const, position: { x, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 },
+      halfExtents: { x: 0.5, y: 0.5, z: 0.01 },
+    });
+    viz.applyCommand({ type: "debugColliders", colliders: [box("world", 1)] });
+    viz.applyCommand({ type: "debugColliders", layerId: "hud", colliders: [box("button", 2)] });
+    viz.applyCommand({ type: "debugColliders", layerId: "map", colliders: [box("pin", 3)] });
+    // A layer the compositor does not know draws nowhere.
+    viz.applyCommand({ type: "debugColliders", layerId: "gone", colliders: [box("stray", 4)] });
+    expect(scene.getMeshByName("playConsoleViz:world")).not.toBeNull();
+    expect(scene.getMeshByName("playConsoleViz:button")).toBeNull();
+    expect(hud.getMeshByName("playConsoleViz:button")?.position.x).toBeCloseTo(2);
+    expect(hud.getMeshByName("playConsoleViz:world")).toBeNull();
+    expect(map.getMeshByName("playConsoleViz:pin")).not.toBeNull();
+    expect([scene, hud, map].some((target) => target.getMeshByName("playConsoleViz:stray"))).toBe(false);
+
+    viz.applyCommand({ type: "sceneLayerRemove", layerId: "hud" });
+    expect(hud.meshes).toHaveLength(0);
+    expect(hud.materials).toHaveLength(0);
+    expect(map.getMeshByName("playConsoleViz:pin")).not.toBeNull();
+
+    viz.applyCommand({ type: "setShowCollision", enabled: false });
+    expect(scene.getMeshByName("playConsoleViz:world")).toBeNull();
+    expect(map.meshes).toHaveLength(0);
+    expect(map.materials).toHaveLength(0);
+    viz.dispose();
     engine.dispose();
   });
 

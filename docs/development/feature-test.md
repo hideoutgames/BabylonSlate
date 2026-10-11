@@ -80,7 +80,7 @@ Zones sit on a 32 m grid (`layout.ts`); each has an Outliner folder and a 3D Tex
 | `FT_2D` | Orthographic camera over a 16 × 9 Tilemap of 128 px Kenney platformer tiles: parallax backdrop, collision ground (grass on dirt, crates, chain ramp, top-edge ledges, animated switch blocks) and a decor layer from a second Tileset (animated water and torches, signs, plants). `FT_2DRobotGraph` cycles robot Idle, Walk, Jump and Fall Sprite Animations on a mascot and a dynamic walking robot; 32 falling robot bodies use every 2D collider shape; chain funnel; hinge pendulum; custom `Characters` sorting layer. |
 | `FT_StreamedRoom` | Platform, pillars, sign and a streamed spinner; no camera or lights. |
 | `FT_HUD` (Scene Layer) | Every overlay widget: text with the Text-domain Material, rich text, panels, safe area, form controls, scroll box, virtualized list (10 000 rows) and grid (400 cells), mask and mask panel, texture, material swatch, click button (`FT_UIClickButton`), focus target, card switcher (`FT_UICardSwitcher`), joystick bound to Move, persistent painter. Focus navigation uses Confirm. |
-| `FT_OverlayPhysics` (Scene Layer) | Eight 2D bodies falling into a pit in the overlay's own physics world. |
+| `FT_OverlayPhysics` (Scene Layer) | Eight 2D bodies falling into a pit in the overlay's own physics world. `FT_UIPitCounter` under the pit counts them each tick with Sphere Overlap Actors (World Dynamic) from a layer actor's script, which reads the layer's world rather than main-Scene bodies at the same coordinates; its label updates only when the count changes. `showcollision` draws the pit and boxes in the layer. |
 
 ## Scripting, data and settings
 
@@ -88,7 +88,7 @@ Zones sit on a 32 m grid (`layout.ts`); each has an Outliner folder and a 3D Tex
 - **Editor**: `FT_EditorProbe` (EditorUtilityObject, registered) logs editor events; `FT_EditorMath` (EditorFunctionLibrary) is authored only.
 - **Types and data**: `FT_ScriptSpeedMode` (Enum), `FT_ScriptSpinConfig` (Structure), `FT_ScriptDescribable` (ScriptInterface), `FT_DataItemStats` / `FT_DataItems` (Data Definition and Data Tree), `FT_DataProgress` (SaveGame, `wipeOnPlay` on).
 - **Input**: Basic 3D actions plus `FT_ScriptPulse` (P or pad button 3; every press also rumbles pad 0 through Set Gamepad Rumble) and `FT_ScriptNudge` (arrow keys); the HUD joystick adds touch bindings to Move.
-- **Project settings**: Feature Test tags, collision layers Default, Dynamic, Trigger, Water, Ghost; PBR with Scene Linear and ACES, bloom, vignette, white balance, FXAA, FSR at render scale 0.8, ambient occlusion, reflections and volumetrics at 0.5 scale; shadows on; render path Auto; WebGL2; dynamic resolution off; Geist as the default font.
+- **Project settings**: Feature Test tags, collision layers Default, Dynamic, Trigger, Water, Ghost; PBR with Scene Linear and ACES, bloom, vignette, white balance, FXAA, FSR at render scale 0.8, ambient occlusion, reflections and volumetrics at 0.5 scale (at the default Medium quality only ambient occlusion runs; reflections and scene-wide volumetric fog need High or Ultra, and the Effects zone's Fog Volume renders on every tier); shadows on; render path Auto; WebGL2; dynamic resolution off; Geist as the default font.
 
 ### Console commands
 
@@ -134,7 +134,7 @@ For devices without a test harness (iPad, phones, other browsers), a Feature Tes
   - fps, p95, max frame and stalls over 100 ms;
   - draw calls, mesh and texture counts, CPU/GPU frame cost and render resolution;
   - console command output and duration;
-  - the Preview Session Report entries, texture counts before and after Play (`LEAK` when Play left textures), and Play error/warning lines.
+  - the Preview Session Report entries, texture counts before and after Play (`LEAK` when textures created during Play are still loaded after release; Babylon's once-per-Engine placeholder textures do not count), and Play error/warning lines.
 - **Benchmark output:** a per-profile table per scene. Quality tiers include their resolution scale, so the resolution column changes between tiers. It also lists the highest Forward tier that holds 60 fps (at least 55 fps, p95 ≤ 25 ms) and 30 fps (at least 28 fps, p95 ≤ 45 ms), per scene and across all of them. A profile the engine could not apply (for example Clustered Forward on an orthographic camera) shows `(ran forward)`.
 - **Pass/fail:** a scene fails when it does not open or load (120 s each), a command fails or times out (60 s), the session report has an error, or release is not confirmed. While a check runs, a small status bar with **Cancel** replaces the dialog, and the Preview Session Report dialog is held back; its entries go into the report instead.
 - **Code:** runner `apps/editor/src/services/feature-test-check.ts`; text report `apps/editor/src/lib/feature-test-check-report.ts`; dialog `apps/editor/src/components/feature-test-check-dialog.tsx`. `FEATURE_TEST_CHECK_SCENES` must name existing scenes; the scaffold gate checks this.
@@ -166,16 +166,18 @@ Rules: compare runs on the same machine, browser project and build only; never a
 
 Main-scene editor viewport at default (Medium) quality, Forward path, with float blending unavailable as on an iPad A16. Draw calls per frame, counted per framebuffer in software GL. On the iPad, Play reported 1947 per frame before these changes, at 4 to 5 fps.
 
-| Pass | Before | After local shadow range |
-| --- | --- | --- |
-| Sun shadow, 2 cascades | 411 | 411 |
-| Point light cube shadow (10 m range) | 302 | 16 |
-| Spot shadow | 5 | 4 |
-| Outline occluder mask | 290 | 290 |
-| Scene (opaque and transparent) | 135 | 135 |
-| Spatial-effects geometry (SSAO, SSR, volumetrics) | 123 | 123 |
-| Full-screen effects | 21 | 21 |
-| **Total** | **1289** | **1002** |
+| Pass | Before | After local shadow range | After strict outline occluder culling |
+| --- | --- | --- | --- |
+| Sun shadow, 2 cascades | 411 | 411 | 411 |
+| Point light cube shadow (10 m range) | 302 | 16 | 16 |
+| Spot shadow | 5 | 4 | 4 |
+| Outline masks | 290 | 290 | 2 |
+| Scene (opaque and transparent) | 135 | 135 | 135 |
+| Spatial-effects geometry (SSAO, SSR, volumetrics) | 123 | 123 | 123 |
+| Full-screen effects | 21 | 21 | 21 |
+| **Total** | **1289** | **1002** | **713** |
+
+Medium skips reflections and scene-wide volumetric fog and Low also skips ambient occlusion; both save GPU time rather than draws here. The Effects zone's Fog Volume keeps the spatial-effects geometry pass (depth only at Low) on every tier, so its 123 draws remain.
 
 ## Verification
 

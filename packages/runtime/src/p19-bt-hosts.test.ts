@@ -836,6 +836,32 @@ describe("trace restore of Play Sound voices", () => {
     replay.stop();
   });
 
+  it("draws a voice's clip and pitch from the session seed, traces the draws and replays them on restore", () => {
+    const draws = (commands: CommandMessage[]) => commands.flatMap((command) =>
+      command.type === "playSound" ? [[command.clipRoll, command.pitchRoll]] : []);
+    const commands: CommandMessage[] = [];
+    const recorded = soundRuntime(["sound", "wait"], null, commands);
+    recorded.executeConsoleCommand("snapshot start");
+    recorded.tick();
+    recorded.executeConsoleCommand("snapshot stop");
+    const frame = recorded.stopTrace()!.frames.at(-1)!;
+    recorded.stop();
+    const [played] = draws(commands);
+    for (const draw of played!) expect(draw).toSatisfy((value: unknown) => typeof value === "number" && value >= 0 && value < 1);
+    expect(frame.audio?.voices).toEqual([expect.objectContaining({ voiceId: "bt:guard:sound", clipRoll: played![0], pitchRoll: played![1] })]);
+
+    // Another session with the seed draws the same; a restore replays the recorded draws, not new ones.
+    const replayCommands: CommandMessage[] = [];
+    const replay = soundRuntime(["delay", "sound", "wait"], null, replayCommands);
+    replay.tick();
+    replay.tick();
+    expect(draws(replayCommands)).toEqual([played]);
+    replayCommands.length = 0;
+    replay.restoreFromTrace(frame);
+    expect(draws(replayCommands)).toEqual([played]);
+    replay.stop();
+  });
+
   it("stops a live voice the restored frame was not playing, then replays the recorded run", () => {
     const commands: CommandMessage[] = [];
     const runtime = soundRuntime(["delay", "sound", "wait"], null, commands);

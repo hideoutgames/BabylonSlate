@@ -121,6 +121,7 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
       sharedEngineGeneration: 1,
       playing: false,
       preparing: false,
+      reportSceneViewportLoading: vi.fn(),
     },
   };
 });
@@ -243,6 +244,7 @@ describe("ViewportPanel engine", () => {
     handle.editor.setGridSettings.mockClear();
     handle.editor.gizmos.setSnap.mockClear();
     play.registerSharedEngine.mockClear();
+    play.reportSceneViewportLoading.mockClear();
     play.playing = false;
     play.preparing = false;
     documents.openDocuments = [];
@@ -476,6 +478,30 @@ describe("ViewportPanel engine", () => {
       }
     },
   );
+
+  it("keeps Retry in the viewport after closing a failed load and holds Play only while loading", async () => {
+    documents.openDocuments = [{
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      content: createDefaultScene(),
+    }];
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+    handle.loadSceneAsync.mockRejectedValueOnce(new Error("Unavailable scene resource"));
+    try {
+      renderViewport();
+      await waitFor(() => expect(screen.getByRole("dialog").textContent).toContain("Scene Loading Failed"));
+      expect(play.reportSceneViewportLoading).toHaveBeenCalledWith("scene:S", true);
+      expect(play.reportSceneViewportLoading).toHaveBeenLastCalledWith("scene:S", false);
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      fireEvent.click(screen.getByTestId("viewport-load-retry"));
+      await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
+      expect(screen.queryByTestId("viewport-load-failed")).toBeNull();
+      expect(createEngineMock).toHaveBeenCalledTimes(2);
+      expect(play.reportSceneViewportLoading).toHaveBeenLastCalledWith("scene:S", false);
+    } finally {
+      errorLog.mockRestore();
+    }
+  });
 
   it("applies compatible settings behind blocking progress without replacing the scene or camera", async () => {
     const scene = createDefaultScene();

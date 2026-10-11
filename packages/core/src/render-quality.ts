@@ -140,7 +140,19 @@ export function parseWaterQualitySetting(field: string, value: string): Partial<
 }
 export interface PostProcessingQuality extends QualitySelection {
   resolutionScale: number;
+  /**
+   * Screen-space effects this tier can afford. Each runs only when the project
+   * also enables it; a disallowed one is skipped, never forced on.
+   */
+  ambientOcclusion: boolean;
+  reflections: boolean;
+  /** Scene-wide volumetric lighting only; Fog Volumes always render. */
+  volumetricLighting: boolean;
 }
+export type PostProcessingEffectField = "ambientOcclusion" | "reflections" | "volumetricLighting";
+export const POST_PROCESSING_EFFECT_FIELDS: readonly PostProcessingEffectField[] = [
+  "ambientOcclusion", "reflections", "volumetricLighting",
+];
 export interface LightingQuality extends QualitySelection {
   localLightMode: "auto" | "manual";
   maxLocalLights: number;
@@ -184,7 +196,7 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
       refraction: false, refractionScale: 0.5, reflections: "sky", reflectionSteps: 8,
       planarScale: 0.5, fft: false, fftSize: 64, fftCascades: 1,
     },
-    postprocessing: { resolutionScale: 0.5 },
+    postprocessing: { resolutionScale: 0.5, ambientOcclusion: false, reflections: false, volumetricLighting: false },
   },
   medium: {
     lighting: { localLightMode: "auto", maxLocalLights: 16 },
@@ -196,7 +208,7 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
       refraction: true, refractionScale: 0.5, reflections: "sky", reflectionSteps: 8,
       planarScale: 0.5, fft: false, fftSize: 64, fftCascades: 1,
     },
-    postprocessing: { resolutionScale: 0.75 },
+    postprocessing: { resolutionScale: 0.75, ambientOcclusion: true, reflections: false, volumetricLighting: false },
   },
   high: {
     lighting: { localLightMode: "auto", maxLocalLights: 64 },
@@ -208,7 +220,7 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
       refraction: true, refractionScale: 0.75, reflections: "screenSpace", reflectionSteps: 16,
       planarScale: 0.5, fft: true, fftSize: 128, fftCascades: 2,
     },
-    postprocessing: { resolutionScale: 1 },
+    postprocessing: { resolutionScale: 1, ambientOcclusion: true, reflections: true, volumetricLighting: true },
   },
   ultra: {
     lighting: { localLightMode: "auto", maxLocalLights: 256 },
@@ -220,7 +232,7 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
       refraction: true, refractionScale: 1, reflections: "planar", reflectionSteps: 24,
       planarScale: 0.75, fft: true, fftSize: 256, fftCascades: 3,
     },
-    postprocessing: { resolutionScale: 1 },
+    postprocessing: { resolutionScale: 1, ambientOcclusion: true, reflections: true, volumetricLighting: true },
   },
 };
 export function isQualityLevel(value: unknown): value is QualityLevel {
@@ -311,6 +323,7 @@ export function normalizeRenderingQuality(value: unknown): RenderingQuality {
         0.25,
         1,
       ),
+      ...postProcessingEffects(source.postprocessing),
     },
     lighting: {
       ...selection(source.lighting),
@@ -335,6 +348,21 @@ export function normalizeRenderingQuality(value: unknown): RenderingQuality {
 }
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+/**
+ * Effect allowances missing from older saves take the saved profile's tier
+ * (Medium without one), like water fields added by later releases.
+ */
+function postProcessingEffects(
+  source: Partial<PostProcessingQuality> | undefined,
+): Pick<PostProcessingQuality, PostProcessingEffectField> {
+  const tier = RENDER_QUALITY_PROFILES[isQualityLevel(source?.profile) ? source.profile : "medium"].postprocessing;
+  const flag = (key: PostProcessingEffectField) => typeof source?.[key] === "boolean" ? source[key] : tier[key];
+  return {
+    ambientOcclusion: flag("ambientOcclusion"),
+    reflections: flag("reflections"),
+    volumetricLighting: flag("volumetricLighting"),
+  };
 }
 function snapWaterFftSize(value: number): number {
   return WATER_FFT_SIZES.reduce((best, size) =>

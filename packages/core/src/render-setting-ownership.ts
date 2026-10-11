@@ -45,7 +45,12 @@ export const SCALABILITY_FIELD_OWNERS = {
     fftSize: "water",
     fftCascades: "water",
   },
-  postprocessing: { resolutionScale: "postprocessing" },
+  postprocessing: {
+    resolutionScale: "postprocessing",
+    ambientOcclusion: "postprocessing",
+    reflections: "postprocessing",
+    volumetricLighting: "postprocessing",
+  },
   lighting: { localLightMode: "lighting", maxLocalLights: "lighting" },
 } as const satisfies {
   [G in QualityGroup]: Record<

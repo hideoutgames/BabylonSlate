@@ -17,6 +17,7 @@ import {
 import {
   createMeshComponent,
   identitySerializedTransform,
+  type QuaternionTuple,
   type SerializedComponent,
   type SerializedGraph,
   type SerializedScene,
@@ -34,6 +35,8 @@ export const MANNEQUIN_CLASS_FILE = "Mannequin.class.babasset";
 export const MANNEQUIN_ASSET_FOLDER = "Mannequin";
 export const MANNEQUIN_CLASS_ID = "Mannequin";
 export const MANNEQUIN_ACTOR_ID = "actor-1";
+/** The model faces +Z; turn it toward the default Camera on the -Z side. */
+export const MANNEQUIN_ROTATION: QuaternionTuple = [0, 1, 0, 0];
 
 /** Kenney Mannequin is about 1.6m tall; origin is at the feet. */
 export const MANNEQUIN_CAPSULE_RADIUS = 0.5;
@@ -120,6 +123,7 @@ function replaceDefaultCubeActor(
         ...actor,
         name: MANNEQUIN_CLASS_ID,
         classId: MANNEQUIN_CLASS_ID,
+        transform: { ...actor.transform, rotation: MANNEQUIN_ROTATION },
         components: [
           {
             ...mesh,

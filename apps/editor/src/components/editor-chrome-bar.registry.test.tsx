@@ -24,6 +24,8 @@ const state = vi.hoisted(() => ({
   phone: false,
   errorCount: 0,
   activeId: "first",
+  canPlay: false,
+  sceneViewportLoading: false,
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
@@ -36,7 +38,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   registryEpoch: state.registry?.generation ?? 0,
 })));
 vi.mock("../context/play-context", () => ({
-  usePlay: () => ({ playing: false, preparing: false, canPlay: false }),
+  usePlay: () => ({ playing: false, preparing: false, canPlay: state.canPlay, sceneViewportLoading: state.sceneViewportLoading }),
 }));
 vi.mock("../context/validation-context", () => ({
   useValidation: () => ({ errorCount: state.errorCount }),
@@ -91,6 +93,22 @@ afterEach(() => {
   state.phone = false;
   state.errorCount = 0;
   state.activeId = "first";
+  state.canPlay = false;
+  state.sceneViewportLoading = false;
+});
+
+describe("chrome Play", () => {
+  it("waits for a loading Scene viewport before Play", () => {
+    state.canPlay = true;
+    state.sceneViewportLoading = true;
+    const { rerender } = render(<Chrome />);
+    const play = screen.getByTestId("play-preview");
+    expect(play.hasAttribute("disabled")).toBe(true);
+    expect(play.getAttribute("title")).toBe("Wait for the scene to finish loading");
+    state.sceneViewportLoading = false;
+    rerender(<Chrome />);
+    expect(screen.getByTestId("play-preview").hasAttribute("disabled")).toBe(false);
+  });
 });
 
 describe("chrome document icons", () => {

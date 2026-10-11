@@ -94,6 +94,8 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
   private readonly havokWasmUrl: string | undefined;
   private readonly preferSoftwarePhysics: boolean;
   private showCollision = false;
+  /** Layer worlds whose last collision-view emission was empty. */
+  private readonly emptyDebugLayers = new Set<string>();
   private waters = new Map<string, WaterDefinition>();
   /** Project Water Blend Distance, applied to every world's water. */
   private readonly waterBlendDistance: number;
@@ -205,6 +207,7 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
   removeLayer(layerGuid: string): void {
     this.layerWorlds.get(layerGuid)?.sync?.dispose();
     this.layerWorlds.delete(layerGuid);
+    this.emptyDebugLayers.delete(layerGuid);
   }
 
   /** Stop, phase 2: release every world. */
@@ -212,6 +215,7 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
     this.mainSync.dispose();
     for (const entry of this.layerWorlds.values()) entry.sync?.dispose();
     this.layerWorlds.clear();
+    this.emptyDebugLayers.clear();
   }
 
   /** Upgrade both software worlds to Havok/Rapier and re-sync spawned bodies. */
@@ -476,9 +480,10 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
     for (const entry of this.layerWorlds.values()) if (entry.sync) this.dispatchContacts(entry.sync);
   }
 
-  /** Console `showcollision`. */
+  /** Console `showcollision`; turning it off clears the main world's and every layer's debug meshes. */
   setShowCollision(enabled: unknown): void {
     this.showCollision = Boolean(enabled);
+    this.emptyDebugLayers.clear();
     this.host.emit({
       type: "setShowCollision",
       enabled: this.showCollision,
@@ -487,13 +492,25 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
     else this.host.emit({ type: "debugColliders", colliders: [] });
   }
 
-  /** The main world's colliders while the collision view is on. */
+  /**
+   * While the collision view is on: the main world's colliders, then each
+   * created Scene Layer world's, tagged with its layer so they draw in that
+   * layer's own scene. A layer world stays silent while it remains empty.
+   */
   emitDebugColliders(): void {
     if (!this.showCollision) return;
     this.host.emit({
       type: "debugColliders",
       colliders: this.mainSync.getBackend().listDebugColliders(),
     });
+    for (const [layerId, entry] of this.layerWorlds) {
+      if (!entry.sync) continue;
+      const colliders = entry.sync.getBackend().listDebugColliders();
+      if (colliders.length === 0 && this.emptyDebugLayers.has(layerId)) continue;
+      if (colliders.length === 0) this.emptyDebugLayers.add(layerId);
+      else this.emptyDebugLayers.delete(layerId);
+      this.host.emit({ type: "debugColliders", layerId, colliders });
+    }
   }
 
   /** Created layer worlds, in creation order. */

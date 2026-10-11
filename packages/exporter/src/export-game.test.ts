@@ -596,8 +596,20 @@ describe("exportGame", () => {
     expect(two.value.files.has("assets/HavokPhysics_es.js")).toBe(false);
   });
 
+  const sceneLayerAsset = (guid: string, physicsEnabled: boolean) => {
+    const layer = createDefaultSceneLayer();
+    layer.settings.physicsEnabled = physicsEnabled;
+    return { guid, type: "SceneLayer", sceneGuid: "scene-1", bytes: new TextEncoder().encode(JSON.stringify(layer)) };
+  };
+  const physicsPlayerFiles = () => new Map([
+    ...stubPlayer(),
+    ["havok/HavokPhysics.wasm", new Uint8Array([1])],
+    ["assets/HavokPhysics_es.js", new TextEncoder().encode("havok")],
+    ["assets/rapier.es.js", new TextEncoder().encode("rapier")],
+  ]);
+
   it(
-    "retains Rapier for SceneLayers alongside a 3d world",
+    "retains Rapier for a physics-enabled SceneLayer alongside a 3d world",
     async () => {
       const result = await exportGame({
         bundleDebugger: false,
@@ -612,21 +624,10 @@ describe("exportGame", () => {
             sceneGuid: "scene-1",
             bytes: new Uint8Array([1]),
           },
-          {
-            guid: "overlay-1",
-            type: "SceneLayer",
-            sceneGuid: "scene-1",
-            bytes: new TextEncoder().encode(
-              JSON.stringify(createDefaultSceneLayer()),
-            ),
-          },
+          sceneLayerAsset("hud", false),
+          sceneLayerAsset("minigame", true),
         ],
-        playerFiles: new Map([
-          ...stubPlayer(),
-          ["havok/HavokPhysics.wasm", new Uint8Array([1])],
-          ["assets/HavokPhysics_es.js", new TextEncoder().encode("havok")],
-          ["assets/rapier.es.js", new TextEncoder().encode("rapier")],
-        ]),
+        playerFiles: physicsPlayerFiles(),
       });
       expect(result.ok).toBe(true);
       if (!result.ok) return;
@@ -636,6 +637,29 @@ describe("exportGame", () => {
       expect(result.value.manifest.physicsWorld).toBe("3d");
     },
   );
+
+  it("omits Rapier from a 3d export whose SceneLayers all leave physics off", async () => {
+    const result = await exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+      physicsWorld: "3d",
+      scripts: [],
+      assets: [
+        { guid: "scene-1", type: "Scene", sceneGuid: "scene-1", bytes: new Uint8Array([1]) },
+        sceneLayerAsset("hud", false),
+        sceneLayerAsset("pause-menu", false),
+      ],
+      playerFiles: physicsPlayerFiles(),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.files.has("assets/rapier.es.js")).toBe(false);
+    expect(result.value.files.has("havok/HavokPhysics.wasm")).toBe(true);
+    expect(result.value.files.has("assets/HavokPhysics_es.js")).toBe(true);
+    expect(result.value.manifest.assets.filter((asset) => asset.type === "SceneLayer").map((asset) => asset.guid))
+      .toEqual(["hud", "pause-menu"]);
+  });
 
   it("inlines every link to a stylesheet verbatim and keeps an unlinked stylesheet", async () => {
     const theme = "a::after{content:\"$& </style>\"}";

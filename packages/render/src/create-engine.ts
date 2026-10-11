@@ -1242,6 +1242,7 @@ function initializeEngine(
         navmeshBytes: options.navmeshBytes,
         navBlockers: options.navBlockers,
         world: options.physicsWorld ?? options.viewportMode,
+        layerScene: (layerId) => sceneLayerCompositor?.layers().find((layer) => layer.layerId === layerId)?.scene,
       })
     : null;
   onRollback(() => playViz?.dispose());

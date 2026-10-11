@@ -7,6 +7,7 @@ import {
   skyboxFaceGuids,
 } from "./skybox";
 import { createDefaultScene } from "./project";
+import { quatRotateVector } from "./euler";
 
 describe("SkyboxComponent helpers", () => {
   it("falls back to size 1000 for missing or non-positive sizes", () => {
@@ -78,6 +79,19 @@ describe("createDefaultScene skybox", () => {
     expect(scene.actors.some((actor) => actor.name === "Cube")).toBe(false);
     expect(scene.actors.some((actor) => actor.name === "Actor")).toBe(true);
     expect(scene.settings.environmentColor).toEqual([0.45, 0.62, 0.85]);
+  });
+
+  it("lights upright surfaces that face the default camera from above", () => {
+    const scene = createDefaultScene();
+    const camera = scene.actors.find((actor) => actor.id === scene.settings.mainCameraActorId)!;
+    const sun = scene.actors.find((actor) => actor.id === "actor-sun")!;
+    const [qx, qy, qz, qw] = sun.transform.rotation;
+    // Directional lights shine along actor rotation × (0, 0, 1).
+    const light = quatRotateVector({ x: qx, y: qy, z: qz, w: qw }, { x: 0, y: 0, z: 1 });
+    const [cx, , cz] = camera.transform.position;
+    // A vertical face at the origin turned toward the camera receives light.
+    expect(light.x * cx + light.z * cz).toBeLessThan(0);
+    expect(light.y).toBeLessThan(0);
   });
 
   it("lets authors remove the seeded skybox like any other actor", () => {

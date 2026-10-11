@@ -47,7 +47,8 @@ test(`Basic 3D mannequin ${variant.backend} ${variant.mode} ${variant.profile} k
     mode: variant.mode, shadows: initial.requestedShadows,
     quality: normalizeRenderingQuality({ resolution: { scale: 1, minScale: 1, dynamic: false } }),
   };
-  await page.evaluate(() => window.__babylonslateViewportTest.setShadowCaptureView([3, 2, 4], [0, 1.35, 0], 0.7));
+  // The template Mannequin faces the default camera (-Z); view its front from the Sun's side.
+  await page.evaluate(() => window.__babylonslateViewportTest.setShadowCaptureView([-3, 2, -4], [0, 1.35, 0], 0.7));
   const beforeSettings = await page.evaluate(() => window.__babylonslateViewportTest.renderingBaseline());
   await page.evaluate(settings => window.__babylonslateViewportTest.setRenderSettings(settings), settings);
   try {

@@ -116,6 +116,28 @@ describe("applyModelMaterialSlots", () => {
     expect(isEngineDefaultMaterial(scene.defaultMaterial)).toBe(true);
   });
 
+  it("keeps each instance of one model on its own construction material", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    // Babylon clones share their source's metadata object, as glTF instances do.
+    const source = MeshBuilder.CreateBox("part", { size: 1 }, scene);
+    source.metadata = {};
+    const first = source.clone("first");
+    const second = source.clone("second");
+    first.material = new StandardMaterial("colormap", scene);
+    second.material = new StandardMaterial("colormap", scene);
+    const own = second.material;
+    const slots = [{ index: 0, name: "colormap", materialGuid: null }];
+
+    applyModelMaterialSlots(first, slots, () => null);
+    first.material.dispose();
+    applyModelMaterialSlots(second, slots, () => null);
+
+    expect(second.material).toBe(own);
+    expect(scene.materials).toContain(own);
+  });
+
   it("assigns a resolved material to a filled slot and restores the import on clear or a failed resolve", () => {
     const handle = createTestEngine();
     handles.push(handle);

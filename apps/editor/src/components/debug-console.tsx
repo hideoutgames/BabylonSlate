@@ -1,7 +1,9 @@
 import {
   memo,
+  useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -131,6 +133,19 @@ export function DebugConsole({
   const [clearedLogId, setClearedLogId] = useState(-Infinity);
   const [executing, setExecuting] = useState(false);
   const [copyStatus, setCopyStatus] = useState("");
+  // Terminal block caret: null while unfocused or while a range is selected.
+  const [caret, setCaret] = useState<{ index: number; scrollLeft: number; font: string; inset: string } | null>(null);
+  const syncCaret = useCallback(() => {
+    const input = inputRef.current;
+    if (!input || document.activeElement !== input || input.selectionStart !== input.selectionEnd) {
+      setCaret(null);
+      return;
+    }
+    const style = getComputedStyle(input);
+    setCaret({ index: input.selectionStart ?? input.value.length, scrollLeft: input.scrollLeft, font: style.font, inset: style.paddingLeft });
+  }, []);
+  // History, completion and submit replace the value, which moves the caret.
+  useLayoutEffect(syncCaret, [draft, syncCaret]);
   const suggestions = useMemo(
     () =>
       draft
@@ -439,27 +454,47 @@ export function DebugConsole({
           <span aria-hidden="true" className="shrink-0 text-muted-foreground">
             &gt;
           </span>
-          <Input
-            ref={inputRef}
-            className="h-6 min-w-0 flex-1 rounded-none border-0 bg-transparent px-1 font-mono text-xs shadow-none focus-visible:ring-0 dark:bg-transparent pointer-coarse:min-h-11"
-            value={draft}
-            onChange={(event) => updateDraft(event.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="Tab completes · ↑ ↓ history · Esc closes"
-            aria-label="Console command"
-            role="combobox"
-            aria-autocomplete="list"
-            aria-expanded={suggestions.length > 0}
-            aria-controls={suggestions.length > 0 ? listId : undefined}
-            aria-activedescendant={
-              suggestions.length > 0 ? `${listId}-${selectedIndex}` : undefined
-            }
-            data-testid="debug-console-input"
-            autoComplete="off"
-            autoCorrect="off"
-            spellCheck={false}
-            autoFocus={false}
-          />
+          <div className="relative flex min-w-0 flex-1 items-center">
+            <Input
+              ref={inputRef}
+              className="h-6 min-w-0 flex-1 rounded-none border-0 bg-transparent px-1 font-mono text-xs caret-transparent shadow-none focus-visible:ring-0 dark:bg-transparent pointer-coarse:min-h-11"
+              value={draft}
+              onChange={(event) => updateDraft(event.target.value)}
+              onKeyDown={onKeyDown}
+              onSelect={syncCaret}
+              onFocus={syncCaret}
+              onBlur={() => setCaret(null)}
+              onScroll={syncCaret}
+              aria-label="Console command"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded={suggestions.length > 0}
+              aria-controls={suggestions.length > 0 ? listId : undefined}
+              aria-activedescendant={
+                suggestions.length > 0 ? `${listId}-${selectedIndex}` : undefined
+              }
+              data-testid="debug-console-input"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+              autoFocus={false}
+            />
+            {caret ? (
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 flex items-center overflow-hidden whitespace-pre"
+                style={{ font: caret.font, paddingLeft: caret.inset }}
+              >
+                <span style={{ transform: `translateX(${-caret.scrollLeft}px)` }}>
+                  <span className="invisible">{draft.slice(0, caret.index)}</span>
+                  <span
+                    className="inline-block h-[1.2em] w-[1ch] align-[-0.25em] animate-caret-blink bg-foreground/60 motion-reduce:animate-none"
+                    data-testid="debug-console-caret"
+                  />
+                </span>
+              </span>
+            ) : null}
+          </div>
           <Button
             type="submit"
             size="xs"
