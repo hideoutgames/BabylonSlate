@@ -23,9 +23,10 @@ vi.mock("@babylonslate/runtime", async (importOriginal) => ({
   createRuntimeFromLoad: vi.fn(),
 }));
 vi.mock("./game-worker-host", () => ({ createGameWorkerHost: vi.fn() }));
+const capture = vi.hoisted(() => ({ setSuppressed: vi.fn<(suppressed: boolean) => void>() }));
 vi.mock("./input-capture", () => ({
   attachInputCapture: () => ({
-    dispose() {}, setSuppressed() {}, neutralize() {}, setTick() {}, pollGamepads() {}, ring: { drain: () => [] },
+    dispose() {}, setSuppressed: capture.setSuppressed, neutralize() {}, setTick() {}, pollGamepads() {}, ring: { drain: () => [] },
   }),
 }));
 
@@ -46,6 +47,7 @@ let session: PlaySession | undefined;
 afterEach(() => {
   session?.stop();
   session = undefined;
+  capture.setSuppressed.mockReset();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -63,6 +65,7 @@ describe.each(["worker", "in-process"] as const)(
         scenes?: Parameters<typeof startPlaySession>[0]["scenes"];
         prepareSceneStream?: () => Promise<void>;
         applyCommand?: (command: CommandMessage) => void;
+        pushSnapshot?: (buffer: Float32Array) => void;
         captureFrame?: () => Promise<unknown>;
         onGameTimePaused?: (paused: boolean) => void;
         acquireAssetSources?: Parameters<typeof startPlaySession>[0]["acquireAssetSources"];
@@ -73,6 +76,8 @@ describe.each(["worker", "in-process"] as const)(
         onRuntime?: (runtime: RuntimeDriver) => void;
         /** In-process mode: a worker that starts but cannot accept its boot controls. */
         failingWorkerTerminate?: () => void;
+        /** Worker mode: deliver output as the worker would, including after Stop. */
+        onWorker?: (worker: { command(command: CommandMessage): void; snapshot(buffer: Float32Array): void }) => void;
       } = {},
     ): Promise<RuntimeDriver> {
       vi.stubGlobal("window", new EventTarget());
@@ -91,7 +96,9 @@ describe.each(["worker", "in-process"] as const)(
         scheduler: { invalidate() {}, acquireObstruction: () => () => {}, gateState: () => ({ frameCap: 60 }), stats: () => ({ renderedFps: 0 }) },
         liveObjectCounts: () => ({ meshes: 0, textures: 0 }),
         applyCommand: options.applyCommand ?? (() => {}),
-        pushSnapshot() {},
+        pushSnapshot: options.pushSnapshot ?? (() => {}),
+        setGameInputEnabled() {},
+        setSimulationEditMode() {},
         renderPathStatus: () => ({
           requested: { renderPath: "forward", gpuBackend: "webgl2" },
           effective: { renderPath: "forward", gpuBackend: "webgl2" },
@@ -150,11 +157,15 @@ describe.each(["worker", "in-process"] as const)(
       } else {
         const boot = createPlayBootCoordinator();
         let onCommand: (command: CommandMessage) => void = () => {};
+        let onSnapshot: (buffer: Float32Array) => void = () => {};
+        options.onWorker?.({ command: (command) => onCommand(command), snapshot: (buffer) => onSnapshot(buffer) });
         vi.mocked(createGameWorkerHost).mockReturnValue({
           onCommand: (handler) => {
             onCommand = handler;
           },
-          onSnapshot() {},
+          onSnapshot: (handler) => {
+            onSnapshot = handler;
+          },
           pushInput() {},
           terminate() {},
           postControl(control) {
@@ -218,6 +229,47 @@ describe.each(["worker", "in-process"] as const)(
       expect(captureFrame).toHaveBeenCalledTimes(1);
       await session!.setPauseReason("lifecycle", false);
       expect(renderPaused).toBe(false);
+    });
+
+    it("returns keyboard, pointer and gamepad input to the game after a Play pause", async () => {
+      await play();
+      await session!.setPauseReason("user", true);
+      expect(capture.setSuppressed).toHaveBeenLastCalledWith(true);
+      await session!.setPauseReason("user", false);
+      expect(capture.setSuppressed).toHaveBeenLastCalledWith(false);
+    });
+
+    it("ends an editor input transition whose reset fails without holding game input", async () => {
+      let refuseReset = false;
+      await play({
+        onRuntime: (runtime) => {
+          const request = runtime.requestSessionBoundary.bind(runtime);
+          vi.spyOn(runtime, "requestSessionBoundary").mockImplementation(async (boundary) => {
+            const result = await request(boundary);
+            return refuseReset && boundary.action.kind === "resetInput" ? { ...result, success: false, reason: "Reset refused" } : result;
+          });
+        },
+      });
+      await session!.setEditorInputSuppressed(true);
+      expect(capture.setSuppressed).toHaveBeenLastCalledWith(true);
+      refuseReset = true;
+      await expect(session!.setEditorInputSuppressed(false)).rejects.toThrow("Reset refused");
+      expect(capture.setSuppressed).toHaveBeenLastCalledWith(false);
+    });
+
+    it.runIf(mode === "worker")("does not present worker output that arrives after Stop", async () => {
+      const applyCommand = vi.fn();
+      const pushSnapshot = vi.fn();
+      let worker!: { command(command: CommandMessage): void; snapshot(buffer: Float32Array): void };
+      await play({ applyCommand, pushSnapshot, onWorker: (output) => { worker = output; } });
+      session!.stop();
+      session = undefined;
+      applyCommand.mockClear();
+      pushSnapshot.mockClear();
+      worker.command({ type: "setFreeCam", enabled: true });
+      worker.snapshot(new Float32Array(16));
+      expect(applyCommand).not.toHaveBeenCalled();
+      expect(pushSnapshot).not.toHaveBeenCalled();
     });
 
     it("does not create the default model actor when its class is merely loaded", async () => {

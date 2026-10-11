@@ -654,11 +654,16 @@ export function startPlaySession(options: {
       diagnosticClient.receive(await runtime.requestDiagnosticOperation(request));
     },
   });
+  // Declared before any runtime callback can read them.
+  let stopped = false;
+  let stopResult: PlaySessionResult | null = null;
   let gameInputMode: "game" | "edit" = "game";
   let inputTransition = 0;
   let inputTransitionPending = false;
   let editorInputSuppressed = false;
   let editorInputRoutingEnabled = false;
+  /** Capture routes exclusively once anything took input away; it must also hear the return. */
+  let inputExclusive = false;
   let acknowledgedPaused = false;
   let lastBoundaryId = 0;
   const requestedPauses = new Set<import("@babylonslate/bridge").SessionPauseReason>();
@@ -693,8 +698,12 @@ export function startPlaySession(options: {
   const suppressGameInput = () => {
     const suppressed = editorInputSuppressed || inputTransitionPending || gameInputMode === "edit" || acknowledgedPaused || requestedPauses.size > 0;
     const routed = options.mode === "simulate" || editorInputRoutingEnabled;
-    // Ordinary Play keeps shared routing until something actually takes input away.
-    if (routed || suppressed) input?.setSuppressed(suppressed);
+    // Ordinary Play keeps shared routing until something actually takes input
+    // away; from then on the exclusive capture is told when input returns.
+    if (input && (routed || suppressed || inputExclusive)) {
+      input.setSuppressed(suppressed);
+      inputExclusive = true;
+    }
     if (routed) handle.setGameInputEnabled(!suppressed);
     return suppressed;
   };
@@ -809,10 +818,8 @@ export function startPlaySession(options: {
         diagnostic.severity === "error" ? "error" : "warning",
       );
     },
-    onTouchAxis: (controlId, value) => {
-      if (options.mode === "simulate") input?.setTouchAxis(controlId, value);
-      else input?.ring.push({ kind: "touchAxis", controlId, value, tick: playInputStampTick(runtime?.getWorld().clock.tickIndex, lastWorkerTickIndex) });
-    },
+    // Virtual sticks share the capture's suppression and fresh-transition admission.
+    onTouchAxis: (controlId, value) => input?.setTouchAxis(controlId, value),
     onSceneLayerScroll: (event) => {
       if (options.mode === "simulate" && suppressGameInput()) return;
       const control = { type: "sceneLayerScroll" as const, ...event };
@@ -1307,14 +1314,7 @@ export function startPlaySession(options: {
     }
   };
   const onCommand = (command: CommandMessage) => {
-    if (command.type === "simulationRetentionUnavailable") {
-      if (command.sessionGeneration === (options.sessionGeneration ?? 0)) options.onRetentionUnavailable?.(command.reason);
-      return;
-    }
-    if (command.type === "simulationQuiesced") { acceptQuiesced(command); return; }
-    if (command.type === "simulationCaptureChunk" || command.type === "simulationCaptureResult") { captureClient.receive(command); return; }
-    if (captureFenceActive && shouldForwardPlayEngineCommand(command.type)) captureFenceChanged = true;
-    if (materialEditHost.receive(command)) return;
+    // Diagnostics finish their final recording while the session stops.
     if (command.type === "diagnosticOperationResult") { diagnosticClient.receive(command); return; }
     if (command.type === "performanceTicks") {
       if (command.sessionGeneration === (options.sessionGeneration ?? 0)) performanceDiagnostics?.receiveTicks(command);
@@ -1324,6 +1324,21 @@ export function startPlaySession(options: {
       if (command.sessionGeneration === (options.sessionGeneration ?? 0)) performanceDiagnostics?.runtimeStopped(command);
       return;
     }
+    // Stop released the presentation, preparation and every correlated client.
+    // Output that was already queued, or the stop phase's own, only reaches the log.
+    if (stopped) {
+      if (command.type === "log") options.onLog?.(command.message, command.severity ?? "log");
+      else if (command.type === "diagnostic") options.onLog?.(command.message, command.severity ?? "error");
+      return;
+    }
+    if (command.type === "simulationRetentionUnavailable") {
+      if (command.sessionGeneration === (options.sessionGeneration ?? 0)) options.onRetentionUnavailable?.(command.reason);
+      return;
+    }
+    if (command.type === "simulationQuiesced") { acceptQuiesced(command); return; }
+    if (command.type === "simulationCaptureChunk" || command.type === "simulationCaptureResult") { captureClient.receive(command); return; }
+    if (captureFenceActive && shouldForwardPlayEngineCommand(command.type)) captureFenceChanged = true;
+    if (materialEditHost.receive(command)) return;
     if (command.type === "sessionBoundaryResult") { boundaryClient.receive(command); return; }
     if (command.type === "runtimeInspectorResult") {
       if (command.success && command.payload?.kind === "mutation" && acknowledgedPaused) handle.requestPausedRedraw();
@@ -1487,6 +1502,7 @@ export function startPlaySession(options: {
     runtimeMode = "worker";
     worker.onCommand((cmd) => onCommand(cmd));
     worker.onSnapshot((buffer) => {
+      if (stopped) return;
       lastWorkerTickIndex = applyPlaySnapshotTick(lastWorkerTickIndex, buffer);
       handle.pushSnapshot(buffer);
     });
@@ -1610,7 +1626,8 @@ export function startPlaySession(options: {
   if (options.mode === "simulate") input.setSuppressed(false);
 
   const unlock = () => {
-    void handle.unlockAudio();
+    void handle.unlockAudio().catch((error: unknown) =>
+      options.onLog?.(`Audio unlock: ${error instanceof Error ? error.message : String(error)}`, "warning"));
   };
   canvas.addEventListener("pointerdown", unlock);
   canvas.addEventListener("touchstart", unlock);
@@ -1622,8 +1639,6 @@ export function startPlaySession(options: {
   let sessionDiagnostics: SessionReportEntry[] = [];
   let droppedDiagnostics = 0;
   let lastObservedMoveX: number | null = null;
-  let stopped = false;
-  let stopResult: PlaySessionResult | null = null;
 
   const pump = () => {
     if (stopped) return;
@@ -1746,24 +1761,38 @@ export function startPlaySession(options: {
       editorInputSuppressed = suppressed;
       input.neutralize();
       suppressGameInput();
-      const result = await boundaryClient.request({ kind: "resetInput" });
-      if (!result.success) throw new Error(result.reason ?? "Editor input ownership could not be reset");
-      if (transition !== inputTransition) return;
-      inputTransitionPending = false;
-      suppressGameInput();
+      try {
+        const result = await boundaryClient.request({ kind: "resetInput" });
+        if (!result.success) throw new Error(result.reason ?? "Editor input ownership could not be reset");
+      } finally {
+        // A failed reset still ends this transition; the open surface keeps its own hold.
+        if (transition === inputTransition && !stopped) {
+          inputTransitionPending = false;
+          suppressGameInput();
+        }
+      }
     },
     setInputMode: async (mode) => {
       const transition = ++inputTransition;
+      const previous = gameInputMode;
       inputTransitionPending = true;
       gameInputMode = mode;
       input.neutralize();
       suppressGameInput();
-      const result = await boundaryClient.request({ kind: "resetInput" });
-      if (!result.success) throw new Error(result.reason ?? "Game input could not be reset");
-      if (transition !== inputTransition) return;
-      inputTransitionPending = false;
-      suppressGameInput();
-      handle.setSimulationEditMode(mode === "edit");
+      let reset = false;
+      try {
+        const result = await boundaryClient.request({ kind: "resetInput" });
+        if (!result.success) throw new Error(result.reason ?? "Game input could not be reset");
+        reset = true;
+      } finally {
+        if (transition === inputTransition && !stopped) {
+          // A failed reset keeps the previous mode instead of half-applying the new one.
+          if (!reset) gameInputMode = previous;
+          inputTransitionPending = false;
+          suppressGameInput();
+          if (reset) handle.setSimulationEditMode(mode === "edit");
+        }
+      }
     },
     requestPausedRedraw: () => handle.requestPausedRedraw(),
     lastMoveX: () => {
