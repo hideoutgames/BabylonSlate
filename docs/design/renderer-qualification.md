@@ -1817,8 +1817,10 @@ denser unique-pixel sampling where the interiors become smaller.
 
 Rejected experiments remain failed evidence: larger constant offsets detach
 contacts; a common correction across an entire wide PCF kernel removes valid
-occlusion. The final correction preserves native tap positions, weights and
-fetch counts. Coarse legitimate shadow edges remain visible at Low's large
+occlusion. The final correction preserves native tap positions and weights.
+Medium/High keep native fetch counts; Low replaces its single hardware bilinear
+comparison with four texel-center comparisons (three extra fetches, reported as
+`receiverCorrection.extraTextureFetches`). Coarse legitimate shadow edges remain visible at Low's large
 coverage distance; their existence is not proof of original-image correctness.
 
 WebGL2 executed on ANGLE / Microsoft Basic Render Driver (D3D11 software).
@@ -1888,6 +1890,7 @@ also records actual shadow draws/faces, zero readiness draws and ownership.
   or exact GPU-memory claim is made here. A repeatable regression above 5%
   remains a review gate.
 
-Map/pass/sampler budgets and native PCF fetch counts are unchanged. No production
+Map/pass/sampler budgets are unchanged, as are native PCF fetch counts except
+Low's three extra comparisons. No production
 readback or full-scene pass was added. These structural constraints protect the
 budget but do not waive physical-device timing and memory qualification.
