@@ -6,48 +6,18 @@ import {
 
 const GLB_MAGIC = 0x46546c67;
 const CHUNK_JSON = 0x4e4f534a;
-const CHUNK_BIN = 0x004e4942;
 
-function readU32(view: DataView, offset: number): number {
-  return view.getUint32(offset, true);
-}
-
-function pad4(length: number): number {
-  return (4 - (length % 4)) % 4;
-}
-
-function splitGlb(bytes: Uint8Array): {
-  json: Record<string, unknown>;
-  bin: Uint8Array | null;
-} | null {
-  if (bytes.byteLength < 12) return null;
+/**
+ * GLB v2 header whose first chunk is JSON and fits the buffer. The loader
+ * parses that JSON itself, so sniffing never decodes it a second time.
+ */
+function isGlbContainer(bytes: Uint8Array): boolean {
+  if (bytes.byteLength < 20) return false;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  if (readU32(view, 0) !== GLB_MAGIC) return null;
-  if (readU32(view, 4) !== 2) return null;
-  let offset = 12;
-  let json: Record<string, unknown> | null = null;
-  let bin: Uint8Array | null = null;
-  while (offset + 8 <= bytes.byteLength) {
-    const chunkLength = readU32(view, offset);
-    const chunkType = readU32(view, offset + 4);
-    offset += 8;
-    if (offset + chunkLength > bytes.byteLength) break;
-    const chunk = bytes.subarray(offset, offset + chunkLength);
-    offset += chunkLength + pad4(chunkLength);
-    if (chunkType === CHUNK_JSON) {
-      try {
-        json = JSON.parse(new TextDecoder().decode(chunk)) as Record<
-          string,
-          unknown
-        >;
-      } catch {
-        return null;
-      }
-    } else if (chunkType === CHUNK_BIN) {
-      bin = chunk;
-    }
-  }
-  return json ? { json, bin } : null;
+  return view.getUint32(0, true) === GLB_MAGIC &&
+    view.getUint32(4, true) === 2 &&
+    view.getUint32(16, true) === CHUNK_JSON &&
+    20 + view.getUint32(12, true) <= bytes.byteLength;
 }
 
 /** True when bytes are a GLB or glTF JSON document. OBJ/STL return false. */
@@ -55,7 +25,7 @@ export function isGltfModelBytes(
   bytes: Uint8Array | null | undefined,
 ): boolean {
   if (!bytes || bytes.byteLength < 4) return false;
-  if (splitGlb(bytes)) return true;
+  if (isGlbContainer(bytes)) return true;
   try {
     const json = JSON.parse(new TextDecoder().decode(bytes)) as {
       asset?: unknown;
@@ -91,5 +61,5 @@ export function gpuModelBytes(
 }
 
 export function gltfLoaderExtension(bytes: Uint8Array): ".glb" | ".gltf" {
-  return splitGlb(bytes) ? ".glb" : ".gltf";
+  return isGlbContainer(bytes) ? ".glb" : ".gltf";
 }

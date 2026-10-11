@@ -218,11 +218,12 @@ export function attachViewportGestures(
       const samples = [...pointers.values()];
       recapturePinch(samples);
       lastPoint = null;
-      if (dragSelectGesture) {
-        clearMarqueeOverlay();
-        dragSelectGesture = false;
-        marqueeArmed = false;
-      }
+      // A second finger makes this a pinch/pan: drop Drag Select and any armed
+      // or pending 2D hold marquee so the remaining finger cannot draw one.
+      clearMarqueeTimer();
+      if (dragSelectGesture || marqueeArmed) clearMarqueeOverlay();
+      dragSelectGesture = false;
+      marqueeArmed = false;
       acquireLease();
     }
   };

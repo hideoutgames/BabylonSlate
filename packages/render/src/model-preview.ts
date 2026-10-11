@@ -99,13 +99,9 @@ export function applyModelMaterialSlots(
     const slotIndex = constructionToSlot.get(construction);
     if (slotIndex === undefined) continue;
     const guid = byIndex.get(slotIndex) ?? null;
-    if (!guid) {
-      mesh.material = construction;
-      applyMaterialBounds(mesh);
-      continue;
-    }
-    const resolved = resolveMaterial(guid);
-    if (resolved) { mesh.material = resolved; applyMaterialBounds(mesh); }
+    // An unresolvable slot Material shows the import, never a previous override.
+    mesh.material = (guid ? resolveMaterial(guid) : null) ?? construction;
+    applyMaterialBounds(mesh);
   }
 }
 

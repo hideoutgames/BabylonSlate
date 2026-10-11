@@ -262,6 +262,32 @@ export function measureBitmapGlyph(
   };
 }
 
+/** Square (Chebyshev) dilation of a 0/1 mask by `radius` pixels, one running window per axis. */
+function dilateSquare(mask: Uint8Array, width: number, height: number, radius: number): Uint8Array {
+  const horizontal = new Uint8Array(mask.length);
+  for (let y = 0; y < height; y++) {
+    const row = y * width;
+    let count = 0;
+    for (let x = 0; x < Math.min(width, radius); x++) count += mask[row + x]!;
+    for (let x = 0; x < width; x++) {
+      if (x + radius < width) count += mask[row + x + radius]!;
+      if (x - radius - 1 >= 0) count -= mask[row + x - radius - 1]!;
+      horizontal[row + x] = count > 0 ? 1 : 0;
+    }
+  }
+  const dilated = new Uint8Array(mask.length);
+  for (let x = 0; x < width; x++) {
+    let count = 0;
+    for (let y = 0; y < Math.min(height, radius); y++) count += horizontal[y * width + x]!;
+    for (let y = 0; y < height; y++) {
+      if (y + radius < height) count += horizontal[(y + radius) * width + x]!;
+      if (y - radius - 1 >= 0) count -= horizontal[(y - radius - 1) * width + x]!;
+      dilated[y * width + x] = count > 0 ? 1 : 0;
+    }
+  }
+  return dilated;
+}
+
 function rasterizeSoftwareBitmapGlyph(
   ch: string,
   style: RichTextStyle,
@@ -271,51 +297,36 @@ function rasterizeSoftwareBitmapGlyph(
   const { width, height, scale, outlinePx } = softwareGlyphSize(style);
   const pixels = new Uint8ClampedArray(width * height * 4);
   const rows = asciiBitmapRows(ch);
-  const paint = (
-    col: number,
-    row: number,
-    color: [number, number, number],
-    alpha: number,
-  ) => {
-    const x0 = outlinePx + 1 + col * scale;
-    const y0 = outlinePx + 1 + row * scale;
-    for (let y = 0; y < scale; y++) {
-      for (let x = 0; x < scale; x++) {
-        const px = x0 + x;
-        const py = y0 + y;
-        if (px < 0 || py < 0 || px >= width || py >= height) continue;
-        const i = (py * width + px) * 4;
-        pixels[i] = channel(color, 0);
-        pixels[i + 1] = channel(color, 1);
-        pixels[i + 2] = channel(color, 2);
-        pixels[i + 3] = alpha;
-      }
-    }
-  };
   const lit = (col: number, row: number, shift: number): boolean => {
     const bit = col - shift;
     if (bit < 0 || bit >= ASCII_BITMAP_COLS) return false;
     return (((rows[row] ?? 0) >> (ASCII_BITMAP_COLS - 1 - bit)) & 1) === 1;
   };
-  if (outlinePx > 0) {
-    for (let row = 0; row < ASCII_BITMAP_ROWS; row++) {
-      for (let col = 0; col < ASCII_BITMAP_COLS + (style.bold ? 1 : 0); col++) {
-        if (!lit(col, row, 0) && !(style.bold && lit(col, row, 1))) continue;
-        for (let dy = -1; dy <= 1; dy++) {
-          for (let dx = -1; dx <= 1; dx++) {
-            if (dx === 0 && dy === 0) continue;
-            paint(col + dx, row + dy, style.outlineColor, 255);
-          }
-        }
+  // Each lit 5x7 dot (and its bold copy one dot right) covers a `scale` square.
+  const ink = new Uint8Array(width * height);
+  for (let row = 0; row < ASCII_BITMAP_ROWS; row++) {
+    for (let col = 0; col < ASCII_BITMAP_COLS + (style.bold ? 1 : 0); col++) {
+      if (!lit(col, row, 0) && !(style.bold && lit(col, row, 1))) continue;
+      const x0 = outlinePx + 1 + col * scale;
+      const y0 = outlinePx + 1 + row * scale;
+      for (let y = y0; y < Math.min(height, y0 + scale); y++) {
+        ink.fill(1, y * width + x0, y * width + Math.min(width, x0 + scale));
       }
     }
   }
-  for (let row = 0; row < ASCII_BITMAP_ROWS; row++) {
-    for (let col = 0; col < ASCII_BITMAP_COLS; col++) {
-      if (lit(col, row, 0)) paint(col, row, style.color, 255);
-      if (style.bold && lit(col, row, 1)) paint(col, row, style.color, 255);
-    }
+  const write = (index: number, color: [number, number, number]) => {
+    const i = index * 4;
+    pixels[i] = channel(color, 0);
+    pixels[i + 1] = channel(color, 1);
+    pixels[i + 2] = channel(color, 2);
+    pixels[i + 3] = 255;
+  };
+  // Like the canvas stroke, the outline reaches `outline` pixels past the ink.
+  if (outlinePx > 0) {
+    const outline = dilateSquare(ink, width, height, outlinePx);
+    for (let i = 0; i < ink.length; i++) if (outline[i] && !ink[i]) write(i, style.outlineColor);
   }
+  for (let i = 0; i < ink.length; i++) if (ink[i]) write(i, style.color);
   return { key, width, height, pixels, inkBounds: letterShapedBounds(pixels, width, height) ?? undefined };
 }
 

@@ -89,6 +89,8 @@ export class EditorSceneSync {
   private sortingLayers: string[] = [...DEFAULT_SORTING_LAYERS];
   private assets: MeshAssetContext | undefined;
   private lastAssetFingerprint: string | null = null;
+  /** `meshAssetFingerprintWithoutModels(this.assets)`, kept with the assets. */
+  private lastAssetContentFingerprint = meshAssetFingerprintWithoutModels(undefined);
   private lastModelSlotKey = "";
   private assetsNeedRebuild = false;
   private lastScene: SerializedScene | null = null;
@@ -145,9 +147,11 @@ export class EditorSceneSync {
       textureBytes: installTextureBytes(assets.textureBytes),
       fontMsdfPng: installTextureBytes(assets.fontMsdfPng),
     };
-    const fingerprint = meshAssetFingerprint(assets);
+    // Serialize the tilemap, tileset and water payloads once per install.
+    const contentFingerprint = meshAssetFingerprintWithoutModels(assets);
+    const fingerprint = meshAssetFingerprint(assets, contentFingerprint);
     const slotKey = modelSlotFingerprint(assets?.modelPayloads);
-    const onlyModelsChanged = meshAssetFingerprintWithoutModels(this.assets) === meshAssetFingerprintWithoutModels(assets);
+    const onlyModelsChanged = contentFingerprint === this.lastAssetContentFingerprint;
     const layers = assets?.sortingLayers
       ? [...(assets.sortingLayers.length > 0 ? assets.sortingLayers : DEFAULT_SORTING_LAYERS)]
       : this.sortingLayers;
@@ -157,6 +161,7 @@ export class EditorSceneSync {
     this.assets = assets;
     this.sortingLayers = layers;
     this.lastAssetFingerprint = fingerprint;
+    this.lastAssetContentFingerprint = contentFingerprint;
     this.lastModelSlotKey = slotKey;
     return { rebuild, reapply };
   }
