@@ -103,10 +103,6 @@ function actionBindingHeld(
       return state.heldKeys.has(binding.code);
     case "mouseButton":
       return state.heldPointerButtons.has(Number(binding.code));
-    case "pointer":
-      return state.heldPointerButtons.has(
-        binding.code === "primary" ? 0 : Number(binding.code),
-      );
     case "gamepadButton":
       return state.heldGamepadButtons.has(binding.code);
     case "touch":
@@ -127,7 +123,6 @@ function axisBindingValue(
   switch (binding.device) {
     case "key":
     case "mouseButton":
-    case "pointer":
     case "gamepadButton": {
       const held = actionBindingHeld(
         {

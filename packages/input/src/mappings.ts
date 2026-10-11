@@ -94,7 +94,6 @@ function asDevice(value: unknown): InputDevice | null {
   switch (value) {
     case "key":
     case "mouseButton":
-    case "pointer":
     case "gamepadButton":
     case "gamepadAxis":
     case "touch":

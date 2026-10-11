@@ -55,7 +55,7 @@ The built-in 3D template includes Jump, Confirm, Move, and Look assets in `asset
 | `ActionMapping` | `name`, `bindings[]` |
 | `AxisMapping` | `name`, `kind` (`"1d"` \| `"2d"`), `bindings[]` |
 
-Each **binding** targets a device (`key`, `mouseButton`, `pointer`, `gamepadButton`, `gamepadAxis`, `touch`) plus a device-specific `code`. Optional `modifiers` (shift/ctrl/alt/meta). Bindable codes and labels live in `bindingCodesForDevice()` / `bindingCodeLabel()` (`packages/input/src/binding-catalog.ts`) so the input asset picker and stored-binding labels stay in sync.
+Each **binding** targets a device (`key`, `mouseButton`, `gamepadButton`, `gamepadAxis`, `touch`) plus a device-specific `code`. Optional `modifiers` (shift/ctrl/alt/meta). Bindable codes and labels live in `bindingCodesForDevice()` / `bindingCodeLabel()` (`packages/input/src/binding-catalog.ts`) so the input asset picker and stored-binding labels stay in sync.
 
 **Axis bindings** additionally carry per-binding tuning:
 

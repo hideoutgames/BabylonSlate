@@ -33,10 +33,6 @@ const MOUSE_CATALOG: BindingCatalogEntry[] = INPUT_KEYS.filter(
   (entry) => entry.device === "mouseButton",
 ).map(({ code, label, group }) => ({ code, label, group }));
 
-const POINTER_CATALOG: BindingCatalogEntry[] = [
-  { code: "primary", label: "Primary Pointer", group: "Pointer" },
-];
-
 function padGroup(padIndex: number): string {
   return `Gamepad ${padIndex + 1}`;
 }
@@ -79,7 +75,8 @@ const GAMEPAD_AXIS_CATALOG = gamepadAxisCatalog();
 const CATALOG_BY_DEVICE: Record<InputDevice, BindingCatalogEntry[]> = {
   key: KEYBOARD_CATALOG,
   mouseButton: MOUSE_CATALOG,
-  pointer: POINTER_CATALOG,
+  // Pointer bindings are no longer authored or resolved; Mouse Button covers touch.
+  pointer: [],
   gamepadButton: GAMEPAD_BUTTON_CATALOG,
   gamepadAxis: GAMEPAD_AXIS_CATALOG,
   touch: Object.entries(TOUCH_LABELS).map(([code, label]) => ({
