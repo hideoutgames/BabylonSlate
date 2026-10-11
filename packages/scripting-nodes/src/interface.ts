@@ -6,6 +6,7 @@ import {
 } from "@babylonslate/scripting";
 import {
   CALL_PIN_IDS,
+  assignResultFields,
   memberArgPinId,
   memberPinRows,
   objectLiteralKey,
@@ -89,9 +90,9 @@ export const interfaceNodes: NodeDefinition[] = [
             edge.targetNodeId === ctx.node.id &&
             edge.targetPinId === targetPin.id,
         );
+      // Like Call Function: only a Self-bound row turns an unwired Target into Self.
       const targetExpr =
-        !targetPin ||
-        (!targetConnected && properties.implicitSelf !== false)
+        !targetConnected && properties.implicitSelf === true
           ? "ctx.self"
           : ctx.input("target");
       const args: string[] = [];
@@ -113,13 +114,10 @@ export const interfaceNodes: NodeDefinition[] = [
         ctx.emit(`${call};`);
         return;
       }
-      const assigns = outPins
-        .map(
-          (pinDef) =>
-            `${objectLiteralKey(pinDef.name)}: ${ctx.output(pinDef.id)}`,
-        )
-        .join(", ");
-      ctx.emit(`({ ${assigns} } = ${call} ?? {});`);
+      ctx.emit(assignResultFields(
+        outPins.map((pinDef) => ({ key: pinDef.name, slot: ctx.output(pinDef.id), type: pinDef.type })),
+        call,
+      ));
     },
   },
 ];

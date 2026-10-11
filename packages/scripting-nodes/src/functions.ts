@@ -6,6 +6,7 @@ import {
 } from "@babylonslate/scripting";
 import {
   CALL_PIN_IDS,
+  assignResultFields,
   jsIdent,
   memberArgPinId,
   memberPinRows,
@@ -116,13 +117,10 @@ export const functionCallNodes: NodeDefinition[] = [
         ctx.emit(`${call};`);
         return;
       }
-      const assigns = outPins
-        .map(
-          (pinDef) =>
-            `${objectLiteralKey(pinDef.name)}: ${ctx.output(pinDef.id)}`,
-        )
-        .join(", ");
-      ctx.emit(`({ ${assigns} } = ${call} ?? {});`);
+      ctx.emit(assignResultFields(
+        outPins.map((pinDef) => ({ key: pinDef.name, slot: ctx.output(pinDef.id), type: pinDef.type })),
+        call,
+      ));
     },
   },
 ];

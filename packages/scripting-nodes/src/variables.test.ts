@@ -120,7 +120,7 @@ describe("variables.get / variables.set", () => {
           variableName: "Health",
           typeId: "float",
           implicitSelf: true,
-          "default:Health": 8,
+          "default:value": 8,
         }),
         node(registry, "get", "variables.get", {
           variableName: "Health",
@@ -154,10 +154,18 @@ describe("variables.get / variables.set", () => {
       ],
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
-    expect(compiled.source).toContain('ctx.setVariable("Health"');
-    expect(compiled.source).toContain("ctx.setVariable(\"Health\", 8)");
-    expect(compiled.source).toContain('ctx.getVariable("Health")');
-    expect(compiled.source).not.toContain("ctx.input(\"name\")");
+    const body = compiled.source.replace(/export\s+(async\s+)?function\s+/g, "$1function ");
+    const onBeginPlay = new Function(`${body}\nreturn onBeginPlay;`)() as (ctx: unknown) => void;
+    const store = new Map<string, unknown>();
+    const logs: string[] = [];
+    onBeginPlay({
+      setVariable: (key: string, value: unknown) => store.set(key, value),
+      getVariable: (key: string) => store.get(key),
+      formatValue: String,
+      log: (_severity: string, _category: string, message: string) => logs.push(message),
+    });
+    expect([...store]).toEqual([["Health", 8]]);
+    expect(logs).toEqual(["8"]);
   });
 
   it("compiles a component-ref Get to ctx.getComponentById", () => {
@@ -404,48 +412,49 @@ describe("variables.get / variables.set", () => {
     expect(compiled.source).toContain('"Health"');
   });
 
-  it("compiles Set pass-through onto the named out pin", () => {
+  it.each([true, false])("Set Variable stores and passes through one sample of the value (implicitSelf %s)", (implicitSelf) => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "self", "actor.getSelf"),
+        node(registry, "roll", "math.random"),
         node(registry, "set", "variables.set", {
           variableName: "Health",
           typeId: "float",
-          implicitSelf: true,
-          "default:Health": 8,
+          classId: "Guard",
+          implicitSelf,
         }),
         node(registry, "log", "debug.log"),
       ],
       edges: [
-        {
-          id: "e1",
-          sourceNodeId: "begin",
-          sourcePinId: "execOut",
-          targetNodeId: "set",
-          targetPinId: "execIn",
-        },
-        {
-          id: "e2",
-          sourceNodeId: "set",
-          sourcePinId: "execOut",
-          targetNodeId: "log",
-          targetPinId: "execIn",
-        },
-        {
-          id: "e3",
-          sourceNodeId: "set",
-          sourcePinId: "out",
-          targetNodeId: "log",
-          targetPinId: "message",
-        },
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "set", targetPinId: "execIn" },
+        { id: "e2", sourceNodeId: "set", sourcePinId: "execOut", targetNodeId: "log", targetPinId: "execIn" },
+        { id: "e3", sourceNodeId: "set", sourcePinId: "out", targetNodeId: "log", targetPinId: "message" },
+        { id: "e4", sourceNodeId: "roll", sourcePinId: "out", targetNodeId: "set", targetPinId: "value" },
+        ...(implicitSelf
+          ? []
+          : [{ id: "e5", sourceNodeId: "self", sourcePinId: "out", targetNodeId: "set", targetPinId: "target" }]),
       ],
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
-    expect(compiled.source).toContain("_n_set_out = 8");
-    expect(compiled.source).toContain("ctx.setVariable(\"Health\", 8)");
+    const body = compiled.source.replace(/export\s+(async\s+)?function\s+/g, "$1function ");
+    const onBeginPlay = new Function(`${body}\nreturn { onBeginPlay };`)()
+      .onBeginPlay as (ctx: unknown) => void;
+    let samples = 0;
+    const writes: unknown[] = [];
+    const messages: unknown[] = [];
+    onBeginPlay({
+      self: { classId: "Guard" },
+      random: { float: () => (samples += 1) },
+      setVariable: (_key: string, value: unknown) => writes.push(value),
+      setVariableOn: (_owner: unknown, _key: string, value: unknown) => writes.push(value),
+      formatValue: (value: unknown) => value,
+      log: (_severity: string, _category: string, message: unknown) => messages.push(message),
+    });
+    expect({ samples, writes, messages }).toEqual({ samples: 1, writes: [1], messages: [1] });
   });
 
   it.each([

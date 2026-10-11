@@ -226,4 +226,35 @@ describe("interface nodes", () => {
     expect(calls[0]?.[2]).toBe("Apply Damage");
     expect(calls[0]?.[3]).toMatchObject({ amount: expect.anything() });
   });
+
+  it.each([
+    [true, "self"],
+    [undefined, null],
+  ] as const)("an unwired Target with implicitSelf %s calls on %s", (implicitSelf, expected) => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "call", "interface.call", {
+          interfaceGuid: "iface-damageable",
+          method: "Apply Damage",
+          ...(implicitSelf === undefined ? {} : { implicitSelf }),
+        }),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "call", targetPinId: "execIn" },
+      ],
+    };
+    const targets: unknown[] = [];
+    (loadModule(compileGraph(graph, { assetGuid: "a", registry }).source).onBeginPlay as (ctx: unknown) => void)({
+      self: "self",
+      callInterface: (target: unknown) => {
+        targets.push(target);
+        return {};
+      },
+    });
+    expect(targets).toEqual([expected]);
+  });
 });

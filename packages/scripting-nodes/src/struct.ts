@@ -103,7 +103,7 @@ export const structNodes: NodeDefinition[] = [
         out[field.name] =
           structGuidOf(ctx.node.properties) === "engine:InputType" &&
           field.name === "Name"
-            ? `(ctx.getInputState?.(${value})?.input.Name ?? (${value})?.Name ?? "")`
+            ? `((v) => ctx.getInputState?.(v)?.input.Name ?? v?.Name ?? "")(${value})`
             : `(${value})[${JSON.stringify(field.name)}]`;
       }
       return out;

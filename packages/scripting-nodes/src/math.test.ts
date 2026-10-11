@@ -54,13 +54,21 @@ describe("math nodes", () => {
     expect(values).toEqual(["65536"]);
   });
 
-  it.each([[5, 2, 2], [-5, 2, -2], [5, -2, -2], [6, 2, 3]])(
-    "Divide Int truncates %s / %s toward zero", (a, b, expected) => {
+  it.each([
+    ["math.div_int", 5, 2, 2],
+    ["math.div_int", -5, 2, -2],
+    ["math.div_int", 5, -2, -2],
+    ["math.div_int", 6, 2, 3],
+    ["math.div_int", 5, 0, 0],
+    ["math.mod_int", -5, 3, -2],
+    ["math.mod_int", 5, 0, 0],
+  ] as const)(
+    "%s of %s and %s is %s (truncating, 0 for a zero divisor)", (typeId, a, b, expected) => {
       const registry = createDefaultNodeRegistry();
       const graph: LogicGraph = {
         id: "division", kind: "event",
         nodes: [node(registry, "begin", "flow.event.beginPlay"),
-          node(registry, "divide", "math.div_int", { "default:a": a, "default:b": b }),
+          node(registry, "divide", typeId, { "default:a": a, "default:b": b }),
           node(registry, "log", "debug.log")],
         edges: [
           { id: "exec", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "log", targetPinId: "execIn" },
@@ -74,6 +82,30 @@ describe("math nodes", () => {
       expect(logs).toEqual([String(expected)]);
     },
   );
+
+  it("Lerp reads an impure A once", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "lerp", kind: "event",
+      nodes: [node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "roll", "math.random"),
+        node(registry, "lerp", "math.lerp", { "default:b": 3, "default:alpha": 0.5 }),
+        node(registry, "log", "debug.log")],
+      edges: [
+        { id: "exec", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "log", targetPinId: "execIn" },
+        { id: "a", sourceNodeId: "roll", sourcePinId: "out", targetNodeId: "lerp", targetPinId: "a" },
+        { id: "value", sourceNodeId: "lerp", sourcePinId: "out", targetNodeId: "log", targetPinId: "message" },
+      ],
+    };
+    let samples = 0;
+    const logs: string[] = [];
+    (loadModule(compileGraph(graph, { assetGuid: "lerp", registry }).source).onBeginPlay as (ctx: unknown) => void)({
+      random: { float: () => (samples += 1) },
+      formatValue: String,
+      log: (_severity: string, _category: string, value: string) => logs.push(value),
+    });
+    expect({ samples, logs }).toEqual({ samples: 1, logs: ["2"] });
+  });
 
   it("registers Random Int and Random Bool that codegen through ctx.random", () => {
     expect(mathNodes.map((entry) => entry.id)).toEqual(

@@ -145,14 +145,15 @@ export const variableNodes: NodeDefinition[] = [
         return;
       }
       const quoted = JSON.stringify(storeKeyOf(ctx.node.properties, name));
+      // Evaluate the value once: the stored value and the output are one sample.
+      ctx.emit(`${out} = ${value};`);
       if (usesImplicitSelf(ctx)) {
-        ctx.emit(`ctx.setVariable(${quoted}, ${value});`);
+        ctx.emit(`ctx.setVariable(${quoted}, ${out});`);
       } else {
         ctx.emit(
-          `ctx.setVariableOn(${ctx.input("target")}, ${quoted}, ${value});`,
+          `ctx.setVariableOn(${ctx.input("target")}, ${quoted}, ${out});`,
         );
       }
-      ctx.emit(`${out} = ${value};`);
     },
   },
   {

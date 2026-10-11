@@ -283,4 +283,55 @@ describe("physics nodes", () => {
       { drawDebug: drawDebug ?? true, actorsToIgnore: [] },
     ]]);
   });
+
+  function runBeginPlay(
+    nodes: Array<[string, string, Record<string, unknown>?]>,
+    edges: Array<[string, string, string, string]>,
+    ctx: Record<string, unknown>,
+  ): unknown[] {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [["begin", "flow.event.beginPlay"] as [string, string], ...nodes].map(([id, typeId, properties = {}]) => ({
+        id, typeId, position: { x: 0, y: 0 }, pins: registry.get(typeId)!.pins(properties), properties,
+      })),
+      edges: edges.map(([sourceNodeId, sourcePinId, targetNodeId, targetPinId], index) => ({
+        id: `e${index}`, sourceNodeId, sourcePinId, targetNodeId, targetPinId,
+      })),
+    };
+    const body = compileGraph(graph, { assetGuid: "a", registry }).source
+      .replace(/export\s+(async\s+)?function\s+/g, "$1function ");
+    const logs: unknown[] = [];
+    (new Function(`${body}\nreturn onBeginPlay;`)() as (ctx: unknown) => void)({
+      formatValue: (value: unknown) => value,
+      log: (_severity: string, _category: string, value: unknown) => logs.push(value),
+      ...ctx,
+    });
+    return logs;
+  }
+
+  it("reports a Line Trace miss as zero Location and Normal on the pins and in Hit Result", () => {
+    const logs = runBeginPlay(
+      [["trace", "physics.lineTrace"], ["logLocation", "debug.log"],
+        ["logNormal", "debug.log"], ["logResult", "debug.log"]],
+      [["begin", "execOut", "trace", "execIn"], ["trace", "execOut", "logLocation", "execIn"],
+        ["logLocation", "execOut", "logNormal", "execIn"], ["logNormal", "execOut", "logResult", "execIn"],
+        ["trace", "location", "logLocation", "message"], ["trace", "normal", "logNormal", "message"],
+        ["trace", "hitResult", "logResult", "message"]],
+      { lineTrace: () => ({ hit: false }) },
+    );
+    const zero = { x: 0, y: 0, z: 0 };
+    expect(logs).toEqual([zero, zero, { Hit: false, Location: zero, Normal: zero, Actor: null, Distance: 0 }]);
+  });
+
+  it("Add Impulse applies Strength 1 when the pin is unwired", () => {
+    const impulses: unknown[][] = [];
+    runBeginPlay(
+      [["impulse", "physics.addImpulse", { "default:impulse": { x: 0, y: 5, z: 0 } }]],
+      [["begin", "execOut", "impulse", "execIn"]],
+      { addImpulse: (...args: unknown[]) => impulses.push(args) },
+    );
+    expect(impulses).toEqual([[null, { x: 0, y: 5, z: 0 }, 1]]);
+  });
 });

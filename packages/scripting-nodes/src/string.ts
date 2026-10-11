@@ -103,18 +103,28 @@ function formatStringCodegen(ctx: {
     return { out: `String(${ctx.input("format")})` };
   }
   const format = formatStringOf(ctx.node.properties);
-  const parts: string[] = [];
-  for (const token of parseFormatTokens(format)) {
-    if (token.kind === "lit") {
-      if (token.text.length === 0) continue;
-      parts.push(JSON.stringify(token.text));
-      continue;
-    }
-    parts.push(`ctx.formatValue(${ctx.input(formatArgPinId(token.name))})`);
+  const tokens = parseFormatTokens(format).filter(
+    (token) => token.kind === "arg" || token.text.length > 0,
+  );
+  if (tokens.length === 0) return { out: '""' };
+  const names = parseFormatPlaceholders(format);
+  const arg = (name: string) =>
+    `ctx.formatValue(${ctx.input(formatArgPinId(name))})`;
+  const argTokens = tokens.filter((token) => token.kind === "arg").length;
+  if (argTokens === names.length) {
+    // Every placeholder appears once: concatenate the formatted values in place.
+    const parts = tokens.map((token) =>
+      token.kind === "lit" ? JSON.stringify(token.text) : arg(token.name),
+    );
+    return { out: parts.length === 1 ? parts[0]! : `(${parts.join(" + ")})` };
   }
-  if (parts.length === 0) return { out: '""' };
-  if (parts.length === 1) return { out: parts[0]! };
-  return { out: `(${parts.join(" + ")})` };
+  // A repeated placeholder is read and formatted once, so `{score}/{score}`
+  // prints one value twice.
+  const parts = tokens.map((token) =>
+    token.kind === "lit" ? JSON.stringify(token.text) : `a${names.indexOf(token.name)}`,
+  );
+  const params = names.map((_, index) => `a${index}`).join(", ");
+  return { out: `((${params}) => ${parts.join(" + ")})(${names.map(arg).join(", ")})` };
 }
 
 export const stringNodes: NodeDefinition[] = [
@@ -255,7 +265,8 @@ export const stringNodes: NodeDefinition[] = [
       pin("out", "Out", "out", STRING),
     ],
     codegen: (ctx) => ({
-      out: `(String(${ctx.input("in")}).substring((${ctx.input("start")}) | 0, (${ctx.input("end")}) | 0))`,
+      // Start and End clamp to the string; End before Start is empty, never swapped.
+      out: `((s, a, b) => (b > a ? s.substring(a, b) : ""))(String(${ctx.input("in")}), Math.trunc(${ctx.input("start")}) || 0, Math.trunc(${ctx.input("end")}) || 0)`,
     }),
   },
   {

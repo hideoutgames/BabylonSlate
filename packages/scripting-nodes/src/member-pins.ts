@@ -2,6 +2,7 @@ import {
   pin,
   defaultValueLiteral,
   pinTypeForVariable,
+  type PinType,
 } from "@babylonslate/scripting";
 import { mapDefaultLiteral } from "@babylonslate/core";
 
@@ -36,8 +37,28 @@ export function localVariableIdent(name: string): string {
   return `__lv_${jsIdent(name)}`;
 }
 
+/**
+ * Property key for an object literal or destructuring pattern. `__proto__`
+ * is computed, because a plain or quoted `__proto__` key in a literal sets
+ * the prototype instead of storing a field.
+ */
 export function objectLiteralKey(name: string): string {
+  if (name === "__proto__") return `[${JSON.stringify(name)}]`;
   return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) ? name : JSON.stringify(name);
+}
+
+/**
+ * Statement assigning a call's returned fields to output slots. A field the
+ * result omits keeps the output type's default instead of `undefined`.
+ */
+export function assignResultFields(
+  outputs: ReadonlyArray<{ key: string; slot: string; type: PinType }>,
+  call: string,
+): string {
+  const fields = outputs
+    .map((output) => `${objectLiteralKey(output.key)}: ${output.slot} = ${defaultValueLiteral(output.type)}`)
+    .join(", ");
+  return `({ ${fields} } = ${call} ?? {});`;
 }
 
 export function memberPinRows(properties: Record<string, unknown>): MemberPinRow[] {
