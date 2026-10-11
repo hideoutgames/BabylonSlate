@@ -35,7 +35,7 @@ Transition fire: **Exit State** (leave source) **and** **Enter State** (enter ta
 
 ## Runtime
 
-`AnimationGraphComponent` (`graphGuid`) attaches a graph to an actor. `RuntimeDriver.registerAnimGraph` / worker `loadAnimGraphs` load documents. Play loads graphs referenced by scene `graphGuid` plus every project AnimationGraph (Compile / Play / export).
+`AnimationGraphComponent` (`graphGuid`) attaches a graph to an actor. `RuntimeDriver.registerAnimGraph` / worker `loadAnimGraphs` load documents. Play loads and compiles only the AnimationGraphs reached from the session's scenes (scene `graphGuid` and the asset closure); an open graph the scenes do not reference is left out. Export compiles and packs the graphs in its closure, and the player hydrates those. Only the toolbar **Compile** action compiles every project AnimationGraph.
 
 Each tick `AnimGraphRuntime.tick` (`packages/runtime/src/anim-graph-runtime.ts`, owned by the runtime driver):
 

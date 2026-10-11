@@ -44,7 +44,7 @@ When the code-review skill reports Standards or Spec findings:
 | 2026-09-23 | zeron/babylonslate-rendering-handoff | Rendering handoff CI repair | Spec | Frozen Material Graph submeshes retained stale WebGPU light buffers after camera updates. Refreshing missing or rotated bindings preserves native pixel parity without shader rebuilds; binding/shadow regressions and the native clustered oracle pass. See [repair evidence](../design/renderer-qualification.md#integration-acceptance-after-main-663). | Resolved |
 | 2026-08-27 | cursor/model-simple-collision-33dd | Model simple collision | Spec | `PhysicsWorldSync.applyMeshColliders` fingerprinted kind + TRS + layer/mask but not `baked.shape`, so actor scale (and radius/hull size) kept the old Havok collider | Resolved |
 | 2026-08-27 | cursor/model-simple-collision-33dd | Model simple collision | Spec | Add → Generated Collision with no Model `source` chunk wrote `kind: "generated"` and `points: []` instead of recooking the hull | Resolved |
-| 2026-08-27 | cursor/model-simple-collision-33dd | Model simple collision | Spec | Play `showcollision` maps cylinder to a box AABB and skips convex/mesh (cone, generated, complex). Editor dashes already use cylinder/hull wires. Same skip as prior convex authorship | Accepted |
+| 2026-08-27 | cursor/model-simple-collision-33dd | Model simple collision | Spec | Play `showcollision` maps cylinder to a box AABB and skips convex/mesh (cone, generated, complex). Editor dashes already use cylinder/hull wires. Same skip as prior convex authorship | Resolved; Play `showcollision` now draws cylinder, convex hull and triangle-mesh wires (`play-console-viz.ts`) |
 | 2026-08-27 | cursor/model-simple-collision-33dd | Model simple collision | Spec | Havok always uses `PhysicsShapeCylinder` (present in Babylon 9); unused `cylinderConvexPoints` prism fallback not wired | Resolved 2026-09-27; unused fallback removed |
 | 2026-08-27 | cursor/model-simple-collision-33dd | Model simple collision | Spec | `physicsActorDiagnostics` treats Mesh `collisionMode !== "none"` as a collider source without resolved shapes or Model payloads | Accepted |
 | 2026-08-27 | cursor/model-simple-collision-33dd | Model simple collision | Standards | Colliders Add/Delete sit in the panel body, not `PanelFrame.toolbar`. DockView already titles the tab Colliders | Accepted |
@@ -127,7 +127,7 @@ When the code-review skill reports Standards or Spec findings:
 | 2026-08-16 | cursor/p15-source-control-gaps-44b6 | p15-lock-ux | Spec | Deleting an asset we held did not unlock the old LFS path | Resolved |
 | 2026-08-15 | cursor/p14-implementation-review-c2d5 | p14-export / p14-platforms | Spec | Packaged player booted an empty Engine: no sprite/tilemap/navmesh hydrate, no UI-logic compile, no in-process rAF `advance` or canvas input | Resolved |
 | 2026-08-15 | cursor/p14-implementation-review-c2d5 | p14-packed-mode | Spec | `game.json` omitted `pixelsPerUnit` / `pixelPerfect`; Font index entries had no authored family `name` | Resolved |
-| 2026-08-15 | cursor/p14-implementation-review-c2d5 | p14-platforms | Spec | Packaged player compiles UserInterface logic and packs UI JSON; Babylon GUI widget mount stays overlay Play (`PlayHudOverlay`) | Accepted |
+| 2026-08-15 | cursor/p14-implementation-review-c2d5 | p14-platforms | Spec | Packaged player compiles UserInterface logic and packs UI JSON; Babylon GUI widget mount stays overlay Play (`PlayHudOverlay`) | Superseded; UserInterface was removed from the engine |
 | 2026-08-15 | cursor/p14-implementation-review-c2d5 | p14-export | Spec | Export e2e still asserts boot + ticks on the cube fixture; packed sprite/tilemap/navmesh/UI-logic coverage is unit-tested | Accepted |
 | 2026-08-15 | cursor/p13-implementation-review-4e26 | p13-plugin-model / Play | Spec | `collectPlaySceneLibrary` walked `project.json` `scenes` only, so enabled plugin Scenes never reached Play `changescene` | Resolved |
 | 2026-08-15 | cursor/p13-implementation-review-4e26 | p13-engine-plugin | Spec | Engine Memory `ProjectStorage` stayed writable after unpack; now wrapped with `createReadOnlyProjectStorage` | Resolved |
@@ -146,7 +146,7 @@ When the code-review skill reports Standards or Spec findings:
 | 2026-08-15 | cursor/p4-followups-55e8 | p4-preview-report | Spec | Log Error never entered the session report; ExecuteJavaScript `bodyLine` was not compiled, not on the worker diagnostic command, and navigate did not set CodeMirror focus | Resolved |
 | 2026-08-15 | cursor/p3-spawn-wiring-14d8 | p3-object-model | Spec | ClassRegistry unused at spawn; Play `callInterface` skipped `dispatchInterface` so scene actors never received class-declared interface guids | Resolved |
 | 2026-08-15 | cursor/p3-spawn-wiring-14d8 | p3-object-model | Standards | Engine components and BT builtins were reparentable (`MeshComponent` → `Actor`) | Resolved |
-| 2026-08-15 | cursor/p3-spawn-wiring-14d8 | p3-object-model / p3-harness | Spec | Remaining accepted P3 cuts: World-owned spawn API (spec wording), flat runtime components (`SerializedComponent.parentId` dropped at Play), VFS fixtures decoupled from the 120-tick golden | Accepted |
+| 2026-08-15 | cursor/p3-spawn-wiring-14d8 | p3-object-model / p3-harness | Spec | Remaining accepted P3 cuts: World-owned spawn API (spec wording), flat runtime components (`SerializedComponent.parentId` dropped at Play), VFS fixtures decoupled from the 120-tick golden | Accepted; runtime components now keep `parentId` (`instantiate-scene.ts`) |
 | 2026-08-14 | cursor/scene-open-old-project-crash-82b9 | scene-open crash | Standards | Alert catalog “Used for” omitted `WorkspaceErrorBoundary` | Resolved |
 | 2026-08-14 | cursor/p11-p12-quality-b945 | p11-behaviour-tree | Spec | Empty-stack restart ran in the same tick as root TimeLimit/abort; Parallel starved nested siblings and skipped abort/TimeLimit/services on yielded children; Loop ignored failure; self-abort skipped Cooldown | Resolved |
 | 2026-08-14 | cursor/p11-p12-quality-b945 | p12-editor-extensions | Spec | Saving EditorUtilityInterface `dockKind` wrote the header but did not reindex `AssetRegistry`, so Windows → Editor Utilities kept the stale filter until remount | Resolved |
@@ -257,7 +257,7 @@ Design notes: [command-layer.md](../architecture/command-layer.md), [asset-regis
 
 Design notes: [object-model.md](../architecture/object-model.md).
 
-`World.createActor` / `createComponent` / `createGameInstance` apply `ClassRegistry.inheritedVariables` and `inheritedInterfaces` (caller overrides win). `RuntimeDriver.loadScripts` registers session class ids from `ScriptBundleEntry` metadata. Play `ctx.callInterface` uses `dispatchInterface` (pin defaults on miss). Nested runtime component `parentId` and VFS-backed 120-tick fixtures stay out of this wiring.
+`World.createActor` / `createComponent` / `createGameInstance` apply `ClassRegistry.inheritedVariables` and `inheritedInterfaces` (caller overrides win). `RuntimeDriver.loadScripts` registers session class ids from `ScriptBundleEntry` metadata. Play `ctx.callInterface` uses `dispatchInterface` (pin defaults on miss). VFS-backed 120-tick fixtures stay out of this wiring.
 
 ## P4 slice ownership
 
@@ -451,7 +451,7 @@ Chrome polish (pin flash) stays parked. Multi-select gizmo group transforms are 
 | ScriptHost input / tick Delay / spawn / addComponent / GameInstance | Done (foundation wave; worker Play applies queued input each tick — host wall-clock stamps must not drop GetAxis) |
 | Play startup scene with no scene tab open | Superseded — Play is **disabled** until a scene tab is open; `startupSceneGuid` is packaged/export only |
 | Sprite/tilemap `ResourceCache` textures + GLB `assetGuid` | Done (foundation wave) |
-| HUD TouchButton / TouchDPad → input | Removed with the game HUD. There is no on-screen Play movement stick; Touch bindings are fed only by the `injectTestTouchAxis` test hook |
+| HUD TouchButton / TouchDPad → input | Removed with the game HUD. SceneLayer **2D Joystick** components feed Touch bindings (`Joystick X/Y`, `D-Pad X/Y`) in Play and the exported player ([scene layers](../architecture/scene-layers.md#_2d-joystick)); `injectTestTouchAxis` remains a test hook |
 | `playSound` command (log, not a mixer), `.babtrace` tab, §9.4 HUD | Command landed; mixer Done; `.babtrace` tab Done (`p8-trace-playback`). §9.4 stats HUD parked. Game HUD removed |
 
 ### Authoring-surface wave (before P11)
@@ -507,7 +507,7 @@ Do **not** rebuild `shader-graph`, `anim-graph`, `scripting`, `physics`, or `deb
 | Item | Status |
 | --- | --- |
 | ScriptHost `TickContext` input, tick Delay, spawn, addComponent, interface handlers | Done |
-| Play loads startup/main scene + `gameInstanceClass` with no scene tab | Superseded — Play uses the open scene tab only; disabled otherwise. `collectPlayStartupScene` path fallback removed. `startupSceneGuid` is packaged/export boot (`p14-export`) |
+| Play loads startup/main scene + `gameInstanceClass` with no scene tab | Superseded — Debug **Play from Scene** (default on) seeds Play from the open scene tab and disables Play without one; with it off, Play and Preview Build start at `startupSceneGuid`. `collectPlayStartupScene` path fallback removed |
 | Place Actors copies closed-tab class prefab components from disk | Done |
 | `changescene` / `ctx.changeScene` instantiates a library scene | Done |
 | Sprite/tilemap textures via `ResourceCache`; GLB `assetGuid`; authored lights/cameras | Done (full lighting/camera contract landed in `p-lighting-camera`) |
