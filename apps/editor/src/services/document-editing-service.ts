@@ -112,6 +112,13 @@ export class DocumentEditingService {
     );
   }
 
+  /** The indexed asset at `path` belongs to a read-only asset source. */
+  private isInReadOnlyRoot(path: string): boolean {
+    const registry = this.project.registry;
+    const asset = registry?.getByPath(path);
+    return Boolean(asset && registry?.getRoot(asset.rootId)?.readOnly);
+  }
+
   /** Apply a graph edit through the command layer (marks dirty + undoable). */
   async applyGraphChange(id: string, next: SerializedGraph): Promise<boolean> {
     const doc = this.documents.getState().openDocuments.get(id);
@@ -221,9 +228,7 @@ export class DocumentEditingService {
       release: lease.release,
       applyScene: async (candidate) => {
         const path = lease.baseline.ref.path;
-        const registry = this.project.registry;
-        const asset = registry?.list().find(entry => entry.path === path);
-        if (asset && registry?.getRoot(asset.rootId)?.readOnly) return { ok: false, reason: "The Scene belongs to a read-only asset source." };
+        if (this.isInReadOnlyRoot(path)) return { ok: false, reason: "The Scene belongs to a read-only asset source." };
         if (isMutatingApplyBlocked(this.sourceControl, path, isPluginDocumentReadOnly(this.project.plugins, path), false)) {
           return { ok: false, reason: "The Scene is read-only or locked by source control." };
         }
@@ -337,11 +342,19 @@ export class DocumentEditingService {
     if (options?.quiet) {
       // The open-time sync rewrites instances without a command, so history
       // recorded before it (such as history kept from a closed tab) no longer
-      // fits the content and must not replay onto it. The file still holds
-      // the old instances, so the Scene is dirty until Save writes them.
+      // fits the content and must not replay onto it.
       this.editSession.dropDocument(sceneDoc.id);
-      this.documents.updateScene(sceneDoc.id, next, "compare");
-      this.options.scheduleDebouncedSave();
+      const path = sceneDoc.ref.path;
+      if (this.isApplyBlocked(path) || this.isInReadOnlyRoot(path)) {
+        // Save never writes a read-only or locked Scene, so it stays clean.
+        this.documents.patchLoadedContent(sceneDoc.id, next);
+      } else {
+        // The file still holds the old instances, so the Scene is dirty
+        // until Save writes them, and source control locks it like an edit.
+        this.documents.updateScene(sceneDoc.id, next, "compare");
+        this.options.scheduleDebouncedSave();
+        void afterMutatingApply(this.sourceControl, path);
+      }
       this.options.bump();
       return;
     }

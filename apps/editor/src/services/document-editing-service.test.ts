@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  createActor,
   createDefaultScene,
+  DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS,
   documentId,
   MAIN_SCENE_FILE,
   type DocumentRef,
   type ProjectStorage,
   type SerializedActor,
+  type SerializedComponent,
   type SerializedGraph,
   type SerializedScene,
 } from "@babylonslate/core";
@@ -17,11 +20,13 @@ import {
   serializeJournalLine,
   SetSceneNameCommand,
 } from "@babylonslate/edit";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { FakeLockProvider } from "@babylonslate/source-control";
+import { MemorySecretStore, MemoryStorageAdapter } from "@babylonslate/vfs";
 import { JournalBuffer } from "../lib/journal-buffer";
 import { DocumentEditingService } from "./document-editing-service";
 import { DocumentService } from "./document-service";
 import type { ProjectService } from "./project-service";
+import { classIdForGraphPath } from "./script-compiler";
 import { SourceControlService } from "./source-control-service";
 
 const LOCKED_PLUGIN = {
@@ -39,6 +44,8 @@ function createEditing(options: {
   maxBytes?: number;
   derivedStorage?: () => Promise<ProjectStorage>;
   onRecoveryResolved?: () => void;
+  sourceControl?: SourceControlService;
+  scheduleDebouncedSave?: () => void;
 } = {}) {
   const documents = new DocumentService();
   const editSession = new EditSession({ maxBytes: options.maxBytes ?? DEFAULT_EDIT_BYTE_BUDGET });
@@ -59,11 +66,11 @@ function createEditing(options: {
     documents,
     editSession,
     project,
-    sourceControl: new SourceControlService(),
+    sourceControl: options.sourceControl ?? new SourceControlService(),
     journal,
     derivedStorage: options.derivedStorage ?? (() => Promise.reject(new Error("Recovery is not part of these tests."))),
     bump: () => {},
-    scheduleDebouncedSave: () => {},
+    scheduleDebouncedSave: options.scheduleDebouncedSave ?? (() => {}),
     onHistoryCleared: (id) => historyCleared.push(id),
     registryTick: () => 0,
     isProjectDirty: () => false,
@@ -165,6 +172,41 @@ describe("DocumentEditingService", () => {
     expect(documents.getDocument(lockedId)!.dirty).toBe(false);
     expect(await apply(editing, editableId, documents.getDocument(editableId)!.content)).toBe(true);
     expect((await journaled()).map((line) => line.docId)).toEqual([editableId]);
+  });
+
+  it.each([
+    { scene: "a writable Scene", path: "assets/Level.babasset", teammateLock: false, saved: true },
+    { scene: "a read-only plugin Scene", path: "plugins/Locked/Level.babasset", teammateLock: false, saved: false },
+    { scene: "a Scene a teammate locked", path: "assets/Level.babasset", teammateLock: true, saved: false },
+  ])("leaves only $scene for Save after the open-time prefab sync updates its instance", async ({ path, teammateLock, saved }) => {
+    const fake = new FakeLockProvider();
+    if (teammateLock) fake.addTheirs(path, "Teammate");
+    const sourceControl = new SourceControlService();
+    const saves = vi.fn();
+    try {
+      await sourceControl.configure({
+        settings: { ...DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, enabled: true }, projectGuid: "project-guid",
+        platform: "web", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake,
+      });
+      sourceControl.pausePolling();
+      await sourceControl.refresh();
+      const { documents, editing, open } = createEditing({ sourceControl, scheduleDebouncedSave: saves });
+      const classPath = "assets/Hero.class.babasset";
+      const sprite: SerializedComponent = { id: "component-sprite", classId: "SpriteComponent", properties: {}, parentId: null };
+      await open({ kind: "graph", path: classPath, label: "Hero" }, { nodes: [], edges: [], components: [sprite] });
+      const instance = createActor("hero", "Hero", { classId: classIdForGraphPath(classPath) });
+      const sceneId = await open({ kind: "scene", path, label: "Level" }, { ...createDefaultScene("2d"), actors: [instance] });
+      sourceControl.onOpenDocument(path);
+
+      await editing.syncPrefabInstances({ quiet: true });
+      const synced = documents.getDocument(sceneId)!;
+      expect((synced.content as SerializedScene).actors[0]!.components.map((component) => component.sourceId))
+        .toEqual([sprite.id]);
+      expect(synced.dirty).toBe(saved);
+      expect(saves).toHaveBeenCalledTimes(saved ? 1 : 0);
+      // Like an edit, the sync takes the writable Scene's lock before Auto-Save writes it.
+      await vi.waitFor(() => expect(sourceControl.lockStateForPath(path)).toBe(saved ? "mine" : teammateLock ? "theirs" : null));
+    } finally { sourceControl.dispose(); }
   });
 
   it("keeps the Scene, dirty state and history when a Simulation result exceeds the Undo memory limit", async () => {
