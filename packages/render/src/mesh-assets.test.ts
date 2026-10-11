@@ -234,7 +234,7 @@ describe("applyAlbedoTexture", () => {
       const materials = f.scene.materials.length;
       const acquisitions = f.acquire.mock.calls.length;
       const fade = (weight: number) => applyAnimStateToScene({
-        animationGroups: [], getSpriteSlot: () => ({ mesh: f.mesh, overlayMesh: overlay, payload: f.sprite }),
+        getAnimationGroups: () => [], getSpriteSlot: () => ({ mesh: f.mesh, overlayMesh: overlay, payload: f.sprite }),
       }, {
         type: "animState", slotId: 1, stateId: "idle", normalisedTime: 0, blendWeights: {},
         layers: [

@@ -43,7 +43,7 @@ describe("seekGameplayAnimation", () => {
     const frames: number[] = [];
     applyAnimStateToScene(
       {
-        animationGroups: [
+        getAnimationGroups: (slotId) => slotId === 0 ? [
           {
             name: "Idle",
             from: 0,
@@ -53,7 +53,7 @@ describe("seekGameplayAnimation", () => {
               frames.push(frame);
             },
           },
-        ],
+        ] : [],
       },
       {
         type: "animState",
@@ -109,7 +109,7 @@ describe("seekGameplayAnimation", () => {
     const mesh = createSpriteQuad(scene, "hero", payload.frames[0]!);
     applyAnimStateToScene(
       {
-        animationGroups: [],
+        getAnimationGroups: () => [],
         getSpriteSlot: (slotId) =>
           slotId === 3 ? { mesh, payload } : undefined,
       },
@@ -183,7 +183,7 @@ describe("seekGameplayAnimation", () => {
     const textures: string[] = [];
     applyAnimStateToScene(
       {
-        animationGroups: [],
+        getAnimationGroups: () => [],
         getSpriteSlot: (slotId) =>
           slotId === 3
             ? {
@@ -369,39 +369,34 @@ describe("seekGameplayAnimation", () => {
     const missing: Array<{ slotId: number; clipName: string }> = [];
     applyAnimStateToScene(
       {
-        animationGroups: [],
-        getAnimationGroup: (slotId, clipName, clipAssetGuid) => {
-          if (slotId !== 4 || clipAssetGuid !== "hero-model") return undefined;
-          if (clipName === "Idle") {
-            return {
-              name: "Idle",
-              from: 0,
-              to: 20,
-              pause() {},
-              goToFrame(frame) {
-                idleFrames.push(frame);
-              },
-              setWeightForAllAnimatables(weight) {
-                idleWeights.push(weight);
-              },
-            };
-          }
-          if (clipName === "Walk") {
-            return {
-              name: "Walk",
-              from: 0,
-              to: 40,
-              pause() {},
-              goToFrame(frame) {
-                walkFrames.push(frame);
-              },
-              setWeightForAllAnimatables(weight) {
-                walkWeights.push(weight);
-              },
-            };
-          }
-          return undefined;
-        },
+        getAnimationGroups: (slotId) => slotId !== 4 ? [] : [
+          {
+            name: "Idle",
+            from: 0,
+            to: 20,
+            clipAssetGuid: "hero-model",
+            pause() {},
+            goToFrame(frame) {
+              idleFrames.push(frame);
+            },
+            setWeightForAllAnimatables(weight) {
+              idleWeights.push(weight);
+            },
+          },
+          {
+            name: "Walk",
+            from: 0,
+            to: 40,
+            clipAssetGuid: "hero-model",
+            pause() {},
+            goToFrame(frame) {
+              walkFrames.push(frame);
+            },
+            setWeightForAllAnimatables(weight) {
+              walkWeights.push(weight);
+            },
+          },
+        ],
         onMissingClip: (info) => {
           missing.push({ slotId: info.slotId, clipName: info.clipName });
         },
@@ -442,58 +437,6 @@ describe("seekGameplayAnimation", () => {
     expect(missing).toEqual([]);
   });
 
-  it("seeks only the Idle group whose Model guid matches when two groups share a name", () => {
-    const aFrames: number[] = [];
-    const bFrames: number[] = [];
-    applyAnimStateToScene(
-      {
-        animationGroups: [
-          {
-            name: "Idle",
-            from: 0,
-            to: 20,
-            clipAssetGuid: "model-a",
-            pause() {},
-            goToFrame(frame) {
-              aFrames.push(frame);
-            },
-          },
-          {
-            name: "Idle",
-            from: 0,
-            to: 20,
-            pause() {},
-            goToFrame() {
-              aFrames.push(-1);
-            },
-          },
-          {
-            name: "Idle",
-            from: 0,
-            to: 20,
-            clipAssetGuid: "model-b",
-            pause() {},
-            goToFrame(frame) {
-              bFrames.push(frame);
-            },
-          },
-        ],
-      },
-      {
-        type: "animState",
-        slotId: 1,
-        stateId: "idle",
-        normalisedTime: 0.5,
-        blendWeights: { idle: 1 },
-        clipName: "Idle",
-        clipKind: "animation",
-        clipAssetGuid: "model-b",
-      },
-    );
-    expect(aFrames).toEqual([]);
-    expect(bFrames).toEqual([10]);
-  });
-
   it("reports a missing animation clip instead of silently skipping it", () => {
     const missing: Array<{
       slotId: number;
@@ -502,7 +445,7 @@ describe("seekGameplayAnimation", () => {
     }> = [];
     applyAnimStateToScene(
       {
-        animationGroups: [],
+        getAnimationGroups: () => [],
         onMissingClip: (info) => {
           missing.push({
             slotId: info.slotId,
@@ -576,7 +519,7 @@ describe("seekGameplayAnimation", () => {
     const overlay = createSpriteQuad(scene, "hero-blend", idlePayload.frames[0]!);
     applyAnimStateToScene(
       {
-        animationGroups: [],
+        getAnimationGroups: () => [],
         getSpriteSlot: (slotId) =>
           slotId === 1
             ? { mesh, payload: idlePayload, overlayMesh: overlay }
@@ -644,7 +587,7 @@ describe("AnimationGraph pose changes", () => {
     walk.start(true);
     walk.pause();
     walk.setWeightForAllAnimatables(0);
-    applyAnimStateToScene({ animationGroups: [walk] }, {
+    applyAnimStateToScene({ getAnimationGroups: () => [walk] }, {
       type: "animState",
       slotId: 1,
       stateId: "walk",
@@ -790,9 +733,6 @@ describe("sceneAnimHostFromBinding", () => {
       spritePayloads: new Map([["hero-sprite", payload]]),
     });
     expect(host.getSpriteSlot?.(0)?.overlayMesh).toBe(overlay);
-    expect(
-      host.getAnimationGroup?.(7, "Idle", "hero-model")?.name,
-    ).toBe("Idle");
     applyAnimStateToScene(host, {
       type: "animState",
       slotId: 7,
