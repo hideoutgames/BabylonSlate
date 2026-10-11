@@ -872,26 +872,72 @@ export function isValidMoveDestination(options: {
 }
 
 /**
- * Move or Copy target for a mixed selection. A folder never goes into itself
- * or a descendant. Items already in the destination are skipped, as a tree
- * drop skips them, so a move only needs one item that changes folder.
+ * What Move… / Copy to Folder… does with a selection at `destinationPath`,
+ * under the tree drop's rules: items in another content root stay where they
+ * are, as do items already in the destination (Move). A folder never goes
+ * into itself or a descendant, and a Move never lands on an existing or
+ * already-claimed name, so it cannot fail after moving part of the
+ * selection. `error` says why the destination cannot be used.
  */
-export function isValidSelectionMoveDestination(options: {
+export function contentBrowserSelectionMoves(options: {
   destinationPath: string;
   operation?: "move" | "copy";
-  assetSourcePaths?: readonly string[];
-  folderSourcePaths?: readonly string[];
-}): boolean {
-  const assetSourcePaths = options.assetSourcePaths ?? [];
-  const folderSourcePaths = options.folderSourcePaths ?? [];
-  const destination = options.destinationPath;
-  if (assetSourcePaths.length + folderSourcePaths.length === 0) return false;
-  if (folderSourcePaths.some((source) => destination === source || destination.startsWith(`${source}/`))) {
-    return false;
+  assetPaths: readonly string[];
+  folderPaths: readonly string[];
+  rootPaths?: readonly string[];
+  /** Asset and folder paths that already exist, for the Move name check. */
+  existingPaths?: ReadonlySet<string>;
+}): { moves: ContentBrowserDropMove[]; error: string | null } {
+  const { destinationPath: destination, operation = "move" } = options;
+  const rootPaths = options.rootPaths ?? [ASSETS_ROOT];
+  const verb = operation === "copy" ? "copied" : "moved";
+  if (options.folderPaths.some((path) => isFolderMoveCycle(path, destination))) {
+    return { moves: [], error: `A folder cannot be ${verb} inside itself.` };
   }
-  if (options.operation === "copy") return true;
-  return folderSourcePaths.some((source) => destination !== parentFolderPath(source)) ||
-    assetSourcePaths.some((source) => destination !== source);
+  const destRoot = contentRootOfPath(destination, rootPaths);
+  const inRoot = (path: string) => contentRootOfPath(path, rootPaths) === destRoot;
+  const folders = options.folderPaths.filter(inRoot);
+  const assets = options.assetPaths.filter(inRoot);
+  if (folders.length + assets.length === 0) {
+    return { moves: [], error: `Items in another content root cannot be ${verb} here.` };
+  }
+  const changesFolder = (from: string) => operation === "copy" || from !== destination;
+  const moves: ContentBrowserDropMove[] = [
+    ...folders
+      .filter((path) => changesFolder(parentFolderPath(path, destRoot)))
+      .map((path) => ({ kind: "folder" as const, sourcePath: path, destinationPath: destination, id: path })),
+    ...assets.flatMap((path) => {
+      const from = parentFolderPath(path, destRoot);
+      return changesFolder(from)
+        ? [{ kind: "asset" as const, sourcePath: from, destinationPath: destination, id: path }]
+        : [];
+    }),
+  ];
+  if (moves.length === 0) {
+    return { moves, error: "The selected items are already in this folder." };
+  }
+  const collision = operation === "move" ? moveNameCollision(moves, options.existingPaths) : null;
+  return collision ? { moves: [], error: collision } : { moves, error: null };
+}
+
+/**
+ * Why these moves would land on an existing file or folder name in their
+ * destination, or on a name another of them claims; null when none does.
+ */
+export function moveNameCollision(
+  moves: readonly ContentBrowserDropMove[],
+  existingPaths: ReadonlySet<string> = new Set(),
+): string | null {
+  const claimed = new Set<string>();
+  for (const move of moves) {
+    const name = move.id.slice(move.id.lastIndexOf("/") + 1);
+    const target = joinAssetFolderPath(move.destinationPath, name);
+    if (existingPaths.has(target) || claimed.has(target)) {
+      return `"${name}" already exists in ${move.destinationPath}.`;
+    }
+    claimed.add(target);
+  }
+  return null;
 }
 
 export type ContentBrowserContextAction =
@@ -1377,8 +1423,10 @@ export function contentBrowserTreeDropMoves(options: {
     }),
   );
   const moves: ContentBrowserDropMove[] = [];
+  // Selected items in another content root stay where they are, as items
+  // already in the destination do.
   for (const path of folders) {
-    if (contentRootOfPath(path, rootPaths) !== dest.destRoot) return [];
+    if (contentRootOfPath(path, rootPaths) !== dest.destRoot) continue;
     moves.push({
       kind: "folder",
       sourcePath: path,
@@ -1390,7 +1438,7 @@ export function contentBrowserTreeDropMoves(options: {
     const path = pathOf(guid);
     if (!path) continue;
     const sourceRoot = contentRootOfPath(path, rootPaths);
-    if (sourceRoot !== dest.destRoot) return [];
+    if (sourceRoot !== dest.destRoot) continue;
     const sourcePath = parentFolderPath(path, sourceRoot);
     if (
       !isValidMoveDestination({

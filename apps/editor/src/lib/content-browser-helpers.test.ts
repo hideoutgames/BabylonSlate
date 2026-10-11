@@ -19,6 +19,7 @@ import {
   classDocumentShowsPrefab,
   collectFolderGuids,
   contentBrowserMoveFromDrop,
+  contentBrowserSelectionMoves,
   contentBrowserTreeDropMoves,
   filterAssets,
   sortAssets,
@@ -36,7 +37,6 @@ import {
   isNewAssetNameTaken,
   isRenameNameTaken,
   isValidMoveDestination,
-  isValidSelectionMoveDestination,
   contentBrowserContextActions,
   buildMaterialInstanceAssetResult,
   materialInstanceNameFor,
@@ -786,6 +786,32 @@ describe("content-browser-helpers", () => {
         selectedFolderPaths: new Set(["assets/textures"]),
       }),
     ).toEqual([]);
+  });
+
+  it("still moves the rest of the selection when a selected asset is in another content root", () => {
+    const lamp = asset({ guid: "lamp-guid", name: "lamp", path: "plugins/tools/assets/lamp.babasset" });
+    const rows = [
+      ...flattenContentBrowserTree(multiMoveTree, multiMoveAssets),
+      ...flattenContentBrowserTree({ name: "assets", path: "plugins/tools/assets", assets: ["lamp-guid"], children: [] }, [lamp]),
+    ];
+    expect(
+      contentBrowserTreeDropMoves({
+        dragId: "assets/hero.babasset",
+        targetId: "assets/textures",
+        rows,
+        selectedGuids: new Set(["hero-guid", "lamp-guid"]),
+        selectedFolderPaths: new Set(),
+        rootPaths: ["assets", "plugins/tools/assets"],
+      }),
+    ).toEqual([
+      {
+        kind: "asset",
+        sourcePath: "assets",
+        destinationPath: "assets/textures",
+        id: "assets/hero.babasset",
+        guid: "hero-guid",
+      },
+    ]);
   });
 
   it("still moves other selected items when the dragged row is already in the destination", () => {
@@ -1740,58 +1766,61 @@ describe("content-browser-helpers", () => {
     expect(canRetargetSelectedAssets([])).toBe(false);
   });
 
-  it("rejects a move destination that is any selected folder or a descendant", () => {
-    expect(
-      isValidSelectionMoveDestination({
-        destinationPath: "assets/fx",
-        folderSourcePaths: ["assets/textures", "assets/audio"],
-        assetSourcePaths: ["assets"],
-      }),
-    ).toBe(true);
-    expect(
-      isValidSelectionMoveDestination({
-        destinationPath: "assets/textures",
-        folderSourcePaths: ["assets/textures", "assets/audio"],
-      }),
-    ).toBe(false);
-    expect(
-      isValidSelectionMoveDestination({
-        destinationPath: "assets/textures/ui",
-        folderSourcePaths: ["assets/textures"],
-      }),
-    ).toBe(false);
-    expect(
-      isValidSelectionMoveDestination({
-        destinationPath: "assets",
-        operation: "move",
-        folderSourcePaths: ["assets/textures"],
-      }),
-    ).toBe(false);
-    expect(
-      isValidSelectionMoveDestination({
-        destinationPath: "assets",
-        operation: "copy",
-        folderSourcePaths: ["assets/textures"],
-        assetSourcePaths: ["assets"],
-      }),
-    ).toBe(true);
+  it("rejects a move or copy destination that is any selected folder or a descendant", () => {
+    const selection = { folderPaths: ["assets/textures", "assets/audio"], assetPaths: ["assets/hero.babasset"] };
+    expect(contentBrowserSelectionMoves({ destinationPath: "assets/fx", ...selection }).error).toBeNull();
+    expect(contentBrowserSelectionMoves({ destinationPath: "assets/textures", ...selection }).error)
+      .toBe("A folder cannot be moved inside itself.");
+    expect(contentBrowserSelectionMoves({ destinationPath: "assets/textures/ui", operation: "copy", ...selection }).error)
+      .toBe("A folder cannot be copied inside itself.");
+    expect(contentBrowserSelectionMoves({ destinationPath: "assets", operation: "move", ...selection }).error)
+      .toBe("The selected items are already in this folder.");
+    expect(contentBrowserSelectionMoves({ destinationPath: "assets", operation: "copy", ...selection }).moves)
+      .toHaveLength(3);
   });
 
-  it("allows a move when only some selected items already live in the destination", () => {
-    expect(
-      isValidSelectionMoveDestination({
-        destinationPath: "assets",
-        operation: "move",
-        assetSourcePaths: ["assets", "assets/textures"],
-      }),
-    ).toBe(true);
-    expect(
-      isValidSelectionMoveDestination({
-        destinationPath: "assets",
-        operation: "move",
-        assetSourcePaths: ["assets"],
-      }),
-    ).toBe(false);
+  it("moves only the items that change folder", () => {
+    expect(contentBrowserSelectionMoves({
+      destinationPath: "assets",
+      folderPaths: [],
+      assetPaths: ["assets/hero.babasset", "assets/textures/dirt.babasset"],
+    }).moves).toEqual([
+      { kind: "asset", sourcePath: "assets/textures", destinationPath: "assets", id: "assets/textures/dirt.babasset" },
+    ]);
+  });
+
+  it("leaves items in another content root where they are, as a tree drop does", () => {
+    const rootPaths = ["assets", "plugins/tools/assets"];
+    const plan = contentBrowserSelectionMoves({
+      destinationPath: "assets/fx",
+      operation: "copy",
+      folderPaths: ["plugins/tools/assets/Props"],
+      assetPaths: ["assets/hero.babasset", "plugins/tools/assets/lamp.babasset"],
+      rootPaths,
+    });
+    expect(plan).toEqual({
+      moves: [{ kind: "asset", sourcePath: "assets", destinationPath: "assets/fx", id: "assets/hero.babasset" }],
+      error: null,
+    });
+    expect(contentBrowserSelectionMoves({
+      destinationPath: "assets/fx",
+      folderPaths: [],
+      assetPaths: ["plugins/tools/assets/lamp.babasset"],
+      rootPaths,
+    }).error).toBe("Items in another content root cannot be moved here.");
+  });
+
+  it("refuses a move onto an existing or shared name before anything moves", () => {
+    const selection = { folderPaths: ["assets/textures"], assetPaths: ["assets/a/hero.babasset", "assets/b/hero.babasset"] };
+    expect(contentBrowserSelectionMoves({ destinationPath: "assets/fx", ...selection }).error)
+      .toBe('"hero.babasset" already exists in assets/fx.');
+    expect(contentBrowserSelectionMoves({
+      destinationPath: "assets/fx",
+      folderPaths: ["assets/textures"],
+      assetPaths: ["assets/a/hero.babasset"],
+      existingPaths: new Set(["assets/fx/textures"]),
+    }).error).toBe('"textures" already exists in assets/fx.');
+    expect(contentBrowserSelectionMoves({ destinationPath: "assets/fx", operation: "copy", ...selection }).error).toBeNull();
   });
 
   it("drops selected assets that already live under a selected folder", () => {

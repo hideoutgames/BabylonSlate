@@ -166,6 +166,7 @@ import {
   contentBrowserDeleteListNames,
   contentBrowserDeletingGuids,
   contentBrowserMovePreviewName,
+  contentBrowserSelectionMoves,
   contentBrowserTreeDropMoves,
   lastSceneClassDeleteLines,
   CONTENT_BROWSER_SORT_OPTIONS,
@@ -178,6 +179,7 @@ import {
   isContentBrowserEmptyGridDoubleClickTarget,
   isNewAssetNameTaken,
   isRenameNameTaken,
+  moveNameCollision,
   newAssetFileName,
   joinAssetFolderPath,
   listChildFoldersFromTrees,
@@ -237,13 +239,15 @@ type MoveTarget = {
   name: string;
   sourcePath: string;
   folderPath: string;
-  assetSourcePaths: string[];
-  folderSourcePaths: string[];
+  /** Asset files of `guids`, in order. */
+  assetPaths: string[];
   itemCount: number;
   typeVisual: TypeVisual | null;
 };
 
 type GridItem = ContentBrowserGridItem;
+
+const NO_PATHS: readonly string[] = [];
 
 /** Folder selection after `fromFolder` moved to `toFolder`; an unchanged set is kept. */
 function remapFolderSelection(
@@ -840,6 +844,10 @@ function ContentBrowserWorkspaceBody({
       flattenFolderForest(folderTrees).map((row) => row.path),
     [folderTrees],
   );
+  const existingContentPaths = useMemo(
+    () => new Set([...existingAssetPaths, ...existingFolderPaths]),
+    [existingAssetPaths, existingFolderPaths],
+  );
   const newDataTypes = useMemo(() => newAssetOpen && (newAssetType === "DataDefinition" || newAssetType === "DataTree")
     ? collectGraphTypeAssets({ assets: allAssets, openDocuments })
     : { structures: [], enums: [], dataDefinitions: [] }, [newAssetOpen, newAssetType, allAssets, openDocuments]);
@@ -1021,7 +1029,7 @@ function ContentBrowserWorkspaceBody({
       );
       if (folders.length + guids.length === 0) return;
       const names: string[] = [];
-      const assetSourcePaths: string[] = [];
+      const assetPaths: string[] = [];
       for (const path of folders) {
         names.push(path.slice(path.lastIndexOf("/") + 1));
       }
@@ -1030,16 +1038,13 @@ function ContentBrowserWorkspaceBody({
         const asset = assetRegistry.getByGuid(guid);
         if (!asset) continue;
         names.push(asset.header.name);
-        const folderPath = parentFolderPath(asset.path);
-        if (!assetSourcePaths.includes(folderPath)) {
-          assetSourcePaths.push(folderPath);
-        }
+        assetPaths.push(asset.path);
         if (guids.length === 1 && folders.length === 0) {
           typeVisual = visualForIndexedAsset(asset, classParentOf);
         }
       }
       const sourcePath =
-        folders[0] ?? assetSourcePaths[0] ?? selectedFolderPath;
+        folders[0] ?? (assetPaths[0] ? parentFolderPath(assetPaths[0]) : selectedFolderPath);
       setMoveTarget({
         operation,
         kind: folders.length > 0 && guids.length === 0 ? "folder" : "asset",
@@ -1048,13 +1053,12 @@ function ContentBrowserWorkspaceBody({
         name: contentBrowserMovePreviewName(names),
         sourcePath,
         folderPath: sourcePath,
-        assetSourcePaths,
-        folderSourcePaths: folders,
+        assetPaths,
         itemCount: folders.length + guids.length,
         typeVisual,
       });
     },
-    [assetRegistry, classParentOf, selectedFolderPath],
+    [assetRegistry, classParentOf, rootPrefixes, selectedFolderPath],
   );
 
   const keybinds = useKeybindings();
@@ -1870,67 +1874,50 @@ function ContentBrowserWorkspaceBody({
 
   const confirmMove = useCallback(async () => {
     if (!assetRegistry || !moveTarget) return;
-    const dest = contentBrowserFolderOps(moveTarget.folderPath, browserRoots);
+    const destPath = moveTarget.folderPath;
+    const dest = contentBrowserFolderOps(destPath, browserRoots);
     if (dest.readOnly) {
-      setOperationError(`${moveTarget.folderPath} is read-only. Choose a folder in project content.`);
+      setOperationError(`${destPath} is read-only. Choose a folder in project content.`);
       return;
     }
+    const guidByPath = new Map(moveTarget.guids.flatMap((guid) => {
+      const path = assetRegistry.getByGuid(guid)?.path;
+      return path ? [[path, guid] as const] : [];
+    }));
+    // The tree drop's rules: items in another content root, and for Move
+    // items already in the destination, stay where they are.
+    const plan = contentBrowserSelectionMoves({
+      destinationPath: destPath,
+      operation: moveTarget.operation,
+      assetPaths: [...guidByPath.keys()],
+      folderPaths: moveTarget.folderPaths,
+      rootPaths: rootPrefixes,
+      existingPaths: existingContentPaths,
+    });
+    if (plan.error) {
+      setOperationError(plan.error);
+      return;
+    }
+    const moves = plan.moves.map((move) =>
+      move.kind === "asset" ? { ...move, guid: guidByPath.get(move.id) } : move);
     setBusy(true);
     setOperationError(null);
-    const remainingGuids = new Set(moveTarget.guids);
-    const remainingFolders = new Set(moveTarget.folderPaths);
+    const remainingGuids = new Set(moves.flatMap((move) => move.guid ? [move.guid] : []));
+    const remainingFolders = new Set(moves.flatMap((move) => move.kind === "folder" ? [move.sourcePath] : []));
     const total = remainingGuids.size + remainingFolders.size;
     try {
-      const destPath = moveTarget.folderPath;
-      const destRelative = dest.relative;
       if (moveTarget.operation === "copy") {
-        for (const fromPath of moveTarget.folderPaths) {
-          const from = contentBrowserFolderOps(fromPath, browserRoots);
-          if (from.rootId !== dest.rootId) continue;
-          await assetRegistry.copyFolder(
-            from.rootId,
-            from.relative,
-            destRelative,
-          );
-          remainingFolders.delete(fromPath);
-        }
-        for (const guid of moveTarget.guids) {
-          await assetRegistry.copyAsset(guid, dest.rootId, destRelative);
-          remainingGuids.delete(guid);
+        for (const move of moves) {
+          if (move.kind === "folder") {
+            const from = contentBrowserFolderOps(move.sourcePath, browserRoots);
+            await assetRegistry.copyFolder(from.rootId, from.relative, dest.relative);
+            remainingFolders.delete(move.sourcePath);
+          } else if (move.guid) {
+            await assetRegistry.copyAsset(move.guid, dest.rootId, dest.relative);
+            remainingGuids.delete(move.guid);
+          }
         }
       } else {
-        // Items already in the destination stay where they are, as in a tree drop.
-        const moves: ContentBrowserDropMove[] = [
-          ...moveTarget.folderPaths.flatMap((path) => {
-            if (parentFolderPath(path) === destPath) {
-              remainingFolders.delete(path);
-              return [];
-            }
-            return [{
-              kind: "folder" as const,
-              sourcePath: path,
-              destinationPath: destPath,
-              id: path,
-            }];
-          }),
-          ...moveTarget.guids.flatMap((guid) => {
-            const before = assetRegistry.getByGuid(guid);
-            if (!before) return [];
-            if (parentFolderPath(before.path) === destPath) {
-              remainingGuids.delete(guid);
-              return [];
-            }
-            return [
-              {
-                kind: "asset" as const,
-                sourcePath: parentFolderPath(before.path),
-                destinationPath: destPath,
-                id: before.path,
-                guid,
-              },
-            ];
-          }),
-        ];
         await applyRegistryMoves(moves, (move) => {
           if (move.kind === "folder") remainingFolders.delete(move.sourcePath);
           else if (move.guid) remainingGuids.delete(move.guid);
@@ -1950,11 +1937,10 @@ function ContentBrowserWorkspaceBody({
           ...moveTarget,
           guids,
           folderPaths: folders,
-          folderSourcePaths: folders,
-          assetSourcePaths: [...new Set(guids.flatMap((guid) => {
+          assetPaths: guids.flatMap((guid) => {
             const asset = assetRegistry.getByGuid(guid);
-            return asset ? [parentFolderPath(asset.path)] : [];
-          }))],
+            return asset ? [asset.path] : [];
+          }),
           itemCount: remaining,
           kind: guids.length === 0 ? "folder" : "asset",
           name: contentBrowserMovePreviewName([
@@ -1972,8 +1958,10 @@ function ContentBrowserWorkspaceBody({
   }, [
     applyRegistryMoves,
     assetRegistry,
+    existingContentPaths,
     moveTarget,
     refreshAssetRegistry,
+    rootPrefixes,
     browserRoots,
   ]);
 
@@ -2263,6 +2251,12 @@ function ContentBrowserWorkspaceBody({
         placement,
       });
       if (moves.length === 0) return;
+      // Refuse before moving anything, so a taken name cannot stop the drop halfway.
+      const collision = moveNameCollision(moves, existingContentPaths);
+      if (collision) {
+        setOperationError(collision);
+        return;
+      }
       void (async () => {
         setBusy(true);
         setOperationError(null);
@@ -2284,6 +2278,7 @@ function ContentBrowserWorkspaceBody({
       assetRegistry,
       browserRows,
       busy,
+      existingContentPaths,
       refreshAssetRegistry,
       rootPrefixes,
       selectedFolderPaths,
@@ -3186,10 +3181,11 @@ function ContentBrowserWorkspaceBody({
                   contentBrowserFolderOps(moveTarget.sourcePath, browserRoots)
                     .pathPrefix,
                 )
-              : moveTarget.assetSourcePaths[0] ?? moveTarget.sourcePath
+              : moveTarget.assetPaths[0]
+                ? parentFolderPath(moveTarget.assetPaths[0])
+                : moveTarget.sourcePath
             : ASSETS_ROOT
         }
-        sourcePath={moveTarget?.sourcePath ?? ASSETS_ROOT}
         folderTree={
           folderTrees.find((tree) => {
             const source = moveTarget?.sourcePath ?? ASSETS_ROOT;
@@ -3209,8 +3205,10 @@ function ContentBrowserWorkspaceBody({
         error={operationError}
         typeVisual={moveTarget?.typeVisual ?? null}
         itemCount={moveTarget?.itemCount}
-        assetSourcePaths={moveTarget?.assetSourcePaths}
-        folderSourcePaths={moveTarget?.folderSourcePaths}
+        assetPaths={moveTarget?.assetPaths ?? NO_PATHS}
+        folderPaths={moveTarget?.folderPaths ?? NO_PATHS}
+        rootPaths={rootPrefixes}
+        existingPaths={existingContentPaths}
       />
 
       {referenceGuid ? (

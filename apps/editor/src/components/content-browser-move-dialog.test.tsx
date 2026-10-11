@@ -44,7 +44,8 @@ function renderDialog(
       kind="asset"
       name="hero"
       currentFolderPath="assets"
-      sourcePath="assets"
+      assetPaths={["assets/hero.babasset"]}
+      folderPaths={[]}
       folderTree={tree}
       destinationPath="assets"
       onDestinationChange={onDestinationChange}
@@ -89,7 +90,8 @@ describe("ContentBrowserMoveDialog", () => {
       kind: "folder",
       name: "textures",
       currentFolderPath: "assets",
-      sourcePath: "assets/textures",
+      assetPaths: [],
+      folderPaths: ["assets/textures"],
       destinationPath: "assets/fx",
     });
     selectRow("assets");
@@ -119,12 +121,36 @@ describe("ContentBrowserMoveDialog", () => {
       name: "3 items",
       itemCount: 3,
       currentFolderPath: "assets",
-      sourcePath: "assets/textures",
-      folderSourcePaths: ["assets/textures", "assets/audio"],
-      assetSourcePaths: ["assets"],
+      folderPaths: ["assets/textures", "assets/audio"],
+      assetPaths: ["assets/hero.babasset"],
       destinationPath: "assets/fx",
     });
     expect(screen.getByText("Move 3 items")).toBeTruthy();
+    selectRow("assets/textures");
+    expect(onDestinationChange).not.toHaveBeenCalled();
+  });
+
+  it("explains that Copy cannot put a folder inside itself", () => {
+    renderDialog({
+      kind: "folder",
+      operation: "copy",
+      assetPaths: [],
+      folderPaths: ["assets/textures"],
+      destinationPath: "assets/textures/ui",
+    });
+    expect(screen.getByTestId("content-browser-move-problem").textContent)
+      .toBe("Choose a different folder. A folder cannot be copied inside itself.");
+    expect(screen.getByTestId("content-browser-move-confirm").hasAttribute("disabled")).toBe(true);
+  });
+
+  it("blocks a Move into a folder that already has a file of the same name", () => {
+    const { onDestinationChange } = renderDialog({
+      destinationPath: "assets/fx",
+      existingPaths: new Set(["assets/fx/hero.babasset", "assets/textures/hero.babasset"]),
+    });
+    expect(screen.getByTestId("content-browser-move-problem").textContent)
+      .toBe('Choose a different folder. "hero.babasset" already exists in assets/fx.');
+    expect(screen.getByTestId("content-browser-move-confirm").hasAttribute("disabled")).toBe(true);
     selectRow("assets/textures");
     expect(onDestinationChange).not.toHaveBeenCalled();
   });
