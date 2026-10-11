@@ -62,7 +62,13 @@ export class EngineExtensionLibrary {
   private async readDefaults(): Promise<Record<string, boolean>> {
     const defaults: Record<string, boolean> = Object.create(null);
     if (!(await this.libraryStorage.exists(DEFAULTS_FILE))) return defaults;
-    const value: unknown = JSON.parse(await this.libraryStorage.readText(DEFAULTS_FILE));
+    let value: unknown;
+    try {
+      value = JSON.parse(await this.libraryStorage.readText(DEFAULTS_FILE));
+    } catch {
+      // Defaults are preferences: unreadable ones fall back to each extension's own.
+      return defaults;
+    }
     if (!value || typeof value !== "object" || Array.isArray(value)) return defaults;
     for (const [guid, enabled] of Object.entries(value)) {
       if (typeof enabled === "boolean") defaults[guid] = enabled;
