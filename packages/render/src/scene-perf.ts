@@ -191,14 +191,15 @@ export function pendingSceneTextures(scene: Scene): string[] {
 
 /**
  * Pinned Babylon 9.29 adapter for a staged scene stream. Anonymous pending
- * tokens (glTF imports, cube images, particle helpers, prefiltering) cannot be
- * told apart from the stream's own, and texture uploads are decided per
- * admitted texture. Any other pending owner, such as a water reflection's
- * irradiance, is scene-level work the parent still waits for.
+ * tokens (glTF imports, particle helpers and prefiltering use plain objects;
+ * cube images use a GUID string) cannot be told apart from the stream's own,
+ * and texture uploads are decided per admitted texture. Any other pending
+ * owner, such as a water reflection's irradiance, is scene-level work the
+ * parent still waits for.
  */
 function hasParentPendingData(scene: Scene): boolean {
   for (const data of scene._pendingData as unknown[]) {
-    if (data instanceof InternalTexture || data instanceof BaseTexture) continue;
+    if (data instanceof InternalTexture || data instanceof BaseTexture || typeof data === "string") continue;
     if (typeof data === "object" && data !== null && Object.getPrototypeOf(data) === Object.prototype) continue;
     return true;
   }

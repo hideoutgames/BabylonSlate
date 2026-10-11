@@ -166,6 +166,9 @@ it("keeps the parent drawing after cancel while native import and detached textu
   // abortable promise. Texture GPU work can outlive that pending-data record.
   const nativeImport = {};
   scene.addPendingData(nativeImport);
+  // Babylon 9.29 cube image loads register a bare GUID string per face.
+  const cubeImage = "cube-image-token";
+  scene.addPendingData(cubeImage);
   const texture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, scene);
   vi.spyOn(texture, "isReady").mockReturnValue(false);
   admission.receive({ type: "sceneStreamRemoved", actorGuid: "cancelled", streamLoadId: 1 });
@@ -181,6 +184,7 @@ it("keeps the parent drawing after cancel while native import and detached textu
   markSceneReadinessDirty(scene);
   expect(renderer.render().rendered).toBe(true);
   scene.removePendingData(nativeImport);
+  scene.removePendingData(cubeImage);
   admission.sync();
   expect(renderer.render().rendered).toBe(true);
   // Sharing that same pending resource with a live parent must still block it.
