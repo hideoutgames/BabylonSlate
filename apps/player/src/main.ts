@@ -376,10 +376,15 @@ if (previewMode()) {
       previewHostOrigin,
     );
     if (!pack) return;
-    // The host may resend the pack until it sees the player boot; ignore repeats.
+    // The host may resend the pack until it sees the player boot; ignore repeats
+    // while a launch is running or has started. A failed launch accepts a later pack.
     if (launched) return;
     launched = true;
-    void launchFromFiles(filesFromPreviewPack(pack), pack.traceByteBudget, pack.onDemand).catch(bootFailure);
+    delete rootEl().dataset.error;
+    void launchFromFiles(filesFromPreviewPack(pack), pack.traceByteBudget, pack.onDemand).catch((error: unknown) => {
+      if (!startupAbort.signal.aborted) launched = false;
+      bootFailure(error);
+    });
   });
   // Ask only once the listener above exists. Waiting for the parent's iframe
   // `load` event alone raced module evaluation and silently dropped the pack.
