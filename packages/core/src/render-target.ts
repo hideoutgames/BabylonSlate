@@ -120,20 +120,16 @@ export function renderTargetAssetGuidsFromGraph(graph: SerializedGraph): string[
   }
   for (const slice of [graph, ...Object.values(graph.functionGraphs ?? {})]) {
     for (const node of slice.nodes ?? []) {
-      const nested = node.data?.properties;
-      const props = nested && typeof nested === "object" && !Array.isArray(nested)
-        ? nested as Record<string, unknown> : node.data ?? {};
-      const names = node.type === "render-target.getMode" ? ["target", "Render Target"]
-        : node.type === "render-target.getTextureTarget" ? ["texture", "Texture"]
-          : node.type === "render-target.setRenderTarget" ? ["value", "Render Target"]
-            : node.type === "variables.set" ? ["value", typeof props.variableName === "string" ? props.variableName : "Value"] : null;
-      if (!names) continue;
-      // Canonical cleared defaults mask legacy id/name values, as in codegen.
-      const value = names.flatMap((name) => [`default:${name}`, name])
-        .map((key) => props[key]).find((entry) => entry !== undefined);
+      const pinId = node.type === "render-target.getMode" ? "target"
+        : node.type === "render-target.getTextureTarget" ? "texture"
+          : node.type === "variables.set" ? "value" : null;
+      if (!pinId) continue;
+      // The pin's authored literal, where the compiler reads it.
+      const data = node.data ?? {};
+      const value = data[`default:${pinId}`];
       if (node.type === "variables.set") {
         // Texture pins can carry a RenderTargetTexture, including container entries.
-        collectDefault(props as Partial<GraphClassMember>, value, true);
+        collectDefault(data as Partial<GraphClassMember>, value, true);
       } else add(value);
     }
   }
