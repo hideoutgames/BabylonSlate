@@ -422,7 +422,6 @@ export type CommandMessage =
   | ({ type: "performanceTicks" } & import("./diagnostic-operation").PerformanceTickChunk)
   | { type: "diagnosticOperationStopped"; sessionGeneration: number; recordingId: string; kind: "profile" | "frame"; reason: "requested" | "duration" | "budget" | "session-ended" }
   | ({ type: "runtimeInspectorResult" } & import("./runtime-inspector").RuntimeInspectorResult)
-  | { type: "resetActorInterpolation"; actorGuid: string; slotId: number; frameId: number }
   | ({ type: "sessionBoundaryResult" } & SessionBoundaryResult)
   | { type: "saveStorageRequest"; request: import("@babylonslate/core").SaveStorageRequest }
   | { type: "setUIControl2D"; slotId: number; componentId: string; uiControl: { classId: string; properties: import("@babylonslate/core").UIControl2DProperties }; focused?: boolean; beginEditing?: boolean }

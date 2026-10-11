@@ -35,8 +35,8 @@ interface RuntimeInspectorServiceHost {
   sessionMode(): GameSessionMode;
   stopped(): boolean;
   frameId(): number;
-  /** Advance the presentation frame id and return the new value. */
-  advanceFrameId(): number;
+  /** Advance the presentation frame id. */
+  advanceFrameId(): void;
   commandRevision(): number;
   playSceneGuid(): string;
   simulation(): Pick<SimulationSession, "canWrite" | "canEditActor">;
@@ -195,7 +195,7 @@ export class RuntimeInspectorService {
           }
           apply(prior); throw error;
         }
-        if (target instanceof Actor && key === "visible") this.publishSnapshot(target);
+        if (target instanceof Actor && key === "visible") this.publishSnapshot();
       },
       applyTransform: (target, transform, space) => {
         const world = this.host.world();
@@ -227,7 +227,7 @@ export class RuntimeInspectorService {
           const slotId = this.host.renderSlots().recordedSlot(actor);
           if (slotId !== undefined) this.host.renderEmitter().emitComponentTransforms(actor, slotId);
         }
-        this.publishSnapshot(actor);
+        this.publishSnapshot();
       },
       applyMaterial: (component, name, value) => {
         const material = component.getVariable("materialObject");
@@ -263,11 +263,12 @@ export class RuntimeInspectorService {
     });
   }
 
-  /** Presentation identity advances, while tick index, delays and physics do not. */
-  private publishSnapshot(actor: Actor): void {
-    const frameId = this.host.advanceFrameId();
-    const slotId = this.host.renderSlots().recordedSlot(actor);
-    if (slotId !== undefined) this.host.emit({ type: "resetActorInterpolation", actorGuid: actor.guid, slotId, frameId });
+  /**
+   * Publish under a fresh presentation identity, which makes the renderer
+   * reapply the edited pose; tick index, delays and physics do not advance.
+   */
+  private publishSnapshot(): void {
+    this.host.advanceFrameId();
     this.host.publishSnapshot();
   }
 }
