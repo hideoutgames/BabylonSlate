@@ -2716,7 +2716,10 @@ function initializeEngine(
         gpuMs: counter && counter.count > 0 ? counter.current / 1_000_000 : null,
       };
       lastPresentedAt = presentedAt;
-      scaling.noteFramePressure(lastPressureSample);
+      // The scaling level is Engine-wide: only the sole rendering view drives
+      // it, so sibling views on a shared Engine cannot ratchet it against
+      // each other.
+      if (sole) scaling.noteFramePressure(lastPressureSample);
       if (!registeredView) syncLockedViewSize();
     }
     previousFramePresented = framePresented;

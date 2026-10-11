@@ -1966,6 +1966,31 @@ describe("Play createEngine view", () => {
     expect(pressure?.gpuMs).toBeNull();
   });
 
+  it("lets only the sole rendering view drive the Engine-wide scaling valve", async () => {
+    const engine = sharedEngine();
+    const { handle: scene } = editorHandle(engine);
+    const { handle: prefab } = editorHandle(engine);
+    await scene.prewarmSceneMaterials();
+    await prefab.prewarmSceneMaterials();
+    const sceneValve = vi.spyOn(scene.scaling, "noteFramePressure");
+    const prefabValve = vi.spyOn(prefab.scaling, "noteFramePressure");
+    const frame = () => {
+      engine.onBeginFrameObservable.notifyObservers(engine);
+      renderViews(engine);
+      engine.onEndFrameObservable.notifyObservers(engine);
+    };
+    frame();
+    frame();
+    // Both views presented, but neither owns the shared scale alone.
+    expect(scene.renderDiagnostics().pressure?.cpuMs).toBeGreaterThanOrEqual(0);
+    expect(sceneValve).not.toHaveBeenCalled();
+    expect(prefabValve).not.toHaveBeenCalled();
+    prefab.setRegisterViewEnabled(false);
+    frame();
+    expect(sceneValve).toHaveBeenCalled();
+    expect(prefabValve).not.toHaveBeenCalled();
+  });
+
   it("rebinds editor MeshComponent materials after setMaterialDocuments", () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {
