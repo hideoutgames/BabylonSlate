@@ -177,14 +177,16 @@ describe("EncodeQueue", () => {
     expect(completed).toEqual(["paused"]);
   });
 
-  it("fails a hung encode on timeout and pumps the next job", async () => {
+  it("fails a hung encode on timeout, aborts its encoder and pumps the next job", async () => {
     const states: string[] = [];
     const completed: string[] = [];
     const errors: string[] = [];
+    let hungSignal: AbortSignal | undefined;
     const queue = new EncodeQueue({
       jobTimeoutMs: 20,
-      encode: async (source, settings) => {
+      encode: async (source, settings, _mime, signal) => {
         if (source[0] === 1) {
+          hungSignal = signal;
           await new Promise(() => undefined);
         }
         return stubEncodeKtx2(source, settings);
@@ -224,6 +226,7 @@ describe("EncodeQueue", () => {
     expect(states).toContain("hang:encoding");
     expect(states).toContain("hang:encode_failed");
     expect(states).toContain("ok:compressed");
+    expect(hungSignal?.aborted).toBe(true);
   });
 });
 
