@@ -360,6 +360,51 @@ describe("SceneLayer runtime compositor", () => {
     expect(runtime.getWorld().getSceneLayers()).toHaveLength(0);
   });
 
+  async function tickLayerRuntime(onTick: string) {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      preferSoftwarePhysics: true,
+      seedDemoActors: false,
+      playScene: worldScene("A"),
+      sceneLayerLibrary: { hud: overlayLayer() },
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([{
+      assetGuid: "layer-script",
+      classId: "LayerScript",
+      source: `let done = false; export function onTick(ctx) { if (done) return; done = true; ${onTick} }`,
+      anchors: [],
+      entryPoints: [{ name: "onTick", event: "onTick", isAsync: false }],
+    }]);
+    runtime.realizePlayWorld();
+    runtime.spawnScriptedActor({ classId: "LayerScript" });
+    runtime.start();
+    commands.length = 0;
+    runtime.tick();
+    runtime.tick();
+    const layerCommands = commands.flatMap((command) =>
+      (command.type === "spawn" && command.sceneLayerId) || command.type === "despawn" || command.type === "sceneLayerRemove"
+        ? [command.type === "sceneLayerRemove" ? command.type : `${command.type}:${command.slotId}`] : []);
+    return { runtime, layerCommands };
+  }
+
+  it("keeps the render slots of a layer created during a tick, before its actors commit", async () => {
+    const { runtime, layerCommands } = await tickLayerRuntime("ctx.createSceneLayer('hud', 0);");
+    const [layer] = runtime.getWorld().getSceneLayers();
+    expect(runtime.getWorld().findActor(inLayer(layer, "banner"))).toBeTruthy();
+    expect(layerCommands).toEqual([expect.stringMatching(/^spawn:/)]);
+    runtime.stop();
+  });
+
+  it("despawns the queued actors of a layer removed in the tick that created it", async () => {
+    const { runtime, layerCommands } = await tickLayerRuntime("ctx.removeSceneLayer(ctx.createSceneLayer('hud', 0));");
+    const slot = layerCommands[0]!.slice("spawn:".length);
+    expect(layerCommands).toEqual([`spawn:${slot}`, `despawn:${slot}`, "sceneLayerRemove"]);
+    expect(runtime.getWorld().getSceneLayers()).toHaveLength(0);
+    runtime.stop();
+  });
+
   it("never shares a guid between a global layer's actor and a later Scene actor with the same authored id", () => {
     const hud: SerializedSceneLayer = {
       ...overlayLayer(),

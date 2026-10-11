@@ -138,7 +138,7 @@ Category `scene-layer` (GameInstance and other graphs; instances live on the ses
 | Node | Runtime |
 | --- | --- |
 | Create Scene Layer | `await ctx.createSceneLayerAsync(guid, zOrder)`: preloads the asset when assets load on demand, creates the layer, and resolves once it is ready (30-second deadline) |
-| Remove Scene Layer | Destroy instance + actors; no-op if already gone |
+| Remove Scene Layer | Destroy instance + actors (including actors whose spawn is still queued because the layer was created in the same tick phase, which despawn and release their render slots); no-op if already gone |
 | Clear Scene Layer | Remove all |
 | Register Scene Layer Post-Processing | Append a `postProcess` Material |
 | Unregister Scene Layer Post-Processing | Missing material: error diagnostic / Output Log, Play continues |

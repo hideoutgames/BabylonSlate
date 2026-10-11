@@ -482,6 +482,12 @@ export class World {
     this.discardUnspawned(actor);
   }
 
+  /** Whether `actor` waits in the spawn queue: spawned during a tick phase and not committed yet. */
+  isSpawnQueued(actor: Actor): boolean {
+    return !actor.destroyed && actor.world === null && this.pendingSpawnGuids.has(actor.guid) &&
+      this.pendingSpawn.indexOf(actor, this.spawnCursor) >= 0;
+  }
+
   /** An unspawned actor never received creation hooks and has no live world. */
   private discardUnspawned(actor: Actor): void {
     for (const component of actor.components) {
