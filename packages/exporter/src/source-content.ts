@@ -61,7 +61,10 @@ export function gameSourceSubset(game: GameSourceContent, ids: ReadonlySet<strin
     return selected;
   };
   // Unpacked clips are keyed `assetGuid:chunkId` beside the default clip's plain guid.
-  const audioBytes = new Map([...game.audioBytes].filter(([key]) => keys.has(key) || keys.has(key.slice(0, key.indexOf(":")))));
+  const audioBytes = new Map([...game.audioBytes].filter(([key]) => {
+    const colon = key.indexOf(":");
+    return keys.has(key) || (colon > 0 && keys.has(key.slice(0, colon)));
+  }));
   return {
     ...game,
     manifest: { ...game.manifest, assets: game.manifest.assets.filter(entry => keys.has(entry.guid)) },

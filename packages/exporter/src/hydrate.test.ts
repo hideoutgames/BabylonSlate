@@ -45,8 +45,9 @@ describe("gameSourceSubset", () => {
       { guid: "jump", type: "Audio", encoding: "bytes" },
       { guid: "navmesh:scene", type: "NavMesh", encoding: "bytes" },
       { guid: "other", type: "Audio", encoding: "bytes" },
+      { guid: "jumps", type: "Audio", encoding: "bytes" },
     ]);
-    for (const key of ["jump", "jump:source", "jump:loop", "other:source"]) game.audioBytes.set(key, new Uint8Array([1]));
+    for (const key of ["jump", "jump:source", "jump:loop", "other:source", "jumps"]) game.audioBytes.set(key, new Uint8Array([1]));
     game.navmeshBytes.set("scene", new Uint8Array([2]));
     const subset = gameSourceSubset(game, new Set(["jump", "navmesh:scene"]));
     expect([...subset.audioBytes.keys()]).toEqual(["jump", "jump:source", "jump:loop"]);
