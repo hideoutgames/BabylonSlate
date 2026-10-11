@@ -71,4 +71,22 @@ describe("scalability nodes", () => {
     );
     expect({ reads, logs }).toEqual({ reads: 1, logs: ["webgpu"] });
   });
+
+  it("Get Effective Scalability reports the effective backend of an acknowledgement without a pipeline", () => {
+    const logs: unknown[] = [];
+    runBeginPlay(
+      [["get", "scalability.getEffective"], ["log", "debug.log"]],
+      [["begin", "execOut", "log", "execIn"], ["get", "effectiveBackend", "log", "message"]],
+      {
+        getScalability: () => ({
+          requested: { render: { gpuBackend: "auto" } },
+          effective: { render: { gpuBackend: "webgl2" } },
+          pipeline: null,
+        }),
+        formatValue: (value: unknown) => value,
+        log: (_severity: string, _category: string, value: unknown) => logs.push(value),
+      },
+    );
+    expect(logs).toEqual(["webgl2"]);
+  });
 });
