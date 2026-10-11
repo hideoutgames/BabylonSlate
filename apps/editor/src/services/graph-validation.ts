@@ -1221,13 +1221,12 @@ type FunctionRow = {
  * missing-input warning.
  */
 function engineScalarInputDefaults(
-  pins: readonly { name: string; typeId: string; direction: "in" | "out"; container?: string; defaultValue?: unknown }[],
+  pins: readonly { name: string; typeId: string; direction: "in" | "out"; container?: string }[],
 ): Record<string, unknown> | undefined {
   const defaults: Record<string, unknown> = {};
   for (const pin of pins) {
     if (pin.direction !== "in" || (pin.container && pin.container !== "single")) continue;
-    if (pin.defaultValue !== undefined) defaults[pin.name] = pin.defaultValue;
-    else if (pin.typeId === "float" || pin.typeId === "int") defaults[pin.name] = 0;
+    if (pin.typeId === "float" || pin.typeId === "int") defaults[pin.name] = 0;
     else if (pin.typeId === "bool") defaults[pin.name] = false;
   }
   return Object.keys(defaults).length > 0 ? defaults : undefined;

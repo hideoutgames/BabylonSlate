@@ -1941,10 +1941,10 @@ describe("scriptPaletteNodes", () => {
       nodes.some((node) => node.id === "functions.call:CameraComponent:Possess"),
     ).toBe(true);
     expect(
-      nodes.find(
+      nodes.some(
         (node) => node.id === "functions.call:RigidBodyComponent:Add Impulse",
-      )?.defaultData,
-    ).toMatchObject({ "default:strength": 1 });
+      ),
+    ).toBe(true);
     expect(
       nodes.some(
         (node) => node.id === "functions.call:NavAgentComponent:Move To",

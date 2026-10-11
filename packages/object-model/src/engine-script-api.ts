@@ -9,8 +9,6 @@ export type EngineScriptPin = {
   direction: "in" | "out";
   typeClassId?: string;
   container?: "single" | "array" | "map";
-  /** Literal a newly placed Call node stores for this input. */
-  defaultValue?: unknown;
 };
 
 export type EngineScriptVariable = {
@@ -737,7 +735,7 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
           EXEC_IN,
           EXEC_OUT,
           { name: "impulse", typeId: "vec3", direction: "in" },
-          { name: "strength", typeId: "float", direction: "in", defaultValue: 1 },
+          { name: "strength", typeId: "float", direction: "in" },
         ],
       },
     ],
@@ -785,7 +783,7 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
     ],
     functions: [{
       name: "Add Impulse", runtime: "addImpulse",
-      pins: [EXEC_IN, EXEC_OUT, { name: "impulse", typeId: "vec3", direction: "in" }, { name: "strength", typeId: "float", direction: "in", defaultValue: 1 }],
+      pins: [EXEC_IN, EXEC_OUT, { name: "impulse", typeId: "vec3", direction: "in" }, { name: "strength", typeId: "float", direction: "in" }],
     }],
   },
   {
