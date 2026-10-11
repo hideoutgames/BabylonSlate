@@ -535,11 +535,13 @@ components and graph. Native WebGPU presented the
 and [returned editor](../assets/renderer-qualification/2026-09-23-computer-use/model-reopened-webgpu.png).
 
 The [portable source backup](../assets/renderer-qualification/2026-09-23-computer-use/animated-project.zip)
-extends the earlier textured fixture. The 2026-09-23 project ZIPs are kept
-unchanged as the record of this run (the backup's hash is in `final-exports.json`).
-They predate chunk lengths and dependency metadata, so current builds refuse
-them as an unsupported old `.babasset` layout; the steps below apply to the
-recorded build. Import it through Projects, open Main Scene,
+extends the earlier textured fixture. On 2026-10-11 the 2026-09-23 project ZIPs
+were re-encoded to the current `.babasset` layout and asset versions so current
+builds import them; only asset headers gained chunk lengths and dependency
+metadata, while payloads, blobs, `project.json` and `layout.json` are unchanged.
+`final-exports.json` records the re-encoded backup. The originals, including the
+backup hash recorded at qualification time (`b5467ebe…`), remain in git history.
+Import it through Projects, open Main Scene,
 then Play: the saved graph selects Low and scale 0.5, retains artistic CEL values,
 and resets to project defaults after 60 seconds. The backup requests WebGL2;
 Project Settings → Rendering → GPU Backend selects native WebGPU at the Engine
