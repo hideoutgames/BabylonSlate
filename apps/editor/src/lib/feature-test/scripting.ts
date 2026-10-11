@@ -706,7 +706,7 @@ async function saveSpinner(ctx: FeatureTestContext, types: ScriptingTypes, mater
         "default:binding": binding("FT_ScriptPulse", types.pulseAction),
       }),
       callEvent("input-pulse", 260, 1300, pulse, { "default:Strength": 1 }),
-      // The pad that pressed Pulse (pad 0) answers with a short rumble.
+      // Every Pulse press, from P or pad button 3, rumbles pad 0 briefly.
       gNode("pulse-rumble", "input.setGamepadRumble", 520, 1300, {
         "default:index": 0,
         "default:intensity": 0.6,
