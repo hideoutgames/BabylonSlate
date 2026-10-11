@@ -920,12 +920,15 @@ describe("ViewportPanel engine", () => {
 
   it("refreshes a prepared emission asset without rebuilding the scene or reacting to unchanged registry content", async () => {
     const sourceHash = "a".repeat(64);
-    const asset = {
-      rootId: "project", path: "assets/Emitter.texture.babasset",
-      header: readAssetDocumentHeader(await encodeAssetDocument({ type: "Texture", guid: "emission", name: "Emitter", version: 1, payload: {} })),
-    };
-    asset.header.chunks.push({ id: "pixels", kind: "pixels", mime: "image/png", sha256: sourceHash, locator: { inline: { offset: 0, length: 4 } } });
+    const header = readAssetDocumentHeader(await encodeAssetDocument({ type: "Texture", guid: "emission", name: "Emitter", version: 1, payload: {} }));
+    header.chunks.push({ id: "pixels", kind: "pixels", mime: "image/png", sha256: sourceHash, locator: { inline: { offset: 0, length: 4 } } });
+    let asset = { rootId: "project", path: "assets/Emitter.texture.babasset", header };
     documents.assetRegistry = { list: () => [asset], getByGuid: (guid) => guid === "emission" ? asset : undefined };
+    // The registry re-indexes a rewritten Texture with a new header; it never edits one in place.
+    const reindex = (chunks: typeof header.chunks) => {
+      asset = { ...asset, header: { ...asset.header, chunks } };
+      documents.registryEpoch += 1;
+    };
     const scene = createDefaultScene();
     scene.actors = [createActor("emitter", "Emitter", { components: [{ id: "area", classId: "AreaRectLightComponent", properties: { textureGuid: "emission" } }] })];
     documents.openDocuments = [{ id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" }, content: scene }];
@@ -934,8 +937,7 @@ describe("ViewportPanel engine", () => {
     const loads = handle.loadScene.mock.calls.length;
     const collects = documents.collectPlayAreaEmissions.mock.calls.length;
     const refresh = () => view.rerender(<DocumentWorkspaceProvider documentId="scene:S"><ViewportPanel {...({} as IDockviewPanelProps)} /></DocumentWorkspaceProvider>);
-    asset.header.chunks.push({ id: areaEmissionChunkId(sourceHash), kind: "area-emission", mime: "application/octet-stream", sha256: "b".repeat(64), locator: { inline: { offset: 4, length: 8 } } });
-    documents.registryEpoch += 1;
+    reindex([...asset.header.chunks, { id: areaEmissionChunkId(sourceHash), kind: "area-emission", mime: "application/octet-stream", sha256: "b".repeat(64), locator: { inline: { offset: 4, length: 8 } } }]);
     refresh();
     await waitFor(() => expect(documents.collectPlayAreaEmissions).toHaveBeenCalledTimes(collects + 1));
     await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
@@ -944,8 +946,7 @@ describe("ViewportPanel engine", () => {
     await act(async () => {});
     expect(documents.collectPlayAreaEmissions).toHaveBeenCalledTimes(collects + 1);
     // Replacing the source invalidates the old prepared representation.
-    asset.header.chunks.find((chunk) => chunk.id === "pixels")!.sha256 = "c".repeat(64);
-    documents.registryEpoch += 1;
+    reindex(asset.header.chunks.map((chunk) => chunk.id === "pixels" ? { ...chunk, sha256: "c".repeat(64) } : chunk));
     refresh();
     await waitFor(() => expect(documents.collectPlayAreaEmissions).toHaveBeenCalledTimes(collects + 2));
   });
