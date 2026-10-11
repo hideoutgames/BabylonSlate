@@ -206,6 +206,20 @@ describe("collectClassGraphsForPalette", () => {
     ]);
   });
 
+  it("keeps Array and Map variables through a closed Class header", () => {
+    const members = [
+      { id: "var-1", kind: "variable" as const, name: "Waypoints", typeId: "vec3", container: "array" as const },
+      {
+        id: "var-2", kind: "variable" as const, name: "Loot", typeId: "asset", typeClassId: "Audio",
+        container: "map" as const, keyTypeId: "class", keyTypeClassId: "Actor", loading: "hard" as const,
+      },
+    ];
+    const header = classHeaderMeta({ members });
+    expect(
+      classGraphFromHeaderPayload(header as unknown as Record<string, unknown>).members,
+    ).toEqual(members);
+  });
+
   it("rebuilds members from a closed Class header and prefers open documents", () => {
     expect(
       classGraphFromHeaderPayload({
