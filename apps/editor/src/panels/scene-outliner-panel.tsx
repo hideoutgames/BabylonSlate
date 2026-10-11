@@ -515,13 +515,16 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
     let cancelled = false;
     const assets = assetRegistry?.list() ?? [];
     void (async () => {
+      // Load the Classes together, so the slowest one sets the wait, not the sum.
+      const loaded = await Promise.all(
+        assets
+          .filter((asset) => asset.header.type === "Class" && asset.path)
+          .map(async (asset) => [asset.path, await loadGraphDocument(asset.path)] as const),
+      );
+      if (cancelled) return;
       const next = new Map<string, SerializedGraph>();
-      for (const asset of assets) {
-        if (asset.header.type !== "Class" || !asset.path) continue;
-        const graph = await loadGraphDocument(asset.path);
-        if (graph) next.set(asset.path, graph);
-      }
-      if (!cancelled) setDiskGraphs(next);
+      for (const [path, graph] of loaded) if (graph) next.set(path, graph);
+      setDiskGraphs(next);
     })();
     return () => {
       cancelled = true;
