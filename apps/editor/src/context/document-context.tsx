@@ -43,7 +43,6 @@ import {
   readJournalLines,
   readThumbnail,
   writeThumbnail,
-  upgradeTextureThumbnail,
   ThumbnailDecodeLru,
   truncateJournal,
   clearDeletedAssetRefs,
@@ -3066,7 +3065,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const guid = projectService.guid;
       if (!guid) return null;
       const asset = projectService.registry?.getByGuid(assetGuid);
-      const rendered = asset?.header.type === "Model" || asset?.header.type === "Animation";
       const revisionIndex = thumbnailRevisionIndexRef.current;
       const revision = revisionIndex.revision(assetGuid);
       if (revision !== null) {
@@ -3075,28 +3073,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         requested.set(assetGuid, revision);
         if (requested.size > 512) requested.delete(requested.keys().next().value!);
       }
-      else if (asset?.header.type === "Class" || asset?.header.type === "Graph") return null;
-      // Regenerate old one-frame captures that may have been cached before
-      // their materials were ready. Texture thumbnail keys stay unchanged.
-      const key = revision !== null ? await revisionIndex.cacheKey(assetGuid) :
-        rendered ? `${assetGuid}.render-v2` : assetGuid;
+      else if (asset?.header.type === "Class") return null;
+      const key = revision !== null ? await revisionIndex.cacheKey(assetGuid) : assetGuid;
       if (!key || projectService.guid !== guid || thumbnailLruRef.current !== lru ||
         thumbnailRevisionIndexRef.current.revision(assetGuid) !== revision) return null;
       const cached = lru.get(key);
       if (cached) return cached;
       const derived = await ensureDerived();
-      let bytes = await readThumbnail(derived, guid, key);
-      if (projectService.guid !== guid || thumbnailLruRef.current !== lru) return null;
-      if (asset?.header.type === "Texture") {
-        const pixels = asset.header.chunks.find((chunk) => chunk.id === "pixels" || chunk.kind === "pixels");
-        if (pixels) {
-          const upgraded = await upgradeTextureThumbnail(bytes, pixels.mime, () =>
-            projectService.readAssetChunk(asset.path, pixels.id));
-          if (projectService.guid !== guid || thumbnailLruRef.current !== lru) return null;
-          if (upgraded && upgraded !== bytes) await writeThumbnail(derived, guid, key, upgraded);
-          bytes = upgraded;
-        }
-      }
+      const bytes = await readThumbnail(derived, guid, key);
       if (projectService.guid !== guid || thumbnailLruRef.current !== lru ||
         thumbnailRevisionIndexRef.current.revision(assetGuid) !== revision) return null;
       if (bytes) lru.set(key, bytes);
@@ -3113,11 +3097,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (!guid || (expected && expected.projectGuid !== guid)) return;
       const lru = thumbnailLruRef.current;
       const derived = await ensureDerived();
-      const type = projectService.registry?.getByGuid(assetGuid)?.header.type;
       const revisionIndex = createAssetThumbnailRevisionIndex(projectService.registry?.list() ?? [], projectDocumentRef.current?.settings.twoD.pixelsPerUnit);
       const revision = revisionIndex.revision(assetGuid);
-      const key = revision !== null ? await revisionIndex.cacheKey(assetGuid) :
-        type === "Model" || type === "Animation" ? `${assetGuid}.render-v2` : assetGuid;
+      const key = revision !== null ? await revisionIndex.cacheKey(assetGuid) : assetGuid;
       if (!key || projectService.guid !== guid || thumbnailLruRef.current !== lru ||
         (expected && expected.cacheKey !== key)) return;
       await writeThumbnail(derived, guid, key, bytes);
