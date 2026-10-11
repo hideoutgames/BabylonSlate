@@ -276,22 +276,28 @@ export class InputResolver {
       }
     };
     const connections: GamepadConnectionEvent[] = [];
+    // Name lookups (`isActionHeld("Jump")`) cover every asset with that display
+    // name; `inputs` keeps each asset's own state.
     const actions: Record<string, ActionState> = {};
     const heldNow = new Set(this.state.previousHeldActions);
     const sampleActions = () => {
+      const heldByName = new Map<string, boolean>();
       for (const mapping of this.mappings.actions) {
         const held = mapping.bindings.some((binding) =>
           actionBindingHeld(binding, this.state),
         );
-        const wasHeld = heldNow.has(mapping.name);
-        const prior = actions[mapping.name];
-        actions[mapping.name] = {
+        heldByName.set(mapping.name, heldByName.get(mapping.name) === true || held);
+      }
+      for (const [name, held] of heldByName) {
+        const wasHeld = heldNow.has(name);
+        const prior = actions[name];
+        actions[name] = {
           held,
           pressed: (prior?.pressed ?? false) || (held && !wasHeld),
           released: (prior?.released ?? false) || (!held && wasHeld),
         };
-        if (held) heldNow.add(mapping.name);
-        else heldNow.delete(mapping.name);
+        if (held) heldNow.add(name);
+        else heldNow.delete(name);
       }
     };
 
@@ -313,10 +319,16 @@ export class InputResolver {
         case "pointer": {
           const contacts = this.state.pointerButtons;
           // Only the first contact controls the cursor. Existing secondary
-          // fingers stay secondary until lifted, even after the first lifts.
+          // fingers stay secondary until lifted, even after the first lifts;
+          // a new contact becomes primary whenever no primary contact is down.
+          const primary = this.state.primaryPointerId;
+          const primaryDown = primary !== null && contacts.has(primary);
           if (
-            contacts.size === 0 &&
-            (event.phase === "down" || event.phase === "move")
+            (contacts.size === 0 &&
+              (event.phase === "down" || event.phase === "move")) ||
+            (event.phase === "down" &&
+              !primaryDown &&
+              !contacts.has(event.pointerId))
           ) {
             this.state.primaryPointerId = event.pointerId;
           }
@@ -380,6 +392,18 @@ export class InputResolver {
               pressed("gamepadAxis", key);
             this.state.gamepadAxes.set(key, value);
           }
+          // A sample is the pad's whole state: controls it omits are at rest.
+          const prefix = `${pad}:`;
+          const sampled = (key: string, count: number) =>
+            !key.startsWith(prefix) || Number(key.slice(prefix.length)) < count;
+          for (const key of [...this.state.heldGamepadButtons]) {
+            if (!sampled(key, event.buttons.length))
+              this.state.heldGamepadButtons.delete(key);
+          }
+          for (const key of [...this.state.gamepadAxes.keys()]) {
+            if (!sampled(key, event.axes.length))
+              this.state.gamepadAxes.delete(key);
+          }
           break;
         }
         case "gamepadDisconnect": {
@@ -415,34 +439,34 @@ export class InputResolver {
         .map((mapping) => mapping.name),
     );
 
-    const axes: Record<string, number> = {};
-    const axes2D: Record<string, Axis2DValue> = {};
+    // Assets sharing a display name add up like the bindings of one asset.
+    const clamp = (value: number) => Math.max(-1, Math.min(1, value));
+    const sums1D = new Map<string, number>();
+    const sums2D = new Map<string, Axis2DValue>();
     for (const mapping of this.mappings.axes) {
-      if ("kind" in mapping && mapping.kind === "2d") {
-        let x = 0;
-        let y = 0;
-        for (const binding of mapping.bindings) {
-          const value = axisBindingValue(binding, this.state);
-          if (binding.component === "y") y += value;
-          else x += value;
-        }
-        axes2D[mapping.name] = {
-          x: Math.max(-1, Math.min(1, x)),
-          y: Math.max(-1, Math.min(1, y)),
-        };
-        // A 2D axis is also readable as its magnitude for getAxis callers.
-        axes[mapping.name] = Math.hypot(
-          axes2D[mapping.name]!.x,
-          axes2D[mapping.name]!.y,
-        );
+      let x = 0;
+      let y = 0;
+      const twoD = "kind" in mapping && mapping.kind === "2d";
+      for (const binding of mapping.bindings) {
+        const value = axisBindingValue(binding, this.state);
+        if (twoD && binding.component === "y") y += value;
+        else x += value;
+      }
+      if (twoD) {
+        const sum = sums2D.get(mapping.name) ?? { x: 0, y: 0 };
+        sums2D.set(mapping.name, { x: sum.x + clamp(x), y: sum.y + clamp(y) });
       } else {
-        let total = 0;
-        for (const binding of mapping.bindings) {
-          total += axisBindingValue(binding, this.state);
-        }
-        axes[mapping.name] = Math.max(-1, Math.min(1, total));
+        sums1D.set(mapping.name, (sums1D.get(mapping.name) ?? 0) + clamp(x));
       }
     }
+    const axes: Record<string, number> = {};
+    const axes2D: Record<string, Axis2DValue> = {};
+    for (const [name, sum] of sums2D) {
+      axes2D[name] = { x: clamp(sum.x), y: clamp(sum.y) };
+      // A 2D axis is also readable as its magnitude for getAxis callers.
+      axes[name] = Math.hypot(axes2D[name]!.x, axes2D[name]!.y);
+    }
+    for (const [name, sum] of sums1D) axes[name] = clamp(sum);
 
     const dt = Number.isFinite(deltaSeconds) ? Math.max(0, deltaSeconds) : 0;
     for (const [key, value] of Object.entries(inputs)) {
@@ -450,31 +474,6 @@ export class InputResolver {
         value.heldSeconds += dt;
     }
     this.inputStates = inputs;
-    // Asset identities remain independent even when two assets share a display name.
-    const exposeAction = (id: string, name: string) => {
-      const state = inputs[id];
-      if (state)
-        actions[name] = {
-          pressed: state.started,
-          released: state.released,
-          held: state.held,
-        };
-    };
-    const exposeAxis = (id: string, name: string) => {
-      const state = inputs[id];
-      if (!state) return;
-      if (typeof state.value === "object") {
-        axes2D[name] = state.value;
-        axes[name] = Math.hypot(state.value.x, state.value.y);
-      } else {
-        axes[name] = Number(state.value);
-        delete axes2D[name];
-      }
-    };
-    for (const mapping of this.mappings.actions)
-      if (mapping.id) exposeAction(mapping.id, mapping.name);
-    for (const mapping of this.mappings.axes)
-      if (mapping.id) exposeAxis(mapping.id, mapping.name);
     return {
       inputs,
       pressedKeys,
