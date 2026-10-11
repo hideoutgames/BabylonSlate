@@ -32,6 +32,23 @@ describe("Play physics startup", () => {
     }
   });
 
+  it("starts a 3d session with physics-off Scene Layers when Rapier is not available", async () => {
+    vi.spyOn(Rapier2DPhysicsBackend, "createFactory").mockRejectedValue(
+      new Error("Rapier is not included when no exported Scene Layer enables physics"),
+    );
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      sceneLayerLibrary: { hud: createDefaultSceneLayer() },
+    });
+    try {
+      await runtime.loadPhysics();
+      expect(runtime.getPhysicsSync()!.getBackend()).toBeInstanceOf(HavokPhysicsBackend);
+    } finally {
+      runtime.stop();
+    }
+  });
+
   it("keeps simulation stopped when the requested physics engine cannot load", async () => {
     vi.spyOn(HavokPhysicsBackend, "create").mockRejectedValue(
       new Error("Havok download failed"),
