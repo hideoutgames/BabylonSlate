@@ -129,6 +129,19 @@ describe("runtime Save Game", () => {
     } finally { next.runtime.stop(); }
   });
 
+  it("captures the Save Game component's current selection", async () => {
+    const { runtime, service } = await boot(new MemoryStorage());
+    try {
+      const save = hero(runtime).components.find((component) => component.classId === "SaveGameComponent")!;
+      save.setVariable("actorVariables", ["health", "temporary"]);
+      hero(runtime).setVariable("temporary", "saved");
+      expect((await service.saveGame()).ok).toBe(true);
+      hero(runtime).setVariable("temporary", "changed");
+      expect((await service.loadGame()).ok).toBe(true);
+      expect(hero(runtime).getVariable("temporary")).toBe("saved");
+    } finally { runtime.stop(); }
+  });
+
   it("recreates registered spawned actors with stable references despite different runtime spawn order", async () => {
     const storage = new MemoryStorage();
     const first = await boot(storage);
