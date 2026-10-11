@@ -289,11 +289,17 @@ describe.each(["worker", "in-process"] as const)(
       const terminate = vi.fn();
       let worker!: { command(command: CommandMessage): void; snapshot(buffer: Float32Array): void };
       await play({ workerTerminate: terminate, onWorker: (output) => { worker = output; } });
-      session!.stop();
+      const { released } = session!.stop();
       session = undefined;
+      let settled = false;
+      void released.then(() => { settled = true; });
+      await new Promise((resolve) => setTimeout(resolve, 0));
       expect(terminate).not.toHaveBeenCalled();
+      // The next session waits for release, so End Play saves cannot land in it.
+      expect(settled).toBe(false);
       worker.command({ type: "runtimeStopped" });
       expect(terminate).toHaveBeenCalledOnce();
+      await expect(released).resolves.toMatchObject({ quarantined: false });
       worker.command({ type: "runtimeStopped" });
       expect(terminate).toHaveBeenCalledOnce();
     });
@@ -303,12 +309,16 @@ describe.each(["worker", "in-process"] as const)(
       await play({ workerTerminate: terminate });
       vi.useFakeTimers();
       try {
-        session!.stop();
+        const { released } = session!.stop();
         session = undefined;
-        vi.advanceTimersByTime(2999);
+        let settled = false;
+        void released.then(() => { settled = true; });
+        await vi.advanceTimersByTimeAsync(2999);
         expect(terminate).not.toHaveBeenCalled();
-        vi.advanceTimersByTime(1);
+        expect(settled).toBe(false);
+        await vi.advanceTimersByTimeAsync(1);
         expect(terminate).toHaveBeenCalledOnce();
+        await expect(released).resolves.toMatchObject({ quarantined: false });
       } finally { vi.useRealTimers(); }
     });
 
