@@ -58,7 +58,7 @@ Dependencies are explicit constructor options: `DocumentService`, the `EditSessi
 
 | Owned by the Play content service | Stays in `DocumentProvider` |
 | --- | --- |
-| The 17 `collectPlay*` loaders the viewports, previews and Play compile use (open tabs override saved files; `requiredGuids` limits reads) and `collectEditorUtilityScripts` | `loadAssetDocument`, `loadGraphDocument` and `readAssetChunk` (injected into the service) |
+| The 17 `collectPlay*` loaders the viewports, previews and Play compile use (open tabs override saved files and Font / Animation headers; `requiredGuids` limits reads) and `collectEditorUtilityScripts` | `loadAssetDocument`, `loadGraphDocument` and `readAssetChunk` (injected into the service) |
 | Class / Animation Graph compilation and the `GraphScriptCompileCache` (`clearCompileCache` on project open / close) | `lastCompiledSignature`, `playLoadedSignature`, `playPreviewBundles` / `playPreviewDiagnostics` state, `scriptsStale` and `graphsNeedCompile` |
 | Compile signatures: `graphSignature` (the `currentGraphSignature` memo, keyed on `GRAPH_SIGNATURE_KINDS` revisions), Compile on Save (`compileOpenGraphs`) and the signature a whole-project Play compile records | When Compile on Save runs |
 | `collectGraphTypeSchemas` (also used by rename / delete reference repair) | |

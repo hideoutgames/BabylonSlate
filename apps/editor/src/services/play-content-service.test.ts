@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
-import type { DocumentRef, SerializedGraph } from "@babylonslate/core";
+import { createActor, createDefaultScene, type DocumentRef, type SerializedGraph } from "@babylonslate/core";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import { DocumentService } from "./document-service";
 import { createPlayContentService } from "./play-content-service";
@@ -21,15 +21,15 @@ function logGraph(message: string): SerializedGraph {
   };
 }
 
-type Asset = { guid: string; type: string; name: string; path: string; content: unknown };
+type Asset = { guid: string; type: string; name: string; path: string; content: unknown; header?: Record<string, unknown> };
 
 /** A project with the given saved assets and an editor that can open them in tabs. */
-function createPlayContent(assets: readonly Asset[]) {
+function createPlayContent(assets: readonly Asset[], readAssetChunk: (path: string, chunkId: string) => Promise<Uint8Array | null> = async () => null) {
   const documents = new DocumentService();
   const files = new Map(assets.map((asset) => [asset.path, asset.content]));
   const indexed = assets.map((asset) => ({
     path: asset.path,
-    header: { guid: asset.guid, type: asset.type, name: asset.name, payload: {} },
+    header: { guid: asset.guid, type: asset.type, name: asset.name, payload: asset.header ?? {} },
   }));
   const project = {
     guid: "project-guid",
@@ -42,7 +42,7 @@ function createPlayContent(assets: readonly Asset[]) {
   const playContent = createPlayContentService({
     documents,
     project,
-    readAssetChunk: async () => null,
+    readAssetChunk,
     projectDocument: () => null,
     onPreviewScriptsCompiled: (signature, bundles) => compiled.push({ signature, bundles }),
   });
@@ -113,5 +113,21 @@ describe("createPlayContentService", () => {
     expect([...waters.keys()]).toEqual(["lake"]);
     expect(waters.get("lake")?.opacity).toBe(0.75);
     expect(project.loadDocument).not.toHaveBeenCalled();
+  });
+
+  it("collects viewport Font fallbacks and families from an unsaved open tab, as Play does", async () => {
+    const saved = { family: "Saved Title", fallbackGuids: [] };
+    const { documents, playContent, open } = createPlayContent([
+      { guid: "title", type: "Font", name: "Title", path: "Title.babasset", content: saved, header: saved },
+      { guid: "symbols", type: "Font", name: "Symbols", path: "Symbols.babasset", content: {}, header: { family: "Symbols" } },
+    ], async () => new Uint8Array([1]));
+    const id = await open({ kind: "font", path: "Title.babasset", label: "Title" });
+    documents.updateAssetDocument(id, { family: "Edited Title", fallbackGuids: ["symbols"] });
+    const scene = { ...createDefaultScene(), actors: [createActor("label", "Label", {
+      components: [{ id: "text", classId: "Text3DComponent", properties: { fontAssetGuid: "title" } }],
+    })] };
+
+    expect([...(await playContent.collectPlayFontFacetypeBytes(scene)).keys()]).toEqual(["title", "symbols"]);
+    expect(playContent.collectPlayFontCssStacks().fontCssStackByGuid.get("title")).toContain("Edited Title");
   });
 });

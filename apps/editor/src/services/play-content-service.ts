@@ -16,6 +16,7 @@ import {
 import {
   decodeSourceToRgba,
   normalizeModelPayload,
+  type IndexedAsset,
   type ModelPayload,
   type SpriteAnimationPayload,
   type SpritePayload,
@@ -470,6 +471,22 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     }
   };
 
+  /**
+   * Asset rows whose payload is an open tab's unsaved document instead of the
+   * saved header, as Play preparation substitutes open documents.
+   */
+  const workingAssetSources = (assets: readonly IndexedAsset[]) => {
+    const open = new Map(documentService.getOpenDocumentsOrdered()
+      .filter((doc) => doc.content && doc.ref.kind !== "trace")
+      .map((doc) => [doc.ref.path, persistableDocumentContent(doc.ref.kind, doc.content)] as const));
+    return assets.map((asset) => ({
+      guid: asset.header.guid,
+      path: asset.path,
+      type: asset.header.type,
+      payload: open.get(asset.path) ?? asset.header.payload,
+    }));
+  };
+
   const collectPlaySpritePayloads = async (
     scene?: SerializedScene | null,
     extraScenes: readonly SerializedScene[] = [],
@@ -610,7 +627,8 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
         return encodeRgbaPng(decoded.width, decoded.height, decoded.rgba);
       },
       onMissingKtx2: (guid) => {
-        void projectService.retryTextureEncoding(guid);
+        void projectService.retryTextureEncoding(guid).catch((error: unknown) =>
+          console.warn(`[play] Texture ${guid} could not be queued for KTX2 encoding`, error));
       },
     });
   };
@@ -633,13 +651,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     scene?: SerializedScene | null,
     extraScenes: readonly SerializedScene[] = [],
   ): Promise<Map<string, Uint8Array>> => {
-    const assets = projectService.registry?.list() ?? [];
-    const sources = assets.map((asset) => ({
-      guid: asset.header.guid,
-      path: asset.path,
-      type: asset.header.type,
-      payload: asset.header.payload,
-    }));
+    const sources = workingAssetSources(projectService.registry?.list() ?? []);
     return collectFontFacetypeBytes(
       sources,
       fontGuidsForSceneRepresentation([scene, ...extraScenes], sources, "facetype"),
@@ -651,13 +663,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     scene?: SerializedScene | null,
     extraScenes: readonly SerializedScene[] = [],
   ) => {
-    const assets = projectService.registry?.list() ?? [];
-    const sources = assets.map((asset) => ({
-      guid: asset.header.guid,
-      path: asset.path,
-      type: asset.header.type,
-      payload: asset.header.payload,
-    }));
+    const sources = workingAssetSources(projectService.registry?.list() ?? []);
     return collectFontMsdfPair(
       sources,
       fontGuidsForSceneRepresentation([scene, ...extraScenes], sources, "msdf", options.projectDocument()?.settings.fonts.defaultFontGuid),
@@ -668,25 +674,14 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
   const collectPlayFontFaceEntries = async (requiredGuids?: ReadonlySet<string>) => {
     const assets = (projectService.registry?.list() ?? []).filter((asset) => !requiredGuids || requiredGuids.has(asset.header.guid));
     return collectFontAssetEntries(
-      assets.map((asset) => ({
-        guid: asset.header.guid,
-        path: asset.path,
-        type: asset.header.type,
-        payload: asset.header.payload,
-      })),
+      workingAssetSources(assets),
       (path, chunkId) => readAssetChunk(path, chunkId),
     );
   };
 
   const collectPlayFontCssStacks = () => {
-    const assets = projectService.registry?.list() ?? [];
     return collectFontCssStacks(
-      assets.map((asset) => ({
-        guid: asset.header.guid,
-        path: asset.path,
-        type: asset.header.type,
-        payload: asset.header.payload,
-      })),
+      workingAssetSources(projectService.registry?.list() ?? []),
       options.projectDocument()?.settings.fonts,
     );
   };
@@ -701,12 +696,8 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
       assets.map((asset) => [asset.header.guid, asset] as const),
     );
     const bytes = new Map<string, Uint8Array>();
-    const animationRows = assets
-      .filter((asset) => asset.header.type === "Animation" && (!requiredGuids || requiredGuids.has(asset.header.guid)))
-      .map((asset) => ({
-        guid: asset.header.guid,
-        payload: asset.header.payload,
-      }));
+    const animationRows = workingAssetSources(assets.filter((asset) =>
+      asset.header.type === "Animation" && (!requiredGuids || requiredGuids.has(asset.header.guid))));
     for (const guid of modelGuidsForPlayRetarget(
       [
         ...modelAssetGuidsFromScene(scene),
