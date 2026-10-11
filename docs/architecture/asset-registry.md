@@ -25,7 +25,7 @@ Folder moves and deletions wait for pending asset writes and creations before en
 
 Asset renames preserve Unicode display names and the complete asset suffix (including `.class.babasset` and `.scene.babasset`). Invalid path names are rejected. Class renames update saved and open instances, child-Class parents, typed Class references and project settings; an unwritable referrer blocks the operation. Referrer write failures restore the original bytes and Class path. Open referrers retain unsaved edits; their old undo commands are discarded so undo cannot restore a missing Class name.
 
-Saved layouts include each tab's asset GUID, allowing tabs, dock layouts and panel placements to follow renames or folder moves on reopen. Legacy layout entries with missing paths are skipped so a stale tab cannot prevent opening the project; other read failures remain visible.
+Saved layouts include each tab's asset GUID, allowing tabs, dock layouts and panel placements to follow renames or folder moves on reopen. Legacy layout entries with missing paths are skipped so a stale tab cannot prevent opening the project; other read failures remain visible. A `layout.json` without `documents` and `tabOrder` opens with the default layout. A `project.json` without a project `guid` (the namespace of saves and derived data) does not open.
 
 Retained `.babylonslate-move-*` recovery folders stay on disk for recovery/export but are excluded from asset discovery, so their duplicate GUIDs cannot replace live entries after reopening.
 

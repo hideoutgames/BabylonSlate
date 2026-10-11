@@ -7,7 +7,6 @@ import {
   documentId,
   MAIN_CLASS_FILE,
   MAIN_SCENE_FILE,
-  migrateLegacyLayout,
   type DocumentKind,
 } from "@babylonslate/core";
 import {
@@ -1280,15 +1279,5 @@ describe("DocumentService revisions", () => {
     // leak into this combination.
     service.updateScene(scene, { ...createDefaultScene(), name: "Edited Again" });
     expect(classesAndTypes()).toBe(afterClassEdit);
-  });
-});
-
-describe("layout migration", () => {
-  it("migrates legacy flat layout to per-document map", () => {
-    const sceneId = documentId({ kind: "scene", path: MAIN_SCENE_FILE });
-    const legacy = { grid: { root: { type: "branch" } } };
-    const migrated = migrateLegacyLayout(legacy, sceneId);
-    expect(migrated.documents[sceneId]).toEqual(legacy);
-    expect(migrated.tabOrder).toEqual([sceneId]);
   });
 });

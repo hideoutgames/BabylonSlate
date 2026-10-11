@@ -42,7 +42,8 @@ export async function minimalProjectFiles(
     components: [createMeshComponent("prefab-mesh", "box")],
   };
   const files = new Map<string, Uint8Array>([
-    [PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project))],
+    // Each copy is its own project, as a created one is: derived data and saves key on the guid.
+    [PROJECT_FILE, new TextEncoder().encode(JSON.stringify({ ...project, guid: crypto.randomUUID() }))],
     [
       MAIN_SCENE_FILE,
       await encodeAssetDocument(

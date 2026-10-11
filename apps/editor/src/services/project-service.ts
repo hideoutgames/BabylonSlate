@@ -41,7 +41,6 @@ import {
   LAYOUT_FILE,
   MAIN_CLASS_FILE,
   MAIN_SCENE_FILE,
-  migrateLegacyLayout,
   PROJECT_FILE,
   type ProjectDocument,
   type ProjectMetadata,
@@ -1407,13 +1406,11 @@ export class ProjectService {
       await this.storage.readText(PROJECT_FILE),
     ) as ProjectDocument & { guid?: string; kind?: string; version?: number };
     const document = normalizeProjectDocument(raw, folder.name);
-    this.projectGuid = raw.guid ?? newGuid();
-    // Persist the existing project identity convention before the first player save.
-    // Legacy projects must not acquire a different save namespace on every reopen.
-    if (!raw.guid) {
-      raw.guid = this.projectGuid;
-      await this.storage.writeText(PROJECT_FILE, JSON.stringify(raw, null, 2));
+    // Every project is created with its guid, the namespace of its player saves.
+    if (typeof raw.guid !== "string" || !raw.guid) {
+      throw new Error("Invalid project manifest: project.json has no project guid.");
     }
+    this.projectGuid = raw.guid;
     this.loadedTextureSettings = document.settings.textures;
     this.sourceControlEnabled = document.settings.sourceControl?.enabled === true;
     this.pluginOverrides = document.settings.pluginOverrides ?? {};
@@ -1437,12 +1434,7 @@ export class ProjectService {
     // Legacy Scene-local GameInstance defaults resolve when that Scene is
     // requested. Project opening must not scan every Scene to guess a default.
     const migratedDocument = withDocuments;
-    const layouts = await this.loadLayouts(
-      documentId({
-        kind: "scene",
-        path: migratedDocument.scenes[0] ?? MAIN_SCENE_FILE,
-      }),
-    );
+    const layouts = await this.loadLayouts();
 
     return {
       document: migratedDocument,
@@ -2778,7 +2770,8 @@ export class ProjectService {
     return this.storageForPath(path).exists(path);
   }
 
-  async loadLayouts(mainSceneId: string): Promise<ProjectLayouts> {
+  /** `layout.json` only restores the editor's view: one of another shape opens with the default layout. */
+  async loadLayouts(): Promise<ProjectLayouts> {
     if (!(await this.storage.exists(LAYOUT_FILE))) {
       return createEmptyLayouts();
     }
@@ -2810,7 +2803,7 @@ export class ProjectService {
       };
     }
 
-    return migrateLegacyLayout(parsed, mainSceneId);
+    return createEmptyLayouts();
   }
 
   captureLayout(api: DockviewApi): Record<string, unknown> {
