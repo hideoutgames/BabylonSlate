@@ -23,6 +23,13 @@ describe("applyPlayerEngineCommand", () => {
     expect(applied).toEqual(["assignMaterial"]);
   });
 
+  it("forwards a live voice's gain change onto the Engine handle", () => {
+    const applied: unknown[] = [];
+    const handle = { applyCommand: (command: unknown) => { applied.push(command); } };
+    expect(applyPlayerEngineCommand(handle, { type: "setVoiceGain", voiceId: "audio-1", volume: 0.25 })).toBe(true);
+    expect(applied).toEqual([{ type: "setVoiceGain", voiceId: "audio-1", volume: 0.25 }]);
+  });
+
   it("ignores commands the Engine does not apply", () => {
     const applied: string[] = [];
     const handle = {

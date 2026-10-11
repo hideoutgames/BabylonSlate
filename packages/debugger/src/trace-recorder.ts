@@ -45,6 +45,9 @@ export type TraceVoice = {
   emitterActorGuid?: string;
   /** Undilated fixed-step seconds since the voice started. */
   elapsedSeconds: number;
+  /** The playSound clip and pitch draws (`clipRoll`, `pitchRoll`), so a restore replays the same clip at the same pitch. */
+  clipRoll?: number;
+  pitchRoll?: number;
 };
 
 export type TraceAudioState = {
