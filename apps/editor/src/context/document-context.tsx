@@ -2185,10 +2185,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const exportDocument =
         options?.projectSnapshot ?? projectDocumentRef.current;
       // Export consumes persisted sources even when a tab contains unsaved edits.
-      await flushAudioReverbForSave(await collectAudioReverbFlushScenes({
+      // A Scene the bake cannot read fails the export only if the game reaches it.
+      const reverbScenes = await collectAudioReverbFlushScenes({
         paths: playSceneLibraryPaths(exportDocument?.scenes ?? [], projectService.registry?.list() ?? []),
         load: (path) => projectService.loadDocument("scene", path),
-      }));
+      });
+      await flushAudioReverbForSave(reverbScenes.scenes);
       const preset =
         exportDocument?.settings.exportPresets[0] ?? defaultExportPreset();
       const plugins = projectService.plugins;
@@ -2224,6 +2226,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         transcoderAvailable:
           options?.transcoderAvailable ??
           playerFilesHaveKtx2Transcoder(playerFiles),
+        audioReverbBakeFailures: reverbScenes.unreadable,
       });
       const startupSceneGuid =
         typeof options?.startupSceneGuid === "string" &&

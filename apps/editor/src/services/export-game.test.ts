@@ -15,7 +15,7 @@ import {
   type SerializedGraph,
 } from "@babylonslate/core";
 import { migrateLegacyShaderPayload } from "@babylonslate/shader-graph";
-import { collectAssetDependencyMetadata, createDefaultPluginSettings, type IndexedAsset } from "@babylonslate/assets";
+import { AUDIO_REVERB_CHUNK_ID, collectAssetDependencyMetadata, createDefaultPluginSettings, type IndexedAsset } from "@babylonslate/assets";
 import { MISSING_STARTUP_SCENE_MESSAGE } from "@babylonslate/exporter";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import { assetsFromIndexed, collectAndExportGame, resolveExportPluginGraph } from "./export-game";
@@ -133,6 +133,34 @@ describe("collectAndExportGame", () => {
     expect(await exportReaching(["clip"])).toEqual({
       ok: false,
       error: 'Clip could not be read for export: Asset type "Audio" version 0 uses an unsupported old format. This engine reads version 1; older files are not upgraded.',
+    });
+  });
+
+  it("fails once the game reaches a Scene the reverb bake could not read", async () => {
+    const scene = createDefaultScene();
+    const sceneAsset = (guid: string, name: string): IndexedAsset => ({ rootId: "project", path: `assets/${name}.scene.babasset`, header: {
+      guid, type: "Scene", name, engineVersion: "0.0.0", version: SCENE_SCHEMA_VERSION, mode: "thin",
+      payload: scene as unknown as Record<string, unknown>, dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, chunks: [],
+    } });
+    const indexed = [sceneAsset("main", "Main"), sceneAsset("unused", "Unused")];
+    const exportAfterBakeFailed = async (path: string) => {
+      const loaded = await loadExportDocuments({
+        assets: indexed,
+        // Export's own reads succeed, and each Scene still holds an earlier reverb chunk.
+        loadDocument: async (_kind, assetPath) => indexed.find(entry => entry.path === assetPath)?.header.payload ?? null,
+        readAssetChunk: async (_path, chunk) => chunk === AUDIO_REVERB_CHUNK_ID ? new Uint8Array([1]) : null,
+        audioReverbBakeFailures: new Map([[path, new Error("read failed")]]),
+      });
+      return collectAndExportGame({
+        startupSceneGuid: "main", assets: assetsFromIndexed(indexed),
+        plugins: [], projectPluginOverrides: {}, parentOf: () => null, ...loaded,
+        renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, playFrameCap: 60, physicsWorld: "3d", playerFiles,
+      });
+    };
+    expect(isOk(await exportAfterBakeFailed("assets/Unused.scene.babasset"))).toBe(true);
+    expect(await exportAfterBakeFailed("assets/Main.scene.babasset")).toEqual({
+      ok: false,
+      error: "Main could not be read for its audio reverb bake: read failed",
     });
   });
 

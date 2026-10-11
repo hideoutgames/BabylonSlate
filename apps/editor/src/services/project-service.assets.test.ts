@@ -31,7 +31,7 @@ import {
   snapshotIndexedMtimes,
   type EncodeFn,
 } from "@babylonslate/assets";
-import { AUDIO_REVERB_CHUNK_ID } from "@babylonslate/assets";
+import { AssetFormatVersionError, AUDIO_REVERB_CHUNK_ID } from "@babylonslate/assets";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { ProjectService } from "./project-service";
@@ -1548,27 +1548,32 @@ describe("project documents as .babasset", () => {
     const persisted = await collectAudioReverbFlushScenes({
       paths: [MAIN_SCENE_FILE], load: (path) => service.loadDocument("scene", path),
     });
-    await controller.flushAll(persisted);
+    await controller.flushAll(persisted.scenes);
     const saved = await decodeAssetDocument(await storage.readBinary(MAIN_SCENE_FILE));
     expect((saved.payload as unknown as SerializedScene).actors[0]!.transform.position[0]).toBe(0);
     expect(await service.readAssetChunk(MAIN_SCENE_FILE, AUDIO_REVERB_CHUNK_ID)).toEqual(new Uint8Array([2]));
     controller.dispose();
   });
 
-  it("leaves a Scene stored in an unsupported format to export's own read instead of baking it", async () => {
+  it.each([
+    ["stored in an unsupported format", AssetFormatVersionError],
+    ["that is corrupt", Error],
+  ] as const)("reports a Scene %s to export instead of baking it", async (state, failure) => {
     const { storage, service } = await scaffolded();
     const scene = createDefaultScene();
     await service.saveDocument("scene", MAIN_SCENE_FILE, scene);
-    const stale = "assets/Stale.scene.babasset";
-    await storage.writeBinary(stale, await encodeAssetDocument({
-      guid: "00000000-0000-4000-8000-0000000000aa", type: "Scene", name: "Stale",
+    const unreadable = "assets/Unreadable.scene.babasset";
+    await storage.writeBinary(unreadable, state === "that is corrupt" ? new Uint8Array([1, 2, 3]) : await encodeAssetDocument({
+      guid: "00000000-0000-4000-8000-0000000000aa", type: "Scene", name: "Unreadable",
       version: SCENE_SCHEMA_VERSION - 1, payload: scene as unknown as Record<string, unknown>,
     }));
-    // Export fails on the stale Scene only if the game reaches it (loadExportDocuments).
-    const scenes = await collectAudioReverbFlushScenes({
-      paths: [stale, MAIN_SCENE_FILE], load: (path) => service.loadDocument("scene", path),
+    // Export fails on the unreadable Scene only if the game reaches it (loadExportDocuments).
+    const collected = await collectAudioReverbFlushScenes({
+      paths: [unreadable, MAIN_SCENE_FILE], load: (path) => service.loadDocument("scene", path),
     });
-    expect(scenes.map((entry) => entry.path)).toEqual([MAIN_SCENE_FILE]);
+    expect(collected.scenes.map((entry) => entry.path)).toEqual([MAIN_SCENE_FILE]);
+    expect([...collected.unreadable.keys()]).toEqual([unreadable]);
+    expect(collected.unreadable.get(unreadable)).toBeInstanceOf(failure);
   });
 
   it.each([false, true])("reconciles reverb when manual nav bake saves changed geometry (staged=%s)", async (staged) => {
@@ -1589,9 +1594,9 @@ describe("project documents as .babasset", () => {
     await service.writeSceneNavmeshChunk(MAIN_SCENE_FILE, new Uint8Array([9]), next as unknown as Record<string, unknown>);
     expect(await service.readAssetChunk(MAIN_SCENE_FILE, AUDIO_REVERB_CHUNK_ID)).toEqual(staged ? new Uint8Array([2]) : null);
     // Export either joins its completed bake or bakes the now-saved geometry.
-    await controller.flushAll(await collectAudioReverbFlushScenes({
+    await controller.flushAll((await collectAudioReverbFlushScenes({
       paths: [MAIN_SCENE_FILE], load: (path) => service.loadDocument("scene", path),
-    }));
+    })).scenes);
     expect(await service.readAssetChunk(MAIN_SCENE_FILE, AUDIO_REVERB_CHUNK_ID)).toEqual(new Uint8Array([2]));
     expect(await service.readAssetChunk(MAIN_SCENE_FILE, NAVMESH_CHUNK_ID)).toEqual(new Uint8Array([9]));
     controller.dispose();
