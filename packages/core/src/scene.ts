@@ -186,7 +186,10 @@ export interface SceneSettings {
 
 /** One entry of the scene's ordered post-process chain. */
 export interface ScenePostProcessEntry {
-  /** Stable within the owning Scene/SceneLayer; absent only in legacy input. */
+  /**
+   * Stable within the owning Scene/SceneLayer; parameter writes target it.
+   * Normalized Scene and SceneLayer stacks always carry it.
+   */
   id?: string;
   scalable?: boolean;
   materialGuid: string;
@@ -641,37 +644,31 @@ export function normalizeSceneSettings(
   };
 }
 
-/** Authored order is the array order; entries default to enabled. */
+/**
+ * Authored order is the array order; entries default to enabled. An entry's id
+ * is its identity, so one without an id, or repeating an earlier entry's id, is
+ * not a pass, as an entry without a material is not.
+ */
 export function normalizeScenePostProcessStack(
   value: unknown,
 ): Array<ScenePostProcessEntry & { id: string }> {
   if (!Array.isArray(value)) return [];
-  const entries = value.flatMap((entry) => {
+  const used = new Set<string>();
+  return value.flatMap((entry) => {
     if (!entry || typeof entry !== "object") return [];
     const record = entry as Record<string, unknown>;
-    const materialGuid = record.materialGuid;
+    const { id, materialGuid } = record;
     if (typeof materialGuid !== "string" || materialGuid === "") return [];
+    if (typeof id !== "string" || !id.trim() || used.has(id)) return [];
+    used.add(id);
     const parameters = normalizeMaterialParameterOverrides(record.parameters);
     return [{
-      id: typeof record.id === "string" && record.id.trim() ? record.id : undefined,
+      id,
       materialGuid,
       enabled: record.enabled !== false,
       ...(record.scalable === true ? { scalable: true } : {}),
       ...(Object.keys(parameters).length ? { parameters } : {}),
     }];
-  });
-  // Reserve authored IDs before migration so an early legacy entry cannot take
-  // the identity of a later authored one. Persisted IDs survive every reorder.
-  const reserved = new Set(entries.map((entry) => entry.id).filter(Boolean));
-  const used = new Set<string>();
-  let sequence = 0;
-  return entries.map((entry) => {
-    let id = entry.id;
-    if (!id || used.has(id)) {
-      do { id = `legacy-pass-${++sequence}`; } while (reserved.has(id) || used.has(id));
-    }
-    used.add(id);
-    return { ...entry, id };
   });
 }
 

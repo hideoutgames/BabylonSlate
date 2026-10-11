@@ -72,7 +72,7 @@ describe("SceneLayer schema", () => {
         },
       ],
       settings: {
-        postProcessStack: [{ materialGuid: "pp-1" }],
+        postProcessStack: [{ id: "pass-1", materialGuid: "pp-1" }],
         sceneLayers: [{ assetGuid: "should-ignore" }],
       },
     });
@@ -82,7 +82,7 @@ describe("SceneLayer schema", () => {
       "SpriteComponent",
     ]);
     expect(layer.settings.postProcessStack).toEqual([
-      { id: expect.any(String), materialGuid: "pp-1", enabled: true },
+      { id: "pass-1", materialGuid: "pp-1", enabled: true },
     ]);
   });
 
@@ -104,7 +104,7 @@ describe("SceneLayer schema", () => {
   it("projects a SceneLayer into a locked 2D editor scene", () => {
     const layer = normalizeSceneLayer({
       name: "HUD",
-      settings: { gravity: [0, -4, 0], postProcessStack: [{ materialGuid: "pp" }] },
+      settings: { gravity: [0, -4, 0], postProcessStack: [{ id: "pass", materialGuid: "pp" }] },
       actors: [createActor("a", "A", { classId: "SceneLayerActor" })],
     });
     const scene = sceneLayerToEditorScene(layer);
@@ -112,7 +112,7 @@ describe("SceneLayer schema", () => {
     expect(scene.settings.physicsWorld).toBe("2d");
     expect(scene.settings.gravity).toEqual([0, -4, 0]);
     expect(scene.settings.postProcessStack).toEqual([
-      { id: expect.any(String), materialGuid: "pp", enabled: true },
+      { id: "pass", materialGuid: "pp", enabled: true },
     ]);
     expect(scene.actors).toHaveLength(1);
     expect(scene.settings.cameraBounds2D).toEqual({ width: 32, height: 18 });
@@ -169,14 +169,14 @@ describe("SceneLayer schema", () => {
   it("round-trips an editor scene back to a SceneLayer payload", () => {
     const layer = normalizeSceneLayer({
       name: "HUD",
-      settings: { gravity: [0, -4, 0], postProcessStack: [{ materialGuid: "pp" }] },
+      settings: { gravity: [0, -4, 0], postProcessStack: [{ id: "pass", materialGuid: "pp" }] },
       actors: [createActor("a", "A", { classId: "SceneLayerActor" })],
     });
     const restored = editorSceneToSceneLayer(sceneLayerToEditorScene(layer));
     expect(restored.name).toBe("HUD");
     expect(restored.settings.gravity).toEqual([0, -4, 0]);
     expect(restored.settings.postProcessStack).toEqual([
-      { id: expect.any(String), materialGuid: "pp", enabled: true },
+      { id: "pass", materialGuid: "pp", enabled: true },
     ]);
     expect(restored.actors).toHaveLength(1);
   });
