@@ -50,6 +50,22 @@ describe("worker save storage", () => {
     expect(next).toBe("available");
   });
 
+  it("reports the locked operation's own outcome when the release fails", async () => {
+    const { client, server } = fixture();
+    const closeBeforeRelease = (work: () => Promise<string>) => client.storage.withLock("project", async () => {
+      const value = await work();
+      server.dispose(); client.dispose();
+      return value;
+    });
+    await expect(closeBeforeRelease(async () => "written")).resolves.toBe("written");
+
+    const second = fixture();
+    await expect(second.client.storage.withLock("project", async () => {
+      second.server.dispose(); second.client.dispose();
+      throw Object.assign(new Error("Disk full"), { code: "ENOSPC" });
+    })).rejects.toMatchObject({ code: "ENOSPC" });
+  });
+
   it("preserves native storage-full error codes across the worker boundary", async () => {
     const { client, server, storage } = fixture();
     storage.write = async () => { throw Object.assign(new Error("Disk full"), { code: "ENOSPC" }); };

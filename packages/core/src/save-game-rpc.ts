@@ -43,8 +43,15 @@ export function createSaveStorageClient(send: (request: SaveStorageRequest) => v
     requestPersistence: async () => await request("persist") as boolean,
     async withLock<T>(key: string, operation: () => Promise<T>): Promise<T> {
       const token = await request("acquire", key) as string;
-      try { return await operation(); }
-      finally { await request("release", token); }
+      let outcome: { ok: true; value: T } | { ok: false; error: unknown };
+      try { outcome = { ok: true, value: await operation() }; }
+      catch (error) { outcome = { ok: false, error }; }
+      // The operation's outcome is the result: a failed release (a closed
+      // session, whose server drops every lock) must not report a completed
+      // write as failed or hide the write's own error.
+      await request("release", token).catch(() => undefined);
+      if (!outcome.ok) throw outcome.error;
+      return outcome.value;
     },
   };
   return {
