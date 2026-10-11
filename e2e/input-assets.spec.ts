@@ -52,14 +52,28 @@ test(
     expect(
       rowBounds!.x + rowBounds!.width - removeBounds!.x - removeBounds!.width,
     ).toBeLessThanOrEqual(12);
-    await workspace
-      .getByRole("button", { name: "Listen", exact: true })
+    const listenRowName = await workspace
+      .getByRole("group", { name: /^Control \d+$/ })
+      .filter({
+        has: page.getByRole("button", { name: "Listen", exact: true }),
+      })
       .first()
-      .click();
+      .getAttribute("aria-label");
+    const listenRow = workspace.getByRole("group", {
+      name: listenRowName!,
+      exact: true,
+    });
+    await listenRow.getByRole("button", { name: "Listen", exact: true }).click();
     await page.keyboard.press("KeyJ");
     await expect(
       workspace.getByRole("button", { name: "Listen", exact: true }),
     ).toHaveCount(4);
+    // The listened key replaces that control's binding (WASD starts at A).
+    await expect(
+      listenRow.locator(
+        '[data-testid^="input-control-"]:not([data-testid$="-menu"])',
+      ),
+    ).toHaveText("J");
     await saveAllIfEnabled(page);
     await page.screenshot({
       path: test.info().outputPath("dark-input-axis.png"),

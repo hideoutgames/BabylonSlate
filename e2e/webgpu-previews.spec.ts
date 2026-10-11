@@ -21,7 +21,8 @@ const UNLIT_MATERIAL_GUID = "00000000-0000-4000-8000-000000000013";
 const MODEL_ASSET = "assets/Quad.model.babasset";
 const PBR_MATERIAL_ASSET = "assets/AuthoredPbr.material.babasset";
 
-type Backend = "webgl2" | "webgpu";
+// WebGL2 previews are covered by the default-backend specs; this one pins WebGPU.
+type Backend = "webgpu";
 
 function isGpuFailure(type: string, message: string): boolean {
   return (
@@ -217,6 +218,11 @@ interface CanvasEvidence {
   corners: number[][];
 }
 
+/** The sampled center-row pixel nearest the canvas center. */
+function centerPixel(evidence: CanvasEvidence): number[] {
+  return evidence.centerRow[Math.floor(evidence.centerRow.length / 2)]!;
+}
+
 /** Readback evidence from a 2D preview canvas or GL canvas via drawImage. */
 async function canvasEvidence(canvas: Locator): Promise<CanvasEvidence> {
   return canvas.evaluate((node: HTMLCanvasElement) => {
@@ -277,7 +283,7 @@ async function canvasEvidence(canvas: Locator): Promise<CanvasEvidence> {
   });
 }
 
-for (const backend of ["webgpu"] as ("webgl2" | "webgpu")[]) {
+for (const backend of ["webgpu"] as const) {
   test(`material, model and prefab previews present correctly on ${backend}`, async ({
     page,
   }, testInfo) => {
@@ -318,6 +324,12 @@ for (const backend of ["webgpu"] as ("webgl2" | "webgpu")[]) {
         material.nonBlank,
         `material preview blank on ${backend}/${mode}`,
       ).toBeGreaterThan(200);
+      // The previewed cube covers the center with the authored red base color.
+      const [materialRed, materialGreen, materialBlue] = centerPixel(material);
+      expect(
+        materialRed,
+        `material preview shows its red base color on ${backend}/${mode}`,
+      ).toBeGreaterThan(Math.max(materialGreen!, materialBlue!));
 
       // Real Model document preview.
       await openAssetFromBrowser(page, MODEL_ASSET);
@@ -336,6 +348,12 @@ for (const backend of ["webgpu"] as ("webgl2" | "webgpu")[]) {
         await page.getByTestId("model-preview-load-error").count(),
         `model preview error on ${backend}/${mode}`,
       ).toBe(0);
+      // The framed quad covers the center with its green base color texture.
+      const [modelRed, modelGreen, modelBlue] = centerPixel(model);
+      expect(
+        modelGreen,
+        `model preview shows its green texture on ${backend}/${mode}`,
+      ).toBeGreaterThan(Math.max(modelRed!, modelBlue!));
 
       // Real Prefab document preview: pitch-black background, no skybox.
       await openAssetFromBrowser(page, "assets/main.class.babasset");

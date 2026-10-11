@@ -12,6 +12,13 @@ async function openClassPrefab(page: Page): Promise<void> {
   await expect(page.getByTestId("prefab-preview-canvas")).toBeVisible();
 }
 
+/** Babylon Engines alive in the page, read through the warm Scene viewport's hook. */
+function engineCount(page: Page): Promise<number | null> {
+  return page.evaluate(() => (globalThis as unknown as {
+    __babylonslateViewportTest?: { renderingBaseline(): { engineCount: number } | null };
+  }).__babylonslateViewportTest?.renderingBaseline()?.engineCount ?? null);
+}
+
 test.describe.configure({ mode: "serial" });
 
 test.describe("P18 iPad editor optimisation", () => {
@@ -24,10 +31,13 @@ test.describe("P18 iPad editor optimisation", () => {
     await expect(page.getByTestId("viewport-canvas")).toBeVisible({
       timeout: 15_000,
     });
+    await expect.poll(() => engineCount(page)).toBe(1);
 
     await openClassPrefab(page);
+    await expect.poll(() => engineCount(page)).toBe(1);
     await clickPlayAndWaitForOverlay(page);
     await expect(page.getByTestId("play-canvas")).toBeVisible();
+    await expect.poll(() => engineCount(page)).toBe(1);
     await page.getByTestId("play-overlay-close").click();
     await expect(page.getByTestId("play-overlay")).toHaveCount(0);
     await expect(page.getByTestId("prefab-preview-canvas")).toBeVisible();
@@ -36,5 +46,6 @@ test.describe("P18 iPad editor optimisation", () => {
     await expect(page.getByTestId("viewport-canvas")).toBeVisible({
       timeout: 15_000,
     });
+    await expect.poll(() => engineCount(page)).toBe(1);
   });
 });
