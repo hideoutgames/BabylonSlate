@@ -261,6 +261,7 @@ describe("seekGameplayAnimation", () => {
     expect(bounds.minimumWorld.y).toBeCloseTo(0);
     expect(bounds.maximumWorld.x).toBeCloseTo(2);
     expect(bounds.maximumWorld.y).toBeCloseTo(2);
+    expect(mesh.isWorldMatrixFrozen).toBe(true);
     scene.dispose();
     engine.dispose();
   });

@@ -393,7 +393,7 @@ Worker → main. The main thread resolves Emitter / System payloads from the Pla
 | { type: "setParticlePlaying"; actorGuid: string; componentId?: string; playing: boolean }
 ```
 
-`ParticleComponent` properties: `particleSystemGuid`, `playOnStart`, sorting layer/order. Play-on-start emits `assignParticle` with `play: true`. Sorting layer sets `IParticleSystem.renderingGroupId`. Script graph Play/Stop nodes target `self` when Actor is unconnected.
+`ParticleComponent` properties: `particleSystemGuid`, `playOnStart`, sorting layer/order. Play-on-start emits `assignParticle` with `play: true`. Sorting layer and order set `IParticleSystem.renderingGroupId` and the system's place in `scene.particleSystems` ([Assets](#assets)). Script graph Play/Stop nodes target `self` when Actor is unconnected.
 
 ## Component ownership and playback
 

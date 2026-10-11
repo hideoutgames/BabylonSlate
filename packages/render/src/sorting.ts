@@ -5,7 +5,8 @@ import { sortingLayerSortKey } from "@babylonslate/core";
  * Babylon supports four rendering groups, reserved here for coarse separation
  * so a UI sprite can never sort behind world geometry no matter what its
  * `orderInLayer` says. Fine ordering inside a group is the `alphaIndex` sort
- * key below.
+ * key below for meshes, and the position in `scene.particleSystems` for
+ * particle systems (`applySortingToParticleSystem`).
  */
 export const RENDERING_GROUP = {
   background: 0,
