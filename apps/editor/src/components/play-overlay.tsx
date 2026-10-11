@@ -350,6 +350,8 @@ export function PlayOverlay({
   const inputModeRef = useRef<"game" | "edit">("game");
   const inputSequenceRef = useRef(0);
   const [statsOpen, setStatsOpen] = useState(false);
+  const statsVisibleRef = useRef(false);
+  statsVisibleRef.current = statsOpen && overlayStats;
   const [statGroups, setStatGroups] = useState<readonly StatGroup[]>([]);
   const inspectSelectionRef = useRef<string | null>(null);
   const hostMemoryInFlight = useRef(false);
@@ -823,6 +825,8 @@ export function PlayOverlay({
           onFatalDiagnostic: () => finishSessionRef.current(),
         });
       } catch (error) {
+        // Closed here: a later Stop must not stop or close this session again.
+        closedRef.current = true;
         if (sessionOwner && sessionTicket) sessionOwner.fail(sessionTicket, error, true);
         pushLog("error", `Play startup failed: ${error instanceof Error ? error.message : String(error)}`);
         onCloseRef.current(emptyPlayResult(), sessionTicket);
@@ -930,26 +934,30 @@ export function PlayOverlay({
         setAudioQueued(audioStats.queued);
         setAudioUnlocked(audioStats.unlocked);
         if (current) {
-          setMemoryBytes(current.accountedBytes());
-          if (!hostMemoryInFlight.current) {
-            hostMemoryInFlight.current = true;
-            void getHostMemoryStats()
-              .then(setHostMemory)
-              .catch(() => setHostMemory(null))
-              .finally(() => {
-                hostMemoryInFlight.current = false;
-              });
-          }
-          setGeometryBytes(current.handle.accountedGeometryBytes());
-          const counts = current.liveObjectCounts();
-          setMeshCount(counts.meshes);
-          setTextureCount(counts.textures);
-          setDraws(current.drawCalls());
+          // The lights debug overlay also reads these diagnostics.
           setRendering(current.handle.renderDiagnostics());
-          setBridgeRate(current.bridgeMessagesPerSec());
           setPostProcessPasses(current.handle.postProcessPassCount());
           setAssignedMaterials(current.handle.assignedMaterialGuids().join(","));
           setFreeCamEnabled(current.handle.isFreeCamEnabled());
+          // Only the Stats HUD shows these; skip their reads while it is hidden.
+          if (statsVisibleRef.current) {
+            setMemoryBytes(current.accountedBytes());
+            if (!hostMemoryInFlight.current) {
+              hostMemoryInFlight.current = true;
+              void getHostMemoryStats()
+                .then(setHostMemory)
+                .catch(() => setHostMemory(null))
+                .finally(() => {
+                  hostMemoryInFlight.current = false;
+                });
+            }
+            setGeometryBytes(current.handle.accountedGeometryBytes());
+            const counts = current.liveObjectCounts();
+            setMeshCount(counts.meshes);
+            setTextureCount(counts.textures);
+            setDraws(current.drawCalls());
+            setBridgeRate(current.bridgeMessagesPerSec());
+          }
         }
       }, 200);
       const onSettings = (event: Event) => {

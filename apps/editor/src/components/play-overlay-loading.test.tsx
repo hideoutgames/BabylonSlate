@@ -75,6 +75,17 @@ it.each(["Stop", "failure"] as const)("closes pending startup on %s before the w
   expect(onClose).toHaveBeenCalledExactlyOnceWith(result);
 });
 
+it("closes a failed startup once when Stop is pressed before the overlay unmounts", async () => {
+  vi.mocked(startPlaySession).mockImplementationOnce(() => { throw new Error("Engine unavailable"); });
+  const onClose = vi.fn();
+  render(<PlayOverlay sharedEngine={{} as Engine} onClose={onClose} />);
+  await act(async () => {});
+  expect(onClose).toHaveBeenCalledOnce();
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Stop" }));
+  await act(async () => {});
+  expect(onClose).toHaveBeenCalledOnce();
+});
+
 it("does not allocate a second runtime during StrictMode effect probing", async () => {
   const before = vi.mocked(startPlaySession).mock.calls.length;
   const { stop } = await openPendingPlay(true);
