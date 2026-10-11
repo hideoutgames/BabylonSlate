@@ -222,13 +222,19 @@ describe("runtime data catalog", () => {
       ...assets(),
       // The Stats default was authored before Stats gained Offset.
       definition("loadout", [{ id: "stats", name: "Stats", typeId: "struct", typeClassId: "stats", defaultValue: { Health: 1 } }]),
+      // Character only embeds Loadout, so the stale default is one level deeper.
+      definition("character", [{ id: "loadout", name: "Loadout", typeId: "struct", typeClassId: "loadout" }]),
       tree("loadouts", "loadout", [
         createDataTreeEntry({ id: "current", name: "Current", values: { Stats: stats(5) } }),
         createDataTreeEntry({ id: "stale", name: "Stale", values: { Stats: { Health: 1 } } }),
       ]),
+      tree("characters", "character", [
+        createDataTreeEntry({ id: "hero", name: "Hero", values: { Loadout: { Stats: stats(7) } } }),
+      ]),
     ]);
     expect(data.readEntry("loadouts", "Current")).toEqual({ Stats: stats(5) });
     expect(data.canReadEntry("loadouts", "Stale")).toBe(false);
+    expect(data.readEntry("characters", "Hero")).toEqual({ Loadout: { Stats: stats(7) } });
   });
 
   it("projects stable field renames without inheriting new defaults", () => {
