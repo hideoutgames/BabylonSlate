@@ -106,6 +106,19 @@ describe("flattenPrefabComponents", () => {
     ]);
     expect(nodes.find((node) => node.id === "root")?.hasChildren).toBe(true);
   });
+
+  it("lists a component under Prefab Root when its parent is missing or loops back to it", () => {
+    const orphan = { ...createMeshComponent("orphan", "box"), parentId: "gone" };
+    const loopA = { ...createMeshComponent("loop-a", "box"), parentId: "loop-b" };
+    const loopB = { ...createMeshComponent("loop-b", "box"), parentId: "loop-a" };
+    const nodes = flattenPrefabComponents([orphan, loopA, loopB], new Set());
+    expect(nodes.map((node) => [node.id, node.depth])).toEqual([
+      [PREFAB_ROOT_ID, 0],
+      ["orphan", 1],
+      ["loop-a", 1],
+      ["loop-b", 1],
+    ]);
+  });
 });
 
 describe("ActorPrefabPanel", () => {
