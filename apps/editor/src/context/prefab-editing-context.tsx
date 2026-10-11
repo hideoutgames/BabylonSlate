@@ -63,10 +63,12 @@ interface PrefabEditingContextValue {
     targetId: string | null,
     placement?: TreeDropPlacement,
   ) => void;
+  /** Writes one Details property plus any coupled `alsoSet` properties as one edit. */
   updateComponent: (
     componentId: string,
     property: string,
     value: unknown,
+    alsoSet?: Readonly<Record<string, unknown>>,
   ) => void;
   /** Sets the display name; undefined restores the class label. */
   renameComponent: (componentId: string, name: string | undefined) => void;
@@ -220,9 +222,49 @@ export function PrefabEditingProvider({
     [parentSignature],
   );
 
+  // Only open ancestor Classes feed the inherited components. Keep that list
+  // while its documents are unchanged, so an edit to this Class or to an
+  // unrelated one does not rebuild and compare the ancestor data.
+  const ancestorIds = useMemo(() => {
+    const ids = new Set<string>();
+    let current = classId ? parentOf(classId) : null;
+    while (current && !ids.has(current)) {
+      ids.add(current);
+      current = parentOf(current);
+    }
+    return ids;
+  }, [classId, parentOf]);
+  // DocumentService edits an open document in place, so the entry keeps its
+  // identity across edits. Key the list on each entry's path and content too.
+  const ancestorDocumentsRef = useRef<{
+    documents: readonly OpenDocument[];
+    keys: readonly (readonly [string, unknown])[];
+  }>({ documents: [], keys: [] });
+  const ancestorDocuments = useMemo(() => {
+    const next = classDocuments.filter(
+      (entry) =>
+        entry.ref.kind === "graph" &&
+        ancestorIds.has(classIdForGraphPath(entry.ref.path)),
+    );
+    const previous = ancestorDocumentsRef.current;
+    if (
+      next.length !== previous.keys.length ||
+      next.some(
+        (entry, index) =>
+          entry.ref.path !== previous.keys[index]![0] ||
+          entry.content !== previous.keys[index]![1],
+      )
+    ) {
+      ancestorDocumentsRef.current = {
+        documents: next,
+        keys: next.map((entry) => [entry.ref.path, entry.content] as const),
+      };
+    }
+    return ancestorDocumentsRef.current.documents;
+  }, [ancestorIds, classDocuments]);
+
   const ancestorsRef = useRef<readonly PrefabAncestor[]>(NO_ANCESTORS);
-  // Rebuilt when the registry or an open Class document changes, not when a
-  // Scene, Material or other non-Class document is edited.
+  // Rebuilt when the registry or an open ancestor Class document changes.
   const isClassDocument = graph !== null;
   const ancestors = useMemo(() => {
     void registryEpoch;
@@ -230,7 +272,7 @@ export function PrefabEditingProvider({
       classId,
       parentOf,
       isClassDocument ? (assetRegistry?.list() ?? NO_ASSETS) : NO_ASSETS,
-      classDocuments,
+      ancestorDocuments,
     );
     // Header payloads parse into fresh arrays; keep the previous list while
     // the inherited components are unchanged so the published value stays
@@ -240,8 +282,8 @@ export function PrefabEditingProvider({
     }
     return ancestorsRef.current;
   }, [
+    ancestorDocuments,
     assetRegistry,
-    classDocuments,
     classId,
     isClassDocument,
     parentOf,
@@ -363,7 +405,12 @@ export function PrefabEditingProvider({
   );
 
   const updateComponent = useCallback(
-    (componentId: string, property: string, value: unknown) => {
+    (
+      componentId: string,
+      property: string,
+      value: unknown,
+      alsoSet?: Readonly<Record<string, unknown>>,
+    ) => {
       if (property === "sceneGuid" && components.some((component) => component.id === componentId && component.classId === "SceneStreamingComponent")) {
         const guid = typeof value === "string" ? value : null;
         upsertLocalFromViews(setSceneStreamingTarget(components, componentId, guid, guid ? assetRegistry?.getByGuid(guid)?.header.name ?? "" : ""));
@@ -374,11 +421,14 @@ export function PrefabEditingProvider({
           component.id === componentId
             ? {
                 ...component,
-                properties: patchInspectorComponentProperty(
-                  component,
-                  property,
-                  value,
-                ),
+                properties: {
+                  ...patchInspectorComponentProperty(
+                    component,
+                    property,
+                    value,
+                  ),
+                  ...alsoSet,
+                },
               }
             : component,
         ),

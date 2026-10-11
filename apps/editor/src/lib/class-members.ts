@@ -1120,10 +1120,10 @@ function syncFunctionGraphPins(
   };
 }
 
+/** Get / Set / Validated Get nodes bound to `member` by its id. */
 function isVariableAccessNode(
   node: SerializedGraph["nodes"][number],
   member: GraphClassMember,
-  previous?: GraphClassMember,
 ): boolean {
   if (
     node.type !== "variables.get" &&
@@ -1132,15 +1132,7 @@ function isVariableAccessNode(
   ) {
     return false;
   }
-  const variableId = node.data.variableId;
-  if (typeof variableId === "string" && variableId) {
-    return variableId === member.id;
-  }
-  const variableName = node.data.variableName;
-  return (
-    variableName === member.name ||
-    (typeof previous?.name === "string" && variableName === previous.name)
-  );
+  return node.data.variableId === member.id;
 }
 
 function stampVariableTypeOnData(
@@ -1215,10 +1207,9 @@ function mapGraphNodes(
 export function syncVariableAccessNodes(
   graph: SerializedGraph,
   member: GraphClassMember,
-  previous?: GraphClassMember,
 ): SerializedGraph {
   return mapGraphNodes(graph, (node) =>
-    isVariableAccessNode(node, member, previous)
+    isVariableAccessNode(node, member)
       ? patchVariableAccessNode(node, member)
       : node,
   );
@@ -1609,6 +1600,24 @@ export function renameCustomEvent(
   };
 }
 
+/** Retarget this document's self Call Function nodes, in every graph, to a renamed function. */
+function renameFunctionCalls(
+  graph: SerializedGraph,
+  previousName: string,
+  nextName: string,
+): SerializedGraph {
+  return mapGraphNodes(graph, (node) =>
+    node.type === "functions.call" &&
+    node.data.functionName === previousName &&
+    (node.data.implicitSelf === true || !node.data.classId)
+      ? {
+          ...node,
+          data: { ...node.data, functionName: nextName, title: `Call ${nextName}` },
+        }
+      : node,
+  );
+}
+
 export function patchClassMember(
   graph: SerializedGraph,
   memberId: string,
@@ -1625,6 +1634,9 @@ export function patchClassMember(
     if (!event || customEventRenameError(graph, event.id, patch.name)) return graph;
     graph = renameCustomEvent(graph, event.id, patch.name);
     patch = { ...patch, name: formatEventMemberName(patch.name) };
+  }
+  if (previous?.kind === "function" && patch.name !== undefined && patch.name !== previous.name) {
+    graph = renameFunctionCalls(graph, previous.name, patch.name);
   }
   const members = (graph.members ?? []).map((member) => {
     if (member.id !== memberId) return member;
@@ -1644,7 +1656,7 @@ export function patchClassMember(
   const next = { ...graph, members };
   const declared = next.members?.find((member) => member.id === memberId);
   if (declared?.kind === "variable") {
-    return syncVariableAccessNodes(next, declared, previous);
+    return syncVariableAccessNodes(next, declared);
   }
   if (!patch.pins) return next;
   if (declared?.kind === "event") {

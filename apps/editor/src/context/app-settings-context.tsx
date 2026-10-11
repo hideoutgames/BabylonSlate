@@ -62,11 +62,15 @@ export class AppSettingsOwner {
     },
   ): void => {
     this.generation += 1;
-    const appearance = patch.theme
-      ? { ...this.snapshot.settings.appearance, theme: patch.theme }
-      : (patch.appearance ?? this.snapshot.settings.appearance);
+    // Store events carry the full appearance plus a top-level `theme`; a
+    // theme-only event keeps the rest of the current appearance.
+    const { theme, ...settings } = patch;
+    const appearance = {
+      ...(settings.appearance ?? this.snapshot.settings.appearance),
+      ...(theme ? { theme } : {}),
+    };
     this.publish(
-      { ...this.snapshot.settings, ...patch, appearance },
+      { ...this.snapshot.settings, ...settings, appearance },
       this.snapshot.hydrated,
     );
   };

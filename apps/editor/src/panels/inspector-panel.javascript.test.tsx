@@ -42,4 +42,17 @@ describe("Execute JavaScript Inspector", () => {
     fireEvent.click(await screen.findByTestId("search-item-float"));
     expect(state.graph.nodes[0]!.data.outputs).toEqual([expect.objectContaining({ name: "NewOutput", type: { kind: "float" } })]);
   });
+
+  it("edits the function graph node, not an Event Graph node with the same id", async () => {
+    const eventNode = { id: "js", type: "debug.executeJavaScript", position: { x: 0, y: 0 }, data: {} };
+    state.graph = {
+      nodes: [eventNode], edges: [], members: [{ id: "fn", kind: "function", name: "Run" }],
+      functionGraphs: { fn: { nodes: [{ ...eventNode, data: {} }], edges: [] } },
+    } as SerializedGraph;
+    render(<PrefabEditingProvider initialSelectedId={null}><GraphEditingProvider initialSelectedNodeIds={["js"]} initialActiveFunctionId="fn"><InspectorPanel {...({} as IDockviewPanelProps)} /></GraphEditingProvider></PrefabEditingProvider>);
+    fireEvent.click(screen.getByTestId("js-input-add"));
+    fireEvent.click(await screen.findByTestId("search-item-object"));
+    expect(state.graph.functionGraphs?.fn?.nodes[0]!.data.inputs).toEqual([expect.objectContaining({ type: expect.objectContaining({ kind: "objectRef" }) })]);
+    expect(state.graph.nodes[0]!.data).toEqual({});
+  });
 });

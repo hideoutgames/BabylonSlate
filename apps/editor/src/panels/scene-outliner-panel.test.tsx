@@ -90,6 +90,31 @@ describe("flattenOutliner folders", () => {
     const nodes = flattenOutliner(scene, { collapsed: new Set(), search: "lamp" });
     expect(nodes[0]?.label).toBe("Lighting / Spots / Lamp");
   });
+
+  it("lists rows at the root when their parent is missing or loops back to them", () => {
+    const nodes = flattenOutliner(sceneWith({
+      folders: [
+        { id: "lost", name: "Lost", parentFolderId: "gone-folder" },
+        { id: "ring-a", name: "Ring A", parentFolderId: "ring-b" },
+        { id: "ring-b", name: "Ring B", parentFolderId: "ring-a" },
+      ],
+      actors: [
+        { ...createActor("orphan", "Orphan", { parentId: "gone-actor" }), folderId: "gone-folder" },
+        { ...createActor("loop-a", "Loop A", { parentId: "loop-b" }), folderId: null },
+        { ...createActor("loop-b", "Loop B", { parentId: "loop-a" }), folderId: null },
+        { ...createActor("tail", "Tail", { parentId: "loop-a" }), folderId: null },
+      ],
+    }), { collapsed: new Set(), search: "" });
+    expect(nodes.map((node) => [node.id, node.depth])).toEqual([
+      [folderRowId("lost"), 0],
+      [folderRowId("ring-a"), 0],
+      [folderRowId("ring-b"), 0],
+      [actorRowId("orphan"), 0],
+      [actorRowId("loop-a"), 0],
+      [actorRowId("tail"), 1],
+      [actorRowId("loop-b"), 0],
+    ]);
+  });
 });
 
 describe("outlinerRowTarget", () => {

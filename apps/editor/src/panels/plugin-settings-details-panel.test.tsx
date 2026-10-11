@@ -101,6 +101,14 @@ describe("Plugin Settings Details", () => {
     expect(screen.queryByDisplayValue("Base Tools")).toBeNull();
   });
 
+  it("removes one Editor Utility Object and keeps the others", () => {
+    harness.content.editorUtilityObjects = ["PackTool", "PackBaker"];
+    render(<PluginSettingsDetailsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.click(screen.getByRole("button", { name: "Remove PackTool" }));
+    expect(harness.content.editorUtilityObjects).toEqual(["PackBaker"]);
+    expect(screen.queryByText("PackTool")).toBeNull();
+  });
+
   it("preserves imported compatibility while editing identity without version-range fields", async () => {
     harness.content.version = "0.1";
     harness.content.engineVersion = "0.0.0";

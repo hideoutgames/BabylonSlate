@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   MAIN_CLASS_FILE,
+  createText3DComponent,
   documentId,
   type SerializedGraph,
 } from "@babylonslate/core";
@@ -71,19 +72,21 @@ const seen: {
   actions: DocumentActions | null;
   documents: ReturnType<typeof useDocuments> | null;
   panelProps: IDockviewPanelProps;
-} = { actions: null, documents: null, panelProps: {} as IDockviewPanelProps };
+  graphId: string;
+} = { actions: null, documents: null, panelProps: {} as IDockviewPanelProps, graphId: MAIN_CLASS_ID };
 
-/** The Main Class graph panel, mounted once its tab is open. */
+/** The Class graph panel for `seen.graphId` (Main by default), mounted once its tab is open. */
 function MainClassGraph() {
   seen.actions = useDocumentActions();
   seen.documents = useDocuments();
-  if (!seen.documents.openDocuments.some((doc) => doc.id === MAIN_CLASS_ID)) {
+  const graphId = seen.graphId;
+  if (!seen.documents.openDocuments.some((doc) => doc.id === graphId)) {
     return null;
   }
   return (
     <ValidationProvider>
       <GraphEditingProvider>
-        <DocumentWorkspaceProvider documentId={MAIN_CLASS_ID}>
+        <DocumentWorkspaceProvider documentId={graphId}>
           <GraphPanel {...seen.panelProps} />
         </DocumentWorkspaceProvider>
       </GraphEditingProvider>
@@ -104,6 +107,7 @@ afterEach(async () => {
   seen.actions = null;
   seen.documents = null;
   seen.panelProps = {} as IDockviewPanelProps;
+  seen.graphId = MAIN_CLASS_ID;
 });
 
 describe("Graph panel", () => {
@@ -157,6 +161,48 @@ describe("Graph panel", () => {
     });
     expect(
       await within(screen.getByTestId("node-palette")).findByText("Call Launch"),
+    ).toBeTruthy();
+  });
+
+  it("offers a Get row for a component its parent Class adds", async () => {
+    render(
+      <DocumentProvider>
+        <MainClassGraph />
+      </DocumentProvider>,
+    );
+    await waitFor(() => expect(seen.documents?.homepageReady).toBe(true));
+    const actions = seen.actions!;
+    await act(() => actions.createEmptyProject("Inherited", { kind: "2d" }));
+    const create = (name: string, parentClass: string) =>
+      createProjectAsset({
+        registry: seen.documents!.assetRegistry!,
+        rootId: "project",
+        folderRelative: "",
+        type: "Class",
+        name,
+        parentClass,
+      });
+    const base = await act(() => create("Base", "Actor"));
+    const child = await act(() => create("Child", "Base"));
+    act(() => actions.noteAssetsCreated());
+    const baseId = documentId({ kind: "graph", path: base.path });
+    await act(() => actions.openDocument({ kind: "graph", path: base.path, label: "Base" }));
+    const baseGraph = openContent<SerializedGraph>(baseId);
+    await act(() =>
+      actions.applyGraphChange(baseId, {
+        ...baseGraph,
+        components: [...(baseGraph.components ?? []), createText3DComponent("label")],
+      }),
+    );
+    seen.graphId = documentId({ kind: "graph", path: child.path });
+    await act(() => actions.openDocument({ kind: "graph", path: child.path, label: "Child" }));
+
+    fireEvent.click(screen.getByTestId("graph-add-node"));
+    fireEvent.change(screen.getByTestId("node-palette-search"), {
+      target: { value: "Get 3D Text" },
+    });
+    expect(
+      await within(screen.getByTestId("node-palette")).findByText("Get 3D Text"),
     ).toBeTruthy();
   });
 

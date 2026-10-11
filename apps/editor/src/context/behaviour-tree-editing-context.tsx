@@ -43,12 +43,15 @@ export function BehaviourTreeEditingProvider({
 }) {
   const { documentId } = useDocumentWorkspace();
   const doc = useOpenDocument(documentId);
-  const tree = asTree(
-    (doc?.content && typeof doc.content === "object"
-      ? (doc.content as Record<string, unknown>)
-      : {}) as Record<string, unknown>,
+  // Only the first selection reads the tree, so parse it once, not per render.
+  const [selectedId, setSelectedId] = useState<string | null>(
+    () =>
+      asTree(
+        doc?.content && typeof doc.content === "object"
+          ? (doc.content as Record<string, unknown>)
+          : {},
+      ).rootId,
   );
-  const [selectedId, setSelectedId] = useState<string | null>(tree.rootId);
   const [attachmentId, setAttachmentId] = useState<string | null>(null);
   const [attachmentCatalog, setAttachmentCatalog] =
     useState<BehaviourTreeAttachmentCatalog | null>(null);

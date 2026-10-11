@@ -257,7 +257,7 @@ In 3D worlds, dynamic actors with `NavAgentComponent` retain physics position au
 
 ### Collision layers
 
-Project Settings → **Physics** stores `settings.physics.collisionLayers` (`NamedListEditor`, default `["Default"]`, cap 32, same normalize pattern as sorting layers). Bit storage stays 32-bit for Havok membership/collide masks (`layer` = `1 << index`; Default → `1`). Collider Details: **Layer** is a single-bit Select; **Collides With** is a `FlagsField` of named bits only. No collision matrix in this slice.
+Project Settings → **Physics** stores `settings.physics.collisionLayers` (`NamedListEditor`, default `["Default"]`, cap 32, same normalize pattern as sorting layers). Bit storage stays 32-bit for Havok membership/collide masks (`layer` = `1 << index`; Default → `1`). Collider Details: **Layer** is a single-bit Select (a stored mask that is not one named bit is listed as its own option: **None**, the set layers joined, or **Layer N** for a bit past the named layers); **Collides With** is a `FlagsField` of named bits only. No collision matrix in this slice.
 
 Rapier contact and sensor-pair hooks preserve the same 32-bit membership/mask contract, including layers above bit 15. Both colliders must admit the other layer before collision response or contact/overlap events occur; the software fallback uses the same pair rule.
 

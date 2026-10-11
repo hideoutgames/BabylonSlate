@@ -50,8 +50,11 @@ describe("Save Game authoring", () => {
     expect(harness.apply).toHaveBeenCalledWith("progress", { id: "definition", schemaVersion: 1, fields: [{ id: "score-id", name: "Coins", type: "int", defaultValue: 5 }] });
     harness.apply.mockClear();
     fireEvent.change(screen.getByTestId("property-name-score-id"), { target: { value: "constructor" } });
-    await waitFor(() => expect(screen.getByText("Invalid Save Definition")).toBeTruthy());
+    expect(screen.getByText("Choose a different field name; this name is reserved.")).toBeTruthy();
     expect(harness.apply).not.toHaveBeenCalled();
+    fireEvent.blur(screen.getByTestId("property-name-score-id"));
+    expect(screen.getByTestId("property-name-score-id")).toHaveProperty("value", "Coins");
+    expect(screen.queryByText("Choose a different field name; this name is reserved.")).toBeNull();
     expect(screen.queryByRole("textbox", { name: "Field ID" })).toBeNull();
   });
 

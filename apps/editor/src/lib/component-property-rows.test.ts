@@ -40,7 +40,7 @@ function rowsFor(
                           : undefined,
       assetType: (guid) =>
         guid === "mesh-1"
-          ? "Mesh"
+          ? "Model"
           : guid === "sprite-1"
             ? "Sprite"
             : guid === "graph-1"
@@ -362,7 +362,7 @@ describe("componentPropertyRows", () => {
     });
   });
 
-  it("exposes MeshComponent.assetGuid as an asset pick of Mesh/Model", () => {
+  it("exposes MeshComponent.assetGuid as a Model asset pick", () => {
     const { rows, onPickAsset } = rowsFor({
       id: "mesh",
       classId: "MeshComponent",
@@ -373,20 +373,20 @@ describe("componentPropertyRows", () => {
       kind: "asset",
       value: "mesh-1",
       displayLabel: "Rock",
-      displayType: "Mesh",
-      visual: { assetType: "Mesh" },
+      displayType: "Model",
+      visual: { assetType: "Model" },
     });
     expect(rows.find((row) => row.id.endsWith("-meshKind"))).toBeUndefined();
     if (asset?.kind === "asset") asset.onPick();
     expect(onPickAsset).toHaveBeenCalledWith(
       expect.objectContaining({
         property: "assetGuid",
-        allowedTypes: ["Mesh", "Model"],
+        allowedTypes: ["Model"],
       }),
     );
   });
 
-  it("exposes Mesh Kind only when MeshComponent has no Model or Mesh asset", () => {
+  it("exposes Mesh Kind only when MeshComponent has no Model asset", () => {
     const { rows } = rowsFor({
       id: "mesh",
       classId: "MeshComponent",
@@ -816,8 +816,11 @@ describe("componentPropertyRows", () => {
     const light = rowsFor({
       id: "light",
       classId: "LightComponent",
-      properties: { intensity: 1, color: [1, 0, 0] },
+      properties: { intensity: 1, color: [1, 0, 0], shadowPriority: 2 },
     });
+    expect(light.rows.filter((row) => row.id.endsWith("-shadowPriority"))).toEqual([
+      expect.objectContaining({ kind: "number", label: "Shadow Priority", value: 2 }),
+    ]);
     expect(light.rows.find((row) => row.id.endsWith("-color"))).toMatchObject({
       kind: "color",
       value: [1, 0, 0],
@@ -991,6 +994,22 @@ describe("componentPropertyRows", () => {
     });
   });
 
+  it.each([
+    [0, "None"],
+    [0b11, "Default, Enemy"],
+    [0b100, "Layer 3"],
+  ])("labels stored collision layer mask %i as %s instead of the first layer", (layer, label) => {
+    const { rows } = rowsFor(
+      { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "sphere", radius: 0.5 }, layer } },
+      { collisionLayers: ["Default", "Enemy"] },
+    );
+    const row = rows.find((entry) => entry.id.endsWith("-layer"));
+    expect(row).toMatchObject({ kind: "enum", value: label });
+    if (row?.kind === "enum") {
+      expect(row.options.map((option) => option.value)).toEqual(["Default", "Enemy", label]);
+    }
+  });
+
   it("keeps an unfinished primitive editable without admitting it to physics", () => {
     const result = rowsFor({ id: "col", classId: "ColliderComponent", properties: {
       shape: { kind: "sphere", radius: 0 },
@@ -1050,7 +1069,7 @@ describe("gameInstanceClassEntries", () => {
         header: { type: "Class", name: "MyGame", parentClass: "GameInstance" },
       },
       { header: { type: "Class", name: "Hero", parentClass: "Actor" } },
-      { header: { type: "Mesh", name: "Rock" } },
+      { header: { type: "Model", name: "Rock" } },
     ]);
     expect(entries.map((entry) => entry.id)).toEqual(["GameInstance", "MyGame"]);
   });
@@ -1310,15 +1329,22 @@ describe("applyPrefabPropertyDefaults", () => {
         },
       },
       {
-        fontHasMsdfJson: (guid) => guid === "font-1",
+        fontHasMsdfJson: (guid) => guid === "font-1" || guid === "font-json-only",
         fontHasMsdfPng: (guid) => guid === "font-1",
       },
     );
     const font = text.rows.find((row) => row.id.endsWith("-fontAssetGuid"));
-    expect(font?.kind).toBe("asset");
-    if (font?.kind === "asset") font.onChange(null);
-    expect(text.update).toHaveBeenCalledWith("fontAssetGuid", null);
-    expect(text.update).toHaveBeenCalledWith("renderer", "bitmap");
+    if (font?.kind !== "asset") throw new Error("Missing Font row");
+    font.onChange("font-json-only");
+    font.onChange("font-1");
+    font.onChange(null);
+    // One write per pick: Details applies each update to its render snapshot,
+    // so a separate renderer write would restore the previous font.
+    expect(text.update.mock.calls).toEqual([
+      ["fontAssetGuid", "font-json-only", { renderer: "bitmap" }],
+      ["fontAssetGuid", "font-1", undefined],
+      ["fontAssetGuid", null, { renderer: "bitmap" }],
+    ]);
   });
 });
 

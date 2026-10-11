@@ -106,17 +106,27 @@ function valueAt(payload: ParticleEmitterPayload, path: string): unknown {
   return value;
 }
 
+/**
+ * Copies only the objects along `path`; untouched modules, curves and
+ * gradients stay shared, so a scrub does not clone the whole payload.
+ */
 function withValueAt(
   payload: ParticleEmitterPayload,
   path: string,
   value: unknown,
 ): ParticleEmitterPayload {
-  const next = structuredClone(payload);
   const keys = path.split(".");
-  let target = next as unknown as Record<string, unknown>;
-  for (const key of keys.slice(0, -1)) target = target[key] as Record<string, unknown>;
-  target[keys[keys.length - 1]!] = value;
-  return next;
+  const assign = (source: unknown, depth: number): unknown => {
+    const key = keys[depth]!;
+    const copy: Record<string, unknown> = Array.isArray(source)
+      ? ([...source] as unknown as Record<string, unknown>)
+      : { ...(source as Record<string, unknown>) };
+    copy[key] = depth === keys.length - 1
+      ? value
+      : assign((source as Record<string, unknown>)[key], depth + 1);
+    return copy;
+  };
+  return assign(payload, 0) as ParticleEmitterPayload;
 }
 
 function useEmitterDocument() {

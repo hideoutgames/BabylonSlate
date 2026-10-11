@@ -114,6 +114,26 @@ const QUIET_ROW_ACTION =
   "[@media(hover:hover)_and_(pointer:fine)]:opacity-0 [@media(hover:hover)_and_(pointer:fine)]:[[role=treeitem]:hover_&]:opacity-100 [@media(hover:hover)_and_(pointer:fine)]:[[role=treeitem]:focus-within_&]:opacity-100";
 
 /**
+ * The parent a row is listed under. A parent that is not in the scene, or a
+ * chain that loops back to the row, lists it at the root so it stays visible.
+ */
+function listedParent(
+  id: string,
+  parentById: ReadonlyMap<string, string | null>,
+): string | null {
+  const parent = parentById.get(id) ?? null;
+  if (parent === null || !parentById.has(parent)) return null;
+  const seen = new Set<string>();
+  let cursor: string | null = parent;
+  while (cursor !== null && parentById.has(cursor) && !seen.has(cursor)) {
+    if (cursor === id) return null;
+    seen.add(cursor);
+    cursor = parentById.get(cursor) ?? null;
+  }
+  return parent;
+}
+
+/**
  * Depth-first walk so children follow their parent in the flattened list.
  * Folders come first at each level, then the actors they hold. Transform
  * children stay under their parent actor regardless of folder, because
@@ -145,17 +165,25 @@ export function flattenOutliner(
 
   const names = sceneActorDisplayNames(scene);
   const needle = options.search.trim().toLowerCase();
+  const actorParentById = new Map(
+    scene.actors.map((actor) => [actor.id, actor.parentId]),
+  );
+  const folderParentById = new Map(
+    scene.folders.map((folder) => [folder.id, folder.parentFolderId]),
+  );
   const childrenOf = new Map<string | null, SerializedActor[]>();
   for (const actor of scene.actors) {
-    const bucket = childrenOf.get(actor.parentId) ?? [];
+    const parentId = listedParent(actor.id, actorParentById);
+    const bucket = childrenOf.get(parentId) ?? [];
     bucket.push(actor);
-    childrenOf.set(actor.parentId, bucket);
+    childrenOf.set(parentId, bucket);
   }
   const foldersByParent = new Map<string | null, SerializedOutlinerFolder[]>();
   for (const folder of scene.folders) {
-    const bucket = foldersByParent.get(folder.parentFolderId) ?? [];
+    const parentFolderId = listedParent(folder.id, folderParentById);
+    const bucket = foldersByParent.get(parentFolderId) ?? [];
     bucket.push(folder);
-    foldersByParent.set(folder.parentFolderId, bucket);
+    foldersByParent.set(parentFolderId, bucket);
   }
   const folderById = new Map(
     scene.folders.map((folder) => [folder.id, folder]),
@@ -236,9 +264,13 @@ export function flattenOutliner(
     SerializedActor[]
   >();
   for (const actor of childrenOf.get(null) ?? []) {
-    const bucket = rootActorsByFolder.get(actor.folderId) ?? [];
+    const folderId =
+      actor.folderId !== null && folderById.has(actor.folderId)
+        ? actor.folderId
+        : null;
+    const bucket = rootActorsByFolder.get(folderId) ?? [];
     bucket.push(actor);
-    rootActorsByFolder.set(actor.folderId, bucket);
+    rootActorsByFolder.set(folderId, bucket);
   }
   const actorsAtFolderRoot = (folderId: string | null) =>
     rootActorsByFolder.get(folderId) ?? [];
@@ -483,13 +515,16 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
     let cancelled = false;
     const assets = assetRegistry?.list() ?? [];
     void (async () => {
+      // Load the Classes together, so the slowest one sets the wait, not the sum.
+      const loaded = await Promise.all(
+        assets
+          .filter((asset) => asset.header.type === "Class" && asset.path)
+          .map(async (asset) => [asset.path, await loadGraphDocument(asset.path)] as const),
+      );
+      if (cancelled) return;
       const next = new Map<string, SerializedGraph>();
-      for (const asset of assets) {
-        if (asset.header.type !== "Class" || !asset.path) continue;
-        const graph = await loadGraphDocument(asset.path);
-        if (graph) next.set(asset.path, graph);
-      }
-      if (!cancelled) setDiskGraphs(next);
+      for (const [path, graph] of loaded) if (graph) next.set(path, graph);
+      setDiskGraphs(next);
     })();
     return () => {
       cancelled = true;
