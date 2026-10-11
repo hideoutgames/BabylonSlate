@@ -1224,10 +1224,12 @@ function initializeEngine(
       })
     : null;
   onRollback(() => playFreeCam?.dispose());
+  // Assigned once SceneLayer picking exists; a HUD control keeps its drag.
+  let overlayBlocksPointer: (canvasX: number, canvasY: number) => boolean = () => false;
   const playFreeCamInput: PlayFreeCamInputHandle | null = playFreeCam
     ? attachPlayFreeCamInput(canvas, playFreeCam, {
         mode: options.viewportMode ?? "3d",
-        blockPointer: (x, y) => runtimeTransformTools?.blocksCameraPointer(x, y) ?? false,
+        blockPointer: (x, y) => (runtimeTransformTools?.blocksCameraPointer(x, y) ?? false) || overlayBlocksPointer(x, y),
       })
     : null;
   onRollback(() => playFreeCamInput?.dispose());
@@ -1536,21 +1538,28 @@ function initializeEngine(
   };
   notifyOverlayResize();
 
+  const overlayPointerWalk = (canvasX: number, canvasY: number) => {
+    if (!sceneLayerCompositor || !acceptsGameInput()) return null;
+    const mapped = mapCanvasPointer(scene, canvasX, canvasY, pointerCanvas());
+    const canvasSize = pointerCanvas();
+    return walkOverlayPointerHits(
+      sceneLayerCompositor.pickHits(mapped.x, mapped.y, {
+        minTargetPx: options.touchMinTargetPx ?? 44,
+        canvasCssHeight: canvasSize.height,
+      }),
+    );
+  };
+  /** A blocking HUD hit owns the pointer, as it does for world input. */
+  overlayBlocksPointer = (canvasX, canvasY) => overlayPointerWalk(canvasX, canvasY)?.blocked ?? false;
+
   const dispatchOverlayPointer = (
     phase: OverlayPointerPhase,
     canvasX: number,
     canvasY: number,
     pointerId?: number,
   ): boolean => {
-    if (!sceneLayerCompositor || !acceptsGameInput()) return false;
-    const mapped = mapCanvasPointer(scene, canvasX, canvasY, pointerCanvas());
-    const canvasSize = pointerCanvas();
-    const walked = walkOverlayPointerHits(
-      sceneLayerCompositor.pickHits(mapped.x, mapped.y, {
-        minTargetPx: options.touchMinTargetPx ?? 44,
-        canvasCssHeight: canvasSize.height,
-      }),
-    );
+    const walked = overlayPointerWalk(canvasX, canvasY);
+    if (!walked) return false;
     if (phase === "down" && !binding.paused && pointerId !== undefined) {
       if (uiControls.down(pointerId, walked.targets, canvasX, canvasY)) return true;
       if (joysticks.down(pointerId, walked.targets, canvasX, canvasY)) return true;

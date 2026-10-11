@@ -3305,6 +3305,32 @@ describe("Play createEngine view", () => {
     ).toBe(false);
   });
 
+  it("leaves a free cam drag that starts on a blocking HUD button to the button", () => {
+    const engine = sharedEngine();
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(256);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(256);
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const canvas = new FakeCanvas();
+    const events: string[] = [];
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true,
+      onSceneLayerPointer: event => events.push(event.event) });
+    handles.push(handle);
+    spawnOverlayButton(handle, () => runRenderLoop.mock.calls[0]?.[0]?.(), "hud", { width: 9, height: 9 });
+    handle.applyCommand({ type: "setFreeCam", enabled: true });
+    const camera = handle.scene.activeCamera as UniversalCamera;
+    const rotation = () => JSON.stringify([camera.rotation.asArray(), camera.rotationQuaternion?.asArray() ?? null]);
+    const start = rotation();
+    canvas.emit("pointerdown", pointerAt(128, 128));
+    canvas.emit("pointermove", pointerAt(160, 150));
+    canvas.emit("pointerup", pointerAt(160, 150));
+    expect(events).toContain("onPressStart");
+    expect(rotation()).toBe(start);
+    canvas.emit("pointerdown", pointerAt(16, 16, { pointerId: 2 }));
+    canvas.emit("pointermove", pointerAt(48, 40, { pointerId: 2 }));
+    canvas.emit("pointerup", pointerAt(48, 40, { pointerId: 2 }));
+    expect(rotation()).not.toBe(start);
+  });
+
   it("applies setScalability quality on Play views only, not the editor viewport", () => {
     const playEngine = sharedEngine();
     const playLoop = vi.spyOn(playEngine, "runRenderLoop");
