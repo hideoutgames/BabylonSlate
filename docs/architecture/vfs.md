@@ -9,7 +9,7 @@ Text + binary filesystem over a bound project folder:
 - `pickProjectFolder` / `openDocumentsProject` / `getCurrentFolder` / `releaseFolder`
 - `readText` / `writeText` / `readBinary` / `writeBinary`
 - `readBinaryRange(path, offset, length, expectedRevision?, options?)` — exact, bounded bytes plus file size, opaque revision, and actual bytes read; invalid bounds, short reads, and changed revisions reject
-- `exists` / `readdir` / `mkdir` / `remove` / `stat`
+- `exists` / `readdir` / `mkdir` / `remove` / `stat`; `""` and `"."` name the project root for `exists` / `readdir` / `stat`, and `..` segments are rejected on every adapter
 - Optional `deleteProject` — implemented by OPFS and memory adapters; omitted on Documents / Electron / Capacitor so Homepage list-remove cannot trash native folders
 - Folder handles carry `tier`: `documents` | `external` | `opfs`
 
@@ -25,7 +25,7 @@ UI never imports Capacitor; all I/O goes through `createStorage()` in `@babylons
 
 Catalog mounting reads a `.babasset` prefix and header through `readBinaryRange`; it does not open each asset's payload. A subsequent read carries the catalog revision, and payload hashes validate the selected chunk. Range APIs never implement a partial read by slicing an already-loaded complete file.
 
-- OPFS uses `File.slice().arrayBuffer()` and checks the file metadata before and after reading. Adapter writes also advance a shared revision counter, including equal-size writes within one timestamp tick.
+- OPFS uses `File.slice().arrayBuffer()` and checks the file metadata before and after reading. Adapter writes also advance a shared revision counter, including equal-size writes within one timestamp tick; a write that fails and aborts restores it, so readers of the unchanged file keep their revision.
 - Node uses positioned file-descriptor reads and checks inode, size, nanosecond modification/change times, and the current path after reading. Electron forwards the bounded request through validated IPC.
 - Capacitor Documents and external folders use the existing native storage plugin: `FileHandle` seeks on iOS and `pread` on Android. External iOS operations retain coordination/security scope; SAF requires a seekable regular descriptor and reports unsupported providers without falling back to a whole-file read. Native requests validate bounds before allocation and cap a single bridge transfer at 512 MiB.
 - Memory storage gives every write a new revision. Read-only plugin wrappers and mobile read scopes preserve bounded reads and shared accounting.
@@ -34,29 +34,29 @@ Catalog mounting reads a `.babasset` prefix and header through `readBinaryRange`
 
 Revisions detect changed sources; they are not filesystem transactions. `hasStrongSourceRevisions` is true only for owned memory generations and immutable HTTP catalogs. Disk adapters, including Node/Electron, conservatively leave it unset because filesystem timestamp precision varies. Asset readers refresh bounded headers for these mutable sources and include the header digest in the logical asset revision; deferred range reads retain the separate storage revision and validate chunk hashes. This detects equal-size header changes even when storage timestamps collide, without scanning payloads. Read-only and mounted views preserve this capability only when their underlying sources provide it. Unsupported bounded access is an actionable load failure, not permission to read the entire project eagerly. Native implementation still requires device qualification; local adapter tests do not establish A16 performance.
 
-Bundled Engine Plugins use an HTTP file catalog. The build emits each `.babasset` prefix, JSON header, and inline chunk as a separate immutable content object; blob files are independently addressable too. Opening the catalog and taking a mounted library view do not download or unpack plugin archives. Normal catalog/chunk requests use whole small objects and work without HTTP Range support. Arbitrary partial reads require validated `206`/`Content-Range` responses; a server returning a full object is rejected before consuming its body. Responses are length-bounded while reading, complete objects are hash-checked, and discarded bytes are accounted.
+Bundled Engine Plugins use an HTTP file catalog. The build emits each `.babasset` prefix, JSON header, and inline chunk as a separate immutable content object; blob files are independently addressable too. Opening the catalog and taking a mounted library view do not download or unpack plugin archives. Normal catalog/chunk requests use whole small objects and work without HTTP Range support. Arbitrary partial reads require validated `206`/`Content-Range` responses; a server returning a full object is rejected before consuming its body. Responses are length-bounded while reading, complete objects are hash-checked, and discarded bytes are accounted. A partial range cannot be checked against its object's hash without downloading the whole object; asset payload chunks are hash-checked by the payload loader instead.
 
 `readText`, `readBinary`, and `readBinaryRange` accept optional `StorageReadOptions.signal`. Read-only, mounted, and mobile views forward the options. The source service passes its shared operation signal through catalog, chunk, and blob reads; the final interested owner aborts HTTP fetch and any pending body reader. Leaving one of several owners does not cancel their shared transport. Bytes delivered before cancellation remain in storage metrics, including failed full blob reads through mounted views. Source scheduler slots and reservations stay held until the load settles and releases its buffers; cancellation does not pretend an unfinished read has freed memory. Local platform operations without an interruptible primitive finish before the caller observes cancellation. Initial plugin catalog opening is separate from a scoped source request.
 
-`createMountedProjectStorage` combines read-only directory/file views with the most specific path winning, including small settings overrides. Views retain storage locations and metadata, not copies of plugin payloads. Imported plugin generations and their explicit legacy upgrade are described in [plugins](plugins.md).
+`createMountedProjectStorage` combines read-only directory/file views with the most specific path winning, including small settings overrides. A path with a deeper mount below it is a directory in both `stat` and listings. Views retain storage locations and metadata, not copies of plugin payloads. Imported plugin generations and their explicit legacy upgrade are described in [plugins](plugins.md).
 
 ## Adapter matrix
 
 | Adapter | Host | Notes |
 | --- | --- | --- |
-| OPFS | Web | Replaces localStorage; binary-capable; projects under stable ids; Homepage remove deletes the OPFS directory; `readdir` skips Chromium's `*.crswap` write swap files and entries removed mid-listing, so a concurrent save never fails a whole listing (an asset rescan would otherwise publish an empty Content Browser); `readBinary` reads again when a save replaces the file between `getFile()` and the read (Chromium fails that stale snapshot with `NotReadableError` / `NotFoundError`), so a Preview reading a Texture while its encode commits gets the saved bytes; a snapshot that stays unreadable reports its real read error instead of `File not found` |
+| OPFS | Web | Replaces localStorage; binary-capable; projects under stable ids; Homepage remove deletes the OPFS directory; binding creates the project folder and later writes never recreate it, so a save racing a deletion fails; `readdir` fails rather than returning an empty listing where directory iteration is unavailable; `readdir` skips Chromium's `*.crswap` write swap files and entries removed mid-listing, so a concurrent save never fails a whole listing (an asset rescan would otherwise publish an empty Content Browser); `readBinary` reads again when a save replaces the file between `getFile()` and the read (Chromium fails that stale snapshot with `NotReadableError` / `NotFoundError`), so a Preview reading a Texture while its encode commits gets the saved bytes; a snapshot that stays unreadable reports its real read error instead of `File not found` |
 | Documents | iPad default | `@capacitor/filesystem` `Directory.Documents` under `BabylonSlate/projects/`; no picker/bookmark; Files-visible via `UIFileSharingEnabled` + `LSSupportsOpeningDocumentsInPlace` |
 | Documents | Android default | App-private `Directory.Data` under `BabylonSlate/projects/`; Android 11+ public Documents is unreadable without a picker |
 | Scoped / external | iPad opt-in | Document picker; security-scoped bookmarks; root-confined relative paths; `openKnownFolder` reopens without picker; Reconnect on staleness or revoked scope access |
 | Scoped / external | Android opt-in | SAF `ACTION_OPEN_DOCUMENT_TREE`; persisted read/write URI permissions; `DocumentsContract` child traversal; UUID handles map to tree URIs in native SharedPreferences; no `importBookmark` |
-| Memory | Tests | In-memory tree |
+| Memory | Tests | In-memory tree; like a disk, a file write never replaces a directory |
 | Read-only wrapper | Engine plugins | `createReadOnlyProjectStorage(inner)` — reads pass through; `write*` / `mkdir` / `remove` / `deleteProject` throw |
-| Node | CI / tools | Real filesystem under a root path; `openAbsoluteFolder` for Electron pickers |
+| Node | Electron main, CI / tools | Real filesystem under a root path. Paths resolve through symbolic links and must stay inside the root's real location; listings omit links that leave it and anything but files and directories. Writes stage a flushed temporary file and rename it over the target, so a crash never leaves a truncated file. `openKnownFolder` reopens an existing Documents project by id; picked folders use `openAbsoluteFolder` after the host's grant check |
 | Electron | Desktop editor | Renderer `ElectronStorageAdapter` over preload IPC; main process `NodeStorageAdapter` |
 
 `openKnownFolder(handle)` rebinds a previously known project (Documents / OPFS / external bookmark) without showing a picker. The picker is only for first bind and Reconnect.
 
-Browser project writes require OPFS; an unavailable or denied filesystem reports an error instead of accepting temporary in-memory saves. Project handles keep their existing ids, while metadata maps new projects to distinct hashed directories. Legacy directories remain readable; opening a remembered name alias copies its shared legacy contents into an independent directory, and deleting an unresolved alias preserves other projects' files. Tests inject an explicit OPFS filesystem boundary.
+Browser project writes require OPFS; an unavailable or denied filesystem reports an error instead of accepting temporary in-memory saves. Each project id maps to its own hashed directory (`project-v2-<sha256 of the id>`). App-owned libraries and derived data bind with `new OpfsStorageAdapter({ library: true })`: they are not in the project list and never become the project a new adapter restores. Tests inject an explicit OPFS filesystem boundary.
 
 OPFS directory creation is recursive by default; `mkdir(path, false)` requires existing parent directories.
 
@@ -124,7 +124,7 @@ Capacitor 8.5.2 handles `webViewWebContentProcessDidTerminate` natively — `Web
 
 ## Template library
 
-`createTemplateStorage(root)` binds an app-owned folder (`__slate_templates__` for templates) in the same tier as projects, so `listTemplates()` reads directory and zip templates through the ordinary project backends on every host. There is no user-chosen templates folder; a `templatesFolder` key in older saved settings is dropped on load. Each directory or `.zip` / legacy `.babproject` entry with a `project.json` manifest becomes a card. Entries without a manifest are skipped rather than failing the Homepage.
+`createTemplateStorage(root)` binds an app-owned folder (`__slate_templates__` for templates, plus the Engine Plugin and Extension libraries), so `listTemplates()` reads directory and zip templates through the ordinary storage backends. On iOS and Android the folder sits beside projects in the Documents tier (Android app-private `Directory.Data`); on web and Electron it is an OPFS library bind. Derived data (`createDerivedStorage`, `__babylonslate_derived__`) uses the same placement. Electron projects live in the Node `userData/projects` tree, so its libraries and derived data are not beside them: the main-process project IPC binds a single root. There is no user-chosen templates folder; a `templatesFolder` key in older saved settings is dropped on load. Each directory or `.zip` / legacy `.babproject` entry with a `project.json` manifest becomes a card. Entries without a manifest are skipped rather than failing the Homepage.
 
 ## Write performance decision (§19)
 
@@ -138,7 +138,7 @@ Decided for P1, in this order:
 
 **Pack format is not adopted.** One `.babasset` per asset stays the unit on disk; revisit only if device numbers show the first three are insufficient. That keeps the P2 registry and Content Browser free of a pack indirection they would otherwise have to assume.
 
-CI covers memory, OPFS through an explicit filesystem boundary (including durable reopen, name migration, denied access, swap-file listings and stale reads), and Documents through a fake filesystem; Playwright exercises real OPFS. Device Capacitor timings still need an iPad and remain open.
+CI covers memory, OPFS through an explicit filesystem boundary (including durable reopen, denied access, swap-file listings and stale reads), and Documents through a fake filesystem; Playwright exercises real OPFS. Device Capacitor timings still need an iPad and remain open.
 
 ## SecretStore and nativeHttp (P15)
 

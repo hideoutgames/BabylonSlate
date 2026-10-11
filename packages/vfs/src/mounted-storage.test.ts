@@ -28,4 +28,17 @@ describe("mounted project storage", () => {
     await expect(view.readBinaryRange("../plugin/settings", 0, 1)).rejects.toThrow(/path/i);
     expect(await source.readText("generation/settings")).toBe("original");
   });
+
+  it("lists a file mount with a deeper mount below it as the directory stat reports", async () => {
+    const source = new MemoryStorageAdapter();
+    await source.openDocumentsProject("source");
+    await source.writeText("settings", "override");
+    const view = createMountedProjectStorage([
+      { path: "plugin/virtual", storage: source, sourcePath: "settings" },
+      { path: "plugin/virtual/note", storage: source, sourcePath: "settings" },
+    ]);
+    expect(await view.stat("plugin/virtual")).toMatchObject({ isDir: true });
+    expect(await view.readdir("plugin")).toEqual([expect.objectContaining({ name: "virtual", isDir: true })]);
+    expect((await view.readdir("plugin/virtual")).map(entry => entry.name)).toEqual(["note"]);
+  });
 });
