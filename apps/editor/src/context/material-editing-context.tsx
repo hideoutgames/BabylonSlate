@@ -473,11 +473,18 @@ export function MaterialEditingProvider({
     };
   }, [assetRegistry, documentId, invalidatePreview, readAssetChunk, textureGuidsKey, textureSourcesKey]);
 
-  const rootParameters = useMemo(() => {
+  const rootLowering = useMemo(() => {
     if (!isInstanceDocument || !document) return null;
-    const lowered = lowerMaterialDocument(document, { functions });
-    return lowered.ok ? materialParameterDefaults(lowered.plan) : null;
+    return lowerMaterialDocument(document, { functions });
   }, [document, functions, isInstanceDocument]);
+  const rootParameters = useMemo(
+    () => rootLowering?.ok ? materialParameterDefaults(rootLowering.plan) : null,
+    [rootLowering],
+  );
+  // Until the root's Material Functions load, a failed lowering is not final.
+  const rootLoweringError = functionsReady && rootLowering && !rootLowering.ok
+    ? rootLowering.diagnostics.find((row) => row.severity === "error")?.message ?? "The parent Material does not compile."
+    : null;
 
   /** Push the merged overrides as uniform/texture writes; unset names return to the root default. */
   const applyInstanceParameters = useCallback(() => {
@@ -650,10 +657,10 @@ export function MaterialEditingProvider({
     const inherited = parentOverrides?.ok ? parentOverrides.overrides : {};
     return {
       document: instanceDocument,
-      status: !instanceDocument.parentGuid || instanceResolution?.ok === false ? "error"
+      status: !instanceDocument.parentGuid || instanceResolution?.ok === false || rootLoweringError ? "error"
         : instanceResolution?.ok && rootParameters ? "ready" : "loading",
       error: !instanceDocument.parentGuid ? "Pick a parent Material to edit its parameters."
-        : instanceResolution?.ok === false ? instanceResolution.message : null,
+        : instanceResolution?.ok === false ? instanceResolution.message : rootLoweringError,
       rootGuid: instanceResolution?.ok ? instanceResolution.rootGuid : null,
       domain: document?.domain ?? null,
       parameters: Object.entries(rootParameters ?? {}).map(([name, fallback]) => ({
@@ -661,7 +668,7 @@ export function MaterialEditingProvider({
         inherited: inherited[name]?.kind === fallback.kind ? inherited[name]! : fallback,
       })),
     };
-  }, [document?.domain, instanceDocument, instanceResolution, instanceSources, rootParameters]);
+  }, [document?.domain, instanceDocument, instanceResolution, instanceSources, rootLoweringError, rootParameters]);
 
   const value = useMemo<MaterialEditingValue>(
     () => ({
