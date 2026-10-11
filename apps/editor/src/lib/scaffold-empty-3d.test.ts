@@ -8,6 +8,7 @@ import {
   MANNEQUIN_ACTOR_ID,
   MANNEQUIN_CLASS_ID,
 } from "./scaffold-empty-3d";
+import { syncSceneActorsFromPrefabs } from "./prefab-instance-sync";
 
 function indexed(
   type: string,
@@ -126,6 +127,8 @@ describe("applyKenneyMannequinEmptyScaffold", () => {
       expect.objectContaining({ kind: "capsule" }),
     );
     expect(classCollider?.transform?.position[1]).toBe(actorY);
+    // The open-time prefab sync finds the instance current, so a new project opens clean.
+    expect(syncSceneActorsFromPrefabs(scene, { [MANNEQUIN_CLASS_ID]: graph.components! })).toBe(scene);
 
     const catalog = new AssetRegistry(storage);
     await catalog.mountRoot({ id: "project", kind: "project", pathPrefix: "" });
