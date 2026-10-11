@@ -7,7 +7,16 @@ import { EngineStore, Vector3 } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ContextMenuOverlay, useContextMenu } from "@babylonslate/editor-kit";
-import { FocusIcon, RefreshCwIcon } from "lucide-react";
+import { FocusIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
+import { Button } from "@babylonslate/ui/components/button";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@babylonslate/ui/components/empty";
 import {
   applyGizmoMultiSelectDrag,
   applyViewportJoystickSteer,
@@ -166,6 +175,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     preparing,
     ensureSharedEngine,
     sharedEngineGeneration,
+    reportSceneViewportLoading,
   } = usePlay();
   const [sharedEngine, setSharedEngine] = useState<AbstractEngine | null>(null);
   const [engineEpoch, setEngineEpoch] = useState(0);
@@ -209,6 +219,13 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     gpu?: ReturnType<typeof engineAdapterInfo> | null;
   }>({ open: false, progress: 0, phase: "Preparing Scene" });
   const [sceneReady, setSceneReady] = useState(false);
+  // Play shares the project Engine; it waits for a blocking load to settle.
+  const sceneLoading = sceneLoad.open && sceneLoad.failed !== true;
+  useEffect(() => {
+    if (!sceneLoading || !documentId || !reportSceneViewportLoading) return;
+    reportSceneViewportLoading(documentId, true);
+    return () => reportSceneViewportLoading(documentId, false);
+  }, [documentId, reportSceneViewportLoading, sceneLoading]);
   const [dropReady, setDropReady] = useState<{
     scene: SerializedScene;
     handle: EngineHandle;
@@ -1502,6 +1519,37 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         className="h-full min-h-0 min-w-0 w-full flex-1 touch-none"
         data-testid="viewport-canvas"
       />
+      {sceneLoad.failed && !sceneLoad.open ? (
+        // The failed load released the Engine; keep Retry reachable after Close.
+        <Empty
+          className="absolute inset-0 rounded-none border-0 bg-background"
+          data-testid="viewport-load-failed"
+        >
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <TriangleAlertIcon />
+            </EmptyMedia>
+            <EmptyTitle>{sceneLoad.rendering ? "Rendering Update Failed" : "Scene Loading Failed"}</EmptyTitle>
+            <EmptyDescription>
+              {sceneLoad.phase === "Loading Document"
+                ? "The scene document could not be read."
+                : "The viewport could not finish loading. Adjust the scene or rendering settings, then retry."}
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+              data-testid="viewport-load-retry"
+              onClick={() => setReloadVersion((version) => version + 1)}
+            >
+              Retry
+            </Button>
+          </EmptyContent>
+        </Empty>
+      ) : null}
       {marqueeRect ? (
         <div
           data-testid="viewport-marquee"

@@ -189,6 +189,9 @@ interface PlayContextValue {
   ensureSharedEngine: () => AbstractEngine | null;
   sharedEngineGeneration: number;
   registerScheduler: (scheduler: EditorLoopHandle) => () => void;
+  /** A Scene viewport is in a blocking load; Play waits for it to finish. */
+  sceneViewportLoading: boolean;
+  reportSceneViewportLoading: (documentId: string, loading: boolean) => void;
   focusedNodeId: string | null;
   clearFocusedNode: () => void;
   appendLog: (line: string) => void;
@@ -725,6 +728,18 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const registerScheduler = useCallback((scheduler: EditorLoopHandle) => {
     return schedulerRegistryRef.current.register(scheduler);
   }, []);
+
+  const [loadingSceneViewports, setLoadingSceneViewports] = useState<ReadonlySet<string>>(() => new Set());
+  const reportSceneViewportLoading = useCallback((documentId: string, loading: boolean) => {
+    setLoadingSceneViewports((current) => {
+      if (current.has(documentId) === loading) return current;
+      const next = new Set(current);
+      if (loading) next.add(documentId);
+      else next.delete(documentId);
+      return next;
+    });
+  }, []);
+  const sceneViewportLoading = loadingSceneViewports.size > 0;
 
   useEffect(() => {
     return attachLifecyclePause((paused) => {
@@ -1495,6 +1510,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       ensureSharedEngine: ensureEngine,
       sharedEngineGeneration,
       registerScheduler,
+      sceneViewportLoading,
+      reportSceneViewportLoading,
       focusedNodeId,
       clearFocusedNode: () => setFocusedNodeId(null),
       appendLog,
@@ -1534,6 +1551,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       ensureEngine,
       sharedEngineGeneration,
       registerScheduler,
+      sceneViewportLoading,
+      reportSceneViewportLoading,
       focusedNodeId,
       appendLog,
       reportBtState,

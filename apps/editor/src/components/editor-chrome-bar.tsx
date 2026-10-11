@@ -289,6 +289,7 @@ export function EditorChromeBar({
     playing,
     preparing,
     canPlay,
+    sceneViewportLoading,
     previewBuild,
     setPreviewBuild,
     playFromScene,
@@ -371,7 +372,7 @@ export function EditorChromeBar({
   const playChord = useKeybindChord("play.start");
   const projectSettingsChord = useKeybindChord("editor.projectSettings");
   const engineSettingsChord = useKeybindChord("editor.engineSettings");
-  const playEnabled = Boolean(projectName) && !playing && !preparing && canPlay;
+  const playEnabled = Boolean(projectName) && !playing && !preparing && canPlay && !sceneViewportLoading;
   const launchPlay = () => {
     const inject =
       typeof window !== "undefined" &&
@@ -799,11 +800,13 @@ export function EditorChromeBar({
                       playFromScene,
                     })}
                     title={
-                      canPlay
-                        ? undefined
-                        : playFromScene && !previewBuild
+                      !canPlay
+                        ? playFromScene && !previewBuild
                           ? "Open a scene to play"
                           : "Set Startup Scene in Project Settings."
+                        : sceneViewportLoading
+                          ? "Wait for the scene to finish loading"
+                          : undefined
                     }
                     aria-keyshortcuts={playChord ? ariaKeyShortcuts(playChord) : undefined}
                     disabled={!playEnabled}
@@ -824,7 +827,7 @@ export function EditorChromeBar({
                   </span>
                 ) : null}
               </TooltipTrigger>
-              {canPlay ? (
+              {canPlay && !sceneViewportLoading ? (
                 <TooltipContent>
                   {phone && previewBuild ? "Build" : playChromeLaunchLabel(previewBuild)}
                   <ShortcutKeys chord={playChord} decorative />
