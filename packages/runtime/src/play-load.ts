@@ -139,11 +139,11 @@ export function createRuntimeFromLoad(
   msg: PlayLoadControl,
   onCommand: (command: CommandMessage) => void,
   saveGameStorage?: import("@babylonslate/core").SaveGameStorage,
-  sourceHost?: { acquireScene?: AcquireRuntimeScene; sceneGuidByKey?: Readonly<Record<string, string>> },
+  sourceHost?: { acquireScene?: AcquireRuntimeScene },
 ): RuntimeDriver {
   const runtime = createInProcessRuntime({
     ...runtimeOptionsFromLoadControl(msg),
-    ...sourceHost,
+    ...(sourceHost?.acquireScene ? { acquireScene: sourceHost.acquireScene } : {}),
     onCommand,
   });
   if (msg.saveGame && saveGameStorage) runtime.configureSaveGame({ ...msg.saveGame, storage: saveGameStorage });
