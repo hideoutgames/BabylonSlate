@@ -32,6 +32,23 @@ describe("ktx2 transcoder config", () => {
     ).resolves.toBe(true);
   });
 
+  it("checks a host that refuses HEAD without downloading the decoder", async () => {
+    const cancelled = vi.fn();
+    const requests: RequestInit[] = [];
+    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push(init ?? {});
+      if (init?.method === "HEAD") return new Response(null, { status: 405 });
+      return new Response(new ReadableStream({ cancel: cancelled }), { status: 200 });
+    });
+    await expect(
+      probeKtx2TranscoderAvailable("/ktx2/", fetchImpl as unknown as typeof fetch),
+    ).resolves.toBe(true);
+    const gets = requests.filter((init) => init.method === "GET");
+    expect(gets.length).toBeGreaterThan(0);
+    for (const init of gets) expect(new Headers(init.headers).get("Range")).toBe("bytes=0-0");
+    expect(cancelled).toHaveBeenCalledTimes(gets.length);
+  });
+
   it("treats a missing wasm module as unavailable even when the JS decoder exists", async () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
