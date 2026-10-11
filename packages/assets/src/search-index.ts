@@ -1,5 +1,5 @@
 import type { ProjectStorage } from "@babylonslate/core";
-import { decodeAssetDocument } from "./asset-document";
+import { readStoredAssetDocument } from "./asset-document";
 import type { BlobStore } from "./blob-store";
 import type { AssetRegistry, IndexedAsset } from "./registry";
 
@@ -64,7 +64,8 @@ export interface ProjectSearchRebuildOptions {
 
 /**
  * Project-wide text index layered on the header-only asset registry.
- * May decode Scene/Graph document JSON; never loads binary payloads.
+ * Reads only the header and document chunk of Scene/Graph/Class files; never
+ * loads binary payloads.
  */
 export class ProjectSearchIndex {
   private readonly storage: ProjectStorage;
@@ -200,8 +201,7 @@ export class ProjectSearchIndex {
     try {
       const storage = registry?.storageFor(asset.rootId) ?? this.storage;
       const blobs = registry?.blobsFor(asset.rootId) ?? this.blobs;
-      const bytes = await storage.readBinary(asset.path);
-      const document = await decodeAssetDocument(bytes, { blobs });
+      const document = await readStoredAssetDocument(storage, asset.path, { blobs });
       this.addDocumentEntries(asset, document.payload);
     } catch {
       // Header-only fallback when the document chunk is missing or corrupt.

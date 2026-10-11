@@ -1,12 +1,14 @@
-import { ENGINE_VERSION } from "@babylonslate/core";
+import { ENGINE_VERSION, type ProjectStorage } from "@babylonslate/core";
 import {
   decodeBabassetChunk,
   encodeBabasset,
   readBabassetHeader,
+  type BabassetHeader,
   type ChunkInput,
   type DecodedBabasset,
 } from "./babasset";
 import type { BlobStore } from "./blob-store";
+import { AccountedPayloadLoader, readAssetCatalog } from "./payload-loader";
 import { stableStringify } from "./bytes";
 import { collectAssetDependencyMetadata, type AssetDependencyContext, type AssetDependencyMetadata } from "./asset-dependencies";
 import { ATLAS_REFERRER_TYPES, ATLAS_TEXTURES_META, atlasTextureGuids } from "./atlas-textures";
@@ -119,6 +121,30 @@ export async function decodeAssetDocument(
     DOCUMENT_CHUNK_ID,
     options.blobs ? (sha256) => options.blobs!.readBlob(sha256) : undefined,
   );
+  return assetDocumentFrom(header, body);
+}
+
+/**
+ * {@link decodeAssetDocument} for a file in storage, reading only its header
+ * and `document` chunk, so a Scene's navmesh or reverb bake stays on disk.
+ * The read is not charged to any registry's payload account.
+ */
+export async function readStoredAssetDocument(
+  storage: ProjectStorage,
+  path: string,
+  options: { blobs?: BlobStore } = {},
+): Promise<AssetDocument> {
+  const { header, locator } = await readAssetCatalog(storage, path);
+  const entry = header.chunks.find((chunk) => chunk.id === DOCUMENT_CHUNK_ID);
+  const loader = new AccountedPayloadLoader(storage, { blobs: options.blobs });
+  const body = entry ? await loader.loadChunk(locator, entry) : null;
+  return assetDocumentFrom(header, body);
+}
+
+function assetDocumentFrom(
+  header: BabassetHeader,
+  body: Uint8Array | null,
+): AssetDocument {
   const headerPayload = header.payload;
   let payload: Record<string, unknown>;
   if (body) {
