@@ -19,7 +19,7 @@ export function resolveAssetCatalogDependencies(
   if (!references?.length) return [...dependencies].sort();
   const classes = new Map<string, Set<string>>();
   for (const asset of assets) {
-    if (asset.header.type !== "Class" && asset.header.type !== "Graph") continue;
+    if (asset.header.type !== "Class") continue;
     const classId = classIdForAssetPath(asset.path);
     for (const alias of [asset.header.guid, classId, asset.header.payload.classId]) {
       if (typeof alias !== "string" || !alias) continue;

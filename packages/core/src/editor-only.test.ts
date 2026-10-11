@@ -57,13 +57,10 @@ describe("editor-only assets", () => {
     ).toBe(false);
   });
 
-  it("treats EditorFunctionLibrary ancestry as editor-only on Class and Graph assets", () => {
+  it("treats EditorFunctionLibrary ancestry as editor-only on Class assets", () => {
     expect(isEditorFunctionLibraryClass("EditorMath", parentOf)).toBe(true);
     expect(
       isEditorOnlyAsset({ type: "Class", parentClass: "EditorMath" }, parentOf),
-    ).toBe(true);
-    expect(
-      isEditorOnlyAsset({ type: "Graph", parentClass: "EditorMath" }, parentOf),
     ).toBe(true);
   });
 

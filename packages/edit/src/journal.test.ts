@@ -71,7 +71,7 @@ describe("journal", () => {
   it("serializes and parses journal lines", () => {
     const line: JournalLine = {
       v: 1,
-      docId: "graph:assets/main.graph.babasset",
+      docId: "graph:assets/main.class.babasset",
       at: "2026-08-11T17:00:00.000Z",
       command: {
         type: "graph.moveNode",

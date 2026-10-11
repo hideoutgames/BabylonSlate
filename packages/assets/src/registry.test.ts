@@ -863,45 +863,24 @@ describe("AssetRegistry", () => {
     expect(fx?.assets).toContain("r2");
   });
 
-  it("lists Scene and Graph document paths", async () => {
+  it("lists Scene and Class document paths", async () => {
     const storage = await createStorage();
     await writeAsset(storage, "assets/main.scene.babasset", {
       guid: "s1",
       type: "Scene",
       name: "Main",
     });
-    await writeAsset(storage, "assets/main.graph.babasset", {
-      guid: "g1",
-      type: "Graph",
-      name: "Main",
+    await writeAsset(storage, "assets/hero.class.babasset", {
+      guid: "c1",
+      type: "Class",
+      name: "Hero",
     });
 
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     expect(registry.listDocumentPaths()).toEqual({
       scenes: ["assets/main.scene.babasset"],
-      graphs: ["assets/main.graph.babasset"],
-    });
-  });
-
-  it("lists Class assets as graph documents", async () => {
-    const storage = await createStorage();
-    await writeAsset(storage, "assets/hero.class.babasset", {
-      guid: "c1",
-      type: "Class",
-      name: "Hero",
-    });
-    await writeAsset(storage, "assets/legacy.graph.babasset", {
-      guid: "g1",
-      type: "Graph",
-      name: "Legacy",
-    });
-
-    const registry = new AssetRegistry(storage);
-    await registry.mountRoot(projectContentRoot());
-    expect(registry.listDocumentPaths()).toEqual({
-      scenes: [],
-      graphs: ["assets/hero.class.babasset", "assets/legacy.graph.babasset"],
+      graphs: ["assets/hero.class.babasset"],
     });
   });
 

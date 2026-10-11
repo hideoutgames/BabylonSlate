@@ -211,7 +211,7 @@ export function dataAssetDependencies(
 
 export function remapDataPayloadGuids<T>(assetType: string, value: T, remap: ReadonlyMap<string, string>, definitionFields?: DataDefinitionFieldsResolver): T {
   const map = (reference: string) => remap.get(reference) ?? reference;
-  return assetType === "Class" || assetType === "Graph"
+  return assetType === "Class"
     ? mapDataGraphReferences(value, map, definitionFields) : mapDataTypeReferences(assetType, value, map, definitionFields);
 }
 

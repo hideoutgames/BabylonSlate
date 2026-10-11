@@ -184,7 +184,7 @@ export function collectFunctionLibrariesForPalette(options: {
   };
 
   for (const asset of options.assets) {
-    if (asset.header.type !== "Class" && asset.header.type !== "Graph") {
+    if (asset.header.type !== "Class") {
       continue;
     }
     consider(
@@ -236,7 +236,7 @@ export function collectSubsystemClassesForPalette(options: {
     if (base) bases.set(classId, base);
   };
   for (const asset of options.assets) {
-    if (asset.header.type !== "Class" && asset.header.type !== "Graph") {
+    if (asset.header.type !== "Class") {
       continue;
     }
     consider(options.classIdForPath(asset.path), asset.header.parentClass);
@@ -505,7 +505,7 @@ export function collectClassGraphsForPalette(options: {
 }): Record<string, SerializedGraph> {
   const graphs: Record<string, SerializedGraph> = {};
   for (const asset of options.assets) {
-    if (asset.header.type !== "Class" && asset.header.type !== "Graph") {
+    if (asset.header.type !== "Class") {
       continue;
     }
     const classId = options.classIdForPath(asset.path);

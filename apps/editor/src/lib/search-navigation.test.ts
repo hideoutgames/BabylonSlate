@@ -46,18 +46,18 @@ describe("documentOpenForTarget", () => {
     expect(
       documentOpenForTarget({
         kind: "graph-node",
-        graphPath: "assets/main.graph.babasset",
+        graphPath: "assets/main.class.babasset",
         nodeId: "log-1",
       }),
-    ).toEqual({ kind: "graph", path: "assets/main.graph.babasset" });
+    ).toEqual({ kind: "graph", path: "assets/main.class.babasset" });
     expect(
       documentOpenForTarget({
         kind: "variable",
         name: "health",
-        graphPath: "assets/main.graph.babasset",
+        graphPath: "assets/main.class.babasset",
         nodeId: "var-1",
       }),
-    ).toEqual({ kind: "graph", path: "assets/main.graph.babasset" });
+    ).toEqual({ kind: "graph", path: "assets/main.class.babasset" });
   });
 
   it("opens settings documents for import and type assets", () => {

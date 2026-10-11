@@ -9,11 +9,11 @@ const FIXTURE_DIR = dirname(fileURLToPath(import.meta.url));
 const UPDATE = process.env.UPDATE_GOLDENS === "1";
 
 describe("babasset golden fixtures", () => {
-  it("matches committed Graph v1 golden", async () => {
+  it("matches committed Class v1 golden", async () => {
     const bytes = await encodeBabasset({
       header: {
         guid: "00000000-0000-4000-8000-000000000001",
-        type: "Graph",
+        type: "Class",
         name: "Main",
         engineVersion: "0.0.0",
         version: 1,
@@ -25,12 +25,12 @@ describe("babasset golden fixtures", () => {
       blobThreshold: 1024 * 1024,
     });
 
-    const relative = "__fixtures__/graph-v1.babasset";
+    const relative = "__fixtures__/class-v1.babasset";
     if (UPDATE) {
       writeGoldenBinary(FIXTURE_DIR, relative, bytes);
     }
     const golden = readGoldenBinary(FIXTURE_DIR, relative);
     expect(bytesEqual(bytes, golden)).toBe(true);
-    expect(readBabassetHeader(golden).type).toBe("Graph");
+    expect(readBabassetHeader(golden).type).toBe("Class");
   });
 });

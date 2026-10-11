@@ -19,7 +19,7 @@ describe("planPlayPreviewPrepare", () => {
     expect(
       planPlayPreviewPrepare({
         dirtyDocuments: [
-          { label: "main.graph.babasset" },
+          { label: "main.class.babasset" },
           { label: "main.scene.babasset" },
         ],
         scriptsStale: true,
@@ -29,7 +29,7 @@ describe("planPlayPreviewPrepare", () => {
       action: "prepare",
       needsSave: true,
       needsCompile: true,
-      dirtyNames: ["main.graph.babasset", "main.scene.babasset"],
+      dirtyNames: ["main.class.babasset", "main.scene.babasset"],
     });
   });
 
@@ -66,7 +66,7 @@ describe("planPlayPreviewPrepare", () => {
   it("requires migration approval before saving dirty documents", () => {
     expect(
       planPlayPreviewPrepare({
-        dirtyDocuments: [{ label: "main.graph.babasset" }],
+        dirtyDocuments: [{ label: "main.class.babasset" }],
         scriptsStale: true,
         migrationPending: true,
       }),

@@ -1,4 +1,4 @@
-import type { GraphClassMember } from "@babylonslate/core";
+import { classIdForAssetPath, type GraphClassMember } from "@babylonslate/core";
 import { ASSET_DEPENDENCY_METADATA_VERSION, collectAssetDependencyMetadata, type AssetDependencyClass, type AssetDependencyContext } from "./asset-dependencies";
 import { BABASSET_PREFIX_BYTES, readBabassetHeader, readBabassetHeaderLength } from "./babasset";
 import { concatBytes, sha256Hex, stableStringify, writeU32LE } from "./bytes";
@@ -16,14 +16,8 @@ export interface DependencyMetadataUpgradeOptions {
 export function assetsNeedingDependencyMetadataUpgrade(assets: readonly IndexedAsset[]): IndexedAsset[] {
   return assets.filter(asset => !asset.placeholder && (
     asset.header.dependencyMetadataVersion !== ASSET_DEPENDENCY_METADATA_VERSION || !asset.header.requiredDependencies
-    || (["Class", "Graph"].includes(asset.header.type) && !asset.header.requiredVariableNames)
+    || (asset.header.type === "Class" && !asset.header.requiredVariableNames)
   ));
-}
-
-function classId(asset: IndexedAsset): string {
-  return (asset.path.split("/").pop() ?? asset.path)
-    .replace(/\.(graph|class)\.(babasset|json)$/, "")
-    .replace(/\.babasset$/, "").replace(/[^A-Za-z0-9_]+/g, "_") || "Graph";
 }
 
 /**
@@ -49,16 +43,16 @@ export async function upgradeAssetDependencyMetadata(registry: AssetRegistry, op
   // Schema documents are small; scene/source documents are consumed one at a time.
   for (const asset of catalog) {
     options.signal?.throwIfAborted();
-    if (!["Class", "Graph", "DataDefinition", "Structure"].includes(asset.header.type)) continue;
+    if (!["Class", "DataDefinition", "Structure"].includes(asset.header.type)) continue;
     const document = await registry.readAssetDocument(asset.header.guid);
-    if (asset.header.type === "Class" || asset.header.type === "Graph") {
+    if (asset.header.type === "Class") {
       // Role keys are declared on variable getter nodes. Resolve them while this
       // one graph is in memory; retain only its schema for later instance overrides.
       const roles = collectAssetDependencyMetadata("Class", document.payload, {
         ...options.context, parentClass: asset.header.parentClass,
       }).requiredVariableNames;
       classes.push({
-        guid: asset.header.guid, classId: classId(asset), parentClassId: asset.header.parentClass,
+        guid: asset.header.guid, classId: classIdForAssetPath(asset.path), parentClassId: asset.header.parentClass,
         members: Array.isArray(document.payload.members) ? document.payload.members as GraphClassMember[] : [],
         requiredVariableNames: roles,
       });

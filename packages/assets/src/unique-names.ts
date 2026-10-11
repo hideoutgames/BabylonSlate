@@ -22,8 +22,8 @@ export function nextCopyName(name: string, existingNames: string[]): string {
 }
 
 /**
- * Container suffixes of typed assets (`newAssetFileSuffix`, `PLUGIN_FILE_SUFFIX`
- * and `MAIN_GRAPH_FILE`). Rename and Duplicate keep these; any other file name
+ * Container suffixes of typed assets (`newAssetFileSuffix` and
+ * `PLUGIN_FILE_SUFFIX`). Rename and Duplicate keep these; any other file name
  * only loses its trailing `.babasset`.
  */
 const ASSET_FILE_SUFFIXES = [
@@ -40,7 +40,6 @@ const ASSET_FILE_SUFFIXES = [
   ".inputaxis.babasset",
   ".savegame.babasset",
   ".scene.babasset",
-  ".graph.babasset",
   ".class.babasset",
   ".prefab.babasset",
   ".spriteanim.babasset",

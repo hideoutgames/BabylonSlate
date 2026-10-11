@@ -1,5 +1,5 @@
 import type { ProjectStorage, ProjectStorageReader, StorageReadOptions } from "@babylonslate/core";
-import { ENGINE_VERSION, isStorageNotFound, SourceRevisionChangedError } from "@babylonslate/core";
+import { classIdForAssetPath, ENGINE_VERSION, isStorageNotFound, SourceRevisionChangedError } from "@babylonslate/core";
 import {
   decodeBabasset,
   encodeBabasset,
@@ -614,7 +614,7 @@ export class AssetRegistry {
       .map((asset) => ({
         guid: asset.header.guid,
         classId: typeof asset.header.payload.classId === "string" ? asset.header.payload.classId
-          : (asset.path.split("/").pop() ?? "").replace(/\.(graph|class)\.(babasset|json)$/, "").replace(/\.babasset$/, "").replace(/[^A-Za-z0-9_]+/g, "_") || "Graph",
+          : classIdForAssetPath(asset.path),
         parentClassId: asset.header.parentClass,
         requiredVariableNames: asset.header.requiredVariableNames,
         members: Array.isArray(asset.header.payload.members) ? asset.header.payload.members as AssetDependencyClass["members"]
@@ -1412,7 +1412,7 @@ export class AssetRegistry {
     return this.byGuid.get(guid);
   }
 
-  /** Paths of Scene and Graph assets for ProjectDocument reconciliation. */
+  /** Paths of Scene and Class assets for ProjectDocument reconciliation. */
   listDocumentPaths(filter?: { rootId?: string }): { scenes: string[]; graphs: string[] } {
     const scenes: string[] = [];
     const graphs: string[] = [];
@@ -1420,7 +1420,7 @@ export class AssetRegistry {
       if (asset.placeholder || asset.header.type === "Unresolved") continue;
       if (filter?.rootId && asset.rootId !== filter.rootId) continue;
       if (asset.header.type === "Scene") scenes.push(asset.path);
-      else if (asset.header.type === "Graph" || asset.header.type === "Class") {
+      else if (asset.header.type === "Class") {
         graphs.push(asset.path);
       }
     }
