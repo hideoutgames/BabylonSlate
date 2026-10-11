@@ -1557,6 +1557,27 @@ describe("validateGraphs", () => {
     expect(validateGraphs([graph], { assetGuid: "a" })).toEqual([]);
   });
 
+  it("warns on a While Loop whose condition is wired from a Make Bool True", () => {
+    const makeBool: GraphNode = {
+      id: "true", typeId: "literal.makeBool", position: { x: 0, y: 0 },
+      properties: { "default:in": true }, pins: [pin("in", "In", "in", BOOL), pin("out", "Out", "out", BOOL)],
+    };
+    const graph: LogicGraph = {
+      id: "g", kind: "event", nodes: [flowEntry(), makeBool, {
+        id: "while", typeId: "flow.whileLoop", position: { x: 0, y: 0 },
+        properties: { "default:condition": false }, pins: [pin("execIn", "exec", "in", EXEC), pin("condition", "Condition", "in", BOOL), pin("loopBody", "Loop Body", "out", EXEC)],
+      }],
+      edges: [
+        execThen("entry", "while"),
+        { id: "cond", sourceNodeId: "true", sourcePinId: "out", targetNodeId: "while", targetPinId: "condition" },
+      ],
+    };
+    const constantLoop = () => validateGraphs([graph], { assetGuid: "a" }).filter((d) => d.code === "flow.constant_loop");
+    expect(constantLoop()).toEqual([expect.objectContaining({ nodeId: "while", severity: "warning" })]);
+    makeBool.properties["default:in"] = false;
+    expect(constantLoop()).toEqual([]);
+  });
+
   it("still diagnoses a Branch false arm reachable from Begin Play", () => {
     const graph: LogicGraph = {
       id: "g",

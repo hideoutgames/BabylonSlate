@@ -225,14 +225,27 @@ function validateStructural(
   for (const node of graph.nodes) {
     if (!compiled.has(node.id) || node.typeId !== "flow.whileLoop") continue;
     const condition = node.pins.find((pin) => pin.id === "condition");
-    if (!condition || graph.edges.some((edge) => edge.targetNodeId === node.id && edge.targetPinId === condition.id)) continue;
-    if (readPinDefaultForPin(node.properties, condition) !== true) continue;
+    if (!condition || !isConstantTrue(graph, node, condition.id)) continue;
     out.push(diagnostic({ severity: "warning", code: "flow.constant_loop",
       message: "While Loop condition is always True. Ensure the loop body breaks or yields.",
       assetGuid: ctx.assetGuid, graphId: graph.id, nodeId: node.id, pinId: condition.id }));
   }
 
   return out;
+}
+
+/**
+ * True when an input is the literal True: its unwired default, or a wire from
+ * a Make Bool whose own input is (recursively) the literal True.
+ */
+function isConstantTrue(graph: LogicGraph, node: GraphNode, pinId: string, seen = new Set<string>()): boolean {
+  const pin = findPin(node, pinId);
+  if (!pin || seen.has(node.id)) return false;
+  seen.add(node.id);
+  const edge = graph.edges.find((entry) => entry.targetNodeId === node.id && entry.targetPinId === pinId);
+  if (!edge) return readPinDefaultForPin(node.properties, pin) === true;
+  const source = findNode(graph, edge.sourceNodeId);
+  return source?.typeId === "literal.makeBool" && isConstantTrue(graph, source, "in", seen);
 }
 
 function validatePinTyping(
