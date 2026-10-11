@@ -3429,7 +3429,8 @@ float swToonCover = smoothstep(-swToonAA, swToonAA, swSwashEdgeS);
 // half a Foam Width), so a steep-banked body (a narrow river or canal, a quay) keeps a thin edge instead of foaming across
 // its whole width. A gentle beach never reaches this depth inside its band.
 float swBandCap = swFoamWidth * 0.4 + 2.0 * U.slateWaterWaves.x;
-float swBandShallow = mix(1.0, 1.0 - step(swBandCap, swTerrainDepth), swKnown);
+float swBandCapAA = fwidth(swTerrainDepth) * 0.7 + 0.002;
+float swBandShallow = mix(1.0, 1.0 - smoothstep(swBandCap - swBandCapAA, swBandCap + swBandCapAA, swTerrainDepth), swKnown);
 float swFoam = (1.0 - smoothstep(swSurfEdge - swAAU, swSurfEdge + swAAU, swShoreX)) * swToonCover * swBandShallow;
 float swFrontAA = min(fwidth(swSwashFoam) * 0.7 + 0.01, 0.3);
 swFoam = max(swFoam, smoothstep(0.5 - swFrontAA, 0.5 + swFrontAA, swSwashFoam) * step(0.01, swFoamAmt));
