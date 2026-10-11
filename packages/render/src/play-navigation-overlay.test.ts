@@ -3,7 +3,7 @@ import { createTestEngine } from "./create-null-engine";
 import { createPlayNavigationOverlay } from "./play-navigation-overlay";
 
 describe("createPlayNavigationOverlay", () => {
-  it("rebuilds an agent label only for a stop or a real speed change", () => {
+  it("labels agent speed in half-unit steps so jitter reuses the label", () => {
     const { engine, scene } = createTestEngine();
     const overlay = createPlayNavigationOverlay(scene);
     const agent = {
@@ -27,6 +27,9 @@ describe("createPlayNavigationOverlay", () => {
       expect(label().metadata.label).toContain("2.5 u/s");
       update(0);
       expect(label().metadata.label).toContain("0.0 u/s");
+      // A slow walk after standing still is not labelled as stopped.
+      update(0.4);
+      expect(label().metadata.label).toContain("0.5 u/s");
     } finally {
       overlay.dispose();
       engine.dispose();
