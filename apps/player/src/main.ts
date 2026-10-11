@@ -229,6 +229,7 @@ async function launchLoaded(
         __babylonslatePlayerTest?: PlayerTestHandle;
       }
     ).__babylonslatePlayerTest = {
+      tickIndex: () => session.ticks(),
       visuals: () => session.visuals(),
       rendering: () => session.rendering(),
       scalability: () => session.scalability(),

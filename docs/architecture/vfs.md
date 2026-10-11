@@ -112,7 +112,7 @@ Fields: recents + bookmarks (each recent also caches the project's appearance an
 
 Number fields (frame cap, hardware scaling, pointer scale, undo length, graph default zoom, camera speed, Prefab grid size, model import default scale, texture budget MB, audio budget MB, max voices, and Project Settings `pixelsPerUnit`) use `NumberField`: an empty draft while typing does not persist, and blur restores the last valid value. Out-of-range drafts clamp on blur. Focusing the field selects all on first click, tap, or Tab.
 
-`createAppSettingsStore()` picks Preferences on iOS/Android, `ElectronAppSettingsStore` when the host installed `globalThis.babylonslate.userData`, otherwise localStorage. If a bridge read or write fails, the Electron store keeps settings in memory for the session. On iOS/Android, stored settings that cannot be parsed or validated load as defaults and are replaced on the next save; a failed native Preferences read is reported and never overwrites stored settings.
+`createAppSettingsStore()` picks Preferences on iOS/Android, `ElectronAppSettingsStore` when the host installed `globalThis.babylonslate.userData`, otherwise localStorage. When localStorage or the Electron bridge refuses a save, the store keeps those settings in memory and loads them ahead of the older stored copy for the rest of the session. If a later read fails or cannot be parsed, the store loads the settings it last saved or read rather than defaults. On iOS/Android, stored settings that cannot be parsed or validated load as defaults and are replaced on the next save; a failed native Preferences read is reported and never overwrites stored settings.
 
 ## Capacitor public copies (P14)
 
@@ -178,7 +178,7 @@ iOS audio lifecycle uses a `.playback` session mixed with other apps, so Play an
 | Web | OPFS `babylonslate-game-saves`; writable streams stage changes until `close()`. An exclusive Web Lock spans the service transaction across tabs. Browser persistence requests return the browser decision; storage remains clearable. |
 | iOS | Capacitor `Directory.Library/Application Support/BabylonSlate/game-saves`, independent of Files-visible Documents. Temporary write then rename; Web Locks serialize WebView contexts. |
 | Android | Capacitor `Directory.Data/BabylonSlate/game-saves`; temporary write then rename; Web Locks serialize WebView contexts. |
-| Electron | `userData/game-saves`; main-process temporary file, file sync, rename, then directory sync on POSIX. The application single-instance lock prevents competing host processes; owned IPC leases serialize windows and release on reload, crash or close. |
+| Electron | `userData/game-saves`; main-process temporary file, file sync, rename, then directory sync on POSIX. The application single-instance lock prevents competing host processes; owned IPC leases serialize windows and release on reload, crash or close. A lease covers its key and every key below it, so no two windows hold a key and its parent at once. |
 
 - Filesystem names encode the logical key bytes so case-insensitive hosts cannot merge differently named profiles or slots. Paths reject traversal, empty segments and oversized encoded names.
 - Missing results are reserved for explicit not-found errors. Permission and storage errors propagate; quota errors and explicit native `ENOSPC`/`EDQUOT` map to storage-full. Capacitor generic I/O errors are not guessed to mean full.

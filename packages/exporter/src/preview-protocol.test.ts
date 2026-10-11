@@ -13,11 +13,13 @@ import {
 } from "./preview-protocol";
 
 describe("preview pack protocol", () => {
-  it.each([undefined, 64 * 1024 * 1024])("round-trips in-memory files with a separate session budget of %s", (traceByteBudget) => {
+  it("hands off only the catalog with a separate session budget", () => {
+    const traceByteBudget = 64 * 1024 * 1024;
     const files = new Map([
       ["game.json", new TextEncoder().encode('{"startupSceneGuid":"s1"}')],
+      ["assets/data-0.bin", new Uint8Array([1, 2])],
     ]);
-    const message = previewPackFromFiles(files, { traceByteBudget });
+    const message = previewPackFromFiles(files, traceByteBudget);
     expect(message.type).toBe(PREVIEW_PACK_MESSAGE);
     expect(isPreviewPackMessage(message)).toBe(true);
     expect(message.traceByteBudget).toBe(traceByteBudget);
@@ -26,7 +28,7 @@ describe("preview pack protocol", () => {
     expect([...restored.keys()]).toEqual(["game.json"]);
   });
 
-  it.each([0, -1, 1.5, NaN, Infinity, "128"])("rejects an invalid Preview trace budget of %s", (traceByteBudget) => {
+  it.each([undefined, 0, -1, 1.5, NaN, Infinity, "128"])("rejects an invalid Preview trace budget of %s", (traceByteBudget) => {
     expect(isPreviewPackMessage({ type: PREVIEW_PACK_MESSAGE, files: {}, traceByteBudget })).toBe(false);
   });
 

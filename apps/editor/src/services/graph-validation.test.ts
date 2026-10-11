@@ -340,7 +340,6 @@ describe("hydrateSerializedGraphForEditor", () => {
           type: "casting.cast",
           position: { x: 0, y: 0 },
           data: {
-            defaultClassId: "Hero",
             "default:class": "Hero",
             title: "Cast to BObject",
             __pins: [
@@ -390,7 +389,6 @@ describe("hydrateSerializedGraphForEditor", () => {
           type: "casting.cast",
           position: { x: 200, y: 0 },
           data: {
-            defaultClassId: "Hero",
             "default:class": "Hero",
           },
         },

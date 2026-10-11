@@ -13,6 +13,7 @@ describe("historical migration goldens", () => {
   it("runs a frozen v0 logic graph payload through the Class chain", () => {
     const registry = createDefaultMigrationRegistry();
     // Frozen pre-nodes/edges file: never regenerate it with the current writer.
+    // Only its v0 payload is under test; its retired "Graph" header type is not read.
     const golden = readGoldenBinary(FIXTURE_DIR, "__fixtures__/class-v0.babasset");
     const header = readBabassetHeader(golden);
     expect(header.version).toBe(0);

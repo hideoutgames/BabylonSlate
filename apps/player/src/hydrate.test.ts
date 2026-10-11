@@ -53,7 +53,7 @@ function pngIhdr(width: number, height: number): Uint8Array {
 }
 
 describe("packedContentFromGame", () => {
-  it.each(["packed", "loose"] as const)("hydrates independent Data Definitions and owned hierarchical entries (%s)", async (mode) => {
+  it("hydrates independent Data Definitions and owned hierarchical entries", async () => {
     const payloads = [
       { guid: "quality", type: "Enum", payload: { members: [{ name: "Rare", value: 1 }] } },
       { guid: "stats", type: "DataDefinition", payload: { kind: "dataDefinition", fields: [
@@ -66,7 +66,7 @@ describe("packedContentFromGame", () => {
       ] } },
     ];
     const exported = await exportGame({
-      mode, bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [],
+      bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [],
       assets: payloads.map(({ guid, type, payload }) => ({ guid, type, sceneGuid: "scene", bytes: encoder.encode(JSON.stringify(payload)) })),
     });
     if (!exported.ok) throw new Error(exported.error);
@@ -104,9 +104,9 @@ describe("packedContentFromGame", () => {
       expect(decode.mock.calls.some(([bytes]) => binary.has(bytes as Uint8Array))).toBe(false);
     } finally { decode.mockRestore(); }
   });
-  it.each(["packed", "loose"] as const)("hydrates live render target assets without treating them as uploaded images (%s)", async (mode) => {
+  it("hydrates live render target assets without treating them as uploaded images", async () => {
     const packed = await exportGame({
-      mode, bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [],
+      bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [],
       assets: [
         { guid: "scene", type: "Scene", sceneGuid: "scene", bytes: encoder.encode(JSON.stringify(createDefaultScene())) },
         { guid: "depth", type: "RenderTarget", sceneGuid: "scene", bytes: encoder.encode(JSON.stringify({ mode: "DepthPass", width: 128, height: 64 })) },

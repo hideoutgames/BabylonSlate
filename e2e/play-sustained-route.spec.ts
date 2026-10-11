@@ -77,7 +77,10 @@ async function sampleWindow(
           rendering?: () => unknown;
           tickIndex?: () => number;
         };
-        __babylonslatePlayerTest?: { rendering?: () => unknown };
+        __babylonslatePlayerTest?: {
+          rendering?: () => unknown;
+          tickIndex?: () => number;
+        };
       };
       const hooks =
         global.__babylonslatePlayTest ?? global.__babylonslatePlayerTest ?? null;
@@ -88,9 +91,7 @@ async function sampleWindow(
           return null;
         }
       };
-      const tickIndex = () =>
-        (hooks as { tickIndex?: () => number | null } | null)?.tickIndex?.() ??
-        null;
+      const tickIndex = () => hooks?.tickIndex?.() ?? null;
       const longTasks: number[] = [];
       let observer: PerformanceObserver | null;
       try {

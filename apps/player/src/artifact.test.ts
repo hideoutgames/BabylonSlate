@@ -93,8 +93,8 @@ describe("loadGameFromFiles", () => {
     expect(game.fontMsdfPng.size).toBe(0);
     game.dispose!();
   });
-  it.each(["packed", "loose"] as const)("overlaps asset HTTP requests with a bounded pool (%s)", async (mode) => {
-    const result = await exportGame({ mode, bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [],
+  it("overlaps asset HTTP requests with a bounded pool", async () => {
+    const result = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [],
       assets: Array.from({ length: 15 }, (_, index) => ({ guid: `texture-${index}`, type: "Texture", startupRequired: true, sceneGuid: "scene", bytes: new Uint8Array([index]) })) });
     if (!result.ok) throw new Error(result.error);
     let active = 0;
@@ -139,9 +139,9 @@ describe("loadGameFromFiles", () => {
     expect(game.textureBytes.has("texture")).toBe(false);
     game.dispose!();
   });
-  it.each([true, false])("loads prepared emission independently of visual texture bytes (packed=%s)", async (pack) => {
+  it("loads prepared emission independently of visual texture bytes", async () => {
     const emission = await encodeAreaEmission(new Uint8Array(AREA_EMISSION_EDGE ** 2 * 4).fill(200), "a".repeat(64));
-    const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], mode: pack ? "packed" : "loose", assets: [
+    const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
       { guid: "texture", type: "Texture", bytes: new Uint8Array([1, 2, 3]), startupRequired: true, sceneGuid: "scene" },
       { guid: areaEmissionExportGuid("texture"), type: AREA_EMISSION_EXPORT_TYPE, bytes: emission, startupRequired: true, sceneGuid: "scene" },
     ] });
@@ -150,7 +150,7 @@ describe("loadGameFromFiles", () => {
     expect(game.textureBytes.get("texture")).toEqual(new Uint8Array([1, 2, 3]));
     expect(game.areaEmissions.get("texture")?.rgba.every((value) => value === 200)).toBe(true);
     emission[emission.length - 1] = 0;
-    const corrupted = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], mode: pack ? "packed" : "loose", assets: [{ guid: areaEmissionExportGuid("texture"), type: AREA_EMISSION_EXPORT_TYPE, bytes: emission, startupRequired: true, sceneGuid: "scene" }] });
+    const corrupted = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [{ guid: areaEmissionExportGuid("texture"), type: AREA_EMISSION_EXPORT_TYPE, bytes: emission, startupRequired: true, sceneGuid: "scene" }] });
     if (!corrupted.ok) throw new Error(corrupted.error);
     await expect(loadGameFromFiles(corrupted.value.files)).rejects.toThrow(/corrupt/i);
   });
@@ -389,9 +389,9 @@ describe("loadGameFromFiles", () => {
 });
 
 describe("demand-driven exported sources", () => {
-  it.each(["packed", "loose"] as const)("keeps deferred assets unread, shares source reads, and releases the last consumer (%s)", async mode => {
+  it("keeps deferred assets unread, shares source reads, and releases the last consumer", async () => {
     const scene = encoder.encode(JSON.stringify(createDefaultScene()));
-    const exported = await exportGame({ mode, bundleDebugger: false, startupSceneGuid: "a", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
+    const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "a", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
       { guid: "a", type: "Scene", sceneGuid: "a", bytes: scene, dependencies: ["b"], requiredDependencies: [] },
       { guid: "b", type: "Scene", sceneGuid: "b", bytes: scene, requiredDependencies: ["texture"] },
       { guid: "texture", type: "Texture", sceneGuid: "b", bytes: new Uint8Array([1, 2, 3]), requiredDependencies: [] },

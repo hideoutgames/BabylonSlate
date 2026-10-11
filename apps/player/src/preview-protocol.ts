@@ -16,16 +16,12 @@ export function isExpectedPreviewHostMessage(
   return event.source === parentWindow && event.origin === expectedOrigin;
 }
 
-/** The Preview handoff: the catalog only, assets on demand, and the session's trace budget. */
-export type PreviewHandoff = PreviewPackMessage & { onDemand: true; traceByteBudget: number };
-
 export function previewPackFromExpectedHostMessage(
   event: Pick<MessageEvent, "source" | "origin" | "data">,
   parentWindow: Window,
   expectedOrigin: string,
-): PreviewHandoff | null {
+): PreviewPackMessage | null {
   if (!isExpectedPreviewHostMessage(event, parentWindow, expectedOrigin)) return null;
   const pack: unknown = event.data;
-  return isPackMessage(pack) && pack.onDemand === true && pack.traceByteBudget !== undefined
-    ? pack as PreviewHandoff : null;
+  return isPackMessage(pack) ? pack : null;
 }

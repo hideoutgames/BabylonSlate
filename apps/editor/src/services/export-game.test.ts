@@ -399,7 +399,6 @@ describe("collectAndExportGame", () => {
     expect(result.ok).toBe(true);
     if (!isOk(result)) return;
     expect(result.value.manifest.startupSceneGuid).toBe("scene-1");
-    expect(result.value.manifest.mode).toBe("packed");
     expect(result.value.manifest.bundleDebugger).toBe(false);
     const startupAsset = result.value.manifest.assets.find(entry => entry.guid === "scene-1")!;
     expect(startupAsset.path).toMatch(/^assets\/data-\d+\.bin$/);

@@ -890,17 +890,13 @@ export function decodePackedAudioAsset(
   return { payload, source, sources };
 }
 
-/** Clip bytes from a BSAU envelope or a raw source blob. */
+/** One clip's bytes from a BSAU envelope; anything else holds no clip. */
 export function extractPackedAudioClipBytes(
   bytes: Uint8Array,
   chunkId: string,
 ): Uint8Array | null {
   const packed = decodePackedAudioAsset(bytes);
-  if (!packed) {
-    return chunkId === AUDIO_DEFAULT_SOURCE_CHUNK || chunkId === ""
-      ? bytes
-      : null;
-  }
+  if (!packed) return null;
   const index = packed.payload.clips.findIndex((clip) => clip.chunkId === chunkId);
   if (index >= 0) {
     const clipBytes = packed.sources[index];

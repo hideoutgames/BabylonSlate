@@ -201,7 +201,7 @@ async function acquirePlayAssetSourcesAttempt(
   const game: GameSourceContent = {
     manifest: {
       assetCatalogVersion: 1, startupSceneGuid: roots.find((id) => host.registry.getByGuid(id)?.header.type === "Scene") ?? "",
-      bundleDebugger: true, mode: "loose", render: project.settings.render, playFrameCap: project.settings.playFrameCap,
+      bundleDebugger: true, render: project.settings.render, playFrameCap: project.settings.playFrameCap,
       pixelsPerUnit: project.settings.twoD.pixelsPerUnit, sortingLayers: project.settings.twoD.sortingLayers,
       pixelPerfect: project.settings.twoD.pixelPerfect, physicsWorld: "3d",
       audioMixerGuid: project.settings.audio.audioMixerGuid ?? undefined,

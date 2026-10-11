@@ -4,7 +4,7 @@ export const PREVIEW_DIAGNOSTIC_MESSAGE = "babylonslate-preview-diagnostic-contr
 export type PreviewDiagnosticOperation = "profile-start" | "profile-stop" | "frame" | "input";
 export type PreviewDiagnosticSettings = { durationMs?: number; byteBudget?: number; inputSuppressed?: boolean; gpuTiming?: boolean };
 export type PreviewDiagnosticResult = { success: boolean; reason?: string; result?: unknown };
-export type PreviewProfileTransfer = { metadata: Record<string, unknown>; frames: Float64Array[]; ticks: Float64Array[]; gpu?: Float64Array[] };
+export type PreviewProfileTransfer = { metadata: Record<string, unknown>; frames: Float64Array[]; ticks: Float64Array[]; gpu: Float64Array[] };
 type Incoming = { source: unknown; origin: string; data: unknown };
 export type PreviewDiagnosticEndpoint = {
   source(): unknown; origin(): string;
@@ -147,22 +147,30 @@ export function createPreviewDiagnosticServer(endpoint: PreviewDiagnosticEndpoin
     if (!closed && client) endpoint.send({ type: PREVIEW_DIAGNOSTIC_MESSAGE, client, session, ...message }, transfer);
   };
   return {
-    async publishProfile(transfer: PreviewProfileTransfer): Promise<void> {
-      if (closed || !client) return;
+    /** Resolves whether the editor received the whole profile, with the reason it did not. */
+    async publishProfile(transfer: PreviewProfileTransfer): Promise<PreviewDiagnosticResult> {
+      const gone: PreviewDiagnosticResult = { success: false, reason: "Preview diagnostics closed before the profile was sent." };
+      if (closed || !client) return gone;
       const owner = client;
       const profileId = ++profileSequence;
       let sequence = 0;
       try {
         send({ action: "profile-start", profileId, metadata: transfer.metadata });
-        for (const stream of ["frames", "ticks", "gpu"] as const) for (const source of transfer[stream] ?? []) {
-          if (closed || client !== owner) return;
+        for (const stream of ["frames", "ticks", "gpu"] as const) for (const source of transfer[stream]) {
+          if (closed || client !== owner) return gone;
           if (source.byteLength > MAX_CHUNK_BYTES) throw new Error("Preview profile chunk exceeds the transport budget.");
           const rows = source.slice();
           send({ action: "profile-chunk", profileId, stream, sequence: sequence++, rows }, [rows.buffer]);
           if (sequence % 16 === 0) await new Promise<void>((resolve) => setTimeout(resolve, 0));
         }
-        if (!closed && client === owner) send({ action: "profile-end", profileId, sequence });
-      } catch (error) { send({ action: "profile-error", profileId, reason: String(error) }); }
+        if (closed || client !== owner) return gone;
+        send({ action: "profile-end", profileId, sequence });
+        return { success: true };
+      } catch (error) {
+        const reason = String(error);
+        send({ action: "profile-error", profileId, reason });
+        return { success: false, reason };
+      }
     },
     receive(event: Incoming): void {
       if (closed) return;

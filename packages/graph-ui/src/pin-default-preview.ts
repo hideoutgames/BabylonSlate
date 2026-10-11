@@ -199,8 +199,9 @@ export function pinDefaultPreview(
       return { kind: "classRef", text: pinDefaultAsString(selectedClass) };
     }
   }
+  // Only the node's own Target pin; a member argument named "target" is `target__arg`.
   if (
-    pin.name === "target" &&
+    pin.id === "target" &&
     properties.implicitSelf === true &&
     (pin.type.kind === "objectRef" || pin.type.kind === "actorRef")
   ) {

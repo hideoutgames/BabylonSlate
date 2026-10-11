@@ -440,7 +440,6 @@ describe("project schema", () => {
         id: "web",
         name: "Web",
         pluginOverrides: { "plug-1": { enabled: false } },
-        packed: true,
         bundleDebugger: false,
         fileCountWarn: 800,
         fileCountFail: 1000,
@@ -448,7 +447,7 @@ describe("project schema", () => {
     ]);
   });
 
-  it("defaults export preset packed on, bundleDebugger off, and file-count gates", () => {
+  it("defaults export preset bundleDebugger off and file-count gates", () => {
     expect(
       normalizeProjectSettings({
         exportPresets: [{ id: "itch", name: "Itch" }],
@@ -458,7 +457,6 @@ describe("project schema", () => {
         id: "itch",
         name: "Itch",
         pluginOverrides: {},
-        packed: true,
         bundleDebugger: false,
         fileCountWarn: 800,
         fileCountFail: 1000,
@@ -470,7 +468,6 @@ describe("project schema", () => {
           {
             id: "dev",
             name: "Dev",
-            packed: false,
             bundleDebugger: true,
             fileCountWarn: 10,
             fileCountFail: 20,
@@ -481,7 +478,6 @@ describe("project schema", () => {
       id: "dev",
       name: "Dev",
       pluginOverrides: {},
-      packed: false,
       bundleDebugger: true,
       fileCountWarn: 10,
       fileCountFail: 20,

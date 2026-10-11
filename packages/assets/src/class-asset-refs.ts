@@ -105,7 +105,6 @@ function transform<T>(
       if (Array.isArray(record.pins)) for (const pin of record.pins) {
         if (pin && typeof pin === "object" && (pin.type?.kind === "classRef" || pin.typeId === "class")) {
           if (typeof pin.id === "string") localDefaults.add(`default:${pin.id}`);
-          if (typeof pin.name === "string") localDefaults.add(`default:${pin.name}`);
         }
       }
       let changed = mapped !== record;

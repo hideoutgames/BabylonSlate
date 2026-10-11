@@ -36,7 +36,7 @@ export function createPreviewDiagnostics(options: {
       const gpu = transfer.metadata.gpu as Record<string, unknown> | undefined;
       const profile = parsePerformanceProfile({ ...transfer.metadata,
         frames: { ...frames, chunks: transfer.frames }, ticks: { ...ticks, chunks: transfer.ticks },
-        gpu: { ...gpu, chunks: transfer.gpu ?? [] } });
+        gpu: { ...gpu, chunks: transfer.gpu } });
       if (!profile) { failProfile("Preview returned an invalid or incomplete performance profile."); return; }
       retained = profile;
       profileActive = false;
@@ -107,7 +107,10 @@ export function createPreviewDiagnostics(options: {
               await starting;
               if (profileActive) {
                 const reply = await client.request("profile-stop");
-                if (!reply.success) throw new Error(reply.reason ?? "Preview recording could not be finalized.");
+                // A failed transfer was already reported through onError before Stop's reply.
+                if (!reply.success && reply.reason !== profileFailure) {
+                  throw new Error(reply.reason ?? "Preview recording could not be finalized.");
+                }
               }
             })(),
             new Promise<never>((_, reject) => {

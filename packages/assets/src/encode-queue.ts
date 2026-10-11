@@ -88,11 +88,14 @@ export interface EncodeQueueOptions {
   ) => void;
   onComplete?: (result: EncodeJobResult) => void | Promise<void>;
   onError?: (assetGuid: string, error: unknown, job: EncodeJob) => void;
-  /** A guarded job its guard refused at the front of the queue, dropped unencoded. */
+  /**
+   * A job that writes nothing: a guarded job its guard refused at the front of
+   * the queue, or the job that was encoding when `clear()` dropped the queue.
+   */
   onDrop?: (job: EncodeJob) => void;
 }
 
-type DerivedJob = { run: () => Promise<void> };
+type DerivedJob = { run: () => Promise<void>; cancel: (reason: unknown) => void };
 
 /**
  * Main-thread encode scheduler: one job at a time, pauseable for Preview /
@@ -109,10 +112,12 @@ export class EncodeQueue {
   private readonly onDrop?: EncodeQueueOptions["onDrop"];
   private paused = false;
   private running = false;
-  /** The job being encoded, until its result or error is reported. */
+  /** The job being encoded, until its result or error is reported or `clear()` drops it. */
   private encoding: EncodeJob | null = null;
   private completedSinceRecycle = 0;
   private recycled = 0;
+  /** Advanced by `clear()`: an encode started before it reports `onDrop`. */
+  private generation = 0;
 
   constructor(options: EncodeQueueOptions = {}) {
     this.encode = options.encode ?? stubEncodeKtx2;
@@ -135,7 +140,9 @@ export class EncodeQueue {
 
   /**
    * A job for this asset waits or is encoding. Its completion callbacks run
-   * after this turns false, so they may queue the asset again.
+   * after this turns false, so they may queue the asset again. An encode
+   * `clear()` dropped no longer counts, so a reopened project may queue its
+   * asset again.
    */
   has(assetGuid: string): boolean {
     if (this.encoding?.assetGuid === assetGuid) return true;
@@ -164,7 +171,11 @@ export class EncodeQueue {
           reject(controller.signal.reason);
         }
       };
-      const job: DerivedJob = { run: async () => {
+      const job: DerivedJob = { cancel: (reason) => {
+        controller.abort(reason);
+        signal?.removeEventListener("abort", cancel);
+        reject(reason);
+      }, run: async () => {
         started = true;
         const timer = this.jobTimeoutMs > 0 ? setTimeout(() => controller.abort(new Error("Derived texture processing timed out.")), this.jobTimeoutMs) : undefined;
         try {
@@ -180,6 +191,20 @@ export class EncodeQueue {
       this.queue.push(job);
       void this.pump();
     });
+  }
+
+  /**
+   * Drops the jobs of a closed project: every waiting job (a waiting derived
+   * job rejects) and the result of the encode running now, which reports
+   * `onDrop` instead of `onComplete` or `onError`. A new project's jobs run
+   * after that encode settles.
+   */
+  clear(): void {
+    this.generation += 1;
+    this.encoding = null;
+    for (const job of this.queue.splice(0)) {
+      if ("run" in job) job.cancel(new Error("Asset processing cancelled."));
+    }
   }
 
   pause(): void {
@@ -242,11 +267,16 @@ export class EncodeQueue {
       finally { this.running = false; void this.pump(); }
       return;
     }
+    const generation = this.generation;
     this.encoding = job;
     this.onState?.(job.assetGuid, "encoding", job);
     try {
       const { ktx2, wallMs } = await this.encodeWithTimeout(job);
       this.encoding = null;
+      if (generation !== this.generation) {
+        this.onDrop?.(job);
+        return;
+      }
       this.onState?.(job.assetGuid, "compressed", job);
       await this.onComplete?.({
         assetGuid: job.assetGuid,
@@ -265,6 +295,10 @@ export class EncodeQueue {
       }
     } catch (error) {
       this.encoding = null;
+      if (generation !== this.generation) {
+        this.onDrop?.(job);
+        return;
+      }
       this.onState?.(job.assetGuid, "encode_failed", job);
       this.onError?.(job.assetGuid, error, job);
     } finally {

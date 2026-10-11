@@ -99,20 +99,21 @@ const row = (value: unknown): Row => value && typeof value === "object" && !Arra
 const rows = (value: unknown): Row[] => Array.isArray(value) ? value.map(row) : [];
 const values = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
 
-// Legacy graphs may omit canvas pin snapshots. Dynamic pins use host schemas.
-const BUILTIN_ASSET_PINS: Readonly<Record<string, readonly string[]>> = {
-  "literal.makeAsset": ["in", "In"],
-  "audio.play": ["asset", "asset"],
-  "audio.setChannelVolume": ["channel", "channel"],
-  "scene.change": ["scene", "scene"],
-  "scene-layer.create": ["asset", "Asset"],
-  "scene-layer.registerPostProcess": ["material", "Material"],
-  "scene-layer.unregisterPostProcess": ["material", "Material"],
-  "material.setMaterialInstance": ["instance", "Instance"],
-  "material.setTextureParameter": ["value", "Value"],
-  "render-target.getMode": ["target", "Render Target"],
-  "render-target.getTextureTarget": ["texture", "Texture"],
-  "render-target.setRenderTarget": ["value", "Render Target"],
+// Asset pin ids of built-in nodes, for a graph read without pin snapshots.
+// Dynamic pins use host schemas.
+const BUILTIN_ASSET_PINS: Readonly<Record<string, string>> = {
+  "literal.makeAsset": "in",
+  "audio.play": "asset",
+  "audio.setChannelVolume": "channel",
+  "scene.change": "scene",
+  "scene-layer.create": "asset",
+  "scene-layer.registerPostProcess": "material",
+  "scene-layer.unregisterPostProcess": "material",
+  "material.setMaterialInstance": "instance",
+  "material.setTextureParameter": "value",
+  "render-target.getMode": "target",
+  "render-target.getTextureTarget": "texture",
+  "render-target.setRenderTarget": "value",
 };
 
 /** Typed fields, never a recursive search for arbitrary strings resembling GUIDs. */
@@ -343,18 +344,18 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
         const needed = requiredNodes.has(String(node.id));
         const schemaNeeded = nodeType !== "data.readEntryAsync";
         for (const pin of pins) {
-          const explicit = [`default:${pin.id}`, pin.id, `default:${pin.name}`, pin.name].map(key => properties[key]).find(entry => entry !== undefined);
+          // Authored literals live only under `default:<pinId>`, where compile reads them.
+          const explicit = properties[`default:${pin.id}`];
           const value = explicit === undefined ? pin.defaultValue : explicit;
           typeValue(pin.type, pin.direction === "out" ? undefined : value, needed, undefined, schemaNeeded);
         }
         if (!pins.length) {
-          const names = BUILTIN_ASSET_PINS[nodeType];
-          if (names) add([`default:${names[0]}`, names[0]!, `default:${names[1]}`, names[1]!]
-            .map(key => properties[key]).find(value => value !== undefined), needed);
-          if (nodeType === "literal.makeClass") addClass(properties["default:in"] ?? properties.in ?? properties["default:In"], needed);
+          const pinId = BUILTIN_ASSET_PINS[nodeType];
+          if (pinId) add(properties[`default:${pinId}`], needed);
+          if (nodeType === "literal.makeClass") addClass(properties["default:in"], needed);
         }
         if (nodeType.startsWith("data.")) {
-          add(properties["default:tree"] ?? properties.tree ?? properties["default:Tree"], needed);
+          add(properties["default:tree"], needed);
           add(properties.definitionGuid, schemaNeeded);
           for (const field of rows(properties.dataSchema)) memberValue(field, undefined, false, undefined, schemaNeeded);
         }

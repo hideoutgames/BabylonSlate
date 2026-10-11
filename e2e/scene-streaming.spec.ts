@@ -26,7 +26,7 @@ function commandGraph(commandName: string, actorClass: string, method: string): 
     nodes: [
       { id: "run", type: "flow.event.commandRun", data: { commandName }, position: { x: 0, y: 0 } },
       { id: "target", type: "actor.getOfClass", data: { "default:classId": actorClass }, position: { x: 0, y: 200 } },
-      { id: "cast", type: "casting.cast", data: { "default:class": "SceneStreamingActor", defaultClassId: "SceneStreamingActor", resultKind: "actorRef" }, position: { x: 250, y: 0 } },
+      { id: "cast", type: "casting.cast", data: { "default:class": "SceneStreamingActor", resultKind: "actorRef" }, position: { x: 250, y: 0 } },
       { id: "stream", type: `sceneStreaming.${method}`, data: {}, position: { x: 500, y: 0 } },
     ],
     edges: [

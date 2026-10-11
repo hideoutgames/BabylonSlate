@@ -143,31 +143,28 @@ async function verifyCrossTabRecovery(page: Page, url: string, projectId: string
     .toMatchObject({ sequence: 4, visits: previous.visits + 1, checksumValid: true });
 }
 
-// CI runs the packed format, which also carries the cross-tab recovery proof.
-for (const mode of ["packed"] as const) {
-  test(`${mode} exported game restores OPFS progress after a cold page reload`, async ({ page, baseURL }, info) => {
-    test.setTimeout(240_000);
-    const scene = createDefaultScene("2d");
-    const artifact = await exportGame({
-      mode, bundleDebugger: true, startupSceneGuid: "start", gameInstanceClass: "SaveFlow",
-      renderSettings: { customResolution: false, width: 640, height: 360, blackBars: false },
-      physicsWorld: "2d",
-      saveGame: { projectId: `export-${mode}`, definition, preview: false },
-      scripts: [{ ...compiled, assetGuid: "save-flow-class", classId: "SaveFlow", parentClassId: "GameInstance" }],
-      assets: [{ guid: "start", type: "Scene", sceneGuid: "start", encoding: "json", bytes: new TextEncoder().encode(JSON.stringify(scene)) },
-        { guid: "save-flow-class", type: "Class", sceneGuid: "start", name: "SaveFlow", encoding: "json", bytes: new TextEncoder().encode(JSON.stringify({ components: [] })) }],
-      playerFiles: await loadPlayerDistFiles(new URL("/player/", baseURL).href),
-    });
-    if (!artifact.ok) throw new Error(artifact.error);
-    const server = await serveExportFiles(artifact.value.files, { honorRange: true });
-    try {
-      await page.goto(server.url);
-      await expect(page.getByTestId("print-overlay")).toContainText("Saved Visits: 1", { timeout: 40_000 });
-      await page.reload();
-      await expect(page.getByTestId("print-overlay")).toContainText("Saved Visits: 2", { timeout: 40_000 });
-      await page.screenshot({ path: info.outputPath(`${mode}-save-roundtrip.png`) });
-      await verifyCrossTabRecovery(page, server.url, `export-${mode}`);
-      await page.screenshot({ path: info.outputPath(`${mode}-cross-tab-recovery.png`) });
-    } finally { await server.close(); }
+test("exported game restores OPFS progress after a cold page reload", async ({ page, baseURL }, info) => {
+  test.setTimeout(240_000);
+  const scene = createDefaultScene("2d");
+  const artifact = await exportGame({
+    bundleDebugger: true, startupSceneGuid: "start", gameInstanceClass: "SaveFlow",
+    renderSettings: { customResolution: false, width: 640, height: 360, blackBars: false },
+    physicsWorld: "2d",
+    saveGame: { projectId: "export-save-game", definition, preview: false },
+    scripts: [{ ...compiled, assetGuid: "save-flow-class", classId: "SaveFlow", parentClassId: "GameInstance" }],
+    assets: [{ guid: "start", type: "Scene", sceneGuid: "start", encoding: "json", bytes: new TextEncoder().encode(JSON.stringify(scene)) },
+      { guid: "save-flow-class", type: "Class", sceneGuid: "start", name: "SaveFlow", encoding: "json", bytes: new TextEncoder().encode(JSON.stringify({ components: [] })) }],
+    playerFiles: await loadPlayerDistFiles(new URL("/player/", baseURL).href),
   });
-}
+  if (!artifact.ok) throw new Error(artifact.error);
+  const server = await serveExportFiles(artifact.value.files, { honorRange: true });
+  try {
+    await page.goto(server.url);
+    await expect(page.getByTestId("print-overlay")).toContainText("Saved Visits: 1", { timeout: 40_000 });
+    await page.reload();
+    await expect(page.getByTestId("print-overlay")).toContainText("Saved Visits: 2", { timeout: 40_000 });
+    await page.screenshot({ path: info.outputPath("export-save-roundtrip.png") });
+    await verifyCrossTabRecovery(page, server.url, "export-save-game");
+    await page.screenshot({ path: info.outputPath("export-cross-tab-recovery.png") });
+  } finally { await server.close(); }
+});

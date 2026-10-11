@@ -901,8 +901,9 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const sendPreviewPack = useCallback(() => {
     const files = previewFilesRef.current;
     const frame = previewIframeRef.current?.contentWindow;
+    const traceByteBudget = previewTraceByteBudgetRef.current;
     const handoff = { files, closing: previewClosingRef.current };
-    if (!canSendPreviewPack(handoff) || !frame) {
+    if (!canSendPreviewPack(handoff) || !frame || traceByteBudget === undefined) {
       return;
     }
     try {
@@ -911,10 +912,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         files: handoff.files,
         send: (message, transfer) => frame.postMessage(message, previewOriginRef.current, transfer),
       });
-      frame.postMessage(previewPackFromFiles(handoff.files, {
-        traceByteBudget: previewTraceByteBudgetRef.current,
-        onDemand: true,
-      }), previewOriginRef.current);
+      frame.postMessage(previewPackFromFiles(handoff.files, traceByteBudget), previewOriginRef.current);
     } catch (error) {
       setPreviewError(
         `Preview Build could not send the game data: ${

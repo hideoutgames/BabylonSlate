@@ -906,6 +906,12 @@ export class AssetRegistry {
         : other.path;
       siblingStems.push(stripAssetFileSuffix(otherFile));
     }
+    // A Class's file stem is its class id, which no other Class in any root may use.
+    const classIds = decoded.header.type === "Class"
+      ? new Set([...this.byGuid.values()]
+        .filter((other) => !other.placeholder && other.header.type === "Class")
+        .map((other) => classIdForAssetPath(other.path)))
+      : null;
     // Pick and claim the copy's name together, skipping names another write
     // holds and unindexed files already on disk.
     let uniqueName: string;
@@ -916,6 +922,7 @@ export class AssetRegistry {
       candidate = joinRootPath(root, joinRelative(targetFolderRelative, `${uniqueName}${suffix}`));
       siblingStems.push(uniqueName);
       if (this.isPathReserved(candidate) || this.byPath.has(candidate)) continue;
+      if (classIds?.has(classIdForAssetPath(candidate))) continue;
       release = this.reservePath(candidate, `Asset already exists: ${candidate}`);
       let free = false;
       try {

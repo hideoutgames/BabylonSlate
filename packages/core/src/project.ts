@@ -274,8 +274,6 @@ export interface ExportPreset {
   id: string;
   name: string;
   pluginOverrides: Record<string, PluginEnableOverride>;
-  /** Packed `.babpack` export; default on. */
-  packed: boolean;
   /** Release zip default off; Preview Build always on. */
   bundleDebugger: boolean;
   fileCountWarn: number;
@@ -290,7 +288,6 @@ export function defaultExportPreset(
     id,
     name,
     pluginOverrides: {},
-    packed: true,
     bundleDebugger: false,
     fileCountWarn: DEFAULT_EXPORT_FILE_COUNT_WARN,
     fileCountFail: DEFAULT_EXPORT_FILE_COUNT_FAIL,
@@ -684,7 +681,6 @@ function normalizeExportPresets(value: unknown): ExportPreset[] {
       id,
       name,
       pluginOverrides: normalizePluginOverrides(record.pluginOverrides),
-      packed: record.packed !== false,
       bundleDebugger: record.bundleDebugger === true,
       fileCountWarn: normalizeCountThreshold(
         record.fileCountWarn,

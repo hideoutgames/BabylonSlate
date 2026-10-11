@@ -42,8 +42,7 @@ import {
 const decoder = new TextDecoder();
 
 export type LoadedGame = {
-  /** Present for independently addressable exports; legacy fixture hosts may omit it. */
-  assets?: AssetLoadingService;
+  assets: AssetLoadingService;
   getReadMetrics?: () => StorageReadMetrics;
   onSourcesChanged?: (listener: () => void) => () => void;
   acquireAssets?: (ids: string[], request: { consumer: string; signal: AbortSignal; priority?: AssetLoadPriority; fontModes?: ReadonlyMap<string, ReadonlySet<"facetype" | "msdf" | "bitmap">>; onProgress?: (progress: { completed: number; total: number }) => void }) => Promise<{ release: () => void; assetGuids?: ReadonlySet<string> }>;
@@ -220,39 +219,8 @@ export async function loadGameFromFiles(
     return { bytes, decodedBytes, document, model, publish: () => { payloads.set(entry.guid, bytes); if (document !== undefined) decodedPayloads.set(entry.guid, document); install(); } };
   }
 
-  const game: LoadedGame = {
-    manifest,
-    scripts,
-    scenes,
-    sceneLayers,
-    textureBytes,
-    areaEmissions,
-    modelBytes,
-    modelPayloads,
-    fontBytes,
-    fontFacetypeBytes,
-    fontMsdfJson,
-    fontMsdfPng,
-    fontFamilies,
-    audioBytes,
-    audioPayloads,
-    payloads,
-    decodedPayloads,
-    complexMeshes,
-    navmeshBytes,
-    audioReverbBytes,
-  };
   const sourceListeners = new Set<() => void>();
   let notificationPending = false;
-  // The cooked mesh is its own cached representation and can outlive the
-  // Model's trimmed source bytes.
-  game.cookComplexCollision = guid => {
-    const cooked = complexMeshes.get(guid);
-    if (cooked) return cooked;
-    const source = modelBytes.get(guid);
-    return source ? cookComplexCollisionMesh(source, modelPayloads.get(guid)) : null;
-  };
-  game.onSourcesChanged = listener => { sourceListeners.add(listener); return () => { sourceListeners.delete(listener); }; };
   function evict(entry: GameAssetIndexEntry, bytes: Uint8Array): void {
     if (payloads.get(entry.guid) !== bytes) return;
     if (!notificationPending) { notificationPending = true; queueMicrotask(() => { notificationPending = false; for (const listener of sourceListeners) listener(); }); }
@@ -296,7 +264,38 @@ export async function loadGameFromFiles(
       };
     },
   });
-  game.assets = service;
+  const game: LoadedGame = {
+    assets: service,
+    manifest,
+    scripts,
+    scenes,
+    sceneLayers,
+    textureBytes,
+    areaEmissions,
+    modelBytes,
+    modelPayloads,
+    fontBytes,
+    fontFacetypeBytes,
+    fontMsdfJson,
+    fontMsdfPng,
+    fontFamilies,
+    audioBytes,
+    audioPayloads,
+    payloads,
+    decodedPayloads,
+    complexMeshes,
+    navmeshBytes,
+    audioReverbBytes,
+  };
+  // The cooked mesh is its own cached representation and can outlive the
+  // Model's trimmed source bytes.
+  game.cookComplexCollision = guid => {
+    const cooked = complexMeshes.get(guid);
+    if (cooked) return cooked;
+    const source = modelBytes.get(guid);
+    return source ? cookComplexCollisionMesh(source, modelPayloads.get(guid)) : null;
+  };
+  game.onSourcesChanged = listener => { sourceListeners.add(listener); return () => { sourceListeners.delete(listener); }; };
   game.getReadMetrics = () => ({ ...readMetrics });
   function acquireCollision(scope: AssetLoadScope, id: string, model: { source: Uint8Array; payload: ModelPayload }, signal?: AbortSignal, priority: AssetLoadPriority = "gameplay") {
     return scope.acquire<PreparedAsset>(id, {
@@ -444,11 +443,12 @@ export function createGameAudioSourceLoader(
   return async ({ assetGuid, chunkId, revision }) => {
     const exportedRevision = game.manifest.assets.find(entry => entry.guid === assetGuid)?.revision;
     if (revision && exportedRevision && revision !== exportedRevision) throw new Error(`Audio asset ${assetGuid} source revision is no longer available.`);
-    const scope = game.assets?.createScope(`audio:${assetGuid}:${chunkId}`);
+    const scope = game.assets.createScope(`audio:${assetGuid}:${chunkId}`);
     try {
-      if (scope) { const prepared = await scope.acquire<{ publish: () => void }>(assetGuid); prepared.publish(); }
+      const prepared = await scope.acquire<{ publish: () => void }>(assetGuid);
+      prepared.publish();
       return loadGameAudioClipBytes(game, assetGuid, chunkId);
-    } finally { scope?.dispose(); }
+    } finally { scope.dispose(); }
   };
 }
 

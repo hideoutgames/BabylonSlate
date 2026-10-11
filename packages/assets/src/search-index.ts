@@ -64,7 +64,7 @@ export interface ProjectSearchRebuildOptions {
 
 /**
  * Project-wide text index layered on the header-only asset registry.
- * Reads only the header and document chunk of Scene/Graph/Class files; never
+ * Reads only the header and document chunk of Scene/Class files; never
  * loads binary payloads.
  */
 export class ProjectSearchIndex {

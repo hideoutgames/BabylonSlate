@@ -295,6 +295,37 @@ describe("app settings", () => {
     expect((await reloaded.load()).traceByteBudget).toBe(201_326_592);
   });
 
+  it("builds the next update on a save localStorage refused, not the older stored copy", async () => {
+    localStorage.setItem("babylonslate:engine-settings", JSON.stringify({ viewportFrameCap: 60 }));
+    const store = new WebAppSettingsStore();
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("quota", "QuotaExceededError");
+    });
+    try {
+      await store.update((settings) => { settings.viewportFrameCap = 30; });
+      const next = await store.update((settings) => { settings.undoHistoryLength = 75; });
+      expect([next.viewportFrameCap, next.undoHistoryLength]).toEqual([30, 75]);
+      expect((await store.load()).viewportFrameCap).toBe(30);
+    } finally {
+      setItem.mockRestore();
+    }
+  });
+
+  it("builds the next update on the last saved settings when a later localStorage read fails", async () => {
+    localStorage.clear();
+    const store = new WebAppSettingsStore();
+    await store.update((settings) => { settings.viewportFrameCap = 60; });
+    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementationOnce(() => {
+      throw new DOMException("denied", "SecurityError");
+    });
+    try {
+      const next = await store.update((settings) => { settings.undoHistoryLength = 75; });
+      expect([next.viewportFrameCap, next.undoHistoryLength]).toEqual([60, 75]);
+    } finally {
+      getItem.mockRestore();
+    }
+  });
+
   it("falls back to defaults when localStorage holds invalid JSON", async () => {
     localStorage.setItem("babylonslate:engine-settings", "{not-json");
     const store = new WebAppSettingsStore();

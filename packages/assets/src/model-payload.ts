@@ -215,13 +215,3 @@ export function decodePackedModelAsset(
   return { payload, source: bytes.subarray(range.jsonEnd) };
 }
 
-/** Packed Model source plus payload; raw GLB uses a default payload. */
-export function extractPackedModelAsset(bytes: Uint8Array): {
-  payload: ModelPayload;
-  source: Uint8Array;
-} {
-  return decodePackedModelAsset(bytes) ?? {
-    payload: normalizeModelPayload({}),
-    source: bytes,
-  };
-}

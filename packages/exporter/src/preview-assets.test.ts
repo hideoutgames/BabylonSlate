@@ -10,7 +10,7 @@ describe("on-demand Preview files", () => {
       ["assets/a.bin", new Uint8Array([1, 2])],
       ["assets/b.bin", new Uint8Array([3, 4])],
     ]);
-    const handoff = previewPackFromFiles(files, { onDemand: true });
+    const handoff = previewPackFromFiles(files, 1024);
     expect(Object.keys(handoff.files)).toEqual(["game.json"]);
     const transferred: number[] = [];
     const server = createPreviewAssetServer({ files, send: (message, transfer) => { transferred.push(...transfer.map(value => (value as ArrayBuffer).byteLength)); client.receive(message); } });
