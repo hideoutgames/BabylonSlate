@@ -243,7 +243,7 @@ describe("material node contracts", () => {
       expect(sampler.texture?.getSize()).toMatchObject({ width: 1, height: 1 });
     }
   });
-  it("advances Seconds-mode Time when previews render without fresh engine frame deltas", async () => {
+  it("advances Time when previews render without fresh engine frame deltas", async () => {
     const doc = createDefaultMaterialDocument();
     node(doc, "time", "input.time");
     node(doc, "sine", "math.sin");
