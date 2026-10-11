@@ -1,0 +1,38 @@
+{
+  "id": "unbound-struct",
+  "kind": "event",
+  "nodes": [
+    {
+      "id": "entry",
+      "typeId": "flow.entry",
+      "position": {
+        "x": 10600,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {}
+    }
+  ],
+  "edges": [],
+  "context": {
+    "members": [
+      {
+        "id": "stats",
+        "name": "Stats",
+        "kind": "variable",
+        "classId": "Hero",
+        "typeId": "struct"
+      }
+    ]
+  }
+}

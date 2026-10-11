@@ -1,0 +1,46 @@
+{
+  "id": "local-name-conflict",
+  "kind": "event",
+  "nodes": [
+    {
+      "id": "entry",
+      "typeId": "flow.entry",
+      "position": {
+        "x": 8200,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {}
+    }
+  ],
+  "edges": [],
+  "context": {
+    "members": [
+      {
+        "id": "health",
+        "name": "Health",
+        "kind": "variable",
+        "classId": "Hero",
+        "typeId": "float"
+      },
+      {
+        "id": "local-health",
+        "name": "Health",
+        "kind": "variable",
+        "classId": "Hero",
+        "typeId": "float",
+        "functionId": "heal"
+      }
+    ]
+  }
+}

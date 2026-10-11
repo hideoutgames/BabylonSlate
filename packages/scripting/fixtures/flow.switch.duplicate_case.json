@@ -1,0 +1,80 @@
+{
+  "id": "flow-switch-duplicate_case",
+  "kind": "event",
+  "nodes": [
+    {
+      "id": "entry",
+      "typeId": "flow.entry",
+      "position": {
+        "x": 11800,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {}
+    },
+    {
+      "id": "switch",
+      "typeId": "flow.switchInt",
+      "position": {
+        "x": 11600,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execIn",
+          "name": "exec",
+          "kind": "exec",
+          "direction": "in",
+          "type": {
+            "kind": "exec"
+          }
+        },
+        {
+          "id": "value",
+          "name": "value",
+          "kind": "data",
+          "direction": "in",
+          "type": {
+            "kind": "int"
+          },
+          "optional": true
+        },
+        {
+          "id": "default",
+          "name": "Default",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {
+        "cases": [
+          1,
+          2,
+          1
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "entry.execOut->switch.execIn",
+      "sourceNodeId": "entry",
+      "sourcePinId": "execOut",
+      "targetNodeId": "switch",
+      "targetPinId": "execIn"
+    }
+  ]
+}

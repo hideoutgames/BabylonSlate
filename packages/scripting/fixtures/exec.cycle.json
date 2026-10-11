@@ -1,0 +1,107 @@
+{
+  "id": "exec-cycle",
+  "kind": "event",
+  "nodes": [
+    {
+      "id": "entry",
+      "typeId": "flow.entry",
+      "position": {
+        "x": 1400,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {}
+    },
+    {
+      "id": "a",
+      "typeId": "debug.log",
+      "position": {
+        "x": 1000,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execIn",
+          "name": "exec",
+          "kind": "exec",
+          "direction": "in",
+          "type": {
+            "kind": "exec"
+          }
+        },
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {}
+    },
+    {
+      "id": "b",
+      "typeId": "debug.log",
+      "position": {
+        "x": 1200,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execIn",
+          "name": "exec",
+          "kind": "exec",
+          "direction": "in",
+          "type": {
+            "kind": "exec"
+          }
+        },
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {}
+    }
+  ],
+  "edges": [
+    {
+      "id": "entry.execOut->a.execIn",
+      "sourceNodeId": "entry",
+      "sourcePinId": "execOut",
+      "targetNodeId": "a",
+      "targetPinId": "execIn"
+    },
+    {
+      "id": "a.execOut->b.execIn",
+      "sourceNodeId": "a",
+      "sourcePinId": "execOut",
+      "targetNodeId": "b",
+      "targetPinId": "execIn"
+    },
+    {
+      "id": "b.execOut->a.execIn",
+      "sourceNodeId": "b",
+      "sourcePinId": "execOut",
+      "targetNodeId": "a",
+      "targetPinId": "execIn"
+    }
+  ]
+}

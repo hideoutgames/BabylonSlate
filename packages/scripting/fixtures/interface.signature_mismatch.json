@@ -1,0 +1,61 @@
+{
+  "id": "interface-signature",
+  "kind": "event",
+  "nodes": [
+    {
+      "id": "entry",
+      "typeId": "flow.entry",
+      "position": {
+        "x": 10000,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {}
+    }
+  ],
+  "edges": [],
+  "context": {
+    "classId": "Hero",
+    "members": [
+      {
+        "id": "take-damage",
+        "name": "TakeDamage",
+        "kind": "function",
+        "classId": "Hero",
+        "pins": [],
+        "implementsInterface": {
+          "assetGuid": "damageable",
+          "methodName": "TakeDamage"
+        }
+      }
+    ],
+    "implementedInterfaces": [
+      {
+        "guid": "damageable",
+        "name": "Damageable",
+        "methods": [
+          {
+            "name": "TakeDamage",
+            "pins": [
+              {
+                "name": "Amount",
+                "typeId": "float",
+                "direction": "in"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

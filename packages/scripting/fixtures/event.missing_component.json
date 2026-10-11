@@ -1,0 +1,37 @@
+{
+  "id": "missing-component",
+  "kind": "event",
+  "nodes": [
+    {
+      "id": "hit",
+      "typeId": "flow.event.hit",
+      "position": {
+        "x": 8000,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {
+        "componentId": "removed-collider"
+      }
+    }
+  ],
+  "edges": [],
+  "context": {
+    "attachedComponents": [
+      {
+        "id": "collider",
+        "classId": "BoxComponent"
+      }
+    ]
+  }
+}
