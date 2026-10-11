@@ -1,5 +1,5 @@
 import { err, ok, classIdForAssetPath, DEFAULT_LOOP_COUNT, DEFAULT_SORTING_LAYERS, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, renderEffectsAssetGuids, consoleCommandMetadataFromGraph, type Result } from "@babylonslate/core";
-import { collectAssetDependencyMetadata, extractPackedModelAsset, peekPackedAudioPayload, sha256Hex, PARTICLE_ASSET_TYPES, type AssetDependencyClass } from "@babylonslate/assets";
+import { collectAssetDependencyMetadata, decodePackedModelAsset, peekPackedAudioPayload, sha256Hex, PARTICLE_ASSET_TYPES, type AssetDependencyClass } from "@babylonslate/assets";
 import { zipSync, unzipSync } from "fflate";
 import {
   DEFAULT_FILE_COUNT_FAIL,
@@ -216,7 +216,7 @@ function dependencyCatalog(assets: readonly ExportAssetBytes[]): ExportAssetByte
     let requiredClassReferences = asset.requiredClassReferences;
     if (!required) {
       let payload: unknown;
-      if (asset.type === "Model") payload = extractPackedModelAsset(asset.bytes).payload;
+      if (asset.type === "Model") payload = decodePackedModelAsset(asset.bytes)?.payload;
       else if (asset.type === "Audio") payload = peekPackedAudioPayload(asset.bytes);
       else payload = document(asset);
       if (payload && typeof payload === "object" && !Array.isArray(payload)) {

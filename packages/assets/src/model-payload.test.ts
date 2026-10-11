@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   decodePackedModelAsset,
   encodePackedModelAsset,
-  extractPackedModelAsset,
   normalizeModelPayload,
   peekPackedModelPayload,
   shouldSlimModelEmbeddedTextures,
@@ -152,13 +151,9 @@ describe("packed Model envelope", () => {
     });
   });
 
-  it("treats raw GLB as unenveloped source so old packs stay loadable", () => {
+  it("does not read raw GLB as a packed Model", () => {
     expect(peekPackedModelPayload(glb)).toBeNull();
     expect(decodePackedModelAsset(glb)).toBeNull();
-    expect(extractPackedModelAsset(glb)).toEqual({
-      payload: normalizeModelPayload({}),
-      source: glb,
-    });
   });
 });
 
