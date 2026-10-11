@@ -1,6 +1,6 @@
 import { createContext, useContext, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { isValidTagPath, type Tag, type TagContainer, type TagDefinition } from "@babylonslate/core";
-import { ChevronDownIcon, MinusIcon, TagsIcon, TagIcon } from "lucide-react";
+import { ChevronDownIcon, TagsIcon, TagIcon } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
 import { Checkbox } from "@babylonslate/ui/components/checkbox";
 import { Dialog, DialogContent, DialogTitle } from "@babylonslate/ui/components/dialog";
@@ -160,9 +160,8 @@ export function TagPicker(props: TagPickerProps) {
         depth,
         hasChildren,
         expanded,
-        icon: <span className="pointer-events-none relative flex" title={entry.path}>
-          <Checkbox checked={checked} indeterminate={indeterminate} readOnly tabIndex={-1} aria-label={`${entry.path} Selection`} className={indeterminate ? "[&_svg]:hidden" : undefined} />
-          {indeterminate ? <MinusIcon className="absolute inset-0 size-4 text-foreground" aria-hidden="true" /> : null}
+        icon: <span className="pointer-events-none flex" title={entry.path}>
+          <Checkbox checked={checked} indeterminate={indeterminate} readOnly tabIndex={-1} aria-label={`${entry.path} Selection`} />
         </span>,
         preview: hasChildren ? <span className="text-xs text-muted-foreground tabular-nums">{subtreeSize - 1}</span> : undefined,
       });
