@@ -278,6 +278,16 @@ describe("audio payloads", () => {
     );
     expect(cycle.resolvedParents.a).toBeNull();
     expect(cycle.resolvedParents.b).toBeNull();
+
+    // A channel that only leads into the cycle keeps its parent.
+    const lead = validateAudioChannelGraph({
+      a: { parentChannelGuid: "b" },
+      b: { parentChannelGuid: "a" },
+      sfx: { parentChannelGuid: "a" },
+    });
+    expect(lead.ok).toBe(false);
+    expect(lead.resolvedParents).toEqual({ a: null, b: null, sfx: "a" });
+    expect(audioChannelHasParentCycle(new Map([["a", "b"], ["b", "a"], ["sfx", "a"]]), "sfx")).toBe(false);
   });
 
   it("sanitizes missing Audio refs and cyclic channel parents for Play", () => {

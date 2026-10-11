@@ -146,6 +146,15 @@ describe("resolveGpuTexture", () => {
     expect(resolved?.kind).toBe("ktx2");
     expect(resolved?.chunkId).toBe("ktx2:particle");
     expect(resolved?.missingPreferred).toBe(true);
+
+    // An older encode that happens to be on the grid too must not win.
+    byId["ktx2:albedo"] = ktx2Header(500, 376);
+    const aligned = await resolveGpuTexture({
+      header: particle,
+      readChunk: async (id) => byId[id] ?? null,
+      editorLod: { enabled: false, quality: 1 },
+    });
+    expect(aligned?.chunkId).toBe("ktx2:particle");
   });
 
   it("does not bind a full-size KTX2 when editor LOD wants a smaller variant", async () => {

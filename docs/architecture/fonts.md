@@ -48,7 +48,7 @@ Incomplete picks leave `representations.msdf` false until the pair is complete. 
 3. Project default font (Project Settings).
 4. Global generic fallback (`sans-serif` unless overridden).
 
-Duplicates are dropped. The stack always terminates in a generic family so a failed load is never silent Arial. `compileText2DFontStacks` builds the project default stack plus a per-Font map; editor viewport / Play / player pass those as `fontCssStack` / `fontCssStackByGuid`.
+Duplicates are dropped. Font families (1–3) are always quoted, so a Font named like a generic (`serif`, `Monospace`) still names its own face. The stack always terminates in a generic family so a failed load is never silent Arial. `compileText2DFontStacks` builds the project default stack plus a per-Font map; editor viewport / Play / player pass those as `fontCssStack` / `fontCssStackByGuid`.
 
 Project Settings (`packages/core` `ProjectSettings.fonts`): `defaultFontGuid`, `globalFallback` (generic CSS family).
 

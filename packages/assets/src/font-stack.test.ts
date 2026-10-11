@@ -11,13 +11,23 @@ describe("compileFontStack", () => {
     expect(
       compileFontStack({
         family: "Display Face",
-        fallbackFamilies: ["Fallback One", "sans-serif"],
+        fallbackFamilies: ["Fallback One"],
         projectDefaultFamily: "Project Default",
         globalFallback: "sans-serif",
       }),
     ).toBe(
       '"Display Face", "Fallback One", "Project Default", sans-serif',
     );
+  });
+
+  it("keeps Fonts named like CSS generics as their own quoted faces", () => {
+    expect(
+      compileFontStack({
+        family: "serif",
+        fallbackFamilies: ["Monospace"],
+        globalFallback: "serif",
+      }),
+    ).toBe('"serif", "Monospace", serif');
   });
 
   it("dedupes and always ends with a generic family", () => {

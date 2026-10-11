@@ -56,6 +56,18 @@ describe("classifyExternalChanges", () => {
     expect(result.dirtyChangedPaths).toEqual(["assets/a.babasset"]);
   });
 
+  it("reports open documents whose files were deleted on disk", () => {
+    const deleted = (dirty: boolean) => classifyExternalChanges({
+      previousAssets: { "assets/a.babasset": 1, "assets/b.babasset": 1 },
+      nextAssets: { "assets/b.babasset": 1 },
+      previousProjectJsonMtime: 10,
+      nextProjectJsonMtime: 10,
+      openDocs: [{ path: "assets/a.babasset", dirty }],
+    });
+    expect(deleted(true)).toMatchObject({ kind: "dirty-disk", dirtyChangedPaths: ["assets/a.babasset"] });
+    expect(deleted(false)).toMatchObject({ kind: "reload-clean", cleanChangedPaths: ["assets/a.babasset"] });
+  });
+
   it("prefers Reload Project when project.json or many assets change", () => {
     expect(
       classifyExternalChanges({

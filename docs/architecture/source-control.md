@@ -111,8 +111,8 @@ Tick on subscribe, then every `pollIntervalMs` (default 60s). `pause()` / `resum
 | Classification | Prompt |
 | --- | --- |
 | Many assets and/or `project.json` changed (`MANY_EXTERNAL_CHANGES` = 8) | **Reload Project** |
-| Dirty open docs whose files changed | Keep Edits vs Reload From Disk |
-| Clean open docs whose files changed | Reload From Disk |
+| Dirty open docs whose files changed or were deleted | Keep Edits vs Reload From Disk |
+| Clean open docs whose files changed or were deleted | Reload From Disk |
 
 Reload must not drop in-memory locks until the next verify poll. This is the acceptance path for a Working Copy branch switch while backgrounded.
 

@@ -524,14 +524,19 @@ export function validateAudioMixer(
   return { ok: diagnostics.length === 0, diagnostics };
 }
 
+/**
+ * True when `start` lies on a parent cycle: its parent chain returns to it.
+ * A channel whose chain only leads into a cycle is not on it, and keeps its
+ * own parent.
+ */
 export function audioChannelHasParentCycle(
   parents: ReadonlyMap<string, string | null>,
   start: string,
 ): boolean {
   const seen = new Set<string>();
-  let current: string | null | undefined = start;
-  while (current) {
-    if (seen.has(current)) return true;
+  let current: string | null | undefined = parents.get(start) ?? null;
+  while (current && !seen.has(current)) {
+    if (current === start) return true;
     seen.add(current);
     current = parents.get(current) ?? null;
   }
