@@ -962,6 +962,11 @@ export function javaScriptPinsFromRows(rows: readonly PinListRow[]) {
   }));
 }
 
+/**
+ * Rows for saved command parameters, which have no ids. Ids are positional
+ * unless `ids` carries the editor's ids from the last commit, so a rename keeps
+ * its input mounted and a moved row stays selected.
+ */
 export function commandParameterRows(
   rows: ReadonlyArray<{
     name: string;
@@ -970,9 +975,10 @@ export function commandParameterRows(
     defaultValue?: unknown;
     enumValues?: unknown;
   }>,
+  ids?: readonly string[],
 ): ParameterRow[] {
   return rows.map((row, index) => ({
-    id: `cmd-${index}-${row.name}`,
+    id: ids?.[index] ?? `cmd-${index}`,
     name: row.name,
     type: parameterTypeFromPin(row.type),
     optional: row.optional === true,

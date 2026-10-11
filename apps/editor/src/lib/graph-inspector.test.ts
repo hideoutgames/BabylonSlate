@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { COLOR, FLOAT, STRING, VEC2, VEC4, assetRef, classRef, enumRef, objectRef, pin, type PinType } from "@babylonslate/scripting";
 import {
   collectEnumMemberNames,
+  commandParameterRows,
   connectedEnumGuidFromSerialized,
   connectedInputPinIds,
   containerConstructorPropertyRows,
@@ -802,6 +803,16 @@ describe("parameter type conversion", () => {
   it("keeps enum parameters and maps them onto string pins", () => {
     expect(parameterTypeFromPin("enum")).toBe("enum");
     expect(pinTypeFromParameterType("enum")).toEqual(STRING);
+  });
+});
+
+describe("commandParameterRows", () => {
+  it("keeps a parameter's row id while its name is typed", () => {
+    // The parameter editor keys the name input on the row id.
+    const typing = ["", "a", "am", "amount"].map((name) => commandParameterRows([{ name, type: "int" }])[0]?.id);
+    expect(new Set(typing).size).toBe(1);
+    expect(commandParameterRows([{ name: "b" }, { name: "a" }], ["row-a", "row-b"]).map((row) => row.id))
+      .toEqual(["row-a", "row-b"]);
   });
 });
 

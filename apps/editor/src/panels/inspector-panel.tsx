@@ -1172,6 +1172,12 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
     allowedTypes: string[];
   } | null>(null);
   const [eventPinRowIds, setEventPinRowIds] = useState<CommittedPinRowIds | null>(null);
+  /** Command parameter row ids from the last commit, as for member pins. */
+  const [commandRowIds, setCommandRowIds] = useState<{
+    nodeId: string;
+    parameters: string;
+    ids: string[];
+  } | null>(null);
 
   const doc = useOpenDocument(documentId);
   const docPath = doc?.ref.path;
@@ -1966,10 +1972,22 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
             </FieldGroup>
             <ParameterListEditor
               title="Parameters"
-              rows={commandParameterRows(commandParams)}
-              onChange={(rows) =>
-                updateNodeData({ parameters: commandParametersFromRows(rows) })
-              }
+              rows={commandParameterRows(
+                commandParams,
+                commandRowIds?.nodeId === selectedNode.id &&
+                  commandRowIds.parameters === JSON.stringify(commandParams)
+                  ? commandRowIds.ids
+                  : undefined,
+              )}
+              onChange={(rows) => {
+                const parameters = commandParametersFromRows(rows);
+                setCommandRowIds({
+                  nodeId: selectedNode.id,
+                  parameters: JSON.stringify(parameters),
+                  ids: rows.map((row) => row.id),
+                });
+                updateNodeData({ parameters });
+              }}
             />
           </>
         ) : null}
