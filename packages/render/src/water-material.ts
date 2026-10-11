@@ -1304,10 +1304,11 @@ if (U.slateWaterSwash.w > 0.0 && swShoreRest < swSurfW && (swSwashZone > 0.0 || 
   float swFrontW = swSwashX * 0.26 + swFoamWidth * 0.3 + swAAX;
   float swFrontS = swShoreHere - swEdgeX;
   float swFront = smoothstep(-swAAX, swAAX * 0.5, swFrontS) * (1.0 - smoothstep(swFrontW * 0.25, swFrontW, swFrontS)) * mix(1.0, exp(-swDn * 3.0), swSwashBack) * (0.6 + 0.4 * swReach);${fromTier(1, `
-  // Its furthest reach leaves a stranded line that fades as the water drains.
+  // Its furthest reach leaves a stranded line that fades as the water drains (Toon leaves it out: it lay as a pale strip on
+  // the sand beyond the wet film, and that film darkens the sand to mark the furthest reach instead).
   float swStrandW = swFoamWidth * 0.12 + swAAX;
   float swStrand = (1.0 - smoothstep(swStrandW * 0.4, swStrandW, abs(swShoreHere - swSwashX * (1.0 - swReach)))) * swSwashBack * exp(-swDn * 2.0) * 0.8;
-  swSwashFoam = max(swFront, swStrand) * swSwashZone;
+  swSwashFoam = ${toon ? "swFront" : "max(swFront, swStrand)"} * swSwashZone;
   // Wet film: time since the backwash uncovered this point (this cycle's, else the last cycle's), so the wet band lags
   // the swash and dries where only the larger waves reach.
   float swNeed = 1.0 - swShoreHere / max(swSwashX, 0.001);
@@ -2895,25 +2896,28 @@ float swBandCount = max(1.0, U.slateWaterLook.x);
 // water bends (by at most about three quarters of a band), so gentle shallows keep wide, clean bands rather than
 // breaking into pools, and open water (at least about a band deeper) never shoals.
 float swPrimN = swPrimH / max(swPrimAmp, 0.0001);${fromTier(1, `
-// A slow noise along each crest, in a frame that travels with the swell (the primary phase counts whole crests, so the
-// pattern never jumps as the clock wraps), shortens the troughs' tongues of deep water into rounded shapes.
+// A noise along each crest (about fourteen metres across), in a frame that travels with the swell (the primary phase counts
+// whole crests, so the pattern never jumps as the clock wraps), gates where the swell bends the edge, so the deep water's
+// tongues break into rounded lobes about as long as they are wide instead of running the whole crest as fingers.
 float swBandPh = swP0 * 0.159155 + U.slateWaterLight.w;
 swBandPh -= ${f(CREST_COUNT_PERIOD)} * floor(swBandPh / ${f(CREST_COUNT_PERIOD)});
-float swBandAlong = swNoise(vec2(dot(swFlowed, vec2(-swD0.y, swD0.x)) * 0.05, swBandPh) + vec2(4.1, 8.3));`, `
+float swBandAlong = smoothstep(0.2, 0.8, swNoise(vec2(dot(swFlowed, vec2(-swD0.y, swD0.x)) * 0.07, swBandPh) + vec2(4.1, 8.3)));`, `
 float swBandAlong = 0.5;`)}
 float swBandRaw = swBedTone * swBandCount;
-float swBandWarp = ((swLarge - 0.5) * 0.5 - swPrimN * (0.25 + 0.6 * swBandAlong)) * step(1.5, swBandCount)
+float swBandWarp = ((swLarge - 0.5) * 0.6 - swPrimN * (0.04 + 0.26 * swBandAlong)) * step(1.5, swBandCount)
   * smoothstep(swBandCount - 1.8, swBandCount - 1.3, swBandRaw);
 float swBand = max(swBandRaw + swBandWarp, 0.0);
 float swBandAA = min(fwidth(swBand), 0.5);
 float swBandF = fract(swBand);
 float swBanded = min((floor(swBand) + smoothstep(1.0 - swBandAA * 1.5, 1.0, swBandF)) / max(swBandCount - 1.0, 1.0), 1.0);${fromTier(1, `
 // From Medium each band edge carries a thin, slightly lighter rim (Wind Waker's band outline), about a pixel and a half
-// wide close up and culled with the footprint, between the bands only (not at the shallowest edge or past the deepest).
+// wide close up and culled with the footprint. Only the edge into the deepest band carries one, and not near the shore,
+// where foam and surf lines dominate and a pale hairline across the shallows would read as a scratch.
 float swBandPx = min(swBandF, 1.0 - swBandF) / max(fwidth(swBand), 0.00001);
 float swRimHalf = 1.5 * (1.0 - smoothstep(0.3, 1.2, swFoot));
 float swBandRim = (1.0 - smoothstep(swRimHalf - 0.6, swRimHalf + 0.6, swBandPx)) * smoothstep(0.3, 0.8, swRimHalf)
-  * step(1.5, swBandCount) * step(1.0, swBand) * (1.0 - step(swBandCount - 0.5, swBand));`)}
+  * step(1.5, swBandCount) * step(max(1.0, swBandCount - 1.0), swBand) * (1.0 - step(swBandCount - 0.5, swBand))
+  * smoothstep(swFoamWidth * 4.0, swFoamWidth * 8.0, swShoreRest);`)}
 float swDepthTone = mix(swBedTone, swBanded, step(1.5, swBandCount));
 // Inside the shallow bands the open sea's wave tones and dapples recede, so the lagoon reads as flat colour.
 float swOpenSea = clamp(swDepthTone * 2.0 - 0.6, 0.0, 1.0);
@@ -3036,7 +3040,13 @@ float swLinePx = sqrt(1.5613 * max(U.slateWaterWaves.y, 0.1)) * U.slateWaterWave
 // into a whole ring that pops in at full size as the bump's peak crosses its level; there its dashes shorten and vanish
 // instead, and grow back as the slope steepens.
 float swLineFlat = 1.0 - smoothstep(0.05, 0.16, abs(dot(swGradient, swD0)) / max(U.slateWaterWaves.x * swK0, 0.0001));
-float swLineCut = 0.5 + 0.3 * smoothstep(0.05, 0.1, swLineFw) + 0.5 * smoothstep(0.05, 0.4, swFoot) + 0.6 * smoothstep(10.0, 22.0, swLinePx) + 0.8 * swColQuiet + 0.6 * swLineFlat;
+// Beyond the near field the crest lines are also broken at fixed world intervals along the crest (about 0.8 metres, their
+// phase bent by the slow noise so the pieces differ), so a dash never stretches into a long speed line. Low (no budget for
+// the breaks) simply thins its lines out sooner.${fromTier(1, `
+float swLineGap = abs(fract(swCrestAlong * (1.0 + 0.5 * swCrestSeed.y) + (swLineWig - 0.5) * 6.0 + swCrestSeed.x * 7.0) * 2.0 - 1.0);
+float swLineFar = 1.2 * smoothstep(0.05, 0.12, swFoot) * (1.0 - smoothstep(0.3, 0.5, swLineGap)) + 0.5 * smoothstep(0.05, 0.4, swFoot);`, `
+float swLineFar = 0.9 * smoothstep(0.05, 0.4, swFoot);`)}
+float swLineCut = 0.5 + 0.3 * smoothstep(0.05, 0.1, swLineFw) + swLineFar + 0.6 * smoothstep(10.0, 22.0, swLinePx) + 0.8 * swColQuiet + 0.6 * swLineFlat;
 // Brush strokes: each dash swells from about a third of its width at its ends to its full width (about two to four
 // pixels); dashes too short to swell past half their width are dropped, so none shrinks to a speck.
 float swLineTaper = clamp((swLineDash - swLineCut) * 9.0, 0.0, 1.0);
@@ -3190,8 +3200,12 @@ float swDashN0 = swNoise(vec2(swAlong / swDashLen, swRowK * 1.37 + swDashL * 5.3
 float swDashN1 = swNoise(vec2(swAlong / (swDashLen * 2.0), swRowK * 1.37 + swDashL * 5.3 + 5.3));
 float swDashCut = 0.92 + 0.14 * swNearSwell - swCol * 0.95 + 0.12 * swColFar;
 float swDashMax = (0.32 - 0.12 * swNearSwell) * (1.0 - 0.5 * swColFar);
+${fromTier(1, `
+// The thickness grows as a square root of how far the noise stands above the cut, so each dash ends in a rounded tip.
+float swDashHalf = swDashMax * max(sqrt(clamp((swDashN0 - swDashCut - 1.1 * smoothstep(0.35, 1.0, swDashT)) * 4.0, 0.0, 1.0)),
+  sqrt(clamp((swDashN1 - swDashCut - 1.1 + 1.1 * smoothstep(0.0, 0.65, swDashT)) * 4.0, 0.0, 1.0)));`, `
 float swDashHalf = max(clamp((swDashN0 - swDashCut - 1.1 * smoothstep(0.35, 1.0, swDashT)) * 1.3, 0.0, swDashMax),
-  clamp((swDashN1 - swDashCut - 1.1 + 1.1 * smoothstep(0.0, 0.65, swDashT)) * 1.3, 0.0, swDashMax));
+  clamp((swDashN1 - swDashCut - 1.1 + 1.1 * smoothstep(0.0, 0.65, swDashT)) * 1.3, 0.0, swDashMax));`)}
 // Half thickness in pixels: a share of the row spacing near the eye, of about ten pixels farther out.
 float swDashHalfPx = swDashHalf * max(0.15 / max(swFootS, 0.00001), 10.0) * swRowCull;
 float swRowAA = min(fwidth(swRowV) * 0.7 + 0.01, 0.2) * swRowPx;
@@ -3250,6 +3264,12 @@ swHaze *= swHaze;
 // changes per pixel.
 float swAirD = 1.0 - swAir;
 float swAirT = (1.0 - swAirD * swAirD * swAirD) * smoothstep(0.3, 0.85, 1.0 - swUp);
+// The nearer steps bend with the large noise (the last one, all of the haze, does not, and the bend fades where the noise
+// would alias), so a step never draws the straight, view-aligned edge of an eye-distance contour, which met a band's edge
+// at a right angle in views from above.
+float swAirBend = (swLarge - 0.5) * 0.3 * smoothstep(0.0, 0.06, swAirT) * (1.0 - swAirT);${fromTier(1, `
+swAirBend *= 1.0 - smoothstep(0.15, 0.6, swFoot);`)}
+swAirT += swAirBend;
 float swAirAA = fwidth(swAirT) * 0.75 + 0.002;
 float swAirBand = 0.35 * smoothstep(0.1 - swAirAA, 0.1 + swAirAA, swAirT) + 0.3 * smoothstep(0.25 - swAirAA, 0.25 + swAirAA, swAirT) + 0.25 * smoothstep(0.5 - swAirAA, 0.5 + swAirAA, swAirT) + 0.1 * smoothstep(0.8 - swAirAA, 0.8 + swAirAA, swAirT);
 swAirBand *= smoothstep(0.6, 0.95, swDepthTone);
@@ -3294,7 +3314,7 @@ float swToonCover = smoothstep(-swToonAA, swToonAA, swSwashEdgeS);
 // half a Foam Width), so a steep-banked body (a narrow river or canal, a quay) keeps a thin edge instead of foaming across
 // its whole width. A gentle beach never reaches this depth inside its band.
 float swBandCap = swFoamWidth * 0.4 + 2.0 * U.slateWaterWaves.x;
-float swBandShallow = mix(1.0, 1.0 - smoothstep(swBandCap * 0.85, swBandCap * 1.15, swTerrainDepth), swKnown);
+float swBandShallow = mix(1.0, 1.0 - step(swBandCap, swTerrainDepth), swKnown);
 float swFoam = (1.0 - smoothstep(swSurfEdge - swAAU, swSurfEdge + swAAU, swShoreX)) * swToonCover * swBandShallow;
 float swFrontAA = min(fwidth(swSwashFoam) * 0.7 + 0.01, 0.3);
 swFoam = max(swFoam, smoothstep(0.5 - swFrontAA, 0.5 + swFrontAA, swSwashFoam) * step(0.01, swFoamAmt));
@@ -3309,7 +3329,9 @@ float swBoreD = (min(swBorePhase, 1.0 - swBorePhase) * 6.283185 / max(U.slateWat
 float swBoreAAC = min(fwidth(swBoreD) * 0.7 + 0.002, 0.5);
 // At least about a pixel and a half wide (the line thins, never fades), while its bore is strong enough.
 float swBoreHalf = max(0.16 * swFoamWidth * swBoreOn, swBoreAAC * 1.1 * smoothstep(0.15, 0.35, swBoreOn)) * step(0.01, swFoamAmt);
-swFoam = max(swFoam, (1.0 - smoothstep(swBoreHalf - swBoreAAC, swBoreHalf + swBoreAAC, swBoreD)) * step(0.000001, swBoreHalf) * (1.0 - smoothstep(5.0, 6.0, swWashUnit)));`, `
+// A bore whose own width would be under about a pixel is culled, not drawn as a scratchy hairline.
+float swBoreWide = smoothstep(0.7, 1.4, 0.16 * swFoamWidth * swBoreOn / swBoreAAC);
+swFoam = max(swFoam, (1.0 - smoothstep(swBoreHalf - swBoreAAC, swBoreHalf + swBoreAAC, swBoreD)) * step(0.000001, swBoreHalf) * swBoreWide * (1.0 - smoothstep(5.0, 6.0, swWashUnit)));`, `
 float swWashPhase = sin(swTime * 0.8 + swLarge * 5.0);
 float swWashAA = min(fwidth(swWashUnit) * 0.7 + 0.002, 0.5);
 float swWashHalf = max((0.26 + 0.06 * swWashPhase) * mix(1.0, 0.6, swBodyEdge) * swFoamAmt, swWashAA * 1.1) * step(0.01, swFoamAmt);
@@ -3414,25 +3436,35 @@ alpha = clamp(max(U.slateWaterShallow.a * mix(0.65, 1.0, clamp(swDepthTone * 2.0
 // (darker water over the sand), which shrinks back as the sand dries behind the swash.
 float swFilm = (1.0 - swToonCover) * swSwashWet;
 float swFilmAA = min(fwidth(swFilm) * 0.7 + 0.01, 0.2);
-float swFilmA = max(swFoam, smoothstep(0.32 - swFilmAA, 0.32 + swFilmAA, swFilm) * 0.34);
-swEmissive = mix(mix(swFoamLit * vec3(0.2, 0.17, 0.15), swFoamLit, clamp(swFoam / max(swFilmA, 0.001), 0.0, 1.0)), swEmissive, swToonCover);
+float swFilmA = max(swFoam, smoothstep(0.32 - swFilmAA, 0.32 + swFilmAA, swFilm) * 0.4);
+swEmissive = mix(mix(vec3(0.07, 0.04, 0.015) * swExpo, swFoamLit, clamp(swFoam / max(swFilmA, 0.001), 0.0, 1.0)), swEmissive, swToonCover);
 alpha = mix(swFilmA, alpha, swToonCover);
 ${fromTier(1, `
-// The wet line (Medium up): a thin dark outline (about two pixels) along the waterline where the sand begins, measured
-// in pixels by the screen derivative of the distance: the swash's edge over terrain (it runs up and down the beach with
-// the bores), else the last pixels of the body's own edge (its bank, or the depth over terrain).
-float swWetS = swSwashEdgeS / max(fwidth(swSwashEdgeS), 0.00001);
+// The wet line (Medium up): wet sand along the outermost edge of everything the water leaves on the beach, so nothing
+// water-coloured lies beyond it. That edge is the outer boundary of the union of the swash's covered water and the drying
+// film behind it (wet sand, below); the line stands just outside it, about two pixels wide close up and gone in the
+// far field (it would outline every shoreline from above). Each distance is turned into pixels by its screen derivative,
+// bounded by the pixel footprint so the texel steps of a field's slope never spike it into a jagged line. Where the union
+// reaches the body's own edge (the mesh ends at the waterline) it is drawn there instead. It is the scene behind the
+// water darkened (a warm dark at partial coverage, so sand reads as wet sand, not ink), refracted bed included, since
+// nothing refracts under it.
+float swWetIn = swSwashEdgeS / clamp(fwidth(swSwashEdgeS), swFoot * 0.3, swFoot * 1.2);
+float swFilmPx = (swFilm - 0.32) / clamp(fwidth(swFilm), 0.005, 0.2);
+float swWetOut = -max(swWetIn, swFilmPx);
+float swWetHw = 2.4 * (1.0 - smoothstep(0.03, 0.2, swFoot));
+float swWetBand = smoothstep(-0.8, 0.8, swWetOut) * (1.0 - smoothstep(swWetHw - 0.8, swWetHw + 0.8, swWetOut));
 // Only real terrain draws it (or, with no terrain field bound at all, a body's own bank): a field's last texels, where its
 // known share ramps down, and a body's edge over open water are no shore, and would draw a dashed line along them.
 float swWetTerrain = step(${f(WATER_FIELD_TERRAIN_ALPHA)}, swKnown);
 float swWetD = mix(IN.vSlateWater.y, swTerrainDepth, swWetTerrain);
-float swWetPx = swWetD / max(fwidth(swWetD), 0.00001);
-float swWetLine = max(smoothstep(-2.6, -1.0, swWetS) * (1.0 - smoothstep(0.4, 1.6, swWetS)) * (1.0 - smoothstep(0.4, 0.8, abs(swSwashEdgeS))), (1.0 - smoothstep(1.4, 2.6, swWetPx)) * swToonCover);
+float swWetEdge = (1.0 - smoothstep(swWetHw - 0.8, swWetHw + 0.8, swWetD / max(fwidth(swWetD), 0.00001))) * swToonCover
+  * (1.0 - smoothstep(0.0, 2.0, swWetOut));
 // A waterline is shallow: past a metre or two of depth the field's own edge rows (where its distances blend toward zero)
 // would draw one.
+float swWetLine = max(swWetBand, swWetEdge) * smoothstep(0.4, 1.2, swWetHw);
 swWetLine *= max(swWetTerrain, 1.0 - U.slateWaterFieldInfo.x) * mix(1.0, 1.0 - smoothstep(1.0, 2.0, swTerrainDepth), swWetTerrain) * (1.0 - swOpenAny) * (1.0 - swHaze);
-swEmissive = mix(swEmissive, mix(swDeepC, vec3(0.12, 0.1, 0.09), 0.5) * (0.5 * swExpo), swWetLine);
-alpha = max(alpha, swWetLine);`, `
+swEmissive = mix(swEmissive, vec3(0.07, 0.04, 0.015) * swExpo, swWetLine);
+alpha = max(alpha, 0.55 * swWetLine);`, `
 float swWetLine = 0.0;`)}
 // Fresnel for object reflections: they replace the water by it, never over foam.
 float swNdotV = clamp(dot(normalize(mix(swSwellNormal, normalW, 0.5)), swV), 0.0, 1.0);
