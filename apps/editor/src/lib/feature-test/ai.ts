@@ -708,7 +708,7 @@ function primitiveTriangles(meshKind: unknown): { positions: number[]; indices: 
     case "ground":
       return { positions: [-5, 0, -5, 5, 0, -5, 5, 0, 5, -5, 0, 5], indices: [0, 3, 2, 0, 2, 1] };
     case "cylinder":
-      return solidBlockerMesh({ kind: "cylinder", pose: ORIGIN, size: { x: 0.5, y: 1.5, z: 0.5 } });
+      return solidBlockerMesh({ kind: "cylinder", pose: ORIGIN, size: { x: 1, y: 1.5, z: 1 } });
     case "sphere":
     case "plane":
     case "quad":
