@@ -577,6 +577,7 @@ See [scene-layers.md](scene-layers.md) and [fonts.md](fonts.md).
 - Tag `playDebugOverlay` so illumination/shadows skip them (same idea as other Play helpers)
 - Duration `0` = one **sim tick** (keep across extra engine presents on overlay Play and Preview Build; `noteSimTick` from a published `pushSnapshot` expires the previous tick after it has presented). A `debugDraw` from a new runtime tick (a different `frameId`) replaces the previous tick's duration-0 meshes so the line does not blank between worker messages; duration-0 draws sharing a `frameId` accumulate (a Line Trace line and its hit marker), and a command without a numeric `frameId` replaces every duration-0 draw. Thick GreasedLine draws dispose their auto-created material on expiry. `> 0` = seconds.
 - Coordinate System draws RGB axes and ignores Color
+- Script-supplied shape inputs are clamped so a duration-0 draw rebuilt every tick stays bounded: sphere Segments 4–64, cone angle 0–89°, frustum FOV 1–179°
 - Player `applyPlayerEngineCommand` accepts `debugDraw` **without** `bundleDebugger`
 
 Print HUD is DOM (`print-hud` in `@babylonslate/core`), not this overlay.
