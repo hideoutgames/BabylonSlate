@@ -144,10 +144,15 @@ export function remapImportResultGuids(
   return applyImportGuidRemap(results, remap);
 }
 
-/** Give each asset `remap` names its new guid and rewrite every reference to it in the set. */
+/**
+ * Give each asset `remap` names its new guid and rewrite every reference to it
+ * in the set. `outsideDefinitionFields` resolves Data Definitions and
+ * Structures the set itself does not hold (a folder copy's project assets).
+ */
 export function applyImportGuidRemap(
   results: ImportResult[],
   remap: ReadonlyMap<string, string>,
+  outsideDefinitionFields?: DataDefinitionFieldsResolver,
 ): ImportResult[] {
   if (remap.size === 0) {
     return results;
@@ -168,7 +173,7 @@ export function applyImportGuidRemap(
     }
     if ((result.type === "DataDefinition" || result.type === "Structure") && Array.isArray(payload.fields)) definitions.set(result.guid, payload.fields);
   }
-  const definitionFields: DataDefinitionFieldsResolver = (guid) => definitions.get(guid);
+  const definitionFields: DataDefinitionFieldsResolver = (guid) => definitions.get(guid) ?? outsideDefinitionFields?.(guid);
   const references = (entries: readonly string[] | undefined) => entries?.map((entry) => remapReference(entry, remap));
   return results.map((result) => ({
     ...result,
