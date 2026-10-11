@@ -144,7 +144,7 @@ describe("Texture editor", () => {
     expect(retryTextureEncoding).toHaveBeenCalledWith("tex-odd", { force: true, usage: "normal" });
   });
 
-  it("re-encodes nothing while another user's lock keeps the Texture read-only", async () => {
+  it("re-encodes and prepares nothing while another user's lock keeps the Texture read-only", async () => {
     textureUsageBlockedReason.mockReturnValue("The Texture is locked by Bob.");
     textureAlignmentStale.mockResolvedValue(true);
     const onChange = vi.fn();
@@ -152,6 +152,11 @@ describe("Texture editor", () => {
     const retry = await screen.findByTestId("texture-retry-encode");
     expect(retry).toHaveProperty("disabled", true);
     fireEvent.click(retry);
+    // Emission preparation stores derived chunks in the same file.
+    const prepare = screen.getByRole("button", { name: "Prepare Emission" });
+    expect(prepare).toHaveProperty("disabled", true);
+    fireEvent.click(prepare);
+    expect(prepareAreaEmission).not.toHaveBeenCalled();
     // A Details change the read-only tab refuses must not re-encode the file either.
     fireEvent.click(screen.getByRole("combobox", { name: "Usage" }));
     const particle = screen.getByRole("option", { name: "Particle" });

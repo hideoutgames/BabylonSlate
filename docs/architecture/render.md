@@ -1458,8 +1458,9 @@ Light**, set Width/Height in local units, and adjust Color and Intensity. It
 illuminates receivers without a visible plane or material. For textured emission,
 open an ordinary Texture asset, choose **Prepare Emission**, wait for Ready,
 then assign it in **Emission Texture**. Clearing the picker restores uniform
-emission. Preparation is cancellable and saved with the Texture; reopening or
-duplicating the asset reuses current prepared data. Replacing source pixels
+emission. Preparation is cancellable and saved with the Texture, so it is
+unavailable while the Texture is read-only (such as under another user's lock);
+reopening or duplicating the asset reuses current prepared data. Replacing source pixels
 requires preparation again. The Enabled description states the unshadowed,
 through-walls limitation; there is no Cast Shadows control.
 

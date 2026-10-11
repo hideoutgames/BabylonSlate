@@ -354,8 +354,9 @@ export function TextureDetails({
   const texturePath = guid ? assetRegistry?.getByGuid(guid)?.path : undefined;
   useOpenDocument(texturePath ? documentId({ kind: "texture", path: texturePath }) : null);
   const alignmentStale = useTextureAlignmentStale(guid, payload, textureAlignmentStale, registryEpoch);
-  // A re-encode rewrites the file: not while it is read-only, such as under
-  // another user's lock (the tab's banner offers Edit Anyway).
+  // A re-encode or emission preparation rewrites the file: not while it is
+  // read-only, such as under another user's lock (the tab's banner offers
+  // Edit Anyway).
   const encodeBlocked = guid ? textureUsageBlockedReason(guid) !== null : true;
   const emissionJob = useRef<AbortController | null>(null);
   const [emissionProgress, setEmissionProgress] = useState<AreaEmissionProgress | null>(null);
@@ -494,7 +495,7 @@ export function TextureDetails({
               Prepare this Texture for rectangular lights. The original image stays available for materials. Prepared data is saved with the asset and included in game exports.
             </p>
             <div className="flex items-center gap-2">
-              <Button size="sm" variant="outline" disabled={emissionProgress !== null} onClick={() => void prepareEmission()}>
+              <Button size="sm" variant="outline" disabled={emissionProgress !== null || encodeBlocked} onClick={() => void prepareEmission()}>
                 {emissionReady ? "Check Emission Data" : "Prepare Emission"}
               </Button>
               {emissionProgress ? (
