@@ -129,7 +129,7 @@ describe("array-map nodes", () => {
     expect(runLog(compiled.source)).toEqual(["3"]);
   });
 
-  it("compiles Get / Get Safe miss paths to typed defaults and valid flags", () => {
+  it("compiles an Array Get miss to the typed default and a false Valid flag", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",
@@ -138,7 +138,6 @@ describe("array-map nodes", () => {
         node(registry, "entry", "flow.entry"),
         node(registry, "make", "array.make", { count: 1, "default:item0": 9 }),
         node(registry, "get", "array.get", { "default:index": 5 }),
-        node(registry, "safe", "array.getSafe", { "default:index": 5 }),
         node(registry, "branch", "flow.sequence", { count: 2 }),
         node(registry, "logValue", "debug.log"),
         node(registry, "logValid", "debug.log"),
@@ -146,11 +145,10 @@ describe("array-map nodes", () => {
       edges: [
         edge("e1", "entry", "execOut", "branch", "execIn"),
         edge("e2", "make", "out", "get", "array"),
-        edge("e3", "make", "out", "safe", "array"),
         edge("e4", "branch", "then0", "logValue", "execIn"),
         edge("e5", "branch", "then1", "logValid", "execIn"),
         edge("e6", "get", "out", "logValue", "message"),
-        edge("e7", "safe", "valid", "logValid", "message"),
+        edge("e7", "get", "valid", "logValid", "message"),
       ],
     };
     const make = graph.nodes.find((entry) => entry.id === "make")!;
@@ -158,13 +156,11 @@ describe("array-map nodes", () => {
       if (pin.id.startsWith("item")) pin.type = INT;
       if (pin.id === "out") pin.type = arrayOf(INT);
     }
-    for (const id of ["get", "safe"] as const) {
-      const entry = graph.nodes.find((n) => n.id === id)!;
-      for (const pin of entry.pins) {
-        if (pin.id === "array") pin.type = arrayOf(INT);
-        if (pin.id === "out") pin.type = INT;
-        if (pin.id === "valid") pin.type = BOOL;
-      }
+    const get = graph.nodes.find((n) => n.id === "get")!;
+    for (const pin of get.pins) {
+      if (pin.id === "array") pin.type = arrayOf(INT);
+      if (pin.id === "out") pin.type = INT;
+      if (pin.id === "valid") pin.type = BOOL;
     }
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
     expect(runLog(compiled.source)).toEqual(["0", "false"]);
@@ -253,7 +249,11 @@ describe("array-map nodes", () => {
     expect(runLog(compiled.source)).toEqual(["true", "0", "0"]);
   });
 
-  it("Set At Index reads an impure index once for the check and the write", () => {
+  it.each([
+    ["array.set", { "default:item": 7 }, "7,2,3"],
+    ["array.removeIndex", {}, "2,3"],
+    ["array.insert", { "default:item": 7 }, "7,1,2,3"],
+  ] as const)("%s reads an impure index once for the check and the edit", (typeId, properties, expected) => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",
@@ -267,16 +267,16 @@ describe("array-map nodes", () => {
           "default:item2": 3,
         }),
         node(registry, "roll", "math.randomInt", { "default:min": 0, "default:max": 9 }),
-        node(registry, "set", "array.set", { "default:item": 7 }),
+        node(registry, "edit", typeId, { ...properties }),
         node(registry, "join", "string.join", { "default:separator": "," }),
         node(registry, "log", "debug.log"),
       ],
       edges: [
-        edge("e1", "entry", "execOut", "set", "execIn"),
-        edge("e2", "make", "out", "set", "array"),
-        edge("e3", "roll", "out", "set", "index"),
-        edge("e4", "set", "execOut", "log", "execIn"),
-        edge("e5", "set", "out", "join", "array"),
+        edge("e1", "entry", "execOut", "edit", "execIn"),
+        edge("e2", "make", "out", "edit", "array"),
+        edge("e3", "roll", "out", "edit", "index"),
+        edge("e4", "edit", "execOut", "log", "execIn"),
+        edge("e5", "edit", "out", "join", "array"),
         edge("e6", "join", "out", "log", "message"),
       ],
     };
@@ -289,7 +289,7 @@ describe("array-map nodes", () => {
       log: (_s: string, _c: string, message: string) => logs.push(message),
     });
     expect(rolls).toBe(1);
-    expect(logs).toEqual(["7,2,3"]);
+    expect(logs).toEqual([expected]);
   });
 
   it("compiles Append Array, Set At Index, Insert, Remove At, Remove Item, Clear", () => {

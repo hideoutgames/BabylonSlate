@@ -586,9 +586,7 @@ export const flowNodes: NodeDefinition[] = [
       const rawName =
         typeof ctx.node.properties.eventName === "string"
           ? ctx.node.properties.eventName
-          : typeof ctx.node.properties.name === "string"
-            ? ctx.node.properties.name
-            : "Custom";
+          : "Custom";
       const eventName = catalogEvent ?? jsIdent(rawName);
       const args = callParentArgs(ctx.node.properties);
       const wired = (pinId: string) =>

@@ -743,7 +743,7 @@ export function hydrateSerializedGraphForEditor(
         properties.resultKind = resultKindForClass(resultClassId, parentOf);
         const pinProperties = {
           ...properties,
-          defaultClassId: resultClassId,
+          "default:class": resultClassId,
         };
         const def = nodeRegistry.get(typeId);
         const pins: GraphPin[] = def ? def.pins(pinProperties) : [];

@@ -83,27 +83,6 @@ export const arrayMapNodes: NodeDefinition[] = [
     },
   },
   {
-    id: "array.getSafe",
-    title: "Get Safe",
-    category: "array",
-    pure: true,
-    pins: () => [
-      pin("array", "Array", "in", arrayOf(T)),
-      pin("index", "Index", "in", INT),
-      pin("out", "Out", "out", T),
-      pin("valid", "Valid", "out", BOOL),
-    ],
-    codegen: (ctx) => {
-      const array = ctx.input("array");
-      const index = ctx.input("index");
-      const fallback = outFallback(ctx);
-      return {
-        valid: `((a,i)=>{const l=a??[];return Number.isInteger(i)&&i>=0&&i<l.length;})(${array},${index})`,
-        out: `((a,i,d)=>{const l=a??[];return Number.isInteger(i)&&i>=0&&i<l.length?l[i]:d;})(${array},${index},${fallback})`,
-      };
-    },
-  },
-  {
     id: "array.length",
     title: "Array Length",
     category: "array",
@@ -266,8 +245,9 @@ export const arrayMapNodes: NodeDefinition[] = [
       const out = ctx.output("out");
       const index = ctx.input("index");
       ctx.emit(`${out} = ((${ctx.input("array")})??[]).slice();`);
+      // Read the index once; a non-finite index inserts at the front.
       ctx.emit(
-        `${out}.splice((Number.isFinite(${index})?Math.max(0,${index}|0):0), 0, ${ctx.input("item")});`,
+        `{ const __i = ${index}; ${out}.splice(Number.isFinite(__i)?Math.max(0,Math.trunc(__i)):0, 0, ${ctx.input("item")}); }`,
       );
     },
   },
@@ -288,10 +268,10 @@ export const arrayMapNodes: NodeDefinition[] = [
       const success = ctx.output("success");
       const index = ctx.input("index");
       ctx.emit(`${out} = ((${ctx.input("array")})??[]).slice();`);
+      // Read the index once so the bounds check and the removal use one value.
       ctx.emit(
-        `${success} = Number.isInteger(${index})&&${index}>=0&&${index}<${out}.length;`,
+        `{ const __i = ${index}; ${success} = Number.isInteger(__i)&&__i>=0&&__i<${out}.length; if (${success}) { ${out}.splice(__i, 1); } }`,
       );
-      ctx.emit(`if (${success}) { ${out}.splice(${index}, 1); }`);
     },
   },
   {

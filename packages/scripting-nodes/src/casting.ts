@@ -12,22 +12,22 @@ import {
   createWildcardNodes,
 } from "@babylonslate/scripting";
 
-function stringProp(value: unknown, fallback: string): string {
-  return typeof value === "string" && value.trim() ? value.trim() : fallback;
-}
-
+/**
+ * The Class pin's literal default (`default:class`), or BObject. Editor
+ * hydrate passes a wired Class pin's constraint through the same key when it
+ * builds pins, so Result typing and the default class never disagree.
+ */
 export function castDefaultClassId(
   properties: Record<string, unknown>,
 ): string {
   const keyed = properties["default:class"];
-  if (typeof keyed === "string" && keyed.trim()) return keyed.trim();
-  return stringProp(properties.defaultClassId, "BObject");
+  return typeof keyed === "string" && keyed.trim() ? keyed.trim() : "BObject";
 }
 
 export function castResultPinType(
   properties: Record<string, unknown>,
 ): PinType {
-  const classId = stringProp(properties.defaultClassId, castDefaultClassId(properties));
+  const classId = castDefaultClassId(properties);
   if (properties.resultKind === "actorRef") return actorRef(classId);
   if (properties.resultKind === "objectRef") return objectRef(classId);
   return classId === "Actor" ? actorRef(classId) : objectRef(classId);
@@ -47,12 +47,12 @@ function castPins(properties: Record<string, unknown>) {
 function castCodegen(
   ctx: Parameters<NodeDefinition["codegen"]>[0],
 ): void {
-  const input = ctx.input("object");
-  const classId = ctx.input("class");
   const success = ctx.output("success");
   const result = ctx.output("result");
-  ctx.emit(`${success} = ctx.isA(${input}, ${classId});`);
-  ctx.emit(`${result} = (${success} ? ${input} : null);`);
+  // Read the object once so the class test and Result see the same instance.
+  ctx.emit(
+    `{ const __o = ${ctx.input("object")}; ${success} = ctx.isA(__o, ${ctx.input("class")}); ${result} = ${success} ? __o : null; }`,
+  );
 }
 
 export const castingNodes: NodeDefinition[] = [
@@ -87,25 +87,6 @@ export const castingNodes: NodeDefinition[] = [
     category: "casting",
     pins: castPins,
     codegen: castCodegen,
-  },
-  {
-    id: "casting.castActor",
-    title: "Cast To Actor",
-    category: "casting",
-    pure: true,
-    pins: () => [
-      pin("in", "in", "in", objectRef("BObject")),
-      pin("success", "success", "out", BOOL),
-      pin("asActor", "asActor", "out", actorRef("Actor")),
-    ],
-    codegen: (ctx) => {
-      const input = ctx.input("in");
-      const ok = `ctx.isA(${input}, "Actor")`;
-      return {
-        success: ok,
-        asActor: `(${ok} ? ${input} : null)`,
-      };
-    },
   },
   ...createWildcardNodes(),
 ];
