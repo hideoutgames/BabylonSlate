@@ -840,4 +840,30 @@ describe("texture encode diagnostics", () => {
     );
     expect(service.sessionDiagnostics).toEqual(lines);
   });
+
+  it("marks the other compressed Textures as fallback when one cannot be written", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    const service = new ProjectService(storage);
+    await service.createEmptyProject("Fallback", { kind: "2d" });
+    for (const name of ["Stuck", "Wall"]) {
+      await storage.writeBinary(`assets/${name}.babasset`, await encodeBabasset({
+        header: { guid: name, type: "Texture", name, engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null, payload: { compressionState: "compressed", usage: "albedo" } },
+        chunks: [
+          { id: "pixels", kind: "pixels", mime: "image/png", data: new Uint8Array([1, 2, 3]) },
+          { id: "ktx2:a", kind: "ktx2", mime: "image/ktx2", data: new Uint8Array([4, 5, 6]) },
+        ],
+      }));
+    }
+    await service.remountRegistry();
+    const lines: string[] = [];
+    service.onDiagnostic((line) => lines.push(line));
+    const write = storage.writeBinary.bind(storage);
+    vi.spyOn(storage, "writeBinary").mockImplementation(async (path, bytes) => {
+      if (path.startsWith("assets/Stuck")) throw new Error("Disk full");
+      return write(path, bytes);
+    });
+    await service.setTranscoderAvailable(false);
+    expect(service.registry!.getByGuid("Wall")?.header.payload.compressionState).toBe("fallback_uncompressed");
+    expect(lines).toEqual(["Texture fallback state could not be saved for Stuck (Stuck): Disk full"]);
+  });
 });

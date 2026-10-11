@@ -660,11 +660,11 @@ export class ProjectService {
     };
   }
 
-  private emitTextureEncodeDiagnostic(guid: string, error: unknown): void {
+  private emitTextureEncodeDiagnostic(guid: string, error: unknown, failure = "encode failed"): void {
     const asset = this.assetRegistry?.getByGuid(guid);
     const name = asset?.header.name?.trim() || "Texture";
     const message = error instanceof Error ? error.message : String(error);
-    const line = `Texture encode failed for ${name} (${guid}): ${message}`;
+    const line = `Texture ${failure} for ${name} (${guid}): ${message}`;
     this.diagnostics.push(line);
     if (this.diagnostics.length > 200) this.diagnostics.shift();
     for (const listener of this.diagnosticListeners) listener(line);
@@ -733,17 +733,22 @@ export class ProjectService {
   }
 
   private async markCompressedTexturesFallback(): Promise<void> {
-    if (!this.assetRegistry) return;
-    for (const asset of this.assetRegistry.list({ type: "Texture" })) {
+    const registry = this.assetRegistry;
+    if (!registry) return;
+    for (const asset of registry.list({ type: "Texture" })) {
       const hasKtx2 = asset.header.chunks.some(
         (chunk) => chunk.kind === "ktx2" || chunk.id.startsWith("ktx2:"),
       );
       const state = asset.header.payload.compressionState;
-      if (hasKtx2 && state === "compressed") {
-        await this.assetRegistry.setCompressionState(
-          asset.header.guid,
-          "fallback_uncompressed",
-        );
+      if (!hasKtx2 || state !== "compressed") continue;
+      // Read-only roots and plugins keep their saved state; without a
+      // transcoder the resolver uses their pixels either way.
+      if (registry.getRoot(asset.rootId)?.readOnly || isPluginDocumentReadOnly(this.pluginDescriptors, asset.path)) continue;
+      try {
+        await registry.setCompressionState(asset.header.guid, "fallback_uncompressed");
+      } catch (error) {
+        // One unwritable Texture must not stop the others, or the open waiting on them.
+        this.emitTextureEncodeDiagnostic(asset.header.guid, error, "fallback state could not be saved");
       }
     }
   }
