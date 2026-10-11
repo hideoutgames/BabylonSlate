@@ -1401,8 +1401,7 @@ function initializeEngine(
     const anisotropy = appliedQuality?.textures.anisotropy ?? 4;
     applyMaterialTextureAnisotropy(texture, Math.min(anisotropy, engine.getCaps().maxAnisotropy ?? 1));
   };
-  const applyRenderingQuality = () => {
-    const state = sceneRenderingSettings(scene);
+  const applyQualitySettings = (state: ReturnType<typeof sceneRenderingSettings>) => {
     if (appliedRuntimeOverrides === state.runtimeOverrides && appliedProject === state.project && appliedSceneOverrides === state.shadowOverrides && appliedSessionOverrides === state.qualityOverrides && appliedLocalOverrides === state.localQualityOverrides) return;
     appliedRuntimeOverrides = state.runtimeOverrides;
     appliedProject = state.project;
@@ -1424,6 +1423,12 @@ function initializeEngine(
       rebuildPostProcessStack();
       sceneLayerCompositor?.refreshPostProcess();
     }
+  };
+  const applyRenderingQuality = () => {
+    const state = sceneRenderingSettings(scene);
+    applyQualitySettings(state);
+    // Fog Volume presence, a published LUT and the effects toggle replan the
+    // effects key without touching the quality inputs compared above.
     const effectsKey = state.effectsKey;
     if (appliedEffectsKey !== undefined && appliedEffectsKey !== effectsKey) {
       rebuildPostProcessStack();
