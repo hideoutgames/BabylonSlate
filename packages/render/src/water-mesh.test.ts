@@ -10,7 +10,7 @@ import {
   createWaterMesh, sceneWaterSamplesSceneCopy, setSceneWaterTime, setWaterGpuWaves, updateSceneWater, updateWaterMeshBody, updateWaterMeshDefinition,
   waterMeshBody, WATER_BLEND_REFRESH_MS, WATER_FINITE_CELL_BUDGET, WATER_GLOBAL_CELL_BUDGET, WATER_RESTORES_PER_FRAME,
 } from "./water-mesh";
-import { updateSceneRenderingSettings } from "./render-settings";
+import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
 import type { WaterMaterialPlugin } from "./water-material";
 import { createLandscapeMesh } from "./landscape-mesh";
 import { WATER_FIELD_EDGE_RAMP } from "./water-field";
@@ -52,8 +52,11 @@ const meshSurface = (water: WaterDefinition, body: WaterBodyProperties, x: numbe
 const pluginOf = (mesh: Mesh) => (mesh.material as PBRMaterial).pluginManager!.getPlugin<WaterMaterialPlugin>("SlateWater")!;
 const setQuality = (scene: Scene, level: QualityLevel, blendDistance?: number) =>
   updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch(level)), ...(blendDistance === undefined ? {} : { water: { blendDistance } }) });
-/** Tests of one body's own layout place several bodies in one scene: they keep blending off. */
-const noBlending = (scene: Scene) => updateSceneRenderingSettings(scene, { water: { blendDistance: 0 } });
+/** Tests of one body's own layout place several bodies in one scene: they keep blending off (the other project settings, Water quality included, stay as they are). */
+const noBlending = (scene: Scene) => {
+  const { project } = sceneRenderingSettings(scene);
+  updateSceneRenderingSettings(scene, { ...project, water: { ...project.water, blendDistance: 0 } });
+};
 
 /**
  * World translation the vertex shader adds to the uploaded positions (`slateWaterGridOffset`): a Global grid is uploaded
