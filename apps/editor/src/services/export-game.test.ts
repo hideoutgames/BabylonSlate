@@ -15,17 +15,15 @@ import {
 } from "@babylonslate/core";
 import { migrateLegacyShaderPayload } from "@babylonslate/shader-graph";
 import { collectAssetDependencyMetadata, createDefaultPluginSettings, type IndexedAsset } from "@babylonslate/assets";
-import {
-  MISSING_STARTUP_SCENE_MESSAGE,
-  parseScriptRegistry,
-} from "@babylonslate/exporter";
+import { MISSING_STARTUP_SCENE_MESSAGE } from "@babylonslate/exporter";
+import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import { assetsFromIndexed, collectAndExportGame, resolveExportPluginGraph } from "./export-game";
 import { loadExportDocuments } from "./export-game-inputs";
 import type { ExportIndexedAsset, ExportArtifact } from "@babylonslate/exporter";
 // Collect the real compiler with the suite so cold transforms are not timed as export work.
 import "./script-compiler";
 
-function compiledScripts(artifact: ExportArtifact): ReturnType<typeof parseScriptRegistry> {
+function compiledScripts(artifact: ExportArtifact): ScriptBundleEntry[] {
   return artifact.manifest.assets.filter(asset => asset.type === "CompiledScript").map(asset =>
     JSON.parse(new TextDecoder().decode(artifact.files.get(asset.path!))));
 }
@@ -38,6 +36,8 @@ function asset(
     dependencies: [],
     rootId: "project",
     parentClass: null,
+    // A Class's compile id is its file stem; fixtures name the file after the Class.
+    ...(partial.type === "Class" ? { path: `assets/${partial.name}.class.babasset` } : {}),
     ...partial,
   };
 }
@@ -319,9 +319,7 @@ describe("collectAndExportGame", () => {
     expect(paths(first.value)).toEqual(paths(reversed.value));
     expect(Object.keys(paths(first.value)).sort()).toEqual(["boot-only", "scene-a", "scene-start", "scene-z", "shared"]);
     expect(new Set(Object.values(paths(first.value))).size).toBe(5);
-    expect(first.value.manifest.packs).toEqual([]);
     for (const entry of first.value.manifest.assets) {
-      expect(entry.pack).toBeUndefined();
       expect(entry.path).toMatch(/^assets\/data-\d+\.bin$/);
       expect(new TextDecoder().decode(first.value.files.get(entry.path!))).toBe(entry.guid);
     }
@@ -404,7 +402,6 @@ describe("collectAndExportGame", () => {
     const startupAsset = result.value.manifest.assets.find(entry => entry.guid === "scene-1")!;
     expect(startupAsset.path).toMatch(/^assets\/data-\d+\.bin$/);
     expect(new TextDecoder().decode(result.value.files.get(startupAsset.path!))).toBe(JSON.stringify(scene));
-    expect(result.value.manifest.packs).toEqual([]);
     expect(
       result.value.manifest.assets.some((entry) => entry.guid === "euo-1"),
     ).toBe(false);

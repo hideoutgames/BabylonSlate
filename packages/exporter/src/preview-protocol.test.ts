@@ -38,6 +38,16 @@ describe("preview pack protocol", () => {
     ).toBe(true);
   });
 
+  it.each([
+    ["no diagnostics", undefined],
+    ["a non-array", { message: "x", severity: "error" }],
+    ["an entry without a message", [{ severity: "error" }]],
+    ["a non-string code", [{ message: "x", severity: "error", code: 7 }]],
+    ["a null entry", [null]],
+  ])("rejects a diagnostics message with %s", (_label, diagnostics) => {
+    expect(isPreviewDiagnosticsMessage({ type: PREVIEW_DIAGNOSTICS_MESSAGE, diagnostics })).toBe(false);
+  });
+
   it("round-trips diagnostic code on Preview Build posts", () => {
     const message = {
       type: PREVIEW_DIAGNOSTICS_MESSAGE,

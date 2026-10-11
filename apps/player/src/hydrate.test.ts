@@ -92,7 +92,7 @@ describe("packedContentFromGame", () => {
     if (!exported.ok) throw new Error(exported.error);
     const game = await loadGameFromFiles(exported.value.files);
     for (const type of binaryTypes) {
-      game.manifest.assets!.push({ guid: type, type, encoding: "bytes", pack: "boot.babpack" });
+      game.manifest.assets!.push({ guid: type, type, encoding: "bytes" });
       game.payloads.set(type, new Uint8Array([0xff, 0xfe, 0xfd]));
     }
     // Packed audio metadata was already extracted from its binary envelope.

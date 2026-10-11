@@ -50,7 +50,6 @@ async function packTinyGame(playerBaseURL: string) {
   const source = packed.value.manifest.assets.find(asset => asset.guid === "scene-guid-export");
   expect(source?.path).toBeTruthy();
   expect(packed.value.files.get(source!.path!)).toEqual(new TextEncoder().encode(JSON.stringify(scene)));
-  expect(packed.value.manifest.packs).toEqual([]);
   expect(packed.value.manifest.startupSceneGuid).toBe("scene-guid-export");
   expect(packed.value.fileCount).toBeLessThan(800);
   expect(

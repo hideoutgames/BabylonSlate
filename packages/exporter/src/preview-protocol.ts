@@ -85,11 +85,24 @@ export function isPreviewPackMessage(
   );
 }
 
+const isOptionalString = (value: unknown): boolean => value === undefined || typeof value === "string";
+
+function isPreviewDiagnostic(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const entry = value as Record<string, unknown>;
+  return typeof entry.message === "string" && typeof entry.severity === "string" &&
+    isOptionalString(entry.code) && isOptionalString(entry.assetGuid) && isOptionalString(entry.graphId) &&
+    isOptionalString(entry.nodeId) && isOptionalString(entry.btNodeId) &&
+    (entry.bodyLine === undefined || typeof entry.bodyLine === "number");
+}
+
 export function isPreviewDiagnosticsMessage(
   value: unknown,
 ): value is PreviewDiagnosticsMessage {
   if (!value || typeof value !== "object") return false;
-  return (value as { type?: unknown }).type === PREVIEW_DIAGNOSTICS_MESSAGE;
+  const record = value as { type?: unknown; diagnostics?: unknown };
+  return record.type === PREVIEW_DIAGNOSTICS_MESSAGE && Array.isArray(record.diagnostics) &&
+    record.diagnostics.every(isPreviewDiagnostic);
 }
 
 export function isPreviewRequestPackMessage(
@@ -119,14 +132,14 @@ export function filesFromPreviewPack(
   return files;
 }
 
+/** On demand, the handoff carries only the catalog; the player requests every other file. */
 export function previewPackFromFiles(
   files: Map<string, Uint8Array>,
   options: Pick<PreviewPackMessage, "traceByteBudget" | "onDemand"> = {},
 ): PreviewPackMessage {
   const record: Record<string, ArrayBuffer> = {};
-  const scripts = options.onDemand ? JSON.parse(new TextDecoder().decode(files.get(GAME_MANIFEST_FILE))).scriptsFile ?? "scripts.js" : "";
   for (const [path, bytes] of files) {
-    if (options.onDemand && path !== GAME_MANIFEST_FILE && path !== scripts) continue;
+    if (options.onDemand && path !== GAME_MANIFEST_FILE) continue;
     record[path] = bytes.buffer.slice(
       bytes.byteOffset,
       bytes.byteOffset + bytes.byteLength,

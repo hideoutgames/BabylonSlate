@@ -47,7 +47,7 @@ When adding a new `docs/**/*.md` file, add a sidebar entry in [`apps/docs/src/si
 | [architecture/theming.md](architecture/theming.md) | UI color palette and semantic tokens |
 | [architecture/components.md](architecture/components.md) | Reusable Editor UI primitives and composites |
 | [architecture/editor-extensions.md](architecture/editor-extensions.md) | EditorUtilityObject, editor-only graphs, Skybox Creator |
-| [architecture/exporter.md](architecture/exporter.md) | Itch zip, `.babpack`, Preview Build, `apps/player` |
+| [architecture/exporter.md](architecture/exporter.md) | Itch zip, asset catalog, Preview Build, `apps/player` |
 | [architecture/source-control.md](architecture/source-control.md) | Git LFS locking, SecretStore, advisory UX, mtime rescan |
 | [architecture/testing.md](architecture/testing.md) | Vitest projects, coverage gates, Playwright |
 | [ci-performance.md](ci-performance.md) | CI baseline, independent browser build pilot and rollback |

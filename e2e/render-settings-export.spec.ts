@@ -60,10 +60,12 @@ for (const variant of [
       effects: { fxaa: true },
       customResolution: true, width: 480, height: 270, blackBars: true,
     });
+    const scripts = scalabilityGraphScripts();
     const exported = await exportGame({
       mode: variant.mode, bundleDebugger: true, startupSceneGuid: "first",
-      renderSettings, playFrameCap: 30, scripts: scalabilityGraphScripts(),
-      assets: ["first", "second"].map((guid) => {
+      renderSettings, playFrameCap: 30, scripts,
+      assets: [...scripts.map((script) => ({ guid: script.assetGuid, type: "Class", sceneGuid: "first", name: script.classId,
+        bytes: new TextEncoder().encode(JSON.stringify({ components: [] })) })), ...["first", "second"].map((guid) => {
         const scene = { ...previewPlacementScene(), name: guid };
         // This setter fixture qualifies transactions, not large shadow-map
         // allocations. Dedicated shadow fixtures own actual caster coverage.
@@ -78,7 +80,7 @@ for (const variant of [
           scene.settings.environmentLighting = { intensity: 3 };
         }
         return { guid, type: "Scene", sceneGuid: guid, bytes: new TextEncoder().encode(JSON.stringify(scene)) };
-      }),
+      })],
       playerFiles: await loadPlayerDistFiles(new URL("/player/", baseURL).href),
     });
     if (!exported.ok) throw new Error(exported.error);
@@ -125,7 +127,6 @@ for (const variant of [
         return live;
       };
       const boot = await ready(1.25);
-      expect(exported.value.manifest.packs).toEqual([]);
       expect(requestsFor(secondPath), "deferred Scene document stays unread at startup").toEqual([]);
       expect(requestsFor(commandClass.path!), "available console Class stays unread at startup").toEqual([]);
       expect(requestsFor(commandCode.path!), "available compiled command code stays unread at startup").toEqual([]);

@@ -47,6 +47,27 @@ describe("Preview diagnostics transport", () => {
     pair.client.dispose(); pair.server.dispose();
   });
 
+  it("fails a profile transfer only after it goes idle and ignores an earlier profile's error", async () => {
+    const pair = linked();
+    await pair.client.connect();
+    vi.useFakeTimers();
+    const ready = pair.sent[0]!;
+    const deliver = (message: Record<string, unknown>) => pair.client.receive({ source: player, origin, data: { ...ready, ...message } });
+    deliver({ action: "profile-start", profileId: 2, metadata: { byteBudget: 4096 } });
+    for (let sequence = 0; sequence < 3; sequence++) {
+      await vi.advanceTimersByTimeAsync(6_000);
+      deliver({ action: "profile-chunk", profileId: 2, sequence, stream: "frames", rows: new Float64Array([sequence]) });
+    }
+    deliver({ action: "profile-error", profileId: 1, reason: "Earlier profile failed." });
+    deliver({ action: "profile-end", profileId: 2, sequence: 3 });
+    expect(pair.errors).toEqual([]);
+    expect(pair.profiles[0]?.frames).toHaveLength(3);
+    deliver({ action: "profile-start", profileId: 3, metadata: { byteBudget: 4096 } });
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(pair.errors).toEqual(["Preview profile transfer timed out."]);
+    pair.client.dispose(); pair.server.dispose();
+  });
+
   it("bounds handshake time and clears pending requests when the iframe closes", async () => {
     vi.useFakeTimers();
     const client = createPreviewDiagnosticClient({ source: () => player, origin: () => origin, send: () => {} }, { onProfile: () => {} });

@@ -29,7 +29,7 @@ export type ExportIndexedAsset = {
 export type ExportClosureInput = {
   startupSceneGuid: string | null;
   saveGameDefinitionGuid?: string | null;
-  /** Project Game Instance class id; packed even when scene settings omit it. */
+  /** Project Game Instance class id or Class asset guid; a startup root. */
   gameInstanceClass?: string | null;
   /** Project AudioMixer guid; packed even when no scene actor references it. */
   audioMixerGuid?: string | null;
@@ -106,7 +106,7 @@ export type GameAssetIndexEntry = {
   requiredDependencies?: string[];
   startupRequired?: boolean;
   consoleCommand?: ConsoleCommandMetadata;
-  pack?: string;
+  /** Exported file. Editor Play's in-memory catalog has none. */
   path?: string;
   name?: string;
   /**
@@ -121,10 +121,10 @@ export type GameAssetIndexEntry = {
 };
 
 export type GameManifest = {
-  /** Version 1 uses independent files and required-edge loading. */
-  assetCatalogVersion?: 1;
+  /** Independent asset files and required-edge loading. */
+  assetCatalogVersion: 1;
   saveGame?: import("@babylonslate/core").SaveGameConfiguration;
-  /** Authored build identity; absent in legacy builds. */
+  /** Authored build identity; every export writes it. Editor Play's in-memory catalog has none. */
   project?: { name: string; version: string };
   inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
   inputMappings?: ProjectInputSettings;
@@ -143,12 +143,9 @@ export type GameManifest = {
   playFrameCap: number;
   touchMinTargetPx?: number;
   pixelsPerUnit: number;
-  /** Ordered 2D sorting layers; absent in older exports. */
-  sortingLayers?: readonly string[];
+  /** Ordered 2D sorting layers. */
+  sortingLayers: readonly string[];
   pixelPerfect: boolean;
-  packs: string[];
-  /** Script registry path. Legacy manifests that omit it migrate to `scripts.js`. */
-  scriptsFile: string;
   physicsWorld: "2d" | "3d";
   assets: GameAssetIndexEntry[];
   /** Present only when `bundleDebugger` is true. */
@@ -188,7 +185,6 @@ export type ExportGameOptions = {
   scripts: readonly ScriptBundleEntry[];
   assets: readonly ExportAssetBytes[];
   playerFiles?: ReadonlyMap<string, Uint8Array>;
-  extraFiles?: ReadonlyMap<string, Uint8Array>;
   fileCountWarn?: number;
   fileCountFail?: number;
 };

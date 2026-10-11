@@ -18,7 +18,7 @@ engine-content/       Engine default skybox faces (`skybox/px.png` … `nz.png`,
 packages/core/        GUIDs, Result, math, seeded RNG, schemas, command bus, storage port, formatValue, print HUD helper (P5)
 packages/vfs/         Storage adapters (OPFS, Capacitor, Electron IPC, Node), platform detection, app settings, SecretStore, nativeHttp
 packages/assets/      Containers, asset registry, search index, importers, encode queue
-packages/exporter/    Headless game packer: export closure, `.babpack`, zip (P14)
+packages/exporter/    Headless game packer: export closure, asset catalog, zip (P14)
 packages/source-control/ Git LFS locking client behind LockProvider (P15)
 packages/edit/        Per-document undo stacks and reversible commands
 packages/object-model/ Headless BObject / Actor / World / tick / class registry

@@ -1,7 +1,7 @@
 import { classIdForAssetPath, type RuntimeAssetCatalogEntry } from "@babylonslate/core";
 import type { ExportIndexedAsset, GameAssetIndexEntry } from "./types";
 
-const isClassType = (type: string): boolean => type === "Class" || type === "Graph";
+const isClassType = (type: string): boolean => type === "Class";
 
 /**
  * Catalog entries for indexed headers, such as the packaged set Editor Play
