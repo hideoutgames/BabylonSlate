@@ -1251,7 +1251,7 @@ Games export to **web only**; the Capacitor and Electron shells exist to run the
 
 ### 15.1 Keeping the exported file count low
 
-itch.io caps a playable HTML upload at 1000 files. Babylon's tree-shaken chunks alone already produce 60 files today in the committed `apps/editor/ios/App/App/public/assets` directory, before a single game asset exists, and every reached asset adds files on top of that. `packed` is the default export preset; `packed` and `loose` currently write the same independent-file layout.
+itch.io caps a playable HTML upload at 1000 files. Babylon's tree-shaken chunks alone already produce 60 files today in the committed `apps/editor/ios/App/App/public/assets` directory, before a single game asset exists, and every reached asset adds files on top of that. Export presets have no packing choice: every export writes the same independent-file layout.
 
 What the export does:
 - **One player bundle.** Turn off code splitting for the player build (`inlineDynamicImports`, no `manualChunks`) so Babylon, the runtime and the player shell emit a single JavaScript file. Workers are the deliberate exception, since a worker entry has to be its own file; that is two or three more.
