@@ -76,7 +76,10 @@ export const castingNodes: NodeDefinition[] = [
       pin("in", "in", "in", FLOAT),
       pin("out", "out", "out", INT),
     ],
-    codegen: (ctx) => ({ out: `(${ctx.input("in")} | 0)` }),
+    // Truncate toward zero without int32 wrapping; non-finite input is 0.
+    codegen: (ctx) => ({
+      out: `((v) => (Number.isFinite(v) ? Math.trunc(v) : 0))(${ctx.input("in")})`,
+    }),
   },
   {
     id: "casting.cast",

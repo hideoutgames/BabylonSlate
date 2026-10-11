@@ -19,7 +19,7 @@ function pairCount(properties: Record<string, unknown>): number {
   return Math.max(0, Math.min(32, Math.floor(raw)));
 }
 
-/** Key kinds whose runtime values are plain data objects, compared by value. */
+/** Pin kinds whose runtime values are plain data objects, compared by value. */
 const VALUE_KEY_KINDS = new Set<PinType["kind"]>([
   "vec2",
   "vec3",
@@ -31,6 +31,13 @@ const VALUE_KEY_KINDS = new Set<PinType["kind"]>([
   "structRef",
 ]);
 
+/** Declares `q(a, b)`, recursive structural equality for plain data values. */
+const VALUE_EQUALS_DECL =
+  "const q=(a,b)=>{if(a===b)return true;" +
+  "if(a===null||b===null||typeof a!==\"object\"||typeof b!==\"object\")return false;" +
+  "const x=Object.keys(a);" +
+  "return x.length===Object.keys(b).length&&x.every((n)=>Object.prototype.hasOwnProperty.call(b,n)&&q(a[n],b[n]));};";
+
 /**
  * `(m, k) => key` returning the stored key structurally equal to `k`. Native
  * `Map` compares objects by reference, and each Vector / struct read yields a
@@ -38,13 +45,20 @@ const VALUE_KEY_KINDS = new Set<PinType["kind"]>([
  */
 const STORED_KEY =
   "((m,k)=>{if(k===null||typeof k!==\"object\"||m.has(k))return k;" +
-  "const q=(a,b)=>{if(a===b)return true;" +
-  "if(a===null||b===null||typeof a!==\"object\"||typeof b!==\"object\")return false;" +
-  "const x=Object.keys(a);" +
-  "return x.length===Object.keys(b).length&&x.every((n)=>Object.prototype.hasOwnProperty.call(b,n)&&q(a[n],b[n]));};" +
+  VALUE_EQUALS_DECL +
   "for(const e of m.keys())if(q(e,k))return e;return k;})";
 
-function hasValueKey(
+/**
+ * `(l, v) => index` of the first array element structurally equal to `v`,
+ * or -1; the value-type counterpart of `indexOf`.
+ */
+export const VALUE_INDEX_OF =
+  "((l,v)=>{" +
+  VALUE_EQUALS_DECL +
+  "for(let i=0;i<l.length;i++)if(q(l[i],v))return i;return -1;})";
+
+/** True when the (resolved) pin carries a value type compared by value. */
+export function hasValueTypePin(
   ctx: Parameters<NodeDefinition["codegen"]>[0],
   pinId: string,
 ): boolean {
@@ -59,7 +73,7 @@ function storedKey(
   map: string,
   key: string,
 ): string {
-  return hasValueKey(ctx, pinId) ? `${STORED_KEY}(${map},${key})` : key;
+  return hasValueTypePin(ctx, pinId) ? `${STORED_KEY}(${map},${key})` : key;
 }
 
 function valueFallback(ctx: Parameters<NodeDefinition["codegen"]>[0]) {
@@ -90,7 +104,7 @@ export const mapNodes: NodeDefinition[] = [
         pairs.push(`[${ctx.input(`key${i}`)}, ${ctx.input(`value${i}`)}]`);
       }
       const entries = `[${pairs.join(", ")}]`;
-      if (!hasValueKey(ctx, "key0")) return { out: `new Map(${entries})` };
+      if (!hasValueTypePin(ctx, "key0")) return { out: `new Map(${entries})` };
       return {
         out: `((p)=>{const m=new Map();for(const [k,v] of p)m.set(${STORED_KEY}(m,k),v);return m;})(${entries})`,
       };

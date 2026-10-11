@@ -216,6 +216,43 @@ describe("array-map nodes", () => {
     expect(runLog(compiled.source)).toEqual(["3"]);
   });
 
+  it("matches Vector items by value in Contains, Find Index and Remove Item", () => {
+    const registry = createDefaultNodeRegistry();
+    const item = { x: 1, y: 2, z: 3 };
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "entry", "flow.entry"),
+        node(registry, "vec", "vector.make3", { "default:x": 1, "default:y": 2, "default:z": 3 }),
+        node(registry, "make", "array.make", { count: 1 }),
+        node(registry, "contains", "array.contains", { "default:item": item }),
+        node(registry, "find", "array.find", { "default:item": item }),
+        node(registry, "remove", "array.removeItem", { "default:item": item }),
+        node(registry, "length", "array.length"),
+        node(registry, "logContains", "debug.log"),
+        node(registry, "logFind", "debug.log"),
+        node(registry, "logLength", "debug.log"),
+      ],
+      edges: [
+        edge("e1", "vec", "out", "make", "item0"),
+        edge("e2", "make", "out", "contains", "array"),
+        edge("e3", "make", "out", "find", "array"),
+        edge("e4", "make", "out", "remove", "array"),
+        edge("e5", "remove", "out", "length", "array"),
+        edge("e6", "entry", "execOut", "remove", "execIn"),
+        edge("e7", "remove", "execOut", "logContains", "execIn"),
+        edge("e8", "logContains", "execOut", "logFind", "execIn"),
+        edge("e9", "logFind", "execOut", "logLength", "execIn"),
+        edge("e10", "contains", "out", "logContains", "message"),
+        edge("e11", "find", "out", "logFind", "message"),
+        edge("e12", "length", "out", "logLength", "message"),
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    expect(runLog(compiled.source)).toEqual(["true", "0", "0"]);
+  });
+
   it("compiles Append Array, Set At Index, Insert, Remove At, Remove Item, Clear", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {

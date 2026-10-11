@@ -8,8 +8,23 @@ import {
   arrayOf,
   defaultValueLiteral,
 } from "@babylonslate/scripting";
+import { VALUE_INDEX_OF, hasValueTypePin } from "./map";
 
 const T = RESOLVING_WILDCARD;
+
+/**
+ * Index of `item` in `array`. Vector, rotator, color, transform and struct
+ * reads are new objects each time, so those items match by value.
+ */
+function itemIndexExpr(
+  ctx: Parameters<NodeDefinition["codegen"]>[0],
+  array: string,
+  item: string,
+): string {
+  return hasValueTypePin(ctx, "item")
+    ? `${VALUE_INDEX_OF}(${array},${item})`
+    : `${array}.indexOf(${item})`;
+}
 
 function outFallback(ctx: Parameters<NodeDefinition["codegen"]>[0], pinId = "out") {
   const outPin = ctx.node.pins.find((entry) => entry.id === pinId);
@@ -149,9 +164,15 @@ export const arrayMapNodes: NodeDefinition[] = [
       pin("item", "Item", "in", T),
       pin("out", "Out", "out", BOOL),
     ],
-    codegen: (ctx) => ({
-      out: `((${ctx.input("array")})??[]).includes(${ctx.input("item")})`,
-    }),
+    codegen: (ctx) => {
+      const array = `((${ctx.input("array")})??[])`;
+      const item = ctx.input("item");
+      return {
+        out: hasValueTypePin(ctx, "item")
+          ? `(${itemIndexExpr(ctx, array, item)}>=0)`
+          : `${array}.includes(${item})`,
+      };
+    },
   },
   {
     id: "array.find",
@@ -164,7 +185,7 @@ export const arrayMapNodes: NodeDefinition[] = [
       pin("out", "Out", "out", INT),
     ],
     codegen: (ctx) => ({
-      out: `((${ctx.input("array")})??[]).indexOf(${ctx.input("item")})`,
+      out: itemIndexExpr(ctx, `((${ctx.input("array")})??[])`, ctx.input("item")),
     }),
   },
   {
@@ -290,7 +311,7 @@ export const arrayMapNodes: NodeDefinition[] = [
       const success = ctx.output("success");
       const item = ctx.input("item");
       ctx.emit(`${out} = ((${ctx.input("array")})??[]).slice();`);
-      ctx.emit(`{ const __i = ${out}.indexOf(${item}); ${success} = __i>=0; if (${success}) { ${out}.splice(__i, 1); } }`);
+      ctx.emit(`{ const __i = ${itemIndexExpr(ctx, out, item)}; ${success} = __i>=0; if (${success}) { ${out}.splice(__i, 1); } }`);
     },
   },
   {

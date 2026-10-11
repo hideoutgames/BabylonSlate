@@ -180,7 +180,6 @@ describe("string.format node", () => {
       ["string.toLower", "toLowerCase", "out"],
       ["string.toUpper", "toUpperCase", "out"],
       ["string.parseInt", "parseInt", "out"],
-      ["string.parseFloat", "parseFloat", "out"],
     ] as const) {
       const graph: LogicGraph = {
         id: "g",
@@ -306,5 +305,41 @@ describe("string.format node", () => {
       log: (_s: string, _c: string, message: string) => parseLogs.push(message),
     });
     expect(parseLogs).toEqual(["true"]);
+  });
+});
+
+describe("string.parseFloat", () => {
+  it.each([
+    ["1.5e2", ["true", "150"]],
+    ["-.5", ["true", "-0.5"]],
+    ["0x10", ["false", "0"]],
+    ["1_000", ["false", "0"]],
+    ["12abc", ["false", "0"]],
+    ["1e400", ["false", "0"]],
+  ])("parses %s with matching Success and Out", (text, expected) => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "parse",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "parse", "string.parseFloat", { "default:in": text }),
+        node(registry, "logSuccess", "debug.log"),
+        node(registry, "logOut", "debug.log"),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "logSuccess", targetPinId: "execIn" },
+        { id: "e2", sourceNodeId: "logSuccess", sourcePinId: "execOut", targetNodeId: "logOut", targetPinId: "execIn" },
+        { id: "e3", sourceNodeId: "parse", sourcePinId: "success", targetNodeId: "logSuccess", targetPinId: "message" },
+        { id: "e4", sourceNodeId: "parse", sourcePinId: "out", targetNodeId: "logOut", targetPinId: "message" },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    const logs: string[] = [];
+    (loadModule(compiled.source).onBeginPlay as (ctx: unknown) => void)({
+      formatValue: (value: unknown) => String(value),
+      log: (_s: string, _c: string, message: string) => logs.push(message),
+    });
+    expect(logs).toEqual(expected);
   });
 });

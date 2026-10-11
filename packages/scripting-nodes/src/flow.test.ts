@@ -334,6 +334,19 @@ describe("flow nodes", () => {
     expect(calls).toEqual([["guard", "On_Alert", { target: 7 }], ["guard", "On_Alert", { target: 9 }]]);
   });
 
+  it.each([
+    [undefined, 2],
+    [Number.POSITIVE_INFINITY, 2],
+    ["many", 2],
+    [2.7, 2],
+    [0, 1],
+    [1000, 32],
+  ])("gives Sequence with count %s a bounded whole number of outputs", (count, outputs) => {
+    const sequence = flowNodes.find((node) => node.id === "flow.sequence")!;
+    const pins = sequence.pins(count === undefined ? {} : { count });
+    expect(pins.filter((pin) => pin.direction === "out")).toHaveLength(outputs);
+  });
+
   it("registers Call Parent Event with passthrough data pins", () => {
     const callParent = flowNodes.find(
       (node) => node.id === "flow.event.callParent",

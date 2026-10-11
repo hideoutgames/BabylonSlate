@@ -303,3 +303,36 @@ describe("wildcard conversions", () => {
     ).toMatchObject({ success: true, value: hero, typeOf: "actorRef:Hero" });
   });
 });
+
+describe("Float To Int", () => {
+  it.each([
+    [-2.7, "-2"],
+    [3e9, "3000000000"],
+    [Number.NaN, "0"],
+    [Number.POSITIVE_INFINITY, "0"],
+  ])("truncates %s toward zero without int32 wrapping", (value, expected) => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "speed", "variables.get", { variableName: "Speed", typeId: "float", implicitSelf: true }),
+        node(registry, "toInt", "casting.floatToInt"),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "log", targetPinId: "execIn" },
+        { id: "e2", sourceNodeId: "speed", sourcePinId: "value", targetNodeId: "toInt", targetPinId: "in" },
+        { id: "e3", sourceNodeId: "toInt", sourcePinId: "out", targetNodeId: "log", targetPinId: "message" },
+      ],
+    };
+    const logged: string[] = [];
+    loadBeginPlay(compileGraph(graph, { assetGuid: "a", registry }).source)({
+      getVariable: () => value,
+      formatValue: String,
+      log: (_severity: string, _category: string, message: string) => logged.push(message),
+    });
+    expect(logged).toEqual([expected]);
+  });
+});

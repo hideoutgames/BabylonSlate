@@ -38,6 +38,13 @@ function lengthExpr(v: string, axes: readonly string[]): string {
   return `Math.hypot(${axes.map((axis) => `(${v}).${axis}`).join(", ")})`;
 }
 
+/** Reads the vector once, so the length and every component see one value. */
+function normalizeExpr(v: string, axes: readonly string[]): string {
+  const unit = axes.map((axis) => `${axis}: v.${axis} / l`).join(", ");
+  const zero = axes.map((axis) => `${axis}: 0`).join(", ");
+  return `((v) => { const l = ${lengthExpr("v", axes)}; return l > 1e-8 ? { ${unit} } : { ${zero} }; })(${v})`;
+}
+
 function lengthSquaredExpr(v: string, axes: readonly string[]): string {
   return `(${axes.map((axis) => `(${v}).${axis} * (${v}).${axis}`).join(" + ")})`;
 }
@@ -298,13 +305,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("v", "V", "in", VEC3),
       pin("out", "Out", "out", VEC3),
     ],
-    codegen: (ctx) => {
-      const v = ctx.input("v");
-      const len = `__len_${ctx.node.id.replace(/[^A-Za-z0-9]/g, "_")}`;
-      return {
-        out: `((${len} => ${len} > 1e-8 ? { x: (${v}).x / ${len}, y: (${v}).y / ${len}, z: (${v}).z / ${len} } : { x: 0, y: 0, z: 0 })(${lengthExpr(v, AXES3)}))`,
-      };
-    },
+    codegen: (ctx) => ({ out: normalizeExpr(ctx.input("v"), AXES3) }),
   },
   {
     id: "vector.distance3",
@@ -391,12 +392,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("v", "V", "in", VEC2),
       pin("out", "Out", "out", VEC2),
     ],
-    codegen: (ctx) => {
-      const v = ctx.input("v");
-      return {
-        out: `((${lengthExpr(v, AXES2)} > 1e-8 ? { x: (${v}).x / ${lengthExpr(v, AXES2)}, y: (${v}).y / ${lengthExpr(v, AXES2)} } : { x: 0, y: 0 }))`,
-      };
-    },
+    codegen: (ctx) => ({ out: normalizeExpr(ctx.input("v"), AXES2) }),
   },
   {
     id: "vector.distance2",
@@ -483,13 +479,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("v", "V", "in", VEC4),
       pin("out", "Out", "out", VEC4),
     ],
-    codegen: (ctx) => {
-      const v = ctx.input("v");
-      const len = lengthExpr(v, AXES4);
-      return {
-        out: `((${len} > 1e-8 ? { x: (${v}).x / ${len}, y: (${v}).y / ${len}, z: (${v}).z / ${len}, w: (${v}).w / ${len} } : { x: 0, y: 0, z: 0, w: 0 }))`,
-      };
-    },
+    codegen: (ctx) => ({ out: normalizeExpr(ctx.input("v"), AXES4) }),
   },
   {
     id: "vector.distance4",

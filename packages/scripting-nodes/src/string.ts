@@ -10,6 +10,13 @@ import {
   readPinDefault,
 } from "@babylonslate/scripting";
 
+/**
+ * Parse Float input grammar: an optional minus, decimal digits with an
+ * optional fraction, and an optional exponent. Success and Out both use it,
+ * so hex, digit separators, trailing text and overflow fail and return 0.
+ */
+const DECIMAL_LITERAL = String.raw`/^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/`;
+
 export const FORMAT_ARG_PIN_PREFIX = "arg:";
 export const FORMAT_STRING_DEFAULT = "{input}";
 
@@ -315,8 +322,8 @@ export const stringNodes: NodeDefinition[] = [
     codegen: (ctx) => {
       const raw = `String(${ctx.input("in")}).trim()`;
       return {
-        success: `((s => { const n = Number(s); return s !== "" && Number.isFinite(n); })(${raw}))`,
-        out: `((s => { const n = Number.parseFloat(s); return s !== "" && Number.isFinite(n) ? n : 0; })(${raw}))`,
+        success: `((s => ${DECIMAL_LITERAL}.test(s) && Number.isFinite(Number(s)))(${raw}))`,
+        out: `((s => { const n = Number(s); return ${DECIMAL_LITERAL}.test(s) && Number.isFinite(n) ? n : 0; })(${raw}))`,
       };
     },
   },

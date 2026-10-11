@@ -694,7 +694,7 @@ export const flowNodes: NodeDefinition[] = [
     title: "Sequence",
     category: "flow",
     pins: (properties) => {
-      const count = Math.max(1, Number(properties.count ?? 2));
+      const count = sequenceOutputCount(properties);
       const pins = [pin("execIn", "exec", "in", EXEC)];
       for (let i = 0; i < count; i++) {
         pins.push(pin(`then${i}`, `then_${i}`, "out", EXEC));
@@ -1082,6 +1082,13 @@ function functionEndpointPins(
   return endpoint === "input"
     ? [pin("exec", "then", "out", EXEC)]
     : [pin("then", "then", "in", EXEC)];
+}
+
+/** Sequence outputs: a whole count from 1 to 32, or 2 when the count is not a finite number. */
+function sequenceOutputCount(properties: Record<string, unknown>): number {
+  const raw = Number(properties.count ?? 2);
+  if (!Number.isFinite(raw)) return 2;
+  return Math.max(1, Math.min(32, Math.floor(raw)));
 }
 
 function pinTypeForCommandParam(type: string | undefined): PinType {
