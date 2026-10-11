@@ -859,15 +859,24 @@ describe("evaluateBehaviourTree", () => {
     expect(ticks).toBe(3);
   });
 
-  it("restarts an infinite Loop at most once per tick", () => {
+  it("restarts an infinite Loop at most once per tick and re-checks its decorators", () => {
     const leaf = node("leaf", "task", "bt.task.custom");
-    leaf.decorators.push({
-      id: "loop",
-      classId: "bt.decorator.loop",
-      abortMode: "none",
-      observedKeys: [],
-      properties: { numLoops: 0 },
-    });
+    leaf.decorators.push(
+      {
+        id: "loop",
+        classId: "bt.decorator.loop",
+        abortMode: "none",
+        observedKeys: [],
+        properties: { numLoops: 0 },
+      },
+      {
+        id: "go",
+        classId: "bt.decorator.blackboardIsSet",
+        abortMode: "none",
+        observedKeys: ["go"],
+        properties: { key: "go" },
+      },
+    );
     const doc = tree(
       [node("root", "sequence", "bt.composite.sequence", ["leaf"]), leaf],
       "root",
@@ -879,11 +888,14 @@ describe("evaluateBehaviourTree", () => {
         return "success" as const;
       },
     };
-    const first = evaluateBehaviourTree(doc, null, 1 / 60, { host });
+    const first = evaluateBehaviourTree(doc, null, 1 / 60, { host, blackboard: { go: 1 } });
     expect(first.status).toBe("running");
-    expect(first.lastResults.leaf).toBe("running");
     expect(ticks).toBe(2);
-    evaluateBehaviourTree(doc, first, 1 / 60, { host });
+    const second = evaluateBehaviourTree(doc, first, 1 / 60, { host, blackboard: { go: 1 } });
+    expect(ticks).toBe(4);
+    // The iteration that starts on the next tick sees the decorator fail.
+    const stopped = evaluateBehaviourTree(doc, second, 1 / 60, { host, blackboard: {} });
+    expect(stopped.status).toBe("failure");
     expect(ticks).toBe(4);
   });
 

@@ -303,18 +303,20 @@ function popThrough(
   }
 }
 
+/** Stack index of the nearest Parallel below the top frame, or -1. */
+function parallelBelowTop(stack: BtStackFrame[], nodes: Map<string, BtNode>): number {
+  for (let i = stack.length - 2; i >= 0; i -= 1) {
+    if (nodes.get(stack[i]!.nodeId)?.kind === "parallel") return i;
+  }
+  return -1;
+}
+
 function yieldToParallel(
   stack: BtStackFrame[],
   nodes: Map<string, BtNode>,
   lastResults: Record<string, BtResult>,
 ): boolean {
-  let parallelIndex = -1;
-  for (let i = stack.length - 2; i >= 0; i -= 1) {
-    if (nodes.get(stack[i]!.nodeId)?.kind === "parallel") {
-      parallelIndex = i;
-      break;
-    }
-  }
+  const parallelIndex = parallelBelowTop(stack, nodes);
   if (parallelIndex < 0) return false;
   stack.pop();
   while (stack.length - 1 > parallelIndex) {
@@ -851,7 +853,10 @@ export function evaluateBehaviourTree(
   // instant tasks still loop within the tick. An infinite Loop restarts at
   // most once per tick: when its subtree finishes again in the same pass, the
   // node stays running and the next iteration starts on the next tick, so
-  // instant tasks never spin until the step guard.
+  // instant tasks never spin until the step guard. That iteration starts like
+  // any restart, from an unopened frame that re-checks the node's decorators;
+  // only under a Parallel, which pops the frame, does the node resume from its
+  // `running` result.
   const restarted = new Set<string>();
   let yielded = false;
   const stepDt = (): number =>
@@ -865,9 +870,9 @@ export function evaluateBehaviourTree(
     resetSubtreeForLoop(nodes, lastResults, nodeMemory, node.id);
     restarted.add(node.id);
     frame.childIndex = 0;
-    frame.opened = again;
+    frame.opened = false;
     if (again) {
-      lastResults[node.id] = "running";
+      if (parallelBelowTop(stack, nodes) >= 0) lastResults[node.id] = "running";
       yielded = true;
     }
     return true;
