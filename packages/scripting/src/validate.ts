@@ -440,7 +440,8 @@ function validatePinTyping(
         const implicitSelfTarget =
           pin.id === "target" &&
           node.properties.implicitSelf === true &&
-          (pin.type.kind === "objectRef" || pin.type.kind === "actorRef");
+          (pin.type.kind === "objectRef" || pin.type.kind === "actorRef") &&
+          (registry === undefined || registry.get(node.typeId)?.implicitSelfTarget === true);
         const defaultClearsMissing =
           !requiresReference && hasStored &&
           (pinAcceptsLiteralDefault(pin.type) ||

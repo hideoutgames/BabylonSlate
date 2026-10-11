@@ -92,6 +92,7 @@ function memberGetExpr(
 export const variableNodes: NodeDefinition[] = [
   {
     id: "variables.get",
+    implicitSelfTarget: true,
     title: "Get Variable",
     category: "variables",
     pure: true,
@@ -119,6 +120,7 @@ export const variableNodes: NodeDefinition[] = [
   },
   {
     id: "variables.set",
+    implicitSelfTarget: true,
     title: "Set Variable",
     category: "variables",
     pins: (properties) => {
@@ -158,6 +160,7 @@ export const variableNodes: NodeDefinition[] = [
   },
   {
     id: "variables.getValidated",
+    implicitSelfTarget: true,
     title: "Validated Get",
     category: "variables",
     pins: (properties) => {

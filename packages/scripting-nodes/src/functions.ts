@@ -18,6 +18,7 @@ import {
 export const functionCallNodes: NodeDefinition[] = [
   {
     id: "functions.call",
+    implicitSelfTarget: true,
     title: "Call",
     category: "functions",
     declaredPinOrder: true,
