@@ -94,6 +94,7 @@ function membersEqual(
   a: SerializedGraph["members"],
   b: SerializedGraph["members"],
 ): boolean {
+  if (a === b) return true;
   return JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
 }
 
@@ -105,7 +106,8 @@ function componentsEqual(
   a: SerializedGraph["components"],
   b: SerializedGraph["components"],
 ): boolean {
-  if (a === undefined || b === undefined) return a === b;
+  if (a === b) return true;
+  if (a === undefined || b === undefined) return false;
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
@@ -113,6 +115,7 @@ function functionGraphsEqual(
   a: SerializedGraph["functionGraphs"],
   b: SerializedGraph["functionGraphs"],
 ): boolean {
+  if (a === b) return true;
   return JSON.stringify(a ?? {}) === JSON.stringify(b ?? {});
 }
 
@@ -142,6 +145,7 @@ function actorDefaultsEqual(
   a: SerializedGraph["actorDefaults"],
   b: SerializedGraph["actorDefaults"],
 ): boolean {
+  if (a === b) return true;
   return JSON.stringify(a ?? {}) === JSON.stringify(b ?? {});
 }
 
