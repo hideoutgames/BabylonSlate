@@ -1474,7 +1474,10 @@ swLowBedT = max(swLowBedT - vec3(swTransmit), vec3(0.0));`)}${ifDefined(REFRACTI
 // no background (the sky colour behind it never tints the sea), and its in-scattered light fills in.
 float swVoid = step(${f(WATER_SCENE_COPY_SKY_DEPTH * 0.9)}, swSceneZ);
 swTransmitRgb *= 1.0 - swVoid;
-swTransmit *= 1.0 - swVoid;
+swTransmit *= 1.0 - swVoid;${fromTier(1, "", `
+// Low draws its bed's remaining light itself: there is no bed there either.
+swLowBedT *= 1.0 - swVoid;
+swScatterT *= 1.0 - swVoid;`)}
 // Thin water at a shoreline: the copy's depth is one nearest texel, so a hard in-front test flips from texel to texel
 // into a dithered checker there; a tolerance band (wider far away) blends the refracted and blended paths instead.
 swRefracts = smoothstep(-0.03, 0.03 + swWaterZ * 0.004, swSceneZ - swWaterZ);
@@ -2406,7 +2409,13 @@ vec2 swBedXZ = swWorld - swV.xz / max(swUp, 0.25) * swDepth;
 float swCa = swNoise(swBedXZ * 0.85 + vec2(swTime * 0.11, swTime * 0.07));
 float swCb = swNoise(swBedXZ * 1.25 + vec2(swCa * 1.2 - swTime * 0.09, 0.4 - swTime * 0.05));
 float swCaustic = clamp(1.0 - abs(swCa + swCb - 1.0) * 7.0, 0.0, 1.0);
-swCaustic = swCaustic * swCaustic * smoothstep(0.05, 0.4, swDepth) * (1.0 - smoothstep(1.5, 5.0, swDepth)) * (1.0 - smoothstep(0.15, 0.5, swFoot)) * swSunVis;
+swCaustic = swCaustic * swCaustic * smoothstep(0.05, 0.4, swDepth) * (1.0 - smoothstep(1.5, 5.0, swDepth)) * (1.0 - smoothstep(0.15, 0.5, swFoot)) * swSunVis;${ifDefined(REFRACTION, `
+// As Realistic: where the copy holds no geometry behind the water (its sky depth) there is no bed, so open water
+// transmits no background and lights no caustics there; its own light fills in.
+float swVoid = step(${f(WATER_SCENE_COPY_SKY_DEPTH * 0.9)}, swSceneZ);
+swTransRgb *= 1.0 - swVoid;
+swTrans *= 1.0 - swVoid;
+swCaustic *= 1.0 - swVoid;`)}
 #ifndef ${REFRACTION}
 // Without the copy the bed blends in untinted: the water covers more of it, its in-scattered light standing in for
 // the tinted bed, and the caustics light it from above.
@@ -3131,7 +3140,10 @@ swRefracts *= swToonCover;
 // Refraction-tinted shallows: what shows through takes the water's hue (a gain of at most 1) and fades toward the
 // water's own colour with the refracted depth, so nothing below glows brighter than above.
 vec3 swTintHue = swShallowC / max(max(swShallowC.r, max(swShallowC.g, swShallowC.b)), 0.001);
-swBackground = mix(swBackground * mix(vec3(1.0), swTintHue, 0.5), swLit, clamp(swTone, 0.0, 1.0));
+// As Realistic: where the copy holds no geometry behind the water (its sky depth) there is no bed, and the water's own
+// colour shows instead of the sky.
+float swVoid = step(${f(WATER_SCENE_COPY_SKY_DEPTH * 0.9)}, swSceneZ);
+swBackground = mix(swBackground * mix(vec3(1.0), swTintHue, 0.5), swLit, max(clamp(swTone, 0.0, 1.0), swVoid));
 // The refracted scene replaces the blended background; Opacity still sets how much of it shows. It joins the output
 // after the water's own fog (\`swRefracted\`, see CUSTOM_FRAGMENT_BEFORE_FOG).
 float swRefractedWeight = (1.0 - alpha) * swRefracts;
