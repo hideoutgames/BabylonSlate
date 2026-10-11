@@ -20,7 +20,6 @@ export interface NumericDragFieldProps {
   sensitivity?: number;
   /** Maximum displayed decimal places while idle; stored values are never rounded. */
   precision?: number;
-  step?: number;
   min?: number;
   max?: number;
   /** Additional constraints; invalid typed values are retained as drafts only. */

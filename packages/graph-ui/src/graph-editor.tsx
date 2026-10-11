@@ -780,9 +780,7 @@ function GraphEditorCanvas({
           data.__nodeType = node.type;
         }
         const typeId =
-          typeof data.__nodeType === "string"
-            ? data.__nodeType
-            : (node.type ?? "logMessage");
+          typeof data.__nodeType === "string" ? data.__nodeType : (node.type ?? "");
         return withDragHandle(
           {
             id: node.id,
