@@ -72,15 +72,6 @@ export function parseSpriteAnimationFrame(
   return frame;
 }
 
-function withoutDurationOverride(
-  frame: SpriteAnimationFrame,
-): SpriteAnimationFrame {
-  if (frame.durationMsOverride === undefined) return frame;
-  const next = { ...frame };
-  delete next.durationMsOverride;
-  return next;
-}
-
 export function parseSpriteAnimationPayload(
   value: unknown,
 ): SpriteAnimationPayload {
@@ -92,33 +83,15 @@ export function parseSpriteAnimationPayload(
     ? source.frames.map((frame) => parseSpriteAnimationFrame(frame))
     : [];
   if (frames.length === 0) return createDefaultSpriteAnimationPayload();
-  if ("frameDurationMs" in source) {
-    return {
-      frameDurationMs: Math.max(
-        1,
-        asFinitePositive(
-          source.frameDurationMs,
-          createDefaultSpriteAnimationPayload().frameDurationMs,
-        ),
-      ),
-      frames,
-    };
-  }
-  const firstDuration = frames[0]!.durationMs;
-  const uniform = frames.every((frame) => frame.durationMs === firstDuration);
-  if (uniform) {
-    return {
-      frameDurationMs: firstDuration,
-      frames: frames.map(withoutDurationOverride),
-    };
-  }
   return {
-    frameDurationMs: firstDuration,
-    frames: frames.map((frame) =>
-      frame.durationMs === firstDuration
-        ? withoutDurationOverride(frame)
-        : { ...frame, durationMsOverride: true },
+    frameDurationMs: Math.max(
+      1,
+      asFinitePositive(
+        source.frameDurationMs,
+        createDefaultSpriteAnimationPayload().frameDurationMs,
+      ),
     ),
+    frames,
   };
 }
 
