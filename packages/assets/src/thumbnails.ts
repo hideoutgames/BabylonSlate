@@ -95,7 +95,7 @@ export function thumbnailMime(bytes: Uint8Array): string {
 
 export function isThumbnailableAssetType(type: string): boolean {
   return type === "Texture" || type === "Model" || type === "Animation" ||
-    type === "Material" || type === "Class" || type === "Graph";
+    type === "Material" || type === "Class";
 }
 
 /** Rebuild legacy JPEG thumbnails whose source may contain alpha, on demand. */

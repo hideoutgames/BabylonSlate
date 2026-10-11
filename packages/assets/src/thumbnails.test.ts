@@ -113,7 +113,6 @@ describe("thumbnails I/O", () => {
     expect(isThumbnailableAssetType("Animation")).toBe(true);
     expect(isThumbnailableAssetType("Material")).toBe(true);
     expect(isThumbnailableAssetType("Class")).toBe(true);
-    expect(isThumbnailableAssetType("Graph")).toBe(true);
     expect(isThumbnailableAssetType("Audio")).toBe(false);
   });
 });
