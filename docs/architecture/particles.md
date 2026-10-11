@@ -145,7 +145,7 @@ Every node has a `role` (`output`, `create`, `shape`, `update`, `input`, `value`
 | Logic | Condition (`ParticleConditionBlock`; Test, Epsilon) |
 
 - Apply Velocity and Fade To Dead Color keep Babylon's names ("basic position update", "basic color update") as search aliases.
-- Divide, Maximum, Smooth Step, Step and Clamp take Float or vectors, not Color (Babylon's Color4 versions throw or misbehave); Minimum takes Color. Modulo and Power are Float only. Split takes Vector 2, Vector 3 or Color; Combine's W defaults to 1.
+- Divide, Maximum, Smooth Step, Step and Clamp take Float or vectors, not Color (Babylon's Color4 versions throw or misbehave); Minimum takes Color. Modulo and Power are Float only. Split takes Vector 2, Vector 3 or Color; Combine's W defaults to 1. Unwired Reciprocal and Logarithm read 1, so they stay finite.
 - Sphere, Cone and Cylinder emit radially until both Direction 1 and Direction 2 are set; Point and Box default both to (0, 1, 0). Radius Range defaults to 1 (fills the volume).
 - Reserved v1 ids report `particle.unsupportedNode` by name (`PARTICLE_UNSUPPORTED_V1_TYPES`): `shape.mesh`, `shape.custom`, `sprite.setup`, `update.spriteCell`, `update.basicSprite`, `update.noise`, `update.flowMap`, `update.age`, `trigger.spawn`, `utility.localVariable`, `math.nlerp`, `math.floatToInt`.
 - `SystemBlock` `texture`, `targetStopDuration`, `onStart` / `onEnd`, `translationPivot` and `textureMask` are never pins; Loop and Duration are settings.
@@ -182,7 +182,7 @@ Every node has a `role` (`output`, `create`, `shape`, `update`, `input`, `value`
 | `cpuBudget` | Warning | Capacity above 512 |
 | `missingMaterial` | Warning | No Material, or the Material is not in the project |
 | `materialDomain` | Warning | The Material is not in the Particle domain |
-| `attractorParticleInput` | Warning | The Attractor is the first update on the spine and a particle-dependent input reads the previous particle |
+| `attractorParticleInput` | Warning | No update before the Attractor sets the particle (Align Angle and Attractor do not) and a particle-dependent input reads the previous particle |
 | `shapeDirectionPair` | Warning | Only one of Direction 1 / Direction 2 is set on Sphere, Cone or Cylinder |
 | `multipleShapes` | Warning | An earlier Shape on the spine is overridden |
 | `colorOverridden` | Warning | Anchored on Create Particle's Color: an Update Color on the spine reads neither Initial Color nor Particle Color, and no later one reads Initial Color, so Create Particle's Color never shows |
@@ -194,8 +194,8 @@ Render adds node-anchored build codes: `particle.compile.unsupportedNode` (no bl
 ### Lowering and build
 
 - `lowerParticleGraphDocument(doc)` validates, then walks back from Emitter Output over inputs in catalog pin order. The `ParticleBuildPlan` holds `settings`, topological `operations` and `hash`; render takes the Material from the document or emitter. The order never depends on the node array, and unreachable nodes never enter it.
-- Each operation id is its node id, the anchor for build diagnostics. Inputs reference earlier operations (with a Float splat marked) or carry constants already sized to the pin type and clamped to its range. Gradient stops arrive sorted, with a stop at 0 prepended when missing, because Babylon returns 0 below its first stop.
-- **Compile key:** `particleGraphCompileKey` is an FNV-1a hash of the settings and operations. Positions, the name, `materialGuid`, unreachable nodes and defaults on wired pins never change it. A graph with errors gets a stable `invalid:<hash>` of its settings, nodes (without positions) and edges.
+- Each operation id is its node id, the anchor for build diagnostics. Inputs reference earlier operations (with a Float splat marked) or carry constants already sized to the pin type and clamped to its range. A wired Lifetime passes through an added Maximum operation against 0.01 s (id `<node id>/lifetime`), because Babylon divides by it; other wired values are never clamped. Gradient stops arrive sorted, with a stop at 0 prepended when missing, because Babylon returns 0 below its first stop.
+- **Compile key:** `particleGraphCompileKey` is an FNV-1a hash of the settings and operations. Positions, the name, `materialGuid`, unreachable nodes, defaults on wired pins, Duration on Infinite and Pre Warm on Once never change it. A graph with errors gets a stable `invalid:<hash>` of its settings, nodes (without positions) and edges.
 - **Build:** `realizeParticleGraph(plan, { scene, name, emitter, space })` (`packages/render/src/particle-graph-realize.ts`) runs synchronously inside `ParticleService.prepare`, using the block table in `particle-graph-blocks.ts`:
   - Blocks are constructed directly with `new`, never through `Parse`, snippets, `setToDefault` or `buildAsync`. Each prepared slot gets one fresh `NodeParticleSystemSet`, and every block joins its `attachedBlocks`.
   - Constants are connected `ParticleInputBlock`s. A Float into a vector or color input multiplies by a ones constant, except on math blocks, which adapt it themselves.

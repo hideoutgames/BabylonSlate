@@ -145,6 +145,22 @@ describe("material preview state machine", () => {
     expect(state.status).toBe("dirty");
   });
 
+  it("still queues the final edit when the compile it superseded fails", () => {
+    const failed = drive(createMaterialPreviewState(), [
+      { type: "edit", cost: "cheap" },
+      { type: "idle" },
+      { type: "lowerStart", generation: 1 },
+      { type: "compileStart", generation: 1 },
+      { type: "edit", cost: "cheap" },
+      { type: "result", generation: 1, ok: false, error: "block failed" },
+    ]);
+    expect(failed.status).toBe("dirty");
+    expect(failed.compilingGeneration).toBeNull();
+    const queued = materialPreviewReducer(failed, { type: "idle" });
+    expect(queued.status).toBe("queued");
+    expect(queued.queuedGeneration).toBe(2);
+  });
+
   it("discards a stale result from an superseded generation", () => {
     const state = drive(createMaterialPreviewState(), [
       { type: "edit", cost: "cheap" },

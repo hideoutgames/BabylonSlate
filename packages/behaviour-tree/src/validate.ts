@@ -66,6 +66,25 @@ export function validateBehaviourTree(
     );
   }
 
+  const references = new Map<string, number>();
+  for (const node of doc.nodes) {
+    for (const childId of node.children) {
+      references.set(childId, (references.get(childId) ?? 0) + 1);
+    }
+  }
+  for (const [childId, count] of references) {
+    if (count < 2 || !nodes.has(childId)) continue;
+    out.push(
+      diagnostic({
+        code: "bt.multiple_parents",
+        message: `Node "${childId}" is listed as a child more than once; it runs only under the first parent`,
+        assetGuid: ctx.assetGuid,
+        graphId,
+        nodeId: childId,
+      }),
+    );
+  }
+
   for (const node of doc.nodes) {
     if (node.kind === "task" && node.children.length > 0) {
       out.push(

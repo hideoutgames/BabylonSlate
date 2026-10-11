@@ -47,7 +47,7 @@ export {
   animPaletteNodes,
   findReverseTransition,
   hydrateAnimGraphForEditor,
-  migrateAnimHandle,
+  animStateHandle,
   normalizeAnimConnection,
   serializedToAnimGraph,
   setTransitionBidirectional,

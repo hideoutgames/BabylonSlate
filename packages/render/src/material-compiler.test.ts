@@ -5,6 +5,7 @@ import {
   createDefaultMaterialFunctionDocument,
   lowerMaterialDocument,
   migrateLegacyShaderPayload,
+  newCustomGlslProperties,
   type MaterialDocument,
 } from "@babylonslate/shader-graph";
 import { compileMaterialPlan, isGpuTextureSampleReady, prewarmMaterial } from "./material-compiler";
@@ -557,7 +558,11 @@ describe("material compiler", () => {
       id: "glsl",
       type: "custom.glsl",
       position: { x: 0, y: 0 },
-      properties: { body: "a" },
+      properties: {
+        inputs: [{ id: "a", name: "A", type: "vec4" }],
+        outputs: [{ id: "out", name: "Result", type: "vec4" }],
+        body: "return A;",
+      },
     });
     doc.edges = doc.edges.map((edge) =>
       edge.id === "e-scene-output"
@@ -837,7 +842,7 @@ describe("material compiler", () => {
       id: "glsl",
       type: "custom.glsl",
       position: { x: 0, y: 0 },
-      properties: { body: "a + b" },
+      properties: newCustomGlslProperties(),
     });
     doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
     doc.edges.push(
@@ -872,7 +877,11 @@ describe("material compiler", () => {
       vi.spyOn(scene.getEngine(), "getClassName").mockReturnValue("WebGL2Engine");
       const doc = createDefaultMaterialDocument();
       doc.nodes.push(
-        { id: "glsl", type: "custom.glsl", position: { x: 0, y: 0 }, properties: { body: "a" } },
+        { id: "glsl", type: "custom.glsl", position: { x: 0, y: 0 }, properties: {
+          inputs: [{ id: "a", name: "A", type: "vec3" }],
+          outputs: [{ id: "out", name: "Result", type: "vec3" }],
+          body: "return A;",
+        } },
         { id: "mask", type: "texture.sample", position: { x: 0, y: 0 }, properties: { textureGuid: "mask" } },
       );
       doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");

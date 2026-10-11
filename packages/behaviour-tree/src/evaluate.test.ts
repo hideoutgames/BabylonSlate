@@ -225,6 +225,32 @@ describe("evaluateBehaviourTree", () => {
     expect(next.stack).toEqual([]);
   });
 
+  it("drops a child reference that loops back, so abort walks end at the root", () => {
+    const a = node("a", "sequence", "bt.composite.sequence", ["b"]);
+    a.decorators.push({
+      id: "watch",
+      classId: "bt.decorator.blackboardIsSet",
+      abortMode: "lowerPriority",
+      observedKeys: ["k"],
+      properties: { key: "k" },
+    });
+    const wait = node("wait", "task", "bt.task.wait");
+    wait.properties = { durationMs: 1000 };
+    const doc = tree(
+      [
+        node("root", "sequence", "bt.composite.sequence", ["a"]),
+        a,
+        node("b", "sequence", "bt.composite.sequence", ["a", "wait"]),
+        wait,
+      ],
+      "root",
+    );
+    const first = evaluateBehaviourTree(doc, null, 0.016, { blackboard: { k: true } });
+    expect(first.btNodeId).toBe("wait");
+    const next = evaluateBehaviourTree(doc, first, 0.016, { blackboard: { k: true } });
+    expect(next.status).toBe("running");
+  });
+
   it("fails an unknown task class when no host is provided", () => {
     const leaf = node("leaf", "task", "bt.task.custom");
     const doc = tree(
@@ -292,6 +318,13 @@ describe("evaluateBehaviourTree", () => {
     expect(next.status).toBe("success");
     expect(next.lastResults.a).toBe("success");
     expect(next.lastResults.b).toBe("success");
+  });
+
+  it("succeeds a parallel with no children, like an empty sequence", () => {
+    const doc = tree([node("root", "parallel", "bt.composite.parallel")], "root");
+    const next = evaluateBehaviourTree(doc, null, 1 / 60);
+    expect(next.status).toBe("success");
+    expect(next.stack).toEqual([]);
   });
 
   it("ticks every parallel wait then succeeds when all complete", () => {
@@ -379,6 +412,28 @@ describe("evaluateBehaviourTree", () => {
     expect(
       evaluateBehaviourTree(doc, null, 1 / 60, { blackboard: { hp: 10 } }).status,
     ).toBe("success");
+  });
+
+  it.each([
+    { op: "eq", z: 3, want: "success" },
+    { op: "eq", z: 4, want: "failure" },
+    { op: "neq", z: 3, want: "failure" },
+    { op: "neq", z: 4, want: "success" },
+  ])("compares a vec3 blackboard value by its components ($op, z $z)", ({ op, z, want }) => {
+    const leaf = node("leaf", "task", "bt.task.succeed");
+    leaf.decorators.push({
+      id: "at",
+      classId: "BTDecorator_CompareBlackboardValue",
+      abortMode: "none",
+      observedKeys: ["target"],
+      properties: { key: "target", op, value: { x: 1, y: 2, z } },
+    });
+    const doc = tree(
+      [node("root", "sequence", "bt.composite.sequence", ["leaf"]), leaf],
+      "root",
+    );
+    const blackboard = { target: { x: 1, y: 2, z: 3 } };
+    expect(evaluateBehaviourTree(doc, null, 1 / 60, { blackboard }).status).toBe(want);
   });
 
   it("succeeds a zero-duration wait on the first tick", () => {
@@ -570,6 +625,63 @@ describe("evaluateBehaviourTree", () => {
     expect(ticks).toBe(3);
   });
 
+  it("keeps a child's cooldown when a Loop restarts its subtree", () => {
+    const leaf = node("leaf", "task", "bt.task.custom");
+    leaf.decorators.push({
+      id: "cd",
+      classId: "bt.decorator.cooldown",
+      abortMode: "none",
+      observedKeys: [],
+      properties: { durationMs: 1000 },
+    });
+    const body = node("body", "sequence", "bt.composite.sequence", ["leaf"]);
+    body.decorators.push({
+      id: "loop",
+      classId: "bt.decorator.loop",
+      abortMode: "none",
+      observedKeys: [],
+      properties: { numLoops: 3 },
+    });
+    const doc = tree(
+      [node("root", "sequence", "bt.composite.sequence", ["body"]), body, leaf],
+      "root",
+    );
+    let ticks = 0;
+    const next = evaluateBehaviourTree(doc, null, 1 / 60, {
+      host: {
+        tick: () => {
+          ticks += 1;
+          return "success";
+        },
+      },
+    });
+    // Iterations two and three meet the cooldown the first one started.
+    expect(ticks).toBe(1);
+    expect(next.status).toBe("failure");
+  });
+
+  it("fires a service at most once on a long tick", () => {
+    const root = node("root", "sequence", "bt.composite.sequence", ["idle"]);
+    root.services.push({
+      id: "pulse",
+      classId: "bt.service.custom",
+      intervalMs: 50,
+      randomDeviationMs: 0,
+      properties: {},
+    });
+    const wait = node("idle", "task", "bt.task.wait");
+    wait.properties = { durationMs: 10_000 };
+    const doc = tree([root, wait], "root");
+    const seen: string[] = [];
+    const host = { tick: (service: { id: string }) => seen.push(service.id) };
+    const hitch = evaluateBehaviourTree(doc, null, 1, { serviceHost: host });
+    expect(hitch.status).toBe("running");
+    expect(seen).toEqual(["pulse"]);
+    // The missed intervals are dropped, not replayed on the next short tick.
+    evaluateBehaviourTree(doc, hitch, 0.016, { serviceHost: host });
+    expect(seen).toEqual(["pulse"]);
+  });
+
   it("blocks a node during cooldown after it finishes", () => {
     const leaf = node("leaf", "task", "bt.task.succeed");
     leaf.decorators.push({
@@ -747,6 +859,81 @@ describe("evaluateBehaviourTree", () => {
     expect(ticks).toBe(3);
   });
 
+  it("restarts an infinite Loop at most once per tick and re-checks its decorators", () => {
+    const leaf = node("leaf", "task", "bt.task.custom");
+    leaf.decorators.push(
+      {
+        id: "loop",
+        classId: "bt.decorator.loop",
+        abortMode: "none",
+        observedKeys: [],
+        properties: { numLoops: 0 },
+      },
+      {
+        id: "go",
+        classId: "bt.decorator.blackboardIsSet",
+        abortMode: "none",
+        observedKeys: ["go"],
+        properties: { key: "go" },
+      },
+    );
+    const doc = tree(
+      [node("root", "sequence", "bt.composite.sequence", ["leaf"]), leaf],
+      "root",
+    );
+    let ticks = 0;
+    const host = {
+      tick: () => {
+        ticks += 1;
+        return "success" as const;
+      },
+    };
+    const first = evaluateBehaviourTree(doc, null, 1 / 60, { host, blackboard: { go: 1 } });
+    expect(first.status).toBe("running");
+    expect(ticks).toBe(2);
+    const second = evaluateBehaviourTree(doc, first, 1 / 60, { host, blackboard: { go: 1 } });
+    expect(ticks).toBe(4);
+    // The iteration that starts on the next tick sees the decorator fail.
+    const stopped = evaluateBehaviourTree(doc, second, 1 / 60, { host, blackboard: {} });
+    expect(stopped.status).toBe("failure");
+    expect(ticks).toBe(4);
+  });
+
+  it("stops at the smallest count when a node has several Loops", () => {
+    const leaf = node("leaf", "task", "bt.task.custom");
+    leaf.decorators.push(
+      {
+        id: "forever",
+        classId: "bt.decorator.loop",
+        abortMode: "none",
+        observedKeys: [],
+        properties: { numLoops: 0 },
+      },
+      {
+        id: "thrice",
+        classId: "bt.decorator.loop",
+        abortMode: "none",
+        observedKeys: [],
+        properties: { numLoops: 3 },
+      },
+    );
+    const doc = tree(
+      [node("root", "sequence", "bt.composite.sequence", ["leaf"]), leaf],
+      "root",
+    );
+    let ticks = 0;
+    const next = evaluateBehaviourTree(doc, null, 1 / 60, {
+      host: {
+        tick: () => {
+          ticks += 1;
+          return "success";
+        },
+      },
+    });
+    expect(next.status).toBe("success");
+    expect(ticks).toBe(3);
+  });
+
   it("starts cooldown when a decorator aborts a running node", () => {
     const wait = node("wait", "task", "bt.task.wait");
     wait.properties = { durationMs: 10_000 };
@@ -770,17 +957,19 @@ describe("evaluateBehaviourTree", () => {
       [node("root", "sequence", "bt.composite.sequence", ["wait"]), wait],
       "root",
     );
-    const running = evaluateBehaviourTree(doc, null, 0.016, {
+    const running = evaluateBehaviourTree(doc, null, 0.05, {
       blackboard: { ok: true },
     });
     expect(running.status).toBe("running");
-    const aborted = evaluateBehaviourTree(doc, running, 0.016, { blackboard: {} });
+    const aborted = evaluateBehaviourTree(doc, running, 0.05, { blackboard: {} });
     expect(aborted.status).toBe("failure");
-    const cooling = evaluateBehaviourTree(doc, aborted, 0.016, {
+    // Like a finished node's, the cooldown counts from the next tick: the
+    // abort's own frame does not shorten it.
+    const cooling = evaluateBehaviourTree(doc, aborted, 0.05, {
       blackboard: { ok: true },
     });
     expect(cooling.status).toBe("failure");
-    const ready = evaluateBehaviourTree(doc, cooling, 0.1, {
+    const ready = evaluateBehaviourTree(doc, cooling, 0.05, {
       blackboard: { ok: true },
     });
     expect(ready.status).toBe("running");
@@ -888,6 +1077,55 @@ describe("evaluateBehaviourTree", () => {
       });
       evaluateBehaviourTree(doc, cleared, 1 / 60, { blackboard: { alert: true }, host });
       expect(counts).toEqual({ activations: 3, aborts: 2 });
+    });
+
+    it("aborts through the first parent of a node listed under two parents", () => {
+      const doc = guardedPatrol("bt.task.succeed", [
+        {
+          id: "alert",
+          classId: "bt.decorator.blackboardIsSet",
+          abortMode: "lowerPriority",
+          observedKeys: ["alert"],
+          properties: { key: "alert" },
+        },
+      ]);
+      doc.nodes.push(
+        node("outer", "sequence", "bt.composite.sequence", ["root", "again"]),
+        node("again", "selector", "bt.composite.selector", ["high"]),
+      );
+      doc.rootId = "outer";
+      const { counts, host } = latentHost();
+      run(doc, host, [{ alert: false }, { alert: true }]);
+      expect(counts).toEqual({ activations: 1, aborts: 1 });
+    });
+
+    it("aborts the lower branch of a selector that yielded under a Parallel", () => {
+      const high = node("high", "task", "bt.task.succeed");
+      high.decorators.push({
+        id: "alert",
+        classId: "bt.decorator.blackboardIsSet",
+        abortMode: "lowerPriority",
+        observedKeys: ["alert"],
+        properties: { key: "alert" },
+      });
+      const doc = tree(
+        [
+          node("root", "parallel", "bt.composite.parallel", ["pick", "idle"]),
+          node("pick", "selector", "bt.composite.selector", ["high", "low"]),
+          high,
+          node("low", "task", "bt.task.custom"),
+          node("idle", "task", "bt.task.custom"),
+        ],
+        "root",
+      );
+      const { counts, host } = latentHost();
+      const first = evaluateBehaviourTree(doc, null, 1 / 60, { blackboard: { alert: false }, host });
+      expect(first.lastResults.low).toBe("running");
+      const next = evaluateBehaviourTree(doc, first, 1 / 60, { blackboard: { alert: true }, host });
+      // The Parallel keeps running; only the selector's lower branch is aborted.
+      expect(next.status).toBe("running");
+      expect(next.lastResults).toMatchObject({ high: "success", pick: "success", idle: "running" });
+      expect(counts.aborts).toBe(1);
     });
 
     it("restarts a Wait from zero when the abort re-enters it", () => {

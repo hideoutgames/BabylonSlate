@@ -11,6 +11,10 @@ describe("Custom GLSL function bodies", () => {
     expect(customGlslFunctionBodyError("uniform float x; return x;")).not.toBeNull();
     expect(customGlslFunctionBodyError("return texture2D(samplerImage, vec2(0.5));")).toBeNull();
     expect(customGlslFunctionBodyError("sampler2D local; return texture2D(local, vec2(0.5));")).not.toBeNull();
+    expect(customGlslFunctionBodyError("return(A);")).toBeNull();
+    expect(customGlslFunctionBodyError("returnValue = A;")).not.toBeNull();
+    // An open block comment would swallow the generated function's closing brace.
+    expect(customGlslFunctionBodyError("return A; /* unfinished")).not.toBeNull();
   });
 
   it("rejects duplicate, reserved and texture output pin interfaces", () => {
@@ -42,6 +46,8 @@ describe("Custom GLSL function bodies", () => {
     } });
     doc.edges.push({ id: "offset", sourceNodeId: "custom", sourcePinId: "out", targetNodeId: "output", targetPinId: "worldPositionOffset" });
     expect(createTypeResolver(doc).outputType("custom", "out")).toBe("vec3");
+    expect(validateMaterialDocument(doc)).toEqual(expect.arrayContaining([expect.objectContaining({ code: "material.stageMismatch", nodeId: "custom" })]));
+    doc.nodes.find((node) => node.id === "custom")!.properties.body = "return vec3(dFdxCoarse(A));";
     expect(validateMaterialDocument(doc)).toEqual(expect.arrayContaining([expect.objectContaining({ code: "material.stageMismatch", nodeId: "custom" })]));
   });
 });

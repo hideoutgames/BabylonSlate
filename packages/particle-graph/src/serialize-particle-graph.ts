@@ -158,8 +158,8 @@ export function serializedToParticleGraph(
         id: edge.id,
         sourceNodeId: edge.source,
         targetNodeId: edge.target,
-        sourcePinId: edge.sourceHandle ?? "out",
-        targetPinId: edge.targetHandle ?? "in",
+        sourcePinId: edge.sourceHandle,
+        targetPinId: edge.targetHandle,
       })),
     },
     base.name,
@@ -194,9 +194,9 @@ export function hydrateParticleGraphForEditor(graph: SerializedGraph): Serialize
   const edges = graph.edges.map((edge) => ({
     id: edge.id,
     sourceNodeId: edge.source,
-    sourcePinId: edge.sourceHandle ?? "out",
+    sourcePinId: edge.sourceHandle ?? "",
     targetNodeId: edge.target,
-    targetPinId: edge.targetHandle ?? "in",
+    targetPinId: edge.targetHandle ?? "",
   }));
   const resolver = createParticleTypeResolver({
     nodes: graph.nodes.map((node) => ({

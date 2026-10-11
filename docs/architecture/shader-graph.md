@@ -48,7 +48,7 @@ The native algorithm and GLSL generation are preserved; the workaround is local
 to each NodeMaterial build.
 
 For a varying Perlin/Worley pattern, connect World Position or UV (which widens
-to Vector 3 with zero Z); use Combine to supply a different Z. Zero coordinates
+to Vector 3 with Z = 1, like every widening conversion); use Combine to supply a different Z. Zero coordinates
 produce a constant sample. Multiply coordinates to change frequency. Voronoi Density controls its
 frequency directly, and Offset animates the cells. A supplied UV overrides the
 automatic UV source. Controls and connections persist through save/reopen and
@@ -75,7 +75,7 @@ as `material`, and saving rewrites the header to `Material`. No migration
 converts their payloads: the Material chain only advances the version, and
 `Shader` has none. Paths are **not** renamed.
 
-`MaterialDocument` (v3) carries `domain` (`surface` | `postProcess` | `particle`),
+`MaterialDocument` (v3) carries `domain` (`surface` | `landscape` | `postProcess` | `particle` | `text`),
 `shadingModel`, `blendMode`, `twoSided`, `defaultNormals`, `alphaCutoff`, `preview` and the graph.
 
 Surface material Defaults expose **Default Normals**: **Model Normals** (the
@@ -91,9 +91,7 @@ model normal selecting only their outward orientation. Shared model geometry,
 vertex counts, and draw counts are unchanged; the extra shader work runs only
 when the flat fallback is used.
 
-Unknown domain strings, including leftover HUD `interface`, parse as `surface`.
-There is no `output.interface` node and no WidgetComponent / HUD Material blit
-path.
+Unknown domain strings parse as `surface`.
 `MaterialFunctionDocument` (v2) carries typed `inputs` / `outputs` with **stable
 pin ids** plus the graph; renaming a pin does not break callers.
 
@@ -176,8 +174,15 @@ space. Textures only connect to textures. Generic nodes (`math.add`,
 `math.mix`, …) use the widest connected numeric input, independently of
 connection order, and convert each operand to that width. Declared function
 and Custom GLSL pins retain their explicit types. Disconnected inputs retain
-their authored/catalog defaults. To repeat a scalar across channels (for
-example, a uniform RGB gain), wire it to each desired **Combine** input.
+their authored/catalog defaults; a scalar default on a wider pin fills every
+channel (a disconnected Add B of `0.5` on V3 is `(0.5,0.5,0.5)`), and a shorter
+vector default keeps its channels and fills the rest with `1`, in Details and the
+shader alike. Catalog defaults
+keep an unwired node defined: Divide/Modulo B, Power Exponent and Atan2 X are
+`1`; Reciprocal, Logarithm, Logarithm 2 and Inverse Square Root take `1`; Clamp
+is `0`–`1`; Smooth Step edges are `0` and `1`; Remap maps `0`–`1` to `0`–`1`.
+To repeat a wired scalar across channels (for example, a uniform RGB gain),
+wire it to each desired **Combine** input.
 
 Padding with one preserves unmatched channels during multiplication:
 Float `2` × V3 `(1,1,1)` produces `(2,1,1)`. Addition introduces offsets:
@@ -197,9 +202,8 @@ and Normalize returns the sign (zero remains zero).
 exact-kind default.
 
 **Color Parameter** defaults to RGBA (`vec4`) and provides an explicit **RGB**
-(`vec3`) output for Base Color and other three-component inputs. Older material
-and function documents gain alpha `1`, and their existing Color Parameter Out
-links move to RGB so their appearance and downstream vector widths stay intact.
+(`vec3`) output for Base Color and other three-component inputs. A stored value
+with fewer than four components is padded with `1`.
 
 ## Parameter authoring
 
@@ -218,8 +222,6 @@ name errors before writing the asset.
 The naming dialog tracks newly added or pasted nodes only. Invalid names in an
 existing or loaded graph remain editable in Details; cancelling a naming dialog
 cannot remove those nodes or their links.
-Schema upgrades give legacy unnamed or duplicate parameters deterministic unique
-names while preserving existing authored names, so older materials keep rendering.
 
 Runtime parameter setters expose parameters on the root Material graph. Material
 Function parameters remain internal defaults; expose function inputs to pass
@@ -249,7 +251,9 @@ topologically ordered operations, explicit operands (including ordered numeric c
 texture bindings and dependencies, cost features and a content hash that ignores
 node positions. Material Function calls are **inlined** here under namespaced
 operation ids (`callNodeId/innerNodeId`) because Babylon has no runtime function
-object; each inlined operation still maps back to its call node.
+object; each inlined operation still maps back to its call node. A call input
+is resolved only when the function body reads it, so a wired input the body
+ignores emits no operations, cost or scene-buffer requirement.
 
 Conversions compose across every function boundary: V4 `(2,3,4,5)` through a
 V2 input and V4 output becomes `(2,3,1,1)`, never the original V4. The full
@@ -419,7 +423,7 @@ Render would bind a dead GPU object and the preview would stay a white cube
 until the Material tab closed.
 
 The compact `material-preview-overlay` contains only the viewport-style mesh
-`ToggleGroup`. Preview icons resolve at render time so lazy production chunk initialization cannot leave stale, undefined icon entries. Cube is the document default and the runtime fallback for
+`ToggleGroup`. Preview icons resolve at render time so lazy production chunk initialization cannot leave stale, undefined icon entries. Cube is the document default (a new Text material starts on Plane) and the runtime fallback for
 missing/invalid custom bytes. **Custom** opens the existing Model `AssetPicker`
 directly; selecting None returns to Cube, and dismissing the picker without a
 pick keeps the current preview mesh. A picked custom Model can be re-picked
@@ -448,13 +452,15 @@ Every edit bumps the generation. Cheap graphs auto-queue after a trailing
 debounce; expensive ones stay dirty until **Render**. A manual Render of the
 ready generation queues a fresh render generation. A result from an older
 generation still becomes the last good image unless a newer compile is already
-in flight, so the preview is never blank while editing.
+in flight, so the preview is never blank while editing. A failed older
+generation is dropped: the newer edit keeps its dirty or queued status.
 An explicit Render remains queued while cold Texture or Material Function
 sources arrive; unrelated catalog changes do not reload the preview's textures.
 
 `classifyMaterialCost` prefers measured compile durations once the session has
-two of them and compares them against the **active frame budget**
-(`1000 / playFrameCap`), not a fixed millisecond constant. Custom GLSL and
+two of them and keeps auto-preview while the slowest is at most **two frames**
+of the active frame budget (`1000 / playFrameCap`), not a fixed millisecond
+constant. Custom GLSL and
 post-process passes are always manual because neither is profiled on the device.
 Timings stay session-local and are never written into an asset.
 
@@ -499,19 +505,24 @@ Changing Domain (`setMaterialDomain`):
   reused). Otherwise the output draws constant white and ignores every emitter colour. The new-Material Base Color
   constant goes too when it is untouched and no longer wired; an edited constant stays. Shading Model and Blend Mode
   are left as authored: Particle ignores them (emitters own blending), so a return to Surface keeps them.
+- **From Text:** Text forces unlit, translucent and two-sided, so leaving it takes the new domain's Shading Model,
+  Blend Mode and Two Sided defaults.
 
 ## Custom GLSL
 
-`custom.glsl` uses a typed function body on new nodes. Define named numeric
+`custom.glsl` uses a typed function body. Define named numeric
 inputs and additional outputs in Details, return the primary output, and assign
 additional outputs by name. The expanded editor provides GLSL highlighting and
-line numbers; the node shows four read-only code lines. Existing expression
-nodes retain `result = fn(a, b)` until explicitly converted.
+line numbers; the node shows four read-only code lines. A node without a typed
+pin interface is a validation error.
 
 The validator checks interfaces, function boundaries, stage restrictions and
 GLSL/WebGL capability. GPU errors appear as `material.compile.glsl`, with body
 line mapping when available. Babylon `CustomBlock` generates the function
-signature. Body and interface edits participate in the plan hash. Custom nodes
+signature, so the body must return the primary output (`return x;` or
+`return(x);`) and close every block comment. Derivatives (`dFdx`, `dFdy`,
+`fwidth`, including `Coarse` / `Fine` forms) and `discard` make the node
+fragment-only. Body and interface edits participate in the plan hash. Custom nodes
 use manual **Render** and retain the last good material on compilation failure.
 
 ## GLSL to Material conversion
@@ -720,9 +731,8 @@ after a suspended preview resumes, Time reflects the current elapsed time. Legac
 nodes preserve Babylon's previous scene-animation timing (0.6 units per second
 at 60 FPS).
 
-Custom GLSL nodes created by the editor use node-local `customVersion: 2`, with
-stable pin IDs, GLSL variable names and explicit Float / Vector 2 / Vector 3 /
-Vector 4 types. The body returns the first output and assigns named additional
+Custom GLSL nodes have stable pin IDs, GLSL variable names and explicit Float /
+Vector 2 / Vector 3 / Vector 4 types. The body returns the first output and assigns named additional
 outputs, initialized to zero before the body runs. Inputs have ordinary editable
 pin defaults for numeric values. Texture inputs expose `sampler2D` variables:
 connect a Texture Parameter or the Texture output of Texture Sample / Texture
@@ -733,8 +743,6 @@ updates also reach Custom GLSL, including forwarded sample textures. WebGPU is
 not supported. Derivatives and
 discard restrict the node to the fragment stage. Graph validation checks the
 interface and function boundary; the GPU compiler checks GLSL syntax and types.
-Legacy expression nodes keep their original generic A/B behavior. **Convert to
-Function Body** preserves link IDs and the currently inferred vector width.
 Changing a variable name does not rewrite authored GLSL; update its references.
 
 Custom nodes display four highlighted read-only lines below their pins. Details
@@ -750,12 +758,12 @@ variables inside the function. Use **Render** to compile Custom GLSL changes.
 
 ### Geometry information and particle previews
 
-VertexNormalWS provides a normalized transformed mesh normal, usable for vertex displacement and fragment effects on curved meshes. World Normal remains available for existing graphs. Vertex Position (Local) and Vertex Normal (Local) expose morph-adjusted local geometry; these are Surface-only. Camera Position is available in Surface and Post Processing. Post Processing uses Screen UV, Scene Color, Scene Depth, Scene Normal, and Screen Size; it has no mesh vertex attributes.
+VertexNormalWS provides a normalized transformed mesh normal, usable for vertex displacement and fragment effects on curved meshes. World Normal remains available for existing graphs. Vertex Position (Local) and Vertex Normal (Local) expose morph-adjusted local geometry; these are Surface-only. Camera Position is available in Surface and Post Processing. Post Processing uses Screen UV, Scene Color, Scene Depth, Scene Normal, and Screen Size; it has no mesh vertex attributes, so UV is offered only in Surface, Landscape, Particle and Text.
 
 Particle materials preview on one stationary plane with no particle system. The preview compiler supplies a white Particle Color default and skips the Multiply blend block; the emitter supplies Particle Color during Play. Texture Sample and UV masks still run on the plane. Domain changes immediately clear the previous preview effect, including when the next shader fails compilation.
 
 ## Landscape materials
 
-The **Landscape** domain uses the surface/PBR output and the usual texture, noise, normal, and math nodes. Landscape Coordinates tiles world X/Z coordinates; Landscape Height reads world Y; Landscape Slope is zero on horizontal ground and one on vertical faces. Landscape Layers exposes the four normalized weights painted by the Landscape brush, and Landscape Blend mixes two colors by a weight. Assign these materials in Landscape Settings. Unassigned landscapes use the engine's tiled-grid default material. Foliage uses surface materials from each Model's slots, with an optional surface Material override for each group entry.
+The **Landscape** domain uses the surface/PBR output and the usual texture, noise, normal, and math nodes. Landscape Coordinates tiles world X/Z coordinates; Landscape Height reads world Y; Landscape Slope is zero on horizontal ground and one on vertical faces. Landscape Paint Layers exposes the four normalized weights painted by the Landscape brush, and Landscape Layer Blend mixes two colors by a weight. Assign these materials in Landscape Settings. Unassigned landscapes use the engine's tiled-grid default material. Foliage uses surface materials from each Model's slots, with an optional surface Material override for each group entry.
 
 New Material graphs place connected seed nodes in separate columns with space for their expanded controls, including Surface, Particle, and Post Process outputs.

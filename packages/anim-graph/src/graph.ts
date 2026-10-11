@@ -9,7 +9,7 @@ export const ANIM_RULE_ENTER_TYPE = "anim.rule.enterState";
 export const ANIM_RULE_EXIT_TYPE = "anim.rule.exitState";
 export const ANIM_RULE_ENTER_NODE_ID = "enter-state";
 export const ANIM_RULE_EXIT_NODE_ID = "exit-state";
-/** Rule-graph query that fires when the clip crosses an exit time (legacy `hasExitTime`). */
+/** Rule-graph query that fires when the clip crosses an exit time. */
 export const ANIM_EXIT_TIME_REACHED_TYPE = "anim.state.exitTimeReached";
 
 export type AnimClipKind = "animation" | "sprite";
@@ -32,7 +32,7 @@ export interface AnimState {
   /** Speed multiplier; 1 is authored duration. */
   speed: number;
   loop: boolean;
-  /** Canvas layout. Parse fills a fallback when a legacy document omits it. */
+  /** Canvas layout. Parse fills a fallback when a document omits it. */
   position: { x: number; y: number };
 }
 
@@ -53,13 +53,9 @@ export interface AnimTransition {
   /** Lower numbers win when several transitions pass. */
   priority: number;
   ruleGraph: SerializedGraph;
-  /** Canvas handle ids (`right-out` / `left-in`). Legacy `out` / `in` migrate. */
+  /** Canvas handle ids (`right-out` / `left-in`); missing ids draw on those default sides. */
   sourceHandle?: string;
   targetHandle?: string;
-  /** Legacy named bool/trigger; kept after migration for evaluator fallback. */
-  condition?: string;
-  hasExitTime?: boolean;
-  exitTime?: number;
 }
 
 export interface AnimGraphDocument {
@@ -71,11 +67,6 @@ export interface AnimGraphDocument {
   clips: AnimClipRef[];
   variables: AnimGraphVariable[];
   animationObject: SerializedGraph;
-  /**
-   * Legacy bool/trigger names. Parse keeps these in sync with bool variables
-   * so older editor panels still list parameters.
-   */
-  parameters: string[];
 }
 
 export interface AnimTransitionDecision {
@@ -84,9 +75,6 @@ export interface AnimTransitionDecision {
 }
 
 export interface AnimGraphInputs {
-  variables?: Record<string, unknown>;
-  /** @deprecated Prefer `variables`; bool conditions still map into the store. */
-  conditions?: Record<string, boolean>;
   transitionRules?: Record<string, AnimTransitionDecision>;
   decideTransition?: (
     transition: AnimTransition,
@@ -275,153 +263,7 @@ export function createDefaultAnimGraph(name = "Locomotion"): AnimGraphDocument {
     ],
     variables: [],
     animationObject: createDefaultAnimationObjectGraph(),
-    parameters: [],
   };
-}
-
-function uniqueNodeId(prefix: string, used: Set<string>): string {
-  let index = 1;
-  let id = `${prefix}-${index}`;
-  while (used.has(id)) {
-    index += 1;
-    id = `${prefix}-${index}`;
-  }
-  used.add(id);
-  return id;
-}
-
-function exitTimeReachedNode(
-  id: string,
-  position: { x: number; y: number },
-  exitTime: number,
-): SerializedGraph["nodes"][number] {
-  return {
-    id,
-    type: ANIM_EXIT_TIME_REACHED_TYPE,
-    position,
-    data: { title: "Exit Time Reached", exitTime },
-  };
-}
-
-/**
- * Earlier parses migrated `hasExitTime` to `Normalised Time ≥ exitTime`, which
- * cannot see a looping clip wrap past the threshold. Swap that exact generated
- * pair for Exit Time Reached; authored comparisons are left alone.
- */
-function upgradeMigratedExitTime(
-  graph: SerializedGraph,
-  exitTime: number,
-): SerializedGraph {
-  const time = graph.nodes.find(
-    (node) =>
-      node.type === "anim.state.normalisedTime" &&
-      node.id.startsWith("normalised-time-"),
-  );
-  if (!time) return graph;
-  const timeEdges = graph.edges.filter((edge) => edge.source === time.id);
-  const cmp =
-    timeEdges.length === 1 && timeEdges[0]!.targetHandle === "a"
-      ? graph.nodes.find((node) => node.id === timeEdges[0]!.target)
-      : undefined;
-  if (
-    !cmp ||
-    cmp.type !== "math.greaterEqual" ||
-    !cmp.id.startsWith("exit-time-") ||
-    cmp.data.b !== exitTime ||
-    graph.edges.some((edge) => edge.target === cmp.id && edge.source !== time.id)
-  ) {
-    return graph;
-  }
-  return {
-    ...graph,
-    nodes: graph.nodes
-      .filter((node) => node.id !== time.id)
-      .map((node) =>
-        node.id === cmp.id ? exitTimeReachedNode(cmp.id, cmp.position, exitTime) : node,
-      ),
-    edges: graph.edges
-      .filter((edge) => edge.source !== time.id)
-      .map((edge) =>
-        edge.source === cmp.id && edge.sourceHandle === "out"
-          ? { ...edge, sourceHandle: "value" }
-          : edge,
-      ),
-  };
-}
-
-function migrateConditionToRuleGraph(
-  condition: string | undefined,
-  hasExitTime: boolean,
-  exitTime: number,
-): SerializedGraph {
-  const graph = createDefaultTransitionRuleGraph();
-  const used = new Set(graph.nodes.map((node) => node.id));
-  const exitId = ANIM_RULE_EXIT_NODE_ID;
-  let exitSourceId: string | null = null;
-  let exitSourceHandle = "value";
-
-  if (typeof condition === "string" && condition !== "") {
-    const getId = uniqueNodeId("get-var", used);
-    graph.nodes.push({
-      id: getId,
-      type: "variables.get",
-      position: { x: 80, y: 180 },
-      data: {
-        title: `Get ${condition}`,
-        variableName: condition,
-        typeId: "bool",
-        implicitSelf: true,
-      },
-    });
-    exitSourceId = getId;
-    exitSourceHandle = "value";
-  }
-
-  if (hasExitTime) {
-    const cmpId = uniqueNodeId("exit-time", used);
-    graph.nodes.push(exitTimeReachedNode(cmpId, { x: 220, y: 40 }, exitTime));
-    if (exitSourceId) {
-      const andId = uniqueNodeId("and", used);
-      graph.nodes.push({
-        id: andId,
-        type: "boolean.and",
-        position: { x: 220, y: 180 },
-        data: { title: "Boolean And" },
-      });
-      graph.edges.push(
-        {
-          id: uniqueNodeId("e", used),
-          source: cmpId,
-          target: andId,
-          sourceHandle: "value",
-          targetHandle: "a",
-        },
-        {
-          id: uniqueNodeId("e", used),
-          source: exitSourceId,
-          target: andId,
-          sourceHandle: exitSourceHandle,
-          targetHandle: "b",
-        },
-      );
-      exitSourceId = andId;
-      exitSourceHandle = "out";
-    } else {
-      exitSourceId = cmpId;
-      exitSourceHandle = "value";
-    }
-  }
-
-  if (exitSourceId) {
-    graph.edges.push({
-      id: uniqueNodeId("e", used),
-      source: exitSourceId,
-      target: exitId,
-      sourceHandle: exitSourceHandle,
-      targetHandle: "value",
-    });
-  }
-  return graph;
 }
 
 export function decorateTransitionRuleGraph(
@@ -718,16 +560,7 @@ function layerFor(
   };
 }
 
-function readBool(
-  inputs: AnimGraphInputs,
-  name: string,
-): boolean {
-  if (inputs.variables && name in inputs.variables) {
-    return inputs.variables[name] === true;
-  }
-  return inputs.conditions?.[name] === true;
-}
-
+/** A transition with no decision passes, like a rule graph with both sinks unwired. */
 function transitionPasses(
   transition: AnimTransition,
   facts: AnimStateFacts,
@@ -735,13 +568,7 @@ function transitionPasses(
 ): boolean {
   const decided = inputs.decideTransition?.(transition, facts);
   const rule = decided ?? inputs.transitionRules?.[transition.id];
-  if (rule) return rule.enter === true && rule.exit === true;
-  const conditionOk =
-    !transition.condition || readBool(inputs, transition.condition);
-  const exitOk =
-    !transition.hasExitTime ||
-    animExitTimeReached(facts, transition.exitTime ?? 0);
-  return conditionOk && exitOk;
+  return !rule || (rule.enter === true && rule.exit === true);
 }
 
 export function evaluateAnimGraph(
@@ -752,8 +579,12 @@ export function evaluateAnimGraph(
 ): AnimEvalState {
   const states = new Map(doc.states.map((state) => [state.id, state]));
   const clips = new Map(doc.clips.map((clip) => [clip.id, clip]));
-  let stateId = previous?.stateId ?? doc.entryStateId;
-  if (!states.has(stateId)) stateId = doc.entryStateId;
+  // A missing entry (reported by `validateAnimGraph`) starts on the first state
+  // rather than throwing inside the tick; a graph with no states stays idle.
+  const entryStateId = states.has(doc.entryStateId) ? doc.entryStateId : doc.states[0]?.id;
+  let stateId = previous?.stateId ?? entryStateId;
+  if (stateId === undefined || !states.has(stateId)) stateId = entryStateId;
+  if (stateId === undefined) return idleAnimEvalState(doc.entryStateId);
   const current = states.get(stateId)!;
   const duration = clipDurationMs(current, clips);
   const clock = advanceClock(
@@ -792,6 +623,8 @@ export function evaluateAnimGraph(
   let startedBlend: AnimTransition | null = null;
 
   for (const { row } of outgoing) {
+    // A transition to a missing state (`anim.badTransition`) never fires.
+    if (!states.has(row.toStateId)) continue;
     if (!transitionPasses(row, currentFacts, inputs)) continue;
     nextId = row.toStateId;
     nextTimeMs = 0;
@@ -817,7 +650,7 @@ export function evaluateAnimGraph(
     blendSeconds = 0;
   }
 
-  const nextState = states.get(nextId) ?? current;
+  const nextState = states.get(nextId)!;
   const nextDuration = clipDurationMs(nextState, clips);
   const nextFacts = factsFor(nextState, nextDuration, {
     timeMs: nextTimeMs,
@@ -882,6 +715,34 @@ export function evaluateAnimGraph(
     blendElapsedMs,
     blendSeconds,
     loopCount: nextLoopCount,
+  };
+}
+
+function idleAnimEvalState(stateId: string): AnimEvalState {
+  return {
+    stateId,
+    normalisedTime: 0,
+    blendWeights: {},
+    timeMs: 0,
+    facts: {
+      elapsedSeconds: 0,
+      durationSeconds: 0,
+      normalisedTime: 0,
+      remainingSeconds: 0,
+      remainingRatio: 0,
+      looping: false,
+      loopCount: 0,
+      justLooped: false,
+      justFinished: false,
+      totalNormalisedTime: 0,
+      previousTotalNormalisedTime: 0,
+    },
+    layers: [],
+    blendFromStateId: null,
+    blendFromTimeMs: 0,
+    blendElapsedMs: 0,
+    blendSeconds: 0,
+    loopCount: 0,
   };
 }
 
@@ -955,38 +816,15 @@ function parseVariables(
       seen.add(name.toLowerCase());
     }
   }
-  const parameters = Array.isArray(source.parameters)
-    ? source.parameters.filter((entry): entry is string => typeof entry === "string")
-    : [];
-  for (const name of parameters) {
-    const trimmed = name.trim();
-    if (trimmed === "" || seen.has(trimmed.toLowerCase())) continue;
-    variables.push({
-      id: `var-${trimmed}`,
-      name: trimmed,
-      typeId: "bool",
-      defaultValue: false,
-    });
-    seen.add(trimmed.toLowerCase());
-  }
   return variables;
 }
 
-function parseRuleGraph(
-  value: unknown,
-  condition: string | undefined,
-  hasExitTime: boolean,
-  exitTime: number,
-): SerializedGraph {
+function parseRuleGraph(value: unknown): SerializedGraph {
   if (isSerializedGraph(value) && value.nodes.length > 0) {
-    const graph = {
+    return {
       nodes: value.nodes.map((node) => ({ ...node, data: { ...node.data } })),
       edges: value.edges.map((edge) => ({ ...edge })),
     };
-    return hasExitTime ? upgradeMigratedExitTime(graph, exitTime) : graph;
-  }
-  if (condition || hasExitTime) {
-    return migrateConditionToRuleGraph(condition, hasExitTime, exitTime);
   }
   return createDefaultTransitionRuleGraph();
 }
@@ -1049,24 +887,13 @@ export function parseAnimGraphDocument(
       if (typeof transition.id !== "string") continue;
       if (typeof transition.fromStateId !== "string") continue;
       if (typeof transition.toStateId !== "string") continue;
-      const condition =
-        typeof transition.condition === "string"
-          ? transition.condition
-          : undefined;
-      const hasExitTime = transition.hasExitTime === true;
-      const exitTime = asFiniteNumber(transition.exitTime, 0);
       transitions.push({
         id: transition.id,
         fromStateId: transition.fromStateId,
         toStateId: transition.toStateId,
         blendSeconds: asFiniteNumber(transition.blendSeconds, 0.1),
         priority: asFiniteNumber(transition.priority, 0),
-        ruleGraph: parseRuleGraph(
-          transition.ruleGraph,
-          condition,
-          hasExitTime,
-          exitTime,
-        ),
+        ruleGraph: parseRuleGraph(transition.ruleGraph),
         sourceHandle:
           typeof transition.sourceHandle === "string"
             ? transition.sourceHandle
@@ -1075,9 +902,6 @@ export function parseAnimGraphDocument(
           typeof transition.targetHandle === "string"
             ? transition.targetHandle
             : undefined,
-        condition,
-        hasExitTime,
-        exitTime,
       });
     }
   }
@@ -1099,9 +923,6 @@ export function parseAnimGraphDocument(
     clips,
     variables,
     animationObject: parseAnimationObject(source.animationObject),
-    parameters: variables
-      .filter((variable) => variable.typeId === "bool")
-      .map((variable) => variable.name),
   };
 }
 
@@ -1119,27 +940,9 @@ export interface AnimClipCatalogEntry {
   modelGuid?: string;
 }
 
-function stateNameForClip(
-  doc: AnimGraphDocument,
-  clipId: string,
-): string | undefined {
-  return doc.states.find((state) => state.clipId === clipId)?.name;
-}
-
-function shouldReplaceClipName(
-  current: string,
-  stateName: string | undefined,
-  available: readonly string[],
-): boolean {
-  if (current === "") return true;
-  if (available.includes(current)) return false;
-  return Boolean(stateName && current === stateName);
-}
-
 function resolveOneClip(
   clip: AnimClipRef,
   catalog: readonly AnimClipCatalogEntry[],
-  stateName?: string,
 ): AnimClipRef {
   const byGuid = new Map(catalog.map((entry) => [entry.guid, entry]));
   const entry = byGuid.get(clip.assetGuid);
@@ -1158,9 +961,10 @@ function resolveOneClip(
   if (clip.kind !== "animation") return clip;
   if (!entry) return clip;
   if (entry.type === "Model") {
-    const names = entry.clipNames ?? [];
-    if (!shouldReplaceClipName(clip.clipName, stateName, names)) return clip;
-    const nextName = names[0] ?? clip.clipName;
+    // Only an empty name is filled. A name the Model lacks stays as authored
+    // (and plays nothing) rather than silently playing the first group.
+    if (clip.clipName !== "") return clip;
+    const nextName = entry.clipNames?.[0] ?? clip.clipName;
     return nextName === clip.clipName ? clip : { ...clip, clipName: nextName };
   }
   if (entry.type !== "Animation") return clip;
@@ -1183,7 +987,7 @@ export function resolveAnimGraphClips(
   if (catalog.length === 0) return doc;
   let changed = false;
   const clips = doc.clips.map((clip) => {
-    const next = resolveOneClip(clip, catalog, stateNameForClip(doc, clip.id));
+    const next = resolveOneClip(clip, catalog);
     if (next !== clip) changed = true;
     return next;
   });

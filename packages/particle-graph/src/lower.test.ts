@@ -62,8 +62,17 @@ describe("particle graph lowering", () => {
         doc.nodes.push({ id: "stray", type: "const.float", position: { x: 0, y: 0 }, properties: { value: [4] } }),
       ),
       edited((doc) => (nodeOf(doc, "updateColor").properties["default:color"] = [1, 0, 0, 1])),
+      // Infinite never reads Duration.
+      edited((doc) => (doc.settings.duration = 5)),
     ];
     for (const doc of same) expect(plan(doc).hash).toBe(hash);
+    // Once never reads Pre Warm.
+    const once = (prewarm: number) =>
+      edited((doc) => {
+        doc.settings.loop = "once";
+        doc.settings.prewarm = prewarm;
+      });
+    expect(plan(once(2)).hash).toBe(plan(once(0)).hash);
 
     const changed = [
       edited((doc) => (nodeOf(doc, "gradient").properties.stops = [
@@ -72,6 +81,7 @@ describe("particle graph lowering", () => {
       ])),
       edited((doc) => (nodeOf(doc, "create").properties["default:size"] = [0.5])),
       edited((doc) => (doc.settings.loop = "once")),
+      edited((doc) => (doc.settings.prewarm = 1)),
     ];
     for (const doc of changed) expect(plan(doc).hash).not.toBe(hash);
   });
@@ -126,9 +136,32 @@ describe("particle graph lowering", () => {
     ]);
   });
 
-  it("clamps constants to the pin range, so Lifetime never divides by zero", () => {
+  it("bounds Lifetime, wired or not, so Babylon never divides by zero", () => {
     const doc = edited((entry) => (nodeOf(entry, "create").properties["default:lifetime"] = [0]));
     expect(operation(plan(doc), "create").inputs.lifetime).toEqual({ kind: "constant", type: "float", value: [0.01] });
+    const wired = edited((entry) => {
+      entry.nodes.push({ id: "zero", type: "const.float", position: { x: 0, y: 0 }, properties: { value: [0] } });
+      entry.edges.push({ id: "e-zero", sourceNodeId: "zero", sourcePinId: "out", targetNodeId: "create", targetPinId: "lifetime" });
+    });
+    const bounded = plan(wired);
+    expect(operation(bounded, "create").inputs.lifetime).toEqual({
+      kind: "operation",
+      operationId: "create/lifetime",
+      pinId: "out",
+    });
+    expect(operation(bounded, "create/lifetime")).toEqual({
+      id: "create/lifetime",
+      nodeType: "math.max",
+      resolvedType: "float",
+      inputs: {
+        a: { kind: "operation", operationId: "zero", pinId: "out" },
+        b: { kind: "constant", type: "float", value: [0.01] },
+      },
+      properties: {},
+    });
+    const ids = bounded.operations.map((entry) => entry.id);
+    expect(ids.indexOf("zero")).toBeLessThan(ids.indexOf("create/lifetime"));
+    expect(ids.indexOf("create/lifetime")).toBeLessThan(ids.indexOf("create"));
   });
 
   it("lowers authored shape directions as operands and leaves unset ones out", () => {

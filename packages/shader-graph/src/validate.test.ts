@@ -5,6 +5,7 @@ import {
   type MaterialDocument,
   type MaterialFunctionDocument,
 } from "./document";
+import { newCustomGlslProperties } from "./custom-glsl";
 import { collectFunctionDependencies, validateMaterialDocument } from "./validate";
 
 function codes(doc: MaterialDocument, context = {}): string[] {
@@ -336,42 +337,25 @@ describe("material validation", () => {
     );
   });
 
-  it("accepts an expression-only Custom GLSL body", () => {
-    const doc = createDefaultMaterialDocument();
-    doc.nodes.push({
-      id: "glsl",
-      type: "custom.glsl",
-      position: { x: 0, y: 0 },
-      properties: { body: "a + b" },
-    });
-    expect(codes(doc)).not.toContain("material.customGlsl");
-  });
-
   it("flags an empty Custom GLSL body", () => {
     const doc = createDefaultMaterialDocument();
     doc.nodes.push({
       id: "glsl",
       type: "custom.glsl",
       position: { x: 0, y: 0 },
-      properties: { body: "   " },
+      properties: { ...newCustomGlslProperties(), body: "   " },
     });
     expect(codes(doc)).toContain("material.customGlsl");
   });
 
-  it("rejects declarations, preprocessor directives and assignments in Custom GLSL", () => {
+  it("flags a Custom GLSL node without a typed pin interface", () => {
     const doc = createDefaultMaterialDocument();
     doc.nodes.push({
       id: "glsl",
       type: "custom.glsl",
       position: { x: 0, y: 0 },
-      properties: { body: "a; float x = 1.0" },
+      properties: { body: "return A;" },
     });
-    expect(codes(doc)).toContain("material.customGlsl");
-    doc.nodes[doc.nodes.length - 1]!.properties = { body: "#define X 1" };
-    expect(codes(doc)).toContain("material.customGlsl");
-    doc.nodes[doc.nodes.length - 1]!.properties = { body: "gl_FragColor" };
-    expect(codes(doc)).toContain("material.customGlsl");
-    doc.nodes[doc.nodes.length - 1]!.properties = { body: "a = b" };
     expect(codes(doc)).toContain("material.customGlsl");
   });
 
@@ -381,7 +365,7 @@ describe("material validation", () => {
       id: "glsl",
       type: "custom.glsl",
       position: { x: 0, y: 0 },
-      properties: { body: "a + b" },
+      properties: newCustomGlslProperties(),
     });
     const diagnostic = validateMaterialDocument(doc, {
       capabilities: { customGlsl: false },

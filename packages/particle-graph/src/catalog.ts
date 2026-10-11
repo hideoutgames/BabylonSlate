@@ -46,6 +46,11 @@ export interface ParticlePinDefinition {
   /** Per-component clamp applied by Details and by lowering. */
   min?: number;
   max?: number;
+  /**
+   * The range also bounds a wired value: lowering routes it through Maximum /
+   * Minimum / Clamp, because Babylon divides by this input (Lifetime).
+   */
+  clampWired?: true;
   /** Pin typed by the node's `valueType` property (Random, Gradient). */
   followsValueType?: true;
   description?: string;
@@ -322,13 +327,14 @@ function binaryMath(
   };
 }
 
-function unaryMath(type: string, title: string): ParticleNodeDefinition {
+/** `defaultValue` keeps an unwired node defined (Reciprocal and Logarithm of 0 are infinite). */
+function unaryMath(type: string, title: string, defaultValue = 0): ParticleNodeDefinition {
   return {
     type,
     title,
     category: "Math",
     role: "value",
-    inputs: [{ id: "value", name: "Value", type: GENERIC, defaultValue: [0] }],
+    inputs: [{ id: "value", name: "Value", type: GENERIC, defaultValue: [defaultValue] }],
     outputs: [{ id: "out", name: "Out", type: GENERIC }],
   };
 }
@@ -365,7 +371,7 @@ const EMITTER_NODES: ParticleNodeDefinition[] = [
       "Starts the particle spine. Inputs are read once per new particle, before the Shape sets its position and direction.",
     inputs: [
       { id: "emitPower", name: "Emit Power", type: FLOAT, defaultValue: [1], unit: "m/s", description: "Initial speed along the emit direction (m/s)." },
-      { id: "lifetime", name: "Lifetime", type: FLOAT, defaultValue: [1], min: 0.01, unit: "s", description: "Seconds." },
+      { id: "lifetime", name: "Lifetime", type: FLOAT, defaultValue: [1], min: 0.01, clampWired: true, unit: "s", description: "Seconds." },
       {
         id: "color",
         name: "Color",
@@ -631,7 +637,7 @@ const MATH_NODES: ParticleNodeDefinition[] = [
   unaryMath("math.floor", "Floor"),
   unaryMath("math.ceil", "Ceiling"),
   unaryMath("math.sqrt", "Square Root"),
-  unaryMath("math.log", "Logarithm"),
+  unaryMath("math.log", "Logarithm", 1),
   unaryMath("math.tan", "Tangent"),
   unaryMath("math.atan", "Arctangent"),
   unaryMath("math.acos", "Arccosine"),
@@ -639,7 +645,7 @@ const MATH_NODES: ParticleNodeDefinition[] = [
   unaryMath("math.sign", "Sign"),
   unaryMath("math.negate", "Negate"),
   unaryMath("math.oneMinus", "One Minus"),
-  unaryMath("math.reciprocal", "Reciprocal"),
+  unaryMath("math.reciprocal", "Reciprocal", 1),
   unaryMath("math.degrees", "Degrees"),
   unaryMath("math.radians", "Radians"),
   unaryMath("math.fract", "Fraction"),
