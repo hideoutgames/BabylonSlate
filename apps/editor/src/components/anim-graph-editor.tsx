@@ -227,24 +227,26 @@ function transitionLabel(doc: AnimGraphDocument, transition: AnimTransition): st
   return `${from} To ${to}`;
 }
 
+/** Asset types a state clip, its label or its skeleton check can name. */
+const CLIP_CATALOG_TYPES: ReadonlySet<string> = new Set([
+  "Animation",
+  "Model",
+  "SpriteAnimation",
+]);
+
 function useAnimGraphDocument() {
   const { documentId } = useDocumentWorkspace();
   const { applyAssetDocumentChange, getOpenDocuments } = useDocumentActions();
-  const { assetRegistry } = useRegistryState();
+  const { assetRegistry, registryEpoch } = useRegistryState();
   const entry = useOpenDocument(documentId);
-  const listed = assetRegistry?.list() ?? [];
-  const catalogKey = listed
-    .map(
-      (asset) =>
-        `${asset.header.guid}:${asset.header.type}:${JSON.stringify(asset.header.payload ?? {})}`,
-    )
-    .join("|");
-  const catalog = useMemo(
-    () => animClipCatalogFromAssets(listed),
-    // listed is rebuilt each render; catalogKey is the actual input.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [catalogKey],
-  );
+  const catalog = useMemo(() => {
+    void registryEpoch; // Registry contents change without replacing its instance.
+    return animClipCatalogFromAssets(
+      (assetRegistry?.list() ?? []).filter((asset) =>
+        CLIP_CATALOG_TYPES.has(asset.header.type),
+      ),
+    );
+  }, [assetRegistry, registryEpoch]);
   const doc = useMemo(
     () =>
       asAnimGraph((entry?.content ?? {}) as Record<string, unknown>, catalog),
