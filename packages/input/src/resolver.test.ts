@@ -89,10 +89,15 @@ describe("InputResolver event transitions", () => {
   });
 
   it("releases gamepad controls a later sample omits", () => {
-    const resolver = new InputResolver({ actions: [{ name: "Menu", bindings: [{ device: "gamepadButton", code: "0:9" }] }], axes: [] });
-    const pad = (buttons: number[]): RawInputEvent => ({ kind: "gamepad", tick: 0, gamepadIndex: 0, axes: [], buttons });
-    expect(resolver.resolve([pad([0, 0, 0, 0, 0, 0, 0, 0, 0, 1])]).actions.Menu.held).toBe(true);
-    expect(resolver.resolve([pad([0, 0, 0, 0])]).actions.Menu).toEqual({ held: false, pressed: false, released: true });
+    const resolver = new InputResolver({ actions: [{ name: "Menu", bindings: [{ device: "gamepadButton", code: "0:9" }] }],
+      axes: [{ name: "Look", bindings: [{ device: "gamepadAxis", code: "0:3" }] }] });
+    const pad = (buttons: number[], axes: number[] = []): RawInputEvent => ({ kind: "gamepad", tick: 0, gamepadIndex: 0, axes, buttons });
+    const full = resolver.resolve([pad([0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [0, 0, 0, 0.75])]);
+    expect(full.actions.Menu.held).toBe(true);
+    expect(full.axes.Look).toBe(0.75);
+    const short = resolver.resolve([pad([0, 0, 0, 0], [0, 0])]);
+    expect(short.actions.Menu).toEqual({ held: false, pressed: false, released: true });
+    expect(short.axes.Look).toBe(0);
   });
 
   it("releases a whole mouse contact when pointerup names a button whose chord edge was missed", () => {
