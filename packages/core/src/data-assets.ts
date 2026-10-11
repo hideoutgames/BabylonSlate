@@ -160,10 +160,7 @@ function normalizeSnapshot(fields: unknown[], depth = 0): DataFieldSnapshot[] {
 }
 
 export function normalizeDataTreeAsset(value: unknown): DataTreeAsset {
-  if (!record(value) || (value.kind !== undefined && value.kind !== "dataTree")) throw new Error("Invalid Data Tree payload. Historical Data Sheets and Data Objects are unsupported.");
-  if ("rows" in value || "objectGuids" in value || "structureGuid" in value || "definitionGuid" in value) {
-    throw new Error("Historical Data Sheets and Data Objects cannot be opened as Data Trees; their stored data has not been changed.");
-  }
+  if (!record(value) || (value.kind !== undefined && value.kind !== "dataTree")) throw new Error("Invalid Data Tree payload.");
   if (value.entries !== undefined && !Array.isArray(value.entries)) throw new Error("Data Tree entries must be an array.");
   if (value.defaultDefinitionGuid !== undefined && value.defaultDefinitionGuid !== null && typeof value.defaultDefinitionGuid !== "string") throw new Error("Invalid Data Tree default Definition.");
   return createDataTreeAsset(

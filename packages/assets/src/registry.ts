@@ -1099,9 +1099,6 @@ export class AssetRegistry {
   ): Promise<IndexedAsset> {
     const asset = this.byGuid.get(guid);
     if (!asset) throw new Error(`Unknown asset ${guid}`);
-    const { header: indexed } = asset;
-    // Historical Data Objects and Sheets have no reference schema to remap by.
-    if (indexed.type === "DataObject" || indexed.type === "DataSheet") return asset;
     const storage = this.storageForAsset(asset);
     const blobs = this.blobsForAsset(asset);
     const decoded = await decodeBabasset(await storage.readBinary(asset.path), (sha256) => blobs.readBlob(sha256));

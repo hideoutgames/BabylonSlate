@@ -82,12 +82,6 @@ describe("collectExportReachability", () => {
       ] } : null, payloadByGuid: (guid) => payloads[guid] ?? null });
     expect(result).toMatchObject({ ok: true, value: { guids: ["fallback-texture", "grade", "hero", "host", "override", "override-texture", "scene", "stats", "texture", "tree", "weapon"] } });
   });
-  it.each(["DataObject", "DataSheet"])("refuses reachable historical %s instead of shipping an unsupported payload", (type) => {
-    const result = collectExportReachability({ startupSceneGuid: "scene", pluginEnabledGuids: new Set(), parentOf: () => null,
-      assets: [asset({ guid: "scene", name: "Scene", type: "Scene", dependencies: ["legacy"] }), asset({ guid: "legacy", name: "Old Weapon", type })],
-      sceneByGuid: () => createDefaultScene(), graphByGuid: () => null });
-    expect(result).toMatchObject({ ok: false, error: expect.stringContaining("Historical") });
-  });
   it("resolves a class reference by the compile id of the Class file, never by a display name", () => {
     const scene = { ...createDefaultScene(), actors: [createActor("hero", "Hero", { classId: "main" })] };
     const result = collectExportReachability({ startupSceneGuid: "scene", pluginEnabledGuids: new Set(), parentOf: () => "Actor",

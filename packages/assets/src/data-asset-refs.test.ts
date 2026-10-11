@@ -265,17 +265,4 @@ describe("Data Definition and owned entry reference lifecycle", () => {
       .toMatchObject({ "default:entryPath": "texture", "default:name": "texture", "default:values": { Icon: "" } });
     expect(replaced.nodes[2]!.data.properties).toMatchObject({ "default:entryPaths": ["texture", "unused"] });
   });
-
-  it("preserves unsupported historical bodies instead of reinterpreting them as definitions or trees", () => {
-    const legacyObject = { kind: "dataObject", structureGuid: "old", values: { Label: "texture" } };
-    const legacySheet = { kind: "dataSheet", structureGuid: "old", objectGuids: ["texture"] };
-    const ownedSheet = { kind: "dataSheet", definitionGuid: "old", rows: [{ id: "row", name: "Row", values: { Icon: "texture" }, schema: [{ name: "Icon", typeId: "asset" }] }] };
-    expect(clearDeletedAssetRefs(legacyObject, new Set(["texture", "old"])).value).toBe(legacyObject);
-    expect(clearDeletedAssetRefs(legacySheet, new Set(["texture", "old"])).value).toBe(legacySheet);
-    expect(clearDeletedAssetRefs(ownedSheet, new Set(["texture", "old"])).value).toBe(ownedSheet);
-    const imports = [imported("DataObject", "texture", legacyObject), imported("DataSheet", "old-sheet", legacySheet), imported("DataSheet", "owned-sheet", ownedSheet)];
-    expect(remapImportResultGuids(imports, new Set())).toBe(imports);
-    expect(() => remapImportResultGuids(imports, new Set(["texture"]))).toThrow(/Historical/);
-    expect(body(imports[0]!)).toEqual(legacyObject);
-  });
 });

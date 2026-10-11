@@ -195,9 +195,9 @@ function rootsFromIndex(input: ExportRootInput, { sortedAssets }: ClosureIndex):
 
 /**
  * Adds the references beyond the header `dependencies` that a closure follows
- * from `asset`, or returns why the asset cannot ship.
+ * from `asset`.
  */
-type RefExpander = (asset: ExportIndexedAsset, refs: Set<string>) => string | undefined;
+type RefExpander = (asset: ExportIndexedAsset, refs: Set<string>) => void;
 
 /**
  * The included asset a reference names: an asset guid, or else the compile
@@ -260,8 +260,7 @@ function walkClosure(
       const refs = new Set<string>(asset.dependencies);
       const parentClass = asset.type === "Class" ? asset.parentClass?.trim() : "";
       if (parentClass) refs.add(parentClass);
-      const failure = expand(asset, refs);
-      if (failure) return err(failure);
+      expand(asset, refs);
       reached.add(asset.guid);
       for (const next of [...refs].sort()) enqueue(next);
     }
@@ -297,7 +296,6 @@ export function collectExportReachability(
 
   /** Scans the document and payload of an asset for the references its header omits. */
   const expand: RefExpander = (asset, refs) => {
-    if (asset.type === "DataObject" || asset.type === "DataSheet") return `Historical ${asset.type === "DataObject" ? "Data Object" : "Data Sheet"} "${asset.name}" is referenced by this game. Replace that reference with a Data Tree entry before exporting.`;
     const collectOverrides = (value: unknown) => {
       const references = actorPropertyReferences(value, classId => {
         const entry = byGuid.get(classId) ?? byClassId.get(classId)?.[0];
@@ -345,7 +343,6 @@ export function collectExportReachability(
         }
       }
     }
-    return undefined;
   };
   return walkClosure(input, index, [startup], expand);
 }

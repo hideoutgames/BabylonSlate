@@ -13,8 +13,7 @@ function record(value: unknown): Record<string, unknown> | null {
 
 export function isDataAssetPayload(value: unknown): boolean {
   const kind = record(value)?.kind;
-  // Unsupported historical payloads are protected from generic string walkers.
-  return kind === "dataDefinition" || kind === "dataTree" || kind === "dataSheet" || kind === "dataObject";
+  return kind === "dataDefinition" || kind === "dataTree";
 }
 
 export function isDataGraphNodePayload(value: unknown): boolean {
