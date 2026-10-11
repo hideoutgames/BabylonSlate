@@ -67,4 +67,24 @@ describe("sessionReportNavigation", () => {
       label: "Hero",
     });
   });
+
+  it("opens a class asset that runtime scripts report by path", () => {
+    const hero = {
+      header: { type: "Class", name: "Hero" },
+      path: "assets/Hero.class.babasset",
+    };
+    const nav = sessionReportNavigation(
+      { nodeId: "print", assetGuid: "assets/Hero.class.babasset" },
+      {
+        getByGuid: () => undefined,
+        getByPath: (path) => (path === hero.path ? hero : undefined),
+      },
+    );
+    expect(nav.focusedNodeId).toBe("print");
+    expect(nav.document).toEqual({
+      kind: "graph",
+      path: "assets/Hero.class.babasset",
+      label: "Hero",
+    });
+  });
 });
