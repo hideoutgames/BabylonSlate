@@ -84,7 +84,7 @@ async function load(
 
 describe("compiled runtime input rebinding", () => {
   it.each([
-    ["input.resetInput", { input: jump }, "Space", "KeyC"],
+    ["input.resetInput", { "default:input": jump }, "Space", "KeyC"],
     ["input.resetAllBindings", {}, "Space", "Enter"],
   ])(
     "executes %s against the selected player bindings",

@@ -262,7 +262,7 @@ describe("runtime AnimationGraph scripts", () => {
           variableName: "moving",
           typeId: "bool",
           implicitSelf: true,
-          moving: true,
+          "default:value": true,
         }),
         node(registry, "update", "anim.event.update"),
       ],

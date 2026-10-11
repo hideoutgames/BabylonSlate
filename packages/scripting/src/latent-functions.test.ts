@@ -210,7 +210,7 @@ describe("latentSourcesFromSerializedGraph", () => {
               id: "delay",
               type: "timers.delay",
               position: { x: 0, y: 0 },
-              data: { duration: 0.25 },
+              data: { "default:duration": 0.25 },
             },
           ],
           edges: [],
