@@ -7,7 +7,7 @@
 - `ProjectService.createEmptyProject(name, { kind: "feature-test" })` runs the Basic 3D scaffold (Input assets, Kenney Mannequin) and then lazily loads `apps/editor/src/lib/feature-test/`.
 - `index.ts` runs each area in a fixed order: imports, audio, materials, scripting types, scripting, rendering, physics, world, animation, particles, AI, 2D, Scene Layers. Every referenced asset exists before the asset that uses it. Area modules then place actors in their zones. Scene documents save last (Scene Layers, sub-scenes, scenes, then the main scene), followed by the navmesh bake and project settings.
 - Content is deterministic: fixed ids, fixed positions and fixed counts. Only asset guids differ between projects, so tooling finds assets by path or name.
-- All assets live under `assets/FeatureTest/<Area>/`, which is an Always Package Folder so Preview Build and export ship the whole showcase.
+- Feature Test's own assets live under `assets/FeatureTest/<Area>/`, which is an Always Package Folder so Preview Build and export ship the whole showcase. The Basic 3D scaffold's files stay where it writes them: the startup scene `assets/main.scene.babasset`, the Input assets under `assets/Input/`, and the Mannequin (`assets/Mannequin/` plus `assets/Mannequin.class.babasset`), which the areas reuse.
 
 ## Source content
 

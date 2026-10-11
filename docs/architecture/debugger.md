@@ -74,7 +74,7 @@ The registry does not touch the world or renderer. Runtime implements:
 | `slomo [rate]` | `setTimeDilation` / `getTimeDilation`. `tick` uses `dt * rate` (clamp `0..8`) for script, physics, nav crowd, and BT. Trace header and frame snapshots keep recorded (undilated) `dt`; each trace frame records the tick's `timeDilation` |
 | `freecam [on\|off]` | `{ type: "setFreeCam" }`. Detached fly/pan camera; simulation keeps ticking. Pointer/WASD stay off the game ring; 2D pinch zooms ortho; gamepad still forwards. Overlay Play shows a fly stick while on. |
 | `lightsdebug on/off` | `setLightsDebug` controls a separate light allocation overlay, independent of Stats and off by default. |
-| `showfps` / `stat *` | `{ type: "setShowFps" }` / `{ type: "setStat" }`. Opens Stats HUD; `stat` highlights unit (timings), memory, draws, or threads (main vs worker) |
+| `showfps` / `stat *` | `{ type: "setShowFps" }` / `{ type: "setStat" }`. Opens Stats HUD; `stat` highlights unit (timings), memory, draws, or threads (bridge message rate; actors and ticks in the packed player) |
 | `wireframe` / `showbounds` / `actorboundingbox` / `showcollision` / `shownav` | Play-scene overlays. Collision / nav meshes use `RENDERING_GROUP.world` with depth test (not a group-0 underlay). Collision uses `PhysicsBackend.listDebugColliders()` (boxes/spheres/circles/capsules/polylines/convex hulls; body rotation of local offsets and polyline points). `actorboundingbox` calls the same `setShowBounds` host as `showbounds`. Separate from per-collider **Render In Game** world dashes. |
 | `showaudiodebug` | `{ type: "setShowAudioDebug" }`. DOM overlay of playing AudioV2 voices (applies; not log-only) |
 | `possess <name\|guid>` / `destroyactor <name\|guid>` | `possessActorCamera(query)` / `destroyActor(query)`; a GUID or unique exact name. The Play Inspector's **Use Camera** and **Destroy Actor** send these with the selected GUID. |
@@ -100,7 +100,7 @@ Editor Output Log lines and live behaviour-tree snapshots live in an isolated di
 
 Play overlay chrome is a labeled top bar (**Pause** / **Resume**, **Stats**, **Console**, **Inspector**, **Stop**, plus **Step** while paused) with 44px targets. **Stats** and **Inspector** stay filled in both states; the primary outline marks their pressed state. `StatsHud` stays **collapsed** until Stats is tapped so the first Play frame reads as a game view; while it is hidden, overlay Play skips the memory, object-count, draw-call and bridge-rate reads only the HUD shows. User and lifecycle pause requests wait for a correlated completed-boundary acknowledgement, then freeze render-owned game time and live AudioV2 voices. A requested supported redraw or Frame Capture can present without a new game tick. Console pause/resume reflects the effective boundary and cannot clear another owner's hold. Close is one tap (**Stop**). Preview Build uses the same labeled **Stop** over its player iframe (the packaged player keeps its own stats HUD, which samples completed renders per elapsed second; the shared Console button also controls Preview Build; the separate Pause / Inspector buttons remain in overlay Play). When Preview Build is on, the chrome launch control reads **Preview**.
 
-**Debug menu** (next to Play) uses the same content-sized, minimum 14rem width as the viewport settings island so labels stay on one line. It persists overlay chrome in Engine Settings `debuggerDefaults` (same store as Preview Build). Retired `showFps` / `logLevel` keys in older saved settings are dropped on load; do not reuse those names.
+**Debug menu** (next to Play) uses the same content-sized, minimum 14rem width as the viewport settings island so labels stay on one line. It persists overlay chrome in Engine Settings `debuggerDefaults` (same store as Preview Build).
 
 Stats keeps the measured timings and **Over Budget** warning; normal ticks no longer add a **Tick OK** label.
 
@@ -155,7 +155,7 @@ the paused interval. Stop remains available outside hidden document tabs.
 
 | Live edit | Current owner/capability |
 | --- | --- |
-| Actor/local component pose | Validated transform/physics boundary; teleports preserve velocity and reset interpolation; unsafe owners report restart required (an enabled Ragdoll on the actor or a moved descendant, or a selected Physics Constraint / Scene Streaming component; a disabled Ragdoll still teleports) |
+| Actor/local component pose | Validated transform/physics boundary; teleports preserve velocity and publish a new presentation frame; unsafe owners report restart required (an enabled Ragdoll on the actor or a moved descendant, or a selected Physics Constraint / Scene Streaming component; a disabled Ragdoll still teleports) |
 | Exposed Class scalar/vector/reference values | Reflected typed setter when supported; Maps/structures and unsupported types remain inspection-only |
 | Existing Mesh shadows/material assignment, camera/light/outline, rigid body/collider/navigation fields, audio volume | Explicit runtime descriptors; colliders use their owner rebuild boundary; other asset replacements/rebuilds may require restart |
 | Surface float/color/texture parameters | Session-owned `MaterialObject` parameters with staged asset preparation; no shared source-material writes |

@@ -3,7 +3,10 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitepress";
 import { withMermaid } from "vitepress-plugin-mermaid";
 import { docsBrand } from "../src/branding";
-import { installRepoLinkRewriter } from "../src/rewrite-repo-links";
+import {
+  githubHeadingSlug,
+  installRepoLinkRewriter,
+} from "../src/rewrite-repo-links";
 import { docsSidebar } from "../src/sidebar";
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -69,6 +72,7 @@ export default withMermaid(
       ],
     },
     markdown: {
+      anchor: { slugify: githubHeadingSlug },
       config(md) {
         installRepoLinkRewriter(md);
       },

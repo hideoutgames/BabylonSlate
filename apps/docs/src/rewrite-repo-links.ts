@@ -3,6 +3,15 @@ import path from "node:path";
 export const GITHUB_BLOB_BASE =
   "https://github.com/hideoutgames/BabylonSlate/blob/main/";
 
+/** GitHub's directory view; a link ending in `/` names a directory. */
+export const GITHUB_TREE_BASE =
+  "https://github.com/hideoutgames/BabylonSlate/tree/main/";
+
+function githubRepoUrl(repoPath: string, suffix: string): string {
+  const base = repoPath.endsWith("/") ? GITHUB_TREE_BASE : GITHUB_BLOB_BASE;
+  return `${base}${repoPath}${suffix}`;
+}
+
 const REPO_ROOT_PREFIXES = [
   "apps/",
   "packages/",
@@ -12,6 +21,21 @@ const REPO_ROOT_PREFIXES = [
 ];
 
 const SOURCE_FILE = /\.(?:ts|tsx|js|jsx|mjs|cjs|css|mdc|vue)$/i;
+
+// GitHub keeps letters, marks, digits, connector punctuation, spaces and
+// hyphens in a heading id, then turns each space into a hyphen.
+const NON_HEADING_ID_CHARACTER = /[^\p{Alphabetic}\p{M}\p{Nd}\p{Pc} -]/gu;
+
+/**
+ * Heading id as GitHub renders it. The site uses the same ids so one
+ * `page.md#fragment` link works on GitHub and on the site.
+ */
+export function githubHeadingSlug(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(NON_HEADING_ID_CHARACTER, "")
+    .replace(/ /g, "-");
+}
 
 export function rewriteRepoSourceHref(href: string, fromDocPath: string): string {
   const hashIndex = href.indexOf("#");
@@ -38,27 +62,38 @@ export function rewriteRepoSourceHref(href: string, fromDocPath: string): string
 
   const stripped = pathname.replace(/^\.\//, "");
   if (isRepoRootStyle(stripped)) {
-    return `${GITHUB_BLOB_BASE}${stripped}${suffix}`;
+    return githubRepoUrl(stripped, suffix);
   }
 
   const fromDir = path.posix.dirname(fromDocPath || ".");
   const resolved = path.posix.normalize(path.posix.join(fromDir, pathname));
   if (resolved === ".." || resolved.startsWith("../")) {
     const repoPath = path.posix.normalize(path.posix.join("docs", resolved));
-    return `${GITHUB_BLOB_BASE}${repoPath}${suffix}`;
-  }
-
-  // VitePress does not copy arbitrary linked JSON files into its public output.
-  // Link evidence to its real repository path, relative to the current doc.
-  if (/\.json$/i.test(pathname)) {
-    return `${GITHUB_BLOB_BASE}docs/${resolved}${suffix}`;
+    if (repoPath === ".." || repoPath.startsWith("../")) {
+      throw new Error(
+        `Link "${href}" in docs/${fromDocPath} points outside the repository.`,
+      );
+    }
+    return githubRepoUrl(repoPath, suffix);
   }
 
   if (SOURCE_FILE.test(pathname)) {
     return `${GITHUB_BLOB_BASE}${stripped}${suffix}`;
   }
 
+  // VitePress publishes pages, not linked files such as JSON, screenshots,
+  // videos, archives or patches, and its dead-link check skips them. Link
+  // evidence to its real repository path, relative to the current doc.
+  if (isLinkedFile(pathname)) {
+    return `${GITHUB_BLOB_BASE}docs/${resolved}${suffix}`;
+  }
+
   return href;
+}
+
+function isLinkedFile(pathname: string): boolean {
+  const extension = path.posix.extname(pathname);
+  return extension !== "" && !/^\.(?:md|html)$/i.test(extension);
 }
 
 function isExternal(pathname: string): boolean {
