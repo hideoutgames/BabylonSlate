@@ -38,13 +38,13 @@ SpriteAnimationPayload = {
     durationMs: number;           // used only when durationMsOverride is true
     pivot: { x: number; y: number }; // default {0.5,0.5}
     collision: SpriteCollision;      // default {0,0,1,1}
-    width?: number;   // texture pixels; stamped from PNG IHDR when missing
+    width?: number;   // texture pixels; stamped from the Texture image (PNG, JPEG, WebP, GIF) when missing
     height?: number;
   }>;
 }
 ```
 
-DockView **Preview** (25%) + **Details** (75%). Preview: a `ToolbarStrip` with Play / Pause, Loop, and a frame/time readout (`sprite-animation-position`); a square token checkerboard stage fitted to the panel with the current frame (`object-contain`), pivot crosshair and AABB overlay on the contained image box; then the scrubber and a filmstrip of Texture thumbnails (frame number, override-duration badge, selection ring). Details **Animation** (header summary "N Frames · T ms"): Frame Duration MS (global). Details **Frame N** (header Add Frame / Remove Frame): Texture `AssetPicker` (stamps `width`/`height` from the Texture `pixels` PNG IHDR), Frame Duration MS Override (when on, a per-frame duration seeded from the global), pivot, collision numbers. Play and the packaged player fill missing frame sizes from the catalog's authored Texture `width`/`height`, else from collected Texture source bytes, PNG, JPEG, WebP or GIF (`hydrateSpriteAnimationPixelSizes`). Header `dependencies[]` lists frame `textureGuid`s for Show References and export closure.
+DockView **Preview** (25%) + **Details** (75%). Preview: a `ToolbarStrip` with Play / Pause, Loop, and a frame/time readout (`sprite-animation-position`); a square token checkerboard stage fitted to the panel with the current frame (`object-contain`), pivot crosshair and AABB overlay on the contained image box; then the scrubber and a filmstrip of Texture thumbnails (frame number, override-duration badge, selection ring). Details **Animation** (header summary "N Frames · T ms"): Frame Duration MS (global). Details **Frame N** (header Add Frame / Remove Frame): Texture `AssetPicker` (stamps `width`/`height` from the Texture `pixels` image: PNG, JPEG, WebP or GIF), Frame Duration MS Override (when on, a per-frame duration seeded from the global), pivot, collision numbers. Play and the packaged player fill missing frame sizes from the catalog's authored Texture `width`/`height`, else from collected Texture source bytes, PNG, JPEG, WebP or GIF (`hydrateSpriteAnimationPixelSizes`). Header `dependencies[]` lists frame `textureGuid`s for Show References and export closure.
 
 AnimGraph **Sprite** clip kind picks this asset (not Sprite). Duration for the evaluator is the sum of **effective** frame durations (`frameDurationMs`, or `durationMs` when `durationMsOverride` is true). A document without `frameDurationMs` plays its frames at the 100 ms default.
 

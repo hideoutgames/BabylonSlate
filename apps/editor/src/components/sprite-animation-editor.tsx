@@ -26,7 +26,7 @@ import {
   parseSpriteAnimationPayload,
   parseSpriteCollision,
   parseSpritePivot,
-  pngPixelSize,
+  sniffSourceImageSize,
   spriteAnimationDurationMs,
   spriteAnimationFrameStartMs,
   spriteAnimationPlayhead,
@@ -503,7 +503,7 @@ export function SpriteAnimationDetails({
           : await readAssetChunk(path, "source");
       if (picks.get(frameIndex) !== pick) return;
       picks.delete(frameIndex);
-      const size = source && source.byteLength > 0 ? pngPixelSize(source) : null;
+      const size = source && source.byteLength > 0 ? sniffSourceImageSize(source) : null;
       patchFrameIn(
         latestRef.current,
         frameIndex,
