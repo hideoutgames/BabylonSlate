@@ -152,7 +152,7 @@ import { useProjectSearch } from "../context/project-search-context";
 import { useValidation } from "../context/validation-context";
 import {
   ASSETS_ROOT,
-  assetReferencesIncludingOpenDocuments,
+  assetDependenciesIncludingOpenDocuments,
   applyContentBrowserTreeSelect,
   applyContentBrowserTileSelect,
   classIdFromClassAsset,
@@ -1310,12 +1310,11 @@ function ContentBrowserWorkspaceBody({
       thumbnailsEnabled,
       openMoveForSnapshot,
       openOrFocusDocument,
-      referenceAssets,
-      openDocuments,
       refreshAssetRegistry,
       requestDeleteSnapshot,
       selectedFolderPath,
       browserRoots,
+      rootPrefixes,
       setImportErrors,
       keybinds,
     ],
@@ -1345,14 +1344,12 @@ function ContentBrowserWorkspaceBody({
     .map((asset) => asset.header.guid)), [deletingGuids, referenceAssets]);
   const deleteInboundRefs = useMemo(() => {
     if (!deleteTarget || !assetRegistry) return [];
+    // One dependency pass for the whole project, not one per deleted guid.
     const refs = new Map<string, string[]>();
-    for (const guid of deletingGuids) {
-      for (const inbound of assetReferencesIncludingOpenDocuments(guid, referenceAssets, openDocuments).inbound) {
-        if (deletingGuids.has(inbound)) continue;
-        const targets = refs.get(inbound) ?? [];
-        targets.push(guid);
-        refs.set(inbound, targets);
-      }
+    for (const [inbound, dependencies] of assetDependenciesIncludingOpenDocuments(referenceAssets, openDocuments)) {
+      if (deletingGuids.has(inbound)) continue;
+      const targets = dependencies.filter((guid) => deletingGuids.has(guid));
+      if (targets.length > 0) refs.set(inbound, targets);
     }
     const rows = [...refs].map(([guid, targets]) => {
       const asset = assetRegistry.getByGuid(guid);
@@ -1995,6 +1992,9 @@ function ContentBrowserWorkspaceBody({
     setNewAssetOpen(true);
   }, [busy, selectedRootWritable]);
 
+  // Disabled like the toolbar buttons, so a read-only root offers no action
+  // that would then do nothing.
+  const creationDisabled = busy || !selectedRootWritable;
   const emptyGridItems = useMemo(
     () => [
       {
@@ -2002,6 +2002,7 @@ function ContentBrowserWorkspaceBody({
         label: "New Folder",
         shortcut: keybinds.get("edit.newFolder")?.[0],
         icon: <FolderPlusIcon />,
+        disabled: creationDisabled,
         onSelect: () => setNameDialog({ kind: "folder", value: "NewFolder" }),
       },
       {
@@ -2009,6 +2010,7 @@ function ContentBrowserWorkspaceBody({
         label: "New Asset",
         shortcut: keybinds.get("browser.newAsset")?.[0],
         icon: <PlusIcon />,
+        disabled: creationDisabled,
         onSelect: openNewAssetDialog,
       },
       {
@@ -2016,12 +2018,13 @@ function ContentBrowserWorkspaceBody({
         label: "Import",
         shortcut: keybinds.get("browser.import")?.[0],
         icon: <UploadIcon />,
+        disabled: creationDisabled,
         onSelect: () => {
           void handleImport();
         },
       },
     ],
-    [handleImport, openNewAssetDialog, keybinds],
+    [creationDisabled, handleImport, openNewAssetDialog, keybinds],
   );
   const {
     menu: emptyGridMenu,
@@ -2768,14 +2771,10 @@ function ContentBrowserWorkspaceBody({
               ) {
                 return;
               }
-              if (selectedGuids.size !== 1 || selectedFolderPaths.size !== 0) {
-                return;
-              }
-              const guid = [...selectedGuids][0]!;
-              const asset = assetRegistry?.getByGuid(guid);
-              if (!asset) return;
+              // The toolbar Open action: open one asset or enter one folder.
+              if (!canOpenSelection) return;
               event.preventDefault();
-              void openOrFocusDocument(asset);
+              openSelection();
             }}
             onDoubleClick={(event) => {
               if (!isContentBrowserEmptyGridDoubleClickTarget(event.target)) {

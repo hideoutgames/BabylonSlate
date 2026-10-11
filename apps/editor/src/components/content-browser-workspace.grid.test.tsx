@@ -694,6 +694,39 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(screen.getByRole("button", { name: "Parent Folder" }).hasAttribute("disabled")).toBe(true);
   });
 
+  it("enters a selected folder with Enter, as the Open action does", async () => {
+    installRegistry([], ["Characters"]);
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId("content-folder-assets/Characters"));
+    fireEvent.keyDown(screen.getByTestId("content-browser-asset-grid"), { key: "Enter" });
+    const location = await screen.findByRole("navigation", { name: "Folder Location" });
+    expect(location.querySelector('[aria-current="page"]')?.textContent).toBe("Characters");
+  });
+
+  it("disables the empty-grid New Folder, New Asset and Import in a read-only root", () => {
+    docs.thumbnailsEnabled = false;
+    docs.showPluginContent = true;
+    const plugin = {
+      pluginGuid: "starter", source: "engine", folderName: "starter", readOnly: true,
+      folderPath: "plugins/starter", contentPath: "plugins/starter/assets",
+      settingsPath: "plugins/starter/starter.plugin.babasset",
+      settings: { ...createDefaultPluginSettings({ pluginGuid: "starter", displayName: "Starter" }), enabledByDefault: true },
+    };
+    docs.pluginDescriptors = [plugin];
+    const root = projectContentRoot();
+    docs.assetRegistry = {
+      getRoot: (id: string) => id === "project" ? root : { ...root, id, pathPrefix: plugin.contentPath, readOnly: true },
+      list: () => [],
+      folderTree: (id: string) => ({ name: "assets", path: id === "project" ? "assets" : plugin.contentPath, children: [], assets: [] }),
+    };
+    render(<ContentBrowserWorkspace />);
+    tapTreeRow(screen.getByTestId("tree-row-plugins/starter/assets"));
+    fireEvent.contextMenu(screen.getByTestId("content-browser-asset-grid"));
+    for (const id of ["new-folder", "new-asset", "import"]) {
+      expect((screen.getByTestId(`context-menu-item-${id}`) as HTMLButtonElement).disabled).toBe(true);
+    }
+  });
+
   it("clears an unsuccessful search without leaving the current folder", async () => {
     installRegistry([texture(1)]);
     render(<ContentBrowserWorkspace />);
