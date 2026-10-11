@@ -3,6 +3,7 @@ import {
   matchCommandName,
   parseCommandArgs,
   tokenize,
+  tokenizeCommand,
 } from "./parser";
 import type { CommandParameter } from "./types";
 
@@ -33,7 +34,7 @@ describe("parseCommandArgs", () => {
   ];
 
   it("fills positional args then applies defaults for omitted optionals", () => {
-    expect(parseCommandArgs(["medium"], params)).toEqual({
+    expect(parseCommandArgs(tokenizeCommand("medium"), params)).toEqual({
       ok: true,
       args: { level: "medium", scale: 1 },
     });
@@ -41,19 +42,19 @@ describe("parseCommandArgs", () => {
 
   it("coerces bool tokens and prefers named overrides over position", () => {
     expect(
-      parseCommandArgs(["high", "enabled=on", "scale=0.5"], params),
+      parseCommandArgs(tokenizeCommand("high enabled=on scale=0.5"), params),
     ).toEqual({
       ok: true,
       args: { level: "high", scale: 0.5, enabled: true },
     });
-    const off = parseCommandArgs(["low", "enabled=no"], params);
+    const off = parseCommandArgs(tokenizeCommand("low enabled:no"), params);
     expect(off.ok).toBe(true);
     if (off.ok) expect(off.args.enabled).toBe(false);
   });
 
   it("rejects bad int/float/bool/enum values without throwing", () => {
     expect(
-      parseCommandArgs(["nope"], [
+      parseCommandArgs(tokenizeCommand("nope"), [
         { name: "fps", type: "int" },
       ]),
     ).toEqual({
@@ -61,29 +62,57 @@ describe("parseCommandArgs", () => {
       output: 'parameter "fps" expects int, got "nope"',
     });
     expect(
-      parseCommandArgs(["NaN"], [{ name: "rate", type: "float" }]),
+      parseCommandArgs(tokenizeCommand("NaN"), [{ name: "rate", type: "float" }]),
     ).toEqual({
       ok: false,
       output: 'parameter "rate" expects float, got "NaN"',
     });
     expect(
-      parseCommandArgs(["maybe"], [{ name: "flag", type: "bool" }]),
+      parseCommandArgs(tokenizeCommand("maybe"), [{ name: "flag", type: "bool" }]),
     ).toEqual({
       ok: false,
       output: 'parameter "flag" expects bool, got "maybe"',
     });
     expect(
-      parseCommandArgs(["ultra"], [
+      parseCommandArgs(tokenizeCommand("ultra"), [
         { name: "level", type: "enum", enumValues: ["low", "high"] },
       ]),
     ).toEqual({
       ok: false,
       output: 'parameter "level" expects one of low, high, got "ultra"',
     });
+    expect(
+      parseCommandArgs(tokenizeCommand('rate=""'), [{ name: "rate", type: "float" }]),
+    ).toEqual({
+      ok: false,
+      output: 'parameter "rate" expects float, got ""',
+    });
+  });
+
+  it("keeps quoted text positional and rejects names no parameter declares", () => {
+    const query: CommandParameter[] = [{ name: "query", type: "string" }];
+    expect(parseCommandArgs(tokenizeCommand('"boss=final"'), query)).toEqual({
+      ok: true,
+      args: { query: "boss=final" },
+    });
+    expect(parseCommandArgs(tokenizeCommand("lighting:high"), params)).toEqual({
+      ok: false,
+      output: 'unknown parameter "lighting"',
+    });
+  });
+
+  it("gives a rest parameter every remaining positional token", () => {
+    const name: CommandParameter[] = [
+      { name: "name", type: "string", optional: true, rest: true },
+    ];
+    expect(parseCommandArgs(tokenizeCommand("stat  unit"), name)).toEqual({
+      ok: true,
+      args: { name: "stat unit" },
+    });
   });
 
   it("requires missing non-optional parameters", () => {
-    expect(parseCommandArgs([], [{ name: "scene", type: "string" }])).toEqual({
+    expect(parseCommandArgs(tokenizeCommand(""), [{ name: "scene", type: "string" }])).toEqual({
       ok: false,
       output: 'parameter "scene" is required',
     });

@@ -12,7 +12,7 @@ Engine command catalog (what applies, autocomplete, reserved names): [console-co
 | --- | --- |
 | `createCommandRegistry({ includeDebug })` | Core commands always; debug tier only when `includeDebug` is true |
 | `CommandRegistry.execute(line, host)` | Parse, coerce, run; never throws |
-| `tokenize` / `parseCommandArgs` | Quoted tokens, positional and `name=value` args, type coercion |
+| `tokenizeCommand` / `tokenize` / `parseCommandArgs` | Quoted tokens, positional and `name=value` args, type coercion (`tokenize` is the text form used for completion) |
 | `CORE_COMMAND_NAMES` / `DEBUG_COMMAND_NAMES` | Stable name lists for export presets and compile-time warnings |
 | `createUserCommand` | User `BDebugCommand` → **core** tier so it ships in every export |
 | `suggestConsoleCompletions` / `applyConsoleCompletion` | Ranked exact/prefix/interior/subsequence command matching, then enum values, `on`/`off`, `param=`, defaults, and Play context (`scenes` / `actors` / `commands`). Named arguments resolve by name. Selection replaces the current token and preserves quoting; command hits become `name `. |
@@ -52,10 +52,10 @@ Real export tree-shaking of the debug module is landed: the release player calls
 
 ## Parser
 
-- Tokenize on whitespace; `"quoted strings"` keep spaces.
+- Tokenize on whitespace; `"quoted strings"` keep spaces. `tokenizeCommand` returns `{ value, name? }` tokens; a quoted token is always a value, even when it reads `boss=final`.
 - Command names may contain spaces (`stat unit`, `snapshot start`). Match the longest registered (or stripped) name.
-- Remaining tokens fill parameters in order, or as `name=value` / `name:value`.
-- Coerce to `string` / `float` / `int` / `bool` / `enum`. Bool accepts `true`/`false`/`1`/`0`/`on`/`off`/`yes`/`no`.
+- Remaining tokens fill parameters in order, or as `name=value` / `name:value`. A name that no parameter declares fails with `unknown parameter "<name>"`. A `rest` parameter (`help`'s name) takes every remaining positional token, so `help stat unit` describes `stat unit`.
+- Coerce to `string` / `float` / `int` / `bool` / `enum`. Bool accepts `true`/`false`/`1`/`0`/`on`/`off`/`yes`/`no`. An empty int or float is rejected.
 - Missing required args or bad coercion → `{ success: false, output }` describing the parameter. Optional args use `defaultValue`.
 
 ## Host (`ConsoleCommandHost`)

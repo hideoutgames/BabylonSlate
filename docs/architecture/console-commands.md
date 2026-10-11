@@ -14,7 +14,7 @@ The organising idea does not change: **the command system is always present; onl
 | Overlay `DebugConsole` | Flat bottom-edge Sheet shared by Play and Preview Build; simulation keeps ticking. Completions from `playConsoleCommands` (builtins + compiled `script.command`). Live logs, prints, warnings, errors, and command results share the transcript. |
 | `BDebugCommand` | User class → `Event On Command Run` → compiled as **core** via `loadScripts` / `bindUserCommand`. Ships even when `includeDebug: false`. |
 
-Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `snapshot start`), positional or `name=value` args, coercion to string/float/int/bool/enum. Unknown names and stripped debug names return `{ success: false, output }` and never throw.
+Parser: whitespace tokens, quoted strings (always values), longest-name match (`stat unit`, `snapshot start`), positional or `name=value` args (undeclared names are rejected), coercion to string/float/int/bool/enum. Unknown names and stripped debug names return `{ success: false, output }` and never throw.
 
 ## Audit — builtins
 
