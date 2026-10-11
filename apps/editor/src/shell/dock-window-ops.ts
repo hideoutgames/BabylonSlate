@@ -15,8 +15,6 @@ export interface DockWindowPanel {
     width?: number;
     height?: number;
   };
-  neighborId?: string;
-  neighborDirection?: DockWindowDirection;
 }
 
 export interface DockWindowApi {
@@ -60,16 +58,6 @@ const NAV_FROM_REFERENCE: Record<AdjacentNav, DockWindowDirection> = {
   up: "above",
   down: "below",
 };
-
-function invertDockDirection(
-  direction: DockWindowDirection,
-): DockWindowDirection {
-  if (direction === "left") return "right";
-  if (direction === "right") return "left";
-  if (direction === "above") return "below";
-  if (direction === "below") return "above";
-  return "within";
-}
 
 export function listDockPanels(api: DockWindowApi): DockWindowPanel[] {
   const panels = api.panels;
@@ -185,14 +173,6 @@ export function capturePanelPlacement(
     return { referencePanelId: sibling.id, direction: "within", ...size };
   }
 
-  if (panel.neighborId && panel.neighborDirection) {
-    return {
-      referencePanelId: panel.neighborId,
-      direction: panel.neighborDirection,
-      ...size,
-    };
-  }
-
   const fromCatalog = placementFromCatalogReference(api, panel, def, size);
   if (fromCatalog) return fromCatalog;
 
@@ -205,22 +185,6 @@ export function capturePanelPlacement(
   return catalogPlacement(api, def, size);
 }
 
-function isStaleRememberedPlacement(
-  placement: PanelPlacement,
-  def: DockWindowDefinition,
-): boolean {
-  const catalog = def.defaultPosition;
-  if (!catalog) return false;
-  if (placement.referencePanelId !== catalog.referencePanelId) return false;
-  if (placement.direction === "within" && catalog.direction !== "within") {
-    return true;
-  }
-  return (
-    catalog.direction !== "within" &&
-    placement.direction === invertDockDirection(catalog.direction)
-  );
-}
-
 function resolveOpenTarget(
   api: DockWindowApi,
   def: DockWindowDefinition,
@@ -231,7 +195,7 @@ function resolveOpenTarget(
   initialWidth?: number;
   initialHeight?: number;
 } {
-  if (placement && !isStaleRememberedPlacement(placement, def)) {
+  if (placement) {
     const remembered = api.getPanel(placement.referencePanelId);
     if (remembered) {
       return {
