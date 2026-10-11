@@ -309,6 +309,15 @@ describe("player startup and Stop ownership", () => {
     await expectEngineReleased(owner);
   });
 
+  it("reports a failed audio unlock from a gesture instead of leaving it unhandled", async () => {
+    const { game, canvas, handle } = await fixture();
+    vi.spyOn(handle, "unlockAudio").mockRejectedValue(new Error("AudioContext resume was rejected"));
+    const commands: Array<{ type: string } & Record<string, unknown>> = [];
+    sessions.push(startPlayer({ game, canvas, onConsoleEvent: (command) => commands.push(command) }));
+    canvas.dispatchEvent(new Event("touchstart"));
+    await vi.waitFor(() => expect(commands).toContainEqual({ type: "log", severity: "warning", message: "Audio could not start: AudioContext resume was rejected" }));
+  });
+
   it.each([
     { traceByteBudget: undefined, retainedTicks: [1, 2, 3, 4, 5, 6, 7, 8] },
     { traceByteBudget: 1024, retainedTicks: [] },

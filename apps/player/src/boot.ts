@@ -1076,7 +1076,10 @@ function initializePlayer(
   if (options.previewDiagnostics) applyInputOwnership();
   own(() => input?.dispose());
   const releaseUnlock = unlockAudioOnFirstGesture(() => {
-    void handle.unlockAudio();
+    // The next gesture retries; a failure is reported, not left unhandled.
+    handle.unlockAudio().catch((error: unknown) => {
+      if (!halted) options.onConsoleEvent?.({ type: "log", severity: "warning", message: `Audio could not start: ${error instanceof Error ? error.message : String(error)}` });
+    });
   }, canvas);
   own(releaseUnlock);
   last = performance.now();
