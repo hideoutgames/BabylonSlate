@@ -1057,7 +1057,6 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       viewportMode === "2d" && twoD.pixelPerfect
         ? {
             pixelsPerUnit: twoD.pixelsPerUnit,
-            integerZoomSteps: twoD.integerZoomSteps,
           }
         : null,
     );
