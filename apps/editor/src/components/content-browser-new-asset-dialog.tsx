@@ -11,6 +11,7 @@ import {
   resolveTypeVisual,
   walkAncestry,
 } from "@babylonslate/editor-kit";
+import { contentEntryNameError } from "@babylonslate/assets";
 import { MAX_CLASS_INHERITANCE_DEPTH } from "@babylonslate/object-model";
 import { Button } from "@babylonslate/ui/components/button";
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
@@ -166,7 +167,10 @@ export function ContentBrowserNewAssetDialog({
   const detailsRef = useRef<HTMLElement>(null);
   const selectedVisual = resolveTypeVisual({ assetType: type });
   const isData = type === "DataTree";
-  const canCreate = !busy && !nameTaken && Boolean(name.trim());
+  // The same rule as Rename, so a created name can always be renamed back.
+  const nameError = name.trim() ? contentEntryNameError(name) : null;
+  const nameInvalid = nameTaken || Boolean(nameError);
+  const canCreate = !busy && !nameInvalid && Boolean(name.trim());
 
   useEffect(() => {
     if (open) {
@@ -332,15 +336,15 @@ export function ContentBrowserNewAssetDialog({
                   </div>
                 </div>
                 <FieldGroup>
-                  <Field data-invalid={nameTaken || undefined}>
+                  <Field data-invalid={nameInvalid || undefined}>
                     <FieldLabel htmlFor="new-asset-name">Name</FieldLabel>
                     <Input
                       id="new-asset-name"
                       data-testid="new-asset-name"
                       className="min-h-[var(--chrome-row,28px)]"
                       value={name}
-                      aria-invalid={nameTaken || undefined}
-                      aria-describedby={nameTaken ? "new-asset-name-error" : undefined}
+                      aria-invalid={nameInvalid || undefined}
+                      aria-describedby={nameInvalid ? "new-asset-name-error" : undefined}
                       onChange={(event) => onNameChange(event.target.value)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" && !event.nativeEvent.isComposing) {
@@ -349,7 +353,11 @@ export function ContentBrowserNewAssetDialog({
                         }
                       }}
                     />
-                    {nameTaken ? (
+                    {nameError ? (
+                      <FieldError id="new-asset-name-error" data-testid="new-asset-name-invalid">
+                        {nameError}
+                      </FieldError>
+                    ) : nameTaken ? (
                       <FieldError id="new-asset-name-error" data-testid="new-asset-name-taken">
                         An asset with this name already exists in the folder.
                       </FieldError>

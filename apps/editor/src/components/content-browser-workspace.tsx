@@ -2309,7 +2309,7 @@ function ContentBrowserWorkspaceBody({
   const handleCreateAsset = useCallback(async () => {
     if (!assetRegistry || newAssetNameTaken || selectedRoot.readOnly) return;
     const name = newAssetName.trim();
-    if (!name) return;
+    if (!name || contentEntryNameError(name)) return;
     setBusy(true);
     setOperationError(null);
     try {

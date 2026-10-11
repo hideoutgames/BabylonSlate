@@ -239,6 +239,15 @@ describe("ContentBrowserNewAssetDialog", () => {
     ).toBe(true);
   });
 
+  it.each([".", "..", "Hero."])("rejects %s as Rename does", (name) => {
+    const { onCreate } = renderDialog({ name });
+    expect(screen.getByTestId("new-asset-name-invalid").textContent).toMatch(/\.|period/);
+    const create = screen.getByTestId("content-browser-new-asset-create");
+    expect(create.hasAttribute("disabled")).toBe(true);
+    fireEvent.keyDown(screen.getByTestId("new-asset-name"), { key: "Enter" });
+    expect(onCreate).not.toHaveBeenCalled();
+  });
+
   it("creates with the selected type after a name is typed", () => {
     const { onCreate, onNameChange } = renderDialog({ name: "Arena" });
     fireEvent.change(screen.getByTestId("new-asset-name"), {
