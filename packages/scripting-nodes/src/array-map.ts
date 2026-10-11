@@ -244,10 +244,10 @@ export const arrayMapNodes: NodeDefinition[] = [
       const index = ctx.input("index");
       const item = ctx.input("item");
       ctx.emit(`${out} = ((${array})??[]).slice();`);
+      // Read the index once so the bounds check and the write use one value.
       ctx.emit(
-        `${success} = Number.isInteger(${index})&&${index}>=0&&${index}<${out}.length;`,
+        `{ const __i = ${index}; ${success} = Number.isInteger(__i)&&__i>=0&&__i<${out}.length; if (${success}) { ${out}[__i] = ${item}; } }`,
       );
-      ctx.emit(`if (${success}) { ${out}[${index}] = ${item}; }`);
     },
   },
   {

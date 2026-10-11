@@ -253,6 +253,45 @@ describe("array-map nodes", () => {
     expect(runLog(compiled.source)).toEqual(["true", "0", "0"]);
   });
 
+  it("Set At Index reads an impure index once for the check and the write", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "entry", "flow.entry"),
+        node(registry, "make", "array.make", {
+          count: 3,
+          "default:item0": 1,
+          "default:item1": 2,
+          "default:item2": 3,
+        }),
+        node(registry, "roll", "math.randomInt", { "default:min": 0, "default:max": 9 }),
+        node(registry, "set", "array.set", { "default:item": 7 }),
+        node(registry, "join", "string.join", { "default:separator": "," }),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        edge("e1", "entry", "execOut", "set", "execIn"),
+        edge("e2", "make", "out", "set", "array"),
+        edge("e3", "roll", "out", "set", "index"),
+        edge("e4", "set", "execOut", "log", "execIn"),
+        edge("e5", "set", "out", "join", "array"),
+        edge("e6", "join", "out", "log", "message"),
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    let rolls = 0;
+    const logs: string[] = [];
+    (loadModule(compiled.source).run as (ctx: unknown) => void)({
+      random: { int: () => rolls++ },
+      formatValue: (v: unknown) => String(v),
+      log: (_s: string, _c: string, message: string) => logs.push(message),
+    });
+    expect(rolls).toBe(1);
+    expect(logs).toEqual(["7,2,3"]);
+  });
+
   it("compiles Append Array, Set At Index, Insert, Remove At, Remove Item, Clear", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
