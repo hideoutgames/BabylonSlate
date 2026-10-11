@@ -294,10 +294,14 @@ describe("DocumentProvider actions and route", () => {
     await act(() => actions.applyGraphChange(id, { ...graph, members: [
       ...(graph.members ?? []), { id: "speed", kind: "variable", name: "Speed", typeId: "float", defaultValue: 3 },
     ] }));
+    await act(() => actions.collectPlayPreviewScripts());
+    expect(documents()).toMatchObject({ graphsNeedCompile: false, scriptsStale: false });
 
     expect(await act(() => actions.reparentClassDocument(id, "Hero"))).toBeNull();
     expect(registry.getByPath(MAIN_CLASS_FILE)?.header.parentClass).toBe("Hero");
     expect(documents().dirtyDocuments.map((doc) => doc.id)).toEqual([id]);
+    // The new parent reaches Compile and Play's bundles, though the graph is unchanged.
+    expect(documents()).toMatchObject({ graphsNeedCompile: true, scriptsStale: true });
 
     // Discard: the unsaved member never reached disk.
     act(() => actions.closeDocument(id));

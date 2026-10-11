@@ -2911,10 +2911,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         return error instanceof Error ? error.message : String(error);
       }
+      // The graph signature does not cover the header's parent, so Compile and
+      // Play's stored bundles would otherwise keep the previous parent.
+      setLastCompiledSignature(null);
+      clearPlayPreviewScripts();
       bump();
       return null;
     },
-    [bump, documentService, editing, projectService],
+    [bump, clearPlayPreviewScripts, documentService, editing, projectService],
   );
 
   const beginSimulationDocument = useCallback<DocumentContextValue["beginSimulationDocument"]>(

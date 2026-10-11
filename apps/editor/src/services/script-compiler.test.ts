@@ -1143,6 +1143,8 @@ describe("graphCompileSignature", () => {
       ),
     };
     const disconnected: SerializedGraph = { ...tickToLog, edges: [] };
+    // Actor Defaults are copied onto the compiled bundle, so they recompile too.
+    const actorDefaults: SerializedGraph = { ...tickToLog, actorDefaults: { generateHitEvents: false } };
     const base = graphCompileSignature([
       { path: "assets/main.graph.babasset", content: tickToLog },
     ]);
@@ -1153,6 +1155,9 @@ describe("graphCompileSignature", () => {
       graphCompileSignature([
         { path: "assets/main.graph.babasset", content: disconnected },
       ]),
+    ).not.toBe(base);
+    expect(
+      graphCompileSignature([{ path: "assets/main.graph.babasset", content: actorDefaults }]),
     ).not.toBe(base);
   });
 

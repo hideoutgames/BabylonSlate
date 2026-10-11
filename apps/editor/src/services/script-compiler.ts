@@ -373,6 +373,8 @@ function documentCompileFingerprint(content: SerializedGraph): string {
     members: content.members ?? [],
     components: content.components ?? [],
     functionGraphs: compileFunctionGraphFingerprint(content.functionGraphs),
+    // Copied onto the compiled bundle (`classMetadataFromGraph`).
+    actorDefaults: content.actorDefaults ?? null,
   });
   documentFingerprints.set(content, fingerprint);
   return fingerprint;
