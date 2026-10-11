@@ -33,6 +33,14 @@ describe("rewriteRepoSourceHref", () => {
     ).toBe(`${GITHUB_BLOB_BASE}.cursor/rules/touch-editor.md`);
   });
 
+  it("rejects a relative link that resolves outside the repository", () => {
+    expect(() =>
+      rewriteRepoSourceHref("../../packages/ui/src/styles/globals.css", "engineplan.md"),
+    ).toThrow(/outside the repository/);
+    expect(rewriteRepoSourceHref("../packages/ui/src/styles/globals.css", "engineplan.md"))
+      .toBe(`${GITHUB_BLOB_BASE}packages/ui/src/styles/globals.css`);
+  });
+
   it("preserves in-docs markdown links, including hashes", () => {
     expect(
       rewriteRepoSourceHref("architecture/theming.md", "engineplan.md"),
@@ -55,10 +63,14 @@ describe("rewriteRepoSourceHref", () => {
     expect(rewriteRepoSourceHref("#overview", "engineplan.md")).toBe("#overview");
   });
 
-  it("resolves JSON evidence relative to its doc without losing repository source links", () => {
+  it("resolves linked evidence files relative to their doc without losing repository source links", () => {
     for (const [href, target] of [
       ["../assets/renderer-qualification/measurements.json", "docs/assets/renderer-qualification/measurements.json"],
       ["./evidence/shadow-self-shadowing/corrected.json?raw=1#settings", "docs/design/evidence/shadow-self-shadowing/corrected.json?raw=1#settings"],
+      ["../assets/renderer-qualification/play-webgl2.png", "docs/assets/renderer-qualification/play-webgl2.png"],
+      ["../assets/renderer-qualification/animated-play-webgl2.mp4", "docs/assets/renderer-qualification/animated-play-webgl2.mp4"],
+      ["../assets/renderer-qualification/authored-project.zip", "docs/assets/renderer-qualification/authored-project.zip"],
+      ["./evidence/shadow-self-shadowing/original-policy.patch", "docs/design/evidence/shadow-self-shadowing/original-policy.patch"],
     ]) {
       expect(rewriteRepoSourceHref(href, "design/renderer-qualification.md"))
         .toBe(`${GITHUB_BLOB_BASE}${target}`);

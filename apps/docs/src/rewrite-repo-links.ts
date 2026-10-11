@@ -45,20 +45,31 @@ export function rewriteRepoSourceHref(href: string, fromDocPath: string): string
   const resolved = path.posix.normalize(path.posix.join(fromDir, pathname));
   if (resolved === ".." || resolved.startsWith("../")) {
     const repoPath = path.posix.normalize(path.posix.join("docs", resolved));
+    if (repoPath === ".." || repoPath.startsWith("../")) {
+      throw new Error(
+        `Link "${href}" in docs/${fromDocPath} points outside the repository.`,
+      );
+    }
     return `${GITHUB_BLOB_BASE}${repoPath}${suffix}`;
-  }
-
-  // VitePress does not copy arbitrary linked JSON files into its public output.
-  // Link evidence to its real repository path, relative to the current doc.
-  if (/\.json$/i.test(pathname)) {
-    return `${GITHUB_BLOB_BASE}docs/${resolved}${suffix}`;
   }
 
   if (SOURCE_FILE.test(pathname)) {
     return `${GITHUB_BLOB_BASE}${stripped}${suffix}`;
   }
 
+  // VitePress publishes pages, not linked files such as JSON, screenshots,
+  // videos, archives or patches, and its dead-link check skips them. Link
+  // evidence to its real repository path, relative to the current doc.
+  if (isLinkedFile(pathname)) {
+    return `${GITHUB_BLOB_BASE}docs/${resolved}${suffix}`;
+  }
+
   return href;
+}
+
+function isLinkedFile(pathname: string): boolean {
+  const extension = path.posix.extname(pathname);
+  return extension !== "" && !/^\.(?:md|html)$/i.test(extension);
 }
 
 function isExternal(pathname: string): boolean {
