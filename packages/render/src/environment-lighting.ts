@@ -70,8 +70,9 @@ class EnvironmentLighting {
 
   constructor(scene: Scene) {
     this.scene = scene;
+    // Rendering only applies pending changes; readiness consumers report a failure.
     scene.onBeforeRenderObservable.add(() => {
-      if (this.view) this.isReady();
+      if (this.view) this.refresh();
     });
     scene.onDisposeObservable.addOnce(() => {
       this.disposed = true;
@@ -166,6 +167,19 @@ class EnvironmentLighting {
   }
 
   isReady(): boolean {
+    this.refresh();
+    if (this.preparationError) throw this.preparationError;
+    if (this.pendingLease) return false;
+    return (
+      !this.view ||
+      (this.view.isReady() &&
+        (!sceneRenderingSettings(this.scene).environmentLighting.enabled ||
+          this.irradiance!.isReady()))
+    );
+  }
+
+  /** Apply a finished irradiance update and record a failed source upload. */
+  private refresh(): void {
     if (this.irradianceChanged) {
       this.irradianceChanged = false;
       this.invalidateMaterials();
@@ -177,14 +191,6 @@ class EnvironmentLighting {
         { cause: this.source.errorObject?.exception },
       ));
     }
-    if (this.preparationError) throw this.preparationError;
-    if (this.pendingLease) return false;
-    return (
-      !this.view ||
-      (this.view.isReady() &&
-        (!sceneRenderingSettings(this.scene).environmentLighting.enabled ||
-          this.irradiance!.isReady()))
-    );
   }
 
   private publish(lease: ResourceLease<CubeTexture>): void {
