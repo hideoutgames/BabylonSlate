@@ -464,8 +464,6 @@ export function applyPlayFpsSample(
   };
 }
 
-/** How long Stop waits for the worker's stop phase before terminating it. */
-const WORKER_STOP_TIMEOUT_MS = 2000;
 const FIXTURE_ASSET = "preview-fixture";
 const FIXTURE_NODE = "throw-node";
 
@@ -645,8 +643,6 @@ export function startPlaySession(options: {
   };
 
   let worker: GameWorkerHost | null = null;
-  /** Set while Stop waits for the worker's `stopped` answer. */
-  let finishWorkerStop: (() => void) | null = null;
   let runtime: RuntimeDriver | null = null;
   // eslint-disable-next-line prefer-const -- runtime command handlers installed first may run before assignment.
   let performanceDiagnostics: SessionDiagnostics<import("@babylonslate/render").RenderFrameReport> | undefined;
@@ -1336,9 +1332,6 @@ export function startPlaySession(options: {
       if (command.sessionGeneration === (options.sessionGeneration ?? 0)) performanceDiagnostics?.runtimeStopped(command);
       return;
     }
-    if (command.type === "stopped") { finishWorkerStop?.(); return; }
-    // The worker's stop phase may still save; serve it until the worker is terminated.
-    if (command.type === "saveStorageRequest") { saveServer.receive(command.request); return; }
     // Stop released the presentation, preparation and every correlated client.
     // Output that was already queued, or the stop phase's own, only reaches the log.
     if (stopped) {
@@ -1370,6 +1363,7 @@ export function startPlaySession(options: {
     if (command.type === "requestComplexCollision") { answerComplexCollision(command.assetGuid); return; }
     if (receivePreload(command)) return;
     if (sceneSources?.receive(command)) return;
+    if (command.type === "saveStorageRequest") { saveServer.receive(command.request); return; }
     noteCommand();
     if (command.type === "activeScene") { inspectorClient.invalidateScene(); materialEditHost.invalidate(); }
     if (command.type === "despawn") { inspectorClient.invalidateActor(command.actorGuid); materialEditHost.invalidateActor(command.actorGuid); }
@@ -1913,26 +1907,9 @@ export function startPlaySession(options: {
       }
       sessionDiagnostics.push(...hostDiagnostics.entries());
       droppedDiagnostics += hostDiagnostics.droppedCount();
-      if (worker) {
-        // End Play and On Game End run in the worker's stop phase; terminating
-        // in the same turn would discard the stop message. Wait, bounded, for
-        // its answer so a hung worker still ends.
-        const stoppingWorker = worker;
-        const timer = setTimeout(() => finishWorkerStop?.(), WORKER_STOP_TIMEOUT_MS);
-        finishWorkerStop = () => {
-          finishWorkerStop = null;
-          clearTimeout(timer);
-          saveServer.dispose();
-          stoppingWorker.terminate();
-        };
-        try {
-          stoppingWorker.postControl({ type: "stop" });
-        } catch {
-          finishWorkerStop();
-        }
-      } else {
-        saveServer.dispose();
-      }
+      worker?.postControl({ type: "stop" });
+      saveServer.dispose();
+      worker?.terminate();
       for (const request of sourceRequests.values()) request.reject(new Error("Play stopped during script preparation."));
       sourceRequests.clear();
       sceneSources?.dispose();

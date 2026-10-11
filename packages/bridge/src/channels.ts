@@ -413,8 +413,6 @@ export type DebugBehaviourTree = {
 };
 
 export type CommandMessage =
-  /** Worker answer to `stop`, sent after its stop phase (End Play, On Game End) ran. */
-  | { type: "stopped" }
   | { type: "simulationRetentionUnavailable"; sessionGeneration: number; reason: string }
   | ({ type: "simulationQuiesced" } & SessionBoundaryResult)
   | { type: "simulationCaptureChunk"; sessionGeneration: number; requestId: number; sequence: number; bytes: Uint8Array }

@@ -238,15 +238,6 @@ describe("worker entry snapshot transport", () => {
     expect(snapshots()[3]!.frameId).toBe(newest);
   });
 
-  it("answers stop after its stop phase ran", async () => {
-    const { runtime, posts, kinds } = await bootWorker({ type: "load", sceneAssetGuid: "main", scene: createDefaultScene() });
-    const stopPhase = vi.spyOn(runtime, "stop");
-    const before = posts.length;
-    send!({ type: "stop" });
-    expect(stopPhase).toHaveBeenCalledOnce();
-    expect(kinds(posts.slice(before)).at(-1)).toBe("stopped");
-  });
-
   it("pauses again after a single step whose tick throws", async () => {
     const { runtime, runFrames } = await bootWorker({ type: "load", sceneAssetGuid: "main", scene: { ...createDefaultScene(), actors: [createActor("prop", "Prop")] } });
     send!({ type: "setPaused", paused: true });
