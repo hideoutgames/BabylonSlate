@@ -143,7 +143,7 @@ Scale about the midpoint, then apply two-finger translation. Wheel zooms about t
 | Double-tap / double-click **empty grid** | Open New Asset (writable roots only; not the long-press create menu) |
 | Move past ~8px on a **tile** | Paint-select (do not open the menu; do not scroll the grid for that gesture) |
 | Move before ~500ms on **empty grid** | Scroll (do not open the menu) |
-| Hold still ≥500ms or right-click on a **tile** | Add that tile if needed, then open the asset or folder context menu. Tile pointer events do not bubble to the empty-grid menu. |
+| Hold still ≥500ms or right-click on a **tile** | A tile outside the selection replaces it; a selected tile keeps the selected group. Then open the asset or folder context menu. Tile pointer events do not bubble to the empty-grid menu. |
 | Hold still ≥500ms or right-click on **empty grid** | New Folder, New Asset, Import |
 | Left tree: tap folder | Set the grid’s current folder |
 | Left tree: tap asset | Set the grid to that asset’s parent and select the guid |
