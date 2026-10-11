@@ -1057,7 +1057,7 @@ Three findings make it work:
 
 `packages/source-control` holds a `LockProvider` port with one real implementation and an in-memory fake, so no editor code talks HTTP directly and every lock behaviour is testable without a network.
 
-- Four endpoints against `<repo>.git/info/lfs/locks`: create with `POST /locks`, list with `GET /locks`, verify with `POST /locks/verify`, and release with `POST /locks/:id/unlock`. Content type `application/vnd.git-lfs+json`, Basic auth with a personal access token.
+- Three endpoints against `<repo>.git/info/lfs/locks`: create with `POST /locks`, verify with `POST /locks/verify` (the only call that tells our locks from others'), and release with `POST /locks/:id/unlock`. Content type `application/vnd.git-lfs+json`, Basic auth with a personal access token.
 - Configuration is **explicit in Project Settings under a Source Control page**: enable toggle, repository URL and branch. It is not discovered by parsing `.git`, because Working Copy's file provider exposes the working tree and we should not assume the git directory is readable through it. Where `.git/config` happens to be readable, typically desktop, we prefill the fields from it and never depend on them.
 - The token lives in the platform secret store, iOS Keychain or Electron `safeStorage`, never in `project.json` and never committed. Lock holder names come back from the server, so no identity configuration is needed.
 - SSH remotes are fine: the LFS endpoint is derived from the HTTPS form of the host, since a token is required regardless.
@@ -1072,7 +1072,7 @@ Three findings make it work:
 
 ### 12.3 Polling and decoration
 
-- `GET /locks` is polled on project open, on app foreground, on Content Browser focus, on manual refresh, and on a timer defaulting to 60 seconds and configurable, paused while the app is backgrounded so it costs nothing on battery.
+- `POST /locks/verify` is polled on project open, on app foreground, on Content Browser focus, on manual refresh, and on a timer defaulting to 60 seconds and configurable, paused while the app is backgrounded so it costs nothing on battery.
 - The Content Browser decoration slot introduced in P2 renders lock state per asset: held by me, held by someone else with their name, or unlocked. A Locks panel lists every lock in the repository with holder, path and age, offers force-unlock for stale ones, and shows how many locks you currently hold beside the Release All button so the count is visible without nagging.
 - Git status such as modified or untracked is deliberately **not** shown, because we never read git state. If it is ever wanted, a read-only local status pass is purely additive and needs no network.
 
@@ -1566,7 +1566,7 @@ Named slice, not a P-number. Spec: section 2.5. **Done.**
 
 ### P15
 
-- [x] **p15-lock-provider** — P15: source-control package with a LockProvider port, a Git LFS locking client (POST /locks, GET /locks, POST /locks/verify, POST /locks/:id/unlock with vnd.git-lfs+json and Basic auth by PAT) and an in-memory fake; endpoint derived from an explicitly configured repo URL rather than by parsing .git, since Working Copy exposes only the working tree; token in iOS Keychain and Electron safeStorage, never in project.json. The engine implements no git: clone, commit, pull and push stay in Working Copy or a desktop client
+- [x] **p15-lock-provider** — P15: source-control package with a LockProvider port, a Git LFS locking client (POST /locks, POST /locks/verify, POST /locks/:id/unlock with vnd.git-lfs+json and Basic auth by PAT) and an in-memory fake; endpoint derived from an explicitly configured repo URL rather than by parsing .git, since Working Copy exposes only the working tree; token in iOS Keychain and Electron safeStorage, never in project.json. The engine implements no git: clone, commit, pull and push stay in Working Copy or a desktop client
 - [x] **p15-lock-ux** — P15: source control is per-project opt-in and off by default with zero editor difference when disabled; auto-lock on first edit with the create call as the atomic check (409 carries the existing lock), advisory locks that never block opening, read-only-by-default with Edit Anyway and a holder banner, no lockable in .gitattributes, and exactly one release mechanism - a Release All My Locks button whose confirmation warns that unpushed work becomes editable by others, plus per-asset release - with nothing released on a timer, on close or by heuristic; Content Browser lock decoration, Locks panel with held count and force-unlock, and poll on open, foreground, focus, manual refresh and a 60s timer paused while backgrounded
 - [x] **p15-external-change** — P15: treat external change as normal - asset registry mtime rescan on foreground, reload prompts for changed assets, and a loud warning when a file backing an open document with unsaved edits changed on disk, since Working Copy will pull, switch branches and discard underneath a running editor
 

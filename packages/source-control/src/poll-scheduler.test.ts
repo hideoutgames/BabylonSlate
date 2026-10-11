@@ -37,6 +37,42 @@ describe("LockPollScheduler", () => {
     vi.useRealTimers();
   });
 
+  it("holds the first tick when the host was hidden before start", () => {
+    vi.useFakeTimers();
+    const tick = vi.fn();
+    const scheduler = new LockPollScheduler({
+      intervalMs: 1_000,
+      tick,
+    });
+    scheduler.pause();
+    scheduler.start();
+    vi.advanceTimersByTime(5_000);
+    expect(tick).not.toHaveBeenCalled();
+    scheduler.resume();
+    expect(tick).toHaveBeenCalledTimes(1);
+    scheduler.stop();
+    vi.useRealTimers();
+  });
+
+  it("runs a refresh requested during a pending tick once, after it settles", async () => {
+    vi.useFakeTimers();
+    const settles: Array<() => void> = [];
+    const tick = vi.fn(() => new Promise<void>((resolve) => settles.push(resolve)));
+    const scheduler = new LockPollScheduler({
+      intervalMs: 1_000,
+      tick,
+    });
+    scheduler.start();
+    scheduler.requestImmediate();
+    vi.advanceTimersByTime(1_000);
+    expect(tick).toHaveBeenCalledTimes(1);
+    settles[0]!();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(tick).toHaveBeenCalledTimes(2);
+    scheduler.stop();
+    vi.useRealTimers();
+  });
+
   it("requestImmediate ticks even when a timer is pending", () => {
     vi.useFakeTimers();
     const tick = vi.fn();

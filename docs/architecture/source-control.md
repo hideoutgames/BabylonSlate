@@ -23,7 +23,6 @@ interface FileLock {
 
 interface LockProvider {
   create(path: string): Promise<Result<FileLock, LockError>>;
-  list(): Promise<Result<FileLock[], LockError>>;
   verify(): Promise<Result<{ ours: FileLock[]; theirs: FileLock[] }, LockError>>;
   unlock(id: string, options?: { force?: boolean }): Promise<Result<void, LockError>>;
 }
@@ -35,25 +34,25 @@ Implementations: `GitLfsLockProvider` (injected `lfsFetch` + `getToken` — the 
 
 ## Git LFS client
 
-Four calls against `{lfsBase}/locks` with `Accept` / `Content-Type: application/vnd.git-lfs+json` and Basic auth (`x-access-token:PAT`):
+Three calls against `{lfsBase}/locks` with `Accept` / `Content-Type: application/vnd.git-lfs+json` and Basic auth (`x-access-token:PAT`):
 
 | Call | HTTP |
 | --- | --- |
 | create | `POST /locks` `{ path, ref }` |
-| list | `GET /locks` (cursor pagination) |
-| verify | `POST /locks/verify` `{ ref }` — `ours` / `theirs` (holder names come from the server) |
+| verify | `POST /locks/verify` `{ ref, cursor? }` — `ours` / `theirs` (holder names come from the server), cursor pagination |
 | unlock | `POST /locks/:id/unlock` `{ force, ref }` |
 
-`ref.name` is `refs/heads/{branch}` from Project Settings.
+`ref.name` is `refs/heads/{branch}` from Project Settings. Lock state comes only from verify: `GET /locks` cannot tell ours from theirs. A verify 200 whose body is not a JSON object, or whose `ours` / `theirs` is present but not an array, is an `http` error rather than an empty lock list, so a refresh keeps the last known locks; a repeated `next_cursor` stops pagination with an error.
 
 ### URL derivation (`lfsEndpointFromRepoUrl`)
 
-Endpoint comes from the **configured repository URL**, not from parsing `.git` (Working Copy exposes the working tree). Prefill from `.git/config` + `HEAD` when those files are readable (desktop); never required.
+Endpoint comes from the **configured repository URL**, not from parsing `.git` (Working Copy exposes the working tree). Prefill from `.git/config` + `HEAD` when those files are readable (desktop); never required. Config values follow git quoting (quotes removed, unquoted `;` / `#` comments dropped). A detached `HEAD` leaves Branch unchanged; only a missing `HEAD` falls back to the first `[branch]` merge ref.
 
 | Remote | LFS base |
 | --- | --- |
 | `https://github.com/org/repo` or `.git` | `https://github.com/org/repo.git/info/lfs` |
 | `git@github.com:org/repo.git` / `ssh://git@github.com/org/repo.git` | same HTTPS host (a PAT is required) |
+| `http://{host}/{path}` | `https://{host}/{path}.git/info/lfs` — the token is never sent over plain HTTP |
 | GitLab / Gitea HTTPS or SSH | `https://{host}/{path}.git/info/lfs` |
 
 ## Secrets and native HTTP (`vfs`)
@@ -120,4 +119,4 @@ Two-device GitHub lock visibility is **manual** native acceptance, not CI.
 
 ## Tests
 
-Node: endpoint mapping, SSH→HTTPS, 201/409 create, 409 already-ours via verify, verify ours/theirs, unlock/force, pagination, fake, poll pause, settings normalize, mtime classify. jsdom: settings hidden on web, token not in `project.json`, auto-lock, skip create when already ours, 409 banner, CB `data-lock-state`, Locks **No Locks.** / Release All copy, readonly + Edit Anyway, rename/folder/move refused when theirs, lock transfer pairs, delete unlocks ours, iOS `BabylonSlateSecretsPlugin` in pbxproj + `packageClassList`, foreground dirty warning (`SelectableText` paths). Playwright `e2e/p15-source-control.spec.ts`: Fake enable → edit → mine decoration → Locks count → Edit Anyway → Release All confirm → mtime reload dialog. Desktop source-read: IPC channel names `secrets:*` and `lfs:fetch`; iOS App-target Keychain plugin in `project.pbxproj` / `packageClassList`. Two-device GitHub lock visibility is manual, not CI.
+Node: endpoint mapping, SSH→HTTPS, 201/409 create, 409 already-ours via verify, verify ours/theirs, invalid verify bodies, unlock/force, pagination and repeated cursors, fake, poll pause (including before start) and non-overlapping ticks, settings normalize, mtime classify. jsdom: settings hidden on web, token not in `project.json`, auto-lock, skip create when already ours, 409 banner, CB `data-lock-state`, Locks **No Locks.** / Release All copy, readonly + Edit Anyway, rename/folder/move refused when theirs, lock transfer pairs, delete unlocks ours, iOS `BabylonSlateSecretsPlugin` in pbxproj + `packageClassList`, foreground dirty warning (`SelectableText` paths). Playwright `e2e/p15-source-control.spec.ts`: Fake enable → edit → mine decoration → Locks count → Edit Anyway → Release All confirm → mtime reload dialog. Desktop source-read: IPC channel names `secrets:*` and `lfs:fetch`; iOS App-target Keychain plugin in `project.pbxproj` / `packageClassList`. Two-device GitHub lock visibility is manual, not CI.
