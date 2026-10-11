@@ -3289,6 +3289,7 @@ function initializeEngine(
         const actorGuid = captureActorSlots.get(command.slotId);
         if (actorGuid) runtimeTransformTools?.actorRemoved(actorGuid, command.slotId);
         if (actorGuid) renderTargetCaptures.removeActor(actorGuid);
+        audioService?.forgetActorSlot(command.actorGuid, command.slotId);
         captureActorSlots.delete(command.slotId);
         runtimeActorIdentities.delete(command.slotId);
         runtimeComponentTokens.delete(command.slotId);

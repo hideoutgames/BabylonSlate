@@ -376,6 +376,11 @@ export class AudioService {
     this.actorSlots.set(actorGuid, slotId);
   }
 
+  /** Despawn: a voice outliving its emitter must not follow the slot's next owner. */
+  forgetActorSlot(actorGuid: string, slotId: number): void {
+    if (this.actorSlots.get(actorGuid) === slotId) this.actorSlots.delete(actorGuid);
+  }
+
   handleCommand(command: CommandMessage): void {
     if (command.type === "stopSound") this.preparingVoices.get(command.voiceId)?.abort(new Error("Audio voice stopped during loading."));
     if (this.disposed) return;
