@@ -5,7 +5,6 @@ export type InputAssetType = (typeof INPUT_ASSET_TYPES)[number];
 export const INPUT_DEVICES = [
   "key",
   "mouseButton",
-  "pointer",
   "gamepadButton",
   "gamepadAxis",
   "touch",
