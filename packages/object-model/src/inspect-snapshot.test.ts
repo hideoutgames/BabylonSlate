@@ -106,6 +106,18 @@ describe("createDebugInspectSnapshot", () => {
     });
   });
 
+  it("lists actors in a parent cycle once each, cutting the link that closes the cycle", () => {
+    const world = createInspectWorld();
+    for (const [guid, parentId] of [["a", "b"], ["b", "a"], ["leaf", "b"], ["self", "self"]] as const) {
+      world.spawnActorNow(world.createActor({ guid, classId: "Actor", variables: { parentId } }));
+    }
+    const nodes = createDebugInspectSnapshot(world).nodes.filter((node) => node.kind === "actor");
+    expect(nodes.map((node) => [node.id, node.parentId])).toEqual([
+      ["a", null], ["b", "a"], ["leaf", "b"], ["self", null],
+    ]);
+    expect(nodes[0]?.variables.parentId).toBe("b");
+  });
+
   it("stamps inherited class metadata from ClassRegistry", () => {
     const world = createInspectWorld();
     expect(

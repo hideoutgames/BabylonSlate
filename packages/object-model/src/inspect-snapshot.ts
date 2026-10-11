@@ -104,10 +104,13 @@ export function sanitizeInspectValue(value: unknown): unknown {
 
 function visitActor(
   actor: Actor,
+  parentId: string | null,
   children: Map<string, Actor[]>,
+  visited: Set<Actor>,
   nodes: DebugInspectNode[],
   world: World,
 ): void {
+  visited.add(actor);
   const variables = sortedSanitizedVariables(actor.variables);
   nodes.push({
     id: actor.guid,
@@ -115,7 +118,7 @@ function visitActor(
     label: inspectLabel(actor.variables, actor.classId),
     classId: actor.classId,
     ancestry: world.classRegistry.ancestry(actor.classId),
-    parentId: actorParentId(actor),
+    parentId,
     transform: serializeTransform(actor.transform),
     variables,
     variableTypes: classVariableTypes(world, actor.classId, variables),
@@ -139,7 +142,7 @@ function visitActor(
     });
   }
   for (const child of children.get(actor.guid) ?? []) {
-    visitActor(child, children, nodes, world);
+    if (!visited.has(child)) visitActor(child, actorParentId(child), children, visited, nodes, world);
   }
 }
 
@@ -188,7 +191,13 @@ export function createDebugInspectSnapshot(world: World): DebugInspectSnapshot {
       roots.push(actor);
     }
   }
-  for (const root of roots) visitActor(root, children, nodes, world);
+  const visited = new Set<Actor>();
+  for (const root of roots) visitActor(root, actorParentId(root), children, visited, nodes, world);
+  // A parent cycle has no root: its first member in spawn order is listed at
+  // the top level (its parent link cut) and the rest nest under it.
+  for (const actor of actors) {
+    if (!visited.has(actor)) visitActor(actor, null, children, visited, nodes, world);
+  }
 
   return {
     tickIndex: world.clock.tickIndex,
