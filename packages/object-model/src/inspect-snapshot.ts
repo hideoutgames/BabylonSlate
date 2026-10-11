@@ -146,6 +146,30 @@ function visitActor(
   }
 }
 
+/** Follows parent links from `start` until they loop; the loop's first-spawned member. */
+function firstSpawnedCycleMember(
+  start: Actor,
+  byGuid: ReadonlyMap<string, Actor>,
+  spawnOrder: ReadonlyMap<Actor, number>,
+): Actor {
+  const path: Actor[] = [];
+  const position = new Map<Actor, number>();
+  let actor = start;
+  while (!position.has(actor)) {
+    position.set(actor, path.length);
+    path.push(actor);
+    const parent = byGuid.get(actorParentId(actor) ?? "");
+    // An actor without a live parent is a root, so this never happens here.
+    if (!parent) return start;
+    actor = parent;
+  }
+  let first = actor;
+  for (const member of path.slice(position.get(actor))) {
+    if (spawnOrder.get(member)! < spawnOrder.get(first)!) first = member;
+  }
+  return first;
+}
+
 function rootObjectNode(
   object: BObject,
   kind: "gameInstance" | "subsystem",
@@ -193,10 +217,13 @@ export function createDebugInspectSnapshot(world: World): DebugInspectSnapshot {
   }
   const visited = new Set<Actor>();
   for (const root of roots) visitActor(root, actorParentId(root), children, visited, nodes, world);
-  // A parent cycle has no root: its first member in spawn order is listed at
-  // the top level (its parent link cut) and the rest nest under it.
+  // Every actor left is in, or hangs off, a parent cycle, which has no root:
+  // the cycle's first member in spawn order is listed at the top level (its
+  // parent link cut) and everything else nests under it.
+  const spawnOrder = new Map(actors.map((actor, index) => [actor, index]));
   for (const actor of actors) {
-    if (!visited.has(actor)) visitActor(actor, null, children, visited, nodes, world);
+    if (visited.has(actor)) continue;
+    visitActor(firstSpawnedCycleMember(actor, byGuid, spawnOrder), null, children, visited, nodes, world);
   }
 
   return {

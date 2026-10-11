@@ -106,10 +106,14 @@ describe("createDebugInspectSnapshot", () => {
     });
   });
 
-  it("lists actors in a parent cycle once each, cutting the link that closes the cycle", () => {
+  it.each([
+    ["cycle first", ["a", "b", "leaf", "self"]],
+    ["descendant first", ["leaf", "a", "b", "self"]],
+  ])("lists actors in a parent cycle once each, rooted at its first-spawned member (%s)", (_order, spawnOrder) => {
     const world = createInspectWorld();
-    for (const [guid, parentId] of [["a", "b"], ["b", "a"], ["leaf", "b"], ["self", "self"]] as const) {
-      world.spawnActorNow(world.createActor({ guid, classId: "Actor", variables: { parentId } }));
+    const parents: Record<string, string> = { a: "b", b: "a", leaf: "b", self: "self" };
+    for (const guid of spawnOrder) {
+      world.spawnActorNow(world.createActor({ guid, classId: "Actor", variables: { parentId: parents[guid] } }));
     }
     const nodes = createDebugInspectSnapshot(world).nodes.filter((node) => node.kind === "actor");
     expect(nodes.map((node) => [node.id, node.parentId])).toEqual([
