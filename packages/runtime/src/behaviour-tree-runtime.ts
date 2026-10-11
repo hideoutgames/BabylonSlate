@@ -52,14 +52,12 @@ interface BehaviourTreeRuntimeHost {
   slot(actor: Actor): number | undefined;
   /** MoveTo tasks steer the actor's crowd agent; Rotate To Face turns it. */
   navigation(): RuntimeNavigation;
-  /** Push an authored pose write to the actor's physics body, as script transform writes do. */
-  teleportActor?(actor: Actor): void;
   /** The main Scene's physics world kind; 2D faces in XY. */
   worldKind(): PhysicsWorldKind;
   seed(): number;
   frameId(): number;
   tickIndex(): number;
-  scripts(): Pick<ScriptHost, "hasClass" | "invokeBtEvent">;
+  scripts(): Pick<ScriptHost, "hasClass" | "invokeBtEvent" | "teleportActor">;
   setSpriteClip(actor: Actor, clip: SpriteClip | null): void;
   actorName(actor: Actor): string;
   recordDiagnostic(diagnostic: RuntimeDiagnostic): void;
@@ -338,7 +336,7 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     actor.transform.rotation.w = quat[3];
     // Trees tick after the physics step: a body must take the new heading too,
     // or its next step writes the old rotation back.
-    this.host.teleportActor?.(actor);
+    this.host.scripts().teleportActor(actor);
     this.host.navigation().faceYaw(actor.guid, yawRad);
     return "success";
   }

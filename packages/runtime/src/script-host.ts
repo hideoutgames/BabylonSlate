@@ -1056,6 +1056,14 @@ export class ScriptHost {
     this.dispatchEvent(loaded, event, self, deltaSeconds, 0, {}, undefined, extras);
   }
 
+  /**
+   * Push an engine task's pose write (Behaviour Tree Rotate To Face) to the
+   * actor's physics body through the same binding script transform writes use.
+   */
+  teleportActor(actor: Actor): void {
+    this.services.teleportActor?.(actor);
+  }
+
   invokeAnimEvent(
     classId: string,
     event: string,

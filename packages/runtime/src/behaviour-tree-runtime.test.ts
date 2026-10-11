@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CommandMessage } from "@babylonslate/bridge";
-import { createActor, createDefaultSceneSettings, type SerializedScene } from "@babylonslate/core";
+import { createActor, createDefaultSceneSettings, quaternionToEulerDegrees, type SerializedScene } from "@babylonslate/core";
 import type { BehaviourTreeDocument, BlackboardDocument } from "@babylonslate/behaviour-tree";
 import { createInProcessRuntime } from "./driver";
 
@@ -97,6 +97,30 @@ describe("BehaviourTreeRuntime", () => {
       tree.setVariable("treeGuid", "tree-1");
       runtime.tick();
       expect(btStates(commands).at(-1)).toMatchObject({ btNodeId: "wait", blackboard: { items: ["pushed"] } });
+    } finally { runtime.stop(); }
+  });
+
+  it("Rotate To Face turns a dynamic physics body so the next step keeps the new heading", async () => {
+    const scene = guardScene();
+    scene.actors[0]!.components.push(
+      { id: "body", classId: "RigidBodyComponent", properties: { motionType: "dynamic", mass: 1, gravityScale: 0 } },
+      { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } } },
+    );
+    const runtime = createInProcessRuntime({
+      seed: 1, maxActors: 4, seedDemoActors: false, preferSoftwarePhysics: true, playScene: scene,
+      behaviourTrees: { "tree-1": { name: "Face", rootId: "root", blackboardGuid: null, nodes: [
+        sequence(["face", "wait"]),
+        task("face", "bt.task.rotateToFace", { target: { x: 1, y: 0, z: 0 } }),
+        task("wait", "bt.task.wait", { durationMs: 2000 }),
+      ] } },
+    });
+    try {
+      await runtime.realizePlayWorld();
+      runtime.start();
+      runtime.tick();
+      runtime.tick();
+      const { rotation } = runtime.getWorld().findActor("guard")!.transform;
+      expect(quaternionToEulerDegrees([rotation.x, rotation.y, rotation.z, rotation.w])[1]).toBeCloseTo(90, 3);
     } finally { runtime.stop(); }
   });
 });
