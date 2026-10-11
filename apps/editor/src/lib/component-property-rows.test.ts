@@ -1333,8 +1333,10 @@ describe("applyPrefabPropertyDefaults", () => {
     const font = text.rows.find((row) => row.id.endsWith("-fontAssetGuid"));
     expect(font?.kind).toBe("asset");
     if (font?.kind === "asset") font.onChange(null);
-    expect(text.update).toHaveBeenCalledWith("fontAssetGuid", null);
-    expect(text.update).toHaveBeenCalledWith("renderer", "bitmap");
+    // One write: Details applies each update to its render snapshot, so a
+    // separate renderer write would restore the cleared font.
+    expect(text.update).toHaveBeenCalledOnce();
+    expect(text.update).toHaveBeenCalledWith("fontAssetGuid", null, { renderer: "bitmap" });
   });
 });
 

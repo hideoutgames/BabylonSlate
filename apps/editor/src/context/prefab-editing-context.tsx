@@ -63,10 +63,12 @@ interface PrefabEditingContextValue {
     targetId: string | null,
     placement?: TreeDropPlacement,
   ) => void;
+  /** Writes one Details property plus any coupled `alsoSet` properties as one edit. */
   updateComponent: (
     componentId: string,
     property: string,
     value: unknown,
+    alsoSet?: Readonly<Record<string, unknown>>,
   ) => void;
   /** Sets the display name; undefined restores the class label. */
   renameComponent: (componentId: string, name: string | undefined) => void;
@@ -363,7 +365,12 @@ export function PrefabEditingProvider({
   );
 
   const updateComponent = useCallback(
-    (componentId: string, property: string, value: unknown) => {
+    (
+      componentId: string,
+      property: string,
+      value: unknown,
+      alsoSet?: Readonly<Record<string, unknown>>,
+    ) => {
       if (property === "sceneGuid" && components.some((component) => component.id === componentId && component.classId === "SceneStreamingComponent")) {
         const guid = typeof value === "string" ? value : null;
         upsertLocalFromViews(setSceneStreamingTarget(components, componentId, guid, guid ? assetRegistry?.getByGuid(guid)?.header.name ?? "" : ""));
@@ -374,11 +381,14 @@ export function PrefabEditingProvider({
           component.id === componentId
             ? {
                 ...component,
-                properties: patchInspectorComponentProperty(
-                  component,
-                  property,
-                  value,
-                ),
+                properties: {
+                  ...patchInspectorComponentProperty(
+                    component,
+                    property,
+                    value,
+                  ),
+                  ...alsoSet,
+                },
               }
             : component,
         ),

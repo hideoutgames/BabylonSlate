@@ -535,11 +535,22 @@ function sortingLayerRow(
   };
 }
 
+/**
+ * Writes one Details property. `alsoSet` carries coupled properties that must
+ * land in the same edit; callers apply every write to their render snapshot,
+ * so a second call would discard the first.
+ */
+export type ComponentPropertyUpdate = (
+  property: string,
+  value: unknown,
+  alsoSet?: Readonly<Record<string, unknown>>,
+) => void;
+
 /** Typed Details rows for a serialized component (asset picks, physics flatten). */
 export function componentPropertyRows(
   actorId: string,
   component: SerializedComponent,
-  update: (property: string, value: unknown) => void,
+  update: ComponentPropertyUpdate,
   context: ComponentPropertyContext,
 ): PropertyRow[] {
   if (component.classId === "SaveGameComponent") return saveGamePropertyRows(actorId, component, update, context);
@@ -1784,14 +1795,15 @@ export function componentPropertyRows(
         "Pick Font",
       ) as Extract<PropertyRow, { kind: "asset" }>;
       const coerceRendererOnFontChange = (next: string | null) => {
-        update("fontAssetGuid", next);
         const guid = typeof next === "string" && next.trim() ? next.trim() : null;
         const pair = Boolean(
           guid && context.fontHasMsdfJson?.(guid) && context.fontHasMsdfPng?.(guid),
         );
-        if (!pair && parsed.renderer === "msdf") {
-          update("renderer", "bitmap");
-        }
+        update(
+          "fontAssetGuid",
+          next,
+          !pair && parsed.renderer === "msdf" ? { renderer: "bitmap" } : undefined,
+        );
       };
       const msdfStyleNote =
         rendererValue === "msdf"

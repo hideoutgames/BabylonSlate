@@ -105,6 +105,7 @@ import {
   componentPropertyRows,
   subclassClassEntries,
   type AssetPickRequest,
+  type ComponentPropertyUpdate,
 } from "../lib/component-property-rows";
 import { JsBodyEditor } from "../components/js-body-editor";
 import { GlslCodePreview } from "../components/glsl-code-preview";
@@ -912,7 +913,7 @@ function PrefabComponentDetails({
   fontHasFacetype?: (guid: string | null | undefined) => boolean;
   fontHasMsdfJson?: (guid: string | null | undefined) => boolean;
   fontHasMsdfPng?: (guid: string | null | undefined) => boolean;
-  onUpdate: (property: string, value: unknown) => void;
+  onUpdate: ComponentPropertyUpdate;
   onUpdateTransform: (transform: SerializedTransform) => void;
 }) {
   const { assetRegistry, registryEpoch } = useRegistryState();
@@ -1050,17 +1051,13 @@ function PrefabComponentDetails({
         onPick={(guid) => {
           if (!assetPick) return;
           if (guid && assetPick.materialDomain === "text" && materialDomains[guid] !== "text") return;
-          onUpdate(assetPick.property, guid);
-          if (
+          // A Font without an MSDF pair stores Bitmap in the same edit as the Font.
+          const bitmapFont =
             assetPick.property === "fontAssetGuid" &&
             (component.classId === "2DTextComponent" ||
-              component.classId === "2DRichTextComponent")
-          ) {
-            const pair = Boolean(
-              guid && fontHasMsdfJson?.(guid) && fontHasMsdfPng?.(guid),
-            );
-            if (!pair) onUpdate("renderer", "bitmap");
-          }
+              component.classId === "2DRichTextComponent") &&
+            !(guid && fontHasMsdfJson?.(guid) && fontHasMsdfPng?.(guid));
+          onUpdate(assetPick.property, guid, bitmapFont ? { renderer: "bitmap" } : undefined);
           setAssetPick(null);
         }}
         data-testid="inspector-prefab-asset-picker"
@@ -1424,8 +1421,8 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
           fontHasFacetype={fontHasFacetype}
           fontHasMsdfJson={fontHasMsdfJson}
           fontHasMsdfPng={fontHasMsdfPng}
-          onUpdate={(property, value) =>
-            updateComponent(selectedPrefabComponent.id, property, value)
+          onUpdate={(property, value, alsoSet) =>
+            updateComponent(selectedPrefabComponent.id, property, value, alsoSet)
           }
           onUpdateTransform={(transform) =>
             updateComponentTransform(selectedPrefabComponent.id, transform)
