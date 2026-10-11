@@ -33,4 +33,9 @@ describe("isPlayEngineCommandType", () => {
   it("routes bone attachments to both Play engine hosts", () => {
     expect(isPlayEngineCommandType("attachToBone")).toBe(true);
   });
+
+  it("delivers cable frames and live voice gain changes to the Play engine", () => {
+    expect(isPlayEngineCommandType("cableFrame")).toBe(true);
+    expect(isPlayEngineCommandType("setVoiceGain")).toBe(true);
+  });
 });
