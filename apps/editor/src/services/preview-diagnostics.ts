@@ -12,6 +12,13 @@ export function createPreviewDiagnostics(options: {
 }) {
   let retained: PerformanceProfile | null = null;
   let profileActive = false;
+  /** Why the latest recording delivered no profile; its transfer ended the recording. */
+  let profileFailure: string | null = null;
+  const failProfile = (reason: string) => {
+    profileActive = false;
+    profileFailure = reason;
+    options.onError(reason);
+  };
   let starting: Promise<PreviewDiagnosticResult> | null = null;
   let closing: Promise<void> | null = null;
   let disposed = false;
@@ -29,13 +36,13 @@ export function createPreviewDiagnostics(options: {
       const gpu = transfer.metadata.gpu as Record<string, unknown> | undefined;
       const profile = parsePerformanceProfile({ ...transfer.metadata,
         frames: { ...frames, chunks: transfer.frames }, ticks: { ...ticks, chunks: transfer.ticks },
-        ...(gpu ? { gpu: { ...gpu, chunks: transfer.gpu ?? [] } } : {}) });
-      if (!profile) { options.onError("Preview returned an invalid or incomplete performance profile."); return; }
+        gpu: { ...gpu, chunks: transfer.gpu ?? [] } });
+      if (!profile) { failProfile("Preview returned an invalid or incomplete performance profile."); return; }
       retained = profile;
       profileActive = false;
       options.onProfile(profile);
     },
-    onError: options.onError,
+    onError: failProfile,
   });
   const receive = (event: MessageEvent) => client.receive(event);
   window.addEventListener("message", receive);
@@ -57,18 +64,23 @@ export function createPreviewDiagnostics(options: {
     startProfile(settings: { durationMs?: number; byteBudget?: number; gpuTiming?: boolean } = {}): Promise<PreviewDiagnosticResult> {
       if (closing || disposed || starting || profileActive) return Promise.resolve({ success: false, reason: "Preview diagnostics are unavailable or already recording." });
       profileActive = true;
+      profileFailure = null;
+      retained = null;
       starting = client.request("profile-start", settings).then((result) => {
         if (!result.success) profileActive = false;
         return result;
       }).finally(() => { starting = null; });
       return starting;
     },
+    /** The player publishes the profile before it answers Stop, so a failed transfer is known here. */
     async stopProfile(): Promise<PreviewDiagnosticResult> {
       await starting;
-      if (!profileActive) return { success: true };
-      const reply = await client.request("profile-stop");
-      if (reply.success) profileActive = false;
-      return reply;
+      if (profileActive) {
+        const reply = await client.request("profile-stop");
+        if (!reply.success) return reply;
+        profileActive = false;
+      }
+      return profileFailure ? { success: false, reason: profileFailure } : { success: true };
     },
     async captureFrame(): Promise<RenderFrameReport> {
       if (closing || disposed) throw new Error("Preview diagnostics are closing.");
