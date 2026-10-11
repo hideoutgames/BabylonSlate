@@ -192,7 +192,6 @@ export function TilemapDetails({
     tilemap.layers[0]?.id ?? "layer-1",
   );
   const editing = useOptionalTilemapEditing();
-  const { loadAssetDocument } = useDocumentActions();
   const { projectDocument } = useProjectState();
   const assets = useRegistryPickerAssets();
   const sortingLayers = projectDocument?.settings.twoD.sortingLayers ?? [
@@ -222,24 +221,14 @@ export function TilemapDetails({
     }, field ? `layer:${layer.id}:${field}` : undefined);
   };
 
+  const addTilesetToLatest = useAddTileset(tilemap, loadPayloads, assets);
   const addTileset = async (guid: string | null) => {
-    if (!guid) return;
-    const asset = assets.find((entry) => entry.guid === guid);
-    const raw =
-      asset && loadAssetDocument
-        ? await loadAssetDocument("tileset", asset.path)
-        : {};
-    const next = addTilemapTileset(
-      tilemap,
-      guid,
-      normalizeTilesetPayload(raw ?? {}),
-      await loadPayloads(),
-    );
-    const added = next.tilesets[next.tilesets.length - 1];
-    if (added && editing && tilemap.tilesets.length === 0) {
-      editing.setSelectedTile({ guid: added.guid, localId: 1 });
+    const result = await addTilesetToLatest(guid);
+    if (!result) return;
+    if (result.added && editing && result.base.tilesets.length === 0) {
+      editing.setSelectedTile({ guid: result.added.guid, localId: 1 });
     }
-    commit(next);
+    commit(result.next);
   };
 
   const mapRows: PropertyRow[] = [
@@ -514,27 +503,16 @@ export function TilemapPalette({
   const editing = useOptionalTilemapEditing();
   const [query, setQuery] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
-  const { loadAssetDocument } = useDocumentActions();
   const atlases = useTilesetAtlases(payloads);
   const assets = useRegistryPickerAssets();
   const needle = query.trim().toLowerCase();
 
+  const addTilesetToLatest = useAddTileset(tilemap, loadPayloads, assets);
   const addTileset = async (guid: string | null) => {
-    if (!guid) return;
-    const asset = assets.find((entry) => entry.guid === guid);
-    const raw =
-      asset && loadAssetDocument
-        ? await loadAssetDocument("tileset", asset.path)
-        : {};
-    const next = addTilemapTileset(
-      tilemap,
-      guid,
-      normalizeTilesetPayload(raw ?? {}),
-      await loadPayloads(),
-    );
-    const added = next.tilesets[next.tilesets.length - 1];
-    if (added) editing?.setSelectedTile({ guid: added.guid, localId: 1 });
-    onChange?.(next as unknown as Record<string, unknown>);
+    const result = await addTilesetToLatest(guid);
+    if (!result) return;
+    if (result.added) editing?.setSelectedTile({ guid: result.added.guid, localId: 1 });
+    onChange?.(result.next as unknown as Record<string, unknown>);
   };
 
   if (tilemap.tilesets.length === 0) {
@@ -703,7 +681,6 @@ export function TilemapPaint({
   const shown = strokePreview ?? tilemap;
   const viewRef = useRef({ pan, cellSize });
   viewRef.current = { pan, cellSize };
-  const { loadAssetDocument } = useDocumentActions();
   const atlases = useTilesetAtlases(payloads);
   const layer =
     tilemap.layers.find((entry) => entry.id === layerId) ?? tilemap.layers[0];
@@ -861,26 +838,16 @@ export function TilemapPaint({
     setStrokePreview(painted);
   };
 
+  const addTilesetToLatest = useAddTileset(tilemap, loadPayloads, assets);
   const addTileset = async (guid: string | null) => {
-    if (!guid) return;
-    const asset = assets.find((entry) => entry.guid === guid);
-    const raw =
-      asset && loadAssetDocument
-        ? await loadAssetDocument("tileset", asset.path)
-        : {};
-    const next = addTilemapTileset(
-      tilemap,
-      guid,
-      normalizeTilesetPayload(raw ?? {}),
-      await loadPayloads(),
-    );
-    const added = next.tilesets[next.tilesets.length - 1];
-    if (added) {
-      const tile = { guid: added.guid, localId: 1 };
+    const result = await addTilesetToLatest(guid);
+    if (!result) return;
+    if (result.added) {
+      const tile = { guid: result.added.guid, localId: 1 };
       if (editing) editing.setSelectedTile(tile);
       else setLocalTile(tile);
     }
-    onChange(next as unknown as Record<string, unknown>);
+    onChange(result.next as unknown as Record<string, unknown>);
   };
 
   if (tilemap.tilesets.length === 0) {
@@ -1319,6 +1286,33 @@ function useLoadedTilesets(
   return { payloads, loadPayloads };
 }
 
+/**
+ * Adds a picked Tileset. The Tileset document and the referenced Tilesets load
+ * first, so the edit is built on the tilemap as it is when they finish rather
+ * than on the render that opened the picker. Returns that base with the edit.
+ */
+function useAddTileset(
+  tilemap: TilemapPayload,
+  loadPayloads: ReturnType<typeof useLoadedTilesets>["loadPayloads"],
+  assets: ReturnType<typeof useRegistryPickerAssets>,
+) {
+  const { loadAssetDocument } = useDocumentActions();
+  const latestRef = useRef({ tilemap, loadPayloads });
+  latestRef.current = { tilemap, loadPayloads };
+  return async (guid: string | null) => {
+    if (!guid) return null;
+    const asset = assets.find((entry) => entry.guid === guid);
+    const raw =
+      asset && loadAssetDocument
+        ? await loadAssetDocument("tileset", asset.path)
+        : {};
+    const known = await latestRef.current.loadPayloads();
+    const base = latestRef.current.tilemap;
+    const next = addTilemapTileset(base, guid, normalizeTilesetPayload(raw ?? {}), known);
+    return { base, next, added: next.tilesets[next.tilesets.length - 1] };
+  };
+}
+
 function useTilesetAtlases(
   payloads: ReadonlyMap<string, TilesetPayload>,
 ): ReadonlyMap<string, HTMLImageElement> {
@@ -1341,6 +1335,8 @@ function useTilesetAtlases(
           : undefined;
         if (!texture || !readAssetChunk) continue;
         const bytes = await readAssetChunk(texture.path, "pixels");
+        // Cleanup may have run during the read; a URL made now would leak.
+        if (cancelled) return;
         if (!bytes || bytes.byteLength === 0) continue;
         const objectUrl = URL.createObjectURL(
           new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "image/png" }),

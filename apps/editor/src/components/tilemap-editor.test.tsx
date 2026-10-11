@@ -11,6 +11,7 @@ import {
   normalizeTilemapPayload,
   setTile,
   type TilemapPayload,
+  type TilesetPayload,
 } from "@babylonslate/assets";
 import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
 import { TilemapEditingProvider } from "../context/tilemap-editing-context";
@@ -296,6 +297,30 @@ describe("TilemapDetails", () => {
     ]);
     expect(next.tilesets[1]?.firstGid).toBe(3);
   });
+
+  it("adds a tileset to the map as edited while that tileset loads", async () => {
+    let finishProps!: (tileset: TilesetPayload) => void;
+    loadAssetDocument.mockImplementation((_kind: string, path: string) =>
+      path === PROPS_PATH
+        ? new Promise((resolve) => { finishProps = resolve; })
+        : Promise.resolve(path === GROUND_PATH ? twoTileTileset() : null),
+    );
+    const onChange = vi.fn();
+    const view = render(
+      <TilemapDetails payload={mapWithGround() as unknown as Record<string, unknown>} onChange={onChange} />,
+    );
+    fireEvent.click(screen.getByTestId("tilemap-tilesets-add"));
+    fireEvent.click(await screen.findByTestId("search-item-ts-props"));
+    await waitFor(() => expect(loadAssetDocument).toHaveBeenCalledWith("tileset", PROPS_PATH));
+    view.rerender(
+      <TilemapDetails payload={{ ...mapWithGround(), width: 8 } as unknown as Record<string, unknown>} onChange={onChange} />,
+    );
+    await act(async () => finishProps(twoTileTileset()));
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+    const next = onChange.mock.calls.at(-1)?.[0] as TilemapPayload;
+    expect(next.width).toBe(8);
+    expect(next.tilesets.map((ref) => ref.guid)).toEqual(["ts-ground", "ts-props"]);
+  });
 });
 
 describe("TilemapPalette", () => {
@@ -315,6 +340,25 @@ describe("TilemapPalette", () => {
     );
     expect(loadAssetDocument).toHaveBeenCalledWith("tileset", GROUND_PATH);
     expect(readAssetChunk).toHaveBeenCalledWith("assets/Atlas.texture.babasset", "pixels");
+  });
+
+  it("revokes every atlas URL when it closes while an atlas is still loading", async () => {
+    let finishAtlas!: (bytes: Uint8Array) => void;
+    readAssetChunk.mockImplementationOnce(() => new Promise((resolve) => { finishAtlas = resolve; }));
+    const createUrl = vi.spyOn(URL, "createObjectURL").mockImplementation(() => "blob:atlas");
+    const revokeUrl = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    try {
+      const view = render(<TilemapPalette payload={mapWithGround() as unknown as Record<string, unknown>} />);
+      await waitFor(() => expect(readAssetChunk).toHaveBeenCalled());
+      view.unmount();
+      await act(async () => finishAtlas(new Uint8Array([137, 80, 78, 71])));
+      expect(revokeUrl.mock.calls.map(([url]) => url)).toEqual(
+        createUrl.mock.results.map((result) => result.value),
+      );
+    } finally {
+      createUrl.mockRestore();
+      revokeUrl.mockRestore();
+    }
   });
 });
 
