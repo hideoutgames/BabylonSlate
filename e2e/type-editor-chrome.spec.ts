@@ -169,6 +169,8 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     ).toBeVisible();
     await dragClassMemberOntoGraph(page, "Target");
     await page.getByTestId("member-access-validated-get").click();
+    // Until the chooser has closed, its backdrop takes the next drag's raw mouse press.
+    await expect(page.getByTestId("member-access-chooser")).toHaveCount(0);
     await expect(nodes).toHaveCount(baseline + 2);
     await expect(graph.getByText("Validated Get Target")).toBeVisible();
     await dragClassMemberOntoGraph(page, "Target");
