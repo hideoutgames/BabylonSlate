@@ -54,8 +54,9 @@ describe("node storage adapter", () => {
     await storage.writeText("project.json", "{}");
     expect(await storage.exists("missing.json")).toBe(false);
     expect(await storage.exists("project.json/child")).toBe(false);
-    for (const missing of [storage.readText("missing.json"), storage.stat("missing.json"), storage.remove("missing.json"), storage.readdir("missing")]) {
-      const error = await missing.catch((caught: unknown) => caught);
+    // Start each operation only when its rejection is awaited, so none is unhandled meanwhile.
+    for (const missing of [() => storage.readText("missing.json"), () => storage.stat("missing.json"), () => storage.remove("missing.json"), () => storage.readdir("missing")]) {
+      const error = await missing().catch((caught: unknown) => caught);
       expect(isStorageNotFound(error)).toBe(true);
     }
     await expect(storage.readText("missing.json")).rejects.toThrow("File not found: missing.json");
