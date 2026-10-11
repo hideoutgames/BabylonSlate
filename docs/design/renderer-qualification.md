@@ -1278,7 +1278,7 @@ not that per-view sizing contract.
 
 Future A16 qualification should cover empty, representative authored, many objects/instances, many lights, dense overlap, animated characters, and repeated selection/inspector/gizmo interaction runs in editor and standalone player. Existing performance-room tooling below covers only part of that matrix. Direct GPU timer values must be distinguished from estimates; unavailable measurements stay unavailable. Do not derive universal actor/light counts or treat reduced resolution as equal-quality savings.
 
-**Existing sustained route: tooling landed, runs pending.** The route (`e2e/play-sustained-route.spec.ts`, `BL_PERF_SUSTAINED=1`) enumerates on CI and skips without the env flag; no machine with enough free memory has completed a full session yet. Nothing on this page is A16/iOS PWA qualification — desktop Chromium observations only. Budgets live in [perf-budget.md](perf-budget.md); the engine-level design is in [render.md](../architecture/render.md).
+**Existing sustained route: tooling landed, runs pending.** The route (`e2e/play-sustained-route.spec.ts`, `BL_PERF_SUSTAINED=1`) is excluded from CI and skips without the env flag under `playwright.perf.config.ts`; no machine with enough free memory has completed a full session yet. Nothing on this page is A16/iOS PWA qualification — desktop Chromium observations only. Budgets live in [perf-budget.md](perf-budget.md); the engine-level design is in [render.md](../architecture/render.md).
 ## Model and generated-text lifetime follow-up
 
 The physical A16 run is waived for this follow-up at the user's request. Acceptance still requires the local native and browser checks below; unexecuted fixtures are not evidence and no device-performance result is claimed.
@@ -1413,7 +1413,7 @@ The first three selectors cover `bef1b987`'s five material-admission cases, `ae6
 
 After those corrections pass, resume only their affected consumers from the architecture notes, including `material-parameters.test.ts`, `resource-cache-upload.test.ts`, `snapshot-apply.test.ts`, `editor-scene-sync.chunks.test.ts` and `scene-loader.test.ts`, then scoped static and browser segments. Browser runs must report requested/effective backend and driver. Software WebGPU is a local correctness result; fallback does not pass a WebGPU gate. Real packaged Havok is required for collider/teleport acceptance, and browser emission/readback remains required for GPU particle behavior.
 
-Sustained-route status: **tooling landed, runs pending.** The sustained route (`e2e/play-sustained-route.spec.ts`, `BL_PERF_SUSTAINED=1`) enumerates on CI and skips without the env flag; no machine with enough free memory has completed a full session yet. Its browser observations are desktop Chromium only; nothing on this page establishes A16/iOS PWA qualification. Budgets live in [perf-budget.md](perf-budget.md); the engine-level design is in [render.md](../architecture/render.md).
+Sustained-route status: **tooling landed, runs pending.** The sustained route (`e2e/play-sustained-route.spec.ts`, `BL_PERF_SUSTAINED=1`) is excluded from CI and skips without the env flag under `playwright.perf.config.ts`; no machine with enough free memory has completed a full session yet. Its browser observations are desktop Chromium only; nothing on this page establishes A16/iOS PWA qualification. Budgets live in [perf-budget.md](perf-budget.md); the engine-level design is in [render.md](../architecture/render.md).
 
 ### Historical rendering integration checkpoint
 
@@ -1425,7 +1425,7 @@ No tests, static checks, build, dependency installation or browser runs were per
 
 ## Coverage matrix
 
-"CI" means the standard e2e suite (Chromium, SwiftShader/software WebGPU via `SOFTWARE_WEBGPU_ARGS`). "Local-only (env gate)" specs enumerate but skip without their flag. "Unit" means Vitest coverage with no browser run.
+"CI" means the standard e2e suite on headless Chromium with software WebGL2; `playwright.config.ts` sets no launch arguments, so each spec that needs WebGPU (and several WebGL2 renderer smokes) opts into SwiftShader software WebGPU with `test.use` and `SOFTWARE_WEBGPU_ARGS`. "Local-only (env gate)" routes are excluded from that suite and run only through `playwright.perf.config.ts`, where they skip without their flag. "Unit" means Vitest coverage with no browser run.
 
 ### Backend
 
@@ -1502,7 +1502,7 @@ BL_PERF_SUSTAINED=1 BL_PERF_QUALITY=low pnpm run test:e2e e2e/play-sustained-rou
 
 | Env | Default | Effect |
 | --- | --- | --- |
-| `BL_PERF_SUSTAINED` | off | `1` opts in; otherwise the spec skips (CI no-op) |
+| `BL_PERF_SUSTAINED` | off | `1` opts in; otherwise the spec skips (CI never lists it) |
 | `BL_PERF_SUSTAINED_MINUTES` | `20` | Sampled duration **per host** after warm-up |
 | `BL_PERF_SUSTAINED_WARMUP_MS` | `60000` | Warm-up per host before sampling |
 | `BL_PERF_SAMPLE_MS` | `30000` | Window length |
