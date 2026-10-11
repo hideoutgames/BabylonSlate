@@ -203,9 +203,9 @@ const PlayContext = createContext<PlayContextValue | null>(null);
 const OutputLogContext = createContext<{ lines: string[] }>({ lines: [] });
 const LiveBtStateContext = createContext<LiveBtState | null>(null);
 type PlayDiagnosticsActions = Pick<PlayContextValue, "appendLog" | "reportBtState"> & {
-  /** Counts an open Output Log window until the returned release runs. */
-  openOutputLogWindow: () => () => void;
-  outputLogWindowOpen: () => boolean;
+  /** Counts a visible Output Log window until the returned release runs. */
+  showOutputLogWindow: () => () => void;
+  outputLogWindowVisible: () => boolean;
 };
 const PlayDiagnosticsActionsContext = createContext<PlayDiagnosticsActions | null>(null);
 
@@ -221,11 +221,11 @@ function PlayDiagnosticsProvider({ children }: { children: ReactNode }) {
     () => ({
       appendLog,
       reportBtState: setLiveBtState,
-      openOutputLogWindow: () => {
+      showOutputLogWindow: () => {
         outputLogWindows.current += 1;
         return () => { outputLogWindows.current -= 1; };
       },
-      outputLogWindowOpen: () => outputLogWindows.current > 0,
+      outputLogWindowVisible: () => outputLogWindows.current > 0,
     }),
     [appendLog],
   );
@@ -252,7 +252,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
 }
 
 function PlaySessionProvider({ children }: { children: ReactNode }) {
-  const { appendLog, reportBtState, outputLogWindowOpen } = useContext(PlayDiagnosticsActionsContext)!;
+  const { appendLog, reportBtState, outputLogWindowVisible } = useContext(PlayDiagnosticsActionsContext)!;
   const { settings: appSettings, updateDebuggerDefaults } = useAppSettings();
   const engineRef = useRef<AbstractEngine | null>(null);
   const providerMountRef = useRef(0);
@@ -1424,8 +1424,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         if (!sessionOwner.isCurrent(ticket)) return;
         const reason = error instanceof Error ? error.message : String(error);
         appendLog(`Play preparation failed: ${reason}`);
-        // With no Output Log window open, the log line alone would go unseen.
-        if (!outputLogWindowOpen()) setPlayFailure({ simulating, reason });
+        // With no Output Log window visible, the log line alone would go unseen.
+        if (!outputLogWindowVisible()) setPlayFailure({ simulating, reason });
         setPrepareState(null);
         setScripts([]);
       } finally {
@@ -1438,7 +1438,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     },
     [
       appendLog,
-      outputLogWindowOpen,
+      outputLogWindowVisible,
       launchPlay,
       playFromScene,
       sessionOwner,
@@ -1925,12 +1925,13 @@ export function useOutputLog(): { lines: string[] } {
 }
 
 /**
- * Marks an Output Log window as open while the caller is mounted. Play reports
- * a preparation failure in a dialog only while no such window is open.
+ * Marks an Output Log window as visible while the caller is mounted and
+ * `visible`. Play reports a preparation failure in a dialog only while no
+ * Output Log window is visible.
  */
-export function useOutputLogWindow(): void {
+export function useOutputLogWindow(visible: boolean): void {
   const actions = useContext(PlayDiagnosticsActionsContext);
-  useEffect(() => actions?.openOutputLogWindow(), [actions]);
+  useEffect(() => (visible ? actions?.showOutputLogWindow() : undefined), [actions, visible]);
 }
 
 /** Subscribe only the behaviour-tree debugger to live snapshots. */
