@@ -11,13 +11,14 @@ import {
   TREE_ROW_HEIGHT,
   WindowedList,
 } from "@babylonslate/editor-kit";
-import { useOutputLog } from "../context/play-context";
+import { useOutputLog, useOutputLogWindow } from "../context/play-context";
 import { MessageDetails } from "../components/message-details";
 import { parseOutputLogLine } from "../lib/output-log-line";
 import { useCoarsePointer } from "../shell/use-platform-layout";
 
 export function OutputLogPanel(_props: IDockviewPanelProps) {
   void _props;
+  useOutputLogWindow();
   const { lines } = useOutputLog();
   const coarsePointer = useCoarsePointer();
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);

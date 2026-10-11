@@ -8,6 +8,7 @@ const lines = Array.from({ length: 500 }, (_, i) => `log line ${i}`);
 
 vi.mock("../context/play-context", () => ({
   useOutputLog: () => ({ lines }),
+  useOutputLogWindow: () => {},
 }));
 
 const VIEWPORT = '[data-slot="scroll-area-viewport"]';

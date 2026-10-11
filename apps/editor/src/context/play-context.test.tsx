@@ -1,6 +1,8 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import type { IDockviewPanelProps } from "dockview-react";
 import { createDefaultScene, engineCommandBus } from "@babylonslate/core";
+import { OutputLogPanel } from "../panels/output-log-panel";
 import {
   PlayProvider,
   useLiveBtState,
@@ -231,6 +233,32 @@ it("keeps Play stopped and the preparation error visible even with fixture injec
   expect(controls.preparing).toBe(false);
   expect(screen.queryByTestId("play-prepare-dialog")).toBeNull();
   expect(screen.getByTestId("logs").textContent).toBe("Play preparation failed: No project catalog is available.");
+});
+
+it("shows a Play preparation failure in a dialog only while no Output Log window is open", async () => {
+  const scene = {
+    id: "scene:assets/Main.scene.babasset",
+    ref: { kind: "scene", path: "assets/Main.scene.babasset", label: "Main" },
+    content: createDefaultScene(),
+    dirty: false,
+  };
+  host.documents = { ...host.noProject, openDocuments: [scene], activeDocumentId: scene.id };
+  let controls!: ReturnType<typeof usePlay>;
+  function Controls() { controls = usePlay(); return null; }
+  const view = render(<PlayProvider><Controls /><OutputLogPanel {...({} as IDockviewPanelProps)} /></PlayProvider>);
+
+  await act(async () => { await controls.requestPlay(); });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.getByTestId("output-log-panel").textContent).not.toContain("No Log Output");
+
+  // Without an Output Log window (no Scene open, or the window closed) the log line is unseen.
+  view.rerender(<PlayProvider><Controls /></PlayProvider>);
+  await act(async () => { await controls.requestPlay(); });
+  const failure = screen.getByRole("dialog", { name: "Play Failed" });
+  expect(failure.textContent).toContain("No project catalog is available.");
+  expect(controls.playing).toBe(false);
+  await act(async () => { fireEvent.click(within(failure).getByRole("button", { name: "Close" })); });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 });
 
 it("cancels or plays without saving from the Unsaved Changes prompt", async () => {
