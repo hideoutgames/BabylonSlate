@@ -52,7 +52,6 @@ export const docsSidebar: SidebarItem[] = [
   },
   {
     text: "Design",
-    link: "/design/",
     collapsed: false,
     items: [
       { text: "Performance budget", link: "/design/perf-budget" },

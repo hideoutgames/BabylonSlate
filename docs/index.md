@@ -30,7 +30,7 @@ features:
     link: /architecture/overview
     linkText: Browse architecture
   - title: Design
-    details: A16 iPad performance budget, renderer qualification, touch gesture contracts, and particle emitters.
-    link: /design/
-    linkText: Design notes
+    details: A16 iPad performance budget and render rules.
+    link: /design/perf-budget
+    linkText: Read the budget
 ---
