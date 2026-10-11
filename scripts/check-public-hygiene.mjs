@@ -9,11 +9,14 @@
 //
 // Usage:
 //   node scripts/check-public-hygiene.mjs                 # tracked files at HEAD
-//   node scripts/check-public-hygiene.mjs --range A...B    # + lines added in a range
+//   node scripts/check-public-hygiene.mjs --range A..B     # + lines each commit in A..B adds
+//   node scripts/check-public-hygiene.mjs --event E.json   # + issue/pull-request event text
+//   node scripts/check-public-hygiene.mjs --commits A..B   # + commit messages
 
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { extname } from "node:path";
+import { pathToFileURL } from "node:url";
 
 /**
  * Files that legitimately contain the patterns below, because they define or
@@ -41,7 +44,6 @@ const binaryExtensions = new Set([
   ".otf",
   ".pdf",
   ".png",
-  ".svg",
   ".ttf",
   ".wasm",
   ".wav",
@@ -107,8 +109,10 @@ export const contentRules = [
     // A team ID or profile UUID identifies the developer account and is never
     // needed for a simulator build; see SECURITY.md. A complete quoted Xcode
     // variable reference carries no identifier; literal prefixes/suffixes do.
+    // Conditional settings such as `"DEVELOPMENT_TEAM[sdk=iphoneos*]" = …` are
+    // checked like the plain setting.
     regex:
-      /\b(?:DEVELOPMENT_TEAM|PROVISIONING_PROFILE|PROVISIONING_PROFILE_SPECIFIER)\b\s*=\s*(?!""|;|"\$\([A-Za-z_][A-Za-z0-9_]*\)"\s*(?:;|$))\S/,
+      /\b(?:DEVELOPMENT_TEAM|PROVISIONING_PROFILE|PROVISIONING_PROFILE_SPECIFIER)\b(?:\[[^\]\n]*\])*"?\s*=\s*(?!""|;|"\$\([A-Za-z_][A-Za-z0-9_]*\)"\s*(?:;|$))\S/,
     hint: "Keep signing identifiers in a local, gitignored .xcconfig.",
   },
 ];
@@ -181,22 +185,20 @@ export function scanPath(path) {
     .map((rule) => ({ path, line: 0, rule: rule.id, hint: rule.hint }));
 }
 
-function git(args, cwd) {
-  return execFileSync("git", args, {
-    cwd,
-    encoding: "utf8",
-    maxBuffer: 64 * 1024 * 1024,
-  });
+function git(args, cwd, maxBuffer = 64 * 1024 * 1024) {
+  return execFileSync("git", args, { cwd, encoding: "utf8", maxBuffer });
 }
 
 export function trackedFiles(cwd) {
   return git(["ls-files", "-z"], cwd).split("\0").filter(Boolean);
 }
 
-export function isProbablyBinary(path, text) {
-  return (
-    binaryExtensions.has(extname(path).toLowerCase()) || text.includes("\0")
-  );
+/**
+ * Only known binary formats skip content rules. Text that merely contains a NUL
+ * byte (or an SVG) is still scanned, so a link cannot hide behind one.
+ */
+export function isProbablyBinary(path) {
+  return binaryExtensions.has(extname(path).toLowerCase());
 }
 
 export function scanTrackedFiles(cwd) {
@@ -210,7 +212,7 @@ export function scanTrackedFiles(cwd) {
       // Submodules and files removed from the working tree have nothing to scan.
       continue;
     }
-    if (isProbablyBinary(path, text)) {
+    if (isProbablyBinary(path)) {
       continue;
     }
     violations.push(...scanText(path, text));
@@ -218,24 +220,76 @@ export function scanTrackedFiles(cwd) {
   return violations;
 }
 
-/** Scans only lines a range *adds*, so pre-existing findings don't block a PR. */
+/**
+ * Scans the lines each commit in `A..B` adds (`A...B` is read the same way), so
+ * pre-existing findings don't block a PR, while content added by one commit and
+ * removed by a later one is still caught. NUL-containing text is diffed as text;
+ * known binary formats are left out.
+ */
 export function scanAddedLines(range, cwd) {
-  const diff = git(
-    ["diff", "--unified=0", "--no-color", "--diff-filter=ACMR", range],
+  const commits = git(
+    ["rev-list", "--reverse", "--no-merges", range.replace("...", "..")],
     cwd,
+  )
+    .split("\n")
+    .filter(Boolean);
+  return commits.flatMap((commit) =>
+    scanCommitPatch(
+      commit,
+      git(
+        [
+          "-c",
+          "core.quotePath=false",
+          "show",
+          "--patch",
+          "--text",
+          "--unified=0",
+          "--no-color",
+          "--no-ext-diff",
+          "--diff-filter=ACMR",
+          "--format=",
+          commit,
+          "--",
+          ".",
+          ...[...binaryExtensions].map(
+            (extension) => `:(exclude,icase)*${extension}`,
+          ),
+        ],
+        cwd,
+        // One commit at a time; a large generated file must not abort the scan.
+        256 * 1024 * 1024,
+      ),
+    ),
   );
+}
+
+function scanCommitPatch(commit, patch) {
   const violations = [];
+  const at = (violation) => ({
+    ...violation,
+    path: `commit:${commit}:${violation.path}`,
+  });
   let path = "";
-  for (const line of diff.split("\n")) {
-    if (line.startsWith("+++ b/")) {
-      path = line.slice("+++ b/".length);
-      violations.push(...scanPath(path));
+  let inHeader = false;
+  for (const line of patch.split("\n")) {
+    if (line.startsWith("diff --git ")) {
+      inHeader = true;
+      path = "";
       continue;
     }
-    if (!line.startsWith("+") || line.startsWith("+++")) {
+    if (inHeader) {
+      const target = /^(?:\+\+\+ "?b\/|rename to |copy to )(.*?)"?$/.exec(line);
+      if (target) {
+        path = target[1];
+        violations.push(...scanPath(path).map(at));
+      } else if (line.startsWith("@@")) {
+        inHeader = false;
+      }
       continue;
     }
-    violations.push(...scanText(path, line.slice(1)));
+    if (line.startsWith("+")) {
+      violations.push(...scanText(path, line.slice(1)).map(at));
+    }
   }
   return violations;
 }
@@ -252,10 +306,17 @@ export function scanEventMetadata(event) {
       ),
     );
   }
-  if (event.comment && event.issue?.pull_request) {
-    violations.push(
-      ...scanText("pull-request:comment", event.comment.body ?? ""),
-    );
+  if (event.review) {
+    violations.push(...scanText("pull-request:review", event.review.body ?? ""));
+  }
+  if (event.comment) {
+    // Pull-request review comments carry `pull_request`; issue comments carry
+    // `issue`, which has `pull_request` only when the issue is a pull request.
+    const location =
+      event.pull_request || event.issue?.pull_request
+        ? "pull-request:comment"
+        : "issue:comment";
+    violations.push(...scanText(location, event.comment.body ?? ""));
   }
   return violations;
 }
@@ -272,31 +333,28 @@ export function scanCommitMessages(range, cwd) {
   return violations;
 }
 
+function option(name, hint) {
+  const index = process.argv.indexOf(name);
+  if (index === -1) return null;
+  const value = process.argv[index + 1];
+  if (!value || value.startsWith("--")) throw new Error(`${name} needs ${hint}`);
+  return value;
+}
+
 function main() {
+  // Validate arguments before the slow tracked-tree scan.
+  const range = option("--range", "a git range, e.g. origin/main..HEAD");
+  const eventPath = option("--event", "a GitHub event JSON path");
+  const commits = option("--commits", "a git range");
   const cwd = git(["rev-parse", "--show-toplevel"], process.cwd()).trim();
-  const rangeIndex = process.argv.indexOf("--range");
-  const eventIndex = process.argv.indexOf("--event");
-  const commitsIndex = process.argv.indexOf("--commits");
   const violations = scanTrackedFiles(cwd);
-  if (rangeIndex !== -1) {
-    const range = process.argv[rangeIndex + 1];
-    if (!range) {
-      throw new Error("--range needs a git range, e.g. origin/main...HEAD");
-    }
-    violations.push(...scanAddedLines(range, cwd));
-  }
-  if (eventIndex !== -1) {
-    const eventPath = process.argv[eventIndex + 1];
-    if (!eventPath) throw new Error("--event needs a GitHub event JSON path");
+  if (range) violations.push(...scanAddedLines(range, cwd));
+  if (eventPath) {
     violations.push(
       ...scanEventMetadata(JSON.parse(readFileSync(eventPath, "utf8"))),
     );
   }
-  if (commitsIndex !== -1) {
-    const range = process.argv[commitsIndex + 1];
-    if (!range) throw new Error("--commits needs a git range");
-    violations.push(...scanCommitMessages(range, cwd));
-  }
+  if (commits) violations.push(...scanCommitMessages(commits, cwd));
 
   if (violations.length === 0) {
     process.stdout.write("public hygiene: no violations\n");
@@ -314,9 +372,16 @@ function main() {
   process.exitCode = 1;
 }
 
-if (
-  process.argv[1] &&
-  import.meta.url.endsWith(process.argv[1].split("/").pop())
-) {
+/** Compares resolved file URLs, so Windows paths and symlinked entries still run the check. */
+function invokedDirectly() {
+  if (!process.argv[1]) return false;
+  try {
+    return import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
+  } catch {
+    return false;
+  }
+}
+
+if (invokedDirectly()) {
   main();
 }
