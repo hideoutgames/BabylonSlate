@@ -188,8 +188,17 @@ vi.mock("../context/play-context", () => ({
   usePlay: () => play,
 }));
 
+const pickSelection = vi.hoisted(() => ({
+  setSelectedId: vi.fn(),
+  setSelectedMemberId: vi.fn(),
+  setSelectedNodeIds: vi.fn(),
+}));
+
 vi.mock("../context/graph-editing-context", () => ({
-  useGraphEditing: () => ({ setSelectedMemberId: vi.fn(), setSelectedNodeIds: vi.fn() }),
+  useGraphEditing: () => ({
+    setSelectedMemberId: pickSelection.setSelectedMemberId,
+    setSelectedNodeIds: pickSelection.setSelectedNodeIds,
+  }),
 }));
 
 vi.mock("../context/prefab-editing-context", () => ({
@@ -197,7 +206,7 @@ vi.mock("../context/prefab-editing-context", () => ({
     components: prefabState.components,
     selectedId: prefabState.selectedIds.at(-1) ?? null,
     selectedIds: prefabState.selectedIds,
-    setSelectedId: vi.fn(),
+    setSelectedId: pickSelection.setSelectedId,
     updateComponentTransform: vi.fn(),
     commitComponentGizmo: vi.fn(),
     commitComponentTransforms,
@@ -331,6 +340,27 @@ describe("PrefabViewportPanel engine", () => {
     play.ensureSharedEngine.mockClear();
     play.sharedEngineGeneration = 1;
     play.ensureSharedEngine.mockReturnValue({ id: "shared-engine" });
+    pickSelection.setSelectedId.mockClear();
+    pickSelection.setSelectedMemberId.mockClear();
+    pickSelection.setSelectedNodeIds.mockClear();
+  });
+
+  it("clears the graph node and member selection only when a pick selects a component or Prefab Root", async () => {
+    render(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
+    await waitFor(() => expect(createEngineMock).toHaveBeenCalled());
+    const options = createEngineMock.mock.calls.at(-1)![1] as import("@babylonslate/render").CreateEngineOptions;
+    act(() => options.onPickActor?.(null));
+    expect(pickSelection.setSelectedId).toHaveBeenLastCalledWith(null);
+    expect(pickSelection.setSelectedNodeIds).not.toHaveBeenCalled();
+    expect(pickSelection.setSelectedMemberId).not.toHaveBeenCalled();
+    for (const picked of ["prefab-mesh", PREFAB_ROOT_ID]) {
+      pickSelection.setSelectedNodeIds.mockClear();
+      pickSelection.setSelectedMemberId.mockClear();
+      act(() => options.onPickActor?.(picked));
+      expect(pickSelection.setSelectedId).toHaveBeenLastCalledWith(picked);
+      expect(pickSelection.setSelectedNodeIds).toHaveBeenCalledExactlyOnceWith([]);
+      expect(pickSelection.setSelectedMemberId).toHaveBeenCalledExactlyOnceWith(null);
+    }
   });
 
   it("commits a viewport spline edit to its prefab component", async () => {
