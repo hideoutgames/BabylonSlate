@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { Trash2Icon } from "lucide-react";
 import {
@@ -44,9 +44,10 @@ function useInputDocument() {
   const activeDocumentId = useActiveDocumentId();
   const doc = useOpenDocument(documentId);
   const isAxis = doc?.ref.kind === "input-axis";
-  const asset = normalizeInputAssetPayload(
-    isAxis ? "InputAxis" : "InputAction",
-    doc?.content,
+  const content = doc?.content;
+  const asset = useMemo(
+    () => normalizeInputAssetPayload(isAxis ? "InputAxis" : "InputAction", content),
+    [isAxis, content],
   );
   /** `mergeKey` groups one scrub's edits into one undo entry. */
   const commit = (next: InputAssetPayload, mergeKey?: string) =>
