@@ -2,6 +2,8 @@
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="sharedpref" path="babylonslate-secrets.xml" />
+        <!-- Projects can exceed the 25 MB cloud quota, which would stop every backup. -->
+        <exclude domain="file" path="BabylonSlate/projects/" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="babylonslate-secrets.xml" />

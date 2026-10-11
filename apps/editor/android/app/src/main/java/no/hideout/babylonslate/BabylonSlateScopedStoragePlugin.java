@@ -18,7 +18,6 @@ import android.provider.DocumentsContract;
 import android.util.Base64;
 import android.webkit.WebView;
 import androidx.activity.result.ActivityResult;
-import androidx.documentfile.provider.DocumentFile;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -31,6 +30,9 @@ import java.io.ByteArrayOutputStream;
 import java.io.FileNotFoundException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.HashMap;
@@ -42,6 +44,8 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
     private static final String STORE_NAME = "babylonslate-scoped-storage";
     private static final String URI_PREFIX = "uri:";
     private static final String NAME_PREFIX = "name:";
+    /** One bridge transfer, whole-file or ranged, never exceeds this. */
+    private static final int MAX_TRANSFER_BYTES = 512 * 1024 * 1024;
     private boolean pickPending;
     private boolean readScopeLifecycleAttached;
     private final Map<String, FolderAccess> readScopes = new HashMap<>();
@@ -122,7 +126,6 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
             call.reject("A native picker is already open", "UNREACHABLE");
             return;
         }
-        pickPending = true;
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
         intent.addFlags(
             Intent.FLAG_GRANT_READ_URI_PERMISSION |
@@ -130,7 +133,14 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
             Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION |
             Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
         );
-        startActivityForResult(call, intent, "pickFolderResult");
+        pickPending = true;
+        try {
+            startActivityForResult(call, intent, "pickFolderResult");
+        } catch (RuntimeException error) {
+            // No result callback follows a launch that failed, so later picks must not wait for one.
+            pickPending = false;
+            call.reject("Folder selection is unavailable", "UNREACHABLE", error);
+        }
     }
 
     @ActivityCallback
@@ -247,7 +257,7 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
         Double lengthValue = rawLength instanceof Number ? ((Number) rawLength).doubleValue() : null;
         if (offsetValue == null || lengthValue == null || !Double.isFinite(offsetValue) || !Double.isFinite(lengthValue) ||
             offsetValue < 0 || lengthValue < 0 || offsetValue != Math.floor(offsetValue) || lengthValue != Math.floor(lengthValue) ||
-            offsetValue + lengthValue > 9007199254740991d || lengthValue > 512 * 1024 * 1024) {
+            offsetValue + lengthValue > 9007199254740991d || lengthValue > MAX_TRANSFER_BYTES) {
             throw new PluginFailure("Invalid storage byte range", "INVALID_RANGE");
         }
         long offset = offsetValue.longValue();
@@ -291,14 +301,15 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
         executeFileOperation(call, () -> {
             FolderAccess folder = folder(call, true);
             String path = path(call, false);
-            Uri target = resolve(folder, path).uri;
-            try (InputStream input = getContext().getContentResolver().openInputStream(target)) {
+            DocumentMetadata target = resolve(folder, path);
+            if (target.size > MAX_TRANSFER_BYTES) throw tooLarge();
+            try (InputStream input = getContext().getContentResolver().openInputStream(target.uri)) {
                 if (input == null) throw new FileNotFoundException(path);
                 byte[] bytes = readAll(input);
                 String encoding = call.getString("encoding", "utf8");
                 String data = "base64".equals(encoding)
                     ? Base64.encodeToString(bytes, Base64.NO_WRAP)
-                    : new String(bytes, StandardCharsets.UTF_8);
+                    : decodeUtf8(bytes);
                 JSObject result = new JSObject();
                 result.put("data", data);
                 call.resolve(result);
@@ -330,17 +341,73 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
             for (int index = 0; index < parts.length - 1; index++) {
                 parent = ensureDirectory(folder, parent, parts[index]);
             }
-            DocumentMetadata existing = findChild(folder, parent, parts[parts.length - 1]);
-            Uri target = existing == null
-                ? createChild(folder, parent, "application/octet-stream", parts[parts.length - 1])
-                : existing.uri;
+            String name = parts[parts.length - 1];
+            DocumentMetadata existing = findChild(folder, parent, name);
             if (existing != null && existing.directory) throw new PluginFailure("File not found", "NOT_FOUND");
-            try (OutputStream output = getContext().getContentResolver().openOutputStream(target, "wt")) {
-                if (output == null) throw new FileNotFoundException(path);
-                output.write(payload);
+            if (existing == null) {
+                Uri created = createChild(folder, parent, "application/octet-stream", name);
+                try {
+                    writeDocument(created, payload);
+                } catch (Exception error) {
+                    deleteQuietly(created);
+                    throw error;
+                }
+            } else {
+                replaceDocument(folder, parent, existing, name, payload);
             }
             call.resolve();
         });
+    }
+
+    /**
+     * SAF has no atomic replace. Stage the payload beside the file first, so a
+     * failed write leaves the previous contents intact, then swap names.
+     */
+    private void replaceDocument(FolderAccess folder, Uri parent, DocumentMetadata existing, String name, byte[] payload)
+        throws Exception {
+        Uri staged = createChild(folder, parent, "application/octet-stream", ".babylonslate-" + UUID.randomUUID() + ".tmp");
+        try {
+            if ((documentFlags(staged) & DocumentsContract.Document.FLAG_SUPPORTS_RENAME) == 0) {
+                // A provider without rename can only rewrite the file in place.
+                deleteQuietly(staged);
+                writeDocument(existing.uri, payload);
+                return;
+            }
+            writeDocument(staged, payload);
+            if (!DocumentsContract.deleteDocument(getContext().getContentResolver(), existing.uri)) {
+                throw new PluginFailure("Could not replace " + name, null);
+            }
+        } catch (Exception error) {
+            deleteQuietly(staged);
+            throw error;
+        }
+        Uri renamed = DocumentsContract.renameDocument(getContext().getContentResolver(), staged, name);
+        if (renamed == null || !name.equals(metadata(renamed).name)) {
+            throw new PluginFailure("Saved contents of " + name + " remain in a temporary file", null);
+        }
+    }
+
+    private void writeDocument(Uri target, byte[] payload) throws Exception {
+        try (OutputStream output = getContext().getContentResolver().openOutputStream(target, "wt")) {
+            if (output == null) throw new FileNotFoundException(target.toString());
+            output.write(payload);
+        }
+    }
+
+    private void deleteQuietly(Uri target) {
+        try {
+            DocumentsContract.deleteDocument(getContext().getContentResolver(), target);
+        } catch (Exception ignored) {
+            // The original failure is the one worth reporting.
+        }
+    }
+
+    private int documentFlags(Uri uri) throws Exception {
+        String[] projection = { DocumentsContract.Document.COLUMN_FLAGS };
+        try (Cursor cursor = getContext().getContentResolver().query(uri, projection, null, null, null)) {
+            if (cursor == null || !cursor.moveToFirst()) throw new FileNotFoundException(uri.toString());
+            return cursor.isNull(0) ? 0 : cursor.getInt(0);
+        }
     }
 
     @PluginMethod
@@ -385,8 +452,10 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
             FolderAccess folder = folder(call);
             String path = path(call, false);
             DocumentMetadata target = resolve(folder, path);
-            DocumentFile document = DocumentFile.fromSingleUri(getContext(), target.uri);
-            if (document == null || !document.delete()) throw new FileNotFoundException(path);
+            // The entry was just resolved, so a refused delete is a failure, not a missing file.
+            if (!DocumentsContract.deleteDocument(getContext().getContentResolver(), target.uri)) {
+                throw new PluginFailure("Could not delete " + path, null);
+            }
             call.resolve();
         });
     }
@@ -581,12 +650,25 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
         return metadata;
     }
 
+    /** A path cannot address one of two same-named children, so refuse it instead of picking one. */
     private DocumentMetadata findChild(FolderAccess folder, Uri parent, String name) throws Exception {
         List<DocumentMetadata> entries = children(folder, parent);
         DirectoryReadCache.Directory<DocumentMetadata> cached = folder.directories == null ? null : folder.directories.get(parent.toString());
-        if (cached != null) return cached.byName.get(name);
-        for (DocumentMetadata child : entries) if (name.equals(child.name)) return child;
-        return null;
+        if (cached != null) {
+            if (cached.duplicateNames.contains(name)) throw duplicateName(name);
+            return cached.byName.get(name);
+        }
+        DocumentMetadata found = null;
+        for (DocumentMetadata child : entries) {
+            if (!name.equals(child.name)) continue;
+            if (found != null) throw duplicateName(name);
+            found = child;
+        }
+        return found;
+    }
+
+    private static PluginFailure duplicateName(String name) {
+        return new PluginFailure("More than one entry is named " + name, null);
     }
 
     private List<DocumentMetadata> children(FolderAccess folder, Uri parent) throws Exception {
@@ -670,7 +752,26 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         byte[] buffer = new byte[8192];
         int read;
-        while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
+        while ((read = input.read(buffer)) != -1) {
+            if (output.size() > MAX_TRANSFER_BYTES - read) throw tooLarge();
+            output.write(buffer, 0, read);
+        }
         return output.toByteArray();
+    }
+
+    private static PluginFailure tooLarge() {
+        return new PluginFailure("File is too large to read at once", null);
+    }
+
+    private static String decodeUtf8(byte[] bytes) throws PluginFailure {
+        try {
+            return StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(bytes))
+                .toString();
+        } catch (CharacterCodingException error) {
+            throw new PluginFailure("File is not valid UTF-8", "UNREACHABLE");
+        }
     }
 }

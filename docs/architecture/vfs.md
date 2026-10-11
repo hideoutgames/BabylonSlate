@@ -46,9 +46,9 @@ Bundled Engine Plugins use an HTTP file catalog. The build emits each `.babasset
 | --- | --- | --- |
 | OPFS | Web | Replaces localStorage; binary-capable; projects under stable ids; Homepage remove deletes the OPFS directory; `readdir` skips Chromium's `*.crswap` write swap files and entries removed mid-listing, so a concurrent save never fails a whole listing (an asset rescan would otherwise publish an empty Content Browser); `readBinary` reads again when a save replaces the file between `getFile()` and the read (Chromium fails that stale snapshot with `NotReadableError` / `NotFoundError`), so a Preview reading a Texture while its encode commits gets the saved bytes; a snapshot that stays unreadable reports its real read error instead of `File not found` |
 | Documents | iPad default | `@capacitor/filesystem` `Directory.Documents` under `BabylonSlate/projects/`; no picker/bookmark; Files-visible via `UIFileSharingEnabled` + `LSSupportsOpeningDocumentsInPlace` |
-| Documents | Android default | App-private `Directory.Data` under `BabylonSlate/projects/`; Android 11+ public Documents is unreadable without a picker |
+| Documents | Android default | App-private `Directory.Data` under `BabylonSlate/projects/`; Android 11+ public Documents is unreadable without a picker. Projects are excluded from cloud backup, whose 25 MB quota would otherwise stop every backup; Android 12+ device transfer keeps them |
 | Scoped / external | iPad opt-in | Document picker; security-scoped bookmarks; root-confined relative paths; `openKnownFolder` reopens without picker; Reconnect on staleness or revoked scope access |
-| Scoped / external | Android opt-in | SAF `ACTION_OPEN_DOCUMENT_TREE`; persisted read/write URI permissions; `DocumentsContract` child traversal; UUID handles map to tree URIs in native SharedPreferences; no `importBookmark` |
+| Scoped / external | Android opt-in | SAF `ACTION_OPEN_DOCUMENT_TREE`; persisted read/write URI permissions; `DocumentsContract` child traversal; UUID handles map to tree URIs in native SharedPreferences; no `importBookmark`. Overwrites stage a hidden sibling, then delete and rename, so a failed write keeps the old file (providers without rename are rewritten in place). A name the provider lists twice cannot be opened or written |
 | Memory | Tests | In-memory tree |
 | Read-only wrapper | Engine plugins | `createReadOnlyProjectStorage(inner)` — reads pass through; `write*` / `mkdir` / `remove` / `deleteProject` throw |
 | Node | CI / tools | Real filesystem under a root path; `openAbsoluteFolder` for Electron pickers |
@@ -66,7 +66,7 @@ Node operations validate relative path segments and root containment, including 
 
 ### External tier / Working Copy spike
 
-iPad file-provider I/O uses `NSFileCoordinator` and acquires/releases security scope for each operation, including metadata checks. Android SAF retains read/write URI permission and resolves each path segment through `DocumentsContract` cursor results. Both plugins reject absolute/traversing paths and surface revoked access.
+iPad file-provider I/O uses `NSFileCoordinator` and acquires/releases security scope for each operation, including metadata checks. Android SAF retains read/write URI permission and resolves each path segment through `DocumentsContract` cursor results. Both plugins reject absolute/traversing paths, reject UTF-8 text reads with invalid bytes, and surface revoked access.
 
 Registry mounting optionally uses `ProjectStorage.withReadScope` to reuse Android directory lookups throughout one recursive scan. Each scope has an independent native cache, closed in `finally`; ordinary reads and later scans start fresh. Cached listings also index child names, avoiding one provider enumeration per asset. Native mutations clear open caches before and after their I/O, with native file operations serialized to prevent stale queries repopulating a cache after a write. Each scope retains at most 8,192 listing entries (an empty directory counts as one), evicts older directories, and skips caching larger single listings; at most eight scopes are open per plugin. These are lookup caches, not transactional snapshots of externally changing provider files. iOS and other adapters keep their existing read behavior.
 
@@ -165,7 +165,7 @@ Native account builds require Clerk's Native API and email-code sign-in/sign-up 
 
 `StatusBarStylePort` accepts `"light"` or `"dark"` glyph styles. iOS/Android use the Capacitor Status Bar plugin's `setStyle` only; Web and Electron use a no-op adapter. The editor maps resolved dark chrome to light glyphs and resolved light chrome to dark glyphs. It never hides or overlays the native status bar.
 
-Android audio lifecycle reports route additions/removals from device callbacks and becoming-noisy broadcasts. API 31+ audio mode changes model call/ringtone interruptions. It never requests audio focus, so other apps keep playing. Android memory stats report host-process PSS and system `availMem`; there is no jetsam-style per-process allowance, and the separate WebView renderer is not included.
+Android audio lifecycle reports route additions/removals from device callbacks and becoming-noisy broadcasts. API 31+ audio mode changes model call, ringtone, screening and redirect interruptions, including a call already active at startup; these events wait for the web listener. It never requests audio focus, so other apps keep playing. Android memory stats report host-process PSS and system `availMem`; there is no jetsam-style per-process allowance, and the separate WebView renderer is not included.
 
 ## Player saved games
 

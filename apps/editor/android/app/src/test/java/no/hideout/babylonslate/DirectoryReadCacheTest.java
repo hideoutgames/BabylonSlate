@@ -11,7 +11,9 @@ public class DirectoryReadCacheTest {
         DirectoryReadCache<String> cache = new DirectoryReadCache<>(3);
         cache.put("assets", Arrays.asList("b", "a", "a"), value -> value);
         assertEquals(Arrays.asList("b", "a", "a"), cache.get("assets").entries);
-        assertEquals("a", cache.get("assets").byName.get("a"));
+        assertEquals("b", cache.get("assets").byName.get("b"));
+        assertNull(cache.get("assets").byName.get("a"));
+        assertEquals(Collections.singleton("a"), cache.get("assets").duplicateNames);
         assertNull(cache.get("assets").byName.get("missing"));
         cache.clear();
         assertNull(cache.get("assets"));
