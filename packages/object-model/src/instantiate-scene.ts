@@ -114,11 +114,14 @@ export function attachSerializedComponents(
   components: readonly SerializedComponent[],
   options: { freshIds?: boolean } = {},
 ): void {
-  const suppressed = actor.suppressedComponentSourceIds.length ? new Set(components.filter((component) => {
+  // Suppressed source rows and, in a SceneLayer, denied classes are never
+  // created: their children attach to the actor and no reference resolves to them.
+  const dropped = new Set(components.filter((component) => {
+    if (actor.sceneLayerId && isSceneLayerDeniedComponent(component.classId)) return true;
     const sourceId = options.freshIds ? component.id : component.sourceId;
     return !!sourceId && actor.suppressedComponentSourceIds.includes(sourceId);
-  }).map((component) => component.id)) : null;
-  const activeComponents = suppressed ? components.filter((component) => !suppressed.has(component.id)) : components;
+  }).map((component) => component.id));
+  const activeComponents = dropped.size ? components.filter((component) => !dropped.has(component.id)) : components;
   const ids = new Map(
     activeComponents.map((component) => [
       component.id,
@@ -126,9 +129,6 @@ export function attachSerializedComponents(
     ]),
   );
   for (const component of activeComponents) {
-    if (actor.sceneLayerId && isSceneLayerDeniedComponent(component.classId)) {
-      continue;
-    }
     const properties = structuredClone(component.properties);
     for (const variable of world.classRegistry.inheritedVariables(component.classId)) {
       if (Object.hasOwn(properties, variable.name) && variable.container) {
@@ -136,8 +136,8 @@ export function attachSerializedComponents(
       }
     }
     if (component.classId === "DeformerComponent" && typeof properties.targetMeshComponentId === "string") {
-      const target = components.find((entry) => entry.classId === "MeshComponent" && entry.id === properties.targetMeshComponentId)
-        ?? components.find((entry) => entry.classId === "MeshComponent" && entry.sourceId === properties.targetMeshComponentId);
+      const target = activeComponents.find((entry) => entry.classId === "MeshComponent" && entry.id === properties.targetMeshComponentId)
+        ?? activeComponents.find((entry) => entry.classId === "MeshComponent" && entry.sourceId === properties.targetMeshComponentId);
       if (target) properties.targetMeshComponentId = ids.get(target.id)!;
     }
     const instance = world.createComponent({
@@ -148,7 +148,7 @@ export function attachSerializedComponents(
         sourceId: options.freshIds
           ? component.id
           : (component.sourceId ?? null),
-        parentId: component.parentId && !suppressed?.has(component.parentId)
+        parentId: component.parentId && !dropped.has(component.parentId)
           ? (ids.get(component.parentId) ??
             (options.freshIds ? null : component.parentId))
           : null,
