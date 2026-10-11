@@ -449,6 +449,13 @@ describe("pinDefaultPreview", () => {
     });
   });
 
+  it("previews implicit Self only on the Target pin, not on an argument named target", () => {
+    const target = pin({ id: "target", name: "target", kind: "data", direction: "in", type: { kind: "actorRef" } });
+    const argument = pin({ id: "target__arg", name: "target", kind: "data", direction: "in", type: { kind: "actorRef" } });
+    expect(pinDefaultPreview(target, { implicitSelf: true }, false)).toEqual({ kind: "actorRef", text: "Self" });
+    expect(pinDefaultPreview(argument, { implicitSelf: true }, false)).toEqual({ kind: "actorRef", text: "", placeholder: true });
+  });
+
   it("returns null for texture pins", () => {
     const texture = pin({
       id: "texture",
