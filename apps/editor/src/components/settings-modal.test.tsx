@@ -524,7 +524,7 @@ describe("SettingsModal project authoring", () => {
     });
   });
 
-  it("downloads only the exported archive bytes", async () => {
+  it("downloads only the exported archive bytes and releases the URL after the download starts", async () => {
     exportProject.mockResolvedValue(new Uint8Array([9, 9, 1, 2, 3, 9]).subarray(2, 5));
     const blobs: Blob[] = [];
     const createUrl = vi.spyOn(URL, "createObjectURL").mockImplementation((blob) => {
@@ -536,13 +536,18 @@ describe("SettingsModal project authoring", () => {
     try {
       render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
       fireEvent.click(screen.getByTestId("settings-modal-category-export"));
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
       await act(async () => {
         fireEvent.click(screen.getByTestId("export-project"));
       });
       expect(click).toHaveBeenCalledTimes(1);
       expect(blobs.map((blob) => blob.size)).toEqual([3]);
+      // Safari and WKWebView read the blob URL after the click returns.
+      expect(revokeUrl).not.toHaveBeenCalled();
+      act(() => { vi.runAllTimers(); });
       expect(revokeUrl).toHaveBeenCalledWith("blob:project-archive");
     } finally {
+      vi.useRealTimers();
       createUrl.mockRestore();
       revokeUrl.mockRestore();
       click.mockRestore();

@@ -306,6 +306,12 @@ const ENGINE_GROUPS: CatalogCategoryGroup[] = [
   { label: "Projects", ids: ["templates", "plugins", "extensions"] },
 ];
 
+/**
+ * Some browsers (Safari and WKWebView among them) read an anchor download's
+ * blob URL after the click returns, so the URL is released later.
+ */
+const DOWNLOAD_URL_LIFETIME_MS = 40_000;
+
 /** Downloads exactly the view's bytes, even when it shares a larger buffer. */
 function downloadZip(bytes: Uint8Array, fileName: string): void {
   const url = URL.createObjectURL(
@@ -317,7 +323,7 @@ function downloadZip(bytes: Uint8Array, fileName: string): void {
     anchor.download = fileName;
     anchor.click();
   } finally {
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), DOWNLOAD_URL_LIFETIME_MS);
   }
 }
 

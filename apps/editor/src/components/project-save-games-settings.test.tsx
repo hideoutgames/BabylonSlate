@@ -86,6 +86,30 @@ describe("Preview Saves manager", () => {
     expect(harness.settings).not.toHaveBeenCalled();
   });
 
+  it("exports a save without releasing its download URL in the same turn as the click", async () => {
+    const blobs: Blob[] = [];
+    const createUrl = vi.spyOn(URL, "createObjectURL").mockImplementation((blob) => {
+      blobs.push(blob as Blob);
+      return "blob:save";
+    });
+    const revokeUrl = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const downloads: string[] = [];
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      downloads.push(this.download);
+    });
+    try {
+      render(<ProjectSaveGamesSettings />);
+      fireEvent.click(await screen.findByRole("button", { name: "Export default" }));
+      await waitFor(() => expect(downloads).toEqual(["default.babsave"]));
+      expect(blobs[0]?.size).toBeGreaterThan(0);
+      expect(revokeUrl).not.toHaveBeenCalled();
+    } finally {
+      createUrl.mockRestore();
+      revokeUrl.mockRestore();
+      click.mockRestore();
+    }
+  });
+
   it("enables Play reset without losing the selected definition or slot", async () => {
     render(<ProjectSaveGamesSettings />);
     fireEvent.click(screen.getByRole("switch", { name: "Wipe Preview Saves On Play" }));

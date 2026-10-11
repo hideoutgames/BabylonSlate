@@ -29,6 +29,12 @@ function displayValue(value: SaveGameValue): string {
   return String(value);
 }
 
+/**
+ * Some browsers (Safari and WKWebView among them) read an anchor download's
+ * blob URL after the click returns, so the URL is released later.
+ */
+const DOWNLOAD_URL_LIFETIME_MS = 40_000;
+
 function downloadSave(text: string, slot: string) {
   const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
   try {
@@ -36,7 +42,7 @@ function downloadSave(text: string, slot: string) {
     anchor.href = url;
     anchor.download = `${slot.replace(/[^a-zA-Z0-9_.-]+/g, "_") || "save"}.babsave`;
     anchor.click();
-  } finally { URL.revokeObjectURL(url); }
+  } finally { setTimeout(() => URL.revokeObjectURL(url), DOWNLOAD_URL_LIFETIME_MS); }
 }
 
 export function ProjectSaveGamesSettings() {
