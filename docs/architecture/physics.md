@@ -225,7 +225,7 @@ The actor fixtures count unrelated transform reads (409,600 → 0 across 100 tic
 | `BlockingVolumeComponent` | No authored properties. Place Actors **Physics → Blocking Volume** only (hidden from Add Component / Search). Editor: blue dotted unit box + `default.png` at the center. Play: helper hidden; static physics box from actor TRS. Not a navmesh input. |
 | `LandscapeComponent` | `collisionsEnabled` (default **false**), edited in Landscape mode → Landscape Settings. 3D triangle mesh from `width`, `depth`, `subdivisions`, and `heights`; friction 0.5, restitution 0. |
 
-Simulation needs **both** a rigid body and at least one collider on the same actor (tilemaps, **blocking volumes**, enabled **Landscape Collisions**, and **MeshComponent** collision that is not `none` are the exception: they create an implicit static body). That pairing is the authored workflow — not a Play blocker. Compile warnings:
+Simulation needs **both** a rigid body and at least one collider on the same actor (tilemaps, **blocking volumes**, enabled **Landscape Collisions**, **Dynamic Runtime Mesh** with **Enable Collision**, and **MeshComponent** collision that is not `none` are the exception: they create an implicit static body; **Movement** supplies its own kinematic capsule body). Actors with any of these get no ordinary pairing warning. That pairing is the authored workflow — not a Play blocker. Compile warnings:
 
 | Case | Code | Severity |
 | --- | --- | --- |
@@ -293,7 +293,7 @@ Sync nodes (exec pin continues in the same tick): `physics.lineTrace`, `physics.
 
 ## Determinism
 
-Within-build reproducibility is required: the same build, backend and inputs produce the same actor transforms. The test-kit `runDeterministicScenario` golden covers scripted World ticks without physics; there is no per-backend physics harness. Physics coverage comes from focused backend and runtime tests (for example the software and Rapier cases in `packages/physics/src/physics.test.ts`). Do not require identical Havok vs Rapier **file** goldens — numeric drift between engines is expected. Rapier uses its deterministic build (see [Rapier 0.21](#rapier-0-21)); a Rapier upgrade changes 2D results between builds. Runtime work reductions must leave per-tick `stringifyWorldSnapshot(createWorldSnapshot(world))` unchanged for acyclic hierarchies.
+Within-build reproducibility is required: the same build, backend and inputs produce the same actor transforms. The test-kit `runDeterministicScenario` golden covers scripted World ticks without physics; there is no per-backend physics harness. Physics coverage comes from focused backend and runtime tests (for example the software and Rapier cases in `packages/physics/src/physics.test.ts`). Do not require identical Havok vs Rapier **file** goldens — numeric drift between engines is expected. Rapier uses its deterministic build (see [Rapier 0.21](#rapier-021)); a Rapier upgrade changes 2D results between builds. Runtime work reductions must leave per-tick `stringifyWorldSnapshot(createWorldSnapshot(world))` unchanged for acyclic hierarchies.
 
 `packages/runtime/src/physics-duplicate-identities.test.ts` exercises real Havok with five legacy duplicated dynamic boxes resting on a thin, Simple-only Ground, both with and without explicit box ColliderComponents. The Ground needs no RigidBodyComponent. `packages/runtime/src/collision-events.test.ts` covers native trigger entry/exit through compiled component-bound graphs, including initial intersection and compound mesh collision.
 

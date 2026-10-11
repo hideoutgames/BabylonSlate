@@ -59,7 +59,7 @@ For public API changes, select directly affected consumers for scoped typechecki
 
 ## Responsive editor checks
 
-- `e2e/phone-editor.spec.ts` covers the 390x844 phone window switcher with one visible Dockview window, the 844x390 landscape round trip with injected safe-area insets, and restoration to the 1194x834 tablet layout. Physical Home Screen testing remains necessary for iOS status-bar effects, installed-phone insets and rotation timing.
+- `e2e/phone-editor.spec.ts` covers the 390x844 phone window switcher with one visible Dockview window, the 844x390 landscape round trip, injected safe-area insets back in 390x844 portrait, and restoration to the 1194x834 tablet layout. Physical Home Screen testing remains necessary for iOS status-bar effects, installed-phone insets and rotation timing.
 - `e2e/phone-content-browser.spec.ts` covers touch folder navigation in the drawer and explicit Open. These run under desktop-chrome with phone viewport/touch overrides; existing iPad tests remain unchanged.
 - Shared CatalogDialog tests cover category selection; real Dockview tests cover panel visibility, preservation, and layout restoration. Phone browser emulation does not certify native iOS/Android packaging or physical-device behavior.
 - Tablet folder-pan coverage creates enough rows to scroll at 1194x600, keeping the coarse-pointer viewport above the 500px phone-layout height breakpoint.
@@ -98,7 +98,7 @@ The shared Save All browser helper waits for scene reloads to finish and uses an
 
 [`.github/workflows/verify.yml`](../../.github/workflows/verify.yml) splits that gate into three standard `ubuntu-latest` job templates (`static`, unsharded `unit` coverage, and a 4-way `e2e` shard matrix). [`.github/workflows/preview.yml`](../../.github/workflows/preview.yml) deploys GitHub Pages from `main` only (a manual dispatch on another ref is skipped) and smoke-checks that the live editor and docs index pages match the uploaded build byte for byte. [`.github/workflows/webkit-smoke.yml`](../../.github/workflows/webkit-smoke.yml) runs the optional [WebKit smoke lane](#webkit-smoke-lane) after merges. Do not enable or target [larger runners](https://docs.github.com/en/actions/using-github-hosted-runners/using-larger-runners). Agent rule: [`.agents/rules/github-actions-standard-runners.md`](../../.agents/rules/github-actions-standard-runners.md).
 
-The repository plans around a 20-job concurrency budget; account limits and actual overlapping work must be observed rather than inferred from workflow job counts. Each ready PR uses 6 Verify jobs (`static` + `unit` + 4 e2e shards). Four ready PRs can use 24, and a merge adds `main` Verify (6) + one Preview job + one optional WebKit smoke job; GitHub queues jobs beyond the 20-job concurrency cap rather than failing them. Preserve the four-ready-PR cadence and standard runners. Do not shard Vitest coverage: per-package 60% gates need the full suite, and a blob-merge job would add another runner.
+The repository plans around a 20-job concurrency budget; account limits and actual overlapping work must be observed rather than inferred from workflow job counts. Each ready PR uses 6 Verify jobs (`static` + `unit` + 4 e2e shards). Four ready PRs can use 24, and a merge adds `main` Verify (6) + Preview (three sequential jobs: build, deploy, smoke, so one runs at a time) + one optional WebKit smoke job; GitHub queues jobs beyond the 20-job concurrency cap rather than failing them. Preserve the four-ready-PR cadence and standard runners. Do not shard Vitest coverage: per-package 60% gates need the full suite, and a blob-merge job would add another runner.
 
 Browser shards start independently and each builds its own immutable player/editor bundle before testing. The explicit hosted-only `ci-bundle` contract leaves full typechecking in the required static job; local standalone builds still typecheck. The shared build artifact dependency is removed. See [CI performance](../ci-performance.md) for the existing-run baseline, provisional pilot criteria and rollback; no measured speedup is claimed yet.
 
@@ -114,7 +114,7 @@ Browser shards start independently and each builds its own immutable player/edit
 Configured in `vitest.workspace.ts`; each project is a thin config in `vitest.projects.*.ts`. Isolated forks use one admitted local worker or four workers in CI (public-repository runners have four vCPUs). `VITEST_COVERAGE=1` excludes all editor tests from package instrumentation. `pnpm test:coverage` then runs the editor logic tests in Node and its DOM tests in fresh batches of at most 50 files, without coverage. `vitest.environments.ts` lists explicit DOM dependencies; a discovery regression checks every authored test appears exactly once.
 | Project | Environment | Covers |
 | --- | --- | --- |
-| `node` | node | `packages/core`, `packages/assets`, `packages/edit`, `packages/object-model`, `packages/physics` (Havok via `NullEngine`), `packages/bridge`, `packages/runtime`, `packages/debugger`, `packages/anim-graph`, `packages/behaviour-tree`, `packages/navigation`, `packages/shader-graph`, `packages/particle-graph`, `packages/input`, `packages/ui`, `packages/scripting`, `packages/scripting-nodes`, `packages/test-kit`, `packages/exporter`, `packages/source-control`, `apps/docs` (sidebar coverage, repo-link rewriter, Verify workflow policy), `apps/player`, `apps/desktop` (source-read host tests; Electron main is not executed), `playwright.config.test.ts` — no DOM |
+| `node` | node | `packages/core`, `packages/assets`, `packages/edit`, `packages/object-model`, `packages/physics` (Havok via `NullEngine`), `packages/bridge`, `packages/runtime`, `packages/debugger`, `packages/anim-graph`, `packages/behaviour-tree`, `packages/navigation`, `packages/shader-graph`, `packages/particle-graph`, `packages/input`, `packages/ui`, `packages/scripting`, `packages/scripting-nodes`, `packages/test-kit`, `packages/exporter`, `packages/source-control`, `apps/docs` (sidebar coverage, repo-link rewriter, heading fragments, Verify workflow policy), `apps/player`, `apps/desktop` (source-read host tests; Electron main is not executed), `playwright.config.test.ts` — no DOM |
 | `jsdom` | jsdom + `vitest.setup.jsdom.ts` | Editor/editor-kit/graph-ui `.test.tsx` files and the explicit DOM-dependent `.test.ts` exceptions |
 | `babylon` | node | `packages/render` via `NullEngine` |
 
@@ -132,7 +132,7 @@ Startup regressions verify deployment-base WASM URLs, failed explicit downloads 
 
 ## Coverage gates
 
-Coverage is scoped to `packages/*/src/**` and gated **per package** at 60% (lines, functions, branches, statements), including `@babylonslate/exporter` and `@babylonslate/source-control`. `apps/editor` is outside the gate (Playwright). `pnpm test:coverage` therefore instruments packages without the editor jsdom suite (that suite OOMs a 4GB Node heap under v8 coverage) and then runs `apps/editor` unit tests as four sequential shards without coverage. `apps/player` and `apps/desktop` are outside the gate (export/Preview e2e and source-read host tests). `apps/docs` is outside the gate (VitePress build + unit tests for sidebar coverage and the repo-link rewriter).
+Coverage is scoped to `packages/*/src/**` and gated **per package** at 60% (lines, functions, branches, statements), including `@babylonslate/exporter` and `@babylonslate/source-control`. `@babylonslate/physics` is the exception: 50% lines, functions and statements, 45% branches. `apps/editor` is outside the gate (Playwright). `pnpm test:coverage` therefore instruments packages without the editor jsdom suite (that suite OOMs a 4GB Node heap under v8 coverage) and then runs `apps/editor` unit tests without coverage (logic tests in Node, DOM tests in batches of at most 50 files). `apps/player` and `apps/desktop` are outside the gate (export/Preview e2e and source-read host tests). `apps/docs` is outside the gate (VitePress build + unit tests for sidebar coverage, the repo-link rewriter and heading fragments). The rewriter sends links to source and to non-page files (JSON, screenshots, video, archives) to their GitHub path, because VitePress publishes neither, and fails the build on a link that resolves outside the repository. The site gives headings GitHub's ids (`githubHeadingSlug`), so one `page.md#heading` fragment works on GitHub and on the site. VitePress's dead-link check ignores fragments, so `heading-fragments.test.ts` parses every docs page and fails on a fragment that names no heading on its target page.
 
 Excluded, each for a stated reason:
 
@@ -140,18 +140,19 @@ Excluded, each for a stated reason:
 | --- | --- |
 | `mobile-storage-adapter.ts` | Wraps Documents + scoped; device spike |
 | `preferences-app-settings.ts` | Capacitor Preferences; device spike |
+| `capacitor-secret-store.ts` | Keychain / Keystore plugin; device spike |
 | `documents-adapter.ts` | Capacitor Filesystem production path; unit-tested via injected fake FS |
 | `derived-storage.ts` | Thin OPFS/Documents factory; Playwright cold-reopen |
 | `node-adapter.ts` | CI/tooling adapter; own unit tests, excluded from browser package gate |
-| Electron main / preload | `apps/desktop`; source-read unit tests, not a live Electron run |
 | `create-engine.ts` | Needs a real WebGL context; covered by Playwright |
 | `babylon-audio-backend.ts` | Babylon AudioV2; unit tests inject `FakeAudioPlaybackBackend` |
-| `ui-surface.ts` | Standalone `CreateFullscreenUI` + Canvas2D blit need a real Engine canvas |
 | `worker-entry.ts` | Game worker host; Play is covered by e2e, while `worker-entry.test.ts` verifies boot, repeated advancement, and cancellation with worker RAF present or absent. Pause On Play gating is unit-tested in `play-pause-gate.test.ts`; inspect control (`inspect-control.ts`) has no unit test |
 | `bake-worker.ts` | Navmesh bake worker; covered through the editor host |
 | `audio-reverb-worker.ts` | Audio reverb bake worker; occupancy/probe bake is covered in `audio-reverb.test.ts` plus editor host |
 | `havok-backend.ts`, `havok-loader.ts`, `rapier-backend.ts` | Wasm backends; HavokPlugin path asserted in `havok-v2.test.ts`; coverage of the Babylon/Havok surface is environment-dependent |
+| `worker-encode.ts`, `decode-source-rgba.ts` | Browser Worker + OffscreenCanvas encode path; covered by editor wiring and the Node Basis smoke (`node-basis-encode.ts`) |
 | `packages/ui/**` | shadcn primitives generated by the CLI |
+| `index.ts`, `styles/**`, `test-support/**` | Re-export barrels, stylesheets and test helpers |
 
 `scoped-storage-adapter.ts` is **not** excluded: its Capacitor plugins are mocked in `scoped-storage-adapter.test.ts`, which covers bookmark reopen without a picker, staleness surfacing as Reconnect, and the tiers it refuses. Only the on-device `NSFileCoordinator` behaviour stays unproven.
 
@@ -277,7 +278,7 @@ Measures React commit cost per editor edit, so store and context changes can be 
 
 ## Property tests
 
-`fast-check` is available for pure logic. Current uses: golden text normalization idempotence, `.babasset` chunk round-tripping, edit command apply-then-invert, and navigation coordinate remapping.
+`fast-check` is available for pure logic. Current uses: `.babasset` chunk round-tripping, edit command apply-then-invert and scene diff round trips, navigation coordinate remapping, actor world-transform composition, and authored transform matrices matching the runtime composition.
 
 ## Test cost policy
 
