@@ -151,7 +151,7 @@ export class SimulationInspectionStore {
     this.reading = true;
     const generation = this.generation;
     const selectionGeneration = this.selectionGeneration;
-    const patch: Partial<SimulationInspectionState> = {};
+    let patch: Partial<SimulationInspectionState> = {};
     try {
       const extending = this.loadNext && !!this.cursor;
       this.loadNext = false;
@@ -176,6 +176,10 @@ export class SimulationInspectionStore {
           this.cursor = payload.nextCursor;
           patch.moreIdentities = !!this.cursor;
           this.structuralRevision = result.structuralRevision;
+          // The cursor advanced with these rows: publish them now so a
+          // superseded or failed selection read cannot drop them.
+          this.publish(patch);
+          patch = {};
         }
       }
       const target = this.state.selected;
