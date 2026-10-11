@@ -211,10 +211,7 @@ export interface ProjectSettings {
    * Play uses the open scene tab.
    */
   startupSceneGuid: string | null;
-  /**
-   * GameInstance subclass constructed for Play, Preview, and export.
-   * Scene `settings.gameInstanceClass` remains for old files.
-   */
+  /** GameInstance subclass constructed for Play, Preview, and export. */
   gameInstanceClass: string | null;
   textures: TextureProjectSettings;
   twoD: TwoDProjectSettings;
@@ -647,17 +644,6 @@ function normalizeStartupSceneGuid(value: unknown): string | null {
 
 function normalizeGameInstanceClass(value: unknown): string | null {
   return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
-}
-
-/** Project field wins; scene value is a fallback for unsaved / in-flight loads. */
-export function resolveGameInstanceClass(
-  project: { gameInstanceClass?: string | null } | null | undefined,
-  scene: { settings?: { gameInstanceClass?: string | null } } | null | undefined,
-): string | undefined {
-  const fromProject = project?.gameInstanceClass?.trim();
-  if (fromProject) return fromProject;
-  const fromScene = scene?.settings?.gameInstanceClass?.trim();
-  return fromScene || undefined;
 }
 
 function normalizePluginOverrides(value: unknown): Record<string, PluginEnableOverride> {

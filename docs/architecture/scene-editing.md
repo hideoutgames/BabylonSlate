@@ -54,7 +54,7 @@ Scene Defaults lists Post Process passes and Scene Layers as compact two-line en
 | -------------- | ---------------------------------------------------------------------------------------------------- |
 | `name`         | Scene display name                                                                                   |
 | `viewportMode` | `"3d"` \| `"2d"` — per-scene default; toolbar toggle on world Scenes (hidden on SceneLayer, locked `"2d"`) |
-| `settings`     | Environment, gravity, timestep, fog, grid, `cameraBounds2D`, `editorJoystickEnabled`, `showNavmesh`, **`sceneLayers`** (`assetGuid` / `zOrder` / `enabled` spawn list). `gameInstanceClass` stays in the schema for old files; Play/Preview/export read `ProjectSettings.gameInstanceClass` |
+| `settings`     | Environment, gravity, timestep, fog, grid, `cameraBounds2D`, `editorJoystickEnabled`, `showNavmesh`, **`sceneLayers`** (`assetGuid` / `zOrder` / `enabled` spawn list). Scenes carry no Game Instance; Play/Preview/export read `ProjectSettings.gameInstanceClass` |
 | `actors`       | Flat list with `parentId`; hierarchy resolved at apply time                                          |
 | `folders`      | Editor-only Outliner folders (`id`, `name`, `parentFolderId`); missing documents normalize to `[]`   |
 
@@ -139,7 +139,7 @@ Notable command types:
 | -------------------------- | ------------------------------------------------------------------------------------------- |
 | `SetSceneNameCommand`      | `scene.name`                                                                                |
 | `SetViewportModeCommand`   | `scene.viewportMode`                                                                        |
-| `SetSceneSettingCommand`   | any `settings.*` field (including `grid.snapEnabled`, `grid.showGrid`, `gameInstanceClass`) |
+| `SetSceneSettingCommand`   | any `settings.*` field (including `grid.snapEnabled`, `grid.showGrid`) |
 | `ReorderComponentCommand` / `ReorderActorCommand` / `ReorderFolderCommand` | row order change, including alongside adds and removes |
 | `SetActorPropertiesCommand` | `actor.properties` per-instance overrides, e.g. SceneLayer switcher entries (merge key `actorProperties:{actorId}`) |
 | `SetActorClassCommand` / `SetComponentClassCommand` | `classId` change on an existing actor / component id                    |

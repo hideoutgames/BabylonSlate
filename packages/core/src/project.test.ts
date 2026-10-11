@@ -12,7 +12,6 @@ import {
   PROJECT_FILE,
   normalizeProjectSettings,
   normalizeRenderProjectSettings,
-  resolveGameInstanceClass,
   type ProjectSettings,
 } from "./project";
 
@@ -340,21 +339,6 @@ describe("project schema", () => {
     expect(
       normalizeProjectSettings({ gameInstanceClass: "MyGame" }).gameInstanceClass,
     ).toBe("MyGame");
-  });
-
-  it("prefers the project Game Instance over a scene value", () => {
-    expect(
-      resolveGameInstanceClass(
-        { gameInstanceClass: "ProjectGame" },
-        { settings: { gameInstanceClass: "SceneGame" } },
-      ),
-    ).toBe("ProjectGame");
-    expect(
-      resolveGameInstanceClass(
-        { gameInstanceClass: null },
-        { settings: { gameInstanceClass: "SceneGame" } },
-      ),
-    ).toBe("SceneGame");
   });
 
   it("normalizes editorUtilityObjects to unique class ids", () => {

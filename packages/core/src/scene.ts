@@ -156,8 +156,6 @@ export interface SceneSettings {
   mainCameraComponentId: string | null;
   gravity: [number, number, number];
   fixedTimestepMs: number;
-  /** GameInstance class override for this scene, null to use the project default. */
-  gameInstanceClass: string | null;
   /**
    * Physics backend for this scene. Defaults from `viewportMode` on create;
    * a scene never mixes 2D and 3D physics worlds.
@@ -247,7 +245,6 @@ export function createDefaultSceneSettings(
     mainCameraComponentId: null,
     gravity: [0, -9.81, 0],
     fixedTimestepMs: 16.6667,
-    gameInstanceClass: null,
     physicsWorld: viewportMode === "2d" ? "2d" : "3d",
     grid: {
       snapEnabled: false,
@@ -602,10 +599,6 @@ export function normalizeSceneSettings(
       typeof source.fixedTimestepMs === "number"
         ? source.fixedTimestepMs
         : defaults.fixedTimestepMs,
-    gameInstanceClass:
-      typeof source.gameInstanceClass === "string"
-        ? source.gameInstanceClass
-        : null,
     physicsWorld,
     grid: {
       snapEnabled: grid.snapEnabled === true,

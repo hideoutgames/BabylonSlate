@@ -491,13 +491,7 @@ function initializePlayer(
     texturePixelSizes: Object.fromEntries(content.texturePixelSizes),
     gravity: scene.settings.gravity,
     havokWasmUrl: havokWasmUrl(),
-    gameInstanceClass:
-      (typeof manifest.gameInstanceClass === "string" &&
-      manifest.gameInstanceClass.trim()
-        ? manifest.gameInstanceClass.trim()
-        : undefined) ??
-      scene.settings.gameInstanceClass ??
-      undefined,
+    gameInstanceClass: manifest.gameInstanceClass,
     scenes,
     classAssetGuids: Object.fromEntries(manifest.assets.filter(entry => entry.type === "Class" || entry.type === "Graph").flatMap(entry => [...new Set([entry.classId, entry.name, entry.guid, `scene:${entry.guid}`].filter((id): id is string => !!id))].map(id => [id, entry.guid]))),
     consoleCommands: manifest.assets.flatMap(entry => {
