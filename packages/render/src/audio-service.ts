@@ -858,6 +858,14 @@ export class AudioService {
       if (!pose) {
         this.lastDistance = null;
         this.backend.setVoiceMuffle(voice.voiceId, 0);
+        // A pose-less emitter holds its last position, so it stops shifting
+        // pitch, and its next pose must not read as a jump from the stale one.
+        if (voice.previousPose) {
+          voice.previousPose = null;
+          if (voice.spatial.doppler?.enabled) {
+            this.backend.setVoicePlaybackRate(voice.voiceId, voice.pitch);
+          }
+        }
         continue;
       }
       this.backend.setVoicePose(voice.voiceId, pose);
