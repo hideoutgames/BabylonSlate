@@ -207,13 +207,15 @@ export class RemoveNodeCommand implements EditCommand<SerializedGraph> {
     this.index = index;
   }
 
+  /**
+   * Removes only the node, so `invert` restores exactly what was removed.
+   * Callers remove the node's edges with their own RemoveEdgeCommands first,
+   * as diffGraphCommands does.
+   */
   apply(doc: SerializedGraph): SerializedGraph {
     return {
       ...doc,
       nodes: doc.nodes.filter((entry) => entry.id !== this.node.id),
-      edges: doc.edges.filter(
-        (edge) => edge.source !== this.node.id && edge.target !== this.node.id,
-      ),
     };
   }
 

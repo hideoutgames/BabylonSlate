@@ -124,8 +124,8 @@ describe("graph commands", () => {
 
   it("RemoveNodeCommand apply-then-invert restores the document", () => {
     fc.assert(
-      fc.property(nodeArb, (node) => {
-        const doc = graphWithNode(node);
+      fc.property(nodeArb, edgeArb, (node, edge) => {
+        const doc = { ...graphWithNode(node), edges: [{ ...edge, source: node.id }] };
         const command = new RemoveNodeCommand(node);
         const afterApply = command.apply(doc);
         expect(afterApply.nodes).toEqual([]);
