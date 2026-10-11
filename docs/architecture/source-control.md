@@ -113,6 +113,8 @@ Tick on subscribe, then every `pollIntervalMs` (default 60s). `pause()` / `resum
 | Dirty open docs whose files changed or were deleted | Keep Edits vs Reload From Disk |
 | Clean open docs whose files changed or were deleted | Reload From Disk |
 
+Reload From Disk closes the tab of a document whose file was deleted; a file that exists but cannot be read keeps its tab and stays in the prompt.
+
 Reload must not drop in-memory locks until the next verify poll. This is the acceptance path for a Working Copy branch switch while backgrounded.
 
 Two-device GitHub lock visibility is **manual** native acceptance, not CI.
