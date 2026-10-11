@@ -520,11 +520,14 @@ export function mergePreparedPlaySources(entries: Iterable<PreparedPlaySources>)
   if (!prepared.length) return null;
   const first = prepared[0];
   const game = copyContainers(first.game);
+  // The manifest's asset list (for example the Audio GUIDs Play Sound accepts) is a union too.
+  game.manifest = copyContainers(first.game.manifest);
   const content = copyContainers(first.content);
   content.audioLibrary = copyContainers(first.content.audioLibrary);
   content.particleLibrary = copyContainers(first.content.particleLibrary);
   for (const next of prepared.slice(1)) {
     mergeContainers(game, next.game);
+    mergeContainers(game.manifest, next.game.manifest);
     mergeContainers(content, next.content);
     mergeContainers(content.audioLibrary, next.content.audioLibrary);
     mergeContainers(content.particleLibrary, next.content.particleLibrary);
