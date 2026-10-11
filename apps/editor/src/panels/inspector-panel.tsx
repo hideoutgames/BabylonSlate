@@ -978,7 +978,11 @@ function PrefabComponentDetails({
   const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
   const modelDocuments = useOpenDocumentsOfKinds(MODEL_KINDS);
   const sceneDocuments = useOpenDocumentsOfKinds(SCENE_KINDS);
-  const classGraphs = collectClassGraphsForPalette({ assets: assetRegistry?.list() ?? [], openDocuments: classDocuments, classIdForPath: classIdForGraphPath });
+  // Kept across renders, so a gizmo drag does not walk every Class again.
+  const classGraphs = useMemo(() => {
+    void registryEpoch;
+    return collectClassGraphsForPalette({ assets: assetRegistry?.list() ?? [], openDocuments: classDocuments, classIdForPath: classIdForGraphPath });
+  }, [assetRegistry, classDocuments, registryEpoch]);
   const [assetPick, setAssetPick] = useState<AssetPickRequest | null>(null);
   // An open Material tab's unsaved domain wins over its saved header.
   const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
