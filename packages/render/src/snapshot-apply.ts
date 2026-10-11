@@ -477,9 +477,6 @@ function resolveAssignedMaterial(
   );
 }
 
-/** The assigned Material each Play mesh last received from this path. */
-const appliedAssignedMaterials = new WeakMap<Mesh, Material>();
-
 export function applyMaterialToActorMeshes(
   binding: SnapshotSceneBinding,
   slotId: number,
@@ -504,19 +501,9 @@ export function applyMaterialToActorMeshes(
       guid,
       componentId,
     );
-    if (material) {
-      target.material = material;
-      appliedAssignedMaterials.set(target, material);
-      applyMaterialBounds(target);
-    } else if (target.material && appliedAssignedMaterials.get(target) === target.material) {
-      // An unresolvable Material shows the construction material, never the
-      // previous assignment; import materials it never replaced stay.
-      appliedAssignedMaterials.delete(target);
-      if (!restoreAlbedoMaterial(target)) target.material = null;
-    }
+    if (material) { target.material = material; applyMaterialBounds(target); }
   }
 }
-
 
 /** Imported glTF child names are arbitrary; their component is on an ancestor. */
 export function componentIdForPlayMesh(
