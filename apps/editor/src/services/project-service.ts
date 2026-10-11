@@ -2351,12 +2351,9 @@ export class ProjectService {
       await storage.mkdir(dir, true);
     }
     const existing = await this.readExistingAssetMeta(path);
-    const type =
-      kind === "asset-settings" && existing?.type
-        ? existing.type
-        : isAssetDocumentKind(kind)
-          ? assetTypeForDocumentKind(kind)
-          : "Class";
+    const type = isAssetDocumentKind(kind)
+      ? assetTypeForDocumentKind(kind)
+      : "Class";
     const ownerPlugin = this.pluginForPath(path);
     let pluginContentChanged = false;
     if (ownerPlugin && type !== "PluginSettings") {
@@ -2391,8 +2388,7 @@ export class ProjectService {
     // Imported assets keep their settings in the header beside their binary
     // chunks; a Font's MSDF attach merges into that header payload.
     const storeInHeader =
-      (kind === "asset-settings" ||
-        kind === "texture" ||
+      (kind === "texture" ||
         kind === "font" ||
         kind === "model" ||
         kind === "skeleton" ||

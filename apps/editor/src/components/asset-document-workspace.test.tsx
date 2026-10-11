@@ -40,22 +40,6 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
       layout: null,
       dirty: false,
     },
-    {
-      id: "asset-settings:assets/Stats.structure.babasset",
-      ref: {
-        kind: "asset-settings",
-        path: "assets/Stats.structure.babasset",
-        label: "Stats",
-      },
-      content: {
-        kind: "structure",
-        guid: "s1",
-        name: "Stats",
-        fields: [{ name: "Health", typeId: "float" }],
-      },
-      layout: null,
-      dirty: false,
-    },
   ],
   applyAssetDocumentChange,
   projectDocument: {
@@ -83,10 +67,6 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
           payload: { family: "Body" },
         },
         path: "assets/Body.font.babasset",
-      },
-      {
-        header: { guid: "s1", name: "Stats", type: "Structure", payload: {} },
-        path: "assets/Stats.structure.babasset",
       },
     ],
     getByGuid: (guid: string) =>

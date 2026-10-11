@@ -739,11 +739,11 @@ describe("project documents as .babasset", () => {
     );
 
     const payload = (await service.loadDocument(
-      "asset-settings",
+      "texture",
       path,
     )) as Record<string, unknown>;
     expect(payload.usage).toBe("albedo");
-    await service.saveDocument("asset-settings", path, {
+    await service.saveDocument("texture", path, {
       ...payload,
       usage: "pixelArt",
     });

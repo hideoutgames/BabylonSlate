@@ -461,8 +461,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
       | "enum"
       | "audio"
       | "scene-layer"
-      | "texture"
-      | "asset-settings",
+      | "texture",
     path: string,
   ): Promise<unknown | null> => {
     const openDoc = documentService
