@@ -835,7 +835,7 @@ describe("filterPaletteForPin", () => {
       title: "Cast to Hero",
       category: "casting",
       pins: [execIn, objectIn, asHero],
-      defaultData: { defaultClassId: "Hero", classId: "Hero" },
+      defaultData: { "default:class": "Hero" },
     };
     expect(
       filterPaletteForPin(
