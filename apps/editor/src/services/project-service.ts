@@ -1103,13 +1103,15 @@ export class ProjectService {
         ) || "Imported Project";
       let name = base;
       let suffix = 2;
-      // Existing browser projects remain untouched, even when display names match.
-      for (;;) {
-        await this.storage.openDocumentsProject(name);
-        if (await this.projectFolderIsEmpty()) break;
+      // Existing browser projects remain untouched, even when display names
+      // match. The probe that creates the folder owns it, so a failed import
+      // removes that folder instead of leaving it listed and its name taken.
+      let owned = await this.openOwnedDocumentsProject(name);
+      while (!(await this.projectFolderIsEmpty())) {
         name = `${base} ${suffix++}`;
+        owned = await this.openOwnedDocumentsProject(name);
       }
-      return this.createFromTemplate({ templateFiles: files, name });
+      return this.scaffoldFromTemplate(owned, name, { templateFiles: files });
     }
     await this.storage.pickProjectFolder();
     return this.loadCurrentProject();
@@ -1156,6 +1158,15 @@ export class ProjectService {
     } else {
       owned = await this.openOwnedDocumentsProject(projectName);
     }
+    return this.scaffoldFromTemplate(owned, projectName, options);
+  }
+
+  /** Scaffolds a template into the current folder; `owned` is null for a user-picked folder. */
+  private async scaffoldFromTemplate(
+    owned: OwnedFolder | null,
+    projectName: string,
+    options: { templateFiles: ProjectTreeFile[]; appearance?: ProjectAppearance },
+  ): Promise<ProjectLoadResult> {
     if (await this.storage.exists(PROJECT_FILE) && !owned?.createdHere) {
       throw new Error("A project already exists in this folder.");
     }
