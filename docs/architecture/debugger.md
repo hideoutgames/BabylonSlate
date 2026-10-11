@@ -155,7 +155,7 @@ the paused interval. Stop remains available outside hidden document tabs.
 
 | Live edit | Current owner/capability |
 | --- | --- |
-| Actor/local component pose | Validated transform/physics boundary; teleports preserve velocity and reset interpolation; unsafe owners report restart required (an enabled Ragdoll on the actor or a moved descendant, or a selected Physics Constraint / Scene Streaming component; a disabled Ragdoll still teleports) |
+| Actor/local component pose | Validated transform/physics boundary; teleports preserve velocity and publish a new presentation frame; unsafe owners report restart required (an enabled Ragdoll on the actor or a moved descendant, or a selected Physics Constraint / Scene Streaming component; a disabled Ragdoll still teleports) |
 | Exposed Class scalar/vector/reference values | Reflected typed setter when supported; Maps/structures and unsupported types remain inspection-only |
 | Existing Mesh shadows/material assignment, camera/light/outline, rigid body/collider/navigation fields, audio volume | Explicit runtime descriptors; colliders use their owner rebuild boundary; other asset replacements/rebuilds may require restart |
 | Surface float/color/texture parameters | Session-owned `MaterialObject` parameters with staged asset preparation; no shared source-material writes |

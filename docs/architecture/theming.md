@@ -16,7 +16,7 @@ No automated test checks palette contrast. Screenshots and interaction review va
 
 ## Safe-area insets
 
-`globals.css` owns the four safe-area tokens: `--safe-top`, `--safe-right`, `--safe-bottom`, and `--safe-left`. They resolve the corresponding `env(safe-area-inset-*, 0px)` values, keeping web, Electron, and jsdom at zero. Surfaces consume these tokens and never call `env()` directly.
+`globals.css` owns the four safe-area tokens: `--safe-top`, `--safe-right`, `--safe-bottom`, and `--safe-left`. They resolve the corresponding `env(safe-area-inset-*, 0px)` values, keeping web, Electron, and jsdom at zero. Surfaces consume these tokens. The exceptions are the floating Simulation session bar and Feature Test Check bar, which place themselves at `max(0.5rem, env(safe-area-inset-top))`.
 
 - The editor and Homepage roots use `.safe-frame` for left, right, and bottom insets.
 - Visible bottom status bars extend through the frame's bottom inset at their existing height, removing the extra gap on iPad. Layouts without a visible status bar retain bottom safe-area padding; overlay insets remain independent.

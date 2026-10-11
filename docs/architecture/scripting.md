@@ -863,8 +863,8 @@ variables; reference edits never evaluate expressions or property paths.
 Mutations carry independent request IDs and per-property sequences. At most 32
 bounded requests wait at the boundary; stopped/stale/oversized requests fail explicitly.
 An accepted transform uses the physics teleport owner, preserves body velocity,
-updates affected descendants, and publishes a new presentation frame identity with
-an interpolation reset while keeping the simulation tick unchanged. Runtime edits
+updates affected descendants, and publishes a new presentation frame identity
+while keeping the simulation tick unchanged. Runtime edits
 remain outside authoring history; final scene persistence has its own full-state
 capture contract, independent of the Inspector's writable subset.
 

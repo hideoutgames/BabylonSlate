@@ -19,7 +19,7 @@ magic "BABA" (4) | version u32 LE | headerLen u32 LE | header JSON (utf8) | chun
 | `name` | Display name |
 | `engineVersion` | Engine that wrote the file |
 | `version` | Payload schema version (per type) |
-| `parentClass` | Optional parent class guid |
+| `parentClass` | Optional parent class id (for example `BObject` or `Hero`) |
 | `dependencies` | Guid list |
 | `mode` | `thin` (in-project) or `bundled` (share/export) |
 | `payload` | Structured data (graphs, properties, component trees) |
