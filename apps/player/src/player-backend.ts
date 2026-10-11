@@ -11,6 +11,13 @@ export type PlayerBackendHandle = PlayerBootHandle & {
   backend: Pick<BackendEngineSession, "requestedBackend" | "effectiveBackend" | "fallbackReason">;
 };
 
+/**
+ * Longest wait for the view's native release before its Engine goes anyway.
+ * Context loss or a hidden page can stop the frames that release needs, and
+ * Engine disposal, the final native owner, then completes it.
+ */
+const VIEW_RELEASE_DEADLINE_MS = 5_000;
+
 /** One private graphics context for this player, released after its runtime/views. */
 export async function startPlayerWithBackend(
   options: Omit<PlayerBootOptions, "sharedEngine" | "content" | "onStopped"> & { signal?: AbortSignal; onStopped?: () => void },
@@ -39,17 +46,36 @@ export async function startPlayerWithBackend(
   });
   let released = false;
   let releaseFailure: unknown;
+  // Stop has already returned its diagnostics, so a late failure is posted on its own.
+  const reportDeferredFailure = (error: unknown) => {
+    const message = `Graphics backend cleanup failed: ${error instanceof Error ? error.message : String(error)}`;
+    console.error(`[player] ${message}`);
+    try { options.onDiagnostic?.([{ severity: "error", code: "player.cleanup.failed", message }]); }
+    catch (reportError) { console.error("[player] Graphics backend cleanup could not be reported.", reportError); }
+  };
+  // The view releases its Scene on this Engine once native work settles; the
+  // Engine goes after that release, confirmed or quarantined. WebGPU destroys
+  // released textures and buffers only at the end of a frame, and the view
+  // stopped the only render loop, so empty frames keep that drain going.
+  const disposeAfterView = (viewReleased: Promise<void>) => {
+    const { engine } = owner;
+    const drain = () => {};
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<void>((resolve) => { timer = setTimeout(resolve, VIEW_RELEASE_DEADLINE_MS); });
+    void Promise.race([viewReleased.catch(() => {}), deadline])
+      .then(() => {
+        clearTimeout(timer);
+        try { engine.stopRenderLoop(drain); } finally { owner.dispose(); }
+      })
+      .catch(reportDeferredFailure);
+    engine.runRenderLoop(drain);
+  };
   const releaseOwner = (viewReleased?: Promise<void>) => {
     if (released) return;
     released = true;
     const errors: unknown[] = [];
-    // The view releases its Scene on this Engine once native work settles.
-    // Dispose the Engine only after that, even when the release was
-    // quarantined: Engine disposal is the final native owner.
     if (viewReleased) {
-      void viewReleased.catch(() => {}).then(() => owner.dispose()).catch((error: unknown) => {
-        console.error(`[player] Graphics backend cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
-      });
+      try { disposeAfterView(viewReleased); } catch (error) { errors.push(error); }
     } else {
       try { owner.dispose(); } catch (error) { errors.push(error); }
     }

@@ -38,18 +38,32 @@ async function game(custom = false) {
 
 describe("packed player backend lifetime", () => {
   const events: string[] = [];
+  // Active render loops and end-of-frame observers on the private Engine.
+  const renderLoops = new Set<() => void>();
+  const endFrame = new Set<() => void>();
+  /** Like Babylon's frame queue: a frame ends only while a render loop runs. */
+  const renderFrame = () => {
+    if (!renderLoops.size) return;
+    for (const loop of [...renderLoops]) loop();
+    for (const observer of [...endFrame]) observer();
+  };
   let owner: BackendEngineSession;
   let player: PlayerBootHandle;
   const canvas = { width: 320, height: 180 } as HTMLCanvasElement;
   beforeEach(() => {
     vi.resetAllMocks();
     events.length = 0;
+    renderLoops.clear();
+    endFrame.clear();
     vi.stubGlobal("document", {
       baseURI: "https://game.example/subdir/index.html",
       createElement: () => ({ width: 0, height: 0, remove: vi.fn() }),
     });
     owner = {
-      engine: {} as AbstractEngine,
+      engine: {
+        runRenderLoop: (loop: () => void) => { renderLoops.add(loop); },
+        stopRenderLoop: (loop: () => void) => { renderLoops.delete(loop); },
+      } as unknown as AbstractEngine,
       requestedBackend: "webgpu",
       effectiveBackend: "webgpu",
       dispose: vi.fn(() => { events.push("engine"); }),
@@ -71,7 +85,11 @@ describe("packed player backend lifetime", () => {
     createBackend.mockResolvedValue(owner);
     start.mockReturnValue(player);
   });
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
 
   it("boots the packed preference on a private canvas and releases the player before its engine", async () => {
     const loaded = await game();
@@ -146,18 +164,52 @@ describe("packed player backend lifetime", () => {
     expect(events).toEqual(["player", "engine"]);
   });
 
-  it("reports internal cleanup failures without disposing the uncertain backend again", async () => {
+  it("keeps frames running on its private Engine until a frame-drained view release settles", async () => {
     const loaded = await game();
-    const engineFailure = new Error("Device disposal failed");
-    const pageFailure = new Error("Page cleanup failed");
-    vi.mocked(owner.dispose).mockImplementation(() => { events.push("engine"); throw engineFailure; });
-    const onStopped = vi.fn(() => { throw pageFailure; });
-    const handle = await startPlayerWithBackend({ game: loaded, canvas, onStopped });
+    const handle = await startPlayerWithBackend({ game: loaded, canvas });
     const boot = start.mock.calls[0]![0] as PlayerBootOptions;
-    let failure: unknown;
-    try { boot.onStopped!(); } catch (error) { failure = error; }
-    expect(failure).toBeInstanceOf(AggregateError);
-    expect((failure as AggregateError).errors).toEqual([engineFailure, pageFailure]);
+    // WebGPU releases the view's retired resources at the next end of frame.
+    boot.onStopped!(new Promise<void>((resolve) => { endFrame.add(resolve); }));
+    await Promise.resolve();
+    expect(events).toEqual([]);
+    renderFrame();
+    await vi.waitFor(() => expect(events).toEqual(["engine"]));
+    expect(renderLoops.size).toBe(0);
+    handle.stop();
+    expect(owner.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("disposes the Engine after a bounded wait when only Engine disposal can complete the view release", async () => {
+    const loaded = await game();
+    const handle = await startPlayerWithBackend({ game: loaded, canvas });
+    const boot = start.mock.calls[0]![0] as PlayerBootOptions;
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    let settle!: () => void;
+    const viewReleased = new Promise<void>((resolve) => { settle = resolve; });
+    vi.mocked(owner.dispose).mockImplementation(() => { events.push("engine"); settle(); });
+    boot.onStopped!(viewReleased);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(events).toEqual([]);
+    await vi.runAllTimersAsync();
+    expect(events).toEqual(["engine"]);
+    await viewReleased;
+    handle.stop();
+    expect(owner.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("reports a failed deferred Engine disposal without disposing the uncertain backend again", async () => {
+    const loaded = await game();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const pageFailure = new Error("Page cleanup failed");
+    vi.mocked(owner.dispose).mockImplementation(() => { events.push("engine"); throw new Error("Device disposal failed"); });
+    const onStopped = vi.fn(() => { throw pageFailure; });
+    const onDiagnostic = vi.fn();
+    const handle = await startPlayerWithBackend({ game: loaded, canvas, onStopped, onDiagnostic });
+    const boot = start.mock.calls[0]![0] as PlayerBootOptions;
+    expect(() => boot.onStopped!(Promise.resolve())).toThrow(pageFailure);
+    await vi.waitFor(() => expect(onDiagnostic).toHaveBeenCalledWith([expect.objectContaining({
+      code: "player.cleanup.failed", severity: "error", message: expect.stringContaining("Device disposal failed"),
+    })]));
     expect(() => handle.stop()).toThrow("Player shutdown failed");
     handle.stop();
     expect(owner.dispose).toHaveBeenCalledOnce();

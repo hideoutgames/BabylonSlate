@@ -102,7 +102,7 @@ async function fixture(withWater = false, saveGame?: SaveGameConfiguration) {
 async function backendFixture() {
   const value = await fixture();
   const owner: rendering.BackendEngineSession = {
-    engine: {} as AbstractEngine,
+    engine: { runRenderLoop: vi.fn(), stopRenderLoop: vi.fn() } as unknown as AbstractEngine,
     requestedBackend: "webgl2",
     effectiveBackend: "webgl2",
     dispose: vi.fn(() => { expect(value.handle.dispose).toHaveBeenCalledOnce(); }),
