@@ -71,11 +71,13 @@ export class AddActorCommand implements EditCommand<SerializedScene> {
     if (doc.actors.some((actor) => actor.id === this.actor.id)) {
       return doc;
     }
+    // A copy, so an in-place write to the added actor cannot reach the snapshot.
+    const actor = structuredClone(this.actor);
     const actors = [...doc.actors];
     if (this.index >= 0 && this.index <= actors.length) {
-      actors.splice(this.index, 0, this.actor);
+      actors.splice(this.index, 0, actor);
     } else {
-      actors.push(this.actor);
+      actors.push(actor);
     }
     return { ...doc, actors };
   }
@@ -345,12 +347,14 @@ export class AddComponentCommand implements EditCommand<SerializedScene> {
     if (!target || target.components.some((entry) => entry.id === this.component.id)) {
       return doc;
     }
+    // A copy, so an in-place write to the added component cannot reach the snapshot.
+    const component = structuredClone(this.component);
     return replaceActor(doc, this.actorId, (actor) => {
       const components = [...actor.components];
       if (this.index >= 0 && this.index <= components.length) {
-        components.splice(this.index, 0, this.component);
+        components.splice(this.index, 0, component);
       } else {
-        components.push(this.component);
+        components.push(component);
       }
       return { ...actor, components };
     });

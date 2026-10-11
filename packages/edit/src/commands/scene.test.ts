@@ -309,7 +309,7 @@ describe("scene commands", () => {
     );
   });
 
-  it("keeps component property and transform snapshots apart from the edited document", () => {
+  it("keeps command snapshots apart from the edited document", () => {
     const scene = baseScene();
     const from = scene.actors[0]!.components[0]!.transform!;
     const to: SerializedTransform = { ...from, position: [2, 0, 0] };
@@ -320,6 +320,19 @@ describe("scene commands", () => {
     (component.properties.heights as number[])[0] = 9;
     expect(to.position).toEqual([2, 0, 0]);
     expect(property.to).toEqual([1, 2]);
+
+    // Undo of a delete re-adds the removed rows from the Redo entry's snapshots.
+    const actor = createActor("c", "C", { components: [createMeshComponent("c3", "box")] });
+    const added = createMeshComponent("c2", "sphere");
+    const snapshots = structuredClone({ actor, added });
+    const restored = new RemoveComponentCommand("a", added).invert().apply(
+      new RemoveActorCommand(actor).invert().apply(scene),
+    );
+    const restoredActor = restored.actors.find((entry) => entry.id === "c")!;
+    restoredActor.transform.position[0] = 9;
+    restoredActor.components[0]!.properties.meshKind = "sphere";
+    restored.actors[0]!.components.find((entry) => entry.id === "c2")!.properties.meshKind = "box";
+    expect({ actor, added }).toEqual(snapshots);
   });
 
   it("SetSceneSettingCommand apply-then-invert restores the document", () => {
