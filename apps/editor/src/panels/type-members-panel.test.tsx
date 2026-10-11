@@ -84,6 +84,29 @@ describe("type asset member table", () => {
     );
   });
 
+  it.each(["enum", "structure"] as const)("keeps the %s name input mounted while its name is typed", (kind) => {
+    harness.kind = kind;
+    harness.content = kind === "enum"
+      ? { kind, guid: "e1", name: "Colors", members: [{ name: "None", value: 0 }] }
+      : { kind, guid: "s1", name: "Stats", fields: [{ id: "health", name: "Health", typeId: "float" }] };
+    const panel = () => (
+      <TypeAssetEditingProvider>
+        <TypeMembersPanel {...({} as IDockviewPanelProps)} />
+      </TypeAssetEditingProvider>
+    );
+    const { rerender } = render(panel());
+    const label = kind === "enum" ? "Member 1 name" : "Field 1 name";
+    const input = screen.getByLabelText(label);
+    input.focus();
+    fireEvent.change(input, { target: { value: "Renamed" } });
+    // The document applies each keystroke, so the row re-renders with the new name.
+    const [, saved] = applyAssetDocumentChange.mock.calls.at(-1) as unknown as [string, Record<string, unknown>];
+    harness.content = saved;
+    rerender(panel());
+    expect(screen.getByLabelText(label)).toBe(input);
+    expect(document.activeElement).toBe(input);
+  });
+
   it("shows a PinTypePicker for the selected structure field", () => {
     harness.kind = "structure";
     harness.content = {

@@ -86,8 +86,10 @@ export function TypeMembersPanel(_props: IDockviewPanelProps) {
           {asset.members.map((member, index) => {
             const selected = selectedIndex === index;
             return (
+              // The name commits on each keystroke, so a name-based key would
+              // remount the input and drop focus.
               <div
-                key={`${member.name}-${index}`}
+                key={index}
                 className={`flex min-h-[var(--chrome-row,28px)] items-center gap-1 px-2 ${
                   selected ? "bg-accent" : "hover:bg-accent/50"
                 }`}
@@ -180,7 +182,7 @@ export function TypeMembersPanel(_props: IDockviewPanelProps) {
             const selected = selectedIndex === index;
             return (
               <div
-                key={`${field.name}-${index}`}
+                key={field.id ?? `index:${index}`}
                 className={`flex min-h-[var(--chrome-row,28px)] items-center gap-1 px-2 ${
                   selected ? "bg-accent" : "hover:bg-accent/50"
                 }`}
