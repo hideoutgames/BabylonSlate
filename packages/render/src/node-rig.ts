@@ -69,7 +69,8 @@ export function createLinkedSkeletonFromNodeRig(
   );
   const boneMeshIndices = boneMesh?.getIndices();
   const boneMeshNormals = boneMesh?.getVerticesData(VertexBuffer.NormalKind);
-  const mapNameToBone: Record<string, Bone> = {};
+  // Parent by node identity: imported rigs may repeat names under different parents.
+  const boneByNode = new Map<TransformNode, Bone>();
 
   for (const node of nodes) {
     ensureNodeRotationQuaternion(node);
@@ -97,9 +98,8 @@ export function createLinkedSkeletonFromNodeRig(
         indices.push(currentVertexIndex + boneMeshIndices[i]!);
       }
     }
-    const parentName = node.parent?.name;
     const parentBone =
-      node.parent && parentName ? (mapNameToBone[parentName] ?? null) : null;
+      node.parent instanceof TransformNode ? (boneByNode.get(node.parent) ?? null) : null;
     const bone = new Bone(
       node.name,
       skeleton,
@@ -109,7 +109,7 @@ export function createLinkedSkeletonFromNodeRig(
       Matrix.Identity(),
     );
     bone.linkTransformNode(node);
-    mapNameToBone[node.name] = bone;
+    boneByNode.set(node, bone);
   }
 
   overlay?.setVerticesData(VertexBuffer.PositionKind, positions);

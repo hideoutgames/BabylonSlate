@@ -91,6 +91,25 @@ describe("node-rig helpers", () => {
     expect(skeleton.bones.map((bone) => bone.name)).not.toContain("__root__");
   });
 
+  it("parents bones by node identity when a descendant repeats an ancestor name", () => {
+    const { engine, scene } = makeScene();
+    engines.push(engine);
+    const root = new TransformNode("rig", scene);
+    const outer = new TransformNode("Joint", scene);
+    outer.parent = root;
+    const inner = new TransformNode("Inner", scene);
+    inner.parent = outer;
+    // Visited between `outer` and `tip`, so a name lookup would find this node.
+    const nested = new TransformNode("Joint", scene);
+    nested.parent = inner;
+    const tip = new TransformNode("Tip", scene);
+    tip.parent = outer;
+    const { skeleton } = createLinkedSkeletonFromNodeRig(root);
+    const boneFor = (node: TransformNode) => skeleton.bones.find((bone) => bone.getTransformNode() === node)!;
+    expect(boneFor(tip).getParent()).toBe(boneFor(outer));
+    expect(boneFor(nested).getParent()).toBe(boneFor(inner));
+  });
+
   it("walks descendants of __root__ without creating a __root__ bone", () => {
     const { engine, scene } = makeScene();
     engines.push(engine);
