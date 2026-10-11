@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultGraph } from "@babylonslate/core";
+import fc from "fast-check";
+import { createDefaultGraph, type SerializedGraph } from "@babylonslate/core";
 import {
   AddEdgeCommand,
   AddNodeCommand,
@@ -13,6 +14,8 @@ import {
   SetNodeDataCommand,
 } from "./graph";
 import { diffGraphCommands } from "./graph-diff";
+import { EditSession } from "../session";
+import { commandToJournalPayload, reviveCommand } from "../journal";
 
 describe("diffGraphCommands", () => {
   it("emits a move command when a node position changes", () => {
@@ -199,3 +202,51 @@ describe("diffGraphCommands", () => {
   });
 });
 
+const NODE_IDS = ["n1", "n2", "n3", "n4"] as const;
+const EDGE_IDS = ["e1", "e2", "e3", "e4"] as const;
+
+const nodeArb = fc.record({
+  id: fc.constantFrom(...NODE_IDS),
+  type: fc.constantFrom("flow.branch", "debug.print"),
+  position: fc.record({ x: fc.integer({ min: 0, max: 2 }), y: fc.constant(0) }),
+  data: fc.dictionary(fc.constantFrom("title", "message"), fc.constantFrom("A", "B")),
+});
+
+const edgeArb = fc.record({
+  id: fc.constantFrom(...EDGE_IDS),
+  source: fc.constantFrom(...NODE_IDS),
+  target: fc.constantFrom(...NODE_IDS),
+  sourceHandle: fc.constantFrom("then", "else"),
+  type: fc.constantFrom("exec", "data"),
+}, { requiredKeys: ["id", "source", "target"] });
+
+/** Unique rows in any order; edges only between nodes the graph holds. */
+const graphArb: fc.Arbitrary<SerializedGraph> = fc.record({
+  nodes: fc.uniqueArray(nodeArb, { selector: (node) => node.id, maxLength: 4 }),
+  edges: fc.uniqueArray(edgeArb, { selector: (edge) => edge.id, maxLength: 4 }),
+}).map(({ nodes, edges }) => {
+  const ids = new Set(nodes.map((node) => node.id));
+  return { nodes, edges: edges.filter((edge) => ids.has(edge.source) && ids.has(edge.target)) };
+});
+
+describe("diffGraphCommands round trip", () => {
+  it("reproduces rewired edges, retyped nodes and row order, undoes exactly, and replays from the journal", () => {
+    fc.assert(
+      fc.property(graphArb, graphArb, (before, after) => {
+        const commands = diffGraphCommands(before, after);
+        const session = new EditSession();
+        const applied = session.applyBatch("graph", before, commands)?.doc ?? before;
+        expect(applied).toEqual(after);
+        expect(session.undo("graph", applied)?.doc ?? applied).toEqual(before);
+
+        let replayed = before;
+        for (const command of commands) {
+          const line = JSON.parse(JSON.stringify(commandToJournalPayload(command))) as { type: string };
+          replayed = reviveCommand(line)!.apply(replayed) as SerializedGraph;
+        }
+        expect(replayed).toEqual(after);
+      }),
+      { numRuns: 300 },
+    );
+  });
+});
