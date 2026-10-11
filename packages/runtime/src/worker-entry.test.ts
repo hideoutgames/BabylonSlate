@@ -107,6 +107,17 @@ describe.each([
     expect(() => harness.runNext(16)).toThrow("No scheduled worker callback");
     expect(advance).toHaveBeenCalledTimes(3);
   });
+  it("keeps advancing after a frame throws", () => {
+    const harness = createHost(withAnimationFrame);
+    const advance = vi.fn().mockImplementationOnce(() => { throw new Error("tick failed"); });
+    const scheduler = createWorkerScheduler(harness.host, advance);
+    scheduler.start();
+    expect(() => harness.runNext(16)).toThrow("tick failed");
+    expect(harness.activeCount()).toBe(1);
+    harness.runNext(20);
+    expect(advance.mock.calls).toEqual([[0], [0.02]]);
+    scheduler.stop();
+  });
 });
 
 describe("worker entry snapshot transport", () => {
@@ -121,8 +132,9 @@ describe("worker entry snapshot transport", () => {
   });
 
   /** Boot the real worker entry against a host that recycles only when told to. */
-  async function bootWorker(load: Extract<ControlMessage, { type: "load" }>, before: ControlMessage[] = []) {
+  async function bootWorker(load: Extract<ControlMessage, { type: "load" }>, before: ControlMessage[] = [], beforeImport?: () => Promise<void>) {
     vi.resetModules();
+    await beforeImport?.();
     let now = 0;
     const frames: FrameRequestCallback[] = [];
     const host = {
@@ -224,6 +236,52 @@ describe("worker entry snapshot transport", () => {
     deliver({ channel: "recycleSnapshot", payload: snapshots()[1]!.buffer });
     expect(kinds(posts.slice(before))).toEqual(["snapshot"]);
     expect(snapshots()[3]!.frameId).toBe(newest);
+  });
+
+  it("pauses again after a single step whose tick throws", async () => {
+    const { runtime, runFrames } = await bootWorker({ type: "load", sceneAssetGuid: "main", scene: { ...createDefaultScene(), actors: [createActor("prop", "Prop")] } });
+    send!({ type: "setPaused", paused: true });
+    const tickIndex = runtime.getWorld().clock.tickIndex;
+    vi.spyOn(runtime, "tick").mockImplementationOnce(() => { throw new Error("tick failed"); });
+    expect(() => send!({ type: "step" })).toThrow("tick failed");
+    runFrames(3);
+    expect(runtime.getWorld().clock.tickIndex).toBe(tickIndex);
+  });
+
+  it("retries a layout whose transfer buffers failed to allocate, then resumes poses at the new capacity", async () => {
+    let failures = 0;
+    let restoreGrow = () => {};
+    try {
+      const { posts, emitted, runFrames, kinds } = await bootWorker({ type: "load", sceneAssetGuid: "main",
+        scene: { ...createDefaultScene(), actors: Array.from({ length: 300 }, (_, index) => createActor(`prop-${index}`, "Prop")) } }, [], async () => {
+        // The worker module's own bridge instance, loaded after the module reset.
+        const { TransferablePingPong } = await import("@babylonslate/bridge");
+        const grow = TransferablePingPong.prototype.grow;
+        const spy = vi.spyOn(TransferablePingPong.prototype, "grow").mockImplementation(function (this: InstanceType<typeof TransferablePingPong>, capacity: number) {
+          if (capacity > this.maxActors && failures++ < 2) throw new RangeError("Array buffer allocation failed");
+          return grow.call(this, capacity);
+        });
+        restoreGrow = () => spy.mockRestore();
+      });
+      const settleFrame = async () => {
+        runFrames(1);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      };
+      for (let i = 0; i < 100 && !kinds().includes("snapshotLayout"); i++) await settleFrame();
+      // Both failed allocations were retried; only the first was reported.
+      expect(failures).toBe(3);
+      expect(emitted.filter((command) => command.type === "diagnostic" &&
+        command.message.includes("Unable to allocate transferable Actor snapshots"))).toHaveLength(1);
+      const layoutAt = kinds().indexOf("snapshotLayout");
+      const layout = posts[layoutAt]!;
+      if (layout.kind !== "command" || layout.command.type !== "snapshotLayout") throw new Error("missing layout");
+      await settleFrame();
+      const resumed = posts.slice(layoutAt).flatMap((post) => post.kind === "snapshot" ? [post] : []);
+      expect(resumed.length).toBeGreaterThan(0);
+      expect(resumed[0]!.buffer.byteLength).toBe(snapshotFloatCount(layout.command.capacity) * 4);
+    } finally {
+      restoreGrow();
+    }
   });
 
   it("delivers a held runtime Inspector edit result right after the pose that shows the edit", async () => {

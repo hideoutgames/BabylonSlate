@@ -66,6 +66,8 @@ function releaseAfterPose(): void {
 }
 let installedGeneration = 0;
 let pendingGeneration: number | null = null;
+// A layout whose transfer buffers could not be allocated yet; poses wait for it.
+let unpostedLayout: Extract<CommandMessage, { type: "snapshotLayout" }> | null = null;
 let stopConsoleCapture: (() => void) | null = null;
 
 function onCommand(command: CommandMessage): void {
@@ -84,15 +86,31 @@ function onCommand(command: CommandMessage): void {
     return;
   }
   if (command.type === "snapshotLayout") {
-    try {
-      snapshotPing = snapshotPing.grow(command.capacity);
-      pendingGeneration = command.generation;
-    } catch (error) {
-      ensureRuntime().reportError(new Error(`Unable to allocate transferable Actor snapshots (${command.capacity}): ${error instanceof Error ? error.message : String(error)}`));
-      return;
-    }
+    installSnapshotLayout(command);
+    return;
   }
   postMessage({ channel: "command", payload: command });
+}
+
+/**
+ * Grow the transfer buffers for a layout, then announce it. When allocation
+ * fails, the failure is reported once and poses wait; each later publish
+ * retries the newest layout, so poses resume once memory allows.
+ */
+function installSnapshotLayout(command: Extract<CommandMessage, { type: "snapshotLayout" }>): boolean {
+  try {
+    snapshotPing = snapshotPing.grow(command.capacity);
+  } catch (error) {
+    if (unpostedLayout?.generation !== command.generation) {
+      ensureRuntime().reportError(new Error(`Unable to allocate transferable Actor snapshots (${command.capacity}): ${error instanceof Error ? error.message : String(error)}`));
+    }
+    unpostedLayout = command;
+    return false;
+  }
+  unpostedLayout = null;
+  pendingGeneration = command.generation;
+  postMessage({ channel: "command", payload: command });
+  return true;
 }
 
 function ensureRuntime(seed = 1): RuntimeDriver {
@@ -219,6 +237,8 @@ function handleControl(msg: ControlMessage): void {
         runtime.stop();
         runtime = null;
       }
+      // The replaced runtime's layout never applies to the next one.
+      unpostedLayout = null;
       saveStorage.dispose();
       sceneSources.dispose();
       sceneSources = createSceneSourceClient(onCommand);
@@ -345,8 +365,11 @@ function handleControl(msg: ControlMessage): void {
     case "step": {
       const rt = ensureRuntime();
       rt.resume();
-      rt.tick();
-      rt.pause();
+      try {
+        rt.tick();
+      } finally {
+        rt.pause();
+      }
       return;
     }
     case "stop":
@@ -444,7 +467,9 @@ function handleControl(msg: ControlMessage): void {
 
 function publishSnapshot(): boolean {
   const rt = runtime;
-  if (!rt || pendingGeneration !== null) return false;
+  if (!rt) return false;
+  if (unpostedLayout) installSnapshotLayout(unpostedLayout);
+  if (unpostedLayout || pendingGeneration !== null) return false;
   if (inFlightSnapshots >= MAX_IN_FLIGHT_SNAPSHOTS) {
     snapshotSkipped = true;
     return false;
