@@ -124,6 +124,13 @@ function isAudioCommand(command: CommandMessage): command is QueuedCommand {
   );
 }
 
+type PlaySoundCommand = Extract<CommandMessage, { type: "playSound" }>;
+
+/** A runtime draw as the random source of one choice; without one the host draws. */
+function drawOr(roll: number | undefined, random: () => number): () => number {
+  return typeof roll === "number" && Number.isFinite(roll) ? () => roll : random;
+}
+
 function clampAudioScale(value: number): number {
   if (!Number.isFinite(value)) return 1;
   if (value < 0) return 0;
@@ -177,6 +184,8 @@ export class AudioService {
   private lastDistance: number | null = null;
   private wet = 0;
   private voiceSeq = 0;
+  /** Latest runtime simulated seconds (`audioSimTime`, restored `playSound` stamps). */
+  private simulatedSeconds = 0;
   private listener: AudioPose = { x: 0, y: 0, z: 0 };
   private reverbField: AudioReverbField | null = null;
   private readonly now: () => number;
@@ -383,7 +392,13 @@ export class AudioService {
       this.setShowAudioDebug(command.enabled);
       return;
     }
+    if (command.type === "audioSimTime") {
+      if (Number.isFinite(command.seconds)) this.simulatedSeconds = command.seconds;
+      return;
+    }
     if (!isAudioCommand(command)) return;
+    if (command.type === "playSound" && Number.isFinite(command.restoredAtSeconds))
+      this.simulatedSeconds = command.restoredAtSeconds!;
     if (!this.unlocked) {
       if (this.queue.length >= AUDIO_PRE_UNLOCK_QUEUE_CAP) this.queue.shift();
       this.queue.push(command);
@@ -446,7 +461,8 @@ export class AudioService {
       this.queue = [];
       this.publishStats();
       for (const command of pending) {
-        this.work = this.work.catch(() => undefined).then(() => this.dispatch(command, generation));
+        const queued = this.caughtUp(command);
+        this.work = this.work.catch(() => undefined).then(() => this.dispatch(queued, generation));
       }
       await this.work;
     });
@@ -455,6 +471,19 @@ export class AudioService {
     } finally {
       this.unlocking = null;
     }
+  }
+
+  /**
+   * A trace-restored voice that waited for the unlock starts later by the
+   * simulated time that passed meanwhile (paused time never counts). The
+   * backend wraps a looping voice and ends a one-shot already past its clip.
+   * Ordinary queued voices still start at the beginning.
+   */
+  private caughtUp(command: QueuedCommand): QueuedCommand {
+    if (command.type !== "playSound" || !Number.isFinite(command.restoredAtSeconds)) return command;
+    const waited = this.simulatedSeconds - command.restoredAtSeconds!;
+    if (!(waited > 0)) return command;
+    return { ...command, startOffsetSeconds: (command.startOffsetSeconds ?? 0) + waited };
   }
 
   syncListener(pose: AudioPose): void {
@@ -628,7 +657,7 @@ export class AudioService {
   }
 
   private async play(
-    command: Extract<CommandMessage, { type: "playSound" }>,
+    command: PlaySoundCommand,
     generation: number,
   ): Promise<void> {
     if (!this.prepareAsset) return this.playPrepared(command, generation);
@@ -663,7 +692,7 @@ export class AudioService {
   }
 
   private async playPrepared(
-    command: Extract<CommandMessage, { type: "playSound" }>, generation: number,
+    command: PlaySoundCommand, generation: number,
     sourceOwner?: { transferred: boolean; release?: () => void; signal?: AbortSignal },
   ): Promise<void> {
     const assetGuid = command.assetGuid;
@@ -681,8 +710,9 @@ export class AudioService {
       sessionChannelVolumes: this.sessionChannelVolumes,
       sessionGlobalVolume: this.sessionGlobalVolume,
     });
-    const clip = pickWeightedAudioClip(payload.clips, this.random);
-    const pitch = resolveAudioPitch(payload, this.random);
+    // The runtime's draws make the choice reproducible: a trace restore replays them.
+    const clip = pickWeightedAudioClip(payload.clips, drawOr(command.clipRoll, this.random));
+    const pitch = resolveAudioPitch(payload, drawOr(command.pitchRoll, this.random));
     const cacheKey = this.clipKey(assetGuid, clip.chunkId);
     const source = await this.resolveSourceBytes(assetGuid, clip.chunkId, cacheKey);
     if (!this.isCurrent(generation) || sourceOwner?.signal?.aborted || cacheKey !== this.clipKey(assetGuid, clip.chunkId) || this.retiredClipKeys.has(cacheKey)) return;

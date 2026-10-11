@@ -827,7 +827,20 @@ export type CommandMessage =
       voiceId?: string;
       /** Seconds of the voice already played (trace restore); omitted starts at the beginning. */
       startOffsetSeconds?: number;
+      /**
+       * The runtime's uniform [0, 1) draws for the weighted clip and the random pitch, so a trace
+       * restore plays the same clip at the same pitch. Omitted draws are random on the host.
+       */
+      clipRoll?: number;
+      pitchRoll?: number;
+      /**
+       * Trace restore only: the runtime's simulated (dilated) seconds when it issued the voice. A
+       * restored voice that waits for the audio unlock starts later by the simulated time it waited.
+       */
+      restoredAtSeconds?: number;
     }
+  /** Runtime simulated (dilated) seconds; sent each tick while trace-restored voices are live. */
+  | { type: "audioSimTime"; seconds: number }
   | { type: "stopSound"; voiceId: string }
   | { type: "setVoiceGain"; voiceId: string; volume: number }
   | { type: "setChannelVolume"; channelGuid: string; volume: number }

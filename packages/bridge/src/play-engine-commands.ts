@@ -28,6 +28,7 @@ export const PLAY_ENGINE_COMMAND_TYPES = [
   "despawn",
   "playSound",
   "stopSound",
+  "audioSimTime",
   "setChannelVolume",
   "setGlobalVolume",
   "setScalability",

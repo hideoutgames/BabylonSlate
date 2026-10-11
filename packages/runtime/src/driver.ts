@@ -238,8 +238,8 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly loopGuard: InfiniteLoopGuard;
 
   // Leaf services, built by field initializers: they take no other subsystem.
-  /** Voices `emit` started and has not stopped, for trace frames and restore. */
-  private readonly voices = new RuntimeVoices();
+  /** Voices `emit` started and has not stopped, for trace frames and restore; draws their clip and pitch. */
+  private readonly voices = new RuntimeVoices(() => this.seed);
   /** Sprite Animation clips actors show, for trace frames and restore. */
   private readonly spriteClips = new SpriteClipTrace();
   private readonly assetPreloads = new RuntimeAssetPreloads(command => this.emit(command));
@@ -1521,7 +1521,8 @@ class InProcessRuntime implements RuntimeDriver {
    * render slot). Order: dilation, BT evaluation and ownership, Animation Graph
    * evaluation, then each live actor's sprite clip in World order (`animState` for a recorded clip,
    * collider clip cleared otherwise), then `stopSound` for live voices the
-   * frame lacks and `playSound` at the recorded offset for each recorded voice.
+   * frame lacks and `playSound` at the recorded offset, clip and pitch for each
+   * recorded voice.
    */
   restoreFromTrace(frame: TraceFrame): void {
     this.setTimeDilation(frame.timeDilation ?? 1);
@@ -1879,8 +1880,10 @@ class InProcessRuntime implements RuntimeDriver {
     const simDt = this.simulationDt();
     this.world.clock.dt = simDt;
     this.waterClock.advance(simDt);
-    // Voices play in real time, so their age follows the undilated step.
-    this.voices.advance(this.dt);
+    // Voices play in real time, so their age follows the undilated step; restored
+    // voices waiting for the audio unlock catch up by the simulated step.
+    this.voices.advance(this.dt, simDt);
+    if (this.voices.hasRestoredVoices) this.emit({ type: "audioSimTime", seconds: this.voices.simulatedTime });
     const pending = this.resolveTickInput(simDt);
     this.ticks.beginPhaseTiming();
     this.tickWorld(pending, simDt);
@@ -2055,7 +2058,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private emit(command: CommandMessage): void {
-    command = this.inspector.annotate(command);
+    command = this.voices.prepare(this.inspector.annotate(command));
 
     this.commandRevision++;
     // Every log line and Print String reaches the ring that `dumplog` and the
