@@ -2424,7 +2424,8 @@ export class ProjectService {
     this.noteMigrated(path);
     if (pluginContentChanged && ownerPlugin) {
       // In the settings file's own write queue, so a PluginSettings save is
-      // read here rather than replaced by the copy read before it.
+      // read here rather than replaced by the copy read before it, and is not
+      // written while plugin discovery reads the stamp.
       await this.withDocumentWrite(ownerPlugin.settingsPath, async (settingsPath) => {
         const document = await decodeAssetDocument(await storage.readBinary(settingsPath));
         const settings = normalizePluginSettings(document.payload, { pluginGuid: ownerPlugin.pluginGuid });
@@ -2436,9 +2437,10 @@ export class ProjectService {
             version: this.pluginDescriptors.find((plugin) => plugin.pluginGuid === dependency.guid)?.settings.version ?? dependency.version,
           })),
         }));
+        await this.syncPlugins();
       });
-    }
-    if (type === "PluginSettings" || pluginContentChanged) {
+      this.emitRegistryChange();
+    } else if (type === "PluginSettings") {
       await this.syncPlugins();
       this.emitRegistryChange();
     }
