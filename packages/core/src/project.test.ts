@@ -4,6 +4,7 @@ import {
   createEmptyProject,
   DEFAULT_CAMERA_FIELD_OF_VIEW,
   DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
+  DEFAULT_PROJECT_INPUT_SETTINGS,
   DEFAULT_SORTING_LAYERS,
   MAIN_CLASS_FILE,
   MAIN_SCENE_FILE,
@@ -39,9 +40,10 @@ describe("project schema", () => {
     expect(normalizeRenderProjectSettings(null)).toEqual(normalizeProjectSettings(undefined).render);
     expect(normalizeRenderProjectSettings({ width: 0.25, height: 1.9 })).toMatchObject({ width: 1, height: 2 });
   });
-  it("H13: keeps deliberately empty input mappings instead of restoring defaults", () => {
+  it("H13: keeps deliberately empty input mappings and never restores defaults", () => {
     expect(normalizeProjectSettings({ input: { actions: [], axes: [] } }).input).toEqual({ actions: [], axes: [] });
-    expect(normalizeProjectSettings(undefined).input.actions.some((action) => action.name === "Jump")).toBe(true);
+    // Controls live in Input assets; a project without input lists gets none.
+    expect(normalizeProjectSettings(undefined).input).toEqual({ actions: [], axes: [] });
   });
   it("creates an empty project with expected paths", () => {
     const project = createEmptyProject("Demo");
@@ -54,13 +56,10 @@ describe("project schema", () => {
       ...DEFAULT_SORTING_LAYERS,
     ]);
     expect(project.settings.physics.collisionLayers).toEqual(["Default"]);
-    expect(project.settings.input.actions.some((a) => a.name === "Jump")).toBe(
-      true,
-    );
-    const jumpPad = project.settings.input.actions
+    const jumpPad = DEFAULT_PROJECT_INPUT_SETTINGS.actions
       .find((a) => a.name === "Jump")
       ?.bindings.find((b) => b.device === "gamepadButton")?.code;
-    const confirmPad = project.settings.input.actions
+    const confirmPad = DEFAULT_PROJECT_INPUT_SETTINGS.actions
       .find((a) => a.name === "Confirm")
       ?.bindings.find((b) => b.device === "gamepadButton")?.code;
     expect(jumpPad).toBe("0:0");
