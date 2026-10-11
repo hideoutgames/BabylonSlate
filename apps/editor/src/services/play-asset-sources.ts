@@ -44,7 +44,7 @@ export function playDocumentOverrides(registry: AssetRegistry, documents: readon
   });
   for (const asset of schemas) {
     const override = overrides.get(asset.header.guid);
-    if (override && ["Class", "Graph"].includes(asset.header.type)) {
+    if (override && asset.header.type === "Class") {
       asset.header.requiredVariableNames = assetHeaderDependencyMetadata(asset.header.type, override.payload, schemas, asset.header.parentClass).requiredVariableNames;
     }
   }
@@ -112,8 +112,9 @@ function cancellableCatalogRead<T>(read: Promise<T>, signal: AbortSignal): Promi
 export function requiredProjectAssets(registry: AssetRegistry, project: ProjectDocument): string[] {
   const settings = project.settings;
   const roots = [settings.audio.audioMixerGuid, ...renderEffectsAssetGuids(settings.render.effects)];
-  const classes = registry.list().filter(asset => asset.header.type === "Class" || asset.header.type === "Graph");
-  const byId = new Map(classes.flatMap(asset => [[classIdFromClassAsset(asset), asset], [asset.header.guid, asset]] as const));
+  const classes = registry.list().filter(asset => asset.header.type === "Class");
+  // Game Instance and parentClass settings name compile class ids.
+  const byId = new Map(classes.map(asset => [classIdFromClassAsset(asset), asset] as const));
   const classId = settings.gameInstanceClass;
   const asset = classId ? byId.get(classId) : undefined;
   if (asset) roots.push(asset.header.guid);
@@ -483,7 +484,7 @@ async function acquirePlayAssetSourcesAttempt(
   }
 }
 
-const SCRIPT_ASSET_TYPES = new Set(["Class", "Graph", "AnimationGraph"]);
+const SCRIPT_ASSET_TYPES = new Set(["Class", "AnimationGraph"]);
 const COMPILE_INPUT_TYPES = new Set([...SCRIPT_ASSET_TYPES, "InputAction", "InputAxis", "DataDefinition", "DataTree", "Enum", "Structure", "ScriptInterface"]);
 
 /** Drop cache-owned containers without mutating authored payload objects. */
