@@ -673,7 +673,7 @@ the canvas for another session.
 - First `pointerdown` / `touchstart` calls `unlockAsync()` and drains a bounded ordered queue (cap 32). Decode / missing-context diagnose without crashing Play.
 - `AudioBufferCache` is a separate **256 MiB** (Engine Settings, default on; 64 MiB iPad suggestion) PCM LRU with active-voice pins, separate from `ResourceCache`. Decode keys include asset GUID, clip chunk and source revision, so replacing source bytes cannot reuse an obsolete decoded buffer. LRU eviction disposes the AudioV2 `StaticSoundBuffer`. Audio document Preview does not use this cache.
 - Channels with `environmentReverb.enabled` send to one shared parametric bus; the listener interpolates wet / decay / damping, then project scales multiply. Channel-less stays dry. Failed bake → marked dry fallback, wet 0.
-- Channels with `muffleThroughWalls.enabled` add a shared ~700 Hz lowpass send mixed by occupancy DDA (project Occlusion master). Extra send only — do not `disconnect()` AudioV2 `_outNode`.
+- Channels with `muffleThroughWalls.enabled` muffle by occupancy DDA (project Occlusion master): the voice volume drops by the factor (max 0.9) and a per-voice send into a shared ~700 Hz lowpass restores its low band. Extra send only — do not `disconnect()` AudioV2 `_outNode`.
 - Test-mode `window.__babylonslateAudioStats` (`audioStats`) exposes `unlocked`, `queued`, `voices`, `lastGain`, `lastDistance`, `wet`, `accountedBytes`. Play open/close must return voices/buffers to baseline.
 
 See [audio.md](audio.md).

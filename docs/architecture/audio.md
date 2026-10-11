@@ -126,7 +126,7 @@ Channels with `environmentReverb.enabled` send to **one** shared delay/comb/all-
 
 ## Wall muffling
 
-Additive on Done P16. **Not** triangle ray tracing / Recast / physics rays. Spatial voices whose channel (or parent) has `muffleThroughWalls` enabled run a DDA walk on the baked occupancy grid each listener/snapshot sync (Play-view listener from Spatial). Occupied voxels along the segment count as walls; saturate after two (`occlusionFactor` `0..1`). Non-spatial, missing emitter, channel-less, missing occupancy, or Project Settings **Occlusion** off → factor `0`. One shared ~700 Hz lowpass bus; per-voice extra send mixed by the factor. Fake backend records `muffles.get(voiceId)`.
+Additive on Done P16. **Not** triangle ray tracing / Recast / physics rays. Spatial voices whose channel (or parent) has `muffleThroughWalls` enabled run a DDA walk on the baked occupancy grid each listener/snapshot sync (Play-view listener from Spatial). Occupied voxels along the segment count as walls; saturate after two (`occlusionFactor` `0..1`). Non-spatial, missing emitter, channel-less, missing occupancy, or Project Settings **Occlusion** off → factor `0`. One shared ~700 Hz lowpass bus. AudioV2's dry route stays connected, so the Babylon backend lowers the voice volume (its high band) by the factor, capped at 0.9 (-20 dB), and a per-voice send of `factor / (1 - factor)` from the voice output into the lowpass restores the low band to the requested gain. Fake backend records `muffles.get(voiceId)`.
 
 ## A16 budgets
 
