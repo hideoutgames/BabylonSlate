@@ -4,7 +4,6 @@ import {
   Mesh,
   RenderTargetTexture,
   VertexBuffer,
-  Vector3,
   type AbstractMesh,
   type Geometry,
   type Scene,
@@ -15,6 +14,7 @@ import { hasRevisionTrackedCableGeometry } from "./cable-mesh";
 import { hasRevisionTrackedDynamicMesh } from "./dynamic-runtime-mesh";
 import { geometryRevision, unwatchGeometry, watchGeometry } from "./geometry-revision";
 import { isAutoLodMaster, peekAutoLodLevel } from "./model-lod";
+import { casterWithinShadowRange } from "./shadow-mesh-policy";
 
 /** Reused scalar/object snapshot; unchanged frames allocate no signature arrays. */
 class Snapshot {
@@ -42,9 +42,17 @@ type Caster = {
   worldFlag: number;
   worldValue: Matrix;
   transformRevision: number;
+  /** Bumped whenever this caster's shadow-relevant state changes. */
+  revision: number;
+  /** Visible content whose shadow can change without a tracked state change. */
+  unsafe: boolean;
 };
 
-/** Conservative scene-wide invalidation for local maps with static opaque content. */
+/**
+ * Per-map invalidation for local maps with static opaque content. A local map
+ * tracks only casters within its light's range: elsewhere a caster cannot
+ * reach the map, whose depth range ends at that range.
+ */
 export class ShadowMapRefresh {
   private readonly casters = new Map<AbstractMesh, Caster>();
   private readonly maps = new WeakMap<ShadowGenerator, Snapshot>();
@@ -61,14 +69,12 @@ export class ShadowMapRefresh {
   }
 
   syncCasters(scene: Scene, meshes: ReadonlySet<AbstractMesh>): void {
-    let changed = false;
-    let continuous = false;
     this.lodLevels.clear();
+    // Removed casters leave each map's in-range list, which refreshes that map.
     for (const [mesh, record] of this.casters) {
       if (meshes.has(mesh)) continue;
       if (record.geometry) unwatchGeometry(record.geometry);
       this.casters.delete(mesh);
-      changed = true;
     }
     for (const mesh of meshes) {
       let record = this.casters.get(mesh);
@@ -80,9 +86,10 @@ export class ShadowMapRefresh {
           worldFlag: -1,
           worldValue: Matrix.Identity(),
           transformRevision: 0,
+          revision: 0,
+          unsafe: false,
         };
         this.casters.set(mesh, record);
-        changed = true;
       }
       const geometry = mesh instanceof Mesh ? mesh.geometry : null;
       if (record.geometry !== geometry) {
@@ -169,13 +176,12 @@ export class ShadowMapRefresh {
       state.value(safeMesh);
       state.end();
       if (state.changed) {
-        changed = true;
+        record.revision++;
         this.casterChanged(mesh);
       }
-      if (mesh.isEnabled() && mesh.isVisible && mesh.visibility > 0) {
-        continuous ||= !safeMesh || !safeMaterial;
-        if (autoLod) this.lodLevels.set(mesh, peekAutoLodLevel(mesh, scene.activeCamera) ?? 0);
-      }
+      const visible = mesh.isEnabled() && mesh.isVisible && mesh.visibility > 0;
+      record.unsafe = visible && (!safeMesh || !safeMaterial);
+      if (visible && autoLod) this.lodLevels.set(mesh, peekAutoLodLevel(mesh, scene.activeCamera) ?? 0);
     }
     const state = this.sceneState;
     state.begin();
@@ -187,7 +193,7 @@ export class ShadowMapRefresh {
     state.value(scene.forcePointsCloud);
     state.value(scene.useRightHandedSystem);
     state.end();
-    continuous ||= !!(
+    this.continuous = !!(
       scene.clipPlane ||
       scene.clipPlane2 ||
       scene.clipPlane3 ||
@@ -195,8 +201,7 @@ export class ShadowMapRefresh {
       scene.clipPlane5 ||
       scene.clipPlane6
     );
-    if (changed || state.changed) this.revision++;
-    this.continuous = continuous;
+    if (state.changed) this.revision++;
   }
 
   apply(generator: ShadowGenerator): void {
@@ -241,21 +246,30 @@ export class ShadowMapRefresh {
     state.value(generator.transparencyShadow);
     state.value(generator.enableSoftTransparentShadow);
     state.value(generator.useOpacityTextureForTransparentShadow);
-    // A local map re-renders once when a caster within its range changes the
-    // level the camera draws, not when unrelated casters switch.
-    const range = "range" in light && Number.isFinite(light.range) ? light.range : Infinity;
-    for (const [mesh, level] of this.lodLevels) {
-      const sphere = mesh.getBoundingInfo().boundingSphere;
-      if (Vector3.Distance(sphere.centerWorld, position) > range + sphere.radiusWorld) continue;
-      state.value(mesh);
-      state.value(level);
-    }
-    state.end();
-    const continuous =
+    const directional = light instanceof DirectionalLight;
+    let continuous =
       this.continuous ||
-      light instanceof DirectionalLight ||
+      directional ||
       !!light.customProjectionMatrixBuilder ||
       !!generator.customShaderOptions;
+    if (!continuous) {
+      // A local map re-renders once when a caster within its range changes,
+      // enters or leaves, or changes the level the camera draws; unrelated
+      // casters elsewhere in the scene do not touch it.
+      const range = "range" in light && Number.isFinite(light.range) ? light.range : Infinity;
+      for (const [mesh, record] of this.casters) {
+        if (!casterWithinShadowRange(mesh, position, range)) continue;
+        if (record.unsafe) {
+          continuous = true;
+          break;
+        }
+        state.value(mesh);
+        state.value(record.revision);
+        const level = this.lodLevels.get(mesh);
+        if (level !== undefined) state.value(level);
+      }
+    }
+    state.end();
     const rate = continuous
       ? RenderTargetTexture.REFRESHRATE_RENDER_ONEVERYFRAME
       : RenderTargetTexture.REFRESHRATE_RENDER_ONCE;

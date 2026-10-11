@@ -162,6 +162,21 @@ It creates FeatureTest through the Create dialog, waits for background texture e
 
 Rules: compare runs on the same machine, browser project and build only; never assert frame rates. Dynamic resolution is off in FeatureTest projects, so the workload stays fixed. A quick smoke run uses `BL_PERF_SAMPLES=1 BL_PERF_SAMPLE_MS=2000 BL_PERF_WARMUP_MS=2000`.
 
+### Main-scene draw calls by pass
+
+Main-scene editor viewport at default (Medium) quality, Forward path, with float blending unavailable as on an iPad A16. Draw calls per frame, counted per framebuffer in software GL. On the iPad, Play reported 1947 per frame before these changes, at 4 to 5 fps.
+
+| Pass | Before | After local shadow range |
+| --- | --- | --- |
+| Sun shadow, 2 cascades | 411 | 411 |
+| Point light cube shadow (10 m range) | 302 | 16 |
+| Spot shadow | 5 | 4 |
+| Outline occluder mask | 290 | 290 |
+| Scene (opaque and transparent) | 135 | 135 |
+| Spatial-effects geometry (SSAO, SSR, volumetrics) | 123 | 123 |
+| Full-screen effects | 21 | 21 |
+| **Total** | **1289** | **1002** |
+
 ## Verification
 
 `apps/editor/src/services/project-service.feature-test.test.ts` (node) creates the project in memory and reopens it. It requires every `ENGINE_COMPONENT_CLASS_IDS` entry, every creatable and imported asset type, and every `ENGINE_BASE_CLASSES` entry to be present. It also requires every dependency to resolve, every document to decode, Play validation to report no errors, every compiled script to load the way Play loads it, every Material and Material Instance to compile, every Particle and Animation Graph to validate, and physics pairing to be clean.
