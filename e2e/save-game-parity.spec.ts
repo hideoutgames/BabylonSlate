@@ -143,9 +143,10 @@ async function verifyCrossTabRecovery(page: Page, url: string, projectId: string
     .toMatchObject({ sequence: 4, visits: previous.visits + 1, checksumValid: true });
 }
 
-for (const mode of ["packed"] as ("packed" | "loose")[]) {
+// CI runs the packed format, which also carries the cross-tab recovery proof.
+for (const mode of ["packed"] as const) {
   test(`${mode} exported game restores OPFS progress after a cold page reload`, async ({ page, baseURL }, info) => {
-    test.setTimeout(mode === "packed" ? 240_000 : 120_000);
+    test.setTimeout(240_000);
     const scene = createDefaultScene("2d");
     const artifact = await exportGame({
       mode, bundleDebugger: true, startupSceneGuid: "start", gameInstanceClass: "SaveFlow",
@@ -164,10 +165,8 @@ for (const mode of ["packed"] as ("packed" | "loose")[]) {
       await page.reload();
       await expect(page.getByTestId("print-overlay")).toContainText("Saved Visits: 2", { timeout: 40_000 });
       await page.screenshot({ path: info.outputPath(`${mode}-save-roundtrip.png`) });
-      if (mode === "packed") {
-        await verifyCrossTabRecovery(page, server.url, "export-packed");
-        await page.screenshot({ path: info.outputPath("packed-cross-tab-recovery.png") });
-      }
+      await verifyCrossTabRecovery(page, server.url, `export-${mode}`);
+      await page.screenshot({ path: info.outputPath(`${mode}-cross-tab-recovery.png`) });
     } finally { await server.close(); }
   });
 }

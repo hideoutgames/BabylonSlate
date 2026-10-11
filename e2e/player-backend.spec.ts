@@ -8,7 +8,7 @@ import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
 test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
-async function playerFiles(baseURL: string, backend: "webgl2" | "webgpu") {
+async function playerFiles(baseURL: string, backend: "webgpu") {
   const packed = await exportGame({
     bundleDebugger: false,
     startupSceneGuid: "backend-scene",
@@ -27,7 +27,8 @@ async function playerFiles(baseURL: string, backend: "webgl2" | "webgpu") {
   return packed.value.files;
 }
 
-for (const backend of ["webgpu"] as ("webgl2" | "webgpu")[]) {
+// p14-export.spec.ts boots the default (WebGL2) packed player; this pins WebGPU.
+for (const backend of ["webgpu"] as const) {
   test(`standalone player uses the packed ${backend} backend and presents its scene`, async ({ page, baseURL }, testInfo) => {
     test.setTimeout(120_000);
     const errors: string[] = [];

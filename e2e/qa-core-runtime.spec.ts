@@ -4,11 +4,12 @@ import {
   type SerializedGraph,
 } from "../packages/core/src/index.ts";
 import { openMainScene, openTestProject } from "./open-test-project";
-import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot } from "./play";
+import { waitForPreviewBuildBoot } from "./play";
 import { guidForPath } from "./material-graph";
 
-for (const preview of [true]) {
-  test(`H2: Spawn Actor retains prefab components and transform in ${preview ? "Preview Build" : "Normal Play"}`, async ({
+// Spawned prefab state is proven through the packed Preview Build player.
+for (const mode of ["Preview Build"] as const) {
+  test(`H2: Spawn Actor retains prefab components and transform in ${mode}`, async ({
     page,
   }) => {
     test.setTimeout(120_000);
@@ -113,37 +114,28 @@ for (const preview of [true]) {
       ),
     ).toBe(true);
     await openMainScene(page);
-    if (preview) {
-      await page.getByTestId("debug-menu").click();
-      await page.getByTestId("preview-build-toggle").click();
-      await page.getByTestId("play-preview").click();
-      await waitForPreviewBuildBoot(page);
-    } else await clickPlayAndWaitForOverlay(page);
+    await page.getByTestId("debug-menu").click();
+    await page.getByTestId("preview-build-toggle").click();
+    await page.getByTestId("play-preview").click();
+    await waitForPreviewBuildBoot(page);
     const frame = page.frameLocator('[data-testid="preview-build-iframe"]');
-    await (
-      preview ? frame.locator("canvas#game") : page.getByTestId("play-canvas")
-    ).click();
+    await frame.locator("canvas#game").click();
     await page.keyboard.press("Enter");
-    await expect(
-      (preview ? frame : page).getByTestId("print-overlay"),
-    ).toContainText("true");
+    await expect(frame.getByTestId("print-overlay")).toContainText("true");
     await expect
       .poll(
         async () => {
-          const host = preview
-            ? page.frames().find((entry) => entry.url().includes("player"))
-            : page;
-          if (!host) return [];
-          return host.evaluate(() => {
+          const player = page.frames().find((entry) => entry.url().includes("player"));
+          if (!player) return [];
+          return player.evaluate(() => {
             type Visuals = {
               visuals: () => Array<{ worldMatrixPosition: number[] }>;
             };
             const scope = globalThis as unknown as {
-              __babylonslatePlayTest?: Visuals;
               __babylonslatePlayerTest?: Visuals;
             };
             return (
-              (scope.__babylonslatePlayTest ?? scope.__babylonslatePlayerTest)
+              scope.__babylonslatePlayerTest
                 ?.visuals()
                 .map((visual) => visual.worldMatrixPosition) ?? []
             );
@@ -152,8 +144,6 @@ for (const preview of [true]) {
         { timeout: 15_000 },
       )
       .toContainEqual([10, 20, 30]);
-    await page
-      .getByTestId(preview ? "preview-build-close" : "play-overlay-close")
-      .click();
+    await page.getByTestId("preview-build-close").click();
   });
 }

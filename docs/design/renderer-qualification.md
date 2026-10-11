@@ -1652,6 +1652,11 @@ request active. Save All stays disabled: scripted settings did not dirty the
 project. Play now owns a reference-counted render-path session, restores the
 editor preference on final release, and unsubscribes disposed view listeners.
 
+Both specs now keep only their WebGL2 case (packed, for the export); the loose,
+WebGPU and failed-startup variants above are no longer in the specs. Packed
+WebGPU player startup stays in `player-backend.spec.ts`, and editor adapter
+fallback in `webgl2-fallback.spec.ts`.
+
 Focused local validation: six `packages/runtime/src/scalability.test.ts` cases
 passed at `74766aa0`; three selected render-path/construction-rollback cases in
 `packages/render/src/create-engine.play.test.ts` passed at `686dc574` (118 other

@@ -38,19 +38,14 @@ const magentaPixels = (page: Page, captured: string) => page.evaluate(async (bas
 
 // One packed WebGL2 export keeps the standalone settings and deferred-loading
 // journey in CI; backend variants are covered by webgpu-backend and player-backend.
-for (const variant of [
-  { mode: "packed", backend: "webgl2", fail: false },
-] as { mode: "packed" | "loose"; backend: "webgl2" | "webgpu"; fail: boolean }[]) {
-  test(`non-default ${variant.mode} settings reach the standalone ${variant.backend} player${variant.fail ? " after initialization failure" : ""}`, async ({ page, baseURL }, testInfo) => {
+for (const variant of [{ mode: "packed", backend: "webgl2" }] as const) {
+  test(`non-default ${variant.mode} settings reach the standalone ${variant.backend} player`, async ({ page, baseURL }, testInfo) => {
     test.setTimeout(120_000);
     await page.addInitScript(() => { Error.stackTraceLimit = 30; });
     const errors: string[] = [];
     const rendererMessages: string[] = [];
     page.on("console", (message) => { if (message.type() === "warning" || message.type() === "error") rendererMessages.push(message.text()); });
     page.on("pageerror", (error) => errors.push(error.message));
-    if (variant.fail) await page.addInitScript(() => {
-      navigator.gpu.requestAdapter = async () => { throw new Error("qualification adapter failure"); };
-    });
     const renderSettings = normalizeRenderProjectSettings({
       gpuBackend: variant.backend, renderPath: "forward", mode: "cel",
       cel: { shadowBands: 5, lightMixing: "blend", specularEnabled: false },
@@ -69,8 +64,8 @@ for (const variant of [
         // allocations. Dedicated shadow fixtures own actual caster coverage.
         for (const actor of scene.actors) for (const component of actor.components)
           if (component.classId === "LightComponent") component.properties.castShadows = false;
-        // Serialized authored state reaches runtime hydration in both packed
-        // and loose players; only this actor receives the magenta style.
+        // Serialized authored state reaches runtime hydration; only this actor
+        // receives the magenta style.
         scene.actors.find((actor) => actor.id === "material-actor")!.components.push({ id: "authored-ink", classId: "OutlineComponent", properties: { enabled: true, color: [1, 0, 1], width: 4, throughMeshes: false } });
         if (guid === "second") {
           scene.actors.find((actor) => actor.id === "far-actor")!.transform.position[2] = 3;
@@ -101,8 +96,8 @@ for (const variant of [
       await page.goto(server.url);
       const root = page.getByTestId("player-root");
       await expect(root).toHaveAttribute("data-requested-backend", variant.backend);
-      await expect(root).toHaveAttribute("data-effective-backend", variant.fail ? "webgl2" : variant.backend);
-      await expect(root).toHaveAttribute("data-backend-fallback", variant.fail ? /qualification adapter failure/ : "");
+      await expect(root).toHaveAttribute("data-effective-backend", variant.backend);
+      await expect(root).toHaveAttribute("data-backend-fallback", "");
       const ready = async (scale: number, scene = "first") => {
         await expect(root).toHaveAttribute("data-booted", "true", { timeout: 30_000 });
         await expect(root).toHaveAttribute("data-scene-loading", "false", { timeout: 30_000 });
@@ -170,7 +165,6 @@ for (const variant of [
       await expect.poll(async () => (await read(page)).scalability?.effective?.render.cel?.shadowBands).toBe(7);
       expect((await read(page)).scalability?.effective?.render.environmentLighting?.intensity).toBe(3);
       expect(boot.scalability?.pipeline?.requested.gpuBackend).toBe(variant.backend);
-      if (variant.fail) expect(boot.scalability?.pipeline?.limits.join(" ")).toContain("qualification adapter failure");
       expect(await command(page, "framecap")).toMatchObject({ success: true, output: "framecap 20" });
       const stored = await (await page.request.get(new URL(GAME_MANIFEST_FILE, server.url).href)).json();
       expect(stored.render).toMatchObject({ gpuBackend: variant.backend, mode: "cel", quality: { resolution: { scale: 0.8 } }, effects: { fxaa: true } });
@@ -186,43 +180,41 @@ for (const variant of [
       expect(reset.scalability?.effective?.frameCap).toBe(30);
       expect(reset.scalability?.effective?.render.cel).toMatchObject({ outlinesEnabled: true, outlineColor: [0.03, 0.03, 0.03], outlineWidth: 1 });
       expect(await magentaPixels(page, await pixels(page))).toBeGreaterThan(8);
-      if (!variant.fail) {
-        for (const preset of ["low", "medium", "high", "ultra"]) {
-          expect(await command(page, `qual_${preset}`)).toMatchObject({ success: true });
-          await expect.poll(async () => (await read(page)).scalability?.effective?.render.quality?.lighting.profile).toBe(preset);
-          const applied = (await read(page)).scalability!;
-          expect(applied.effective?.render.mode).toBe("cel");
-          expect(applied.effective?.render.effects?.fxaa).toBe(true);
-          expect(applied.effective?.render.cel?.shadowBands).toBe(7);
-          expect(applied.effective?.frameCap).toBe(30);
-        }
-        expect(await command(page, "qual_settings")).toMatchObject({ success: true });
-        await expect.poll(async () => (await read(page)).scalability?.effective?.render.environmentLighting?.rotationYDegrees).toBe(23);
-        const custom = await read(page);
-        expect(custom.rendering).toMatchObject({ width: 300, height: 180, scalingLevel: 1 / 0.75 });
-        expect(custom.scalability?.effective).toMatchObject({ frameCap: 24, render: {
-          width: 400, height: 240, customResolution: true, blackBars: true,
-          quality: { resolution: { scale: 0.75, dynamic: false, targetFps: 30 }, lighting: { localLightMode: "manual", maxLocalLights: 3 }, textures: { lodBias: 1, anisotropy: 2, byteBudget: 128 * 1024 ** 2 }, geometry: { autoLod: false, lodDistanceScale: 2 }, postprocessing: { resolutionScale: 0.5 } },
-          shadows: { enabled: false, distance: 80, fadeFraction: 0.2, mapSize: 512, cascades: 1, filterQuality: "low", autoBias: false, depthBias: 0.002, normalBias: 0.01, localLightMode: "manual", maxLocalLights: 1, localMapSize: 256 },
-          effects: { fxaa: false, exposure: 1.5, contrast: 1.2, vignette: { enabled: true, weight: 1.1, color: [0.2, 0.1, 0.3] } },
-          cel: { shadowBands: 6, shadowThreshold: 0.4, shadowStrength: 0.7, specularEnabled: false, specularStrength: 0.1, specularSize: 0.3, lightColorInfluence: 0.8, lightMixing: "additive" },
-          environmentLighting: { enabled: false, intensity: 0.3, rotationYDegrees: 23, celStrength: 0.5 },
-        } });
-        expect(custom.tasks?.some((name) => /FXAA/.test(name))).toBe(false);
-        await testInfo.attach("compiled-setters", { body: JSON.stringify(custom), contentType: "application/json" });
-        expect(await command(page, "qual_invalid")).toMatchObject({ success: true });
-        expect((await read(page)).scalability?.revision).toBe(custom.scalability?.revision);
-        expect(await command(page, "qual_aa")).toMatchObject({ success: true });
-        await expect.poll(async () => (await read(page)).tasks?.some((name) => /FXAA/.test(name))).toBe(true);
-        expect(await command(page, "qual_clamped")).toMatchObject({ success: true });
-        await expect.poll(async () => (await read(page)).scalability?.effective?.render.quality?.resolution.scale).toBe(0.25);
-        expect((await read(page)).scalability?.status).toBe("clamped");
-        expect(await command(page, "qual_cluster")).toMatchObject({ success: true });
-        await expect.poll(async () => (await read(page)).scalability?.pipeline?.requested.renderPath).toBe("clusteredForward");
-        expect((await read(page)).scalability?.pipeline?.effective.renderPath).toBe(variant.backend === "webgpu" ? "forward" : "clusteredForward");
-        expect(await command(page, "qual_reset")).toMatchObject({ success: true });
-        await ready(1.25, "second");
+      for (const preset of ["low", "medium", "high", "ultra"]) {
+        expect(await command(page, `qual_${preset}`)).toMatchObject({ success: true });
+        await expect.poll(async () => (await read(page)).scalability?.effective?.render.quality?.lighting.profile).toBe(preset);
+        const applied = (await read(page)).scalability!;
+        expect(applied.effective?.render.mode).toBe("cel");
+        expect(applied.effective?.render.effects?.fxaa).toBe(true);
+        expect(applied.effective?.render.cel?.shadowBands).toBe(7);
+        expect(applied.effective?.frameCap).toBe(30);
       }
+      expect(await command(page, "qual_settings")).toMatchObject({ success: true });
+      await expect.poll(async () => (await read(page)).scalability?.effective?.render.environmentLighting?.rotationYDegrees).toBe(23);
+      const custom = await read(page);
+      expect(custom.rendering).toMatchObject({ width: 300, height: 180, scalingLevel: 1 / 0.75 });
+      expect(custom.scalability?.effective).toMatchObject({ frameCap: 24, render: {
+        width: 400, height: 240, customResolution: true, blackBars: true,
+        quality: { resolution: { scale: 0.75, dynamic: false, targetFps: 30 }, lighting: { localLightMode: "manual", maxLocalLights: 3 }, textures: { lodBias: 1, anisotropy: 2, byteBudget: 128 * 1024 ** 2 }, geometry: { autoLod: false, lodDistanceScale: 2 }, postprocessing: { resolutionScale: 0.5 } },
+        shadows: { enabled: false, distance: 80, fadeFraction: 0.2, mapSize: 512, cascades: 1, filterQuality: "low", autoBias: false, depthBias: 0.002, normalBias: 0.01, localLightMode: "manual", maxLocalLights: 1, localMapSize: 256 },
+        effects: { fxaa: false, exposure: 1.5, contrast: 1.2, vignette: { enabled: true, weight: 1.1, color: [0.2, 0.1, 0.3] } },
+        cel: { shadowBands: 6, shadowThreshold: 0.4, shadowStrength: 0.7, specularEnabled: false, specularStrength: 0.1, specularSize: 0.3, lightColorInfluence: 0.8, lightMixing: "additive" },
+        environmentLighting: { enabled: false, intensity: 0.3, rotationYDegrees: 23, celStrength: 0.5 },
+      } });
+      expect(custom.tasks?.some((name) => /FXAA/.test(name))).toBe(false);
+      await testInfo.attach("compiled-setters", { body: JSON.stringify(custom), contentType: "application/json" });
+      expect(await command(page, "qual_invalid")).toMatchObject({ success: true });
+      expect((await read(page)).scalability?.revision).toBe(custom.scalability?.revision);
+      expect(await command(page, "qual_aa")).toMatchObject({ success: true });
+      await expect.poll(async () => (await read(page)).tasks?.some((name) => /FXAA/.test(name))).toBe(true);
+      expect(await command(page, "qual_clamped")).toMatchObject({ success: true });
+      await expect.poll(async () => (await read(page)).scalability?.effective?.render.quality?.resolution.scale).toBe(0.25);
+      expect((await read(page)).scalability?.status).toBe("clamped");
+      expect(await command(page, "qual_cluster")).toMatchObject({ success: true });
+      await expect.poll(async () => (await read(page)).scalability?.pipeline?.requested.renderPath).toBe("clusteredForward");
+      expect((await read(page)).scalability?.pipeline?.effective.renderPath).toBe("clusteredForward");
+      expect(await command(page, "qual_reset")).toMatchObject({ success: true });
+      await ready(1.25, "second");
       await page.reload();
       await ready(1.25);
       expect(requestsFor(secondPath), "restarting Scene A does not request Scene B again").toHaveLength(1);

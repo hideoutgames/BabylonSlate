@@ -1,25 +1,17 @@
 import { expect, test } from "@playwright/test";
 import { openMainScene, openTestProject } from "./open-test-project";
-import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot, showOverlayButtons } from "./play";
+import { clickPlayAndWaitForOverlay, showOverlayButtons } from "./play";
 
-for (const mode of ["Play"] as ("Play" | "Preview Build")[]) {
+// Preview Build console integration is not part of this CI journey.
+for (const mode of ["Play"] as const) {
   test(`${mode} console overlays the view, captures warnings and runs debug commands`, async ({ page }, testInfo) => {
     test.setTimeout(180_000);
     await openTestProject(page);
     await showOverlayButtons(page, ["console"]);
     await openMainScene(page);
-    if (mode === "Preview Build") {
-      await page.getByTestId("debug-menu").click();
-      await page.getByTestId("preview-build-toggle").click();
-      await page.getByTestId("play-preview").click();
-      await waitForPreviewBuildBoot(page);
-      await page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("player-root").evaluate(() => console.warn("Console integration warning"));
-      await page.getByRole("button", { name: "Console", exact: true }).click();
-    } else {
-      await clickPlayAndWaitForOverlay(page);
-      await page.evaluate(() => console.warn("Console integration warning"));
-      await page.getByTestId("play-console-open").click();
-    }
+    await clickPlayAndWaitForOverlay(page);
+    await page.evaluate(() => console.warn("Console integration warning"));
+    await page.getByTestId("play-console-open").click();
     const consolePanel = page.getByTestId("debug-console");
     const input = page.getByTestId("debug-console-input");
     const transcript = page.getByTestId("debug-console-transcript");
@@ -44,7 +36,7 @@ for (const mode of ["Play"] as ("Play" | "Preview Build")[]) {
     await expect(page.getByTestId("behaviour-tree-debugger")).toBeVisible();
     await expect(page.getByText("No Running Behaviour Trees")).toBeVisible();
     await page.getByTestId("behaviour-tree-debugger").getByRole("button", { name: "Close", exact: true }).click();
-    await page.getByTestId(mode === "Play" ? "play-overlay-close" : "preview-build-close").click();
-    await expect(page.getByTestId(mode === "Play" ? "play-overlay" : "preview-build-overlay")).toHaveCount(0);
+    await page.getByTestId("play-overlay-close").click();
+    await expect(page.getByTestId("play-overlay")).toHaveCount(0);
   });
 }

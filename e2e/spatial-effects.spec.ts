@@ -3,10 +3,10 @@ import type { runSpatialEffectsProof } from "../apps/editor/src/testing/spatial-
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
 test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
-for (const backend of ["webgl2"] as ("webgl2" | "webgpu")[])
-  for (const kind of [
-    "combined",
-  ] as ("reflections" | "point" | "spot" | "sun" | "combined")[]) {
+// CI runs these feature smokes on WebGL2 only (renderer-qualification coverage matrix).
+// The combined scene renders reflections and a shadowed fog spot light together.
+for (const backend of ["webgl2"] as const)
+  for (const kind of ["combined"] as const) {
     test(`${kind} spatial lighting renders and retires on ${backend}`, async ({
       page,
     }, testInfo) => {
@@ -90,18 +90,13 @@ for (const backend of ["webgl2"] as ("webgl2" | "webgpu")[])
           linearDifference,
           "default linear display preserves spatial color",
         ).toBeLessThan(3);
-        if (kind !== "reflections") {
-          const occluded = capture.changed.filter(
-            (value, i) => i % 4 === 0 && value > capture.on[i]! + 3,
-          ).length;
-          expect(
-            occluded,
-            "shadows occlude fog",
-          ).toBeGreaterThan(20);
-        } else
-          expect(
-            capture.changed.some((value, i) => i % 4 === 0 && value > 50),
-          ).toBe(true);
+        const occluded = capture.changed.filter(
+          (value, i) => i % 4 === 0 && value > capture.on[i]! + 3,
+        ).length;
+        expect(
+          occluded,
+          "shadows occlude fog",
+        ).toBeGreaterThan(20);
       }
     });
   }
@@ -121,7 +116,7 @@ function pixelDifference(before: number[], after: number[]) {
   return before.reduce((sum, value, index) => sum + Math.abs(value - after[index]!), 0) / before.length;
 }
 
-for (const backend of ["webgl2"] as ("webgl2" | "webgpu")[]) {
+for (const backend of ["webgl2"] as const) {
   test(`local fog volumes stay bounded and retire on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(90_000);
     const errors: string[] = [];
@@ -190,7 +185,7 @@ function darkened(before: number[], after: number[], threshold: number) {
   return before.filter((value, i) => i % 4 === 0 && value - after[i]! >= threshold).length;
 }
 
-for (const backend of ["webgl2"] as ("webgl2" | "webgpu")[]) {
+for (const backend of ["webgl2"] as const) {
   test(`ambient occlusion darkens contact creases and retires on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(90_000);
     const errors: string[] = [];
