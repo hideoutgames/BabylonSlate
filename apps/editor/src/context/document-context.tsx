@@ -359,6 +359,8 @@ interface DocumentContextValue {
   projectDirty: boolean;
   autoSaveStatus: { state: "saving" | "saved" | "error"; message?: string } | null;
   migrationPending: MigrationPending[];
+  /** Advances each time a Save All the user asked for is refused for pending migrations. */
+  migrationPromptRequest: number;
   templates: ProjectTemplateCatalogEntry[];
   homepageReady: boolean;
   refreshTemplates: () => Promise<void>;
@@ -381,7 +383,8 @@ interface DocumentContextValue {
   reconnectProject: () => Promise<void>;
   saveProject: () => Promise<boolean>;
   saveAll: () => Promise<boolean>;
-  approveMigrationsAndSave: () => Promise<void>;
+  /** Approve pending schema migrations and run the complete Save All; false when it did not save. */
+  approveMigrationsAndSave: () => Promise<boolean>;
   closeProject: () => Promise<{ blocked: boolean; dirty: OpenDocument[]; projectDirty: boolean }>;
   forceCloseProject: () => Promise<void>;
   exportProject: (snapshot?: ProjectDocument) => Promise<Uint8Array>;
@@ -732,6 +735,7 @@ export type EditorShellState = Pick<
   | "needsReconnect"
   | "recoveryAvailable"
   | "migrationPending"
+  | "migrationPromptRequest"
   | "templates"
   | "homepageReady"
   | "pendingExclusiveScene"
@@ -926,6 +930,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const [migrationPending, setMigrationPending] = useState<MigrationPending[]>(
     [],
   );
+  const [migrationPromptRequest, setMigrationPromptRequest] = useState(0);
   const [homepageReady, setHomepageReady] = useState(false);
   const templatesRef = useRef<ProjectTemplateCatalogEntry[]>([]);
   const [templates, setTemplates] = useRefState(templatesRef);
@@ -1822,7 +1827,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
   }, [attachEnginePlugins, enterEditor, projectService]);
 
-  const saveProject = useCallback((): Promise<boolean> => {
+  /**
+   * The one Save All path: auto-save, Save All, Play's save and Migrate On
+   * Save. Pending schema migrations refuse it until the user approves them
+   * (`approveMigrations`, kept for the rest of the project session); a refused
+   * Save All the user asked for (`promptMigrations`) opens the migration prompt.
+   */
+  const runSaveAll = useCallback((options: { approveMigrations?: boolean; promptMigrations?: boolean } = {}): Promise<boolean> => {
     // Keep the immutable authored document as the only save source. A session
     // defers new saves; an already admitted Save All retains its complete lane.
     // Refuse before queueing so a deferred save never waits behind that lane.
@@ -1850,8 +1861,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         progress.finish();
         return false;
       }
-      if (projectService.pendingMigrations.length > 0) {
+      const migrate = options.approveMigrations === true || projectService.migrationsApproved;
+      if (!migrate && projectService.pendingMigrations.length > 0) {
         setMigrationPending(projectService.pendingMigrations);
+        if (options.promptMigrations) setMigrationPromptRequest((request) => request + 1);
         recordSaveAllTrace({
           ok: false,
           reason: "migrations",
@@ -1859,9 +1872,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           dirtyAfter: dirtyBefore,
         });
         progress.finish();
-        // Caller must use approveMigrationsAndSave — never silently rewrite.
+        // Never silently rewrite: the user approves through the migration prompt.
         return false;
       }
+      if (options.approveMigrations) projectService.approveMigrateOnSave();
       if (saveDebounceRef.current) {
         clearTimeout(saveDebounceRef.current);
         saveDebounceRef.current = null;
@@ -1896,6 +1910,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
                 | Record<string, unknown>,
             );
           }
+        }
+        if (migrate && projectService.pendingDependencyMetadataUpgrades.length > 0) {
+          await writer.upgradeDependencyMetadata();
         }
         progress.phase("compile");
         if (document.settings.compileOnSave) {
@@ -1975,6 +1992,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     playContent,
     projectService,
   ]);
+  /** Auto-save: a refusal pauses it with a status message, never a prompt. */
+  const saveProject = useCallback(() => runSaveAll(), [runSaveAll]);
+  /** Save All the user asked for: a refusal for pending migrations opens the prompt. */
+  const saveAll = useCallback(() => runSaveAll({ promptMigrations: true }), [runSaveAll]);
+  /** Migrate On Save: approve the pending migrations and run the complete Save All. */
+  const approveMigrationsAndSave = useCallback(() => runSaveAll({ approveMigrations: true }), [runSaveAll]);
 
   const scheduleDebouncedSave = useCallback(() => {
     if (saveDebounceRef.current) return;
@@ -2042,51 +2065,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       ),
     [projectService, setShowPluginContent],
   );
-
-  const approveMigrationsAndSave = useCallback(async () => {
-    if (projectService.authoringWriteBlockedReason) return;
-    return projectService.withBaselineSave(async writer => {
-      const projectDocument = projectDocumentRef.current;
-      if (!projectDocument) return;
-      const projectSave = projectSaveState.current.capture(projectDocument);
-      projectService.approveMigrateOnSave();
-      captureAllLayouts();
-      const dirtyDocs = documentService.getDirtyDocuments().map((doc) => ({ ...doc }));
-      for (const doc of dirtyDocs) {
-        if (
-          isAssetDocumentKind(doc.ref.kind) &&
-          doc.ref.kind !== "trace" &&
-          doc.content
-        ) {
-          await writer.saveDocument(
-            doc.ref.kind,
-            doc.ref.path,
-            persistableDocumentContent(doc.ref.kind, doc.content) as
-              | SerializedScene
-              | SerializedSceneLayer
-              | SerializedGraph
-              | Record<string, unknown>,
-          );
-        }
-      }
-      await writer.upgradeDependencyMetadata();
-      const layouts = documentService.buildLayouts();
-      await writer.saveProject(projectDocument, layouts);
-      documentService.markAllClean(dirtyDocs);
-      setMigrationPending([]);
-      await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
-      projectSaveState.current.complete(projectSave);
-      bump();
-    });
-  }, [
-    bump,
-    captureAllLayouts,
-    captureMtimeSnapshot,
-    documentService,
-    projectService,
-  ]);
-
-  const saveAll = saveProject;
 
   const forceCloseProject = useCallback(async () => {
     setAutoSaveStatus(null);
@@ -4111,6 +4089,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       needsReconnect,
       recoveryAvailable,
       migrationPending,
+      migrationPromptRequest,
       templates,
       homepageReady,
       pendingExclusiveScene,
@@ -4119,7 +4098,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       thumbnailVersions,
       thumbnailsEnabled,
     }),
-    [listedProjects, needsReconnect, recoveryAvailable, migrationPending, templates, homepageReady, pendingExclusiveScene, externalChangePrompt, undoHistoryNotice, thumbnailVersions, thumbnailsEnabled],
+    [listedProjects, needsReconnect, recoveryAvailable, migrationPending, migrationPromptRequest, templates, homepageReady, pendingExclusiveScene, externalChangePrompt, undoHistoryNotice, thumbnailVersions, thumbnailsEnabled],
   );
   const sourceControlState = useMemo<SourceControlState>(() => {
     void sourceControlTick;

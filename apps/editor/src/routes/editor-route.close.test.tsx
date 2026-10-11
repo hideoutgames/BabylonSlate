@@ -22,6 +22,9 @@ const state = vi.hoisted(() => ({
   closeProject: vi.fn(async (): Promise<{ blocked: boolean; projectDirty: boolean; dirty: OpenDocument[] }> => ({ blocked: state.projectDirty, projectDirty: state.projectDirty, dirty: [] })),
   forceCloseProject: vi.fn(async () => {}),
   saveAll: vi.fn(async () => true),
+  approveMigrationsAndSave: vi.fn(async () => true),
+  migrationPromptRequest: 0,
+  play: {} as Record<string, unknown>,
   closeDocument: vi.fn((id: string) => {
     state.documents = state.documents.filter((doc) => doc.id !== id);
   }),
@@ -34,10 +37,12 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   closeProject: state.closeProject,
   forceCloseProject: state.forceCloseProject,
   migrationPending: [],
+  migrationPromptRequest: state.migrationPromptRequest,
   pendingExclusiveScene: null,
   externalChangePrompt: null,
   cancelExclusiveSceneOpen: vi.fn(),
   saveAll: state.saveAll,
+  approveMigrationsAndSave: state.approveMigrationsAndSave,
   closeDocument: state.closeDocument,
 })));
 
@@ -80,7 +85,7 @@ vi.mock("../context/validation-context", () => ({
 }));
 vi.mock("../context/play-context", () => ({
   PlayProvider: ({ children }: { children: ReactNode }) => children,
-  usePlay: () => ({}),
+  usePlay: () => state.play,
 }));
 vi.mock("../context/material-render-control-context", () => ({
   MaterialRenderControlProvider: ({ children }: { children: ReactNode }) =>
@@ -149,6 +154,9 @@ beforeEach(() => {
     },
   ];
   state.saveAll.mockReset().mockResolvedValue(true);
+  state.approveMigrationsAndSave.mockReset().mockResolvedValue(true);
+  state.migrationPromptRequest = 0;
+  state.play = {};
   state.closeDocument.mockClear();
 });
 afterEach(cleanup);
@@ -273,6 +281,22 @@ describe("document tab close requests", () => {
     await waitFor(() => expect(screen.queryByTestId("dirty-close-dialog")).toBeNull());
   });
 
+  it("keeps the prompt and its tabs when Save All fails", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    state.saveAll.mockRejectedValue(new Error("Storage unavailable"));
+    try {
+      render(<EditorRoute />);
+      requestBulkClose();
+      fireEvent.click(screen.getByTestId("dirty-save"));
+      await waitFor(() => expect(screen.getByTestId("dirty-save")).toHaveProperty("disabled", false));
+      expect(error).toHaveBeenCalled();
+      expect(state.closeDocument).not.toHaveBeenCalled();
+      expect(screen.getAllByRole("listitem").map((item) => item.textContent)).toEqual(["Main Scene", "Hero Class"]);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
   it("keeps tabs open when edits remain dirty after a successful save", async () => {
     state.saveAll.mockImplementation(async () => {
       state.documents.forEach((doc) => { doc.dirty = doc.id === "graph"; });
@@ -296,5 +320,26 @@ describe("document tab close requests", () => {
       "graph",
       "other",
     ]);
+  });
+});
+
+describe("schema migration prompt", () => {
+  it("opens when pending migrations refuse a Save All", () => {
+    const { rerender } = render(<EditorRoute />);
+    expect(screen.queryByTestId("migrate-on-save-dialog")).toBeNull();
+    state.migrationPromptRequest = 1;
+    rerender(<EditorRoute />);
+    expect(screen.getByTestId("migrate-on-save-dialog")).toBeTruthy();
+  });
+
+  it.each([true, false])("resumes a waiting Play only when Migrate On Save saved (saved: %s)", async (saved) => {
+    const resume = vi.fn(async () => {});
+    const cancel = vi.fn();
+    state.play = { playAwaitingMigration: true, resumePlayAfterMigration: resume, cancelPlayMigration: cancel };
+    state.approveMigrationsAndSave.mockResolvedValue(saved);
+    render(<EditorRoute />);
+    fireEvent.click(await screen.findByTestId("migrate-approve"));
+    await waitFor(() => expect(saved ? resume : cancel).toHaveBeenCalledOnce());
+    expect(saved ? cancel : resume).not.toHaveBeenCalled();
   });
 });

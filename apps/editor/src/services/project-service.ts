@@ -1035,8 +1035,21 @@ export class ProjectService {
     this.migrateOnSaveApproved = true;
   }
 
-  clearMigrateOnSaveApproval(): void {
-    this.migrateOnSaveApproved = false;
+  /** The user approved Migrate On Save for this project session. */
+  get migrationsApproved(): boolean {
+    return this.migrateOnSaveApproved;
+  }
+
+  /** A write stamps the current schema version, so a pending migration needs approval first. */
+  private assertMigrationApproved(path: string): void {
+    if (this.migrationPending.some((p) => p.path === path) && !this.migrateOnSaveApproved) {
+      throw new Error("Asset schema migration requires user approval before save");
+    }
+  }
+
+  /** The file at `path` was written at the current schema version. */
+  private noteMigrated(path: string): void {
+    this.migrationPending = this.migrationPending.filter((p) => p.path !== path);
   }
 
   async listProjects(): Promise<ProjectFolderHandle[]> {
@@ -2310,11 +2323,7 @@ export class ProjectService {
       const diagnostic = validateMaterialParameterNames(graph)[0];
       if (diagnostic) throw new Error(diagnostic.message);
     }
-    if (this.migrationPending.some((p) => p.path === path) && !this.migrateOnSaveApproved) {
-      throw new Error(
-        "Asset schema migration requires user approval before save",
-      );
-    }
+    this.assertMigrationApproved(path);
     const storage = this.storageForPath(path);
     const blobs = this.blobsForPath(path);
     if (isPluginDocumentReadOnly(this.pluginDescriptors, path)) {
@@ -2421,7 +2430,7 @@ export class ProjectService {
         JSON.stringify({ ...content, version }, null, 2),
       );
     }
-    this.migrationPending = this.migrationPending.filter((p) => p.path !== path);
+    this.noteMigrated(path);
     if (pluginContentChanged && ownerPlugin) {
       const document = await decodeAssetDocument(await storage.readBinary(ownerPlugin.settingsPath));
       const settings = normalizePluginSettings(document.payload, { pluginGuid: ownerPlugin.pluginGuid });
@@ -2525,6 +2534,7 @@ export class ProjectService {
     if (isPluginDocumentReadOnly(this.pluginDescriptors, path)) {
       throw new Error("Engine plugin assets are read-only");
     }
+    this.assertMigrationApproved(path);
     const storage = this.storageForPath(path);
     const guid = await this.guidForAsset(path);
     const extra = extraChunksWithNavmesh(await this.sceneExtraChunksForWrite(path, payload, guid), bytes);
@@ -2547,6 +2557,7 @@ export class ProjectService {
     );
     await storage.writeBinary(path, encoded);
     await this.assetRegistry?.reindexPath(path);
+    this.noteMigrated(path);
   }
 
   /** Update only derived bytes; unsaved geometry waits for an explicit Scene save. */
@@ -2599,12 +2610,14 @@ export class ProjectService {
     mime: string,
     payload: Record<string, unknown>,
   ): Promise<void> {
-    const extra = extraChunksWithAudioClip(await this.extraChunksFor(path), {
-      id: chunkId,
-      bytes,
-      mime,
+    return this.withDocumentWrite(path, async (currentPath) => {
+      const extra = extraChunksWithAudioClip(await this.extraChunksFor(currentPath), {
+        id: chunkId,
+        bytes,
+        mime,
+      });
+      await this.writeAssetDocumentWithExtra(currentPath, payload, extra);
     });
-    await this.writeAssetDocumentWithExtra(path, payload, extra);
   }
 
   /** Drop an extra Audio clip chunk. Never deletes the last `source`. */
@@ -2613,11 +2626,13 @@ export class ProjectService {
     chunkId: string,
     payload: Record<string, unknown>,
   ): Promise<void> {
-    const extra = extraChunksWithoutAudioClip(
-      await this.extraChunksFor(path),
-      chunkId,
-    );
-    await this.writeAssetDocumentWithExtra(path, payload, extra);
+    return this.withDocumentWrite(path, async (currentPath) => {
+      const extra = extraChunksWithoutAudioClip(
+        await this.extraChunksFor(currentPath),
+        chunkId,
+      );
+      await this.writeAssetDocumentWithExtra(currentPath, payload, extra);
+    });
   }
 
   private async writeAssetDocumentWithExtra(
@@ -2628,6 +2643,7 @@ export class ProjectService {
     if (isPluginDocumentReadOnly(this.pluginDescriptors, path)) {
       throw new Error("Engine plugin assets are read-only");
     }
+    this.assertMigrationApproved(path);
     const storage = this.storageForPath(path);
     const existing = await this.readExistingAssetMeta(path);
     const type = existing?.type ?? "Audio";
@@ -2651,6 +2667,7 @@ export class ProjectService {
     );
     await storage.writeBinary(path, encoded);
     await this.assetRegistry?.reindexPath(path);
+    this.noteMigrated(path);
   }
 
   guidForPath(path: string): string | null {
@@ -2727,14 +2744,7 @@ export class ProjectService {
     document: ProjectDocument,
     layouts: ProjectLayouts,
   ): Promise<void> {
-    if (
-      this.migrationPending.some((p) => p.path === PROJECT_FILE) &&
-      !this.migrateOnSaveApproved
-    ) {
-      throw new Error(
-        "Asset schema migration requires user approval before save",
-      );
-    }
+    this.assertMigrationApproved(PROJECT_FILE);
     const now = new Date().toISOString();
     const updated: ProjectDocument = {
       ...document,
@@ -2761,9 +2771,7 @@ export class ProjectService {
         return guid ? [[id, guid]] : [];
       })) }, null, 2),
     );
-    this.migrationPending = this.migrationPending.filter(
-      (p) => p.path !== PROJECT_FILE,
-    );
+    this.noteMigrated(PROJECT_FILE);
   }
 
   async documentExists(path: string): Promise<boolean> {

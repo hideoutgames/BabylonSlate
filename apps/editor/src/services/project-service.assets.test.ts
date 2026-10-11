@@ -1830,10 +1830,8 @@ describe("project documents as .babasset", () => {
     ]);
   });
 
-  it("writes extra Audio clip chunks and refuses to delete source", async () => {
-    const { storage, service } = await scaffolded();
-    const path = "assets/Jump.babasset";
-    const source = new Uint8Array([1, 2, 3, 4]);
+  /** An imported Audio asset with one `source` clip, indexed by the registry. */
+  async function audioAsset(service: ProjectService, storage: MemoryStorageAdapter, path: string, source: Uint8Array) {
     await storage.writeBinary(
       path,
       await encodeBabasset({
@@ -1854,6 +1852,13 @@ describe("project documents as .babasset", () => {
       }),
     );
     await service.remountRegistry();
+  }
+
+  it("writes extra Audio clip chunks and refuses to delete source", async () => {
+    const { storage, service } = await scaffolded();
+    const path = "assets/Jump.babasset";
+    const source = new Uint8Array([1, 2, 3, 4]);
+    await audioAsset(service, storage, path, source);
     const extra = new Uint8Array([9, 8, 7]);
     await service.writeAudioClipChunk(path, "source:2", extra, "audio/ogg", {
       clips: [
@@ -1872,6 +1877,19 @@ describe("project documents as .babasset", () => {
     });
     expect(await service.readAssetChunk(path, "source:2")).toBeNull();
     expect(await service.readAssetChunk(path, "source")).toEqual(source);
+  });
+
+  it("follows a queued rename before an Audio clip write without recreating the old file", async () => {
+    const { storage, service } = await scaffolded();
+    const path = "assets/Jump.babasset";
+    await audioAsset(service, storage, path, new Uint8Array([1, 2]));
+    const rename = service.registry!.renameAsset("audio-guid", "Leap");
+    const write = service.writeAudioClipChunk(path, "source:2", new Uint8Array([9]), "audio/ogg", {
+      clips: [{ chunkId: "source", weight: 1 }, { chunkId: "source:2", weight: 1 }],
+    });
+    const [renamed] = await Promise.all([rename, write]);
+    expect(await storage.exists(path)).toBe(false);
+    expect(await service.readAssetChunk(renamed.path, "source:2")).toEqual(new Uint8Array([9]));
   });
 
   it("rewrites remaining sprites to None after a referenced texture is deleted", async () => {

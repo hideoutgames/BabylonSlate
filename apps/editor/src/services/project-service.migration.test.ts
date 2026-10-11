@@ -72,13 +72,16 @@ describe("migrate-on-load and migrate-on-save approval", () => {
     ]);
   });
 
-  it("refuses to save a migrated asset before the user approves", async () => {
-    const { service } = await projectWithOldScene(0);
+  it.each(["save", "navmesh"] as const)("refuses a %s write of a migrated asset before the user approves", async (write) => {
+    const { storage, service } = await projectWithOldScene(0);
+    const before = await storage.readBinary(MAIN_SCENE_FILE);
     const scene = await service.loadDocument("scene", MAIN_SCENE_FILE);
 
-    await expect(
-      service.saveDocument("scene", MAIN_SCENE_FILE, scene),
+    await expect(write === "save"
+      ? service.saveDocument("scene", MAIN_SCENE_FILE, scene)
+      : service.writeSceneNavmeshChunk(MAIN_SCENE_FILE, new Uint8Array([1]), scene as Record<string, unknown>),
     ).rejects.toThrow(/requires user approval/);
+    expect(await storage.readBinary(MAIN_SCENE_FILE)).toEqual(before);
   });
 
   it("writes the current schema once migration is approved", async () => {

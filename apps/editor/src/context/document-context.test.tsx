@@ -26,6 +26,7 @@ import { UndoHistoryNotice } from "../components/undo-history-notice";
 import { createProjectAsset } from "../lib/create-project-asset";
 import { subscribeModelThumbnailJobs } from "../lib/model-thumbnail-queue";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
+import { JOURNAL_FLUSH_DELAY_MS } from "../lib/journal-buffer";
 import { registerNavBakeSaveFlush } from "../lib/nav-bake-save";
 import type { OpenDocument } from "../services/document-service";
 import { ProjectService } from "../services/project-service";
@@ -1029,6 +1030,36 @@ describe("DocumentProvider closed document history", () => {
     } finally {
       save.mockRestore();
       vi.useRealTimers();
+    }
+  });
+
+  it("runs a complete Save All for Migrate On Save and asks only once per project session", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 3)));
+    const derived = await createDerivedStorage();
+    const guid = documents().projectGuid!;
+    // An untouched file still waits for migration after the approved save.
+    const pending = vi.spyOn(ProjectService.prototype, "pendingMigrations", "get").mockReturnValue([
+      { type: "Scene", fromVersion: 0, toVersion: 4, path: "assets/Untouched.scene.babasset" },
+    ]);
+    try {
+      expect(await act(() => actions.saveAll())).toBe(false);
+      expect(documents().migrationPromptRequest).toBe(1);
+      expect(documents().dirtyDocuments.map((doc) => doc.id)).toEqual([MAIN_SCENE_ID]);
+
+      expect(await act(() => actions.approveMigrationsAndSave())).toBe(true);
+      expect(documents().dirtyDocuments).toEqual([]);
+      // Save cleared the journal its edit was written to, so no recovery remains.
+      await act(() => new Promise((resolve) => setTimeout(resolve, JOURNAL_FLUSH_DELAY_MS * 2)));
+      expect(await readJournalLines(derived, guid)).toEqual([]);
+
+      await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 1)));
+      expect(await act(() => actions.saveAll())).toBe(true);
+      expect(documents().migrationPromptRequest).toBe(1);
+      expect(documents().dirtyDocuments).toEqual([]);
+    } finally {
+      pending.mockRestore();
     }
   });
 

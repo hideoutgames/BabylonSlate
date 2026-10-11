@@ -194,7 +194,7 @@ function RecoveryBanner() {
  */
 function EditorChromeAndPrompts() {
   const { dirtyDocuments } = useSaveState();
-  const { migrationPending, pendingExclusiveScene, externalChangePrompt } = useEditorShellState();
+  const { migrationPending, migrationPromptRequest, pendingExclusiveScene, externalChangePrompt } = useEditorShellState();
   const {
     closeProject,
     forceCloseProject,
@@ -229,6 +229,11 @@ function EditorChromeAndPrompts() {
   useEffect(() => {
     if (playAwaitingMigration) setShowMigrate(true);
   }, [playAwaitingMigration]);
+  // Save All, the close prompt's Save All and the exclusive Scene's Save all
+  // reach the migration prompt when pending migrations refuse their save.
+  useEffect(() => {
+    if (migrationPromptRequest > 0) setShowMigrate(true);
+  }, [migrationPromptRequest]);
 
   const requestClose = async () => {
     const result = await closeProject();
@@ -278,21 +283,13 @@ function EditorChromeAndPrompts() {
     for (const doc of tabs) closeDocument(doc.id);
   };
 
-  const requestSave = async () => {
-    if (migrationPending.length > 0) {
-      setShowMigrate(true);
-      return false;
-    }
-    return saveAll();
-  };
-
   return (
     <>
       {profileRegion(
         "editor-chrome-bar",
         <EditorChromeBar
           onCloseProject={() => void requestClose()}
-          onSaveProject={requestSave}
+          onSaveProject={saveAll}
           onCloseDocument={requestCloseDocument}
           onCloseAllDocuments={requestCloseAllDocuments}
         />,
@@ -335,7 +332,7 @@ function EditorChromeAndPrompts() {
                 await confirmExclusiveSceneOpen("save");
                 return;
               }
-              const saved = await requestSave();
+              const saved = await saveAll();
               if (request !== closeRequest.current || !saved) return;
               if (pendingTabClose) {
                 const tabs = getOpenDocuments().filter((doc) => pendingTabClose.some((tab) => tab.id === doc.id));
@@ -348,6 +345,9 @@ function EditorChromeAndPrompts() {
                 setPendingTabClose(null);
                 for (const doc of tabs) closeDocument(doc.id);
               } else await requestClose();
+            } catch (error) {
+              // The documents stay dirty and the prompt stays open to retry or discard.
+              console.error("[editor] Save All before closing failed", error);
             } finally {
               if (request === closeRequest.current) setSavingBeforeClose(false);
             }
@@ -364,10 +364,14 @@ function EditorChromeAndPrompts() {
         onApprove={() => {
           setShowMigrate(false);
           void (async () => {
-            await approveMigrationsAndSave();
-            if (playAwaitingMigration) {
-              await resumePlayAfterMigration();
-            }
+            const saved = await approveMigrationsAndSave().catch((error: unknown) => {
+              console.error("[editor] Migrate On Save failed", error);
+              return false;
+            });
+            if (!playAwaitingMigration) return;
+            // Play continues only from a completed save; a refused or failed one ends the request.
+            if (saved) await resumePlayAfterMigration();
+            else cancelPlayMigration();
           })();
         }}
       />
