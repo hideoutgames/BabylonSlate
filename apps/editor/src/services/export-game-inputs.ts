@@ -28,7 +28,6 @@ const JSON_TYPES = new Set<string>([
   "InputAction", "InputAxis", "SaveGame",
   "Scene",
   "Class",
-  "Graph",
   "AnimationGraph",
   "BehaviourTree",
   "Blackboard",

@@ -980,6 +980,31 @@ describe("collectAndExportGame", () => {
     ).toBe(true);
   });
 
+  it("exports a Texture whose unused area emission is unreadable, without that emission", async () => {
+    const scene = {
+      ...createDefaultScene(),
+      actors: [createActor("hero", "Hero", {
+        components: [{ id: "mesh-1", classId: "MeshComponent", properties: { textureGuid: "tex-1" } }],
+      })],
+    };
+    const result = await collectAndExportGame({
+      startupSceneGuid: "scene-1",
+      assets: [
+        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
+        asset({ guid: "tex-1", type: "Texture", name: "Logo" }),
+      ],
+      plugins: [], projectPluginOverrides: {}, parentOf: () => null,
+      sceneByGuid: () => scene, graphByGuid: () => null,
+      bytesByGuid: (guid) => guid === "scene-1" ? new TextEncoder().encode(JSON.stringify(scene)) : new Uint8Array([1]),
+      areaEmissionBytesByGuid: () => { throw new Error("Corrupt area emission"); },
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, playFrameCap: 60, physicsWorld: "3d", playerFiles,
+    });
+    if (!isOk(result)) throw new Error(result.error);
+    const types = result.value.manifest.assets.map((entry) => entry.type);
+    expect(types).toContain("Texture");
+    expect(types).not.toContain("AreaEmission");
+  });
+
   it("packs a scene audioReverb chunk under a sidecar guid", async () => {
     const scene = createDefaultScene();
     const field = new Uint8Array([3, 2, 1]);

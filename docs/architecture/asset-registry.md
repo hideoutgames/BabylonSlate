@@ -282,6 +282,7 @@ saves, renames and derived commits share one per-asset write queue.
 Editor and Play consume validated prepared chunks. Export carries each reachable
 prepared Texture as an `AreaEmission` sidecar while retaining its independent
 visual representation. Missing required preparation blocks export with the
-Texture GUID and the preparation action. The player validates the version and
+Texture GUID and the preparation action; an unreadable emission that no area
+light in the export uses is left out instead. The player validates the version and
 pixel hash before engine creation. Native GPU filter/orientation comparison and
 textured receiver browser qualification remain pending.

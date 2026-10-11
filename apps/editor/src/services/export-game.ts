@@ -335,7 +335,7 @@ export async function collectAndExportGame(
     content: SerializedGraph;
     parentClassId?: string | null;
   }> = [];
-  const animDocs: Array<{ guid: string; path: string; document: unknown }> = [];
+  const animDocs: Array<{ guid: string; document: unknown }> = [];
   const exportAssets: ExportAssetBytes[] = [];
   const subsystemHierarchy = { ancestry(classId: string) { const result: string[] = []; const seen = new Set<string>(); let current: string | null | undefined = classId; while (current && !seen.has(current)) { seen.add(current); result.push(current); current = params.parentOf(current); } return result; } };
   const requiredEmissions = new Set<string>();
@@ -366,13 +366,7 @@ export async function collectAndExportGame(
     }
     if (asset.type === "AnimationGraph") {
       const payload = params.payloadByGuid?.(guid) ?? null;
-      if (payload) {
-        const animPath =
-          asset.path && /\.anim\.(babasset|json)$/i.test(asset.path)
-            ? asset.path
-            : `assets/${asset.name}.anim.babasset`;
-        animDocs.push({ guid, path: animPath, document: payload });
-      }
+      if (payload) animDocs.push({ guid, document: payload });
     }
     let bytes: Uint8Array | null;
     try {
@@ -381,10 +375,15 @@ export async function collectAndExportGame(
       return { ok: false, error: `${asset.name} could not be read for export: ${error instanceof Error ? error.message : String(error)}` };
     }
     if (asset.type === "Texture") {
+      // Required emissions were checked above; a stale emission no area light
+      // in the closure uses is left out rather than failing the export.
+      let emission: Uint8Array | null | undefined = null;
       try {
-        const emission = params.areaEmissionBytesByGuid?.(guid);
-        if (emission) exportAssets.push({ guid: areaEmissionExportGuid(guid), type: AREA_EMISSION_EXPORT_TYPE, sceneGuid: packSceneGuidForAsset(guid, startup, closure.value.bySceneGuid), bytes: emission, encoding: "bytes", name: `${asset.name} Area Emission` });
-      } catch (error) { return { ok: false, error: `Area emission ${asset.name}: ${String(error)}` }; }
+        emission = params.areaEmissionBytesByGuid?.(guid);
+      } catch {
+        emission = null;
+      }
+      if (emission) exportAssets.push({ guid: areaEmissionExportGuid(guid), type: AREA_EMISSION_EXPORT_TYPE, sceneGuid: packSceneGuidForAsset(guid, startup, closure.value.bySceneGuid), bytes: emission, encoding: "bytes", name: `${asset.name} Area Emission` });
     }
     if (bytes) {
       const payload = params.payloadByGuid?.(guid);
@@ -531,6 +530,7 @@ export async function collectAndExportGame(
     try {
       scripts.push(
         ...compileGraphDocuments(graphDocs.map(document => ({ ...document, classId: classIdForGraphPath(document.path), path: document.guid })), compileOptions),
+        // Exported Animation Graph scripts are keyed by guid, as the pack is.
         ...compileAnimGraphScripts(animDocs.map(document => ({ ...document, path: document.guid })), compileOptions),
       );
     } catch (error) {
