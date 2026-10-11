@@ -42,6 +42,36 @@ export class MigrationRegistry {
     return this.chains.get(type)?.currentVersion ?? 0;
   }
 
+  /** Throws for a stored version no registered step reads, or a future one. */
+  private refuseUnreadable(chain: TypeMigrationChain, version: number): void {
+    const { type, currentVersion: current } = chain;
+    if (version > current) {
+      throw new AssetFormatVersionError(
+        `Asset type "${type}" version ${version} was made with a newer engine version (current ${current})`,
+      );
+    }
+    const oldest = current - (chain.migrations?.length ?? 0);
+    if (version < oldest) {
+      throw new AssetFormatVersionError(
+        `Asset type "${type}" version ${version} uses an unsupported old format. This engine reads version ${current}${oldest < current ? ` and upgrades from version ${oldest}` : ""}; older files are not upgraded.`,
+      );
+    }
+  }
+
+  /**
+   * Play, Preview Build and export read stored payloads without migrating
+   * them, so a registered type must be at its current version. Versions that
+   * `migrate` refuses throw its message; an upgradable one must be saved first.
+   */
+  requireCurrent(type: string, version: number): void {
+    const chain = this.chains.get(type);
+    if (!chain || version === chain.currentVersion) return;
+    this.refuseUnreadable(chain, version);
+    throw new AssetFormatVersionError(
+      `Asset type "${type}" version ${version} must be upgraded to version ${chain.currentVersion} before it can be played or exported. Open it and save with Migrate On Save.`,
+    );
+  }
+
   /**
    * Apply ordered migrations so payload matches the current schema version.
    * Refuses future versions and old versions no registered step reads.
@@ -56,21 +86,12 @@ export class MigrationRegistry {
       return { version, payload, migrated: false };
     }
     const current = chain.currentVersion;
-    if (version > current) {
-      throw new AssetFormatVersionError(
-        `Asset type "${type}" version ${version} was made with a newer engine version (current ${current})`,
-      );
-    }
     if (version === current) {
       return { version, payload, migrated: false };
     }
+    this.refuseUnreadable(chain, version);
     const steps = chain.migrations ?? [];
     const oldest = current - steps.length;
-    if (version < oldest) {
-      throw new AssetFormatVersionError(
-        `Asset type "${type}" version ${version} uses an unsupported old format. This engine reads version ${current}${oldest < current ? ` and upgrades from version ${oldest}` : ""}; older files are not upgraded.`,
-      );
-    }
     let next = payload;
     for (let v = version; v < current; v++) {
       next = steps[v - oldest]!(next);

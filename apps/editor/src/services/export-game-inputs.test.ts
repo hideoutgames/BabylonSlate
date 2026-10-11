@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultScene, createDefaultSceneLayer } from "@babylonslate/core";
+import { createDefaultScene, createDefaultSceneLayer, SCENE_SCHEMA_VERSION } from "@babylonslate/core";
 import { createDefaultParticleGraphDocument } from "@babylonslate/particle-graph";
 import type { IndexedAsset } from "@babylonslate/assets";
 import { loadExportDocuments } from "./export-game-inputs";
@@ -157,7 +157,7 @@ describe("loadExportDocuments", () => {
             type: "Scene",
             name: "Main",
             engineVersion: "0.0.0",
-            version: 1,
+            version: SCENE_SCHEMA_VERSION,
             mode: "thin",
             dependencies: [],
             payload: {},
@@ -339,7 +339,7 @@ describe("loadExportDocuments", () => {
             type: "Scene",
             name: "Main",
             engineVersion: "0.0.0",
-            version: 1,
+            version: SCENE_SCHEMA_VERSION,
             mode: "thin",
             dependencies: [],
             payload: {},
@@ -375,7 +375,7 @@ describe("loadExportDocuments", () => {
             type: "Scene",
             name: "Main",
             engineVersion: "0.0.0",
-            version: 1,
+            version: SCENE_SCHEMA_VERSION,
             mode: "thin",
             dependencies: [],
             payload: {},

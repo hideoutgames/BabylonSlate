@@ -1,14 +1,75 @@
 import { describe, expect, it, vi } from "vitest";
-import { createDocumentRef, createEmptyProject, documentId } from "@babylonslate/core";
+import { createDocumentRef, createEmptyProject, documentId, SCENE_SCHEMA_VERSION } from "@babylonslate/core";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { createInProcessRuntime } from "@babylonslate/runtime";
 import type { CommandMessage, ScriptBundleEntry } from "@babylonslate/bridge";
 import {
-  AssetRegistry, buildBoxGlbFixture, createRegistryAssetLoadingService, encodeBabasset,
-  FONT_FACETYPE_CHUNK_ID, projectContentRoot, type ChunkInput,
+  AssetFormatVersionError, AssetRegistry, buildBoxGlbFixture, createDefaultMigrationRegistry, createRegistryAssetLoadingService, encodeBabasset,
+  FONT_FACETYPE_CHUNK_ID, MATERIAL_PAYLOAD_VERSION, projectContentRoot, type ChunkInput,
 } from "@babylonslate/assets";
 import { acquirePlayAssetSources, emptyPlaySourceControls, mergePreparedPlaySources, playDocumentOverrides, requiredProjectAssets } from "./play-asset-sources";
 import type { OpenDocument } from "./document-service";
+
+const formats = createDefaultMigrationRegistry();
+/** Fixture header version: the type's current format, or 1 for unversioned types. */
+const currentFormat = (type: string) => formats.currentVersion(type) || 1;
+
+async function formatFixture(versions: { scene: number; material: number }) {
+  const storage = new MemoryStorageAdapter();
+  await storage.pickProjectFolder();
+  await storage.mkdir("assets");
+  await storage.writeBinary("assets/scene.babasset", await encodeBabasset({ header: {
+    guid: "scene", name: "Scene", type: "Scene", version: versions.scene, engineVersion: "0.0.0", mode: "thin",
+    payload: { name: "Scene", actors: [] }, dependencies: ["material"], requiredDependencies: ["material"], dependencyMetadataVersion: 1,
+  }, chunks: [] }));
+  await storage.writeBinary("assets/material.babasset", await encodeBabasset({ header: {
+    guid: "material", name: "Material", type: "Material", version: versions.material, engineVersion: "0.0.0", mode: "thin",
+    payload: { name: "Material", nodes: [], edges: [] }, dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1,
+  }, chunks: [] }));
+  const registry = new AssetRegistry(storage);
+  await registry.mountRoot(projectContentRoot());
+  const loading = createRegistryAssetLoadingService(registry, { projectId: "formats" });
+  const host = { registry, project: createEmptyProject("Formats"), createScope: (owner: string) => loading.createScope(owner),
+    compile: vi.fn(async () => ({ bundles: [], diagnostics: [] })) };
+  return { registry, loading, host };
+}
+
+describe("Play asset formats", () => {
+  const options = { consumer: "Play Scene", signal: new AbortController().signal };
+
+  it.each([
+    ["an older-format Scene", { scene: SCENE_SCHEMA_VERSION - 1, material: MATERIAL_PAYLOAD_VERSION },
+      `Asset type "Scene" version ${SCENE_SCHEMA_VERSION - 1} uses an unsupported old format. This engine reads version ${SCENE_SCHEMA_VERSION}; older files are not upgraded.`],
+    ["an older-format Material the Scene requires", { scene: SCENE_SCHEMA_VERSION, material: MATERIAL_PAYLOAD_VERSION - 1 },
+      `Asset type "Material" version ${MATERIAL_PAYLOAD_VERSION - 1} uses an unsupported old format. This engine reads version ${MATERIAL_PAYLOAD_VERSION}; older files are not upgraded.`],
+    ["a newer-format Scene", { scene: SCENE_SCHEMA_VERSION + 1, material: MATERIAL_PAYLOAD_VERSION },
+      `Asset type "Scene" version ${SCENE_SCHEMA_VERSION + 1} was made with a newer engine version (current ${SCENE_SCHEMA_VERSION})`],
+  ])("refuses to prepare %s before compiling or loading anything", async (_case, versions, message) => {
+    const { host, loading } = await formatFixture(versions);
+    const preparing = acquirePlayAssetSources(host, ["scene"], options);
+    await expect(preparing).rejects.toThrow(AssetFormatVersionError);
+    await expect(preparing).rejects.toThrow(message);
+    expect(host.compile).not.toHaveBeenCalled();
+    expect(loading.snapshot().entries).toEqual([]);
+    loading.dispose();
+  });
+
+  it("prepares current formats and an open working document whose file predates them", async () => {
+    const current = await formatFixture({ scene: SCENE_SCHEMA_VERSION, material: MATERIAL_PAYLOAD_VERSION });
+    const prepared = await acquirePlayAssetSources(current.host, ["scene"], options);
+    expect(prepared.game.scenes.get("scene")?.name).toBe("Scene");
+    prepared.release();
+    current.loading.dispose();
+    // The editor migrated the open Scene when it loaded; Play reads that working copy.
+    const old = await formatFixture({ scene: SCENE_SCHEMA_VERSION - 1, material: MATERIAL_PAYLOAD_VERSION });
+    const ref = createDocumentRef("scene", "assets/scene.babasset");
+    const open: OpenDocument = { id: documentId(ref), ref, content: { name: "Migrated", actors: [] }, dirty: false, layout: null };
+    const working = await acquirePlayAssetSources({ ...old.host, documentOverrides: playDocumentOverrides(old.registry, [open]) }, ["scene"], options);
+    expect(working.game.scenes.get("scene")?.name).toBe("Migrated");
+    working.release();
+    old.loading.dispose();
+  });
+});
 
 async function sceneSaveDuringCompilationFixture() {
   const storage = new MemoryStorageAdapter();
@@ -16,7 +77,7 @@ async function sceneSaveDuringCompilationFixture() {
   await storage.mkdir("assets");
   const writeScene = async (name: string, reverb: number) => storage.writeBinary("assets/scene.babasset", await encodeBabasset({
     header: {
-      guid: "scene", name, type: "Scene", version: 1, engineVersion: "0.0.0", mode: "thin", payload: { name, actors: [] },
+      guid: "scene", name, type: "Scene", version: SCENE_SCHEMA_VERSION, engineVersion: "0.0.0", mode: "thin", payload: { name, actors: [] },
       dependencies: ["script"], requiredDependencies: ["script"], dependencyMetadataVersion: 1,
     }, chunks: [{ id: "audioReverb", kind: "audio-reverb", mime: "application/octet-stream", data: new Uint8Array([reverb]) }],
   }));
@@ -57,12 +118,12 @@ describe("Play source ownership", () => {
       ],
     }] });
     const savedBytes = await encodeBabasset({ header: {
-      guid: "scene", name: "Scene", type: "Scene", version: 1, engineVersion: "0.0.0", mode: "thin",
+      guid: "scene", name: "Scene", type: "Scene", version: SCENE_SCHEMA_VERSION, engineVersion: "0.0.0", mode: "thin",
       payload: scenePayload("Saved", "saved-font"), dependencies: ["saved-font"], requiredDependencies: ["saved-font"], dependencyMetadataVersion: 1,
     }, chunks: [] });
     await storage.writeBinary(scenePath, savedBytes);
     await storage.writeBinary("assets/material.babasset", await encodeBabasset({ header: {
-      guid: "material", name: "Material", type: "Material", version: 1, engineVersion: "0.0.0", mode: "thin",
+      guid: "material", name: "Material", type: "Material", version: MATERIAL_PAYLOAD_VERSION, engineVersion: "0.0.0", mode: "thin",
       payload: { name: "Saved material", nodes: [], edges: [] }, dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1,
     }, chunks: [] }));
     for (const guid of ["saved-font", "live-font", "unrelated-font"]) await storage.writeBinary(`assets/${guid}.babasset`, await encodeBabasset({
@@ -227,7 +288,7 @@ describe("Play source ownership", () => {
     await storage.mkdir("assets");
     for (const id of ["scene-a", "scene-b", "script"]) await storage.writeBinary(`assets/${id}.babasset`, await encodeBabasset({
       header: {
-        guid: id, name: id, type: id === "script" ? "Class" : "Scene", version: 1, engineVersion: "0.0.0", mode: "thin",
+        guid: id, name: id, type: id === "script" ? "Class" : "Scene", version: id === "script" ? 1 : SCENE_SCHEMA_VERSION, engineVersion: "0.0.0", mode: "thin",
         dependencies: id === "script" ? [] : ["script"], requiredDependencies: id === "script" ? [] : ["script"], dependencyMetadataVersion: 1, requiredVariableNames: [],
         payload: id === "script" ? { nodes: [], edges: [], members: [] } : { actors: [] },
       }, chunks: [],
@@ -363,7 +424,7 @@ describe("Play source ownership", () => {
     await storage.mkdir("assets");
     const writeScene = async (required: string[]) => storage.writeBinary("assets/scene.babasset", await encodeBabasset({
       header: {
-        guid: "scene", name: "Scene", type: "Scene", version: 1, engineVersion: "0.0.0", mode: "thin", payload: { actors: [] },
+        guid: "scene", name: "Scene", type: "Scene", version: SCENE_SCHEMA_VERSION, engineVersion: "0.0.0", mode: "thin", payload: { actors: [] },
         dependencies: required, requiredDependencies: required, dependencyMetadataVersion: 1,
       }, chunks: [],
     }));
@@ -398,7 +459,7 @@ describe("Play source ownership", () => {
     const write = async (guid: string, type: string, payload: Record<string, unknown>, chunks: ChunkInput[], required: string[] = []) => {
       await storage.writeBinary(`assets/${guid}.babasset`, await encodeBabasset({
         header: {
-          guid, name: guid, type, version: 1, engineVersion: "0.0.0", mode: "thin", payload,
+          guid, name: guid, type, version: currentFormat(type), engineVersion: "0.0.0", mode: "thin", payload,
           dependencies: required, requiredDependencies: required, dependencyMetadataVersion: 1, requiredVariableNames: [],
         }, chunks,
       }));
@@ -479,7 +540,7 @@ describe("Play source ownership", () => {
       id: "crate", name: "Crate", components: [{ id: "mesh", classId: "MeshComponent", properties: { assetGuid: "model", collisionMode: "simple" } }],
     }] }));
     await storage.writeBinary("assets/scene.babasset", await encodeBabasset({
-      header: { guid: "scene", name: "scene", type: "Scene", version: 1, engineVersion: "0.0.0", mode: "thin", payload: {},
+      header: { guid: "scene", name: "scene", type: "Scene", version: SCENE_SCHEMA_VERSION, engineVersion: "0.0.0", mode: "thin", payload: {},
         dependencies: ["model"], requiredDependencies: ["model"], dependencyMetadataVersion: 1 },
       chunks: [{ id: "document", kind: "document", mime: "application/json", data: scene }],
     }));
@@ -513,7 +574,7 @@ describe("Play source ownership", () => {
     await storage.mkdir("assets");
     const write = async (guid: string, type: string, payload: Record<string, unknown>, chunks: ChunkInput[], required: string[] = []) =>
       storage.writeBinary(`assets/${guid}.babasset`, await encodeBabasset({
-        header: { guid, name: guid, type, version: 1, engineVersion: "0.0.0", mode: "thin", payload,
+        header: { guid, name: guid, type, version: currentFormat(type), engineVersion: "0.0.0", mode: "thin", payload,
           dependencies: required, requiredDependencies: required, dependencyMetadataVersion: 1, requiredVariableNames: [] },
         chunks,
       }));
