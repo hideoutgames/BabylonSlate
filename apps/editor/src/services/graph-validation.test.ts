@@ -765,6 +765,26 @@ describe("createDefaultLogicGraphSerialized", () => {
     ).toBe(true);
   });
 
+  it("seeds each inherited custom event whose name shares a node id slug", () => {
+    const graph = createDefaultLogicGraphSerialized(registry, {
+      parentClass: "HeroBase",
+      parentOf: (id) => (id === "HeroBase" ? "Actor" : null),
+      parentGraphs: {
+        HeroBase: {
+          nodes: [],
+          edges: [],
+          members: [
+            { id: "evt-1", kind: "event", name: "Ping", pins: [] },
+            { id: "evt-2", kind: "event", name: "PiNG", pins: [] },
+          ],
+        },
+      },
+    });
+    const custom = graph.nodes.filter((node) => node.type === "flow.event.custom");
+    expect(custom.map((node) => node.data.name)).toEqual(["Ping", "PiNG"]);
+    expect(new Set(custom.map((node) => node.id)).size).toBe(2);
+  });
+
   it("seeds On Evaluate for a BTDecorator class", () => {
     const graph = createDefaultLogicGraphSerialized(registry, {
       parentClass: "BTDecorator",

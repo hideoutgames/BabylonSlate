@@ -1015,11 +1015,13 @@ export function createDefaultLogicGraphSerialized(
 
   const inherited = inheritedCustomEventSeeds(options);
   inherited.forEach((event, index) => {
-    const eventId = `event-custom-${event.name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "")}`;
-    if (graph.nodes.some((node) => node.id === eventId)) return;
+    if (graph.nodes.some((node) => node.type === "flow.event.custom" && node.data.name === event.name)) return;
+    // Names that differ only in punctuation ("Foo Bar", "Foo-Bar") share a slug; each gets its own node.
+    const slug = event.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    let eventId = `event-custom-${slug}`;
+    for (let suffix = 2; graph.nodes.some((node) => node.id === eventId); suffix++) {
+      eventId = `event-custom-${slug}-${suffix}`;
+    }
     const y = 80 + (stubs.length + index) * 160;
     graph = {
       ...graph,
