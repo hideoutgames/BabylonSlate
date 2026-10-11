@@ -135,9 +135,9 @@ describe("game session ownership", () => {
 });
 
 describe("transitionClosesSessionSource", () => {
-  it("treats opening another Scene as closing the Scene the session started from", () => {
-    expect(transitionClosesSessionSource({ kind: "replace-document", documentId: "scene:b" }, "scene:a")).toBe(true);
-    expect(transitionClosesSessionSource({ kind: "replace-document", documentId: "scene:a" }, "scene:a")).toBe(false);
+  it("closes the session's Scene only when the transition replaces or closes that Scene", () => {
+    expect(transitionClosesSessionSource({ kind: "replace-document", documentId: "scene:a" }, "scene:a")).toBe(true);
+    expect(transitionClosesSessionSource({ kind: "replace-document", documentId: "scene:b" }, "scene:a")).toBe(false);
     expect(transitionClosesSessionSource({ kind: "close-document", documentId: "scene:a" }, "scene:a")).toBe(true);
     expect(transitionClosesSessionSource({ kind: "close-document", documentId: "graph:hero" }, "scene:a")).toBe(false);
   });

@@ -33,8 +33,8 @@ export class GameSessionCancelledError extends Error {
 /**
  * Whether a document transition closes the open Scene a running session was
  * started from (`null` when it was not started from an open document).
- * `replace-document` names the Scene being opened; it replaces every other
- * open Scene, so it closes the source unless it reopens that same Scene.
+ * `replace-document` names an open Scene that opening another Scene replaces,
+ * so like `close-document` it closes the source only when it names it.
  */
 export function transitionClosesSessionSource(
   transition: DocumentTransition,
@@ -45,9 +45,8 @@ export function transitionClosesSessionSource(
     case "replace-project":
       return true;
     case "close-document":
-      return sourceDocumentId !== null && transition.documentId === sourceDocumentId;
     case "replace-document":
-      return sourceDocumentId !== null && transition.documentId !== sourceDocumentId;
+      return sourceDocumentId !== null && transition.documentId === sourceDocumentId;
   }
 }
 
