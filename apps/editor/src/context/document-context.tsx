@@ -2265,7 +2265,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         infiniteLoopDetection:
           exportDocument?.settings.infiniteLoopDetection,
         loopCount: exportDocument?.settings.loopCount,
-        inputMappings: exportDocument?.settings.input,
         focusNavigation: exportDocument?.settings.focusNavigation,
         tagRegistry: exportDocument?.settings.tags,
         playerFiles,
