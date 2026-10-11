@@ -115,6 +115,21 @@ describe("DocumentEditStack", () => {
     expect(stack.redo(doc)?.doc).toEqual({ value: 1 });
   });
 
+  it("records nothing and keeps Redo for an edit that returns its unchanged document", () => {
+    const stack = new DocumentEditStack<TestDoc>({ maxEntries: 10, maxBytes: 100 });
+    let doc = stack.apply({ value: 0 }, new IncrementCommand(1)).doc;
+    doc = stack.undo(doc)!.doc;
+    // An Add whose id already exists: its inverse would remove state it never created.
+    const noop: EditCommand<TestDoc> = {
+      type: "test.noop",
+      apply: (current) => current,
+      invert: () => new IncrementCommand(-5),
+    };
+    expect(stack.apply(doc, noop)).toEqual({ doc, command: noop, history: "unchanged" });
+    expect(stack.undoDepth).toBe(0);
+    expect(stack.redo(doc)?.doc).toEqual({ value: 1 });
+  });
+
   it("keeps the first inverse of a merged gesture across Undo, Redo and another Undo", () => {
     const stack = new DocumentEditStack<TestDoc>({ maxEntries: 10, maxBytes: 1000 });
     let doc = stack.apply({ value: 0 }, new MergeableCommand(0, 1)).doc;

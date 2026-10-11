@@ -113,6 +113,24 @@ describe("scene commands", () => {
     expect(command.byteSize).toBeGreaterThan(0);
   });
 
+  it("counts component property and scene setting payloads toward the Undo byte budget", () => {
+    const heights = Array.from({ length: 500 }, (_, index) => index);
+    const session = new EditSession({ maxBytes: 1000 });
+    const property = session.apply("scene", baseScene(), new SetComponentPropertyCommand("a", "c1", "heights", undefined, heights));
+    expect(property.history).toBe("cleared");
+    const stack = Array.from({ length: 100 }, (_, index) => ({ materialGuid: `material-${index}`, enabled: true }));
+    const setting = session.apply("scene", baseScene(), new SetSceneSettingCommand("postProcessStack", [], stack));
+    expect(setting.history).toBe("cleared");
+  });
+
+  it("records no Undo step for an add whose component id already exists", () => {
+    const session = new EditSession();
+    const scene = baseScene();
+    const duplicate = new AddComponentCommand("a", createMeshComponent("c1", "sphere"));
+    expect(session.apply("scene", scene, duplicate)).toMatchObject({ doc: scene, history: "unchanged" });
+    expect(session.canUndo("scene")).toBe(false);
+  });
+
   it("SetActorTransformCommand apply-then-invert restores the document", () => {
     fc.assert(
       fc.property(transformArb, transformArb, (from, to) => {
@@ -535,6 +553,30 @@ describe("diffSceneCommands", () => {
     expect(types).toContain("scene.addComponent");
     expect(types).toContain("scene.removeComponent");
     expect(types).toContain("scene.reparentComponent");
+  });
+
+  it("clears a component property without leaving an own undefined key", () => {
+    const before = baseScene();
+    before.actors[0]!.components[0]!.properties.speed = 3;
+    const after = structuredClone(before);
+    delete after.actors[0]!.components[0]!.properties.speed;
+    const commands = diffSceneCommands(before, after);
+    const applied = commands.reduce<SerializedScene>((doc, command) => command.apply(doc), before);
+    expect(applied).toStrictEqual(after);
+  });
+
+  it("restores a component transform when Undo turns a 2D anchor back into its earlier class", () => {
+    const before = baseScene();
+    const after = structuredClone(before);
+    const component = after.actors[0]!.components[0]!;
+    component.classId = "2DAnchorComponent";
+    delete component.transform;
+    for (const [from, to] of [[before, after], [after, before]] as const) {
+      const session = new EditSession();
+      const applied = session.applyBatch("scene", from, diffSceneCommands(from, to))!.doc;
+      expect(applied).toEqual(to);
+      expect(session.undo("scene", applied)!.doc).toEqual(from);
+    }
   });
 
   it("derives SetComponentTransformCommand when a component transform changes", () => {

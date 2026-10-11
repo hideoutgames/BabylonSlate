@@ -17,8 +17,10 @@ export interface ApplyResult<TDoc> {
  *   (including this step) was cleared and the edit cannot be undone.
  * - `cleared-gesture`: continues a gesture already `cleared`; nothing more is
  *   recorded, so Undo never stops part-way through that gesture.
+ * - `unchanged`: the command returned the document it was given, so there is
+ *   nothing to undo; Undo, Redo and the open gesture are left as they were.
  */
-export type HistoryOutcome = "recorded" | "cleared" | "cleared-gesture";
+export type HistoryOutcome = "recorded" | "cleared" | "cleared-gesture" | "unchanged";
 
 export interface EditApplyResult<TDoc> extends ApplyResult<TDoc> {
   history: HistoryOutcome;
@@ -106,6 +108,9 @@ export class DocumentEditStack<TDoc> {
 
   apply(doc: TDoc, command: EditCommand<TDoc>): EditApplyResult<TDoc> {
     const next = command.apply(doc);
+    // A no-op (such as an Add whose id already exists) has an inverse that
+    // would undo state this command never created, so it records nothing.
+    if (next === doc) return { doc, command, history: "unchanged" };
     this.redoStack = [];
     const continuesGesture = this.mergeOpen && command.mergeKey !== undefined;
     if (continuesGesture && command.mergeKey === this.clearedMergeKey) {

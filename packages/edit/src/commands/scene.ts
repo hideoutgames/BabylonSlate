@@ -25,6 +25,17 @@ function byteSizeOf(value: unknown): number {
   return new TextEncoder().encode(JSON.stringify(value)).byteLength;
 }
 
+/** `undefined` clears the key, as saving to JSON would. */
+function withProperty(
+  properties: Record<string, unknown>,
+  key: string,
+  value: unknown,
+): Record<string, unknown> {
+  const next = { ...properties, [key]: value };
+  if (value === undefined) delete next[key];
+  return next;
+}
+
 function replaceActor(
   doc: SerializedScene,
   actorId: string,
@@ -324,10 +335,12 @@ export class AddComponentCommand implements EditCommand<SerializedScene> {
   }
 
   apply(doc: SerializedScene): SerializedScene {
+    const target = doc.actors.find((actor) => actor.id === this.actorId);
+    // Unchanged, so Undo history records no inverse that would delete the existing row.
+    if (!target || target.components.some((entry) => entry.id === this.component.id)) {
+      return doc;
+    }
     return replaceActor(doc, this.actorId, (actor) => {
-      if (actor.components.some((entry) => entry.id === this.component.id)) {
-        return actor;
-      }
       const components = [...actor.components];
       if (this.index >= 0 && this.index <= components.length) {
         components.splice(this.index, 0, this.component);
@@ -515,6 +528,14 @@ export class SetComponentPropertyCommand
   readonly from: unknown;
   readonly to: unknown;
   readonly linkage?: ComponentLinkageChange;
+  #byteSize?: number;
+  /**
+   * Both values count toward the byte budget (landscape heights, tile data,
+   * spline points); measured on first read and memoised.
+   */
+  get byteSize(): number {
+    return (this.#byteSize ??= byteSizeOf({ from: this.from, to: this.to }));
+  }
 
   constructor(
     actorId: string,
@@ -540,7 +561,7 @@ export class SetComponentPropertyCommand
         component.id === this.componentId
           ? withComponentLinkage({
               ...component,
-              properties: { ...component.properties, [this.property]: this.to },
+              properties: withProperty(component.properties, this.property, this.to),
             }, this.linkage?.to)
           : component,
       ),
@@ -548,7 +569,7 @@ export class SetComponentPropertyCommand
   }
 
   invert(): SetComponentPropertyCommand {
-    return new SetComponentPropertyCommand(
+    const inverse = new SetComponentPropertyCommand(
       this.actorId,
       this.componentId,
       this.property,
@@ -556,6 +577,9 @@ export class SetComponentPropertyCommand
       this.from,
       this.linkage ? { from: this.linkage.to, to: this.linkage.from } : undefined,
     );
+    // Swapping `from` and `to` keeps the measured size.
+    inverse.#byteSize = this.#byteSize;
+    return inverse;
   }
 }
 
@@ -613,6 +637,14 @@ export class SetSceneSettingCommand implements EditCommand<SerializedScene> {
   readonly key: keyof SceneSettings;
   readonly from: SceneSettings[keyof SceneSettings];
   readonly to: SceneSettings[keyof SceneSettings];
+  #byteSize?: number;
+  /**
+   * Both values count toward the byte budget (foliage groups, the
+   * post-process stack); measured on first read and memoised.
+   */
+  get byteSize(): number {
+    return (this.#byteSize ??= byteSizeOf({ from: this.from, to: this.to }));
+  }
 
   constructor(
     key: keyof SceneSettings,
@@ -635,7 +667,10 @@ export class SetSceneSettingCommand implements EditCommand<SerializedScene> {
   }
 
   invert(): SetSceneSettingCommand {
-    return new SetSceneSettingCommand(this.key, this.to, this.from);
+    const inverse = new SetSceneSettingCommand(this.key, this.to, this.from);
+    // Swapping `from` and `to` keeps the measured size.
+    inverse.#byteSize = this.#byteSize;
+    return inverse;
   }
 }
 
