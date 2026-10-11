@@ -182,6 +182,56 @@ describe("audio reverb bake", () => {
     );
   });
 
+  it("collects each primitive's own shape, placed through its actor and component parents", async () => {
+    const bounds = (triangles: Awaited<ReturnType<typeof collectStaticAudioGeometry>>["triangles"]) => {
+      const xs = triangles.flatMap((t) => [t.ax, t.bx, t.cx]);
+      const ys = triangles.flatMap((t) => [t.ay, t.by, t.cy]);
+      const zs = triangles.flatMap((t) => [t.az, t.bz, t.cz]);
+      return [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys), Math.min(...zs), Math.max(...zs)];
+    };
+    const room = createActor("room", "room", {
+      transform: { ...identitySerializedTransform(), position: [10, 0, 0] },
+      components: [],
+    });
+    const floor = createActor("floor", "floor", {
+      parentId: "room",
+      transform: { ...identitySerializedTransform(), position: [0, -1, 0] },
+      components: [
+        { id: "pivot", classId: "SceneComponent", properties: {}, parentId: null, transform: { ...identitySerializedTransform(), position: [0, 0, 2] } },
+        { ...createMeshComponent("floor-mesh", "ground"), parentId: "pivot" },
+      ],
+    });
+    const geometry = await collectStaticAudioGeometry({ actors: [room, floor] });
+    const [minX, maxX, minY, maxY, minZ, maxZ] = bounds(geometry.triangles);
+    expect([minX, maxX]).toEqual([5, 15]);
+    expect(minY).toBeCloseTo(-1.01);
+    expect(maxY).toBeCloseTo(-0.99);
+    expect([minZ, maxZ]).toEqual([-3, 7]);
+
+    const sphere = await collectStaticAudioGeometry({
+      actors: [createActor("ball", "ball", { components: [createMeshComponent("ball-mesh", "sphere")] })],
+    });
+    expect(Math.max(...bounds(sphere.triangles).map(Math.abs))).toBeCloseTo(0.75);
+  });
+
+  it("marks only the voxels a slanted wall touches, not its bounding box", () => {
+    // A 4-high wall along the diagonal x = z from (0, 0, 0) to (20, 0, 20).
+    const wall = {
+      triangles: [
+        { ax: 0, ay: 0, az: 0, bx: 20, by: 0, bz: 20, cx: 20, cy: 4, cz: 20 },
+        { ax: 0, ay: 0, az: 0, bx: 20, by: 4, bz: 20, cx: 0, cy: 4, cz: 0 },
+      ],
+    };
+    const field = decodeAudioReverbChunk(bakeAudioReverb(wall));
+    expect(isDryAudioReverbFallback(field)).toBe(false);
+    const occupancy = field!.occupancy!;
+    let occupied = 0;
+    for (const byte of occupancy.bits) for (let bit = 0; bit < 8; bit += 1) occupied += (byte >> bit) & 1;
+    const cells = occupancy.sizeX * occupancy.sizeY * occupancy.sizeZ;
+    expect(occupied).toBeGreaterThan(0);
+    expect(occupied).toBeLessThan(cells / 2);
+  });
+
   it("ignores dynamic rigid bodies when hashing geometry", async () => {
     const staticOnly = await collectStaticAudioGeometry({
       actors: [boxActor("wall", [0, 0, 0])],

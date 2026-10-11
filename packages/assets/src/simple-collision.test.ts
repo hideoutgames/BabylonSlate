@@ -71,13 +71,14 @@ describe("generateSimpleCollisionFromPoints", () => {
     expect(collider.points).toHaveLength(8);
   });
 
-  it("falls back to a bounds box when the cloud has no volume", () => {
+  it("falls back to a bounds box centered on the cloud when it has no volume", () => {
     const collider = generateSimpleCollisionFromPoints([
       { x: 0, y: 0, z: 0 },
       { x: 2, y: 0, z: 0 },
     ]);
     expect(collider.kind).toBe("box");
     expect(collider.halfExtents?.x).toBeCloseTo(1);
+    expect(collider.position).toEqual([1, 0, 0]);
     expect(collider.name).toBe("Generated Collision");
   });
 });
@@ -126,6 +127,16 @@ describe("cookGeneratedCollisionFromGltf", () => {
           Math.abs(point.z - 2) < 1e-4,
       ),
     ).toBe(true);
+  });
+
+  it("honors an authored zero node scale instead of reading it as 1", () => {
+    const { json, bin } = splitGlbJsonBin(buildBoxGlbFixture(2))!;
+    json.scenes = [{ nodes: [0, 1] }];
+    json.nodes = [{ mesh: 0 }, { mesh: 0, translation: [10, 0, 0], scale: [0, 0, 0] }];
+    expect(extractGltfPositions(encodeGlbJsonBin(json, bin)).every((point) => Math.abs(point.x) <= 1)).toBe(true);
+
+    json.nodes = [{ mesh: 0, scale: [1, 0, 1] }];
+    expect(extractGltfPositions(encodeGlbJsonBin(json, bin)).every((point) => point.y === 0)).toBe(true);
   });
 });
 

@@ -108,7 +108,7 @@ Worker emits identity only (`emitterActorGuid` / `voiceId`). Main thread follows
 
 ## Reverb bake
 
-Mirrors nav bake: main-thread collect of **static** `MeshComponent` triangles (chunked, 8 actors per yield), worker occupancy + flood-fill + sparse probes, debounce 1_500 ms after the last static geometry edit, cancel, geometry-hash cache, timeout 8_000 ms. Dynamic rigid bodies do not invalidate.
+Mirrors nav bake: main-thread collect of **static** `MeshComponent` triangles (chunked, 8 actors per yield), worker occupancy + flood-fill + sparse probes, debounce 1_500 ms after the last static geometry edit, cancel, geometry-hash cache, timeout 8_000 ms. Dynamic rigid bodies do not invalidate. Each primitive contributes its own shape at its `createPrimitiveMesh` size (`complexCollisionMeshForMeshKind`), placed through its component and actor attachments; a Model mesh stands in as the Box primitive, since the bake reads scene actors only. Occupancy marks the voxels a triangle actually touches (triangle–box overlap), so a slanted wall marks a band, not its bounding box.
 
 Save/export join matching in-flight geometry work through chunk persistence and registry refresh. A background bake that is still writing must finish before Save continues; it does not start a duplicate bake and concurrent Scene rewrite. Changed static geometry still requests a new result.
 
@@ -126,7 +126,7 @@ Channels with `environmentReverb.enabled` send to **one** shared delay/comb/all-
 
 ## Wall muffling
 
-Additive on Done P16. **Not** triangle ray tracing / Recast / physics rays. Spatial voices whose channel (or parent) has `muffleThroughWalls` enabled run a DDA walk on the baked occupancy grid each listener/snapshot sync (Play-view listener from Spatial). Occupied voxels along the segment count as walls; saturate after two (`occlusionFactor` `0..1`). Non-spatial, missing emitter, channel-less, missing occupancy, or Project Settings **Occlusion** off → factor `0`. One shared ~700 Hz lowpass bus; per-voice extra send mixed by the factor. Fake backend records `muffles.get(voiceId)`.
+Additive on Done P16. **Not** triangle ray tracing / Recast / physics rays. Spatial voices whose channel (or parent) has `muffleThroughWalls` enabled run a DDA walk on the baked occupancy grid each listener/snapshot sync (Play-view listener from Spatial). Occupied voxels along the segment count as walls; saturate after two (`occlusionFactor` `0..1`). The emitter's own voxel is skipped: at 2-unit voxels a source's own static mesh occupies it and must not muffle that source. Non-spatial, missing emitter, channel-less, missing occupancy, or Project Settings **Occlusion** off → factor `0`. One shared ~700 Hz lowpass bus; per-voice extra send mixed by the factor. Fake backend records `muffles.get(voiceId)`.
 
 ## A16 budgets
 

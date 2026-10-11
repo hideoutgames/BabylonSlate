@@ -63,7 +63,7 @@ Scene Preview, Play, and Preview Build share alpha-test draw ordering and projec
 
 ## Collision
 
-`tilemapChunkChains` (also Babylon-free) merges `full` tiles in a chunk: shared edges cancel, collinear outer edges collapse, so a solid rectangle is **one four-point loop** rather than a box per tile. Full-tile outlines merge in integer grid coordinates before scaling to world units, so fractional tile sizes (including the default 16px / 100 PPU) cannot leave internal collision edges. Custom `chain` collision on a tile is emitted as an open polyline in world space.
+`tilemapChunkChains` (also Babylon-free) merges `full` tiles in a chunk: shared edges cancel, collinear outer edges collapse, so a solid rectangle is **one four-point loop** rather than a box per tile. `tilemapLayerChains` does the same across every chunk of a layer, and `tilemapCollisionChains` (nav bake, editor drop collisions) uses it per collision layer, so a floor that crosses a chunk border has no edge at the border. Full-tile outlines merge in integer grid coordinates before scaling to world units, so fractional tile sizes (including the default 16px / 100 PPU) cannot leave internal collision edges. Custom `chain` collision on a tile is emitted as an open polyline in world space.
 
 `PhysicsWorldSync` gives every `TilemapComponent` actor a **static** body (even without `RigidBodyComponent`) and attaches those chains for layers with `collision: true`. Layers with `collision: false`, a missing `assetGuid`, or a missing tileset payload produce no chain colliders. Software 2D treats a chain as its AABB (wasm-failure path); Rapier uses real chain colliders. Closed Rapier loops get a closing **segment** collider (repeating the first polyline point makes Rapier miss raycasts).
 
