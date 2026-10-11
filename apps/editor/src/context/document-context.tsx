@@ -982,6 +982,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     pendingExclusiveSceneRef,
   );
   const exclusiveSceneRequest = useRef(0);
+  /** The latest tab activation the user asked for; an earlier, slower open does not take focus from it. */
+  const activationRequest = useRef(0);
   const [lastCompiledSignature, setLastCompiledSignature] = useState<
     string | null
   >(null);
@@ -2537,6 +2539,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const finishOpenDocument = useCallback(
     async (ref: DocumentRef) => {
+      // Taken before the session gate's wait, so a tab picked during it stays active.
+      const request = ++activationRequest.current;
       if (ref.kind === "scene" && !documentService.getDocument(documentId(ref))) {
         const allowed = documentTransitions.check({ kind: "replace-document", documentId: documentId(ref) });
         if (allowed === false || (typeof allowed !== "boolean" && !await allowed)) return;
@@ -2553,7 +2557,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const layouts = documentService.buildLayouts();
       const layout = layouts.documents[documentId(ref)] ?? null;
       try {
-        await documentService.openDocument(projectService, ref, layout, true, controller ? {
+        await documentService.openDocument(projectService, ref, layout, () => activationRequest.current === request, controller ? {
           signal: controller.signal,
           beforeLoad: async () => {
             setSceneDocumentLoad({ ref, failed: false });
@@ -2608,23 +2612,22 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const openDocument = useCallback(
     async (ref: DocumentRef) => {
       if (ref.kind === "scene") {
-        if (!documentService.getDocument(documentId(ref))) {
-          const allowed = documentTransitions.check({ kind: "replace-document", documentId: documentId(ref) });
-          if (allowed === false || (typeof allowed !== "boolean" && !await allowed)) return;
-        }
         exclusiveSceneRequest.current += 1;
         const blocking = dirtyScenesBlockingOpen(
           documentService.getDirtyDocuments(),
           documentId(ref),
         );
         if (blocking.length > 0) {
+          // The session gate runs once the user chooses Save or Discard, so
+          // Cancel leaves a running session untouched.
           setPendingExclusiveScene(ref);
           return;
         }
       }
+      // A Scene's replace-document gate runs in finishOpenDocument.
       await finishOpenDocument(ref);
     },
-    [documentService, finishOpenDocument, setPendingExclusiveScene, documentTransitions],
+    [documentService, finishOpenDocument, setPendingExclusiveScene],
   );
 
   const openRecordedTrace = useCallback(
@@ -2652,9 +2655,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       // same event is already visible here.
       const ref = pendingExclusiveSceneRef.current;
       if (!ref) return;
+      // Cancel, or a newer open request, while the gate or Save awaits ends this one.
+      const request = exclusiveSceneRequest.current;
       const allowed = documentTransitions.check({ kind: "replace-document", documentId: documentId(ref) });
       if (allowed === false || (typeof allowed !== "boolean" && !await allowed)) return;
-      const request = exclusiveSceneRequest.current;
+      if (request !== exclusiveSceneRequest.current) return;
       if (mode === "save") {
         const saved = await saveAll();
         if (!saved || request !== exclusiveSceneRequest.current ||
@@ -2673,6 +2678,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const setActiveDocument = useCallback(
     (id: string) => {
+      activationRequest.current += 1;
       const { activeDocumentId } = documentService.getState();
       if (id === activeDocumentId) return;
       const target = documentService.getState().openDocuments.get(id);

@@ -794,6 +794,62 @@ describe("DocumentProvider actions and route", () => {
     expect(documents().canUndoActiveDocument).toBe(false);
   });
 
+  it("asks a session owner only after the exclusive scene choice, and opens nothing when cancelled meanwhile", async () => {
+    const actions = await openProject();
+    const second = await createScene(actions, "Second");
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 2)));
+    let asked = 0;
+    let resolve!: (allowed: boolean) => void;
+    const unregister = actions.registerBeforeTransition(() => {
+      asked += 1;
+      return new Promise<boolean>((done) => { resolve = done; });
+    });
+    try {
+      await act(() => actions.openDocument(sceneRef(second.path)));
+      expect(documents().pendingExclusiveScene?.path).toBe(second.path);
+      expect(asked).toBe(0);
+
+      let confirming!: Promise<void>;
+      act(() => { confirming = actions.confirmExclusiveSceneOpen("discard"); });
+      expect(asked).toBe(1);
+      act(() => actions.cancelExclusiveSceneOpen());
+      await act(async () => { resolve(true); await confirming; });
+      expect(documents().openDocuments.filter((doc) => doc.ref.kind === "scene").map((doc) => doc.id)).toEqual([MAIN_SCENE_ID]);
+      expect(documents().dirtyDocuments.map((doc) => doc.id)).toEqual([MAIN_SCENE_ID]);
+    } finally {
+      unregister();
+    }
+  });
+
+  it("keeps the last tab asked for active when an earlier open finishes later", async () => {
+    const actions = await openProject();
+    const animation = await act(() => createProjectAsset({
+      registry: documents().assetRegistry!, rootId: "project", folderRelative: "", type: "AnimationGraph", name: "Locomotion",
+    }));
+    act(() => actions.noteAssetsCreated());
+    const classRef = { kind: "graph" as const, path: MAIN_CLASS_FILE, label: "Main" };
+    const animationRef = { kind: "anim-graph" as const, path: animation.path, label: "Locomotion" };
+    let finishRead!: () => void;
+    const heldRead = new Promise<void>((resolve) => { finishRead = resolve; });
+    const realLoad = ProjectService.prototype.loadDocument;
+    const read = vi.spyOn(ProjectService.prototype, "loadDocument").mockImplementation(async function (this: ProjectService, kind, path, options) {
+      if (path === MAIN_CLASS_FILE) await heldRead;
+      return realLoad.call(this, kind, path, options);
+    });
+    try {
+      let first!: Promise<void>;
+      act(() => { first = actions.openDocument(classRef); });
+      await act(() => actions.openDocument(animationRef));
+      await act(async () => { finishRead(); await first; });
+      expect(documents().openDocuments.some((doc) => doc.id === documentId(classRef))).toBe(true);
+      expect(documents().activeDocumentId).toBe(documentId(animationRef));
+    } finally {
+      finishRead();
+      read.mockRestore();
+    }
+  });
+
   it("keeps document lists through registry-only updates and tab switches, and Class inputs through Scene edits", async () => {
     const actions = await openProject();
     const classId = documentId({ kind: "graph", path: MAIN_CLASS_FILE });

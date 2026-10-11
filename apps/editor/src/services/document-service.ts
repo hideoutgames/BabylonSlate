@@ -472,9 +472,11 @@ export class DocumentService {
     projectService: ProjectService,
     ref: DocumentRef,
     layout: Record<string, unknown> | null = null,
-    setActive = true,
+    /** Activate the tab; a function is asked when the document commits, after its load. */
+    setActive: boolean | (() => boolean) = true,
     options?: DocumentLoadOptions,
   ): Promise<string> {
+    const activate = () => typeof setActive === "function" ? setActive() : setActive;
     options?.signal?.throwIfAborted();
     if (options?.background && (ref.kind === "content-browser" || isSceneWorkspaceKind(ref.kind))) {
       throw new Error("Scene workspaces and Content Browser cannot be background documents.");
@@ -497,7 +499,7 @@ export class DocumentService {
       options?.signal?.throwIfAborted();
       const tabs = this.tabsSnapshot();
       if (!options?.background) this.promoteDocument(existing);
-      if (setActive && !options?.background) {
+      if (!options?.background && activate()) {
         this.state.activeDocumentId = id;
       }
       if (ref.kind === "scene") {
@@ -576,7 +578,7 @@ export class DocumentService {
         this.closeOtherSceneDocuments(id);
       }
       this.pinStickyTabs();
-      if (setActive && !options?.background) {
+      if (!options?.background && activate()) {
         this.state.activeDocumentId = id;
       }
       this.advanceTabsIfChanged(tabs);
