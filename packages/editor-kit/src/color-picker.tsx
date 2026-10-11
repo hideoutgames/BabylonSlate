@@ -220,7 +220,7 @@ export function ColorPicker({
           <span id={`${id}-palette-help`} className="sr-only">Use Left and Right for saturation, Up and Down for brightness. Hold Shift for larger changes.</span>
           <Field className="gap-0">
             <FieldLabel id={`${id}-hue-label`} className="text-xs">Hue</FieldLabel>
-            <Slider aria-labelledby={`${id}-hue-label`} min={0} max={360} step={1} value={current.hsv[0]}
+            <Slider aria-labelledby={`${id}-hue-label`} min={0} max={360} step={1} value={current.hsv[0]} trackJumpOnTouch
               className="[&_[data-slot=slider-track]]:h-3 [&_[data-slot=slider-track]]:[background:var(--color-picker-track)] [&_[data-slot=slider-range]]:bg-transparent"
               style={{ "--color-picker-track": HUE_TRACK } as CSSProperties}
               onValueChange={(next) => setDraft((previous) => previous ? editHsv(previous, [Array.isArray(next) ? next[0]! : next, previous.hsv[1], previous.hsv[2]]) : null)} />
@@ -258,7 +258,7 @@ export function ColorPicker({
           {withAlpha ? <Field className="gap-0" data-invalid={invalidAlpha || undefined}>
             <FieldLabel htmlFor={`${id}-alpha`} className="text-xs">Alpha</FieldLabel>
             <div className="flex items-center gap-3">
-              <Slider aria-label="Alpha" min={0} max={1} step={0.01} value={clampUnit(current.color[3])}
+              <Slider aria-label="Alpha" min={0} max={1} step={0.01} value={clampUnit(current.color[3])} trackJumpOnTouch
                 className="min-w-0 flex-1 [&_[data-slot=slider-track]]:h-3 [&_[data-slot=slider-track]]:[background:var(--color-picker-track)] [&_[data-slot=slider-range]]:bg-transparent"
                 style={{ "--color-picker-track": alphaTrack(colorToHex(rgb(current.color))) } as CSSProperties}
                 onValueChange={(next) => {

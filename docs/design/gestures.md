@@ -113,6 +113,13 @@ Scale about the midpoint, then apply two-finger translation. Wheel zooms about t
 - **Behaviour tree node drag:** free X/Y from the header handle (`.bt-node-drag-handle`). Attachments use `nodrag`. A completed move persists `editorPositions` and stably re-sorts siblings by X; Auto Arrange must not change `children[]`.
 - **Shake To Disconnect:** repeated node-drag reversals break the dragged nodes' incident links immediately when the shake threshold is reached. The node stays held, and connection assistance remains suppressed until release so nearby pins cannot reconnect during the same gesture. Engine Settings can disable shake detection.
 
+## Sliders
+
+- Mouse: click the track to jump, drag the thumb.
+- Touch and pen: only a thumb drag changes the value. The track is `touch-pan-y`, so a vertical swipe that starts on it scrolls Details, Settings, and other panels; the thumb stays `touch-none` with its 44px hit area. Pointer type is checked per event, so a hybrid device follows the input in use.
+- Sliders in non-scrolling surfaces opt back into touch tap-to-jump with `trackJumpOnTouch` (ColorPicker hue and alpha strips).
+- Keyboard arrows, Page Up / Down, and Home / End are unchanged.
+
 ## Details curves and gradients
 
 - A collapsed Curve or Gradient row (`CurveField` / `GradientField`) is `touch-pan-y`, so a finger pan scrolls Details; a tap expands it.
