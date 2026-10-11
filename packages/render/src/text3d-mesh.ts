@@ -126,6 +126,8 @@ function createFlatTextMesh(
   const meshes: Mesh[] = [];
   for (const shapePath of shapePaths) {
     if (!shapePath.paths.length) continue;
+    // Each hole belongs to the contour that contains it; a hole inside no
+    // contour is never punched into an unrelated one.
     const holes = shapePath.holes.slice();
     for (const path of shapePath.paths) {
       const shape = pathPointsToShape(path.getPoints());
@@ -138,12 +140,6 @@ function createFlatTextMesh(
         if (!inside) continue;
         holeVectors.push(pathPointsToShape(points));
         holes.splice(holes.indexOf(hole), 1);
-      }
-      if (!holeVectors.length && holes.length && meshes.length === 0) {
-        for (const hole of holes) {
-          holeVectors.push(pathPointsToShape(hole.getPoints()));
-        }
-        holes.length = 0;
       }
       meshes.push(
         CreatePolygon(

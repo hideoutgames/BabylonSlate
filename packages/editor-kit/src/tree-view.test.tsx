@@ -337,23 +337,23 @@ describe("TreeView", () => {
     expect(onSelect.mock.calls[0]).toHaveLength(1);
   });
 
-  it("adds a row on Ctrl Shift or Meta click", () => {
+  it.each([
+    ["ctrlKey", { additive: true }],
+    ["metaKey", { additive: true }],
+    ["shiftKey", { range: true }],
+  ] as const)("selects with %s click as %o", (modifier, options) => {
     const onSelect = vi.fn();
     render(<TreeView nodes={nodes} onSelect={onSelect} data-testid="tree" />);
     const row = screen.getByTestId("tree-row-other");
-    dispatchPointerEvent(row, "pointerdown", {
-      pointerType: "mouse",
+    const init = {
+      pointerType: "mouse" as const,
       clientX: 10,
       clientY: 10,
-      ctrlKey: true,
-    });
-    dispatchPointerEvent(row, "pointerup", {
-      pointerType: "mouse",
-      clientX: 10,
-      clientY: 10,
-      ctrlKey: true,
-    });
-    expect(onSelect).toHaveBeenCalledWith("other", { additive: true });
+      [modifier]: true,
+    };
+    dispatchPointerEvent(row, "pointerdown", init);
+    dispatchPointerEvent(row, "pointerup", init);
+    expect(onSelect).toHaveBeenCalledWith("other", options);
   });
 
   it("adds a row on a horizontal swipe of at least 44px", () => {

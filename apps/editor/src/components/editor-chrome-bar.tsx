@@ -84,12 +84,14 @@ import { physicsPairingDiagnostics } from "../lib/physics-pairing-diagnostics";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 import { SettingsModal } from "./settings-modal";
 import { GlobalSearchDialog } from "./global-search-dialog";
+import { FeatureTestCheckDialog } from "./feature-test-check-dialog";
+import { useIsFeatureTestProject } from "../lib/use-is-feature-test-project";
+import { useDebugMode } from "../context/app-settings-context";
 import { IconActionButton } from "./icon-action-button";
 import { ActionFeedbackButton } from "./action-feedback-button";
 import { CompilationErrorIndicator } from "./compilation-error-indicator";
 import { WindowsMenu } from "./windows-menu";
 import { PlayDebugMenuItems } from "./play-debug-menu-items";
-import { displayProjectName } from "../lib/display-project-name";
 import { useMaterialRenderControl } from "../context/material-render-control-context";
 import {
   playChromeLaunchAriaLabel,
@@ -286,6 +288,7 @@ export function EditorChromeBar({
     playing,
     preparing,
     canPlay,
+    sceneViewportLoading,
     previewBuild,
     setPreviewBuild,
     playFromScene,
@@ -316,6 +319,10 @@ export function EditorChromeBar({
   }
   const [searchOpen, setSearchOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [featureTestCheckOpen, setFeatureTestCheckOpen] = useState(false);
+  const featureTestProject = useIsFeatureTestProject();
+  const debugMode = useDebugMode();
+  const featureTestCheck = featureTestProject && debugMode;
   const phone = usePhoneLayout();
   // Keeps its lazy class lookup until the registry changes, not per edit.
   const resolveDocumentVisual = useMemo(() => {
@@ -364,7 +371,7 @@ export function EditorChromeBar({
   const playChord = useKeybindChord("play.start");
   const projectSettingsChord = useKeybindChord("editor.projectSettings");
   const engineSettingsChord = useKeybindChord("editor.engineSettings");
-  const playEnabled = Boolean(projectName) && !playing && !preparing && canPlay;
+  const playEnabled = Boolean(projectName) && !playing && !preparing && canPlay && !sceneViewportLoading;
   const launchPlay = () => {
     const inject =
       typeof window !== "undefined" &&
@@ -427,6 +434,10 @@ export function EditorChromeBar({
         onPauseOnPlayChange={setPauseOnPlay}
         onPreviewBuildChange={setPreviewBuild}
         onPlayFromSceneChange={setPlayFromScene}
+        onRunFeatureTestCheck={featureTestCheck ? () => {
+          setToolsOpen(false);
+          setFeatureTestCheckOpen(true);
+        } : undefined}
       />
     </DropdownMenu>
   );
@@ -543,11 +554,11 @@ export function EditorChromeBar({
           <div
             className="editor-chrome-title"
             data-testid="project-name"
-            title={projectName ? displayProjectName(projectName) : undefined}
+            title={projectName || undefined}
           >
             <BrandIcon className="editor-chrome-brand" />
             <span className="editor-chrome-project">
-              {projectName ? displayProjectName(projectName) : ""}
+              {projectName ?? ""}
             </span>
           </div>
         ) : null}
@@ -788,11 +799,13 @@ export function EditorChromeBar({
                       playFromScene,
                     })}
                     title={
-                      canPlay
-                        ? undefined
-                        : playFromScene && !previewBuild
+                      !canPlay
+                        ? playFromScene && !previewBuild
                           ? "Open a scene to play"
                           : "Set Startup Scene in Project Settings."
+                        : sceneViewportLoading
+                          ? "Wait for the scene to finish loading"
+                          : undefined
                     }
                     aria-keyshortcuts={playChord ? ariaKeyShortcuts(playChord) : undefined}
                     disabled={!playEnabled}
@@ -813,7 +826,7 @@ export function EditorChromeBar({
                   </span>
                 ) : null}
               </TooltipTrigger>
-              {canPlay ? (
+              {canPlay && !sceneViewportLoading ? (
                 <TooltipContent>
                   {phone && previewBuild ? "Build" : playChromeLaunchLabel(previewBuild)}
                   <ShortcutKeys chord={playChord} decorative />
@@ -860,6 +873,9 @@ export function EditorChromeBar({
       </div>
 
       <GlobalSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
+      {featureTestCheck ? (
+        <FeatureTestCheckDialog open={featureTestCheckOpen} onOpenChange={setFeatureTestCheckOpen} />
+      ) : null}
       {openedSettings.project ? (
         <SettingsModal
           open={settingsScope === "project"}

@@ -1,5 +1,7 @@
 import { Color4, ImageProcessingConfiguration, type BaseTexture } from "@babylonjs/core";
 import type {
+  PostProcessingEffectField,
+  PostProcessingQuality,
   RenderEffectsSettings,
   RenderEffectsToneMapping,
   RenderMode,
@@ -21,6 +23,11 @@ export interface SceneEffectsInputs {
   fogVolumesPresent?: boolean;
   /** The project's LUT, once loaded; null leaves color grading off. */
   colorGradingTexture?: BaseTexture | null;
+  /**
+   * Screen-space effects the quality tier can afford (Post Processing quality).
+   * Omitted allows every effect the project enables.
+   */
+  allowed?: Pick<PostProcessingQuality, PostProcessingEffectField>;
 }
 
 /** Composed effect chain: authored stack output → ambient occlusion →
@@ -79,9 +86,14 @@ export function planSceneEffects(
     sceneLinear || vignette || colorGrading ? { sceneLinear, vignette, colorGrading } : null;
   const fxaa = effects.fxaa;
   const temporalAntiAliasing = effects.temporalAntiAliasing.enabled ? effects.temporalAntiAliasing : null;
-  const ambientOcclusion = mode === "pbr" && effects.ambientOcclusion.enabled ? effects.ambientOcclusion : null;
-  const reflections = mode === "pbr" && effects.reflections.enabled ? effects.reflections : null;
-  const volumetricLighting = effects.volumetricLighting.enabled ? effects.volumetricLighting
+  const allowed = inputs.allowed;
+  const ambientOcclusion = mode === "pbr" && effects.ambientOcclusion.enabled && allowed?.ambientOcclusion !== false
+    ? effects.ambientOcclusion : null;
+  const reflections = mode === "pbr" && effects.reflections.enabled && allowed?.reflections !== false ? effects.reflections : null;
+  // A tier without volumetric lighting keeps authored Fog Volumes: the pass
+  // then runs exactly as with the project's scene-wide volumetrics off.
+  const volumetricLighting = effects.volumetricLighting.enabled && allowed?.volumetricLighting !== false
+    ? effects.volumetricLighting
     : fogVolumesPresent ? { ...effects.volumetricLighting, enabled: true, density: 0 } : null;
   const upscale = effects.upscaling.enabled && effects.upscaling.renderScale < 1 ? effects.upscaling : null;
   // sceneLinear always yields imageProcessing, so it needs no separate term.
@@ -158,5 +170,9 @@ export function sceneEffectsKey(
 ): string {
   if (!enabled) return "off";
   const lut = effects.colorGrading.enabled ? inputs.colorGradingTexture?.uniqueId : undefined;
-  return `${mode}${JSON.stringify(effects)}${inputs.fogVolumesPresent ? ":fogVolumes" : ""}${lut === undefined ? "" : `:lut${lut}`}`;
+  const allowed = inputs.allowed;
+  const skipped = allowed
+    ? `:skip${allowed.ambientOcclusion ? "" : "O"}${allowed.reflections ? "" : "R"}${allowed.volumetricLighting ? "" : "V"}`
+    : "";
+  return `${mode}${JSON.stringify(effects)}${inputs.fogVolumesPresent ? ":fogVolumes" : ""}${lut === undefined ? "" : `:lut${lut}`}${skipped}`;
 }

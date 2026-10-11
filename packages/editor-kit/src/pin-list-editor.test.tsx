@@ -206,7 +206,7 @@ describe("PinListEditor", () => {
     expect(openAsset).toHaveBeenCalledWith("struct-stats");
   });
 
-  it("does not clear typeClassId when switching the pin type to enum", async () => {
+  it("clears an Object class constraint when switching the pin type to enum", async () => {
     const onChange = vi.fn();
     render(
       <PinListEditor
@@ -231,11 +231,27 @@ describe("PinListEditor", () => {
     });
     screen.getByTestId("search-item-enum").click();
     expect(onChange).toHaveBeenCalledWith([
-      expect.objectContaining({
-        id: "a",
-        type: "enum",
-        typeClassId: "Hero",
-      }),
+      { id: "a", name: "team", type: "enum", direction: "in" },
+    ]);
+  });
+
+  it("keeps a class constraint when switching an Object pin to Actor", async () => {
+    const onChange = vi.fn();
+    render(
+      <PinListEditor
+        rows={[{ id: "a", name: "target", type: "object", direction: "in", typeClassId: "Hero" }]}
+        selectedId="a"
+        classEntries={[{ id: "Hero", name: "Hero" }]}
+        onChange={onChange}
+      />,
+    );
+    screen.getByTestId("pin-a-type").click();
+    await waitFor(() => {
+      expect(screen.getByTestId("search-item-actor")).toBeTruthy();
+    });
+    screen.getByTestId("search-item-actor").click();
+    expect(onChange).toHaveBeenCalledWith([
+      expect.objectContaining({ id: "a", type: "actor", typeClassId: "Hero" }),
     ]);
   });
 

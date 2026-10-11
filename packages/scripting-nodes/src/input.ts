@@ -35,6 +35,7 @@ function assetInputEventPins(valueType: unknown) {
   ];
 }
 
+/** A miss reports zero Location and Normal on the struct and on the exploded pins alike. */
 function emitMappedHit(
   ctx: Parameters<NonNullable<NodeDefinition["codegen"]>>[0],
   expr: string,
@@ -48,7 +49,7 @@ function emitMappedHit(
   const worldOrigin = ctx.output("worldOrigin");
   const worldDirection = ctx.output("worldDirection");
   ctx.emit(
-    `{ const __hit = ${expr}; ${hitResult} = { Hit: __hit.hit === true, Location: __hit.location ?? { x: 0, y: 0, z: 0 }, Normal: __hit.normal ?? { x: 0, y: 0, z: 0 }, Actor: __hit.actor ?? null, Distance: __hit.distance ?? 0 }; ${hit} = __hit.hit === true; ${location} = __hit.location ?? null; ${normal} = __hit.normal ?? null; ${distance} = __hit.distance ?? 0; ${actor} = __hit.actor ?? null; ${worldOrigin} = __hit.worldOrigin ?? { x: 0, y: 0, z: 0 }; ${worldDirection} = __hit.worldDirection ?? { x: 0, y: 0, z: 0 }; }`,
+    `{ const __hit = ${expr}; ${hitResult} = { Hit: __hit.hit === true, Location: __hit.location ?? { x: 0, y: 0, z: 0 }, Normal: __hit.normal ?? { x: 0, y: 0, z: 0 }, Actor: __hit.actor ?? null, Distance: __hit.distance ?? 0 }; ${hit} = __hit.hit === true; ${location} = __hit.location ?? { x: 0, y: 0, z: 0 }; ${normal} = __hit.normal ?? { x: 0, y: 0, z: 0 }; ${distance} = __hit.distance ?? 0; ${actor} = __hit.actor ?? null; ${worldOrigin} = __hit.worldOrigin ?? { x: 0, y: 0, z: 0 }; ${worldDirection} = __hit.worldDirection ?? { x: 0, y: 0, z: 0 }; }`,
   );
 }
 

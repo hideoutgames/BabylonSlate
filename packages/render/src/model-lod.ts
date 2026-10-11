@@ -2,7 +2,7 @@ import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { Camera } from "@babylonjs/core/Cameras/camera";
 import { Material } from "@babylonjs/core/Materials/material";
 import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
-import type { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { Geometry } from "@babylonjs/core/Meshes/geometry";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
@@ -388,7 +388,8 @@ export function autoLodScreenCoverage(radius: number, center: Vector3, camera: C
     const height = (camera.orthoTop ?? half) - (camera.orthoBottom ?? -half);
     return height > 0 ? (Math.PI * radius * radius) / (height * height) : Infinity;
   }
-  const distance = center.subtract(camera.globalPosition).length();
+  // Runs per master mesh and render pass, so it must not allocate.
+  const distance = Vector3.Distance(center, camera.globalPosition);
   if (distance <= radius) return Infinity;
   const tangent = Math.tan(camera.fov / 2);
   return (Math.PI * radius * radius) / (4 * distance * distance * tangent * tangent);

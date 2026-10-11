@@ -14,7 +14,6 @@ import {
   mountEnabledPlugins,
   resolvePluginEnabled,
   resolvePluginGraph,
-  pluginCompatibilityKey,
   shadowEnginePlugins,
   writeProjectPlugin,
 } from "./plugin-host";
@@ -45,6 +44,7 @@ async function writePluginFolder(
     await storage.mkdir(dir, true);
     const bytes = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [], requiredVariableNames: [],
         guid: asset.guid,
         type: asset.type,
         name: asset.name,
@@ -213,22 +213,11 @@ describe("resolvePluginGraph", () => {
       expect.objectContaining({ code: "plugin.engine_unsatisfiable", severity: "warning", recordedVersion: "older" }),
       expect.objectContaining({ code: "plugin.unsatisfiable", severity: "warning", recordedVersion: "2.7", foundVersion: "2.8" }),
     ]);
-    const overrides = { pack: { enabled: true, acceptedCompatibility: pluginCompatibilityKey(pack, plugins) } };
-    expect(resolvePluginGraph(plugins, undefined, overrides).order.map((entry) => entry.pluginGuid)).toEqual(["base", "pack"]);
-    expect(resolvePluginGraph(plugins, undefined, overrides).diagnostics).toEqual([]);
-    base.settings.version = "2.9";
-    expect(resolvePluginGraph(plugins, undefined, overrides).order.map((entry) => entry.pluginGuid)).toEqual(["base", "pack"]);
-    expect(resolvePluginGraph(plugins, undefined, overrides).diagnostics)
-      .toContainEqual(expect.objectContaining({ severity: "warning", foundVersion: "2.9" }));
-    base.settings.version = "2.8";
-    pack.settings.version = "0.2";
-    expect(resolvePluginGraph(plugins, undefined, overrides).order.map((entry) => entry.pluginGuid)).toEqual(["base", "pack"]);
-    pack.settings.version = "0.1";
-    expect(resolvePluginGraph(plugins, "new-engine", overrides).order.map((entry) => entry.pluginGuid)).toEqual(["base", "pack"]);
-    expect(resolvePluginGraph([pack], undefined, { pack: { enabled: true, acceptedCompatibility: pluginCompatibilityKey(pack, [pack]) } }).diagnostics)
+    expect(resolvePluginGraph(plugins, "new-engine").order.map((entry) => entry.pluginGuid)).toEqual(["base", "pack"]);
+    expect(resolvePluginGraph([pack]).diagnostics)
       .toContainEqual(expect.objectContaining({ code: "plugin.missing", severity: "error" }));
     base.settings.pluginDependencies = [{ guid: "pack", version: "0.1" }];
-    expect(resolvePluginGraph(plugins, undefined, overrides).diagnostics)
+    expect(resolvePluginGraph(plugins).diagnostics)
       .toContainEqual(expect.objectContaining({ code: "plugin.cycle", severity: "error" }));
   });
 
@@ -576,6 +565,7 @@ describe("indexUnresolvedPlaceholders", () => {
     });
     const withDeps = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "scene-1",
         type: "Scene",
         name: "Main",

@@ -58,6 +58,32 @@ describe("Electron userData app settings", () => {
     expect((await store.load()).viewportFrameCap).toBe(30);
   });
 
+  it("builds the next update on a save the bridge refused, not the older file", async () => {
+    const stored = defaultEngineSettings();
+    stored.viewportFrameCap = 60;
+    const bridge = fakeBridge(JSON.stringify(stored));
+    bridge.writeSettings.mockRejectedValue(new Error("disk full"));
+    const store = new ElectronAppSettingsStore(bridge);
+
+    await store.update((settings) => { settings.viewportFrameCap = 30; });
+    const next = await store.update((settings) => { settings.undoHistoryLength = 75; });
+
+    expect([next.viewportFrameCap, next.undoHistoryLength]).toEqual([30, 75]);
+    expect((await store.load()).viewportFrameCap).toBe(30);
+  });
+
+  it("builds the next update on the last saved settings when a later read fails", async () => {
+    const bridge = fakeBridge();
+    const store = new ElectronAppSettingsStore(bridge);
+    await store.update((settings) => { settings.viewportFrameCap = 60; });
+    bridge.readSettings.mockResolvedValueOnce(null);
+
+    const next = await store.update((settings) => { settings.undoHistoryLength = 75; });
+
+    expect([next.viewportFrameCap, next.undoHistoryLength]).toEqual([60, 75]);
+    expect(JSON.parse(bridge.writeSettings.mock.lastCall![0]).viewportFrameCap).toBe(60);
+  });
+
   it("detects the Electron host from the injected bridge", () => {
     expect(isElectronHost()).toBe(false);
     expect(getHostPlatform()).toBe("web");

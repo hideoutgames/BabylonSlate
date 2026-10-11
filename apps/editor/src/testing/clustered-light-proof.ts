@@ -454,6 +454,8 @@ export async function runClusteredLightProof() {
             const referenceOrder = surface.lightSources.map(
               (light) => light.name,
             );
+            scene.render(false);
+            const referenceSettled = await read();
             const owner = new ClusteredSceneLights(scene, mixedLights);
             beginEngineDrawCallFrame(engine);
             const prepared = await tieGraph.prepare(camera);
@@ -462,6 +464,7 @@ export async function runClusteredLightProof() {
             ties.push({
               name: `${kind}-mixed-camera-${x}`,
               reference,
+              referenceSettled,
               referenceOrder,
               positionProbePixel: null,
               clusteredCount: owner.status().clustered,

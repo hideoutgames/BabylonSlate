@@ -1,158 +1,126 @@
 import { describe, expect, it } from "vitest";
-import { SCENE_SCHEMA_VERSION, normalizeScene } from "@babylonslate/core";
-import { createDefaultMigrationRegistry } from "./migration";
+import { SCENE_SCHEMA_VERSION } from "@babylonslate/core";
+import {
+  AssetFormatVersionError,
+  MATERIAL_PAYLOAD_VERSION,
+  MigrationRegistry,
+  createDefaultMigrationRegistry,
+  type MigrationFn,
+} from "./migration";
 import { loadPayloadWithMigration } from "./migrate-on-load";
 
-describe("Data asset schema versions", () => {
-  it("versions definitions and trees without converting historical sheets", () => {
-    const registry = createDefaultMigrationRegistry();
-    const definition = registry.migrate("DataDefinition", 0, { kind: "dataDefinition", fields: [{ id: "damage", name: "Damage", typeId: "float", defaultValue: 10 }] });
-    expect(definition).toMatchObject({ migrated: true, version: 1, payload: { kind: "dataDefinition", fields: [{ id: "damage", defaultValue: 10 }] } });
-    const tree = { kind: "dataTree", defaultDefinitionGuid: "weapon", entries: [{ id: "swords", parentId: null, name: "Swords", values: {} }, { id: "sword", parentId: "swords", name: "Sword", definitionGuid: null, values: { Damage: 10, Retired: "keep" } }] };
-    expect(registry.migrate("DataTree", 0, tree)).toEqual({ payload: tree, version: 1, migrated: true });
-    expect(registry.migrate("DataTree", 1, tree).migrated).toBe(false);
-    const legacy = { kind: "dataSheet", structureGuid: "weapon", objectGuids: ["sword"] };
-    expect(() => registry.migrate("DataTree", 0, legacy)).toThrow(/Historical/);
-    expect(() => registry.migrate("DataTree", 0, { kind: "dataSheet", definitionGuid: "weapon", rows: [] })).toThrow(/Historical/);
-    expect(legacy.objectGuids).toEqual(["sword"]);
-    expect(() => registry.migrate("DataDefinition", 0, { kind: "dataObject", values: { Damage: 10 } })).toThrow();
-    expect(() => registry.migrate("DataTree", 2, {})).toThrow(/newer engine version/);
-  });
-});
+const appendStep =
+  (step: number): MigrationFn =>
+  (payload) => ({ ...payload, steps: [...(payload.steps as number[]), step] });
 
-describe("Scene schema version", () => {
-  it("matches SCENE_SCHEMA_VERSION so newly created scenes can load", () => {
-    const registry = createDefaultMigrationRegistry();
-    expect(registry.currentVersion("Scene")).toBe(SCENE_SCHEMA_VERSION);
+function registryWithSteps(): MigrationRegistry {
+  const registry = new MigrationRegistry();
+  registry.register({
+    type: "Thing",
+    currentVersion: 3,
+    migrations: [appendStep(2), appendStep(3)],
+  });
+  return registry;
+}
+
+describe("migration harness", () => {
+  it("runs registered steps in order and reports the pending save", () => {
+    const loaded = loadPayloadWithMigration(registryWithSteps(), {
+      type: "Thing",
+      version: 1,
+      payload: { steps: [] },
+      path: "assets/Thing.babasset",
+    });
+    expect(loaded.payload).toEqual({ steps: [2, 3] });
+    expect(loaded.version).toBe(3);
+    expect(loaded.pending).toEqual({
+      type: "Thing",
+      fromVersion: 1,
+      toVersion: 3,
+      path: "assets/Thing.babasset",
+    });
+    expect(registryWithSteps().migrate("Thing", 2, { steps: [] })).toEqual({
+      version: 3,
+      payload: { steps: [3] },
+      migrated: true,
+    });
   });
 
-  it("loads a Scene at the current schema version without pending migration", () => {
-    const registry = createDefaultMigrationRegistry();
-    const loaded = loadPayloadWithMigration(registry, {
-      type: "Scene",
-      version: SCENE_SCHEMA_VERSION,
-      payload: { name: "New", actors: [] },
-      path: "assets/NewAsset.scene.babasset",
-    });
-    expect(loaded.pending).toBeNull();
-    expect(loaded.version).toBe(SCENE_SCHEMA_VERSION);
-    expect(loaded.payload.name).toBe("New");
-  });
-
-  it("migrates a Scene v2 document up to the current schema", () => {
-    const registry = createDefaultMigrationRegistry();
-    const loaded = loadPayloadWithMigration(registry, {
-      type: "Scene",
-      version: 2,
-      payload: {
-        name: "Legacy",
-        viewportMode: "3d",
-        actors: [],
-      },
-      path: "assets/legacy.scene.babasset",
-    });
-    expect(loaded.version).toBe(SCENE_SCHEMA_VERSION);
-    expect(loaded.pending).not.toBeNull();
-    expect(loaded.payload.name).toBe("Legacy");
-  });
-  it("migrates legacy shadow capacity once and preserves a subsequently reset mode", () => {
-    const registry = createDefaultMigrationRegistry();
-    const migrated = registry.migrate("Scene", 3, {
-      settings: { shadowOverrides: { maxLocalLights: 0, enabled: false } },
-      actors: [],
-    });
-    const scene = normalizeScene(migrated.payload);
-    expect(scene.settings.shadowOverrides).toEqual({
-      maxLocalLights: 0,
-      enabled: false,
-      localLightMode: "manual",
-    });
-    delete scene.settings.shadowOverrides!.localLightMode;
-    const reopened = registry.migrate(
-      "Scene",
-      migrated.version,
-      JSON.parse(JSON.stringify(scene)),
+  it("refuses versions before its first step and after its current version", () => {
+    const registry = registryWithSteps();
+    expect(() => registry.migrate("Thing", 0, { steps: [] })).toThrow(
+      /version 0 uses an unsupported old format/,
     );
-    expect(normalizeScene(reopened.payload).settings.shadowOverrides).toEqual({
-      maxLocalLights: 0,
-      enabled: false,
-    });
-    expect(registry.migrate("Scene", 3, { settings: {} }).payload).toEqual({
-      settings: {},
-    });
+    expect(() => registry.migrate("Thing", 4, { steps: [] })).toThrow(
+      /newer engine version/,
+    );
+    expect(() =>
+      new MigrationRegistry().register({
+        type: "Broken",
+        currentVersion: 1,
+        migrations: [appendStep(1), appendStep(2)],
+      }),
+    ).toThrow(/cannot follow 2 migration steps/);
+  });
+
+  it("requires the current version where payloads are read without migrating", () => {
+    const registry = registryWithSteps();
+    expect(() => registry.requireCurrent("Thing", 3)).not.toThrow();
+    // Unregistered types pass through, as in migrate.
+    expect(() => registry.requireCurrent("Texture", 7)).not.toThrow();
+    const refused = [
+      [1, /version 1 must be upgraded to version 3 before it can be played or exported/],
+      [0, /version 0 uses an unsupported old format/],
+      [4, /newer engine version/],
+    ] as const;
+    for (const [version, message] of refused) {
+      const read = () => registry.requireCurrent("Thing", version);
+      expect(read).toThrow(AssetFormatVersionError);
+      expect(read).toThrow(message);
+    }
   });
 });
 
-describe("Audio schema versions", () => {
-  it("registers Audio mixer, channel, and attenuation at version 1", () => {
+describe("default migration registry", () => {
+  it("refuses every older stored version instead of upgrading it", () => {
     const registry = createDefaultMigrationRegistry();
-    expect(registry.currentVersion("Audio")).toBe(1);
-    expect(registry.currentVersion("AudioMixer")).toBe(1);
-    expect(registry.currentVersion("AudioChannel")).toBe(1);
-    expect(registry.currentVersion("SoundAttenuation")).toBe(1);
-    expect(registry.currentVersion("ParticleEmitter")).toBe(1);
-    expect(registry.currentVersion("ParticleGraph")).toBe(1);
-    expect(registry.currentVersion("ParticleSystem")).toBe(1);
-    expect(registry.currentVersion("SceneLayer")).toBe(1);
+    const old = [
+      ["Class", 0],
+      ["Scene", 0],
+      ["Scene", SCENE_SCHEMA_VERSION - 1],
+      ["Material", MATERIAL_PAYLOAD_VERSION - 1],
+      ["Project", 0],
+      ["DataTree", 0],
+      ["Audio", 0],
+      ["ParticleSystem", 0],
+    ] as const;
+    for (const [type, version] of old) {
+      const load = () =>
+        loadPayloadWithMigration(registry, {
+          type,
+          version,
+          payload: {},
+          path: "assets/Old.babasset",
+        });
+      // The editor shows this error type's message to the user.
+      expect(load).toThrow(AssetFormatVersionError);
+      expect(load).toThrow(/unsupported old format/);
+    }
   });
 
-  it("loads current AudioMixer payloads without a pending migration", () => {
+  it("loads current payloads unchanged with no pending save and refuses newer ones", () => {
     const registry = createDefaultMigrationRegistry();
-    const loaded = loadPayloadWithMigration(registry, {
-      type: "AudioMixer",
-      version: 1,
-      payload: { globalVolume: 0.5, channels: [] },
-      path: "assets/Master.mixer.babasset",
-    });
+    const payload = {
+      id: "player-progress",
+      schemaVersion: 7,
+      fields: [{ id: "stable-score", name: "Coins", type: "int", defaultValue: 0 }],
+    };
+    const options = { type: "SaveGame", payload, path: "assets/Progress.savegame.babasset" };
+    const loaded = loadPayloadWithMigration(registry, { ...options, version: 1 });
     expect(loaded.pending).toBeNull();
-    expect(loaded.version).toBe(1);
-    expect(loaded.payload.globalVolume).toBe(0.5);
-  });
-});
-
-describe("ParticleGraph schema version", () => {
-  it("loads a v1 Particle Graph without a save prompt", () => {
-    const registry = createDefaultMigrationRegistry();
-    const loaded = loadPayloadWithMigration(registry, {
-      type: "ParticleGraph",
-      version: 1,
-      payload: {
-        schemaVersion: 1,
-        name: "Embers",
-        materialGuid: "mat-1",
-        nodes: [{ id: "create", type: "particle.create", position: { x: 4, y: 8 }, properties: {} }],
-        edges: [],
-      },
-      path: "assets/Embers.particlegraph.babasset",
-    });
-    expect(loaded.pending).toBeNull();
-    expect(loaded.version).toBe(1);
-  });
-
-  it("normalizes an unversioned payload into a graph with its Emitter Output", () => {
-    const registry = createDefaultMigrationRegistry();
-    const loaded = loadPayloadWithMigration(registry, {
-      type: "ParticleGraph",
-      version: 0,
-      payload: {},
-      path: "assets/Embers.particlegraph.babasset",
-    });
-    expect(loaded.version).toBe(1);
-    expect(loaded.pending).not.toBeNull();
-    expect(loaded.payload.nodes).toEqual([
-      expect.objectContaining({ type: "particle.output" }),
-    ]);
-  });
-});
-
-
-describe("Save Game definition asset format", () => {
-  it("keeps gameplay schema versions separate from the asset format and refuses future formats", () => {
-    const registry = createDefaultMigrationRegistry();
-    const payload = { id: "player-progress", schemaVersion: 7, fields: [{ id: "stable-score", name: "Coins", type: "int", defaultValue: 0 }] };
-    const loaded = loadPayloadWithMigration(registry, { type: "SaveGame", version: 1, payload, path: "assets/Progress.savegame.babasset" });
-    expect(loaded.pending).toBeNull();
-    expect(loaded.payload).toEqual(payload);
-    expect(() => loadPayloadWithMigration(registry, { type: "SaveGame", version: 2, payload, path: "assets/Progress.savegame.babasset" })).toThrow(/newer engine/);
+    expect(loaded.payload).toBe(payload);
+    expect(() =>
+      loadPayloadWithMigration(registry, { ...options, version: 2 }),
+    ).toThrow(/newer engine/);
   });
 });

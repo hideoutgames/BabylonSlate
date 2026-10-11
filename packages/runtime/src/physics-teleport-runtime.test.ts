@@ -179,8 +179,16 @@ it("places a parented body and converts Move Character against its parent's pose
       "  ctx.setVariable('placed', ctx.lineTrace({ x: 10, y: 2, z: -1 }, { x: 10, y: -2, z: -1 }, undefined, { drawDebug: false }).actor);",
       "  ctx.moveCharacter(ctx.self, { x: 2, y: 0, z: 0 });",
       "}",
+      // The carrier moves; the rider's own body is not written before it moves.
+      "export function carry(ctx) {",
+      "  ctx.setActorTransform(ctx.getParent(ctx.self), { position: { x: 20, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } });",
+      "  ctx.moveCharacter(ctx.self, { x: 2, y: 0, z: 0 });",
+      "}",
     ].join("\n"),
-    entryPoints: [{ name: "ride", event: "Ride", isAsync: false }],
+    entryPoints: [
+      { name: "ride", event: "Ride", isAsync: false },
+      { name: "carry", event: "Carry", isAsync: false },
+    ],
   };
   const runtime = createInProcessRuntime({
     seed: 1,
@@ -225,6 +233,13 @@ it("places a parented body and converts Move Character against its parent's pose
     expect(actor.transform.position.y).toBeCloseTo(0, 9);
     expect(actor.transform.position.z).toBeCloseTo(2, 9);
     expect(actor.transform.rotation.w).toBeCloseTo(1, 9);
+    // The solve starts from the rider's composed pose under the moved carrier:
+    // world (21, 0, 2) moves to (23, 0, 2), local (3, 0, 2).
+    runtime.invokeScriptEvent("Rider", "Carry", actor);
+    expect(runtime.getDiagnostics().entries()).toEqual([]);
+    expect(actor.transform.position.x).toBeCloseTo(3, 9);
+    expect(actor.transform.position.z).toBeCloseTo(2, 9);
+    expect(runtime.getPhysicsSync()!.getBackend().getBodyTransform(`body:${actor.guid}`)!.position.x).toBeCloseTo(23, 9);
   } finally {
     runtime.stop();
   }

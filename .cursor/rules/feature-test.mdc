@@ -1,0 +1,9 @@
+---
+description: Keep the Feature Test starter and its doc current when engine features, components, asset types, base classes, or settings change
+globs: apps/editor/src/lib/feature-test/**,packages/core/src/engine-components.ts,docs/development/feature-test.md
+alwaysApply: false
+---
+
+# Cursor compatibility
+
+Read and follow [the canonical rule](../../.agents/rules/feature-test.md) in full. Start with [AGENTS.md](../../AGENTS.md) for shared policies and skill routing. Edit the canonical file when changing policy.

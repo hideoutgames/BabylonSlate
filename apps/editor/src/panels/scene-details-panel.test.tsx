@@ -107,10 +107,10 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
         header: {
           guid: "mesh-1",
           name: "Rock",
-          type: "Mesh",
+          type: "Model",
           parentClass: null,
         },
-        path: "assets/Rock.mesh.babasset",
+        path: "assets/Rock.model.babasset",
       },
       {
         header: {
@@ -164,10 +164,10 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
       guid === "mesh-1"
         ? {
             header: {
-              guid: "mesh-1", name: "Rock", type: "Mesh",
+              guid: "mesh-1", name: "Rock", type: "Model",
               payload: { materialSlots: [{ index: 0, name: "Rock", materialGuid: "mat-rock" }] },
             },
-            path: "assets/Rock.mesh.babasset",
+            path: "assets/Rock.model.babasset",
           }
         : undefined,
   },
@@ -615,7 +615,7 @@ describe("SceneDetailsPanel authoring", () => {
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     const button = screen.getByTestId("property-actor-1-component-1-assetGuid");
     expect(button.textContent).toContain("Rock");
-    expect(button.textContent).toContain("Mesh");
+    expect(button.textContent).toContain("Model");
     expect(button.textContent).not.toContain("mesh-1");
     expect(
       button
@@ -920,7 +920,7 @@ describe("SceneDetailsPanel authoring", () => {
     expect(screen.queryByTestId("search-item-mat-rock")).toBeNull();
   });
 
-  it("adds a project Mesh as MeshComponent with assetGuid set", () => {
+  it("adds a project Model as MeshComponent with assetGuid set", () => {
     harness.selectedActorIds = ["actor-1"];
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     fireEvent.click(screen.getByTestId("details-add-component"));
@@ -937,7 +937,7 @@ describe("SceneDetailsPanel authoring", () => {
     });
   });
 
-  it("adds a distinct component after deleting a middle row without changing the remaining component", () => {
+  it("adds a distinct component when a deleted middle row left an id gap, without changing the remaining component", () => {
     const actor = createActor("actor-1", "Actor", { components: [
       createMeshComponent("actor-1-component-1", "box"),
       { id: "actor-1-component-3", classId: "PointLightComponent", properties: { intensity: 5 } },
@@ -959,26 +959,26 @@ describe("SceneDetailsPanel authoring", () => {
 
   it("reorders, disables, and removes a post-process pass", () => {
     scene().settings.postProcessStack = [
-      { materialGuid: "pp-a", enabled: true },
-      { materialGuid: "pp-b", enabled: true },
+      { id: "a", materialGuid: "pp-a", enabled: true },
+      { id: "b", materialGuid: "pp-b", enabled: true },
     ];
-    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    const { rerender } = render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    const passes = () =>
+      (harness.applySceneChange.mock.calls.at(-1)![1] as SerializedScene)
+        .settings.postProcessStack.map((entry) => [entry.materialGuid, entry.enabled]);
+    // Each step acts on the scene the previous step wrote.
+    const commitLast = () => {
+      harness.scene = harness.applySceneChange.mock.calls.at(-1)![1];
+      rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    };
     fireEvent.click(screen.getByTestId("scene-post-process-stack-1-move-up"));
-    const reordered = harness.applySceneChange.mock
-      .calls[0]![1] as SerializedScene;
-    expect(
-      reordered.settings.postProcessStack.map((entry) => entry.materialGuid),
-    ).toEqual(["pp-b", "pp-a"]);
+    expect(passes()).toEqual([["pp-b", true], ["pp-a", true]]);
+    commitLast();
     fireEvent.click(screen.getByTestId("scene-post-process-0-enabled"));
-    const toggled = harness.applySceneChange.mock.calls.at(
-      -1,
-    )![1] as SerializedScene;
-    expect(toggled.settings.postProcessStack[0]?.enabled).toBe(false);
+    expect(passes()).toEqual([["pp-b", false], ["pp-a", true]]);
+    commitLast();
     fireEvent.click(screen.getByTestId("scene-post-process-stack-0-remove"));
-    const removed = harness.applySceneChange.mock.calls.at(
-      -1,
-    )![1] as SerializedScene;
-    expect(removed.settings.postProcessStack).toHaveLength(1);
+    expect(passes()).toEqual([["pp-a", true]]);
   });
 
   it("authors a SceneLayer spawn list on world Scene Options", async () => {
@@ -1036,18 +1036,20 @@ describe("SceneDetailsPanel authoring", () => {
       { id: "a", materialGuid: "pp-blur", enabled: true },
       { id: "b", materialGuid: "pp-blur", enabled: false, scalable: true },
     ];
-    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    const { rerender } = render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     fireEvent.click(screen.getByTestId("scene-post-process-stack-1-move-up"));
-    expect(
-      harness.applySceneChange.mock.calls.at(-1)![1].settings.postProcessStack,
-    ).toEqual([
+    const moved = harness.applySceneChange.mock.calls.at(-1)![1];
+    expect(moved.settings.postProcessStack).toEqual([
       { id: "b", materialGuid: "pp-blur", enabled: false, scalable: true },
       { id: "a", materialGuid: "pp-blur", enabled: true },
     ]);
+    harness.scene = moved;
+    rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    // Removing the moved pass, now first, keeps the other pass and its state.
     fireEvent.click(screen.getByTestId("scene-post-process-stack-0-remove"));
     expect(
       harness.applySceneChange.mock.calls.at(-1)![1].settings.postProcessStack,
-    ).toEqual([{ id: "b", materialGuid: "pp-blur", enabled: false, scalable: true }]);
+    ).toEqual([{ id: "a", materialGuid: "pp-blur", enabled: true }]);
   });
 
   it("retains pass identity and scalability when replacing its Material", async () => {
@@ -1096,16 +1098,20 @@ describe("SceneDetailsPanel authoring", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Layer 1 Z-Order" }), {
       target: { value: "12" },
     });
-    expect(
-      harness.applySceneChange.mock.calls.at(-1)![1].settings.sceneLayers,
-    ).toEqual([
+    const edited = harness.applySceneChange.mock.calls.at(-1)![1];
+    expect(edited.settings.sceneLayers).toEqual([
       { assetGuid: "layer-hud", zOrder: 12, enabled: false },
       { assetGuid: "layer-hud", zOrder: 2, enabled: true },
     ]);
+    harness.scene = edited;
+    rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     fireEvent.click(screen.getByRole("switch", { name: "Layer 1 Enabled" }));
     expect(
-      harness.applySceneChange.mock.calls.at(-1)![1].settings.sceneLayers[0],
-    ).toEqual({ assetGuid: "layer-hud", zOrder: 8, enabled: true });
+      harness.applySceneChange.mock.calls.at(-1)![1].settings.sceneLayers,
+    ).toEqual([
+      { assetGuid: "layer-hud", zOrder: 12, enabled: true },
+      { assetGuid: "layer-hud", zOrder: 2, enabled: true },
+    ]);
   });
 
   it("shows overlay Details with gravity and post-process only", () => {

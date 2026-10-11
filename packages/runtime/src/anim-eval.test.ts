@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CommandMessage } from "@babylonslate/bridge";
 import {
+  animRuleScriptClassId,
   createDefaultAnimGraph,
   createDefaultTransitionRuleGraph,
 } from "@babylonslate/anim-graph";
@@ -14,7 +15,64 @@ import {
   createDefaultSpriteAnimationPayload,
   createDefaultSpritePayload,
 } from "@babylonslate/assets";
+import {
+  compileTransitionRuleGraph,
+  type GraphNode,
+  type NodeRegistry,
+} from "@babylonslate/scripting";
+import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
 import { createInProcessRuntime } from "./driver";
+import type { CompiledScript } from "./script-host";
+
+function ruleNode(
+  registry: NodeRegistry,
+  id: string,
+  typeId: string,
+  properties: Record<string, unknown> = {},
+): GraphNode {
+  const def = registry.get(typeId);
+  if (!def) throw new Error(`missing node ${typeId}`);
+  return { id, typeId, position: { x: 0, y: 0 }, pins: def.pins(properties), properties };
+}
+
+/** Compiled rule for `graph-1` that holds the transition until the bool variable `moving` is true. */
+function movingRuleScript(transitionId: string): CompiledScript {
+  const registry = createDefaultNodeRegistry();
+  const assetGuid = `assets/Hero.anim.babasset#${transitionId}`;
+  const compiled = compileTransitionRuleGraph(
+    {
+      id: transitionId,
+      kind: "event",
+      nodes: [
+        ruleNode(registry, "enter-state", "anim.rule.enterState"),
+        ruleNode(registry, "exit-state", "anim.rule.exitState"),
+        ruleNode(registry, "get-moving", "variables.get", {
+          variableName: "moving",
+          typeId: "bool",
+          implicitSelf: true,
+        }),
+      ],
+      edges: [
+        {
+          id: "e-exit",
+          sourceNodeId: "get-moving",
+          sourcePinId: "value",
+          targetNodeId: "exit-state",
+          targetPinId: "value",
+        },
+      ],
+    },
+    { assetGuid, registry },
+  );
+  return {
+    assetGuid,
+    classId: animRuleScriptClassId("graph-1", transitionId),
+    source: compiled.source,
+    anchors: compiled.anchors,
+    entryPoints: compiled.entryPoints,
+    parentClassId: "BObject",
+  };
+}
 
 function animScene(): SerializedScene {
   return {
@@ -127,7 +185,7 @@ describe("runtime AnimationGraph evaluation", () => {
 
   it.each(["world", "SceneLayer"])(
     "clears the %s Sprite Animation collider when the graph leaves a sprite clip",
-    (owner) => {
+    async (owner) => {
       const graph = createDefaultAnimGraph();
       graph.clips[0] = {
         id: "idle-clip",
@@ -151,15 +209,14 @@ describe("runtime AnimationGraph evaluation", () => {
         clipName: "Run",
         durationMs: 400,
       });
-      graph.parameters = ["moving"];
+      graph.variables = [
+        { id: "var-moving", name: "moving", typeId: "bool", defaultValue: false },
+      ];
       graph.transitions.push({
         id: "idle-to-run",
         fromStateId: "idle",
         toStateId: "run",
-        condition: "moving",
         blendSeconds: 0,
-        hasExitTime: false,
-        exitTime: 0,
         priority: 0,
         ruleGraph: createDefaultTransitionRuleGraph(),
       });
@@ -235,6 +292,7 @@ describe("runtime AnimationGraph evaluation", () => {
         spriteAnimations: { "walk-anim": animation },
         pixelsPerUnit: 100,
       });
+      await runtime.loadScripts([movingRuleScript("idle-to-run")]);
       runtime.start();
       runtime.realizePlayWorld();
       const layer = owner === "SceneLayer" ? runtime.createSceneLayer("overlay") : null;
@@ -263,7 +321,8 @@ describe("runtime AnimationGraph evaluation", () => {
         ?.components.find(
           (entry) => entry.classId === "AnimationGraphComponent",
         );
-      component?.setVariable("conditions", { moving: true });
+      expect(component).toBeDefined();
+      component!.setVariable("moving", true);
       runtime.tick();
       runtime.tick();
 

@@ -1,4 +1,9 @@
-import { isAbsolute, relative, resolve } from "node:path";
+import { realpath } from "node:fs/promises";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { isLibraryFolder } from "@babylonslate/vfs/library-folders";
+
+/** Largest payload one project IPC call may move through the main process. */
+export const MAX_IPC_BYTES = 512 * 1024 * 1024;
 
 function requireValue(condition: unknown): asserts condition {
   if (!condition) throw new Error("Invalid desktop request");
@@ -13,17 +18,55 @@ export function rendererFile(rawUrl: string, root: string): string {
   requireValue(url.protocol === "app:" && url.host === "babylonslate" && !url.username && !url.password);
   const pathname = decodeURIComponent(url.pathname);
   requireValue(!pathname.includes(":"));
+  // Win32 drops trailing dots and spaces from each segment, so `.. ` would
+  // reach the filesystem as a parent reference. No bundled name ends that way.
+  requireValue(!pathname.split("/").some(part => /[. ]$/.test(part)));
   const file = resolve(root, pathname === "/" ? "index.html" : pathname.slice(1));
   const within = relative(resolve(root), file);
   requireValue(within !== ".." && !within.startsWith("..") && !isAbsolute(within));
   return file;
 }
 
-export function isEditorSender(rawUrl: string, mainFrame: boolean): boolean {
+function bundledUrl(rawUrl: string): URL | null {
   try {
     const url = new URL(rawUrl);
-    return mainFrame && url.protocol === "app:" && url.host === "babylonslate" && !url.username && !url.password && ["/", "/index.html"].includes(url.pathname);
-  } catch { return false; }
+    return url.protocol === "app:" && url.host === "babylonslate" && !url.username && !url.password ? url : null;
+  } catch { return null; }
+}
+
+export function isEditorSender(rawUrl: string, mainFrame: boolean): boolean {
+  const url = bundledUrl(rawUrl);
+  return mainFrame && url !== null && ["/", "/index.html"].includes(url.pathname);
+}
+
+/** A subframe may only host the bundled Preview player. */
+export function isPreviewFrameUrl(rawUrl: string): boolean {
+  const url = bundledUrl(rawUrl);
+  return url !== null && ["/player/", "/player/index.html"].includes(url.pathname);
+}
+
+/** The editor frame may write the clipboard; every other permission is denied. */
+export function allowsEditorPermission(permission: string, requestingUrl: string, mainFrame: boolean): boolean {
+  return permission === "clipboard-sanitized-write" && isEditorSender(requestingUrl, mainFrame);
+}
+
+/**
+ * Canonical folder a project id may reopen without the picker: a folder directly
+ * inside the canonical `projectsHome`, or one granted through the folder picker.
+ * The desktop host only issues `node:` ids, so any other id is refused. Both
+ * checks use the canonical path that is then opened, so a link cannot stand in
+ * for a project.
+ */
+export async function knownProjectFolder(
+  id: string,
+  projectsHome: string,
+  grants: () => Promise<readonly string[]>,
+): Promise<string> {
+  if (id.startsWith("node:")) {
+    const target = await realpath(id.slice("node:".length));
+    if (dirname(target) === projectsHome || (await grants()).includes(target)) return target;
+  }
+  throw new Error("Choose this folder using the folder picker first");
 }
 
 function text(value: unknown, max = 1024 * 1024): asserts value is string {
@@ -36,7 +79,25 @@ function projectPath(value: unknown, allowRoot = true): void {
   if (!allowRoot) requireValue(value !== "" && value !== ".");
 }
 
+/**
+ * File operations a user library scope may perform. `library:*` mirrors these
+ * `project:*` channels with the scope as an extra first argument; the
+ * project-only channels (picker, Documents, reopen, list, release) have no
+ * library counterpart, so a library can never be pointed at another folder.
+ */
+export const LIBRARY_FILE_OPERATIONS = [
+  "readBinary", "readBinaryRange", "writeBinary", "exists", "readdir", "mkdir", "remove", "stat",
+] as const;
+
 export function validateIpcArguments(channel: string, args: unknown[]): void {
+  const operation = channel.startsWith("library:") ? channel.slice("library:".length) : null;
+  if (operation !== null) {
+    requireValue((LIBRARY_FILE_OPERATIONS as readonly string[]).includes(operation));
+    // Exactly the shared allowlist: no other folder name, path or object.
+    requireValue(isLibraryFolder(args[0]));
+    validateIpcArguments(`project:${operation}`, args.slice(1));
+    return;
+  }
   const counts: Record<string, number> = {
     "save-games:read": 1, "save-games:write": 2, "save-games:remove": 1,
     "save-games:list": 1, "save-games:acquire-lock": 1, "save-games:release-lock": 1,
@@ -96,11 +157,11 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
     if (channel === "project:readBinaryRange") {
       const offset = args[1], length = args[2];
       requireValue(typeof offset === "number" && Number.isSafeInteger(offset) && offset >= 0);
-      requireValue(typeof length === "number" && Number.isSafeInteger(length) && length >= 0 && length <= 512 * 1024 * 1024);
+      requireValue(typeof length === "number" && Number.isSafeInteger(length) && length >= 0 && length <= MAX_IPC_BYTES);
       requireValue(Number.isSafeInteger(Number(offset) + Number(length)));
       if (args[3] !== undefined) text(args[3], 4096);
     }
-    if (channel === "project:writeBinary") requireValue(args[1] instanceof ArrayBuffer && args[1].byteLength <= 512 * 1024 * 1024);
+    if (channel === "project:writeBinary") requireValue(args[1] instanceof ArrayBuffer && args[1].byteLength <= MAX_IPC_BYTES);
     if (channel === "project:mkdir") requireValue(args[1] === undefined || typeof args[1] === "boolean");
   }
 }

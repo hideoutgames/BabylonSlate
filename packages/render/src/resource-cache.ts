@@ -839,6 +839,10 @@ export class ResourceCacheOwner implements TextureResources {
   acquireTexture(...args: Parameters<ResourceCache["acquireTexture"]>) { return this.own(this.inner.acquireTexture(...args)); }
   acquireBlobUrl(...args: Parameters<ResourceCache["acquireBlobUrl"]>) { return this.own(this.inner.acquireBlobUrl(...args)); }
   acquireCubeTextureFromImages(...args: Parameters<ResourceCache["acquireCubeTextureFromImages"]>) { return this.own(this.inner.acquireCubeTextureFromImages(...args)); }
+  /**
+   * Deliberately untracked: callers retain a resource for an in-flight native
+   * upload or readback and release it when that settles, even after `dispose`.
+   */
   acquireExisting<T extends BaseTexture | string>(resource: T) { return this.inner.acquireExisting(resource); }
   resourceKey(resource: string | BaseTexture) { return this.inner.resourceKey(resource); }
   setByteCeiling(bytes: number) { this.inner.setClientBudget(this, bytes); }

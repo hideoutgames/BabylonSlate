@@ -224,6 +224,19 @@ describe("ParticleSystemPreview", () => {
     );
   });
 
+  it("keeps its emitters while an emitter outside its slots is edited", async () => {
+    harness.loadAssetDocument.mockResolvedValue(withMaterial);
+    const smoke = (rate: number) => ({ ref: { kind: "particle-emitter", path: "assets/Smoke.emitter.babasset" },
+      content: { ...emitter, spawnRate: rate } });
+    harness.openDocuments = [smoke(10)];
+    const view = renderPreview(system);
+    await waitFor(() => expect(screen.getByTestId("particle-system-preview-canvas")).toBeTruthy());
+    harness.openDocuments = [smoke(20)];
+    view.rerender(<ParticleSystemPreview payload={system as unknown as Record<string, unknown>} />);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(harness.loadAssetDocument).toHaveBeenCalledOnce();
+  });
+
   it("names a loaded emitter without a Material instead of drawing a blank canvas", async () => {
     harness.loadAssetDocument.mockResolvedValue(emitter);
     renderPreview(system);

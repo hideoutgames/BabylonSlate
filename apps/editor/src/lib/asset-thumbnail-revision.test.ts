@@ -9,7 +9,7 @@ function asset(guid: string, type: string, header: Partial<IndexedAsset["header"
     path: `Content/${guid}.${type.toLowerCase()}.babasset`,
     header: {
       guid, type, name: guid, version: 1, engineVersion: "1", mode: "thin",
-      payload: {}, dependencies: [], chunks: [], ...header,
+      payload: {}, dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, chunks: [], ...header,
     },
   };
 }
@@ -17,7 +17,7 @@ function asset(guid: string, type: string, header: Partial<IndexedAsset["header"
 function documentChunk(hash: string): IndexedAsset["header"]["chunks"] {
   return [{
     id: "document", kind: "document", mime: "application/json", sha256: hash,
-    locator: { inline: { offset: 0, length: 12 } },
+    byteLength: 12, locator: { inline: { offset: 0, length: 12 } },
   }];
 }
 
@@ -92,15 +92,13 @@ describe("saved asset thumbnail revisions", () => {
     expect(await restored.cacheKey("material")).not.toBe(await missing.cacheKey("material"));
   });
 
-  it("captures actor classes and legacy actor graphs while leaving ordinary classes as icons", async () => {
+  it("captures actor classes while leaving ordinary classes as icons", async () => {
     const revisions = createAssetThumbnailRevisionIndex([
       asset("actor", "Class", { parentClass: "Actor" }),
-      asset("legacy", "Graph"),
       asset("object", "Class", { parentClass: "BObject" }),
       asset("component", "Class", { parentClass: "MeshComponent" }),
     ]);
     expect(await revisions.cacheKey("actor")).not.toBeNull();
-    expect(await revisions.cacheKey("legacy")).not.toBeNull();
     expect(await revisions.cacheKey("object")).toBeNull();
     expect(await revisions.cacheKey("component")).toBeNull();
   });

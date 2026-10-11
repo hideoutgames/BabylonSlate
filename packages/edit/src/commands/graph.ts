@@ -207,13 +207,15 @@ export class RemoveNodeCommand implements EditCommand<SerializedGraph> {
     this.index = index;
   }
 
+  /**
+   * Removes only the node, so `invert` restores exactly what was removed.
+   * Callers remove the node's edges with their own RemoveEdgeCommands first,
+   * as diffGraphCommands does.
+   */
   apply(doc: SerializedGraph): SerializedGraph {
     return {
       ...doc,
       nodes: doc.nodes.filter((entry) => entry.id !== this.node.id),
-      edges: doc.edges.filter(
-        (edge) => edge.source !== this.node.id && edge.target !== this.node.id,
-      ),
     };
   }
 
@@ -290,18 +292,29 @@ export class SetGraphFunctionGraphsCommand implements EditCommand<SerializedGrap
   readonly type = "graph.setFunctionGraphs";
   readonly from: SerializedGraph["functionGraphs"];
   readonly to: SerializedGraph["functionGraphs"];
-  #byteSize?: number;
-  /** Retained snapshot cost, measured on first read and memoised. */
+  /** Set when the edit stays inside one function graph, so a scrub coalesces. */
+  readonly mergeKey?: string;
+  #fromBytes?: number;
+  #toBytes?: number;
+  /**
+   * Retained snapshot cost. Each side is measured on first read and memoised,
+   * and inverting or coalescing carries the measured sides, so each sample of
+   * a scrub measures only its new `to`.
+   */
   get byteSize(): number {
-    return (this.#byteSize ??= snapshotBytes({ from: this.from, to: this.to }));
+    this.#fromBytes ??= snapshotBytes(this.from);
+    this.#toBytes ??= snapshotBytes(this.to);
+    return this.#fromBytes + this.#toBytes;
   }
 
   constructor(
     from: SerializedGraph["functionGraphs"],
     to: SerializedGraph["functionGraphs"],
+    mergeKey?: string,
   ) {
     this.from = from;
     this.to = to;
+    if (mergeKey) this.mergeKey = mergeKey;
   }
 
   apply(doc: SerializedGraph): SerializedGraph {
@@ -314,7 +327,27 @@ export class SetGraphFunctionGraphsCommand implements EditCommand<SerializedGrap
   }
 
   invert(): SetGraphFunctionGraphsCommand {
-    return new SetGraphFunctionGraphsCommand(this.to, this.from);
+    const inverse = new SetGraphFunctionGraphsCommand(this.to, this.from, this.mergeKey);
+    inverse.#fromBytes = this.#toBytes;
+    inverse.#toBytes = this.#fromBytes;
+    return inverse;
+  }
+
+  /** A gesture keeps only its first `from` and its latest `to`. */
+  coalesce(
+    next: EditCommand<SerializedGraph>,
+  ): SetGraphFunctionGraphsCommand | undefined {
+    if (
+      !(next instanceof SetGraphFunctionGraphsCommand) ||
+      this.mergeKey === undefined ||
+      next.mergeKey !== this.mergeKey
+    ) {
+      return undefined;
+    }
+    const merged = new SetGraphFunctionGraphsCommand(this.from, next.to, this.mergeKey);
+    merged.#fromBytes = this.#fromBytes;
+    merged.#toBytes = next.#toBytes;
+    return merged;
   }
 }
 
@@ -426,6 +459,7 @@ export function createSetGraphFunctionGraphsCommandFromJson(
   return new SetGraphFunctionGraphsCommand(
     payload.from as SerializedGraph["functionGraphs"],
     payload.to as SerializedGraph["functionGraphs"],
+    payload.mergeKey ? String(payload.mergeKey) : undefined,
   );
 }
 

@@ -375,10 +375,8 @@ export function ModelPreviewCanvas({
 
   useEffect(() => {
     const host = hostRef.current;
-    const gizmos = gizmoHostRef.current;
     const visuals = colliderVisualsRef.current;
     if (!host) return;
-    gizmos?.attachTo(null);
     if (showCollision) {
       const colliders = JSON.parse(colliderKey) as ModelSimpleCollider[];
       for (const collider of colliders) {
@@ -410,20 +408,27 @@ export function ModelPreviewCanvas({
         visual.scaling.set(collider.scale[0], collider.scale[1], collider.scale[2]);
         visuals.set(collider.id, visual);
       }
-      const selected = selectedColliderId
-        ? visuals.get(selectedColliderId)
-        : undefined;
-      if (selected) {
-        gizmos?.attachTo(selected);
-        gizmos?.setTool(gizmoTool);
-      }
     }
     presenterRef.current?.present({ force: true });
     return () => {
+      gizmoHostRef.current?.attachTo(null);
       visuals.forEach((visual) => visual.dispose());
       visuals.clear();
-      gizmos?.attachTo(null);
     };
+  }, [colliderKey, previewGeneration, showCollision]);
+
+  // Selection and the gizmo tool only move the gizmo; the collider visuals
+  // above are rebuilt only when the colliders or their visibility change.
+  useEffect(() => {
+    const gizmos = gizmoHostRef.current;
+    if (!gizmos) return;
+    const selected = selectedColliderId
+      ? colliderVisualsRef.current.get(selectedColliderId)
+      : undefined;
+    gizmos.attachTo(selected ?? null);
+    if (selected) gizmos.setTool(gizmoTool);
+    presenterRef.current?.present({ force: true });
+    return () => gizmos.attachTo(null);
   }, [
     colliderKey,
     gizmoTool,

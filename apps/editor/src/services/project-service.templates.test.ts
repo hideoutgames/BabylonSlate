@@ -3,9 +3,10 @@ import {
   createEmptyProjectFiles,
   encodeAssetDocument,
   encodeProjectZip,
-  listTemplates,
+  loadTemplateFiles,
   writeProjectTree,
 } from "@babylonslate/assets";
+import { SCENE_SCHEMA_VERSION } from "@babylonslate/core";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { ProjectService } from "./project-service";
 
@@ -26,12 +27,12 @@ async function folderWithTemplates() {
 
 describe("Create Project from a template", () => {
   it("creates a project from a template card with a new name and identity", async () => {
-    const cards = await listTemplates(await folderWithTemplates());
+    const templateFiles = await loadTemplateFiles(await folderWithTemplates(), "Platformer");
 
     const destination = new MemoryStorageAdapter("documents");
     const service = new ProjectService(destination);
     const { document } = await service.createFromTemplate({
-      templateFiles: cards[0]!.files,
+      templateFiles,
       name: "MyPlatformer",
     });
 
@@ -56,7 +57,7 @@ describe("Create Project from a template", () => {
       type: "Scene",
       name: "level1.scene",
       guid: "template-scene",
-      version: 1,
+      version: SCENE_SCHEMA_VERSION,
       payload: { name: "Level 1", meshes: [] },
     });
     await templates.writeBinary(
@@ -64,11 +65,11 @@ describe("Create Project from a template", () => {
       sceneBytes,
     );
 
-    const cards = await listTemplates(templates);
+    const templateFiles = await loadTemplateFiles(templates, "Platformer");
     const destination = new MemoryStorageAdapter("documents");
     const service = new ProjectService(destination);
     const { document } = await service.createFromTemplate({
-      templateFiles: cards.find((c) => c.name === "Platformer")!.files,
+      templateFiles,
       name: "FromTemplate",
     });
 

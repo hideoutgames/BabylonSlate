@@ -43,9 +43,14 @@ export function usePickerCreate({
     latest.current.onOpenChange(false);
   }, [created]);
 
+  // Session of the create in flight. A ref, so a second click before the
+  // busy state renders cannot start another create.
+  const pending = useRef<number | null>(null);
+
   const run = async (rowId: string, create: () => Promise<string>) => {
-    if (creatingId !== null && created === null) return;
+    if (pending.current === session.current) return;
     const started = session.current;
+    pending.current = started;
     setCreatingId(rowId);
     setCreated(null);
     setError(null);
@@ -54,6 +59,7 @@ export function usePickerCreate({
       if (session.current === started) setCreated({ id });
     } catch (cause) {
       if (session.current !== started) return;
+      pending.current = null;
       setCreatingId(null);
       setError(cause instanceof Error ? cause.message : String(cause));
     }

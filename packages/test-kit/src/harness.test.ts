@@ -9,7 +9,7 @@ import {
 import { runDeterministicScenario } from "./harness";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const UPDATE_GOLDEN = process.env.UPDATE_GOLDEN === "1";
+const UPDATE_GOLDENS = process.env.UPDATE_GOLDENS === "1";
 
 describe("deterministic runtime harness", () => {
   it("reproduces a 120-tick snapshot exactly (acceptance)", () => {
@@ -21,7 +21,7 @@ describe("deterministic runtime harness", () => {
     expect(a.snapshot.gameInstance?.variables.ticks).toBe(120);
 
     const goldenPath = join("goldens", "p3-120-tick.snapshot.json");
-    if (UPDATE_GOLDEN) {
+    if (UPDATE_GOLDENS) {
       writeGolden(HERE, goldenPath, a.snapshotText);
     }
     const golden = normalizeGoldenText(readGolden(HERE, goldenPath));

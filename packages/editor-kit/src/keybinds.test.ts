@@ -50,6 +50,7 @@ describe("normalizeChord", () => {
     expect(normalizeChord("Shift+Mod+z")).toBe("Mod+Shift+Z");
     expect(normalizeChord("Esc")).toBe("Escape");
     expect(normalizeChord("Mod++")).toBe("Mod++");
+    expect(normalizeChord("+")).toBe("+");
   });
 
   it("rejects unknown modifiers so bad saved data is ignored", () => {

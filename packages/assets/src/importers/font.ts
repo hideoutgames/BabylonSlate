@@ -27,46 +27,47 @@ function isMsdfFileName(fileName: string): boolean {
   return /msdf/i.test(fileName);
 }
 
+function parseJsonObject(bytes: Uint8Array): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** msdf-bmfont JSON: the `chars` glyph table the overlay's MSDF reader needs. */
+function hasMsdfAtlasShape(parsed: Record<string, unknown>): boolean {
+  return Array.isArray(parsed.chars);
+}
+
+/** facetype.js output: a `glyphs` table and the em `resolution` it is measured in. */
+function hasFacetypeShape(parsed: Record<string, unknown>): boolean {
+  const glyphs = parsed.glyphs;
+  return Boolean(glyphs) && typeof glyphs === "object" && !Array.isArray(glyphs) &&
+    typeof parsed.resolution === "number";
+}
+
 /**
  * facetype.js and msdf atlas JSON describe glyph representations for a font
  * that should already exist rather than a new asset; matched by filename
- * convention or, failing that, by shape (`facetype` / `chars` / `atlas` keys).
+ * convention or, failing that, by the shape those generators write.
  */
 export function isFontRepresentationFile(fileName: string, bytes: Uint8Array): boolean {
   if (extensionOf(fileName) !== "json") return false;
   if (/msdf|facetype/i.test(fileName)) return true;
-  try {
-    const parsed = JSON.parse(new TextDecoder().decode(bytes)) as Record<
-      string,
-      unknown
-    >;
-    return (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      ("facetype" in parsed || "chars" in parsed || "atlas" in parsed)
-    );
-  } catch {
-    return false;
-  }
+  const parsed = parseJsonObject(bytes);
+  return parsed !== null && (hasMsdfAtlasShape(parsed) || hasFacetypeShape(parsed));
 }
 
 export function isMsdfJsonFile(fileName: string, bytes: Uint8Array): boolean {
   if (!isFontRepresentationFile(fileName, bytes)) return false;
   if (isMsdfFileName(fileName)) return true;
   if (/facetype/i.test(fileName)) return false;
-  try {
-    const parsed = JSON.parse(new TextDecoder().decode(bytes)) as Record<
-      string,
-      unknown
-    >;
-    return (
-      Array.isArray(parsed.chars) ||
-      Array.isArray(parsed.pages) ||
-      "atlas" in parsed
-    );
-  } catch {
-    return false;
-  }
+  const parsed = parseJsonObject(bytes);
+  return parsed !== null && hasMsdfAtlasShape(parsed);
 }
 
 /** Strips a trailing `-msdf` / `.facetype` style marker to recover the font family name. */
@@ -124,10 +125,11 @@ function findMsdfPngSidecar(
 ): { name: string; bytes: Uint8Array } | null {
   const map = sidecarLookup(sidecars);
   if (map.size === 0) return null;
-  const candidates = [
-    ...msdfJsonAtlasPageNames(jsonBytes),
-    ...[...map.keys()].filter((name) => isMsdfAtlasPng(name)),
-  ];
+  // A JSON that names its atlas page uses only that file.
+  const pages = msdfJsonAtlasPageNames(jsonBytes);
+  const candidates = pages.length > 0
+    ? pages
+    : [...map.keys()].filter((name) => isMsdfAtlasPng(name));
   for (const name of candidates) {
     const bytes =
       map.get(name) ??
@@ -225,7 +227,10 @@ export async function importFont(
   }
 
   const extension = extensionOf(options.fileName);
-  const mime = MIME_BY_EXTENSION[extension] ?? "application/octet-stream";
+  const mime = MIME_BY_EXTENSION[extension];
+  if (!mime) {
+    throw new Error(`${options.fileName} is not a font file, an MSDF atlas (msdf-bmfont JSON) or facetype.js glyphs`);
+  }
   return [
     {
       type: "Font",

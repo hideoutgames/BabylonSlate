@@ -1,0 +1,9 @@
+Kenney 2D art (CC0, see License.txt), used by the Feature Test starter.
+
+tiles.png      = Kenney Platformer Pack Redux tilesheet (13 x 12 tiles of 128 px)
+Robot/*.png    = Kenney toon robot animation frames (96 x 128 px: idle, jump, fall, walk0-7)
+
+Original author: Kenney (https://kenney.nl). Copied unmodified from the Kenney
+subset bundled in the Python Arcade package (arcade 3.3.3 on PyPI,
+arcade/resources/assets/images/), which redistributes these files with
+Kenney's CC0 License.txt.

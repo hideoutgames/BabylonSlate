@@ -6,7 +6,7 @@ import { Material, Mesh, MeshBuilder, HemisphericLight, PointLight, Quaternion, 
 import { afterEach, describe, expect, it } from "vitest";
 import { SNAPSHOT_FLAG_OVERLAY, SNAPSHOT_FLAG_VISIBLE } from "@babylonslate/bridge";
 import { createDefaultSpritePayload, createDefaultTilemapPayload, decodeBabasset, embedGlbExternalImages, encodeBabasset, normalizeTilesetPayload, setTile } from "@babylonslate/assets";
-import { DEFAULT_SORTING_LAYERS, parseText2DProperties } from "@babylonslate/core";
+import { createDefaultWaterDefinition, DEFAULT_SORTING_LAYERS, normalizeWaterBody, parseText2DProperties } from "@babylonslate/core";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import { createTestEngine } from "./create-null-engine";
 import { encodeAnimatedTriangleGlb, encodeParentedAnimatedTriangleGlb, encodeTriangleGlb, encodeUvHierarchyGlb } from "./glb-test-fixtures";
@@ -87,6 +87,10 @@ describe("createPlayMesh", () => {
     const material = spriteMesh.material as StandardMaterial;
     expect(material.transparencyMode).toBe(Material.MATERIAL_ALPHATEST);
     expect(material.alphaCutOff).toBeCloseTo(0.4);
+    // Only the slot's own sprite owns the clip-crossfade overlay.
+    expect(binding.spriteOverlays?.get(1)?.parent).toBe(spriteMesh);
+    createPlayMesh(scene, 3, "sprite", "sprite-1", binding, "actor-3|second");
+    expect(binding.spriteOverlays?.has(3)).toBe(false);
 
     const model = createPlayMesh(scene, 2, "box", "model-1", binding);
     expect(model.getTotalVertices()).toBe(0);
@@ -173,6 +177,22 @@ describe("createPlayMesh", () => {
     expect(scene.getMeshByName("actor-5")).not.toBeNull();
   });
 
+  it("attaches the link that would close a component parent cycle to the actor origin", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    const part = (componentId: string, parentId: string) => ({ componentId, parentId, meshKind: "box",
+      position: [1, 0, 0] as [number, number, number], rotation: [0, 0, 0, 1] as [number, number, number, number], scale: [1, 1, 1] as [number, number, number] });
+    applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 0, meshKind: "box", meshAssetGuid: null,
+      parts: [part("a", "b"), part("b", "a")] });
+    const root = binding.meshes.get(0)!;
+    const a = scene.getMeshByName("actor-0|a")!, b = scene.getMeshByName("actor-0|b")!;
+    expect(a.parent).toBe(b);
+    expect(b.parent).toBe(root);
+    expect(a.computeWorldMatrix(true).getTranslation().x).toBeCloseTo(2);
+  });
+
   it("builds a 9-slice 2DPanel play mesh from overlayPanel margins", () => {
     const handle = createTestEngine();
     handles.push(handle);
@@ -182,10 +202,10 @@ describe("createPlayMesh", () => {
       source: "texture",
       textureGuid: "tex-1",
       materialGuid: null,
-      marginLeft: 10,
-      marginRight: 10,
-      marginTop: 10,
-      marginBottom: 10,
+      marginLeft: 0.1,
+      marginRight: 0.1,
+      marginTop: 0.1,
+      marginBottom: 0.1,
       hitTest: "ignore",
     });
     const mesh = createPlayMesh(handle.scene, 4, "2dpanel", "tex-1", binding);
@@ -269,13 +289,14 @@ describe("createPlayMesh", () => {
     ).toBe("btn-1");
   });
 
-  it("puts primitive and model Play meshes in the same world rendering group", async () => {
+  it("puts primitive, model and water Play meshes in the same world rendering group", async () => {
     const handle = createTestEngine();
     handles.push(handle);
     const { scene } = handle;
     const binding = createSnapshotSceneBinding();
     binding.modelBytes = new Map([["model-1", encodeTriangleGlb()]]);
     binding.modelSources = installModelSources(binding);
+    binding.waters = new Map([["water", createDefaultWaterDefinition()]]);
     const box = createPlayMesh(scene, 1, "box", null, binding);
     const model = createPlayMesh(scene, 2, "box", "model-1", binding);
     await binding.slotAnimLoads?.get(2);
@@ -284,6 +305,14 @@ describe("createPlayMesh", () => {
     for (const child of model.getChildMeshes()) {
       expect(child.renderingGroupId).toBe(model.renderingGroupId);
     }
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh", slotId: 3, meshKind: "water", meshAssetGuid: "water",
+      parts: [{ componentId: "lake", meshKind: "water", meshAssetGuid: "water", parentId: null, position: [0, 0, 0],
+        rotation: [0, 0, 0, 1], scale: [1, 1, 1], water: normalizeWaterBody({ width: 4, length: 4, resolution: 8 }) }],
+    });
+    const surface = binding.meshes.get(3)!.getChildMeshes()[0]!;
+    expect(surface.isVerticesDataPresent("slateWaterData")).toBe(true);
+    expect(surface.renderingGroupId).toBe(box.renderingGroupId);
   });
 
   it("loads a Model guid once for two Play slots", async () => {
@@ -323,6 +352,7 @@ describe("createPlayMesh", () => {
     const glb = encodeTriangleGlb();
     const encoded = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "model-1",
         type: "Model",
         name: "Hero",
@@ -536,9 +566,7 @@ describe("createPlayMesh", () => {
       const position = target!.getAbsolutePosition();
       return [position.x, position.y, position.z];
     };
-    const host = sceneAnimHostFromBinding(binding, {
-      animationGroups: scene.animationGroups,
-    });
+    const host = sceneAnimHostFromBinding(binding);
     const command = {
       type: "animState" as const,
       slotId: 2,
@@ -580,9 +608,7 @@ describe("createPlayMesh", () => {
       const position = target!.getAbsolutePosition();
       return [position.x, position.y, position.z];
     };
-    const host = sceneAnimHostFromBinding(binding, {
-      animationGroups: scene.animationGroups,
-    });
+    const host = sceneAnimHostFromBinding(binding);
     const command = {
       type: "animState" as const,
       slotId: 2,
@@ -662,9 +688,7 @@ describe("createPlayMesh", () => {
       const rotation = target!.rotationQuaternion ?? target!.rotation;
       return [position.x, position.y, position.z, rotation.x, rotation.y, rotation.z];
     };
-    const host = sceneAnimHostFromBinding(binding, {
-      animationGroups: scene.animationGroups,
-    });
+    const host = sceneAnimHostFromBinding(binding);
     const command = {
       type: "animState" as const,
       slotId: 2,
@@ -784,7 +808,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -838,7 +861,7 @@ describe("createPlayMesh", () => {
       ] };
     applyAssignMesh(scene, binding, command);
     await binding.slotAnimLoads?.get(0);
-    applySnapshotToScene(scene, binding, { frameId: 1, tickIndex: 1, alpha: 1, actorCount: 1, actors: [{ slotId: 0, position: { x: 10, y: 0, z: 0 },
+    applySnapshotToScene(scene, binding, { frameId: 1, tickIndex: 1, actorCount: 1, actors: [{ slotId: 0, position: { x: 10, y: 0, z: 0 },
       rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 2, y: 2, z: 2 }, flags: SNAPSHOT_FLAG_VISIBLE }] });
     const lamp = scene.getLightByName("authoredLight:0") as PointLight;
     const fill = scene.getLightByName("authoredLight:0|fill") as HemisphericLight;
@@ -887,7 +910,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -959,7 +981,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -1026,7 +1047,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -1042,7 +1062,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 2,
       tickIndex: 2,
-      alpha: 1,
       actorCount: 0,
       actors: [],
     });
@@ -1070,7 +1089,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -1120,7 +1138,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -1167,7 +1184,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 4,
       actors: [1, 2, 3, 8].map((slotId) => ({
         slotId,
@@ -1202,7 +1218,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -1234,7 +1249,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -1258,7 +1272,7 @@ describe("createPlayMesh", () => {
     const binding = createSnapshotSceneBinding();
     binding.pixelPerfect = true;
     binding.pixelsPerUnit = 100;
-    const map = setTile({ ...createDefaultTilemapPayload(), tilesetGuid: "atlas" }, "layer-1", 0, 0, 1);
+    const map = setTile({ ...createDefaultTilemapPayload(), tilesets: [{ guid: "atlas", firstGid: 1, tileCount: 1 }] }, "layer-1", 0, 0, 1);
     // Parallax 0 is screen-locked: the layer offset equals the camera position.
     binding.tilemaps = new Map([["map", { ...map, layers: map.layers.map((layer) => ({ ...layer, parallax: { x: 0, y: 0 } })) }]]);
     binding.tilesets = new Map([["atlas", normalizeTilesetPayload({})]]);
@@ -1275,7 +1289,7 @@ describe("createPlayMesh", () => {
     });
     // The tilemap slot precedes the camera slot that moves in this snapshot.
     applySnapshotToScene(scene, binding, {
-      frameId: 1, tickIndex: 1, alpha: 1, actorCount: 2, actors: [pose(1, 0, 0), pose(2, 3.014, 1.026)],
+      frameId: 1, tickIndex: 1, actorCount: 2, actors: [pose(1, 0, 0), pose(2, 3.014, 1.026)],
     });
     const chunk = binding.meshes.get(1)!.getChildMeshes()[0]!;
     expect(chunk.position.x).toBeCloseTo(3.01, 6);
@@ -1305,7 +1319,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 2,
       actors: [1, 2].map((slotId) => ({
         slotId,
@@ -1345,7 +1358,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 2,
       actors: [1, 2].map((slotId) => ({
         slotId,
@@ -1361,7 +1373,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 2,
       tickIndex: 2,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -1398,7 +1409,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 2,
       actors: [
         {
@@ -1449,7 +1459,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 2,
       actors: [
         {
@@ -1486,7 +1495,6 @@ describe("createPlayMesh", () => {
     const snapshot = {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -1540,7 +1548,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 2,
       actors: [
         {
@@ -1581,7 +1588,7 @@ describe("createPlayMesh", () => {
     });
     applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 2, meshKind: "box", meshAssetGuid: "model-1" });
     const snapshot = (flags: number) => ({
-      frameId: 1, tickIndex: 1, alpha: 1, actorCount: 2,
+      frameId: 1, tickIndex: 1, actorCount: 2,
       actors: [1, 2].map((slotId) => ({
         slotId, flags, position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 },
       })),
@@ -1616,7 +1623,7 @@ describe("createPlayMesh", () => {
     applyAssignMesh(scene, binding, text("HI"));
     applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 2, meshKind: "box", meshAssetGuid: null });
     const snapshot = (flags: number) => ({
-      frameId: 1, tickIndex: 1, alpha: 1, actorCount: 2,
+      frameId: 1, tickIndex: 1, actorCount: 2,
       actors: [1, 2].map((slotId) => ({
         slotId, flags, position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 },
       })),
@@ -1673,7 +1680,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -1731,7 +1737,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -1780,7 +1785,8 @@ describe("createPlayMesh", () => {
     expect(extent).toBeCloseTo(125);
   });
 
-  it("creates a 3D Text mesh for meshKind text3d", () => {
+  // The runtime sends a Text3D's Font as its asset guid; it must not load as a Model.
+  it.each([null, "font-guid"])("creates a 3D Text mesh for meshKind text3d (font %s)", (fontAssetGuid) => {
     const handle = createTestEngine();
     handles.push(handle);
     const { scene } = handle;
@@ -1788,14 +1794,13 @@ describe("createPlayMesh", () => {
     applyAssignMesh(scene, binding, {
       type: "assignMesh",
       slotId: 4,
-      meshAssetGuid: null,
+      meshAssetGuid: fontAssetGuid,
       meshKind: "text3d",
       text3d: {
         text: "Hi",
         size: 1,
-        depth: 0.1,
         color: [1, 0, 0],
-        fontAssetGuid: null,
+        fontAssetGuid,
         alignment: "left",
       },
     });
@@ -1825,7 +1830,14 @@ describe("createPlayMesh", () => {
     ).toBe(true);
   });
 
-  it("draws Play collider dashes when meshKind encodes a collider shape", () => {
+  it.each([
+    { label: "box", shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } },
+    // Authored triangle meshes store vertex rows; the visual needs the packed form.
+    {
+      label: "authored triangle mesh",
+      shape: { kind: "mesh", vertices: [{ x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, { x: 0, y: 0, z: 1 }], indices: [0, 1, 2] },
+    },
+  ])("draws Play collider dashes when meshKind encodes a $label collider shape", ({ shape }) => {
     const handle = createTestEngine();
     handles.push(handle);
     const { scene } = handle;
@@ -1834,7 +1846,7 @@ describe("createPlayMesh", () => {
       type: "assignMesh",
       slotId: 5,
       meshAssetGuid: null,
-      meshKind: "collider:{\"kind\":\"box\",\"halfExtents\":{\"x\":0.5,\"y\":0.5,\"z\":0.5}}",
+      meshKind: `collider:${JSON.stringify(shape)}`,
     });
     const mesh = scene.getMeshByName("actor-5") as Mesh | null;
     expect(mesh).not.toBeNull();
@@ -1885,7 +1897,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -1913,26 +1924,21 @@ describe("createPlayMesh", () => {
       meshAssetGuid: null,
       meshKind: "2dtexture",
     });
-    expect(scene.getMeshByName("actor-4")).not.toBeNull();
+    const worldCopy = scene.getMeshByName("actor-4")!;
+    const sample = (flags: number) => ({ frameId: 1, tickIndex: 1, actorCount: 1, actors: [{ slotId: 4,
+      position: { x: 2, y: 1, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 }, flags }] });
+    applySnapshotToScene(scene, binding, sample(SNAPSHOT_FLAG_VISIBLE));
+    expect(worldCopy.isVisible).toBe(true);
+    // Its layer is not live yet: the world copy stops drawing until migration.
+    binding.sceneForSlot = () => null;
+    applySnapshotToScene(scene, binding, sample(SNAPSHOT_FLAG_VISIBLE | SNAPSHOT_FLAG_OVERLAY));
+    expect(worldCopy.isVisible).toBe(false);
     binding.sceneForSlot = () => overlay;
-    applySnapshotToScene(scene, binding, {
-      frameId: 1,
-      tickIndex: 1,
-      alpha: 1,
-      actorCount: 1,
-      actors: [
-        {
-          slotId: 4,
-          position: { x: 2, y: 1, z: 0 },
-          rotation: { x: 0, y: 0, z: 0, w: 1 },
-          scale: { x: 1, y: 1, z: 1 },
-          flags: SNAPSHOT_FLAG_VISIBLE | SNAPSHOT_FLAG_OVERLAY,
-        },
-      ],
-    });
+    applySnapshotToScene(scene, binding, sample(SNAPSHOT_FLAG_VISIBLE | SNAPSHOT_FLAG_OVERLAY));
     expect(overlay.getMeshByName("actor-4")).not.toBeNull();
     expect(scene.getMeshByName("actor-4")).toBeNull();
     expect(binding.meshes.get(4)?.position.x).toBeCloseTo(2);
+    expect(binding.meshes.get(4)?.isVisible).toBe(true);
     overlay.dispose();
   });
 
@@ -1949,7 +1955,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -1975,7 +1980,6 @@ describe("createPlayMesh", () => {
     const world = (slotIds: number[], frameId: number) => ({
       frameId,
       tickIndex: frameId,
-      alpha: 1,
       actorCount: slotIds.length,
       actors: slotIds.map((slotId) => ({
         slotId,
@@ -2001,6 +2005,16 @@ describe("createPlayMesh", () => {
     expect(quad!.isDisposed()).toBe(false);
     expect(quad!.metadata?.playHelperVisual).toBeUndefined();
     expect(binding.meshKinds.get(2)).toBe("2dtexture");
+    // A sample whose scene lookup throws for the slot has not applied it.
+    binding.sceneForSlot = (slotId) => {
+      if (slotId === 2) throw new Error("layer lookup failed");
+      return null;
+    };
+    expect(() => applySnapshotToScene(scene, binding, world([0, 1, 2], 2))).toThrow("layer lookup failed");
+    binding.sceneForSlot = undefined;
+    applySnapshotToScene(scene, binding, world([0, 1], 2));
+    expect(binding.meshes.get(2)).toBe(quad);
+    expect(quad!.isDisposed()).toBe(false);
     // Once an applied snapshot has contained the slot, later absence retires.
     applySnapshotToScene(scene, binding, world([0, 1, 2], 2));
     expect(quad!.isVisible).toBe(true);
@@ -2037,7 +2051,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -2061,7 +2074,6 @@ describe("createPlayMesh", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 0,
       actors: [],
     });

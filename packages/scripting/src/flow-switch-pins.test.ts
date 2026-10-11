@@ -27,8 +27,8 @@ describe("flow switch case pin ids", () => {
 });
 
 describe("normalizeIntSwitchCases", () => {
-  it("keeps finite integers in order and floors floats", () => {
-    expect(normalizeIntSwitchCases([1, 2.9, -3])).toEqual({
+  it("keeps finite integers in order", () => {
+    expect(normalizeIntSwitchCases([1, 2, -3])).toEqual({
       cases: [1, 2, -3],
       warnings: [],
     });
@@ -65,8 +65,8 @@ describe("normalizeIntSwitchCases", () => {
     ]);
   });
 
-  it("drops non-integer values and diagnoses them", () => {
-    const result = normalizeIntSwitchCases(["1", "nope", Number.NaN, Infinity]);
+  it("drops non-integer values, including fractions, and diagnoses them", () => {
+    const result = normalizeIntSwitchCases(["1", "nope", Number.NaN, Infinity, 2.9, "-0.5"]);
     expect(result.cases).toEqual([1]);
     expect(result.warnings).toEqual([
       expect.objectContaining({
@@ -75,6 +75,8 @@ describe("normalizeIntSwitchCases", () => {
       }),
       expect.objectContaining({ code: "flow.switch.invalid_int" }),
       expect.objectContaining({ code: "flow.switch.invalid_int" }),
+      expect.objectContaining({ code: "flow.switch.invalid_int", value: "2.9" }),
+      expect.objectContaining({ code: "flow.switch.invalid_int", value: "-0.5" }),
     ]);
   });
 });
@@ -88,11 +90,21 @@ describe("normalizeStringSwitchCases", () => {
   });
 
   it("drops empty rows and diagnoses them", () => {
-    const result = normalizeStringSwitchCases(["a", "", "b", "  "]);
+    const result = normalizeStringSwitchCases(["a", "", "b", "  ", null]);
     expect(result.cases).toEqual(["a", "b"]);
     expect(result.warnings).toEqual([
       expect.objectContaining({ code: "flow.switch.empty_case" }),
       expect.objectContaining({ code: "flow.switch.empty_case" }),
+      expect.objectContaining({ code: "flow.switch.empty_case" }),
+    ]);
+  });
+
+  it("drops non-string rows as invalid rather than empty", () => {
+    const result = normalizeStringSwitchCases(["a", 1, true]);
+    expect(result.cases).toEqual(["a"]);
+    expect(result.warnings).toEqual([
+      expect.objectContaining({ code: "flow.switch.invalid_string", value: "1", message: "Non-string Switch on String case was removed." }),
+      expect.objectContaining({ code: "flow.switch.invalid_string", value: "true" }),
     ]);
   });
 

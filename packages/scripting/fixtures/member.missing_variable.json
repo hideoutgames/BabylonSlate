@@ -1,0 +1,90 @@
+{
+  "id": "missing-variable",
+  "kind": "event",
+  "nodes": [
+    {
+      "id": "entry",
+      "typeId": "flow.entry",
+      "position": {
+        "x": 8800,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {}
+    },
+    {
+      "id": "set",
+      "typeId": "variables.set",
+      "position": {
+        "x": 8600,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execIn",
+          "name": "exec",
+          "kind": "exec",
+          "direction": "in",
+          "type": {
+            "kind": "exec"
+          }
+        },
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        },
+        {
+          "id": "value",
+          "name": "Speed",
+          "kind": "data",
+          "direction": "in",
+          "type": {
+            "kind": "float"
+          },
+          "optional": true
+        }
+      ],
+      "properties": {
+        "variableId": "speed",
+        "variableName": "Speed",
+        "scope": "member",
+        "implicitSelf": true
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "entry.execOut->set.execIn",
+      "sourceNodeId": "entry",
+      "sourcePinId": "execOut",
+      "targetNodeId": "set",
+      "targetPinId": "execIn"
+    }
+  ],
+  "context": {
+    "members": [
+      {
+        "id": "health",
+        "name": "Health",
+        "kind": "variable",
+        "classId": "Hero",
+        "typeId": "float"
+      }
+    ]
+  }
+}

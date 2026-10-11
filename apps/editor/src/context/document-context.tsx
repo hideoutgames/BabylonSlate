@@ -35,7 +35,7 @@ import type {
   SerializedScene,
   SerializedSceneLayer,
 } from "@babylonslate/core";
-import { ASSET_DOCUMENT_KINDS, documentId, isAssetDocumentKind, isSceneWorkspaceKind, normalizeProjectSettings, defaultExportPreset, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@babylonslate/core";
+import { ASSET_DOCUMENT_KINDS, documentId, isAssetDocumentKind, isSceneWorkspaceKind, normalizeProjectSettings, remapAlwaysPackageFolders, removeAlwaysPackageFolders, defaultExportPreset, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@babylonslate/core";
 import {
   appendJournalLines,
   getTile,
@@ -43,7 +43,6 @@ import {
   readJournalLines,
   readThumbnail,
   writeThumbnail,
-  upgradeTextureThumbnail,
   ThumbnailDecodeLru,
   truncateJournal,
   clearDeletedAssetRefs,
@@ -66,7 +65,6 @@ import {
   type TilesetPayload,
   newAssetGuid,
   playerFilesHaveKtx2Transcoder,
-  type ParticleLibrary,
 } from "@babylonslate/assets";
 import {
   DEFAULT_EDIT_BYTE_BUDGET,
@@ -191,6 +189,7 @@ import {
 import { readProjectJsonMtime, refreshMtimeSnapshotAfterEditorSave } from "../lib/external-change";
 import { ProjectSaveState } from "../lib/project-save-state";
 import {
+  AssetFormatVersionError,
   applyOwnAssetWrite,
   classifyExternalChanges,
   snapshotIndexedMtimes,
@@ -207,11 +206,6 @@ import {
   EDITOR_UTILITY_EVENTS,
   emitEditorUtilityLifecycle,
 } from "../lib/editor-utility-scripts";
-import type {
-  PlayAnimGraphEntry,
-  PlayBehaviourTreeEntry,
-  PlayBlackboardEntry,
-} from "../lib/play-content";
 import {
   beginSaveAllProgress,
   clearDocumentDirtyTrace,
@@ -234,7 +228,19 @@ import type {
   MaterialDocument,
   MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
+import { useDebugMode } from "./app-settings-context";
+import { formatSceneLoadReport } from "../lib/scene-load-report";
 export type AppRoute = "home" | "editor";
+
+/**
+ * `closeProject`: closed, held by unsaved work (nothing was written; a
+ * session was stopped only when its stop left that work, as Simulation's Keep
+ * Changes does), or refused by a running Play / Simulate session.
+ */
+export type CloseProjectResult =
+  | { outcome: "closed" }
+  | { outcome: "unsaved"; dirty: OpenDocument[]; projectDirty: boolean }
+  | { outcome: "refused" };
 
 interface DocumentContextValue {
   registerBeforeTransition: DocumentTransitionGate["register"];
@@ -291,6 +297,11 @@ interface DocumentContextValue {
     oldPath: string,
     newPath: string,
   ) => void;
+  /**
+   * Follow a Content Browser folder rename or move in the project settings
+   * that name folders (Always Package Folders).
+   */
+  repathProjectFolder: (fromFolder: string, toFolder: string) => void;
   renameAsset: ProjectService["renameAsset"];
   /** Document opens and renames, for session state keyed by document id. */
   subscribeDocumentIdentity: (listener: DocumentIdentityListener) => () => void;
@@ -352,6 +363,8 @@ interface DocumentContextValue {
   projectDirty: boolean;
   autoSaveStatus: { state: "saving" | "saved" | "error"; message?: string } | null;
   migrationPending: MigrationPending[];
+  /** Advances each time a Save All the user asked for is refused for pending migrations. */
+  migrationPromptRequest: number;
   templates: ProjectTemplateCatalogEntry[];
   homepageReady: boolean;
   refreshTemplates: () => Promise<void>;
@@ -374,9 +387,17 @@ interface DocumentContextValue {
   reconnectProject: () => Promise<void>;
   saveProject: () => Promise<boolean>;
   saveAll: () => Promise<boolean>;
-  approveMigrationsAndSave: () => Promise<void>;
-  closeProject: () => Promise<{ blocked: boolean; dirty: OpenDocument[]; projectDirty: boolean }>;
-  forceCloseProject: () => Promise<void>;
+  /** Approve pending schema migrations and run the complete Save All; false when it did not save. */
+  approveMigrationsAndSave: () => Promise<boolean>;
+  /** Closes a clean project; unsaved work returns it without asking a session to stop. */
+  closeProject: () => Promise<CloseProjectResult>;
+  /**
+   * Ask a running Play or Simulate session to stop before the close prompt's
+   * Save All, whose writes the session's authoring lock refuses.
+   */
+  releaseSessionsForProjectClose: () => Promise<boolean>;
+  /** Close without saving once sessions stop and queued writes finish; false when a session refused. */
+  forceCloseProject: () => Promise<boolean>;
   exportProject: (snapshot?: ProjectDocument) => Promise<Uint8Array>;
   exportGameArtifact: (options?: {
     projectSnapshot?: ProjectDocument;
@@ -408,12 +429,12 @@ interface DocumentContextValue {
     deletedGuids: ReadonlySet<string>,
     deletedClassNames?: ReadonlySet<string>,
     onProgress?: (currentName: string) => Promise<void>,
+    /** Storage folders the operation deleted. */
+    deletedFolders?: readonly string[],
   ) => Promise<void>;
   setActiveDocument: (id: string) => void;
   reorderTabs: (fromIndex: number, toIndex: number) => void;
   reorderClosableTabs: (fromIndex: number, toIndex: number) => void;
-  updateScene: (id: string, scene: SerializedScene) => void;
-  updateGraph: (id: string, graph: SerializedGraph) => void;
   /** Apply a graph edit through the command layer (marks dirty + undoable). */
   applyGraphChange: (id: string, next: SerializedGraph) => Promise<boolean>;
   /**
@@ -515,32 +536,12 @@ interface DocumentContextValue {
     kind: AssetDocumentKind,
     path: string,
   ) => Promise<unknown | null>;
-  /** AnimationGraphs referenced by the Play scene; open tabs override only required graphs. */
-  collectPlayAnimGraphs: (
-    scene?: SerializedScene | null,
-    extraScenes?: readonly SerializedScene[],
-  ) => Promise<PlayAnimGraphEntry[]>;
-  collectPlayBehaviourTrees: (
-    scene?: SerializedScene | null,
-    extraScenes?: readonly SerializedScene[],
-  ) => Promise<PlayBehaviourTreeEntry[]>;
-  collectPlayBlackboards: (
-    scene?: SerializedScene | null,
-    extraScenes?: readonly SerializedScene[],
-  ) => Promise<PlayBlackboardEntry[]>;
   /** Sprite payloads referenced by the Play scene for clip UV seeks. */
   collectPlaySpritePayloads: (
     scene?: SerializedScene | null,
-    graphs?: readonly PlayAnimGraphEntry[],
     extraScenes?: readonly SerializedScene[],
   ) => Promise<Map<string, SpritePayload>>;
-  /** Sprite Animation clips referenced by loaded Animation Graphs and behaviour trees. */
-  collectPlaySpriteAnimationPayloads: (
-    graphs: readonly PlayAnimGraphEntry[],
-    trees?: readonly PlayBehaviourTreeEntry[],
-  ) => Promise<Map<string, SpriteAnimationPayload>>;
   collectPlayWaterContent: (requiredGuids?: ReadonlySet<string>) => Promise<Map<string, WaterDefinition>>;
-  collectPlayDataAssets: (requiredGuids?: ReadonlySet<string>) => Promise<import("@babylonslate/core").DataAssetCatalogEntry[]>;
   collectPlayRenderTargets: (requiredGuids?: ReadonlySet<string>) => Promise<{ renderTargets: Map<string, RenderTargetPayload>; renderTargetTextures: Map<string, RenderTargetTexturePayload> }>;
   collectPlayTilemapContent: (
     scene?: SerializedScene | null,
@@ -609,20 +610,6 @@ interface DocumentContextValue {
     documents: Map<string, MaterialDocument>;
     functions: Map<string, MaterialFunctionDocument>;
     textureGuids: string[];
-  }>;
-  collectPlayParticles: (requiredGuids?: ReadonlySet<string>) => Promise<ParticleLibrary>;
-  /** Requested Scene documents; omitted selection is for explicit whole-project operations. */
-  collectPlaySceneLibrary: (requiredGuids?: ReadonlySet<string>) => Promise<
-    Array<{ guid: string; scene: SerializedScene }>
-  >;
-  /** Active SceneLayers; graph-reference traversal is an explicit opt-in operation. */
-  collectPlaySceneLayers: (
-    scenes: readonly SerializedScene[],
-    includeGraphReferences?: boolean,
-  ) => Promise<{
-    layers: Array<{ guid: string; layer: SerializedSceneLayer }>;
-    overlayScenes: SerializedScene[];
-    graphMaterialGuids: string[];
   }>;
   /** Class graph payload from an open tab or disk. */
   loadGraphDocument: (path: string) => Promise<SerializedGraph | null>;
@@ -723,6 +710,7 @@ export type EditorShellState = Pick<
   | "needsReconnect"
   | "recoveryAvailable"
   | "migrationPending"
+  | "migrationPromptRequest"
   | "templates"
   | "homepageReady"
   | "pendingExclusiveScene"
@@ -796,9 +784,7 @@ function dockOptionsForIndexed(
     actorPrefab:
       kind !== "graph" ||
       !indexed ||
-      classDocumentShowsPrefab(indexed.header.parentClass, (id) => parentOf(id) ?? null, {
-        assetType: indexed.header.type,
-      }),
+      classDocumentShowsPrefab(indexed.header.parentClass, (id) => parentOf(id) ?? null),
     sourceControl: sourceControlEnabled,
     sceneMode: kind === "scene" ? (sceneMode ?? "design") : undefined,
     animEditorMode:
@@ -853,7 +839,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const documentTransitions = useRef(new DocumentTransitionGate()).current;
   const registerBeforeTransition = useCallback<DocumentTransitionGate["register"]>(handler => documentTransitions.register(handler), [documentTransitions]);
   const sceneDocumentLoadRef = useRef<AbortController | null>(null);
-  const [sceneDocumentLoad, setSceneDocumentLoad] = useState<{ ref: DocumentRef; failed: boolean } | null>(null);
+  const [sceneDocumentLoad, setSceneDocumentLoad] = useState<{ ref: DocumentRef; failed: boolean; error?: unknown } | null>(null);
+  const debugMode = useDebugMode();
   useEffect(() => () => sceneDocumentLoadRef.current?.abort(), []);
   const cancelSceneDocumentLoad = useCallback(() => {
     sceneDocumentLoadRef.current?.abort();
@@ -916,6 +903,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const [migrationPending, setMigrationPending] = useState<MigrationPending[]>(
     [],
   );
+  const [migrationPromptRequest, setMigrationPromptRequest] = useState(0);
   const [homepageReady, setHomepageReady] = useState(false);
   const templatesRef = useRef<ProjectTemplateCatalogEntry[]>([]);
   const [templates, setTemplates] = useRefState(templatesRef);
@@ -967,6 +955,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     pendingExclusiveSceneRef,
   );
   const exclusiveSceneRequest = useRef(0);
+  /** The latest tab activation the user asked for; an earlier, slower open does not take focus from it. */
+  const activationRequest = useRef(0);
   const [lastCompiledSignature, setLastCompiledSignature] = useState<
     string | null
   >(null);
@@ -1011,13 +1001,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     collectGraphTypeSchemas,
     collectPlayPreviewScripts,
     collectEditorUtilityScripts,
-    collectPlayAnimGraphs,
-    collectPlayBehaviourTrees,
-    collectPlayBlackboards,
     collectPlaySpritePayloads,
-    collectPlaySpriteAnimationPayloads,
     collectPlayWaterContent,
-    collectPlayDataAssets,
     collectPlayRenderTargets,
     collectPlayTilemapContent,
     collectPlayAreaEmissions,
@@ -1031,10 +1016,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     collectPlayModelPayloads,
     collectPlayInputAssets,
     collectPlayAudio,
-    collectPlayParticles,
     collectPlayMaterialLibrary,
-    collectPlaySceneLibrary,
-    collectPlaySceneLayers,
   } = playContent;
   const clearPlayPreviewScripts = useCallback(() => {
     setPlayLoadedSignature(null);
@@ -1344,10 +1326,19 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     noteAssetsCreated();
   }, [noteAssetsCreated, projectService]);
 
+  /** Set once `closeDocumentsForPaths` exists; reload closes tabs whose file is gone. */
+  const closeDocumentsForPathsRef = useRef<(paths: Iterable<string>) => void>(() => {});
+  /**
+   * Returns the paths whose file could not be read; their tabs keep their
+   * content. A tab whose file was deleted on disk closes, as reloading it has
+   * nothing to load.
+   */
   const reloadDocumentsFromDisk = useCallback(
-    async (paths: string[]) => {
+    async (paths: string[]): Promise<string[]> => {
       const authoring = documentService.getAuthoringLock();
-      if (authoring.readOnly) return;
+      const failed: string[] = [];
+      const deleted: string[] = [];
+      if (authoring.readOnly) return failed;
       for (const path of paths) {
         const doc = [...documentService.getState().openDocuments.values()].find(
           (entry) => entry.ref.path === path,
@@ -1358,26 +1349,39 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
             doc.ref.kind,
             doc.ref.path,
           );
-          if (documentService.getAuthoringLock() !== authoring) return;
+          if (documentService.getAuthoringLock() !== authoring) return failed;
           documentService.replaceLoadedContent(
             doc.id,
             editorTabContentForKind(doc.ref.kind, loaded) as NonNullable<typeof doc.content>,
           );
           editSessionRef.current.dropDocument(doc.id);
-        } catch {
-          // Deleted or unreadable on disk.
+        } catch (error) {
+          const exists = await projectService.documentExists(path).catch(() => true);
+          if (documentService.getAuthoringLock() !== authoring) return failed;
+          if (!exists) {
+            deleted.push(path);
+            continue;
+          }
+          console.warn(`[editor] Could not reload ${path} from disk`, error);
+          failed.push(path);
         }
       }
+      if (deleted.length > 0) closeDocumentsForPathsRef.current(deleted);
       bump();
+      return failed;
     },
     [bump, documentService, projectService],
   );
 
   const runForegroundRescan = useCallback(async () => {
     if (!projectDocumentRef.current) return;
+    const guid = projectService.guid;
     const previous = mtimeSnapshotRef.current;
     await projectService.remountRegistry();
     bump();
+    // Another project, or a snapshot an own save took meanwhile, is newer
+    // than this scan: classifying against it would report the wrong changes.
+    if (projectService.guid !== guid || mtimeSnapshotRef.current !== previous) return;
     const nextAssets = snapshotIndexedMtimes(
       projectService.registry?.list() ?? [],
     );
@@ -1386,6 +1390,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const next = { assets: { ...nextAssets }, projectJson: previous?.projectJson ?? null };
     mtimeSnapshotRef.current = next;
     const nextProject = await readProjectJsonMtime(projectService.storagePort);
+    if (projectService.guid !== guid || mtimeSnapshotRef.current !== next) return;
     if (previous) {
       const openDocs = documentService
         .getOpenDocumentsOrdered()
@@ -1433,8 +1438,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const confirmExternalChangeReloadDocs = useCallback(
     async (paths: string[]) => {
       if (documentService.getAuthoringLock().readOnly) return;
-      await reloadDocumentsFromDisk(paths);
-      setExternalChangePrompt(null);
+      const failed = await reloadDocumentsFromDisk(paths);
+      // The next rescan will not report these files again, so the prompt
+      // keeps offering the ones that could not be read.
+      const keep = (list: string[]) => list.filter((path) => failed.includes(path));
+      setExternalChangePrompt((current) => !current || failed.length === 0 ? null : {
+        ...current,
+        changedPaths: keep(current.changedPaths),
+        dirtyChangedPaths: keep(current.dirtyChangedPaths),
+        cleanChangedPaths: keep(current.cleanChangedPaths),
+      });
     },
     [documentService, reloadDocumentsFromDisk],
   );
@@ -1812,7 +1825,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
   }, [attachEnginePlugins, enterEditor, projectService]);
 
-  const saveProject = useCallback((): Promise<boolean> => {
+  /**
+   * The one Save All path: auto-save, Save All, Play's save and Migrate On
+   * Save. Pending schema migrations refuse it until the user approves them
+   * (`approveMigrations`, kept for the rest of the project session); a refused
+   * Save All the user asked for (`promptMigrations`) opens the migration prompt.
+   */
+  const runSaveAll = useCallback((options: { approveMigrations?: boolean; promptMigrations?: boolean } = {}): Promise<boolean> => {
     // Keep the immutable authored document as the only save source. A session
     // defers new saves; an already admitted Save All retains its complete lane.
     // Refuse before queueing so a deferred save never waits behind that lane.
@@ -1828,6 +1847,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     return projectService.withBaselineSave(async writer => {
       const progress = beginSaveAllProgress();
       const document = projectDocumentRef.current;
+      const guid = projectService.guid;
       const dirtyBefore = documentService.getDirtyDocuments().length + Number(projectSaveState.current.isDirty(document));
       if (!document) {
         recordSaveAllTrace({
@@ -1839,8 +1859,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         progress.finish();
         return false;
       }
-      if (projectService.pendingMigrations.length > 0) {
+      const migrate = options.approveMigrations === true || projectService.migrationsApproved;
+      if (!migrate && projectService.pendingMigrations.length > 0) {
         setMigrationPending(projectService.pendingMigrations);
+        if (options.promptMigrations) setMigrationPromptRequest((request) => request + 1);
         recordSaveAllTrace({
           ok: false,
           reason: "migrations",
@@ -1848,9 +1870,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           dirtyAfter: dirtyBefore,
         });
         progress.finish();
-        // Caller must use approveMigrationsAndSave — never silently rewrite.
+        // Never silently rewrite: the user approves through the migration prompt.
         return false;
       }
+      if (options.approveMigrations) projectService.approveMigrateOnSave();
       if (saveDebounceRef.current) {
         clearTimeout(saveDebounceRef.current);
         saveDebounceRef.current = null;
@@ -1897,13 +1920,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         setMigrationPending([]);
         progress.phase("mtime");
         await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
-        const guid = projectService.guid;
         if (guid) {
           progress.phase("journal");
           const derived = await ensureDerived();
-          const cleared = await journalBuffer.afterFlush(guid, () =>
+          // The journal holds document edits only; Project Settings changed
+          // during the save are not in it and must not keep saved edits there.
+          const cleared = await journalBuffer.clearAfterFlush(guid, () =>
             truncateJournal(derived, guid, () =>
-              documentService.getDirtyDocuments().length === 0 && projectDocumentRef.current === document,
+              projectService.guid === guid && documentService.getDirtyDocuments().length === 0,
             ),
           );
           if (cleared) setRecoveryAvailable(false);
@@ -1963,6 +1987,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     playContent,
     projectService,
   ]);
+  /** Auto-save: a refusal pauses it with a status message, never a prompt. */
+  const saveProject = useCallback(() => runSaveAll(), [runSaveAll]);
+  /** Save All the user asked for: a refusal for pending migrations opens the prompt. */
+  const saveAll = useCallback(() => runSaveAll({ promptMigrations: true }), [runSaveAll]);
+  /** Migrate On Save: approve the pending migrations and run the complete Save All. */
+  const approveMigrationsAndSave = useCallback(() => runSaveAll({ approveMigrations: true }), [runSaveAll]);
 
   const scheduleDebouncedSave = useCallback(() => {
     if (saveDebounceRef.current) return;
@@ -2031,67 +2061,58 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [projectService, setShowPluginContent],
   );
 
-  const approveMigrationsAndSave = useCallback(async () => {
-    if (projectService.authoringWriteBlockedReason) return;
-    return projectService.withBaselineSave(async writer => {
-      const projectDocument = projectDocumentRef.current;
-      if (!projectDocument) return;
-      const projectSave = projectSaveState.current.capture(projectDocument);
-      projectService.approveMigrateOnSave();
-      captureAllLayouts();
-      const dirtyDocs = documentService.getDirtyDocuments().map((doc) => ({ ...doc }));
-      for (const doc of dirtyDocs) {
-        if (
-          isAssetDocumentKind(doc.ref.kind) &&
-          doc.ref.kind !== "trace" &&
-          doc.content
-        ) {
-          await writer.saveDocument(
-            doc.ref.kind,
-            doc.ref.path,
-            persistableDocumentContent(doc.ref.kind, doc.content) as
-              | SerializedScene
-              | SerializedSceneLayer
-              | SerializedGraph
-              | Record<string, unknown>,
-          );
-        }
-      }
-      await writer.upgradeDependencyMetadata();
-      const layouts = documentService.buildLayouts();
-      await writer.saveProject(projectDocument, layouts);
-      documentService.markAllClean(dirtyDocs);
-      setMigrationPending([]);
-      await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
-      projectSaveState.current.complete(projectSave);
-      bump();
-    });
-  }, [
-    bump,
-    captureAllLayouts,
-    captureMtimeSnapshot,
-    documentService,
-    projectService,
-  ]);
+  const releaseSessionsForProjectClose = useCallback(
+    async () => documentTransitions.check({ kind: "close-project" }),
+    [documentTransitions],
+  );
 
-  const saveAll = saveProject;
+  /** Close Project's prompt when documents or project settings are unsaved. */
+  const unsavedProjectWork = useCallback((): CloseProjectResult | null => {
+    const dirty = documentService.getDirtyDocuments();
+    const projectDirty = projectSaveState.current.isDirty(projectDocumentRef.current);
+    return dirty.length > 0 || projectDirty ? { outcome: "unsaved", dirty, projectDirty } : null;
+  }, [documentService]);
 
-  const forceCloseProject = useCallback(async () => {
+  /**
+   * `clean`: the close keeps no unsaved work. It writes tabs, dock layouts and
+   * panel placements, which Save would have, and returns unsaved work a
+   * stopping session left behind (Simulation's Keep Changes) instead of
+   * discarding it. Otherwise the close discards unsaved work.
+   */
+  const shutDownProject = useCallback(async (clean: boolean): Promise<CloseProjectResult> => {
     setAutoSaveStatus(null);
-    if (!await documentTransitions.check({ kind: "close-project" })) return;
+    if (!await documentTransitions.check({ kind: "close-project" })) return { outcome: "refused" };
+    const unsaved = clean ? unsavedProjectWork() : null;
+    if (unsaved) return unsaved;
     documentService.assertAuthoringWritable();
     cancelSceneDocumentLoad();
-    if (saveDebounceRef.current) {
+    exclusiveSceneRequest.current += 1;
+    setPendingExclusiveScene(null);
+    const clearDebouncedSave = () => {
+      if (!saveDebounceRef.current) return;
       clearTimeout(saveDebounceRef.current);
       saveDebounceRef.current = null;
-    }
-    const guid = projectService.guid;
-    if (guid) {
-      const derived = await ensureDerived();
-      await journalBuffer.afterFlush(guid, () => truncateJournal(derived, guid));
-    }
-    emitEditorUtilityLifecycle(EDITOR_UTILITY_EVENTS.shutdown);
-    await projectService.closeProject();
+    };
+    clearDebouncedSave();
+    // A Save All or rename already admitted finishes before the journal is
+    // cleared and the folder released; later queued saves find no project.
+    await enqueueProjectWrite(async () => {
+      clearDebouncedSave();
+      if (clean && !projectService.authoringWriteBlockedReason) {
+        captureAllLayouts();
+        // Layout is a convenience: a failed write must not keep the project open.
+        await projectService.saveLayouts(documentService.buildLayouts()).catch((error: unknown) => {
+          console.warn("[editor] Could not keep the layout when closing the project", error);
+        });
+      }
+      const guid = projectService.guid;
+      if (guid) {
+        const derived = await ensureDerived();
+        await journalBuffer.clearAfterFlush(guid, () => truncateJournal(derived, guid));
+      }
+      emitEditorUtilityLifecycle(EDITOR_UTILITY_EVENTS.shutdown);
+      await projectService.closeProject();
+    });
     sourceControlRef.current.dispose();
     projectService.setDerivedStorage(null);
     dockviewApisRef.current.clear();
@@ -2114,10 +2135,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setExternalChangePrompt(null);
     await refreshProjectList();
     bump();
+    return { outcome: "closed" };
   }, [
     bump,
+    captureAllLayouts,
     disposeDockSubscriptions,
     documentService,
+    enqueueProjectWrite,
     ensureDerived,
     journalBuffer,
     projectService,
@@ -2126,22 +2150,23 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     cancelSceneDocumentLoad,
     playContent,
     setAnimEditorModes,
+    setPendingExclusiveScene,
     setProjectDocument,
     documentTransitions,
+    unsavedProjectWork,
   ]);
 
-  const closeProject = useCallback(async () => {
-    if (!await documentTransitions.check({ kind: "close-project" })) {
-      return { blocked: true, dirty: documentService.getDirtyDocuments(), projectDirty: projectSaveState.current.isDirty(projectDocumentRef.current) };
-    }
-    const dirty = documentService.getDirtyDocuments();
-    const projectDirty = projectSaveState.current.isDirty(projectDocumentRef.current);
-    if (dirty.length > 0 || projectDirty) {
-      return { blocked: true, dirty, projectDirty };
-    }
-    await forceCloseProject();
-    return { blocked: false, dirty: [], projectDirty: false };
-  }, [documentService, forceCloseProject, documentTransitions]);
+  const forceCloseProject = useCallback(
+    async () => (await shutDownProject(false)).outcome === "closed",
+    [shutDownProject],
+  );
+
+  // Unsaved work prompts first: a running session stops only once the user
+  // chooses Save All or Discard, so Cancel leaves it running.
+  const closeProject = useCallback(
+    async (): Promise<CloseProjectResult> => unsavedProjectWork() ?? shutDownProject(true),
+    [shutDownProject, unsavedProjectWork],
+  );
 
   const exportProject = useCallback(async (snapshot?: ProjectDocument) => {
     return projectService.exportZip(snapshot);
@@ -2185,11 +2210,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
       const list = await projectService.listExportAssets(
         new Set(pluginGraph.order.map((plugin) => plugin.pluginGuid)),
-        Object.fromEntries(pluginGraph.order.map((plugin) => [plugin.pluginGuid, {
-          ...projectPluginOverrides[plugin.pluginGuid],
-          ...preset.pluginOverrides[plugin.pluginGuid],
-          enabled: true,
-        }])),
       );
       const playerFiles = options?.playerFiles ?? (await loadPlayerDistFiles());
       const loaded = await loadExportDocuments({
@@ -2223,6 +2243,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         reverbWetScale: exportDocument?.settings.audio.reverbWetScale,
         reverbDecayScale: exportDocument?.settings.audio.reverbDecayScale,
         reverbDampingScale: exportDocument?.settings.audio.reverbDampingScale,
+        alwaysPackageFolders: exportDocument?.settings.alwaysPackageFolders,
         assets: assetsFromIndexed(list),
         plugins,
         projectPluginOverrides,
@@ -2255,7 +2276,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         infiniteLoopDetection:
           exportDocument?.settings.infiniteLoopDetection,
         loopCount: exportDocument?.settings.loopCount,
-        inputMappings: exportDocument?.settings.input,
         focusNavigation: exportDocument?.settings.focusNavigation,
         tagRegistry: exportDocument?.settings.tags,
         playerFiles,
@@ -2274,9 +2294,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const guid = projectService.guid;
     if (guid) {
       const derived = await ensureDerived();
-      await journalBuffer.afterFlush(guid, () => truncateJournal(derived, guid));
+      await journalBuffer.clearAfterFlush(guid, () => truncateJournal(derived, guid));
     }
-    setRecoveryAvailable(false);
+    // The banner belongs to the project open now; another may have opened meanwhile.
+    if (projectService.guid === guid) setRecoveryAvailable(false);
   }, [ensureDerived, journalBuffer, projectService]);
 
   const keepRecovery = useCallback(() => {
@@ -2372,6 +2393,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     },
     [performCloseDocument, documentService],
   );
+  closeDocumentsForPathsRef.current = closeDocumentsForPaths;
 
   const replaceClassReferencesBeforeDelete = useCallback(async (
     replacements: readonly ClassAssetReplacement[],
@@ -2393,6 +2415,18 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       return [{ doc, content: walked.value }];
     });
     await projectService.replaceClassReferencesBeforeDelete(replacements, deletingGuids, onProgress);
+    // The referrer files now name the replacement. Open tabs follow at once,
+    // from their current content, so a failed Project Settings write below
+    // cannot leave a tab whose next Save writes the old reference back.
+    for (const { doc } of openChanges) {
+      const open = documentService.getDocument(doc.id);
+      if (!open?.content) continue;
+      const walked = replaceClassAssetReferences(open.content, replacements, definitionFields);
+      if (!walked.changed) continue;
+      if (open.dirty) documentService.patchLoadedContent(open.id, walked.value);
+      else documentService.replaceLoadedContent(open.id, walked.value);
+    }
+    bump();
     const current = projectDocumentRef.current;
     if (current) {
       const settings = replaceClassAssetReferences(current.settings, replacements);
@@ -2401,16 +2435,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const next = { ...current, settings: settings.value };
         const projectSave = projectSaveState.current.capture(next);
         await projectService.saveProject(next, documentService.buildLayouts());
+        await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
         projectSaveState.current.complete(projectSave);
         setProjectDocument(next);
       }
     }
-    for (const { doc, content } of openChanges) {
-      if (doc.dirty) documentService.patchLoadedContent(doc.id, content);
-      else documentService.replaceLoadedContent(doc.id, content);
-    }
-    bump();
-  }, [bump, collectGraphTypeSchemas, documentService, projectService, setProjectDocument]);
+  }, [bump, captureMtimeSnapshot, collectGraphTypeSchemas, documentService, projectService, setProjectDocument]);
 
   const renameAsset = useCallback((guid: string, newName: string) => enqueueProjectWrite(async () => {
     if (saveDebounceRef.current) { clearTimeout(saveDebounceRef.current); saveDebounceRef.current = null; }
@@ -2419,7 +2449,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const before = registry?.getByGuid(guid);
       if (!registry || !before) throw new Error("The asset is unavailable.");
       const nextPath = renamedAssetPath(before.path, newName);
-      const replacements: ClassAssetReplacement[] = before.header.type === "Class" || before.header.type === "Graph"
+      const replacements: ClassAssetReplacement[] = before.header.type === "Class"
         ? [{ guid, classId: classIdFromClassAsset(before), replacement: { guid, classId: classIdFromClassAsset({ ...before, path: nextPath }) } }]
         : [];
       const schemas = collectGraphTypeSchemas();
@@ -2453,6 +2483,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           await journalBuffer.flush(projectGuid, { rejectOnError: true });
         },
       });
+      // The rename moved files and may have rewritten project.json: neither is external.
+      await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
       for (const { doc, content } of openChanges) {
         if (doc.dirty) documentService.patchLoadedContent(doc.id, content);
         else documentService.replaceLoadedContent(doc.id, content);
@@ -2470,17 +2502,18 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     } finally {
       if (documentService.getDirtyDocuments().length || projectSaveState.current.isDirty(projectDocumentRef.current)) scheduleDebouncedSave();
     }
-  }), [bump, collectGraphTypeSchemas, documentService, enqueueProjectWrite, journalBuffer, projectService, scheduleDebouncedSave, setProjectDocument]);
+  }), [bump, captureMtimeSnapshot, collectGraphTypeSchemas, documentService, enqueueProjectWrite, journalBuffer, projectService, scheduleDebouncedSave, setProjectDocument]);
 
   const repairAfterAssetDelete = useCallback(
     async (
       deletedGuids: ReadonlySet<string>,
       deletedClassNames: ReadonlySet<string> = new Set(),
       onProgress?: (currentName: string) => Promise<void>,
+      deletedFolders: readonly string[] = [],
     ) => {
       const schemas = collectGraphTypeSchemas();
       const definitionFields = (guid: string) => schemas.structs?.[guid]?.fields;
-      await projectService.clearDeletedAssetReferences(deletedGuids, {
+      const unrepaired = await projectService.clearDeletedAssetReferences(deletedGuids, {
         deletedClassNames,
         onProgress,
       });
@@ -2508,11 +2541,15 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       });
       if (current) {
         await onProgress?.("Saving Project");
-        const settings = clearDeletedRefsFromProjectSettings(
+        const cleared = clearDeletedRefsFromProjectSettings(
           current.settings,
           deletedGuids,
           deletedClassNames,
         ).value;
+        const settings = {
+          ...cleared,
+          alwaysPackageFolders: removeAlwaysPackageFolders(cleared.alwaysPackageFolders, deletedFolders),
+        };
         const next = {
           ...current,
           settings,
@@ -2526,6 +2563,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         projectSaveState.current.complete(projectSave);
       }
       bump();
+      // Everything else is repaired first; the delete then reports what was not.
+      if (unrepaired.length > 0) {
+        const cause = unrepaired[0]!.error;
+        throw new Error(
+          `References to the deleted assets remain in ${unrepaired.map((entry) => entry.path).join(", ")}: ${cause instanceof Error ? cause.message : String(cause)}`,
+          { cause },
+        );
+      }
     },
     [
       bump,
@@ -2538,11 +2583,40 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     ],
   );
 
+  /**
+   * Opening a Scene closes every other open Scene. Each one it replaces goes
+   * through the gate, so a session playing or simulating it stops first.
+   */
+  const checkSceneReplacement = useCallback((ref: DocumentRef): boolean | Promise<boolean> => {
+    const nextId = documentId(ref);
+    const replaced = documentService.getOpenDocumentsOrdered()
+      .filter((doc) => doc.ref.kind === "scene" && doc.id !== nextId);
+    const next = (index: number): boolean | Promise<boolean> => {
+      for (let cursor = index; cursor < replaced.length; cursor++) {
+        const allowed = documentTransitions.check({ kind: "replace-document", documentId: replaced[cursor]!.id });
+        if (allowed === false) return false;
+        if (allowed !== true) return allowed.then((ok) => ok && next(cursor + 1));
+      }
+      return true;
+    };
+    return next(0);
+  }, [documentService, documentTransitions]);
+
+  /** `discardDirtyScenes`: the user chose Discard, so replaced Scenes close even when dirty. */
   const finishOpenDocument = useCallback(
-    async (ref: DocumentRef) => {
+    async (ref: DocumentRef, options?: { discardDirtyScenes?: boolean }) => {
+      // Taken before the session gate's wait, so a tab picked during it stays active.
+      const request = ++activationRequest.current;
       if (ref.kind === "scene" && !documentService.getDocument(documentId(ref))) {
-        const allowed = documentTransitions.check({ kind: "replace-document", documentId: documentId(ref) });
+        const allowed = checkSceneReplacement(ref);
         if (allowed === false || (typeof allowed !== "boolean" && !await allowed)) return;
+        // A stopped session can leave a replaced Scene dirty (Simulation's
+        // Keep Changes); ask to Save or Discard it instead of closing it.
+        if (!options?.discardDirtyScenes &&
+          dirtyScenesBlockingOpen(documentService.getDirtyDocuments(), documentId(ref)).length > 0) {
+          setPendingExclusiveScene(ref);
+          return;
+        }
       }
       const controller = isSceneWorkspaceKind(ref.kind) ? new AbortController() : null;
       if (controller) {
@@ -2556,7 +2630,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const layouts = documentService.buildLayouts();
       const layout = layouts.documents[documentId(ref)] ?? null;
       try {
-        await documentService.openDocument(projectService, ref, layout, true, controller ? {
+        await documentService.openDocument(projectService, ref, layout, () => activationRequest.current === request, controller ? {
           signal: controller.signal,
           beforeLoad: async () => {
             setSceneDocumentLoad({ ref, failed: false });
@@ -2575,7 +2649,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         if (controller?.signal.aborted) return;
         if (!controller) throw error;
         console.error("[editor] failed to open scene document", error);
-        setSceneDocumentLoad({ ref, failed: true });
+        setSceneDocumentLoad({ ref, failed: true, error });
         return;
       }
       if (controller?.signal.aborted) return;
@@ -2592,7 +2666,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         await editing.syncPrefabInstances({ quiet: true });
       }
     },
-    [bump, captureLayoutForId, editing, performCloseDocument, documentService, projectService, cancelSceneDocumentLoad, documentTransitions],
+    [bump, captureLayoutForId, checkSceneReplacement, editing, performCloseDocument, documentService, projectService, cancelSceneDocumentLoad, setPendingExclusiveScene],
   );
 
   const ensureAssetDocument = useCallback(async (ref: DocumentRef): Promise<string> => {
@@ -2611,23 +2685,22 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const openDocument = useCallback(
     async (ref: DocumentRef) => {
       if (ref.kind === "scene") {
-        if (!documentService.getDocument(documentId(ref))) {
-          const allowed = documentTransitions.check({ kind: "replace-document", documentId: documentId(ref) });
-          if (allowed === false || (typeof allowed !== "boolean" && !await allowed)) return;
-        }
         exclusiveSceneRequest.current += 1;
         const blocking = dirtyScenesBlockingOpen(
           documentService.getDirtyDocuments(),
           documentId(ref),
         );
         if (blocking.length > 0) {
+          // The session gate runs once the user chooses Save or Discard, so
+          // Cancel leaves a running session untouched.
           setPendingExclusiveScene(ref);
           return;
         }
       }
+      // A Scene's replace-document gate runs in finishOpenDocument.
       await finishOpenDocument(ref);
     },
-    [documentService, finishOpenDocument, setPendingExclusiveScene, documentTransitions],
+    [documentService, finishOpenDocument, setPendingExclusiveScene],
   );
 
   const openRecordedTrace = useCallback(
@@ -2655,18 +2728,20 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       // same event is already visible here.
       const ref = pendingExclusiveSceneRef.current;
       if (!ref) return;
-      const allowed = documentTransitions.check({ kind: "replace-document", documentId: documentId(ref) });
-      if (allowed === false || (typeof allowed !== "boolean" && !await allowed)) return;
+      // Cancel, or a newer open request, while the gate or Save awaits ends this one.
       const request = exclusiveSceneRequest.current;
+      const allowed = checkSceneReplacement(ref);
+      if (allowed === false || (typeof allowed !== "boolean" && !await allowed)) return;
+      if (request !== exclusiveSceneRequest.current) return;
       if (mode === "save") {
         const saved = await saveAll();
         if (!saved || request !== exclusiveSceneRequest.current ||
           dirtyScenesBlockingOpen(documentService.getDirtyDocuments(), documentId(ref)).length > 0) return;
       }
       setPendingExclusiveScene(null);
-      await finishOpenDocument(ref);
+      await finishOpenDocument(ref, { discardDirtyScenes: mode === "discard" });
     },
-    [documentService, finishOpenDocument, saveAll, setPendingExclusiveScene, documentTransitions],
+    [checkSceneReplacement, documentService, finishOpenDocument, saveAll, setPendingExclusiveScene],
   );
 
   const cancelExclusiveSceneOpen = useCallback(() => {
@@ -2676,6 +2751,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const setActiveDocument = useCallback(
     (id: string) => {
+      activationRequest.current += 1;
       const { activeDocumentId } = documentService.getState();
       if (id === activeDocumentId) return;
       const target = documentService.getState().openDocuments.get(id);
@@ -2703,24 +2779,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const reorderTabs = useCallback(
     (fromIndex: number, toIndex: number) => {
       documentService.reorderTabs(fromIndex, toIndex);
-      bump();
-    },
-    [bump, documentService],
-  );
-
-  const updateScene = useCallback(
-    (id: string, scene: SerializedScene) => {
-      if (documentService.getAuthoringLock().readOnly) return;
-      documentService.updateScene(id, scene);
-      bump();
-    },
-    [bump, documentService],
-  );
-
-  const updateGraph = useCallback(
-    (id: string, graph: SerializedGraph) => {
-      if (documentService.getAuthoringLock().readOnly) return;
-      documentService.updateGraph(id, graph);
       bump();
     },
     [bump, documentService],
@@ -2777,9 +2835,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
               ...current.settings.sourceControl,
               ...settings.sourceControl,
             },
-            input: settings.input
-              ? settings.input
-              : current.settings.input,
           }),
           metadata: {
             ...current.metadata,
@@ -2790,6 +2845,22 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       scheduleDebouncedSave();
     },
     [documentService, scheduleDebouncedSave, setProjectDocument],
+  );
+
+  const repathProjectFolder = useCallback(
+    (fromFolder: string, toFolder: string) => {
+      const current = projectDocumentRef.current;
+      if (!current) return;
+      const folders = remapAlwaysPackageFolders(current.settings.alwaysPackageFolders, fromFolder, toFolder);
+      if (folders.length === current.settings.alwaysPackageFolders.length && folders.every((folder, index) => folder === current.settings.alwaysPackageFolders[index])) return;
+      setProjectDocument({
+        ...current,
+        settings: { ...current.settings, alwaysPackageFolders: folders },
+        metadata: { ...current.metadata, updatedAt: new Date().toISOString() },
+      });
+      scheduleDebouncedSave();
+    },
+    [scheduleDebouncedSave, setProjectDocument],
   );
 
   const prefillSourceControlFromGit = useCallback(async () => {
@@ -2818,16 +2889,22 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         assets,
       });
       if (preview.ok === false) return preview.error;
-      await projectService.saveDocument(
-        "graph",
-        doc.ref.path,
-        doc.content as SerializedGraph,
-        { parentClass: newParentId },
-      );
+      try {
+        // The parent is a file operation like a rename: it goes to disk now with
+        // the saved graph, while the tab's unsaved edits stay unsaved.
+        const saved = await projectService.loadDocument("graph", doc.ref.path);
+        await projectService.saveDocument("graph", doc.ref.path, saved, { parentClass: newParentId });
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+      }
+      // The graph signature does not cover the header's parent, so Compile and
+      // Play's stored bundles would otherwise keep the previous parent.
+      setLastCompiledSignature(null);
+      clearPlayPreviewScripts();
       bump();
       return null;
     },
-    [bump, documentService, editing, projectService],
+    [bump, clearPlayPreviewScripts, documentService, editing, projectService],
   );
 
   const beginSimulationDocument = useCallback<DocumentContextValue["beginSimulationDocument"]>(
@@ -2978,7 +3055,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const guid = projectService.guid;
       if (!guid) return null;
       const asset = projectService.registry?.getByGuid(assetGuid);
-      const rendered = asset?.header.type === "Model" || asset?.header.type === "Animation";
       const revisionIndex = thumbnailRevisionIndexRef.current;
       const revision = revisionIndex.revision(assetGuid);
       if (revision !== null) {
@@ -2987,28 +3063,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         requested.set(assetGuid, revision);
         if (requested.size > 512) requested.delete(requested.keys().next().value!);
       }
-      else if (asset?.header.type === "Class" || asset?.header.type === "Graph") return null;
-      // Regenerate old one-frame captures that may have been cached before
-      // their materials were ready. Texture thumbnail keys stay unchanged.
-      const key = revision !== null ? await revisionIndex.cacheKey(assetGuid) :
-        rendered ? `${assetGuid}.render-v2` : assetGuid;
+      else if (asset?.header.type === "Class") return null;
+      const key = revision !== null ? await revisionIndex.cacheKey(assetGuid) : assetGuid;
       if (!key || projectService.guid !== guid || thumbnailLruRef.current !== lru ||
         thumbnailRevisionIndexRef.current.revision(assetGuid) !== revision) return null;
       const cached = lru.get(key);
       if (cached) return cached;
       const derived = await ensureDerived();
-      let bytes = await readThumbnail(derived, guid, key);
-      if (projectService.guid !== guid || thumbnailLruRef.current !== lru) return null;
-      if (asset?.header.type === "Texture") {
-        const pixels = asset.header.chunks.find((chunk) => chunk.id === "pixels" || chunk.kind === "pixels");
-        if (pixels) {
-          const upgraded = await upgradeTextureThumbnail(bytes, pixels.mime, () =>
-            projectService.readAssetChunk(asset.path, pixels.id));
-          if (projectService.guid !== guid || thumbnailLruRef.current !== lru) return null;
-          if (upgraded && upgraded !== bytes) await writeThumbnail(derived, guid, key, upgraded);
-          bytes = upgraded;
-        }
-      }
+      const bytes = await readThumbnail(derived, guid, key);
       if (projectService.guid !== guid || thumbnailLruRef.current !== lru ||
         thumbnailRevisionIndexRef.current.revision(assetGuid) !== revision) return null;
       if (bytes) lru.set(key, bytes);
@@ -3025,11 +3087,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (!guid || (expected && expected.projectGuid !== guid)) return;
       const lru = thumbnailLruRef.current;
       const derived = await ensureDerived();
-      const type = projectService.registry?.getByGuid(assetGuid)?.header.type;
       const revisionIndex = createAssetThumbnailRevisionIndex(projectService.registry?.list() ?? [], projectDocumentRef.current?.settings.twoD.pixelsPerUnit);
       const revision = revisionIndex.revision(assetGuid);
-      const key = revision !== null ? await revisionIndex.cacheKey(assetGuid) :
-        type === "Model" || type === "Animation" ? `${assetGuid}.render-v2` : assetGuid;
+      const key = revision !== null ? await revisionIndex.cacheKey(assetGuid) : assetGuid;
       if (!key || projectService.guid !== guid || thumbnailLruRef.current !== lru ||
         (expected && expected.cacheKey !== key)) return;
       await writeThumbnail(derived, guid, key, bytes);
@@ -3082,7 +3142,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         pluginGuids: () => string[];
         enginePluginLoad: () => {
           entries: number;
-          unpacked: number;
           errors: string[];
         };
         seedMissingPluginOverride: (guid: string) => Promise<{
@@ -3110,6 +3169,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         resetRenderProfile: () => void;
         /** Texture alignment passes run and queued, and the Textures they requeued. */
         textureAlignment: () => { runs: number; pending: number; requeued: string[] };
+        /** Texture paths whose KTX2 encode is still pending or running. */
+        pendingTextureEncodes: () => string[];
         textureEncodeState: (path: string) => {
           compressionState: string | null;
           encodeError: string | null;
@@ -3152,7 +3213,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const candidates = [
           "assets/Mannequin.class.babasset",
           "assets/main.class.babasset",
-          "assets/main.graph.babasset",
         ];
         const existing = [...documentService.getState().openDocuments.values()].find(
           (entry) => entry.ref.kind === "graph",
@@ -3254,7 +3314,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const candidates = [
           "assets/Mannequin.class.babasset",
           "assets/main.class.babasset",
-          "assets/main.graph.babasset",
         ];
         const openGraph = [...documentService.getState().openDocuments.values()].find(
           (entry) => entry.ref.kind === "graph",
@@ -3310,6 +3369,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         projectService.readAssetChunk(path, chunkId),
       lastNavBake: () => lastNavBakeSaveResult(),
       textureAlignment: () => projectService.textureAlignmentState,
+      pendingTextureEncodes: () =>
+        (projectService.registry?.list() ?? [])
+          .filter((entry) => {
+            const state = entry.header.payload.compressionState;
+            return entry.header.type === "Texture" && (state === "pending" || state === "encoding");
+          })
+          .map((entry) => entry.path),
       textureEncodeState: (path: string) => {
         const asset = projectService.registry
           ?.list()
@@ -3423,15 +3489,20 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       sub.dispose();
     }
     dockSubscriptionsRef.current.delete(key);
+    // Drags and resizes fire layout changes continuously: the Class parent
+    // lookup is rebuilt only when the registry changes.
+    let parentLookup: { generation: number; parentOf: ReturnType<typeof classParentLookup> } | null = null;
     const rememberPlacements = () => {
       if (preFocusLayoutsRef.current.has(key) || preFocusLayoutsRef.current.has(id) || isPhoneDockLayout(api)) return;
       const dock = asDockWindowApi(api);
-      const kind = documentService.getDocument(id)?.ref.kind;
       const doc = documentService.getDocument(id);
-      const indexed = projectService.registry
-        ?.list()
-        .find((asset) => asset.path === doc?.ref.path);
-      const parentOf = classParentLookup(projectService.registry?.list() ?? []);
+      const kind = doc?.ref.kind;
+      const indexed = doc ? projectService.registry?.getByPath(doc.ref.path) : undefined;
+      const generation = projectService.registryGeneration;
+      if (parentLookup?.generation !== generation) {
+        parentLookup = { generation, parentOf: classParentLookup(projectService.registry?.list() ?? []) };
+      }
+      const parentOf = parentLookup.parentOf;
       const animSurfaceMode: AnimEditorMode | undefined =
         surface === "animationObject"
           ? "animationObject"
@@ -3697,6 +3768,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       exportPlugin,
       importPlugin,
       repathDocument,
+      repathProjectFolder,
       renameAsset,
       subscribeDocumentIdentity,
       retryFailedTextureEncoding,
@@ -3719,6 +3791,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       saveAll,
       approveMigrationsAndSave,
       closeProject,
+      releaseSessionsForProjectClose,
       forceCloseProject,
       exportProject,
       exportGameArtifact,
@@ -3737,8 +3810,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setActiveDocument,
       reorderTabs,
       reorderClosableTabs,
-      updateScene,
-      updateGraph,
       applyGraphChange,
       reparentClassDocument,
       applySceneChange,
@@ -3774,14 +3845,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayPreviewScripts,
       collectEditorUtilityScripts,
       loadAssetDocument,
-      collectPlayAnimGraphs,
-      collectPlayBehaviourTrees,
-      collectPlayBlackboards,
       collectPlaySpritePayloads,
-      collectPlaySpriteAnimationPayloads,
       collectPlayWaterContent,
       collectPlayRenderTargets,
-      collectPlayDataAssets,
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayTexturePixelSizes,
@@ -3793,10 +3859,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayModelPayloads,
       collectPlayInputAssets,
       collectPlayAudio,
-      collectPlayParticles,
       collectPlayMaterialLibrary,
-      collectPlaySceneLibrary,
-      collectPlaySceneLayers,
       loadGraphDocument,
     }),
     [
@@ -3816,6 +3879,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       exportPlugin,
       importPlugin,
       repathDocument,
+      repathProjectFolder,
       renameAsset,
       subscribeDocumentIdentity,
       retryFailedTextureEncoding,
@@ -3838,6 +3902,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       saveAll,
       approveMigrationsAndSave,
       closeProject,
+      releaseSessionsForProjectClose,
       forceCloseProject,
       exportProject,
       exportGameArtifact,
@@ -3856,8 +3921,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setActiveDocument,
       reorderTabs,
       reorderClosableTabs,
-      updateScene,
-      updateGraph,
       applyGraphChange,
       reparentClassDocument,
       applySceneChange,
@@ -3893,14 +3956,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayPreviewScripts,
       collectEditorUtilityScripts,
       loadAssetDocument,
-      collectPlayAnimGraphs,
-      collectPlayBehaviourTrees,
-      collectPlayBlackboards,
       collectPlaySpritePayloads,
-      collectPlaySpriteAnimationPayloads,
       collectPlayWaterContent,
       collectPlayRenderTargets,
-      collectPlayDataAssets,
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayTexturePixelSizes,
@@ -3912,10 +3970,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayModelPayloads,
       collectPlayInputAssets,
       collectPlayAudio,
-      collectPlayParticles,
       collectPlayMaterialLibrary,
-      collectPlaySceneLibrary,
-      collectPlaySceneLayers,
       loadGraphDocument,
     ],
   );
@@ -4065,6 +4120,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       needsReconnect,
       recoveryAvailable,
       migrationPending,
+      migrationPromptRequest,
       templates,
       homepageReady,
       pendingExclusiveScene,
@@ -4073,7 +4129,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       thumbnailVersions,
       thumbnailsEnabled,
     }),
-    [listedProjects, needsReconnect, recoveryAvailable, migrationPending, templates, homepageReady, pendingExclusiveScene, externalChangePrompt, undoHistoryNotice, thumbnailVersions, thumbnailsEnabled],
+    [listedProjects, needsReconnect, recoveryAvailable, migrationPending, migrationPromptRequest, templates, homepageReady, pendingExclusiveScene, externalChangePrompt, undoHistoryNotice, thumbnailVersions, thumbnailsEnabled],
   );
   const sourceControlState = useMemo<SourceControlState>(() => {
     void sourceControlTick;
@@ -4146,6 +4202,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
                             failed={sceneDocumentLoad?.failed}
                             onRetry={() => { if (sceneDocumentLoad) void finishOpenDocument(sceneDocumentLoad.ref); }}
                             onDismiss={cancelSceneDocumentLoad}
+                            reason={sceneDocumentLoad?.error instanceof AssetFormatVersionError ? sceneDocumentLoad.error.message : undefined}
+                            onCopyDetails={debugMode && sceneDocumentLoad ? () => formatSceneLoadReport({
+                              surface: "Scene Document", scene: sceneDocumentLoad.ref.path, phase: "Loading Document",
+                              progress: null, failed: sceneDocumentLoad.failed, elapsedMs: null, error: sceneDocumentLoad.error,
+                            }) : undefined}
                           />
                         </DocumentContext.Provider>
                       </SourceControlStateContext.Provider>

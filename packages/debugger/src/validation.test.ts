@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { warnDebugTierConsoleCommands, warnReservedConsoleCommandNames } from "./validation";
 
 describe("warnDebugTierConsoleCommands", () => {
-  it("warns when ExecuteConsoleCommand literals name a debug-tier command", () => {
+  it("warns when unwired ExecuteConsoleCommand literals name a debug-tier command", () => {
     const diags = warnDebugTierConsoleCommands(
       [
         {
@@ -11,12 +11,17 @@ describe("warnDebugTierConsoleCommands", () => {
             {
               id: "cmd",
               typeId: "debug.executeConsoleCommand",
-              properties: { command: "showfps" },
+              properties: { "default:command": "showfps" },
             },
             {
               id: "ok",
               typeId: "debug.executeConsoleCommand",
-              properties: { command: "changescene level-2" },
+              properties: { "default:command": "changescene level-2" },
+            },
+            {
+              id: "wired",
+              typeId: "debug.executeConsoleCommand",
+              properties: { "default:command": "showfps" },
             },
             {
               id: "log",
@@ -24,6 +29,7 @@ describe("warnDebugTierConsoleCommands", () => {
               properties: { message: "showfps" },
             },
           ],
+          edges: [{ targetNodeId: "wired", targetPinId: "command" }],
         },
       ],
       { assetGuid: "graph-1" },
@@ -58,6 +64,7 @@ describe("warnDebugTierConsoleCommands", () => {
               properties: { commandName: "heal" },
             },
           ],
+          edges: [],
         },
       ],
       { assetGuid: "graph-1" },

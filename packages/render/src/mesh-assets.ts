@@ -126,56 +126,50 @@ function sortedStringMapFingerprint(
 }
 
 /**
- * Stable key for editor mesh rebuilds. Transform-only scene commits reuse the
- * same payloads (new Map instances), so identity of the maps must not matter.
+ * Key of the inputs whose change rebuilds editor meshes: everything except
+ * Model bytes and area-light emission, which reapply in place.
  */
-export function meshAssetFingerprint(
+export function meshAssetFingerprintWithoutModels(
   assets: MeshAssetContext | undefined,
 ): string {
-  if (!assets) return "";
   return [
-    `ppu:${assets.pixelsPerUnit ?? ""}`,
-    `sprites:${sortedMapKeys(assets.spritePayloads)}`,
-    `spriteAnims:${sortedMapKeys(assets.spriteAnimations)}`,
-    `tilemaps:${payloadMapFingerprint(assets.tilemaps)}`,
-    `waters:${payloadMapFingerprint(assets.waters)}`,
-    `tilesets:${payloadMapFingerprint(assets.tilesets)}`,
-    `tex:${byteMapFingerprint(assets.textureBytes)}`,
-    `area:${[...(assets.areaEmissions ?? [])].map(([guid, data]) => `${guid}:${data.metadata.pixelsHash}`).sort().join(",")}`,
+    `ppu:${assets?.pixelsPerUnit ?? ""}`,
+    `sprites:${sortedMapKeys(assets?.spritePayloads)}`,
+    `spriteAnims:${sortedMapKeys(assets?.spriteAnimations)}`,
+    `tilemaps:${payloadMapFingerprint(assets?.tilemaps)}`,
+    `waters:${payloadMapFingerprint(assets?.waters)}`,
+    `tilesets:${payloadMapFingerprint(assets?.tilesets)}`,
+    `tex:${byteMapFingerprint(assets?.textureBytes)}`,
     `texPx:${
-      assets.texturePixelSizes
+      assets?.texturePixelSizes
         ? [...assets.texturePixelSizes.entries()]
             .map(([guid, size]) => `${guid}:${size.width}x${size.height}`)
             .sort()
             .join(",")
         : ""
     }`,
-    `fonts:${byteMapFingerprint(assets.fontFacetypeBytes)}`,
-    `msdf:${byteMapFingerprint(assets.fontMsdfJson)}:${byteMapFingerprint(assets.fontMsdfPng)}`,
-    `fontCss:${assets.fontCssStack ?? ""}:${sortedStringMapFingerprint(assets.fontCssStackByGuid)}`,
-    `models:${byteMapFingerprint(assets.modelSources ?? assets.modelBytes)}`,
+    `fonts:${byteMapFingerprint(assets?.fontFacetypeBytes)}`,
+    `msdf:${byteMapFingerprint(assets?.fontMsdfJson)}:${byteMapFingerprint(assets?.fontMsdfPng)}`,
+    `fontCss:${assets?.fontCssStack ?? ""}:${sortedStringMapFingerprint(assets?.fontCssStackByGuid)}`,
   ].join("|");
 }
 
-export function meshAssetFingerprintWithoutModels(
+/**
+ * Stable key for editor mesh rebuilds. Transform-only scene commits reuse the
+ * same payloads (new Map instances), so identity of the maps must not matter.
+ * Pass the caller's `meshAssetFingerprintWithoutModels` result to avoid
+ * serializing the tilemap, tileset and water payloads a second time.
+ */
+export function meshAssetFingerprint(
   assets: MeshAssetContext | undefined,
+  withoutModels = meshAssetFingerprintWithoutModels(assets),
 ): string {
-  return meshAssetFingerprint({
-    pixelsPerUnit: assets?.pixelsPerUnit,
-    spritePayloads: assets?.spritePayloads,
-    spriteAnimations: assets?.spriteAnimations,
-    tilemaps: assets?.tilemaps,
-    waters: assets?.waters,
-    tilesets: assets?.tilesets,
-    textureBytes: assets?.textureBytes,
-    texturePixelSizes: assets?.texturePixelSizes,
-    fontFacetypeBytes: assets?.fontFacetypeBytes,
-    fontMsdfJson: assets?.fontMsdfJson,
-    fontMsdfPng: assets?.fontMsdfPng,
-    fontCssStack: assets?.fontCssStack,
-    fontCssStackByGuid: assets?.fontCssStackByGuid,
-    modelBytes: undefined,
-  });
+  if (!assets) return "";
+  return [
+    withoutModels,
+    `area:${[...(assets.areaEmissions ?? [])].map(([guid, data]) => `${guid}:${data.metadata.pixelsHash}`).sort().join(",")}`,
+    `models:${byteMapFingerprint(assets.modelSources ?? assets.modelBytes)}`,
+  ].join("|");
 }
 
 export function modelSlotFingerprint(

@@ -16,6 +16,7 @@ import {
 } from "../lib/editor-utility-scripts";
 import { createEditorDataReader } from "../services/editor-data-reader";
 import { createEditorDataAuthoringApi } from "../services/editor-data-authoring";
+import { createRegistryCatalogSource } from "../services/asset-catalog";
 import { mergePluginEditorUtilityObjects } from "../lib/plugin-ui";
 
 function editorHostServices(
@@ -88,13 +89,15 @@ export function EditorUtilityRuntime() {
         () => latestRef.current.documents,
         () => !cancelled,
       ),
+      getAssetCatalog: createRegistryCatalogSource(() => latestRef.current.documents.assetRegistry),
       getProjectName: () => latestRef.current.metadata?.name ?? "",
       getProjectVersion: () => latestRef.current.metadata?.version ?? "",
     });
     hostRef.current = host;
     void latestRef.current.collectScripts().then(async (scripts) => {
-      if (cancelled) return;
       for (const script of scripts) {
+        // A replaced or unmounted host loads nothing further.
+        if (cancelled) return;
         await host.load(script);
       }
       if (cancelled) return;
@@ -105,6 +108,8 @@ export function EditorUtilityRuntime() {
         fireEditorUtilityEvent(host, event);
       }
       startedRef.current = true;
+    }).catch((error: unknown) => {
+      if (!cancelled) latestRef.current.appendLog(`Editor utility scripts could not start: ${error instanceof Error ? error.message : String(error)}`);
     });
     return () => {
       cancelled = true;

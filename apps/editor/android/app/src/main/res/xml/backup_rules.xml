@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and lower apply these rules to cloud backup and device transfer alike. -->
 <full-backup-content>
     <exclude domain="sharedpref" path="babylonslate-secrets.xml" />
+    <!-- Projects can exceed the 25 MB cloud quota, which would stop every backup. -->
+    <exclude domain="file" path="BabylonSlate/projects/" />
 </full-backup-content>

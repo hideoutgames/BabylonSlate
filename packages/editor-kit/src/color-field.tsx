@@ -5,6 +5,8 @@ import { SelectAllInput } from "./select-all-input";
 
 export type ColorValue = [number, number, number];
 
+const FULL_HEX = /^#?[0-9a-fA-F]{6}$/;
+
 export function colorToHex(color: ColorValue): string {
   const channel = (value: number) =>
     Math.max(0, Math.min(255, Math.round(value * 255)))
@@ -61,6 +63,18 @@ export function ColorField({
   const [draft, setDraft] = useState<string | null>(null);
   const [error, setError] = useState(false);
   const errorId = useId();
+  // A `#rgb` draft applies on blur or Enter. Typing `#00ff00` passes through
+  // `#00f`, which must not apply blue on the way.
+  const finishDraft = () => {
+    if (draft === null) return;
+    const parsed = parseHexColor(draft);
+    if (!parsed) {
+      if (draft.trim()) setError(true);
+    } else if (!FULL_HEX.test(draft.trim())) {
+      onChange(parsed);
+    }
+    setDraft(null);
+  };
 
   return (
     <div
@@ -97,13 +111,12 @@ export function ColorField({
             const raw = event.target.value;
             setDraft(raw);
             setError(false);
-            const parsed = parseHexColor(raw);
-            if (parsed) onChange(parsed);
+            if (FULL_HEX.test(raw.trim())) onChange(colorFromHex(raw));
           }}
-          onBlur={() => {
-            if (draft?.trim() && !parseHexColor(draft)) setError(true);
-            setDraft(null);
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.nativeEvent.isComposing) finishDraft();
           }}
+          onBlur={finishDraft}
         />
         {alpha !== undefined ? (
           // The phone layout widens the scrub handle to 44px; keep room to type.

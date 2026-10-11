@@ -45,6 +45,21 @@ function isBoxed(type: PinType): boolean {
   return type.kind === "boxedWildcard";
 }
 
+function hasResolving(type: PinType): boolean {
+  switch (type.kind) {
+    case "resolvingWildcard":
+      return true;
+    case "array":
+      return hasResolving(type.element);
+    case "map":
+      return hasResolving(type.key) || hasResolving(type.value);
+    case "delegate":
+      return type.inputs.some(hasResolving) || type.outputs.some(hasResolving);
+    default:
+      return false;
+  }
+}
+
 function groupOf(type: PinType): string {
   return isResolving(type) ? (type.group ?? "T") : "T";
 }
@@ -108,6 +123,11 @@ function bind(
   if (pinTypeEquals(existing, type)) return false;
   if (isAssignable(type, existing)) return false;
   if (!hard) return false;
+  // Widen (Int then Float binds Float), so wire order cannot decide the type.
+  if (isAssignable(existing, type)) {
+    subst.set(key, type);
+    return true;
+  }
   subst.delete(key);
   conflicted.add(key);
   conflicts.push({
@@ -238,11 +258,14 @@ export function resolveWildcardPinTypes(
   const conflicted = new Set<string>();
   const conflicts: WildcardConflict[] = [];
 
+  // Every productive pass binds, widens or conflicts a (node, group) variable,
+  // so passes stay well under this; the bound only guards against a defect.
+  const maxPasses = 16 * (graph.edges.length + 1);
   let changed = true;
-  let guard = 0;
-  while (changed && guard < 64) {
+  let passes = 0;
+  while (changed && passes < maxPasses) {
     changed = false;
-    guard += 1;
+    passes += 1;
     for (const edge of graph.edges) {
       const sourceType = findPin(
         pinTypes,
@@ -311,6 +334,21 @@ export function resolveWildcardPinTypes(
           },
           false,
         ) || changed;
+    }
+  }
+
+  if (changed) {
+    // Unsettled wildcards would pass isAssignable as compatible; block them.
+    for (const edge of graph.edges) {
+      const targetType = findPin(pinTypes, edge.targetNodeId, edge.targetPinId);
+      if (!targetType || !hasResolving(substitute(targetType, edge.targetNodeId, subst, conflicted))) continue;
+      conflicts.push({
+        nodeId: edge.targetNodeId,
+        pinId: edge.targetPinId,
+        relatedNodeId: edge.sourceNodeId,
+        relatedPinId: edge.sourcePinId,
+        message: "Wildcard resolution did not settle",
+      });
     }
   }
 

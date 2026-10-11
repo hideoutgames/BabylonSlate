@@ -43,7 +43,7 @@ describe("seekGameplayAnimation", () => {
     const frames: number[] = [];
     applyAnimStateToScene(
       {
-        animationGroups: [
+        getAnimationGroups: (slotId) => slotId === 0 ? [
           {
             name: "Idle",
             from: 0,
@@ -53,7 +53,7 @@ describe("seekGameplayAnimation", () => {
               frames.push(frame);
             },
           },
-        ],
+        ] : [],
       },
       {
         type: "animState",
@@ -109,7 +109,7 @@ describe("seekGameplayAnimation", () => {
     const mesh = createSpriteQuad(scene, "hero", payload.frames[0]!);
     applyAnimStateToScene(
       {
-        animationGroups: [],
+        getAnimationGroups: () => [],
         getSpriteSlot: (slotId) =>
           slotId === 3 ? { mesh, payload } : undefined,
       },
@@ -131,7 +131,7 @@ describe("seekGameplayAnimation", () => {
     engine.dispose();
   });
 
-  it("binds a Sprite Animation frame texture, full UVs, and pivot on the sprite mesh", () => {
+  it("binds a Sprite Animation frame texture and full UVs with its pivot on the actor origin", () => {
     const sprite: SpritePayload = {
       textureGuid: "sprite-tex",
       pixelsPerUnit: 100,
@@ -183,7 +183,7 @@ describe("seekGameplayAnimation", () => {
     const textures: string[] = [];
     applyAnimStateToScene(
       {
-        animationGroups: [],
+        getAnimationGroups: () => [],
         getSpriteSlot: (slotId) =>
           slotId === 3
             ? {
@@ -211,14 +211,18 @@ describe("seekGameplayAnimation", () => {
     expect(uvs[0]).toBeCloseTo(0);
     expect(uvs[2]).toBeCloseTo(1);
     expect(textures).toEqual(["frame-b"]);
-    const pivot = mesh.getPivotPoint();
-    expect(pivot.x).toBeCloseTo(-0.5);
-    expect(pivot.y).toBeCloseTo(-0.5);
+    // Pivot (0, 1) is the bottom-left corner (v grows downward).
+    mesh.refreshBoundingInfo();
+    const bounds = mesh.getBoundingInfo().boundingBox;
+    expect(bounds.minimum.x).toBeCloseTo(0);
+    expect(bounds.minimum.y).toBeCloseTo(0);
+    expect(bounds.maximum.x).toBeCloseTo(1);
+    expect(bounds.maximum.y).toBeCloseTo(1);
     scene.dispose();
     engine.dispose();
   });
 
-  it("moves a frozen scaled sprite when only the frame pivot changes", () => {
+  it("moves a frozen scaled sprite's world bounds when only the frame pivot changes", () => {
     const frame = {
       textureGuid: "frame",
       durationMs: 100,
@@ -249,11 +253,14 @@ describe("seekGameplayAnimation", () => {
     mesh.scaling.set(2, 2, 1);
     applySpriteAnimationAssetFrame(mesh, animation, 0);
     mesh.freezeWorldMatrix();
-    expect(mesh.getWorldMatrix().getTranslation().x).toBeCloseTo(0);
+    expect(mesh.getBoundingInfo().boundingBox.minimumWorld.x).toBeCloseTo(-1);
+    expect(mesh.getBoundingInfo().boundingBox.maximumWorld.y).toBeCloseTo(1);
     applySpriteAnimationAssetFrame(mesh, animation, 0.99);
-    const translation = mesh.getWorldMatrix().getTranslation();
-    expect(translation.x).toBeCloseTo(0.5);
-    expect(translation.y).toBeCloseTo(0.5);
+    const bounds = mesh.getBoundingInfo().boundingBox;
+    expect(bounds.minimumWorld.x).toBeCloseTo(0);
+    expect(bounds.minimumWorld.y).toBeCloseTo(0);
+    expect(bounds.maximumWorld.x).toBeCloseTo(2);
+    expect(bounds.maximumWorld.y).toBeCloseTo(2);
     expect(mesh.isWorldMatrixFrozen).toBe(true);
     scene.dispose();
     engine.dispose();
@@ -338,7 +345,6 @@ describe("seekGameplayAnimation", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -370,39 +376,34 @@ describe("seekGameplayAnimation", () => {
     const missing: Array<{ slotId: number; clipName: string }> = [];
     applyAnimStateToScene(
       {
-        animationGroups: [],
-        getAnimationGroup: (slotId, clipName, clipAssetGuid) => {
-          if (slotId !== 4 || clipAssetGuid !== "hero-model") return undefined;
-          if (clipName === "Idle") {
-            return {
-              name: "Idle",
-              from: 0,
-              to: 20,
-              pause() {},
-              goToFrame(frame) {
-                idleFrames.push(frame);
-              },
-              setWeightForAllAnimatables(weight) {
-                idleWeights.push(weight);
-              },
-            };
-          }
-          if (clipName === "Walk") {
-            return {
-              name: "Walk",
-              from: 0,
-              to: 40,
-              pause() {},
-              goToFrame(frame) {
-                walkFrames.push(frame);
-              },
-              setWeightForAllAnimatables(weight) {
-                walkWeights.push(weight);
-              },
-            };
-          }
-          return undefined;
-        },
+        getAnimationGroups: (slotId) => slotId !== 4 ? [] : [
+          {
+            name: "Idle",
+            from: 0,
+            to: 20,
+            clipAssetGuid: "hero-model",
+            pause() {},
+            goToFrame(frame) {
+              idleFrames.push(frame);
+            },
+            setWeightForAllAnimatables(weight) {
+              idleWeights.push(weight);
+            },
+          },
+          {
+            name: "Walk",
+            from: 0,
+            to: 40,
+            clipAssetGuid: "hero-model",
+            pause() {},
+            goToFrame(frame) {
+              walkFrames.push(frame);
+            },
+            setWeightForAllAnimatables(weight) {
+              walkWeights.push(weight);
+            },
+          },
+        ],
         onMissingClip: (info) => {
           missing.push({ slotId: info.slotId, clipName: info.clipName });
         },
@@ -443,58 +444,6 @@ describe("seekGameplayAnimation", () => {
     expect(missing).toEqual([]);
   });
 
-  it("seeks only the Idle group whose Model guid matches when two groups share a name", () => {
-    const aFrames: number[] = [];
-    const bFrames: number[] = [];
-    applyAnimStateToScene(
-      {
-        animationGroups: [
-          {
-            name: "Idle",
-            from: 0,
-            to: 20,
-            clipAssetGuid: "model-a",
-            pause() {},
-            goToFrame(frame) {
-              aFrames.push(frame);
-            },
-          },
-          {
-            name: "Idle",
-            from: 0,
-            to: 20,
-            pause() {},
-            goToFrame() {
-              aFrames.push(-1);
-            },
-          },
-          {
-            name: "Idle",
-            from: 0,
-            to: 20,
-            clipAssetGuid: "model-b",
-            pause() {},
-            goToFrame(frame) {
-              bFrames.push(frame);
-            },
-          },
-        ],
-      },
-      {
-        type: "animState",
-        slotId: 1,
-        stateId: "idle",
-        normalisedTime: 0.5,
-        blendWeights: { idle: 1 },
-        clipName: "Idle",
-        clipKind: "animation",
-        clipAssetGuid: "model-b",
-      },
-    );
-    expect(aFrames).toEqual([]);
-    expect(bFrames).toEqual([10]);
-  });
-
   it("reports a missing animation clip instead of silently skipping it", () => {
     const missing: Array<{
       slotId: number;
@@ -503,7 +452,7 @@ describe("seekGameplayAnimation", () => {
     }> = [];
     applyAnimStateToScene(
       {
-        animationGroups: [],
+        getAnimationGroups: () => [],
         onMissingClip: (info) => {
           missing.push({
             slotId: info.slotId,
@@ -577,7 +526,7 @@ describe("seekGameplayAnimation", () => {
     const overlay = createSpriteQuad(scene, "hero-blend", idlePayload.frames[0]!);
     applyAnimStateToScene(
       {
-        animationGroups: [],
+        getAnimationGroups: () => [],
         getSpriteSlot: (slotId) =>
           slotId === 1
             ? { mesh, payload: idlePayload, overlayMesh: overlay }
@@ -645,7 +594,7 @@ describe("AnimationGraph pose changes", () => {
     walk.start(true);
     walk.pause();
     walk.setWeightForAllAnimatables(0);
-    applyAnimStateToScene({ animationGroups: [walk] }, {
+    applyAnimStateToScene({ getAnimationGroups: () => [walk] }, {
       type: "animState",
       slotId: 1,
       stateId: "walk",
@@ -679,7 +628,7 @@ describe("applySpriteAnimFrame", () => {
     engine.dispose();
   });
 
-  it("bakes the clip frame UVs for the given normalised time", () => {
+  it("bakes the clip frame UVs, size and pivot for the given normalised time", () => {
     const payload: SpritePayload = {
       textureGuid: null,
       pixelsPerUnit: 100,
@@ -702,8 +651,8 @@ describe("applySpriteAnimFrame", () => {
           uSize: 0.5,
           vSize: 1,
           durationMs: 100,
-          pivot: { x: 0.5, y: 0.5 },
-          width: 16,
+          pivot: { x: 0, y: 1 },
+          width: 32,
           height: 16,
         },
       ],
@@ -715,6 +664,13 @@ describe("applySpriteAnimFrame", () => {
     const expected = spriteFrameUvs(payload.frames[1]!);
     expect(uvs[0]).toBeCloseTo(expected.u0);
     expect(uvs[2]).toBeCloseTo(expected.u1);
+    // Frame b's bottom-left pivot sits on the actor origin, as its collider does.
+    mesh.refreshBoundingInfo();
+    const bounds = mesh.getBoundingInfo().boundingBox;
+    expect(bounds.minimum.x).toBeCloseTo(0);
+    expect(bounds.minimum.y).toBeCloseTo(0);
+    expect(bounds.maximum.x).toBeCloseTo(0.32);
+    expect(bounds.maximum.y).toBeCloseTo(0.16);
   });
 });
 
@@ -756,7 +712,6 @@ describe("sceneAnimHostFromBinding", () => {
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
-      alpha: 1,
       actorCount: 1,
       actors: [
         {
@@ -790,12 +745,8 @@ describe("sceneAnimHostFromBinding", () => {
     ]);
     const host = sceneAnimHostFromBinding(binding, {
       spritePayloads: new Map([["hero-sprite", payload]]),
-      animationGroups: [],
     });
     expect(host.getSpriteSlot?.(0)?.overlayMesh).toBe(overlay);
-    expect(
-      host.getAnimationGroup?.(7, "Idle", "hero-model")?.name,
-    ).toBe("Idle");
     applyAnimStateToScene(host, {
       type: "animState",
       slotId: 7,
@@ -858,7 +809,7 @@ describe("sceneAnimHostFromBinding", () => {
         ],
       ],
     ]);
-    const host = sceneAnimHostFromBinding(binding, { animationGroups: [] });
+    const host = sceneAnimHostFromBinding(binding);
     applyAnimStateToScene(host, {
       type: "animState",
       slotId: 2,
@@ -878,6 +829,17 @@ describe("sceneAnimHostFromBinding", () => {
       clipName: "Idle",
       clipKind: "animation",
       clipAssetGuid: "model-a",
+    });
+    // A slot whose Model has not registered Idle never borrows another actor's group.
+    applyAnimStateToScene(host, {
+      type: "animState",
+      slotId: 3,
+      stateId: "idle",
+      normalisedTime: 0.2,
+      blendWeights: { idle: 1 },
+      clipName: "Idle",
+      clipKind: "animation",
+      clipAssetGuid: "",
     });
     expect(aFrames).toEqual([8]);
     expect(bFrames).toEqual([4]);

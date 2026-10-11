@@ -3,8 +3,8 @@
   "artifact": "0a47744c69aa4bfc59bd96778c23af078af9cc0c4a9abd2f60b6e993f6f0e993",
   "sourceBackup": {
     "path": "animated-project.zip",
-    "sha256": "b5467ebeb401b00553c2559c2f466100873a30e19fd78d5808c3d810b1a64eb6",
-    "bytes": 497614
+    "sha256": "0d16b24985eeb17b239ac90c64ba6af9ff0a715d99189485ee38140b8e02b2ce",
+    "bytes": 499357
   },
   "packedWebgl2": {
     "sha256": "3f3587dcaf878d5e450d23e1b82dd7766f8d879110017ef9ae59b82f493bb7f6",

@@ -247,13 +247,25 @@ function supersededBy(sample: RawInputEvent, next: RawInputEvent): boolean {
   return sample.axes.length === next.axes.length && levels(sample) === levels(next);
 }
 
+/** What a release lets go of; a later release with the same key repeats it. Disconnects never repeat. */
+function releasedControl(event: RawInputEvent): string | undefined {
+  switch (event.kind) {
+    case "key": return `k${event.code}`;
+    case "pointer": return `p${event.pointerId}:${event.phase}:${event.button}`;
+    case "gamepadDisconnect": return undefined;
+    default: return controlKey(event);
+  }
+}
+
 /**
  * Bounded input queue that never strands a held control. At `capacity`, push
  * first coalesces the oldest continuous sample (pointer move, gamepad or
  * touch-axis sample) that the next event for the same control supersedes
  * without changing a threshold edge. A queue of edges may grow to four times
  * `capacity`; beyond that the oldest press or sample is dropped, so a release
- * can arrive without its press but is never lost itself.
+ * can arrive without its press but is never lost itself. A queue holding only
+ * releases drops only a release that a later release of the same control
+ * repeats, so it grows at most by one release per control.
  */
 export class InputRingBuffer {
   private readonly capacity: number;
@@ -268,8 +280,10 @@ export class InputRingBuffer {
       let victim = this.supersededIndex(event);
       if (victim < 0 && this.events.length >= this.capacity * 4) {
         victim = this.events.findIndex(queued => !isInputReleaseEvent(queued));
-        if (victim < 0 && !isInputReleaseEvent(event)) return;
-        victim = Math.max(victim, 0);
+        if (victim < 0) {
+          if (!isInputReleaseEvent(event)) return;
+          victim = this.repeatedReleaseIndex(event);
+        }
       }
       if (victim >= 0) this.events.splice(victim, 1);
     }
@@ -278,6 +292,21 @@ export class InputRingBuffer {
 
   drain(): RawInputEvent[] {
     return this.events.splice(0, this.events.length);
+  }
+
+  /** Oldest queued release whose control is released again later, or -1. */
+  private repeatedReleaseIndex(incoming: RawInputEvent): number {
+    const later = new Set<string>();
+    const incomingControl = releasedControl(incoming);
+    if (incomingControl) later.add(incomingControl);
+    let victim = -1;
+    for (let index = this.events.length - 1; index >= 0; index--) {
+      const control = releasedControl(this.events[index]!);
+      if (!control) continue;
+      if (later.has(control)) victim = index;
+      later.add(control);
+    }
+    return victim;
   }
 
   /** Oldest queued sample made redundant by the next event for its control, or -1. */

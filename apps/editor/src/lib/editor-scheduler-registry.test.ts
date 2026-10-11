@@ -46,4 +46,20 @@ describe("EditorSchedulerRegistry", () => {
     registry.register(handle);
     expect(handle.always).toBe(true);
   });
+
+  it("pauses a viewport registered while the editor is paused", () => {
+    const registry = new EditorSchedulerRegistry();
+    registry.setPaused(true);
+    const handle = {
+      paused: false,
+      setAlwaysRender: () => {},
+      setPaused: (value: boolean) => {
+        handle.paused = value;
+      },
+    };
+    registry.register(handle);
+    expect(handle.paused).toBe(true);
+    registry.setPaused(false);
+    expect(handle.paused).toBe(false);
+  });
 });

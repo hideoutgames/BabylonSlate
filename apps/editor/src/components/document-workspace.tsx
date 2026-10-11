@@ -733,9 +733,7 @@ export function DocumentWorkspace() {
         const actorPrefab =
           doc.ref.kind !== "graph" ||
           !indexed ||
-          classDocumentShowsPrefab(indexed.header.parentClass, parentOf, {
-            assetType: indexed.header.type,
-          });
+          classDocumentShowsPrefab(indexed.header.parentClass, parentOf);
         const overlayPrefab =
           doc.ref.kind === "graph" &&
           walkAncestry(

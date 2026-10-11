@@ -239,7 +239,7 @@ export class EditorDebugOverlay {
     if (light) this.buildLightDebug(light.actor, light.component, sceneData.actors);
     for (const { actor, component } of selected) {
       if (component.classId !== "AudioComponent") continue;
-      const guid = component.properties.audioAssetGuid ?? component.properties.assetGuid;
+      const guid = component.properties.audioAssetGuid;
       if (typeof guid !== "string") continue;
       const attenuationGuid = options.audioLibrary?.audio.get(guid)?.soundAttenuationGuid;
       const attenuation = attenuationGuid

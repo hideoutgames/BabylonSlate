@@ -47,6 +47,8 @@ describe("AudioComponent play-on-start", () => {
         loop: true,
         voiceId: "audio-1",
         emitterActorGuid: "speaker",
+        clipRoll: expect.any(Number),
+        pitchRoll: expect.any(Number),
       },
     ]);
     runtime.start();

@@ -93,6 +93,10 @@ export function tilesetTileById(
   tileId: number,
 ): TilesetTile | null {
   if (tileId <= 0) return null;
+  // `ensureTilesetTiles` stores tile `id` at index `id - 1`: one read per cell
+  // instead of a scan while a chunk is meshed or chained.
+  const direct = tileset.tiles[tileId - 1];
+  if (direct?.id === tileId) return direct;
   return tileset.tiles.find((tile) => tile.id === tileId) ?? null;
 }
 

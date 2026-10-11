@@ -83,6 +83,8 @@ function nodeMatrix(node: Record<string, unknown>): Mat4 {
   const t = Array.isArray(node.translation) ? node.translation : [0, 0, 0];
   const r = Array.isArray(node.rotation) ? node.rotation : [0, 0, 0, 1];
   const s = Array.isArray(node.scale) ? node.scale : [1, 1, 1];
+  // A scale of 0 is authored (it hides a node), not a missing value.
+  const scale = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? value : 1;
   return multiplyMat(
     translationMat(Number(t[0]) || 0, Number(t[1]) || 0, Number(t[2]) || 0),
     multiplyMat(
@@ -92,9 +94,15 @@ function nodeMatrix(node: Record<string, unknown>): Mat4 {
         Number(r[2]) || 0,
         typeof r[3] === "number" ? r[3] : 1,
       ),
-      scaleMat(Number(s[0]) || 1, Number(s[1]) || 1, Number(s[2]) || 1),
+      scaleMat(scale(s[0]), scale(s[1]), scale(s[2])),
     ),
   );
+}
+
+/** A node scaled to nothing on every axis draws nothing, and neither do its children. */
+function isCollapsedNode(node: Record<string, unknown>): boolean {
+  return Array.isArray(node.scale) && node.scale.length >= 3 &&
+    node.scale.slice(0, 3).every((value) => value === 0);
 }
 
 function componentBytes(componentType: number): number {
@@ -217,6 +225,7 @@ function collectFromNode(
   const nodes = Array.isArray(json.nodes) ? json.nodes : [];
   const meshes = Array.isArray(json.meshes) ? json.meshes : [];
   const node = asRecord(nodes[nodeIndex]);
+  if (isCollapsedNode(node)) return;
   const world = multiplyMat(parent, nodeMatrix(node));
   if (typeof node.mesh === "number") {
     const mesh = asRecord(meshes[node.mesh]);

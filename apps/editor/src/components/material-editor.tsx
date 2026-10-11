@@ -105,7 +105,7 @@ function previewMeshIcon(mesh: MaterialPreviewMesh): LucideIcon {
 type MaterialGraphDocument = MaterialDocument | MaterialFunctionDocument;
 
 function renderMaterialNodeBody(_id: string, data: Record<string, unknown>) {
-  return data.__nodeType === "custom.glsl" ? <div className="w-88 max-w-88 overflow-hidden border-t px-3 py-2"><GlslCodePreview value={String(data.body ?? "a + b")} /></div> : null;
+  return data.__nodeType === "custom.glsl" ? <div className="w-88 max-w-88 overflow-hidden border-t px-3 py-2"><GlslCodePreview value={String(data.body ?? "")} /></div> : null;
 }
 
 function materialPinDefaultRows(
@@ -494,8 +494,6 @@ export function MaterialPreviewSurface({
 }) {
   const editing = useMaterialEditing();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const customPickNeedsFallbackRef = useRef(false);
-  const customPickCommittedRef = useRef(false);
   const [meshPickOpen, setMeshPickOpen] = useState(false);
   const { assetRegistry } = useRegistryState();
 
@@ -518,13 +516,8 @@ export function MaterialPreviewSurface({
   );
 
   const status = editing.previewState.status;
-  const openCustomMeshPicker = () => {
-    customPickNeedsFallbackRef.current =
-      preview.mesh !== "custom" ||
-      !preview.customMeshGuid;
-    customPickCommittedRef.current = false;
-    setMeshPickOpen(true);
-  };
+  // Dismissing the picker keeps the current mesh; only a pick changes it.
+  const openCustomMeshPicker = () => setMeshPickOpen(true);
 
   return (
     <PanelFrame className="flex-1" data-testid="material-preview-panel">
@@ -589,26 +582,12 @@ export function MaterialPreviewSurface({
         ) : null}
         <AssetPicker
           open={meshPickOpen}
-          onOpenChange={(open) => {
-            if (
-              !open &&
-              customPickNeedsFallbackRef.current &&
-              !customPickCommittedRef.current
-            ) {
-              onPreviewChange({ mesh: "cube", customMeshGuid: null });
-            }
-            if (!open) {
-              customPickNeedsFallbackRef.current = false;
-              customPickCommittedRef.current = false;
-            }
-            setMeshPickOpen(open);
-          }}
+          onOpenChange={setMeshPickOpen}
           assets={modelAssets}
           allowedTypes={["Model"]}
           title="Pick Preview Mesh"
           allowNone
           onPick={(guid) => {
-            customPickCommittedRef.current = true;
             onPreviewChange(guid
               ? { mesh: "custom", customMeshGuid: guid }
               : { mesh: "cube", customMeshGuid: null });
@@ -910,7 +889,7 @@ function MaterialNodeDetails<T extends MaterialGraphDocument>({
         ]} />}
       /></div> : null}
       {node.type === "custom.glsl" ? (
-        <MaterialCustomGlsl node={node} document={document} setProperties={setProperties} bodyLine={editing.compileDiagnostics.find((diagnostic) => diagnostic.nodeId === node.id)?.line} />
+        <MaterialCustomGlsl node={node} setProperties={setProperties} bodyLine={editing.compileDiagnostics.find((diagnostic) => diagnostic.nodeId === node.id)?.line} />
       ) : null}
       {isTextureNode ? (
         <div className="px-3">

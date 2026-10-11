@@ -1,3 +1,5 @@
+import type { DocumentTransition } from "./document-transition-gate";
+
 /** Game lifetime is independent of the canvas or React surface presenting it. */
 export type GameSessionMode = "play" | "simulate" | "preview";
 export type GameSessionLifecycle = "idle" | "preparing" | "running" | "paused" | "stopping" | "retention-resolution" | "failure";
@@ -25,6 +27,26 @@ export class GameSessionCancelledError extends Error {
   constructor() {
     super("Game session preparation was cancelled.");
     this.name = "AbortError";
+  }
+}
+
+/**
+ * Whether a document transition closes the open Scene a running session was
+ * started from (`null` when it was not started from an open document).
+ * `replace-document` names an open Scene that opening another Scene replaces,
+ * so like `close-document` it closes the source only when it names it.
+ */
+export function transitionClosesSessionSource(
+  transition: DocumentTransition,
+  sourceDocumentId: string | null,
+): boolean {
+  switch (transition.kind) {
+    case "close-project":
+    case "replace-project":
+      return true;
+    case "close-document":
+    case "replace-document":
+      return sourceDocumentId !== null && transition.documentId === sourceDocumentId;
   }
 }
 

@@ -61,14 +61,16 @@ function enumSelectCodegen(ctx: {
   if (members.length === 0) {
     return { out: "null" };
   }
-  const index = ctx.input("index");
+  // The Index is read once; only the chosen option is evaluated. An Index
+  // matching no member selects the first member's option, its default value.
   let expr = ctx.input(selectOptionPinId(members[0]!.name));
   for (let i = members.length - 1; i >= 1; i -= 1) {
     const member = members[i]!;
     const option = ctx.input(selectOptionPinId(member.name));
-    expr = `((${index}) === ${JSON.stringify(member.name)} ? (${option}) : (${expr}))`;
+    expr = `(i === ${JSON.stringify(member.name)} ? (${option}) : ${expr})`;
   }
-  return { out: expr };
+  if (members.length === 1) return { out: expr };
+  return { out: `((i) => ${expr})(${ctx.input("index")})` };
 }
 
 export const selectNodes: NodeDefinition[] = [

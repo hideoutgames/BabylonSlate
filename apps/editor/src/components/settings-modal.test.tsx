@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { SettingsModal } from "./settings-modal";
 import { createDefaultPluginSettings, type PluginDescriptor } from "@babylonslate/assets";
+import { defaultExportPreset } from "@babylonslate/core";
 import { createAppSettingsStore } from "@babylonslate/vfs";
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
@@ -23,17 +24,16 @@ const {
   exportProject,
   importPlugin,
   sourceControlEnabled,
-  lastProjectInput,
+  projectSourceControl,
+  projectExportPresets,
   lastProjectRender,
   pluginDescriptors,
   applyPluginOverrides,
 } = vi.hoisted(() => {
-  const lastProjectInput = { current: null as unknown };
   const lastProjectRender = { current: null as import("@babylonslate/core").RenderProjectSettings | null };
   return {
     updateProjectVersion: vi.fn(),
-    updateProjectSettings: vi.fn((patch: { input?: unknown; render?: import("@babylonslate/core").RenderProjectSettings }) => {
-      if (patch?.input) lastProjectInput.current = patch.input;
+    updateProjectSettings: vi.fn((patch: { render?: import("@babylonslate/core").RenderProjectSettings }) => {
       if (patch?.render) lastProjectRender.current = patch.render;
     }),
     setShowPluginContent: vi.fn(),
@@ -48,7 +48,8 @@ const {
     exportProject: vi.fn(),
     importPlugin: vi.fn(),
     sourceControlEnabled: { current: false },
-    lastProjectInput,
+    projectSourceControl: { current: null as Partial<import("@babylonslate/core").SourceControlProjectSettings> | null },
+    projectExportPresets: { current: null as import("@babylonslate/core").ExportPreset[] | null },
     lastProjectRender,
     pluginDescriptors: [] as PluginDescriptor[],
     applyPluginOverrides: vi.fn(async () => undefined),
@@ -69,15 +70,20 @@ vi.mock("../context/document-context", async () => {
   return (await import("../testing/document-context-mock")).documentContextMock(() => {
     const projectDocument = emptyProject("Demo");
     if (lastProjectRender.current) projectDocument.settings.render = lastProjectRender.current;
-    if (lastProjectInput.current) {
-      projectDocument.settings.input =
-        lastProjectInput.current as typeof projectDocument.settings.input;
-    }
     if (sourceControlEnabled.current) {
       projectDocument.settings.sourceControl = {
         ...projectDocument.settings.sourceControl,
         enabled: true,
       };
+    }
+    if (projectSourceControl.current) {
+      projectDocument.settings.sourceControl = {
+        ...projectDocument.settings.sourceControl,
+        ...projectSourceControl.current,
+      };
+    }
+    if (projectExportPresets.current) {
+      projectDocument.settings.exportPresets = projectExportPresets.current;
     }
     return {
     projectDocument,
@@ -129,6 +135,13 @@ vi.mock("../context/document-context", async () => {
           path: "assets/Master.mixer.babasset",
         },
       ],
+      listRoots: () => [{ id: "project" }],
+      folderTree: () => ({
+        name: "assets",
+        path: "assets",
+        assets: [],
+        children: [{ name: "Weapons", path: "assets/Weapons", assets: [], children: [] }],
+      }),
       getByGuid: (guid: string) =>
         guid === "font-1"
           ? {
@@ -154,7 +167,6 @@ vi.mock("../context/document-context", async () => {
 
 afterEach(() => {
   cleanup();
-  lastProjectInput.current = null;
   lastProjectRender.current = null;
   updateProjectSettings.mockClear();
   updateProjectVersion.mockClear();
@@ -169,6 +181,8 @@ afterEach(() => {
   exportProject.mockReset();
   importPlugin.mockReset();
   sourceControlEnabled.current = false;
+  projectSourceControl.current = null;
+  projectExportPresets.current = null;
   pluginDescriptors.length = 0;
   applyPluginOverrides.mockClear();
 });
@@ -320,6 +334,7 @@ describe("SettingsModal project authoring", () => {
     ["texture anisotropy", /Texture Anisotropy/, "Scalability", "quality-textures-anisotropy"],
     ["reflections", /Real-Time Reflections/, "Post Processing", "project-effects-reflections"],
     ["fft ocean", /Water FFT Ocean Detail/, "Scalability", "quality-water-fft"],
+    ["allow reflections", /Allow Reflections/, "Scalability", "quality-postprocessing-reflections"],
     ["ssao", /Ambient Occlusion/, "Post Processing", "project-effects-ambient-occlusion"],
     ["lut", /Color Grading/, "Post Processing", "project-effects-color-grading"],
     ["temporal", /Temporal Anti-Aliasing/, "Post Processing", "project-effects-temporal"],
@@ -477,16 +492,73 @@ describe("SettingsModal project authoring", () => {
     fireEvent.click(screen.getByTestId("settings-modal-category-export"));
     expect(screen.getByTestId("export-game")).toBeTruthy();
     expect(screen.getByTestId("export-project")).toBeTruthy();
-    expect(screen.getByTestId("setting-export-packed")).toBeTruthy();
     expect(screen.getByTestId("setting-export-debugger")).toBeTruthy();
     fireEvent.click(screen.getByTestId("setting-export-debugger"));
     expect(updateProjectSettings).toHaveBeenCalledWith(
       expect.objectContaining({
         exportPresets: [
-          expect.objectContaining({ bundleDebugger: true, packed: true }),
+          expect.objectContaining({ bundleDebugger: true }),
         ],
       }),
     );
+  });
+
+  it("edits the first export preset and keeps the others", () => {
+    const web = { ...defaultExportPreset(), bundleDebugger: true };
+    const desktop = { ...defaultExportPreset("desktop", "Desktop"), bundleDebugger: true };
+    projectExportPresets.current = [web, desktop];
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-export"));
+    fireEvent.click(screen.getByTestId("setting-export-debugger"));
+    expect(updateProjectSettings).toHaveBeenLastCalledWith({
+      exportPresets: [{ ...web, bundleDebugger: false }, desktop],
+    });
+  });
+
+  it("downloads only the exported archive bytes and releases the URL after the download starts", async () => {
+    exportProject.mockResolvedValue(new Uint8Array([9, 9, 1, 2, 3, 9]).subarray(2, 5));
+    const blobs: Blob[] = [];
+    const createUrl = vi.spyOn(URL, "createObjectURL").mockImplementation((blob) => {
+      blobs.push(blob as Blob);
+      return "blob:project-archive";
+    });
+    const revokeUrl = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    try {
+      render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+      fireEvent.click(screen.getByTestId("settings-modal-category-export"));
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      await act(async () => {
+        fireEvent.click(screen.getByTestId("export-project"));
+      });
+      expect(click).toHaveBeenCalledTimes(1);
+      expect(blobs.map((blob) => blob.size)).toEqual([3]);
+      // Safari and WKWebView read the blob URL after the click returns.
+      expect(revokeUrl).not.toHaveBeenCalled();
+      act(() => { vi.runAllTimers(); });
+      expect(revokeUrl).toHaveBeenCalledWith("blob:project-archive");
+    } finally {
+      vi.useRealTimers();
+      createUrl.mockRestore();
+      revokeUrl.mockRestore();
+      click.mockRestore();
+    }
+  });
+
+  it("adds an Always Package Folder from the Export category's folder picker", () => {
+    render(
+      <SettingsModal open onOpenChange={() => {}} scope="project" />,
+    );
+    fireEvent.click(screen.getByTestId("settings-modal-category-export"));
+    fireEvent.click(screen.getByTestId("settings-always-package-folders-add"));
+    const row = screen.getByTestId("tree-row-assets/Weapons");
+    for (const type of ["pointerdown", "pointerup"]) {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: 8, clientY: 8 });
+      Object.defineProperties(event, { pointerId: { value: 1 }, pointerType: { value: "mouse" }, isPrimary: { value: true } });
+      fireEvent(row, event);
+    }
+    fireEvent.click(screen.getByTestId("settings-always-package-folders-picker-confirm"));
+    expect(updateProjectSettings).toHaveBeenCalledWith({ alwaysPackageFolders: ["assets/Weapons"] });
   });
 
   it("authors custom render resolution on the Rendering category", () => {
@@ -675,6 +747,29 @@ describe("SettingsModal project authoring", () => {
     expect(screen.getByTestId("settings-source-control-token-copy").textContent).not.toMatch(
       /Token Saved/,
     );
+  });
+
+  it("fills Source Control from Git without replacing a URL typed during the read", async () => {
+    let finishPrefill!: (prefill: { repositoryUrl: string; branch: string }) => void;
+    sourceControl.readGitPrefill.mockImplementationOnce(
+      () => new Promise((resolve) => { finishPrefill = resolve; }),
+    );
+    const view = render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
+    fireEvent.click(screen.getByTestId("settings-source-control-enabled"));
+    expect(sourceControl.readGitPrefill).toHaveBeenCalledTimes(1);
+    projectSourceControl.current = { enabled: true, repositoryUrl: "https://example.com/typed.git" };
+    view.rerender(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    await act(async () => {
+      finishPrefill({ repositoryUrl: "https://example.com/origin.git", branch: "develop" });
+    });
+    expect(updateProjectSettings).toHaveBeenLastCalledWith({
+      sourceControl: expect.objectContaining({
+        enabled: true,
+        repositoryUrl: "https://example.com/typed.git",
+        branch: "develop",
+      }),
+    });
   });
 
   it("confirms before turning Source Control Enable off", () => {

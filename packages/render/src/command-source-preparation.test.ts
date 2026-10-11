@@ -78,6 +78,18 @@ describe("cold command source preparation", () => {
     preparation.dispose();
   });
 
+  it("still applies commands queued behind a replacement whose sources fail", async () => {
+    const preparation = new CommandSourcePreparation();
+    preparation.setLoader(async () => { throw new Error("Missing source file"); });
+    const applied: string[] = [];
+    const apply = (command: CommandMessage) => { applied.push(command.type); };
+    preparation.receive(mesh("replacement"), apply);
+    preparation.receive({ type: "attachToBone", slotId: 7, targetSlotId: 3, boneName: "hand" }, apply);
+    await expect(preparation.whenReady([7])).rejects.toThrow("Missing source file");
+    expect(applied).toEqual(["attachToBone"]);
+    preparation.dispose();
+  });
+
   it("cancels a despawned consumer and releases late preparation without publishing it", async () => {
     const result = deferred<() => void>();
     let signal: AbortSignal | undefined;
@@ -114,7 +126,7 @@ describe("cold command source preparation", () => {
     await preparation.whenReady();
     expect(peak).toBe(1);
     expect(commandSourceGuids({ ...mesh("model"), text3d: {
-      text: "Label", size: 1, depth: 0.1, color: [1, 1, 1], alignment: "left", fontAssetGuid: "font",
+      text: "Label", size: 1, color: [1, 1, 1], alignment: "left", fontAssetGuid: "font",
     }, skybox: { size: 10, faces: { px: "texture", py: null, pz: null, nx: null, ny: null, nz: null } } })).toEqual(["font", "model", "texture"]);
     preparation.dispose();
   });

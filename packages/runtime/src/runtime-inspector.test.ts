@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createActor, createDefaultScene, createMeshComponent, identitySerializedTransform } from "@babylonslate/core";
-import type { CommandMessage, RuntimeInspectorAction, RuntimeInspectorResult, RuntimeObjectIdentity } from "@babylonslate/bridge";
+import { readSnapshotHeader, snapshotFloatCount, type CommandMessage, type RuntimeInspectorAction, type RuntimeInspectorResult,
+  type RuntimeObjectIdentity } from "@babylonslate/bridge";
 import { createInProcessRuntime } from "./driver";
 
 const catalog = { mat: { domain: "surface" as const, planHash: "mat", parameters: { Gain: { kind: "float" as const, value: 1 } } } };
@@ -192,13 +193,18 @@ describe("bounded runtime Inspector", () => {
   });
 
   it("publishes a paused transform with a fresh presentation identity without a new simulation tick", async () => {
-    const { runtime, request, actor, commands } = await fixture();
+    const { runtime, request, actor } = await fixture();
     try {
       runtime.pause(); const transform = identitySerializedTransform(); transform.position = [7, 8, 9];
+      const snapshot = new Float32Array(snapshotFloatCount(runtime.snapshotCapacity));
+      expect(runtime.copySnapshot(snapshot)).toBe(true);
+      const previousFrameId = readSnapshotHeader(snapshot).frameId;
       const result = await request({ kind: "setTransform", target: actor, sequence: 1, transform });
       expect(result).toMatchObject({ success: true, tickIndex: 0, payload: { effectiveValue: transform } });
       expect(runtime.getWorld().findActor("hero")!.transform.position).toEqual({ x: 7, y: 8, z: 9 });
-      expect(commands).toContainEqual(expect.objectContaining({ type: "resetActorInterpolation", actorGuid: "hero", frameId: result.frameId }));
+      expect(result.frameId).toBeGreaterThan(previousFrameId);
+      expect(runtime.copySnapshot(snapshot)).toBe(true);
+      expect(readSnapshotHeader(snapshot)).toMatchObject({ frameId: result.frameId, tickIndex: 0 });
       expect((await request({ kind: "setTransform", target: actor, sequence: 2,
         transform: { ...transform, rotation: [0, 0, 0, 0] } })).success).toBe(false);
     } finally { runtime.stop(); }
@@ -216,6 +222,28 @@ describe("bounded runtime Inspector", () => {
       transform.position = [22, 0, 0];
       expect((await request({ kind: "setTransform", target: component, sequence: 1, transform, space: "world" })).success).toBe(true);
       expect(hero.components[0]!.transform.position.x).toBe(2);
+    } finally { runtime.stop(); }
+  });
+
+  it("teleports actors whose Ragdoll is disabled and restricts them once it is enabled", async () => {
+    const { runtime, request, actor } = await fixture();
+    try {
+      const world = runtime.getWorld(); const hero = world.findActor("hero")!;
+      const child = world.createActor({ classId: "Actor", guid: "rider" }); world.spawnActorNow(child); child.setVariable("parentId", hero.guid);
+      const ragdolls = [hero, child].map(owner => {
+        const ragdoll = world.createComponent({ classId: "RagdollComponent", variables: { enabled: false } });
+        owner.attachComponent(ragdoll); return ragdoll;
+      });
+      runtime.pause(); const transform = identitySerializedTransform(); transform.position = [7, 0, 0];
+      expect((await request({ kind: "selection", target: actor })).payload).toMatchObject({ transformCapability: "live" });
+      expect((await request({ kind: "setTransform", target: actor, sequence: 1, transform })).success).toBe(true);
+      expect(hero.transform.position.x).toBe(7);
+      ragdolls[1]!.setVariable("enabled", true);
+      transform.position = [9, 0, 0];
+      expect((await request({ kind: "setTransform", target: actor, sequence: 2, transform })).success).toBe(false);
+      ragdolls[0]!.setVariable("enabled", true);
+      expect((await request({ kind: "selection", target: actor })).payload).toMatchObject({ transformCapability: "restart" });
+      expect(hero.transform.position.x).toBe(7);
     } finally { runtime.stop(); }
   });
 

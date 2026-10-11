@@ -67,11 +67,11 @@ it("hands material ownership to the replacement and releases superseded source p
   const released: string[] = [];
   const ctx = new ScriptHost(services({
     prepareAssets: async () => {},
-    preloadAssets: async (guids, owner) => {
+    acquireAssets: async (guids, owner) => {
       expect(owner).toBe(mesh);
       return { success: true, progress: 1, preloadId: `preload:${guids[0]}`, errorMessage: "" };
     },
-    releasePreload: id => { released.push(id); },
+    releaseAcquiredAssets: id => { released.push(id); },
     getAssetLoadState: () => "ready",
   })).createContext(actor, 0, 0);
   await ctx.setMeshMaterialAsync(mesh, "first");

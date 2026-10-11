@@ -121,6 +121,7 @@ export class RenderTargetCaptures {
   private readonly targets = new Map<string, Target>();
   private readonly textures = new Map<string, CaptureTexture>();
   private readonly frameOwners = new Set<string>();
+  private readonly checkedMaterials = new Set<Material>();
   private readonly consumerScenes = new Map<Scene, Observer<Scene>>();
   private fallback: RawTexture | undefined;
   private fallbackLease: ManagedRenderLease | undefined;
@@ -377,16 +378,22 @@ export class RenderTargetCaptures {
       throw error;
     }
   }
+  /** Runs every frame for each color target, so each shared material is inspected once. */
   private samplesAttachment(target: Target, destination: CaptureRenderTarget): boolean {
     const attachment = destination.getInternalTexture();
-    for (const mesh of target.meshes) {
-      if (mesh.material?.getActiveTextures().some((texture) => texture.getInternalTexture() === attachment)) return true;
-    }
-    for (const system of target.particles) {
-      if (system.particleTexture?.getInternalTexture() === attachment ||
-        particleMaterialForSystem(system)?.getActiveTextures().some((texture) => texture.getInternalTexture() === attachment)) return true;
-    }
-    return false;
+    const checked = this.checkedMaterials;
+    const samples = (material: Material | null | undefined): boolean => {
+      if (!material || checked.has(material)) return false;
+      checked.add(material);
+      return material.getActiveTextures().some((texture) => texture.getInternalTexture() === attachment);
+    };
+    try {
+      for (const mesh of target.meshes) if (samples(mesh.material)) return true;
+      for (const system of target.particles) {
+        if (system.particleTexture?.getInternalTexture() === attachment || samples(particleMaterialForSystem(system))) return true;
+      }
+      return false;
+    } finally { checked.clear(); }
   }
   private renderList(capture: Capture, target: Target): AbstractMesh[] {
     if (capture.settings.captureOnlyActors && this.rootsDirty) {

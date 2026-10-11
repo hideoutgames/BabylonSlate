@@ -41,17 +41,14 @@ describe("selectEditorUtilityGraphs", () => {
           "assets/Hero.class.babasset": {
             type: "Class",
             parentClass: "Actor",
-            name: "Hero",
           },
           "assets/Tools.class.babasset": {
             type: "Class",
             parentClass: "EditorUtilityObject",
-            name: "Tools",
           },
           "assets/OtherTools.class.babasset": {
             type: "Class",
             parentClass: "EditorUtilityObject",
-            name: "OtherTools",
           },
         },
         parentOf,
@@ -76,7 +73,6 @@ describe("selectEditorUtilityGraphs", () => {
           "assets/Hero.class.babasset": {
             type: "Class",
             parentClass: "Actor",
-            name: "Hero",
           },
         },
         parentOf,
@@ -84,6 +80,18 @@ describe("selectEditorUtilityGraphs", () => {
       },
     );
     expect(selected).toEqual([]);
+  });
+
+  it("matches a class whose display name is not an identifier by its registered path class id", () => {
+    // Registry headers carry the display name; the class picker stores the path id.
+    const headers = {
+      "assets/Level Tools.class.babasset": { type: "Class", parentClass: "EditorUtilityObject", name: "Level Tools" },
+    };
+    const selected = selectEditorUtilityGraphs(
+      [{ path: "assets/Level Tools.class.babasset", content: emptyGraph }],
+      { headers, parentOf, registeredClassIds: ["Level_Tools"] },
+    );
+    expect(selected.map((graph) => graph.path)).toEqual(["assets/Level Tools.class.babasset"]);
   });
 
   it("keeps plugin-registered EUO graphs when merged with project ids", () => {
@@ -106,12 +114,10 @@ describe("selectEditorUtilityGraphs", () => {
           "assets/Tools.class.babasset": {
             type: "Class",
             parentClass: "EditorUtilityObject",
-            name: "Tools",
           },
           "plugins/pack/assets/PackTools.class.babasset": {
             type: "Class",
             parentClass: "EditorUtilityObject",
-            name: "PackTools",
           },
         },
         parentOf,
@@ -155,7 +161,7 @@ describe("editor utility ScriptHost events", () => {
               id: "log",
               type: "debug.log",
               position: { x: 200, y: 0 },
-              data: { message: "editor-up", category: "Editor" },
+              data: { "default:message": "editor-up", category: "Editor" },
             },
           ],
           edges: [

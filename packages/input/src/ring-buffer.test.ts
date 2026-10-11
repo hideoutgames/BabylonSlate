@@ -96,4 +96,12 @@ describe("input ring buffer overflow", () => {
       "down KeyD", "down KeyE", "down KeyF", "down KeyG", "down KeyH", "up KeyA", "up KeyB", "up KeyC",
     ]);
   });
+
+  it("keeps every release in a full queue of releases, dropping only a repeated one", () => {
+    const ring = new InputRingBuffer(1);
+    for (const code of ["KeyA", "KeyB", "KeyC", "KeyD", "KeyE", "KeyA"]) ring.push({ kind: "key", tick: 1, code, phase: "up" });
+    expect(ring.drain().map(event => event.kind === "key" ? event.code : "")).toEqual([
+      "KeyB", "KeyC", "KeyD", "KeyE", "KeyA",
+    ]);
+  });
 });

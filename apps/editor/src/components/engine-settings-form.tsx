@@ -8,8 +8,10 @@ import { getBuildIdentity } from "../lib/build-identity";
 import {
   getHostPlatform,
   MAX_UNDO_BYTE_BUDGET,
+  MAX_HARDWARE_SCALING_LEVEL,
   MAX_UNDO_HISTORY_LENGTH,
   MAX_VIEWPORT_FRAME_CAP,
+  MIN_HARDWARE_SCALING_LEVEL,
   MIN_UNDO_BYTE_BUDGET,
   MIN_VIEWPORT_FRAME_CAP,
   type EngineSettings,
@@ -66,8 +68,11 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
   { kind: "scene", keepKey: "sceneFoliage", label: "Scene — Foliage", options: { sceneMode: "foliage" } },
   { kind: "scene-layer", keepKey: "scene-layer", label: "Scene Layer" },
   { kind: "graph", keepKey: "graph", label: "Class" },
+  { kind: "prefab", keepKey: "prefab", label: "Prefab" },
   { kind: "enum", keepKey: "enum", label: "Enum" },
   { kind: "structure", keepKey: "structure", label: "Structure" },
+  { kind: "data-definition", keepKey: "data-definition", label: "Data Definition" },
+  { kind: "data-tree", keepKey: "data-tree", label: "Data Tree" },
   {
     kind: "script-interface",
     keepKey: "script-interface",
@@ -87,6 +92,8 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
     keepKey: "material-function",
     label: "Material Function",
   },
+  { kind: "material-instance", keepKey: "material-instance", label: "Material Instance" },
+  { kind: "plugin-settings", keepKey: "plugin-settings", label: "Plugin Settings" },
   {
     kind: "anim-graph",
     keepKey: "anim-graph",
@@ -108,6 +115,9 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
     keepKey: "audio",
     label: "Audio",
   },
+  { kind: "save-game", keepKey: "save-game", label: "Save Game" },
+  { kind: "input-action", keepKey: "input-action", label: "Input Action" },
+  { kind: "input-axis", keepKey: "input-axis", label: "Input Axis" },
   {
     kind: "audio-mixer",
     keepKey: "audio-mixer",
@@ -137,6 +147,13 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
     kind: "particle-system",
     keepKey: "particle-system",
     label: "Particle System",
+  },
+  { kind: "water", keepKey: "water", label: "Water" },
+  { kind: "render-target", keepKey: "render-target", label: "Render Target" },
+  {
+    kind: "render-target-texture",
+    keepKey: "render-target-texture",
+    label: "Render Target Texture",
   },
   { kind: "model", keepKey: "model", label: "Model" },
   { kind: "skeleton", keepKey: "skeleton", label: "Skeleton" },
@@ -393,7 +410,8 @@ export function EngineSettingsForm({
             </FieldLabel>
             <NumberField
               id="setting-hardware-scale"
-              min={0.25}
+              min={MIN_HARDWARE_SCALING_LEVEL}
+              max={MAX_HARDWARE_SCALING_LEVEL}
               step={0.25}
               className="min-h-[var(--chrome-row,28px)]"
               data-testid="setting-hardware-scale"

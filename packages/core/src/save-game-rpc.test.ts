@@ -33,6 +33,19 @@ describe("worker save storage", () => {
     client.dispose(); server.dispose();
   });
 
+  it("reports idle only after a locked write and its release have finished", async () => {
+    const { client, server, storage } = fixture();
+    const saved = client.storage.withLock("project", async () => {
+      await client.storage.write("slot", "end of play");
+    });
+    await client.whenIdle();
+    expect(await storage.read("slot")).toBe("end of play");
+    await saved;
+    // Nothing waiting: idle at once.
+    await client.whenIdle();
+    client.dispose(); server.dispose();
+  });
+
   it("releases a terminated worker's lock even when another acquisition is queued", async () => {
     const { client, server, storage } = fixture();
     let started!: () => void;
@@ -48,6 +61,22 @@ describe("worker save storage", () => {
     await Promise.all([held, waiting]);
     const next = await storage.withLock("project", async () => "available");
     expect(next).toBe("available");
+  });
+
+  it("reports the locked operation's own outcome when the release fails", async () => {
+    const { client, server } = fixture();
+    const closeBeforeRelease = (work: () => Promise<string>) => client.storage.withLock("project", async () => {
+      const value = await work();
+      server.dispose(); client.dispose();
+      return value;
+    });
+    await expect(closeBeforeRelease(async () => "written")).resolves.toBe("written");
+
+    const second = fixture();
+    await expect(second.client.storage.withLock("project", async () => {
+      second.server.dispose(); second.client.dispose();
+      throw Object.assign(new Error("Disk full"), { code: "ENOSPC" });
+    })).rejects.toMatchObject({ code: "ENOSPC" });
   });
 
   it("preserves native storage-full error codes across the worker boundary", async () => {

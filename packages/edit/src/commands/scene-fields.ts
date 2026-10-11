@@ -221,7 +221,8 @@ export class ReorderFolderCommand implements EditCommand<SerializedScene> {
 
   apply(doc: SerializedScene): SerializedScene {
     const index = doc.folders.findIndex((folder) => folder.id === this.folderId);
-    if (index === -1) return doc;
+    // Only the row recorded at `from` moves, as in ReorderActorCommand.
+    if (index !== this.from) return doc;
     const folders = [...doc.folders];
     const [moved] = folders.splice(index, 1);
     folders.splice(Math.max(0, Math.min(this.to, folders.length)), 0, moved!);

@@ -23,7 +23,6 @@ import {
   createDefaultParticleEmitterPayload,
   createDefaultParticleSystemPayload,
   createDefaultSpriteAnimationPayload,
-  encodeGlbJsonBin,
   normalizeAudioPayload,
 } from "@babylonslate/assets";
 import { exportGame as buildExport, type ExportGameOptions, navmeshExportGuid } from "@babylonslate/exporter";
@@ -54,7 +53,7 @@ function pngIhdr(width: number, height: number): Uint8Array {
 }
 
 describe("packedContentFromGame", () => {
-  it.each(["packed", "loose"] as const)("hydrates independent Data Definitions and owned hierarchical entries (%s)", async (mode) => {
+  it("hydrates independent Data Definitions and owned hierarchical entries", async () => {
     const payloads = [
       { guid: "quality", type: "Enum", payload: { members: [{ name: "Rare", value: 1 }] } },
       { guid: "stats", type: "DataDefinition", payload: { kind: "dataDefinition", fields: [
@@ -67,7 +66,7 @@ describe("packedContentFromGame", () => {
       ] } },
     ];
     const exported = await exportGame({
-      mode, bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [],
+      bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [],
       assets: payloads.map(({ guid, type, payload }) => ({ guid, type, sceneGuid: "scene", bytes: encoder.encode(JSON.stringify(payload)) })),
     });
     if (!exported.ok) throw new Error(exported.error);
@@ -93,7 +92,7 @@ describe("packedContentFromGame", () => {
     if (!exported.ok) throw new Error(exported.error);
     const game = await loadGameFromFiles(exported.value.files);
     for (const type of binaryTypes) {
-      game.manifest.assets!.push({ guid: type, type, encoding: "bytes", pack: "boot.babpack" });
+      game.manifest.assets!.push({ guid: type, type, encoding: "bytes" });
       game.payloads.set(type, new Uint8Array([0xff, 0xfe, 0xfd]));
     }
     // Packed audio metadata was already extracted from its binary envelope.
@@ -105,9 +104,9 @@ describe("packedContentFromGame", () => {
       expect(decode.mock.calls.some(([bytes]) => binary.has(bytes as Uint8Array))).toBe(false);
     } finally { decode.mockRestore(); }
   });
-  it.each(["packed", "loose"] as const)("hydrates live render target assets without treating them as uploaded images (%s)", async (mode) => {
+  it("hydrates live render target assets without treating them as uploaded images", async () => {
     const packed = await exportGame({
-      mode, bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [],
+      bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [],
       assets: [
         { guid: "scene", type: "Scene", sceneGuid: "scene", bytes: encoder.encode(JSON.stringify(createDefaultScene())) },
         { guid: "depth", type: "RenderTarget", sceneGuid: "scene", bytes: encoder.encode(JSON.stringify({ mode: "DepthPass", width: 128, height: 64 })) },
@@ -145,7 +144,7 @@ describe("packedContentFromGame", () => {
       clips: [{ name: "Idle", frames: ["idle"] }],
     };
     const tilemap = {
-      tilesetGuid: "tileset-1",
+      tilesets: [{ guid: "tileset-1", firstGid: 1, tileCount: 1 }],
       tileWidth: 16,
       tileHeight: 16,
       chunkSize: 32,
@@ -262,7 +261,7 @@ describe("packedContentFromGame", () => {
       width: 200,
       height: 100,
     });
-    expect(content.tilemapPayloads.get("tilemap-1")?.tilesetGuid).toBe("tileset-1");
+    expect(content.tilemapPayloads.get("tilemap-1")?.tilesets[0]?.guid).toBe("tileset-1");
     expect(content.tilesetPayloads.get("tileset-1")?.textureGuid).toBe("tex-1");
     expect(content.navmeshBytes).toEqual(new Uint8Array([4, 5, 6]));
     expect(content.navmeshByScene.get("scene-2")).toEqual(new Uint8Array([7, 8]));
@@ -328,6 +327,11 @@ describe("packedContentFromGame", () => {
     // A script switching the simple Model to Complex Collision is served on demand.
     expect(game.cookComplexCollision?.("hero-model")?.positions).toHaveLength(8 * 3);
     expect(game.cookComplexCollision?.("unloaded-model")).toBeNull();
+    // The cooked mesh outlives the Model's trimmed source bytes.
+    const cooked = game.complexMeshes?.get("rock-model");
+    expect(cooked).toBeDefined();
+    game.modelBytes.delete("rock-model");
+    expect(game.cookComplexCollision?.("rock-model")).toBe(cooked);
   });
 
   it("resolves packed Animation Graph clips from Animation assets and maps clip guids", async () => {
@@ -387,16 +391,6 @@ describe("packedContentFromGame", () => {
     expect(content.modelClipAnimationGuids.get("hero-model")?.get("Idle")).toBe(
       "hero-idle-anim",
     );
-    const legacyGame = await loadGameFromFiles(packed.value.files);
-    legacyGame.modelBytes.set("hero-model", encodeGlbJsonBin({
-      animations: [{ name: "Idle", samplers: [{ input: 0 }] }],
-      accessors: [{ min: [47], max: [48] }],
-    }, new Uint8Array()));
-    const repaired = packedContentFromGame(legacyGame);
-    expect(repaired.animClipCatalog.find((clip) => clip.guid === "hero-idle-anim")?.durationMs).toBe(1000);
-    expect(repaired.animGraphs.find((entry) => entry.guid === "anim-1")?.document).toMatchObject({
-      clips: [{ clipName: "Idle", durationMs: 1000 }],
-    });
   });
 
   it("includes BT Play Animation clips in the packed worker clip catalog", async () => {
@@ -478,7 +472,7 @@ describe("packedContentFromGame", () => {
       name: "Arena",
       settings: {
         ...createDefaultScene().settings,
-        postProcessStack: [{ materialGuid: "mat-bloom", enabled: true }],
+        postProcessStack: [{ id: "bloom", materialGuid: "mat-bloom", enabled: true }],
       },
       actors: [
         createActor("hero", "Hero", {

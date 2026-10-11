@@ -34,3 +34,14 @@ it("blocks code transactions during the document lock while preserving selection
   act(() => view.dispatch({ changes: { from: 12, to: 13, insert: "4" } }));
   expect(onChange).toHaveBeenLastCalledWith("let value = 4;");
 });
+
+it("keeps the caret outside the span an external value changes", () => {
+  const editor = (value: string) => <CodeBodyEditor language="javascript" value={value} onChange={vi.fn()} />;
+  const { container, rerender } = render(editor("const a = 1;\nconst b = 2;"));
+  const view = EditorView.findFromDOM(container.querySelector(".cm-editor")!)!;
+  act(() => view.dispatch({ selection: { anchor: 6, head: 7 } }));
+  rerender(editor("const a = 1;\nconst b = 3;"));
+  expect(view.state.doc.toString()).toBe("const a = 1;\nconst b = 3;");
+  expect(view.state.selection.main.from).toBe(6);
+  expect(view.state.selection.main.to).toBe(7);
+});

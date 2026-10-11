@@ -183,6 +183,11 @@ export function materialPreviewReducer(
         return { ...state, compileSamplesMs: samples, compilingGeneration };
       }
       if (!event.ok) {
+        if (event.generation !== state.generation) {
+          // A superseded graph failed. The newer edit keeps its dirty/queued
+          // status so it still compiles; the last good image stays on screen.
+          return { ...state, compilingGeneration, compileSamplesMs: samples };
+        }
         return {
           ...state,
           status: "error",

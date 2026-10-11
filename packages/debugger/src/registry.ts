@@ -4,7 +4,7 @@ import {
   DEBUG_COMMAND_NAMES,
   isReservedConsoleCommandName,
 } from "./commands";
-import { fail, matchCommandName, parseCommandArgs, tokenize } from "./parser";
+import { fail, matchCommandName, parseCommandArgs, tokenizeCommand } from "./parser";
 import type {
   CommandRegistry,
   CommandResult,
@@ -50,7 +50,7 @@ export function createCommandRegistry(
       return [...byName.values()];
     },
     execute(line, host: ConsoleCommandHost): CommandResult {
-      const tokens = tokenize(line.trim());
+      const tokens = tokenizeCommand(line.trim());
       if (tokens.length === 0) {
         return fail("unknown command:");
       }

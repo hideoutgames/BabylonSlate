@@ -17,7 +17,6 @@ export {
   type BindingModifiers,
   type InputDevice,
   type InputMappings,
-  type NormalizeInputMappingsOptions,
 } from "./mappings";
 export {
   bindingCodeLabel,

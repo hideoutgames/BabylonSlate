@@ -201,13 +201,17 @@ export class SnapshotPublisher {
     this.retireRemovedActors();
   }
 
-  /** Retire detached streams, then despawn and release slots of actors no longer in the World. */
+  /**
+   * Retire detached streams, then despawn and release slots of actors no
+   * longer in the World. An actor whose spawn is still queued (a Scene Layer
+   * created mid-tick publishes before its actors commit) keeps its slot.
+   */
   private retireRemovedActors(): void {
     this.host.retireDetachedStreams();
     let removedActors = false;
     for (const [slotId, owner] of this.slots.entries()) {
       // The World's guid index answers whether this slot's own actor is still live.
-      if (this.world.findActor(owner.guid) === owner) continue;
+      if (this.world.findActor(owner.guid) === owner || this.world.isSpawnQueued(owner)) continue;
       this.host.emit({ type: "despawn", slotId, actorGuid: owner.guid });
       this.slots.release(slotId);
       removedActors = true;

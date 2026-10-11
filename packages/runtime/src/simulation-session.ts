@@ -18,6 +18,7 @@ import type { SceneRealizer } from "./scene-realizer";
 import type { SceneStreams } from "./scene-streams";
 import type { ScriptHost } from "./script-host";
 import type { SessionBoundaries } from "./session-boundaries";
+import type { SimulationBlocks } from "./simulation-blocks";
 import { captureSimulationScene, type SimulationCaptureIdentity, type SimulationSceneCaptureResult } from "./simulation-scene-capture";
 
 interface SimulationSessionOptions {
@@ -38,7 +39,8 @@ interface SimulationSessionHost {
   commandRevision(): number;
   boundaries(): Pick<SessionBoundaries, "result" | "saveBoundaryActive">;
   sceneRealizer(): Pick<SceneRealizer, "blocked" | "loadId">;
-  streams(): Pick<SceneStreams, "blocking" | "actorReady" | "isStreamActor">;
+  streams(): Pick<SceneStreams, "actorReady" | "isStreamActor">;
+  blocks(): Pick<SimulationBlocks, "active">;
   layers(): Pick<SceneLayers, "get">;
   /** The live material edit gate, once an Inspector material edit created it. */
   materialEditGate(): Pick<RuntimeMaterialEditGate, "cancel" | "busy" | "ownershipFailure"> | null;
@@ -93,7 +95,7 @@ export class SimulationSession {
   canEditActor(actor: Actor): boolean {
     const world = this.host.world();
     const streams = this.host.streams();
-    if (this._quiescent || this.host.stopped() || this.host.boundaries().saveBoundaryActive || actor.destroyed || actor.world !== world || streams.blocking || !streams.actorReady(actor)) return false;
+    if (this._quiescent || this.host.stopped() || this.host.boundaries().saveBoundaryActive || actor.destroyed || actor.world !== world || this.host.blocks().active || !streams.actorReady(actor)) return false;
     return actor.sceneLayerId ? this.host.layers().get(actor.sceneLayerId)?.ready === true : !this.host.sceneRealizer().blocked && !this.host.bootLoading();
   }
 
@@ -134,13 +136,18 @@ export class SimulationSession {
         !Number.isSafeInteger(request.requestId) || request.requestId <= this.lastCaptureRequestId ? "Invalid or superseded capture request ID." : null;
       if (invalid) { resolve(this.host.boundaries().result(boundaryRequest, invalid)); return; }
       this.lastCaptureRequestId = request.requestId;
-      this.host.setPauseReason("loading", true);
-      this.host.materialEditGate()?.cancel("Simulation is stopping; the pending material edit was cancelled.");
-      this._quiescent = true;
-      this.host.resetInputState();
-      this.host.flushInspectorRequests();
-      this.host.flushDeferredSnapshot();
-      resolve(this.host.boundaries().result(boundaryRequest));
+      try {
+        this.host.setPauseReason("loading", true);
+        this.host.materialEditGate()?.cancel("Simulation is stopping; the pending material edit was cancelled.");
+        this._quiescent = true;
+        this.host.resetInputState();
+        this.host.flushInspectorRequests();
+        this.host.flushDeferredSnapshot();
+        resolve(this.host.boundaries().result(boundaryRequest));
+      } catch (error) {
+        // Answer now; a later request ID can retry the boundary.
+        resolve(this.host.boundaries().result(boundaryRequest, error instanceof Error ? error.message : "Simulation quiescence failed."));
+      }
     }));
   }
 
@@ -159,7 +166,7 @@ export class SimulationSession {
       if (request.maxBytes !== undefined && (!Number.isSafeInteger(request.maxBytes) || request.maxBytes < 1 || request.maxBytes > 64 * 1024 * 1024)) { fail("Invalid final scene capture budget.", "budget"); return; }
       try {
         const scene = world.currentScene;
-        if (!scene || this.host.sceneRealizer().blocked || this.host.bootLoading() || this.host.streams().blocking) { fail("Scene loading has not reached a complete final boundary."); return; }
+        if (!scene || this.host.sceneRealizer().blocked || this.host.bootLoading() || this.host.blocks().active) { fail("Scene loading has not reached a complete final boundary."); return; }
         const materials = this.host.materialParameters();
         const postProcessStack: typeof scene.postProcessStack = [];
         for (const entry of scene.postProcessStack) {

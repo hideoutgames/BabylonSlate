@@ -144,7 +144,7 @@ describe("runtime material component identity", () => {
     expect(scene.materials).toContain(shared);
   });
 
-  it("retains compatibility with legacy whole-actor assignment commands", () => {
+  it("applies whole-actor assignment commands that name no component", () => {
     const { scene, binding, single } = setup();
     single("body");
     applyAssignMaterial(scene, binding, {

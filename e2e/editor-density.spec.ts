@@ -294,8 +294,16 @@ test.describe("Editor density and IA", () => {
       await deleteSelected.click();
       const list = page.getByTestId("content-browser-delete-list");
       await expect(list).toBeVisible();
-      await expect(list).toContainText("assets/qa-folder");
-      await expect(list.locator("li")).toHaveCount(2);
+      // Each row shows the item name, then its project path; folders come first.
+      // The minimal fixture names its main Scene asset "Main".
+      const rows = list.locator("li");
+      await expect(rows).toHaveCount(2);
+      await expect(rows.nth(0)).toHaveText(
+        /^qa-folder\s*assets\/qa-folder\s*0 Assets$/,
+      );
+      await expect(rows.nth(1)).toHaveText(
+        /^Main\s*assets\/main\.scene\.babasset$/,
+      );
       await page.getByTestId("content-browser-delete-cancel").click();
     },
   );

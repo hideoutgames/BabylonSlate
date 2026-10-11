@@ -11,7 +11,7 @@ import {
 import { DEFAULT_RENDER_EFFECTS } from "@babylonslate/core";
 import { expect, it } from "vitest";
 import { registerClusteredLightPolicy } from "./clustered-light-policy";
-import { selectVolumetricLights } from "./volumetric-lights";
+import { selectVolumetricLights, volumetricLayoutKey } from "./volumetric-lights";
 
 it("bounds contributors, includes borrowed cluster children and follows parent transforms", () => {
   const engine = new NullEngine();
@@ -75,6 +75,26 @@ it("bounds contributors, includes borrowed cluster children and follows parent t
     expect(selectVolumetricLights(scene, camera, settings)).toEqual([]);
     unregister();
     child.dispose();
+  } finally {
+    scene.dispose();
+    engine.dispose();
+  }
+});
+
+it("keeps the shader layout key while selected lights cross in distance", () => {
+  const engine = new NullEngine();
+  const scene = new Scene(engine);
+  try {
+    const camera = new FreeCamera("camera", Vector3.Zero(), scene);
+    camera.getViewMatrix();
+    const a = new PointLight("a", new Vector3(1, 0, 0), scene);
+    const b = new PointLight("b", new Vector3(2, 0, 0), scene);
+    const settings = { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true, maxLights: 2, maxDistance: 10 };
+    const key = volumetricLayoutKey(scene, camera, settings);
+    a.position.x = 3;
+    expect(volumetricLayoutKey(scene, camera, settings)).toBe(key);
+    // Distance still chooses which lights take part.
+    expect(selectVolumetricLights(scene, camera, { ...settings, maxLights: 1 })).toEqual([b]);
   } finally {
     scene.dispose();
     engine.dispose();

@@ -55,8 +55,10 @@ export function writeSnapshotHeader(
 ): void {
   buf[0] = header.magic ?? SNAPSHOT_MAGIC_F32;
   buf[1] = header.version ?? SNAPSHOT_LAYOUT_VERSION;
-  buf[2] = header.frameId;
-  buf[3] = header.tickIndex;
+  // Frame and tick identities are raw u32 bits (like `seq`): a float32 value
+  // stops counting every integer past 2^24 (about 78 hours at 60 Hz).
+  buf[2] = u32ToFloatBits(header.frameId);
+  buf[3] = u32ToFloatBits(header.tickIndex);
   buf[4] = header.actorCount;
   buf[5] = header.scriptMs;
   buf[6] = header.physicsMs;
@@ -75,8 +77,8 @@ export function readSnapshotHeader(buf: Float32Array): SnapshotHeader {
   return {
     magic: buf[0]!,
     version: buf[1]!,
-    frameId: buf[2]!,
-    tickIndex: buf[3]!,
+    frameId: floatBitsToU32(buf[2]!),
+    tickIndex: floatBitsToU32(buf[3]!),
     actorCount: buf[4]!,
     scriptMs: buf[5]!,
     physicsMs: buf[6]!,

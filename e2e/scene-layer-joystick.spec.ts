@@ -6,7 +6,7 @@ import { createDefaultMigrationRegistry } from "../packages/assets/src/migration
 import { createDefaultMaterialDocument } from "../packages/shader-graph/src/document";
 import { openMinimalTestProject } from "./minimal-project";
 import { openMainScene } from "./open-test-project";
-import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot } from "./play";
+import { clickPlayAndWaitForOverlay } from "./play";
 
 async function colorAt(canvas: Locator, x: number) {
   return canvas.evaluate((node: HTMLCanvasElement, localX) => {
@@ -19,7 +19,8 @@ async function colorAt(canvas: Locator, x: number) {
   }, x);
 }
 
-for (const mode of ["Play"] as ("Play" | "Preview Build")[]) {
+// Preview Build SceneLayer input is not part of this CI journey.
+for (const mode of ["Play"] as const) {
   test(`@ipad SceneLayer joystick touch moves its custom material and resets on cancellation in ${mode}`, async ({ page }, testInfo) => {
     test.setTimeout(120000);
     const files = await minimalProjectFiles(), versions = createDefaultMigrationRegistry();
@@ -46,14 +47,8 @@ for (const mode of ["Play"] as ("Play" | "Preview Build")[]) {
       version: versions.currentVersion("Scene"), payload: scene as unknown as Record<string, unknown> }));
     await openMinimalTestProject(page, files);
     await openMainScene(page);
-    if (mode === "Play") await clickPlayAndWaitForOverlay(page);
-    else {
-      await page.getByTestId("debug-menu").click();
-      await page.getByTestId("preview-build-toggle").click();
-      await page.getByTestId("play-preview").click();
-      await waitForPreviewBuildBoot(page);
-    }
-    const canvas = mode === "Play" ? page.getByTestId("play-canvas") : page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("player-canvas");
+    await clickPlayAndWaitForOverlay(page);
+    const canvas = page.getByTestId("play-canvas");
     await expect.poll(() => colorAt(canvas, 0), { timeout: 30000 }).toBe("blue");
     await expect.poll(() => colorAt(canvas, 2.5)).toBe("red");
     // Rendering can finish before Play dismisses its loading overlay. CDP touch
@@ -66,13 +61,13 @@ for (const mode of ["Play"] as ("Play" | "Preview Build")[]) {
     await session.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ ...center, x: center.x + box.width / 8 }] });
     await expect.poll(() => colorAt(canvas, 0)).toBe("red");
     await expect.poll(() => colorAt(canvas, 2)).toBe("blue");
-    if (mode === "Play") await expect.poll(async () => Number(await page.getByTestId("play-move-x").getAttribute("data-move-x"))).toBeGreaterThan(0.9);
+    await expect.poll(async () => Number(await page.getByTestId("play-move-x").getAttribute("data-move-x"))).toBeGreaterThan(0.9);
     await canvas.screenshot({ path: testInfo.outputPath("joystick-drag.png") });
     await session.send("Input.dispatchTouchEvent", { type: "touchCancel", touchPoints: [] });
     await expect.poll(() => colorAt(canvas, 0)).toBe("blue");
     await expect.poll(() => colorAt(canvas, 2.5)).toBe("red");
-    if (mode === "Play") await expect.poll(async () => Number(await page.getByTestId("play-move-x").getAttribute("data-move-x"))).toBe(0);
+    await expect.poll(async () => Number(await page.getByTestId("play-move-x").getAttribute("data-move-x"))).toBe(0);
     await session.detach();
-    await page.getByTestId(mode === "Play" ? "play-overlay-close" : "preview-build-close").click();
+    await page.getByTestId("play-overlay-close").click();
   });
 }

@@ -84,7 +84,7 @@ async function registryRecord(
     ...(documentEntry && options.includeDocument !== false ? [DOCUMENT_CHUNK_ID] : []),
     ...(options.selectChunks?.(indexed) ?? []),
   ])];
-  const lengths = await Promise.all(chunkIds.map((chunkId) => registry.chunkByteLength(id, chunkId, locator, locator.revision, readOptions)));
+  const lengths = await Promise.all(chunkIds.map((chunkId) => registry.chunkByteLength(id, chunkId, locator, locator.revision)));
   readOptions?.signal?.throwIfAborted();
   const documentIndex = chunkIds.indexOf(DOCUMENT_CHUNK_ID);
   return {

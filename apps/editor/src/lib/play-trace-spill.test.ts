@@ -12,9 +12,11 @@ import type { PlaySessionResult } from "../services/play-session";
 const payload: TracePayload = {
   seed: 11,
   dt: 1 / 60,
+  retention: { byteBudget: 1024 * 1024, droppedFrames: 0, complete: true, stopReason: "requested" },
   frames: [
     {
       tickIndex: 1,
+      timeDilation: 1,
       scriptMs: 1,
       physicsMs: 0.2,
       logs: [],

@@ -230,7 +230,7 @@ describe("select nodes", () => {
     expect(resolved.resolved.get(pinTypeKey("sel", "out"))).toEqual(FLOAT);
   });
 
-  it("compiles fixed Select and enum Select", () => {
+  it("compiles fixed Select and runs enum Select with one Index read", () => {
     const registry = createDefaultNodeRegistry();
     const boolGraph: LogicGraph = {
       id: "g",
@@ -269,7 +269,18 @@ describe("select nodes", () => {
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "sel", "enum.select", team),
+        node(registry, "team", "variables.get", {
+          variableName: "Team",
+          typeId: "enum",
+          typeClassId: "enum-team",
+          implicitSelf: true,
+        }),
+        node(registry, "sel", "enum.select", {
+          ...team,
+          [`default:${selectOptionPinId("None")}`]: "none",
+          [`default:${selectOptionPinId("Red")}`]: "red",
+          [`default:${selectOptionPinId("Blue")}`]: "blue",
+        }),
         node(registry, "log", "debug.log"),
       ],
       edges: [
@@ -287,10 +298,37 @@ describe("select nodes", () => {
           targetNodeId: "log",
           targetPinId: "message",
         },
+        {
+          id: "e3",
+          sourceNodeId: "team",
+          sourcePinId: "value",
+          targetNodeId: "sel",
+          targetPinId: "index",
+        },
       ],
     };
-    const enumCompiled = compileGraph(enumGraph, { assetGuid: "a", registry });
-    expect(enumCompiled.source).toContain('"Red"');
-    expect(enumCompiled.source).toContain('"Blue"');
+    const body = compileGraph(enumGraph, { assetGuid: "a", registry }).source
+      .replace(/export\s+(async\s+)?function\s+/g, "$1function ");
+    const onBeginPlay = new Function(`${body}\nreturn onBeginPlay;`)() as (
+      ctx: unknown,
+    ) => void;
+    // A non-member Index, including the unset "", selects the first member.
+    const indexes = ["Blue", "Red", "None", "Green", ""];
+    const logged: unknown[] = [];
+    let reads = 0;
+    for (const index of indexes) {
+      onBeginPlay({
+        getVariable: () => {
+          reads += 1;
+          return index;
+        },
+        formatValue: (value: unknown) => value,
+        log: (_severity: unknown, _category: unknown, message: unknown) => {
+          logged.push(message);
+        },
+      });
+    }
+    expect(logged).toEqual(["blue", "red", "none", "none", "none"]);
+    expect(reads).toBe(indexes.length);
   });
 });

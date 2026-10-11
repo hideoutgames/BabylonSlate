@@ -82,6 +82,26 @@ describe("NodePalette", () => {
     expect(onAddNode).toHaveBeenCalledWith(node);
   });
 
+  it("finds a node by its description and by its title typed without spaces", () => {
+    const folder = {
+      ...log,
+      id: "assets.folderHasAssets",
+      title: "Folder Has Assets",
+      category: "Assets",
+      description: "True when the folder holds a packaged asset.",
+    };
+    const { getByPlaceholderText } = render(
+      <NodePalette open onOpenChange={() => {}} paletteNodes={[log, begin, folder]} onAddNode={() => {}} />,
+    );
+    const search = getByPlaceholderText("Search nodes");
+    fireEvent.change(search, { target: { value: "packaged" } });
+    expect(itemIds()).toEqual(["node-palette-item-assets.folderHasAssets"]);
+    fireEvent.change(search, { target: { value: "beginPlay" } });
+    expect(itemIds()).toEqual(["node-palette-item-flow.event.beginPlay"]);
+    fireEvent.change(search, { target: { value: "EventBeginPlay" } });
+    expect(itemIds()).toEqual(["node-palette-item-flow.event.beginPlay"]);
+  });
+
   it("expands categories by default, collapses on click, and expands every match while searching", () => {
     const { getByPlaceholderText, getByTestId, queryByTestId } = render(
       <NodePalette open onOpenChange={() => {}} paletteNodes={[log, begin]} onAddNode={() => {}} />,

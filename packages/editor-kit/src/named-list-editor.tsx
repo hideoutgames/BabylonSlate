@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Button } from "@babylonslate/ui/components/button";
 import { Input } from "@babylonslate/ui/components/input";
 import { ListRowActions } from "./list-row-actions";
@@ -49,6 +49,12 @@ export function NamedListEditor({
   "data-testid": testId,
 }: NamedListEditorProps) {
   const [draft, setDraft] = useState("");
+  // Row keys follow rows through move and remove; keying by value would
+  // remount the input on every keystroke and drop focus.
+  const rowKeys = useRef({ next: 0, keys: [] as number[] });
+  const keys = rowKeys.current.keys;
+  while (keys.length < values.length) keys.push(rowKeys.current.next++);
+  keys.length = values.length;
   const rootId = testId ?? "named-list";
   const addDraft = () => {
     const name = draft.trim();
@@ -61,7 +67,7 @@ export function NamedListEditor({
     <div className="flex flex-col gap-1" data-testid={rootId}>
       {title ? <div className="text-sm font-medium">{title}</div> : null}
       {values.map((value, index) => (
-        <div key={`${value}-${index}`} className="px-1 py-0.5">
+        <div key={keys[index]} className="px-1 py-0.5">
           <div className="flex flex-nowrap items-center gap-1">
             {renderItem ? (
               <div className="min-w-0 flex-1">
@@ -94,10 +100,17 @@ export function NamedListEditor({
               count={values.length}
               testIdPrefix={rootId}
               touchAdaptive
-              onMove={(delta) => onChange(moveItem(values, index, delta))}
-              onRemove={() =>
-                onChange(values.filter((_, rowIndex) => rowIndex !== index))
-              }
+              onMove={(delta) => {
+                const target = index + delta;
+                if (target >= 0 && target < keys.length) {
+                  [keys[index], keys[target]] = [keys[target]!, keys[index]!];
+                }
+                onChange(moveItem(values, index, delta));
+              }}
+              onRemove={() => {
+                keys.splice(index, 1);
+                onChange(values.filter((_, rowIndex) => rowIndex !== index));
+              }}
             />
           </div>
         </div>

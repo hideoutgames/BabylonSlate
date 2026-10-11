@@ -23,7 +23,6 @@ export async function minimalProjectFiles(
   project.metadata.createdAt = project.metadata.updatedAt =
     "2026-01-01T00:00:00.000Z";
   project.settings.startupSceneGuid = sceneGuid;
-  project.settings.input = { actions: [], axes: [] };
   const scene = createDefaultScene();
   scene.actors = [
     createActor("actor-1", "Actor", {
@@ -42,7 +41,8 @@ export async function minimalProjectFiles(
     components: [createMeshComponent("prefab-mesh", "box")],
   };
   const files = new Map<string, Uint8Array>([
-    [PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project))],
+    // Each copy is its own project, as a created one is: derived data and saves key on the guid.
+    [PROJECT_FILE, new TextEncoder().encode(JSON.stringify({ ...project, guid: crypto.randomUUID() }))],
     [
       MAIN_SCENE_FILE,
       await encodeAssetDocument(

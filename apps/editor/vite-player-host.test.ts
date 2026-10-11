@@ -1,6 +1,6 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { playerHostVitePlugin } from "./vite-player-host";
 
@@ -11,9 +11,13 @@ type Middleware = (
 ) => void;
 
 /** Drive the plugin's dev middleware with a resolved Vite base. */
-function serveWith(base: string, url: string): { served: boolean } {
+function serveWith(
+  base: string,
+  request: string | ((playerDist: string) => string),
+): { served: boolean } {
   const playerDist = mkdtempSync(join(tmpdir(), "player-host-"));
   writeFileSync(join(playerDist, "index.html"), "<!doctype html>");
+  const url = typeof request === "string" ? request : request(playerDist);
 
   const plugin = playerHostVitePlugin(playerDist, join(playerDist, "editor"));
   (plugin.configResolved as (config: { base: string }) => void)({ base });
@@ -65,5 +69,20 @@ describe("playerHostVitePlugin", () => {
 
   it("passes unrelated editor routes through", () => {
     expect(serveWith("/", "/index.html").served).toBe(false);
+  });
+
+  it("does not serve a sibling directory whose name starts with the dist name", () => {
+    let sibling = "";
+    try {
+      const result = serveWith("/", (playerDist) => {
+        sibling = `${playerDist}-backup`;
+        mkdirSync(sibling);
+        writeFileSync(join(sibling, "secret.js"), "secret");
+        return `/player/..%2F${basename(sibling)}%2Fsecret.js`;
+      });
+      expect(result.served).toBe(false);
+    } finally {
+      if (sibling) rmSync(sibling, { recursive: true, force: true });
+    }
   });
 });

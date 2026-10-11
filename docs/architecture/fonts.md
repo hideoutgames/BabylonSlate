@@ -18,7 +18,7 @@ Facetype and MSDF remain **import-only** optional chunks (no in-engine bake). Ch
 
 ## 3D Text
 
-`Text3DComponent` (catalog **3D Text**) builds a flat triangulated TypeFace mesh in `@babylonslate/render` (`createText3DMesh`: `CreateTextShapePaths` + `CreatePolygon` + injected `earcut`). One unlit two-sided material. This is a scene mesh, not a DynamicTexture plane. Bundled ASCII glyphs greedy-merge 5×7 pixels into rectangles. Serialized `depth` is ignored. Newlines (`\n`; CRLF normalized) stack extra lines **up** from a bottom origin. `alignment` (`left` default, `center`, `right`) is the horizontal anchor of the block, not a wrap-width.
+`Text3DComponent` (catalog **3D Text**) builds a flat triangulated TypeFace mesh in `@babylonslate/render` (`createText3DMesh`: `CreateTextShapePaths` + `CreatePolygon` + injected `earcut`). One unlit two-sided material. This is a scene mesh, not a DynamicTexture plane. Bundled ASCII glyphs greedy-merge 5×7 pixels into rectangles. Newlines (`\n`; CRLF normalized) stack extra lines **up** from a bottom origin. `alignment` (`left` default, `center`, `right`) is the horizontal anchor of the block, not a wrap-width.
 
 | Font data | When |
 | --- | --- |
@@ -37,7 +37,7 @@ See [render.md](render.md) and [engineplan §11.4](../engineplan.md).
 2. Font document **Import MSDF Atlas…** (`data-testid="font-import-msdf"`) — always attaches to the open Font.
 3. Font tile context menu **Import MSDF Atlas…**.
 
-Incomplete picks leave `representations.msdf` false until the pair is complete. Attach merges representation flags with OR so attaching MSDF does not clear `source`. Export packs `FontMsdf` (`font-msdf:<guid>`) and `FontMsdfAtlas` (`font-msdf-png:<guid>`) when the Font is in the closure and both chunks exist. A packed game missing the sidecar falls back to Bitmap (log once).
+Incomplete picks leave `representations.msdf` false until the pair is complete. Attach merges representation flags with OR so attaching MSDF does not clear `source`. It merges into the Font's saved payload, its `document` chunk once the Font editor has saved it, and writes the result to both that chunk and the header, so a closed Font's MSDF flag and an open editor's header both see the new chunks. The open Font document merges only those flags into its own payload, so its fallbacks and other edits stay. Export packs `FontMsdf` (`font-msdf:<guid>`) and `FontMsdfAtlas` (`font-msdf-png:<guid>`) when the Font is in the closure and both chunks exist. A packed game missing the sidecar falls back to Bitmap (log once).
 
 ## Fallback stack
 
@@ -48,22 +48,22 @@ Incomplete picks leave `representations.msdf` false until the pair is complete. 
 3. Project default font (Project Settings).
 4. Global generic fallback (`sans-serif` unless overridden).
 
-Duplicates are dropped. The stack always terminates in a generic family so a failed load is never silent Arial. `compileText2DFontStacks` builds the project default stack plus a per-Font map; editor viewport / Play / player pass those as `fontCssStack` / `fontCssStackByGuid`.
+Duplicates are dropped. Font families (1–3) are always quoted, so a Font named like a generic (`serif`, `Monospace`) still names its own face. The stack always terminates in a generic family so a failed load is never silent Arial. `compileText2DFontStacks` builds the project default stack plus a per-Font map; editor viewport / Play / player pass those as `fontCssStack` / `fontCssStackByGuid`.
 
 Project Settings (`packages/core` `ProjectSettings.fonts`): `defaultFontGuid`, `globalFallback` (generic CSS family).
 
 ## Registry (`render`)
 
-`FontRegistry` takes an injectable `FontFaceHost` so Node tests mock `document.fonts`:
+`FontRegistry` takes an injectable `FontFaceHost` so Node tests mock `FontFace` and `document.fonts`:
 
 1. `new FontFace(family, bytes)` + `document.fonts.add`.
-2. **Await** `document.fonts.load` before the first 3D Text / Font sample paint (`register` / `registerAll`).
-3. Late resolve → `consumeDirty()` so a host can `markAsDirty()`.
+2. **Await** that face's own `FontFace.load()` before the first 3D Text / Font sample paint (`register` / `registerAll`). A family-wide `document.fonts.load` would match only the regular face, so a bold or italic face could report ready before it loads.
+3. Late resolve → `consumeDirty()` so a host can `markAsDirty()`. `createEngine({ fontFaceEntries })` registers at construction; world `whenEditorModelsReady` awaits that registration, and a face that resolves late invalidates the render scheduler like `registerFonts`.
 4. Failed load → editor warning, never a silent substitution.
 5. One document face per registered font content (guid, family, weight, style and a SHA-256 of the bytes); repeated registrations share it. Changed bytes replace the face only after the new one loads, and failed faces are removed.
-6. `dispose()` removes only that registry's faces, so sibling views keep theirs. `EngineHandle.dispose()`, construction rollback and the Font document preview dispose their registries.
+6. `dispose()` removes only that registry's faces, so sibling views keep theirs, and `isReady` turns false for every guid it served. `EngineHandle.dispose()`, construction rollback and the Font document preview dispose their registries.
 
-The Font document workspace calls `register` when the asset has a `source` chunk (imported woff/ttf/otf). New Asset fonts have payload only — the sample still compiles a CSS stack that terminates in the Project Settings generic fallback. Editor viewports **await** `registerFonts` before `setMeshAssets` so Bitmap 2D Text rasterize sees loaded faces. Imported fonts store payload on the babasset **header** (no `document` chunk); `decodeAssetDocument` falls back to `header.payload` so they open. Saving a Font keeps extra chunks (`source`, facetype, msdf) beside the rewritten document body.
+The Font document workspace calls `register` when the asset has a `source` chunk (imported woff/ttf/otf). New Asset does not create Fonts; every Font comes from import. A Font imported only from representation files (MSDF JSON + PNG, or facetype JSON) has no `source` chunk — the sample still compiles a CSS stack that terminates in the Project Settings generic fallback. Editor viewports **await** `registerFonts` before `setMeshAssets` so Bitmap 2D Text rasterize sees loaded faces. Imported fonts store payload on the babasset **header** (no `document` chunk); `decodeAssetDocument` falls back to `header.payload` so they open. Saving a Font keeps extra chunks (`source`, facetype, msdf) beside the rewritten document body.
 
 ## Editor
 

@@ -1,5 +1,5 @@
 import type { IDockviewPanelProps } from "dockview-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { Empty, EmptyDescription, EmptyTitle } from "@babylonslate/ui/components/empty";
 import {
@@ -79,6 +79,12 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
   }, [activeDocumentId, documentId, sceneContent, sceneKind, scenePath, setDiagnostics]);
 
   const rows = useMemo(() => flattenCompilerRows(diagnostics), [diagnostics]);
+  // Stable per row list, so the windowed list can reuse its row offsets.
+  const rowHeight = useCallback(
+    (index: number) =>
+      rows[index]?.kind === "header" ? TREE_ROW_HEIGHT : WINDOWED_LIST_TOUCH_ROW_HEIGHT,
+    [rows],
+  );
   const [selectedDiagnostic, setSelectedDiagnostic] = useState<Diagnostic | null>(null);
   const selected = selectedDiagnostic && diagnostics.includes(selectedDiagnostic) ? selectedDiagnostic : null;
 
@@ -93,9 +99,7 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
         <ScrollArea className="min-h-0 flex-1 pb-1">
           <WindowedList
             itemCount={rows.length}
-            rowHeight={(index) =>
-              rows[index]?.kind === "header" ? TREE_ROW_HEIGHT : WINDOWED_LIST_TOUCH_ROW_HEIGHT
-            }
+            rowHeight={rowHeight}
           >
             {(index) => {
               const row = rows[index]!;

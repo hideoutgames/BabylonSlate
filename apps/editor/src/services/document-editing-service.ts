@@ -112,6 +112,13 @@ export class DocumentEditingService {
     );
   }
 
+  /** The indexed asset at `path` belongs to a read-only asset source. */
+  private isInReadOnlyRoot(path: string): boolean {
+    const registry = this.project.registry;
+    const asset = registry?.getByPath(path);
+    return Boolean(asset && registry?.getRoot(asset.rootId)?.readOnly);
+  }
+
   /** Apply a graph edit through the command layer (marks dirty + undoable). */
   async applyGraphChange(id: string, next: SerializedGraph): Promise<boolean> {
     const doc = this.documents.getState().openDocuments.get(id);
@@ -221,9 +228,7 @@ export class DocumentEditingService {
       release: lease.release,
       applyScene: async (candidate) => {
         const path = lease.baseline.ref.path;
-        const registry = this.project.registry;
-        const asset = registry?.list().find(entry => entry.path === path);
-        if (asset && registry?.getRoot(asset.rootId)?.readOnly) return { ok: false, reason: "The Scene belongs to a read-only asset source." };
+        if (this.isInReadOnlyRoot(path)) return { ok: false, reason: "The Scene belongs to a read-only asset source." };
         if (isMutatingApplyBlocked(this.sourceControl, path, isPluginDocumentReadOnly(this.project.plugins, path), false)) {
           return { ok: false, reason: "The Scene is read-only or locked by source control." };
         }
@@ -339,24 +344,39 @@ export class DocumentEditingService {
       // recorded before it (such as history kept from a closed tab) no longer
       // fits the content and must not replay onto it.
       this.editSession.dropDocument(sceneDoc.id);
-      this.documents.patchLoadedContent(sceneDoc.id, next);
+      const path = sceneDoc.ref.path;
+      if (this.isApplyBlocked(path) || this.isInReadOnlyRoot(path)) {
+        // Save never writes a read-only or locked Scene, so it stays clean.
+        this.documents.patchLoadedContent(sceneDoc.id, next);
+      } else {
+        // The file still holds the old instances, so the Scene is dirty
+        // until Save writes them, and source control locks it like an edit.
+        this.documents.updateScene(sceneDoc.id, next, "compare");
+        this.options.scheduleDebouncedSave();
+        void afterMutatingApply(this.sourceControl, path);
+      }
       this.options.bump();
       return;
     }
     await this.applySceneChange(sceneDoc.id, next, { prefabSync: true });
   }
 
-  /** Replay the crash-recovery journal onto its documents, opening cold ones first. */
+  /**
+   * Replay the crash-recovery journal onto its documents, opening cold ones
+   * first. Stops without resolving recovery when an authoring lock or another
+   * project takes over during its reads, so the banner stays for a retry.
+   */
   async replayRecoveryJournal(): Promise<void> {
     const authoring = this.documents.getAuthoringLock();
     if (authoring.readOnly) return;
     const guid = this.project.guid;
     if (!guid) return;
+    const current = () => this.documents.getAuthoringLock() === authoring && this.project.guid === guid;
     const derived = await this.options.derivedStorage();
     const lines = resolveClassRenameRecovery(await this.journal.afterFlush(guid, () =>
       readJournalLines(derived, guid),
     ), this.project.registry);
-    if (this.documents.getAuthoringLock() !== authoring) return;
+    if (!current()) return;
     if (lines.length === 0) {
       this.options.onRecoveryResolved();
       return;
@@ -365,7 +385,7 @@ export class DocumentEditingService {
     // Ensure every journal target document is open so replay is not skipped.
     // Resolved ids follow renames, so a renamed document opens at its new path.
     for (const { docId } of resolveJournalLines(lines)) {
-      if (this.documents.getAuthoringLock() !== authoring) return;
+      if (!current()) return;
       const ref = parseDocumentId(docId);
       if (!ref || !isAssetDocumentKind(ref.kind)) continue;
       if (this.documents.getState().openDocuments.get(docId)?.content != null) continue;
@@ -382,7 +402,7 @@ export class DocumentEditingService {
       }
     }
 
-    if (this.documents.getAuthoringLock() !== authoring) return;
+    if (!current()) return;
 
     const openDocs = new Map<string, DocumentContent>();
     for (const doc of this.documents.getOpenDocumentsOrdered()) {
@@ -391,7 +411,10 @@ export class DocumentEditingService {
       }
     }
 
-    const { documents, skipped } = replayJournalLines(lines, openDocs);
+    const { documents, skipped, malformed } = replayJournalLines(lines, openDocs);
+    if (malformed.length > 0) {
+      console.warn(`[journal] ${malformed.length} unreadable recovery record(s) could not be replayed`);
+    }
     for (const [id, content] of documents) {
       const doc = this.documents.getDocument(id);
       if (!doc || doc.content === content) continue;
@@ -406,9 +429,9 @@ export class DocumentEditingService {
     }
     // Undo can leave the journal at the saved content. There is nothing to
     // save in that case, so retire the replayed journal without a no-op edit.
-    // Retain skipped records and any edits made while the clear is queued.
-    if (skipped.length === 0) {
-      await this.journal.afterFlush(guid, () => truncateJournal(derived, guid, () =>
+    // Retain skipped or unreadable records and any edits made while the clear is queued.
+    if (skipped.length === 0 && malformed.length === 0) {
+      await this.journal.clearAfterFlush(guid, () => truncateJournal(derived, guid, () =>
         this.project.guid === guid &&
         this.documents.getDirtyDocuments().length === 0 &&
         !this.options.isProjectDirty(),

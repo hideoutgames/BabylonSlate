@@ -85,11 +85,13 @@ export function classifyExternalChanges(input: {
   ];
   const projectJsonChanged =
     input.previousProjectJsonMtime !== input.nextProjectJsonMtime;
+  // An open document's file deleted on disk changed under it too.
+  const touched = new Set([...diff.changedPaths, ...diff.removedPaths]);
   const dirtyChangedPaths = input.openDocs
-    .filter((doc) => doc.dirty && diff.changedPaths.includes(doc.path))
+    .filter((doc) => doc.dirty && touched.has(doc.path))
     .map((doc) => doc.path);
   const cleanChangedPaths = input.openDocs
-    .filter((doc) => !doc.dirty && diff.changedPaths.includes(doc.path))
+    .filter((doc) => !doc.dirty && touched.has(doc.path))
     .map((doc) => doc.path);
 
   let kind: ExternalChangeKind = "none";

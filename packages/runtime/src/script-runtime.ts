@@ -114,12 +114,8 @@ export class ScriptRuntime {
       if (this.host.stopped()) throw new Error("The runtime stopped during script preparation.");
       const world = this.host.world();
       const requested = new Map(scripts.map((script) => [compiledScriptKey(script), script]));
-      const actors = world.getActors();
-      const owners = [world.gameInstance, world.currentScene, ...actors, ...actors.flatMap((actor) => actor.components),
-        ...world.getSceneLayers(), ...world.getGameSubsystems(), ...world.getSceneSubsystems(),
-        ...this.host.streams().scenes()];
-      const liveClasses = new Set(owners.filter((owner) => owner && !owner.destroyed)
-        .flatMap((owner) => world.classRegistry.ancestry(owner!.classId)));
+      const liveClasses = new Set(this.liveScriptOwners()
+        .flatMap((owner) => world.classRegistry.ancestry(owner.classId)));
       for (const script of this.scriptSources.values())
         if ((!replace || liveClasses.has(script.classId)) && !requested.has(compiledScriptKey(script))) requested.set(compiledScriptKey(script), script);
       const ordered = parentFirstScriptOrder([...requested.values()], (classId) => world.classRegistry.has(classId));
@@ -157,10 +153,21 @@ export class ScriptRuntime {
         this.host.registerAnchors(guid, anchors.sort((a, b) => a.line - b.line || a.column - b.column));
       this.applyGameInstanceClassDefaults();
       this.installSubsystems();
-      for (const owner of owners) if (owner && !owner.destroyed) this.host.scriptHost().bindInterfaceHandlers(owner);
+      // Read the owners again: objects created while the modules loaded must bind the new handlers too.
+      for (const owner of this.liveScriptOwners()) this.host.scriptHost().bindInterfaceHandlers(owner);
     });
     this.scriptSourceWork = work;
     return work;
+  }
+
+  /** Every live object that can own script handlers. */
+  private liveScriptOwners(): BObject[] {
+    const world = this.host.world();
+    const actors = world.getActors();
+    const owners: Array<BObject | null> = [world.gameInstance, world.currentScene, ...actors, ...actors.flatMap((actor) => actor.components),
+      ...world.getSceneLayers(), ...world.getGameSubsystems(), ...world.getSceneSubsystems(),
+      ...this.host.streams().scenes()];
+    return owners.filter((owner): owner is BObject => !!owner && !owner.destroyed);
   }
 
   /** Stop: unregister the script classes (children first) and forget their sources. */

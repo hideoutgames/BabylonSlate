@@ -17,6 +17,7 @@ import {
 import {
   createMeshComponent,
   identitySerializedTransform,
+  type QuaternionTuple,
   type SerializedComponent,
   type SerializedGraph,
   type SerializedScene,
@@ -34,14 +35,26 @@ export const MANNEQUIN_CLASS_FILE = "Mannequin.class.babasset";
 export const MANNEQUIN_ASSET_FOLDER = "Mannequin";
 export const MANNEQUIN_CLASS_ID = "Mannequin";
 export const MANNEQUIN_ACTOR_ID = "actor-1";
+/** The model faces +Z; turn it toward the default Camera on the -Z side. */
+export const MANNEQUIN_ROTATION: QuaternionTuple = [0, 1, 0, 0];
 
 /** Kenney Mannequin is about 1.6m tall; origin is at the feet. */
 export const MANNEQUIN_CAPSULE_RADIUS = 0.5;
 export const MANNEQUIN_CAPSULE_HALF_HEIGHT = 1;
 
-function mannequinPhysicsComponents(idPrefix: string): SerializedComponent[] {
+/** Mannequin Class prefab row ids; `actor-1`'s rows link to them by `sourceId`. */
+const PREFAB_ID_PREFIX = "prefab-";
+const PREFAB_MESH_ID = `${PREFAB_ID_PREFIX}mesh`;
+const PREFAB_ANIM_GRAPH_ID = `${PREFAB_ID_PREFIX}anim-graph`;
+
+/**
+ * The capsule rows. Instance rows (`sourceIdPrefix` set) link to the Class
+ * prefab rows, so opening the Scene finds them in sync and leaves it clean.
+ */
+function mannequinPhysicsComponents(idPrefix: string, sourceIdPrefix?: string): SerializedComponent[] {
   const radius = MANNEQUIN_CAPSULE_RADIUS;
   const halfHeight = MANNEQUIN_CAPSULE_HALF_HEIGHT;
+  const source = (name: string) => sourceIdPrefix ? { sourceId: `${sourceIdPrefix}${name}` } : {};
   return [
     {
       id: `${idPrefix}rigid-body`,
@@ -53,6 +66,7 @@ function mannequinPhysicsComponents(idPrefix: string): SerializedComponent[] {
       },
       parentId: null,
       transform: identitySerializedTransform(),
+      ...source("rigid-body"),
     },
     {
       id: `${idPrefix}collider`,
@@ -70,11 +84,12 @@ function mannequinPhysicsComponents(idPrefix: string): SerializedComponent[] {
         ...identitySerializedTransform(),
         position: [0, radius + halfHeight, 0],
       },
+      ...source("collider"),
     },
   ];
 }
 
-function withDocumentPayload(
+export function withDocumentPayload(
   result: ImportResult,
   payload: Record<string, unknown>,
 ): ImportResult {
@@ -120,6 +135,7 @@ function replaceDefaultCubeActor(
         ...actor,
         name: MANNEQUIN_CLASS_ID,
         classId: MANNEQUIN_CLASS_ID,
+        transform: { ...actor.transform, rotation: MANNEQUIN_ROTATION },
         components: [
           {
             ...mesh,
@@ -127,6 +143,7 @@ function replaceDefaultCubeActor(
               ...mesh.properties,
               assetGuid: options.modelGuid,
             },
+            sourceId: PREFAB_MESH_ID,
           },
           {
             id: "component-anim-graph",
@@ -134,8 +151,9 @@ function replaceDefaultCubeActor(
             properties: { graphGuid: options.graphGuid },
             parentId: null,
             transform: identitySerializedTransform(),
+            sourceId: PREFAB_ANIM_GRAPH_ID,
           },
-          ...mannequinPhysicsComponents("component-"),
+          ...mannequinPhysicsComponents("component-", PREFAB_ID_PREFIX),
         ],
       };
     }),
@@ -251,7 +269,7 @@ export async function applyKenneyMannequinEmptyScaffold(options: {
     animGraph as unknown as Record<string, unknown>,
   );
 
-  const mesh = createMeshComponent("prefab-mesh", "box");
+  const mesh = createMeshComponent(PREFAB_MESH_ID, "box");
   mesh.properties.assetGuid = model.header.guid;
   const classPayload = buildNewAssetResult({
     type: "Class",
@@ -263,13 +281,13 @@ export async function applyKenneyMannequinEmptyScaffold(options: {
   classGraph.components = [
     mesh,
     {
-      id: "prefab-anim-graph",
+      id: PREFAB_ANIM_GRAPH_ID,
       classId: "AnimationGraphComponent",
       properties: { graphGuid },
       parentId: null,
       transform: identitySerializedTransform(),
     },
-    ...mannequinPhysicsComponents("prefab-"),
+    ...mannequinPhysicsComponents(PREFAB_ID_PREFIX),
   ];
   const classResult = withDocumentPayload(
     {

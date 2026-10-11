@@ -55,3 +55,9 @@ export function createMemoryOpfsRoot(name = ""): FileSystemDirectoryHandle {
     async *entries() { yield* entries; },
   } as unknown as FileSystemDirectoryHandle;
 }
+
+/** The folder an OPFS adapter keeps a project or library id in: `project-v2-<SHA-256 hex of the JSON-encoded id>`. */
+export async function opfsProjectFolder(root: FileSystemDirectoryHandle, id: string): Promise<FileSystemDirectoryHandle> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(id)));
+  return root.getDirectoryHandle(`project-v2-${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")}`);
+}

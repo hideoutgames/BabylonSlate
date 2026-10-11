@@ -6,25 +6,11 @@ import {
 import type { SerializedGraph } from "@babylonslate/core";
 import { syncVariableAccessNodes } from "./class-members";
 
-function withVariables(
-  doc: AnimGraphDocument,
-  variables: AnimGraphVariable[],
-): AnimGraphDocument {
-  return {
-    ...doc,
-    variables,
-    parameters: variables
-      .filter((variable) => variable.typeId === "bool")
-      .map((variable) => variable.name),
-  };
-}
-
 function syncGraph(
   graph: SerializedGraph,
   declared: ReturnType<typeof animGraphMembersFromVariables>[number],
-  previous: ReturnType<typeof animGraphMembersFromVariables>[number],
 ): SerializedGraph {
-  const next = syncVariableAccessNodes(graph, declared, previous);
+  const next = syncVariableAccessNodes(graph, declared);
   return { nodes: next.nodes, edges: next.edges };
 }
 
@@ -45,16 +31,12 @@ export function commitAnimGraphVariables(
       continue;
     }
     const declared = animGraphMembersFromVariables([variable])[0];
-    const prior = animGraphMembersFromVariables([previous])[0];
-    if (!declared || !prior) continue;
-    animationObject = syncGraph(animationObject, declared, prior);
+    if (!declared) continue;
+    animationObject = syncGraph(animationObject, declared);
     transitions = transitions.map((transition) => ({
       ...transition,
-      ruleGraph: syncGraph(transition.ruleGraph, declared, prior),
+      ruleGraph: syncGraph(transition.ruleGraph, declared),
     }));
   }
-  return withVariables(
-    { ...doc, animationObject, transitions },
-    variables,
-  );
+  return { ...doc, animationObject, transitions, variables };
 }

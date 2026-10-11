@@ -13,6 +13,10 @@ export interface CanvasRect {
   height: number;
 }
 
+// Marquee sampling projects every pickable mesh; reuse projection scratch.
+const projectViewport = new Viewport(0, 0, 1, 1);
+const projectedScratch = new Vector3();
+
 /**
  * Project a world point to canvas pixels through the active camera.
  *
@@ -29,11 +33,14 @@ export function projectToCanvas(
 ): CanvasPoint | null {
   const camera = scene.activeCamera;
   if (!camera || width <= 0 || height <= 0) return null;
-  const projected = Vector3.Project(
+  projectViewport.width = width;
+  projectViewport.height = height;
+  const projected = Vector3.ProjectToRef(
     point,
-    Matrix.Identity(),
+    Matrix.IdentityReadOnly,
     scene.getTransformMatrix(),
-    new Viewport(0, 0, width, height),
+    projectViewport,
+    projectedScratch,
   );
   return { x: projected.x, y: projected.y };
 }

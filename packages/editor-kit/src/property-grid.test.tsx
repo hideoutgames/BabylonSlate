@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -16,7 +17,11 @@ import {
   formatEventTitle,
   humanizePropertyLabel,
 } from "./humanize-property-label";
-import { dispatchPointerEvent } from "./test-support/pointer-events";
+import {
+  dispatchPointerEvent,
+  dispatchTouchEvent,
+  stubPointerCapture,
+} from "./test-support/pointer-events";
 
 describe("PropertyGrid", () => {
   afterEach(() => {
@@ -36,6 +41,23 @@ describe("PropertyGrid", () => {
     fireEvent.keyDown(input, { key: "Escape" });
     expect(input.value).toBe("Camera");
     expect(onCommit).not.toHaveBeenCalled();
+  });
+
+  it("commits a text row on blur only after typing", () => {
+    const onCommit = vi.fn();
+    render(
+      <PropertyGrid
+        rows={[{ kind: "text", id: "name", label: "Name", value: "Camera", onChange: () => {}, onCommit }]}
+      />,
+    );
+    const input = screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement;
+    fireEvent.focus(input);
+    fireEvent.blur(input);
+    expect(onCommit).not.toHaveBeenCalled();
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "Player" } });
+    fireEvent.blur(input);
+    expect(onCommit).toHaveBeenCalledExactlyOnceWith("Player");
   });
 
   it("shows readable Boolean states and toggles from the value label", () => {
@@ -60,8 +82,9 @@ describe("PropertyGrid", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("edits a vector3 row per axis", () => {
+  it("edits a vector3 row per axis and commits the finished axis value", () => {
     const onChange = vi.fn();
+    const onCommit = vi.fn();
     const rows: PropertyRow[] = [
       {
         kind: "vector3",
@@ -69,14 +92,16 @@ describe("PropertyGrid", () => {
         label: "Position",
         value: [1, 2, 3],
         onChange,
+        onCommit,
       },
     ];
     render(<PropertyGrid rows={rows} />);
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Position Y" }), {
-      target: { value: "9" },
-    });
+    const y = screen.getByRole("textbox", { name: "Position Y" });
+    fireEvent.change(y, { target: { value: "9" } });
     expect(onChange).toHaveBeenCalledWith([1, 9, 3]);
+    fireEvent.blur(y);
+    expect(onCommit).toHaveBeenCalledExactlyOnceWith([1, 9, 3]);
   });
 
   it("names compound color and slider controls with their property context", async () => {
@@ -470,28 +495,128 @@ describe("PropertyGrid", () => {
     expect(rows.every((row) => row.disabled === undefined)).toBe(true);
   });
 
-  it("renders a bounded slider beside the numeric field", () => {
+  it("renders a bounded slider beside the numeric field and commits its changes", async () => {
+    // Base UI's inset thumb needs a measured track before it becomes accessible.
+    const bounds = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue(new DOMRect(0, 0, 100, 20));
     const onChange = vi.fn();
-    render(
-      <PropertyGrid
-        rows={[
-          {
-            kind: "slider",
-            id: "friction",
-            label: "Friction",
-            value: 0.5,
-            min: 0,
-            max: 1,
-            onChange,
-          },
-        ]}
-      />,
-    );
-    expect(screen.getByTestId("property-friction-slider")).toBeTruthy();
-    fireEvent.change(screen.getByTestId("property-friction"), {
-      target: { value: "0.25" },
+    const onCommit = vi.fn();
+    try {
+      render(
+        <PropertyGrid
+          rows={[
+            {
+              kind: "slider",
+              id: "friction",
+              label: "Friction",
+              value: 0.5,
+              min: 0,
+              max: 1,
+              onChange,
+              onCommit,
+            },
+          ]}
+        />,
+      );
+      expect(screen.getByTestId("property-friction-slider")).toBeTruthy();
+      fireEvent.change(screen.getByTestId("property-friction"), {
+        target: { value: "0.25" },
+      });
+      expect(onChange).toHaveBeenCalledWith(0.25);
+      const thumb = await screen.findByRole("slider", { name: "Friction" });
+      fireEvent.keyDown(thumb, { key: "End" });
+      expect(onCommit).toHaveBeenLastCalledWith(1);
+    } finally {
+      bounds.mockRestore();
+    }
+  });
+
+  describe("slider pointer input", () => {
+    // A 100px control with a 16px edge-aligned thumb: values map to
+    // 8px + value * 84px, so 0.5 centres the thumb at 50px.
+    let restorePointerCapture = () => {};
+
+    function renderFrictionSlider() {
+      restorePointerCapture = stubPointerCapture();
+      vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+        function (this: HTMLElement) {
+          return this.dataset.slot === "slider-thumb"
+            ? new DOMRect(42, 2, 16, 16)
+            : new DOMRect(0, 0, 100, 20);
+        },
+      );
+      const onChange = vi.fn();
+      const onCommit = vi.fn();
+      render(
+        <PropertyGrid
+          rows={[
+            {
+              kind: "slider",
+              id: "friction",
+              label: "Friction",
+              value: 0.5,
+              min: 0,
+              max: 1,
+              onChange,
+              onCommit,
+            },
+          ]}
+        />,
+      );
+      const slider = screen.getByTestId("property-friction-slider");
+      return {
+        onChange,
+        onCommit,
+        track: slider.querySelector('[data-slot="slider-track"]')!,
+        thumb: slider.querySelector('[data-slot="slider-thumb"]')!,
+      };
+    }
+
+    afterEach(() => {
+      restorePointerCapture();
+      vi.restoreAllMocks();
     });
-    expect(onChange).toHaveBeenCalledWith(0.25);
+
+    it.each(["touch", "pen"] as const)(
+      "leaves the value alone when a %s swipe starts on the track",
+      (pointerType) => {
+        const { onChange, onCommit, track } = renderFrictionSlider();
+        act(() => {
+          dispatchPointerEvent(track, "pointerdown", { pointerType, clientX: 92, clientY: 10, buttons: 1 });
+          dispatchTouchEvent(track, "touchstart", { clientX: 92, clientY: 10 });
+          dispatchTouchEvent(track, "touchmove", { clientX: 90, clientY: 60 });
+          dispatchPointerEvent(track, "pointercancel", { pointerType, clientX: 92, clientY: 10 });
+          dispatchTouchEvent(track, "touchend", { clientX: 90, clientY: 60 });
+        });
+        expect(onChange).not.toHaveBeenCalled();
+        expect(onCommit).not.toHaveBeenCalled();
+      },
+    );
+
+    it("changes the value when a touch drags the thumb and commits on release", () => {
+      const { onChange, onCommit, thumb } = renderFrictionSlider();
+      act(() => {
+        dispatchPointerEvent(thumb, "pointerdown", { clientX: 50, clientY: 10, buttons: 1 });
+        dispatchTouchEvent(thumb, "touchstart", { clientX: 50, clientY: 10 });
+        dispatchPointerEvent(thumb, "pointermove", { clientX: 71, clientY: 10, buttons: 1 });
+        dispatchTouchEvent(thumb, "touchmove", { clientX: 71, clientY: 10 });
+        dispatchPointerEvent(thumb, "pointerup", { clientX: 71, clientY: 10 });
+        dispatchTouchEvent(thumb, "touchend", { clientX: 71, clientY: 10 });
+      });
+      expect(onChange).toHaveBeenLastCalledWith(0.75);
+      expect(onCommit).toHaveBeenCalledExactlyOnceWith(0.75);
+    });
+
+    it("jumps to a mouse click on the track", () => {
+      const { onChange, onCommit, track } = renderFrictionSlider();
+      act(() => {
+        dispatchPointerEvent(track, "pointerdown", { pointerType: "mouse", clientX: 29, clientY: 10, buttons: 1 });
+        dispatchPointerEvent(track, "pointerup", { pointerType: "mouse", clientX: 29, clientY: 10 });
+      });
+      expect(onChange).toHaveBeenCalledExactlyOnceWith(0.25);
+      expect(onCommit).toHaveBeenCalledExactlyOnceWith(0.25);
+    });
   });
 
   it("renders flag bits and toggles a mask value", () => {

@@ -1,7 +1,7 @@
 import type { ScalabilityTransaction, ScalabilityAcknowledgement, RenderPathStatus, RenderProjectSettings, ScenePostProcessEntry, MaterialParameterCatalog, MaterialParameterValue } from "@babylonslate/core";
 /** Reliable ordered channel message types (never through the snapshot buffer). */
 
-import type { ActorDefaults, CollisionTriangleMesh, ProjectInputSettings, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
+import type { ActorDefaults, CollisionTriangleMesh, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
 
 /** Rest-pose Complex Collision triangles for one Model; typed arrays clone as one memcpy. */
 export type CookedCollisionMeshEntry = { guid: string } & CollisionTriangleMesh;
@@ -148,6 +148,8 @@ export type ControlMessage =
       simulationAssetGuids?: string[];
       saveGame?: import("@babylonslate/core").SaveGameConfiguration;
       dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
+      /** Packaged authored assets for the Asset Registry nodes, snapshotted when the session starts. */
+      assetCatalog?: import("@babylonslate/core").RuntimeAssetCatalogEntry[];
       /** Initial session render cap, shared with the renderer for console readback. */
       frameCap?: number;
       /** Serialized trace retention budget in bytes for this session. */
@@ -155,9 +157,8 @@ export type ControlMessage =
   renderSettings?: Partial<RenderProjectSettings>;
       project?: { name: string; version: string };
       sceneAssetGuid: string;
-      /** Authored project mappings; omitted legacy loads use defaults. */
+      /** Authored Input Action / Input Axis assets; omitted loads use the starter controls. */
       inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
-  inputMappings?: ProjectInputSettings;
       focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
       pixelsPerUnit?: number;
       texturePixelSizes?: Record<string, { width: number; height: number }>;
@@ -421,7 +422,6 @@ export type CommandMessage =
   | ({ type: "performanceTicks" } & import("./diagnostic-operation").PerformanceTickChunk)
   | { type: "diagnosticOperationStopped"; sessionGeneration: number; recordingId: string; kind: "profile" | "frame"; reason: "requested" | "duration" | "budget" | "session-ended" }
   | ({ type: "runtimeInspectorResult" } & import("./runtime-inspector").RuntimeInspectorResult)
-  | { type: "resetActorInterpolation"; actorGuid: string; slotId: number; frameId: number }
   | ({ type: "sessionBoundaryResult" } & SessionBoundaryResult)
   | { type: "saveStorageRequest"; request: import("@babylonslate/core").SaveStorageRequest }
   | { type: "setUIControl2D"; slotId: number; componentId: string; uiControl: { classId: string; properties: import("@babylonslate/core").UIControl2DProperties }; focused?: boolean; beginEditing?: boolean }
@@ -545,7 +545,6 @@ export type CommandMessage =
         text3d?: {
           text: string;
           size: number;
-          depth: number;
           color: [number, number, number];
           fontAssetGuid: string | null;
           alignment: "left" | "center" | "right";
@@ -591,7 +590,6 @@ export type CommandMessage =
       text3d?: {
         text: string;
         size: number;
-        depth: number;
         color: [number, number, number];
         fontAssetGuid: string | null;
         alignment: "left" | "center" | "right";
@@ -636,8 +634,10 @@ export type CommandMessage =
   | { type: "possessCamera"; slotId: number }
   | { type: "sceneLoading"; sceneAssetGuid: string; sceneLoadId: number }
   | { type: "sceneStreamLoading"; actorGuid: string; streamLoadId: number }
-  | { type: "sceneStreamBlocking"; blocking: boolean }
-  | { type: "assetPreload"; preloadId: string; ownerId: string; assetGuids: string[] }
+  /** A blocking Scene load or asset load holds the simulation; the host pauses render game time to match. */
+  | { type: "simulationBlocking"; blocking: boolean }
+  /** `priority` orders the host's source and native preparation work. */
+  | { type: "assetPreload"; preloadId: string; ownerId: string; assetGuids: string[]; priority: import("@babylonslate/core").RuntimeAssetSchedulerPriority }
   | { type: "assetPreloadRelease"; preloadId: string }
   | { type: "assetSourcesReady"; requestId: number; success: boolean; error?: string }
   /** A Complex Collision Model had no cooked mesh; the host answers with `loadComplexCollision`. */
@@ -739,6 +739,16 @@ export type CommandMessage =
       visible: boolean;
       frameId: number;
     }
+  /** The worker finished its `stop` phase (End Play, On Game End and their save writes). */
+  | { type: "runtimeStopped" }
+  /** Rumble a pad by its Gamepad API index: intensity 0..1; zero intensity or duration stops it. */
+  | {
+      type: "setGamepadRumble";
+      gamepadIndex: number;
+      intensity: number;
+      durationMs: number;
+      frameId: number;
+    }
   | {
       type: "consoleResult";
       success: boolean;
@@ -823,7 +833,21 @@ export type CommandMessage =
       voiceId?: string;
       /** Seconds of the voice already played (trace restore); omitted starts at the beginning. */
       startOffsetSeconds?: number;
+      /**
+       * The runtime's uniform [0, 1) draws for the weighted clip and the random pitch, so a trace
+       * restore plays the same clip at the same pitch. Omitted draws are random on the host.
+       */
+      clipRoll?: number;
+      pitchRoll?: number;
+      /**
+       * Trace restore only: the runtime's audio clock (undilated simulation time, excluding pauses)
+       * when it issued the voice. A restored voice that waits for the audio unlock starts later by
+       * the audio clock time it waited.
+       */
+      restoredAtSeconds?: number;
     }
+  /** Runtime audio clock (undilated simulation seconds, excluding pauses); sent each tick while trace-restored voices are live. */
+  | { type: "audioSimTime"; seconds: number }
   | { type: "stopSound"; voiceId: string }
   | { type: "setVoiceGain"; voiceId: string; volume: number }
   | { type: "setChannelVolume"; channelGuid: string; volume: number }
@@ -863,6 +887,8 @@ export type CommandMessage =
   | {
       type: "debugColliders";
       colliders: readonly DebugColliderPrimitive[];
+      /** The Scene Layer instance whose own world (and overlay scene) these colliders belong to; absent for the main world. */
+      layerId?: string;
     }
   | {
       type: "sceneLayerCreate";

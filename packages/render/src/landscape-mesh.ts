@@ -94,6 +94,11 @@ export function landscapeMeshData(root: Mesh): LandscapeProperties | null {
   return landscapes.get(root)?.data ?? null;
 }
 
+/**
+ * Rewrites heights, weights and Material in place. Chunks keep the
+ * subdivisions the mesh was created with: a subdivision change has a new
+ * `landscape:<subdivisions>` visual kind, so EditorSceneSync rebuilds the mesh.
+ */
 export function updateLandscapeMesh(root: Mesh, properties: unknown, assets?: MeshAssetContext): void {
   const state = landscapes.get(root);
   if (!state) return;

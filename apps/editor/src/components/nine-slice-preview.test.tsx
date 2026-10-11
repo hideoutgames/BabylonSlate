@@ -37,27 +37,27 @@ describe("NineSlicePreview", () => {
         source="texture"
         textureGuid={null}
         materialGuid={null}
-        marginLeft={10}
-        marginRight={10}
-        marginTop={10}
-        marginBottom={10}
+        marginLeft={0.1}
+        marginRight={0.1}
+        marginTop={0.1}
+        marginBottom={0.1}
       />,
     );
     expect(screen.getByTestId("panel-nine-slice-preview")).toBeTruthy();
     expect(screen.queryByTestId("panel-nine-slice-overlay")).toBeNull();
   });
 
-  it("loads a texture still and maps pixel margins onto the contain box", async () => {
+  it("loads a texture still and maps margin fractions onto the contain box", async () => {
     vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:panel");
     render(
       <NineSlicePreview
         source="texture"
         textureGuid="tex-1"
         materialGuid={null}
-        marginLeft={10}
-        marginRight={20}
-        marginTop={5}
-        marginBottom={15}
+        marginLeft={0.1}
+        marginRight={0.2}
+        marginTop={0.1}
+        marginBottom={0.3}
         sourceWidthPx={100}
         sourceHeightPx={50}
       />,
@@ -99,10 +99,10 @@ describe("NineSlicePreview", () => {
         source="material"
         textureGuid={null}
         materialGuid="mat-1"
-        marginLeft={10}
-        marginRight={10}
-        marginTop={10}
-        marginBottom={10}
+        marginLeft={0.1}
+        marginRight={0.1}
+        marginTop={0.1}
+        marginBottom={0.1}
         sourceWidthPx={100}
         sourceHeightPx={100}
       />,

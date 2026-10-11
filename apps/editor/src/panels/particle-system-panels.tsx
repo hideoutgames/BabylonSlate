@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   AssetPicker,
@@ -77,6 +77,17 @@ export function ParticleSystemDetailsPanel(_props: IDockviewPanelProps) {
   );
 }
 
+function sameEntries(
+  left: ReadonlyMap<string, unknown>,
+  right: ReadonlyMap<string, unknown>,
+): boolean {
+  if (left.size !== right.size) return false;
+  for (const [key, value] of left) {
+    if (right.get(key) !== value) return false;
+  }
+  return true;
+}
+
 const idleControls = {
   paused: false,
   onPausedChange: () => {},
@@ -105,13 +116,20 @@ export function ParticleSystemPreview({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
 
-  const openPayloads = new Map<string, unknown>();
+  // Only this system's emitters matter. An edit replaces an open tab's content
+  // object, so the same objects mean nothing the preview reads has changed.
+  const slotGuids = new Set(system.emitterGuids);
+  const nextOpenPayloads = new Map<string, unknown>();
   for (const asset of assets) {
-    if (!isParticleEmitterAssetType(asset.header.type)) continue;
+    if (!slotGuids.has(asset.header.guid) || !isParticleEmitterAssetType(asset.header.type)) continue;
     const doc = emitterDocuments.find((entry) => entry.ref.path === asset.path);
-    if (doc?.content) openPayloads.set(asset.header.guid, doc.content);
+    if (doc?.content) nextOpenPayloads.set(asset.header.guid, doc.content);
   }
-  const openKey = JSON.stringify([...openPayloads.entries()]);
+  const openPayloadsRef = useRef(nextOpenPayloads);
+  if (!sameEntries(openPayloadsRef.current, nextOpenPayloads)) {
+    openPayloadsRef.current = nextOpenPayloads;
+  }
+  const openPayloads = openPayloadsRef.current;
   const guidKey = system.emitterGuids.join(",");
 
   useEffect(() => {
@@ -141,10 +159,11 @@ export function ParticleSystemPreview({
     return () => {
       cancelled = true;
     };
-    // assets/openPayloads are rebuilt each render; keys capture the inputs that
-    // should refetch Emitter documents. Loaded emitters stay shown meanwhile.
+    // assets and system are rebuilt each render; guidKey and openPayloads capture
+    // the inputs that should refetch Emitter documents. Loaded emitters stay
+    // shown meanwhile.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [guidKey, openKey, loadAssetDocument, attempt]);
+  }, [guidKey, openPayloads, loadAssetDocument, attempt]);
 
   const content =
     system.emitterGuids.length === 0 ? (

@@ -46,6 +46,7 @@ function asset(): IndexedAsset {
     rootId: "project",
     path: "assets/hero.babasset",
     header: {
+      dependencyMetadataVersion: 1, requiredDependencies: [],
       guid: "hero-1",
       type: "Texture",
       name: "hero",
@@ -128,6 +129,13 @@ describe("ContentBrowserAssetTile", () => {
     expect(notPrevented).toBe(false);
     expect(onSelect).not.toHaveBeenCalled();
     expect(onLongPressMenu).toHaveBeenCalledWith(12, 18);
+  });
+
+  it("titles a dotted asset name in full", () => {
+    const item = asset();
+    item.header.name = "Player.Idle";
+    const { tile } = renderTile({ asset: item });
+    expect(tile.textContent).toContain("Player.Idle");
   });
 
   it("selects on click", () => {

@@ -14,38 +14,38 @@ export function scalabilityGraphDefinitions(): { name: string; graph: LogicGraph
     })) };
     return { name, graph };
   };
-  const outlineRoundtrip = graphCommand("qual_outline_roundtrip", [["scalability.setCelOutlines", { enabled: true, width: 4 }]]);
+  const outlineRoundtrip = graphCommand("qual_outline_roundtrip", [["scalability.setCelOutlines", { "default:enabled": true, "default:width": 4 }]]);
   outlineRoundtrip.graph.nodes.push({ id: "read", typeId: "scalability.getEffective", properties: {}, position: { x: 0, y: 160 }, pins: registry.get("scalability.getEffective")!.pins({}) });
   outlineRoundtrip.graph.edges.push({ id: "outline-color", sourceNodeId: "read", sourcePinId: "outlineColor", targetNodeId: "node-1", targetPinId: "color" });
   return [
-    graphCommand("qual_outlines", [["scalability.setCelOutlines", { enabled: true, color: { x: 0.1875, y: 0.75, z: 0.375, w: 1 }, width: 4 }]]),
-    graphCommand("qual_outlines_off", [["scalability.setCelOutlines", { enabled: false, color: { x: 0.1875, y: 0.75, z: 0.375, w: 1 }, width: 4 }]]),
+    graphCommand("qual_outlines", [["scalability.setCelOutlines", { "default:enabled": true, "default:color": { x: 0.1875, y: 0.75, z: 0.375, w: 1 }, "default:width": 4 }]]),
+    graphCommand("qual_outlines_off", [["scalability.setCelOutlines", { "default:enabled": false, "default:color": { x: 0.1875, y: 0.75, z: 0.375, w: 1 }, "default:width": 4 }]]),
     outlineRoundtrip,
-    graphCommand("qual_pbr", [["scalability.setRenderMode", { mode: "pbr" }]]),
-    graphCommand("qual_cel", [["scalability.setRenderMode", { mode: "cel" }]]),
-    graphCommand("qual_runtime", [["scalability.setFrameCap", { fps: 20 }], ["scalability.setRenderScale", { scale: 0.5 }]]),
+    graphCommand("qual_pbr", [["scalability.setRenderMode", { "default:mode": "pbr" }]]),
+    graphCommand("qual_cel", [["scalability.setRenderMode", { "default:mode": "cel" }]]),
+    graphCommand("qual_runtime", [["scalability.setFrameCap", { "default:fps": 20 }], ["scalability.setRenderScale", { "default:scale": 0.5 }]]),
     graphCommand("qual_reset", [["scalability.reset", {}]]),
-    graphCommand("qual_clamped", [["scalability.setRenderScale", { scale: 0.1 }]]),
-    graphCommand("qual_invalid", [["scalability.setFrameCap", { fps: -10 }]]),
-    graphCommand("qual_aa", [["scalability.setAntialiasing", { enabled: true }]]),
-    graphCommand("qual_cluster", [["scalability.setRenderPath", { path: "clusteredForward" }]]),
+    graphCommand("qual_clamped", [["scalability.setRenderScale", { "default:scale": 0.1 }]]),
+    graphCommand("qual_invalid", [["scalability.setFrameCap", { "default:fps": -10 }]]),
+    graphCommand("qual_aa", [["scalability.setAntialiasing", { "default:enabled": true }]]),
+    graphCommand("qual_cluster", [["scalability.setRenderPath", { "default:path": "clusteredForward" }]]),
     graphCommand("qual_settings", [
-      ["scalability.setResolution", { width: 400, height: 240 }],
-      ["scalability.setResolutionQuality", { settings: { scale: 0.75, minScale: 0.75, dynamic: false, targetFps: 30 } }],
-      ["scalability.setFrameCap", { fps: 24 }],
-      ["scalability.setShadowsEnabled", { enabled: false }],
-      ["scalability.setShadowQuality", { settings: { distance: 80, fadeFraction: 0.2, mapSize: 512, cascades: 1, filter: "pcf", filterQuality: "low", softness: 0.08, autoBias: false, depthBias: 0.002, normalBias: 0.01, localLightMode: "manual", maxLocalLights: 1, localMapSize: 256 } }],
-      ["scalability.setLightingQuality", { settings: { localLightMode: "manual", maxLocalLights: 3 } }],
-      ["scalability.setTextureQuality", { settings: { lodBias: 1, anisotropy: 2, byteBudget: 128 * 1024 ** 2 } }],
-      ["scalability.setGeometryQuality", { settings: { autoLod: false, lodDistanceScale: 2 } }],
-      ["scalability.setPostProcessingQuality", { settings: { resolutionScale: 0.5 } }],
-      ["scalability.setEffects", { settings: { fxaa: false, exposure: 1.5, contrast: 1.2, vignette: { enabled: true, weight: 1.1 }, bloom: { enabled: false } } }],
-      ["scalability.setVignetteColor", { color: { x: 0.2, y: 0.1, z: 0.3, w: 1 } }],
-      ["scalability.setCelShading", { settings: { shadowBands: 6, shadowThreshold: 0.4, shadowStrength: 0.7, specularEnabled: false, specularStrength: 0.1, specularSize: 0.3, lightColorInfluence: 0.8, lightMixing: "additive" } }],
-      ["scalability.setCelOutlines", { enabled: true, color: { x: 0.1875, y: 0.75, z: 0.375, w: 1 }, width: 4 }],
-      ["scalability.setEnvironmentLighting", { settings: { enabled: false, intensity: 0.3, rotationYDegrees: 23, celStrength: 0.5 } }],
+      ["scalability.setResolution", { "default:width": 400, "default:height": 240 }],
+      ["scalability.setResolutionQuality", { "default:settings": { scale: 0.75, minScale: 0.75, dynamic: false, targetFps: 30 } }],
+      ["scalability.setFrameCap", { "default:fps": 24 }],
+      ["scalability.setShadowsEnabled", { "default:enabled": false }],
+      ["scalability.setShadowQuality", { "default:settings": { distance: 80, fadeFraction: 0.2, mapSize: 512, cascades: 1, filter: "pcf", filterQuality: "low", softness: 0.08, autoBias: false, depthBias: 0.002, normalBias: 0.01, localLightMode: "manual", maxLocalLights: 1, localMapSize: 256 } }],
+      ["scalability.setLightingQuality", { "default:settings": { localLightMode: "manual", maxLocalLights: 3 } }],
+      ["scalability.setTextureQuality", { "default:settings": { lodBias: 1, anisotropy: 2, byteBudget: 128 * 1024 ** 2 } }],
+      ["scalability.setGeometryQuality", { "default:settings": { autoLod: false, lodDistanceScale: 2 } }],
+      ["scalability.setPostProcessingQuality", { "default:settings": { resolutionScale: 0.5 } }],
+      ["scalability.setEffects", { "default:settings": { fxaa: false, exposure: 1.5, contrast: 1.2, vignette: { enabled: true, weight: 1.1 }, bloom: { enabled: false } } }],
+      ["scalability.setVignetteColor", { "default:color": { x: 0.2, y: 0.1, z: 0.3, w: 1 } }],
+      ["scalability.setCelShading", { "default:settings": { shadowBands: 6, shadowThreshold: 0.4, shadowStrength: 0.7, specularEnabled: false, specularStrength: 0.1, specularSize: 0.3, lightColorInfluence: 0.8, lightMixing: "additive" } }],
+      ["scalability.setCelOutlines", { "default:enabled": true, "default:color": { x: 0.1875, y: 0.75, z: 0.375, w: 1 }, "default:width": 4 }],
+      ["scalability.setEnvironmentLighting", { "default:settings": { enabled: false, intensity: 0.3, rotationYDegrees: 23, celStrength: 0.5 } }],
     ]),
-    ...["low", "medium", "high", "ultra"].map((preset) => graphCommand(`qual_${preset}`, [["scalability.setPreset", { preset }]])),
+    ...["low", "medium", "high", "ultra"].map((preset) => graphCommand(`qual_${preset}`, [["scalability.setPreset", { "default:preset": preset }]])),
   ];
 }
 

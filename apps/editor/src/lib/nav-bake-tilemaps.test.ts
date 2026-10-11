@@ -11,7 +11,7 @@ describe("navBakeTilemapChains", () => {
       [
         "map",
         normalizeTilemapPayload({
-          tilesetGuid: "set",
+          tilesets: [{ guid: "set", firstGid: 1, tileCount: 1 }],
           tileWidth: 16,
           tileHeight: 16,
           chunkSize: 2,

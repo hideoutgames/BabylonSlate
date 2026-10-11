@@ -7,6 +7,7 @@ function textureHeader(
   payload: Record<string, unknown> = {},
 ): BabassetHeader {
   return {
+    dependencyMetadataVersion: 1, requiredDependencies: [],
     guid: "tex-1",
     type: "Texture",
     name: "Hero",
@@ -37,7 +38,7 @@ describe("collectGpuTextureBytes", () => {
       id,
       type: "material.setTextureParameter",
       position: { x: 0, y: 0 },
-      data: { properties: { "default:name": "Albedo", "default:value": guid } },
+      data: { "default:name": "Albedo", "default:value": guid },
     });
     const bytes = await collectGpuTextureBytes({
       assets: ["tex-event", "tex-function", "tex-class", "tex-local", "tex-unused"].map((guid) => ({
@@ -48,7 +49,7 @@ describe("collectGpuTextureBytes", () => {
             kind: "pixels",
             mime: "image/png",
             sha256: guid,
-            locator: { inline: { offset: 0, length: 3 } },
+            byteLength: 3, locator: { inline: { offset: 0, length: 3 } },
           }], { width: 1, height: 1 }),
           guid,
         },
@@ -99,7 +100,7 @@ describe("collectGpuTextureBytes", () => {
                 kind: "pixels",
                 mime: "image/png",
                 sha256: "aa",
-                locator: { inline: { offset: 0, length: 3 } },
+                byteLength: 3, locator: { inline: { offset: 0, length: 3 } },
               },
             ],
             { usage: "albedo", width: 4096, height: 4096 },
@@ -131,7 +132,7 @@ describe("collectGpuTextureBytes", () => {
                 kind: "pixels",
                 mime: "image/png",
                 sha256: "aa",
-                locator: { inline: { offset: 0, length: 3 } },
+                byteLength: 3, locator: { inline: { offset: 0, length: 3 } },
               },
             ],
             { usage: "albedo", width: 4096, height: 4096 },
@@ -161,7 +162,7 @@ describe("collectGpuTextureBytes", () => {
                 kind: "pixels",
                 mime: "image/png",
                 sha256: "aa",
-                locator: { inline: { offset: 0, length: 3 } },
+                byteLength: 3, locator: { inline: { offset: 0, length: 3 } },
               },
             ],
             { usage: "albedo", downsample: 4, width: 4096, height: 4096 },
@@ -188,7 +189,7 @@ describe("collectGpuTextureBytes", () => {
                 kind: "pixels",
                 mime: "image/png",
                 sha256: "aa",
-                locator: { inline: { offset: 0, length: 3 } },
+                byteLength: 3, locator: { inline: { offset: 0, length: 3 } },
               },
             ],
             { usage: "albedo", width: 1024, height: 512 },

@@ -215,38 +215,57 @@ describe("resolveWildcardPinTypes", () => {
     expect(result.conflicts).toEqual([]);
   });
 
-  it("allows int into an already-bound float group without conflict", () => {
-    const result = resolveWildcardPinTypes({
-      nodes: [
-        { id: "floatSrc", pins: [{ id: "out", type: FLOAT }] },
-        { id: "intSrc", pins: [{ id: "out", type: INT }] },
-        {
-          id: "select",
-          pins: [
-            { id: "a", type: T },
-            { id: "b", type: T },
-            { id: "out", type: T },
-          ],
-        },
-      ],
-      edges: [
-        {
-          sourceNodeId: "floatSrc",
-          sourcePinId: "out",
-          targetNodeId: "select",
-          targetPinId: "a",
-        },
-        {
-          sourceNodeId: "intSrc",
-          sourcePinId: "out",
-          targetNodeId: "select",
-          targetPinId: "b",
-        },
-      ],
-    });
-    expect(typeAt(result.resolved, "select", "a")).toEqual(FLOAT);
-    expect(typeAt(result.resolved, "select", "b")).toEqual(FLOAT);
-    expect(typeAt(result.resolved, "select", "out")).toEqual(FLOAT);
+  it("binds Float for Int and Float wires in either edge order without conflict", () => {
+    const floatEdge = {
+      sourceNodeId: "floatSrc",
+      sourcePinId: "out",
+      targetNodeId: "select",
+      targetPinId: "a",
+    };
+    const intEdge = {
+      sourceNodeId: "intSrc",
+      sourcePinId: "out",
+      targetNodeId: "select",
+      targetPinId: "b",
+    };
+    for (const edges of [[floatEdge, intEdge], [intEdge, floatEdge]]) {
+      const result = resolveWildcardPinTypes({
+        nodes: [
+          { id: "floatSrc", pins: [{ id: "out", type: FLOAT }] },
+          { id: "intSrc", pins: [{ id: "out", type: INT }] },
+          {
+            id: "select",
+            pins: [
+              { id: "a", type: T },
+              { id: "b", type: T },
+              { id: "out", type: T },
+            ],
+          },
+        ],
+        edges,
+      });
+      expect(typeAt(result.resolved, "select", "a")).toEqual(FLOAT);
+      expect(typeAt(result.resolved, "select", "b")).toEqual(FLOAT);
+      expect(typeAt(result.resolved, "select", "out")).toEqual(FLOAT);
+      expect(result.conflicts).toEqual([]);
+    }
+  });
+
+  it("resolves a long wildcard chain whose wires are stored downstream-first", () => {
+    const length = 100;
+    const nodes: WildcardGraph["nodes"] = [{ id: "src", pins: [{ id: "out", type: STRING }] }];
+    const edges: WildcardGraph["edges"] = [];
+    for (let i = 0; i < length; i++) {
+      nodes.push({ id: `n${i}`, pins: [{ id: "in", type: T }, { id: "out", type: T }] });
+      edges.unshift({
+        sourceNodeId: i === 0 ? "src" : `n${i - 1}`,
+        sourcePinId: "out",
+        targetNodeId: `n${i}`,
+        targetPinId: "in",
+      });
+    }
+    const result = resolveWildcardPinTypes({ nodes, edges });
+    expect(typeAt(result.resolved, `n${length - 1}`, "out")).toEqual(STRING);
     expect(result.conflicts).toEqual([]);
   });
 

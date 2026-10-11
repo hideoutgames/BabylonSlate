@@ -87,7 +87,6 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   projectDocument: {
     settings: {
       twoD: { sortingLayers: ["Default"] },
-      input: { actions: [], axes: [] },
     },
   },
   reparentClassDocument: vi.fn(async () => null),

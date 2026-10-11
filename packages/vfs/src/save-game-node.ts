@@ -1,10 +1,31 @@
 import { mkdir, open, readFile, readdir, rename, unlink } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { SaveGameStorage } from "@babylonslate/core";
 import { decodeSaveGameSegment, encodeSaveGameSegment, isSaveGameMissing, normalizeSaveGameStorageError, saveGameSegments } from "./save-game-path";
 
-const locks = new Map<string, Promise<void>>();
+/** Paths of granted locks, and requests waiting in arrival order. */
+const heldLocks: string[] = [];
+const waitingLocks: { path: string; grant: () => void }[] = [];
+
+/** A lock covers its key and every key below it. */
+function overlaps(a: string, b: string): boolean {
+  return a === b || a.startsWith(`${b}${sep}`) || b.startsWith(`${a}${sep}`);
+}
+
+/** Grant each waiting request that overlaps no granted or earlier waiting lock. */
+function grantWaitingLocks(): void {
+  const blocked = [...heldLocks];
+  for (let index = 0; index < waitingLocks.length;) {
+    const request = waitingLocks[index]!;
+    const free = !blocked.some(path => overlaps(path, request.path));
+    blocked.push(request.path);
+    if (!free) { index += 1; continue; }
+    waitingLocks.splice(index, 1);
+    heldLocks.push(request.path);
+    request.grant();
+  }
+}
 
 /** Main-process storage. The Electron host holds its application single-instance lock. */
 export class NodeSaveGameStorage implements SaveGameStorage {
@@ -66,21 +87,23 @@ export class NodeSaveGameStorage implements SaveGameStorage {
     return result.sort();
   }
 
-  /** Kept in the main process; renderer locks are released when their window closes. */
+  /**
+   * Kept in the main process; renderer locks are released when their window
+   * closes. A held key also excludes its ancestors and descendants, because a
+   * lease grants access to every key below it.
+   */
   async acquireLock(key: string): Promise<() => void> {
-    const name = this.path(key);
-    const previous = locks.get(name) ?? Promise.resolve();
-    let release!: () => void;
-    const held = new Promise<void>(resolve => { release = resolve; });
-    const tail = previous.then(() => held);
-    locks.set(name, tail);
-    await previous;
+    const path = this.path(key);
+    await new Promise<void>(grant => {
+      waitingLocks.push({ path, grant });
+      grantWaitingLocks();
+    });
     let released = false;
     return () => {
       if (released) return;
       released = true;
-      release();
-      if (locks.get(name) === tail) locks.delete(name);
+      heldLocks.splice(heldLocks.indexOf(path), 1);
+      grantWaitingLocks();
     };
   }
 

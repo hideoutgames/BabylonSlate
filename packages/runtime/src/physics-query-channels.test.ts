@@ -13,7 +13,7 @@ describe("script physics query channels", () => {
     const sync = new PhysicsWorldSync(backend);
     const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
     try {
-      for (const [guid, x, y] of [["static", 2, 0], ["dynamic", 4, 0], ["pawn", 6, 0], ["trigger", 1, 3]] as const) {
+      for (const [guid, x, y] of [["static", 2, 0], ["dynamic", 4, 0], ["pawn", 6, 0], ["trigger", 1, 0]] as const) {
         const actor = world.createActor({ classId: "Actor", guid, transform: { ...identityTransform(), position: { x, y, z: 0 } } });
         if (guid === "pawn") actor.attachComponent(world.createComponent({ classId: "MovementComponent" }));
         else {
@@ -34,9 +34,10 @@ describe("script physics query channels", () => {
       }).createContext(null, 0, 0);
       const start = identityTransform(), end = { ...identityTransform(), position: { x: 10, y: 0, z: 0 } };
       const shape = dimension === "2d" ? { kind: "circle" as const, radius: 0.1 } : { kind: "sphere" as const, radius: 0.1 };
+      // Every backend's traces and sweeps hit the trigger in front unless the channel excludes it.
       for (const [channel, first, actors] of [
-        ["All", "static", ["dynamic", "pawn", "static", "trigger"]],
-        ["WorldStatic", "static", ["static", "trigger"]],
+        ["All", "trigger", ["dynamic", "pawn", "static", "trigger"]],
+        ["WorldStatic", "trigger", ["static", "trigger"]],
         ["WorldDynamic", "dynamic", ["dynamic", "pawn"]],
         ["Pawn", "pawn", ["pawn"]],
         ["Visibility", "static", ["dynamic", "pawn", "static"]],

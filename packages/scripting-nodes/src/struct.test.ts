@@ -132,6 +132,38 @@ describe("struct nodes", () => {
     expect(compiled.source).toContain('Label: "ok"');
   });
 
+  it("stores a field named __proto__ as a field, not the prototype", () => {
+    const registry = createDefaultNodeRegistry();
+    const properties = {
+      structGuid: "struct-odd",
+      fields: [{ name: "__proto__", typeId: "int" }],
+      "default:__proto__": 5,
+    };
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "make", "struct.make", properties),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "log", targetPinId: "execIn" },
+        { id: "e2", sourceNodeId: "make", sourcePinId: "out", targetNodeId: "log", targetPinId: "message" },
+      ],
+    };
+    const body = compileGraph(graph, { assetGuid: "a", registry }).source
+      .replace(/export\s+(async\s+)?function\s+/g, "$1function ");
+    const logs: unknown[] = [];
+    (new Function(`${body}\nreturn onBeginPlay;`)() as (ctx: unknown) => void)({
+      formatValue: (value: unknown) => value,
+      log: (_severity: string, _category: string, value: unknown) => logs.push(value),
+    });
+    const made = logs[0] as Record<string, unknown>;
+    expect(Object.getPrototypeOf(made)).toBe(Object.prototype);
+    expect(Object.getOwnPropertyDescriptor(made, "__proto__")?.value).toBe(5);
+  });
+
   it("keeps field pins by name when the snapshot is rewritten", () => {
     const def = createDefaultNodeRegistry().get("struct.make")!;
     const first = def.pins({

@@ -110,9 +110,13 @@ export function patchStructureField(
 ): StructureAsset {
   return {
     ...asset,
-    fields: asset.fields.map((field, i) =>
-      i === index ? { ...field, ...patch, id: dataFieldIdentity(field) } : field,
-    ),
+    fields: asset.fields.map((field, i) => {
+      if (i !== index) return field;
+      const next = { ...field, ...patch, id: dataFieldIdentity(field) };
+      // Soft is the absence of the property.
+      if ("loading" in patch && patch.loading !== "hard") delete next.loading;
+      return next;
+    }),
   };
 }
 
@@ -183,7 +187,6 @@ export function patchTextureDownsample(
 ): Record<string, unknown> {
   const parsed = typeof value === "number" ? value : Number(value);
   const next = { ...payload };
-  delete next.maxDimension;
   if (!TEXTURE_DOWNSAMPLE_OPTIONS.includes(parsed as (typeof TEXTURE_DOWNSAMPLE_OPTIONS)[number])) {
     delete next.downsample;
     return next;

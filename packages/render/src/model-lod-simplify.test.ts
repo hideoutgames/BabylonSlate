@@ -53,4 +53,21 @@ describe("automatic LOD simplification", () => {
       expect(levels.at(-1)!.triangles).toBeLessThan(cube.indices.length / 3 / 10);
     }
   });
+
+  it("stops before a level that would remove every triangle of a deforming mesh", async () => {
+    await MeshoptSimplifier.ready;
+    const cube = subdividedCube(4);
+    let calls = 0;
+    // The first level halves the mesh; any later simplification collapses it entirely.
+    const collapsing: typeof MeshoptSimplifier = {
+      ...MeshoptSimplifier,
+      simplifyWithAttributes: (indices) => {
+        calls++;
+        return [calls === 1 ? indices.slice(0, indices.length / 2) : new Uint32Array(0), 0];
+      },
+    };
+    const levels = simplifyLevels(collapsing, { ...cube, ranges: [cube.indices], deforming: true });
+    expect(levels.length).toBe(1);
+    expect(levels[0]!.triangles).toBeGreaterThan(0);
+  });
 });

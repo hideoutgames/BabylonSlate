@@ -676,7 +676,8 @@ if (U.slateWaterPlanar.x > 0.5) {
   vec2 swPlanarUv = swPlanarClip.xy / max(swPlanarClip.w, 0.000001) * 0.5 + vec2(0.5);
   vec4 swPlanarHit = swPlanarTexel(swPlanarUv);
   vec3 swPlanarColor = swPlanarHit.rgb / max(swPlanarHit.a, 0.001);
-  swObjRefl = vec4(mix(swPlanarColor, SW_TO_LINEAR(swPlanarColor), U.slateWaterPlanar.y), swPlanarHit.a);
+  // A point behind the mirrored camera has no projection (its uv would clamp to an edge texel): the sky stays.
+  swObjRefl = vec4(mix(swPlanarColor, SW_TO_LINEAR(swPlanarColor), U.slateWaterPlanar.y), swPlanarHit.a * step(0.000001, swPlanarClip.w));
 }`)}${ifDefined(SSR, `
 if (U.slateWaterPlanar.x < 0.5) {
   swObjRefl = swMarch(IN.vPositionW, swReflRay);
@@ -809,12 +810,13 @@ if (swFftFd${c} > 0.0) {
   }).join("");
   return ifFft(`
 vec4 swFft = U.slateWaterFft;
-swFft = vec4(swFft.x * swBlendH, swFft.yzw);
 float swFftReach = max(length(swFootX), length(swFootY));${fftTileWeight("swFft", "swSwellWP")}
 vec2 swFftGrad = vec2(0.0);
 vec3 swFftJ = vec3(0.0);${cascades}
-swFftGrad = swFftGrad * swFft.x;
-swFftJ = swFftJ * (swFft.x * swFft.y * swGain);
+// A blending surface scales the band's height by its swell share and its horizontal terms by its offset share, as the
+// mesh scales the band's height and offset and the Gerstner offsets above use \`swBlendD\`.
+swFftGrad = swFftGrad * (swFft.x * swBlendH);
+swFftJ = swFftJ * (swFft.x * swFft.y * swGain * swBlendD);
 float swFftDet = (swJxx + swFftJ.x) * (swJzz + swFftJ.z) - (swJxz + swFftJ.y) * (swJzx + swFftJ.y);
 float swFftKeep = mix(1.0, clamp((swDetJ - ${floor}) / max(swDetJ - swFftDet, 0.000001), 0.0, 1.0), step(swFftDet, ${floor}));
 swFftJ = swFftJ * swFftKeep;
@@ -835,8 +837,8 @@ vec2 swFftSlope = vec2(swFftJzz * swFftGrad.x - swFftJzx * swFftGrad.y, swFftJxx
  * vertex (metres per pixel at its view depth). The band has no mips, so a vertex point-samples every wavelength of a
  * cascade it keeps: only cascades the mesh resolves completely displace it, and the fragment carries the rest, so no
  * part of the band aliases into the geometry or crawls along silhouettes. The horizontal detail shrinks where it would
- * fold the mesh: the combined determinant (the swell's `swvShear` plus the band's ∂D terms) stays at or above
- * `WATER_JACOBIAN_FLOOR`. Faded cascades skip their taps.
+ * fold the mesh: the combined determinant (the swell's `swvShear` plus the band's ∂D terms, at a blending surface's
+ * offset scale) stays at or above `WATER_JACOBIAN_FLOOR`. Faded cascades skip their taps.
  */
 function fftVertexSource(): string {
   const floor = f(WATER_JACOBIAN_FLOOR);
@@ -861,12 +863,17 @@ float swvReach = max(swvSpacing, 2.0 * (swvFft.z * abs((S.view * worldPos).z) + 
 float swvFftH = 0.0;
 vec2 swvFftD = vec2(0.0);
 vec3 swvFftJ = vec3(0.0);${cascades}
-float swvJxx = 1.0 - swvGain * (swvShear.x * swvWarpM.x + swvShear.y * swvWarpM.y);
-float swvJxz = -swvGain * (swvShear.x * swvWarpM.y + swvShear.y * swvWarpM.z);
-float swvJzx = -swvGain * (swvShear.y * swvWarpM.x + swvShear.z * swvWarpM.y);
-float swvJzz = 1.0 - swvGain * (swvShear.y * swvWarpM.y + swvShear.z * swvWarpM.z);
+// The fold limit sees the offset the mesh receives: a blending surface scales it by its offset share below.
+float swvFoldGain = swvGain;
+#ifdef ${WATER_BLEND_DEFINE}
+swvFoldGain = swvFoldGain * A.slateWaterBlend.y;
+#endif
+float swvJxx = 1.0 - swvFoldGain * (swvShear.x * swvWarpM.x + swvShear.y * swvWarpM.y);
+float swvJxz = -swvFoldGain * (swvShear.x * swvWarpM.y + swvShear.y * swvWarpM.z);
+float swvJzx = -swvFoldGain * (swvShear.y * swvWarpM.x + swvShear.z * swvWarpM.y);
+float swvJzz = 1.0 - swvFoldGain * (swvShear.y * swvWarpM.y + swvShear.z * swvWarpM.z);
 float swvDetA = swvJxx * swvJzz - swvJxz * swvJzx;
-vec3 swvJb = swvFftJ * (swvFft.x * swvFft.y * swvGain);
+vec3 swvJb = swvFftJ * (swvFft.x * swvFft.y * swvFoldGain);
 float swvDetB = (swvJxx + swvJb.x) * (swvJzz + swvJb.z) - (swvJxz + swvJb.y) * (swvJzx + swvJb.y);
 float swvKeep = mix(1.0, clamp((swvDetA - ${floor}) / max(swvDetA - swvDetB, 0.000001), 0.0, 1.0), step(swvDetB, ${floor}));
 swvH += swvFftH * swvFft.x;
@@ -1558,8 +1565,9 @@ float swSparkBase = 0.0;`) : ""}
  * - Upper column (`swColumn`): the sunlit top metre keeps its blue-green at grazing views, under the mirror rather than
  *   replaced by it; wind-gust patches (`swWindPatch`) make some water glassy and some rippled and roughen its highlight.
  * - Crests: thin crest tops glow green-teal with sunlight through them (Subsurface: a translucency lobe toward the sun,
- *   the sun's colour after the water's absorption), outside the Fresnel weighting, and every crest glows a little with
- *   skylight, so crests separate from the troughs under any sky.
+ *   the sun's colour after the water's absorption), fading with the Fresnel like the body (light the surface reflects
+ *   never enters the crest), and every crest glows a little with skylight, so crests separate from the troughs under any
+ *   sky.
  * - Roughness: detail a pixel cannot resolve roughens it (the filtered slope variance plus centimetre wind ripples, under
  *   a sea-state cap), so reflections of cloud edges stay soft and blur further with distance.
  * - Sky: without an environment or skybox the reflection is an analytic sky from the scene (`slateWaterSky`): mostly its
@@ -1686,7 +1694,10 @@ swLowBedT = max(swLowBedT - vec3(swTransmit), vec3(0.0));`)}${ifDefined(REFRACTI
 // no background (the sky colour behind it never tints the sea), and its in-scattered light fills in.
 float swVoid = step(${f(WATER_SCENE_COPY_SKY_DEPTH * 0.9)}, swSceneZ);
 swTransmitRgb *= 1.0 - swVoid;
-swTransmit *= 1.0 - swVoid;
+swTransmit *= 1.0 - swVoid;${fromTier(1, "", `
+// Low draws its bed's remaining light itself: there is no bed there either.
+swLowBedT *= 1.0 - swVoid;
+swScatterT *= 1.0 - swVoid;`)}
 // Thin water at a shoreline: the copy's depth is one nearest texel, so a hard in-front test flips from texel to texel
 // into a dithered checker there; a tolerance band (wider far away) blends the refracted and blended paths instead.
 swRefracts = smoothstep(-0.03, 0.03 + swWaterZ * 0.004, swSceneZ - swWaterZ);
@@ -1738,7 +1749,8 @@ swScatterCol = mix(swScatterCol, U.slateWaterShallow.rgb * 0.3, (1.0 - swTone) *
 float swOvercast = U.slateWaterHorizon.w;
 swScatterCol = mix(swScatterCol, vec3(dot(swScatterCol, vec3(0.3, 0.59, 0.11))) * vec3(0.85, 1.0, 1.12), 0.5 * swOvercast);
 vec3 swScatter = swScatterCol * swBodyLight * swVolume;
-// Crest glow (Subsurface), added outside the Fresnel weighting so it still shows at grazing angles.
+// Crest glow (Subsurface). It leaves the water through the surface, so it fades with the Fresnel like the body (light
+// the surface reflects never enters the crest).
 vec3 swGlow = vec3(0.0);${ifDefined(WATER_FEATURE_DEFINES.subsurface, `
 // Light through thin crest tops and chop tips: sunlight entering a crest scatters out toward an eye looking into the
 // sun (a translucency lobe around the sun direction bent by the facet), in the sun's colour after the water's
@@ -2156,7 +2168,11 @@ float swFoamSun = clamp(dot(swWaveN, swL) * 0.6 + 0.4, 0.0, 1.0);
 vec3 swFoamTint = mix(vec3(0.8, 0.91, 1.0), vec3(1.08, 1.03, 0.95), swFoamSun);`, `
 vec3 swFoamTint = vec3(1.0);`)}
 surfaceAlbedo = U.slateWaterFoam.rgb * swFoamTint * ((0.78 + 0.26 * swFoamThick) * (0.66 + 0.34 * smoothstep(0.15, 0.75, swFoamTex)) * swFoam * swEdgeFade);
-swMatte = swFoam;
+swMatte = swFoam;${fromTier(1, `
+// PBR lights the foam on the shading normal, which above is the half vector toward the lifted reflection: under foam
+// it returns to the facet's own normal (the one the Fresnel sees), so foam is lit by the faces it lies on, as Low's
+// unlit foam and the body are.
+normalW = normalize(mix(normalW, swFresN, swFoam));`)}
 float swEdgeDark = 1.0;${fromTier(1, `
 swEdgeDark = 1.0 - ${f(REAL_FOAM_EDGE)} * smoothstep(0.06, 0.3, swFoam) * (1.0 - smoothstep(0.35, 0.75, swFoam));`)}
 // The water's own light covers, per channel, what the transmittance leaves: over a bright bed its colour is the bed's
@@ -2721,7 +2737,13 @@ vec2 swBedXZ = swWorld - swV.xz / max(swUp, 0.25) * swDepth + swPrimG * 5.0;
 float swCa = swNoise(swBedXZ * 0.85 + vec2(swTime * 0.11, swTime * 0.07));
 float swCb = swNoise(swBedXZ * 1.25 + vec2(swCa * 1.2 - swTime * 0.09, 0.4 - swTime * 0.05));
 float swCaustic = clamp(1.0 - abs(swCa + swCb - 1.0) * 5.5, 0.0, 1.0);
-swCaustic = swCaustic * swCaustic * 1.25 * smoothstep(0.05, 0.4, swDepth) * (1.0 - smoothstep(0.8, 2.6, swDepth)) * (1.0 - smoothstep(0.15, 0.5, swFoot)) * swSunVis;
+swCaustic = swCaustic * swCaustic * 1.25 * smoothstep(0.05, 0.4, swDepth) * (1.0 - smoothstep(0.8, 2.6, swDepth)) * (1.0 - smoothstep(0.15, 0.5, swFoot)) * swSunVis;${ifDefined(REFRACTION, `
+// As Realistic: where the copy holds no geometry behind the water (its sky depth) there is no bed, so open water
+// transmits no background and lights no caustics there; its own light fills in.
+float swVoid = step(${f(WATER_SCENE_COPY_SKY_DEPTH * 0.9)}, swSceneZ);
+swTransRgb *= 1.0 - swVoid;
+swTrans *= 1.0 - swVoid;
+swCaustic *= 1.0 - swVoid;`)}
 #ifndef ${REFRACTION}
 // Without the copy the bed blends in untinted: the water covers more of it, its in-scattered light standing in for
 // the tinted bed, and the caustics light it from above.
@@ -2770,10 +2792,10 @@ float swWashB = fract(swBorePhase + swEdgeWobble * 0.04);
 float swWashM = swWashB * 6.283185 / max(U.slateWaterSwash.z, 0.001);
 float swWashAhead = (1.0 - swWashB) * 6.283185 / max(U.slateWaterSwash.z, 0.001);
 float swWash = max(max(1.0 - smoothstep(0.0, swFoamWidth * 0.55, swWashM), 1.0 - smoothstep(0.0, swFoamWidth * 0.2 + swFoot, swWashAhead)) * 0.75,
-  0.25 * exp(-swWashM / (swFoamWidth * 2.5))) * min(swBoreOn * 1.6, 1.0);
+  0.25 * exp(-swWashM / (swFoamWidth * 2.5))) * min(swBoreOn * 1.6, 1.0);${fromTier(1, `
 // A fainter lace line halfway between bores (the backwash meeting the next bore), so the surf carries two lines.
 float swWashHalfM = abs(swWashM - 3.141593 / max(U.slateWaterSwash.z, 0.001));
-swWash = max(swWash, (1.0 - smoothstep(0.0, swFoamWidth * 0.4 + swFoot, swWashHalfM)) * 0.55 * min(swBoreOn * 1.6, 1.0));
+swWash = max(swWash, (1.0 - smoothstep(0.0, swFoamWidth * 0.4 + swFoot, swWashHalfM)) * 0.55 * min(swBoreOn * 1.6, 1.0));`)}
 swWash *= 1.0 - smoothstep(3.5, 4.5, swWashUnit);
 // Surf: one broad soft band of churned water off the shore (lightens the water; lace only where dense).
 float swSurfBand = exp(-swWashUnit * 0.55) * (1.0 - swShoreD);
@@ -3606,7 +3628,10 @@ swRefracts *= swToonCover * (1.0 - swWetLine);
 // Refraction-tinted shallows: what shows through takes the water's hue (a gain of at most 1) and fades toward the
 // water's own colour with the refracted depth, so nothing below glows brighter than above.
 vec3 swTintHue = swShallowC / max(max(swShallowC.r, max(swShallowC.g, swShallowC.b)), 0.001);
-swBackground = mix(swBackground * mix(vec3(1.0), swTintHue, 0.5), swLit, clamp(swTone, 0.0, 1.0));
+// As Realistic: where the copy holds no geometry behind the water (its sky depth) there is no bed, and the water's own
+// colour shows instead of the sky.
+float swVoid = step(${f(WATER_SCENE_COPY_SKY_DEPTH * 0.9)}, swSceneZ);
+swBackground = mix(swBackground * mix(vec3(1.0), swTintHue, 0.5), swLit, max(clamp(swTone, 0.0, 1.0), swVoid));
 // The refracted scene replaces the blended background; Opacity still sets how much of it shows. It joins the output
 // after the water's own fog (\`swRefracted\`, see CUSTOM_FRAGMENT_BEFORE_FOG).
 float swRefractedWeight = (1.0 - alpha) * swRefracts;
@@ -3849,10 +3874,13 @@ export function waterVertexSource(language: ShaderLanguage): { definitions: stri
 export const WATER_VERTEX_WAVE_UNIFORMS: readonly string[] = [
   "slateWaterShape", "slateWaterSwellInfo", "slateWaterGridOffset", ...SWELL_DIRECTION, ...SWELL_AMPLITUDE, ...SWELL_GROUP, ...SWELL_WARP, "slateWaterFft", ...FFT_CASCADE_UNIFORMS,
 ];
-/** `vertexWaveDefines` per cascades the vertex samples (0-3): built once. */
-const VERTEX_WAVE_DEFINES: ReadonlyArray<readonly string[]> = Array.from({ length: WATER_FFT_CASCADES_MAX + 1 }, (_, cascades) => [
-  `#define ${WATER_GPU_WAVES_DEFINE}`, ...(cascades ? [`#define ${FFT_VERTEX} ${cascades}`] : []),
-]);
+/** `vertexWaveDefines` per blend state (off, on) and cascades the vertex samples (0-3): built once. */
+const VERTEX_WAVE_DEFINES: ReadonlyArray<ReadonlyArray<readonly string[]>> = [false, true].map((blend) =>
+  Array.from({ length: WATER_FFT_CASCADES_MAX + 1 }, (_, cascades) => [
+    `#define ${WATER_GPU_WAVES_DEFINE}`, ...(cascades ? [`#define ${FFT_VERTEX} ${cascades}`] : []), ...(blend ? [`#define ${WATER_BLEND_DEFINE}`] : []),
+  ]));
+/** `vertexWaveAttributes` per blend state (off, on). */
+const VERTEX_WAVE_ATTRIBUTES: ReadonlyArray<readonly string[]> = [["slateWaterData"], ["slateWaterData", "slateWaterBlend"]];
 
 /**
  * The GPU swell for another pass's vertex shader that computes a `worldPos` vec4 from the same world matrix and has a
@@ -3864,9 +3892,10 @@ export function waterOutlineVertexSource(language: ShaderLanguage): { declaratio
   const wgsl = language === ShaderLanguage.WGSL;
   const uniforms = WATER_VERTEX_WAVE_UNIFORMS.map((name) => (wgsl ? `uniform ${name}: vec4f;` : `uniform vec4 ${name};`)).join("\n");
   const attribute = wgsl ? "attribute slateWaterData: vec4f;" : "attribute vec4 slateWaterData;";
+  const blend = `#ifdef ${WATER_BLEND_DEFINE}\n${wgsl ? "attribute slateWaterBlend: vec4f;" : "attribute vec4 slateWaterBlend;"}\n#endif`;
   const displacement = vertexWaveSource(false);
   return {
-    declarations: `\n#ifdef ${WATER_GPU_WAVES_DEFINE}\n${attribute}\n${uniforms}${fftHelpers(wgsl, FFT_VERTEX)}#endif\n`,
+    declarations: `\n#ifdef ${WATER_GPU_WAVES_DEFINE}\n${attribute}\n${blend}\n${uniforms}${fftHelpers(wgsl, FFT_VERTEX)}#endif\n`,
     displacement: bindVertexSource(wgsl ? toWgsl(displacement) : displacement, wgsl, "uniforms."),
   };
 }
@@ -3920,10 +3949,13 @@ export function toWgsl(source: string): string {
  * CUSTOM_FRAGMENT_BEFORE_FOG. Realistic colour is premultiplied by coverage: undo it for Babylon's non-premultiplied
  * blend, fog and image processing. Bright glints and reflections raise coverage instead of clipping in 8-bit targets.
  *
- * The refracted scene (`swRefracted`, its share `swRefractedWeight`; `SLATE_WATER_REFRACTION`) is light from behind
- * the surface, already fogged by its own materials. With the copy the water covers that share too, so Babylon's fog
- * below would fog the background again and add its fog colour over it: the refracted light is pre-divided by the fog
- * factor, less the fog colour at its share, so the result equals blending (the water's fog on its own light only).
+ * The refracted scene (`swRefracted`; `SLATE_WATER_REFRACTION`) is light from behind the surface, already fogged by its
+ * own materials. Its share `swRefractedWeight` is the coverage the water's own light leaves it (the output's coverage
+ * less the water's blend coverage), whatever tint, caustics or foam `swRefracted` carries. With the copy the water
+ * covers that share too, so Babylon's fog below would fog the background again and add its fog colour over it: the
+ * refracted light is pre-divided by the fog factor, less the fog colour at its share, so the result equals blending
+ * (the water's fog on its own light only). The factor is the weight Babylon's PBR fog mixes with
+ * (`toLinearSpace(CalcFogFactor())` under `PBR`, which water materials are).
  * In Scene Linear (`IMAGEPROCESSINGPOSTPROCESS`, an HDR target that never clips at 1) it stays
  * out of the coverage, so a refracted background brighter than 1 never raises coverage and dims what the shore fade
  * blends over; 8-bit display targets keep counting it (their background never exceeds 1). Stylized water is opaque
@@ -4054,12 +4086,18 @@ function placeholderFft(scene: Scene): BaseTexture {
   return texture;
 }
 
-/** One colour channel in linear space, as the asset's colours upload. */
-const linearChannel = (c: number) => c ** 2.2;
 /** Writes one vec4 into a packed array at `o`; returns the next offset. */
 const put4 = (v: Float64Array, o: number, x: number, y: number, z: number, w: number) => {
   v[o] = x; v[o + 1] = y; v[o + 2] = z; v[o + 3] = w;
   return o + 4;
+};
+/**
+ * Writes an asset colour, in linear space as Babylon converts colours (exact sRGB where the engine uses it, like the
+ * clear and fog colours in `sceneWaterLighting`), and `w` into a packed array at `o`; returns the next offset.
+ */
+const putLinear = (v: Float64Array, o: number, color: readonly number[], w: number, exact: boolean) => {
+  gammaScratch.set(color[0]!, color[1]!, color[2]!).toLinearSpaceToRef(linearScratch, exact);
+  return put4(v, o, linearScratch.r, linearScratch.g, linearScratch.b, w);
 };
 /**
  * The per-render vec4s `WaterMaterialPlugin.frameConstants` packs, in its write order; from `FRAME_BLEND_START` on, the
@@ -4125,7 +4163,6 @@ type WaterLighting = {
   haze: Float64Array;
 };
 
-const toLinear = (value: number) => Math.max(0, value) ** 2.2;
 const linearScratch = new Color3(), gammaScratch = new Color3();
 /**
  * A Shallow Color channel's relative absorption through clear water (see `WaterMaterialPlugin.absorption`): the optical
@@ -4172,7 +4209,8 @@ function sceneWaterLighting(scene: Scene, out: WaterLighting): void {
   }
   ambient[0] = ar; ambient[1] = ag; ambient[2] = ab;
   // Linear space as Babylon converts colours (exact sRGB where the engine uses it), so the reflected horizon matches
-  // the fog the water itself fades into.
+  // the fog the water itself fades into. Light colours above are linear already: Babylon's PBR lights shade with them
+  // unconverted.
   const exact = scene.getEngine().useExactSrgbConversions, clear = scene.clearColor;
   gammaScratch.set(Math.max(0, clear.r), Math.max(0, clear.g), Math.max(0, clear.b)).toLinearSpaceToRef(linearScratch, exact);
   const cr = linearScratch.r, cg = linearScratch.g, cb = linearScratch.b;
@@ -4868,9 +4906,10 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     const v = this.frameValues;
     let o = 0;
     const lighting = data.lighting, ambient = withWaterEnvironment(lighting, w.reflectionStrength, reflective);
-    o = put4(v, o, linearChannel(w.shallowColor[0]), linearChannel(w.shallowColor[1]), linearChannel(w.shallowColor[2]), w.opacity);
-    o = put4(v, o, linearChannel(w.deepColor[0]), linearChannel(w.deepColor[1]), linearChannel(w.deepColor[2]), w.reflectionStrength);
-    o = put4(v, o, linearChannel(w.foamColor[0]), linearChannel(w.foamColor[1]), linearChannel(w.foamColor[2]), w.foamAmount);
+    const exact = scene.getEngine().useExactSrgbConversions;
+    o = putLinear(v, o, w.shallowColor, w.opacity, exact);
+    o = putLinear(v, o, w.deepColor, w.reflectionStrength, exact);
+    o = putLinear(v, o, w.foamColor, w.foamAmount, exact);
     o = put4(v, o, this.time, w.rippleScale, w.rippleStrength, w.foamWidth);
     o = put4(v, o, w.colorBands, w.depthColorDistance, w.sparkles, w.subsurface);
     o = put4(v, o, w.waveHeight * scale, w.waveLength, w.waveSpeed, w.waveDirection * Math.PI / 180);
@@ -4882,7 +4921,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     o = put4(v, o, horizon[0]!, horizon[1]!, horizon[2]!, lighting.overcast);
     const shape = lighting.sunShape;
     o = put4(v, o, shape[0]!, shape[1]!, shape[2]!, shape[3]!);
-    this.absorption(v, o, lighting, w); o += 8;
+    this.absorption(v, o, lighting, w, exact); o += 8;
     // With floating origin, shaders see positions relative to this offset (the eye); patterns must stay world-anchored.
     o = put4(v, o, origin.x, origin.y, origin.z, w.roughness);
     const swell = this.swellConstants(scene);
@@ -4922,10 +4961,10 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     o = put4(v, o, haze[0]!, haze[1]!, haze[2]!, haze[3]!);
     if (partner) {
       // The partner's colours, through the same conversions as the asset's own (its own again without a partner).
-      o = put4(v, o, linearChannel(partner.shallowColor[0]), linearChannel(partner.shallowColor[1]), linearChannel(partner.shallowColor[2]), partner.opacity);
-      o = put4(v, o, linearChannel(partner.deepColor[0]), linearChannel(partner.deepColor[1]), linearChannel(partner.deepColor[2]), partner.reflectionStrength);
-      o = put4(v, o, linearChannel(partner.foamColor[0]), linearChannel(partner.foamColor[1]), linearChannel(partner.foamColor[2]), partner.foamAmount);
-      this.absorption(v, o, lighting, partner);
+      o = putLinear(v, o, partner.shallowColor, partner.opacity, exact);
+      o = putLinear(v, o, partner.deepColor, partner.reflectionStrength, exact);
+      o = putLinear(v, o, partner.foamColor, partner.foamAmount, exact);
+      this.absorption(v, o, lighting, partner, exact);
     }
     return v;
   }
@@ -4974,8 +5013,10 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
    * is spare, 0). The light through thin crests (`slateWaterThrough`, Subsurface) is
    * the sun's colour times what a crest transmits, by the gentler `glowCoefficient`. Allocation-free.
    */
-  private absorption(v: Float64Array, o: number, lighting: WaterLighting, water: WaterDefinition): void {
-    const tint = water.shallowColor, r = toLinear(tint[0]), g = toLinear(tint[1]), b = toLinear(tint[2]), top = Math.max(r, g, b);
+  private absorption(v: Float64Array, o: number, lighting: WaterLighting, water: WaterDefinition, exact: boolean): void {
+    const tint = water.shallowColor;
+    gammaScratch.set(Math.max(0, tint[0]), Math.max(0, tint[1]), Math.max(0, tint[2])).toLinearSpaceToRef(linearScratch, exact);
+    const r = linearScratch.r, g = linearScratch.g, b = linearScratch.b, top = Math.max(r, g, b);
     // The look's coefficients follow this material's style (a partner of the other style is coloured, not restyled).
     const k = this.water.style === "stylized" ? stylizedAbsorbCoefficient : absorbCoefficient;
     const kr = k(r, top), kg = k(g, top), kb = k(b, top), weight = Math.min(kr, kg, kb);
@@ -4994,10 +5035,14 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   private bankFade(): number { return this.body.kind === "global" ? 0 : waterBankFadeLength(this.water, this.waveScale); }
   /**
    * Defines another pass's program needs for `waterOutlineVertexSource` to match this material's vertex shader,
-   * including the cascades of the FFT detail band its vertex stage samples. Allocation-free.
+   * including the cascades of the FFT detail band its vertex stage samples and the blend scaling. Allocation-free.
    */
   vertexWaveDefines(): readonly string[] {
-    return VERTEX_WAVE_DEFINES[this.fftVertex]!;
+    return VERTEX_WAVE_DEFINES[this._blend ? 1 : 0]![this.fftVertex]!;
+  }
+  /** Mesh attributes `waterOutlineVertexSource` reads under `vertexWaveDefines`. Allocation-free. */
+  vertexWaveAttributes(): readonly string[] {
+    return VERTEX_WAVE_ATTRIBUTES[this._blend ? 1 : 0]!;
   }
   /**
    * Sets `WATER_VERTEX_WAVE_UNIFORMS` and the band's sampler on another pass's effect for this frame, as

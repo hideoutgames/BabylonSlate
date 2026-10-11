@@ -1,5 +1,6 @@
 import { embedGlbExternalImages } from "@babylonslate/assets";
 import { publicAssetUrl } from "./branding";
+import { nodeCwd, tryReadRepoFile } from "./engine-content";
 import { prepareMannequinNormals } from "./kenney-mannequin-normals";
 
 /** Public URL path (under Vite `BASE_URL`) for the Kenney Mannequin GLB. */
@@ -13,62 +14,6 @@ const REPO_RELATIVE_GLB =
   "engine-content/kenney-assets/Mannequin/mannequin.glb";
 const REPO_RELATIVE_PNG =
   "engine-content/kenney-assets/Mannequin/mannequin.png";
-
-type NodeFs = {
-  readFile: (path: string) => Promise<Uint8Array>;
-  access: (path: string) => Promise<void>;
-};
-
-type NodePath = {
-  dirname: (path: string) => string;
-  resolve: (...paths: string[]) => string;
-};
-
-type NodeUrl = {
-  fileURLToPath: (url: string | URL) => string;
-};
-
-function nodeCwd(): string | null {
-  const proc = (globalThis as { process?: { cwd?: () => string } }).process;
-  if (typeof proc?.cwd !== "function") return null;
-  return proc.cwd();
-}
-
-/** Non-literal so tsc does not resolve Node built-ins in the app tsconfig. */
-function nodeBuiltin(name: "fs/promises" | "path" | "url"): string {
-  return `node:${name}`;
-}
-
-async function tryReadRepoFile(relativePath: string): Promise<Uint8Array | null> {
-  const cwd = nodeCwd();
-  if (!cwd) return null;
-  try {
-    const [fs, path, url] = (await Promise.all([
-      import(/* @vite-ignore */ nodeBuiltin("fs/promises")),
-      import(/* @vite-ignore */ nodeBuiltin("path")),
-      import(/* @vite-ignore */ nodeBuiltin("url")),
-    ])) as [NodeFs, NodePath, NodeUrl];
-    const candidates = [
-      path.resolve(cwd, relativePath),
-      path.resolve(
-        path.dirname(url.fileURLToPath(import.meta.url)),
-        "../../../../",
-        relativePath,
-      ),
-    ];
-    for (const file of candidates) {
-      try {
-        await fs.access(file);
-        return new Uint8Array(await fs.readFile(file));
-      } catch {
-        continue;
-      }
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
 
 async function fetchPublicBytes(publicPath: string): Promise<Uint8Array> {
   const response = await fetch(publicAssetUrl(publicPath));

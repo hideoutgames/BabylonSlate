@@ -48,7 +48,7 @@ export interface ParticleGraphSettings {
   /** 16–4096. */
   capacity: number;
   loop: ParticleLoopMode;
-  /** Seconds: loop length when infinite, run length when once. */
+  /** Seconds the emitter runs when Loop is Once; Infinite ignores it. */
   duration: number;
   /** Seconds simulated before the first frame; infinite loops only. */
   prewarm: number;
@@ -246,15 +246,17 @@ function normalizeEdges(value: unknown): ParticleGraphEdge[] {
   return value.flatMap((entry, index) => {
     const record = asRecord(entry);
     const sourceNodeId = asString(record.sourceNodeId, "");
+    const sourcePinId = asString(record.sourcePinId, "");
     const targetNodeId = asString(record.targetNodeId, "");
-    if (!sourceNodeId || !targetNodeId) return [];
+    const targetPinId = asString(record.targetPinId, "");
+    if (!sourceNodeId || !sourcePinId || !targetNodeId || !targetPinId) return [];
     return [
       {
         id: asString(record.id, `edge-${index}`),
         sourceNodeId,
-        sourcePinId: asString(record.sourcePinId, "out"),
+        sourcePinId,
         targetNodeId,
-        targetPinId: asString(record.targetPinId, "in"),
+        targetPinId,
       },
     ];
   });

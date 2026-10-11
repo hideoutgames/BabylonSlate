@@ -1,4 +1,4 @@
-import { getRequiredDependencies, type IndexedAsset } from "@babylonslate/assets";
+import type { IndexedAsset } from "@babylonslate/assets";
 import { areaEmissionTextureGuids, type SerializedScene } from "@babylonslate/core";
 import {
   environmentTextureGuidsFromScenes, materialGuidsFromScenes, modelAssetGuidsFromScene,
@@ -20,7 +20,7 @@ export function sceneViewportRequiredAssets(scene: SerializedScene, assets: read
     if (result.has(guid)) continue;
     result.add(guid);
     const asset = byGuid.get(guid);
-    if (asset && !asset.placeholder) pending.push(...getRequiredDependencies(asset.header));
+    if (asset && !asset.placeholder) pending.push(...asset.header.requiredDependencies);
   }
   return result;
 }
@@ -36,11 +36,28 @@ export function sceneViewportAssetKey(scene: SerializedScene | null, assets: rea
     ...postProcessTextureGuidsFromScenes([scene]), ...materialInstanceTextureGuidsFromScenes([scene]), ...skyboxFaceGuidsFromScene(scene),
     ...overlayTextureGuidsFromScene(scene), ...areaEmissionTextureGuids(scene),
   ]);
-  return JSON.stringify([
-    [...guids].sort(),
-    assets.filter(({ header }) => resourceTypes.has(header.type))
-      .sort((a, b) => a.header.guid.localeCompare(b.header.guid))
-      .map(({ header }) => [header.guid, header.type, header.payload,
-        header.chunks.map((chunk) => [chunk.id, chunk.sha256])]),
-  ]);
+  return `${JSON.stringify([...guids].sort())}\n${resourceRevisionKey(assets)}`;
+}
+
+type ResourceSource = readonly [asset: IndexedAsset, header: unknown, payload: unknown, chunks: unknown];
+let resourceKeyCache: { sources: readonly ResourceSource[]; key: string } | null = null;
+
+/** Scene edits recompute the asset key; reuse the resource part while the
+ * registry still holds the same headers, payloads and chunk lists. */
+function resourceRevisionKey(assets: readonly IndexedAsset[]): string {
+  const resources = assets.filter(({ header }) => resourceTypes.has(header.type));
+  const cached = resourceKeyCache;
+  if (cached && cached.sources.length === resources.length && resources.every((asset, index) => {
+    const [source, header, payload, chunks] = cached.sources[index]!;
+    return source === asset && header === asset.header && payload === asset.header.payload && chunks === asset.header.chunks;
+  })) return cached.key;
+  const key = JSON.stringify([...resources]
+    .sort((a, b) => a.header.guid.localeCompare(b.header.guid))
+    .map(({ header }) => [header.guid, header.type, header.payload,
+      header.chunks.map((chunk) => [chunk.id, chunk.sha256])]));
+  resourceKeyCache = {
+    sources: resources.map((asset): ResourceSource => [asset, asset.header, asset.header.payload, asset.header.chunks]),
+    key,
+  };
+  return key;
 }

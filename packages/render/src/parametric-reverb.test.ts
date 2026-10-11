@@ -12,7 +12,7 @@ type MockNode = {
   kind: string;
   connections: MockNode[];
   connect: (dest: MockNode) => MockNode;
-  disconnect: () => void;
+  disconnect: (dest?: MockNode) => void;
   gain: { value: number };
   delayTime: { value: number };
   type: string;
@@ -34,7 +34,9 @@ function mockAudioGraph(): {
         this.connections.push(dest);
         return dest;
       },
-      disconnect() {},
+      disconnect(dest) {
+        this.connections = dest ? this.connections.filter((node) => node !== dest) : [];
+      },
       gain: { value: 0 },
       delayTime: { value: 0 },
       type: "",
@@ -70,6 +72,10 @@ describe("parametric reverb topology", () => {
 
   it("wires dry unity plus Schroeder comb feedback and all-pass feedforward", () => {
     const graph = mockAudioGraph();
+    const input = graph.nodes.find((node) => node.kind === "input")!;
+    const output = graph.nodes.find((node) => node.kind === "output")!;
+    // The host's own bus route must survive the reverb graph's disposal.
+    input.connect(output);
     const connected = connectParametricReverb(
       graph.context,
       graph.input,
@@ -96,6 +102,7 @@ describe("parametric reverb topology", () => {
     const filters = graph.nodes.filter((node) => node.kind === "filter");
     expect(filters.every((node) => node.frequency.value < 3000)).toBe(true);
     connected.dispose();
+    expect(input.connections).toEqual([output]);
   });
 
   it("skips a second dry path when the host already routes the send bus", () => {

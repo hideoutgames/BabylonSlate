@@ -1,0 +1,84 @@
+{
+  "id": "constant-loop",
+  "kind": "event",
+  "nodes": [
+    {
+      "id": "entry",
+      "typeId": "flow.entry",
+      "position": {
+        "x": 1800,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {}
+    },
+    {
+      "id": "while",
+      "typeId": "flow.whileLoop",
+      "position": {
+        "x": 1600,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execIn",
+          "name": "exec",
+          "kind": "exec",
+          "direction": "in",
+          "type": {
+            "kind": "exec"
+          }
+        },
+        {
+          "id": "condition",
+          "name": "Condition",
+          "kind": "data",
+          "direction": "in",
+          "type": {
+            "kind": "bool"
+          }
+        },
+        {
+          "id": "loopBody",
+          "name": "Loop Body",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        },
+        {
+          "id": "completed",
+          "name": "Completed",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {
+        "default:condition": true
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "entry.execOut->while.execIn",
+      "sourceNodeId": "entry",
+      "sourcePinId": "execOut",
+      "targetNodeId": "while",
+      "targetPinId": "execIn"
+    }
+  ]
+}

@@ -39,6 +39,7 @@ export type InterfaceMethodContext = {
       typeId: string;
       direction: "in" | "out";
       typeClassId?: string;
+      container?: "single" | "array" | "map";
     }>;
   }>;
 };
@@ -51,6 +52,7 @@ export type ParentFunctionSignature = {
     typeId: string;
     direction: "in" | "out";
     typeClassId?: string;
+    container?: "single" | "array" | "map";
   }>;
 };
 

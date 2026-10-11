@@ -1,7 +1,7 @@
 import { setSceneGameTimePaused } from "./scene-game-time";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ArcRotateCamera, Constants, DiscardBlock, FragmentOutputBlock, InputBlock, MeshBuilder, MultiplyBlock, NullEngine, PrecisionDate, Scene, Vector3, VectorMergerBlock, type NodeMaterialConnectionPoint } from "@babylonjs/core";
-import { createDefaultMaterialDocument, lowerMaterialDocument, type MaterialDocument } from "@babylonslate/shader-graph";
+import { createDefaultMaterialDocument, lowerMaterialDocument, newCustomGlslProperties, type MaterialDocument } from "@babylonslate/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { ImageSourceBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/imageSourceBlock";
@@ -155,18 +155,18 @@ describe("material node contracts", () => {
       expect((channel.connectedPoint!.ownerBlock as InputBlock).value).toBe(1);
     }
   });
-  it("keeps different legacy GLSL expressions distinct when numeric node IDs sanitize alike", async () => {
+  it("keeps different Custom GLSL bodies distinct when numeric node IDs sanitize alike", async () => {
     const doc = createDefaultMaterialDocument();
     doc.shadingModel = "unlit";
     doc.edges = [];
     for (const [index, id] of ["custom.glsl-123", "custom.glsl-456"].entries()) {
-      node(doc, id, "custom.glsl", { body: index === 0 ? "a + b" : "a - b" });
+      node(doc, id, "custom.glsl", { ...newCustomGlslProperties(), body: index === 0 ? "return A + B;" : "return A - B;" });
       wire(doc, "baseColor", "out", id, "a");
       wire(doc, id, "out", "output", index === 0 ? "baseColor" : "emissive");
     }
     const result = await compile(doc);
-    expect(result.material.compiledShaders).toContain("result = a + b;");
-    expect(result.material.compiledShaders).toContain("result = a - b;");
+    expect(result.material.compiledShaders).toContain("return A + B;");
+    expect(result.material.compiledShaders).toContain("return A - B;");
   });
 
   it("builds distinct legal texture samplers from editor-generated numeric node IDs", async () => {
@@ -216,7 +216,6 @@ describe("material node contracts", () => {
     vi.spyOn(texture, "isReady").mockReturnValue(true);
     const doc = createDefaultMaterialDocument();
     node(doc, "custom", "custom.glsl", {
-      customVersion: 2,
       inputs: [{ id: "image", name: "Albedo", type: "texture" }, { id: "uv", name: "UV", type: "vec2" }],
       outputs: [{ id: "out", name: "Result", type: "vec3" }],
       body: "return texture2D(Albedo, UV * 2.0).rgb;",
@@ -243,9 +242,9 @@ describe("material node contracts", () => {
       expect(sampler.texture?.getSize()).toMatchObject({ width: 1, height: 1 });
     }
   });
-  it("advances Seconds-mode Time when previews render without fresh engine frame deltas", async () => {
+  it("advances Time when previews render without fresh engine frame deltas", async () => {
     const doc = createDefaultMaterialDocument();
-    node(doc, "time", "input.time", { timeMode: "seconds" });
+    node(doc, "time", "input.time");
     node(doc, "sine", "math.sin");
     wire(doc, "time", "time", "sine", "value");
     wire(doc, "sine", "out", "output", "roughness");
@@ -283,7 +282,7 @@ describe("material node contracts", () => {
   });
   it.each(["a", "b"])("compiles animated normal displacement with Time on Multiply %s", async (timePin) => {
     const doc = createDefaultMaterialDocument();
-    node(doc, "time", "input.time", { timeMode: "seconds" });
+    node(doc, "time", "input.time");
     node(doc, "sine", "math.sin");
     node(doc, "normal", "input.vertexNormalWS");
     node(doc, "multiply", "math.multiply");
@@ -350,7 +349,6 @@ describe("material node contracts", () => {
   it("compiles a typed Custom GLSL return and an independently typed additional output", async () => {
     const doc = createDefaultMaterialDocument();
     node(doc, "custom", "custom.glsl", {
-      customVersion: 2,
       inputs: [{ id: "uv", name: "UV", type: "vec2" }],
       outputs: [{ id: "out", name: "Result", type: "vec3" }, { id: "mask", name: "Mask", type: "float" }],
       body: "Mask = step(0.5, UV.x);\nreturn vec3(UV, Mask);",

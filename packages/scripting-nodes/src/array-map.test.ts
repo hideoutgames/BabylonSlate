@@ -129,7 +129,7 @@ describe("array-map nodes", () => {
     expect(runLog(compiled.source)).toEqual(["3"]);
   });
 
-  it("compiles Get / Get Safe miss paths to typed defaults and valid flags", () => {
+  it("compiles an Array Get miss to the typed default and a false Valid flag", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",
@@ -138,7 +138,6 @@ describe("array-map nodes", () => {
         node(registry, "entry", "flow.entry"),
         node(registry, "make", "array.make", { count: 1, "default:item0": 9 }),
         node(registry, "get", "array.get", { "default:index": 5 }),
-        node(registry, "safe", "array.getSafe", { "default:index": 5 }),
         node(registry, "branch", "flow.sequence", { count: 2 }),
         node(registry, "logValue", "debug.log"),
         node(registry, "logValid", "debug.log"),
@@ -146,11 +145,10 @@ describe("array-map nodes", () => {
       edges: [
         edge("e1", "entry", "execOut", "branch", "execIn"),
         edge("e2", "make", "out", "get", "array"),
-        edge("e3", "make", "out", "safe", "array"),
         edge("e4", "branch", "then0", "logValue", "execIn"),
         edge("e5", "branch", "then1", "logValid", "execIn"),
         edge("e6", "get", "out", "logValue", "message"),
-        edge("e7", "safe", "valid", "logValid", "message"),
+        edge("e7", "get", "valid", "logValid", "message"),
       ],
     };
     const make = graph.nodes.find((entry) => entry.id === "make")!;
@@ -158,13 +156,11 @@ describe("array-map nodes", () => {
       if (pin.id.startsWith("item")) pin.type = INT;
       if (pin.id === "out") pin.type = arrayOf(INT);
     }
-    for (const id of ["get", "safe"] as const) {
-      const entry = graph.nodes.find((n) => n.id === id)!;
-      for (const pin of entry.pins) {
-        if (pin.id === "array") pin.type = arrayOf(INT);
-        if (pin.id === "out") pin.type = INT;
-        if (pin.id === "valid") pin.type = BOOL;
-      }
+    const get = graph.nodes.find((n) => n.id === "get")!;
+    for (const pin of get.pins) {
+      if (pin.id === "array") pin.type = arrayOf(INT);
+      if (pin.id === "out") pin.type = INT;
+      if (pin.id === "valid") pin.type = BOOL;
     }
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
     expect(runLog(compiled.source)).toEqual(["0", "false"]);
@@ -214,6 +210,86 @@ describe("array-map nodes", () => {
     }
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
     expect(runLog(compiled.source)).toEqual(["3"]);
+  });
+
+  it("matches Vector items by value in Contains, Find Index and Remove Item", () => {
+    const registry = createDefaultNodeRegistry();
+    const item = { x: 1, y: 2, z: 3 };
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "entry", "flow.entry"),
+        node(registry, "vec", "vector.make3", { "default:x": 1, "default:y": 2, "default:z": 3 }),
+        node(registry, "make", "array.make", { count: 1 }),
+        node(registry, "contains", "array.contains", { "default:item": item }),
+        node(registry, "find", "array.find", { "default:item": item }),
+        node(registry, "remove", "array.removeItem", { "default:item": item }),
+        node(registry, "length", "array.length"),
+        node(registry, "logContains", "debug.log"),
+        node(registry, "logFind", "debug.log"),
+        node(registry, "logLength", "debug.log"),
+      ],
+      edges: [
+        edge("e1", "vec", "out", "make", "item0"),
+        edge("e2", "make", "out", "contains", "array"),
+        edge("e3", "make", "out", "find", "array"),
+        edge("e4", "make", "out", "remove", "array"),
+        edge("e5", "remove", "out", "length", "array"),
+        edge("e6", "entry", "execOut", "remove", "execIn"),
+        edge("e7", "remove", "execOut", "logContains", "execIn"),
+        edge("e8", "logContains", "execOut", "logFind", "execIn"),
+        edge("e9", "logFind", "execOut", "logLength", "execIn"),
+        edge("e10", "contains", "out", "logContains", "message"),
+        edge("e11", "find", "out", "logFind", "message"),
+        edge("e12", "length", "out", "logLength", "message"),
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    expect(runLog(compiled.source)).toEqual(["true", "0", "0"]);
+  });
+
+  it.each([
+    ["array.set", { "default:item": 7 }, "7,2,3"],
+    ["array.removeIndex", {}, "2,3"],
+    ["array.insert", { "default:item": 7 }, "7,1,2,3"],
+  ] as const)("%s reads an impure index once for the check and the edit", (typeId, properties, expected) => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "entry", "flow.entry"),
+        node(registry, "make", "array.make", {
+          count: 3,
+          "default:item0": 1,
+          "default:item1": 2,
+          "default:item2": 3,
+        }),
+        node(registry, "roll", "math.randomInt", { "default:min": 0, "default:max": 9 }),
+        node(registry, "edit", typeId, { ...properties }),
+        node(registry, "join", "string.join", { "default:separator": "," }),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        edge("e1", "entry", "execOut", "edit", "execIn"),
+        edge("e2", "make", "out", "edit", "array"),
+        edge("e3", "roll", "out", "edit", "index"),
+        edge("e4", "edit", "execOut", "log", "execIn"),
+        edge("e5", "edit", "out", "join", "array"),
+        edge("e6", "join", "out", "log", "message"),
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    let rolls = 0;
+    const logs: string[] = [];
+    (loadModule(compiled.source).run as (ctx: unknown) => void)({
+      random: { int: () => rolls++ },
+      formatValue: (v: unknown) => String(v),
+      log: (_s: string, _c: string, message: string) => logs.push(message),
+    });
+    expect(rolls).toBe(1);
+    expect(logs).toEqual([expected]);
   });
 
   it("compiles Append Array, Set At Index, Insert, Remove At, Remove Item, Clear", () => {

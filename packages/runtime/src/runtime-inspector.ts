@@ -256,7 +256,7 @@ export class RuntimeInspector {
   }
   private transformRestriction(target: Target): string | null {
     const actor = target instanceof Actor ? target : target.owner!;
-    if (actor.components.some(component => !component.destroyed && component.classId === "RagdollComponent"))
+    if (hasEnabledRagdoll(actor))
       return "Ragdoll transforms require a new session; live teleport cannot preserve articulated body state.";
     if (target instanceof ActorComponent && ["PhysicsConstraintComponent", "SceneStreamingComponent"].includes(target.classId))
       return "This component owner does not support live local transform replacement.";
@@ -353,6 +353,10 @@ function boundedInput(value: unknown): void {
     if (remaining < 0) throw new Error("Inspector request exceeds its bounded transport budget.");
   };
   visit(value, 0);
+}
+/** Only an enabled ragdoll owns articulated bodies a live teleport would break; a disabled one starts from the current pose. */
+export function hasEnabledRagdoll(actor: Actor): boolean {
+  return actor.components.some(component => !component.destroyed && component.classId === "RagdollComponent" && component.getVariable("enabled") === true);
 }
 function serializedTransform(target: Target): SerializedTransform {
   const { position: p, rotation: r, scale: s } = target.transform;

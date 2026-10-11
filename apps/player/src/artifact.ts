@@ -1,9 +1,6 @@
 import { collisionTriangleMeshBytes, normalizeScene, normalizeSceneLayer, parseText2DProperties, type CollisionTriangleMesh, type SerializedScene, type SerializedSceneLayer, type StorageReadMetrics } from "@babylonslate/core";
 import {
-  createHttpPackSource,
-  createMemoryPackSource,
   parseGameManifest,
-  parseScriptRegistry,
   GAME_MANIFEST_FILE,
   NAVMESH_EXPORT_TYPE,
   sceneGuidFromNavmeshExport,
@@ -22,23 +19,20 @@ import {
   fontMsdfAtlasExportGuid,
   type GameAssetIndexEntry,
   type GameManifest,
-  type PackSource,
 } from "@babylonslate/exporter";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import {
   AssetLoadingService,
   complexCollisionModelGuids,
   cookComplexCollisionMesh,
-  modelAnimationDurations,
   sha256Hex,
   type AssetLoadScope,
   type AssetLoadPriority,
   extractPackedAudioClipBytes,
-  extractPackedModelAsset,
+  decodePackedModelAsset,
   peekPackedAudioPayload,
   audioClipCacheKey,
   AUDIO_DEFAULT_SOURCE_CHUNK,
-  normalizeAudioPayload,
   type AudioPayload,
   type ModelPayload,
   decodeAreaEmission,
@@ -48,8 +42,7 @@ import {
 const decoder = new TextDecoder();
 
 export type LoadedGame = {
-  /** Present for independently addressable exports; legacy fixture hosts may omit it. */
-  assets?: AssetLoadingService;
+  assets: AssetLoadingService;
   getReadMetrics?: () => StorageReadMetrics;
   onSourcesChanged?: (listener: () => void) => () => void;
   acquireAssets?: (ids: string[], request: { consumer: string; signal: AbortSignal; priority?: AssetLoadPriority; fontModes?: ReadonlyMap<string, ReadonlySet<"facetype" | "msdf" | "bitmap">>; onProgress?: (progress: { completed: number; total: number }) => void }) => Promise<{ release: () => void; assetGuids?: ReadonlySet<string> }>;
@@ -78,7 +71,6 @@ export type LoadedGame = {
   complexMeshes?: Map<string, CollisionTriangleMesh>;
   /** On-demand fallback for the runtime's `requestComplexCollision`; `null` when the Model is not loaded. */
   cookComplexCollision?: (guid: string) => CollisionTriangleMesh | null;
-  modelAnimationDurations?: Map<string, ReadonlyMap<string, number | undefined>>;
   navmeshBytes: Map<string, Uint8Array>;
   audioReverbBytes: Map<string, Uint8Array>;
 };
@@ -87,20 +79,6 @@ function textFromFiles(files: Map<string, Uint8Array>, name: string): string {
   const bytes = files.get(name);
   if (!bytes) throw new Error(`Export is missing ${name}`);
   return decoder.decode(bytes);
-}
-
-function packSourceFor(
-  files: Map<string, Uint8Array>,
-  packName: string,
-  fetchImpl?: typeof fetch,
-  baseUrl?: string,
-): PackSource {
-  const bytes = files.get(packName);
-  if (bytes) return createMemoryPackSource(bytes);
-  if (!baseUrl || !fetchImpl) {
-    throw new Error(`Pack ${packName} is not in memory and no HTTP source was given`);
-  }
-  return createHttpPackSource(new URL(packName, baseUrl).href, undefined, fetchImpl);
 }
 
 function parseJsonAsset(bytes: Uint8Array): unknown {
@@ -115,7 +93,8 @@ export async function loadGameFromFiles(
   // browser rejects the latter's receiver with an Illegal invocation error.
   const fetchAsset = options.fetchImpl;
   const manifest = parseGameManifest(textFromFiles(files, GAME_MANIFEST_FILE));
-  const scripts = parseScriptRegistry(textFromFiles(files, manifest.scriptsFile));
+  // Compiled Class code arrives as CompiledScript sidecars when acquired.
+  const scripts: ScriptBundleEntry[] = [];
   const scenes = new Map<string, SerializedScene>();
   const sceneLayers = new Map<string, SerializedSceneLayer>();
   const textureBytes = new Map<string, Uint8Array>();
@@ -132,12 +111,11 @@ export async function loadGameFromFiles(
   const payloads = new Map<string, Uint8Array>();
   const decodedPayloads = new Map<string, unknown>();
   const complexMeshes = new Map<string, CollisionTriangleMesh>();
-  const durations = new Map<string, ReadonlyMap<string, number | undefined>>();
   const navmeshBytes = new Map<string, Uint8Array>();
   const audioReverbBytes = new Map<string, Uint8Array>();
 
-  const packSources = new Map<string, PackSource>();
-  const readMetrics: StorageReadMetrics = { operations: 2, fullReads: 2, rangeReads: 0, requestedBytes: (files.get(GAME_MANIFEST_FILE)?.byteLength ?? 0) + (files.get(manifest.scriptsFile)?.byteLength ?? 0), actualBytesRead: (files.get(GAME_MANIFEST_FILE)?.byteLength ?? 0) + (files.get(manifest.scriptsFile)?.byteLength ?? 0) };
+  const manifestLength = files.get(GAME_MANIFEST_FILE)?.byteLength ?? 0;
+  const readMetrics: StorageReadMetrics = { operations: 1, fullReads: 1, rangeReads: 0, requestedBytes: manifestLength, actualBytesRead: manifestLength };
   const entries = new Map(manifest.assets.map(entry => [entry.guid, entry]));
   for (const entry of manifest.assets) if (entry.type === "Font") fontFamilies.set(entry.guid, entry.name?.trim() || entry.guid);
   const projectId = options.baseUrl ?? `memory-export:${manifest.project?.name ?? "game"}`;
@@ -186,18 +164,11 @@ export async function loadGameFromFiles(
       if (!response.ok) throw new Error(`Asset ${entry.guid} is missing (${entry.path}, HTTP ${response.status}).`);
       accounted = true;
       bytes = await readResponse(entry, response);
-    } else if (entry.pack) {
-      let source = packSources.get(entry.pack);
-      if (!source) {
-        source = packSourceFor(files, entry.pack, fetchAsset, options.baseUrl);
-        packSources.set(entry.pack, source);
-      }
-      bytes = await source.read(entry.guid);
     } else throw new Error(`Missing bytes for asset ${entry.guid}.`);
-    if (!entry.pack && !accounted) { readMetrics.operations++; readMetrics.fullReads++; readMetrics.requestedBytes += entry.byteLength ?? bytes.byteLength; readMetrics.actualBytesRead += bytes.byteLength; }
+    if (!accounted) { readMetrics.operations++; readMetrics.fullReads++; readMetrics.requestedBytes += entry.byteLength ?? bytes.byteLength; readMetrics.actualBytesRead += bytes.byteLength; }
     signal.throwIfAborted();
     if (entry.byteLength !== undefined && bytes.byteLength !== entry.byteLength) throw new Error(`Asset ${entry.guid} has a corrupt length.`);
-    if (entry.revision && await sha256Hex(bytes) !== entry.revision) throw new Error(`Asset ${entry.guid} has a corrupt revision.`);
+    if (await sha256Hex(bytes) !== entry.revision) throw new Error(`Asset ${entry.guid} has a corrupt revision.`);
     signal.throwIfAborted();
     return bytes;
   }
@@ -207,6 +178,11 @@ export async function loadGameFromFiles(
     let decodedBytes = document === undefined ? 0 : bytes.byteLength * 2;
     let install = () => {};
     let model: PreparedAsset["model"];
+    // Exported sidecars always carry their prefixed identity (`navmesh:<scene>`).
+    const sidecarOwner = (guid: string | null) => {
+      if (!guid) throw new Error(`Invalid ${entry.type} asset identity: ${entry.guid}`);
+      return guid;
+    };
     if (entry.type === "Scene") { const value = normalizeScene(document); install = () => { scenes.set(entry.guid, value); }; }
     else if (entry.type === "SceneLayer") { const value = normalizeSceneLayer(document); install = () => { sceneLayers.set(entry.guid, value); }; }
     else if (entry.type === "Texture") install = () => { textureBytes.set(entry.guid, bytes); };
@@ -217,62 +193,34 @@ export async function loadGameFromFiles(
       decodedBytes = value.rgba.byteLength;
       install = () => { areaEmissions.set(guid, value); };
     } else if (entry.type === "Model") {
-      const value = extractPackedModelAsset(bytes);
-      const animationDurations = modelAnimationDurations(value.source);
+      const value = decodePackedModelAsset(bytes);
+      if (!value) throw new Error(`Model ${entry.guid} is not a packed Model asset.`);
       // Complex Collision is a separate representation, cooked in prepare() only when needed.
       model = value;
-      decodedBytes = animationDurations.size * 128;
-      install = () => { modelBytes.set(entry.guid, value.source); modelPayloads.set(entry.guid, value.payload); durations.set(entry.guid, animationDurations); };
+      install = () => { modelBytes.set(entry.guid, value.source); modelPayloads.set(entry.guid, value.payload); };
     } else if (entry.type === "Font") install = () => {
       fontBytes.set(entry.guid, bytes);
       if (entry.name?.trim()) fontFamilies.set(entry.guid, entry.name.trim());
     };
-    else if (entry.type === FONT_FACETYPE_EXPORT_TYPE) install = () => { fontFacetypeBytes.set(fontGuidFromFontFacetypeExport(entry.guid) ?? entry.guid, bytes); };
-    else if (entry.type === FONT_MSDF_EXPORT_TYPE) install = () => { fontMsdfJson.set(fontGuidFromFontMsdfExport(entry.guid) ?? entry.guid, bytes); };
-    else if (entry.type === FONT_MSDF_ATLAS_EXPORT_TYPE) install = () => { fontMsdfPng.set(fontGuidFromFontMsdfAtlasExport(entry.guid) ?? entry.guid, bytes); };
+    else if (entry.type === FONT_FACETYPE_EXPORT_TYPE) { const guid = sidecarOwner(fontGuidFromFontFacetypeExport(entry.guid)); install = () => { fontFacetypeBytes.set(guid, bytes); }; }
+    else if (entry.type === FONT_MSDF_EXPORT_TYPE) { const guid = sidecarOwner(fontGuidFromFontMsdfExport(entry.guid)); install = () => { fontMsdfJson.set(guid, bytes); }; }
+    else if (entry.type === FONT_MSDF_ATLAS_EXPORT_TYPE) { const guid = sidecarOwner(fontGuidFromFontMsdfAtlasExport(entry.guid)); install = () => { fontMsdfPng.set(guid, bytes); }; }
     else if (entry.type === "Audio") {
-      const value = peekPackedAudioPayload(bytes) ?? normalizeAudioPayload({});
+      const value = peekPackedAudioPayload(bytes);
+      if (!value) throw new Error(`Audio ${entry.guid} is not a packed Audio asset.`);
       install = () => { audioPayloads.set(entry.guid, value); };
     } else if (entry.type === "CompiledScript") {
       const value = document as Partial<ScriptBundleEntry> | undefined;
       if (!value || typeof value.assetGuid !== "string" || typeof value.classId !== "string" || typeof value.source !== "string" || !Array.isArray(value.anchors) || !Array.isArray(value.entryPoints))
         throw new Error(`Compiled Class ${entry.guid} has invalid script metadata.`);
       install = () => { const index = scripts.findIndex(script => script.assetGuid === value.assetGuid && script.classId === value.classId); if (index >= 0) scripts[index] = value as ScriptBundleEntry; else scripts.push(value as ScriptBundleEntry); };
-    } else if (entry.type === NAVMESH_EXPORT_TYPE) install = () => { navmeshBytes.set(sceneGuidFromNavmeshExport(entry.guid) ?? entry.guid, bytes); };
-    else if (entry.type === AUDIO_REVERB_EXPORT_TYPE) install = () => { audioReverbBytes.set(sceneGuidFromAudioReverbExport(entry.guid) ?? entry.guid, bytes); };
+    } else if (entry.type === NAVMESH_EXPORT_TYPE) { const guid = sidecarOwner(sceneGuidFromNavmeshExport(entry.guid)); install = () => { navmeshBytes.set(guid, bytes); }; }
+    else if (entry.type === AUDIO_REVERB_EXPORT_TYPE) { const guid = sidecarOwner(sceneGuidFromAudioReverbExport(entry.guid)); install = () => { audioReverbBytes.set(guid, bytes); }; }
     return { bytes, decodedBytes, document, model, publish: () => { payloads.set(entry.guid, bytes); if (document !== undefined) decodedPayloads.set(entry.guid, document); install(); } };
   }
 
-  const game: LoadedGame = {
-    manifest,
-    scripts,
-    scenes,
-    sceneLayers,
-    textureBytes,
-    areaEmissions,
-    modelBytes,
-    modelPayloads,
-    fontBytes,
-    fontFacetypeBytes,
-    fontMsdfJson,
-    fontMsdfPng,
-    fontFamilies,
-    audioBytes,
-    audioPayloads,
-    payloads,
-    decodedPayloads,
-    complexMeshes,
-    modelAnimationDurations: durations,
-    navmeshBytes,
-    audioReverbBytes,
-  };
   const sourceListeners = new Set<() => void>();
   let notificationPending = false;
-  game.cookComplexCollision = guid => {
-    const source = modelBytes.get(guid);
-    return source ? complexMeshes.get(guid) ?? cookComplexCollisionMesh(source, modelPayloads.get(guid)) : null;
-  };
-  game.onSourcesChanged = listener => { sourceListeners.add(listener); return () => { sourceListeners.delete(listener); }; };
   function evict(entry: GameAssetIndexEntry, bytes: Uint8Array): void {
     if (payloads.get(entry.guid) !== bytes) return;
     if (!notificationPending) { notificationPending = true; queueMicrotask(() => { notificationPending = false; for (const listener of sourceListeners) listener(); }); }
@@ -282,7 +230,6 @@ export async function loadGameFromFiles(
       if (index >= 0) scripts.splice(index, 1);
     }
     decodedPayloads.delete(entry.guid);
-    durations.delete(entry.guid);
     for (const map of [scenes, sceneLayers, textureBytes, modelBytes, modelPayloads, fontBytes, audioPayloads]) map.delete(entry.guid);
     const owner = entry.guid.slice(entry.guid.indexOf(":") + 1);
     if (entry.type === AREA_EMISSION_EXPORT_TYPE) areaEmissions.delete(owner);
@@ -301,7 +248,8 @@ export async function loadGameFromFiles(
     resolve: (id) => {
       const entry = entries.get(id);
       if (!entry) throw new Error(`Asset ${id} is not in the exported catalog.`);
-      return { id, rootId: projectId, revision: entry.revision ?? "legacy", requiredDependencies: entry.requiredDependencies ?? [] };
+      if (!entry.revision) throw new Error(`Asset ${id} has no revision in the exported catalog; rebuild the game.`);
+      return { id, rootId: projectId, revision: entry.revision, requiredDependencies: entry.requiredDependencies ?? [] };
     },
     representation: (record) => {
       const entry = entries.get(record.id)!;
@@ -316,12 +264,39 @@ export async function loadGameFromFiles(
       };
     },
   });
-  game.assets = service;
-  game.getReadMetrics = () => {
-    const result = { ...readMetrics };
-    for (const source of packSources.values()) { const stats = source.getReadMetrics?.(); if (stats) for (const key of Object.keys(result) as Array<keyof StorageReadMetrics>) result[key] += stats[key]; }
-    return result;
+  const game: LoadedGame = {
+    assets: service,
+    manifest,
+    scripts,
+    scenes,
+    sceneLayers,
+    textureBytes,
+    areaEmissions,
+    modelBytes,
+    modelPayloads,
+    fontBytes,
+    fontFacetypeBytes,
+    fontMsdfJson,
+    fontMsdfPng,
+    fontFamilies,
+    audioBytes,
+    audioPayloads,
+    payloads,
+    decodedPayloads,
+    complexMeshes,
+    navmeshBytes,
+    audioReverbBytes,
   };
+  // The cooked mesh is its own cached representation and can outlive the
+  // Model's trimmed source bytes.
+  game.cookComplexCollision = guid => {
+    const cooked = complexMeshes.get(guid);
+    if (cooked) return cooked;
+    const source = modelBytes.get(guid);
+    return source ? cookComplexCollisionMesh(source, modelPayloads.get(guid)) : null;
+  };
+  game.onSourcesChanged = listener => { sourceListeners.add(listener); return () => { sourceListeners.delete(listener); }; };
+  game.getReadMetrics = () => ({ ...readMetrics });
   function acquireCollision(scope: AssetLoadScope, id: string, model: { source: Uint8Array; payload: ModelPayload }, signal?: AbortSignal, priority: AssetLoadPriority = "gameplay") {
     return scope.acquire<PreparedAsset>(id, {
       key: "export-complex-collision",
@@ -359,7 +334,7 @@ export async function loadGameFromFiles(
       load: async () => ({ value: { bytes: new Uint8Array(), decodedBytes: 0, publish() {} } }),
     } : undefined, { signal, priority, dependencies: "none" });
     const documentIds = [...closure];
-    const prepared = await Promise.all(documentIds.map(id => acquire(id, entries.get(id)?.type === "Font" && manifest.assetCatalogVersion === 1)));
+    const prepared = await Promise.all(documentIds.map(id => acquire(id, entries.get(id)?.type === "Font")));
     const inspect = (value: unknown): void => {
       if (!value || typeof value !== "object") return;
       if (Array.isArray(value)) { for (const child of value) inspect(child); return; }
@@ -425,10 +400,9 @@ export async function loadGameFromFiles(
     if (!scene) { source.release(); throw new Error(`Asset ${guid} is not a Scene.`); }
     return { scene, release: source.release, assetGuids: source.assetGuids };
   };
-  game.dispose = () => { sourceListeners.clear(); for (const scope of liveScopes) scope.dispose(); liveScopes.clear(); service.dispose(); packSources.clear(); };
-  const roots = manifest.assetCatalogVersion === 1
-    ? manifest.assets.filter(entry => entry.guid === manifest.startupSceneGuid).map(entry => entry.guid)
-    : manifest.assets.map(entry => entry.guid);
+  game.dispose = () => { sourceListeners.clear(); for (const scope of liveScopes) scope.dispose(); liveScopes.clear(); service.dispose(); };
+  // Startup reads the entry Scene's closure and the startup-required systems.
+  const roots = entries.has(manifest.startupSceneGuid) ? [manifest.startupSceneGuid] : [];
   try {
     const [, systemAssets] = await Promise.all([prepare(startupScope, roots, options.signal),
       prepare(systemScope, manifest.assets.filter(entry => entry.startupRequired).map(entry => entry.guid), options.signal)]);
@@ -469,11 +443,12 @@ export function createGameAudioSourceLoader(
   return async ({ assetGuid, chunkId, revision }) => {
     const exportedRevision = game.manifest.assets.find(entry => entry.guid === assetGuid)?.revision;
     if (revision && exportedRevision && revision !== exportedRevision) throw new Error(`Audio asset ${assetGuid} source revision is no longer available.`);
-    const scope = game.assets?.createScope(`audio:${assetGuid}:${chunkId}`);
+    const scope = game.assets.createScope(`audio:${assetGuid}:${chunkId}`);
     try {
-      if (scope) { const prepared = await scope.acquire<{ publish: () => void }>(assetGuid); prepared.publish(); }
+      const prepared = await scope.acquire<{ publish: () => void }>(assetGuid);
+      prepared.publish();
       return loadGameAudioClipBytes(game, assetGuid, chunkId);
-    } finally { scope?.dispose(); }
+    } finally { scope.dispose(); }
   };
 }
 
@@ -486,12 +461,6 @@ export async function loadGameFromHttp(
   const manifestRes = await fetchImpl(manifestUrl, { signal });
   if (!manifestRes.ok) throw new Error("Export is missing game.json");
   const manifestBytes = new Uint8Array(await manifestRes.arrayBuffer());
-  const manifest = parseGameManifest(decoder.decode(manifestBytes));
-  const scriptsRes = await fetchImpl(new URL(manifest.scriptsFile, baseUrl).href, { signal });
-  if (!scriptsRes.ok) throw new Error(`Export is missing ${manifest.scriptsFile}`);
-  const files = new Map<string, Uint8Array>([
-    [GAME_MANIFEST_FILE, manifestBytes],
-    [manifest.scriptsFile, new Uint8Array(await scriptsRes.arrayBuffer())],
-  ]);
+  const files = new Map<string, Uint8Array>([[GAME_MANIFEST_FILE, manifestBytes]]);
   return loadGameFromFiles(files, { fetchImpl, baseUrl, signal });
 }

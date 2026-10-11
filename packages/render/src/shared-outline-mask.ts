@@ -177,9 +177,9 @@ export class SharedOutlineMaskRenderer {
       if (hardware) attributes.push("bakedVertexAnimationSettingsInstanced");
     }
     // Built-in water displaces its static rest grid in the vertex shader: the mask applies the same displacement,
-    // including the FFT detail band's when the material samples it.
+    // including the FFT detail band's when the material samples it and a blending surface's per-vertex scaling.
     const water = gpuWaterWaves(source, mesh);
-    if (water) { defines.push(...water.vertexWaveDefines()); attributes.push("slateWaterData"); }
+    if (water) { defines.push(...water.vertexWaveDefines()); attributes.push(...water.vertexWaveAttributes()); }
     PrepareStringDefinesForClipPlanes(source, this.view.scene, defines);
     const joined = defines.join("\n");
     let wrapper = subMesh._getDrawWrapper(this.renderer.renderPassId, true)!;

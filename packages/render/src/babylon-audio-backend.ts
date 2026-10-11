@@ -35,6 +35,12 @@ function clipStartOffset(request: AudioPlayRequest, duration: number): number | 
   return offset < duration ? offset : null;
 }
 
+/**
+ * Largest share of a voice's high band a wall can remove (-20 dB). The lowpass
+ * send restores the low band by `muffle / (1 - muffle)`, which must stay finite.
+ */
+const MAX_VOICE_MUFFLE = 0.9;
+
 function degreesToRadians(degrees: number): number {
   return (degrees * Math.PI) / 180;
 }
@@ -68,6 +74,8 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
   private readonly buffers = new Map<string, StaticSoundBuffer>();
   private readonly voices = new Map<string, StaticSound>();
   private readonly muffleSends = new Map<string, GainNode>();
+  /** Requested gain and applied muffle per live voice; both set its volume. */
+  private readonly voiceLevels = new Map<string, { gain: number; muffle: number }>();
   private muffleFilter: BiquadFilterNode | null = null;
   private unlocked = false;
   private paused = false;
@@ -168,6 +176,7 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     }
     this.pendingVoices.delete(request.voiceId);
     this.voices.set(request.voiceId, sound);
+    this.voiceLevels.set(request.voiceId, { gain: request.gain, muffle: 0 });
     sound.onEndedObservable.addOnce(() => {
       this.onVoiceEnded?.(request.voiceId);
     });
@@ -178,6 +187,7 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
   stop(voiceId: string): void {
     this.pendingVoices.delete(voiceId);
     this.disposeMuffleSend(voiceId);
+    this.voiceLevels.delete(voiceId);
     const sound = this.voices.get(voiceId);
     if (!sound) return;
     this.voices.delete(voiceId);
@@ -186,8 +196,10 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
   }
 
   setVoiceGain(voiceId: string, gain: number): void {
-    const sound = this.voices.get(voiceId);
-    if (sound) sound.volume = gain;
+    const level = this.voiceLevels.get(voiceId);
+    if (!level) return;
+    level.gain = gain;
+    this.applyVoiceLevel(voiceId);
   }
 
   setVoicePose(voiceId: string, pose: AudioPose): void {
@@ -240,21 +252,38 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
   }
 
   setVoiceMuffle(voiceId: string, factor: number): void {
-    const amount = Math.min(1, Math.max(0, factor));
     const sound = this.voices.get(voiceId);
-    const out = webAudioPort(sound, "_outNode");
-    const filter = this.ensureMuffleFilter();
-    const context = this.audioContext;
-    if (!sound || !out || !filter || !context) return;
-    let send = this.muffleSends.get(voiceId);
-    if (!send) {
-      send = context.createGain();
+    const level = this.voiceLevels.get(voiceId);
+    if (!sound || !level) return;
+    const amount = Number.isFinite(factor) ? Math.min(MAX_VOICE_MUFFLE, Math.max(0, factor)) : 0;
+    if (amount > 0 && !this.muffleSends.has(voiceId)) {
+      const out = webAudioPort(sound, "_outNode");
+      const filter = this.ensureMuffleFilter();
+      const context = this.audioContext;
+      // Without the lowpass send, lowering the dry level would only make it quieter.
+      if (!out || !filter || !context) return;
+      const send = context.createGain();
       send.gain.value = 0;
       out.connect(send);
       send.connect(filter);
       this.muffleSends.set(voiceId, send);
     }
-    send.gain.value = amount;
+    level.muffle = this.muffleSends.has(voiceId) ? amount : 0;
+    this.applyVoiceLevel(voiceId);
+  }
+
+  /**
+   * The send taps the voice after its volume and AudioV2's dry route stays
+   * connected, so muffling lowers the dry level (the high band) by the factor
+   * while the lowpass send brings the low band back to the requested gain.
+   */
+  private applyVoiceLevel(voiceId: string): void {
+    const sound = this.voices.get(voiceId);
+    const level = this.voiceLevels.get(voiceId);
+    if (!sound || !level) return;
+    sound.volume = level.gain * (1 - level.muffle);
+    const send = this.muffleSends.get(voiceId);
+    if (send) send.gain.value = level.muffle / (1 - level.muffle);
   }
 
   setPaused(paused: boolean): void {

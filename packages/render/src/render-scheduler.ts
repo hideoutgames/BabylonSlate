@@ -83,9 +83,14 @@ export class RenderScheduler {
     this.dirty = true;
   }
 
+  /** Whether the view's canvas is on screen, so it may draw into its Engine's frames. */
+  isShown(): boolean {
+    return this.documentVisible && this.visible;
+  }
+
   /** A loading transaction may draw under its modal, but never a hidden view. */
   canPresentLoadingFrame(): boolean {
-    return this.documentVisible && this.visible && !this.resizing;
+    return this.isShown() && !this.resizing;
   }
 
   /** Loading owns a blocker independently of other modal observers. */

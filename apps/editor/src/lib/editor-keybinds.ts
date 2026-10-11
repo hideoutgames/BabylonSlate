@@ -11,10 +11,12 @@ export interface EditorCommandDefinition {
   allowInTextInput?: boolean;
   /** Held keys repeat the command (history stepping). */
   repeat?: boolean;
+  /** The chord's browser action (Save Page As) never runs, even when the command cannot. */
+  blocksBrowserDefault?: boolean;
 }
 
 const COMMAND_LIST = [
-  { id: "editor.saveAll", label: "Save All", category: "General", defaultChords: ["Mod+S"], allowInTextInput: true },
+  { id: "editor.saveAll", label: "Save All", category: "General", defaultChords: ["Mod+S"], allowInTextInput: true, blocksBrowserDefault: true },
   { id: "editor.undo", label: "Undo", category: "General", defaultChords: ["Mod+Z"], repeat: true },
   { id: "editor.redo", label: "Redo", category: "General", defaultChords: ["Mod+Shift+Z", "Mod+Y"], repeat: true },
   { id: "editor.search", label: "Search Project", category: "General", defaultChords: ["Mod+K"], allowInTextInput: true },

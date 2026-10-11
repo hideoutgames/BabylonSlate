@@ -51,6 +51,25 @@ describe("gizmo screen-scale clamp", () => {
   });
 });
 
+describe("gizmo tool override", () => {
+  it("translates an override attachment and restores the active tool for the next one", () => {
+    const { scene } = createHandle();
+    scene.activeCamera = new FreeCamera("cam", new Vector3(0, 0, -10), scene);
+    const point = MeshBuilder.CreateBox("point", { size: 1 }, scene);
+    const actor = MeshBuilder.CreateBox("actor", { size: 1 }, scene);
+    const host = createGizmoHost(scene, { tool: "rotate" });
+    host.attachTo(point, [], { tool: "translate" });
+    expect(host.positionGizmo.attachedMesh).toBe(point);
+    expect(host.rotationGizmo.attachedMesh).toBeNull();
+    host.setTool("scale");
+    expect(host.positionGizmo.attachedMesh).toBe(point);
+    host.attachTo(actor);
+    expect(host.positionGizmo.attachedMesh).toBeNull();
+    expect(host.scaleGizmo.attachedMesh).toBe(actor);
+    host.dispose();
+  });
+});
+
 describe("gizmo move snap", () => {
   it("lands dragged axes on the world grid and leaves other axes alone", () => {
     const { scene } = createHandle();
@@ -79,9 +98,12 @@ describe("gizmo move snap", () => {
     drag.onDragObservable.notifyObservers(event(0.1));
     expect(mesh.position.x).toBeCloseTo(0);
     drag.onDragObservable.notifyObservers(event(0.5));
+    // Float drift on an axis the X handle does not move must not snap it.
+    mesh.position.y += 1e-6;
+    mesh.computeWorldMatrix(true);
     drag.onDragObservable.notifyObservers(event(0.3));
     expect(mesh.position.x).toBeCloseTo(1);
-    expect(mesh.position.y).toBeCloseTo(0.25);
+    expect(mesh.position.y).toBe(0.25);
     host.dispose();
   });
 });

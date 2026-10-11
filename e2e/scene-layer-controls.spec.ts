@@ -6,7 +6,7 @@ import { createDefaultMigrationRegistry } from "../packages/assets/src/migration
 import { createDefaultMaterialDocument } from "../packages/shader-graph/src/document";
 import { openMinimalTestProject } from "./minimal-project";
 import { openMainScene } from "./open-test-project";
-import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot } from "./play";
+import { clickPlayAndWaitForOverlay } from "./play";
 
 async function colorAt(canvas: Locator, x: number, y: number) {
   return canvas.evaluate((node: HTMLCanvasElement, point) => {
@@ -19,7 +19,8 @@ async function colorAt(canvas: Locator, x: number, y: number) {
   }, { x, y });
 }
 
-for (const mode of ["Play"] as ("Play" | "Preview Build")[]) {
+// Preview Build SceneLayer input is not part of this CI journey.
+for (const mode of ["Play"] as const) {
   test(`SceneLayer controls retain authored materials and edited values in ${mode}`, async ({ page }) => {
     test.setTimeout(120000);
     const files = await minimalProjectFiles(), versions = createDefaultMigrationRegistry();
@@ -57,14 +58,8 @@ for (const mode of ["Play"] as ("Play" | "Preview Build")[]) {
       version: versions.currentVersion("Scene"), payload: scene as unknown as Record<string, unknown> }));
     await openMinimalTestProject(page, files);
     await openMainScene(page);
-    if (mode === "Play") await clickPlayAndWaitForOverlay(page);
-    else {
-      await page.getByTestId("debug-menu").click();
-      await page.getByTestId("preview-build-toggle").click();
-      await page.getByTestId("play-preview").click();
-      await waitForPreviewBuildBoot(page);
-    }
-    const canvas = mode === "Play" ? page.getByTestId("play-canvas") : page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("player-canvas");
+    await clickPlayAndWaitForOverlay(page);
+    const canvas = page.getByTestId("play-canvas");
     await expect.poll(() => colorAt(canvas, 0, 3), { timeout: 30000 }).toBe("blue");
     await expect.poll(() => colorAt(canvas, 2, 3)).toBe("red");
     const box = (await canvas.boundingBox())!;
@@ -80,13 +75,12 @@ for (const mode of ["Play"] as ("Play" | "Preview Build")[]) {
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
     await expect.poll(() => colorAt(canvas, 0, 0)).toBe("red");
     await page.mouse.click(box.x + box.width / 2, box.y + box.height * 2 / 3);
-    const nativeInput = mode === "Play" ? page.getByTestId("scene-layer-native-input")
-      : page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("scene-layer-native-input");
+    const nativeInput = page.getByTestId("scene-layer-native-input");
     await expect(nativeInput).toHaveValue("Initial");
     await nativeInput.fill("Edited Text", { force: true });
     await nativeInput.press("Enter");
     await page.mouse.click(box.x + box.width / 2, box.y + box.height * 2 / 3);
     await expect(nativeInput).toHaveValue("Edited Text");
-    await page.getByTestId(mode === "Play" ? "play-overlay-close" : "preview-build-close").click();
+    await page.getByTestId("play-overlay-close").click();
   });
 }

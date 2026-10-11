@@ -16,13 +16,20 @@ export class LatentDelays implements RuntimeSubsystem {
     this.waiters.push({ remaining: Math.max(0, Number(seconds) || 0), resolve, owner });
   }
 
-  /** Count one tick for every waiter whose owner may run, then resume the due ones in order. */
+  /**
+   * Count one tick for every waiter whose owner may run, then resume the due
+   * ones in order. A destroyed owner's waiter resumes at once, so its
+   * continuation ends (an owner cancellation) rather than staying pending.
+   */
   advance(dt: number): void {
     if (this.waiters.length === 0) return;
     const remaining: DelayWaiter[] = [];
     const due: Array<() => void> = [];
     for (const waiter of this.waiters) {
-      if (waiter.owner?.destroyed) continue;
+      if (waiter.owner?.destroyed) {
+        due.push(waiter.resolve);
+        continue;
+      }
       if (waiter.owner && !this.admission.canRunActions(waiter.owner)) {
         remaining.push(waiter);
         continue;

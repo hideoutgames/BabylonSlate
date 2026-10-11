@@ -1,11 +1,20 @@
 import { documentId, parseDocumentId } from "@babylonslate/core";
 import { replaceClassAssetReferences, type AssetRegistry, type ClassAssetReference } from "@babylonslate/assets";
-import { JOURNAL_CHECKPOINT_TYPE, resolveJournalLines, serializeJournalLine } from "@babylonslate/edit";
+import { JOURNAL_CHECKPOINT_TYPE, parseJournalLine, resolveJournalLines, serializeJournalLine } from "@babylonslate/edit";
 import { classIdFromClassAsset } from "./content-browser-helpers";
 
 /** Checkpoints survive both completed and rolled-back Class file operations. */
 export function resolveClassRenameRecovery(lines: string[], registry: AssetRegistry | null): string[] {
-  return resolveJournalLines(lines).map((line) => {
+  // Unreadable lines pass through so replay reports them instead of losing them here.
+  const unreadable = lines.filter((line) => {
+    try {
+      parseJournalLine(line);
+      return false;
+    } catch {
+      return true;
+    }
+  });
+  return [...resolveJournalLines(lines).map((line) => {
     if (line.command.type !== JOURNAL_CHECKPOINT_TYPE) return serializeJournalLine(line);
     const asset = typeof line.command.assetGuid === "string" ? registry?.getByGuid(line.command.assetGuid) : undefined;
     const ref = parseDocumentId(line.docId);
@@ -25,5 +34,5 @@ export function resolveClassRenameRecovery(lines: string[], registry: AssetRegis
       docId: asset && ref ? documentId({ kind: ref.kind, path: asset.path }) : line.docId,
       command: { ...line.command, content },
     });
-  });
+  }), ...unreadable];
 }

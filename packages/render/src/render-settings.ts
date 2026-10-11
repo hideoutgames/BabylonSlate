@@ -24,6 +24,8 @@ import {
   WATER_QUALITY_FIELDS,
   type WaterQuality,
   normalizeWaterBlendDistance,
+  type PostProcessingEffectField,
+  type PostProcessingQuality,
 } from "@babylonslate/core";
 import { ColorGradingSource } from "./color-grading";
 import type { MeshAssetContext } from "./mesh-assets";
@@ -70,6 +72,8 @@ type SceneRendering = {
   effectsEnabled: boolean;
   /** Local components request the shared fog pass without changing project settings. */
   fogVolumesPresent: boolean;
+  /** Screen-space effects the resolved quality tier can afford. */
+  effectAllowances: Pick<PostProcessingQuality, PostProcessingEffectField>;
   /** Loads the requested LUT asset; only a ready texture enters the plan. */
   colorGrading: ColorGradingSource;
   colorGradingTexture: BaseTexture | null;
@@ -129,6 +133,11 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
       effects,
       effectsEnabled: true,
       fogVolumesPresent: false,
+      effectAllowances: {
+        ambientOcclusion: quality.postprocessing.ambientOcclusion,
+        reflections: quality.postprocessing.reflections,
+        volumetricLighting: quality.postprocessing.volumetricLighting,
+      },
       colorGrading: undefined as unknown as ColorGradingSource,
       colorGradingTexture: null,
       effectsKey: sceneEffectsKey(effects, "pbr", true),
@@ -168,6 +177,8 @@ export function updateSceneRenderingSettings(
   state.environmentLighting = resolveEnvironmentLightingSettings(resolveEnvironmentLightingSettings(state.project.environmentLighting, state.environmentOverrides), state.runtimeOverrides.environmentLighting);
   const quality = resolveSceneRenderingQuality(scene);
   state.shadows = quality.shadows;
+  const { ambientOcclusion, reflections, volumetricLighting } = quality.postprocessing;
+  state.effectAllowances = { ambientOcclusion, reflections, volumetricLighting };
   state.localLightBudget = resolveLocalLightBudget(quality.lighting);
   state.textureLodBias = quality.textures.lodBias;
   state.autoLod = quality.geometry.autoLod;
@@ -197,9 +208,24 @@ function replanSceneEffects(state: SceneRendering): void {
   const inputs = {
     fogVolumesPresent: state.fogVolumesPresent,
     colorGradingTexture: state.colorGradingTexture,
+    allowed: state.effectAllowances,
   };
   state.effectsKey = sceneEffectsKey(state.effects, state.mode, state.effectsEnabled, inputs);
   state.effectsPlan = planSceneEffects(state.effects, state.mode, state.effectsEnabled, inputs);
+}
+
+/** Project-enabled screen-space effects that the quality tier skips, for diagnostics. */
+export function sceneEffectsQualityLimits(scene: Scene): string[] {
+  const state = sceneRenderingSettings(scene);
+  if (!state.effectsEnabled) return [];
+  const { effects, effectAllowances: allowed } = state;
+  const pbr = state.mode === "pbr";
+  const skipped = [
+    pbr && effects.ambientOcclusion.enabled && !allowed.ambientOcclusion ? "ambient occlusion" : null,
+    pbr && effects.reflections.enabled && !allowed.reflections ? "reflections" : null,
+    effects.volumetricLighting.enabled && !allowed.volumetricLighting ? "scene-wide volumetric lighting" : null,
+  ].filter((name): name is string => name !== null);
+  return skipped.length ? [`post processing quality skips ${skipped.join(", ")}`] : [];
 }
 
 /** Texture bytes for project-level effect assets such as the grading LUT. */

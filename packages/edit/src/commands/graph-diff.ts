@@ -19,7 +19,8 @@ function positionsEqual(
   return a.x === b.x && a.y === b.y;
 }
 
-function dataEqual(
+/** Same own keys with identical values; node data and edge fields are flat. */
+function shallowEqual(
   a: Record<string, unknown>,
   b: Record<string, unknown>,
 ): boolean {
@@ -31,38 +32,129 @@ function dataEqual(
   return aKeys.every((key) => Object.is(a[key], b[key]));
 }
 
+interface RowPlan<T> {
+  /** Highest `before` index first, so a reversed (Undo) batch re-inserts lowest first. */
+  removed: Array<{ item: T; index: number }>;
+  /** Lowest `after` index first, so each insert lands at its final index. */
+  added: Array<{ item: T; index: number }>;
+  /** Ids of rows that stay in place. */
+  kept: Set<string>;
+}
+
 /**
- * Derives minimal graph edit commands from a before/after pair.
- * Used by the graph editor to route mutations through the undo stack.
+ * Plans an ordered row list as removes, then inserts. A row stays in place
+ * only when `keep` accepts it and it belongs to the longest run of such rows
+ * already in `after` order; every other row leaves and returns at its final
+ * index. Replaying the plan on `before` reproduces `after`'s rows and order,
+ * and the reversed inverses restore `before`.
  */
+function planRows<T extends { id: string }>(
+  before: readonly T[],
+  after: readonly T[],
+  keep: (previous: T, next: T) => boolean,
+): RowPlan<T> {
+  const beforeIndex = new Map(before.map((item, index) => [item.id, index]));
+  // `before` indices of keepable rows, in `after` order.
+  const candidates: Array<{ id: string; index: number }> = [];
+  for (const item of after) {
+    const index = beforeIndex.get(item.id);
+    if (index !== undefined && keep(before[index]!, item)) {
+      candidates.push({ id: item.id, index });
+    }
+  }
+  // Longest increasing run of `before` indices (patience sorting).
+  const tails: number[] = [];
+  const previous: number[] = [];
+  for (let i = 0; i < candidates.length; i++) {
+    let low = 0;
+    let high = tails.length;
+    while (low < high) {
+      const mid = (low + high) >> 1;
+      if (candidates[tails[mid]!]!.index < candidates[i]!.index) low = mid + 1;
+      else high = mid;
+    }
+    previous[i] = low > 0 ? tails[low - 1]! : -1;
+    tails[low] = i;
+  }
+  const kept = new Set<string>();
+  for (let i = tails.at(-1) ?? -1; i !== -1; i = previous[i]!) {
+    kept.add(candidates[i]!.id);
+  }
+  const removed = before
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => !kept.has(item.id))
+    .reverse();
+  const added = after
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => !kept.has(item.id));
+  return { removed, added, kept };
+}
+
 function membersEqual(
   a: SerializedGraph["members"],
   b: SerializedGraph["members"],
 ): boolean {
+  if (a === b) return true;
   return JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
 }
 
+/**
+ * A missing list means the default prefab mesh and `[]` an authored empty
+ * prefab, so the two are different values.
+ */
 function componentsEqual(
   a: SerializedGraph["components"],
   b: SerializedGraph["components"],
 ): boolean {
-  return JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
+  if (a === b) return true;
+  if (a === undefined || b === undefined) return false;
+  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 function functionGraphsEqual(
   a: SerializedGraph["functionGraphs"],
   b: SerializedGraph["functionGraphs"],
 ): boolean {
+  if (a === b) return true;
   return JSON.stringify(a ?? {}) === JSON.stringify(b ?? {});
+}
+
+/**
+ * Merge key for an edit that changes exactly one existing function graph, so a
+ * pin scrub inside a function is one undo step as it is in the event graph.
+ * Adding, removing or renaming a function, or touching two, has no key.
+ */
+function functionGraphsMergeKey(
+  a: SerializedGraph["functionGraphs"],
+  b: SerializedGraph["functionGraphs"],
+): string | undefined {
+  if (!a || !b) return undefined;
+  const names = Object.keys(b);
+  if (names.length !== Object.keys(a).length) return undefined;
+  let changed: string | undefined;
+  for (const name of names) {
+    if (!Object.hasOwn(a, name)) return undefined;
+    if (a[name] === b[name] || JSON.stringify(a[name]) === JSON.stringify(b[name])) continue;
+    if (changed !== undefined) return undefined;
+    changed = name;
+  }
+  return changed === undefined ? undefined : `function-graph:${changed}`;
 }
 
 function actorDefaultsEqual(
   a: SerializedGraph["actorDefaults"],
   b: SerializedGraph["actorDefaults"],
 ): boolean {
+  if (a === b) return true;
   return JSON.stringify(a ?? {}) === JSON.stringify(b ?? {});
 }
 
+/**
+ * Derives minimal graph edit commands from a before/after pair, so the graph
+ * editor routes every mutation through the undo stack. Replaying the commands
+ * on `before` reproduces `after`, including rewired edges, retyped nodes and
+ * row order.
+ */
 export function diffGraphCommands(
   before: SerializedGraph,
   after: SerializedGraph,
@@ -91,56 +183,42 @@ export function diffGraphCommands(
     | SetGraphActorDefaultsCommand
   > = [];
 
-  const beforeNodes = new Map(before.nodes.map((node) => [node.id, node]));
-  const afterNodes = new Map(after.nodes.map((node) => [node.id, node]));
+  // A retyped node is a different node under the same id: it leaves and returns.
+  const nodes = planRows(before.nodes, after.nodes, (previous, next) => previous.type === next.type);
+  // RemoveNodeCommand removes only the node, so every edge touching a removed
+  // or added node is its own RemoveEdge/AddEdge command: an edge stays in
+  // place only when it is unchanged and neither endpoint is removed or added.
+  const moving = new Set([...nodes.removed, ...nodes.added].map(({ item }) => item.id));
+  const edges = planRows(before.edges, after.edges, (previous, next) =>
+    shallowEqual(previous, next) && !moving.has(next.source) && !moving.has(next.target));
 
-  for (const [nodeId, afterNode] of afterNodes) {
-    const beforeNode = beforeNodes.get(nodeId);
-    if (!beforeNode) {
-      commands.push(new AddNodeCommand(afterNode));
-      continue;
-    }
+  const beforeNodes = new Map(before.nodes.map((node) => [node.id, node]));
+  for (const afterNode of after.nodes) {
+    if (!nodes.kept.has(afterNode.id)) continue;
+    const beforeNode = beforeNodes.get(afterNode.id)!;
     if (!positionsEqual(beforeNode.position, afterNode.position)) {
       commands.push(
-        new MoveNodeCommand(nodeId, beforeNode.position, afterNode.position),
+        new MoveNodeCommand(afterNode.id, beforeNode.position, afterNode.position),
       );
     }
-    if (!dataEqual(beforeNode.data, afterNode.data)) {
+    if (!shallowEqual(beforeNode.data, afterNode.data)) {
       commands.push(
-        new SetNodeDataCommand(nodeId, beforeNode.data, afterNode.data),
+        new SetNodeDataCommand(afterNode.id, beforeNode.data, afterNode.data),
       );
     }
   }
 
-  for (const [nodeId, beforeNode] of [...beforeNodes].reverse()) {
-    if (!afterNodes.has(nodeId)) {
-      commands.push(
-        new RemoveNodeCommand(
-          beforeNode,
-          before.nodes.findIndex((node) => node.id === nodeId),
-        ),
-      );
-    }
+  for (const { item, index } of edges.removed) {
+    commands.push(new RemoveEdgeCommand(item, index));
   }
-
-  const beforeEdges = new Map(before.edges.map((edge) => [edge.id, edge]));
-  const afterEdges = new Map(after.edges.map((edge) => [edge.id, edge]));
-
-  for (const [edgeId, edge] of afterEdges) {
-    if (!beforeEdges.has(edgeId)) {
-      commands.push(new AddEdgeCommand(edge));
-    }
+  for (const { item, index } of nodes.removed) {
+    commands.push(new RemoveNodeCommand(item, index));
   }
-
-  for (const [edgeId, edge] of [...beforeEdges].reverse()) {
-    if (!afterEdges.has(edgeId)) {
-      commands.push(
-        new RemoveEdgeCommand(
-          edge,
-          before.edges.findIndex((entry) => entry.id === edgeId),
-        ),
-      );
-    }
+  for (const { item, index } of nodes.added) {
+    commands.push(new AddNodeCommand(item, index));
+  }
+  for (const { item, index } of edges.added) {
+    commands.push(new AddEdgeCommand(item, index));
   }
 
   if (!membersEqual(before.members, after.members)) {
@@ -158,6 +236,7 @@ export function diffGraphCommands(
       new SetGraphFunctionGraphsCommand(
         before.functionGraphs,
         after.functionGraphs,
+        functionGraphsMergeKey(before.functionGraphs, after.functionGraphs),
       ),
     );
   }

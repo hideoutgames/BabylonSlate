@@ -95,4 +95,18 @@ describe("desktop account credentials", () => {
     ).toBe("fresh-client-token");
     expect(h.contents()).not.toContain("fresh-client-token");
   });
+
+  it("drops only a damaged entry and keeps intact sign-ins", async () => {
+    const h = harness();
+    await new DesktopAccountSecretStore(h.files, h.safeStorage).set("first", "kept-token");
+    const record = JSON.parse(h.contents()) as { secrets: Record<string, unknown> };
+    record.secrets.damaged = 42;
+    await h.files.write(JSON.stringify(record));
+    const store = new DesktopAccountSecretStore(h.files, h.safeStorage);
+    expect(await store.get("damaged")).toBeNull();
+    await store.set("second", "new-token");
+    const restored = new DesktopAccountSecretStore(h.files, h.safeStorage);
+    expect(await restored.get("first")).toBe("kept-token");
+    expect(await restored.get("second")).toBe("new-token");
+  });
 });

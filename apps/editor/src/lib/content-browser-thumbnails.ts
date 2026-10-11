@@ -19,6 +19,7 @@ export type SyncContentBrowserThumbnailUrlsInput = {
  * Blob URLs for tiles that left the window are revoked. A CSS-hidden
  * Content Browser skips decode. Recaptures retain the old image until commit;
  * unrelated cells keep their URLs. Cancelled loads release only their new URLs.
+ * A load that throws leaves that cell unchanged and does not stop the batch.
  */
 export async function syncContentBrowserThumbnailUrls({
   mountedTextureGuids,
@@ -47,7 +48,13 @@ export async function syncContentBrowserThumbnailUrls({
   try {
     for (const guid of mountedTextureGuids) {
       if (next[guid] && !refreshGuids.has(guid)) continue;
-      const bytes = await load(guid);
+      let bytes: Uint8Array | null;
+      try {
+        bytes = await load(guid);
+      } catch {
+        // One unreadable thumbnail keeps its tile as it was; the rest still load.
+        bytes = null;
+      }
       if (isCancelled()) return;
       if (!bytes) continue;
       const url = createObjectURL(

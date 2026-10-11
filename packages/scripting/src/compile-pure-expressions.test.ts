@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { compileGraph, compileTransitionRuleGraph } from "./compile";
 import { NodeRegistry, pin } from "./node-registry";
-import { EXEC, FLOAT, BOOL, VEC3 } from "./types";
+import { EXEC, FLOAT, BOOL, VEC3, STRING, defaultValueLiteral, type PinType } from "./types";
 import type { GraphNode, LogicGraph } from "./ir";
 
 function fixture(depth: number, volatile = false) {
@@ -68,6 +68,31 @@ describe("shared pure expression compilation", () => {
     const transition = compileTransitionRuleGraph(graph, { assetGuid: "dag", registry });
     expect(transition.source.length).toBeLessThan(20_000);
     expect(entry(transition.source, "evaluate")({})).toEqual({ enter: true, exit: true });
+  });
+
+  it("compiles a graph holding an unused pure cycle", () => {
+    const { graph, registry, node, wire } = fixture(0);
+    graph.nodes.push(node("loopA", "add"), node("loopB", "add"));
+    wire("loopA", "loopB", "a"); wire("loopB", "loopA", "a");
+    const values: unknown[] = [];
+    entry(compileGraph(graph, { assetGuid: "cycle", registry }).source, "onBeginPlay")({ enabled: true, log: (value: unknown) => values.push(value) });
+    expect(values).toEqual([1, 1]);
+    graph.nodes.push(node("enter", "anim.rule.enterState"));
+    expect(entry(compileTransitionRuleGraph(graph, { assetGuid: "cycle", registry }).source, "evaluate")({})).toEqual({ enter: true, exit: true });
+  });
+
+  it("resolves wildcard pins before compiling transition rules", () => {
+    const { registry, node, wire, graph } = fixture(0);
+    const T: PinType = { kind: "resolvingWildcard" };
+    registry.registerAll([
+      { id: "text", title: "Text", category: "string", pure: true, pins: () => [pin("out", "out", "out", STRING)], codegen: () => ({ out: "\"x\"" }) },
+      { id: "missing", title: "Missing", category: "map", pure: true,
+        pins: () => [pin("value", "value", "in", T), pin("out", "out", "out", T)],
+        codegen: (ctx) => ({ out: defaultValueLiteral(ctx.node.pins.find((entry) => entry.id === "out")!.type) }) },
+    ]);
+    graph.nodes.push(node("text", "text"), node("missing", "missing"), node("enter", "anim.rule.enterState"));
+    wire("text", "missing", "value"); wire("missing", "enter", "value");
+    expect(entry(compileTransitionRuleGraph(graph, { assetGuid: "rule", registry }).source, "evaluate")({})).toEqual({ enter: "", exit: true });
   });
 
   it("preserves short-circuit laziness, volatile read counts, and writes between consumers", () => {

@@ -1,28 +1,4 @@
-import { normalizeWaterDefinition } from "@babylonslate/core";
-import {
-  createDefaultSceneSettings,
-  normalizeInputAssetPayload,
-  validateSaveGameDefinition,
-  identitySerializedTransform,
-  normalizeSceneLayer,
-  normalizeShadowOverrides,
-  normalizeDataDefinitionAsset,
-  normalizeDataTreeAsset,
-  normalizePrefab,
-} from "@babylonslate/core";
-import { normalizeParticleGraphDocument } from "@babylonslate/particle-graph";
-import {
-  migrateLegacyShaderPayload,
-  normalizeMaterialFunctionDocument,
-} from "@babylonslate/shader-graph";
-import {
-  normalizeAudioChannelPayload,
-  normalizeAudioMixerPayload,
-  normalizeSoundAttenuationPayload,
-} from "./audio-payload";
-import { normalizeParticleEmitterPayload } from "./particle-basic-emitter";
-import { normalizeParticleSystemPayload } from "./particle-payload";
-import { normalizeSkyboxCreatorPayload } from "./skybox-creator-payload";
+import { SCENE_SCHEMA_VERSION } from "@babylonslate/core";
 
 export type MigrationFn = (
   payload: Record<string, unknown>,
@@ -30,24 +6,75 @@ export type MigrationFn = (
 
 export interface TypeMigrationChain {
   type: string;
-  /** migrations[i] migrates version i → i+1. Current version = migrations.length. */
-  migrations: MigrationFn[];
+  /** Schema version this engine writes and reads for the type. */
+  currentVersion: number;
+  /**
+   * Ordered steps ending at `currentVersion`: `migrations[i]` migrates
+   * version `currentVersion - migrations.length + i` to the next one. Stored
+   * versions older than the first step are refused as an unsupported old
+   * format. Omit for a type that has no supported older format.
+   */
+  migrations?: readonly MigrationFn[];
+}
+
+/**
+ * A stored schema version this engine refuses: older than any registered
+ * step reads, or newer than current. Its message is written for the user.
+ */
+export class AssetFormatVersionError extends Error {
+  override readonly name = "AssetFormatVersionError";
 }
 
 export class MigrationRegistry {
   private readonly chains = new Map<string, TypeMigrationChain>();
 
   register(chain: TypeMigrationChain): void {
+    const steps = chain.migrations?.length ?? 0;
+    if (!Number.isInteger(chain.currentVersion) || chain.currentVersion < steps) {
+      throw new Error(
+        `Asset type "${chain.type}" current version ${chain.currentVersion} cannot follow ${steps} migration steps`,
+      );
+    }
     this.chains.set(chain.type, chain);
   }
 
   currentVersion(type: string): number {
-    return this.chains.get(type)?.migrations.length ?? 0;
+    return this.chains.get(type)?.currentVersion ?? 0;
+  }
+
+  /** Throws for a stored version no registered step reads, or a future one. */
+  private refuseUnreadable(chain: TypeMigrationChain, version: number): void {
+    const { type, currentVersion: current } = chain;
+    if (version > current) {
+      throw new AssetFormatVersionError(
+        `Asset type "${type}" version ${version} was made with a newer engine version (current ${current})`,
+      );
+    }
+    const oldest = current - (chain.migrations?.length ?? 0);
+    if (version < oldest) {
+      throw new AssetFormatVersionError(
+        `Asset type "${type}" version ${version} uses an unsupported old format. This engine reads version ${current}${oldest < current ? ` and upgrades from version ${oldest}` : ""}; older files are not upgraded.`,
+      );
+    }
+  }
+
+  /**
+   * Play, Preview Build and export read stored payloads without migrating
+   * them, so a registered type must be at its current version. Versions that
+   * `migrate` refuses throw its message; an upgradable one must be saved first.
+   */
+  requireCurrent(type: string, version: number): void {
+    const chain = this.chains.get(type);
+    if (!chain || version === chain.currentVersion) return;
+    this.refuseUnreadable(chain, version);
+    throw new AssetFormatVersionError(
+      `Asset type "${type}" version ${version} must be upgraded to version ${chain.currentVersion} before it can be played or exported. Open it and save with Migrate On Save.`,
+    );
   }
 
   /**
    * Apply ordered migrations so payload matches the current schema version.
-   * Refuses future versions.
+   * Refuses future versions and old versions no registered step reads.
    */
   migrate(
     type: string,
@@ -58,238 +85,61 @@ export class MigrationRegistry {
     if (!chain) {
       return { version, payload, migrated: false };
     }
-    const current = chain.migrations.length;
-    if (version > current) {
-      throw new Error(
-        `Asset type "${type}" version ${version} was made with a newer engine version (current ${current})`,
-      );
-    }
+    const current = chain.currentVersion;
     if (version === current) {
       return { version, payload, migrated: false };
     }
+    this.refuseUnreadable(chain, version);
+    const steps = chain.migrations ?? [];
+    const oldest = current - steps.length;
     let next = payload;
     for (let v = version; v < current; v++) {
-      next = chain.migrations[v]!(next);
+      next = steps[v - oldest]!(next);
     }
     return { version: current, payload: next, migrated: true };
   }
 }
 
-/**
- * Scene v1 → v2: the placeholder `meshes[]` list becomes actors carrying a
- * MeshComponent, plus scene settings and a viewport mode default.
- */
-function migrateSceneMeshesToActors(
-  payload: Record<string, unknown>,
-): Record<string, unknown> {
-  const { meshes, ...rest } = payload;
-  const legacyMeshes = Array.isArray(meshes) ? meshes : [];
-  const actors = legacyMeshes.map((entry, index) => {
-    const mesh = (entry ?? {}) as Record<string, unknown>;
-    const id = typeof mesh.id === "string" ? mesh.id : `actor-${index + 1}`;
-    const position = Array.isArray(mesh.position)
-      ? (mesh.position as number[]).slice(0, 3)
-      : [0, 0, 0];
-    const transform = identitySerializedTransform();
-    return {
-      id,
-      name: id,
-      classId: "Actor",
-      parentId: null,
-      transform: {
-        ...transform,
-        position: [
-          Number(position[0]) || 0,
-          Number(position[1]) || 0,
-          Number(position[2]) || 0,
-        ],
-      },
-      visible: true,
-      locked: false,
-      components: [
-        {
-          id: `${id}-mesh`,
-          classId: "MeshComponent",
-          properties: {
-            meshKind: typeof mesh.type === "string" ? mesh.type : "box",
-            assetGuid: null,
-          },
-        },
-      ],
-    };
-  });
-
-  return {
-    ...rest,
-    viewportMode: rest.viewportMode === "2d" ? "2d" : "3d",
-    settings: rest.settings ?? createDefaultSceneSettings(),
-    actors: Array.isArray(rest.actors) ? rest.actors : actors,
-  };
-}
-
-/** Scene v2 → v3: physicsWorld / editorJoystickEnabled are additive on normalize. */
-function migrateSceneV2ToV3(
-  payload: Record<string, unknown>,
-): Record<string, unknown> {
-  return { ...payload };
-}
-
-/** Preserve legacy numeric capacity once; current sparse overrides stay independent. */
-function migrateSceneShadowCapacity(
-  payload: Record<string, unknown>,
-): Record<string, unknown> {
-  if (!payload.settings || typeof payload.settings !== "object") return payload;
-  const settings = payload.settings as Record<string, unknown>;
-  const shadowOverrides = normalizeShadowOverrides(settings.shadowOverrides);
-  if (
-    shadowOverrides.maxLocalLights === undefined ||
-    shadowOverrides.localLightMode !== undefined
-  )
-    return payload;
-  return {
-    ...payload,
-    settings: {
-      ...settings,
-      shadowOverrides: { ...shadowOverrides, localLightMode: "manual" },
-    },
-  };
-}
-
-/** Default registry with Graph/Class logic-graph chains and Scene/Project. */
-export function createDefaultMigrationRegistry(): MigrationRegistry {
-  const registry = new MigrationRegistry();
-  const graphMigrations: MigrationFn[] = [
-    (payload) => ({
-      ...payload,
-      nodes: Array.isArray(payload.nodes) ? payload.nodes : [],
-      edges: Array.isArray(payload.edges) ? payload.edges : [],
-    }),
-  ];
-  registry.register({
-    type: "Graph",
-    migrations: graphMigrations,
-  });
-  registry.register({
-    type: "Class",
-    migrations: graphMigrations,
-  });
-  registry.register({
-    type: "Scene",
-    migrations: [
-      (payload) => ({
-        ...payload,
-        meshes: Array.isArray(payload.meshes) ? payload.meshes : [],
-      }),
-      migrateSceneMeshesToActors,
-      migrateSceneV2ToV3,
-      migrateSceneShadowCapacity,
-    ],
-  });
-  registry.register({
-    type: "Project",
-    migrations: [(payload) => ({ ...payload })],
-  });
-  // v1 was the empty imported glTF stub; v2 is the authored Material graph.
-  const materialMigrations: MigrationFn[] = [
-    (payload) => ({ ...payload }),
-    (payload) =>
-      migrateLegacyShaderPayload(payload) as unknown as Record<string, unknown>,
-  ];
-  registry.register({ type: "Material", migrations: materialMigrations });
-  // Legacy authored Shader assets read through the same chain and are
-  // rewritten to the `Material` header type on save.
-  registry.register({ type: "Shader", migrations: materialMigrations });
-  registry.register({
-    type: "MaterialFunction",
-    migrations: [
-      (payload) =>
-        normalizeMaterialFunctionDocument(payload) as unknown as Record<
-          string,
-          unknown
-        >,
-    ],
-  });
-  // Header payload is a summary ({ domain, parentGuid }); the document chunk holds the instance.
-  registry.register({
-    type: "MaterialInstance",
-    migrations: [(payload) => ({ ...payload })],
-  });
-  const asRecord = <T extends object>(value: T): Record<string, unknown> =>
-    value as unknown as Record<string, unknown>;
-  registry.register({
-    type: "DataDefinition",
-    migrations: [(payload) => asRecord(normalizeDataDefinitionAsset(payload))],
-  });
-  registry.register({
-    type: "DataTree",
-    migrations: [(payload) => asRecord(normalizeDataTreeAsset(payload))],
-  });
-  for (const type of ["InputAction", "InputAxis"] as const) {
-    registry.register({
-      type,
-      migrations: [
-        (payload) => asRecord(normalizeInputAssetPayload(type, payload)),
-      ],
-    });
-  }
-  registry.register({
-    type: "Prefab",
-    migrations: [(payload) => asRecord(normalizePrefab(payload))],
-  });
-  registry.register({
-    type: "SaveGame",
-    migrations: [(payload) => ({ ...validateSaveGameDefinition(payload) })],
-  });
-  registry.register({
-    type: "Audio",
-    migrations: [(payload) => ({ ...payload })],
-  });
-  registry.register({
-    type: "AudioMixer",
-    migrations: [(payload) => asRecord(normalizeAudioMixerPayload(payload))],
-  });
-  registry.register({
-    type: "AudioChannel",
-    migrations: [(payload) => asRecord(normalizeAudioChannelPayload(payload))],
-  });
-  registry.register({
-    type: "SoundAttenuation",
-    migrations: [
-      (payload) => asRecord(normalizeSoundAttenuationPayload(payload)),
-    ],
-  });
-  registry.register({
-    type: "ParticleEmitter",
-    migrations: [
-      (payload) => asRecord(normalizeParticleEmitterPayload(payload)),
-    ],
-  });
-  registry.register({
-    type: "ParticleGraph",
-    migrations: [
-      (payload) => asRecord(normalizeParticleGraphDocument(payload)),
-    ],
-  });
-  registry.register({
-    type: "ParticleSystem",
-    migrations: [
-      (payload) => asRecord(normalizeParticleSystemPayload(payload)),
-    ],
-  });
-  registry.register({
-    type: "Water",
-    migrations: [(payload) => asRecord(normalizeWaterDefinition(payload))],
-  });
-  registry.register({
-    type: "SkyboxCreator",
-    migrations: [(payload) => asRecord(normalizeSkyboxCreatorPayload(payload))],
-  });
-  registry.register({
-    type: "SceneLayer",
-    migrations: [(payload) => asRecord(normalizeSceneLayer(payload))],
-  });
-  return registry;
-}
-
 /** Current Material payload version (domain + graph + preview settings). */
 export const MATERIAL_PAYLOAD_VERSION = 2;
+
+/**
+ * Current schema version of each versioned asset type. The engine is
+ * unreleased, so no type registers a migration step: a file at an older
+ * version is refused rather than upgraded. Add steps here when a released
+ * format must be read again.
+ */
+const CURRENT_VERSIONS: Readonly<Record<string, number>> = {
+  Class: 1,
+  Scene: SCENE_SCHEMA_VERSION,
+  Project: 1,
+  Material: MATERIAL_PAYLOAD_VERSION,
+  MaterialFunction: 1,
+  // Header payload is a summary ({ domain, parentGuid }); the document chunk holds the instance.
+  MaterialInstance: 1,
+  DataDefinition: 1,
+  DataTree: 1,
+  InputAction: 1,
+  InputAxis: 1,
+  Prefab: 1,
+  SaveGame: 1,
+  Audio: 1,
+  AudioMixer: 1,
+  AudioChannel: 1,
+  SoundAttenuation: 1,
+  ParticleEmitter: 1,
+  ParticleGraph: 1,
+  ParticleSystem: 1,
+  Water: 1,
+  SkyboxCreator: 1,
+  SceneLayer: 1,
+};
+
+/** Default registry: every versioned type at its current version, with no migration steps. */
+export function createDefaultMigrationRegistry(): MigrationRegistry {
+  const registry = new MigrationRegistry();
+  for (const [type, currentVersion] of Object.entries(CURRENT_VERSIONS)) {
+    registry.register({ type, currentVersion });
+  }
+  return registry;
+}

@@ -459,9 +459,17 @@ describe("Havok explicit native motion", () => {
       expect(backend.pollContacts()).toEqual([]);
       backend.teleportBody("visitor", pose(10));
       for (let i = 0; i < 3; i++) backend.step(1 / 60);
+      // The unconfirmed pair ends on the colliders its begin named, so
+      // component-bound End Overlap reaches the same trigger component.
       expect(
         backend.pollContacts().filter((event) => event.kind === "overlapEnd"),
-      ).toHaveLength(1);
+      ).toEqual([{
+        kind: "overlapEnd",
+        actorAId: "body",
+        actorBId: "visitor",
+        colliderAId: "replacement",
+        colliderBId: "visitor-shape",
+      }]);
     } finally {
       backend.dispose();
     }

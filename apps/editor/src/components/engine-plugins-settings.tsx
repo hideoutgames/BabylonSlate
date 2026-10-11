@@ -40,7 +40,6 @@ export function EnginePluginsSettings() {
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
-  const [upgradeRequired, setUpgradeRequired] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<EnginePluginEntry | null>(
     null,
   );
@@ -49,17 +48,13 @@ export function EnginePluginsSettings() {
     let active = true;
     setLoading(true);
     setError(null);
-    setUpgradeRequired(false);
     void ensureEnginePluginLibrary()
       .then((library) => library.list())
       .then((plugins) => {
         if (active) setEntries(plugins);
       })
       .catch((cause: unknown) => {
-        if (active) {
-          setError(cause instanceof Error ? cause.message : String(cause));
-          setUpgradeRequired(Boolean(cause && typeof cause === "object" && "code" in cause && cause.code === "engine-plugin-library-upgrade-required"));
-        }
+        if (active) setError(cause instanceof Error ? cause.message : String(cause));
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -77,10 +72,8 @@ export function EnginePluginsSettings() {
     try {
       await action();
       setEntries(await (await ensureEnginePluginLibrary()).list());
-      setUpgradeRequired(false);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
-      setUpgradeRequired(Boolean(cause && typeof cause === "object" && "code" in cause && cause.code === "engine-plugin-library-upgrade-required"));
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -96,7 +89,7 @@ export function EnginePluginsSettings() {
       {loading ? <p role="status">Loading Engine Plugins…</p> : null}
       {error ? (
         <Alert variant="destructive">
-          <AlertTitle>{upgradeRequired ? "Plugin Storage Upgrade Required" : "Engine Plugin Action Failed"}</AlertTitle>
+          <AlertTitle>Engine Plugin Action Failed</AlertTitle>
           <AlertDescription>
             {error}
             <Button
@@ -104,11 +97,9 @@ export function EnginePluginsSettings() {
               size="sm"
               className="mt-2 w-fit"
               disabled={busy || loading}
-              onClick={() => upgradeRequired
-                ? void run(async () => { await (await ensureEnginePluginLibrary()).upgradeLegacyArchives(); })
-                : setLoadVersion((value) => value + 1)}
+              onClick={() => setLoadVersion((value) => value + 1)}
             >
-              {upgradeRequired ? "Upgrade Plugin Storage" : "Reload"}
+              Reload
             </Button>
           </AlertDescription>
         </Alert>

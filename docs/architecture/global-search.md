@@ -9,13 +9,13 @@ The asset registry is **header-only** ([asset-registry.md](asset-registry.md)): 
 | Layer | Reads | Answers |
 | --- | --- | --- |
 | `AssetRegistry` | `.babasset` headers | guid, type, name, path, parentClass, dependencies |
-| `ProjectSearchIndex` | headers + Scene/Class (and legacy Graph) `document` chunks | substring query over assets, actors, components, graph nodes, classes, variables |
+| `ProjectSearchIndex` | headers + Scene/Class `document` chunks | substring query over assets, actors, components, graph nodes, classes, variables |
 
 ## Entry kinds
 
 | Kind | Source | Open target |
 | --- | --- | --- |
-| `asset` | Header name, type, path, guid, parentClass | Scene/Class/Model/Skeleton/Animation and other DockView types → document tab; Texture / Audio → Settings tab; else Content Browser reveal |
+| `asset` | Header name, type, path, guid, parentClass | Scene/Class/Model/Skeleton/Animation/Texture/Audio and other types with a document kind (`documentKindForAssetType`) → document tab; else Content Browser reveal |
 | `actor` | Scene `actors[]` name, id, classId | Open scene + select actor |
 | `component` | Actor `components[]` classId, id, short string properties | Open scene + select parent actor |
 | `graph-node` | Graph `nodes[]` type, id, catalog title, short string properties | Open class graph + focus node |
@@ -24,7 +24,7 @@ The asset registry is **header-only** ([asset-registry.md](asset-registry.md)): 
 
 Out of v1: ExecuteJavaScript `body` text, binary payloads, on-disk search cache.
 
-`ProjectSearchIndex` reads document chunks from the asset’s **root** storage (`registry.storageFor(rootId)`), so enabled plugin Scene/Class documents are searchable. Disabled plugins are unmounted and absent from the index.
+`ProjectSearchIndex` reads document chunks from the asset’s **root** storage (`registry.storageFor(rootId)`), so enabled plugin Scene/Class documents are searchable. Disabled plugins are unmounted and absent from the index. `readStoredAssetDocument` range-reads only the header and the `document` chunk, so a Scene's navmesh or reverb bake is never read, and nothing is charged to the registry's payload account.
 
 ## Lifecycle
 

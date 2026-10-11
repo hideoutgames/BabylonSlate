@@ -46,7 +46,7 @@ export function ExtensionCommandDialog({ command, service, onClose }: {
   const { busy, error, run } = useExtensionAction();
   const setValue = (id: string, value: string) => { setValues((previous) => ({ ...previous, [id]: value })); setSucceeded(false); };
   return <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
-    <DialogContent className="editor-dialog-large flex min-h-0 flex-col overflow-hidden sm:max-w-2xl">
+    <DialogContent className="editor-dialog-large sm:max-w-2xl" bodyClassName="flex flex-col overflow-hidden">
       <DialogHeader><DialogTitle>{command.title}</DialogTitle><DialogDescription>{command.description ?? "Run this editor extension command."}</DialogDescription></DialogHeader>
       <FieldGroup className="min-h-0 flex-1 overflow-y-auto">
         {command.fields.map((field) => <Field key={field.id}>
@@ -84,7 +84,7 @@ export function ExtensionEditorDialog({ entry, entries, initialSource, service, 
   const { busy, error, run } = useExtensionAction();
   const patch = (value: Partial<ExtensionSettings>) => setSettings((previous) => ({ ...previous, ...value }));
   return <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
-    <DialogContent className="editor-dialog-large flex min-h-0 flex-col overflow-hidden sm:max-w-3xl">
+    <DialogContent className="editor-dialog-large sm:max-w-3xl" bodyClassName="flex flex-col overflow-hidden">
       <DialogHeader><DialogTitle>Edit Extension</DialogTitle><DialogDescription>Saving reloads enabled extensions. Code runs in the editor and can modify project assets and code.</DialogDescription></DialogHeader>
       <FieldGroup className="min-h-0 flex-1 overflow-y-auto">
         <Field><FieldLabel htmlFor="extension-edit-guid">Extension ID</FieldLabel><Input id="extension-edit-guid" value={entry.extensionGuid} readOnly /></Field>

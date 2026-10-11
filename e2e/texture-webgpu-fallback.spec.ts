@@ -51,9 +51,6 @@ const ODD_TILESET_GUID = "00000000-0000-4000-8000-000000000077";
 /** The same 1×1 encode with no atlas: stale until explicitly re-encoded. */
 const LEGACY_TEXTURE_GUID = "00000000-0000-4000-8000-000000000078";
 const LEGACY_TEXTURE_PATH = "assets/legacy-odd.babasset";
-/** Another such Texture, for a project with source control on. */
-const WAITING_TEXTURE_GUID = "00000000-0000-4000-8000-000000000079";
-const WAITING_TEXTURE_PATH = "assets/waiting-odd.babasset";
 /** Samples the texture through its surface Material. */
 const TEXTURED_BOX = "actor-1";
 /** No Material: the engine default material under the same light. */
@@ -84,15 +81,13 @@ async function encodeKtx2(
   return ktx2;
 }
 
-/** The minimal project on `backend`, with source control **Enable** on when asked. */
+/** The minimal project on `backend`. */
 async function projectFiles(
   backend: Backend,
-  sourceControl = false,
 ): Promise<{ files: Map<string, Uint8Array>; startupSceneGuid: string }> {
   const files = await minimalProjectFiles();
   const project = JSON.parse(new TextDecoder().decode(files.get(PROJECT_FILE)!));
   project.settings.render.gpuBackend = backend;
-  if (sourceControl) project.settings.sourceControl = { ...project.settings.sourceControl, enabled: true };
   files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
   return { files, startupSceneGuid: project.settings.startupSceneGuid };
 }
@@ -105,11 +100,10 @@ async function projectFiles(
  * resolver compute for it: opening the project neither re-encodes it nor
  * prefers another chunk. A surface Material samples it on the box and a
  * particle Material in an Emitter; a second box has no Material. A second
- * Texture holds the same 1×1 encode with no atlas; with source control on, a
- * third one does too.
+ * Texture holds the same 1×1 encode with no atlas.
  */
-async function fixture(backend: Backend, sourceControl = false): Promise<Map<string, Uint8Array>> {
-  const { files, startupSceneGuid } = await projectFiles(backend, sourceControl);
+async function fixture(backend: Backend): Promise<Map<string, Uint8Array>> {
+  const { files, startupSceneGuid } = await projectFiles(backend);
   const migrations = createDefaultMigrationRegistry();
   const png = new Uint8Array(await readFile(path.join(process.cwd(), "e2e/fixtures/albedo.png")));
   const [texture] = await importImage(png, { fileName: "albedo.png", existingGuids: new Set() });
@@ -119,7 +113,6 @@ async function fixture(backend: Backend, sourceControl = false): Promise<Map<str
   const ktx2 = await encodeKtx2(settings, 1, 1, () => [0, 255, 0]);
   const payload = { ...texture!.payload, compressionState: "compressed", ktx2ChunkId: chunkId };
   const textures: [string, string][] = [[TEXTURE_GUID, TEXTURE_PATH], [LEGACY_TEXTURE_GUID, LEGACY_TEXTURE_PATH]];
-  if (sourceControl) textures.push([WAITING_TEXTURE_GUID, WAITING_TEXTURE_PATH]);
   for (const [guid, assetPath] of textures) {
     files.set(assetPath, await encodeAssetDocument(
       { guid, type: "Texture", name: path.basename(assetPath, ".babasset"), version: texture!.version, payload },

@@ -437,6 +437,7 @@ export function createHelpCommand(
         type: "string",
         optional: true,
         complete: "commands",
+        rest: true,
       },
     ],
     run(args) {

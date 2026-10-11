@@ -461,6 +461,39 @@ describe("NestedMenu context overlay", () => {
     }
   });
 
+  it("flips a submenu by its own measured width, clear of its parent", async () => {
+    const originalWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 900 });
+    const widths = new Map([["context-menu-panel", 192], ["context-menu-sub-more", 240]]);
+    const offsetWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth");
+    Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
+      configurable: true,
+      get() {
+        return widths.get((this as HTMLElement).dataset.testid ?? "") ?? 0;
+      },
+    });
+    try {
+      render(
+        <ContextMenuOverlay
+          menu={{
+            open: true,
+            x: 500,
+            y: 80,
+            items: [{ id: "more", type: "submenu", label: "More", items: [leaf()] }],
+          }}
+          onClose={() => undefined}
+        />,
+      );
+      fireEvent.click(document.querySelector('[data-testid="context-menu-item-more"]')!);
+      const submenu = document.querySelector('[data-testid="context-menu-sub-more"]') as HTMLElement;
+      // 500 + 192 + 240 overflows 900 - 8, so the full 240px panel sits left of the parent.
+      await waitFor(() => expect(submenu.style.left).toBe("260px"));
+    } finally {
+      if (offsetWidth) Object.defineProperty(HTMLElement.prototype, "offsetWidth", offsetWidth);
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: originalWidth });
+    }
+  });
+
   it("repositions an open root menu and submenu when only the viewport shrinks", async () => {
     const originalWidth = window.innerWidth;
     const originalHeight = window.innerHeight;
@@ -493,6 +526,11 @@ describe("NestedMenu context overlay", () => {
       Object.defineProperty(panel, "offsetHeight", { configurable: true, value: 120 });
       fireEvent.click(
         document.querySelector('[data-testid="context-menu-item-more"]')!,
+      );
+      Object.defineProperty(
+        document.querySelector('[data-testid="context-menu-sub-more"]')!,
+        "offsetWidth",
+        { configurable: true, value: 192 },
       );
 
       Object.defineProperty(window, "innerWidth", {

@@ -1,6 +1,7 @@
 import type { AbstractMesh, BaseTexture, IParticleSystem, Light, Scene } from "@babylonjs/core";
 import type { CommandMessage } from "@babylonslate/bridge";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
+import { particleDrawOrderRevision } from "./sorting";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
 import { decodeSceneStreamEvent, type SceneStreamIdentity } from "./scene-stream-commands";
 
@@ -22,6 +23,7 @@ type Scope = {
     particleCount?: number;
     particleSlotCount?: number;
     newestParticle?: IParticleSystem;
+    particleOrder?: number;
   };
 };
 const scopes = new WeakMap<Scene, Scope>();
@@ -61,8 +63,11 @@ export function admittedSceneParticles(scene: Scene): IParticleSystem[] | undefi
   admittedSceneMeshes(scene);
   const cached = scope.cached!;
   const newestParticle = scene.particleSystems.at(-1);
+  // Sorting can insert a new system before the last one, so the newest entry alone misses that change.
+  const particleOrder = particleDrawOrderRevision(scene);
   if (cached.particles && cached.particleCount === scene.particleSystems.length &&
-      cached.particleSlotCount === scope.slots.size && cached.newestParticle === newestParticle) return cached.particles;
+      cached.particleSlotCount === scope.slots.size && cached.newestParticle === newestParticle &&
+      cached.particleOrder === particleOrder) return cached.particles;
   const live = scope.liveScratch;
   live.clear();
   for (const system of scene.particleSystems) live.add(system);
@@ -78,6 +83,7 @@ export function admittedSceneParticles(scene: Scene): IParticleSystem[] | undefi
   cached.particleCount = scene.particleSystems.length;
   cached.particleSlotCount = scope.slots.size;
   cached.newestParticle = newestParticle;
+  cached.particleOrder = particleOrder;
   return particles;
 }
 

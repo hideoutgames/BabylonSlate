@@ -13,11 +13,12 @@ import {
   createMountedProjectStorage,
   type ProjectStorageMount,
   createTemplateStorage,
+  ENGINE_PLUGIN_LIBRARY_FOLDER,
   MemoryStorageAdapter,
 } from "@babylonslate/vfs";
 import { ensureEnginePluginStorage } from "./engine-plugins";
 
-export const ENGINE_PLUGIN_LIBRARY_ROOT = "__slate_engine_plugins__";
+export const ENGINE_PLUGIN_LIBRARY_ROOT = ENGINE_PLUGIN_LIBRARY_FOLDER;
 const DEFAULTS_FILE = "defaults.json";
 const CATALOG_FILE = "catalog.json";
 const CATALOG_VERSION = 1;
@@ -26,16 +27,6 @@ interface StoredPlugin {
   generationPath: string;
   settingsPath: string;
   settings: PluginSettingsPayload;
-}
-
-export class EnginePluginLibraryUpgradeRequiredError extends Error {
-  readonly code = "engine-plugin-library-upgrade-required";
-  readonly archiveCount: number;
-  constructor(archiveCount: number) {
-    super(`${archiveCount} Engine Plugin archive(s) need a one-time storage upgrade. Open Engine Settings → Plugins and choose Upgrade Plugin Storage.`);
-    this.name = "EnginePluginLibraryUpgradeRequiredError";
-    this.archiveCount = archiveCount;
-  }
 }
 
 export interface EnginePluginEntry extends PluginDescriptor {
@@ -80,7 +71,13 @@ export class EnginePluginLibrary {
   private async readDefaults(): Promise<Record<string, boolean>> {
     const defaults: Record<string, boolean> = Object.create(null);
     if (!(await this.libraryStorage.exists(DEFAULTS_FILE))) return defaults;
-    const value: unknown = JSON.parse(await this.libraryStorage.readText(DEFAULTS_FILE));
+    let value: unknown;
+    try {
+      value = JSON.parse(await this.libraryStorage.readText(DEFAULTS_FILE));
+    } catch {
+      // Defaults are preferences: unreadable ones fall back to each plugin's own.
+      return defaults;
+    }
     if (!value || typeof value !== "object" || Array.isArray(value)) return defaults;
     for (const [guid, enabled] of Object.entries(value)) {
       if (typeof enabled === "boolean") defaults[guid] = enabled;
@@ -88,18 +85,8 @@ export class EnginePluginLibrary {
     return defaults;
   }
 
-  private async legacyArchives(): Promise<string[]> {
-    return (await this.libraryStorage.readdir("."))
-      .filter((file) => !file.isDir && file.name.endsWith(".babplugin"))
-      .map((file) => file.name).sort();
-  }
-
-  private async readRecords(allowLegacy = false): Promise<StoredPlugin[]> {
-    if (!(await this.libraryStorage.exists(CATALOG_FILE))) {
-      const archives = await this.legacyArchives();
-      if (!allowLegacy && archives.length > 0) throw new EnginePluginLibraryUpgradeRequiredError(archives.length);
-      return [];
-    }
+  private async readRecords(): Promise<StoredPlugin[]> {
+    if (!(await this.libraryStorage.exists(CATALOG_FILE))) return [];
     const catalog = JSON.parse(await this.libraryStorage.readText(CATALOG_FILE)) as { version?: unknown; plugins?: unknown };
     if (catalog.version !== CATALOG_VERSION || !Array.isArray(catalog.plugins)) throw new Error("Unsupported Engine Plugin storage catalog.");
     return catalog.plugins.map((value: unknown) => {
@@ -126,23 +113,6 @@ export class EnginePluginLibrary {
       await this.libraryStorage.writeBinary(path, file.data);
     }
     return { generationPath, settingsPath: incoming.settingsPath, settings: incoming.settings };
-  }
-
-  /** Explicitly expands old archives once; opening/listing never reads their payloads. */
-  upgradeLegacyArchives(): Promise<number> {
-    return this.serialize(async () => {
-      const archives = await this.legacyArchives();
-      const records = await this.readRecords(true);
-      for (const archive of archives) {
-        const incoming = await inspectBabplugin(await this.libraryStorage.readBinary(archive));
-        if (!records.some((record) => record.settings.pluginGuid === incoming.settings.pluginGuid)) {
-          records.push(await this.storeGeneration(incoming));
-        }
-      }
-      await this.writeRecords(records);
-      for (const archive of archives) await this.libraryStorage.remove(archive);
-      return archives.length;
-    });
   }
 
   private async readState(): Promise<LibraryState> {
@@ -276,13 +246,35 @@ export class EnginePluginLibrary {
         defaults[incoming.settings.pluginGuid] = existing.enabledByDefault;
       }
       const generation = await this.storeGeneration(incoming);
-      await this.writeRecords([...records.filter((record) => record.settings.pluginGuid !== existing?.pluginGuid), generation]);
-      await this.libraryStorage.writeText(DEFAULTS_FILE, JSON.stringify(defaults));
-      const entry = (await this.readState()).entries.find(
-        (plugin) => plugin.pluginGuid === incoming.settings.pluginGuid,
-      );
-      if (!entry) throw new Error("Export did not produce an Engine Plugin.");
-      return { status: "imported", entry };
+      const previousCatalog = await this.libraryStorage.exists(CATALOG_FILE)
+        ? await this.libraryStorage.readBinary(CATALOG_FILE)
+        : null;
+      const previousDefaults = await this.libraryStorage.exists(DEFAULTS_FILE)
+        ? await this.libraryStorage.readBinary(DEFAULTS_FILE)
+        : null;
+      try {
+        await this.writeRecords([...records.filter((record) => record.settings.pluginGuid !== existing?.pluginGuid), generation]);
+        await this.libraryStorage.writeText(DEFAULTS_FILE, JSON.stringify(defaults));
+        const entry = (await this.readState()).entries.find(
+          (plugin) => plugin.pluginGuid === incoming.settings.pluginGuid,
+        );
+        if (!entry) throw new Error("Export did not produce an Engine Plugin.");
+        return { status: "imported", entry };
+      } catch (cause) {
+        // The new generation folder stays unreferenced; restore the catalog and
+        // defaults so the library lists exactly what it did before the import.
+        const restoreErrors: unknown[] = [];
+        for (const [path, previous] of [[CATALOG_FILE, previousCatalog], [DEFAULTS_FILE, previousDefaults]] as const) {
+          try {
+            if (previous) await this.libraryStorage.writeBinary(path, previous);
+            else if (await this.libraryStorage.exists(path)) await this.libraryStorage.remove(path);
+          } catch (restoreError) { restoreErrors.push(restoreError); }
+        }
+        if (restoreErrors.length > 0) {
+          throw new AggregateError([cause, ...restoreErrors], "Plugin import failed and the previous library state could not be fully restored.", { cause });
+        }
+        throw cause;
+      }
     });
   }
 }

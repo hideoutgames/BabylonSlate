@@ -27,6 +27,15 @@ export interface InterfaceDispatchTarget {
   interfaceHandlers?: ReadonlyMap<string, InterfaceHandler>;
 }
 
+/** Deep copy of pin defaults, so no caller shares (or edits) a registered value. */
+function copyPinDefaults(outputs: Record<string, PinDefault>): Record<string, PinDefault> {
+  const copy: Record<string, PinDefault> = {};
+  for (const [name, value] of Object.entries(outputs)) {
+    copy[name] = value !== null && typeof value === "object" ? structuredClone(value) : value;
+  }
+  return copy;
+}
+
 export class InterfaceRegistry {
   private readonly interfaces = new Map<string, ScriptInterfaceDef>();
 
@@ -35,7 +44,7 @@ export class InterfaceRegistry {
       ...def,
       methods: def.methods.map((m) => ({
         ...m,
-        outputs: { ...m.outputs },
+        outputs: copyPinDefaults(m.outputs),
       })),
     });
   }
@@ -62,7 +71,7 @@ export function dispatchInterface(
 ): Record<string, unknown> {
   const def = registry.get(interfaceGuid);
   const methodDef = def?.methods.find((m) => m.name === method);
-  const defaults = methodDef ? { ...methodDef.outputs } : {};
+  const defaults = methodDef ? copyPinDefaults(methodDef.outputs) : {};
 
   if (!target.implementedInterfaces.includes(interfaceGuid)) {
     return defaults;

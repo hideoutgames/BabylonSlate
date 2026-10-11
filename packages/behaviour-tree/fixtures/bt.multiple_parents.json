@@ -1,0 +1,43 @@
+{
+  "name": "multiple parents",
+  "rootId": "root",
+  "blackboardGuid": null,
+  "nodes": [
+    {
+      "id": "root",
+      "kind": "sequence",
+      "classId": "bt.composite.sequence",
+      "children": ["left", "right"],
+      "decorators": [],
+      "services": [],
+      "properties": {}
+    },
+    {
+      "id": "left",
+      "kind": "sequence",
+      "classId": "bt.composite.sequence",
+      "children": ["shared"],
+      "decorators": [],
+      "services": [],
+      "properties": {}
+    },
+    {
+      "id": "right",
+      "kind": "sequence",
+      "classId": "bt.composite.sequence",
+      "children": ["shared"],
+      "decorators": [],
+      "services": [],
+      "properties": {}
+    },
+    {
+      "id": "shared",
+      "kind": "task",
+      "classId": "bt.task.succeed",
+      "children": [],
+      "decorators": [],
+      "services": [],
+      "properties": {}
+    }
+  ]
+}

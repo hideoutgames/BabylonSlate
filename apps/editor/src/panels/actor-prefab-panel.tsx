@@ -17,7 +17,7 @@ import { useGraphEditing } from "../context/graph-editing-context";
 import { useSceneEditing } from "../context/scene-editing-context";
 import {
   PREFAB_ROOT_ID,
-  childrenOfPrefabParent,
+  prefabChildrenByParent,
   type PrefabComponentView,
 } from "../lib/prefab-preview";
 import { applyPrefabTreeSelect } from "../lib/prefab-tree-select";
@@ -45,7 +45,8 @@ export function flattenPrefabComponents(
   parentOf: (id: string) => string | null | undefined = engineParentOf,
 ): TreeViewNode[] {
   const rows: TreeViewNode[] = [];
-  const roots = childrenOfPrefabParent(components, null);
+  const childrenOf = prefabChildrenByParent(components);
+  const roots = childrenOf.get(null) ?? [];
   rows.push({
     id: PREFAB_ROOT_ID,
     label: "Prefab Root",
@@ -56,8 +57,8 @@ export function flattenPrefabComponents(
   if (collapsed.has(PREFAB_ROOT_ID)) return rows;
 
   const walk = (parentId: string | null, depth: number) => {
-    for (const component of childrenOfPrefabParent(components, parentId)) {
-      const kids = childrenOfPrefabParent(components, component.id);
+    for (const component of childrenOf.get(parentId) ?? []) {
+      const kids = childrenOf.get(component.id) ?? [];
       const expanded = !collapsed.has(component.id);
       const inherited = Boolean(component.inheritedFrom);
       const { name, detail } = prefabComponentLabelParts(component, assetLabel);
@@ -113,7 +114,7 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
     reparentComponent,
     renameComponent,
   } = usePrefabEditing();
-  const { assetRegistry } = useRegistryState();
+  const { assetRegistry, registryEpoch } = useRegistryState();
   const { documentId } = useDocumentWorkspace();
   const doc = useOpenDocument(documentId);
   // The open world Scene or Scene Layer sets the Add Component physics world.
@@ -123,7 +124,12 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
   const [addAnchor, setAddAnchor] = useState<{ x: number; y: number } | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [renamingId, setRenamingId] = useState<string | null>(null);
-  const listedAssets = assetRegistry?.list() ?? [];
+  // `list()` returns a new array per call; keep one per registry change so the
+  // tree and Add Component memos below do not rebuild on every render.
+  const listedAssets = useMemo(() => {
+    void registryEpoch;
+    return assetRegistry?.list() ?? [];
+  }, [assetRegistry, registryEpoch]);
   const isPrefabAsset = doc?.ref.kind === "prefab";
   const docPath = doc?.ref.path;
   const overlay = useMemo(() => {
@@ -200,7 +206,9 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
               range: options?.range,
             });
             setSelectedIds(next);
-            if (next.some((entry) => entry !== PREFAB_ROOT_ID)) {
+            // Prefab Root Details replace a graph node's, so picking the root
+            // also leaves the canvas and Class member selection.
+            if (next.length > 0) {
               setSelectedMemberId(null);
               setSelectedNodeIds([]);
             }

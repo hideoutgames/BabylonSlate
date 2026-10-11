@@ -39,7 +39,6 @@ export function usePlatformLayoutOptions() {
   return {
     singleWindow,
     disableFloatingGroups: mobile || singleWindow,
-    disablePopout: mobile || singleWindow,
     /** Pointer DnD on coarse/mobile; auto (html5 + pointer) on desktop. */
     dndStrategy: mobile || touch ? ("pointer" as const) : ("auto" as const),
   };

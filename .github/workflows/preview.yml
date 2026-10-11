@@ -10,13 +10,19 @@ permissions:
   pages: write
   id-token: write
 
+# A dispatch on another ref gets its own group, so it cannot cancel a main deploy.
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
+    # Only main is published; a manual dispatch on another ref builds and deploys nothing.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    outputs:
+      editor_sha256: ${{ steps.digests.outputs.editor }}
+      docs_sha256: ${{ steps.digests.outputs.docs }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -45,6 +51,12 @@ jobs:
         run: |
           mkdir -p apps/editor/dist/docs
           cp -a apps/docs/.vitepress/dist/. apps/editor/dist/docs/
+      # The smoke job compares the live pages with these exact uploaded files.
+      - name: Record deployed index digests
+        id: digests
+        run: |
+          echo "editor=$(sha256sum apps/editor/dist/index.html | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "docs=$(sha256sum apps/editor/dist/docs/index.html | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: apps/editor/dist
@@ -60,7 +72,7 @@ jobs:
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
 
   smoke:
-    needs: deploy
+    needs: [build, deploy]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -79,33 +91,40 @@ jobs:
             echo "https://github.com/${{ github.repository }}/settings/pages"
             exit 1
           fi
-      - name: Verify GitHub Pages deployment serves the editor
+      # A unique query bypasses cached copies; only this run's uploaded page matches the digest.
+      - name: Verify GitHub Pages deployment serves this build of the editor
+        env:
+          EXPECTED_SHA256: ${{ needs.build.outputs.editor_sha256 }}
         run: |
           url="https://hideoutgames.github.io/BabylonSlate/"
           for attempt in 1 2 3 4 5; do
-            status=$(curl -s -o /tmp/pages.html -w "%{http_code}" "$url")
-            if [ "$status" = "200" ] && grep -q 'id="root"' /tmp/pages.html && ! grep -q 'Jekyll v' /tmp/pages.html; then
+            status=$(curl -s -o /tmp/pages.html -w "%{http_code}" "$url?deployment=$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$attempt")
+            actual=$(sha256sum /tmp/pages.html | cut -d' ' -f1)
+            if [ "$status" = "200" ] && [ "$actual" = "$EXPECTED_SHA256" ]; then
               echo "Pages deployment verified at $url"
               exit 0
             fi
             echo "Attempt $attempt: status=$status, retrying in 15s..."
             sleep 15
           done
-          echo "::error::Pages smoke check failed — the site is not serving the built editor."
+          echo "::error::Pages smoke check failed — the site is not serving this run's editor build."
           echo "Ensure GitHub Pages source is GitHub Actions (not Deploy from a branch):"
           echo "https://github.com/hideoutgames/BabylonSlate/settings/pages"
           exit 1
-      - name: Verify GitHub Pages deployment serves the docs site
+      - name: Verify GitHub Pages deployment serves this build of the docs site
+        env:
+          EXPECTED_SHA256: ${{ needs.build.outputs.docs_sha256 }}
         run: |
           url="https://hideoutgames.github.io/BabylonSlate/docs/"
           for attempt in 1 2 3 4 5; do
-            status=$(curl -s -o /tmp/docs.html -w "%{http_code}" "$url")
-            if [ "$status" = "200" ] && grep -q 'VPNav' /tmp/docs.html && grep -q 'BabylonSlate' /tmp/docs.html; then
+            status=$(curl -s -o /tmp/docs.html -w "%{http_code}" "$url?deployment=$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$attempt")
+            actual=$(sha256sum /tmp/docs.html | cut -d' ' -f1)
+            if [ "$status" = "200" ] && [ "$actual" = "$EXPECTED_SHA256" ]; then
               echo "Docs deployment verified at $url"
               exit 0
             fi
             echo "Attempt $attempt: status=$status, retrying in 15s..."
             sleep 15
           done
-          echo "::error::Pages smoke check failed — /docs/ is not serving the VitePress site."
+          echo "::error::Pages smoke check failed — /docs/ is not serving this run's VitePress build."
           exit 1

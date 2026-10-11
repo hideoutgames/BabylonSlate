@@ -6,9 +6,10 @@ import {
   EDITOR_UTILITY_LIFECYCLE_EVENT,
 } from "../lib/editor-utility-scripts";
 
-const { invokeEvent, load, docs } = vi.hoisted(() => ({
+const { invokeEvent, load, hostServices, docs } = vi.hoisted(() => ({
   invokeEvent: vi.fn(),
   load: vi.fn(async () => {}),
+  hostServices: [] as Array<{ getAssetCatalog?: () => { getAssetsByPath(folder: string, recursive: boolean): Array<{ Path: string }> } | null }>,
   docs: {
     projectName: "Demo" as string | null,
     projectDocument: {
@@ -22,12 +23,20 @@ const { invokeEvent, load, docs } = vi.hoisted(() => ({
     }>,
     assetRegistry: {
       getRoot: vi.fn<(rootId: string) => object | undefined>(() => undefined),
+      generation: 1,
+      list: vi.fn(() => [] as unknown[]),
+      listRoots: () => [{ id: "project" }],
+      folderTree: () => ({ name: "assets", path: "assets", children: [], assets: [] }),
     },
   },
 }));
 
-vi.mock("@babylonslate/runtime", () => ({
+vi.mock("@babylonslate/runtime", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@babylonslate/runtime")>()),
   ScriptHost: class {
+    constructor(services: (typeof hostServices)[number]) {
+      hostServices.push(services);
+    }
     private loadedClasses: string[] = [];
     load = async (script: { classId: string }) => {
       this.loadedClasses.push(script.classId);
@@ -56,6 +65,9 @@ afterEach(() => {
   docs.collectEditorUtilityScripts.mockClear();
   docs.pluginDescriptors = [];
   docs.assetRegistry.getRoot.mockReset();
+  docs.assetRegistry.list.mockReset().mockReturnValue([]);
+  docs.assetRegistry.generation = 1;
+  hostServices.length = 0;
 });
 
 describe("EditorUtilityRuntime", () => {
@@ -101,6 +113,25 @@ describe("EditorUtilityRuntime", () => {
     expect(docs.collectEditorUtilityScripts).toHaveBeenCalledTimes(2);
   });
 
+  it("lets editor utility graphs query the live registry, rebuilt after the registry changes", async () => {
+    const asset = (name: string) => ({
+      rootId: "project",
+      path: `assets/${name}.texture.babasset`,
+      header: { guid: `guid-${name}`, name, type: "Texture", dependencies: [], engineVersion: "0", mode: "thin", parentClass: null, payload: {}, chunks: [], version: 1 },
+    });
+    docs.assetRegistry.list.mockReturnValue([asset("A")]);
+    render(<EditorUtilityRuntime />);
+    await waitFor(() => expect(hostServices).toHaveLength(1));
+    const catalog = () => hostServices[0]!.getAssetCatalog!()!;
+    expect(catalog().getAssetsByPath("assets", false).map((entry) => entry.Path)).toEqual(["assets/A.texture.babasset"]);
+    docs.assetRegistry.list.mockReturnValue([asset("A"), asset("B")]);
+    docs.assetRegistry.generation = 2;
+    expect(catalog().getAssetsByPath("assets", false).map((entry) => entry.Path)).toEqual([
+      "assets/A.texture.babasset",
+      "assets/B.texture.babasset",
+    ]);
+  });
+
   it("boots On Editor Startup then On Scene Open when a scene tab is already open", async () => {
     docs.openDocuments = [{ ref: { kind: "scene" } }];
     render(<EditorUtilityRuntime />);
@@ -127,6 +158,17 @@ describe("EditorUtilityRuntime", () => {
       "Tools",
       EDITOR_UTILITY_EVENTS.shutdown,
     );
+  });
+
+  it("stops loading an unmounted host's remaining scripts", async () => {
+    let finishFirst!: () => void;
+    load.mockImplementationOnce(() => new Promise<void>((resolve) => { finishFirst = resolve; }));
+    docs.collectEditorUtilityScripts.mockResolvedValueOnce([{ classId: "Tools" }, { classId: "More" }]);
+    const view = render(<EditorUtilityRuntime />);
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+    view.unmount();
+    await act(async () => { finishFirst(); });
+    expect(load).toHaveBeenCalledTimes(1);
   });
 
   it("does not reboot when project settings identity changes with the same list", async () => {

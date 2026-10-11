@@ -84,6 +84,10 @@
       from { transform: translateX(-100%); }
       to { transform: translateX(250%); }
     }
+    --animate-caret-blink: caret-blink 1.06s step-end infinite;
+    @keyframes caret-blink {
+      50% { opacity: 0; }
+    }
 }
 
 /*

@@ -6,7 +6,6 @@ import {
   AUDIO_SPEED_OF_SOUND,
   audioAssetDependencies,
   fillEmptySourceClipName,
-  remapAudioPayloadGuids,
   computeAttenuationGain,
   computeDopplerPlaybackRate,
   audioChannelHasParentCycle,
@@ -37,12 +36,11 @@ import {
   validateAudioChannelGraph,
   validateAudioMixer,
 } from "./audio-payload";
+import { collectAssetDependencyMetadata } from "./asset-dependencies";
 import { decodeAssetDocument, encodeAssetDocument } from "./asset-document";
 import { decodeBabasset, encodeBabasset } from "./babasset";
 import { bytesEqual } from "./bytes";
 import { importAudio } from "./importers/audio";
-import { loadPayloadWithMigration } from "./migrate-on-load";
-import { createDefaultMigrationRegistry } from "./migration";
 
 const FIXTURE_DIR = dirname(fileURLToPath(import.meta.url));
 const UPDATE = process.env.UPDATE_GOLDENS === "1";
@@ -99,6 +97,10 @@ describe("audio payloads", () => {
     expect(pickWeightedAudioClip(clips, () => 0.24).chunkId).toBe("source");
     expect(pickWeightedAudioClip(clips, () => 0.25).chunkId).toBe("source:2");
     expect(pickWeightedAudioClip(clips, () => 0.99).chunkId).toBe("source:2");
+    // All-zero weights are equal weights, not always the first clip.
+    const silent = clips.map((clip) => ({ ...clip, weight: 0 }));
+    expect(pickWeightedAudioClip(silent, () => 0.49).chunkId).toBe("source");
+    expect(pickWeightedAudioClip(silent, () => 0.5).chunkId).toBe("source:2");
     expect(
       resolveAudioPitch(
         {
@@ -278,6 +280,16 @@ describe("audio payloads", () => {
     );
     expect(cycle.resolvedParents.a).toBeNull();
     expect(cycle.resolvedParents.b).toBeNull();
+
+    // A channel that only leads into the cycle keeps its parent.
+    const lead = validateAudioChannelGraph({
+      a: { parentChannelGuid: "b" },
+      b: { parentChannelGuid: "a" },
+      sfx: { parentChannelGuid: "a" },
+    });
+    expect(lead.ok).toBe(false);
+    expect(lead.resolvedParents).toEqual({ a: null, b: null, sfx: "a" });
+    expect(audioChannelHasParentCycle(new Map([["a", "b"], ["b", "a"], ["sfx", "a"]]), "sfx")).toBe(false);
   });
 
   it("sanitizes missing Audio refs and cyclic channel parents for Play", () => {
@@ -366,51 +378,6 @@ describe("audio payloads", () => {
     expect(audioAssetDependencies("Class", { audioChannelGuid: "ch-1" })).toEqual(
       [],
     );
-  });
-
-  it("remaps Audio, mixer, and channel guids in payloads", () => {
-    const remap = new Map([
-      ["ch-old", "ch-new"],
-      ["att-old", "att-new"],
-    ]);
-    expect(
-      remapAudioPayloadGuids(
-        "Audio",
-        {
-          volume: 1,
-          audioChannelGuid: "ch-old",
-          soundAttenuationGuid: "att-old",
-        },
-        remap,
-      ),
-    ).toEqual({
-      volume: 1,
-      audioChannelGuid: "ch-new",
-      soundAttenuationGuid: "att-new",
-      clips: [{ chunkId: "source", name: "", weight: 1 }],
-      pitch: 1,
-      pitchRandom: false,
-      pitchMin: 1,
-      pitchMax: 1,
-      loop: false,
-    });
-    expect(
-      remapAudioPayloadGuids(
-        "AudioMixer",
-        { globalVolume: 1, channels: [{ channelGuid: "ch-old", volume: 0.5 }] },
-        remap,
-      ),
-    ).toEqual({
-      globalVolume: 1,
-      channels: [{ channelGuid: "ch-new", volume: 0.5 }],
-    });
-    expect(
-      remapAudioPayloadGuids(
-        "AudioChannel",
-        { parentChannelGuid: "ch-old", effects: [] },
-        remap,
-      ),
-    ).toMatchObject({ parentChannelGuid: "ch-new" });
   });
 
   it("resolves session playback gain without inventing mixer or channel factors", () => {
@@ -649,21 +616,22 @@ describe("audio payloads", () => {
 describe("audio asset containers", () => {
   it("round-trips a new Audio babasset and keeps the source chunk", async () => {
     const source = new Uint8Array([1, 2, 3, 4]);
+    const payload = {
+      volume: 0.5,
+      audioChannelGuid: "ch-1",
+      soundAttenuationGuid: "att-1",
+    };
     const encoded = await encodeBabasset({
       header: {
+        ...collectAssetDependencyMetadata("Audio", payload),
         guid: "00000000-0000-4000-8000-00000000a001",
         type: "Audio",
         name: "Jump",
         engineVersion: "0.0.0",
         version: 1,
         mode: "thin",
-        dependencies: ["att-1", "ch-1"],
         parentClass: null,
-        payload: {
-          volume: 0.5,
-          audioChannelGuid: "ch-1",
-          soundAttenuationGuid: "att-1",
-        },
+        payload,
       },
       chunks: [{ id: "source", kind: "audio", mime: "audio/wav", data: source }],
     });
@@ -679,27 +647,6 @@ describe("audio asset containers", () => {
     });
     expect(decoded.header.dependencies).toEqual(["att-1", "ch-1"]);
     expect(decoded.header.chunks[0]!.byteLength).toBe(source.byteLength);
-    expect(decoded.chunks.get("source")).toEqual(source);
-  });
-
-  it("normalizes an old Audio babasset without rewriting source bytes", async () => {
-    const source = new Uint8Array([9, 8, 7]);
-    // Historical files must not be regenerated by the current container writer.
-    const golden = readGoldenBinary(FIXTURE_DIR, "__fixtures__/audio-legacy.babasset");
-    const decoded = await decodeBabasset(golden);
-    expect(decoded.header.dependencyMetadataVersion).toBeUndefined();
-    expect(decoded.header.chunks[0]!.byteLength).toBeUndefined();
-    expect(decoded.header.payload).toEqual({});
-    expect(decoded.chunks.get("source")).toEqual(source);
-    const loaded = loadPayloadWithMigration(createDefaultMigrationRegistry(), {
-      type: "Audio",
-      version: decoded.header.version,
-      payload: decoded.header.payload,
-      path: "assets/Hit.babasset",
-    });
-    expect(normalizeAudioPayload(loaded.payload)).toEqual(
-      createDefaultAudioPayload(),
-    );
     expect(decoded.chunks.get("source")).toEqual(source);
   });
 

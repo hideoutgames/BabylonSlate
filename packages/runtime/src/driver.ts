@@ -2,6 +2,7 @@ import type { SimulationSceneCaptureResult } from "./simulation-scene-capture";
 import { SimulationSession } from "./simulation-session";
 import { RuntimeInspectorService } from "./runtime-inspector-service";
 import { RuntimeDataCatalog } from "./data-catalog";
+import { RuntimeAssetCatalog } from "./asset-catalog";
 import type { SaveGameService } from "@babylonslate/core";
 import { SessionBoundaries, type RuntimeSaveGameOptions } from "./session-boundaries";
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
@@ -104,7 +105,8 @@ import { RenderCommandEmitter } from "./render-command-emitter";
 import { AudioParticleEmitter, createAudioHostBindings } from "./audio-particle-emitter";
 import { RuntimeVoices } from "./runtime-voices";
 import { SpriteClipTrace, type SpriteClipState } from "./sprite-clip-trace";
-import { createActorHostBindings, createAssetHostBindings } from "./runtime-host-actors";
+import { createActorHostBindings } from "./runtime-host-actors";
+import { createAssetHostBindings } from "./runtime-host-assets";
 import { createComponentHostBindings } from "./runtime-host-components";
 import { createWorldInputProvider } from "./runtime-host-input";
 import { createNavigationHostBindings } from "./runtime-host-navigation";
@@ -129,6 +131,7 @@ import { BehaviourTreeRuntime } from "./behaviour-tree-runtime";
 import { LatentDelays } from "./latent-delays";
 import { RuntimeCamera } from "./runtime-camera";
 import { RuntimePropertyWrites } from "./runtime-property-writes";
+import { SimulationBlocks } from "./simulation-blocks";
 import { RuntimeContinuationCancelled, SimulationWaits } from "./simulation-waits";
 import type { RuntimeDriver, RuntimeDriverOptions } from "./driver-types";
 
@@ -235,14 +238,24 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly loopGuard: InfiniteLoopGuard;
 
   // Leaf services, built by field initializers: they take no other subsystem.
-  /** Voices `emit` started and has not stopped, for trace frames and restore. */
-  private readonly voices = new RuntimeVoices();
+  /** Voices `emit` started and has not stopped, for trace frames and restore; draws their clip and pitch. */
+  private readonly voices = new RuntimeVoices(() => this.seed);
   /** Sprite Animation clips actors show, for trace frames and restore. */
   private readonly spriteClips = new SpriteClipTrace();
   private readonly assetPreloads = new RuntimeAssetPreloads(command => this.emit(command));
+  /** Blocking Scene stream and asset loads hold the simulation here; a settled hold resumes it. */
+  private readonly blocks = new SimulationBlocks({
+    stopped: () => this.stopped,
+    emit: (command) => this.emit(command),
+    settled: () => {
+      this.ticks.resetAccumulator();
+      this.admission.flush();
+      this.waits.resumeWaiters();
+    },
+  });
   private readonly painters = new Painter2DRuntime();
   private readonly textAppear = new Text2DAppearRuntime();
-  private readonly tweens = new TweenRuntime((owner) => !this.stopped && !this.paused && !this.streams.blocking &&
+  private readonly tweens = new TweenRuntime((owner) => !this.stopped && !this.paused && !this.blocks.active &&
     (!owner || this.admission.canRunActions(owner)));
   /**
    * Subsystems with lifecycle hooks. Registration order (`registerSubsystems`)
@@ -409,7 +422,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.behaviourTrees.replaceAnimClipCatalog((options.animClipCatalog ?? []).filter((entry) => entry.guid));
     const registry = createClassRegistry();
     this.resolver = new InputResolver(normalizeInputMappings(
-      options.inputAssets !== undefined ? inputMappingsFromAssets(options.inputAssets) : options.inputMappings ?? createDefaultInputMappings(),
+      options.inputAssets !== undefined ? inputMappingsFromAssets(options.inputAssets) : createDefaultInputMappings(),
     ));
     if (options.tilemaps || options.tilesets) this.physics.bindAll();
     if (options.sprites || options.spriteAnimations) {
@@ -499,6 +512,7 @@ class InProcessRuntime implements RuntimeDriver {
       saveBoundaryActive: () => this.boundaries.saveBoundaryActive,
       sceneLoading: () => this.sceneRealizer.blocked || this.bootLoading,
       streams: () => this.streams,
+      blocks: () => this.blocks,
       layers: () => this.layers,
       releaseAssets: (ownerGuid) => this.assetPreloads.releaseOwner(ownerGuid),
       reportError: (error) => { this.reportError(error); },
@@ -555,11 +569,7 @@ class InProcessRuntime implements RuntimeDriver {
       cancelInvalidTweens: () => this.tweens.cancelInvalid(),
       releaseAssets: (ownerGuid) => this.assetPreloads.releaseOwner(ownerGuid),
       markUnsupportedInstance: (sceneGuid) => this.simulation.markUnsupportedInstance("stream", sceneGuid),
-      blockSettled: () => {
-        this.ticks.resetAccumulator();
-        this.admission.flush();
-        this.waits.resumeWaiters();
-      },
+      blocks: () => this.blocks,
       emit: (command) => this.emit(command),
     });
   }
@@ -627,6 +637,7 @@ class InProcessRuntime implements RuntimeDriver {
       sceneLibrary: () => this.sceneLibrary,
       scripts: () => this.scriptHost,
       streams: () => this.streams,
+      blocks: () => this.blocks,
       sceneRealizer: () => this.sceneRealizer,
       physics: () => this.physics,
       actorHooks: () => this.actors.sceneActorHooks,
@@ -717,14 +728,13 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private createWaits(): SimulationWaits {
-    return new SimulationWaits(this.admission, {
-      world: () => this.world,
+    return new SimulationWaits({
       stopped: () => this.stopped,
       paused: () => this.paused,
       pauseChangePending: () => [...this.pendingPauseChanges.values()].some(Boolean),
       streams: () => this.streams,
+      blocks: () => this.blocks,
       boundaries: () => this.boundaries,
-      assetPreloads: () => this.assetPreloads,
     });
   }
 
@@ -744,6 +754,7 @@ class InProcessRuntime implements RuntimeDriver {
       boundaries: () => this.boundaries,
       sceneRealizer: () => this.sceneRealizer,
       streams: () => this.streams,
+      blocks: () => this.blocks,
       layers: () => this.layers,
       materialEditGate: () => this.inspector.materialEditGate,
       materialParameters: () => this.materialParameters,
@@ -902,7 +913,7 @@ class InProcessRuntime implements RuntimeDriver {
       classRegistry: registry,
       guidFactory: () => `rt-${++guidSeq}`,
       onPhase: (phase) => this.ticks.markPhase(phase),
-      canTickScene: () => !this.stopped && !this.streams.blocking,
+      canTickScene: () => !this.stopped && !this.blocks.active,
       canTickActor: (actor) => this.admission.canTickActor(actor),
       componentHooksFor: (classId) => this.actors.componentHooks(classId),
       sceneSubsystemHooksFor: (classId) => this.scriptRuntime.sceneSubsystemHooks(classId),
@@ -942,8 +953,8 @@ class InProcessRuntime implements RuntimeDriver {
 
   private createTickPipeline(options: RuntimeDriverOptions): TickPipeline {
     return new TickPipeline(this.world, this.snapshots, this.logs, {
-      canTick: () => this.running && !this.paused && !this.boundaries.saveBoundaryActive && !this.streams.blocking,
-      canAdvance: () => this.running && !this.paused && !this.streams.blocking,
+      canTick: () => this.running && !this.paused && !this.boundaries.saveBoundaryActive && !this.blocks.active,
+      canAdvance: () => this.running && !this.paused && !this.blocks.active,
       paused: () => this.paused,
       stopped: () => this.stopped,
       runTick: () => this.runTick(),
@@ -1068,8 +1079,10 @@ class InProcessRuntime implements RuntimeDriver {
     const slot = (actor: Actor): number | undefined => this.actorSlot(actor);
     const canRun = (owner: BObject): boolean => this.admission.canRun(owner);
     const continueSimulation = (owner: BObject | null): Promise<void> | undefined => this.waits.continueSimulation(owner);
+    const assetCatalog = new RuntimeAssetCatalog(options.assetCatalog);
     return new ScriptHost({
       data: this.dataCatalog,
+      getAssetCatalog: () => assetCatalog,
       seed: options.seed,
       canRunOwner: (owner) => this.admission.canRun(owner),
       inputBindings: this.resolver.bindings,
@@ -1102,7 +1115,9 @@ class InProcessRuntime implements RuntimeDriver {
       ...createAssetHostBindings({
         world: () => this.world,
         demandAssetCatalog: this.demandAssetCatalog,
+        classAssetGuids: this.scriptRuntime.classAssetGuids,
         assetPreloads: this.assetPreloads,
+        blocks: this.blocks,
         continueSimulation,
       }),
       ...createTimingHostBindings({
@@ -1114,10 +1129,13 @@ class InProcessRuntime implements RuntimeDriver {
       ...createPhysicsHostBindings({
         world: () => this.world,
         physics: () => this.physics.main,
+        layerPhysics: (layerGuid) => this.physics.layer(layerGuid),
         physicsFor: (actor) => this.physics.forActor(actor),
         ragdolls: this.ragdolls,
         waterTime: () => this.waterClock.time,
-        projectCursorToScene: (channel, options) => this.camera.projectCursorToScene(channel, options),
+        projectCursorToScene: (channel, options, sceneLayerId) => sceneLayerId
+          ? this.camera.projectCursorToSceneLayer(sceneLayerId, channel)
+          : this.camera.projectCursorToScene(channel, options),
       }),
       ...createScalabilityHostBindings({
         getScalability: () => this.getScalability(),
@@ -1164,7 +1182,6 @@ class InProcessRuntime implements RuntimeDriver {
         if (!Number.isFinite(value)) return 0;
         return Math.min(1, Math.max(0, value));
       },
-      preloadAssets: (assets, owner, options) => this.waits.preloadForGameplay(assets, owner, options),
       waitForSimulation: (owner) => this.waits.continueSimulation(owner) ?? Promise.resolve(),
       getProjectName: () => projectName,
       getProjectVersion: () => projectVersion,
@@ -1507,10 +1524,11 @@ class InProcessRuntime implements RuntimeDriver {
    * render slot). Order: dilation, BT evaluation and ownership, Animation Graph
    * evaluation, then each live actor's sprite clip in World order (`animState` for a recorded clip,
    * collider clip cleared otherwise), then `stopSound` for live voices the
-   * frame lacks and `playSound` at the recorded offset for each recorded voice.
+   * frame lacks and `playSound` at the recorded offset, clip and pitch for each
+   * recorded voice.
    */
   restoreFromTrace(frame: TraceFrame): void {
-    this.setTimeDilation(frame.timeDilation ?? 1);
+    this.setTimeDilation(frame.timeDilation);
     this.behaviourTrees.restoreFromTrace(frame.bt ?? []);
     this.animGraphs.restoreFromTrace(frame.animGraphs ?? []);
     const recordedClips = new Map((frame.sprites ?? []).map((clip) => [clip.actorGuid, clip]));
@@ -1855,7 +1873,8 @@ class InProcessRuntime implements RuntimeDriver {
    *    World tick (actors, then physics through `onPhysics`), deferred owner
    *    work and streamed Scenes. The tick ends here when it stopped the session.
    * 3. Scene systems (timed): tween cleanup, Delays, animation graphs, tile
-   *    animation time, behaviour trees and the crowd.
+   *    animation time, behaviour trees and the crowd. The tick also ends here
+   *    when one of them stopped the session.
    * 4. Component commands changed during the tick: painters, text reveal, deformers.
    * 5. Publish: advance the frame id, then the pose snapshot and debug views;
    *    `TickPipeline` records stats and the trace frame last.
@@ -1865,13 +1884,16 @@ class InProcessRuntime implements RuntimeDriver {
     const simDt = this.simulationDt();
     this.world.clock.dt = simDt;
     this.waterClock.advance(simDt);
-    // Voices play in real time, so their age follows the undilated step.
+    // Voices play in real time, so their age (and the clock restored voices
+    // waiting for the audio unlock catch up by) follows the undilated step.
     this.voices.advance(this.dt);
+    if (this.voices.hasRestoredVoices) this.emit({ type: "audioSimTime", seconds: this.voices.audioTime });
     const pending = this.resolveTickInput(simDt);
     this.ticks.beginPhaseTiming();
     this.tickWorld(pending, simDt);
     if (this.stopped) return;
     this.tickSceneSystems(simDt);
+    if (this.stopped) return;
     this.ticks.closePhaseTiming();
     this.flushComponentCommands();
     const completedFrameId = this.frameId;
@@ -2041,7 +2063,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private emit(command: CommandMessage): void {
-    command = this.inspector.annotate(command);
+    command = this.voices.prepare(this.inspector.annotate(command));
 
     this.commandRevision++;
     // Every log line and Print String reaches the ring that `dumplog` and the

@@ -64,7 +64,8 @@ export function BlackboardEditor({
   const doc = useMemo(() => asBoard(payload), [payload]);
   const [selected, setSelected] = useState(0);
   const [typeAssetPickerOpen, setTypeAssetPickerOpen] = useState(false);
-  const [defaultAssetPickerOpen, setDefaultAssetPickerOpen] = useState(false);
+  /** The default row that asked for an asset, so a Structure field pick writes only that field. */
+  const [defaultAssetPick, setDefaultAssetPick] = useState<{ rowId: string; assetType: string } | null>(null);
   const typeCatalog = collectGraphTypeAssets({
     assets: assetRegistry?.list() ?? [],
     openDocuments,
@@ -137,7 +138,7 @@ export function BlackboardEditor({
             name: entry.name,
             type: entry.type,
           })),
-          onPickAsset: () => setDefaultAssetPickerOpen(true),
+          onPickAsset: (rowId, assetType) => setDefaultAssetPick({ rowId, assetType }),
         },
       )
     : [];
@@ -278,22 +279,18 @@ export function BlackboardEditor({
               data-testid="blackboard-key-type-asset-picker"
             />
             <AssetPicker
-              open={defaultAssetPickerOpen}
-              onOpenChange={setDefaultAssetPickerOpen}
+              open={defaultAssetPick !== null}
+              onOpenChange={(open) => {
+                if (!open) setDefaultAssetPick(null);
+              }}
               assets={pickerAssets}
-              allowedTypes={variableAssetPickerAllowedTypes(typeClassId)}
+              allowedTypes={variableAssetPickerAllowedTypes(defaultAssetPick?.assetType)}
               allowNone
               title="Pick Asset"
               onPick={(guid) => {
-                commit({
-                  ...doc,
-                  keys: doc.keys.map((entry, index) =>
-                    index === selected
-                      ? { ...entry, defaultValue: guid ?? "" }
-                      : entry,
-                  ),
-                });
-                setDefaultAssetPickerOpen(false);
+                const row = defaultRows.find((entry) => entry.id === defaultAssetPick?.rowId);
+                if (row?.kind === "asset") row.onChange(guid ?? "");
+                setDefaultAssetPick(null);
               }}
               data-testid="blackboard-key-default-asset-picker"
             />

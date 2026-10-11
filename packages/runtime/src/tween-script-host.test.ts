@@ -51,8 +51,8 @@ describe("Tween script targets", () => {
     const variable = node("variable", "variables.get", { variableName: "score", typeId: "float", classId: "Actor" });
     const graph: LogicGraph = { id: "targets", kind: "event", nodes: [node("entry", "flow.entry"),
       node("owner", "variables.get", { variableName: "Other", typeId: "object", typeClassId: "Actor", implicitSelf: true }),
-      variable, node("tween", "tween.float", { a: 10, b: 20, duration: 1 }),
-      node("done", "debug.log", { message: "completed" })],
+      variable, node("tween", "tween.float", { "default:a": 10, "default:b": 20, "default:duration": 1 }),
+      node("done", "debug.log", { "default:message": "completed" })],
       edges: [edge("entry", "execOut", "tween", "execIn"), edge("owner", "value", "variable", "target"),
         edge("variable", "value", "tween", "target"), edge("tween", "execOut", "done", "execIn")] };
     const run = () => {
@@ -77,8 +77,8 @@ describe("Tween script targets", () => {
     expect(completed).toHaveBeenCalledOnce();
 
     graph.nodes = [node("entry", "flow.entry"), node("tween", "tween.actorPosition", {
-      a: { x: 10, y: 0, z: 0 }, b: { x: 20, y: 0, z: 0 }, duration: 0,
-    }), node("done", "debug.log", { message: "completed" })];
+      "default:a": { x: 10, y: 0, z: 0 }, "default:b": { x: 20, y: 0, z: 0 }, "default:duration": 0,
+    }), node("done", "debug.log", { "default:message": "completed" })];
     graph.edges = [edge("entry", "execOut", "tween", "execIn"), edge("tween", "execOut", "done", "execIn")];
     await run();
     expect(actor.transform.position).toEqual({ x: 0, y: 0, z: 0 });

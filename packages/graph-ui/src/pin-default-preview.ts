@@ -49,7 +49,15 @@ export function literalPinType(
   pin: SerializedPin,
 ): PinType | null {
   if (pin.colorHint) return { kind: "color" };
-  if (pin.type.kind === "generic") return { kind: "float" };
+  if (pin.type.kind === "generic") {
+    // An unwired generic group edits as its host fallback (Particle Split
+    // Value falls back to Color), else as Float.
+    const fallback = { kind: pin.type.fallback } as PinType;
+    return typeof pin.type.fallback === "string" &&
+      pinAcceptsLiteralDefault(fallback)
+      ? fallback
+      : { kind: "float" };
+  }
   if (!pinAcceptsLiteralDefault(pin.type as PinType)) return null;
   return pin.type as PinType;
 }
@@ -191,8 +199,9 @@ export function pinDefaultPreview(
       return { kind: "classRef", text: pinDefaultAsString(selectedClass) };
     }
   }
+  // Only the node's own Target pin; a member argument named "target" is `target__arg`.
   if (
-    pin.name === "target" &&
+    pin.id === "target" &&
     properties.implicitSelf === true &&
     (pin.type.kind === "objectRef" || pin.type.kind === "actorRef")
   ) {

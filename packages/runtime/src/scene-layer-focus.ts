@@ -20,6 +20,12 @@ interface Candidate {
   bounds: FocusBounds;
   properties: FocusTargetProperties;
 }
+/** Scene Layer actors with focus-target components, in world order, for one world structure revision. */
+interface FocusTargets {
+  revision: number;
+  byGuid: Map<string, Actor>;
+  entries: Array<{ actor: Actor; components: ActorComponent[] }>;
+}
 
 function fallbackResolver(): InputResolver {
   const directions: AxisBinding[] = [
@@ -67,6 +73,7 @@ export class SceneLayerFocusNavigation {
   private direction: FocusDirection | null = null;
   private repeatRemaining = 0;
   private initialLayer: string | null = null;
+  private targets: FocusTargets | null = null;
 
   constructor(world: World, settings: Partial<FocusNavigationSettings> | undefined, host: FocusNavigationHost) {
     this.world = world;
@@ -74,13 +81,35 @@ export class SceneLayerFocusNavigation {
     this.settings = normalizeFocusNavigationSettings(settings);
   }
 
+  /**
+   * Which actors and components can be focus targets changes only with the
+   * world structure (spawn, destroy, attach, reparent), so the full actor walk
+   * reruns only after a structural change. Availability, admission, transforms
+   * and bounds are read live on every call.
+   */
+  private focusTargets(): FocusTargets {
+    const revision = this.world.structuralRevision;
+    if (this.targets?.revision === revision) return this.targets;
+    const actors = this.world.getActors();
+    const entries: FocusTargets["entries"] = [];
+    for (const actor of actors) {
+      if (!actor.sceneLayerId) continue;
+      const components = actor.components.filter((component) => isFocusTargetClass(component.classId));
+      if (components.length > 0) entries.push({ actor, components });
+    }
+    this.targets = { revision, byGuid: actorGuidIndex(actors), entries };
+    return this.targets;
+  }
+
   private candidates(): Candidate[] {
     if (!this.settings.enabled) return [];
-    const actors = this.world.getActors();
-    const byGuid = actorGuidIndex(actors);
+    // Focus targets live only on Scene Layer actors; a world without a live layer has none to walk.
+    const liveLayers = this.world.getSceneLayers().filter((layer) => !layer.destroyed);
+    if (liveLayers.length === 0) return [];
+    const { byGuid, entries } = this.focusTargets();
     const result: Candidate[] = [];
-    for (const actor of actors) {
-      if (!actor.sceneLayerId || !available(actor) || !this.host.canRun(actor)) continue;
+    for (const { actor, components } of entries) {
+      if (!available(actor) || !this.host.canRun(actor)) continue;
       const visited = new Set<string>([actor.guid]);
       let parentId = actorParentGuid(actor);
       let visible = true;
@@ -93,8 +122,8 @@ export class SceneLayerFocusNavigation {
       if (!visible) continue;
       const actorTransform = actorWorldTransform(actor, byGuid);
       if (!actorTransform) continue;
-      for (const component of actor.components) {
-        if (!isFocusTargetClass(component.classId) || !available(component)) continue;
+      for (const component of components) {
+        if (!available(component)) continue;
         const properties = parseFocusTargetProperties(Object.fromEntries(component.variables));
         if (!properties.focusEnabled) continue;
         if (component.getVariable("focused") === undefined) component.setVariable("focused", false);
@@ -122,8 +151,7 @@ export class SceneLayerFocusNavigation {
       }
     }
     // Same tie-break as the compositor: the last drawn eligible layer owns navigation.
-    const layers = this.world.getSceneLayers().filter((layer) => !layer.destroyed)
-      .sort((a, b) => a.zOrder - b.zOrder || a.guid.localeCompare(b.guid));
+    const layers = liveLayers.sort((a, b) => a.zOrder - b.zOrder || a.guid.localeCompare(b.guid));
     const active = layers.reverse().find((layer) => result.some((candidate) => candidate.actor.sceneLayerId === layer.guid));
     return active ? result.filter((candidate) => candidate.actor.sceneLayerId === active.guid) : [];
   }
@@ -155,12 +183,19 @@ export class SceneLayerFocusNavigation {
     this.emit(live, "onFocusEnter");
   }
 
-  refresh(): void {
+  /** Revalidate the focused target and return the live candidates, read again only after a leave handler ran. */
+  private refreshed(): Candidate[] {
     const candidates = this.candidates();
     const current = candidates.find((entry) => entry.component === this.focused?.component);
-    if (this.focused && !current) this.transition(null);
-    else if (current) this.focused = current;
+    if (this.focused && !current) {
+      this.transition(null);
+      return this.candidates();
+    }
+    if (current) this.focused = current;
+    return candidates;
   }
+
+  refresh(): void { this.refreshed(); }
 
   getFocused(): ActorComponent | null { this.refresh(); return this.focused?.component ?? null; }
 
@@ -175,8 +210,7 @@ export class SceneLayerFocusNavigation {
 
   /** Tab order shares the same live, top-layer candidate set as gamepad focus. */
   advance(reverse = false): ActorComponent | null {
-    this.refresh();
-    const candidates = this.candidates();
+    const candidates = this.refreshed();
     if (!candidates.length) return null;
     this.initialLayer = candidates[0]!.actor.sceneLayerId;
     const index = candidates.findIndex((entry) => entry.component === this.focused?.component);
@@ -197,8 +231,7 @@ export class SceneLayerFocusNavigation {
   }
 
   move(direction: FocusDirection): void {
-    this.refresh();
-    const candidates = this.candidates();
+    const candidates = this.refreshed();
     const current = this.focused;
     if (!current) { this.transition(this.initial(candidates) ?? null); return; }
     const key = `focus${direction[0]!.toUpperCase()}${direction.slice(1)}` as keyof FocusTargetProperties;
@@ -232,9 +265,8 @@ export class SceneLayerFocusNavigation {
 
   tick(events: readonly RawInputEvent[], input: ResolvedInputTick, dt: number): void {
     const defaults = this.defaults.resolve(events, dt);
-    this.refresh();
+    const candidates = this.refreshed();
     if (!this.settings.enabled) return;
-    const candidates = this.candidates();
     const layer = candidates[0]?.actor.sceneLayerId ?? null;
     if (layer !== this.initialLayer) {
       this.initialLayer = layer;

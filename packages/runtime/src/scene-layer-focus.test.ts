@@ -47,6 +47,21 @@ describe("SceneLayer focus navigation", () => {
     expect(f.navigation.getFocused()).toBeNull();
   });
 
+  it("reaches focus targets spawned or attached after navigation started", () => {
+    const f = fixture();
+    const a = f.add("a", 0, 0, { focusInitial: true });
+    f.tick();
+    expect(f.navigation.getFocused()).toBe(a.component);
+    const b = f.add("b", 3, 0);
+    f.tick(tap("ArrowRight"));
+    expect(f.navigation.getFocused()).toBe(b.component);
+    const attached = f.world.createComponent({ guid: "b-next", classId: "2DButtonComponent" });
+    attached.transform.position = { x: 3, y: 0, z: 0 };
+    b.actor.attachComponent(attached);
+    f.tick(tap("ArrowRight"));
+    expect(f.navigation.getFocused()).toBe(attached);
+  });
+
   it("moves immediately on a same-direction repress and restarts the repeat delay", () => {
     const f = fixture({ repeatDelay: 0.4, repeatInterval: 0.1 });
     f.add("a", 0, 0, { focusInitial: true });

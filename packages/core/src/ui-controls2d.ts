@@ -43,11 +43,13 @@ export function clampUIControl2DValue(value: number, properties: Pick<UIControl2
   const { min, max, step } = properties;
   const clamped = Math.max(min, Math.min(max, finite(value, min)));
   if (clamped === min || clamped === max || step <= 0) return clamped;
-  const count = (clamped - min) / step;
+  const count = Math.floor((clamped - min) / step);
   // Extreme finite inputs may overflow the ratio. The bounded input is still valid.
   if (!Number.isFinite(count)) return clamped;
-  const snapped = Number((min + Math.round(count) * step).toPrecision(15));
-  return Math.max(min, Math.min(max, snapped));
+  const lower = Number((min + count * step).toPrecision(15));
+  // The step past `lower` ends at `max` when the range leaves a partial last step.
+  const upper = Math.min(max, Number((min + (count + 1) * step).toPrecision(15)));
+  return Math.max(min, Math.min(max, clamped - lower < upper - clamped ? lower : upper));
 }
 
 export function uiControl2DFraction(value: number, properties: Pick<UIControl2DProperties, "min" | "max">): number {

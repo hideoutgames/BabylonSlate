@@ -1,6 +1,6 @@
-import { createContext, useContext, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { isValidTagPath, type Tag, type TagContainer, type TagDefinition } from "@babylonslate/core";
-import { ChevronDownIcon, MinusIcon, TagsIcon, TagIcon } from "lucide-react";
+import { ChevronDownIcon, TagsIcon, TagIcon } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
 import { Checkbox } from "@babylonslate/ui/components/checkbox";
 import { Dialog, DialogContent, DialogTitle } from "@babylonslate/ui/components/dialog";
@@ -70,6 +70,11 @@ export function TagPicker(props: TagPickerProps) {
   const bodyRef = useRef<HTMLDivElement>(null);
   const createId = useId();
   const coarse = isCoarsePointerEnvironment();
+  // A create resolves later; it applies to the value and handler current then.
+  const latest = useRef(props);
+  useLayoutEffect(() => {
+    latest.current = props;
+  });
   const selected = useMemo(
     () => new Set(props.mode === "single" ? (props.value ? [props.value] : []) : props.value.Tags),
     [props.mode, props.value],
@@ -155,9 +160,8 @@ export function TagPicker(props: TagPickerProps) {
         depth,
         hasChildren,
         expanded,
-        icon: <span className="pointer-events-none relative flex" title={entry.path}>
-          <Checkbox checked={checked} indeterminate={indeterminate} readOnly tabIndex={-1} aria-label={`${entry.path} Selection`} className={indeterminate ? "[&_svg]:hidden" : undefined} />
-          {indeterminate ? <MinusIcon className="absolute inset-0 size-4 text-foreground" aria-hidden="true" /> : null}
+        icon: <span className="pointer-events-none flex" title={entry.path}>
+          <Checkbox checked={checked} indeterminate={indeterminate} readOnly tabIndex={-1} aria-label={`${entry.path} Selection`} />
         </span>,
         preview: hasChildren ? <span className="text-xs text-muted-foreground tabular-nums">{subtreeSize - 1}</span> : undefined,
       });
@@ -195,11 +199,12 @@ export function TagPicker(props: TagPickerProps) {
     setError("");
     try {
       const tag = await onCreate(path);
-      if (props.mode === "single") {
-        props.onChange(tag);
+      const current = latest.current;
+      if (current.mode === "single") {
+        current.onChange(tag);
         setOpen(false);
       } else {
-        props.onChange({ Tags: [...new Set([...props.value.Tags, tag])] });
+        current.onChange({ Tags: [...new Set([...current.value.Tags, tag])] });
       }
       setDraft("");
       setQuery("");
@@ -231,7 +236,8 @@ export function TagPicker(props: TagPickerProps) {
     {open ? <Dialog open onOpenChange={setOpen}>
       <DialogContent showCloseButton={false} overlayClassName="catalog-menu-overlay bg-transparent" finalFocus={triggerRef}
         initialFocus={(interaction) => coarse && interaction !== "keyboard" ? bodyRef.current : searchRef.current}
-        className="catalog-menu catalog-menu-popup flex max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-lg p-0 sm:max-w-none"
+        className="catalog-menu catalog-menu-popup max-w-none translate-x-0 translate-y-0 rounded-lg sm:max-w-none"
+        bodyClassName="flex flex-col gap-0 overflow-hidden p-0"
         style={popupMenuFrame(anchor, { width: 400, height: 470 })} data-testid={`${testId}-dialog`}>
         <div className="flex shrink-0 items-center justify-between gap-2 px-3 pt-3 pb-2">
           <DialogTitle className="text-sm">{multiple ? "Select Tags" : "Select Tag"}</DialogTitle>

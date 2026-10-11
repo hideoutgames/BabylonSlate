@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { GameSessionOwner, type GameSessionStopResult } from "./game-session-owner";
+import { GameSessionOwner, transitionClosesSessionSource, type GameSessionStopResult } from "./game-session-owner";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -132,4 +132,20 @@ describe("game session ownership", () => {
     expect(stop).toHaveBeenCalledOnce();
   });
 
+});
+
+describe("transitionClosesSessionSource", () => {
+  it("closes the session's Scene only when the transition replaces or closes that Scene", () => {
+    expect(transitionClosesSessionSource({ kind: "replace-document", documentId: "scene:a" }, "scene:a")).toBe(true);
+    expect(transitionClosesSessionSource({ kind: "replace-document", documentId: "scene:b" }, "scene:a")).toBe(false);
+    expect(transitionClosesSessionSource({ kind: "close-document", documentId: "scene:a" }, "scene:a")).toBe(true);
+    expect(transitionClosesSessionSource({ kind: "close-document", documentId: "graph:hero" }, "scene:a")).toBe(false);
+  });
+
+  it("leaves documents alone for a session started without an open Scene, but not the project", () => {
+    expect(transitionClosesSessionSource({ kind: "replace-document", documentId: "scene:b" }, null)).toBe(false);
+    expect(transitionClosesSessionSource({ kind: "close-document", documentId: "scene:b" }, null)).toBe(false);
+    expect(transitionClosesSessionSource({ kind: "close-project" }, null)).toBe(true);
+    expect(transitionClosesSessionSource({ kind: "replace-project" }, "scene:a")).toBe(true);
+  });
 });

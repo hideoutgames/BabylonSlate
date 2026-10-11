@@ -11,7 +11,7 @@ import { ValidationProvider } from "../context/validation-context";
 import {
   AnimGraphDetailsPanel,
   AnimGraphGraphPanel,
-  AnimGraphParametersPanel,
+  AnimGraphVariablesPanel,
 } from "./anim-graph-editor";
 
 if (typeof window !== "undefined") {
@@ -66,7 +66,7 @@ vi.mock("../context/document-context", async () => {
       ],
       applyAssetDocumentChange: store.applyAssetDocumentChange,
       applyGraphChange: vi.fn(),
-      projectDocument: { settings: { input: { actions: [], axes: [] } } },
+      projectDocument: { settings: {} },
       activeDocumentId: DOC_ID,
       animEditorMode: "stateMachine",
       assetRegistry: {
@@ -199,7 +199,7 @@ function renderAnimGraph(payload: AnimGraphDocument = createDefaultAnimGraph()) 
         <AnimGraphEditingProvider>
           <PrefabEditingProvider>
             <GraphEditingProvider>
-              <AnimGraphParametersPanel {...panelProps} />
+              <AnimGraphVariablesPanel {...panelProps} />
               <AnimGraphGraphPanel {...panelProps} />
               <AnimGraphDetailsPanel {...panelProps} />
             </GraphEditingProvider>
@@ -217,7 +217,6 @@ function lastCommit(): AnimGraphDocument {
 
 function locoGraph(): AnimGraphDocument {
   const doc = createDefaultAnimGraph();
-  doc.parameters = ["moving"];
   doc.states.push({
     id: "run",
     name: "Run",
@@ -237,10 +236,7 @@ function locoGraph(): AnimGraphDocument {
     id: "idle-to-run",
     fromStateId: "idle",
     toStateId: "run",
-    condition: "moving",
     blendSeconds: 0.25,
-    hasExitTime: false,
-    exitTime: 0,
     priority: 0,
     ruleGraph: createDefaultTransitionRuleGraph(),
   });
@@ -296,7 +292,7 @@ describe("AnimGraphEditor", () => {
     render(
       <TagProvider entries={[{ id: 1, path: "Actor", parentId: 0 }, { id: 2, path: "Actor.Alive", parentId: 1 }]}>
         <DocumentWorkspaceProvider documentId={DOC_ID}>
-          <AnimGraphEditingProvider><AnimGraphParametersPanel {...panelProps} /></AnimGraphEditingProvider>
+          <AnimGraphEditingProvider><AnimGraphVariablesPanel {...panelProps} /></AnimGraphEditingProvider>
         </DocumentWorkspaceProvider>
       </TagProvider>,
     );

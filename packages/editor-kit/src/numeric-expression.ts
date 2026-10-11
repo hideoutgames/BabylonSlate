@@ -1,10 +1,24 @@
-/** Idle Details numerics: round to the requested precision and strip trailing zeros. */
+function trimFixed(fixed: string): string {
+  const [intPart, frac = ""] = fixed.split(".");
+  const trimmedFrac = frac.replace(/0+$/, "");
+  const formatted = trimmedFrac ? `${intPart}.${trimmedFrac}` : intPart!;
+  return formatted === "-0" ? "0" : formatted;
+}
+
+/**
+ * Idle Details numerics: round to the requested precision and strip trailing
+ * zeros. A nonzero value that would round to 0 keeps that many significant
+ * digits instead (`0.001`, not `0`), so the field never hides a small value.
+ */
 export function formatNumericDisplay(value: number, precision = 2): string {
   if (!Number.isFinite(value)) return "0";
-  const [intPart, frac = ""] = value.toFixed(Math.max(0, Math.min(20, precision))).split(".");
-  const trimmedFrac = frac.replace(/0+$/, "");
-  const formatted = trimmedFrac ? `${intPart}.${trimmedFrac}` : intPart;
-  return formatted === "-0" ? "0" : formatted;
+  const digits = Math.max(0, Math.min(20, precision));
+  const rounded = trimFixed(value.toFixed(digits));
+  if (rounded !== "0" || value === 0) return rounded;
+  const leadingZeros = -Math.floor(Math.log10(Math.abs(value))) - 1;
+  return trimFixed(
+    value.toFixed(Math.min(20, leadingZeros + Math.max(1, digits))),
+  );
 }
 
 type Operator = "+" | "-" | "*" | "/";
@@ -26,12 +40,17 @@ export function evaluateNumericExpression(
 ): number | undefined {
   const trimmed = raw.trim();
   if (!trimmed) return undefined;
-  const source =
-    trimmed.startsWith("*") || trimmed.startsWith("/") || trimmed.startsWith("+")
-      ? `${currentValue}${trimmed}`
-      : trimmed;
-  const tokens = tokenize(source);
+  const tokens = tokenize(trimmed);
   if (!tokens) return undefined;
+  // A leading operator continues from the current value. It enters as a
+  // number token, so values printed in exponent form (1e-7) still apply.
+  if (
+    trimmed.startsWith("*") ||
+    trimmed.startsWith("/") ||
+    trimmed.startsWith("+")
+  ) {
+    tokens.unshift({ kind: "number", value: currentValue });
+  }
   const parser = { tokens, index: 0 };
   const value = parseAdditive(parser);
   if (value === undefined || parser.index !== tokens.length) return undefined;
@@ -81,6 +100,15 @@ function tokenize(source: string): Token[] | undefined {
         break;
       }
       if (!sawDigit) return undefined;
+      // Exponent form (`1e3`, `1e-7`), which a plain number field accepts.
+      if (source[i] === "e" || source[i] === "E") {
+        let end = i + 1;
+        if (source[end] === "+" || source[end] === "-") end += 1;
+        const digits = end;
+        while (end < source.length && source[end]! >= "0" && source[end]! <= "9") end += 1;
+        if (end === digits) return undefined;
+        i = end;
+      }
       const value = Number(source.slice(start, i));
       if (!Number.isFinite(value)) return undefined;
       tokens.push({ kind: "number", value });

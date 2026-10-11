@@ -6,25 +6,12 @@ import {
   assetRef,
 } from "@babylonslate/scripting";
 
-function volumeExpr(
-  ctx: Parameters<NodeDefinition["codegen"]>[0],
-  pinName = "volume",
-): string {
-  const volumePin = ctx.node.pins.find(
-    (entry) => entry.name === pinName && entry.direction === "in",
-  );
-  const connected = Boolean(
-    volumePin &&
-      ctx.graph.edges.some(
-        (edge) =>
-          edge.targetNodeId === ctx.node.id && edge.targetPinId === volumePin.id,
-      ),
-  );
-  const stored =
-    ctx.node.properties[`default:${pinName}`] ?? ctx.node.properties[pinName];
-  const raw = connected || stored !== undefined ? ctx.input(pinName) : "1";
-  return `Math.min(1, Math.max(0, Number(${raw})))`;
+/** Volume pins default to 1; codegen clamps the value to 0..1. */
+function volumeExpr(ctx: Parameters<NodeDefinition["codegen"]>[0]): string {
+  return `Math.min(1, Math.max(0, Number(${ctx.input("volume")})))`;
 }
+
+const volumePin = () => pin("volume", "volume", "in", FLOAT, "data", true, 1);
 
 export const audioNodes: NodeDefinition[] = [
   {
@@ -35,7 +22,7 @@ export const audioNodes: NodeDefinition[] = [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
       pin("asset", "asset", "in", assetRef("Audio")),
-      pin("volume", "volume", "in", FLOAT, "data", true),
+      volumePin(),
     ],
     codegen: (ctx) => {
       ctx.emit(
@@ -51,7 +38,7 @@ export const audioNodes: NodeDefinition[] = [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
       pin("channel", "channel", "in", assetRef("AudioChannel")),
-      pin("volume", "volume", "in", FLOAT, "data", true),
+      volumePin(),
     ],
     codegen: (ctx) => {
       ctx.emit(
@@ -66,7 +53,7 @@ export const audioNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("volume", "volume", "in", FLOAT, "data", true),
+      volumePin(),
     ],
     codegen: (ctx) => {
       ctx.emit(`ctx.setGlobalVolume(${volumeExpr(ctx)});`);

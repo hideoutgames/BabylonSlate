@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { IndexedAsset } from "@babylonslate/assets";
 import { createDefaultMigrationRegistry } from "@babylonslate/assets";
 import { createSceneStreamingActor } from "@babylonslate/core";
+import { mergeEngineTypeSchemas } from "@babylonslate/scripting";
 import {
   PARTICLE_OUTPUT_NODE_TYPE,
   normalizeParticleGraphDocument,
@@ -18,8 +19,8 @@ import {
   classDocumentShowsPrefab,
   collectFolderGuids,
   contentBrowserMoveFromDrop,
+  contentBrowserSelectionMoves,
   contentBrowserTreeDropMoves,
-  displayAssetTitle,
   filterAssets,
   sortAssets,
   sortChildFolders,
@@ -36,7 +37,6 @@ import {
   isNewAssetNameTaken,
   isRenameNameTaken,
   isValidMoveDestination,
-  isValidSelectionMoveDestination,
   contentBrowserContextActions,
   buildMaterialInstanceAssetResult,
   materialInstanceNameFor,
@@ -58,6 +58,7 @@ import {
   isParticleMaterialForPicker,
   materialDomainsFromAssets,
   filterInspectorPinPickerAssets,
+  classIdConflict,
   classIdFromClassAsset,
   classParentLookup,
   exclusiveSelectAsset,
@@ -106,6 +107,7 @@ function asset(
     rootId: "project",
     path: overrides.path ?? "assets/tex.babasset",
     header: {
+      dependencyMetadataVersion: 1, requiredDependencies: [],
       guid: overrides.guid ?? "guid-1",
       type: overrides.type ?? "Texture",
       name: overrides.name ?? "tex",
@@ -216,13 +218,15 @@ describe("content-browser-helpers", () => {
   });
 
   it("matches search across name, path, and type", () => {
-    const item = asset({ name: "Crate", type: "Model", path: "assets/models/crate.babasset" });
-    expect(matchesAssetSearch(item, "model")).toBe(true);
+    // Each needle occurs in exactly one field, so every field is checked.
+    const item = asset({ name: "Crate", type: "Model", path: "assets/props/box.babasset" });
     expect(matchesAssetSearch(item, "crate")).toBe(true);
+    expect(matchesAssetSearch(item, "props")).toBe(true);
+    expect(matchesAssetSearch(item, "model")).toBe(true);
     expect(matchesAssetSearch(item, "missing")).toBe(false);
   });
 
-  it("sorts assets by display name case-insensitively", () => {
+  it("sorts assets by name case-insensitively", () => {
     const zebra = asset({ guid: "z", name: "Zebra.Texture" });
     const alpha = asset({ guid: "a", name: "alpha" });
     const beta = asset({ guid: "b", name: "Beta" });
@@ -318,13 +322,6 @@ describe("content-browser-helpers", () => {
       "Zed",
     ]);
     expect(folders.map((folder) => folder.name)).toEqual(["Zed", "alpha", "Beta"]);
-  });
-
-  it("strips a trailing type suffix from asset titles", () => {
-    expect(displayAssetTitle("main.scene")).toBe("main");
-    expect(displayAssetTitle("logic.graph")).toBe("logic");
-    expect(displayAssetTitle("Hero")).toBe("Hero");
-    expect(displayAssetTitle("crate.model")).toBe("crate");
   });
 
   it("collects only direct children unless the folder is recursive", () => {
@@ -792,6 +789,32 @@ describe("content-browser-helpers", () => {
     ).toEqual([]);
   });
 
+  it("still moves the rest of the selection when a selected asset is in another content root", () => {
+    const lamp = asset({ guid: "lamp-guid", name: "lamp", path: "plugins/tools/assets/lamp.babasset" });
+    const rows = [
+      ...flattenContentBrowserTree(multiMoveTree, multiMoveAssets),
+      ...flattenContentBrowserTree({ name: "assets", path: "plugins/tools/assets", assets: ["lamp-guid"], children: [] }, [lamp]),
+    ];
+    expect(
+      contentBrowserTreeDropMoves({
+        dragId: "assets/hero.babasset",
+        targetId: "assets/textures",
+        rows,
+        selectedGuids: new Set(["hero-guid", "lamp-guid"]),
+        selectedFolderPaths: new Set(),
+        rootPaths: ["assets", "plugins/tools/assets"],
+      }),
+    ).toEqual([
+      {
+        kind: "asset",
+        sourcePath: "assets",
+        destinationPath: "assets/textures",
+        id: "assets/hero.babasset",
+        guid: "hero-guid",
+      },
+    ]);
+  });
+
   it("still moves other selected items when the dragged row is already in the destination", () => {
     const rows = flattenContentBrowserTree(multiMoveTree, multiMoveAssets);
     expect(
@@ -1067,29 +1090,43 @@ describe("content-browser-helpers", () => {
     expect(parentOf("Scene")).toBe("BObject");
   });
 
-  it("looks up Class parents by compile id when the header name still has a type suffix", () => {
-    const parentOf = classParentLookup([
-      {
-        path: "assets/main.class.babasset",
-        header: { type: "Class", name: "main.class", parentClass: "Actor" },
-      },
-    ]);
-    expect(parentOf("main")).toBe("Actor");
-    expect(parentOf("main.class")).toBe("Actor");
+  it("looks up Class parents by class id only, keeping the first Class for a shared id as the Parent Class tree does", () => {
+    const assets = [
+      { path: "assets/A/Rain_Weather.class.babasset", header: { type: "Class", name: "Rain_Weather", parentClass: "Actor" } },
+      { path: "assets/Storm.class.babasset", header: { type: "Class", name: "Rain_Weather", parentClass: "BTTask" } },
+      { path: "assets/B/Rain-Weather.class.babasset", header: { type: "Class", name: "Rain-Weather", parentClass: "GameInstance" } },
+      { path: "assets/Hero.class.babasset", header: { type: "Class", name: "Actor", parentClass: "GameInstance" } },
+    ];
+    const parentOf = classParentLookup(assets);
+    expect(parentOf("Rain_Weather")).toBe("Actor");
+    // A display name is not a class id, so it never replaces an engine class's parent.
+    expect(parentOf("Actor")).toBe("BObject");
+    expect(buildParentClassTreeRows(assets).find((row) => row.id === "Rain_Weather")?.parentClassId).toBe("Actor");
   });
 
-  it("uses the compile class id for a Class asset named main.class", () => {
+  it("refuses a Class id that another Class or the engine already uses", () => {
+    const assets = [
+      { path: "assets/Weather/Rain_Weather.class.babasset", header: { type: "Class" } },
+      { path: "assets/Snow.scene.babasset", header: { type: "Scene" } },
+    ];
+    const taken = 'Another Class already uses the class id "Rain_Weather".';
+    expect(classIdConflict(assets, "assets/Rain-Weather.class.babasset")).toBe(taken);
+    expect(classIdConflict(assets, "assets/Other/Rain_Weather.class.babasset")).toBe(taken);
+    expect(classIdConflict(assets, "assets/Weather/Rain-Weather.class.babasset", "assets/Weather/Rain_Weather.class.babasset")).toBeNull();
+    expect(classIdConflict(assets, "assets/Snow.class.babasset")).toBeNull();
+    expect(classIdConflict(assets, "assets/Actor.class.babasset")).toMatch(/"Actor" is an engine class name/);
+  });
+
+  it("uses the file stem as the class id, or without a path the stem New Asset writes for the name", () => {
     expect(
       classIdFromClassAsset({
-        path: "assets/main.class.babasset",
-        header: { type: "Class", name: "main.class", parentClass: "Actor" },
+        path: "assets/Rain-Weather.class.babasset",
+        header: { type: "Class", name: "Rain Weather" },
       }),
-    ).toBe("main");
-    expect(
-      classIdFromClassAsset({
-        header: { type: "Class", name: "main.class", parentClass: "Actor" },
-      }),
-    ).toBe("main");
+    ).toBe("Rain_Weather");
+    // New Asset writes `Rain-Weather.class.babasset` and `main.class.class.babasset`.
+    expect(classIdFromClassAsset({ header: { type: "Class", name: "Rain-Weather" } })).toBe("Rain_Weather");
+    expect(classIdFromClassAsset({ header: { type: "Class", name: "main.class" } })).toBe("main_class");
   });
 
   it("offers behaviour-tree bases as Class parents", () => {
@@ -1405,6 +1442,11 @@ describe("content-browser-helpers", () => {
     expect([...grouped].sort()).toEqual([...CREATABLE_ASSET_TYPES].sort());
   });
 
+  it("offers every creatable type as an Asset Type, so Find Assets can target it", () => {
+    const targetable = mergeEngineTypeSchemas().enums["engine:AssetType"]!.members.map((member) => member.name);
+    for (const type of CREATABLE_ASSET_TYPES) expect(targetable, type).toContain(type);
+  });
+
   it("filters creatable types by Title Case label", () => {
     expect(filterCreatableAssetTypes("class")).toEqual(["Class"]);
     expect(filterCreatableAssetTypes("basic")).toEqual(["ParticleEmitter"]);
@@ -1511,21 +1553,25 @@ describe("content-browser-helpers", () => {
     const hero = asset({
       type: "Class",
       name: "MyHero",
+      path: "assets/MyHero.class.babasset",
       parentClass: "Actor",
     });
     const stats = asset({
       type: "Class",
       name: "GameStats",
+      path: "assets/GameStats.class.babasset",
       parentClass: "BObject",
     });
     const meshComp = asset({
       type: "Class",
       name: "MyMesh",
+      path: "assets/MyMesh.class.babasset",
       parentClass: "ActorComponent",
     });
     const subclass = asset({
       type: "Class",
       name: "Boss",
+      path: "assets/Boss.class.babasset",
       parentClass: "MyHero",
     });
     const parentOf = classParentLookup([hero, stats, meshComp, subclass]);
@@ -1536,9 +1582,7 @@ describe("content-browser-helpers", () => {
     expect(classDocumentShowsPrefab("GameStats", parentOf)).toBe(false);
     expect(classDocumentShowsPrefab("ActorComponent", parentOf)).toBe(false);
     expect(classDocumentShowsPrefab("MyMesh", parentOf)).toBe(false);
-    expect(
-      classDocumentShowsPrefab(null, parentOf, { assetType: "Graph" }),
-    ).toBe(true);
+    expect(classDocumentShowsPrefab(null, parentOf)).toBe(false);
   });
 
   it("replaces the Content Browser selection with a single asset tap", () => {
@@ -1731,41 +1775,61 @@ describe("content-browser-helpers", () => {
     expect(canRetargetSelectedAssets([])).toBe(false);
   });
 
-  it("rejects a move destination that is any selected folder or a descendant", () => {
-    expect(
-      isValidSelectionMoveDestination({
-        destinationPath: "assets/fx",
-        folderSourcePaths: ["assets/textures", "assets/audio"],
-        assetSourcePaths: ["assets"],
-      }),
-    ).toBe(true);
-    expect(
-      isValidSelectionMoveDestination({
-        destinationPath: "assets/textures",
-        folderSourcePaths: ["assets/textures", "assets/audio"],
-      }),
-    ).toBe(false);
-    expect(
-      isValidSelectionMoveDestination({
-        destinationPath: "assets/textures/ui",
-        folderSourcePaths: ["assets/textures"],
-      }),
-    ).toBe(false);
-    expect(
-      isValidSelectionMoveDestination({
-        destinationPath: "assets",
-        operation: "move",
-        folderSourcePaths: ["assets/textures"],
-      }),
-    ).toBe(false);
-    expect(
-      isValidSelectionMoveDestination({
-        destinationPath: "assets",
-        operation: "copy",
-        folderSourcePaths: ["assets/textures"],
-        assetSourcePaths: ["assets"],
-      }),
-    ).toBe(true);
+  it("rejects a move or copy destination that is any selected folder or a descendant", () => {
+    const selection = { folderPaths: ["assets/textures", "assets/audio"], assetPaths: ["assets/hero.babasset"] };
+    expect(contentBrowserSelectionMoves({ destinationPath: "assets/fx", ...selection }).error).toBeNull();
+    expect(contentBrowserSelectionMoves({ destinationPath: "assets/textures", ...selection }).error)
+      .toBe("A folder cannot be moved inside itself.");
+    expect(contentBrowserSelectionMoves({ destinationPath: "assets/textures/ui", operation: "copy", ...selection }).error)
+      .toBe("A folder cannot be copied inside itself.");
+    expect(contentBrowserSelectionMoves({ destinationPath: "assets", operation: "move", ...selection }).error)
+      .toBe("The selected items are already in this folder.");
+    expect(contentBrowserSelectionMoves({ destinationPath: "assets", operation: "copy", ...selection }).moves)
+      .toHaveLength(3);
+  });
+
+  it("moves only the items that change folder", () => {
+    expect(contentBrowserSelectionMoves({
+      destinationPath: "assets",
+      folderPaths: [],
+      assetPaths: ["assets/hero.babasset", "assets/textures/dirt.babasset"],
+    }).moves).toEqual([
+      { kind: "asset", sourcePath: "assets/textures", destinationPath: "assets", id: "assets/textures/dirt.babasset" },
+    ]);
+  });
+
+  it("leaves items in another content root where they are, as a tree drop does", () => {
+    const rootPaths = ["assets", "plugins/tools/assets"];
+    const plan = contentBrowserSelectionMoves({
+      destinationPath: "assets/fx",
+      operation: "copy",
+      folderPaths: ["plugins/tools/assets/Props"],
+      assetPaths: ["assets/hero.babasset", "plugins/tools/assets/lamp.babasset"],
+      rootPaths,
+    });
+    expect(plan).toEqual({
+      moves: [{ kind: "asset", sourcePath: "assets", destinationPath: "assets/fx", id: "assets/hero.babasset" }],
+      error: null,
+    });
+    expect(contentBrowserSelectionMoves({
+      destinationPath: "assets/fx",
+      folderPaths: [],
+      assetPaths: ["plugins/tools/assets/lamp.babasset"],
+      rootPaths,
+    }).error).toBe("Items in another content root cannot be moved here.");
+  });
+
+  it("refuses a move onto an existing or shared name before anything moves", () => {
+    const selection = { folderPaths: ["assets/textures"], assetPaths: ["assets/a/hero.babasset", "assets/b/hero.babasset"] };
+    expect(contentBrowserSelectionMoves({ destinationPath: "assets/fx", ...selection }).error)
+      .toBe('"hero.babasset" already exists in assets/fx.');
+    expect(contentBrowserSelectionMoves({
+      destinationPath: "assets/fx",
+      folderPaths: ["assets/textures"],
+      assetPaths: ["assets/a/hero.babasset"],
+      existingPaths: new Set(["assets/fx/textures"]),
+    }).error).toBe('"textures" already exists in assets/fx.');
+    expect(contentBrowserSelectionMoves({ destinationPath: "assets/fx", operation: "copy", ...selection }).error).toBeNull();
   });
 
   it("drops selected assets that already live under a selected folder", () => {
@@ -1810,12 +1874,12 @@ describe("content-browser-helpers", () => {
     expect(materialAssetDependencies("Class", {})).toEqual([]);
   });
 
-  it.each(["Class", "Graph"])("records Class variable references in %s header dependencies", (type) => {
+  it("records Class variable references in Class header dependencies", () => {
     const classes = ["SpawnChild", "SpawnBase", "Unused"].map((name) => ({
       path: `assets/${name}.class.babasset`,
-      header: { type: "Class", name: `${name}.class`, guid: `guid-${name}` },
+      header: { type: "Class", name, guid: `guid-${name}` },
     }));
-    expect(assetHeaderDependencies(type, {
+    expect(assetHeaderDependencies("Class", {
       members: [
         { id: "spawn", kind: "variable", name: "SpawnClass", typeId: "class", typeClassId: "SpawnChild", defaultValue: "SpawnChild" },
         { id: "choices", kind: "variable", name: "Choices", typeId: "class", typeClassId: "SpawnBase", container: "array", defaultValue: ["SpawnChild"] },
@@ -1824,8 +1888,8 @@ describe("content-browser-helpers", () => {
     }, classes)).toEqual(["guid-SpawnBase", "guid-SpawnChild"]);
   });
 
-  it.each(["Class", "Graph"])("records typed non-texture asset defaults in %s header dependencies", (type) => {
-    expect(assetHeaderDependencies(type, { members: [
+  it("records typed non-texture asset defaults in Class header dependencies", () => {
+    expect(assetHeaderDependencies("Class", { members: [
       { id: "audio", kind: "variable", name: "Clip", typeId: "asset", typeClassId: "Audio", defaultValue: "clip" },
       { id: "name", kind: "variable", name: "Name", typeId: "string", defaultValue: "unused" },
     ] })).toEqual(["clip"]);
@@ -1837,7 +1901,7 @@ describe("content-browser-helpers", () => {
     expect(assetHeaderDependencies(type, payload)).toEqual(["rope-material"]);
   });
 
-  it.each(["Scene", "Class", "Graph"])("records streaming Scene targets in %s header dependencies", (type) => {
+  it.each(["Scene", "Class"])("records streaming Scene targets in %s header dependencies", (type) => {
     const actor = createSceneStreamingActor("room", "scene-room", "Room");
     const unassigned = createSceneStreamingActor("unassigned");
     const payload = type === "Scene"

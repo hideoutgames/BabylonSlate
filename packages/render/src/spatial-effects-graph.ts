@@ -3,7 +3,7 @@ import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import { FrameGraphPostProcessTask } from "@babylonjs/core/FrameGraph/Tasks/PostProcesses/postProcessTask";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
-import { LogicalGeometryTask } from "./framegraph-logical-buffers";
+import { geometryDepthTextureType, LogicalGeometryTask } from "./framegraph-logical-buffers";
 import {
   createSpatialStages,
   spatialEffectsUnsupported,
@@ -173,7 +173,8 @@ export class SpatialEffectsGraph {
       this.geometry.textureDescriptions = [
         {
           type: Constants.PREPASS_DEPTH_TEXTURE_TYPE,
-          textureType: Constants.TEXTURETYPE_FLOAT,
+          // Spatial support already requires float and half-float rendering.
+          textureType: geometryDepthTextureType(graph.scene.getEngine().getCaps())!,
           textureFormat: Constants.TEXTUREFORMAT_R,
         },
       ];

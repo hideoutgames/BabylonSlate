@@ -535,7 +535,13 @@ components and graph. Native WebGPU presented the
 and [returned editor](../assets/renderer-qualification/2026-09-23-computer-use/model-reopened-webgpu.png).
 
 The [portable source backup](../assets/renderer-qualification/2026-09-23-computer-use/animated-project.zip)
-extends the earlier textured fixture. Import it through Projects, open Main Scene,
+extends the earlier textured fixture. On 2026-10-11 the 2026-09-23 project ZIPs
+were re-encoded to the current `.babasset` layout and asset versions so current
+builds import them; only asset headers gained chunk lengths and dependency
+metadata, while payloads, blobs, `project.json` and `layout.json` are unchanged.
+`final-exports.json` records the re-encoded backup. The originals, including the
+backup hash recorded at qualification time (`b5467ebe…`), remain in git history.
+Import it through Projects, open Main Scene,
 then Play: the saved graph selects Low and scale 0.5, retains artistic CEL values,
 and resets to project defaults after 60 seconds. The backup requests WebGL2;
 Project Settings → Rendering → GPU Backend selects native WebGPU at the Engine
@@ -1278,7 +1284,7 @@ not that per-view sizing contract.
 
 Future A16 qualification should cover empty, representative authored, many objects/instances, many lights, dense overlap, animated characters, and repeated selection/inspector/gizmo interaction runs in editor and standalone player. Existing performance-room tooling below covers only part of that matrix. Direct GPU timer values must be distinguished from estimates; unavailable measurements stay unavailable. Do not derive universal actor/light counts or treat reduced resolution as equal-quality savings.
 
-**Existing sustained route: tooling landed, runs pending.** The route (`e2e/play-sustained-route.spec.ts`, `BL_PERF_SUSTAINED=1`) enumerates on CI and skips without the env flag; no machine with enough free memory has completed a full session yet. Nothing on this page is A16/iOS PWA qualification — desktop Chromium observations only. Budgets live in [perf-budget.md](perf-budget.md); the engine-level design is in [render.md](../architecture/render.md).
+**Existing sustained route: tooling landed, runs pending.** The route (`e2e/play-sustained-route.spec.ts`, `BL_PERF_SUSTAINED=1`) is excluded from CI and skips without the env flag under `playwright.perf.config.ts`; no machine with enough free memory has completed a full session yet. Nothing on this page is A16/iOS PWA qualification — desktop Chromium observations only. Budgets live in [perf-budget.md](perf-budget.md); the engine-level design is in [render.md](../architecture/render.md).
 ## Model and generated-text lifetime follow-up
 
 The physical A16 run is waived for this follow-up at the user's request. Acceptance still requires the local native and browser checks below; unexecuted fixtures are not evidence and no device-performance result is claimed.
@@ -1297,7 +1303,7 @@ This checkpoint supersedes pending statuses below only for the named checks. PR 
 
 - Hosted run `35736297166` at `d7c84c77` passed static checks, all 5,708 package assertions, 1,250 editor assertions and the first 360 DOM assertions. Its final DOM phase failed the particle-preview recovery mock (434 passed, one failed); the unit job therefore failed. The mock now uses the lease-era installation exports, and its targeted recovery case passed at `3d76aedb`.
 - `95aada49`: `material-library.test.ts` and `material-parameters.test.ts` passed **33/33**, including the regression that failed at `dfbf726e`: an initial sampler override must not cancel the compiler's still-pending texture preparation. The saved duplicate post-process override browser case passed at `3f2a23d4` in a mixed batch whose GPU particle case failed.
-- `5998d689`: all **four** `particle-lifecycle.spec.ts` cases passed: CPU/GPU simulation on effective WebGL2/WebGPU, native resources returning to baseline, 100 lifecycle cycles, scene-local textures, stop/drain/restart, and no captured GPU validation errors. The adapter prepares the native WGSL vertex shader, instanced draw context and gradient-dependent vertex layout before first binding. Controlled GPU readback is fixture-only.
+- `5998d689`: all **four** `particle-lifecycle.spec.ts` cases passed (that browser spec has since been removed from the tree): CPU/GPU simulation on effective WebGL2/WebGPU, native resources returning to baseline, 100 lifecycle cycles, scene-local textures, stop/drain/restart, and no captured GPU validation errors. The adapter prepares the native WGSL vertex shader, instanced draw context and gradient-dependent vertex layout before first binding. Controlled GPU readback is fixture-only.
 - `3d76aedb`: `mesh-assets.test.ts` and `particle-preview-recovery.test.tsx` passed **14/14**. Immutable texture installation now retains the existing legacy UASTC upload normalization; stored assets remain unchanged. The subsequent four-case browser batch passed CEL Mannequin illumination, H16 animation and encoded tilemap Preview/Play pixels. P7 physics timing failed because the 3D project scaffold carried an unsupported capsule into the selected 2D world; that mixed batch is not a pass. `c8dfe021` changes P7 to the existing minimal project, retaining its authored 2D body and timing assertion, and adds explicit cross-world shape rejection coverage.
 - The two-file native selection at `c8dfe021` (`physics.test.ts`, `node-material-particles.test.ts`) was cancelled after over five minutes in admission behind another owner's acceptance server; no tests executed. Only its exact queued process and ticket were removed after confirming no descendants. The corrected P7 case and current-head scoped static checks remain deferred under the user's resource-budget instruction. Earlier results apply only to unchanged paths; required fresh hosted CI remains the merge gate.
 
@@ -1321,8 +1327,10 @@ Pickup selections (keep `BL_TEST_PROFILE=shared` and the shared host configurati
 
 ```powershell
 pnpm --silent agent:wait local --script test -- apps/editor/src/lib/component-property-rows.test.ts packages/physics/src/physics.test.ts
-pnpm --silent agent:wait local --script test:e2e -- e2e/particle-lifecycle.spec.ts e2e/tileset-preview.spec.ts e2e/post-process-owner-overrides.spec.ts e2e/cel-render-mode.spec.ts --project=desktop-chrome -g 'webgpu with GPU|encoded Tilemap|saved duplicate|Mannequin illumination'
+pnpm --silent agent:wait local --script test:e2e -- e2e/tileset-preview.spec.ts --project=desktop-chrome -g 'encoded Tilemap'
 ```
+
+`e2e/particle-lifecycle.spec.ts` and `e2e/post-process-owner-overrides.spec.ts` are no longer in the tree, and `e2e/cel-render-mode.spec.ts` no longer has a Mannequin illumination test (its only case is the authored-color check). The GPU WebGPU particle, saved duplicate post-process override and CEL Mannequin illumination cases therefore have no browser pickup; their earlier results above are historical.
 
 Current-head scoped editor/render typechecking and changed-file lint remain pending after the latest diagnostic and inspector edits. Hosted verification remains mandatory before merge; later CI results must be recorded separately from these unexecuted local selections. Isolated before/after physics timing and sustained representative Play measurements remain follow-up items, not performance claims.
 
@@ -1391,7 +1399,7 @@ Merge `01d342ac` includes `main` through `556c4e34`: A's confirmed merge, the sh
 
 The combined Babylon patch retains the merged WebGPU fixes, E's AssetContainer observer retirement and B's Havok null-handle/native-result fixes. Its LF-normalized SHA-256 and all lockfile patch references are `78c5e57ba857e093f52f241f213c75b265124a78d44a7190f7250cd202f209e1`. Dependency versions were unchanged during conflict resolution; validate the combined patch through the normal admitted frozen-lockfile installation before native/browser checks. Do not reuse either track's installed Babylon package as proof of the combined dependency.
 
-Resume [physics preparation and native lifecycle checks](../architecture/physics.md#change-driven-preparation-and-verification-pickup), [texture ownership checks](../architecture/render.md#texture-ownership-verification-pickup), [visual ownership checks](../architecture/render.md#visual-ownership-verification-pickup), and [particle checks](../architecture/particles.md) in their recorded segments. Run production checks on the current combined branch, including later integration repairs, rather than treating an earlier delivery branch as current evidence. The frozen C baseline remains separate at `de96b6d3`; compare it before measuring the implementation. Render integration also adds unrun authored-sprite material restoration/upload-race cases in `mesh-assets.test.ts` and the directly affected `scene-lighting.test.ts` consumer.
+Resume [physics preparation](../architecture/physics.md#change-driven-preparation) and [native lifecycle checks](../architecture/physics.md#native-lifecycle-verification), [texture ownership checks](../architecture/render.md#texture-ownership-verification-pickup), [visual ownership checks](../architecture/render.md#visual-ownership-verification-pickup), and [particle checks](../architecture/particles.md) in their recorded segments. Run production checks on the current combined branch, including later integration repairs, rather than treating an earlier delivery branch as current evidence. The frozen C baseline remains separate at `de96b6d3`; compare it before measuring the implementation. Render integration also adds unrun authored-sprite material restoration/upload-race cases in `mesh-assets.test.ts` and the directly affected `scene-lighting.test.ts` consumer.
 
 Source integration found that native texture readiness can precede completion of the lease's allocation checks. Environment replacement now retains the prior view until the full successor lease preparation succeeds. `environment-lighting.test.ts` adds an unexecuted native-ready/deferred-admission rejection-and-success regression, including no automatic retry churn after rejection. Include it in the recorded environment batch; no runtime or compilation result is claimed for this correction.
 
@@ -1413,7 +1421,7 @@ The first three selectors cover `bef1b987`'s five material-admission cases, `ae6
 
 After those corrections pass, resume only their affected consumers from the architecture notes, including `material-parameters.test.ts`, `resource-cache-upload.test.ts`, `snapshot-apply.test.ts`, `editor-scene-sync.chunks.test.ts` and `scene-loader.test.ts`, then scoped static and browser segments. Browser runs must report requested/effective backend and driver. Software WebGPU is a local correctness result; fallback does not pass a WebGPU gate. Real packaged Havok is required for collider/teleport acceptance, and browser emission/readback remains required for GPU particle behavior.
 
-Sustained-route status: **tooling landed, runs pending.** The sustained route (`e2e/play-sustained-route.spec.ts`, `BL_PERF_SUSTAINED=1`) enumerates on CI and skips without the env flag; no machine with enough free memory has completed a full session yet. Its browser observations are desktop Chromium only; nothing on this page establishes A16/iOS PWA qualification. Budgets live in [perf-budget.md](perf-budget.md); the engine-level design is in [render.md](../architecture/render.md).
+Sustained-route status: **tooling landed, runs pending.** The sustained route (`e2e/play-sustained-route.spec.ts`, `BL_PERF_SUSTAINED=1`) is excluded from CI and skips without the env flag under `playwright.perf.config.ts`; no machine with enough free memory has completed a full session yet. Its browser observations are desktop Chromium only; nothing on this page establishes A16/iOS PWA qualification. Budgets live in [perf-budget.md](perf-budget.md); the engine-level design is in [render.md](../architecture/render.md).
 
 ### Historical rendering integration checkpoint
 
@@ -1425,7 +1433,7 @@ No tests, static checks, build, dependency installation or browser runs were per
 
 ## Coverage matrix
 
-"CI" means the standard e2e suite (Chromium, SwiftShader/software WebGPU via `SOFTWARE_WEBGPU_ARGS`). "Local-only (env gate)" specs enumerate but skip without their flag. "Unit" means Vitest coverage with no browser run.
+"CI" means the standard e2e suite on headless Chromium with software WebGL2; `playwright.config.ts` sets no launch arguments, so each spec that needs WebGPU (and several WebGL2 renderer smokes) opts into SwiftShader software WebGPU with `test.use` and `SOFTWARE_WEBGPU_ARGS`. "Local-only (env gate)" routes are excluded from that suite and run only through `playwright.perf.config.ts`, where they skip without their flag. "Unit" means Vitest coverage with no browser run.
 
 ### Backend
 
@@ -1455,7 +1463,7 @@ No tests, static checks, build, dependency installation or browser runs were per
 | --- | --- |
 | Shadows | `basic-3d-mannequin-shadows.spec.ts`, `basic-3d-mannequin-shadow-hosts.spec.ts`, `webgpu-backend.spec.ts` (WebGPU shadow proof); refresh and FrameGraph shadow binding are unit only (`shadow-map-refresh.test.ts`, `framegraph-managed-shadows.test.ts`) |
 | Project post-processing effects | `color-pipeline.spec.ts` (bloom in the editor viewport) |
-| Authored post-process stack | Unit only (`framegraph-post-process.test.ts`, `scene-post-process-*.test.ts`) |
+| Authored post-process stack | `engine-settings.spec.ts` (editor viewport pass count, per-entry toggle, Engine Settings gate), `p9-content.spec.ts` (stack applied in Play and gated by Engine Settings); FrameGraph wiring is unit only (`framegraph-post-process.test.ts`, `scene-post-process-*.test.ts`) |
 | SceneLayers | `scene-layer-rendering.spec.ts` (compiled Tweens on rendered components) |
 | Particles | `p17-particles.spec.ts` (Particle Material with Texture Sample, Basic emitter and System, Play billboards, teardown, save/reopen); `particle-graph.spec.ts` (Particle Graph authoring, CPU preview, mixed Basic + Graph System in Play) |
 
@@ -1474,7 +1482,7 @@ No tests, static checks, build, dependency installation or browser runs were per
 | --- | --- |
 | Context loss | Unit only (`create-engine.play.test.ts`, `rgbd-texture-lifetime.test.ts` — `noteRestore`, texture release, material invalidation). **Not covered** in e2e: no spec forces a real `WEBGL_lose_context` on a live session |
 | Backend switch | `webgpu-backend.spec.ts` (WebGPU→WebGL2→WebGPU through Project Settings, one Engine, undo/redo and Play after) |
-| Backend fallback | `webgl2-fallback.spec.ts` (WebGPU requested while `requestAdapter` resolves null → one WebGL2 Engine, presented viewport, explicit reason in Project Settings, Play afterwards) |
+| Backend fallback | `webgl2-fallback.spec.ts` (WebGPU requested while `requestAdapter` resolves null → one WebGL2 Engine, presented viewport, fallback reason in renderer diagnostics, Project Settings keeps the WebGPU request, Play afterwards) |
 | Scene reload | `runtime-scene-loading.spec.ts` (repeated transitions + Stop in Play) |
 | WebContent termination | Not covered. Capacitor's native handler reloads the WebView to Home; the editor does not detect or report the previous exit. OS delivery on a real device is untested |
 
@@ -1502,7 +1510,7 @@ BL_PERF_SUSTAINED=1 BL_PERF_QUALITY=low pnpm run test:e2e e2e/play-sustained-rou
 
 | Env | Default | Effect |
 | --- | --- | --- |
-| `BL_PERF_SUSTAINED` | off | `1` opts in; otherwise the spec skips (CI no-op) |
+| `BL_PERF_SUSTAINED` | off | `1` opts in; otherwise the spec skips (CI never lists it) |
 | `BL_PERF_SUSTAINED_MINUTES` | `20` | Sampled duration **per host** after warm-up |
 | `BL_PERF_SUSTAINED_WARMUP_MS` | `60000` | Warm-up per host before sampling |
 | `BL_PERF_SAMPLE_MS` | `30000` | Window length |
@@ -1651,6 +1659,11 @@ transaction, reset, and a new Play session after stopping with a clustered
 request active. Save All stays disabled: scripted settings did not dirty the
 project. Play now owns a reference-counted render-path session, restores the
 editor preference on final release, and unsubscribes disposed view listeners.
+
+Both specs now keep only their WebGL2 case (packed, for the export); the loose,
+WebGPU and failed-startup variants above are no longer in the specs. Packed
+WebGPU player startup stays in `player-backend.spec.ts`, and editor adapter
+fallback in `webgl2-fallback.spec.ts`.
 
 Focused local validation: six `packages/runtime/src/scalability.test.ts` cases
 passed at `74766aa0`; three selected render-path/construction-rollback cases in
@@ -1817,8 +1830,10 @@ denser unique-pixel sampling where the interiors become smaller.
 
 Rejected experiments remain failed evidence: larger constant offsets detach
 contacts; a common correction across an entire wide PCF kernel removes valid
-occlusion. The final correction preserves native tap positions, weights and
-fetch counts. Coarse legitimate shadow edges remain visible at Low's large
+occlusion. The final correction preserves native tap positions and weights.
+Medium/High keep native fetch counts; Low replaces its single hardware bilinear
+comparison with four texel-center comparisons (three extra fetches, reported as
+`receiverCorrection.extraTextureFetches`). Coarse legitimate shadow edges remain visible at Low's large
 coverage distance; their existence is not proof of original-image correctness.
 
 WebGL2 executed on ANGLE / Microsoft Basic Render Driver (D3D11 software).
@@ -1888,6 +1903,7 @@ also records actual shadow draws/faces, zero readiness draws and ownership.
   or exact GPU-memory claim is made here. A repeatable regression above 5%
   remains a review gate.
 
-Map/pass/sampler budgets and native PCF fetch counts are unchanged. No production
+Map/pass/sampler budgets are unchanged, as are native PCF fetch counts except
+Low's three extra comparisons. No production
 readback or full-scene pass was added. These structural constraints protect the
 budget but do not waive physical-device timing and memory qualification.

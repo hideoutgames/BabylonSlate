@@ -118,8 +118,10 @@ export class World {
   private sceneSubsystemClassIds: string[] = [];
   /** Main Scene creations this session; numbers SceneSubsystem guids. */
   private mainSceneCreations = 0;
-  /** Objects whose Spawned / Added the live SceneSubsystems received. */
-  private announcedToSceneSubsystems = new WeakSet<Actor | SceneLayer>();
+  /** Per world actor or SceneLayer, the current SceneSubsystems that heard its Spawned / Added. */
+  private sceneSubsystemAudiences = new WeakMap<Actor | SceneLayer, SceneSubsystem[]>();
+  /** True while `createScene` retires the current main Scene. */
+  private replacingScene = false;
   /** Actors in spawn order — never iterate a Map for tick/snapshot. */
   private readonly actors: Actor[] = [];
   /** Live actors by guid, including ones queued for destruction. Guids are unique. */
@@ -139,6 +141,12 @@ export class World {
   private readonly pendingDestroy: Array<Guid | Actor> = [];
   private destroyCursor = 0;
   private started = false;
+  /** Set once `start()` reaches the Game Instance's On Init; replacements then end and init. */
+  private gameInstanceStarted = false;
+  /** Set by `end()`: the session is over and the World never ticks again. */
+  private ended = false;
+  /** True for the whole of `tick()`, which is not re-entrant. */
+  private tickInProgress = false;
   /** True while a tick phase is executing (before deferred flush). */
   private ticking = false;
   private firstSceneLoaded = false;
@@ -171,8 +179,20 @@ export class World {
     return this.rng.nextFloat();
   }
 
+  /**
+   * Install the session Game Instance. Once `start()` has reached the Game
+   * Instance's On Init, and until `end()`, a replacement ends the previous
+   * instance (On End, after it is unlinked) and then runs the new one's On
+   * Init, so every instance that inits also ends, once. Earlier (including
+   * from a GameSubsystem's On Init) it only takes the place `start()` inits.
+   */
   setGameInstance(instance: GameInstance): void {
+    const previous = this.gameInstance;
+    if (previous === instance) return;
     this.gameInstance = instance;
+    if (!this.gameInstanceStarted || this.ended) return;
+    previous?.callOnGameEnd();
+    if (this.gameInstance === instance && !this.ended) instance.callOnCreation();
   }
 
   /**
@@ -241,16 +261,27 @@ export class World {
     if (actor.world === this && !actor.destroyed) this.announceSceneActor(actor);
   }
 
-  /** GameSubsystems' On Init (class-id order), then the Game Instance's. */
+  /**
+   * GameSubsystems' On Init (class-id order), then the Game Instance's. Never
+   * after `end()`, including an `end()` from a GameSubsystem's On Init.
+   */
   start(): void {
-    if (this.started) return;
+    if (this.started || this.ended) return;
     this.started = true;
     for (const subsystem of this.liveGameSubsystems()) subsystem.callOnCreation();
+    if (this.ended) return;
+    this.gameInstanceStarted = true;
     this.gameInstance?.callOnCreation();
   }
 
-  /** Scene exit, Game Instance On End, then GameSubsystems' On End in reverse. */
+  /**
+   * Scene exit, Game Instance On End, then GameSubsystems' On End in reverse.
+   * Runs once: the World never ticks again, a tick in progress stops before
+   * its next actor, component or phase, and later spawns are cancelled.
+   */
   end(): void {
+    if (this.ended) return;
+    this.ended = true;
     this.exitActiveScene();
     this.gameInstance?.callOnGameEnd();
     for (const subsystem of this.liveGameSubsystems().reverse()) {
@@ -339,19 +370,56 @@ export class World {
     );
   }
 
-  /** Scene Actor Spawned, once per SceneSubsystem generation. */
+  /**
+   * Scene Actor Spawned for the current SceneSubsystem generation, until the
+   * actor is destroyed. A Spawned hook that installs a new main Scene leaves
+   * the actor to that generation, which also hears it before its On Init.
+   * That re-announcement happens once: a Scene its own hooks install treats
+   * the actor as already present, so a hook that always replaces the Scene
+   * still terminates.
+   */
   private announceSceneActor(actor: Actor): void {
-    if (
-      this.sceneSubsystems.length === 0 ||
-      !this.isWorldSceneActor(actor) ||
-      this.announcedToSceneSubsystems.has(actor)
-    ) {
-      return;
+    if (!this.isWorldSceneActor(actor)) return;
+    for (let round = 0; round < 2; round++) {
+      if (
+        actor.destroyed ||
+        this.sceneSubsystems.length === 0 ||
+        this.sceneSubsystemAudiences.has(actor)
+      ) {
+        return;
+      }
+      this.announceToSceneSubsystems(actor, (subsystem) =>
+        subsystem.callOnSceneActorSpawned(actor),
+      );
     }
-    this.announcedToSceneSubsystems.add(actor);
+  }
+
+  /**
+   * Deliver Spawned / Added to the live SceneSubsystems in order, recording
+   * each one before its hook. Delivery stops once the object is destroyed or
+   * the generation changes, so Destroyed / Removed reach exactly the
+   * subsystems that heard the arrival.
+   */
+  private announceToSceneSubsystems(
+    object: Actor | SceneLayer,
+    announce: (subsystem: SceneSubsystem) => void,
+  ): void {
+    const audiences = this.sceneSubsystemAudiences;
+    const audience: SceneSubsystem[] = [];
+    audiences.set(object, audience);
     for (const subsystem of this.liveSceneSubsystems()) {
-      subsystem.callOnSceneActorSpawned(actor);
+      if (object.destroyed || audiences !== this.sceneSubsystemAudiences) return;
+      audience.push(subsystem);
+      announce(subsystem);
     }
+  }
+
+  /** Remove and return the subsystems that heard this object arrive. */
+  private takeSceneSubsystemAudience(object: Actor | SceneLayer): readonly SceneSubsystem[] {
+    const audience = this.sceneSubsystemAudiences.get(object);
+    if (!audience) return [];
+    this.sceneSubsystemAudiences.delete(object);
+    return audience;
   }
 
   /**
@@ -411,7 +479,17 @@ export class World {
       this.pendingSpawn.splice(pending, 1);
       this.pendingSpawnGuids.delete(actor.guid);
     }
-    // An unspawned actor never received creation hooks and has no live world.
+    this.discardUnspawned(actor);
+  }
+
+  /** Whether `actor` waits in the spawn queue: spawned during a tick phase and not committed yet. */
+  isSpawnQueued(actor: Actor): boolean {
+    return !actor.destroyed && actor.world === null && this.pendingSpawnGuids.has(actor.guid) &&
+      this.pendingSpawn.indexOf(actor, this.spawnCursor) >= 0;
+  }
+
+  /** An unspawned actor never received creation hooks and has no live world. */
+  private discardUnspawned(actor: Actor): void {
     for (const component of actor.components) {
       component.destroyed = true;
       component.owner = null;
@@ -447,12 +525,16 @@ export class World {
       ...options,
       guidFactory: this.guidFactory,
     });
+    // Destruction and actor ownership go by guid, so two live layers never share one.
+    if (this.findSceneLayer(layer.guid)) {
+      throw new Error(`Cannot create SceneLayer "${layer.guid}": a live SceneLayer already uses this guid.`);
+    }
     this.sceneLayers.push(layer);
     layer.callOnCreation();
-    const subsystems = this.liveSceneSubsystems();
-    if (!layer.destroyed && subsystems.length > 0) {
-      this.announcedToSceneSubsystems.add(layer);
-      for (const subsystem of subsystems) subsystem.callOnSceneLayerAdded(layer);
+    if (!layer.destroyed && this.sceneSubsystems.length > 0) {
+      this.announceToSceneSubsystems(layer, (subsystem) =>
+        subsystem.callOnSceneLayerAdded(layer),
+      );
     }
     return layer;
   }
@@ -462,11 +544,13 @@ export class World {
     if (index < 0) return;
     const layer = this.sceneLayers[index]!;
     this.sceneLayers.splice(index, 1);
+    // Spawns still queued for this layer are cancelled, never committed into it.
+    for (const actor of this.pendingSpawn.slice(this.spawnCursor)) {
+      if (actor.sceneLayerId === guid) this.destroyActorInstance(actor);
+    }
     // Unlinked but intact: re-entrant destruction of this layer is a no-op.
-    if (this.announcedToSceneSubsystems.delete(layer)) {
-      for (const subsystem of this.liveSceneSubsystems()) {
-        subsystem.callOnSceneLayerRemoved(layer);
-      }
+    for (const subsystem of this.takeSceneSubsystemAudience(layer)) {
+      subsystem.callOnSceneLayerRemoved(layer);
     }
     for (const actor of [...this.actors]) {
       if (actor.sceneLayerId === guid) {
@@ -486,11 +570,21 @@ export class World {
     variables?: Record<string, unknown>;
     hooks?: LifecycleHooks;
   }): Scene {
-    // A SceneSubsystem's On End may install a scene re-entrantly; retire it too
-    // so no main Scene (or its subsystems) is orphaned without End.
-    do {
+    if (this.replacingScene || this.ended) {
+      // Requested by a hook while this World retires the current Scene for
+      // another createScene (that outer request wins), or once the session
+      // ended: this Scene never becomes current, creates no SceneSubsystems
+      // and runs no hooks, so replacement terminates and nothing outlives End.
+      const superseded = new Scene({ ...options, guidFactory: this.guidFactory });
+      superseded.destroyed = true;
+      return superseded;
+    }
+    this.replacingScene = true;
+    try {
       this.clearCurrentScene();
-    } while (this.currentScene);
+    } finally {
+      this.replacingScene = false;
+    }
     const scene = new Scene({
       ...options,
       guidFactory: this.guidFactory,
@@ -508,8 +602,8 @@ export class World {
    */
   private createSceneSubsystems(scene: Scene): void {
     const creation = ++this.mainSceneCreations;
+    this.sceneSubsystemAudiences = new WeakMap();
     if (this.sceneSubsystemClassIds.length === 0) return;
-    this.announcedToSceneSubsystems = new WeakSet();
     const subsystems = this.sceneSubsystemClassIds.map((classId) => {
       const defaults = this.classDefaults(classId, {});
       return new SceneSubsystem({
@@ -555,12 +649,19 @@ export class World {
 
   private commitSpawn(actor: Actor): void {
     if (actor.destroyed) return;
+    // Nothing begins play once the session ended: the spawn is cancelled.
+    if (this.ended) {
+      this.discardUnspawned(actor);
+      return;
+    }
     actor.world = this;
     actor.spawnIndex = this.actors.length;
     this.actors.push(actor);
     this.markStructureChanged();
     this.actorsByGuid.set(actor.guid, actor);
     this.announceSceneActor(actor);
+    // A Spawned hook may have destroyed it already; it then never begins play.
+    if (actor.destroyed) return;
     actor.callOnCreation();
     for (const component of actor.components) component.callOnCreation();
   }
@@ -606,11 +707,9 @@ export class World {
     this.staleSpawnIndexFrom = Math.min(this.staleSpawnIndexFrom, index);
     this.markStructureChanged();
     this.actorsByGuid.delete(actor.guid);
-    // Unlinked but intact, before its own teardown; announced actors only.
-    if (this.announcedToSceneSubsystems.delete(actor)) {
-      for (const subsystem of this.liveSceneSubsystems()) {
-        subsystem.callOnSceneActorDestroyed(actor);
-      }
+    // Unlinked but intact, before its own teardown; only to subsystems that heard it spawn.
+    for (const subsystem of this.takeSceneSubsystemAudience(actor)) {
+      subsystem.callOnSceneActorDestroyed(actor);
     }
     actor.destroyed = true;
     for (const component of [...actor.components].reverse()) {
@@ -669,6 +768,11 @@ export class World {
     };
   }
 
+  /** Scene work continues only while the session lives and the scene may tick. */
+  private sceneTickable(): boolean {
+    return !this.ended && this.canTickScene();
+  }
+
   private runPhase(phase: TickPhase, tickIndex: number): void {
     if (phase !== "gameInstance" && !this.canTickScene()) return;
     this.onPhase?.(phase, this.clock.dt, tickIndex);
@@ -680,12 +784,13 @@ export class World {
         case "gameInstance":
           this.gameInstance?.callOnTick(ctx);
           for (const subsystem of this.liveGameSubsystems()) {
+            if (this.ended) break;
             subsystem.callOnTick(ctx);
           }
           break;
         case "sceneSubsystems":
           for (const subsystem of this.liveSceneSubsystems()) {
-            if (!this.canTickScene()) break;
+            if (!this.sceneTickable()) break;
             if (!subsystem.ended && this.canTickSceneSubsystem(subsystem)) {
               subsystem.callOnTick(ctx);
             }
@@ -713,7 +818,7 @@ export class World {
     const iteration = this.beginActorIteration();
     try {
       for (let i = 0; i < iteration.length; i++) {
-        if (!this.canTickScene()) break;
+        if (!this.sceneTickable()) break;
         const actor = iteration.list[i]!;
         if (actor.tickEnabled && !actor.destroyed && this.canTickActor(actor)) actor.callOnTick(ctx);
       }
@@ -728,13 +833,13 @@ export class World {
     const scratch = (this.componentScratch[this.actorIterationDepth - 1] ??= []);
     try {
       for (let i = 0; i < iteration.length; i++) {
-        if (!this.canTickScene()) break;
+        if (!this.sceneTickable()) break;
         const actor = iteration.list[i]!;
         if (actor.destroyed || !this.canTickActor(actor)) continue;
         const count = actor.components.length;
         for (let c = 0; c < count; c++) scratch[c] = actor.components[c];
         for (let c = 0; c < count; c++) {
-          if (!this.canTickScene() || !this.canTickActor(actor)) break;
+          if (!this.sceneTickable() || !this.canTickActor(actor)) break;
           const component = scratch[c]!;
           if (!component.destroyed) component.callOnTick(ctx);
         }
@@ -745,14 +850,27 @@ export class World {
     }
   }
 
+  /**
+   * Run one tick and return its index, or -1 once `end()` has run (an ended
+   * World never ticks). Throws when called from inside a tick: a nested tick
+   * would advance the clock twice and commit spawns mid-phase.
+   */
   tick(): number {
+    if (this.tickInProgress) throw new Error("World.tick() is not re-entrant");
     if (!this.started) this.start();
-    this.flushDeferred();
-    const tickIndex = this.clock.advance();
-    for (const phase of TICK_PHASES) {
-      this.runPhase(phase, tickIndex);
+    if (this.ended) return -1;
+    this.tickInProgress = true;
+    try {
+      this.flushDeferred();
+      const tickIndex = this.clock.advance();
+      for (const phase of TICK_PHASES) {
+        if (this.ended) break;
+        this.runPhase(phase, tickIndex);
+      }
+      return tickIndex;
+    } finally {
+      this.tickInProgress = false;
     }
-    return tickIndex;
   }
 
   /** Apply queued spawn/destroy immediately (scene swaps outside a tick). */

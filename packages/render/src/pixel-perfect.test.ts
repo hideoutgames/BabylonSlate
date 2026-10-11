@@ -35,7 +35,7 @@ describe("editor camera pixel-perfect framing", () => {
     const scene = new Scene(engine);
     const camera = createEditorCamera(scene, { mode: "2d" });
     camera.setCanvasHeight(600);
-    camera.setPixelPerfect({ pixelsPerUnit: 100, integerZoomSteps: true });
+    camera.setPixelPerfect({ pixelsPerUnit: 100 });
     camera.camera.target.set(0.014, 0.026, 0);
     camera.pan(0, 0);
 
@@ -52,12 +52,12 @@ describe("editor camera pixel-perfect framing", () => {
     engine.dispose();
   });
 
-  it("zooms smoothly in sub-integer steps even when integer zoom steps is on", () => {
+  it("zooms in smoothly by sub-integer factors", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     const camera = createEditorCamera(scene, { mode: "2d" });
     camera.setCanvasHeight(600);
-    camera.setPixelPerfect({ pixelsPerUnit: 100, integerZoomSteps: true });
+    camera.setPixelPerfect({ pixelsPerUnit: 100 });
 
     expect(camera.pixelZoom()).toBe(1);
     expect(camera.orthoHalfHeight()).toBe(3);
@@ -75,12 +75,12 @@ describe("editor camera pixel-perfect framing", () => {
     engine.dispose();
   });
 
-  it("zooms out smoothly in sub-integer steps even when integer zoom steps is on", () => {
+  it("zooms out smoothly by sub-integer factors", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     const camera = createEditorCamera(scene, { mode: "2d" });
     camera.setCanvasHeight(600);
-    camera.setPixelPerfect({ pixelsPerUnit: 100, integerZoomSteps: true });
+    camera.setPixelPerfect({ pixelsPerUnit: 100 });
 
     camera.zoom(1 / 1.1);
     expect(camera.pixelZoom()).toBeCloseTo(1 / 1.1, 5);

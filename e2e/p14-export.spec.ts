@@ -50,7 +50,6 @@ async function packTinyGame(playerBaseURL: string) {
   const source = packed.value.manifest.assets.find(asset => asset.guid === "scene-guid-export");
   expect(source?.path).toBeTruthy();
   expect(packed.value.files.get(source!.path!)).toEqual(new TextEncoder().encode(JSON.stringify(scene)));
-  expect(packed.value.manifest.packs).toEqual([]);
   expect(packed.value.manifest.startupSceneGuid).toBe("scene-guid-export");
   expect(packed.value.fileCount).toBeLessThan(800);
   expect(
@@ -74,7 +73,6 @@ test.describe("P14 export smoke", () => {
       new TextDecoder().decode(unzipped[GAME_MANIFEST_FILE]),
     );
     expect(manifest.startupSceneGuid).toBe("scene-guid-export");
-    expect(manifest.mode).toBe("packed");
     const startupPath = manifest.assets.find(asset => asset.guid === manifest.startupSceneGuid)!.path!;
     expect(unzipped[startupPath]).toEqual(artifact.files.get(startupPath));
 
@@ -93,15 +91,18 @@ test.describe("P14 export smoke", () => {
           "data-startup-scene",
           "scene-guid-export",
         );
+        // A missing data-ticks attribute counts as zero ticks, not progress.
         await expect
           .poll(
             async () =>
-              page.getByTestId("player-root").getAttribute("data-ticks"),
+              Number(
+                (await page.getByTestId("player-root").getAttribute("data-ticks")) ?? "0",
+              ),
             {
               timeout: 20_000,
             },
           )
-          .not.toBe("0");
+          .toBeGreaterThan(0);
         await expect(page.getByTestId("player-root")).toHaveAttribute(
           "data-booted",
           "true",

@@ -47,6 +47,16 @@ function localFunctionNames(graph?: SerializedGraph): Set<string> {
   return names;
 }
 
+/** `guid:method` for each interface method a local function implements. */
+function localInterfaceImplementations(graph?: SerializedGraph): Set<string> {
+  const keys = new Set<string>();
+  for (const member of graph?.members ?? []) {
+    const implemented = member.kind === "function" ? member.implementsInterface : undefined;
+    if (implemented) keys.add(`${implemented.assetGuid}:${implemented.methodName}`);
+  }
+  return keys;
+}
+
 function interfaceMembersFromGraphs(
   classId: string | undefined,
   graph: SerializedGraph | undefined,
@@ -88,7 +98,10 @@ export function collectOverridableFunctionRows(options: {
   scriptInterfaces?: readonly ScriptInterfaceCatalogEntry[];
 }): OverridableFunctionRow[] {
   const parentOf = parentLookup(options.parentOf);
+  // A same-named local function replaces a parent function at runtime, but an
+  // interface method is only implemented by a function declaring it.
   const taken = localFunctionNames(options.graph);
+  const implemented = localInterfaceImplementations(options.graph);
   const rows: OverridableFunctionRow[] = [];
   const seen = new Set<string>();
 
@@ -115,7 +128,7 @@ export function collectOverridableFunctionRows(options: {
         kind: "interface",
         name: method.name,
         description: `Interface · ${iface.name}`,
-        overwritten: taken.has(method.name),
+        overwritten: implemented.has(`${guid}:${method.name}`),
         pins: ensureFunctionExecPins(method.pins),
         implementsInterface: { assetGuid: guid, methodName: method.name },
       });

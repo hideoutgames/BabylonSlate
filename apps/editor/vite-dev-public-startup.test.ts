@@ -5,7 +5,12 @@ import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 import { describe, expect, it } from "vitest";
 import { ENGINE_BILLBOARD_FILES } from "../../packages/render/src/default-billboard/urls";
+import {
+  FEATURE_TEST_ENGINE_CONTENT,
+  FEATURE_TEST_SLOTS_MANIFEST,
+} from "./src/lib/feature-test/engine-content-files";
 import { engineBillboardsVitePlugin } from "./vite-engine-billboards";
+import { featureTestEngineContentVitePlugin } from "./vite-engine-content";
 import { enginePluginsVitePlugin } from "./vite-engine-plugins";
 import { engineDefaultSkyboxVitePlugin } from "./vite-engine-skybox";
 import { kenneyMannequinVitePlugin } from "./vite-kenney-mannequin";
@@ -40,6 +45,7 @@ describe("dev server first-run public snapshot", () => {
         plugins: [
           engineBillboardsVitePlugin(REPO_ROOT, publicDir),
           engineDefaultSkyboxVitePlugin(REPO_ROOT, publicDir),
+          featureTestEngineContentVitePlugin(REPO_ROOT, publicDir),
           kenneyMannequinVitePlugin({
             sourceDir: join(REPO_ROOT, "engine-content/kenney-assets/Mannequin"),
             publicDir: join(
@@ -81,6 +87,16 @@ describe("dev server first-run public snapshot", () => {
       );
       expect(billboard.status).toBe(200);
       expect(billboard.bytes.byteLength).toBeGreaterThan(0);
+
+      // FeatureTest content, including the space in "Holiday Pack".
+      for (const file of FEATURE_TEST_ENGINE_CONTENT) {
+        const served = await get(base, `/${file.split("/").map(encodeURIComponent).join("/")}`);
+        expect(served.status, file).toBe(200);
+        expect(served.bytes.byteLength, file).toBeGreaterThan(0);
+      }
+      const slots = await get(base, `/${FEATURE_TEST_SLOTS_MANIFEST}`);
+      expect(slots.status).toBe(200);
+      expect(JSON.parse(new TextDecoder().decode(slots.bytes))).toEqual({ present: expect.any(Array) });
 
       const index = await get(base, "/engine-plugins/index.json");
       expect(index.status).toBe(200);

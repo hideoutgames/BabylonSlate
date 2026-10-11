@@ -84,6 +84,52 @@ describe("type asset member table", () => {
     );
   });
 
+  it.each(["enum", "structure"] as const)("keeps the %s name input mounted while its name is typed", (kind) => {
+    harness.kind = kind;
+    harness.content = kind === "enum"
+      ? { kind, guid: "e1", name: "Colors", members: [{ name: "None", value: 0 }] }
+      : { kind, guid: "s1", name: "Stats", fields: [{ id: "health", name: "Health", typeId: "float" }] };
+    const panel = () => (
+      <TypeAssetEditingProvider>
+        <TypeMembersPanel {...({} as IDockviewPanelProps)} />
+      </TypeAssetEditingProvider>
+    );
+    const { rerender } = render(panel());
+    const label = kind === "enum" ? "Member 1 name" : "Field 1 name";
+    const input = screen.getByLabelText(label);
+    input.focus();
+    fireEvent.change(input, { target: { value: "Renamed" } });
+    // The document applies each keystroke, so the row re-renders with the new name.
+    const [, saved] = applyAssetDocumentChange.mock.calls.at(-1) as unknown as [string, Record<string, unknown>];
+    harness.content = saved;
+    rerender(panel());
+    expect(screen.getByLabelText(label)).toBe(input);
+    expect(document.activeElement).toBe(input);
+  });
+
+  it.each(["enum", "structure"] as const)("keeps a moved %s row selected in Details", (kind) => {
+    harness.kind = kind;
+    harness.content = kind === "enum"
+      ? { kind, guid: "e1", name: "Colors", members: [{ name: "Red", value: 0 }, { name: "Blue", value: 1 }] }
+      : { kind, guid: "s1", name: "Stats", fields: [
+        { id: "red", name: "Red", typeId: "float" },
+        { id: "blue", name: "Blue", typeId: "float" },
+      ] };
+    const panels = () => (
+      <TypeAssetEditingProvider>
+        <TypeMembersPanel {...({} as IDockviewPanelProps)} />
+        <TypeDetailsPanel {...({} as IDockviewPanelProps)} />
+      </TypeAssetEditingProvider>
+    );
+    const { rerender } = render(panels());
+    fireEvent.click(screen.getByTestId(`${kind}-row-0`));
+    fireEvent.click(screen.getByRole("button", { name: "Move Red down" }));
+    const [, saved] = applyAssetDocumentChange.mock.calls.at(-1) as unknown as [string, Record<string, unknown>];
+    harness.content = saved;
+    rerender(panels());
+    expect((screen.getByTestId("property-name") as HTMLInputElement).value).toBe("Red");
+  });
+
   it("shows a PinTypePicker for the selected structure field", () => {
     harness.kind = "structure";
     harness.content = {
@@ -125,5 +171,31 @@ describe("type asset member table", () => {
     expect(applyAssetDocumentChange).toHaveBeenCalledWith("enum:assets/Colors.babasset", expect.objectContaining({ fields: [{
       id: "item-field", name: "Item", typeId: "struct", typeClassId: "item", defaultValue: { Price: 12 },
     }] }));
+  });
+
+  it("edits the Loading of an asset field and offers none for other field types", () => {
+    harness.kind = "structure";
+    harness.content = { kind: "structure", guid: "s1", name: "Kit", fields: [
+      { id: "mesh", name: "Mesh", typeId: "asset", typeClassId: "Model", defaultValue: "", loading: "hard" },
+      { id: "health", name: "Health", typeId: "float" },
+    ] };
+    render(<TypeAssetEditingProvider>
+      <TypeMembersPanel {...({} as IDockviewPanelProps)} />
+      <TypeDetailsPanel {...({} as IDockviewPanelProps)} />
+    </TypeAssetEditingProvider>);
+    fireEvent.click(screen.getByTestId("structure-row-1"));
+    expect(screen.queryByTestId("structure-field-loading")).toBeNull();
+    fireEvent.click(screen.getByTestId("structure-row-0"));
+    const loading = screen.getByTestId("structure-field-loading");
+    expect(loading.textContent).toContain("Hard (Load With Owner)");
+    fireEvent.click(loading);
+    const soft = screen.getByRole("option", { name: "Soft (Load On Demand)" });
+    fireEvent.pointerDown(soft);
+    fireEvent.click(soft);
+    const saved = applyAssetDocumentChange.mock.calls.at(-1) as unknown as [string, { fields: object[] }];
+    expect(saved[1].fields).toEqual([
+      { id: "mesh", name: "Mesh", typeId: "asset", typeClassId: "Model", defaultValue: "" },
+      { id: "health", name: "Health", typeId: "float" },
+    ]);
   });
 });

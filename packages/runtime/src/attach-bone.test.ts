@@ -106,6 +106,31 @@ describe("Attach to Bone scripting", () => {
       expect(refused[1]).toContain(parent!.guid);
     } finally { runtime.stop(); }
   });
+
+  it("keeps the child's parent and pose when the target actor has no render slot", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, onCommand: (c) => commands.push(c) });
+    try {
+      await runtime.loadScripts([...characterScripts, linkScript]);
+      const world = runtime.getWorld();
+      const unslotted = world.spawnActorNow(world.createActor({ classId: "Character" }));
+      const child = runtime.spawnScriptedActor({ classId: "Link", transform: {
+        position: { x: 1, y: 2, z: 3 }, rotation: { x: 0, y: 1, z: 0, w: 0 }, scale: { x: 1, y: 1, z: 1 },
+      } })!;
+
+      runtime.invokeScriptEvent("Link", "AttachToBone", null, { child, parent: unslotted });
+      expect(child.getVariable("parentId") ?? null).toBeNull();
+      expect(child.transform.position).toEqual({ x: 1, y: 2, z: 3 });
+      expect(child.transform.rotation).toEqual({ x: 0, y: 1, z: 0, w: 0 });
+      expect(commands.filter((c) => c.type === "attachToBone")).toEqual([]);
+
+      const slotted = runtime.spawnScriptedActor({ classId: "Character" })!;
+      runtime.invokeScriptEvent("Link", "AttachToBone", null, { child, parent: slotted });
+      expect(child.getVariable("parentId")).toBe(slotted.guid);
+      expect(child.transform.position).toEqual({ x: 0, y: 0, z: 0 });
+      expect(commands.filter((c) => c.type === "attachToBone")).toHaveLength(1);
+    } finally { runtime.stop(); }
+  });
 });
 
 describe("Parent link cycles", () => {

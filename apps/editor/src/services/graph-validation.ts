@@ -51,6 +51,7 @@ import {
   sceneAssetClassId,
   subsystemBaseClassIdOf,
   subsystemClassIdsForGet,
+  type EngineScriptPin,
   type SubsystemClassHierarchy,
 } from "@babylonslate/object-model";
 import {
@@ -60,6 +61,7 @@ import {
 import { collectParentEventNames } from "../lib/overridable-functions";
 import { prefabComponentLabel } from "../panels/add-component-catalog";
 import {
+  ASSET_REGISTRY_BY_CLASS_NODE_ID,
   createDefaultNodeRegistry,
   castDefaultClassId,
   callInterfaceTitle,
@@ -230,6 +232,7 @@ function shouldRegeneratePins(typeId: string): boolean {
     typeId === "variables.getValidated" ||
     typeId === "component.getNamed" ||
     typeId === "casting.cast" ||
+    typeId === ASSET_REGISTRY_BY_CLASS_NODE_ID ||
     typeId === SUBSYSTEM_GET_NODE_ID ||
     typeId === "struct.make" ||
     typeId === "struct.break" ||
@@ -369,6 +372,49 @@ function connectedCastClassId(
     (pin) => pin.id === edge.sourceHandle || pin.name === edge.sourceHandle,
   );
   return pinClassId(sourcePin?.type) ?? "BObject";
+}
+
+/**
+ * Cast types its Result from the Class wired into it, else from the Class
+ * picked on the node (`default:class`). Records the Result kind on
+ * `properties` and returns the pin inputs, for the editor and validation alike.
+ */
+function castPinProperties(
+  properties: Record<string, unknown>,
+  graph: SerializedGraph,
+  nodeId: string,
+  nodeRegistry: NodeRegistry,
+  parentOf: (id: string) => string | null | undefined,
+): {
+  pinProperties: Record<string, unknown>;
+  defaultClassId: string;
+  wiredClassId: string | undefined;
+} {
+  const defaultClassId = castDefaultClassId(properties);
+  const wiredClassId = connectedCastClassId(graph, nodeId, nodeRegistry);
+  const resultClassId = wiredClassId ?? defaultClassId;
+  properties.resultKind = resultKindForClass(resultClassId, parentOf);
+  return {
+    pinProperties: { ...properties, "default:class": resultClassId },
+    defaultClassId,
+    wiredClassId,
+  };
+}
+
+/**
+ * Get Assets By Class types Classes the way Cast types its result: from the
+ * Class wired into it, else from the Class picked on the node.
+ */
+function assetsByClassPinProperties(
+  typeId: string,
+  properties: Record<string, unknown>,
+  graph: SerializedGraph,
+  nodeId: string,
+  nodeRegistry: NodeRegistry,
+): Record<string, unknown> {
+  if (typeId !== ASSET_REGISTRY_BY_CLASS_NODE_ID) return properties;
+  const wiredClassId = connectedCastClassId(graph, nodeId, nodeRegistry);
+  return wiredClassId ? { ...properties, "default:class": wiredClassId } : properties;
 }
 
 function isEnumCatalogType(typeId: string): boolean {
@@ -688,7 +734,7 @@ export function hydrateSerializedGraphForEditor(
         };
       }
 
-      let typeId =
+      const typeId =
         typeof rawData.__nodeType === "string"
           ? rawData.__nodeType
           : node.type;
@@ -699,34 +745,13 @@ export function hydrateSerializedGraphForEditor(
       refreshInputEvent(typeId, properties, options, graph, node.id);
       refreshVariableReferenceAccess(typeId, properties);
 
-      if (typeId === "logMessage") {
-        typeId = "debug.log";
-        if (properties.message === undefined) {
-          properties.message = "";
-        }
-        if (properties.severity === undefined) {
-          properties.severity = "log";
-        }
-        if (properties.category === undefined) {
-          properties.category = "Script";
-        }
-      }
-
       const authoredTitle =
         typeof rawData.title === "string" && rawData.title.trim()
           ? rawData.title
           : undefined;
 
       if (typeId === "casting.cast") {
-        const defaultClassId = castDefaultClassId(properties);
-        properties.defaultClassId = defaultClassId;
-        const wiredClassId = connectedCastClassId(graph, node.id, nodeRegistry);
-        const resultClassId = wiredClassId ?? defaultClassId;
-        properties.resultKind = resultKindForClass(resultClassId, parentOf);
-        const pinProperties = {
-          ...properties,
-          defaultClassId: resultClassId,
-        };
+        const { pinProperties, defaultClassId, wiredClassId } = castPinProperties(properties, graph, node.id, nodeRegistry, parentOf);
         const def = nodeRegistry.get(typeId);
         const pins: GraphPin[] = def ? def.pins(pinProperties) : [];
         return {
@@ -765,16 +790,9 @@ export function hydrateSerializedGraphForEditor(
         const eventType =
           typeof properties.eventType === "string" ? properties.eventType : "";
         const rawName =
-          typeof properties.eventName === "string"
-            ? properties.eventName
-            : typeof properties.name === "string"
-              ? properties.name
-              : "";
+          typeof properties.eventName === "string" ? properties.eventName : "";
         const bodyName = formatEventMemberName(rawName);
-        if (bodyName) {
-          properties.eventName = bodyName;
-          properties.name = bodyName;
-        }
+        if (bodyName) properties.eventName = bodyName;
         const label =
           eventType && eventType !== "flow.event.custom"
             ? formatEventMemberName(
@@ -794,7 +812,9 @@ export function hydrateSerializedGraphForEditor(
       }
 
       const def = nodeRegistry.get(typeId);
-      const pins: GraphPin[] = def ? def.pins(properties) : [];
+      const pins: GraphPin[] = def
+        ? def.pins(assetsByClassPinProperties(typeId, properties, graph, node.id, nodeRegistry))
+        : [];
 
       return {
         ...node,
@@ -983,11 +1003,13 @@ export function createDefaultLogicGraphSerialized(
 
   const inherited = inheritedCustomEventSeeds(options);
   inherited.forEach((event, index) => {
-    const eventId = `event-custom-${event.name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "")}`;
-    if (graph.nodes.some((node) => node.id === eventId)) return;
+    if (graph.nodes.some((node) => node.type === "flow.event.custom" && node.data.name === event.name)) return;
+    // Names that differ only in punctuation ("Foo Bar", "Foo-Bar") share a slug; each gets its own node.
+    const slug = event.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    let eventId = `event-custom-${slug}`;
+    for (let suffix = 2; graph.nodes.some((node) => node.id === eventId); suffix++) {
+      eventId = `event-custom-${slug}-${suffix}`;
+    }
     const y = 80 + (stubs.length + index) * 160;
     graph = {
       ...graph,
@@ -1187,12 +1209,13 @@ type FunctionRow = {
  * missing-input warning.
  */
 function engineScalarInputDefaults(
-  pins: readonly { name: string; typeId: string; direction: "in" | "out"; container?: string }[],
+  pins: readonly EngineScriptPin[],
 ): Record<string, unknown> | undefined {
   const defaults: Record<string, unknown> = {};
   for (const pin of pins) {
     if (pin.direction !== "in" || (pin.container && pin.container !== "single")) continue;
-    if (pin.typeId === "float" || pin.typeId === "int") defaults[pin.name] = 0;
+    if (pin.defaultValue !== undefined) defaults[pin.name] = pin.defaultValue;
+    else if (pin.typeId === "float" || pin.typeId === "int") defaults[pin.name] = 0;
     else if (pin.typeId === "bool") defaults[pin.name] = false;
   }
   return Object.keys(defaults).length > 0 ? defaults : undefined;
@@ -1410,7 +1433,6 @@ type VariableRow = {
   name: string;
   typeId: string;
   typeClassId?: string;
-  typeClassIds?: readonly string[];
   container?: "single" | "array" | "map";
   keyTypeId?: string;
   keyTypeClassId?: string;
@@ -1494,12 +1516,14 @@ function variableAccessPaletteNodes(
     variable,
     implicitSelf: true,
   }));
+  // Inherited prefab components come from the parent Class graphs, which the
+  // graph panel passes as `otherClassGraphs` (as hydrate and validate read them).
   for (const member of componentGraphMembersForClass({
     graph: options?.graph,
     classId: options?.classId,
     parentClass: options?.parentClass,
     parentOf: options?.parentOf,
-    parentGraphs: options?.parentGraphs,
+    parentGraphs: options?.parentGraphs ?? options?.otherClassGraphs,
   })) {
     rows.push({
       classId: localClassId,
@@ -1526,7 +1550,6 @@ function variableAccessPaletteNodes(
           name: variable.name,
           typeId: variable.typeId,
           typeClassId: variable.typeClassId,
-          typeClassIds: variable.typeClassIds,
           container: variable.container,
           scope: "member",
           propertyKey: variable.propertyKey,
@@ -1602,9 +1625,6 @@ function variableAccessPaletteNodes(
       };
       if (variable.functionId) defaultData.functionId = variable.functionId;
       if (variable.typeClassId) defaultData.typeClassId = variable.typeClassId;
-      if (variable.typeClassIds && variable.typeClassIds.length > 0) {
-        defaultData.typeClassIds = [...variable.typeClassIds];
-      }
       if (variable.componentId) defaultData.componentId = variable.componentId;
       if (variable.propertyKey) defaultData.propertyKey = variable.propertyKey;
       if (variable.container === "array" || variable.container === "map") {
@@ -1729,7 +1749,6 @@ function castPaletteNodes(
   return classIds.map((classId) => {
     const resultKind = resultKindForClass(classId, parentOf);
     const defaultData: Record<string, unknown> = {
-      defaultClassId: classId,
       "default:class": classId,
       resultKind,
     };
@@ -2086,13 +2105,6 @@ function scriptPaletteCatalogNodes(
       if (def.id === "string.format") {
         defaultData["default:format"] = "{input}";
       }
-      if (
-        def.id === "audio.play" ||
-        def.id === "audio.setChannelVolume" ||
-        def.id === "audio.setGlobalVolume"
-      ) {
-        defaultData["default:volume"] = 1;
-      }
       const pins = def.pins(defaultData);
       if (def.editorOnly) defaultData.__editorOnly = true;
       return {
@@ -2219,13 +2231,17 @@ export function scriptPaletteNodes(
   return assemble();
 }
 
-export function hydrateClassDocumentPayload(
+/**
+ * A Class document is a graph. Anything without its node and edge lists is
+ * unreadable, never a default graph that a later save would write over it.
+ */
+export function requireClassGraphPayload(
   payload: Record<string, unknown> | SerializedGraph,
 ): SerializedGraph {
   if (Array.isArray(payload.nodes) && Array.isArray(payload.edges)) {
     return payload as unknown as SerializedGraph;
   }
-  return createDefaultLogicGraphSerialized();
+  throw new Error("The Class document is not a graph: it has no node and edge lists.");
 }
 
 export function materializeLogicGraph(
@@ -2236,6 +2252,7 @@ export function materializeLogicGraph(
 ): LogicGraph {
   if (isLogicGraphPayload(content)) return content;
   const logic = fromSerializedGraph(content, graphId, kind);
+  const parentOf = parentLookup(options?.parentOf);
   for (let i = 0; i < logic.nodes.length; i++) {
     const data = content.nodes[i]?.data as
       | { __pins?: LogicGraph["nodes"][0]["pins"]; __nodeType?: string }
@@ -2261,6 +2278,10 @@ export function materializeLogicGraph(
     }
     refreshInputEvent(typeId, properties, options, content, logic.nodes[i]!.id);
     refreshVariableReferenceAccess(typeId, properties);
+    // Pins follow a wired Class here exactly as they do on the canvas.
+    const pinProperties = typeId === "casting.cast"
+      ? castPinProperties(properties, content, logic.nodes[i]!.id, registry, parentOf).pinProperties
+      : assetsByClassPinProperties(typeId, properties, content, logic.nodes[i]!.id, registry);
     const regenerate = shouldRegeneratePins(typeId);
     const def = registry.get(typeId);
     if (data?.__pins && !regenerate) {
@@ -2275,7 +2296,7 @@ export function materializeLogicGraph(
         ...logic.nodes[i]!,
         typeId,
         properties,
-        pins: def.pins(properties),
+        pins: def.pins(pinProperties),
       };
     } else if (data?.__pins) {
       logic.nodes[i] = {
@@ -2298,9 +2319,9 @@ export function materializeLogicGraph(
     .map((e, i) => ({
       id: e.id || `e${i}`,
       sourceNodeId: e.source,
-      sourcePinId: e.sourceHandle ?? logic.edges[i]?.sourcePinId ?? "execOut",
+      sourcePinId: e.sourceHandle ?? "",
       targetNodeId: e.target,
-      targetPinId: e.targetHandle ?? logic.edges[i]?.targetPinId ?? "execIn",
+      targetPinId: e.targetHandle ?? "",
     }))
     .filter((edge) => {
       const source = logic.nodes.find((node) => node.id === edge.sourceNodeId);
@@ -2366,7 +2387,8 @@ export function classMemberSymbolsFromGraphs(
       if (member.propertyKey) symbol.propertyKey = member.propertyKey;
       symbols.push(symbol);
     }
-    // The palette also exposes events declared by canvas nodes in older graphs.
+    // Add Node's Event Custom places a canvas node without a member; Calls to
+    // it resolve through these symbols.
     const declaredEvents = new Set(
       (graph.members ?? [])
         .filter((member) => member.kind === "event")
@@ -2507,8 +2529,8 @@ function hostLineageDiagnostics(
   const hierarchy: SubsystemClassHierarchy = {
     ancestry: (id) => walkAncestry(id, parentOf),
   };
-  // A class the lookup does not know (legacy Graph assets, Animation Graph
-  // objects) has no lineage to check against.
+  // A host the lookup does not know (an Animation Graph object, or a caller
+  // without the project's parent lookup) has no lineage to check against.
   const classChain = options.classId
     ? walkAncestry(options.classId, parentOf)
     : [];
@@ -2735,6 +2757,8 @@ export function validateSerializedGraph(
     enums: options.enums,
     structs: options.structs,
     dataDefinitions: options.dataDefinitions,
+    // A Cast's Result kind follows the project Class hierarchy, as on the canvas.
+    parentOf: options.parentOf,
   };
   const eventGraph = materializeLogicGraph(
     content,

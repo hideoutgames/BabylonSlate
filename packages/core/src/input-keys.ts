@@ -240,13 +240,10 @@ export function inputControlFromKey(
   return entry ? { device: entry.device, code: entry.code } : null;
 }
 
-/** Legacy Pointer controls share the ordinary mouse/touch button keys. */
 export function inputKeyFromControl(
   device: InputDevice,
   code: string,
 ): InputKey | null {
   if (!code) return null;
-  if (device === "pointer")
-    return inputKeyFromControl("mouseButton", code === "primary" ? "0" : code);
   return BY_CONTROL.get(`${device}:${code}`)?.key ?? null;
 }

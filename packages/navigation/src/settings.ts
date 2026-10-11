@@ -11,7 +11,6 @@ export type NavMeshActorSettings = NavMeshSettings & {
   bakeBoundsEnabled: boolean;
   bakeBoundsMin: { x: number; y: number; z: number };
   bakeBoundsMax: { x: number; y: number; z: number };
-  debugOverlay: boolean;
 };
 
 export const DEFAULT_NAV_AGENT_PARAMS: Required<NavAgentParams> = {
@@ -58,7 +57,6 @@ export function defaultNavMeshComponentProperties(): NavMeshActorSettings {
     bakeBoundsEnabled: false,
     bakeBoundsMin: { x: -50, y: -10, z: -50 },
     bakeBoundsMax: { x: 50, y: 10, z: 50 },
-    debugOverlay: false,
   };
 }
 
@@ -110,7 +108,6 @@ export function parseNavMeshActorSettings(
     ),
     bakeBoundsMin: asVector3(properties.bakeBoundsMin, defaults.bakeBoundsMin),
     bakeBoundsMax: asVector3(properties.bakeBoundsMax, defaults.bakeBoundsMax),
-    debugOverlay: asBoolean(properties.debugOverlay, defaults.debugOverlay),
   };
 }
 

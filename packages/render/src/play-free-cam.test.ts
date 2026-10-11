@@ -266,6 +266,21 @@ describe("attachPlayFreeCamInput", () => {
     engine.dispose();
   });
 
+  it("stops pitch short of vertical so the view never flips", () => {
+    const { engine, scene } = createTestEngine();
+    setupDefaultViewport(scene);
+    const freeCam = createPlayFreeCamController(scene, { binding: createSnapshotSceneBinding(), mode: "3d" });
+    freeCam.setEnabled(true);
+    const camera = scene.activeCamera as UniversalCamera;
+    for (const delta of [1, 1, 1, -1, -1, -1, -1, -1, -1]) {
+      freeCam.look(0.3, delta);
+      camera.computeWorldMatrix();
+      expect(camera.getDirection(Vector3.Up()).y).toBeGreaterThan(0);
+    }
+    freeCam.dispose();
+    engine.dispose();
+  });
+
   it("pans XY from pointer drag in 2D", () => {
     const { engine, scene } = createTestEngine();
     setupDefaultViewport(scene);

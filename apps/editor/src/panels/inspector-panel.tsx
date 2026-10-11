@@ -4,15 +4,16 @@ import { useSimulationInspectionStore } from "../context/simulation-inspection-c
 import { GraphDataLiteralDefaults } from "../components/graph-data-literal-editor";
 import { saveGameVariableNames } from "../lib/save-game-property-rows";
 import { SceneLayerSwitcherFields } from "../components/scene-layer-switcher-fields";
-import { normalizeClassMemberCategory, parseUIControl2DProperties } from "@babylonslate/core";
+import { carriesLoadingPolicy, normalizeClassMemberCategory, parseUIControl2DProperties } from "@babylonslate/core";
 import { useMemo, useState } from "react";
 import { normalizeModelPayload } from "@babylonslate/assets";
 import { MODEL_MATERIALS_PICKER_ENTRY } from "../lib/mesh-material-properties";
 import { RagdollBoneNamesEditor } from "../components/ragdoll-bone-names-editor";
-import { normalizeRenderTargetCaptureProperties, type SerializedScene } from "@babylonslate/core";
-import { RenderTargetCaptureActorsField } from "../components/render-target-capture-actors-field";
+import { normalizeRenderTargetCaptureProperties } from "@babylonslate/core";
+import { ClassCaptureActorsField } from "../components/class-capture-actors-field";
 import { RichTextAppearModesField } from "../components/rich-text-appear-modes-field";
 import {
+  AssetLoadingField,
   AssetPicker,
   AssetPickerControl,
   ClassPicker,
@@ -104,12 +105,13 @@ import {
   componentPropertyRows,
   subclassClassEntries,
   type AssetPickRequest,
+  type ComponentPropertyUpdate,
 } from "../lib/component-property-rows";
 import { JsBodyEditor } from "../components/js-body-editor";
 import { GlslCodePreview } from "../components/glsl-code-preview";
 import { NineSlicePreview } from "../components/nine-slice-preview";
 import { DataTreeEntryField } from "../components/data-tree-entry-picker";
-import { isValidJsIdentifier } from "@babylonslate/scripting-nodes";
+import { executeJavaScriptNameError } from "@babylonslate/scripting-nodes";
 import { isReservedConsoleCommandName } from "@babylonslate/debugger";
 import {
   assetPickerAllowedTypes,
@@ -152,7 +154,7 @@ import {
   typeSchemasFromGraphAssets,
 } from "../lib/logic-graph-document";
 import { hydrateSerializedGraphForEditor } from "../services/graph-validation";
-import { collectDataGraphAssets, dataGraphAssetCreateOptions, dataGraphAssetPickPatch, isDataGraphNode, patchDataGraphNode } from "../lib/data-graph";
+import { collectDataGraphAssets, dataGraphAssetCreateOptions, dataGraphAssetPickPatch, isDataGraphNode, patchDataGraphNode, patchInspectedGraphNode } from "../lib/data-graph";
 import { classIdForGraphPath } from "../services/script-compiler";
 import {
   MATERIAL_DOCUMENT_KINDS,
@@ -161,21 +163,59 @@ import {
 
 const CLASS_KINDS = ["graph"] as const;
 const MODEL_KINDS = ["model"] as const;
-const SCENE_KINDS = ["scene"] as const;
 const WORLD_KINDS = ["scene", "scene-layer"] as const;
 const INTERFACE_KINDS = ["script-interface"] as const;
 const TYPE_KINDS = ["structure", "enum", "data-definition"] as const;
 const DATA_KINDS = ["data-tree"] as const;
 
+/**
+ * Saved member pins carry no ids, so their rows get positional ids. The rows
+ * the Inspector last committed keep their editor ids while the saved pins
+ * still match that commit, so a moved or added pin stays selected instead of
+ * the selection staying on its old position.
+ */
+type CommittedPinRowIds = {
+  ownerId: string;
+  pins: string;
+  in: string[];
+  out: string[];
+};
+
+function committedPinRowIds(
+  ownerId: string,
+  pins: GraphClassMember["pins"],
+  inputs: readonly PinListRow[],
+  outputs: readonly PinListRow[],
+): CommittedPinRowIds {
+  return {
+    ownerId,
+    pins: JSON.stringify(pins ?? []),
+    in: inputs.map((row) => row.id),
+    out: outputs.map((row) => row.id),
+  };
+}
+
+function pinRowIdsFor(
+  committed: CommittedPinRowIds | null,
+  ownerId: string,
+  pins: GraphClassMember["pins"],
+  direction: "in" | "out",
+): readonly string[] | undefined {
+  return committed?.ownerId === ownerId && committed.pins === JSON.stringify(pins ?? [])
+    ? committed[direction]
+    : undefined;
+}
+
 function memberPinRows(
   pins: GraphClassMember["pins"],
   memberId: string,
   direction: "in" | "out",
+  ids?: readonly string[],
 ): PinListRow[] {
   return (pins ?? [])
     .filter((pin) => pin.direction === direction)
     .map((pin, index) => ({
-      id: `${memberId}-${direction}-${index}`,
+      id: ids?.[index] ?? `${memberId}-${direction}-${index}`,
       name: pin.name,
       type: pin.typeId,
       ...(pin.container ? { container: pin.container } : {}),
@@ -266,6 +306,7 @@ function ClassMemberDetails({
   pickerAssets,
   schemas,
   enumMembers,
+  classId,
   onChange,
 }: {
   graph: SerializedGraph;
@@ -281,18 +322,25 @@ function ClassMemberDetails({
   }>;
   schemas: ReturnType<typeof typeSchemasFromGraphAssets>;
   enumMembers: Record<string, string[]>;
+  /** This document's class id, so renames and signature edits reach only its own Calls. */
+  classId?: string;
   onChange: (next: SerializedGraph) => void;
 }) {
   const [interfacePickerOpen, setInterfacePickerOpen] = useState(false);
   const [classPickerOpen, setClassPickerOpen] = useState(false);
   const [typeAssetPickerOpen, setTypeAssetPickerOpen] = useState(false);
-  const [defaultAssetPickerOpen, setDefaultAssetPickerOpen] = useState(false);
+  /** The Default row the asset picker fills: the whole value or one Structure field. */
+  const [defaultAssetPick, setDefaultAssetPick] = useState<{
+    rowId: string;
+    assetType: string;
+  } | null>(null);
   const [entryPick, setEntryPick] = useState<{
     index: number;
     field: "value" | "key";
   } | null>(null);
+  const [pinRowIds, setPinRowIds] = useState<CommittedPinRowIds | null>(null);
   const commit = (patch: Partial<GraphClassMember>) => {
-    onChange(patchClassMember(graph, member.id, patch));
+    onChange(patchClassMember(graph, member.id, patch, classId));
   };
   const categoryRow = {
     id: "category",
@@ -355,6 +403,8 @@ function ClassMemberDetails({
           nextContainer === "map" ? next.keyTypeClassId : undefined,
         typeClassId: nextClassId,
       };
+      // Loading only applies to asset and Class references.
+      if (member.loading && !carriesLoadingPolicy(patch)) patch.loading = undefined;
       if (
         typeChanged ||
         containerChanged ||
@@ -382,7 +432,7 @@ function ClassMemberDetails({
         enumMembers,
         container,
         assetEntries,
-        onPickAsset: () => setDefaultAssetPickerOpen(true),
+        onPickAsset: (rowId, assetType) => setDefaultAssetPick({ rowId, assetType }),
       },
     );
     return (
@@ -495,6 +545,16 @@ function ClassMemberDetails({
               </Button>
             </SearchDropdown>
           </Field>
+        ) : null}
+        {!member.functionId &&
+        carriesLoadingPolicy({ typeId, container, keyTypeId: member.keyTypeId }) ? (
+          <AssetLoadingField
+            value={member.loading}
+            onChange={(policy) =>
+              commit({ loading: policy === "hard" ? "hard" : undefined })
+            }
+            data-testid="inspector-member-loading"
+          />
         ) : null}
         {singleDefaultRows.length > 0 ? (
           <PropertyGrid rows={singleDefaultRows} />
@@ -627,15 +687,20 @@ function ClassMemberDetails({
           data-testid="inspector-member-type-asset-picker"
         />
         <AssetPicker
-          open={defaultAssetPickerOpen}
-          onOpenChange={setDefaultAssetPickerOpen}
+          open={defaultAssetPick !== null}
+          onOpenChange={(open) => {
+            if (!open) setDefaultAssetPick(null);
+          }}
           assets={pickerAssets}
-          allowedTypes={variableAssetPickerAllowedTypes(member.typeClassId)}
+          allowedTypes={variableAssetPickerAllowedTypes(defaultAssetPick?.assetType)}
           allowNone
           title="Pick Asset"
           onPick={(guid) => {
-            commit({ defaultValue: guid ?? "" });
-            setDefaultAssetPickerOpen(false);
+            // The picked row writes its own value, so a Structure field keeps
+            // the rest of the Structure default.
+            const row = singleDefaultRows.find((entry) => entry.id === defaultAssetPick?.rowId);
+            if (row?.kind === "asset") row.onChange(guid ?? "");
+            setDefaultAssetPick(null);
           }}
           data-testid="inspector-member-default-asset-picker"
         />
@@ -720,13 +785,17 @@ function ClassMemberDetails({
   }
 
   if (member.kind === "function") {
-    const inputRows = memberPinRows(member.pins, member.id, "in");
-    const outputRows = memberPinRows(member.pins, member.id, "out");
+    const inputRows = memberPinRows(member.pins, member.id, "in",
+      pinRowIdsFor(pinRowIds, member.id, member.pins, "in"));
+    const outputRows = memberPinRows(member.pins, member.id, "out",
+      pinRowIdsFor(pinRowIds, member.id, member.pins, "out"));
     const commitPins = (
       nextInputs: PinListRow[],
       nextOutputs: PinListRow[],
     ) => {
-      commit({ pins: memberPinsFromRows(nextInputs, nextOutputs) });
+      const pins = memberPinsFromRows(nextInputs, nextOutputs);
+      setPinRowIds(committedPinRowIds(member.id, pins, nextInputs, nextOutputs));
+      commit({ pins });
     };
     const interfaceImpl = member.implementsInterface;
     const lockSignature = Boolean(interfaceImpl);
@@ -778,6 +847,8 @@ function ClassMemberDetails({
           itemLabel="Input"
           testIdPrefix="class-fn-in"
           data-testid="inspector-member-inputs"
+          showOptional={false}
+          showDefault={false}
           readOnly={lockSignature}
           onChange={(nextRows) => commitPins(nextRows, outputRows)}
         />
@@ -790,6 +861,8 @@ function ClassMemberDetails({
           itemLabel="Output"
           testIdPrefix="class-fn-out"
           data-testid="inspector-member-outputs"
+          showOptional={false}
+          showDefault={false}
           readOnly={lockSignature}
           onChange={(nextRows) => commitPins(inputRows, nextRows)}
         />
@@ -899,15 +972,18 @@ function PrefabComponentDetails({
   fontHasFacetype?: (guid: string | null | undefined) => boolean;
   fontHasMsdfJson?: (guid: string | null | undefined) => boolean;
   fontHasMsdfPng?: (guid: string | null | undefined) => boolean;
-  onUpdate: (property: string, value: unknown) => void;
+  onUpdate: ComponentPropertyUpdate;
   onUpdateTransform: (transform: SerializedTransform) => void;
 }) {
   const { assetRegistry, registryEpoch } = useRegistryState();
-  // Open Class, Model and Scene tabs override saved content in these rows.
+  // Open Class and Model tabs override saved content in these rows.
   const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
   const modelDocuments = useOpenDocumentsOfKinds(MODEL_KINDS);
-  const sceneDocuments = useOpenDocumentsOfKinds(SCENE_KINDS);
-  const classGraphs = collectClassGraphsForPalette({ assets: assetRegistry?.list() ?? [], openDocuments: classDocuments, classIdForPath: classIdForGraphPath });
+  // Kept across renders, so a gizmo drag does not walk every Class again.
+  const classGraphs = useMemo(() => {
+    void registryEpoch;
+    return collectClassGraphsForPalette({ assets: assetRegistry?.list() ?? [], openDocuments: classDocuments, classIdForPath: classIdForGraphPath });
+  }, [assetRegistry, classDocuments, registryEpoch]);
   const [assetPick, setAssetPick] = useState<AssetPickRequest | null>(null);
   // An open Material tab's unsaved domain wins over its saved header.
   const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
@@ -986,8 +1062,7 @@ function PrefabComponentDetails({
           />
         ) : null}
         {component.classId === "RenderTargetCaptureComponent" && component.properties.captureOnlyActors === true ? (
-          <RenderTargetCaptureActorsField
-            actors={(sceneDocuments[0]?.content as SerializedScene | undefined)?.actors ?? []}
+          <ClassCaptureActorsField
             actorIds={normalizeRenderTargetCaptureProperties(component.properties).actorIds}
             onChange={(actorIds) => onUpdate("actorIds", actorIds)} />
         ) : null}
@@ -1037,17 +1112,13 @@ function PrefabComponentDetails({
         onPick={(guid) => {
           if (!assetPick) return;
           if (guid && assetPick.materialDomain === "text" && materialDomains[guid] !== "text") return;
-          onUpdate(assetPick.property, guid);
-          if (
+          // A Font without an MSDF pair stores Bitmap in the same edit as the Font.
+          const bitmapFont =
             assetPick.property === "fontAssetGuid" &&
             (component.classId === "2DTextComponent" ||
-              component.classId === "2DRichTextComponent")
-          ) {
-            const pair = Boolean(
-              guid && fontHasMsdfJson?.(guid) && fontHasMsdfPng?.(guid),
-            );
-            if (!pair) onUpdate("renderer", "bitmap");
-          }
+              component.classId === "2DRichTextComponent") &&
+            !(guid && fontHasMsdfJson?.(guid) && fontHasMsdfPng?.(guid));
+          onUpdate(assetPick.property, guid, bitmapFont ? { renderer: "bitmap" } : undefined);
           setAssetPick(null);
         }}
         data-testid="inspector-prefab-asset-picker"
@@ -1103,6 +1174,13 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
     pinId: string;
     assetType: string;
     allowedTypes: string[];
+  } | null>(null);
+  const [eventPinRowIds, setEventPinRowIds] = useState<CommittedPinRowIds | null>(null);
+  /** Command parameter row ids from the last commit, as for member pins. */
+  const [commandRowIds, setCommandRowIds] = useState<{
+    nodeId: string;
+    parameters: string;
+    ids: string[];
   } | null>(null);
 
   const doc = useOpenDocument(documentId);
@@ -1411,8 +1489,8 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
           fontHasFacetype={fontHasFacetype}
           fontHasMsdfJson={fontHasMsdfJson}
           fontHasMsdfPng={fontHasMsdfPng}
-          onUpdate={(property, value) =>
-            updateComponent(selectedPrefabComponent.id, property, value)
+          onUpdate={(property, value, alsoSet) =>
+            updateComponent(selectedPrefabComponent.id, property, value, alsoSet)
           }
           onUpdateTransform={(transform) =>
             updateComponentTransform(selectedPrefabComponent.id, transform)
@@ -1439,6 +1517,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
           pickerAssets={pickerAssets}
           schemas={typeSchemas}
           enumMembers={enumMembers}
+          classId={doc?.ref.path ? classIdForGraphPath(doc.ref.path) : undefined}
           onChange={persistGraph}
         />
       </PanelFrame>
@@ -1467,9 +1546,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
     doc?.ref.kind === "graph" &&
     graph
   ) {
-    const showActorDefaults = classDocumentShowsPrefab(parentClass, parentOf, {
-      assetType: indexed?.header.type,
-    });
+    const showActorDefaults = classDocumentShowsPrefab(parentClass, parentOf);
     const defaults = graph.actorDefaults ?? {};
     const selfClassId = classIdFromClassAsset({
       path: doc.ref.path,
@@ -1487,9 +1564,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
         .filter(
           (entry) =>
             entry.id !== selfClassId &&
-            classDocumentShowsPrefab(entry.parentClass, parentOf, {
-              assetType: "Class",
-            }),
+            classDocumentShowsPrefab(entry.parentClass, parentOf),
         )
         .map(({ id, name, group }) => ({ id, name, group })),
     ];
@@ -1575,6 +1650,10 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
   const outputs = Array.isArray(selectedNode.data.outputs)
     ? (selectedNode.data.outputs as Array<{ name: string; type?: unknown }>)
     : [];
+  // Inputs and outputs share one generated function scope.
+  const jsNameError = isExecJs
+    ? executeJavaScriptNameError([...inputs, ...outputs].map((pin) => pin.name))
+    : undefined;
   const commandParams = Array.isArray(selectedNode.data.parameters)
     ? (selectedNode.data.parameters as Array<{
         name: string;
@@ -1593,6 +1672,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
               formatEventMemberName(String(selectedNode.data.name ?? ""))),
       )
     : undefined;
+  const eventOutputIds = pinRowIdsFor(eventPinRowIds, selectedNode.id, eventMember?.pins, "out");
   const eventOutputRows: PinListRow[] = (
     eventMember?.pins ??
     (Array.isArray(selectedNode.data.pins)
@@ -1606,7 +1686,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
   )
     .filter((pin) => pin.direction !== "in" && pin.name)
     .map((pin, index) => ({
-      id: `${selectedNode.id}-out-${index}`,
+      id: eventOutputIds?.[index] ?? `${selectedNode.id}-out-${index}`,
       name: String(pin.name),
       type: pin.typeId ?? "float",
       ...("typeClassId" in pin && pin.typeClassId
@@ -1619,17 +1699,9 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
       : selectedNode.type;
 
   const updateNodeData = (patch: Record<string, unknown>) => {
-    if (isDataGraphNode(selectedNode.type)) {
-      persistGraph(patchDataGraphNode(graph, selectedNode, patch, activeFunctionId));
-      return;
-    }
-    const next: SerializedGraph = {
-      ...graph,
-      nodes: graph.nodes.map((n) =>
-        n.id === selectedNode.id ? { ...n, data: { ...n.data, ...patch } } : n,
-      ),
-    };
-    persistGraph(next);
+    persistGraph(isDataGraphNode(selectedNode.type)
+      ? patchDataGraphNode(graph, selectedNode, patch, activeFunctionId)
+      : patchInspectedGraphNode(graph, selectedNode.id, patch, activeFunctionId));
   };
 
   const dataPinWired = (pinId: string) => (inspectGraph?.edges ?? graph.edges)
@@ -1661,15 +1733,17 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
         setAssetPinPick({
           pinId,
           assetType,
-          allowedTypes: assetPickerAllowedTypes(
-            assetType,
-            selectedNode.data.typeClassIds,
-          ),
+          allowedTypes: assetPickerAllowedTypes(assetType),
         });
       },
       schemas: typeSchemas,
     },
   );
+  /** A Structure field inside a pin default writes through its own row, not as a pin. */
+  const nestedPinDefaultRow = (rowId: string) =>
+    literalDefaults.some((entry) => entry.pinId === rowId)
+      ? undefined
+      : pinDefaultRows.find((row) => row.id === rowId);
   const isEnumNode = selectedNode.type.startsWith("enum.");
   const enumNodeRows = isEnumNode
     ? enumNodePropertyRows(
@@ -1678,8 +1752,12 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
         updateNodeData,
         {
           enums: typeCatalog.enums,
+          // The wire lives in the graph being inspected (event or function).
           typeSelectDisabled: Boolean(
-            connectedEnumGuidFromSerialized(graph, selectedNode.id),
+            connectedEnumGuidFromSerialized(
+              hydratedInspectGraph ?? inspectGraph ?? graph,
+              selectedNode.id,
+            ),
           ),
         },
       )
@@ -1705,7 +1783,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
     selectedNode.data,
     updateNodeData,
     pickerAssets.map((asset) => ({ id: asset.guid, name: asset.name, type: asset.type })),
-    graph.edges.some((edge) => edge.target === selectedNode.id && edge.targetHandle === "binding"),
+    dataPinWired("binding"),
   );
   const containerConstructorRows = containerConstructorPropertyRows(
     selectedNode.type,
@@ -1804,15 +1882,9 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
               typeAssets={typeAssets}
               itemLabel="Input"
               testIdPrefix="js-input"
-              onChange={(rows) => {
-                const invalid = rows.find((r) => !isValidJsIdentifier(r.name));
-                updateNodeData({
-                  inputs: javaScriptPinsFromRows(rows),
-                  ...(invalid
-                    ? { __identError: invalid.name }
-                    : { __identError: undefined }),
-                });
-              }}
+              onChange={(rows) =>
+                updateNodeData({ inputs: javaScriptPinsFromRows(rows) })
+              }
             />
             <PinListEditor
               title="Outputs"
@@ -1823,16 +1895,13 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
               typeAssets={typeAssets}
               itemLabel="Output"
               testIdPrefix="js-output"
-              onChange={(rows) => {
-                const invalid = rows.find((r) => !isValidJsIdentifier(r.name));
-                updateNodeData({
-                  outputs: javaScriptPinsFromRows(rows),
-                  ...(invalid
-                    ? { __identError: invalid.name }
-                    : { __identError: undefined }),
-                });
-              }}
+              onChange={(rows) =>
+                updateNodeData({ outputs: javaScriptPinsFromRows(rows) })
+              }
             />
+            {jsNameError ? (
+              <FieldError data-testid="js-name-error">{jsNameError}</FieldError>
+            ) : null}
             <MultilineTextField code title="JavaScript Function Body" data-testid="class-node-code"
               value={String(selectedNode.data.body ?? "")}
               onChange={(body) => updateNodeData({ body })}
@@ -1900,10 +1969,22 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
             </FieldGroup>
             <ParameterListEditor
               title="Parameters"
-              rows={commandParameterRows(commandParams)}
-              onChange={(rows) =>
-                updateNodeData({ parameters: commandParametersFromRows(rows) })
-              }
+              rows={commandParameterRows(
+                commandParams,
+                commandRowIds?.nodeId === selectedNode.id &&
+                  commandRowIds.parameters === JSON.stringify(commandParams)
+                  ? commandRowIds.ids
+                  : undefined,
+              )}
+              onChange={(rows) => {
+                const parameters = commandParametersFromRows(rows);
+                setCommandRowIds({
+                  nodeId: selectedNode.id,
+                  parameters: JSON.stringify(parameters),
+                  ids: rows.map((row) => row.id),
+                });
+                updateNodeData({ parameters });
+              }}
             />
           </>
         ) : null}
@@ -1934,8 +2015,11 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
             itemLabel="Output"
             testIdPrefix="event-out"
             data-testid="inspector-event-outputs"
+            showOptional={false}
+            showDefault={false}
             onChange={(rows) => {
               const pins = memberPinsFromRows([], rows);
+              setEventPinRowIds(committedPinRowIds(selectedNode.id, pins, [], rows));
               if (eventMember) {
                 persistGraph(patchClassMember(graph, eventMember.id, { pins }));
                 return;
@@ -1998,7 +2082,9 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
         createBaseClass={classPinPick?.constraintClassId}
         onPick={(classId) => {
           if (classPinPick && classId) {
-            updateNodeData({
+            const nested = nestedPinDefaultRow(classPinPick.pinId);
+            if (nested?.kind === "asset") nested.onChange(classId);
+            else updateNodeData({
               [pinDefaultPropertyKey(classPinPick.pinId)]: classId,
             });
           }
@@ -2032,10 +2118,12 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
               : undefined
         }
         allowNone
-        title={assetPinPick ? `Pick ${assetPinPick.assetType}` : "Pick Asset"}
+        title={assetPinPick ? `Pick ${assetPinPick.assetType || "Asset"}` : "Pick Asset"}
         onPick={(guid) => {
           if (assetPinPick) {
-            updateNodeData(dataGraphAssetPickPatch(selectedNode.type, assetPinPick.pinId, guid, dataAssets, selectedNode.data, dataPinWired));
+            const nested = nestedPinDefaultRow(assetPinPick.pinId);
+            if (nested?.kind === "asset") nested.onChange(guid ?? "");
+            else updateNodeData(dataGraphAssetPickPatch(selectedNode.type, assetPinPick.pinId, guid, dataAssets, selectedNode.data, dataPinWired));
           }
           setAssetPinPick(null);
         }}

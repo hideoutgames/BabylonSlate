@@ -7,10 +7,11 @@ import { join } from "node:path";
 import { platformArtifactNames, validateArtifacts } from "../../../scripts/distribution/contract.mjs";
 import { validatePatchNotes } from "../../../scripts/distribution/changelog.mjs";
 
-if (process.env.VITE_TEST_MODE === "true" || process.env.VITE_TEST_QUERY === "true") throw new Error("Native distribution must use production storage");
 const editorDir = fileURLToPath(new URL("..", import.meta.url));
 const androidDir = join(editorDir, "android");
-const manifest = JSON.parse(await readFile(join(editorDir, "dist/build-manifest.json"), "utf8"));
+// This signs the web copy android:sync left; only a distribution build (which refuses
+// test-mode storage) emits build-manifest.json, so its presence proves a production bundle.
+const manifest = JSON.parse(await readFile(join(androidDir, "app/src/main/assets/public/build-manifest.json"), "utf8"));
 if (!["test", "release"].includes(manifest.channel) || !manifest.packageVersion || manifest.platform !== "android" || !Number.isSafeInteger(manifest.androidVersionCode) || manifest.androidVersionCode < 1) {
   throw new Error("Android distribution manifest required");
 }

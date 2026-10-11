@@ -245,6 +245,37 @@ describe("Project Composer", () => {
     ).toBe(false);
   });
 
+  it("keeps a color chosen while a picture encodes and then shows the picture", async () => {
+    let resolvePicture!: (value: string) => void;
+    vi.spyOn(appearanceHelpers, "prepareProjectPicture").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvePicture = resolve;
+        }),
+    );
+    render(<Composer />);
+    fireEvent.change(screen.getByLabelText("Upload Picture"), {
+      target: {
+        files: [
+          new File([new Uint8Array(1)], "badge.png", { type: "image/png" }),
+        ],
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Violet" }));
+    expect(
+      screen.getByRole("button", { name: "Violet" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+    await act(async () => {
+      resolvePicture("data:image/webp;base64,AAAA");
+    });
+    expect(
+      screen.getByTestId("project-identity-preview").querySelector("img"),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Violet" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
   it("keeps the chosen template fixed while project creation is in progress", () => {
     render(<Composer busy />);
     expect(

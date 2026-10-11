@@ -3,7 +3,6 @@ import {
   createText3DComponent,
   parseText3DAlignment,
   parseText3DColor,
-  parseText3DDepth,
   parseText3DFontAssetGuid,
   parseText3DProperties,
   parseText3DSize,
@@ -20,7 +19,6 @@ describe("Text3DComponent helpers", () => {
     expect(parseText3DAlignment("nope")).toBe("left");
     expect(parseText3DText(undefined)).toBe("Text");
     expect(parseText3DSize(-2)).toBe(1);
-    expect(parseText3DDepth(0)).toBe(0.1);
     expect(parseText3DColor(undefined)).toEqual([1, 1, 1]);
     expect(parseText3DFontAssetGuid("")).toBeNull();
   });
@@ -29,7 +27,6 @@ describe("Text3DComponent helpers", () => {
     const parsed = parseText3DProperties({
       text: "Hi",
       size: 2,
-      depth: 0.25,
       color: [0.2, 0.4, 0.6],
       fontAssetGuid: "font-1",
       alignment: "center",
@@ -37,7 +34,6 @@ describe("Text3DComponent helpers", () => {
     expect(parsed).toEqual({
       text: "Hi",
       size: 2,
-      depth: 0.25,
       color: [0.2, 0.4, 0.6],
       fontAssetGuid: "font-1",
       alignment: "center",

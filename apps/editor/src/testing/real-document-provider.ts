@@ -44,7 +44,7 @@ export function installMemoryOpfs(): void {
  */
 export async function unmountDocumentProvider(
   documents: { projectDocument: unknown } | null,
-  actions: { forceCloseProject: () => Promise<void> } | null,
+  actions: { forceCloseProject: () => Promise<unknown> } | null,
 ): Promise<void> {
   if (documents?.projectDocument && actions) {
     await act(() => actions.forceCloseProject());

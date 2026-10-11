@@ -8,6 +8,8 @@ const PATH_COLOR = new Color3(0.2, 0.85, 1);
 const AGENT_COLOR = new Color3(0.4, 1, 0.45);
 type Point = { x: number; y: number; z: number };
 type Slot = { mesh: Mesh; key: string };
+/** Labels show speed rounded to this step, so crowd jitter and steady acceleration do not remesh every update. */
+const LABEL_SPEED_STEP = 0.5;
 
 function vector(point: Point): Vector3 {
   return new Vector3(point.x, point.y, point.z);
@@ -93,11 +95,12 @@ export function createPlayNavigationOverlay(scene: Scene): {
       const velocityOrigin = position.add(world === "3d" ? new Vector3(0, 0.1, 0) : new Vector3(0, 0, -0.1));
       syncLines(`${name}velocity`, [[velocityOrigin, velocityOrigin.add(vector(agent.velocity))]], AGENT_COLOR, seen);
 
-      const speed = Math.hypot(agent.velocity.x, agent.velocity.y, agent.velocity.z);
-      const text = `${agent.actorName.slice(0, 48)} (${agent.actorGuid.slice(0, 8)})\n${agent.state} - ${speed.toFixed(1)} u/s`;
       const labelName = `${name}label`;
       seen.add(labelName);
       let label = slots.get(labelName);
+      const measured = Math.hypot(agent.velocity.x, agent.velocity.y, agent.velocity.z);
+      const speed = Math.round(measured / LABEL_SPEED_STEP) * LABEL_SPEED_STEP;
+      const text = `${agent.actorName.slice(0, 48)} (${agent.actorGuid.slice(0, 8)})\n${agent.state} - ${speed.toFixed(1)} u/s`;
       if (label && label.key !== text) {
         remove(labelName, label);
         label = undefined;

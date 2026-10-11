@@ -57,7 +57,8 @@ export function DebugBehaviourTreeDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="editor-dialog-large flex min-h-0 flex-col gap-3"
+        className="editor-dialog-large"
+        bodyClassName="flex flex-col gap-3"
         data-testid="behaviour-tree-debugger"
       >
         <DialogHeader>

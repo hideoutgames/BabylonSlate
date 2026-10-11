@@ -27,6 +27,35 @@ describe("DebugConsole", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false, expect.anything());
   });
 
+  it("draws a block caret that follows the typed text instead of key hints", () => {
+    render(
+      <DebugConsole
+        open
+        onOpenChange={() => {}}
+        commands={createCommandRegistry().list()}
+        onExecute={() => ({ success: true, output: "" })}
+      />,
+    );
+    const input = screen.getByTestId("debug-console-input") as HTMLInputElement;
+    expect(input.getAttribute("placeholder")).toBeNull();
+    expect(screen.queryByTestId("debug-console-caret")).toBeNull();
+    input.focus();
+    fireEvent.change(input, { target: { value: "fps" } });
+    const before = () => screen.getByTestId("debug-console-caret").previousSibling?.textContent;
+    expect(before()).toBe("fps");
+    input.setSelectionRange(1, 1);
+    fireEvent.select(input);
+    expect(before()).toBe("f");
+    // A selected range shows the native highlight, not the block.
+    input.setSelectionRange(0, 2);
+    fireEvent.select(input);
+    expect(screen.queryByTestId("debug-console-caret")).toBeNull();
+    input.setSelectionRange(3, 3);
+    fireEvent.select(input);
+    fireEvent.blur(input);
+    expect(screen.queryByTestId("debug-console-caret")).toBeNull();
+  });
+
   it("runs a command, shows SelectableText output, and suggests names", async () => {
     const onExecute = vi.fn().mockResolvedValue({
       success: true,
@@ -117,6 +146,35 @@ describe("DebugConsole", () => {
     expect(
       (screen.getByTestId("debug-console-input") as HTMLInputElement).value,
     ).toBe("quality resolution high");
+  });
+
+  it("stops following new output after the user scrolls back", () => {
+    const scrollIntoView = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      const props = {
+        open: true,
+        onOpenChange: () => {},
+        commands: createCommandRegistry().list(),
+        onExecute: () => ({ success: true, output: "" }),
+      };
+      const line = (id: number) => ({ id, timestamp: id, severity: "log", message: `Line ${id}` });
+      const view = render(<DebugConsole {...props} logs={[line(1)]} />);
+      const viewport = document.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]')!;
+      Object.defineProperties(viewport, {
+        scrollHeight: { configurable: true, value: 1000 },
+        clientHeight: { configurable: true, value: 200 },
+        scrollTop: { configurable: true, value: 0 },
+      });
+      fireEvent.scroll(viewport);
+      scrollIntoView.mockClear();
+      view.rerender(<DebugConsole {...props} logs={[line(1), line(2)]} />);
+      expect(screen.getByTestId("debug-console-transcript").textContent).toContain("Line 2");
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
   });
 
   it("does not reset suggestion scrolling when live context refreshes", () => {

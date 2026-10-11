@@ -14,7 +14,6 @@ export function applyPlayerLayout(options: {
     options.root.style.background = options.render.blackBars ? "#000" : "#111";
     options.canvas.style.width = "100%";
     options.canvas.style.height = "100%";
-    options.canvas.style.objectFit = "";
     return null;
   }
   options.root.style.background = "#000";
@@ -26,6 +25,5 @@ export function applyPlayerLayout(options: {
   );
   options.canvas.style.width = `${fitted.width}px`;
   options.canvas.style.height = `${fitted.height}px`;
-  options.canvas.style.objectFit = "";
   return framebuffer;
 }

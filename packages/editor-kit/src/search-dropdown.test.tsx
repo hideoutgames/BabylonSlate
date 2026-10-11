@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { SearchDropdown } from "./search-dropdown";
 
 const items = [
@@ -54,6 +54,34 @@ describe("SearchDropdown", () => {
     );
     fireEvent.keyDown(screen.getByTestId("palette-query"), { key: "Escape" });
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("moves from the search field into the results with the arrow keys", async () => {
+    const onSelect = vi.fn();
+    render(
+      <SearchDropdown
+        open
+        onOpenChange={() => {}}
+        title="Keys"
+        items={items}
+        onSelect={onSelect}
+        data-testid="palette"
+      >
+        <button type="button">Palette</button>
+      </SearchDropdown>,
+    );
+    const query = screen.getByTestId("palette-query");
+    query.focus();
+    fireEvent.keyDown(query, { key: "ArrowDown" });
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByTestId("search-item-a"));
+    });
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowDown" });
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByTestId("search-item-b"));
+    });
+    fireEvent.click(document.activeElement!);
+    expect(onSelect).toHaveBeenCalledWith("b");
   });
 
   it("renders group headers for consecutive items that share a group", () => {

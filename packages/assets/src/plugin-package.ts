@@ -1,6 +1,6 @@
 import { ENGINE_VERSION, type ProjectStorage } from "@babylonslate/core";
 import { decodeAssetDocument } from "./asset-document";
-import { readBabassetHeader } from "./babasset";
+import { decodeBabasset, encodeBabasset, readBabassetHeader, type BabassetHeader } from "./babasset";
 import {
   ASSETS_DIR,
   decodeProjectZip,
@@ -14,6 +14,8 @@ import {
 } from "./babproject";
 import { stableStringify } from "./bytes";
 import { newAssetGuid } from "./guid";
+import { applyImportGuidRemap } from "./importers/guid-remap";
+import type { ImportResult } from "./importers/types";
 import { copyStorageTree } from "./storage-move";
 import { isPortablePackagePath } from "./package-path";
 import {
@@ -57,8 +59,11 @@ export interface InspectedBabplugin {
   files: ProjectTreeFile[];
 }
 
+/** Contained asset guids the project already uses, each with the new guid it is given. */
+export type PluginAssetGuidRemap = Readonly<Record<string, string>>;
+
 export type PluginImportPlan =
-  | { kind: "install"; folderName: string }
+  | { kind: "install"; folderName: string; assetGuids?: PluginAssetGuidRemap }
   | { kind: "update"; folderName: string; existingGuid: string }
   | {
       kind: "conflict";
@@ -72,6 +77,7 @@ export type PluginImportPlan =
       folderName: string;
       previousGuid: string;
       nextGuid: string;
+      assetGuids?: PluginAssetGuidRemap;
     };
 
 function dirname(path: string): string {
@@ -225,10 +231,21 @@ export async function exportPluginZip(
   return encodeProjectZip(files);
 }
 
+/** An indexed asset as `AssetRegistry.list()` returns it, reduced to what import planning reads. */
+export interface PluginImportIndexedAsset {
+  header: { guid: string };
+  placeholder?: boolean;
+}
+
+/**
+ * Plan a `.babplugin` import. A guid counts as taken when an existing plugin
+ * or a real indexed asset has it. An Unresolved placeholder does not take its
+ * guid: the incoming plugin may be what fills it.
+ */
 export function planPluginImport(options: {
   incoming: InspectedBabplugin;
   existingPlugins: readonly PluginDescriptor[];
-  occupiedGuids: ReadonlySet<string>;
+  indexedAssets: readonly PluginImportIndexedAsset[];
   existingFolderNames: readonly string[];
   createGuid?: () => string;
 }): PluginImportPlan {
@@ -255,15 +272,121 @@ export function planPluginImport(options: {
     options.incoming.settings.displayName,
     options.existingFolderNames,
   );
-  if (options.occupiedGuids.has(guid)) {
+  const occupiedGuids = new Set(options.existingPlugins.map((plugin) => plugin.pluginGuid));
+  for (const asset of options.indexedAssets) {
+    if (!asset.placeholder) occupiedGuids.add(asset.header.guid);
+  }
+  const createGuid = options.createGuid ?? newAssetGuid;
+  const assetGuids = containedGuidRemap(options.incoming, occupiedGuids, createGuid);
+  const remapped = Object.keys(assetGuids).length > 0 ? { assetGuids } : {};
+  if (occupiedGuids.has(guid)) {
     return {
       kind: "remap-plugin",
       folderName,
       previousGuid: guid,
-      nextGuid: (options.createGuid ?? newAssetGuid)(),
+      nextGuid: createGuid(),
+      ...remapped,
     };
   }
-  return { kind: "install", folderName };
+  return { kind: "install", folderName, ...remapped };
+}
+
+/**
+ * A new plugin's assets that share a guid with an asset the project already
+ * has get new guids, so both stay indexed. An asset that fills a placeholder
+ * keeps its guid, so its referrers resolve to it. An update keeps its ids:
+ * they are the ids the plugin's previous version, and its users, already have.
+ */
+function containedGuidRemap(
+  incoming: InspectedBabplugin,
+  occupiedGuids: ReadonlySet<string>,
+  createGuid: () => string,
+): Record<string, string> {
+  const remap: Record<string, string> = {};
+  for (const file of incoming.files) {
+    if (!file.path.endsWith(".babasset") || file.path === incoming.settingsPath) continue;
+    let guid: string;
+    try {
+      guid = readBabassetHeader(file.data).guid;
+    } catch {
+      continue;
+    }
+    if (occupiedGuids.has(guid) && !Object.hasOwn(remap, guid)) remap[guid] = createGuid();
+  }
+  return remap;
+}
+
+const PACK_BLOBS_DIR = `${ASSETS_DIR}/.blobs`;
+
+/**
+ * Give the remapped assets their new guids and rewrite every reference to
+ * them in the pack's assets (dependencies, payloads, documents), as a
+ * `.babasset` import does.
+ */
+async function remapPluginAssetGuids(
+  files: readonly ProjectTreeFile[],
+  remap: PluginAssetGuidRemap,
+): Promise<ProjectTreeFile[]> {
+  const blobs = new Map<string, Uint8Array>();
+  for (const file of files) {
+    if (file.path.startsWith(`${PACK_BLOBS_DIR}/`)) blobs.set(file.path.slice(PACK_BLOBS_DIR.length + 1), file.data);
+  }
+  const readBlob = async (sha256: string) => {
+    const data = blobs.get(sha256);
+    if (!data) throw new Error(`Plugin blob ${sha256} is missing from the package`);
+    return data;
+  };
+  const assets: Array<{ index: number; header: BabassetHeader; result: ImportResult }> = [];
+  for (const [index, file] of files.entries()) {
+    if (!file.path.endsWith(".babasset")) continue;
+    const decoded = await decodeBabasset(file.data, readBlob);
+    const { header } = decoded;
+    assets.push({
+      index,
+      header,
+      result: {
+        type: header.type,
+        name: header.name,
+        guid: header.guid,
+        version: header.version,
+        dependencies: [...header.dependencies],
+        requiredDependencies: header.requiredDependencies ? [...header.requiredDependencies] : undefined,
+        classReferences: header.classReferences,
+        requiredClassReferences: header.requiredClassReferences,
+        parentClass: header.parentClass ?? null,
+        payload: header.payload,
+        chunks: header.chunks.map((entry) => ({ id: entry.id, kind: entry.kind, mime: entry.mime, data: decoded.chunks.get(entry.id)! })),
+      },
+    });
+  }
+  const remapped = applyImportGuidRemap(assets.map((asset) => asset.result), new Map(Object.entries(remap)));
+  const out = [...files];
+  const written = new Map<string, Uint8Array>();
+  for (const [position, asset] of assets.entries()) {
+    const result = remapped[position]!;
+    const { chunks, ...header } = asset.header;
+    void chunks;
+    const data = await encodeBabasset({
+      header: {
+        ...header,
+        guid: result.guid,
+        dependencies: result.dependencies,
+        ...(result.requiredDependencies ? { requiredDependencies: result.requiredDependencies } : {}),
+        ...(result.classReferences ? { classReferences: result.classReferences } : {}),
+        ...(result.requiredClassReferences ? { requiredClassReferences: result.requiredClassReferences } : {}),
+        payload: result.payload,
+      },
+      chunks: result.chunks,
+      writeBlob: async (sha256, bytes) => {
+        if (blobs.has(sha256)) return;
+        blobs.set(sha256, bytes);
+        written.set(sha256, bytes);
+      },
+    });
+    out[asset.index] = { path: files[asset.index]!.path, data };
+  }
+  for (const [sha256, data] of written) out.push({ path: `${PACK_BLOBS_DIR}/${sha256}`, data });
+  return out;
 }
 
 async function rewritePluginSettingsGuid(
@@ -300,10 +423,12 @@ export async function applyPluginImport(
   const folderName = plan.folderName;
   validatePluginPath(folderName);
   if (folderName.includes("/")) throw new Error("Plugin folder must be a single name");
-  const files = pluginFiles(incoming.files);
+  let files = pluginFiles(incoming.files);
   if (!files.some((file) => file.path === incoming.settingsPath)) {
     throw new Error("Not a .babplugin: missing PluginSettings");
   }
+  const assetGuids = plan.kind === "install" || plan.kind === "remap-plugin" ? plan.assetGuids : undefined;
+  if (assetGuids && Object.keys(assetGuids).length > 0) files = await remapPluginAssetGuids(files, assetGuids);
   const folderPath = `${PLUGINS_DIR}/${folderName}`;
   const hadOriginal = await storage.exists(folderPath);
   if (hadOriginal && !replace) {

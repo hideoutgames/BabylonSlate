@@ -113,11 +113,13 @@ export class MemoryStorageAdapter implements ProjectStorage {
   }
 
   private split(path: string): string[] {
-    return path
+    const parts = path
       .replace(/^\.\/+/, "")
       .replace(/^\/+/, "")
       .split("/")
       .filter((s) => s.length > 0 && s !== ".");
+    if (parts.includes("..")) throw new Error(`Path escapes project root: ${path}`);
+    return parts;
   }
 
   private walk(
@@ -182,6 +184,8 @@ export class MemoryStorageAdapter implements ProjectStorage {
     if (!name) {
       throw new Error(`Cannot write to root path`);
     }
+    // Like a real filesystem, a file write never replaces a directory and its contents.
+    if (parent.children.get(name)?.kind === "dir") throw new Error(`Is a directory: ${path}`);
     parent.children.set(name, {
       kind: "file",
       data: new Uint8Array(data),
@@ -213,7 +217,7 @@ export class MemoryStorageAdapter implements ProjectStorage {
   }
 
   async readdir(path: string): Promise<DirEntry[]> {
-    const parts = this.split(path === "." ? "" : path);
+    const parts = this.split(path);
     let dir = this.root();
     for (const seg of parts) {
       const child = dir.children.get(seg);

@@ -37,7 +37,7 @@ function partialPixels(pixels: number[]) {
   return pixels.filter((value, i) => i % 4 === 0 && value > 24 && value < 231).length;
 }
 
-for (const backend of ["webgl2"] as ("webgl2" | "webgpu")[]) {
+for (const backend of ["webgl2"] as const) {
   test(`temporal anti-aliasing accumulates and reprojects on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(90_000);
     const errors: string[] = [];

@@ -17,9 +17,16 @@ export type ConsoleCommandGraph = {
     typeId: string;
     properties: Record<string, unknown>;
   }[];
+  edges: readonly { targetNodeId: string; targetPinId: string }[];
 };
 
-/** Lint ExecuteConsoleCommand literals that name a debug-tier command. */
+/**
+ * Stored literal of the Command pin. Same key as `pinDefaultPropertyKey("command")`
+ * in `@babylonslate/scripting`, which depends on this package.
+ */
+const COMMAND_PIN_DEFAULT_KEY = "default:command";
+
+/** Lint unwired ExecuteConsoleCommand literals that name a debug-tier command. */
 export function warnDebugTierConsoleCommands(
   graphs: readonly ConsoleCommandGraph[],
   ctx: { assetGuid: string },
@@ -29,7 +36,12 @@ export function warnDebugTierConsoleCommands(
   for (const graph of graphs) {
     for (const node of graph.nodes) {
       if (node.typeId !== "debug.executeConsoleCommand") continue;
-      const raw = node.properties.command;
+      // A wired Command pin compiles its source, not the stored literal.
+      const wired = graph.edges.some(
+        (edge) => edge.targetNodeId === node.id && edge.targetPinId === "command",
+      );
+      if (wired) continue;
+      const raw = node.properties[COMMAND_PIN_DEFAULT_KEY];
       if (typeof raw !== "string" || raw.trim() === "") continue;
       const { name } = matchCommandName(tokenize(raw), debugNames);
       if (!debugNames.has(name)) continue;

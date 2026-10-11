@@ -11,7 +11,7 @@ vi.mock("../context/document-workspace-context", () => ({ useDocumentWorkspace: 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   openDocuments: [{ id: "graph:assets/Test.class.babasset", ref: { kind: "graph", path: "assets/Test.class.babasset", label: "Test" }, content: state.graph, layout: null, dirty: false }],
   applyGraphChange: async (_id: string, graph: SerializedGraph) => { state.graph = graph; return true; },
-  projectDocument: { settings: { input: { actions: [], axes: [] } } },
+  projectDocument: { settings: {} },
   assetRegistry: { list: () => [] },
 })));
 vi.mock("../context/validation-context", () => ({ useValidation: () => ({ focusDiagnostic: null, setFocusDiagnostic: vi.fn() }) }));
@@ -41,5 +41,28 @@ describe("Execute JavaScript Inspector", () => {
     fireEvent.click(screen.getByTestId("js-output-add"));
     fireEvent.click(await screen.findByTestId("search-item-float"));
     expect(state.graph.nodes[0]!.data.outputs).toEqual([expect.objectContaining({ name: "NewOutput", type: { kind: "float" } })]);
+  });
+
+  it("reports a name repeated across inputs and outputs", () => {
+    const pin = { name: "value", type: { kind: "float" } };
+    state.graph = {
+      nodes: [{ id: "js", type: "debug.executeJavaScript", position: { x: 0, y: 0 }, data: { inputs: [{ id: "a", ...pin }], outputs: [{ id: "b", ...pin }] } }],
+      edges: [], members: [],
+    } as SerializedGraph;
+    render(<PrefabEditingProvider initialSelectedId={null}><GraphEditingProvider initialSelectedNodeIds={["js"]}><InspectorPanel {...({} as IDockviewPanelProps)} /></GraphEditingProvider></PrefabEditingProvider>);
+    expect(screen.getByTestId("js-name-error").textContent).toBe("Duplicate JS identifier: value");
+  });
+
+  it("edits the function graph node, not an Event Graph node with the same id", async () => {
+    const eventNode = { id: "js", type: "debug.executeJavaScript", position: { x: 0, y: 0 }, data: {} };
+    state.graph = {
+      nodes: [eventNode], edges: [], members: [{ id: "fn", kind: "function", name: "Run" }],
+      functionGraphs: { fn: { nodes: [{ ...eventNode, data: {} }], edges: [] } },
+    } as SerializedGraph;
+    render(<PrefabEditingProvider initialSelectedId={null}><GraphEditingProvider initialSelectedNodeIds={["js"]} initialActiveFunctionId="fn"><InspectorPanel {...({} as IDockviewPanelProps)} /></GraphEditingProvider></PrefabEditingProvider>);
+    fireEvent.click(screen.getByTestId("js-input-add"));
+    fireEvent.click(await screen.findByTestId("search-item-object"));
+    expect(state.graph.functionGraphs?.fn?.nodes[0]!.data.inputs).toEqual([expect.objectContaining({ type: expect.objectContaining({ kind: "objectRef" }) })]);
+    expect(state.graph.nodes[0]!.data).toEqual({});
   });
 });

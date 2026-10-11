@@ -27,7 +27,7 @@ function SeverityIcon({
 }
 
 /**
- * One 44px Compiler Results row: a ghost button with a severity icon, the
+ * One 44px diagnostic row (Compiler Results, Preview Session Report): a ghost button with a severity icon, the
  * truncated message, and an optional mono code / location line.
  */
 export function DiagnosticResultRow({
@@ -38,6 +38,7 @@ export function DiagnosticResultRow({
   selected = false,
   onSelect,
   testId,
+  nodeId,
 }: {
   severity: "error" | "warning" | "info";
   message: string;
@@ -48,6 +49,8 @@ export function DiagnosticResultRow({
   onSelect: () => void;
   /** On the row button. */
   testId: string;
+  /** Node the row navigates to, exposed as `data-node-id`. */
+  nodeId?: string;
 }) {
   const { label, tone } = SEVERITY[severity];
   return (
@@ -63,6 +66,7 @@ export function DiagnosticResultRow({
       aria-pressed={selected}
       data-testid={testId}
       data-severity={severity}
+      data-node-id={nodeId}
     >
       <SeverityIcon severity={severity} className={cn("size-3.5 shrink-0", tone)} />
       <span className="sr-only">{label}</span>

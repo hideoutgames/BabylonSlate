@@ -113,6 +113,30 @@ describe("Water rendering", () => {
       expect(source.getInternalTexture()).toBeNull();
     } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
   });
+  it("reflects a skybox added after the water and follows its visibility", () => {
+    const engine = new NullEngine(), scene = new Scene(engine), cache = resourceCacheForEngine(engine);
+    vi.spyOn(engine, "createPrefilteredCubeTexture").mockImplementation((url) => {
+      const internal = engine.createTexture(url, false, false, null);
+      internal.isCube = true; internal._sphericalPolynomial = new SphericalPolynomial();
+      return internal;
+    });
+    try {
+      const water = createWaterMesh(scene, "water", normalizeWaterBody({ resolution: 8 }));
+      const material = water.material as PBRMaterial;
+      updateSceneWater(scene);
+      expect(material.reflectionTexture).toBeNull();
+      const lease = cache.acquireTexture("sky", engine, buildFloatDdsCubeFixture(), { isCube: true }) as ResourceLease<CubeTexture>;
+      const sky = createSkyboxMesh(scene, "sky", lease);
+      updateSceneWater(scene);
+      expect(material.reflectionTexture?.getInternalTexture()).toBe(lease.resource.getInternalTexture());
+      sky.setEnabled(false); updateSceneWater(scene);
+      expect(material.reflectionTexture).toBeNull();
+      sky.setEnabled(true); updateSceneWater(scene);
+      expect(material.reflectionTexture).not.toBeNull();
+      sky.dispose(); updateSceneWater(scene);
+      expect(material.reflectionTexture).toBeNull();
+    } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
+  });
   it("resizes tessellation with a stretched volume while rendered waves still match world-space queries", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     const water = createDefaultWaterDefinition(), body = normalizeWaterBody({ width: 12, length: 10, waveScale: 1 }, "ocean");
@@ -264,28 +288,26 @@ describe("Water rendering", () => {
       expect(updateWaterMeshDefinition(MeshBuilder.CreateBox("box", {}, scene), edited)).toBe(false);
     } finally { scene.dispose(); engine.dispose(); }
   });
-  it("draws Play water at the physics water time of the applied snapshot frames, interpolated between them like poses", () => {
+  it("draws Play water at the physics water time of the applied snapshot frame", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     const binding = createSnapshotSceneBinding();
-    const apply = (frameId: number, previousFrameId: number, alpha: number) =>
-      applySnapshotToScene(scene, binding, { frameId, previousFrameId, tickIndex: frameId, alpha, actorCount: 0, actors: [] });
+    const apply = (frameId: number) =>
+      applySnapshotToScene(scene, binding, { frameId, tickIndex: frameId, actorCount: 0, actors: [] });
     try {
       setSceneWaterTime(scene, 0);
       const mesh = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 10, length: 10 }));
       const drawnTime = () => { updateSceneWater(scene); return bindWater(mesh).get("slateWaterMotion")![0]; };
       // The worker stepped frame 4's water at 0.15 s and frame 5's at 0.2 s (slomo 0.5 with a 0.1 s step).
       setSceneWaterTime(scene, 0.15, 4); setSceneWaterTime(scene, 0.2, 5);
-      apply(5, 4, 1);
+      apply(5);
       expect(drawnTime()).toBeCloseTo(0.2, 12);
-      apply(5, 4, 0.25);
-      expect(drawnTime()).toBeCloseTo(0.1625, 12);
-      apply(4, 4, 1);
+      apply(4);
       expect(drawnTime()).toBeCloseTo(0.15, 12);
       // A frame whose water time has not arrived keeps the newest earlier one; the late time applies without a new sample.
-      apply(6, 5, 0.5);
+      apply(6);
       expect(drawnTime()).toBeCloseTo(0.2, 12);
       setSceneWaterTime(scene, 0.25, 6);
-      expect(drawnTime()).toBeCloseTo(0.225, 12);
+      expect(drawnTime()).toBeCloseTo(0.25, 12);
     } finally { scene.dispose(); engine.dispose(); }
   });
   it("resamples CPU-displaced waves for an edited definition while the water clock is paused", () => {

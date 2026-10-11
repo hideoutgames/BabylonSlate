@@ -6,7 +6,6 @@ import { SlateVoronoiNoiseBlock } from "./voronoi-noise-block";
 import { WaterSurfaceBlock } from "./water-surface-block";
 import {
   AddBlock,
-  AnimatedInputBlockTypes,
   ArcTan2Block,
   ClampBlock,
   Color3,
@@ -606,18 +605,8 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     const block = new InputBlock(context.name); block.value = new Color4(1, 1, 1, 1);
     return single(block, {}, { color: block.output });
   },
-  "input.time": ({ name, operation }) => {
-    const block = new GameTimeInputBlock(
-      name,
-      undefined,
-      NodeMaterialBlockConnectionPointTypes.Float,
-    );
-    // Preview Scenes render independently of the shared Engine's frame loop.
-    // Its frame delta can be stale, so Seconds must use elapsed time directly.
-    // Keep the historical scene-animation rate for authored legacy nodes.
-    block.animationType = operation.properties.timeMode === "seconds"
-      ? AnimatedInputBlockTypes.RealTime
-      : AnimatedInputBlockTypes.Time;
+  "input.time": ({ name }) => {
+    const block = new GameTimeInputBlock(name);
     return single(block, {}, { time: block.output });
   },
   "input.waterSurface": ({ name }) => {
@@ -891,68 +880,36 @@ ADAPTERS["input.sceneNormal"] = ({ name, plumbing }) => {
 
 ADAPTERS["custom.glsl"] = ({ name, operation }) => {
   const pins = customGlslInterface(operation.properties);
-  if (pins) {
-    const primary = pins.outputs[0]!;
-    const additional = pins.outputs.slice(1);
-    const functionName = customGlslFunctionName(operation.id);
-    const helper = `${functionName}_body`;
-    const block = new CustomBlock(name);
-    const blockType = { float: "Float", vec2: "Vector2", vec3: "Vector3", vec4: "Vector4", texture: "sampler2D" };
-    const glslType = (type: MaterialValueType) => type === "texture" ? "sampler2D" : type;
-    const parameters = [...pins.inputs.map((pin) => `${glslType(pin.type)} ${pin.name}`), ...additional.map((pin) => `out ${pin.type} ${pin.name}`)];
-    const wrapperParameters = [...pins.inputs.map((pin, i) => `${glslType(pin.type)} input${i}`), ...pins.outputs.map((pin, i) => `out ${pin.type} output${i}`)];
-    block.options = {
-      name,
-      target: "Neutral",
-      functionName,
-      inParameters: pins.inputs.map((pin, i) => ({ name: `input${i}`, type: blockType[pin.type] })),
-      outParameters: pins.outputs.map((pin, i) => ({ name: `output${i}`, type: blockType[pin.type] })),
-      code: [
-        `${primary.type} ${helper}(${parameters.join(", ")}) {`,
-        ...additional.map((pin) => `${pin.name} = ${pin.type}(0.0);`),
-        `// CUSTOM_BODY_${functionName}`,
-        String(operation.properties.body ?? ""),
-        `}`,
-        `void ${functionName}(${wrapperParameters.join(", ")}) {`,
-        `output0 = ${helper}(${[...pins.inputs.map((_, i) => `input${i}`), ...additional.map((_, i) => `output${i + 1}`)].join(", ")});`,
-        `}`,
-      ],
-    };
-    return {
-      blocks: [block],
-      inputs: Object.fromEntries(pins.inputs.map((pin, i) => [pin.id, block.inputs[i]!])),
-      outputs: Object.fromEntries(pins.outputs.map((pin, i) => [pin.id, block.outputs[i]!])),
-    };
-  }
-  const raw =
-    typeof operation.properties.body === "string"
-      ? operation.properties.body.trim()
-      : "";
-  const expression = raw === "" ? "a" : raw;
+  const primary = pins.outputs[0]!;
+  const additional = pins.outputs.slice(1);
   const functionName = customGlslFunctionName(operation.id);
+  const helper = `${functionName}_body`;
   const block = new CustomBlock(name);
+  const blockType = { float: "Float", vec2: "Vector2", vec3: "Vector3", vec4: "Vector4", texture: "sampler2D" };
+  const glslType = (type: MaterialValueType) => type === "texture" ? "sampler2D" : type;
+  const parameters = [...pins.inputs.map((pin) => `${glslType(pin.type)} ${pin.name}`), ...additional.map((pin) => `out ${pin.type} ${pin.name}`)];
+  const wrapperParameters = [...pins.inputs.map((pin, i) => `${glslType(pin.type)} input${i}`), ...pins.outputs.map((pin, i) => `out ${pin.type} output${i}`)];
   block.options = {
     name,
     target: "Neutral",
     functionName,
-    inParameters: [
-      { name: "a", type: "AutoDetect" },
-      { name: "b", type: "AutoDetect" },
-    ],
-    outParameters: [
-      { name: "result", type: "BasedOnInput", typeFromInput: "a" },
-    ],
-    inLinkedConnectionTypes: [{ input1: "a", input2: "b" }],
+    inParameters: pins.inputs.map((pin, i) => ({ name: `input${i}`, type: blockType[pin.type] })),
+    outParameters: pins.outputs.map((pin, i) => ({ name: `output${i}`, type: blockType[pin.type] })),
     code: [
-      `void ${functionName}({TYPE_a} a, {TYPE_b} b, out {TYPE_result} result) {`,
-      `result = ${expression};`,
+      `${primary.type} ${helper}(${parameters.join(", ")}) {`,
+      ...additional.map((pin) => `${pin.name} = ${pin.type}(0.0);`),
+      `// CUSTOM_BODY_${functionName}`,
+      String(operation.properties.body ?? ""),
+      `}`,
+      `void ${functionName}(${wrapperParameters.join(", ")}) {`,
+      `output0 = ${helper}(${[...pins.inputs.map((_, i) => `input${i}`), ...additional.map((_, i) => `output${i + 1}`)].join(", ")});`,
       `}`,
     ],
   };
   return {
     blocks: [block],
-    inputs: { a: block.inputs[0]!, b: block.inputs[1]! },
-    outputs: { out: block.outputs[0]! },
+    inputs: Object.fromEntries(pins.inputs.map((pin, i) => [pin.id, block.inputs[i]!])),
+    outputs: Object.fromEntries(pins.outputs.map((pin, i) => [pin.id, block.outputs[i]!])),
   };
 };
 

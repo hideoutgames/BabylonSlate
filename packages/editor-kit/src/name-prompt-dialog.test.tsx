@@ -60,4 +60,16 @@ describe("NamePromptDialog", () => {
     expect(onSubmit).toHaveBeenCalledWith("Jump");
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
+
+  it("submits on Enter but not on the Enter that confirms an IME candidate", () => {
+    const onSubmit = vi.fn();
+    render(<NamePromptDialog open onOpenChange={() => {}} title="Add Function" label="Function Name" onSubmit={onSubmit} />);
+    const input = screen.getByTestId("name-prompt-input");
+    fireEvent.change(input, { target: { value: "ジャンプ" } });
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    fireEvent.keyDown(input, { key: "Enter", keyCode: 229 });
+    expect(onSubmit).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onSubmit).toHaveBeenCalledWith("ジャンプ");
+  });
 });

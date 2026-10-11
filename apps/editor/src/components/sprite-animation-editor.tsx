@@ -26,7 +26,7 @@ import {
   parseSpriteAnimationPayload,
   parseSpriteCollision,
   parseSpritePivot,
-  pngPixelSize,
+  sniffSourceImageSize,
   spriteAnimationDurationMs,
   spriteAnimationFrameStartMs,
   spriteAnimationPlayhead,
@@ -433,20 +433,35 @@ export function SpriteAnimationDetails({
   const collision = parseSpriteCollision(frame?.collision);
   const pivot = parseSpritePivot(frame?.pivot);
 
+  // A texture pick reads the image first; it then patches the document as it
+  // is, and only if no later pick on the same frame replaced it.
+  const latestRef = useRef(animation);
+  latestRef.current = animation;
+  const texturePickByFrameRef = useRef(new Map<number, object>());
+
   /** `field` marks a continuous edit whose scrub is one undo step. */
-  const patchFrame = (
+  const patchFrameIn = (
+    base: typeof animation,
+    index: number,
     patch: Partial<NonNullable<typeof frame>>,
     field?: string,
   ): void => {
-    const frames = [...animation.frames];
-    if (!frames[selectedFrameIndex]) return;
-    frames[selectedFrameIndex] = {
-      ...frames[selectedFrameIndex]!,
+    const frames = [...base.frames];
+    if (!frames[index]) return;
+    frames[index] = {
+      ...frames[index]!,
       ...patch,
     };
-    if (field) onChange({ ...animation, frames }, spriteFrameMergeKey(selectedFrameIndex, field));
-    else onChange({ ...animation, frames });
+    const next = { ...base, frames };
+    // Later reads that finish before the next render build on this edit.
+    latestRef.current = next;
+    if (field) onChange(next, spriteFrameMergeKey(index, field));
+    else onChange(next);
   };
+  const patchFrame = (
+    patch: Partial<NonNullable<typeof frame>>,
+    field?: string,
+  ): void => patchFrameIn(animation, selectedFrameIndex, patch, field);
 
   const setDurationOverride = (override: boolean): void => {
     const frames = [...animation.frames];
@@ -467,6 +482,10 @@ export function SpriteAnimationDetails({
   };
 
   const applyTextureGuid = (guid: string | null): void => {
+    const frameIndex = selectedFrameIndex;
+    const pick = {};
+    const picks = texturePickByFrameRef.current;
+    picks.set(frameIndex, pick);
     if (!guid) {
       patchFrame({ textureGuid: "" });
       return;
@@ -482,8 +501,12 @@ export function SpriteAnimationDetails({
         pixels && pixels.byteLength > 0
           ? pixels
           : await readAssetChunk(path, "source");
-      const size = source && source.byteLength > 0 ? pngPixelSize(source) : null;
-      patchFrame(
+      if (picks.get(frameIndex) !== pick) return;
+      picks.delete(frameIndex);
+      const size = source && source.byteLength > 0 ? sniffSourceImageSize(source) : null;
+      patchFrameIn(
+        latestRef.current,
+        frameIndex,
         size
           ? { textureGuid: guid, width: size.width, height: size.height }
           : { textureGuid: guid },

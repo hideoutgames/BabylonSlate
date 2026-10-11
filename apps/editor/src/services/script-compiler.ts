@@ -1,4 +1,4 @@
-import { consoleCommandMetadataFromGraph } from "@babylonslate/core";
+import { classIdForAssetPath, consoleCommandMetadataFromGraph } from "@babylonslate/core";
 import {
   type GraphClassMember,
   type SerializedGraph,
@@ -86,12 +86,7 @@ function alwaysCompilesClass(
  * use the file stem as the stable key.
  */
 export function classIdForGraphPath(path: string): string {
-  const file = path.split("/").pop() ?? path;
-  const base = file
-    .replace(/\.(graph|class)\.(babasset|json)$/, "")
-    .replace(/\.babasset$/, "");
-  const cleaned = base.replace(/[^A-Za-z0-9_]+/g, "_");
-  return cleaned.length > 0 ? cleaned : "Graph";
+  return classIdForAssetPath(path);
 }
 
 
@@ -327,6 +322,8 @@ function classMetadataFromGraph(
 export type GraphCompileDocument = {
   path: string;
   content: SerializedGraph;
+  /** The Class's saved parent, which the compile inherits from. */
+  parentClassId?: string | null;
 };
 
 function compileNodeFingerprint(
@@ -378,6 +375,8 @@ function documentCompileFingerprint(content: SerializedGraph): string {
     members: content.members ?? [],
     components: content.components ?? [],
     functionGraphs: compileFunctionGraphFingerprint(content.functionGraphs),
+    // Copied onto the compiled bundle (`classMetadataFromGraph`).
+    actorDefaults: content.actorDefaults ?? null,
   });
   documentFingerprints.set(content, fingerprint);
   return fingerprint;
@@ -398,6 +397,7 @@ export function graphCompileSignature(
     .map((doc) => ({
       path: doc.path,
       fingerprint: documentCompileFingerprint(doc.content),
+      ...(doc.parentClassId ? { parentClassId: doc.parentClassId } : {}),
     }))
     .sort((a, b) => a.path.localeCompare(b.path));
   return JSON.stringify(
@@ -591,6 +591,7 @@ function compileGraphDocumentCached(
     latentFingerprint?: string;
     parentOf?: (classId: string) => string | null | undefined;
     otherClassGraphs?: Record<string, SerializedGraph>;
+    throwOnError?: boolean;
   },
 ): ScriptBundleEntry | null {
   const cache = options.cache;
@@ -618,6 +619,9 @@ function compileGraphDocumentCached(
     if (cache && key) cache.retainGraph(key, script);
     return script;
   } catch (error) {
+    if (options.throwOnError) {
+      throw new Error(`Class ${documentClassId(doc)} could not be compiled: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    }
     // A graph that fails codegen must not stop Preview; the validator has
     // already surfaced the error in Compiler Results.
     console.error(`[play] failed to compile ${doc.path}`, error);
@@ -682,6 +686,12 @@ function projectLatentFunctions(
   };
 }
 
+/** `throwOnError`: a codegen failure throws instead of omitting that script, as export requires. */
+export type GraphDocumentsCompileOptions = GraphCompileCacheOptions & {
+  cache?: GraphScriptCompileCache;
+  throwOnError?: boolean;
+};
+
 export function compileGraphDocuments(
   documents: ReadonlyArray<{
     path: string;
@@ -689,7 +699,7 @@ export function compileGraphDocuments(
     classId?: string;
     parentClassId?: string | null;
   }>,
-  options: GraphCompileCacheOptions & { cache?: GraphScriptCompileCache } = {},
+  options: GraphDocumentsCompileOptions = {},
 ): ScriptBundleEntry[] {
   const typesFingerprint = typeSchemasFingerprint(
     options.enums,
@@ -718,6 +728,8 @@ export function compileGraphDocuments(
 export type AnimGraphCompileDocument = {
   guid: string;
   path: string;
+  /** The asset name a `throwOnError` failure reports; the guid when absent. */
+  name?: string;
   document: AnimGraphDocument | unknown;
 };
 
@@ -834,7 +846,7 @@ function compileAnimGraphDocument(
  */
 export function compileAnimGraphScripts(
   documents: ReadonlyArray<AnimGraphCompileDocument>,
-  options: GraphCompileCacheOptions & { cache?: GraphScriptCompileCache } = {},
+  options: GraphDocumentsCompileOptions = {},
 ): ScriptBundleEntry[] {
   const scripts: ScriptBundleEntry[] = [];
   const cacheOptions = {
@@ -855,6 +867,9 @@ export function compileAnimGraphScripts(
       if (cache && key) cache.retainAnimation(key, compiled);
       scripts.push(...compiled);
     } catch (error) {
+      if (options.throwOnError) {
+        throw new Error(`Animation Graph ${entry.name ?? entry.guid} could not be compiled:${error instanceof Error ? error.message : String(error)}`, { cause: error });
+      }
       console.error(`[play] failed to compile AnimationGraph ${entry.path}`, error);
     }
   }

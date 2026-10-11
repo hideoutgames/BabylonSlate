@@ -11,7 +11,6 @@ import {
   CardTitle,
 } from "@babylonslate/ui/components/card";
 import type { ListedProject } from "../lib/listed-projects";
-import { displayProjectName } from "../lib/display-project-name";
 import {
   ProjectColorDot,
   ProjectCover,
@@ -58,7 +57,7 @@ export function HomepageProjectCard({
   onEdit: () => void;
   onRemove: () => void;
 }) {
-  const name = displayProjectName(project.label);
+  const name = project.label;
   const activity = describeProjectActivity(project);
   const holding = useRef(false);
   const { menu, closeMenu, bind, openMenuAt } = useContextMenu({

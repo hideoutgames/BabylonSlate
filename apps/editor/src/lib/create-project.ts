@@ -1,4 +1,3 @@
-import { displayProjectName } from "./display-project-name";
 import type { ProjectAppearance } from "@babylonslate/core";
 
 // Descriptor + noun + head noun reads as a compound name in any combination,
@@ -47,7 +46,7 @@ export function randomProjectName(
 
 /** Folder name written to storage; empty when the display name is blank. */
 export function normalizeProjectFolderName(displayName: string): string {
-  return displayProjectName(displayName.trim());
+  return displayName.trim();
 }
 
 export type CreateProjectNameIssue = "Name required." | "Name already exists.";
@@ -66,12 +65,21 @@ export function createProjectNameIssue(
   return taken ? "Name already exists." : null;
 }
 
+/** Built-in starters: Blank, Basic 3D (legacy `empty`), Basic 2D, and Feature Test. */
+export const BUILT_IN_STARTER_KINDS = ["blank", "empty", "2d", "feature-test"] as const;
+
+export type BuiltInStarterKind = (typeof BUILT_IN_STARTER_KINDS)[number];
+
+export function isBuiltInStarterKind(id: string): id is BuiltInStarterKind {
+  return (BUILT_IN_STARTER_KINDS as readonly string[]).includes(id);
+}
+
 export type CreateProjectOptions = {
   appearance?: ProjectAppearance;
   /** Native only: pick an external folder, then scaffold into it. */
   pickFolder?: boolean;
-  /** Built-in starter: Blank, Basic 3D (legacy empty), or Basic 2D. */
-  kind?: "blank" | "empty" | "2d";
+  /** Built-in starter; omitted creates Basic 3D. */
+  kind?: BuiltInStarterKind;
   renderWidth?: number;
   renderHeight?: number;
   blackBars?: boolean;

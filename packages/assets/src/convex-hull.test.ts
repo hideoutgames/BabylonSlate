@@ -40,6 +40,9 @@ describe("convexHull3d", () => {
     expect(convexHullMesh([{ x: 0, y: 0, z: 0 }]).indices).toEqual([]);
   });
   it("keeps the eight cube corners and drops interior points", () => {
+    // Corners nudged 5e-8, across a dedupe grid cell edge, are the same points.
+    const nudged = cubeCorners().map((corner) => ({ ...corner, x: corner.x - 5e-8 }));
+    expect(convexHullMesh([...cubeCorners(), ...nudged]).vertices).toHaveLength(8);
     const hull = convexHull3d([
       ...cubeCorners(),
       { x: 0, y: 0, z: 0 },

@@ -615,7 +615,7 @@ describe("editor Drop", () => {
     const tiles = emptyChunkTiles(2);
     tiles[0] = 1;
     const tilemap = normalizeTilemapPayload({
-      tilesetGuid: "set",
+      tilesets: [{ guid: "set", firstGid: 1, tileCount: 1 }],
       tileWidth: 100,
       tileHeight: 100,
       chunkSize: 2,

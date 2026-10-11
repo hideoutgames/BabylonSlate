@@ -53,6 +53,27 @@ describe("outlinerTreeDropMoves", () => {
     ]);
   });
 
+  it("finishes when an actor's parents loop without reaching the selection", () => {
+    const world = scene({
+      folders: [{ id: "dest", name: "Dest", parentFolderId: null }],
+      actors: [
+        createActor("child", "Child", { parentId: "ring-a" }),
+        createActor("ring-a", "Ring A", { parentId: "ring-b" }),
+        createActor("ring-b", "Ring B", { parentId: "ring-a" }),
+      ],
+    });
+    expect(
+      outlinerTreeDropMoves({
+        dragRowId: actorRowId("child"),
+        targetRowId: folderRowId("dest"),
+        selectedRowIds: [actorRowId("child")],
+        scene: world,
+      }),
+    ).toEqual([
+      { kind: "actor", id: "child", parentId: null, folderId: "dest" },
+    ]);
+  });
+
   it("omits a nested folder when an ancestor folder is also selected", () => {
     const world = scene({
       folders: [
@@ -161,6 +182,24 @@ describe("outlinerTreeDropMoves", () => {
         dragRowId: folderRowId("pack"),
         targetRowId: actorRowId("hero"),
         selectedRowIds: [folderRowId("pack"), actorRowId("lamp")],
+        scene: world,
+      }),
+    ).toEqual([]);
+  });
+
+  it("returns no move when an unselected folder drops onto an actor", () => {
+    const world = scene({
+      folders: [
+        { id: "outer", name: "Outer", parentFolderId: null },
+        { id: "pack", name: "Pack", parentFolderId: "outer" },
+      ],
+      actors: [createActor("hero", "Hero", { folderId: "outer" })],
+    });
+    expect(
+      outlinerTreeDropMoves({
+        dragRowId: folderRowId("pack"),
+        targetRowId: actorRowId("hero"),
+        selectedRowIds: [],
         scene: world,
       }),
     ).toEqual([]);

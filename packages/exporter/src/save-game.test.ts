@@ -24,9 +24,9 @@ describe("Save Game export contract", () => {
     expect(result.ok && result.value.guids).toEqual(["save", "scene", "skin"]);
   });
 
-  it.each(["packed", "loose"] as const)("retains stable identity, schema and save defaults in the %s player", async (mode) => {
+  it("retains stable identity, schema and save defaults in the player", async () => {
     const result = await exportGame({
-      mode, bundleDebugger: false, startupSceneGuid: "scene", scripts: [], assets: [],
+      bundleDebugger: false, startupSceneGuid: "scene", scripts: [], assets: [],
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       saveGame: { projectId: "stable-project-guid", definition, defaultProfile: "player-one", defaultSlot: "checkpoint", preview: false },
       playerFiles: new Map([["index.html", new TextEncoder().encode('<script type="module" src="./player.js"></script>')], ["player.js", new Uint8Array()]]),

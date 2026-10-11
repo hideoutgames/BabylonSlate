@@ -9,7 +9,12 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
     type: "DataDefinition", guid: "item", name: "Item", payload: { kind: "dataDefinition", fields: [
       { id: "price", name: "Price", typeId: "int", defaultValue: 12 },
     ] },
-  } }] },
+  } }, { path: "assets/Loadout.structure.babasset", header: {
+    type: "Structure", guid: "struct-loadout", name: "Loadout", payload: { fields: [
+      { name: "Cue", typeId: "asset", typeClassId: "Audio" },
+      { name: "Count", typeId: "int" },
+    ] },
+  } }, { path: "assets/Jump.audio.babasset", header: { type: "Audio", guid: "audio-1", name: "Jump", payload: {} } }] },
 })));
 
 if (typeof window !== "undefined") {
@@ -83,6 +88,24 @@ describe("BlackboardEditor", () => {
     expect(
       await screen.findByTestId("blackboard-key-default-asset-picker"),
     ).toBeTruthy();
+  });
+
+  it("picks a Structure Default's asset field without replacing the other fields", async () => {
+    const onChange = vi.fn();
+    render(
+      <BlackboardEditor
+        payload={{
+          name: "AI",
+          keys: [{ name: "loadout", type: { kind: "structRef", guid: "struct-loadout" }, defaultValue: { Cue: "", Count: 3 } }],
+        }}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("property-:Cue"));
+    fireEvent.click(await screen.findByTestId("search-item-audio-1"));
+    expect(onChange.mock.calls.at(-1)?.[0]).toMatchObject({
+      keys: [{ name: "loadout", defaultValue: { Cue: "audio-1", Count: 3 } }],
+    });
   });
 
   it("edits a bool default as a checkbox", () => {

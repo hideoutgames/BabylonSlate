@@ -11,6 +11,7 @@ import { isAssignable, pinTypeEquals } from "./types";
 import { isWritableVariableOutput } from "./variable-references";
 import {
   isClassConstraintTypeId,
+  isMemberTypeId,
   isStructOrEnumTypeId,
 } from "./member-pin-type";
 import {
@@ -27,31 +28,12 @@ import {
   normalizeStringSwitchCases,
 } from "./flow-switch-pins";
 import { isBreakableLoopKind } from "./structured-flow";
+import { eventNameForEntry } from "./compile";
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as FunctionConstructor;
 
 function pinById(node: GraphNode, pinId: string) {
   return findPin(node, pinId);
-}
-
-function canonicalizeEdges(graph: LogicGraph): LogicGraph {
-  const edges = graph.edges.map((edge) => {
-    const source = findNode(graph, edge.sourceNodeId);
-    const target = findNode(graph, edge.targetNodeId);
-    if (!source || !target) return edge;
-    const sp = pinById(source, edge.sourcePinId);
-    const tp = pinById(target, edge.targetPinId);
-    if (!sp || !tp) return edge;
-    if (sp.direction !== "in" || tp.direction !== "out") return edge;
-    return {
-      ...edge,
-      sourceNodeId: edge.targetNodeId,
-      sourcePinId: edge.targetPinId,
-      targetNodeId: edge.sourceNodeId,
-      targetPinId: edge.sourcePinId,
-    };
-  });
-  return { ...graph, edges };
 }
 
 function isPureEvalSource(
@@ -78,6 +60,8 @@ function buildAdjacency(
     const sp = pinById(source, edge.sourcePinId);
     const tp = pinById(target, edge.targetPinId);
     if (!sp || !tp) continue;
+    // A reversed wire reports pin.direction; it is not a dependency.
+    if (sp.direction !== "out" || tp.direction !== "in") continue;
     if (
       sp.kind === "data" &&
       tp.kind === "data" &&
@@ -145,6 +129,7 @@ function validateBreakContext(
     const kind = meta?.kind;
     const breakable =
       isBreakableLoopKind(kind) ||
+      node.typeId === "flow.whileLoop" ||
       node.typeId === "flow.forLoopWithBreak" ||
       node.typeId === "flow.forEachWithBreak" ||
       node.typeId === "flow.forEachMapWithBreak";
@@ -183,7 +168,7 @@ function validateBreakContext(
     out.push(
       diagnostic({
         code: "flow.break_outside_loop",
-        message: "Break must be inside a For Loop / For Each With Break body",
+        message: "Break must be inside a While Loop or a For Loop / For Each With Break body",
         assetGuid: ctx.assetGuid,
         graphId: graph.id,
         nodeId: brk.id,
@@ -240,51 +225,27 @@ function validateStructural(
   for (const node of graph.nodes) {
     if (!compiled.has(node.id) || node.typeId !== "flow.whileLoop") continue;
     const condition = node.pins.find((pin) => pin.id === "condition");
-    if (!condition || graph.edges.some((edge) => edge.targetNodeId === node.id && edge.targetPinId === condition.id)) continue;
-    if (readPinDefaultForPin(node.properties, condition) !== true) continue;
+    if (!condition || !isConstantTrue(graph, node, condition.id)) continue;
     out.push(diagnostic({ severity: "warning", code: "flow.constant_loop",
       message: "While Loop condition is always True. Ensure the loop body breaks or yields.",
       assetGuid: ctx.assetGuid, graphId: graph.id, nodeId: node.id, pinId: condition.id }));
   }
 
-  const entryNodes = graph.nodes.filter((n) =>
-    n.pins.some((p) => p.kind === "exec" && p.direction === "in"),
-  );
-  const hasIncomingExec = new Set(
-    graph.edges
-      .filter((e) => {
-        const src = findNode(graph, e.sourceNodeId);
-        const sp = src && pinById(src, e.sourcePinId);
-        return sp?.kind === "exec";
-      })
-      .map((e) => e.targetNodeId),
-  );
-
-  for (const node of entryNodes) {
-    const isEventLike =
-      node.typeId.startsWith("flow.event") ||
-      node.typeId === "flow.entry" ||
-      node.pins.every(
-        (p) => !(p.kind === "exec" && p.direction === "in"),
-      );
-    if (!isEventLike && !hasIncomingExec.has(node.id)) {
-      // Only flag if the node has both exec in and is not an entry producer.
-      if (node.pins.some((p) => p.kind === "exec" && p.direction === "in")) {
-        out.push(
-          diagnostic({
-            severity: "warning",
-            code: "exec.unreachable",
-            message: `Node ${node.id} has no incoming exec connection`,
-            assetGuid: ctx.assetGuid,
-            graphId: graph.id,
-            nodeId: node.id,
-          }),
-        );
-      }
-    }
-  }
-
   return out;
+}
+
+/**
+ * True when an input is the literal True: its unwired default, or a wire from
+ * a Make Bool whose own input is (recursively) the literal True.
+ */
+function isConstantTrue(graph: LogicGraph, node: GraphNode, pinId: string, seen = new Set<string>()): boolean {
+  const pin = findPin(node, pinId);
+  if (!pin || seen.has(node.id)) return false;
+  seen.add(node.id);
+  const edge = graph.edges.find((entry) => entry.targetNodeId === node.id && entry.targetPinId === pinId);
+  if (!edge) return readPinDefaultForPin(node.properties, pin) === true;
+  const source = findNode(graph, edge.sourceNodeId);
+  return source?.typeId === "literal.makeBool" && isConstantTrue(graph, source, "in", seen);
 }
 
 function validatePinTyping(
@@ -477,9 +438,10 @@ function validatePinTyping(
       }
       if (!connected && pin.type.kind !== "exec") {
         const implicitSelfTarget =
-          pin.name === "target" &&
+          pin.id === "target" &&
           node.properties.implicitSelf === true &&
-          (pin.type.kind === "objectRef" || pin.type.kind === "actorRef");
+          (pin.type.kind === "objectRef" || pin.type.kind === "actorRef") &&
+          (registry === undefined || registry.get(node.typeId)?.implicitSelfTarget === true);
         const defaultClearsMissing =
           !requiresReference && hasStored &&
           (pinAcceptsLiteralDefault(pin.type) ||
@@ -515,6 +477,14 @@ function validatePinTyping(
   return out;
 }
 
+function executeJavaScriptRowNames(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((row: unknown) => {
+    const name = row && typeof row === "object" ? (row as { name?: unknown }).name : undefined;
+    return typeof name === "string" ? [name] : [];
+  });
+}
+
 function validateExecuteJavaScript(
   graph: LogicGraph,
   ctx: TypeContext,
@@ -523,10 +493,23 @@ function validateExecuteJavaScript(
   for (const node of graph.nodes) {
     if (node.typeId !== "debug.executeJavaScript") continue;
     const body = String(node.properties.body ?? "");
+    // Parse the body the way the compiler wraps it, without evaluating it: a
+    // strict-mode module function taking ctx and the inputs, with each output
+    // declared by `let`. Invalid row names are the node's own error, so they
+    // fall back to a bare wrapper here.
+    const ParseFunction = node.properties.async ? AsyncFunction : Function;
+    const inputs = executeJavaScriptRowNames(node.properties.inputs);
+    const outputs = executeJavaScriptRowNames(node.properties.outputs);
+    let params = ["ctx", ...inputs];
+    let prologue = `"use strict";${outputs.length > 0 ? ` let ${outputs.join(", ")};` : ""}`;
     try {
-      // Match the compiler's function kind without evaluating authored code.
-      const ParseFunction = node.properties.async ? AsyncFunction : Function;
-      new ParseFunction(body);
+      new ParseFunction(...params, prologue);
+    } catch {
+      params = ["ctx"];
+      prologue = '"use strict";';
+    }
+    try {
+      new ParseFunction(...params, `${prologue}\n${body}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const match = /:(\d+):(\d+)/.exec(message);
@@ -537,7 +520,7 @@ function validateExecuteJavaScript(
           assetGuid: ctx.assetGuid,
           graphId: graph.id,
           nodeId: node.id,
-          bodyLine: match ? Number(match[1]) : 1,
+          bodyLine: match ? Math.max(1, Number(match[1]) - 1) : 1,
           bodyColumn: match ? Number(match[2]) : 1,
         }),
       );
@@ -587,11 +570,7 @@ function isInheritedEventOverride(node: GraphNode): boolean {
 }
 
 function inheritedEventName(node: GraphNode): string | undefined {
-  return eventBindingName(
-    stringProp(node.properties, "name") ??
-      stringProp(node.properties, "title") ??
-      stringProp(node.properties, "eventName"),
-  );
+  return eventBindingName(stringProp(node.properties, "name"));
 }
 
 function validateComponentAndInheritedBindings(
@@ -658,11 +637,6 @@ function validateMemberBindings(
 ): Diagnostic[] {
   const out: Diagnostic[] = [];
   const members = ctx.members ?? [];
-  if (members.length === 0 && !ctx.knownClassIds) {
-    // Still check local-name conflicts if members exist; skip stale lookups
-    // when the editor did not supply a symbol table.
-  }
-
   const classVars = members.filter(
     (member) => member.kind === "variable" && !member.functionId,
   );
@@ -753,23 +727,14 @@ function validateMemberBindings(
       if (stringProp(node.properties, "componentId")) continue;
       const variableId = stringProp(node.properties, "variableId");
       const variableName = stringProp(node.properties, "variableName");
-      const classId =
-        stringProp(node.properties, "classId") ?? ctx.classId;
       const functionId =
         stringProp(node.properties, "functionId") ??
         ctx.activeFunctionId ??
         undefined;
       const local = node.properties.scope === "local";
-      const found = members.find((member) => {
-        if (member.kind !== "variable") return false;
-        if (variableId && member.id === variableId) return true;
-        if (!variableId && variableName && member.name === variableName) {
-          if (local) return member.functionId === functionId;
-          if (classId && member.classId !== classId) return false;
-          return !member.functionId;
-        }
-        return false;
-      });
+      const found = variableId
+        ? members.find((member) => member.kind === "variable" && member.id === variableId)
+        : undefined;
       if (!found) {
         out.push(
           diagnostic({
@@ -846,10 +811,12 @@ type SignaturePin = {
   typeId: string;
   direction: "in" | "out";
   typeClassId?: string;
+  container?: "single" | "array" | "map";
 };
 
 function signaturePinKey(pin: SignaturePin): string {
-  return `${pin.direction}:${pin.name}:${pin.typeId}:${pin.typeClassId ?? ""}`;
+  const container = pin.container === "array" || pin.container === "map" ? pin.container : "single";
+  return `${pin.direction}:${pin.name}:${container}:${pin.typeId}:${pin.typeClassId ?? ""}`;
 }
 
 function pinsMatch(
@@ -931,6 +898,42 @@ function validateInterfaceAndOverrides(
   return out;
 }
 
+/**
+ * The runtime dispatches a custom event by its compiled identifier, so two
+ * differently spelled names that compile to one identifier ("A/B", "A B")
+ * would both run whenever either is called.
+ */
+function validateCustomEventNames(
+  graphs: readonly LogicGraph[],
+  ctx: TypeContext,
+): Diagnostic[] {
+  const out: Diagnostic[] = [];
+  const firstNameByEvent = new Map<string, string>();
+  for (const graph of graphs) {
+    for (const node of graph.nodes) {
+      if (node.typeId !== "flow.event.custom") continue;
+      const event = eventNameForEntry(node);
+      const name = node.properties.name;
+      if (!event || typeof name !== "string") continue;
+      const first = firstNameByEvent.get(event);
+      if (first === undefined) {
+        firstNameByEvent.set(event, name);
+      } else if (first !== name) {
+        out.push(
+          diagnostic({
+            code: "event.name_collision",
+            message: `Custom events "${first}" and "${name}" compile to the same event "${event}"; rename one of them`,
+            assetGuid: ctx.assetGuid,
+            graphId: graph.id,
+            nodeId: node.id,
+          }),
+        );
+      }
+    }
+  }
+  return out;
+}
+
 function reportTypeGuid(
   out: Diagnostic[],
   ctx: TypeContext,
@@ -970,21 +973,52 @@ function reportTypeGuid(
   }
 }
 
+/**
+ * Member declarations belong to the class, not to one graph: `ctx.members`
+ * may also list other project classes' members, so only the validated
+ * class's own members are checked, once per `validateGraphs` call.
+ */
+function validateMemberTypes(
+  graphs: readonly LogicGraph[],
+  ctx: TypeContext,
+): Diagnostic[] {
+  const out: Diagnostic[] = [];
+  const graphId = graphs[0]?.id ?? "";
+  for (const member of ctx.members ?? []) {
+    if (ctx.classId && member.classId !== ctx.classId) continue;
+    const typeIds = [
+      member.typeId,
+      member.container === "map" ? member.keyTypeId : undefined,
+      ...(member.pins ?? []).map((pin) => pin.typeId),
+    ];
+    for (const typeId of typeIds) {
+      if (typeId === undefined || isMemberTypeId(typeId)) continue;
+      out.push(
+        diagnostic({
+          code: "member.unknown_type",
+          message: `"${member.name}" uses unknown type "${typeId}"`,
+          assetGuid: ctx.assetGuid,
+          graphId,
+        }),
+      );
+    }
+    if (!isStructOrEnumTypeId(member.typeId)) continue;
+    reportTypeGuid(
+      out,
+      ctx,
+      graphId,
+      member.typeId === "struct" ? "structRef" : "enumRef",
+      member.typeClassId?.trim() || undefined,
+    );
+  }
+  return out;
+}
+
 function validateTypeRefs(
   graph: LogicGraph,
   ctx: TypeContext,
 ): Diagnostic[] {
   const out: Diagnostic[] = [];
-  for (const member of ctx.members ?? []) {
-    if (!isStructOrEnumTypeId(member.typeId)) continue;
-    reportTypeGuid(
-      out,
-      ctx,
-      graph.id,
-      member.typeId === "struct" ? "structRef" : "enumRef",
-      member.typeClassId?.trim() || undefined,
-    );
-  }
   for (const node of graph.nodes) {
     const typeId = stringProp(node.properties, "typeId");
     if (isStructOrEnumTypeId(typeId)) {
@@ -1088,8 +1122,7 @@ export function validateGraphs(
   options: ValidateOptions = {},
 ): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
-  const canonicalGraphs = graphs.map(canonicalizeEdges);
-  for (const graph of canonicalGraphs) {
+  for (const graph of graphs) {
     const compiled = compiledNodeIds(graph);
     const keep = (diags: readonly Diagnostic[]) =>
       keepCompiledNodeDiagnostics(diags, compiled);
@@ -1104,9 +1137,11 @@ export function validateGraphs(
     diagnostics.push(...keep(validateTypeRefs(graph, ctx)));
     diagnostics.push(...keep(validateFlowSwitchCases(graph, ctx)));
   }
-  diagnostics.push(...validateInterfaceAndOverrides(canonicalGraphs, ctx));
+  diagnostics.push(...validateMemberTypes(graphs, ctx));
+  diagnostics.push(...validateInterfaceAndOverrides(graphs, ctx));
+  diagnostics.push(...validateCustomEventNames(graphs, ctx));
   for (const rule of listValidationRules()) {
-    diagnostics.push(...rule.run(canonicalGraphs, ctx));
+    diagnostics.push(...rule.run(graphs, ctx));
   }
   return diagnostics;
 }

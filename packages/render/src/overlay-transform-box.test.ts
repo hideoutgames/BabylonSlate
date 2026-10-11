@@ -505,17 +505,24 @@ describe("overlayTextWrapFromResize", () => {
 });
 
 describe("writeOverlayBoxTransform text wrap", () => {
-  it("stores pending wrap px and inverse-scales glyph children", () => {
+  it("stores pending wrap px and inverse-scales only its glyph children", () => {
     const { scene } = createHandle();
     const mesh = MeshBuilder.CreatePlane("text", { width: 2, height: 0.64 }, scene);
     mesh.metadata = { text2d: true, text2dWrapWidth: 200, text2dWrapHeight: 64 };
     const glyph = MeshBuilder.CreatePlane("glyph", { size: 0.32 }, scene);
     glyph.parent = mesh;
-    writeOverlayBoxTransform(
-      mesh,
-      { position: [0.5, 0, 0], rotationZ: 0, scale: [2, 1, 1] },
-      { position: [0, 0, 0], rotationZ: 0, scale: [1, 1, 1] },
-    );
+    glyph.metadata = { text2dGlyph: true };
+    const bold = MeshBuilder.CreatePlane("bold", { size: 0.32 }, scene);
+    bold.parent = mesh;
+    bold.metadata = { text2dGlyph: true };
+    bold.scaling.set(1.08, 1.08, 1);
+    // A child actor parented under the text root keeps its authored scale.
+    const childActor = MeshBuilder.CreateBox("child-actor", { size: 0.2 }, scene);
+    childActor.parent = mesh;
+    childActor.scaling.set(3, 3, 3);
+    const start: OverlayBoxTransform = { position: [0, 0, 0], rotationZ: 0, scale: [1, 1, 1] };
+    writeOverlayBoxTransform(mesh, { position: [0.25, 0, 0], rotationZ: 0, scale: [1.5, 1, 1] }, start);
+    writeOverlayBoxTransform(mesh, { position: [0.5, 0, 0], rotationZ: 0, scale: [2, 1, 1] }, start);
     const meta = mesh.metadata as {
       text2dPendingWrap?: { wrapWidth: number; wrapHeight: number };
       text2dDragStartScale?: [number, number, number];
@@ -525,6 +532,9 @@ describe("writeOverlayBoxTransform text wrap", () => {
     expect(mesh.scaling.x).toBeCloseTo(2);
     expect(glyph.scaling.x).toBeCloseTo(0.5);
     expect(glyph.scaling.y).toBeCloseTo(1);
+    expect(bold.scaling.x).toBeCloseTo(0.54);
+    expect(bold.scaling.y).toBeCloseTo(1.08);
+    expect(childActor.scaling.asArray()).toEqual([3, 3, 3]);
   });
 });
 

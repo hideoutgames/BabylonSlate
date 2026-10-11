@@ -15,6 +15,8 @@ function setting(id: string, title: string, description: string, type: string, p
     return `{ kind: "patch", render: ${body} }`;
   });
 }
+/** RGB tuple of a graph Color, reading the color once. */
+const rgbTuple = (color: string) => `((c) => [c.x, c.y, c.z])(${color})`;
 /** Core serializes RGB tuples; graph Color fields use the native x/y/z/w value. */
 const graphSnapshot = (expression: string) => `((s) => { if (!s) return s; const value = (v) => !v ? v : ({ ...v, render: { ...v.render, cel: { ...v.render.cel, outlineColor: ((c) => ({ x: c?.[0] ?? 0.03, y: c?.[1] ?? 0.03, z: c?.[2] ?? 0.03, w: 1 }))(v.render.cel?.outlineColor) } } }); return { ...s, requested: value(s.requested), effective: value(s.effective) }; })(${expression})`;
 export const scalabilityNodes: NodeDefinition[] = [
@@ -23,16 +25,20 @@ export const scalabilityNodes: NodeDefinition[] = [
     pins: () => [pin("settings", "Settings", "out", structRef("engine:ScalabilitySnapshot")), pin("ready", "Ready", "out", BOOL),
       pin("requestedBackend", "Requested GPU Backend", "out", enumRef("engine:GpuBackend")), pin("effectiveBackend", "Effective GPU Backend", "out", enumRef("engine:GpuBackend")),
       pin("fallbackReason", "Fallback Reason", "out", STRING), pin("vignetteColor", "Vignette Color", "out", COLOR), pin("outlineColor", "CEL Outline Color", "out", COLOR)],
-    codegen: () => ({ settings: graphSnapshot("ctx.getScalability()"), ready: "(ctx.getScalability()?.effective != null)",
-      requestedBackend: "(ctx.getScalability()?.pipeline?.requested.gpuBackend ?? ctx.getScalability()?.requested.render.gpuBackend ?? 'auto')",
-      effectiveBackend: "(ctx.getScalability()?.pipeline?.effective.gpuBackend ?? 'auto')",
-      fallbackReason: "(ctx.getScalability()?.pipeline?.limits.join(' ' ) ?? '')",
-      vignetteColor: "((c) => ({ x: c?.[0] ?? 0, y: c?.[1] ?? 0, z: c?.[2] ?? 0, w: 1 }))(ctx.getScalability()?.effective?.render.effects?.vignette.color)",
-      outlineColor: "((c) => ({ x: c?.[0] ?? 0.03, y: c?.[1] ?? 0.03, z: c?.[2] ?? 0.03, w: 1 }))(ctx.getScalability()?.effective?.render.cel?.outlineColor)" }) },
+    // Every output of one statement reads the same snapshot.
+    codegen: (ctx) => {
+      const s = ctx.shared?.("ctx.getScalability()") ?? "ctx.getScalability()";
+      return { settings: graphSnapshot(s), ready: `(${s}?.effective != null)`,
+        requestedBackend: `(${s}?.requested.render.gpuBackend ?? 'auto')`,
+        effectiveBackend: `(${s}?.effective?.render.gpuBackend ?? 'auto')`,
+        fallbackReason: `(${s}?.pipeline?.limits.join(' ' ) ?? '')`,
+        vignetteColor: `((c) => ({ x: c?.[0] ?? 0, y: c?.[1] ?? 0, z: c?.[2] ?? 0, w: 1 }))(${s}?.effective?.render.effects?.vignette.color)`,
+        outlineColor: `((c) => ({ x: c?.[0] ?? 0.03, y: c?.[1] ?? 0.03, z: c?.[2] ?? 0.03, w: 1 }))(${s}?.effective?.render.cel?.outlineColor)` };
+    } },
   setter("setPreset", "Set Scalability Preset", "Apply a session quality tier. CEL/PBR, outline appearance and artistic effects remain independently authored.",
     [input("preset", "Preset", enumRef("engine:ScalabilityPreset"), "medium")], (ctx) => `{ kind: "preset", preset: ${ctx.input("preset")} }`),
   setter("setRenderScale", "Set Render Scale", "Set fixed render scale (0.25–1). Disables dynamic resolution. Wait for the settings-changed event for effective values.",
-    [input("scale", "Scale", FLOAT, 1)], (ctx) => `{ kind: "patch", render: { quality: { resolution: { scale: ${ctx.input("scale")}, minScale: ${ctx.input("scale")}, dynamic: false } } } }`),
+    [input("scale", "Scale", FLOAT, 1)], (ctx) => `((s) => ({ kind: "patch", render: { quality: { resolution: { scale: s, minScale: s, dynamic: false } } } }))(${ctx.input("scale")})`),
   setter("setResolution", "Set Render Resolution", "Lock the output dimensions with letterboxing. Reset to Project Defaults restores the authored output policy.",
     [input("width", "Width", INT, 1920), input("height", "Height", INT, 1080)], (ctx) => `{ kind: "patch", render: { width: ${ctx.input("width")}, height: ${ctx.input("height")}, customResolution: true, blackBars: true } }`),
   setter("setFrameCap", "Set Frame Cap", "Cap presentation frames per second. The fixed simulation step is unchanged.",
@@ -42,7 +48,7 @@ export const scalabilityNodes: NodeDefinition[] = [
   setter("setAntialiasing", "Set Antialiasing", "Enable the production FXAA pass. The view prepares its replacement graph before acknowledging the request.",
     [input("enabled", "FXAA Enabled", BOOL, true)], (ctx) => `{ kind: "patch", render: { effects: { fxaa: ${ctx.input("enabled")} } } }`),
   setter("setVignetteColor", "Set Vignette Color", "Set the display-space vignette tint without changing its enablement or weight.",
-    [input("color", "Color", COLOR, { x: 0, y: 0, z: 0, w: 1 })], (ctx) => `{ kind: "patch", render: { effects: { vignette: { color: [${ctx.input("color")}.x, ${ctx.input("color")}.y, ${ctx.input("color")}.z] } } } }`),
+    [input("color", "Color", COLOR, { x: 0, y: 0, z: 0, w: 1 })], (ctx) => `{ kind: "patch", render: { effects: { vignette: { color: ${rgbTuple(ctx.input("color"))} } } } }`),
   setter("setRenderMode", "Set Render Mode", "Switch PBR/CEL for this session through the shared material owner. The result remains pending until ready.",
     [input("mode", "Mode", enumRef("engine:RenderMode"), "pbr")], (ctx) => `{ kind: "patch", render: { mode: ${ctx.input("mode")} } }`),
   setter("setRenderPath", "Set Render Path", "Request the global render path. Effective readback reports backend or scene restrictions.",
@@ -58,7 +64,7 @@ export const scalabilityNodes: NodeDefinition[] = [
   setting("setCelShading", "Set CEL Shading", "Change CEL banding, specular, light mixing and outlines without changing project defaults.", "CelShading", ["cel"]),
   setter("setCelOutlines", "Set CEL Outlines", "Set strictly occluded global CEL outlines. Component styles and editor selection remain independent.",
     [input("enabled", "Enabled", BOOL, true), input("color", "Color", COLOR, { x: 0.03, y: 0.03, z: 0.03, w: 1 }), input("width", "Width", FLOAT, 1)],
-    (ctx) => `{ kind: "patch", render: { cel: { outlinesEnabled: ${ctx.input("enabled")}, outlineColor: [${ctx.input("color")}.x, ${ctx.input("color")}.y, ${ctx.input("color")}.z], outlineWidth: ${ctx.input("width")} } } }`),
+    (ctx) => `{ kind: "patch", render: { cel: { outlinesEnabled: ${ctx.input("enabled")}, outlineColor: ${rgbTuple(ctx.input("color"))}, outlineWidth: ${ctx.input("width")} } } }`),
   setting("setEnvironmentLighting", "Set Environment Lighting", "Change IBL enablement, intensity, orientation and CEL strength. Environment assets remain authored scene data.", "EnvironmentLighting", ["environmentLighting"]),
   setter("reset", "Reset to Project Defaults", "Clear temporary session overrides. Scene defaults resume inheritance. Persistent player preferences are separate.", [], () => `{ kind: "reset" }`),
   { id: "flow.event.scalabilityChanged", title: "Event Scalability Changed", category: "scalability", pure: true,

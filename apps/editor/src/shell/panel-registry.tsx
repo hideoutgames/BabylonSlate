@@ -101,7 +101,6 @@ import { LocksPanel } from "../panels/locks-panel";
 import {
   AnimGraphDetailsPanel,
   AnimGraphGraphPanel,
-  AnimGraphParametersPanel,
   AnimGraphVariablesPanel,
   AnimObjectVariablesPanel,
 } from "../components/anim-graph-editor";
@@ -137,7 +136,6 @@ export const panelComponents = {
   "scene-details": (props: IDockviewPanelProps) => (
     <SceneDetailsPanel {...props} />
   ),
-  "mini-asset-browser": () => null,
   "actor-prefab": (props: IDockviewPanelProps) => <ActorPrefabPanel {...props} />,
   "prefab-viewport": (props: IDockviewPanelProps) => (
     <PrefabViewportPanel {...props} />
@@ -303,9 +301,6 @@ export const panelComponents = {
   ),
   "anim-graph-graph": (props: IDockviewPanelProps) => (
     <AnimGraphGraphPanel {...props} />
-  ),
-  "anim-graph-parameters": (props: IDockviewPanelProps) => (
-    <AnimGraphParametersPanel {...props} />
   ),
   "anim-graph-variables": (props: IDockviewPanelProps) => (
     <AnimGraphVariablesPanel {...props} />

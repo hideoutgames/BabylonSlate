@@ -16,7 +16,6 @@ import { typeColorThumbAccent } from "@babylonslate/ui/lib/data-types";
 import { cn } from "@babylonslate/ui/lib/utils";
 import {
   compressionBadgeLabel,
-  displayAssetTitle,
   textureCompressionState,
 } from "../lib/content-browser-helpers";
 import { LockIcon } from "lucide-react";
@@ -168,7 +167,7 @@ export function ContentBrowserAssetTile({
         <CardHeader className="min-h-0 w-full flex-1 content-center gap-0.5 p-1.5">
           <CardTitle className="truncate text-xs font-medium">
             <SelectableText>
-              {displayAssetTitle(asset.header.name)}
+              {asset.header.name}
             </SelectableText>
           </CardTitle>
           <CardDescription className="truncate text-[10px]">

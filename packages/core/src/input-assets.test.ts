@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { createDefaultInputAssets } from "./default-input-assets";
 import { normalizeInputAssetPayload } from "./input-assets";
 
 describe("input asset controls", () => {
-  it("preserves stable bindings and axis tuning while assigning missing identities", () => {
+  it("preserves stable bindings and axis tuning and drops a binding without an identity", () => {
     const asset = normalizeInputAssetPayload("InputAxis", {
       valueType: "2d",
       bindings: [
@@ -14,12 +15,14 @@ describe("input asset controls", () => {
           digitalValue: -1,
         },
         {
+          id: "stick",
           device: "gamepadAxis",
           code: "0:1",
           component: "y",
           invert: true,
           deadZone: 0.15,
         },
+        { device: "key", code: "KeyD", component: "x", digitalValue: 1 },
       ],
     });
     expect(asset).toEqual({
@@ -33,7 +36,7 @@ describe("input asset controls", () => {
           digitalValue: -1,
         },
         {
-          id: "binding-2",
+          id: "stick",
           device: "gamepadAxis",
           code: "0:1",
           component: "y",
@@ -47,7 +50,7 @@ describe("input asset controls", () => {
         ...asset,
         bindings: [...asset.bindings].reverse(),
       }).bindings.map((b) => b.id),
-    ).toEqual(["binding-2", "left"]);
+    ).toEqual(["stick", "left"]);
   });
   it("keeps incomplete authoring rows but rejects unsupported devices and duplicate identities", () => {
     const asset = normalizeInputAssetPayload("InputAction", {
@@ -64,8 +67,15 @@ describe("input asset controls", () => {
     });
     expect(asset.bindings).toEqual([
       { id: "one", device: "key", code: "", modifiers: { ctrl: true } },
-      { id: "one-copy", device: "mouseButton", code: "0" },
     ]);
     expect(normalizeInputAssetPayload("InputAction", {}).bindings).toEqual([]);
+  });
+
+  it("gives the starter Jump and Confirm actions different gamepad buttons", () => {
+    const padButton = (name: string) => createDefaultInputAssets()
+      .find((asset) => asset.name === name)
+      ?.bindings.find((binding) => binding.device === "gamepadButton")?.code;
+    expect(padButton("Jump")).toBe("0:0");
+    expect(padButton("Confirm")).toBe("0:1");
   });
 });

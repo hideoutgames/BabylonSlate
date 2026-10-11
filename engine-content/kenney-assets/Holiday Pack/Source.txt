@@ -1,0 +1,5 @@
+Kenney Holiday Kit 3D models and their shared colormap (CC0, see License.txt).
+
+Original author: Kenney (https://kenney.nl). The files were in this repository
+before the Feature Test starter; it publishes only the subset listed in
+apps/editor/src/lib/feature-test/engine-content-files.ts.

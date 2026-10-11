@@ -12,71 +12,71 @@ export interface TilemapChain {
 
 type Point = { x: number; y: number };
 
-/**
- * Merge solid tiles in a chunk into Rapier chain polylines.
- * Shared edges cancel; collinear outer edges collapse so a solid rectangle
- * is one four-point loop rather than a box per tile.
- */
-export function tilemapChunkChains(options: {
+type GidResolver = (
+  gid: number,
+) => { tileset: TilesetPayload; localId: number; guid: string } | null;
+
+interface ChainChunk {
+  cx: number;
+  cy: number;
   tiles: readonly number[];
+}
+
+/**
+ * Merge a layer's solid tiles across all its chunks into Rapier chain
+ * polylines in world space. Shared edges cancel, across chunk borders too, so
+ * a floor that spans a border has no edge there for a body to catch on;
+ * collinear outer edges collapse so a solid rectangle is one four-point loop
+ * rather than a box per tile.
+ */
+export function tilemapLayerChains(options: {
+  chunks: readonly ChainChunk[];
   chunkSize: number;
-  chunkX: number;
-  chunkY: number;
   tileset: TilesetPayload;
   worldTileWidth: number;
   worldTileHeight: number;
-  resolveGid?: (
-    gid: number,
-  ) => { tileset: TilesetPayload; localId: number; guid: string } | null;
+  resolveGid?: GidResolver;
 }): TilemapChain[] {
-  const {
-    tiles,
-    chunkSize,
-    chunkX,
-    chunkY,
-    tileset,
-    worldTileWidth,
-    worldTileHeight,
-    resolveGid,
-  } = options;
-  const originX = chunkX * chunkSize * worldTileWidth;
-  const originY = chunkY * chunkSize * worldTileHeight;
+  const { chunks, chunkSize, tileset, worldTileWidth, worldTileHeight, resolveGid } = options;
   const unitEdges: Array<[Point, Point]> = [];
   const custom: TilemapChain[] = [];
 
-  for (let ly = 0; ly < chunkSize; ly++) {
-    for (let lx = 0; lx < chunkSize; lx++) {
-      const tileId = tiles[ly * chunkSize + lx] ?? 0;
-      if (tileId <= 0) continue;
-      const resolved = resolveGid?.(tileId);
-      if (resolveGid && !resolved) continue;
-      const atlas = resolved?.tileset ?? tileset;
-      const localId = resolved?.localId ?? tileId;
-      const def = tilesetTileById(atlas, localId);
-      if (!def) continue;
-      if (def.collision === "full") {
-        // Merge in integer grid space: adjacent world-space endpoints can
-        // otherwise differ by rounding at fractional pixels-per-unit scales.
-        const x0 = lx;
-        const y0 = ly;
-        const x1 = lx + 1;
-        const y1 = ly + 1;
-        unitEdges.push(
-          [{ x: x0, y: y0 }, { x: x1, y: y0 }],
-          [{ x: x1, y: y0 }, { x: x1, y: y1 }],
-          [{ x: x1, y: y1 }, { x: x0, y: y1 }],
-          [{ x: x0, y: y1 }, { x: x0, y: y0 }],
-        );
-        continue;
-      }
-      if (def.collision !== "none" && def.collision.kind === "chain") {
-        custom.push({
-          loop: false,
-          points: def.collision.points.map((point) => ({
-            x: originX + (lx + point.x) * worldTileWidth,
-            y: originY + (ly + point.y) * worldTileHeight,
-          })),
-        });
+  for (const chunk of chunks) {
+    // Grid position of this chunk's first tile, in whole tiles.
+    const offsetX = chunk.cx * chunkSize;
+    const offsetY = chunk.cy * chunkSize;
+    for (let ly = 0; ly < chunkSize; ly++) {
+      for (let lx = 0; lx < chunkSize; lx++) {
+        const tileId = chunk.tiles[ly * chunkSize + lx] ?? 0;
+        if (tileId <= 0) continue;
+        const resolved = resolveGid?.(tileId);
+        if (resolveGid && !resolved) continue;
+        const atlas = resolved?.tileset ?? tileset;
+        const localId = resolved?.localId ?? tileId;
+        const def = tilesetTileById(atlas, localId);
+        if (!def) continue;
+        const gx = offsetX + lx;
+        const gy = offsetY + ly;
+        if (def.collision === "full") {
+          // Merge in integer grid space: adjacent world-space endpoints can
+          // otherwise differ by rounding at fractional pixels-per-unit scales.
+          unitEdges.push(
+            [{ x: gx, y: gy }, { x: gx + 1, y: gy }],
+            [{ x: gx + 1, y: gy }, { x: gx + 1, y: gy + 1 }],
+            [{ x: gx + 1, y: gy + 1 }, { x: gx, y: gy + 1 }],
+            [{ x: gx, y: gy + 1 }, { x: gx, y: gy }],
+          );
+          continue;
+        }
+        if (def.collision !== "none" && def.collision.kind === "chain") {
+          custom.push({
+            loop: false,
+            points: def.collision.points.map((point) => ({
+              x: (gx + point.x) * worldTileWidth,
+              y: (gy + point.y) * worldTileHeight,
+            })),
+          });
+        }
       }
     }
   }
@@ -84,14 +84,14 @@ export function tilemapChunkChains(options: {
   const outlines = outlineChains(unitEdges).map((chain) => ({
     ...chain,
     points: chain.points.map((point) => ({
-      x: originX + point.x * worldTileWidth,
-      y: originY + point.y * worldTileHeight,
+      x: point.x * worldTileWidth,
+      y: point.y * worldTileHeight,
     })),
   }));
   return [...outlines, ...custom.filter((c) => c.points.length >= 2)];
 }
 
-/** Collision-layer chains for every chunk in a tilemap (nav bake / Rapier). */
+/** Collision-layer chains for a tilemap, merged per layer (nav bake / Rapier). */
 export function tilemapCollisionChains(
   map: TilemapPayload,
   tileset: TilesetPayload | ReadonlyMap<string, TilesetPayload>,
@@ -109,25 +109,21 @@ export function tilemapCollisionChains(
         return hit;
       }
     : undefined;
+  const atlas = fallback ?? firstTileset(map, tilesets);
+  if (!atlas) return [];
   const chains: TilemapChain[] = [];
   for (const layer of map.layers) {
     if (!layer.collision) continue;
-    for (const chunk of layer.chunks) {
-      const atlas = fallback ?? firstTileset(map, tilesets);
-      if (!atlas) continue;
-      chains.push(
-        ...tilemapChunkChains({
-          tiles: chunk.tiles,
-          chunkSize: map.chunkSize,
-          chunkX: chunk.cx,
-          chunkY: chunk.cy,
-          tileset: atlas,
-          worldTileWidth,
-          worldTileHeight,
-          resolveGid,
-        }),
-      );
-    }
+    chains.push(
+      ...tilemapLayerChains({
+        chunks: layer.chunks,
+        chunkSize: map.chunkSize,
+        tileset: atlas,
+        worldTileWidth,
+        worldTileHeight,
+        resolveGid,
+      }),
+    );
   }
   return chains;
 }
@@ -176,21 +172,23 @@ function outlineChains(directed: Array<[Point, Point]>): TilemapChain[] {
   for (const [from, to] of remaining.values()) {
     const startKey = undirectedKey(from, to);
     if (used.has(startKey)) continue;
-    const walked = walkOutline(from, adj, used);
+    const walked = walkOutline(from, adj, used, remaining.size);
     if (walked.points.length >= 3) chains.push(walked);
   }
   return chains;
 }
 
+/** Each step uses up one edge, so `edgeCount` steps finish any outline (a layer's can be long). */
 function walkOutline(
   start: Point,
   adj: Map<string, Point[]>,
   used: Set<string>,
+  edgeCount: number,
 ): TilemapChain {
   const points: Point[] = [start];
   let prev: Point | null = null;
   let curr = start;
-  for (let guard = 0; guard < 10_000; guard++) {
+  for (let guard = 0; guard < edgeCount; guard++) {
     const neighbors = adj.get(pointKey(curr)) ?? [];
     const next =
       neighbors.find(

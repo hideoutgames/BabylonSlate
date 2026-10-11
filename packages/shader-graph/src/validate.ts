@@ -75,61 +75,8 @@ const DEFAULT_CAPABILITIES: Required<MaterialCapabilities> = {
   customGlsl: true,
 };
 
-export const CUSTOM_GLSL_BODY_MAX = 4096;
-
 export function customGlslBody(node: MaterialGraphNode): string {
-  const body = node.properties.body;
-  if (typeof body === "string") return body;
-  const legacy = node.properties.glsl;
-  return typeof legacy === "string" ? legacy : "";
-}
-
-/**
- * Custom GLSL is an expression over `a` and `b` only. The compiler generates
- * the function signature; the body must not declare uniforms, samplers,
- * preprocessor directives, or statements.
- */
-export function validateCustomGlslBody(
-  body: string,
-): MaterialDiagnostic | null {
-  const trimmed = body.trim();
-  if (trimmed === "") {
-    return {
-      code: "material.customGlsl",
-      message: "Custom GLSL needs a non-empty expression over A and B",
-      severity: "error",
-    };
-  }
-  if (body.length > CUSTOM_GLSL_BODY_MAX) {
-    return {
-      code: "material.customGlsl",
-      message: `Custom GLSL expressions are limited to ${CUSTOM_GLSL_BODY_MAX} characters`,
-      severity: "error",
-    };
-  }
-  if (/[#;{}]/.test(body) || /\b(uniform|sampler|void|return|out)\b/.test(body)) {
-    return {
-      code: "material.customGlsl",
-      message:
-        "Custom GLSL must be a single expression: no statements, uniforms, samplers, or preprocessor directives",
-      severity: "error",
-    };
-  }
-  if (/\bgl_/.test(body)) {
-    return {
-      code: "material.customGlsl",
-      message: "Custom GLSL cannot read built-in GLSL globals such as gl_FragColor",
-      severity: "error",
-    };
-  }
-  if (/(^|[^=!<>])=(?!=)/.test(body)) {
-    return {
-      code: "material.customGlsl",
-      message: "Custom GLSL cannot assign; write an expression that produces the result",
-      severity: "error",
-    };
-  }
-  return null;
+  return typeof node.properties.body === "string" ? node.properties.body : "";
 }
 
 function pinById(
@@ -354,20 +301,12 @@ function validateGraph(
     }
 
     if (node.type === "vector.mask") {
-      const resolver = createTypeResolver(graph, { functions: options.functions, functionInterface: options.functionInterface });
-      const message = vectorMaskError(node.properties, resolver.inputType(node.id, "value"));
+      const message = vectorMaskError(node.properties);
       if (message) diagnostics.push({ code: "material.vectorMask", message, severity: "error", nodeId: node.id, pinId: "value" });
     }
     if (node.type === "custom.glsl") {
-      const message = node.properties.customVersion === 2
-        ? customGlslInterfaceError(node.properties) ?? customGlslFunctionBodyError(customGlslBody(node))
-        : null;
-      const custom = node.properties.customVersion === 2
-        ? message ? { code: "material.customGlsl", message, severity: "error" as const } : null
-        : validateCustomGlslBody(customGlslBody(node));
-      if (custom) {
-        diagnostics.push({ ...custom, nodeId: node.id });
-      }
+      const message = customGlslInterfaceError(node.properties) ?? customGlslFunctionBodyError(customGlslBody(node));
+      if (message) diagnostics.push({ code: "material.customGlsl", message, severity: "error", nodeId: node.id });
     }
 
     if (node.type === "function.call") {

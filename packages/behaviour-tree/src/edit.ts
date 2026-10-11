@@ -154,8 +154,11 @@ export function duplicateSubtree(
   doc: BehaviourTreeDocument,
   nodeId: string,
 ): BehaviourTreeDocument {
-  const source = doc.nodes.find((node) => node.id === nodeId);
-  if (!source) return doc;
+  // The clone becomes the next sibling, so the root (or any parentless node)
+  // cannot be duplicated: its copy would be unreachable.
+  if (nodeId === doc.rootId || !doc.nodes.some((node) => node.children.includes(nodeId))) {
+    return doc;
+  }
   const ids = subtreeIds(doc, nodeId);
   const used = usedIds(doc);
   const idMap = new Map<string, string>();
@@ -178,12 +181,6 @@ export function duplicateSubtree(
     .map((node) => cloneNode(node, idMap));
   const cloneRoot = idMap.get(nodeId)!;
   const positions = duplicatedPositions(doc, ids, idMap);
-  if (doc.rootId === nodeId) {
-    return withEditorPositions(
-      { ...doc, nodes: [...doc.nodes, ...clones] },
-      positions,
-    );
-  }
   return withEditorPositions(
     {
       ...doc,

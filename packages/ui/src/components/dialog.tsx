@@ -39,8 +39,14 @@ function DialogOverlay({
   )
 }
 
+/**
+ * Modal frame plus scrolling body. `className`, `style`, `ref` and data props
+ * size and position the fixed frame, which also holds the pinned close
+ * button; `bodyClassName` sets the content layout (padding, gap, flex).
+ */
 function DialogContent({
   className,
+  bodyClassName,
   children,
   showCloseButton = true,
   overlayClassName,
@@ -48,6 +54,8 @@ function DialogContent({
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean
   overlayClassName?: string
+  /** Layout classes for the scrolling body that receives `children`. */
+  bodyClassName?: string
 }) {
   return (
     <DialogPortal>
@@ -55,12 +63,21 @@ function DialogContent({
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
-          "editor-dialog fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto rounded-xl bg-popover p-4 shadow-xl text-sm text-popover-foreground ring-1 ring-border duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 motion-reduce:animate-none",
+          "editor-dialog fixed top-1/2 left-1/2 z-50 flex w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl bg-popover shadow-xl text-sm text-popover-foreground ring-1 ring-border duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 motion-reduce:animate-none",
+          showCloseButton && "[--dialog-close-inset:--spacing(12)]",
           className
         )}
         {...props}
       >
-        {children}
+        <div
+          data-slot="dialog-body"
+          className={cn(
+            "grid min-h-0 flex-auto gap-4 overflow-y-auto overscroll-contain p-4",
+            bodyClassName
+          )}
+        >
+          {children}
+        </div>
         {showCloseButton && (
           <DialogPrimitive.Close
             data-slot="dialog-close"
@@ -86,7 +103,7 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="dialog-header"
-      className={cn("flex min-h-10 flex-col justify-center gap-1 pr-12", className)}
+      className={cn("flex min-h-10 flex-col justify-center gap-1 pr-(--dialog-close-inset)", className)}
       {...props}
     />
   )

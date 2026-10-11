@@ -195,8 +195,7 @@ export function classAssetPaths(
   return assets
     .filter(
       (asset) =>
-        !asset.placeholder &&
-        (asset.header.type === "Class" || asset.header.type === "Graph"),
+        !asset.placeholder && asset.header.type === "Class",
     )
     .map((asset) => asset.path)
     .sort();

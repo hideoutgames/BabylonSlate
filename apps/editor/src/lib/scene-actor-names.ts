@@ -1,6 +1,9 @@
 import type { SerializedScene } from "@babylonslate/core";
 
-/** Keep saved names intact while making legacy duplicates selectable. */
+/**
+ * Keep saved names intact while telling apart actors that share one. Place and
+ * Duplicate mint unique names, but a rename in the Outliner or Details may repeat one.
+ */
 export function sceneActorDisplayNames(scene: SerializedScene): Map<string, string> {
   const counts = new Map<string, number>();
   for (const actor of scene.actors) {

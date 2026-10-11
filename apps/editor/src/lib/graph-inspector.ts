@@ -150,6 +150,8 @@ function flattenStructFieldRows(
   onChange: (next: Record<string, unknown>) => void,
   mapping: PinDefaultMapping | undefined,
   labelPrefix: string,
+  /** Structure guids already being expanded; a field that re-enters one gets no rows. */
+  visiting: ReadonlySet<string>,
 ): PropertyRow[] {
   const schemas = mapping?.schemas;
   const instance = hydrateStructInstance(fields, value, schemas);
@@ -166,6 +168,7 @@ function flattenStructFieldRows(
       continue;
     }
     if (type.kind === "structRef" && type.guid !== "engine:TagContainer") {
+      if (type.guid && visiting.has(type.guid)) continue;
       const nested = type.guid ? schemas?.structs[type.guid] : undefined;
       if (nested) {
         rows.push(
@@ -176,6 +179,7 @@ function flattenStructFieldRows(
               onChange({ ...instance, [field.name]: nestedValue }),
             mapping,
             label,
+            new Set([...visiting, type.guid]),
           ),
         );
         continue;
@@ -205,27 +209,21 @@ function flattenStructFieldRows(
   return rows;
 }
 
-/** Prefer catalog `typeClassIds` (Mesh+Model) over the pin's single asset type. */
-export function assetPickerAllowedTypes(
-  pinAssetType: string,
-  typeClassIds: unknown,
-): string[] {
-  const compatibleTypes = (types: string[]) => [...new Set(types.flatMap((type) =>
-    type === "Texture" ? [type, "RenderTargetTexture"] : type === "Material" ? [type, "MaterialInstance"] : [type]))];
-  if (!Array.isArray(typeClassIds) || typeClassIds.length === 0) {
-    return compatibleTypes([pinAssetType]);
-  }
-  const ids = typeClassIds
-    .filter((id): id is string => typeof id === "string")
-    .map((id) => id.trim())
-    .filter(Boolean);
-  return compatibleTypes(ids.length > 0 ? ids : [pinAssetType]);
+/**
+ * Content Browser types an asset pin's picker offers: the pin's asset type
+ * plus the types that stand in for it. The empty asset type accepts any
+ * asset, so it lists them all (no type filter).
+ */
+export function assetPickerAllowedTypes(pinAssetType: string): string[] {
+  const type = pinAssetType.trim();
+  if (!type) return [];
+  return type === "Texture" ? [type, "RenderTargetTexture"] : type === "Material" ? [type, "MaterialInstance"] : [type];
 }
 
 /** Asset Variable Default picker kinds: the pre-cast Asset Type, or the catalog list. */
 export function variableAssetPickerAllowedTypes(typeClassId?: string): string[] {
   const trimmed = typeClassId?.trim();
-  if (trimmed) return assetPickerAllowedTypes(trimmed, undefined);
+  if (trimmed) return assetPickerAllowedTypes(trimmed);
   return [...ASSET_REF_PICKER_TYPES];
 }
 
@@ -435,7 +433,7 @@ export function pinDefaultPropertyRows(
           displayLabel: identity.displayLabel,
           displayType: identity.displayType,
           visual: identity.visual,
-          placeholder: assetType,
+          placeholder: assetType || "Any Asset",
           onPick: () => mappingNames?.onPickAsset?.(entry.pinId, assetType),
           onChange: (value) => onPatch({ [key]: value }),
         });
@@ -468,6 +466,7 @@ export function pinDefaultPropertyRows(
             (next) => onPatch({ [key]: next }),
             mappingNames,
             entry.name === "Default" ? "" : humanizePropertyLabel(entry.name),
+            new Set([entry.type.guid]),
           ),
         );
         break;
@@ -526,6 +525,7 @@ export function variableDefaultPropertyRows(
       (next) => onChange(next),
       mapping,
       label === "Default" ? "" : label,
+      new Set([type.guid]),
     );
   }
   const resolved = value === undefined ? defaultJsValue(type) : value;
@@ -956,6 +956,11 @@ export function javaScriptPinsFromRows(rows: readonly PinListRow[]) {
   }));
 }
 
+/**
+ * Rows for saved command parameters, which have no ids. Ids are positional
+ * unless `ids` carries the editor's ids from the last commit, so a rename keeps
+ * its input mounted and a moved row stays selected.
+ */
 export function commandParameterRows(
   rows: ReadonlyArray<{
     name: string;
@@ -964,9 +969,10 @@ export function commandParameterRows(
     defaultValue?: unknown;
     enumValues?: unknown;
   }>,
+  ids?: readonly string[],
 ): ParameterRow[] {
   return rows.map((row, index) => ({
-    id: `cmd-${index}-${row.name}`,
+    id: ids?.[index] ?? `cmd-${index}`,
     name: row.name,
     type: parameterTypeFromPin(row.type),
     optional: row.optional === true,

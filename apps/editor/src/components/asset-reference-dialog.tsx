@@ -12,7 +12,6 @@ import {
   DialogTitle,
 } from "@babylonslate/ui/components/dialog";
 import { buildAssetReferenceGraph } from "../lib/asset-reference-graph";
-import { displayAssetTitle } from "../lib/content-browser-helpers";
 
 /** Links only follow node selection; unselectable edges let a drag that starts on a link pan the graph. */
 const referenceEdges = {
@@ -68,12 +67,13 @@ export function AssetReferenceDialog({
       }}
     >
       <DialogContent
-        className="editor-dialog-large flex min-h-0 flex-col overflow-hidden"
+        className="editor-dialog-large"
+        bodyClassName="flex flex-col overflow-hidden"
         data-testid="content-browser-refs-dialog"
       >
         <DialogHeader className="shrink-0">
           <DialogTitle>
-            {displayAssetTitle(root?.header.name ?? rootGuid)} References
+            {root?.header.name ?? rootGuid} References
           </DialogTitle>
         </DialogHeader>
         <style>{selectedEdgeStyles(selectedGuid)}</style>
