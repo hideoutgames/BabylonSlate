@@ -86,7 +86,7 @@ export async function resolveGpuTexture(
   const sourceEdge =
     longestEdge(sniffed) ??
     DEFAULT_TEXTURE_ENCODE_SETTINGS.maxDimension;
-  const downsample = textureDownsampleFromPayload(header.payload, sourceEdge);
+  const downsample = textureDownsampleFromPayload(header.payload);
   const usage = String(header.payload.usage ?? "albedo");
   const lod = options.editorLod;
   const targetEdge = resolveTextureTargetEdge({
@@ -206,7 +206,7 @@ export function authoredEncodeMaxDimension(
     (typeof payload.width === "number" && typeof payload.height === "number"
       ? Math.max(payload.width, payload.height)
       : projectMax);
-  const downsample = textureDownsampleFromPayload(payload, edge);
+  const downsample = textureDownsampleFromPayload(payload);
   return Math.min(
     projectMax,
     authoredTextureMaxDimension({ sourceEdge: edge, downsample }),

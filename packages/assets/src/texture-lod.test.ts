@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   authoredTextureMaxDimension,
-  migrateMaxDimensionToDownsample,
   resolveTextureTargetEdge,
   textureDownsampleFromPayload,
   TEXTURE_LOD_FLOOR,
@@ -135,18 +134,6 @@ describe("textureDownsampleFromPayload", () => {
   it("reads downsample 1/2/4/8/16", () => {
     expect(textureDownsampleFromPayload({ downsample: 4 })).toBe(4);
     expect(textureDownsampleFromPayload({ downsample: 16 })).toBe(16);
-  });
-
-  it("migrates a legacy maxDimension against source size", () => {
-    expect(migrateMaxDimensionToDownsample(1024, 4096)).toBe(4);
-    expect(migrateMaxDimensionToDownsample(2048, 2048)).toBe(1);
-    expect(migrateMaxDimensionToDownsample(undefined, 4096)).toBe(1);
-  });
-
-  it("uses migrated maxDimension when downsample is absent", () => {
-    expect(
-      textureDownsampleFromPayload({ maxDimension: 1024 }, 4096),
-    ).toBe(4);
   });
 });
 
