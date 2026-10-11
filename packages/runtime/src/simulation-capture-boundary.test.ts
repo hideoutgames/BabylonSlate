@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createActor, createDefaultScene } from "@babylonslate/core";
 import { createInProcessRuntime } from "./driver";
 import { simulationCaptureChunks } from "./simulation-capture-transport";
+import { SnapshotPublisher } from "./snapshot-publisher";
 
 describe("Simulation final capture boundary", () => {
   it("retains known cold asset references without treating their identity as a loaded resource", async () => {
@@ -81,6 +82,20 @@ describe("Simulation final capture boundary", () => {
       expect(runtime.getWorld().getActors()).toHaveLength(1);
       expect((await runtime.captureSimulationState({ sessionGeneration: 8, requestId: 5, renderRevision: boundary.commandRevision })).ok).toBe(true);
     } finally { runtime.stop(); }
+  });
+
+  it("answers a quiescence step that throws and accepts a retry with a newer request ID", async () => {
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, sessionGeneration: 9,
+      sessionMode: "simulate", playScene: { ...createDefaultScene(), actors: [createActor("before", "Before")] }, playSceneGuid: "root" });
+    const flush = vi.spyOn(SnapshotPublisher.prototype, "flushDeferred");
+    try {
+      runtime.realizePlayWorld(); runtime.start();
+      flush.mockImplementationOnce(() => { throw new Error("Deferred snapshot failed."); });
+      expect(await runtime.quiesceSimulation({ sessionGeneration: 9, requestId: 1 })).toMatchObject({ success: false, reason: "Deferred snapshot failed." });
+      const boundary = await runtime.quiesceSimulation({ sessionGeneration: 9, requestId: 2 });
+      expect(boundary.success).toBe(true);
+      expect((await runtime.captureSimulationState({ sessionGeneration: 9, requestId: 3, renderRevision: boundary.commandRevision })).ok).toBe(true);
+    } finally { flush.mockRestore(); runtime.stop(); }
   });
 
   it("streams large escaped and Unicode values in bounded chunks without changing the JSON meaning", () => {

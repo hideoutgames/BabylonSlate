@@ -151,6 +151,18 @@ describe("additive scene streaming", () => {
     } finally { runtime.stop(); }
   });
 
+  it("rejects a load whose readiness admission throws instead of reporting it loaded", async () => {
+    const { runtime, commands, world, left } = await setup();
+    try {
+      const load = runtime.loadSceneStream(left);
+      const ready = await realized(commands, "left");
+      vi.spyOn(world, "notifyStreamedSceneLoaded").mockImplementationOnce(() => { throw new Error("admission failed"); });
+      acknowledge(runtime, ready);
+      await expect(load).rejects.toThrow("admission failed");
+      expect(runtime.getSceneState(left)).toBe("Unloaded");
+    } finally { runtime.stop(); }
+  });
+
   it("holds concurrent blocking loads through readiness without clearing manual pause", async () => {
     const { runtime, commands, world, left, right } = await setup();
     try {
