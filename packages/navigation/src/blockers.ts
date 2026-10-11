@@ -428,6 +428,24 @@ function blockerWorldAffine(
 }
 
 /**
+ * A blocker actor's world transform exactly as the bake carves it (through its
+ * parent chain, no axis below the minimum extent), as the 16 entries Babylon's
+ * `Matrix.FromArray` reads: row-vector layout with the translation at 12–14.
+ */
+export function blockerWorldMatrix(
+  actor: BlockerActorBakeInput,
+  actorsById: ReadonlyMap<string, BlockerActorBakeInput>,
+): number[] {
+  const m = blockerWorldAffine(actor, actorsById);
+  return [
+    m[0]!, m[4]!, m[8]!, 0,
+    m[1]!, m[5]!, m[9]!, 0,
+    m[2]!, m[6]!, m[10]!, 0,
+    m[3]!, m[7]!, m[11]!, 1,
+  ];
+}
+
+/**
  * The unit volume the editor draws for a blocker (a box or a diameter-1
  * cylinder, height 1 along local Y) placed by its world transform. In 2D the
  * actor's local XY plane is the walk plane and the volume becomes a prism
