@@ -1,6 +1,6 @@
 import { renderSceneWithGameTime, setSceneGameTimePaused } from "./scene-game-time";
 import { installAssetBytes } from "@babylonslate/assets";
-import { FreeCamera, Vector3, MeshBuilder, TransformNode, type Mesh } from "@babylonjs/core";
+import { AnimationGroup, FreeCamera, Vector3, MeshBuilder, TransformNode, type Mesh } from "@babylonjs/core";
 import { encodeGlbJsonBin, splitGlbJsonBin } from "@babylonslate/assets";
 import {
   applyAnimStateToScene,
@@ -216,6 +216,7 @@ describe("beginSlotModelAnimLoad", () => {
         });
       },
       pose: () => [part.position.y, (part.parent as TransformNode).position.y],
+      root,
     };
   }
 
@@ -253,6 +254,17 @@ describe("beginSlotModelAnimLoad", () => {
     const [part, root] = model.pose();
     expect(part).toBeCloseTo(1);
     expect(root).toBeCloseTo(0);
+  });
+
+  it("drops a queued crossfade when its model instance is disposed", async () => {
+    const model = await loadCrossfadeModel();
+    model.apply([["First", 1, 0.5], ["Second", 0.5, 0.5]]);
+    model.root.dispose();
+    const seek = vi.spyOn(AnimationGroup.prototype, "goToFrame");
+    try {
+      model.scene.render();
+      expect(seek).not.toHaveBeenCalled();
+    } finally { seek.mockRestore(); }
   });
 
   it("retains a queued weighted pose while a paused scene redraws", async () => {
