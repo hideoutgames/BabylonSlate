@@ -18,6 +18,8 @@ import {
 import { useOptionalPlay } from "../context/play-context";
 import { useProjectState } from "../context/document-context";
 
+const STOPPED_CLIP = { playing: false, looping: false };
+
 export function AnimationPreviewCanvas({
   sourceBytes,
   clipName,
@@ -36,7 +38,8 @@ export function AnimationPreviewCanvas({
   const { projectDocument } = useProjectState();
   const [engine, setEngine] = useState<AbstractEngine | null>(null);
   const [previewGeneration, setPreviewGeneration] = useState(0);
-  const [clipPlaying, setClipPlaying] = useState(false);
+  /** Read back from the AnimationGroup, so the attributes report what plays. */
+  const [clip, setClip] = useState(STOPPED_CLIP);
   const hostRef = useRef<MaterialPreviewScene | null>(null);
   const presenterRef = useRef<MaterialPreviewPresenter | null>(null);
   const bonesRef = useRef<{ dispose: () => void } | null>(null);
@@ -105,6 +108,9 @@ export function AnimationPreviewCanvas({
           group = loaded.animationGroups.find((entry) => entry.name === clipName) ?? null;
         }
         group?.play(true);
+        group?.onAnimationGroupEndObservable.add(() => {
+          if (!cancelled) setClip(STOPPED_CLIP);
+        });
         playingRef.current = group;
         presenter = createMaterialPreviewPresenter(host, canvas, { maxFps: 30 });
         gestures = attachMaterialPreviewGestures(canvas, host.camera, {
@@ -123,7 +129,11 @@ export function AnimationPreviewCanvas({
           presenterRef.current = null;
           return;
         }
-        setClipPlaying(Boolean(group));
+        setClip(
+          group?.isPlaying
+            ? { playing: true, looping: group.loopAnimation }
+            : STOPPED_CLIP,
+        );
         setPreviewGeneration((value) => value + 1);
         const tick = () => {
           if (cancelled) return;
@@ -142,7 +152,7 @@ export function AnimationPreviewCanvas({
         host?.dispose();
         hostRef.current = null;
         presenterRef.current = null;
-        setClipPlaying(false);
+        setClip(STOPPED_CLIP);
       }
     })();
     return () => {
@@ -150,7 +160,7 @@ export function AnimationPreviewCanvas({
       window.cancelAnimationFrame(raf.id);
       playingRef.current?.stop();
       playingRef.current = null;
-      setClipPlaying(false);
+      setClip(STOPPED_CLIP);
       bonesRef.current?.dispose();
       bonesRef.current = null;
       gestures?.dispose();
@@ -185,8 +195,8 @@ export function AnimationPreviewCanvas({
       ref={canvasRef}
       className="h-full w-full touch-none"
       data-testid="animation-preview-canvas"
-      data-playing={clipPlaying ? "true" : "false"}
-      data-looping={clipPlaying ? "true" : "false"}
+      data-playing={clip.playing ? "true" : "false"}
+      data-looping={clip.looping ? "true" : "false"}
     />
   );
 }

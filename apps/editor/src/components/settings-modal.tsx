@@ -32,6 +32,7 @@ import {
   normalizeCelShadingSettings,
   normalizeEnvironmentLightingSettings,
   normalizeRenderEffectsSettings,
+  type ExportPreset,
 } from "@babylonslate/core";
 import {
   Empty,
@@ -91,6 +92,7 @@ import { editorUtilityObjectClassEntries } from "../lib/editor-utility-classes";
 import { gameInstanceClassEntries } from "../lib/component-property-rows";
 import { classIdFromClassAsset } from "../lib/content-browser-helpers";
 import { projectArchiveDownloadName } from "../lib/display-project-name";
+import { downloadBlob } from "../lib/download";
 import { exportGameFailureMessage } from "../lib/export-game-failure";
 import {
   EngineSettingsForm,
@@ -305,6 +307,14 @@ const ENGINE_GROUPS: CatalogCategoryGroup[] = [
   { label: "Projects", ids: ["templates", "plugins", "extensions"] },
 ];
 
+/** Downloads exactly the view's bytes, even when it shares a larger buffer. */
+function downloadZip(bytes: Uint8Array, fileName: string): void {
+  downloadBlob(
+    new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "application/zip" }),
+    fileName,
+  );
+}
+
 function matchesSearch(
   label: string,
   keywords: string,
@@ -498,17 +508,8 @@ export function SettingsModal({
     setExportNotice(null);
     try {
       const bytes = await exportProject(projectDocument);
-      const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "application/zip" });
-      const url = URL.createObjectURL(blob);
-      try {
-        const anchor = document.createElement("a");
-        anchor.href = url;
-        anchor.download = projectArchiveDownloadName(projectDocument.metadata.name);
-        anchor.click();
-        setExportNotice("Project backup prepared. Check your downloads.");
-      } finally {
-        URL.revokeObjectURL(url);
-      }
+      downloadZip(bytes, projectArchiveDownloadName(projectDocument.metadata.name));
+      setExportNotice("Project backup prepared. Check your downloads.");
     } catch (error) {
       setExportProjectError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -527,16 +528,10 @@ export function SettingsModal({
         setExportGameError(exportGameFailureMessage(result.error));
         return;
       }
-      const bytes = zipExportedGame(result.value);
-      const blob = new Blob([bytes.buffer as ArrayBuffer], {
-        type: "application/zip",
-      });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `${projectDocument.metadata.name.replace(/\s+/g, "_")}.zip`;
-      anchor.click();
-      URL.revokeObjectURL(url);
+      downloadZip(
+        zipExportedGame(result.value),
+        `${projectDocument.metadata.name.replace(/\s+/g, "_")}.zip`,
+      );
       setExportNotice("Game export prepared. Check your downloads.");
     } catch (error) {
       console.error("[editor] Export Game failed", error);
@@ -548,6 +543,13 @@ export function SettingsModal({
 
   const exportPreset =
     projectDocument?.settings.exportPresets[0] ?? defaultExportPreset();
+  /** The Export fields edit the first preset; later presets stay as stored. */
+  const updateExportPreset = (patch: Partial<ExportPreset>) => {
+    if (!projectDocument) return;
+    const [current = defaultExportPreset(), ...rest] =
+      projectDocument.settings.exportPresets;
+    updateProjectSettings({ exportPresets: [{ ...current, ...patch }, ...rest] });
+  };
 
   const twoD = projectDocument?.settings.twoD;
   const showProjectBody =
@@ -1431,15 +1433,9 @@ export function SettingsModal({
               <Switch
                 id="setting-export-packed"
                 checked={exportPreset.packed}
-                onCheckedChange={(checked) => {
-                  if (!projectDocument) return;
-                  const current =
-                    projectDocument.settings.exportPresets[0] ??
-                    defaultExportPreset();
-                  updateProjectSettings({
-                    exportPresets: [{ ...current, packed: checked === true }],
-                  });
-                }}
+                onCheckedChange={(checked) =>
+                  updateExportPreset({ packed: checked === true })
+                }
                 data-testid="setting-export-packed"
               />
               <FieldDescription>
@@ -1453,17 +1449,9 @@ export function SettingsModal({
               <Switch
                 id="setting-export-debugger"
                 checked={exportPreset.bundleDebugger}
-                onCheckedChange={(checked) => {
-                  if (!projectDocument) return;
-                  const current =
-                    projectDocument.settings.exportPresets[0] ??
-                    defaultExportPreset();
-                  updateProjectSettings({
-                    exportPresets: [
-                      { ...current, bundleDebugger: checked === true },
-                    ],
-                  });
-                }}
+                onCheckedChange={(checked) =>
+                  updateExportPreset({ bundleDebugger: checked === true })
+                }
                 data-testid="setting-export-debugger"
               />
               <FieldDescription>
@@ -1479,15 +1467,7 @@ export function SettingsModal({
                 id="setting-export-file-warn"
                 min={1}
                 value={exportPreset.fileCountWarn}
-                onChange={(value) => {
-                  if (!projectDocument) return;
-                  const current =
-                    projectDocument.settings.exportPresets[0] ??
-                    defaultExportPreset();
-                  updateProjectSettings({
-                    exportPresets: [{ ...current, fileCountWarn: value }],
-                  });
-                }}
+                onChange={(value) => updateExportPreset({ fileCountWarn: value })}
                 data-testid="setting-export-file-warn"
               />
             </Field>
@@ -1499,15 +1479,7 @@ export function SettingsModal({
                 id="setting-export-file-fail"
                 min={1}
                 value={exportPreset.fileCountFail}
-                onChange={(value) => {
-                  if (!projectDocument) return;
-                  const current =
-                    projectDocument.settings.exportPresets[0] ??
-                    defaultExportPreset();
-                  updateProjectSettings({
-                    exportPresets: [{ ...current, fileCountFail: value }],
-                  });
-                }}
+                onChange={(value) => updateExportPreset({ fileCountFail: value })}
                 data-testid="setting-export-file-fail"
               />
             </Field>
@@ -1596,15 +1568,23 @@ export function SettingsModal({
                     sourceControl: { ...current, enabled },
                   });
                   if (!current.repositoryUrl) {
+                    const requestedProject = projectGuid;
                     void prefillSourceControlFromGit().then((prefill) => {
                       if (!prefill.repositoryUrl && !prefill.branch) return;
-                      updateProjectSettings({
+                      // Fill from the settings as they are now: a field typed
+                      // or a Disable confirmed during the Git read wins.
+                      const live = latest.current;
+                      if (!live.project || live.projectGuid !== requestedProject) return;
+                      const now = live.project.settings.sourceControl;
+                      if (!now.enabled) return;
+                      live.applyProjectSettings({
                         sourceControl: {
-                          ...current,
-                          enabled: true,
-                          repositoryUrl:
-                            prefill.repositoryUrl || current.repositoryUrl,
-                          branch: prefill.branch || current.branch,
+                          ...now,
+                          repositoryUrl: now.repositoryUrl || prefill.repositoryUrl,
+                          branch:
+                            now.branch === current.branch && prefill.branch
+                              ? prefill.branch
+                              : now.branch,
                         },
                       });
                     });

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createDefaultSkyboxCreatorPayload } from "@babylonslate/assets";
 import {
   SkyboxCreatorCubemap,
@@ -51,8 +51,10 @@ vi.mock("@babylonslate/assets", async (importOriginal) => {
   };
 });
 
+const encodePngRgba = vi.hoisted(() => vi.fn(() => Uint8Array.of(9)));
+
 vi.mock("@babylonslate/render", () => ({
-  encodePngRgba: () => Uint8Array.of(9),
+  encodePngRgba,
   createMaterialPreviewScene: () => null,
   createMaterialPreviewPresenter: () => null,
   createSkyboxMeshForFaces: () => null,
@@ -144,6 +146,32 @@ describe("SkyboxCreatorEditor", () => {
     expect(onChange.mock.invocationCallOrder[0]!).toBeLessThan(
       refreshAssetRegistry.mock.invocationCallOrder[0]!,
     );
+  });
+
+  it("records the created faces on the document as it is when the writes finish", async () => {
+    let releaseRead!: () => void;
+    readAssetChunk.mockImplementationOnce(
+      () => new Promise<typeof PNG_MAGIC>((resolve) => { releaseRead = () => resolve(PNG_MAGIC); }),
+    );
+    const payload = (x: number) => ({
+      ...createDefaultSkyboxCreatorPayload(),
+      sourceTextureGuid: "tex-1",
+      sourcePlacement: { x, y: 0, width: 1, height: 1 },
+    }) as unknown as Record<string, unknown>;
+    const onChange = vi.fn();
+    const editor = (x: number) => (
+      <SkyboxCreatorEditor payload={payload(x)} helperPath="assets/Day.skyboxcreator.babasset" onChange={onChange} />
+    );
+    const { rerender } = render(editor(0));
+    fireEvent.click(screen.getByTestId("skybox-creator-create"));
+    await waitFor(() => expect(readAssetChunk).toHaveBeenCalled());
+    rerender(editor(0.25));
+    releaseRead();
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      sourcePlacement: { x: 0.25, y: 0, width: 1, height: 1 },
+      generatedFaces: expect.objectContaining({ px: expect.any(String) }),
+    }));
   });
 
   it("shows the createAsset failure instead of a decode error", async () => {
@@ -425,5 +453,48 @@ describe("SkyboxCreatorCubemap", () => {
     );
     await screen.findByTestId("skybox-creator-preview-canvas");
     expect(decodeSourceToRgba).toHaveBeenCalledTimes(callsAfterLoad);
+  });
+
+  it("explains a source Texture that could not be read instead of waiting on the decode", async () => {
+    readAssetChunk.mockRejectedValueOnce(new Error("Asset chunk assets/Sky.babasset#pixels could not be read."));
+    render(
+      <SkyboxCreatorCubemap
+        payload={{ ...createDefaultSkyboxCreatorPayload(), sourceTextureGuid: "tex-1" } as unknown as Record<string, unknown>}
+      />,
+    );
+    expect(await screen.findByText("Asset chunk assets/Sky.babasset#pixels could not be read.")).toBeTruthy();
+    expect(screen.queryByText("Decoding the Texture…")).toBeNull();
+    expect(decodeSourceToRgba).not.toHaveBeenCalled();
+  });
+
+  it("explains a source Texture that is no longer in the project", async () => {
+    render(
+      <SkyboxCreatorCubemap
+        payload={{ ...createDefaultSkyboxCreatorPayload(), sourceTextureGuid: "tex-gone" } as unknown as Record<string, unknown>}
+      />,
+    );
+    expect(await screen.findByText("The source Texture is missing.")).toBeTruthy();
+    expect(screen.queryByText("Decoding the Texture…")).toBeNull();
+    expect(readAssetChunk).not.toHaveBeenCalled();
+  });
+
+  it("encodes the six preview faces once after a placement drag settles", async () => {
+    const payload = (x: number) => ({
+      ...createDefaultSkyboxCreatorPayload(),
+      sourceTextureGuid: "tex-1",
+      sourcePlacement: { x, y: 0, width: 1, height: 1 },
+    }) as unknown as Record<string, unknown>;
+    const { rerender } = render(<SkyboxCreatorCubemap payload={payload(0)} />);
+    await screen.findByTestId("skybox-creator-preview-canvas");
+    encodePngRgba.mockClear();
+    vi.useFakeTimers();
+    try {
+      for (const x of [0.01, 0.02, 0.03]) rerender(<SkyboxCreatorCubemap payload={payload(x)} />);
+      expect(encodePngRgba).not.toHaveBeenCalled();
+      act(() => { vi.runAllTimers(); });
+      expect(encodePngRgba).toHaveBeenCalledTimes(6);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

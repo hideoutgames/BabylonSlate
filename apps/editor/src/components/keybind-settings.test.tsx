@@ -46,8 +46,10 @@ describe("KeybindSettings", () => {
     const dialogEscape = vi.fn();
     document.addEventListener("keydown", dialogEscape);
     const view = render(<Harness onKeybinds={onKeybinds} />);
-    fireEvent.click(view.getByTestId("keybind-record-edit.rename"));
-    fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
+    const record = view.getByTestId("keybind-record-edit.rename");
+    fireEvent.click(record);
+    // Dispatched inside the document, where a dialog's document listener would see it.
+    fireEvent.keyDown(record, { key: "Escape", code: "Escape" });
     document.removeEventListener("keydown", dialogEscape);
     expect(onKeybinds).not.toHaveBeenCalled();
     expect(dialogEscape).not.toHaveBeenCalled();

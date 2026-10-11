@@ -1588,7 +1588,7 @@ export function ComponentGallery() {
             <GalleryDangerDialog />
             <Sheet modal={false}>
               <SheetTrigger render={<Button variant="outline" size="sm" data-testid="gallery-console-sheet-open" />}>Open Console Sheet</SheetTrigger>
-              <SheetContent side="bottom" showOverlay={false} className="gap-0 rounded-none shadow-none data-[side=bottom]:h-[min(58dvh,38rem)]" data-testid="gallery-console-sheet">
+              <SheetContent side="bottom" showOverlay={false} className="gap-0 rounded-none shadow-none data-[side=bottom]:h-[min(40dvh,22rem)] pointer-coarse:data-[side=bottom]:h-[min(50dvh,26rem)]" data-testid="gallery-console-sheet">
                 <SheetHeader><SheetTitle>Console Sheet</SheetTitle></SheetHeader>
                 <SelectableText className="px-4 font-mono text-xs">A flat nonmodal drawer leaves the view above visible and interactive.</SelectableText>
               </SheetContent>

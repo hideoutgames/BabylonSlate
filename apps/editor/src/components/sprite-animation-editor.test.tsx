@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   AssetRegistry,
@@ -105,6 +106,74 @@ describe("SpriteAnimation editor", () => {
         }),
       );
     });
+  });
+
+  it("applies a picked Texture to the animation as edited while the image loads", async () => {
+    let finishRead!: (bytes: Uint8Array) => void;
+    readAssetChunk.mockImplementationOnce(() => new Promise((resolve) => { finishRead = resolve; }));
+    const payload = createDefaultSpriteAnimationPayload();
+    const onChange = vi.fn();
+    const view = render(
+      <SpriteAnimationDetails payload={payload as unknown as Record<string, unknown>} onChange={onChange} />,
+    );
+    fireEvent.click(screen.getByTestId("property-texture"));
+    fireEvent.click(await screen.findByTestId("search-item-tex-1"));
+    await waitFor(() => expect(readAssetChunk).toHaveBeenCalled());
+    const edited = { ...payload, frameDurationMs: 250 };
+    view.rerender(
+      <SpriteAnimationDetails payload={edited as unknown as Record<string, unknown>} onChange={onChange} />,
+    );
+    await act(async () => finishRead(pngIhdr(200, 100)));
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        frameDurationMs: 250,
+        frames: [expect.objectContaining({ textureGuid: "tex-1", width: 200, height: 100 })],
+      }),
+    );
+  });
+
+  it("keeps a frame's pending Texture pick when another frame's Texture is picked", async () => {
+    let finishRead!: (bytes: Uint8Array) => void;
+    readAssetChunk.mockImplementationOnce(() => new Promise((resolve) => { finishRead = resolve; }));
+    const onChange = vi.fn();
+    function Harness() {
+      const [payload, setPayload] = useState<Record<string, unknown>>(
+        () => createDefaultSpriteAnimationPayload() as unknown as Record<string, unknown>,
+      );
+      return (
+        <SpriteAnimationDetails
+          payload={payload}
+          onChange={(next) => {
+            setPayload(next);
+            onChange(next);
+          }}
+        />
+      );
+    }
+    render(<Harness />);
+    fireEvent.click(screen.getByTestId("property-texture"));
+    fireEvent.click(await screen.findByTestId("search-item-tex-1"));
+    await waitFor(() => expect(readAssetChunk).toHaveBeenCalled());
+    fireEvent.click(screen.getByTestId("sprite-animation-add-frame"));
+    expect(screen.getByTestId("sprite-animation-selected-frame").textContent).toBe("Frame 2");
+    fireEvent.click(screen.getByTestId("property-texture"));
+    fireEvent.click(await screen.findByTestId("search-item-tex-2"));
+    await waitFor(() =>
+      expect(onChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          frames: [expect.anything(), expect.objectContaining({ textureGuid: "tex-2" })],
+        }),
+      ),
+    );
+    await act(async () => finishRead(pngIhdr(64, 32)));
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        frames: [
+          expect.objectContaining({ textureGuid: "tex-1", width: 64, height: 32 }),
+          expect.objectContaining({ textureGuid: "tex-2", width: 200, height: 100 }),
+        ],
+      }),
+    );
   });
 
   it("plays indexed frame textures without scanning the registry and stops on pause", async () => {

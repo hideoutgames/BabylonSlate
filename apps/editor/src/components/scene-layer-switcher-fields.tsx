@@ -45,10 +45,11 @@ export function SceneLayerSwitcherFields({ properties: authoredProperties, class
     })).then(results => { if (active) setGraphs(Object.fromEntries(results.filter((entry): entry is readonly [string, SerializedGraph] => entry[1] !== null))); }).catch(reason => { if (active) setError(reason instanceof Error ? reason.message : "Unable to load Class defaults."); });
     return () => { active = false; };
   }, [assets, classDocuments, entryClassIds, loadGraphDocument, parentOf]);
-  const changeEntries = (sceneLayerActors: SwitcherEntry[]) => onChange({ ...properties, sceneLayerActors });
+  // `properties` shows inherited Class defaults; an edit stores only its own field.
+  const changeEntries = (sceneLayerActors: SwitcherEntry[]) => onChange({ ...authoredProperties, sceneLayerActors });
   return <Field className="p-2" data-testid="scene-layer-switcher-fields">
     <FieldLabel>Scene Layer Actors</FieldLabel>
-    <PropertyGrid density="compact" rows={[{ kind: "number", id: "switcher-initial-index", label: "Initial Index", value: typeof properties.initialIndex === "number" ? properties.initialIndex : 0, min: -1, max: Math.max(0, entries.length - 1), precision: 0, sensitivity: 1, description: "Zero selects the first entry. Use -1 to start empty.", onChange: initialIndex => onChange({ ...properties, initialIndex: Math.trunc(initialIndex) }) }]} />
+    <PropertyGrid density="compact" rows={[{ kind: "number", id: "switcher-initial-index", label: "Initial Index", value: typeof properties.initialIndex === "number" ? properties.initialIndex : 0, min: -1, max: Math.max(0, entries.length - 1), precision: 0, sensitivity: 1, description: "Zero selects the first entry. Use -1 to start empty.", onChange: initialIndex => onChange({ ...authoredProperties, initialIndex: Math.trunc(initialIndex) }) }]} />
     <EntryListEditor items={entries} onChange={changeEntries} onAdd={() => setPicking(entries.length)} addLabel="Add Scene Layer Actor" touchAdaptive data-testid="switcher-entries"
       renderItemHeader={({ item, index }) => <PropertyGrid density="compact" rows={[{ kind: "asset", id: `switcher-class-${index}`, label: `Actor ${index + 1} Class`, value: item.classId, ...classRowIdentity(classes.find(entry => entry.id === item.classId) ?? { id: item.classId, name: item.classId }), onPick: () => setPicking(index), onChange: () => {} }]} />}
       renderItem={({ item, index, onChange: update }) => {

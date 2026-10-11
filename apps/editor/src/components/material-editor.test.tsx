@@ -153,17 +153,17 @@ describe("Material preview panel", () => {
     });
   });
 
-  it("returns to Cube when an initial custom pick is dismissed", () => {
+  it("keeps the current primitive when an initial custom pick is dismissed", async () => {
     const doc = createDefaultMaterialDocument("Rock");
     doc.preview = { mesh: "cylinder", customMeshGuid: null };
     harness.content = doc as unknown as Record<string, unknown>;
     render(<MaterialPreviewPanel {...panelProps} />);
     fireEvent.click(screen.getByTestId("material-preview-mesh-custom"));
     fireEvent.keyDown(document.body, { key: "Escape" });
-    expect(lastCommit().preview).toEqual({
-      mesh: "cube",
-      customMeshGuid: null,
-    });
+    await waitFor(() =>
+      expect(screen.queryByTestId("material-preview-mesh-picker")).toBeNull(),
+    );
+    expect(harness.applyAssetDocumentChange).not.toHaveBeenCalled();
   });
 
   it("surfaces a compile error under the canvas", () => {

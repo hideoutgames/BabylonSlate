@@ -13,6 +13,16 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
 }
 
 const applyAssetDocumentChange = vi.hoisted(() => vi.fn(async () => true));
+const fontHarness = vi.hoisted(() => ({
+  content: null as Record<string, unknown> | null,
+  importFile: vi.fn(async () => {}),
+  pickImportFiles: vi.fn(async (): Promise<Array<{ name: string; bytes: Uint8Array }>> => []),
+}));
+
+vi.mock("@babylonslate/vfs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@babylonslate/vfs")>()),
+  pickImportFiles: fontHarness.pickImportFiles,
+}));
 const readAssetChunk = vi.hoisted(() =>
   vi.fn(async () => new Uint8Array([0x89, 0x50, 0x4e, 0x47])),
 );
@@ -26,7 +36,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
         path: "assets/Display.font.babasset",
         label: "Display Font",
       },
-      content: createFontPayload("Display"),
+      content: fontHarness.content ?? createFontPayload("Display"),
       layout: null,
       dirty: false,
     },
@@ -90,7 +100,23 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
             },
             path: "assets/Body.font.babasset",
           }
-        : undefined,
+        : guid === "font-1"
+          ? {
+              // A saved Font's header after an MSDF attach: the payload lives
+              // in the document chunk, so only the attached flags are here.
+              header: {
+                guid: "font-1",
+                name: "Display",
+                type: "Font",
+                payload: {
+                  family: "Display",
+                  representations: { msdfJson: true, msdfPng: true },
+                },
+              },
+              path: "assets/Display.font.babasset",
+            }
+          : undefined,
+    importFile: fontHarness.importFile,
   },
   readAssetChunk,
 })));
@@ -98,6 +124,10 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
 afterEach(() => {
   cleanup();
   applyAssetDocumentChange.mockClear();
+  fontHarness.content = null;
+  fontHarness.importFile.mockClear();
+  fontHarness.pickImportFiles.mockReset();
+  fontHarness.pickImportFiles.mockResolvedValue([]);
 });
 
 describe("AssetDocumentWorkspace authoring", () => {
@@ -151,5 +181,32 @@ describe("AssetDocumentWorkspace authoring", () => {
       undefined,
     );
   });
-
+  it("keeps the open Font's source and fallbacks when an MSDF atlas attaches", async () => {
+    fontHarness.content = createFontPayload("Display", {
+      fallbackGuids: ["font-2"],
+      representations: { source: true },
+    }) as unknown as Record<string, unknown>;
+    fontHarness.pickImportFiles.mockResolvedValueOnce([
+      { name: "Display.json", bytes: new TextEncoder().encode('{"chars":[],"common":{}}') },
+      { name: "Display.png", bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47]) },
+    ]);
+    render(<AssetDocumentWorkspace documentId="font:assets/Display.font.babasset" />);
+    fireEvent.click(screen.getByTestId("font-import-msdf"));
+    await vi.waitFor(() => expect(applyAssetDocumentChange).toHaveBeenCalled());
+    expect(fontHarness.importFile).toHaveBeenCalledWith(
+      undefined,
+      expect.any(String),
+      "Display.json",
+      expect.anything(),
+      expect.objectContaining({ attachToGuid: "font-1" }),
+    );
+    expect(applyAssetDocumentChange).toHaveBeenLastCalledWith(
+      "font:assets/Display.font.babasset",
+      expect.objectContaining({
+        fallbackGuids: ["font-2"],
+        representations: expect.objectContaining({ source: true, msdf: true }),
+      }),
+      undefined,
+    );
+  });
 });

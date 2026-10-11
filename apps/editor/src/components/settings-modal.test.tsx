@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { SettingsModal } from "./settings-modal";
 import { createDefaultPluginSettings, type PluginDescriptor } from "@babylonslate/assets";
+import { defaultExportPreset } from "@babylonslate/core";
 import { createAppSettingsStore } from "@babylonslate/vfs";
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
@@ -23,6 +24,8 @@ const {
   exportProject,
   importPlugin,
   sourceControlEnabled,
+  projectSourceControl,
+  projectExportPresets,
   lastProjectInput,
   lastProjectRender,
   pluginDescriptors,
@@ -48,6 +51,8 @@ const {
     exportProject: vi.fn(),
     importPlugin: vi.fn(),
     sourceControlEnabled: { current: false },
+    projectSourceControl: { current: null as Partial<import("@babylonslate/core").SourceControlProjectSettings> | null },
+    projectExportPresets: { current: null as import("@babylonslate/core").ExportPreset[] | null },
     lastProjectInput,
     lastProjectRender,
     pluginDescriptors: [] as PluginDescriptor[],
@@ -78,6 +83,15 @@ vi.mock("../context/document-context", async () => {
         ...projectDocument.settings.sourceControl,
         enabled: true,
       };
+    }
+    if (projectSourceControl.current) {
+      projectDocument.settings.sourceControl = {
+        ...projectDocument.settings.sourceControl,
+        ...projectSourceControl.current,
+      };
+    }
+    if (projectExportPresets.current) {
+      projectDocument.settings.exportPresets = projectExportPresets.current;
     }
     return {
     projectDocument,
@@ -176,6 +190,8 @@ afterEach(() => {
   exportProject.mockReset();
   importPlugin.mockReset();
   sourceControlEnabled.current = false;
+  projectSourceControl.current = null;
+  projectExportPresets.current = null;
   pluginDescriptors.length = 0;
   applyPluginOverrides.mockClear();
 });
@@ -496,6 +512,48 @@ describe("SettingsModal project authoring", () => {
     );
   });
 
+  it("edits the first export preset and keeps the others", () => {
+    const web = { ...defaultExportPreset(), bundleDebugger: true };
+    const desktop = { ...defaultExportPreset("desktop", "Desktop"), packed: false };
+    projectExportPresets.current = [web, desktop];
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-export"));
+    fireEvent.click(screen.getByTestId("setting-export-packed"));
+    expect(updateProjectSettings).toHaveBeenLastCalledWith({
+      exportPresets: [{ ...web, packed: false }, desktop],
+    });
+  });
+
+  it("downloads only the exported archive bytes and releases the URL after the download starts", async () => {
+    exportProject.mockResolvedValue(new Uint8Array([9, 9, 1, 2, 3, 9]).subarray(2, 5));
+    const blobs: Blob[] = [];
+    const createUrl = vi.spyOn(URL, "createObjectURL").mockImplementation((blob) => {
+      blobs.push(blob as Blob);
+      return "blob:project-archive";
+    });
+    const revokeUrl = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    try {
+      render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+      fireEvent.click(screen.getByTestId("settings-modal-category-export"));
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      await act(async () => {
+        fireEvent.click(screen.getByTestId("export-project"));
+      });
+      expect(click).toHaveBeenCalledTimes(1);
+      expect(blobs.map((blob) => blob.size)).toEqual([3]);
+      // Safari and WKWebView read the blob URL after the click returns.
+      expect(revokeUrl).not.toHaveBeenCalled();
+      act(() => { vi.runAllTimers(); });
+      expect(revokeUrl).toHaveBeenCalledWith("blob:project-archive");
+    } finally {
+      vi.useRealTimers();
+      createUrl.mockRestore();
+      revokeUrl.mockRestore();
+      click.mockRestore();
+    }
+  });
+
   it("adds an Always Package Folder from the Export category's folder picker", () => {
     render(
       <SettingsModal open onOpenChange={() => {}} scope="project" />,
@@ -698,6 +756,29 @@ describe("SettingsModal project authoring", () => {
     expect(screen.getByTestId("settings-source-control-token-copy").textContent).not.toMatch(
       /Token Saved/,
     );
+  });
+
+  it("fills Source Control from Git without replacing a URL typed during the read", async () => {
+    let finishPrefill!: (prefill: { repositoryUrl: string; branch: string }) => void;
+    sourceControl.readGitPrefill.mockImplementationOnce(
+      () => new Promise((resolve) => { finishPrefill = resolve; }),
+    );
+    const view = render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
+    fireEvent.click(screen.getByTestId("settings-source-control-enabled"));
+    expect(sourceControl.readGitPrefill).toHaveBeenCalledTimes(1);
+    projectSourceControl.current = { enabled: true, repositoryUrl: "https://example.com/typed.git" };
+    view.rerender(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    await act(async () => {
+      finishPrefill({ repositoryUrl: "https://example.com/origin.git", branch: "develop" });
+    });
+    expect(updateProjectSettings).toHaveBeenLastCalledWith({
+      sourceControl: expect.objectContaining({
+        enabled: true,
+        repositoryUrl: "https://example.com/typed.git",
+        branch: "develop",
+      }),
+    });
   });
 
   it("confirms before turning Source Control Enable off", () => {

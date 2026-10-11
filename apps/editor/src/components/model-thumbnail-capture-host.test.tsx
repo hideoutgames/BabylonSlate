@@ -86,9 +86,12 @@ vi.mock("../lib/asset-thumbnail-input", () => ({
   prepareAssetThumbnailInput: (input: unknown) => prepareAssetThumbnailInput(input),
 }));
 
+const sharedEngine = vi.hoisted(() => ({ engine: { id: "shared-engine" } as unknown, generation: 1 }));
+
 vi.mock("../context/play-context", () => ({
   useOptionalPlay: () => ({
-    ensureSharedEngine: () => ({ id: "shared-engine" }),
+    ensureSharedEngine: () => sharedEngine.engine,
+    sharedEngineGeneration: sharedEngine.generation,
   }),
 }));
 
@@ -121,6 +124,8 @@ afterEach(() => {
   thumbnailsEnabled = true;
   captureAssetThumbnailPng.mockReset().mockResolvedValue(new Uint8Array([137, 80, 78, 71]));
   prepareAssetThumbnailInput.mockClear();
+  sharedEngine.engine = { id: "shared-engine" };
+  sharedEngine.generation = 1;
 });
 
 describe("ModelThumbnailCaptureHost", () => {
@@ -133,6 +138,21 @@ describe("ModelThumbnailCaptureHost", () => {
     expect(captureAssetThumbnailPng).toHaveBeenCalledTimes(1);
     expect(captureModelThumbnailPng).not.toHaveBeenCalled();
     expect(scopes[0]!.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a backfill job until the shared Engine is registered", async () => {
+    sharedEngine.engine = null;
+    sharedEngine.generation = 0;
+    assets.set("asset", { path: "assets/preview.babasset", header: { type: "Material", payload: {} } });
+    const view = render(<ModelThumbnailCaptureHost />);
+    enqueueModelThumbnailJobs([{ guid: "asset", path: "assets/preview.babasset", type: "Material", payload: {}, cacheKey: "asset.revision-1", projectGuid, onlyIfMissing: true }]);
+    await waitFor(() => expect(scopes[0]?.dispose).toHaveBeenCalledOnce());
+    expect(captureAssetThumbnailPng).not.toHaveBeenCalled();
+    sharedEngine.engine = { id: "shared-engine" };
+    sharedEngine.generation = 1;
+    view.rerender(<ModelThumbnailCaptureHost />);
+    await waitFor(() => expect(writeAssetThumbnail).toHaveBeenCalledWith("asset", expect.any(Uint8Array), { cacheKey: "asset.revision-1", projectGuid: "project-a" }));
+    expect(captureAssetThumbnailPng).toHaveBeenCalledOnce();
   });
 
   it.each(["project switch", "disabled thumbnails", "unmount"])("discards an in-flight capture after %s", async (change) => {
