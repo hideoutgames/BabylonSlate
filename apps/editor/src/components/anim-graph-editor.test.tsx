@@ -11,7 +11,7 @@ import { ValidationProvider } from "../context/validation-context";
 import {
   AnimGraphDetailsPanel,
   AnimGraphGraphPanel,
-  AnimGraphParametersPanel,
+  AnimGraphVariablesPanel,
 } from "./anim-graph-editor";
 
 if (typeof window !== "undefined") {
@@ -199,7 +199,7 @@ function renderAnimGraph(payload: AnimGraphDocument = createDefaultAnimGraph()) 
         <AnimGraphEditingProvider>
           <PrefabEditingProvider>
             <GraphEditingProvider>
-              <AnimGraphParametersPanel {...panelProps} />
+              <AnimGraphVariablesPanel {...panelProps} />
               <AnimGraphGraphPanel {...panelProps} />
               <AnimGraphDetailsPanel {...panelProps} />
             </GraphEditingProvider>
@@ -292,7 +292,7 @@ describe("AnimGraphEditor", () => {
     render(
       <TagProvider entries={[{ id: 1, path: "Actor", parentId: 0 }, { id: 2, path: "Actor.Alive", parentId: 1 }]}>
         <DocumentWorkspaceProvider documentId={DOC_ID}>
-          <AnimGraphEditingProvider><AnimGraphParametersPanel {...panelProps} /></AnimGraphEditingProvider>
+          <AnimGraphEditingProvider><AnimGraphVariablesPanel {...panelProps} /></AnimGraphEditingProvider>
         </DocumentWorkspaceProvider>
       </TagProvider>,
     );
