@@ -76,7 +76,7 @@ function textList(value: unknown): string[] {
 }
 
 function isClassAsset(entry: RuntimeAssetCatalogEntry): boolean {
-  return entry.type === "Class" || entry.type === "Graph";
+  return entry.type === "Class";
 }
 
 let engineClasses: ClassRegistry | undefined;
