@@ -1092,12 +1092,24 @@ describe("World subsystems", () => {
     world.spawnActorNow(world.createActor({ classId: "Actor", guid: "traveller", hooks: hooks("traveller") }));
     world.destroyActor("traveller");
     world.flushPending();
+    // A hook that always opens another Scene: the actor is re-announced once, so spawning terminates.
+    onAlphaSpawned = () => {
+      world.createScene({ assetGuid: "scene-3", sceneName: "L3" });
+    };
+    world.spawnActorNow(world.createActor({ classId: "Actor", guid: "restless", hooks: hooks("restless") }));
+    onAlphaSpawned = undefined;
+    world.destroyActor("restless");
+    world.flushPending();
 
     expect(events).toEqual([
       "Alpha:spawned:doomed", "Alpha:destroyed:doomed", "doomed:destroyed",
       "Alpha:spawned:traveller", "Beta:end", "Alpha:end", "Alpha:init", "Beta:init",
       "Alpha:spawned:traveller", "Beta:spawned:traveller", "traveller:beginPlay",
       "Alpha:destroyed:traveller", "Beta:destroyed:traveller", "traveller:destroyed",
+      "Alpha:spawned:restless", "Beta:end", "Alpha:end", "Alpha:init", "Beta:init",
+      "Alpha:spawned:restless", "Beta:end", "Alpha:end", "Alpha:init", "Beta:init",
+      // The last Scene never heard it spawn, so it hears no Destroyed either.
+      "restless:beginPlay", "restless:destroyed",
     ]);
   });
 

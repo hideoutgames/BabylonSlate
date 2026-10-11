@@ -371,17 +371,23 @@ export class World {
   }
 
   /**
-   * Scene Actor Spawned, once per SceneSubsystem generation, until the actor
-   * is destroyed. A Spawned hook that installs a new main Scene leaves the
-   * actor to that generation, which also hears it before its On Init.
+   * Scene Actor Spawned for the current SceneSubsystem generation, until the
+   * actor is destroyed. A Spawned hook that installs a new main Scene leaves
+   * the actor to that generation, which also hears it before its On Init.
+   * That re-announcement happens once: a Scene its own hooks install treats
+   * the actor as already present, so a hook that always replaces the Scene
+   * still terminates.
    */
   private announceSceneActor(actor: Actor): void {
-    if (this.sceneSubsystems.length === 0 || !this.isWorldSceneActor(actor)) return;
-    while (
-      !actor.destroyed &&
-      this.sceneSubsystems.length > 0 &&
-      !this.sceneSubsystemAudiences.has(actor)
-    ) {
+    if (!this.isWorldSceneActor(actor)) return;
+    for (let round = 0; round < 2; round++) {
+      if (
+        actor.destroyed ||
+        this.sceneSubsystems.length === 0 ||
+        this.sceneSubsystemAudiences.has(actor)
+      ) {
+        return;
+      }
       this.announceToSceneSubsystems(actor, (subsystem) =>
         subsystem.callOnSceneActorSpawned(actor),
       );
