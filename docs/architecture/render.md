@@ -610,7 +610,7 @@ Models get Babylon mesh LOD levels automatically (`model-lod.ts`). Texture strea
   - Eligible meshes are indexed triangle meshes with at least 1024 triangles, GPU skinning, and no glTF instances or thin instances.
   - Up to three cascaded levels are error-driven: each stays within about 2 px of a 1080 px view at its switch point. Normals and UVs are weighted, and open borders are locked so separately switching parts do not crack.
   - Static meshes can go down to 1% of their triangles. Skinned and morphing meshes keep 50/25/12.5% floors because their error is measured in bind pose.
-  - A level must remove at least 20% of the previous level's triangles.
+  - A level must remove at least 20% of the previous level's triangles. Generation stops before a level that would remove every triangle.
   - Generated indices are cached per model bytes while any Scene uses them, plus the 32 most recently released models, so the editor viewport, Play, previews and SceneLayers share them. Levels are not persisted or exported; the player generates them after boot.
 - **Index-only levels.** A level is a Babylon `Geometry` that wraps the model's own GPU vertex buffers without owning them (on WebGPU, the aligned copy) and adds its own index buffer, using the source index width.
   - Skinning, morph targets, tangents, extra UV sets and material defines therefore match the master.
