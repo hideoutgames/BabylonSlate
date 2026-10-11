@@ -1833,12 +1833,12 @@ describe("content-browser-helpers", () => {
     expect(materialAssetDependencies("Class", {})).toEqual([]);
   });
 
-  it.each(["Class", "Graph"])("records Class variable references in %s header dependencies", (type) => {
+  it("records Class variable references in Class header dependencies", () => {
     const classes = ["SpawnChild", "SpawnBase", "Unused"].map((name) => ({
       path: `assets/${name}.class.babasset`,
-      header: { type: "Class", name: `${name}.class`, guid: `guid-${name}` },
+      header: { type: "Class", name, guid: `guid-${name}` },
     }));
-    expect(assetHeaderDependencies(type, {
+    expect(assetHeaderDependencies("Class", {
       members: [
         { id: "spawn", kind: "variable", name: "SpawnClass", typeId: "class", typeClassId: "SpawnChild", defaultValue: "SpawnChild" },
         { id: "choices", kind: "variable", name: "Choices", typeId: "class", typeClassId: "SpawnBase", container: "array", defaultValue: ["SpawnChild"] },
@@ -1847,8 +1847,8 @@ describe("content-browser-helpers", () => {
     }, classes)).toEqual(["guid-SpawnBase", "guid-SpawnChild"]);
   });
 
-  it.each(["Class", "Graph"])("records typed non-texture asset defaults in %s header dependencies", (type) => {
-    expect(assetHeaderDependencies(type, { members: [
+  it("records typed non-texture asset defaults in Class header dependencies", () => {
+    expect(assetHeaderDependencies("Class", { members: [
       { id: "audio", kind: "variable", name: "Clip", typeId: "asset", typeClassId: "Audio", defaultValue: "clip" },
       { id: "name", kind: "variable", name: "Name", typeId: "string", defaultValue: "unused" },
     ] })).toEqual(["clip"]);
@@ -1860,7 +1860,7 @@ describe("content-browser-helpers", () => {
     expect(assetHeaderDependencies(type, payload)).toEqual(["rope-material"]);
   });
 
-  it.each(["Scene", "Class", "Graph"])("records streaming Scene targets in %s header dependencies", (type) => {
+  it.each(["Scene", "Class"])("records streaming Scene targets in %s header dependencies", (type) => {
     const actor = createSceneStreamingActor("room", "scene-room", "Room");
     const unassigned = createSceneStreamingActor("unassigned");
     const payload = type === "Scene"

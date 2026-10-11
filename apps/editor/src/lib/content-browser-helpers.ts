@@ -43,7 +43,6 @@ import {
   createDefaultSaveGameDefinition,
   isInputAssetType,
   createDefaultSceneLayer,
-  isLegacyMaterialAssetType,
   isMaterialTextureAssetType,
 } from "@babylonslate/core";
 import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
@@ -72,7 +71,6 @@ import {
   type TypeVisual,
   type TreeDropPlacement,
 } from "@babylonslate/editor-kit";
-import { typeColorThumbAccent } from "@babylonslate/ui/lib/data-types";
 import {
   GAME_SUBSYSTEM_CLASS_ID,
   SCENE_SUBSYSTEM_CLASS_ID,
@@ -610,8 +608,6 @@ export function resolveContentBrowserPaintHit(
   if (path) return { kind: "folder", path };
   return null;
 }
-
-export { typeColorThumbAccent as assetTypeThumbAccent };
 
 type AssetSearchHaystack = {
   sourceName: string;
@@ -1872,7 +1868,7 @@ export function materialAssetDependencies(
   assetType: string,
   payload: Record<string, unknown>,
 ): string[] {
-  if (assetType === "Material" || isLegacyMaterialAssetType(assetType)) {
+  if (assetType === "Material") {
     return materialDependencies(normalizeMaterialDocument(payload)).all;
   }
   if (assetType === "MaterialFunction") {
@@ -1897,38 +1893,22 @@ function legacyAssetHeaderDependencies(
       ? [[asset.header.guid, fields] as const] : [];
   }));
   const definitionFields = (guid: string) => schemasByGuid.get(guid);
+  const classRefs = classes.flatMap((asset) =>
+    asset.header.guid && asset.header.type === "Class"
+      ? [{ guid: asset.header.guid, classId: classIdFromClassAsset(asset) }] : []);
   if (["DataDefinition", "DataTree", "Structure", "Enum"].includes(assetType)) {
-    return dataAssetDependencies(assetType, payload, classes.flatMap((asset) =>
-      asset.header.guid && ["Class", "Graph"].includes(asset.header.type)
-        ? [{ guid: asset.header.guid, classId: classIdFromClassAsset(asset) }] : []), definitionFields);
+    return dataAssetDependencies(assetType, payload, classRefs, definitionFields);
   }
-  const inputRefs: string[] = [];
-  const visitInputRefs = (value: unknown): void => {
-    if (!value || typeof value !== "object") return;
-    if (Array.isArray(value)) { value.forEach(visitInputRefs); return; }
-    const row = value as Record<string, unknown>;
-    if (typeof row.Name === "string" && typeof row.Asset === "string" && row.Asset) inputRefs.push(row.Asset);
-    Object.entries(row).forEach(([key, entry]) => {
-      if (Array.isArray(row.dataSchema) && (key === "default:values" || key === "dataSchema")) return;
-      visitInputRefs(entry);
-    });
-  };
-  visitInputRefs(payload);
   const unique = new Set<string>([
-    ...(["Class", "Graph"].includes(assetType) ? dataGraphAssetDependencies(payload, classes.flatMap((asset) =>
-      asset.header.guid && ["Class", "Graph"].includes(asset.header.type)
-        ? [{ guid: asset.header.guid, classId: classIdFromClassAsset(asset) }] : []), definitionFields) : []),
-    ...inputRefs,
+    ...(assetType === "Class" ? dataGraphAssetDependencies(payload, classRefs, definitionFields) : []),
     ...(assetType === "SaveGame" && Array.isArray(payload.fields) ? payload.fields.flatMap((field) => {
       if (!field || typeof field !== "object" || field.type !== "asset") return [];
       return (Array.isArray(field.defaultValue) ? field.defaultValue : [field.defaultValue]).filter((value: unknown): value is string => typeof value === "string" && !!value);
     }) : []),
-    ...(["Class", "Graph"].includes(assetType) ? assetVariableGuidsFromGraph(payload as unknown as import("@babylonslate/core").SerializedGraph) : []),
-    ...(["Class", "Graph"].includes(assetType) ? renderTargetAssetGuidsFromGraph(payload as unknown as import("@babylonslate/core").SerializedGraph) : []),
+    ...(assetType === "Class" ? assetVariableGuidsFromGraph(payload as unknown as import("@babylonslate/core").SerializedGraph) : []),
+    ...(assetType === "Class" ? renderTargetAssetGuidsFromGraph(payload as unknown as import("@babylonslate/core").SerializedGraph) : []),
     ...areaEmissionTextureGuids(payload),
-    ...findClassAssetReferences({ ...payload, parentClass }, classes.flatMap((asset) =>
-      asset.header.guid && ["Class", "Graph"].includes(asset.header.type)
-        ? [{ guid: asset.header.guid, classId: classIdFromClassAsset(asset) }] : []), definitionFields),
+    ...findClassAssetReferences({ ...payload, parentClass }, classRefs, definitionFields),
     ...materialAssetDependencies(assetType, payload),
     ...audioAssetDependencies(assetType, payload),
     ...particleAssetDependencies(assetType, payload),
@@ -1947,14 +1927,11 @@ function legacyAssetHeaderDependencies(
     const environment = settings?.environmentTextureGuid;
     if (typeof environment === "string" && environment.length > 0) unique.add(environment);
   }
-  if (["Scene", "SceneLayer", "Class", "Graph"].includes(assetType)) {
+  if (["Scene", "SceneLayer", "Class"].includes(assetType)) {
     const addClass = (classId: unknown) => {
       if (typeof classId !== "string" || !classId) return;
-      const asset = classes.find((entry) =>
-        (entry.header.type === "Class" || entry.header.type === "Graph") &&
-        classIdFromClassAsset(entry) === classId,
-      );
-      if (asset?.header.guid) unique.add(asset.header.guid);
+      const asset = classRefs.find((entry) => entry.classId === classId);
+      if (asset) unique.add(asset.guid);
     };
     const addComponents = (components: unknown) => {
       if (!Array.isArray(components)) return;
@@ -2008,11 +1985,12 @@ export function assetHeaderDependencyMetadata(
   return collectAssetDependencyMetadata(assetType, payload, {
     dependencies: legacyAssetHeaderDependencies(assetType, payload, classes, parentClass),
     parentClass,
-    classes: classes.flatMap(asset => asset.header.guid && ["Class", "Graph"].includes(asset.header.type) ? [{
+    classes: classes.flatMap(asset => asset.header.guid && asset.header.type === "Class" ? [{
       guid: asset.header.guid,
       classId: classIdFromClassAsset(asset),
       parentClassId: asset.header.parentClass,
       requiredVariableNames: asset.header.requiredVariableNames,
+      // Saved Class headers carry `classHeaderMeta` variables, not graph members.
       members: (asset.header.payload?.members ?? (Array.isArray(asset.header.payload?.variables)
         ? asset.header.payload.variables.map(variable => ({ ...variable, kind: "variable" })) : [])) as import("@babylonslate/core").GraphClassMember[],
     }] : []),
@@ -2076,9 +2054,7 @@ export function materialHeaderMeta(
     const instance = normalizeMaterialInstanceDocument(payload);
     return { domain: instance.domain, parentGuid: instance.parentGuid };
   }
-  if (assetType !== "Material" && !isLegacyMaterialAssetType(assetType)) {
-    return undefined;
-  }
+  if (assetType !== "Material") return undefined;
   return {
     domain: parseMaterialDomain(payload.domain),
   };
