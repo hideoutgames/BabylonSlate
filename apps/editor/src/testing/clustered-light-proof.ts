@@ -357,6 +357,8 @@ export async function runClusteredLightProof() {
             const centerHit = scene
               .pick(canvas.width / 2, canvas.height / 2)
               ?.pickedPoint?.asArray();
+            scene.render(false);
+            const referenceSettled = await read();
             const effectiveMaterial: Material | null = surface.material;
             const referenceDefines = surface.subMeshes[0]?.effect?.defines
               .split("\n")
@@ -382,6 +384,7 @@ export async function runClusteredLightProof() {
             ties.push({
               name: `${kind}-camera-${x}`,
               reference,
+              referenceSettled,
               referenceOrder,
               centerHit,
               referenceDefines,
@@ -451,6 +454,8 @@ export async function runClusteredLightProof() {
             const referenceOrder = surface.lightSources.map(
               (light) => light.name,
             );
+            scene.render(false);
+            const referenceSettled = await read();
             const owner = new ClusteredSceneLights(scene, mixedLights);
             beginEngineDrawCallFrame(engine);
             const prepared = await tieGraph.prepare(camera);
@@ -459,6 +464,7 @@ export async function runClusteredLightProof() {
             ties.push({
               name: `${kind}-mixed-camera-${x}`,
               reference,
+              referenceSettled,
               referenceOrder,
               positionProbePixel: null,
               clusteredCount: owner.status().clustered,
