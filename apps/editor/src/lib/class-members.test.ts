@@ -810,6 +810,24 @@ describe("addClassMember", () => {
       expect(node?.data.__pins).toBeUndefined();
     }
   });
+
+  it("retargets self Call Function nodes in every graph when a function is renamed", () => {
+    let graph = addClassMember(emptyGraph(), "function", "Jump", () => "fn-1");
+    graph = addClassMember(graph, "function", "Land", () => "fn-2");
+    graph = addCallFunctionNode(graph, graph.members![0]!, { idFactory: () => "self-call", classId: "Hero" });
+    graph = addCallFunctionNode(graph, graph.members![0]!, { idFactory: () => "nested-call", functionId: "fn-2" });
+    graph = addCallFunctionNode(graph, graph.members![0]!, {
+      idFactory: () => "target-call", classId: "Enemy", implicitSelf: false,
+    });
+    graph = patchClassMember(graph, "fn-1", { name: "Leap" });
+    const nested = graph.functionGraphs?.["fn-2"]?.nodes.find((node) => node.id === "nested-call");
+    for (const node of [graph.nodes.find((entry) => entry.id === "self-call"), nested]) {
+      expect(node?.data).toMatchObject({ functionName: "Leap", title: "Call Leap" });
+    }
+    expect(graph.nodes.find((node) => node.id === "target-call")?.data).toMatchObject({
+      functionName: "Jump", title: "Call Jump",
+    });
+  });
 });
 
 describe("blueprintSectionsForClass", () => {

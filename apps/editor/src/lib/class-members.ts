@@ -1609,6 +1609,24 @@ export function renameCustomEvent(
   };
 }
 
+/** Retarget this document's self Call Function nodes, in every graph, to a renamed function. */
+function renameFunctionCalls(
+  graph: SerializedGraph,
+  previousName: string,
+  nextName: string,
+): SerializedGraph {
+  return mapGraphNodes(graph, (node) =>
+    node.type === "functions.call" &&
+    node.data.functionName === previousName &&
+    (node.data.implicitSelf === true || !node.data.classId)
+      ? {
+          ...node,
+          data: { ...node.data, functionName: nextName, title: `Call ${nextName}` },
+        }
+      : node,
+  );
+}
+
 export function patchClassMember(
   graph: SerializedGraph,
   memberId: string,
@@ -1625,6 +1643,9 @@ export function patchClassMember(
     if (!event || customEventRenameError(graph, event.id, patch.name)) return graph;
     graph = renameCustomEvent(graph, event.id, patch.name);
     patch = { ...patch, name: formatEventMemberName(patch.name) };
+  }
+  if (previous?.kind === "function" && patch.name !== undefined && patch.name !== previous.name) {
+    graph = renameFunctionCalls(graph, previous.name, patch.name);
   }
   const members = (graph.members ?? []).map((member) => {
     if (member.id !== memberId) return member;
