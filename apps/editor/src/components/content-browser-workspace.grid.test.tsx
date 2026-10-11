@@ -806,6 +806,23 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(docs.repairAfterAssetDelete).toHaveBeenCalledWith(new Set(["tex-0"]), new Set(), expect.any(Function), []);
   });
 
+  it("repairs a deleted Class by its compile id, not its display name", async () => {
+    docs.thumbnailsEnabled = false;
+    const classAsset = texture(0);
+    classAsset.path = "assets/Rain-Weather.class.babasset";
+    classAsset.header = { ...classAsset.header, type: "Class", name: "Actor", guid: "rain" };
+    installRegistry([classAsset]);
+    Object.assign(docs.assetRegistry as object, { deleteAsset: async () => {} });
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId(`content-item-${classAsset.path}`));
+    fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
+    await waitFor(() => expect((screen.getByTestId("content-browser-delete-confirm") as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
+    await waitFor(() => expect(docs.repairAfterAssetDelete).toHaveBeenCalledWith(
+      new Set(["rain"]), new Set(["Rain_Weather"]), expect.any(Function), [],
+    ));
+  });
+
   it("mounts no tiles while hidden and shows the current folder again when visible", () => {
     docs.thumbnailsEnabled = false;
     stubGridSize(

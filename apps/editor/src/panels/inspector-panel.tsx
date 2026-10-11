@@ -1480,9 +1480,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
     doc?.ref.kind === "graph" &&
     graph
   ) {
-    const showActorDefaults = classDocumentShowsPrefab(parentClass, parentOf, {
-      assetType: indexed?.header.type,
-    });
+    const showActorDefaults = classDocumentShowsPrefab(parentClass, parentOf);
     const defaults = graph.actorDefaults ?? {};
     const selfClassId = classIdFromClassAsset({
       path: doc.ref.path,
@@ -1500,9 +1498,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
         .filter(
           (entry) =>
             entry.id !== selfClassId &&
-            classDocumentShowsPrefab(entry.parentClass, parentOf, {
-              assetType: "Class",
-            }),
+            classDocumentShowsPrefab(entry.parentClass, parentOf),
         )
         .map(({ id, name, group }) => ({ id, name, group })),
     ];

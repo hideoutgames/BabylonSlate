@@ -805,9 +805,7 @@ function dockOptionsForIndexed(
     actorPrefab:
       kind !== "graph" ||
       !indexed ||
-      classDocumentShowsPrefab(indexed.header.parentClass, (id) => parentOf(id) ?? null, {
-        assetType: indexed.header.type,
-      }),
+      classDocumentShowsPrefab(indexed.header.parentClass, (id) => parentOf(id) ?? null),
     sourceControl: sourceControlEnabled,
     sceneMode: kind === "scene" ? (sceneMode ?? "design") : undefined,
     animEditorMode:

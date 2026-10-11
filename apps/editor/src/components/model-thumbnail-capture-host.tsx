@@ -128,7 +128,7 @@ export function ModelThumbnailCaptureHost() {
           await writeAssetThumbnail(job.guid, png);
         }
       };
-      if (job.type === "Material" || job.type === "Class" || job.type === "Graph") {
+      if (job.type === "Material" || job.type === "Class") {
         const asset = assetRegistry?.getByGuid(job.guid);
         if (!asset || !assetRegistry) return;
         const input = await prepareAssetThumbnailInput({

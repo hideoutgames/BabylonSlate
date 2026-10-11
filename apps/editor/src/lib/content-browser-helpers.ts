@@ -1513,12 +1513,8 @@ export function visualForIndexedAsset(
 export function classDocumentShowsPrefab(
   parentClass: string | null | undefined,
   parentOf: (id: string) => string | null,
-  options?: { assetType?: string },
 ): boolean {
-  const start =
-    parentClass ??
-    (options?.assetType === "Graph" ? "Actor" : "BObject");
-  return walkAncestry(start, parentOf).includes("Actor");
+  return walkAncestry(parentClass ?? "BObject", parentOf).includes("Actor");
 }
 
 export function defaultParentClassForType(

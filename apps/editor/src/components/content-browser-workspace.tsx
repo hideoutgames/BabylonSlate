@@ -743,7 +743,7 @@ function ContentBrowserWorkspaceBody({
       const item = gridItems[index];
       if (item?.kind === "asset" && isThumbnailableAssetType(item.asset.header.type)) {
         const { type, parentClass } = item.asset.header;
-        if ((type === "Class" || type === "Graph") && !classDocumentShowsPrefab(parentClass, classParentOf, { assetType: type })) continue;
+        if (type === "Class" && !classDocumentShowsPrefab(parentClass, classParentOf)) continue;
         guids.push(item.asset.header.guid);
       }
     }
@@ -1062,7 +1062,7 @@ function ContentBrowserWorkspaceBody({
               const asset = assetRegistry.getByGuid(guid);
               if (!asset) continue;
               const type = asset.header.type;
-              if (type !== "Model" && type !== "Animation" && type !== "Material" && type !== "Class" && type !== "Graph") continue;
+              if (type !== "Model" && type !== "Animation" && type !== "Material" && type !== "Class") continue;
               jobs.push({
                 guid, path: asset.path, type, payload: asset.header.payload,
                 projectGuid, cacheKey: await revisions.cacheKey(guid) ?? `${guid}.render-v2`,
@@ -1323,8 +1323,7 @@ function ContentBrowserWorkspaceBody({
     assets: allAssets,
   }), [allAssets, deleteTarget]);
   const deletingClassGuids = useMemo(() => new Set(referenceAssets
-    .filter((asset) => deletingGuids.has(asset.header.guid) &&
-      (asset.header.type === "Class" || asset.header.type === "Graph"))
+    .filter((asset) => deletingGuids.has(asset.header.guid) && asset.header.type === "Class")
     .map((asset) => asset.header.guid)), [deletingGuids, referenceAssets]);
   const [deleteReferenceScan, setDeleteReferenceScan] = useState<{
     deleting: ReadonlySet<string>;
@@ -1562,10 +1561,10 @@ function ContentBrowserWorkspaceBody({
               await sourceControl.releasePath(path);
             }
           }
+          // Stored Class references and parentClass use the compile id, not the display name.
           const removedClassNames = new Set(allAssets
-            .filter((asset) => removedGuids.has(asset.header.guid) &&
-              (asset.header.type === "Class" || asset.header.type === "Graph"))
-            .map((asset) => asset.header.name));
+            .filter((asset) => removedGuids.has(asset.header.guid) && asset.header.type === "Class")
+            .map(classIdFromClassAsset));
           await repairAfterAssetDelete(removedGuids, removedClassNames, (name) =>
             reportProgress(`Updating References: ${name}`), removedFolders,
           );
@@ -2066,7 +2065,7 @@ function ContentBrowserWorkspaceBody({
             if (!asset) return false;
             const type = asset.header.type;
             return type === "Model" || type === "Animation" || type === "Material" ||
-              ((type === "Class" || type === "Graph") && classDocumentShowsPrefab(asset.header.parentClass, classParentOf, { assetType: type }));
+              (type === "Class" && classDocumentShowsPrefab(asset.header.parentClass, classParentOf));
           }),
           singleAssetType:
             guids.length === 1 && folders.length === 0

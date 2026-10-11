@@ -1544,9 +1544,7 @@ describe("content-browser-helpers", () => {
     expect(classDocumentShowsPrefab("GameStats", parentOf)).toBe(false);
     expect(classDocumentShowsPrefab("ActorComponent", parentOf)).toBe(false);
     expect(classDocumentShowsPrefab("MyMesh", parentOf)).toBe(false);
-    expect(
-      classDocumentShowsPrefab(null, parentOf, { assetType: "Graph" }),
-    ).toBe(true);
+    expect(classDocumentShowsPrefab(null, parentOf)).toBe(false);
   });
 
   it("replaces the Content Browser selection with a single asset tap", () => {

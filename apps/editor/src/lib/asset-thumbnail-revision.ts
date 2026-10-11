@@ -14,7 +14,7 @@ export function createAssetThumbnailRevisionIndex(
   pixelsPerUnit = DEFAULT_TWO_D_PROJECT_SETTINGS.pixelsPerUnit,
 ) {
   const byGuid = new Map(assets.map((asset) => [asset.header.guid, asset]));
-  const classes = assets.filter((asset) => asset.header.type === "Class" || asset.header.type === "Graph");
+  const classes = assets.filter((asset) => asset.header.type === "Class");
   const byClassId = new Map(classes.flatMap((asset) => [
     [classIdFromClassAsset(asset), asset] as const,
     [asset.header.name, asset] as const,
@@ -38,8 +38,7 @@ export function createAssetThumbnailRevisionIndex(
     const asset = byGuid.get(guid);
     const type = asset?.header.type;
     if (!asset || (type !== "Material" && !(
-      (type === "Class" || type === "Graph") &&
-      classDocumentShowsPrefab(asset.header.parentClass, parentOf, { assetType: type })
+      type === "Class" && classDocumentShowsPrefab(asset.header.parentClass, parentOf)
     ))) {
       return remember(guid, null);
     }
@@ -67,7 +66,7 @@ export function createAssetThumbnailRevisionIndex(
       }]);
       pending.push(...header.dependencies);
       // Older saved classes may omit their parent from dependencies[].
-      if (header.type === "Class" || header.type === "Graph") {
+      if (header.type === "Class") {
         const parent = header.parentClass ? byClassId.get(header.parentClass) : undefined;
         if (parent) pending.push(parent.header.guid);
       }
