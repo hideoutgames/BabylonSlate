@@ -166,7 +166,7 @@ import {
   applyKenneyMannequinEmptyScaffold,
   MANNEQUIN_CLASS_FILE,
 } from "../lib/scaffold-empty-3d";
-import { asStructureAsset } from "../lib/type-asset-payload";
+import { asEnumAsset, asStructureAsset } from "../lib/type-asset-payload";
 import { createDefaultLogicGraphSerialized, defaultNodeRegistry, requireClassGraphPayload } from "./graph-validation";
 
 function headerMetaForSave(
@@ -216,8 +216,10 @@ function headerMetaForSave(
       },
     );
   }
-  // Closed Structures supply their fields to type catalogs and dependency collection.
+  // Closed Structures and Enums supply their fields and members to type catalogs,
+  // data reads and dependency collection.
   if (type === "Structure") return { ...asStructureAsset(content as Record<string, unknown>) };
+  if (type === "Enum") return { ...asEnumAsset(content as Record<string, unknown>) };
   if (type === "ScriptInterface") {
     const payload = content as {
       guid?: string;

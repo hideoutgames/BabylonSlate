@@ -134,4 +134,19 @@ describe("Data Definition and tree persistence", () => {
       expect(rigHeader.requiredDependencies).not.toContain("kit-skin");
     } finally { project.dispose(); }
   });
+
+  it("stamps a saved Enum's members into its header for closed reads", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("EnumData");
+    const project = new ProjectService(storage);
+    try {
+      await project.loadCurrentProject();
+      const created = await createProjectAsset({ registry: project.registry!, rootId: "project", folderRelative: "Data", type: "Enum", name: "Rarity" });
+      const loaded = await project.loadDocument("enum", created.path) as Record<string, unknown>;
+      const members = [{ name: "Common", value: 0 }, { name: "Rare", value: 1 }];
+      await project.saveDocument("enum", created.path, { ...loaded, members });
+      await project.remountRegistry();
+      expect(project.registry!.getByGuid(created.header.guid)!.header.payload.members).toEqual(members);
+    } finally { project.dispose(); }
+  });
 });
