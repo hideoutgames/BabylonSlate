@@ -659,6 +659,9 @@ export class DocumentService {
     this.assertAuthoringWritable();
     const oldId = documentId({ kind, path: oldPath });
     const newId = documentId({ kind, path: newPath });
+    // A read still pending for the old path must not commit a tab at the old id.
+    for (const controller of this.pendingLoads.get(oldId) ?? []) controller.abort();
+    this.pendingLoads.delete(oldId);
     this.retargetOpenDocument(kind, oldId, newId, newPath);
     this.emitIdentity({ type: "repathed", oldId, newId });
     return { oldId, newId };

@@ -278,6 +278,19 @@ describe("DocumentService", () => {
     expect(service.getOpenDocumentsOrdered().map((doc) => doc.id)).toEqual([CONTENT_BROWSER_ID]);
   });
 
+  it("does not commit a pending asset read at the old id after the asset moves", async () => {
+    const service = new DocumentService();
+    let finishRead!: (value: { nodes: []; edges: [] }) => void;
+    const pending = service.openDocument(createMockProjectService({
+      loadDocument: vi.fn(() => new Promise<{ nodes: []; edges: [] }>((resolve) => { finishRead = resolve; })),
+    }), { kind: "graph", path: MAIN_CLASS_FILE, label: "Main" });
+    const rejected = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    service.repathDocument("graph", MAIN_CLASS_FILE, "assets/Moved.class.babasset");
+    finishRead({ nodes: [], edges: [] });
+    await rejected;
+    expect(service.getOpenDocumentsOrdered()).toEqual([]);
+  });
+
   it("waits for blocking UI before reading a scene and only closes the previous scene after success", async () => {
     const service = new DocumentService();
     const previous = { kind: "scene" as const, path: "assets/Previous.scene.babasset", label: "Previous" };
