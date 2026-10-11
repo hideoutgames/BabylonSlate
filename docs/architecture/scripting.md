@@ -554,8 +554,8 @@ Parent a Class to **GameSubsystem** (session lifetime) or **SceneSubsystem** (ma
 
 | Lineage | Events and host nodes |
 | --- | --- |
-| GameSubsystem | Game Instance parity: On Init, Tick, On End, Scalability Changed, On First Scene Loaded, On Scene Start / Finish Loading, On Scene Exit, with the same ids, export names and `sceneName` pin. Get Scene Loading Progress and Get Scene Reference. |
-| SceneSubsystem | On Init, Tick, On End and the seven events below. Get Scene Reference (the main Scene). |
+| GameSubsystem | Game Instance parity: On Game Loaded, On Init, Tick, On End, Scalability Changed, On First Scene Loaded, On Scene Start / Finish Loading, On Scene Exit, with the same ids, export names and `sceneName` pin. Get Scene Loading Progress and Get Scene Reference. |
+| SceneSubsystem | On Game Loaded, On Init, Tick, On End and the seven events below. Get Scene Reference (the main Scene). |
 
 | Title | Id → export | Outputs | Fires |
 | --- | --- | --- | --- |
