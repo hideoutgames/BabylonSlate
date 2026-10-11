@@ -636,6 +636,29 @@ describe("scene-loader", () => {
     expect(sphereMesh?.position.x).toBe(2);
   });
 
+  it("attaches the link that closes a component parent cycle to the actor origin", () => {
+    const { scene } = createHandle();
+    applySceneToBabylonScene(
+      scene,
+      sceneWithActors([
+        createActor("hero", "Hero", {
+          components: [
+            { id: "a", classId: "SceneComponent", parentId: "b", properties: {} },
+            { id: "b", classId: "SceneComponent", parentId: "a", properties: {} },
+            { ...createMeshComponent("box", "box"), parentId: "a" },
+            { ...createMeshComponent("sphere", "sphere"), parentId: "cube" },
+            { ...createMeshComponent("cube", "box"), parentId: "sphere" },
+          ],
+        }),
+      ]),
+    );
+    const root = scene.getMeshByName(editorMeshName("hero"));
+    const mesh = (id: string) => scene.getMeshByName(editorComponentMeshName("hero", id));
+    expect(mesh("box")?.parent).toBe(root);
+    expect(mesh("sphere")?.parent).toBe(mesh("cube"));
+    expect(mesh("cube")?.parent).toBe(root);
+  });
+
   it("keeps a nested child actor origin at the child transform", () => {
     const { scene } = createHandle();
     const sphere = {
