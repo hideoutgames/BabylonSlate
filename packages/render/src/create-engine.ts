@@ -2951,9 +2951,12 @@ function initializeEngine(
   onRollback(unsubscribeEditorDrop);
   // FontFace registration publishes to the document, so start it only after
   // the synchronous construction steps that can still roll back have succeeded.
-  if (options.fontFaceEntries && options.fontFaceEntries.length > 0) {
-    void fontRegistry.registerAll(options.fontFaceEntries);
-  }
+  // World readiness awaits it; a late face redraws like `registerFonts`.
+  const initialFonts = options.fontFaceEntries && options.fontFaceEntries.length > 0
+    ? fontRegistry.registerAll(options.fontFaceEntries).then(() => {
+      if (!disposed && fontRegistry.consumeDirty()) scheduler.invalidate("asset");
+    })
+    : Promise.resolve();
 
   let callerPaused = false;
   let sceneStreamingPaused = false;
@@ -4049,6 +4052,7 @@ function initializeEngine(
     },
     whenEditorModelsReady: async (owner) => {
       const scope = loadingScope(owner);
+      if (!owner) { await initialFonts; scope.assert(); }
       await commandSources.whenReady(commandSources.pendingSlotIds().filter((slotId) =>
         (sceneLayerCompositor?.layerIdForSlot(slotId) ?? undefined) === owner?.layerId));
       scope.assert();
