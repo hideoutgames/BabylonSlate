@@ -1781,9 +1781,29 @@ export class ProjectService {
     if (!registry) throw new Error("The asset registry is unavailable.");
     validateClassDeletionReplacements(replacements, registry.list(), deletingGuids);
     const plans = await this.planClassReferenceReplacements(replacements, deletingGuids, onProgress);
-    for (const plan of plans) {
-      await onProgress?.(plan.path);
-      await this.saveDocument(plan.kind, plan.path, plan.content, { parentClass: plan.parentClass });
+    // Like a Class rename, the referrers are rewritten together or not at all.
+    const backups = await Promise.all(plans.map(async (plan) => ({
+      path: plan.path,
+      storage: this.storageForPath(plan.path),
+      bytes: await this.storageForPath(plan.path).readBinary(plan.path),
+    })));
+    let attempted = 0;
+    try {
+      for (const plan of plans) {
+        await onProgress?.(plan.path);
+        attempted += 1;
+        await this.saveDocument(plan.kind, plan.path, plan.content, { parentClass: plan.parentClass });
+      }
+    } catch (error) {
+      const failures: string[] = [];
+      for (const backup of backups.slice(0, attempted)) {
+        try { await backup.storage.writeBinary(backup.path, backup.bytes); }
+        catch { failures.push(backup.path); }
+      }
+      try { await this.remountRegistry(); }
+      catch { failures.push("Asset Registry"); }
+      if (failures.length) throw new Error(`Replacing Class references failed and some files could not be restored: ${failures.join(", ")}. ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+      throw error;
     }
   }
 

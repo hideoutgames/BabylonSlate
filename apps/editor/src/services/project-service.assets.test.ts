@@ -286,6 +286,28 @@ describe("project documents as .babasset", () => {
     expect(service.guidForPath(sourcePath)).toBe(sourceGuid);
   });
 
+  it("restores the referrers already rewritten when a later Class replacement write fails", async () => {
+    const { service, storage } = await scaffolded();
+    const sourcePath = "assets/Hero.class.babasset";
+    await service.saveDocument("graph", sourcePath, { nodes: [], edges: [] }, { parentClass: "Actor" });
+    await service.saveDocument("graph", "assets/A.class.babasset", { nodes: [], edges: [] }, { parentClass: "Hero" });
+    await service.saveDocument("graph", "assets/B.class.babasset", { nodes: [], edges: [] }, { parentClass: "Hero" });
+    const sourceGuid = service.guidForPath(sourcePath)!;
+    const before = new Map(await Promise.all(["assets/A.class.babasset", "assets/B.class.babasset"].map(async (path) => [path, await storage.readBinary(path)] as const)));
+    const write = storage.writeBinary.bind(storage);
+    let writes = 0;
+    vi.spyOn(storage, "writeBinary").mockImplementation(async (path, bytes) => {
+      // The first referrer saves; the second fails, and the restores go through.
+      if (before.has(path) && ++writes === 2) throw new Error("Disk full");
+      return write(path, bytes);
+    });
+    await expect(service.replaceClassReferencesBeforeDelete([
+      { guid: sourceGuid, classId: "Hero", replacement: null },
+    ], new Set([sourceGuid]))).rejects.toThrow("Disk full");
+    for (const [path, bytes] of before) expect(await storage.readBinary(path)).toEqual(bytes);
+    expect(service.registry!.getByPath("assets/A.class.babasset")?.header.parentClass).toBe("Hero");
+  });
+
   it("refuses to save unnamed or duplicate material parameters and keeps the saved asset intact", async () => {
     const { storage, service } = await scaffolded();
     const path = "assets/Named.material.babasset";
