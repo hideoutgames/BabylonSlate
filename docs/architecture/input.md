@@ -68,7 +68,7 @@ Each **binding** targets a device (`key`, `mouseButton`, `pointer`, `gamepadButt
 | `component` | `"x"` \| `"y"` for `kind: "2d"` axes |
 | `digitalValue` | Constant while a digital binding is held |
 
-`InputMappings` = `{ actions[], axes[] }`. `normalizeInputMappings()` coerces unknown `project.json` payloads and **drops empty `code`s** so Play never treats a blank mouse/pointer draft as button 0. Input asset authoring passes `{ allowIncomplete: true }` so device switches and Add Binding keep `{ device, code: "" }` rows until a control is picked. `createDefaultInputMappings()` supplies Jump / Confirm / Move / Look defaults. Default **Move** includes keyboard and gamepad stick bindings. **Jump** includes Space and Gamepad 1 Face Button Down; **Confirm** uses Enter and Face Button Right. Synthetic touch controls are no longer included in starter defaults.
+`InputMappings` = `{ actions[], axes[] }`. `normalizeInputMappings()` validates a mapping document and **drops empty `code`s** so Play never treats a blank mouse draft as button 0; a missing list is empty, never replaced by defaults. `createDefaultInputMappings()` supplies Jump / Confirm / Move / Look defaults. Default **Move** includes keyboard and gamepad stick bindings. **Jump** includes Space and Gamepad 1 Face Button Down; **Confirm** uses Enter and Face Button Right. Synthetic touch controls are no longer included in starter defaults.
 
 Gamepad picker labels are layout-agnostic Standard Gamepad names (Face Button Down/Right/Left/Up, bumpers, triggers, Left/Right Stick Click, D-Pad, Home). Stored codes stay `padIndex:buttonIndex`. Closed bindings stay pad-qualified (`Gamepad 1 Face Button Down`); picker rows show the button name under a `Gamepad N` group.
 

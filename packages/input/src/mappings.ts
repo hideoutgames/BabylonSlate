@@ -104,14 +104,11 @@ function asDevice(value: unknown): InputDevice | null {
   }
 }
 
-function normalizeActionBinding(
-  value: unknown,
-  allowIncomplete: boolean,
-): ActionBinding | null {
+function normalizeActionBinding(value: unknown): ActionBinding | null {
   const source = (value ?? {}) as Record<string, unknown>;
   const device = asDevice(source.device);
-  if (!device || typeof source.code !== "string") return null;
-  if (source.code === "" && !allowIncomplete) return null;
+  if (!device || typeof source.code !== "string" || source.code === "")
+    return null;
   const modifiers = source.modifiers as BindingModifiers | undefined;
   return {
     device,
@@ -121,14 +118,11 @@ function normalizeActionBinding(
   };
 }
 
-function normalizeAxisBinding(
-  value: unknown,
-  allowIncomplete: boolean,
-): AxisBinding | null {
+function normalizeAxisBinding(value: unknown): AxisBinding | null {
   const source = (value ?? {}) as Record<string, unknown>;
   const device = asDevice(source.device);
-  if (!device || typeof source.code !== "string") return null;
-  if (source.code === "" && !allowIncomplete) return null;
+  if (!device || typeof source.code !== "string" || source.code === "")
+    return null;
   const binding: AxisBinding = { device, code: source.code };
   if (typeof source.id === "string") binding.id = source.id;
   if (source.component === "x" || source.component === "y") {
@@ -148,17 +142,11 @@ function normalizeAxisBinding(
   return binding;
 }
 
-export interface NormalizeInputMappingsOptions {
-  /** Keep `{ device, code: "" }` drafts for Project Settings authoring. */
-  allowIncomplete?: boolean;
-}
-
-/** Coerce an unknown project.json payload into a valid mapping document. */
-export function normalizeInputMappings(
-  value: unknown,
-  options?: NormalizeInputMappingsOptions,
-): InputMappings {
-  const allowIncomplete = options?.allowIncomplete === true;
+/**
+ * Validate a mapping document: drops unnamed rows and malformed or empty-code
+ * bindings. Missing lists are empty, never replaced by defaults.
+ */
+export function normalizeInputMappings(value: unknown): InputMappings {
   const source = (value ?? {}) as Record<string, unknown>;
   const actions: ActionMapping[] = [];
   if (Array.isArray(source.actions)) {
@@ -167,7 +155,7 @@ export function normalizeInputMappings(
       if (typeof row.name !== "string" || row.name.trim() === "") continue;
       const bindings = Array.isArray(row.bindings)
         ? row.bindings
-            .map((binding) => normalizeActionBinding(binding, allowIncomplete))
+            .map((binding) => normalizeActionBinding(binding))
             .filter((binding): binding is ActionBinding => binding !== null)
         : [];
       actions.push({
@@ -184,7 +172,7 @@ export function normalizeInputMappings(
       if (typeof row.name !== "string" || row.name.trim() === "") continue;
       const bindings = Array.isArray(row.bindings)
         ? row.bindings
-            .map((binding) => normalizeAxisBinding(binding, allowIncomplete))
+            .map((binding) => normalizeAxisBinding(binding))
             .filter((binding): binding is AxisBinding => binding !== null)
         : [];
       axes.push({
@@ -194,9 +182,6 @@ export function normalizeInputMappings(
         bindings,
       });
     }
-  }
-  if (!Array.isArray(source.actions) && !Array.isArray(source.axes)) {
-    return createDefaultInputMappings();
   }
   return { actions, axes };
 }

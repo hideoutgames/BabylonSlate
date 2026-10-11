@@ -157,7 +157,8 @@ describe("InputResolver event transitions", () => {
 });
 
 describe("normalizeInputMappings", () => {
-  it("H13: preserves explicit empty action and axis lists", () => {
+  it("H13: keeps explicit empty and missing action and axis lists empty", () => {
+    expect(normalizeInputMappings({})).toEqual({ actions: [], axes: [] });
     const resolver = new InputResolver(
       normalizeInputMappings({ actions: [], axes: [] }),
     );
@@ -167,11 +168,6 @@ describe("normalizeInputMappings", () => {
     ]);
     expect(resolved.actions).toEqual({});
     expect(resolved.axes2D).toEqual({});
-  });
-  it("falls back to defaults for an empty payload", () => {
-    const mappings = normalizeInputMappings({});
-    expect(mappings.actions.length).toBeGreaterThan(0);
-    expect(mappings.axes.some((axis) => axis.name === "Move")).toBe(true);
   });
 
   it("drops malformed bindings and keeps valid ones", () => {
@@ -193,7 +189,7 @@ describe("normalizeInputMappings", () => {
     ]);
   });
 
-  it("drops empty-code drafts by default", () => {
+  it("drops empty-code drafts", () => {
     const mappings = normalizeInputMappings({
       actions: [
         {
@@ -216,46 +212,6 @@ describe("normalizeInputMappings", () => {
       { name: "Jump", bindings: [{ device: "key", code: "Space" }] },
     ]);
     expect(mappings.axes).toEqual([{ name: "Look", kind: "1d", bindings: [] }]);
-  });
-
-  it("keeps empty-code drafts when allowIncomplete is set", () => {
-    const mappings = normalizeInputMappings(
-      {
-        actions: [
-          {
-            name: "Jump",
-            bindings: [
-              { device: "key", code: "Space" },
-              { device: "key", code: "" },
-            ],
-          },
-        ],
-        axes: [
-          {
-            name: "Look",
-            kind: "1d",
-            bindings: [{ device: "gamepadAxis", code: "" }],
-          },
-        ],
-      },
-      { allowIncomplete: true },
-    );
-    expect(mappings.actions).toEqual([
-      {
-        name: "Jump",
-        bindings: [
-          { device: "key", code: "Space" },
-          { device: "key", code: "" },
-        ],
-      },
-    ]);
-    expect(mappings.axes).toEqual([
-      {
-        name: "Look",
-        kind: "1d",
-        bindings: [{ device: "gamepadAxis", code: "" }],
-      },
-    ]);
   });
 });
 
