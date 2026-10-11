@@ -28,6 +28,7 @@ import {
   type QualityLevel,
   type WaterReflectionMode,
   type WaterShadingDetail,
+  type PostProcessingEffectField,
 } from "@babylonslate/core";
 import { NumberField } from "@babylonslate/editor-kit";
 import {
@@ -57,6 +58,12 @@ const labels = {
   water: "Water",
   postprocessing: "Post Processing",
 };
+/** Each runs only when the project's Effects also enable it. */
+const postProcessingEffects: { field: PostProcessingEffectField; label: string; description: string }[] = [
+  { field: "ambientOcclusion", label: "Allow Ambient Occlusion", description: "Runs the project's Ambient Occlusion when enabled." },
+  { field: "reflections", label: "Allow Reflections", description: "Runs the project's screen-space Reflections when enabled." },
+  { field: "volumetricLighting", label: "Allow Volumetric Lighting", description: "Runs the project's scene-wide Volumetric Lighting when enabled. Fog Volumes always render." },
+];
 const reflectionLabels: Record<WaterReflectionMode, string> = {
   sky: "Sky Only",
   screenSpace: "Screen Space",
@@ -433,6 +440,18 @@ export function RenderQualityFields({
           />
           <FieldDescription>Applies to passes with Scalable Resolution.</FieldDescription>
         </Field>
+        {postProcessingEffects.map(({ field, label, description }) => (
+          <Field key={field} className="settings-field">
+            <FieldLabel htmlFor={`quality-postprocessing-${field}`}>{label}</FieldLabel>
+            <Switch
+              id={`quality-postprocessing-${field}`}
+              data-testid={`quality-postprocessing-${field}`}
+              checked={effective.postprocessing[field]}
+              onCheckedChange={(allowed) => edit("postprocessing", { [field]: allowed })}
+            />
+            <FieldDescription>{description}</FieldDescription>
+          </Field>
+        ))}
         <Field className="settings-field">
           <FieldLabel htmlFor="quality-lighting-mode">
             Local Light Budget Mode

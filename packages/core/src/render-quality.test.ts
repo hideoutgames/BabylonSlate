@@ -171,6 +171,17 @@ describe("rendering quality sessions", () => {
     const low = normalizeRenderingQuality({ water: { profile: "low", meshDensity: 9, fftSize: 100, reflectionSteps: 3.6, contactResolution: 300.4 } });
     expect(low.water).toMatchObject({ meshDensity: 1.5, fftSize: 128, reflectionSteps: 4, contactResolution: 300, refraction: false, preset: "custom" });
   });
+  it("allows screen-space effects by the saved Post Processing tier and keeps explicit allowances", () => {
+    // Saved before allowances existed: the saved tier fills them, Medium without one.
+    const savedHigh = normalizeRenderingQuality({ postprocessing: { profile: "high", preset: "high", resolutionScale: 1 } });
+    expect(savedHigh.postprocessing).toMatchObject({ ambientOcclusion: true, reflections: true, volumetricLighting: true, preset: "high" });
+    const unprofiled = normalizeRenderingQuality({});
+    expect(unprofiled.postprocessing).toMatchObject({ ambientOcclusion: true, reflections: false, volumetricLighting: false, preset: "medium" });
+    const custom = resolveRenderingQuality({ quality: unprofiled }, {}, qualitySettingPatch("postprocessing", { reflections: true }));
+    expect(custom.postprocessing).toMatchObject({ reflections: true, preset: "custom" });
+    expect(resolveRenderingQuality({ quality: unprofiled }, {}, qualityPresetPatch("low")).postprocessing)
+      .toMatchObject({ ambientOcclusion: false, reflections: false, volumetricLighting: false, preset: "low" });
+  });
   it("sets, rejects and resets individual water settings from the console", () => {
     const session = new RenderingQualitySession();
     expect(session.execute("water", "refraction", "off").success).toBe(true);

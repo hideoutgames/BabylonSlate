@@ -10,7 +10,7 @@ import {
 } from "@babylonjs/core";
 import { findSceneShadowController, shadowLightDiagnostics } from "./shadow-controller";
 import { effectiveShadowSettings } from "@babylonslate/core";
-import { sceneRenderingSettings } from "./render-settings";
+import { sceneEffectsQualityLimits, sceneRenderingSettings } from "./render-settings";
 import { sceneLightingLimits } from "./scene-lighting";
 import { autoLodDiagnostics, liveMeshCount } from "./model-lod";
 import type { RenderScheduler } from "./render-scheduler";
@@ -159,6 +159,7 @@ export function createRenderDiagnostics(
           state.mode,
         ).limits,
         ...(shadows?.limits() ?? []),
+        ...sceneEffectsQualityLimits(scene),
       ],
       adapter: engineAdapterInfo(engine),
       drawCalls: readEngineDrawCalls(engine),

@@ -88,7 +88,7 @@ Zones sit on a 32 m grid (`layout.ts`); each has an Outliner folder and a 3D Tex
 - **Editor**: `FT_EditorProbe` (EditorUtilityObject, registered) logs editor events; `FT_EditorMath` (EditorFunctionLibrary) is authored only.
 - **Types and data**: `FT_ScriptSpeedMode` (Enum), `FT_ScriptSpinConfig` (Structure), `FT_ScriptDescribable` (ScriptInterface), `FT_DataItemStats` / `FT_DataItems` (Data Definition and Data Tree), `FT_DataProgress` (SaveGame, `wipeOnPlay` on).
 - **Input**: Basic 3D actions plus `FT_ScriptPulse` (P) and `FT_ScriptNudge` (arrow keys); the HUD joystick adds touch bindings to Move.
-- **Project settings**: Feature Test tags, collision layers Default, Dynamic, Trigger, Water, Ghost; PBR with Scene Linear and ACES, bloom, vignette, white balance, FXAA, FSR at render scale 0.8, ambient occlusion, reflections and volumetrics at 0.5 scale; shadows on; render path Auto; WebGL2; dynamic resolution off; Geist as the default font.
+- **Project settings**: Feature Test tags, collision layers Default, Dynamic, Trigger, Water, Ghost; PBR with Scene Linear and ACES, bloom, vignette, white balance, FXAA, FSR at render scale 0.8, ambient occlusion, reflections and volumetrics at 0.5 scale (at the default Medium quality only ambient occlusion runs; reflections and scene-wide volumetric fog need High or Ultra, and the Effects zone's Fog Volume renders on every tier); shadows on; render path Auto; WebGL2; dynamic resolution off; Geist as the default font.
 
 ### Console commands
 
@@ -176,6 +176,8 @@ Main-scene editor viewport at default (Medium) quality, Forward path, with float
 | Spatial-effects geometry (SSAO, SSR, volumetrics) | 123 | 123 | 123 |
 | Full-screen effects | 21 | 21 | 21 |
 | **Total** | **1289** | **1002** | **713** |
+
+Medium skips reflections and scene-wide volumetric fog and Low also skips ambient occlusion; both save GPU time rather than draws here. The Effects zone's Fog Volume keeps the spatial-effects geometry pass (depth only at Low) on every tier, so its 123 draws remain.
 
 ## Verification
 

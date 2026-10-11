@@ -7,7 +7,7 @@ import {
   DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, qualityPresetPatch, qualitySettingPatch, RENDER_QUALITY_PROFILES, ScalabilitySession, type QualityLevel,
 } from "@babylonslate/core";
 import {
-  applyMaterialTextureAnisotropy, followSceneRenderSettings, sceneRenderingSettings, sceneWaterQuality,
+  applyMaterialTextureAnisotropy, followSceneRenderSettings, sceneEffectsQualityLimits, sceneRenderingSettings, sceneWaterQuality,
   sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, updateSceneRenderingSettings,
 } from "./render-settings";
 import { onSceneReadinessDirty } from "./scene-readiness-signal";
@@ -174,4 +174,26 @@ it("reports device-clamped water features while keeping the requested quality", 
   // With half-float targets the colour pipeline cannot change what runs, so switching it keeps the same clamp.
   updateSceneRenderingSettings(capable, sceneLinear);
   expect(sceneWaterQualityDeviceClamp(capable)).toBe(capableClamp);
+});
+
+it("replans screen-space effects when the session quality tier changes and reports what it skips", () => {
+  const scene = fixture();
+  updateSceneRenderingSettings(scene, { effects: {
+    ...DEFAULT_RENDER_EFFECTS,
+    ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true },
+    reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true },
+  } });
+  const state = sceneRenderingSettings(scene);
+  expect(state.effectsPlan).toMatchObject({ ambientOcclusion: { enabled: true }, reflections: null });
+  expect(sceneEffectsQualityLimits(scene)).toEqual(["post processing quality skips reflections"]);
+  const medium = state.effectsKey;
+  state.qualityOverrides = qualityPresetPatch("high");
+  updateSceneRenderingSettings(scene);
+  expect(state.effectsPlan).toMatchObject({ ambientOcclusion: { enabled: true }, reflections: { enabled: true } });
+  expect(state.effectsKey).not.toBe(medium);
+  expect(sceneEffectsQualityLimits(scene)).toEqual([]);
+  state.qualityOverrides = qualityPresetPatch("low");
+  updateSceneRenderingSettings(scene);
+  expect(state.effectsPlan).toBeNull();
+  expect(sceneEffectsQualityLimits(scene)).toEqual(["post processing quality skips ambient occlusion, reflections"]);
 });
