@@ -1715,7 +1715,15 @@ These properties do not meet independent styles and strict CEL visibility.
   their target's global CEL contribution; removing the component reveals CEL.
   Selection composes last. Strict masks include ordinary occluders as ID zero,
   with depth testing/writes, and composition additionally compares candidate and
-  destination depth so dilation cannot spill onto a foreground occluder.
+  destination depth so dilation cannot spill onto a foreground occluder. Each
+  frame draws only the occluders that can matter (`cullStrictOccluders`): those
+  whose screen bounds overlap the members' screen bounds, padded by the widest
+  strict stroke, and that start nearer than the members' farthest point. A mesh
+  beside the members or wholly behind them can hide neither a member pixel nor
+  a stroke pixel; bounds crossing the camera plane are kept. Readiness still
+  probes the full occluder list, so an occluder's mask program is compiled
+  before it comes into view. On the FeatureTest main scene the strict mask fell
+  from 290 draws per frame (every scene mesh, unculled) to the members alone.
   Through/selection masks depth-test only their own members. Strict CEL never
   borrows through-mesh visibility. Opaque surfaces occlude; alpha-tested surfaces
   use their actual texture/cutoff; transparent surfaces conservatively occlude
