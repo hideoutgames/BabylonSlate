@@ -69,6 +69,7 @@ import type { InputBindingControls } from "@babylonslate/input";
 import type { TweenValueType } from "@babylonslate/core";
 import type { TweenReference, TweenRequest } from "./tween-runtime";
 import { tweenOwnerAlive } from "./tween-runtime";
+import { DelayOwnerDestroyed } from "./latent-delays";
 import { isReadOnlyTweenProperty, propertyTweenReference, tweenStorageValue } from "./tween-targets";
 import { cloneSaveGameValue, SaveGameError, type SaveGameService, type SaveGameValue,
   type SaveGameOptions, type SaveGameResult, type SaveGameInfo, type SaveGameMigration,
@@ -1006,6 +1007,15 @@ export class ScriptHost {
     return !owner.destroyed && this.services.canRunOwner?.(owner) !== false;
   }
 
+  /**
+   * Report a latent script failure. A Delay cancelled because `owner` was
+   * destroyed ends that owner's graph quietly, like a cancelled tween.
+   */
+  private reportLatentError(error: unknown, owner: BObject | null): void {
+    if (error instanceof DelayOwnerDestroyed && owner?.destroyed) return;
+    this.services.reportError(error);
+  }
+
   private invokeOwned<T>(owner: BObject | null, invoke: () => T): T {
     const previous = this.invokingOwner;
     this.invokingOwner = owner;
@@ -1170,7 +1180,7 @@ export class ScriptHost {
       const result = this.invokeOwned(object, () => (fn as (ctx: ScriptContext) => unknown)(ctx));
       if (result instanceof Promise) {
         // Call Interface is not latent: a latent implementation's outputs are the pin defaults.
-        void result.catch((error) => this.services.reportError(error));
+        void result.catch((error) => this.reportLatentError(error, object));
         return {};
       }
       return (
@@ -1227,7 +1237,7 @@ export class ScriptHost {
           if (result instanceof Promise) {
             if (self) this.markPending(self, key);
             void result
-              .catch((error) => this.services.reportError(error))
+              .catch((error) => this.reportLatentError(error, self))
               .finally(() => {
                 if (self) this.clearPending(self, key);
               });
@@ -1901,7 +1911,7 @@ export class ScriptHost {
         const nestedExtras = receiver ? extras : { ...extras, callerOwner: contextOwner };
         const failed = (error: unknown): void => {
           if (extras?.saveMigrationData || isInfiniteLoopError(error)) throw error;
-          this.services.reportError(error);
+          this.reportLatentError(error, receiver);
         };
         const record = (value: unknown): Record<string, unknown> =>
           (value && typeof value === "object" && !Array.isArray(value) ? value : {}) as Record<string, unknown>;
