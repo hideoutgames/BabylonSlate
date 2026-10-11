@@ -1028,6 +1028,13 @@ describe("Play createEngine view", () => {
     await expect(handle.whenMaterialTexturesReady()).rejects.toThrow("disposed");
   });
 
+  it("abandons world warm-up once a live Play scene change begins", async () => {
+    const { handle } = playHandle(sharedEngine());
+    const warming = expect(handle.prewarmSceneMaterials()).rejects.toThrow("superseded");
+    handle.applyCommand({ type: "sceneLoading", sceneAssetGuid: "next", sceneLoadId: 1 });
+    await warming;
+  });
+
   it("fails the loading transaction when its first render throws", async () => {
     const engine = sharedEngine();
     const runLoop = vi.spyOn(engine, "runRenderLoop");

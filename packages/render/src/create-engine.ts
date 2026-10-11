@@ -2351,10 +2351,16 @@ function initializeEngine(
   };
   const loadingScope = (owner?: SceneLayerLoadIdentity) => {
     const generation = loadGeneration;
+    // A live Play scene change advances worldLoadId before the host reloads.
+    const sceneLoadId = worldLoadId;
     const layer = owner ? layerLoads.get(owner.layerId) : undefined;
     const target = owner ? sceneLayerCompositor?.layers().find((entry) => entry.layerId === owner.layerId)?.scene : scene;
     const assert = () => {
-      if (!owner) { assertCurrent(generation); return; }
+      if (!owner) {
+        assertCurrent(generation);
+        if (sceneLoadId !== worldLoadId) throw new Error("Scene loading was superseded or disposed.");
+        return;
+      }
       if (disposed || !target || target.isDisposed || layerLoads.get(owner.layerId) !== layer || layer?.loadId !== owner.layerLoadId) {
         throw new Error("SceneLayer loading was superseded or disposed.");
       }
