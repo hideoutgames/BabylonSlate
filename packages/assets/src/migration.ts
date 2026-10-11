@@ -1,9 +1,7 @@
 import { normalizeWaterDefinition } from "@babylonslate/core";
 import {
-  createDefaultSceneSettings,
   normalizeInputAssetPayload,
   validateSaveGameDefinition,
-  identitySerializedTransform,
   normalizeSceneLayer,
   normalizeShadowOverrides,
   normalizeDataDefinitionAsset,
@@ -76,61 +74,11 @@ export class MigrationRegistry {
 }
 
 /**
- * Scene v1 → v2: the placeholder `meshes[]` list becomes actors carrying a
- * MeshComponent, plus scene settings and a viewport mode default.
+ * A version step whose payload needs no change: `normalizeScene` fills every
+ * default. Scene v0–v2 steps are such steps; the pre-actor `meshes[]` list
+ * they once converted is no longer read.
  */
-function migrateSceneMeshesToActors(
-  payload: Record<string, unknown>,
-): Record<string, unknown> {
-  const { meshes, ...rest } = payload;
-  const legacyMeshes = Array.isArray(meshes) ? meshes : [];
-  const actors = legacyMeshes.map((entry, index) => {
-    const mesh = (entry ?? {}) as Record<string, unknown>;
-    const id = typeof mesh.id === "string" ? mesh.id : `actor-${index + 1}`;
-    const position = Array.isArray(mesh.position)
-      ? (mesh.position as number[]).slice(0, 3)
-      : [0, 0, 0];
-    const transform = identitySerializedTransform();
-    return {
-      id,
-      name: id,
-      classId: "Actor",
-      parentId: null,
-      transform: {
-        ...transform,
-        position: [
-          Number(position[0]) || 0,
-          Number(position[1]) || 0,
-          Number(position[2]) || 0,
-        ],
-      },
-      visible: true,
-      locked: false,
-      components: [
-        {
-          id: `${id}-mesh`,
-          classId: "MeshComponent",
-          properties: {
-            meshKind: typeof mesh.type === "string" ? mesh.type : "box",
-            assetGuid: null,
-          },
-        },
-      ],
-    };
-  });
-
-  return {
-    ...rest,
-    viewportMode: rest.viewportMode === "2d" ? "2d" : "3d",
-    settings: rest.settings ?? createDefaultSceneSettings(),
-    actors: Array.isArray(rest.actors) ? rest.actors : actors,
-  };
-}
-
-/** Scene v2 → v3: physicsWorld / editorJoystickEnabled are additive on normalize. */
-function migrateSceneV2ToV3(
-  payload: Record<string, unknown>,
-): Record<string, unknown> {
+function keepPayload(payload: Record<string, unknown>): Record<string, unknown> {
   return { ...payload };
 }
 
@@ -176,12 +124,9 @@ export function createDefaultMigrationRegistry(): MigrationRegistry {
   registry.register({
     type: "Scene",
     migrations: [
-      (payload) => ({
-        ...payload,
-        meshes: Array.isArray(payload.meshes) ? payload.meshes : [],
-      }),
-      migrateSceneMeshesToActors,
-      migrateSceneV2ToV3,
+      keepPayload,
+      keepPayload,
+      keepPayload,
       migrateSceneShadowCapacity,
     ],
   });
