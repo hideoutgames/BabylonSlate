@@ -170,7 +170,7 @@ describe("applyAlbedoTexture", () => {
       const animation = createDefaultSpriteAnimationPayload();
       animation.frames[0]!.textureGuid = "next";
       const host = sceneAnimHostFromBinding(f.binding, {
-        animationGroups: [], spritePayloads: new Map([["sprite", f.sprite]]),
+        spritePayloads: new Map([["sprite", f.sprite]]),
         spriteAnimations: new Map([["animation", animation]]),
         applyTexture: (mesh, guid) => applyAlbedoTexture(mesh, mesh.getScene(), guid, f.assets),
       });

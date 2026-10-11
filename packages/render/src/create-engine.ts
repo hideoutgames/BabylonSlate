@@ -1331,7 +1331,6 @@ function initializeEngine(
       appliedSnapshotIdentity = null;
       const pending = binding.pendingAnimState?.get(slotId);
       if (pending) applyAnimStateToScene(sceneAnimHostFromBinding(binding, {
-        animationGroups: successor.getScene().animationGroups,
         spritePayloads: binding.spritePayloads ?? options.spritePayloads,
         spriteAnimations: binding.spriteAnimations ?? options.spriteAnimations,
         applyTexture: (mesh, guid) => applyAlbedoTexture(mesh, mesh.getScene(), guid, binding),
@@ -3443,7 +3442,6 @@ function initializeEngine(
         if (pending) {
           applyAnimStateToScene(
             sceneAnimHostFromBinding(binding, {
-              animationGroups: scene.animationGroups,
               spritePayloads: binding.spritePayloads ?? options.spritePayloads,
               spriteAnimations:
                 binding.spriteAnimations ?? options.spriteAnimations,
@@ -3477,7 +3475,6 @@ function initializeEngine(
         binding.ragdoll?.clear(command);
         const pending = binding.pendingAnimState?.get(command.slotId);
         if (pending) applyAnimStateToScene(sceneAnimHostFromBinding(binding, {
-          animationGroups: scene.animationGroups,
           spritePayloads: binding.spritePayloads ?? options.spritePayloads,
           spriteAnimations: binding.spriteAnimations ?? options.spriteAnimations,
           applyTexture: (mesh, guid) => applyAlbedoTexture(mesh, mesh.getScene(), guid, binding),
@@ -3537,7 +3534,6 @@ function initializeEngine(
         binding.pendingAnimState.set(command.slotId, command);
         applyAnimStateToScene(
           sceneAnimHostFromBinding(binding, {
-            animationGroups: scene.animationGroups,
             spritePayloads: binding.spritePayloads ?? options.spritePayloads,
             spriteAnimations:
               binding.spriteAnimations ?? options.spriteAnimations,

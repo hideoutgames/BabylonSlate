@@ -536,9 +536,7 @@ describe("createPlayMesh", () => {
       const position = target!.getAbsolutePosition();
       return [position.x, position.y, position.z];
     };
-    const host = sceneAnimHostFromBinding(binding, {
-      animationGroups: scene.animationGroups,
-    });
+    const host = sceneAnimHostFromBinding(binding);
     const command = {
       type: "animState" as const,
       slotId: 2,
@@ -580,9 +578,7 @@ describe("createPlayMesh", () => {
       const position = target!.getAbsolutePosition();
       return [position.x, position.y, position.z];
     };
-    const host = sceneAnimHostFromBinding(binding, {
-      animationGroups: scene.animationGroups,
-    });
+    const host = sceneAnimHostFromBinding(binding);
     const command = {
       type: "animState" as const,
       slotId: 2,
@@ -662,9 +658,7 @@ describe("createPlayMesh", () => {
       const rotation = target!.rotationQuaternion ?? target!.rotation;
       return [position.x, position.y, position.z, rotation.x, rotation.y, rotation.z];
     };
-    const host = sceneAnimHostFromBinding(binding, {
-      animationGroups: scene.animationGroups,
-    });
+    const host = sceneAnimHostFromBinding(binding);
     const command = {
       type: "animState" as const,
       slotId: 2,

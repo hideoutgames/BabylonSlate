@@ -195,7 +195,7 @@ describe("beginSlotModelAnimLoad", () => {
       channels: [...animations[0]!.channels, { sampler: 0, target: { node: 0, path: "translation" } }],
     });
     await beginSlotModelAnimLoad(handle.scene, binding, 1, "model", installAssetBytes(encodeGlbJsonBin(split.json, split.bin)), root);
-    const host = sceneAnimHostFromBinding(binding, { animationGroups: handle.scene.animationGroups });
+    const host = sceneAnimHostFromBinding(binding);
     const part = visualMeshes(root)[0]!;
     return {
       scene: handle.scene,

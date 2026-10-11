@@ -790,7 +790,6 @@ describe("sceneAnimHostFromBinding", () => {
     ]);
     const host = sceneAnimHostFromBinding(binding, {
       spritePayloads: new Map([["hero-sprite", payload]]),
-      animationGroups: [],
     });
     expect(host.getSpriteSlot?.(0)?.overlayMesh).toBe(overlay);
     expect(
@@ -858,7 +857,7 @@ describe("sceneAnimHostFromBinding", () => {
         ],
       ],
     ]);
-    const host = sceneAnimHostFromBinding(binding, { animationGroups: [] });
+    const host = sceneAnimHostFromBinding(binding);
     applyAnimStateToScene(host, {
       type: "animState",
       slotId: 2,
@@ -878,6 +877,17 @@ describe("sceneAnimHostFromBinding", () => {
       clipName: "Idle",
       clipKind: "animation",
       clipAssetGuid: "model-a",
+    });
+    // A slot whose Model has not registered Idle never borrows another actor's group.
+    applyAnimStateToScene(host, {
+      type: "animState",
+      slotId: 3,
+      stateId: "idle",
+      normalisedTime: 0.2,
+      blendWeights: { idle: 1 },
+      clipName: "Idle",
+      clipKind: "animation",
+      clipAssetGuid: "",
     });
     expect(aFrames).toEqual([8]);
     expect(bFrames).toEqual([4]);

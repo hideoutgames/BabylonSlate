@@ -146,7 +146,8 @@ export interface MissingAnimClip {
 
 export interface SceneAnimHost {
   isPhysicsDriven?(slotId: number): boolean;
-  animationGroups: NamedSeekableGroup[];
+  /** Searched only by a host without per-slot lookup (`getAnimationGroup`). */
+  animationGroups?: readonly NamedSeekableGroup[];
   getAnimationGroups?(slotId: number): readonly NamedSeekableGroup[];
   getAnimationGroup?(
     slotId: number,
@@ -202,13 +203,12 @@ function resolveAnimationGroup(
   slotId: number,
   layer: AnimClipLayer,
 ): NamedSeekableGroup | undefined {
-  const fromHost = scene.getAnimationGroup?.(
-    slotId,
-    layer.clipName,
-    layer.clipAssetGuid,
-  );
-  if (fromHost) return fromHost;
-  return findClipGroup(scene.animationGroups, layer.clipName, layer.clipAssetGuid);
+  // A slot without its own clip (still loading, or not on its Model) must not
+  // seek another actor's group of the same name from the scene-wide list.
+  if (scene.getAnimationGroup) {
+    return scene.getAnimationGroup(slotId, layer.clipName, layer.clipAssetGuid);
+  }
+  return findClipGroup(scene.animationGroups ?? NO_GROUPS, layer.clipName, layer.clipAssetGuid);
 }
 
 function applySpriteLayer(
@@ -358,16 +358,14 @@ export function applyAnimStateToScene(
 export function sceneAnimHostFromBinding(
   binding: SnapshotSceneBinding,
   options: {
-    animationGroups: NamedSeekableGroup[];
     spritePayloads?: ReadonlyMap<string, SpritePayload>;
     spriteAnimations?: ReadonlyMap<string, SpriteAnimationPayload>;
     applyTexture?: (mesh: Mesh, textureGuid: string | null | undefined) => void;
     onMissingClip?: (info: MissingAnimClip) => void;
-  },
+  } = {},
 ): SceneAnimHost {
   return {
     isPhysicsDriven: (slotId) => binding.ragdoll?.isDriven(slotId) ?? false,
-    animationGroups: options.animationGroups,
     getAnimationGroups: (slotId) => binding.slotAnimationGroups?.get(slotId) ?? NO_GROUPS,
     getAnimationGroup: (slotId, clipName, clipAssetGuid) =>
       findClipGroup(

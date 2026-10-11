@@ -221,7 +221,6 @@ export function invalidateSlotAnimLoad(
 }
 
 function replayPendingAnimState(
-  scene: Scene,
   binding: ModelAnimLoadBinding,
   slotId: number,
 ): void {
@@ -229,7 +228,6 @@ function replayPendingAnimState(
   if (!pending) return;
   applyAnimStateToScene(
     sceneAnimHostFromBinding(binding as SnapshotSceneBinding, {
-      animationGroups: scene.animationGroups,
       spritePayloads: binding.spritePayloads,
     }),
     pending,
@@ -807,7 +805,7 @@ export function beginSlotModelAnimLoad(
       hideModelPlaceholder(placeholder);
       previousInstance?.bundle.dispose();
       onAdopted?.(placeholder);
-      replayPendingAnimState(scene, binding, slotId);
+      replayPendingAnimState(binding, slotId);
       const current = prepared;
       // Levels share the master's buffers and materials, so their effects are
       // already compiled. A replaced or despawned instance keeps none.
@@ -870,7 +868,7 @@ export function publishModelHierarchyAnimations(
       else binding.slotAnimationGroups!.delete(slotId);
     });
   }
-  replayPendingAnimState(scene, binding, slotId);
+  replayPendingAnimState(binding, slotId);
 }
 
 /** True when name-match retarget keeps at least one channel. */
