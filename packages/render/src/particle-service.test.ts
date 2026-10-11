@@ -59,6 +59,7 @@ describe("ParticleService", () => {
     ready?: (guid: string, released: Promise<void>) => Promise<void> | undefined;
     sceneForSlot?: (slotId: number) => Scene | null;
     statsScope?: "global" | "local";
+    sortingLayers?: () => readonly string[] | undefined;
     /** Transform-feedback caps: GPU slots are built, but NullEngine never draws them. */
     gpu?: boolean;
   } = {}) {
@@ -88,6 +89,7 @@ describe("ParticleService", () => {
       sceneForSlot: options.sceneForSlot,
       onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
       statsScope: options.statsScope,
+      sortingLayers: options.sortingLayers,
     });
     const assign = (slotId = 1, play = true) => service.handleCommand({ type: "assignParticle", slotId, actorGuid: "fx",
       componentId: "particle-1", particleSystemGuid: "sys-1", play });
@@ -290,6 +292,19 @@ describe("ParticleService", () => {
     service.handleCommand({ type: "assignParticle", slotId: 1, actorGuid: "fx", componentId: "particle-1", particleSystemGuid: "sys-1",
       play: true, sortingLayer: "UI", orderInLayer: 3 });
     expect(scene.particleSystems[0]!.renderingGroupId).toBe(3);
+    service.dispose();
+  });
+
+  it("draws ParticleComponents in the project's sorting layer and order", () => {
+    const { scene, service } = host({ sortingLayers: () => ["Default", "Characters"] });
+    service.setLibrary(library({ "em-1": basic() }));
+    const assign = (componentId: string, sortingLayer: string, orderInLayer: number) =>
+      service.handleCommand({ type: "assignParticle", slotId: 1, actorGuid: "fx", componentId, particleSystemGuid: "sys-1",
+        play: true, sortingLayer, orderInLayer });
+    assign("characters", "Characters", 0);
+    assign("default", "Default", 9);
+    const emitters = scene.particleSystems.map((system) => (system.emitter as { name: string }).name);
+    expect(emitters).toEqual(["particleEmitter:fx:default", "particleEmitter:fx:characters"]);
     service.dispose();
   });
 

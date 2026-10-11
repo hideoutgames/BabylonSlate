@@ -1,9 +1,11 @@
+import { NullEngine, ParticleSystem, Scene } from "@babylonjs/core";
 import { describe, expect, it } from "vitest";
 import { computeSortKey } from "@babylonslate/core";
 import {
   RENDERING_GROUP,
   applySortingToMesh,
   applySortingToParticleSystem,
+  particleDrawOrderRevision,
   renderingGroupForLayer,
   resolveSortingLayer,
 } from "./sorting";
@@ -44,12 +46,26 @@ describe("applySorting", () => {
     expect(mesh.renderingGroupId).toBe(RENDERING_GROUP.world);
   });
 
-  it("writes renderingGroupId onto a particle system", () => {
-    const system = { renderingGroupId: 0 };
-    applySortingToParticleSystem(
-      system,
-      resolveSortingLayer(["Background", "Default", "Foreground", "UI"], "UI", 4),
-    );
-    expect(system.renderingGroupId).toBe(RENDERING_GROUP.ui);
+  it("puts a particle system in its layer's group and draws it in sort-key order", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const layers = ["Background", "Default", "Characters", "Foreground", "UI"];
+    new ParticleSystem("unsorted", 1, scene);
+    const sorted = (name: string, layer: string, order: number) => {
+      const system = new ParticleSystem(name, 1, scene);
+      applySortingToParticleSystem(system, resolveSortingLayer(layers, layer, order));
+      return system;
+    };
+    sorted("front", "Characters", 0);
+    const before = particleDrawOrderRevision(scene);
+    const back = sorted("back", "Default", 5);
+    sorted("tied", "Characters", 0);
+    const ui = sorted("ui", "UI", -3);
+    expect(back.renderingGroupId).toBe(RENDERING_GROUP.world);
+    expect(ui.renderingGroupId).toBe(RENDERING_GROUP.ui);
+    expect(scene.particleSystems.map((system) => system.name)).toEqual(["unsorted", "back", "front", "tied", "ui"]);
+    expect(particleDrawOrderRevision(scene)).not.toBe(before);
+    scene.dispose();
+    engine.dispose();
   });
 });
