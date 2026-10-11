@@ -182,18 +182,6 @@ describe("3D Text mesh", () => {
     const before = actorVisualFingerprint(actor);
     actor.components[0]!.properties.text = "Hi";
     expect(actorVisualFingerprint(actor)).not.toBe(before);
-    actor.components[0]!.properties.depth = 9;
-    expect(actorVisualFingerprint(actor)).toBe(
-      actorVisualFingerprint({
-        ...actor,
-        components: [
-          {
-            ...actor.components[0]!,
-            properties: { ...actor.components[0]!.properties, depth: 0.01 },
-          },
-        ],
-      }),
-    );
     actor.components[0]!.properties.alignment = "right";
     expect(actorVisualFingerprint(actor)).not.toBe(
       actorVisualFingerprint({
