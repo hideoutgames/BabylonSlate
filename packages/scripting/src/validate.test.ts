@@ -1074,6 +1074,24 @@ describe("validateGraphs", () => {
     );
   });
 
+  it("errors when two custom event names compile to the same event", () => {
+    const customEvent = (id: string, name: string) => ({
+      id,
+      typeId: "flow.event.custom",
+      position: { x: 0, y: 0 },
+      pins: [pin("execOut", "then", "out", EXEC)],
+      properties: { name },
+    });
+    const graph: LogicGraph = {
+      ...createEmptyLogicGraph("g"),
+      nodes: [customEvent("a", "Open/Close"), customEvent("b", "Open Close"), customEvent("c", "Reset")],
+    };
+    const collisions = validateGraphs([graph], { assetGuid: "a" }).filter(
+      (d) => d.code === "event.name_collision",
+    );
+    expect(collisions).toEqual([expect.objectContaining({ severity: "error", nodeId: "b" })]);
+  });
+
   it("errors when an interface implementation pin is a Map where the method takes an Array", () => {
     const signature = (container: "array" | "map") => [
       { name: "targets", typeId: "actorRef", direction: "in" as const, container },

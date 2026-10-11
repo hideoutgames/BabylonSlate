@@ -28,6 +28,7 @@ import {
   normalizeStringSwitchCases,
 } from "./flow-switch-pins";
 import { isBreakableLoopKind } from "./structured-flow";
+import { eventNameForEntry } from "./compile";
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as FunctionConstructor;
 
@@ -862,6 +863,42 @@ function validateInterfaceAndOverrides(
   return out;
 }
 
+/**
+ * The runtime dispatches a custom event by its compiled identifier, so two
+ * differently spelled names that compile to one identifier ("A/B", "A B")
+ * would both run whenever either is called.
+ */
+function validateCustomEventNames(
+  graphs: readonly LogicGraph[],
+  ctx: TypeContext,
+): Diagnostic[] {
+  const out: Diagnostic[] = [];
+  const firstNameByEvent = new Map<string, string>();
+  for (const graph of graphs) {
+    for (const node of graph.nodes) {
+      if (node.typeId !== "flow.event.custom") continue;
+      const event = eventNameForEntry(node);
+      const name = node.properties.name;
+      if (!event || typeof name !== "string") continue;
+      const first = firstNameByEvent.get(event);
+      if (first === undefined) {
+        firstNameByEvent.set(event, name);
+      } else if (first !== name) {
+        out.push(
+          diagnostic({
+            code: "event.name_collision",
+            message: `Custom events "${first}" and "${name}" compile to the same event "${event}"; rename one of them`,
+            assetGuid: ctx.assetGuid,
+            graphId: graph.id,
+            nodeId: node.id,
+          }),
+        );
+      }
+    }
+  }
+  return out;
+}
+
 function reportTypeGuid(
   out: Diagnostic[],
   ctx: TypeContext,
@@ -1067,6 +1104,7 @@ export function validateGraphs(
   }
   diagnostics.push(...validateMemberTypes(graphs, ctx));
   diagnostics.push(...validateInterfaceAndOverrides(graphs, ctx));
+  diagnostics.push(...validateCustomEventNames(graphs, ctx));
   for (const rule of listValidationRules()) {
     diagnostics.push(...rule.run(graphs, ctx));
   }
