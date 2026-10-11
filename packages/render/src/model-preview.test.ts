@@ -116,7 +116,7 @@ describe("applyModelMaterialSlots", () => {
     expect(isEngineDefaultMaterial(scene.defaultMaterial)).toBe(true);
   });
 
-  it("assigns a resolved material to a filled slot and restores on clear", () => {
+  it("assigns a resolved material to a filled slot and restores the import on clear or a failed resolve", () => {
     const handle = createTestEngine();
     handles.push(handle);
     const { scene } = handle;
@@ -152,6 +152,20 @@ describe("applyModelMaterialSlots", () => {
 
     expect(root.material).toBe(constructionA);
     expect(child.material).toBe(constructionB);
+
+    applyModelMaterialSlots(
+      root,
+      [{ index: 0, name: "Hero Mat", materialGuid: "mat-1" }, { index: 1, name: "Slot 2", materialGuid: null }],
+      () => override,
+    );
+    // A replacement Material that fails to resolve must not leave the old override.
+    applyModelMaterialSlots(
+      root,
+      [{ index: 0, name: "Hero Mat", materialGuid: "broken" }, { index: 1, name: "Slot 2", materialGuid: null }],
+      () => null,
+    );
+
+    expect(root.material).toBe(constructionA);
   });
 
   it("skips a hidden placeholder root so slot 0 maps to the loaded mesh", () => {
