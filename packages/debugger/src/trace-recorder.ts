@@ -28,8 +28,8 @@ export type TraceBtState = {
   nodeMemory?: Record<string, Record<string, unknown>>;
   /** A Play Animation task owns the slot's animation state; omitted when false. */
   playAnimationOwned?: boolean;
-  /** The Play Sound voice the slot's actor owns (stopped on abort or slot release); omitted when none. */
-  playSoundVoiceId?: string;
+  /** Every Play Sound voice the slot's actor owns (stopped on abort or slot release); omitted when none. */
+  playSoundVoiceIds?: string[];
 };
 
 /** A voice the runtime started and has neither stopped nor seen end by the frame. */

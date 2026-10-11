@@ -759,6 +759,7 @@ describe("trace restore of Play Sound voices", () => {
           properties: {},
         },
         task("sound", "bt.task.playSound", { audioAssetGuid: "audio-1", volume: 0.4 }),
+        task("sound2", "bt.task.playSound", { audioAssetGuid: "audio-1", volume: 0.6 }),
         task("wait", "bt.task.wait", { durationMs: 2000 }),
         task("delay", "bt.task.wait", { durationMs: 200 }),
       ],
@@ -810,6 +811,28 @@ describe("trace restore of Play Sound voices", () => {
     commands.length = 0;
     replay.tick();
     expect(audioCommands(commands)).toEqual([{ type: "stopSound", voiceId: "bt:guard:sound" }]);
+    replay.stop();
+  });
+
+  it("restores ownership of every voice the tree started, so an abort stops them all", () => {
+    const recordedCommands: CommandMessage[] = [];
+    const recorded = soundRuntime(["sound", "sound2", "wait"], 350, recordedCommands);
+    recorded.executeConsoleCommand("snapshot start");
+    for (let i = 0; i < 3; i += 1) recorded.tick();
+    recorded.executeConsoleCommand("snapshot stop");
+    const frame = recorded.stopTrace()!.frames.at(-1)!;
+    expect(frame.bt?.[0]?.playSoundVoiceIds).toEqual(["bt:guard:sound", "bt:guard:sound2"]);
+    recorded.stop();
+
+    const commands: CommandMessage[] = [];
+    const replay = soundRuntime(["sound", "sound2", "wait"], 350, commands);
+    replay.restoreFromTrace(frame);
+    commands.length = 0;
+    replay.tick();
+    expect(audioCommands(commands)).toEqual([
+      { type: "stopSound", voiceId: "bt:guard:sound" },
+      { type: "stopSound", voiceId: "bt:guard:sound2" },
+    ]);
     replay.stop();
   });
 

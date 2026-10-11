@@ -170,7 +170,7 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     for (const row of states) {
       if (row.playAnimationOwned === true) this.playAnimOwnedSlots.add(row.slotId);
       const owner = actorBySlot.get(row.slotId);
-      if (row.playSoundVoiceId && owner) this.voiceByActor.set(owner.guid, new Set([row.playSoundVoiceId]));
+      if (row.playSoundVoiceIds?.length && owner) this.voiceByActor.set(owner.guid, new Set(row.playSoundVoiceIds));
       this.evalBySlot.set(row.slotId, {
         stack: row.stack.map((frame) => ({ ...frame })),
         status: row.status as BtEvalState["status"],
@@ -189,13 +189,12 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
 
   /** Per-slot evaluation state recorded with each trace frame. */
   traceStates(): TraceBtState[] {
-    const voiceBySlot = new Map<number, string>();
+    const voicesBySlot = new Map<number, string[]>();
     if (this.voiceByActor.size > 0) {
       for (const actor of this.host.world().getActors()) {
-        // The trace row names one voice: the latest one the actor's tree started.
-        const voiceId = [...this.voiceByActor.get(actor.guid) ?? []].at(-1);
-        const slotId = voiceId && !actor.destroyed ? this.host.slot(actor) : undefined;
-        if (voiceId && slotId !== undefined) voiceBySlot.set(slotId, voiceId);
+        const voices = this.voiceByActor.get(actor.guid);
+        const slotId = voices?.size && !actor.destroyed ? this.host.slot(actor) : undefined;
+        if (voices && slotId !== undefined) voicesBySlot.set(slotId, [...voices]);
       }
     }
     return [...this.evalBySlot.entries()].map(([slotId, state]) => ({
@@ -212,7 +211,7 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
         ]),
       ),
       ...(this.playAnimOwnedSlots.has(slotId) ? { playAnimationOwned: true } : {}),
-      ...(voiceBySlot.has(slotId) ? { playSoundVoiceId: voiceBySlot.get(slotId) } : {}),
+      ...(voicesBySlot.has(slotId) ? { playSoundVoiceIds: voicesBySlot.get(slotId) } : {}),
     }));
   }
 
