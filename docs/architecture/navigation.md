@@ -50,7 +50,7 @@ Bake modal phases:
 
 1. Non-dismissable modal on a painted frame before collect starts.
 2. Names the phase (collect → generate in bake worker → write chunk).
-3. Cancel is enabled only while the worker is generating.
+3. Cancel is enabled only while the worker is generating; it ends the bake at once and terminates the worker. A bake worker that fails to load, crashes or sends an unreadable reply fails the bake with that error instead of leaving the modal waiting.
 
 ## Bytes on the Scene asset
 

@@ -99,6 +99,28 @@ describe("runNavBake", () => {
     expect(write).not.toHaveBeenCalled();
   });
 
+  it("rejects on cancel while generating without waiting for the worker", async () => {
+    const controller = new AbortController();
+    const write = vi.fn(async () => {});
+    const bake = runNavBake({
+      waitPaintedFrame: async () => {},
+      collect: () => ({
+        positions: [0, 0, 0, 1, 0, 0, 0, 0, 1],
+        indices: [0, 1, 2],
+      }),
+      // A worker that never replies.
+      generate: () => new Promise<Uint8Array>(() => {}),
+      write,
+      settings: {},
+      onPhase: (phase) => {
+        if (phase === "generating") queueMicrotask(() => controller.abort());
+      },
+      signal: controller.signal,
+    });
+    await expect(bake).rejects.toThrow(/abort/i);
+    expect(write).not.toHaveBeenCalled();
+  });
+
   it("awaits async collect before generate", async () => {
     const generate = vi.fn(async () => new Uint8Array([1, 2]));
     await runNavBake({
