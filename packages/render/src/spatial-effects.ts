@@ -277,6 +277,8 @@ export function createSpatialStages(
     }
     if (reflections) {
       const scale = Math.max(0.25, reflections.resolutionScale * quality);
+      // Compose onto the color reflections read, which already carries occlusion.
+      const mainInput = stages.length;
       const ssr = own(
         new PreparedSSR("Scene Reflections", scene, {
           blockCompilation: true,
@@ -333,7 +335,7 @@ export function createSpatialStages(
       stages.push({
         wrapper: combine,
         scale: 1,
-        mainInput: 0,
+        mainInput,
         geometry: true,
         bind: () => {},
       });
@@ -379,6 +381,7 @@ export function createSpatialStages(
           ),
           uniforms,
           samplers,
+          failure,
         ),
       );
       const inverseProjection = Matrix.Identity(),
