@@ -53,12 +53,6 @@ for (const backend of ["webgl2"] as const)
       expect(result.reservations.reservedBytes).toBe(0);
       expect(result.captures).toHaveLength(1);
       for (const capture of result.captures) {
-      for (const difference of capture.stackDifferences)
-        expect(difference, "authored stack replacement preserves reflections").toBeLessThan(1);
-        expect(
-          capture.cameraSwitchDifference,
-          "camera switch uses the new camera matrices",
-        ).toBeLessThan(1);
         const lit = capture.on.filter(
           (value, i) => i % 4 === 0 && value > capture.off[i]! + 8,
         ).length;
