@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { replayJournalLines } from "../journal-replay";
 import { DocumentEditStack } from "../stack";
 import { SetAssetDocumentCommand, createSetAssetDocumentCommandFromJson } from "./asset-document";
 
@@ -44,6 +45,18 @@ describe("SetAssetDocumentCommand", () => {
       to: { n: 2 },
       mergeKey: "tilemap-stroke:abc",
     }).mergeKey).toBe("tilemap-stroke:abc");
+  });
+
+  it("skips a journaled edit without both documents instead of emptying the asset", () => {
+    const docId = "water:assets/Lake.water.babasset";
+    const water = { waveHeight: 1 };
+    const line = JSON.stringify({
+      v: 1, docId, at: "2026-10-11T00:00:00Z",
+      command: { type: "asset.setDocument", from: water },
+    });
+    const result = replayJournalLines([line], new Map([[docId, water]]));
+    expect(result.skipped).toHaveLength(1);
+    expect(result.documents.get(docId)).toBe(water);
   });
 
   it("one undo restores the pre-stroke payload when merge keys match", () => {

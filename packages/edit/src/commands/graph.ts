@@ -292,10 +292,17 @@ export class SetGraphFunctionGraphsCommand implements EditCommand<SerializedGrap
   readonly to: SerializedGraph["functionGraphs"];
   /** Set when the edit stays inside one function graph, so a scrub coalesces. */
   readonly mergeKey?: string;
-  #byteSize?: number;
-  /** Retained snapshot cost, measured on first read and memoised. */
+  #fromBytes?: number;
+  #toBytes?: number;
+  /**
+   * Retained snapshot cost. Each side is measured on first read and memoised,
+   * and inverting or coalescing carries the measured sides, so each sample of
+   * a scrub measures only its new `to`.
+   */
   get byteSize(): number {
-    return (this.#byteSize ??= snapshotBytes({ from: this.from, to: this.to }));
+    this.#fromBytes ??= snapshotBytes(this.from);
+    this.#toBytes ??= snapshotBytes(this.to);
+    return this.#fromBytes + this.#toBytes;
   }
 
   constructor(
@@ -318,7 +325,10 @@ export class SetGraphFunctionGraphsCommand implements EditCommand<SerializedGrap
   }
 
   invert(): SetGraphFunctionGraphsCommand {
-    return new SetGraphFunctionGraphsCommand(this.to, this.from, this.mergeKey);
+    const inverse = new SetGraphFunctionGraphsCommand(this.to, this.from, this.mergeKey);
+    inverse.#fromBytes = this.#toBytes;
+    inverse.#toBytes = this.#fromBytes;
+    return inverse;
   }
 
   /** A gesture keeps only its first `from` and its latest `to`. */
@@ -332,7 +342,10 @@ export class SetGraphFunctionGraphsCommand implements EditCommand<SerializedGrap
     ) {
       return undefined;
     }
-    return new SetGraphFunctionGraphsCommand(this.from, next.to, this.mergeKey);
+    const merged = new SetGraphFunctionGraphsCommand(this.from, next.to, this.mergeKey);
+    merged.#fromBytes = this.#fromBytes;
+    merged.#toBytes = next.#toBytes;
+    return merged;
   }
 }
 
