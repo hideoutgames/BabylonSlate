@@ -4270,7 +4270,9 @@ describe("Play createEngine view", () => {
     handle.applyCommand({ type: "sceneLayerLayout", layerId: "hud", entries: [{ actorId: "strip", componentId: "viewport", slotId: 2, rect: { x: 0, y: 0, width: 9, height: 9 }, clip: null, scrollAncestors: [], scroll: { x: 0, y: 0, maxX: 20, maxY: 0, axis: "horizontal", viewport: { x: 0, y: 0, width: 9, height: 9 }, scaleX: 2, scaleY: 2 } }] });
     canvas.emit("wheel", { clientX: 128, clientY: 128, deltaX: 32, deltaY: 0, deltaMode: 0 });
     canvas.emit("wheel", { clientX: 128, clientY: 128, deltaX: 0, deltaY: 32, deltaMode: 0 });
-    expect(scrolls.map(scroll => scroll.deltaX)).toEqual([expect.closeTo(0.5625), expect.closeTo(0.5625)]);
+    // A mostly vertical wheel with horizontal jitter scrolls by its dominant axis.
+    canvas.emit("wheel", { clientX: 128, clientY: 128, deltaX: 1, deltaY: 32, deltaMode: 0 });
+    expect(scrolls.map(scroll => scroll.deltaX)).toEqual([expect.closeTo(0.5625), expect.closeTo(0.5625), expect.closeTo(0.5625)]);
   });
 
   it("scrolls nested overlay content with wheel and cancels button activation after touch dragging", () => {

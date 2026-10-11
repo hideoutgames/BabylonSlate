@@ -115,7 +115,7 @@ SceneLayer Outliner children and SceneLayerActor component children share the sa
 | --- | --- |
 | 2D Vertical Box / 2D Horizontal Box | Arrange children top-to-bottom / left-to-right with Gap and alignment. |
 | 2D Overlay Box | Arrange children in the same content rectangle, with alignment and existing draw order. |
-| 2D Scroll Box | Clip nested content to its viewport; vertical, horizontal or both axes. Wheel, Shift+wheel, touch/pen drag and Scroll X/Y setters move it within measured content bounds. |
+| 2D Scroll Box | Clip nested content to its viewport; vertical, horizontal or both axes. Wheel, Shift+wheel, touch/pen drag and Scroll X/Y setters move it within measured content bounds. On a horizontal box or with Shift, the wheel's dominant axis (vertical wheel or trackpad swipe) scrolls sideways. |
 | 2D Padding | Nonvisual child modifier: Left/Right/Top/Bottom inset only the immediate parent's content area; it occupies no layout slot. |
 | 2D Spacer | Nonvisual fixed space or a weighted share of the remaining main-axis space. |
 

@@ -2814,10 +2814,11 @@ function initializeEngine(
     if (!hit) return;
     event.preventDefault();
     const factor = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? rect.height : 1;
-    // A vertical wheel scrolls a horizontal box or Shift+wheel sideways, but a
-    // native horizontal delta (trackpad swipe, platform Shift+wheel) wins.
+    // A horizontal box or Shift+wheel scrolls sideways by the dominant axis: a
+    // native horizontal swipe keeps deltaX, and a vertical wheel with a little
+    // horizontal jitter still scrolls by deltaY.
     const sideways = event.shiftKey || hit.target.scroll?.axis === "horizontal";
-    const deltaX = sideways && event.deltaX === 0 ? event.deltaY : event.deltaX;
+    const deltaX = sideways && Math.abs(event.deltaY) > Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
     options.onSceneLayerScroll?.({ layerId: hit.layer.layerId, actorId: hit.target.actorId, componentId: hit.target.componentId!, deltaX: deltaX * factor * hit.scaleX, deltaY: event.shiftKey ? 0 : event.deltaY * factor * hit.scaleY });
   };
   const onPointerDown = (event: PointerEvent) => {
