@@ -56,7 +56,6 @@ describe("ProjectService lifecycle", () => {
     try {
       await expect(service.saveDocument("scene", MAIN_SCENE_FILE, { ...scene, name: "Blocked" })).rejects.toThrow(/Read-only/);
       await expect(service.saveProject(project.document, project.layouts)).rejects.toThrow(/Read-only/);
-      await expect(service.upgradeDependencyMetadata()).rejects.toThrow(/Read-only/);
       await expect(registry.createFolder("project", "Blocked")).rejects.toThrow(/Read-only/);
       await expect(registry.storageFor("project").writeText("assets/direct.txt", "Blocked")).rejects.toThrow(/Read-only/);
       await expect(blobs.writeBlob("blocked", new Uint8Array([1]))).rejects.toThrow(/Read-only/);
@@ -87,7 +86,6 @@ describe("ProjectService lifecycle", () => {
       await writer.saveDocument("scene", MAIN_SCENE_FILE, { ...scene, name: "Saved baseline" });
       wroteScene();
       await paused;
-      await writer.upgradeDependencyMetadata();
       await writer.saveProject({ ...project.document, metadata: { ...project.document.metadata, version: "2.0" } }, project.layouts);
     });
     await firstWrite;

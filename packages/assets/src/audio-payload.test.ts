@@ -36,6 +36,7 @@ import {
   validateAudioChannelGraph,
   validateAudioMixer,
 } from "./audio-payload";
+import { collectAssetDependencyMetadata } from "./asset-dependencies";
 import { decodeAssetDocument, encodeAssetDocument } from "./asset-document";
 import { decodeBabasset, encodeBabasset } from "./babasset";
 import { bytesEqual } from "./bytes";
@@ -615,21 +616,22 @@ describe("audio payloads", () => {
 describe("audio asset containers", () => {
   it("round-trips a new Audio babasset and keeps the source chunk", async () => {
     const source = new Uint8Array([1, 2, 3, 4]);
+    const payload = {
+      volume: 0.5,
+      audioChannelGuid: "ch-1",
+      soundAttenuationGuid: "att-1",
+    };
     const encoded = await encodeBabasset({
       header: {
+        ...collectAssetDependencyMetadata("Audio", payload),
         guid: "00000000-0000-4000-8000-00000000a001",
         type: "Audio",
         name: "Jump",
         engineVersion: "0.0.0",
         version: 1,
         mode: "thin",
-        dependencies: ["att-1", "ch-1"],
         parentClass: null,
-        payload: {
-          volume: 0.5,
-          audioChannelGuid: "ch-1",
-          soundAttenuationGuid: "att-1",
-        },
+        payload,
       },
       chunks: [{ id: "source", kind: "audio", mime: "audio/wav", data: source }],
     });

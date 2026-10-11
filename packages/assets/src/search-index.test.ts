@@ -58,6 +58,7 @@ async function writeTexture(
   if (dir) await storage.mkdir(dir, true);
   const bytes = await encodeBabasset({
     header: {
+      dependencyMetadataVersion: 1, requiredDependencies: [],
       guid: options.guid,
       type: "Texture",
       name: options.name,
@@ -641,6 +642,7 @@ describe("ProjectSearchIndex ranking", () => {
     rootId: "project",
     path: "assets/level.scene.babasset",
     header: {
+      dependencyMetadataVersion: 1, requiredDependencies: [],
       guid: "scene-1",
       type: "Scene",
       name: "Level",

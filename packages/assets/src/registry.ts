@@ -1,6 +1,7 @@
 import type { ProjectStorage, ProjectStorageReader, StorageReadOptions } from "@babylonslate/core";
 import { classIdForAssetPath, ENGINE_VERSION, isStorageNotFound, SourceRevisionChangedError } from "@babylonslate/core";
 import {
+  ASSET_DEPENDENCY_METADATA_VERSION,
   decodeBabasset,
   encodeBabasset,
   readBabassetHeader,
@@ -355,7 +356,7 @@ export class AssetRegistry {
     return this.loader.loadChunk(locator, entry, this.blobsForAsset(asset), this.storageForAsset(asset), options);
   }
 
-  /** Reserve memory before reading, including blobs written before length metadata. */
+  /** Reserve memory before reading: every chunk records its length. */
   async getChunkByteLength(guid: string, chunkId: string, expectedRevision?: string, options: StorageReadOptions = {}): Promise<number> {
     const locator = await this.getAssetLocator(guid, options);
     options.signal?.throwIfAborted();
@@ -369,14 +370,7 @@ export class AssetRegistry {
     if (!asset || asset.locator !== locator) throw new SourceRevisionChangedError(`Asset changed while estimating chunk ${chunkId}: ${guid}`);
     const entry = asset?.header.chunks.find((chunk) => chunk.id === chunkId);
     if (!asset || !entry) throw new Error(`Missing chunk ${chunkId} in asset ${guid}`);
-    if (entry.byteLength !== undefined) return entry.byteLength;
-    if ("inline" in entry.locator) return entry.locator.inline.length;
-    const blobs = this.blobsForAsset(asset);
-    if (!blobs.blobByteLength) throw new Error(`Blob storage cannot report the size of legacy chunk ${chunkId}; upgrade asset ${guid}`);
-    const size = await blobs.blobByteLength(entry.locator.blob, options);
-    options.signal?.throwIfAborted();
-    if (!Number.isSafeInteger(size) || size < 0) throw new Error(`Invalid blob size for ${chunkId} in asset ${guid}`);
-    return size;
+    return entry.byteLength;
   }
 
   /** Document opening does not pull in retained originals or derived representations. */
@@ -476,12 +470,14 @@ export class AssetRegistry {
     const header: BabassetHeader = {
       chunks: [],
       dependencies: [],
+      dependencyMetadataVersion: ASSET_DEPENDENCY_METADATA_VERSION,
       engineVersion: ENGINE_VERSION,
       guid,
       mode: "thin",
       name: "Missing Asset",
       parentClass: null,
       payload: {},
+      requiredDependencies: [],
       type: "Unresolved",
       version: 0,
     };

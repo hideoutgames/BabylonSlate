@@ -74,6 +74,7 @@ async function writeClass(
     path,
     await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: options.guid,
         type: "Class",
         name: options.name,
@@ -428,6 +429,7 @@ describe("importPluginZip", () => {
     );
     await incomingStorage.writeBinary("plugins/pack/assets/Hero.babasset", await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "tex-1", type: "Texture", name: "Hero", engineVersion: "0.0.0", version: 1, mode: "thin",
         dependencies: [], parentClass: null, payload: { usage: "pixelArt" },
       },

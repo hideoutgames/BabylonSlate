@@ -344,6 +344,7 @@ describe("importers", () => {
   it("imports .babasset and remaps colliding guids", async () => {
     const bytes = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "taken",
         type: "Texture",
         name: "Tex",

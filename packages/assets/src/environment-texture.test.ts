@@ -77,7 +77,7 @@ describe("environment texture import", () => {
         },
       });
       const packed = await encodeBabasset({
-        header: { ...asset!, engineVersion: "0.0.0", mode: "thin" },
+        header: { ...asset!, dependencyMetadataVersion: 1, requiredDependencies: [], engineVersion: "0.0.0", mode: "thin" },
         chunks: asset!.chunks,
       });
       const decoded = await decodeBabasset(packed);

@@ -56,6 +56,7 @@ async function writeAsset(
   if (dir) await storage.mkdir(dir, true);
   const bytes = await encodeBabasset({
     header: {
+      dependencyMetadataVersion: 1, requiredDependencies: [],
       guid: options.guid,
       type: options.type,
       name: options.name,
@@ -424,6 +425,7 @@ describe("AssetRegistry", () => {
     const write = async (name: string) => {
       const bytes = await encodeBabasset({
         header: {
+          dependencyMetadataVersion: 1, requiredDependencies: [],
           guid: "sprite-1",
           type: "Sprite",
           name,
@@ -641,6 +643,7 @@ describe("AssetRegistry", () => {
     });
     const incoming = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "shared-guid",
         type: "Texture",
         name: "Incoming",
@@ -1439,6 +1442,7 @@ describe("AssetRegistry", () => {
     await storage.mkdir("assets", true);
     await storage.writeBinary("assets/tex.babasset", await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "tex", type: "Texture", name: "tex", engineVersion: "0.0.0", version: 1, mode: "thin",
         dependencies: [], parentClass: null, payload: { usage: "albedo", compressionState: "pending" },
       },
