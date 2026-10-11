@@ -38,7 +38,7 @@ test("Preview Build keeps export failures visible and can launch after correctio
   await expect(page.getByTestId("play-preview")).toBeEnabled();
 });
 
-// Migration approval is shared by Play and Preview Build; CI exercises it through Play.
+// CI exercises migration approval through Play; Preview Build preparation is covered above.
 for (const mode of ["Play"] as const) {
   test(`${mode} requests migration approval and launches after approval`, async ({ page }) => {
     const files = await minimalProjectFiles();
