@@ -9,7 +9,9 @@ import type { RawInputEvent } from "./ring-buffer";
 import { InputBindingProfile } from "./input-bindings";
 import type {
   ActionBinding,
+  ActionMapping,
   AxisBinding,
+  AxisMapping,
   BindingModifiers,
   InputMappings,
 } from "./mappings";
@@ -218,70 +220,51 @@ export class InputResolver {
       const key = inputKeyFromControl(device, code);
       if (key) pressedKeys.push(key);
     };
-    const sampleInputs = () => {
-      for (const mapping of [...this.mappings.actions, ...this.mappings.axes]) {
-        const key = inputMappingKey(mapping);
-        const axis = this.mappings.axes.includes(mapping);
-        let value: InputValueState["value"];
-        if (!axis)
-          value = mapping.bindings.some((binding) =>
-            actionBindingHeld(binding, this.state),
-          );
-        else {
-          let x = 0,
-            y = 0;
-          for (const binding of mapping.bindings) {
-            const amount = axisBindingValue(binding, this.state);
-            if (
-              "kind" in mapping &&
-              mapping.kind === "2d" &&
-              "component" in binding &&
-              binding.component === "y"
-            )
-              y += amount;
-            else x += amount;
-          }
-          x = Math.max(-1, Math.min(1, x));
-          y = Math.max(-1, Math.min(1, y));
-          value = "kind" in mapping && mapping.kind === "2d" ? { x, y } : x;
-        }
-        const held =
-          typeof value === "object" ? value.x !== 0 || value.y !== 0 : !!value;
-        const previous = inputs[key] ?? this.inputStates[key];
-        const accumulated = inputs[key];
-        inputs[key] = {
-          input: { Name: mapping.name, Asset: mapping.id ?? "" },
-          valueType: axis
-            ? "kind" in mapping && mapping.kind === "2d"
-              ? "2d"
-              : "1d"
-            : "button",
-          value,
-          ...(axis && held && typeof value !== "boolean" ? { activeValue: value }
-            : accumulated?.activeValue !== undefined ? { activeValue: accumulated.activeValue } : {}),
-          held,
-          started: !!accumulated?.started || (held && !previous?.held),
-          released: !!accumulated?.released || (!held && !!previous?.held),
-          heldSeconds: held ? (previous?.held ? previous.heldSeconds : 0) : 0,
-          lastHeldSeconds:
-            !held && previous?.held
-              ? previous.heldSeconds
-              : (previous?.lastHeldSeconds ?? 0),
-        };
-      }
+    const clamp = (value: number) => Math.max(-1, Math.min(1, value));
+    const recordInput = (
+      mapping: ActionMapping | AxisMapping,
+      valueType: InputValueState["valueType"],
+      value: InputValueState["value"],
+    ) => {
+      const key = inputMappingKey(mapping);
+      const held =
+        typeof value === "object" ? value.x !== 0 || value.y !== 0 : !!value;
+      const previous = inputs[key] ?? this.inputStates[key];
+      const accumulated = inputs[key];
+      inputs[key] = {
+        input: { Name: mapping.name, Asset: mapping.id ?? "" },
+        valueType,
+        value,
+        ...(valueType !== "button" && held && typeof value !== "boolean" ? { activeValue: value }
+          : accumulated?.activeValue !== undefined ? { activeValue: accumulated.activeValue } : {}),
+        held,
+        started: !!accumulated?.started || (held && !previous?.held),
+        released: !!accumulated?.released || (!held && !!previous?.held),
+        heldSeconds: held ? (previous?.held ? previous.heldSeconds : 0) : 0,
+        lastHeldSeconds:
+          !held && previous?.held
+            ? previous.heldSeconds
+            : (previous?.lastHeldSeconds ?? 0),
+      };
     };
     const connections: GamepadConnectionEvent[] = [];
     // Name lookups (`isActionHeld("Jump")`) cover every asset with that display
     // name; `inputs` keeps each asset's own state.
     const actions: Record<string, ActionState> = {};
     const heldNow = new Set(this.state.previousHeldActions);
-    const sampleActions = () => {
-      const heldByName = new Map<string, boolean>();
+    const heldByName = new Map<string, boolean>();
+    // Each axis mapping's clamped value at the latest sample; `axes` reuses it.
+    const axisValues = this.mappings.axes.map(() => ({ x: 0, y: 0 }));
+    // One pass reads every binding once and updates both per-asset `inputs` and
+    // name-keyed `actions`.
+    const sample = () => {
+      heldByName.clear();
       for (const mapping of this.mappings.actions) {
         const held = mapping.bindings.some((binding) =>
           actionBindingHeld(binding, this.state),
         );
         heldByName.set(mapping.name, heldByName.get(mapping.name) === true || held);
+        recordInput(mapping, "button", held);
       }
       for (const [name, held] of heldByName) {
         const wasHeld = heldNow.has(name);
@@ -294,12 +277,25 @@ export class InputResolver {
         if (held) heldNow.add(name);
         else heldNow.delete(name);
       }
+      this.mappings.axes.forEach((mapping, index) => {
+        const twoD = mapping.kind === "2d";
+        let x = 0;
+        let y = 0;
+        for (const binding of mapping.bindings) {
+          const amount = axisBindingValue(binding, this.state);
+          if (twoD && binding.component === "y") y += amount;
+          else x += amount;
+        }
+        const value = axisValues[index]!;
+        value.x = clamp(x);
+        value.y = clamp(y);
+        recordInput(mapping, twoD ? "2d" : "1d", twoD ? { x: value.x, y: value.y } : value.x);
+      });
     };
 
     // A mapping change can release an action before the first new event arrives.
     // Observe that boundary so a fresh press of the replacement key keeps its edge.
-    sampleActions();
-    sampleInputs();
+    sample();
     for (const event of events) {
       switch (event.kind) {
         case "key": {
@@ -422,12 +418,10 @@ export class InputResolver {
         default:
           break;
       }
-      sampleActions();
-      sampleInputs();
+      sample();
     }
 
-    sampleActions();
-    sampleInputs();
+    sample();
     this.state.previousHeldActions = new Set(
       this.mappings.actions
         .filter((mapping) => heldNow.has(mapping.name))
@@ -435,25 +429,17 @@ export class InputResolver {
     );
 
     // Assets sharing a display name add up like the bindings of one asset.
-    const clamp = (value: number) => Math.max(-1, Math.min(1, value));
     const sums1D = new Map<string, number>();
     const sums2D = new Map<string, Axis2DValue>();
-    for (const mapping of this.mappings.axes) {
-      let x = 0;
-      let y = 0;
-      const twoD = "kind" in mapping && mapping.kind === "2d";
-      for (const binding of mapping.bindings) {
-        const value = axisBindingValue(binding, this.state);
-        if (twoD && binding.component === "y") y += value;
-        else x += value;
-      }
-      if (twoD) {
+    this.mappings.axes.forEach((mapping, index) => {
+      const value = axisValues[index]!;
+      if (mapping.kind === "2d") {
         const sum = sums2D.get(mapping.name) ?? { x: 0, y: 0 };
-        sums2D.set(mapping.name, { x: sum.x + clamp(x), y: sum.y + clamp(y) });
+        sums2D.set(mapping.name, { x: sum.x + value.x, y: sum.y + value.y });
       } else {
-        sums1D.set(mapping.name, (sums1D.get(mapping.name) ?? 0) + clamp(x));
+        sums1D.set(mapping.name, (sums1D.get(mapping.name) ?? 0) + value.x);
       }
-    }
+    });
     const axes: Record<string, number> = {};
     const axes2D: Record<string, Axis2DValue> = {};
     for (const [name, sum] of sums2D) {
@@ -481,15 +467,11 @@ export class InputResolver {
   }
 
   getInputState(input: InputTypeValue): InputValueState | null {
-    const mapping = [...this.mappings.actions, ...this.mappings.axes].find(
-      (entry) => entry.id === input?.Asset,
-    );
+    const action = this.mappings.actions.find((entry) => entry.id === input?.Asset);
+    const axis = action ? undefined : this.mappings.axes.find((entry) => entry.id === input?.Asset);
+    const mapping = action ?? axis;
     if (!mapping) return null;
-    const valueType = this.mappings.axes.includes(mapping)
-      ? "kind" in mapping && mapping.kind === "2d"
-        ? "2d"
-        : "1d"
-      : "button";
+    const valueType = axis ? (axis.kind === "2d" ? "2d" : "1d") : "button";
     return (
       this.inputStates[mapping.id!] ?? {
         input: { Name: mapping.name, Asset: mapping.id! },
