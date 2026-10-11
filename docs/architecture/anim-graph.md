@@ -39,10 +39,10 @@ Transition fire: **Exit State** (leave source) **and** **Enter State** (enter ta
 
 Each tick `AnimGraphRuntime.tick` (`packages/runtime/src/anim-graph-runtime.ts`, owned by the runtime driver):
 
-1. Seed component `variableStore` from document defaults.
-2. Once per `${slotId}:{guid}`, `invokeAnimEvent(AnimGraph:{guid}, onInitializeAnimation)`.
+1. Seed component `variableStore` from document defaults; each component gets its own copy of an object default, and a struct without a default starts as an empty object (`{ Tags: [] }` for TagContainer).
+2. Once per `${componentGuid}:{guid}`, `invokeAnimEvent(AnimGraph:{guid}, onInitializeAnimation)`. A graph skipped for a tick (owner not admitted, no render slot, or a Behaviour Tree Play Animation owns the slot) keeps its initialization and evaluation; they are dropped only when the component, its graph guid or the document goes away. Evaluation and a queued Jump To State belong to one graph guid, so a component switched to another graph starts that graph at its entry state.
 3. Every tick, `invokeAnimEvent(..., onUpdateAnimation, dt)`.
-4. `evaluateAnimGraph` with `decideTransition` → `invokeAnimRule(AnimRule:{guid}:{id})` (`exports.evaluate` → `{ enter, exit }`; missing class / throw → `undefined` = legacy fallback).
+4. `evaluateAnimGraph` with `decideTransition` → `invokeAnimRule(AnimRule:{guid}:{id})` (`exports.evaluate` → `{ enter, exit }`; missing class / throw → `undefined` = legacy fallback; an infinite-loop abort is reported and rethrown, ending the tick).
 5. If the current clip is `kind: "sprite"` with an asset guid, `setActorSpriteClip`; otherwise clear it so a later Model state does not keep the last Sprite Animation box.
 
 Trace frames record each component's evaluation state, graph guid and pending jump (`TraceFrame.animGraphs`) plus each actor's current sprite clip (`TraceFrame.sprites`). `restoreFromTrace` replaces evaluation, initialization and pending jumps with the frame's, so the next tick continues the recorded state and time without re-running On Initialize Animation, and shows the recorded sprite frame at once ([debugger.md](debugger.md#trace-recorder)).

@@ -15,6 +15,7 @@ import {
 } from "@babylonslate/behaviour-tree";
 import { blackboardInspectTypes, blackboardTargetPosition, snapshotBlackboard } from "./bt-blackboard";
 import type { RuntimeDiagnostic } from "./diagnostics";
+import { samePlainData } from "./plain-data";
 import { navPointFromUnknown, type RuntimeNavigation } from "./runtime-navigation";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 import type { ScriptHost } from "./script-host";
@@ -25,6 +26,8 @@ type SpriteClip = { assetGuid: string; clipName: string; normalisedTime: number;
 // it. A resumed task writes to its current board and cannot finish a later run.
 const BT_TASK_ACTIVATION = Symbol("btTaskActivation");
 type BtTaskActivation = { active: boolean; blackboard: BlackboardValues; result?: "success" | "failure" };
+/** The fields of a published `btState`, kept to skip unchanged ticks. */
+type BtStatePayload = Pick<BtEvalState, "status" | "btNodeId" | "lastResults" | "blackboard" | "stack">;
 
 interface BehaviourTreeRuntimeHost {
   world(): World;
@@ -41,7 +44,7 @@ interface BehaviourTreeRuntimeHost {
   seed(): number;
   frameId(): number;
   tickIndex(): number;
-  scripts(): Pick<ScriptHost, "hasClass" | "invokeBtEvent">;
+  scripts(): Pick<ScriptHost, "hasClass" | "invokeBtEvent" | "teleportActor">;
   setSpriteClip(actor: Actor, clip: SpriteClip | null): void;
   actorName(actor: Actor): string;
   recordDiagnostic(diagnostic: RuntimeDiagnostic): void;
@@ -64,8 +67,11 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
   /** Animation / Sprite Animation clip metadata for Play Animation. */
   private readonly animClipCatalog = new Map<string, AnimClipCatalogEntry>();
   private readonly playAnimOwnedSlots = new Set<number>();
-  private readonly voiceByActor = new Map<string, string>();
-  private readonly lastStateJson = new Map<number, string>();
+  /** Every Play Sound voice each actor's tree started, oldest first. */
+  private readonly voiceByActor = new Map<string, Set<string>>();
+  /** The component, tree and Blackboard each slot's evaluation belongs to. */
+  private readonly sourceBySlot = new Map<number, { key: string; treeGuid: string }>();
+  private readonly lastState = new Map<number, BtStatePayload>();
   private debug = false;
   private lastDebugMs = -Infinity;
   private readonly host: BehaviourTreeRuntimeHost;
@@ -128,7 +134,8 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
    */
   releaseSlot(slotId: number, owner: Actor | undefined): void {
     this.evalBySlot.delete(slotId);
-    this.lastStateJson.delete(slotId);
+    this.sourceBySlot.delete(slotId);
+    this.lastState.delete(slotId);
     this.playAnimOwnedSlots.delete(slotId);
     if (owner) this.stopPlaySound(owner.guid);
   }
@@ -145,7 +152,8 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
    */
   restoreFromTrace(states: readonly TraceBtState[]): void {
     this.evalBySlot.clear();
-    this.lastStateJson.clear();
+    this.sourceBySlot.clear();
+    this.lastState.clear();
     this.playAnimOwnedSlots.clear();
     this.voiceByActor.clear();
     const actorBySlot = new Map<number, Actor>();
@@ -156,7 +164,7 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     for (const row of states) {
       if (row.playAnimationOwned === true) this.playAnimOwnedSlots.add(row.slotId);
       const owner = actorBySlot.get(row.slotId);
-      if (row.playSoundVoiceId && owner) this.voiceByActor.set(owner.guid, row.playSoundVoiceId);
+      if (row.playSoundVoiceId && owner) this.voiceByActor.set(owner.guid, new Set([row.playSoundVoiceId]));
       this.evalBySlot.set(row.slotId, {
         stack: row.stack.map((frame) => ({ ...frame })),
         status: row.status as BtEvalState["status"],
@@ -178,7 +186,8 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     const voiceBySlot = new Map<number, string>();
     if (this.voiceByActor.size > 0) {
       for (const actor of this.host.world().getActors()) {
-        const voiceId = this.voiceByActor.get(actor.guid);
+        // The trace row names one voice: the latest one the actor's tree started.
+        const voiceId = [...this.voiceByActor.get(actor.guid) ?? []].at(-1);
         const slotId = voiceId && !actor.destroyed ? this.host.slot(actor) : undefined;
         if (voiceId && slotId !== undefined) voiceBySlot.set(slotId, voiceId);
       }
@@ -217,8 +226,9 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     const document = this.blackboards.get(guid);
     if (!document) return {};
     const values: BlackboardValues = {};
+    // Each evaluation owns its values: an object default is never shared with the document or another actor.
     for (const key of document.keys) {
-      if (key.defaultValue !== undefined) values[key.name] = key.defaultValue;
+      if (key.defaultValue !== undefined) values[key.name] = structuredClone(key.defaultValue);
     }
     return values;
   }
@@ -311,6 +321,9 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     actor.transform.rotation.y = quat[1];
     actor.transform.rotation.z = quat[2];
     actor.transform.rotation.w = quat[3];
+    // Trees tick after the physics step: a body must take the new heading too,
+    // or its next step writes the old rotation back.
+    this.host.scripts().teleportActor(actor);
     this.host.navigation().faceYaw(actor.guid, yawRad);
     return "success";
   }
@@ -424,7 +437,11 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     const voiceId = `bt:${actor.guid}:${node.id}`;
     if (memory.__soundPlayed !== true) {
       memory.__soundPlayed = true;
-      this.voiceByActor.set(actor.guid, voiceId);
+      const voices = this.voiceByActor.get(actor.guid) ?? new Set<string>();
+      // Re-adding moves a replayed voice to the end, keeping the set oldest first.
+      voices.delete(voiceId);
+      voices.add(voiceId);
+      this.voiceByActor.set(actor.guid, voices);
       this.host.emit({
         type: "playSound",
         assetGuid: guid,
@@ -437,13 +454,18 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     return "success";
   }
 
+  /** Stop one Play Sound task's voice, or every voice the actor's tree started. */
   private stopPlaySound(actorGuid: string, nodeId?: string): void {
-    const voiceId =
-      nodeId !== undefined
-        ? `bt:${actorGuid}:${nodeId}`
-        : this.voiceByActor.get(actorGuid);
-    if (!voiceId) return;
-    this.host.emit({ type: "stopSound", voiceId });
+    const voices = this.voiceByActor.get(actorGuid);
+    if (nodeId !== undefined) {
+      const voiceId = `bt:${actorGuid}:${nodeId}`;
+      this.host.emit({ type: "stopSound", voiceId });
+      voices?.delete(voiceId);
+      if (voices?.size === 0) this.voiceByActor.delete(actorGuid);
+      return;
+    }
+    if (!voices) return;
+    for (const voiceId of voices) this.host.emit({ type: "stopSound", voiceId });
     this.voiceByActor.delete(actorGuid);
   }
 
@@ -545,19 +567,28 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
         (entry) =>
           entry.classId === "BehaviourTreeComponent" && !entry.destroyed,
       );
-      if (!component) continue;
+      if (!component) {
+        // A removed BehaviourTreeComponent takes its tree's running work with it.
+        if (this.sourceBySlot.has(slotId)) this.resetEvaluation(actor, slotId, dtSeconds);
+        continue;
+      }
       const guid = this.treeGuid(component);
       if (!guid) {
         this.emitMissing(actor.guid, "BehaviourTreeComponent has no treeGuid");
         continue;
       }
-      this.assetGuid = guid;
       const document = this.documents.get(guid);
       if (!document) {
         this.emitMissing(actor.guid, `Behaviour tree not loaded: ${guid}`);
         continue;
       }
       const blackboardGuid = this.stringGuid(component.getVariable("blackboardGuid")) ?? document.blackboardGuid;
+      const source = `${component.guid}\0${guid}\0${blackboardGuid ?? ""}`;
+      if (this.sourceBySlot.get(slotId)?.key !== source) {
+        if (this.sourceBySlot.has(slotId)) this.resetEvaluation(actor, slotId, dtSeconds);
+        this.sourceBySlot.set(slotId, { key: source, treeGuid: guid });
+      }
+      this.assetGuid = guid;
       const previous = this.evalBySlot.get(slotId) ?? null;
       const blackboard: BlackboardValues = previous
         ? { ...previous.blackboard }
@@ -597,26 +628,42 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
       this.evalBySlot.set(slotId, next);
       this.nodeId = null;
       this.assetGuid = null;
-      const blackboardSnapshot = snapshotBlackboard(next.blackboard);
-      const payload = JSON.stringify({
+      // Evaluation copies its inputs, so the published objects stay as emitted.
+      const state: BtStatePayload = {
         status: next.status,
         btNodeId: next.btNodeId,
         lastResults: next.lastResults,
-        blackboard: blackboardSnapshot,
+        blackboard: snapshotBlackboard(next.blackboard),
         stack: next.stack,
-      });
-      if (this.lastStateJson.get(slotId) === payload) continue;
-      this.lastStateJson.set(slotId, payload);
-      this.host.emit({
-        type: "btState",
-        slotId,
-        status: next.status,
-        btNodeId: next.btNodeId,
-        lastResults: next.lastResults,
-        blackboard: blackboardSnapshot,
-        stack: next.stack,
-      });
+      };
+      if (samePlainData(this.lastState.get(slotId), state)) continue;
+      this.lastState.set(slotId, state);
+      this.host.emit({ type: "btState", slotId, ...state });
     }
+  }
+
+  /**
+   * The slot's BehaviourTreeComponent, tree or Blackboard changed: abort the
+   * old tree's running tasks and drop its evaluation, so the new source starts
+   * at its root with fresh Blackboard defaults.
+   */
+  private resetEvaluation(actor: Actor, slotId: number, dtSeconds: number): void {
+    const previous = this.evalBySlot.get(slotId);
+    const treeGuid = this.sourceBySlot.get(slotId)?.treeGuid;
+    const document = treeGuid ? this.documents.get(treeGuid) : undefined;
+    if (previous && document) {
+      this.assetGuid = treeGuid!;
+      for (const node of document.nodes) {
+        if (node.kind === "task" && previous.lastResults[node.id] === "running") {
+          this.abortTask(actor, node, previous.blackboard, previous.nodeMemory[node.id] ?? {}, dtSeconds);
+        }
+      }
+      this.assetGuid = null;
+    }
+    this.evalBySlot.delete(slotId);
+    this.sourceBySlot.delete(slotId);
+    this.lastState.delete(slotId);
+    this.playAnimOwnedSlots.delete(slotId);
   }
 
   /** `bt.debug` console toggle. */

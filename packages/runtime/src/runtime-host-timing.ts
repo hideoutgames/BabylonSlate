@@ -1,5 +1,5 @@
 import type { BObject } from "@babylonslate/object-model";
-import type { LatentDelays } from "./latent-delays";
+import { DelayOwnerDestroyed, type LatentDelays } from "./latent-delays";
 import type { ScriptHostServices } from "./script-host";
 import type { TweenRuntime } from "./tween-runtime";
 
@@ -25,7 +25,10 @@ export function createTimingHostBindings(deps: TimingHostDeps): Pick<ScriptHostS
       new Promise<void>((resolve) => {
         if (deps.stopped()) { resolve(); return; }
         deps.delays.add(seconds, resolve, owner);
+      }).then(() => {
+        if (owner?.destroyed && !deps.stopped()) throw new DelayOwnerDestroyed();
         // A boundary requested after the timer fired still holds the continuation.
-      }).then(() => deps.continueSimulation(owner ?? null)),
+        return deps.continueSimulation(owner ?? null);
+      }),
   };
 }
