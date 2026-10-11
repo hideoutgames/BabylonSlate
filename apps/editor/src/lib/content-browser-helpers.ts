@@ -43,7 +43,6 @@ import {
   createDefaultSaveGameDefinition,
   isInputAssetType,
   createDefaultSceneLayer,
-  isLegacyMaterialAssetType,
   isMaterialTextureAssetType,
 } from "@babylonslate/core";
 import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
@@ -1889,7 +1888,7 @@ export function materialAssetDependencies(
   assetType: string,
   payload: Record<string, unknown>,
 ): string[] {
-  if (assetType === "Material" || isLegacyMaterialAssetType(assetType)) {
+  if (assetType === "Material") {
     return materialDependencies(normalizeMaterialDocument(payload)).all;
   }
   if (assetType === "MaterialFunction") {
@@ -2093,7 +2092,7 @@ export function materialHeaderMeta(
     const instance = normalizeMaterialInstanceDocument(payload);
     return { domain: instance.domain, parentGuid: instance.parentGuid };
   }
-  if (assetType !== "Material" && !isLegacyMaterialAssetType(assetType)) {
+  if (assetType !== "Material") {
     return undefined;
   }
   return {

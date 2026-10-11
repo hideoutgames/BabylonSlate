@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   CONTENT_BROWSER_ID,
   assetTypeForDocumentKind,
-  assetTypeForDocumentSave,
   createDocumentRef,
   createEmptyLayouts,
   documentId,
@@ -15,10 +14,8 @@ import {
 } from "./document";
 
 describe("P9 document kinds", () => {
-  it("opens legacy Shader assets and imported Material assets as Material documents", () => {
+  it("opens Material assets as Material documents", () => {
     expect(documentKindForAssetType("Material")).toBe("material");
-    expect(documentKindForAssetType("Shader")).toBe("material");
-    expect(documentKindForAssetType("ShaderGraph")).toBe("material");
     expect(documentKindForAssetType("MaterialFunction")).toBe(
       "material-function",
     );
@@ -26,7 +23,6 @@ describe("P9 document kinds", () => {
 
   it("saves a Material document under the canonical header type", () => {
     expect(assetTypeForDocumentKind("material")).toBe("Material");
-    expect(assetTypeForDocumentSave("material", "Shader")).toBe("Material");
     expect(assetTypeForDocumentKind("material-function")).toBe(
       "MaterialFunction",
     );
@@ -35,7 +31,6 @@ describe("P9 document kinds", () => {
   it("strips material file suffixes from tab labels", () => {
     expect(labelFromPath("assets/Rock.material.babasset")).toBe("Rock");
     expect(labelFromPath("assets/Tint.matfunc.babasset")).toBe("Tint");
-    expect(labelFromPath("assets/Legacy.shader.babasset")).toBe("Legacy");
     expect(labelFromPath("assets/Depth.rendertarget.babasset")).toBe("Depth");
     expect(labelFromPath("assets/Depth Image.rendertargettexture.babasset")).toBe("Depth Image");
   });
@@ -49,7 +44,7 @@ describe("P9 document kinds", () => {
       const ref = createDocumentRef(mapped, path);
       expect(parseDocumentId(documentId(ref))).toEqual({ kind, path });
       expect(ref.label).toBe(label);
-      expect(assetTypeForDocumentSave(mapped)).toBe(type);
+      expect(assetTypeForDocumentKind(mapped)).toBe(type);
     }
   });
 
@@ -115,8 +110,8 @@ describe("P9 document kinds", () => {
   });
 
   it("parses document ids and labels compound suffixes", () => {
-    expect(labelFromPath("assets/player_hud.ui.babasset")).toBe("Player Hud");
-    expect(labelFromPath("assets/scene_tools.eui.babasset")).toBe("Scene Tools");
+    expect(labelFromPath("assets/player_hud.scenelayer.babasset")).toBe("Player Hud");
+    expect(labelFromPath("assets/move_input.inputaction.babasset")).toBe("Move Input");
   });
 });
 

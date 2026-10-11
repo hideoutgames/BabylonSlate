@@ -164,27 +164,6 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
   }
 }
 
-/**
- * A legacy `Shader` asset opens as a Material document and is rewritten to the
- * canonical `Material` header type on save, which the migrate-on-save approval
- * flow gates. Its `.shader.babasset` path is deliberately left alone so open
- * documents, layout ids, references and source-control locks stay valid.
- */
-export function assetTypeForDocumentSave(
-  kind: AssetDocumentKind,
-  existingType?: string | null,
-): string {
-  void existingType;
-  return assetTypeForDocumentKind(kind);
-}
-
-/** Header types that open as a Material document. */
-export const LEGACY_MATERIAL_ASSET_TYPES = ["Shader", "ShaderGraph"] as const;
-
-export function isLegacyMaterialAssetType(type: string): boolean {
-  return (LEGACY_MATERIAL_ASSET_TYPES as readonly string[]).includes(type);
-}
-
 export function documentKindForAssetType(type: string): AssetDocumentKind | null {
   switch (type) {
     case "Scene":
@@ -211,8 +190,6 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
     case "SaveGame":
       return "save-game";
     case "Material":
-    case "Shader":
-    case "ShaderGraph":
       return "material";
     case "MaterialFunction":
       return "material-function";
@@ -422,7 +399,7 @@ export function labelFromPath(path: string): string {
       .split("/")
       .pop()
       ?.replace(
-        /\.(inputaction|inputaxis|scene|scenelayer|graph|prefab|eui|ui|spriteanim|sprite|anim|shader|material|matfunc|class|tileset|tilemap|datadefinition|datatree|plugin|mixer|channel|atten|emitter|particlegraph|particles|skyboxcreator|rendertargettexture|rendertarget|savegame)\.(babasset|json)$/i,
+        /\.(inputaction|inputaxis|scene|scenelayer|prefab|spriteanim|sprite|anim|material|matfunc|class|tileset|tilemap|datadefinition|datatree|plugin|mixer|channel|atten|emitter|particlegraph|particles|skyboxcreator|rendertargettexture|rendertarget|savegame)\.(babasset|json)$/i,
         "",
       )
       .replace(/\.babasset$/i, "")

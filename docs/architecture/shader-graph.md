@@ -70,11 +70,8 @@ Aliases are catalog metadata and are not stored in authored graph properties.
 | `MaterialFunction` | `material-function` | `.matfunc.babasset` |
 | `MaterialInstance` | `material-instance` | `.matinst.babasset` |
 
-`documentKindForAssetType` also opens legacy `Shader` / `ShaderGraph` headers
-and imported `Material` stubs as `material`. Saving rewrites the header to
-`Material` through the existing migrate-on-save approval. Paths are **not**
-renamed, so `.shader.babasset` files keep working and their layout ids,
-references and Git LFS locks stay valid.
+Imported `Material` stubs open as `material` too. The removed `Shader` /
+`ShaderGraph` header types no longer open as Material documents.
 
 `MaterialDocument` (v3) carries `domain` (`surface` | `postProcess` | `particle`),
 `shadingModel`, `blendMode`, `twoSided`, `defaultNormals`, `alphaCutoff`, `preview` and the graph.

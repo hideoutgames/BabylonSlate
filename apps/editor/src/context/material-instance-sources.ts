@@ -5,7 +5,6 @@ import {
   normalizeMaterialInstanceDocument,
   type MaterialSource,
 } from "@babylonslate/shader-graph";
-import { isLegacyMaterialAssetType } from "@babylonslate/core";
 import { useDocumentActions, useRegistryState } from "./document-context";
 import {
   MATERIAL_DOCUMENT_KINDS,
@@ -62,7 +61,7 @@ export function useMaterialInstanceSources(
           const document = normalizeMaterialInstanceDocument(content, asset.header.name);
           next.set(guid, { kind: "instance", document });
           guid = document.parentGuid;
-        } else if (asset.header.type === "Material" || isLegacyMaterialAssetType(asset.header.type)) {
+        } else if (asset.header.type === "Material") {
           next.set(guid, { kind: "material", document: normalizeMaterialDocument(content, asset.header.name) });
           break;
         } else break;
