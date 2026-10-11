@@ -1,5 +1,5 @@
 import type { AbstractMesh, Scene } from "@babylonjs/core";
-import { Constants } from "@babylonjs/core";
+import { Camera, Constants, Matrix } from "@babylonjs/core";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { LogicalGeometryTask } from "./framegraph-logical-buffers";
@@ -9,6 +9,7 @@ export type GpuPickResult = AbstractMesh | null | undefined;
 
 const READY_TIMEOUT_MS = 1000;
 const READY_POLL_MS = 16;
+const PICK_TARGET_SIZE = { width: 1, height: 1 } as const;
 
 /** Same eligibility as Babylon's default `scene.pick` predicate. */
 export function gpuPickableMeshes(scene: Scene): AbstractMesh[] {
@@ -23,10 +24,24 @@ export function decodeObjectId(pixel: ArrayLike<number>): number {
 }
 
 /**
- * Read-back row for a top-down pick pixel. WebGL reads bottom-up, WebGPU top-down.
+ * Narrow `projection` to pixel (`px`, `py`) of a top-down `width` × `height`
+ * view: clip x/y are scaled and shifted in proportion to w, so that pixel's
+ * centre lands on the centre of a 1×1 target. Depth and the sample position
+ * are unchanged, so the single texel matches that pixel of a full-view pass.
  */
-export function objectIdReadRow(pixelY: number, height: number, webgpu: boolean): number {
-  return webgpu ? pixelY : height - pixelY - 1;
+export function pickPixelProjection(
+  projection: Matrix, px: number, py: number, width: number, height: number, result = new Matrix(),
+): Matrix {
+  const centreX = (2 * (px + 0.5)) / width - 1;
+  const centreY = 1 - (2 * (py + 0.5)) / height;
+  // Babylon multiplies row vectors: clip' = clip × region.
+  const region = Matrix.FromValues(
+    width, 0, 0, 0,
+    0, height, 0, 0,
+    0, 0, 1, 0,
+    -centreX * width, -centreY * height, 0, 1,
+  );
+  return projection.multiplyToRef(region, result);
 }
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -35,12 +50,16 @@ const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, 
  * Pick through each mesh's own material in a one-shot geometry pass writing
  * Babylon's object-ID texture. Vertex deformation (skinning, morphs, lattice,
  * water, node-material offsets) therefore matches what is drawn, unlike the
- * CPU ray against bind-pose geometry. Coordinates are `scene.pick` pixels.
+ * CPU ray against bind-pose geometry. Only the tapped pixel is rendered: a
+ * pick projection fills 1×1 object-ID and depth targets with it, so the pass
+ * costs one texel regardless of viewport size. Coordinates are `scene.pick`
+ * pixels.
  */
 export async function gpuPickMesh(scene: Scene, x: number, y: number): Promise<GpuPickResult> {
   const engine = scene.getEngine();
   const camera = scene.activeCamera;
   if (!camera || typeof engine._readTexturePixels !== "function") return undefined;
+  if (camera.cameraRigMode !== Camera.RIG_MODE_NONE) return undefined;
   const viewport = camera.viewport;
   if (viewport.x !== 0 || viewport.y !== 0 || viewport.width !== 1 || viewport.height !== 1) return undefined;
   const width = engine.getRenderWidth();
@@ -58,7 +77,7 @@ export async function gpuPickMesh(scene: Scene, x: number, y: number): Promise<G
   scene.removeFrameGraph(graph);
   try {
     const depth = graph.textureManager.createRenderTargetTexture("GPU Pick Depth", {
-      size: { width, height },
+      size: PICK_TARGET_SIZE,
       sizeIsPercentage: false,
       options: {
         createMipMaps: false,
@@ -74,11 +93,13 @@ export async function gpuPickMesh(scene: Scene, x: number, y: number): Promise<G
     clear.clearDepth = true;
     clear.clearStencil = false;
     graph.addTask(clear);
-    const geometry = new LogicalGeometryTask("GPU Pick Object IDs", graph, scene, { doNotChangeAspectRatio: false });
+    // The pass supplies its own pick projection: keep the renderer from
+    // recomputing the camera projection with the 1×1 target's aspect ratio.
+    const geometry = new LogicalGeometryTask("GPU Pick Object IDs", graph, scene, { doNotChangeAspectRatio: true });
     geometry.camera = camera;
     geometry.objectList = { meshes, particleSystems: [] };
     geometry.depthTexture = clear.outputDepthTexture;
-    geometry.size = { width, height };
+    geometry.size = { ...PICK_TARGET_SIZE };
     geometry.sizeIsPercentage = false;
     geometry.samples = 1;
     geometry.dontRenderWhenMaterialDepthWriteIsDisabled = false;
@@ -89,6 +110,12 @@ export async function gpuPickMesh(scene: Scene, x: number, y: number): Promise<G
       textureType: Constants.TEXTURETYPE_UNSIGNED_BYTE,
       textureFormat: Constants.TEXTUREFORMAT_RGBA,
     });
+    const renderer = geometry.objectRenderer;
+    renderer.dontSetTransformationMatrix = true;
+    let pickProjection: Matrix | undefined;
+    renderer.onInitRenderingObservable.add(() => {
+      if (pickProjection) scene.setTransformMatrix(camera.getViewMatrix(), pickProjection);
+    });
     graph.addTask(geometry);
     await graph.buildAsync(false);
     const deadline = performance.now() + READY_TIMEOUT_MS;
@@ -96,13 +123,21 @@ export async function gpuPickMesh(scene: Scene, x: number, y: number): Promise<G
       if (performance.now() > deadline) return undefined;
       await wait(READY_POLL_MS);
     }
-    graph.execute();
+    // Between frames no target is bound, so this is the projection the canvas
+    // was drawn with (full-view aspect ratio).
+    pickProjection = pickPixelProjection(camera.getProjectionMatrix(), px, py, width, height);
+    try {
+      graph.execute();
+    } finally {
+      // The pass rendered with the scene's own camera, so Babylon does not
+      // restore the scene matrices; put the camera's projection back.
+      scene.setTransformMatrix(camera.getViewMatrix(), camera.getProjectionMatrix());
+    }
     const texture = graph.textureManager.getTextureFromHandle(geometry.geometryObjectIdTexture);
     if (!texture) return undefined;
+    // One texel: WebGL's bottom-up and WebGPU's top-down rows coincide.
     const pixel = new Uint8Array(engine.isWebGPU ? 256 : 4);
-    await engine._readTexturePixels(
-      texture, 1, 1, -1, 0, pixel, true, true, px, objectIdReadRow(py, height, engine.isWebGPU),
-    );
+    await engine._readTexturePixels(texture, 1, 1, -1, 0, pixel, true, true, 0, 0);
     const id = decodeObjectId(pixel);
     return id === 0 ? null : meshes[id - 1] ?? null;
   } catch {
