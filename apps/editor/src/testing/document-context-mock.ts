@@ -191,8 +191,6 @@ function inertDocuments(current: () => DocumentsValue | undefined): DocumentsVal
     setActiveDocument: noop,
     reorderTabs: noop,
     reorderClosableTabs: noop,
-    updateScene: noop,
-    updateGraph: noop,
     applyGraphChange: async () => false,
     reparentClassDocument: async () => null,
     applySceneChange: async () => false,

@@ -440,8 +440,6 @@ interface DocumentContextValue {
   setActiveDocument: (id: string) => void;
   reorderTabs: (fromIndex: number, toIndex: number) => void;
   reorderClosableTabs: (fromIndex: number, toIndex: number) => void;
-  updateScene: (id: string, scene: SerializedScene) => void;
-  updateGraph: (id: string, graph: SerializedGraph) => void;
   /** Apply a graph edit through the command layer (marks dirty + undoable). */
   applyGraphChange: (id: string, next: SerializedGraph) => Promise<boolean>;
   /**
@@ -2767,24 +2765,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [bump, documentService],
   );
 
-  const updateScene = useCallback(
-    (id: string, scene: SerializedScene) => {
-      if (documentService.getAuthoringLock().readOnly) return;
-      documentService.updateScene(id, scene);
-      bump();
-    },
-    [bump, documentService],
-  );
-
-  const updateGraph = useCallback(
-    (id: string, graph: SerializedGraph) => {
-      if (documentService.getAuthoringLock().readOnly) return;
-      documentService.updateGraph(id, graph);
-      bump();
-    },
-    [bump, documentService],
-  );
-
   const updateProjectVersion = useCallback((version: string) => {
     if (documentService.getAuthoringLock().readOnly) return;
     setProjectDocument(current => current ? {
@@ -3825,8 +3805,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setActiveDocument,
       reorderTabs,
       reorderClosableTabs,
-      updateScene,
-      updateGraph,
       applyGraphChange,
       reparentClassDocument,
       applySceneChange,
@@ -3946,8 +3924,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setActiveDocument,
       reorderTabs,
       reorderClosableTabs,
-      updateScene,
-      updateGraph,
       applyGraphChange,
       reparentClassDocument,
       applySceneChange,
