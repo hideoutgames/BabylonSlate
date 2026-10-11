@@ -130,6 +130,8 @@ describe("NumberPromptDialog", () => {
     const input = screen.getByTestId("number-prompt-input");
     fireEvent.change(input, { target: { value: "40" } });
     fireEvent.change(input, { target: { value: "40/" } });
+    // Clicking, tapping or tabbing to Save blurs the field before activation.
+    fireEvent.blur(input);
     fireEvent.click(screen.getByTestId("number-prompt-confirm"));
 
     expect(onSubmit).not.toHaveBeenCalled();

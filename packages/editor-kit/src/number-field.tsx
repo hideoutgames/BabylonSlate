@@ -25,8 +25,9 @@ export interface NumberFieldProps extends Omit<
   onEnter?: (value: number) => void;
   /**
    * Receives a function that finishes the draft as Enter does: it returns the
-   * clamped value, or undefined after explaining an invalid draft. A host
-   * confirm button calls it instead of trusting the last live `onChange`.
+   * clamped value, or undefined after explaining an invalid draft and until
+   * the next edit. A host confirm button calls it instead of trusting the
+   * last live `onChange`.
    */
   finishRef?: Ref<() => number | undefined>;
   min?: number;
@@ -77,6 +78,9 @@ export function NumberField({
     parseNumberInput(raw) ??
     evaluateNumericExpression(raw, baselineRef.current);
   const finishDraft = (): number | undefined => {
+    // A rejected draft stays rejected until the next edit, so a confirm button
+    // that blurred the field first cannot submit the restored value.
+    if (draft === null && feedback?.invalid) return undefined;
     const parsed = parseDraft(draft ?? String(value));
     setDraft(null);
     if (parsed === undefined) {
