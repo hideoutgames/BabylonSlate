@@ -84,7 +84,7 @@ export function MultilineTextField({
         }}
       >
         <DialogContent
-          className={cn("flex max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none", code ? "h-[min(720px,80dvh)] w-[min(960px,calc(100vw-32px))] rounded-md" : "editor-dialog-large")}
+          className={cn("editor-dialog-large flex max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none", code && "rounded-md")}
           data-testid={testId ? `${testId}-dialog` : undefined}
         >
           <DialogHeader className={cn("shrink-0 border-b pr-14", code ? "min-h-11 px-3 py-2" : "min-h-14 px-4 py-3")}>
