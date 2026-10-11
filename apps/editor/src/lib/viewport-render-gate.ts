@@ -185,12 +185,13 @@ function mutationsMayAffectOverlays(records: readonly MutationRecord[]): boolean
   return false;
 }
 
+/**
+ * A closing overlay carries `data-closed`; an unmounted one is `hidden`.
+ * `aria-hidden` is not a closed state: an open modal marks everything outside
+ * its popup aria-hidden, its own backdrop included.
+ */
 function overlayIsOpen(el: Element): boolean {
-  if (el.hasAttribute("data-closed") || el.hasAttribute("hidden")) {
-    return false;
-  }
-  if (el.getAttribute("aria-hidden") === "true") return false;
-  return true;
+  return !el.hasAttribute("data-closed") && !el.hasAttribute("hidden");
 }
 
 export type EditorCanvasRect = {
@@ -283,7 +284,7 @@ export function attachViewportRenderGate(options: {
     childList: true,
     subtree: true,
     attributes: true,
-    attributeFilter: ["data-open", "data-closed", "hidden", "aria-hidden", "data-slot"],
+    attributeFilter: ["data-open", "data-closed", "hidden", "data-slot"],
   });
 
   let settingsVersion = -1;

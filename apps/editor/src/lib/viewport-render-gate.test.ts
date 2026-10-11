@@ -1,4 +1,7 @@
+import { createElement } from "react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { Dialog, DialogContent, DialogTitle } from "@babylonslate/ui/components/dialog";
 import { RenderScheduler } from "@babylonslate/render/render-scheduler";
 import {
   attachViewportRenderGate,
@@ -150,6 +153,30 @@ describe("attachViewportRenderGate", () => {
     portal.remove();
     await Promise.resolve();
     expect(scheduler.shouldRender(50)).toBe(true);
+    detach();
+  });
+
+  it("freezes while an editor Dialog is open", async () => {
+    const canvas = document.createElement("canvas");
+    Object.defineProperty(canvas, "clientWidth", { value: 200 });
+    Object.defineProperty(canvas, "clientHeight", { value: 120 });
+    document.body.append(canvas);
+    const scheduler = new RenderScheduler();
+    scheduler.setAlwaysRender(true);
+    const detach = attachViewportRenderGate({ canvas, scheduler });
+    const dialog = (open: boolean) =>
+      createElement(Dialog, { open }, createElement(DialogContent, null, createElement(DialogTitle, null, "Project Settings")));
+
+    // A modal Dialog marks everything outside its popup, its own backdrop
+    // included, aria-hidden while it is open.
+    const view = render(dialog(true));
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeTruthy());
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    expect(scheduler.shouldRender(0)).toBe(false);
+
+    view.rerender(dialog(false));
+    await waitFor(() => expect(scheduler.shouldRender(0)).toBe(true));
+    view.unmount();
     detach();
   });
 
