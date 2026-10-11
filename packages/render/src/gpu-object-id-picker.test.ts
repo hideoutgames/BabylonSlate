@@ -18,10 +18,10 @@ describe("pickPixelProjection", () => {
 
   for (const [mode, projection] of Object.entries(projections)) {
     it(`maps only the tapped ${mode} pixel onto the 1×1 target with unchanged depth`, () => {
-      // View-space points near the corners and edges of the frame.
+      // View-space points near the corners and edges of the frame, off pixel boundaries.
       const points = [
-        new Vector3(-2.95, 1.97, 7), new Vector3(2.96, -1.98, 7.5),
-        new Vector3(2.9, 1.95, 7.2), new Vector3(-2.97, -0.4, 6.8), new Vector3(0.3, -1.99, 7),
+        new Vector3(-2.951, 1.971, 7), new Vector3(2.961, -1.983, 7.5),
+        new Vector3(2.903, 1.953, 7.2), new Vector3(-2.968, -0.41, 6.8), new Vector3(0.31, -1.991, 7),
       ];
       for (const point of points) {
         const ndc = Vector3.TransformCoordinates(point, projection);

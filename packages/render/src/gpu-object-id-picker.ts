@@ -112,10 +112,9 @@ export async function gpuPickMesh(scene: Scene, x: number, y: number): Promise<G
     });
     const renderer = geometry.objectRenderer;
     renderer.dontSetTransformationMatrix = true;
-    let pickProjection: Matrix | undefined;
-    renderer.onInitRenderingObservable.add(() => {
-      if (pickProjection) scene.setTransformMatrix(camera.getViewMatrix(), pickProjection);
-    });
+    // Filled just before execute(); initRender runs only inside execute().
+    const pickProjection = new Matrix();
+    renderer.onInitRenderingObservable.add(() => scene.setTransformMatrix(camera.getViewMatrix(), pickProjection));
     graph.addTask(geometry);
     await graph.buildAsync(false);
     const deadline = performance.now() + READY_TIMEOUT_MS;
@@ -125,7 +124,7 @@ export async function gpuPickMesh(scene: Scene, x: number, y: number): Promise<G
     }
     // Between frames no target is bound, so this is the projection the canvas
     // was drawn with (full-view aspect ratio).
-    pickProjection = pickPixelProjection(camera.getProjectionMatrix(), px, py, width, height);
+    pickPixelProjection(camera.getProjectionMatrix(), px, py, width, height, pickProjection);
     try {
       graph.execute();
     } finally {
