@@ -14,3 +14,15 @@ export function samePlainData(a: unknown, b: unknown): boolean {
   const keys = Object.keys(left);
   return keys.length === Object.keys(right).length && keys.every((key) => Object.hasOwn(right, key) && samePlainData(left[key], right[key]));
 }
+
+/**
+ * Copy of the arrays and plain objects inside `value`. Any other object, such as
+ * a live actor or component, stays the same reference.
+ */
+export function copyPlainData<T>(value: T): T {
+  if (Array.isArray(value)) return value.map(copyPlainData) as T;
+  if (!value || typeof value !== "object") return value;
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return value;
+  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, copyPlainData(entry)])) as T;
+}

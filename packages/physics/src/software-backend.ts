@@ -605,12 +605,20 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
    * Pushes overlapping solid shapes apart along their least-penetrating axis,
    * for the same pairs that report contacts (layer/mask both ways, distinct
    * owners). Dynamic pairs share the correction by inverse mass; any approaching
-   * velocity along that axis is removed. Boxes are rebuilt from the current
-   * poses, so each correction sees the earlier ones.
+   * velocity along that axis is removed. A box is rebuilt only after a
+   * correction moves its body, so each correction sees the earlier ones.
    */
   private separateOverlaps(): void {
     const axes = this.kind === "3d" ? AXES_3D : AXES_2D;
-    const solids: Array<{ desc: ColliderDesc; body: BodyState; actorId: string; inverseMass: number }> = [];
+    type Solid = {
+      desc: ColliderDesc;
+      body: BodyState;
+      actorId: string;
+      inverseMass: number;
+      box: { min: Vec3; max: Vec3 } | null;
+      boxMoves: number;
+    };
+    const solids: Solid[] = [];
     for (const collider of this.colliders.values()) {
       const body = this.bodies.get(collider.desc.bodyId);
       if (!body || collider.desc.isTrigger) continue;
@@ -619,8 +627,20 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
         body,
         actorId: collider.desc.actorId ?? body.desc.actorId,
         inverseMass: body.desc.motionType === "dynamic" ? 1 / Math.max(body.desc.mass, 1e-6) : 0,
+        box: null,
+        boxMoves: 0,
       });
     }
+    // Corrections applied to each body so far; a cached box from fewer is stale.
+    const moves = new Map<BodyState, number>();
+    const boxOf = (solid: Solid) => {
+      const bodyMoves = moves.get(solid.body) ?? 0;
+      if (!solid.box || solid.boxMoves !== bodyMoves) {
+        solid.box = aabbForCollider(solid.desc, solid.body.transform);
+        solid.boxMoves = bodyMoves;
+      }
+      return solid.box;
+    };
     for (let i = 0; i < solids.length; i++) {
       const a = solids[i]!;
       if (a.inverseMass === 0) continue;
@@ -630,16 +650,14 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
         if (j === i || (b.inverseMass > 0 && j < i)) continue;
         if (a.body === b.body || a.actorId === b.actorId) continue;
         if (!(a.desc.layer & b.desc.mask) || !(b.desc.layer & a.desc.mask)) continue;
-        const separation = separationAxis(
-          aabbForCollider(a.desc, a.body.transform),
-          aabbForCollider(b.desc, b.body.transform),
-          axes,
-        );
+        const separation = separationAxis(boxOf(a), boxOf(b), axes);
         if (!separation) continue;
         const { axis, sign, depth } = separation;
         const total = a.inverseMass + b.inverseMass;
         a.body.transform.position[axis] += (sign * depth * a.inverseMass) / total;
         b.body.transform.position[axis] -= (sign * depth * b.inverseMass) / total;
+        moves.set(a.body, (moves.get(a.body) ?? 0) + 1);
+        if (b.inverseMass > 0) moves.set(b.body, (moves.get(b.body) ?? 0) + 1);
         // Bodies that are not dynamic do not integrate a velocity here.
         const approach =
           sign * (a.body.linearVelocity[axis] - (b.inverseMass > 0 ? b.body.linearVelocity[axis] : 0));

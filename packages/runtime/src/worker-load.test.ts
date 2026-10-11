@@ -13,9 +13,11 @@ vi.mock("./play-load", async (importOriginal) => ({
 }));
 
 let send: ((control: ControlMessage) => void) | undefined;
-afterEach(() => {
+afterEach(async () => {
   send?.({ type: "stop" });
   send = undefined;
+  // The stopped worker reports it a task later; let that land before the stubs go.
+  await new Promise((resolve) => setTimeout(resolve, 0));
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });

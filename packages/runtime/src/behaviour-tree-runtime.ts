@@ -21,7 +21,7 @@ import {
 } from "./actor-world-transform";
 import { blackboardInspectTypes, blackboardTargetPosition, snapshotBlackboard } from "./bt-blackboard";
 import type { RuntimeDiagnostic } from "./diagnostics";
-import { samePlainData } from "./plain-data";
+import { copyPlainData, samePlainData } from "./plain-data";
 import { navPointFromUnknown, type RuntimeNavigation } from "./runtime-navigation";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 import type { ScriptHost } from "./script-host";
@@ -231,9 +231,10 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     const document = this.blackboards.get(guid);
     if (!document) return {};
     const values: BlackboardValues = {};
-    // Each evaluation owns its values: an object default is never shared with the document or another actor.
+    // Each evaluation owns its data: an object default is never shared with the document or another actor,
+    // while a live actor or component default still refers to that object.
     for (const key of document.keys) {
-      if (key.defaultValue !== undefined) values[key.name] = structuredClone(key.defaultValue);
+      if (key.defaultValue !== undefined) values[key.name] = copyPlainData(key.defaultValue);
     }
     return values;
   }

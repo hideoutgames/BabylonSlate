@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from "vitest";
 import { Camera, FreeCamera, NullEngine, Scene, Vector3 } from "@babylonjs/core";
-import { DEFAULT_RENDER_EFFECTS } from "@babylonslate/core";
+import { DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, qualityPresetPatch } from "@babylonslate/core";
 import { EffectCompileFailure } from "./effect-compile-failure";
 import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
 import { createSpatialStages, type SpatialStage } from "./spatial-effects";
@@ -18,7 +18,10 @@ function stagesFor(effects: Partial<typeof DEFAULT_RENDER_EFFECTS>, failure?: Ef
   const scene = new Scene(engine);
   const camera = new FreeCamera("camera", new Vector3(0, 2, -6), scene);
   camera.mode = mode;
-  updateSceneRenderingSettings(scene, { mode: "pbr", effects: { ...DEFAULT_RENDER_EFFECTS, ...effects } });
+  // High is the lowest Post Processing tier that allows every screen-space effect.
+  updateSceneRenderingSettings(scene, {
+    mode: "pbr", effects: { ...DEFAULT_RENDER_EFFECTS, ...effects }, quality: normalizeRenderingQuality(qualityPresetPatch("high")),
+  });
   const stages = createSpatialStages(scene, camera, sceneRenderingSettings(scene).effectsPlan!, 64, 64, failure);
   disposers.push(() => { for (const stage of stages) stage.wrapper.dispose(); scene.dispose(); engine.dispose(); });
   return stages;

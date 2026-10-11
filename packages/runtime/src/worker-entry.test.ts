@@ -319,10 +319,11 @@ describe("worker entry snapshot transport", () => {
       const layoutAt = kinds().indexOf("snapshotLayout");
       const layout = posts[layoutAt]!;
       if (layout.kind !== "command" || layout.command.type !== "snapshotLayout") throw new Error("missing layout");
-      await settleFrame();
-      const resumed = posts.slice(layoutAt).flatMap((post) => post.kind === "snapshot" ? [post] : []);
-      expect(resumed.length).toBeGreaterThan(0);
-      expect(resumed[0]!.buffer.byteLength).toBe(snapshotFloatCount(layout.command.capacity) * 4);
+      // Realization may still be spawning when the layout lands; poses resume once it finishes.
+      const resumed = () => posts.slice(layoutAt).flatMap((post) => post.kind === "snapshot" ? [post] : []);
+      for (let i = 0; i < 100 && resumed().length === 0; i++) await settleFrame();
+      expect(resumed().length).toBeGreaterThan(0);
+      expect(resumed()[0]!.buffer.byteLength).toBe(snapshotFloatCount(layout.command.capacity) * 4);
     } finally {
       restoreGrow();
     }
