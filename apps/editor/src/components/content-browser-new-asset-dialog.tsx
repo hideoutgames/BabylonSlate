@@ -219,9 +219,8 @@ export function ContentBrowserNewAssetDialog({
       <DialogContent
         data-testid="content-browser-new-asset-dialog"
         initialFocus={bodyRef}
-        className={cn(
-          "editor-dialog-large flex max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none",
-        )}
+        className="editor-dialog-large max-w-none sm:max-w-none"
+        bodyClassName="flex flex-col gap-0 overflow-hidden p-0"
       >
         <DialogHeader className="min-h-14 shrink-0 border-b px-4 py-3 pr-12">
           <DialogTitle>New Asset</DialogTitle>

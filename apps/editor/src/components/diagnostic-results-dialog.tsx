@@ -396,7 +396,7 @@ export default function DiagnosticResultsDialog({ store }: { store: DiagnosticRe
   };
   const status = state.active === "profile" ? "Recording…" : state.active === "frame" ? "Capturing…" : state.mode === "play" ? "Play Session" : state.mode === "preview" ? "Preview Build" : state.mode === "simulate" ? "Simulate" : "No Session";
   return <Dialog open={state.open} onOpenChange={open => { if (!open) store.close(); }}>
-    <DialogContent className="flex h-[min(90dvh,900px)] max-w-[calc(100%-1rem)] flex-col gap-0 overflow-hidden rounded-md p-0 sm:max-w-6xl" showCloseButton={false}>
+    <DialogContent className="h-[min(90dvh,900px)] max-w-[calc(100%-1rem)] rounded-md sm:max-w-6xl" bodyClassName="flex flex-col gap-0 overflow-hidden p-0" showCloseButton={false}>
       <div className="flex h-8 shrink-0 items-center gap-2 border-b bg-panel-header pr-1 pl-2">
         <DialogTitle className="text-sm font-medium">Profiler and Frame Debugger</DialogTitle>
         <span className={cn("text-xs", state.active ? "text-destructive" : "text-muted-foreground")}>{status}</span>

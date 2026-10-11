@@ -40,7 +40,8 @@ export function PreviewSessionReport({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="flex max-h-[min(32rem,80vh)] w-full flex-col gap-3 sm:max-w-lg"
+        className="max-h-[min(32rem,80vh)] w-full sm:max-w-lg"
+        bodyClassName="flex flex-col gap-3"
         data-testid="preview-session-report"
       >
         <DialogHeader>

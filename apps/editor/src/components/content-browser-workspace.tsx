@@ -2508,7 +2508,7 @@ function ContentBrowserWorkspaceBody({
             </SheetTrigger>
             <SheetContent
               side="left"
-              className="gap-0"
+              bodyClassName="gap-0"
               data-testid="content-browser-folders-sheet"
             >
               <SheetHeader>

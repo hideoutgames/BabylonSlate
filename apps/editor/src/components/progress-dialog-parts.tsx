@@ -20,6 +20,7 @@ export type ProgressDialogContentProps = ComponentProps<typeof DialogContent> & 
 export function ProgressDialogContent({
   failed = false,
   className,
+  bodyClassName,
   overlayClassName,
   ...props
 }: ProgressDialogContentProps) {
@@ -33,8 +34,9 @@ export function ProgressDialogContent({
         "bg-popover/30 data-open:duration-250 data-open:delay-300 data-open:fill-mode-both data-closed:duration-150",
         overlayClassName,
       )}
+      bodyClassName={cn("gap-3 p-4", bodyClassName)}
       className={cn(
-        "gap-3 p-4 data-open:duration-250 data-open:delay-300 data-open:fill-mode-both data-closed:duration-150 data-open:zoom-in-[0.98]",
+        "data-open:duration-250 data-open:delay-300 data-open:fill-mode-both data-closed:duration-150 data-open:zoom-in-[0.98]",
         failed ? "sm:max-w-sm" : "sm:max-w-xs",
         className,
       )}
