@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MoveNodeCommand } from "./commands/graph";
+import { SetActorsTransformsCommand } from "./commands/scene";
 import { SetAssetDocumentCommand } from "./commands/asset-document";
 import type { EditCommand } from "./command";
 import {
@@ -84,6 +85,30 @@ describe("journal coalescing", () => {
       new SetAssetDocumentCommand({ ...initial, opacity: 0.5 }, { ...initial, waveHeight: 3, opacity: 0.5 }, "water:waveHeight"),
     ].map((command) => journalRecord(docId, command));
     expect(coalesceJournalLines(otherField[0]!, otherField[1]!)).toBeNull();
+  });
+
+  it("folds a multi-select transform drag into one record that recovers the same scene", () => {
+    const sceneId = "scene:assets/Main.scene.babasset";
+    const initial = createDefaultScene();
+    initial.actors.push(createActor("a", "A"), createActor("b", "B"));
+    const pose = (x: number) => ({ position: [x, 0, 0] as [number, number, number], rotation: [0, 0, 0, 1] as [number, number, number, number], scale: [1, 1, 1] as [number, number, number] });
+    const step = (from: number, to: number) => new SetActorsTransformsCommand(
+      ["a", "b"].map((actorId) => ({ actorId, from: pose(from), to: pose(to) })),
+    );
+    const records = [step(0, 1), step(1, 4), step(4, 9)].map((command) => journalRecord(sceneId, command));
+    const folded = fold(records);
+    expect(folded).toHaveLength(1);
+    expect(folded[0]!.command.entries).toEqual(
+      ["a", "b"].map((actorId) => ({ actorId, from: pose(0), to: pose(9) })),
+    );
+    const replay = (lines: JournalLine[]) =>
+      replayJournalLines(lines.map(serializeJournalLine), new Map([[sceneId, initial]])).documents.get(sceneId);
+    expect(replay(folded)).toEqual(replay(records));
+
+    const otherActors = journalRecord(sceneId, new SetActorsTransformsCommand(
+      ["a", "c"].map((actorId) => ({ actorId, from: pose(9), to: pose(10) })),
+    ));
+    expect(coalesceJournalLines(records[2]!, otherActors)).toBeNull();
   });
 });
 

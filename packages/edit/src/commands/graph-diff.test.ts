@@ -161,6 +161,37 @@ describe("diffGraphCommands", () => {
     expect(set.to).toEqual(after.functionGraphs);
   });
 
+  it("makes a pin scrub inside one function graph one undo step", () => {
+    const withValue = (graph: SerializedGraph, value: number): SerializedGraph => ({
+      ...graph,
+      functionGraphs: {
+        ...graph.functionGraphs,
+        jump: {
+          nodes: [{ id: "n", type: "math.add", position: { x: 0, y: 0 }, data: { b: value } }],
+          edges: [],
+        },
+      },
+    });
+    const before = withValue(
+      { ...createDefaultGraph(), functionGraphs: { land: { nodes: [], edges: [] } } },
+      0,
+    );
+    const session = new EditSession();
+    let doc = before;
+    for (const value of [1, 2, 3]) {
+      doc = session.applyBatch("graph", doc, diffGraphCommands(doc, withValue(doc, value)))!.doc;
+    }
+    expect(doc).toEqual(withValue(before, 3));
+    expect(session.undo("graph", doc)?.doc).toEqual(before);
+    expect(session.canUndo("graph")).toBe(false);
+
+    const addFunction = diffGraphCommands(before, {
+      ...before,
+      functionGraphs: { ...before.functionGraphs, fall: { nodes: [], edges: [] } },
+    });
+    expect(addFunction.map((command) => command.mergeKey)).toEqual([undefined]);
+  });
+
   it("keeps a seeded function graph after applying the add-function diff", () => {
     const before = createDefaultGraph();
     const after: typeof before = {

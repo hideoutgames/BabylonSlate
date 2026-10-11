@@ -290,6 +290,8 @@ export class SetGraphFunctionGraphsCommand implements EditCommand<SerializedGrap
   readonly type = "graph.setFunctionGraphs";
   readonly from: SerializedGraph["functionGraphs"];
   readonly to: SerializedGraph["functionGraphs"];
+  /** Set when the edit stays inside one function graph, so a scrub coalesces. */
+  readonly mergeKey?: string;
   #byteSize?: number;
   /** Retained snapshot cost, measured on first read and memoised. */
   get byteSize(): number {
@@ -299,9 +301,11 @@ export class SetGraphFunctionGraphsCommand implements EditCommand<SerializedGrap
   constructor(
     from: SerializedGraph["functionGraphs"],
     to: SerializedGraph["functionGraphs"],
+    mergeKey?: string,
   ) {
     this.from = from;
     this.to = to;
+    if (mergeKey) this.mergeKey = mergeKey;
   }
 
   apply(doc: SerializedGraph): SerializedGraph {
@@ -314,7 +318,21 @@ export class SetGraphFunctionGraphsCommand implements EditCommand<SerializedGrap
   }
 
   invert(): SetGraphFunctionGraphsCommand {
-    return new SetGraphFunctionGraphsCommand(this.to, this.from);
+    return new SetGraphFunctionGraphsCommand(this.to, this.from, this.mergeKey);
+  }
+
+  /** A gesture keeps only its first `from` and its latest `to`. */
+  coalesce(
+    next: EditCommand<SerializedGraph>,
+  ): SetGraphFunctionGraphsCommand | undefined {
+    if (
+      !(next instanceof SetGraphFunctionGraphsCommand) ||
+      this.mergeKey === undefined ||
+      next.mergeKey !== this.mergeKey
+    ) {
+      return undefined;
+    }
+    return new SetGraphFunctionGraphsCommand(this.from, next.to, this.mergeKey);
   }
 }
 
@@ -426,6 +444,7 @@ export function createSetGraphFunctionGraphsCommandFromJson(
   return new SetGraphFunctionGraphsCommand(
     payload.from as SerializedGraph["functionGraphs"],
     payload.to as SerializedGraph["functionGraphs"],
+    payload.mergeKey ? String(payload.mergeKey) : undefined,
   );
 }
 

@@ -116,6 +116,28 @@ function functionGraphsEqual(
   return JSON.stringify(a ?? {}) === JSON.stringify(b ?? {});
 }
 
+/**
+ * Merge key for an edit that changes exactly one existing function graph, so a
+ * pin scrub inside a function is one undo step as it is in the event graph.
+ * Adding, removing or renaming a function, or touching two, has no key.
+ */
+function functionGraphsMergeKey(
+  a: SerializedGraph["functionGraphs"],
+  b: SerializedGraph["functionGraphs"],
+): string | undefined {
+  if (!a || !b) return undefined;
+  const names = Object.keys(b);
+  if (names.length !== Object.keys(a).length) return undefined;
+  let changed: string | undefined;
+  for (const name of names) {
+    if (!Object.hasOwn(a, name)) return undefined;
+    if (a[name] === b[name] || JSON.stringify(a[name]) === JSON.stringify(b[name])) continue;
+    if (changed !== undefined) return undefined;
+    changed = name;
+  }
+  return changed === undefined ? undefined : `function-graph:${changed}`;
+}
+
 function actorDefaultsEqual(
   a: SerializedGraph["actorDefaults"],
   b: SerializedGraph["actorDefaults"],
@@ -210,6 +232,7 @@ export function diffGraphCommands(
       new SetGraphFunctionGraphsCommand(
         before.functionGraphs,
         after.functionGraphs,
+        functionGraphsMergeKey(before.functionGraphs, after.functionGraphs),
       ),
     );
   }
