@@ -56,11 +56,11 @@ Bundled Engine Plugins use an HTTP file catalog. The build emits each `.babasset
 
 `openKnownFolder(handle)` rebinds a previously known project (Documents / OPFS / external bookmark) without showing a picker. The picker is only for first bind and Reconnect.
 
-Browser project writes require OPFS; an unavailable or denied filesystem reports an error instead of accepting temporary in-memory saves. Each project id maps to its own hashed directory (`project-v2-<sha256 of the id>`). App-owned libraries and derived data bind with `new OpfsStorageAdapter({ library: true })`: they are not in the project list and never become the project a new adapter restores. Tests inject an explicit OPFS filesystem boundary.
+Browser project writes require OPFS; an unavailable or denied filesystem reports an error instead of accepting temporary in-memory saves. Each project id maps to its own hashed directory (`project-v2-<SHA-256 hex of the JSON-encoded id>`); the project list records only ids and names, and the folder is always derived from the id. App-owned libraries and derived data bind with `new OpfsStorageAdapter({ library: true })`: they are not in the project list and never become the project a new adapter restores. Tests inject an explicit OPFS filesystem boundary.
 
 OPFS directory creation is recursive by default; `mkdir(path, false)` requires existing parent directories.
 
-Project lifecycle operations serialize by id across adapter instances and use Web Locks across browser tabs when available, so a second legacy migration cannot replay over a newer save. Metadata merges use a separate origin-wide Web Lock. Deletion reconciles the latest metadata after filesystem I/O, preserving unrelated project registrations.
+Binding and deletion of a project id serialize across adapter instances and use Web Locks across browser tabs when available, so a bind never interleaves with a deletion of the same project. Metadata merges use a separate origin-wide Web Lock. Deletion reconciles the latest metadata after filesystem I/O, preserving unrelated project registrations.
 
 Node operations validate relative path segments and root containment, including siblings whose names share the project prefix. `readdir(".")` lists the project root on every adapter, including external mobile folders. Full project exports propagate directory-listing failures so an unreadable subtree cannot silently produce a partial backup.
 

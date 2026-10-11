@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { createMemoryOpfsRoot } from "./test-support/memory-opfs";
+import { createMemoryOpfsRoot, opfsProjectFolder } from "./test-support/memory-opfs";
 import { webcrypto } from "node:crypto";
 import { createStorage } from "./create-storage";
 import { TEST_PROJECT_NAME } from "./test-mode";
@@ -54,8 +54,7 @@ describe("OPFS / web storage adapter", () => {
     bytes.set([7, 8, 9], 64);
     await storage.writeBinary("large.babasset", bytes);
     const root = await navigator.storage.getDirectory();
-    const project = (JSON.parse(localStorage.getItem("babylonslate:opfs-meta")!) as { projects: Array<{ directory: string }> }).projects[0]!;
-    const file = await (await root.getDirectoryHandle(project.directory)).getFileHandle("large.babasset");
+    const file = await (await opfsProjectFolder(root, storage.getCurrentFolder()!.id)).getFileHandle("large.babasset");
     const getFile = file.getFile.bind(file);
     vi.spyOn(file, "getFile").mockImplementation(async () => {
       const snapshot = await getFile();
@@ -74,8 +73,7 @@ describe("OPFS / web storage adapter", () => {
     const storage = await openedAdapter();
     await storage.writeBinary("asset.babasset", new Uint8Array([1, 2, 3, 4]));
     const root = await navigator.storage.getDirectory();
-    const project = (JSON.parse(localStorage.getItem("babylonslate:opfs-meta")!) as { projects: Array<{ directory: string }> }).projects[0]!;
-    const handle = await (await root.getDirectoryHandle(project.directory)).getFileHandle("asset.babasset");
+    const handle = await (await opfsProjectFolder(root, storage.getCurrentFolder()!.id)).getFileHandle("asset.babasset");
     const snapshot = await handle.getFile();
     const failure = new DOMException("Snapshot cannot be read", errorName);
     const slice = snapshot.slice.bind(snapshot);
@@ -93,8 +91,7 @@ describe("OPFS / web storage adapter", () => {
     const storage = await openedAdapter();
     await storage.writeBinary("asset.babasset", new Uint8Array([1, 2, 3, 4]));
     const root = await navigator.storage.getDirectory();
-    const project = (JSON.parse(localStorage.getItem("babylonslate:opfs-meta")!) as { projects: Array<{ directory: string }> }).projects[0]!;
-    const handle = await (await root.getDirectoryHandle(project.directory)).getFileHandle("asset.babasset");
+    const handle = await (await opfsProjectFolder(root, storage.getCurrentFolder()!.id)).getFileHandle("asset.babasset");
     const snapshot = await handle.getFile();
     const failure = new DOMException("Source revision changed", errorName);
     const slice = snapshot.slice.bind(snapshot);
@@ -109,8 +106,7 @@ describe("OPFS / web storage adapter", () => {
     await storage.writeBinary("asset.babasset", new Uint8Array([1, 2, 3, 4]));
     const mounted = createMountedProjectStorage([{ path: "plugin", storage, sourcePath: "" }]);
     const root = await navigator.storage.getDirectory();
-    const project = (JSON.parse(localStorage.getItem("babylonslate:opfs-meta")!) as { projects: Array<{ directory: string }> }).projects[0]!;
-    const handle = await (await root.getDirectoryHandle(project.directory)).getFileHandle("asset.babasset");
+    const handle = await (await opfsProjectFolder(root, storage.getCurrentFolder()!.id)).getFileHandle("asset.babasset");
     const snapshot = await handle.getFile();
     const slice = snapshot.slice.bind(snapshot);
     snapshot.slice = (...args) => {
@@ -204,8 +200,7 @@ describe("OPFS / web storage adapter", () => {
     expect(isStorageNotFound(removed)).toBe(true);
 
     const root = await navigator.storage.getDirectory();
-    const meta = JSON.parse(localStorage.getItem("babylonslate:opfs-meta")!);
-    const directory = await root.getDirectoryHandle(meta.projects[0].directory);
+    const directory = await opfsProjectFolder(root, storage.getCurrentFolder()!.id);
     const failure = new DOMException("Handle state changed", "InvalidStateError");
     vi.spyOn(directory, "getFileHandle").mockRejectedValue(failure);
     await expect(storage.exists("project.json")).rejects.toThrow("Handle state changed");
@@ -437,8 +432,7 @@ describe("OPFS / web storage adapter", () => {
     await storage.writeBinary("asset.babasset", new Uint8Array([1, 2, 3, 4]));
     const before = await storage.readBinaryRange("asset.babasset", 0, 2);
     const root = await navigator.storage.getDirectory();
-    const meta = JSON.parse(localStorage.getItem("babylonslate:opfs-meta")!);
-    const file = await (await root.getDirectoryHandle(meta.projects[0].directory)).getFileHandle("asset.babasset");
+    const file = await (await opfsProjectFolder(root, storage.getCurrentFolder()!.id)).getFileHandle("asset.babasset");
     vi.spyOn(file, "createWritable").mockResolvedValueOnce({
       write: async () => { throw new DOMException("Storage is full", "QuotaExceededError"); },
       close: async () => {},
@@ -489,8 +483,7 @@ describe("OPFS / web storage adapter", () => {
     const storage = await openedAdapter();
     await storage.writeText("project.json", "original");
     const root = await navigator.storage.getDirectory();
-    const meta = JSON.parse(localStorage.getItem("babylonslate:opfs-meta")!);
-    const directory = await root.getDirectoryHandle(meta.projects[0].directory);
+    const directory = await opfsProjectFolder(root, storage.getCurrentFolder()!.id);
     const file = await directory.getFileHandle("project.json");
     vi.spyOn(file, "createWritable").mockRejectedValueOnce(new DOMException("Storage is full", "QuotaExceededError"));
     await expect(storage.writeText("project.json", "changed")).rejects.toThrow("Storage is full");

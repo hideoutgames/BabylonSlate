@@ -50,8 +50,7 @@ function withProjectLifecycle<T>(id: string, work: () => Promise<T>): Promise<T>
 
 interface OpfsMeta {
   currentId: string | null;
-  /** `directory` records the hashed folder name for diagnostics and probes. */
-  projects: Array<{ id: string; name: string; directory?: string }>;
+  projects: Array<{ id: string; name: string }>;
 }
 
 function loadMeta(): OpfsMeta {
@@ -111,11 +110,11 @@ export class OpfsStorageAdapter implements ProjectStorage {
     return this.root;
   }
 
-  private async remember(handle: ProjectFolderHandle, directory: string): Promise<ProjectFolderHandle> {
+  private async remember(handle: ProjectFolderHandle): Promise<ProjectFolderHandle> {
     await updateMeta((meta) => {
-      const existing = meta.projects.find((project) => project.id === handle.id);
-      if (existing) existing.directory = directory;
-      else meta.projects.push({ id: handle.id, name: handle.name, directory });
+      if (!meta.projects.some((project) => project.id === handle.id)) {
+        meta.projects.push({ id: handle.id, name: handle.name });
+      }
       meta.currentId = handle.id;
     });
     this.folder = handle;
@@ -126,9 +125,8 @@ export class OpfsStorageAdapter implements ProjectStorage {
     const handle: ProjectFolderHandle = { id: `opfs:${name}`, name, tier: "opfs" };
     return withProjectLifecycle(handle.id, async () => {
       const opfs = await this.getOpfsRoot();
-      const directory = await directoryName(handle.id);
-      await opfs.getDirectoryHandle(directory, { create: true });
-      if (!this.library) return this.remember(handle, directory);
+      await opfs.getDirectoryHandle(await directoryName(handle.id), { create: true });
+      if (!this.library) return this.remember(handle);
       this.folder = handle;
       return handle;
     });

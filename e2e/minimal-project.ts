@@ -55,7 +55,7 @@ export async function openMinimalTestProject(
         "babylonslate:opfs-meta",
         JSON.stringify({
           currentId: null,
-          projects: [{ id, name: "TestProject", directory: projectDirectory }],
+          projects: [{ id, name: "TestProject" }],
         }),
       );
     },
