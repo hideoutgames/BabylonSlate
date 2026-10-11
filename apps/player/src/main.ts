@@ -292,8 +292,10 @@ async function launchLoaded(
           previewHostOrigin,
         );
       })
-      // A failed or unanswered inspection keeps the last published actors.
-      .catch((error: unknown) => { if (!stopped) console.warn("Preview actor catalog could not refresh.", error); })
+      // A failed or unanswered inspection keeps the last published actors and
+      // the next context request retries. Console output would reach the
+      // game's Preview log through console capture, once per poll.
+      .catch(() => {})
       .finally(() => {
         inspecting = false;
         if (inspectAgain && !stopped) refreshActorCatalog();
