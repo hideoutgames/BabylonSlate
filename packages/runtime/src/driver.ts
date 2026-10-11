@@ -1129,10 +1129,13 @@ class InProcessRuntime implements RuntimeDriver {
       ...createPhysicsHostBindings({
         world: () => this.world,
         physics: () => this.physics.main,
+        layerPhysics: (layerGuid) => this.physics.layer(layerGuid),
         physicsFor: (actor) => this.physics.forActor(actor),
         ragdolls: this.ragdolls,
         waterTime: () => this.waterClock.time,
-        projectCursorToScene: (channel, options) => this.camera.projectCursorToScene(channel, options),
+        projectCursorToScene: (channel, options, sceneLayerId) => sceneLayerId
+          ? this.camera.projectCursorToSceneLayer(sceneLayerId, channel)
+          : this.camera.projectCursorToScene(channel, options),
       }),
       ...createScalabilityHostBindings({
         getScalability: () => this.getScalability(),

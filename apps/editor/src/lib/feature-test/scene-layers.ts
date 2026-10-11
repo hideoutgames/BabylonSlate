@@ -37,6 +37,7 @@ export const FEATURE_TEST_SCENE_LAYER_NAMES = {
   cardB: "FT_UICardB",
   switcher: "FT_UICardSwitcher",
   clickButton: "FT_UIClickButton",
+  pitCounter: "FT_UIPitCounter",
 } as const;
 
 /**
@@ -82,7 +83,7 @@ interface LayerRefs {
   overlayMaterial: string;
   panelTexture: string;
   icons: Record<"camera" | "audio" | "particles" | "point_light" | "spot_light" | "navmesh" | "default", string>;
-  classes: Record<"listItem" | "gridItem" | "cardA" | "cardB" | "switcher" | "clickButton", PlacedClass>;
+  classes: Record<"listItem" | "gridItem" | "cardA" | "cardB" | "switcher" | "clickButton" | "pitCounter", PlacedClass>;
 }
 
 /** A Class plus the prefab components its layer instances copy. */
@@ -131,6 +132,7 @@ export async function buildFeatureTestSceneLayers(ctx: FeatureTestContext): Prom
       cardB,
       switcher: await saveSwitcher(ctx, base),
       clickButton: await saveClickButton(ctx, base),
+      pitCounter: await savePitCounter(ctx, base),
     },
   };
 
@@ -637,7 +639,8 @@ function painterCommands(): PainterCommand[] {
 /**
  * Physics-enabled layer: its own 2D world with the layer's gravity. A static
  * pit (floor and two walls) catches dynamic icon boxes dropped at the bottom
- * center of the screen; nothing here collides with the 3D world.
+ * center of the screen; nothing here collides with the 3D world. A counter
+ * under the pit queries this layer's world (not the main Scene's) for them.
  */
 function overlayPhysicsLayer(refs: LayerRefs): SerializedSceneLayer {
   const layer: SerializedSceneLayer = { ...createDefaultSceneLayer(), name: NAMES.overlayPhysics };
@@ -667,7 +670,55 @@ function overlayPhysicsLayer(refs: LayerRefs): SerializedSceneLayer {
       rotationDeg: (index * 23) % 45,
     }));
   }
+  add(classInstance(refs.classes.pitCounter, "ft-ui-physics-pit-counter", "Pit Counter", { position: [0, -6.1] }));
   return layer;
+}
+
+/** The pit FT_UIPitCounter watches, centered on the floor's top edge. */
+const PIT = { center: [0, -5] as const, radius: 2.6 } as const;
+
+/**
+ * Tick runs Sphere Overlap Actors (World Dynamic) over the pit. A Scene Layer
+ * actor's query reads its own layer's world, so it counts the layer's boxes
+ * and never the main Scene's bodies at the same coordinates. The label is set
+ * only when the count changes.
+ */
+async function savePitCounter(ctx: FeatureTestContext, refs: ClassBase): Promise<PlacedClass> {
+  const shown = varMember("ft-ui-var-pit-shown", "Shown", "int", -1, { category: "Pit Counter" });
+  const components = [
+    ui("prefab-label", "2DTextComponent", text(refs, "In pit: 0", 24, [240, 30], { alignment: "center", bold: true }),
+      at(0, 0, FRONT_Z)),
+  ];
+  const graph = classGraph({
+    members: [shown],
+    components,
+    nodes: [
+      gNode("tick", "flow.event.tick", 0, 0),
+      gNode("center", "vector.make3", 0, 200, { "default:x": PIT.center[0], "default:y": PIT.center[1], "default:z": 0 }),
+      gNode("overlap", "physics.sphereOverlap", 240, 0, { "default:radius": PIT.radius, "default:channel": "WorldDynamic" }),
+      getVar("get-shown", shown, 240, 300),
+      gNode("changed", "math.notEquals", 480, 220),
+      gNode("branch", "flow.branch", 680, 0),
+      setVar("set-shown", shown, 900, 0),
+      gNode("format", "string.format", 1120, 200, { "default:format": "In pit: {count}" }),
+      ...setTextNodes(1360, 0),
+    ],
+    edges: [
+      gWire("tick", "execOut", "overlap", "execIn"),
+      gWire("center", "out", "overlap", "center"),
+      gWire("overlap", "execOut", "branch", "execIn"),
+      gWire("overlap", "count", "changed", "a"),
+      gWire("get-shown", "value", "changed", "b"),
+      gWire("changed", "out", "branch", "condition"),
+      gWire("branch", "true", "set-shown", "execIn"),
+      gWire("overlap", "count", "set-shown", "value"),
+      gWire("set-shown", "execOut", "set-text", "exec"),
+      gWire("set-shown", "out", "format", "arg:count"),
+      ...setTextEdges("format"),
+    ],
+  });
+  const ref = await ctx.saveClass({ folder: FOLDER, name: NAMES.pitCounter, parentClass: "SceneLayerActor", graph });
+  return { ref, components };
 }
 
 function body(id: string, motionType: "static" | "dynamic"): SerializedComponent {

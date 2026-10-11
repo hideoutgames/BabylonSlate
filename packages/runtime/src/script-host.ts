@@ -197,21 +197,28 @@ export interface ScriptHostServices {
    * actors must return undefined so query nodes never surface string ids.
    */
   findActor?(actorId: string): Actor | undefined;
-  sampleWater?(position: Vec3, actorId: string | null): WaterSample & { actorId: string | null };
-  lineTrace?(start: Vec3, end: Vec3, options?: LineTraceOptions & { channel?: string }): HitResult;
+  /*
+   * Scene queries take the object whose script calls them (`caller`: the
+   * actor, component or Scene Layer running the script, null outside one) so
+   * the host can answer from that object's physics world.
+   */
+  sampleWater?(position: Vec3, actorId: string | null, caller?: BObject | null): WaterSample & { actorId: string | null };
+  lineTrace?(start: Vec3, end: Vec3, options?: LineTraceOptions & { channel?: string }, caller?: BObject | null): HitResult;
   projectCursorToScene?(
     channel?: string,
     options?: { drawDebug?: boolean; duration?: number },
+    caller?: BObject | null,
   ): HitResult & {
     worldOrigin: Vec3;
     worldDirection: Vec3;
   };
-  sphereOverlap?(center: Vec3, radius: number, channel?: string): OverlapResult;
+  sphereOverlap?(center: Vec3, radius: number, channel?: string, caller?: BObject | null): OverlapResult;
   shapeSweep?(
     shape: ColliderShape,
     start: PhysicsTransform,
     end: PhysicsTransform,
     channel?: string,
+    caller?: BObject | null,
   ): HitResult;
   addImpulse?(
     actor: Actor | null | undefined,
@@ -1276,6 +1283,9 @@ export class ScriptHost {
     const services = this.services;
     const store = extras?.variableStore ?? self;
     const tweenOwner = self ?? extras?.tweenOwner ?? null;
+    // Scene queries answer from the calling object's world; a static Function
+    // Library call keeps its caller's, as it keeps its tween owner.
+    const queryCaller = tweenOwner;
     const unavailable = async <T>(): Promise<SaveGameResult<T>> => ({ ok: false, error: {
       code: "unavailable", message: "Select a default Save Game in Project Settings before using saves.",
     } });
@@ -1956,7 +1966,7 @@ export class ScriptHost {
       gamepadConnections: tick?.gamepadConnections ?? [],
       sampleWater: (position, waterActor) => {
         if (waterActor?.destroyed) return { ...emptyWaterSample(), actor: null };
-        const sample = services.sampleWater?.(position, waterActor?.guid ?? null);
+        const sample = services.sampleWater?.(position, waterActor?.guid ?? null, queryCaller);
         return sample ? { ...sample, actor: resolveLiveActor(services, sample.actorId) } : { ...emptyWaterSample(), actor: null };
       },
       lineTrace: (start, end, channel, options) => {
@@ -1967,7 +1977,7 @@ export class ScriptHost {
               .map((actor) => actor.guid),
           ),
         ];
-        const hit = services.lineTrace?.(start, end, { ignoreActorIds, ...(channel ? { channel } : {}) }) ?? {
+        const hit = services.lineTrace?.(start, end, { ignoreActorIds, ...(channel ? { channel } : {}) }, queryCaller) ?? {
           hit: false,
           location: null,
           actorId: null,
@@ -2007,7 +2017,7 @@ export class ScriptHost {
         };
       },
       projectCursorToScene: (channel, options) => {
-        const hit = services.projectCursorToScene?.(channel, options) ?? {
+        const hit = services.projectCursorToScene?.(channel, options, queryCaller) ?? {
           hit: false,
           location: null,
           normal: null,
@@ -2028,7 +2038,7 @@ export class ScriptHost {
         };
       },
       sphereOverlap: (center, radius, channel) => {
-        const overlap = services.sphereOverlap?.(center, radius, channel) ?? {
+        const overlap = services.sphereOverlap?.(center, radius, channel, queryCaller) ?? {
           actorIds: [],
           bodyIds: [],
         };
@@ -2039,7 +2049,7 @@ export class ScriptHost {
         };
       },
       shapeSweep: (shape, start, end, channel) => {
-        const hit = services.shapeSweep?.(shape, start, end, channel) ?? {
+        const hit = services.shapeSweep?.(shape, start, end, channel, queryCaller) ?? {
           hit: false,
           location: null,
           normal: null,

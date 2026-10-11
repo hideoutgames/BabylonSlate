@@ -342,11 +342,37 @@ export function createPlayConsoleViz(
     navmeshBytes?: Uint8Array | null;
     navBlockers?: readonly NavDebugBlockerPose[] | null;
     world?: PhysicsWorldKind;
+    /** A live Scene Layer's overlay scene, where that layer's own world's colliders draw in its camera space. */
+    layerScene?: (layerId: string) => Scene | null | undefined;
   } = {},
 ): PlayConsoleVizController {
   let wireframe = false;
   let bounds = false;
   const collision = createPlayCollisionOverlay(scene);
+  const layerCollisions = new Map<string, { scene: Scene; overlay: ReturnType<typeof createPlayCollisionOverlay> }>();
+  const removeLayerCollision = (layerId: string) => {
+    layerCollisions.get(layerId)?.overlay.dispose();
+    layerCollisions.delete(layerId);
+  };
+  const clearLayerCollisions = () => {
+    for (const layerId of [...layerCollisions.keys()]) removeLayerCollision(layerId);
+  };
+  const syncLayerCollision = (layerId: string, colliders: readonly DebugColliderPrimitive[]) => {
+    const target = options.layerScene?.(layerId) ?? null;
+    let entry = layerCollisions.get(layerId);
+    if (entry && entry.scene !== target) {
+      removeLayerCollision(layerId);
+      entry = undefined;
+    }
+    // A layer whose scene is not live yet draws on a later tick.
+    if (!target || target.isDisposed) return;
+    if (!entry) {
+      if (colliders.length === 0) return;
+      entry = { scene: target, overlay: createPlayCollisionOverlay(target) };
+      layerCollisions.set(layerId, entry);
+    }
+    entry.overlay.sync(colliders);
+  };
   const nav = new NavMeshDebugOverlay(scene);
   const navigation = createPlayNavigationOverlay(scene);
 
@@ -369,12 +395,23 @@ export function createPlayConsoleViz(
         return true;
       }
       if (command.type === "debugColliders") {
-        collision.sync(command.colliders);
+        if (command.layerId) syncLayerCollision(command.layerId, command.colliders);
+        else collision.sync(command.colliders);
         return true;
       }
       if (command.type === "setShowCollision" && !command.enabled) {
         collision.sync([]);
+        clearLayerCollisions();
         return true;
+      }
+      // A removed layer's debug meshes go with it (handled before its scene retires).
+      if (command.type === "sceneLayerRemove") {
+        removeLayerCollision(command.layerId);
+        return false;
+      }
+      if (command.type === "sceneLayerClear") {
+        clearLayerCollisions();
+        return false;
       }
       if (command.type === "setShowNav") {
         if (command.enabled) {
@@ -391,6 +428,7 @@ export function createPlayConsoleViz(
       applyPlayWireframe(scene, false);
       applyPlayShowBounds(scene, false);
       collision.dispose();
+      clearLayerCollisions();
       nav.dispose();
       navigation.dispose();
     },
