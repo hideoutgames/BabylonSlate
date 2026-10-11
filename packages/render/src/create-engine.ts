@@ -2285,7 +2285,9 @@ function initializeEngine(
       notifyOverlayResize();
     };
 
-  let interpAlpha = 1;
+  // Play samples the latest published snapshot (alpha 1); render and the
+  // worker tick share one cap, so a time-based alpha would only add lag.
+  const interpAlpha = 1;
   // Registered-view admission and renderLoop both prepare the same frame; apply
   // only when the sampled identity changes or a command invalidated it.
   let appliedSnapshotIdentity: { frameId: number; alpha: number; layoutGeneration: number } | null = null;
@@ -3169,7 +3171,6 @@ function initializeEngine(
       // Deliveries already queued when the view stopped must not repose it.
       if (disposed) return;
       interpolator.push(buffer);
-      interpAlpha = 1;
       appliedSnapshotIdentity = null;
       const sampled = interpolator.sample(interpAlpha);
       if (sampled) positionsFromSample(sampled, lastPositions);
