@@ -198,7 +198,10 @@ export class MaterialLibrary {
     doc: MaterialDocument,
     options?: MaterialAcquireOptions,
   ): boolean {
-    const lowered = this.planFor(doc, options?.unlit);
+    return this.isCompiledPlan(scene, assetGuid, this.planFor(doc, options?.unlit), options);
+  }
+
+  private isCompiledPlan(scene: Scene, assetGuid: string, lowered: MaterialLowerResult, options?: MaterialAcquireOptions): boolean {
     if (!lowered.ok || scene.isDisposed) return false;
     const entries = this.entriesFor(scene);
     const key = cacheKey(assetGuid, options?.unlit, options?.instanceKey, options?.logicalSceneBuffers);
@@ -220,8 +223,18 @@ export class MaterialLibrary {
     doc: MaterialDocument,
     options?: MaterialAcquireOptions,
   ): MaterialAcquireResult {
+    return this.acquirePlan(scene, assetGuid, doc, this.planFor(doc, options?.unlit === true), options);
+  }
+
+  /** `acquire` with the document's plan already resolved (`planFor` serializes the whole document). */
+  private acquirePlan(
+    scene: Scene,
+    assetGuid: string,
+    doc: MaterialDocument,
+    lowered: MaterialLowerResult,
+    options?: MaterialAcquireOptions,
+  ): MaterialAcquireResult {
     const unlit = options?.unlit === true;
-    const lowered = this.planFor(doc, unlit);
     if (!lowered.ok) {
       return { ok: false, diagnostics: lowered.diagnostics };
     }
@@ -234,7 +247,8 @@ export class MaterialLibrary {
     const existing = entries.get(key);
     const pending = this.pending.get(scene)!;
     const waiting = pending.get(key);
-    if (waiting?.hash === this.generationHash(lowered.plan) && !isDisposedNodeMaterial(waiting.material, scene)) {
+    const hash = this.generationHash(lowered.plan);
+    if (waiting?.hash === hash && !isDisposedNodeMaterial(waiting.material, scene)) {
       waiting.refCount += 1;
       return { ok: true, material: waiting.material, hash: waiting.hash, plan: lowered.plan, ready: waiting.ready };
     }
@@ -249,7 +263,7 @@ export class MaterialLibrary {
     };
     if (
       existing &&
-      existing.hash === this.generationHash(lowered.plan) &&
+      existing.hash === hash &&
       !isDisposedNodeMaterial(existing.material, scene)
     ) {
       existing.refCount = (waiting?.refCount ?? existing.refCount) + 1;
@@ -331,10 +345,12 @@ export class MaterialLibrary {
       }));
     const pendingParameters = new Map<string, { texture: Texture; guid: string; identity: string | undefined; ready: Promise<readonly MaterialDiagnostic[]>; cancel: () => void }>();
     const parameterFailures = new Map<string, readonly MaterialDiagnostic[]>();
-    const prepareParameters = () => {
-      const failures = [...parameterFailures.values()].flat();
-      return Promise.all([...pendingParameters.values()].map((request) => request.ready))
-        .then((results) => [...results.flat(), ...failures]);
+    // A parameter replaced while its texture prepares settles its request as cancelled: the replacement's request (and
+    // any later one) is awaited instead, and only the failures still current count, so replacing a texture never
+    // fails the generation.
+    const prepareParameters = async (): Promise<readonly MaterialDiagnostic[]> => {
+      while (pendingParameters.size) await Promise.all([...pendingParameters.values()].map((request) => request.ready));
+      return [...parameterFailures.values()].flat();
     };
     let preparingTextures = true;
     const pruneTextures = () => {
@@ -418,7 +434,7 @@ export class MaterialLibrary {
     const candidate: CacheEntry = {
       assetGuid,
       material: compiled.material,
-      hash: this.generationHash(lowered.plan),
+      hash,
       refCount: (waiting?.refCount ?? existing?.refCount ?? 0) + 1,
       dispose: () => { cancelPreparation(); for (const request of pendingParameters.values()) request.cancel(); pendingParameters.clear(); compiled.dispose(); textures.dispose(); },
       setParameter,
@@ -467,7 +483,7 @@ export class MaterialLibrary {
         this.options.onMaterialReady?.(scene, assetGuid);
       });
     }
-    return { ok: true, material: compiled.material, hash: this.generationHash(lowered.plan), plan: lowered.plan, ready };
+    return { ok: true, material: compiled.material, hash, plan: lowered.plan, ready };
   }
 
   release(
@@ -520,8 +536,9 @@ export class MaterialLibrary {
     options?: MaterialResolveOptions,
   ): NodeMaterial | null {
     let material = this.materialFor(scene, assetGuid, options);
-    if (!material || !this.isCompiled(scene, assetGuid, doc, options)) {
-      const acquired = this.acquire(scene, assetGuid, doc, options);
+    const lowered = this.planFor(doc, options?.unlit);
+    if (!material || !this.isCompiledPlan(scene, assetGuid, lowered, options)) {
+      const acquired = this.acquirePlan(scene, assetGuid, doc, lowered, options);
       if (materialAvailable(acquired)) {
         if (material) this.release(scene, assetGuid, options);
         material = this.materialFor(scene, assetGuid, options) ?? acquired.material;

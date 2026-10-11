@@ -100,6 +100,25 @@ describe("material library", () => {
     expect(f.onTextureError).not.toHaveBeenCalled();
   });
 
+  it("waits for the replacement when a texture parameter is replaced while the build prepares it", async () => {
+    const f = textureLibrary();
+    const obsolete = deferredTextureSource();
+    f.sources.set("obsolete", obsolete.source);
+    f.sources.set("winner", new Uint8Array([8, 9, 10]));
+    const acquired = f.library.acquire(f.scene, "material", textureDocument("first"));
+    if (!acquired.ok) throw new Error("Material did not compile");
+    expect(f.library.setParameter(f.scene, "material", "Albedo", { kind: "texture", textureAssetGuid: "obsolete" })).toBe(true);
+    // Let the compile settle, so the build is waiting on the parameter's texture.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(f.library.setParameter(f.scene, "material", "Albedo", { kind: "texture", textureAssetGuid: "winner" })).toBe(true);
+    obsolete.finish();
+    expect(await acquired.ready).toEqual([]);
+    expect(f.library.materialFor(f.scene, "material")).toBe(acquired.material);
+    expect(f.scene.materials).toContain(acquired.material);
+    expect((acquired.material.getBlockByName("sample") as TextureBlock).texture).toBe(f.leases.get("winner")!.resource);
+    expect(f.onTextureError).not.toHaveBeenCalled();
+  });
+
   it("preserves the working texture parameter when native-ready replacement fails delayed admission", async () => {
     const f = textureLibrary();
     const deferred = deferredTextureSource();
