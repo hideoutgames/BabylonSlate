@@ -238,8 +238,9 @@ import { formatSceneLoadReport } from "../lib/scene-load-report";
 export type AppRoute = "home" | "editor";
 
 /**
- * `closeProject`: closed, held by unsaved work (nothing was stopped or
- * written), or refused by a running Play / Simulate session.
+ * `closeProject`: closed, held by unsaved work (nothing was written; a
+ * session was stopped only when its stop left that work, as Simulation's Keep
+ * Changes does), or refused by a running Play / Simulate session.
  */
 export type CloseProjectResult =
   | { outcome: "closed" }
@@ -2104,10 +2105,24 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [documentTransitions],
   );
 
-  /** `keepLayout`: a clean close writes tabs, dock layouts and panel placements, which Save would have. */
-  const shutDownProject = useCallback(async (keepLayout: boolean): Promise<boolean> => {
+  /** Close Project's prompt when documents or project settings are unsaved. */
+  const unsavedProjectWork = useCallback((): CloseProjectResult | null => {
+    const dirty = documentService.getDirtyDocuments();
+    const projectDirty = projectSaveState.current.isDirty(projectDocumentRef.current);
+    return dirty.length > 0 || projectDirty ? { outcome: "unsaved", dirty, projectDirty } : null;
+  }, [documentService]);
+
+  /**
+   * `clean`: the close keeps no unsaved work. It writes tabs, dock layouts and
+   * panel placements, which Save would have, and returns unsaved work a
+   * stopping session left behind (Simulation's Keep Changes) instead of
+   * discarding it. Otherwise the close discards unsaved work.
+   */
+  const shutDownProject = useCallback(async (clean: boolean): Promise<CloseProjectResult> => {
     setAutoSaveStatus(null);
-    if (!await documentTransitions.check({ kind: "close-project" })) return false;
+    if (!await documentTransitions.check({ kind: "close-project" })) return { outcome: "refused" };
+    const unsaved = clean ? unsavedProjectWork() : null;
+    if (unsaved) return unsaved;
     documentService.assertAuthoringWritable();
     cancelSceneDocumentLoad();
     exclusiveSceneRequest.current += 1;
@@ -2122,7 +2137,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     // cleared and the folder released; later queued saves find no project.
     await enqueueProjectWrite(async () => {
       clearDebouncedSave();
-      if (keepLayout && !projectService.authoringWriteBlockedReason) {
+      if (clean && !projectService.authoringWriteBlockedReason) {
         captureAllLayouts();
         // Layout is a convenience: a failed write must not keep the project open.
         await projectService.saveLayouts(documentService.buildLayouts()).catch((error: unknown) => {
@@ -2159,7 +2174,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setExternalChangePrompt(null);
     await refreshProjectList();
     bump();
-    return true;
+    return { outcome: "closed" };
   }, [
     bump,
     captureAllLayouts,
@@ -2177,18 +2192,20 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setPendingExclusiveScene,
     setProjectDocument,
     documentTransitions,
+    unsavedProjectWork,
   ]);
 
-  const forceCloseProject = useCallback(() => shutDownProject(false), [shutDownProject]);
+  const forceCloseProject = useCallback(
+    async () => (await shutDownProject(false)).outcome === "closed",
+    [shutDownProject],
+  );
 
-  const closeProject = useCallback(async (): Promise<CloseProjectResult> => {
-    // Unsaved work prompts first: a running session stops only once the user
-    // chooses Save All or Discard, so Cancel leaves it running.
-    const dirty = documentService.getDirtyDocuments();
-    const projectDirty = projectSaveState.current.isDirty(projectDocumentRef.current);
-    if (dirty.length > 0 || projectDirty) return { outcome: "unsaved", dirty, projectDirty };
-    return await shutDownProject(true) ? { outcome: "closed" } : { outcome: "refused" };
-  }, [documentService, shutDownProject]);
+  // Unsaved work prompts first: a running session stops only once the user
+  // chooses Save All or Discard, so Cancel leaves it running.
+  const closeProject = useCallback(
+    async (): Promise<CloseProjectResult> => unsavedProjectWork() ?? shutDownProject(true),
+    [shutDownProject, unsavedProjectWork],
+  );
 
   const exportProject = useCallback(async (snapshot?: ProjectDocument) => {
     return projectService.exportZip(snapshot);
@@ -2629,13 +2646,21 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     return next(0);
   }, [documentService, documentTransitions]);
 
+  /** `discardDirtyScenes`: the user chose Discard, so replaced Scenes close even when dirty. */
   const finishOpenDocument = useCallback(
-    async (ref: DocumentRef) => {
+    async (ref: DocumentRef, options?: { discardDirtyScenes?: boolean }) => {
       // Taken before the session gate's wait, so a tab picked during it stays active.
       const request = ++activationRequest.current;
       if (ref.kind === "scene" && !documentService.getDocument(documentId(ref))) {
         const allowed = checkSceneReplacement(ref);
         if (allowed === false || (typeof allowed !== "boolean" && !await allowed)) return;
+        // A stopped session can leave a replaced Scene dirty (Simulation's
+        // Keep Changes); ask to Save or Discard it instead of closing it.
+        if (!options?.discardDirtyScenes &&
+          dirtyScenesBlockingOpen(documentService.getDirtyDocuments(), documentId(ref)).length > 0) {
+          setPendingExclusiveScene(ref);
+          return;
+        }
       }
       const controller = isSceneWorkspaceKind(ref.kind) ? new AbortController() : null;
       if (controller) {
@@ -2685,7 +2710,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         await editing.syncPrefabInstances({ quiet: true });
       }
     },
-    [bump, captureLayoutForId, checkSceneReplacement, editing, performCloseDocument, documentService, projectService, cancelSceneDocumentLoad],
+    [bump, captureLayoutForId, checkSceneReplacement, editing, performCloseDocument, documentService, projectService, cancelSceneDocumentLoad, setPendingExclusiveScene],
   );
 
   const ensureAssetDocument = useCallback(async (ref: DocumentRef): Promise<string> => {
@@ -2758,7 +2783,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           dirtyScenesBlockingOpen(documentService.getDirtyDocuments(), documentId(ref)).length > 0) return;
       }
       setPendingExclusiveScene(null);
-      await finishOpenDocument(ref);
+      await finishOpenDocument(ref, { discardDirtyScenes: mode === "discard" });
     },
     [checkSceneReplacement, documentService, finishOpenDocument, saveAll, setPendingExclusiveScene],
   );

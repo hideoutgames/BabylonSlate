@@ -890,6 +890,54 @@ describe("DocumentProvider actions and route", () => {
     }
   });
 
+  /** A session whose stop applies its final Scene to Main, as Simulation's Keep Changes does. */
+  function keepChangesOnStop(actions: DocumentActions, kind: "close-project" | "replace-document") {
+    let kept: SerializedScene | null = null;
+    const unregister = actions.registerBeforeTransition(async (transition) => {
+      if (transition.kind !== kind || kept) return true;
+      kept = movedScene(openScene(MAIN_SCENE_ID), 4);
+      await actions.applySceneChange(MAIN_SCENE_ID, kept);
+      return true;
+    });
+    return { unregister, kept: () => kept };
+  }
+
+  it("lists the changes a stopping session keeps instead of closing a clean project", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    const session = keepChangesOnStop(actions, "close-project");
+    try {
+      expect(await act(() => actions.closeProject())).toMatchObject({
+        outcome: "unsaved", dirty: [expect.objectContaining({ id: MAIN_SCENE_ID })], projectDirty: false,
+      });
+      expect(documents().route).toBe("editor");
+      expect(openScene(MAIN_SCENE_ID)).toEqual(session.kept());
+    } finally {
+      session.unregister();
+    }
+  });
+
+  it("asks to save the changes a stopping session keeps before replacing their Scene", async () => {
+    const actions = await openProject();
+    const second = await createScene(actions, "Second");
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    const session = keepChangesOnStop(actions, "replace-document");
+    try {
+      await act(() => actions.openDocument(sceneRef(second.path)));
+      expect(documents().pendingExclusiveScene?.path).toBe(second.path);
+      expect(openScene(MAIN_SCENE_ID)).toEqual(session.kept());
+      expect(documents().dirtyDocuments.map((doc) => doc.id)).toEqual([MAIN_SCENE_ID]);
+      // Save keeps them and then opens the Scene.
+      await act(() => actions.confirmExclusiveSceneOpen("save"));
+      expect(documents().openDocuments.filter((doc) => doc.ref.kind === "scene").map((doc) => doc.ref.path))
+        .toEqual([second.path]);
+      const saved = await actions.loadAssetDocument("scene", MAIN_SCENE_FILE) as SerializedScene;
+      expect(saved.actors[0]!.transform.position).toEqual(session.kept()!.actors[0]!.transform.position);
+    } finally {
+      session.unregister();
+    }
+  });
+
   it("closes a project only after a Save All already writing has finished", async () => {
     const actions = await openProject();
     await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
