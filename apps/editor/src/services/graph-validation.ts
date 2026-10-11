@@ -2781,6 +2781,8 @@ export function validateSerializedGraph(
     enums: options.enums,
     structs: options.structs,
     dataDefinitions: options.dataDefinitions,
+    // A Cast's Result kind follows the project Class hierarchy, as on the canvas.
+    parentOf: options.parentOf,
   };
   const eventGraph = materializeLogicGraph(
     content,
