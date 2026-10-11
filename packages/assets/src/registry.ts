@@ -1395,8 +1395,10 @@ export class AssetRegistry {
       ) {
         try {
           if (await this.retryTextureEncoding(header.guid)) count += 1;
-        } catch {
-          // One Texture replaced on disk mid-pass must not stop the others.
+        } catch (error) {
+          // One Texture replaced on disk mid-pass must not stop the others;
+          // the next rescan indexes the new file. Any other failure is real.
+          if (!(error instanceof SourceRevisionChangedError)) throw error;
         }
       }
     }
