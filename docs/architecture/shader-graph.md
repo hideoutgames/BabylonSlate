@@ -176,7 +176,9 @@ space. Textures only connect to textures. Generic nodes (`math.add`,
 connection order, and convert each operand to that width. Declared function
 and Custom GLSL pins retain their explicit types. Disconnected inputs retain
 their authored/catalog defaults; a scalar default on a wider pin fills every
-channel (a disconnected Add B of `0.5` on V3 is `(0.5,0.5,0.5)`). Catalog defaults
+channel (a disconnected Add B of `0.5` on V3 is `(0.5,0.5,0.5)`), and a shorter
+vector default keeps its channels and fills the rest with `1`, in Details and the
+shader alike. Catalog defaults
 keep an unwired node defined: Divide/Modulo B, Power Exponent and Atan2 X are
 `1`; Reciprocal, Logarithm, Logarithm 2 and Inverse Square Root take `1`; Clamp
 is `0`–`1`; Smooth Step edges are `0` and `1`; Remap maps `0`–`1` to `0`–`1`.
@@ -201,9 +203,8 @@ and Normalize returns the sign (zero remains zero).
 exact-kind default.
 
 **Color Parameter** defaults to RGBA (`vec4`) and provides an explicit **RGB**
-(`vec3`) output for Base Color and other three-component inputs. Older material
-and function documents gain alpha `1`, and their existing Color Parameter Out
-links move to RGB so their appearance and downstream vector widths stay intact.
+(`vec3`) output for Base Color and other three-component inputs. A stored value
+with fewer than four components is padded with `1`.
 
 ## Parameter authoring
 
@@ -222,8 +223,6 @@ name errors before writing the asset.
 The naming dialog tracks newly added or pasted nodes only. Invalid names in an
 existing or loaded graph remain editable in Details; cancelling a naming dialog
 cannot remove those nodes or their links.
-Schema upgrades give legacy unnamed or duplicate parameters deterministic unique
-names while preserving existing authored names, so older materials keep rendering.
 
 Runtime parameter setters expose parameters on the root Material graph. Material
 Function parameters remain internal defaults; expose function inputs to pass
@@ -511,11 +510,11 @@ Changing Domain (`setMaterialDomain`):
 
 ## Custom GLSL
 
-`custom.glsl` uses a typed function body on new nodes. Define named numeric
+`custom.glsl` uses a typed function body. Define named numeric
 inputs and additional outputs in Details, return the primary output, and assign
 additional outputs by name. The expanded editor provides GLSL highlighting and
-line numbers; the node shows four read-only code lines. Existing expression
-nodes retain `result = fn(a, b)` until explicitly converted.
+line numbers; the node shows four read-only code lines. A node without a typed
+pin interface is a validation error.
 
 The validator checks interfaces, function boundaries, stage restrictions and
 GLSL/WebGL capability. GPU errors appear as `material.compile.glsl`, with body
@@ -732,9 +731,8 @@ after a suspended preview resumes, Time reflects the current elapsed time. Legac
 nodes preserve Babylon's previous scene-animation timing (0.6 units per second
 at 60 FPS).
 
-Custom GLSL nodes created by the editor use node-local `customVersion: 2`, with
-stable pin IDs, GLSL variable names and explicit Float / Vector 2 / Vector 3 /
-Vector 4 types. The body returns the first output and assigns named additional
+Custom GLSL nodes have stable pin IDs, GLSL variable names and explicit Float /
+Vector 2 / Vector 3 / Vector 4 types. The body returns the first output and assigns named additional
 outputs, initialized to zero before the body runs. Inputs have ordinary editable
 pin defaults for numeric values. Texture inputs expose `sampler2D` variables:
 connect a Texture Parameter or the Texture output of Texture Sample / Texture
@@ -745,8 +743,6 @@ updates also reach Custom GLSL, including forwarded sample textures. WebGPU is
 not supported. Derivatives and
 discard restrict the node to the fragment stage. Graph validation checks the
 interface and function boundary; the GPU compiler checks GLSL syntax and types.
-Legacy expression nodes keep their original generic A/B behavior. **Convert to
-Function Body** preserves link IDs and the currently inferred vector width.
 Changing a variable name does not rewrite authored GLSL; update its references.
 
 Custom nodes display four highlighted read-only lines below their pins. Details

@@ -5,6 +5,7 @@ import {
   normalizeMaterialDocument,
   type MaterialDocument,
 } from "./document";
+import { newCustomGlslProperties } from "./custom-glsl";
 import { lowerMaterialDocument, materialCompileKey } from "./lower";
 
 function surfaceWithMultiply(): MaterialDocument {
@@ -210,7 +211,6 @@ describe("material lowering", () => {
   it("converts declared Custom GLSL inputs independently of its output width", () => {
     const doc = createDefaultMaterialDocument();
     doc.nodes.push({ id: "custom", type: "custom.glsl", position: { x: 0, y: 0 }, properties: {
-      customVersion: 2,
       inputs: [{ id: "value", name: "Value", type: "vec2" }],
       outputs: [{ id: "out", name: "Out", type: "float" }],
       body: "return Value.x;",
@@ -294,6 +294,15 @@ describe("material lowering", () => {
     expect(materialCompileKey(a)).not.toBe(materialCompileKey(b));
   });
 
+  it("keys the exact alpha cutoff the compiler bakes", () => {
+    const masked = (alphaCutoff: number) => ({
+      ...createDefaultMaterialDocument(),
+      blendMode: "masked" as const,
+      alphaCutoff,
+    });
+    expect(materialCompileKey(masked(0.50001))).not.toBe(materialCompileKey(masked(0.50004)));
+  });
+
   it("changes the compile key when a Custom GLSL body changes", () => {
     const withBody = (body: string) => {
       const doc = createDefaultMaterialDocument();
@@ -301,7 +310,7 @@ describe("material lowering", () => {
         id: "glsl",
         type: "custom.glsl",
         position: { x: 0, y: 0 },
-        properties: { body },
+        properties: { ...newCustomGlslProperties(), body },
       });
       doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
       doc.edges.push(
@@ -322,8 +331,8 @@ describe("material lowering", () => {
       );
       return doc;
     };
-    expect(materialCompileKey(withBody("a + b"))).not.toBe(
-      materialCompileKey(withBody("a * b")),
+    expect(materialCompileKey(withBody("return A + B;"))).not.toBe(
+      materialCompileKey(withBody("return A * B;")),
     );
   });
 

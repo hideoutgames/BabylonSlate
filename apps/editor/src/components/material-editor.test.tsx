@@ -8,6 +8,7 @@ import {
   createDefaultMaterialFunctionDocument,
   createMaterialPreviewState,
   materialPreviewReducer,
+  newCustomGlslProperties,
   type MaterialDocument,
   type MaterialPreviewState,
 } from "@babylonslate/shader-graph";
@@ -288,20 +289,20 @@ describe("Material details panel", () => {
     ).toBe("expensive");
   });
 
-  it("shows a GLSL expression editor for the selected Custom GLSL node", () => {
+  it("shows a GLSL function body editor for the selected Custom GLSL node", () => {
     const doc = createDefaultMaterialDocument("Rock");
     doc.nodes.push({
       id: "glsl",
       type: "custom.glsl",
       position: { x: 0, y: 0 },
-      properties: { body: "a + b" },
+      properties: newCustomGlslProperties(),
     });
     harness.content = doc as unknown as Record<string, unknown>;
     harness.selectedNodeId = "glsl";
     render(<MaterialDetailsPanel {...panelProps} />);
     expect(screen.getByTestId("material-node-glsl")).toBeTruthy();
     expect(screen.getByTestId("material-node-glsl-signature").textContent).toMatch(
-      /a,\s*b/,
+      /Use input names as variables/,
     );
   });
 

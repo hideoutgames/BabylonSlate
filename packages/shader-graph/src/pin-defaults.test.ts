@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultMaterialDocument } from "./document";
+import { lowerMaterialDocument } from "./lower";
 import {
   listUnconnectedMaterialPinDefaults,
   materialPinDefaultPropertyKey,
@@ -50,6 +51,20 @@ describe("material pin defaults", () => {
       value: [0, 0, 0],
     });
     expect(byId.normal).toBeUndefined();
+  });
+
+  it("widens a short authored vector the same way for Details and the shader", () => {
+    const doc = createDefaultMaterialDocument();
+    const output = doc.nodes.find((node) => node.id === "output")!;
+    output.properties = { "default:worldPositionOffset": [1, 2] };
+    const listed = listUnconnectedMaterialPinDefaults(doc, "output");
+    expect(listed.find((row) => row.pinId === "worldPositionOffset")?.value).toEqual([1, 2, 1]);
+    const lowered = lowerMaterialDocument(doc);
+    expect(lowered.ok && lowered.plan.outputs.worldPositionOffset).toEqual({
+      kind: "constant",
+      type: "vec3",
+      value: [1, 2, 1],
+    });
   });
 
   it("uses the authored override and omits a pin once it is wired", () => {

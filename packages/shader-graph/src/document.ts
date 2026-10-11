@@ -5,7 +5,6 @@ import {
   terminalNodeTypeFor,
 } from "./catalog";
 import type { MaterialValueType } from "./types";
-import { isMaterialParameterNode, materialParameterName } from "./parameters";
 
 export const MATERIAL_SCHEMA_VERSION = 3;
 export const MATERIAL_FUNCTION_SCHEMA_VERSION = 2;
@@ -129,16 +128,7 @@ function normalizeNodeProperties(
     const value = Array.isArray(properties.value) ? properties.value : [];
     return { ...properties, value: [asNumber(value[0], 1), asNumber(value[1], 1), asNumber(value[2], 1), asNumber(value[3], 1)] };
   }
-  if (type !== "custom.glsl") return properties;
-  const body =
-    typeof properties.body === "string"
-      ? properties.body
-      : typeof properties.glsl === "string"
-        ? properties.glsl
-        : "a + b";
-  const next: Record<string, unknown> = { ...properties, body };
-  delete next.glsl;
-  return next;
+  return properties;
 }
 
 function normalizeNodes(value: unknown): MaterialGraphNode[] {
@@ -163,15 +153,17 @@ function normalizeEdges(value: unknown): MaterialGraphEdge[] {
   return value.flatMap((entry, index) => {
     const record = asRecord(entry);
     const sourceNodeId = asString(record.sourceNodeId, "");
+    const sourcePinId = asString(record.sourcePinId, "");
     const targetNodeId = asString(record.targetNodeId, "");
-    if (!sourceNodeId || !targetNodeId) return [];
+    const targetPinId = asString(record.targetPinId, "");
+    if (!sourceNodeId || !sourcePinId || !targetNodeId || !targetPinId) return [];
     return [
       {
         id: asString(record.id, `edge-${index}`),
         sourceNodeId,
-        sourcePinId: asString(record.sourcePinId, "out"),
+        sourcePinId,
         targetNodeId,
-        targetPinId: asString(record.targetPinId, "in"),
+        targetPinId,
       },
     ];
   });
@@ -469,10 +461,7 @@ export function normalizeMaterialDocument(
 ): MaterialDocument {
   const record = asRecord(value);
   const domain = parseMaterialDomain(record.domain);
-  const nodes = withTerminal(
-    normalizeLegacyParameterNames(record, normalizeNodes(record.nodes), MATERIAL_SCHEMA_VERSION),
-    domain,
-  );
+  const nodes = withTerminal(normalizeNodes(record.nodes), domain);
   return {
     schemaVersion: Math.max(asNumber(record.schemaVersion, MATERIAL_SCHEMA_VERSION), MATERIAL_SCHEMA_VERSION),
     name: asString(record.name, fallbackName),
@@ -490,44 +479,8 @@ export function normalizeMaterialDocument(
     ...(asNumber(record.boundsPadding, 0) > 0 ? { boundsPadding: asNumber(record.boundsPadding, 0) } : {}),
     preview: normalizeMaterialPreviewSettings(record.preview),
     nodes,
-    edges: normalizeColorParameterEdges(record, nodes, MATERIAL_SCHEMA_VERSION),
+    edges: normalizeEdges(record.edges),
   };
-}
-
-/** Older Color Parameter Out pins carried RGB; keep those links explicitly RGB. */
-function normalizeColorParameterEdges(
-  record: Record<string, unknown>,
-  nodes: readonly MaterialGraphNode[],
-  currentVersion: number,
-): MaterialGraphEdge[] {
-  const edges = normalizeEdges(record.edges);
-  if (asNumber(record.schemaVersion, 0) >= currentVersion) return edges;
-  const colorIds = new Set(nodes.filter((node) => node.type === "param.color").map((node) => node.id));
-  return edges.map((edge) => colorIds.has(edge.sourceNodeId) && edge.sourcePinId === "out" ? { ...edge, sourcePinId: "rgb" } : edge);
-}
-
-/** Upgrade old authoring, which allowed unnamed and duplicate parameters. */
-function normalizeLegacyParameterNames(
-  record: Record<string, unknown>,
-  nodes: MaterialGraphNode[],
-  currentVersion: number,
-): MaterialGraphNode[] {
-  if (asNumber(record.schemaVersion, 0) >= currentVersion) return nodes;
-  const reserved = new Set(nodes.filter((node) => isMaterialParameterNode(node.type)).map(materialParameterName));
-  const used = new Set<string>();
-  return nodes.map((node) => {
-    if (!isMaterialParameterNode(node.type)) return node;
-    let name = materialParameterName(node);
-    if (!name || used.has(name)) {
-      const base = name || materialNodeDefinition(node.type)!.title;
-      name = base;
-      let suffix = 2;
-      while (reserved.has(name) || used.has(name)) name = `${base} ${suffix++}`;
-      reserved.add(name);
-    }
-    used.add(name);
-    return { ...node, properties: { ...node.properties, name } };
-  });
 }
 
 function normalizeFunctionPins(
@@ -592,8 +545,7 @@ export function normalizeMaterialFunctionDocument(
   fallbackName = "Material Function",
 ): MaterialFunctionDocument {
   const record = asRecord(value);
-  const nodes = normalizeLegacyParameterNames(record, normalizeNodes(record.nodes), MATERIAL_FUNCTION_SCHEMA_VERSION);
-  const withPlumbing = [...nodes];
+  const withPlumbing = normalizeNodes(record.nodes);
   if (!withPlumbing.some((node) => node.type === "function.input")) {
     withPlumbing.unshift({
       id: "inputs",
@@ -617,7 +569,7 @@ export function normalizeMaterialFunctionDocument(
     inputs: normalizeFunctionPins(record.inputs, "in"),
     outputs: normalizeFunctionPins(record.outputs, "out"),
     nodes: withPlumbing,
-    edges: normalizeColorParameterEdges(record, withPlumbing, MATERIAL_FUNCTION_SCHEMA_VERSION),
+    edges: normalizeEdges(record.edges),
   };
 }
 
@@ -647,7 +599,7 @@ export function migrateLegacyShaderPayload(
   context: LegacyShaderMigrationContext = {},
 ): MaterialDocument {
   const record = asRecord(value);
-  const legacyNodes = normalizeLegacyParameterNames(record, normalizeNodes(record.nodes), MATERIAL_SCHEMA_VERSION);
+  const legacyNodes = normalizeNodes(record.nodes);
   const hasPostTerminal = legacyNodes.some(
     (node) => node.type === "output.postProcess",
   );
@@ -663,7 +615,7 @@ export function migrateLegacyShaderPayload(
   }));
   const byId = new Map(nodes.map((node) => [node.id, node]));
 
-  const edges = normalizeColorParameterEdges(record, nodes, MATERIAL_SCHEMA_VERSION)
+  const edges = normalizeEdges(record.edges)
     .map((edge) => {
       const target = byId.get(edge.targetNodeId);
       if (!target) return edge;

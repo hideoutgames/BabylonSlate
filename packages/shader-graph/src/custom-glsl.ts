@@ -14,8 +14,7 @@ export interface CustomGlslInterface {
 }
 
 /** Pin IDs belong to graph links; names belong to the authored GLSL scope. */
-export function customGlslInterface(properties: Record<string, unknown>): CustomGlslInterface | null {
-  if (properties.customVersion !== 2) return null;
+export function customGlslInterface(properties: Record<string, unknown>): CustomGlslInterface {
   const read = (value: unknown): CustomGlslPin[] => Array.isArray(value)
     ? value.filter((pin): pin is CustomGlslPin => !!pin && typeof pin === "object"
       && typeof pin.id === "string" && typeof pin.name === "string"
@@ -26,7 +25,6 @@ export function customGlslInterface(properties: Record<string, unknown>): Custom
 
 export function newCustomGlslProperties(): Record<string, unknown> {
   return {
-    customVersion: 2,
     inputs: [{ id: "a", name: "A", type: "float" }, { id: "b", name: "B", type: "float" }],
     outputs: [{ id: "out", name: "Result", type: "float" }],
     body: "return A + B;",
@@ -39,7 +37,6 @@ const FRAGMENT_ONLY = /\b(?:(?:dFdx|dFdy|fwidth)(?:Coarse|Fine)?|discard)\b/;
 
 export function customGlslDefinition(node: MaterialGraphNode, base: MaterialNodeDefinition): MaterialNodeDefinition {
   const pins = customGlslInterface(node.properties);
-  if (!pins) return base;
   const code = glslWithoutComments(String(node.properties.body ?? ""));
   return {
     ...base,
@@ -60,7 +57,6 @@ const RESERVED = new Set("attribute const uniform varying layout centroid flat s
 
 export function customGlslInterfaceError(properties: Record<string, unknown>): string | null {
   const pins = customGlslInterface(properties);
-  if (!pins) return null;
   if (!Array.isArray(properties.inputs) || !Array.isArray(properties.outputs)
     || pins.inputs.length !== properties.inputs.length || pins.outputs.length !== properties.outputs.length) {
     return "Custom GLSL pins must have an ID, variable name and Float, Vector or Texture type";

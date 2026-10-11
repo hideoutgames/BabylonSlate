@@ -29,6 +29,22 @@ export function readMaterialPinDefault(
   return asNumberArray(properties[materialPinDefaultPropertyKey(pinId)]);
 }
 
+/**
+ * An unwired value at `type`'s width: a scalar fills every channel; a vector
+ * keeps its leading channels, drops extra ones and fills missing ones with 1,
+ * like every widening conversion. Lowering and Details both read this, so the
+ * shader and the inspector show the same value.
+ */
+export function materialDefaultComponents(
+  type: MaterialValueType,
+  value: readonly number[] | undefined,
+): number[] {
+  const width = Math.max(1, componentCount(type));
+  const source = value && value.length > 0 ? value : [0];
+  if (source.length === 1) return Array<number>(width).fill(source[0]!);
+  return Array.from({ length: width }, (_, index) => source[index] ?? 1);
+}
+
 function zeroComponents(type: MaterialValueType | "generic"): number[] {
   if (type === "generic" || type === "float") return [0];
   if (type === "texture") return [];
@@ -97,7 +113,7 @@ export function listUnconnectedMaterialPinDefaults(
       name: pin.name,
       type,
       ...(pin.colorHint ? { colorHint: true } : {}),
-      value: value.length === 1 && type !== "generic" && componentCount(type) > 1 ? Array(componentCount(type)).fill(value[0]) as number[] : value,
+      value: type === "generic" ? value : materialDefaultComponents(type, value),
     });
   }
   return listed;

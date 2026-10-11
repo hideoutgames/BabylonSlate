@@ -758,11 +758,9 @@ const CUSTOM_NODES: MaterialNodeDefinition[] = [
     title: "Custom GLSL",
     category: "Custom",
     cost: 16,
-    inputs: [
-      { id: "a", name: "A", type: GENERIC, defaultValue: [0] },
-      { id: "b", name: "B", type: GENERIC, defaultValue: [0] },
-    ],
-    outputs: [{ id: "out", name: "Out", type: GENERIC }],
+    // Pins come from each node's typed interface (`customGlslDefinition`).
+    inputs: [],
+    outputs: [],
     requires: ["customGlsl"],
   },
 ];

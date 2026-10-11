@@ -12,8 +12,8 @@ import type {
   MaterialGraphNode,
 } from "./document";
 import { createTypeResolver, type TypeResolver } from "./resolve";
-import { resolveMaterialPinDefault } from "./pin-defaults";
-import { componentCount, conversionFor, convertMaterialValue, type MaterialConversion, type MaterialValueType } from "./types";
+import { materialDefaultComponents, resolveMaterialPinDefault } from "./pin-defaults";
+import { conversionFor, convertMaterialValue, type MaterialConversion, type MaterialValueType } from "./types";
 import {
   validateMaterialDocument,
   type MaterialDiagnostic,
@@ -114,24 +114,11 @@ interface Frame {
 }
 
 /** Widen a literal to the component count of `type`, splatting a scalar. */
-function constantComponents(
-  type: MaterialValueType,
-  value: readonly number[] | undefined,
-): number[] {
-  const width = Math.max(1, componentCount(type));
-  const source = value ?? [0];
-  const components: number[] = [];
-  for (let index = 0; index < width; index++) {
-    components.push(source[index] ?? source[0] ?? 0);
-  }
-  return components;
-}
-
 function constantOperand(
   type: MaterialValueType,
   value: readonly number[] | undefined,
 ): MaterialOperand {
-  return { kind: "constant", type, value: constantComponents(type, value) };
+  return { kind: "constant", type, value: materialDefaultComponents(type, value) };
 }
 
 function pinDefault(
@@ -412,7 +399,7 @@ export function lowerMaterialDocument(
     const properties = { ...node.properties };
     if (definition.outputs[0] && node.type.startsWith("const.")) {
       const constantType = definition.outputs[0].type.kind as MaterialValueType;
-      properties.value = constantComponents(
+      properties.value = materialDefaultComponents(
         constantType,
         propertyVector(node, constantType),
       );
@@ -465,7 +452,7 @@ export function lowerMaterialDocument(
     doc.blendMode,
     doc.twoSided ? "two-sided" : "one-sided",
     doc.defaultNormals,
-    doc.alphaCutoff.toFixed(4),
+    String(doc.alphaCutoff),
     String(doc.boundsPadding ?? 0),
   ].join("|");
 
