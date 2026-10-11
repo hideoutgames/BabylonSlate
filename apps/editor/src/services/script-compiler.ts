@@ -725,6 +725,8 @@ export function compileGraphDocuments(
 export type AnimGraphCompileDocument = {
   guid: string;
   path: string;
+  /** The asset name a `throwOnError` failure reports; the guid when absent. */
+  name?: string;
   document: AnimGraphDocument | unknown;
 };
 
@@ -863,7 +865,7 @@ export function compileAnimGraphScripts(
       scripts.push(...compiled);
     } catch (error) {
       if (options.throwOnError) {
-        throw new Error(`Animation Graph ${entry.guid} could not be compiled: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+        throw new Error(`Animation Graph ${entry.name ?? entry.guid} could not be compiled:${error instanceof Error ? error.message : String(error)}`, { cause: error });
       }
       console.error(`[play] failed to compile AnimationGraph ${entry.path}`, error);
     }

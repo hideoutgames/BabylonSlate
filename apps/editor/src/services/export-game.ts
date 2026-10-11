@@ -335,7 +335,7 @@ export async function collectAndExportGame(
     content: SerializedGraph;
     parentClassId?: string | null;
   }> = [];
-  const animDocs: Array<{ guid: string; document: unknown }> = [];
+  const animDocs: Array<{ guid: string; name: string; document: unknown }> = [];
   const exportAssets: ExportAssetBytes[] = [];
   const subsystemHierarchy = { ancestry(classId: string) { const result: string[] = []; const seen = new Set<string>(); let current: string | null | undefined = classId; while (current && !seen.has(current)) { seen.add(current); result.push(current); current = params.parentOf(current); } return result; } };
   const requiredEmissions = new Set<string>();
@@ -366,7 +366,7 @@ export async function collectAndExportGame(
     }
     if (asset.type === "AnimationGraph") {
       const payload = params.payloadByGuid?.(guid) ?? null;
-      if (payload) animDocs.push({ guid, document: payload });
+      if (payload) animDocs.push({ guid, name: asset.name, document: payload });
     }
     let bytes: Uint8Array | null;
     try {
