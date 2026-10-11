@@ -10,6 +10,7 @@ vi.mock("../context/play-context", () => ({
   useOutputLog: () => ({ lines }),
   useOutputLogWindow: () => {},
 }));
+vi.mock("../lib/use-dock-panel-shown", () => ({ useDockPanelShown: () => true }));
 
 const VIEWPORT = '[data-slot="scroll-area-viewport"]';
 
