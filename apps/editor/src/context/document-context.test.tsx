@@ -514,7 +514,6 @@ describe("DocumentProvider actions and route", () => {
     expect(documents().canRedoActiveDocument).toBe(false);
     await act(async () => {
       expect(await actions.applySceneChange(MAIN_SCENE_ID, movedScene(restored, 20))).toBe(false);
-      actions.updateScene(MAIN_SCENE_ID, movedScene(restored, 30));
       actions.undoActiveDocument();
       actions.redoActiveDocument();
       actions.updateProjectSettings({ compileOnSave: !settings.compileOnSave });
