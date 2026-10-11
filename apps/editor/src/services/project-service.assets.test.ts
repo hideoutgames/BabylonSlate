@@ -214,6 +214,17 @@ describe("project documents as .babasset", () => {
     expect(await storage.readBinary(path)).toEqual(bytes);
   });
 
+  it.each([false, true])("refuses to save over an asset it cannot read (rescanned=%s)", async (rescanned) => {
+    const { service, storage } = await scaffolded();
+    const path = "assets/Corrupt.class.babasset";
+    await service.saveDocument("graph", path, { nodes: [], edges: [] });
+    const corrupt = new Uint8Array([1, 2, 3]);
+    await storage.writeBinary(path, corrupt);
+    if (rescanned) await service.remountRegistry();
+    await expect(service.saveDocument("graph", path, { nodes: [], edges: [] })).rejects.toThrow(/could not be read/);
+    expect(await storage.readBinary(path)).toEqual(corrupt);
+  });
+
   it.each([false, true])("persists one Class replacement across all usages (None=%s)", async (none) => {
     const { service, storage } = await scaffolded();
     const sourcePath = "assets/Hero.class.babasset";

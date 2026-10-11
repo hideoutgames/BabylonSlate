@@ -2703,6 +2703,10 @@ export class ProjectService {
     }
   }
 
+  /**
+   * The chunks a rewrite of `path` must keep. A file that exists but cannot
+   * be read refuses the write rather than losing them.
+   */
   private async extraChunksFor(path: string) {
     const storage = this.storageForPath(path);
     const blobs = this.blobsForPath(path);
@@ -2713,11 +2717,12 @@ export class ProjectService {
         (hash) => blobs.readBlob(hash),
       );
       return extraChunksFromDecoded(decoded);
-    } catch {
-      return [];
+    } catch (cause) {
+      throw new Error(`${path} could not be read, so it was not overwritten.`, { cause });
     }
   }
 
+  /** The identity a write of `path` keeps; an existing file that cannot be read refuses the write. */
   private async guidForAsset(path: string): Promise<string> {
     const indexed = this.assetRegistry?.getByPath(path);
     if (indexed) return indexed.header.guid;
@@ -2725,15 +2730,14 @@ export class ProjectService {
     if (reserved) return reserved;
     const storage = this.storageForPath(path);
     if (await storage.exists(path)) {
+      let header: ReturnType<typeof readAssetDocumentHeader>;
       try {
-        const header = readAssetDocumentHeader(
-          await storage.readBinary(path),
-        );
-        this.assetGuids.set(path, header.guid);
-        return header.guid;
-      } catch {
-        /* unreadable asset: fall through to a fresh guid */
+        header = readAssetDocumentHeader(await storage.readBinary(path));
+      } catch (cause) {
+        throw new Error(`${path} could not be read, so it was not overwritten.`, { cause });
       }
+      this.assetGuids.set(path, header.guid);
+      return header.guid;
     }
     const guid = newGuid();
     this.assetGuids.set(path, guid);
