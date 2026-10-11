@@ -10,7 +10,7 @@ import { createDefaultMigrationRegistry } from "./migration";
 const FIXTURE_DIR = dirname(fileURLToPath(import.meta.url));
 
 describe("historical migration goldens", () => {
-  it("migrates Graph v0 golden payload to current", () => {
+  it("migrates a v0 logic graph golden payload to the current Class", () => {
     const registry = createDefaultMigrationRegistry();
     // Frozen pre-nodes/edges file: never regenerate it with the current writer.
     const golden = readGoldenBinary(FIXTURE_DIR, "__fixtures__/graph-v0.babasset");
@@ -20,10 +20,10 @@ describe("historical migration goldens", () => {
     expect(header.dependencyMetadataVersion).toBeUndefined();
 
     const loaded = loadPayloadWithMigration(registry, {
-      type: "Graph",
+      type: "Class",
       version: header.version,
       payload: header.payload,
-      path: "assets/legacy.graph.babasset",
+      path: "assets/legacy.class.babasset",
     });
     expect(loaded.pending).not.toBeNull();
     expect(loaded.version).toBe(1);

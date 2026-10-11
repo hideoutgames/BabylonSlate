@@ -1,4 +1,4 @@
-import type { GraphClassMember } from "@babylonslate/core";
+import { classIdForAssetPath, type GraphClassMember } from "@babylonslate/core";
 import { ASSET_DEPENDENCY_METADATA_VERSION, collectAssetDependencyMetadata, type AssetDependencyClass, type AssetDependencyContext } from "./asset-dependencies";
 import { BABASSET_PREFIX_BYTES, readBabassetHeader, readBabassetHeaderLength } from "./babasset";
 import { concatBytes, sha256Hex, stableStringify, writeU32LE } from "./bytes";
@@ -20,11 +20,6 @@ export function assetsNeedingDependencyMetadataUpgrade(assets: readonly IndexedA
   ));
 }
 
-function classId(asset: IndexedAsset): string {
-  return (asset.path.split("/").pop() ?? asset.path)
-    .replace(/\.(graph|class)\.(babasset|json)$/, "")
-    .replace(/\.babasset$/, "").replace(/[^A-Za-z0-9_]+/g, "_") || "Graph";
-}
 
 /**
  * An explicit, versioned maintenance operation, never invoked by catalog scans.
@@ -58,7 +53,7 @@ export async function upgradeAssetDependencyMetadata(registry: AssetRegistry, op
         ...options.context, parentClass: asset.header.parentClass,
       }).requiredVariableNames;
       classes.push({
-        guid: asset.header.guid, classId: classId(asset), parentClassId: asset.header.parentClass,
+        guid: asset.header.guid, classId: classIdForAssetPath(asset.path), parentClassId: asset.header.parentClass,
         members: Array.isArray(document.payload.members) ? document.payload.members as GraphClassMember[] : [],
         requiredVariableNames: roles,
       });

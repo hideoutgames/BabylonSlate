@@ -1,5 +1,5 @@
 import type { ProjectStorage, ProjectStorageReader, StorageReadOptions } from "@babylonslate/core";
-import { ENGINE_VERSION, isStorageNotFound, SourceRevisionChangedError } from "@babylonslate/core";
+import { classIdForAssetPath, ENGINE_VERSION, isStorageNotFound, SourceRevisionChangedError } from "@babylonslate/core";
 import {
   decodeBabasset,
   encodeBabasset,
@@ -614,7 +614,7 @@ export class AssetRegistry {
       .map((asset) => ({
         guid: asset.header.guid,
         classId: typeof asset.header.payload.classId === "string" ? asset.header.payload.classId
-          : (asset.path.split("/").pop() ?? "").replace(/\.(graph|class)\.(babasset|json)$/, "").replace(/\.babasset$/, "").replace(/[^A-Za-z0-9_]+/g, "_") || "Graph",
+          : classIdForAssetPath(asset.path),
         parentClassId: asset.header.parentClass,
         requiredVariableNames: asset.header.requiredVariableNames,
         members: Array.isArray(asset.header.payload.members) ? asset.header.payload.members as AssetDependencyClass["members"]

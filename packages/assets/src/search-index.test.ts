@@ -168,9 +168,9 @@ describe("ProjectSearchIndex", () => {
 
   it("indexes graph nodes, variable names, and skips ExecuteJavaScript bodies", async () => {
     const storage = await createStorage();
-    await writeDocument(storage, "assets/main.graph.babasset", {
+    await writeDocument(storage, "assets/main.class.babasset", {
       guid: "graph-1",
-      type: "Graph",
+      type: "Class",
       name: "MainGraph",
       payload: {
         nodes: [
@@ -219,7 +219,7 @@ describe("ProjectSearchIndex", () => {
       hello.find((hit) => hit.kind === "graph-node")?.target,
     ).toMatchObject({
       kind: "graph-node",
-      graphPath: "assets/main.graph.babasset",
+      graphPath: "assets/main.class.babasset",
       nodeId: "log-1",
     });
 
