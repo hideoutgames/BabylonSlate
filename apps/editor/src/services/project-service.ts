@@ -574,8 +574,14 @@ export class ProjectService {
           await this.refreshTextureWrite(guid, registry, session);
         }).catch(failure => this.emitTextureEncodeDiagnostic(guid, failure)).finally(() => release?.());
       },
-      // A guarded job dropped unencoded may leave its Texture stale for the user.
-      onDrop: () => this.emitRegistryChange(),
+      // A guarded job dropped unencoded may leave its Texture stale for the
+      // user. A closed project's encode ends the write it retained here.
+      onDrop: (job) => {
+        const release = this.encodeWriteReleases.get(job.assetGuid);
+        this.encodeWriteReleases.delete(job.assetGuid);
+        release?.();
+        this.emitRegistryChange();
+      },
     });
     this.publicEncodeQueue = guardProjectEncodeQueue(this.encodeQueue, this.writeAdmission);
     this.writeAdmission.subscribe(() => this.updateEncodePause());
@@ -1286,6 +1292,9 @@ export class ProjectService {
 
   async closeProject(): Promise<void> {
     this.resetAssetLoading();
+    // Queued encodes belong to this project's registry: none may commit into
+    // the next one. Their Textures stay pending for Retry Encoding.
+    this.encodeQueue.clear();
     this.sessionEncodes.clear();
     await this.extensions.close();
     this.cancelEmissionJobs();
