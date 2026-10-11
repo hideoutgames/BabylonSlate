@@ -282,6 +282,26 @@ describe("DocumentProvider actions and route", () => {
     expect(documents().dirtyDocuments.some(doc => doc.id === MAIN_SCENE_ID)).toBe(true);
   });
 
+  it("writes a Class reparent with the saved graph and keeps the tab's unsaved edits unsaved", async () => {
+    const actions = await openProject();
+    const registry = documents().assetRegistry!;
+    await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "Class", name: "Hero" }));
+    act(() => actions.noteAssetsCreated());
+    const ref = { kind: "graph" as const, path: MAIN_CLASS_FILE, label: "Main" };
+    const id = documentId(ref);
+    await act(() => actions.openDocument(ref));
+    const graph = actions.getOpenDocuments().find((doc) => doc.id === id)!.content as SerializedGraph;
+    await act(() => actions.applyGraphChange(id, { ...graph, members: [
+      ...(graph.members ?? []), { id: "speed", kind: "variable", name: "Speed", typeId: "float", defaultValue: 3 },
+    ] }));
+
+    expect(await act(() => actions.reparentClassDocument(id, "Hero"))).toBeNull();
+    expect(registry.getByPath(MAIN_CLASS_FILE)?.header.parentClass).toBe("Hero");
+    const stored = await actions.loadAssetDocument("graph", MAIN_CLASS_FILE) as SerializedGraph;
+    expect(stored.members ?? []).not.toContainEqual(expect.objectContaining({ id: "speed" }));
+    expect(documents().dirtyDocuments.map((doc) => doc.id)).toEqual([id]);
+  });
+
   it("records a SceneLayer switcher entries edit for Undo and crash recovery", async () => {
     const actions = await openProject();
     await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));

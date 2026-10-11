@@ -1392,9 +1392,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const runForegroundRescan = useCallback(async () => {
     if (!projectDocumentRef.current) return;
+    const guid = projectService.guid;
     const previous = mtimeSnapshotRef.current;
     await projectService.remountRegistry();
     bump();
+    // Another project, or a snapshot an own save took meanwhile, is newer
+    // than this scan: classifying against it would report the wrong changes.
+    if (projectService.guid !== guid || mtimeSnapshotRef.current !== previous) return;
     const nextAssets = snapshotIndexedMtimes(
       projectService.registry?.list() ?? [],
     );
@@ -1403,6 +1407,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const next = { assets: { ...nextAssets }, projectJson: previous?.projectJson ?? null };
     mtimeSnapshotRef.current = next;
     const nextProject = await readProjectJsonMtime(projectService.storagePort);
+    if (projectService.guid !== guid || mtimeSnapshotRef.current !== next) return;
     if (previous) {
       const openDocs = documentService
         .getOpenDocumentsOrdered()
@@ -2395,6 +2400,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const next = { ...current, settings: settings.value };
         const projectSave = projectSaveState.current.capture(next);
         await projectService.saveProject(next, documentService.buildLayouts());
+        await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
         projectSaveState.current.complete(projectSave);
         setProjectDocument(next);
       }
@@ -2404,7 +2410,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       else documentService.replaceLoadedContent(doc.id, content);
     }
     bump();
-  }, [bump, collectGraphTypeSchemas, documentService, projectService, setProjectDocument]);
+  }, [bump, captureMtimeSnapshot, collectGraphTypeSchemas, documentService, projectService, setProjectDocument]);
 
   const renameAsset = useCallback((guid: string, newName: string) => enqueueProjectWrite(async () => {
     if (saveDebounceRef.current) { clearTimeout(saveDebounceRef.current); saveDebounceRef.current = null; }
@@ -2447,6 +2453,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           await journalBuffer.flush(projectGuid, { rejectOnError: true });
         },
       });
+      // The rename moved files and may have rewritten project.json: neither is external.
+      await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
       for (const { doc, content } of openChanges) {
         if (doc.dirty) documentService.patchLoadedContent(doc.id, content);
         else documentService.replaceLoadedContent(doc.id, content);
@@ -2464,7 +2472,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     } finally {
       if (documentService.getDirtyDocuments().length || projectSaveState.current.isDirty(projectDocumentRef.current)) scheduleDebouncedSave();
     }
-  }), [bump, collectGraphTypeSchemas, documentService, enqueueProjectWrite, journalBuffer, projectService, scheduleDebouncedSave, setProjectDocument]);
+  }), [bump, captureMtimeSnapshot, collectGraphTypeSchemas, documentService, enqueueProjectWrite, journalBuffer, projectService, scheduleDebouncedSave, setProjectDocument]);
 
   const repairAfterAssetDelete = useCallback(
     async (
@@ -2837,12 +2845,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         assets,
       });
       if (preview.ok === false) return preview.error;
-      await projectService.saveDocument(
-        "graph",
-        doc.ref.path,
-        doc.content as SerializedGraph,
-        { parentClass: newParentId },
-      );
+      try {
+        // The parent is a file operation like a rename: it goes to disk now with
+        // the saved graph, while the tab's unsaved edits stay unsaved.
+        const saved = await projectService.loadDocument("graph", doc.ref.path);
+        await projectService.saveDocument("graph", doc.ref.path, saved, { parentClass: newParentId });
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+      }
       bump();
       return null;
     },
