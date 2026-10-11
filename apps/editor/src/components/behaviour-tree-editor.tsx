@@ -240,23 +240,26 @@ function useBehaviourTreeDocument() {
   const linkedBlackboardContent = useOpenDocument(
     blackboardPath ? documentId({ kind: "blackboard", path: blackboardPath }) : null,
   )?.content;
-  const [loadedBlackboard, setLoadedBlackboard] = useState<BlackboardDocument | null>(
-    null,
-  );
+  // A closed Blackboard loads from storage. Keep the path it was read from so
+  // a relink, or a load that finds nothing, never shows the previous keys.
+  const [loadedBlackboard, setLoadedBlackboard] = useState<{
+    path: string;
+    document: BlackboardDocument | null;
+  } | null>(null);
   useEffect(() => {
-    if (!blackboardPath) {
-      setLoadedBlackboard(null);
-      return;
-    }
+    if (!blackboardPath) return;
     if (linkedBlackboardContent && typeof linkedBlackboardContent === "object") {
       return;
     }
     let cancelled = false;
     void loadAssetDocument("blackboard", blackboardPath).then((payload) => {
-      if (cancelled || !payload || typeof payload !== "object") return;
-      setLoadedBlackboard(
-        parseBlackboardDocument(payload as Record<string, unknown>),
-      );
+      if (cancelled) return;
+      setLoadedBlackboard({
+        path: blackboardPath,
+        document: payload && typeof payload === "object"
+          ? parseBlackboardDocument(payload as Record<string, unknown>)
+          : null,
+      });
     });
     return () => {
       cancelled = true;
@@ -268,8 +271,10 @@ function useBehaviourTreeDocument() {
         linkedBlackboardContent as Record<string, unknown>,
       );
     }
-    return loadedBlackboard;
-  }, [linkedBlackboardContent, loadedBlackboard]);
+    return loadedBlackboard && loadedBlackboard.path === blackboardPath
+      ? loadedBlackboard.document
+      : null;
+  }, [blackboardPath, linkedBlackboardContent, loadedBlackboard]);
   const blackboardKeyEntries = blackboardDocument?.keys ?? [];
   const blackboardKeys = blackboardKeyEntries.map((key) => key.name);
   const diagnostics = validateBehaviourTree(doc, {

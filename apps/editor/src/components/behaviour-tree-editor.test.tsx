@@ -164,6 +164,11 @@ vi.mock("../context/document-context", async () => {
                 header: { guid: "bb-1", name: "Guard", type: "Blackboard" },
                 path: BB_PATH,
               }
+            : guid === "bb-scout" || guid === "bb-missing"
+              ? {
+                  header: { guid, name: guid, type: "Blackboard" },
+                  path: `assets/${guid}.blackboard.babasset`,
+                }
             : guid === "audio-1"
               ? {
                   header: { guid: "audio-1", name: "Jump", type: "Audio" },
@@ -421,6 +426,21 @@ describe("BehaviourTreeEditor", () => {
     expect(alert.textContent).toMatch(/Alert/i);
     expect(alert.textContent).toMatch(/Bool/);
     expect(screen.getByTestId("bt-blackboard-key-hp").textContent).toMatch(/Float/);
+  });
+
+  it("drops the previous closed Blackboard's keys when the relinked one cannot load", async () => {
+    loadAssetDocument.mockImplementation(async (_kind: string, path: string) =>
+      path === "assets/bb-scout.blackboard.babasset"
+        ? { name: "Scout", keys: [{ name: "target", type: { kind: "vector3" } }] }
+        : null,
+    );
+    const doc = treeWithWait();
+    doc.blackboardGuid = "bb-scout";
+    renderTree(doc);
+    expect(await screen.findByTestId("bt-blackboard-key-target")).toBeTruthy();
+    act(() => store.reset({ ...doc, blackboardGuid: "bb-missing" } as unknown as Record<string, unknown>));
+    await waitFor(() => expect(loadAssetDocument).toHaveBeenCalledWith("blackboard", "assets/bb-missing.blackboard.babasset"));
+    await waitFor(() => expect(screen.queryByTestId("bt-blackboard-key-target")).toBeNull());
   });
 
   it("lists compiler diagnostics and focuses the node when tapped", async () => {
