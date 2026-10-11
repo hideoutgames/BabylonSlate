@@ -283,7 +283,7 @@ The global toolbar's **Scene Mode** picker is available in Scene documents: **De
 only at an owner-acknowledged quiescent boundary whose render command revision
 matches the runtime revision. It reads the real World, reflected Class variables,
 the same component authoring defaults used by Add Component, and explicit material
-parameter state. Diagnostic snapshots and rendered/interpolated poses are not its
+parameter state. Diagnostic snapshots and rendered poses are not its
 input. The service returns a complete candidate or a named failure without changing
 the document. `PlaySession.captureSimulationScene` first quiesces the runtime and
 drains accepted render-property work. `SimulationSession` then owns permission
