@@ -1599,6 +1599,61 @@ describe("GraphEditor", () => {
     }
   });
 
+  it("ends a pin drag whose touch is cancelled, so a later release does nothing", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const { container, queryByTestId } = render(
+        <GraphEditor
+          initialGraph={graphWithWiredPins()}
+          paletteNodes={pinDragPalette}
+          onChange={onChange}
+        />,
+      );
+      const source = mockPinDragLayout(container);
+      onChange.mockClear();
+      const touches = (identifier: number, point: { x: number; y: number }) => [
+        { identifier, clientX: point.x, clientY: point.y } as Touch,
+      ];
+      act(() => {
+        source.dispatchEvent(
+          new TouchEvent("touchstart", {
+            bubbles: true,
+            cancelable: true,
+            touches: touches(7, { x: 22, y: 22 }),
+            changedTouches: touches(7, { x: 22, y: 22 }),
+          }),
+        );
+        document.dispatchEvent(
+          new TouchEvent("touchmove", {
+            bubbles: true,
+            cancelable: true,
+            touches: touches(7, farDrop),
+            changedTouches: touches(7, farDrop),
+          }),
+        );
+        document.dispatchEvent(
+          new TouchEvent("touchcancel", {
+            bubbles: true,
+            changedTouches: touches(7, farDrop),
+          }),
+        );
+        // The next, unrelated tap is XYFlow's first release since the drag.
+        document.dispatchEvent(
+          new TouchEvent("touchend", {
+            bubbles: true,
+            cancelable: true,
+            changedTouches: touches(8, farDrop),
+          }),
+        );
+      });
+      expect(queryByTestId("node-palette-body")).toBeNull();
+      expect(onChange).not.toHaveBeenCalled();
+    } finally {
+      restoreLayout();
+    }
+  });
+
   it("spawns a picked node at the drag point and auto-connects the dragged pin", () => {
     const restoreLayout = stubMeasuredGraphLayout();
     try {

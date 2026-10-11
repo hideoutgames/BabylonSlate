@@ -1429,7 +1429,9 @@ function GraphEditorCanvas({
 
   const handleConnect = useCallback(
     (connection: Connection) => {
-      if (readOnly) return;
+      // A cancelled drag ends without a wire, even when XYFlow later reports
+      // the handle it last hovered.
+      if (readOnly || connectDragRef.current?.connectEndHandled) return;
       const next = orientThenNormalize(
         connection,
         graphStateRef.current.nodes,
@@ -2123,6 +2125,17 @@ function GraphEditorCanvas({
   }, []);
 
   useEffect(() => {
+    // The gesture ends with no action: a later release only lets XYFlow tidy
+    // up, and the next move ends its drag because the connection is gone.
+    const endConnectSession = (
+      session: NonNullable<typeof connectDragRef.current>,
+    ) => {
+      session.connectEndHandled = true;
+      pendingPinRef.current = null;
+      setPendingPin(null);
+      storeApi.getState().cancelConnection();
+    };
+
     const onMove = (event: Event) => {
       const session = connectDragRef.current;
       if (!session) return;
@@ -2134,6 +2147,22 @@ function GraphEditorCanvas({
       }
       const point = clientPoint(event as MouseEvent | TouchEvent);
       if (point) session.pointer = point;
+    };
+
+    // XYFlow drags pins with touch events and never sees `touchcancel`.
+    const onTouchCancel = (event: Event) => {
+      const session = connectDragRef.current;
+      if (!session || session.connectEndHandled) return;
+      const touches = (event as TouchEvent).changedTouches;
+      if (
+        !touches ||
+        !Array.from(touches).some(
+          (touch) => touch.identifier === session.pointerId,
+        )
+      ) {
+        return;
+      }
+      endConnectSession(session);
     };
 
     const onSecondaryPointerDown = (event: Event) => {
@@ -2149,11 +2178,8 @@ function GraphEditorCanvas({
       if (eventPointerId === session.pointerId) return;
       event.preventDefault();
       const cancelRubberBand = () => {
-        session.connectEndHandled = true;
         skipPaneClickRef.current = true;
-        pendingPinRef.current = null;
-        setPendingPin(null);
-        storeApi.getState().cancelConnection();
+        endConnectSession(session);
       };
       if (
         shouldCancelConnectionOnSecondaryPointer({
@@ -2215,12 +2241,14 @@ function GraphEditorCanvas({
       capture: true,
       passive: false,
     });
+    document.addEventListener("touchcancel", onTouchCancel, true);
     return () => {
       document.removeEventListener("pointermove", onMove, true);
       document.removeEventListener("mousemove", onMove, true);
       document.removeEventListener("touchmove", onMove, true);
       document.removeEventListener("pointerdown", onSecondaryPointerDown, true);
       document.removeEventListener("touchstart", onSecondaryPointerDown, true);
+      document.removeEventListener("touchcancel", onTouchCancel, true);
     };
   }, [storeApi]);
 
