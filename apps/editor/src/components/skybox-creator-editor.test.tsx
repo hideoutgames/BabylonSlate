@@ -148,6 +148,32 @@ describe("SkyboxCreatorEditor", () => {
     );
   });
 
+  it("records the created faces on the document as it is when the writes finish", async () => {
+    let releaseRead!: () => void;
+    readAssetChunk.mockImplementationOnce(
+      () => new Promise<Uint8Array>((resolve) => { releaseRead = () => resolve(PNG_MAGIC); }),
+    );
+    const payload = (x: number) => ({
+      ...createDefaultSkyboxCreatorPayload(),
+      sourceTextureGuid: "tex-1",
+      sourcePlacement: { x, y: 0, width: 1, height: 1 },
+    }) as unknown as Record<string, unknown>;
+    const onChange = vi.fn();
+    const editor = (x: number) => (
+      <SkyboxCreatorEditor payload={payload(x)} helperPath="assets/Day.skyboxcreator.babasset" onChange={onChange} />
+    );
+    const { rerender } = render(editor(0));
+    fireEvent.click(screen.getByTestId("skybox-creator-create"));
+    await waitFor(() => expect(readAssetChunk).toHaveBeenCalled());
+    rerender(editor(0.25));
+    releaseRead();
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      sourcePlacement: { x: 0.25, y: 0, width: 1, height: 1 },
+      generatedFaces: expect.objectContaining({ px: expect.any(String) }),
+    }));
+  });
+
   it("shows the createAsset failure instead of a decode error", async () => {
     createAsset.mockRejectedValueOnce(
       new Error("Asset already exists: assets/Day_px.babasset"),
@@ -427,6 +453,18 @@ describe("SkyboxCreatorCubemap", () => {
     );
     await screen.findByTestId("skybox-creator-preview-canvas");
     expect(decodeSourceToRgba).toHaveBeenCalledTimes(callsAfterLoad);
+  });
+
+  it("explains a source Texture that could not be read instead of waiting on the decode", async () => {
+    readAssetChunk.mockRejectedValueOnce(new Error("Asset chunk assets/Sky.babasset#pixels could not be read."));
+    render(
+      <SkyboxCreatorCubemap
+        payload={{ ...createDefaultSkyboxCreatorPayload(), sourceTextureGuid: "tex-1" } as unknown as Record<string, unknown>}
+      />,
+    );
+    expect(await screen.findByText("Asset chunk assets/Sky.babasset#pixels could not be read.")).toBeTruthy();
+    expect(screen.queryByText("Decoding the Texture…")).toBeNull();
+    expect(decodeSourceToRgba).not.toHaveBeenCalled();
   });
 
   it("encodes the six preview faces once after a placement drag settles", async () => {
