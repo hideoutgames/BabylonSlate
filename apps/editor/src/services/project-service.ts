@@ -549,7 +549,7 @@ export class ProjectService {
           const saved = current.getByGuid(result.assetGuid)?.header.payload.usage;
           const usage = this.openTextureUsage?.(result.assetGuid) ?? String(saved ?? "albedo");
           if (result.usage === undefined || result.usage === usage) {
-            void this.reconcileTextureAlignment([result.assetGuid]);
+            this.reconcileTextureAlignmentInBackground([result.assetGuid]);
           }
           succeeded = true;
         } finally {
@@ -639,7 +639,9 @@ export class ProjectService {
   /** Release provider-lifetime resources; project close deliberately does not. */
   dispose(): void {
     this.resetAssetLoading();
-    void this.extensions.close();
+    this.extensions.close().catch((error: unknown) => {
+      console.warn("[editor] Closing editor extensions failed", error);
+    });
     this.cancelEmissionJobs();
     this.encodeQueuePauseUnsubscribe?.();
     this.encodeQueuePauseUnsubscribe = null;
@@ -662,10 +664,21 @@ export class ProjectService {
     const asset = this.assetRegistry?.getByGuid(guid);
     const name = asset?.header.name?.trim() || "Texture";
     const message = error instanceof Error ? error.message : String(error);
-    const line = `Texture ${failure} for ${name} (${guid}): ${message}`;
+    this.pushDiagnostic(`Texture ${failure} for ${name} (${guid}): ${message}`);
+  }
+
+  private pushDiagnostic(line: string): void {
     this.diagnostics.push(line);
     if (this.diagnostics.length > 200) this.diagnostics.shift();
     for (const listener of this.diagnosticListeners) listener(line);
+  }
+
+  /** Background alignment pass: a refused or failed pass is reported, never left unhandled. */
+  private reconcileTextureAlignmentInBackground(guids: readonly string[]): void {
+    this.reconcileTextureAlignment(guids).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      this.pushDiagnostic(`Texture alignment check failed: ${message}`);
+    });
   }
 
   /** A scan may have captured the old encode state before this write committed. */
@@ -1547,7 +1560,7 @@ export class ProjectService {
     // Opening a project only builds its catalog. Legacy metadata upgrades and
     // bulk texture processing are explicit maintenance operations.
     registry.setAtlasStatusListener((guids) => {
-      void this.reconcileTextureAlignment(guids);
+      this.reconcileTextureAlignmentInBackground(guids);
     });
     return registry;
   }
