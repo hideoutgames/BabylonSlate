@@ -676,7 +676,7 @@ export function Homepage({
                           onClick={() => create()}
                         >
                           <PlusIcon data-icon="inline-start" />
-                          Create Project
+                          New Project
                         </Button>
                         <Button
                           variant="outline"
