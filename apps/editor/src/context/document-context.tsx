@@ -3114,7 +3114,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         pluginGuids: () => string[];
         enginePluginLoad: () => {
           entries: number;
-          unpacked: number;
           errors: string[];
         };
         seedMissingPluginOverride: (guid: string) => Promise<{
