@@ -92,6 +92,7 @@ import { editorUtilityObjectClassEntries } from "../lib/editor-utility-classes";
 import { gameInstanceClassEntries } from "../lib/component-property-rows";
 import { classIdFromClassAsset } from "../lib/content-browser-helpers";
 import { projectArchiveDownloadName } from "../lib/display-project-name";
+import { downloadBlob } from "../lib/download";
 import { exportGameFailureMessage } from "../lib/export-game-failure";
 import {
   EngineSettingsForm,
@@ -306,25 +307,12 @@ const ENGINE_GROUPS: CatalogCategoryGroup[] = [
   { label: "Projects", ids: ["templates", "plugins", "extensions"] },
 ];
 
-/**
- * Some browsers (Safari and WKWebView among them) read an anchor download's
- * blob URL after the click returns, so the URL is released later.
- */
-const DOWNLOAD_URL_LIFETIME_MS = 40_000;
-
 /** Downloads exactly the view's bytes, even when it shares a larger buffer. */
 function downloadZip(bytes: Uint8Array, fileName: string): void {
-  const url = URL.createObjectURL(
+  downloadBlob(
     new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "application/zip" }),
+    fileName,
   );
-  try {
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = fileName;
-    anchor.click();
-  } finally {
-    setTimeout(() => URL.revokeObjectURL(url), DOWNLOAD_URL_LIFETIME_MS);
-  }
 }
 
 function matchesSearch(
