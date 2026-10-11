@@ -135,7 +135,7 @@ Category `scene-layer` (GameInstance and other graphs; instances live on the ses
 
 | Node | Runtime |
 | --- | --- |
-| Create Scene Layer | `ctx.createSceneLayer(guid, zOrder)` |
+| Create Scene Layer | `await ctx.createSceneLayerAsync(guid, zOrder)`: prepares the layer's assets, creates it, and waits for it to be ready |
 | Remove Scene Layer | Destroy instance + actors; no-op if already gone |
 | Clear Scene Layer | Remove all |
 | Register Scene Layer Post-Processing | Append a `postProcess` Material |
@@ -143,7 +143,7 @@ Category `scene-layer` (GameInstance and other graphs; instances live on the ses
 
 Register/Unregister pickers require `domain === "postProcess"`.
 
-World Scene Details **Scene Layers** (`settings.sceneLayers`) and **Create Scene Layer** both call `createSceneLayer`. They differ only in `ownerSceneGuid` (scene-owned vs graph/`null`). Neither path instantiates overlay meshes into the world Babylon Scene. The Details list does not copy overlay actors into the authored world `scene.actors`.
+World Scene Details **Scene Layers** (`settings.sceneLayers`) call `createSceneLayer`; **Create Scene Layer** reaches the same creation through `createSceneLayerAsync` after preparing assets. They differ in `ownerSceneGuid` (scene-owned vs graph/`null`). Neither path instantiates overlay meshes into the world Babylon Scene. The Details list does not copy overlay actors into the authored world `scene.actors`.
 
 ## Play / export / player
 
