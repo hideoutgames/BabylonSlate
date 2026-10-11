@@ -27,7 +27,7 @@ import type {
 } from "./types";
 import { listDebugCollidersFromRecords } from "./debug-colliders";
 import { quatToPlanarAngle } from "./collider-bake";
-import { copyColliderDesc, normalizedPhysicsPose } from "./collider-validation";
+import { copyColliderDesc, linearSweepPoses, normalizedPhysicsPose } from "./collider-validation";
 import { copyConstraintDesc } from "./constraint-validation";
 
 type RapierEventQueue = {
@@ -78,6 +78,25 @@ type RapierApi = {
       shape: unknown,
       callback: (collider: RapierCollider) => boolean,
     ): void;
+    castShape(
+      position: { x: number; y: number },
+      rotation: number,
+      velocity: { x: number; y: number },
+      shape: unknown,
+      targetDistance: number,
+      maxToi: number,
+      stopAtPenetration: boolean,
+      filterFlags?: QueryFilterFlags,
+      filterGroups?: InteractionGroups,
+      filterExcludeCollider?: RapierCollider,
+      filterExcludeRigidBody?: RapierRigidBody,
+      filterPredicate?: (collider: RapierCollider) => boolean,
+    ): {
+      collider: RapierCollider;
+      time_of_impact: number;
+      witness1: { x: number; y: number };
+      normal1: { x: number; y: number };
+    } | null;
     collidersWithAabbIntersectingAabb(
       center: { x: number; y: number },
       halfExtents: { x: number; y: number },
@@ -106,7 +125,12 @@ type RapierApi = {
     origin: { x: number; y: number },
     dir: { x: number; y: number },
   ) => { pointAt(toi: number): { x: number; y: number } };
+  // Query shapes are plain descriptors; each query allocates and frees its native shape.
   Ball: new (radius: number) => unknown;
+  Cuboid: new (hx: number, hy: number) => unknown;
+  Capsule: new (halfHeight: number, radius: number) => unknown;
+  ConvexPolygon: new (vertices: Float32Array, skipConvexHullComputation: boolean) => unknown;
+  Polyline: new (vertices: Float32Array, indices?: Uint32Array) => unknown;
 };
 
 type RapierBodyDesc = {
@@ -150,6 +174,7 @@ type RapierRigidBody = {
   setLinearDamping(damping: number): void;
   setAngularDamping(damping: number): void;
   setAdditionalMass(mass: number, wakeUp: boolean): void;
+  recomputeMassPropertiesFromColliders(): void;
 };
 
 type RapierCollider = {
@@ -159,6 +184,8 @@ type RapierCollider = {
   setSensor(isSensor: boolean): void;
   setFriction(friction: number): void;
   setRestitution(restitution: number): void;
+  volume(): number;
+  setMass(mass: number): void;
 };
 
 type RapierCharacterController = {
@@ -184,7 +211,6 @@ type BodyRecord = {
 type ColliderRecord = {
   desc: ColliderDesc;
   collider: RapierCollider;
-  extra?: RapierCollider;
 };
 
 type CharacterRecord = {
@@ -201,10 +227,6 @@ function miss(): HitResult {
     actorId: null,
     bodyId: null,
   };
-}
-
-function identityRotation(): PhysicsTransform["rotation"] {
-  return { x: 0, y: 0, z: 0, w: 1 };
 }
 
 /**
@@ -289,8 +311,8 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
         bodyDesc = R.RigidBodyDesc.kinematicPositionBased();
         break;
       default:
-        // Same floor as updateBody (and Havok): a zero or negative mass makes
-        // Rapier integrate NaN and the body disappears.
+        // Same floor as distributeMass (and Havok): a zero or negative mass makes
+        // Rapier integrate NaN and the body disappears. Colliders take it over.
         bodyDesc = R.RigidBodyDesc.dynamic().setAdditionalMass(
           Math.max(desc.mass, 1e-6),
         );
@@ -492,7 +514,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     }
     if (typeof tuning.mass === "number" && Number.isFinite(tuning.mass)) {
       record.desc.mass = tuning.mass;
-      record.body.setAdditionalMass(Math.max(tuning.mass, 1e-6), true);
+      this.distributeMass(record);
     }
     if (
       typeof tuning.linearDamping === "number" &&
@@ -560,18 +582,14 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     const provisional: ColliderRecord[] = [];
     try {
       for (const { desc, colliderDesc } of prepared) {
-        const record: ColliderRecord = {
+        provisional.push({
           desc,
           collider: this.world.createCollider(colliderDesc, body.body),
-        };
-        provisional.push(record);
-        record.extra = this.createLoopCloseSegment(desc, body.body);
+        });
       }
     } catch (error) {
-      for (const record of provisional) {
+      for (const record of provisional)
         this.world.removeCollider(record.collider, false);
-        if (record.extra) this.world.removeCollider(record.extra, false);
-      }
       throw error;
     }
     for (const id of new Set([
@@ -584,10 +602,33 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     for (const record of provisional) {
       this.colliders.set(record.desc.id, record);
       this.colliderIdByHandle.set(record.collider.handle, record.desc.id);
-      if (record.extra)
-        this.colliderIdByHandle.set(record.extra.handle, record.desc.id);
     }
+    this.distributeMass(body);
     this.queriesDirty = true;
+  }
+
+  /**
+   * The authored mass replaces the colliders' default density: the body's own
+   * colliders share it in proportion to their areas, so their geometry still
+   * gives the center of mass and inertia. Hosted child shapes stay massless. A
+   * body without own area (no colliders, or only chains) carries it as
+   * additional mass.
+   */
+  private distributeMass(record: BodyRecord): void {
+    const mass = Math.max(record.desc.mass, 1e-6);
+    const own: RapierCollider[] = [];
+    let area = 0;
+    for (const collider of this.colliders.values()) {
+      if (collider.desc.bodyId !== record.desc.id ||
+        (collider.desc.actorId ?? record.desc.actorId) !== record.desc.actorId) continue;
+      own.push(collider.collider);
+      area += collider.collider.volume();
+    }
+    for (const collider of own)
+      collider.setMass(area > 0 ? (mass * collider.volume()) / area : 0);
+    record.body.setAdditionalMass(area > 0 ? 0 : mass, true);
+    // Impulses before the next step already see the new mass.
+    record.body.recomputeMassPropertiesFromColliders();
   }
 
   destroyCollider(colliderId: string): void {
@@ -600,9 +641,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     if (refresh) this.refreshColliderContacts(colliderId);
     else this.retireColliderContacts(colliderId);
     this.colliderIdByHandle.delete(record.collider.handle);
-    if (record.extra) this.colliderIdByHandle.delete(record.extra.handle);
     this.world.removeCollider(record.collider, true);
-    if (record.extra) this.world.removeCollider(record.extra, true);
     this.colliders.delete(colliderId);
     this.queriesDirty = true;
   }
@@ -658,7 +697,6 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       { x: start.x, y: start.y },
       { x: dx / len, y: dy / len },
     );
-    const ignored = new Set(options?.ignoreActorIds);
     const hit = this.world.castRayAndGetNormal(
       ray,
       len,
@@ -667,14 +705,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       undefined,
       undefined,
       undefined,
-      ignored.size || options?.includeTriggers === false
-        ? (collider) => {
-            const actorId = this.colliderActorId(collider);
-            const desc = this.colliders.get(this.colliderIdByHandle.get(collider.handle) ?? "")?.desc;
-            return (actorId === null || !ignored.has(actorId)) &&
-              !(options?.includeTriggers === false && desc?.isTrigger);
-          }
-        : undefined,
+      this.queryFilter(options),
     );
     if (!hit) return miss();
     const point = ray.pointAt(hit.timeOfImpact);
@@ -692,59 +723,82 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
 
   sphereOverlap(center: Vec3, radius: number, options?: LineTraceOptions): OverlapResult {
     this.flushSceneQueries();
-    const ignored = new Set(options?.ignoreActorIds);
-    const allowed = (collider: RapierCollider) => {
-      const desc = this.colliders.get(this.colliderIdByHandle.get(collider.handle) ?? "")?.desc;
-      const actorId = desc ? this.colliderActorId(collider) : null;
-      return actorId !== null && !ignored.has(actorId) && !(options?.includeTriggers === false && desc?.isTrigger);
-    };
+    const allowed = this.queryFilter(options);
     const actorIds: string[] = [];
     const bodyIds: string[] = [];
-    this.world.intersectionsWithPoint(
-      { x: center.x, y: center.y },
-      (collider) => {
-        if (!allowed(collider)) return true;
-        const bodyId = this.bodyIdByHandle.get(collider.parent()?.handle ?? -1);
-        if (!bodyId || !this.bodies.has(bodyId)) return true;
-        // Point query; approximate radius by also testing nearby with shape.
+    const reported = new Set<string>();
+    const collect = (collider: RapierCollider) => {
+      if (!this.colliderIdByHandle.has(collider.handle) || (allowed && !allowed(collider))) return true;
+      const actorId = this.colliderActorId(collider);
+      const bodyId = this.bodyIdByHandle.get(collider.parent()?.handle ?? -1);
+      if (actorId === null || !bodyId || !this.bodies.has(bodyId)) return true;
+      // A host body reports each shape owner once, including hosted children.
+      const key = `${bodyId}\t${actorId}`;
+      if (!reported.has(key)) {
+        reported.add(key);
         bodyIds.push(bodyId);
-        actorIds.push(this.colliderActorId(collider)!);
-        return true;
-      },
-    );
-    // Also collect via shape cast for radius > 0
-    if (radius > 0) {
-      const shape = new this.RAPIER.Ball(radius);
-      this.world.intersectionsWithShape(
-        { x: center.x, y: center.y },
-        0,
-        shape,
-        (collider) => {
-          if (!allowed(collider)) return true;
-          const bodyId = this.bodyIdByHandle.get(
-            collider.parent()?.handle ?? -1,
-          );
-          if (!bodyId || !this.bodies.has(bodyId)) return true;
-          // A host body reports each shape owner once, including hosted children.
-          const actorId = this.colliderActorId(collider)!;
-          if (!bodyIds.some((id, index) => id === bodyId && actorIds[index] === actorId)) {
-            bodyIds.push(bodyId);
-            actorIds.push(actorId);
-          }
-          return true;
-        },
-      );
-    }
+        actorIds.push(actorId);
+      }
+      return true;
+    };
+    const point = { x: center.x, y: center.y };
+    // The ball query already includes every collider that contains the center.
+    if (radius > 0)
+      this.world.intersectionsWithShape(point, 0, new this.RAPIER.Ball(radius), collect);
+    else this.world.intersectionsWithPoint(point, collect);
     return { actorIds, bodyIds };
   }
 
   shapeSweep(
-    _shape: ColliderDesc["shape"],
+    shape: ColliderDesc["shape"],
     start: PhysicsTransform,
     end: PhysicsTransform,
     options?: LineTraceOptions,
   ): HitResult {
-    return this.lineTrace(start.position, end.position, options);
+    const sweep = linearSweepPoses(start, end);
+    if (!sweep) return miss();
+    this.flushSceneQueries();
+    const query = this.queryShape(shape);
+    if (!query) return miss();
+    const from = sweep.start.position;
+    const velocity = { x: sweep.end.x - from.x, y: sweep.end.y - from.y };
+    // Travel is velocity × time of impact; an initial overlap stops at zero.
+    const hit = this.world.castShape(
+      { x: from.x, y: from.y },
+      quatToPlanarAngle(sweep.start.rotation),
+      velocity,
+      query,
+      0,
+      1,
+      true,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      this.queryFilter(options),
+    );
+    if (!hit) return miss();
+    const bodyId = this.bodyIdByHandle.get(hit.collider.parent()?.handle ?? -1);
+    return {
+      hit: true,
+      location: { x: hit.witness1.x, y: hit.witness1.y, z: 0 },
+      normal: { x: hit.normal1.x, y: hit.normal1.y, z: 0 },
+      distance: Math.hypot(velocity.x, velocity.y) * hit.time_of_impact,
+      actorId: this.colliderActorId(hit.collider),
+      bodyId: bodyId ?? null,
+    };
+  }
+
+  /** Collider predicate for `ignoreActorIds` and `includeTriggers: false`; undefined when neither applies. */
+  private queryFilter(options?: LineTraceOptions): ((collider: RapierCollider) => boolean) | undefined {
+    const ignored = new Set(options?.ignoreActorIds);
+    if (!ignored.size && options?.includeTriggers !== false) return undefined;
+    return (collider) => {
+      const actorId = this.colliderActorId(collider);
+      const desc = this.colliders.get(this.colliderIdByHandle.get(collider.handle) ?? "")?.desc;
+      return (actorId === null || !ignored.has(actorId)) &&
+        !(options?.includeTriggers === false && desc?.isTrigger);
+    };
   }
 
   createCharacterController(desc: CharacterControllerDesc): void {
@@ -818,17 +872,19 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       }
     }
     const movement = character.controller.computedMovement();
-    bodyRecord.body.setNextKinematicTranslation({
-      x: position.x + movement.x,
-      y: position.y + movement.y,
-    });
+    // The solve keeps the start pose's rotation (including any tilt out of the plane).
+    const pose: PhysicsTransform = {
+      position: { x: position.x + movement.x, y: position.y + movement.y, z: 0 },
+      rotation: start?.rotation ?? { x: 0, y: 0, z: Math.sin(rotation / 2), w: Math.cos(rotation / 2) },
+    };
+    // A kinematic body moves to the solved pose as its native target; other
+    // bodies take no target, so they are placed there, as Havok does.
+    if (bodyRecord.desc.motionType === "kinematic") {
+      bodyRecord.body.setNextKinematicTranslation(pose.position);
+      bodyRecord.body.setNextKinematicRotation(rotation);
+    } else this.teleportBody(character.desc.bodyId, pose);
     return {
-      position: {
-        x: position.x + movement.x,
-        y: position.y + movement.y,
-        z: 0,
-      },
-      rotation: this.getBodyTransform(character.desc.bodyId)?.rotation ?? identityRotation(),
+      ...pose,
       velocity: { x: movement.x * inverseDt, y: movement.y * inverseDt, z: 0 },
       grounded: translation.y <= 0 && character.controller.computedGrounded(),
     };
@@ -844,21 +900,11 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
         return R.ColliderDesc.ball(shape.radius);
       case "capsule2d":
         return R.ColliderDesc.capsule(shape.halfHeight, shape.radius);
-      case "polygon": {
-        const flat = new Float32Array(shape.points.length * 2);
-        shape.points.forEach((p, i) => {
-          flat[i * 2] = p.x;
-          flat[i * 2 + 1] = p.y;
-        });
-        return R.ColliderDesc.convexHull(flat);
-      }
+      case "polygon":
+        return R.ColliderDesc.convexHull(flatPoints(shape.points));
       case "chain": {
-        const flat = new Float32Array(shape.points.length * 2);
-        shape.points.forEach((p, i) => {
-          flat[i * 2] = p.x;
-          flat[i * 2 + 1] = p.y;
-        });
-        return R.ColliderDesc.polyline(flat);
+        const chain = chainGeometry(shape.points, shape.loop === true);
+        return R.ColliderDesc.polyline(chain.vertices, chain.indices);
       }
       default:
         return null;
@@ -866,36 +912,33 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
   }
 
   /**
-   * Rapier line-strips do not include the closing edge, and repeating the first
-   * point makes the whole polyline miss raycasts. Close loops with a segment.
+   * A planar query shape for sweeps. Spheres, boxes, capsules and cylinders
+   * use their exact XY cross-section through the shape's center; convex hulls
+   * and triangle meshes have no planar equivalent.
    */
-  private createLoopCloseSegment(
-    desc: ColliderDesc,
-    body: RapierRigidBody,
-  ): RapierCollider | undefined {
-    const shape = desc.shape;
-    if (
-      shape.kind !== "chain" ||
-      shape.loop !== true ||
-      shape.points.length < 2
-    ) {
-      return undefined;
+  private queryShape(shape: ColliderDesc["shape"]): unknown {
+    const R = this.RAPIER;
+    switch (shape.kind) {
+      case "circle":
+      case "sphere":
+        return new R.Ball(shape.radius);
+      case "box2d":
+      case "box":
+        return new R.Cuboid(shape.halfExtents.x, shape.halfExtents.y);
+      case "capsule2d":
+      case "capsule":
+        return new R.Capsule(shape.halfHeight, shape.radius);
+      case "cylinder":
+        return new R.Cuboid(shape.radius, shape.height / 2);
+      case "polygon":
+        return new R.ConvexPolygon(flatPoints(shape.points), false);
+      case "chain": {
+        const chain = chainGeometry(shape.points, shape.loop === true);
+        return new R.Polyline(chain.vertices, chain.indices);
+      }
+      default:
+        return null;
     }
-    const first = shape.points[0]!;
-    const last = shape.points[shape.points.length - 1]!;
-    if (first.x === last.x && first.y === last.y) return undefined;
-    const flat = new Float32Array([last.x, last.y, first.x, first.y]);
-    const segment = this.RAPIER.ColliderDesc.polyline(flat)
-      .setFriction(desc.friction)
-      .setRestitution(desc.restitution)
-      .setSensor(desc.isTrigger)
-      .setActiveEvents(this.RAPIER.ActiveEvents.COLLISION_EVENTS)
-      .setActiveHooks(this.RAPIER.ActiveHooks.FILTER_CONTACT_PAIRS | this.RAPIER.ActiveHooks.FILTER_INTERSECTION_PAIRS)
-      .setActiveCollisionTypes(this.RAPIER.ActiveCollisionTypes.ALL);
-    segment
-      .setTranslation(desc.translation?.x ?? 0, desc.translation?.y ?? 0)
-      .setRotation(quatToPlanarAngle(desc.rotation ?? identityRotation()));
-    return this.world.createCollider(segment, body);
   }
 
   /**
@@ -1100,6 +1143,38 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     if (!record) return { x: 0, y: 0 };
     return record.collider.translation();
   }
+}
+
+function flatPoints(points: readonly { x: number; y: number }[]): Float32Array {
+  const flat = new Float32Array(points.length * 2);
+  points.forEach((p, i) => {
+    flat[i * 2] = p.x;
+    flat[i * 2 + 1] = p.y;
+  });
+  return flat;
+}
+
+/**
+ * One polyline per chain, so its contacts have one collider handle. A loop
+ * lists its closing edge as an indexed segment: Rapier line strips have no
+ * closing edge, and repeating the first point makes raycasts miss the strip.
+ */
+function chainGeometry(
+  points: readonly { x: number; y: number }[],
+  loop: boolean,
+): { vertices: Float32Array; indices?: Uint32Array } {
+  const first = points[0];
+  const last = points[points.length - 1];
+  const open = loop && first && last && first.x === last.x && first.y === last.y
+    ? points.slice(0, -1)
+    : points;
+  if (!loop || open.length < 3) return { vertices: flatPoints(points) };
+  const indices = new Uint32Array(open.length * 2);
+  for (let i = 0; i < open.length; i++) {
+    indices[i * 2] = i;
+    indices[i * 2 + 1] = (i + 1) % open.length;
+  }
+  return { vertices: flatPoints(open), indices };
 }
 
 /** Whether a replacement reports the same pairs: same trigger, filter and owner. */

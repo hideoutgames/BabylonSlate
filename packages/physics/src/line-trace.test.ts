@@ -94,3 +94,60 @@ describe("Line Trace surface normals", () => {
     } finally { backend.dispose(); }
   });
 });
+
+describe("Sphere Overlap", () => {
+  it.each([
+    { label: "software 3D", kind: "3d" as const, preferSoftware: true },
+    { label: "Havok 3D", kind: "3d" as const, preferSoftware: false },
+    { label: "Rapier 2D", kind: "2d" as const, preferSoftware: false },
+  ])("$label lists a body once and skips its triggers on request", async (options) => {
+    const backend = await createPhysicsBackend({
+      ...options, gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false,
+    });
+    const body = (id: string, x: number) => backend.createBody({ id, actorId: id, motionType: "static", mass: 0,
+      linearDamping: 0, angularDamping: 0, gravityScale: 0,
+      transform: { position: { x, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } } });
+    const box = (id: string, bodyId: string, y: number, isTrigger = false) => backend.createCollider({ id, bodyId,
+      shape: options.kind === "2d" ? { kind: "box2d", halfExtents: { x: 0.5, y: 0.5 } }
+        : { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } },
+      translation: { x: 0, y, z: 0 }, friction: 0.5, restitution: 0, isTrigger, layer: 1, mask: 0xffffffff });
+    try {
+      body("pair", 0);
+      box("pair-a", "pair", 0);
+      box("pair-b", "pair", 0.2);
+      // A solid shape out of range and a trigger at the query point.
+      body("mixed", 10);
+      box("mixed-solid", "mixed", 5);
+      box("mixed-trigger", "mixed", 0, true);
+      backend.step(1 / 60);
+      expect(backend.sphereOverlap({ x: 0, y: 0, z: 0 }, 0.1)).toEqual({ actorIds: ["pair"], bodyIds: ["pair"] });
+      expect(backend.sphereOverlap({ x: 10, y: 0, z: 0 }, 0.1).actorIds).toEqual(["mixed"]);
+      expect(backend.sphereOverlap({ x: 10, y: 0, z: 0 }, 0.1, { includeTriggers: false }).actorIds).toEqual([]);
+    } finally { backend.dispose(); }
+  });
+
+  it.each([
+    { label: "Havok 3D", kind: "3d" as const },
+    { label: "Rapier 2D", kind: "2d" as const },
+  ])("$label tests collider shapes, not their bounds", async (options) => {
+    const backend = await createPhysicsBackend({
+      ...options, gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false,
+    });
+    const angle = Math.PI / 4;
+    try {
+      backend.createBody({ id: "diamond", actorId: "diamond", motionType: "static", mass: 0,
+        linearDamping: 0, angularDamping: 0, gravityScale: 0,
+        transform: { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: Math.sin(angle / 2), w: Math.cos(angle / 2) } } });
+      backend.createCollider({ id: "diamond-col", bodyId: "diamond",
+        shape: options.kind === "2d" ? { kind: "box2d", halfExtents: { x: 1, y: 1 } }
+          : { kind: "box", halfExtents: { x: 1, y: 1, z: 1 } },
+        friction: 0.5, restitution: 0, isTrigger: false, layer: 1, mask: 0xffffffff });
+      backend.step(1 / 60);
+      // Inside the rotated box's bounds (±√2), outside the box itself (|x| + |y| > √2).
+      expect(backend.sphereOverlap({ x: 1.2, y: 1.2, z: 0 }, 0.05).actorIds).toEqual([]);
+      expect(backend.sphereOverlap({ x: 1.2, y: 0, z: 0 }, 0.05).actorIds).toEqual(["diamond"]);
+      // Reaching the face from outside within the radius.
+      expect(backend.sphereOverlap({ x: 1.6, y: 0, z: 0 }, 0.2).actorIds).toEqual(["diamond"]);
+    } finally { backend.dispose(); }
+  });
+});
