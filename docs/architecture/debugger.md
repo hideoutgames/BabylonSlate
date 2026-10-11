@@ -43,8 +43,8 @@ Every registered command has a tier. A non-debug registry **does not register de
 
 | Tier | Ships | Commands |
 | --- | --- | --- |
-| **core** | Every build | `changescene`, `quality` and its rendering groups, `framecap`, `volume`, `quit`, `help`, plus user `BDebugCommand` classes |
-| **debug** | Debugger bundled | `showfps`, `stat unit`, `stat memory`, `stat draws`, `stat threads`, `showcollision`, `debugphysics`, `showbounds`, `actorboundingbox`, `wireframe`, `pause`, `resume` (alias `unpause`), `step`, `slomo`, `freecam`, `shownav`, `shownavdebug`, `showpathfinding`, `shownavagent`, `behaviourtreedebug`, `showaudiodebug`, `dumpactors`, `inspect`, `dumplog`, `snapshot start`, `snapshot stop` |
+| **core** | Every build | `changescene`, `quality` and its rendering groups, `renderpath`, `framecap`, `volume`, `quit`, `help`, plus user `BDebugCommand` classes |
+| **debug** | Debugger bundled | `showfps`, `lightsdebug`, `stat unit`, `stat memory`, `stat draws`, `stat threads`, `showcollision`, `debugphysics`, `showbounds`, `actorboundingbox`, `wireframe`, `pause`, `resume` (alias `unpause`), `step`, `slomo`, `freecam`, `shownav`, `shownavdebug`, `showpathfinding`, `shownavagent`, `behaviourtreedebug`, `showaudiodebug`, `dumpactors`, `inspect`, `possess`, `destroyactor`, `dumplog`, `snapshot start`, `snapshot stop` |
 
 Real export tree-shaking of the debug module is landed: the release player calls `createCommandRegistry({ includeDebug: false })` via `includeDebugCommands: manifest.bundleDebugger`. Preview Build and a **Bundle Debugger** export preset keep the debug tier. See [exporter.md](exporter.md).
 
@@ -66,6 +66,7 @@ The registry does not touch the world or renderer. Runtime implements:
 | --- | --- |
 | `changescene` | `changeScene(guid)` → load that guid from the Play scene library into the World (same as `ctx.changeScene`) |
 | `quality` / `quality shadows` / `quality resolution` / `quality textures` / `quality geometry` / `quality water` / `quality postprocessing` / `quality lighting` | Shared `RenderingQualitySession` resolver; emits a `setScalability` transaction with session overrides. Optional arguments query effective values. Tiers are Low, Medium, High and Ultra; individual groups and all overrides can reset. `quality water <field> <value>` completes every Water setting name. |
+| `renderpath [auto\|forward\|clusteredForward\|reset]` | `setRenderPath(path)` requests a non-persistent session render path; `reset` passes `null`. No argument prints the requested and effective path and GPU backend from `getRenderPath()`. |
 | `volume` / `framecap` | Typed setters emit `setGlobalVolume` / a `setScalability` frame-cap patch; optional arguments query current values. |
 | `quit` | `quit()` → runtime `stop` |
 | `help [name]` | Core. Lists registered commands (user included) or one command’s parameters. Stripped debug names print “not available in this build” |
@@ -76,6 +77,7 @@ The registry does not touch the world or renderer. Runtime implements:
 | `showfps` / `stat *` | `{ type: "setShowFps" }` / `{ type: "setStat" }`. Opens Stats HUD; `stat` highlights unit (timings), memory, draws, or threads (main vs worker) |
 | `wireframe` / `showbounds` / `actorboundingbox` / `showcollision` / `shownav` | Play-scene overlays. Collision / nav meshes use `RENDERING_GROUP.world` with depth test (not a group-0 underlay). Collision uses `PhysicsBackend.listDebugColliders()` (boxes/spheres/circles/capsules/polylines/convex hulls; body rotation of local offsets and polyline points). `actorboundingbox` calls the same `setShowBounds` host as `showbounds`. Separate from per-collider **Render In Game** world dashes. |
 | `showaudiodebug` | `{ type: "setShowAudioDebug" }`. DOM overlay of playing AudioV2 voices (applies; not log-only) |
+| `possess <name\|guid>` / `destroyactor <name\|guid>` | `possessActorCamera(query)` / `destroyActor(query)`; a GUID or unique exact name. The Play Inspector's **Use Camera** and **Destroy Actor** send these with the selected GUID. |
 | `dumpactors` / `inspect [name\|guid]` | Format `inspectWorld()`. Bare `inspect` uses overlay Inspector selection when known, else prints usage |
 | `dumplog` | `dumpLog()` from the log ring |
 | `snapshot start` / `snapshot stop` | `startSnapshot` / `stopSnapshot` → `TraceRecorder`; stop emits a `trace` command |

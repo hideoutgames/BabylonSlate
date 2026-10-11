@@ -28,9 +28,11 @@ Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `sna
 | `quality [low\|medium\|high\|ultra\|reset]` | yes | **yes** | Applies all scalability groups, or queries effective values when omitted. |
 | `quit` | yes | **yes** | `runtime.stop()`. Overlay Stop is a separate chrome path. |
 | `quality shadows/resolution/textures/geometry/water/postprocessing/lighting [tier\|reset]` | yes | **yes** | Applies or resets one group. Shadow budget, distance and enabled state are independent settings. |
+| `quality lighting budget <N\|auto>` | yes | **yes** | Sets the session local-light budget (`maxLocalLights`, a non-negative integer) or returns it to automatic; the lighting group then reports Custom. |
 | `quality geometry lod on\|off`, `quality geometry distance <0.25..4>` | yes | **yes** | Switches automatic Model LOD or scales its switch distances for the session. |
 | `quality water <field> <value>` | yes | **yes** | One Water setting for the session: `shadingDetail low..ultra`, `meshDensity 0.5..1.5`, `contactResolution 256..1024`, `refraction on\|off`, `refractionScale 0.25..1`, `reflections sky\|screenSpace\|planar`, `reflectionSteps 4..32`, `planarScale 0.25..1`, `fft on\|off`, `fftSize 64\|128\|256`, `fftCascades 1..3`. Out-of-range or non-integer values are rejected. |
 | `quality resolution scale <0.25..1>` | yes | **yes** | Sets a fixed fraction of target width/height without resetting simulation. |
+| `renderpath [auto\|forward\|clusteredForward\|reset]` | yes | **yes** | Requests a non-persistent session render path for every live Scene; `reset` returns to the project path. No arg → print the requested and effective path and GPU backend. |
 | `framecap` | yes | **yes** | `setScalability` frame-cap patch → Play/player `scheduler.setFrameCap`. No arg → print current. |
 | `volume` | yes | **yes** | `{ type: "setGlobalVolume" }` (P16 mixer). Rejects values outside `0..1`. No arg → print current. |
 | `help` | yes | **yes** | Core. Lists registered names or one command’s parameters. Stripped debug names print “not available in this build”. |
@@ -107,7 +109,7 @@ The console shows a scrollable suggestion list above the input with command desc
 
 ### Core catalog (every build)
 
-Seven core setters plus `help`. Optional args print the current value.
+Core setters plus `help`. Optional args print the current value.
 
 | Command | Target |
 | --- | --- |
@@ -117,6 +119,8 @@ Seven core setters plus `help`. Optional args print the current value.
 | `quality resolution scale N` | Fixed fraction of target width and height, from 0.25 to 1. |
 | `quality geometry [tier\|reset\|lod on/off\|distance N]` | Automatic Model LOD and its distance scale, from 0.25 to 4. |
 | `quality water [tier\|reset\|<field> <value>]` | Render-only water cost; field names complete from `WATER_QUALITY_FIELDS`. Buoyancy is unaffected. |
+| `quality lighting [tier\|reset\|budget N\|budget auto]` | Local-light admission tier and the session `maxLocalLights` budget. |
+| `renderpath [auto\|forward\|clusteredForward\|reset]` | Session render path request through the shared rendering session; never persisted. |
 | `framecap [fps]` | `setScalability` frame-cap patch → Play/player `scheduler.setFrameCap`. No arg → print current. |
 | `volume [0..1]` | Emit `setGlobalVolume` (same as the graph node). No arg → print current. |
 | `quit` | Unchanged. |
