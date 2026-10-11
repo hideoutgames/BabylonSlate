@@ -50,9 +50,14 @@ Three layers, all of which run on Linux and need no macOS or Xcode:
    become the leak. Text lockfiles and `.gltf` JSON remain in scan scope because
    both can contain authenticated URLs or arbitrary metadata.
 3. `scripts/check-public-hygiene.mjs` (also run as a unit test, so `pnpm verify`
-   covers it) rejects agent session links and credential markers in tracked
-   content, pull-request titles/comments, commit messages, and added lines, and
-   credential markers and attribution footers in pull-request descriptions.
+   covers it) rejects agent session links, attribution footers, credential
+   markers and Apple signing identifiers in tracked text (SVG and NUL-containing
+   files included; only known binary formats are skipped), in the lines each
+   pull-request commit adds (not only the net diff), in commit messages, and in
+   pull-request titles, review bodies and comments and issue comments.
+   Pull-request descriptions may link the agent session but are checked for
+   everything else. Signing material, `.env` files and SSH keys are rejected by
+   path.
 
 None of these can catch a secret that has been renamed and obfuscated. They are a
 safety net under the actual rule, which is human: don't put secrets in a public
