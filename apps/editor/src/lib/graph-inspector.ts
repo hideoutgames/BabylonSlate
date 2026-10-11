@@ -150,6 +150,8 @@ function flattenStructFieldRows(
   onChange: (next: Record<string, unknown>) => void,
   mapping: PinDefaultMapping | undefined,
   labelPrefix: string,
+  /** Structure guids already being expanded; a field that re-enters one gets no rows. */
+  visiting: ReadonlySet<string>,
 ): PropertyRow[] {
   const schemas = mapping?.schemas;
   const instance = hydrateStructInstance(fields, value, schemas);
@@ -166,6 +168,7 @@ function flattenStructFieldRows(
       continue;
     }
     if (type.kind === "structRef" && type.guid !== "engine:TagContainer") {
+      if (type.guid && visiting.has(type.guid)) continue;
       const nested = type.guid ? schemas?.structs[type.guid] : undefined;
       if (nested) {
         rows.push(
@@ -176,6 +179,7 @@ function flattenStructFieldRows(
               onChange({ ...instance, [field.name]: nestedValue }),
             mapping,
             label,
+            new Set([...visiting, type.guid]),
           ),
         );
         continue;
@@ -468,6 +472,7 @@ export function pinDefaultPropertyRows(
             (next) => onPatch({ [key]: next }),
             mappingNames,
             entry.name === "Default" ? "" : humanizePropertyLabel(entry.name),
+            new Set([entry.type.guid]),
           ),
         );
         break;
@@ -526,6 +531,7 @@ export function variableDefaultPropertyRows(
       (next) => onChange(next),
       mapping,
       label === "Default" ? "" : label,
+      new Set([type.guid]),
     );
   }
   const resolved = value === undefined ? defaultJsValue(type) : value;

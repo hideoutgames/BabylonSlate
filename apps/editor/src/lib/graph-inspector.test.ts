@@ -591,6 +591,22 @@ describe("variableDefaultPropertyRows structs and enums", () => {
     );
   });
 
+  it("stops expanding a Structure field that re-enters a Structure already shown", () => {
+    const schemas = { enums: {}, structs: {
+      node: { name: "Node", fields: [
+        { name: "value", typeId: "int" },
+        { name: "next", typeId: "struct", typeClassId: "node" },
+        { name: "link", typeId: "struct", typeClassId: "link" },
+      ] },
+      link: { name: "Link", fields: [
+        { name: "weight", typeId: "float" },
+        { name: "back", typeId: "struct", typeClassId: "node" },
+      ] },
+    } };
+    const rows = variableDefaultPropertyRows("struct", { value: 1 }, vi.fn(), { typeClassId: "node", schemas });
+    expect(rows.map((row) => row.label)).toEqual(["Value", "Link Weight"]);
+  });
+
   it("never scalar-edits array or map fields while editing a sibling Structure field", () => {
     const onChange = vi.fn();
     const value = { health: 8, prices: [10, 20], labels: [{ key: 7, value: "Rare" }] };
