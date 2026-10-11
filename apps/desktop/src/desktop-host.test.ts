@@ -18,7 +18,7 @@ function createHarness(initial = ""): {
     files: {
       read: vi.fn(async () => {
         await Promise.resolve();
-        if (!contents) throw new Error("missing file");
+        if (!contents) throw Object.assign(new Error("missing file"), { code: "ENOENT" });
         return contents;
       }),
       write: vi.fn(async (next) => {
@@ -93,5 +93,18 @@ describe("desktop secret store", () => {
     expect(await store.get("first")).toBe("one");
     expect(await store.get("second")).toBe("two");
     expect(await store.get("remove")).toBeNull();
+  });
+
+  it("keeps every stored secret when the file cannot be read", async () => {
+    const harness = createHarness();
+    const store = new DesktopSecretStore(harness.files, harness.safeStorage);
+    await store.set("first", "one");
+    vi.mocked(harness.files.read).mockRejectedValueOnce(
+      Object.assign(new Error("busy"), { code: "EBUSY" }),
+    );
+
+    await expect(store.set("second", "two")).rejects.toThrow("busy");
+    expect(await store.get("first")).toBe("one");
+    expect(await store.get("second")).toBeNull();
   });
 });

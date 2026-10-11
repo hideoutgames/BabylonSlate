@@ -52,11 +52,16 @@ public class BabylonSlateSecretsPlugin: CAPPlugin, CAPBridgedPlugin {
             kSecAttrService as String: service,
             kSecAttrAccount as String: key,
         ]
-        SecItemDelete(query as CFDictionary)
-        var add = query
-        add[kSecValueData as String] = payload
-        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        let status = SecItemAdd(add as CFDictionary, nil)
+        let attributes: [String: Any] = [
+            kSecValueData as String: payload,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+        ]
+        // Update in place so a failed write keeps the previous secret.
+        var status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if status == errSecItemNotFound {
+            let add = query.merging(attributes) { _, new in new }
+            status = SecItemAdd(add as CFDictionary, nil)
+        }
         guard status == errSecSuccess else {
             call.reject("Keychain write failed")
             return

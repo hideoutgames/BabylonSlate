@@ -75,6 +75,15 @@ it("honors saved opt-out at startup and resumes when enabled", async () => {
   controller.setEnabled(false);
 });
 
+it("keeps updates off when saved settings cannot be parsed", async () => {
+  vi.useFakeTimers();
+  const { driver, start } = harness('{"automaticUpdatesEnabled":fal');
+  start();
+  await vi.advanceTimersByTimeAsync(12 * 60 * 60 * 1000);
+  expect(driver.checkForUpdates).not.toHaveBeenCalled();
+  expect(driver.autoInstallOnAppQuit).toBe(false);
+});
+
 it("does not download a check that finishes after opt-out", async () => {
   vi.useFakeTimers();
   const { driver, result, start, controller } = harness();

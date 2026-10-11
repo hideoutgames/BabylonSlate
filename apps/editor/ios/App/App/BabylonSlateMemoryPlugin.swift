@@ -39,29 +39,32 @@ public class BabylonSlateMemoryPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     /// Bytes this app process may still allocate before jetsam terminates it.
+    /// Zero means the limit is unknown (for example in the simulator), not exhausted.
     private func appAvailableBytes() -> UInt64? {
         let available = os_proc_available_memory()
-        guard available >= 0 else { return nil }
+        guard available > 0 else { return nil }
         return UInt64(available)
     }
 
-    /// Device-wide reclaimable memory: free + inactive + purgeable pages.
+    /// Device-wide reclaimable memory: free + inactive pages. Purgeable pages
+    /// already sit on those queues, so adding them would count them twice.
     private func systemAvailableBytes() -> UInt64? {
+        // Each mach_host_self() call adds a send right; release the one we take.
+        let host = mach_host_self()
+        defer { _ = mach_port_deallocate(mach_task_self_, host) }
         var stats = vm_statistics64_data_t()
         var count = mach_msg_type_number_t(
             MemoryLayout<vm_statistics64_data_t>.stride / MemoryLayout<integer_t>.stride
         )
         let result = withUnsafeMutablePointer(to: &stats) { pointer in
             pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { rebounded in
-                host_statistics64(mach_host_self(), HOST_VM_INFO64, rebounded, &count)
+                host_statistics64(host, HOST_VM_INFO64, rebounded, &count)
             }
         }
         guard result == KERN_SUCCESS else { return nil }
         var pageSize = vm_size_t()
-        guard host_page_size(mach_host_self(), &pageSize) == KERN_SUCCESS else { return nil }
-        let pages = UInt64(stats.free_count)
-            + UInt64(stats.inactive_count)
-            + UInt64(stats.purgeable_count)
+        guard host_page_size(host, &pageSize) == KERN_SUCCESS else { return nil }
+        let pages = UInt64(stats.free_count) + UInt64(stats.inactive_count)
         return pages * UInt64(pageSize)
     }
 }

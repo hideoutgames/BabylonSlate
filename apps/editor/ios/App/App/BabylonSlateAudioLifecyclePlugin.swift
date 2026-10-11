@@ -52,6 +52,14 @@ public class BabylonSlateAudioLifecyclePlugin: CAPPlugin, CAPBridgedPlugin {
             let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
             shouldResume = options.contains(.shouldResume)
         }
+        if shouldResume {
+            // The system deactivates the session for the interruption; resuming needs it back.
+            do {
+                try AVAudioSession.sharedInstance().setActive(true)
+            } catch {
+                print("BabylonSlateAudioLifecycle: session reactivation failed", error.localizedDescription)
+            }
+        }
         notifyListeners("audioInterruption", data: [
             "type": "ended",
             "shouldResume": shouldResume,

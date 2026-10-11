@@ -3,22 +3,33 @@ package no.hideout.babylonslate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 
 /** One read operation's directory listings, bounded by retained entry count. */
 final class DirectoryReadCache<T> {
     static final class Directory<T> {
         final List<T> entries;
+        /** Names held by exactly one entry. */
         final Map<String, T> byName;
+        /** Names a provider reported more than once; a path cannot address either entry. */
+        final Set<String> duplicateNames;
 
         Directory(List<T> entries, Function<T, String> name) {
             this.entries = Collections.unmodifiableList(new ArrayList<>(entries));
             Map<String, T> index = new HashMap<>();
-            for (T entry : entries) index.putIfAbsent(name.apply(entry), entry);
+            Set<String> duplicates = new HashSet<>();
+            for (T entry : entries) {
+                String key = name.apply(entry);
+                if (index.putIfAbsent(key, entry) != null) duplicates.add(key);
+            }
+            index.keySet().removeAll(duplicates);
             this.byName = Collections.unmodifiableMap(index);
+            this.duplicateNames = Collections.unmodifiableSet(duplicates);
         }
 
         int cost() { return Math.max(1, entries.size()); }
