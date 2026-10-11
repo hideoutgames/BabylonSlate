@@ -104,6 +104,7 @@ export function DockviewShell({
   sceneMode,
 }: DockviewShellProps) {
   const apiRef = useRef<DockviewApi | null>(null);
+  const hostRef = useRef<HTMLDivElement>(null);
   const [api, setApi] = useState<DockviewApi | null>(null);
   const [activePanelId, setActivePanelId] = useState<string | null>(null);
   const [functionWindows, setFunctionWindows] = useState<
@@ -139,12 +140,12 @@ export function DockviewShell({
           hostLayout as unknown as ReturnType<DockviewApi["toJSON"]>,
         );
       } else {
-        createDefaultLayoutForKind(event.api, documentKind, {
-          actorPrefab,
-          sourceControl,
-          animEditorMode,
-          sceneMode,
-        });
+        createDefaultLayoutForKind(
+          event.api,
+          documentKind,
+          { actorPrefab, sourceControl, animEditorMode, sceneMode },
+          hostRef.current?.clientWidth ?? 0,
+        );
       }
       closeHiddenWindows(event.api, { actorPrefab, sourceControl });
       // A phone returns to the saved floating and popout groups, not the
@@ -262,6 +263,7 @@ export function DockviewShell({
       data-layout={platformOptions.singleWindow ? "phone" : "docked"}
     >
       <div
+        ref={hostRef}
         className={cn(
           "min-h-0 min-w-0 flex-1",
           !platformOptions.singleWindow && "dockview-frame",

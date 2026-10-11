@@ -19,7 +19,6 @@ export interface DockWindowPanel {
 
 export interface DockWindowApi {
   width?: number;
-  element?: { clientWidth?: number };
   getPanel: (id: string) => DockWindowPanel | undefined;
   panels?: Iterable<DockWindowPanel> | DockWindowPanel[];
   addPanel: (options: {
