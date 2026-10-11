@@ -689,10 +689,16 @@ export function compileGraph(
         const firstExpr = ctx.input(meta.firstIndexPin);
         const lastExpr = ctx.input(meta.lastIndexPin);
         const iter = `__i_${jsIdent(node.id)}`;
+        const bound = `__bound_${jsIdent(node.id)}`;
         emitBody(`  {`, anchor);
-        // Int pins carry safe integers; `| 0` would wrap bounds beyond int32.
+        // Like `| 0` without the int32 wrap: Int pins carry safe integers.
+        // A non-finite bound (Int division by zero) is 0, not an endless loop.
+        emitBody(
+          `    const ${bound} = (v) => { const n = Number(v); return Number.isFinite(n) ? Math.trunc(n) : 0; };`,
+          anchor,
+        );
         const opening = emitBody(
-          `    for (let ${iter} = Math.trunc(${firstExpr}); ${iter} <= Math.trunc(${lastExpr}); ${iter}++) {`,
+          `    for (let ${iter} = ${bound}(${firstExpr}); ${iter} <= ${bound}(${lastExpr}); ${iter}++) {`,
           anchor,
         );
         if (instrumentLoops) emitBody(`      ${loopCheck(anchor.nodeId)}`, anchor);

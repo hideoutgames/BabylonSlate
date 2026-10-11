@@ -279,6 +279,8 @@ function flowRegistry(): NodeRegistry {
       codegen: (ctx) => { ctx.emit(`const __local = ctx.next();`); ctx.emit(`ctx.log(__local);`); } },
     { id: "items", title: "Items", category: "debug", pure: true,
       pins: () => [pin("out", "out", "out", arrayOf(STRING))], codegen: () => ({ out: "ctx.items()" }) },
+    { id: "num", title: "Number", category: "debug", pure: true,
+      pins: () => [pin("out", "out", "out", INT)], codegen: () => ({ out: "ctx.num()" }) },
     { id: "flow.sequence", title: "Sequence", category: "flow",
       pins: () => [pin("execIn", "exec", "in", EXEC), pin("then0", "then_0", "out", EXEC), pin("then1", "then_1", "out", EXEC)],
       codegen: () => {} },
@@ -390,5 +392,21 @@ describe("compiled structured flow behavior", () => {
       ["log", "log"],
     ], ["entry.execOut->loop.execIn", "loop.loopBody->log.execIn", "loop.index->log.message"]);
     expect(runCompiled(graph, registry, {})).toEqual([2 ** 31 - 1, 2 ** 31]);
+  });
+
+  it("treats a non-finite For Loop bound as 0 instead of looping without end", () => {
+    const registry = flowRegistry();
+    const graph = flowGraph(registry, [
+      ["entry", "flow.entry"],
+      ["num", "num"],
+      ["loop", "flow.forLoop", { "default:firstIndex": 0 }],
+      ["log", "log"],
+    ], ["entry.execOut->loop.execIn", "num.out->loop.lastIndex", "loop.loopBody->log.execIn", "loop.index->log.message"]);
+    let reads = 0;
+    const num = () => {
+      if (++reads > 10) throw new Error("unbounded loop");
+      return Infinity;
+    };
+    expect(runCompiled(graph, registry, { num })).toEqual([0]);
   });
 });
