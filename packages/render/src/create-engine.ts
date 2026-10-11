@@ -2809,18 +2809,13 @@ function initializeEngine(
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
     playCursor?.notePointer(event.pointerType ?? "mouse", x, y);
-    const blocked = dispatchOverlayPointer("down", x, y, event.pointerId);
+    // Game views keep no world selection; a ray pick here changed nothing.
+    dispatchOverlayPointer("down", x, y, event.pointerId);
     if (joysticks.owns(event.pointerId)) return;
     const controlOwns = uiControls.owns(event.pointerId);
     if (controlOwns && !uiControls.allowsScroll(event.pointerId)) return;
     const scrollTarget = event.pointerType === "touch" || event.pointerType === "pen" ? scrollTargetAt(x, y) : undefined;
     if (scrollTarget) scrollDrag = { pointerId: event.pointerId, startX: x, startY: y, x, y, active: false, target: scrollTarget };
-    if (controlOwns) return;
-    if (blocked) { scheduler.invalidate("selection"); return; }
-    const hit = pickAtCanvas(scene, x, y);
-    if (hit) {
-      scheduler.invalidate("selection");
-    }
   };
   const onPointerMove = (event: PointerEvent) => {
     if (!acceptsGameInput() || ((event.pointerType === "touch" || event.buttons > 0) && !activeGamePointers.has(event.pointerId))) return;
