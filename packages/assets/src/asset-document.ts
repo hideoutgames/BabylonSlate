@@ -22,7 +22,8 @@ export interface AssetDocument {
 
 /**
  * Non-document chunks (font source, pixels, audio, …) to keep when an editor
- * document save rewrites the JSON body.
+ * document save rewrites the JSON body. Every one listed in the header must
+ * have its bytes: a save must never drop a chunk it could not load.
  */
 export function extraChunksFromDecoded(
   decoded: DecodedBabasset,
@@ -31,7 +32,7 @@ export function extraChunksFromDecoded(
   for (const entry of decoded.header.chunks) {
     if (entry.id === DOCUMENT_CHUNK_ID) continue;
     const data = decoded.chunks.get(entry.id);
-    if (!data) continue;
+    if (!data) throw new Error(`Chunk ${entry.id} was not loaded; refusing to drop it on save`);
     extra.push({
       id: entry.id,
       kind: entry.kind,

@@ -197,13 +197,17 @@ export async function encodeBabasset(
   ]);
 }
 
+/**
+ * Decode every chunk. Each one must have its recorded length and sha256, so a
+ * truncated file or a torn blob is rejected rather than returned as the chunk.
+ */
 export async function decodeBabasset(
   bytes: Uint8Array,
   readBlob?: (sha256: string) => Promise<Uint8Array>,
 ): Promise<DecodedBabasset> {
   const header = readBabassetHeader(bytes);
   const headerLen = readU32LE(bytes, 8);
-  const payloadStart = 12 + headerLen;
+  const payloadStart = BABASSET_PREFIX_BYTES + headerLen;
   const chunks = new Map<string, Uint8Array>();
   const nestedAssets = new Map<string, Uint8Array>();
 
@@ -211,7 +215,11 @@ export async function decodeBabasset(
     let data: Uint8Array;
     if ("inline" in entry.locator) {
       const { offset, length } = entry.locator.inline;
-      data = bytes.subarray(payloadStart + offset, payloadStart + offset + length);
+      const end = payloadStart + offset + length;
+      if (end > bytes.byteLength || (entry.byteLength !== undefined && entry.byteLength !== length)) {
+        throw new Error(`Truncated or invalid chunk ${entry.id} in .babasset`);
+      }
+      data = bytes.subarray(payloadStart + offset, end);
     } else {
       if (!readBlob) {
         throw new Error(
@@ -219,6 +227,12 @@ export async function decodeBabasset(
         );
       }
       data = await readBlob(entry.locator.blob);
+      if (entry.byteLength !== undefined && data.byteLength !== entry.byteLength) {
+        throw new Error(`Length mismatch for chunk ${entry.id} in .babasset`);
+      }
+    }
+    if ((await sha256Hex(data)) !== entry.sha256) {
+      throw new Error(`Hash mismatch for chunk ${entry.id} in .babasset`);
     }
     chunks.set(entry.id, data);
     if (entry.kind === "asset" && entry.id.startsWith("nested:")) {
