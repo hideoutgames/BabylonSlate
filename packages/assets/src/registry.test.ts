@@ -974,6 +974,22 @@ describe("AssetRegistry", () => {
     expect(copy.header.guid).not.toBe("dup-1");
   });
 
+  it("never gives a copied or duplicated Class another Class's class id", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/a/Hero.class.babasset", { guid: "hero", type: "Class", name: "Hero" });
+    await writeAsset(storage, "assets/b/Hero_1.class.babasset", { guid: "hero-1", type: "Class", name: "Hero_1" });
+    await writeAsset(storage, "assets/c/Rock.babasset", { guid: "rock", type: "Texture", name: "Rock" });
+
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    // Copy to Folder keeps a free stem for other types, but Hero and Hero_1 are taken class ids.
+    expect((await registry.copyAsset("rock", "project", "d")).path).toBe("assets/d/Rock.babasset");
+    const copy = await registry.copyAsset("hero", "project", "d");
+    expect(copy.path).toBe("assets/d/Hero_2.class.babasset");
+    expect(copy.header.name).toBe("Hero_2");
+    expect((await registry.duplicateAsset("hero", "project", "a")).path).toBe("assets/a/Hero_3.class.babasset");
+  });
+
   it("preserves .scene.babasset when duplicating a scene", async () => {
     const storage = await createStorage();
     await storage.mkdir("assets", true);
