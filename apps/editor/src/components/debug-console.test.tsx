@@ -119,6 +119,35 @@ describe("DebugConsole", () => {
     ).toBe("quality resolution high");
   });
 
+  it("stops following new output after the user scrolls back", () => {
+    const scrollIntoView = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      const props = {
+        open: true,
+        onOpenChange: () => {},
+        commands: createCommandRegistry().list(),
+        onExecute: () => ({ success: true, output: "" }),
+      };
+      const line = (id: number) => ({ id, timestamp: id, severity: "log", message: `Line ${id}` });
+      const view = render(<DebugConsole {...props} logs={[line(1)]} />);
+      const viewport = document.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]')!;
+      Object.defineProperties(viewport, {
+        scrollHeight: { configurable: true, value: 1000 },
+        clientHeight: { configurable: true, value: 200 },
+        scrollTop: { configurable: true, value: 0 },
+      });
+      fireEvent.scroll(viewport);
+      scrollIntoView.mockClear();
+      view.rerender(<DebugConsole {...props} logs={[line(1), line(2)]} />);
+      expect(screen.getByTestId("debug-console-transcript").textContent).toContain("Line 2");
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
   it("does not reset suggestion scrolling when live context refreshes", () => {
     const props = {
       open: true,
