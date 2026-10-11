@@ -231,6 +231,8 @@ describe("NativeClerkClient", () => {
     expect(new URL(requests[3]!.url).pathname).toBe(
       "/v1/client/sessions/sess_one/remove",
     );
+    // The removal still carries the client credential it revokes.
+    expect(requests[3]!.headers.Authorization).toBe("client-a");
     expect(
       await new NativeClerkClient(key, http, secrets).restoreSession(),
     ).toBeNull();
