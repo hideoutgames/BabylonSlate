@@ -42,7 +42,7 @@ Each tick `AnimGraphRuntime.tick` (`packages/runtime/src/anim-graph-runtime.ts`,
 1. Seed component `variableStore` from document defaults.
 2. Once per `${slotId}:{guid}`, `invokeAnimEvent(AnimGraph:{guid}, onInitializeAnimation)`.
 3. Every tick, `invokeAnimEvent(..., onUpdateAnimation, dt)`.
-4. `evaluateAnimGraph` with `decideTransition` → `invokeAnimRule(AnimRule:{guid}:{id})` (`exports.evaluate` → `{ enter, exit }`; missing class / throw → `undefined` = legacy fallback).
+4. `evaluateAnimGraph` with `decideTransition` → `invokeAnimRule(AnimRule:{guid}:{id})` (`exports.evaluate` → `{ enter, exit }`; missing class / throw → `undefined` = legacy fallback; an infinite-loop abort is reported and rethrown, ending the tick).
 5. If the current clip is `kind: "sprite"` with an asset guid, `setActorSpriteClip`; otherwise clear it so a later Model state does not keep the last Sprite Animation box.
 
 Trace frames record each component's evaluation state, graph guid and pending jump (`TraceFrame.animGraphs`) plus each actor's current sprite clip (`TraceFrame.sprites`). `restoreFromTrace` replaces evaluation, initialization and pending jumps with the frame's, so the next tick continues the recorded state and time without re-running On Initialize Animation, and shows the recorded sprite frame at once ([debugger.md](debugger.md#trace-recorder)).
