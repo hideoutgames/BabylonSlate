@@ -3,6 +3,7 @@ import {
   normalizeClassMemberCategory,
   normalizeDataDefinitionAsset,
   normalizeScene,
+  type DataDefinitionField,
   type GraphClassMember,
   type GraphClassMemberPin,
   type SerializedGraph,
@@ -650,9 +651,16 @@ export type GraphEnumEntry = {
   members: EnumMember[];
 };
 
+/** A Data Definition's fields always carry their persisted id. */
+export type GraphDataDefinitionEntry = {
+  guid: string;
+  name: string;
+  fields: DataDefinitionField[];
+};
+
 export type GraphTypeAssetCatalog = {
   structures: GraphStructureEntry[];
-  dataDefinitions: GraphStructureEntry[];
+  dataDefinitions: GraphDataDefinitionEntry[];
   enums: GraphEnumEntry[];
 };
 
@@ -712,7 +720,7 @@ export function collectGraphTypeAssets(options: {
     content: unknown;
   }>;
 }): GraphTypeAssetCatalog {
-  const dataDefinitions = new Map<string, GraphStructureEntry>();
+  const dataDefinitions = new Map<string, GraphDataDefinitionEntry>();
   const structures = new Map<string, GraphStructureEntry>();
   const enums = new Map<string, GraphEnumEntry>();
   for (const entry of ENGINE_STRUCTS) {
