@@ -8,7 +8,6 @@ import {
   hardLoadingProperty,
   isDataTreeAsset,
   isHardLoading,
-  isLegacyMaterialAssetType,
   materialParameterTextureGuidsFromGraph,
   normalizeMaterialInstanceOverrides,
   parseMapDefaultEntries,
@@ -390,7 +389,7 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
 
   addMany(audioAssetDependencies(assetType, payload));
   addMany(particleAssetDependencies(assetType, payload));
-  if (assetType === "Material" || isLegacyMaterialAssetType(assetType) || assetType === "MaterialFunction") {
+  if (assetType === "Material" || assetType === "MaterialFunction") {
     const document = assetType === "MaterialFunction" ? normalizeMaterialFunctionDocument(payload) : normalizeMaterialDocument(payload);
     const refs = materialDependencies(document);
     addMany(refs.textures); addMany(refs.functions); addMany(refs.meshes, false);

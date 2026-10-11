@@ -3,16 +3,12 @@ import {
   normalizeInputAssetPayload,
   validateSaveGameDefinition,
   normalizeSceneLayer,
-  normalizeShadowOverrides,
   normalizeDataDefinitionAsset,
   normalizeDataTreeAsset,
   normalizePrefab,
 } from "@babylonslate/core";
 import { normalizeParticleGraphDocument } from "@babylonslate/particle-graph";
-import {
-  migrateLegacyShaderPayload,
-  normalizeMaterialFunctionDocument,
-} from "@babylonslate/shader-graph";
+import { normalizeMaterialFunctionDocument } from "@babylonslate/shader-graph";
 import {
   normalizeAudioChannelPayload,
   normalizeAudioMixerPayload,
@@ -74,33 +70,12 @@ export class MigrationRegistry {
 }
 
 /**
- * A version step whose payload needs no change: `normalizeScene` fills every
- * default. Scene v0–v2 steps are such steps; the pre-actor `meshes[]` list
- * they once converted is no longer read.
+ * A version step whose payload needs no change, kept so the type's current
+ * version number stays where saved files have it. Older shapes are not
+ * converted: the type's normalizer fills current defaults on load.
  */
 function keepPayload(payload: Record<string, unknown>): Record<string, unknown> {
   return { ...payload };
-}
-
-/** Preserve legacy numeric capacity once; current sparse overrides stay independent. */
-function migrateSceneShadowCapacity(
-  payload: Record<string, unknown>,
-): Record<string, unknown> {
-  if (!payload.settings || typeof payload.settings !== "object") return payload;
-  const settings = payload.settings as Record<string, unknown>;
-  const shadowOverrides = normalizeShadowOverrides(settings.shadowOverrides);
-  if (
-    shadowOverrides.maxLocalLights === undefined ||
-    shadowOverrides.localLightMode !== undefined
-  )
-    return payload;
-  return {
-    ...payload,
-    settings: {
-      ...settings,
-      shadowOverrides: { ...shadowOverrides, localLightMode: "manual" },
-    },
-  };
 }
 
 /** Default registry with Graph/Class logic-graph chains and Scene/Project. */
@@ -123,27 +98,14 @@ export function createDefaultMigrationRegistry(): MigrationRegistry {
   });
   registry.register({
     type: "Scene",
-    migrations: [
-      keepPayload,
-      keepPayload,
-      keepPayload,
-      migrateSceneShadowCapacity,
-    ],
+    migrations: [keepPayload, keepPayload, keepPayload, keepPayload],
   });
   registry.register({
     type: "Project",
     migrations: [(payload) => ({ ...payload })],
   });
-  // v1 was the empty imported glTF stub; v2 is the authored Material graph.
-  const materialMigrations: MigrationFn[] = [
-    (payload) => ({ ...payload }),
-    (payload) =>
-      migrateLegacyShaderPayload(payload) as unknown as Record<string, unknown>,
-  ];
-  registry.register({ type: "Material", migrations: materialMigrations });
-  // Legacy authored Shader assets read through the same chain and are
-  // rewritten to the `Material` header type on save.
-  registry.register({ type: "Shader", migrations: materialMigrations });
+  // Version 2 is the authored Material graph.
+  registry.register({ type: "Material", migrations: [keepPayload, keepPayload] });
   registry.register({
     type: "MaterialFunction",
     migrations: [

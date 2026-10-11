@@ -1130,8 +1130,7 @@ complete shadow category, including Auto mode, the saved Manual count (1/2/4/8),
 distance, filtering and bias. Switching only Auto/Manual retains its saved count.
 Legacy full project settings with a numeric capacity migrate to Manual,
 including the ambiguous value four that historical normalization wrote by default.
-Scene v3-to-v4 migration applies this once to authored numeric overrides; current
-sparse fields stay independent, and resetting mode resumes project inheritance.
+Scene overrides are sparse and independent; resetting mode resumes project inheritance.
 Project normalization, export and player hydration retain the mode. The authored
 shadow distance defaults to 200 world units and does not limit map size. The
 conservative actual byte ceilings remain unchanged: selecting Ultra does not
