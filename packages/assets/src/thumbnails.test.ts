@@ -7,7 +7,6 @@ import {
   thumbnailMime,
   thumbnailPath,
   writeThumbnail,
-  upgradeTextureThumbnail,
 } from "./thumbnails";
 
 describe("thumbnails I/O", () => {
@@ -78,9 +77,7 @@ describe("thumbnails I/O", () => {
       convertToBlob = convertToBlob;
     });
     try {
-      const oldThumbnail = new Uint8Array([0xff, 0xd8, 0xff]);
-      const source = vi.fn(async () => new Uint8Array([1]));
-      await expect(upgradeTextureThumbnail(sourceMime === "image/jpeg" ? null : oldThumbnail, sourceMime, source))
+      await expect(generateThumbnailBytes(new Uint8Array([1]), undefined, sourceMime))
         .resolves.toEqual(new Uint8Array([1, 2, 3]));
       expect(convertToBlob).toHaveBeenCalledWith({ type: outputMime, quality: 0.7 });
       expect(drawImage).toHaveBeenCalledWith(expect.anything(), 0, 0, 128, 64);
@@ -88,17 +85,6 @@ describe("thumbnails I/O", () => {
     } finally {
       vi.unstubAllGlobals();
     }
-  });
-
-  it("keeps current alpha thumbnails and opaque JPEG thumbnails without reading source pixels", async () => {
-    const readSource = vi.fn<() => Promise<Uint8Array>>();
-    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
-    const jpeg = new Uint8Array([0xff, 0xd8, 0xff]);
-    await expect(upgradeTextureThumbnail(png, "image/png", readSource)).resolves.toBe(png);
-    await expect(upgradeTextureThumbnail(jpeg, "image/jpeg", readSource)).resolves.toBe(jpeg);
-    expect(readSource).not.toHaveBeenCalled();
-    await expect(upgradeTextureThumbnail(jpeg, "image/png", async () => { throw new Error("Missing source"); }))
-      .resolves.toBe(jpeg);
   });
 
   it("sniffs PNG vs JPEG magic for Content Browser blobs", () => {
