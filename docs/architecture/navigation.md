@@ -75,7 +75,7 @@ The crowd composes world poses only for NavAgent actors and their ancestors, res
 
 In 3D worlds, a dynamic RigidBody remains responsible for the actor's position. NavAgent supplies XZ steering, preserves vertical velocity, and synchronizes the crowd with the physics result instead of overwriting the actor with the navmesh height. Idle agents still fall, collider offsets remain intact, and stopping navigation does not cancel a fall. An airborne movement request is retained while the actor reaches the navmesh; arrival is checked against the actual actor position. Existing static/kinematic motion settings, `gravityScale`, and 2D crowd navigation remain unchanged.
 
-`BTTask_MoveTo` without a task host still succeeds (package stub). The runtime host requests `setNavAgentTarget` and returns `running` until the agent is inside `acceptRadius` (default 0.75). Aborting a running MoveTo calls `stopNavAgent` so the crowd does not keep the aborted target.
+`BTTask_MoveTo` without a task host still succeeds (package stub). The runtime host requests `setNavAgentTarget` and returns `running` until the agent is inside `acceptRadius` (new Move To and Move To Blackboard Key nodes stamp 0.5; the runtime reads 0.75 only when the property is missing or non-finite). Aborting a running MoveTo calls `stopNavAgent` so the crowd does not keep the aborted target.
 
 ## Play console inspection
 

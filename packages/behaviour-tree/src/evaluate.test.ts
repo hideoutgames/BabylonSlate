@@ -294,6 +294,13 @@ describe("evaluateBehaviourTree", () => {
     expect(next.lastResults.b).toBe("success");
   });
 
+  it("succeeds a parallel with no children, like an empty sequence", () => {
+    const doc = tree([node("root", "parallel", "bt.composite.parallel")], "root");
+    const next = evaluateBehaviourTree(doc, null, 1 / 60);
+    expect(next.status).toBe("success");
+    expect(next.stack).toEqual([]);
+  });
+
   it("ticks every parallel wait then succeeds when all complete", () => {
     const a = node("a", "task", "bt.task.wait");
     a.properties = { durationMs: 100 };
@@ -568,6 +575,63 @@ describe("evaluateBehaviourTree", () => {
     });
     expect(next.status).toBe("success");
     expect(ticks).toBe(3);
+  });
+
+  it("keeps a child's cooldown when a Loop restarts its subtree", () => {
+    const leaf = node("leaf", "task", "bt.task.custom");
+    leaf.decorators.push({
+      id: "cd",
+      classId: "bt.decorator.cooldown",
+      abortMode: "none",
+      observedKeys: [],
+      properties: { durationMs: 1000 },
+    });
+    const body = node("body", "sequence", "bt.composite.sequence", ["leaf"]);
+    body.decorators.push({
+      id: "loop",
+      classId: "bt.decorator.loop",
+      abortMode: "none",
+      observedKeys: [],
+      properties: { numLoops: 3 },
+    });
+    const doc = tree(
+      [node("root", "sequence", "bt.composite.sequence", ["body"]), body, leaf],
+      "root",
+    );
+    let ticks = 0;
+    const next = evaluateBehaviourTree(doc, null, 1 / 60, {
+      host: {
+        tick: () => {
+          ticks += 1;
+          return "success";
+        },
+      },
+    });
+    // Iterations two and three meet the cooldown the first one started.
+    expect(ticks).toBe(1);
+    expect(next.status).toBe("failure");
+  });
+
+  it("fires a service at most once on a long tick", () => {
+    const root = node("root", "sequence", "bt.composite.sequence", ["idle"]);
+    root.services.push({
+      id: "pulse",
+      classId: "bt.service.custom",
+      intervalMs: 50,
+      randomDeviationMs: 0,
+      properties: {},
+    });
+    const wait = node("idle", "task", "bt.task.wait");
+    wait.properties = { durationMs: 10_000 };
+    const doc = tree([root, wait], "root");
+    const seen: string[] = [];
+    const host = { tick: (service: { id: string }) => seen.push(service.id) };
+    const hitch = evaluateBehaviourTree(doc, null, 1, { serviceHost: host });
+    expect(hitch.status).toBe("running");
+    expect(seen).toEqual(["pulse"]);
+    // The missed intervals are dropped, not replayed on the next short tick.
+    evaluateBehaviourTree(doc, hitch, 0.016, { serviceHost: host });
+    expect(seen).toEqual(["pulse"]);
   });
 
   it("blocks a node during cooldown after it finishes", () => {
@@ -888,6 +952,35 @@ describe("evaluateBehaviourTree", () => {
       });
       evaluateBehaviourTree(doc, cleared, 1 / 60, { blackboard: { alert: true }, host });
       expect(counts).toEqual({ activations: 3, aborts: 2 });
+    });
+
+    it("aborts the lower branch of a selector that yielded under a Parallel", () => {
+      const high = node("high", "task", "bt.task.succeed");
+      high.decorators.push({
+        id: "alert",
+        classId: "bt.decorator.blackboardIsSet",
+        abortMode: "lowerPriority",
+        observedKeys: ["alert"],
+        properties: { key: "alert" },
+      });
+      const doc = tree(
+        [
+          node("root", "parallel", "bt.composite.parallel", ["pick", "idle"]),
+          node("pick", "selector", "bt.composite.selector", ["high", "low"]),
+          high,
+          node("low", "task", "bt.task.custom"),
+          node("idle", "task", "bt.task.custom"),
+        ],
+        "root",
+      );
+      const { counts, host } = latentHost();
+      const first = evaluateBehaviourTree(doc, null, 1 / 60, { blackboard: { alert: false }, host });
+      expect(first.lastResults.low).toBe("running");
+      const next = evaluateBehaviourTree(doc, first, 1 / 60, { blackboard: { alert: true }, host });
+      // The Parallel keeps running; only the selector's lower branch is aborted.
+      expect(next.status).toBe("running");
+      expect(next.lastResults).toMatchObject({ high: "success", pick: "success", idle: "running" });
+      expect(counts.aborts).toBe(1);
     });
 
     it("restarts a Wait from zero when the abort re-enters it", () => {

@@ -438,7 +438,7 @@ function resetSubtreeForLoop(
   for (const id of subtreeIds(nodes, rootId)) {
     delete lastResults[id];
     if (id !== rootId) {
-      delete nodeMemory[id];
+      resetNodeMemory(nodeMemory, id);
       continue;
     }
     nodeMemory[id] = cooldownOnlyMemory(nodeMemory[id], (key) =>
@@ -591,7 +591,11 @@ function applyAborts(
         ) {
           continue;
         }
-        while (stack.length > 0 && stack[stack.length - 1]!.nodeId !== found.selector.id) {
+        // A selector that yielded under a Parallel is `running` but off the
+        // stack. Its lower branch is aborted in place and the Parallel resumes
+        // it next pass; popping toward it would unwind the Parallel instead.
+        const selectorOnStack = stack.some((frame) => frame.nodeId === found.selector.id);
+        while (selectorOnStack && stack[stack.length - 1]!.nodeId !== found.selector.id) {
           const frame = stack.pop()!;
           lastResults[frame.nodeId] = "failure";
           const popped = nodes.get(frame.nodeId);
@@ -614,14 +618,14 @@ function applyAborts(
             if (child) startCooldowns(child, nodeMemory);
           }
         }
-        const selectorFrame = stack[stack.length - 1];
-        if (selectorFrame) {
+        if (selectorOnStack) {
+          const selectorFrame = stack[stack.length - 1]!;
           selectorFrame.childIndex = found.index;
           selectorFrame.opened = true;
-          for (const childId of found.selector.children.slice(found.index)) {
-            for (const id of subtreeIds(nodes, childId)) {
-              delete lastResults[id];
-            }
+        }
+        for (const childId of found.selector.children.slice(found.index)) {
+          for (const id of subtreeIds(nodes, childId)) {
+            delete lastResults[id];
           }
         }
         return;
@@ -682,19 +686,15 @@ function tickNodeServices(
     let nextMs =
       typeof row.nextMs === "number" ? row.nextMs : serviceIntervalMs(service, seed, fires);
     elapsed += dtSeconds * 1000;
-    if (nextMs <= 0) {
+    if (elapsed >= nextMs) {
+      // At most one fire per tick: a long frame does not replay every missed
+      // interval against the same blackboard. A remainder shorter than the next
+      // interval carries over so the cadence keeps its average rate.
       fireService(service, node, blackboard, dtSeconds, memory, host);
+      elapsed = nextMs > 0 ? elapsed - nextMs : 0;
       fires += 1;
-      elapsed = 0;
       nextMs = serviceIntervalMs(service, seed, fires);
-    } else {
-      while (elapsed >= nextMs && nextMs > 0) {
-        elapsed -= nextMs;
-        fireService(service, node, blackboard, dtSeconds, memory, host);
-        fires += 1;
-        nextMs = serviceIntervalMs(service, seed, fires);
-        if (nextMs <= 0) break;
-      }
+      if (elapsed >= nextMs) elapsed = 0;
     }
     memory[key] = { elapsedMs: elapsed, nextMs, fires };
   }
@@ -901,7 +901,8 @@ export function evaluateBehaviourTree(
           stack.pop();
           continue;
         }
-        if (results.length > 0 && results.every((row) => row === "success")) {
+        // Like an empty Sequence, a Parallel with no children succeeds.
+        if (results.every((row) => row === "success")) {
           lastResults[node.id] = "success";
           if (loop(node, frame)) continue;
           startCooldowns(node, nodeMemory);

@@ -2,14 +2,13 @@ import { hierarchy, tree } from "d3-hierarchy";
 import type { SerializedGraph } from "@babylonslate/core";
 import type {
   BehaviourTreeDocument,
-  BtAbortMode,
   BtDecorator,
   BtEvalState,
   BtNode,
   BtNodeKind,
   BtService,
 } from "./types";
-import { createDefaultBehaviourTree } from "./tree";
+import { createDefaultBehaviourTree, parseBtDecorator, parseBtService } from "./tree";
 import { kindForCatalogClassId, titleForBtClassId } from "./catalog";
 import type { BtEditorPosition } from "./types";
 
@@ -219,48 +218,16 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function parseAbortMode(value: unknown): BtAbortMode {
-  if (value === "self" || value === "lowerPriority" || value === "both") {
-    return value;
-  }
-  return "none";
+function parseDecorators(value: unknown[]): BtDecorator[] {
+  return value
+    .map((entry, index) => parseBtDecorator(entry, index))
+    .filter((entry): entry is BtDecorator => entry !== null);
 }
 
-function parseDecorators(value: unknown): BtDecorator[] {
-  if (!Array.isArray(value)) return [];
-  const out: BtDecorator[] = [];
-  for (const entry of value) {
-    const row = asRecord(entry);
-    if (typeof row.id !== "string" || typeof row.classId !== "string") continue;
-    out.push({
-      id: row.id,
-      classId: row.classId,
-      abortMode: parseAbortMode(row.abortMode),
-      observedKeys: Array.isArray(row.observedKeys)
-        ? row.observedKeys.filter((key): key is string => typeof key === "string")
-        : [],
-      properties: asRecord(row.properties),
-    });
-  }
-  return out;
-}
-
-function parseServices(value: unknown): BtService[] {
-  if (!Array.isArray(value)) return [];
-  const out: BtService[] = [];
-  for (const entry of value) {
-    const row = asRecord(entry);
-    if (typeof row.id !== "string" || typeof row.classId !== "string") continue;
-    out.push({
-      id: row.id,
-      classId: row.classId,
-      intervalMs: typeof row.intervalMs === "number" ? row.intervalMs : 0,
-      randomDeviationMs:
-        typeof row.randomDeviationMs === "number" ? row.randomDeviationMs : 0,
-      properties: asRecord(row.properties),
-    });
-  }
-  return out;
+function parseServices(value: unknown[]): BtService[] {
+  return value
+    .map((entry, index) => parseBtService(entry, index))
+    .filter((entry): entry is BtService => entry !== null);
 }
 
 function parseKind(value: unknown, classId: string): BtNodeKind {

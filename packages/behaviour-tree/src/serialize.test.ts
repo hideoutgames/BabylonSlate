@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createDefaultBehaviourTree,
+  parseBehaviourTreeDocument,
   type BehaviourTreeDocument,
   type BtNode,
 } from "./index";
@@ -93,6 +94,25 @@ describe("behaviour tree serialize", () => {
     expect(restored.nodes.find((entry) => entry.id === "sequence")?.decorators).toEqual(
       sequence.decorators,
     );
+  });
+
+  it("reads a canvas service interval the way the document parser does", () => {
+    const tree = createDefaultBehaviourTree();
+    const graph = behaviourTreeToSerialized(tree);
+    const sequence = graph.nodes.find((entry) => entry.id === "sequence")!;
+    sequence.data.services = [
+      { id: "missing", classId: "bt.service.setBlackboard", properties: {} },
+      { id: "broken", classId: "bt.service.setBlackboard", intervalMs: Number.NaN, properties: {} },
+    ];
+    const canvas = serializedToBehaviourTree(graph, tree).nodes.find((entry) => entry.id === "sequence")!;
+    const stored = parseBehaviourTreeDocument({
+      ...tree,
+      nodes: tree.nodes.map((entry) =>
+        entry.id === "sequence" ? { ...entry, services: sequence.data.services } : entry,
+      ),
+    })!.nodes.find((entry) => entry.id === "sequence")!;
+    expect(canvas.services).toEqual(stored.services);
+    expect(canvas.services.map((row) => row.intervalMs)).toEqual([250, 250]);
   });
 
   it("marks every node on the running stack, not only the leaf", () => {
