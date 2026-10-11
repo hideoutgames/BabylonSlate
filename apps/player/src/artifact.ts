@@ -34,11 +34,10 @@ import {
   type AssetLoadScope,
   type AssetLoadPriority,
   extractPackedAudioClipBytes,
-  extractPackedModelAsset,
+  decodePackedModelAsset,
   peekPackedAudioPayload,
   audioClipCacheKey,
   AUDIO_DEFAULT_SOURCE_CHUNK,
-  normalizeAudioPayload,
   type AudioPayload,
   type ModelPayload,
   decodeAreaEmission,
@@ -197,7 +196,7 @@ export async function loadGameFromFiles(
     if (!entry.pack && !accounted) { readMetrics.operations++; readMetrics.fullReads++; readMetrics.requestedBytes += entry.byteLength ?? bytes.byteLength; readMetrics.actualBytesRead += bytes.byteLength; }
     signal.throwIfAborted();
     if (entry.byteLength !== undefined && bytes.byteLength !== entry.byteLength) throw new Error(`Asset ${entry.guid} has a corrupt length.`);
-    if (entry.revision && await sha256Hex(bytes) !== entry.revision) throw new Error(`Asset ${entry.guid} has a corrupt revision.`);
+    if (await sha256Hex(bytes) !== entry.revision) throw new Error(`Asset ${entry.guid} has a corrupt revision.`);
     signal.throwIfAborted();
     return bytes;
   }
@@ -207,6 +206,11 @@ export async function loadGameFromFiles(
     let decodedBytes = document === undefined ? 0 : bytes.byteLength * 2;
     let install = () => {};
     let model: PreparedAsset["model"];
+    // Exported sidecars always carry their prefixed identity (`navmesh:<scene>`).
+    const sidecarOwner = (guid: string | null) => {
+      if (!guid) throw new Error(`Invalid ${entry.type} asset identity: ${entry.guid}`);
+      return guid;
+    };
     if (entry.type === "Scene") { const value = normalizeScene(document); install = () => { scenes.set(entry.guid, value); }; }
     else if (entry.type === "SceneLayer") { const value = normalizeSceneLayer(document); install = () => { sceneLayers.set(entry.guid, value); }; }
     else if (entry.type === "Texture") install = () => { textureBytes.set(entry.guid, bytes); };
@@ -217,7 +221,8 @@ export async function loadGameFromFiles(
       decodedBytes = value.rgba.byteLength;
       install = () => { areaEmissions.set(guid, value); };
     } else if (entry.type === "Model") {
-      const value = extractPackedModelAsset(bytes);
+      const value = decodePackedModelAsset(bytes);
+      if (!value) throw new Error(`Model ${entry.guid} is not a packed Model asset.`);
       const animationDurations = modelAnimationDurations(value.source);
       // Complex Collision is a separate representation, cooked in prepare() only when needed.
       model = value;
@@ -227,19 +232,20 @@ export async function loadGameFromFiles(
       fontBytes.set(entry.guid, bytes);
       if (entry.name?.trim()) fontFamilies.set(entry.guid, entry.name.trim());
     };
-    else if (entry.type === FONT_FACETYPE_EXPORT_TYPE) install = () => { fontFacetypeBytes.set(fontGuidFromFontFacetypeExport(entry.guid) ?? entry.guid, bytes); };
-    else if (entry.type === FONT_MSDF_EXPORT_TYPE) install = () => { fontMsdfJson.set(fontGuidFromFontMsdfExport(entry.guid) ?? entry.guid, bytes); };
-    else if (entry.type === FONT_MSDF_ATLAS_EXPORT_TYPE) install = () => { fontMsdfPng.set(fontGuidFromFontMsdfAtlasExport(entry.guid) ?? entry.guid, bytes); };
+    else if (entry.type === FONT_FACETYPE_EXPORT_TYPE) { const guid = sidecarOwner(fontGuidFromFontFacetypeExport(entry.guid)); install = () => { fontFacetypeBytes.set(guid, bytes); }; }
+    else if (entry.type === FONT_MSDF_EXPORT_TYPE) { const guid = sidecarOwner(fontGuidFromFontMsdfExport(entry.guid)); install = () => { fontMsdfJson.set(guid, bytes); }; }
+    else if (entry.type === FONT_MSDF_ATLAS_EXPORT_TYPE) { const guid = sidecarOwner(fontGuidFromFontMsdfAtlasExport(entry.guid)); install = () => { fontMsdfPng.set(guid, bytes); }; }
     else if (entry.type === "Audio") {
-      const value = peekPackedAudioPayload(bytes) ?? normalizeAudioPayload({});
+      const value = peekPackedAudioPayload(bytes);
+      if (!value) throw new Error(`Audio ${entry.guid} is not a packed Audio asset.`);
       install = () => { audioPayloads.set(entry.guid, value); };
     } else if (entry.type === "CompiledScript") {
       const value = document as Partial<ScriptBundleEntry> | undefined;
       if (!value || typeof value.assetGuid !== "string" || typeof value.classId !== "string" || typeof value.source !== "string" || !Array.isArray(value.anchors) || !Array.isArray(value.entryPoints))
         throw new Error(`Compiled Class ${entry.guid} has invalid script metadata.`);
       install = () => { const index = scripts.findIndex(script => script.assetGuid === value.assetGuid && script.classId === value.classId); if (index >= 0) scripts[index] = value as ScriptBundleEntry; else scripts.push(value as ScriptBundleEntry); };
-    } else if (entry.type === NAVMESH_EXPORT_TYPE) install = () => { navmeshBytes.set(sceneGuidFromNavmeshExport(entry.guid) ?? entry.guid, bytes); };
-    else if (entry.type === AUDIO_REVERB_EXPORT_TYPE) install = () => { audioReverbBytes.set(sceneGuidFromAudioReverbExport(entry.guid) ?? entry.guid, bytes); };
+    } else if (entry.type === NAVMESH_EXPORT_TYPE) { const guid = sidecarOwner(sceneGuidFromNavmeshExport(entry.guid)); install = () => { navmeshBytes.set(guid, bytes); }; }
+    else if (entry.type === AUDIO_REVERB_EXPORT_TYPE) { const guid = sidecarOwner(sceneGuidFromAudioReverbExport(entry.guid)); install = () => { audioReverbBytes.set(guid, bytes); }; }
     return { bytes, decodedBytes, document, model, publish: () => { payloads.set(entry.guid, bytes); if (document !== undefined) decodedPayloads.set(entry.guid, document); install(); } };
   }
 
@@ -268,9 +274,13 @@ export async function loadGameFromFiles(
   };
   const sourceListeners = new Set<() => void>();
   let notificationPending = false;
+  // The cooked mesh is its own cached representation and can outlive the
+  // Model's trimmed source bytes.
   game.cookComplexCollision = guid => {
+    const cooked = complexMeshes.get(guid);
+    if (cooked) return cooked;
     const source = modelBytes.get(guid);
-    return source ? complexMeshes.get(guid) ?? cookComplexCollisionMesh(source, modelPayloads.get(guid)) : null;
+    return source ? cookComplexCollisionMesh(source, modelPayloads.get(guid)) : null;
   };
   game.onSourcesChanged = listener => { sourceListeners.add(listener); return () => { sourceListeners.delete(listener); }; };
   function evict(entry: GameAssetIndexEntry, bytes: Uint8Array): void {
@@ -301,7 +311,8 @@ export async function loadGameFromFiles(
     resolve: (id) => {
       const entry = entries.get(id);
       if (!entry) throw new Error(`Asset ${id} is not in the exported catalog.`);
-      return { id, rootId: projectId, revision: entry.revision ?? "legacy", requiredDependencies: entry.requiredDependencies ?? [] };
+      if (!entry.revision) throw new Error(`Asset ${id} has no revision in the exported catalog; rebuild the game.`);
+      return { id, rootId: projectId, revision: entry.revision, requiredDependencies: entry.requiredDependencies ?? [] };
     },
     representation: (record) => {
       const entry = entries.get(record.id)!;
@@ -359,7 +370,7 @@ export async function loadGameFromFiles(
       load: async () => ({ value: { bytes: new Uint8Array(), decodedBytes: 0, publish() {} } }),
     } : undefined, { signal, priority, dependencies: "none" });
     const documentIds = [...closure];
-    const prepared = await Promise.all(documentIds.map(id => acquire(id, entries.get(id)?.type === "Font" && manifest.assetCatalogVersion === 1)));
+    const prepared = await Promise.all(documentIds.map(id => acquire(id, entries.get(id)?.type === "Font")));
     const inspect = (value: unknown): void => {
       if (!value || typeof value !== "object") return;
       if (Array.isArray(value)) { for (const child of value) inspect(child); return; }
@@ -426,9 +437,8 @@ export async function loadGameFromFiles(
     return { scene, release: source.release, assetGuids: source.assetGuids };
   };
   game.dispose = () => { sourceListeners.clear(); for (const scope of liveScopes) scope.dispose(); liveScopes.clear(); service.dispose(); packSources.clear(); };
-  const roots = manifest.assetCatalogVersion === 1
-    ? manifest.assets.filter(entry => entry.guid === manifest.startupSceneGuid).map(entry => entry.guid)
-    : manifest.assets.map(entry => entry.guid);
+  // Startup reads the entry Scene's closure and the startup-required systems.
+  const roots = entries.has(manifest.startupSceneGuid) ? [manifest.startupSceneGuid] : [];
   try {
     const [, systemAssets] = await Promise.all([prepare(startupScope, roots, options.signal),
       prepare(systemScope, manifest.assets.filter(entry => entry.startupRequired).map(entry => entry.guid), options.signal)]);

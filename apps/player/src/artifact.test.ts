@@ -358,8 +358,7 @@ describe("loadGameFromFiles", () => {
     expect(loaded.modelPayloads.get("hero-model")?.importScale).toBe(4);
   });
 
-  it("loads a raw GLB Model pack as source with default payload", async () => {
-    const glb = new Uint8Array([0x67, 0x6c, 0x54, 0x46, 9]);
+  it.each(["Model", "Audio"] as const)("rejects a %s whose bytes are not a packed envelope", async (type) => {
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
@@ -373,23 +372,16 @@ describe("loadGameFromFiles", () => {
           bytes: new TextEncoder().encode(JSON.stringify(createDefaultScene())),
         },
         {
-          guid: "hero-model",
-          type: "Model",
+          guid: "raw",
+          type,
           startupRequired: true, sceneGuid: "scene-1",
-          name: "Hero",
-          bytes: glb,
+          name: "Raw",
+          bytes: new Uint8Array([0x67, 0x6c, 0x54, 0x46, 9]),
         },
       ],
-      playerFiles: new Map([
-        ["index.html", new TextEncoder().encode("<html></html>")],
-        ["player.js", new TextEncoder().encode("void 0")],
-      ]),
     });
-    expect(packed.ok).toBe(true);
-    if (!packed.ok) return;
-    const loaded = await loadGameFromFiles(packed.value.files);
-    expect(loaded.modelBytes.get("hero-model")).toEqual(glb);
-    expect(loaded.modelPayloads.get("hero-model")?.importScale).toBe(1);
+    if (!packed.ok) throw new Error(packed.error);
+    await expect(loadGameFromFiles(packed.value.files)).rejects.toThrow(`${type} raw is not a packed ${type} asset.`);
   });
 
   it("loads packed SceneLayer documents onto the compositor library", async () => {
