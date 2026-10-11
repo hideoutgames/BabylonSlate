@@ -1750,8 +1750,12 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
         updateNodeData,
         {
           enums: typeCatalog.enums,
+          // The wire lives in the graph being inspected (event or function).
           typeSelectDisabled: Boolean(
-            connectedEnumGuidFromSerialized(graph, selectedNode.id),
+            connectedEnumGuidFromSerialized(
+              hydratedInspectGraph ?? inspectGraph ?? graph,
+              selectedNode.id,
+            ),
           ),
         },
       )
