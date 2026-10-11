@@ -1394,6 +1394,17 @@ describe("project documents as .babasset", () => {
     );
   });
 
+  it("reports a copied asset file hidden because its guid duplicates another asset, once", async () => {
+    const { storage, service } = await scaffolded();
+    await storage.mkdir("assets/Copies", true);
+    await storage.writeBinary("assets/Copies/main.scene.babasset", await storage.readBinary(MAIN_SCENE_FILE));
+    await service.remountRegistry();
+    await service.remountRegistry();
+    expect(service.sessionDiagnostics.filter((line) => line.includes("assets/Copies/main.scene.babasset"))).toEqual([
+      `assets/Copies/main.scene.babasset is hidden: it has the same asset id as ${MAIN_SCENE_FILE}. Remove the copy or import it again to give it its own id.`,
+    ]);
+  });
+
   it("writes a Scene navmesh extra chunk without regenerating at Play", async () => {
     const { service } = await scaffolded();
     const scene = (await service.loadDocument(

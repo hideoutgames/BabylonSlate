@@ -1550,9 +1550,15 @@ export class ProjectService {
       const committed = committedKtx2Sha256(header);
       if (committed) this.sessionEncodes.set(header.guid, committed);
     });
+    // A remount reports only conflicts the previous catalog did not have.
+    const reportedConflicts = new Set((this.assetRegistry?.listGuidConflicts() ?? []).map((conflict) => conflict.path));
     await registry.mountRoot(projectContentRoot());
     if (session !== this.sourceSession) throw new DOMException("Project changed during catalog scan", "AbortError");
     this.assetRegistry = registry;
+    for (const conflict of registry.listGuidConflicts()) {
+      if (reportedConflicts.has(conflict.path)) continue;
+      this.pushDiagnostic(`${conflict.path} is hidden: it has the same asset id as ${conflict.indexedPath}. Remove the copy or import it again to give it its own id.`);
+    }
     await this.syncPlugins();
     if (session !== this.sourceSession) throw new DOMException("Project changed during catalog scan", "AbortError");
     this.projectSearchIndex = new ProjectSearchIndex(this.storage, {
