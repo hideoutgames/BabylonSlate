@@ -21,10 +21,10 @@ behaviour trees, the crowd) uses that same step for the whole tick, so a `slomo`
 or script dilation change made during a tick takes effect from the next tick.
 Engine delays, tween completion, ready-scene lifecycle, audio completion and
 scalability callbacks wait for game-owner admission while paused. Stop cancels
-waiting engine continuations. Destroying an actor while its Delay counts ends
-that graph without a diagnostic, like a cancelled tween; a continuation that
-Pause or a blocking load already holds reports the owner cancellation. Asset
-I/O and readiness may finish during a pause.
+waiting engine continuations. Destroying an actor while its Delay counts, or
+while Pause or a blocking load holds its continuation, ends that graph without
+a diagnostic, like a cancelled tween. Asset I/O and readiness may finish during
+a pause.
 Custom JavaScript timers, promises and external effects remain cooperative and
 are not a suspended-process transaction. Simulation sessions refuse snapshot
 recording at the recorder command boundary; use Play or Preview Build.

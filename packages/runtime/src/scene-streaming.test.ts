@@ -333,7 +333,7 @@ describe("additive scene streaming", () => {
       source: `export async function begin(ctx) {
         if (ctx.self.getVariable("parentId") !== "left") return;
         const target = ctx.getAllActorsOfClass("SceneStreamingActor").find(actor => actor.guid === "right");
-        await ctx.loadSceneBlocking(target);
+        try { await ctx.loadSceneBlocking(target); } catch (error) { ctx.log("log", "test", "ended " + error.message); throw error; }
         ctx.setVariable("continued", true);
         ctx.spawnActor("Spawned");
       }
@@ -349,7 +349,9 @@ describe("additive scene streaming", () => {
       await runtime.unloadSceneStream(left);
       expect(waiting.destroyed).toBe(true);
       acknowledge(runtime, sibling);
-      await vi.waitFor(() => expect(runtime.getDiagnostics().entries().some((entry) => entry.message.includes("owner was destroyed"))).toBe(true));
+      await vi.waitFor(() => expect(commands.some((command) => command.type === "log" && command.category === "test" &&
+        command.message === "ended Script continuation cancelled: its owner was destroyed.")).toBe(true));
+      expect(runtime.getDiagnostics().entries()).toEqual([]);
       expect(waiting.getVariable("continued")).toBeUndefined();
       expect(world.getActors().some((actor) => actor.classId === "Spawned")).toBe(false);
     } finally { runtime.stop(); }

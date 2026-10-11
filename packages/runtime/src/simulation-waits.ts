@@ -12,9 +12,18 @@ const CONTINUATION_CANCELLED: Record<RuntimeContinuationCancelReason, string> = 
   streamNotLoaded: "Script continuation cancelled: its owner's streamed Scene is not loaded.",
 };
 
-/** A latent continuation whose session stopped, or whose owner went away, while it waited. */
+/**
+ * A latent continuation whose session stopped, or whose owner went away, while
+ * it waited. The driver drops it after Stop, and ScriptHost ends a destroyed
+ * owner's own graph on `ownerDestroyed` without a diagnostic.
+ */
 export class RuntimeContinuationCancelled extends Error {
-  constructor(reason: RuntimeContinuationCancelReason) { super(CONTINUATION_CANCELLED[reason]); this.name = "AbortError"; }
+  readonly reason: RuntimeContinuationCancelReason;
+  constructor(reason: RuntimeContinuationCancelReason) {
+    super(CONTINUATION_CANCELLED[reason]);
+    this.name = "AbortError";
+    this.reason = reason;
+  }
 }
 
 interface SimulationWaitsHost {

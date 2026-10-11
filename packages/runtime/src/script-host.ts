@@ -69,7 +69,7 @@ import type { InputBindingControls } from "@babylonslate/input";
 import type { TweenValueType } from "@babylonslate/core";
 import type { TweenReference, TweenRequest } from "./tween-runtime";
 import { tweenOwnerAlive } from "./tween-runtime";
-import { DelayOwnerDestroyed } from "./latent-delays";
+import { RuntimeContinuationCancelled } from "./simulation-waits";
 import { isReadOnlyTweenProperty, propertyTweenReference, tweenStorageValue } from "./tween-targets";
 import { cloneSaveGameValue, SaveGameError, type SaveGameService, type SaveGameValue,
   type SaveGameOptions, type SaveGameResult, type SaveGameInfo, type SaveGameMigration,
@@ -1010,11 +1010,12 @@ export class ScriptHost {
   }
 
   /**
-   * Report a latent script failure. A Delay cancelled because `owner` was
-   * destroyed ends that owner's graph quietly, like a cancelled tween.
+   * Report a latent script failure. A continuation cancelled because `owner`
+   * was destroyed (a counting Delay, or one Pause or a blocking load held)
+   * ends that owner's graph quietly, like a cancelled tween.
    */
   private reportLatentError(error: unknown, owner: BObject | null): void {
-    if (error instanceof DelayOwnerDestroyed && owner?.destroyed) return;
+    if (owner?.destroyed && error instanceof RuntimeContinuationCancelled && error.reason === "ownerDestroyed") return;
     this.services.reportError(error);
   }
 
