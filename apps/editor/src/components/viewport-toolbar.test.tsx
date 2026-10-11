@@ -616,14 +616,16 @@ describe("ViewportToolbar", () => {
     expect(screen.getByTestId("viewport-settings")).toBeTruthy();
   });
 
-  it("hides the 3D / 2D toggle and fixed Unlit badge on SceneLayer viewports", () => {
+  it("hides the 3D / 2D toggle and fixed Unlit badge and locks Unlit shading on SceneLayer viewports", () => {
     harness.documentKind = "scene-layer";
     harness.viewportMode = "2d";
     harness.viewportShadingMode = "unlit";
     renderToolbar({ showViewportModeToggle: false });
     expect(screen.queryByTestId("viewport-mode-toggle")).toBeNull();
     expect(screen.queryByText("Unlit")).toBeNull();
-    expect(screen.getByTestId("viewport-settings")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("viewport-settings"));
+    expect(screen.getByTestId("viewport-show-grid-toggle")).toBeTruthy();
+    expect(screen.queryByTestId("viewport-shading-mode")).toBeNull();
   });
 
   it("hides Move / Rotate / Scale when showGizmoTools is false", () => {
