@@ -338,6 +338,26 @@ describe("journal replay", () => {
     expect(result.documents.get(docId)?.nodes[0]?.position).toEqual({ x: 5, y: 0 });
   });
 
+  it("skips a record whose apply throws and still replays later documents", () => {
+    const sceneId = "scene:assets/Main.scene.babasset";
+    const graphId = "graph:assets/main.graph.babasset";
+    const scene = createDefaultScene();
+    scene.actors.push(createActor("a", "A"));
+    const graph = { nodes: [{ id: "node-1", type: "print", position: { x: 0, y: 0 }, data: {} }], edges: [] };
+    const bad: JournalLine = {
+      v: 1, docId: sceneId, at: "2026-10-11T00:00:00Z",
+      command: { type: "scene.setActorsTransforms", mergeKey: "transforms:a", entries: [{ actorId: "a" }] },
+    };
+    const later = journalRecord(graphId, new MoveNodeCommand("node-1", { x: 0, y: 0 }, { x: 7, y: 0 }));
+    const result = replayJournalLines(
+      [serializeJournalLine(bad), serializeJournalLine(later)],
+      new Map<string, SerializedScene | SerializedGraph>([[sceneId, scene], [graphId, graph]]),
+    );
+    expect(result.skipped).toEqual([bad]);
+    expect(result.documents.get(sceneId)).toBe(scene);
+    expect((result.documents.get(graphId) as SerializedGraph).nodes[0]?.position).toEqual({ x: 7, y: 0 });
+  });
+
   it("skips a whole batch when one child command cannot be recovered", () => {
     const docId = "graph:assets/history.class.babasset";
     const graph = { nodes: [{ id: "node-1", type: "print", position: { x: 0, y: 0 }, data: {} }], edges: [] };

@@ -15,7 +15,10 @@ export type ReplayableDocument = SerializedGraph | SerializedScene | Record<stri
 export interface JournalReplayResult<TDoc = ReplayableDocument> {
   /** Updated documents keyed by doc id. */
   documents: Map<string, TDoc>;
-  /** Lines skipped because the target document was not open or the command was unknown. */
+  /**
+   * Lines skipped because the target document was not open, the command was
+   * unknown, or reviving or applying it threw.
+   */
   skipped: JournalLine[];
   /** Raw lines that are not journal records, so their edits could not be recovered. */
   malformed: string[];
@@ -77,7 +80,8 @@ function resolveParsedLines(parsed: JournalLine[]): JournalLine[] {
  * editing (revive → command.apply). All asset documents share one stream,
  * keyed by doc id, so recovery is not a second serialisation path. Rename
  * markers are honoured through `resolveJournalLines`. Lines that do not parse
- * are returned in `malformed` rather than dropped silently.
+ * are returned in `malformed` rather than dropped silently; a record whose
+ * revive or apply throws is returned in `skipped`.
  */
 export function replayJournalLines<TDoc extends ReplayableDocument>(
   lines: string[],
@@ -94,13 +98,21 @@ export function replayJournalLines<TDoc extends ReplayableDocument>(
       continue;
     }
 
-    const command = reviveCommand(line.command);
-    if (!command) {
+    // One bad record (a payload a reviver or apply cannot read) costs only
+    // that edit: later lines, including other documents', still replay.
+    let next: TDoc;
+    try {
+      const command = reviveCommand(line.command);
+      if (!command) {
+        skipped.push(line);
+        continue;
+      }
+      next = (command as EditCommand<TDoc>).apply(doc);
+    } catch {
       skipped.push(line);
       continue;
     }
-
-    documents.set(line.docId, (command as EditCommand<TDoc>).apply(doc));
+    documents.set(line.docId, next);
   }
 
   return { documents, skipped, malformed };
