@@ -13,11 +13,14 @@ import { encodeJobMayWrite, type EncodeJobGuard, type EncodeJobResult, type Enco
 import { newAssetGuid } from "./guid";
 import { isEnvironmentTexturePayload } from "./environment-texture";
 import {
+  applyImportGuidRemap,
   importByExtension,
   remapImportResultGuids,
   type ImportOptions,
   type ImportResult,
 } from "./importers";
+import { replaceClassAssetReferences, type ClassAssetReplacement } from "./class-asset-refs";
+import type { DataDefinitionFieldsResolver } from "./data-asset-refs";
 import { mergeFontAttachPayload } from "./font-payload";
 import { AccountedPayloadLoader, readAssetCatalog, validateAssetSourceLocator, type AssetSourceLocator } from "./payload-loader";
 import {
@@ -1035,6 +1038,7 @@ export class AssetRegistry {
       (asset) =>
         asset.rootId === rootId && isWithinFolder(asset.path, fromPath),
     );
+    const copies: Array<{ source: IndexedAsset; copy: IndexedAsset }> = [];
     for (const asset of assets) {
       const parent = asset.path.includes("/")
         ? asset.path.slice(0, asset.path.lastIndexOf("/"))
@@ -1044,9 +1048,117 @@ export class AssetRegistry {
       const destFolder = suffix
         ? joinRelative(destRelative, suffix)
         : destRelative;
-      await this.duplicateAsset(asset.header.guid, rootId, destFolder);
+      const copy = await this.withCreationWrite(() => this.duplicateAssetUnlocked(asset.header.guid, rootId, destFolder));
+      copies.push({ source: asset, copy });
     }
+    const remapped = await this.remapFolderCopyReferences(copies);
+    // After the remap, so a copied Sprite or Tileset already samples its copied Texture.
+    await this.alignCreatedTextures(remapped);
     return destRelative;
+  }
+
+  /**
+   * Point each folder copy's references to another asset in the copied folder
+   * at that asset's copy (guids, and Class ids, which follow the copies' file
+   * stems), as a `.babasset` import does for colliding guids. References to
+   * assets outside the folder are left as they were.
+   */
+  private async remapFolderCopyReferences(
+    copies: ReadonlyArray<{ source: IndexedAsset; copy: IndexedAsset }>,
+  ): Promise<IndexedAsset[]> {
+    const guids = new Map(copies.map(({ source, copy }) => [source.header.guid, copy.header.guid]));
+    const classes: ClassAssetReplacement[] = copies
+      .filter(({ source }) => source.header.type === "Class")
+      .map(({ source, copy }) => ({
+        guid: source.header.guid,
+        classId: classIdForAssetPath(source.path),
+        replacement: { guid: copy.header.guid, classId: classIdForAssetPath(copy.path) },
+      }));
+    const classIds = new Map(classes.map((entry) => [entry.classId, entry.replacement!.classId]));
+    // Definitions keep a header snapshot of their fields; the copies' Data
+    // values name originals until remapped and copies after.
+    const definitionFields: DataDefinitionFieldsResolver = (guid) => {
+      const header = this.byGuid.get(guid)?.header;
+      return header && (header.type === "DataDefinition" || header.type === "Structure") && Array.isArray(header.payload.fields)
+        ? header.payload.fields : undefined;
+    };
+    const remapped: IndexedAsset[] = [];
+    for (const { copy } of copies) {
+      const guid = copy.header.guid;
+      remapped.push(await this.withAssetWrite(guid, () => this.rewriteCopiedReferences(guid, guids, classes, classIds, definitionFields)));
+    }
+    return remapped;
+  }
+
+  private async rewriteCopiedReferences(
+    guid: string,
+    guids: ReadonlyMap<string, string>,
+    classes: readonly ClassAssetReplacement[],
+    classIds: ReadonlyMap<string, string>,
+    definitionFields: DataDefinitionFieldsResolver,
+  ): Promise<IndexedAsset> {
+    const asset = this.byGuid.get(guid);
+    if (!asset) throw new Error(`Unknown asset ${guid}`);
+    const { header: indexed } = asset;
+    // Historical Data Objects and Sheets have no reference schema to remap by.
+    if (indexed.type === "DataObject" || indexed.type === "DataSheet") return asset;
+    const storage = this.storageForAsset(asset);
+    const blobs = this.blobsForAsset(asset);
+    const decoded = await decodeBabasset(await storage.readBinary(asset.path), (sha256) => blobs.readBlob(sha256));
+    const { chunks: entries, ...header } = decoded.header;
+    const chunks: ChunkInput[] = entries.flatMap((entry) => {
+      const data = decoded.chunks.get(entry.id);
+      return data ? [{ id: entry.id, kind: entry.kind, mime: entry.mime, data }] : [];
+    });
+    let result: ImportResult;
+    try {
+      [result] = applyImportGuidRemap([{
+        type: header.type,
+        name: header.name,
+        guid: header.guid,
+        version: header.version,
+        dependencies: header.dependencies,
+        requiredDependencies: header.requiredDependencies,
+        classReferences: header.classReferences,
+        requiredClassReferences: header.requiredClassReferences,
+        payload: header.payload,
+        chunks,
+      }], guids, definitionFields) as [ImportResult];
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new Error(`Copied ${asset.path}, but could not point its references at the folder's copies: ${reason}`, { cause: error });
+    }
+    const replaceClasses = <T>(value: T): T =>
+      classes.length > 0 ? replaceClassAssetReferences(value, classes, definitionFields).value : value;
+    const classIdsOf = (entries: readonly string[] | undefined) => entries?.map((entry) => classIds.get(entry) ?? entry);
+    const next: Omit<BabassetHeader, "chunks"> = {
+      ...header,
+      dependencies: result.dependencies,
+      ...(result.requiredDependencies ? { requiredDependencies: result.requiredDependencies } : {}),
+      ...(result.classReferences ? { classReferences: classIdsOf(result.classReferences) } : {}),
+      ...(result.requiredClassReferences ? { requiredClassReferences: classIdsOf(result.requiredClassReferences) } : {}),
+      ...(header.parentClass != null ? { parentClass: replaceClasses({ parentClass: header.parentClass }).parentClass } : {}),
+      payload: replaceClasses(result.payload),
+    };
+    let changed = stableStringify(next) !== stableStringify(header);
+    const nextChunks = result.chunks.map((chunk, index) => {
+      if (chunk.id !== DOCUMENT_CHUNK_ID) return chunk;
+      const original = chunks[index]!;
+      const decode = (data: Uint8Array): unknown => JSON.parse(new TextDecoder().decode(data));
+      const document = replaceClasses(decode(chunk.data));
+      // Keep the copied bytes when nothing in the document named the folder's assets.
+      if (stableStringify(document) === stableStringify(decode(original.data))) return original;
+      changed = true;
+      return { ...chunk, data: new TextEncoder().encode(JSON.stringify(document)) };
+    });
+    if (!changed) return asset;
+    const encoded = await encodeBabasset({
+      header: next,
+      chunks: nextChunks,
+      writeBlob: (sha256, data) => blobs.writeBlob(sha256, data),
+    });
+    await storage.writeBinary(asset.path, encoded);
+    return this.indexHeader(asset.rootId, asset.path, readBabassetHeader(encoded), false, await this.statMtime(storage, asset.path));
   }
 
   async duplicateFolder(

@@ -1169,6 +1169,122 @@ describe("AssetRegistry", () => {
     expect(nested).toBeDefined();
   });
 
+  it("points a copied folder's references at the copies inside it and keeps references to outside assets", async () => {
+    const storage = await createStorage();
+    const writeDocument = async (path: string, type: string, guid: string, payload: Record<string, unknown>, metadata: {
+      parentClass?: string;
+      dependencies?: string[];
+      classReferences?: string[];
+      headerMeta?: Record<string, unknown>;
+    } = {}) => {
+      const name = path.slice(path.lastIndexOf("/") + 1).replace(/(\.class|\.scene|\.datadefinition|\.datatree)?\.babasset$/, "");
+      await storage.mkdir(path.slice(0, path.lastIndexOf("/")), true);
+      await storage.writeBinary(path, await encodeAssetDocument({ type, name, guid, version: 1, payload }, {
+        parentClass: metadata.parentClass ?? null,
+        headerMeta: metadata.headerMeta,
+        dependencyMetadata: {
+          dependencyMetadataVersion: 1,
+          dependencies: metadata.dependencies ?? [],
+          requiredDependencies: metadata.dependencies ?? [],
+          ...(metadata.classReferences ? { classReferences: metadata.classReferences, requiredClassReferences: metadata.classReferences } : {}),
+        },
+      }));
+    };
+    // Outside the copied folder.
+    await writeAsset(storage, "assets/shared/stone.babasset", { guid: "tex-stone", type: "Texture", name: "stone" });
+    await writeAsset(storage, "assets/Base.class.babasset", { guid: "class-base", type: "Class", name: "Base" });
+    const loot = { kind: "dataDefinition", fields: [{ id: "icon", name: "Icon", typeId: "asset" }] };
+    await writeDocument("assets/defs/Loot.datadefinition.babasset", "DataDefinition", "def-loot", loot, { headerMeta: loot });
+    // Inside: Texture -> Material -> Class prefab -> Scene, a Class deriving from a copied Class, and a nested Sprite.
+    await writeAsset(storage, "assets/kit/brick.babasset", { guid: "tex-brick", type: "Texture", name: "brick" });
+    await writeDocument("assets/kit/wall.babasset", "Material", "mat-wall", {
+      nodes: [
+        { id: "albedo", type: "texture", properties: { texture: "tex-brick" } },
+        { id: "detail", type: "texture", properties: { texture: "tex-stone" } },
+      ],
+    }, { dependencies: ["tex-brick", "tex-stone"] });
+    await writeDocument("assets/kit/Enemy.class.babasset", "Class", "class-enemy", {
+      prefab: { components: [{ id: "mesh", classId: "MeshComponent", properties: { materialGuid: "mat-wall" } }] },
+    }, { parentClass: "Base", dependencies: ["mat-wall", "class-base"], classReferences: ["Base"] });
+    await writeDocument("assets/kit/Boss.class.babasset", "Class", "class-boss", { members: [] }, {
+      parentClass: "Enemy", dependencies: ["class-enemy"], classReferences: ["Enemy"],
+    });
+    await writeDocument("assets/kit/levels/arena.scene.babasset", "Scene", "scene-arena", {
+      name: "arena",
+      actors: [
+        { id: "a1", classId: "Enemy", components: [{ id: "mesh", classId: "MeshComponent", properties: { materialGuid: "mat-wall" } }] },
+        { id: "a2", classId: "Base", components: [{ id: "sprite", classId: "SpriteComponent", properties: { assetGuid: "tex-stone" } }] },
+      ],
+    }, { dependencies: ["class-enemy", "mat-wall", "class-base", "tex-stone"], classReferences: ["Enemy", "Base"] });
+    // Its Definition is outside the folder: only that schema says Icon is an asset reference.
+    await writeDocument("assets/kit/drops.datatree.babasset", "DataTree", "tree-drops", {
+      kind: "dataTree", entries: [{ id: "coin", definitionGuid: "def-loot", values: { Icon: "tex-brick" } }],
+    }, { dependencies: ["def-loot", "tex-brick"] });
+    await writeDocument("assets/kit/sprites/hero.babasset", "Sprite", "sprite-hero", { textureGuid: "tex-brick" }, { dependencies: ["tex-brick"] });
+
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    expect(await registry.copyFolder("project", "kit", "")).toBe("kit_1");
+
+    const copyAt = (path: string) => {
+      const asset = registry.list().find((entry) => entry.path === path);
+      expect(asset, path).toBeDefined();
+      return asset!;
+    };
+    const documentAt = async (path: string) => (await decodeAssetDocument(await storage.readBinary(path))).payload;
+    const brick = copyAt("assets/kit_1/brick.babasset").header.guid;
+    const wall = copyAt("assets/kit_1/wall.babasset");
+    // Class ids come from file stems and stay unique, so the copies are Enemy_1 and Boss_1.
+    const enemy = copyAt("assets/kit_1/Enemy_1.class.babasset");
+    const boss = copyAt("assets/kit_1/Boss_1.class.babasset");
+    const arena = copyAt("assets/kit_1/levels/arena.scene.babasset");
+    const hero = copyAt("assets/kit_1/sprites/hero.babasset");
+
+    expect(await documentAt(wall.path)).toEqual({
+      nodes: [
+        { id: "albedo", type: "texture", properties: { texture: brick } },
+        { id: "detail", type: "texture", properties: { texture: "tex-stone" } },
+      ],
+    });
+    expect(wall.header.dependencies).toEqual([brick, "tex-stone"]);
+
+    expect(await documentAt(enemy.path)).toEqual({
+      prefab: { components: [{ id: "mesh", classId: "MeshComponent", properties: { materialGuid: wall.header.guid } }] },
+    });
+    expect(enemy.header.parentClass).toBe("Base");
+    expect(enemy.header.dependencies).toEqual([wall.header.guid, "class-base"]);
+
+    expect(boss.header.parentClass).toBe("Enemy_1");
+    expect(boss.header.dependencies).toEqual([enemy.header.guid]);
+    expect(boss.header.classReferences).toEqual(["Enemy_1"]);
+
+    expect(await documentAt(arena.path)).toEqual({
+      name: "arena",
+      actors: [
+        { id: "a1", classId: "Enemy_1", components: [{ id: "mesh", classId: "MeshComponent", properties: { materialGuid: wall.header.guid } }] },
+        { id: "a2", classId: "Base", components: [{ id: "sprite", classId: "SpriteComponent", properties: { assetGuid: "tex-stone" } }] },
+      ],
+    });
+    expect(arena.header.dependencies).toEqual([enemy.header.guid, wall.header.guid, "class-base", "tex-stone"]);
+    expect(arena.header.classReferences).toEqual(["Enemy_1", "Base"]);
+
+    expect(await documentAt(hero.path)).toEqual({ textureGuid: brick });
+    expect(await documentAt(copyAt("assets/kit_1/drops.datatree.babasset").path)).toEqual({
+      kind: "dataTree", entries: [{ id: "coin", definitionGuid: "def-loot", values: { Icon: brick } }],
+    });
+    expect(hero.header.payload.atlasTextures).toEqual([brick]);
+
+    // The originals keep pointing at each other, and only the copies use the copied Texture.
+    expect(await documentAt("assets/kit/levels/arena.scene.babasset")).toMatchObject({
+      actors: [{ classId: "Enemy", components: [{ properties: { materialGuid: "mat-wall" } }] }, { classId: "Base" }],
+    });
+    expect(registry.getByGuid("class-boss")?.header.parentClass).toBe("Enemy");
+    expect(registry.showReferences("tex-brick").inbound).toEqual(["mat-wall", "sprite-hero", "tree-drops"]);
+    expect(registry.showReferences(brick).inbound).toEqual(
+      [hero.header.guid, wall.header.guid, copyAt("assets/kit_1/drops.datatree.babasset").header.guid].sort(),
+    );
+  });
+
   it("renames a folder in place through moveFolder with a new name", async () => {
     const storage = await createStorage();
     await writeAsset(storage, "assets/fx/spark.babasset", {
