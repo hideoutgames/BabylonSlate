@@ -235,6 +235,9 @@ export class SourceControlService {
     this.fake = null;
     this.tokenSaved = false;
     this.locksByPath.clear();
+    // The old provider's locks are gone, so their read-only tabs and banners go
+    // too, even when the new provider never refreshes.
+    this.reconcileDocumentLockState();
     this.autoLockAttempted.clear();
     const hostOk = isSourceControlHost(input.platform, input.testMode);
     if (!hostOk) {

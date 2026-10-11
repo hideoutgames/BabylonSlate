@@ -359,6 +359,28 @@ describe("SourceControlService", () => {
     service.dispose();
   });
 
+  it("lifts a read-only tab when the repository changes and the new provider cannot refresh", async () => {
+    const service = new SourceControlService();
+    const fake = new FakeLockProvider({ selfName: "Ada" });
+    fake.addTheirs("assets/hero.scene.babasset", "Bob");
+    const config = { settings: enabled, projectGuid: "proj", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake };
+    try {
+      await service.configure(config);
+      service.pausePolling();
+      await service.refresh();
+      service.onOpenDocument("assets/hero.scene.babasset");
+      expect(service.isDocumentReadOnly("assets/hero.scene.babasset")).toBe(true);
+      // The new repository's provider never verifies, so no refresh reconciles the tab.
+      await service.configure({
+        settings: { ...enabled, repositoryUrl: "https://changed.example/repo" },
+        projectGuid: "proj", platform: "web", testMode: false, secretStore: new MemorySecretStore(), nativeHttp: null,
+      });
+      expect(service.lockForPath("assets/hero.scene.babasset")).toBeUndefined();
+      expect(service.isDocumentReadOnly("assets/hero.scene.babasset")).toBe(false);
+      expect(service.bannerFor("assets/hero.scene.babasset")).toBeNull();
+    } finally { service.dispose(); }
+  });
+
   it.each(["conflicts", "is offline"] as const)("never blocks an edit when create %s", async (failure) => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider({ selfName: "Ada" });
