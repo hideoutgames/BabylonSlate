@@ -228,6 +228,8 @@ describe("native mobile account requirement", () => {
       await screen.findByRole("button", { name: "Create Project" }),
     ).toBeTruthy();
     expect(auth.verifyCode).toHaveBeenCalledWith(challenge, "123456");
+    // The Sign In dialog closes after verification; Profile opens only once it is gone.
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Sign In" })).toBeNull());
     fireEvent.click(screen.getByRole("button", { name: "Profile" }));
     expect(await screen.findByText("Ada Lovelace")).toBeTruthy();
     expect(screen.getByText("ada@example.test")).toBeTruthy();
