@@ -446,30 +446,44 @@ export class SourceControlService {
     const existing = this.locksByPath.get(oldPath);
     if (!existing?.ours) return;
     this.lastOperationError = null;
+    const reason = (error: unknown) => error instanceof Error ? error.message : String(error);
+    // Lock the moved path before releasing the old one: a failed create keeps
+    // the user's lock held rather than releasing it remotely.
+    let lock: FileLock;
     try {
-      const released = await provider.unlock(existing.id);
-      if (revision !== this.providerRevision) return;
-      if (!isOk(released)) throw new Error(released.error.message || "Could not release the old lock.");
-      this.locksByPath.delete(oldPath);
-      this.autoLockAttempted.delete(oldPath);
       const created = await provider.create(newPath);
       if (revision !== this.providerRevision) return;
       if (!isOk(created)) throw new Error(created.error.message || "Could not lock the moved asset.");
-      this.locksByPath.set(newPath, created.value);
-      this.banners.delete(oldPath);
-      this.banners.delete(newPath);
-      this.editMode.delete(oldPath);
-      this.editMode.set(newPath, "editable");
-      this.autoLockAttempted.add(newPath);
+      lock = created.value;
     } catch (error) {
       if (revision !== this.providerRevision) return;
-      const message = `Could not transfer the lock to ${newPath}: ${error instanceof Error ? error.message : String(error)}`;
+      const message = `Could not transfer the lock to ${newPath}: ${reason(error)}`;
       this.autoLockAttempted.delete(newPath);
       this.banners.set(newPath, { kind: "unlocked", message });
       this.lastOperationError = message;
       this.emit();
       throw new Error(message, { cause: error });
     }
+    this.locksByPath.set(newPath, lock);
+    this.banners.delete(newPath);
+    this.editMode.set(newPath, "editable");
+    this.autoLockAttempted.add(newPath);
+    try {
+      const released = await provider.unlock(existing.id);
+      if (revision !== this.providerRevision) return;
+      if (!isOk(released)) throw new Error(released.error.message || "Could not release the old lock.");
+    } catch (error) {
+      if (revision !== this.providerRevision) return;
+      // The moved asset stays locked; the old path's lock stays listed to release later.
+      const message = `Could not release the lock on ${oldPath}: ${reason(error)}`;
+      this.lastOperationError = message;
+      this.emit();
+      throw new Error(message, { cause: error });
+    }
+    this.locksByPath.delete(oldPath);
+    this.autoLockAttempted.delete(oldPath);
+    this.banners.delete(oldPath);
+    this.editMode.delete(oldPath);
     this.emit();
   }
 

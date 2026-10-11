@@ -82,21 +82,39 @@ describe("SourceControlService", () => {
     } finally { service.dispose(); }
   });
 
-  it.each(["unlock", "create"] as const)("reports a failed transfer %s and permits locking the moved path later", async (stage) => {
+  it("keeps the old lock when locking the moved path fails, and permits locking it later", async () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider();
     try {
       await service.configure({ settings: enabled, projectGuid: "proj", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake });
       service.pausePolling();
       await service.autoLock("assets/old.babasset");
-      vi.spyOn(fake, stage).mockResolvedValueOnce(err({ kind: "offline", message: "Connection lost" }));
+      const unlock = vi.spyOn(fake, "unlock");
+      vi.spyOn(fake, "create").mockResolvedValueOnce(err({ kind: "offline", message: "Connection lost" }));
       await expect(service.transferLock("assets/old.babasset", "assets/new.babasset")).rejects.toThrow("Connection lost");
       expect(service.operationError).toContain("Connection lost");
       expect(service.bannerFor("assets/new.babasset")?.kind).toBe("unlocked");
-      expect(Boolean(service.lockForPath("assets/old.babasset"))).toBe(stage === "unlock");
+      expect(unlock).not.toHaveBeenCalled();
+      expect(service.lockForPath("assets/old.babasset")?.ours).toBe(true);
       await service.autoLock("assets/new.babasset");
       expect(service.lockForPath("assets/new.babasset")?.ours).toBe(true);
       expect(service.bannerFor("assets/new.babasset")).toBeNull();
+    } finally { service.dispose(); }
+  });
+
+  it("keeps the moved path locked when releasing the old lock fails", async () => {
+    const service = new SourceControlService();
+    const fake = new FakeLockProvider();
+    try {
+      await service.configure({ settings: enabled, projectGuid: "proj", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake });
+      service.pausePolling();
+      await service.autoLock("assets/old.babasset");
+      vi.spyOn(fake, "unlock").mockResolvedValueOnce(err({ kind: "offline", message: "Connection lost" }));
+      await expect(service.transferLock("assets/old.babasset", "assets/new.babasset")).rejects.toThrow("Connection lost");
+      expect(service.operationError).toContain("assets/old.babasset");
+      expect(service.lockForPath("assets/new.babasset")?.ours).toBe(true);
+      expect(service.bannerFor("assets/new.babasset")).toBeNull();
+      expect(service.lockForPath("assets/old.babasset")?.ours).toBe(true);
     } finally { service.dispose(); }
   });
 
