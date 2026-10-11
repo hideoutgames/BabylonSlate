@@ -180,7 +180,7 @@ describe("ModelPreview", () => {
     expect(screen.getByTestId("model-show-collision")).toBeTruthy();
   });
 
-  it("renders a 1fps preview canvas for glTF source bytes", () => {
+  it("renders a preview canvas instead of No Mesh for glTF source bytes", () => {
     render(
       <ModelPreview
         payload={{ materialSlots: [], clipNames: [] }}
