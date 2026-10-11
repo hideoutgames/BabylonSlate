@@ -12,6 +12,7 @@ function textureAsset(): IndexedAsset {
     rootId: "project",
     path: "assets/Hero.texture.babasset",
     header: {
+      dependencyMetadataVersion: 1, requiredDependencies: [],
       guid: "tex-1",
       type: "Texture",
       name: "Hero",
@@ -26,14 +27,14 @@ function textureAsset(): IndexedAsset {
           kind: "pixels",
           mime: "image/png",
           sha256: "aa",
-          locator: { inline: { offset: 0, length: 1 } },
+          byteLength: 1, locator: { inline: { offset: 0, length: 1 } },
         },
         {
           id: "ktx2:hash",
           kind: "ktx2",
           mime: "image/ktx2",
           sha256: "bb",
-          locator: { inline: { offset: 1, length: 1 } },
+          byteLength: 1, locator: { inline: { offset: 1, length: 1 } },
         },
       ],
     },
@@ -67,7 +68,7 @@ describe("loadExportDocuments", () => {
     const document = type === "RenderTarget" ? { size: 512, mode: "depth" } : { renderTargetGuid: "target", attachment: "depth" };
     const asset: IndexedAsset = { ...textureAsset(), path: `assets/capture.${type}.babasset`, header: {
       ...textureAsset().header, guid: "capture", type, payload: {}, chunks: [
-        { id: "document", kind: "document", mime: "application/json", sha256: "aa", locator: { inline: { offset: 0, length: 1 } } },
+        { id: "document", kind: "document", mime: "application/json", sha256: "aa", byteLength: 1, locator: { inline: { offset: 0, length: 1 } } },
       ],
     } };
     const loaded = await loadExportDocuments({ assets: [asset], loadDocument: async (_kind, path) => path === asset.path ? document : null,
@@ -90,7 +91,7 @@ describe("loadExportDocuments", () => {
     const sourceHash = "a".repeat(64);
     asset.header.chunks[0]!.sha256 = sourceHash;
     const id = areaEmissionChunkId(sourceHash);
-    asset.header.chunks.push({ id, kind: "area-emission", mime: "application/x-babylonslate-area-emission", sha256: "b".repeat(64), locator: { inline: { offset: 0, length: 1 } } });
+    asset.header.chunks.push({ id, kind: "area-emission", mime: "application/x-babylonslate-area-emission", sha256: "b".repeat(64), byteLength: 1, locator: { inline: { offset: 0, length: 1 } } });
     const prepared = await encodeAreaEmission(new Uint8Array(AREA_EMISSION_EDGE ** 2 * 4).fill(190), sourceHash);
     const load = () => loadExportDocuments({ assets: [asset], loadDocument: async () => null, readAssetChunk: async (_path, chunk) => chunk === id ? prepared : new Uint8Array([7]) });
     const loaded = await load();
@@ -151,6 +152,7 @@ describe("loadExportDocuments", () => {
           rootId: "project",
           path: "assets/main.scene.babasset",
           header: {
+            dependencyMetadataVersion: 1, requiredDependencies: [],
             guid: "scene-1",
             type: "Scene",
             name: "Main",
@@ -202,6 +204,7 @@ describe("loadExportDocuments", () => {
           rootId: "project",
           path: "assets/Hero.texture.babasset",
           header: {
+            dependencyMetadataVersion: 1, requiredDependencies: [],
             guid: "tex-1",
             type: "Texture",
             name: "Hero",
@@ -216,21 +219,21 @@ describe("loadExportDocuments", () => {
                 kind: "pixels",
                 mime: "image/png",
                 sha256: "aa",
-                locator: { inline: { offset: 0, length: 1 } },
+                byteLength: 1, locator: { inline: { offset: 0, length: 1 } },
               },
               {
                 id: "ktx2:stale",
                 kind: "ktx2",
                 mime: "image/ktx2",
                 sha256: "old",
-                locator: { inline: { offset: 1, length: 1 } },
+                byteLength: 1, locator: { inline: { offset: 1, length: 1 } },
               },
               {
                 id: "ktx2:authored",
                 kind: "ktx2",
                 mime: "image/ktx2",
                 sha256: "new",
-                locator: { inline: { offset: 2, length: 1 } },
+                byteLength: 1, locator: { inline: { offset: 2, length: 1 } },
               },
             ],
           },
@@ -263,6 +266,7 @@ describe("loadExportDocuments", () => {
             rootId: "project",
             path: "assets/Spark.texture.babasset",
             header: {
+              dependencyMetadataVersion: 1, requiredDependencies: [],
               guid: "tex-1",
               type: "Texture",
               name: "Spark",
@@ -272,8 +276,8 @@ describe("loadExportDocuments", () => {
               dependencies: [],
               payload: { usage, ktx2ChunkId: "ktx2:committed" },
               chunks: [
-                { id: "pixels", kind: "pixels", mime: "image/png", sha256: "aa", locator: { inline: { offset: 0, length: 1 } } },
-                { id: "ktx2:committed", kind: "ktx2", mime: "image/ktx2", sha256: "bb", locator: { inline: { offset: 1, length: 1 } } },
+                { id: "pixels", kind: "pixels", mime: "image/png", sha256: "aa", byteLength: 1, locator: { inline: { offset: 0, length: 1 } } },
+                { id: "ktx2:committed", kind: "ktx2", mime: "image/ktx2", sha256: "bb", byteLength: 1, locator: { inline: { offset: 1, length: 1 } } },
               ],
             },
           },
@@ -303,6 +307,7 @@ describe("loadExportDocuments", () => {
           rootId: "project",
           path: "assets/Hero.sprite.babasset",
           header: {
+            dependencyMetadataVersion: 1, requiredDependencies: [],
             guid: "sprite-1",
             type: "Sprite",
             name: "Hero",
@@ -329,6 +334,7 @@ describe("loadExportDocuments", () => {
           rootId: "project",
           path: "assets/main.scene.babasset",
           header: {
+            dependencyMetadataVersion: 1, requiredDependencies: [],
             guid: "scene-1",
             type: "Scene",
             name: "Main",
@@ -343,7 +349,7 @@ describe("loadExportDocuments", () => {
                 kind: "bytes",
                 mime: "application/octet-stream",
                 sha256: "cc",
-                locator: { inline: { offset: 0, length: 3 } },
+                byteLength: 3, locator: { inline: { offset: 0, length: 3 } },
               },
             ],
           },
@@ -364,6 +370,7 @@ describe("loadExportDocuments", () => {
           rootId: "project",
           path: "assets/main.scene.babasset",
           header: {
+            dependencyMetadataVersion: 1, requiredDependencies: [],
             guid: "scene-1",
             type: "Scene",
             name: "Main",
@@ -378,7 +385,7 @@ describe("loadExportDocuments", () => {
                 kind: "bytes",
                 mime: "application/octet-stream",
                 sha256: "ee",
-                locator: { inline: { offset: 0, length: 2 } },
+                byteLength: 2, locator: { inline: { offset: 0, length: 2 } },
               },
             ],
           },
@@ -398,6 +405,7 @@ describe("loadExportDocuments", () => {
           rootId: "project",
           path: "assets/Display.font.babasset",
           header: {
+            dependencyMetadataVersion: 1, requiredDependencies: [],
             guid: "font-1",
             type: "Font",
             name: "Custom Font",
@@ -412,7 +420,7 @@ describe("loadExportDocuments", () => {
                 kind: "bytes",
                 mime: "font/ttf",
                 sha256: "dd",
-                locator: { inline: { offset: 0, length: 3 } },
+                byteLength: 3, locator: { inline: { offset: 0, length: 3 } },
               },
             ],
           },
@@ -438,6 +446,7 @@ describe("loadExportDocuments", () => {
           rootId: "project",
           path: "assets/Jump.babasset",
           header: {
+            dependencyMetadataVersion: 1, requiredDependencies: [],
             guid: "jump",
             type: "Audio",
             name: "Jump",
@@ -452,7 +461,7 @@ describe("loadExportDocuments", () => {
                 kind: "audio",
                 mime: "audio/wav",
                 sha256: "aa",
-                locator: { inline: { offset: 0, length: 4 } },
+                byteLength: 4, locator: { inline: { offset: 0, length: 4 } },
               },
             ],
           },
@@ -493,6 +502,7 @@ describe("loadExportDocuments", () => {
           rootId: "project",
           path: "assets/Jump.babasset",
           header: {
+            dependencyMetadataVersion: 1, requiredDependencies: [],
             guid: "jump",
             type: "Audio",
             name: "Jump",
@@ -512,14 +522,14 @@ describe("loadExportDocuments", () => {
                 kind: "audio",
                 mime: "audio/wav",
                 sha256: "aa",
-                locator: { inline: { offset: 0, length: 3 } },
+                byteLength: 3, locator: { inline: { offset: 0, length: 3 } },
               },
               {
                 id: "source:2",
                 kind: "audio",
                 mime: "audio/wav",
                 sha256: "bb",
-                locator: { inline: { offset: 0, length: 2 } },
+                byteLength: 2, locator: { inline: { offset: 0, length: 2 } },
               },
             ],
           },
@@ -558,6 +568,7 @@ describe("loadExportDocuments", () => {
           rootId: "project",
           path: "assets/Hero_Idle.animation.babasset",
           header: {
+            dependencyMetadataVersion: 1, requiredDependencies: [],
             guid: "hero-idle-anim",
             type: "Animation",
             name: "Hero_Idle",
@@ -591,6 +602,7 @@ describe("loadExportDocuments", () => {
           rootId: "project",
           path: "assets/Embers.particlegraph.babasset",
           header: {
+            dependencyMetadataVersion: 1, requiredDependencies: [],
             guid: "embers",
             type: "ParticleGraph",
             name: "Embers",
@@ -620,6 +632,7 @@ describe("loadExportDocuments", () => {
           rootId: "project",
           path: "assets/Display.font.babasset",
           header: {
+            dependencyMetadataVersion: 1, requiredDependencies: [],
             guid: "font-1",
             type: "Font",
             name: "Display",
@@ -634,14 +647,14 @@ describe("loadExportDocuments", () => {
                 kind: "font",
                 mime: "font/woff2",
                 sha256: "aa",
-                locator: { inline: { offset: 0, length: 2 } },
+                byteLength: 2, locator: { inline: { offset: 0, length: 2 } },
               },
               {
                 id: "facetype-glyphs",
                 kind: "font-facetype",
                 mime: "application/json",
                 sha256: "bb",
-                locator: { inline: { offset: 2, length: 3 } },
+                byteLength: 3, locator: { inline: { offset: 2, length: 3 } },
               },
             ],
           },
@@ -665,6 +678,7 @@ describe("loadExportDocuments", () => {
           rootId: "project",
           path: "assets/Display.font.babasset",
           header: {
+            dependencyMetadataVersion: 1, requiredDependencies: [],
             guid: "font-1",
             type: "Font",
             name: "Display",
@@ -679,21 +693,21 @@ describe("loadExportDocuments", () => {
                 kind: "font",
                 mime: "font/woff2",
                 sha256: "aa",
-                locator: { inline: { offset: 0, length: 2 } },
+                byteLength: 2, locator: { inline: { offset: 0, length: 2 } },
               },
               {
                 id: "msdf-atlas",
                 kind: "font-msdf",
                 mime: "application/json",
                 sha256: "cc",
-                locator: { inline: { offset: 2, length: 1 } },
+                byteLength: 1, locator: { inline: { offset: 2, length: 1 } },
               },
               {
                 id: "msdf-atlas-png",
                 kind: "font-msdf-png",
                 mime: "image/png",
                 sha256: "dd",
-                locator: { inline: { offset: 3, length: 1 } },
+                byteLength: 1, locator: { inline: { offset: 3, length: 1 } },
               },
             ],
           },
@@ -721,6 +735,7 @@ describe("loadExportDocuments", () => {
           rootId: "project",
           path: "assets/Hero.model.babasset",
           header: {
+            dependencyMetadataVersion: 1, requiredDependencies: [],
             guid: "hero-model",
             type: "Model",
             name: "Hero",
@@ -735,7 +750,7 @@ describe("loadExportDocuments", () => {
                 kind: "geometry",
                 mime: "model/gltf-binary",
                 sha256: "aa",
-                locator: { inline: { offset: 0, length: 6 } },
+                byteLength: 6, locator: { inline: { offset: 0, length: 6 } },
               },
             ],
           },
@@ -780,6 +795,7 @@ describe("loadExportDocuments", () => {
           rootId: "project",
           path: "assets/Hud.scenelayer.babasset",
           header: {
+            dependencyMetadataVersion: 1, requiredDependencies: [],
             guid: "hud",
             type: "SceneLayer",
             name: "HUD",

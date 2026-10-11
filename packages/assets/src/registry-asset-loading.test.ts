@@ -285,25 +285,4 @@ describe("registry source loading", () => {
     expect(loader.snapshot()).toMatchObject({ sourceBytes: 0, decodedBytes: 0, entries: [] });
     loader.dispose();
   });
-
-  it("allows editing legacy documents without preparing dependencies, but requires an explicit runtime metadata upgrade", async () => {
-    const storage = new MemoryStorageAdapter();
-    await storage.pickProjectFolder();
-    await storage.mkdir("assets");
-    await storage.writeBinary("assets/scene.babasset", await encodeBabasset({
-      header: {
-        guid: "scene", name: "Scene", type: "Scene", version: 1, engineVersion: "0.0.0", mode: "thin",
-        dependencies: ["missing-model"], payload: {},
-      },
-      chunks: [{ id: "document", kind: "document", mime: "application/json", data: new TextEncoder().encode('{"name":"Draft","actors":[]}') }],
-    }));
-    const registry = new AssetRegistry(storage);
-    await registry.mountRoot(projectContentRoot());
-    const loader = createRegistryAssetLoadingService(registry, { projectId: "project" });
-    const editor = loader.createScope("editor");
-    const loaded = await editor.acquire<RegistryLoadedAsset>("scene", undefined, { dependencies: "none" });
-    expect(loaded.document.payload).toEqual({ name: "Draft", actors: [] });
-    await expect(loader.createScope("runtime").acquire("scene")).rejects.toMatchObject({ code: "dependency-metadata-upgrade-required" });
-    loader.dispose();
-  });
 });

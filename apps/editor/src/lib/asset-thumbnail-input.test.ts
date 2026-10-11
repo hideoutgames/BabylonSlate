@@ -13,6 +13,7 @@ function asset(guid: string, type: string, payload: Record<string, unknown> = {}
     rootId: "project",
     path: `Content/${guid}.${type.toLowerCase()}.babasset`,
     header: {
+      dependencyMetadataVersion: 1, requiredDependencies: [],
       guid, type, name: guid, parentClass, payload,
       engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], chunks: [],
     },
@@ -20,11 +21,12 @@ function asset(guid: string, type: string, payload: Record<string, unknown> = {}
 }
 
 function saved(entry: IndexedAsset, content: unknown, bytes: Map<string, Uint8Array>): IndexedAsset {
+  const data = new TextEncoder().encode(JSON.stringify(content));
   entry.header.chunks.push({
     id: "document", kind: "document", mime: "application/json", sha256: `${entry.header.guid}-saved`,
-    locator: { blob: `${entry.header.guid}-saved` },
+    byteLength: data.byteLength, locator: { blob: `${entry.header.guid}-saved` },
   });
-  bytes.set(`${entry.path}/document`, new TextEncoder().encode(JSON.stringify(content)));
+  bytes.set(`${entry.path}/document`, data);
   return entry;
 }
 
@@ -102,7 +104,7 @@ describe("prepareAssetThumbnailInput", () => {
       materialSlots: [{ index: 0, name: "Surface", materialGuid: "slot-material" }],
       importScale: 0.5,
     });
-    model.header.chunks.push({ id: "source", kind: "source", mime: "model/gltf-binary", sha256: "model", locator: { blob: "model" } });
+    model.header.chunks.push({ id: "source", kind: "source", mime: "model/gltf-binary", sha256: "model", byteLength: 1, locator: { blob: "model" } });
     bytes.set(`${model.path}/source`, new Uint8Array([1, 2, 3]));
     const inputs = fixture([
       selected, parent, model,
@@ -185,7 +187,7 @@ describe("prepareAssetThumbnailInput", () => {
     component.properties.assetGuid = "model";
     const selected = asset("prefab", "Class", { components: [component] }, "Actor");
     const model = asset("model", "Model");
-    model.header.chunks.push({ id: "source", kind: "source", mime: "model/gltf-binary", sha256: "missing", locator: { blob: "missing" } });
+    model.header.chunks.push({ id: "source", kind: "source", mime: "model/gltf-binary", sha256: "missing", byteLength: 1, locator: { blob: "missing" } });
     const inputs = fixture([selected, model]);
 
     expect(await prepareAssetThumbnailInput({ asset: selected, ...inputs })).toBeNull();

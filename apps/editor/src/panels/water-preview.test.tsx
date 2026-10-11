@@ -78,10 +78,10 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
 })));
 
 function asset(guid: string, type: string, path: string, dependencies: string[] = [], payload: Record<string, unknown> = {}, chunkSha256s: string[] = []): IndexedAsset {
-  const chunks = chunkSha256s.map((sha256, index) => ({ id: `chunk-${index}`, kind: "image", mime: "image/png", sha256, locator: { blob: sha256 } }));
+  const chunks = chunkSha256s.map((sha256, index) => ({ id: `chunk-${index}`, kind: "image", mime: "image/png", sha256, byteLength: 1, locator: { blob: sha256 } }));
   return {
     rootId: "project", path,
-    header: { guid, type, name: guid, version: 1, engineVersion: "1", mode: "thin", parentClass: null, payload, dependencies, chunks },
+    header: { dependencyMetadataVersion: 1, requiredDependencies: [], guid, type, name: guid, version: 1, engineVersion: "1", mode: "thin", parentClass: null, payload, dependencies, chunks },
   };
 }
 

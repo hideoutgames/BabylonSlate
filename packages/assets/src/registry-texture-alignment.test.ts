@@ -83,7 +83,7 @@ async function writeTexture(
       : {}),
   };
   await storage.writeBinary(path, await encodeBabasset({
-    header: { guid, type: "Texture", name: guid, engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null, payload },
+    header: { dependencyMetadataVersion: 1, requiredDependencies: [], guid, type: "Texture", name: guid, engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null, payload },
     chunks: [
       ...(options.pixels === false
         ? []
@@ -254,6 +254,7 @@ describe("texture encode alignment", () => {
     await storage.mkdir("plugin/assets", true);
     await storage.writeBinary(path, await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "locked", type: "Texture", name: "locked", engineVersion: "0.0.0", version: 1, mode: "thin",
         dependencies: [], parentClass: null, payload: { usage: "albedo", compressionState: "fallback_uncompressed" },
       },
@@ -366,6 +367,7 @@ describe("texture encode alignment", () => {
     for (const [guid, edge] of [["even-webp", 32], ["odd-webp", 30]] as const) {
       await storage.writeBinary(`assets/${guid}.babasset`, await encodeBabasset({
         header: {
+          dependencyMetadataVersion: 1, requiredDependencies: [],
           guid, type: "Texture", name: guid, engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null,
           payload: { usage: "albedo", compressionState: "pending" },
         },
@@ -433,6 +435,7 @@ describe("texture encode alignment", () => {
     const clamped = await textureEncodeChunkId(textureEncodeSettingsFor(payload, projectSettings), "albedo");
     await storage.writeBinary("assets/retained.babasset", await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "retained", type: "Texture", name: "retained", engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null,
         payload: { ...payload, compressionState: "compressed", ktx2ChunkId: clamped },
       },

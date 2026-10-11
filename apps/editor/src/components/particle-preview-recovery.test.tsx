@@ -157,11 +157,13 @@ function savedTexture(payload: Record<string, unknown>, ktx2ChunkIds: string[]):
     rootId: "project",
     path: "assets/albedo.babasset",
     header: {
+      dependencyMetadataVersion: 1, requiredDependencies: [],
       chunks: ktx2ChunkIds.map((id) => ({
         id,
         kind: "ktx2",
         mime: "image/ktx2",
         sha256: `sha-${id}`,
+        byteLength: 1,
         locator: { blob: id },
       })),
       dependencies: [],

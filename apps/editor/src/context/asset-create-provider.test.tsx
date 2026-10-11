@@ -26,6 +26,7 @@ async function projectRegistry(): Promise<AssetRegistry> {
   await storage.mkdir("assets/Levels", true);
   const bytes = await encodeBabasset({
     header: {
+      dependencyMetadataVersion: 1, requiredDependencies: [],
       guid: "scene-main",
       type: "Scene",
       name: "Main",

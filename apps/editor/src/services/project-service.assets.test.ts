@@ -76,6 +76,7 @@ const KTX2_KEY_MAX_1 = "ktx2:30d6ee4fb9bf2d2e";
 async function writeLegacyOddTexture(storage: MemoryStorageAdapter, path: string, guid: string): Promise<void> {
   await storage.writeBinary(path, await encodeBabasset({
     header: {
+      dependencyMetadataVersion: 1, requiredDependencies: [],
       guid, type: "Texture", name: guid, engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null,
       payload: { usage: "albedo", compressionState: "compressed", ktx2ChunkId: KTX2_KEY_MAX_1, width: 1, height: 1 },
     },
@@ -675,6 +676,7 @@ describe("project documents as .babasset", () => {
       path,
       await encodeBabasset({
         header: {
+          dependencyMetadataVersion: 1, requiredDependencies: [],
           guid: "font-guid",
           type: "Font",
           name: "Ui",
@@ -722,6 +724,7 @@ describe("project documents as .babasset", () => {
       path,
       await encodeBabasset({
         header: {
+          dependencyMetadataVersion: 1, requiredDependencies: [],
           guid: "tex-guid",
           type: "Texture",
           name: "hero",
@@ -764,6 +767,7 @@ describe("project documents as .babasset", () => {
       path,
       await encodeBabasset({
         header: {
+          dependencyMetadataVersion: 1, requiredDependencies: [],
           guid: "tex-spark",
           type: "Texture",
           name: "spark",
@@ -957,6 +961,7 @@ describe("project documents as .babasset", () => {
     const legacyPath = "assets/legacy-padded.babasset";
     await storage.writeBinary(legacyPath, await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "legacy-padded", type: "Texture", name: "legacy-padded", engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null,
         payload: {
           usage: "albedo", compressionState: "compressed", ktx2ChunkId: KTX2_KEY_MAX_1, width: 1, height: 1,
@@ -1346,6 +1351,7 @@ describe("project documents as .babasset", () => {
       path,
       await encodeBabasset({
         header: {
+          dependencyMetadataVersion: 1, requiredDependencies: [],
           guid: "model-guid",
           type: "Model",
           name: "hero",
@@ -1800,6 +1806,7 @@ describe("project documents as .babasset", () => {
       path,
       await encodeBabasset({
         header: {
+          dependencyMetadataVersion: 1, requiredDependencies: [],
           guid: "audio-guid",
           type: "Audio",
           name: "Jump",

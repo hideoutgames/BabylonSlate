@@ -75,9 +75,6 @@ import {
   DOCUMENT_CHUNK_ID,
   EncodeQueue,
   encodeAssetDocument,
-  assetsNeedingDependencyMetadataUpgrade,
-  upgradeAssetDependencyMetadata,
-  type DependencyMetadataUpgradeOptions,
   encodeJobMayWrite,
   extraChunksFromDecoded,
   extraChunksWithAudioReverb,
@@ -165,7 +162,7 @@ import {
   MANNEQUIN_CLASS_FILE,
 } from "../lib/scaffold-empty-3d";
 import { asEnumAsset, asStructureAsset } from "../lib/type-asset-payload";
-import { createDefaultLogicGraphSerialized, defaultNodeRegistry, requireClassGraphPayload } from "./graph-validation";
+import { createDefaultLogicGraphSerialized, requireClassGraphPayload } from "./graph-validation";
 
 function headerMetaForSave(
   type: string,
@@ -602,7 +599,7 @@ export class ProjectService {
       "createProjectPlugin", "deleteProjectPlugin", "importPlugin", "remountRegistry",
       "replaceClassReferencesBeforeDelete", "clearDeletedAssetReferences", "renameAsset", "saveDocument",
       "writeSceneNavmeshChunk", "writeSceneAudioReverbChunk", "writeAudioClipChunk",
-      "removeAudioClipChunk", "saveProject", "saveLayouts", "upgradeDependencyMetadata",
+      "removeAudioClipChunk", "saveProject", "saveLayouts",
     ]);
   }
 
@@ -614,11 +611,10 @@ export class ProjectService {
   get authoringWriteBlockedReason(): string | null { return this.writeAdmission.reason; }
 
   /** Save All owns one admission, even when it saves several documents after awaits. */
-  withBaselineSave<T>(save: (writer: Pick<ProjectService, "saveDocument" | "saveProject" | "upgradeDependencyMetadata"> & ProjectSceneWriter) => Promise<T>): Promise<T> {
+  withBaselineSave<T>(save: (writer: Pick<ProjectService, "saveDocument" | "saveProject"> & ProjectSceneWriter) => Promise<T>): Promise<T> {
     return withProjectWriter(this.writeAdmission, {
       saveDocument: this.saveDocument.bind(this),
       saveProject: this.saveProject.bind(this),
-      upgradeDependencyMetadata: this.upgradeDependencyMetadata.bind(this),
       ...this.sceneWriter(),
     }, save);
   }
@@ -1045,27 +1041,7 @@ export class ProjectService {
   }
 
   get pendingMigrations(): MigrationPending[] {
-    return [...this.migrationPending, ...this.pendingDependencyMetadataUpgrades.map(asset => ({
-      type: "Asset Dependency Metadata", fromVersion: asset.header.dependencyMetadataVersion ?? 0,
-      toVersion: 1, path: asset.path,
-    }))];
-  }
-
-  /** Catalog-only detection; the explicit upgrade reads legacy documents. */
-  get pendingDependencyMetadataUpgrades(): IndexedAsset[] {
-    return assetsNeedingDependencyMetadataUpgrade(this.assetRegistry?.list() ?? [])
-      .filter(asset => !this.assetRegistry?.getRoot(asset.rootId)?.readOnly);
-  }
-
-  async upgradeDependencyMetadata(options: DependencyMetadataUpgradeOptions = {}) {
-    if (!this.assetRegistry) throw new Error("Open a project before upgrading dependency metadata");
-    return upgradeAssetDependencyMetadata(this.assetRegistry, {
-      ...options,
-      context: {
-        graphPins: (type, properties) => defaultNodeRegistry.get(type)?.pins(properties),
-        ...options.context,
-      },
-    });
+    return [...this.migrationPending];
   }
 
   approveMigrateOnSave(): void {

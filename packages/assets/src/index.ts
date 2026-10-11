@@ -1,6 +1,5 @@
 export * from "./asset-document";
 export * from "./asset-dependencies";
-export * from "./dependency-metadata-upgrade";
 export * from "./asset-loading-service";
 export * from "./registry-asset-loading";
 export * from "./atlas-textures";

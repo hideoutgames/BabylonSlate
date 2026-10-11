@@ -1,18 +1,28 @@
 import { describe, expect, it } from "vitest";
 import * as fc from "fast-check";
 import {
+  BABASSET_FORMAT_VERSION,
+  BABASSET_MAGIC,
   decodeBabasset,
   encodeBabasset,
   readBabassetHeader,
+  type BabassetHeader,
 } from "./babasset";
-import { bytesEqual, sha256Hex } from "./bytes";
-import { createDefaultMigrationRegistry } from "./migration";
+import { bytesEqual, concatBytes, sha256Hex, writeU32LE } from "./bytes";
+import { AssetFormatVersionError, createDefaultMigrationRegistry } from "./migration";
+
+/** A file with an arbitrary header, as another writer could have stored it. */
+function rawBabasset(header: object, body: Uint8Array): Uint8Array {
+  const json = new TextEncoder().encode(JSON.stringify(header));
+  return concatBytes([BABASSET_MAGIC, writeU32LE(BABASSET_FORMAT_VERSION), writeU32LE(json.byteLength), json, body]);
+}
 
 describe("babasset codec", () => {
   it("round-trips header and inline chunks", async () => {
     const payload = new Uint8Array([1, 2, 3, 4, 5]);
     const bytes = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [], requiredVariableNames: [],
         guid: "guid-1",
         type: "Class",
         name: "Main",
@@ -42,11 +52,46 @@ describe("babasset codec", () => {
     expect(bytesEqual(decoded.chunks.get("source")!, payload)).toBe(true);
   });
 
+  it("refuses the older layout without chunk lengths or dependency metadata", async () => {
+    const body = new TextEncoder().encode('{"name":"Old"}');
+    const current: BabassetHeader = {
+      chunks: [{
+        id: "document", kind: "document", mime: "application/json", sha256: await sha256Hex(body),
+        byteLength: body.byteLength, locator: { inline: { offset: 0, length: body.byteLength } },
+      }],
+      dependencies: [], dependencyMetadataVersion: 1, requiredDependencies: [],
+      engineVersion: "0.0.0", guid: "old-scene", mode: "thin", name: "Old", payload: {}, type: "Scene", version: 4,
+    };
+    expect((await decodeBabasset(rawBabasset(current, body))).chunks.get("document")).toEqual(body);
+
+    const withoutMetadata: Record<string, unknown> = { ...current };
+    delete withoutMetadata.dependencyMetadataVersion;
+    delete withoutMetadata.requiredDependencies;
+    const withoutLengths = { ...current, chunks: current.chunks.map((chunk) => {
+      const old: Record<string, unknown> = { ...chunk };
+      delete old.byteLength;
+      return old;
+    }) };
+    for (const header of [withoutMetadata, withoutLengths]) {
+      expect(() => readBabassetHeader(rawBabasset(header, body))).toThrow(AssetFormatVersionError);
+      await expect(decodeBabasset(rawBabasset(header, body))).rejects.toThrow(
+        /Asset old-scene uses an unsupported old \.babasset layout .*older files are not upgraded/,
+      );
+    }
+    expect(() => readBabassetHeader(rawBabasset({ ...current, dependencyMetadataVersion: 2 }, body)))
+      .toThrow(/newer engine version/);
+    // A writer cannot produce a file the reader refuses.
+    const header = { ...withoutMetadata };
+    delete header.chunks;
+    await expect(encodeBabasset({ header: header as BabassetHeader, chunks: [] })).rejects.toThrow(AssetFormatVersionError);
+  });
+
   it("externalises large chunks to the blob store", async () => {
     const blobs = new Map<string, Uint8Array>();
     const big = new Uint8Array(70 * 1024).map((_, i) => i % 256);
     const bytes = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "g2",
         type: "Texture",
         name: "Big",
@@ -87,6 +132,8 @@ describe("babasset codec", () => {
       version: 1,
       mode: "thin" as const,
       dependencies: [],
+      dependencyMetadataVersion: 1,
+      requiredDependencies: [],
       payload: {},
     };
     const inline = await encodeBabasset({
@@ -114,6 +161,7 @@ describe("babasset codec", () => {
   it("header-only read does not require chunk payload access", async () => {
     const bytes = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "g3",
         type: "Scene",
         name: "S",
@@ -142,6 +190,7 @@ describe("babasset codec", () => {
       fc.asyncProperty(fc.uint8Array({ minLength: 0, maxLength: 64 }), async (data) => {
         const bytes = await encodeBabasset({
           header: {
+            dependencyMetadataVersion: 1, requiredDependencies: [], requiredVariableNames: [],
             guid: "p",
             type: "Class",
             name: "P",
@@ -171,6 +220,7 @@ describe("babasset codec", () => {
   it("bundles nested dependency assets and unpacks them on decode", async () => {
     const nested = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "dep-1",
         type: "Texture",
         name: "Tex",
@@ -193,6 +243,7 @@ describe("babasset codec", () => {
 
     const bundled = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "root",
         type: "Material",
         name: "Mat",

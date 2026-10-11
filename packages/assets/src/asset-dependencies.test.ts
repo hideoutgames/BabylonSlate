@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { collectAssetDependencyMetadata, DependencyMetadataUpgradeRequiredError, getRequiredDependencies } from "./asset-dependencies";
+import { collectAssetDependencyMetadata } from "./asset-dependencies";
 import { encodeAssetDocument } from "./asset-document";
 import { readBabassetHeader } from "./babasset";
 
@@ -18,7 +18,7 @@ describe("typed asset dependencies", () => {
       ] }],
     }, { classes: [{ guid: "hero", classId: "Hero" }] });
     expect(metadata.dependencies).toEqual(["environment", "font", "hero", "hud", "material", "model", "pause", "scene-b", "sound", "spark"]);
-    expect(getRequiredDependencies({ guid: "scene-a", ...metadata })).toEqual(["environment", "font", "hero", "hud", "material", "model", "sound", "spark"]);
+    expect(metadata.requiredDependencies).toEqual(["environment", "font", "hero", "hud", "material", "model", "sound", "spark"]);
   });
 
   it("keeps saved scene-owned material textures in the required source closure without loading stale overrides", async () => {
@@ -39,7 +39,7 @@ describe("typed asset dependencies", () => {
     } });
     const header = readBabassetHeader(bytes);
     expect(header.dependencies).toEqual(["private-texture", "replacement", "surface"]);
-    expect(getRequiredDependencies(header)).toEqual(["private-texture", "replacement", "surface"]);
+    expect(header.requiredDependencies).toEqual(["private-texture", "replacement", "surface"]);
   });
 
   it("collects typed graph literals, nested structure collections and selected classes without treating free text as references", () => {
@@ -274,15 +274,14 @@ describe("typed asset dependencies", () => {
       } });
       const header = readBabassetHeader(bytes);
       expect(header.dependencies).toEqual(["cup", "sword"]);
-      expect(getRequiredDependencies(header)).toEqual(["sword"]);
+      expect(header.requiredDependencies).toEqual(["sword"]);
       expect(header.requiredVariableNames).toEqual(["Weapon"]);
     });
   });
 
-  it("stamps saved documents and requires an explicit upgrade for legacy metadata", async () => {
+  it("stamps saved documents with required dependency metadata", async () => {
     const bytes = await encodeAssetDocument({ type: "Font", guid: "font", name: "Font", version: 1, payload: { fallbackGuids: ["fallback"] } });
-    expect(getRequiredDependencies(readBabassetHeader(bytes))).toEqual(["fallback"]);
-    expect(() => getRequiredDependencies({ guid: "old" })).toThrow(DependencyMetadataUpgradeRequiredError);
+    expect(readBabassetHeader(bytes).requiredDependencies).toEqual(["fallback"]);
   });
 
   it("keeps command registration and unresolved typed Class identities in catalog metadata", async () => {

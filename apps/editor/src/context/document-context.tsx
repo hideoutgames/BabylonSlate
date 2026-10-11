@@ -1909,9 +1909,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
             );
           }
         }
-        if (migrate && projectService.pendingDependencyMetadataUpgrades.length > 0) {
-          await writer.upgradeDependencyMetadata();
-        }
         progress.phase("compile");
         if (document.settings.compileOnSave) {
           setLastCompiledSignature(playContent.compileOpenGraphs(document.settings.tags));

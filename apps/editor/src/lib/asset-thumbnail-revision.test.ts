@@ -9,7 +9,7 @@ function asset(guid: string, type: string, header: Partial<IndexedAsset["header"
     path: `Content/${guid}.${type.toLowerCase()}.babasset`,
     header: {
       guid, type, name: guid, version: 1, engineVersion: "1", mode: "thin",
-      payload: {}, dependencies: [], chunks: [], ...header,
+      payload: {}, dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, chunks: [], ...header,
     },
   };
 }
@@ -17,7 +17,7 @@ function asset(guid: string, type: string, header: Partial<IndexedAsset["header"
 function documentChunk(hash: string): IndexedAsset["header"]["chunks"] {
   return [{
     id: "document", kind: "document", mime: "application/json", sha256: hash,
-    locator: { inline: { offset: 0, length: 12 } },
+    byteLength: 12, locator: { inline: { offset: 0, length: 12 } },
   }];
 }
 

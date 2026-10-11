@@ -1,4 +1,4 @@
-import { getRequiredDependencies, type IndexedAsset } from "@babylonslate/assets";
+import type { IndexedAsset } from "@babylonslate/assets";
 import { areaEmissionTextureGuids, type SerializedScene } from "@babylonslate/core";
 import {
   environmentTextureGuidsFromScenes, materialGuidsFromScenes, modelAssetGuidsFromScene,
@@ -20,7 +20,7 @@ export function sceneViewportRequiredAssets(scene: SerializedScene, assets: read
     if (result.has(guid)) continue;
     result.add(guid);
     const asset = byGuid.get(guid);
-    if (asset && !asset.placeholder) pending.push(...getRequiredDependencies(asset.header));
+    if (asset && !asset.placeholder) pending.push(...asset.header.requiredDependencies);
   }
   return result;
 }
