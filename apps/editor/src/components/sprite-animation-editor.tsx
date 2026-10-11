@@ -433,20 +433,32 @@ export function SpriteAnimationDetails({
   const collision = parseSpriteCollision(frame?.collision);
   const pivot = parseSpritePivot(frame?.pivot);
 
+  // A texture pick reads the image first; it then patches the document as it
+  // is, and only if no later pick replaced it.
+  const latestRef = useRef(animation);
+  latestRef.current = animation;
+  const texturePickRef = useRef(0);
+
   /** `field` marks a continuous edit whose scrub is one undo step. */
-  const patchFrame = (
+  const patchFrameIn = (
+    base: typeof animation,
+    index: number,
     patch: Partial<NonNullable<typeof frame>>,
     field?: string,
   ): void => {
-    const frames = [...animation.frames];
-    if (!frames[selectedFrameIndex]) return;
-    frames[selectedFrameIndex] = {
-      ...frames[selectedFrameIndex]!,
+    const frames = [...base.frames];
+    if (!frames[index]) return;
+    frames[index] = {
+      ...frames[index]!,
       ...patch,
     };
-    if (field) onChange({ ...animation, frames }, spriteFrameMergeKey(selectedFrameIndex, field));
-    else onChange({ ...animation, frames });
+    if (field) onChange({ ...base, frames }, spriteFrameMergeKey(index, field));
+    else onChange({ ...base, frames });
   };
+  const patchFrame = (
+    patch: Partial<NonNullable<typeof frame>>,
+    field?: string,
+  ): void => patchFrameIn(animation, selectedFrameIndex, patch, field);
 
   const setDurationOverride = (override: boolean): void => {
     const frames = [...animation.frames];
@@ -467,6 +479,7 @@ export function SpriteAnimationDetails({
   };
 
   const applyTextureGuid = (guid: string | null): void => {
+    const pick = ++texturePickRef.current;
     if (!guid) {
       patchFrame({ textureGuid: "" });
       return;
@@ -476,14 +489,18 @@ export function SpriteAnimationDetails({
       patchFrame({ textureGuid: guid });
       return;
     }
+    const frameIndex = selectedFrameIndex;
     void (async () => {
       const pixels = await readAssetChunk(path, "pixels");
       const source =
         pixels && pixels.byteLength > 0
           ? pixels
           : await readAssetChunk(path, "source");
+      if (pick !== texturePickRef.current) return;
       const size = source && source.byteLength > 0 ? pngPixelSize(source) : null;
-      patchFrame(
+      patchFrameIn(
+        latestRef.current,
+        frameIndex,
         size
           ? { textureGuid: guid, width: size.width, height: size.height }
           : { textureGuid: guid },

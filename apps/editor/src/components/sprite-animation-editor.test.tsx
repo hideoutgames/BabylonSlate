@@ -107,6 +107,30 @@ describe("SpriteAnimation editor", () => {
     });
   });
 
+  it("applies a picked Texture to the animation as edited while the image loads", async () => {
+    let finishRead!: (bytes: Uint8Array) => void;
+    readAssetChunk.mockImplementationOnce(() => new Promise((resolve) => { finishRead = resolve; }));
+    const payload = createDefaultSpriteAnimationPayload();
+    const onChange = vi.fn();
+    const view = render(
+      <SpriteAnimationDetails payload={payload as unknown as Record<string, unknown>} onChange={onChange} />,
+    );
+    fireEvent.click(screen.getByTestId("property-texture"));
+    fireEvent.click(await screen.findByTestId("search-item-tex-1"));
+    await waitFor(() => expect(readAssetChunk).toHaveBeenCalled());
+    const edited = { ...payload, frameDurationMs: 250 };
+    view.rerender(
+      <SpriteAnimationDetails payload={edited as unknown as Record<string, unknown>} onChange={onChange} />,
+    );
+    await act(async () => finishRead(pngIhdr(200, 100)));
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        frameDurationMs: 250,
+        frames: [expect.objectContaining({ textureGuid: "tex-1", width: 200, height: 100 })],
+      }),
+    );
+  });
+
   it("plays indexed frame textures without scanning the registry and stops on pause", async () => {
     const listAssets = vi.spyOn(assetRegistry, "list");
     vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:animation-texture");
