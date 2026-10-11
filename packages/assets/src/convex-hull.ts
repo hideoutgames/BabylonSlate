@@ -59,9 +59,15 @@ function volume6(
   return dot(sub(points[d]!, points[a]!), faceNormal(points, { a, b, c }));
 }
 
+/**
+ * Finite points with near-duplicates (within `eps`) dropped, in input order.
+ * Kept points are bucketed in an `eps` grid, so each point is compared only
+ * with the kept points in its own and neighbouring cells.
+ */
 function uniquePoints(points: readonly HullVec3[], eps = 1e-7): HullVec3[] {
   const out: HullVec3[] = [];
   const eps2 = eps * eps;
+  const cells = new Map<string, HullVec3[]>();
   for (const point of points) {
     if (
       !Number.isFinite(point.x) ||
@@ -70,8 +76,25 @@ function uniquePoints(points: readonly HullVec3[], eps = 1e-7): HullVec3[] {
     ) {
       continue;
     }
-    if (out.some((existing) => dist2(existing, point) <= eps2)) continue;
-    out.push({ x: point.x, y: point.y, z: point.z });
+    const cx = Math.floor(point.x / eps);
+    const cy = Math.floor(point.y / eps);
+    const cz = Math.floor(point.z / eps);
+    let duplicate = false;
+    for (let dx = -1; dx <= 1 && !duplicate; dx++) {
+      for (let dy = -1; dy <= 1 && !duplicate; dy++) {
+        for (let dz = -1; dz <= 1 && !duplicate; dz++) {
+          duplicate = cells.get(`${cx + dx},${cy + dy},${cz + dz}`)
+            ?.some((existing) => dist2(existing, point) <= eps2) ?? false;
+        }
+      }
+    }
+    if (duplicate) continue;
+    const kept = { x: point.x, y: point.y, z: point.z };
+    out.push(kept);
+    const key = `${cx},${cy},${cz}`;
+    const cell = cells.get(key);
+    if (cell) cell.push(kept);
+    else cells.set(key, [kept]);
   }
   return out;
 }
@@ -92,11 +115,23 @@ function initialTetrahedron(
   points: readonly HullVec3[],
 ): [number, number, number, number] | null {
   if (points.length < 4) return null;
+  // Seed from the farthest pair of axis-extreme points: a long enough base
+  // edge in one pass, where comparing every pair is quadratic in the cloud.
+  const extremes: number[] = [];
+  for (const axis of ["x", "y", "z"] as const) {
+    let min = 0;
+    let max = 0;
+    for (let i = 1; i < points.length; i++) {
+      if (points[i]![axis] < points[min]![axis]) min = i;
+      if (points[i]![axis] > points[max]![axis]) max = i;
+    }
+    extremes.push(min, max);
+  }
   let i0 = 0;
-  let i1 = 1;
-  let best = dist2(points[0]!, points[1]!);
-  for (let i = 0; i < points.length; i++) {
-    for (let j = i + 1; j < points.length; j++) {
+  let i1 = 0;
+  let best = 0;
+  for (const i of extremes) {
+    for (const j of extremes) {
       const d = dist2(points[i]!, points[j]!);
       if (d > best) {
         best = d;
