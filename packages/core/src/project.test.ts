@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  createDefaultGraph,
   createDefaultScene,
   createEmptyProject,
   DEFAULT_CAMERA_FIELD_OF_VIEW,
@@ -94,11 +93,6 @@ describe("project schema", () => {
       height: 1080,
       blackBars: false,
     });
-  });
-
-  it("creates default scene and graph structures", () => {
-    expect(createDefaultScene().actors.length).toBeGreaterThan(0);
-    expect(createDefaultGraph().nodes.length).toBeGreaterThan(0);
   });
 
   it("seeds a 3D default scene with an empty Actor and a possessing Default Camera", () => {

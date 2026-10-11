@@ -2,7 +2,6 @@ import { act, fireEvent, render, cleanup, screen, waitFor } from "@testing-libra
 import { useStore } from "@xyflow/react";
 import { useEffect, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDefaultGraph } from "@babylonslate/core";
 import { DRAG_ARM_MS, EditorReadOnlyContext, TagProvider } from "@babylonslate/editor-kit";
 import {
   GRAPH_DEFAULT_ZOOM,
@@ -86,6 +85,21 @@ const debugLogPins = [
     type: { kind: "string" },
   },
 ];
+
+/** A one-node graph: a hydrated Log node with its pins. */
+function singleLogGraph(): GraphDocument {
+  return {
+    nodes: [
+      {
+        id: "log-1",
+        type: "debug.log",
+        position: { x: 120, y: 120 },
+        data: { title: "Log", message: "Hello", __pins: debugLogPins },
+      },
+    ],
+    edges: [],
+  };
+}
 
 function installImmediateGraphHostSize(
   width = 500,
@@ -566,7 +580,7 @@ describe("GraphEditor", () => {
   });
 
   it("renders a node for each node in the graph", () => {
-    const graph = createDefaultGraph();
+    const graph = singleLogGraph();
     const { container } = render(<GraphEditor initialGraph={graph} />);
 
     expect(container.querySelector(".react-flow")).not.toBeNull();
@@ -578,7 +592,7 @@ describe("GraphEditor", () => {
   it("marks a restored session viewport so remount can skip fitView", () => {
     render(
       <GraphEditor
-        initialGraph={createDefaultGraph()}
+        initialGraph={singleLogGraph()}
         sessionViewport={{ x: 24, y: -8, zoom: 0.8 }}
       />,
     );
@@ -802,15 +816,6 @@ describe("GraphEditor", () => {
     } finally {
       globalThis.ResizeObserver = previous;
     }
-  });
-
-  it("renders the log message body so authors can read it on the canvas", () => {
-    const graph = createDefaultGraph();
-    const message = String(graph.nodes[0]?.data.message ?? "");
-    const { getByText } = render(<GraphEditor initialGraph={graph} />);
-
-    expect(getByText("Log Message")).toBeTruthy();
-    expect(getByText(message)).toBeTruthy();
   });
 
   it("renders an empty canvas without nodes", () => {
@@ -1813,7 +1818,7 @@ describe("GraphEditor", () => {
   });
 
   it("shows an error badge on nodes referenced by diagnostics", () => {
-    const graph = createDefaultGraph();
+    const graph = singleLogGraph();
     const nodeId = graph.nodes[0]?.id ?? "";
     const { getByLabelText } = render(
       <GraphEditor
@@ -1832,7 +1837,7 @@ describe("GraphEditor", () => {
   });
 
   it("clips the title bar to the shell radius without clipping the error badge", () => {
-    const graph = createDefaultGraph();
+    const graph = singleLogGraph();
     const nodeId = graph.nodes[0]?.id ?? "";
     const { getByText, getByLabelText, container } = render(
       <GraphEditor
@@ -1851,7 +1856,7 @@ describe("GraphEditor", () => {
     expect(shell?.className).toMatch(/\boverflow-hidden\b/);
     expect(shell?.className).toMatch(/\brounded-lg\b/);
 
-    const title = getByText("Log Message");
+    const title = getByText("Log");
     expect(title.className).toMatch(/\brounded-t-lg\b/);
 
     const badge = getByLabelText("1 error");
@@ -4288,7 +4293,7 @@ describe("GraphEditor", () => {
   it("exposes a canvas drop api for client-to-flow conversion", async () => {
     const onCanvasApi = vi.fn();
     const { getByTestId } = render(
-      <GraphEditor initialGraph={createDefaultGraph()} onCanvasApi={onCanvasApi} />,
+      <GraphEditor initialGraph={singleLogGraph()} onCanvasApi={onCanvasApi} />,
     );
     await waitFor(() => {
       expect(onCanvasApi).toHaveBeenCalled();

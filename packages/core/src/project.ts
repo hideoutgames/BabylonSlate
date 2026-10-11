@@ -976,16 +976,3 @@ export function createDefaultScene(
   };
 }
 
-export function createDefaultGraph(): SerializedGraph {
-  return {
-    nodes: [
-      {
-        id: "log-1",
-        type: "logMessage",
-        position: { x: 120, y: 120 },
-        data: { message: "Hello from BabylonSlate" },
-      },
-    ],
-    edges: [],
-  };
-}

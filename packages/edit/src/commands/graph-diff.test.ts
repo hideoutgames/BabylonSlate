@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import { createDefaultGraph, type SerializedGraph } from "@babylonslate/core";
+import type { SerializedGraph } from "@babylonslate/core";
 import {
   AddEdgeCommand,
   AddNodeCommand,
@@ -17,9 +17,17 @@ import { diffGraphCommands } from "./graph-diff";
 import { EditSession } from "../session";
 import { commandToJournalPayload, reviveCommand } from "../journal";
 
+/** A one-node graph: a Log node with its message literal. */
+function oneNodeGraph(): SerializedGraph {
+  return {
+    nodes: [{ id: "log-1", type: "debug.log", position: { x: 120, y: 120 }, data: { "default:message": "Hello" } }],
+    edges: [],
+  };
+}
+
 describe("diffGraphCommands", () => {
   it("emits a move command when a node position changes", () => {
-    const before = createDefaultGraph();
+    const before = oneNodeGraph();
     const after = {
       ...before,
       nodes: before.nodes.map((node) => ({
@@ -34,12 +42,12 @@ describe("diffGraphCommands", () => {
   });
 
   it("returns no commands when graphs are identical", () => {
-    const graph = createDefaultGraph();
+    const graph = oneNodeGraph();
     expect(diffGraphCommands(graph, graph)).toEqual([]);
   });
 
   it("emits AddNodeCommand when a node appears in after", () => {
-    const before = createDefaultGraph();
+    const before = oneNodeGraph();
     const added = {
       id: "branch-1",
       type: "flow.branch",
@@ -55,7 +63,7 @@ describe("diffGraphCommands", () => {
   });
 
   it("emits RemoveNodeCommand when a node disappears from after", () => {
-    const before = createDefaultGraph();
+    const before = oneNodeGraph();
     const after = { ...before, nodes: [] };
 
     const commands = diffGraphCommands(before, after);
@@ -63,7 +71,7 @@ describe("diffGraphCommands", () => {
   });
 
   it("emits SetGraphMembersCommand when class members change", () => {
-    const before = createDefaultGraph();
+    const before = oneNodeGraph();
     const after = {
       ...before,
       members: [{ id: "fn-1", kind: "function" as const, name: "Jump" }],
@@ -75,7 +83,7 @@ describe("diffGraphCommands", () => {
   });
 
   it("emits an undoable SetGraphActorDefaultsCommand when Actor Defaults change", () => {
-    const before = createDefaultGraph();
+    const before = oneNodeGraph();
     const after = { ...before, actorDefaults: { generateHitEvents: false, eventTick: "disabled" as const } };
     const commands = diffGraphCommands(before, after);
     expect(commands).toHaveLength(1);
@@ -86,7 +94,7 @@ describe("diffGraphCommands", () => {
   });
 
   it("emits SetGraphComponentsCommand when prefab components change", () => {
-    const before = createDefaultGraph();
+    const before = oneNodeGraph();
     const after = {
       ...before,
       components: [
@@ -100,7 +108,7 @@ describe("diffGraphCommands", () => {
   });
 
   it("emits an undoable SetGraphComponentsCommand when the default prefab mesh is deleted", () => {
-    const before: SerializedGraph = { ...createDefaultGraph() };
+    const before: SerializedGraph = { ...oneNodeGraph() };
     delete before.components;
     const after = { ...before, components: [] };
     const commands = diffGraphCommands(before, after);
@@ -111,7 +119,7 @@ describe("diffGraphCommands", () => {
   });
 
   it("emits AddEdgeCommand and RemoveEdgeCommand for edge deltas", () => {
-    const before = createDefaultGraph();
+    const before = oneNodeGraph();
     const edge = {
       id: "e1",
       source: "log-1",
@@ -134,7 +142,7 @@ describe("diffGraphCommands", () => {
   });
 
   it("emits SetGraphFunctionGraphsCommand when function graphs change", () => {
-    const before = createDefaultGraph();
+    const before = oneNodeGraph();
     const after = {
       ...before,
       functionGraphs: {
@@ -173,7 +181,7 @@ describe("diffGraphCommands", () => {
       },
     });
     const before = withValue(
-      { ...createDefaultGraph(), functionGraphs: { land: { nodes: [], edges: [] } } },
+      { ...oneNodeGraph(), functionGraphs: { land: { nodes: [], edges: [] } } },
       0,
     );
     const session = new EditSession();
@@ -193,7 +201,7 @@ describe("diffGraphCommands", () => {
   });
 
   it("keeps a seeded function graph after applying the add-function diff", () => {
-    const before = createDefaultGraph();
+    const before = oneNodeGraph();
     const after: typeof before = {
       ...before,
       members: [{ id: "fn-1", kind: "function", name: "Jump" }],
@@ -226,7 +234,7 @@ describe("diffGraphCommands", () => {
   });
 
   it("emits SetNodeDataCommand when node data changes", () => {
-    const before = createDefaultGraph();
+    const before = oneNodeGraph();
     const after = {
       ...before,
       nodes: before.nodes.map((node) =>
