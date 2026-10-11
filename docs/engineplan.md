@@ -666,7 +666,7 @@ NodeGraph infers typed Get Data output from a known entry, supports Make/Break D
 
 Most nodes are a pin list plus a one-line codegen template. These four are not, and each needs its own design before the catalog work starts.
 
-**ExecuteJavaScript.** An escape hatch node whose Details panel holds two editable pin lists, inputs and outputs, where each row is a name and a type. The name is both the graph pin label and the identifier the body sees, so it is validated as a legal JavaScript identifier that is unique within its list and not a reserved word or a generated-prefix collision. Exec in and exec out exist by default and cannot be added to or removed. The body is a JavaScript function body, not a full function.
+**ExecuteJavaScript.** An escape hatch node whose Details panel holds two editable pin lists, inputs and outputs, where each row is a name and a type. The name is both the graph pin label and the identifier the body sees, so it is validated as a legal JavaScript identifier that is unique across both lists and not a reserved word or a generated-prefix collision. Exec in and exec out exist by default and cannot be added to or removed. The body is a JavaScript function body, not a full function.
 
 It compiles to a named function hoisted to module scope rather than an inlined block, which keeps stack traces readable, prevents the body from colliding with the compiler's generated temporaries, and keeps golden output stable:
 

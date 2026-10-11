@@ -111,7 +111,7 @@ import { JsBodyEditor } from "../components/js-body-editor";
 import { GlslCodePreview } from "../components/glsl-code-preview";
 import { NineSlicePreview } from "../components/nine-slice-preview";
 import { DataTreeEntryField } from "../components/data-tree-entry-picker";
-import { isValidJsIdentifier } from "@babylonslate/scripting-nodes";
+import { executeJavaScriptNameError } from "@babylonslate/scripting-nodes";
 import { isReservedConsoleCommandName } from "@babylonslate/debugger";
 import {
   assetPickerAllowedTypes,
@@ -1649,6 +1649,10 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
   const outputs = Array.isArray(selectedNode.data.outputs)
     ? (selectedNode.data.outputs as Array<{ name: string; type?: unknown }>)
     : [];
+  // Inputs and outputs share one generated function scope.
+  const jsNameError = isExecJs
+    ? executeJavaScriptNameError([...inputs, ...outputs].map((pin) => pin.name))
+    : undefined;
   const commandParams = Array.isArray(selectedNode.data.parameters)
     ? (selectedNode.data.parameters as Array<{
         name: string;
@@ -1880,15 +1884,9 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
               typeAssets={typeAssets}
               itemLabel="Input"
               testIdPrefix="js-input"
-              onChange={(rows) => {
-                const invalid = rows.find((r) => !isValidJsIdentifier(r.name));
-                updateNodeData({
-                  inputs: javaScriptPinsFromRows(rows),
-                  ...(invalid
-                    ? { __identError: invalid.name }
-                    : { __identError: undefined }),
-                });
-              }}
+              onChange={(rows) =>
+                updateNodeData({ inputs: javaScriptPinsFromRows(rows) })
+              }
             />
             <PinListEditor
               title="Outputs"
@@ -1899,16 +1897,13 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
               typeAssets={typeAssets}
               itemLabel="Output"
               testIdPrefix="js-output"
-              onChange={(rows) => {
-                const invalid = rows.find((r) => !isValidJsIdentifier(r.name));
-                updateNodeData({
-                  outputs: javaScriptPinsFromRows(rows),
-                  ...(invalid
-                    ? { __identError: invalid.name }
-                    : { __identError: undefined }),
-                });
-              }}
+              onChange={(rows) =>
+                updateNodeData({ outputs: javaScriptPinsFromRows(rows) })
+              }
             />
+            {jsNameError ? (
+              <FieldError data-testid="js-name-error">{jsNameError}</FieldError>
+            ) : null}
             <MultilineTextField code title="JavaScript Function Body" data-testid="class-node-code"
               value={String(selectedNode.data.body ?? "")}
               onChange={(body) => updateNodeData({ body })}
