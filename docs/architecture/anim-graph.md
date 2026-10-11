@@ -72,7 +72,7 @@ Play `collectPlayPreviewScripts` and export `collectAndExportGame` merge those b
 
 ## Authoring
 
-DockView document (`DockviewShell`, kind `anim-graph`), not `AssetDocumentWorkspace`. Chrome **State Machine | Animation Object** `AnimEditorModeBar` (`ToggleGroup`) sits **outside** DockView. `documentKind` stays `"anim-graph"`; modes use `animEditorMode` and DockView surfaces `stateMachine` / `animationObject`. `layout.json` stores `{ animEditorMode, stateMachine, animationObject }`; a raw old snapshot migrates to State Machine. Mode switches keep only the active DockView mounted. Inactive document tabs idle-unmount (`p18-inactive-documents`).
+DockView document (`DockviewShell`, kind `anim-graph`), not `AssetDocumentWorkspace`. Chrome **State Machine | Animation Object** `AnimEditorModeBar` (`ToggleGroup`) sits **outside** DockView. `documentKind` stays `"anim-graph"`; modes use `animEditorMode` and DockView surfaces `stateMachine` / `animationObject`. `layout.json` stores `{ animEditorMode, stateMachine, animationObject }`; any other shape opens the catalog defaults. Mode switches keep only the active DockView mounted. Inactive document tabs idle-unmount (`p18-inactive-documents`).
 
 | Mode | Catalog (Windows / Focus) | Primary |
 | --- | --- | --- |
