@@ -581,7 +581,7 @@ export class ProjectService {
       "createProjectPlugin", "deleteProjectPlugin", "importPlugin", "remountRegistry",
       "replaceClassReferencesBeforeDelete", "clearDeletedAssetReferences", "saveDocument",
       "writeSceneNavmeshChunk", "writeSceneAudioReverbChunk", "writeAudioClipChunk",
-      "removeAudioClipChunk", "saveProject", "upgradeDependencyMetadata",
+      "removeAudioClipChunk", "saveProject", "saveLayouts", "upgradeDependencyMetadata",
     ]);
   }
 
@@ -2767,6 +2767,12 @@ export class ProjectService {
     this.projectGuid = payload.guid as string;
 
     await this.storage.writeText(PROJECT_FILE, JSON.stringify(payload, null, 2));
+    await this.saveLayouts(layouts);
+    this.noteMigrated(PROJECT_FILE);
+  }
+
+  /** Write only `layout.json` (tabs, dock layouts and panel placements), which holds no project content. */
+  async saveLayouts(layouts: ProjectLayouts): Promise<void> {
     await this.storage.writeText(
       LAYOUT_FILE,
       JSON.stringify({ ...layouts, assetGuids: Object.fromEntries(layouts.tabOrder.flatMap((id) => {
@@ -2775,7 +2781,6 @@ export class ProjectService {
         return guid ? [[id, guid]] : [];
       })) }, null, 2),
     );
-    this.noteMigrated(PROJECT_FILE);
   }
 
   async documentExists(path: string): Promise<boolean> {

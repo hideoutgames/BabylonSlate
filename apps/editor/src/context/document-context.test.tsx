@@ -921,6 +921,18 @@ describe("DocumentProvider actions and route", () => {
     expect(saved.actors[0]!.transform.position).toEqual(edited.actors[0]!.transform.position);
   });
 
+  it("keeps tabs opened since the last save when a clean project closes", async () => {
+    const actions = await openProject();
+    const second = await createScene(actions, "Second");
+    await act(() => actions.saveAll());
+    const secondId = documentId({ kind: "scene", path: second.path });
+    await act(() => actions.openDocument(sceneRef(second.path)));
+    const listed = documents().listedProjects.find((project) => project.label === "Stable")!;
+    expect(await act(() => actions.closeProject())).toEqual({ outcome: "closed" });
+    await act(() => actions.openListedProject(listed));
+    expect(documents().openDocuments.map((doc) => doc.id)).toContain(secondId);
+  });
+
   it("drops a pending exclusive Scene request when the project closes", async () => {
     const actions = await openProject();
     const second = await createScene(actions, "Second");

@@ -2105,7 +2105,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [documentTransitions],
   );
 
-  const forceCloseProject = useCallback(async (): Promise<boolean> => {
+  /** `keepLayout`: a clean close writes tabs, dock layouts and panel placements, which Save would have. */
+  const shutDownProject = useCallback(async (keepLayout: boolean): Promise<boolean> => {
     setAutoSaveStatus(null);
     if (!await documentTransitions.check({ kind: "close-project" })) return false;
     documentService.assertAuthoringWritable();
@@ -2122,6 +2123,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     // cleared and the folder released; later queued saves find no project.
     await enqueueProjectWrite(async () => {
       clearDebouncedSave();
+      if (keepLayout && !projectService.authoringWriteBlockedReason) {
+        captureAllLayouts();
+        // Layout is a convenience: a failed write must not keep the project open.
+        await projectService.saveLayouts(documentService.buildLayouts()).catch((error: unknown) => {
+          console.warn("[editor] Could not keep the layout when closing the project", error);
+        });
+      }
       const guid = projectService.guid;
       if (guid) {
         const derived = await ensureDerived();
@@ -2155,6 +2163,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     return true;
   }, [
     bump,
+    captureAllLayouts,
     disposeDockSubscriptions,
     documentService,
     enqueueProjectWrite,
@@ -2171,14 +2180,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     documentTransitions,
   ]);
 
+  const forceCloseProject = useCallback(() => shutDownProject(false), [shutDownProject]);
+
   const closeProject = useCallback(async (): Promise<CloseProjectResult> => {
     // Unsaved work prompts first: a running session stops only once the user
     // chooses Save All or Discard, so Cancel leaves it running.
     const dirty = documentService.getDirtyDocuments();
     const projectDirty = projectSaveState.current.isDirty(projectDocumentRef.current);
     if (dirty.length > 0 || projectDirty) return { outcome: "unsaved", dirty, projectDirty };
-    return await forceCloseProject() ? { outcome: "closed" } : { outcome: "refused" };
-  }, [documentService, forceCloseProject]);
+    return await shutDownProject(true) ? { outcome: "closed" } : { outcome: "refused" };
+  }, [documentService, shutDownProject]);
 
   const exportProject = useCallback(async (snapshot?: ProjectDocument) => {
     return projectService.exportZip(snapshot);
