@@ -141,6 +141,8 @@ export class World {
   private readonly pendingDestroy: Array<Guid | Actor> = [];
   private destroyCursor = 0;
   private started = false;
+  /** Set once `start()` reaches the Game Instance's On Init; replacements then end and init. */
+  private gameInstanceStarted = false;
   /** Set by `end()`: the session is over and the World never ticks again. */
   private ended = false;
   /** True for the whole of `tick()`, which is not re-entrant. */
@@ -178,17 +180,19 @@ export class World {
   }
 
   /**
-   * Install the session Game Instance. Between `start()` and `end()` a
-   * replacement ends the previous instance (On End, after it is unlinked) and
-   * then runs the new one's On Init, so every instance that inits also ends.
+   * Install the session Game Instance. Once `start()` has reached the Game
+   * Instance's On Init, and until `end()`, a replacement ends the previous
+   * instance (On End, after it is unlinked) and then runs the new one's On
+   * Init, so every instance that inits also ends, once. Earlier (including
+   * from a GameSubsystem's On Init) it only takes the place `start()` inits.
    */
   setGameInstance(instance: GameInstance): void {
     const previous = this.gameInstance;
     if (previous === instance) return;
     this.gameInstance = instance;
-    if (!this.started || this.ended) return;
+    if (!this.gameInstanceStarted || this.ended) return;
     previous?.callOnGameEnd();
-    if (this.gameInstance === instance) instance.callOnCreation();
+    if (this.gameInstance === instance && !this.ended) instance.callOnCreation();
   }
 
   /**
@@ -257,11 +261,16 @@ export class World {
     if (actor.world === this && !actor.destroyed) this.announceSceneActor(actor);
   }
 
-  /** GameSubsystems' On Init (class-id order), then the Game Instance's. Never after `end()`. */
+  /**
+   * GameSubsystems' On Init (class-id order), then the Game Instance's. Never
+   * after `end()`, including an `end()` from a GameSubsystem's On Init.
+   */
   start(): void {
     if (this.started || this.ended) return;
     this.started = true;
     for (const subsystem of this.liveGameSubsystems()) subsystem.callOnCreation();
+    if (this.ended) return;
+    this.gameInstanceStarted = true;
     this.gameInstance?.callOnCreation();
   }
 

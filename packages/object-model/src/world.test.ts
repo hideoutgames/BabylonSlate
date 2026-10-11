@@ -518,6 +518,24 @@ describe("World tick", () => {
     world.end();
     world.setGameInstance(instance("late"));
     expect(events).toEqual(["first:init", "first:end", "second:init", "second:end"]);
+
+    // A GameSubsystem's On Init runs before start() reaches the Game Instance.
+    const startWith = (onInit: (session: World) => void) => {
+      events.length = 0;
+      const session = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
+      session.setGameInstance(instance("installed"));
+      session.setGameSubsystems([
+        session.createGameSubsystem({ classId: "Boot", hooks: { onCreation: () => onInit(session) } }),
+      ]);
+      session.start();
+      return session;
+    };
+    // Its replacement is the instance start() inits, once.
+    startWith((session) => session.setGameInstance(instance("chosen"))).end();
+    expect(events).toEqual(["chosen:init", "chosen:end"]);
+    // Ending the session there leaves the Game Instance ended, never initialized after its On End.
+    startWith((session) => session.end());
+    expect(events).toEqual(["installed:end"]);
   });
 
   it("fires OnSceneExit for a scene that started loading but never finished", () => {
