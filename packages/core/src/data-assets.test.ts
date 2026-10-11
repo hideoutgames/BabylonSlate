@@ -52,7 +52,7 @@ describe("Definition and tree payloads", () => {
     expect(entry.schema!.map((field) => field.loading)).toEqual(["hard", undefined, undefined, undefined]);
   });
 
-  it("refuses historical sheets and objects without silently discarding their data", () => {
+  it("refuses historical sheets, objects and id-less fields without silently discarding their data", () => {
     const referenceSheet = { kind: "dataSheet", structureGuid: "stats", objectGuids: ["sword", "shield"] };
     const ownedSheet = { kind: "dataSheet", definitionGuid: "stats", rows: [{ id: "sword", name: "Sword", values: { Health: 12 } }] };
     const object = { kind: "dataObject", structureGuid: "stats", values: { Health: 10 } };
@@ -60,6 +60,7 @@ describe("Definition and tree payloads", () => {
     expect(referenceSheet.objectGuids).toEqual(["sword", "shield"]);
     expect(ownedSheet.rows[0]!.values).toEqual({ Health: 12 });
     expect(() => normalizeDataDefinitionAsset(object)).toThrow();
+    expect(() => normalizeDataDefinitionAsset({ kind: "dataDefinition", fields: [{ name: "Health", typeId: "int" }] })).toThrow();
     expect(() => normalizeDataTreeAsset({ kind: "dataTree", defaultDefinitionGuid: null, entries: [{ id: "broken", parentId: null, name: "Broken", values: null }] })).toThrow();
   });
 });
