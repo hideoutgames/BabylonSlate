@@ -166,16 +166,16 @@ Rules: compare runs on the same machine, browser project and build only; never a
 
 Main-scene editor viewport at default (Medium) quality, Forward path, with float blending unavailable as on an iPad A16. Draw calls per frame, counted per framebuffer in software GL. On the iPad, Play reported 1947 per frame before these changes, at 4 to 5 fps.
 
-| Pass | Before | After local shadow range |
-| --- | --- | --- |
-| Sun shadow, 2 cascades | 411 | 411 |
-| Point light cube shadow (10 m range) | 302 | 16 |
-| Spot shadow | 5 | 4 |
-| Outline occluder mask | 290 | 290 |
-| Scene (opaque and transparent) | 135 | 135 |
-| Spatial-effects geometry (SSAO, SSR, volumetrics) | 123 | 123 |
-| Full-screen effects | 21 | 21 |
-| **Total** | **1289** | **1002** |
+| Pass | Before | After local shadow range | After strict outline occluder culling |
+| --- | --- | --- | --- |
+| Sun shadow, 2 cascades | 411 | 411 | 411 |
+| Point light cube shadow (10 m range) | 302 | 16 | 16 |
+| Spot shadow | 5 | 4 | 4 |
+| Outline masks | 290 | 290 | 2 |
+| Scene (opaque and transparent) | 135 | 135 | 135 |
+| Spatial-effects geometry (SSAO, SSR, volumetrics) | 123 | 123 | 123 |
+| Full-screen effects | 21 | 21 | 21 |
+| **Total** | **1289** | **1002** | **713** |
 
 ## Verification
 
